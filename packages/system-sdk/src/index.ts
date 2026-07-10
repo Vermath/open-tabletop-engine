@@ -1,4 +1,4 @@
-import type { Actor, Combat, Item, PermissionName } from "@open-tabletop/core";
+import type { Actor, Combat, Item, PermissionName, SystemCapability, SystemManifestData } from "@open-tabletop/core";
 
 export interface JsonSchema {
   $schema?: string;
@@ -9,20 +9,32 @@ export interface JsonSchema {
   items?: JsonSchema;
 }
 
-export interface SystemManifest {
-  id: string;
-  name: string;
-  version: string;
-  compatibleCore: string;
-  entrypoints: {
-    client?: string;
-    server?: string;
-  };
-  schemas: {
-    actor: string;
-    item: string;
-  };
-  permissions: PermissionName[];
+export interface SystemManifest extends SystemManifestData {}
+
+export const OPEN_TABLETOP_CORE_VERSION = "0.3.0";
+
+const systemManifestPermissions = new Set<PermissionName>(["actor.read", "actor.updateOwned", "dice.roll", "chat.write"]);
+const systemCapabilities = new Set<SystemCapability>([
+  "data-model",
+  "actor-sheet",
+  "quick-rolls",
+  "actions",
+  "conditions",
+  "advancement",
+  "rest",
+  "compendium",
+  "character-templates",
+  "character-import",
+  "character-origins",
+  "encounter-builder",
+  "monster-builder"
+]);
+
+export class SystemManifestValidationError extends Error {
+  constructor(readonly issues: string[]) {
+    super(issues.join("; "));
+    this.name = "SystemManifestValidationError";
+  }
 }
 
 export const DND_5E_SRD_SYSTEM_ID = "dnd-5e-srd";
@@ -658,6 +670,8 @@ export function createSystemRegistry(): SystemRegistry {
 
 export function registerSystem(registry: SystemRegistry, manifest: SystemManifest): SystemRegistry {
   validateSystemManifest(manifest);
+  if (registry.manifests.some((item) => item.id === manifest.id)) throw new Error(`System id is already registered: ${manifest.id}`);
+  if (registry.manifests.some((item) => item.name.toLocaleLowerCase() === manifest.name.toLocaleLowerCase())) throw new Error(`System name is already registered: ${manifest.name}`);
   return { ...registry, manifests: [...registry.manifests, manifest] };
 }
 
@@ -669,25 +683,99 @@ export function registerDiceFormula(registry: SystemRegistry, formula: DiceFormu
   return { ...registry, diceFormulas: [...registry.diceFormulas, formula] };
 }
 
-export function validateSystemManifest(manifest: SystemManifest): void {
+export function validateSystemManifest(manifest: SystemManifest, options: { coreVersion?: string } = {}): void {
+  const issues: string[] = [];
   if (!manifest || typeof manifest !== "object") {
-    throw new Error("System manifest must be an object");
+    throw new SystemManifestValidationError(["System manifest must be an object"]);
   }
-  if (typeof manifest.id !== "string" || !manifest.id.trim() || typeof manifest.name !== "string" || !manifest.name.trim() || typeof manifest.version !== "string" || !manifest.version.trim()) {
-    throw new Error("System manifest requires id, name, and version");
-  }
-  if (typeof manifest.compatibleCore !== "string" || !manifest.compatibleCore.trim()) {
-    throw new Error("System manifest requires a compatible core version range");
-  }
+  const manifestKeys = new Set(["id", "name", "version", "compatibleCore", "entrypoints", "schemas", "permissions", "capabilities"]);
+  const unknownManifestKeys = Object.keys(manifest).filter((key) => !manifestKeys.has(key));
+  if (unknownManifestKeys.length) issues.push(`System manifest contains unknown fields: ${unknownManifestKeys.join(", ")}`);
+  if (typeof manifest.id !== "string" || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(manifest.id) || manifest.id.length > 64) issues.push("System manifest id must be a lowercase kebab-case identifier of 64 characters or fewer");
+  if (typeof manifest.name !== "string" || !manifest.name.trim() || manifest.name.trim().length > 120) issues.push("System manifest name must contain 1 to 120 characters");
+  if (typeof manifest.version !== "string" || !parseSystemSemver(manifest.version)) issues.push("System manifest version must be a semantic version such as 1.0.0");
+  if (typeof manifest.compatibleCore !== "string" || !manifest.compatibleCore.trim()) issues.push("System manifest requires a compatible core version range");
+  else if (!systemCoreCompatibility(manifest.compatibleCore, options.coreVersion ?? OPEN_TABLETOP_CORE_VERSION).valid) issues.push("System manifest compatible core version range is invalid");
+  else if (!systemCoreCompatibility(manifest.compatibleCore, options.coreVersion ?? OPEN_TABLETOP_CORE_VERSION).satisfied) issues.push(`System manifest is incompatible with OpenTabletop core ${options.coreVersion ?? OPEN_TABLETOP_CORE_VERSION}`);
   if (!manifest.entrypoints || typeof manifest.entrypoints !== "object" || Array.isArray(manifest.entrypoints)) {
-    throw new Error("System manifest requires entrypoints");
+    issues.push("System manifest requires entrypoints");
+  } else {
+    for (const [kind, path] of Object.entries(manifest.entrypoints)) {
+      if (kind !== "client" && kind !== "server") issues.push(`Unknown system entrypoint: ${kind}`);
+      if (path !== undefined && !safeSystemManifestPath(path)) issues.push(`System ${kind} entrypoint must be a safe relative package path`);
+    }
   }
   if (!manifest.schemas || typeof manifest.schemas !== "object" || Array.isArray(manifest.schemas) || typeof manifest.schemas.actor !== "string" || !manifest.schemas.actor.trim() || typeof manifest.schemas.item !== "string" || !manifest.schemas.item.trim()) {
-    throw new Error("System manifest requires actor and item schemas");
+    issues.push("System manifest requires actor and item schemas");
+  } else {
+    const unknownSchemaKeys = Object.keys(manifest.schemas).filter((key) => key !== "actor" && key !== "item");
+    if (unknownSchemaKeys.length) issues.push(`System manifest schemas contain unknown fields: ${unknownSchemaKeys.join(", ")}`);
+    if (!safeSystemManifestPath(manifest.schemas.actor) || !safeSystemManifestPath(manifest.schemas.item)) issues.push("System actor and item schemas must use safe relative package paths");
   }
   if (!Array.isArray(manifest.permissions) || manifest.permissions.some((permission) => typeof permission !== "string" || !permission)) {
-    throw new Error("System manifest permissions must be an array of permission names");
+    issues.push("System manifest permissions must be an array of permission names");
+  } else {
+    const invalidPermissions = manifest.permissions.filter((permission) => !systemManifestPermissions.has(permission));
+    if (invalidPermissions.length) issues.push(`System manifest requests unsupported permissions: ${[...new Set(invalidPermissions)].join(", ")}`);
+    if (new Set(manifest.permissions).size !== manifest.permissions.length) issues.push("System manifest permissions must not contain duplicates");
   }
+  if (!Array.isArray(manifest.capabilities) || manifest.capabilities.length === 0) issues.push("System manifest capabilities must be a non-empty array");
+  else {
+    const invalidCapabilities = manifest.capabilities.filter((capability) => !systemCapabilities.has(capability));
+    if (invalidCapabilities.length) issues.push(`System manifest declares unknown capabilities: ${[...new Set(invalidCapabilities)].join(", ")}`);
+    if (new Set(manifest.capabilities).size !== manifest.capabilities.length) issues.push("System manifest capabilities must not contain duplicates");
+  }
+  if (issues.length) throw new SystemManifestValidationError(issues);
+}
+
+export function systemCoreCompatibility(range: string, coreVersion = OPEN_TABLETOP_CORE_VERSION): { valid: boolean; satisfied: boolean } {
+  const current = parseSystemSemver(coreVersion);
+  if (!current || typeof range !== "string" || !range.trim() || range.includes("||")) return { valid: false, satisfied: false };
+  const comparators = range.trim().split(/\s+/);
+  let valid = true;
+  const satisfied = comparators.every((comparator) => {
+    if (comparator === "*" || comparator.toLowerCase() === "x") return true;
+    const match = /^(\^|~|>=|<=|>|<|=)?(\d+\.\d+\.\d+)$/.exec(comparator);
+    if (!match) {
+      valid = false;
+      return false;
+    }
+    const target = parseSystemSemver(match[2]!);
+    if (!target) {
+      valid = false;
+      return false;
+    }
+    const operator = match[1] ?? "=";
+    const comparison = compareSystemSemver(current, target);
+    if (operator === ">=") return comparison >= 0;
+    if (operator === "<=") return comparison <= 0;
+    if (operator === ">") return comparison > 0;
+    if (operator === "<") return comparison < 0;
+    if (operator === "~") return comparison >= 0 && current.major === target.major && current.minor === target.minor;
+    if (operator === "^") {
+      if (target.major > 0) return comparison >= 0 && current.major === target.major;
+      return comparison >= 0 && current.major === 0 && current.minor === target.minor;
+    }
+    return comparison === 0;
+  });
+  return { valid, satisfied: valid && satisfied };
+}
+
+function safeSystemManifestPath(value: unknown): value is string {
+  if (typeof value !== "string" || !value.trim() || value.length > 512 || value.includes("\\")) return false;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(value)) return false;
+  const segments = value.split("/");
+  return !segments.includes("..") && (value.startsWith("./") || value.startsWith("/systems/") || !value.startsWith("/"));
+}
+
+function parseSystemSemver(value: string): { major: number; minor: number; patch: number } | undefined {
+  const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$/.exec(value.trim());
+  if (!match) return undefined;
+  return { major: Number(match[1]), minor: Number(match[2]), patch: Number(match[3]) };
+}
+
+function compareSystemSemver(left: { major: number; minor: number; patch: number }, right: { major: number; minor: number; patch: number }): number {
+  return left.major - right.major || left.minor - right.minor || left.patch - right.patch;
 }
 
 export function summarizeActor(actor: Actor): string {

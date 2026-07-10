@@ -1,8 +1,8 @@
 import type { ChatMessage, DiceRoll } from "@open-tabletop/core";
-import { Activity, Check, ChevronDown, Dices, MessageSquare, Plus, Send } from "lucide-react";
+import { Activity, Check, ChevronDown, Dices, MessageSquare, PencilLine, Plus, Save, Send, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { verifyDiceRoll, type DiceRollVerification, type Snapshot } from "./api.js";
-import { addDieToFormula, diceTraySides, rollHighlight, rollTermHighlight } from "./dice-insights.js";
+import { addDieToFormula, adjustDiceModifier, diceQuickPresets, diceTraySides, rollHighlight, rollTermHighlight } from "./dice-insights.js";
 import { errorMessage, formatDateTime, formatNumber, formatRollTermDetail, formatRollTermName, rollTermTotal, safeProbabilityRange, titleCaseLabel } from "./sheet-format.js";
 
 
@@ -25,6 +25,8 @@ export type ChatRailProps = {
   onSaveDiceFormula(): Promise<void>;
   onSubmitCommand(): Promise<void>;
   onClearReply(): void;
+  currentUserId: string;
+  onEditMessage(message: ChatMessage, body: string): Promise<void>;
   canRollDice: boolean;
   dice3dEnabled: boolean;
   onToggleDice3d(): void;
@@ -76,6 +78,14 @@ export function ChatRail(props: ChatRailProps) {
               d{sides}
             </button>
           ))}
+          <span className="dice-tray-divider" aria-hidden="true" />
+          {diceQuickPresets.map((preset) => (
+            <button className="dice-chip dice-preset-chip" key={preset.id} type="button" title={preset.title} aria-label={preset.title} onClick={() => props.setDiceFormula(preset.formula)}>
+              {preset.label}
+            </button>
+          ))}
+          <button className="dice-chip dice-modifier-chip" type="button" title="Reduce the roll modifier by 1" aria-label="Reduce dice modifier by 1" onClick={() => props.setDiceFormula(adjustDiceModifier(props.diceFormula, -1))}>−1</button>
+          <button className="dice-chip dice-modifier-chip" type="button" title="Increase the roll modifier by 1" aria-label="Increase dice modifier by 1" onClick={() => props.setDiceFormula(adjustDiceModifier(props.diceFormula, 1))}>+1</button>
           <button className={props.dice3dEnabled ? "dice-chip dice-3d-toggle active" : "dice-chip dice-3d-toggle"} type="button" title={props.dice3dEnabled ? "3D dice on; click for text-only rolling" : "Text-only rolling; click to enable 3D dice"} aria-label={props.dice3dEnabled ? "Use text-only dice" : "Enable 3D dice"} aria-pressed={props.dice3dEnabled} onClick={props.onToggleDice3d}>
             <Dices size={13} aria-hidden="true" /> 3D
           </button>
@@ -86,7 +96,7 @@ export function ChatRail(props: ChatRailProps) {
           <div className="empty-state compact">No messages yet.</div>
         ) : (
           props.messages.map((message) => (
-            <ChatMessageItem key={message.id} campaignId={props.campaignId} message={message} roll={message.rollId ? rollById.get(message.rollId) : undefined} rollConcealed={message.rollId ? props.concealedRollIds.has(message.rollId) : false} memberNames={memberNames} messageById={messageById} />
+            <ChatMessageItem key={message.id} campaignId={props.campaignId} message={message} roll={message.rollId ? rollById.get(message.rollId) : undefined} rollConcealed={message.rollId ? props.concealedRollIds.has(message.rollId) : false} memberNames={memberNames} messageById={messageById} canEdit={message.userId === props.currentUserId && !message.rollId && message.type !== "roll"} onEditMessage={props.onEditMessage} />
           ))
         )}
       </div>
@@ -96,7 +106,10 @@ export function ChatRail(props: ChatRailProps) {
 }
 
 
-export function ChatMessageItem(props: { campaignId: string; message: ChatMessage; roll?: DiceRoll; rollConcealed?: boolean; memberNames: Map<string, string>; messageById: Map<string, ChatMessage> }) {
+export function ChatMessageItem(props: { campaignId: string; message: ChatMessage; roll?: DiceRoll; rollConcealed?: boolean; memberNames: Map<string, string>; messageById: Map<string, ChatMessage>; canEdit?: boolean; onEditMessage?(message: ChatMessage, body: string): Promise<void> }) {
+  const [editing, setEditing] = useState(false);
+  const [editBody, setEditBody] = useState(props.message.body);
+  const [editStatus, setEditStatus] = useState("");
   const messageKind = props.roll || props.message.type === "roll" ? "roll" : props.message.type;
   const author = props.memberNames.get(props.message.userId) ?? props.message.userId;
   const replyMessage = props.message.replyToMessageId ? props.messageById.get(props.message.replyToMessageId) : undefined;
@@ -108,6 +121,8 @@ export function ChatMessageItem(props: { campaignId: string; message: ChatMessag
         <span className="chat-author">{messageKind === "emote" ? `${author} ${props.message.body}` : author}</span>
         <span className="chat-time">{formatDateTime(props.message.createdAt)}</span>
         <span className={`chat-visibility chat-visibility-${props.message.visibility}`}>{chatVisibilityLabel(props.message.visibility)}</span>
+        {props.message.editedAt && <span className="chat-edited-label" title={`Edited ${formatDateTime(props.message.editedAt)}`}>edited</span>}
+        {props.canEdit && !editing && <button className="chat-message-action" type="button" aria-label={`Edit message from ${author}`} title="Edit message" onClick={() => { setEditBody(props.message.body); setEditing(true); }}><PencilLine size={12} /></button>}
       </header>
       {replyMessage && (
         <div className="chat-reply-context" aria-label="Chat reply context">
@@ -115,7 +130,22 @@ export function ChatMessageItem(props: { campaignId: string; message: ChatMessag
           <span>{replyMessage.body.slice(0, 96)}</span>
         </div>
       )}
-      {props.roll ? (
+      {editing ? (
+        <form className="chat-edit-form" aria-label="Edit chat message" onSubmit={(event) => {
+          event.preventDefault();
+          const body = editBody.trim();
+          if (!body || !props.onEditMessage) return;
+          setEditStatus("Saving");
+          props.onEditMessage(props.message, body).then(() => { setEditing(false); setEditStatus(""); }).catch((error) => setEditStatus(`Save failed: ${errorMessage(error)}`));
+        }}>
+          <textarea aria-label="Edited chat message" value={editBody} rows={3} onChange={(event) => setEditBody(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); setEditing(false); setEditBody(props.message.body); } }} />
+          <div className="button-row wrap">
+            <button className="ghost-button small" type="submit" disabled={!editBody.trim() || editBody.trim() === props.message.body}><Save size={12} /> Save</button>
+            <button className="ghost-button small" type="button" onClick={() => { setEditing(false); setEditBody(props.message.body); setEditStatus(""); }}><X size={12} /> Cancel</button>
+            {editStatus && <span role="status">{editStatus}</span>}
+          </div>
+        </form>
+      ) : props.roll ? (
         <RollMessageCard campaignId={props.campaignId} message={props.message} roll={props.roll} concealed={props.rollConcealed === true} />
       ) : messageKind === "emote" ? null : (
         <p className="chat-body">{props.message.body}</p>

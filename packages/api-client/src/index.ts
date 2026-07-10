@@ -1,5 +1,51 @@
 import { routes } from "@open-tabletop/api-contracts";
-import type { Actor, AiEvaluationRun, AiMemoryFact, AiThread, AiToolCall, AudioTrack, AuditLog, Campaign, CampaignMember, ChatMessage, Combat, CombatAction, ContentImportBatch, DiceMacro, DiceRoll, DiceRollFairness, Encounter, EngineEvent, FogPreset, FogRegion, Item, JournalEntry, LightSource, MapAsset, OrganizationMember, OrganizationWorkspace, PermissionName, Proposal, Scene, SceneAnnotation, SceneAnnotationKind, Token, User, UserSession, VisionPoint, VisionPointSample, VisionSnapshot, Wall } from "@open-tabletop/core";
+import type {
+  Actor,
+  AiEvaluationRun,
+  AiMemoryFact,
+  AiThread,
+  AiToolCall,
+  AudioTrack,
+  AuditLog,
+  Campaign,
+  CampaignArchive,
+  CampaignMember,
+  CampaignSession,
+  ChatMessage,
+  Combat,
+  CombatAction,
+  ContentImportBatch,
+  DiceMacro,
+  DiceRoll,
+  DiceRollFairness,
+  Encounter,
+  EngineEvent,
+  FogPreset,
+  FogRegion,
+  Handout,
+  Item,
+  JournalEntry,
+  LightSource,
+  MapAsset,
+  OrganizationMember,
+  OrganizationWorkspace,
+  PermissionGrant,
+  PermissionName,
+  Proposal,
+  Scene,
+  SceneAnnotation,
+  SceneAnnotationKind,
+  SystemCapability,
+  SystemManifestData,
+  Token,
+  User,
+  UserSession,
+  VisionPoint,
+  VisionPointSample,
+  VisionSnapshot,
+  Wall,
+  World,
+} from "@open-tabletop/core";
 
 export interface OpenTabletopClientOptions {
   token?: string;
@@ -7,7 +53,10 @@ export interface OpenTabletopClientOptions {
   fetch?: typeof fetch;
 }
 
-export type RealtimeWebSocketConstructor = new (url: string | URL, protocols?: string | string[]) => WebSocket;
+export type RealtimeWebSocketConstructor = new (
+  url: string | URL,
+  protocols?: string | string[],
+) => WebSocket;
 
 export interface OpenTabletopRealtimeOptions {
   token?: string;
@@ -47,7 +96,12 @@ export interface DiceRollVerification {
   rollId: string;
   formula: string;
   verified: boolean;
-  reason?: "fairness_unavailable" | "unsupported_algorithm" | "seed_hash_mismatch" | "formula_unparseable" | "result_mismatch";
+  reason?:
+    | "fairness_unavailable"
+    | "unsupported_algorithm"
+    | "seed_hash_mismatch"
+    | "formula_unparseable"
+    | "result_mismatch";
   fairness?: DiceRollFairness;
   expected: { total: number };
   recomputed?: { total: number };
@@ -75,6 +129,8 @@ export interface CampaignSnapshot {
   generatedAt: string;
   campaign: Campaign;
   members: CampaignSnapshotMember[];
+  campaignSessions: CampaignSession[];
+  worlds: World[];
   scenes: Scene[];
   selectedSceneId?: string;
   activeSceneId?: string;
@@ -85,6 +141,7 @@ export interface CampaignSnapshot {
   actors: Actor[];
   items: Item[];
   journals: JournalEntry[];
+  handouts: Handout[];
   chat: ChatMessage[];
   rolls: DiceRoll[];
   diceMacros: DiceMacro[];
@@ -101,6 +158,14 @@ export interface CampaignArchiveImportOptions {
   regenerateIds?: boolean;
 }
 
+export interface CampaignArchiveExportOptions {
+  scope?: "campaign" | "world" | "selected_collections";
+  scopeId?: string;
+  collections?: string[];
+  version?: "0.2.0";
+  redaction?: "portable";
+}
+
 export interface AssetUploadResponse {
   asset: MapAsset;
   scene?: Scene;
@@ -114,7 +179,13 @@ export interface AiEditLayerApplyResult {
   replacedTokenCount: number;
 }
 
-export type AiReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+export type AiReasoningEffort =
+  | "none"
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh";
 
 export interface AiThreadMessageInput {
   role?: string;
@@ -144,7 +215,12 @@ export interface McpJsonRpcResponse {
   jsonrpc: "2.0";
   id: string | number | null;
   result?: unknown;
-  error?: { code?: number; message?: string; data?: unknown; [key: string]: unknown };
+  error?: {
+    code?: number;
+    message?: string;
+    data?: unknown;
+    [key: string]: unknown;
+  };
   [key: string]: unknown;
 }
 
@@ -177,25 +253,62 @@ export interface PluginRuntimeInfo {
   id: string;
   name: string;
   version: string;
-  permissions: string[];
-  installed?: boolean;
+  compatibleCore?: string;
+  permissions: PermissionName[];
+}
+
+export interface PluginCampaignInfo extends PluginRuntimeInfo {
+  installed: boolean;
+  grantedPermissions: PermissionName[];
+  missingPermissions: PermissionName[];
   updateAvailable?: boolean;
   audit?: {
     installCount: number;
     lastInstallAt?: string;
-    lastActorUserId?: string;
     versions: string[];
   };
 }
 
-export interface SystemRuntimeInfo {
-  id: string;
-  name: string;
-  version: string;
-  active?: boolean;
+export interface PluginInstallResult {
+  plugin: PluginCampaignInfo;
+  grant: PermissionGrant;
+  permissionReview: {
+    requestedPermissions: PermissionName[];
+    grantedPermissions: PermissionName[];
+    missingPermissions: PermissionName[];
+  };
 }
 
-export interface PublicSession extends Pick<UserSession, "id" | "userId" | "expiresAt" | "lastSeenAt" | "createdAt" | "updatedAt"> {}
+export interface PluginStorageEntryInfo {
+  id: string;
+  campaignId: string;
+  pluginId: string;
+  key: string;
+  value: unknown;
+  updatedByType?: string;
+  updatedById?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SystemRuntimeInfo extends SystemManifestData {
+  active: boolean;
+  source: "bundled" | "api";
+  dataDriven: boolean;
+  runtimeCapabilities: SystemCapability[];
+  unsupportedCapabilities: SystemCapability[];
+  installedAt?: string;
+}
+
+export interface SystemActivationResult {
+  system: SystemRuntimeInfo;
+  campaign: Campaign;
+}
+
+export interface PublicSession extends Pick<
+  UserSession,
+  "id" | "userId" | "expiresAt" | "lastSeenAt" | "createdAt" | "updatedAt"
+> {}
 
 export interface SessionInfo {
   user: Omit<User, "passwordHash" | "mfa" | "scim">;
@@ -238,8 +351,14 @@ export interface CombatInitiativeRollNpcsResult {
   chatMessages: ChatMessage[];
 }
 
-export type OrganizationMemberInfo = OrganizationMember & { user: Pick<User, "id" | "displayName" | "email"> };
-export type OrganizationWorkspaceInfo = OrganizationWorkspace & { role: "owner" | "admin" | "member"; memberCount: number; campaignCount: number };
+export type OrganizationMemberInfo = OrganizationMember & {
+  user: Pick<User, "id" | "displayName" | "email">;
+};
+export type OrganizationWorkspaceInfo = OrganizationWorkspace & {
+  role: "owner" | "admin" | "member";
+  memberCount: number;
+  campaignCount: number;
+};
 
 export type ApiClientRouteStatus = "supported" | "excluded";
 
@@ -252,12 +371,35 @@ export interface ApiClientRouteConformanceEntry {
 }
 
 export const apiClientExcludedRoutePatterns = [
-  { prefix: "/api/v1/admin/", reason: "server-admin operations are intentionally excluded from the reusable public client surface" },
-  { prefix: "/api/v1/scim/", reason: "SCIM provisioning is an identity-provider integration surface, not reusable campaign client API" },
-  { path: routes.openApi, reason: "OpenAPI contract discovery is consumed at build/test time rather than wrapped as domain behavior" },
-  { path: openTabletopRealtimePath, reason: "Realtime uses websocket helpers instead of REST fetch wrappers" },
-  { path: "/api/v1/assets/{assetId}/blob", reason: "Binary asset delivery is intentionally fetched directly from signed URLs or browser media elements" },
-  { path: "/api/v1/agent/board-captures/{captureHandle}", reason: "Short-lived PNG board captures are fetched directly from signed URLs or browser image elements" }
+  {
+    prefix: "/api/v1/admin/",
+    reason:
+      "server-admin operations are intentionally excluded from the reusable public client surface",
+  },
+  {
+    prefix: "/api/v1/scim/",
+    reason:
+      "SCIM provisioning is an identity-provider integration surface, not reusable campaign client API",
+  },
+  {
+    path: routes.openApi,
+    reason:
+      "OpenAPI contract discovery is consumed at build/test time rather than wrapped as domain behavior",
+  },
+  {
+    path: openTabletopRealtimePath,
+    reason: "Realtime uses websocket helpers instead of REST fetch wrappers",
+  },
+  {
+    path: "/api/v1/assets/{assetId}/blob",
+    reason:
+      "Binary asset delivery is intentionally fetched directly from signed URLs or browser media elements",
+  },
+  {
+    path: "/api/v1/agent/board-captures/{captureHandle}",
+    reason:
+      "Short-lived PNG board captures are fetched directly from signed URLs or browser image elements",
+  },
 ] as const;
 
 export class OpenTabletopClient {
@@ -266,7 +408,7 @@ export class OpenTabletopClient {
 
   constructor(
     baseUrl: string,
-    private readonly options: OpenTabletopClientOptions = {}
+    private readonly options: OpenTabletopClientOptions = {},
   ) {
     this.baseUrl = normalizeClientBaseUrl(baseUrl);
     this.fetchImpl = options.fetch ?? fetch;
@@ -276,11 +418,21 @@ export class OpenTabletopClient {
     return this.get(routes.health);
   }
 
-  async login(input: { userId?: string; email?: string; password?: string; mfaCode?: string; recoveryCode?: string }): Promise<SessionLoginInfo> {
+  async login(input: {
+    userId?: string;
+    email?: string;
+    password?: string;
+    mfaCode?: string;
+    recoveryCode?: string;
+  }): Promise<SessionLoginInfo> {
     return this.post(routes.login, input);
   }
 
-  async register(input: { email: string; displayName: string; password: string }): Promise<SessionLoginInfo> {
+  async register(input: {
+    email: string;
+    displayName: string;
+    password: string;
+  }): Promise<SessionLoginInfo> {
     return this.post(routes.register, input);
   }
 
@@ -292,15 +444,24 @@ export class OpenTabletopClient {
     return this.get(routes.session);
   }
 
-  async requestPasswordReset(input: { email: string; returnTo?: string }): Promise<{ ok: true; resetToken?: string }> {
+  async requestPasswordReset(input: {
+    email: string;
+    returnTo?: string;
+  }): Promise<{ ok: true; resetToken?: string }> {
     return this.post(routes.passwordResetRequest, input);
   }
 
-  async confirmPasswordReset(input: { token: string; password: string }): Promise<SessionLoginInfo> {
+  async confirmPasswordReset(input: {
+    token: string;
+    password: string;
+  }): Promise<SessionLoginInfo> {
     return this.post(routes.passwordResetConfirm, input);
   }
 
-  async changePassword(input: { currentPassword: string; newPassword: string }): Promise<SessionLoginInfo> {
+  async changePassword(input: {
+    currentPassword: string;
+    newPassword: string;
+  }): Promise<SessionLoginInfo> {
     return this.post(routes.passwordChange, input);
   }
 
@@ -316,7 +477,11 @@ export class OpenTabletopClient {
     return this.post(routes.mfaTotpConfirm, input);
   }
 
-  async disableTotpMfa(input: { currentPassword?: string; mfaCode?: string; recoveryCode?: string }): Promise<unknown> {
+  async disableTotpMfa(input: {
+    currentPassword?: string;
+    mfaCode?: string;
+    recoveryCode?: string;
+  }): Promise<unknown> {
     return this.delete(routes.mfaTotpDisable, input);
   }
 
@@ -345,11 +510,21 @@ export class OpenTabletopClient {
     return this.get(routes.bootstrap);
   }
 
-  async bootstrapOwner(input: { email: string; displayName: string; password: string; campaignName: string; campaignDescription?: string; defaultSystemId?: string }): Promise<BootstrapOwnerInfo> {
+  async bootstrapOwner(input: {
+    email: string;
+    displayName: string;
+    password: string;
+    campaignName: string;
+    campaignDescription?: string;
+    defaultSystemId?: string;
+  }): Promise<BootstrapOwnerInfo> {
     return this.post(routes.bootstrap, input);
   }
 
-  realtimeUrl(campaignId: string, options: Pick<OpenTabletopRealtimeOptions, "token"> = {}): string {
+  realtimeUrl(
+    campaignId: string,
+    options: Pick<OpenTabletopRealtimeOptions, "token"> = {},
+  ): string {
     const url = new URL(`${this.baseUrl}${openTabletopRealtimePath}`);
     if (url.protocol === "http:") url.protocol = "ws:";
     if (url.protocol === "https:") url.protocol = "wss:";
@@ -357,13 +532,24 @@ export class OpenTabletopClient {
     return url.toString();
   }
 
-  connectRealtime(campaignId: string, options: OpenTabletopRealtimeOptions = {}): WebSocket {
+  connectRealtime(
+    campaignId: string,
+    options: OpenTabletopRealtimeOptions = {},
+  ): WebSocket {
     const WebSocketCtor = options.WebSocket ?? globalThis.WebSocket;
-    if (!WebSocketCtor) throw new Error("WebSocket is not available; pass a WebSocket constructor in OpenTabletopRealtimeOptions.");
-    return new WebSocketCtor(this.realtimeUrl(campaignId, options), realtimeProtocols(options.protocols, options.token ?? this.options.token));
+    if (!WebSocketCtor)
+      throw new Error(
+        "WebSocket is not available; pass a WebSocket constructor in OpenTabletopRealtimeOptions.",
+      );
+    return new WebSocketCtor(
+      this.realtimeUrl(campaignId, options),
+      realtimeProtocols(options.protocols, options.token ?? this.options.token),
+    );
   }
 
-  parseRealtimeMessage<TEvent extends EngineEvent = EngineEvent>(message: string | MessageEvent<string>): TEvent {
+  parseRealtimeMessage<TEvent extends EngineEvent = EngineEvent>(
+    message: string | MessageEvent<string>,
+  ): TEvent {
     const data = typeof message === "string" ? message : message.data;
     return JSON.parse(data) as TEvent;
   }
@@ -372,11 +558,23 @@ export class OpenTabletopClient {
     return this.get(routes.organizations);
   }
 
-  async createOrganization(input: Partial<OrganizationWorkspace> & { name: string }): Promise<{ organization: OrganizationWorkspace; session: PublicSession; organizations: OrganizationWorkspaceInfo[] }> {
+  async createOrganization(
+    input: Partial<OrganizationWorkspace> & { name: string },
+  ): Promise<{
+    organization: OrganizationWorkspace;
+    session: PublicSession;
+    organizations: OrganizationWorkspaceInfo[];
+  }> {
     return this.post(routes.organizations, input);
   }
 
-  async switchOrganization(organizationId: string): Promise<{ organization: OrganizationWorkspace; session: PublicSession; organizations: OrganizationWorkspaceInfo[] }> {
+  async switchOrganization(
+    organizationId: string,
+  ): Promise<{
+    organization: OrganizationWorkspace;
+    session: PublicSession;
+    organizations: OrganizationWorkspaceInfo[];
+  }> {
     return this.patch(routes.organizationSession, { organizationId });
   }
 
@@ -384,7 +582,9 @@ export class OpenTabletopClient {
     return this.get(routes.organizationWorkspaceDefaults);
   }
 
-  async updateWorkspaceDefaults(input: Partial<OrganizationWorkspace>): Promise<OrganizationWorkspace> {
+  async updateWorkspaceDefaults(
+    input: Partial<OrganizationWorkspace>,
+  ): Promise<OrganizationWorkspace> {
     return this.patch(routes.organizationWorkspaceDefaults, input);
   }
 
@@ -392,15 +592,29 @@ export class OpenTabletopClient {
     return this.get(routes.organizationMembers);
   }
 
-  async addOrganizationMember(input: { userId?: string; email?: string; role: "admin" | "member" }): Promise<OrganizationMemberInfo> {
+  async addOrganizationMember(input: {
+    userId?: string;
+    email?: string;
+    role: "admin" | "member";
+  }): Promise<OrganizationMemberInfo> {
     return this.post(routes.organizationMembers, input);
   }
 
-  async updateOrganizationMember(memberId: string, input: { role: "admin" | "member" }): Promise<OrganizationMemberInfo> {
+  async updateOrganizationMember(
+    memberId: string,
+    input: { role: "admin" | "member" },
+  ): Promise<OrganizationMemberInfo> {
     return this.patch(routes.organizationMember(memberId), input);
   }
 
-  async removeOrganizationMember(memberId: string): Promise<{ removed: boolean; memberId: string; userId: string; removedCampaignMemberships: number }> {
+  async removeOrganizationMember(
+    memberId: string,
+  ): Promise<{
+    removed: boolean;
+    memberId: string;
+    userId: string;
+    removedCampaignMemberships: number;
+  }> {
     return this.delete(routes.organizationMember(memberId));
   }
 
@@ -408,7 +622,12 @@ export class OpenTabletopClient {
     return this.get(routes.organizationInvites);
   }
 
-  async createOrganizationInvite(input: { campaignId: string; email?: string; role?: string; expiresInDays?: number }): Promise<CampaignInviteCreateResult> {
+  async createOrganizationInvite(input: {
+    campaignId: string;
+    email?: string;
+    role?: string;
+    expiresInDays?: number;
+  }): Promise<CampaignInviteCreateResult> {
     return this.post(routes.organizationInvites, input);
   }
 
@@ -424,15 +643,24 @@ export class OpenTabletopClient {
     return this.get(routes.campaign(campaignId));
   }
 
-  async updateCampaign(campaignId: string, input: Partial<Campaign>): Promise<Campaign> {
+  async updateCampaign(
+    campaignId: string,
+    input: Partial<Campaign>,
+  ): Promise<Campaign> {
     return this.patch(routes.campaign(campaignId), input);
   }
 
-  async archiveCampaign(campaignId: string, input: { reason?: string } = {}): Promise<Campaign> {
+  async archiveCampaign(
+    campaignId: string,
+    input: { reason?: string } = {},
+  ): Promise<Campaign> {
     return this.post(routes.campaignArchive(campaignId), input);
   }
 
-  async restoreCampaign(campaignId: string, input: { reason?: string } = {}): Promise<Campaign> {
+  async restoreCampaign(
+    campaignId: string,
+    input: { reason?: string } = {},
+  ): Promise<Campaign> {
     return this.post(routes.campaignRestore(campaignId), input);
   }
 
@@ -444,11 +672,108 @@ export class OpenTabletopClient {
     return this.get(routes.campaignInvites(campaignId));
   }
 
-  async campaignMembers(campaignId: string): Promise<CampaignMember[]> {
+  async campaignMembers(campaignId: string): Promise<CampaignSnapshotMember[]> {
     return this.get(routes.campaignMembers(campaignId));
   }
 
-  async createCampaignInvite(campaignId: string, input: { email?: string; role?: string; expiresInDays?: number }): Promise<CampaignInviteCreateResult> {
+  async updateCampaignMember(
+    campaignId: string,
+    memberId: string,
+    role: "gm" | "assistant_gm" | "player" | "observer",
+  ): Promise<CampaignSnapshotMember> {
+    return this.patch(routes.campaignMember(campaignId, memberId), { role });
+  }
+
+  async removeCampaignMember(
+    campaignId: string,
+    memberId: string,
+  ): Promise<CampaignSnapshotMember> {
+    return this.delete(routes.campaignMember(campaignId, memberId));
+  }
+
+  async campaignSessions(campaignId: string): Promise<CampaignSession[]> {
+    return this.get(routes.campaignSessions(campaignId));
+  }
+
+  async createCampaignSession(
+    campaignId: string,
+    input: Partial<
+      Pick<
+        CampaignSession,
+        | "title"
+        | "agenda"
+        | "notes"
+        | "scheduledFor"
+        | "sceneIds"
+        | "encounterIds"
+      >
+    >,
+  ): Promise<CampaignSession> {
+    return this.post(routes.campaignSessions(campaignId), input);
+  }
+
+  async campaignSession(sessionId: string): Promise<CampaignSession> {
+    return this.get(routes.campaignSession(sessionId));
+  }
+
+  async updateCampaignSession(
+    sessionId: string,
+    input: Partial<
+      Pick<
+        CampaignSession,
+        | "title"
+        | "agenda"
+        | "notes"
+        | "scheduledFor"
+        | "sceneIds"
+        | "encounterIds"
+      >
+    >,
+  ): Promise<CampaignSession> {
+    return this.patch(routes.campaignSession(sessionId), input);
+  }
+
+  async startCampaignSession(
+    sessionId: string,
+    activateSceneId?: string,
+  ): Promise<CampaignSession> {
+    return this.post(
+      routes.campaignSessionStart(sessionId),
+      activateSceneId ? { activateSceneId } : {},
+    );
+  }
+
+  async completeCampaignSession(
+    sessionId: string,
+    notes?: string,
+  ): Promise<CampaignSession> {
+    return this.post(
+      routes.campaignSessionComplete(sessionId),
+      notes === undefined ? {} : { notes },
+    );
+  }
+
+  async deleteCampaignSession(sessionId: string): Promise<CampaignSession> {
+    return this.delete(routes.campaignSession(sessionId));
+  }
+
+  async searchCampaign(
+    campaignId: string,
+    query: { q: string; types?: string[]; worldId?: string; limit?: number },
+  ): Promise<CampaignSearchResult[]> {
+    const params = new URLSearchParams({ q: query.q });
+    if (query.types?.length) params.set("types", query.types.join(","));
+    if (query.worldId) params.set("worldId", query.worldId);
+    if (query.limit) params.set("limit", String(query.limit));
+    return this.get(
+      `${routes.campaignSearch(campaignId)}?${params.toString()}`,
+    );
+  }
+
+  async createCampaignInvite(
+    campaignId: string,
+    input: { email?: string; role?: string; expiresInDays?: number },
+  ): Promise<CampaignInviteCreateResult> {
     return this.post(routes.campaignInvites(campaignId), input);
   }
 
@@ -456,7 +781,13 @@ export class OpenTabletopClient {
     return this.post(routes.revokeInvite(inviteId), {});
   }
 
-  async acceptInvite(input: { token: string; userId?: string; email?: string; displayName?: string; password?: string }): Promise<unknown> {
+  async acceptInvite(input: {
+    token: string;
+    userId?: string;
+    email?: string;
+    displayName?: string;
+    password?: string;
+  }): Promise<unknown> {
     return this.post(routes.acceptInvite, input);
   }
 
@@ -476,15 +807,23 @@ export class OpenTabletopClient {
     return this.get(routes.sceneVision(sceneId));
   }
 
-  async sampleSceneVision(sceneId: string, point: { x: number; y: number }): Promise<VisionPointSample> {
-    return this.get(`${routes.sceneVisionSample(sceneId)}?x=${encodeURIComponent(String(point.x))}&y=${encodeURIComponent(String(point.y))}`);
+  async sampleSceneVision(
+    sceneId: string,
+    point: { x: number; y: number },
+  ): Promise<VisionPointSample> {
+    return this.get(
+      `${routes.sceneVisionSample(sceneId)}?x=${encodeURIComponent(String(point.x))}&y=${encodeURIComponent(String(point.y))}`,
+    );
   }
 
   async sceneRenderingDiagnostics(sceneId: string): Promise<unknown> {
     return this.get(routes.sceneRenderingDiagnostics(sceneId));
   }
 
-  async updateScene(sceneId: string, input: Partial<Scene>): Promise<Scene> {
+  async updateScene(
+    sceneId: string,
+    input: Omit<Partial<Scene>, "worldId"> & { worldId?: string | null },
+  ): Promise<Scene> {
     return this.patch(routes.scene(sceneId), input);
   }
 
@@ -492,15 +831,50 @@ export class OpenTabletopClient {
     return this.delete(routes.scene(sceneId));
   }
 
-  async createSceneAnnotation(sceneId: string, input: { kind: SceneAnnotationKind; points: VisionPoint[]; label?: string; color?: string; radius?: number; expiresInSeconds?: number }): Promise<Scene> {
+  async createSceneAnnotation(
+    sceneId: string,
+    input: {
+      kind: SceneAnnotationKind;
+      points: VisionPoint[];
+      label?: string;
+      color?: string;
+      radius?: number;
+      expiresInSeconds?: number;
+    },
+  ): Promise<Scene> {
     return this.post(routes.sceneAnnotations(sceneId), input);
   }
 
-  async updateSceneAnnotation(sceneId: string, annotationId: string, input: Partial<Pick<SceneAnnotation, "label" | "color" | "layer" | "groupId" | "groupLabel" | "sortOrder" | "templateShape" | "templateSaveAbility" | "templateSaveDc" | "templateDamageFormula" | "templateDamageType" | "snapToGrid" | "points" | "radius">> & { expiresInSeconds?: number }): Promise<Scene> {
+  async updateSceneAnnotation(
+    sceneId: string,
+    annotationId: string,
+    input: Partial<
+      Pick<
+        SceneAnnotation,
+        | "label"
+        | "color"
+        | "layer"
+        | "groupId"
+        | "groupLabel"
+        | "sortOrder"
+        | "templateShape"
+        | "templateSaveAbility"
+        | "templateSaveDc"
+        | "templateDamageFormula"
+        | "templateDamageType"
+        | "snapToGrid"
+        | "points"
+        | "radius"
+      >
+    > & { expiresInSeconds?: number },
+  ): Promise<Scene> {
     return this.patch(routes.sceneAnnotation(sceneId, annotationId), input);
   }
 
-  async deleteSceneAnnotation(sceneId: string, annotationId: string): Promise<Scene> {
+  async deleteSceneAnnotation(
+    sceneId: string,
+    annotationId: string,
+  ): Promise<Scene> {
     return this.delete(routes.sceneAnnotation(sceneId, annotationId));
   }
 
@@ -508,23 +882,39 @@ export class OpenTabletopClient {
     return this.get(routes.fogPresets(campaignId));
   }
 
-  async createFogPreset(campaignId: string, input: { name?: string; description?: string; sceneId?: string }): Promise<FogPreset> {
+  async createFogPreset(
+    campaignId: string,
+    input: { name?: string; description?: string; sceneId?: string },
+  ): Promise<FogPreset> {
     return this.post(routes.fogPresets(campaignId), input);
   }
 
-  async deleteFogPreset(campaignId: string, presetId: string): Promise<FogPreset> {
+  async deleteFogPreset(
+    campaignId: string,
+    presetId: string,
+  ): Promise<FogPreset> {
     return this.delete(routes.fogPreset(campaignId, presetId));
   }
 
-  async applyFogPreset(sceneId: string, input: { presetId: string; mode?: "append" | "replace" }): Promise<Scene> {
+  async applyFogPreset(
+    sceneId: string,
+    input: { presetId: string; mode?: "append" | "replace" },
+  ): Promise<Scene> {
     return this.post(routes.sceneFogApplyPreset(sceneId), input);
   }
 
-  async createFogRegion(sceneId: string, input: Partial<FogRegion>): Promise<Scene> {
+  async createFogRegion(
+    sceneId: string,
+    input: Partial<FogRegion>,
+  ): Promise<Scene> {
     return this.post(routes.sceneFog(sceneId), input);
   }
 
-  async updateFogRegion(sceneId: string, fogId: string, input: Partial<FogRegion>): Promise<Scene> {
+  async updateFogRegion(
+    sceneId: string,
+    fogId: string,
+    input: Partial<FogRegion>,
+  ): Promise<Scene> {
     return this.patch(routes.sceneFogRegion(sceneId, fogId), input);
   }
 
@@ -552,7 +942,11 @@ export class OpenTabletopClient {
     return this.post(routes.sceneWalls(sceneId), input);
   }
 
-  async updateWall(sceneId: string, wallId: string, input: Partial<Wall>): Promise<Scene> {
+  async updateWall(
+    sceneId: string,
+    wallId: string,
+    input: Partial<Wall>,
+  ): Promise<Scene> {
     return this.patch(routes.sceneWall(sceneId, wallId), input);
   }
 
@@ -560,11 +954,18 @@ export class OpenTabletopClient {
     return this.delete(routes.sceneWall(sceneId, wallId));
   }
 
-  async createLight(sceneId: string, input: Partial<LightSource>): Promise<Scene> {
+  async createLight(
+    sceneId: string,
+    input: Partial<LightSource>,
+  ): Promise<Scene> {
     return this.post(routes.sceneLights(sceneId), input);
   }
 
-  async updateLight(sceneId: string, lightId: string, input: Partial<LightSource>): Promise<Scene> {
+  async updateLight(
+    sceneId: string,
+    lightId: string,
+    input: Partial<LightSource>,
+  ): Promise<Scene> {
     return this.patch(routes.sceneLight(sceneId, lightId), input);
   }
 
@@ -572,7 +973,9 @@ export class OpenTabletopClient {
     return this.delete(routes.sceneLight(sceneId, lightId));
   }
 
-  async applyAiEditLayerToTarget(sceneId: string): Promise<AiEditLayerApplyResult> {
+  async applyAiEditLayerToTarget(
+    sceneId: string,
+  ): Promise<AiEditLayerApplyResult> {
     return this.post(routes.sceneAiEditsApply(sceneId), {});
   }
 
@@ -584,27 +987,62 @@ export class OpenTabletopClient {
     return this.get(routes.assetStorage(campaignId));
   }
 
-  async createAsset(campaignId: string, input: Partial<MapAsset>): Promise<MapAsset> {
+  async createAsset(
+    campaignId: string,
+    input: Partial<MapAsset>,
+  ): Promise<MapAsset> {
     return this.post(routes.assets(campaignId), input);
   }
 
-  async uploadAsset(campaignId: string, body: BodyInit, options: { contentType: string; fileName?: string; folder?: string; tags?: string[] }): Promise<AssetUploadResponse> {
-    const headers: Record<string, string> = { "content-type": options.contentType };
+  async uploadAsset(
+    campaignId: string,
+    body: BodyInit,
+    options: {
+      contentType: string;
+      fileName?: string;
+      folder?: string;
+      tags?: string[];
+    },
+  ): Promise<AssetUploadResponse> {
+    const headers: Record<string, string> = {
+      "content-type": options.contentType,
+    };
     if (options.fileName) headers["x-asset-name"] = options.fileName;
     if (options.folder) headers["x-asset-folder"] = options.folder;
     if (options.tags?.length) headers["x-asset-tags"] = options.tags.join(",");
-    return this.requestRaw("POST", routes.uploadAsset(campaignId), body, headers);
+    return this.requestRaw(
+      "POST",
+      routes.uploadAsset(campaignId),
+      body,
+      headers,
+    );
   }
 
-  async updateAsset(assetId: string, input: { name?: string; folder?: string | null; tags?: string[] | string }): Promise<MapAsset> {
+  async updateAsset(
+    assetId: string,
+    input: { name?: string; folder?: string | null; tags?: string[] | string },
+  ): Promise<MapAsset> {
     return this.patch(routes.asset(assetId), input);
   }
 
-  async updateAssetLifecycle(assetId: string, input: { status: "active" | "archived" | "deleted"; expiresAt?: string | null; reason?: string }): Promise<MapAsset> {
+  async updateAssetLifecycle(
+    assetId: string,
+    input: {
+      status: "active" | "archived" | "deleted";
+      expiresAt?: string | null;
+      reason?: string;
+    },
+  ): Promise<MapAsset> {
     return this.patch(routes.assetLifecycle(assetId), input);
   }
 
-  async assetDeliveryUrl(assetId: string, input: { expiresInSeconds?: number; disposition?: "inline" | "attachment" } = {}): Promise<{ url: string; expiresAt: string }> {
+  async assetDeliveryUrl(
+    assetId: string,
+    input: {
+      expiresInSeconds?: number;
+      disposition?: "inline" | "attachment";
+    } = {},
+  ): Promise<{ url: string; expiresAt: string }> {
     return this.post(routes.assetDeliveryUrl(assetId), input);
   }
 
@@ -636,39 +1074,120 @@ export class OpenTabletopClient {
     return this.post(routes.actors(campaignId), input);
   }
 
-  async updateActor(actorId: string, input: Partial<Actor>): Promise<Actor> {
+  async actor(actorId: string): Promise<Actor> {
+    return this.get(routes.actor(actorId));
+  }
+
+  async updateActor(
+    actorId: string,
+    input: Omit<Partial<Actor>, "worldId"> & { worldId?: string | null },
+  ): Promise<Actor> {
     return this.patch(routes.actor(actorId), input);
+  }
+
+  async deleteActor(actorId: string): Promise<Actor> {
+    return this.delete(routes.actor(actorId));
   }
 
   async items(campaignId: string): Promise<Item[]> {
     return this.get(routes.items(campaignId));
   }
 
-  async createItem(campaignId: string, input: Record<string, unknown>): Promise<Item> {
+  async createItem(
+    campaignId: string,
+    input: Record<string, unknown>,
+  ): Promise<Item> {
     return this.post(routes.items(campaignId), input);
   }
 
-  async updateItem(itemId: string, input: Partial<Item>): Promise<Item> {
+  async item(itemId: string): Promise<Item> {
+    return this.get(routes.item(itemId));
+  }
+
+  async updateItem(
+    itemId: string,
+    input: Omit<Partial<Item>, "worldId" | "actorId"> & {
+      worldId?: string | null;
+      actorId?: string | null;
+    },
+  ): Promise<Item> {
     return this.patch(routes.item(itemId), input);
+  }
+
+  async deleteItem(itemId: string): Promise<Item> {
+    return this.delete(routes.item(itemId));
   }
 
   async journals(campaignId: string): Promise<JournalEntry[]> {
     return this.get(routes.journals(campaignId));
   }
 
-  async createJournal(campaignId: string, input: Partial<JournalEntry>): Promise<JournalEntry> {
+  async createJournal(
+    campaignId: string,
+    input: Partial<JournalEntry>,
+  ): Promise<JournalEntry> {
     return this.post(routes.journals(campaignId), input);
   }
 
-  async updateJournal(entryId: string, input: Partial<JournalEntry>): Promise<JournalEntry> {
+  async journal(entryId: string): Promise<JournalEntry> {
+    return this.get(routes.journal(entryId));
+  }
+
+  async updateJournal(
+    entryId: string,
+    input: Omit<Partial<JournalEntry>, "worldId"> & { worldId?: string | null },
+  ): Promise<JournalEntry> {
     return this.patch(routes.journal(entryId), input);
   }
 
-  async chat(campaignId: string): Promise<ChatMessage[]> {
-    return this.get(`${routes.chat}?campaignId=${encodeURIComponent(campaignId)}`);
+  async deleteJournal(entryId: string): Promise<JournalEntry> {
+    return this.delete(routes.journal(entryId));
   }
 
-  async sendChat(input: { campaignId: string; body: string; type?: ChatMessage["type"]; visibility?: ChatMessage["visibility"]; recipientUserIds?: string[]; replyToMessageId?: string }): Promise<ChatMessage> {
+  async handouts(campaignId: string): Promise<Handout[]> {
+    return this.get(routes.handouts(campaignId));
+  }
+
+  async createHandout(
+    campaignId: string,
+    input: Partial<Handout>,
+  ): Promise<Handout> {
+    return this.post(routes.handouts(campaignId), input);
+  }
+
+  async handout(handoutId: string): Promise<Handout> {
+    return this.get(routes.handout(handoutId));
+  }
+
+  async updateHandout(
+    handoutId: string,
+    input: Omit<Partial<Handout>, "worldId"> & { worldId?: string | null },
+  ): Promise<Handout> {
+    return this.patch(routes.handout(handoutId), input);
+  }
+
+  async markHandoutRead(handoutId: string): Promise<Handout> {
+    return this.post(routes.handoutRead(handoutId), {});
+  }
+
+  async deleteHandout(handoutId: string): Promise<Handout> {
+    return this.delete(routes.handout(handoutId));
+  }
+
+  async chat(campaignId: string): Promise<ChatMessage[]> {
+    return this.get(
+      `${routes.chat}?campaignId=${encodeURIComponent(campaignId)}`,
+    );
+  }
+
+  async sendChat(input: {
+    campaignId: string;
+    body: string;
+    type?: ChatMessage["type"];
+    visibility?: ChatMessage["visibility"];
+    recipientUserIds?: string[];
+    replyToMessageId?: string;
+  }): Promise<ChatMessage> {
     return this.post(routes.chat, input);
   }
 
@@ -676,16 +1195,33 @@ export class OpenTabletopClient {
     return this.patch(routes.chatMessage(messageId), { body });
   }
 
-  async moderateChat(messageId: string, moderationStatus: NonNullable<ChatMessage["moderationStatus"]>): Promise<ChatMessage> {
-    return this.patch(routes.chatMessageModeration(messageId), { moderationStatus });
+  async moderateChat(
+    messageId: string,
+    moderationStatus: NonNullable<ChatMessage["moderationStatus"]>,
+  ): Promise<ChatMessage> {
+    return this.patch(routes.chatMessageModeration(messageId), {
+      moderationStatus,
+    });
   }
 
   async deleteChat(messageId: string): Promise<ChatMessage> {
     return this.delete(routes.chatMessage(messageId));
   }
 
-  async exportChat(campaignId: string, options: { format?: "json" } = {}): Promise<{ campaignId: string; exportedAt: string; count: number; visibilityCounts: Record<string, number>; typeCounts: Record<string, number>; messages: ChatMessage[] }> {
-    const query = options.format ? `?format=${encodeURIComponent(options.format)}` : "";
+  async exportChat(
+    campaignId: string,
+    options: { format?: "json" } = {},
+  ): Promise<{
+    campaignId: string;
+    exportedAt: string;
+    count: number;
+    visibilityCounts: Record<string, number>;
+    typeCounts: Record<string, number>;
+    messages: ChatMessage[];
+  }> {
+    const query = options.format
+      ? `?format=${encodeURIComponent(options.format)}`
+      : "";
     return this.get(`${routes.chatExport(campaignId)}${query}`);
   }
 
@@ -693,7 +1229,13 @@ export class OpenTabletopClient {
     return this.getText(`${routes.chatExport(campaignId)}?format=ndjson`);
   }
 
-  async roll(input: { campaignId: string; formula: string; visibility?: DiceRoll["visibility"]; label?: string; clientSeed?: string }): Promise<DiceRoll> {
+  async roll(input: {
+    campaignId: string;
+    formula: string;
+    visibility?: DiceRoll["visibility"];
+    label?: string;
+    clientSeed?: string;
+  }): Promise<DiceRoll> {
     return this.post(routes.dice, input);
   }
 
@@ -701,11 +1243,17 @@ export class OpenTabletopClient {
     return this.get(routes.campaignRolls(campaignId));
   }
 
-  async verifyRoll(campaignId: string, rollId: string): Promise<DiceRollVerification> {
+  async verifyRoll(
+    campaignId: string,
+    rollId: string,
+  ): Promise<DiceRollVerification> {
     return this.get(routes.campaignRollVerify(campaignId, rollId));
   }
 
-  async campaignSnapshot(campaignId: string, sceneId?: string): Promise<CampaignSnapshot> {
+  async campaignSnapshot(
+    campaignId: string,
+    sceneId?: string,
+  ): Promise<CampaignSnapshot> {
     const query = sceneId ? `?sceneId=${encodeURIComponent(sceneId)}` : "";
     return this.get(`${routes.campaignSnapshot(campaignId)}${query}`);
   }
@@ -714,11 +1262,21 @@ export class OpenTabletopClient {
     return this.get(routes.diceMacros(campaignId));
   }
 
-  async createDiceMacro(campaignId: string, input: { name: string; formula: string; visibility?: DiceMacro["visibility"] }): Promise<DiceMacro> {
+  async createDiceMacro(
+    campaignId: string,
+    input: {
+      name: string;
+      formula: string;
+      visibility?: DiceMacro["visibility"];
+    },
+  ): Promise<DiceMacro> {
     return this.post(routes.diceMacros(campaignId), input);
   }
 
-  async updateDiceMacro(macroId: string, input: Partial<Pick<DiceMacro, "name" | "formula" | "visibility">>): Promise<DiceMacro> {
+  async updateDiceMacro(
+    macroId: string,
+    input: Partial<Pick<DiceMacro, "name" | "formula" | "visibility">>,
+  ): Promise<DiceMacro> {
     return this.patch(routes.diceMacro(macroId), input);
   }
 
@@ -730,11 +1288,25 @@ export class OpenTabletopClient {
     return this.get(routes.campaignAudio(campaignId));
   }
 
-  async createAudioTrack(campaignId: string, input: { name: string; url: string; kind?: AudioTrack["kind"]; loop?: boolean; volume?: number }): Promise<AudioTrack> {
+  async createAudioTrack(
+    campaignId: string,
+    input: {
+      name: string;
+      url: string;
+      kind?: AudioTrack["kind"];
+      loop?: boolean;
+      volume?: number;
+    },
+  ): Promise<AudioTrack> {
     return this.post(routes.campaignAudio(campaignId), input);
   }
 
-  async updateAudioTrack(trackId: string, input: Partial<Pick<AudioTrack, "name" | "url" | "kind" | "loop" | "volume" | "playing">>): Promise<AudioTrack> {
+  async updateAudioTrack(
+    trackId: string,
+    input: Partial<
+      Pick<AudioTrack, "name" | "url" | "kind" | "loop" | "volume" | "playing">
+    >,
+  ): Promise<AudioTrack> {
     return this.patch(routes.audioTrack(trackId), input);
   }
 
@@ -750,27 +1322,49 @@ export class OpenTabletopClient {
     return this.get(routes.combatAudit(combatId));
   }
 
-  async startCombat(campaignId: string, input: Partial<Combat>): Promise<Combat> {
+  async startCombat(
+    campaignId: string,
+    input: Partial<Combat>,
+  ): Promise<Combat> {
     return this.post(routes.combats(campaignId), input);
   }
 
-  async updateCombat(combatId: string, input: Partial<Combat>): Promise<Combat> {
+  async updateCombat(
+    combatId: string,
+    input: Partial<Combat>,
+  ): Promise<Combat> {
     return this.patch(routes.combat(combatId), input);
   }
 
-  async rollNpcInitiative(combatId: string): Promise<CombatInitiativeRollNpcsResult> {
-    return this.post(`/api/v1/combats/${encodeURIComponent(combatId)}/initiative/roll-npcs`, {});
+  async rollNpcInitiative(
+    combatId: string,
+  ): Promise<CombatInitiativeRollNpcsResult> {
+    return this.post(
+      `/api/v1/combats/${encodeURIComponent(combatId)}/initiative/roll-npcs`,
+      {},
+    );
   }
 
-  async updateCombatant(combatId: string, combatantId: string, input: Partial<Combat["combatants"][number]> & { syncActorSheet?: boolean }): Promise<Combat> {
+  async updateCombatant(
+    combatId: string,
+    combatantId: string,
+    input: Partial<Combat["combatants"][number]> & { syncActorSheet?: boolean },
+  ): Promise<Combat> {
     return this.patch(routes.combatant(combatId, combatantId), input);
   }
 
-  async confirmCombatAction(combatId: string, actionId: string): Promise<CombatActionMutationResult> {
+  async confirmCombatAction(
+    combatId: string,
+    actionId: string,
+  ): Promise<CombatActionMutationResult> {
     return this.post(routes.combatActionConfirm(combatId, actionId), {});
   }
 
-  async rejectCombatAction(combatId: string, actionId: string, input: { reason?: string } = {}): Promise<CombatActionMutationResult> {
+  async rejectCombatAction(
+    combatId: string,
+    actionId: string,
+    input: { reason?: string } = {},
+  ): Promise<CombatActionMutationResult> {
     return this.post(routes.combatActionReject(combatId, actionId), input);
   }
 
@@ -778,19 +1372,40 @@ export class OpenTabletopClient {
     return this.delete(routes.combat(combatId));
   }
 
-  async encounters(campaignId: string): Promise<unknown[]> {
+  async encounters(campaignId: string): Promise<Encounter[]> {
     return this.get(routes.encounters(campaignId));
   }
 
-  async createEncounter(campaignId: string, input: unknown): Promise<unknown> {
+  async createEncounter(
+    campaignId: string,
+    input: Partial<Encounter>,
+  ): Promise<Encounter> {
     return this.post(routes.encounters(campaignId), input);
+  }
+
+  async encounter(encounterId: string): Promise<Encounter> {
+    return this.get(routes.encounter(encounterId));
+  }
+
+  async updateEncounter(
+    encounterId: string,
+    input: Omit<Partial<Encounter>, "worldId"> & { worldId?: string | null },
+  ): Promise<Encounter> {
+    return this.patch(routes.encounter(encounterId), input);
+  }
+
+  async deleteEncounter(encounterId: string): Promise<Encounter> {
+    return this.delete(routes.encounter(encounterId));
   }
 
   async proposals(campaignId: string): Promise<Proposal[]> {
     return this.get(routes.proposals(campaignId));
   }
 
-  async createProposal(campaignId: string, input: Partial<Proposal>): Promise<Proposal> {
+  async createProposal(
+    campaignId: string,
+    input: Partial<Proposal>,
+  ): Promise<Proposal> {
     return this.post(routes.proposals(campaignId), input);
   }
 
@@ -802,6 +1417,10 @@ export class OpenTabletopClient {
     return this.post(routes.proposalApply(proposalId), {});
   }
 
+  async revertProposal(proposalId: string): Promise<Proposal> {
+    return this.post(routes.proposalRevert(proposalId), {});
+  }
+
   async rejectProposal(proposalId: string): Promise<Proposal> {
     return this.post(routes.proposalReject(proposalId), {});
   }
@@ -810,7 +1429,10 @@ export class OpenTabletopClient {
     return this.get(routes.aiThreads(campaignId));
   }
 
-  async createAiThread(campaignId: string, input: AiThreadCreateInput): Promise<AiThread> {
+  async createAiThread(
+    campaignId: string,
+    input: AiThreadCreateInput,
+  ): Promise<AiThread> {
     return this.post(routes.aiThreads(campaignId), input);
   }
 
@@ -818,7 +1440,10 @@ export class OpenTabletopClient {
     return this.post(routes.mcp, input);
   }
 
-  async submitBoardCapture(requestId: string, input: BoardCaptureSubmitInput): Promise<BoardCaptureResult> {
+  async submitBoardCapture(
+    requestId: string,
+    input: BoardCaptureSubmitInput,
+  ): Promise<BoardCaptureResult> {
     return this.post(routes.agentBoardCaptureSubmit(requestId), input);
   }
 
@@ -830,7 +1455,10 @@ export class OpenTabletopClient {
     return this.get(routes.aiEvaluations(campaignId));
   }
 
-  async createAiEvaluation(campaignId: string, input: unknown): Promise<AiEvaluationRun> {
+  async createAiEvaluation(
+    campaignId: string,
+    input: unknown,
+  ): Promise<AiEvaluationRun> {
     return this.post(routes.aiEvaluations(campaignId), input);
   }
 
@@ -838,16 +1466,41 @@ export class OpenTabletopClient {
     return this.get(routes.aiMemory(campaignId));
   }
 
-  async createAiMemory(campaignId: string, input: Partial<AiMemoryFact>): Promise<AiMemoryFact> {
+  async createAiMemory(
+    campaignId: string,
+    input: Partial<AiMemoryFact>,
+  ): Promise<AiMemoryFact> {
     return this.post(routes.aiMemory(campaignId), input);
   }
 
-  async extractAiMemory(campaignId: string, input: { transcript: string }): Promise<unknown> {
+  async extractAiMemory(
+    campaignId: string,
+    input: { transcript: string },
+  ): Promise<unknown> {
     return this.post(routes.aiMemoryExtract(campaignId), input);
   }
 
   async approveAiMemory(factId: string): Promise<AiMemoryFact> {
     return this.post(routes.aiMemoryApprove(factId), {});
+  }
+
+  async aiMemoryFact(factId: string): Promise<AiMemoryFact> {
+    return this.get(routes.aiMemoryFact(factId));
+  }
+
+  async updateAiMemory(
+    factId: string,
+    input: Omit<Partial<AiMemoryFact>, "worldId" | "subject" | "confidence"> & {
+      worldId?: string | null;
+      subject?: string | null;
+      confidence?: number | null;
+    },
+  ): Promise<AiMemoryFact> {
+    return this.patch(routes.aiMemoryFact(factId), input);
+  }
+
+  async rejectAiMemory(factId: string): Promise<AiMemoryFact> {
+    return this.post(routes.aiMemoryReject(factId), {});
   }
 
   async deleteAiMemory(factId: string): Promise<AiMemoryFact> {
@@ -858,161 +1511,386 @@ export class OpenTabletopClient {
     return this.get(routes.aiToolCalls(campaignId));
   }
 
-  async retryAiToolCall(campaignId: string, toolCallId: string, input: { dryRun?: boolean } = {}): Promise<unknown> {
+  async retryAiToolCall(
+    campaignId: string,
+    toolCallId: string,
+    input: { dryRun?: boolean } = {},
+  ): Promise<unknown> {
     return this.post(routes.aiToolCallRetry(campaignId, toolCallId), input);
   }
 
-  async aiSessionRecap(campaignId: string, input: { transcript?: string }): Promise<unknown> {
+  async aiSessionRecap(
+    campaignId: string,
+    input: { transcript?: string },
+  ): Promise<unknown> {
     return this.post(routes.aiSessionRecap(campaignId), input);
   }
 
-  async aiEncounterDesign(campaignId: string, input: unknown): Promise<Proposal> {
+  async aiEncounterDesign(
+    campaignId: string,
+    input: unknown,
+  ): Promise<Proposal> {
     return this.post(routes.aiEncounterDesign(campaignId), input);
   }
 
-  async aiGenerateMapAsset(campaignId: string, input: { prompt: string; name?: string; sceneId?: string; size?: string; quality?: string; outputFormat?: "png" | "jpeg" | "webp" }): Promise<unknown> {
+  async aiGenerateMapAsset(
+    campaignId: string,
+    input: {
+      prompt: string;
+      name?: string;
+      sceneId?: string;
+      size?: string;
+      quality?: string;
+      outputFormat?: "png" | "jpeg" | "webp";
+    },
+  ): Promise<unknown> {
     return this.post(routes.aiGenerateMapAsset(campaignId), input);
   }
 
-  async aiGenerateTokenAsset(campaignId: string, input: { prompt: string; name?: string; tokenId?: string; size?: string; quality?: string; outputFormat?: "png" | "jpeg" | "webp" }): Promise<unknown> {
+  async aiGenerateTokenAsset(
+    campaignId: string,
+    input: {
+      prompt: string;
+      name?: string;
+      tokenId?: string;
+      size?: string;
+      quality?: string;
+      outputFormat?: "png" | "jpeg" | "webp";
+    },
+  ): Promise<unknown> {
     return this.post(routes.aiGenerateTokenAsset(campaignId), input);
   }
 
-  async plugins(campaignId?: string): Promise<PluginRuntimeInfo[]> {
-    return this.get(campaignId ? routes.campaignPlugins(campaignId) : routes.plugins);
+  async plugins(): Promise<PluginRuntimeInfo[]>;
+  async plugins(campaignId: string): Promise<PluginCampaignInfo[]>;
+  async plugins(
+    campaignId?: string,
+  ): Promise<PluginRuntimeInfo[] | PluginCampaignInfo[]> {
+    return this.get(
+      campaignId ? routes.campaignPlugins(campaignId) : routes.plugins,
+    );
   }
 
-  async installPlugin(campaignId: string, pluginId: string): Promise<PluginRuntimeInfo> {
-    return this.post(`${routes.campaignPlugin(campaignId, pluginId)}/install`, {});
+  async installPlugin(
+    campaignId: string,
+    pluginId: string,
+    input: { permissions?: PermissionName[]; version?: string } = {},
+  ): Promise<PluginInstallResult> {
+    return this.post(
+      `${routes.campaignPlugin(campaignId, pluginId)}/install`,
+      input,
+    );
   }
 
-  async registerPlugin(input: { packagePath?: string; packageId?: string }): Promise<PluginRuntimeInfo> {
+  async registerPlugin(input: {
+    campaignId?: string;
+    packagePath: string;
+  }): Promise<PluginRuntimeInfo> {
     return this.post("/api/v1/plugins/install", input);
   }
 
-  async syncPluginRegistry(input: { registryUrl?: string } = {}): Promise<unknown> {
+  async syncPluginRegistry(
+    input: { campaignId?: string; registryUrl?: string } = {},
+  ): Promise<unknown> {
     return this.post(routes.pluginRegistrySync, input);
   }
 
-  async pluginStorage(campaignId: string, pluginId: string): Promise<unknown> {
+  async pluginStorage(
+    campaignId: string,
+    pluginId: string,
+  ): Promise<PluginStorageEntryInfo[]> {
     return this.get(routes.pluginStorage(campaignId, pluginId));
   }
 
-  async pluginStorageEntry(campaignId: string, pluginId: string, key: string): Promise<unknown> {
+  async pluginStorageEntry(
+    campaignId: string,
+    pluginId: string,
+    key: string,
+  ): Promise<PluginStorageEntryInfo> {
     return this.get(routes.pluginStorageEntry(campaignId, pluginId, key));
   }
 
-  async setPluginStorageEntry(campaignId: string, pluginId: string, key: string, value: unknown): Promise<unknown> {
-    return this.put(routes.pluginStorageEntry(campaignId, pluginId, key), value);
+  async setPluginStorageEntry(
+    campaignId: string,
+    pluginId: string,
+    key: string,
+    value: unknown,
+  ): Promise<PluginStorageEntryInfo> {
+    return this.put(routes.pluginStorageEntry(campaignId, pluginId, key), {
+      value,
+    });
   }
 
-  async deletePluginStorageEntry(campaignId: string, pluginId: string, key: string): Promise<unknown> {
+  async deletePluginStorageEntry(
+    campaignId: string,
+    pluginId: string,
+    key: string,
+  ): Promise<{ deleted: boolean; key: string }> {
     return this.delete(routes.pluginStorageEntry(campaignId, pluginId, key));
   }
 
-  async runPluginChatCommand(campaignId: string, pluginId: string, input: { command: string; args?: string; sceneId?: string; actorId?: string; tokenId?: string }): Promise<unknown> {
+  async runPluginChatCommand(
+    campaignId: string,
+    pluginId: string,
+    input: {
+      command: string;
+      args?: string;
+      sceneId?: string;
+      actorId?: string;
+      tokenId?: string;
+    },
+  ): Promise<unknown> {
     return this.post(routes.pluginChatCommand(campaignId, pluginId), input);
   }
 
   async systems(campaignId?: string): Promise<SystemRuntimeInfo[]> {
-    return this.get(campaignId ? routes.campaignSystems(campaignId) : routes.systems);
+    return this.get(
+      campaignId ? routes.campaignSystems(campaignId) : routes.systems,
+    );
   }
 
-  async installSystem(campaignId: string, systemId: string): Promise<SystemRuntimeInfo> {
-    return this.post(`${routes.campaignSystem(campaignId, systemId)}/install`, {});
+  async installSystem(
+    campaignId: string,
+    systemId: string,
+  ): Promise<SystemActivationResult> {
+    return this.post(
+      `${routes.campaignSystem(campaignId, systemId)}/install`,
+      {},
+    );
   }
 
-  async registerSystem(input: { packagePath?: string; systemId?: string }): Promise<SystemRuntimeInfo> {
-    return this.post("/api/v1/systems/install", input);
+  async registerSystem(
+    campaignId: string,
+    manifest: SystemManifestData,
+  ): Promise<SystemRuntimeInfo> {
+    return this.post("/api/v1/systems/install", { campaignId, manifest });
   }
 
-  async systemCharacterTemplates(campaignId: string, systemId: string): Promise<unknown> {
+  async systemCharacterTemplates(
+    campaignId: string,
+    systemId: string,
+  ): Promise<unknown> {
     return this.get(routes.systemCharacterTemplates(campaignId, systemId));
   }
 
-  async systemCharacterOrigins(campaignId: string, systemId: string): Promise<unknown> {
+  async systemCharacterOrigins(
+    campaignId: string,
+    systemId: string,
+  ): Promise<unknown> {
     return this.get(routes.systemCharacterOrigins(campaignId, systemId));
   }
 
-  async createSystemCharacter(campaignId: string, systemId: string, input: unknown): Promise<Actor> {
+  async createSystemCharacter(
+    campaignId: string,
+    systemId: string,
+    input: unknown,
+  ): Promise<Actor> {
     return this.post(routes.systemCharacters(campaignId, systemId), input);
   }
 
-  async createSystemMonster(campaignId: string, systemId: string, input: unknown): Promise<Actor> {
+  async createSystemMonster(
+    campaignId: string,
+    systemId: string,
+    input: unknown,
+  ): Promise<Actor> {
     return this.post(routes.systemMonsters(campaignId, systemId), input);
   }
 
-  async importSystemCharacter(campaignId: string, systemId: string, input: unknown): Promise<unknown> {
+  async importSystemCharacter(
+    campaignId: string,
+    systemId: string,
+    input: unknown,
+  ): Promise<unknown> {
     return this.post(routes.systemCharacterImport(campaignId, systemId), input);
   }
 
-  async systemEncounterThreats(campaignId: string, systemId: string): Promise<unknown> {
+  async systemEncounterThreats(
+    campaignId: string,
+    systemId: string,
+  ): Promise<unknown> {
     return this.get(routes.systemEncounterThreats(campaignId, systemId));
   }
 
-  async systemEncounterPlan(campaignId: string, systemId: string, input: unknown): Promise<unknown> {
+  async systemEncounterPlan(
+    campaignId: string,
+    systemId: string,
+    input: unknown,
+  ): Promise<unknown> {
     return this.post(routes.systemEncounterPlan(campaignId, systemId), input);
   }
 
-  async systemCompendium(campaignId: string, systemId: string): Promise<unknown> {
+  async systemCompendium(
+    campaignId: string,
+    systemId: string,
+  ): Promise<unknown> {
     return this.get(routes.systemCompendium(campaignId, systemId));
   }
 
-  async addSystemCompendiumToActor(campaignId: string, systemId: string, actorId: string, input: unknown): Promise<Actor> {
-    return this.post(routes.systemActorCompendium(campaignId, systemId, actorId), input);
+  async addSystemCompendiumToActor(
+    campaignId: string,
+    systemId: string,
+    actorId: string,
+    input: unknown,
+  ): Promise<Actor> {
+    return this.post(
+      routes.systemActorCompendium(campaignId, systemId, actorId),
+      input,
+    );
   }
 
-  async purchaseSystemEquipment(campaignId: string, systemId: string, actorId: string, input: unknown): Promise<Actor> {
-    return this.post(routes.systemActorPurchase(campaignId, systemId, actorId), input);
+  async purchaseSystemEquipment(
+    campaignId: string,
+    systemId: string,
+    actorId: string,
+    input: unknown,
+  ): Promise<Actor> {
+    return this.post(
+      routes.systemActorPurchase(campaignId, systemId, actorId),
+      input,
+    );
   }
 
-  async addSystemActorCondition(campaignId: string, systemId: string, actorId: string, input: unknown): Promise<Actor> {
-    return this.post(routes.systemActorConditions(campaignId, systemId, actorId), input);
+  async addSystemActorCondition(
+    campaignId: string,
+    systemId: string,
+    actorId: string,
+    input: unknown,
+  ): Promise<Actor> {
+    return this.post(
+      routes.systemActorConditions(campaignId, systemId, actorId),
+      input,
+    );
   }
 
-  async removeSystemActorCondition(campaignId: string, systemId: string, actorId: string, conditionId: string): Promise<Actor> {
-    return this.delete(routes.systemActorCondition(campaignId, systemId, actorId, conditionId));
+  async removeSystemActorCondition(
+    campaignId: string,
+    systemId: string,
+    actorId: string,
+    conditionId: string,
+  ): Promise<Actor> {
+    return this.delete(
+      routes.systemActorCondition(campaignId, systemId, actorId, conditionId),
+    );
   }
 
-  async systemActorAdvancement(campaignId: string, systemId: string, actorId: string): Promise<unknown> {
-    return this.get(routes.systemActorAdvancement(campaignId, systemId, actorId));
+  async systemActorAdvancement(
+    campaignId: string,
+    systemId: string,
+    actorId: string,
+  ): Promise<unknown> {
+    return this.get(
+      routes.systemActorAdvancement(campaignId, systemId, actorId),
+    );
   }
 
-  async advanceSystemActor(campaignId: string, systemId: string, actorId: string, input: unknown): Promise<Actor> {
-    return this.post(routes.systemActorAdvance(campaignId, systemId, actorId), input);
+  async advanceSystemActor(
+    campaignId: string,
+    systemId: string,
+    actorId: string,
+    input: unknown,
+  ): Promise<Actor> {
+    return this.post(
+      routes.systemActorAdvance(campaignId, systemId, actorId),
+      input,
+    );
   }
 
-  async restSystemActor(campaignId: string, systemId: string, actorId: string, input: unknown): Promise<unknown> {
-    return this.post(routes.systemActorRest(campaignId, systemId, actorId), input);
+  async restSystemActor(
+    campaignId: string,
+    systemId: string,
+    actorId: string,
+    input: unknown,
+  ): Promise<unknown> {
+    return this.post(
+      routes.systemActorRest(campaignId, systemId, actorId),
+      input,
+    );
   }
 
-  async systemActorSheet(campaignId: string, systemId: string, actorId: string): Promise<unknown> {
+  async systemActorSheet(
+    campaignId: string,
+    systemId: string,
+    actorId: string,
+  ): Promise<unknown> {
     return this.get(routes.systemActorSheet(campaignId, systemId, actorId));
   }
 
-  async rollSystemActor(campaignId: string, systemId: string, actorId: string, input: unknown): Promise<unknown> {
-    return this.post(routes.systemActorRoll(campaignId, systemId, actorId), input);
+  async rollSystemActor(
+    campaignId: string,
+    systemId: string,
+    actorId: string,
+    input: unknown,
+  ): Promise<unknown> {
+    return this.post(
+      routes.systemActorRoll(campaignId, systemId, actorId),
+      input,
+    );
   }
 
   async contentImports(campaignId: string): Promise<ContentImportBatch[]> {
     return this.get(routes.contentImports(campaignId));
   }
 
-  async previewContentImport(campaignId: string, input: unknown): Promise<ContentImportBatch> {
+  async previewContentImport(
+    campaignId: string,
+    input: unknown,
+  ): Promise<ContentImportBatch> {
     return this.post(routes.contentImportPreview(campaignId), input);
   }
 
-  async analyzePdfContentImport(campaignId: string, body: BodyInit, options: { sourceName?: string } = {}): Promise<ContentImportBatch> {
-    const headers: Record<string, string> = { "content-type": "application/pdf" };
+  async worlds(campaignId: string): Promise<World[]> {
+    return this.get(routes.worlds(campaignId));
+  }
+
+  async createWorld(
+    campaignId: string,
+    input: Partial<Pick<World, "name" | "description">>,
+  ): Promise<World> {
+    return this.post(routes.worlds(campaignId), input);
+  }
+
+  async world(worldId: string): Promise<World> {
+    return this.get(routes.world(worldId));
+  }
+
+  async updateWorld(
+    worldId: string,
+    input: Partial<Pick<World, "name" | "description">>,
+  ): Promise<World> {
+    return this.patch(routes.world(worldId), input);
+  }
+
+  async deleteWorld(
+    worldId: string,
+  ): Promise<World & { detachedRecords?: Record<string, number> }> {
+    return this.delete(routes.world(worldId));
+  }
+
+  async analyzePdfContentImport(
+    campaignId: string,
+    body: BodyInit,
+    options: { sourceName?: string } = {},
+  ): Promise<ContentImportBatch> {
+    const headers: Record<string, string> = {
+      "content-type": "application/pdf",
+    };
     if (options.sourceName) headers["x-source-name"] = options.sourceName;
-    return this.requestRaw("POST", routes.contentImportPdfAi(campaignId), body, headers);
+    return this.requestRaw(
+      "POST",
+      routes.contentImportPdfAi(campaignId),
+      body,
+      headers,
+    );
   }
 
   async contentImport(importId: string): Promise<ContentImportBatch> {
     return this.get(routes.contentImport(importId));
   }
 
-  async applyContentImport(importId: string, input: { selectedEntityIds?: string[] }): Promise<ContentImportBatch> {
+  async applyContentImport(
+    importId: string,
+    input: { selectedEntityIds?: string[] },
+  ): Promise<ContentImportBatch> {
     return this.post(routes.contentImportApply(importId), input);
   }
 
@@ -1024,9 +1902,15 @@ export class OpenTabletopClient {
     return this.delete(routes.contentImportDelete(importId));
   }
 
-  async exportCampaign(campaignId: string, options: { scope?: "campaign"; version?: "0.2.0"; redaction?: "portable" } = {}): Promise<unknown> {
+  async exportCampaign(
+    campaignId: string,
+    options: CampaignArchiveExportOptions = {},
+  ): Promise<CampaignArchive> {
     const query = new URLSearchParams();
     if (options.scope) query.set("scope", options.scope);
+    if (options.scopeId) query.set("scopeId", options.scopeId);
+    if (options.collections?.length)
+      query.set("collections", options.collections.join(","));
     if (options.version) query.set("version", options.version);
     if (options.redaction) query.set("redaction", options.redaction);
     const suffix = query.size > 0 ? `?${query.toString()}` : "";
@@ -1037,9 +1921,18 @@ export class OpenTabletopClient {
     return this.get(routes.dogfoodReportBundle(campaignId));
   }
 
-  async importCampaign(archive: unknown, options: CampaignArchiveImportOptions = {}): Promise<CampaignArchiveImportResult> {
-    const hasOptions = options.mode !== undefined || options.scope !== undefined || options.collections !== undefined;
-    return this.post(routes.importCampaign, hasOptions ? { archive, ...options } : archive);
+  async importCampaign(
+    archive: unknown,
+    options: CampaignArchiveImportOptions = {},
+  ): Promise<CampaignArchiveImportResult> {
+    const hasOptions =
+      options.mode !== undefined ||
+      options.scope !== undefined ||
+      options.collections !== undefined;
+    return this.post(
+      routes.importCampaign,
+      hasOptions ? { archive, ...options } : archive,
+    );
   }
 
   private async get<T>(path: string): Promise<T> {
@@ -1062,14 +1955,20 @@ export class OpenTabletopClient {
     return this.request("DELETE", path, body);
   }
 
-  private async requestRaw<T>(method: string, path: string, body: BodyInit, headers: Record<string, string> = {}): Promise<T> {
+  private async requestRaw<T>(
+    method: string,
+    path: string,
+    body: BodyInit,
+    headers: Record<string, string> = {},
+  ): Promise<T> {
     const requestHeaders: Record<string, string> = { ...headers };
-    if (this.options.token) requestHeaders.authorization = `Bearer ${this.options.token}`;
+    if (this.options.token)
+      requestHeaders.authorization = `Bearer ${this.options.token}`;
     if (this.options.userId) requestHeaders["x-user-id"] = this.options.userId;
     const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
       method,
       headers: requestHeaders,
-      body
+      body,
     });
     if (!response.ok) throw new Error(await response.text());
     return response.json() as Promise<T>;
@@ -1077,29 +1976,55 @@ export class OpenTabletopClient {
 
   private async getText(path: string): Promise<string> {
     const headers: Record<string, string> = {};
-    if (this.options.token) headers.authorization = `Bearer ${this.options.token}`;
+    if (this.options.token)
+      headers.authorization = `Bearer ${this.options.token}`;
     if (this.options.userId) headers["x-user-id"] = this.options.userId;
     const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
       method: "GET",
-      headers
+      headers,
     });
     if (!response.ok) throw new Error(await response.text());
     return response.text();
   }
 
-  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  private async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+  ): Promise<T> {
     const headers: Record<string, string> = {};
     if (body !== undefined) headers["content-type"] = "application/json";
-    if (this.options.token) headers.authorization = `Bearer ${this.options.token}`;
+    if (this.options.token)
+      headers.authorization = `Bearer ${this.options.token}`;
     if (this.options.userId) headers["x-user-id"] = this.options.userId;
     const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
       method,
       headers,
-      body: body === undefined ? undefined : JSON.stringify(body)
+      body: body === undefined ? undefined : JSON.stringify(body),
     });
     if (!response.ok) throw new Error(await response.text());
     return response.json() as Promise<T>;
   }
+}
+
+export interface CampaignSearchResult {
+  type:
+    | "world"
+    | "scene"
+    | "actor"
+    | "item"
+    | "journal"
+    | "handout"
+    | "encounter"
+    | "memory"
+    | "chat";
+  id: string;
+  title: string;
+  snippet: string;
+  updatedAt: string;
+  worldId?: string;
+  visibility?: string;
+  score: number;
 }
 
 function normalizeClientBaseUrl(value: string): string {
@@ -1110,8 +2035,16 @@ function normalizeClientBaseUrl(value: string): string {
   return url.toString().replace(/\/$/, "");
 }
 
-function realtimeProtocols(protocols: string | string[] | undefined, token: string | undefined): string[] | undefined {
-  const list = protocols === undefined ? ["otte.v1"] : Array.isArray(protocols) ? [...protocols] : [protocols];
+function realtimeProtocols(
+  protocols: string | string[] | undefined,
+  token: string | undefined,
+): string[] | undefined {
+  const list =
+    protocols === undefined
+      ? ["otte.v1"]
+      : Array.isArray(protocols)
+        ? [...protocols]
+        : [protocols];
   if (token) list.push(`otte.auth.${token}`);
   return list.length > 0 ? [...new Set(list)] : undefined;
 }

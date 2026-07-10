@@ -52,9 +52,31 @@ const socket = new WebSocket(realtimeUrl, ["otte.v1", `otte.auth.${token}`]);
 
 ## Public Surface
 
-The client wraps the public session, workspace, campaign, scene, token, actor, item, journal, chat, dice, combat, encounter, proposal, AI, plugin, system, content-import, archive, asset upload/delivery metadata, chat export, and dogfood report surfaces.
+The client wraps the public session, workspace, campaign/member/session/search, world, scene, token, actor, item, journal, handout/read-receipt, chat, dice, combat, encounter, proposal/revert, structured AI-memory lifecycle, plugin, system, content-import, archive, asset upload/delivery metadata, chat export, and dogfood report surfaces.
 
 The reusable client intentionally excludes server-admin routes, SCIM bearer-provisioning routes, OIDC browser redirects, the websocket endpoint as a REST fetch wrapper, and raw asset blob delivery. Those surfaces either require privileged operator handling, browser redirects, direct media fetches, or the dedicated realtime helpers above.
+
+## Rules-system registration
+
+System registration and campaign activation are separate calls. Registration requires both server-admin authority and `campaign.update` for the explicit campaign context. External packages are currently data-model-only; runtime capabilities are server-controlled and unsupported feature calls return a structured `422` response.
+
+```ts
+const registered = await client.registerSystem("camp_demo", {
+  id: "my-data-system",
+  name: "My Data System",
+  version: "1.0.0",
+  compatibleCore: ">=0.3.0 <1.0.0",
+  entrypoints: {},
+  schemas: { actor: "schemas/actor.json", item: "schemas/item.json" },
+  permissions: ["actor.read"],
+  capabilities: ["data-model"]
+});
+
+const activated = await client.installSystem("camp_demo", registered.id);
+console.log(activated.campaign.defaultSystemId);
+```
+
+Treat `400 invalid_system_manifest`, `403`, `409`, and `422 unsupported_system_capabilities` as expected registration outcomes. The catalog's `runtimeCapabilities` and `unsupportedCapabilities` fields are authoritative; manifest claims do not load or execute arbitrary server code.
 
 ## Author Checklist
 

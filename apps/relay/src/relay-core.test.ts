@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createRelayTable, hostTokenHash, MemoryRateLimiter, relayLimits, relayTableStatus, verifyHostToken, verifyHostTokenHash } from "./relay-core.js";
-import { selectRelayWebSocketProtocol } from "./index.js";
+import { safeRelayPath, selectRelayWebSocketProtocol, TableTunnel, type RelayEnv } from "./index.js";
 
 describe("relay core", () => {
   it("creates high-entropy table credentials with a 12 hour ttl", () => {
@@ -46,5 +46,39 @@ describe("relay core", () => {
     expect(selectRelayWebSocketProtocol("otte.v1, otte.auth.ots_test")).toBe("otte.v1");
     expect(selectRelayWebSocketProtocol("custom.v2, otte.auth.ots_test")).toBe("custom.v2");
     expect(selectRelayWebSocketProtocol(null)).toBeUndefined();
+  });
+
+  it("rejects tunnel paths that WHATWG URL parsing could redirect off the desktop origin", () => {
+    expect(() => safeRelayPath("/\\\\evil.test/")).toThrow("backslashes");
+    expect(() => safeRelayPath("//evil.test/")).toThrow("shared table origin");
+    expect(safeRelayPath("/api/v1/health?check=1")).toBe("/api/v1/health?check=1");
+  });
+
+  it("accepts host credentials only from the Bearer authorization header", async () => {
+    const table = createRelayTable({ publicBaseUrl: "https://share.open-tabletop.org" });
+    const storedTable = {
+      slug: table.slug,
+      hostTokenHash: await hostTokenHash(table.hostToken),
+      publicUrl: table.publicUrl,
+      expiresAt: table.expiresAt
+    };
+    const state = {
+      storage: {
+        get: vi.fn().mockResolvedValue(storedTable)
+      }
+    } as unknown as DurableObjectState;
+    const tunnel = new TableTunnel(state, {} as RelayEnv);
+
+    const queryOnly = await tunnel.fetch(new Request(`https://table.internal/host?token=${encodeURIComponent(table.hostToken)}`));
+    expect(queryOnly.status).toBe(401);
+    await expect(queryOnly.json()).resolves.toEqual({ error: "bad_host_token" });
+
+    const bearer = await tunnel.fetch(
+      new Request("https://table.internal/host", {
+        headers: { authorization: `Bearer ${table.hostToken}` }
+      })
+    );
+    expect(bearer.status).toBe(426);
+    await expect(bearer.json()).resolves.toEqual({ error: "websocket_required" });
   });
 });

@@ -1,10 +1,10 @@
 import type { Actor, AiMemoryFact, AiThread, AiToolCall, AudioTrack, AuditLog, Campaign, CampaignArchive, ChatMessage, Combat, CombatAction, ContentImportBatch, ContentImportEntityKind, ContentImportSource, DiceRoll, EmailOutboxMessage, Encounter, FogHistoryEntry, FogMode, FogPreset, Item, JournalEntry, MapAsset, MessageType, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, SceneAnnotation, SceneAnnotationKind, SceneAnnotationLayer, SceneTemplateShape, ScimAssignableRole, Token, TokenLayer, UserRole, Visibility, VisionPoint, VisionPointSample, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
 import { probabilityRange, rollFormula } from "@open-tabletop/dice-engine";
 import { toPng } from "html-to-image";
-import { Activity, Bot, Boxes, BrickWall, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Circle, Crosshair, Dices, Download, Eraser, Eye, FileText, Flame, Grip, Hand, Image as ImageIcon, KeyRound, Layers, Lightbulb, LockKeyhole, Mail, Map as MapIcon, MapPin, MessageSquare, Moon, Music, Paintbrush, Pause, PencilLine, Pentagon, Play, Plus, RefreshCw, RotateCcw, Ruler, ScrollText, Search, Send, Shield, Swords, Timer, Trash2, Triangle, Upload, UserCog, UserPlus, Users, UserX, Volume2, VolumeX, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
+import { Activity, BookOpen, Bot, Boxes, Brain, BrickWall, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Circle, Crosshair, Dices, Download, Eraser, Eye, FileText, Flame, Globe2, Grip, Hand, Image as ImageIcon, KeyRound, Layers, Lightbulb, LockKeyhole, Mail, Map as MapIcon, MapPin, MessageSquare, Moon, Music, Paintbrush, Pause, PencilLine, Pentagon, Play, Plus, RefreshCw, RotateCcw, Ruler, ScrollText, Search, Send, Shield, Swords, Timer, Trash2, Triangle, Upload, UserCog, UserPlus, Users, UserX, Volume2, VolumeX, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
 import type { CSSProperties, DragEvent as ReactDragEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { acceptInviteSession, ApiError, apiAnalyzePdfContentImport, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, bootstrapOwnerSession, changePasswordSession, clearSession, confirmPasswordResetSession, confirmTotpMfa, consumeSsoRedirect, createOrganizationWorkspace, disableTotpMfa, enrollTotpMfa, getSessionToken, getSessionUserId, loadAdminSnapshot, loadBootstrapStatus, loadMfaStatus, loadOidcConfig, loadOrganizationInvites, loadOrganizationMembers, loadSnapshot, loginPasswordSession, loginSession, logoutSession, registerSession, removeOrganizationMember, requestPasswordReset, revokeInvite, setSessionUserId, setStatelessDemoApiMode, startOidcLogin, switchOrganization, updateOrganizationMemberRole, updateWorkspaceDefaults, upsertOrganizationMember, verifyDiceRoll, type AdminAssetIntegrityQuarantineResult, type AdminAuthConnectionTestResult, type AdminEmailOutboxRetryAllResult, type AdminJob, type AdminJobAlertResult, type AdminPasswordResetInfo, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminScimGroupRoleMappingResult, type AdminSessionInfo, type AdminSnapshot, type AdminStorageBackupResult, type AdminStorageRestoreDrillResult, type AdminStorageRestoreResult, type AdminUserInfo, type AiUsageSummary, type CampaignAssetStorageInfo, type CharacterTemplateInfo, type DiceRollVerification, type EncounterPlanInfo, type InviteCreateInfo, type MfaInfo, type OrganizationMemberInfo, type PluginReviewStatus, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
+import { acceptInviteSession, ApiError, apiAnalyzePdfContentImport, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, bootstrapOwnerSession, changePasswordSession, clearSession, confirmPasswordResetSession, confirmTotpMfa, consumeSsoRedirect, createOrganizationWorkspace, disableTotpMfa, enrollTotpMfa, getSessionToken, getSessionUserId, loadAdminSnapshot, loadBootstrapStatus, loadMfaStatus, loadOidcConfig, loadOrganizationInvites, loadOrganizationMembers, loadSnapshot, loginPasswordSession, loginSession, logoutSession, registerSession, removeOrganizationMember, requestPasswordReset, revokeInvite, setSessionUserId, setStatelessDemoApiMode, startOidcLogin, switchOrganization, updateOrganizationMemberRole, updateWorkspaceDefaults, upsertOrganizationMember, verifyDiceRoll, type AdminAssetIntegrityQuarantineResult, type AdminAuthConnectionTestResult, type AdminEmailOutboxRetryAllResult, type AdminJob, type AdminJobAlertResult, type AdminPasswordResetInfo, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminScimGroupRoleMappingResult, type AdminSessionInfo, type AdminSnapshot, type AdminStorageBackupResult, type AdminStorageRestoreDrillResult, type AdminStorageRestoreResult, type AdminUserInfo, type AiUsageSummary, type CampaignAssetStorageInfo, type CampaignSessionInfo, type CharacterTemplateInfo, type DiceRollVerification, type EncounterPlanInfo, type InviteCreateInfo, type MfaInfo, type OrganizationMemberInfo, type PluginReviewStatus, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
 import { adversaryActorsForSceneBoard, isAdversaryActor } from "./actor-rails.js";
 import { activeSceneAnnotations, nextAnnotationExpiryMs } from "./annotation-expiry.js";
 import { applyLocalBoardHistoryAction, createTokenCopies, type BoardHistoryAction, type BoardHistoryDirection, type BoardTokenFrameChange, type BoardTokenPositionChange } from "./board-history.js";
@@ -20,9 +20,10 @@ import { addDieToFormula, diceTraySides, rollHighlight, rollTermHighlight } from
 import { dice3dStorageKey, diceCastPlan, dieShapeName, dieShapePoints, initialDice3dEnabled, newDiceCastRolls, type DiceCastPlan, type Dice3dPreferenceEnvironment } from "./dice-3d.js";
 import { castPhysicsDiceWhenReady, clearPhysicsDice, diceBoxContainerId, diceBoxStatus, physicsDiceLabelDelayMs, primePhysicsDiceStage } from "./dice-box-stage.js";
 import { initialUiTheme, nextUiTheme, uiThemeLabel, uiThemeStorageKey, type UiTheme } from "./ui-theme.js";
-import { applyProposalChangesToSnapshot, proposalReviewActionLabel, proposalReviewSteps, visibleAiAgentProposals } from "./proposal-review.js";
+import { applyProposalChangesToSnapshot, proposalChangesExternalLore, proposalReviewActionLabel, proposalReviewSteps, setProposalHidden, visibleAiAgentProposals } from "./proposal-review.js";
 import { realtimeConnectionIdentity, startRealtimeConnection } from "./realtime-connection.js";
 import { boardCaptureRequestDecision, createRealtimeHandlers, workspaceSelectionMatches, type BoardCaptureRequestDecision } from "./realtime-refresh.js";
+import { settleWorkspaceLoreLoad } from "./workspace-lore-load.js";
 import { templateConePoints } from "./scene-annotations.js";
 import { normalizeSceneSizeValue, sceneDimensionsFromCells, sceneGridCellSummary, sceneSizePresets, type SceneSizePreset } from "./scene-size.js";
 import { sceneQuickCreateIndex, sceneTabWrapClass, showTrailingSceneCreate } from "./scene-tabs.js";
@@ -42,6 +43,11 @@ import { assetMatchesFolderFilter, contentImportEntityData, normalizeAssetFolder
 import { systemAdvancementOptionId, systemEncounterThreatId, systemImportPayload, systemRollId, type AdvancementOptionInfo } from "./system-actions.js";
 import { CharacterCreatorDialog, type CharacterCreateInput, type CharacterOriginsInfo } from "./character-creator-dialog.js";
 import { EncounterBuilderDialog, type EncounterBuilderThreatSelection } from "./encounter-builder.js";
+import { WorldAtlasPanel, worldFilterMatchesScene, type LoreCollectionLoadState, type WorldAtlasFilter, type WorldAtlasWorld } from "./world-atlas-panel.js";
+import { HandoutLibraryPanel, type HandoutLibraryItem } from "./handout-library-panel.js";
+import { CampaignMemoryPanel, type CampaignMemoryFact } from "./campaign-memory-panel.js";
+import { HitDiceRestCard } from "./hit-dice-rest-card.js";
+import { LiveSessionBanner, SessionDeskPanel } from "./session-desk-panel.js";
 import { useModalAccessibility } from "./modal-accessibility.js";
 import { actorActionDiceFormula, actorActionOptions, actorActionSupportsEffect, actorArmorClass, actorCombatResource, actorCombatStateLabels, actorConditionLabels, actorHitPoints, actorResourceControls, actorResourceLabels, actorResourceUpdate, actorSaveFormula, adjustedTemplateDamage, appendActorCondition, formatActorConditions, isPointInsidePoints, isPurchasableCompendiumEntry, itemDisplayLabel, itemEquippedLabel, itemPreparedLabel, parseActorConditions, quickActorConditionIds, targetConditionLabels, tokenBrightVisionPatch, tokenPermissionPresetLabel, tokenPlayerOwnerIds, type ActorActionOption, type RulesCompendiumEntry, type TokenVisionPatch } from "./actor-sheet-data.js";
 import { actorRailSubtitle, clampNumber, contentImportStatusClass, downloadJson, errorMessage, formatAdminList, formatCost, formatCurrency, formatDateTime, formatDuration, formatDurationSeconds, formatFogHistoryEntry, formatGp, formatNumber, formatPercent, formatRollTermDetail, formatRollTermName, formatStorageBytes, formatTime, formatVisionPoint, formatVisionPointSample, jobStatusClass, numericValue, registryHostLabel, prettyOriginId, readinessStatusClass, recordValue, rollTermTotal, safeProbabilityRange, slugId, stringArrayValue, stringValue, titleCaseLabel } from "./sheet-format.js";
@@ -123,13 +129,27 @@ interface SceneViewportSize {
 
 type ChatExportFormat = "json" | "ndjson";
 type ChatModerationResolution = "open" | "follow_up" | "reviewed";
-type ArchiveExportScope = "campaign";
+type ArchiveExportScope = "campaign" | "world" | "selected_collections";
+type ArchiveExportCollection =
+  | ArchiveImportCollection
+  | "worlds"
+  | "audioTracks"
+  | "campaignSessions"
+  | "compendia"
+  | "proposals"
+  | "aiThreads"
+  | "aiEvaluations"
+  | "aiMemory"
+  | "aiToolCalls"
+  | "auditLogs"
+  | "permissionGrants"
+  | "pluginStorage";
 type ArchiveExportVersion = "0.2.0";
 type ArchiveRedactionMode = "portable";
 type ArchiveImportMode = "upsert" | "reject_conflicts" | "skip_conflicts" | "dry_run";
 type ManageCategoryId = "account" | "campaign" | "people" | "scenes" | "archives" | "serverAdmin";
 type WorkspaceMode = "live" | "prep" | "ai" | "manage";
-type InspectorTab = "actors" | "journal" | "chat" | "combat" | "content" | "plugins";
+type InspectorTab = "actors" | "sessions" | "worlds" | "handouts" | "journal" | "memory" | "chat" | "combat" | "content" | "plugins";
 type AiAgentApprovalMode = "manual" | "auto";
 type AiGenerationJobKind = "map" | "token" | "tokenBatch";
 type RulesSaveOutcome = "success" | "failure";
@@ -364,6 +384,22 @@ const archiveImportCollectionOptions: Array<{ id: ArchiveImportCollection; label
   { id: "combats", label: "Combats" },
   { id: "contentImports", label: "Import batches" },
   { id: "fogPresets", label: "Fog presets" }
+];
+
+const archiveExportCollectionOptions: Array<{ id: ArchiveExportCollection; label: string }> = [
+  { id: "worlds", label: "Worlds" },
+  ...archiveImportCollectionOptions,
+  { id: "audioTracks", label: "Audio" },
+  { id: "campaignSessions", label: "Sessions" },
+  { id: "compendia", label: "Compendia" },
+  { id: "proposals", label: "Proposals" },
+  { id: "aiThreads", label: "AI threads" },
+  { id: "aiEvaluations", label: "AI evaluations" },
+  { id: "aiMemory", label: "AI memory" },
+  { id: "aiToolCalls", label: "AI tool calls" },
+  { id: "auditLogs", label: "Audit logs" },
+  { id: "permissionGrants", label: "Permission grants" },
+  { id: "pluginStorage", label: "Plugin storage" }
 ];
 
 type XpProgressInfo = {
@@ -800,6 +836,15 @@ export function App() {
   const [annotationSnapToGrid, setAnnotationSnapToGrid] = useState(true);
   const [tab, setTab] = useState<InspectorTab>("actors");
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("live");
+  const [worlds, setWorlds] = useState<WorldAtlasWorld[]>([]);
+  const [handouts, setHandouts] = useState<HandoutLibraryItem[]>([]);
+  const [worldsLoadState, setWorldsLoadState] = useState<LoreCollectionLoadState>("idle");
+  const [handoutsLoadState, setHandoutsLoadState] = useState<LoreCollectionLoadState>("idle");
+  const [worldsLoadError, setWorldsLoadError] = useState("");
+  const [handoutsLoadError, setHandoutsLoadError] = useState("");
+  const [loreReloadVersion, setLoreReloadVersion] = useState(0);
+  const loreRealtimeRefreshPendingRef = useRef(false);
+  const [selectedWorldId, setSelectedWorldId] = useState<WorldAtlasFilter>("all");
   const [manageCategory, setManageCategory] = useState<ManageCategoryId>("campaign");
   const [status, setStatus] = useState("Loading campaign");
   const [diceFormula, setDiceFormula] = useState("1d20+5");
@@ -931,6 +976,8 @@ export function App() {
   const [archiveRollbackSnapshot, setArchiveRollbackSnapshot] = useState<CampaignArchive>();
   const [archiveRollbackFileName, setArchiveRollbackFileName] = useState("");
   const [archiveExportScope, setArchiveExportScope] = useState<ArchiveExportScope>("campaign");
+  const [archiveExportWorldId, setArchiveExportWorldId] = useState("");
+  const [archiveExportCollections, setArchiveExportCollections] = useState<ArchiveExportCollection[]>(["actors", "items", "journals", "handouts"]);
   const [archiveExportVersion, setArchiveExportVersion] = useState<ArchiveExportVersion>("0.2.0");
   const [archiveRedactionMode, setArchiveRedactionMode] = useState<ArchiveRedactionMode>("portable");
   const [archiveExportStatus, setArchiveExportStatus] = useState("No archive exported this session");
@@ -1061,6 +1108,7 @@ export function App() {
   }, {});
   const normalizedSceneSearch = sceneSearch.trim().toLocaleLowerCase();
   const visibleScenes = accessibleScenes
+    .filter((scene) => workspaceMode !== "prep" || worldFilterMatchesScene(scene, selectedWorldId))
     .filter((scene) => sceneFolderFilter === "all" || scene.folder === sceneFolderFilter)
     .filter((scene) => !normalizedSceneSearch || [scene.name, scene.folder ?? "", scene.id].some((value) => value.toLocaleLowerCase().includes(normalizedSceneSearch)));
   const quickCreateSceneIndex = sceneQuickCreateIndex(visibleScenes.length);
@@ -1093,6 +1141,8 @@ export function App() {
   const adversaryActors = adversaryActorsForSceneBoard(snapshot.actors, snapshot.tokens, selectedScene?.id);
   const partyActors = snapshot.actors.filter((actor) => !isAdversaryActor(actor, snapshot.tokens));
   const activeCombat = snapshot.combats.find((combat) => combat.active);
+  const campaignSessions = snapshot.campaignSessions ?? [];
+  const liveCampaignSession = campaignSessions.find((session) => session.status === "live");
   const currentTurnCombatant = activeCombat && activeCombat.combatants.length > 0 ? activeCombat.combatants[activeCombat.turnIndex] ?? activeCombat.combatants[0] : undefined;
   const nextTurnCombatant = activeCombat && activeCombat.combatants.length > 1 ? activeCombat.combatants[nextCombatTurnPosition(activeCombat, 1).turnIndex] : undefined;
   const currentTurnTokenIds = currentTurnCombatant?.tokenId ? [currentTurnCombatant.tokenId] : [];
@@ -1114,9 +1164,15 @@ export function App() {
     : setupOnboardingBody.trim()
       ? `Public handout: ${setupOnboardingTitle.trim() || "Welcome to the Table"}`
       : "No onboarding handout";
-  const archiveExportRecordCount = snapshot.scenes.length + snapshot.assets.length + snapshot.actors.length + snapshot.journals.length + snapshot.chat.length + snapshot.combats.length;
+  const archiveExportRecordCount = archiveExportScope === "world"
+    ? snapshot.scenes.filter((scene) => scene.worldId === archiveExportWorldId).length + snapshot.actors.filter((actor) => actor.worldId === archiveExportWorldId).length + snapshot.journals.filter((journal) => journal.worldId === archiveExportWorldId).length + handouts.filter((handout) => handout.worldId === archiveExportWorldId).length
+    : snapshot.scenes.length + snapshot.assets.length + snapshot.actors.length + snapshot.journals.length + handouts.length + snapshot.chat.length + snapshot.combats.length;
   const archiveCompatibilityNotes = [
-    "Exports the selected campaign and related tabletop records.",
+    archiveExportScope === "campaign"
+      ? "Exports the selected campaign and all related portable tabletop records."
+      : archiveExportScope === "world"
+        ? "Exports one world with dependency-closed scenes, actors, content, assets, sessions, and audit records."
+        : "Exports the campaign identity shell plus only the selected record collections; dependency warnings are embedded in the archive.",
     "Archive 0.2.0 is accepted by the current v0.3/v1-compatible importer.",
     "Portable redaction strips account secrets, sessions, MFA, SCIM sources, plugin reviews, idempotency records, jobs, and organization records while preserving playable content."
   ];
@@ -1252,7 +1308,7 @@ export function App() {
   const canManagePeople = hasPermission("campaign.update") || canManageActiveOrganization;
   const canManageScenes = hasPermission("scene.create") || hasPermission("scene.update") || hasPermission("scene.delete") || hasPermission("scene.activate");
   const canManageArchives = hasPermission("campaign.update") || canManageActiveOrganization;
-  const canUsePrepWorkspace = canManageScenes || hasPermission("journal.create") || hasPermission("journal.update") || hasPermission("plugin.install") || hasPermission("plugin.configure") || hasPermission("actor.create");
+  const canUsePrepWorkspace = canManageScenes || hasPermission("world.create") || hasPermission("world.update") || hasPermission("handout.create") || hasPermission("handout.update") || hasPermission("journal.create") || hasPermission("journal.update") || hasPermission("plugin.install") || hasPermission("plugin.configure") || hasPermission("actor.create");
   const canUseAiStudioWorkspace = hasPermission("ai.proposeChanges") || hasPermission("ai.applyChanges") || hasPermission("ai.readGmMemory") || hasPermission("combat.manage");
 
   useEffect(() => {
@@ -1355,6 +1411,17 @@ export function App() {
     setAudioSoundboardOpen(false);
   }
 
+  function clearLoreWorkspaceState() {
+    loreRealtimeRefreshPendingRef.current = false;
+    setWorlds([]);
+    setHandouts([]);
+    setWorldsLoadState("idle");
+    setHandoutsLoadState("idle");
+    setWorldsLoadError("");
+    setHandoutsLoadError("");
+    setSelectedWorldId("all");
+  }
+
   function selectWorkspaceContext(nextCampaignId: string, nextSceneId = "", nextUserId = currentUserId) {
     const current = realtimeSelectionRef.current;
     const identityChanged = current.campaignId !== nextCampaignId || current.userId !== nextUserId;
@@ -1363,6 +1430,7 @@ export function App() {
       cancelAiAgentForWorkspaceChange();
       cancelWorkspaceBoundRequestsForChange();
       closeWorkspaceDialogs();
+      clearLoreWorkspaceState();
     }
     realtimeSelectionRef.current = { campaignId: nextCampaignId, sceneId: nextSceneId, userId: nextUserId };
     setCampaignId(nextCampaignId);
@@ -1449,6 +1517,7 @@ export function App() {
       cancelAiAgentForWorkspaceChange();
       cancelWorkspaceBoundRequestsForChange();
       closeWorkspaceDialogs();
+      clearLoreWorkspaceState();
     }
     realtimeSelectionRef.current = { campaignId: resolvedCampaignId, sceneId: resolvedSceneId, userId: requestUserId };
     setCampaignId(resolvedCampaignId);
@@ -1619,9 +1688,14 @@ export function App() {
     );
   }
 
-  realtimeRefreshRef.current = () => {
+  realtimeRefreshRef.current = async () => {
     const selection = realtimeSelectionRef.current;
-    return refresh(selection.campaignId, selection.sceneId, { syncStatus: false });
+    const next = await refresh(selection.campaignId, selection.sceneId, { syncStatus: false });
+    if (loreRealtimeRefreshPendingRef.current) {
+      loreRealtimeRefreshPendingRef.current = false;
+      setLoreReloadVersion((version) => version + 1);
+    }
+    return next;
   };
   realtimeBoardCaptureHandlerRef.current = handleBoardCaptureRealtimeEvent;
   const applyAiAgentRealtimeEvent = (event: AiAgentRealtimeEvent) => {
@@ -1674,6 +1748,7 @@ export function App() {
     }
     if (!event || typeof event.type !== "string" || event.campaignId !== campaignId) return;
     const payload = event.payload;
+    if (event.type.startsWith("world.") || event.type.startsWith("handout.")) loreRealtimeRefreshPendingRef.current = true;
     if (applyAiAgentRealtimeEvent(event)) return;
     if (event.type === "actor.updated" && payload && payload.redacted !== true && typeof payload.id === "string" && payload.data && typeof payload.data === "object") {
       applyActorToSnapshot(payload as unknown as Actor);
@@ -1714,6 +1789,52 @@ export function App() {
     if (blankCanvasDemoOpen) return;
     persistStoredId("otte:selectedCampaignId", campaignId);
   }, [blankCanvasDemoOpen, campaignId]);
+
+  useEffect(() => {
+    if (!snapshotReady || blankCanvasDemoOpen || !campaignId) {
+      setWorlds([]);
+      setHandouts([]);
+      setWorldsLoadState("idle");
+      setHandoutsLoadState("idle");
+      setWorldsLoadError("");
+      setHandoutsLoadError("");
+      setSelectedWorldId("all");
+      return;
+    }
+    const loreRequest = { campaignId, userId: currentUserId };
+    const controller = new AbortController();
+    const loreRequestIsCurrent = () =>
+      !controller.signal.aborted && workspaceRequestIsCurrent(loreRequest.campaignId, loreRequest.userId);
+    setWorldsLoadState("loading");
+    setHandoutsLoadState("loading");
+    setWorldsLoadError("");
+    setHandoutsLoadError("");
+    void settleWorkspaceLoreLoad(
+      apiGet<WorldAtlasWorld[]>(`/api/v1/campaigns/${loreRequest.campaignId}/worlds`, { signal: controller.signal }),
+      loreRequestIsCurrent,
+      (nextWorlds) => {
+        setWorlds([...nextWorlds].sort((left, right) => left.name.localeCompare(right.name)));
+        setWorldsLoadState("ready");
+      },
+      (error) => {
+        setWorldsLoadError(`Worlds could not be loaded: ${errorMessage(error)}`);
+        setWorldsLoadState("error");
+      }
+    );
+    void settleWorkspaceLoreLoad(
+      apiGet<HandoutLibraryItem[]>(`/api/v1/campaigns/${loreRequest.campaignId}/handouts`, { signal: controller.signal }),
+      loreRequestIsCurrent,
+      (nextHandouts) => {
+        setHandouts(nextHandouts);
+        setHandoutsLoadState("ready");
+      },
+      (error) => {
+        setHandoutsLoadError(`Handouts could not be loaded: ${errorMessage(error)}`);
+        setHandoutsLoadState("error");
+      }
+    );
+    return () => controller.abort();
+  }, [blankCanvasDemoOpen, campaignId, currentUserId, loreReloadVersion, snapshotReady]);
 
   useEffect(() => {
     if (blankCanvasDemoOpen) return;
@@ -1839,9 +1960,9 @@ export function App() {
   }, [blankCanvasDemoOpen, campaignId, currentUserId, manageCategory, workspaceMode, snapshot.session?.serverAdmin]);
 
   useEffect(() => {
-    if (workspaceMode === "live" && tab !== "actors" && tab !== "chat" && tab !== "combat") setTab("actors");
-    if (workspaceMode === "prep" && tab !== "actors" && tab !== "journal" && tab !== "content" && tab !== "plugins") setTab("content");
-    if (workspaceMode === "manage" && tab !== "actors" && tab !== "journal" && tab !== "content" && tab !== "plugins") setTab("actors");
+    if (workspaceMode === "live" && tab !== "actors" && tab !== "handouts" && tab !== "chat" && tab !== "combat") setTab("actors");
+    if (workspaceMode === "prep" && !["actors", "sessions", "worlds", "handouts", "journal", "memory", "content", "plugins"].includes(tab)) setTab("content");
+    if (workspaceMode === "manage" && !["actors", "journal", "content", "plugins"].includes(tab)) setTab("actors");
   }, [tab, workspaceMode]);
 
   useEffect(() => {
@@ -3059,6 +3180,13 @@ export function App() {
     const safeNext = next.length > 0 ? next : current;
     archiveImportCollectionsRef.current = safeNext;
     setArchiveImportCollections(safeNext);
+  }
+
+  function updateArchiveExportCollection(collection: ArchiveExportCollection, checked: boolean) {
+    setArchiveExportCollections((current) => {
+      const next = checked ? [...new Set([...current, collection])] : current.filter((item) => item !== collection);
+      return next.length > 0 ? next : current;
+    });
   }
 
   async function importCampaignArchive(file: File, input?: HTMLInputElement) {
@@ -4596,6 +4724,24 @@ export function App() {
     await refresh(request.campaignId, realtimeSelectionRef.current.sceneId);
   }
 
+  async function editChatMessage(message: ChatMessage, body: string) {
+    if (message.userId !== currentUserId) throw new Error("You can only edit your own messages.");
+    const request = currentWorkspaceRequestIdentity();
+    if (blankCanvasDemoOpen) {
+      const editedAt = new Date().toISOString();
+      setSnapshot((current) => ({
+        ...current,
+        chat: current.chat.map((item) => item.id === message.id ? { ...item, body, editedAt, editedByUserId: currentUserId, updatedAt: editedAt } : item)
+      }));
+      setStatus("Demo message edited locally");
+      return;
+    }
+    const updated = await apiPatch<ChatMessage>(`/api/v1/chat/messages/${message.id}`, { body });
+    if (!workspaceIdentityIsCurrent(request)) return;
+    setSnapshot((current) => ({ ...current, chat: current.chat.map((item) => item.id === updated.id ? updated : item) }));
+    setStatus("Message edited");
+  }
+
   async function deleteChatMessage(message: ChatMessage) {
     const request = currentWorkspaceRequestIdentity();
     await apiDelete<ChatMessage>(`/api/v1/chat/messages/${message.id}`);
@@ -5295,6 +5441,7 @@ export function App() {
     const applied = await apiPost<Proposal>(`/api/v1/proposals/${proposal.id}/apply`, {});
     if (!workspaceRequestIsCurrent(request.campaignId, request.userId)) return undefined;
     setSnapshot((current) => applyProposalChangesToSnapshot(current, applied));
+    if (proposalChangesExternalLore(applied)) setLoreReloadVersion((version) => version + 1);
     const appliedSceneId = sceneIdToOpenAfterProposalApply(applied) ?? sceneIdToOpen;
     if (appliedSceneId) {
       setSceneId(appliedSceneId);
@@ -5375,9 +5522,16 @@ export function App() {
         const message = errorMessage(error);
         if (isProposalNotFoundError(error)) {
           setSnapshot((current) => ({ ...current, proposals: current.proposals.filter((item) => item.id !== proposal.id) }));
+        } else {
+          showAiAgentProposal(proposal.id);
         }
         setAiAgentMessages((messages) => [...messages, { id: `agent-auto-apply-error-${proposal.id}-${Date.now()}`, role: "system", content: `Auto approve failed for ${proposal.id}: ${message}`, createdAt: new Date().toISOString() }]);
       }
+    }
+
+    if (failedCount > 0) {
+      await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false }).catch(() => undefined);
+      if (!workspaceRequestIsCurrent(request.campaignId, request.userId)) return;
     }
 
     const message =
@@ -5406,6 +5560,7 @@ export function App() {
         refresh().catch(() => undefined);
         return;
       }
+      showAiAgentProposal(proposal.id);
       if (isSessionAuthError(error)) {
         requireInteractiveSignIn(`Sign in required. ${message}`);
         setAiAgentStatus("Sign in required");
@@ -5413,6 +5568,7 @@ export function App() {
       }
       setAiAgentStatus(`Apply failed: ${message}`);
       setAiAgentMessages((messages) => [...messages, { id: `agent-apply-error-${Date.now()}`, role: "system", content: message, createdAt: new Date().toISOString() }]);
+      refresh(proposal.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false }).catch(() => undefined);
     }
   }
 
@@ -5433,6 +5589,7 @@ export function App() {
         refresh().catch(() => undefined);
         return;
       }
+      showAiAgentProposal(proposal.id);
       if (isSessionAuthError(error)) {
         requireInteractiveSignIn(`Sign in required. ${message}`);
         setAiAgentStatus("Sign in required");
@@ -5440,11 +5597,16 @@ export function App() {
       }
       setAiAgentStatus(`Reject failed: ${message}`);
       setAiAgentMessages((messages) => [...messages, { id: `agent-reject-error-${Date.now()}`, role: "system", content: message, createdAt: new Date().toISOString() }]);
+      refresh(proposal.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false }).catch(() => undefined);
     }
   }
 
   function hideAiAgentProposal(proposalId: string) {
-    setAiAgentHiddenProposalIds((proposalIds) => new Set([...proposalIds, proposalId]));
+    setAiAgentHiddenProposalIds((proposalIds) => setProposalHidden(proposalIds, proposalId, true));
+  }
+
+  function showAiAgentProposal(proposalId: string) {
+    setAiAgentHiddenProposalIds((proposalIds) => setProposalHidden(proposalIds, proposalId, false));
   }
 
   async function rejectProposalReview(proposal: Proposal) {
@@ -5529,12 +5691,12 @@ export function App() {
 
   async function runPluginCommand(plugin: PluginRuntimeInfo, command: string) {
     await runWorkspaceBoundAction(
-      (request) => apiPost(`/api/v1/campaigns/${request.campaignId}/plugins/${plugin.id}/chat-command`, {
+      (request) => apiPost<{ proposal: Proposal; approvalRequired: boolean }>(`/api/v1/campaigns/${request.campaignId}/plugins/${plugin.id}/chat-command`, {
         command,
         args: "from the browser tabletop"
       }, { signal: request.controller.signal }),
-      async (_result, request) => {
-        setStatus(`${plugin.name} command ran`);
+      async (result, request) => {
+        setStatus(result.approvalRequired ? `${plugin.name} command awaiting approval` : `${plugin.name} command ran`);
         await refresh(request.campaignId, realtimeSelectionRef.current.sceneId);
       }
     );
@@ -5697,6 +5859,21 @@ export function App() {
     });
     if (rested.actor) applyActorToSnapshot(rested.actor);
     setStatus(rested.rest.summary);
+  }
+
+  function updateCampaignSessions(nextSessions: CampaignSessionInfo[]) {
+    setSnapshot((current) => ({ ...current, campaignSessions: nextSessions }));
+  }
+
+  async function completeLiveCampaignSession(session: CampaignSessionInfo) {
+    const request = currentWorkspaceRequestIdentity();
+    const updated = await apiPost<CampaignSessionInfo>(`/api/v1/campaign-sessions/${session.id}/complete`, { notes: session.notes });
+    if (!workspaceIdentityIsCurrent(request)) return;
+    setSnapshot((current) => ({
+      ...current,
+      campaignSessions: (current.campaignSessions ?? []).map((item) => item.id === updated.id ? updated : item)
+    }));
+    setStatus(`${updated.title} completed`);
   }
 
   function planSystemEncounter() {
@@ -5931,9 +6108,12 @@ export function App() {
       version: archiveExportVersion,
       redaction: archiveRedactionMode
     });
+    if (archiveExportScope === "world") params.set("scopeId", archiveExportWorldId);
+    if (archiveExportScope === "selected_collections") params.set("collections", archiveExportCollections.join(","));
     const archive = await apiGet<object>(`/api/v1/campaigns/${campaignId}/export?${params.toString()}`);
-    downloadJson(`${selectedCampaign?.name ?? "campaign"}.ottx.json`, archive);
-    setArchiveExportStatus(`${selectedCampaign?.name ?? "Campaign"} archive exported as ${archiveExportVersion}`);
+    const scopeLabel = archiveExportScope === "world" ? worlds.find((world) => world.id === archiveExportWorldId)?.name ?? "world" : archiveExportScope === "selected_collections" ? "selected-records" : "campaign";
+    downloadJson(`${selectedCampaign?.name ?? "campaign"}-${scopeLabel}.ottx.json`, archive);
+    setArchiveExportStatus(`${scopeLabel} archive exported as ${archiveExportVersion}`);
   }
 
   async function exportDogfoodReportBundle() {
@@ -6369,8 +6549,10 @@ export function App() {
   const desktopRelayState = desktopRelay?.state ?? "stopped";
   const desktopInviteUrl = desktopRelay?.inviteUrl ?? desktopRelay?.publicUrl ?? "";
   const inspectorTabs: InspectorTab[] = workspaceMode === "live"
-    ? ["actors", "chat", "combat"]
-    : ["actors", "journal", "content", "plugins"];
+    ? ["actors", "handouts", "chat", "combat"]
+    : workspaceMode === "prep"
+      ? ["actors", "sessions", "worlds", "handouts", "journal", "memory", "content", "plugins"]
+      : ["actors", "journal", "content", "plugins"];
   const aiPanelElement = (
     <AiPanel
       prompt={aiPrompt}
@@ -7289,9 +7471,35 @@ export function App() {
               <div className="manage-card-grid">
         <section className="account-box" aria-label="Archive export wizard">
           <div className="section-title">Archive Export</div>
-          <select aria-label="Archive export scope" value={archiveExportScope} onChange={(event) => setArchiveExportScope(event.target.value as ArchiveExportScope)}>
+          <select aria-label="Archive export scope" value={archiveExportScope} onChange={(event) => { const scope = event.target.value as ArchiveExportScope; setArchiveExportScope(scope); if (scope === "world" && !archiveExportWorldId) setArchiveExportWorldId(worlds[0]?.id ?? ""); }}>
             <option value="campaign">Current campaign</option>
+            <option value="world">One world</option>
+            <option value="selected_collections">Selected record collections</option>
           </select>
+          {archiveExportScope === "world" && (
+            <label>
+              <span>World</span>
+              <select aria-label="Archive export world" value={archiveExportWorldId} onChange={(event) => setArchiveExportWorldId(event.target.value)}>
+                <option value="">Select a world</option>
+                {worlds.map((world) => <option key={world.id} value={world.id}>{world.name}</option>)}
+              </select>
+            </label>
+          )}
+          {archiveExportScope === "selected_collections" && (
+            <div className="asset-pressure-list archive-export-collections" aria-label="Archive export collection selection">
+              {archiveExportCollectionOptions.map((option) => (
+                <label className="operator-row tool-call-row" key={option.id}>
+                  <span>{option.label}</span>
+                  <input
+                    type="checkbox"
+                    aria-label={`Export ${option.label}`}
+                    checked={archiveExportCollections.includes(option.id)}
+                    onChange={(event) => updateArchiveExportCollection(option.id, event.target.checked)}
+                  />
+                </label>
+              ))}
+            </div>
+          )}
           <select aria-label="Archive export version" value={archiveExportVersion} onChange={(event) => setArchiveExportVersion(event.target.value as ArchiveExportVersion)}>
             <option value="0.2.0">Archive 0.2.0</option>
           </select>
@@ -7311,7 +7519,7 @@ export function App() {
             ))}
           </div>
           <p className="account-summary">{archiveExportStatus}</p>
-          <button className="ghost-button wide" type="button" onClick={() => exportCampaign().catch((error) => setArchiveExportStatus(error instanceof Error ? error.message : String(error)))}>
+          <button className="ghost-button wide" type="button" disabled={archiveExportScope === "world" && !archiveExportWorldId} onClick={() => exportCampaign().catch((error) => setArchiveExportStatus(error instanceof Error ? error.message : String(error)))}>
             <Download size={16} /> Export Archive
           </button>
         </section>
@@ -7590,6 +7798,16 @@ export function App() {
           </form>
         </header>
 
+        {liveCampaignSession && workspaceMode !== "manage" && (
+          <LiveSessionBanner
+            session={liveCampaignSession}
+            sceneName={activeScene?.name}
+            canComplete={hasPermission("campaign.update")}
+            onOpen={() => { setWorkspaceMode("prep"); setTab("sessions"); }}
+            onComplete={() => { void completeLiveCampaignSession(liveCampaignSession).catch((error) => setStatus(`Session completion failed: ${errorMessage(error)}`)); }}
+          />
+        )}
+
         {showTableWorkspace ? (
         <div className={`table-grid workspace-${workspaceMode}`}>
           <section className={`table-area ${canvasAssetDragging ? "canvas-asset-dragging" : ""}`}>
@@ -7866,15 +8084,23 @@ export function App() {
           <aside className="inspector">
             <div className="tabs inspector-tabs" role="tablist" aria-label="Inspector panels">
               {inspectorTabs.includes("actors") && <TabButton active={tab === "actors"} icon={<Users size={15} />} label="Actors" onClick={() => setTab("actors")} />}
+              {inspectorTabs.includes("sessions") && <TabButton active={tab === "sessions"} icon={<Timer size={15} />} label="Sessions" onClick={() => setTab("sessions")} />}
+              {inspectorTabs.includes("worlds") && <TabButton active={tab === "worlds"} icon={<Globe2 size={15} />} label="Worlds" onClick={() => setTab("worlds")} />}
+              {inspectorTabs.includes("handouts") && <TabButton active={tab === "handouts"} icon={<BookOpen size={15} />} label="Handouts" onClick={() => setTab("handouts")} />}
               {inspectorTabs.includes("journal") && <TabButton active={tab === "journal"} icon={<ScrollText size={15} />} label="Journal" onClick={() => setTab("journal")} />}
+              {inspectorTabs.includes("memory") && <TabButton active={tab === "memory"} icon={<Brain size={15} />} label="Memory" onClick={() => setTab("memory")} />}
               {inspectorTabs.includes("chat") && <TabButton active={tab === "chat"} icon={<MessageSquare size={15} />} label="Chat" onClick={() => setTab("chat")} />}
               {inspectorTabs.includes("combat") && <TabButton active={tab === "combat"} icon={<Swords size={15} />} label="Combat" onClick={() => setTab("combat")} />}
               {inspectorTabs.includes("content") && <TabButton active={tab === "content"} icon={<Upload size={15} />} label="Content" onClick={() => setTab("content")} />}
               {inspectorTabs.includes("plugins") && <TabButton active={tab === "plugins"} icon={<Boxes size={15} />} label="Plugins" onClick={() => setTab("plugins")} />}
             </div>
-            {tab === "actors" && <ActorPanel campaignId={campaignId} actor={selectedActor} token={selectedToken} systemLabel={snapshot.systems.find((system) => system.id === selectedActor?.systemId)?.name ?? selectedActor?.systemId} scene={selectedScene} currentUserId={currentUserId} actors={snapshot.actors} tokens={snapshot.tokens} combat={activeCombat} members={snapshot.members} assets={snapshot.assets} items={snapshot.items} compendiumEntries={compendiumEntries} compendiumSearch={compendiumSearch} setCompendiumSearch={setCompendiumSearch} compendiumStatus={compendiumStatus} actionTargetActorId={actorActionTargetId} setActionTargetActorId={setActorActionTargetId} actionApplyEffect={actorActionApplyEffect} setActionApplyEffect={setActorActionApplyEffect} actionConsumeResources={actorActionConsumeResources} setActionConsumeResources={setActorActionConsumeResources} updateActorHp={updateActorHp} adjustActorHp={adjustActorHp} awardActorXp={awardActorXp} xpProgress={xpProgress} advancementReady={Boolean(xpProgress?.readyToLevel && advancementOptions.length > 0 && canUpdateSelectedActor)} onLevelUp={() => setAdvancementModalOpen(true)} updateActorData={updateActorData} toggleActorCondition={toggleActorCondition} updateItemData={updateItemData} assignItemToActor={assignItemToActor} updateToken={updateSelectedToken} onUploadTokenImage={uploadSelectedTokenImage} targetToken={setTokenTarget} targetTokens={setTokenTargets} deleteToken={deleteSelectedToken} updateTokenVision={updateSelectedTokenVision} useActorAction={useActorAction} onImportCompendiumEntry={importCompendiumEntry} onPurchaseCompendiumEntry={purchaseCompendiumEntry} canCreateToken={hasPermission("token.create")} canUpdateActor={canUpdateSelectedActor} canUpdateToken={hasPermission("token.update")} canDeleteToken={hasPermission("token.delete")} canUseAction={canUpdateSelectedActor && hasPermission("dice.roll")} />}
+            {tab === "actors" && <ActorPanel campaignId={campaignId} actor={selectedActor} token={selectedToken} systemLabel={snapshot.systems.find((system) => system.id === selectedActor?.systemId)?.name ?? selectedActor?.systemId} scene={selectedScene} currentUserId={currentUserId} actors={snapshot.actors} tokens={snapshot.tokens} combat={activeCombat} members={snapshot.members} assets={snapshot.assets} items={snapshot.items} compendiumEntries={compendiumEntries} compendiumSearch={compendiumSearch} setCompendiumSearch={setCompendiumSearch} compendiumStatus={compendiumStatus} actionTargetActorId={actorActionTargetId} setActionTargetActorId={setActorActionTargetId} actionApplyEffect={actorActionApplyEffect} setActionApplyEffect={setActorActionApplyEffect} actionConsumeResources={actorActionConsumeResources} setActionConsumeResources={setActorActionConsumeResources} updateActorHp={updateActorHp} adjustActorHp={adjustActorHp} awardActorXp={awardActorXp} xpProgress={xpProgress} advancementReady={Boolean(xpProgress?.readyToLevel && advancementOptions.length > 0 && canUpdateSelectedActor)} onLevelUp={() => setAdvancementModalOpen(true)} onRestActor={restSelectedActor} updateActorData={updateActorData} toggleActorCondition={toggleActorCondition} updateItemData={updateItemData} assignItemToActor={assignItemToActor} updateToken={updateSelectedToken} onUploadTokenImage={uploadSelectedTokenImage} targetToken={setTokenTarget} targetTokens={setTokenTargets} deleteToken={deleteSelectedToken} updateTokenVision={updateSelectedTokenVision} useActorAction={useActorAction} onImportCompendiumEntry={importCompendiumEntry} onPurchaseCompendiumEntry={purchaseCompendiumEntry} canCreateToken={hasPermission("token.create")} canUpdateActor={canUpdateSelectedActor} canRestActor={canUpdateSelectedActor} canUpdateToken={hasPermission("token.update")} canDeleteToken={hasPermission("token.delete")} canUseAction={canUpdateSelectedActor && hasPermission("dice.roll")} />}
+            {tab === "sessions" && <SessionDeskPanel key={`sessions:${campaignId}:${currentUserId}`} campaignId={campaignId} sessions={campaignSessions} scenes={accessibleScenes} encounters={snapshot.encounters} canManage={hasPermission("campaign.update")} canStart={hasPermission("scene.activate")} onSessionsChange={(sessions) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) updateCampaignSessions(sessions); }} onSceneActivated={(nextSceneId) => { if (!workspaceRequestIsCurrent(campaignId, currentUserId)) return; setSceneId(nextSceneId); void refresh(campaignId, nextSceneId, { syncStatus: false }); }} onStatus={(message) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setStatus(message); }} />}
+            {tab === "worlds" && <WorldAtlasPanel key={`worlds:${campaignId}:${currentUserId}`} campaignId={campaignId} worlds={worlds} scenes={accessibleScenes} selectedWorldId={selectedWorldId} canCreate={hasPermission("world.create")} canUpdateWorld={hasPermission("world.update")} canAssignScenes={hasPermission("scene.update")} canDelete={hasPermission("world.delete")} loadState={worldsLoadState} loadError={worldsLoadError} onRetryLoad={() => setLoreReloadVersion((version) => version + 1)} onWorldsChange={(nextWorlds) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setWorlds(nextWorlds); }} onSelectWorld={(worldId) => { setSelectedWorldId(worldId); const nextScene = accessibleScenes.find((scene) => worldFilterMatchesScene(scene, worldId)); if (nextScene) setSceneId(nextScene.id); }} onSceneUpdated={applySceneToSnapshot} onStatus={(message) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setStatus(message); }} />}
+            {tab === "handouts" && <HandoutLibraryPanel key={`handouts:${campaignId}:${currentUserId}`} campaignId={campaignId} currentUserId={currentUserId} handouts={handouts} worlds={worlds} members={snapshot.members} actors={partyActors} assets={snapshot.assets} canCreate={hasPermission("handout.create")} canUpdate={hasPermission("handout.update")} canDelete={hasPermission("handout.delete")} loadState={handoutsLoadState} loadError={handoutsLoadError} onRetryLoad={() => setLoreReloadVersion((version) => version + 1)} onHandoutsChange={(items) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setHandouts(items); }} onStatus={(message) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setStatus(message); }} />}
             {tab === "journal" && <JournalPanel journals={snapshot.journals} members={snapshot.members} actors={partyActors} title={newJournalTitle} setTitle={setNewJournalTitle} body={newJournalBody} setBody={setNewJournalBody} visibility={newJournalVisibility} setVisibility={setNewJournalVisibility} tags={newJournalTags} setTags={setNewJournalTags} onCreate={createJournal} onGenerateRecap={generateSessionRecap} canCreate={hasPermission("journal.create")} />}
-            {tab === "chat" && <ChatRail campaignId={campaignId} command={chatBody} setCommand={setChatBody} replyTarget={chatReplyTarget} messages={snapshot.chat} rolls={snapshot.rolls} concealedRollIds={concealedRollIds} members={snapshot.members} diceFormula={diceFormula} setDiceFormula={setDiceFormula} diceVisibility={diceVisibility} setDiceVisibility={setDiceVisibility} savedDiceFormulas={savedDiceFormulas} diceMacros={snapshot.diceMacros} onRollDice={rollDice} onSaveDiceFormula={saveCurrentDiceFormula} onSubmitCommand={submitChatCommand} onClearReply={() => setChatReplyToMessageId("")} canRollDice={hasPermission("dice.roll")} dice3dEnabled={dice3dEnabled} onToggleDice3d={() => setDice3dEnabled((enabled) => !enabled)} />}
+            {tab === "memory" && <CampaignMemoryPanel key={`memory:${campaignId}:${currentUserId}`} campaignId={campaignId} facts={snapshot.memory as CampaignMemoryFact[]} canCreate={hasPermission("ai.proposeChanges")} canReview={hasPermission("ai.applyChanges")} onFactsChange={(memory) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setSnapshot((current) => ({ ...current, memory })); }} onExtract={extractMemory} onStatus={(message) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setStatus(message); }} />}
+            {tab === "chat" && <ChatRail campaignId={campaignId} currentUserId={currentUserId} command={chatBody} setCommand={setChatBody} replyTarget={chatReplyTarget} messages={snapshot.chat} rolls={snapshot.rolls} concealedRollIds={concealedRollIds} members={snapshot.members} diceFormula={diceFormula} setDiceFormula={setDiceFormula} diceVisibility={diceVisibility} setDiceVisibility={setDiceVisibility} savedDiceFormulas={savedDiceFormulas} diceMacros={snapshot.diceMacros} onRollDice={rollDice} onSaveDiceFormula={saveCurrentDiceFormula} onSubmitCommand={submitChatCommand} onEditMessage={editChatMessage} onClearReply={() => setChatReplyToMessageId("")} canRollDice={hasPermission("dice.roll")} dice3dEnabled={dice3dEnabled} onToggleDice3d={() => setDice3dEnabled((enabled) => !enabled)} />}
             {tab === "combat" && <CombatPanel combat={activeCombat} recentCombats={recentEndedCombats} auditLogs={snapshot.combatAudit} actors={snapshot.actors} tokens={snapshot.tokens} onFocusCombatant={(combatant) => selectSingleToken(combatant.tokenId)} onStart={startCombat} onPlanEncounter={planSystemEncounter} onNext={(combat) => advanceCombatTurn(combat, 1)} onPrevious={(combat) => advanceCombatTurn(combat, -1)} onEnd={endCombat} onAwardPartyXp={awardPartyXp} onAwardPartyGold={awardPartyGold} canAwardXp={hasPermission("actor.update")} onUpdateCombatant={updateCombatant} onConfirmAction={confirmCombatAction} onRejectAction={rejectCombatAction} canManage={hasPermission("combat.manage")} />}
             {tab === "content" && <ContentImportPanel assets={snapshot.assets} assetStorage={snapshot.assetStorage} selectedScene={selectedScene} assetSearch={assetSearch} setAssetSearch={setAssetSearch} assetFolder={assetFolder} setAssetFolder={setAssetFolder} assetTags={assetTags} setAssetTags={setAssetTags} assetStatus={assetStatus} failedAssetUpload={failedAssetUpload} onRetryFailedAssetUpload={retryAssetUpload} onDismissFailedAssetUpload={dismissFailedAssetUpload} lifecycleReason={assetLifecycleReason} setLifecycleReason={setAssetLifecycleReason} onUploadAsset={uploadAssetToLibrary} onSetSceneBackground={setSceneBackgroundFromAsset} onPlaceAssetToken={createTokenFromAsset} onUpdateAssetMetadata={updateAssetMetadata} onUpdateAssetLifecycle={updateAssetLifecycle} onCreateAssetDeliveryUrl={createAssetDeliveryUrl} imports={snapshot.contentImports} kind={contentImportKind} setKind={setContentImportKind} name={contentImportName} setName={setContentImportName} body={contentImportBody} setBody={setContentImportBody} status={contentImportStatus} onPreview={previewContentImport} onAnalyzePdf={analyzePdfContentImport} onApply={applyContentImport} onRollback={rollbackContentImport} onDelete={deleteContentImport} canManage={hasPermission("campaign.update")} canCreateAsset={hasPermission("scene.create")} canUpdateScene={hasPermission("scene.update")} canCreateToken={hasPermission("token.create")} />}
             {tab === "plugins" && <SdkPanel plugins={snapshot.plugins} systems={snapshot.systems} characterTemplates={snapshot.characterTemplates} actor={selectedActor} advancementOptions={advancementOptions} advancementGrantsFeat={advancementGrantsFeat} advancementFeats={advancementFeats} multiclassOptions={multiclassOptions} importedActor={importedActor} createdMonster={createdMonster} onSyncPluginRegistries={syncPluginRegistries} onInstallPlugin={installPlugin} onInstallSystem={installSystem} onCreateCharacter={createCharacterFromTemplate} onOpenCharacterCreator={() => void openCharacterCreator()} onImportCharacter={importSystemCharacter} onCreateMonster={createSystemMonster} onAdvanceActor={advanceSelectedActor} onRestActor={restSelectedActor} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={hasPermission("plugin.install")} canInstallSystem={hasPermission("campaign.update")} canCreateActor={hasPermission("actor.create")} canImportActor={hasPermission("actor.create")} canAdvanceActor={canUpdateSelectedActor} canRestActor={canUpdateSelectedActor} canRollSystem={hasPermission("dice.roll")} />}
@@ -8625,7 +8851,7 @@ function formatTokenAuras(token?: Token): string {
   return token?.auras?.map((aura) => `${aura.name}:${aura.radius}${aura.color ? `:${aura.color}` : ""}`).join("; ") ?? "";
 }
 
-function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; systemLabel?: string; scene?: Scene; currentUserId: string; actors: Actor[]; tokens: Token[]; combat?: Combat; members: Snapshot["members"]; assets: MapAsset[]; items: Item[]; compendiumEntries: RulesCompendiumEntry[]; compendiumSearch: string; setCompendiumSearch(value: string): void; compendiumStatus: string; actionTargetActorId: string; setActionTargetActorId(value: string): void; actionApplyEffect: boolean; setActionApplyEffect(value: boolean): void; actionConsumeResources: boolean; setActionConsumeResources(value: boolean): void; updateActorHp(actor: Actor, current: number): void; adjustActorHp(actor: Actor, delta: number): void; awardActorXp(actor: Actor, amount: number): void; xpProgress?: XpProgressInfo; advancementReady: boolean; onLevelUp(): void; updateActorData(actor: Actor, patch: Record<string, unknown>): void; toggleActorCondition(actor: Actor, conditionId: string): void; updateItemData(item: Item, patch: Record<string, unknown>): Promise<void>; assignItemToActor(item: Item, actor: Actor): Promise<void>; updateToken(patch: Partial<Token>): void; onUploadTokenImage(file: File, input?: HTMLInputElement): Promise<void>; targetToken(tokenId: string, targeted: boolean): void; targetTokens(tokenIds: string[], targeted: boolean): void; deleteToken(): void; updateTokenVision(patch: TokenVisionPatch): void; useActorAction(rollId: string, options?: ActorActionCommitOptions): void; onImportCompendiumEntry(entry: RulesCompendiumEntry): Promise<void>; onPurchaseCompendiumEntry(entry: RulesCompendiumEntry, quantity: number): Promise<void>; canCreateToken: boolean; canUpdateActor: boolean; canUpdateToken: boolean; canDeleteToken: boolean; canUseAction: boolean }) {
+function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; systemLabel?: string; scene?: Scene; currentUserId: string; actors: Actor[]; tokens: Token[]; combat?: Combat; members: Snapshot["members"]; assets: MapAsset[]; items: Item[]; compendiumEntries: RulesCompendiumEntry[]; compendiumSearch: string; setCompendiumSearch(value: string): void; compendiumStatus: string; actionTargetActorId: string; setActionTargetActorId(value: string): void; actionApplyEffect: boolean; setActionApplyEffect(value: boolean): void; actionConsumeResources: boolean; setActionConsumeResources(value: boolean): void; updateActorHp(actor: Actor, current: number): void; adjustActorHp(actor: Actor, delta: number): void; awardActorXp(actor: Actor, amount: number): void; xpProgress?: XpProgressInfo; advancementReady: boolean; onLevelUp(): void; onRestActor(restType: "short" | "long"): void; updateActorData(actor: Actor, patch: Record<string, unknown>): void; toggleActorCondition(actor: Actor, conditionId: string): void; updateItemData(item: Item, patch: Record<string, unknown>): Promise<void>; assignItemToActor(item: Item, actor: Actor): Promise<void>; updateToken(patch: Partial<Token>): void; onUploadTokenImage(file: File, input?: HTMLInputElement): Promise<void>; targetToken(tokenId: string, targeted: boolean): void; targetTokens(tokenIds: string[], targeted: boolean): void; deleteToken(): void; updateTokenVision(patch: TokenVisionPatch): void; useActorAction(rollId: string, options?: ActorActionCommitOptions): void; onImportCompendiumEntry(entry: RulesCompendiumEntry): Promise<void>; onPurchaseCompendiumEntry(entry: RulesCompendiumEntry, quantity: number): Promise<void>; canCreateToken: boolean; canUpdateActor: boolean; canRestActor: boolean; canUpdateToken: boolean; canDeleteToken: boolean; canUseAction: boolean }) {
   const [sheetView, setSheetView] = useState<"stats" | "loadout" | "actions" | "compendium">("stats");
   const [assignItemId, setAssignItemId] = useState("");
   const [itemDropActive, setItemDropActive] = useState(false);
@@ -9040,6 +9266,7 @@ function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; s
               )}
             </div>
           )}
+          <HitDiceRestCard actor={props.actor} canRest={props.canRestActor} onRest={props.onRestActor} />
           <div className="condition-quick-chips" role="group" aria-label="Toggle common conditions">
             {conditionChipIds.map((conditionId) => (
               <button

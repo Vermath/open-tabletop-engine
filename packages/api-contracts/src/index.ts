@@ -19,7 +19,8 @@ export const routes = {
   mfaTotpConfirm: "/api/v1/auth/mfa/totp/confirm",
   mfaTotpDisable: "/api/v1/auth/mfa/totp",
   authSessions: "/api/v1/auth/sessions",
-  authSession: (sessionId: string) => `/api/v1/auth/sessions/${pathPart(sessionId)}`,
+  authSession: (sessionId: string) =>
+    `/api/v1/auth/sessions/${pathPart(sessionId)}`,
   oidcConfig: "/api/v1/auth/oidc/config",
   oidcStart: "/api/v1/auth/oidc/start",
   oidcCallback: "/api/v1/auth/oidc/callback",
@@ -27,19 +28,25 @@ export const routes = {
   organizationSession: "/api/v1/organization/session",
   organizationWorkspaceDefaults: "/api/v1/organization/workspace-defaults",
   organizationMembers: "/api/v1/organization/members",
-  organizationMember: (memberId: string) => `/api/v1/organization/members/${pathPart(memberId)}`,
+  organizationMember: (memberId: string) =>
+    `/api/v1/organization/members/${pathPart(memberId)}`,
   organizationInvites: "/api/v1/organization/invites",
   adminUsers: "/api/v1/admin/users",
   adminUser: (userId: string) => `/api/v1/admin/users/${pathPart(userId)}`,
-  adminUserPasswordReset: (userId: string) => `/api/v1/admin/users/${pathPart(userId)}/password-reset`,
-  adminUserSessions: (userId: string) => `/api/v1/admin/users/${pathPart(userId)}/sessions`,
+  adminUserPasswordReset: (userId: string) =>
+    `/api/v1/admin/users/${pathPart(userId)}/password-reset`,
+  adminUserSessions: (userId: string) =>
+    `/api/v1/admin/users/${pathPart(userId)}/sessions`,
   adminSessions: "/api/v1/admin/sessions",
-  adminSession: (sessionId: string) => `/api/v1/admin/sessions/${pathPart(sessionId)}`,
+  adminSession: (sessionId: string) =>
+    `/api/v1/admin/sessions/${pathPart(sessionId)}`,
   adminEmailOutbox: "/api/v1/admin/email-outbox",
   adminPluginReviews: "/api/v1/admin/plugins/reviews",
-  adminPluginReview: (reviewKey: string) => `/api/v1/admin/plugins/reviews/${pathPart(reviewKey)}`,
+  adminPluginReview: (reviewKey: string) =>
+    `/api/v1/admin/plugins/reviews/${pathPart(reviewKey)}`,
   adminScimGroupRoleMappings: "/api/v1/admin/scim/group-role-mappings",
-  adminScimGroupRoleMapping: (mappingId: string) => `/api/v1/admin/scim/group-role-mappings/${pathPart(mappingId)}`,
+  adminScimGroupRoleMapping: (mappingId: string) =>
+    `/api/v1/admin/scim/group-role-mappings/${pathPart(mappingId)}`,
   scimServiceProviderConfig: "/api/v1/scim/v2/ServiceProviderConfig",
   scimUsers: "/api/v1/scim/v2/Users",
   scimUser: (userId: string) => `/api/v1/scim/v2/Users/${pathPart(userId)}`,
@@ -57,145 +64,294 @@ export const routes = {
   adminJobMetrics: "/api/v1/admin/jobs/metrics",
   adminJobAlerts: "/api/v1/admin/jobs/alerts",
   adminJob: (jobId: string) => `/api/v1/admin/jobs/${pathPart(jobId)}`,
-  adminJobRetry: (jobId: string) => `/api/v1/admin/jobs/${pathPart(jobId)}/retry`,
-  adminJobCancel: (jobId: string) => `/api/v1/admin/jobs/${pathPart(jobId)}/cancel`,
+  adminJobRetry: (jobId: string) =>
+    `/api/v1/admin/jobs/${pathPart(jobId)}/retry`,
+  adminJobCancel: (jobId: string) =>
+    `/api/v1/admin/jobs/${pathPart(jobId)}/cancel`,
   campaigns: "/api/v1/campaigns",
   campaign: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}`,
-  campaignMembers: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/members`,
-  campaignArchive: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/archive`,
-  campaignRestore: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/restore`,
-  campaignInvites: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/invites`,
+  campaignMembers: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/members`,
+  campaignMember: (campaignId: string, memberId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/members/${pathPart(memberId)}`,
+  campaignSessions: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/sessions`,
+  campaignSearch: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/search`,
+  campaignSession: (sessionId: string) =>
+    `/api/v1/campaign-sessions/${pathPart(sessionId)}`,
+  campaignSessionStart: (sessionId: string) =>
+    `/api/v1/campaign-sessions/${pathPart(sessionId)}/start`,
+  campaignSessionComplete: (sessionId: string) =>
+    `/api/v1/campaign-sessions/${pathPart(sessionId)}/complete`,
+  campaignArchive: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/archive`,
+  campaignRestore: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/restore`,
+  campaignInvites: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/invites`,
   acceptInvite: "/api/v1/invites/accept",
-  revokeInvite: (inviteId: string) => `/api/v1/invites/${pathPart(inviteId)}/revoke`,
-  scenes: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/scenes`,
-  fogPresets: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/fog-presets`,
-  fogPreset: (campaignId: string, presetId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/fog-presets/${pathPart(presetId)}`,
-  assets: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/assets`,
-  assetStorage: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/assets/storage`,
-  uploadAsset: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/assets/upload`,
+  revokeInvite: (inviteId: string) =>
+    `/api/v1/invites/${pathPart(inviteId)}/revoke`,
+  worlds: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/worlds`,
+  world: (worldId: string) => `/api/v1/worlds/${pathPart(worldId)}`,
+  scenes: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/scenes`,
+  fogPresets: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/fog-presets`,
+  fogPreset: (campaignId: string, presetId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/fog-presets/${pathPart(presetId)}`,
+  assets: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/assets`,
+  assetStorage: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/assets/storage`,
+  uploadAsset: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/assets/upload`,
   asset: (assetId: string) => `/api/v1/assets/${pathPart(assetId)}`,
   assetBlob: (assetId: string) => `/api/v1/assets/${pathPart(assetId)}/blob`,
-  assetDeliveryUrl: (assetId: string) => `/api/v1/assets/${pathPart(assetId)}/delivery-url`,
-  assetLifecycle: (assetId: string) => `/api/v1/assets/${pathPart(assetId)}/lifecycle`,
+  assetDeliveryUrl: (assetId: string) =>
+    `/api/v1/assets/${pathPart(assetId)}/delivery-url`,
+  assetLifecycle: (assetId: string) =>
+    `/api/v1/assets/${pathPart(assetId)}/lifecycle`,
   scene: (sceneId: string) => `/api/v1/scenes/${pathPart(sceneId)}`,
-  sceneVision: (sceneId: string) => `/api/v1/scenes/${pathPart(sceneId)}/vision`,
-  sceneVisionSample: (sceneId: string) => `/api/v1/scenes/${pathPart(sceneId)}/vision/sample`,
-  sceneRenderingDiagnostics: (sceneId: string) => `/api/v1/scenes/${pathPart(sceneId)}/rendering/diagnostics`,
-  sceneAiEditsApply: (sceneId: string) => `/api/v1/scenes/${pathPart(sceneId)}/ai-edits/apply-to-target`,
+  sceneVision: (sceneId: string) =>
+    `/api/v1/scenes/${pathPart(sceneId)}/vision`,
+  sceneVisionSample: (sceneId: string) =>
+    `/api/v1/scenes/${pathPart(sceneId)}/vision/sample`,
+  sceneRenderingDiagnostics: (sceneId: string) =>
+    `/api/v1/scenes/${pathPart(sceneId)}/rendering/diagnostics`,
+  sceneAiEditsApply: (sceneId: string) =>
+    `/api/v1/scenes/${pathPart(sceneId)}/ai-edits/apply-to-target`,
   sceneFog: (sceneId: string) => `/api/v1/scenes/${pathPart(sceneId)}/fog`,
-  sceneFogHistory: (sceneId: string) => `/api/v1/scenes/${pathPart(sceneId)}/fog/history`,
-  sceneFogUndo: (sceneId: string) => `/api/v1/scenes/${pathPart(sceneId)}/fog/undo`,
+  sceneFogHistory: (sceneId: string) =>
+    `/api/v1/scenes/${pathPart(sceneId)}/fog/history`,
+  sceneFogUndo: (sceneId: string) =>
+    `/api/v1/scenes/${pathPart(sceneId)}/fog/undo`,
   sceneEdits: (sceneId: string) => `/api/v1/scenes/${pathPart(sceneId)}/edits`,
   sceneUndo: (sceneId: string) => `/api/v1/scenes/${pathPart(sceneId)}/undo`,
-  sceneFogApplyPreset: (sceneId: string) => `/api/v1/scenes/${pathPart(sceneId)}/fog/apply-preset`,
-  sceneFogRegion: (sceneId: string, fogId: string) => `/api/v1/scenes/${pathPart(sceneId)}/fog/${pathPart(fogId)}`,
+  sceneFogApplyPreset: (sceneId: string) =>
+    `/api/v1/scenes/${pathPart(sceneId)}/fog/apply-preset`,
+  sceneFogRegion: (sceneId: string, fogId: string) =>
+    `/api/v1/scenes/${pathPart(sceneId)}/fog/${pathPart(fogId)}`,
   sceneWalls: (sceneId: string) => `/api/v1/scenes/${pathPart(sceneId)}/walls`,
-  sceneWall: (sceneId: string, wallId: string) => `/api/v1/scenes/${pathPart(sceneId)}/walls/${pathPart(wallId)}`,
-  sceneLights: (sceneId: string) => `/api/v1/scenes/${pathPart(sceneId)}/lights`,
-  sceneLight: (sceneId: string, lightId: string) => `/api/v1/scenes/${pathPart(sceneId)}/lights/${pathPart(lightId)}`,
-  sceneAnnotations: (sceneId: string) => `/api/v1/scenes/${pathPart(sceneId)}/annotations`,
-  sceneAnnotation: (sceneId: string, annotationId: string) => `/api/v1/scenes/${pathPart(sceneId)}/annotations/${pathPart(annotationId)}`,
+  sceneWall: (sceneId: string, wallId: string) =>
+    `/api/v1/scenes/${pathPart(sceneId)}/walls/${pathPart(wallId)}`,
+  sceneLights: (sceneId: string) =>
+    `/api/v1/scenes/${pathPart(sceneId)}/lights`,
+  sceneLight: (sceneId: string, lightId: string) =>
+    `/api/v1/scenes/${pathPart(sceneId)}/lights/${pathPart(lightId)}`,
+  sceneAnnotations: (sceneId: string) =>
+    `/api/v1/scenes/${pathPart(sceneId)}/annotations`,
+  sceneAnnotation: (sceneId: string, annotationId: string) =>
+    `/api/v1/scenes/${pathPart(sceneId)}/annotations/${pathPart(annotationId)}`,
   tokens: (sceneId: string) => `/api/v1/scenes/${pathPart(sceneId)}/tokens`,
   token: (tokenId: string) => `/api/v1/tokens/${pathPart(tokenId)}`,
-  tokenTarget: (tokenId: string) => `/api/v1/tokens/${pathPart(tokenId)}/target`,
-  actors: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/actors`,
+  tokenTarget: (tokenId: string) =>
+    `/api/v1/tokens/${pathPart(tokenId)}/target`,
+  actors: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/actors`,
   actor: (actorId: string) => `/api/v1/actors/${pathPart(actorId)}`,
-  items: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/items`,
+  items: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/items`,
   item: (itemId: string) => `/api/v1/items/${pathPart(itemId)}`,
-  journals: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/journal`,
+  journals: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/journal`,
   journal: (entryId: string) => `/api/v1/journal/${pathPart(entryId)}`,
+  handouts: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/handouts`,
+  handout: (handoutId: string) => `/api/v1/handouts/${pathPart(handoutId)}`,
+  handoutRead: (handoutId: string) =>
+    `/api/v1/handouts/${pathPart(handoutId)}/read`,
   chat: "/api/v1/chat/messages",
-  chatMessage: (messageId: string) => `/api/v1/chat/messages/${pathPart(messageId)}`,
-  chatMessageModeration: (messageId: string) => `/api/v1/chat/messages/${pathPart(messageId)}/moderation`,
-  chatExport: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/chat/export`,
+  chatMessage: (messageId: string) =>
+    `/api/v1/chat/messages/${pathPart(messageId)}`,
+  chatMessageModeration: (messageId: string) =>
+    `/api/v1/chat/messages/${pathPart(messageId)}/moderation`,
+  chatExport: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/chat/export`,
   dice: "/api/v1/dice/roll",
-  diceMacros: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/dice-macros`,
-  campaignAudio: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/audio`,
+  diceMacros: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/dice-macros`,
+  campaignAudio: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/audio`,
   audioTrack: (trackId: string) => `/api/v1/audio/${pathPart(trackId)}`,
   diceMacro: (macroId: string) => `/api/v1/dice-macros/${pathPart(macroId)}`,
-  encounters: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/encounters`,
-  combats: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/combats`,
+  encounters: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/encounters`,
+  encounter: (encounterId: string) =>
+    `/api/v1/encounters/${pathPart(encounterId)}`,
+  combats: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/combats`,
   combat: (combatId: string) => `/api/v1/combats/${pathPart(combatId)}`,
-  combatant: (combatId: string, combatantId: string) => `/api/v1/combats/${pathPart(combatId)}/combatants/${pathPart(combatantId)}`,
-  combatAudit: (combatId: string) => `/api/v1/combats/${pathPart(combatId)}/audit`,
-  combatActionConfirm: (combatId: string, actionId: string) => `/api/v1/combats/${pathPart(combatId)}/actions/${pathPart(actionId)}/confirm`,
-  combatActionReject: (combatId: string, actionId: string) => `/api/v1/combats/${pathPart(combatId)}/actions/${pathPart(actionId)}/reject`,
-  proposals: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/proposals`,
+  combatant: (combatId: string, combatantId: string) =>
+    `/api/v1/combats/${pathPart(combatId)}/combatants/${pathPart(combatantId)}`,
+  combatAudit: (combatId: string) =>
+    `/api/v1/combats/${pathPart(combatId)}/audit`,
+  combatActionConfirm: (combatId: string, actionId: string) =>
+    `/api/v1/combats/${pathPart(combatId)}/actions/${pathPart(actionId)}/confirm`,
+  combatActionReject: (combatId: string, actionId: string) =>
+    `/api/v1/combats/${pathPart(combatId)}/actions/${pathPart(actionId)}/reject`,
+  proposals: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/proposals`,
   proposal: (proposalId: string) => `/api/v1/proposals/${pathPart(proposalId)}`,
-  proposalApprove: (proposalId: string) => `/api/v1/proposals/${pathPart(proposalId)}/approve`,
-  proposalReject: (proposalId: string) => `/api/v1/proposals/${pathPart(proposalId)}/reject`,
-  proposalApply: (proposalId: string) => `/api/v1/proposals/${pathPart(proposalId)}/apply`,
-  aiThreads: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/ai/threads`,
-  aiUsage: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/ai/usage`,
-  aiEvaluations: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/ai/evaluations`,
-  aiMemory: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/ai/memory`,
-  aiMemoryExtract: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/ai/memory/extract`,
+  proposalApprove: (proposalId: string) =>
+    `/api/v1/proposals/${pathPart(proposalId)}/approve`,
+  proposalReject: (proposalId: string) =>
+    `/api/v1/proposals/${pathPart(proposalId)}/reject`,
+  proposalApply: (proposalId: string) =>
+    `/api/v1/proposals/${pathPart(proposalId)}/apply`,
+  proposalRevert: (proposalId: string) =>
+    `/api/v1/proposals/${pathPart(proposalId)}/revert`,
+  aiThreads: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/ai/threads`,
+  aiUsage: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/ai/usage`,
+  aiEvaluations: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/ai/evaluations`,
+  aiMemory: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/ai/memory`,
+  aiMemoryExtract: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/ai/memory/extract`,
   aiMemoryFact: (factId: string) => `/api/v1/ai/memory/${pathPart(factId)}`,
-  aiMemoryApprove: (factId: string) => `/api/v1/ai/memory/${pathPart(factId)}/approve`,
-  aiToolCalls: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/ai/tool-calls`,
-  aiToolCallRetry: (campaignId: string, toolCallId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/ai/tool-calls/${pathPart(toolCallId)}/retry`,
-  aiSessionRecap: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/ai/session-recap`,
-  aiEncounterDesign: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/ai/encounter-design`,
-  aiGenerateMapAsset: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/ai/generate-map-asset`,
-  aiGenerateTokenAsset: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/ai/generate-token-asset`,
+  aiMemoryApprove: (factId: string) =>
+    `/api/v1/ai/memory/${pathPart(factId)}/approve`,
+  aiMemoryReject: (factId: string) =>
+    `/api/v1/ai/memory/${pathPart(factId)}/reject`,
+  aiToolCalls: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/ai/tool-calls`,
+  aiToolCallRetry: (campaignId: string, toolCallId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/ai/tool-calls/${pathPart(toolCallId)}/retry`,
+  aiSessionRecap: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/ai/session-recap`,
+  aiEncounterDesign: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/ai/encounter-design`,
+  aiGenerateMapAsset: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/ai/generate-map-asset`,
+  aiGenerateTokenAsset: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/ai/generate-token-asset`,
   mcp: "/api/v1/mcp",
-  agentBoardCapture: (captureId: string) => `/api/v1/agent/board-captures/${pathPart(captureId)}`,
-  agentBoardCaptureSubmit: (requestId: string) => `/api/v1/agent/board-captures/${pathPart(requestId)}`,
+  agentBoardCapture: (captureId: string) =>
+    `/api/v1/agent/board-captures/${pathPart(captureId)}`,
+  agentBoardCaptureSubmit: (requestId: string) =>
+    `/api/v1/agent/board-captures/${pathPart(requestId)}`,
   systems: "/api/v1/systems",
-  campaignSystems: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/systems`,
-  campaignSystem: (campaignId: string, systemId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}`,
-  systemCharacterTemplates: (campaignId: string, systemId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/character-templates`,
-  systemCharacterOrigins: (campaignId: string, systemId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/character-origins`,
-  systemCharacters: (campaignId: string, systemId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/characters`,
-  systemMonsters: (campaignId: string, systemId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/monsters`,
-  systemCharacterImport: (campaignId: string, systemId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/characters/import`,
-  systemEncounterThreats: (campaignId: string, systemId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/encounter-threats`,
-  systemEncounterPlan: (campaignId: string, systemId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/encounter-plan`,
-  systemCompendium: (campaignId: string, systemId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/compendium`,
-  systemActorCompendium: (campaignId: string, systemId: string, actorId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/actors/${pathPart(actorId)}/compendium`,
-  systemActorPurchase: (campaignId: string, systemId: string, actorId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/actors/${pathPart(actorId)}/purchase`,
-  systemActorConditions: (campaignId: string, systemId: string, actorId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/actors/${pathPart(actorId)}/conditions`,
-  systemActorCondition: (campaignId: string, systemId: string, actorId: string, conditionId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/actors/${pathPart(actorId)}/conditions/${pathPart(conditionId)}`,
-  systemActorAdvancement: (campaignId: string, systemId: string, actorId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/actors/${pathPart(actorId)}/advancement`,
-  systemActorAdvance: (campaignId: string, systemId: string, actorId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/actors/${pathPart(actorId)}/advance`,
-  systemActorRest: (campaignId: string, systemId: string, actorId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/actors/${pathPart(actorId)}/rest`,
-  systemActorSheet: (campaignId: string, systemId: string, actorId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/actors/${pathPart(actorId)}/sheet`,
-  systemActorRoll: (campaignId: string, systemId: string, actorId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/actors/${pathPart(actorId)}/roll`,
+  campaignSystems: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/systems`,
+  campaignSystem: (campaignId: string, systemId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}`,
+  systemCharacterTemplates: (campaignId: string, systemId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/character-templates`,
+  systemCharacterOrigins: (campaignId: string, systemId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/character-origins`,
+  systemCharacters: (campaignId: string, systemId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/characters`,
+  systemMonsters: (campaignId: string, systemId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/monsters`,
+  systemCharacterImport: (campaignId: string, systemId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/characters/import`,
+  systemEncounterThreats: (campaignId: string, systemId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/encounter-threats`,
+  systemEncounterPlan: (campaignId: string, systemId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/encounter-plan`,
+  systemCompendium: (campaignId: string, systemId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/compendium`,
+  systemActorCompendium: (
+    campaignId: string,
+    systemId: string,
+    actorId: string,
+  ) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/actors/${pathPart(actorId)}/compendium`,
+  systemActorPurchase: (
+    campaignId: string,
+    systemId: string,
+    actorId: string,
+  ) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/actors/${pathPart(actorId)}/purchase`,
+  systemActorConditions: (
+    campaignId: string,
+    systemId: string,
+    actorId: string,
+  ) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/actors/${pathPart(actorId)}/conditions`,
+  systemActorCondition: (
+    campaignId: string,
+    systemId: string,
+    actorId: string,
+    conditionId: string,
+  ) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/actors/${pathPart(actorId)}/conditions/${pathPart(conditionId)}`,
+  systemActorAdvancement: (
+    campaignId: string,
+    systemId: string,
+    actorId: string,
+  ) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/actors/${pathPart(actorId)}/advancement`,
+  systemActorAdvance: (campaignId: string, systemId: string, actorId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/actors/${pathPart(actorId)}/advance`,
+  systemActorRest: (campaignId: string, systemId: string, actorId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/actors/${pathPart(actorId)}/rest`,
+  systemActorSheet: (campaignId: string, systemId: string, actorId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/actors/${pathPart(actorId)}/sheet`,
+  systemActorRoll: (campaignId: string, systemId: string, actorId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/actors/${pathPart(actorId)}/roll`,
   plugins: "/api/v1/plugins",
   pluginRegistrySync: "/api/v1/plugins/registry/sync",
-  campaignPlugins: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/plugins`,
-  campaignPlugin: (campaignId: string, pluginId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/plugins/${pathPart(pluginId)}`,
-  pluginStorage: (campaignId: string, pluginId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/plugins/${pathPart(pluginId)}/storage`,
-  pluginStorageEntry: (campaignId: string, pluginId: string, key: string) => `/api/v1/campaigns/${pathPart(campaignId)}/plugins/${pathPart(pluginId)}/storage/${pathPart(key)}`,
-  pluginChatCommand: (campaignId: string, pluginId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/plugins/${pathPart(pluginId)}/chat-command`,
-  exportCampaign: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/export`,
-  dogfoodReportBundle: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/dogfood-report-bundle`,
+  campaignPlugins: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/plugins`,
+  campaignPlugin: (campaignId: string, pluginId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/plugins/${pathPart(pluginId)}`,
+  pluginStorage: (campaignId: string, pluginId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/plugins/${pathPart(pluginId)}/storage`,
+  pluginStorageEntry: (campaignId: string, pluginId: string, key: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/plugins/${pathPart(pluginId)}/storage/${pathPart(key)}`,
+  pluginChatCommand: (campaignId: string, pluginId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/plugins/${pathPart(pluginId)}/chat-command`,
+  exportCampaign: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/export`,
+  dogfoodReportBundle: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/dogfood-report-bundle`,
   importCampaign: "/api/v1/import/campaign",
-  campaignRolls: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/rolls`,
-  campaignRollVerify: (campaignId: string, rollId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/rolls/${pathPart(rollId)}/verify`,
-  campaignSnapshot: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/snapshot`,
-  contentImports: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/content-imports`,
-  contentImportPreview: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/content-imports/preview`,
-  contentImportPdfAi: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/content-imports/pdf/ai`,
-  contentImport: (importId: string) => `/api/v1/content-imports/${pathPart(importId)}`,
-  contentImportApply: (importId: string) => `/api/v1/content-imports/${pathPart(importId)}/apply`,
-  contentImportRollback: (importId: string) => `/api/v1/content-imports/${pathPart(importId)}/rollback`,
-  contentImportDelete: (importId: string) => `/api/v1/content-imports/${pathPart(importId)}`,
-  openApi: "/api/v1/openapi.json"
+  campaignRolls: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/rolls`,
+  campaignRollVerify: (campaignId: string, rollId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/rolls/${pathPart(rollId)}/verify`,
+  campaignSnapshot: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/snapshot`,
+  contentImports: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/content-imports`,
+  contentImportPreview: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/content-imports/preview`,
+  contentImportPdfAi: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/content-imports/pdf/ai`,
+  contentImport: (importId: string) =>
+    `/api/v1/content-imports/${pathPart(importId)}`,
+  contentImportApply: (importId: string) =>
+    `/api/v1/content-imports/${pathPart(importId)}/apply`,
+  contentImportRollback: (importId: string) =>
+    `/api/v1/content-imports/${pathPart(importId)}/rollback`,
+  contentImportDelete: (importId: string) =>
+    `/api/v1/content-imports/${pathPart(importId)}`,
+  openApi: "/api/v1/openapi.json",
 } as const;
 
 export const apiContractPolicy = {
   versioning: {
     current: apiVersion,
     basePath: "/api/v1",
-    compatibility: "v1 routes are additive within the major version; incompatible response or request semantics require a new /api/v{n} base path.",
-    deprecation: "Deprecated v1 fields and routes must remain documented until the next major API base path is available."
+    compatibility:
+      "v1 routes are additive within the major version; incompatible response or request semantics require a new /api/v{n} base path.",
+    deprecation:
+      "Deprecated v1 fields and routes must remain documented until the next major API base path is available.",
   },
   auth: {
     scheme: "BearerAuth",
     header: "Authorization",
     bearerFormat: "opaque ots_ session token",
-    queryTokenExceptions: ["asset blob delivery", "realtime websocket connection"]
+    queryTokenExceptions: [
+      "asset blob delivery",
+      "realtime websocket connection",
+    ],
   },
   errors: {
     schema: "ErrorResponse",
@@ -208,29 +364,43 @@ export const apiContractPolicy = {
       409: "state conflict, duplicate, stale, or not-ready transition",
       422: "well-formed request failed domain validation",
       429: "rate limit exceeded when deployment throttles are enabled",
-      500: "unexpected server failure"
-    }
+      500: "unexpected server failure",
+    },
   },
   idempotency: {
     header: "Idempotency-Key",
     appliesTo: ["POST", "PUT", "PATCH", "DELETE"],
-    guarantee: "Mutating clients should send a stable key per logical action. The v1 runtime persists successful JSON mutation responses and replays matching method/path/user/body requests with Idempotency-Replayed: true; reusing a key for a different request returns 409."
+    excludes: [
+      "authentication and credential lifecycle",
+      "invite issuance and acceptance",
+      "signed asset delivery",
+      "secret-bearing responses",
+      "anonymous callers",
+    ],
+    guarantee:
+      "Authenticated clients may send a stable key for eligible non-secret mutations. The v1 runtime persists successful JSON responses only when they contain no credentials or capability URLs, and replays matching method/path/user/body requests with Idempotency-Replayed: true; reusing a key for a different request returns 409.",
   },
   pagination: {
     cursorParameter: "cursor",
     limitParameter: "limit",
     offsetParameter: "offset",
     defaultLimit: 50,
-    maxLimit: 200
+    maxLimit: 200,
   },
   rateLimits: {
     statusCode: 429,
-    headers: ["Retry-After", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"],
-    enforcement: "The API runtime enforces a fixed-window per-route caller limit when OTTE_RATE_LIMIT_ENABLED=true and enables it by default in production. OTTE_RATE_LIMIT_WINDOW_SECONDS and OTTE_RATE_LIMIT_MAX_REQUESTS tune the window and ceiling."
+    headers: [
+      "Retry-After",
+      "X-RateLimit-Limit",
+      "X-RateLimit-Remaining",
+      "X-RateLimit-Reset",
+    ],
+    enforcement:
+      "The API runtime enforces a fixed-window per-route caller limit when OTTE_RATE_LIMIT_ENABLED=true and enables it by default in production. OTTE_RATE_LIMIT_WINDOW_SECONDS and OTTE_RATE_LIMIT_MAX_REQUESTS tune the window and ceiling.",
   },
   chat: {
-    messageBodyMaxLength: 4096
-  }
+    messageBodyMaxLength: 4096,
+  },
 } as const;
 
 const endpointSpecs = [
@@ -341,12 +511,27 @@ const endpointSpecs = [
   ["PATCH", "/api/v1/campaigns/{campaignId}"],
   ["DELETE", "/api/v1/campaigns/{campaignId}"],
   ["GET", "/api/v1/campaigns/{campaignId}/members"],
+  ["PATCH", "/api/v1/campaigns/{campaignId}/members/{memberId}"],
+  ["DELETE", "/api/v1/campaigns/{campaignId}/members/{memberId}"],
+  ["GET", "/api/v1/campaigns/{campaignId}/sessions"],
+  ["POST", "/api/v1/campaigns/{campaignId}/sessions"],
+  ["GET", "/api/v1/campaigns/{campaignId}/search"],
+  ["GET", "/api/v1/campaign-sessions/{sessionId}"],
+  ["PATCH", "/api/v1/campaign-sessions/{sessionId}"],
+  ["DELETE", "/api/v1/campaign-sessions/{sessionId}"],
+  ["POST", "/api/v1/campaign-sessions/{sessionId}/start"],
+  ["POST", "/api/v1/campaign-sessions/{sessionId}/complete"],
   ["POST", "/api/v1/campaigns/{campaignId}/archive"],
   ["POST", "/api/v1/campaigns/{campaignId}/restore"],
   ["GET", "/api/v1/campaigns/{campaignId}/invites"],
   ["POST", "/api/v1/campaigns/{campaignId}/invites"],
   ["POST", routes.acceptInvite],
   ["POST", "/api/v1/invites/{inviteId}/revoke"],
+  ["GET", "/api/v1/campaigns/{campaignId}/worlds"],
+  ["POST", "/api/v1/campaigns/{campaignId}/worlds"],
+  ["GET", "/api/v1/worlds/{worldId}"],
+  ["PATCH", "/api/v1/worlds/{worldId}"],
+  ["DELETE", "/api/v1/worlds/{worldId}"],
   ["GET", "/api/v1/campaigns/{campaignId}/scenes"],
   ["POST", "/api/v1/campaigns/{campaignId}/scenes"],
   ["GET", "/api/v1/campaigns/{campaignId}/fog-presets"],
@@ -391,13 +576,25 @@ const endpointSpecs = [
   ["DELETE", "/api/v1/tokens/{tokenId}"],
   ["GET", "/api/v1/campaigns/{campaignId}/actors"],
   ["POST", "/api/v1/campaigns/{campaignId}/actors"],
+  ["GET", "/api/v1/actors/{actorId}"],
   ["PATCH", "/api/v1/actors/{actorId}"],
+  ["DELETE", "/api/v1/actors/{actorId}"],
   ["GET", "/api/v1/campaigns/{campaignId}/items"],
   ["POST", "/api/v1/campaigns/{campaignId}/items"],
+  ["GET", "/api/v1/items/{itemId}"],
   ["PATCH", "/api/v1/items/{itemId}"],
+  ["DELETE", "/api/v1/items/{itemId}"],
   ["GET", "/api/v1/campaigns/{campaignId}/journal"],
   ["POST", "/api/v1/campaigns/{campaignId}/journal"],
+  ["GET", "/api/v1/journal/{entryId}"],
   ["PATCH", "/api/v1/journal/{entryId}"],
+  ["DELETE", "/api/v1/journal/{entryId}"],
+  ["GET", "/api/v1/campaigns/{campaignId}/handouts"],
+  ["POST", "/api/v1/campaigns/{campaignId}/handouts"],
+  ["GET", "/api/v1/handouts/{handoutId}"],
+  ["PATCH", "/api/v1/handouts/{handoutId}"],
+  ["DELETE", "/api/v1/handouts/{handoutId}"],
+  ["POST", "/api/v1/handouts/{handoutId}/read"],
   ["POST", routes.dice],
   ["POST", routes.chat],
   ["GET", routes.chat],
@@ -420,6 +617,9 @@ const endpointSpecs = [
   ["POST", "/api/v1/campaigns/{campaignId}/combats"],
   ["GET", "/api/v1/campaigns/{campaignId}/encounters"],
   ["POST", "/api/v1/campaigns/{campaignId}/encounters"],
+  ["GET", "/api/v1/encounters/{encounterId}"],
+  ["PATCH", "/api/v1/encounters/{encounterId}"],
+  ["DELETE", "/api/v1/encounters/{encounterId}"],
   ["GET", "/api/v1/combats/{combatId}/audit"],
   ["POST", "/api/v1/combats/{combatId}/actions/{actionId}/confirm"],
   ["POST", "/api/v1/combats/{combatId}/actions/{actionId}/reject"],
@@ -432,6 +632,7 @@ const endpointSpecs = [
   ["POST", "/api/v1/proposals/{proposalId}/approve"],
   ["POST", "/api/v1/proposals/{proposalId}/reject"],
   ["POST", "/api/v1/proposals/{proposalId}/apply"],
+  ["POST", "/api/v1/proposals/{proposalId}/revert"],
   ["GET", "/api/v1/campaigns/{campaignId}/ai/threads"],
   ["POST", "/api/v1/campaigns/{campaignId}/ai/threads"],
   ["GET", "/api/v1/campaigns/{campaignId}/ai/usage"],
@@ -443,7 +644,10 @@ const endpointSpecs = [
   ["GET", "/api/v1/campaigns/{campaignId}/ai/tool-calls"],
   ["POST", "/api/v1/campaigns/{campaignId}/ai/tool-calls/{toolCallId}/retry"],
   ["DELETE", "/api/v1/ai/memory/{factId}"],
+  ["GET", "/api/v1/ai/memory/{factId}"],
+  ["PATCH", "/api/v1/ai/memory/{factId}"],
   ["POST", "/api/v1/ai/memory/{factId}/approve"],
+  ["POST", "/api/v1/ai/memory/{factId}/reject"],
   ["POST", "/api/v1/campaigns/{campaignId}/ai/session-recap"],
   ["POST", "/api/v1/campaigns/{campaignId}/ai/encounter-design"],
   ["POST", "/api/v1/campaigns/{campaignId}/ai/generate-map-asset"],
@@ -462,23 +666,62 @@ const endpointSpecs = [
   ["POST", "/api/v1/systems/install"],
   ["GET", "/api/v1/campaigns/{campaignId}/systems"],
   ["POST", "/api/v1/campaigns/{campaignId}/systems/{systemId}/install"],
-  ["GET", "/api/v1/campaigns/{campaignId}/systems/{systemId}/character-templates"],
-  ["GET", "/api/v1/campaigns/{campaignId}/systems/{systemId}/character-origins"],
+  [
+    "GET",
+    "/api/v1/campaigns/{campaignId}/systems/{systemId}/character-templates",
+  ],
+  [
+    "GET",
+    "/api/v1/campaigns/{campaignId}/systems/{systemId}/character-origins",
+  ],
   ["POST", "/api/v1/campaigns/{campaignId}/systems/{systemId}/characters"],
   ["POST", "/api/v1/campaigns/{campaignId}/systems/{systemId}/monsters"],
-  ["POST", "/api/v1/campaigns/{campaignId}/systems/{systemId}/characters/import"],
-  ["GET", "/api/v1/campaigns/{campaignId}/systems/{systemId}/encounter-threats"],
+  [
+    "POST",
+    "/api/v1/campaigns/{campaignId}/systems/{systemId}/characters/import",
+  ],
+  [
+    "GET",
+    "/api/v1/campaigns/{campaignId}/systems/{systemId}/encounter-threats",
+  ],
   ["POST", "/api/v1/campaigns/{campaignId}/systems/{systemId}/encounter-plan"],
   ["GET", "/api/v1/campaigns/{campaignId}/systems/{systemId}/compendium"],
-  ["POST", "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/compendium"],
-  ["POST", "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/purchase"],
-  ["POST", "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/conditions"],
-  ["DELETE", "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/conditions/{conditionId}"],
-  ["GET", "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/advancement"],
-  ["POST", "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/advance"],
-  ["POST", "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/rest"],
-  ["GET", "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/sheet"],
-  ["POST", "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/roll"],
+  [
+    "POST",
+    "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/compendium",
+  ],
+  [
+    "POST",
+    "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/purchase",
+  ],
+  [
+    "POST",
+    "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/conditions",
+  ],
+  [
+    "DELETE",
+    "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/conditions/{conditionId}",
+  ],
+  [
+    "GET",
+    "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/advancement",
+  ],
+  [
+    "POST",
+    "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/advance",
+  ],
+  [
+    "POST",
+    "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/rest",
+  ],
+  [
+    "GET",
+    "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/sheet",
+  ],
+  [
+    "POST",
+    "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/roll",
+  ],
   ["GET", "/api/v1/campaigns/{campaignId}/export"],
   ["GET", "/api/v1/campaigns/{campaignId}/dogfood-report-bundle"],
   ["POST", routes.importCampaign],
@@ -488,7 +731,7 @@ const endpointSpecs = [
   ["GET", "/api/v1/content-imports/{importId}"],
   ["POST", "/api/v1/content-imports/{importId}/apply"],
   ["POST", "/api/v1/content-imports/{importId}/rollback"],
-  ["DELETE", "/api/v1/content-imports/{importId}"]
+  ["DELETE", "/api/v1/content-imports/{importId}"],
 ] as const;
 
 type EndpointSpec = (typeof endpointSpecs)[number];
@@ -524,21 +767,22 @@ type OpenApiPathItem = Partial<Record<Lowercase<HttpMethod>, OpenApiOperation>>;
 const errorContent = {
   "application/json": {
     schema: {
-      $ref: "#/components/schemas/ErrorResponse"
-    }
-  }
+      $ref: "#/components/schemas/ErrorResponse",
+    },
+  },
 };
 
 const idempotencyKeyParameter: OpenApiParameter = {
   name: apiContractPolicy.idempotency.header,
   in: "header",
   required: false,
-  description: "Stable client-generated key for retrying one logical mutation without duplicating side effects once route-level replay storage is enabled.",
+  description:
+    "Stable client-generated key for retrying one logical mutation without duplicating side effects once route-level replay storage is enabled.",
   schema: {
     type: "string",
     minLength: 8,
-    maxLength: 128
-  }
+    maxLength: 160,
+  },
 };
 
 const paginationParameters: OpenApiParameter[] = [
@@ -550,8 +794,8 @@ const paginationParameters: OpenApiParameter[] = [
     schema: {
       type: "integer",
       minimum: 1,
-      maximum: apiContractPolicy.pagination.maxLimit
-    }
+      maximum: apiContractPolicy.pagination.maxLimit,
+    },
   },
   {
     name: apiContractPolicy.pagination.cursorParameter,
@@ -559,35 +803,36 @@ const paginationParameters: OpenApiParameter[] = [
     required: false,
     description: "Opaque cursor returned by a previous list response.",
     schema: {
-      type: "string"
-    }
+      type: "string",
+    },
   },
   {
     name: apiContractPolicy.pagination.offsetParameter,
     in: "query",
     required: false,
-    description: "Zero-based result offset for list routes that support offset pagination. Do not combine with cursor.",
+    description:
+      "Zero-based result offset for list routes that support offset pagination. Do not combine with cursor.",
     schema: {
       type: "integer",
-      minimum: 0
-    }
-  }
+      minimum: 0,
+    },
+  },
 ];
 
 function errorResponse(description: string): OpenApiResponse {
   return {
     description,
-    content: errorContent
+    content: errorContent,
   };
 }
 
 const schemaRef = (name: string) => ({
-  $ref: `#/components/schemas/${name}`
+  $ref: `#/components/schemas/${name}`,
 });
 
 const arrayOf = (items: Record<string, unknown>) => ({
   type: "array",
-  items
+  items,
 });
 
 const paginatedObjectOf = (items: Record<string, unknown>) => ({
@@ -596,45 +841,59 @@ const paginatedObjectOf = (items: Record<string, unknown>) => ({
   required: ["items", "pagination"],
   properties: {
     items: arrayOf(items),
-    pagination: schemaRef("PaginationMeta")
-  }
+    pagination: schemaRef("PaginationMeta"),
+  },
 });
 
 function jsonContent(schema: Record<string, unknown>): Record<string, unknown> {
   return {
     "application/json": {
-      schema
-    }
+      schema,
+    },
   };
 }
 
-function jsonResponse(description: string, schema: Record<string, unknown>): OpenApiResponse {
+function jsonResponse(
+  description: string,
+  schema: Record<string, unknown>,
+): OpenApiResponse {
   return {
     description,
-    content: jsonContent(schema)
+    content: jsonContent(schema),
   };
 }
+
+const unsupportedSystemCapabilityResponse = jsonResponse(
+  "The requested rules-system runtime does not implement this capability",
+  schemaRef("UnsupportedSystemCapabilityResponse"),
+);
 
 function textResponse(description: string): OpenApiResponse {
   return {
     description,
     content: {
       "text/plain": {
-        schema: { type: "string" }
-      }
-    }
+        schema: { type: "string" },
+      },
+    },
   };
 }
 
-function jsonRequestBody(schema: Record<string, unknown>, description?: string): OpenApiRequestBody {
+function jsonRequestBody(
+  schema: Record<string, unknown>,
+  description?: string,
+): OpenApiRequestBody {
   return {
     required: true,
     ...(description ? { description } : {}),
-    content: jsonContent(schema)
+    content: jsonContent(schema),
   };
 }
 
-function binaryRequestBody(contentType: string, description: string): OpenApiRequestBody {
+function binaryRequestBody(
+  contentType: string,
+  description: string,
+): OpenApiRequestBody {
   return {
     required: true,
     description,
@@ -642,56 +901,72 @@ function binaryRequestBody(contentType: string, description: string): OpenApiReq
       [contentType]: {
         schema: {
           type: "string",
-          format: "binary"
-        }
-      }
-    }
+          format: "binary",
+        },
+      },
+    },
   };
 }
 
 const stringSchema = {
-  type: "string"
+  type: "string",
 };
 
 const chatMessageBodySchema = {
   type: "string",
   minLength: 1,
   maxLength: apiContractPolicy.chat.messageBodyMaxLength,
-  pattern: "\\S"
+  pattern: "\\S",
 };
 
 const idSchema = {
   type: "string",
-  minLength: 1
+  minLength: 1,
 };
 
 const timestampProperties = {
   createdAt: {
     type: "string",
-    format: "date-time"
+    format: "date-time",
   },
   updatedAt: {
     type: "string",
-    format: "date-time"
-  }
+    format: "date-time",
+  },
 };
 
 const idTimestampProperties = {
   id: idSchema,
-  ...timestampProperties
+  ...timestampProperties,
 };
 
 const looseObjectSchema = {
   type: "object",
-  additionalProperties: true
+  additionalProperties: true,
 };
 
 const positiveLimitSchema = {
   anyOf: [
     { type: "integer", minimum: 1, maximum: 500 },
-    { type: "string", minLength: 1 }
-  ]
+    { type: "string", minLength: 1 },
+  ],
 };
+
+const systemCapabilityValues = [
+  "data-model",
+  "actor-sheet",
+  "quick-rolls",
+  "actions",
+  "conditions",
+  "advancement",
+  "rest",
+  "compendium",
+  "character-templates",
+  "character-import",
+  "character-origins",
+  "encounter-builder",
+  "monster-builder",
+] as const;
 
 const componentSchemas = {
   ErrorResponse: {
@@ -701,24 +976,48 @@ const componentSchemas = {
     properties: {
       error: {
         type: "string",
-        description: "Stable machine-readable error identifier."
+        description: "Stable machine-readable error identifier.",
       },
       message: {
         type: "string",
-        description: "Human-readable error summary safe to show to an operator or caller."
+        description:
+          "Human-readable error summary safe to show to an operator or caller.",
       },
       code: {
         type: "string",
-        description: "Optional finer-grained machine-readable code for domain failures."
+        description:
+          "Optional finer-grained machine-readable code for domain failures.",
       },
       details: {
-        description: "Optional structured route-specific validation or conflict details."
+        description:
+          "Optional structured route-specific validation or conflict details.",
       },
       requestId: {
         type: "string",
-        description: "Optional request correlation identifier when the deployment provides one."
-      }
-    }
+        description:
+          "Optional request correlation identifier when the deployment provides one.",
+      },
+    },
+  },
+  UnsupportedSystemCapabilityResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["error", "systemId", "capability", "message"],
+    properties: {
+      error: {
+        type: "string",
+        enum: ["unsupported_system_capability"],
+      },
+      systemId: idSchema,
+      capability: {
+        type: "string",
+        enum: systemCapabilityValues,
+      },
+      message: {
+        type: "string",
+        minLength: 1,
+      },
+    },
   },
   PaginationMeta: {
     type: "object",
@@ -726,22 +1025,22 @@ const componentSchemas = {
     required: ["limit", "offset", "totalCount"],
     properties: {
       nextCursor: {
-        type: "string"
+        type: "string",
       },
       limit: {
         type: "integer",
         minimum: 1,
-        maximum: apiContractPolicy.pagination.maxLimit
+        maximum: apiContractPolicy.pagination.maxLimit,
       },
       offset: {
         type: "integer",
-        minimum: 0
+        minimum: 0,
       },
       totalCount: {
         type: "integer",
-        minimum: 0
-      }
-    }
+        minimum: 0,
+      },
+    },
   },
   HealthStatus: {
     type: "object",
@@ -750,28 +1049,34 @@ const componentSchemas = {
     properties: {
       ok: { type: "boolean" },
       version: stringSchema,
-      service: stringSchema
-    }
+      service: stringSchema,
+    },
   },
   ServerAdminPosture: {
     type: "object",
     additionalProperties: true,
     properties: {
       configured: { type: "boolean" },
-      count: { type: "integer", minimum: 0 }
-    }
+      count: { type: "integer", minimum: 0 },
+    },
   },
   BootstrapStatus: {
     type: "object",
     additionalProperties: true,
-    required: ["required", "userCount", "campaignCount", "publicRegistration", "serverAdmins"],
+    required: [
+      "required",
+      "userCount",
+      "campaignCount",
+      "publicRegistration",
+      "serverAdmins",
+    ],
     properties: {
       required: { type: "boolean" },
       userCount: { type: "integer", minimum: 0 },
       campaignCount: { type: "integer", minimum: 0 },
       publicRegistration: { type: "boolean" },
-      serverAdmins: schemaRef("ServerAdminPosture")
-    }
+      serverAdmins: schemaRef("ServerAdminPosture"),
+    },
   },
   BootstrapOwnerRequest: {
     type: "object",
@@ -783,8 +1088,8 @@ const componentSchemas = {
       password: { type: "string", minLength: 8 },
       campaignName: stringSchema,
       campaignDescription: stringSchema,
-      defaultSystemId: idSchema
-    }
+      defaultSystemId: idSchema,
+    },
   },
   LoginRequest: {
     type: "object",
@@ -794,9 +1099,9 @@ const componentSchemas = {
       email: { type: "string", format: "email" },
       password: stringSchema,
       mfaCode: stringSchema,
-      recoveryCode: stringSchema
+      recoveryCode: stringSchema,
     },
-    anyOf: [{ required: ["userId"] }, { required: ["email"] }]
+    anyOf: [{ required: ["userId"] }, { required: ["email"] }],
   },
   RegisterRequest: {
     type: "object",
@@ -805,8 +1110,8 @@ const componentSchemas = {
     properties: {
       email: { type: "string", format: "email" },
       displayName: { type: "string", minLength: 1, maxLength: 80 },
-      password: { type: "string", minLength: 8 }
-    }
+      password: { type: "string", minLength: 8 },
+    },
   },
   PasswordResetRequest: {
     type: "object",
@@ -814,8 +1119,8 @@ const componentSchemas = {
     required: ["email"],
     properties: {
       email: { type: "string", format: "email" },
-      returnTo: stringSchema
-    }
+      returnTo: stringSchema,
+    },
   },
   PasswordResetConfirmRequest: {
     type: "object",
@@ -823,8 +1128,8 @@ const componentSchemas = {
     required: ["token", "password"],
     properties: {
       token: stringSchema,
-      password: { type: "string", minLength: 8 }
-    }
+      password: { type: "string", minLength: 8 },
+    },
   },
   PasswordChangeRequest: {
     type: "object",
@@ -832,16 +1137,16 @@ const componentSchemas = {
     required: ["currentPassword", "newPassword"],
     properties: {
       currentPassword: stringSchema,
-      newPassword: { type: "string", minLength: 8 }
-    }
+      newPassword: { type: "string", minLength: 8 },
+    },
   },
   OkResponse: {
     type: "object",
     additionalProperties: false,
     required: ["ok"],
     properties: {
-      ok: { type: "boolean" }
-    }
+      ok: { type: "boolean" },
+    },
   },
   PublicUser: {
     type: "object",
@@ -854,9 +1159,9 @@ const componentSchemas = {
       serverAdmin: { type: "boolean" },
       disabledAt: { type: "string", format: "date-time" },
       mfa: {
-        $ref: "#/components/schemas/PublicMfaInfo"
-      }
-    }
+        $ref: "#/components/schemas/PublicMfaInfo",
+      },
+    },
   },
   PublicMfaInfo: {
     type: "object",
@@ -867,8 +1172,8 @@ const componentSchemas = {
       totpPending: { type: "boolean" },
       recoveryCodeCount: { type: "integer", minimum: 0 },
       enabledAt: { type: "string", format: "date-time" },
-      lastVerifiedAt: { type: "string", format: "date-time" }
-    }
+      lastVerifiedAt: { type: "string", format: "date-time" },
+    },
   },
   UserSession: {
     type: "object",
@@ -879,15 +1184,15 @@ const componentSchemas = {
       userId: idSchema,
       activeOrganizationId: idSchema,
       expiresAt: { type: "string", format: "date-time" },
-      lastSeenAt: { type: "string", format: "date-time" }
-    }
+      lastSeenAt: { type: "string", format: "date-time" },
+    },
   },
   MfaTotpEnrollRequest: {
     type: "object",
     additionalProperties: false,
     properties: {
-      currentPassword: stringSchema
-    }
+      currentPassword: stringSchema,
+    },
   },
   MfaTotpEnrollResponse: {
     type: "object",
@@ -896,16 +1201,16 @@ const componentSchemas = {
     properties: {
       secret: stringSchema,
       otpauthUrl: stringSchema,
-      mfa: schemaRef("PublicMfaInfo")
-    }
+      mfa: schemaRef("PublicMfaInfo"),
+    },
   },
   MfaTotpConfirmRequest: {
     type: "object",
     additionalProperties: false,
     required: ["code"],
     properties: {
-      code: stringSchema
-    }
+      code: stringSchema,
+    },
   },
   MfaTotpConfirmResponse: {
     type: "object",
@@ -914,8 +1219,8 @@ const componentSchemas = {
     properties: {
       recoveryCodes: arrayOf(stringSchema),
       mfa: schemaRef("PublicMfaInfo"),
-      user: schemaRef("PublicUser")
-    }
+      user: schemaRef("PublicUser"),
+    },
   },
   MfaTotpDisableRequest: {
     type: "object",
@@ -923,8 +1228,8 @@ const componentSchemas = {
     properties: {
       currentPassword: stringSchema,
       mfaCode: stringSchema,
-      recoveryCode: stringSchema
-    }
+      recoveryCode: stringSchema,
+    },
   },
   MfaTotpDisableResponse: {
     type: "object",
@@ -932,8 +1237,8 @@ const componentSchemas = {
     required: ["mfa", "user"],
     properties: {
       mfa: schemaRef("PublicMfaInfo"),
-      user: schemaRef("PublicUser")
-    }
+      user: schemaRef("PublicUser"),
+    },
   },
   OidcPublicConfig: {
     type: "object",
@@ -945,15 +1250,15 @@ const componentSchemas = {
       clientId: stringSchema,
       scope: stringSchema,
       displayName: stringSchema,
-      redirectUri: stringSchema
-    }
+      redirectUri: stringSchema,
+    },
   },
   OidcStartRequest: {
     type: "object",
     additionalProperties: false,
     properties: {
-      returnTo: stringSchema
-    }
+      returnTo: stringSchema,
+    },
   },
   OidcStartResponse: {
     type: "object",
@@ -971,10 +1276,10 @@ const componentSchemas = {
           clientId: stringSchema,
           scope: stringSchema,
           displayName: stringSchema,
-          redirectUri: stringSchema
-        }
-      }
-    }
+          redirectUri: stringSchema,
+        },
+      },
+    },
   },
   AuthIdentity: {
     type: "object",
@@ -986,8 +1291,8 @@ const componentSchemas = {
       provider: { type: "string", enum: ["oidc"] },
       issuer: stringSchema,
       subject: stringSchema,
-      email: { type: "string", format: "email" }
-    }
+      email: { type: "string", format: "email" },
+    },
   },
   OidcCallbackResponse: {
     allOf: [
@@ -996,10 +1301,10 @@ const componentSchemas = {
         type: "object",
         additionalProperties: true,
         properties: {
-          identity: schemaRef("AuthIdentity")
-        }
-      }
-    ]
+          identity: schemaRef("AuthIdentity"),
+        },
+      },
+    ],
   },
   CampaignMember: {
     type: "object",
@@ -1009,10 +1314,21 @@ const componentSchemas = {
       ...idTimestampProperties,
       campaignId: idSchema,
       userId: idSchema,
-      role: { type: "string", enum: ["owner", "gm", "assistant_gm", "player", "observer", "plugin", "ai_assistant"] },
+      role: {
+        type: "string",
+        enum: [
+          "owner",
+          "gm",
+          "assistant_gm",
+          "player",
+          "observer",
+          "plugin",
+          "ai_assistant",
+        ],
+      },
       user: schemaRef("CampaignMemberUser"),
-      permissions: arrayOf(stringSchema)
-    }
+      permissions: arrayOf(stringSchema),
+    },
   },
   CampaignMemberUser: {
     type: "object",
@@ -1021,25 +1337,40 @@ const componentSchemas = {
     properties: {
       id: idSchema,
       displayName: stringSchema,
-      email: { type: "string", format: "email" }
-    }
+      email: { type: "string", format: "email" },
+    },
   },
   CampaignInvite: {
     type: "object",
     additionalProperties: false,
-    required: ["id", "campaignId", "role", "invitedByUserId", "expiresAt", "createdAt", "updatedAt", "status"],
+    required: [
+      "id",
+      "campaignId",
+      "role",
+      "invitedByUserId",
+      "expiresAt",
+      "createdAt",
+      "updatedAt",
+      "status",
+    ],
     properties: {
       ...idTimestampProperties,
       campaignId: idSchema,
       email: { type: "string", format: "email" },
-      role: { type: "string", enum: ["gm", "assistant_gm", "player", "observer"] },
+      role: {
+        type: "string",
+        enum: ["gm", "assistant_gm", "player", "observer"],
+      },
       invitedByUserId: idSchema,
       acceptedByUserId: idSchema,
       acceptedAt: { type: "string", format: "date-time" },
       expiresAt: { type: "string", format: "date-time" },
       revokedAt: { type: "string", format: "date-time" },
-      status: { type: "string", enum: ["pending", "accepted", "expired", "revoked"] }
-    }
+      status: {
+        type: "string",
+        enum: ["pending", "accepted", "expired", "revoked"],
+      },
+    },
   },
   OrganizationInvite: {
     allOf: [
@@ -1055,21 +1386,24 @@ const componentSchemas = {
             required: ["id", "name"],
             properties: {
               id: idSchema,
-              name: stringSchema
-            }
-          }
-        }
-      }
-    ]
+              name: stringSchema,
+            },
+          },
+        },
+      },
+    ],
   },
   CampaignInviteCreateRequest: {
     type: "object",
     additionalProperties: false,
     properties: {
       email: { type: "string", format: "email" },
-      role: { type: "string", enum: ["gm", "assistant_gm", "player", "observer"] },
-      expiresInDays: { type: "integer", minimum: 1, maximum: 30 }
-    }
+      role: {
+        type: "string",
+        enum: ["gm", "assistant_gm", "player", "observer"],
+      },
+      expiresInDays: { type: "integer", minimum: 1, maximum: 30 },
+    },
   },
   OrganizationInviteCreateRequest: {
     type: "object",
@@ -1078,9 +1412,12 @@ const componentSchemas = {
     properties: {
       campaignId: idSchema,
       email: { type: "string", format: "email" },
-      role: { type: "string", enum: ["gm", "assistant_gm", "player", "observer"] },
-      expiresInDays: { type: "integer", minimum: 1, maximum: 30 }
-    }
+      role: {
+        type: "string",
+        enum: ["gm", "assistant_gm", "player", "observer"],
+      },
+      expiresInDays: { type: "integer", minimum: 1, maximum: 30 },
+    },
   },
   CampaignInviteCreateResponse: {
     type: "object",
@@ -1089,8 +1426,8 @@ const componentSchemas = {
     properties: {
       invite: schemaRef("CampaignInvite"),
       token: { type: "string", pattern: "^oti_" },
-      acceptUrl: stringSchema
-    }
+      acceptUrl: stringSchema,
+    },
   },
   InviteAcceptRequest: {
     type: "object",
@@ -1101,8 +1438,8 @@ const componentSchemas = {
       userId: idSchema,
       email: { type: "string", format: "email" },
       displayName: { type: "string", minLength: 1, maxLength: 80 },
-      password: { type: "string", minLength: 8 }
-    }
+      password: { type: "string", minLength: 8 },
+    },
   },
   InviteAcceptResponse: {
     allOf: [
@@ -1114,10 +1451,10 @@ const componentSchemas = {
         properties: {
           invite: schemaRef("CampaignInvite"),
           membership: schemaRef("CampaignMember"),
-          campaign: schemaRef("Campaign")
-        }
-      }
-    ]
+          campaign: schemaRef("Campaign"),
+        },
+      },
+    ],
   },
   ScimMeta: {
     type: "object",
@@ -1127,8 +1464,8 @@ const componentSchemas = {
       resourceType: { type: "string", enum: ["User", "Group"] },
       created: { type: "string", format: "date-time" },
       lastModified: { type: "string", format: "date-time" },
-      location: stringSchema
-    }
+      location: stringSchema,
+    },
   },
   ScimEmail: {
     type: "object",
@@ -1137,20 +1474,28 @@ const componentSchemas = {
     properties: {
       value: { type: "string", format: "email" },
       primary: { type: "boolean" },
-      type: stringSchema
-    }
+      type: stringSchema,
+    },
   },
   ScimUserName: {
     type: "object",
     additionalProperties: false,
     properties: {
-      formatted: stringSchema
-    }
+      formatted: stringSchema,
+    },
   },
   ScimUser: {
     type: "object",
     additionalProperties: true,
-    required: ["schemas", "id", "userName", "displayName", "active", "emails", "meta"],
+    required: [
+      "schemas",
+      "id",
+      "userName",
+      "displayName",
+      "active",
+      "emails",
+      "meta",
+    ],
     properties: {
       schemas: arrayOf(stringSchema),
       id: idSchema,
@@ -1160,8 +1505,8 @@ const componentSchemas = {
       name: schemaRef("ScimUserName"),
       active: { type: "boolean" },
       emails: arrayOf(schemaRef("ScimEmail")),
-      meta: schemaRef("ScimMeta")
-    }
+      meta: schemaRef("ScimMeta"),
+    },
   },
   ScimUserInput: {
     type: "object",
@@ -1172,8 +1517,8 @@ const componentSchemas = {
       displayName: stringSchema,
       name: schemaRef("ScimUserName"),
       emails: arrayOf(schemaRef("ScimEmail")),
-      active: { type: "boolean" }
-    }
+      active: { type: "boolean" },
+    },
   },
   ScimMember: {
     type: "object",
@@ -1182,8 +1527,8 @@ const componentSchemas = {
     properties: {
       value: idSchema,
       $ref: stringSchema,
-      display: stringSchema
-    }
+      display: stringSchema,
+    },
   },
   ScimGroup: {
     type: "object",
@@ -1195,8 +1540,8 @@ const componentSchemas = {
       externalId: stringSchema,
       displayName: stringSchema,
       members: arrayOf(schemaRef("ScimMember")),
-      meta: schemaRef("ScimMeta")
-    }
+      meta: schemaRef("ScimMeta"),
+    },
   },
   ScimGroupInput: {
     type: "object",
@@ -1204,18 +1549,21 @@ const componentSchemas = {
     properties: {
       displayName: stringSchema,
       externalId: stringSchema,
-      members: arrayOf(schemaRef("ScimMember"))
-    }
+      members: arrayOf(schemaRef("ScimMember")),
+    },
   },
   ScimPatchOperation: {
     type: "object",
     additionalProperties: true,
     required: ["op"],
     properties: {
-      op: { type: "string", enum: ["add", "replace", "remove", "Add", "Replace", "Remove"] },
+      op: {
+        type: "string",
+        enum: ["add", "replace", "remove", "Add", "Replace", "Remove"],
+      },
       path: stringSchema,
-      value: {}
-    }
+      value: {},
+    },
   },
   ScimPatchRequest: {
     type: "object",
@@ -1223,40 +1571,66 @@ const componentSchemas = {
     required: ["Operations"],
     properties: {
       schemas: arrayOf(stringSchema),
-      Operations: arrayOf(schemaRef("ScimPatchOperation"))
-    }
+      Operations: arrayOf(schemaRef("ScimPatchOperation")),
+    },
   },
   ScimUserListResponse: {
     type: "object",
     additionalProperties: false,
-    required: ["schemas", "totalResults", "startIndex", "itemsPerPage", "Resources"],
+    required: [
+      "schemas",
+      "totalResults",
+      "startIndex",
+      "itemsPerPage",
+      "Resources",
+    ],
     properties: {
       schemas: arrayOf(stringSchema),
       totalResults: { type: "integer", minimum: 0 },
       startIndex: { type: "integer", minimum: 1 },
       itemsPerPage: { type: "integer", minimum: 0 },
-      Resources: arrayOf(schemaRef("ScimUser"))
-    }
+      Resources: arrayOf(schemaRef("ScimUser")),
+    },
   },
   ScimGroupListResponse: {
     type: "object",
     additionalProperties: false,
-    required: ["schemas", "totalResults", "startIndex", "itemsPerPage", "Resources"],
+    required: [
+      "schemas",
+      "totalResults",
+      "startIndex",
+      "itemsPerPage",
+      "Resources",
+    ],
     properties: {
       schemas: arrayOf(stringSchema),
       totalResults: { type: "integer", minimum: 0 },
       startIndex: { type: "integer", minimum: 1 },
       itemsPerPage: { type: "integer", minimum: 0 },
-      Resources: arrayOf(schemaRef("ScimGroup"))
-    }
+      Resources: arrayOf(schemaRef("ScimGroup")),
+    },
   },
   ScimServiceProviderConfig: {
     type: "object",
     additionalProperties: true,
-    required: ["schemas", "patch", "bulk", "filter", "changePassword", "sort", "etag", "authenticationSchemes"],
+    required: [
+      "schemas",
+      "patch",
+      "bulk",
+      "filter",
+      "changePassword",
+      "sort",
+      "etag",
+      "authenticationSchemes",
+    ],
     properties: {
       schemas: arrayOf(stringSchema),
-      patch: { type: "object", additionalProperties: false, required: ["supported"], properties: { supported: { type: "boolean" } } },
+      patch: {
+        type: "object",
+        additionalProperties: false,
+        required: ["supported"],
+        properties: { supported: { type: "boolean" } },
+      },
       bulk: {
         type: "object",
         additionalProperties: false,
@@ -1264,8 +1638,8 @@ const componentSchemas = {
         properties: {
           supported: { type: "boolean" },
           maxOperations: { type: "integer", minimum: 0 },
-          maxPayloadSize: { type: "integer", minimum: 0 }
-        }
+          maxPayloadSize: { type: "integer", minimum: 0 },
+        },
       },
       filter: {
         type: "object",
@@ -1273,12 +1647,27 @@ const componentSchemas = {
         required: ["supported", "maxResults"],
         properties: {
           supported: { type: "boolean" },
-          maxResults: { type: "integer", minimum: 0 }
-        }
+          maxResults: { type: "integer", minimum: 0 },
+        },
       },
-      changePassword: { type: "object", additionalProperties: false, required: ["supported"], properties: { supported: { type: "boolean" } } },
-      sort: { type: "object", additionalProperties: false, required: ["supported"], properties: { supported: { type: "boolean" } } },
-      etag: { type: "object", additionalProperties: false, required: ["supported"], properties: { supported: { type: "boolean" } } },
+      changePassword: {
+        type: "object",
+        additionalProperties: false,
+        required: ["supported"],
+        properties: { supported: { type: "boolean" } },
+      },
+      sort: {
+        type: "object",
+        additionalProperties: false,
+        required: ["supported"],
+        properties: { supported: { type: "boolean" } },
+      },
+      etag: {
+        type: "object",
+        additionalProperties: false,
+        required: ["supported"],
+        properties: { supported: { type: "boolean" } },
+      },
       authenticationSchemes: arrayOf({
         type: "object",
         additionalProperties: true,
@@ -1286,10 +1675,10 @@ const componentSchemas = {
         properties: {
           type: stringSchema,
           name: stringSchema,
-          primary: { type: "boolean" }
-        }
-      })
-    }
+          primary: { type: "boolean" },
+        },
+      }),
+    },
   },
   ScimError: {
     type: "object",
@@ -1298,8 +1687,8 @@ const componentSchemas = {
     properties: {
       schemas: arrayOf(stringSchema),
       status: stringSchema,
-      detail: stringSchema
-    }
+      detail: stringSchema,
+    },
   },
   AdminScimGroupSnapshot: {
     type: "object",
@@ -1309,8 +1698,8 @@ const componentSchemas = {
       id: idSchema,
       displayName: stringSchema,
       externalId: stringSchema,
-      memberUserIds: arrayOf(idSchema)
-    }
+      memberUserIds: arrayOf(idSchema),
+    },
   },
   AdminScimGroupRoleMapping: {
     type: "object",
@@ -1322,9 +1711,12 @@ const componentSchemas = {
       groupExternalId: stringSchema,
       groupDisplayName: stringSchema,
       campaignId: idSchema,
-      role: { type: "string", enum: ["gm", "assistant_gm", "player", "observer"] },
-      group: schemaRef("AdminScimGroupSnapshot")
-    }
+      role: {
+        type: "string",
+        enum: ["gm", "assistant_gm", "player", "observer"],
+      },
+      group: schemaRef("AdminScimGroupSnapshot"),
+    },
   },
   AdminScimGroupRoleMappingInput: {
     type: "object",
@@ -1335,20 +1727,29 @@ const componentSchemas = {
       groupExternalId: stringSchema,
       groupDisplayName: stringSchema,
       campaignId: idSchema,
-      role: { type: "string", enum: ["gm", "assistant_gm", "player", "observer"] }
-    }
+      role: {
+        type: "string",
+        enum: ["gm", "assistant_gm", "player", "observer"],
+      },
+    },
   },
   ScimGroupRoleSyncResult: {
     type: "object",
     additionalProperties: false,
-    required: ["matchedGroups", "createdMemberships", "updatedMemberships", "removedMemberships", "preservedManualMemberships"],
+    required: [
+      "matchedGroups",
+      "createdMemberships",
+      "updatedMemberships",
+      "removedMemberships",
+      "preservedManualMemberships",
+    ],
     properties: {
       matchedGroups: { type: "integer", minimum: 0 },
       createdMemberships: { type: "integer", minimum: 0 },
       updatedMemberships: { type: "integer", minimum: 0 },
       removedMemberships: { type: "integer", minimum: 0 },
-      preservedManualMemberships: { type: "integer", minimum: 0 }
-    }
+      preservedManualMemberships: { type: "integer", minimum: 0 },
+    },
   },
   AdminScimGroupRoleMappingCreateResponse: {
     type: "object",
@@ -1356,16 +1757,16 @@ const componentSchemas = {
     required: ["mapping", "sync"],
     properties: {
       mapping: schemaRef("AdminScimGroupRoleMapping"),
-      sync: schemaRef("ScimGroupRoleSyncResult")
-    }
+      sync: schemaRef("ScimGroupRoleSyncResult"),
+    },
   },
   AdminScimGroupRoleMappingDeleteResponse: {
     type: "object",
     additionalProperties: false,
     required: ["removedMemberships"],
     properties: {
-      removedMemberships: { type: "integer", minimum: 0 }
-    }
+      removedMemberships: { type: "integer", minimum: 0 },
+    },
   },
   AdminUser: {
     allOf: [
@@ -1373,7 +1774,12 @@ const componentSchemas = {
       {
         type: "object",
         additionalProperties: true,
-        required: ["disabled", "membershipCount", "identityCount", "sessionCount"],
+        required: [
+          "disabled",
+          "membershipCount",
+          "identityCount",
+          "sessionCount",
+        ],
         properties: {
           disabled: { type: "boolean" },
           disabledReason: stringSchema,
@@ -1382,10 +1788,10 @@ const componentSchemas = {
           passwordResetRequired: { type: "boolean" },
           membershipCount: { type: "integer", minimum: 0 },
           identityCount: { type: "integer", minimum: 0 },
-          sessionCount: { type: "integer", minimum: 0 }
-        }
-      }
-    ]
+          sessionCount: { type: "integer", minimum: 0 },
+        },
+      },
+    ],
   },
   AdminUserPatchRequest: {
     type: "object",
@@ -1395,8 +1801,8 @@ const componentSchemas = {
       email: { anyOf: [{ type: "string", format: "email" }, { type: "null" }] },
       disabled: { type: "boolean" },
       disabledReason: stringSchema,
-      passwordResetRequired: { type: "boolean" }
-    }
+      passwordResetRequired: { type: "boolean" },
+    },
   },
   PublicPasswordResetToken: {
     type: "object",
@@ -1408,13 +1814,22 @@ const componentSchemas = {
       email: { type: "string", format: "email" },
       expiresAt: { type: "string", format: "date-time" },
       usedAt: { type: "string", format: "date-time" },
-      requestedByUserId: idSchema
-    }
+      requestedByUserId: idSchema,
+    },
   },
   EmailOutboxMessage: {
     type: "object",
     additionalProperties: false,
-    required: ["id", "to", "subject", "text", "status", "provider", "createdAt", "updatedAt"],
+    required: [
+      "id",
+      "to",
+      "subject",
+      "text",
+      "status",
+      "provider",
+      "createdAt",
+      "updatedAt",
+    ],
     properties: {
       ...idTimestampProperties,
       to: { type: "string", format: "email" },
@@ -1425,15 +1840,15 @@ const componentSchemas = {
       provider: { type: "string", enum: ["outbox", "webhook"] },
       sentAt: { type: "string", format: "date-time" },
       error: stringSchema,
-      metadata: { type: "object", additionalProperties: { type: "string" } }
-    }
+      metadata: { type: "object", additionalProperties: { type: "string" } },
+    },
   },
   AdminUserPasswordResetRequest: {
     type: "object",
     additionalProperties: false,
     properties: {
-      returnTo: stringSchema
-    }
+      returnTo: stringSchema,
+    },
   },
   AdminUserPasswordResetResponse: {
     type: "object",
@@ -1441,8 +1856,8 @@ const componentSchemas = {
     required: ["reset", "email"],
     properties: {
       reset: schemaRef("PublicPasswordResetToken"),
-      email: schemaRef("EmailOutboxMessage")
-    }
+      email: schemaRef("EmailOutboxMessage"),
+    },
   },
   AdminPasswordResetPruneRequest: {
     type: "object",
@@ -1450,13 +1865,23 @@ const componentSchemas = {
     properties: {
       dryRun: { type: "boolean" },
       includeExpired: { type: "boolean" },
-      includeUsed: { type: "boolean" }
-    }
+      includeUsed: { type: "boolean" },
+    },
   },
   AdminPasswordResetPruneResult: {
     type: "object",
     additionalProperties: false,
-    required: ["generatedAt", "dryRun", "includeExpired", "includeUsed", "matched", "pruned", "expiredRemaining", "usedRemaining", "resets"],
+    required: [
+      "generatedAt",
+      "dryRun",
+      "includeExpired",
+      "includeUsed",
+      "matched",
+      "pruned",
+      "expiredRemaining",
+      "usedRemaining",
+      "resets",
+    ],
     properties: {
       generatedAt: { type: "string", format: "date-time" },
       dryRun: { type: "boolean" },
@@ -1466,8 +1891,8 @@ const componentSchemas = {
       pruned: { type: "integer", minimum: 0 },
       expiredRemaining: { type: "integer", minimum: 0 },
       usedRemaining: { type: "integer", minimum: 0 },
-      resets: arrayOf(schemaRef("PublicPasswordResetToken"))
-    }
+      resets: arrayOf(schemaRef("PublicPasswordResetToken")),
+    },
   },
   AdminSession: {
     allOf: [
@@ -1477,30 +1902,38 @@ const componentSchemas = {
         additionalProperties: true,
         required: ["user"],
         properties: {
-          user: schemaRef("PublicUser")
-        }
-      }
-    ]
+          user: schemaRef("PublicUser"),
+        },
+      },
+    ],
   },
   AdminSessionRevokeResponse: {
     type: "object",
     additionalProperties: false,
     required: ["revoked"],
     properties: {
-      revoked: { type: "integer", minimum: 0 }
-    }
+      revoked: { type: "integer", minimum: 0 },
+    },
   },
   AdminSessionPruneRequest: {
     type: "object",
     additionalProperties: false,
     properties: {
-      dryRun: { type: "boolean" }
-    }
+      dryRun: { type: "boolean" },
+    },
   },
   AdminSessionPruneResult: {
     type: "object",
     additionalProperties: false,
-    required: ["generatedAt", "dryRun", "matched", "pruned", "activeRemaining", "expiredRemaining", "sessions"],
+    required: [
+      "generatedAt",
+      "dryRun",
+      "matched",
+      "pruned",
+      "activeRemaining",
+      "expiredRemaining",
+      "sessions",
+    ],
     properties: {
       generatedAt: { type: "string", format: "date-time" },
       dryRun: { type: "boolean" },
@@ -1508,12 +1941,12 @@ const componentSchemas = {
       pruned: { type: "integer", minimum: 0 },
       activeRemaining: { type: "integer", minimum: 0 },
       expiredRemaining: { type: "integer", minimum: 0 },
-      sessions: arrayOf(schemaRef("UserSession"))
-    }
+      sessions: arrayOf(schemaRef("UserSession")),
+    },
   },
   AdminSessionRiskReason: {
     type: "string",
-    enum: ["expired", "stale", "disabled_user", "unknown_user"]
+    enum: ["expired", "stale", "disabled_user", "unknown_user"],
   },
   AdminSessionRiskItem: {
     type: "object",
@@ -1530,15 +1963,15 @@ const componentSchemas = {
             required: ["id", "displayName"],
             properties: {
               id: idSchema,
-              displayName: stringSchema
-            }
-          }
-        ]
+              displayName: stringSchema,
+            },
+          },
+        ],
       },
       reasons: arrayOf(schemaRef("AdminSessionRiskReason")),
       lastSeenAgeDays: { type: "integer", minimum: 0 },
-      expiresInMs: { type: "integer" }
-    }
+      expiresInMs: { type: "integer" },
+    },
   },
   AdminSessionRiskReport: {
     type: "object",
@@ -1550,7 +1983,15 @@ const componentSchemas = {
       totals: {
         type: "object",
         additionalProperties: false,
-        required: ["totalSessionCount", "activeSessionCount", "expiredSessionCount", "staleSessionCount", "disabledUserSessionCount", "unknownUserSessionCount", "riskSessionCount"],
+        required: [
+          "totalSessionCount",
+          "activeSessionCount",
+          "expiredSessionCount",
+          "staleSessionCount",
+          "disabledUserSessionCount",
+          "unknownUserSessionCount",
+          "riskSessionCount",
+        ],
         properties: {
           totalSessionCount: { type: "integer", minimum: 0 },
           activeSessionCount: { type: "integer", minimum: 0 },
@@ -1558,11 +1999,11 @@ const componentSchemas = {
           staleSessionCount: { type: "integer", minimum: 0 },
           disabledUserSessionCount: { type: "integer", minimum: 0 },
           unknownUserSessionCount: { type: "integer", minimum: 0 },
-          riskSessionCount: { type: "integer", minimum: 0 }
-        }
+          riskSessionCount: { type: "integer", minimum: 0 },
+        },
       },
-      sessions: arrayOf(schemaRef("AdminSessionRiskItem"))
-    }
+      sessions: arrayOf(schemaRef("AdminSessionRiskItem")),
+    },
   },
   AdminSessionRiskRevokeRequest: {
     type: "object",
@@ -1570,13 +2011,22 @@ const componentSchemas = {
     properties: {
       staleDays: { type: "integer", minimum: 1, maximum: 365 },
       dryRun: { type: "boolean" },
-      reasons: arrayOf(schemaRef("AdminSessionRiskReason"))
-    }
+      reasons: arrayOf(schemaRef("AdminSessionRiskReason")),
+    },
   },
   AdminSessionRiskRevokeResult: {
     type: "object",
     additionalProperties: false,
-    required: ["generatedAt", "staleDays", "dryRun", "reasons", "matched", "revoked", "remainingRiskSessionCount", "sessions"],
+    required: [
+      "generatedAt",
+      "staleDays",
+      "dryRun",
+      "reasons",
+      "matched",
+      "revoked",
+      "remainingRiskSessionCount",
+      "sessions",
+    ],
     properties: {
       generatedAt: { type: "string", format: "date-time" },
       staleDays: { type: "integer", minimum: 1, maximum: 365 },
@@ -1585,13 +2035,21 @@ const componentSchemas = {
       matched: { type: "integer", minimum: 0 },
       revoked: { type: "integer", minimum: 0 },
       remainingRiskSessionCount: { type: "integer", minimum: 0 },
-      sessions: arrayOf(schemaRef("AdminSessionRiskItem"))
-    }
+      sessions: arrayOf(schemaRef("AdminSessionRiskItem")),
+    },
   },
   AdminAuthRuntimeConfig: {
     type: "object",
     additionalProperties: true,
-    required: ["nodeEnv", "legacyUserHeader", "authUrls", "sessions", "oidc", "scim", "serverAdmins"],
+    required: [
+      "nodeEnv",
+      "legacyUserHeader",
+      "authUrls",
+      "sessions",
+      "oidc",
+      "scim",
+      "serverAdmins",
+    ],
     properties: {
       nodeEnv: stringSchema,
       legacyUserHeader: { type: "object", additionalProperties: true },
@@ -1599,13 +2057,24 @@ const componentSchemas = {
       sessions: { type: "object", additionalProperties: true },
       oidc: { type: "object", additionalProperties: true },
       scim: { type: "object", additionalProperties: true },
-      serverAdmins: { type: "object", additionalProperties: true }
-    }
+      serverAdmins: { type: "object", additionalProperties: true },
+    },
   },
   AdminAuthOperations: {
     type: "object",
     additionalProperties: true,
-    required: ["generatedAt", "actionRequired", "actionReasons", "remediationQueue", "runtime", "users", "sessions", "passwordResets", "emailOutbox", "identities"],
+    required: [
+      "generatedAt",
+      "actionRequired",
+      "actionReasons",
+      "remediationQueue",
+      "runtime",
+      "users",
+      "sessions",
+      "passwordResets",
+      "emailOutbox",
+      "identities",
+    ],
     properties: {
       generatedAt: { type: "string", format: "date-time" },
       actionRequired: { type: "boolean" },
@@ -1622,21 +2091,21 @@ const componentSchemas = {
           staleDays: { type: "integer", minimum: 1, maximum: 365 },
           totals: { type: "object", additionalProperties: true },
           recentRiskSessions: arrayOf(schemaRef("AdminSessionRiskItem")),
-          cleanupOperations: { type: "object", additionalProperties: true }
-        }
+          cleanupOperations: { type: "object", additionalProperties: true },
+        },
       },
       passwordResets: { type: "object", additionalProperties: true },
       emailOutbox: { type: "object", additionalProperties: true },
-      identities: { type: "object", additionalProperties: true }
-    }
+      identities: { type: "object", additionalProperties: true },
+    },
   },
   AdminAuthTestConnectionRequest: {
     type: "object",
     additionalProperties: false,
     required: ["provider"],
     properties: {
-      provider: { type: "string", enum: ["oidc", "scim"] }
-    }
+      provider: { type: "string", enum: ["oidc", "scim"] },
+    },
   },
   AdminAuthConnectionTestResult: {
     type: "object",
@@ -1655,10 +2124,10 @@ const componentSchemas = {
           name: stringSchema,
           ok: { type: "boolean" },
           status: stringSchema,
-          message: stringSchema
-        }
-      })
-    }
+          message: stringSchema,
+        },
+      }),
+    },
   },
   AdminEmailOutboxRetryAllRequest: {
     type: "object",
@@ -1666,13 +2135,24 @@ const componentSchemas = {
     properties: {
       dryRun: { type: "boolean" },
       status: { type: "string", enum: ["pending", "failed", "retryable"] },
-      limit: { type: "integer", minimum: 1, maximum: 1000 }
-    }
+      limit: { type: "integer", minimum: 1, maximum: 1000 },
+    },
   },
   AdminEmailOutboxRetryAllResult: {
     type: "object",
     additionalProperties: false,
-    required: ["generatedAt", "dryRun", "statuses", "limit", "matched", "retried", "delivered", "failed", "skipped", "messages"],
+    required: [
+      "generatedAt",
+      "dryRun",
+      "statuses",
+      "limit",
+      "matched",
+      "retried",
+      "delivered",
+      "failed",
+      "skipped",
+      "messages",
+    ],
     properties: {
       generatedAt: { type: "string", format: "date-time" },
       dryRun: { type: "boolean" },
@@ -1683,8 +2163,8 @@ const componentSchemas = {
       delivered: { type: "integer", minimum: 0 },
       failed: { type: "integer", minimum: 0 },
       skipped: { type: "integer", minimum: 0 },
-      messages: arrayOf(schemaRef("EmailOutboxMessage"))
-    }
+      messages: arrayOf(schemaRef("EmailOutboxMessage")),
+    },
   },
   AdminAuditLogExport: {
     type: "object",
@@ -1695,8 +2175,8 @@ const componentSchemas = {
       count: { type: "integer", minimum: 0 },
       filters: { type: "object", additionalProperties: true },
       summary: { type: "object", additionalProperties: true },
-      auditLogs: arrayOf(schemaRef("AuditLog"))
-    }
+      auditLogs: arrayOf(schemaRef("AuditLog")),
+    },
   },
   AdminJobProgress: {
     type: "object",
@@ -1705,8 +2185,8 @@ const componentSchemas = {
       current: { type: "number", minimum: 0 },
       total: { type: "number", minimum: 0 },
       percent: { type: "number", minimum: 0, maximum: 100 },
-      message: { type: "string", maxLength: 240 }
-    }
+      message: { type: "string", maxLength: 240 },
+    },
   },
   AdminJobLogEntry: {
     type: "object",
@@ -1716,20 +2196,44 @@ const componentSchemas = {
       at: { type: "string", format: "date-time" },
       level: { type: "string", enum: ["info", "warning", "error"] },
       message: stringSchema,
-      details: looseObjectSchema
-    }
+      details: looseObjectSchema,
+    },
   },
   AdminJob: {
     type: "object",
     additionalProperties: true,
-    required: ["id", "type", "status", "payload", "attempts", "maxAttempts", "queuedAt", "logs", "createdAt", "updatedAt"],
+    required: [
+      "id",
+      "type",
+      "status",
+      "payload",
+      "attempts",
+      "maxAttempts",
+      "queuedAt",
+      "logs",
+      "createdAt",
+      "updatedAt",
+    ],
     properties: {
       ...idTimestampProperties,
       type: {
         type: "string",
-        enum: ["campaign.export", "campaign.import", "asset.storage.migrate", "asset.storage.cleanup", "storage.backup", "storage.restoreDrill", "ai.memory.extract", "ai.session.recap", "report.bundle"]
+        enum: [
+          "campaign.export",
+          "campaign.import",
+          "asset.storage.migrate",
+          "asset.storage.cleanup",
+          "storage.backup",
+          "storage.restoreDrill",
+          "ai.memory.extract",
+          "ai.session.recap",
+          "report.bundle",
+        ],
       },
-      status: { type: "string", enum: ["queued", "running", "succeeded", "failed", "cancelled"] },
+      status: {
+        type: "string",
+        enum: ["queued", "running", "succeeded", "failed", "cancelled"],
+      },
       payload: looseObjectSchema,
       output: looseObjectSchema,
       error: stringSchema,
@@ -1746,8 +2250,8 @@ const componentSchemas = {
       lastHeartbeatAt: { type: "string", format: "date-time" },
       createdByUserId: idSchema,
       updatedByUserId: idSchema,
-      logs: arrayOf(schemaRef("AdminJobLogEntry"))
-    }
+      logs: arrayOf(schemaRef("AdminJobLogEntry")),
+    },
   },
   AdminJobCreateRequest: {
     type: "object",
@@ -1756,11 +2260,21 @@ const componentSchemas = {
     properties: {
       type: {
         type: "string",
-        enum: ["campaign.export", "campaign.import", "asset.storage.migrate", "asset.storage.cleanup", "storage.backup", "storage.restoreDrill", "ai.memory.extract", "ai.session.recap", "report.bundle"]
+        enum: [
+          "campaign.export",
+          "campaign.import",
+          "asset.storage.migrate",
+          "asset.storage.cleanup",
+          "storage.backup",
+          "storage.restoreDrill",
+          "ai.memory.extract",
+          "ai.session.recap",
+          "report.bundle",
+        ],
       },
       payload: looseObjectSchema,
-      maxAttempts: { type: "integer", minimum: 1, maximum: 10 }
-    }
+      maxAttempts: { type: "integer", minimum: 1, maximum: 10 },
+    },
   },
   AdminJobLeaseRequest: {
     type: "object",
@@ -1770,15 +2284,28 @@ const componentSchemas = {
       leaseSeconds: { type: "integer", minimum: 1, maximum: 3600 },
       types: arrayOf({
         type: "string",
-        enum: ["campaign.export", "campaign.import", "asset.storage.migrate", "asset.storage.cleanup", "storage.backup", "storage.restoreDrill", "ai.memory.extract", "ai.session.recap", "report.bundle"]
-      })
-    }
+        enum: [
+          "campaign.export",
+          "campaign.import",
+          "asset.storage.migrate",
+          "asset.storage.cleanup",
+          "storage.backup",
+          "storage.restoreDrill",
+          "ai.memory.extract",
+          "ai.session.recap",
+          "report.bundle",
+        ],
+      }),
+    },
   },
   AdminJobPatchRequest: {
     type: "object",
     additionalProperties: false,
     properties: {
-      status: { type: "string", enum: ["queued", "running", "succeeded", "failed", "cancelled"] },
+      status: {
+        type: "string",
+        enum: ["queued", "running", "succeeded", "failed", "cancelled"],
+      },
       progress: schemaRef("AdminJobProgress"),
       output: looseObjectSchema,
       error: stringSchema,
@@ -1789,10 +2316,10 @@ const componentSchemas = {
         properties: {
           level: { type: "string", enum: ["info", "warning", "error"] },
           message: stringSchema,
-          details: looseObjectSchema
-        }
-      }
-    }
+          details: looseObjectSchema,
+        },
+      },
+    },
   },
   AdminJobHeartbeatRequest: {
     type: "object",
@@ -1808,29 +2335,50 @@ const componentSchemas = {
         properties: {
           level: { type: "string", enum: ["info", "warning", "error"] },
           message: stringSchema,
-          details: looseObjectSchema
-        }
-      }
-    }
+          details: looseObjectSchema,
+        },
+      },
+    },
   },
   AdminJobCancelRequest: {
     type: "object",
     additionalProperties: false,
     properties: {
-      reason: { type: "string", maxLength: 240 }
-    }
+      reason: { type: "string", maxLength: 240 },
+    },
   },
   AdminJobOperationSample: {
     type: "object",
     additionalProperties: false,
-    required: ["id", "type", "status", "attempts", "maxAttempts", "queuedAt", "updatedAt"],
+    required: [
+      "id",
+      "type",
+      "status",
+      "attempts",
+      "maxAttempts",
+      "queuedAt",
+      "updatedAt",
+    ],
     properties: {
       id: idSchema,
       type: {
         type: "string",
-        enum: ["campaign.export", "campaign.import", "asset.storage.migrate", "asset.storage.cleanup", "storage.backup", "storage.restoreDrill", "ai.memory.extract", "ai.session.recap", "report.bundle"]
+        enum: [
+          "campaign.export",
+          "campaign.import",
+          "asset.storage.migrate",
+          "asset.storage.cleanup",
+          "storage.backup",
+          "storage.restoreDrill",
+          "ai.memory.extract",
+          "ai.session.recap",
+          "report.bundle",
+        ],
       },
-      status: { type: "string", enum: ["queued", "running", "succeeded", "failed", "cancelled"] },
+      status: {
+        type: "string",
+        enum: ["queued", "running", "succeeded", "failed", "cancelled"],
+      },
       attempts: { type: "integer", minimum: 0 },
       maxAttempts: { type: "integer", minimum: 1 },
       queuedAt: { type: "string", format: "date-time" },
@@ -1838,13 +2386,24 @@ const componentSchemas = {
       leasedBy: stringSchema,
       leaseExpiresAt: { type: "string", format: "date-time" },
       lastHeartbeatAt: { type: "string", format: "date-time" },
-      error: stringSchema
-    }
+      error: stringSchema,
+    },
   },
   AdminJobOperations: {
     type: "object",
     additionalProperties: false,
-    required: ["generatedAt", "actionRequired", "actionReasons", "thresholds", "totals", "queue", "leases", "failures", "throughput", "remediationQueue"],
+    required: [
+      "generatedAt",
+      "actionRequired",
+      "actionReasons",
+      "thresholds",
+      "totals",
+      "queue",
+      "leases",
+      "failures",
+      "throughput",
+      "remediationQueue",
+    ],
     properties: {
       generatedAt: { type: "string", format: "date-time" },
       actionRequired: { type: "boolean" },
@@ -1855,20 +2414,32 @@ const componentSchemas = {
         required: ["staleHeartbeatSeconds", "staleQueuedSeconds"],
         properties: {
           staleHeartbeatSeconds: { type: "integer", minimum: 1 },
-          staleQueuedSeconds: { type: "integer", minimum: 1 }
-        }
+          staleQueuedSeconds: { type: "integer", minimum: 1 },
+        },
       },
       totals: {
         type: "object",
         additionalProperties: false,
-        required: ["totalCount", "byStatus", "byType", "retryableCount", "exhaustedCount"],
+        required: [
+          "totalCount",
+          "byStatus",
+          "byType",
+          "retryableCount",
+          "exhaustedCount",
+        ],
         properties: {
           totalCount: { type: "integer", minimum: 0 },
-          byStatus: { type: "object", additionalProperties: { type: "integer", minimum: 0 } },
-          byType: { type: "object", additionalProperties: { type: "integer", minimum: 0 } },
+          byStatus: {
+            type: "object",
+            additionalProperties: { type: "integer", minimum: 0 },
+          },
+          byType: {
+            type: "object",
+            additionalProperties: { type: "integer", minimum: 0 },
+          },
           retryableCount: { type: "integer", minimum: 0 },
-          exhaustedCount: { type: "integer", minimum: 0 }
-        }
+          exhaustedCount: { type: "integer", minimum: 0 },
+        },
       },
       queue: {
         type: "object",
@@ -1878,13 +2449,21 @@ const componentSchemas = {
           oldestQueuedAt: { type: "string", format: "date-time" },
           maxQueueAgeSeconds: { type: "integer", minimum: 0 },
           staleQueuedCount: { type: "integer", minimum: 0 },
-          recentQueued: arrayOf(schemaRef("AdminJobOperationSample"))
-        }
+          recentQueued: arrayOf(schemaRef("AdminJobOperationSample")),
+        },
       },
       leases: {
         type: "object",
         additionalProperties: false,
-        required: ["runningCount", "leasedWorkerCount", "expiredCount", "staleHeartbeatCount", "workers", "expired", "staleHeartbeats"],
+        required: [
+          "runningCount",
+          "leasedWorkerCount",
+          "expiredCount",
+          "staleHeartbeatCount",
+          "workers",
+          "expired",
+          "staleHeartbeats",
+        ],
         properties: {
           runningCount: { type: "integer", minimum: 0 },
           leasedWorkerCount: { type: "integer", minimum: 0 },
@@ -1893,29 +2472,39 @@ const componentSchemas = {
           workers: arrayOf({
             type: "object",
             additionalProperties: false,
-            required: ["workerId", "runningCount", "expiredLeaseCount", "staleHeartbeatCount"],
+            required: [
+              "workerId",
+              "runningCount",
+              "expiredLeaseCount",
+              "staleHeartbeatCount",
+            ],
             properties: {
               workerId: stringSchema,
               runningCount: { type: "integer", minimum: 0 },
               lastHeartbeatAt: { type: "string", format: "date-time" },
               expiredLeaseCount: { type: "integer", minimum: 0 },
-              staleHeartbeatCount: { type: "integer", minimum: 0 }
-            }
+              staleHeartbeatCount: { type: "integer", minimum: 0 },
+            },
           }),
           expired: arrayOf(schemaRef("AdminJobOperationSample")),
-          staleHeartbeats: arrayOf(schemaRef("AdminJobOperationSample"))
-        }
+          staleHeartbeats: arrayOf(schemaRef("AdminJobOperationSample")),
+        },
       },
       failures: {
         type: "object",
         additionalProperties: false,
-        required: ["failedCount", "retryableCount", "exhaustedCount", "recentFailed"],
+        required: [
+          "failedCount",
+          "retryableCount",
+          "exhaustedCount",
+          "recentFailed",
+        ],
         properties: {
           failedCount: { type: "integer", minimum: 0 },
           retryableCount: { type: "integer", minimum: 0 },
           exhaustedCount: { type: "integer", minimum: 0 },
-          recentFailed: arrayOf(schemaRef("AdminJobOperationSample"))
-        }
+          recentFailed: arrayOf(schemaRef("AdminJobOperationSample")),
+        },
       },
       throughput: {
         type: "object",
@@ -1924,11 +2513,11 @@ const componentSchemas = {
         properties: {
           succeededCount: { type: "integer", minimum: 0 },
           cancelledCount: { type: "integer", minimum: 0 },
-          newestCompletedAt: { type: "string", format: "date-time" }
-        }
+          newestCompletedAt: { type: "string", format: "date-time" },
+        },
       },
-      remediationQueue: arrayOf(schemaRef("AdminOperationRemediation"))
-    }
+      remediationQueue: arrayOf(schemaRef("AdminOperationRemediation")),
+    },
   },
   AdminJobAlertRequest: {
     type: "object",
@@ -1936,15 +2525,25 @@ const componentSchemas = {
     properties: {
       dryRun: { type: "boolean" },
       force: { type: "boolean" },
-      reason: { type: "string", maxLength: 240 }
-    }
+      reason: { type: "string", maxLength: 240 },
+    },
   },
   AdminJobAlertResult: {
     type: "object",
     additionalProperties: false,
-    required: ["status", "configured", "actionRequired", "actionReasons", "remediationCount", "generatedAt"],
+    required: [
+      "status",
+      "configured",
+      "actionRequired",
+      "actionReasons",
+      "remediationCount",
+      "generatedAt",
+    ],
     properties: {
-      status: { type: "string", enum: ["dry_run", "delivered", "skipped", "failed"] },
+      status: {
+        type: "string",
+        enum: ["dry_run", "delivered", "skipped", "failed"],
+      },
       configured: { type: "boolean" },
       actionRequired: { type: "boolean" },
       actionReasons: arrayOf(stringSchema),
@@ -1953,8 +2552,8 @@ const componentSchemas = {
       deliveredAt: { type: "string", format: "date-time" },
       webhookStatus: { type: "integer", minimum: 100, maximum: 599 },
       reason: stringSchema,
-      error: stringSchema
-    }
+      error: stringSchema,
+    },
   },
   OpenApiDocument: {
     type: "object",
@@ -1964,8 +2563,8 @@ const componentSchemas = {
       openapi: stringSchema,
       info: looseObjectSchema,
       paths: looseObjectSchema,
-      components: looseObjectSchema
-    }
+      components: looseObjectSchema,
+    },
   },
   AdminOperationRemediation: {
     type: "object",
@@ -1976,13 +2575,21 @@ const componentSchemas = {
       severity: { type: "string", enum: ["warning", "error"] },
       action: stringSchema,
       affectedCount: { type: "integer", minimum: 0 },
-      samples: arrayOf(looseObjectSchema)
-    }
+      samples: arrayOf(looseObjectSchema),
+    },
   },
   AdminAiOperations: {
     type: "object",
     additionalProperties: true,
-    required: ["provider", "actionRequired", "actionReasons", "runtime", "totals", "risk", "campaigns"],
+    required: [
+      "provider",
+      "actionRequired",
+      "actionReasons",
+      "runtime",
+      "totals",
+      "risk",
+      "campaigns",
+    ],
     properties: {
       provider: looseObjectSchema,
       actionRequired: { type: "boolean" },
@@ -2003,8 +2610,8 @@ const componentSchemas = {
       campaigns: arrayOf(looseObjectSchema),
       recentEvaluations: arrayOf(schemaRef("AiEvaluationRun")),
       recentThreads: arrayOf(schemaRef("AiThread")),
-      recentToolCalls: arrayOf(looseObjectSchema)
-    }
+      recentToolCalls: arrayOf(looseObjectSchema),
+    },
   },
   AdminAiStaleProposalRejectRequest: {
     type: "object",
@@ -2014,13 +2621,22 @@ const componentSchemas = {
       campaignId: idSchema,
       limit: positiveLimitSchema,
       reason: { type: "string", maxLength: 240 },
-      includeApproved: { type: "boolean" }
-    }
+      includeApproved: { type: "boolean" },
+    },
   },
   AdminAiStaleProposalRejectResult: {
     type: "object",
     additionalProperties: true,
-    required: ["dryRun", "includeApproved", "limit", "reason", "staleReviewThresholdMs", "matched", "updated", "proposals"],
+    required: [
+      "dryRun",
+      "includeApproved",
+      "limit",
+      "reason",
+      "staleReviewThresholdMs",
+      "matched",
+      "updated",
+      "proposals",
+    ],
     properties: {
       dryRun: { type: "boolean" },
       campaignId: idSchema,
@@ -2030,8 +2646,8 @@ const componentSchemas = {
       staleReviewThresholdMs: { type: "integer", minimum: 0 },
       matched: { type: "integer", minimum: 0 },
       updated: { type: "integer", minimum: 0 },
-      proposals: arrayOf(looseObjectSchema)
-    }
+      proposals: arrayOf(looseObjectSchema),
+    },
   },
   AdminAiStaleThreadFailRequest: {
     type: "object",
@@ -2040,13 +2656,21 @@ const componentSchemas = {
       dryRun: { type: "boolean" },
       campaignId: idSchema,
       limit: positiveLimitSchema,
-      reason: { type: "string", maxLength: 240 }
-    }
+      reason: { type: "string", maxLength: 240 },
+    },
   },
   AdminAiStaleThreadFailResult: {
     type: "object",
     additionalProperties: true,
-    required: ["dryRun", "limit", "reason", "staleRunningThresholdMs", "matched", "updated", "threads"],
+    required: [
+      "dryRun",
+      "limit",
+      "reason",
+      "staleRunningThresholdMs",
+      "matched",
+      "updated",
+      "threads",
+    ],
     properties: {
       dryRun: { type: "boolean" },
       campaignId: idSchema,
@@ -2055,8 +2679,8 @@ const componentSchemas = {
       staleRunningThresholdMs: { type: "integer", minimum: 0 },
       matched: { type: "integer", minimum: 0 },
       updated: { type: "integer", minimum: 0 },
-      threads: arrayOf(looseObjectSchema)
-    }
+      threads: arrayOf(looseObjectSchema),
+    },
   },
   AdminAiStaleToolCallFailRequest: {
     type: "object",
@@ -2066,13 +2690,21 @@ const componentSchemas = {
       campaignId: idSchema,
       threadId: idSchema,
       limit: positiveLimitSchema,
-      reason: { type: "string", maxLength: 240 }
-    }
+      reason: { type: "string", maxLength: 240 },
+    },
   },
   AdminAiStaleToolCallFailResult: {
     type: "object",
     additionalProperties: true,
-    required: ["dryRun", "limit", "reason", "staleStartedToolCallThresholdMs", "matched", "updated", "toolCalls"],
+    required: [
+      "dryRun",
+      "limit",
+      "reason",
+      "staleStartedToolCallThresholdMs",
+      "matched",
+      "updated",
+      "toolCalls",
+    ],
     properties: {
       dryRun: { type: "boolean" },
       campaignId: idSchema,
@@ -2082,8 +2714,8 @@ const componentSchemas = {
       staleStartedToolCallThresholdMs: { type: "integer", minimum: 0 },
       matched: { type: "integer", minimum: 0 },
       updated: { type: "integer", minimum: 0 },
-      toolCalls: arrayOf(looseObjectSchema)
-    }
+      toolCalls: arrayOf(looseObjectSchema),
+    },
   },
   AdminAiToolCallRetryRequest: {
     type: "object",
@@ -2093,13 +2725,22 @@ const componentSchemas = {
       campaignId: idSchema,
       threadId: idSchema,
       toolCallId: idSchema,
-      limit: positiveLimitSchema
-    }
+      limit: positiveLimitSchema,
+    },
   },
   AdminAiToolCallRetryResult: {
     type: "object",
     additionalProperties: true,
-    required: ["dryRun", "limit", "matched", "retried", "skipped", "completed", "failed", "toolCalls"],
+    required: [
+      "dryRun",
+      "limit",
+      "matched",
+      "retried",
+      "skipped",
+      "completed",
+      "failed",
+      "toolCalls",
+    ],
     properties: {
       dryRun: { type: "boolean" },
       campaignId: idSchema,
@@ -2111,8 +2752,8 @@ const componentSchemas = {
       skipped: { type: "integer", minimum: 0 },
       completed: { type: "integer", minimum: 0 },
       failed: { type: "integer", minimum: 0 },
-      toolCalls: arrayOf(looseObjectSchema)
-    }
+      toolCalls: arrayOf(looseObjectSchema),
+    },
   },
   AdminAiEvaluationExport: {
     type: "object",
@@ -2122,18 +2763,36 @@ const componentSchemas = {
       exportedAt: { type: "string", format: "date-time" },
       format: { type: "string", enum: ["json", "ndjson"] },
       filters: looseObjectSchema,
-      evaluations: arrayOf(looseObjectSchema)
-    }
+      evaluations: arrayOf(looseObjectSchema),
+    },
   },
   AdminPluginReviewInfo: {
     type: "object",
     additionalProperties: true,
-    required: ["review", "plugin", "source", "distribution", "trust", "installable"],
+    required: [
+      "review",
+      "plugin",
+      "source",
+      "distribution",
+      "trust",
+      "installable",
+    ],
     properties: {
       review: {
         type: "object",
         additionalProperties: true,
-        required: ["id", "reviewKey", "pluginId", "packageId", "version", "checksum", "sourceType", "status", "createdAt", "updatedAt"],
+        required: [
+          "id",
+          "reviewKey",
+          "pluginId",
+          "packageId",
+          "version",
+          "checksum",
+          "sourceType",
+          "status",
+          "createdAt",
+          "updatedAt",
+        ],
         properties: {
           ...idTimestampProperties,
           reviewKey: stringSchema,
@@ -2147,16 +2806,16 @@ const componentSchemas = {
           status: { type: "string", enum: ["pending", "approved", "rejected"] },
           notes: stringSchema,
           reviewedByUserId: idSchema,
-          reviewedAt: { type: "string", format: "date-time" }
-        }
+          reviewedAt: { type: "string", format: "date-time" },
+        },
       },
       plugin: looseObjectSchema,
       source: looseObjectSchema,
       distribution: looseObjectSchema,
       trust: looseObjectSchema,
       installable: { type: "boolean" },
-      installBlock: stringSchema
-    }
+      installBlock: stringSchema,
+    },
   },
   AdminPluginReviewSnapshot: {
     type: "object",
@@ -2166,8 +2825,8 @@ const componentSchemas = {
       generatedAt: { type: "string", format: "date-time" },
       policy: looseObjectSchema,
       totals: looseObjectSchema,
-      plugins: arrayOf(schemaRef("AdminPluginReviewInfo"))
-    }
+      plugins: arrayOf(schemaRef("AdminPluginReviewInfo")),
+    },
   },
   AdminPluginReviewPatchRequest: {
     type: "object",
@@ -2175,15 +2834,15 @@ const componentSchemas = {
     required: ["status"],
     properties: {
       status: { type: "string", enum: ["pending", "approved", "rejected"] },
-      notes: { type: "string", maxLength: 500 }
-    }
+      notes: { type: "string", maxLength: 500 },
+    },
   },
   AdminPluginRegistrySyncRequest: {
     type: "object",
     additionalProperties: false,
     properties: {
-      registryUrl: stringSchema
-    }
+      registryUrl: stringSchema,
+    },
   },
   AdminPluginRegistrySyncResponse: {
     type: "object",
@@ -2192,13 +2851,21 @@ const componentSchemas = {
     properties: {
       syncedAt: { type: "string", format: "date-time" },
       registries: arrayOf(looseObjectSchema),
-      plugins: arrayOf(schemaRef("PluginRuntimeInfo"))
-    }
+      plugins: arrayOf(schemaRef("PluginRuntimeInfo")),
+    },
   },
   AdminPluginOperations: {
     type: "object",
     additionalProperties: true,
-    required: ["generatedAt", "actionRequired", "actionReasons", "policy", "totals", "reviews", "remediationQueue"],
+    required: [
+      "generatedAt",
+      "actionRequired",
+      "actionReasons",
+      "policy",
+      "totals",
+      "reviews",
+      "remediationQueue",
+    ],
     properties: {
       generatedAt: { type: "string", format: "date-time" },
       actionRequired: { type: "boolean" },
@@ -2219,13 +2886,19 @@ const componentSchemas = {
       storageOperations: looseObjectSchema,
       commandOperations: looseObjectSchema,
       inventoryOperations: looseObjectSchema,
-      recentCommands: arrayOf(looseObjectSchema)
-    }
+      recentCommands: arrayOf(looseObjectSchema),
+    },
   },
   AdminSystemOperations: {
     type: "object",
     additionalProperties: true,
-    required: ["generatedAt", "actionRequired", "actionReasons", "totals", "systems"],
+    required: [
+      "generatedAt",
+      "actionRequired",
+      "actionReasons",
+      "totals",
+      "systems",
+    ],
     properties: {
       generatedAt: { type: "string", format: "date-time" },
       actionRequired: { type: "boolean" },
@@ -2239,13 +2912,22 @@ const componentSchemas = {
       productionGapCounts: looseObjectSchema,
       promotionBlockers: arrayOf(looseObjectSchema),
       remediationQueue: arrayOf(schemaRef("AdminOperationRemediation")),
-      systems: arrayOf(looseObjectSchema)
-    }
+      systems: arrayOf(looseObjectSchema),
+    },
   },
   AdminRenderingOperations: {
     type: "object",
     additionalProperties: true,
-    required: ["generatedAt", "budget", "featureCoverage", "authoringOperations", "totals", "actionRequired", "actionReasons", "scenes"],
+    required: [
+      "generatedAt",
+      "budget",
+      "featureCoverage",
+      "authoringOperations",
+      "totals",
+      "actionRequired",
+      "actionReasons",
+      "scenes",
+    ],
     properties: {
       generatedAt: { type: "string", format: "date-time" },
       budget: looseObjectSchema,
@@ -2261,13 +2943,21 @@ const componentSchemas = {
       actionReasons: arrayOf(stringSchema),
       remediationQueue: arrayOf(schemaRef("AdminOperationRemediation")),
       scenesRequiringAction: arrayOf(looseObjectSchema),
-      scenes: arrayOf(looseObjectSchema)
-    }
+      scenes: arrayOf(looseObjectSchema),
+    },
   },
   AdminAssetStorageInfo: {
     type: "object",
     additionalProperties: true,
-    required: ["assetCount", "activeAssetCount", "usedBytes", "allBytes", "runtime", "operations", "campaigns"],
+    required: [
+      "assetCount",
+      "activeAssetCount",
+      "usedBytes",
+      "allBytes",
+      "runtime",
+      "operations",
+      "campaigns",
+    ],
     properties: {
       assetCount: { type: "integer", minimum: 0 },
       activeAssetCount: { type: "integer", minimum: 0 },
@@ -2278,8 +2968,8 @@ const componentSchemas = {
       runtime: looseObjectSchema,
       operations: looseObjectSchema,
       cleanupScheduler: looseObjectSchema,
-      campaigns: arrayOf(looseObjectSchema)
-    }
+      campaigns: arrayOf(looseObjectSchema),
+    },
   },
   AdminAssetOperationRequest: {
     type: "object",
@@ -2292,8 +2982,8 @@ const componentSchemas = {
       includeExpired: { type: "boolean" },
       overwrite: { type: "boolean" },
       graceDays: { type: "integer", minimum: 0, maximum: 365 },
-      reason: { type: "string", maxLength: 160 }
-    }
+      reason: { type: "string", maxLength: 160 },
+    },
   },
   AdminAssetOperationResult: {
     type: "object",
@@ -2314,13 +3004,27 @@ const componentSchemas = {
       failed: { type: "integer", minimum: 0 },
       changed: { type: "boolean" },
       reason: stringSchema,
-      results: arrayOf(looseObjectSchema)
-    }
+      results: arrayOf(looseObjectSchema),
+    },
   },
   AdminAssetIntegrityReport: {
     type: "object",
     additionalProperties: true,
-    required: ["provider", "assetCount", "verified", "missing", "mismatched", "cleanupEligible", "skipped", "failed", "actionRequired", "actionReasons", "remediationQueue", "healthy", "results"],
+    required: [
+      "provider",
+      "assetCount",
+      "verified",
+      "missing",
+      "mismatched",
+      "cleanupEligible",
+      "skipped",
+      "failed",
+      "actionRequired",
+      "actionReasons",
+      "remediationQueue",
+      "healthy",
+      "results",
+    ],
     properties: {
       provider: stringSchema,
       assetCount: { type: "integer", minimum: 0 },
@@ -2334,15 +3038,15 @@ const componentSchemas = {
       actionReasons: arrayOf(stringSchema),
       remediationQueue: arrayOf(schemaRef("AdminOperationRemediation")),
       healthy: { type: "boolean" },
-      results: arrayOf(looseObjectSchema)
-    }
+      results: arrayOf(looseObjectSchema),
+    },
   },
   AdminAssetCdnPurgeRequest: {
     type: "object",
     additionalProperties: false,
     properties: {
-      reason: { type: "string", maxLength: 160 }
-    }
+      reason: { type: "string", maxLength: 160 },
+    },
   },
   AdminAssetCdnPurgeResult: {
     type: "object",
@@ -2356,8 +3060,8 @@ const componentSchemas = {
       reason: stringSchema,
       status: { type: "string", enum: ["purged", "failed", "not_configured"] },
       purgedAt: { type: "string", format: "date-time" },
-      error: stringSchema
-    }
+      error: stringSchema,
+    },
   },
   StorageRecordCollectionCount: {
     type: "object",
@@ -2365,8 +3069,8 @@ const componentSchemas = {
     required: ["collection", "count"],
     properties: {
       collection: stringSchema,
-      count: { type: "integer", minimum: 0 }
-    }
+      count: { type: "integer", minimum: 0 },
+    },
   },
   StorageBackupSummary: {
     type: "object",
@@ -2375,15 +3079,15 @@ const componentSchemas = {
     properties: {
       fileName: stringSchema,
       sizeBytes: { type: "integer", minimum: 0 },
-      createdAt: { type: "string", format: "date-time" }
-    }
+      createdAt: { type: "string", format: "date-time" },
+    },
   },
   StorageBackupRequest: {
     type: "object",
     additionalProperties: false,
     properties: {
-      reason: { type: "string", maxLength: 160 }
-    }
+      reason: { type: "string", maxLength: 160 },
+    },
   },
   StorageBackupResult: {
     allOf: [
@@ -2394,10 +3098,10 @@ const componentSchemas = {
         required: ["status"],
         properties: {
           status: { type: "string", enum: ["created"] },
-          reason: { type: "string", maxLength: 160 }
-        }
-      }
-    ]
+          reason: { type: "string", maxLength: 160 },
+        },
+      },
+    ],
   },
   StorageIntegrityCheck: {
     type: "object",
@@ -2406,8 +3110,8 @@ const componentSchemas = {
     properties: {
       checkedAt: { type: "string", format: "date-time" },
       ok: { type: "boolean" },
-      result: stringSchema
-    }
+      result: stringSchema,
+    },
   },
   StorageScheduledBackupStatus: {
     type: "object",
@@ -2430,10 +3134,10 @@ const componentSchemas = {
           sizeBytes: { type: "integer", minimum: 0 },
           startedAt: { type: "string", format: "date-time" },
           finishedAt: { type: "string", format: "date-time" },
-          error: stringSchema
-        }
-      }
-    }
+          error: stringSchema,
+        },
+      },
+    },
   },
   AdminStorageOperations: {
     type: "object",
@@ -2449,13 +3153,18 @@ const componentSchemas = {
         properties: {
           fileName: stringSchema,
           sizeBytes: { type: "integer", minimum: 0 },
-          jsonRecordModel: { type: "boolean" }
-        }
+          jsonRecordModel: { type: "boolean" },
+        },
       },
       migrations: {
         type: "object",
         additionalProperties: false,
-        required: ["expectedVersions", "applied", "latestAppliedVersion", "missingVersions"],
+        required: [
+          "expectedVersions",
+          "applied",
+          "latestAppliedVersion",
+          "missingVersions",
+        ],
         properties: {
           expectedVersions: arrayOf({ type: "integer", minimum: 0 }),
           applied: arrayOf({
@@ -2465,12 +3174,12 @@ const componentSchemas = {
             properties: {
               version: { type: "integer", minimum: 0 },
               name: stringSchema,
-              appliedAt: { type: "string", format: "date-time" }
-            }
+              appliedAt: { type: "string", format: "date-time" },
+            },
           }),
           latestAppliedVersion: { type: "integer", minimum: 0 },
-          missingVersions: arrayOf({ type: "integer", minimum: 0 })
-        }
+          missingVersions: arrayOf({ type: "integer", minimum: 0 }),
+        },
       },
       integrity: schemaRef("StorageIntegrityCheck"),
       records: {
@@ -2479,8 +3188,8 @@ const componentSchemas = {
         required: ["total", "collections"],
         properties: {
           total: { type: "integer", minimum: 0 },
-          collections: arrayOf(schemaRef("StorageRecordCollectionCount"))
-        }
+          collections: arrayOf(schemaRef("StorageRecordCollectionCount")),
+        },
       },
       indexes: {
         type: "object",
@@ -2489,8 +3198,8 @@ const componentSchemas = {
         properties: {
           required: arrayOf(stringSchema),
           present: arrayOf(stringSchema),
-          missing: arrayOf(stringSchema)
-        }
+          missing: arrayOf(stringSchema),
+        },
       },
       backups: {
         type: "object",
@@ -2498,21 +3207,21 @@ const componentSchemas = {
         required: ["directoryName"],
         properties: {
           directoryName: stringSchema,
-          latest: schemaRef("StorageBackupSummary")
-        }
+          latest: schemaRef("StorageBackupSummary"),
+        },
       },
       scheduledBackups: schemaRef("StorageScheduledBackupStatus"),
       actionRequired: { type: "boolean" },
       actionReasons: arrayOf(stringSchema),
-      remediation: stringSchema
-    }
+      remediation: stringSchema,
+    },
   },
   StorageRestoreDrillRequest: {
     type: "object",
     additionalProperties: false,
     properties: {
-      backupFileName: stringSchema
-    }
+      backupFileName: stringSchema,
+    },
   },
   StorageRestoreDrillResult: {
     type: "object",
@@ -2526,8 +3235,8 @@ const componentSchemas = {
       campaignCount: { type: "integer", minimum: 0 },
       recordCount: { type: "integer", minimum: 0 },
       collections: arrayOf(schemaRef("StorageRecordCollectionCount")),
-      error: stringSchema
-    }
+      error: stringSchema,
+    },
   },
   StorageRestoreRequest: {
     type: "object",
@@ -2536,8 +3245,8 @@ const componentSchemas = {
     properties: {
       backupFileName: stringSchema,
       confirmFileName: stringSchema,
-      reason: { type: "string", maxLength: 160 }
-    }
+      reason: { type: "string", maxLength: 160 },
+    },
   },
   StorageRestoreResult: {
     allOf: [
@@ -2547,10 +3256,10 @@ const componentSchemas = {
         additionalProperties: false,
         properties: {
           restoredAt: { type: "string", format: "date-time" },
-          reason: { type: "string", maxLength: 160 }
-        }
-      }
-    ]
+          reason: { type: "string", maxLength: 160 },
+        },
+      },
+    ],
   },
   LoginResponse: {
     type: "object",
@@ -2566,8 +3275,8 @@ const componentSchemas = {
       organization: schemaRef("OrganizationWorkspace"),
       organizations: arrayOf(schemaRef("OrganizationWorkspaceInfo")),
       campaign: schemaRef("Campaign"),
-      scene: schemaRef("Scene")
-    }
+      scene: schemaRef("Scene"),
+    },
   },
   SessionInfo: {
     type: "object",
@@ -2580,8 +3289,8 @@ const componentSchemas = {
       serverAdmin: { type: "boolean" },
       serverAdmins: schemaRef("ServerAdminPosture"),
       organization: schemaRef("OrganizationWorkspace"),
-      organizations: arrayOf(schemaRef("OrganizationWorkspaceInfo"))
-    }
+      organizations: arrayOf(schemaRef("OrganizationWorkspaceInfo")),
+    },
   },
   OrganizationWorkspace: {
     type: "object",
@@ -2602,24 +3311,33 @@ const componentSchemas = {
       "onboardingTitle",
       "onboardingBody",
       "createdAt",
-      "updatedAt"
+      "updatedAt",
     ],
     properties: {
       ...idTimestampProperties,
       name: stringSchema,
       ownerUserId: idSchema,
       defaultSystemId: idSchema,
-      defaultCampaignVisibility: { type: "string", enum: ["private", "invite_only", "public"] },
-      defaultPermissionTemplate: { type: "string", enum: ["standard", "player_authoring", "ai_assisted", "assistant_ops"] },
-      defaultInviteRole: { type: "string", enum: ["gm", "assistant_gm", "player", "observer"] },
+      defaultCampaignVisibility: {
+        type: "string",
+        enum: ["private", "invite_only", "public"],
+      },
+      defaultPermissionTemplate: {
+        type: "string",
+        enum: ["standard", "player_authoring", "ai_assisted", "assistant_ops"],
+      },
+      defaultInviteRole: {
+        type: "string",
+        enum: ["gm", "assistant_gm", "player", "observer"],
+      },
       defaultSceneName: stringSchema,
       defaultSceneFolder: stringSchema,
       defaultSceneWidth: { type: "integer", minimum: 1 },
       defaultSceneHeight: { type: "integer", minimum: 1 },
       defaultSceneGridSize: { type: "integer", minimum: 1 },
       onboardingTitle: stringSchema,
-      onboardingBody: stringSchema
-    }
+      onboardingBody: stringSchema,
+    },
   },
   OrganizationWorkspaceInfo: {
     allOf: [
@@ -2631,18 +3349,18 @@ const componentSchemas = {
         properties: {
           role: { type: "string", enum: ["owner", "admin", "member"] },
           memberCount: { type: "integer", minimum: 0 },
-          campaignCount: { type: "integer", minimum: 0 }
-        }
-      }
-    ]
+          campaignCount: { type: "integer", minimum: 0 },
+        },
+      },
+    ],
   },
   OrganizationSwitchRequest: {
     type: "object",
     additionalProperties: false,
     required: ["organizationId"],
     properties: {
-      organizationId: idSchema
-    }
+      organizationId: idSchema,
+    },
   },
   OrganizationCreateRequest: {
     type: "object",
@@ -2651,17 +3369,26 @@ const componentSchemas = {
     properties: {
       name: stringSchema,
       defaultSystemId: idSchema,
-      defaultCampaignVisibility: { type: "string", enum: ["private", "invite_only", "public"] },
-      defaultPermissionTemplate: { type: "string", enum: ["standard", "player_authoring", "ai_assisted", "assistant_ops"] },
-      defaultInviteRole: { type: "string", enum: ["gm", "assistant_gm", "player", "observer"] },
+      defaultCampaignVisibility: {
+        type: "string",
+        enum: ["private", "invite_only", "public"],
+      },
+      defaultPermissionTemplate: {
+        type: "string",
+        enum: ["standard", "player_authoring", "ai_assisted", "assistant_ops"],
+      },
+      defaultInviteRole: {
+        type: "string",
+        enum: ["gm", "assistant_gm", "player", "observer"],
+      },
       defaultSceneName: stringSchema,
       defaultSceneFolder: stringSchema,
       defaultSceneWidth: { type: "integer", minimum: 1 },
       defaultSceneHeight: { type: "integer", minimum: 1 },
       defaultSceneGridSize: { type: "integer", minimum: 1 },
       onboardingTitle: stringSchema,
-      onboardingBody: stringSchema
-    }
+      onboardingBody: stringSchema,
+    },
   },
   OrganizationSwitchResponse: {
     type: "object",
@@ -2670,8 +3397,8 @@ const componentSchemas = {
     properties: {
       organization: schemaRef("OrganizationWorkspace"),
       session: schemaRef("UserSession"),
-      organizations: arrayOf(schemaRef("OrganizationWorkspaceInfo"))
-    }
+      organizations: arrayOf(schemaRef("OrganizationWorkspaceInfo")),
+    },
   },
   OrganizationWorkspaceDefaultsPatchRequest: {
     type: "object",
@@ -2679,22 +3406,39 @@ const componentSchemas = {
     properties: {
       name: stringSchema,
       defaultSystemId: idSchema,
-      defaultCampaignVisibility: { type: "string", enum: ["private", "invite_only", "public"] },
-      defaultPermissionTemplate: { type: "string", enum: ["standard", "player_authoring", "ai_assisted", "assistant_ops"] },
-      defaultInviteRole: { type: "string", enum: ["gm", "assistant_gm", "player", "observer"] },
+      defaultCampaignVisibility: {
+        type: "string",
+        enum: ["private", "invite_only", "public"],
+      },
+      defaultPermissionTemplate: {
+        type: "string",
+        enum: ["standard", "player_authoring", "ai_assisted", "assistant_ops"],
+      },
+      defaultInviteRole: {
+        type: "string",
+        enum: ["gm", "assistant_gm", "player", "observer"],
+      },
       defaultSceneName: stringSchema,
       defaultSceneFolder: stringSchema,
       defaultSceneWidth: { type: "integer", minimum: 1 },
       defaultSceneHeight: { type: "integer", minimum: 1 },
       defaultSceneGridSize: { type: "integer", minimum: 1 },
       onboardingTitle: stringSchema,
-      onboardingBody: stringSchema
-    }
+      onboardingBody: stringSchema,
+    },
   },
   OrganizationMember: {
     type: "object",
     additionalProperties: false,
-    required: ["id", "organizationId", "userId", "role", "user", "createdAt", "updatedAt"],
+    required: [
+      "id",
+      "organizationId",
+      "userId",
+      "role",
+      "user",
+      "createdAt",
+      "updatedAt",
+    ],
     properties: {
       ...idTimestampProperties,
       organizationId: idSchema,
@@ -2707,10 +3451,10 @@ const componentSchemas = {
         properties: {
           id: idSchema,
           displayName: stringSchema,
-          email: stringSchema
-        }
-      }
-    }
+          email: stringSchema,
+        },
+      },
+    },
   },
   OrganizationMemberCreateRequest: {
     type: "object",
@@ -2718,16 +3462,16 @@ const componentSchemas = {
     properties: {
       userId: idSchema,
       email: stringSchema,
-      role: { type: "string", enum: ["admin", "member"] }
-    }
+      role: { type: "string", enum: ["admin", "member"] },
+    },
   },
   OrganizationMemberUpdateRequest: {
     type: "object",
     additionalProperties: false,
     required: ["role"],
     properties: {
-      role: { type: "string", enum: ["admin", "member"] }
-    }
+      role: { type: "string", enum: ["admin", "member"] },
+    },
   },
   OrganizationMemberDeleteResponse: {
     type: "object",
@@ -2737,13 +3481,22 @@ const componentSchemas = {
       removed: { type: "boolean" },
       memberId: idSchema,
       userId: idSchema,
-      removedCampaignMemberships: { type: "integer", minimum: 0 }
-    }
+      removedCampaignMemberships: { type: "integer", minimum: 0 },
+    },
   },
   Campaign: {
     type: "object",
     additionalProperties: true,
-    required: ["id", "ownerUserId", "name", "description", "defaultSystemId", "visibility", "createdAt", "updatedAt"],
+    required: [
+      "id",
+      "ownerUserId",
+      "name",
+      "description",
+      "defaultSystemId",
+      "visibility",
+      "createdAt",
+      "updatedAt",
+    ],
     properties: {
       ...idTimestampProperties,
       organizationId: idSchema,
@@ -2751,12 +3504,15 @@ const componentSchemas = {
       name: stringSchema,
       description: stringSchema,
       defaultSystemId: idSchema,
-      visibility: { type: "string", enum: ["private", "invite_only", "public"] },
+      visibility: {
+        type: "string",
+        enum: ["private", "invite_only", "public"],
+      },
       archivedAt: { type: "string", format: "date-time" },
       archivedByUserId: idSchema,
       restoredAt: { type: "string", format: "date-time" },
-      restoredByUserId: idSchema
-    }
+      restoredByUserId: idSchema,
+    },
   },
   CampaignCreateRequest: {
     type: "object",
@@ -2765,18 +3521,47 @@ const componentSchemas = {
       name: stringSchema,
       description: stringSchema,
       defaultSystemId: idSchema,
-      visibility: { type: "string", enum: ["private", "invite_only", "public"] },
-      permissionTemplate: { type: "string", enum: ["standard", "player_authoring", "ai_assisted", "assistant_ops"] }
-    }
+      visibility: {
+        type: "string",
+        enum: ["private", "invite_only", "public"],
+      },
+      permissionTemplate: {
+        type: "string",
+        enum: ["standard", "player_authoring", "ai_assisted", "assistant_ops"],
+      },
+    },
   },
   CampaignSnapshot: {
     type: "object",
     additionalProperties: true,
-    required: ["generatedAt", "campaign", "members", "scenes", "tokens", "fogPresets", "assets", "actors", "items", "journals", "chat", "rolls", "diceMacros", "encounters", "combats", "proposals", "memory"],
+    required: [
+      "generatedAt",
+      "campaign",
+      "members",
+      "campaignSessions",
+      "worlds",
+      "scenes",
+      "tokens",
+      "fogPresets",
+      "assets",
+      "actors",
+      "items",
+      "journals",
+      "handouts",
+      "chat",
+      "rolls",
+      "diceMacros",
+      "encounters",
+      "combats",
+      "proposals",
+      "memory",
+    ],
     properties: {
       generatedAt: { type: "string", format: "date-time" },
       campaign: schemaRef("Campaign"),
       members: arrayOf(schemaRef("CampaignMember")),
+      campaignSessions: arrayOf(schemaRef("CampaignSession")),
+      worlds: arrayOf(schemaRef("World")),
       scenes: arrayOf(schemaRef("Scene")),
       selectedSceneId: idSchema,
       activeSceneId: idSchema,
@@ -2787,14 +3572,15 @@ const componentSchemas = {
       actors: arrayOf(schemaRef("Actor")),
       items: arrayOf(schemaRef("Item")),
       journals: arrayOf(schemaRef("JournalEntry")),
+      handouts: arrayOf(schemaRef("Handout")),
       chat: arrayOf(schemaRef("ChatMessage")),
       rolls: arrayOf(schemaRef("DiceRoll")),
       diceMacros: arrayOf(schemaRef("DiceMacro")),
       encounters: arrayOf(schemaRef("Encounter")),
       combats: arrayOf(schemaRef("Combat")),
       proposals: arrayOf(schemaRef("Proposal")),
-      memory: arrayOf(schemaRef("AiMemoryFact"))
-    }
+      memory: arrayOf(schemaRef("AiMemoryFact")),
+    },
   },
   CampaignPatchRequest: {
     type: "object",
@@ -2803,20 +3589,152 @@ const componentSchemas = {
       name: stringSchema,
       description: stringSchema,
       defaultSystemId: idSchema,
-      visibility: { type: "string", enum: ["private", "invite_only", "public"] },
+      visibility: {
+        type: "string",
+        enum: ["private", "invite_only", "public"],
+      },
       archivedAt: { type: "string", format: "date-time" },
       archivedByUserId: idSchema,
       restoredAt: { type: "string", format: "date-time" },
-      restoredByUserId: idSchema
-    }
+      restoredByUserId: idSchema,
+    },
+  },
+  World: {
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "id",
+      "campaignId",
+      "name",
+      "description",
+      "createdAt",
+      "updatedAt",
+    ],
+    properties: {
+      ...idTimestampProperties,
+      campaignId: idSchema,
+      name: stringSchema,
+      description: stringSchema,
+    },
+  },
+  WorldWriteRequest: {
+    type: "object",
+    additionalProperties: false,
+    properties: { name: stringSchema, description: stringSchema },
+  },
+  CampaignSession: {
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "id",
+      "campaignId",
+      "status",
+      "title",
+      "number",
+      "agenda",
+      "notes",
+      "sceneIds",
+      "encounterIds",
+      "createdBy",
+      "updatedBy",
+      "createdAt",
+      "updatedAt",
+    ],
+    properties: {
+      ...idTimestampProperties,
+      campaignId: idSchema,
+      status: { type: "string", enum: ["planned", "live", "completed"] },
+      title: stringSchema,
+      number: { type: "integer", minimum: 1 },
+      agenda: stringSchema,
+      notes: stringSchema,
+      scheduledFor: { type: "string", format: "date-time" },
+      startedAt: { type: "string", format: "date-time" },
+      endedAt: { type: "string", format: "date-time" },
+      sceneIds: arrayOf(idSchema),
+      encounterIds: arrayOf(idSchema),
+      recapProposalId: idSchema,
+      recapJournalId: idSchema,
+      createdBy: idSchema,
+      updatedBy: idSchema,
+    },
+  },
+  CampaignSessionWriteRequest: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      title: stringSchema,
+      agenda: stringSchema,
+      notes: stringSchema,
+      scheduledFor: {
+        oneOf: [{ type: "string", format: "date-time" }, { type: "null" }],
+      },
+      sceneIds: arrayOf(idSchema),
+      encounterIds: arrayOf(idSchema),
+    },
+  },
+  CampaignSearchResult: {
+    type: "object",
+    additionalProperties: false,
+    required: ["type", "id", "title", "snippet", "updatedAt", "score"],
+    properties: {
+      type: {
+        type: "string",
+        enum: [
+          "world",
+          "scene",
+          "actor",
+          "item",
+          "journal",
+          "handout",
+          "encounter",
+          "memory",
+          "chat",
+        ],
+      },
+      id: idSchema,
+      title: stringSchema,
+      snippet: stringSchema,
+      updatedAt: { type: "string", format: "date-time" },
+      worldId: idSchema,
+      visibility: {
+        type: "string",
+        enum: [
+          "gm_only",
+          "public",
+          "specific_players",
+          "specific_characters",
+          "whisper",
+        ],
+      },
+      score: { type: "number" },
+    },
   },
   Scene: {
     type: "object",
     additionalProperties: true,
-    required: ["id", "campaignId", "name", "width", "height", "gridType", "gridSize", "active", "sortOrder", "fog", "walls", "lights", "annotations", "metadata", "createdAt", "updatedAt"],
+    required: [
+      "id",
+      "campaignId",
+      "name",
+      "width",
+      "height",
+      "gridType",
+      "gridSize",
+      "active",
+      "sortOrder",
+      "fog",
+      "walls",
+      "lights",
+      "annotations",
+      "metadata",
+      "createdAt",
+      "updatedAt",
+    ],
     properties: {
       ...idTimestampProperties,
       campaignId: idSchema,
+      worldId: idSchema,
       name: stringSchema,
       width: { type: "number", minimum: 1 },
       height: { type: "number", minimum: 1 },
@@ -2833,8 +3751,8 @@ const componentSchemas = {
       walls: arrayOf(schemaRef("Wall")),
       lights: arrayOf(schemaRef("LightSource")),
       annotations: arrayOf(schemaRef("SceneAnnotation")),
-      metadata: { type: "object", additionalProperties: true }
-    }
+      metadata: { type: "object", additionalProperties: true },
+    },
   },
   SceneActivationHistoryEntry: {
     type: "object",
@@ -2847,13 +3765,14 @@ const componentSchemas = {
       activatedByUserId: idSchema,
       previousActiveSceneId: idSchema,
       deactivatedSceneIds: arrayOf(idSchema),
-      source: { type: "string", enum: ["create", "activate"] }
-    }
+      source: { type: "string", enum: ["create", "activate"] },
+    },
   },
   SceneCreateRequest: {
     type: "object",
     additionalProperties: false,
     properties: {
+      worldId: idSchema,
       name: stringSchema,
       width: { type: "number", minimum: 1 },
       height: { type: "number", minimum: 1 },
@@ -2867,13 +3786,14 @@ const componentSchemas = {
       walls: arrayOf(schemaRef("Wall")),
       lights: arrayOf(schemaRef("LightSource")),
       annotations: arrayOf(schemaRef("SceneAnnotation")),
-      metadata: { type: "object", additionalProperties: true }
-    }
+      metadata: { type: "object", additionalProperties: true },
+    },
   },
   ScenePatchRequest: {
     type: "object",
     additionalProperties: false,
     properties: {
+      worldId: { anyOf: [idSchema, { type: "null" }] },
       name: stringSchema,
       width: { type: "number", minimum: 1 },
       height: { type: "number", minimum: 1 },
@@ -2887,8 +3807,8 @@ const componentSchemas = {
       walls: arrayOf(schemaRef("Wall")),
       lights: arrayOf(schemaRef("LightSource")),
       annotations: arrayOf(schemaRef("SceneAnnotation")),
-      metadata: { type: "object", additionalProperties: true }
-    }
+      metadata: { type: "object", additionalProperties: true },
+    },
   },
   FogRegion: {
     type: "object",
@@ -2902,8 +3822,8 @@ const componentSchemas = {
       hidden: { type: "boolean" },
       shape: { type: "string", enum: ["circle", "polygon"] },
       mode: { type: "string", enum: ["reveal", "hide"] },
-      points: arrayOf(schemaRef("VisionPoint"))
-    }
+      points: arrayOf(schemaRef("VisionPoint")),
+    },
   },
   FogRegionInput: {
     type: "object",
@@ -2916,13 +3836,21 @@ const componentSchemas = {
       hidden: { type: "boolean" },
       shape: { type: "string", enum: ["circle", "polygon", "brush"] },
       mode: { type: "string", enum: ["reveal", "hide"] },
-      points: arrayOf(schemaRef("VisionPoint"))
-    }
+      points: arrayOf(schemaRef("VisionPoint")),
+    },
   },
   FogPreset: {
     type: "object",
     additionalProperties: true,
-    required: ["id", "campaignId", "name", "regions", "metadata", "createdAt", "updatedAt"],
+    required: [
+      "id",
+      "campaignId",
+      "name",
+      "regions",
+      "metadata",
+      "createdAt",
+      "updatedAt",
+    ],
     properties: {
       ...idTimestampProperties,
       campaignId: idSchema,
@@ -2930,8 +3858,8 @@ const componentSchemas = {
       description: stringSchema,
       sourceSceneId: idSchema,
       regions: arrayOf(schemaRef("FogPresetRegion")),
-      metadata: { type: "object", additionalProperties: true }
-    }
+      metadata: { type: "object", additionalProperties: true },
+    },
   },
   FogPresetRegion: {
     type: "object",
@@ -2944,8 +3872,8 @@ const componentSchemas = {
       hidden: { type: "boolean" },
       shape: { type: "string", enum: ["circle", "polygon"] },
       mode: { type: "string", enum: ["reveal", "hide"] },
-      points: arrayOf(schemaRef("VisionPoint"))
-    }
+      points: arrayOf(schemaRef("VisionPoint")),
+    },
   },
   FogPresetCreateRequest: {
     type: "object",
@@ -2953,21 +3881,29 @@ const componentSchemas = {
     properties: {
       name: stringSchema,
       description: stringSchema,
-      sceneId: idSchema
-    }
+      sceneId: idSchema,
+    },
   },
   FogPresetApplyRequest: {
     type: "object",
     additionalProperties: false,
     properties: {
       presetId: idSchema,
-      mode: { type: "string", enum: ["append", "replace"] }
-    }
+      mode: { type: "string", enum: ["append", "replace"] },
+    },
   },
   FogHistoryEntry: {
     type: "object",
     additionalProperties: true,
-    required: ["id", "sceneId", "action", "fogId", "actorUserId", "createdAt", "updatedAt"],
+    required: [
+      "id",
+      "sceneId",
+      "action",
+      "fogId",
+      "actorUserId",
+      "createdAt",
+      "updatedAt",
+    ],
     properties: {
       ...idTimestampProperties,
       sceneId: idSchema,
@@ -2975,8 +3911,8 @@ const componentSchemas = {
       fogId: idSchema,
       actorUserId: idSchema,
       region: schemaRef("FogRegion"),
-      targetHistoryId: idSchema
-    }
+      targetHistoryId: idSchema,
+    },
   },
   SceneEditHistory: {
     type: "object",
@@ -2985,8 +3921,8 @@ const componentSchemas = {
     properties: {
       sceneId: idSchema,
       limit: { type: "integer", minimum: 0 },
-      entries: arrayOf(schemaRef("SceneEditHistoryEntry"))
-    }
+      entries: arrayOf(schemaRef("SceneEditHistoryEntry")),
+    },
   },
   SceneEditHistoryEntry: {
     type: "object",
@@ -2996,8 +3932,8 @@ const componentSchemas = {
       id: idSchema,
       at: { type: "string", format: "date-time" },
       byUserId: idSchema,
-      kind: stringSchema
-    }
+      kind: stringSchema,
+    },
   },
   VisionPoint: {
     type: "object",
@@ -3005,8 +3941,8 @@ const componentSchemas = {
     required: ["x", "y"],
     properties: {
       x: { type: "number" },
-      y: { type: "number" }
-    }
+      y: { type: "number" },
+    },
   },
   VisionPolygon: {
     type: "object",
@@ -3021,8 +3957,8 @@ const componentSchemas = {
       lightLevel: { type: "string", enum: ["bright", "dim"] },
       color: stringSchema,
       opacity: { type: "number", minimum: 0 },
-      mode: { type: "string", enum: ["reveal", "hide"] }
-    }
+      mode: { type: "string", enum: ["reveal", "hide"] },
+    },
   },
   VisionSnapshot: {
     type: "object",
@@ -3032,13 +3968,23 @@ const componentSchemas = {
       sceneId: idSchema,
       userId: idSchema,
       fogActive: { type: "boolean" },
-      polygons: arrayOf(schemaRef("VisionPolygon"))
-    }
+      polygons: arrayOf(schemaRef("VisionPolygon")),
+    },
   },
   VisionPointSample: {
     type: "object",
     additionalProperties: true,
-    required: ["sceneId", "userId", "point", "fogActive", "visible", "revealedBy", "hiddenBy", "illuminatedBy", "blockedBy"],
+    required: [
+      "sceneId",
+      "userId",
+      "point",
+      "fogActive",
+      "visible",
+      "revealedBy",
+      "hiddenBy",
+      "illuminatedBy",
+      "blockedBy",
+    ],
     properties: {
       sceneId: idSchema,
       userId: idSchema,
@@ -3048,8 +3994,8 @@ const componentSchemas = {
       revealedBy: arrayOf({ type: "object", additionalProperties: true }),
       hiddenBy: arrayOf({ type: "object", additionalProperties: true }),
       illuminatedBy: arrayOf({ type: "object", additionalProperties: true }),
-      blockedBy: arrayOf({ type: "object", additionalProperties: true })
-    }
+      blockedBy: arrayOf({ type: "object", additionalProperties: true }),
+    },
   },
   Wall: {
     type: "object",
@@ -3063,8 +4009,8 @@ const componentSchemas = {
       y2: { type: "number" },
       blocksVision: { type: "boolean" },
       blocksMovement: { type: "boolean" },
-      kind: { type: "string", enum: ["wall", "terrain"] }
-    }
+      kind: { type: "string", enum: ["wall", "terrain"] },
+    },
   },
   WallInput: {
     type: "object",
@@ -3076,8 +4022,8 @@ const componentSchemas = {
       y2: { type: "number" },
       blocksVision: { type: "boolean" },
       blocksMovement: { type: "boolean" },
-      kind: { type: "string", enum: ["wall", "terrain"] }
-    }
+      kind: { type: "string", enum: ["wall", "terrain"] },
+    },
   },
   LightSource: {
     type: "object",
@@ -3091,8 +4037,8 @@ const componentSchemas = {
       brightRadius: { type: "number", minimum: 0 },
       dimRadius: { type: "number", minimum: 0 },
       color: stringSchema,
-      intensity: { type: "number", minimum: 0 }
-    }
+      intensity: { type: "number", minimum: 0 },
+    },
   },
   LightSourceInput: {
     type: "object",
@@ -3104,20 +4050,32 @@ const componentSchemas = {
       brightRadius: { type: "number", minimum: 0 },
       dimRadius: { type: "number", minimum: 0 },
       color: stringSchema,
-      intensity: { type: "number", minimum: 0 }
-    }
+      intensity: { type: "number", minimum: 0 },
+    },
   },
   SceneAnnotation: {
     type: "object",
     additionalProperties: true,
-    required: ["id", "sceneId", "kind", "createdByUserId", "color", "points", "createdAt", "updatedAt"],
+    required: [
+      "id",
+      "sceneId",
+      "kind",
+      "createdByUserId",
+      "color",
+      "points",
+      "createdAt",
+      "updatedAt",
+    ],
     properties: {
       ...idTimestampProperties,
       sceneId: idSchema,
       kind: { type: "string", enum: ["ping", "ruler", "template", "drawing"] },
       createdByUserId: idSchema,
       label: stringSchema,
-      layer: { type: "string", enum: ["measurement", "effects", "drawings", "notes"] },
+      layer: {
+        type: "string",
+        enum: ["measurement", "effects", "drawings", "notes"],
+      },
       groupId: idSchema,
       groupLabel: stringSchema,
       sortOrder: { type: "number" },
@@ -3133,20 +4091,32 @@ const componentSchemas = {
       color: stringSchema,
       points: arrayOf(schemaRef("VisionPoint")),
       radius: { type: "number", minimum: 0 },
-      expiresAt: { type: "string", format: "date-time" }
-    }
+      expiresAt: { type: "string", format: "date-time" },
+    },
   },
   SceneAnnotationHistoryEntry: {
     type: "object",
     additionalProperties: false,
-    required: ["id", "sceneId", "annotationId", "action", "kind", "actorUserId", "createdAt", "updatedAt"],
+    required: [
+      "id",
+      "sceneId",
+      "annotationId",
+      "action",
+      "kind",
+      "actorUserId",
+      "createdAt",
+      "updatedAt",
+    ],
     properties: {
       ...idTimestampProperties,
       sceneId: idSchema,
       annotationId: idSchema,
       action: { type: "string", enum: ["create", "update", "delete"] },
       kind: { type: "string", enum: ["ping", "ruler", "template", "drawing"] },
-      layer: { type: "string", enum: ["measurement", "effects", "drawings", "notes"] },
+      layer: {
+        type: "string",
+        enum: ["measurement", "effects", "drawings", "notes"],
+      },
       groupId: idSchema,
       groupLabel: stringSchema,
       templateShape: { type: "string", enum: ["circle", "line", "cone"] },
@@ -3156,8 +4126,8 @@ const componentSchemas = {
       templateDamageType: stringSchema,
       affectedTokenIds: arrayOf(idSchema),
       rulesSystemId: idSchema,
-      actorUserId: idSchema
-    }
+      actorUserId: idSchema,
+    },
   },
   SceneAnnotationCreateRequest: {
     type: "object",
@@ -3166,7 +4136,10 @@ const componentSchemas = {
       kind: { type: "string", enum: ["ping", "ruler", "template", "drawing"] },
       label: stringSchema,
       color: stringSchema,
-      layer: { type: "string", enum: ["measurement", "effects", "drawings", "notes"] },
+      layer: {
+        type: "string",
+        enum: ["measurement", "effects", "drawings", "notes"],
+      },
       groupId: idSchema,
       groupLabel: stringSchema,
       sortOrder: { type: "number" },
@@ -3178,8 +4151,8 @@ const componentSchemas = {
       snapToGrid: { type: "boolean" },
       points: arrayOf(schemaRef("VisionPoint")),
       radius: { type: "number", minimum: 0 },
-      expiresInSeconds: { type: "integer", minimum: 1 }
-    }
+      expiresInSeconds: { type: "integer", minimum: 1 },
+    },
   },
   SceneAnnotationUpdateRequest: {
     type: "object",
@@ -3187,7 +4160,10 @@ const componentSchemas = {
     properties: {
       label: stringSchema,
       color: stringSchema,
-      layer: { type: "string", enum: ["measurement", "effects", "drawings", "notes"] },
+      layer: {
+        type: "string",
+        enum: ["measurement", "effects", "drawings", "notes"],
+      },
       groupId: idSchema,
       groupLabel: stringSchema,
       sortOrder: { type: "number" },
@@ -3198,8 +4174,8 @@ const componentSchemas = {
       snapToGrid: { type: "boolean" },
       points: arrayOf(schemaRef("VisionPoint")),
       radius: { type: "number", minimum: 0 },
-      expiresInSeconds: { type: "integer", minimum: 1 }
-    }
+      expiresInSeconds: { type: "integer", minimum: 1 },
+    },
   },
   SceneRenderingDiagnostics: {
     type: "object",
@@ -3208,21 +4184,38 @@ const componentSchemas = {
       sceneId: idSchema,
       sceneName: stringSchema,
       warnings: arrayOf(stringSchema),
-      metrics: { type: "object", additionalProperties: true }
-    }
+      metrics: { type: "object", additionalProperties: true },
+    },
   },
   TokenTargetRequest: {
     type: "object",
     additionalProperties: false,
     required: ["targeted"],
     properties: {
-      targeted: { type: "boolean" }
-    }
+      targeted: { type: "boolean" },
+    },
   },
   Token: {
     type: "object",
     additionalProperties: true,
-    required: ["id", "sceneId", "name", "x", "y", "width", "height", "rotation", "hidden", "locked", "visionEnabled", "visionRadius", "disposition", "metadata", "createdAt", "updatedAt"],
+    required: [
+      "id",
+      "sceneId",
+      "name",
+      "x",
+      "y",
+      "width",
+      "height",
+      "rotation",
+      "hidden",
+      "locked",
+      "visionEnabled",
+      "visionRadius",
+      "disposition",
+      "metadata",
+      "createdAt",
+      "updatedAt",
+    ],
     properties: {
       ...idTimestampProperties,
       sceneId: idSchema,
@@ -3247,8 +4240,8 @@ const componentSchemas = {
       conditions: arrayOf({ type: "object", additionalProperties: true }),
       auras: arrayOf({ type: "object", additionalProperties: true }),
       targetedByUserIds: arrayOf(idSchema),
-      metadata: { type: "object", additionalProperties: true }
-    }
+      metadata: { type: "object", additionalProperties: true },
+    },
   },
   TokenCreateRequest: {
     type: "object",
@@ -3275,33 +4268,59 @@ const componentSchemas = {
       notes: stringSchema,
       conditions: arrayOf({ type: "object", additionalProperties: true }),
       auras: arrayOf({ type: "object", additionalProperties: true }),
-      metadata: { type: "object", additionalProperties: true }
-    }
+      metadata: { type: "object", additionalProperties: true },
+    },
   },
   TokenPatchRequest: {
-    $ref: "#/components/schemas/TokenCreateRequest"
+    $ref: "#/components/schemas/TokenCreateRequest",
   },
   ChatMessage: {
     type: "object",
     additionalProperties: true,
-    required: ["id", "campaignId", "userId", "type", "body", "visibility", "recipientUserIds", "createdAt", "updatedAt"],
+    required: [
+      "id",
+      "campaignId",
+      "userId",
+      "type",
+      "body",
+      "visibility",
+      "recipientUserIds",
+      "createdAt",
+      "updatedAt",
+    ],
     properties: {
       ...idTimestampProperties,
       campaignId: idSchema,
       sceneId: idSchema,
       userId: idSchema,
-      type: { type: "string", enum: ["plain", "emote", "whisper", "roll", "system", "gm", "ooc", "ai", "plugin"] },
+      type: {
+        type: "string",
+        enum: [
+          "plain",
+          "emote",
+          "whisper",
+          "roll",
+          "system",
+          "gm",
+          "ooc",
+          "ai",
+          "plugin",
+        ],
+      },
       body: stringSchema,
       visibility: { type: "string", enum: ["public", "gm_only", "whisper"] },
       recipientUserIds: arrayOf(idSchema),
       rollId: idSchema,
       replyToMessageId: idSchema,
-      moderationStatus: { type: "string", enum: ["open", "follow_up", "reviewed"] },
+      moderationStatus: {
+        type: "string",
+        enum: ["open", "follow_up", "reviewed"],
+      },
       moderatedByUserId: idSchema,
       moderatedAt: { type: "string", format: "date-time" },
       editedByUserId: idSchema,
-      editedAt: { type: "string", format: "date-time" }
-    }
+      editedAt: { type: "string", format: "date-time" },
+    },
   },
   ChatMessagePage: paginatedObjectOf(schemaRef("ChatMessage")),
   ChatMessageCreateRequest: {
@@ -3311,34 +4330,60 @@ const componentSchemas = {
     properties: {
       campaignId: idSchema,
       sceneId: idSchema,
-      type: { type: "string", enum: ["plain", "emote", "whisper", "roll", "system", "gm", "ooc", "ai", "plugin"] },
+      type: {
+        type: "string",
+        enum: [
+          "plain",
+          "emote",
+          "whisper",
+          "roll",
+          "system",
+          "gm",
+          "ooc",
+          "ai",
+          "plugin",
+        ],
+      },
       body: chatMessageBodySchema,
       visibility: { type: "string", enum: ["public", "gm_only", "whisper"] },
       recipientUserIds: arrayOf(idSchema),
       rollId: idSchema,
-      replyToMessageId: idSchema
-    }
+      replyToMessageId: idSchema,
+    },
   },
   ChatModerationRequest: {
     type: "object",
     additionalProperties: false,
     required: ["moderationStatus"],
     properties: {
-      moderationStatus: { type: "string", enum: ["open", "follow_up", "reviewed"] }
-    }
+      moderationStatus: {
+        type: "string",
+        enum: ["open", "follow_up", "reviewed"],
+      },
+    },
   },
   ChatMessageEditRequest: {
     type: "object",
     additionalProperties: false,
     required: ["body"],
     properties: {
-      body: chatMessageBodySchema
-    }
+      body: chatMessageBodySchema,
+    },
   },
   DiceRoll: {
     type: "object",
     additionalProperties: true,
-    required: ["id", "campaignId", "userId", "formula", "visibility", "terms", "total", "createdAt", "updatedAt"],
+    required: [
+      "id",
+      "campaignId",
+      "userId",
+      "formula",
+      "visibility",
+      "terms",
+      "total",
+      "createdAt",
+      "updatedAt",
+    ],
     properties: {
       ...idTimestampProperties,
       campaignId: idSchema,
@@ -3348,8 +4393,8 @@ const componentSchemas = {
       visibility: { type: "string", enum: ["public", "gm_only", "whisper"] },
       terms: arrayOf(schemaRef("DiceRollTerm")),
       total: { type: "number" },
-      fairness: schemaRef("DiceRollFairness")
-    }
+      fairness: schemaRef("DiceRollFairness"),
+    },
   },
   DiceRollFairness: {
     type: "object",
@@ -3359,8 +4404,8 @@ const componentSchemas = {
       algorithm: { type: "string", enum: ["xmur3-mulberry32"] },
       serverSeed: stringSchema,
       serverSeedHash: stringSchema,
-      clientSeed: stringSchema
-    }
+      clientSeed: stringSchema,
+    },
   },
   DiceRollVerification: {
     type: "object",
@@ -3370,11 +4415,30 @@ const componentSchemas = {
       rollId: idSchema,
       formula: stringSchema,
       verified: { type: "boolean" },
-      reason: { type: "string", enum: ["fairness_unavailable", "unsupported_algorithm", "seed_hash_mismatch", "formula_unparseable", "result_mismatch"] },
+      reason: {
+        type: "string",
+        enum: [
+          "fairness_unavailable",
+          "unsupported_algorithm",
+          "seed_hash_mismatch",
+          "formula_unparseable",
+          "result_mismatch",
+        ],
+      },
       fairness: schemaRef("DiceRollFairness"),
-      expected: { type: "object", additionalProperties: false, required: ["total"], properties: { total: { type: "number" } } },
-      recomputed: { type: "object", additionalProperties: false, required: ["total"], properties: { total: { type: "number" } } }
-    }
+      expected: {
+        type: "object",
+        additionalProperties: false,
+        required: ["total"],
+        properties: { total: { type: "number" } },
+      },
+      recomputed: {
+        type: "object",
+        additionalProperties: false,
+        required: ["total"],
+        properties: { total: { type: "number" } },
+      },
+    },
   },
   DiceRollPage: paginatedObjectOf(schemaRef("DiceRoll")),
   DiceRollTerm: {
@@ -3396,8 +4460,8 @@ const componentSchemas = {
       reroll: { type: "integer", minimum: 1 },
       rerolled: arrayOf({ type: "integer" }),
       value: { type: "number" },
-      path: stringSchema
-    }
+      path: stringSchema,
+    },
   },
   DiceRollRequest: {
     type: "object",
@@ -3408,13 +4472,22 @@ const componentSchemas = {
       formula: stringSchema,
       visibility: { type: "string", enum: ["public", "gm_only", "whisper"] },
       label: stringSchema,
-      clientSeed: stringSchema
-    }
+      clientSeed: stringSchema,
+    },
   },
   MapAsset: {
     type: "object",
     additionalProperties: true,
-    required: ["id", "campaignId", "name", "url", "mimeType", "sizeBytes", "createdAt", "updatedAt"],
+    required: [
+      "id",
+      "campaignId",
+      "name",
+      "url",
+      "mimeType",
+      "sizeBytes",
+      "createdAt",
+      "updatedAt",
+    ],
     properties: {
       ...idTimestampProperties,
       campaignId: idSchema,
@@ -3427,8 +4500,8 @@ const componentSchemas = {
       tags: arrayOf(stringSchema),
       storage: schemaRef("AssetStorageRef"),
       lifecycle: schemaRef("AssetLifecycle"),
-      security: schemaRef("AssetSecurityScan")
-    }
+      security: schemaRef("AssetSecurityScan"),
+    },
   },
   AssetStorageRef: {
     type: "object",
@@ -3437,8 +4510,8 @@ const componentSchemas = {
     properties: {
       provider: { type: "string", enum: ["local", "s3"] },
       key: stringSchema,
-      bucket: stringSchema
-    }
+      bucket: stringSchema,
+    },
   },
   AssetLifecycle: {
     type: "object",
@@ -3451,8 +4524,8 @@ const componentSchemas = {
       updatedByUserId: idSchema,
       reason: stringSchema,
       storageDeletedAt: { type: "string", format: "date-time" },
-      cleanupReason: stringSchema
-    }
+      cleanupReason: stringSchema,
+    },
   },
   AssetSecurityScan: {
     type: "object",
@@ -3462,8 +4535,8 @@ const componentSchemas = {
       status: { type: "string", enum: ["clean"] },
       scanner: stringSchema,
       scannedAt: { type: "string", format: "date-time" },
-      findings: arrayOf({ type: "object", additionalProperties: true })
-    }
+      findings: arrayOf({ type: "object", additionalProperties: true }),
+    },
   },
   MapAssetCreateRequest: {
     type: "object",
@@ -3476,8 +4549,8 @@ const componentSchemas = {
       sizeBytes: { type: "integer", minimum: 0 },
       checksum: stringSchema,
       folder: stringSchema,
-      tags: arrayOf(stringSchema)
-    }
+      tags: arrayOf(stringSchema),
+    },
   },
   MapAssetPatchRequest: {
     type: "object",
@@ -3485,8 +4558,8 @@ const componentSchemas = {
     properties: {
       name: stringSchema,
       folder: { anyOf: [stringSchema, { type: "null" }] },
-      tags: { anyOf: [arrayOf(stringSchema), stringSchema] }
-    }
+      tags: { anyOf: [arrayOf(stringSchema), stringSchema] },
+    },
   },
   AssetUploadResponse: {
     type: "object",
@@ -3494,16 +4567,16 @@ const componentSchemas = {
     required: ["asset"],
     properties: {
       asset: schemaRef("MapAsset"),
-      scene: schemaRef("Scene")
-    }
+      scene: schemaRef("Scene"),
+    },
   },
   AssetDeliveryUrlRequest: {
     type: "object",
     additionalProperties: false,
     properties: {
       expiresInSeconds: { type: "integer", minimum: 1 },
-      disposition: { type: "string", enum: ["inline", "attachment"] }
-    }
+      disposition: { type: "string", enum: ["inline", "attachment"] },
+    },
   },
   AssetDeliveryUrlResponse: {
     type: "object",
@@ -3512,8 +4585,8 @@ const componentSchemas = {
     properties: {
       url: stringSchema,
       expiresAt: { type: "string", format: "date-time" },
-      disposition: { type: "string", enum: ["inline", "attachment"] }
-    }
+      disposition: { type: "string", enum: ["inline", "attachment"] },
+    },
   },
   AssetLifecyclePatchRequest: {
     type: "object",
@@ -3521,14 +4594,26 @@ const componentSchemas = {
     required: ["status"],
     properties: {
       status: { type: "string", enum: ["active", "archived", "deleted"] },
-      expiresAt: { anyOf: [{ type: "string", format: "date-time" }, { type: "null" }] },
-      reason: stringSchema
-    }
+      expiresAt: {
+        anyOf: [{ type: "string", format: "date-time" }, { type: "null" }],
+      },
+      reason: stringSchema,
+    },
   },
   CampaignAssetStorageInfo: {
     type: "object",
     additionalProperties: true,
-    required: ["campaignId", "assetCount", "activeAssetCount", "usedBytes", "allBytes", "lifecycleCounts", "providerCounts", "delivery", "largestAssets"],
+    required: [
+      "campaignId",
+      "assetCount",
+      "activeAssetCount",
+      "usedBytes",
+      "allBytes",
+      "lifecycleCounts",
+      "providerCounts",
+      "delivery",
+      "largestAssets",
+    ],
     properties: {
       campaignId: idSchema,
       assetCount: { type: "integer", minimum: 0 },
@@ -3542,7 +4627,22 @@ const componentSchemas = {
       delivery: {
         type: "object",
         additionalProperties: true,
-        required: ["mode", "cdnConfigured", "publicUrlConfigured", "signingSecretConfigured", "signingSecretRequired", "defaultTtlSeconds", "maxTtlSeconds", "purgeWebhookConfigured", "purgeWebhookTokenConfigured", "purgeTimeoutMs", "actionRequired", "actionReasons", "warnings", "posture"],
+        required: [
+          "mode",
+          "cdnConfigured",
+          "publicUrlConfigured",
+          "signingSecretConfigured",
+          "signingSecretRequired",
+          "defaultTtlSeconds",
+          "maxTtlSeconds",
+          "purgeWebhookConfigured",
+          "purgeWebhookTokenConfigured",
+          "purgeTimeoutMs",
+          "actionRequired",
+          "actionReasons",
+          "warnings",
+          "posture",
+        ],
         properties: {
           mode: stringSchema,
           cdnConfigured: { type: "boolean" },
@@ -3557,116 +4657,233 @@ const componentSchemas = {
           actionRequired: { type: "boolean" },
           actionReasons: arrayOf(stringSchema),
           warnings: arrayOf(looseObjectSchema),
-          posture: looseObjectSchema
-        }
+          posture: looseObjectSchema,
+        },
       },
-      largestAssets: arrayOf(looseObjectSchema)
-    }
+      largestAssets: arrayOf(looseObjectSchema),
+    },
   },
   Actor: {
     type: "object",
     additionalProperties: true,
-    required: ["id", "campaignId", "systemId", "type", "name", "data", "permissions", "createdAt", "updatedAt"],
+    required: [
+      "id",
+      "campaignId",
+      "systemId",
+      "type",
+      "name",
+      "data",
+      "permissions",
+      "createdAt",
+      "updatedAt",
+    ],
     properties: {
       ...idTimestampProperties,
       campaignId: idSchema,
+      worldId: idSchema,
       systemId: idSchema,
       ownerUserId: idSchema,
       type: stringSchema,
       name: stringSchema,
       imageAssetId: idSchema,
       data: { type: "object", additionalProperties: true },
-      permissions: { type: "object", additionalProperties: arrayOf(stringSchema) }
-    }
+      permissions: {
+        type: "object",
+        additionalProperties: arrayOf(stringSchema),
+      },
+    },
   },
   ActorCreateRequest: {
     type: "object",
     additionalProperties: false,
     properties: {
+      worldId: idSchema,
       systemId: idSchema,
       ownerUserId: idSchema,
       type: stringSchema,
       name: stringSchema,
       imageAssetId: idSchema,
       data: { type: "object", additionalProperties: true },
-      permissions: { type: "object", additionalProperties: arrayOf(stringSchema) }
-    }
+      permissions: {
+        type: "object",
+        additionalProperties: arrayOf(stringSchema),
+      },
+    },
   },
   ActorPatchRequest: {
-    $ref: "#/components/schemas/ActorCreateRequest"
+    $ref: "#/components/schemas/ActorCreateRequest",
   },
   Item: {
     type: "object",
     additionalProperties: true,
-    required: ["id", "campaignId", "systemId", "type", "name", "data", "createdAt", "updatedAt"],
+    required: [
+      "id",
+      "campaignId",
+      "systemId",
+      "type",
+      "name",
+      "data",
+      "createdAt",
+      "updatedAt",
+    ],
     properties: {
       ...idTimestampProperties,
       campaignId: idSchema,
+      worldId: idSchema,
       systemId: idSchema,
       actorId: idSchema,
       type: stringSchema,
       name: stringSchema,
-      data: { type: "object", additionalProperties: true }
-    }
+      data: { type: "object", additionalProperties: true },
+    },
   },
   ItemCreateRequest: {
     type: "object",
     additionalProperties: false,
     properties: {
+      worldId: idSchema,
       systemId: idSchema,
       actorId: idSchema,
       type: stringSchema,
       name: stringSchema,
-      data: { type: "object", additionalProperties: true }
-    }
+      data: { type: "object", additionalProperties: true },
+    },
   },
   ItemPatchRequest: {
     type: "object",
     additionalProperties: false,
     properties: {
+      worldId: { anyOf: [idSchema, { type: "null" }] },
+      actorId: { anyOf: [idSchema, { type: "null" }] },
       type: stringSchema,
       name: stringSchema,
-      data: { type: "object", additionalProperties: true }
-    }
+      data: { type: "object", additionalProperties: true },
+    },
   },
   JournalEntry: {
     type: "object",
     additionalProperties: true,
-    required: ["id", "campaignId", "title", "body", "visibility", "visibleToUserIds", "visibleToActorIds", "tags", "createdBy", "updatedBy", "createdAt", "updatedAt"],
+    required: [
+      "id",
+      "campaignId",
+      "title",
+      "body",
+      "visibility",
+      "visibleToUserIds",
+      "visibleToActorIds",
+      "tags",
+      "createdBy",
+      "updatedBy",
+      "createdAt",
+      "updatedAt",
+    ],
     properties: {
       ...idTimestampProperties,
       campaignId: idSchema,
+      worldId: idSchema,
       parentId: idSchema,
       title: stringSchema,
       body: stringSchema,
-      visibility: { type: "string", enum: ["gm_only", "public", "specific_players", "specific_characters"] },
+      visibility: {
+        type: "string",
+        enum: ["gm_only", "public", "specific_players", "specific_characters"],
+      },
       visibleToUserIds: arrayOf(idSchema),
       visibleToActorIds: arrayOf(idSchema),
       tags: arrayOf(stringSchema),
       createdBy: idSchema,
-      updatedBy: idSchema
-    }
+      updatedBy: idSchema,
+    },
   },
   JournalEntryCreateRequest: {
     type: "object",
     additionalProperties: false,
     properties: {
+      worldId: { anyOf: [idSchema, { type: "null" }] },
       parentId: idSchema,
       title: stringSchema,
       body: stringSchema,
-      visibility: { type: "string", enum: ["gm_only", "public", "specific_players", "specific_characters"] },
+      visibility: {
+        type: "string",
+        enum: ["gm_only", "public", "specific_players", "specific_characters"],
+      },
       visibleToUserIds: arrayOf(idSchema),
       visibleToActorIds: arrayOf(idSchema),
-      tags: arrayOf(stringSchema)
-    }
+      tags: arrayOf(stringSchema),
+    },
   },
   JournalEntryPatchRequest: {
-    $ref: "#/components/schemas/JournalEntryCreateRequest"
+    $ref: "#/components/schemas/JournalEntryCreateRequest",
+  },
+  Handout: {
+    type: "object",
+    additionalProperties: true,
+    required: [
+      "id",
+      "campaignId",
+      "title",
+      "body",
+      "visibility",
+      "visibleToUserIds",
+      "visibleToActorIds",
+      "assetIds",
+      "tags",
+      "readByUserIds",
+      "createdBy",
+      "updatedBy",
+      "createdAt",
+      "updatedAt",
+    ],
+    properties: {
+      ...idTimestampProperties,
+      campaignId: idSchema,
+      worldId: idSchema,
+      title: stringSchema,
+      body: stringSchema,
+      visibility: {
+        type: "string",
+        enum: ["gm_only", "public", "specific_players", "specific_characters"],
+      },
+      visibleToUserIds: arrayOf(idSchema),
+      visibleToActorIds: arrayOf(idSchema),
+      assetIds: arrayOf(idSchema),
+      tags: arrayOf(stringSchema),
+      readByUserIds: arrayOf(idSchema),
+      createdBy: idSchema,
+      updatedBy: idSchema,
+    },
+  },
+  HandoutWriteRequest: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      worldId: { anyOf: [idSchema, { type: "null" }] },
+      title: stringSchema,
+      body: stringSchema,
+      visibility: {
+        type: "string",
+        enum: ["gm_only", "public", "specific_players", "specific_characters"],
+      },
+      visibleToUserIds: arrayOf(idSchema),
+      visibleToActorIds: arrayOf(idSchema),
+      assetIds: arrayOf(idSchema),
+      tags: arrayOf(stringSchema),
+      readByUserIds: arrayOf(idSchema),
+    },
   },
   Combat: {
     type: "object",
     additionalProperties: true,
-    required: ["id", "campaignId", "active", "round", "turnIndex", "combatants", "createdAt", "updatedAt"],
+    required: [
+      "id",
+      "campaignId",
+      "active",
+      "round",
+      "turnIndex",
+      "combatants",
+      "createdAt",
+      "updatedAt",
+    ],
     properties: {
       ...idTimestampProperties,
       campaignId: idSchema,
@@ -3676,8 +4893,8 @@ const componentSchemas = {
       turnIndex: { type: "integer", minimum: 0 },
       manualTurnOrder: { type: "boolean" },
       combatants: arrayOf(schemaRef("Combatant")),
-      actions: arrayOf(schemaRef("CombatAction"))
-    }
+      actions: arrayOf(schemaRef("CombatAction")),
+    },
   },
   Combatant: {
     type: "object",
@@ -3698,13 +4915,30 @@ const componentSchemas = {
       resourceKey: stringSchema,
       resourceLabel: stringSchema,
       resourceUsed: { type: "boolean" },
-      resourceSpent: { type: "boolean" }
-    }
+      resourceSpent: { type: "boolean" },
+    },
   },
   CombatAction: {
     type: "object",
     additionalProperties: true,
-    required: ["id", "campaignId", "combatId", "actorId", "actorName", "requestedByUserId", "status", "rollId", "actionLabel", "targetActorIds", "applyEffect", "consumeResources", "rolls", "actorUpdates", "createdAt", "updatedAt"],
+    required: [
+      "id",
+      "campaignId",
+      "combatId",
+      "actorId",
+      "actorName",
+      "requestedByUserId",
+      "status",
+      "rollId",
+      "actionLabel",
+      "targetActorIds",
+      "applyEffect",
+      "consumeResources",
+      "rolls",
+      "actorUpdates",
+      "createdAt",
+      "updatedAt",
+    ],
     properties: {
       ...idTimestampProperties,
       campaignId: idSchema,
@@ -3712,7 +4946,10 @@ const componentSchemas = {
       actorId: idSchema,
       actorName: stringSchema,
       requestedByUserId: idSchema,
-      status: { type: "string", enum: ["pending_gm", "confirmed", "rejected", "failed"] },
+      status: {
+        type: "string",
+        enum: ["pending_gm", "confirmed", "rejected", "failed"],
+      },
       rollId: stringSchema,
       actionLabel: stringSchema,
       targetActorIds: arrayOf(idSchema),
@@ -3729,8 +4966,8 @@ const componentSchemas = {
       rejectedByUserId: idSchema,
       rejectedAt: { type: "string", format: "date-time" },
       rejectionReason: stringSchema,
-      failureReason: stringSchema
-    }
+      failureReason: stringSchema,
+    },
   },
   CombatActionRoll: {
     type: "object",
@@ -3742,8 +4979,8 @@ const componentSchemas = {
       terms: arrayOf({ type: "object", additionalProperties: true }),
       total: { type: "number" },
       targetActorId: idSchema,
-      visibility: { type: "string", enum: ["public", "gm_only", "whisper"] }
-    }
+      visibility: { type: "string", enum: ["public", "gm_only", "whisper"] },
+    },
   },
   CombatActionActorUpdate: {
     type: "object",
@@ -3752,8 +4989,8 @@ const componentSchemas = {
     properties: {
       actorId: idSchema,
       before: { type: "object", additionalProperties: true },
-      after: { type: "object", additionalProperties: true }
-    }
+      after: { type: "object", additionalProperties: true },
+    },
   },
   CombatActionItemUpdate: {
     type: "object",
@@ -3762,8 +4999,8 @@ const componentSchemas = {
     properties: {
       itemId: idSchema,
       before: { type: "object", additionalProperties: true },
-      after: { type: "object", additionalProperties: true }
-    }
+      after: { type: "object", additionalProperties: true },
+    },
   },
   CombatActionEffect: {
     type: "object",
@@ -3772,8 +5009,8 @@ const componentSchemas = {
     properties: {
       type: stringSchema,
       targetActorId: idSchema,
-      amount: { type: "number" }
-    }
+      amount: { type: "number" },
+    },
   },
   CombatActionMutationResponse: {
     type: "object",
@@ -3784,8 +5021,8 @@ const componentSchemas = {
       combatAction: schemaRef("CombatAction"),
       updatedActors: arrayOf(schemaRef("Actor")),
       rolls: arrayOf(schemaRef("DiceRoll")),
-      chatMessages: arrayOf(schemaRef("ChatMessage"))
-    }
+      chatMessages: arrayOf(schemaRef("ChatMessage")),
+    },
   },
   CombatInitiativeRollNpcsResponse: {
     type: "object",
@@ -3794,15 +5031,15 @@ const componentSchemas = {
     properties: {
       combat: schemaRef("Combat"),
       rolls: arrayOf(schemaRef("DiceRoll")),
-      chatMessages: arrayOf(schemaRef("ChatMessage"))
-    }
+      chatMessages: arrayOf(schemaRef("ChatMessage")),
+    },
   },
   CombatActionRejectRequest: {
     type: "object",
     additionalProperties: false,
     properties: {
-      reason: stringSchema
-    }
+      reason: stringSchema,
+    },
   },
   CombatCreateRequest: {
     type: "object",
@@ -3810,8 +5047,8 @@ const componentSchemas = {
     properties: {
       encounterId: idSchema,
       manualTurnOrder: { type: "boolean" },
-      combatants: arrayOf(schemaRef("Combatant"))
-    }
+      combatants: arrayOf(schemaRef("Combatant")),
+    },
   },
   CombatPatchRequest: {
     type: "object",
@@ -3821,8 +5058,8 @@ const componentSchemas = {
       round: { type: "integer", minimum: 1 },
       turnIndex: { type: "integer", minimum: 0 },
       manualTurnOrder: { type: "boolean" },
-      combatants: arrayOf(schemaRef("Combatant"))
-    }
+      combatants: arrayOf(schemaRef("Combatant")),
+    },
   },
   CombatantPatchRequest: {
     allOf: [
@@ -3831,15 +5068,22 @@ const componentSchemas = {
         type: "object",
         additionalProperties: false,
         properties: {
-          syncActorSheet: { type: "boolean" }
-        }
-      }
-    ]
+          syncActorSheet: { type: "boolean" },
+        },
+      },
+    ],
   },
   AuditLog: {
     type: "object",
     additionalProperties: true,
-    required: ["id", "actorType", "action", "targetType", "createdAt", "updatedAt"],
+    required: [
+      "id",
+      "actorType",
+      "action",
+      "targetType",
+      "createdAt",
+      "updatedAt",
+    ],
     properties: {
       ...idTimestampProperties,
       campaignId: idSchema,
@@ -3849,14 +5093,26 @@ const componentSchemas = {
       targetType: stringSchema,
       targetId: idSchema,
       before: {},
-      after: {}
-    }
+      after: {},
+    },
   },
   AuditLogPage: paginatedObjectOf(schemaRef("AuditLog")),
   Proposal: {
     type: "object",
     additionalProperties: true,
-    required: ["id", "campaignId", "createdByType", "title", "summary", "status", "changesJson", "diffJson", "approvalRequired", "createdAt", "updatedAt"],
+    required: [
+      "id",
+      "campaignId",
+      "createdByType",
+      "title",
+      "summary",
+      "status",
+      "changesJson",
+      "diffJson",
+      "approvalRequired",
+      "createdAt",
+      "updatedAt",
+    ],
     properties: {
       ...idTimestampProperties,
       campaignId: idSchema,
@@ -3865,39 +5121,178 @@ const componentSchemas = {
       sourceId: idSchema,
       title: stringSchema,
       summary: stringSchema,
-      status: { type: "string", enum: ["draft", "pending", "approved", "rejected", "applied", "reverted"] },
+      status: {
+        type: "string",
+        enum: [
+          "draft",
+          "pending",
+          "approved",
+          "rejected",
+          "applied",
+          "reverted",
+        ],
+      },
       changesJson: arrayOf(schemaRef("ProposalChange")),
       diffJson: { type: "object", additionalProperties: true },
       approvalRequired: { type: "boolean" },
       approvedByUserId: idSchema,
-      history: arrayOf(schemaRef("ProposalHistoryEntry"))
-    }
+      appliedByUserId: idSchema,
+      appliedAt: { type: "string", format: "date-time" },
+      revertedByUserId: idSchema,
+      revertedAt: { type: "string", format: "date-time" },
+      inverseChangesJson: arrayOf(schemaRef("ProposalInverseChange")),
+      revertGuardsJson: arrayOf(schemaRef("ProposalRevertGuard")),
+      history: arrayOf(schemaRef("ProposalHistoryEntry")),
+    },
   },
   ProposalHistoryEntry: {
     type: "object",
     additionalProperties: false,
     required: ["action", "status", "at", "actorType"],
     properties: {
-      action: { type: "string", enum: ["created", "approved", "rejected", "applied", "revised"] },
-      status: { type: "string", enum: ["draft", "pending", "approved", "rejected", "applied", "reverted"] },
-      previousStatus: { type: "string", enum: ["draft", "pending", "approved", "rejected", "applied", "reverted"] },
+      action: {
+        type: "string",
+        enum: [
+          "created",
+          "approved",
+          "rejected",
+          "applied",
+          "reverted",
+          "revised",
+        ],
+      },
+      status: {
+        type: "string",
+        enum: [
+          "draft",
+          "pending",
+          "approved",
+          "rejected",
+          "applied",
+          "reverted",
+        ],
+      },
+      previousStatus: {
+        type: "string",
+        enum: [
+          "draft",
+          "pending",
+          "approved",
+          "rejected",
+          "applied",
+          "reverted",
+        ],
+      },
       at: stringSchema,
       actorUserId: idSchema,
-      actorType: { type: "string", enum: ["user", "ai", "plugin", "server_admin", "system"] },
+      actorType: {
+        type: "string",
+        enum: ["user", "ai", "plugin", "server_admin", "system"],
+      },
       auditAction: stringSchema,
-      note: stringSchema
-    }
+      note: stringSchema,
+    },
   },
   ProposalChange: {
     type: "object",
     additionalProperties: false,
     required: ["entity", "action", "data"],
     properties: {
-      entity: { type: "string", enum: ["campaign", "scene", "token", "actor", "item", "journal", "chat", "roll", "diceMacro", "encounter", "combat", "asset", "fogPreset"] },
+      entity: {
+        type: "string",
+        enum: [
+          "campaign",
+          "world",
+          "scene",
+          "token",
+          "actor",
+          "item",
+          "journal",
+          "handout",
+          "chat",
+          "roll",
+          "diceMacro",
+          "encounter",
+          "combat",
+          "asset",
+          "fogPreset",
+          "pluginStorage",
+        ],
+      },
       action: { type: "string", enum: ["create", "update", "delete"] },
       id: idSchema,
-      data: { type: "object", additionalProperties: true }
-    }
+      data: { type: "object", additionalProperties: true },
+    },
+  },
+  ProposalInverseChange: {
+    type: "object",
+    additionalProperties: false,
+    required: ["entity", "action", "data"],
+    properties: {
+      entity: {
+        type: "string",
+        enum: [
+          "campaign",
+          "world",
+          "scene",
+          "token",
+          "actor",
+          "item",
+          "journal",
+          "handout",
+          "chat",
+          "roll",
+          "diceMacro",
+          "encounter",
+          "combat",
+          "asset",
+          "fogPreset",
+          "pluginStorage",
+          "campaignSession",
+          "aiMemory",
+        ],
+      },
+      action: { type: "string", enum: ["create", "update", "delete"] },
+      id: idSchema,
+      data: { type: "object", additionalProperties: true },
+    },
+  },
+  ProposalRevertGuard: {
+    type: "object",
+    additionalProperties: false,
+    required: ["entity", "id", "expected"],
+    properties: {
+      entity: {
+        type: "string",
+        enum: [
+          "campaign",
+          "world",
+          "scene",
+          "token",
+          "actor",
+          "item",
+          "journal",
+          "handout",
+          "chat",
+          "roll",
+          "diceMacro",
+          "encounter",
+          "combat",
+          "asset",
+          "fogPreset",
+          "pluginStorage",
+          "campaignSession",
+          "aiMemory",
+        ],
+      },
+      id: idSchema,
+      expected: {
+        anyOf: [
+          { type: "object", additionalProperties: true },
+          { type: "null" },
+        ],
+      },
+    },
   },
   ProposalCreateRequest: {
     type: "object",
@@ -3908,31 +5303,44 @@ const componentSchemas = {
       title: stringSchema,
       summary: stringSchema,
       changesJson: arrayOf(schemaRef("ProposalChange")),
-      diffJson: { type: "object", additionalProperties: true }
-    }
+      diffJson: { type: "object", additionalProperties: true },
+    },
   },
   Encounter: {
     type: "object",
     additionalProperties: true,
-    required: ["id", "campaignId", "name", "summary", "tokenIds", "createdAt", "updatedAt"],
+    required: [
+      "id",
+      "campaignId",
+      "name",
+      "summary",
+      "tokenIds",
+      "createdAt",
+      "updatedAt",
+    ],
     properties: {
       ...idTimestampProperties,
       campaignId: idSchema,
+      worldId: idSchema,
       name: stringSchema,
       summary: stringSchema,
       tokenIds: arrayOf(idSchema),
-      difficulty: stringSchema
-    }
+      difficulty: stringSchema,
+    },
   },
   EncounterCreateRequest: {
     type: "object",
     additionalProperties: false,
     properties: {
+      worldId: { anyOf: [idSchema, { type: "null" }] },
       name: stringSchema,
       summary: stringSchema,
       tokenIds: arrayOf(idSchema),
-      difficulty: stringSchema
-    }
+      difficulty: stringSchema,
+    },
+  },
+  EncounterPatchRequest: {
+    $ref: "#/components/schemas/EncounterCreateRequest",
   },
   ChatExport: {
     type: "object",
@@ -3942,10 +5350,16 @@ const componentSchemas = {
       campaignId: idSchema,
       exportedAt: { type: "string", format: "date-time" },
       count: { type: "integer", minimum: 0 },
-      visibilityCounts: { type: "object", additionalProperties: { type: "integer", minimum: 0 } },
-      typeCounts: { type: "object", additionalProperties: { type: "integer", minimum: 0 } },
-      messages: arrayOf(schemaRef("ChatMessage"))
-    }
+      visibilityCounts: {
+        type: "object",
+        additionalProperties: { type: "integer", minimum: 0 },
+      },
+      typeCounts: {
+        type: "object",
+        additionalProperties: { type: "integer", minimum: 0 },
+      },
+      messages: arrayOf(schemaRef("ChatMessage")),
+    },
   },
   DiceMacro: {
     type: "object",
@@ -3957,8 +5371,8 @@ const componentSchemas = {
       name: stringSchema,
       formula: stringSchema,
       visibility: { type: "string", enum: ["public", "gm_only"] },
-      createdByUserId: idSchema
-    }
+      createdByUserId: idSchema,
+    },
   },
   DiceMacroRequest: {
     type: "object",
@@ -3966,13 +5380,25 @@ const componentSchemas = {
     properties: {
       name: stringSchema,
       formula: stringSchema,
-      visibility: { type: "string", enum: ["public", "gm_only"] }
-    }
+      visibility: { type: "string", enum: ["public", "gm_only"] },
+    },
   },
   AudioTrack: {
     type: "object",
     additionalProperties: true,
-    required: ["id", "campaignId", "createdBy", "name", "url", "kind", "loop", "playing", "volume", "createdAt", "updatedAt"],
+    required: [
+      "id",
+      "campaignId",
+      "createdBy",
+      "name",
+      "url",
+      "kind",
+      "loop",
+      "playing",
+      "volume",
+      "createdAt",
+      "updatedAt",
+    ],
     properties: {
       ...idTimestampProperties,
       campaignId: idSchema,
@@ -3983,8 +5409,8 @@ const componentSchemas = {
       loop: { type: "boolean" },
       playing: { type: "boolean" },
       volume: { type: "number", minimum: 0, maximum: 1 },
-      startedAt: { type: "string", format: "date-time" }
-    }
+      startedAt: { type: "string", format: "date-time" },
+    },
   },
   AudioTrackRequest: {
     type: "object",
@@ -3995,8 +5421,8 @@ const componentSchemas = {
       url: stringSchema,
       kind: { type: "string", enum: ["music", "ambient", "sfx"] },
       loop: { type: "boolean" },
-      volume: { type: "number", minimum: 0, maximum: 1 }
-    }
+      volume: { type: "number", minimum: 0, maximum: 1 },
+    },
   },
   AudioTrackPatchRequest: {
     type: "object",
@@ -4007,13 +5433,21 @@ const componentSchemas = {
       kind: { type: "string", enum: ["music", "ambient", "sfx"] },
       loop: { type: "boolean" },
       volume: { type: "number", minimum: 0, maximum: 1 },
-      playing: { type: "boolean" }
-    }
+      playing: { type: "boolean" },
+    },
   },
   AiThread: {
     type: "object",
     additionalProperties: true,
-    required: ["id", "campaignId", "userId", "provider", "title", "createdAt", "updatedAt"],
+    required: [
+      "id",
+      "campaignId",
+      "userId",
+      "provider",
+      "title",
+      "createdAt",
+      "updatedAt",
+    ],
     properties: {
       ...idTimestampProperties,
       campaignId: idSchema,
@@ -4021,12 +5455,15 @@ const componentSchemas = {
       provider: stringSchema,
       title: stringSchema,
       prompt: stringSchema,
-      status: { type: "string", enum: ["running", "completed", "failed", "cancelled"] },
+      status: {
+        type: "string",
+        enum: ["running", "completed", "failed", "cancelled"],
+      },
       assistantMessage: stringSchema,
       providerError: stringSchema,
       usage: schemaRef("AiUsageMetrics"),
-      advertisedTools: arrayOf({ type: "object", additionalProperties: true })
-    }
+      advertisedTools: arrayOf({ type: "object", additionalProperties: true }),
+    },
   },
   AiUsageMetrics: {
     type: "object",
@@ -4038,13 +5475,20 @@ const componentSchemas = {
       promptTokens: { type: "integer", minimum: 0 },
       completionTokens: { type: "integer", minimum: 0 },
       totalTokens: { type: "integer", minimum: 0 },
-      estimatedCostUsd: { type: "number", minimum: 0 }
-    }
+      estimatedCostUsd: { type: "number", minimum: 0 },
+    },
   },
   AiEvaluationRun: {
     type: "object",
     additionalProperties: true,
-    required: ["id", "campaignId", "threadId", "status", "createdAt", "updatedAt"],
+    required: [
+      "id",
+      "campaignId",
+      "threadId",
+      "status",
+      "createdAt",
+      "updatedAt",
+    ],
     properties: {
       ...idTimestampProperties,
       campaignId: idSchema,
@@ -4052,8 +5496,8 @@ const componentSchemas = {
       requestedByUserId: idSchema,
       status: stringSchema,
       score: { type: "number" },
-      checks: arrayOf({ type: "object", additionalProperties: true })
-    }
+      checks: arrayOf({ type: "object", additionalProperties: true }),
+    },
   },
   AiEvaluationInput: {
     type: "object",
@@ -4062,8 +5506,8 @@ const componentSchemas = {
     properties: {
       threadId: idSchema,
       notes: stringSchema,
-      expectedOutcome: stringSchema
-    }
+      expectedOutcome: stringSchema,
+    },
   },
   AiEvaluationSnapshot: {
     type: "object",
@@ -4071,8 +5515,8 @@ const componentSchemas = {
     properties: {
       campaignId: idSchema,
       exportedAt: { type: "string", format: "date-time" },
-      evaluations: arrayOf(schemaRef("AiEvaluationRun"))
-    }
+      evaluations: arrayOf(schemaRef("AiEvaluationRun")),
+    },
   },
   AiThreadMessage: {
     type: "object",
@@ -4080,8 +5524,8 @@ const componentSchemas = {
     required: ["role", "content"],
     properties: {
       role: { type: "string", enum: ["user", "assistant"] },
-      content: stringSchema
-    }
+      content: stringSchema,
+    },
   },
   AiThreadCreateRequest: {
     type: "object",
@@ -4092,12 +5536,15 @@ const componentSchemas = {
       surface: { type: "string", enum: ["agent_panel", "ai_studio"] },
       approvalMode: { type: "string", enum: ["manual", "auto"] },
       model: stringSchema,
-      reasoningEffort: { type: "string", enum: ["none", "minimal", "low", "medium", "high", "xhigh"] },
+      reasoningEffort: {
+        type: "string",
+        enum: ["none", "minimal", "low", "medium", "high", "xhigh"],
+      },
       selectedSceneId: idSchema,
       selectedAssetId: idSchema,
       selectedTokenIds: arrayOf(idSchema),
-      messages: arrayOf(schemaRef("AiThreadMessage"))
-    }
+      messages: arrayOf(schemaRef("AiThreadMessage")),
+    },
   },
   McpJsonRpcRequest: {
     type: "object",
@@ -4106,8 +5553,8 @@ const componentSchemas = {
       jsonrpc: stringSchema,
       id: { oneOf: [stringSchema, { type: "number" }, { type: "null" }] },
       method: stringSchema,
-      params: looseObjectSchema
-    }
+      params: looseObjectSchema,
+    },
   },
   McpJsonRpcResponse: {
     type: "object",
@@ -4117,8 +5564,8 @@ const componentSchemas = {
       jsonrpc: stringSchema,
       id: { oneOf: [stringSchema, { type: "number" }, { type: "null" }] },
       result: looseObjectSchema,
-      error: looseObjectSchema
-    }
+      error: looseObjectSchema,
+    },
   },
   BoardCaptureSubmitRequest: {
     type: "object",
@@ -4128,15 +5575,18 @@ const componentSchemas = {
       sceneId: idSchema,
       width: { type: "number" },
       height: { type: "number" },
-      error: stringSchema
-    }
+      error: stringSchema,
+    },
   },
   BoardCaptureResult: {
     type: "object",
     additionalProperties: true,
     required: ["status"],
     properties: {
-      status: { type: "string", enum: ["captured", "board_capture_unavailable", "failed"] },
+      status: {
+        type: "string",
+        enum: ["captured", "board_capture_unavailable", "failed"],
+      },
       captureId: idSchema,
       imageUrl: stringSchema,
       expiresAt: { type: "string", format: "date-time" },
@@ -4144,35 +5594,40 @@ const componentSchemas = {
       width: { type: "number" },
       height: { type: "number" },
       mimeType: { type: "string", enum: ["image/png"] },
-      reason: stringSchema
-    }
+      reason: stringSchema,
+    },
   },
   AiEditLayerApplyResult: {
     type: "object",
     additionalProperties: true,
-    required: ["aiEditSceneId", "targetSceneId", "copiedTokenCount", "replacedTokenCount"],
+    required: [
+      "aiEditSceneId",
+      "targetSceneId",
+      "copiedTokenCount",
+      "replacedTokenCount",
+    ],
     properties: {
       aiEditSceneId: idSchema,
       targetSceneId: idSchema,
       backgroundAssetId: idSchema,
       copiedTokenCount: { type: "integer", minimum: 0 },
-      replacedTokenCount: { type: "integer", minimum: 0 }
-    }
+      replacedTokenCount: { type: "integer", minimum: 0 },
+    },
   },
   AiToolCallRetryRequest: {
     type: "object",
     additionalProperties: false,
     properties: {
-      dryRun: { type: "boolean" }
-    }
+      dryRun: { type: "boolean" },
+    },
   },
   AiProviderEvent: {
     type: "object",
     additionalProperties: true,
     required: ["type"],
     properties: {
-      type: stringSchema
-    }
+      type: stringSchema,
+    },
   },
   CodexAuthStart: {
     type: "object",
@@ -4183,8 +5638,8 @@ const componentSchemas = {
       loginId: stringSchema,
       authUrl: stringSchema,
       verificationUrl: stringSchema,
-      userCode: stringSchema
-    }
+      userCode: stringSchema,
+    },
   },
   AiThreadResponse: {
     type: "object",
@@ -4193,8 +5648,8 @@ const componentSchemas = {
     properties: {
       thread: schemaRef("AiThread"),
       assistantMessage: stringSchema,
-      events: arrayOf(schemaRef("AiProviderEvent"))
-    }
+      events: arrayOf(schemaRef("AiProviderEvent")),
+    },
   },
   AiThreadAuthRequiredResponse: {
     type: "object",
@@ -4205,21 +5660,68 @@ const componentSchemas = {
       message: stringSchema,
       codexAuth: schemaRef("CodexAuthStart"),
       thread: schemaRef("AiThread"),
-      events: arrayOf(schemaRef("AiProviderEvent"))
-    }
+      events: arrayOf(schemaRef("AiProviderEvent")),
+    },
   },
   AiMemoryFact: {
     type: "object",
     additionalProperties: true,
-    required: ["id", "campaignId", "text", "visibility", "sourceIds", "createdAt", "updatedAt"],
+    required: [
+      "id",
+      "campaignId",
+      "text",
+      "type",
+      "visibility",
+      "status",
+      "sourceIds",
+      "createdAt",
+      "updatedAt",
+    ],
     properties: {
       ...idTimestampProperties,
       campaignId: idSchema,
+      worldId: idSchema,
       text: stringSchema,
+      type: {
+        type: "string",
+        enum: [
+          "canon_fact",
+          "rumor",
+          "secret",
+          "npc_profile",
+          "location_profile",
+          "faction_profile",
+          "quest_hook",
+          "unresolved_thread",
+          "character_goal",
+          "session_summary",
+          "timeline_event",
+          "retconned_fact",
+          "ai_suggestion",
+        ],
+      },
+      subject: stringSchema,
       visibility: { type: "string", enum: ["public", "gm_only"] },
+      status: {
+        type: "string",
+        enum: ["candidate", "approved", "rejected", "retconned"],
+      },
+      confidence: { type: "number", minimum: 0, maximum: 1 },
       sourceIds: arrayOf(idSchema),
-      approvedByUserId: idSchema
-    }
+      source: {
+        type: "object",
+        additionalProperties: false,
+        required: ["type"],
+        properties: { type: stringSchema, id: idSchema, label: stringSchema },
+      },
+      createdBy: { type: "string", enum: ["user", "ai", "plugin", "system"] },
+      approvedByUserId: idSchema,
+      approvedAt: { type: "string", format: "date-time" },
+      rejectedByUserId: idSchema,
+      rejectedAt: { type: "string", format: "date-time" },
+      retconnedByUserId: idSchema,
+      retconnedAt: { type: "string", format: "date-time" },
+    },
   },
   AiMemoryCreateRequest: {
     type: "object",
@@ -4227,18 +5729,77 @@ const componentSchemas = {
     required: ["text"],
     properties: {
       text: stringSchema,
+      worldId: { anyOf: [idSchema, { type: "null" }] },
+      type: {
+        type: "string",
+        enum: [
+          "canon_fact",
+          "rumor",
+          "secret",
+          "npc_profile",
+          "location_profile",
+          "faction_profile",
+          "quest_hook",
+          "unresolved_thread",
+          "character_goal",
+          "session_summary",
+          "timeline_event",
+          "retconned_fact",
+          "ai_suggestion",
+        ],
+      },
+      subject: { anyOf: [stringSchema, { type: "null" }] },
       visibility: { type: "string", enum: ["public", "gm_only"] },
+      confidence: {
+        anyOf: [{ type: "number", minimum: 0, maximum: 1 }, { type: "null" }],
+      },
       sourceIds: arrayOf(idSchema),
-      approvedByUserId: idSchema
-    }
+      source: { type: "object", additionalProperties: true },
+      createdBy: { type: "string", enum: ["user", "ai", "plugin", "system"] },
+    },
+  },
+  AiMemoryPatchRequest: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      text: stringSchema,
+      worldId: { anyOf: [idSchema, { type: "null" }] },
+      type: {
+        type: "string",
+        enum: [
+          "canon_fact",
+          "rumor",
+          "secret",
+          "npc_profile",
+          "location_profile",
+          "faction_profile",
+          "quest_hook",
+          "unresolved_thread",
+          "character_goal",
+          "session_summary",
+          "timeline_event",
+          "retconned_fact",
+          "ai_suggestion",
+        ],
+      },
+      subject: { anyOf: [stringSchema, { type: "null" }] },
+      visibility: { type: "string", enum: ["public", "gm_only"] },
+      confidence: {
+        anyOf: [{ type: "number", minimum: 0, maximum: 1 }, { type: "null" }],
+      },
+      sourceIds: arrayOf(idSchema),
+      source: { type: "object", additionalProperties: true },
+      createdBy: { type: "string", enum: ["user", "ai", "plugin", "system"] },
+      status: { type: "string", enum: ["candidate", "retconned"] },
+    },
   },
   AiMemoryExtractRequest: {
     type: "object",
     additionalProperties: false,
     properties: {
       sourceText: stringSchema,
-      visibility: { type: "string", enum: ["public", "gm_only"] }
-    }
+      visibility: { type: "string", enum: ["public", "gm_only"] },
+    },
   },
   AiMemoryExtractResponse: {
     type: "object",
@@ -4248,13 +5809,20 @@ const componentSchemas = {
       thread: schemaRef("AiThread"),
       memory: schemaRef("AiMemoryFact"),
       providerOutput: stringSchema,
-      events: arrayOf(schemaRef("AiProviderEvent"))
-    }
+      events: arrayOf(schemaRef("AiProviderEvent")),
+    },
   },
   AiToolCall: {
     type: "object",
     additionalProperties: true,
-    required: ["id", "threadId", "toolName", "status", "createdAt", "updatedAt"],
+    required: [
+      "id",
+      "threadId",
+      "toolName",
+      "status",
+      "createdAt",
+      "updatedAt",
+    ],
     properties: {
       ...idTimestampProperties,
       threadId: idSchema,
@@ -4262,15 +5830,15 @@ const componentSchemas = {
       status: { type: "string", enum: ["started", "completed", "failed"] },
       input: {},
       output: {},
-      durationMs: { type: "number", minimum: 0 }
-    }
+      durationMs: { type: "number", minimum: 0 },
+    },
   },
   AiSessionRecapRequest: {
     type: "object",
     additionalProperties: false,
     properties: {
-      transcript: stringSchema
-    }
+      transcript: stringSchema,
+    },
   },
   AiSessionRecapResponse: {
     type: "object",
@@ -4278,8 +5846,8 @@ const componentSchemas = {
     required: ["proposal", "memory"],
     properties: {
       proposal: schemaRef("Proposal"),
-      memory: schemaRef("AiMemoryFact")
-    }
+      memory: schemaRef("AiMemoryFact"),
+    },
   },
   AiEncounterDesignRequest: {
     type: "object",
@@ -4287,8 +5855,8 @@ const componentSchemas = {
     required: ["prompt"],
     properties: {
       prompt: stringSchema,
-      difficulty: stringSchema
-    }
+      difficulty: stringSchema,
+    },
   },
   AiEncounterDesignResponse: {
     type: "object",
@@ -4296,8 +5864,8 @@ const componentSchemas = {
     required: ["proposal", "encounter"],
     properties: {
       proposal: schemaRef("Proposal"),
-      encounter: schemaRef("Encounter")
-    }
+      encounter: schemaRef("Encounter"),
+    },
   },
   PluginRuntimeInfo: {
     type: "object",
@@ -4307,10 +5875,91 @@ const componentSchemas = {
       id: idSchema,
       name: stringSchema,
       version: stringSchema,
+      compatibleCore: stringSchema,
+      package: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          publisher: stringSchema,
+          license: stringSchema,
+        },
+      },
+      runtime: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          apiVersion: stringSchema,
+          sandbox: stringSchema,
+        },
+      },
       permissions: arrayOf(stringSchema),
-      trust: { type: "object", additionalProperties: true },
-      source: { type: "object", additionalProperties: true }
-    }
+      chatCommands: arrayOf({
+        type: "object",
+        additionalProperties: false,
+        required: ["command", "description"],
+        properties: { command: stringSchema, description: stringSchema },
+      }),
+      eventSubscriptions: arrayOf({
+        type: "object",
+        additionalProperties: false,
+        required: ["type"],
+        properties: { type: stringSchema, description: stringSchema },
+      }),
+      trust: {
+        type: "object",
+        additionalProperties: false,
+        required: ["status", "policy", "required", "installable", "errors"],
+        properties: {
+          status: { type: "string", enum: ["trusted", "unsigned", "untrusted"] },
+          policy: { type: "string", enum: ["allow_unsigned", "require_trusted"] },
+          required: { type: "boolean" },
+          installable: { type: "boolean" },
+          errors: arrayOf(stringSchema),
+          signature: {
+            type: "object",
+            additionalProperties: false,
+            required: ["verified"],
+            properties: {
+              keyId: stringSchema,
+              algorithm: stringSchema,
+              verified: { type: "boolean" },
+            },
+          },
+        },
+      },
+      source: {
+        type: "object",
+        additionalProperties: false,
+        required: ["type", "packageId", "manifestChecksum", "sandbox"],
+        properties: {
+          type: { type: "string", enum: ["local", "registry"] },
+          packageId: stringSchema,
+          manifestChecksum: stringSchema,
+          sandbox: { type: "string", enum: ["vm", "manifest-only"] },
+          checksum: stringSchema,
+          packageChecksum: stringSchema,
+          syncedAt: { type: "string", format: "date-time" },
+        },
+      },
+      distribution: {
+        type: "object",
+        additionalProperties: false,
+        required: ["availableVersions", "latestVersion"],
+        properties: {
+          availableVersions: arrayOf(stringSchema),
+          latestVersion: stringSchema,
+        },
+      },
+      permissionReview: {
+        type: "object",
+        additionalProperties: false,
+        required: ["requestedPermissions", "grantRequired"],
+        properties: {
+          requestedPermissions: arrayOf(stringSchema),
+          grantRequired: { type: "boolean" },
+        },
+      },
+    },
   },
   PluginCampaignInfo: {
     allOf: [
@@ -4329,34 +5978,41 @@ const componentSchemas = {
             properties: {
               installCount: { type: "integer", minimum: 0 },
               lastInstallAt: { type: "string", format: "date-time" },
-              lastActorUserId: stringSchema,
-              versions: arrayOf(stringSchema)
-            }
-          }
-        }
-      }
-    ]
+              versions: arrayOf(stringSchema),
+            },
+          },
+        },
+      },
+    ],
   },
   PluginInstallRequest: {
     type: "object",
     additionalProperties: false,
     properties: {
       permissions: arrayOf(stringSchema),
-      version: stringSchema
-    }
+      version: stringSchema,
+    },
   },
   PermissionGrant: {
     type: "object",
     additionalProperties: true,
-    required: ["id", "subjectType", "subjectId", "campaignId", "permissions", "createdAt", "updatedAt"],
+    required: [
+      "id",
+      "subjectType",
+      "subjectId",
+      "campaignId",
+      "permissions",
+      "createdAt",
+      "updatedAt",
+    ],
     properties: {
       ...idTimestampProperties,
       subjectType: stringSchema,
       subjectId: idSchema,
       campaignId: idSchema,
       permissions: arrayOf(stringSchema),
-      metadata: { type: "object", additionalProperties: true }
-    }
+      metadata: { type: "object", additionalProperties: true },
+    },
   },
   PluginInstallResponse: {
     type: "object",
@@ -4365,13 +6021,21 @@ const componentSchemas = {
     properties: {
       plugin: schemaRef("PluginCampaignInfo"),
       grant: schemaRef("PermissionGrant"),
-      permissionReview: { type: "object", additionalProperties: true }
-    }
+      permissionReview: { type: "object", additionalProperties: true },
+    },
   },
   PluginStorageEntry: {
     type: "object",
     additionalProperties: true,
-    required: ["id", "campaignId", "pluginId", "key", "value", "createdAt", "updatedAt"],
+    required: [
+      "id",
+      "campaignId",
+      "pluginId",
+      "key",
+      "value",
+      "createdAt",
+      "updatedAt",
+    ],
     properties: {
       ...idTimestampProperties,
       campaignId: idSchema,
@@ -4379,15 +6043,15 @@ const componentSchemas = {
       key: stringSchema,
       value: {},
       updatedByType: stringSchema,
-      updatedById: idSchema
-    }
+      updatedById: idSchema,
+    },
   },
   PluginStorageSetRequest: {
     type: "object",
     additionalProperties: false,
     properties: {
-      value: {}
-    }
+      value: {},
+    },
   },
   PluginStorageDeleteResponse: {
     type: "object",
@@ -4395,8 +6059,8 @@ const componentSchemas = {
     required: ["deleted", "key"],
     properties: {
       deleted: { type: "boolean" },
-      key: stringSchema
-    }
+      key: stringSchema,
+    },
   },
   PluginChatCommandRequest: {
     type: "object",
@@ -4404,54 +6068,84 @@ const componentSchemas = {
     required: ["command"],
     properties: {
       command: stringSchema,
-      args: stringSchema
-    }
+      args: stringSchema,
+    },
   },
   PluginChatCommandResponse: {
     type: "object",
     additionalProperties: true,
-    required: ["pluginId", "command", "chat", "storageMutation"],
+    required: [
+      "pluginId",
+      "command",
+      "proposal",
+      "proposals",
+      "chat",
+      "storageMutation",
+      "approvalRequired",
+    ],
     properties: {
       pluginId: idSchema,
       command: stringSchema,
+      proposal: schemaRef("Proposal"),
+      proposals: arrayOf(schemaRef("Proposal")),
+      bridgeReceipts: { type: "object", additionalProperties: stringSchema },
       chat: schemaRef("ChatMessage"),
-      storageMutation: { type: "object", additionalProperties: true }
-    }
+      storageMutation: { type: "object", additionalProperties: true },
+      approvalRequired: { type: "boolean", enum: [true] },
+    },
   },
   PluginPackageInstallRequest: {
     type: "object",
     additionalProperties: false,
     properties: {
       campaignId: idSchema,
-      packagePath: stringSchema
-    }
+      packagePath: stringSchema,
+    },
   },
   PluginRegistrySyncRequest: {
     type: "object",
     additionalProperties: false,
     properties: {
       campaignId: idSchema,
-      registryUrl: stringSchema
-    }
+      registryUrl: stringSchema,
+    },
   },
   PluginRegistrySyncResponse: {
     type: "object",
     additionalProperties: true,
     properties: {
-      registries: arrayOf({ type: "object", additionalProperties: true })
-    }
+      registries: arrayOf({ type: "object", additionalProperties: true }),
+    },
   },
   SystemRuntimeInfo: {
     type: "object",
-    additionalProperties: true,
-    required: ["id", "name", "version"],
+    additionalProperties: false,
+    required: ["id", "name", "version", "compatibleCore", "entrypoints", "schemas", "permissions", "capabilities", "active", "source", "dataDriven", "runtimeCapabilities", "unsupportedCapabilities"],
     properties: {
       id: idSchema,
       name: stringSchema,
       version: stringSchema,
+      compatibleCore: stringSchema,
+      entrypoints: {
+        type: "object",
+        additionalProperties: false,
+        properties: { client: stringSchema, server: stringSchema },
+      },
+      schemas: {
+        type: "object",
+        additionalProperties: false,
+        required: ["actor", "item"],
+        properties: { actor: stringSchema, item: stringSchema },
+      },
+      permissions: arrayOf(stringSchema),
+      capabilities: arrayOf(stringSchema),
       active: { type: "boolean" },
-      manifest: { type: "object", additionalProperties: true }
-    }
+      source: { type: "string", enum: ["bundled", "api"] },
+      dataDriven: { type: "boolean" },
+      runtimeCapabilities: arrayOf(stringSchema),
+      unsupportedCapabilities: arrayOf(stringSchema),
+      installedAt: { type: "string", format: "date-time" },
+    },
   },
   SystemInstallResponse: {
     type: "object",
@@ -4459,18 +6153,40 @@ const componentSchemas = {
     required: ["system", "campaign"],
     properties: {
       system: schemaRef("SystemRuntimeInfo"),
-      campaign: schemaRef("Campaign")
-    }
+      campaign: schemaRef("Campaign"),
+    },
   },
   SystemInstallRequest: {
     type: "object",
-    additionalProperties: true,
+    additionalProperties: false,
+    required: ["campaignId", "manifest"],
     properties: {
       campaignId: idSchema,
-      id: idSchema,
-      name: stringSchema,
-      version: stringSchema
-    }
+      manifest: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "name", "version", "compatibleCore", "entrypoints", "schemas", "permissions", "capabilities"],
+        properties: {
+          id: idSchema,
+          name: stringSchema,
+          version: stringSchema,
+          compatibleCore: stringSchema,
+          entrypoints: {
+            type: "object",
+            additionalProperties: false,
+            properties: { client: stringSchema, server: stringSchema },
+          },
+          schemas: {
+            type: "object",
+            additionalProperties: false,
+            required: ["actor", "item"],
+            properties: { actor: stringSchema, item: stringSchema },
+          },
+          permissions: arrayOf(stringSchema),
+          capabilities: arrayOf(stringSchema),
+        },
+      },
+    },
   },
   SystemCharacterCreateRequest: {
     type: "object",
@@ -4478,8 +6194,8 @@ const componentSchemas = {
     properties: {
       templateId: idSchema,
       name: stringSchema,
-      ownerUserId: idSchema
-    }
+      ownerUserId: idSchema,
+    },
   },
   SystemMonsterCreateRequest: {
     type: "object",
@@ -4487,15 +6203,15 @@ const componentSchemas = {
     properties: {
       threatId: idSchema,
       name: stringSchema,
-      ownerUserId: idSchema
-    }
+      ownerUserId: idSchema,
+    },
   },
   SystemCharacterImportRequest: {
     type: "object",
     additionalProperties: true,
     properties: {
-      ownerUserId: idSchema
-    }
+      ownerUserId: idSchema,
+    },
   },
   SystemActorActionRequest: {
     type: "object",
@@ -4517,12 +6233,15 @@ const componentSchemas = {
       resourceAmount: { type: "number" },
       useFreeResource: { type: "boolean" },
       effectChoice: stringSchema,
-      saveOutcomes: { type: "object", additionalProperties: { type: "string", enum: ["success", "failure"] } },
+      saveOutcomes: {
+        type: "object",
+        additionalProperties: { type: "string", enum: ["success", "failure"] },
+      },
       reactionUse: { type: "boolean" },
       rechargeCheck: { type: "number" },
       commit: { type: "boolean" },
-      preview: { type: "boolean" }
-    }
+      preview: { type: "boolean" },
+    },
   },
   SystemActorResponse: {
     type: "object",
@@ -4531,8 +6250,8 @@ const componentSchemas = {
       actor: schemaRef("Actor"),
       item: schemaRef("Item"),
       items: arrayOf(schemaRef("Item")),
-      sheet: { type: "object", additionalProperties: true }
-    }
+      sheet: { type: "object", additionalProperties: true },
+    },
   },
   SystemRollResponse: {
     type: "object",
@@ -4550,8 +6269,8 @@ const componentSchemas = {
       usage: { type: "object", additionalProperties: true },
       effect: { type: "object", additionalProperties: true },
       effects: arrayOf({ type: "object", additionalProperties: true }),
-      resolution: { type: "object", additionalProperties: true }
-    }
+      resolution: { type: "object", additionalProperties: true },
+    },
   },
   SystemEncounterPlanRequest: {
     type: "object",
@@ -4560,8 +6279,8 @@ const componentSchemas = {
       partyActorIds: arrayOf(idSchema),
       threats: arrayOf({ type: "object", additionalProperties: true }),
       createEncounter: { type: "boolean" },
-      name: stringSchema
-    }
+      name: stringSchema,
+    },
   },
   SystemEncounterPlanResponse: {
     type: "object",
@@ -4569,8 +6288,8 @@ const componentSchemas = {
     required: ["plan"],
     properties: {
       plan: { type: "object", additionalProperties: true },
-      encounter: schemaRef("Encounter")
-    }
+      encounter: schemaRef("Encounter"),
+    },
   },
   SystemCompendium: {
     type: "object",
@@ -4578,8 +6297,8 @@ const componentSchemas = {
     required: ["systemId", "entries"],
     properties: {
       systemId: idSchema,
-      entries: arrayOf({ type: "object", additionalProperties: true })
-    }
+      entries: arrayOf({ type: "object", additionalProperties: true }),
+    },
   },
   ContentImportSource: {
     type: "object",
@@ -4588,8 +6307,8 @@ const componentSchemas = {
       sourceType: stringSchema,
       adapterId: idSchema,
       name: stringSchema,
-      license: { type: "object", additionalProperties: true }
-    }
+      license: { type: "object", additionalProperties: true },
+    },
   },
   ContentImportEntity: {
     type: "object",
@@ -4600,22 +6319,35 @@ const componentSchemas = {
       kind: stringSchema,
       name: stringSchema,
       selectedByDefault: { type: "boolean" },
-      data: { type: "object", additionalProperties: true }
-    }
+      data: { type: "object", additionalProperties: true },
+    },
   },
   ContentImportBatch: {
     type: "object",
     additionalProperties: true,
-    required: ["id", "campaignId", "status", "source", "entities", "selectedEntityIds", "appliedRecords", "createdAt", "updatedAt"],
+    required: [
+      "id",
+      "campaignId",
+      "status",
+      "source",
+      "entities",
+      "selectedEntityIds",
+      "appliedRecords",
+      "createdAt",
+      "updatedAt",
+    ],
     properties: {
       ...idTimestampProperties,
       campaignId: idSchema,
-      status: { type: "string", enum: ["previewed", "applied", "rolled_back", "deleted"] },
+      status: {
+        type: "string",
+        enum: ["previewed", "applied", "rolled_back", "deleted"],
+      },
       source: schemaRef("ContentImportSource"),
       entities: arrayOf(schemaRef("ContentImportEntity")),
       selectedEntityIds: arrayOf(idSchema),
-      appliedRecords: arrayOf({ type: "object", additionalProperties: true })
-    }
+      appliedRecords: arrayOf({ type: "object", additionalProperties: true }),
+    },
   },
   ContentImportPreviewRequest: {
     type: "object",
@@ -4623,15 +6355,15 @@ const componentSchemas = {
     required: ["entities"],
     properties: {
       source: schemaRef("ContentImportSource"),
-      entities: arrayOf(schemaRef("ContentImportEntity"))
-    }
+      entities: arrayOf(schemaRef("ContentImportEntity")),
+    },
   },
   ContentImportApplyRequest: {
     type: "object",
     additionalProperties: false,
     properties: {
-      selectedEntityIds: arrayOf(idSchema)
-    }
+      selectedEntityIds: arrayOf(idSchema),
+    },
   },
   CampaignArchive: {
     type: "object",
@@ -4648,16 +6380,22 @@ const componentSchemas = {
           campaignId: idSchema,
           name: stringSchema,
           schemaVersion: stringSchema,
-          exportScope: { type: "string", enum: ["campaign"] },
+          exportScope: {
+            type: "string",
+            enum: ["campaign", "world", "selected_collections"],
+          },
+          exportScopeId: idSchema,
+          exportCollections: { type: "array", items: { type: "string" } },
+          dependencyWarnings: arrayOf(stringSchema),
           redactionMode: { type: "string", enum: ["portable"] },
           compatibilityNotes: arrayOf(stringSchema),
           assetCount: { type: "integer", minimum: 0 },
-          assetFileCount: { type: "integer", minimum: 0 }
-        }
+          assetFileCount: { type: "integer", minimum: 0 },
+        },
       },
       data: { type: "object", additionalProperties: true },
-      files: arrayOf({ type: "object", additionalProperties: true })
-    }
+      files: arrayOf({ type: "object", additionalProperties: true }),
+    },
   },
   CampaignImportRequest: {
     anyOf: [
@@ -4668,13 +6406,19 @@ const componentSchemas = {
         required: ["archive"],
         properties: {
           archive: schemaRef("CampaignArchive"),
-          mode: { type: "string", enum: ["upsert", "reject_conflicts", "skip_conflicts", "dry_run"] },
-          scope: { type: "string", enum: ["all", "assets_only", "selected_collections"] },
+          mode: {
+            type: "string",
+            enum: ["upsert", "reject_conflicts", "skip_conflicts", "dry_run"],
+          },
+          scope: {
+            type: "string",
+            enum: ["all", "assets_only", "selected_collections"],
+          },
           collections: { type: "array", items: { type: "string" } },
-          regenerateIds: { type: "boolean" }
-        }
-      }
-    ]
+          regenerateIds: { type: "boolean" },
+        },
+      },
+    ],
   },
   CampaignImportResponse: {
     type: "object",
@@ -4682,15 +6426,21 @@ const componentSchemas = {
     required: ["importedCampaignIds", "counts", "conflicts", "assetFiles"],
     properties: {
       importedCampaignIds: arrayOf(idSchema),
-      counts: { type: "object", additionalProperties: { type: "integer", minimum: 0 } },
+      counts: {
+        type: "object",
+        additionalProperties: { type: "integer", minimum: 0 },
+      },
       conflicts: arrayOf({ type: "object", additionalProperties: true }),
       skippedConflicts: arrayOf({ type: "object", additionalProperties: true }),
       assetFiles: { type: "integer", minimum: 0 },
       dryRun: { type: "boolean" },
-      importScope: { type: "string", enum: ["all", "assets_only", "selected_collections"] },
+      importScope: {
+        type: "string",
+        enum: ["all", "assets_only", "selected_collections"],
+      },
       importCollections: { type: "array", items: { type: "string" } },
-      importWarnings: { type: "array", items: { type: "string" } }
-    }
+      importWarnings: { type: "array", items: { type: "string" } },
+    },
   },
   CampaignDogfoodReportBundle: {
     type: "object",
@@ -4698,131 +6448,204 @@ const componentSchemas = {
     properties: {
       format: stringSchema,
       campaignId: idSchema,
-      exportedAt: { type: "string", format: "date-time" }
-    }
-  }
+      exportedAt: { type: "string", format: "date-time" },
+    },
+  },
 } as const;
 
 const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
   "GET /api/v1/openapi.json": {
     responses: {
-      "200": jsonResponse("Generated OpenAPI 3.1 contract document", schemaRef("OpenApiDocument"))
-    }
+      "200": jsonResponse(
+        "Generated OpenAPI 3.1 contract document",
+        schemaRef("OpenApiDocument"),
+      ),
+    },
   },
   "GET /api/v1/health": {
     responses: {
-      "200": jsonResponse("API health status", schemaRef("HealthStatus"))
-    }
+      "200": jsonResponse("API health status", schemaRef("HealthStatus")),
+    },
   },
   "POST /api/v1/mcp": {
     requestBody: jsonRequestBody(schemaRef("McpJsonRpcRequest")),
     responses: {
-      "200": jsonResponse("MCP JSON-RPC response", schemaRef("McpJsonRpcResponse"))
-    }
+      "200": jsonResponse(
+        "MCP JSON-RPC response",
+        schemaRef("McpJsonRpcResponse"),
+      ),
+    },
   },
   "GET /api/v1/agent/board-captures/{captureHandle}": {
-    parameters: [{ name: "token", in: "query", required: true, schema: { type: "string" }, description: "Short-lived capture token" }],
+    parameters: [
+      {
+        name: "token",
+        in: "query",
+        required: true,
+        schema: { type: "string" },
+        description: "Short-lived capture token",
+      },
+    ],
     responses: {
-      "200": { description: "Short-lived board screenshot PNG", content: { "image/png": { schema: { type: "string", format: "binary" } } } },
-      "404": jsonResponse("Capture not found", schemaRef("ErrorResponse"))
-    }
+      "200": {
+        description: "Short-lived board screenshot PNG",
+        content: {
+          "image/png": { schema: { type: "string", format: "binary" } },
+        },
+      },
+      "404": jsonResponse("Capture not found", schemaRef("ErrorResponse")),
+    },
   },
   "POST /api/v1/agent/board-captures/{captureHandle}": {
     requestBody: jsonRequestBody(schemaRef("BoardCaptureSubmitRequest")),
     responses: {
-      "200": jsonResponse("Board capture result", schemaRef("BoardCaptureResult")),
-      "404": jsonResponse("Capture request not found", schemaRef("ErrorResponse"))
-    }
+      "200": jsonResponse(
+        "Board capture result",
+        schemaRef("BoardCaptureResult"),
+      ),
+      "404": jsonResponse(
+        "Capture request not found",
+        schemaRef("ErrorResponse"),
+      ),
+    },
   },
   "GET /api/v1/auth/bootstrap": {
     responses: {
-      "200": jsonResponse("First-run owner bootstrap posture", schemaRef("BootstrapStatus"))
-    }
+      "200": jsonResponse(
+        "First-run owner bootstrap posture",
+        schemaRef("BootstrapStatus"),
+      ),
+    },
   },
   "POST /api/v1/auth/bootstrap": {
     requestBody: jsonRequestBody(schemaRef("BootstrapOwnerRequest")),
     responses: {
-      "200": jsonResponse("Created first owner, starter campaign, scene, and authenticated session", schemaRef("LoginResponse"))
-    }
+      "200": jsonResponse(
+        "Created first owner, starter campaign, scene, and authenticated session",
+        schemaRef("LoginResponse"),
+      ),
+    },
   },
   "POST /api/v1/auth/login": {
     requestBody: jsonRequestBody(schemaRef("LoginRequest")),
     responses: {
-      "200": jsonResponse("Authenticated session and user memberships", schemaRef("LoginResponse"))
-    }
+      "200": jsonResponse(
+        "Authenticated session and user memberships",
+        schemaRef("LoginResponse"),
+      ),
+    },
   },
   "POST /api/v1/auth/register": {
     requestBody: jsonRequestBody(schemaRef("RegisterRequest")),
     responses: {
-      "200": jsonResponse("Registered password user and authenticated session", schemaRef("LoginResponse"))
-    }
+      "200": jsonResponse(
+        "Registered password user and authenticated session",
+        schemaRef("LoginResponse"),
+      ),
+    },
   },
   "POST /api/v1/auth/logout": {
     responses: {
-      "200": jsonResponse("Revoked the current bearer session", schemaRef("OkResponse"))
-    }
+      "200": jsonResponse(
+        "Revoked the current bearer session",
+        schemaRef("OkResponse"),
+      ),
+    },
   },
   "POST /api/v1/auth/password-reset/request": {
     requestBody: jsonRequestBody(schemaRef("PasswordResetRequest")),
     responses: {
-      "200": jsonResponse("Accepted password reset request without account enumeration", schemaRef("OkResponse"))
-    }
+      "200": jsonResponse(
+        "Accepted password reset request without account enumeration",
+        schemaRef("OkResponse"),
+      ),
+    },
   },
   "POST /api/v1/auth/password-reset/confirm": {
     requestBody: jsonRequestBody(schemaRef("PasswordResetConfirmRequest")),
     responses: {
-      "200": jsonResponse("Confirmed password reset and created authenticated session", schemaRef("LoginResponse"))
-    }
+      "200": jsonResponse(
+        "Confirmed password reset and created authenticated session",
+        schemaRef("LoginResponse"),
+      ),
+    },
   },
   "POST /api/v1/auth/password/change": {
     requestBody: jsonRequestBody(schemaRef("PasswordChangeRequest")),
     responses: {
-      "200": jsonResponse("Changed password and rotated authenticated session", schemaRef("LoginResponse"))
-    }
+      "200": jsonResponse(
+        "Changed password and rotated authenticated session",
+        schemaRef("LoginResponse"),
+      ),
+    },
   },
   "GET /api/v1/auth/mfa": {
     responses: {
-      "200": jsonResponse("Current user MFA posture", schemaRef("PublicMfaInfo"))
-    }
+      "200": jsonResponse(
+        "Current user MFA posture",
+        schemaRef("PublicMfaInfo"),
+      ),
+    },
   },
   "POST /api/v1/auth/mfa/totp/enroll": {
     requestBody: jsonRequestBody(schemaRef("MfaTotpEnrollRequest")),
     responses: {
-      "200": jsonResponse("Created pending TOTP enrollment secret", schemaRef("MfaTotpEnrollResponse"))
-    }
+      "200": jsonResponse(
+        "Created pending TOTP enrollment secret",
+        schemaRef("MfaTotpEnrollResponse"),
+      ),
+    },
   },
   "POST /api/v1/auth/mfa/totp/confirm": {
     requestBody: jsonRequestBody(schemaRef("MfaTotpConfirmRequest")),
     responses: {
-      "200": jsonResponse("Confirmed TOTP enrollment and returned recovery codes", schemaRef("MfaTotpConfirmResponse"))
-    }
+      "200": jsonResponse(
+        "Confirmed TOTP enrollment and returned recovery codes",
+        schemaRef("MfaTotpConfirmResponse"),
+      ),
+    },
   },
   "DELETE /api/v1/auth/mfa/totp": {
     requestBody: jsonRequestBody(schemaRef("MfaTotpDisableRequest")),
     responses: {
-      "200": jsonResponse("Disabled TOTP MFA for the current user", schemaRef("MfaTotpDisableResponse"))
-    }
+      "200": jsonResponse(
+        "Disabled TOTP MFA for the current user",
+        schemaRef("MfaTotpDisableResponse"),
+      ),
+    },
   },
   "GET /api/v1/auth/sessions": {
     responses: {
-      "200": jsonResponse("Current user's active sessions", arrayOf(schemaRef("UserSession")))
-    }
+      "200": jsonResponse(
+        "Current user's active sessions",
+        arrayOf(schemaRef("UserSession")),
+      ),
+    },
   },
   "DELETE /api/v1/auth/sessions/{sessionId}": {
     responses: {
-      "200": jsonResponse("Revoked one current-user session", schemaRef("OkResponse"))
-    }
+      "200": jsonResponse(
+        "Revoked one current-user session",
+        schemaRef("OkResponse"),
+      ),
+    },
   },
   "GET /api/v1/auth/oidc/config": {
     responses: {
-      "200": jsonResponse("Public OIDC sign-in configuration", schemaRef("OidcPublicConfig"))
-    }
+      "200": jsonResponse(
+        "Public OIDC sign-in configuration",
+        schemaRef("OidcPublicConfig"),
+      ),
+    },
   },
   "POST /api/v1/auth/oidc/start": {
     requestBody: jsonRequestBody(schemaRef("OidcStartRequest")),
     responses: {
-      "200": jsonResponse("Created OIDC authorization request", schemaRef("OidcStartResponse"))
-    }
+      "200": jsonResponse(
+        "Created OIDC authorization request",
+        schemaRef("OidcStartResponse"),
+      ),
+    },
   },
   "GET /api/v1/auth/oidc/start": {
     parameters: [
@@ -4830,15 +6653,17 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
         name: "returnTo",
         in: "query",
         required: false,
-        description: "Optional relative path to restore after the OIDC callback.",
-        schema: stringSchema
-      }
+        description:
+          "Optional relative path to restore after the OIDC callback.",
+        schema: stringSchema,
+      },
     ],
     responses: {
       "302": {
-        description: "Redirects the browser to the configured OIDC authorization endpoint."
-      }
-    }
+        description:
+          "Redirects the browser to the configured OIDC authorization endpoint.",
+      },
+    },
   },
   "GET /api/v1/auth/oidc/callback": {
     parameters: [
@@ -4847,139 +6672,204 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
         in: "query",
         required: false,
         description: "Authorization code returned by the OIDC provider.",
-        schema: stringSchema
+        schema: stringSchema,
       },
       {
         name: "state",
         in: "query",
         required: false,
         description: "Opaque state token created by the OIDC start route.",
-        schema: stringSchema
+        schema: stringSchema,
       },
       {
         name: "error",
         in: "query",
         required: false,
         description: "Provider error code when authorization fails.",
-        schema: stringSchema
+        schema: stringSchema,
       },
       {
         name: "error_description",
         in: "query",
         required: false,
         description: "Provider error description when authorization fails.",
-        schema: stringSchema
-      }
+        schema: stringSchema,
+      },
     ],
     responses: {
-      "200": jsonResponse("Authenticated OIDC callback result when no browser redirect is requested", schemaRef("OidcCallbackResponse"))
-    }
+      "200": jsonResponse(
+        "Authenticated OIDC callback result when no browser redirect is requested",
+        schemaRef("OidcCallbackResponse"),
+      ),
+    },
   },
   "GET /api/v1/auth/session": {
     responses: {
-      "200": jsonResponse("Current authenticated user session", schemaRef("SessionInfo"))
-    }
+      "200": jsonResponse(
+        "Current authenticated user session",
+        schemaRef("SessionInfo"),
+      ),
+    },
   },
   "GET /api/v1/organizations": {
     responses: {
-      "200": jsonResponse("Organization workspaces accessible to the current user", arrayOf(schemaRef("OrganizationWorkspaceInfo")))
-    }
+      "200": jsonResponse(
+        "Organization workspaces accessible to the current user",
+        arrayOf(schemaRef("OrganizationWorkspaceInfo")),
+      ),
+    },
   },
   "POST /api/v1/organizations": {
     requestBody: jsonRequestBody(schemaRef("OrganizationCreateRequest")),
     responses: {
-      "201": jsonResponse("Created organization workspace and selected it for the current bearer session", schemaRef("OrganizationSwitchResponse"))
-    }
+      "201": jsonResponse(
+        "Created organization workspace and selected it for the current bearer session",
+        schemaRef("OrganizationSwitchResponse"),
+      ),
+    },
   },
   "PATCH /api/v1/organization/session": {
     requestBody: jsonRequestBody(schemaRef("OrganizationSwitchRequest")),
     responses: {
-      "200": jsonResponse("Updated active organization for the current bearer session", schemaRef("OrganizationSwitchResponse"))
-    }
+      "200": jsonResponse(
+        "Updated active organization for the current bearer session",
+        schemaRef("OrganizationSwitchResponse"),
+      ),
+    },
   },
   "GET /api/v1/organization/workspace-defaults": {
     responses: {
-      "200": jsonResponse("Organization-wide campaign setup defaults for the current workspace", schemaRef("OrganizationWorkspace"))
-    }
+      "200": jsonResponse(
+        "Organization-wide campaign setup defaults for the current workspace",
+        schemaRef("OrganizationWorkspace"),
+      ),
+    },
   },
   "PATCH /api/v1/organization/workspace-defaults": {
-    requestBody: jsonRequestBody(schemaRef("OrganizationWorkspaceDefaultsPatchRequest")),
+    requestBody: jsonRequestBody(
+      schemaRef("OrganizationWorkspaceDefaultsPatchRequest"),
+    ),
     responses: {
-      "200": jsonResponse("Updated organization-wide campaign setup defaults", schemaRef("OrganizationWorkspace"))
-    }
+      "200": jsonResponse(
+        "Updated organization-wide campaign setup defaults",
+        schemaRef("OrganizationWorkspace"),
+      ),
+    },
   },
   "GET /api/v1/organization/members": {
     responses: {
-      "200": jsonResponse("Current workspace organization members", arrayOf(schemaRef("OrganizationMember")))
-    }
+      "200": jsonResponse(
+        "Current workspace organization members",
+        arrayOf(schemaRef("OrganizationMember")),
+      ),
+    },
   },
   "POST /api/v1/organization/members": {
     requestBody: jsonRequestBody(schemaRef("OrganizationMemberCreateRequest")),
     responses: {
-      "200": jsonResponse("Updated existing organization member", schemaRef("OrganizationMember")),
-      "201": jsonResponse("Added organization member", schemaRef("OrganizationMember"))
-    }
+      "200": jsonResponse(
+        "Updated existing organization member",
+        schemaRef("OrganizationMember"),
+      ),
+      "201": jsonResponse(
+        "Added organization member",
+        schemaRef("OrganizationMember"),
+      ),
+    },
   },
   "PATCH /api/v1/organization/members/{memberId}": {
     requestBody: jsonRequestBody(schemaRef("OrganizationMemberUpdateRequest")),
     responses: {
-      "200": jsonResponse("Updated organization member role", schemaRef("OrganizationMember"))
-    }
+      "200": jsonResponse(
+        "Updated organization member role",
+        schemaRef("OrganizationMember"),
+      ),
+    },
   },
   "DELETE /api/v1/organization/members/{memberId}": {
     responses: {
-      "200": jsonResponse("Removed organization member and campaign access", schemaRef("OrganizationMemberDeleteResponse"))
-    }
+      "200": jsonResponse(
+        "Removed organization member and campaign access",
+        schemaRef("OrganizationMemberDeleteResponse"),
+      ),
+    },
   },
   "GET /api/v1/organization/invites": {
     responses: {
-      "200": jsonResponse("Current active organization invite roster", arrayOf(schemaRef("OrganizationInvite")))
-    }
+      "200": jsonResponse(
+        "Current active organization invite roster",
+        arrayOf(schemaRef("OrganizationInvite")),
+      ),
+    },
   },
   "POST /api/v1/organization/invites": {
     requestBody: jsonRequestBody(schemaRef("OrganizationInviteCreateRequest")),
     responses: {
-      "201": jsonResponse("Created invite metadata plus the one-time plaintext token for an active-organization campaign", schemaRef("CampaignInviteCreateResponse"))
-    }
+      "201": jsonResponse(
+        "Created invite metadata plus the one-time plaintext token for an active-organization campaign",
+        schemaRef("CampaignInviteCreateResponse"),
+      ),
+    },
   },
   "GET /api/v1/admin/users": {
     responses: {
-      "200": jsonResponse("Server-admin user roster with redacted auth state and counts", arrayOf(schemaRef("AdminUser")))
-    }
+      "200": jsonResponse(
+        "Server-admin user roster with redacted auth state and counts",
+        arrayOf(schemaRef("AdminUser")),
+      ),
+    },
   },
   "PATCH /api/v1/admin/users/{userId}": {
     requestBody: jsonRequestBody(schemaRef("AdminUserPatchRequest")),
     responses: {
-      "200": jsonResponse("Updated server-admin user record", schemaRef("AdminUser"))
-    }
+      "200": jsonResponse(
+        "Updated server-admin user record",
+        schemaRef("AdminUser"),
+      ),
+    },
   },
   "POST /api/v1/admin/users/{userId}/password-reset": {
     requestBody: jsonRequestBody(schemaRef("AdminUserPasswordResetRequest")),
     responses: {
-      "200": jsonResponse("Created password reset token and queued reset email", schemaRef("AdminUserPasswordResetResponse"))
-    }
+      "200": jsonResponse(
+        "Created password reset token and queued reset email",
+        schemaRef("AdminUserPasswordResetResponse"),
+      ),
+    },
   },
   "POST /api/v1/admin/password-resets/prune": {
     requestBody: jsonRequestBody(schemaRef("AdminPasswordResetPruneRequest")),
     responses: {
-      "200": jsonResponse("Password reset pruning dry-run or mutation result", schemaRef("AdminPasswordResetPruneResult"))
-    }
+      "200": jsonResponse(
+        "Password reset pruning dry-run or mutation result",
+        schemaRef("AdminPasswordResetPruneResult"),
+      ),
+    },
   },
   "DELETE /api/v1/admin/users/{userId}/sessions": {
     responses: {
-      "200": jsonResponse("Revoked all sessions for a user", schemaRef("AdminSessionRevokeResponse"))
-    }
+      "200": jsonResponse(
+        "Revoked all sessions for a user",
+        schemaRef("AdminSessionRevokeResponse"),
+      ),
+    },
   },
   "GET /api/v1/admin/sessions": {
     responses: {
-      "200": jsonResponse("Server-admin session roster with redacted user details", arrayOf(schemaRef("AdminSession")))
-    }
+      "200": jsonResponse(
+        "Server-admin session roster with redacted user details",
+        arrayOf(schemaRef("AdminSession")),
+      ),
+    },
   },
   "POST /api/v1/admin/sessions/prune": {
     requestBody: jsonRequestBody(schemaRef("AdminSessionPruneRequest")),
     responses: {
-      "200": jsonResponse("Session pruning dry-run or mutation result", schemaRef("AdminSessionPruneResult"))
-    }
+      "200": jsonResponse(
+        "Session pruning dry-run or mutation result",
+        schemaRef("AdminSessionPruneResult"),
+      ),
+    },
   },
   "GET /api/v1/admin/sessions/risk": {
     parameters: [
@@ -4987,29 +6877,42 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
         name: "staleDays",
         in: "query",
         required: false,
-        description: "Number of idle days before an active session is considered stale.",
-        schema: { type: "integer", minimum: 1, maximum: 365 }
-      }
+        description:
+          "Number of idle days before an active session is considered stale.",
+        schema: { type: "integer", minimum: 1, maximum: 365 },
+      },
     ],
     responses: {
-      "200": jsonResponse("Session risk report for stale, expired, disabled-user, and unknown-user sessions", schemaRef("AdminSessionRiskReport"))
-    }
+      "200": jsonResponse(
+        "Session risk report for stale, expired, disabled-user, and unknown-user sessions",
+        schemaRef("AdminSessionRiskReport"),
+      ),
+    },
   },
   "POST /api/v1/admin/sessions/risk/revoke": {
     requestBody: jsonRequestBody(schemaRef("AdminSessionRiskRevokeRequest")),
     responses: {
-      "200": jsonResponse("Dry-run or revoke result for matching risk sessions", schemaRef("AdminSessionRiskRevokeResult"))
-    }
+      "200": jsonResponse(
+        "Dry-run or revoke result for matching risk sessions",
+        schemaRef("AdminSessionRiskRevokeResult"),
+      ),
+    },
   },
   "DELETE /api/v1/admin/sessions/{sessionId}": {
     responses: {
-      "200": jsonResponse("Revoked one server-admin selected session", schemaRef("OkResponse"))
-    }
+      "200": jsonResponse(
+        "Revoked one server-admin selected session",
+        schemaRef("OkResponse"),
+      ),
+    },
   },
   "GET /api/v1/admin/auth/config": {
     responses: {
-      "200": jsonResponse("Redacted auth runtime configuration posture", schemaRef("AdminAuthRuntimeConfig"))
-    }
+      "200": jsonResponse(
+        "Redacted auth runtime configuration posture",
+        schemaRef("AdminAuthRuntimeConfig"),
+      ),
+    },
   },
   "GET /api/v1/admin/auth/operations": {
     parameters: [
@@ -5017,214 +6920,445 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
         name: "staleDays",
         in: "query",
         required: false,
-        description: "Number of idle days before an active session is considered stale in auth operations posture.",
-        schema: { type: "integer", minimum: 1, maximum: 365 }
-      }
+        description:
+          "Number of idle days before an active session is considered stale in auth operations posture.",
+        schema: { type: "integer", minimum: 1, maximum: 365 },
+      },
     ],
     responses: {
-      "200": jsonResponse("Auth operations posture and remediation queue", schemaRef("AdminAuthOperations"))
-    }
+      "200": jsonResponse(
+        "Auth operations posture and remediation queue",
+        schemaRef("AdminAuthOperations"),
+      ),
+    },
   },
   "POST /api/v1/admin/auth/test-connection": {
     requestBody: jsonRequestBody(schemaRef("AdminAuthTestConnectionRequest")),
     responses: {
-      "200": jsonResponse("Redacted OIDC or SCIM connection test result", schemaRef("AdminAuthConnectionTestResult"))
-    }
+      "200": jsonResponse(
+        "Redacted OIDC or SCIM connection test result",
+        schemaRef("AdminAuthConnectionTestResult"),
+      ),
+    },
   },
   "GET /api/v1/admin/email-outbox": {
     responses: {
-      "200": jsonResponse("Recent email outbox messages visible to server admins", arrayOf(schemaRef("EmailOutboxMessage")))
-    }
+      "200": jsonResponse(
+        "Recent email outbox messages visible to server admins",
+        arrayOf(schemaRef("EmailOutboxMessage")),
+      ),
+    },
   },
   "POST /api/v1/admin/email-outbox/retry-all": {
     requestBody: jsonRequestBody(schemaRef("AdminEmailOutboxRetryAllRequest")),
     responses: {
-      "200": jsonResponse("Bulk email outbox retry dry-run or mutation result", schemaRef("AdminEmailOutboxRetryAllResult"))
-    }
+      "200": jsonResponse(
+        "Bulk email outbox retry dry-run or mutation result",
+        schemaRef("AdminEmailOutboxRetryAllResult"),
+      ),
+    },
   },
   "POST /api/v1/admin/email-outbox/{messageId}/retry": {
     responses: {
-      "200": jsonResponse("Retried email outbox message", schemaRef("EmailOutboxMessage"))
-    }
+      "200": jsonResponse(
+        "Retried email outbox message",
+        schemaRef("EmailOutboxMessage"),
+      ),
+    },
   },
   "GET /api/v1/admin/audit-logs": {
     parameters: [
-      { name: "campaignId", in: "query", required: false, description: "Filter by campaign id.", schema: stringSchema },
-      { name: "actorUserId", in: "query", required: false, description: "Filter by actor user id.", schema: stringSchema },
-      { name: "actorType", in: "query", required: false, description: "Filter by audit actor type.", schema: { type: "string", enum: ["user", "ai", "plugin", "system"] } },
-      { name: "action", in: "query", required: false, description: "Filter by exact audit action.", schema: stringSchema },
-      { name: "targetType", in: "query", required: false, description: "Filter by target type.", schema: stringSchema },
-      { name: "targetId", in: "query", required: false, description: "Filter by target id.", schema: stringSchema },
-      { name: "since", in: "query", required: false, description: "Return audit entries created at or after this ISO timestamp.", schema: { type: "string", format: "date-time" } },
-      { name: "until", in: "query", required: false, description: "Return audit entries created at or before this ISO timestamp.", schema: { type: "string", format: "date-time" } },
-      { name: "limit", in: "query", required: false, description: "Maximum audit entries to return.", schema: { type: "integer", minimum: 1, maximum: 10000 } },
-      { name: "format", in: "query", required: false, description: "Use ndjson for a newline-delimited export; json returns the typed export envelope.", schema: { type: "string", enum: ["json", "ndjson"] } }
+      {
+        name: "campaignId",
+        in: "query",
+        required: false,
+        description: "Filter by campaign id.",
+        schema: stringSchema,
+      },
+      {
+        name: "actorUserId",
+        in: "query",
+        required: false,
+        description: "Filter by actor user id.",
+        schema: stringSchema,
+      },
+      {
+        name: "actorType",
+        in: "query",
+        required: false,
+        description: "Filter by audit actor type.",
+        schema: { type: "string", enum: ["user", "ai", "plugin", "system"] },
+      },
+      {
+        name: "action",
+        in: "query",
+        required: false,
+        description: "Filter by exact audit action.",
+        schema: stringSchema,
+      },
+      {
+        name: "targetType",
+        in: "query",
+        required: false,
+        description: "Filter by target type.",
+        schema: stringSchema,
+      },
+      {
+        name: "targetId",
+        in: "query",
+        required: false,
+        description: "Filter by target id.",
+        schema: stringSchema,
+      },
+      {
+        name: "since",
+        in: "query",
+        required: false,
+        description:
+          "Return audit entries created at or after this ISO timestamp.",
+        schema: { type: "string", format: "date-time" },
+      },
+      {
+        name: "until",
+        in: "query",
+        required: false,
+        description:
+          "Return audit entries created at or before this ISO timestamp.",
+        schema: { type: "string", format: "date-time" },
+      },
+      {
+        name: "limit",
+        in: "query",
+        required: false,
+        description: "Maximum audit entries to return.",
+        schema: { type: "integer", minimum: 1, maximum: 10000 },
+      },
+      {
+        name: "format",
+        in: "query",
+        required: false,
+        description:
+          "Use ndjson for a newline-delimited export; json returns the typed export envelope.",
+        schema: { type: "string", enum: ["json", "ndjson"] },
+      },
     ],
     responses: {
-      "200": jsonResponse("Filtered server-admin audit export envelope for JSON format", schemaRef("AdminAuditLogExport"))
-    }
+      "200": jsonResponse(
+        "Filtered server-admin audit export envelope for JSON format",
+        schemaRef("AdminAuditLogExport"),
+      ),
+    },
   },
   "GET /api/v1/admin/jobs": {
     parameters: [
-      { name: "type", in: "query", required: false, description: "Filter by queued job type.", schema: { type: "string", enum: ["campaign.export", "campaign.import", "asset.storage.migrate", "asset.storage.cleanup", "storage.backup", "storage.restoreDrill", "ai.memory.extract", "ai.session.recap", "report.bundle"] } },
-      { name: "status", in: "query", required: false, description: "Filter by job status.", schema: { type: "string", enum: ["queued", "running", "succeeded", "failed", "cancelled"] } },
-      { name: "limit", in: "query", required: false, description: "Maximum jobs to return.", schema: { type: "integer", minimum: 1, maximum: 500 } }
+      {
+        name: "type",
+        in: "query",
+        required: false,
+        description: "Filter by queued job type.",
+        schema: {
+          type: "string",
+          enum: [
+            "campaign.export",
+            "campaign.import",
+            "asset.storage.migrate",
+            "asset.storage.cleanup",
+            "storage.backup",
+            "storage.restoreDrill",
+            "ai.memory.extract",
+            "ai.session.recap",
+            "report.bundle",
+          ],
+        },
+      },
+      {
+        name: "status",
+        in: "query",
+        required: false,
+        description: "Filter by job status.",
+        schema: {
+          type: "string",
+          enum: ["queued", "running", "succeeded", "failed", "cancelled"],
+        },
+      },
+      {
+        name: "limit",
+        in: "query",
+        required: false,
+        description: "Maximum jobs to return.",
+        schema: { type: "integer", minimum: 1, maximum: 500 },
+      },
     ],
     responses: {
-      "200": jsonResponse("Recent server-admin job ledger entries with redacted payloads and outputs", arrayOf(schemaRef("AdminJob")))
-    }
+      "200": jsonResponse(
+        "Recent server-admin job ledger entries with redacted payloads and outputs",
+        arrayOf(schemaRef("AdminJob")),
+      ),
+    },
   },
   "POST /api/v1/admin/jobs": {
     requestBody: jsonRequestBody(schemaRef("AdminJobCreateRequest")),
     responses: {
-      "201": jsonResponse("Created a queued server-admin job ledger entry", schemaRef("AdminJob"))
-    }
+      "201": jsonResponse(
+        "Created a queued server-admin job ledger entry",
+        schemaRef("AdminJob"),
+      ),
+    },
   },
   "POST /api/v1/admin/jobs/lease": {
     requestBody: jsonRequestBody(schemaRef("AdminJobLeaseRequest")),
     responses: {
-      "200": jsonResponse("Leased the next queued or expired server-admin job", schemaRef("AdminJob")),
-      "204": { description: "No matching queued or expired job is available to lease" }
-    }
+      "200": jsonResponse(
+        "Leased the next queued or expired server-admin job",
+        schemaRef("AdminJob"),
+      ),
+      "204": {
+        description: "No matching queued or expired job is available to lease",
+      },
+    },
   },
   "GET /api/v1/admin/jobs/operations": {
     responses: {
-      "200": jsonResponse("Server-admin job queue, lease, heartbeat, retry, and remediation posture", schemaRef("AdminJobOperations"))
-    }
+      "200": jsonResponse(
+        "Server-admin job queue, lease, heartbeat, retry, and remediation posture",
+        schemaRef("AdminJobOperations"),
+      ),
+    },
   },
   "GET /api/v1/admin/jobs/metrics": {
     responses: {
-      "200": textResponse("Prometheus text exposition for server-admin job queue, lease, heartbeat, retry, and remediation gauges")
-    }
+      "200": textResponse(
+        "Prometheus text exposition for server-admin job queue, lease, heartbeat, retry, and remediation gauges",
+      ),
+    },
   },
   "POST /api/v1/admin/jobs/alerts": {
     requestBody: jsonRequestBody(schemaRef("AdminJobAlertRequest")),
     responses: {
-      "200": jsonResponse("Dry-run, skipped, or delivered job operations alert result", schemaRef("AdminJobAlertResult")),
-      "502": jsonResponse("Job operations alert webhook delivery failed", schemaRef("AdminJobAlertResult"))
-    }
+      "200": jsonResponse(
+        "Dry-run, skipped, or delivered job operations alert result",
+        schemaRef("AdminJobAlertResult"),
+      ),
+      "502": jsonResponse(
+        "Job operations alert webhook delivery failed",
+        schemaRef("AdminJobAlertResult"),
+      ),
+    },
   },
   "GET /api/v1/admin/jobs/{jobId}": {
     responses: {
-      "200": jsonResponse("Server-admin job ledger entry with redacted payload and output", schemaRef("AdminJob"))
-    }
+      "200": jsonResponse(
+        "Server-admin job ledger entry with redacted payload and output",
+        schemaRef("AdminJob"),
+      ),
+    },
   },
   "PATCH /api/v1/admin/jobs/{jobId}": {
     requestBody: jsonRequestBody(schemaRef("AdminJobPatchRequest")),
     responses: {
-      "200": jsonResponse("Updated server-admin job status, progress, output, error, or log", schemaRef("AdminJob"))
-    }
+      "200": jsonResponse(
+        "Updated server-admin job status, progress, output, error, or log",
+        schemaRef("AdminJob"),
+      ),
+    },
   },
   "POST /api/v1/admin/jobs/{jobId}/heartbeat": {
     requestBody: jsonRequestBody(schemaRef("AdminJobHeartbeatRequest")),
     responses: {
-      "200": jsonResponse("Extended the lease and optionally updated progress or logs for a running job", schemaRef("AdminJob"))
-    }
+      "200": jsonResponse(
+        "Extended the lease and optionally updated progress or logs for a running job",
+        schemaRef("AdminJob"),
+      ),
+    },
   },
   "POST /api/v1/admin/jobs/{jobId}/retry": {
     responses: {
-      "200": jsonResponse("Requeued a failed or cancelled server-admin job", schemaRef("AdminJob"))
-    }
+      "200": jsonResponse(
+        "Requeued a failed or cancelled server-admin job",
+        schemaRef("AdminJob"),
+      ),
+    },
   },
   "POST /api/v1/admin/jobs/{jobId}/cancel": {
     requestBody: jsonRequestBody(schemaRef("AdminJobCancelRequest")),
     responses: {
-      "200": jsonResponse("Cancelled a queued or running server-admin job", schemaRef("AdminJob"))
-    }
+      "200": jsonResponse(
+        "Cancelled a queued or running server-admin job",
+        schemaRef("AdminJob"),
+      ),
+    },
   },
   "GET /api/v1/admin/ai/operations": {
     responses: {
-      "200": jsonResponse("Server-admin AI runtime, safety, evaluation, tool, and proposal operations posture", schemaRef("AdminAiOperations"))
-    }
+      "200": jsonResponse(
+        "Server-admin AI runtime, safety, evaluation, tool, and proposal operations posture",
+        schemaRef("AdminAiOperations"),
+      ),
+    },
   },
   "POST /api/v1/admin/ai/proposals/stale/reject": {
-    requestBody: jsonRequestBody(schemaRef("AdminAiStaleProposalRejectRequest")),
+    requestBody: jsonRequestBody(
+      schemaRef("AdminAiStaleProposalRejectRequest"),
+    ),
     responses: {
-      "200": jsonResponse("Dry-run or reject stale pending or approved AI proposals", schemaRef("AdminAiStaleProposalRejectResult"))
-    }
+      "200": jsonResponse(
+        "Dry-run or reject stale pending or approved AI proposals",
+        schemaRef("AdminAiStaleProposalRejectResult"),
+      ),
+    },
   },
   "POST /api/v1/admin/ai/threads/stale/fail": {
     requestBody: jsonRequestBody(schemaRef("AdminAiStaleThreadFailRequest")),
     responses: {
-      "200": jsonResponse("Dry-run or fail stale running AI threads", schemaRef("AdminAiStaleThreadFailResult"))
-    }
+      "200": jsonResponse(
+        "Dry-run or fail stale running AI threads",
+        schemaRef("AdminAiStaleThreadFailResult"),
+      ),
+    },
   },
   "POST /api/v1/admin/ai/tool-calls/stale/fail": {
     requestBody: jsonRequestBody(schemaRef("AdminAiStaleToolCallFailRequest")),
     responses: {
-      "200": jsonResponse("Dry-run or fail stale started AI tool calls", schemaRef("AdminAiStaleToolCallFailResult"))
-    }
+      "200": jsonResponse(
+        "Dry-run or fail stale started AI tool calls",
+        schemaRef("AdminAiStaleToolCallFailResult"),
+      ),
+    },
   },
   "POST /api/v1/admin/ai/tool-calls/retry": {
     requestBody: jsonRequestBody(schemaRef("AdminAiToolCallRetryRequest")),
     responses: {
-      "200": jsonResponse("Dry-run or replay retryable failed AI tool calls through the proposal-safe tool executor", schemaRef("AdminAiToolCallRetryResult"))
-    }
+      "200": jsonResponse(
+        "Dry-run or replay retryable failed AI tool calls through the proposal-safe tool executor",
+        schemaRef("AdminAiToolCallRetryResult"),
+      ),
+    },
   },
   "GET /api/v1/admin/ai/evaluations": {
     parameters: [
-      { name: "campaignId", in: "query", required: false, description: "Filter evaluations by campaign id.", schema: stringSchema },
-      { name: "status", in: "query", required: false, description: "Filter by evaluation status.", schema: { type: "string", enum: ["passed", "failed"] } },
-      { name: "limit", in: "query", required: false, description: "Maximum evaluations to export.", schema: { type: "integer", minimum: 1, maximum: 500 } },
-      { name: "format", in: "query", required: false, description: "Use ndjson for a newline-delimited export; json returns the typed export envelope.", schema: { type: "string", enum: ["json", "ndjson"] } }
+      {
+        name: "campaignId",
+        in: "query",
+        required: false,
+        description: "Filter evaluations by campaign id.",
+        schema: stringSchema,
+      },
+      {
+        name: "status",
+        in: "query",
+        required: false,
+        description: "Filter by evaluation status.",
+        schema: { type: "string", enum: ["passed", "failed"] },
+      },
+      {
+        name: "limit",
+        in: "query",
+        required: false,
+        description: "Maximum evaluations to export.",
+        schema: { type: "integer", minimum: 1, maximum: 500 },
+      },
+      {
+        name: "format",
+        in: "query",
+        required: false,
+        description:
+          "Use ndjson for a newline-delimited export; json returns the typed export envelope.",
+        schema: { type: "string", enum: ["json", "ndjson"] },
+      },
     ],
     responses: {
-      "200": jsonResponse("Filtered AI evaluation export envelope for JSON format", schemaRef("AdminAiEvaluationExport"))
-    }
+      "200": jsonResponse(
+        "Filtered AI evaluation export envelope for JSON format",
+        schemaRef("AdminAiEvaluationExport"),
+      ),
+    },
   },
   "GET /api/v1/admin/plugins/reviews": {
     responses: {
-      "200": jsonResponse("Marketplace plugin review snapshot", schemaRef("AdminPluginReviewSnapshot"))
-    }
+      "200": jsonResponse(
+        "Marketplace plugin review snapshot",
+        schemaRef("AdminPluginReviewSnapshot"),
+      ),
+    },
   },
   "PATCH /api/v1/admin/plugins/reviews/{reviewKey}": {
     requestBody: jsonRequestBody(schemaRef("AdminPluginReviewPatchRequest")),
     responses: {
-      "200": jsonResponse("Updated marketplace plugin review state", schemaRef("AdminPluginReviewInfo"))
-    }
+      "200": jsonResponse(
+        "Updated marketplace plugin review state",
+        schemaRef("AdminPluginReviewInfo"),
+      ),
+    },
   },
   "POST /api/v1/admin/plugins/registry/sync": {
     requestBody: jsonRequestBody(schemaRef("AdminPluginRegistrySyncRequest")),
     responses: {
-      "200": jsonResponse("Synchronized configured plugin registries", schemaRef("AdminPluginRegistrySyncResponse"))
-    }
+      "200": jsonResponse(
+        "Synchronized configured plugin registries",
+        schemaRef("AdminPluginRegistrySyncResponse"),
+      ),
+    },
   },
   "GET /api/v1/admin/plugins/operations": {
     responses: {
-      "200": jsonResponse("Server-admin plugin operations posture and remediation queue", schemaRef("AdminPluginOperations"))
-    }
+      "200": jsonResponse(
+        "Server-admin plugin operations posture and remediation queue",
+        schemaRef("AdminPluginOperations"),
+      ),
+    },
   },
   "GET /api/v1/admin/systems/operations": {
     responses: {
-      "200": jsonResponse("Server-admin rules-system operations posture and remediation queue", schemaRef("AdminSystemOperations"))
-    }
+      "200": jsonResponse(
+        "Server-admin rules-system operations posture and remediation queue",
+        schemaRef("AdminSystemOperations"),
+      ),
+    },
   },
   "GET /api/v1/admin/rendering/operations": {
     responses: {
-      "200": jsonResponse("Server-admin rendering diagnostics, authoring operations, and remediation queue", schemaRef("AdminRenderingOperations"))
-    }
+      "200": jsonResponse(
+        "Server-admin rendering diagnostics, authoring operations, and remediation queue",
+        schemaRef("AdminRenderingOperations"),
+      ),
+    },
   },
   "GET /api/v1/admin/scim/group-role-mappings": {
     responses: {
-      "200": jsonResponse("SCIM group-to-campaign role mappings with matched group snapshots", arrayOf(schemaRef("AdminScimGroupRoleMapping")))
-    }
+      "200": jsonResponse(
+        "SCIM group-to-campaign role mappings with matched group snapshots",
+        arrayOf(schemaRef("AdminScimGroupRoleMapping")),
+      ),
+    },
   },
   "POST /api/v1/admin/scim/group-role-mappings": {
     requestBody: jsonRequestBody(schemaRef("AdminScimGroupRoleMappingInput")),
     responses: {
-      "200": jsonResponse("Created SCIM group role mapping and membership sync summary", schemaRef("AdminScimGroupRoleMappingCreateResponse")),
-      "201": jsonResponse("Created SCIM group role mapping and membership sync summary", schemaRef("AdminScimGroupRoleMappingCreateResponse"))
-    }
+      "200": jsonResponse(
+        "Created SCIM group role mapping and membership sync summary",
+        schemaRef("AdminScimGroupRoleMappingCreateResponse"),
+      ),
+      "201": jsonResponse(
+        "Created SCIM group role mapping and membership sync summary",
+        schemaRef("AdminScimGroupRoleMappingCreateResponse"),
+      ),
+    },
   },
   "DELETE /api/v1/admin/scim/group-role-mappings/{mappingId}": {
     responses: {
-      "200": jsonResponse("Deleted SCIM group role mapping cleanup summary", schemaRef("AdminScimGroupRoleMappingDeleteResponse"))
-    }
+      "200": jsonResponse(
+        "Deleted SCIM group role mapping cleanup summary",
+        schemaRef("AdminScimGroupRoleMappingDeleteResponse"),
+      ),
+    },
   },
   "GET /api/v1/scim/v2/ServiceProviderConfig": {
     responses: {
-      "200": jsonResponse("SCIM v2 service provider capability document", schemaRef("ScimServiceProviderConfig"))
-    }
+      "200": jsonResponse(
+        "SCIM v2 service provider capability document",
+        schemaRef("ScimServiceProviderConfig"),
+      ),
+    },
   },
   "GET /api/v1/scim/v2/Users": {
     parameters: [
@@ -5233,48 +7367,53 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
         in: "query",
         required: false,
         description: "SCIM 1-based result offset.",
-        schema: { type: "integer", minimum: 1 }
+        schema: { type: "integer", minimum: 1 },
       },
       {
         name: "count",
         in: "query",
         required: false,
         description: "SCIM page size, capped at 200.",
-        schema: { type: "integer", minimum: 0, maximum: 200 }
-      }
+        schema: { type: "integer", minimum: 0, maximum: 200 },
+      },
     ],
     responses: {
-      "200": jsonResponse("SCIM user list response", schemaRef("ScimUserListResponse"))
-    }
+      "200": jsonResponse(
+        "SCIM user list response",
+        schemaRef("ScimUserListResponse"),
+      ),
+    },
   },
   "POST /api/v1/scim/v2/Users": {
     requestBody: jsonRequestBody(schemaRef("ScimUserInput")),
     responses: {
       "200": jsonResponse("Created SCIM user resource", schemaRef("ScimUser")),
-      "201": jsonResponse("Created SCIM user resource", schemaRef("ScimUser"))
-    }
+      "201": jsonResponse("Created SCIM user resource", schemaRef("ScimUser")),
+    },
   },
   "GET /api/v1/scim/v2/Users/{userId}": {
     responses: {
-      "200": jsonResponse("SCIM user resource", schemaRef("ScimUser"))
-    }
+      "200": jsonResponse("SCIM user resource", schemaRef("ScimUser")),
+    },
   },
   "PUT /api/v1/scim/v2/Users/{userId}": {
     requestBody: jsonRequestBody(schemaRef("ScimUserInput")),
     responses: {
-      "200": jsonResponse("Replaced SCIM user resource", schemaRef("ScimUser"))
-    }
+      "200": jsonResponse("Replaced SCIM user resource", schemaRef("ScimUser")),
+    },
   },
   "PATCH /api/v1/scim/v2/Users/{userId}": {
     requestBody: jsonRequestBody(schemaRef("ScimPatchRequest")),
     responses: {
-      "200": jsonResponse("Patched SCIM user resource", schemaRef("ScimUser"))
-    }
+      "200": jsonResponse("Patched SCIM user resource", schemaRef("ScimUser")),
+    },
   },
   "DELETE /api/v1/scim/v2/Users/{userId}": {
     responses: {
-      "204": { description: "SCIM user deactivated and active sessions revoked" }
-    }
+      "204": {
+        description: "SCIM user deactivated and active sessions revoked",
+      },
+    },
   },
   "GET /api/v1/scim/v2/Groups": {
     parameters: [
@@ -5283,229 +7422,456 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
         in: "query",
         required: false,
         description: "SCIM 1-based result offset.",
-        schema: { type: "integer", minimum: 1 }
+        schema: { type: "integer", minimum: 1 },
       },
       {
         name: "count",
         in: "query",
         required: false,
         description: "SCIM page size, capped at 200.",
-        schema: { type: "integer", minimum: 0, maximum: 200 }
-      }
+        schema: { type: "integer", minimum: 0, maximum: 200 },
+      },
     ],
     responses: {
-      "200": jsonResponse("SCIM group list response", schemaRef("ScimGroupListResponse"))
-    }
+      "200": jsonResponse(
+        "SCIM group list response",
+        schemaRef("ScimGroupListResponse"),
+      ),
+    },
   },
   "POST /api/v1/scim/v2/Groups": {
     requestBody: jsonRequestBody(schemaRef("ScimGroupInput")),
     responses: {
-      "200": jsonResponse("Created SCIM group resource", schemaRef("ScimGroup")),
-      "201": jsonResponse("Created SCIM group resource", schemaRef("ScimGroup"))
-    }
+      "200": jsonResponse(
+        "Created SCIM group resource",
+        schemaRef("ScimGroup"),
+      ),
+      "201": jsonResponse(
+        "Created SCIM group resource",
+        schemaRef("ScimGroup"),
+      ),
+    },
   },
   "GET /api/v1/scim/v2/Groups/{groupId}": {
     responses: {
-      "200": jsonResponse("SCIM group resource", schemaRef("ScimGroup"))
-    }
+      "200": jsonResponse("SCIM group resource", schemaRef("ScimGroup")),
+    },
   },
   "PUT /api/v1/scim/v2/Groups/{groupId}": {
     requestBody: jsonRequestBody(schemaRef("ScimGroupInput")),
     responses: {
-      "200": jsonResponse("Replaced SCIM group resource", schemaRef("ScimGroup"))
-    }
+      "200": jsonResponse(
+        "Replaced SCIM group resource",
+        schemaRef("ScimGroup"),
+      ),
+    },
   },
   "PATCH /api/v1/scim/v2/Groups/{groupId}": {
     requestBody: jsonRequestBody(schemaRef("ScimPatchRequest")),
     responses: {
-      "200": jsonResponse("Patched SCIM group resource and synchronized mapped memberships", schemaRef("ScimGroup"))
-    }
+      "200": jsonResponse(
+        "Patched SCIM group resource and synchronized mapped memberships",
+        schemaRef("ScimGroup"),
+      ),
+    },
   },
   "DELETE /api/v1/scim/v2/Groups/{groupId}": {
     responses: {
-      "204": { description: "SCIM group deleted and mapped memberships cleaned up" }
-    }
+      "204": {
+        description: "SCIM group deleted and mapped memberships cleaned up",
+      },
+    },
   },
   "GET /api/v1/admin/storage/operations": {
     responses: {
-      "200": jsonResponse("Server-admin storage posture, backup state, and restore readiness", schemaRef("AdminStorageOperations"))
-    }
+      "200": jsonResponse(
+        "Server-admin storage posture, backup state, and restore readiness",
+        schemaRef("AdminStorageOperations"),
+      ),
+    },
   },
   "POST /api/v1/admin/storage/backup": {
     requestBody: jsonRequestBody(schemaRef("StorageBackupRequest")),
     responses: {
-      "200": jsonResponse("Created SQLite backup summary", schemaRef("StorageBackupResult"))
-    }
+      "200": jsonResponse(
+        "Created SQLite backup summary",
+        schemaRef("StorageBackupResult"),
+      ),
+    },
   },
   "POST /api/v1/admin/storage/restore-drill": {
     requestBody: jsonRequestBody(schemaRef("StorageRestoreDrillRequest")),
     responses: {
-      "200": jsonResponse("Restore drill passed against a copied SQLite backup", schemaRef("StorageRestoreDrillResult")),
-      "409": jsonResponse("Restore drill failed against the requested or latest SQLite backup", schemaRef("StorageRestoreDrillResult"))
-    }
+      "200": jsonResponse(
+        "Restore drill passed against a copied SQLite backup",
+        schemaRef("StorageRestoreDrillResult"),
+      ),
+      "409": jsonResponse(
+        "Restore drill failed against the requested or latest SQLite backup",
+        schemaRef("StorageRestoreDrillResult"),
+      ),
+    },
   },
   "POST /api/v1/admin/storage/restore": {
     requestBody: jsonRequestBody(schemaRef("StorageRestoreRequest")),
     responses: {
-      "200": jsonResponse("Restored the live SQLite store from a confirmed backup file", schemaRef("StorageRestoreResult")),
-      "409": jsonResponse("Destructive restore failed against the confirmed SQLite backup", schemaRef("StorageRestoreResult"))
-    }
+      "200": jsonResponse(
+        "Restored the live SQLite store from a confirmed backup file",
+        schemaRef("StorageRestoreResult"),
+      ),
+      "409": jsonResponse(
+        "Destructive restore failed against the confirmed SQLite backup",
+        schemaRef("StorageRestoreResult"),
+      ),
+    },
   },
   "GET /api/v1/admin/assets/storage": {
     responses: {
-      "200": jsonResponse("Server-admin global asset storage runtime and operations posture", schemaRef("AdminAssetStorageInfo"))
-    }
+      "200": jsonResponse(
+        "Server-admin global asset storage runtime and operations posture",
+        schemaRef("AdminAssetStorageInfo"),
+      ),
+    },
   },
   "GET /api/v1/admin/assets/integrity": {
     parameters: [
-      { name: "campaignId", in: "query", required: false, description: "Filter integrity audit to one campaign.", schema: stringSchema },
-      { name: "includeDeleted", in: "query", required: false, description: "Include deleted asset rows in the audit.", schema: { type: "boolean" } },
-      { name: "includeExpired", in: "query", required: false, description: "Include expired asset rows in the audit.", schema: { type: "boolean" } }
+      {
+        name: "campaignId",
+        in: "query",
+        required: false,
+        description: "Filter integrity audit to one campaign.",
+        schema: stringSchema,
+      },
+      {
+        name: "includeDeleted",
+        in: "query",
+        required: false,
+        description: "Include deleted asset rows in the audit.",
+        schema: { type: "boolean" },
+      },
+      {
+        name: "includeExpired",
+        in: "query",
+        required: false,
+        description: "Include expired asset rows in the audit.",
+        schema: { type: "boolean" },
+      },
     ],
     responses: {
-      "200": jsonResponse("Asset byte integrity audit and remediation queue", schemaRef("AdminAssetIntegrityReport"))
-    }
+      "200": jsonResponse(
+        "Asset byte integrity audit and remediation queue",
+        schemaRef("AdminAssetIntegrityReport"),
+      ),
+    },
   },
   "POST /api/v1/admin/assets/integrity/quarantine": {
     requestBody: jsonRequestBody(schemaRef("AdminAssetOperationRequest")),
     responses: {
-      "200": jsonResponse("Dry-run or archive assets with integrity failures", schemaRef("AdminAssetOperationResult"))
-    }
+      "200": jsonResponse(
+        "Dry-run or archive assets with integrity failures",
+        schemaRef("AdminAssetOperationResult"),
+      ),
+    },
   },
   "POST /api/v1/admin/assets/migrate": {
     requestBody: jsonRequestBody(schemaRef("AdminAssetOperationRequest")),
     responses: {
-      "200": jsonResponse("Dry-run or migrate stored asset bytes to the active provider", schemaRef("AdminAssetOperationResult"))
-    }
+      "200": jsonResponse(
+        "Dry-run or migrate stored asset bytes to the active provider",
+        schemaRef("AdminAssetOperationResult"),
+      ),
+    },
   },
   "POST /api/v1/admin/assets/cleanup": {
     requestBody: jsonRequestBody(schemaRef("AdminAssetOperationRequest")),
     responses: {
-      "200": jsonResponse("Dry-run or delete stored bytes for deleted or expired assets", schemaRef("AdminAssetOperationResult"))
-    }
+      "200": jsonResponse(
+        "Dry-run or delete stored bytes for deleted or expired assets",
+        schemaRef("AdminAssetOperationResult"),
+      ),
+    },
   },
   "POST /api/v1/admin/assets/{assetId}/purge-cache": {
     requestBody: jsonRequestBody(schemaRef("AdminAssetCdnPurgeRequest")),
     responses: {
-      "200": jsonResponse("Requested CDN cache purge for one asset", schemaRef("AdminAssetCdnPurgeResult"))
-    }
+      "200": jsonResponse(
+        "Requested CDN cache purge for one asset",
+        schemaRef("AdminAssetCdnPurgeResult"),
+      ),
+    },
   },
   "GET /api/v1/campaigns": {
     responses: {
-      "200": jsonResponse("Campaigns visible to the caller", arrayOf(schemaRef("Campaign")))
-    }
+      "200": jsonResponse(
+        "Campaigns visible to the caller",
+        arrayOf(schemaRef("Campaign")),
+      ),
+    },
   },
   "POST /api/v1/campaigns": {
     requestBody: jsonRequestBody(schemaRef("CampaignCreateRequest")),
     responses: {
-      "200": jsonResponse("Created campaign", schemaRef("Campaign"))
-    }
+      "200": jsonResponse("Created campaign", schemaRef("Campaign")),
+    },
   },
   "GET /api/v1/campaigns/{campaignId}": {
     responses: {
-      "200": jsonResponse("Requested campaign", schemaRef("Campaign"))
-    }
+      "200": jsonResponse("Requested campaign", schemaRef("Campaign")),
+    },
   },
   "PATCH /api/v1/campaigns/{campaignId}": {
     requestBody: jsonRequestBody(schemaRef("CampaignPatchRequest")),
     responses: {
-      "200": jsonResponse("Updated campaign", schemaRef("Campaign"))
-    }
+      "200": jsonResponse("Updated campaign", schemaRef("Campaign")),
+    },
   },
   "DELETE /api/v1/campaigns/{campaignId}": {
     responses: {
-      "200": jsonResponse("Deleted campaign snapshot", schemaRef("Campaign"))
-    }
+      "200": jsonResponse("Deleted campaign snapshot", schemaRef("Campaign")),
+    },
   },
   "POST /api/v1/campaigns/{campaignId}/archive": {
     responses: {
-      "200": jsonResponse("Archived campaign with lifecycle metadata", schemaRef("Campaign"))
-    }
+      "200": jsonResponse(
+        "Archived campaign with lifecycle metadata",
+        schemaRef("Campaign"),
+      ),
+    },
   },
   "POST /api/v1/campaigns/{campaignId}/restore": {
     responses: {
-      "200": jsonResponse("Restored campaign with lifecycle metadata", schemaRef("Campaign"))
-    }
+      "200": jsonResponse(
+        "Restored campaign with lifecycle metadata",
+        schemaRef("Campaign"),
+      ),
+    },
   },
   "GET /api/v1/campaigns/{campaignId}/members": {
     responses: {
-      "200": jsonResponse("Campaign members with public user and permission details", arrayOf(schemaRef("CampaignMember")))
-    }
+      "200": jsonResponse(
+        "Campaign members with public user and permission details",
+        arrayOf(schemaRef("CampaignMember")),
+      ),
+    },
+  },
+  "PATCH /api/v1/campaigns/{campaignId}/members/{memberId}": {
+    requestBody: jsonRequestBody({
+      type: "object",
+      additionalProperties: false,
+      required: ["role"],
+      properties: {
+        role: {
+          type: "string",
+          enum: ["gm", "assistant_gm", "player", "observer"],
+        },
+      },
+    }),
+    responses: {
+      "200": jsonResponse(
+        "Updated campaign member",
+        schemaRef("CampaignMember"),
+      ),
+    },
+  },
+  "DELETE /api/v1/campaigns/{campaignId}/members/{memberId}": {
+    responses: {
+      "200": jsonResponse(
+        "Removed campaign member",
+        schemaRef("CampaignMember"),
+      ),
+    },
+  },
+  "GET /api/v1/campaigns/{campaignId}/sessions": {
+    responses: {
+      "200": jsonResponse(
+        "Campaign session-preparation records",
+        arrayOf(schemaRef("CampaignSession")),
+      ),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/sessions": {
+    requestBody: jsonRequestBody(schemaRef("CampaignSessionWriteRequest")),
+    responses: {
+      "200": jsonResponse(
+        "Created campaign session",
+        schemaRef("CampaignSession"),
+      ),
+    },
+  },
+  "GET /api/v1/campaigns/{campaignId}/search": {
+    parameters: [
+      { name: "q", in: "query", required: true, schema: stringSchema },
+      { name: "types", in: "query", required: false, schema: stringSchema },
+      { name: "worldId", in: "query", required: false, schema: idSchema },
+      {
+        name: "limit",
+        in: "query",
+        required: false,
+        schema: { type: "integer", minimum: 1, maximum: 100 },
+      },
+    ],
+    responses: {
+      "200": jsonResponse(
+        "Permission-filtered campaign search results",
+        arrayOf(schemaRef("CampaignSearchResult")),
+      ),
+    },
+  },
+  "GET /api/v1/campaign-sessions/{sessionId}": {
+    responses: {
+      "200": jsonResponse(
+        "Requested campaign session",
+        schemaRef("CampaignSession"),
+      ),
+    },
+  },
+  "PATCH /api/v1/campaign-sessions/{sessionId}": {
+    requestBody: jsonRequestBody(schemaRef("CampaignSessionWriteRequest")),
+    responses: {
+      "200": jsonResponse(
+        "Updated campaign session",
+        schemaRef("CampaignSession"),
+      ),
+    },
+  },
+  "DELETE /api/v1/campaign-sessions/{sessionId}": {
+    responses: {
+      "200": jsonResponse(
+        "Deleted planned campaign session",
+        schemaRef("CampaignSession"),
+      ),
+    },
+  },
+  "POST /api/v1/campaign-sessions/{sessionId}/start": {
+    requestBody: jsonRequestBody({
+      type: "object",
+      additionalProperties: false,
+      properties: { activateSceneId: idSchema },
+    }),
+    responses: {
+      "200": jsonResponse(
+        "Started campaign session",
+        schemaRef("CampaignSession"),
+      ),
+    },
+  },
+  "POST /api/v1/campaign-sessions/{sessionId}/complete": {
+    requestBody: jsonRequestBody({
+      type: "object",
+      additionalProperties: false,
+      properties: { notes: stringSchema },
+    }),
+    responses: {
+      "200": jsonResponse(
+        "Completed campaign session",
+        schemaRef("CampaignSession"),
+      ),
+    },
   },
   "GET /api/v1/campaigns/{campaignId}/invites": {
     responses: {
-      "200": jsonResponse("Campaign invite metadata without one-time token hashes", arrayOf(schemaRef("CampaignInvite")))
-    }
+      "200": jsonResponse(
+        "Campaign invite metadata without one-time token hashes",
+        arrayOf(schemaRef("CampaignInvite")),
+      ),
+    },
   },
   "POST /api/v1/campaigns/{campaignId}/invites": {
     requestBody: jsonRequestBody(schemaRef("CampaignInviteCreateRequest")),
     responses: {
-      "200": jsonResponse("Created invite metadata plus the one-time plaintext token", schemaRef("CampaignInviteCreateResponse"))
-    }
+      "200": jsonResponse(
+        "Created invite metadata plus the one-time plaintext token",
+        schemaRef("CampaignInviteCreateResponse"),
+      ),
+    },
   },
   "POST /api/v1/invites/accept": {
     requestBody: jsonRequestBody(schemaRef("InviteAcceptRequest")),
     responses: {
-      "200": jsonResponse("Accepted invite and created an authenticated session for the campaign member", schemaRef("InviteAcceptResponse"))
-    }
+      "200": jsonResponse(
+        "Accepted invite and created an authenticated session for the campaign member",
+        schemaRef("InviteAcceptResponse"),
+      ),
+    },
   },
   "POST /api/v1/invites/{inviteId}/revoke": {
     responses: {
-      "200": jsonResponse("Revoked invite metadata without the token hash", schemaRef("CampaignInvite"))
-    }
+      "200": jsonResponse(
+        "Revoked invite metadata without the token hash",
+        schemaRef("CampaignInvite"),
+      ),
+    },
   },
   "GET /api/v1/campaigns/{campaignId}/scenes": {
     responses: {
-      "200": jsonResponse("Scenes in display order", arrayOf(schemaRef("Scene")))
-    }
+      "200": jsonResponse(
+        "Scenes in display order",
+        arrayOf(schemaRef("Scene")),
+      ),
+    },
   },
   "POST /api/v1/campaigns/{campaignId}/scenes": {
     requestBody: jsonRequestBody(schemaRef("SceneCreateRequest")),
     responses: {
-      "200": jsonResponse("Created scene", schemaRef("Scene"))
-    }
+      "200": jsonResponse("Created scene", schemaRef("Scene")),
+    },
   },
   "GET /api/v1/scenes/{sceneId}": {
     responses: {
-      "200": jsonResponse("Requested scene", schemaRef("Scene"))
-    }
+      "200": jsonResponse("Requested scene", schemaRef("Scene")),
+    },
   },
   "PATCH /api/v1/scenes/{sceneId}": {
     requestBody: jsonRequestBody(schemaRef("ScenePatchRequest")),
     responses: {
-      "200": jsonResponse("Updated scene", schemaRef("Scene"))
-    }
+      "200": jsonResponse("Updated scene", schemaRef("Scene")),
+    },
   },
   "DELETE /api/v1/scenes/{sceneId}": {
     responses: {
-      "200": jsonResponse("Deleted scene snapshot", schemaRef("Scene"))
-    }
+      "200": jsonResponse("Deleted scene snapshot", schemaRef("Scene")),
+    },
   },
   "POST /api/v1/scenes/{sceneId}/ai-edits/apply-to-target": {
     responses: {
-      "200": jsonResponse("Applied AI edit layer to its target scene", schemaRef("AiEditLayerApplyResult"))
-    }
+      "200": jsonResponse(
+        "Applied AI edit layer to its target scene",
+        schemaRef("AiEditLayerApplyResult"),
+      ),
+    },
   },
   "GET /api/v1/campaigns/{campaignId}/fog-presets": {
     responses: {
-      "200": jsonResponse("Campaign fog presets", arrayOf(schemaRef("FogPreset")))
-    }
+      "200": jsonResponse(
+        "Campaign fog presets",
+        arrayOf(schemaRef("FogPreset")),
+      ),
+    },
   },
   "POST /api/v1/campaigns/{campaignId}/fog-presets": {
     requestBody: jsonRequestBody(schemaRef("FogPresetCreateRequest")),
     responses: {
-      "200": jsonResponse("Created fog preset from a source scene", schemaRef("FogPreset"))
-    }
+      "200": jsonResponse(
+        "Created fog preset from a source scene",
+        schemaRef("FogPreset"),
+      ),
+    },
   },
   "DELETE /api/v1/campaigns/{campaignId}/fog-presets/{presetId}": {
     responses: {
-      "200": jsonResponse("Deleted fog preset snapshot", schemaRef("FogPreset"))
-    }
+      "200": jsonResponse(
+        "Deleted fog preset snapshot",
+        schemaRef("FogPreset"),
+      ),
+    },
   },
   "GET /api/v1/scenes/{sceneId}/vision": {
     responses: {
-      "200": jsonResponse("Permission-filtered scene vision snapshot", schemaRef("VisionSnapshot"))
-    }
+      "200": jsonResponse(
+        "Permission-filtered scene vision snapshot",
+        schemaRef("VisionSnapshot"),
+      ),
+    },
   },
   "GET /api/v1/scenes/{sceneId}/vision/sample": {
     parameters: [
@@ -5514,146 +7880,206 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
         in: "query",
         required: false,
         description: "Scene-space x coordinate to sample.",
-        schema: { type: "number" }
+        schema: { type: "number" },
       },
       {
         name: "y",
         in: "query",
         required: false,
         description: "Scene-space y coordinate to sample.",
-        schema: { type: "number" }
-      }
+        schema: { type: "number" },
+      },
     ],
     responses: {
-      "200": jsonResponse("Visibility, fog, lighting, and wall sample for one scene point", schemaRef("VisionPointSample"))
-    }
+      "200": jsonResponse(
+        "Visibility, fog, lighting, and wall sample for one scene point",
+        schemaRef("VisionPointSample"),
+      ),
+    },
   },
   "GET /api/v1/scenes/{sceneId}/rendering/diagnostics": {
     responses: {
-      "200": jsonResponse("Scene rendering diagnostics", schemaRef("SceneRenderingDiagnostics"))
-    }
+      "200": jsonResponse(
+        "Scene rendering diagnostics",
+        schemaRef("SceneRenderingDiagnostics"),
+      ),
+    },
   },
   "POST /api/v1/scenes/{sceneId}/annotations": {
     requestBody: jsonRequestBody(schemaRef("SceneAnnotationCreateRequest")),
     responses: {
-      "200": jsonResponse("Updated scene with created annotation", schemaRef("Scene"))
-    }
+      "200": jsonResponse(
+        "Updated scene with created annotation",
+        schemaRef("Scene"),
+      ),
+    },
   },
   "PATCH /api/v1/scenes/{sceneId}/annotations/{annotationId}": {
     requestBody: jsonRequestBody(schemaRef("SceneAnnotationUpdateRequest")),
     responses: {
-      "200": jsonResponse("Updated scene with annotation changes", schemaRef("Scene"))
-    }
+      "200": jsonResponse(
+        "Updated scene with annotation changes",
+        schemaRef("Scene"),
+      ),
+    },
   },
   "DELETE /api/v1/scenes/{sceneId}/annotations/{annotationId}": {
     responses: {
-      "200": jsonResponse("Updated scene with annotation removed", schemaRef("Scene"))
-    }
+      "200": jsonResponse(
+        "Updated scene with annotation removed",
+        schemaRef("Scene"),
+      ),
+    },
   },
   "POST /api/v1/scenes/{sceneId}/fog": {
     requestBody: jsonRequestBody(schemaRef("FogRegionInput")),
     responses: {
-      "200": jsonResponse("Updated scene with created fog region", schemaRef("Scene"))
-    }
+      "200": jsonResponse(
+        "Updated scene with created fog region",
+        schemaRef("Scene"),
+      ),
+    },
   },
   "GET /api/v1/scenes/{sceneId}/fog/history": {
     responses: {
-      "200": jsonResponse("Scene fog edit history", arrayOf(schemaRef("FogHistoryEntry")))
-    }
+      "200": jsonResponse(
+        "Scene fog edit history",
+        arrayOf(schemaRef("FogHistoryEntry")),
+      ),
+    },
   },
   "POST /api/v1/scenes/{sceneId}/fog/undo": {
     responses: {
-      "200": jsonResponse("Updated scene after undoing the latest fog edit", schemaRef("Scene"))
-    }
+      "200": jsonResponse(
+        "Updated scene after undoing the latest fog edit",
+        schemaRef("Scene"),
+      ),
+    },
   },
   "GET /api/v1/scenes/{sceneId}/edits": {
     responses: {
-      "200": jsonResponse("Scene edit undo history (geometry, lighting, and annotation changes)", schemaRef("SceneEditHistory"))
-    }
+      "200": jsonResponse(
+        "Scene edit undo history (geometry, lighting, and annotation changes)",
+        schemaRef("SceneEditHistory"),
+      ),
+    },
   },
   "POST /api/v1/scenes/{sceneId}/undo": {
     responses: {
-      "200": jsonResponse("Updated scene after undoing the latest scene edit", schemaRef("Scene"))
-    }
+      "200": jsonResponse(
+        "Updated scene after undoing the latest scene edit",
+        schemaRef("Scene"),
+      ),
+    },
   },
   "POST /api/v1/scenes/{sceneId}/fog/apply-preset": {
     requestBody: jsonRequestBody(schemaRef("FogPresetApplyRequest")),
     responses: {
-      "200": jsonResponse("Updated scene after applying a fog preset", schemaRef("Scene"))
-    }
+      "200": jsonResponse(
+        "Updated scene after applying a fog preset",
+        schemaRef("Scene"),
+      ),
+    },
   },
   "PATCH /api/v1/scenes/{sceneId}/fog/{fogId}": {
     requestBody: jsonRequestBody(schemaRef("FogRegionInput")),
     responses: {
-      "200": jsonResponse("Updated scene with patched fog region", schemaRef("Scene"))
-    }
+      "200": jsonResponse(
+        "Updated scene with patched fog region",
+        schemaRef("Scene"),
+      ),
+    },
   },
   "DELETE /api/v1/scenes/{sceneId}/fog/{fogId}": {
     responses: {
-      "200": jsonResponse("Updated scene with fog region removed", schemaRef("Scene"))
-    }
+      "200": jsonResponse(
+        "Updated scene with fog region removed",
+        schemaRef("Scene"),
+      ),
+    },
   },
   "POST /api/v1/scenes/{sceneId}/walls": {
     requestBody: jsonRequestBody(schemaRef("WallInput")),
     responses: {
-      "200": jsonResponse("Updated scene with created wall", schemaRef("Scene"))
-    }
+      "200": jsonResponse(
+        "Updated scene with created wall",
+        schemaRef("Scene"),
+      ),
+    },
   },
   "PATCH /api/v1/scenes/{sceneId}/walls/{wallId}": {
     requestBody: jsonRequestBody(schemaRef("WallInput")),
     responses: {
-      "200": jsonResponse("Updated scene with patched wall", schemaRef("Scene"))
-    }
+      "200": jsonResponse(
+        "Updated scene with patched wall",
+        schemaRef("Scene"),
+      ),
+    },
   },
   "DELETE /api/v1/scenes/{sceneId}/walls/{wallId}": {
     responses: {
-      "200": jsonResponse("Updated scene with wall removed", schemaRef("Scene"))
-    }
+      "200": jsonResponse(
+        "Updated scene with wall removed",
+        schemaRef("Scene"),
+      ),
+    },
   },
   "POST /api/v1/scenes/{sceneId}/lights": {
     requestBody: jsonRequestBody(schemaRef("LightSourceInput")),
     responses: {
-      "200": jsonResponse("Updated scene with created light source", schemaRef("Scene"))
-    }
+      "200": jsonResponse(
+        "Updated scene with created light source",
+        schemaRef("Scene"),
+      ),
+    },
   },
   "PATCH /api/v1/scenes/{sceneId}/lights/{lightId}": {
     requestBody: jsonRequestBody(schemaRef("LightSourceInput")),
     responses: {
-      "200": jsonResponse("Updated scene with patched light source", schemaRef("Scene"))
-    }
+      "200": jsonResponse(
+        "Updated scene with patched light source",
+        schemaRef("Scene"),
+      ),
+    },
   },
   "DELETE /api/v1/scenes/{sceneId}/lights/{lightId}": {
     responses: {
-      "200": jsonResponse("Updated scene with light source removed", schemaRef("Scene"))
-    }
+      "200": jsonResponse(
+        "Updated scene with light source removed",
+        schemaRef("Scene"),
+      ),
+    },
   },
   "GET /api/v1/scenes/{sceneId}/tokens": {
     responses: {
-      "200": jsonResponse("Visible tokens in the scene", arrayOf(schemaRef("Token")))
-    }
+      "200": jsonResponse(
+        "Visible tokens in the scene",
+        arrayOf(schemaRef("Token")),
+      ),
+    },
   },
   "POST /api/v1/scenes/{sceneId}/tokens": {
     requestBody: jsonRequestBody(schemaRef("TokenCreateRequest")),
     responses: {
-      "200": jsonResponse("Created token", schemaRef("Token"))
-    }
+      "200": jsonResponse("Created token", schemaRef("Token")),
+    },
   },
   "POST /api/v1/tokens/{tokenId}/target": {
     requestBody: jsonRequestBody(schemaRef("TokenTargetRequest")),
     responses: {
-      "200": jsonResponse("Updated token targeting state", schemaRef("Token"))
-    }
+      "200": jsonResponse("Updated token targeting state", schemaRef("Token")),
+    },
   },
   "PATCH /api/v1/tokens/{tokenId}": {
     requestBody: jsonRequestBody(schemaRef("TokenPatchRequest")),
     responses: {
-      "200": jsonResponse("Updated token", schemaRef("Token"))
-    }
+      "200": jsonResponse("Updated token", schemaRef("Token")),
+    },
   },
   "DELETE /api/v1/tokens/{tokenId}": {
     responses: {
-      "200": jsonResponse("Deleted token snapshot", schemaRef("Token"))
-    }
+      "200": jsonResponse("Deleted token snapshot", schemaRef("Token")),
+    },
   },
   "GET /api/v1/chat/messages": {
     parameters: [
@@ -5661,104 +8087,165 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
         name: "campaignId",
         in: "query",
         required: false,
-        description: "Restrict messages to one campaign before visibility filtering.",
-        schema: idSchema
-      }
+        description:
+          "Restrict messages to one campaign before visibility filtering.",
+        schema: idSchema,
+      },
     ],
     responses: {
-      "200": jsonResponse("Chat messages visible to the caller", { oneOf: [arrayOf(schemaRef("ChatMessage")), schemaRef("ChatMessagePage")] })
-    }
+      "200": jsonResponse("Chat messages visible to the caller", {
+        oneOf: [
+          arrayOf(schemaRef("ChatMessage")),
+          schemaRef("ChatMessagePage"),
+        ],
+      }),
+    },
   },
   "POST /api/v1/chat/messages": {
     requestBody: jsonRequestBody(schemaRef("ChatMessageCreateRequest")),
     responses: {
-      "200": jsonResponse("Created chat message", schemaRef("ChatMessage"))
-    }
+      "200": jsonResponse("Created chat message", schemaRef("ChatMessage")),
+    },
   },
   "PATCH /api/v1/chat/messages/{messageId}": {
     requestBody: jsonRequestBody(schemaRef("ChatMessageEditRequest")),
     responses: {
-      "200": jsonResponse("Edited chat message", schemaRef("ChatMessage"))
-    }
+      "200": jsonResponse("Edited chat message", schemaRef("ChatMessage")),
+    },
   },
   "PATCH /api/v1/chat/messages/{messageId}/moderation": {
     requestBody: jsonRequestBody(schemaRef("ChatModerationRequest")),
     responses: {
-      "200": jsonResponse("Updated chat moderation state", schemaRef("ChatMessage"))
-    }
+      "200": jsonResponse(
+        "Updated chat moderation state",
+        schemaRef("ChatMessage"),
+      ),
+    },
   },
   "DELETE /api/v1/chat/messages/{messageId}": {
     responses: {
-      "200": jsonResponse("Deleted chat message snapshot", schemaRef("ChatMessage"))
-    }
+      "200": jsonResponse(
+        "Deleted chat message snapshot",
+        schemaRef("ChatMessage"),
+      ),
+    },
   },
   "POST /api/v1/dice/roll": {
     requestBody: jsonRequestBody(schemaRef("DiceRollRequest")),
     responses: {
-      "200": jsonResponse("Created dice roll", schemaRef("DiceRoll"))
-    }
+      "200": jsonResponse("Created dice roll", schemaRef("DiceRoll")),
+    },
   },
   "GET /api/v1/campaigns/{campaignId}/rolls": {
     responses: {
-      "200": jsonResponse("Dice rolls visible to the caller", { oneOf: [arrayOf(schemaRef("DiceRoll")), schemaRef("DiceRollPage")] })
-    }
+      "200": jsonResponse("Dice rolls visible to the caller", {
+        oneOf: [arrayOf(schemaRef("DiceRoll")), schemaRef("DiceRollPage")],
+      }),
+    },
   },
   "GET /api/v1/campaigns/{campaignId}/rolls/{rollId}/verify": {
     responses: {
-      "200": jsonResponse("Provably-fair verification of a recorded dice roll", schemaRef("DiceRollVerification"))
-    }
+      "200": jsonResponse(
+        "Provably-fair verification of a recorded dice roll",
+        schemaRef("DiceRollVerification"),
+      ),
+    },
   },
   "GET /api/v1/campaigns/{campaignId}/snapshot": {
     responses: {
-      "200": jsonResponse("Permission-filtered campaign state composed into a single payload", schemaRef("CampaignSnapshot"))
-    }
+      "200": jsonResponse(
+        "Permission-filtered campaign state composed into a single payload",
+        schemaRef("CampaignSnapshot"),
+      ),
+    },
   },
   "GET /api/v1/campaigns/{campaignId}/assets": {
     responses: {
-      "200": jsonResponse("Campaign assets visible to the caller", arrayOf(schemaRef("MapAsset")))
-    }
+      "200": jsonResponse(
+        "Campaign assets visible to the caller",
+        arrayOf(schemaRef("MapAsset")),
+      ),
+    },
   },
   "GET /api/v1/campaigns/{campaignId}/assets/storage": {
     responses: {
-      "200": jsonResponse("Campaign asset storage posture", schemaRef("CampaignAssetStorageInfo"))
-    }
+      "200": jsonResponse(
+        "Campaign asset storage posture",
+        schemaRef("CampaignAssetStorageInfo"),
+      ),
+    },
   },
   "POST /api/v1/campaigns/{campaignId}/assets": {
     requestBody: jsonRequestBody(schemaRef("MapAssetCreateRequest")),
     responses: {
-      "200": jsonResponse("Created map asset metadata", schemaRef("MapAsset"))
-    }
+      "200": jsonResponse("Created map asset metadata", schemaRef("MapAsset")),
+    },
   },
   "POST /api/v1/campaigns/{campaignId}/assets/upload": {
     requestBody: {
       required: true,
-      description: "Raw asset bytes. The runtime reads asset name, folder, and tags from x-asset-* headers.",
+      description:
+        "Raw asset bytes. The runtime reads asset name, folder, and tags from x-asset-* headers.",
       content: {
         "application/octet-stream": {
           schema: {
             type: "string",
-            format: "binary"
-          }
-        }
-      }
+            format: "binary",
+          },
+        },
+      },
     },
     responses: {
-      "200": jsonResponse("Uploaded asset and optional updated scene", schemaRef("AssetUploadResponse"))
-    }
+      "200": jsonResponse(
+        "Uploaded asset and optional updated scene",
+        schemaRef("AssetUploadResponse"),
+      ),
+    },
   },
   "PATCH /api/v1/assets/{assetId}": {
     requestBody: jsonRequestBody(schemaRef("MapAssetPatchRequest")),
     responses: {
-      "200": jsonResponse("Updated asset metadata", schemaRef("MapAsset"))
-    }
+      "200": jsonResponse("Updated asset metadata", schemaRef("MapAsset")),
+    },
   },
   "GET /api/v1/assets/{assetId}/blob": {
     parameters: [
-      { name: "userId", in: "query", required: false, description: "Compatibility user id for legacy local clients.", schema: stringSchema },
-      { name: "sessionToken", in: "query", required: false, description: "Session token for browser media elements that cannot send authorization headers.", schema: stringSchema },
-      { name: "expiresAt", in: "query", required: false, description: "Signed delivery expiration timestamp.", schema: { type: "string", format: "date-time" } },
-      { name: "signature", in: "query", required: false, description: "Signed delivery HMAC.", schema: stringSchema },
-      { name: "disposition", in: "query", required: false, description: "Requested content disposition.", schema: { type: "string", enum: ["inline", "attachment"] } }
+      {
+        name: "userId",
+        in: "query",
+        required: false,
+        description: "Compatibility user id for legacy local clients.",
+        schema: stringSchema,
+      },
+      {
+        name: "sessionToken",
+        in: "query",
+        required: false,
+        description:
+          "Session token for browser media elements that cannot send authorization headers.",
+        schema: stringSchema,
+      },
+      {
+        name: "expiresAt",
+        in: "query",
+        required: false,
+        description: "Signed delivery expiration timestamp.",
+        schema: { type: "string", format: "date-time" },
+      },
+      {
+        name: "signature",
+        in: "query",
+        required: false,
+        description: "Signed delivery HMAC.",
+        schema: stringSchema,
+      },
+      {
+        name: "disposition",
+        in: "query",
+        required: false,
+        description: "Requested content disposition.",
+        schema: { type: "string", enum: ["inline", "attachment"] },
+      },
     ],
     responses: {
       "200": {
@@ -5767,152 +8254,208 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
           "application/octet-stream": {
             schema: {
               type: "string",
-              format: "binary"
-            }
-          }
-        }
-      }
-    }
+              format: "binary",
+            },
+          },
+        },
+      },
+    },
   },
   "POST /api/v1/assets/{assetId}/delivery-url": {
     requestBody: jsonRequestBody(schemaRef("AssetDeliveryUrlRequest")),
     responses: {
-      "200": jsonResponse("Signed asset delivery URL", schemaRef("AssetDeliveryUrlResponse"))
-    }
+      "200": jsonResponse(
+        "Signed asset delivery URL",
+        schemaRef("AssetDeliveryUrlResponse"),
+      ),
+    },
   },
   "PATCH /api/v1/assets/{assetId}/lifecycle": {
     requestBody: jsonRequestBody(schemaRef("AssetLifecyclePatchRequest")),
     responses: {
-      "200": jsonResponse("Updated asset lifecycle", schemaRef("MapAsset"))
-    }
+      "200": jsonResponse("Updated asset lifecycle", schemaRef("MapAsset")),
+    },
   },
   "GET /api/v1/campaigns/{campaignId}/actors": {
     responses: {
-      "200": jsonResponse("Campaign actors visible to the caller", arrayOf(schemaRef("Actor")))
-    }
+      "200": jsonResponse(
+        "Campaign actors visible to the caller",
+        arrayOf(schemaRef("Actor")),
+      ),
+    },
   },
   "POST /api/v1/campaigns/{campaignId}/actors": {
     requestBody: jsonRequestBody(schemaRef("ActorCreateRequest")),
     responses: {
-      "200": jsonResponse("Created actor", schemaRef("Actor"))
-    }
+      "200": jsonResponse("Created actor", schemaRef("Actor")),
+    },
+  },
+  "GET /api/v1/actors/{actorId}": {
+    responses: {
+      "200": jsonResponse(
+        "Requested actor visible to the caller",
+        schemaRef("Actor"),
+      ),
+    },
   },
   "PATCH /api/v1/actors/{actorId}": {
     requestBody: jsonRequestBody(schemaRef("ActorPatchRequest")),
     responses: {
-      "200": jsonResponse("Updated actor", schemaRef("Actor"))
-    }
+      "200": jsonResponse("Updated actor", schemaRef("Actor")),
+    },
   },
   "GET /api/v1/campaigns/{campaignId}/items": {
     responses: {
-      "200": jsonResponse("Campaign items visible to the caller", arrayOf(schemaRef("Item")))
-    }
+      "200": jsonResponse(
+        "Campaign items visible to the caller",
+        arrayOf(schemaRef("Item")),
+      ),
+    },
   },
   "POST /api/v1/campaigns/{campaignId}/items": {
     requestBody: jsonRequestBody(schemaRef("ItemCreateRequest")),
     responses: {
-      "200": jsonResponse("Created item", schemaRef("Item"))
-    }
+      "200": jsonResponse("Created item", schemaRef("Item")),
+    },
+  },
+  "GET /api/v1/items/{itemId}": {
+    responses: {
+      "200": jsonResponse(
+        "Requested item visible to the caller",
+        schemaRef("Item"),
+      ),
+    },
   },
   "PATCH /api/v1/items/{itemId}": {
     requestBody: jsonRequestBody(schemaRef("ItemPatchRequest")),
     responses: {
-      "200": jsonResponse("Updated item", schemaRef("Item"))
-    }
+      "200": jsonResponse("Updated item", schemaRef("Item")),
+    },
   },
   "GET /api/v1/campaigns/{campaignId}/journal": {
     responses: {
-      "200": jsonResponse("Journal entries visible to the caller", arrayOf(schemaRef("JournalEntry")))
-    }
+      "200": jsonResponse(
+        "Journal entries visible to the caller",
+        arrayOf(schemaRef("JournalEntry")),
+      ),
+    },
   },
   "POST /api/v1/campaigns/{campaignId}/journal": {
     requestBody: jsonRequestBody(schemaRef("JournalEntryCreateRequest")),
     responses: {
-      "200": jsonResponse("Created journal entry", schemaRef("JournalEntry"))
-    }
+      "200": jsonResponse("Created journal entry", schemaRef("JournalEntry")),
+    },
+  },
+  "GET /api/v1/journal/{entryId}": {
+    responses: {
+      "200": jsonResponse(
+        "Requested journal entry visible to the caller",
+        schemaRef("JournalEntry"),
+      ),
+    },
   },
   "PATCH /api/v1/journal/{entryId}": {
     requestBody: jsonRequestBody(schemaRef("JournalEntryPatchRequest")),
     responses: {
-      "200": jsonResponse("Updated journal entry", schemaRef("JournalEntry"))
-    }
+      "200": jsonResponse("Updated journal entry", schemaRef("JournalEntry")),
+    },
   },
   "GET /api/v1/campaigns/{campaignId}/combats": {
     responses: {
-      "200": jsonResponse("Campaign combats", arrayOf(schemaRef("Combat")))
-    }
+      "200": jsonResponse("Campaign combats", arrayOf(schemaRef("Combat"))),
+    },
   },
   "GET /api/v1/combats/{combatId}/audit": {
     responses: {
-      "200": jsonResponse("Redacted combat audit entries", { oneOf: [arrayOf(schemaRef("AuditLog")), schemaRef("AuditLogPage")] })
-    }
+      "200": jsonResponse("Redacted combat audit entries", {
+        oneOf: [arrayOf(schemaRef("AuditLog")), schemaRef("AuditLogPage")],
+      }),
+    },
   },
   "POST /api/v1/combats/{combatId}/actions/{actionId}/confirm": {
-    requestBody: jsonRequestBody({ type: "object", additionalProperties: false }),
+    requestBody: jsonRequestBody({
+      type: "object",
+      additionalProperties: false,
+    }),
     responses: {
-      "200": jsonResponse("Confirmed combat action", schemaRef("CombatActionMutationResponse"))
-    }
+      "200": jsonResponse(
+        "Confirmed combat action",
+        schemaRef("CombatActionMutationResponse"),
+      ),
+    },
   },
   "POST /api/v1/combats/{combatId}/actions/{actionId}/reject": {
     requestBody: jsonRequestBody(schemaRef("CombatActionRejectRequest")),
     responses: {
-      "200": jsonResponse("Rejected combat action", schemaRef("CombatActionMutationResponse"))
-    }
+      "200": jsonResponse(
+        "Rejected combat action",
+        schemaRef("CombatActionMutationResponse"),
+      ),
+    },
   },
   "POST /api/v1/combats/{combatId}/initiative/roll-npcs": {
-    requestBody: jsonRequestBody({ type: "object", additionalProperties: false }),
+    requestBody: jsonRequestBody({
+      type: "object",
+      additionalProperties: false,
+    }),
     responses: {
-      "200": jsonResponse("Rolled initiative for linked NPC combatants", schemaRef("CombatInitiativeRollNpcsResponse"))
-    }
+      "200": jsonResponse(
+        "Rolled initiative for linked NPC combatants",
+        schemaRef("CombatInitiativeRollNpcsResponse"),
+      ),
+    },
   },
   "POST /api/v1/campaigns/{campaignId}/combats": {
     requestBody: jsonRequestBody(schemaRef("CombatCreateRequest")),
     responses: {
-      "200": jsonResponse("Started combat", schemaRef("Combat"))
-    }
+      "200": jsonResponse("Started combat", schemaRef("Combat")),
+    },
   },
   "PATCH /api/v1/combats/{combatId}": {
     requestBody: jsonRequestBody(schemaRef("CombatPatchRequest")),
     responses: {
-      "200": jsonResponse("Updated combat", schemaRef("Combat"))
-    }
+      "200": jsonResponse("Updated combat", schemaRef("Combat")),
+    },
   },
   "PATCH /api/v1/combats/{combatId}/combatants/{combatantId}": {
     requestBody: jsonRequestBody(schemaRef("CombatantPatchRequest")),
     responses: {
-      "200": jsonResponse("Updated combatant within combat", schemaRef("Combat"))
-    }
+      "200": jsonResponse(
+        "Updated combatant within combat",
+        schemaRef("Combat"),
+      ),
+    },
   },
   "DELETE /api/v1/combats/{combatId}": {
     responses: {
-      "200": jsonResponse("Ended combat", schemaRef("Combat"))
-    }
+      "200": jsonResponse("Ended combat", schemaRef("Combat")),
+    },
   },
   "GET /api/v1/campaigns/{campaignId}/proposals": {
     responses: {
-      "200": jsonResponse("Campaign proposals", arrayOf(schemaRef("Proposal")))
-    }
+      "200": jsonResponse("Campaign proposals", arrayOf(schemaRef("Proposal"))),
+    },
   },
   "POST /api/v1/campaigns/{campaignId}/proposals": {
     requestBody: jsonRequestBody(schemaRef("ProposalCreateRequest")),
     responses: {
-      "200": jsonResponse("Created proposal", schemaRef("Proposal"))
-    }
+      "200": jsonResponse("Created proposal", schemaRef("Proposal")),
+    },
   },
   "POST /api/v1/proposals/{proposalId}/approve": {
     responses: {
-      "200": jsonResponse("Approved proposal", schemaRef("Proposal"))
-    }
+      "200": jsonResponse("Approved proposal", schemaRef("Proposal")),
+    },
   },
   "POST /api/v1/proposals/{proposalId}/reject": {
     responses: {
-      "200": jsonResponse("Rejected proposal", schemaRef("Proposal"))
-    }
+      "200": jsonResponse("Rejected proposal", schemaRef("Proposal")),
+    },
   },
   "POST /api/v1/proposals/{proposalId}/apply": {
     responses: {
-      "200": jsonResponse("Applied proposal", schemaRef("Proposal"))
-    }
+      "200": jsonResponse("Applied proposal", schemaRef("Proposal")),
+    },
   },
   "GET /api/v1/campaigns/{campaignId}/chat/export": {
     parameters: [
@@ -5920,396 +8463,765 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
         name: "format",
         in: "query",
         required: false,
-        description: "Return JSON metadata or newline-delimited JSON chat messages.",
-        schema: { type: "string", enum: ["json", "ndjson"] }
-      }
+        description:
+          "Return JSON metadata or newline-delimited JSON chat messages.",
+        schema: { type: "string", enum: ["json", "ndjson"] },
+      },
     ],
     responses: {
-      "200": jsonResponse("Visible campaign chat export", schemaRef("ChatExport"))
-    }
+      "200": jsonResponse(
+        "Visible campaign chat export",
+        schemaRef("ChatExport"),
+      ),
+    },
   },
   "GET /api/v1/campaigns/{campaignId}/dice-macros": {
     responses: {
-      "200": jsonResponse("Campaign dice macros", arrayOf(schemaRef("DiceMacro")))
-    }
+      "200": jsonResponse(
+        "Campaign dice macros",
+        arrayOf(schemaRef("DiceMacro")),
+      ),
+    },
   },
   "POST /api/v1/campaigns/{campaignId}/dice-macros": {
     requestBody: jsonRequestBody(schemaRef("DiceMacroRequest")),
     responses: {
-      "200": jsonResponse("Created dice macro", schemaRef("DiceMacro"))
-    }
+      "200": jsonResponse("Created dice macro", schemaRef("DiceMacro")),
+    },
   },
   "PATCH /api/v1/dice-macros/{macroId}": {
     requestBody: jsonRequestBody(schemaRef("DiceMacroRequest")),
     responses: {
-      "200": jsonResponse("Updated dice macro", schemaRef("DiceMacro"))
-    }
+      "200": jsonResponse("Updated dice macro", schemaRef("DiceMacro")),
+    },
   },
   "DELETE /api/v1/dice-macros/{macroId}": {
     responses: {
-      "200": jsonResponse("Deleted dice macro snapshot", schemaRef("DiceMacro"))
-    }
+      "200": jsonResponse(
+        "Deleted dice macro snapshot",
+        schemaRef("DiceMacro"),
+      ),
+    },
   },
   "GET /api/v1/campaigns/{campaignId}/audio": {
     responses: {
-      "200": jsonResponse("Campaign soundboard tracks and their synced playback state", arrayOf(schemaRef("AudioTrack")))
-    }
+      "200": jsonResponse(
+        "Campaign soundboard tracks and their synced playback state",
+        arrayOf(schemaRef("AudioTrack")),
+      ),
+    },
   },
   "POST /api/v1/campaigns/{campaignId}/audio": {
     requestBody: jsonRequestBody(schemaRef("AudioTrackRequest")),
     responses: {
-      "200": jsonResponse("Created audio track", schemaRef("AudioTrack"))
-    }
+      "200": jsonResponse("Created audio track", schemaRef("AudioTrack")),
+    },
   },
   "PATCH /api/v1/audio/{trackId}": {
     requestBody: jsonRequestBody(schemaRef("AudioTrackPatchRequest")),
     responses: {
-      "200": jsonResponse("Updated audio track with synced playback state", schemaRef("AudioTrack"))
-    }
+      "200": jsonResponse(
+        "Updated audio track with synced playback state",
+        schemaRef("AudioTrack"),
+      ),
+    },
   },
   "DELETE /api/v1/audio/{trackId}": {
     responses: {
-      "200": jsonResponse("Deleted audio track snapshot", schemaRef("AudioTrack"))
-    }
+      "200": jsonResponse(
+        "Deleted audio track snapshot",
+        schemaRef("AudioTrack"),
+      ),
+    },
   },
   "GET /api/v1/campaigns/{campaignId}/encounters": {
     responses: {
-      "200": jsonResponse("Campaign encounters", arrayOf(schemaRef("Encounter")))
-    }
+      "200": jsonResponse(
+        "Campaign encounters",
+        arrayOf(schemaRef("Encounter")),
+      ),
+    },
   },
   "POST /api/v1/campaigns/{campaignId}/encounters": {
     requestBody: jsonRequestBody(schemaRef("EncounterCreateRequest")),
     responses: {
-      "200": jsonResponse("Created encounter", schemaRef("Encounter"))
-    }
+      "200": jsonResponse("Created encounter", schemaRef("Encounter")),
+    },
   },
   "GET /api/v1/campaigns/{campaignId}/ai/threads": {
     responses: {
-      "200": jsonResponse("Campaign AI threads", arrayOf(schemaRef("AiThread")))
-    }
+      "200": jsonResponse(
+        "Campaign AI threads",
+        arrayOf(schemaRef("AiThread")),
+      ),
+    },
   },
   "POST /api/v1/campaigns/{campaignId}/ai/threads": {
     requestBody: jsonRequestBody(schemaRef("AiThreadCreateRequest")),
     responses: {
-      "200": jsonResponse("Completed AI thread response", schemaRef("AiThreadResponse")),
-      "428": jsonResponse("Codex app-server ChatGPT sign-in required", schemaRef("AiThreadAuthRequiredResponse"))
-    }
+      "200": jsonResponse(
+        "Completed AI thread response",
+        schemaRef("AiThreadResponse"),
+      ),
+      "428": jsonResponse(
+        "Codex app-server ChatGPT sign-in required",
+        schemaRef("AiThreadAuthRequiredResponse"),
+      ),
+    },
   },
   "GET /api/v1/campaigns/{campaignId}/ai/usage": {
     responses: {
-      "200": jsonResponse("Campaign AI usage summary", schemaRef("AiUsageMetrics"))
-    }
+      "200": jsonResponse(
+        "Campaign AI usage summary",
+        schemaRef("AiUsageMetrics"),
+      ),
+    },
   },
   "GET /api/v1/campaigns/{campaignId}/ai/evaluations": {
     responses: {
-      "200": jsonResponse("AI evaluation snapshot", schemaRef("AiEvaluationSnapshot"))
-    }
+      "200": jsonResponse(
+        "AI evaluation snapshot",
+        schemaRef("AiEvaluationSnapshot"),
+      ),
+    },
   },
   "POST /api/v1/campaigns/{campaignId}/ai/evaluations": {
     requestBody: jsonRequestBody(schemaRef("AiEvaluationInput")),
     responses: {
-      "200": jsonResponse("Created AI evaluation run", schemaRef("AiEvaluationRun"))
-    }
+      "200": jsonResponse(
+        "Created AI evaluation run",
+        schemaRef("AiEvaluationRun"),
+      ),
+    },
   },
   "GET /api/v1/campaigns/{campaignId}/ai/memory": {
     responses: {
-      "200": jsonResponse("Visible campaign AI memory facts", arrayOf(schemaRef("AiMemoryFact")))
-    }
+      "200": jsonResponse(
+        "Visible campaign AI memory facts",
+        arrayOf(schemaRef("AiMemoryFact")),
+      ),
+    },
   },
   "POST /api/v1/campaigns/{campaignId}/ai/memory": {
     requestBody: jsonRequestBody(schemaRef("AiMemoryCreateRequest")),
     responses: {
-      "200": jsonResponse("Created AI memory fact", schemaRef("AiMemoryFact"))
-    }
+      "200": jsonResponse("Created AI memory fact", schemaRef("AiMemoryFact")),
+    },
   },
   "POST /api/v1/campaigns/{campaignId}/ai/memory/extract": {
     requestBody: jsonRequestBody(schemaRef("AiMemoryExtractRequest")),
     responses: {
-      "200": jsonResponse("Extracted memory through the configured AI provider", schemaRef("AiMemoryExtractResponse"))
-    }
+      "200": jsonResponse(
+        "Extracted memory through the configured AI provider",
+        schemaRef("AiMemoryExtractResponse"),
+      ),
+    },
   },
   "GET /api/v1/campaigns/{campaignId}/ai/tool-calls": {
     responses: {
-      "200": jsonResponse("Campaign AI tool calls", arrayOf(schemaRef("AiToolCall")))
-    }
+      "200": jsonResponse(
+        "Campaign AI tool calls",
+        arrayOf(schemaRef("AiToolCall")),
+      ),
+    },
   },
   "POST /api/v1/campaigns/{campaignId}/ai/tool-calls/{toolCallId}/retry": {
     requestBody: jsonRequestBody(schemaRef("AiToolCallRetryRequest")),
     responses: {
-      "200": jsonResponse("Campaign-scoped replay of a retryable failed AI tool call through the proposal-safe tool executor", schemaRef("AdminAiToolCallRetryResult"))
-    }
+      "200": jsonResponse(
+        "Campaign-scoped replay of a retryable failed AI tool call through the proposal-safe tool executor",
+        schemaRef("AdminAiToolCallRetryResult"),
+      ),
+    },
   },
   "POST /api/v1/ai/memory/{factId}/approve": {
     responses: {
-      "200": jsonResponse("Approved AI memory fact", schemaRef("AiMemoryFact"))
-    }
+      "200": jsonResponse("Approved AI memory fact", schemaRef("AiMemoryFact")),
+    },
   },
   "DELETE /api/v1/ai/memory/{factId}": {
     responses: {
-      "200": jsonResponse("Deleted AI memory fact", schemaRef("AiMemoryFact"))
-    }
+      "200": jsonResponse("Deleted AI memory fact", schemaRef("AiMemoryFact")),
+    },
   },
   "POST /api/v1/campaigns/{campaignId}/ai/session-recap": {
     requestBody: jsonRequestBody(schemaRef("AiSessionRecapRequest")),
     responses: {
-      "200": jsonResponse("Created session recap proposal and memory", schemaRef("AiSessionRecapResponse"))
-    }
+      "200": jsonResponse(
+        "Created session recap proposal and memory",
+        schemaRef("AiSessionRecapResponse"),
+      ),
+    },
   },
   "POST /api/v1/campaigns/{campaignId}/ai/encounter-design": {
     requestBody: jsonRequestBody(schemaRef("AiEncounterDesignRequest")),
     responses: {
-      "200": jsonResponse("Created encounter design proposal", schemaRef("AiEncounterDesignResponse"))
-    }
+      "200": jsonResponse(
+        "Created encounter design proposal",
+        schemaRef("AiEncounterDesignResponse"),
+      ),
+    },
   },
   "GET /api/v1/plugins": {
     responses: {
-      "200": jsonResponse("Installed plugin catalog", arrayOf(schemaRef("PluginRuntimeInfo")))
-    }
+      "200": jsonResponse(
+        "Installed plugin catalog",
+        arrayOf(schemaRef("PluginRuntimeInfo")),
+      ),
+    },
   },
   "POST /api/v1/plugins/install": {
     requestBody: jsonRequestBody(schemaRef("PluginPackageInstallRequest")),
     responses: {
-      "200": jsonResponse("Registered plugin package", schemaRef("PluginRuntimeInfo"))
-    }
+      "200": jsonResponse(
+        "Registered plugin package",
+        schemaRef("PluginRuntimeInfo"),
+      ),
+    },
   },
   "POST /api/v1/plugins/registry/sync": {
     requestBody: jsonRequestBody(schemaRef("PluginRegistrySyncRequest")),
     responses: {
-      "200": jsonResponse("Plugin registry sync result", schemaRef("PluginRegistrySyncResponse"))
-    }
+      "200": jsonResponse(
+        "Plugin registry sync result",
+        schemaRef("PluginRegistrySyncResponse"),
+      ),
+    },
   },
   "GET /api/v1/campaigns/{campaignId}/plugins": {
     responses: {
-      "200": jsonResponse("Plugin catalog with campaign installation posture", arrayOf(schemaRef("PluginCampaignInfo")))
-    }
+      "200": jsonResponse(
+        "Plugin catalog with campaign installation posture",
+        arrayOf(schemaRef("PluginCampaignInfo")),
+      ),
+    },
   },
   "POST /api/v1/campaigns/{campaignId}/plugins/{pluginId}/install": {
     requestBody: jsonRequestBody(schemaRef("PluginInstallRequest")),
     responses: {
-      "200": jsonResponse("Installed plugin grant and permission review", schemaRef("PluginInstallResponse"))
-    }
+      "200": jsonResponse(
+        "Installed plugin grant and permission review",
+        schemaRef("PluginInstallResponse"),
+      ),
+    },
   },
   "GET /api/v1/campaigns/{campaignId}/plugins/{pluginId}/storage": {
     responses: {
-      "200": jsonResponse("Plugin storage entries visible to the caller", arrayOf(schemaRef("PluginStorageEntry")))
-    }
+      "200": jsonResponse(
+        "Plugin storage entries visible to the caller",
+        arrayOf(schemaRef("PluginStorageEntry")),
+      ),
+    },
   },
   "GET /api/v1/campaigns/{campaignId}/plugins/{pluginId}/storage/{key}": {
     responses: {
-      "200": jsonResponse("Plugin storage entry", schemaRef("PluginStorageEntry"))
-    }
+      "200": jsonResponse(
+        "Plugin storage entry",
+        schemaRef("PluginStorageEntry"),
+      ),
+    },
   },
   "PUT /api/v1/campaigns/{campaignId}/plugins/{pluginId}/storage/{key}": {
     requestBody: jsonRequestBody(schemaRef("PluginStorageSetRequest")),
     responses: {
-      "200": jsonResponse("Updated plugin storage entry", schemaRef("PluginStorageEntry"))
-    }
+      "200": jsonResponse(
+        "Updated plugin storage entry",
+        schemaRef("PluginStorageEntry"),
+      ),
+    },
   },
   "DELETE /api/v1/campaigns/{campaignId}/plugins/{pluginId}/storage/{key}": {
     responses: {
-      "200": jsonResponse("Deleted plugin storage key result", schemaRef("PluginStorageDeleteResponse"))
-    }
+      "200": jsonResponse(
+        "Deleted plugin storage key result",
+        schemaRef("PluginStorageDeleteResponse"),
+      ),
+    },
   },
   "POST /api/v1/campaigns/{campaignId}/plugins/{pluginId}/chat-command": {
     requestBody: jsonRequestBody(schemaRef("PluginChatCommandRequest")),
     responses: {
-      "200": jsonResponse("Executed plugin chat command", schemaRef("PluginChatCommandResponse"))
-    }
+      "200": jsonResponse(
+        "Staged plugin command output as reviewable proposals",
+        schemaRef("PluginChatCommandResponse"),
+      ),
+    },
   },
   "GET /api/v1/systems": {
     responses: {
-      "200": jsonResponse("Installed rules-system catalog", arrayOf(schemaRef("SystemRuntimeInfo")))
-    }
+      "200": jsonResponse(
+        "Installed rules-system catalog",
+        arrayOf(schemaRef("SystemRuntimeInfo")),
+      ),
+    },
   },
   "POST /api/v1/systems/install": {
     requestBody: jsonRequestBody(schemaRef("SystemInstallRequest")),
     responses: {
-      "200": jsonResponse("Registered rules system", schemaRef("SystemRuntimeInfo"))
-    }
+      "200": jsonResponse(
+        "Registered rules system",
+        schemaRef("SystemRuntimeInfo"),
+      ),
+      "400": jsonResponse("Invalid system manifest", schemaRef("ErrorResponse")),
+      "403": jsonResponse("Campaign or server-admin permission denied", schemaRef("ErrorResponse")),
+      "409": jsonResponse("System id, name, or entrypoint conflict", schemaRef("ErrorResponse")),
+      "422": jsonResponse("Requested runtime capabilities are unsupported", schemaRef("ErrorResponse")),
+    },
   },
   "GET /api/v1/campaigns/{campaignId}/systems": {
     responses: {
-      "200": jsonResponse("Rules-system catalog with active campaign marker", arrayOf(schemaRef("SystemRuntimeInfo")))
-    }
+      "200": jsonResponse(
+        "Rules-system catalog with active campaign marker",
+        arrayOf(schemaRef("SystemRuntimeInfo")),
+      ),
+    },
   },
   "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/install": {
     responses: {
-      "200": jsonResponse("Activated rules system for campaign", schemaRef("SystemInstallResponse"))
-    }
+      "200": jsonResponse(
+        "Activated rules system for campaign",
+        schemaRef("SystemInstallResponse"),
+      ),
+      "403": jsonResponse("Campaign permission denied", schemaRef("ErrorResponse")),
+      "404": jsonResponse("System or campaign not found", schemaRef("ErrorResponse")),
+    },
   },
   "GET /api/v1/campaigns/{campaignId}/systems/{systemId}/character-templates": {
     responses: {
-      "200": jsonResponse("System character templates", arrayOf({ type: "object", additionalProperties: true }))
-    }
+      "200": jsonResponse(
+        "System character templates",
+        arrayOf({ type: "object", additionalProperties: true }),
+      ),
+      "422": unsupportedSystemCapabilityResponse,
+    },
   },
   "GET /api/v1/campaigns/{campaignId}/systems/{systemId}/character-origins": {
     responses: {
-      "200": jsonResponse("System character origins", { type: "object", additionalProperties: true })
-    }
+      "200": jsonResponse("System character origins", {
+        type: "object",
+        additionalProperties: true,
+      }),
+      "422": unsupportedSystemCapabilityResponse,
+    },
   },
   "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/characters": {
     requestBody: jsonRequestBody(schemaRef("SystemCharacterCreateRequest")),
     responses: {
-      "200": jsonResponse("Created system character actor and starter items", schemaRef("SystemActorResponse"))
-    }
+      "200": jsonResponse(
+        "Created system character actor and starter items",
+        schemaRef("SystemActorResponse"),
+      ),
+      "422": unsupportedSystemCapabilityResponse,
+    },
   },
   "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/monsters": {
     requestBody: jsonRequestBody(schemaRef("SystemMonsterCreateRequest")),
     responses: {
-      "200": jsonResponse("Created system monster actor", schemaRef("SystemActorResponse"))
-    }
+      "200": jsonResponse(
+        "Created system monster actor",
+        schemaRef("SystemActorResponse"),
+      ),
+    },
   },
   "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/characters/import": {
     requestBody: jsonRequestBody(schemaRef("SystemCharacterImportRequest")),
     responses: {
-      "200": jsonResponse("Imported system character actor and items", schemaRef("SystemActorResponse"))
-    }
+      "200": jsonResponse(
+        "Imported system character actor and items",
+        schemaRef("SystemActorResponse"),
+      ),
+      "422": unsupportedSystemCapabilityResponse,
+    },
   },
   "GET /api/v1/campaigns/{campaignId}/systems/{systemId}/encounter-threats": {
     responses: {
-      "200": jsonResponse("System encounter threat catalog", arrayOf({ type: "object", additionalProperties: true }))
-    }
+      "200": jsonResponse(
+        "System encounter threat catalog",
+        arrayOf({ type: "object", additionalProperties: true }),
+      ),
+      "422": unsupportedSystemCapabilityResponse,
+    },
   },
   "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/encounter-plan": {
     requestBody: jsonRequestBody(schemaRef("SystemEncounterPlanRequest")),
     responses: {
-      "200": jsonResponse("System encounter plan and optional encounter", schemaRef("SystemEncounterPlanResponse"))
-    }
+      "200": jsonResponse(
+        "System encounter plan and optional encounter",
+        schemaRef("SystemEncounterPlanResponse"),
+      ),
+      "422": unsupportedSystemCapabilityResponse,
+    },
   },
   "GET /api/v1/campaigns/{campaignId}/systems/{systemId}/compendium": {
     responses: {
-      "200": jsonResponse("System compendium entries", schemaRef("SystemCompendium"))
-    }
+      "200": jsonResponse(
+        "System compendium entries",
+        schemaRef("SystemCompendium"),
+      ),
+      "422": unsupportedSystemCapabilityResponse,
+    },
   },
-  "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/compendium": {
-    requestBody: jsonRequestBody(schemaRef("SystemActorActionRequest")),
-    responses: {
-      "200": jsonResponse("Applied compendium entry to actor", schemaRef("SystemActorResponse"))
-    }
-  },
-  "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/purchase": {
-    requestBody: jsonRequestBody(schemaRef("SystemActorActionRequest")),
-    responses: {
-      "200": jsonResponse("Purchased compendium equipment for actor", schemaRef("SystemActorResponse"))
-    }
-  },
-  "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/conditions": {
-    requestBody: jsonRequestBody(schemaRef("SystemActorActionRequest")),
-    responses: {
-      "200": jsonResponse("Applied system condition to actor", schemaRef("SystemActorResponse"))
-    }
-  },
-  "DELETE /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/conditions/{conditionId}": {
-    responses: {
-      "200": jsonResponse("Removed system condition from actor", schemaRef("SystemActorResponse"))
-    }
-  },
-  "GET /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/advancement": {
-    responses: {
-      "200": jsonResponse("System actor advancement options", { type: "object", additionalProperties: true })
-    }
-  },
-  "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/advance": {
-    requestBody: jsonRequestBody(schemaRef("SystemActorActionRequest")),
-    responses: {
-      "200": jsonResponse("Advanced system actor", schemaRef("SystemActorResponse"))
-    }
-  },
-  "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/rest": {
-    requestBody: jsonRequestBody(schemaRef("SystemActorActionRequest")),
-    responses: {
-      "200": jsonResponse("Applied system rest to actor", schemaRef("SystemActorResponse"))
-    }
-  },
-  "GET /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/sheet": {
-    responses: {
-      "200": jsonResponse("System actor sheet", { type: "object", additionalProperties: true })
-    }
-  },
-  "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/roll": {
-    requestBody: jsonRequestBody(schemaRef("SystemActorActionRequest")),
-    responses: {
-      "200": jsonResponse("Executed system actor roll", schemaRef("SystemRollResponse"))
-    }
-  },
+  "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/compendium":
+    {
+      requestBody: jsonRequestBody(schemaRef("SystemActorActionRequest")),
+      responses: {
+        "200": jsonResponse(
+          "Applied compendium entry to actor",
+          schemaRef("SystemActorResponse"),
+        ),
+        "422": unsupportedSystemCapabilityResponse,
+      },
+    },
+  "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/purchase":
+    {
+      requestBody: jsonRequestBody(schemaRef("SystemActorActionRequest")),
+      responses: {
+        "200": jsonResponse(
+          "Purchased compendium equipment for actor",
+          schemaRef("SystemActorResponse"),
+        ),
+        "422": unsupportedSystemCapabilityResponse,
+      },
+    },
+  "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/conditions":
+    {
+      requestBody: jsonRequestBody(schemaRef("SystemActorActionRequest")),
+      responses: {
+        "200": jsonResponse(
+          "Applied system condition to actor",
+          schemaRef("SystemActorResponse"),
+        ),
+        "422": unsupportedSystemCapabilityResponse,
+      },
+    },
+  "DELETE /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/conditions/{conditionId}":
+    {
+      responses: {
+        "200": jsonResponse(
+          "Removed system condition from actor",
+          schemaRef("SystemActorResponse"),
+        ),
+        "422": unsupportedSystemCapabilityResponse,
+      },
+    },
+  "GET /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/advancement":
+    {
+      responses: {
+        "200": jsonResponse("System actor advancement options", {
+          type: "object",
+          additionalProperties: true,
+        }),
+        "422": unsupportedSystemCapabilityResponse,
+      },
+    },
+  "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/advance":
+    {
+      requestBody: jsonRequestBody(schemaRef("SystemActorActionRequest")),
+      responses: {
+        "200": jsonResponse(
+          "Advanced system actor",
+          schemaRef("SystemActorResponse"),
+        ),
+        "422": unsupportedSystemCapabilityResponse,
+      },
+    },
+  "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/rest":
+    {
+      requestBody: jsonRequestBody(schemaRef("SystemActorActionRequest")),
+      responses: {
+        "200": jsonResponse(
+          "Applied system rest to actor",
+          schemaRef("SystemActorResponse"),
+        ),
+        "422": unsupportedSystemCapabilityResponse,
+      },
+    },
+  "GET /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/sheet":
+    {
+      responses: {
+        "200": jsonResponse("System actor sheet", {
+          type: "object",
+          additionalProperties: true,
+        }),
+        "422": unsupportedSystemCapabilityResponse,
+      },
+    },
+  "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/roll":
+    {
+      requestBody: jsonRequestBody(schemaRef("SystemActorActionRequest")),
+      responses: {
+        "200": jsonResponse(
+          "Executed system actor roll",
+          schemaRef("SystemRollResponse"),
+        ),
+        "422": unsupportedSystemCapabilityResponse,
+      },
+    },
   "GET /api/v1/campaigns/{campaignId}/export": {
     parameters: [
       {
         name: "scope",
         in: "query",
         required: false,
-        description: "Archive export scope. The current v1-compatible export supports the selected campaign only.",
-        schema: { type: "string", enum: ["campaign"] }
+        description:
+          "Archive export scope: the full campaign, one dependency-closed world, or selected record collections.",
+        schema: {
+          type: "string",
+          enum: ["campaign", "world", "selected_collections"],
+        },
+      },
+      {
+        name: "scopeId",
+        in: "query",
+        required: false,
+        description: "Required world id when scope is world.",
+        schema: { type: "string" },
+      },
+      {
+        name: "collections",
+        in: "query",
+        required: false,
+        description:
+          "Comma-separated portable collection names when scope is selected_collections.",
+        schema: { type: "string" },
       },
       {
         name: "version",
         in: "query",
         required: false,
         description: "Archive compatibility version to emit.",
-        schema: { type: "string", enum: ["0.2.0"] }
+        schema: { type: "string", enum: ["0.2.0"] },
       },
       {
         name: "redaction",
         in: "query",
         required: false,
-        description: "Portable archive redaction mode. It strips account/auth/server operational secrets while preserving playable campaign content.",
-        schema: { type: "string", enum: ["portable"] }
-      }
+        description:
+          "Portable archive redaction mode. It strips account/auth/server operational secrets while preserving playable campaign content.",
+        schema: { type: "string", enum: ["portable"] },
+      },
     ],
     responses: {
-      "200": jsonResponse("Campaign archive export", schemaRef("CampaignArchive"))
-    }
+      "200": jsonResponse(
+        "Campaign archive export",
+        schemaRef("CampaignArchive"),
+      ),
+    },
   },
   "GET /api/v1/campaigns/{campaignId}/dogfood-report-bundle": {
     responses: {
-      "200": jsonResponse("Campaign dogfood report bundle", schemaRef("CampaignDogfoodReportBundle"))
-    }
+      "200": jsonResponse(
+        "Campaign dogfood report bundle",
+        schemaRef("CampaignDogfoodReportBundle"),
+      ),
+    },
   },
   "POST /api/v1/import/campaign": {
     requestBody: jsonRequestBody(schemaRef("CampaignImportRequest")),
     responses: {
-      "200": jsonResponse("Campaign import result", schemaRef("CampaignImportResponse"))
-    }
+      "200": jsonResponse(
+        "Campaign import result",
+        schemaRef("CampaignImportResponse"),
+      ),
+    },
   },
   "GET /api/v1/campaigns/{campaignId}/content-imports": {
     responses: {
-      "200": jsonResponse("Campaign content import batches", arrayOf(schemaRef("ContentImportBatch")))
-    }
+      "200": jsonResponse(
+        "Campaign content import batches",
+        arrayOf(schemaRef("ContentImportBatch")),
+      ),
+    },
   },
   "POST /api/v1/campaigns/{campaignId}/content-imports/preview": {
     requestBody: jsonRequestBody(schemaRef("ContentImportPreviewRequest")),
     responses: {
-      "200": jsonResponse("Previewed content import batch", schemaRef("ContentImportBatch"))
-    }
+      "200": jsonResponse(
+        "Previewed content import batch",
+        schemaRef("ContentImportBatch"),
+      ),
+    },
+  },
+  "POST /api/v1/ai/memory/{factId}/reject": {
+    responses: {
+      "200": jsonResponse(
+        "Rejected AI memory candidate",
+        schemaRef("AiMemoryFact"),
+      ),
+    },
+  },
+  "GET /api/v1/ai/memory/{factId}": {
+    responses: {
+      "200": jsonResponse(
+        "Requested AI memory fact visible to the caller",
+        schemaRef("AiMemoryFact"),
+      ),
+    },
+  },
+  "PATCH /api/v1/ai/memory/{factId}": {
+    requestBody: jsonRequestBody(schemaRef("AiMemoryPatchRequest")),
+    responses: {
+      "200": jsonResponse(
+        "Updated AI memory fact lifecycle or metadata",
+        schemaRef("AiMemoryFact"),
+      ),
+    },
+  },
+  "POST /api/v1/proposals/{proposalId}/revert": {
+    responses: {
+      "200": jsonResponse(
+        "Reverted an applied proposal with captured inverse changes",
+        schemaRef("Proposal"),
+      ),
+    },
+  },
+  "GET /api/v1/encounters/{encounterId}": {
+    responses: {
+      "200": jsonResponse(
+        "Requested encounter visible to the caller",
+        schemaRef("Encounter"),
+      ),
+    },
+  },
+  "PATCH /api/v1/encounters/{encounterId}": {
+    requestBody: jsonRequestBody(schemaRef("EncounterPatchRequest")),
+    responses: {
+      "200": jsonResponse("Updated encounter", schemaRef("Encounter")),
+    },
+  },
+  "DELETE /api/v1/encounters/{encounterId}": {
+    responses: {
+      "200": jsonResponse("Deleted encounter snapshot", schemaRef("Encounter")),
+    },
+  },
+  "DELETE /api/v1/journal/{entryId}": {
+    responses: {
+      "200": jsonResponse(
+        "Deleted journal entry snapshot",
+        schemaRef("JournalEntry"),
+      ),
+    },
+  },
+  "GET /api/v1/campaigns/{campaignId}/handouts": {
+    responses: {
+      "200": jsonResponse(
+        "Campaign handouts visible to the caller",
+        arrayOf(schemaRef("Handout")),
+      ),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/handouts": {
+    requestBody: jsonRequestBody(schemaRef("HandoutWriteRequest")),
+    responses: { "200": jsonResponse("Created handout", schemaRef("Handout")) },
+  },
+  "GET /api/v1/handouts/{handoutId}": {
+    responses: {
+      "200": jsonResponse(
+        "Requested handout visible to the caller",
+        schemaRef("Handout"),
+      ),
+    },
+  },
+  "PATCH /api/v1/handouts/{handoutId}": {
+    requestBody: jsonRequestBody(schemaRef("HandoutWriteRequest")),
+    responses: { "200": jsonResponse("Updated handout", schemaRef("Handout")) },
+  },
+  "DELETE /api/v1/handouts/{handoutId}": {
+    responses: {
+      "200": jsonResponse("Deleted handout snapshot", schemaRef("Handout")),
+    },
+  },
+  "POST /api/v1/handouts/{handoutId}/read": {
+    responses: {
+      "200": jsonResponse(
+        "Marked handout read for the caller",
+        schemaRef("Handout"),
+      ),
+    },
+  },
+  "DELETE /api/v1/items/{itemId}": {
+    responses: {
+      "200": jsonResponse("Deleted item snapshot", schemaRef("Item")),
+    },
+  },
+  "DELETE /api/v1/actors/{actorId}": {
+    responses: {
+      "200": jsonResponse("Deleted actor snapshot", schemaRef("Actor")),
+    },
+  },
+  "GET /api/v1/campaigns/{campaignId}/worlds": {
+    responses: {
+      "200": jsonResponse("Campaign worlds", arrayOf(schemaRef("World"))),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/worlds": {
+    requestBody: jsonRequestBody(schemaRef("WorldWriteRequest")),
+    responses: { "200": jsonResponse("Created world", schemaRef("World")) },
+  },
+  "GET /api/v1/worlds/{worldId}": {
+    responses: { "200": jsonResponse("Requested world", schemaRef("World")) },
+  },
+  "PATCH /api/v1/worlds/{worldId}": {
+    requestBody: jsonRequestBody(schemaRef("WorldWriteRequest")),
+    responses: { "200": jsonResponse("Updated world", schemaRef("World")) },
+  },
+  "DELETE /api/v1/worlds/{worldId}": {
+    responses: {
+      "200": jsonResponse("Deleted world and detached record counts", {
+        type: "object",
+        additionalProperties: true,
+      }),
+    },
   },
   "POST /api/v1/campaigns/{campaignId}/content-imports/pdf/ai": {
-    requestBody: binaryRequestBody("application/pdf", "PDF file to analyze with the configured AI provider"),
+    requestBody: binaryRequestBody(
+      "application/pdf",
+      "PDF file to analyze with the configured AI provider",
+    ),
     responses: {
-      "200": jsonResponse("AI-generated PDF content import preview batch", schemaRef("ContentImportBatch")),
-      "422": jsonResponse("AI analysis did not return importable content", { type: "object", additionalProperties: true })
-    }
+      "200": jsonResponse(
+        "AI-generated PDF content import preview batch",
+        schemaRef("ContentImportBatch"),
+      ),
+      "422": jsonResponse("AI analysis did not return importable content", {
+        type: "object",
+        additionalProperties: true,
+      }),
+    },
   },
   "GET /api/v1/content-imports/{importId}": {
     responses: {
-      "200": jsonResponse("Content import batch", schemaRef("ContentImportBatch"))
-    }
+      "200": jsonResponse(
+        "Content import batch",
+        schemaRef("ContentImportBatch"),
+      ),
+    },
   },
   "POST /api/v1/content-imports/{importId}/apply": {
     requestBody: jsonRequestBody(schemaRef("ContentImportApplyRequest")),
     responses: {
-      "200": jsonResponse("Applied content import batch", schemaRef("ContentImportBatch"))
-    }
+      "200": jsonResponse(
+        "Applied content import batch",
+        schemaRef("ContentImportBatch"),
+      ),
+    },
   },
   "POST /api/v1/content-imports/{importId}/rollback": {
     responses: {
-      "200": jsonResponse("Rolled back content import batch", schemaRef("ContentImportBatch"))
-    }
+      "200": jsonResponse(
+        "Rolled back content import batch",
+        schemaRef("ContentImportBatch"),
+      ),
+    },
   },
   "DELETE /api/v1/content-imports/{importId}": {
     responses: {
-      "200": jsonResponse("Deleted content import batch snapshot", schemaRef("ContentImportBatch"))
-    }
-  }
+      "200": jsonResponse(
+        "Deleted content import batch snapshot",
+        schemaRef("ContentImportBatch"),
+      ),
+    },
+  },
 };
 
 function isMutatingMethod(method: HttpMethod): boolean {
@@ -6329,19 +9241,26 @@ const publicOperations = new Set([
   `GET ${routes.oidcConfig}`,
   `GET ${routes.oidcStart}`,
   `POST ${routes.oidcStart}`,
-  `GET ${routes.oidcCallback}`
+  `GET ${routes.oidcCallback}`,
 ]);
 
-function operationSecurity(method: HttpMethod, path: string): Array<Record<string, string[]>> | undefined {
+function operationSecurity(
+  method: HttpMethod,
+  path: string,
+): Array<Record<string, string[]>> | undefined {
   if (publicOperations.has(`${method} ${path}`)) return [];
-  if (method === "POST" && (path === routes.mcp || path === routes.acceptInvite)) return [{}, { BearerAuth: [] }];
+  if (
+    method === "POST" &&
+    (path === routes.mcp || path === routes.acceptInvite)
+  )
+    return [{}, { BearerAuth: [] }];
   return undefined;
 }
 
 const paginatedListOperations = new Set([
   `GET ${routes.chat}`,
   "GET /api/v1/campaigns/{campaignId}/rolls",
-  "GET /api/v1/combats/{combatId}/audit"
+  "GET /api/v1/combats/{combatId}/audit",
 ]);
 
 function isListRoute(method: HttpMethod, path: string): boolean {
@@ -6367,19 +9286,24 @@ function pathParameters(path: string): OpenApiParameter[] {
       in: "path",
       required: true,
       schema: {
-        type: "string"
-      }
+        type: "string",
+      },
     }));
 }
 
 function buildOperation(method: HttpMethod, path: string): OpenApiOperation {
   const parameters = [...pathParameters(path)];
   if (isListRoute(method, path)) parameters.push(...paginationParameters);
-  if (isMutatingMethod(method)) parameters.push(idempotencyKeyParameter);
+  if (isMutatingMethod(method) && idempotencyPathIsEligible(path))
+    parameters.push(idempotencyKeyParameter);
   const override = routeOperationOverrides[`${method} ${path}`] ?? {};
-  const mergedParameters = override.parameters ? [...parameters, ...override.parameters] : parameters;
+  const mergedParameters = override.parameters
+    ? [...parameters, ...override.parameters]
+    : parameters;
   const overrideResponseStatuses = Object.keys(override.responses ?? {});
-  const includeDefaultOkResponse = overrideResponseStatuses.length === 0 || overrideResponseStatuses.includes("200");
+  const includeDefaultOkResponse =
+    overrideResponseStatuses.length === 0 ||
+    overrideResponseStatuses.includes("200");
   const security = operationSecurity(method, path);
 
   const operation: OpenApiOperation = {
@@ -6401,28 +9325,28 @@ function buildOperation(method: HttpMethod, path: string): OpenApiOperation {
         headers: {
           "Retry-After": {
             schema: {
-              type: "string"
-            }
+              type: "string",
+            },
           },
           "X-RateLimit-Limit": {
             schema: {
-              type: "integer"
-            }
+              type: "integer",
+            },
           },
           "X-RateLimit-Remaining": {
             schema: {
-              type: "integer"
-            }
+              type: "integer",
+            },
           },
           "X-RateLimit-Reset": {
             schema: {
-              type: "string"
-            }
-          }
-        }
+              type: "string",
+            },
+          },
+        },
       },
-      "500": errorResponse("Unexpected server error")
-    }
+      "500": errorResponse("Unexpected server error"),
+    },
   };
 
   return {
@@ -6434,42 +9358,81 @@ function buildOperation(method: HttpMethod, path: string): OpenApiOperation {
     ...(mergedParameters.length > 0 ? { parameters: mergedParameters } : {}),
     responses: {
       ...operation.responses,
-      ...(override.responses ?? {})
-    }
+      ...(override.responses ?? {}),
+    },
   };
 }
 
-const paths = endpointSpecs.reduce<Record<string, OpenApiPathItem>>((items, [method, path]) => {
-  const pathItem = items[path] ?? {};
-  const methodKey = method.toLowerCase() as Lowercase<HttpMethod>;
-  pathItem[methodKey] = buildOperation(method, path);
-  items[path] = pathItem;
-  return items;
-}, {});
+function idempotencyPathIsEligible(path: string): boolean {
+  if (path === "/api/v1/auth" || path.startsWith("/api/v1/auth/")) return false;
+  if (
+    path === "/api/v1/invites/accept" ||
+    path === "/api/v1/organization/invites"
+  )
+    return false;
+  if (
+    path === "/api/v1/campaigns/{campaignId}/invites" ||
+    path === "/api/v1/assets/{assetId}/delivery-url"
+  )
+    return false;
+  if (path === "/api/v1/admin/users/{userId}/password-reset") return false;
+  if (
+    path === "/api/v1/admin/email-outbox/retry-all" ||
+    path === "/api/v1/admin/email-outbox/{messageId}/retry"
+  )
+    return false;
+  return true;
+}
+
+const paths = endpointSpecs.reduce<Record<string, OpenApiPathItem>>(
+  (items, [method, path]) => {
+    const pathItem = items[path] ?? {};
+    const methodKey = method.toLowerCase() as Lowercase<HttpMethod>;
+    pathItem[methodKey] = buildOperation(method, path);
+    items[path] = pathItem;
+    return items;
+  },
+  {},
+);
 
 export const openApiSpec = {
   openapi: "3.1.0",
   info: {
     title: "OpenTabletop Engine API",
     version: "0.3.0",
-    description: "Public v1 REST contract seed for the OpenTabletop Engine runtime. This document defines the shared compatibility, auth, error, idempotency, pagination, and rate-limit policy while route-specific request and response schemas continue to be hardened toward v1."
+    description:
+      "Public v1 REST contract seed for the OpenTabletop Engine runtime. This document defines the shared compatibility, auth, error, idempotency, pagination, and rate-limit policy while route-specific request and response schemas continue to be hardened toward v1.",
   },
   servers: [
     {
       url: "/",
-      description: "API origin; v1 paths include the /api/v1 prefix"
-    }
+      description: "API origin; v1 paths include the /api/v1 prefix",
+    },
   ],
   security: [
     {
-      BearerAuth: []
-    }
+      BearerAuth: [],
+    },
   ],
   tags: [
-    { name: "auth", description: "Authentication, sessions, first-run owner bootstrap, and enterprise auth setup." },
-    { name: "campaigns", description: "Campaign, scene, asset, actor, journal, chat, dice, combat, import, and export APIs." },
-    { name: "runtime", description: "AI, plugin, and rules-system runtime APIs." },
-    { name: "admin", description: "Server-admin operational posture and recovery APIs." }
+    {
+      name: "auth",
+      description:
+        "Authentication, sessions, first-run owner bootstrap, and enterprise auth setup.",
+    },
+    {
+      name: "campaigns",
+      description:
+        "Campaign, scene, asset, actor, journal, chat, dice, combat, import, and export APIs.",
+    },
+    {
+      name: "runtime",
+      description: "AI, plugin, and rules-system runtime APIs.",
+    },
+    {
+      name: "admin",
+      description: "Server-admin operational posture and recovery APIs.",
+    },
   ],
   paths,
   components: {
@@ -6477,17 +9440,17 @@ export const openApiSpec = {
       BearerAuth: {
         type: "http",
         scheme: "bearer",
-        bearerFormat: apiContractPolicy.auth.bearerFormat
-      }
+        bearerFormat: apiContractPolicy.auth.bearerFormat,
+      },
     },
     schemas: {
-      ...componentSchemas
-    }
+      ...componentSchemas,
+    },
   },
   "x-otte-version-policy": apiContractPolicy.versioning,
   "x-otte-auth-policy": apiContractPolicy.auth,
   "x-otte-error-policy": apiContractPolicy.errors,
   "x-otte-idempotency-policy": apiContractPolicy.idempotency,
   "x-otte-pagination-policy": apiContractPolicy.pagination,
-  "x-otte-rate-limit-policy": apiContractPolicy.rateLimits
+  "x-otte-rate-limit-policy": apiContractPolicy.rateLimits,
 } as const;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Proposal } from "@open-tabletop/core";
 import type { Snapshot } from "./api.js";
-import { applyProposalChangesToSnapshot, proposalReviewActionLabel, proposalReviewSteps, visibleAiAgentProposals } from "./proposal-review.js";
+import { applyProposalChangesToSnapshot, proposalChangesExternalLore, proposalReviewActionLabel, proposalReviewSteps, setProposalHidden, visibleAiAgentProposals } from "./proposal-review.js";
 
 describe("proposal review helpers", () => {
   it("approves pending proposals before applying them", () => {
@@ -30,6 +30,20 @@ describe("proposal review helpers", () => {
     expect(visible.map((proposal) => proposal.id)).toEqual(["prop_approved"]);
   });
 
+  it("can restore a proposal after an action request fails", () => {
+    const proposal = proposalFixture({ id: "prop_retry" });
+    const hidden = setProposalHidden(new Set(), proposal.id, true);
+
+    expect(visibleAiAgentProposals([proposal], [{ proposalIds: [proposal.id] }], hidden)).toEqual([]);
+    expect(visibleAiAgentProposals([proposal], [{ proposalIds: [proposal.id] }], setProposalHidden(hidden, proposal.id, false))).toEqual([proposal]);
+  });
+
+  it("identifies proposal changes whose state is loaded outside the main snapshot", () => {
+    expect(proposalChangesExternalLore(proposalFixture({ changesJson: [{ entity: "world", action: "create", data: { id: "world-1" } }] }))).toBe(true);
+    expect(proposalChangesExternalLore(proposalFixture({ changesJson: [{ entity: "handout", action: "update", id: "handout-1", data: { title: "Updated" } }] }))).toBe(true);
+    expect(proposalChangesExternalLore(proposalFixture({ changesJson: [{ entity: "scene", action: "update", id: "scene-1", data: { name: "Updated" } }] }))).toBe(false);
+  });
+
   it("does not keep terminal proposals in the agent action list", () => {
     const applied = proposalFixture({ id: "prop_applied", status: "applied", title: "Applied board edit" });
     const rejected = proposalFixture({ id: "prop_rejected", status: "rejected", title: "Rejected board edit" });
@@ -37,6 +51,15 @@ describe("proposal review helpers", () => {
     const visible = visibleAiAgentProposals([applied, rejected], [{ proposalIds: ["prop_applied", "prop_rejected"] }]);
 
     expect(visible).toEqual([]);
+  });
+
+  it("surfaces reviewable plugin proposals without requiring an AI message reference", () => {
+    const pluginProposal = proposalFixture({ id: "prop_plugin", createdByType: "plugin", title: "Example Macro Plugin: /spark" });
+    const unrelatedUserProposal = proposalFixture({ id: "prop_user", createdByType: "user", title: "Manual campaign edit" });
+
+    const visible = visibleAiAgentProposals([unrelatedUserProposal, pluginProposal], []);
+
+    expect(visible.map((proposal) => proposal.id)).toEqual(["prop_plugin"]);
   });
 
   it("applies returned proposal changes into the local snapshot", () => {

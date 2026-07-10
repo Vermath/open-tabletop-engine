@@ -92,7 +92,7 @@ describe("FileStateStore", () => {
     expect(persisted.state.campaigns).toEqual([expect.objectContaining({ id: "camp_closed" })]);
   });
 
-  it("preserves existing state and cleans up the temp file when replacement fails", () => {
+  it("preserves existing state and retries the pending write after replacement fails", () => {
     const filePath = join(directory, "state.json");
     writeFileSync(filePath, JSON.stringify(stateWithCampaign("camp_existing", "Existing Campaign"), null, 2));
     const store = new FileStateStore(filePath, { seedDemo: false });
@@ -110,6 +110,12 @@ describe("FileStateStore", () => {
     expect(fsMock.renameCalls).toHaveLength(1);
     expect(readdirSync(directory).filter((fileName) => fileName.includes(".tmp"))).toEqual([]);
     expect(existsSync(filePath)).toBe(true);
+
+    store.flush();
+
+    const retried = JSON.parse(readFileSync(filePath, "utf8")) as EngineState;
+    expect(retried.campaigns).toEqual([expect.objectContaining({ id: "camp_replacement" })]);
+    expect(fsMock.renameCalls).toHaveLength(2);
   });
 });
 

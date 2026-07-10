@@ -2,7 +2,7 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, 
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
-import { emptyState, seedState, type EngineState } from "@open-tabletop/core";
+import { emptyState, normalizeEngineState, seedState, type EngineState } from "@open-tabletop/core";
 import { CoalescedStateWriter, demoSeedEnabled, type StateStore, type StoreSeedOptions } from "./store.js";
 
 interface SqliteDatabase {
@@ -49,6 +49,7 @@ const stateCollections = [
   "diceMacros",
   "audioTracks",
   "encounters",
+  "campaignSessions",
   "combats",
   "compendia",
   "proposals",
@@ -58,6 +59,7 @@ const stateCollections = [
   "aiToolCalls",
   "auditLogs",
   "permissionGrants",
+  "systemInstallations",
   "pluginStorage",
   "pluginReviews",
   "contentImports",
@@ -175,7 +177,10 @@ export interface SqliteRestoreBackupResult extends SqliteRestoreDrillResult {
 }
 
 interface IdentifiedRecord {
-  id: string;
+  id?: string;
+  key?: string;
+  method?: string;
+  userId?: string;
   campaignId?: string;
   sceneId?: string;
   threadId?: string;
@@ -294,10 +299,10 @@ export class SqliteStateStore implements StateStore {
     }
   }
 
-  replace(state: EngineState): void {
-    this.state = state;
+  replace(state: EngineState, options: { flush?: boolean } = {}): void {
+    this.state = normalizeEngineState(state);
     this.save();
-    this.flush();
+    if (options.flush !== false) this.flush();
   }
 
   storageOperations(): SqliteStorageOperations {
@@ -447,8 +452,11 @@ export class SqliteStateStore implements StateStore {
   close(): void {
     if (this.closed) return;
     this.closed = true;
-    this.writer.close();
-    this.db.close();
+    try {
+      this.writer.close();
+    } finally {
+      this.db.close();
+    }
   }
 
   private migrate(): void {
@@ -491,7 +499,7 @@ export class SqliteStateStore implements StateStore {
       if (!isStateCollection(row.collection)) continue;
       (state[row.collection] as unknown[]).push(JSON.parse(row.data));
     }
-    return state;
+    return normalizeEngineState(state);
   }
 
   private campaignIdForRecord(collection: StateCollection, record: IdentifiedRecord): string | null {
@@ -512,7 +520,7 @@ export class SqliteStateStore implements StateStore {
       for (const record of this.state[collection] as IdentifiedRecord[]) {
         records.push({
           collection,
-          id: record.id,
+          id: stateRecordId(collection, record),
           campaignId: this.campaignIdForRecord(collection, record),
           createdAt: record.createdAt ?? null,
           updatedAt: record.updatedAt ?? null,
@@ -561,4 +569,12 @@ function isStateCollection(value: string): value is StateCollection {
 
 function engineRecordKey(collection: string, id: string): string {
   return JSON.stringify([collection, id]);
+}
+
+function stateRecordId(collection: StateCollection, record: IdentifiedRecord): string {
+  if (record.id) return record.id;
+  if (collection === "idempotencyRecords" && record.key && record.method) {
+    return JSON.stringify([record.userId ?? null, record.method, record.key]);
+  }
+  throw new Error(`State record is missing an id: ${collection}`);
 }

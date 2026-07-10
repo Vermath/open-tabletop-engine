@@ -1,6 +1,6 @@
 # OpenTabletop Engine
 
-OpenTabletop Engine is an API-first virtual tabletop platform for campaigns, scenes, tokens, dice, chat, journals, combat, plugins, system modules, portable campaign data, and permissioned AI assistance.
+OpenTabletop Engine is an API-first virtual tabletop platform for campaigns, worlds, scenes, tokens, actors, items, handouts, journals, sessions, encounters, dice, chat, combat, portable campaign data, permissioned extensions, and auditable AI assistance.
 
 ## Product Principles
 
@@ -42,6 +42,7 @@ OpenTabletop Engine is an API-first virtual tabletop platform for campaigns, sce
 - Public documentation index: `docs/site/index.md`
 - Versioned changelog: `CHANGELOG.md`
 - v1.0 release notes: `docs/release/v1.0.md`
+- Current feature-surface completion audit: `docs/verification/feature-surface-completion-2026-07-09.md`
 - Self-hosting and deployment: `docs/deployment/self-hosting.md`
 - Desktop hosting: `docs/deployment/desktop-hosting.md`
 - Hosted deployment recipes: `docs/deployment/hosted-deployment-recipes.md`
@@ -180,10 +181,10 @@ Start here:
 
 Current release tracks:
 
-- API-first campaign, scene, token, actor, journal, chat, dice, combat, proposal, plugin, system, and export/import surfaces.
+- API-first campaign, world, scene, token, actor, item, handout, journal, session, encounter, search, chat, dice, combat, proposal, plugin, system, and scoped export/import surfaces.
 - `dnd-5e-srd` as the primary rules runtime for the demo slice.
-- Local/dev AI provider flow with proposal/approval semantics; OpenAI Responses and Codex loopback providers are documented in `docs/ai/overview.md`.
-- Permissioned plugin and system SDK examples documented under `docs/api/rest.md`, `docs/plugin-sdk/overview.md`, and `docs/system-sdk/overview.md`.
+- Permission-filtered AI provider flow with candidate-to-approved campaign memory, encounter and recap workflows, proposal approval/revert semantics, and a deterministic local structured fallback; provider setup is documented in `docs/ai/overview.md`.
+- Permissioned plugin and system SDK examples documented under `docs/api/rest.md`, `docs/plugin-sdk/overview.md`, and `docs/system-sdk/overview.md`; plugin commands and subscribed events can request proposal-backed chat/storage changes, while system manifests are validated and installed durably under server-admin authority.
 - Public-alpha extension smoke path: install `plugins/example-macro-plugin` on the imported demo with only `chat.write`, run `/spark`, and inspect installed systems or switch through `generic-fantasy` before restoring `dnd-5e-srd`.
 - Beta dogfood path: accepted in `docs/verification/beta-acceptance.md`.
 - v0.3 outside dogfood path: import the beta archive, follow the dogfood guides, run the three-session runbook, export archives and Report Bundles, and record final proof in `docs/verification/v0.3-dogfood-acceptance.md`.

@@ -6,14 +6,18 @@ import websocket from "@fastify/websocket";
 import { buildPermissionFilteredContext, type AiBoardCaptureResult, type AiMessage, type AiProvider, type AiProviderEvent, type AiProviderRequest, type AiReasoningEffort, type AiToolContext, type AiToolDefinition, type AiToolJsonSchema, type PermissionFilteredContext } from "@open-tabletop/ai-core";
 import { apiContractPolicy, openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, CodexAppServerWebSocketTransport, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
-import { applyProposal, approveProposal, buildSmoothFogBrushPolygon, computeFogRevealPolygon, computeLightVisionPolygons, computeTokenVisionPolygons, createEvent, createId, createTimestamped, emptyState, hasPermission, isPointInsideVisionPolygon, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, proposalHistoryEntry, rejectProposal, tokenCenter as centerOfToken, type Actor, type AudioTrack, type AudioTrackKind, type AiEvaluationCheck, type AiEvaluationRun, type AiMemoryFact, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type CombatAction, type ContentImportAppliedRecord, type ContentImportBatch, type ContentImportEntity, type ContentImportEntityKind, type ContentImportSource, type DiceMacro, type DiceRoll, type DiceRollFairness, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogHistoryEntry, type FogMode, type FogPreset, type FogPresetRegion, type FogRegion, type FogShape, type Item, type JobLogEntry, type JobProgress, type JobStatus, type JobType, type JournalEntry, type LightSource, type MapAsset, type MessageType, type OAuthLoginState, type OrganizationMember, type OrganizationMemberRole, type OrganizationWorkspace, type PasswordResetToken, type PermissionGrant, type PermissionName, type PluginReview, type PluginReviewStatus, type PluginStorageEntry, type Proposal, type ProposalChange, type Scene, type SceneAnnotation, type SceneAnnotationKind, type SceneAnnotationLayer, type SceneEditSnapshot, type SceneEditableState, type SceneTemplateShape, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type TokenLayer, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPointSample, type VisionPointSamplePolygon, type VisionPolygon, type VisionSnapshot, type Wall, type WallKind, type WorkerJobRecord } from "@open-tabletop/core";
+import { aiMemoryFactStatus, applyProposal, approveProposal, buildSmoothFogBrushPolygon, computeFogRevealPolygon, computeLightVisionPolygons, computeTokenVisionPolygons, createEvent, createId, createTimestamped, emptyState, hasPermission, isPointInsideVisionPolygon, isPointInsideVisionPolygons, makeArchive, normalizeAiMemoryFact, normalizeEngineState, normalizeHandout, nowIso, permissionsForRole, proposalHistoryEntry, rejectProposal, tokenCenter as centerOfToken, type Actor, type AudioTrack, type AudioTrackKind, type AiEvaluationCheck, type AiEvaluationRun, type AiMemoryFact, type AiMemoryFactSource, type AiMemoryFactStatus, type AiMemoryFactType, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type CampaignSession, type ChatMessage, type Combat, type CombatAction, type ContentImportAppliedRecord, type ContentImportBatch, type ContentImportEntity, type ContentImportEntityKind, type ContentImportSource, type DiceMacro, type DiceRoll, type DiceRollFairness, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogHistoryEntry, type FogMode, type FogPreset, type FogPresetRegion, type FogRegion, type FogShape, type Handout, type Item, type JobLogEntry, type JobProgress, type JobStatus, type JobType, type JournalEntry, type LightSource, type MapAsset, type MessageType, type OAuthLoginState, type OrganizationMember, type OrganizationMemberRole, type OrganizationWorkspace, type PasswordResetToken, type PermissionGrant, type PermissionName, type PluginReview, type PluginReviewStatus, type PluginStorageEntry, type Proposal, type ProposalChange, type Scene, type SceneAnnotation, type SceneAnnotationKind, type SceneAnnotationLayer, type SceneEditSnapshot, type SceneEditableState, type SceneTemplateShape, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type TokenLayer, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPointSample, type VisionPointSamplePolygon, type VisionPolygon, type VisionSnapshot, type Wall, type WallKind, type WorkerJobRecord, type World } from "@open-tabletop/core";
+import { isPluginEventType, pluginEventPermission, type PluginEventEnvelope } from "@open-tabletop/plugin-sdk";
 import { composeFairnessSeed, rollFormula, seededRng } from "@open-tabletop/dice-engine";
+import { revertProposal } from "@open-tabletop/core";
 import { DND_5E_SRD_SYSTEM_ID, applyDnd5eSrdAdvancement, applyDnd5eSrdCondition, applyDnd5eSrdFeat, applyDnd5eSrdMulticlassLevel, dnd5eSrdAbilityScoreImprovementLevels, dnd5eSrdCanMulticlassInto, dnd5eSrdGeneralFeats, dnd5eSrdMulticlassPrerequisites, dnd5eSrdXpProgress, applyDnd5eSrdRest, applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, dnd5eSrdActionFormula, dnd5eSrdAdvancementOptions, dnd5eSrdApplyCharacterOrigins, dnd5eSrdCharacterImport, dnd5eSrdCharacterOrigins, dnd5eSrdCharacterTemplates, dnd5eSrdCompendium, dnd5eSrdCompendiumEntry, dnd5eSrdEncounterPlan, dnd5eSrdEncounterThreats, dnd5eSrdEquipmentPurchase, dnd5eSrdInitiativeRoll, dnd5eSrdMonsterActorData, dnd5eSrdQuickRolls, dnd5eSrdSheet, genericFantasyActionFormula, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplates, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplates, mysticNoirCompendium, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeDnd5eSrdCondition, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, resolveDnd5eSrdAction, resolveDnd5eSrdConcentrationDamage, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplates, stellarFrontiersCompendium, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, summarizeActor, useDnd5eSrdAction, useGenericFantasyAction, useMysticNoirAction, useStellarFrontiersAction, type CharacterImportInput, type CharacterImportResult, type CharacterTemplate, type EncounterPlan, type EncounterThreatSelection, type RulesActionResolutionResult, type RulesSaveOutcome, type SystemActionUseResult, type SystemActionUseOptions, type SystemRestOptions, type SystemRestResult, type SystemRestType } from "@open-tabletop/system-sdk";
+import { SystemManifestValidationError, validateSystemManifest, type SystemManifest } from "@open-tabletop/system-sdk";
+import type { SystemCapability, SystemInstallation } from "@open-tabletop/core";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { assetStorageKey, createAssetStorage, createAssetStorageForProvider, type AssetStorage } from "./asset-storage.js";
 import { extractPdfTextPages, parsePdfContentImportEntities, pdfContentImportPagePrompt, type PdfTextExtractor, type PdfTextPage } from "./pdf-content-import.js";
-import { PluginPackageError, loadPluginRegistry, type LoadedPlugin, type PluginChatCommandResult, type PluginCommandTokenContext, type PluginInventoryWarning, type PluginRuntimeRegistry } from "./plugin-runtime.js";
-import { installedSystems } from "./registries.js";
+import { PluginPackageError, loadPluginRegistry, pluginPackageIdentityChecksum, type LoadedPlugin, type PluginBridgeRequest, type PluginChatCommandResult, type PluginCommandTokenContext, type PluginInventoryWarning, type PluginRuntimeRegistry } from "./plugin-runtime.js";
+import { findRegisteredSystem, isBundledSystem, registeredSystems, systemInstallationByManifestId, systemRuntimeCapabilities } from "./registries.js";
 import { RealtimeHub } from "./realtime.js";
 import { FileStateStore, type StateStore } from "./store.js";
 
@@ -242,14 +246,69 @@ interface CampaignCreateBody extends Partial<Campaign> {
 }
 
 type CampaignPatchBody = Partial<Pick<Campaign, "name" | "description" | "defaultSystemId" | "visibility">>;
+type ScenePatchBody = Partial<Pick<Scene, "name" | "width" | "height" | "gridType" | "gridSize" | "active" | "sortOrder" | "fog" | "walls" | "lights" | "annotations" | "metadata">> & {
+  worldId?: string | null;
+  backgroundAssetId?: string | null;
+  folder?: string | null;
+};
 type TokenPatchBody = Partial<
   Pick<Token, "actorId" | "name" | "x" | "y" | "width" | "height" | "rotation" | "layer" | "hidden" | "locked" | "visionEnabled" | "visionRadius" | "disposition" | "imageAssetId" | "ownerUserIds" | "notes" | "conditions" | "auras" | "targetedByUserIds" | "metadata">
 > & {
   brightVisionRadius?: number | null;
   dimVisionRadius?: number | null;
 };
-type ActorPatchBody = Partial<Pick<Actor, "systemId" | "ownerUserId" | "type" | "name" | "imageAssetId" | "data" | "permissions">>;
-type JournalEntryPatchBody = Partial<Pick<JournalEntry, "parentId" | "title" | "body" | "visibility" | "visibleToUserIds" | "visibleToActorIds" | "tags">>;
+type ActorPatchBody = Partial<Pick<Actor, "systemId" | "ownerUserId" | "type" | "name" | "imageAssetId" | "data" | "permissions">> & { worldId?: string | null };
+type JournalEntryPatchBody = Partial<Pick<JournalEntry, "parentId" | "title" | "body" | "visibility" | "visibleToUserIds" | "visibleToActorIds" | "tags">> & { worldId?: string | null };
+type HandoutPatchBody = Partial<Pick<Handout, "title" | "body" | "visibility" | "visibleToUserIds" | "visibleToActorIds" | "assetIds" | "tags" | "readByUserIds">> & { worldId?: string | null };
+type EncounterPatchBody = Partial<Pick<Encounter, "name" | "summary" | "tokenIds" | "difficulty">> & { worldId?: string | null };
+type AiMemoryPatchBody = Partial<Pick<AiMemoryFact, "text" | "type" | "visibility" | "sourceIds" | "source" | "createdBy">> & {
+  worldId?: string | null;
+  subject?: string | null;
+  confidence?: number | null;
+  status?: AiMemoryFactStatus;
+};
+interface CampaignSessionCreateBody {
+  title?: unknown;
+  agenda?: unknown;
+  notes?: unknown;
+  scheduledFor?: unknown;
+  sceneIds?: unknown;
+  encounterIds?: unknown;
+}
+interface CampaignSessionPatchBody extends CampaignSessionCreateBody {
+  status?: unknown;
+}
+type CampaignSearchResultType = "world" | "scene" | "actor" | "item" | "journal" | "handout" | "encounter" | "memory" | "chat";
+interface CampaignSearchResult {
+  type: CampaignSearchResultType;
+  id: string;
+  title: string;
+  snippet: string;
+  updatedAt: string;
+  worldId?: string;
+  visibility?: Visibility | "whisper";
+  score: number;
+}
+interface StructuredSessionRecap {
+  playerRecap: string;
+  gmRecap: string;
+  timelineEvents: Array<{ text: string; subject?: string; visibility: "public" | "gm_only"; confidence?: number }>;
+  unresolvedHooks: string[];
+  lootGained: string[];
+  xpNotes: string[];
+  characterNotes: string[];
+  prepSuggestions: string[];
+}
+type NormalizedEncounterPatch = Partial<Pick<Encounter, "name" | "summary" | "tokenIds" | "difficulty" | "worldId">>;
+type NormalizedAiMemoryPatch = Partial<Pick<AiMemoryFact, "text" | "type" | "visibility" | "sourceIds" | "source" | "createdBy" | "worldId" | "subject" | "confidence" | "status">>;
+interface StructuredEncounterDesign {
+  name: string;
+  summary: string;
+  difficulty: string;
+  sceneName: string;
+  objectives: string[];
+  complications: string[];
+}
 type CombatPatchBody = Partial<Pick<Combat, "active" | "round" | "turnIndex" | "combatants" | "manualTurnOrder">>;
 
 type CampaignImportPayload =
@@ -293,8 +352,10 @@ const AI_STALE_PROPOSAL_REVIEW_MS = 24 * 60 * 60 * 1000;
 const RENDERING_MAX_POLYGON_VERTEX_BUDGET = 96;
 const RENDERING_TOTAL_POLYGON_VERTEX_BUDGET = 512;
 const PLUGIN_REGISTRY_STALE_SECONDS = 7 * 24 * 60 * 60;
+const IDEMPOTENCY_MAX_KEY_LENGTH = 160;
 const IDEMPOTENCY_MAX_RESPONSE_BYTES = 512 * 1024;
 const IDEMPOTENCY_MAX_RECORDS = 1000;
+const PLUGIN_EVENT_QUEUE_MAX_PENDING = 256;
 const DEFAULT_RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 600;
 const DEFAULT_ASSET_QUOTA_BYTES = 1024 * 1024 * 1024;
@@ -304,6 +365,9 @@ const CHAT_MESSAGE_BODY_MAX_LENGTH = apiContractPolicy.chat.messageBodyMaxLength
 const CHAT_MESSAGE_BODY_VALIDATION_MESSAGE = `Chat message body must be a non-empty string up to ${CHAT_MESSAGE_BODY_MAX_LENGTH} characters`;
 const CHAT_MESSAGE_TYPES = ["plain", "emote", "whisper", "roll", "system", "gm", "ooc", "ai", "plugin"] as const satisfies readonly MessageType[];
 const CHAT_MESSAGE_VISIBILITIES = ["public", "gm_only", "whisper"] as const satisfies readonly ChatMessage["visibility"][];
+const VISIBILITIES = ["gm_only", "public", "specific_players", "specific_characters"] as const satisfies readonly Visibility[];
+const AI_MEMORY_TYPES = ["canon_fact", "rumor", "secret", "npc_profile", "location_profile", "faction_profile", "quest_hook", "unresolved_thread", "character_goal", "session_summary", "timeline_event", "retconned_fact", "ai_suggestion"] as const satisfies readonly AiMemoryFactType[];
+const AI_MEMORY_STATUSES = ["candidate", "approved", "rejected", "retconned"] as const satisfies readonly AiMemoryFactStatus[];
 const ADMIN_JOB_TYPES = [
   "campaign.export",
   "campaign.import",
@@ -330,6 +394,7 @@ const DEFAULT_WORKSPACE_GRID_SIZE = 50;
 const idempotencyContextSymbol = Symbol("otte.idempotencyContext");
 const idempotencyReplaySymbol = Symbol("otte.idempotencyReplay");
 const idempotencySaveScopeSymbol = Symbol("otte.idempotencySaveScope");
+const idempotencyFlightSymbol = Symbol("otte.idempotencyFlight");
 
 const campaignPermissionTemplates: Record<CampaignPermissionTemplateId, CampaignPermissionTemplate> = {
   standard: {
@@ -378,6 +443,15 @@ interface IdempotencySaveScope {
   saveRequested: boolean;
 }
 
+type IdempotencyRecord = EngineState["idempotencyRecords"][number];
+
+interface IdempotencyFlight {
+  context: IdempotencyContext;
+  completion: Promise<IdempotencyRecord | undefined>;
+  resolve: (record: IdempotencyRecord | undefined) => void;
+  settled: boolean;
+}
+
 interface RateLimitConfig {
   enabled: boolean;
   windowMs: number;
@@ -403,6 +477,64 @@ interface AdminPluginReviewInfo {
   trust: LoadedPlugin["trust"];
   installable: boolean;
   installBlock?: string;
+}
+
+type PublicPluginReview = Omit<PluginReview, "registryUrl" | "packageUrl" | "notes" | "reviewedByUserId">;
+
+interface MarketplacePluginReviewInfo {
+  review: PublicPluginReview;
+  installable: boolean;
+  installBlock?: string;
+}
+
+interface PublicPluginCatalogInfo {
+  id: string;
+  name: string;
+  version: string;
+  compatibleCore: string;
+  package?: Pick<NonNullable<LoadedPlugin["package"]>, "publisher" | "license">;
+  runtime?: LoadedPlugin["runtime"];
+  permissions: PermissionName[];
+  ui?: LoadedPlugin["ui"];
+  chatCommands?: LoadedPlugin["chatCommands"];
+  eventSubscriptions?: LoadedPlugin["eventSubscriptions"];
+  source: {
+    type: LoadedPlugin["source"]["type"];
+    packageId: string;
+    manifestChecksum: string;
+    sandbox: LoadedPlugin["source"]["sandbox"];
+    checksum?: string;
+    packageChecksum?: string;
+    syncedAt?: string;
+  };
+  distribution: LoadedPlugin["distribution"];
+  permissionReview: LoadedPlugin["permissionReview"];
+  trust: {
+    status: LoadedPlugin["trust"]["status"];
+    policy: LoadedPlugin["trust"]["policy"];
+    required: boolean;
+    installable: boolean;
+    errors: string[];
+    signature?: Omit<NonNullable<LoadedPlugin["trust"]["signature"]>, "signaturePath">;
+  };
+}
+
+interface CampaignPluginCatalogInfo extends Omit<PublicPluginCatalogInfo, "compatibleCore"> {
+  installed: boolean;
+  grantedPermissions: PermissionName[];
+  missingPermissions: PermissionName[];
+  installedVersion?: string;
+  updateAvailable: boolean;
+  rollbackVersions: string[];
+  marketplaceReview: MarketplacePluginReviewInfo;
+  compatibleCore: { range: string; coreVersion: string; satisfied: boolean };
+  compatibilityBlock?: string;
+  versionCompatibility: Array<{
+    version: string;
+    compatibleCore: { range: string; coreVersion: string; satisfied: boolean };
+    compatibilityBlock?: string;
+  }>;
+  audit: { installCount: number; lastInstallAt?: string; versions: string[] };
 }
 
 interface ScimListQuery {
@@ -522,6 +654,13 @@ interface OrganizationSwitchBody {
 
 type AdminAuthConnectionProvider = "oidc" | "scim";
 
+class UnsupportedSystemCapabilityError extends Error {
+  constructor(readonly systemId: string, readonly capability: SystemCapability) {
+    super(`System ${systemId} does not provide the ${capability} capability in this server runtime`);
+    this.name = "UnsupportedSystemCapabilityError";
+  }
+}
+
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
   const store = options.store ?? new FileStateStore();
   repairLegacyMemoryExtractionThreads(store);
@@ -531,9 +670,35 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   const storageBackupScheduler = createStorageBackupScheduler(store);
   const maxAssetBytes = options.maxAssetBytes ?? 25 * 1024 * 1024;
   const hub = new RealtimeHub();
-  const broadcast = (event: EngineEvent) => {
+  let pluginEventQueue = Promise.resolve();
+  let pendingPluginEventCount = 0;
+  const broadcastToClients = (event: EngineEvent) => {
     const visibilityCache = createTokenVisibilityCache();
     hub.broadcast(event, (candidate, client) => filterRealtimeEvent(store, candidate, client.userId, visibilityCache));
+  };
+  const broadcast = (event: EngineEvent) => {
+    broadcastToClients(event);
+    const pluginEvent = pluginEventEnvelope(event);
+    if (!pluginEvent) return;
+    if (pendingPluginEventCount >= PLUGIN_EVENT_QUEUE_MAX_PENDING) {
+      appendPluginEventFailureAudit(store, {
+        event: pluginEvent,
+        reason: "queue_capacity",
+        message: `Plugin event queue is limited to ${PLUGIN_EVENT_QUEUE_MAX_PENDING} pending events`
+      });
+      store.save();
+      return;
+    }
+    pendingPluginEventCount += 1;
+    pluginEventQueue = pluginEventQueue
+      .then(() => dispatchInstalledPluginEvent(store, pluginRegistry, pluginEvent, broadcastToClients))
+      .catch((error) => {
+        appendPluginEventFailureAudit(store, { event: pluginEvent, reason: "dispatcher_error", message: errorMessage(error) });
+        store.save();
+      })
+      .finally(() => {
+        pendingPluginEventCount -= 1;
+      });
   };
   const aiProvider = options.aiProvider ?? createConfiguredAiProvider();
   const pdfTextExtractor = options.pdfTextExtractor ?? extractPdfTextPages;
@@ -544,6 +709,19 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   const aiToolRuntime: AiToolRuntime = { imageAssetGenerator, assetStorage, maxAssetBytes, requestBoardCapture, broadcast };
   const pluginRegistry = options.pluginRegistry ?? loadPluginRegistry({ pluginRoot: options.pluginRoot });
   const app = Fastify({ logger: true });
+
+  app.setErrorHandler((error, request, reply) => {
+    if (error instanceof UnsupportedSystemCapabilityError) {
+      return reply.code(422).send({
+        error: "unsupported_system_capability",
+        systemId: error.systemId,
+        capability: error.capability,
+        message: error.message
+      });
+    }
+    request.log.error(error);
+    return reply.send(error);
+  });
 
   app.addContentTypeParser(/^image\/(png|jpeg|webp|gif|svg\+xml)$/i, { parseAs: "buffer", bodyLimit: maxAssetBytes }, (_request, body: Buffer, done) => {
     done(null, body);
@@ -1448,11 +1626,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.post<{ Body: AdminJobCreateBody }>("/api/v1/admin/jobs", async (request, reply) => {
     const adminUserId = requireServerAdmin(store, reply, request.headers);
     if (typeof adminUserId !== "string") return adminUserId;
-    const body = request.body ?? {};
+    const body = optionalJsonObjectBody(request.body);
+    if (!body) return badRequest(reply, "Job request body must be a JSON object");
     const type = typeof body.type === "string" ? normalizeJobType(body.type) : undefined;
     if (!type) return badRequest(reply, "Job type is required and must be supported");
     const maxAttempts = normalizeAdminJobMaxAttempts(body.maxAttempts);
     if (!maxAttempts) return badRequest(reply, "maxAttempts must be an integer from 1 to 10");
+    if (body.payload !== undefined && !isRecord(body.payload)) return badRequest(reply, "Job payload must be a JSON object");
     const now = nowIso();
     const job = createTimestamped("job", {
       type,
@@ -1479,7 +1659,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.post<{ Body: AdminJobLeaseBody }>("/api/v1/admin/jobs/lease", async (request, reply) => {
     const adminUserId = requireServerAdmin(store, reply, request.headers);
     if (typeof adminUserId !== "string") return adminUserId;
-    const body = request.body ?? {};
+    const body = optionalJsonObjectBody(request.body);
+    if (!body) return badRequest(reply, "Job lease body must be a JSON object");
+    if (body.workerId !== undefined && typeof body.workerId !== "string") return badRequest(reply, "workerId must be a string");
     const workerId = normalizeWorkerId(body.workerId) ?? adminUserId;
     const leaseSeconds = normalizeAdminJobLeaseSeconds(body.leaseSeconds);
     if (!leaseSeconds) return badRequest(reply, "leaseSeconds must be an integer from 1 to 3600");
@@ -1539,7 +1721,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.post<{ Body: AdminJobAlertBody }>("/api/v1/admin/jobs/alerts", async (request, reply) => {
     const adminUserId = requireServerAdmin(store, reply, request.headers);
     if (typeof adminUserId !== "string") return adminUserId;
-    const body = request.body ?? {};
+    const body = optionalJsonObjectBody(request.body);
+    if (!body) return badRequest(reply, "Job alert body must be a JSON object");
+    if (body.dryRun !== undefined && typeof body.dryRun !== "boolean") return badRequest(reply, "dryRun must be a boolean");
+    if (body.force !== undefined && typeof body.force !== "boolean") return badRequest(reply, "force must be a boolean");
+    if (body.reason !== undefined && typeof body.reason !== "string") return badRequest(reply, "reason must be a string");
     const dryRun = body.dryRun === true;
     const force = body.force === true;
     const reason = typeof body.reason === "string" ? body.reason.slice(0, 240) : undefined;
@@ -1591,28 +1777,38 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const job = store.state.jobs.find((item) => item.id === request.params.jobId);
     if (!job) return notFound(reply, "Job not found");
     const before = publicJobInfo(job);
-    const body = request.body ?? {};
+    const body = optionalJsonObjectBody(request.body);
+    if (!body) return badRequest(reply, "Job update body must be a JSON object");
+    let progress: JobProgress | undefined;
     if (body.progress !== undefined) {
-      const progress = normalizeJobProgress(body.progress);
-      if ("error" in progress) return badRequest(reply, progress.error);
-      job.progress = progress.value;
+      const normalized = normalizeJobProgress(body.progress);
+      if ("error" in normalized) return badRequest(reply, normalized.error);
+      progress = normalized.value;
     }
-    if (body.output !== undefined) job.output = body.output;
+    let error: string | undefined;
     if (body.error !== undefined) {
       if (typeof body.error !== "string") return badRequest(reply, "Job error must be a string");
-      job.error = body.error.slice(0, 1000);
+      error = body.error.slice(0, 1000);
     }
+    let log: JobLogEntry | undefined;
     if (body.log !== undefined) {
-      const log = normalizeJobLogEntry(body.log);
-      if ("error" in log) return badRequest(reply, log.error);
-      appendJobLog(job, log.value);
+      const normalized = normalizeJobLogEntry(body.log);
+      if ("error" in normalized) return badRequest(reply, normalized.error);
+      log = normalized.value;
     }
+    let nextStatus: JobStatus | undefined;
     if (body.status !== undefined) {
-      const nextStatus = typeof body.status === "string" ? normalizeJobStatus(body.status) : undefined;
+      nextStatus = typeof body.status === "string" ? normalizeJobStatus(body.status) : undefined;
       if (!nextStatus) return badRequest(reply, "Job status must be queued, running, succeeded, failed, or cancelled");
-      const transition = transitionAdminJob(job, nextStatus, adminUserId);
+      const validationJob = { ...job, logs: job.logs.map((entry) => ({ ...entry })) };
+      const transition = transitionAdminJob(validationJob, nextStatus, adminUserId);
       if ("error" in transition) return conflict(reply, transition.error);
     }
+    if (progress !== undefined) job.progress = progress;
+    if (body.output !== undefined) job.output = body.output;
+    if (body.error !== undefined) job.error = error;
+    if (log) appendJobLog(job, log);
+    if (nextStatus) transitionAdminJob(job, nextStatus, adminUserId);
     job.updatedAt = nowIso();
     job.updatedByUserId = adminUserId;
     appendServerAuditLog(store, adminUserId, {
@@ -1632,21 +1828,27 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const job = store.state.jobs.find((item) => item.id === request.params.jobId);
     if (!job) return notFound(reply, "Job not found");
     if (job.status !== "running") return conflict(reply, "Only running jobs can receive heartbeats");
-    const body = request.body ?? {};
+    const body = optionalJsonObjectBody(request.body);
+    if (!body) return badRequest(reply, "Job heartbeat body must be a JSON object");
+    if (body.workerId !== undefined && typeof body.workerId !== "string") return badRequest(reply, "workerId must be a string");
     const workerId = normalizeWorkerId(body.workerId);
     if (workerId && job.leasedBy && job.leasedBy !== workerId) return conflict(reply, "Job is leased by another worker");
     const leaseSeconds = normalizeAdminJobLeaseSeconds(body.leaseSeconds);
     if (!leaseSeconds) return badRequest(reply, "leaseSeconds must be an integer from 1 to 3600");
+    let progress: JobProgress | undefined;
     if (body.progress !== undefined) {
-      const progress = normalizeJobProgress(body.progress);
-      if ("error" in progress) return badRequest(reply, progress.error);
-      job.progress = progress.value;
+      const normalized = normalizeJobProgress(body.progress);
+      if ("error" in normalized) return badRequest(reply, normalized.error);
+      progress = normalized.value;
     }
+    let log: JobLogEntry | undefined;
     if (body.log !== undefined) {
-      const log = normalizeJobLogEntry(body.log);
-      if ("error" in log) return badRequest(reply, log.error);
-      appendJobLog(job, log.value);
+      const normalized = normalizeJobLogEntry(body.log);
+      if ("error" in normalized) return badRequest(reply, normalized.error);
+      log = normalized.value;
     }
+    if (progress !== undefined) job.progress = progress;
+    if (log) appendJobLog(job, log);
     const now = nowIso();
     job.lastHeartbeatAt = now;
     job.leaseExpiresAt = new Date(Date.parse(now) + leaseSeconds * 1000).toISOString();
@@ -1706,6 +1908,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const job = store.state.jobs.find((item) => item.id === request.params.jobId);
     if (!job) return notFound(reply, "Job not found");
     if (job.status !== "queued" && job.status !== "running") return conflict(reply, "Only queued or running jobs can be cancelled");
+    const body = optionalJsonObjectBody(request.body);
+    if (!body) return badRequest(reply, "Job cancel body must be a JSON object");
+    if (body.reason !== undefined && typeof body.reason !== "string") return badRequest(reply, "reason must be a string");
     const before = publicJobInfo(job);
     const now = nowIso();
     job.status = "cancelled";
@@ -1717,7 +1922,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     job.lastHeartbeatAt = undefined;
     job.updatedAt = now;
     job.updatedByUserId = adminUserId;
-    const reason = typeof request.body?.reason === "string" ? request.body.reason.slice(0, 240) : undefined;
+    const reason = typeof body.reason === "string" ? body.reason.slice(0, 240) : undefined;
     appendJobLog(job, { at: now, level: "warning", message: reason ? `Job cancelled: ${reason}` : "Job cancelled" });
     appendServerAuditLog(store, adminUserId, {
       action: "admin.jobs.cancel",
@@ -1804,7 +2009,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.post<{ Body: { dryRun?: boolean; campaignId?: string; threadId?: string; limit?: number | string; reason?: string } }>("/api/v1/admin/ai/tool-calls/stale/fail", async (request, reply) => {
     const adminUserId = requireServerAdmin(store, reply, request.headers);
     if (typeof adminUserId !== "string") return adminUserId;
-    const result = failStaleAiToolCalls(store, request.body ?? {});
+    const body = optionalJsonObjectBody(request.body);
+    if (!body) return badRequest(reply, "AI tool-call maintenance body must be a JSON object");
+    const bodyError = aiToolCallMaintenanceBodyError(body, { allowReason: true });
+    if (bodyError) return badRequest(reply, bodyError);
+    const result = failStaleAiToolCalls(store, body as { dryRun?: boolean; campaignId?: string; threadId?: string; limit?: number | string; reason?: string });
     appendServerAuditLog(store, adminUserId, {
       action: "admin.aiToolCalls.failStale",
       targetType: "ai_tool_call",
@@ -1824,7 +2033,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.post<{ Body: { dryRun?: boolean; campaignId?: string; threadId?: string; toolCallId?: string; limit?: number | string } }>("/api/v1/admin/ai/tool-calls/retry", async (request, reply) => {
     const adminUserId = requireServerAdmin(store, reply, request.headers);
     if (typeof adminUserId !== "string") return adminUserId;
-    const result = await retryFailedAiToolCalls(store, aiToolRuntime, request.body ?? {});
+    const body = optionalJsonObjectBody(request.body);
+    if (!body) return badRequest(reply, "AI tool-call maintenance body must be a JSON object");
+    const bodyError = aiToolCallMaintenanceBodyError(body, { allowToolCallId: true });
+    if (bodyError) return badRequest(reply, bodyError);
+    const result = await retryFailedAiToolCalls(store, aiToolRuntime, body as { dryRun?: boolean; campaignId?: string; threadId?: string; toolCallId?: string; limit?: number | string });
     appendServerAuditLog(store, adminUserId, {
       action: "admin.aiToolCalls.retry",
       targetType: "ai_tool_call",
@@ -1933,7 +2146,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.post<{ Body: { registryUrl?: string } }>("/api/v1/admin/plugins/registry/sync", async (request, reply) => {
     const adminUserId = requireServerAdmin(store, reply, request.headers);
     if (typeof adminUserId !== "string") return adminUserId;
-    const sync = await syncPluginRegistriesForRequest(pluginRegistry, request.body?.registryUrl, reply);
+    const body = optionalJsonObjectBody(request.body);
+    if (!body) return badRequest(reply, "Plugin registry sync body must be a JSON object");
+    if (body.registryUrl !== undefined && typeof body.registryUrl !== "string") return badRequest(reply, "registryUrl must be a string");
+    const sync = await syncPluginRegistriesForRequest(pluginRegistry, body.registryUrl as string | undefined, reply);
     if (!sync) return sync;
     if ("statusCode" in sync) return sync;
     appendServerAuditLog(store, adminUserId, {
@@ -2708,6 +2924,63 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return store.state.members.filter((member) => member.campaignId === request.params.campaignId).map((member) => memberSessionInfo(store, member));
   });
 
+  app.patch<{ Params: { campaignId: string; memberId: string }; Body: { role?: unknown } }>("/api/v1/campaigns/:campaignId/members/:memberId", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.update");
+    if (allowed !== true) return allowed;
+    const member = store.state.members.find((item) => item.id === request.params.memberId && item.campaignId === request.params.campaignId);
+    if (!member) return notFound(reply, "Campaign member not found");
+    if (member.role === "owner") return forbidden(reply, "The campaign owner role cannot be changed");
+    if (member.source?.type === "scim_group") return conflict(reply, "SCIM-managed campaign members must be changed through their group mapping");
+    const role = assignableInviteRole(request.body?.role);
+    if (!role) return badRequest(reply, "role must be gm, assistant_gm, player, or observer");
+    const userId = currentUserId(store, request.headers)!;
+    const before = { role: member.role };
+    member.role = role;
+    member.updatedAt = nowIso();
+    appendServerAuditLog(store, userId, {
+      campaignId: member.campaignId,
+      action: "campaign.member.update",
+      targetType: "campaign_member",
+      targetId: member.id,
+      before,
+      after: { role: member.role, userId: member.userId }
+    });
+    store.save();
+    broadcast(createEvent({ campaignId: member.campaignId, type: "campaign.member.updated", actorUserId: userId, targetId: member.id, payload: member }));
+    return memberSessionInfo(store, member);
+  });
+
+  app.delete<{ Params: { campaignId: string; memberId: string } }>("/api/v1/campaigns/:campaignId/members/:memberId", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.update");
+    if (allowed !== true) return allowed;
+    const index = store.state.members.findIndex((item) => item.id === request.params.memberId && item.campaignId === request.params.campaignId);
+    const member = store.state.members[index];
+    if (!member) return notFound(reply, "Campaign member not found");
+    if (member.role === "owner") return forbidden(reply, "The campaign owner cannot be removed");
+    if (member.source?.type === "scim_group") return conflict(reply, "SCIM-managed campaign members must be removed through their group mapping");
+    const userId = currentUserId(store, request.headers)!;
+    store.state.members.splice(index, 1);
+    store.state.permissionGrants = store.state.permissionGrants.filter(
+      (grant) => !(grant.campaignId === member.campaignId && grant.subjectType === "user" && grant.subjectId === member.userId)
+    );
+    for (const token of store.state.tokens) {
+      if (!token.ownerUserIds?.includes(member.userId)) continue;
+      token.ownerUserIds = token.ownerUserIds.filter((id) => id !== member.userId);
+      token.updatedAt = nowIso();
+    }
+    appendServerAuditLog(store, userId, {
+      campaignId: member.campaignId,
+      action: "campaign.member.remove",
+      targetType: "campaign_member",
+      targetId: member.id,
+      before: { userId: member.userId, role: member.role },
+      after: { removed: true }
+    });
+    store.save();
+    broadcast(createEvent({ campaignId: member.campaignId, type: "campaign.member.left", actorUserId: userId, targetId: member.id, payload: member }));
+    return memberSessionInfo(store, member);
+  });
+
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/invites", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.update");
     if (allowed !== true) return allowed;
@@ -2815,6 +3088,181 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     };
   });
 
+  app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/sessions", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.update");
+    if (allowed !== true) return allowed;
+    return store.state.campaignSessions
+      .filter((session) => session.campaignId === request.params.campaignId)
+      .sort((left, right) => left.number - right.number || left.createdAt.localeCompare(right.createdAt));
+  });
+
+  app.get<{ Params: { campaignId: string }; Querystring: { q?: string; types?: string; worldId?: string; limit?: string } }>("/api/v1/campaigns/:campaignId/search", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.read");
+    if (allowed !== true) return allowed;
+    const userId = currentUserId(store, request.headers)!;
+    const query = request.query.q?.trim() ?? "";
+    if (!query || query.length > 200) return badRequest(reply, "q must be 1-200 characters");
+    const types = normalizeCampaignSearchTypes(request.query.types);
+    if (!types.ok) return badRequest(reply, types.error);
+    const worldId = request.query.worldId?.trim();
+    if (
+      worldId &&
+      (!canCampaign(store, userId, request.params.campaignId, "world.read") ||
+        !store.state.worlds.some((world) => world.id === worldId && world.campaignId === request.params.campaignId))
+    )
+      return notFound(reply, "World not found");
+    const limit = request.query.limit === undefined ? 50 : positiveInteger(request.query.limit);
+    if (!limit || limit > 100) return badRequest(reply, "limit must be an integer from 1 to 100");
+    return campaignSearchResults(store, userId, request.params.campaignId, query, types.value, worldId).slice(0, limit);
+  });
+
+  app.post<{ Params: { campaignId: string }; Body: CampaignSessionCreateBody }>("/api/v1/campaigns/:campaignId/sessions", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.update");
+    if (allowed !== true) return allowed;
+    const userId = currentUserId(store, request.headers)!;
+    const normalized = normalizeCampaignSessionInput(store, request.params.campaignId, request.body ?? {});
+    if (!normalized.ok) return badRequest(reply, normalized.error);
+    const number = Math.max(0, ...store.state.campaignSessions.filter((session) => session.campaignId === request.params.campaignId).map((session) => session.number)) + 1;
+    const session = createTimestamped("cses", {
+      campaignId: request.params.campaignId,
+      status: "planned" as const,
+      title: normalized.value.title ?? `Session ${number}`,
+      number,
+      agenda: normalized.value.agenda ?? "",
+      notes: normalized.value.notes ?? "",
+      scheduledFor: normalized.value.scheduledFor,
+      sceneIds: normalized.value.sceneIds ?? [],
+      encounterIds: normalized.value.encounterIds ?? [],
+      createdBy: userId,
+      updatedBy: userId
+    }) satisfies CampaignSession;
+    store.state.campaignSessions.push(session);
+    appendServerAuditLog(store, userId, {
+      campaignId: session.campaignId,
+      action: "campaign.session.create",
+      targetType: "campaign_session",
+      targetId: session.id,
+      after: campaignSessionAuditSummary(session)
+    });
+    store.save();
+    broadcast(createEvent({ campaignId: session.campaignId, type: "campaign.session.created", actorUserId: userId, targetId: session.id, payload: session }));
+    return session;
+  });
+
+  app.get<{ Params: { sessionId: string } }>("/api/v1/campaign-sessions/:sessionId", async (request, reply) => {
+    const session = store.state.campaignSessions.find((item) => item.id === request.params.sessionId);
+    if (!session) return notFound(reply, "Campaign session not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, session.campaignId, "campaign.update");
+    if (allowed !== true) return allowed;
+    return session;
+  });
+
+  app.patch<{ Params: { sessionId: string }; Body: CampaignSessionPatchBody }>("/api/v1/campaign-sessions/:sessionId", async (request, reply) => {
+    const session = store.state.campaignSessions.find((item) => item.id === request.params.sessionId);
+    if (!session) return notFound(reply, "Campaign session not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, session.campaignId, "campaign.update");
+    if (allowed !== true) return allowed;
+    if (isRecord(request.body) && "status" in request.body) return badRequest(reply, "Use the session start or complete actions to change status");
+    const userId = currentUserId(store, request.headers)!;
+    const normalized = normalizeCampaignSessionInput(store, session.campaignId, request.body ?? {}, session);
+    if (!normalized.ok) return badRequest(reply, normalized.error);
+    const before = campaignSessionAuditSummary(session);
+    Object.assign(session, normalized.value, { updatedBy: userId, updatedAt: nowIso() });
+    appendServerAuditLog(store, userId, {
+      campaignId: session.campaignId,
+      action: "campaign.session.update",
+      targetType: "campaign_session",
+      targetId: session.id,
+      before,
+      after: campaignSessionAuditSummary(session)
+    });
+    store.save();
+    broadcast(createEvent({ campaignId: session.campaignId, type: "campaign.session.updated", actorUserId: userId, targetId: session.id, payload: session }));
+    return session;
+  });
+
+  app.post<{ Params: { sessionId: string }; Body: { activateSceneId?: unknown } }>("/api/v1/campaign-sessions/:sessionId/start", async (request, reply) => {
+    const session = store.state.campaignSessions.find((item) => item.id === request.params.sessionId);
+    if (!session) return notFound(reply, "Campaign session not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, session.campaignId, "scene.activate");
+    if (allowed !== true) return allowed;
+    if (session.status !== "planned") return conflict(reply, "Only a planned session can be started");
+    const existingLive = store.state.campaignSessions.find((item) => item.campaignId === session.campaignId && item.status === "live");
+    if (existingLive) return conflict(reply, `Session ${existingLive.number} is already live`);
+    const userId = currentUserId(store, request.headers)!;
+    const activateSceneId = normalizeNonEmptyString(request.body?.activateSceneId);
+    if (request.body?.activateSceneId !== undefined && !activateSceneId) return badRequest(reply, "activateSceneId must be a non-empty string");
+    if (activateSceneId && !session.sceneIds.includes(activateSceneId)) return badRequest(reply, "activateSceneId must be linked to this session");
+    const scene = activateSceneId ? store.state.scenes.find((item) => item.id === activateSceneId && item.campaignId === session.campaignId) : undefined;
+    if (activateSceneId && !scene) return notFound(reply, "Session scene not found");
+    const startedAt = nowIso();
+    if (scene) activateSceneForCampaignSession(store, scene, userId, startedAt);
+    session.status = "live";
+    session.startedAt = startedAt;
+    session.endedAt = undefined;
+    session.updatedBy = userId;
+    session.updatedAt = startedAt;
+    appendServerAuditLog(store, userId, {
+      campaignId: session.campaignId,
+      action: "campaign.session.start",
+      targetType: "campaign_session",
+      targetId: session.id,
+      after: campaignSessionAuditSummary(session)
+    });
+    store.save();
+    if (scene) broadcast(createEvent({ campaignId: scene.campaignId, type: "scene.activated", actorUserId: userId, targetId: scene.id, payload: scene }));
+    broadcast(createEvent({ campaignId: session.campaignId, type: "campaign.session.started", actorUserId: userId, targetId: session.id, payload: session }));
+    return session;
+  });
+
+  app.post<{ Params: { sessionId: string }; Body: { notes?: unknown } }>("/api/v1/campaign-sessions/:sessionId/complete", async (request, reply) => {
+    const session = store.state.campaignSessions.find((item) => item.id === request.params.sessionId);
+    if (!session) return notFound(reply, "Campaign session not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, session.campaignId, "campaign.update");
+    if (allowed !== true) return allowed;
+    if (session.status !== "live") return conflict(reply, "Only a live session can be completed");
+    const notes = request.body?.notes === undefined ? session.notes : normalizeBoundedText(request.body.notes, 20_000);
+    if (notes === undefined) return badRequest(reply, "notes must be a string no longer than 20000 characters");
+    const userId = currentUserId(store, request.headers)!;
+    session.status = "completed";
+    session.notes = notes;
+    session.endedAt = nowIso();
+    session.updatedBy = userId;
+    session.updatedAt = session.endedAt;
+    appendServerAuditLog(store, userId, {
+      campaignId: session.campaignId,
+      action: "campaign.session.complete",
+      targetType: "campaign_session",
+      targetId: session.id,
+      after: campaignSessionAuditSummary(session)
+    });
+    store.save();
+    broadcast(createEvent({ campaignId: session.campaignId, type: "campaign.session.completed", actorUserId: userId, targetId: session.id, payload: session }));
+    return session;
+  });
+
+  app.delete<{ Params: { sessionId: string } }>("/api/v1/campaign-sessions/:sessionId", async (request, reply) => {
+    const index = store.state.campaignSessions.findIndex((item) => item.id === request.params.sessionId);
+    const session = store.state.campaignSessions[index];
+    if (!session) return notFound(reply, "Campaign session not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, session.campaignId, "campaign.update");
+    if (allowed !== true) return allowed;
+    if (session.status !== "planned") return conflict(reply, "Live or completed sessions are auditable records and cannot be deleted");
+    const userId = currentUserId(store, request.headers)!;
+    store.state.campaignSessions.splice(index, 1);
+    appendServerAuditLog(store, userId, {
+      campaignId: session.campaignId,
+      action: "campaign.session.delete",
+      targetType: "campaign_session",
+      targetId: session.id,
+      before: campaignSessionAuditSummary(session),
+      after: { deleted: true }
+    });
+    store.save();
+    broadcast(createEvent({ campaignId: session.campaignId, type: "campaign.session.deleted", actorUserId: userId, targetId: session.id, payload: session }));
+    return session;
+  });
+
   app.patch<{ Params: { campaignId: string }; Body: CampaignPatchBody }>("/api/v1/campaigns/:campaignId", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.update");
     if (allowed !== true) return allowed;
@@ -2912,16 +3360,100 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return deleted;
   });
 
+  app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/worlds", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "world.read");
+    if (allowed !== true) return allowed;
+    return store.state.worlds.filter((world) => world.campaignId === request.params.campaignId);
+  });
+
+  app.post<{ Params: { campaignId: string }; Body: Partial<Pick<World, "name" | "description">> }>("/api/v1/campaigns/:campaignId/worlds", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "world.create");
+    if (allowed !== true) return allowed;
+    const name = normalizeBoundedText(request.body?.name ?? "New World", 160);
+    const description = normalizeBoundedText(request.body?.description ?? "", 20_000);
+    if (!name) return badRequest(reply, "World name must be 1-160 characters");
+    if (description === undefined) return badRequest(reply, "World description must be no longer than 20000 characters");
+    const userId = currentUserId(store, request.headers)!;
+    const world = createTimestamped("world", { campaignId: request.params.campaignId, name, description }) satisfies World;
+    store.state.worlds.push(world);
+    appendServerAuditLog(store, userId, { campaignId: world.campaignId, action: "world.create", targetType: "world", targetId: world.id, after: world });
+    store.save();
+    broadcast(createEvent({ campaignId: world.campaignId, type: "world.created", actorUserId: userId, targetId: world.id, payload: world }));
+    return world;
+  });
+
+  app.get<{ Params: { worldId: string } }>("/api/v1/worlds/:worldId", async (request, reply) => {
+    const world = store.state.worlds.find((item) => item.id === request.params.worldId);
+    if (!world) return notFound(reply, "World not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, world.campaignId, "world.read");
+    if (allowed !== true) return allowed;
+    return world;
+  });
+
+  app.patch<{ Params: { worldId: string }; Body: Partial<Pick<World, "name" | "description">> }>("/api/v1/worlds/:worldId", async (request, reply) => {
+    const world = store.state.worlds.find((item) => item.id === request.params.worldId);
+    if (!world) return notFound(reply, "World not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, world.campaignId, "world.update");
+    if (allowed !== true) return allowed;
+    const before = { name: world.name, description: world.description };
+    if (request.body?.name !== undefined) {
+      const name = normalizeBoundedText(request.body.name, 160);
+      if (!name) return badRequest(reply, "World name must be 1-160 characters");
+      world.name = name;
+    }
+    if (request.body?.description !== undefined) {
+      const description = normalizeBoundedText(request.body.description, 20_000);
+      if (description === undefined) return badRequest(reply, "World description must be no longer than 20000 characters");
+      world.description = description;
+    }
+    world.updatedAt = nowIso();
+    const userId = currentUserId(store, request.headers)!;
+    appendServerAuditLog(store, userId, { campaignId: world.campaignId, action: "world.update", targetType: "world", targetId: world.id, before, after: { name: world.name, description: world.description } });
+    store.save();
+    broadcast(createEvent({ campaignId: world.campaignId, type: "world.updated", actorUserId: userId, targetId: world.id, payload: world }));
+    return world;
+  });
+
+  app.delete<{ Params: { worldId: string } }>("/api/v1/worlds/:worldId", async (request, reply) => {
+    const index = store.state.worlds.findIndex((item) => item.id === request.params.worldId);
+    const world = store.state.worlds[index];
+    if (!world) return notFound(reply, "World not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, world.campaignId, "world.delete");
+    if (allowed !== true) return allowed;
+    const affected: Record<string, number> = {};
+    for (const collection of ["scenes", "actors", "items", "journals", "handouts", "encounters", "aiMemory"] as const) {
+      let count = 0;
+      for (const record of store.state[collection]) {
+        if (record.campaignId !== world.campaignId || record.worldId !== world.id) continue;
+        record.worldId = undefined;
+        record.updatedAt = nowIso();
+        count += 1;
+      }
+      affected[collection] = count;
+    }
+    store.state.worlds.splice(index, 1);
+    const userId = currentUserId(store, request.headers)!;
+    appendServerAuditLog(store, userId, { campaignId: world.campaignId, action: "world.delete", targetType: "world", targetId: world.id, before: world, after: { deleted: true, detachedRecords: affected } });
+    store.save();
+    broadcast(createEvent({ campaignId: world.campaignId, type: "world.deleted", actorUserId: userId, targetId: world.id, payload: world }));
+    return { ...world, detachedRecords: affected };
+  });
+
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/scenes", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "scene.read");
     if (allowed !== true) return allowed;
-    return store.state.scenes.filter((item) => item.campaignId === request.params.campaignId).sort(compareScenesForDisplay).map(withoutSceneEditHistory);
+    const userId = currentUserId(store, request.headers)!;
+    return readableScenesForUser(store, userId, request.params.campaignId).sort(compareScenesForDisplay).map(withoutSceneEditHistory);
   });
 
   app.post<{ Params: { campaignId: string }; Body: Partial<Scene> }>("/api/v1/campaigns/:campaignId/scenes", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "scene.create");
     if (allowed !== true) return allowed;
     const userId = currentUserId(store, request.headers);
+    const worldId = typeof request.body.worldId === "string" ? request.body.worldId : undefined;
+    if (worldId && !store.state.worlds.some((world) => world.id === worldId && world.campaignId === request.params.campaignId)) {
+      return badRequest(reply, "Scene worldId must reference a world in the same campaign");
+    }
     const activatedAt = nowIso();
     const deactivatedSceneIds: string[] = [];
     if (request.body.active) {
@@ -2935,6 +3467,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }
     const scene = createTimestamped("scn", {
       campaignId: request.params.campaignId,
+      worldId,
       name: request.body.name ?? "New Scene",
       width: request.body.width ?? 1200,
       height: request.body.height ?? 800,
@@ -3031,13 +3564,28 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/assets", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "scene.read");
     if (allowed !== true) return allowed;
-    return store.state.assets.filter((item) => item.campaignId === request.params.campaignId);
+    const userId = currentUserId(store, request.headers)!;
+    const readableAssetIds = readableAssetIdsForUser(store, userId, request.params.campaignId);
+    return store.state.assets.filter((item) => item.campaignId === request.params.campaignId && readableAssetIds.has(item.id));
   });
 
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/assets/storage", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "scene.read");
     if (allowed !== true) return allowed;
-    return campaignAssetStorageInfo(store, request.params.campaignId, assetStorage);
+    const userId = currentUserId(store, request.headers)!;
+    if (canAccessPreparedScenes(store, userId, request.params.campaignId)) return campaignAssetStorageInfo(store, request.params.campaignId, assetStorage);
+    const readableAssetIds = readableAssetIdsForUser(store, userId, request.params.campaignId);
+    const assets = store.state.assets.filter((asset) => asset.campaignId === request.params.campaignId && readableAssetIds.has(asset.id));
+    return {
+      campaignId: request.params.campaignId,
+      assetCount: assets.length,
+      activeAssetCount: assets.filter((asset) => asset.lifecycle?.status !== "deleted").length,
+      usedBytes: assets.filter((asset) => asset.lifecycle?.status !== "deleted").reduce((total, asset) => total + asset.sizeBytes, 0),
+      allBytes: assets.reduce((total, asset) => total + asset.sizeBytes, 0),
+      lifecycleCounts: countBy(assets, (asset) => asset.lifecycle?.status ?? "active"),
+      providerCounts: countBy(assets, (asset) => asset.storage?.provider ?? "external"),
+      largestAssets: []
+    };
   });
 
   app.post<{ Params: { campaignId: string }; Body: Partial<MapAsset> }>("/api/v1/campaigns/:campaignId/assets", async (request, reply) => {
@@ -3151,6 +3699,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!isAssetDeliverable(asset)) return assetUnavailable(reply, asset);
     const allowed = requireCampaignPermission(store, reply, request.headers, asset.campaignId, "scene.read");
     if (allowed !== true) return allowed;
+    const userId = currentUserId(store, request.headers)!;
+    if (!canReadAssetRecord(store, userId, asset)) return notFound(reply, "Asset not found");
     try {
       return signedAssetDelivery(asset, request.headers, body.expiresInSeconds, body.disposition);
     } catch (error) {
@@ -3208,6 +3758,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       if (allowed !== true) {
         appendAssetDeliveryAuditLog(store, asset, { status: "denied", accessMode, reason: "missing_permission_or_active_organization" });
         return allowed;
+      }
+      if (!canReadAssetRecord(store, userId, asset)) {
+        appendAssetDeliveryAuditLog(store, asset, { status: "denied", accessMode, reason: "asset_not_visible" });
+        return notFound(reply, "Asset not found");
       }
     }
     const cacheControl = signedAccess ? signedAssetCacheControl(request.query.expiresAt) : "private, max-age=60";
@@ -3366,7 +3920,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "scene.read");
     if (allowed !== true) return allowed;
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
-    return scene;
+    const userId = currentUserId(store, request.headers)!;
+    if (!canReadSceneRecord(store, userId, scene)) return notFound(reply, "Scene not found");
+    return withoutSceneEditHistory(scene);
   });
 
   app.get<{ Params: { sceneId: string } }>("/api/v1/scenes/:sceneId/vision", async (request, reply): Promise<VisionSnapshot | FastifyReply> => {
@@ -3376,6 +3932,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const userId = currentUserId(store, request.headers)!;
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
+    if (!canReadSceneRecord(store, userId, scene)) return notFound(reply, "Scene not found");
     return visionSnapshotForUser(store, userId, campaignId, scene);
   });
 
@@ -3386,6 +3943,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const userId = currentUserId(store, request.headers)!;
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
+    if (!canReadSceneRecord(store, userId, scene)) return notFound(reply, "Scene not found");
     const point = normalizeVisionSamplePoint(scene, request.query.x, request.query.y);
     if (!point) return badRequest(reply, "x and y must be finite scene coordinates");
     return visionPointSampleForUser(store, userId, campaignId, scene, point);
@@ -3400,19 +3958,33 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return sceneRenderingDiagnostics(store, scene);
   });
 
-  app.patch<{ Params: { sceneId: string }; Body: Partial<Scene> & { folder?: string | null } }>("/api/v1/scenes/:sceneId", async (request, reply) => {
+  app.patch<{ Params: { sceneId: string }; Body: ScenePatchBody }>("/api/v1/scenes/:sceneId", async (request, reply) => {
     const campaignId = campaignIdForScene(store, request.params.sceneId);
     if (!campaignId) return notFound(reply, "Scene not found");
     const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "scene.update");
     if (allowed !== true) return allowed;
     const userId = currentUserId(store, request.headers);
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
-    if (SCENE_EDITABLE_PATCH_FIELDS.some((field) => field in request.body)) captureSceneEditSnapshot(scene, userId, "scene.update");
-    const body = { ...request.body };
-    const activating = body.active === true && !scene.active;
+    const normalizedBody = normalizeScenePatch(request.body);
+    if (!normalizedBody.ok) return badRequest(reply, normalizedBody.error);
+    const body = normalizedBody.value;
+    const requestedWorldId = body.worldId === null ? undefined : body.worldId;
+    if (requestedWorldId && !store.state.worlds.some((world) => world.id === requestedWorldId && world.campaignId === campaignId)) {
+      return badRequest(reply, "Scene worldId must reference a world in the same campaign");
+    }
+    const requestedBackgroundAssetId = body.backgroundAssetId === null ? undefined : body.backgroundAssetId;
+    if (requestedBackgroundAssetId && !store.state.assets.some((asset) => asset.id === requestedBackgroundAssetId && asset.campaignId === campaignId)) {
+      return badRequest(reply, "Scene backgroundAssetId must reference an asset in the same campaign");
+    }
+    if (SCENE_EDITABLE_PATCH_FIELDS.some((field) => field in body)) captureSceneEditSnapshot(scene, userId, "scene.update");
+    const { worldId: _worldId, backgroundAssetId: _backgroundAssetId, folder: _folder, ...sceneFields } = body;
+    const patch: Partial<Scene> = { ...sceneFields };
+    if (Object.prototype.hasOwnProperty.call(body, "worldId")) patch.worldId = requestedWorldId;
+    if (Object.prototype.hasOwnProperty.call(body, "backgroundAssetId")) patch.backgroundAssetId = requestedBackgroundAssetId;
+    const activating = patch.active === true && !scene.active;
     const activatedAt = nowIso();
     const deactivatedSceneIds: string[] = [];
-    if (body.active === true) {
+    if (patch.active === true) {
       for (const existingScene of store.state.scenes) {
         if (existingScene.campaignId === campaignId && existingScene.id !== scene.id && existingScene.active) {
           deactivatedSceneIds.push(existingScene.id);
@@ -3421,12 +3993,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         }
       }
     }
-    delete body.activationHistory;
-    if (body.folder !== undefined) {
-      scene.folder = normalizeAssetFolder(body.folder);
-      delete body.folder;
-    }
-    Object.assign(scene, body, { updatedAt: activatedAt });
+    if (body.folder !== undefined) scene.folder = normalizeAssetFolder(body.folder);
+    Object.assign(scene, patch, { updatedAt: activatedAt });
     if (activating) {
       appendSceneActivationHistory(scene, {
         activatedAt,
@@ -4352,6 +4920,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "token.read");
     if (allowed !== true) return allowed;
     const userId = currentUserId(store, request.headers)!;
+    const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
+    if (!canReadSceneRecord(store, userId, scene)) return notFound(reply, "Scene not found");
     return visibleTokensForUser(store, userId, campaignId, store.state.tokens.filter((item) => item.sceneId === request.params.sceneId));
   });
 
@@ -4420,6 +4990,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const token = store.state.tokens.find((item) => item.id === request.params.tokenId);
     if (!token) return notFound(reply, "Token not found");
     const userId = currentUserId(store, request.headers)!;
+    const scene = store.state.scenes.find((item) => item.id === token.sceneId);
+    if (!scene || !canReadSceneRecord(store, userId, scene)) return notFound(reply, "Token not found");
     if (!isTokenVisibleToUser(store, userId, campaignId, token)) return notFound(reply, "Token not found");
     if (!canReadHiddenTokens(store, userId, campaignId) && tokenLayer(token) !== "player") return forbidden(reply, "Only player layer tokens can be targeted");
     if (typeof request.body.targeted !== "boolean") return badRequest(reply, "targeted must be a boolean");
@@ -4429,7 +5001,6 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     token.targetedByUserIds = [...targetedByUserIds].sort();
     token.updatedAt = nowIso();
     store.save();
-    const scene = store.state.scenes.find((item) => item.id === token.sceneId);
     if (scene) {
       broadcast(
         createEvent({
@@ -4454,9 +5025,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const token = store.state.tokens.find((item) => item.id === request.params.tokenId);
     if (!token) return notFound(reply, "Token not found");
     const userId = currentUserId(store, request.headers)!;
+    const readableScene = store.state.scenes.find((item) => item.id === token.sceneId);
+    if (!readableScene || !canReadSceneRecord(store, userId, readableScene)) return notFound(reply, "Token not found");
     if (!isTokenVisibleToUser(store, userId, campaignId, token)) return notFound(reply, "Token not found");
     if (moved && !canMoveToken(store, userId, campaignId, token)) return forbidden(reply, "Missing token ownership");
-    const scene = store.state.scenes.find((item) => item.id === token.sceneId);
+    const scene = readableScene;
     const normalizedVision = normalizeTokenVisionPatch(request.body, token);
     if ("error" in normalizedVision) return badRequest(reply, normalizedVision.error);
     const normalizedTabletop = normalizeTokenTabletopPatch(request.body, campaignMemberUserIds(store, campaignId));
@@ -4491,6 +5064,33 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const userId = currentUserId(store, request.headers)!;
     if (!isTokenVisibleToUser(store, userId, campaignId, store.state.tokens[index]!)) return notFound(reply, "Token not found");
     const deleted = store.state.tokens.splice(index, 1)[0]!;
+    let encounterReferences = 0;
+    let combatantReferences = 0;
+    let removedCombats = 0;
+    store.state.encounters = store.state.encounters.map((encounter) => {
+      if (encounter.campaignId !== campaignId || !encounter.tokenIds.includes(deleted.id)) return encounter;
+      encounterReferences += 1;
+      return { ...encounter, tokenIds: encounter.tokenIds.filter((tokenId) => tokenId !== deleted.id), updatedAt: nowIso() };
+    });
+    store.state.combats = store.state.combats
+      .map((combat) => {
+        if (combat.campaignId !== campaignId || !combat.combatants.some((combatant) => combatant.tokenId === deleted.id)) return combat;
+        combatantReferences += combat.combatants.filter((combatant) => combatant.tokenId === deleted.id).length;
+        return { ...combat, combatants: combat.combatants.filter((combatant) => combatant.tokenId !== deleted.id), updatedAt: nowIso() };
+      })
+      .filter((combat) => {
+        if (combat.campaignId !== campaignId || combat.combatants.length > 0) return true;
+        removedCombats += 1;
+        return false;
+      });
+    appendServerAuditLog(store, userId, {
+      campaignId,
+      action: "token.delete",
+      targetType: "token",
+      targetId: deleted.id,
+      before: deleted,
+      after: { deleted: true, detachedEncounters: encounterReferences, detachedCombatants: combatantReferences, removedEmptyCombats: removedCombats }
+    });
     store.save();
     const scene = store.state.scenes.find((item) => item.id === deleted.sceneId);
     if (scene)
@@ -4517,8 +5117,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
+    const worldId = typeof request.body.worldId === "string" ? request.body.worldId : undefined;
+    if (worldId && !store.state.worlds.some((world) => world.id === worldId && world.campaignId === request.params.campaignId)) {
+      return badRequest(reply, "Actor worldId must reference a world in the same campaign");
+    }
     const actor = createTimestamped("act", {
       campaignId: request.params.campaignId,
+      worldId,
       systemId: request.body.systemId ?? DEFAULT_SYSTEM_ID,
       ownerUserId: request.body.ownerUserId,
       type: request.body.type ?? "character",
@@ -4543,6 +5148,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return actorPayloadForUser(store, userId, actor);
   });
 
+  app.get<{ Params: { actorId: string } }>("/api/v1/actors/:actorId", async (request, reply) => {
+    const actor = store.state.actors.find((item) => item.id === request.params.actorId);
+    if (!actor) return notFound(reply, "Actor not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, actor.campaignId, "actor.read");
+    if (allowed !== true) return allowed;
+    return actorPayloadForUser(store, currentUserId(store, request.headers)!, actor);
+  });
+
   app.patch<{ Params: { actorId: string }; Body: ActorPatchBody }>("/api/v1/actors/:actorId", async (request, reply) => {
     const actor = store.state.actors.find((item) => item.id === request.params.actorId);
     if (!actor) return notFound(reply, "Actor not found");
@@ -4557,6 +5170,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (updatesAccessControl && !canReadActorPrivateData(store, userId, actor.campaignId, actor)) {
       return forbidden(reply, "Missing permission: actor.readPrivate");
     }
+    const requestedWorldId = request.body.worldId === null ? undefined : request.body.worldId;
+    if (requestedWorldId && !store.state.worlds.some((world) => world.id === requestedWorldId && world.campaignId === actor.campaignId)) {
+      return badRequest(reply, "Actor worldId must reference a world in the same campaign");
+    }
     Object.assign(actor, actorPatchFromBody(request.body), { updatedAt: nowIso() });
     store.save();
     broadcast(
@@ -4568,6 +5185,52 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       })
     );
     return actorPayloadForUser(store, userId, actor);
+  });
+
+  app.delete<{ Params: { actorId: string } }>("/api/v1/actors/:actorId", async (request, reply) => {
+    const index = store.state.actors.findIndex((item) => item.id === request.params.actorId);
+    const actor = store.state.actors[index];
+    if (!actor) return notFound(reply, "Actor not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, actor.campaignId, "actor.delete");
+    if (allowed !== true) return allowed;
+    const userId = currentUserId(store, request.headers)!;
+    store.state.actors.splice(index, 1);
+    let tokenCount = 0;
+    let itemCount = 0;
+    let combatantCount = 0;
+    for (const token of store.state.tokens) {
+      if (token.actorId !== actor.id) continue;
+      token.actorId = undefined;
+      token.updatedAt = nowIso();
+      tokenCount += 1;
+    }
+    for (const item of store.state.items) {
+      if (item.actorId !== actor.id) continue;
+      item.actorId = undefined;
+      item.updatedAt = nowIso();
+      itemCount += 1;
+    }
+    for (const combat of store.state.combats) {
+      for (const combatant of combat.combatants) {
+        if (combatant.actorId !== actor.id) continue;
+        combatant.actorId = undefined;
+        combatantCount += 1;
+      }
+      if (combat.combatants.some((combatant) => combatant.actorId === undefined)) combat.updatedAt = nowIso();
+    }
+    for (const journal of store.state.journals) journal.visibleToActorIds = journal.visibleToActorIds.filter((id) => id !== actor.id);
+    for (const handout of store.state.handouts) handout.visibleToActorIds = (handout.visibleToActorIds ?? []).filter((id) => id !== actor.id);
+    appendServerAuditLog(store, userId, {
+      campaignId: actor.campaignId,
+      action: "actor.delete",
+      targetType: "actor",
+      targetId: actor.id,
+      before: actor,
+      after: { deleted: true, detachedTokens: tokenCount, detachedItems: itemCount, detachedCombatants: combatantCount }
+    });
+    store.save();
+    broadcast(createEvent({ campaignId: actor.campaignId, type: "actor.deleted", actorUserId: userId, targetId: actor.id, payload: actor }));
+    return actor;
   });
 
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/items", async (request, reply) => {
@@ -4586,8 +5249,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (actorId !== undefined && !store.state.actors.some((actor) => actor.id === actorId && actor.campaignId === request.params.campaignId)) {
       return badRequest(reply, "Item actorId must reference an actor in the same campaign");
     }
+    const worldId = request.body.worldId === undefined || request.body.worldId === null ? undefined : String(request.body.worldId);
+    if (worldId && !store.state.worlds.some((world) => world.id === worldId && world.campaignId === request.params.campaignId)) {
+      return badRequest(reply, "Item worldId must reference a world in the same campaign");
+    }
     const item = createTimestamped("itm", {
       campaignId: request.params.campaignId,
+      worldId,
       systemId: String(request.body.systemId ?? DEFAULT_SYSTEM_ID),
       actorId,
       type: String(request.body.type ?? "gear"),
@@ -4596,10 +5264,21 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     });
     store.state.items.push(item);
     store.save();
+    broadcast(createEvent({ campaignId: item.campaignId, type: "item.created", actorUserId: userId, targetId: item.id, payload: item }));
     return itemPayloadForUser(store, userId, item);
   });
 
-  app.patch<{ Params: { itemId: string }; Body: Partial<Item> & { actorId?: string | null } }>("/api/v1/items/:itemId", async (request, reply) => {
+  app.get<{ Params: { itemId: string } }>("/api/v1/items/:itemId", async (request, reply) => {
+    const item = store.state.items.find((candidate) => candidate.id === request.params.itemId);
+    if (!item) return notFound(reply, "Item not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, item.campaignId, "actor.read");
+    if (allowed !== true) return allowed;
+    const userId = currentUserId(store, request.headers)!;
+    if (!visibleItemsForUser(store, userId, item.campaignId).some((candidate) => candidate.id === item.id)) return notFound(reply, "Item not found");
+    return itemPayloadForUser(store, userId, item);
+  });
+
+  app.patch<{ Params: { itemId: string }; Body: Omit<Partial<Item>, "actorId" | "worldId"> & { actorId?: string | null; worldId?: string | null } }>("/api/v1/items/:itemId", async (request, reply) => {
     const item = store.state.items.find((candidate) => candidate.id === request.params.itemId);
     if (!item) return notFound(reply, "Item not found");
     const userId = requireUser(store, reply, request.headers);
@@ -4610,6 +5289,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const nextActorId = request.body.actorId === null ? undefined : request.body.actorId !== undefined ? String(request.body.actorId) : item.actorId;
     const nextActor = nextActorId ? store.state.actors.find((candidate) => candidate.id === nextActorId && candidate.campaignId === item.campaignId) : undefined;
     if (nextActorId && !nextActor) return badRequest(reply, "Item actorId must reference an actor in the same campaign");
+    const nextWorldId = request.body.worldId === null ? undefined : request.body.worldId !== undefined ? String(request.body.worldId) : item.worldId;
+    if (nextWorldId && !store.state.worlds.some((world) => world.id === nextWorldId && world.campaignId === item.campaignId)) {
+      return badRequest(reply, "Item worldId must reference a world in the same campaign");
+    }
     const canUpdateCampaign = canCampaign(store, userId, item.campaignId, "actor.update");
     const canUpdateOwned = actor?.ownerUserId === userId && canCampaign(store, userId, item.campaignId, "actor.updateOwned");
     const canUpdateNextOwned = nextActor?.ownerUserId === userId && canCampaign(store, userId, item.campaignId, "actor.updateOwned");
@@ -4621,6 +5304,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (request.body.name !== undefined) item.name = request.body.name;
     if (request.body.type !== undefined) item.type = request.body.type;
     if (request.body.actorId !== undefined) item.actorId = nextActorId;
+    if (request.body.worldId !== undefined) item.worldId = nextWorldId;
     if (request.body.data !== undefined) item.data = request.body.data;
     item.updatedAt = nowIso();
     store.save();
@@ -4644,7 +5328,27 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         })
       );
     }
+    broadcast(createEvent({ campaignId: item.campaignId, type: "item.updated", actorUserId: userId, targetId: item.id, payload: item }));
     return itemPayloadForUser(store, userId, item, [actor?.id, nextActor?.id]);
+  });
+
+  app.delete<{ Params: { itemId: string } }>("/api/v1/items/:itemId", async (request, reply) => {
+    const index = store.state.items.findIndex((candidate) => candidate.id === request.params.itemId);
+    const item = store.state.items[index];
+    if (!item) return notFound(reply, "Item not found");
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    const activeOrganization = requireCampaignActiveOrganization(store, reply, request.headers, userId, item.campaignId);
+    if (activeOrganization !== true) return activeOrganization;
+    const actor = item.actorId ? store.state.actors.find((candidate) => candidate.id === item.actorId && candidate.campaignId === item.campaignId) : undefined;
+    const canDelete = canCampaign(store, userId, item.campaignId, "actor.delete");
+    const canDeleteOwned = actor?.ownerUserId === userId && canCampaign(store, userId, item.campaignId, "actor.updateOwned");
+    if (!canDelete && !canDeleteOwned) return forbidden(reply, "Missing permission: actor.delete");
+    store.state.items.splice(index, 1);
+    appendServerAuditLog(store, userId, { campaignId: item.campaignId, action: "item.delete", targetType: "item", targetId: item.id, before: item, after: { deleted: true } });
+    store.save();
+    broadcast(createEvent({ campaignId: item.campaignId, type: "item.deleted", actorUserId: userId, targetId: item.id, payload: item }));
+    return item;
   });
 
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/journal", async (request, reply) => {
@@ -4652,8 +5356,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (typeof userId !== "string") return userId;
     const allowed = requireCampaignPermissionForUser(store, reply, request.headers, userId, request.params.campaignId, "journal.read");
     if (allowed !== true) return allowed;
-    const canReadSecret = canCampaign(store, userId, request.params.campaignId, "journal.readSecret");
-    return store.state.journals.filter((item) => item.campaignId === request.params.campaignId).filter((item) => item.visibility === "public" || canReadSecret || item.visibleToUserIds.includes(userId));
+    return store.state.journals.filter((item) => item.campaignId === request.params.campaignId && canReadJournalEntry(store, userId, item));
   });
 
   app.post<{ Params: { campaignId: string }; Body: Partial<JournalEntry> }>("/api/v1/campaigns/:campaignId/journal", async (request, reply) => {
@@ -4661,8 +5364,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
+    const worldId = typeof request.body.worldId === "string" ? request.body.worldId : undefined;
+    if (worldId && !store.state.worlds.some((world) => world.id === worldId && world.campaignId === request.params.campaignId)) {
+      return badRequest(reply, "Journal worldId must reference a world in the same campaign");
+    }
     const entry = createTimestamped("jnl", {
       campaignId: request.params.campaignId,
+      worldId,
       parentId: request.body.parentId,
       title: request.body.title ?? "New Journal Entry",
       body: request.body.body ?? "",
@@ -4686,6 +5394,17 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return entry;
   });
 
+  app.get<{ Params: { entryId: string } }>("/api/v1/journal/:entryId", async (request, reply) => {
+    const entry = store.state.journals.find((item) => item.id === request.params.entryId);
+    if (!entry) return notFound(reply, "Journal entry not found");
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    const activeOrganization = requireCampaignActiveOrganization(store, reply, request.headers, userId, entry.campaignId);
+    if (activeOrganization !== true) return activeOrganization;
+    if (!canReadJournalEntry(store, userId, entry)) return notFound(reply, "Journal entry not found");
+    return entry;
+  });
+
   app.patch<{ Params: { entryId: string }; Body: JournalEntryPatchBody }>("/api/v1/journal/:entryId", async (request, reply) => {
     const entry = store.state.journals.find((item) => item.id === request.params.entryId);
     if (!entry) return notFound(reply, "Journal entry not found");
@@ -4693,6 +5412,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
+    const requestedWorldId = request.body.worldId === null ? undefined : request.body.worldId;
+    if (requestedWorldId && !store.state.worlds.some((world) => world.id === requestedWorldId && world.campaignId === entry.campaignId)) {
+      return badRequest(reply, "Journal worldId must reference a world in the same campaign");
+    }
     Object.assign(entry, journalEntryPatchFromBody(request.body), {
       updatedAt: nowIso(),
       updatedBy: userId
@@ -4707,6 +5430,125 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       })
     );
     return entry;
+  });
+
+  app.delete<{ Params: { entryId: string } }>("/api/v1/journal/:entryId", async (request, reply) => {
+    const index = store.state.journals.findIndex((item) => item.id === request.params.entryId);
+    const entry = store.state.journals[index];
+    if (!entry) return notFound(reply, "Journal entry not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, entry.campaignId, "journal.delete");
+    if (allowed !== true) return allowed;
+    const userId = currentUserId(store, request.headers)!;
+    store.state.journals.splice(index, 1);
+    for (const child of store.state.journals) if (child.parentId === entry.id) child.parentId = undefined;
+    for (const session of store.state.campaignSessions) if (session.recapJournalId === entry.id) session.recapJournalId = undefined;
+    appendServerAuditLog(store, userId, { campaignId: entry.campaignId, action: "journal.delete", targetType: "journal", targetId: entry.id, before: entry, after: { deleted: true } });
+    store.save();
+    broadcast(createEvent({ campaignId: entry.campaignId, type: "journal.deleted", actorUserId: userId, targetId: entry.id, payload: entry }));
+    return entry;
+  });
+
+  app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/handouts", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "handout.read");
+    if (allowed !== true) return allowed;
+    const userId = currentUserId(store, request.headers)!;
+    return store.state.handouts
+      .filter((handout) => handout.campaignId === request.params.campaignId && canReadHandout(store, userId, handout))
+      .map((handout) => normalizeHandout(handout));
+  });
+
+  app.post<{ Params: { campaignId: string }; Body: Partial<Handout> }>("/api/v1/campaigns/:campaignId/handouts", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "handout.create");
+    if (allowed !== true) return allowed;
+    const normalized = normalizeHandoutPatch(store, request.params.campaignId, request.body ?? {}, true);
+    if (!normalized.ok) return badRequest(reply, normalized.error);
+    const userId = currentUserId(store, request.headers)!;
+    const handout = normalizeHandout(
+      createTimestamped("hnd", {
+        campaignId: request.params.campaignId,
+        title: normalized.value.title!,
+        body: normalized.value.body!,
+        visibility: normalized.value.visibility!,
+        worldId: normalized.value.worldId,
+        visibleToUserIds: normalized.value.visibleToUserIds ?? [],
+        visibleToActorIds: normalized.value.visibleToActorIds ?? [],
+        assetIds: normalized.value.assetIds ?? [],
+        tags: normalized.value.tags ?? [],
+        readByUserIds: normalized.value.readByUserIds ?? [],
+        createdBy: userId,
+        updatedBy: userId
+      }) satisfies Handout
+    );
+    store.state.handouts.push(handout);
+    appendServerAuditLog(store, userId, { campaignId: handout.campaignId, action: "handout.create", targetType: "handout", targetId: handout.id, after: handout });
+    store.save();
+    broadcast(createEvent({ campaignId: handout.campaignId, type: "handout.created", actorUserId: userId, targetId: handout.id, payload: handout }));
+    return handout;
+  });
+
+  app.get<{ Params: { handoutId: string } }>("/api/v1/handouts/:handoutId", async (request, reply) => {
+    const handout = store.state.handouts.find((item) => item.id === request.params.handoutId);
+    if (!handout) return notFound(reply, "Handout not found");
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    const activeOrganization = requireCampaignActiveOrganization(store, reply, request.headers, userId, handout.campaignId);
+    if (activeOrganization !== true) return activeOrganization;
+    if (!canReadHandout(store, userId, handout)) return notFound(reply, "Handout not found");
+    return normalizeHandout(handout);
+  });
+
+  app.patch<{ Params: { handoutId: string }; Body: HandoutPatchBody }>("/api/v1/handouts/:handoutId", async (request, reply) => {
+    const index = store.state.handouts.findIndex((item) => item.id === request.params.handoutId);
+    const existing = store.state.handouts[index];
+    if (!existing) return notFound(reply, "Handout not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, existing.campaignId, "handout.update");
+    if (allowed !== true) return allowed;
+    const normalized = normalizeHandoutPatch(store, existing.campaignId, request.body ?? {});
+    if (!normalized.ok) return badRequest(reply, normalized.error);
+    const userId = currentUserId(store, request.headers)!;
+    const before = normalizeHandout(existing);
+    const updated = normalizeHandout({ ...existing, ...normalized.value, updatedBy: userId, updatedAt: nowIso() });
+    store.state.handouts[index] = updated;
+    appendServerAuditLog(store, userId, { campaignId: updated.campaignId, action: "handout.update", targetType: "handout", targetId: updated.id, before, after: updated });
+    store.save();
+    broadcast(createEvent({ campaignId: updated.campaignId, type: "handout.updated", actorUserId: userId, targetId: updated.id, payload: updated }));
+    return updated;
+  });
+
+  app.post<{ Params: { handoutId: string } }>("/api/v1/handouts/:handoutId/read", async (request, reply) => {
+    const index = store.state.handouts.findIndex((item) => item.id === request.params.handoutId);
+    const existing = store.state.handouts[index];
+    if (!existing) return notFound(reply, "Handout not found");
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    const activeOrganization = requireCampaignActiveOrganization(store, reply, request.headers, userId, existing.campaignId);
+    if (activeOrganization !== true) return activeOrganization;
+    if (!canReadHandout(store, userId, existing)) return notFound(reply, "Handout not found");
+    const handout = normalizeHandout(existing);
+    handout.readByUserIds ??= [];
+    if (!handout.readByUserIds.includes(userId)) {
+      handout.readByUserIds.push(userId);
+      handout.updatedAt = nowIso();
+      store.state.handouts[index] = handout;
+      store.save();
+      broadcast(createEvent({ campaignId: handout.campaignId, type: "handout.updated", actorUserId: userId, targetId: handout.id, payload: handout }));
+    }
+    return handout;
+  });
+
+  app.delete<{ Params: { handoutId: string } }>("/api/v1/handouts/:handoutId", async (request, reply) => {
+    const index = store.state.handouts.findIndex((item) => item.id === request.params.handoutId);
+    const existing = store.state.handouts[index];
+    if (!existing) return notFound(reply, "Handout not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, existing.campaignId, "handout.delete");
+    if (allowed !== true) return allowed;
+    const handout = normalizeHandout(existing);
+    const userId = currentUserId(store, request.headers)!;
+    store.state.handouts.splice(index, 1);
+    appendServerAuditLog(store, userId, { campaignId: handout.campaignId, action: "handout.delete", targetType: "handout", targetId: handout.id, before: handout, after: { deleted: true } });
+    store.save();
+    broadcast(createEvent({ campaignId: handout.campaignId, type: "handout.deleted", actorUserId: userId, targetId: handout.id, payload: handout }));
+    return handout;
   });
 
   app.post<{
@@ -4880,7 +5722,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/audio", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.read");
     if (allowed !== true) return allowed;
-    return store.state.audioTracks.filter((track) => track.campaignId === request.params.campaignId);
+    const userId = currentUserId(store, request.headers)!;
+    return store.state.audioTracks.filter((track) => track.campaignId === request.params.campaignId && (canAccessPreparedScenes(store, userId, request.params.campaignId) || track.playing));
   });
 
   app.post<{ Params: { campaignId: string }; Body: Partial<AudioTrack> }>("/api/v1/campaigns/:campaignId/audio", async (request, reply) => {
@@ -5146,28 +5989,88 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/encounters", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.read");
     if (allowed !== true) return allowed;
-    return store.state.encounters.filter((item) => item.campaignId === request.params.campaignId);
+    const userId = currentUserId(store, request.headers)!;
+    const activeEncounterIds = new Set(
+      store.state.combats.filter((combat) => combat.campaignId === request.params.campaignId && combat.active && combat.encounterId).map((combat) => combat.encounterId!)
+    );
+    return store.state.encounters.filter(
+      (item) => item.campaignId === request.params.campaignId && (canAccessPreparedScenes(store, userId, request.params.campaignId) || activeEncounterIds.has(item.id))
+    );
   });
 
   app.post<{ Params: { campaignId: string }; Body: Partial<Encounter> }>("/api/v1/campaigns/:campaignId/encounters", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "combat.manage");
     if (allowed !== true) return allowed;
+    const normalized = normalizeEncounterPatch(store, request.params.campaignId, request.body ?? {}, true);
+    if (!normalized.ok) return badRequest(reply, normalized.error);
+    const userId = currentUserId(store, request.headers)!;
     const encounter = createTimestamped("enc", {
       campaignId: request.params.campaignId,
-      name: request.body.name ?? "New Encounter",
-      summary: request.body.summary ?? "",
-      tokenIds: request.body.tokenIds ?? [],
-      difficulty: request.body.difficulty
+      worldId: normalized.value.worldId,
+      name: normalized.value.name!,
+      summary: normalized.value.summary!,
+      tokenIds: normalized.value.tokenIds ?? [],
+      difficulty: normalized.value.difficulty
     }) satisfies Encounter;
     store.state.encounters.push(encounter);
+    appendServerAuditLog(store, userId, { campaignId: encounter.campaignId, action: "encounter.create", targetType: "encounter", targetId: encounter.id, after: encounter });
     store.save();
+    broadcast(createEvent({ campaignId: encounter.campaignId, type: "encounter.created", actorUserId: userId, targetId: encounter.id, payload: encounter }));
+    return encounter;
+  });
+
+  app.get<{ Params: { encounterId: string } }>("/api/v1/encounters/:encounterId", async (request, reply) => {
+    const encounter = store.state.encounters.find((item) => item.id === request.params.encounterId);
+    if (!encounter) return notFound(reply, "Encounter not found");
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    const activeOrganization = requireCampaignActiveOrganization(store, reply, request.headers, userId, encounter.campaignId);
+    if (activeOrganization !== true) return activeOrganization;
+    if (!canReadEncounter(store, userId, encounter)) return notFound(reply, "Encounter not found");
+    return encounter;
+  });
+
+  app.patch<{ Params: { encounterId: string }; Body: EncounterPatchBody }>("/api/v1/encounters/:encounterId", async (request, reply) => {
+    const encounter = store.state.encounters.find((item) => item.id === request.params.encounterId);
+    if (!encounter) return notFound(reply, "Encounter not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, encounter.campaignId, "combat.manage");
+    if (allowed !== true) return allowed;
+    const normalized = normalizeEncounterPatch(store, encounter.campaignId, request.body ?? {});
+    if (!normalized.ok) return badRequest(reply, normalized.error);
+    const userId = currentUserId(store, request.headers)!;
+    const before = { ...encounter, tokenIds: [...encounter.tokenIds] };
+    Object.assign(encounter, normalized.value, { updatedAt: nowIso() });
+    appendServerAuditLog(store, userId, { campaignId: encounter.campaignId, action: "encounter.update", targetType: "encounter", targetId: encounter.id, before, after: encounter });
+    store.save();
+    broadcast(createEvent({ campaignId: encounter.campaignId, type: "encounter.updated", actorUserId: userId, targetId: encounter.id, payload: encounter }));
+    return encounter;
+  });
+
+  app.delete<{ Params: { encounterId: string } }>("/api/v1/encounters/:encounterId", async (request, reply) => {
+    const index = store.state.encounters.findIndex((item) => item.id === request.params.encounterId);
+    const encounter = store.state.encounters[index];
+    if (!encounter) return notFound(reply, "Encounter not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, encounter.campaignId, "combat.manage");
+    if (allowed !== true) return allowed;
+    const userId = currentUserId(store, request.headers)!;
+    store.state.encounters.splice(index, 1);
+    for (const combat of store.state.combats) if (combat.encounterId === encounter.id) combat.encounterId = undefined;
+    for (const session of store.state.campaignSessions) {
+      if (!session.encounterIds.includes(encounter.id)) continue;
+      session.encounterIds = session.encounterIds.filter((id) => id !== encounter.id);
+      session.updatedAt = nowIso();
+      session.updatedBy = userId;
+    }
+    appendServerAuditLog(store, userId, { campaignId: encounter.campaignId, action: "encounter.delete", targetType: "encounter", targetId: encounter.id, before: encounter, after: { deleted: true } });
+    store.save();
+    broadcast(createEvent({ campaignId: encounter.campaignId, type: "encounter.deleted", actorUserId: userId, targetId: encounter.id, payload: encounter }));
     return encounter;
   });
 
   app.get<{ Params: { campaignId: string; systemId: string } }>("/api/v1/campaigns/:campaignId/systems/:systemId/encounter-threats", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.read");
     if (allowed !== true) return allowed;
-    const system = installedSystems.find((item) => item.id === request.params.systemId);
+    const system = findRegisteredSystem(store.state, request.params.systemId);
     if (!system) return notFound(reply, "System not found");
     return encounterThreatsForSystem(system.id);
   });
@@ -5180,7 +6083,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const permission: PermissionName = body.createEncounter ? "combat.manage" : "campaign.read";
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, permission);
     if (allowed !== true) return allowed;
-    const system = installedSystems.find((item) => item.id === request.params.systemId);
+    const system = findRegisteredSystem(store.state, request.params.systemId);
     if (!system) return notFound(reply, "System not found");
     const party = partyActorsForSystem(store, request.params.campaignId, system.id, body.partyActorIds);
     const plan = encounterPlanForSystem(system.id, party, body.threats ?? []);
@@ -5651,10 +6554,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
+    const beforeState = store.state;
+    let appliedChanges: ProposalChange[] = [];
     try {
       const preparedChanges = prepareProposalChanges(store, proposal.campaignId, proposal.createdByUserId ?? userId, proposal.changesJson, { currentProposalId: proposal.id });
       if ("error" in preparedChanges) throw new Error(preparedChanges.message);
+      const missingPermission = missingProposalChangePermission(preparedChanges.changes, permissionsForUser(store, userId, proposal.campaignId));
+      if (missingPermission) return forbidden(reply, `Missing permission: ${missingPermission}`);
       proposal.changesJson = preparedChanges.changes;
+      appliedChanges = structuredClone(proposal.changesJson);
       store.replace(applyProposal(store.state, proposal, userId));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Proposal could not be applied";
@@ -5682,6 +6590,18 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       return reply.code(409).send({ error: "proposal_not_ready", message });
     }
     const applied = store.state.proposals.find((item) => item.id === request.params.proposalId);
+    if (!applied) return reply.code(500).send({ error: "proposal_apply_incomplete", message: "Applied proposal record was not persisted" });
+    linkAppliedRecapToSession(store, applied, userId);
+    appendServerAuditLog(store, userId, {
+      campaignId: applied.campaignId,
+      action: "proposal.apply",
+      targetType: "proposal",
+      targetId: applied.id,
+      before: { status: "approved", changeCount: appliedChanges.length },
+      after: { status: applied.status, entities: [...new Set(appliedChanges.map((change) => change.entity))], reversible: Boolean(applied.inverseChangesJson) }
+    });
+    broadcastProposalEntityChanges(store, beforeState, applied.campaignId, appliedChanges, userId, broadcast);
+    store.save();
     broadcast(
       createEvent({
         campaignId: proposal.campaignId,
@@ -5691,6 +6611,44 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       })
     );
     return applied;
+  });
+
+  app.post<{ Params: { proposalId: string } }>("/api/v1/proposals/:proposalId/revert", async (request, reply) => {
+    const proposal = store.state.proposals.find((item) => item.id === request.params.proposalId);
+    if (!proposal) return notFound(reply, "Proposal not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, proposal.campaignId, "ai.applyChanges");
+    if (allowed !== true) return allowed;
+    const userId = currentUserId(store, request.headers)!;
+    const inverseChanges = structuredClone(proposal.inverseChangesJson ?? []);
+    const beforeState = store.state;
+    try {
+      store.replace(revertProposal(store.state, proposal, userId));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Proposal could not be reverted";
+      appendServerAuditLog(store, userId, {
+        campaignId: proposal.campaignId,
+        action: "proposal.revert.failed",
+        targetType: "proposal",
+        targetId: proposal.id,
+        after: { status: proposal.status, message }
+      });
+      store.save();
+      return reply.code(409).send({ error: "proposal_not_revertible", message });
+    }
+    const reverted = store.state.proposals.find((item) => item.id === proposal.id);
+    if (!reverted) return reply.code(500).send({ error: "proposal_revert_incomplete", message: "Reverted proposal record was not persisted" });
+    appendServerAuditLog(store, userId, {
+      campaignId: reverted.campaignId,
+      action: "proposal.revert",
+      targetType: "proposal",
+      targetId: reverted.id,
+      before: { status: "applied", changeCount: proposal.changesJson.length },
+      after: { status: reverted.status, revertedChangeCount: inverseChanges.length }
+    });
+    broadcastProposalEntityChanges(store, beforeState, reverted.campaignId, inverseChanges, userId, broadcast);
+    store.save();
+    broadcast(createEvent({ campaignId: reverted.campaignId, type: "proposal.reverted", actorUserId: userId, targetId: reverted.id, payload: reverted }));
+    return reverted;
   });
 
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/content-imports", async (request, reply) => {
@@ -6177,7 +7135,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const providerTools = tools.filter((tool) => aiToolAvailableToCaller(tool, permissions));
     thread.advertisedToolNames = providerTools.map((tool) => tool.name);
     thread.advertisedTools = providerTools.map((tool) => ({ name: tool.name, requiredPermissions: [...tool.requiredPermissions], permissionSafe: aiToolPermissionSafe(tool) }));
-    const toolContext = createAiToolContext(store, request.params.campaignId, userId, permissions, aiToolRuntime, turnAbortController.signal);
+    const toolContext = createAiToolContext(store, request.params.campaignId, userId, permissions, aiToolRuntime, turnAbortController.signal, thread.id);
     let content = "";
     const events: AiProviderEvent[] = [];
     let providerEventsSeen = 0;
@@ -6473,7 +7431,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const canReadPublic = canCampaign(store, userId, request.params.campaignId, "ai.readPublicMemory");
     const canReadGm = canCampaign(store, userId, request.params.campaignId, "ai.readGmMemory");
     if (!canReadPublic && !canReadGm) return forbidden(reply, "Missing permission: ai.readPublicMemory");
-    return store.state.aiMemory.filter((item) => item.campaignId === request.params.campaignId).filter((item) => item.visibility === "public" || canReadGm);
+    return store.state.aiMemory
+      .filter((item) => item.campaignId === request.params.campaignId)
+      .map(normalizeAiMemoryFact)
+      .filter((item) => canReadGm || (canReadPublic && item.visibility === "public" && aiMemoryFactStatus(item) === "approved"));
   });
 
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/ai/tool-calls", async (request, reply) => {
@@ -6495,8 +7456,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const toolCall = store.state.aiToolCalls.find((call) => call.id === request.params.toolCallId);
     const thread = toolCall ? threadById.get(toolCall.threadId) : undefined;
     if (!toolCall || thread?.campaignId !== request.params.campaignId) return notFound(reply, "AI tool call not found");
+    const body = optionalJsonObjectBody(request.body);
+    if (!body) return badRequest(reply, "AI tool-call retry body must be a JSON object");
+    if (body.dryRun !== undefined && typeof body.dryRun !== "boolean") return badRequest(reply, "dryRun must be a boolean");
     const result = await retryFailedAiToolCalls(store, aiToolRuntime, {
-      dryRun: request.body?.dryRun === true,
+      dryRun: body.dryRun === true,
       campaignId: request.params.campaignId,
       toolCallId: request.params.toolCallId,
       limit: 1
@@ -6531,14 +7495,26 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   }>("/api/v1/campaigns/:campaignId/ai/memory", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "ai.proposeChanges");
     if (allowed !== true) return allowed;
-    const fact = createTimestamped("mem", {
+    const normalized = normalizeAiMemoryPatch(store, request.params.campaignId, request.body, true);
+    if (!normalized.ok) return badRequest(reply, normalized.error);
+    const userId = currentUserId(store, request.headers)!;
+    const fact = normalizeAiMemoryFact(createTimestamped("mem", {
       campaignId: request.params.campaignId,
-      text: request.body.text,
-      visibility: request.body.visibility ?? "gm_only",
-      sourceIds: request.body.sourceIds ?? []
-    }) satisfies AiMemoryFact;
+      worldId: normalized.value.worldId,
+      text: normalized.value.text!,
+      type: normalized.value.type,
+      subject: normalized.value.subject ?? undefined,
+      visibility: normalized.value.visibility!,
+      confidence: normalized.value.confidence ?? undefined,
+      sourceIds: normalized.value.sourceIds ?? [],
+      source: normalized.value.source,
+      createdBy: normalized.value.createdBy ?? "user",
+      status: "candidate" as const
+    }) satisfies AiMemoryFact);
     store.state.aiMemory.push(fact);
+    appendServerAuditLog(store, userId, { campaignId: fact.campaignId, action: "ai.memory.create", targetType: "ai_memory", targetId: fact.id, after: fact });
     store.save();
+    broadcast(createEvent({ campaignId: fact.campaignId, type: "ai.memory.created", actorUserId: userId, targetId: fact.id, payload: fact }));
     return fact;
   });
 
@@ -6550,7 +7526,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    const sourceText = request.body.sourceText?.trim() || defaultMemoryExtractionSource(store, request.params.campaignId, userId);
+    const body = optionalJsonObjectBody(request.body);
+    if (!body) return badRequest(reply, "AI memory extraction body must be a JSON object");
+    if (body.sourceText !== undefined && typeof body.sourceText !== "string") return badRequest(reply, "sourceText must be a string");
+    if (body.visibility !== undefined && body.visibility !== "public" && body.visibility !== "gm_only") return badRequest(reply, "AI memory visibility must be public or gm_only");
+    const requestedSourceText = typeof body.sourceText === "string" ? body.sourceText.trim() : "";
+    if (requestedSourceText.length > 50000) return badRequest(reply, "sourceText must be 50000 characters or fewer");
+    const sourceText = requestedSourceText || defaultMemoryExtractionSource(store, request.params.campaignId, userId);
     const startedAtMs = Date.now();
     const startedAt = new Date(startedAtMs).toISOString();
     const permissions = permissionsForUser(store, userId, request.params.campaignId);
@@ -6611,15 +7593,75 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         events
       });
     }
-    const memory = createTimestamped("mem", {
+    const memory = normalizeAiMemoryFact(createTimestamped("mem", {
       campaignId: request.params.campaignId,
       text: extractedMemoryText(providerOutput, sourceText),
-      visibility: request.body.visibility ?? "gm_only",
-      sourceIds: [thread.id]
-    }) satisfies AiMemoryFact;
+      type: "ai_suggestion" as const,
+      visibility: body.visibility === "public" ? "public" : "gm_only",
+      sourceIds: [thread.id],
+      source: { type: "ai_thread", id: thread.id, label: "Memory extraction" },
+      createdBy: "ai" as const,
+      status: "candidate" as const
+    }) satisfies AiMemoryFact);
     store.state.aiMemory.push(memory);
+    appendServerAuditLog(store, userId, { campaignId: memory.campaignId, action: "ai.memory.create", targetType: "ai_memory", targetId: memory.id, after: memory });
     store.save();
+    broadcast(createEvent({ campaignId: memory.campaignId, type: "ai.memory.created", actorUserId: userId, targetId: memory.id, payload: memory }));
     return { thread, memory, providerOutput, events };
+  });
+
+  app.get<{ Params: { factId: string } }>("/api/v1/ai/memory/:factId", async (request, reply) => {
+    const rawFact = store.state.aiMemory.find((item) => item.id === request.params.factId);
+    if (!rawFact) return notFound(reply, "Memory fact not found");
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    const activeOrganization = requireCampaignActiveOrganization(store, reply, request.headers, userId, rawFact.campaignId);
+    if (activeOrganization !== true) return activeOrganization;
+    const fact = normalizeAiMemoryFact(rawFact);
+    const canReadGm = canCampaign(store, userId, fact.campaignId, "ai.readGmMemory");
+    const canReadPublic = canCampaign(store, userId, fact.campaignId, "ai.readPublicMemory");
+    if (!canReadGm && !canReadPublic) return forbidden(reply, "Missing permission: ai.readPublicMemory");
+    if (!canReadGm && !(canReadPublic && fact.visibility === "public" && aiMemoryFactStatus(fact) === "approved")) return notFound(reply, "Memory fact not found");
+    return fact;
+  });
+
+  app.patch<{ Params: { factId: string }; Body: AiMemoryPatchBody }>("/api/v1/ai/memory/:factId", async (request, reply) => {
+    const index = store.state.aiMemory.findIndex((item) => item.id === request.params.factId);
+    const existing = store.state.aiMemory[index];
+    if (!existing) return notFound(reply, "Memory fact not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, existing.campaignId, "ai.applyChanges");
+    if (allowed !== true) return allowed;
+    const normalizedPatch = normalizeAiMemoryPatch(store, existing.campaignId, request.body ?? {});
+    if (!normalizedPatch.ok) return badRequest(reply, normalizedPatch.error);
+    const userId = currentUserId(store, request.headers)!;
+    const before = normalizeAiMemoryFact(existing);
+    const patch = { ...normalizedPatch.value };
+    const requestedStatus = patch.status;
+    delete patch.status;
+    const currentStatus = aiMemoryFactStatus(before);
+    if (requestedStatus === "approved" || requestedStatus === "rejected") return badRequest(reply, "Use the approve or reject action to set this status");
+    if (requestedStatus === "retconned" && currentStatus !== "approved") return conflict(reply, "Only an approved memory fact can be retconned");
+    if (requestedStatus === "candidate" && currentStatus === "approved") return conflict(reply, "Approved memory must be retconned before it can be revised as a candidate");
+    const next = normalizeAiMemoryFact({ ...before, ...patch, updatedAt: nowIso() });
+    if (requestedStatus === "retconned") {
+      next.status = "retconned";
+      next.type = "retconned_fact";
+      next.retconnedByUserId = userId;
+      next.retconnedAt = next.updatedAt;
+    } else if (requestedStatus === "candidate") {
+      next.status = "candidate";
+      delete next.approvedByUserId;
+      delete next.approvedAt;
+      delete next.rejectedByUserId;
+      delete next.rejectedAt;
+      delete next.retconnedByUserId;
+      delete next.retconnedAt;
+    }
+    store.state.aiMemory[index] = next;
+    appendServerAuditLog(store, userId, { campaignId: next.campaignId, action: "ai.memory.update", targetType: "ai_memory", targetId: next.id, before, after: next });
+    store.save();
+    broadcast(createEvent({ campaignId: next.campaignId, type: "ai.memory.updated", actorUserId: userId, targetId: next.id, payload: next }));
+    return next;
   });
 
   app.post<{ Params: { factId: string } }>("/api/v1/ai/memory/:factId/approve", async (request, reply) => {
@@ -6629,10 +7671,40 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
+    const status = aiMemoryFactStatus(fact);
+    if (status === "rejected" || status === "retconned") return conflict(reply, `A ${status} memory fact must be returned to candidate before approval`);
+    fact.status = "approved";
     fact.approvedByUserId = userId;
-    fact.updatedAt = nowIso();
+    fact.approvedAt = nowIso();
+    fact.updatedAt = fact.approvedAt;
+    delete fact.rejectedByUserId;
+    delete fact.rejectedAt;
+    appendServerAuditLog(store, userId, { campaignId: fact.campaignId, action: "ai.memory.approve", targetType: "ai_memory", targetId: fact.id, after: normalizeAiMemoryFact(fact) });
     store.save();
-    return fact;
+    const normalized = normalizeAiMemoryFact(fact);
+    broadcast(createEvent({ campaignId: fact.campaignId, type: "ai.memory.approved", actorUserId: userId, targetId: fact.id, payload: normalized }));
+    return normalized;
+  });
+
+  app.post<{ Params: { factId: string } }>("/api/v1/ai/memory/:factId/reject", async (request, reply) => {
+    const fact = store.state.aiMemory.find((item) => item.id === request.params.factId);
+    if (!fact) return notFound(reply, "Memory fact not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, fact.campaignId, "ai.applyChanges");
+    if (allowed !== true) return allowed;
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    if (aiMemoryFactStatus(fact) === "approved") return conflict(reply, "Approved memory must be retconned rather than rejected");
+    fact.status = "rejected";
+    fact.rejectedByUserId = userId;
+    fact.rejectedAt = nowIso();
+    fact.updatedAt = fact.rejectedAt;
+    delete fact.approvedByUserId;
+    delete fact.approvedAt;
+    appendServerAuditLog(store, userId, { campaignId: fact.campaignId, action: "ai.memory.reject", targetType: "ai_memory", targetId: fact.id, after: normalizeAiMemoryFact(fact) });
+    store.save();
+    const normalized = normalizeAiMemoryFact(fact);
+    broadcast(createEvent({ campaignId: fact.campaignId, type: "ai.memory.rejected", actorUserId: userId, targetId: fact.id, payload: normalized }));
+    return normalized;
   });
 
   app.delete<{ Params: { factId: string } }>("/api/v1/ai/memory/:factId", async (request, reply) => {
@@ -6661,104 +7733,287 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       })
     );
     store.save();
-    return fact;
-  });
-
-  app.post<{ Params: { campaignId: string }; Body: { transcript?: string } }>("/api/v1/campaigns/:campaignId/ai/session-recap", async (request, reply) => {
-    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "ai.proposeChanges");
-    if (allowed !== true) return allowed;
-    const userId = requireUser(store, reply, request.headers);
-    if (typeof userId !== "string") return userId;
-    const recap = request.body.transcript?.trim()
-      ? `Session recap: ${request.body.transcript.trim()}`
-      : `Session recap: ${store.state.chat
-          .filter((message) => message.campaignId === request.params.campaignId)
-          .map((message) => message.body)
-          .join(" ")}`;
-    const proposal: Proposal = createTimestamped("prop", {
-      campaignId: request.params.campaignId,
-      createdByUserId: userId,
-      createdByType: "ai" as const,
-      title: "Session Recap",
-      summary: recap.slice(0, 500),
-      status: "pending" as const,
-      changesJson: [
-        {
-          entity: "journal" as const,
-          action: "create" as const,
-          data: createTimestamped("jnl", {
-            campaignId: request.params.campaignId,
-            title: "Session Recap",
-            body: recap,
-            visibility: "gm_only" as const,
-            visibleToUserIds: [],
-            visibleToActorIds: [],
-            tags: ["ai", "recap"],
-            createdBy: userId,
-            updatedBy: userId
-          })
-        }
-      ],
-      diffJson: {},
-      approvalRequired: true
-    });
-    proposal.history = [proposalHistoryEntry({ action: "created", status: "pending", at: proposal.createdAt, actorUserId: userId, actorType: "ai", auditAction: "ai.proposal.created" })];
-    const memory = createTimestamped("mem", {
-      campaignId: request.params.campaignId,
-      text: recap.slice(0, 240),
-      visibility: "gm_only" as const,
-      sourceIds: [proposal.id]
-    }) satisfies AiMemoryFact;
-    store.state.proposals.push(proposal);
-    store.state.aiMemory.push(memory);
-    store.save();
-    broadcast(
-      createEvent({
-        campaignId: proposal.campaignId,
-        type: "ai.proposal.created",
-        targetId: proposal.id,
-        payload: proposal
-      })
-    );
-    return { proposal, memory };
+    const normalized = normalizeAiMemoryFact(fact);
+    broadcast(createEvent({ campaignId: fact.campaignId, type: "ai.memory.deleted", actorUserId: userId, targetId: fact.id, payload: normalized }));
+    return normalized;
   });
 
   app.post<{
     Params: { campaignId: string };
-    Body: { prompt: string; difficulty?: string; sceneName?: string; sceneWidth?: number; sceneHeight?: number; gridSize?: number };
+    Body: { sessionId?: unknown; transcript?: unknown; manualNotes?: unknown };
+  }>("/api/v1/campaigns/:campaignId/ai/session-recap", async (request, reply) => {
+    for (const permission of ["ai.proposeChanges", "journal.create"] as const) {
+      const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, permission);
+      if (allowed !== true) return allowed;
+    }
+    if (!isRecord(request.body)) return badRequest(reply, "Session recap body must be a JSON object");
+    const userId = currentUserId(store, request.headers)!;
+    const requestedSessionId = normalizeNonEmptyString(request.body.sessionId);
+    if (request.body.sessionId !== undefined && !requestedSessionId) return badRequest(reply, "sessionId must be a non-empty string");
+    const campaignSessions = store.state.campaignSessions.filter((item) => item.campaignId === request.params.campaignId);
+    const session = requestedSessionId
+      ? campaignSessions.find((item) => item.id === requestedSessionId)
+      : campaignSessions
+          .slice()
+          .sort((left, right) => (right.endedAt ?? right.startedAt ?? right.createdAt).localeCompare(left.endedAt ?? left.startedAt ?? left.createdAt))[0];
+    if (requestedSessionId && !session) return notFound(reply, "Campaign session not found");
+    if (session?.status === "planned") return conflict(reply, "A planned session must be started before it can be recapped");
+    const transcript = request.body.transcript === undefined ? undefined : normalizeBoundedText(request.body.transcript, 50_000);
+    if (request.body.transcript !== undefined && transcript === undefined) return badRequest(reply, "transcript must be a string no longer than 50000 characters");
+    const manualNotes = request.body.manualNotes === undefined ? undefined : normalizeBoundedText(request.body.manualNotes, 20_000);
+    if (request.body.manualNotes !== undefined && manualNotes === undefined) return badRequest(reply, "manualNotes must be a string no longer than 20000 characters");
+
+    const source = sessionRecapSource(store, userId, request.params.campaignId, session, transcript, manualNotes);
+    const prompt = sessionRecapPrompt(session, source);
+    const permissions = permissionsForUser(store, userId, request.params.campaignId);
+    const context = buildPermissionFilteredContext({ state: store.state, campaignId: request.params.campaignId, userId, permissions });
+    const startedAtMs = Date.now();
+    const startedAt = new Date(startedAtMs).toISOString();
+    const thread: AiThread = createTimestamped("thr", {
+      campaignId: request.params.campaignId,
+      userId,
+      provider: aiProvider.id,
+      title: session ? `Session ${session.number} Recap` : "Campaign Recap",
+      prompt,
+      status: "running" as const,
+      startedAt,
+      retryAttempts: 0,
+      eventCount: 0,
+      toolCallCount: 0,
+      usage: createInitialAiUsage(prompt, context)
+    });
+    store.state.aiThreads.push(thread);
+    let providerOutput = "";
+    const events: AiProviderEvent[] = [];
+    const fallbackUsed = aiProvider.id === "unavailable-ai-provider";
+    if (fallbackUsed) {
+      providerOutput = JSON.stringify(localSessionRecap(store, userId, request.params.campaignId, session));
+      const fallbackEvent: AiProviderEvent = { type: "message.completed", content: providerOutput };
+      events.push(fallbackEvent);
+      thread.provider = "local-structured-fallback";
+      thread.assistantMessage = providerOutput;
+      recordAiResponseUsage(thread, providerOutput);
+      completeAiThread(thread, startedAtMs, 0, events.length, 0);
+    } else {
+      try {
+        for await (const event of aiProvider.stream({
+          threadId: thread.id,
+          messages: [{ role: "user", content: prompt }],
+          tools: [],
+          context
+        })) {
+          events.push(event);
+          if (event.type === "usage.reported") mergeAiUsage(thread, event.usage);
+          if (event.type === "message.delta") providerOutput += event.delta;
+          if (event.type === "message.completed" && !providerOutput) providerOutput = event.content;
+        }
+        recordAiResponseUsage(thread, providerOutput);
+        thread.assistantMessage = providerOutput;
+        completeAiThread(thread, startedAtMs, 0, events.length, 0);
+      } catch (error) {
+        recordAiResponseUsage(thread, providerOutput);
+        thread.assistantMessage = providerOutput;
+        failAiThread(thread, startedAtMs, 0, events.length, 0, error);
+        store.save();
+        return reply.code(502).send({ error: "ai_provider_failed", message: thread.providerError, thread, events });
+      }
+    }
+
+    const recap = parseStructuredSessionRecap(providerOutput, source);
+    const sessionLabel = session ? `Session ${session.number}: ${session.title}` : "Campaign Session";
+    const changes: ProposalChange[] = [
+      {
+        entity: "journal",
+        action: "create",
+        data: createTimestamped("jnl", {
+          campaignId: request.params.campaignId,
+          worldId: sessionWorldId(store, session),
+          title: `${sessionLabel} - Player Recap`,
+          body: recap.playerRecap,
+          visibility: "public" as const,
+          visibleToUserIds: [],
+          visibleToActorIds: [],
+          tags: ["ai", "recap", "player-recap", ...(session ? [`session-${session.number}`] : [])],
+          createdBy: userId,
+          updatedBy: userId
+        })
+      },
+      {
+        entity: "journal",
+        action: "create",
+        data: createTimestamped("jnl", {
+          campaignId: request.params.campaignId,
+          worldId: sessionWorldId(store, session),
+          title: `${sessionLabel} - GM Record`,
+          body: formatGmSessionRecap(recap),
+          visibility: "gm_only" as const,
+          visibleToUserIds: [],
+          visibleToActorIds: [],
+          tags: ["ai", "recap", "gm-recap", ...(session ? [`session-${session.number}`] : [])],
+          createdBy: userId,
+          updatedBy: userId
+        })
+      },
+      {
+        entity: "journal",
+        action: "create",
+        data: createTimestamped("jnl", {
+          campaignId: request.params.campaignId,
+          worldId: sessionWorldId(store, session),
+          title: `${sessionLabel} - Next Session Prep`,
+          body: formatNextSessionPrep(recap),
+          visibility: "gm_only" as const,
+          visibleToUserIds: [],
+          visibleToActorIds: [],
+          tags: ["ai", "prep", "next-session", ...(session ? [`session-${session.number + 1}`] : [])],
+          createdBy: userId,
+          updatedBy: userId
+        })
+      }
+    ];
+    const proposal: Proposal = createTimestamped("prop", {
+      campaignId: request.params.campaignId,
+      createdByUserId: userId,
+      createdByType: "ai" as const,
+      sourceId: thread.id,
+      title: `${sessionLabel} Recap Pack`,
+      summary: recap.playerRecap.slice(0, 500),
+      status: "pending" as const,
+      changesJson: changes,
+      diffJson: {
+        sessionId: session?.id,
+        journalCount: changes.length,
+        timelineEventCount: recap.timelineEvents.length,
+        unresolvedHookCount: recap.unresolvedHooks.length,
+        prepSuggestionCount: recap.prepSuggestions.length
+      },
+      approvalRequired: true
+    });
+    proposal.history = [proposalHistoryEntry({ action: "created", status: "pending", at: proposal.createdAt, actorUserId: userId, actorType: "ai", auditAction: "ai.proposal.created" })];
+
+    const memoryCandidates = sessionRecapMemoryCandidates(request.params.campaignId, userId, proposal.id, session, recap);
+    store.state.proposals.push(proposal);
+    store.state.aiMemory.push(...memoryCandidates);
+    if (session) {
+      session.recapProposalId = proposal.id;
+      session.updatedBy = userId;
+      session.updatedAt = nowIso();
+    }
+    store.save();
+    broadcast(createEvent({ campaignId: proposal.campaignId, type: "ai.proposal.created", actorUserId: userId, targetId: proposal.id, payload: proposal }));
+    for (const memory of memoryCandidates) {
+      broadcast(createEvent({ campaignId: memory.campaignId, type: "ai.memory.created", actorUserId: userId, targetId: memory.id, payload: memory }));
+    }
+    return { proposal, memory: memoryCandidates[0], memories: memoryCandidates, thread, recap, providerOutput, events, session, fallbackUsed };
+  });
+
+  app.post<{
+    Params: { campaignId: string };
+    Body: { prompt?: unknown; difficulty?: unknown; sceneName?: unknown; sceneWidth?: unknown; sceneHeight?: unknown; gridSize?: unknown; worldId?: unknown; partyActorIds?: unknown };
   }>("/api/v1/campaigns/:campaignId/ai/encounter-design", async (request, reply) => {
-    const encounterDesignPermissions: PermissionName[] = ["ai.proposeChanges", "campaign.update", "scene.create"];
+    const encounterDesignPermissions: PermissionName[] = ["ai.proposeChanges", "combat.manage", "scene.create"];
     for (const permission of encounterDesignPermissions) {
       const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, permission);
       if (allowed !== true) return allowed;
     }
-    const userId = requireUser(store, reply, request.headers);
-    if (typeof userId !== "string") return userId;
-    const tokenIds = store.state.tokens.filter((token) => store.state.scenes.some((scene) => scene.campaignId === request.params.campaignId && scene.id === token.sceneId)).map((token) => token.id);
+    if (!isRecord(request.body)) return badRequest(reply, "Encounter design body must be a JSON object");
+    const promptText = normalizeBoundedText(request.body.prompt, 10_000);
+    if (!promptText) return badRequest(reply, "prompt must be 1-10000 characters");
+    const difficulty = request.body.difficulty === undefined ? "standard" : normalizeBoundedText(request.body.difficulty, 40);
+    if (!difficulty) return badRequest(reply, "difficulty must be a string no longer than 40 characters");
+    const worldId = request.body.worldId === undefined ? undefined : normalizeNonEmptyString(request.body.worldId);
+    if (request.body.worldId !== undefined && !worldId) return badRequest(reply, "worldId must be a non-empty string");
+    if (worldId && !store.state.worlds.some((world) => world.id === worldId && world.campaignId === request.params.campaignId)) return notFound(reply, "World not found");
+    const partyActorIds =
+      request.body.partyActorIds === undefined
+        ? []
+        : Array.isArray(request.body.partyActorIds)
+          ? [...new Set(request.body.partyActorIds.filter((id): id is string => typeof id === "string" && Boolean(id.trim())).map((id) => id.trim()))]
+          : [];
+    if (request.body.partyActorIds !== undefined && (!Array.isArray(request.body.partyActorIds) || partyActorIds.length !== request.body.partyActorIds.length)) {
+      return badRequest(reply, "partyActorIds must contain unique non-empty strings");
+    }
+    const invalidActorId = partyActorIds.find((actorId) => !store.state.actors.some((actor) => actor.id === actorId && actor.campaignId === request.params.campaignId));
+    if (invalidActorId) return notFound(reply, `Party actor not found: ${invalidActorId}`);
+    const userId = currentUserId(store, request.headers)!;
+    const permissions = permissionsForUser(store, userId, request.params.campaignId);
+    const context = buildPermissionFilteredContext({ state: store.state, campaignId: request.params.campaignId, userId, permissions });
+    const providerPrompt = encounterDesignProviderPrompt(store, request.params.campaignId, promptText, difficulty, partyActorIds);
+    const startedAtMs = Date.now();
+    const startedAt = new Date(startedAtMs).toISOString();
+    const thread: AiThread = createTimestamped("thr", {
+      campaignId: request.params.campaignId,
+      userId,
+      provider: aiProvider.id,
+      title: "Encounter Design",
+      prompt: providerPrompt,
+      status: "running" as const,
+      startedAt,
+      retryAttempts: 0,
+      eventCount: 0,
+      toolCallCount: 0,
+      usage: createInitialAiUsage(providerPrompt, context)
+    });
+    store.state.aiThreads.push(thread);
+    let providerOutput = "";
+    const events: AiProviderEvent[] = [];
+    const fallbackUsed = aiProvider.id === "unavailable-ai-provider";
+    if (fallbackUsed) {
+      providerOutput = JSON.stringify(localEncounterDesign(promptText, difficulty, normalizeBoundedText(request.body.sceneName, 160)));
+      const fallbackEvent: AiProviderEvent = { type: "message.completed", content: providerOutput };
+      events.push(fallbackEvent);
+      thread.provider = "local-structured-fallback";
+      thread.assistantMessage = providerOutput;
+      recordAiResponseUsage(thread, providerOutput);
+      completeAiThread(thread, startedAtMs, 0, events.length, 0);
+    } else {
+      try {
+        for await (const event of aiProvider.stream({ threadId: thread.id, messages: [{ role: "user", content: providerPrompt }], tools: [], context })) {
+          events.push(event);
+          if (event.type === "usage.reported") mergeAiUsage(thread, event.usage);
+          if (event.type === "message.delta") providerOutput += event.delta;
+          if (event.type === "message.completed" && !providerOutput) providerOutput = event.content;
+        }
+        recordAiResponseUsage(thread, providerOutput);
+        thread.assistantMessage = providerOutput;
+        completeAiThread(thread, startedAtMs, 0, events.length, 0);
+      } catch (error) {
+        recordAiResponseUsage(thread, providerOutput);
+        thread.assistantMessage = providerOutput;
+        failAiThread(thread, startedAtMs, 0, events.length, 0, error);
+        store.save();
+        return reply.code(502).send({ error: "ai_provider_failed", message: thread.providerError, thread, events });
+      }
+    }
+    const design = parseStructuredEncounterDesign(providerOutput, { prompt: promptText, difficulty, sceneName: normalizeBoundedText(request.body.sceneName, 160) });
     const encounter = createTimestamped("enc", {
       campaignId: request.params.campaignId,
-      name: "AI Draft Encounter",
-      summary: request.body.prompt,
-      tokenIds,
-      difficulty: request.body.difficulty ?? "standard"
+      worldId,
+      name: design.name,
+      summary: design.summary,
+      tokenIds: [],
+      difficulty: design.difficulty
     }) satisfies Encounter;
     const scene = createAiEncounterScene({
       state: store.state,
       campaignId: request.params.campaignId,
       encounterId: encounter.id,
       encounterName: encounter.name,
-      summary: request.body.prompt,
-      name: request.body.sceneName,
-      width: request.body.sceneWidth,
-      height: request.body.sceneHeight,
-      gridSize: request.body.gridSize
+      summary: design.summary,
+      name: design.sceneName,
+      width: finiteNumberFromUnknown(request.body.sceneWidth),
+      height: finiteNumberFromUnknown(request.body.sceneHeight),
+      gridSize: finiteNumberFromUnknown(request.body.gridSize)
     });
+    scene.worldId = worldId;
+    scene.metadata = { ...scene.metadata, objectives: design.objectives, complications: design.complications, aiThreadId: thread.id, partyActorIds };
     const proposal: Proposal = createTimestamped("prop", {
       campaignId: request.params.campaignId,
       createdByUserId: userId,
       createdByType: "ai" as const,
-      title: "Encounter Designer Draft",
-      summary: `Drafted ${encounter.difficulty} encounter and new scene ${scene.name}: ${request.body.prompt}`,
+      sourceId: thread.id,
+      title: `Encounter: ${encounter.name}`,
+      summary: `Drafted ${encounter.difficulty} encounter and prep scene ${scene.name}: ${encounter.summary}`.slice(0, 500),
       status: "pending" as const,
       changesJson: [
         {
@@ -6772,11 +8027,24 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
           data: { ...scene }
         }
       ],
-      diffJson: { tokenIds, sceneId: scene.id },
+      diffJson: { tokenIds: [], sceneId: scene.id, worldId, partyActorIds, objectives: design.objectives, complications: design.complications },
       approvalRequired: true
     });
     proposal.history = [proposalHistoryEntry({ action: "created", status: "pending", at: proposal.createdAt, actorUserId: userId, actorType: "ai", auditAction: "ai.proposal.created" })];
+    const memory = createTimestamped("mem", {
+      campaignId: request.params.campaignId,
+      worldId,
+      text: design.summary.slice(0, 1_000),
+      visibility: "gm_only" as const,
+      sourceIds: [thread.id, proposal.id],
+      type: "quest_hook" as const,
+      subject: design.name,
+      status: "candidate" as const,
+      source: { type: "encounter_design", id: encounter.id, label: design.name },
+      createdBy: "ai" as const
+    }) satisfies AiMemoryFact;
     store.state.proposals.push(proposal);
+    store.state.aiMemory.push(memory);
     store.save();
     broadcast(
       createEvent({
@@ -6786,7 +8054,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         payload: proposal
       })
     );
-    return { proposal, encounter, scene };
+    broadcast(createEvent({ campaignId: memory.campaignId, type: "ai.memory.created", actorUserId: userId, targetId: memory.id, payload: memory }));
+    return { proposal, encounter, scene, memory, thread, design, providerOutput, events, fallbackUsed };
   });
 
   async function executeAiAssetProposalRoute(
@@ -6827,7 +8096,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.get("/api/v1/plugins", async (request, reply) => {
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    return pluginRegistry.list();
+    return pluginRegistry.list().map(publicPluginCatalogInfo);
   });
 
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/plugins", async (request, reply) => {
@@ -6844,7 +8113,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    const plugin = pluginRegistry.find(request.params.pluginId, request.body?.version);
+    const body = optionalJsonObjectBody(request.body);
+    if (!body) return badRequest(reply, "Plugin install body must be a JSON object");
+    if (body.version !== undefined && typeof body.version !== "string") return badRequest(reply, "Plugin version must be a string");
+    if (body.permissions !== undefined && (!Array.isArray(body.permissions) || !body.permissions.every((permission) => typeof permission === "string"))) {
+      return badRequest(reply, "Plugin permissions must be an array of strings");
+    }
+    const plugin = pluginRegistry.find(request.params.pluginId, body.version as string | undefined);
     if (!plugin) return notFound(reply, "Plugin not found");
     if (!plugin.trust.installable) return forbidden(reply, pluginTrustErrorMessage(plugin));
     const reviewBlock = pluginReviewInstallBlock(store, plugin);
@@ -6854,7 +8129,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }
     const compatibilityBlock = pluginCoreCompatibilityBlock(plugin);
     if (compatibilityBlock) return forbidden(reply, compatibilityBlock);
-    const permissions = reviewedPluginPermissions(plugin, request.body?.permissions);
+    const permissions = reviewedPluginPermissions(plugin, body.permissions as PermissionName[] | undefined);
     if (!permissions) return badRequest(reply, "Plugin grant permissions must be a subset of the plugin manifest permissions");
     const existing = findPluginGrant(store, request.params.campaignId, plugin.id);
     const grant: PermissionGrant =
@@ -6884,7 +8159,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
           packageId: plugin.source.packageId,
           sandbox: plugin.source.sandbox,
           version: plugin.version,
-          checksum: plugin.source.checksum,
+          checksum: pluginPackageIdentityChecksum(plugin),
+          manifestChecksum: plugin.source.manifestChecksum,
+          runtimeChecksum: plugin.source.checksum,
           trust: plugin.trust
         }
       })
@@ -6928,7 +8205,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!access.ok) return access.reply;
     const key = normalizePluginStorageKey(request.params.key);
     if (!key) return badRequest(reply, "Plugin storage key must be 1-80 characters of letters, numbers, dot, underscore, colon, or dash");
-    const value = normalizePluginStorageValue(request.body?.value);
+    if (!isRecord(request.body)) return badRequest(reply, "Plugin storage body must be a JSON object");
+    const value = normalizePluginStorageValue(request.body.value);
     if (!value.ok) return badRequest(reply, value.error);
     const entry = upsertPluginStorageEntry(store, request.params.campaignId, access.plugin.id, key, value.value, "user", access.userId);
     store.state.auditLogs.push(
@@ -6977,6 +8255,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
+    if (!isRecord(request.body)) return badRequest(reply, "Plugin command body must be a JSON object");
+    const requestedCommand = typeof request.body.command === "string" ? request.body.command.trim() : "";
+    if (!requestedCommand) return badRequest(reply, "Plugin command is required");
+    if (requestedCommand.length > 120) return badRequest(reply, "Plugin command must be 120 characters or fewer");
+    if (request.body.args !== undefined && typeof request.body.args !== "string") return badRequest(reply, "Plugin command args must be a string");
+    const args = typeof request.body.args === "string" ? request.body.args.trim().slice(0, 2000) : "";
     const pluginGrant = findPluginGrant(store, request.params.campaignId, request.params.pluginId);
     const plugin = pluginRegistry.find(request.params.pluginId, pluginVersionFromGrant(pluginGrant));
     if (!plugin) return notFound(reply, "Plugin not found");
@@ -6988,7 +8272,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }
     const compatibilityBlock = pluginCoreCompatibilityBlock(plugin);
     if (compatibilityBlock) return forbidden(reply, compatibilityBlock);
-    const command = request.body.command.startsWith("/") ? request.body.command : `/${request.body.command}`;
+    const identityBlock = pluginGrantIdentityBlock(pluginGrant, plugin);
+    if (identityBlock) return forbidden(reply, identityBlock);
+    const command = requestedCommand.startsWith("/") ? requestedCommand : `/${requestedCommand}`;
     if (!plugin.chatCommands?.some((item) => item.command === command)) return notFound(reply, "Plugin command not found");
     if (!pluginCan(store, request.params.campaignId, plugin.id, "chat.write")) {
       return forbidden(reply, `Plugin ${plugin.id} lacks chat.write in this campaign`);
@@ -7004,7 +8290,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         pluginId: plugin.id,
         userId,
         command,
-        args: request.body.args?.trim() ?? "",
+        args,
         permissions: pluginGrant?.permissions ?? [],
         tokens,
         storage: {
@@ -7027,9 +8313,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       });
     }
     if (commandResult.storage && !canConfigurePlugin) return forbidden(reply, `Plugin ${plugin.id} lacks plugin.configure in this campaign`);
-    let storageMutation: { set: Array<{ key: string; size: number }>; deleted: string[] };
+    let storageProposal: { changes: ProposalChange[]; summary: { set: Array<{ key: string; size: number }>; deleted: string[] } };
     try {
-      storageMutation = commandResult.storage ? applyPluginStorageMutation(store, request.params.campaignId, plugin.id, commandResult.storage, "plugin", plugin.id) : { set: [], deleted: [] };
+      storageProposal = pluginStorageProposalChanges(store, request.params.campaignId, plugin.id, commandResult.storage);
     } catch (error) {
       appendPluginCommandFailureAudit(store, {
         campaignId: request.params.campaignId,
@@ -7045,6 +8331,24 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         message: "Plugin command returned invalid storage mutations"
       });
     }
+    const bridgeProposals = preparePluginBridgeProposals(store, request.params.campaignId, plugin, commandResult.bridgeRequests ?? [], {
+      kind: "command",
+      command,
+      actorUserId: userId
+    });
+    if (!bridgeProposals.ok) {
+      appendPluginCommandFailureAudit(store, {
+        campaignId: request.params.campaignId,
+        userId,
+        plugin,
+        command,
+        reason: bridgeProposals.reason,
+        message: bridgeProposals.message
+      });
+      store.save();
+      if (bridgeProposals.reason === "missing_permission") return forbidden(reply, bridgeProposals.message);
+      return reply.code(500).send({ error: "plugin_runtime_error", message: "Plugin command returned invalid bridge requests" });
+    }
     const message = createTimestamped("msg", {
       campaignId: request.params.campaignId,
       userId: plugin.id,
@@ -7053,42 +8357,60 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       visibility: commandResult.visibility,
       recipientUserIds: []
     }) satisfies ChatMessage;
-    store.state.chat.push(message);
-    store.state.auditLogs.push(
-      createTimestamped("audit", {
-        campaignId: request.params.campaignId,
-        actorUserId: userId,
-        actorType: "plugin" as const,
-        action: "plugin.chatCommand",
-        targetType: "chat",
-        targetId: message.id,
-        after: { pluginId: plugin.id, command, sandbox: plugin.source.sandbox, packageId: plugin.source.packageId, version: plugin.version, checksum: plugin.source.checksum, trust: plugin.trust, storageMutation }
-      })
-    );
-    if (storageMutation.set.length || storageMutation.deleted.length) {
-      store.state.auditLogs.push(
-        createTimestamped("audit", {
-          campaignId: request.params.campaignId,
-          actorUserId: plugin.id,
-          actorType: "plugin" as const,
-          action: "plugin.storageMutation",
-          targetType: "pluginStorage",
-          targetId: plugin.id,
-          after: storageMutation
-        })
-      );
-    }
+    const proposal: Proposal = createTimestamped("prop", {
+      campaignId: request.params.campaignId,
+      createdByUserId: userId,
+      createdByType: "plugin" as const,
+      sourceId: plugin.id,
+      title: `${plugin.name}: ${command}`,
+      summary: `Review plugin chat output${storageProposal.changes.length > 0 ? " and plugin storage changes" : ""} before applying it to the campaign.`,
+      status: "pending" as const,
+      changesJson: [{ entity: "chat", action: "create", data: { ...message } }, ...storageProposal.changes],
+      diffJson: {
+        pluginId: plugin.id,
+        command,
+        sandbox: plugin.source.sandbox,
+        packageId: plugin.source.packageId,
+        version: plugin.version,
+        checksum: pluginPackageIdentityChecksum(plugin),
+        storageMutation: storageProposal.summary
+      },
+      approvalRequired: true
+    });
+    proposal.history = [proposalHistoryEntry({ action: "created", status: "pending", at: proposal.createdAt, actorUserId: userId, actorType: "plugin", auditAction: "plugin.chatCommand.proposed" })];
+    const proposals = [proposal, ...bridgeProposals.proposals];
+    store.state.proposals.push(...proposals);
+    appendServerAuditLog(store, userId, {
+      campaignId: request.params.campaignId,
+      action: "plugin.chatCommand.proposed",
+      targetType: "proposal",
+      targetId: proposal.id,
+      after: {
+        pluginId: plugin.id,
+        command,
+        proposalIds: proposals.map((item) => item.id),
+        changeCount: proposals.reduce((total, item) => total + item.changesJson.length, 0),
+        bridgeCount: commandResult.bridgeRequests?.length ?? 0,
+        storageMutation: storageProposal.summary,
+        packageId: plugin.source.packageId,
+        version: plugin.version,
+        sandbox: plugin.source.sandbox
+      }
+    });
     store.save();
-    broadcast(
-      createEvent({
-        campaignId: message.campaignId,
-        type: "chat.message.created",
-        actorUserId: userId,
-        targetId: message.id,
-        payload: message
-      })
-    );
-    return { pluginId: plugin.id, command, chat: message, storageMutation };
+    for (const createdProposal of proposals) {
+      broadcast(createEvent({ campaignId: createdProposal.campaignId, type: "proposal.created", actorUserId: userId, targetId: createdProposal.id, payload: createdProposal }));
+    }
+    return {
+      pluginId: plugin.id,
+      command,
+      proposal,
+      proposals,
+      bridgeReceipts: bridgeProposals.receipts,
+      chat: message,
+      storageMutation: storageProposal.summary,
+      approvalRequired: true
+    };
   });
 
   function appendPluginCommandFailureAudit(
@@ -7121,14 +8443,17 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.post<{
     Body: { campaignId?: string; packagePath?: string };
   }>("/api/v1/plugins/install", async (request, reply) => {
-    const body = request.body ?? {};
+    const body = optionalJsonObjectBody(request.body);
+    if (!body) return badRequest(reply, "Plugin install body must be a JSON object");
+    if (body.campaignId !== undefined && typeof body.campaignId !== "string") return badRequest(reply, "campaignId must be a string");
+    if (body.packagePath !== undefined && typeof body.packagePath !== "string") return badRequest(reply, "packagePath must be a string");
     const campaignId = body.campaignId ?? store.state.members.find((member) => member.userId === currentUserId(store, request.headers))?.campaignId;
     if (!campaignId) return forbidden(reply, "Plugin installation requires a campaign context");
     const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "plugin.install");
     if (allowed !== true) return allowed;
     if (!body.packagePath) return badRequest(reply, "Plugin packagePath is required");
     try {
-      return pluginRegistry.registerPackage(body.packagePath);
+      return publicPluginCatalogInfo(pluginRegistry.registerPackage(body.packagePath));
     } catch (error) {
       if (error instanceof PluginPackageError) return badRequest(reply, error.loadErrors.join("; "));
       throw error;
@@ -7138,7 +8463,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.post<{
     Body: { campaignId?: string; registryUrl?: string };
   }>("/api/v1/plugins/registry/sync", async (request, reply) => {
-    const body = request.body ?? {};
+    const body = optionalJsonObjectBody(request.body);
+    if (!body) return badRequest(reply, "Plugin registry sync body must be a JSON object");
+    if (body.campaignId !== undefined && typeof body.campaignId !== "string") return badRequest(reply, "campaignId must be a string");
+    if (body.registryUrl !== undefined && typeof body.registryUrl !== "string") return badRequest(reply, "registryUrl must be a string");
     const campaignId = body.campaignId ?? store.state.members.find((member) => member.userId === currentUserId(store, request.headers))?.campaignId;
     if (!campaignId) return forbidden(reply, "Plugin registry sync requires a campaign context");
     const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "plugin.install");
@@ -7170,7 +8498,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.get("/api/v1/systems", async (request, reply) => {
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    return installedSystems;
+    return registeredSystems(store.state).map((system) => systemRuntimeInfo(store, system));
   });
 
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/systems", async (request, reply) => {
@@ -7178,10 +8506,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const campaign = store.state.campaigns.find((item) => item.id === request.params.campaignId);
     if (!campaign) return notFound(reply, "Campaign not found");
-    return installedSystems.map((system) => ({
-      ...system,
-      active: campaign.defaultSystemId === system.id
-    }));
+    return registeredSystems(store.state).map((system) => systemRuntimeInfo(store, system, campaign.defaultSystemId === system.id));
   });
 
   app.post<{ Params: { campaignId: string; systemId: string } }>("/api/v1/campaigns/:campaignId/systems/:systemId/install", async (request, reply) => {
@@ -7191,28 +8516,31 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (typeof userId !== "string") return userId;
     const campaign = store.state.campaigns.find((item) => item.id === request.params.campaignId);
     if (!campaign) return notFound(reply, "Campaign not found");
-    const system = installedSystems.find((item) => item.id === request.params.systemId);
+    const system = findRegisteredSystem(store.state, request.params.systemId);
     if (!system) return notFound(reply, "System not found");
+    const previousSystemId = campaign.defaultSystemId;
     campaign.defaultSystemId = system.id;
     campaign.updatedAt = nowIso();
     store.state.auditLogs.push(
       createTimestamped("audit", {
         campaignId: campaign.id,
         actorUserId: userId,
-        actorType: "system" as const,
-        action: "system.install",
+        actorType: "user" as const,
+        action: "system.activate",
         targetType: "system",
-        targetId: system.id
+        targetId: system.id,
+        before: { defaultSystemId: previousSystemId },
+        after: { defaultSystemId: system.id }
       })
     );
     store.save();
-    return { system, campaign };
+    return { system: systemRuntimeInfo(store, system, true), campaign };
   });
 
   app.get<{ Params: { campaignId: string; systemId: string } }>("/api/v1/campaigns/:campaignId/systems/:systemId/character-templates", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "actor.read");
     if (allowed !== true) return allowed;
-    const system = installedSystems.find((item) => item.id === request.params.systemId);
+    const system = findRegisteredSystem(store.state, request.params.systemId);
     if (!system) return notFound(reply, "System not found");
     return characterTemplatesForSystem(system.id);
   });
@@ -7220,9 +8548,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.get<{ Params: { campaignId: string; systemId: string } }>("/api/v1/campaigns/:campaignId/systems/:systemId/character-origins", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "actor.read");
     if (allowed !== true) return allowed;
-    const system = installedSystems.find((item) => item.id === request.params.systemId);
+    const system = findRegisteredSystem(store.state, request.params.systemId);
     if (!system) return notFound(reply, "System not found");
-    if (system.id !== DND_5E_SRD_SYSTEM_ID) return badRequest(reply, "Character origins are only available for the D&D SRD runtime");
+    if (system.id !== DND_5E_SRD_SYSTEM_ID) throw new UnsupportedSystemCapabilityError(system.id, "character-origins");
     return dnd5eSrdCharacterOrigins();
   });
 
@@ -7302,7 +8630,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    const system = installedSystems.find((item) => item.id === request.params.systemId);
+    const system = findRegisteredSystem(store.state, request.params.systemId);
     if (!system) return notFound(reply, "System not found");
     if (system.id !== DND_5E_SRD_SYSTEM_ID) return badRequest(reply, "Monster creation is only supported for the D&D SRD runtime");
     const threat = dnd5eSrdEncounterThreats().find((item) => item.id === request.body.threatId);
@@ -7344,7 +8672,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    const system = installedSystems.find((item) => item.id === request.params.systemId);
+    const system = findRegisteredSystem(store.state, request.params.systemId);
     if (!system) return notFound(reply, "System not found");
     const imported = characterImportForSystem(system.id, request.body ?? {});
     const actor = createTimestamped("act", {
@@ -7380,7 +8708,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.get<{ Params: { campaignId: string; systemId: string } }>("/api/v1/campaigns/:campaignId/systems/:systemId/compendium", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.read");
     if (allowed !== true) return allowed;
-    const system = installedSystems.find((item) => item.id === request.params.systemId);
+    const system = findRegisteredSystem(store.state, request.params.systemId);
     if (!system) return notFound(reply, "System not found");
     return {
       systemId: system.id,
@@ -7438,6 +8766,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
     if (!canUpdateActorForUser(store, userId, actor)) return forbidden(reply, "Missing permission: actor.update");
+    if (!isBundledSystem(request.params.systemId)) throw new UnsupportedSystemCapabilityError(request.params.systemId, "compendium");
     if (request.params.systemId !== DND_5E_SRD_SYSTEM_ID) return badRequest(reply, "Equipment purchasing is only available for D&D 5.5e SRD actors");
     const entry = dnd5eSrdCompendiumEntry(request.body.entryId ?? "");
     if (!entry) return notFound(reply, "Compendium entry not found");
@@ -7619,6 +8948,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     try {
       rest = applySystemRest(actor, restType, { arcaneRecovery: request.body?.arcaneRecovery });
     } catch (error) {
+      if (error instanceof UnsupportedSystemCapabilityError) throw error;
       const message = error instanceof Error ? error.message : "System rest recovery is unavailable";
       return conflict(reply, canReadActorPrivateData(store, userId, actor.campaignId, actor) ? message : "System rest recovery is unavailable");
     }
@@ -8122,25 +9452,80 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   });
 
   app.post<{
-    Body: (typeof installedSystems)[number] & { campaignId?: string };
+    Body: { campaignId?: unknown; manifest?: unknown };
   }>("/api/v1/systems/install", async (request, reply) => {
-    const campaignId = request.body.campaignId ?? store.state.members.find((member) => member.userId === currentUserId(store, request.headers))?.campaignId;
-    if (!campaignId) return forbidden(reply, "System installation requires a campaign context");
+    const body = optionalJsonObjectBody(request.body);
+    if (!body) return badRequest(reply, "System installation body must be a JSON object");
+    if (typeof body.campaignId !== "string" || !body.campaignId.trim()) return badRequest(reply, "System installation requires an explicit campaignId");
+    const campaignId = body.campaignId.trim();
     const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "campaign.update");
     if (allowed !== true) return allowed;
-    const system = request.body as (typeof installedSystems)[number];
-    installedSystems.push(system);
-    return system;
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    if (!isRecord(body.manifest)) return badRequest(reply, "System installation requires a manifest object");
+    const manifest = structuredClone(body.manifest) as unknown as SystemManifest;
+    try {
+      validateSystemManifest(manifest);
+    } catch (error) {
+      if (error instanceof SystemManifestValidationError) {
+        return reply.code(400).send({ error: "invalid_system_manifest", message: "System manifest validation failed", issues: error.issues });
+      }
+      throw error;
+    }
+    const unsupportedCapabilities = manifest.capabilities.filter((capability) => capability !== "data-model");
+    if (unsupportedCapabilities.length) {
+      return reply.code(422).send({
+        error: "unsupported_system_capabilities",
+        systemId: manifest.id,
+        capabilities: unsupportedCapabilities,
+        message: "This server can register external systems as data models, but it cannot execute untrusted system runtime capabilities"
+      });
+    }
+    const systems = registeredSystems(store.state);
+    const idConflict = systems.find((system) => system.id === manifest.id);
+    if (idConflict) return conflict(reply, `System id is already installed: ${manifest.id}@${idConflict.version}`);
+    const nameConflict = systems.find((system) => system.name.toLocaleLowerCase() === manifest.name.toLocaleLowerCase());
+    if (nameConflict) return conflict(reply, `System name conflicts with installed system ${nameConflict.id}`);
+    const requestedPaths = new Set([manifest.entrypoints.client, manifest.entrypoints.server].filter((value): value is string => Boolean(value)));
+    const pathConflict = systems.find((system) => [system.entrypoints.client, system.entrypoints.server].some((path) => path && requestedPaths.has(path)));
+    if (pathConflict) return conflict(reply, `System entrypoint conflicts with installed system ${pathConflict.id}`);
+    const installation = createTimestamped("sysinst", {
+      manifest,
+      installedByUserId: adminUserId,
+      authorizedByCampaignId: campaignId,
+      source: "api" as const
+    }) satisfies SystemInstallation;
+    store.state.systemInstallations.push(installation);
+    store.state.auditLogs.push(
+      createTimestamped("audit", {
+        campaignId,
+        actorUserId: adminUserId,
+        actorType: "user" as const,
+        action: "system.install",
+        targetType: "system",
+        targetId: manifest.id,
+        after: { installationId: installation.id, manifest }
+      })
+    );
+    store.save();
+    return systemRuntimeInfo(store, manifest);
   });
 
-  app.get<{ Params: { campaignId: string }; Querystring: { scope?: string; version?: string; redaction?: string } }>("/api/v1/campaigns/:campaignId/export", async (request, reply) => {
-    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.read");
+  app.get<{ Params: { campaignId: string }; Querystring: { scope?: string; scopeId?: string; collections?: string; version?: string; redaction?: string } }>("/api/v1/campaigns/:campaignId/export", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.update");
     if (allowed !== true) return allowed;
     const exportOptions = normalizeCampaignArchiveExportOptions(request.query);
     if (!exportOptions.ok) return badRequest(reply, exportOptions.error);
     flushStore(store);
-    const archive = makeArchive(store.state, request.params.campaignId);
+    let archive = makeArchive(store.state, request.params.campaignId);
+    archive.manifest.systemRequirements = systemRequirementsForCampaign(store, request.params.campaignId);
+    const scoped = archiveForExportScope(archive, exportOptions.value);
+    if (!scoped.ok) return scoped.notFound ? notFound(reply, scoped.error) : badRequest(reply, scoped.error);
+    archive = scoped.archive;
     archive.manifest.exportScope = exportOptions.value.scope;
+    archive.manifest.exportScopeId = exportOptions.value.scopeId;
+    archive.manifest.exportCollections = exportOptions.value.collections;
+    archive.manifest.dependencyWarnings = scoped.dependencyWarnings;
     archive.manifest.redactionMode = exportOptions.value.redaction;
     archive.manifest.compatibilityNotes = campaignArchiveCompatibilityNotes(exportOptions.value);
     return await withArchivedAssetFiles(archive, assetStorage);
@@ -8171,12 +9556,20 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!isSupportedArchiveVersion(archive.version)) return reply.code(400).send({ error: "unsupported_archive_version", version: archive.version });
 
     const importWarnings = archiveImportDependencyWarnings(scope, selectedCollections.value, archive);
-    const scopedArchive = regenerateIds ? archiveWithRegeneratedIds(archiveForImportScope(archive, scope, selectedCollections.value), { userId, organizationId: workspace.id }) : archiveForImportScope(archive, scope, selectedCollections.value);
-    for (const campaignId of existingArchiveCampaignIds(store.state, scopedArchive)) {
+    const selectedArchive = regenerateIds ? archiveWithRegeneratedIds(archiveForImportScope(archive, scope, selectedCollections.value), { userId, organizationId: workspace.id }) : archiveForImportScope(archive, scope, selectedCollections.value);
+    const scopedArchive = secureArchiveIdentityForImport(store.state, selectedArchive, { userId, organizationId: workspace.id });
+    const conflicts = findArchiveConflicts(store.state, scopedArchive);
+    const referenceProtection = archiveReferenceProtection(store.state, scopedArchive);
+    if (!referenceProtection.ok) return badRequest(reply, referenceProtection.error);
+    const protectedCampaignIds = new Set([
+      ...existingArchiveCampaignIds(store.state, scopedArchive),
+      ...campaignIdsForArchiveConflicts(store.state, conflicts),
+      ...referenceProtection.campaignIds
+    ]);
+    for (const campaignId of protectedCampaignIds) {
       const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "campaign.update");
       if (allowed !== true) return allowed;
     }
-    const conflicts = findArchiveConflicts(store.state, scopedArchive);
     if (mode === "reject_conflicts" && conflicts.length > 0) {
       return reply.code(409).send({ error: "import_conflict", conflicts });
     }
@@ -8204,6 +9597,25 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       };
     }
     const counts = mergeArchive(store.state, archiveToMerge);
+    const auditedCampaignIds = new Set([...protectedCampaignIds, ...archiveToMerge.data.campaigns.map((campaign) => campaign.id)]);
+    for (const campaignId of auditedCampaignIds) {
+      appendServerAuditLog(store, userId, {
+        campaignId,
+        action: "campaign.import",
+        targetType: "campaign_archive",
+        targetId: campaignId,
+        after: {
+          mode,
+          scope,
+          regenerateIds,
+          importCollections: selectedCollections.value,
+          recordCount: Object.values(counts).reduce((total, count) => total + count, 0),
+          conflictCount: conflicts.length,
+          skippedConflictCount: skippedConflicts.length,
+          restoredAssetFiles
+        }
+      });
+    }
     store.save();
     return {
       importedCampaignIds: archiveToMerge.data.campaigns.map((item) => item.id),
@@ -8267,13 +9679,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.addHook("onClose", async () => {
     assetCleanupScheduler.stop();
     storageBackupScheduler.stop();
+    await pluginEventQueue;
     flushStore(store);
   });
 
   return app;
 }
 
-const ALL_PERMISSIONS: PermissionName[] = ["campaign.read", "campaign.update", "campaign.delete", "scene.read", "scene.create", "scene.update", "scene.delete", "scene.activate", "token.read", "token.create", "token.update", "token.move", "token.delete", "token.reveal", "actor.read", "actor.create", "actor.update", "actor.delete", "actor.readPrivate", "actor.updateOwned", "journal.read", "journal.readSecret", "journal.create", "journal.update", "journal.delete", "chat.read", "chat.write", "chat.moderate", "combat.manage", "plugin.install", "plugin.configure", "dice.roll", "ai.use", "ai.readPublicMemory", "ai.readGmMemory", "ai.proposeChanges", "ai.applyChanges"];
+const ALL_PERMISSIONS: PermissionName[] = ["campaign.read", "campaign.update", "campaign.delete", "world.read", "world.create", "world.update", "world.delete", "scene.read", "scene.create", "scene.update", "scene.delete", "scene.activate", "token.read", "token.create", "token.update", "token.move", "token.delete", "token.reveal", "actor.read", "actor.create", "actor.update", "actor.delete", "actor.readPrivate", "actor.updateOwned", "journal.read", "journal.readSecret", "journal.create", "journal.update", "journal.delete", "handout.read", "handout.readSecret", "handout.create", "handout.update", "handout.delete", "chat.read", "chat.write", "chat.moderate", "combat.manage", "plugin.install", "plugin.configure", "dice.roll", "ai.use", "ai.readPublicMemory", "ai.readGmMemory", "ai.proposeChanges", "ai.applyChanges"];
 
 function createConfiguredAiProvider(): AiProvider {
   const configuredProvider = configuredAiProviderName();
@@ -10082,7 +11495,7 @@ async function retryFailedAiToolCalls(store: StateStore, runtime: AiToolRuntime,
       status: "started" as const
     });
     store.state.aiToolCalls.push(started);
-    const result = await executeAiTool(tools, call.toolName, originalInputCall.input, createAiToolContext(store, thread.campaignId, thread.userId, permissions, runtime));
+    const result = await executeAiTool(tools, call.toolName, originalInputCall.input, createAiToolContext(store, thread.campaignId, thread.userId, permissions, runtime, undefined, thread.id));
     const resultStatus = result.failed ? ("failed" as const) : ("completed" as const);
     resolveAiToolCall(started, {
       output: result.output,
@@ -10586,14 +11999,13 @@ function roundCurrency(value: number): number {
 }
 
 function defaultMemoryExtractionSource(store: StateStore, campaignId: string, userId: string): string {
-  const canReadSecretJournal = canCampaign(store, userId, campaignId, "journal.readSecret");
   const chat = store.state.chat
     .filter((message) => message.campaignId === campaignId && canReadChatMessage(store, userId, message))
     .slice(-8)
     .map((message) => `${message.type}: ${message.body}`);
   const journals = store.state.journals
     .filter((journal) => journal.campaignId === campaignId)
-    .filter((journal) => journal.visibility === "public" || canReadSecretJournal || journal.visibleToUserIds.includes(userId))
+    .filter((journal) => canReadJournalEntry(store, userId, journal))
     .slice(-4)
     .map((journal) => `${journal.title}: ${journal.body}`);
   const source = [...journals, ...chat].join("\n").trim();
@@ -11093,6 +12505,97 @@ function createAiThreadTools(): AiToolDefinition[] {
       }
     },
     {
+      name: "read_world",
+      description: "Read campaign worlds by id or text search without changing world records.",
+      requiredPermissions: ["world.read"],
+      parameters: {
+        type: "object",
+        properties: {
+          worldId: { type: "string", description: "Optional world id to inspect." },
+          query: { type: "string", description: "Optional world name or description search." },
+          limit: { type: "number", description: "Maximum worlds to return, from 1 to 20." }
+        },
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<unknown> {
+        const request = isRecord(input) ? input : {};
+        return readWorldToolOutput(context, {
+          worldId: stringFromRecord(request, "worldId"),
+          query: stringFromRecord(request, "query") ?? "",
+          limit: numberFromRecord(request, "limit", 1, 20) ?? 10
+        });
+      }
+    },
+    {
+      name: "read_handout",
+      description: "Read campaign handouts visible to the caller, including actor- and user-targeted handouts.",
+      requiredPermissions: ["handout.read"],
+      parameters: {
+        type: "object",
+        properties: {
+          handoutId: { type: "string", description: "Optional visible handout id to inspect." },
+          query: { type: "string", description: "Optional handout title, body, or tag search." },
+          limit: { type: "number", description: "Maximum handouts to return, from 1 to 20." }
+        },
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<unknown> {
+        const request = isRecord(input) ? input : {};
+        return readHandoutToolOutput(context, {
+          handoutId: stringFromRecord(request, "handoutId"),
+          query: stringFromRecord(request, "query") ?? "",
+          limit: numberFromRecord(request, "limit", 1, 20) ?? 10
+        });
+      }
+    },
+    {
+      name: "search_campaign",
+      description: "Search permission-filtered campaign worlds, scenes, actors, items, journals, handouts, encounters, memory, and chat.",
+      requiredPermissions: ["campaign.read"],
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Required text search query, from 1 to 200 characters." },
+          types: { type: "array", description: "Optional result types to include.", items: { type: "string", enum: ["world", "scene", "actor", "item", "journal", "handout", "encounter", "memory", "chat"] } },
+          worldId: { type: "string", description: "Optional world id scope." },
+          limit: { type: "number", description: "Maximum results to return, from 1 to 100." }
+        },
+        required: ["query"],
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<unknown> {
+        const request = isRecord(input) ? input : {};
+        return searchCampaignToolOutput(context, {
+          query: stringFromRecord(request, "query") ?? "",
+          types: stringArrayFromRecord(request, "types"),
+          worldId: stringFromRecord(request, "worldId"),
+          limit: numberFromRecord(request, "limit", 1, 100) ?? 50
+        });
+      }
+    },
+    {
+      name: "read_campaign_session",
+      description: "Read campaign preparation sessions visible to campaign managers without changing session state.",
+      requiredPermissions: ["campaign.update"],
+      parameters: {
+        type: "object",
+        properties: {
+          sessionId: { type: "string", description: "Optional campaign session id to inspect." },
+          status: { type: "string", description: "Optional session status filter.", enum: ["planned", "live", "completed"] },
+          limit: { type: "number", description: "Maximum sessions to return, from 1 to 20." }
+        },
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<unknown> {
+        const request = isRecord(input) ? input : {};
+        return readCampaignSessionToolOutput(context, {
+          sessionId: stringFromRecord(request, "sessionId"),
+          status: enumStringFromRecord(request, "status", ["planned", "live", "completed"]),
+          limit: numberFromRecord(request, "limit", 1, 20) ?? 10
+        });
+      }
+    },
+    {
       name: "read_ai_activity",
       description: "Read bounded AI thread, proposal, memory, evaluation, and tool-call activity visible to the caller.",
       requiredPermissions: ["ai.use"],
@@ -11265,8 +12768,8 @@ function createAiThreadTools(): AiToolDefinition[] {
     },
     {
       name: "send_chat_message",
-      description: "Post a plain, emote, OOC, GM, or whisper chat message as the current user.",
-      requiredPermissions: ["chat.write"],
+      description: "Draft a plain, emote, OOC, GM, or whisper chat message for human approval.",
+      requiredPermissions: ["ai.proposeChanges", "chat.write"],
       parameters: {
         type: "object",
         properties: {
@@ -11945,7 +13448,7 @@ function createAiThreadTools(): AiToolDefinition[] {
         const limit = numberFromRecord(request, "limit", 1, 10) ?? 5;
         const normalizedQuery = query.toLocaleLowerCase();
         const memories = context.state.aiMemory
-          .filter((memory) => memory.campaignId === context.campaignId && memory.approvedByUserId)
+          .filter((memory) => memory.campaignId === context.campaignId && aiMemoryFactStatus(memory) === "approved")
           .filter((memory) => {
             if (requestedVisibility === "public") return memory.visibility === "public";
             if (requestedVisibility === "gm_only") return memory.visibility === "gm_only";
@@ -12092,15 +13595,17 @@ function createAiThreadTools(): AiToolDefinition[] {
         const query = stringFromRecord(request, "query") ?? "";
         const requestedVisibility = enumStringFromRecord(request, "visibility", ["public", "gm_only", "any"] as const) ?? "public";
         const canReadSecret = context.permissions.includes("journal.readSecret");
-        if ((requestedVisibility === "gm_only" || requestedVisibility === "any") && !canReadSecret) return missingPermissionToolOutput("journal.readSecret");
+        if (requestedVisibility === "gm_only" && !canReadSecret) return missingPermissionToolOutput("journal.readSecret");
         const limit = numberFromRecord(request, "limit", 1, 10) ?? 5;
         const normalizedQuery = query.toLocaleLowerCase();
+        const visibilityStore = readOnlyToolStore(context);
         const entries = context.state.journals
           .filter((journal) => journal.campaignId === context.campaignId)
+          .filter((journal) => canReadJournalEntry(visibilityStore, context.userId, journal))
           .filter((journal) => {
-            if (requestedVisibility === "public") return journal.visibility === "public" || journal.visibleToUserIds.includes(context.userId);
+            if (requestedVisibility === "public") return journal.visibility !== "gm_only";
             if (requestedVisibility === "gm_only") return journal.visibility === "gm_only";
-            return journal.visibility === "public" || journal.visibility === "gm_only" || journal.visibleToUserIds.includes(context.userId);
+            return true;
           })
           .filter((journal) => {
             if (!normalizedQuery) return true;
@@ -12140,7 +13645,9 @@ function createAiThreadTools(): AiToolDefinition[] {
         const request = isRecord(input) ? input : {};
         const sceneId = stringFromRecord(request, "sceneId");
         const selectedTokenIds = stringArrayFromRecord(request, "selectedTokenIds");
-        const scene = sceneId ? context.state.scenes.find((item) => item.id === sceneId && item.campaignId === context.campaignId) : context.state.scenes.find((item) => item.campaignId === context.campaignId && item.active) ?? context.state.scenes.find((item) => item.campaignId === context.campaignId);
+        const visibilityStore = readOnlyToolStore(context);
+        const readableScenes = readableScenesForUser(visibilityStore, context.userId, context.campaignId);
+        const scene = sceneId ? readableScenes.find((item) => item.id === sceneId) : readableScenes.find((item) => item.active) ?? readableScenes[0];
         if (!scene) return toolError("not_found", { entity: "scene", id: sceneId ?? "active" });
         return readBoardStateToolOutput(context, scene, selectedTokenIds);
       }
@@ -12159,15 +13666,18 @@ function createAiThreadTools(): AiToolDefinition[] {
       async execute(input: unknown, context: AiToolContext): Promise<AiBoardCaptureResult | ToolErrorOutput> {
         const request = isRecord(input) ? input : {};
         const sceneId = stringFromRecord(request, "sceneId");
-        if (sceneId && !context.state.scenes.some((scene) => scene.id === sceneId && scene.campaignId === context.campaignId)) return toolError("not_found", { entity: "scene", id: sceneId });
+        const visibilityStore = readOnlyToolStore(context);
+        const readableScenes = readableScenesForUser(visibilityStore, context.userId, context.campaignId);
+        const scene = sceneId ? readableScenes.find((item) => item.id === sceneId) : readableScenes.find((item) => item.active) ?? readableScenes[0];
+        if (!scene) return toolError("not_found", { entity: "scene", id: sceneId ?? "active" });
         if (!context.captureBoardView) {
           return {
             status: "board_capture_unavailable",
             reason: "Board capture is not configured for this AI tool context.",
-            sceneId
+            sceneId: scene.id
           };
         }
-        return context.captureBoardView({ sceneId });
+        return context.captureBoardView({ sceneId: scene.id });
       }
     },
     {
@@ -12188,9 +13698,10 @@ function createAiThreadTools(): AiToolDefinition[] {
         const sceneId = stringFromRecord(request, "sceneId");
         const activeOnly = booleanFromRecord(request, "activeOnly") ?? false;
         const limit = numberFromRecord(request, "limit", 1, 10) ?? 5;
-        if (sceneId && !context.state.scenes.some((scene) => scene.campaignId === context.campaignId && scene.id === sceneId)) return toolError("not_found", { entity: "scene", id: sceneId });
-        const scenes = context.state.scenes
-          .filter((scene) => scene.campaignId === context.campaignId)
+        const visibilityStore = readOnlyToolStore(context);
+        const readableScenes = readableScenesForUser(visibilityStore, context.userId, context.campaignId);
+        if (sceneId && !readableScenes.some((scene) => scene.id === sceneId)) return toolError("not_found", { entity: "scene", id: sceneId });
+        const scenes = readableScenes
           .filter((scene) => !sceneId || scene.id === sceneId)
           .filter((scene) => !activeOnly || scene.active)
           .sort((left, right) => Number(right.active) - Number(left.active) || left.sortOrder - right.sortOrder || left.name.localeCompare(right.name))
@@ -12242,11 +13753,13 @@ function createAiThreadTools(): AiToolDefinition[] {
         const sceneId = stringFromRecord(request, "sceneId");
         const query = stringFromRecord(request, "query") ?? "";
         const limit = numberFromRecord(request, "limit", 1, 20) ?? 10;
-        if (sceneId && !context.state.scenes.some((scene) => scene.campaignId === context.campaignId && scene.id === sceneId)) return toolError("not_found", { entity: "scene", id: sceneId });
-        const campaignSceneIds = new Set(context.state.scenes.filter((scene) => scene.campaignId === context.campaignId).map((scene) => scene.id));
-        if (tokenId && !context.state.tokens.some((token) => campaignSceneIds.has(token.sceneId) && token.id === tokenId)) return toolError("not_found", { entity: "token", id: tokenId });
+        const visibilityStore = readOnlyToolStore(context);
+        const readableScenes = readableScenesForUser(visibilityStore, context.userId, context.campaignId);
+        if (sceneId && !readableScenes.some((scene) => scene.id === sceneId)) return toolError("not_found", { entity: "scene", id: sceneId });
+        const campaignSceneIds = new Set(readableScenes.map((scene) => scene.id));
         const normalizedQuery = query.toLocaleLowerCase();
-        const visibleTokens = visibleTokensForUser({ state: context.state, save: () => undefined, replace: () => undefined } satisfies StateStore, context.userId, context.campaignId, context.state.tokens.filter((token) => campaignSceneIds.has(token.sceneId)));
+        const visibleTokens = visibleTokensForUser(visibilityStore, context.userId, context.campaignId, context.state.tokens.filter((token) => campaignSceneIds.has(token.sceneId)));
+        if (tokenId && !visibleTokens.some((token) => token.id === tokenId)) return toolError("not_found", { entity: "token", id: tokenId });
         const tokens = visibleTokens
           .filter((token) => !tokenId || token.id === tokenId)
           .filter((token) => !sceneId || token.sceneId === sceneId)
@@ -12305,10 +13818,12 @@ function createAiThreadTools(): AiToolDefinition[] {
         const assetId = stringFromRecord(request, "assetId");
         const query = stringFromRecord(request, "query") ?? "";
         const limit = numberFromRecord(request, "limit", 1, 10) ?? 5;
-        if (assetId && !context.state.assets.some((asset) => asset.campaignId === context.campaignId && asset.id === assetId)) return toolError("not_found", { entity: "asset", id: assetId });
+        const visibilityStore = readOnlyToolStore(context);
+        if (assetId && !context.state.assets.some((asset) => asset.campaignId === context.campaignId && asset.id === assetId && canReadAssetRecord(visibilityStore, context.userId, asset))) return toolError("not_found", { entity: "asset", id: assetId });
         const normalizedQuery = query.toLocaleLowerCase();
         const assets = context.state.assets
           .filter((asset) => asset.campaignId === context.campaignId)
+          .filter((asset) => canReadAssetRecord(visibilityStore, context.userId, asset))
           .filter((asset) => !assetId || asset.id === assetId)
           .filter((asset) => {
             if (!normalizedQuery) return true;
@@ -12346,8 +13861,8 @@ function createAiThreadTools(): AiToolDefinition[] {
     },
     {
       name: "read_combat",
-      description: "Read active or recent combat state visible to a combat manager, including round, turn order, and bounded combatant metadata.",
-      requiredPermissions: ["combat.manage"],
+      description: "Read active or recent combat state visible to the caller, including round, turn order, and bounded combatant metadata.",
+      requiredPermissions: ["campaign.read"],
       parameters: {
         type: "object",
         properties: {
@@ -12424,10 +13939,12 @@ function createAiThreadTools(): AiToolDefinition[] {
         const encounterId = stringFromRecord(request, "encounterId");
         const query = stringFromRecord(request, "query") ?? "";
         const limit = numberFromRecord(request, "limit", 1, 10) ?? 5;
-        if (encounterId && !context.state.encounters.some((encounter) => encounter.campaignId === context.campaignId && encounter.id === encounterId)) return toolError("not_found", { entity: "encounter", id: encounterId });
+        const visibilityStore = readOnlyToolStore(context);
+        if (encounterId && !context.state.encounters.some((encounter) => encounter.campaignId === context.campaignId && encounter.id === encounterId && canReadEncounter(visibilityStore, context.userId, encounter))) return toolError("not_found", { entity: "encounter", id: encounterId });
         const normalizedQuery = query.toLocaleLowerCase();
         const encounters = context.state.encounters
           .filter((encounter) => encounter.campaignId === context.campaignId)
+          .filter((encounter) => canReadEncounter(visibilityStore, context.userId, encounter))
           .filter((encounter) => !encounterId || encounter.id === encounterId)
           .filter((encounter) => {
             if (!normalizedQuery) return true;
@@ -12493,8 +14010,8 @@ function createAiThreadTools(): AiToolDefinition[] {
     },
     {
       name: "roll_dice",
-      description: "Roll dice through the campaign dice engine and add the result to chat.",
-      requiredPermissions: ["dice.roll"],
+      description: "Roll dice through the campaign dice engine and draft the result plus chat card for human approval.",
+      requiredPermissions: ["ai.proposeChanges", "dice.roll", "chat.write"],
       parameters: {
         type: "object",
         properties: {
@@ -12911,6 +14428,11 @@ function readWorkspaceToolOutput(context: AiToolContext): unknown {
   if (!campaign) return toolError("not_found", { entity: "campaign", id: context.campaignId });
   const organization = context.state.organizations.find((item) => item.id === campaign.organizationId);
   const members = organization ? context.state.organizationMembers.filter((member) => member.organizationId === organization.id) : [];
+  const callerMembership = members.find((member) => member.userId === context.userId);
+  const canManageWorkspace = Boolean(
+    organization?.ownerUserId === context.userId || callerMembership?.role === "owner" || callerMembership?.role === "admin",
+  );
+  const visibleMembers = canManageWorkspace ? members : members.filter((member) => member.userId === context.userId);
   return {
     organization: organization
       ? {
@@ -12930,22 +14452,23 @@ function readWorkspaceToolOutput(context: AiToolContext): unknown {
           updatedAt: organization.updatedAt
         }
       : undefined,
-    members: members.map((member) => ({
+    members: visibleMembers.map((member) => ({
       id: member.id,
       userId: member.userId,
       role: member.role,
-      user: redactedUserToolSummary(context.state.users.find((user) => user.id === member.userId)),
+      user: rosterUserToolSummary(context.state.users.find((user) => user.id === member.userId)),
       createdAt: member.createdAt,
       updatedAt: member.updatedAt
     })),
-    memberCount: members.length
+    memberCount: visibleMembers.length
   };
 }
 
 function readCampaignToolOutput(context: AiToolContext): unknown {
   const campaign = context.state.campaigns.find((item) => item.id === context.campaignId);
   if (!campaign) return toolError("not_found", { entity: "campaign", id: context.campaignId });
-  const scenes = context.state.scenes.filter((scene) => scene.campaignId === campaign.id);
+  const canViewPrep = proposalPermissionsIncludePrepAccess(context.permissions);
+  const scenes = context.state.scenes.filter((scene) => scene.campaignId === campaign.id && (canViewPrep || scene.active));
   const sceneIds = new Set(scenes.map((scene) => scene.id));
   const proposals = visibleProposalsForUser(context.state, context.userId, campaign.id, context.permissions);
   const members = context.state.members.filter((member) => member.campaignId === campaign.id);
@@ -12973,22 +14496,25 @@ function readCampaignToolOutput(context: AiToolContext): unknown {
       members: members.length,
       invites: canManageCampaign ? context.state.invites.filter((invite) => invite.campaignId === campaign.id && inviteStatus(invite) === "pending").length : undefined,
       scenes: scenes.length,
-      aiEditLayers: scenes.filter((scene) => scene.folder === AI_EDIT_SCENE_FOLDER).length,
-      tokens: context.state.tokens.filter((token) => sceneIds.has(token.sceneId)).length,
-      actors: context.state.actors.filter((actor) => actor.campaignId === campaign.id).length,
-      items: context.state.items.filter((item) => item.campaignId === campaign.id).length,
-      journals: context.state.journals.filter((journal) => journal.campaignId === campaign.id).length,
-      assets: context.state.assets.filter((asset) => asset.campaignId === campaign.id).length,
-      encounters: context.state.encounters.filter((encounter) => encounter.campaignId === campaign.id).length,
-      combats: context.state.combats.filter((combat) => combat.campaignId === campaign.id).length,
+      ...(canViewPrep
+        ? {
+            aiEditLayers: scenes.filter((scene) => scene.folder === AI_EDIT_SCENE_FOLDER).length,
+            tokens: context.state.tokens.filter((token) => sceneIds.has(token.sceneId)).length,
+            actors: context.state.actors.filter((actor) => actor.campaignId === campaign.id).length,
+            items: context.state.items.filter((item) => item.campaignId === campaign.id).length,
+            journals: context.state.journals.filter((journal) => journal.campaignId === campaign.id).length,
+            assets: context.state.assets.filter((asset) => asset.campaignId === campaign.id).length,
+            encounters: context.state.encounters.filter((encounter) => encounter.campaignId === campaign.id).length,
+            combats: context.state.combats.filter((combat) => combat.campaignId === campaign.id).length,
+          }
+        : {}),
       proposals: proposals.length
     },
     members: members.map((member) => ({
       id: member.id,
       userId: member.userId,
       role: member.role,
-      user: redactedUserToolSummary(context.state.users.find((user) => user.id === member.userId)),
-      source: member.source,
+      user: rosterUserToolSummary(context.state.users.find((user) => user.id === member.userId)),
       createdAt: member.createdAt,
       updatedAt: member.updatedAt
     })),
@@ -13005,29 +14531,88 @@ function readCampaignToolOutput(context: AiToolContext): unknown {
             updatedAt: invite.updatedAt
           }))
       : undefined,
-    aiEditLayers: scenes
-      .filter((scene) => scene.folder === AI_EDIT_SCENE_FOLDER)
-      .map((scene) => ({
-        id: scene.id,
-        name: scene.name,
-        targetSceneId: stringFromRecord(scene.metadata, "targetSceneId"),
-        backgroundAssetId: scene.backgroundAssetId,
-        tokenCount: context.state.tokens.filter((token) => token.sceneId === scene.id).length,
-        updatedAt: scene.updatedAt
-      })),
+    aiEditLayers: canViewPrep
+      ? scenes
+          .filter((scene) => scene.folder === AI_EDIT_SCENE_FOLDER)
+          .map((scene) => ({
+            id: scene.id,
+            name: scene.name,
+            targetSceneId: stringFromRecord(scene.metadata, "targetSceneId"),
+            backgroundAssetId: scene.backgroundAssetId,
+            tokenCount: context.state.tokens.filter((token) => token.sceneId === scene.id).length,
+            updatedAt: scene.updatedAt
+          }))
+      : [],
     proposalStatusCounts: countBy(proposals, (proposal) => proposal.status)
   };
 }
 
+function readWorldToolOutput(context: AiToolContext, input: { worldId?: string; query: string; limit: number }): unknown {
+  const normalizedQuery = input.query.toLocaleLowerCase();
+  const worlds = context.state.worlds
+    .filter((world) => world.campaignId === context.campaignId)
+    .filter((world) => !input.worldId || world.id === input.worldId)
+    .filter((world) => !normalizedQuery || world.name.toLocaleLowerCase().includes(normalizedQuery) || world.description.toLocaleLowerCase().includes(normalizedQuery))
+    .sort((left, right) => left.name.localeCompare(right.name) || left.id.localeCompare(right.id))
+    .slice(0, input.limit)
+    .map((world) => ({ ...world }));
+  if (input.worldId && worlds.length === 0) return toolError("not_found", { entity: "world", id: input.worldId });
+  return { worldId: input.worldId, query: input.query, count: worlds.length, worlds };
+}
+
+function readHandoutToolOutput(context: AiToolContext, input: { handoutId?: string; query: string; limit: number }): unknown {
+  const store = readOnlyToolStore(context);
+  const normalizedQuery = input.query.toLocaleLowerCase();
+  const handouts = context.state.handouts
+    .map((handout) => normalizeHandout(handout))
+    .filter((handout) => handout.campaignId === context.campaignId && canReadHandout(store, context.userId, handout))
+    .filter((handout) => !input.handoutId || handout.id === input.handoutId)
+    .filter((handout) => !normalizedQuery || handout.title.toLocaleLowerCase().includes(normalizedQuery) || handout.body.toLocaleLowerCase().includes(normalizedQuery) || handout.tags.some((tag) => tag.toLocaleLowerCase().includes(normalizedQuery)))
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || left.title.localeCompare(right.title))
+    .slice(0, input.limit)
+    .map((handout) => ({ ...handout, visibleToUserIds: [...handout.visibleToUserIds], visibleToActorIds: [...handout.visibleToActorIds], assetIds: [...handout.assetIds], tags: [...handout.tags], readByUserIds: [...handout.readByUserIds] }));
+  if (input.handoutId && handouts.length === 0) return toolError("not_found", { entity: "handout", id: input.handoutId });
+  return { handoutId: input.handoutId, query: input.query, count: handouts.length, handouts };
+}
+
+function searchCampaignToolOutput(context: AiToolContext, input: { query: string; types: string[]; worldId?: string; limit: number }): unknown {
+  const query = input.query.trim();
+  if (!query || query.length > 200) return toolError("invalid_tool_input", { message: "query must be 1-200 characters" });
+  const normalizedTypes = normalizeCampaignSearchTypes(input.types.length > 0 ? input.types.join(",") : undefined);
+  if (!normalizedTypes.ok) return toolError("invalid_tool_input", { message: normalizedTypes.error });
+  if (
+    input.worldId &&
+    (!context.permissions.includes("world.read") ||
+      !context.state.worlds.some((world) => world.id === input.worldId && world.campaignId === context.campaignId))
+  ) {
+    return toolError("not_found", { entity: "world", id: input.worldId });
+  }
+  const results = campaignSearchResults(readOnlyToolStore(context), context.userId, context.campaignId, query, normalizedTypes.value, input.worldId).slice(0, input.limit);
+  return { query, types: [...normalizedTypes.value], worldId: input.worldId, count: results.length, results };
+}
+
+function readCampaignSessionToolOutput(context: AiToolContext, input: { sessionId?: string; status?: string; limit: number }): unknown {
+  const sessions = context.state.campaignSessions
+    .filter((session) => session.campaignId === context.campaignId)
+    .filter((session) => !input.sessionId || session.id === input.sessionId)
+    .filter((session) => !input.status || session.status === input.status)
+    .sort((left, right) => left.number - right.number || left.createdAt.localeCompare(right.createdAt))
+    .slice(0, input.limit)
+    .map((session) => ({ ...session, sceneIds: [...session.sceneIds], encounterIds: [...session.encounterIds] }));
+  if (input.sessionId && sessions.length === 0) return toolError("not_found", { entity: "campaignSession", id: input.sessionId });
+  return { sessionId: input.sessionId, status: input.status, count: sessions.length, sessions };
+}
+
 function readAiActivityToolOutput(context: AiToolContext, limit: number): unknown {
-  const threadIds = new Set(context.state.aiThreads.filter((thread) => thread.campaignId === context.campaignId).map((thread) => thread.id));
   const canReadGm = context.permissions.includes("ai.readGmMemory");
   const canReadToolCalls = context.permissions.includes("ai.proposeChanges");
+  const threads = context.state.aiThreads
+    .filter((thread) => thread.campaignId === context.campaignId && (canReadToolCalls || thread.userId === context.userId))
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+  const threadIds = new Set(threads.map((thread) => thread.id));
   const visibleProposals = visibleProposalsForUser(context.state, context.userId, context.campaignId, context.permissions);
   return {
-    threads: context.state.aiThreads
-      .filter((thread) => thread.campaignId === context.campaignId)
-      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+    threads: threads
       .slice(0, limit)
       .map((thread) => ({
         id: thread.id,
@@ -13047,7 +14632,7 @@ function readAiActivityToolOutput(context: AiToolContext, limit: number): unknow
       .map(proposalToolSummary),
     memory: context.state.aiMemory
       .filter((memory) => memory.campaignId === context.campaignId)
-      .filter((memory) => memory.visibility === "public" || canReadGm)
+      .filter((memory) => canReadGm || (memory.visibility === "public" && aiMemoryFactStatus(memory) === "approved"))
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
       .slice(0, limit)
       .map((memory) => ({
@@ -13055,12 +14640,13 @@ function readAiActivityToolOutput(context: AiToolContext, limit: number): unknow
         text: memory.text,
         visibility: memory.visibility,
         sourceIds: memory.sourceIds,
-        approved: Boolean(memory.approvedByUserId),
+        status: aiMemoryFactStatus(memory),
+        approved: aiMemoryFactStatus(memory) === "approved",
         createdAt: memory.createdAt,
         updatedAt: memory.updatedAt
       })),
     evaluations: context.state.aiEvaluations
-      .filter((evaluation) => evaluation.campaignId === context.campaignId)
+      .filter((evaluation) => evaluation.campaignId === context.campaignId && threadIds.has(evaluation.threadId))
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
       .slice(0, limit)
       .map((evaluation) => ({
@@ -13228,15 +14814,15 @@ async function draftFogPresetToolOutput(context: AiToolContext, request: Record<
 
 function readSystemsToolOutput(context: AiToolContext, input: { systemId?: string; actorId?: string; includeDetails: boolean; limit: number }): unknown {
   const campaign = context.state.campaigns.find((item) => item.id === context.campaignId);
-  const systems = installedSystems
+  const systems = registeredSystems(context.state)
     .filter((system) => !input.systemId || system.id === input.systemId)
     .map((system) => ({
-      ...system,
+      ...systemRuntimeInfo({ state: context.state }, system),
       active: campaign?.defaultSystemId === system.id,
-      templates: input.includeDetails ? characterTemplatesForSystem(system.id).slice(0, input.limit).map((template) => ({ id: template.id, name: template.name, actorType: template.actorType, systemId: template.systemId })) : undefined,
+      templates: input.includeDetails && hasSystemRuntimeCapability(system.id, "character-templates") ? characterTemplatesForSystem(system.id).slice(0, input.limit).map((template) => ({ id: template.id, name: template.name, actorType: template.actorType, systemId: template.systemId })) : undefined,
       origins: input.includeDetails && system.id === DND_5E_SRD_SYSTEM_ID ? dnd5eSrdCharacterOrigins() : undefined,
-      encounterThreats: input.includeDetails ? encounterThreatsForSystem(system.id).slice(0, input.limit).map((threat) => ({ id: threat.id, name: threat.name, challenge: "challenge" in threat ? threat.challenge : undefined, xp: "xp" in threat ? threat.xp : undefined })) : undefined,
-      compendium: input.includeDetails ? compendiumEntriesForSystem(system.id).slice(0, input.limit).map((entry) => ({ id: entry.id, type: entry.type, name: entry.name, summary: entry.summary })) : undefined
+      encounterThreats: input.includeDetails && hasSystemRuntimeCapability(system.id, "encounter-builder") ? encounterThreatsForSystem(system.id).slice(0, input.limit).map((threat) => ({ id: threat.id, name: threat.name, challenge: "challenge" in threat ? threat.challenge : undefined, xp: "xp" in threat ? threat.xp : undefined })) : undefined,
+      compendium: input.includeDetails && hasSystemRuntimeCapability(system.id, "compendium") ? compendiumEntriesForSystem(system.id).slice(0, input.limit).map((entry) => ({ id: entry.id, type: entry.type, name: entry.name, summary: entry.summary })) : undefined
     }));
   if (input.systemId && systems.length === 0) return toolError("not_found", { entity: "system", id: input.systemId });
   const actor = input.actorId ? context.state.actors.find((item) => item.id === input.actorId && item.campaignId === context.campaignId) : undefined;
@@ -13259,12 +14845,13 @@ function readSystemsToolOutput(context: AiToolContext, input: { systemId?: strin
 }
 
 function readPluginsToolOutput(context: AiToolContext, input: { pluginId?: string; includeStorage: boolean; limit: number }): unknown {
-  const pluginGrants = context.state.permissionGrants.filter((grant) => grant.campaignId === context.campaignId && grant.subjectType === "plugin").filter((grant) => !input.pluginId || grant.subjectId === input.pluginId);
-  const pluginIds = new Set(pluginGrants.map((grant) => grant.subjectId));
-  if (input.pluginId) pluginIds.add(input.pluginId);
+  const campaignPluginGrants = context.state.permissionGrants.filter((grant) => grant.campaignId === context.campaignId && grant.subjectType === "plugin");
+  const pluginIds = new Set(campaignPluginGrants.map((grant) => grant.subjectId));
+  if (input.pluginId && !pluginIds.has(input.pluginId)) return toolError("not_found", { entity: "plugin", id: input.pluginId });
+  const pluginGrants = campaignPluginGrants.filter((grant) => !input.pluginId || grant.subjectId === input.pluginId);
   const storage = input.includeStorage
     ? context.state.pluginStorage
-        .filter((entry) => entry.campaignId === context.campaignId && (!input.pluginId || entry.pluginId === input.pluginId))
+        .filter((entry) => entry.campaignId === context.campaignId && pluginIds.has(entry.pluginId) && (!input.pluginId || entry.pluginId === input.pluginId))
         .sort((left, right) => left.pluginId.localeCompare(right.pluginId) || left.key.localeCompare(right.key))
         .slice(0, input.limit)
         .map((entry) => ({
@@ -13287,9 +14874,9 @@ function readPluginsToolOutput(context: AiToolContext, input: { pluginId?: strin
       updatedAt: grant.updatedAt
     })),
     reviews: context.state.pluginReviews
-      .filter((review) => !input.pluginId || review.pluginId === input.pluginId)
+      .filter((review) => pluginIds.has(review.pluginId) && (!input.pluginId || review.pluginId === input.pluginId))
       .slice(0, input.limit)
-      .map((review) => ({ pluginId: review.pluginId, version: review.version, status: review.status, reviewedByUserId: review.reviewedByUserId, reviewedAt: review.reviewedAt })),
+      .map((review) => ({ pluginId: review.pluginId, version: review.version, status: review.status, reviewedAt: review.reviewedAt })),
     storage,
     registryNote: "Plugin install, configure, registry sync, storage writes, and chat-command execution are intentionally excluded from the agent MCP surface."
   };
@@ -13298,6 +14885,7 @@ function readPluginsToolOutput(context: AiToolContext, input: { pluginId?: strin
 function readContentImportsToolOutput(context: AiToolContext, input: { importId?: string; status?: string; limit: number }): unknown {
   const imports = context.state.contentImports
     .filter((batch) => batch.campaignId === context.campaignId)
+    .filter((batch) => batch.status !== "deleted")
     .filter((batch) => !input.importId || batch.id === input.importId)
     .filter((batch) => !input.status || batch.status === input.status)
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
@@ -13430,6 +15018,11 @@ function redactedUserToolSummary(user: User | undefined): Record<string, unknown
   };
 }
 
+function rosterUserToolSummary(user: User | undefined): Pick<User, "id" | "displayName"> | undefined {
+  if (!user) return undefined;
+  return { id: user.id, displayName: user.displayName };
+}
+
 function fogPresetRegionsFromInput(values: unknown[]): FogPresetRegion[] | undefined {
   const regions: FogPresetRegion[] = [];
   for (const value of values) {
@@ -13501,12 +15094,13 @@ interface SystemRollEffectOptions {
 
 type SystemRollEffectApplication = { data: Record<string, unknown>; effect: SystemRollEffectResult; effects?: SystemRollEffectResult[] } | { error: string; message: string };
 
-function createAiToolContext(store: StateStore, campaignId: string, userId: string, permissions: PermissionName[], runtime: AiToolRuntime, signal?: AbortSignal): AiToolContext {
+function createAiToolContext(store: StateStore, campaignId: string, userId: string, permissions: PermissionName[], runtime: AiToolRuntime, signal?: AbortSignal, sourceId?: string): AiToolContext {
   const createAiProposal: AiToolContext["createProposal"] = async ({ title, summary, changes }) => {
     const proposal: Proposal = createTimestamped("prop", {
       campaignId,
       createdByUserId: userId,
       createdByType: "ai" as const,
+      sourceId,
       title,
       summary,
       status: "pending" as const,
@@ -13595,12 +15189,27 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
       if (proposal.status !== "approved") return toolError("proposal_not_approved", { proposalId, status: proposal.status });
       const preparedChanges = prepareProposalChanges(store, proposal.campaignId, proposal.createdByUserId ?? userId, proposal.changesJson, { currentProposalId: proposal.id });
       if ("error" in preparedChanges) return toolError(preparedChanges.error, { message: preparedChanges.message });
+      const missingPermission = missingProposalChangePermission(preparedChanges.changes, permissions);
+      if (missingPermission) return missingPermissionToolOutput(missingPermission);
       proposal.changesJson = preparedChanges.changes;
       const boardStateChanged = proposalTouchesBoardState(proposal);
+      const beforeState = store.state;
+      const appliedChanges = structuredClone(proposal.changesJson);
       store.replace(applyProposal(store.state, proposal, userId));
       refreshAiToolContextState(context, store.state);
-      store.save();
       const applied = store.state.proposals.find((item) => item.id === proposalId);
+      if (!applied) return toolError("proposal_apply_incomplete", { proposalId });
+      linkAppliedRecapToSession(store, applied, userId);
+      appendServerAuditLog(store, userId, {
+        campaignId,
+        action: "proposal.apply",
+        targetType: "proposal",
+        targetId: applied.id,
+        before: { status: "approved", changeCount: appliedChanges.length },
+        after: { status: applied.status, entities: [...new Set(appliedChanges.map((change) => change.entity))], reversible: Boolean(applied.inverseChangesJson), appliedBy: "ai_tool" }
+      });
+      broadcastProposalEntityChanges(store, beforeState, campaignId, appliedChanges, userId, (event) => runtime.broadcast?.(event));
+      store.save();
       runtime.broadcast?.(
         createEvent({
           campaignId,
@@ -13610,15 +15219,19 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
           payload: applied
         })
       );
-      return { proposal: applied ? proposalToolSummary(applied) : undefined, boardStateChanged };
+      return { proposal: proposalToolSummary(applied), boardStateChanged };
     },
     createMemory: async ({ text, visibility, sourceIds }) => {
-      const memory = createTimestamped("mem", {
+      const memory = normalizeAiMemoryFact(createTimestamped("mem", {
         campaignId,
         text: text.slice(0, 500),
+        type: "ai_suggestion" as const,
         visibility,
-        sourceIds
-      }) satisfies AiMemoryFact;
+        sourceIds,
+        source: { type: "ai_tool" },
+        createdBy: "ai" as const,
+        status: "candidate" as const
+      }) satisfies AiMemoryFact);
       store.state.aiMemory.push(memory);
       return memory.id;
     },
@@ -13701,7 +15314,6 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
         terms: rolled.terms,
         total: rolled.total
       }) satisfies DiceRoll;
-      store.state.rolls.push(roll);
       const message = createTimestamped("msg", {
         campaignId,
         userId,
@@ -13711,8 +15323,15 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
         recipientUserIds: [],
         rollId: roll.id
       }) satisfies ChatMessage;
-      store.state.chat.push(message);
-      return { rollId: roll.id, formula: roll.formula, label: roll.label, total: roll.total, visibility: roll.visibility };
+      const proposalId = await createAiProposal({
+        title: label ? `Roll: ${label}` : `Roll ${formula}`,
+        summary: `${formula} = ${roll.total}. Publish the verified result to campaign roll history and chat after approval.`,
+        changes: [
+          { entity: "roll", action: "create", data: { ...roll } },
+          { entity: "chat", action: "create", data: { ...message } }
+        ]
+      });
+      return { proposalId, rollId: roll.id, formula: roll.formula, label: roll.label, total: roll.total, visibility: roll.visibility, approvalRequired: true };
     },
     sendChatMessage: async ({ body, sceneId, type, visibility, recipientUserIds }) => {
       if (sceneId && !store.state.scenes.some((scene) => scene.id === sceneId && scene.campaignId === campaignId)) return toolError("not_found", { entity: "scene", id: sceneId });
@@ -13733,17 +15352,12 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
         visibility: resolvedVisibility,
         recipientUserIds: resolvedVisibility === "whisper" ? [...new Set(recipientUserIds)].sort() : []
       }) satisfies ChatMessage;
-      store.state.chat.push(message);
-      runtime.broadcast?.(
-        createEvent({
-          campaignId,
-          type: "chat.message.created",
-          actorUserId: userId,
-          targetId: message.id,
-          payload: message
-        })
-      );
-      return { messageId: message.id, type: message.type, visibility: message.visibility, recipientUserIds: message.recipientUserIds, sceneId: message.sceneId };
+      const proposalId = await createAiProposal({
+        title: messageType === "whisper" ? "Send private chat message" : "Send campaign chat message",
+        summary: "Publish the drafted chat message after human review.",
+        changes: [{ entity: "chat", action: "create", data: { ...message } }]
+      });
+      return { proposalId, messageId: message.id, type: message.type, visibility: message.visibility, recipientUserIds: message.recipientUserIds, sceneId: message.sceneId, approvalRequired: true };
     },
     targetToken: async ({ tokenId, targeted }) => {
       const tokenCampaignId = campaignIdForToken(store, tokenId);
@@ -14390,8 +16004,9 @@ function systemEffectPool(actor: Actor): "hp" | "strain" | "composure" | undefin
   return undefined;
 }
 
-const proposalChangeEntities = new Set<ProposalChange["entity"]>(["campaign", "scene", "token", "actor", "item", "journal", "chat", "roll", "diceMacro", "encounter", "combat", "asset", "fogPreset"]);
+const proposalChangeEntities = new Set<ProposalChange["entity"]>(["campaign", "world", "scene", "token", "actor", "item", "journal", "handout", "chat", "roll", "diceMacro", "encounter", "combat", "asset", "fogPreset", "pluginStorage"]);
 const proposalChangeActions = new Set<ProposalChange["action"]>(["create", "update", "delete"]);
+const campaignProposalMutableFields = new Set(["name", "description", "defaultSystemId", "visibility"]);
 
 function prepareProposalChanges(
   store: StateStore,
@@ -14420,8 +16035,14 @@ function prepareProposalChanges(
       .map((change) => stringFromRecord(change.data, "id"))
       .filter((id): id is string => Boolean(id))
   );
+  const createdWorldIds = new Set(
+    normalizedChanges
+      .filter((change) => change.entity === "world" && change.action === "create")
+      .map((change) => stringFromRecord(change.data, "id"))
+      .filter((id): id is string => Boolean(id))
+  );
   for (const [index, change] of normalizedChanges.entries()) {
-    const scopeError = proposalChangeScopeError(store, campaignId, change, createdSceneIds, createdActorIds, options);
+    const scopeError = proposalChangeScopeError(store, campaignId, change, createdSceneIds, createdActorIds, createdWorldIds, options);
     if (scopeError) return { error: "invalid_proposal_scope", message: `Proposal change ${index + 1} ${scopeError}` };
   }
   return { changes: normalizedChanges };
@@ -14439,13 +16060,16 @@ function proposalChangeFromInput(value: unknown): ProposalChange | undefined {
   return id ? { entity, action, id, data } : { entity, action, data };
 }
 
-function proposalChangeScopeError(store: StateStore, campaignId: string, change: ProposalChange, createdSceneIds: Set<string>, createdActorIds: Set<string>, options: { currentProposalId?: string }): string | undefined {
+function proposalChangeScopeError(store: StateStore, campaignId: string, change: ProposalChange, createdSceneIds: Set<string>, createdActorIds: Set<string>, createdWorldIds: Set<string>, options: { currentProposalId?: string }): string | undefined {
   if (change.entity === "campaign") {
     if (change.action === "create") return "cannot create campaigns from a campaign proposal";
+    if (change.action === "delete") return "cannot delete campaigns from a campaign proposal";
     const targetId = change.id ?? stringFromRecord(change.data, "id");
-    return targetId === campaignId ? undefined : "targets a different campaign";
+    if (targetId !== campaignId) return "targets a different campaign";
+    const immutableField = Object.keys(change.data).find((field) => !campaignProposalMutableFields.has(field));
+    return immutableField ? `cannot edit immutable or lifecycle campaign field ${immutableField}` : undefined;
   }
-  if (change.action === "create") return proposalCreateScopeError(store, campaignId, change, createdSceneIds, createdActorIds, options);
+  if (change.action === "create") return proposalCreateScopeError(store, campaignId, change, createdSceneIds, createdActorIds, createdWorldIds, options);
   const existingCampaignId = campaignIdForProposalEntity(store, change.entity, change.id);
   if (!existingCampaignId) return `targets a missing ${change.entity}`;
   if (existingCampaignId !== campaignId) return `targets a ${change.entity} outside this campaign`;
@@ -14455,10 +16079,12 @@ function proposalChangeScopeError(store: StateStore, campaignId: string, change:
   if (sceneScopeError) return sceneScopeError;
   const actorScopeError = proposalActorReferenceScopeError(store, campaignId, change.data, createdActorIds);
   if (actorScopeError) return actorScopeError;
+  const worldScopeError = proposalWorldReferenceScopeError(store, campaignId, change.data, createdWorldIds);
+  if (worldScopeError) return worldScopeError;
   return undefined;
 }
 
-function proposalCreateScopeError(store: StateStore, campaignId: string, change: ProposalChange, createdSceneIds: Set<string>, createdActorIds: Set<string>, options: { currentProposalId?: string }): string | undefined {
+function proposalCreateScopeError(store: StateStore, campaignId: string, change: ProposalChange, createdSceneIds: Set<string>, createdActorIds: Set<string>, createdWorldIds: Set<string>, options: { currentProposalId?: string }): string | undefined {
   const createdId = stringFromRecord(change.data, "id");
   if (createdId && proposalEntityExists(store, change.entity, createdId, options)) return `creates a ${change.entity} id that already exists`;
   if (change.entity === "token") {
@@ -14473,6 +16099,8 @@ function proposalCreateScopeError(store: StateStore, campaignId: string, change:
   if (sceneScopeError) return sceneScopeError;
   const actorScopeError = proposalActorReferenceScopeError(store, campaignId, change.data, createdActorIds);
   if (actorScopeError) return actorScopeError;
+  const worldScopeError = proposalWorldReferenceScopeError(store, campaignId, change.data, createdWorldIds);
+  if (worldScopeError) return worldScopeError;
   return undefined;
 }
 
@@ -14480,6 +16108,8 @@ function proposalEntityExists(store: StateStore, entity: ProposalChange["entity"
   switch (entity) {
     case "campaign":
       return store.state.campaigns.some((item) => item.id === id);
+    case "world":
+      return store.state.worlds.some((item) => item.id === id);
     case "scene":
       return store.state.scenes.some((item) => item.id === id);
     case "token":
@@ -14490,6 +16120,8 @@ function proposalEntityExists(store: StateStore, entity: ProposalChange["entity"
       return store.state.items.some((item) => item.id === id);
     case "journal":
       return store.state.journals.some((item) => item.id === id);
+    case "handout":
+      return store.state.handouts.some((item) => item.id === id);
     case "chat":
       return store.state.chat.some((item) => item.id === id);
     case "roll":
@@ -14498,12 +16130,18 @@ function proposalEntityExists(store: StateStore, entity: ProposalChange["entity"
       return store.state.diceMacros.some((item) => item.id === id);
     case "encounter":
       return store.state.encounters.some((item) => item.id === id);
+    case "campaignSession":
+      return store.state.campaignSessions.some((item) => item.id === id);
     case "combat":
       return store.state.combats.some((item) => item.id === id);
     case "asset":
       return store.state.assets.some((item) => item.id === id) || Boolean(pendingProposalAssetForDelivery(store, id, options.currentProposalId));
     case "fogPreset":
       return store.state.fogPresets.some((item) => item.id === id);
+    case "pluginStorage":
+      return store.state.pluginStorage.some((item) => item.id === id);
+    case "aiMemory":
+      return store.state.aiMemory.some((item) => item.id === id);
   }
 }
 
@@ -14521,9 +16159,18 @@ function proposalActorReferenceScopeError(store: StateStore, campaignId: string,
   return store.state.actors.some((actor) => actor.id === actorId && actor.campaignId === campaignId) ? undefined : "references an actor outside this campaign";
 }
 
+function proposalWorldReferenceScopeError(store: StateStore, campaignId: string, data: Record<string, unknown>, createdWorldIds: Set<string> = new Set()): string | undefined {
+  const worldId = stringFromRecord(data, "worldId");
+  if (!worldId) return undefined;
+  if (createdWorldIds.has(worldId)) return undefined;
+  return store.state.worlds.some((world) => world.id === worldId && world.campaignId === campaignId) ? undefined : "references a world outside this campaign";
+}
+
 function campaignIdForProposalEntity(store: StateStore, entity: ProposalChange["entity"], id: string | undefined): string | undefined {
   if (!id) return undefined;
   switch (entity) {
+    case "world":
+      return store.state.worlds.find((item) => item.id === id)?.campaignId;
     case "scene":
       return store.state.scenes.find((item) => item.id === id)?.campaignId;
     case "token": {
@@ -14536,6 +16183,8 @@ function campaignIdForProposalEntity(store: StateStore, entity: ProposalChange["
       return store.state.items.find((item) => item.id === id)?.campaignId;
     case "journal":
       return store.state.journals.find((item) => item.id === id)?.campaignId;
+    case "handout":
+      return store.state.handouts.find((item) => item.id === id)?.campaignId;
     case "chat":
       return store.state.chat.find((item) => item.id === id)?.campaignId;
     case "roll":
@@ -14544,12 +16193,18 @@ function campaignIdForProposalEntity(store: StateStore, entity: ProposalChange["
       return store.state.diceMacros.find((item) => item.id === id)?.campaignId;
     case "encounter":
       return store.state.encounters.find((item) => item.id === id)?.campaignId;
+    case "campaignSession":
+      return store.state.campaignSessions.find((item) => item.id === id)?.campaignId;
     case "combat":
       return store.state.combats.find((item) => item.id === id)?.campaignId;
     case "asset":
       return store.state.assets.find((item) => item.id === id)?.campaignId ?? pendingProposalAssetForDelivery(store, id)?.campaignId;
     case "fogPreset":
       return store.state.fogPresets.find((item) => item.id === id)?.campaignId;
+    case "pluginStorage":
+      return store.state.pluginStorage.find((item) => item.id === id)?.campaignId;
+    case "aiMemory":
+      return store.state.aiMemory.find((item) => item.id === id)?.campaignId;
     case "campaign":
       return store.state.campaigns.find((item) => item.id === id)?.id;
   }
@@ -14574,6 +16229,22 @@ function normalizeProposalChanges(changes: ProposalChange[], campaignId: string,
       if (!Array.isArray(data.tags)) data.tags = ["ai"];
       if (typeof data.createdBy !== "string") data.createdBy = userId;
       if (typeof data.updatedBy !== "string") data.updatedBy = userId;
+    }
+
+    if (change.entity === "handout") {
+      if (typeof data.visibility !== "string") data.visibility = "gm_only";
+      if (!Array.isArray(data.visibleToUserIds)) data.visibleToUserIds = [];
+      if (!Array.isArray(data.visibleToActorIds)) data.visibleToActorIds = [];
+      if (!Array.isArray(data.assetIds)) data.assetIds = [];
+      if (!Array.isArray(data.tags)) data.tags = ["ai"];
+      if (!Array.isArray(data.readByUserIds)) data.readByUserIds = [];
+      if (typeof data.createdBy !== "string") data.createdBy = userId;
+      if (typeof data.updatedBy !== "string") data.updatedBy = userId;
+    }
+
+    if (change.entity === "pluginStorage") {
+      if (typeof data.updatedByType !== "string") data.updatedByType = "plugin";
+      if (typeof data.updatedById !== "string") data.updatedById = userId;
     }
 
     if (change.entity === "diceMacro") {
@@ -14736,7 +16407,180 @@ function proposalVisibleToUser(state: EngineState, userId: string, campaignId: s
 
 function proposalChangePayloadVisibleToUser(state: EngineState, userId: string, campaignId: string, permissions: PermissionName[], change: ProposalChange): boolean {
   if (change.entity === "journal") return journalProposalChangePayloadVisibleToUser(state, userId, campaignId, permissions, change);
-  return true;
+  const canViewPrep = proposalPermissionsIncludePrepAccess(permissions);
+  const changeId = proposalChangeEntityId(change);
+
+  if (change.entity === "campaign") return permissions.includes("campaign.update");
+  if (change.entity === "world") return permissions.includes("world.read") && canViewPrep;
+  if (change.entity === "scene") {
+    const existing = changeId ? state.scenes.find((scene) => scene.id === changeId && scene.campaignId === campaignId) : undefined;
+    const active = typeof change.data.active === "boolean" ? change.data.active : existing?.active ?? false;
+    return canViewPrep || active;
+  }
+  if (change.entity === "token") {
+    const existing = changeId ? state.tokens.find((token) => token.id === changeId) : undefined;
+    const sceneId = typeof change.data.sceneId === "string" ? change.data.sceneId : existing?.sceneId;
+    const scene = sceneId ? state.scenes.find((candidate) => candidate.id === sceneId && candidate.campaignId === campaignId) : undefined;
+    if (!scene || (!scene.active && !canViewPrep)) return false;
+    if (canViewPrep) return true;
+    const hidden = typeof change.data.hidden === "boolean" ? change.data.hidden : existing?.hidden ?? false;
+    const layer = change.data.layer === "map" || change.data.layer === "player" || change.data.layer === "gm" ? change.data.layer : existing?.layer ?? "player";
+    return !hidden && layer === "player";
+  }
+  if (change.entity === "actor") {
+    const existing = changeId ? state.actors.find((actor) => actor.id === changeId && actor.campaignId === campaignId) : undefined;
+    const ownerUserId = typeof change.data.ownerUserId === "string" ? change.data.ownerUserId : existing?.ownerUserId;
+    const actorPermissions = isRecord(change.data.permissions) ? change.data.permissions : existing?.permissions;
+    const userPermissions = actorPermissions && Array.isArray(actorPermissions[userId]) ? actorPermissions[userId] : [];
+    return permissions.includes("actor.readPrivate") || ownerUserId === userId || userPermissions.includes("actor.readPrivate");
+  }
+  if (change.entity === "item") {
+    const existing = changeId ? state.items.find((item) => item.id === changeId && item.campaignId === campaignId) : undefined;
+    const actorId = typeof change.data.actorId === "string" ? change.data.actorId : existing?.actorId;
+    if (!actorId) return permissions.includes("actor.readPrivate");
+    const actor = state.actors.find((candidate) => candidate.id === actorId && candidate.campaignId === campaignId);
+    return Boolean(
+      actor &&
+        (permissions.includes("actor.readPrivate") || actor.ownerUserId === userId || actor.permissions[userId]?.includes("actor.readPrivate"))
+    );
+  }
+  if (change.entity === "handout") return handoutProposalChangePayloadVisibleToUser(state, userId, campaignId, permissions, change);
+  if (change.entity === "chat") {
+    const existing = changeId ? state.chat.find((message) => message.id === changeId && message.campaignId === campaignId) : undefined;
+    const visibility = change.data.visibility === "public" || change.data.visibility === "gm_only" || change.data.visibility === "whisper" ? change.data.visibility : existing?.visibility;
+    const senderUserId = typeof change.data.userId === "string" ? change.data.userId : existing?.userId;
+    const recipients = Array.isArray(change.data.recipientUserIds) ? stringArrayFromRecord(change.data, "recipientUserIds") : existing?.recipientUserIds ?? [];
+    return visibility === "public" || (visibility === "gm_only" && permissions.includes("chat.moderate")) || (visibility === "whisper" && (senderUserId === userId || recipients.includes(userId)));
+  }
+  if (change.entity === "roll") {
+    const existing = changeId ? state.rolls.find((roll) => roll.id === changeId && roll.campaignId === campaignId) : undefined;
+    const visibility = change.data.visibility === "public" || change.data.visibility === "gm_only" || change.data.visibility === "whisper" ? change.data.visibility : existing?.visibility;
+    const rollerUserId = typeof change.data.userId === "string" ? change.data.userId : existing?.userId;
+    return visibility === "public" || rollerUserId === userId || (visibility === "gm_only" && permissions.includes("chat.moderate"));
+  }
+  if (change.entity === "diceMacro") {
+    const existing = changeId ? state.diceMacros.find((macro) => macro.id === changeId && macro.campaignId === campaignId) : undefined;
+    const visibility = change.data.visibility === "public" || change.data.visibility === "gm_only" ? change.data.visibility : existing?.visibility;
+    return visibility === "public" || permissions.includes("campaign.update");
+  }
+  if (change.entity === "encounter") {
+    if (canViewPrep) return true;
+    return Boolean(changeId && state.combats.some((combat) => combat.campaignId === campaignId && combat.active && combat.encounterId === changeId));
+  }
+  if (change.entity === "combat") return permissions.includes("combat.manage");
+  if (change.entity === "asset") return canViewPrep;
+  if (change.entity === "fogPreset") return permissions.includes("token.reveal");
+  if (change.entity === "pluginStorage") return permissions.includes("plugin.configure");
+  // Newly introduced proposal entities must opt into an explicit visibility
+  // rule. Failing closed prevents a future payload type from leaking by
+  // default through terminal proposal history.
+  return false;
+}
+
+function handoutProposalChangePayloadVisibleToUser(state: EngineState, userId: string, campaignId: string, permissions: PermissionName[], change: ProposalChange): boolean {
+  const handoutId = proposalChangeEntityId(change);
+  const existing = handoutId ? state.handouts.find((handout) => handout.id === handoutId && handout.campaignId === campaignId) : undefined;
+  if (change.action !== "create" && !existing) return false;
+  const visibility = visibilityFromRecord(change.data, "visibility", existing?.visibility ?? "gm_only");
+  const visibleToUserIds = Array.isArray(change.data.visibleToUserIds) ? stringArrayFromRecord(change.data, "visibleToUserIds") : existing?.visibleToUserIds ?? [];
+  const visibleToActorIds = Array.isArray(change.data.visibleToActorIds) ? stringArrayFromRecord(change.data, "visibleToActorIds") : existing?.visibleToActorIds ?? [];
+  if (visibility === "public" || permissions.includes("handout.readSecret") || visibleToUserIds.includes(userId)) return true;
+  return visibleToActorIds.some((actorId) => {
+    const actor = state.actors.find((candidate) => candidate.id === actorId && candidate.campaignId === campaignId);
+    return actor?.ownerUserId === userId || actor?.permissions[userId]?.includes("actor.readPrivate");
+  });
+}
+
+function proposalPermissionsIncludePrepAccess(permissions: PermissionName[]): boolean {
+  return ["campaign.update", "scene.create", "scene.update", "scene.delete", "scene.activate", "token.reveal", "combat.manage"].some((permission) => permissions.includes(permission as PermissionName));
+}
+
+function linkAppliedRecapToSession(store: StateStore, proposal: Proposal, userId: string): void {
+  const sessionId = typeof proposal.diffJson.sessionId === "string" ? proposal.diffJson.sessionId : undefined;
+  if (!sessionId) return;
+  const session = store.state.campaignSessions.find((item) => item.id === sessionId && item.campaignId === proposal.campaignId);
+  if (!session) return;
+  const recapJournalId = proposal.changesJson
+    .filter((change) => change.entity === "journal" && change.action === "create")
+    .map((change) => (typeof change.data.id === "string" ? change.data.id : undefined))
+    .find((id): id is string => Boolean(id));
+  session.recapProposalId = proposal.id;
+  session.recapJournalId = recapJournalId;
+  session.updatedBy = userId;
+  session.updatedAt = nowIso();
+}
+
+function broadcastProposalEntityChanges(
+  store: StateStore,
+  beforeState: EngineState,
+  campaignId: string,
+  changes: ProposalChange[],
+  userId: string,
+  broadcastEvent: (event: EngineEvent) => void
+): void {
+  for (const change of changes) {
+    const id = proposalChangeEntityId(change);
+    const payload = proposalChangeRecordFromState(change.action === "delete" ? beforeState : store.state, campaignId, change) ?? { id, campaignId, deleted: change.action === "delete" };
+    appendServerAuditLog(store, userId, {
+      campaignId,
+      action: `proposal.entity.${change.action}`,
+      targetType: change.entity,
+      targetId: id,
+      after: {
+        proposalEntity: change.entity,
+        proposalAction: change.action,
+        fieldNames: Object.keys(change.data).filter((key) => !["body", "data", "changesJson", "input", "output", "value"].includes(key)).slice(0, 30)
+      }
+    });
+    const eventType = proposalEntityEventType(change);
+    if (eventType) {
+      broadcastEvent(createEvent({ campaignId, type: eventType, actorUserId: userId, targetId: id, payload }));
+    } else {
+      const campaign = store.state.campaigns.find((item) => item.id === campaignId);
+      if (campaign) broadcastEvent(createEvent({ campaignId, type: "campaign.updated", actorUserId: userId, targetId: campaignId, payload: campaign }));
+    }
+  }
+}
+
+function proposalEntityEventType(change: ProposalChange): EngineEvent["type"] | undefined {
+  const suffix = change.action === "create" ? "created" : change.action === "delete" ? "deleted" : "updated";
+  if (change.entity === "world") return `world.${suffix}` as EngineEvent["type"];
+  if (change.entity === "scene") return `scene.${suffix}` as EngineEvent["type"];
+  if (change.entity === "token") return `token.${suffix}` as EngineEvent["type"];
+  if (change.entity === "actor") return `actor.${suffix}` as EngineEvent["type"];
+  if (change.entity === "item") return `item.${suffix}` as EngineEvent["type"];
+  if (change.entity === "journal") return `journal.${suffix}` as EngineEvent["type"];
+  if (change.entity === "handout") return `handout.${suffix}` as EngineEvent["type"];
+  if (change.entity === "chat") return `chat.message.${suffix}` as EngineEvent["type"];
+  if (change.entity === "encounter") return `encounter.${suffix}` as EngineEvent["type"];
+  if (change.entity === "roll" && change.action === "create") return "dice.roll.created";
+  if (change.entity === "combat") return change.action === "create" ? "combat.started" : change.action === "delete" ? "combat.ended" : "combat.turnChanged";
+  if (change.entity === "campaign") return "campaign.updated";
+  return undefined;
+}
+
+function proposalChangeRecordFromState(state: EngineState, campaignId: string, change: ProposalChange): unknown {
+  const id = proposalChangeEntityId(change);
+  if (!id) return undefined;
+  if (change.entity === "campaign") return state.campaigns.find((item) => item.id === id && item.id === campaignId);
+  if (change.entity === "world") return state.worlds.find((item) => item.id === id && item.campaignId === campaignId);
+  if (change.entity === "scene") return state.scenes.find((item) => item.id === id && item.campaignId === campaignId);
+  if (change.entity === "token") return state.tokens.find((item) => item.id === id && state.scenes.some((scene) => scene.id === item.sceneId && scene.campaignId === campaignId));
+  if (change.entity === "actor") return state.actors.find((item) => item.id === id && item.campaignId === campaignId);
+  if (change.entity === "item") return state.items.find((item) => item.id === id && item.campaignId === campaignId);
+  if (change.entity === "journal") return state.journals.find((item) => item.id === id && item.campaignId === campaignId);
+  if (change.entity === "handout") return state.handouts.find((item) => item.id === id && item.campaignId === campaignId);
+  if (change.entity === "chat") return state.chat.find((item) => item.id === id && item.campaignId === campaignId);
+  if (change.entity === "roll") return state.rolls.find((item) => item.id === id && item.campaignId === campaignId);
+  if (change.entity === "diceMacro") return state.diceMacros.find((item) => item.id === id && item.campaignId === campaignId);
+  if (change.entity === "encounter") return state.encounters.find((item) => item.id === id && item.campaignId === campaignId);
+  if (change.entity === "campaignSession") return state.campaignSessions.find((item) => item.id === id && item.campaignId === campaignId);
+  if (change.entity === "combat") return state.combats.find((item) => item.id === id && item.campaignId === campaignId);
+  if (change.entity === "asset") return state.assets.find((item) => item.id === id && item.campaignId === campaignId);
+  if (change.entity === "fogPreset") return state.fogPresets.find((item) => item.id === id && item.campaignId === campaignId);
+  if (change.entity === "pluginStorage") return state.pluginStorage.find((item) => item.id === id && item.campaignId === campaignId);
+  if (change.entity === "aiMemory") return state.aiMemory.find((item) => item.id === id && item.campaignId === campaignId);
+  return undefined;
 }
 
 function journalProposalChangePayloadVisibleToUser(state: EngineState, userId: string, campaignId: string, permissions: PermissionName[], change: ProposalChange): boolean {
@@ -14783,6 +16627,8 @@ function autoApplyAiThreadProposal(store: StateStore, runtime: AiToolRuntime, ca
   try {
     const preparedChanges = prepareProposalChanges(store, proposal.campaignId, proposal.createdByUserId ?? userId, proposal.changesJson, { currentProposalId: proposal.id });
     if ("error" in preparedChanges) throw new Error(preparedChanges.message);
+    const missingPermission = missingProposalChangePermission(preparedChanges.changes, permissionsForUser(store, userId, proposal.campaignId));
+    if (missingPermission) throw new Error(`Missing permission: ${missingPermission}`);
     proposal.changesJson = preparedChanges.changes;
     const boardStateChanged = proposalTouchesBoardState(proposal);
     const refs = proposalAppliedEntityRefs(proposal);
@@ -14799,8 +16645,22 @@ function autoApplyAiThreadProposal(store: StateStore, runtime: AiToolRuntime, ca
       );
     }
     if (proposal.status !== "approved") return undefined;
+    const beforeState = store.state;
+    const appliedChanges = structuredClone(proposal.changesJson);
     store.replace(applyProposal(store.state, proposal, userId));
     const applied = store.state.proposals.find((item) => item.id === proposal.id);
+    if (!applied) throw new Error("Applied proposal record was not persisted");
+    linkAppliedRecapToSession(store, applied, userId);
+    appendServerAuditLog(store, userId, {
+      campaignId: proposal.campaignId,
+      action: "proposal.apply",
+      targetType: "proposal",
+      targetId: proposal.id,
+      before: { status: "approved", changeCount: appliedChanges.length },
+      after: { status: applied.status, entities: [...new Set(appliedChanges.map((change) => change.entity))], reversible: Boolean(applied.inverseChangesJson), appliedBy: "ai_auto" }
+    });
+    broadcastProposalEntityChanges(store, beforeState, proposal.campaignId, appliedChanges, userId, (event) => runtime.broadcast?.(event));
+    store.save();
     runtime.broadcast?.(
       createEvent({
         campaignId: proposal.campaignId,
@@ -14813,7 +16673,7 @@ function autoApplyAiThreadProposal(store: StateStore, runtime: AiToolRuntime, ca
     return {
       proposalId: proposal.id,
       boardStateChanged,
-      proposal: applied ? proposalToolSummary(applied) : undefined,
+      proposal: proposalToolSummary(applied),
       ...refs
     };
   } catch (error) {
@@ -14866,6 +16726,8 @@ function prefixForProposalEntity(entity: ProposalChange["entity"]): string {
   switch (entity) {
     case "campaign":
       return "camp";
+    case "world":
+      return "world";
     case "scene":
       return "scn";
     case "token":
@@ -14876,6 +16738,8 @@ function prefixForProposalEntity(entity: ProposalChange["entity"]): string {
       return "item";
     case "journal":
       return "jnl";
+    case "handout":
+      return "hnd";
     case "chat":
       return "msg";
     case "roll":
@@ -14884,12 +16748,18 @@ function prefixForProposalEntity(entity: ProposalChange["entity"]): string {
       return "mac";
     case "encounter":
       return "enc";
+    case "campaignSession":
+      return "campsess";
     case "combat":
       return "cmb";
     case "asset":
       return "asset";
     case "fogPreset":
       return "fogp";
+    case "pluginStorage":
+      return "pstore";
+    case "aiMemory":
+      return "aimem";
   }
 }
 
@@ -14903,6 +16773,11 @@ function missingProposalChangePermission(changes: ProposalChange[], permissions:
 
 function permissionForProposalChange(change: ProposalChange): PermissionName | undefined {
   if (change.entity === "campaign") return "campaign.update";
+  if (change.entity === "world") {
+    if (change.action === "create") return "world.create";
+    if (change.action === "delete") return "world.delete";
+    return "world.update";
+  }
   if (change.entity === "scene") {
     if (change.action === "create") return "scene.create";
     if (change.action === "delete") return "scene.delete";
@@ -14923,17 +16798,24 @@ function permissionForProposalChange(change: ProposalChange): PermissionName | u
     if (change.action === "delete") return "journal.delete";
     return "journal.update";
   }
+  if (change.entity === "handout") {
+    if (change.action === "create") return "handout.create";
+    if (change.action === "delete") return "handout.delete";
+    return "handout.update";
+  }
   if (change.entity === "chat") return change.action === "create" ? "chat.write" : "chat.moderate";
   if (change.entity === "roll") return "dice.roll";
   if (change.entity === "diceMacro") return "campaign.update";
   if (change.entity === "combat") return "combat.manage";
-  if (change.entity === "encounter") return "campaign.update";
+  if (change.entity === "encounter") return "combat.manage";
   if (change.entity === "item") return "actor.update";
   if (change.entity === "asset") {
     if (change.action === "create") return "scene.create";
     return "scene.update";
   }
   if (change.entity === "fogPreset") return "token.reveal";
+  if (change.entity === "pluginStorage") return "plugin.configure";
+  if (change.entity === "campaignSession" || change.entity === "aiMemory") return "campaign.update";
   return undefined;
 }
 
@@ -14949,6 +16831,10 @@ function toolError(error: string, details: Record<string, unknown> = {}): ToolEr
     error,
     ...details
   };
+}
+
+function readOnlyToolStore(context: AiToolContext): StateStore {
+  return { state: context.state, save: () => undefined, replace: () => undefined };
 }
 
 function tokenForCampaign(context: AiToolContext, tokenId: string): Token | undefined {
@@ -15007,6 +16893,10 @@ const AI_PERMISSION_SAFE_TOOL_NAMES = new Set([
   "read_account",
   "read_workspace",
   "read_campaign",
+  "read_world",
+  "read_handout",
+  "search_campaign",
+  "read_campaign_session",
   "read_ai_activity",
   "search_memory",
   "read_chat",
@@ -15025,8 +16915,6 @@ const AI_PERMISSION_SAFE_TOOL_NAMES = new Set([
   "read_systems",
   "read_plugins",
   "read_content_imports",
-  "send_chat_message",
-  "roll_dice",
   "read_compendium"
 ]);
 
@@ -15790,6 +17678,88 @@ function campaignPatchFromBody(body: CampaignPatchBody): CampaignPatchBody {
   return patch;
 }
 
+const SCENE_PATCH_FIELDS = new Set<keyof ScenePatchBody>([
+  "worldId",
+  "name",
+  "width",
+  "height",
+  "gridType",
+  "gridSize",
+  "backgroundAssetId",
+  "folder",
+  "active",
+  "sortOrder",
+  "fog",
+  "walls",
+  "lights",
+  "annotations",
+  "metadata"
+]);
+
+function normalizeScenePatch(rawBody: unknown): { ok: true; value: ScenePatchBody } | { ok: false; error: string } {
+  if (!isRecord(rawBody)) return { ok: false, error: "Scene body must be a JSON object" };
+  const unexpected = Object.keys(rawBody).find((key) => !SCENE_PATCH_FIELDS.has(key as keyof ScenePatchBody));
+  if (unexpected) return { ok: false, error: `Scene field is not editable: ${unexpected}` };
+  const patch: ScenePatchBody = {};
+  if ("worldId" in rawBody) {
+    if (rawBody.worldId !== null && (typeof rawBody.worldId !== "string" || !rawBody.worldId.trim())) return { ok: false, error: "Scene worldId must be null or a non-empty string" };
+    patch.worldId = rawBody.worldId === null ? null : (rawBody.worldId as string).trim();
+  }
+  if ("name" in rawBody) {
+    const name = normalizeBoundedText(rawBody.name, 200);
+    if (!name) return { ok: false, error: "Scene name must be 1-200 characters" };
+    patch.name = name;
+  }
+  for (const [field, maximum] of [
+    ["width", 100_000],
+    ["height", 100_000],
+    ["gridSize", 10_000]
+  ] as const) {
+    if (!(field in rawBody)) continue;
+    const value = rawBody[field];
+    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0 || value > maximum) return { ok: false, error: `Scene ${field} must be a positive number no greater than ${maximum}` };
+    patch[field] = value;
+  }
+  if ("gridType" in rawBody) {
+    if (rawBody.gridType !== "square" && rawBody.gridType !== "gridless") return { ok: false, error: "Scene gridType must be square or gridless" };
+    patch.gridType = rawBody.gridType;
+  }
+  if ("backgroundAssetId" in rawBody) {
+    if (rawBody.backgroundAssetId !== null && (typeof rawBody.backgroundAssetId !== "string" || !rawBody.backgroundAssetId.trim())) {
+      return { ok: false, error: "Scene backgroundAssetId must be null or a non-empty string" };
+    }
+    patch.backgroundAssetId = rawBody.backgroundAssetId === null ? null : (rawBody.backgroundAssetId as string).trim();
+  }
+  if ("folder" in rawBody) {
+    if (rawBody.folder !== null && typeof rawBody.folder !== "string") return { ok: false, error: "Scene folder must be null or a string" };
+    patch.folder = rawBody.folder as string | null;
+  }
+  if ("active" in rawBody) {
+    if (typeof rawBody.active !== "boolean") return { ok: false, error: "Scene active must be a boolean" };
+    patch.active = rawBody.active;
+  }
+  if ("sortOrder" in rawBody) {
+    if (typeof rawBody.sortOrder !== "number" || !Number.isFinite(rawBody.sortOrder)) return { ok: false, error: "Scene sortOrder must be a finite number" };
+    patch.sortOrder = rawBody.sortOrder;
+  }
+  for (const [field, maximum] of [
+    ["fog", 5_000],
+    ["walls", 10_000],
+    ["lights", 5_000],
+    ["annotations", 10_000]
+  ] as const) {
+    if (!(field in rawBody)) continue;
+    const value = rawBody[field];
+    if (!Array.isArray(value) || value.length > maximum || value.some((entry) => !isRecord(entry))) return { ok: false, error: `Scene ${field} must be an array of at most ${maximum} objects` };
+    (patch[field] as unknown[]) = value;
+  }
+  if ("metadata" in rawBody) {
+    if (!isRecord(rawBody.metadata)) return { ok: false, error: "Scene metadata must be an object" };
+    patch.metadata = rawBody.metadata;
+  }
+  return { ok: true, value: patch };
+}
+
 function tokenPatchFromBody(body: TokenPatchBody): Partial<Token> {
   const patch: Partial<Token> = {};
   if (body.actorId !== undefined) patch.actorId = body.actorId;
@@ -15807,6 +17777,7 @@ function tokenPatchFromBody(body: TokenPatchBody): Partial<Token> {
 
 function actorPatchFromBody(body: ActorPatchBody): ActorPatchBody {
   const patch: ActorPatchBody = {};
+  if (body.worldId !== undefined) patch.worldId = body.worldId === null ? undefined : body.worldId;
   if (body.systemId !== undefined) patch.systemId = body.systemId;
   if (body.ownerUserId !== undefined) patch.ownerUserId = body.ownerUserId;
   if (body.type !== undefined) patch.type = body.type;
@@ -15819,6 +17790,7 @@ function actorPatchFromBody(body: ActorPatchBody): ActorPatchBody {
 
 function journalEntryPatchFromBody(body: JournalEntryPatchBody): JournalEntryPatchBody {
   const patch: JournalEntryPatchBody = {};
+  if (body.worldId !== undefined) patch.worldId = body.worldId === null ? undefined : body.worldId;
   if (body.parentId !== undefined) patch.parentId = body.parentId;
   if (body.title !== undefined) patch.title = body.title;
   if (body.body !== undefined) patch.body = body.body;
@@ -15827,6 +17799,166 @@ function journalEntryPatchFromBody(body: JournalEntryPatchBody): JournalEntryPat
   if (body.visibleToActorIds !== undefined) patch.visibleToActorIds = body.visibleToActorIds;
   if (body.tags !== undefined) patch.tags = body.tags;
   return patch;
+}
+
+function normalizeHandoutPatch(
+  store: StateStore,
+  campaignId: string,
+  rawBody: unknown,
+  create = false
+): { ok: true; value: Partial<Handout> } | { ok: false; error: string } {
+  if (!isRecord(rawBody)) return { ok: false, error: "Handout body must be a JSON object" };
+  const patch: Partial<Handout> = {};
+  if (create || "title" in rawBody) {
+    const title = normalizeBoundedText(rawBody.title ?? "New Handout", 200);
+    if (!title) return { ok: false, error: "Handout title must be 1-200 characters" };
+    patch.title = title;
+  }
+  if (create || "body" in rawBody) {
+    const body = normalizeBoundedText(rawBody.body ?? "", 100_000);
+    if (body === undefined) return { ok: false, error: "Handout body must be no longer than 100000 characters" };
+    patch.body = body;
+  }
+  if (create || "visibility" in rawBody) {
+    const visibility = rawBody.visibility ?? "gm_only";
+    if (!VISIBILITIES.includes(visibility as Visibility)) return { ok: false, error: "Handout visibility is invalid" };
+    patch.visibility = visibility as Visibility;
+  }
+  if ("worldId" in rawBody) {
+    if (rawBody.worldId !== null && rawBody.worldId !== undefined && (typeof rawBody.worldId !== "string" || !store.state.worlds.some((world) => world.id === rawBody.worldId && world.campaignId === campaignId))) {
+      return { ok: false, error: "Handout worldId must reference a world in the same campaign" };
+    }
+    patch.worldId = typeof rawBody.worldId === "string" ? rawBody.worldId : undefined;
+  }
+  for (const [field, maxItems] of [
+    ["visibleToUserIds", 200],
+    ["visibleToActorIds", 200],
+    ["assetIds", 200],
+    ["tags", 100],
+    ["readByUserIds", 200]
+  ] as const) {
+    if (!create && !(field in rawBody)) continue;
+    const ids = normalizedStringIds(rawBody[field], maxItems);
+    if (!ids) return { ok: false, error: `${field} must be an array of non-empty strings` };
+    (patch[field] as string[] | undefined) = ids;
+  }
+  const campaignUsers = campaignMemberUserIds(store, campaignId);
+  if (patch.visibleToUserIds?.some((id) => !campaignUsers.has(id)) || patch.readByUserIds?.some((id) => !campaignUsers.has(id))) {
+    return { ok: false, error: "Handout user IDs must reference campaign members" };
+  }
+  if (patch.visibleToActorIds?.some((id) => !store.state.actors.some((actor) => actor.id === id && actor.campaignId === campaignId))) {
+    return { ok: false, error: "Handout actor IDs must reference actors in the same campaign" };
+  }
+  if (patch.assetIds?.some((id) => !store.state.assets.some((asset) => asset.id === id && asset.campaignId === campaignId))) {
+    return { ok: false, error: "Handout asset IDs must reference assets in the same campaign" };
+  }
+  return { ok: true, value: patch };
+}
+
+function normalizeEncounterPatch(
+  store: StateStore,
+  campaignId: string,
+  rawBody: unknown,
+  create = false
+): { ok: true; value: NormalizedEncounterPatch } | { ok: false; error: string } {
+  if (!isRecord(rawBody)) return { ok: false, error: "Encounter body must be a JSON object" };
+  const patch: NormalizedEncounterPatch = {};
+  if (create || "name" in rawBody) {
+    const name = normalizeBoundedText(rawBody.name ?? "New Encounter", 200);
+    if (!name) return { ok: false, error: "Encounter name must be 1-200 characters" };
+    patch.name = name;
+  }
+  if (create || "summary" in rawBody) {
+    const summary = normalizeBoundedText(rawBody.summary ?? "", 20_000);
+    if (summary === undefined) return { ok: false, error: "Encounter summary must be no longer than 20000 characters" };
+    patch.summary = summary;
+  }
+  if ("difficulty" in rawBody) {
+    if (rawBody.difficulty !== undefined && rawBody.difficulty !== null && typeof rawBody.difficulty !== "string") return { ok: false, error: "Encounter difficulty must be a string" };
+    patch.difficulty = typeof rawBody.difficulty === "string" ? rawBody.difficulty.trim() || undefined : undefined;
+  }
+  if (create || "tokenIds" in rawBody) {
+    const tokenIds = normalizedStringIds(rawBody.tokenIds, 500);
+    if (!tokenIds) return { ok: false, error: "Encounter tokenIds must be an array of non-empty strings" };
+    if (tokenIds.some((id) => !store.state.tokens.some((token) => token.id === id && campaignIdForToken(store, id) === campaignId))) {
+      return { ok: false, error: "Encounter tokenIds must reference tokens in the same campaign" };
+    }
+    patch.tokenIds = tokenIds;
+  }
+  if ("worldId" in rawBody) {
+    if (rawBody.worldId !== null && rawBody.worldId !== undefined && (typeof rawBody.worldId !== "string" || !store.state.worlds.some((world) => world.id === rawBody.worldId && world.campaignId === campaignId))) {
+      return { ok: false, error: "Encounter worldId must reference a world in the same campaign" };
+    }
+    patch.worldId = typeof rawBody.worldId === "string" ? rawBody.worldId : undefined;
+  }
+  return { ok: true, value: patch };
+}
+
+function normalizeAiMemoryPatch(
+  store: StateStore,
+  campaignId: string,
+  rawBody: unknown,
+  create = false
+): { ok: true; value: NormalizedAiMemoryPatch } | { ok: false; error: string } {
+  if (!isRecord(rawBody)) return { ok: false, error: "AI memory body must be a JSON object" };
+  const patch: NormalizedAiMemoryPatch = {};
+  if (create || "text" in rawBody) {
+    const text = normalizeBoundedText(rawBody.text, 4000);
+    if (!text) return { ok: false, error: "AI memory text must be 1-4000 characters" };
+    patch.text = text;
+  }
+  if (create || "type" in rawBody) {
+    const type = rawBody.type ?? "canon_fact";
+    if (!AI_MEMORY_TYPES.includes(type as AiMemoryFactType)) return { ok: false, error: "AI memory type is invalid" };
+    patch.type = type as AiMemoryFactType;
+  }
+  if (create || "visibility" in rawBody) {
+    const visibility = rawBody.visibility ?? "gm_only";
+    if (visibility !== "public" && visibility !== "gm_only") return { ok: false, error: "AI memory visibility must be public or gm_only" };
+    patch.visibility = visibility;
+  }
+  if ("worldId" in rawBody) {
+    if (rawBody.worldId !== null && rawBody.worldId !== undefined && (typeof rawBody.worldId !== "string" || !store.state.worlds.some((world) => world.id === rawBody.worldId && world.campaignId === campaignId))) {
+      return { ok: false, error: "AI memory worldId must reference a world in the same campaign" };
+    }
+    patch.worldId = typeof rawBody.worldId === "string" ? rawBody.worldId : undefined;
+  }
+  if ("subject" in rawBody) {
+    if (rawBody.subject !== null && (typeof rawBody.subject !== "string" || rawBody.subject.trim().length > 300)) return { ok: false, error: "AI memory subject must be null or no longer than 300 characters" };
+    patch.subject = typeof rawBody.subject === "string" ? rawBody.subject.trim() || undefined : undefined;
+  }
+  if ("confidence" in rawBody) {
+    if (rawBody.confidence !== null && (typeof rawBody.confidence !== "number" || !Number.isFinite(rawBody.confidence) || rawBody.confidence < 0 || rawBody.confidence > 1)) {
+      return { ok: false, error: "AI memory confidence must be null or a number from 0 to 1" };
+    }
+    patch.confidence = typeof rawBody.confidence === "number" ? rawBody.confidence : undefined;
+  }
+  if (create || "sourceIds" in rawBody) {
+    const sourceIds = normalizedAiMemorySourceIds(rawBody.sourceIds);
+    if (!sourceIds) return { ok: false, error: "AI memory sourceIds must be an array of strings" };
+    patch.sourceIds = sourceIds;
+  }
+  if ("source" in rawBody) {
+    if (rawBody.source === null || rawBody.source === undefined) patch.source = undefined;
+    else if (!isRecord(rawBody.source) || typeof rawBody.source.type !== "string" || !rawBody.source.type.trim() || (rawBody.source.id !== undefined && typeof rawBody.source.id !== "string") || (rawBody.source.label !== undefined && typeof rawBody.source.label !== "string")) {
+      return { ok: false, error: "AI memory source must contain a non-empty type and optional string id/label" };
+    } else {
+      patch.source = {
+        type: rawBody.source.type.trim().slice(0, 80),
+        ...(typeof rawBody.source.id === "string" ? { id: rawBody.source.id.trim().slice(0, 160) } : {}),
+        ...(typeof rawBody.source.label === "string" ? { label: rawBody.source.label.trim().slice(0, 300) } : {})
+      } satisfies AiMemoryFactSource;
+    }
+  }
+  if ("createdBy" in rawBody) {
+    if (typeof rawBody.createdBy !== "string" || !( ["user", "ai", "plugin", "system"] as readonly string[]).includes(rawBody.createdBy)) return { ok: false, error: "AI memory createdBy is invalid" };
+    patch.createdBy = rawBody.createdBy as NonNullable<AiMemoryFact["createdBy"]>;
+  }
+  if ("status" in rawBody) {
+    if (!AI_MEMORY_STATUSES.includes(rawBody.status as AiMemoryFactStatus)) return { ok: false, error: "AI memory status is invalid" };
+    patch.status = rawBody.status as AiMemoryFactStatus;
+  }
+  return { ok: true, value: patch };
 }
 
 function combatPatchFromBody(body: CombatPatchBody): CombatPatchBody {
@@ -15949,6 +18081,40 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function optionalJsonObjectBody(value: unknown): Record<string, unknown> | undefined {
+  return value === undefined ? {} : isRecord(value) ? value : undefined;
+}
+
+function aiToolCallMaintenanceBodyError(body: Record<string, unknown>, options: { allowReason?: boolean; allowToolCallId?: boolean }): string | undefined {
+  if (body.dryRun !== undefined && typeof body.dryRun !== "boolean") return "dryRun must be a boolean";
+  for (const field of ["campaignId", "threadId"] as const) {
+    const value = body[field];
+    if (value !== undefined && (typeof value !== "string" || value.trim().length === 0)) return `${field} must be a non-empty string`;
+  }
+  if (body.toolCallId !== undefined && (!options.allowToolCallId || typeof body.toolCallId !== "string" || body.toolCallId.trim().length === 0)) {
+    return options.allowToolCallId ? "toolCallId must be a non-empty string" : "toolCallId is not supported for this operation";
+  }
+  if (body.reason !== undefined && (!options.allowReason || typeof body.reason !== "string")) return options.allowReason ? "reason must be a string" : "reason is not supported for this operation";
+  if (body.limit !== undefined) {
+    if (typeof body.limit !== "number" && typeof body.limit !== "string") return "limit must be an integer from 1 to 500";
+    const limit = Number(body.limit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 500) return "limit must be an integer from 1 to 500";
+  }
+  return undefined;
+}
+
+function normalizedAiMemorySourceIds(value: unknown): string[] | undefined {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 50 || !value.every((item) => typeof item === "string" && item.trim().length > 0)) return undefined;
+  return [...new Set(value.map((item) => (item as string).trim().slice(0, 160)))];
+}
+
+function normalizedStringIds(value: unknown, maxItems = 100): string[] | undefined {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > maxItems || !value.every((item) => typeof item === "string" && item.trim().length > 0)) return undefined;
+  return [...new Set(value.map((item) => (item as string).trim()))];
+}
+
 function registerRateLimit(app: FastifyInstance, store: StateStore, config: RateLimitConfig): void {
   if (!config.enabled) return;
   const maxRequests = Math.max(1, Math.floor(config.maxRequests));
@@ -16019,13 +18185,30 @@ function rateLimitIp(request: FastifyRequest): string {
 
 function registerIdempotencyReplay(app: FastifyInstance, store: StateStore): void {
   const saveScopes = new AsyncLocalStorage<IdempotencySaveScope>();
+  const inFlight = new Map<string, IdempotencyFlight>();
   const persistState = store.save.bind(store);
+  const persistFlush = store.flush?.bind(store);
+  const persistReplace = store.replace.bind(store);
+  const retainedRecords = store.state.idempotencyRecords.filter((record) => idempotencyRecordIsSafe(record));
+  if (retainedRecords.length !== store.state.idempotencyRecords.length) {
+    store.state.idempotencyRecords = retainedRecords;
+    persistState();
+  }
   store.save = () => {
     const saveScope = saveScopes.getStore();
     if (!saveScope?.deferSaves) {
       persistState();
       return;
     }
+    saveScope.saveRequested = true;
+  };
+  store.replace = (state) => {
+    const saveScope = saveScopes.getStore();
+    if (!saveScope?.deferSaves) {
+      persistReplace(state);
+      return;
+    }
+    persistReplace(state, { flush: false });
     saveScope.saveRequested = true;
   };
 
@@ -16038,31 +18221,82 @@ function registerIdempotencyReplay(app: FastifyInstance, store: StateStore): voi
     const shouldSave = forceSave || saveScope.saveRequested;
     saveScope.deferSaves = false;
     saveScope.saveRequested = false;
-    if (shouldSave) persistState();
+    if (shouldSave) {
+      persistState();
+      persistFlush?.();
+    }
+  };
+
+  const flightKey = (context: IdempotencyContext): string => stableJson([context.method, context.userId, context.key]);
+  const releaseFlight = (request: FastifyRequest, record?: IdempotencyRecord): void => {
+    const flight = Reflect.get(request, idempotencyFlightSymbol) as IdempotencyFlight | undefined;
+    if (!flight || flight.settled) return;
+    flight.settled = true;
+    const key = flightKey(flight.context);
+    if (inFlight.get(key) === flight) inFlight.delete(key);
+    flight.resolve(record);
+  };
+  const replayRecord = (request: FastifyRequest, reply: FastifyReply, record: IdempotencyRecord): void => {
+    Reflect.set(request, idempotencyReplaySymbol, true);
+    reply
+      .code(record.statusCode)
+      .header("Idempotency-Replayed", "true")
+      .type(record.contentType ?? "application/json")
+      .send(record.responseBody);
   };
 
   app.addHook("preHandler", async (request, reply) => {
     if (!isIdempotentReplayCandidate(request.method)) return;
-    const key = headerText(request.headers["idempotency-key"]);
+    const routePath = request.url.split("?")[0] ?? request.url;
+    if (!idempotencyPathIsEligible(routePath)) return;
+    const key = opaqueHeaderText(request.headers["idempotency-key"]);
     if (!key) return;
-    const normalizedKey = key.slice(0, 160);
+    if (key.length > IDEMPOTENCY_MAX_KEY_LENGTH) {
+      return badRequest(reply, `Idempotency-Key must be ${IDEMPOTENCY_MAX_KEY_LENGTH} characters or fewer`);
+    }
+    const userId = idempotencyUserIdFromHeaders(store, request.headers);
+    // Anonymous mutation responses include bootstrap, login, registration, invite,
+    // password-reset, and OIDC credentials. They are deliberately never replayed.
+    if (!userId) return;
     const context: IdempotencyContext = {
-      key: normalizedKey,
+      key,
       method: request.method.toUpperCase(),
       path: request.url,
-      userId: idempotencyUserIdFromHeaders(store, request.headers),
+      userId,
       requestHash: hashStableJson(request.body ?? null)
     };
-    const existing = store.state.idempotencyRecords.find((record) => record.key === context.key && record.method === context.method && record.userId === context.userId);
-    if (existing) {
-      if (existing.path !== context.path || existing.requestHash !== context.requestHash) return conflict(reply, "Idempotency-Key was already used for a different request");
-      Reflect.set(request, idempotencyReplaySymbol, true);
-      reply
-        .code(existing.statusCode)
-        .header("Idempotency-Replayed", "true")
-        .type(existing.contentType ?? "application/json")
-        .send(existing.responseBody);
-      return;
+    const reservationKey = flightKey(context);
+    while (true) {
+      const existing = store.state.idempotencyRecords.find((record) => record.key === context.key && record.method === context.method && record.userId === context.userId);
+      if (existing) {
+        if (existing.path !== context.path || existing.requestHash !== context.requestHash) return conflict(reply, "Idempotency-Key was already used for a different request");
+        replayRecord(request, reply, existing);
+        return;
+      }
+      const activeFlight = inFlight.get(reservationKey);
+      if (activeFlight) {
+        if (activeFlight.context.path !== context.path || activeFlight.context.requestHash !== context.requestHash) {
+          return conflict(reply, "Idempotency-Key is already in use for a different request");
+        }
+        const completed = await activeFlight.completion;
+        if (completed) {
+          replayRecord(request, reply, completed);
+          return;
+        }
+        continue;
+      }
+      let resolveFlight!: (record: IdempotencyRecord | undefined) => void;
+      const flight: IdempotencyFlight = {
+        context,
+        completion: new Promise((resolve) => {
+          resolveFlight = resolve;
+        }),
+        resolve: (record) => resolveFlight(record),
+        settled: false,
+      };
+      inFlight.set(reservationKey, flight);
+      Reflect.set(request, idempotencyFlightSymbol, flight);
+      break;
     }
     const saveScope: IdempotencySaveScope = { deferSaves: true, saveRequested: false };
     Reflect.set(request, idempotencySaveScopeSymbol, saveScope);
@@ -16075,32 +18309,139 @@ function registerIdempotencyReplay(app: FastifyInstance, store: StateStore): voi
     const context = Reflect.get(request, idempotencyContextSymbol) as IdempotencyContext | undefined;
     if (!context) return payload;
     if (reply.statusCode < 200 || reply.statusCode >= 300) {
-      flushSaveScope(request, false);
+      try {
+        flushSaveScope(request, false);
+      } finally {
+        releaseFlight(request);
+      }
       return payload;
     }
     const responseBody = typeof payload === "string" ? payload : Buffer.isBuffer(payload) ? payload.toString("utf8") : JSON.stringify(payload ?? null);
     if (Buffer.byteLength(responseBody, "utf8") > IDEMPOTENCY_MAX_RESPONSE_BYTES) {
-      flushSaveScope(request, false);
+      try {
+        flushSaveScope(request, false);
+      } finally {
+        releaseFlight(request);
+      }
+      return payload;
+    }
+    if (idempotencyResponseContainsSecret(responseBody)) {
+      try {
+        flushSaveScope(request, false);
+      } finally {
+        releaseFlight(request);
+      }
       return payload;
     }
     const now = nowIso();
+    const record: IdempotencyRecord = {
+      ...context,
+      statusCode: reply.statusCode,
+      contentType: reply.getHeader("content-type")?.toString(),
+      responseBody,
+      createdAt: now,
+      updatedAt: now
+    };
     store.state.idempotencyRecords = [
       ...store.state.idempotencyRecords.filter((record) => !(record.key === context.key && record.method === context.method && record.userId === context.userId)),
-      {
-        ...context,
-        id: createId("idem"),
-        statusCode: reply.statusCode,
-        contentType: reply.getHeader("content-type")?.toString(),
-        responseBody,
-        createdAt: now,
-        updatedAt: now
-      }
+      record
     ]
       .sort(sortTimestampsDesc)
       .slice(0, IDEMPOTENCY_MAX_RECORDS);
-    flushSaveScope(request, true);
+    try {
+      flushSaveScope(request, true);
+      releaseFlight(request, record);
+    } catch (error) {
+      store.state.idempotencyRecords = store.state.idempotencyRecords.filter((candidate) => candidate !== record);
+      releaseFlight(request);
+      throw error;
+    }
     return payload;
   });
+
+  app.addHook("onError", async (request) => {
+    try {
+      flushSaveScope(request, false);
+    } finally {
+      releaseFlight(request);
+    }
+  });
+
+  app.addHook("onClose", async () => {
+    for (const flight of inFlight.values()) {
+      if (flight.settled) continue;
+      flight.settled = true;
+      flight.resolve(undefined);
+    }
+    inFlight.clear();
+  });
+}
+
+function idempotencyRecordIsSafe(record: EngineState["idempotencyRecords"][number]): boolean {
+  return Boolean(record.userId) && idempotencyPathIsEligible(record.path) && !idempotencyResponseContainsSecret(record.responseBody);
+}
+
+function idempotencyPathIsEligible(path: string): boolean {
+  const pathname = path.split("?")[0] ?? path;
+  if (pathname === "/api/v1/auth" || pathname.startsWith("/api/v1/auth/")) return false;
+  if (pathname === "/api/v1/invites/accept") return false;
+  if (pathname === "/api/v1/organization/invites") return false;
+  if (/^\/api\/v1\/campaigns\/[^/]+\/invites$/.test(pathname)) return false;
+  if (/^\/api\/v1\/assets\/[^/]+\/delivery-url$/.test(pathname)) return false;
+  if (/^\/api\/v1\/admin\/users\/[^/]+\/password-reset$/.test(pathname)) return false;
+  if (pathname === "/api/v1/admin/email-outbox/retry-all" || /^\/api\/v1\/admin\/email-outbox\/[^/]+\/retry$/.test(pathname)) return false;
+  return true;
+}
+
+const idempotencySecretResponseKeys = new Set([
+  "accesstoken",
+  "apikey",
+  "accepturl",
+  "authorizationcode",
+  "authorizationurl",
+  "bearertoken",
+  "clientsecret",
+  "credential",
+  "credentials",
+  "enrollmentsecret",
+  "enrollmenturl",
+  "mfasecret",
+  "otpauthurl",
+  "password",
+  "passwordresettoken",
+  "passwordreseturl",
+  "privatekey",
+  "recoverycode",
+  "recoverycodes",
+  "recoveryurl",
+  "refreshtoken",
+  "resettoken",
+  "reseturl",
+  "secret",
+  "sessiontoken",
+  "signature",
+  "signedurl",
+  "token",
+  "totpsecret"
+]);
+
+function idempotencyResponseContainsSecret(responseBody: string): boolean {
+  let value: unknown;
+  try {
+    value = JSON.parse(responseBody) as unknown;
+  } catch {
+    return false;
+  }
+  return idempotencyValueContainsSecret(value);
+}
+
+function idempotencyValueContainsSecret(value: unknown): boolean {
+  if (typeof value === "string") {
+    return /(?:^|[^A-Za-z0-9])(?:ots|oti|opr|oss)_[A-Za-z0-9_-]+|otr-[a-f0-9]{8}-[a-f0-9]{8}|otpauth:\/\/|[?&](?:access_?token|refresh_?token|session_?token|token|signature|invite|code)=/i.test(value);
+  }
+  if (Array.isArray(value)) return value.some(idempotencyValueContainsSecret);
+  if (!isRecord(value)) return false;
+  return Object.entries(value).some(([key, nested]) => idempotencySecretResponseKeys.has(key.replace(/[^a-z0-9]/gi, "").toLowerCase()) || idempotencyValueContainsSecret(nested));
 }
 
 function isIdempotentReplayCandidate(method: string): boolean {
@@ -16110,6 +18451,7 @@ function isIdempotentReplayCandidate(method: string): boolean {
 function idempotencyUserIdFromHeaders(store: StateStore, headers: Record<string, string | string[] | undefined>): string | undefined {
   const session = sessionFromRequest(store, undefined, headers);
   if (session && isActiveUserId(store, session.userId)) return session.userId;
+  if (!legacyUserHeaderEnabled()) return undefined;
   const header = headers["x-user-id"];
   const userId = Array.isArray(header) ? header[0] : header;
   return userId && isActiveUserId(store, userId) ? userId : undefined;
@@ -17551,10 +19893,38 @@ function filterRealtimeEvent(store: StateStore, event: EngineEvent, userId: stri
     return payload.userId === userId ? event : undefined;
   }
   if (event.type.startsWith("contentImport.") && !canCampaign(store, userId, event.campaignId, "campaign.update")) return undefined;
+  if (event.type.startsWith("world.")) return canCampaign(store, userId, event.campaignId, "world.read") ? event : undefined;
+  if (event.type.startsWith("campaign.session.")) {
+    const payload = isRecord(event.payload) ? event.payload : {};
+    if (canAccessPreparedScenes(store, userId, event.campaignId)) return event;
+    if (payload.status !== "live") return undefined;
+    return redactedRealtimeEvent(event, { ...payload, agenda: "", notes: "", encounterIds: [], recapProposalId: undefined, recapJournalId: undefined });
+  }
+  if (event.type.startsWith("audio.")) {
+    if (canAccessPreparedScenes(store, userId, event.campaignId)) return event;
+    const payload = isRecord(event.payload) ? event.payload : {};
+    if (payload.playing === true) return event;
+    return redactedRealtimeEvent(event, { id: event.targetId, campaignId: event.campaignId, playing: false, redacted: true });
+  }
   if (event.type.startsWith("journal.")) {
     const journal = journalEntryFromRealtimeEvent(store, event);
     if (!journal) return canCampaign(store, userId, event.campaignId, "journal.readSecret") ? event : undefined;
     return canReadJournalEntry(store, userId, journal) ? event : undefined;
+  }
+  if (event.type.startsWith("handout.")) {
+    const payload = isRecord(event.payload) ? (event.payload as unknown as Handout) : undefined;
+    const handout = store.state.handouts.find((item) => item.id === event.targetId && item.campaignId === event.campaignId) ?? payload;
+    return handout && canReadHandout(store, userId, handout) ? redactedRealtimeEvent(event, normalizeHandout(handout)) : undefined;
+  }
+  if (event.type.startsWith("ai.memory.")) {
+    const payload = isRecord(event.payload) ? (event.payload as unknown as AiMemoryFact) : undefined;
+    const rawFact = store.state.aiMemory.find((item) => item.id === event.targetId && item.campaignId === event.campaignId) ?? payload;
+    if (!rawFact) return undefined;
+    const fact = normalizeAiMemoryFact(rawFact);
+    if (canCampaign(store, userId, event.campaignId, "ai.readGmMemory")) return redactedRealtimeEvent(event, fact);
+    return canCampaign(store, userId, event.campaignId, "ai.readPublicMemory") && fact.visibility === "public" && aiMemoryFactStatus(fact) === "approved"
+      ? redactedRealtimeEvent(event, fact)
+      : undefined;
   }
   if (event.type === "dice.roll.created") {
     const roll = diceRollFromRealtimeEvent(store, event);
@@ -17579,6 +19949,18 @@ function filterRealtimeEvent(store: StateStore, event: EngineEvent, userId: stri
     if (canReadActorPrivateData(store, userId, actor.campaignId, actor)) return event;
     return redactedRealtimeEvent(event, redactedActorPayload(actor));
   }
+  if (event.type.startsWith("item.")) {
+    if (!canCampaign(store, userId, event.campaignId, "actor.read")) return undefined;
+    const payload = isRecord(event.payload) ? (event.payload as unknown as Item) : undefined;
+    const item = store.state.items.find((candidate) => candidate.id === event.targetId && candidate.campaignId === event.campaignId) ?? payload;
+    if (!item || !visibleItemsForUser(store, userId, event.campaignId).some((candidate) => candidate.id === item.id)) return undefined;
+    return redactedRealtimeEvent(event, itemPayloadForUser(store, userId, item));
+  }
+  if (event.type.startsWith("encounter.")) {
+    const payload = isRecord(event.payload) ? (event.payload as unknown as Encounter) : undefined;
+    const encounter = store.state.encounters.find((item) => item.id === event.targetId && item.campaignId === event.campaignId) ?? payload;
+    return encounter && canReadEncounter(store, userId, encounter) ? event : undefined;
+  }
   if (event.type.startsWith("combat.")) {
     const combat = combatFromRealtimeEvent(store, event);
     return combat ? redactedRealtimeEvent(event, combatPayloadForUser(store, userId, combat)) : undefined;
@@ -17592,6 +19974,10 @@ function filterRealtimeEvent(store: StateStore, event: EngineEvent, userId: stri
   }
   if (event.type.startsWith("scene.")) {
     const scene = event.payload as Partial<Scene> | undefined;
+    const storedScene = store.state.scenes.find((candidate) => candidate.id === (scene?.id ?? event.targetId) && candidate.campaignId === event.campaignId);
+    const readableScene = storedScene ?? (scene?.campaignId === event.campaignId && typeof scene.active === "boolean" ? (scene as Scene) : undefined);
+    if (readableScene && !canReadSceneRecord(store, userId, readableScene)) return undefined;
+    if (!readableScene && !canAccessPreparedScenes(store, userId, event.campaignId)) return undefined;
     if (scene && "sceneEditHistory" in scene) return { ...event, payload: withoutSceneEditHistory(scene as Scene) };
     return event;
   }
@@ -17600,6 +19986,8 @@ function filterRealtimeEvent(store: StateStore, event: EngineEvent, userId: stri
   if (!token?.sceneId) return event;
   const campaignId = campaignIdForScene(store, token.sceneId) ?? event.campaignId;
   if (!canCampaign(store, userId, campaignId, "campaign.read")) return undefined;
+  const scene = store.state.scenes.find((candidate) => candidate.id === token.sceneId && candidate.campaignId === campaignId);
+  if (!scene || !canReadSceneRecord(store, userId, scene)) return undefined;
   if (isTokenVisibleToUser(store, userId, campaignId, token as Token, undefined, visibilityCache)) return event;
   return {
     ...event,
@@ -17634,7 +20022,35 @@ function canReadJournalEntry(store: StateStore, userId: string, journal: Journal
   if (!canCampaign(store, userId, journal.campaignId, "journal.read")) return false;
   if (journal.visibility === "public") return true;
   if (journal.visibleToUserIds.includes(userId)) return true;
+  if (
+    journal.visibleToActorIds.some((actorId) =>
+      store.state.actors.some((actor) => actor.id === actorId && actor.campaignId === journal.campaignId && actor.ownerUserId === userId)
+    )
+  )
+    return true;
   return canCampaign(store, userId, journal.campaignId, "journal.readSecret");
+}
+
+function canReadHandout(store: StateStore, userId: string, rawHandout: Handout): boolean {
+  const handout = normalizeHandout(rawHandout);
+  if (!canCampaign(store, userId, handout.campaignId, "handout.read")) return false;
+  if (handout.visibility === "public") return true;
+  if ((handout.visibleToUserIds ?? []).includes(userId)) return true;
+  if (
+    (handout.visibleToActorIds ?? []).some((actorId) =>
+      store.state.actors.some((actor) => actor.id === actorId && actor.campaignId === handout.campaignId && actor.ownerUserId === userId)
+    )
+  )
+    return true;
+  return canCampaign(store, userId, handout.campaignId, "handout.readSecret");
+}
+
+function canReadEncounter(store: StateStore, userId: string, encounter: Encounter): boolean {
+  if (!canCampaign(store, userId, encounter.campaignId, "campaign.read")) return false;
+  return (
+    canAccessPreparedScenes(store, userId, encounter.campaignId) ||
+    store.state.combats.some((combat) => combat.campaignId === encounter.campaignId && combat.active && combat.encounterId === encounter.id)
+  );
 }
 
 function diceRollFromRealtimeEvent(store: StateStore, event: EngineEvent): DiceRoll | undefined {
@@ -20940,6 +23356,8 @@ interface CampaignSnapshotResult {
   generatedAt: string;
   campaign: Campaign;
   members: ReturnType<typeof memberSessionInfo>[];
+  campaignSessions: CampaignSession[];
+  worlds: World[];
   scenes: Scene[];
   selectedSceneId?: string;
   activeSceneId?: string;
@@ -20950,6 +23368,7 @@ interface CampaignSnapshotResult {
   actors: Actor[];
   items: Item[];
   journals: JournalEntry[];
+  handouts: Handout[];
   chat: ChatMessage[];
   rolls: DiceRoll[];
   diceMacros: DiceMacro[];
@@ -20964,7 +23383,7 @@ interface CampaignSnapshotBundled {
   assetStorage?: Record<string, unknown>;
   audioTracks?: AudioTrack[];
   plugins?: ReturnType<typeof pluginCampaignInfo>[];
-  systems?: Array<(typeof installedSystems)[number] & { active: boolean }>;
+  systems?: Array<ReturnType<typeof systemRuntimeInfo>>;
   characterTemplates?: CharacterTemplate[];
   contentImports?: ContentImportBatch[];
   aiThreads?: AiThread[];
@@ -20982,10 +23401,11 @@ function buildCampaignSnapshot(store: StateStore, userId: string, campaign: Camp
   const campaignId = campaign.id;
   const permissions = permissionsForUser(store, userId, campaignId);
   const canReadCampaign = canCampaign(store, userId, campaignId, "campaign.read");
+  const canWorld = canCampaign(store, userId, campaignId, "world.read");
   const canScene = canCampaign(store, userId, campaignId, "scene.read");
   const canActor = canCampaign(store, userId, campaignId, "actor.read");
   const canJournal = canCampaign(store, userId, campaignId, "journal.read");
-  const canJournalSecret = canCampaign(store, userId, campaignId, "journal.readSecret");
+  const canHandout = canCampaign(store, userId, campaignId, "handout.read");
   const canChat = canCampaign(store, userId, campaignId, "chat.read");
   const canDice = canCampaign(store, userId, campaignId, "dice.roll");
   const canManage = canCampaign(store, userId, campaignId, "campaign.update");
@@ -20993,14 +23413,17 @@ function buildCampaignSnapshot(store: StateStore, userId: string, campaign: Camp
   const canAiOperations = canCampaign(store, userId, campaignId, "ai.proposeChanges");
   const canMemory = canCampaign(store, userId, campaignId, "ai.readPublicMemory") || canCampaign(store, userId, campaignId, "ai.readGmMemory");
   const canMemoryGm = canCampaign(store, userId, campaignId, "ai.readGmMemory");
+  const canViewPrep = canAccessPreparedScenes(store, userId, campaignId);
 
-  const scenes = canScene ? store.state.scenes.filter((scene) => scene.campaignId === campaignId) : [];
+  const scenes = canScene ? readableScenesForUser(store, userId, campaignId) : [];
   const activeScene = scenes.find((scene) => scene.active);
   const selectedScene = (options.sceneId ? scenes.find((scene) => scene.id === options.sceneId) : undefined) ?? activeScene ?? scenes[0];
   const campaignSceneIds = new Set(scenes.map((scene) => scene.id));
   const visibilityCache = createTokenVisibilityCache();
   const tokens = canScene ? visibleTokensForUser(store, userId, campaignId, store.state.tokens.filter((token) => campaignSceneIds.has(token.sceneId)), visibilityCache) : [];
   const vision = canScene && selectedScene ? visionSnapshotForUser(store, userId, campaignId, selectedScene, visibilityCache) : undefined;
+  const readableAssetIds = canScene ? readableAssetIdsForUser(store, userId, campaignId) : new Set<string>();
+  const readableAssets = canScene ? store.state.assets.filter((asset) => asset.campaignId === campaignId && readableAssetIds.has(asset.id)) : [];
 
   const linkedMessagesByRollId = new Map<string, ChatMessage>();
   if (canChat) {
@@ -21010,19 +23433,31 @@ function buildCampaignSnapshot(store: StateStore, userId: string, campaign: Camp
     }
   }
 
-  const systems = installedSystems.map((system) => ({
-    ...system,
-    active: campaign.defaultSystemId === system.id
-  }));
+  const systems = registeredSystems(store.state).map((system) => systemRuntimeInfo(store, system, campaign.defaultSystemId === system.id));
   const activeSystemId = systems.find((system) => system.active)?.id ?? systems[0]?.id;
   const activeCombat = store.state.combats.find((combat) => combat.campaignId === campaignId && combat.active);
   const aiThreads = store.state.aiThreads.filter((thread) => thread.campaignId === campaignId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const aiThreadIds = new Set(aiThreads.map((thread) => thread.id));
   const bundled: CampaignSnapshotBundled = {
-    ...(canScene ? { assetStorage: campaignAssetStorageInfo(store, campaignId, options.assetStorage) } : {}),
+    ...(canScene
+      ? {
+          assetStorage: canViewPrep
+            ? campaignAssetStorageInfo(store, campaignId, options.assetStorage)
+            : {
+                campaignId,
+                assetCount: readableAssets.length,
+                activeAssetCount: readableAssets.filter((asset) => asset.lifecycle?.status !== "deleted").length,
+                usedBytes: readableAssets.filter((asset) => asset.lifecycle?.status !== "deleted").reduce((total, asset) => total + asset.sizeBytes, 0),
+                allBytes: readableAssets.reduce((total, asset) => total + asset.sizeBytes, 0),
+                lifecycleCounts: countBy(readableAssets, (asset) => asset.lifecycle?.status ?? "active"),
+                providerCounts: countBy(readableAssets, (asset) => asset.storage?.provider ?? "external"),
+                largestAssets: []
+              }
+        }
+      : {}),
     ...(canReadCampaign
       ? {
-          audioTracks: store.state.audioTracks.filter((track) => track.campaignId === campaignId),
+          audioTracks: store.state.audioTracks.filter((track) => track.campaignId === campaignId && (canViewPrep || track.playing)),
           plugins: options.pluginRegistry.list().map((plugin) => pluginCampaignInfo(store, options.pluginRegistry, campaignId, plugin)),
           systems,
           combatAudit: activeCombat
@@ -21033,7 +23468,9 @@ function buildCampaignSnapshot(store: StateStore, userId: string, campaign: Camp
             : []
         }
       : {}),
-    ...(canActor && activeSystemId ? { characterTemplates: characterTemplatesForSystem(activeSystemId) } : {}),
+    ...(canActor && activeSystemId && hasSystemRuntimeCapability(activeSystemId, "character-templates")
+      ? { characterTemplates: characterTemplatesForSystem(activeSystemId) }
+      : {}),
     ...(canManage ? { contentImports: store.state.contentImports.filter((item) => item.campaignId === campaignId && item.status !== "deleted") } : {}),
     ...(canAiOperations
       ? {
@@ -21048,34 +23485,59 @@ function buildCampaignSnapshot(store: StateStore, userId: string, campaign: Camp
     generatedAt: nowIso(),
     campaign,
     members: store.state.members.filter((member) => member.campaignId === campaignId).map((member) => memberSessionInfo(store, member)),
+    campaignSessions: store.state.campaignSessions
+      .filter((session) => session.campaignId === campaignId && (canViewPrep || session.status === "live"))
+      .map((session) =>
+        canViewPrep
+          ? session
+          : {
+              ...session,
+              agenda: "",
+              notes: "",
+              encounterIds: session.encounterIds.filter((encounterId) => store.state.combats.some((combat) => combat.active && combat.campaignId === campaignId && combat.encounterId === encounterId)),
+              sceneIds: session.sceneIds.filter((sceneId) => scenes.some((scene) => scene.id === sceneId))
+            }
+      ),
+    worlds: canWorld ? store.state.worlds.filter((world) => world.campaignId === campaignId) : [],
     scenes: scenes.map(withoutSceneEditHistory),
     ...(selectedScene ? { selectedSceneId: selectedScene.id } : {}),
     ...(activeScene ? { activeSceneId: activeScene.id } : {}),
     ...(vision ? { vision } : {}),
     tokens,
     fogPresets: canReveal ? store.state.fogPresets.filter((preset) => preset.campaignId === campaignId) : [],
-    assets: canScene ? store.state.assets.filter((asset) => asset.campaignId === campaignId) : [],
+    assets: readableAssets,
     actors: canActor ? store.state.actors.filter((actor) => actor.campaignId === campaignId).map((actor) => actorPayloadForUser(store, userId, actor)) : [],
     items: canActor ? visibleItemsForUser(store, userId, campaignId) : [],
-    journals: canJournal
-      ? store.state.journals.filter((entry) => entry.campaignId === campaignId).filter((entry) => entry.visibility === "public" || canJournalSecret || entry.visibleToUserIds.includes(userId))
+    journals: canJournal ? store.state.journals.filter((entry) => entry.campaignId === campaignId && canReadJournalEntry(store, userId, entry)) : [],
+    handouts: canHandout
+      ? store.state.handouts.filter((handout) => handout.campaignId === campaignId && canReadHandout(store, userId, handout)).map((handout) => normalizeHandout(handout))
       : [],
     chat: canChat ? store.state.chat.filter((message) => message.campaignId === campaignId && canReadChatMessage(store, userId, message)) : [],
     rolls: canChat ? store.state.rolls.filter((roll) => roll.campaignId === campaignId && canReadDiceRoll(store, userId, roll, linkedMessagesByRollId.get(roll.id))) : [],
     diceMacros: canDice ? store.state.diceMacros.filter((macro) => macro.campaignId === campaignId && (macro.visibility === "public" || canManage)) : [],
-    encounters: store.state.encounters.filter((encounter) => encounter.campaignId === campaignId),
+    encounters: store.state.encounters.filter(
+      (encounter) =>
+        encounter.campaignId === campaignId &&
+        (canViewPrep || store.state.combats.some((combat) => combat.campaignId === campaignId && combat.active && combat.encounterId === encounter.id))
+    ),
     combats: store.state.combats.filter((combat) => combat.campaignId === campaignId).map((combat) => combatPayloadForUser(store, userId, combat)),
     proposals: visibleProposalsForUser(store.state, userId, campaignId, permissions),
-    memory: canMemory ? store.state.aiMemory.filter((item) => item.campaignId === campaignId && (item.visibility === "public" || canMemoryGm)) : [],
+    memory: canMemory
+      ? store.state.aiMemory
+          .filter((item) => item.campaignId === campaignId)
+          .map(normalizeAiMemoryFact)
+          .filter((item) => canMemoryGm || (item.visibility === "public" && aiMemoryFactStatus(item) === "approved"))
+      : [],
     bundled
   };
 }
 
 const SCENE_EDIT_HISTORY_LIMIT = 50;
-const SCENE_EDITABLE_PATCH_FIELDS: Array<keyof Scene> = ["name", "width", "height", "gridType", "gridSize", "backgroundAssetId", "folder", "fog", "walls", "lights", "annotations", "metadata"];
+const SCENE_EDITABLE_PATCH_FIELDS: Array<keyof Scene> = ["worldId", "name", "width", "height", "gridType", "gridSize", "backgroundAssetId", "folder", "fog", "walls", "lights", "annotations", "metadata"];
 
 function cloneSceneEditableState(scene: Scene): SceneEditableState {
   return structuredClone({
+    worldId: scene.worldId,
     name: scene.name,
     width: scene.width,
     height: scene.height,
@@ -21109,6 +23571,7 @@ function undoSceneEdit(scene: Scene): SceneEditSnapshot | undefined {
   if (!last) return undefined;
   scene.sceneEditHistory = history.slice(0, -1);
   const restored = structuredClone(last.state);
+  scene.worldId = restored.worldId;
   scene.name = restored.name;
   scene.width = restored.width;
   scene.height = restored.height;
@@ -21229,9 +23692,17 @@ function sessionFromRequest(store: StateStore, requestUrl: string | undefined, h
   const tokenHash = hashSessionToken(token);
   const now = Date.now();
   const session = store.state.sessions.find((item) => item.tokenHash === tokenHash && Date.parse(item.expiresAt) > now);
-  if (session) session.lastSeenAt = nowIso();
+  if (session) {
+    const previousLastSeenAt = Date.parse(session.lastSeenAt);
+    if (!Number.isFinite(previousLastSeenAt) || now - previousLastSeenAt >= SESSION_LAST_SEEN_PERSIST_INTERVAL_MS) {
+      session.lastSeenAt = new Date(now).toISOString();
+      store.save();
+    }
+  }
   return session;
 }
+
+const SESSION_LAST_SEEN_PERSIST_INTERVAL_MS = 60_000;
 
 function sessionTokenFromRequest(requestUrl: string | undefined, headers: Record<string, string | string[] | undefined>): string | undefined {
   const authorization = headerValue(headers.authorization);
@@ -21585,6 +24056,75 @@ function canCampaign(store: StateStore, userId: string, campaignId: string, perm
   });
 }
 
+/**
+ * Scene read permission means "may participate at the table" for players and
+ * observers.  It must not implicitly disclose the GM's inactive prep scenes.
+ * Roles which can author or administer the table retain access to the full
+ * scene collection.
+ */
+function canAccessPreparedScenes(store: StateStore, userId: string, campaignId: string): boolean {
+  return (
+    canCampaign(store, userId, campaignId, "campaign.update") ||
+    canCampaign(store, userId, campaignId, "scene.create") ||
+    canCampaign(store, userId, campaignId, "scene.update") ||
+    canCampaign(store, userId, campaignId, "scene.delete") ||
+    canCampaign(store, userId, campaignId, "scene.activate") ||
+    canCampaign(store, userId, campaignId, "token.reveal") ||
+    canCampaign(store, userId, campaignId, "combat.manage")
+  );
+}
+
+function canReadSceneRecord(store: StateStore, userId: string, scene: Scene): boolean {
+  if (!canCampaign(store, userId, scene.campaignId, "scene.read")) return false;
+  return scene.active || canAccessPreparedScenes(store, userId, scene.campaignId);
+}
+
+function readableScenesForUser(store: StateStore, userId: string, campaignId: string): Scene[] {
+  if (!canCampaign(store, userId, campaignId, "scene.read")) return [];
+  const includePrepared = canAccessPreparedScenes(store, userId, campaignId);
+  return store.state.scenes.filter((scene) => scene.campaignId === campaignId && (includePrepared || scene.active));
+}
+
+function readableAssetIdsForUser(store: StateStore, userId: string, campaignId: string): Set<string> {
+  if (canAccessPreparedScenes(store, userId, campaignId)) {
+    return new Set(store.state.assets.filter((asset) => asset.campaignId === campaignId).map((asset) => asset.id));
+  }
+
+  const scenes = readableScenesForUser(store, userId, campaignId);
+  const sceneIds = new Set(scenes.map((scene) => scene.id));
+  const ids = new Set<string>();
+  for (const scene of scenes) {
+    if (scene.backgroundAssetId) ids.add(scene.backgroundAssetId);
+  }
+  const visibleTokens = visibleTokensForUser(
+    store,
+    userId,
+    campaignId,
+    store.state.tokens.filter((token) => sceneIds.has(token.sceneId))
+  );
+  for (const token of visibleTokens) {
+    if (token.imageAssetId) ids.add(token.imageAssetId);
+    if (token.actorId) {
+      const actor = store.state.actors.find((candidate) => candidate.id === token.actorId && candidate.campaignId === campaignId);
+      if (actor?.imageAssetId) ids.add(actor.imageAssetId);
+    }
+  }
+  for (const actor of store.state.actors) {
+    if (actor.campaignId === campaignId && actor.ownerUserId === userId && actor.imageAssetId) ids.add(actor.imageAssetId);
+  }
+  for (const handout of store.state.handouts) {
+    if (handout.campaignId !== campaignId) continue;
+    if (!canReadHandout(store, userId, handout)) continue;
+    for (const assetId of handout.assetIds) ids.add(assetId);
+  }
+  return ids;
+}
+
+function canReadAssetRecord(store: StateStore, userId: string, asset: MapAsset): boolean {
+  if (!canCampaign(store, userId, asset.campaignId, "scene.read")) return false;
+  return readableAssetIdsForUser(store, userId, asset.campaignId).has(asset.id);
+}
+
 function campaignIdForScene(store: StateStore, sceneId: string): string | undefined {
   return store.state.scenes.find((scene) => scene.id === sceneId)?.campaignId;
 }
@@ -21606,6 +24146,545 @@ function appendSceneActivationHistory(scene: Scene, input: { activatedAt: string
   });
   if (history.length > 20) history.splice(0, history.length - 20);
   scene.activationHistory = history;
+}
+
+function normalizeBoundedText(value: unknown, maxLength: number): string | undefined {
+  if (typeof value !== "string" || value.length > maxLength) return undefined;
+  return value.trim();
+}
+
+function normalizeCampaignSessionInput(
+  store: StateStore,
+  campaignId: string,
+  rawBody: unknown,
+  existing?: CampaignSession
+):
+  | { ok: true; value: Partial<Pick<CampaignSession, "title" | "agenda" | "notes" | "scheduledFor" | "sceneIds" | "encounterIds">> }
+  | { ok: false; error: string } {
+  if (!isRecord(rawBody)) return { ok: false, error: "Campaign session body must be a JSON object" };
+  const value: Partial<Pick<CampaignSession, "title" | "agenda" | "notes" | "scheduledFor" | "sceneIds" | "encounterIds">> = {};
+
+  if ("title" in rawBody) {
+    const title = normalizeBoundedText(rawBody.title, 160);
+    if (!title) return { ok: false, error: "Session title must be 1-160 characters" };
+    value.title = title;
+  } else if (!existing) {
+    value.title = undefined;
+  }
+  for (const [field, maxLength] of [
+    ["agenda", 20_000],
+    ["notes", 20_000]
+  ] as const) {
+    if (!(field in rawBody)) continue;
+    const text = normalizeBoundedText(rawBody[field], maxLength);
+    if (text === undefined) return { ok: false, error: `${field} must be a string no longer than ${maxLength} characters` };
+    value[field] = text;
+  }
+  if ("scheduledFor" in rawBody) {
+    if (rawBody.scheduledFor === null || rawBody.scheduledFor === "") {
+      value.scheduledFor = undefined;
+    } else if (typeof rawBody.scheduledFor === "string" && Number.isFinite(Date.parse(rawBody.scheduledFor))) {
+      value.scheduledFor = new Date(rawBody.scheduledFor).toISOString();
+    } else {
+      return { ok: false, error: "scheduledFor must be an ISO date or null" };
+    }
+  }
+  for (const [field, collection] of [
+    ["sceneIds", store.state.scenes] as const,
+    ["encounterIds", store.state.encounters] as const
+  ]) {
+    if (!(field in rawBody)) continue;
+    const ids = rawBody[field];
+    if (!Array.isArray(ids) || ids.length > 100 || ids.some((id) => typeof id !== "string" || !id.trim())) {
+      return { ok: false, error: `${field} must be an array of at most 100 non-empty ids` };
+    }
+    const normalizedIds = [...new Set(ids.map((id) => id.trim()))];
+    const missingId = normalizedIds.find((id) => !collection.some((record) => record.id === id && record.campaignId === campaignId));
+    if (missingId) return { ok: false, error: `${field} contains a record outside this campaign: ${missingId}` };
+    value[field] = normalizedIds;
+  }
+  return { ok: true, value };
+}
+
+function activateSceneForCampaignSession(store: StateStore, scene: Scene, userId: string, activatedAt: string): void {
+  const deactivatedSceneIds: string[] = [];
+  for (const existing of store.state.scenes) {
+    if (existing.campaignId !== scene.campaignId || existing.id === scene.id || !existing.active) continue;
+    existing.active = false;
+    existing.updatedAt = activatedAt;
+    deactivatedSceneIds.push(existing.id);
+  }
+  scene.active = true;
+  scene.updatedAt = activatedAt;
+  appendSceneActivationHistory(scene, {
+    activatedAt,
+    activatedByUserId: userId,
+    previousActiveSceneId: deactivatedSceneIds[0],
+    deactivatedSceneIds,
+    source: "activate"
+  });
+}
+
+function campaignSessionAuditSummary(session: CampaignSession): Record<string, unknown> {
+  return {
+    id: session.id,
+    campaignId: session.campaignId,
+    number: session.number,
+    title: session.title,
+    status: session.status,
+    scheduledFor: session.scheduledFor,
+    startedAt: session.startedAt,
+    endedAt: session.endedAt,
+    sceneCount: session.sceneIds.length,
+    encounterCount: session.encounterIds.length,
+    agendaCharacters: session.agenda.length,
+    notesCharacters: session.notes.length,
+    recapProposalId: session.recapProposalId,
+    recapJournalId: session.recapJournalId
+  };
+}
+
+const CAMPAIGN_SEARCH_TYPES = new Set<CampaignSearchResultType>(["world", "scene", "actor", "item", "journal", "handout", "encounter", "memory", "chat"]);
+
+function normalizeCampaignSearchTypes(value: string | undefined): { ok: true; value: Set<CampaignSearchResultType> } | { ok: false; error: string } {
+  if (!value?.trim()) return { ok: true, value: new Set(CAMPAIGN_SEARCH_TYPES) };
+  const requested = [...new Set(value.split(",").map((item) => item.trim()).filter(Boolean))];
+  const invalid = requested.find((item) => !CAMPAIGN_SEARCH_TYPES.has(item as CampaignSearchResultType));
+  if (invalid) return { ok: false, error: `Unsupported search type: ${invalid}` };
+  return { ok: true, value: new Set(requested as CampaignSearchResultType[]) };
+}
+
+function campaignSearchResults(
+  store: StateStore,
+  userId: string,
+  campaignId: string,
+  query: string,
+  types: Set<CampaignSearchResultType>,
+  worldId?: string
+): CampaignSearchResult[] {
+  const normalizedQuery = query.toLocaleLowerCase();
+  const results: CampaignSearchResult[] = [];
+  const add = (input: Omit<CampaignSearchResult, "score" | "snippet"> & { searchable: string; snippetSource?: string }) => {
+    const title = input.title.trim();
+    const searchable = `${title}\n${input.searchable}`.toLocaleLowerCase();
+    if (!searchable.includes(normalizedQuery)) return;
+    const score = campaignSearchScore(title, input.searchable, normalizedQuery);
+    results.push({
+      type: input.type,
+      id: input.id,
+      title,
+      snippet: campaignSearchSnippet(input.snippetSource ?? input.searchable, normalizedQuery),
+      updatedAt: input.updatedAt,
+      ...(input.worldId ? { worldId: input.worldId } : {}),
+      ...(input.visibility ? { visibility: input.visibility } : {}),
+      score
+    });
+  };
+  const inWorld = (recordWorldId: string | undefined) => !worldId || recordWorldId === worldId;
+
+  if (types.has("world") && canCampaign(store, userId, campaignId, "world.read")) {
+    for (const world of store.state.worlds) {
+      if (world.campaignId !== campaignId || (worldId && world.id !== worldId)) continue;
+      add({ type: "world", id: world.id, title: world.name, searchable: world.description, snippetSource: world.description, updatedAt: world.updatedAt, worldId: world.id });
+    }
+  }
+  const readableScenes = readableScenesForUser(store, userId, campaignId);
+  if (types.has("scene")) {
+    for (const scene of readableScenes) {
+      if (!inWorld(scene.worldId)) continue;
+      const searchable = canAccessPreparedScenes(store, userId, campaignId) ? `${scene.folder ?? ""} ${JSON.stringify(scene.metadata)}` : scene.folder ?? "";
+      add({ type: "scene", id: scene.id, title: scene.name, searchable, snippetSource: scene.folder ?? (scene.active ? "Active scene" : "Prepared scene"), updatedAt: scene.updatedAt, worldId: scene.worldId });
+    }
+  }
+  const readableSceneIds = new Set(readableScenes.map((scene) => scene.id));
+  const visibleTokenActorIds = new Set(
+    visibleTokensForUser(store, userId, campaignId, store.state.tokens.filter((token) => readableSceneIds.has(token.sceneId)))
+      .map((token) => token.actorId)
+      .filter((actorId): actorId is string => Boolean(actorId))
+  );
+  if (types.has("actor") && canCampaign(store, userId, campaignId, "actor.read")) {
+    for (const actor of store.state.actors) {
+      if (actor.campaignId !== campaignId || !inWorld(actor.worldId)) continue;
+      const canReadPrivate = canReadActorPrivateData(store, userId, campaignId, actor);
+      if (!canReadPrivate && !visibleTokenActorIds.has(actor.id)) continue;
+      add({
+        type: "actor",
+        id: actor.id,
+        title: actor.name,
+        searchable: canReadPrivate ? `${actor.type} ${actor.systemId} ${JSON.stringify(actor.data)}` : actor.type,
+        snippetSource: actor.type,
+        updatedAt: actor.updatedAt,
+        worldId: actor.worldId
+      });
+    }
+  }
+  if (types.has("item") && canCampaign(store, userId, campaignId, "actor.read")) {
+    for (const item of visibleItemsForUser(store, userId, campaignId)) {
+      if (!inWorld(item.worldId)) continue;
+      add({ type: "item", id: item.id, title: item.name, searchable: `${item.type} ${JSON.stringify(item.data)}`, snippetSource: item.type, updatedAt: item.updatedAt, worldId: item.worldId });
+    }
+  }
+  if (types.has("journal")) {
+    for (const journal of store.state.journals) {
+      if (journal.campaignId !== campaignId || !inWorld(journal.worldId) || !canReadJournalEntry(store, userId, journal)) continue;
+      add({ type: "journal", id: journal.id, title: journal.title, searchable: `${journal.tags.join(" ")} ${journal.body}`, snippetSource: journal.body, updatedAt: journal.updatedAt, worldId: journal.worldId, visibility: journal.visibility });
+    }
+  }
+  if (types.has("handout")) {
+    for (const rawHandout of store.state.handouts) {
+      const handout = normalizeHandout(rawHandout);
+      if (handout.campaignId !== campaignId || !inWorld(handout.worldId) || !canReadHandoutRecord(store, userId, handout)) continue;
+      add({ type: "handout", id: handout.id, title: handout.title, searchable: `${handout.tags?.join(" ") ?? ""} ${handout.body}`, snippetSource: handout.body, updatedAt: handout.updatedAt, worldId: handout.worldId, visibility: handout.visibility });
+    }
+  }
+  if (types.has("encounter")) {
+    const canViewPrep = canAccessPreparedScenes(store, userId, campaignId);
+    const activeEncounterIds = new Set(store.state.combats.filter((combat) => combat.campaignId === campaignId && combat.active && combat.encounterId).map((combat) => combat.encounterId!));
+    for (const encounter of store.state.encounters) {
+      if (encounter.campaignId !== campaignId || !inWorld(encounter.worldId) || (!canViewPrep && !activeEncounterIds.has(encounter.id))) continue;
+      add({ type: "encounter", id: encounter.id, title: encounter.name, searchable: `${encounter.difficulty ?? ""} ${encounter.summary}`, snippetSource: encounter.summary, updatedAt: encounter.updatedAt, worldId: encounter.worldId });
+    }
+  }
+  if (types.has("memory")) {
+    const canReadPublic = canCampaign(store, userId, campaignId, "ai.readPublicMemory");
+    const canReadGm = canCampaign(store, userId, campaignId, "ai.readGmMemory");
+    for (const rawMemory of store.state.aiMemory) {
+      const memory = normalizeAiMemoryFact(rawMemory);
+      if (memory.campaignId !== campaignId || !inWorld(memory.worldId) || aiMemoryFactStatus(memory) !== "approved") continue;
+      if (memory.visibility === "public" ? !canReadPublic && !canReadGm : !canReadGm) continue;
+      add({
+        type: "memory",
+        id: memory.id,
+        title: memory.subject || memory.type?.replaceAll("_", " ") || "Campaign memory",
+        searchable: `${memory.type ?? ""} ${memory.subject ?? ""} ${memory.text} ${memory.sourceIds.join(" ")}`,
+        snippetSource: memory.text,
+        updatedAt: memory.updatedAt,
+        worldId: memory.worldId,
+        visibility: memory.visibility
+      });
+    }
+  }
+  if (types.has("chat") && !worldId && canCampaign(store, userId, campaignId, "chat.read")) {
+    for (const message of store.state.chat) {
+      if (message.campaignId !== campaignId || !canReadChatMessage(store, userId, message)) continue;
+      const author = store.state.users.find((candidate) => candidate.id === message.userId)?.displayName ?? message.userId;
+      add({ type: "chat", id: message.id, title: `${author} - ${message.type}`, searchable: message.body, snippetSource: message.body, updatedAt: message.updatedAt, visibility: message.visibility });
+    }
+  }
+  return results.sort((left, right) => right.score - left.score || right.updatedAt.localeCompare(left.updatedAt) || left.title.localeCompare(right.title));
+}
+
+function canReadHandoutRecord(store: StateStore, userId: string, handout: Handout): boolean {
+  return canReadHandout(store, userId, handout);
+}
+
+function campaignSearchScore(title: string, body: string, normalizedQuery: string): number {
+  const normalizedTitle = title.toLocaleLowerCase();
+  if (normalizedTitle === normalizedQuery) return 1000;
+  if (normalizedTitle.startsWith(normalizedQuery)) return 800;
+  if (normalizedTitle.includes(normalizedQuery)) return 600;
+  const bodyIndex = body.toLocaleLowerCase().indexOf(normalizedQuery);
+  return bodyIndex < 0 ? 0 : Math.max(100, 400 - Math.min(bodyIndex, 300));
+}
+
+function campaignSearchSnippet(value: string, normalizedQuery: string): string {
+  const compact = value.replace(/\s+/g, " ").trim();
+  if (!compact) return "";
+  const index = compact.toLocaleLowerCase().indexOf(normalizedQuery);
+  const start = Math.max(0, index < 0 ? 0 : index - 70);
+  const end = Math.min(compact.length, start + 220);
+  return `${start > 0 ? "..." : ""}${compact.slice(start, end)}${end < compact.length ? "..." : ""}`;
+}
+
+function sessionRecapSource(
+  store: StateStore,
+  userId: string,
+  campaignId: string,
+  session: CampaignSession | undefined,
+  transcript: string | undefined,
+  manualNotes: string | undefined
+): string {
+  const startedAtMs = session?.startedAt ? Date.parse(session.startedAt) : Number.NEGATIVE_INFINITY;
+  const endedAtMs = session?.endedAt ? Date.parse(session.endedAt) : Number.POSITIVE_INFINITY;
+  const inWindow = (createdAt: string) => {
+    const value = Date.parse(createdAt);
+    return Number.isFinite(value) && value >= startedAtMs && value <= endedAtMs;
+  };
+  const chat = store.state.chat
+    .filter((message) => message.campaignId === campaignId && inWindow(message.createdAt) && canReadChatMessage(store, userId, message))
+    .slice(-500)
+    .map((message) => ({ at: message.createdAt, userId: message.userId, type: message.type, visibility: message.visibility, body: message.body }));
+  const rolls = store.state.rolls
+    .filter((roll) => roll.campaignId === campaignId && inWindow(roll.createdAt))
+    .slice(-300)
+    .map((roll) => ({ at: roll.createdAt, userId: roll.userId, label: roll.label, formula: roll.formula, total: roll.total, visibility: roll.visibility }));
+  const combats = store.state.combats
+    .filter((combat) => combat.campaignId === campaignId && (inWindow(combat.createdAt) || inWindow(combat.updatedAt)))
+    .map((combat) => ({ id: combat.id, encounterId: combat.encounterId, round: combat.round, active: combat.active, combatants: combat.combatants.map((combatant) => ({ name: combatant.name, defeated: combatant.defeated })) }));
+  const audit = store.state.auditLogs
+    .filter((entry) => entry.campaignId === campaignId && inWindow(entry.createdAt))
+    .slice(-300)
+    .map((entry) => ({ at: entry.createdAt, action: entry.action, targetType: entry.targetType, targetId: entry.targetId }));
+  return JSON.stringify(
+    {
+      session: session
+        ? {
+            id: session.id,
+            number: session.number,
+            title: session.title,
+            agenda: session.agenda,
+            notes: session.notes,
+            scheduledFor: session.scheduledFor,
+            startedAt: session.startedAt,
+            endedAt: session.endedAt,
+            sceneIds: session.sceneIds,
+            encounterIds: session.encounterIds
+          }
+        : undefined,
+      transcript,
+      manualNotes,
+      chat,
+      rolls,
+      combats,
+      audit
+    },
+    null,
+    2
+  ).slice(0, 120_000);
+}
+
+function sessionRecapPrompt(session: CampaignSession | undefined, source: string): string {
+  return [
+    `Create a structured recap for ${session ? `session ${session.number}, ${session.title}` : "the supplied campaign session"}.`,
+    "Return JSON only with this exact shape:",
+    '{"playerRecap":"markdown safe for all players","gmRecap":"private markdown","timelineEvents":[{"text":"fact","subject":"optional","visibility":"public|gm_only","confidence":0.0}],"unresolvedHooks":["..."],"lootGained":["..."],"xpNotes":["..."],"characterNotes":["..."],"prepSuggestions":["..."]}',
+    "Separate confirmed events from suggestions. Do not expose GM-only source material in playerRecap. Do not invent facts; put uncertain possibilities only in prepSuggestions.",
+    "Session source:",
+    source
+  ].join("\n\n");
+}
+
+function parseStructuredSessionRecap(providerOutput: string, source: string): StructuredSessionRecap {
+  const parsed = parseFirstJsonObject(providerOutput);
+  const record = isRecord(parsed) ? parsed : {};
+  const sourceEvidence = sessionRecapSourceEvidence(source);
+  const playerRecap = boundedString(record.playerRecap, 20_000) ?? "The session is complete. The GM is reviewing the detailed recap before publication.";
+  // A provider can return prose or malformed JSON. Keep that response on the
+  // AI thread, but seed reviewable memory from supplied evidence rather than
+  // accidentally treating unstructured model prose as campaign canon.
+  const gmRecap = boundedString(record.gmRecap, 30_000) ?? sourceEvidence ?? (providerOutput.trim().slice(0, 30_000) || `No provider recap was returned. Source evidence length: ${source.length} characters.`);
+  const timelineEvents = Array.isArray(record.timelineEvents)
+    ? record.timelineEvents
+        .flatMap((entry) => {
+          if (!isRecord(entry)) return [];
+          const text = boundedString(entry.text, 1_000);
+          if (!text) return [];
+          const visibility: "public" | "gm_only" = entry.visibility === "public" ? "public" : "gm_only";
+          const confidence = typeof entry.confidence === "number" && Number.isFinite(entry.confidence) ? Math.min(1, Math.max(0, entry.confidence)) : undefined;
+          return [{ text, subject: boundedString(entry.subject, 160), visibility, confidence }];
+        })
+        .slice(0, 50)
+    : [];
+  return {
+    playerRecap,
+    gmRecap,
+    timelineEvents,
+    unresolvedHooks: boundedStringArray(record.unresolvedHooks, 50, 1_000),
+    lootGained: boundedStringArray(record.lootGained, 50, 500),
+    xpNotes: boundedStringArray(record.xpNotes, 50, 500),
+    characterNotes: boundedStringArray(record.characterNotes, 50, 1_000),
+    prepSuggestions: boundedStringArray(record.prepSuggestions, 50, 1_000)
+  };
+}
+
+function sessionRecapSourceEvidence(source: string): string | undefined {
+  try {
+    const parsed = JSON.parse(source) as unknown;
+    if (!isRecord(parsed)) return undefined;
+    const session = isRecord(parsed.session) ? parsed.session : undefined;
+    const evidence = [
+      boundedString(parsed.transcript, 20_000),
+      boundedString(parsed.manualNotes, 10_000),
+      session ? boundedString(session.notes, 10_000) : undefined
+    ].filter((value): value is string => Boolean(value));
+    return evidence.length > 0 ? evidence.join("\n\n") : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function localSessionRecap(store: StateStore, userId: string, campaignId: string, session: CampaignSession | undefined): StructuredSessionRecap {
+  const defaultWindowStart = Date.now() - 12 * 60 * 60 * 1_000;
+  const sessionWindowStart = Date.parse(session?.startedAt ?? session?.createdAt ?? "");
+  const windowStart = Number.isFinite(sessionWindowStart) ? sessionWindowStart : defaultWindowStart;
+  const publicMessages = store.state.chat
+    .filter((message) => message.campaignId === campaignId && message.visibility === "public" && Date.parse(message.createdAt) >= windowStart)
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+  const visibleRolls = store.state.rolls
+    .filter((roll) => roll.campaignId === campaignId && (roll.visibility === "public" || roll.userId === userId) && Date.parse(roll.createdAt) >= windowStart)
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+  const sessionCombats = store.state.combats.filter((combat) => {
+    if (combat.campaignId !== campaignId || Date.parse(combat.updatedAt) < windowStart) return false;
+    return !session || session.encounterIds.length === 0 || (combat.encounterId !== undefined && session.encounterIds.includes(combat.encounterId));
+  });
+  const highlights = publicMessages
+    .filter((message) => message.type !== "system" && !message.body.trim().startsWith("/"))
+    .slice(-5)
+    .map((message) => message.body.trim().replace(/\s+/g, " ").slice(0, 180));
+  const rollSummary = visibleRolls.length > 0 ? `${visibleRolls.length} visible rolls were recorded; the highest total was ${Math.max(...visibleRolls.map((roll) => roll.total))}.` : "No visible rolls were recorded.";
+  const combatSummary = sessionCombats.length > 0 ? `${sessionCombats.length} combat${sessionCombats.length === 1 ? "" : "s"} reached round ${Math.max(...sessionCombats.map((combat) => combat.round))}.` : "No combat was recorded in this session window.";
+  const playerSections = [
+    `## Session overview\n${rollSummary} ${combatSummary}`,
+    highlights.length > 0 ? `## Table highlights\n${highlights.map((highlight) => `- ${highlight}`).join("\n")}` : undefined
+  ].filter((section): section is string => Boolean(section));
+  const gmSections = [
+    `Local recap generated from ${publicMessages.length} public chat messages, ${visibleRolls.length} visible rolls, and ${sessionCombats.length} combat records.`,
+    session?.notes ? `## Session notes\n${session.notes}` : undefined,
+    session?.agenda.trim() ? `## Agenda review\n${session.agenda}` : undefined
+  ].filter((section): section is string => Boolean(section));
+  return {
+    playerRecap: playerSections.join("\n\n"),
+    gmRecap: gmSections.join("\n\n"),
+    timelineEvents: highlights.map((text) => ({ text, visibility: "public" as const, confidence: 1 })),
+    unresolvedHooks: [],
+    lootGained: [],
+    xpNotes: [],
+    characterNotes: [],
+    prepSuggestions: session?.agenda
+      ? session.agenda
+          .split(/\r?\n/)
+          .map((item) => item.replace(/^\s*[-*]\s*/, "").trim())
+          .filter(Boolean)
+          .slice(0, 20)
+          .map((item) => `Follow up on: ${item}`)
+      : []
+  };
+}
+
+function parseFirstJsonObject(value: string): unknown {
+  const unfenced = value.replace(/^\s*```(?:json)?/i, "").replace(/```\s*$/i, "").trim();
+  const start = unfenced.indexOf("{");
+  const end = unfenced.lastIndexOf("}");
+  if (start < 0 || end <= start) return undefined;
+  try {
+    return JSON.parse(unfenced.slice(start, end + 1)) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+function boundedString(value: unknown, maxLength: number): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const text = value.trim();
+  return text ? text.slice(0, maxLength) : undefined;
+}
+
+function boundedStringArray(value: unknown, maxItems: number, maxLength: number): string[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map((item) => boundedString(item, maxLength)).filter((item): item is string => Boolean(item)))].slice(0, maxItems);
+}
+
+function formatGmSessionRecap(recap: StructuredSessionRecap): string {
+  const sections = [recap.gmRecap];
+  if (recap.timelineEvents.length > 0) sections.push(`## Timeline\n${recap.timelineEvents.map((event) => `- ${event.text}`).join("\n")}`);
+  if (recap.unresolvedHooks.length > 0) sections.push(`## Unresolved hooks\n${recap.unresolvedHooks.map((item) => `- ${item}`).join("\n")}`);
+  if (recap.lootGained.length > 0) sections.push(`## Loot gained\n${recap.lootGained.map((item) => `- ${item}`).join("\n")}`);
+  if (recap.xpNotes.length > 0) sections.push(`## XP and milestones\n${recap.xpNotes.map((item) => `- ${item}`).join("\n")}`);
+  if (recap.characterNotes.length > 0) sections.push(`## Character notes\n${recap.characterNotes.map((item) => `- ${item}`).join("\n")}`);
+  return sections.join("\n\n");
+}
+
+function formatNextSessionPrep(recap: StructuredSessionRecap): string {
+  const suggestions = recap.prepSuggestions.length > 0 ? recap.prepSuggestions : recap.unresolvedHooks.map((hook) => `Decide how this thread advances: ${hook}`);
+  return suggestions.length > 0 ? `## Prep suggestions\n${suggestions.map((item) => `- [ ] ${item}`).join("\n")}` : "No next-session prep suggestions were generated. Add GM notes before publishing.";
+}
+
+function sessionWorldId(store: StateStore, session: CampaignSession | undefined): string | undefined {
+  if (!session) return undefined;
+  return session.sceneIds.map((sceneId) => store.state.scenes.find((scene) => scene.id === sceneId && scene.campaignId === session.campaignId)?.worldId).find((worldId): worldId is string => Boolean(worldId));
+}
+
+function sessionRecapMemoryCandidates(
+  campaignId: string,
+  userId: string,
+  proposalId: string,
+  session: CampaignSession | undefined,
+  recap: StructuredSessionRecap
+): AiMemoryFact[] {
+  const source: AiMemoryFactSource = { type: "session_recap", id: session?.id ?? proposalId, label: session ? `Session ${session.number}: ${session.title}` : "Campaign recap" };
+  const candidates: AiMemoryFact[] = [];
+  const add = (type: AiMemoryFactType, text: string, visibility: Visibility, subject?: string, confidence?: number) => {
+    candidates.push(
+      createTimestamped("mem", {
+        campaignId,
+        worldId: undefined,
+        text,
+        visibility,
+        sourceIds: [proposalId, ...(session ? [session.id] : [])],
+        type,
+        subject,
+        status: "candidate" as const,
+        confidence,
+        source,
+        createdBy: "ai" as const
+      }) satisfies AiMemoryFact
+    );
+  };
+  add("session_summary", recap.gmRecap.slice(0, 1_000), "gm_only", session ? `Session ${session.number}` : "Session recap", 1);
+  for (const event of recap.timelineEvents) add("timeline_event", event.text, event.visibility, event.subject, event.confidence);
+  for (const hook of recap.unresolvedHooks) add("unresolved_thread", hook, "gm_only");
+  for (const loot of recap.lootGained) add("canon_fact", loot, "public", "Loot gained");
+  for (const note of recap.characterNotes) add("character_goal", note, "gm_only");
+  return candidates.slice(0, 100).map((candidate) => ({ ...candidate, createdBy: "ai", status: "candidate" }));
+}
+
+function encounterDesignProviderPrompt(store: StateStore, campaignId: string, prompt: string, difficulty: string, partyActorIds: string[]): string {
+  const campaign = store.state.campaigns.find((item) => item.id === campaignId);
+  const party = store.state.actors
+    .filter((actor) => actor.campaignId === campaignId && (partyActorIds.length === 0 ? Boolean(actor.ownerUserId) : partyActorIds.includes(actor.id)))
+    .map((actor) => ({ id: actor.id, name: actor.name, type: actor.type, systemId: actor.systemId }))
+    .slice(0, 20);
+  const activeScene = store.state.scenes.find((scene) => scene.campaignId === campaignId && scene.active);
+  return [
+    `Design a playable ${difficulty} encounter for ${campaign?.name ?? "this campaign"}.`,
+    `GM brief: ${prompt}`,
+    `Party: ${JSON.stringify(party)}`,
+    `Current scene: ${activeScene ? JSON.stringify({ id: activeScene.id, name: activeScene.name, width: activeScene.width, height: activeScene.height, gridSize: activeScene.gridSize }) : "none"}`,
+    "Return JSON only with this exact shape:",
+    '{"name":"encounter title","summary":"concise playable setup","difficulty":"difficulty label","sceneName":"prep scene title","objectives":["..."],"complications":["..."]}',
+    "Use only the requested system-agnostic brief and visible campaign context. Do not claim that tokens or rules effects were created; this response becomes a reviewable proposal."
+  ].join("\n\n");
+}
+
+function localEncounterDesign(prompt: string, difficulty: string, requestedSceneName?: string): StructuredEncounterDesign {
+  const name = "AI Draft Encounter";
+  return {
+    name,
+    summary: prompt,
+    difficulty,
+    sceneName: requestedSceneName ?? `${name} Scene`,
+    objectives: ["Resolve the encounter objective described in the GM brief."],
+    complications: []
+  };
+}
+
+function parseStructuredEncounterDesign(providerOutput: string, fallback: { prompt: string; difficulty: string; sceneName?: string }): StructuredEncounterDesign {
+  const parsed = parseFirstJsonObject(providerOutput);
+  const record = isRecord(parsed) ? parsed : {};
+  const summary = boundedString(record.summary, 5_000) ?? fallback.prompt;
+  const name = boundedString(record.name, 160) ?? "AI Draft Encounter";
+  return {
+    name,
+    summary,
+    difficulty: boundedString(record.difficulty, 40) ?? fallback.difficulty,
+    sceneName: fallback.sceneName ?? boundedString(record.sceneName, 160) ?? `${name} Scene`,
+    objectives: boundedStringArray(record.objectives, 20, 500),
+    complications: boundedStringArray(record.complications, 20, 500)
+  };
+}
+
+function finiteNumberFromUnknown(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function campaignDeletionAuditSummary(store: StateStore, campaign: Campaign) {
@@ -21959,7 +25038,9 @@ function removeCampaignRecords(store: StateStore, campaignId: string): void {
   store.state.chat = store.state.chat.filter((item) => item.campaignId !== campaignId);
   store.state.rolls = store.state.rolls.filter((item) => item.campaignId !== campaignId);
   store.state.diceMacros = store.state.diceMacros.filter((item) => item.campaignId !== campaignId);
+  store.state.audioTracks = store.state.audioTracks.filter((item) => item.campaignId !== campaignId);
   store.state.encounters = store.state.encounters.filter((item) => item.campaignId !== campaignId);
+  store.state.campaignSessions = store.state.campaignSessions.filter((item) => item.campaignId !== campaignId);
   store.state.combats = store.state.combats.filter((item) => item.campaignId !== campaignId);
   store.state.proposals = store.state.proposals.filter((item) => item.campaignId !== campaignId);
   store.state.aiThreads = store.state.aiThreads.filter((item) => item.campaignId !== campaignId);
@@ -21981,6 +25062,11 @@ function removeSceneRecords(store: StateStore, sceneId: string): void {
   store.state.tokens = store.state.tokens.filter((item) => item.sceneId !== sceneId);
   store.state.chat = store.state.chat.filter((item) => item.sceneId !== sceneId);
   store.state.fogPresets = store.state.fogPresets.filter((item) => item.sourceSceneId !== sceneId);
+  store.state.campaignSessions = store.state.campaignSessions.map((session) =>
+    session.sceneIds.includes(sceneId)
+      ? { ...session, sceneIds: session.sceneIds.filter((id) => id !== sceneId), updatedAt: removedAt }
+      : session
+  );
   store.state.encounters = store.state.encounters.map((encounter) => {
     const tokenIdsAfterDelete = encounter.tokenIds.filter((tokenId) => !tokenIds.has(tokenId));
     return tokenIdsAfterDelete.length === encounter.tokenIds.length ? encounter : { ...encounter, tokenIds: tokenIdsAfterDelete, updatedAt: removedAt };
@@ -22092,6 +25178,240 @@ function deletePluginStorageEntry(store: StateStore, campaignId: string, pluginI
   return store.state.pluginStorage.splice(index, 1)[0];
 }
 
+function pluginEventEnvelope(event: EngineEvent): PluginEventEnvelope | undefined {
+  if (!isPluginEventType(event.type)) return undefined;
+  return {
+    id: event.id,
+    campaignId: event.campaignId,
+    type: event.type,
+    actorUserId: event.actorUserId,
+    targetId: event.targetId,
+    timestamp: event.timestamp,
+    causationId: event.causationId,
+    correlationId: event.correlationId
+  };
+}
+
+async function dispatchInstalledPluginEvent(
+  store: StateStore,
+  pluginRegistry: PluginRuntimeRegistry,
+  event: PluginEventEnvelope,
+  broadcastToClients: (event: EngineEvent) => void
+): Promise<void> {
+  const grants = store.state.permissionGrants.filter((grant) => grant.subjectType === "plugin" && grant.campaignId === event.campaignId);
+  for (const grant of grants) {
+    const plugin = pluginRegistry.find(grant.subjectId, pluginVersionFromGrant(grant));
+    if (!plugin?.eventSubscriptions?.some((subscription) => subscription.type === event.type)) continue;
+    if (!grant.permissions.includes(pluginEventPermission(event.type))) continue;
+    if (!plugin.trust.installable) continue;
+    if (pluginReviewInstallBlockForReview(plugin, pluginReviewForDisplay(store, plugin))) continue;
+    if (pluginCoreCompatibilityBlock(plugin)) continue;
+    if (pluginGrantIdentityBlock(grant, plugin)) continue;
+    try {
+      const result = await pluginRegistry.executeEventAsync(
+        plugin.id,
+        {
+          campaignId: event.campaignId,
+          pluginId: plugin.id,
+          permissions: [...grant.permissions],
+          event
+        },
+        plugin.version
+      );
+      const prepared = preparePluginBridgeProposals(store, event.campaignId, plugin, result.bridgeRequests, {
+        kind: "event",
+        eventType: event.type,
+        eventId: event.id,
+        actorUserId: event.actorUserId
+      });
+      if (!prepared.ok) throw new Error(prepared.message);
+      if (prepared.proposals.length === 0) continue;
+      store.state.proposals.push(...prepared.proposals);
+      store.state.auditLogs.push(
+        createTimestamped("audit", {
+          campaignId: event.campaignId,
+          actorUserId: plugin.id,
+          actorType: "plugin" as const,
+          action: "plugin.event.proposed",
+          targetType: "plugin",
+          targetId: plugin.id,
+          after: {
+            eventId: event.id,
+            eventType: event.type,
+            proposalIds: prepared.proposals.map((proposal) => proposal.id),
+            bridgeCount: result.bridgeRequests.length,
+            packageId: plugin.source.packageId,
+            version: plugin.version
+          }
+        })
+      );
+      store.save();
+      for (const proposal of prepared.proposals) {
+        broadcastToClients(
+          createEvent({
+            campaignId: proposal.campaignId,
+            type: "proposal.created",
+            actorUserId: event.actorUserId,
+            targetId: proposal.id,
+            payload: proposal,
+            causationId: event.id,
+            correlationId: event.correlationId ?? event.id
+          })
+        );
+      }
+    } catch (error) {
+      appendPluginEventFailureAudit(store, { event, plugin, reason: "runtime_or_bridge_error", message: errorMessage(error) });
+      store.save();
+    }
+  }
+}
+
+type PluginBridgeTrigger =
+  | { kind: "command"; command: string; actorUserId?: string }
+  | { kind: "event"; eventType: string; eventId: string; actorUserId?: string };
+
+function preparePluginBridgeProposals(
+  store: StateStore,
+  campaignId: string,
+  plugin: LoadedPlugin,
+  requests: PluginBridgeRequest[],
+  trigger: PluginBridgeTrigger
+):
+  | { ok: true; proposals: Proposal[]; receipts: Record<string, string> }
+  | { ok: false; reason: "missing_permission" | "invalid_changes"; message: string } {
+  const proposals: Proposal[] = [];
+  const receipts: Record<string, string> = {};
+  const createdEntityIds = new Set<string>();
+  for (const request of requests) {
+    const requiredPermission: PermissionName = request.kind === "proposal.create" ? "ai.proposeChanges" : "chat.write";
+    if (!pluginCan(store, campaignId, plugin.id, requiredPermission)) {
+      return { ok: false, reason: "missing_permission", message: `Plugin ${plugin.id} lacks ${requiredPermission} in this campaign` };
+    }
+    const rawChanges: ProposalChange[] =
+      request.kind === "proposal.create"
+        ? request.input.changes
+        : [
+            {
+              entity: "chat",
+              action: "create",
+              data: createTimestamped("msg", {
+                campaignId,
+                userId: plugin.id,
+                type: "plugin" as const,
+                body: request.input.body,
+                visibility: request.input.visibility,
+                recipientUserIds: []
+              })
+            }
+          ];
+    const prepared = prepareProposalChanges(store, campaignId, plugin.id, rawChanges);
+    if ("error" in prepared) return { ok: false, reason: "invalid_changes", message: prepared.message };
+    for (const change of prepared.changes) {
+      if (change.action !== "create") continue;
+      const id = stringFromRecord(change.data, "id");
+      if (!id) continue;
+      const key = `${change.entity}:${id}`;
+      if (createdEntityIds.has(key)) return { ok: false, reason: "invalid_changes", message: `Plugin bridge creates duplicate ${change.entity} id: ${id}` };
+      createdEntityIds.add(key);
+    }
+    const title = request.kind === "proposal.create" ? request.input.title : `${plugin.name}: reviewed chat output`;
+    const summary = request.kind === "proposal.create" ? request.input.summary : "Review this plugin-generated chat message before it is posted to the campaign.";
+    const proposal: Proposal = createTimestamped("prop", {
+      campaignId,
+      createdByUserId: trigger.actorUserId,
+      createdByType: "plugin" as const,
+      sourceId: plugin.id,
+      title,
+      summary,
+      status: "pending" as const,
+      changesJson: prepared.changes,
+      diffJson: {
+        pluginId: plugin.id,
+        bridgeRequestId: request.requestId,
+        trigger: trigger.kind === "command" ? { kind: "command", command: trigger.command } : { kind: "event", eventType: trigger.eventType, eventId: trigger.eventId },
+        packageId: plugin.source.packageId,
+        version: plugin.version,
+        checksum: pluginPackageIdentityChecksum(plugin)
+      },
+      approvalRequired: true
+    });
+    proposal.history = [
+      proposalHistoryEntry({
+        action: "created",
+        status: "pending",
+        at: proposal.createdAt,
+        actorUserId: plugin.id,
+        actorType: "plugin",
+        auditAction: trigger.kind === "command" ? "plugin.command.bridge.proposed" : "plugin.event.bridge.proposed"
+      })
+    ];
+    proposals.push(proposal);
+    receipts[request.requestId] = proposal.id;
+  }
+  return { ok: true, proposals, receipts };
+}
+
+function appendPluginEventFailureAudit(
+  store: StateStore,
+  input: { event: PluginEventEnvelope; plugin?: LoadedPlugin; reason: string; message: string }
+): void {
+  store.state.auditLogs.push(
+    createTimestamped("audit", {
+      campaignId: input.event.campaignId,
+      actorUserId: input.plugin?.id,
+      actorType: input.plugin ? ("plugin" as const) : ("system" as const),
+      action: "plugin.event.failed",
+      targetType: input.plugin ? "plugin" : "plugin_dispatcher",
+      targetId: input.plugin?.id ?? input.event.id,
+      after: {
+        eventId: input.event.id,
+        eventType: input.event.type,
+        reason: input.reason,
+        message: input.message.slice(0, 200),
+        packageId: input.plugin?.source.packageId,
+        version: input.plugin?.version
+      }
+    })
+  );
+}
+
+function pluginStorageProposalChanges(
+  store: StateStore,
+  campaignId: string,
+  pluginId: string,
+  storage: PluginChatCommandResult["storage"]
+): { changes: ProposalChange[]; summary: { set: Array<{ key: string; size: number }>; deleted: string[] } } {
+  const changes: ProposalChange[] = [];
+  const summary = { set: [] as Array<{ key: string; size: number }>, deleted: [] as string[] };
+  if (!storage) return { changes, summary };
+  for (const [rawKey, rawValue] of Object.entries(storage.set ?? {})) {
+    const key = normalizePluginStorageKey(rawKey);
+    if (!key) throw new Error(`Invalid plugin storage key: ${rawKey}`);
+    const value = normalizePluginStorageValue(rawValue);
+    if (!value.ok) throw new Error(value.error);
+    const existing = store.state.pluginStorage.find((entry) => entry.campaignId === campaignId && entry.pluginId === pluginId && entry.key === key);
+    if (existing) {
+      changes.push({ entity: "pluginStorage", action: "update", id: existing.id, data: { value: cloneJsonValue(value.value), updatedByType: "plugin", updatedById: pluginId } });
+    } else {
+      changes.push({
+        entity: "pluginStorage",
+        action: "create",
+        data: createTimestamped("pstore", { campaignId, pluginId, key, value: cloneJsonValue(value.value), updatedByType: "plugin" as const, updatedById: pluginId })
+      });
+    }
+    summary.set.push({ key, size: pluginStorageValueSize(value.value) });
+  }
+  for (const rawKey of storage.delete ?? []) {
+    const key = normalizePluginStorageKey(rawKey);
+    if (!key) throw new Error(`Invalid plugin storage key: ${rawKey}`);
+    const existing = store.state.pluginStorage.find((entry) => entry.campaignId === campaignId && entry.pluginId === pluginId && entry.key === key);
+    if (!existing) continue;
+    changes.push({ entity: "pluginStorage", action: "delete", id: existing.id, data: {} });
+    summary.deleted.push(key);
+  }
+  return { changes, summary };
+}
+
 function applyPluginStorageMutation(
   store: StateStore,
   campaignId: string,
@@ -22186,7 +25506,7 @@ function adminPluginOperations(store: StateStore, pluginRegistry: PluginRuntimeR
     .map((grant) => pluginOperationalInstall(store, pluginRegistry, grant));
   const storageEntries = store.state.pluginStorage;
   const reviewSnapshot = adminPluginReviewSnapshot(store, pluginRegistry);
-  const commandAuditLogs = store.state.auditLogs.filter((log) => log.action === "plugin.chatCommand");
+  const commandAuditLogs = store.state.auditLogs.filter((log) => log.action === "plugin.chatCommand" || log.action === "plugin.chatCommand.proposed");
   const failedCommandAuditLogs = store.state.auditLogs.filter((log) => log.action === "plugin.chatCommand.failed");
   const storageAuditLogs = store.state.auditLogs.filter((log) => log.action === "plugin.storageSet" || log.action === "plugin.storageDelete" || log.action === "plugin.storageMutation");
   const installAuditLogs = store.state.auditLogs.filter((log) => log.action === "plugin.install");
@@ -23063,7 +26383,8 @@ function pluginReviewOperationSamples(plugins: ReturnType<typeof adminPluginRevi
 }
 
 function adminSystemOperations(store: StateStore) {
-  const systems = installedSystems.map((system) => systemOperationsSummary(store, system));
+  const manifests = registeredSystems(store.state);
+  const systems = manifests.map((system) => systemOperationsSummary(store, system));
   const issueCount = systems.reduce((total, system) => total + system.issues.length, 0);
   const productionReadiness = systemProductionReadinessSummary(systems);
   const productionGapCounts = systemProductionGapCounts(systems);
@@ -23075,7 +26396,7 @@ function adminSystemOperations(store: StateStore) {
     actionRequired: actionReasons.length > 0,
     actionReasons,
     totals: {
-      installedSystemCount: installedSystems.length,
+      installedSystemCount: manifests.length,
       activeCampaignCount: store.state.campaigns.length,
       actorCount: store.state.actors.length,
       itemCount: store.state.items.length,
@@ -23105,10 +26426,10 @@ function systemOperationsActionReasons(issueCount: number, productionReadiness: 
   );
 }
 
-function systemOperationsSummary(store: StateStore, system: (typeof installedSystems)[number]) {
-  const templates = characterTemplatesForSystem(system.id);
-  const compendium = compendiumEntriesForSystem(system.id);
-  const threats = encounterThreatsForSystem(system.id);
+function systemOperationsSummary(store: StateStore, system: SystemManifest) {
+  const templates = hasSystemRuntimeCapability(system.id, "character-templates") ? characterTemplatesForSystem(system.id) : [];
+  const compendium = hasSystemRuntimeCapability(system.id, "compendium") ? compendiumEntriesForSystem(system.id) : [];
+  const threats = hasSystemRuntimeCapability(system.id, "encounter-builder") ? encounterThreatsForSystem(system.id) : [];
   const activeCampaigns = store.state.campaigns.filter((campaign) => (campaign.defaultSystemId ?? DEFAULT_SYSTEM_ID) === system.id);
   const actors = store.state.actors.filter((actor) => actor.systemId === system.id);
   const items = store.state.items.filter((item) => item.systemId === system.id);
@@ -23572,7 +26893,7 @@ function systemOperationsRemediationQueue(gapCounts: ReturnType<typeof systemPro
     .slice(0, 8);
 }
 
-function systemOperationsIssues(system: (typeof installedSystems)[number], templateCount: number, compendiumCount: number, threatCount: number): string[] {
+function systemOperationsIssues(system: SystemManifest, templateCount: number, compendiumCount: number, threatCount: number): string[] {
   return [
     system.entrypoints.client ? undefined : "missing_client_entrypoint",
     system.entrypoints.server ? undefined : "missing_server_entrypoint",
@@ -23620,9 +26941,10 @@ function pluginOperationalInstall(store: StateStore, pluginRegistry: PluginRunti
   const compatibleCore = pluginCoreCompatibilityInfo(plugin);
   const reviewBlock = pluginReviewInstallBlock(store, plugin);
   const trustBlock = plugin.trust.installable ? undefined : pluginTrustErrorMessage(plugin);
+  const identityBlock = pluginGrantIdentityBlock(grant, plugin);
   const missingManifestPermissions = plugin.permissions.filter((permission) => !grant.permissions.includes(permission));
   const compatibilityBlock = pluginCoreCompatibilityBlock(plugin);
-  const issues = [trustBlock ? "trust_policy_blocked" : undefined, reviewBlock ? "marketplace_review_blocked" : undefined, missingManifestPermissions.length > 0 ? "manifest_permission_not_granted" : undefined, compatibilityBlock ? "core_compatibility_drift" : undefined].filter((issue): issue is string => Boolean(issue));
+  const issues = [trustBlock ? "trust_policy_blocked" : undefined, reviewBlock ? "marketplace_review_blocked" : undefined, identityBlock ? "package_identity_drift" : undefined, missingManifestPermissions.length > 0 ? "manifest_permission_not_granted" : undefined, compatibilityBlock ? "core_compatibility_drift" : undefined].filter((issue): issue is string => Boolean(issue));
   return {
     campaignId: grant.campaignId,
     pluginId: plugin.id,
@@ -23630,7 +26952,7 @@ function pluginOperationalInstall(store: StateStore, pluginRegistry: PluginRunti
     installedVersion: plugin.version,
     latestVersion: plugin.distribution.latestVersion,
     updateAvailable: plugin.version !== plugin.distribution.latestVersion,
-    status: trustBlock || reviewBlock || compatibilityBlock ? ("blocked" as const) : ("healthy" as const),
+    status: trustBlock || reviewBlock || identityBlock || compatibilityBlock ? ("blocked" as const) : ("healthy" as const),
     grantedPermissions: [...grant.permissions],
     requestedPermissions: [...plugin.permissions],
     missingManifestPermissions,
@@ -23640,7 +26962,7 @@ function pluginOperationalInstall(store: StateStore, pluginRegistry: PluginRunti
     marketplaceReview: publicPluginReviewInfo(plugin, pluginReviewForDisplay(store, plugin)),
     storageEntryCount,
     issues,
-    blocks: [trustBlock, reviewBlock, compatibilityBlock].filter((block): block is string => Boolean(block))
+    blocks: [trustBlock, reviewBlock, identityBlock, compatibilityBlock].filter((block): block is string => Boolean(block))
   };
 }
 
@@ -23726,6 +27048,99 @@ function publicPluginReviewInfo(plugin: LoadedPlugin, review: PluginReview): Adm
   };
 }
 
+function publicPluginCatalogInfo(plugin: LoadedPlugin): PublicPluginCatalogInfo {
+  return {
+    id: plugin.id,
+    name: plugin.name,
+    version: plugin.version,
+    compatibleCore: plugin.compatibleCore,
+    ...(plugin.package
+      ? {
+          package: {
+            publisher: plugin.package.publisher,
+            license: plugin.package.license
+          }
+        }
+      : {}),
+    ...(plugin.runtime
+      ? {
+          runtime: {
+            apiVersion: plugin.runtime.apiVersion,
+            sandbox: plugin.runtime.sandbox
+          }
+        }
+      : {}),
+    permissions: [...plugin.permissions],
+    ...(plugin.ui
+      ? {
+          ui: {
+            panels: plugin.ui.panels?.map((panel) => ({ ...panel }))
+          }
+        }
+      : {}),
+    ...(plugin.chatCommands ? { chatCommands: plugin.chatCommands.map((command) => ({ ...command })) } : {}),
+    ...(plugin.eventSubscriptions ? { eventSubscriptions: plugin.eventSubscriptions.map((subscription) => ({ ...subscription })) } : {}),
+    source: {
+      type: plugin.source.type,
+      packageId: plugin.source.packageId,
+      manifestChecksum: plugin.source.manifestChecksum,
+      sandbox: plugin.source.sandbox,
+      checksum: plugin.source.checksum,
+      packageChecksum: plugin.source.packageChecksum,
+      syncedAt: plugin.source.syncedAt
+    },
+    distribution: {
+      availableVersions: [...plugin.distribution.availableVersions],
+      latestVersion: plugin.distribution.latestVersion
+    },
+    permissionReview: {
+      requestedPermissions: [...plugin.permissionReview.requestedPermissions],
+      grantRequired: plugin.permissionReview.grantRequired
+    },
+    trust: publicPluginTrustInfo(plugin)
+  };
+}
+
+function publicPluginTrustInfo(plugin: LoadedPlugin): PublicPluginCatalogInfo["trust"] {
+  return {
+    status: plugin.trust.status,
+    policy: plugin.trust.policy,
+    required: plugin.trust.required,
+    installable: plugin.trust.installable,
+    errors: [...plugin.trust.errors],
+    ...(plugin.trust.signature
+      ? {
+          signature: {
+            keyId: plugin.trust.signature.keyId,
+            algorithm: plugin.trust.signature.algorithm,
+            verified: plugin.trust.signature.verified
+          }
+        }
+      : {})
+  };
+}
+
+function marketplacePluginReviewInfo(plugin: LoadedPlugin, review: PluginReview): MarketplacePluginReviewInfo {
+  const installBlock = pluginReviewInstallBlockForReview(plugin, review);
+  return {
+    review: {
+      id: review.id,
+      reviewKey: review.reviewKey,
+      pluginId: review.pluginId,
+      packageId: review.packageId,
+      version: review.version,
+      checksum: review.checksum,
+      sourceType: review.sourceType,
+      status: review.status,
+      reviewedAt: review.reviewedAt,
+      createdAt: review.createdAt,
+      updatedAt: review.updatedAt
+    },
+    installable: !installBlock,
+    ...(installBlock ? { installBlock } : {})
+  };
+}
+
 function ensurePluginReview(store: StateStore, plugin: LoadedPlugin): PluginReview {
   const reviewKey = pluginReviewKey(plugin);
   const existing = store.state.pluginReviews.find((review) => review.reviewKey === reviewKey);
@@ -23801,7 +27216,7 @@ function pluginReviewKey(plugin: LoadedPlugin): string {
 }
 
 function pluginReviewChecksum(plugin: LoadedPlugin): string {
-  return plugin.source.checksum ?? plugin.source.manifestChecksum;
+  return pluginPackageIdentityChecksum(plugin);
 }
 
 function pluginReviewPolicyMode(): PluginReviewPolicyMode {
@@ -23820,7 +27235,7 @@ function normalizePluginReviewNotes(value: unknown): string | undefined | false 
   return notes || undefined;
 }
 
-function pluginCampaignAuditSummary(store: StateStore, campaignId: string, pluginId: string): { installCount: number; lastInstallAt?: string; lastActorUserId?: string; versions: string[] } {
+function pluginCampaignAuditSummary(store: StateStore, campaignId: string, pluginId: string): { installCount: number; lastInstallAt?: string; versions: string[] } {
   const installLogs = store.state.auditLogs
     .filter((log) => log.campaignId === campaignId && log.action === "plugin.install" && log.targetType === "plugin" && log.targetId === pluginId)
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
@@ -23828,7 +27243,6 @@ function pluginCampaignAuditSummary(store: StateStore, campaignId: string, plugi
   return {
     installCount: installLogs.length,
     lastInstallAt: installLogs[0]?.createdAt,
-    lastActorUserId: installLogs[0]?.actorUserId,
     versions
   };
 }
@@ -23838,7 +27252,7 @@ function pluginCampaignInfo(
   pluginRegistry: PluginRuntimeRegistry,
   campaignId: string,
   plugin: LoadedPlugin
-): Omit<LoadedPlugin, "compatibleCore"> & { installed: boolean; grantedPermissions: PermissionName[]; missingPermissions: PermissionName[]; installedVersion?: string; updateAvailable: boolean; rollbackVersions: string[]; marketplaceReview: AdminPluginReviewInfo; compatibleCore: { range: string; coreVersion: string; satisfied: boolean }; compatibilityBlock?: string; versionCompatibility: Array<{ version: string; compatibleCore: { range: string; coreVersion: string; satisfied: boolean }; compatibilityBlock?: string }>; audit: { installCount: number; lastInstallAt?: string; lastActorUserId?: string; versions: string[] } } {
+): CampaignPluginCatalogInfo {
   const grant = findPluginGrant(store, campaignId, plugin.id);
   const installedVersion = pluginVersionFromGrant(grant);
   const installedPlugin = installedVersion ? pluginRegistry.find(plugin.id, installedVersion) : undefined;
@@ -23858,15 +27272,18 @@ function pluginCampaignInfo(
     ];
   });
   return {
-    ...displayPlugin,
-    distribution: plugin.distribution,
+    ...publicPluginCatalogInfo(displayPlugin),
+    distribution: {
+      availableVersions: [...plugin.distribution.availableVersions],
+      latestVersion: plugin.distribution.latestVersion
+    },
     installed: Boolean(grant),
     grantedPermissions: grant?.permissions ?? [],
     missingPermissions: displayPlugin.permissions.filter((permission) => !grant?.permissions.includes(permission)),
     installedVersion,
     updateAvailable: Boolean(grant && installedVersion && installedVersion !== latestVersion),
     rollbackVersions: grant ? availableVersions.filter((version) => version !== installedVersion) : [],
-    marketplaceReview: publicPluginReviewInfo(displayPlugin, pluginReviewForDisplay(store, displayPlugin)),
+    marketplaceReview: marketplacePluginReviewInfo(displayPlugin, pluginReviewForDisplay(store, displayPlugin)),
     compatibleCore: pluginCoreCompatibilityInfo(displayPlugin),
     ...(pluginCoreCompatibilityBlock(displayPlugin) ? { compatibilityBlock: pluginCoreCompatibilityBlock(displayPlugin) } : {}),
     versionCompatibility,
@@ -23885,8 +27302,10 @@ function pluginInstallMetadata(plugin: LoadedPlugin): Record<string, unknown> {
   return {
     packageId: plugin.source.packageId,
     version: plugin.version,
-    checksum: plugin.source.checksum,
-    trust: plugin.trust,
+    checksum: pluginPackageIdentityChecksum(plugin),
+    manifestChecksum: plugin.source.manifestChecksum,
+    runtimeChecksum: plugin.source.checksum,
+    trust: publicPluginTrustInfo(plugin),
     installedAt: nowIso()
   };
 }
@@ -23917,6 +27336,23 @@ function pluginVersionFromGrant(grant: PermissionGrant | undefined): string | un
   return typeof metadata.version === "string" ? metadata.version : undefined;
 }
 
+function pluginGrantIdentityBlock(grant: PermissionGrant | undefined, plugin: LoadedPlugin): string | undefined {
+  if (!grant) return undefined;
+  const metadata = grant.metadata;
+  const installedPackageId = isRecord(metadata) && typeof metadata.packageId === "string" ? metadata.packageId : undefined;
+  const installedVersion = isRecord(metadata) && typeof metadata.version === "string" ? metadata.version : undefined;
+  const installedChecksum = isRecord(metadata) && typeof metadata.checksum === "string" ? metadata.checksum : undefined;
+  if (
+    installedPackageId === plugin.source.packageId &&
+    installedVersion === plugin.version &&
+    installedChecksum !== undefined &&
+    installedChecksum === pluginPackageIdentityChecksum(plugin)
+  ) {
+    return undefined;
+  }
+  return `Installed plugin ${plugin.id} package identity no longer matches the reviewed grant; reinstall the intended package before execution`;
+}
+
 function pluginTrustErrorMessage(plugin: LoadedPlugin): string {
   const reason = plugin.trust.errors.length ? plugin.trust.errors.join("; ") : `Plugin trust status is ${plugin.trust.status}`;
   return `Plugin ${plugin.id} is not installable under the current trust policy: ${reason}`;
@@ -23926,11 +27362,46 @@ function findSystemActor(store: StateStore, campaignId: string, systemId: string
   return store.state.actors.find((actor) => actor.id === actorId && actor.campaignId === campaignId && actor.systemId === systemId);
 }
 
+function hasSystemRuntimeCapability(systemId: string, capability: SystemCapability): boolean {
+  return systemRuntimeCapabilities(systemId).includes(capability);
+}
+
+function assertSystemRuntimeCapability(systemId: string, capability: SystemCapability): void {
+  if (!hasSystemRuntimeCapability(systemId, capability)) throw new UnsupportedSystemCapabilityError(systemId, capability);
+}
+
+function systemRuntimeInfo(store: { state: Pick<EngineState, "systemInstallations"> }, system: SystemManifest, active = false) {
+  const installation = systemInstallationByManifestId(store.state, system.id);
+  const runtimeCapabilities = systemRuntimeCapabilities(system.id);
+  return {
+    ...system,
+    active,
+    source: isBundledSystem(system.id) ? "bundled" as const : "api" as const,
+    dataDriven: !isBundledSystem(system.id),
+    runtimeCapabilities,
+    unsupportedCapabilities: system.capabilities.filter((capability) => !runtimeCapabilities.includes(capability)),
+    installedAt: installation?.createdAt
+  };
+}
+
+function systemRequirementsForCampaign(store: StateStore, campaignId: string) {
+  const campaign = store.state.campaigns.find((item) => item.id === campaignId);
+  const ids = new Set<string>();
+  if (campaign?.defaultSystemId) ids.add(campaign.defaultSystemId);
+  for (const actor of store.state.actors) if (actor.campaignId === campaignId) ids.add(actor.systemId);
+  for (const item of store.state.items) if (item.campaignId === campaignId) ids.add(item.systemId);
+  return registeredSystems(store.state)
+    .filter((system) => ids.has(system.id))
+    .map(({ id, name, version, compatibleCore, capabilities }) => ({ id, name, version, compatibleCore, capabilities }))
+    .sort((left, right) => left.id.localeCompare(right.id));
+}
+
 function compendiumEntriesForSystem(systemId: string) {
   if (systemId === DND_5E_SRD_SYSTEM_ID) return dnd5eSrdCompendium();
   if (systemId === "generic-fantasy") return genericFantasyCompendium();
   if (systemId === "stellar-frontiers") return stellarFrontiersCompendium();
   if (systemId === "mystic-noir") return mysticNoirCompendium();
+  assertSystemRuntimeCapability(systemId, "compendium");
   return [];
 }
 
@@ -23939,6 +27410,7 @@ function compendiumEntryForSystem(systemId: string, entryId: string) {
   if (systemId === "generic-fantasy") return genericFantasyCompendiumEntry(entryId);
   if (systemId === "stellar-frontiers") return stellarFrontiersCompendiumEntry(entryId);
   if (systemId === "mystic-noir") return mysticNoirCompendiumEntry(entryId);
+  assertSystemRuntimeCapability(systemId, "compendium");
   return undefined;
 }
 
@@ -23947,6 +27419,7 @@ function characterTemplatesForSystem(systemId: string): CharacterTemplate[] {
   if (systemId === "generic-fantasy") return genericFantasyCharacterTemplates();
   if (systemId === "stellar-frontiers") return stellarFrontiersCharacterTemplates();
   if (systemId === "mystic-noir") return mysticNoirCharacterTemplates();
+  assertSystemRuntimeCapability(systemId, "character-templates");
   return [];
 }
 
@@ -23969,9 +27442,11 @@ function createTemplateItems(campaignId: string, actor: Actor, template: Charact
 
 function characterImportForSystem(systemId: string, input: CharacterImportInput): CharacterImportResult {
   if (systemId === DND_5E_SRD_SYSTEM_ID) return dnd5eSrdCharacterImport(input);
+  if (systemId === "generic-fantasy") return genericFantasyCharacterImport(input);
   if (systemId === "stellar-frontiers") return stellarFrontiersCharacterImport(input);
   if (systemId === "mystic-noir") return mysticNoirCharacterImport(input);
-  return genericFantasyCharacterImport(input);
+  assertSystemRuntimeCapability(systemId, "character-import");
+  throw new UnsupportedSystemCapabilityError(systemId, "character-import");
 }
 
 function createImportedItems(campaignId: string, actor: Actor, imported: CharacterImportResult): Item[] {
@@ -23993,16 +27468,18 @@ function createImportedItems(campaignId: string, actor: Actor, imported: Charact
 
 function systemSheet(actor: Actor, items: Item[]) {
   if (actor.systemId === DND_5E_SRD_SYSTEM_ID) return dnd5eSrdSheet(actor, items);
+  if (actor.systemId === "generic-fantasy") return genericFantasySheet(actor, items);
   if (actor.systemId === "stellar-frontiers") return stellarFrontiersSheet(actor, items);
   if (actor.systemId === "mystic-noir") return mysticNoirSheet(actor, items);
-  return genericFantasySheet(actor, items);
+  throw new UnsupportedSystemCapabilityError(actor.systemId, "actor-sheet");
 }
 
 function systemQuickRolls(actor: Actor, items: Item[] = []) {
   if (actor.systemId === DND_5E_SRD_SYSTEM_ID) return dnd5eSrdQuickRolls(actor, items);
+  if (actor.systemId === "generic-fantasy") return genericFantasyQuickRolls(actor, items);
   if (actor.systemId === "stellar-frontiers") return stellarFrontiersQuickRolls(actor, items);
   if (actor.systemId === "mystic-noir") return mysticNoirQuickRolls(actor, items);
-  return genericFantasyQuickRolls(actor, items);
+  throw new UnsupportedSystemCapabilityError(actor.systemId, "quick-rolls");
 }
 
 function systemActionOptions(spellSlotLevel: number | undefined, resourceAmount?: number, useFreeResource?: boolean): SystemActionUseOptions {
@@ -24012,49 +27489,57 @@ function systemActionOptions(spellSlotLevel: number | undefined, resourceAmount?
 function systemActionFormula(actor: Actor, items: Item[], rollId: string, options: SystemActionUseOptions): string | undefined {
   if (actor.systemId === DND_5E_SRD_SYSTEM_ID) return dnd5eSrdActionFormula(actor, items, rollId, options);
   if (actor.systemId === "generic-fantasy") return genericFantasyActionFormula(actor, items, rollId, options);
+  if (actor.systemId === "stellar-frontiers" || actor.systemId === "mystic-noir") return undefined;
+  assertSystemRuntimeCapability(actor.systemId, "actions");
   return undefined;
 }
 
 function useSystemAction(actor: Actor, items: Item[], rollId: string, options: SystemActionUseOptions = {}): SystemActionUseResult {
   if (actor.systemId === DND_5E_SRD_SYSTEM_ID) return useDnd5eSrdAction(actor, items, rollId, options);
+  if (actor.systemId === "generic-fantasy") return useGenericFantasyAction(actor, items, rollId, options);
   if (actor.systemId === "stellar-frontiers") return useStellarFrontiersAction(actor, items, rollId);
   if (actor.systemId === "mystic-noir") return useMysticNoirAction(actor, items, rollId);
-  return useGenericFantasyAction(actor, items, rollId, options);
+  throw new UnsupportedSystemCapabilityError(actor.systemId, "actions");
 }
 
 function applySystemCondition(actor: Actor, conditionId: string, appliedAt?: string, options: { level?: unknown } = {}): Record<string, unknown> {
   if (actor.systemId === DND_5E_SRD_SYSTEM_ID) return applyDnd5eSrdCondition(actor, conditionId, appliedAt, options);
+  if (actor.systemId === "generic-fantasy") return applyGenericFantasyCondition(actor, conditionId, appliedAt);
   if (actor.systemId === "stellar-frontiers") return applyStellarFrontiersCondition(actor, conditionId, appliedAt);
   if (actor.systemId === "mystic-noir") return applyMysticNoirCondition(actor, conditionId, appliedAt);
-  return applyGenericFantasyCondition(actor, conditionId, appliedAt);
+  throw new UnsupportedSystemCapabilityError(actor.systemId, "conditions");
 }
 
 function removeSystemCondition(actor: Actor, conditionId: string): Record<string, unknown> {
   if (actor.systemId === DND_5E_SRD_SYSTEM_ID) return removeDnd5eSrdCondition(actor, conditionId);
+  if (actor.systemId === "generic-fantasy") return removeGenericFantasyCondition(actor, conditionId);
   if (actor.systemId === "stellar-frontiers") return removeStellarFrontiersCondition(actor, conditionId);
   if (actor.systemId === "mystic-noir") return removeMysticNoirCondition(actor, conditionId);
-  return removeGenericFantasyCondition(actor, conditionId);
+  throw new UnsupportedSystemCapabilityError(actor.systemId, "conditions");
 }
 
 function advancementOptionsForActor(actor: Actor) {
   if (actor.systemId === DND_5E_SRD_SYSTEM_ID) return dnd5eSrdAdvancementOptions(actor);
+  if (actor.systemId === "generic-fantasy") return genericFantasyAdvancementOptions(actor);
   if (actor.systemId === "stellar-frontiers") return stellarFrontiersAdvancementOptions(actor);
   if (actor.systemId === "mystic-noir") return mysticNoirAdvancementOptions(actor);
-  return genericFantasyAdvancementOptions(actor);
+  throw new UnsupportedSystemCapabilityError(actor.systemId, "advancement");
 }
 
 function applySystemAdvancement(actor: Actor, optionId: string): Record<string, unknown> {
   if (actor.systemId === DND_5E_SRD_SYSTEM_ID) return applyDnd5eSrdAdvancement(actor, optionId);
+  if (actor.systemId === "generic-fantasy") return applyGenericFantasyAdvancement(actor, optionId);
   if (actor.systemId === "stellar-frontiers") return applyStellarFrontiersAdvancement(actor, optionId);
   if (actor.systemId === "mystic-noir") return applyMysticNoirAdvancement(actor, optionId);
-  return applyGenericFantasyAdvancement(actor, optionId);
+  throw new UnsupportedSystemCapabilityError(actor.systemId, "advancement");
 }
 
 function applySystemRest(actor: Actor, restType: SystemRestType, options: SystemRestOptions = {}): SystemRestResult {
   if (actor.systemId === DND_5E_SRD_SYSTEM_ID) return applyDnd5eSrdRest(actor, restType, options);
+  if (actor.systemId === "generic-fantasy") return applyGenericFantasyRest(actor, restType);
   if (actor.systemId === "stellar-frontiers") return applyStellarFrontiersRest(actor, restType);
   if (actor.systemId === "mystic-noir") return applyMysticNoirRest(actor, restType);
-  return applyGenericFantasyRest(actor, restType);
+  throw new UnsupportedSystemCapabilityError(actor.systemId, "rest");
 }
 
 function encounterThreatsForSystem(systemId: string) {
@@ -24062,14 +27547,16 @@ function encounterThreatsForSystem(systemId: string) {
   if (systemId === "stellar-frontiers") return stellarFrontiersEncounterThreats();
   if (systemId === "mystic-noir") return mysticNoirEncounterThreats();
   if (systemId === "generic-fantasy") return genericFantasyEncounterThreats();
+  assertSystemRuntimeCapability(systemId, "encounter-builder");
   return [];
 }
 
 function encounterPlanForSystem(systemId: string, party: Actor[], threats: EncounterThreatSelection[]): EncounterPlan {
   if (systemId === DND_5E_SRD_SYSTEM_ID) return dnd5eSrdEncounterPlan(party, threats);
+  if (systemId === "generic-fantasy") return genericFantasyEncounterPlan(party, threats);
   if (systemId === "stellar-frontiers") return stellarFrontiersEncounterPlan(party, threats);
   if (systemId === "mystic-noir") return mysticNoirEncounterPlan(party, threats);
-  return genericFantasyEncounterPlan(party, threats);
+  throw new UnsupportedSystemCapabilityError(systemId, "encounter-builder");
 }
 
 function partyActorsForSystem(store: StateStore, campaignId: string, systemId: string, actorIds?: string[]): Actor[] {
@@ -24262,6 +27749,11 @@ function displayNameFromHeader(value: string | string[] | undefined): string | u
 function headerText(value: string | string[] | undefined): string | undefined {
   const raw = Array.isArray(value) ? value[0] : value;
   return raw ? safeDecodeURIComponent(raw).trim() : undefined;
+}
+
+function opaqueHeaderText(value: string | string[] | undefined): string | undefined {
+  const raw = Array.isArray(value) ? value[0] : value;
+  return raw && raw.length > 0 ? raw : undefined;
 }
 
 function normalizeAssetFolder(value: unknown): string | undefined {
@@ -27197,22 +30689,355 @@ async function withArchivedAssetFiles(archive: CampaignArchive, assetStorage: As
   };
 }
 
-function normalizeCampaignArchiveExportOptions(query: { scope?: string; version?: string; redaction?: string }): { ok: true; value: { scope: "campaign"; version: "0.2.0"; redaction: "portable" } } | { ok: false; error: string } {
+const exportSelectableArchiveCollections = [
+  "worlds",
+  "assets",
+  "scenes",
+  "tokens",
+  "actors",
+  "items",
+  "journals",
+  "handouts",
+  "chat",
+  "rolls",
+  "diceMacros",
+  "audioTracks",
+  "encounters",
+  "campaignSessions",
+  "combats",
+  "compendia",
+  "proposals",
+  "aiThreads",
+  "aiEvaluations",
+  "aiMemory",
+  "aiToolCalls",
+  "auditLogs",
+  "permissionGrants",
+  "pluginStorage",
+  "contentImports",
+  "fogPresets"
+] as const satisfies ReadonlyArray<keyof EngineState>;
+
+type ExportSelectableArchiveCollection = (typeof exportSelectableArchiveCollections)[number];
+type CampaignArchiveExportOptions = {
+  scope: "campaign" | "world" | "selected_collections";
+  scopeId?: string;
+  collections?: ExportSelectableArchiveCollection[];
+  version: "0.2.0";
+  redaction: "portable";
+};
+
+function normalizeCampaignArchiveExportOptions(query: {
+  scope?: string;
+  scopeId?: string;
+  collections?: string;
+  version?: string;
+  redaction?: string;
+}): { ok: true; value: CampaignArchiveExportOptions } | { ok: false; error: string } {
   const scope = query.scope ?? "campaign";
   const version = query.version ?? "0.2.0";
   const redaction = query.redaction ?? "portable";
-  if (scope !== "campaign") return { ok: false, error: "Campaign archive export scope must be campaign" };
+  if (scope !== "campaign" && scope !== "world" && scope !== "selected_collections") {
+    return { ok: false, error: "Campaign archive export scope must be campaign, world, or selected_collections" };
+  }
   if (version !== "0.2.0") return { ok: false, error: "Campaign archive export version must be 0.2.0" };
   if (redaction !== "portable") return { ok: false, error: "Campaign archive redaction must be portable" };
-  return { ok: true, value: { scope, version, redaction } };
+  const scopeId = query.scopeId?.trim();
+  if (scope === "world" && !scopeId) return { ok: false, error: "World archive export requires scopeId" };
+  if (scope !== "world" && query.scopeId !== undefined) return { ok: false, error: "scopeId is supported only for world exports" };
+  const requestedCollections = query.collections
+    ? [...new Set(query.collections.split(",").map((collection) => collection.trim()).filter(Boolean))]
+    : [];
+  if (scope === "selected_collections" && requestedCollections.length === 0) return { ok: false, error: "selected_collections export requires collections" };
+  const unsupportedCollection = requestedCollections.find((collection) => !exportSelectableArchiveCollections.includes(collection as ExportSelectableArchiveCollection));
+  if (unsupportedCollection) return { ok: false, error: `Unsupported export collection: ${unsupportedCollection}` };
+  if (scope !== "selected_collections" && requestedCollections.length > 0) return { ok: false, error: "collections is supported only for selected_collections exports" };
+  return {
+    ok: true,
+    value: {
+      scope,
+      ...(scopeId ? { scopeId } : {}),
+      ...(requestedCollections.length > 0 ? { collections: requestedCollections as ExportSelectableArchiveCollection[] } : {}),
+      version,
+      redaction
+    }
+  };
 }
 
-function campaignArchiveCompatibilityNotes(options: { scope: "campaign"; version: "0.2.0"; redaction: "portable" }): string[] {
+function campaignArchiveCompatibilityNotes(options: CampaignArchiveExportOptions): string[] {
   return [
-    `Scope ${options.scope}: exports one campaign and its related tabletop records.`,
+    options.scope === "campaign"
+      ? "Scope campaign: exports one campaign and all related portable tabletop records."
+      : options.scope === "world"
+        ? `Scope world: exports world ${options.scopeId} with its dependency-closed scenes, tokens, actors, content, assets, sessions, and audit records.`
+        : `Scope selected_collections: exports the campaign identity shell plus ${options.collections?.join(", ") ?? "no"} selected record collections and their referenced dependency records.`,
     `Archive ${options.version}: supported by the current v0.3/v1-compatible importer.`,
     `Redaction ${options.redaction}: strips account secrets, sessions, MFA, SCIM sources, plugin reviews, idempotency records, jobs, and organization records while preserving playable campaign content.`
   ];
+}
+
+function addArchiveRecordsById(
+  data: EngineState,
+  source: EngineState,
+  collection: ExportSelectableArchiveCollection,
+  ids: Iterable<string>
+): boolean {
+  const wanted = new Set(ids);
+  if (wanted.size === 0) return false;
+  const targetRecords = data[collection] as unknown as Array<{ id: string }>;
+  const sourceRecords = source[collection] as unknown as Array<{ id: string }>;
+  const existingIds = new Set(targetRecords.map((record) => record.id));
+  const additions = sourceRecords.filter((record) => wanted.has(record.id) && !existingIds.has(record.id));
+  if (additions.length === 0) return false;
+  targetRecords.push(...structuredClone(additions));
+  return true;
+}
+
+/**
+ * Adds records directly referenced by the records already present in `data`.
+ * This is deliberately a forward-reference closure: selecting a world does not
+ * silently pull every scene in that world, while selecting a token does pull
+ * the scene, actor, and image it needs to remain usable after import.
+ */
+function closeArchiveRecordDependencies(data: EngineState, source: EngineState): Set<ExportSelectableArchiveCollection> {
+  const addedCollections = new Set<ExportSelectableArchiveCollection>();
+  const add = (collection: ExportSelectableArchiveCollection, ids: Iterable<string>) => {
+    const changed = addArchiveRecordsById(data, source, collection, ids);
+    if (changed) addedCollections.add(collection);
+    return changed;
+  };
+  const proposalEntityCollections: Partial<Record<ProposalChange["entity"], ExportSelectableArchiveCollection>> = {
+    world: "worlds",
+    scene: "scenes",
+    token: "tokens",
+    actor: "actors",
+    item: "items",
+    journal: "journals",
+    handout: "handouts",
+    chat: "chat",
+    roll: "rolls",
+    diceMacro: "diceMacros",
+    encounter: "encounters",
+    combat: "combats",
+    asset: "assets",
+    fogPreset: "fogPresets",
+    pluginStorage: "pluginStorage"
+  };
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const worldIds = [
+      ...data.scenes.map((record) => record.worldId),
+      ...data.actors.map((record) => record.worldId),
+      ...data.items.map((record) => record.worldId),
+      ...data.journals.map((record) => record.worldId),
+      ...data.handouts.map((record) => record.worldId),
+      ...data.encounters.map((record) => record.worldId),
+      ...data.aiMemory.map((record) => record.worldId)
+    ].filter((id): id is string => Boolean(id));
+    changed = add("worlds", worldIds) || changed;
+
+    const sceneIds = [
+      ...data.tokens.map((record) => record.sceneId),
+      ...data.chat.map((record) => record.sceneId),
+      ...data.fogPresets.map((record) => record.sourceSceneId),
+      ...data.campaignSessions.flatMap((record) => record.sceneIds)
+    ].filter((id): id is string => Boolean(id));
+    changed = add("scenes", sceneIds) || changed;
+
+    const tokenIds = [
+      ...data.encounters.flatMap((record) => record.tokenIds),
+      ...data.combats.flatMap((record) => record.combatants.map((combatant) => combatant.tokenId))
+    ];
+    changed = add("tokens", tokenIds) || changed;
+
+    const actorIds = [
+      ...data.tokens.map((record) => record.actorId),
+      ...data.items.map((record) => record.actorId),
+      ...data.journals.flatMap((record) => record.visibleToActorIds),
+      ...data.handouts.flatMap((record) => record.visibleToActorIds ?? []),
+      ...data.combats.flatMap((record) => record.combatants.map((combatant) => combatant.actorId)),
+      ...data.combats.flatMap((record) => record.actions?.flatMap((action) => [action.actorId, ...action.targetActorIds]) ?? [])
+    ].filter((id): id is string => Boolean(id));
+    changed = add("actors", actorIds) || changed;
+
+    const itemIds = data.combats.flatMap((record) => record.actions?.flatMap((action) => action.itemUpdates?.map((update) => update.itemId) ?? []) ?? []);
+    changed = add("items", itemIds) || changed;
+
+    const journalIds = [
+      ...data.journals.map((record) => record.parentId),
+      ...data.campaignSessions.map((record) => record.recapJournalId)
+    ].filter((id): id is string => Boolean(id));
+    changed = add("journals", journalIds) || changed;
+
+    const encounterIds = [
+      ...data.campaignSessions.flatMap((record) => record.encounterIds),
+      ...data.combats.map((record) => record.encounterId)
+    ].filter((id): id is string => Boolean(id));
+    changed = add("encounters", encounterIds) || changed;
+
+    const rollIds = [
+      ...data.chat.map((record) => record.rollId),
+      ...data.combats.flatMap((record) => record.actions?.map((action) => action.rollId) ?? [])
+    ].filter((id): id is string => Boolean(id));
+    changed = add("rolls", rollIds) || changed;
+
+    const messageIds = data.chat.map((record) => record.replyToMessageId).filter((id): id is string => Boolean(id));
+    changed = add("chat", messageIds) || changed;
+
+    const proposalIds = data.campaignSessions.map((record) => record.recapProposalId).filter((id): id is string => Boolean(id));
+    changed = add("proposals", proposalIds) || changed;
+    for (const proposal of data.proposals) {
+      for (const change of proposal.changesJson) {
+        const collection = proposalEntityCollections[change.entity];
+        const id = change.id ?? (typeof change.data.id === "string" ? change.data.id : undefined);
+        if (collection && id) changed = add(collection, [id]) || changed;
+      }
+    }
+
+    const threadIds = [
+      ...data.aiEvaluations.map((record) => record.threadId),
+      ...data.aiToolCalls.map((record) => record.threadId),
+      ...data.proposals.filter((record) => record.createdByType === "ai").map((record) => record.sourceId)
+    ].filter((id): id is string => Boolean(id));
+    changed = add("aiThreads", threadIds) || changed;
+
+    for (const batch of data.contentImports) {
+      for (const applied of batch.appliedRecords) {
+        changed = add(applied.collection, [applied.id]) || changed;
+      }
+    }
+
+    const assetIds = [
+      ...data.scenes.map((record) => record.backgroundAssetId),
+      ...data.tokens.map((record) => record.imageAssetId),
+      ...data.actors.map((record) => record.imageAssetId),
+      ...data.handouts.flatMap((record) => record.assetIds ?? [])
+    ].filter((id): id is string => Boolean(id));
+    changed = add("assets", assetIds) || changed;
+  }
+  return addedCollections;
+}
+
+function archiveForExportScope(
+  archive: CampaignArchive,
+  options: CampaignArchiveExportOptions
+): { ok: true; archive: CampaignArchive; dependencyWarnings: string[] } | { ok: false; error: string; notFound?: boolean } {
+  if (options.scope === "campaign") return { ok: true, archive, dependencyWarnings: [] };
+  if (options.scope === "selected_collections") {
+    const collections = options.collections ?? [];
+    const data = emptyState();
+    data.users = structuredClone(archive.data.users);
+    data.campaigns = structuredClone(archive.data.campaigns);
+    data.members = structuredClone(archive.data.members);
+    for (const collection of collections) {
+      (data[collection] as Array<{ id: string }>) = structuredClone(archive.data[collection] as Array<{ id: string }>);
+    }
+    closeArchiveRecordDependencies(data, archive.data);
+    const selectedForWarnings = operatorSelectableArchiveCollections.filter((collection) => (data[collection] as Array<{ id: string }>).length > 0);
+    const dependencyWarnings = archiveImportDependencyWarnings("selected_collections", selectedForWarnings, archive);
+    const assetIds = new Set(data.assets.map((asset) => asset.id));
+    return {
+      ok: true,
+      dependencyWarnings,
+      archive: {
+        ...archive,
+        manifest: { ...archive.manifest, assetCount: data.assets.length },
+        data,
+        files: archive.files?.filter((file) => assetIds.has(file.assetId)) ?? []
+      }
+    };
+  }
+
+  const worldId = options.scopeId!;
+  const world = archive.data.worlds.find((item) => item.id === worldId);
+  if (!world) return { ok: false, error: "World not found", notFound: true };
+  const data = emptyState();
+  data.users = structuredClone(archive.data.users);
+  data.campaigns = structuredClone(archive.data.campaigns);
+  data.members = structuredClone(archive.data.members);
+  data.permissionGrants = structuredClone(archive.data.permissionGrants);
+  data.worlds = [structuredClone(world)];
+  data.scenes = archive.data.scenes.filter((scene) => scene.worldId === worldId);
+  const sceneIds = new Set(data.scenes.map((scene) => scene.id));
+  data.tokens = archive.data.tokens.filter((token) => sceneIds.has(token.sceneId));
+  const tokenIds = new Set(data.tokens.map((token) => token.id));
+  const linkedActorIds = new Set(data.tokens.map((token) => token.actorId).filter((id): id is string => Boolean(id)));
+  data.actors = archive.data.actors.filter((actor) => actor.worldId === worldId || linkedActorIds.has(actor.id));
+  const actorIds = new Set(data.actors.map((actor) => actor.id));
+  data.items = archive.data.items.filter((item) => item.worldId === worldId || (item.actorId !== undefined && actorIds.has(item.actorId)));
+  data.journals = archive.data.journals.filter((journal) => journal.worldId === worldId);
+  const journalIds = new Set(data.journals.map((journal) => journal.id));
+  let addedJournal = true;
+  while (addedJournal) {
+    const before = journalIds.size;
+    for (const journal of archive.data.journals) {
+      if (journalIds.has(journal.id) && journal.parentId) journalIds.add(journal.parentId);
+    }
+    addedJournal = journalIds.size > before;
+  }
+  data.journals = archive.data.journals.filter((journal) => journalIds.has(journal.id));
+  data.handouts = archive.data.handouts.filter((handout) => handout.worldId === worldId);
+  data.encounters = archive.data.encounters.filter((encounter) => encounter.worldId === worldId || encounter.tokenIds.some((id) => tokenIds.has(id)));
+  const encounterIds = new Set(data.encounters.map((encounter) => encounter.id));
+  data.combats = archive.data.combats.filter(
+    (combat) => (combat.encounterId !== undefined && encounterIds.has(combat.encounterId)) || combat.combatants.some((combatant) => tokenIds.has(combatant.tokenId) || (combatant.actorId !== undefined && actorIds.has(combatant.actorId)))
+  );
+  data.campaignSessions = archive.data.campaignSessions.filter((session) => {
+    const hasScopedReference = session.sceneIds.some((id) => sceneIds.has(id)) || session.encounterIds.some((id) => encounterIds.has(id));
+    return hasScopedReference && session.sceneIds.every((id) => sceneIds.has(id)) && session.encounterIds.every((id) => encounterIds.has(id));
+  });
+  data.chat = archive.data.chat.filter((message) => message.sceneId !== undefined && sceneIds.has(message.sceneId));
+  const rollIds = new Set(data.chat.map((message) => message.rollId).filter((id): id is string => Boolean(id)));
+  data.rolls = archive.data.rolls.filter((roll) => rollIds.has(roll.id));
+  data.fogPresets = archive.data.fogPresets.filter((preset) => preset.sourceSceneId !== undefined && sceneIds.has(preset.sourceSceneId));
+  data.aiMemory = archive.data.aiMemory.filter((fact) => fact.worldId === worldId);
+  const includedIds = new Set<string>([
+    worldId,
+    ...sceneIds,
+    ...tokenIds,
+    ...actorIds,
+    ...data.items.map((item) => item.id),
+    ...journalIds,
+    ...data.handouts.map((handout) => handout.id),
+    ...encounterIds,
+    ...data.combats.map((combat) => combat.id),
+    ...data.campaignSessions.map((session) => session.id),
+    ...data.chat.map((message) => message.id),
+    ...rollIds,
+    ...data.aiMemory.map((fact) => fact.id),
+    ...data.fogPresets.map((preset) => preset.id)
+  ]);
+  data.proposals = archive.data.proposals.filter(
+    (proposal) =>
+      proposal.changesJson.length > 0 &&
+      proposal.changesJson.every((change) => {
+      const id = change.id ?? (typeof change.data.id === "string" ? change.data.id : undefined);
+      return change.data.worldId === worldId || (id !== undefined && includedIds.has(id));
+      })
+  );
+  const threadIds = new Set(data.proposals.map((proposal) => proposal.sourceId).filter((id): id is string => Boolean(id)));
+  data.aiThreads = archive.data.aiThreads.filter((thread) => threadIds.has(thread.id));
+  data.aiToolCalls = archive.data.aiToolCalls.filter((call) => threadIds.has(call.threadId));
+  data.aiEvaluations = archive.data.aiEvaluations.filter((evaluation) => threadIds.has(evaluation.threadId));
+  for (const proposal of data.proposals) includedIds.add(proposal.id);
+  for (const thread of data.aiThreads) includedIds.add(thread.id);
+  data.auditLogs = archive.data.auditLogs.filter((log) => log.targetId !== undefined && includedIds.has(log.targetId));
+  closeArchiveRecordDependencies(data, archive.data);
+  const assetIds = new Set<string>();
+  for (const scene of data.scenes) if (scene.backgroundAssetId) assetIds.add(scene.backgroundAssetId);
+  for (const token of data.tokens) if (token.imageAssetId) assetIds.add(token.imageAssetId);
+  for (const actor of data.actors) if (actor.imageAssetId) assetIds.add(actor.imageAssetId);
+  for (const handout of data.handouts) for (const assetId of handout.assetIds ?? []) assetIds.add(assetId);
+  data.assets = archive.data.assets.filter((asset) => assetIds.has(asset.id));
+  const scopedArchive: CampaignArchive = {
+    ...archive,
+    manifest: { ...archive.manifest, name: `${archive.manifest.name} - ${world.name}`, assetCount: data.assets.length },
+    data,
+    files: archive.files?.filter((file) => assetIds.has(file.assetId)) ?? []
+  };
+  return { ok: true, archive: scopedArchive, dependencyWarnings: [] };
 }
 
 async function archiveAssetFile(assetStorage: AssetStorage, asset: MapAsset): Promise<CampaignArchiveFile | undefined> {
@@ -27286,7 +31111,7 @@ function normalizeArchiveForImport(archive: CampaignArchive, organizationId: str
   return {
     ...archive,
     files: archive.files ?? [],
-    data: {
+    data: normalizeEngineState({
       ...emptyState(),
       ...data,
       users,
@@ -27300,8 +31125,9 @@ function normalizeArchiveForImport(archive: CampaignArchive, organizationId: str
       scimGroupRoleMappings: data.scimGroupRoleMappings ?? [],
       invites: data.invites ?? [],
       pluginReviews: [],
+      systemInstallations: [],
       contentImports: data.contentImports ?? []
-    }
+    })
   };
 }
 
@@ -27359,6 +31185,7 @@ function applyContentImportEntity(state: EngineState, campaign: Campaign, entity
     const actor = createTimestamped("act", {
       id: recordId,
       campaignId: campaign.id,
+      worldId: stringFromRecord(entity.data, "worldId"),
       systemId: stringFromRecord(entity.data, "systemId") ?? campaign.defaultSystemId,
       ownerUserId: stringFromRecord(entity.data, "ownerUserId"),
       type: stringFromRecord(entity.data, "type") ?? "npc",
@@ -27377,6 +31204,7 @@ function applyContentImportEntity(state: EngineState, campaign: Campaign, entity
     const item = createTimestamped("item", {
       id: recordId,
       campaignId: campaign.id,
+      worldId: stringFromRecord(entity.data, "worldId"),
       systemId: stringFromRecord(entity.data, "systemId") ?? campaign.defaultSystemId,
       actorId: stringFromRecord(entity.data, "actorId"),
       type: stringFromRecord(entity.data, "type") ?? "loot",
@@ -27391,6 +31219,7 @@ function applyContentImportEntity(state: EngineState, campaign: Campaign, entity
     const journal = createTimestamped("jnl", {
       id: recordId,
       campaignId: campaign.id,
+      worldId: stringFromRecord(entity.data, "worldId"),
       parentId: stringFromRecord(entity.data, "parentId"),
       title: entity.name,
       body: stringFromRecord(entity.data, "body") ?? "",
@@ -27409,6 +31238,7 @@ function applyContentImportEntity(state: EngineState, campaign: Campaign, entity
     const encounter = createTimestamped("enc", {
       id: recordId,
       campaignId: campaign.id,
+      worldId: stringFromRecord(entity.data, "worldId"),
       name: entity.name,
       summary: stringFromRecord(entity.data, "summary") ?? stringFromRecord(entity.data, "body") ?? "",
       tokenIds: stringArrayFromRecord(entity.data, "tokenIds"),
@@ -27421,10 +31251,17 @@ function applyContentImportEntity(state: EngineState, campaign: Campaign, entity
   const handout = createTimestamped("hnd", {
     id: recordId,
     campaignId: campaign.id,
+    worldId: stringFromRecord(entity.data, "worldId"),
     title: entity.name,
     body: stringFromRecord(entity.data, "body") ?? "",
     visibility: visibilityFromRecord(entity.data, "visibility", "gm_only"),
-    assetIds: stringArrayFromRecord(entity.data, "assetIds")
+    visibleToUserIds: stringArrayFromRecord(entity.data, "visibleToUserIds"),
+    visibleToActorIds: stringArrayFromRecord(entity.data, "visibleToActorIds"),
+    assetIds: stringArrayFromRecord(entity.data, "assetIds"),
+    tags: stringArrayFromRecord(entity.data, "tags"),
+    readByUserIds: [],
+    createdBy: userId,
+    updatedBy: userId
   });
   state.handouts.push(handout);
   return { collection: "handouts", id: handout.id, entityId: entity.id };
@@ -27476,6 +31313,7 @@ function countArchiveRecords(archive: CampaignArchive): Record<keyof EngineState
 }
 
 const operatorSelectableArchiveCollections = [
+  "worlds",
   "assets",
   "scenes",
   "tokens",
@@ -27486,7 +31324,9 @@ const operatorSelectableArchiveCollections = [
   "chat",
   "rolls",
   "diceMacros",
+  "audioTracks",
   "encounters",
+  "campaignSessions",
   "combats",
   "contentImports",
   "fogPresets"
@@ -27506,14 +31346,16 @@ function archiveImportDependencyWarnings(scope: "all" | "assets_only" | "selecte
   if (scope !== "selected_collections") return [];
   const selected = new Set<OperatorSelectableArchiveCollection>(collections);
   const dependencies: Partial<Record<OperatorSelectableArchiveCollection, OperatorSelectableArchiveCollection[]>> = {
-    scenes: ["assets", "fogPresets"],
+    worlds: ["scenes", "actors", "items", "journals", "handouts", "encounters"],
+    scenes: ["worlds", "assets", "fogPresets"],
     tokens: ["scenes", "actors", "assets"],
-    actors: ["items", "assets"],
-    items: ["actors"],
-    journals: ["assets"],
-    handouts: ["assets"],
+    actors: ["worlds", "items", "assets"],
+    items: ["worlds", "actors"],
+    journals: ["worlds", "assets"],
+    handouts: ["worlds", "assets"],
     chat: ["rolls"],
-    encounters: ["actors", "tokens"],
+    encounters: ["worlds", "actors", "tokens"],
+    campaignSessions: ["scenes", "encounters", "journals"],
     combats: ["actors", "tokens", "scenes"],
     contentImports: ["actors", "items", "journals", "handouts", "encounters"]
   };
@@ -27553,7 +31395,9 @@ const regeneratableArchiveCollections = [
   "chat",
   "rolls",
   "diceMacros",
+  "audioTracks",
   "encounters",
+  "campaignSessions",
   "combats",
   "proposals",
   "aiThreads",
@@ -27581,7 +31425,9 @@ const archiveIdPrefixes: Record<(typeof regeneratableArchiveCollections)[number]
   chat: "msg",
   rolls: "roll",
   diceMacros: "mac",
+  audioTracks: "audio",
   encounters: "enc",
+  campaignSessions: "cses",
   combats: "cmb",
   proposals: "prop",
   aiThreads: "thr",
@@ -27628,6 +31474,16 @@ function archiveWithRegeneratedIds(archive: CampaignArchive, options: { userId: 
     journal.createdBy = options.userId;
     journal.updatedBy = options.userId;
   }
+  for (const handout of remappedData.handouts) {
+    if (!copiedCampaignIds.has(handout.campaignId)) continue;
+    handout.createdBy = options.userId;
+    handout.updatedBy = options.userId;
+  }
+  for (const session of remappedData.campaignSessions) {
+    if (!copiedCampaignIds.has(session.campaignId)) continue;
+    session.createdBy = options.userId;
+    session.updatedBy = options.userId;
+  }
   for (const macro of remappedData.diceMacros) {
     if (copiedCampaignIds.has(macro.campaignId)) macro.createdBy = options.userId;
   }
@@ -27644,6 +31500,136 @@ function archiveWithRegeneratedIds(archive: CampaignArchive, options: { userId: 
     data: remappedData,
     files: archive.files?.map((file) => ({ ...file, assetId: idMap.get(file.assetId) ?? file.assetId })) ?? []
   };
+}
+
+/**
+ * Campaign archives are portable content, not an identity or server-global
+ * administration channel. Existing accounts, campaign ownership, membership,
+ * permission grants, and global compendia therefore remain server-owned.
+ */
+function secureArchiveIdentityForImport(
+  state: EngineState,
+  archive: CampaignArchive,
+  options: { userId: string; organizationId: string }
+): CampaignArchive {
+  const data = clonePlain(archive.data);
+  const existingUserIds = new Set(state.users.map((user) => user.id));
+  data.users = data.users
+    .filter((user) => !existingUserIds.has(user.id))
+    .map(({ passwordHash: _passwordHash, mfa: _mfa, scim: _scim, serverAdmin: _serverAdmin, disabledAt: _disabledAt, disabledByUserId: _disabledByUserId, disabledReason: _disabledReason, passwordUpdatedAt: _passwordUpdatedAt, ...user }) => ({
+      ...user,
+      passwordResetRequired: true
+    }));
+  const knownUserIds = new Set([...existingUserIds, ...data.users.map((user) => user.id)]);
+  const existingCampaigns = new Map(state.campaigns.map((campaign) => [campaign.id, campaign]));
+  const newCampaignIds = new Set<string>();
+
+  // Compendium packs are server-global in the current model. A campaign archive
+  // records its system requirements but cannot install or replace global packs.
+  data.compendia = [];
+  // Audit history is server evidence, not portable content. The import action
+  // itself is recorded after the merge with the authenticated actor.
+  data.auditLogs = [];
+  data.invites = [];
+  data.scimGroups = [];
+  data.scimGroupRoleMappings = [];
+
+  for (const campaign of data.campaigns) {
+    const existing = existingCampaigns.get(campaign.id);
+    if (existing) {
+      campaign.ownerUserId = existing.ownerUserId;
+      campaign.organizationId = existing.organizationId;
+      continue;
+    }
+    newCampaignIds.add(campaign.id);
+    campaign.ownerUserId = options.userId;
+    campaign.organizationId = options.organizationId;
+  }
+
+  const memberByCampaignAndUser = new Map<string, CampaignMember>();
+  for (const rawMember of data.members) {
+    if (!newCampaignIds.has(rawMember.campaignId) || !knownUserIds.has(rawMember.userId)) continue;
+    const member: CampaignMember = {
+      ...rawMember,
+      id: state.members.some((existing) => existing.id === rawMember.id) ? createId("mem") : rawMember.id,
+      role: rawMember.userId === options.userId ? "owner" : rawMember.role === "owner" ? "gm" : rawMember.role,
+      source: undefined
+    };
+    memberByCampaignAndUser.set(`${member.campaignId}:${member.userId}`, member);
+  }
+  for (const campaignId of newCampaignIds) {
+    const key = `${campaignId}:${options.userId}`;
+    if (!memberByCampaignAndUser.has(key)) {
+      memberByCampaignAndUser.set(
+        key,
+        createTimestamped("mem", { campaignId, userId: options.userId, role: "owner" as const }) satisfies CampaignMember
+      );
+    }
+  }
+  data.members = [...memberByCampaignAndUser.values()];
+
+  data.permissionGrants = data.permissionGrants
+    .filter((grant) => newCampaignIds.has(grant.campaignId))
+    .filter((grant) => grant.subjectType !== "user" || knownUserIds.has(grant.subjectId))
+    .map((grant) => ({
+      ...grant,
+      id: state.permissionGrants.some((existing) => existing.id === grant.id) ? createId("grant") : grant.id
+    }));
+
+  sanitizeArchiveUserIdReferences(data, knownUserIds, options.userId);
+
+  for (const actor of data.actors) {
+    if (actor.ownerUserId && !knownUserIds.has(actor.ownerUserId)) actor.ownerUserId = options.userId;
+  }
+  for (const journal of data.journals) {
+    journal.visibleToUserIds = journal.visibleToUserIds.filter((userId) => knownUserIds.has(userId));
+    if (!journal.createdBy || !knownUserIds.has(journal.createdBy)) journal.createdBy = options.userId;
+    if (!journal.updatedBy || !knownUserIds.has(journal.updatedBy)) journal.updatedBy = options.userId;
+  }
+  for (const handout of data.handouts) {
+    handout.visibleToUserIds = (handout.visibleToUserIds ?? []).filter((userId) => knownUserIds.has(userId));
+    if (!handout.createdBy || !knownUserIds.has(handout.createdBy)) handout.createdBy = options.userId;
+    if (!handout.updatedBy || !knownUserIds.has(handout.updatedBy)) handout.updatedBy = options.userId;
+  }
+  for (const message of data.chat) message.recipientUserIds = message.recipientUserIds.filter((userId) => knownUserIds.has(userId));
+  for (const session of data.campaignSessions) {
+    if (!knownUserIds.has(session.createdBy)) session.createdBy = options.userId;
+    if (!knownUserIds.has(session.updatedBy)) session.updatedBy = options.userId;
+  }
+  for (const macro of data.diceMacros) if (!knownUserIds.has(macro.createdBy)) macro.createdBy = options.userId;
+  for (const track of data.audioTracks) if (!knownUserIds.has(track.createdBy)) track.createdBy = options.userId;
+  for (const entry of data.pluginStorage) {
+    if (entry.updatedByType === "user" && !knownUserIds.has(entry.updatedById)) entry.updatedById = options.userId;
+  }
+
+  return { ...archive, data };
+}
+
+function sanitizeArchiveUserIdReferences(value: unknown, knownUserIds: Set<string>, fallbackUserId: string): void {
+  if (Array.isArray(value)) {
+    for (const item of value) sanitizeArchiveUserIdReferences(item, knownUserIds, fallbackUserId);
+    return;
+  }
+  if (!value || typeof value !== "object") return;
+  const record = value as Record<string, unknown>;
+  for (const [key, item] of Object.entries(record)) {
+    if (Array.isArray(item) && key.endsWith("UserIds")) {
+      record[key] = item.filter((userId): userId is string => typeof userId === "string" && knownUserIds.has(userId));
+      continue;
+    }
+    if (typeof item === "string" && (key === "userId" || key.endsWith("UserId"))) {
+      if (!knownUserIds.has(item)) record[key] = fallbackUserId;
+      continue;
+    }
+    if (key === "permissions" && item && typeof item === "object" && !Array.isArray(item)) {
+      const permissions = item as Record<string, unknown>;
+      if (Object.values(permissions).every((entry) => Array.isArray(entry))) {
+        record[key] = Object.fromEntries(Object.entries(permissions).filter(([userId]) => knownUserIds.has(userId)));
+        continue;
+      }
+    }
+    sanitizeArchiveUserIdReferences(item, knownUserIds, fallbackUserId);
+  }
 }
 
 function remapArchiveReferences(value: unknown, idMap: Map<string, string>): unknown {
@@ -27722,6 +31708,7 @@ function mergeArchive(state: EngineState, archive: CampaignArchive): Record<keyo
     diceMacros: upsertRecords(state.diceMacros, archive.data.diceMacros ?? []),
     audioTracks: upsertRecords(state.audioTracks, archive.data.audioTracks ?? []),
     encounters: upsertRecords(state.encounters, archive.data.encounters),
+    campaignSessions: upsertRecords(state.campaignSessions, archive.data.campaignSessions ?? []),
     combats: upsertRecords(state.combats, archive.data.combats),
     compendia: upsertRecords(state.compendia, archive.data.compendia),
     proposals: upsertRecords(state.proposals, archive.data.proposals),
@@ -27731,6 +31718,7 @@ function mergeArchive(state: EngineState, archive: CampaignArchive): Record<keyo
     aiToolCalls: upsertRecords(state.aiToolCalls, archive.data.aiToolCalls),
     auditLogs: upsertRecords(state.auditLogs, archive.data.auditLogs),
     permissionGrants: upsertRecords(state.permissionGrants, archive.data.permissionGrants),
+    systemInstallations: 0,
     pluginStorage: upsertRecords(state.pluginStorage, archive.data.pluginStorage ?? []),
     pluginReviews: 0,
     contentImports: upsertRecords(state.contentImports, archive.data.contentImports ?? []),
@@ -27765,6 +31753,254 @@ function existingArchiveCampaignIds(state: EngineState, archive: CampaignArchive
     }
   }
   return [...campaignIds];
+}
+
+function campaignIdsForArchiveConflicts(
+  state: EngineState,
+  conflicts: Array<{ collection: keyof EngineState; id: string }>
+): string[] {
+  const campaignIds = new Set<string>();
+  for (const conflict of conflicts) {
+    const records = state[conflict.collection] as unknown as Array<{ id: string; campaignId?: string; sceneId?: string; threadId?: string }>;
+    const record = records.find((item) => item.id === conflict.id);
+    if (!record) continue;
+    if (conflict.collection === "campaigns") {
+      campaignIds.add(conflict.id);
+      continue;
+    }
+    if (typeof record.campaignId === "string") {
+      campaignIds.add(record.campaignId);
+      continue;
+    }
+    if (conflict.collection === "tokens" && record.sceneId) {
+      const campaignId = state.scenes.find((scene) => scene.id === record.sceneId)?.campaignId;
+      if (campaignId) campaignIds.add(campaignId);
+      continue;
+    }
+    if (conflict.collection === "aiToolCalls" && record.threadId) {
+      const campaignId = state.aiThreads.find((thread) => thread.id === record.threadId)?.campaignId;
+      if (campaignId) campaignIds.add(campaignId);
+    }
+  }
+  return [...campaignIds];
+}
+
+type ArchiveReferenceProtection = { ok: true; campaignIds: string[] } | { ok: false; error: string };
+
+/**
+ * Derive campaign authority from both direct campaign ids and relationship-only
+ * records before an archive is merged. Existing records win resolution so an
+ * incoming object cannot spoof ownership by redefining a referenced id inside
+ * the same archive.
+ */
+function archiveReferenceProtection(state: EngineState, archive: CampaignArchive): ArchiveReferenceProtection {
+  type ReferenceCollection = keyof EngineState;
+  type ReferenceRecord = { id: string; campaignId?: string; sceneId?: string; threadId?: string };
+  const protectedCampaignIds = new Set<string>();
+  const existingCampaignIds = new Set(state.campaigns.map((campaign) => campaign.id));
+  const knownCampaignIds = new Set([...existingCampaignIds, ...archive.data.campaigns.map((campaign) => campaign.id)]);
+  const resolving = new Set<string>();
+
+  const recordFor = (collection: ReferenceCollection, id: string): ReferenceRecord | undefined => {
+    const existing = (state[collection] as unknown as ReferenceRecord[]).find((record) => record.id === id);
+    return existing ?? (archive.data[collection] as unknown as ReferenceRecord[]).find((record) => record.id === id);
+  };
+  const campaignFor = (collection: ReferenceCollection, id: string): string | undefined => {
+    const key = `${collection}:${id}`;
+    if (resolving.has(key)) return undefined;
+    resolving.add(key);
+    try {
+      if (collection === "campaigns") return id;
+      const record = recordFor(collection, id);
+      if (!record) return undefined;
+      if (typeof record.campaignId === "string") return record.campaignId;
+      if (collection === "tokens" && typeof record.sceneId === "string") return campaignFor("scenes", record.sceneId);
+      if (collection === "aiToolCalls" && typeof record.threadId === "string") return campaignFor("aiThreads", record.threadId);
+      return undefined;
+    } finally {
+      resolving.delete(key);
+    }
+  };
+  const protect = (campaignId: string | undefined): void => {
+    if (campaignId && existingCampaignIds.has(campaignId)) protectedCampaignIds.add(campaignId);
+  };
+  const validateReference = (
+    ownerCampaignId: string,
+    collection: ReferenceCollection,
+    id: string | undefined,
+    label: string,
+    required = false
+  ): string | undefined => {
+    if (!id) return undefined;
+    const referencedCampaignId = campaignFor(collection, id);
+    protect(referencedCampaignId);
+    if (!referencedCampaignId) return required ? `${label} references missing ${collection} record ${id}` : undefined;
+    if (referencedCampaignId !== ownerCampaignId) {
+      return `${label} belongs to campaign ${ownerCampaignId} but references ${collection} record ${id} in campaign ${referencedCampaignId}`;
+    }
+    return undefined;
+  };
+  const validateMany = (ownerCampaignId: string, collection: ReferenceCollection, ids: string[] | undefined, label: string): string | undefined => {
+    for (const id of ids ?? []) {
+      const error = validateReference(ownerCampaignId, collection, id, label);
+      if (error) return error;
+    }
+    return undefined;
+  };
+  const directCampaignCollections = (Object.keys(archive.data) as ReferenceCollection[]).filter(
+    (collection) => collection !== "campaigns" && collection !== "tokens" && collection !== "aiToolCalls"
+  );
+  for (const collection of directCampaignCollections) {
+    for (const record of archive.data[collection] as unknown as ReferenceRecord[]) {
+      if (!record.campaignId) continue;
+      if (!knownCampaignIds.has(record.campaignId)) return { ok: false, error: `${collection} record ${record.id} references unknown campaign ${record.campaignId}` };
+      protect(record.campaignId);
+    }
+  }
+
+  for (const scene of archive.data.scenes) {
+    const error =
+      validateReference(scene.campaignId, "worlds", scene.worldId, `Scene ${scene.id}`) ??
+      validateReference(scene.campaignId, "assets", scene.backgroundAssetId, `Scene ${scene.id}`);
+    if (error) return { ok: false, error };
+  }
+  for (const token of archive.data.tokens) {
+    const campaignId = campaignFor("scenes", token.sceneId);
+    protect(campaignId);
+    if (!campaignId) return { ok: false, error: `Token ${token.id} references missing scenes record ${token.sceneId}` };
+    const error =
+      validateReference(campaignId, "actors", token.actorId, `Token ${token.id}`) ??
+      validateReference(campaignId, "assets", token.imageAssetId, `Token ${token.id}`);
+    if (error) return { ok: false, error };
+  }
+  for (const actor of archive.data.actors) {
+    const error =
+      validateReference(actor.campaignId, "worlds", actor.worldId, `Actor ${actor.id}`) ??
+      validateReference(actor.campaignId, "assets", actor.imageAssetId, `Actor ${actor.id}`);
+    if (error) return { ok: false, error };
+  }
+  for (const item of archive.data.items) {
+    const error =
+      validateReference(item.campaignId, "worlds", item.worldId, `Item ${item.id}`) ??
+      validateReference(item.campaignId, "actors", item.actorId, `Item ${item.id}`);
+    if (error) return { ok: false, error };
+  }
+  for (const journal of archive.data.journals) {
+    const error =
+      validateReference(journal.campaignId, "worlds", journal.worldId, `Journal ${journal.id}`) ??
+      validateReference(journal.campaignId, "journals", journal.parentId, `Journal ${journal.id}`);
+    if (error) return { ok: false, error };
+  }
+  for (const handout of archive.data.handouts) {
+    const error =
+      validateReference(handout.campaignId, "worlds", handout.worldId, `Handout ${handout.id}`) ??
+      validateMany(handout.campaignId, "assets", handout.assetIds, `Handout ${handout.id}`);
+    if (error) return { ok: false, error };
+  }
+  for (const message of archive.data.chat) {
+    const error =
+      validateReference(message.campaignId, "scenes", message.sceneId, `Chat message ${message.id}`) ??
+      validateReference(message.campaignId, "rolls", message.rollId, `Chat message ${message.id}`) ??
+      validateReference(message.campaignId, "chat", message.replyToMessageId, `Chat message ${message.id}`);
+    if (error) return { ok: false, error };
+  }
+  for (const encounter of archive.data.encounters) {
+    const error =
+      validateReference(encounter.campaignId, "worlds", encounter.worldId, `Encounter ${encounter.id}`) ??
+      validateMany(encounter.campaignId, "tokens", encounter.tokenIds, `Encounter ${encounter.id}`);
+    if (error) return { ok: false, error };
+  }
+  for (const session of archive.data.campaignSessions) {
+    const error =
+      validateMany(session.campaignId, "scenes", session.sceneIds, `Session ${session.id}`) ??
+      validateMany(session.campaignId, "encounters", session.encounterIds, `Session ${session.id}`) ??
+      validateReference(session.campaignId, "proposals", session.recapProposalId, `Session ${session.id}`) ??
+      validateReference(session.campaignId, "journals", session.recapJournalId, `Session ${session.id}`);
+    if (error) return { ok: false, error };
+  }
+  for (const combat of archive.data.combats) {
+    let error = validateReference(combat.campaignId, "encounters", combat.encounterId, `Combat ${combat.id}`);
+    for (const combatant of combat.combatants) {
+      error ??= validateReference(combat.campaignId, "tokens", combatant.tokenId, `Combat ${combat.id}`);
+      error ??= validateReference(combat.campaignId, "actors", combatant.actorId, `Combat ${combat.id}`);
+    }
+    for (const action of combat.actions ?? []) {
+      error ??= validateReference(combat.campaignId, "actors", action.actorId, `Combat ${combat.id} action ${action.id}`);
+      error ??= validateMany(combat.campaignId, "actors", action.targetActorIds, `Combat ${combat.id} action ${action.id}`);
+      error ??= validateMany(combat.campaignId, "actors", action.actorUpdates.map((update) => update.actorId), `Combat ${combat.id} action ${action.id}`);
+      error ??= validateMany(combat.campaignId, "items", action.itemUpdates?.map((update) => update.itemId), `Combat ${combat.id} action ${action.id}`);
+      error ??= validateMany(combat.campaignId, "actors", action.effects?.map((effect) => effect.targetActorId), `Combat ${combat.id} action ${action.id}`);
+    }
+    if (error) return { ok: false, error };
+  }
+  for (const evaluation of archive.data.aiEvaluations) {
+    const error = validateReference(evaluation.campaignId, "aiThreads", evaluation.threadId, `AI evaluation ${evaluation.id}`);
+    if (error) return { ok: false, error };
+  }
+  for (const memory of archive.data.aiMemory) {
+    const error = validateReference(memory.campaignId, "worlds", memory.worldId, `AI memory ${memory.id}`);
+    if (error) return { ok: false, error };
+  }
+  for (const toolCall of archive.data.aiToolCalls) {
+    const campaignId = campaignFor("aiThreads", toolCall.threadId);
+    protect(campaignId);
+    if (!campaignId) return { ok: false, error: `AI tool call ${toolCall.id} references missing aiThreads record ${toolCall.threadId}` };
+  }
+  for (const preset of archive.data.fogPresets) {
+    const error = validateReference(preset.campaignId, "scenes", preset.sourceSceneId, `Fog preset ${preset.id}`);
+    if (error) return { ok: false, error };
+  }
+  for (const batch of archive.data.contentImports) {
+    for (const applied of batch.appliedRecords) {
+      const error = validateReference(batch.campaignId, applied.collection, applied.id, `Content import ${batch.id}`);
+      if (error) return { ok: false, error };
+    }
+  }
+
+  const proposalCollection: Partial<Record<ProposalChange["entity"], ReferenceCollection>> = {
+    campaign: "campaigns",
+    world: "worlds",
+    scene: "scenes",
+    token: "tokens",
+    actor: "actors",
+    item: "items",
+    journal: "journals",
+    handout: "handouts",
+    chat: "chat",
+    roll: "rolls",
+    diceMacro: "diceMacros",
+    encounter: "encounters",
+    combat: "combats",
+    asset: "assets",
+    fogPreset: "fogPresets",
+    pluginStorage: "pluginStorage",
+    campaignSession: "campaignSessions",
+    aiMemory: "aiMemory"
+  };
+  for (const proposal of archive.data.proposals) {
+    for (const change of [...proposal.changesJson, ...(proposal.inverseChangesJson ?? [])]) {
+      const collection = proposalCollection[change.entity];
+      if (!collection) continue;
+      const targetId = change.id ?? (typeof change.data.id === "string" ? change.data.id : undefined);
+      if (change.action === "create") {
+        const embeddedCampaignId = typeof change.data.campaignId === "string" ? change.data.campaignId : undefined;
+        protect(embeddedCampaignId);
+        if (embeddedCampaignId && embeddedCampaignId !== proposal.campaignId) {
+          return { ok: false, error: `Proposal ${proposal.id} creates ${change.entity} content for campaign ${embeddedCampaignId} outside proposal campaign ${proposal.campaignId}` };
+        }
+        if (change.entity === "token" && typeof change.data.sceneId === "string") {
+          const error = validateReference(proposal.campaignId, "scenes", change.data.sceneId, `Proposal ${proposal.id}`, true);
+          if (error) return { ok: false, error };
+        }
+        continue;
+      }
+      if (!targetId) continue;
+      const error = validateReference(proposal.campaignId, collection, targetId, `Proposal ${proposal.id}`);
+      if (error) return { ok: false, error };
+    }
+  }
+
+  return { ok: true, campaignIds: [...protectedCampaignIds] };
 }
 
 function upsertUsers(target: User[], incoming: User[]): number {

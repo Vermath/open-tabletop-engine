@@ -184,6 +184,36 @@ describe("SqliteStateStore", () => {
     expect(reopened.state.campaigns).toEqual([updatedAlpha, betaCampaign]);
     reopened.close();
   });
+
+  it("persists idempotency records using their composite request identity", () => {
+    const record = {
+      key: "create-scene",
+      method: "POST",
+      path: "/api/v1/campaigns/camp_alpha/scenes",
+      userId: "usr_test",
+      requestHash: "request-hash",
+      statusCode: 200,
+      contentType: "application/json",
+      responseBody: JSON.stringify({ id: "scn_alpha" }),
+      createdAt: "2026-06-11T00:05:00.000Z",
+      updatedAt: "2026-06-11T00:05:00.000Z",
+    };
+    store.state.idempotencyRecords = [record];
+
+    store.save();
+    store.flush();
+
+    expect(engineRecords(store)).toContainEqual({
+      collection: "idempotencyRecords",
+      id: JSON.stringify([record.userId, record.method, record.key]),
+      data: JSON.stringify(record),
+    });
+    store.close();
+
+    const reopened = new SqliteStateStore(join(directory, "state.sqlite"), { seedDemo: false });
+    expect(reopened.state.idempotencyRecords).toEqual([record]);
+    reopened.close();
+  });
 });
 
 function stateWithCampaigns(campaigns: Campaign[]): EngineState {

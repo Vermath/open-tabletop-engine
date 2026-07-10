@@ -190,6 +190,7 @@ export interface World extends Timestamps {
 export interface Scene extends Timestamps {
   id: ID;
   campaignId: ID;
+  worldId?: ID;
   name: string;
   width: number;
   height: number;
@@ -212,6 +213,7 @@ export interface Scene extends Timestamps {
 
 /** The editable geometry/layout fields a scene-edit undo restores. */
 export interface SceneEditableState {
+  worldId?: ID;
   name: string;
   width: number;
   height: number;
@@ -503,6 +505,7 @@ export interface TokenAura {
 export interface Actor extends Timestamps {
   id: ID;
   campaignId: ID;
+  worldId?: ID;
   systemId: ID;
   ownerUserId?: ID;
   type: string;
@@ -515,6 +518,7 @@ export interface Actor extends Timestamps {
 export interface Item extends Timestamps {
   id: ID;
   campaignId: ID;
+  worldId?: ID;
   systemId: ID;
   actorId?: ID;
   type: string;
@@ -525,6 +529,7 @@ export interface Item extends Timestamps {
 export interface JournalEntry extends Timestamps {
   id: ID;
   campaignId: ID;
+  worldId?: ID;
   parentId?: ID;
   title: string;
   body: string;
@@ -539,10 +544,18 @@ export interface JournalEntry extends Timestamps {
 export interface Handout extends Timestamps {
   id: ID;
   campaignId: ID;
+  worldId?: ID;
   title: string;
   body: string;
   visibility: Visibility;
   assetIds: ID[];
+  /** Added after the original archive schema; omitted values normalize to empty arrays. */
+  visibleToUserIds?: ID[];
+  visibleToActorIds?: ID[];
+  tags?: string[];
+  readByUserIds?: ID[];
+  createdBy?: ID;
+  updatedBy?: ID;
 }
 
 export interface ChatMessage extends Timestamps {
@@ -636,10 +649,32 @@ export interface DiceRollTerm {
 export interface Encounter extends Timestamps {
   id: ID;
   campaignId: ID;
+  worldId?: ID;
   name: string;
   summary: string;
   tokenIds: ID[];
   difficulty?: string;
+}
+
+export type CampaignSessionStatus = "planned" | "live" | "completed";
+
+export interface CampaignSession extends Timestamps {
+  id: ID;
+  campaignId: ID;
+  status: CampaignSessionStatus;
+  title: string;
+  number: number;
+  agenda: string;
+  notes: string;
+  scheduledFor?: string;
+  startedAt?: string;
+  endedAt?: string;
+  sceneIds: ID[];
+  encounterIds: ID[];
+  recapProposalId?: ID;
+  recapJournalId?: ID;
+  createdBy: ID;
+  updatedBy: ID;
 }
 
 export interface Combat extends Timestamps {
@@ -753,11 +788,29 @@ export interface Proposal extends Timestamps {
   diffJson: Record<string, unknown>;
   approvalRequired: boolean;
   approvedByUserId?: ID;
+  appliedByUserId?: ID;
+  appliedAt?: string;
+  revertedByUserId?: ID;
+  revertedAt?: string;
+  /** Reverse-ordered, domain-aware changes captured at apply time. */
+  inverseChangesJson?: ProposalChange[];
+  /**
+   * Post-apply entity snapshots used to reject a revert after any affected
+   * record has changed. A null expected value means the entity must remain
+   * absent until the proposal is reverted.
+   */
+  revertGuardsJson?: ProposalRevertGuard[];
   history?: ProposalHistoryEntry[];
 }
 
+export interface ProposalRevertGuard {
+  entity: ProposalChange["entity"];
+  id: ID;
+  expected: Record<string, unknown> | null;
+}
+
 export interface ProposalHistoryEntry {
-  action: "created" | "approved" | "rejected" | "applied" | "revised";
+  action: "created" | "approved" | "rejected" | "applied" | "reverted" | "revised";
   status: ProposalStatus;
   previousStatus?: ProposalStatus;
   at: string;
@@ -768,7 +821,26 @@ export interface ProposalHistoryEntry {
 }
 
 export interface ProposalChange {
-  entity: "campaign" | "scene" | "token" | "actor" | "item" | "journal" | "chat" | "roll" | "diceMacro" | "encounter" | "combat" | "asset" | "fogPreset";
+  entity:
+    | "campaign"
+    | "world"
+    | "scene"
+    | "token"
+    | "actor"
+    | "item"
+    | "journal"
+    | "handout"
+    | "chat"
+    | "roll"
+    | "diceMacro"
+    | "encounter"
+    | "combat"
+    | "asset"
+    | "fogPreset"
+    | "pluginStorage"
+    /** Internal inverse-change entities used to restore lifecycle associations. */
+    | "campaignSession"
+    | "aiMemory";
   action: "create" | "update" | "delete";
   id?: ID;
   data: Record<string, unknown>;
@@ -832,13 +904,49 @@ export interface AiUsageMetrics {
   estimatedCostUsd?: number;
 }
 
+export type AiMemoryFactType =
+  | "canon_fact"
+  | "rumor"
+  | "secret"
+  | "npc_profile"
+  | "location_profile"
+  | "faction_profile"
+  | "quest_hook"
+  | "unresolved_thread"
+  | "character_goal"
+  | "session_summary"
+  | "timeline_event"
+  | "retconned_fact"
+  | "ai_suggestion";
+
+export type AiMemoryFactStatus = "candidate" | "approved" | "rejected" | "retconned";
+
+export interface AiMemoryFactSource {
+  type: string;
+  id?: ID;
+  label?: string;
+}
+
 export interface AiMemoryFact extends Timestamps {
   id: ID;
   campaignId: ID;
+  worldId?: ID;
   text: string;
   visibility: Visibility;
   sourceIds: ID[];
+  /** Optional on legacy rows; API and persistence normalization infer a value. */
+  type?: AiMemoryFactType;
+  subject?: string;
+  status?: AiMemoryFactStatus;
+  confidence?: number;
+  source?: AiMemoryFactSource;
+  createdBy?: "user" | "ai" | "plugin" | "system";
   approvedByUserId?: ID;
+  approvedAt?: string;
+  rejectedByUserId?: ID;
+  rejectedAt?: string;
+  retconnedByUserId?: ID;
+  retconnedAt?: string;
 }
 
 export interface AiToolCall extends Timestamps {
@@ -873,6 +981,10 @@ export type PermissionName =
   | "campaign.read"
   | "campaign.update"
   | "campaign.delete"
+  | "world.read"
+  | "world.create"
+  | "world.update"
+  | "world.delete"
   | "scene.read"
   | "scene.create"
   | "scene.update"
@@ -895,6 +1007,11 @@ export type PermissionName =
   | "journal.create"
   | "journal.update"
   | "journal.delete"
+  | "handout.read"
+  | "handout.readSecret"
+  | "handout.create"
+  | "handout.update"
+  | "handout.delete"
   | "chat.read"
   | "chat.write"
   | "chat.moderate"
@@ -907,6 +1024,48 @@ export type PermissionName =
   | "ai.readGmMemory"
   | "ai.proposeChanges"
   | "ai.applyChanges";
+
+export type SystemCapability =
+  | "data-model"
+  | "actor-sheet"
+  | "quick-rolls"
+  | "actions"
+  | "conditions"
+  | "advancement"
+  | "rest"
+  | "compendium"
+  | "character-templates"
+  | "character-import"
+  | "character-origins"
+  | "encounter-builder"
+  | "monster-builder";
+
+/** Serializable system package metadata. Runtime code remains server-controlled. */
+export interface SystemManifestData {
+  id: string;
+  name: string;
+  version: string;
+  compatibleCore: string;
+  entrypoints: {
+    client?: string;
+    server?: string;
+  };
+  schemas: {
+    actor: string;
+    item: string;
+  };
+  permissions: PermissionName[];
+  capabilities: SystemCapability[];
+}
+
+/** Durable record of an administrator-approved system registration. */
+export interface SystemInstallation extends Timestamps {
+  id: ID;
+  manifest: SystemManifestData;
+  installedByUserId: ID;
+  authorizedByCampaignId: ID;
+  source: "api";
+}
 
 export interface PermissionGrant extends Timestamps {
   id: ID;
@@ -1019,9 +1178,13 @@ export interface CampaignArchive {
     campaignId: ID;
     name: string;
     schemaVersion: string;
-    exportScope?: "campaign";
+    exportScope?: "campaign" | "world" | "selected_collections";
+    exportScopeId?: ID;
+    exportCollections?: Array<keyof EngineState>;
+    dependencyWarnings?: string[];
     redactionMode?: "portable";
     compatibilityNotes?: string[];
+    systemRequirements?: Array<Pick<SystemManifestData, "id" | "name" | "version" | "compatibleCore" | "capabilities">>;
     assetCount: number;
     assetFileCount?: number;
   };
@@ -1066,6 +1229,7 @@ export interface EngineState {
   diceMacros: DiceMacro[];
   audioTracks: AudioTrack[];
   encounters: Encounter[];
+  campaignSessions: CampaignSession[];
   combats: Combat[];
   compendia: CompendiumPack[];
   proposals: Proposal[];
@@ -1075,6 +1239,7 @@ export interface EngineState {
   aiToolCalls: AiToolCall[];
   auditLogs: AuditLog[];
   permissionGrants: PermissionGrant[];
+  systemInstallations: SystemInstallation[];
   pluginStorage: PluginStorageEntry[];
   pluginReviews: PluginReview[];
   contentImports: ContentImportBatch[];

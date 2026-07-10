@@ -7,18 +7,55 @@ on:
       - "desktop-v*"
 
 permissions:
-  contents: write
+  contents: read
+  issues: read
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CI: true
 
 jobs:
+  verify:
+    name: Release quality gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 8.7.0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Dependency vulnerability gate
+        run: pnpm audit --audit-level high
+      - name: Install browser used by release smoke tests
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Run release smoke suite
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: pnpm release:smoke
+
   windows:
     name: Windows installer
     runs-on: windows-latest
+    needs: verify
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
         with:
           version: 8.7.0
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
@@ -41,36 +78,81 @@ jobs:
           $installer = Get-ChildItem apps/desktop/release -Filter *.exe | Select-Object -First 1
           if (-not $installer) { throw "No Windows installer produced." }
           $signature = Get-AuthenticodeSignature $installer.FullName
-          Write-Host "Authenticode status: $($signature.Status)"
-          if ("${{ vars.REQUIRE_DESKTOP_SIGNING }}" -eq "true" -and $signature.Status -ne "Valid") {
-            throw "Installer signature is $($signature.Status)."
+          $signatureRequired = "${{ startsWith(github.ref, 'refs/tags/') || vars.REQUIRE_DESKTOP_SIGNING == 'true' }}" -eq "true"
+          Write-Host "Authenticode status: $($signature.Status); required: $signatureRequired"
+          if ($signatureRequired -and $signature.Status -ne "Valid") {
+            throw "Installer signature is $($signature.Status). Tagged releases must be signed."
           }
+      - name: Generate CycloneDX SBOM
+        shell: pwsh
+        run: |
+          pnpm --filter @open-tabletop/desktop list --prod --depth Infinity --json | node scripts/generate-cyclonedx-sbom.mjs --output apps/desktop/release/opentabletop-windows.cdx.json --platform windows-x64
+          if (-not (Test-Path apps/desktop/release/opentabletop-windows.cdx.json)) { throw "SBOM was not generated." }
+      - name: Record build provenance
+        shell: pwsh
+        run: |
+          $provenance = [ordered]@{
+            schemaVersion = 1
+            repository = $env:GITHUB_REPOSITORY
+            commit = $env:GITHUB_SHA
+            ref = $env:GITHUB_REF
+            workflow = $env:GITHUB_WORKFLOW
+            runId = $env:GITHUB_RUN_ID
+            runAttempt = $env:GITHUB_RUN_ATTEMPT
+            runner = [ordered]@{ os = $env:RUNNER_OS; arch = $env:RUNNER_ARCH }
+            toolchain = [ordered]@{ node = (node --version); pnpm = (pnpm --version) }
+            generatedAt = (Get-Date).ToUniversalTime().ToString("o")
+          }
+          $provenance | ConvertTo-Json -Depth 4 | Set-Content apps/desktop/release/BUILD-PROVENANCE-windows.json -Encoding utf8
       - name: Checksums
         shell: pwsh
         run: |
-          Get-ChildItem apps/desktop/release -File | ForEach-Object {
+          $release = Resolve-Path apps/desktop/release
+          $files = @(
+            Get-ChildItem $release -Filter *.exe -File
+            Get-Item "$release/opentabletop-windows.cdx.json"
+            Get-Item "$release/BUILD-PROVENANCE-windows.json"
+          ) | Sort-Object Name
+          if (-not ($files | Where-Object Extension -eq ".exe")) { throw "No Windows installer produced." }
+          $lines = $files | ForEach-Object {
             $hash = Get-FileHash $_.FullName -Algorithm SHA256
-            "$($hash.Hash)  $($_.Name)" | Out-File -Append apps/desktop/release/SHA256SUMS.txt -Encoding utf8
+            "$($hash.Hash.ToLowerInvariant())  $($_.Name)"
+          }
+          [System.IO.File]::WriteAllText("$release/SHA256SUMS.txt", ($lines -join "`n") + "`n", [System.Text.UTF8Encoding]::new($false))
+          $checksumBytes = [System.IO.File]::ReadAllBytes("$release/SHA256SUMS.txt")
+          if ($checksumBytes.Length -ge 3 -and $checksumBytes[0] -eq 0xef -and $checksumBytes[1] -eq 0xbb -and $checksumBytes[2] -eq 0xbf) {
+            throw "Checksum manifest must not contain a UTF-8 BOM."
+          }
+          if ($checksumBytes -contains [byte]0x0d -or $checksumBytes[-1] -ne [byte]0x0a) {
+            throw "Checksum manifest must use LF-only line endings and end with a newline."
           }
       - uses: actions/upload-artifact@v5
         with:
           name: opentabletop-windows
+          if-no-files-found: error
+          retention-days: 14
           path: |
             apps/desktop/release/*.exe
+            apps/desktop/release/opentabletop-windows.cdx.json
+            apps/desktop/release/BUILD-PROVENANCE-windows.json
             apps/desktop/release/SHA256SUMS.txt
 
   mac:
     name: macOS DMG
     runs-on: macos-latest
+    needs: verify
+    timeout-minutes: 60
     strategy:
       matrix:
         arch: [x64, arm64]
     steps:
-      - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
         with:
           version: 8.7.0
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
@@ -85,33 +167,48 @@ jobs:
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-      - name: Inspect signature and assessment
+      - name: Inspect signature and notarization assessment
         run: |
-          APP_PATH="$(find apps/desktop/release -name '*.app' -maxdepth 2 | head -n 1)"
-          DMG_PATH="$(find apps/desktop/release -name '*.dmg' -maxdepth 1 | head -n 1)"
+          DMG_PATH="$(find apps/desktop/release -name '*.dmg' -print | head -n 1)"
           test -n "$DMG_PATH"
-          if [ -n "$APP_PATH" ]; then
-            codesign --verify --deep --strict --verbose=2 "$APP_PATH" || CODESIGN_STATUS=$?
-            spctl --assess --type execute --verbose "$APP_PATH" || SPCTL_STATUS=$?
-            echo "codesign status: ${CODESIGN_STATUS:-0}"
-            echo "spctl status: ${SPCTL_STATUS:-0}"
-            if [ "${{ vars.REQUIRE_DESKTOP_SIGNING }}" = "true" ] && { [ "${CODESIGN_STATUS:-0}" != "0" ] || [ "${SPCTL_STATUS:-0}" != "0" ]; }; then
-              exit 1
-            fi
-          else
-            echo "No .app bundle left after DMG packaging; skipping signature inspection."
-            if [ "${{ vars.REQUIRE_DESKTOP_SIGNING }}" = "true" ]; then
-              exit 1
-            fi
+          APP_PATH="$(find apps/desktop/release -name '*.app' -prune -print | head -n 1)"
+          if [ -z "$APP_PATH" ]; then
+            MOUNT_POINT="$(mktemp -d)"
+            trap 'hdiutil detach "$MOUNT_POINT" >/dev/null 2>&1 || true; rmdir "$MOUNT_POINT" >/dev/null 2>&1 || true' EXIT
+            hdiutil attach "$DMG_PATH" -readonly -nobrowse -mountpoint "$MOUNT_POINT"
+            APP_PATH="$(find "$MOUNT_POINT" -name '*.app' -prune -print | head -n 1)"
           fi
+          test -n "$APP_PATH"
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH" || APP_CODESIGN_STATUS=$?
+          spctl --assess --type execute --verbose "$APP_PATH" || APP_SPCTL_STATUS=$?
+          codesign --verify --verbose=2 "$DMG_PATH" || DMG_CODESIGN_STATUS=$?
+          spctl --assess --type open --context context:primary-signature --verbose "$DMG_PATH" || DMG_SPCTL_STATUS=$?
+          echo "app codesign status: ${APP_CODESIGN_STATUS:-0}"
+          echo "app Gatekeeper status: ${APP_SPCTL_STATUS:-0}"
+          echo "DMG codesign status: ${DMG_CODESIGN_STATUS:-0}"
+          echo "DMG Gatekeeper status: ${DMG_SPCTL_STATUS:-0}"
+          SIGNATURE_REQUIRED="${{ startsWith(github.ref, 'refs/tags/') || vars.REQUIRE_DESKTOP_SIGNING == 'true' }}"
+          if [ "$SIGNATURE_REQUIRED" = "true" ] && { [ "${APP_CODESIGN_STATUS:-0}" != "0" ] || [ "${APP_SPCTL_STATUS:-0}" != "0" ] || [ "${DMG_CODESIGN_STATUS:-0}" != "0" ] || [ "${DMG_SPCTL_STATUS:-0}" != "0" ]; }; then
+            echo "Tagged releases must contain a signed and notarized app and DMG." >&2
+            exit 1
+          fi
+      - name: Generate CycloneDX SBOM
+        run: |
+          pnpm --filter @open-tabletop/desktop list --prod --depth Infinity --json | node scripts/generate-cyclonedx-sbom.mjs --output apps/desktop/release/opentabletop-macos-${{ matrix.arch }}.cdx.json --platform macos-${{ matrix.arch }}
+          test -s apps/desktop/release/opentabletop-macos-${{ matrix.arch }}.cdx.json
+      - name: Record build provenance
+        run: |
+          PNPM_VERSION="$(pnpm --version)" node -e 'const fs = require("node:fs"); const body = { schemaVersion: 1, repository: process.env.GITHUB_REPOSITORY, commit: process.env.GITHUB_SHA, ref: process.env.GITHUB_REF, workflow: process.env.GITHUB_WORKFLOW, runId: process.env.GITHUB_RUN_ID, runAttempt: process.env.GITHUB_RUN_ATTEMPT, runner: { os: process.env.RUNNER_OS, arch: process.env.RUNNER_ARCH }, toolchain: { node: process.version, pnpm: process.env.PNPM_VERSION }, generatedAt: new Date().toISOString() }; fs.writeFileSync(process.argv[1], JSON.stringify(body, null, 2) + "\n");' apps/desktop/release/BUILD-PROVENANCE-macos-${{ matrix.arch }}.json
       - name: Checksums
         run: |
           cd apps/desktop/release
           checksum_file="SHA256SUMS-${{ matrix.arch }}.txt"
+          sbom="opentabletop-macos-${{ matrix.arch }}.cdx.json"
+          provenance="BUILD-PROVENANCE-macos-${{ matrix.arch }}.json"
           : > "$checksum_file"
           artifact_found=0
-          for artifact in *; do
-            if [ -f "$artifact" ] && [ "$artifact" != "$checksum_file" ]; then
+          for artifact in *.dmg "$sbom" "$provenance"; do
+            if [ -f "$artifact" ]; then
               shasum -a 256 "$artifact" >> "$checksum_file"
               artifact_found=1
             fi
@@ -123,19 +220,38 @@ jobs:
       - uses: actions/upload-artifact@v5
         with:
           name: opentabletop-macos-${{ matrix.arch }}
+          if-no-files-found: error
+          retention-days: 14
           path: |
             apps/desktop/release/*.dmg
+            apps/desktop/release/opentabletop-macos-${{ matrix.arch }}.cdx.json
+            apps/desktop/release/BUILD-PROVENANCE-macos-${{ matrix.arch }}.json
             apps/desktop/release/SHA256SUMS-${{ matrix.arch }}.txt
 
   publish:
     name: Publish release artifacts
     runs-on: ubuntu-latest
-    needs: [windows, mac]
+    needs: [verify, windows, mac]
     if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@v6
         with:
           path: artifacts
+      - name: Verify downloaded artifact checksums
+        run: |
+          mapfile -d '' checksum_files < <(find artifacts -name 'SHA256SUMS*.txt' -print0)
+          if [ "${#checksum_files[@]}" -ne 3 ]; then
+            echo "Expected three checksum manifests, found ${#checksum_files[@]}." >&2
+            exit 1
+          fi
+          for checksum_file in "${checksum_files[@]}"; do
+            checksum_dir="$(dirname "$checksum_file")"
+            checksum_name="$(basename "$checksum_file")"
+            (cd "$checksum_dir" && sha256sum --check "$checksum_name")
+          done
       - uses: softprops/action-gh-release@v2
         with:
+          fail_on_unmatched_files: true
           files: artifacts/**/*

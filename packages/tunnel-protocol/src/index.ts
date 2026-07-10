@@ -5,29 +5,59 @@ const reservedWebSocketCloseCodes = new Set([1004, 1005, 1006, 1015]);
 export type TunnelHeaders = Record<string, string>;
 
 export type TunnelFrame =
-  | { type: "host.hello"; protocolVersion: typeof tunnelFrameSchemaVersion; tableSlug: string; hostToken: string }
-  | { type: "http.request"; requestId: string; method: string; path: string; headers: TunnelHeaders }
+  | {
+      type: "host.hello";
+      protocolVersion: typeof tunnelFrameSchemaVersion;
+      tableSlug: string;
+      hostToken: string;
+    }
+  | {
+      type: "http.request";
+      requestId: string;
+      method: string;
+      path: string;
+      headers: TunnelHeaders;
+    }
   | { type: "http.body"; requestId: string; bodyBase64: string }
   | { type: "http.end"; requestId: string }
-  | { type: "http.response"; requestId: string; status: number; headers: TunnelHeaders }
+  | {
+      type: "http.response";
+      requestId: string;
+      status: number;
+      headers: TunnelHeaders;
+    }
   | { type: "ws.open"; socketId: string; path: string; headers: TunnelHeaders }
   | { type: "ws.message"; socketId: string; bodyBase64: string }
   | { type: "ws.close"; socketId: string; code?: number; reason?: string }
   | { type: "control.ping"; sentAt: string };
 
-const supportedFrameTypes = new Set<TunnelFrame["type"]>(["host.hello", "http.request", "http.body", "http.end", "http.response", "ws.open", "ws.message", "ws.close", "control.ping"]);
+const supportedFrameTypes = new Set<TunnelFrame["type"]>([
+  "host.hello",
+  "http.request",
+  "http.body",
+  "http.end",
+  "http.response",
+  "ws.open",
+  "ws.message",
+  "ws.close",
+  "control.ping",
+]);
 
 export function parseTunnelFrame(value: unknown): TunnelFrame {
   const record = requireRecord(value, "Tunnel frame must be an object");
   const type = stringField(record, "type");
-  if (!supportedFrameTypes.has(type as TunnelFrame["type"])) throw new Error(`Unsupported tunnel frame type: ${type}`);
+  if (!supportedFrameTypes.has(type as TunnelFrame["type"]))
+    throw new Error(`Unsupported tunnel frame type: ${type}`);
   switch (type) {
     case "host.hello":
       return {
         type,
-        protocolVersion: numberField(record, "protocolVersion") === tunnelFrameSchemaVersion ? tunnelFrameSchemaVersion : fail("Unsupported tunnel protocol version"),
+        protocolVersion:
+          numberField(record, "protocolVersion") === tunnelFrameSchemaVersion
+            ? tunnelFrameSchemaVersion
+            : fail("Unsupported tunnel protocol version"),
         tableSlug: stringField(record, "tableSlug"),
-        hostToken: stringField(record, "hostToken")
+        hostToken: stringField(record, "hostToken"),
       };
     case "http.request":
       return {
@@ -35,20 +65,43 @@ export function parseTunnelFrame(value: unknown): TunnelFrame {
         requestId: stringField(record, "requestId"),
         method: httpMethod(record),
         path: safePath(record),
-        headers: headersField(record, "headers")
+        headers: headersField(record, "headers"),
       };
     case "http.body":
-      return { type, requestId: stringField(record, "requestId"), bodyBase64: base64Field(record, "bodyBase64") };
+      return {
+        type,
+        requestId: stringField(record, "requestId"),
+        bodyBase64: base64Field(record, "bodyBase64"),
+      };
     case "http.end":
       return { type, requestId: stringField(record, "requestId") };
     case "http.response":
-      return { type, requestId: stringField(record, "requestId"), status: statusField(record), headers: headersField(record, "headers") };
+      return {
+        type,
+        requestId: stringField(record, "requestId"),
+        status: statusField(record),
+        headers: headersField(record, "headers"),
+      };
     case "ws.open":
-      return { type, socketId: stringField(record, "socketId"), path: safePath(record), headers: headersField(record, "headers") };
+      return {
+        type,
+        socketId: stringField(record, "socketId"),
+        path: safePath(record),
+        headers: headersField(record, "headers"),
+      };
     case "ws.message":
-      return { type, socketId: stringField(record, "socketId"), bodyBase64: base64Field(record, "bodyBase64") };
+      return {
+        type,
+        socketId: stringField(record, "socketId"),
+        bodyBase64: base64Field(record, "bodyBase64"),
+      };
     case "ws.close":
-      return { type, socketId: stringField(record, "socketId"), code: optionalCode(record), reason: optionalString(record, "reason") };
+      return {
+        type,
+        socketId: stringField(record, "socketId"),
+        code: optionalCode(record),
+        reason: optionalString(record, "reason"),
+      };
     case "control.ping":
       return { type, sentAt: stringField(record, "sentAt") };
     default:
@@ -69,18 +122,26 @@ export function parseTunnelFrameText(text: string): TunnelFrame {
   }
 }
 
-function requireRecord(value: unknown, message: string): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(message);
+function requireRecord(
+  value: unknown,
+  message: string,
+): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error(message);
   return value as Record<string, unknown>;
 }
 
 function stringField(record: Record<string, unknown>, key: string): string {
   const value = record[key];
-  if (typeof value !== "string" || value.length === 0) throw new Error(`${key} must be a non-empty string`);
+  if (typeof value !== "string" || value.length === 0)
+    throw new Error(`${key} must be a non-empty string`);
   return value;
 }
 
-function optionalString(record: Record<string, unknown>, key: string): string | undefined {
+function optionalString(
+  record: Record<string, unknown>,
+  key: string,
+): string | undefined {
   const value = record[key];
   if (value === undefined) return undefined;
   if (typeof value !== "string") throw new Error(`${key} must be a string`);
@@ -89,24 +150,38 @@ function optionalString(record: Record<string, unknown>, key: string): string | 
 
 function numberField(record: Record<string, unknown>, key: string): number {
   const value = record[key];
-  if (typeof value !== "number" || !Number.isFinite(value)) throw new Error(`${key} must be a finite number`);
+  if (typeof value !== "number" || !Number.isFinite(value))
+    throw new Error(`${key} must be a finite number`);
   return value;
 }
 
-function headersField(record: Record<string, unknown>, key: string): TunnelHeaders {
+function headersField(
+  record: Record<string, unknown>,
+  key: string,
+): TunnelHeaders {
   const headers = requireRecord(record[key], `${key} must be an object`);
   const clean: TunnelHeaders = {};
   for (const [headerKey, headerValue] of Object.entries(headers)) {
-    if (typeof headerValue !== "string") throw new Error(`${key}.${headerKey} must be a string`);
+    if (typeof headerValue !== "string")
+      throw new Error(`${key}.${headerKey} must be a string`);
     clean[headerKey.toLowerCase()] = headerValue;
   }
   return clean;
 }
 
 function safePath(record: Record<string, unknown>): string {
-  const path = stringField(record, "path");
+  return validateTunnelPath(stringField(record, "path"));
+}
+
+export function validateTunnelPath(path: unknown): string {
+  if (typeof path !== "string" || path.length === 0)
+    throw new Error("path must be a non-empty string");
   if (!path.startsWith("/")) throw new Error("path must start with /");
-  if (path.startsWith("//") || /^[a-z][a-z0-9+.-]*:/i.test(path)) throw new Error("path must be relative to the shared table origin");
+  if (/[\\\u0000-\u001f\u007f]/.test(path))
+    throw new Error("path must not contain backslashes or control characters");
+  const base = new URL("https://open-tabletop-tunnel.invalid/");
+  if (path.startsWith("//") || new URL(path, base).origin !== base.origin)
+    throw new Error("path must be relative to the shared table origin");
   return path;
 }
 
@@ -118,20 +193,23 @@ function httpMethod(record: Record<string, unknown>): string {
 
 function base64Field(record: Record<string, unknown>, key: string): string {
   const value = stringField(record, key);
-  if (!/^[a-zA-Z0-9+/]*={0,2}$/.test(value)) throw new Error(`${key} must be base64 encoded`);
+  if (!/^[a-zA-Z0-9+/]*={0,2}$/.test(value))
+    throw new Error(`${key} must be base64 encoded`);
   return value;
 }
 
 function statusField(record: Record<string, unknown>): number {
   const status = numberField(record, "status");
-  if (!Number.isInteger(status) || status < 100 || status > 599) throw new Error("status must be an HTTP status code");
+  if (!Number.isInteger(status) || status < 100 || status > 599)
+    throw new Error("status must be an HTTP status code");
   return status;
 }
 
 function optionalCode(record: Record<string, unknown>): number | undefined {
   const value = record.code;
   if (value === undefined) return undefined;
-  if (!isSendableWebSocketCloseCode(value)) throw new Error("code must be a sendable WebSocket close code");
+  if (!isSendableWebSocketCloseCode(value))
+    throw new Error("code must be a sendable WebSocket close code");
   return value;
 }
 
@@ -139,12 +217,19 @@ export function isSendableWebSocketCloseCode(value: unknown): value is number {
   return (
     typeof value === "number" &&
     Number.isInteger(value) &&
-    (((value >= 1000 && value <= 1014) && !reservedWebSocketCloseCodes.has(value)) || (value >= 3000 && value <= 4999))
+    ((value >= 1000 &&
+      value <= 1014 &&
+      !reservedWebSocketCloseCodes.has(value)) ||
+      (value >= 3000 && value <= 4999))
   );
 }
 
-export function normalizeWebSocketCloseCode(value: unknown, fallback = 1011): number {
-  if (!isSendableWebSocketCloseCode(fallback)) throw new Error("fallback must be a sendable WebSocket close code");
+export function normalizeWebSocketCloseCode(
+  value: unknown,
+  fallback = 1011,
+): number {
+  if (!isSendableWebSocketCloseCode(fallback))
+    throw new Error("fallback must be a sendable WebSocket close code");
   return isSendableWebSocketCloseCode(value) ? value : fallback;
 }
 

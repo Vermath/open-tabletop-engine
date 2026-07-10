@@ -106,7 +106,7 @@ describe("loadSnapshot", () => {
     const snapshot = await loadSnapshot("camp_demo");
 
     expect(snapshot.audioTracks).toEqual([{ id: "aud_1", campaignId: "camp_demo", name: "Fallback Audio" }]);
-    expect(snapshot.systems).toEqual([{ id: "dnd-5e-srd", active: true }]);
+    expect(snapshot.systems).toEqual([expect.objectContaining({ id: "dnd-5e-srd", active: true, runtimeCapabilities: expect.arrayContaining(["character-templates"]) })]);
     expect(snapshot.characterTemplates).toEqual([{ id: "template_fallback", systemId: "dnd-5e-srd", name: "Fallback Template" }]);
     expect(requests).toHaveLength(16);
     expect(requests).toEqual(
@@ -123,6 +123,19 @@ describe("loadSnapshot", () => {
         "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/character-templates"
       ])
     );
+  });
+
+  it("does not request character templates from a data-only external system", async () => {
+    const { requests } = mockLoadSnapshotFetch({
+      bundled: undefined,
+      systems: [{ id: "data-driven-test", active: true, source: "api", dataDriven: true, runtimeCapabilities: ["data-model"] }]
+    });
+
+    const snapshot = await loadSnapshot("camp_demo");
+
+    expect(snapshot.systems).toEqual([expect.objectContaining({ id: "data-driven-test", runtimeCapabilities: ["data-model"] })]);
+    expect(snapshot.characterTemplates).toEqual([]);
+    expect(requests).not.toContain("/api/v1/campaigns/camp_demo/systems/data-driven-test/character-templates");
   });
 
   it("uses bundled side resources from the campaign snapshot without fan-out", async () => {
@@ -214,7 +227,7 @@ function stubSessionStorage(): void {
 }
 type BundledSnapshotResources = ReturnType<typeof bundledSnapshotResources>;
 
-function mockLoadSnapshotFetch(input: { bundled?: BundledSnapshotResources }) {
+function mockLoadSnapshotFetch(input: { bundled?: BundledSnapshotResources; systems?: unknown[] }) {
   const requests: string[] = [];
   const routes = new Map<string, unknown>([
     ["/api/v1/auth/session", sessionFixture()],
@@ -230,7 +243,7 @@ function mockLoadSnapshotFetch(input: { bundled?: BundledSnapshotResources }) {
     ["/api/v1/campaigns/camp_demo/ai/usage", { campaignId: "camp_demo", threadCount: 1 }],
     ["/api/v1/campaigns/camp_demo/ai/tool-calls", [{ id: "tool_1", threadId: "thr_1" }]],
     ["/api/v1/campaigns/camp_demo/plugins", [{ id: "plugin_1", installed: false }]],
-    ["/api/v1/campaigns/camp_demo/systems", [{ id: "dnd-5e-srd", active: true }]],
+    ["/api/v1/campaigns/camp_demo/systems", input.systems ?? [{ id: "dnd-5e-srd", active: true, runtimeCapabilities: ["data-model", "character-templates"] }]],
     ["/api/v1/combats/cmb_1/audit", [{ id: "audit_1", targetId: "cmb_1" }]],
     ["/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/character-templates", [{ id: "template_fallback", systemId: "dnd-5e-srd", name: "Fallback Template" }]],
     ["/api/v1/assets/asset_audio/delivery-url", { url: "https://assets.example.test/api/v1/assets/asset_audio/blob?expiresAt=2026-07-04T00%3A05%3A00.000Z&signature=sig", expiresAt: "2026-07-04T00:05:00.000Z" }]

@@ -158,7 +158,7 @@ describe("desktop layout regressions", () => {
   });
 
   it("keeps lower-permission players out of dead prep, ai, and campaign management modes", () => {
-    expect(appSource).toContain('const canUsePrepWorkspace = canManageScenes || hasPermission("journal.create") || hasPermission("journal.update") || hasPermission("plugin.install") || hasPermission("plugin.configure") || hasPermission("actor.create");');
+    expect(appSource).toContain('const canUsePrepWorkspace = canManageScenes || hasPermission("world.create") || hasPermission("world.update") || hasPermission("handout.create") || hasPermission("handout.update") || hasPermission("journal.create") || hasPermission("journal.update") || hasPermission("plugin.install") || hasPermission("plugin.configure") || hasPermission("actor.create");');
     expect(appSource).toContain('const canUseAiStudioWorkspace = hasPermission("ai.proposeChanges") || hasPermission("ai.applyChanges") || hasPermission("ai.readGmMemory") || hasPermission("combat.manage");');
     expect(appSource).toContain('if (workspaceMode === "prep" && !canUsePrepWorkspace) setWorkspaceMode("live");');
     expect(appSource).toContain('if (workspaceMode === "ai" && !canUseAiStudioWorkspace) setWorkspaceMode("live");');

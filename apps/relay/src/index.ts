@@ -1,4 +1,4 @@
-import { normalizeWebSocketCloseCode, parseTunnelFrameText, serializeTunnelFrame, type TunnelFrame, type TunnelHeaders } from "@open-tabletop/tunnel-protocol";
+import { normalizeWebSocketCloseCode, parseTunnelFrameText, serializeTunnelFrame, validateTunnelPath, type TunnelFrame, type TunnelHeaders } from "@open-tabletop/tunnel-protocol";
 import { createRelayTable, hostTokenHash, MemoryRateLimiter, relayLimits, relayTableStatus, requestIp, verifyHostTokenHash, type RelayTableRecord } from "./relay-core.js";
 
 export interface RelayEnv {
@@ -35,7 +35,7 @@ export default {
     const hostMatch = /^\/v1\/hosts\/([^/]+)$/.exec(url.pathname);
     if (hostMatch) {
       const stub = maybeTableStub(env, hostMatch[1]!);
-      return stub ? stub.fetch(doRequest(request, `/host${url.search}`)) : json({ error: "bad_table_slug" }, 400);
+      return stub ? stub.fetch(doRequest(request, "/host")) : json({ error: "bad_table_slug" }, 400);
     }
 
     const statusMatch = /^\/v1\/tables\/([^/]+)\/status$/.exec(url.pathname);
@@ -114,13 +114,19 @@ export class TableTunnel {
     if (!table) return json({ error: "unknown_table" }, 404);
     if (isExpired(table)) return json({ error: "table_expired" }, 410);
     if (!this.hostSocket) return json({ error: "host_offline" }, 503);
+    let tunnelPath: string;
+    try {
+      tunnelPath = safeRelayPath(path);
+    } catch {
+      return json({ error: "bad_tunnel_path" }, 400);
+    }
     const declaredLength = Number(request.headers.get("content-length") ?? "0");
     if (declaredLength > relayLimits.maxRequestBodyBytes) return json({ error: "request_too_large" }, 413);
     const bodyBytes = request.method === "GET" || request.method === "HEAD" ? new Uint8Array() : new Uint8Array(await request.arrayBuffer());
     if (bodyBytes.byteLength > relayLimits.maxRequestBodyBytes) return json({ error: "request_too_large" }, 413);
     const requestId = crypto.randomUUID();
     const responsePromise = this.waitForHttpResponse(requestId);
-    this.sendHost({ type: "http.request", requestId, method: request.method, path: safeRelayPath(path), headers: requestHeaders(request.headers) });
+    this.sendHost({ type: "http.request", requestId, method: request.method, path: tunnelPath, headers: requestHeaders(request.headers) });
     if (bodyBytes.byteLength > 0) this.sendHost({ type: "http.body", requestId, bodyBase64: bytesToBase64(bodyBytes) });
     this.sendHost({ type: "http.end", requestId });
     return responsePromise;
@@ -131,6 +137,12 @@ export class TableTunnel {
     if (!table) return json({ error: "unknown_table" }, 404);
     if (isExpired(table)) return json({ error: "table_expired" }, 410);
     if (!this.hostSocket) return json({ error: "host_offline" }, 503);
+    let tunnelPath: string;
+    try {
+      tunnelPath = safeRelayPath(path);
+    } catch {
+      return json({ error: "bad_tunnel_path" }, 400);
+    }
     if (this.playerSockets.size >= relayLimits.maxClientWebSocketsPerTable) return json({ error: "too_many_websockets" }, 429);
     if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "websocket_required" }, 426);
     const selectedProtocol = selectRelayWebSocketProtocol(request.headers.get("sec-websocket-protocol"));
@@ -140,7 +152,7 @@ export class TableTunnel {
     const socketId = crypto.randomUUID();
     server.accept();
     this.playerSockets.set(socketId, server);
-    this.sendHost({ type: "ws.open", socketId, path: safeRelayPath(path), headers: requestHeaders(request.headers) });
+    this.sendHost({ type: "ws.open", socketId, path: tunnelPath, headers: requestHeaders(request.headers) });
     server.addEventListener("message", (event) => {
       const bytes = typeof event.data === "string" ? new TextEncoder().encode(event.data) : new Uint8Array(event.data as ArrayBuffer);
       this.sendHost({ type: "ws.message", socketId, bodyBase64: bytesToBase64(bytes) });
@@ -267,7 +279,7 @@ function doRequest(source: Request, path: string): Request {
 function hostTokenFromRequest(request: Request): string | undefined {
   const auth = request.headers.get("authorization");
   if (auth?.toLowerCase().startsWith("bearer ")) return auth.slice("bearer ".length).trim();
-  return new URL(request.url).searchParams.get("token") ?? undefined;
+  return undefined;
 }
 
 function requestHeaders(headers: Headers): TunnelHeaders {
@@ -293,9 +305,8 @@ export function selectRelayWebSocketProtocol(value: string | null): string | und
   return protocols.find((protocol) => protocol === "otte.v1") ?? protocols[0];
 }
 
-function safeRelayPath(path: string): string {
-  if (!path.startsWith("/") || path.startsWith("//") || /^[a-z][a-z0-9+.-]*:/i.test(path)) return "/";
-  return path;
+export function safeRelayPath(path: string): string {
+  return validateTunnelPath(path);
 }
 
 function isExpired(table: StoredTable): boolean {

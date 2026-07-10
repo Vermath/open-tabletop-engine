@@ -49,7 +49,16 @@ describe("deployment smoke", () => {
     expect(completionAuditWorkflow).toContain("pnpm v1:completion:audit");
 
     const desktopReleaseWorkflow = readWorkspaceFile(".github/workflows/desktop-release.yml");
-    expect(desktopReleaseWorkflow).toContain('if [ -f "$artifact" ] && [ "$artifact" != "$checksum_file" ]; then');
+    expect(desktopReleaseWorkflow).toContain("pnpm audit --audit-level high");
+    expect(desktopReleaseWorkflow).not.toContain("pnpm audit --prod");
+    expect(desktopReleaseWorkflow).toContain('for artifact in *.dmg "$sbom" "$provenance"; do');
+    expect(desktopReleaseWorkflow).toContain('if [ -f "$artifact" ]; then');
+    expect(desktopReleaseWorkflow).toContain('if [ "${#checksum_files[@]}" -ne 3 ]; then');
+    expect(desktopReleaseWorkflow).toContain(
+      '[System.IO.File]::WriteAllText("$release/SHA256SUMS.txt", ($lines -join "`n") + "`n", [System.Text.UTF8Encoding]::new($false))'
+    );
+    expect(desktopReleaseWorkflow).toContain("$checksumBytes -contains [byte]0x0d");
+    expect(desktopReleaseWorkflow).not.toMatch(/(?:Set-Content|Out-File)[^\r\n]*SHA256SUMS\.txt/i);
     expect(desktopReleaseWorkflow).not.toContain("shasum -a 256 *");
 
     const docsSiteWorkflow = readWorkspaceFile(".github/workflows/docs-site.yml");

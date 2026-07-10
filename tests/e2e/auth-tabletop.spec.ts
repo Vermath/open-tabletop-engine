@@ -115,6 +115,17 @@ async function openAiAgent(page: Page) {
   return panel;
 }
 
+async function approveAgentProposal(page: Page, proposalTitle: string) {
+  const aiAgent = await openAiAgent(page);
+  const proposal = aiAgent.locator(".ai-agent-proposal-row", { hasText: proposalTitle }).first();
+  await expect(proposal).toContainText("pending");
+  await proposal.getByRole("button", { name: "Approve and apply" }).click();
+  await expect(proposal).toBeHidden();
+  await expect(statusMessage(page, "Proposal applied")).toBeVisible();
+  await aiAgent.getByRole("button", { name: "Close AI Agent" }).click();
+  await expect(aiAgent).toBeHidden();
+}
+
 async function clickElement(locator: Locator) {
   await expect(locator).toBeVisible();
   await locator.evaluate((element) => (element as HTMLElement).click());
@@ -1126,6 +1137,252 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(importReport.locator('[aria-label="Import history"]')).toContainText("Rolled back:");
 });
 
+test("GM can organize prep across the World Atlas, Handout Library, and Session Desk", async ({ page }) => {
+  test.setTimeout(60_000);
+  const suffix = Date.now().toString(36);
+  const worldName = `E2E Ashen Atlas ${suffix}`;
+  const worldDescription = "A persistent E2E world for linked prep.";
+  const handoutTitle = `E2E Atlas Brief ${suffix}`;
+  const handoutBody = "The western vault opens only when the ember bell rings.";
+  const sessionTitle = `E2E Atlas Session ${suffix}`;
+  const sessionAgenda = "Review the atlas brief, enter Vault Entry, and follow the ember bell clue.";
+  const sessionNotes = "Bring the linked handout into play.";
+  let vaultSceneId = "";
+  let originalWorldId: string | undefined;
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Demo GM" }).click();
+  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+
+  try {
+    const scenes = await expectJsonResponse<Array<{ id: string; name: string; worldId?: string }>>(
+      await page.request.get(`${apiBaseUrl}/api/v1/campaigns/camp_demo/scenes`, { headers: gmApiHeaders })
+    );
+    const vaultScene = scenes.find((scene) => scene.name === "Vault Entry");
+    expect(vaultScene).toBeDefined();
+    vaultSceneId = vaultScene!.id;
+    originalWorldId = vaultScene!.worldId;
+
+    await page.getByRole("button", { name: "Prep", exact: true }).click();
+    await openInspectorPanel(page, "Worlds");
+    const worldAtlas = page.getByRole("region", { name: "World Atlas" });
+    await expect(worldAtlas.getByRole("heading", { name: "Places & prep scenes" })).toBeVisible();
+    const addWorld = worldAtlas.locator("details.lore-create-drawer");
+    await openDetails(addWorld);
+    await addWorld.getByRole("textbox", { name: "New world name" }).fill(worldName);
+    await addWorld.getByRole("textbox", { name: "New world description" }).fill(worldDescription);
+    await addWorld.getByRole("button", { name: "Create world" }).click();
+    await expect(statusMessage(page, `${worldName} added to the atlas`)).toBeVisible();
+    const worldEditor = worldAtlas.getByRole("form", { name: `Edit world ${worldName}` });
+    await expect(worldEditor.getByRole("textbox", { name: "World name" })).toHaveValue(worldName);
+    await expect(worldEditor.getByRole("textbox", { name: "World description" })).toHaveValue(worldDescription);
+
+    const worldFilters = worldAtlas.getByRole("group", { name: "Filter prep scenes by world" });
+    await worldFilters.getByRole("button", { name: /^All / }).click();
+    await worldAtlas.getByRole("combobox", { name: "World for Vault Entry" }).selectOption({ label: worldName });
+    await expect(statusMessage(page, `Vault Entry moved to ${worldName}`)).toBeVisible();
+    await worldFilters.getByRole("button", { name: new RegExp(`^${worldName} `) }).click();
+    await expect(worldAtlas.getByRole("region", { name: "World scenes" })).toContainText("Vault Entry");
+
+    await openInspectorPanel(page, "Handouts");
+    const handoutLibrary = page.getByRole("region", { name: "Handout Library" });
+    await expect(handoutLibrary.getByRole("heading", { name: "Shareable table documents" })).toBeVisible();
+    await handoutLibrary.getByRole("button", { name: "Create handout" }).click();
+    const handoutForm = handoutLibrary.getByRole("form", { name: "Create handout" });
+    await handoutForm.getByRole("textbox", { name: "Handout title" }).fill(handoutTitle);
+    await handoutForm.getByRole("textbox", { name: "Handout body" }).fill(handoutBody);
+    await handoutForm.getByRole("combobox", { name: "Handout world" }).selectOption({ label: worldName });
+    await handoutForm.getByRole("combobox", { name: "Handout visibility" }).selectOption("public");
+    await handoutForm.getByRole("textbox", { name: "Handout tags" }).fill("atlas, ember-bell");
+    await handoutForm.getByRole("button", { name: "Share handout" }).click();
+    await expect(statusMessage(page, `${handoutTitle} shared`)).toBeVisible();
+    const handoutRow = handoutLibrary.getByRole("listitem").filter({ hasText: handoutTitle });
+    await expect(handoutRow).toContainText("Everyone");
+    await expect(handoutRow).toContainText("atlas");
+    const savedHandout = handoutLibrary.getByRole("form", { name: `Edit handout ${handoutTitle}` });
+    await expect(savedHandout.getByRole("textbox", { name: "Handout body" })).toHaveValue(handoutBody);
+    await expect(savedHandout.getByRole("combobox", { name: "Handout world" })).toHaveValue(
+      (await expectJsonResponse<Array<{ id: string; name: string }>>(
+        await page.request.get(`${apiBaseUrl}/api/v1/campaigns/camp_demo/worlds`, { headers: gmApiHeaders })
+      )).find((world) => world.name === worldName)!.id
+    );
+
+    await openInspectorPanel(page, "Sessions");
+    const sessionDesk = page.getByRole("region", { name: "Session Desk" });
+    await expect(sessionDesk.getByRole("heading", { name: "Plan, run, remember" })).toBeVisible();
+    await sessionDesk.getByRole("button", { name: "Plan session" }).click();
+    const sessionForm = sessionDesk.getByRole("form", { name: "Plan campaign session" });
+    await sessionForm.getByRole("textbox", { name: "Session title" }).fill(sessionTitle);
+    await sessionForm.getByRole("textbox", { name: "Session agenda" }).fill(sessionAgenda);
+    await sessionForm.getByRole("textbox", { name: "Session notes" }).fill(sessionNotes);
+    await sessionForm.getByRole("checkbox", { name: "Vault Entry" }).check();
+    await sessionForm.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(statusMessage(page, `${sessionTitle} planned`)).toBeVisible();
+    const sessionRow = sessionDesk.getByRole("listitem").filter({ hasText: sessionTitle });
+    await expect(sessionRow).toContainText("planned");
+    await expect(sessionRow).toContainText("Unscheduled");
+    const savedSession = sessionDesk.getByRole("form", { name: `Edit session ${sessionTitle}` });
+    await expect(savedSession.getByRole("textbox", { name: "Session agenda" })).toHaveValue(sessionAgenda);
+    await expect(savedSession.getByRole("textbox", { name: "Session notes" })).toHaveValue(sessionNotes);
+    await expect(savedSession.getByRole("combobox", { name: "Scene to activate when session starts" })).toContainText("Vault Entry");
+
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+    await page.getByRole("button", { name: "Prep", exact: true }).click();
+
+    await openInspectorPanel(page, "Worlds");
+    const reloadedAtlas = page.getByRole("region", { name: "World Atlas" });
+    await reloadedAtlas.getByRole("textbox", { name: "Search worlds" }).fill(worldName);
+    const reloadedWorldFilters = reloadedAtlas.getByRole("group", { name: "Filter prep scenes by world" });
+    await reloadedWorldFilters.getByRole("button", { name: new RegExp(`^${worldName} `) }).click();
+    await expect(reloadedAtlas.getByRole("region", { name: "World scenes" })).toContainText("Vault Entry");
+
+    await openInspectorPanel(page, "Handouts");
+    const reloadedHandouts = page.getByRole("region", { name: "Handout Library" });
+    await reloadedHandouts.getByRole("textbox", { name: "Search handouts" }).fill(handoutTitle);
+    await reloadedHandouts.getByRole("combobox", { name: "Filter handouts by world" }).selectOption({ label: worldName });
+    await expect(reloadedHandouts.getByRole("listitem").filter({ hasText: handoutTitle })).toContainText("ember-bell");
+
+    await openInspectorPanel(page, "Sessions");
+    const reloadedSessions = page.getByRole("region", { name: "Session Desk" });
+    await expect(reloadedSessions.getByRole("listitem").filter({ hasText: sessionTitle })).toContainText("planned");
+  } finally {
+    try {
+      const sessionsResponse = await page.request.get(`${apiBaseUrl}/api/v1/campaigns/camp_demo/sessions`, { headers: gmApiHeaders });
+      if (sessionsResponse.ok()) {
+        const sessions = (await sessionsResponse.json()) as Array<{ id: string; title: string; status: string }>;
+        for (const session of sessions.filter((item) => item.title === sessionTitle && item.status === "planned")) {
+          await page.request.delete(`${apiBaseUrl}/api/v1/campaign-sessions/${session.id}`, { headers: gmApiHeaders });
+        }
+      }
+      const handoutsResponse = await page.request.get(`${apiBaseUrl}/api/v1/campaigns/camp_demo/handouts`, { headers: gmApiHeaders });
+      if (handoutsResponse.ok()) {
+        const handouts = (await handoutsResponse.json()) as Array<{ id: string; title: string }>;
+        for (const handout of handouts.filter((item) => item.title === handoutTitle)) {
+          await page.request.delete(`${apiBaseUrl}/api/v1/handouts/${handout.id}`, { headers: gmApiHeaders });
+        }
+      }
+      if (vaultSceneId) {
+        await page.request.patch(`${apiBaseUrl}/api/v1/scenes/${vaultSceneId}`, {
+          headers: gmApiHeaders,
+          data: { worldId: originalWorldId ?? null }
+        });
+      }
+      const worldsResponse = await page.request.get(`${apiBaseUrl}/api/v1/campaigns/camp_demo/worlds`, { headers: gmApiHeaders });
+      if (worldsResponse.ok()) {
+        const worlds = (await worldsResponse.json()) as Array<{ id: string; name: string }>;
+        for (const world of worlds.filter((item) => item.name === worldName)) {
+          await page.request.delete(`${apiBaseUrl}/api/v1/worlds/${world.id}`, { headers: gmApiHeaders });
+        }
+      }
+    } catch {
+      // Preserve the primary browser assertion when the server is already unavailable.
+    }
+  }
+});
+
+test("World and handout panels reconcile realtime changes made by another client", async ({ page }) => {
+  const suffix = Date.now().toString(36);
+  const worldName = `Realtime World ${suffix}`;
+  const handoutTitle = `Realtime Handout ${suffix}`;
+  let worldId = "";
+  let handoutId = "";
+
+  await page.goto("/");
+  const realtimeConnected = page.waitForEvent("websocket");
+  await page.getByRole("button", { name: "Demo GM" }).click();
+  await realtimeConnected;
+  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+
+  try {
+    await page.getByRole("button", { name: "Prep", exact: true }).click();
+    await openInspectorPanel(page, "Worlds");
+    const worldAtlas = page.getByRole("region", { name: "World Atlas" });
+    await expect(worldAtlas.getByRole("group", { name: "Filter prep scenes by world" })).toBeVisible();
+
+    const world = await expectJsonResponse<{ id: string }>(
+      await page.request.post(`${apiBaseUrl}/api/v1/campaigns/camp_demo/worlds`, {
+        headers: gmApiHeaders,
+        data: { name: worldName, description: "Created outside the open browser client." }
+      })
+    );
+    worldId = world.id;
+    await expect(worldAtlas.getByRole("button", { name: new RegExp(`^${worldName} `) })).toBeVisible();
+
+    await openInspectorPanel(page, "Handouts");
+    const handoutLibrary = page.getByRole("region", { name: "Handout Library" });
+    const handout = await expectJsonResponse<{ id: string }>(
+      await page.request.post(`${apiBaseUrl}/api/v1/campaigns/camp_demo/handouts`, {
+        headers: gmApiHeaders,
+        data: {
+          worldId,
+          title: handoutTitle,
+          body: "Created outside the open browser client.",
+          visibility: "public",
+          visibleToUserIds: [],
+          visibleToActorIds: [],
+          assetIds: [],
+          tags: ["realtime"]
+        }
+      })
+    );
+    handoutId = handout.id;
+    const handoutRow = handoutLibrary.getByRole("listitem").filter({ hasText: handoutTitle });
+    await expect(handoutRow.getByRole("button")).toBeVisible();
+  } finally {
+    if (handoutId) await page.request.delete(`${apiBaseUrl}/api/v1/handouts/${handoutId}`, { headers: gmApiHeaders }).catch(() => undefined);
+    if (worldId) await page.request.delete(`${apiBaseUrl}/api/v1/worlds/${worldId}`, { headers: gmApiHeaders }).catch(() => undefined);
+  }
+});
+
+test("failed AI proposal actions remain available for retry", async ({ page }) => {
+  const suffix = Date.now().toString(36);
+  const draft = await expectJsonResponse<{ id: string; title: string }>(
+    await page.request.post(`${apiBaseUrl}/api/v1/campaigns/camp_demo/proposals`, {
+      headers: gmApiHeaders,
+      data: {
+        title: `Retry proposal ${suffix}`,
+        summary: "A no-op AI proposal used to verify transient action recovery.",
+        createdByType: "ai",
+        sourceId: `e2e_retry_${suffix}`,
+        changesJson: []
+      }
+    })
+  );
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Demo GM" }).click();
+  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+
+  try {
+    const aiAgent = await openAiAgent(page);
+    const proposal = aiAgent.locator(".ai-agent-proposal-row", { hasText: draft.title });
+    await expect(proposal).toHaveCount(1);
+    await page.route(`**/api/v1/proposals/${draft.id}/approve`, (route) => route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({ message: "temporary approval failure" })
+    }));
+    await proposal.getByRole("button", { name: "Approve and apply" }).click();
+    await expect(aiAgent.getByText("Apply failed: temporary approval failure", { exact: true })).toBeVisible();
+    await expect(proposal).toBeVisible();
+    await page.unroute(`**/api/v1/proposals/${draft.id}/approve`);
+
+    await page.route(`**/api/v1/proposals/${draft.id}/reject`, (route) => route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({ message: "temporary rejection failure" })
+    }));
+    await proposal.getByRole("button", { name: "Reject" }).click();
+    await expect(aiAgent.getByText("Reject failed: temporary rejection failure", { exact: true })).toBeVisible();
+    await expect(proposal).toBeVisible();
+    await page.unroute(`**/api/v1/proposals/${draft.id}/reject`);
+  } finally {
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+    await page.request.post(`${apiBaseUrl}/api/v1/proposals/${draft.id}/reject`, { headers: gmApiHeaders }).catch(() => undefined);
+  }
+});
+
 test("GM can create a campaign through the setup wizard", async ({ page }) => {
   await page.goto("/");
 
@@ -1645,7 +1902,7 @@ test("GM can draft and apply an AI proposal from the browser", async ({ page }) 
     }
   }));
 
-  const encounterDraft = await expectJsonResponse<{ proposal: { id: string; status: string; changesJson: Array<{ entity: string; action: string }> } }>(
+  const encounterDraft = await expectJsonResponse<{ proposal: { id: string; title: string; status: string; changesJson: Array<{ entity: string; action: string }> } }>(
     await page.request.post(`${apiBaseUrl}/api/v1/campaigns/camp_demo/ai/encounter-design`, {
       headers: gmApiHeaders,
       data: {
@@ -1666,7 +1923,7 @@ test("GM can draft and apply an AI proposal from the browser", async ({ page }) 
   await page.reload();
   await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
   aiAgent = await openAiAgent(page);
-  const encounterProposal = aiAgent.locator(".ai-agent-proposal-row", { hasText: "Encounter Designer Draft" }).first();
+  const encounterProposal = aiAgent.locator(".ai-agent-proposal-row", { hasText: encounterDraft.proposal.title }).first();
   await expect(encounterProposal).toContainText("pending");
   await encounterProposal.getByRole("button", { name: "Approve and apply" }).click();
   await expect(aiAgent.getByText("Proposal applied").first()).toBeVisible();
@@ -1692,23 +1949,35 @@ test("GM can draft and apply an AI proposal from the browser", async ({ page }) 
     await page.request.delete(`${apiBaseUrl}/api/v1/ai/memory/${extractedMemory.memory.id}`, { headers: gmApiHeaders })
   );
 
-  const recapDraft = await expectJsonResponse<{ proposal: { id: string; title: string; status: string }; memory: { text: string } }>(
+  const recapDraft = await expectJsonResponse<{
+    proposal: {
+      id: string;
+      title: string;
+      status: string;
+      changesJson: Array<{ entity: string; data: { title?: string; body?: string; visibility?: string; tags?: string[] } }>;
+    };
+    memory: { text: string };
+  }>(
     await page.request.post(`${apiBaseUrl}/api/v1/campaigns/camp_demo/ai/session-recap`, {
       headers: gmApiHeaders,
       data: { transcript: "The party secured the ember vault clue." }
     })
   );
-  expect(recapDraft.proposal).toMatchObject({ title: "Session Recap", status: "pending" });
-  expect(recapDraft.memory.text).toContain("Session recap:");
+  expect(recapDraft.proposal.status).toBe("pending");
+  expect(recapDraft.memory.text).toContain("ember vault clue");
+  const gmRecapChange = recapDraft.proposal.changesJson.find((change) => change.entity === "journal" && change.data.tags?.includes("gm-recap"));
+  expect(gmRecapChange?.data).toEqual(
+    expect.objectContaining({ title: expect.any(String), visibility: "gm_only", body: expect.stringContaining("ember vault clue") })
+  );
   await page.reload();
   await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
   aiAgent = await openAiAgent(page);
-  const recapProposal = aiAgent.locator(".ai-agent-proposal-row", { hasText: "Session Recap" }).first();
+  const recapProposal = aiAgent.locator(".ai-agent-proposal-row", { hasText: recapDraft.proposal.title }).first();
   await expect(recapProposal).toContainText("pending");
   await recapProposal.getByRole("button", { name: "Approve and apply" }).click();
   await expect(aiAgent.getByText("Proposal applied").first()).toBeVisible();
 
-  const rejectedDraft = await expectJsonResponse<{ proposal: { id: string; status: string } }>(
+  const rejectedDraft = await expectJsonResponse<{ proposal: { id: string; title: string; status: string } }>(
     await page.request.post(`${apiBaseUrl}/api/v1/campaigns/camp_demo/ai/encounter-design`, {
       headers: gmApiHeaders,
       data: {
@@ -1725,7 +1994,7 @@ test("GM can draft and apply an AI proposal from the browser", async ({ page }) 
   await page.reload();
   await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
   aiAgent = await openAiAgent(page);
-  const rejectedProposal = aiAgent.locator(".ai-agent-proposal-row", { hasText: "Encounter Designer Draft" }).first();
+  const rejectedProposal = aiAgent.locator(".ai-agent-proposal-row", { hasText: rejectedDraft.proposal.title }).first();
   await expect(rejectedProposal).toContainText("pending");
   await rejectedProposal.getByRole("button", { name: "Reject" }).click();
   await expect(aiAgent.getByText("Proposal rejected").first()).toBeVisible();
@@ -1738,9 +2007,9 @@ test("GM can draft and apply an AI proposal from the browser", async ({ page }) 
   await expect(aiAgent).toBeHidden();
   await page.getByRole("button", { name: "Prep", exact: true }).click();
   await page.getByRole("button", { name: "Journal" }).click();
-  const recapJournal = page.locator("article.journal-entry", { hasText: "Session Recap" });
+  const recapJournal = page.locator("article.journal-entry", { hasText: gmRecapChange!.data.title! });
   await expect(recapJournal).toContainText("gm_only");
-  await expect(recapJournal).toContainText("Session recap:");
+  await expect(recapJournal).toContainText("ember vault clue");
 });
 
 test("GM can run SDK plugin and system workflows from the browser", async ({ page }) => {
@@ -1799,6 +2068,8 @@ test("GM can run SDK plugin and system workflows from the browser", async ({ pag
   await expect(pluginCard).toContainText("installed plugin");
   await expect(pluginCard).toContainText("Installed v");
   await pluginCard.getByRole("button", { name: "/spark" }).click();
+  await expect(statusMessage(page, "Example Macro Plugin command awaiting approval")).toBeVisible();
+  await approveAgentProposal(page, "Example Macro Plugin: /spark");
   await page.getByRole("button", { name: "Live Table", exact: true }).click();
   await openInspectorPanel(page, "Chat");
   await expect(page.locator('[aria-label="Chat messages"]')).toContainText(/Spark macro: from the browser tabletop near .*Valen Ash/);
@@ -1820,6 +2091,8 @@ test("GM can run SDK plugin and system workflows from the browser", async ({ pag
   await expect(pluginCard).toBeVisible();
   await sdkPanel.getByRole("combobox", { name: "Plugin marketplace status filter" }).selectOption("all");
   await versionedPluginCard.getByRole("button", { name: "/versioned" }).click();
+  await expect(statusMessage(page, "Versioned Browser Plugin command awaiting approval")).toBeVisible();
+  await approveAgentProposal(page, "Versioned Browser Plugin: /versioned");
   await page.getByRole("button", { name: "Live Table", exact: true }).click();
   await openInspectorPanel(page, "Chat");
   await expect(page.locator('[aria-label="Chat messages"]')).toContainText("Versioned browser plugin v1");
@@ -1829,6 +2102,8 @@ test("GM can run SDK plugin and system workflows from the browser", async ({ pag
   await expect(statusMessage(page, "Versioned Browser Plugin upgraded")).toBeVisible();
   await expect(versionedPluginCard).toContainText("Installed v2.0.0");
   await versionedPluginCard.getByRole("button", { name: "/versioned" }).click();
+  await expect(statusMessage(page, "Versioned Browser Plugin command awaiting approval")).toBeVisible();
+  await approveAgentProposal(page, "Versioned Browser Plugin: /versioned");
   await page.getByRole("button", { name: "Live Table", exact: true }).click();
   await openInspectorPanel(page, "Chat");
   await expect(page.locator('[aria-label="Chat messages"]')).toContainText("Versioned browser plugin v2");
@@ -1870,7 +2145,7 @@ test("GM can run SDK plugin and system workflows from the browser", async ({ pag
   await expect(arrowsEntry).toContainText("1 gp");
   await arrowsEntry.getByRole("spinbutton", { name: "Arrows purchase quantity" }).fill("2");
   await arrowsEntry.getByRole("button", { name: "Purchase" }).click();
-  await expect(page.getByText("Arrows purchased", { exact: true })).toBeVisible();
+  await expect(statusMessage(page, "Arrows purchased")).toBeVisible();
   await expect(fighterCompendium.getByRole("status")).toContainText("Arrows purchased for 2 gp; 48 gp remaining");
   await page.getByRole("tab", { name: "Loadout" }).click();
   await expect(page.getByRole("region", { name: "Actor loadout sheet" })).toContainText("Arrows x2");

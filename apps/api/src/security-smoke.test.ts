@@ -248,7 +248,9 @@ describe("security smoke", () => {
         payload: { permissions: ["chat.write"] }
       });
       expect(registryReviewBlockedInstall.statusCode).toBe(403);
-      expect(registryReviewBlockedInstall.json().message).toContain("requires marketplace approval");
+      // A present but unverifiable signature is always a trust failure. Review
+      // policy must not mask or downgrade that fail-closed decision.
+      expect(registryReviewBlockedInstall.json().message).toContain("signature key is not trusted");
       const permissiveRegistryPosture = await app.inject({
         method: "GET",
         url: "/api/v1/admin/plugins/operations",

@@ -13,6 +13,25 @@ export type RollHighlight = "crit" | "fumble" | null;
 
 export const diceTraySides = [4, 6, 8, 10, 12, 20, 100] as const;
 
+export const diceQuickPresets = [
+  { id: "advantage", label: "Adv", formula: "adv", title: "Roll a d20 with advantage" },
+  { id: "disadvantage", label: "Dis", formula: "dis", title: "Roll a d20 with disadvantage" },
+  { id: "ability-score", label: "4d6↓", formula: "4d6dl1", title: "Roll 4d6 and drop the lowest" },
+  { id: "percentile", label: "d%", formula: "d%", title: "Roll percentile dice" }
+] as const;
+
+export function adjustDiceModifier(formula: string, delta: -1 | 1): string {
+  const trimmed = formula.trim();
+  if (!trimmed) return delta > 0 ? "1d20+1" : "1d20-1";
+  const match = trimmed.match(/([+-])(\d+)$/);
+  if (!match || match.index === undefined) return `${trimmed}${delta > 0 ? "+1" : "-1"}`;
+  const value = (match[1] === "-" ? -1 : 1) * Number(match[2]);
+  const next = value + delta;
+  const prefix = trimmed.slice(0, match.index);
+  if (next === 0) return prefix;
+  return `${prefix}${next > 0 ? "+" : "-"}${Math.abs(next)}`;
+}
+
 function keptValues(term: RollTermLike): number[] {
   return term.kept && term.kept.length > 0 ? term.kept : (term.results ?? []);
 }

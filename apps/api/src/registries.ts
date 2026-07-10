@@ -1,4 +1,5 @@
-import type { SystemManifest } from "@open-tabletop/system-sdk";
+import type { EngineState, SystemCapability, SystemInstallation } from "@open-tabletop/core";
+import { validateSystemManifest, type SystemManifest } from "@open-tabletop/system-sdk";
 
 export const installedSystems: SystemManifest[] = [
   {
@@ -14,7 +15,8 @@ export const installedSystems: SystemManifest[] = [
       actor: "/systems/dnd-5e-srd/actor.schema.json",
       item: "/systems/dnd-5e-srd/item.schema.json"
     },
-    permissions: ["actor.read", "actor.updateOwned", "dice.roll", "chat.write"]
+    permissions: ["actor.read", "actor.updateOwned", "dice.roll", "chat.write"],
+    capabilities: ["data-model", "actor-sheet", "quick-rolls", "actions", "conditions", "advancement", "rest", "compendium", "character-templates", "character-import", "character-origins", "encounter-builder", "monster-builder"]
   },
   {
     id: "generic-fantasy",
@@ -29,7 +31,8 @@ export const installedSystems: SystemManifest[] = [
       actor: "/systems/generic-fantasy/actor.schema.json",
       item: "/systems/generic-fantasy/item.schema.json"
     },
-    permissions: ["actor.read", "actor.updateOwned", "dice.roll", "chat.write"]
+    permissions: ["actor.read", "actor.updateOwned", "dice.roll", "chat.write"],
+    capabilities: ["data-model", "actor-sheet", "quick-rolls", "actions", "conditions", "advancement", "rest", "compendium", "character-templates", "character-import", "encounter-builder", "monster-builder"]
   },
   {
     id: "stellar-frontiers",
@@ -44,7 +47,8 @@ export const installedSystems: SystemManifest[] = [
       actor: "/systems/stellar-frontiers/actor.schema.json",
       item: "/systems/stellar-frontiers/item.schema.json"
     },
-    permissions: ["actor.read", "actor.updateOwned", "dice.roll", "chat.write"]
+    permissions: ["actor.read", "actor.updateOwned", "dice.roll", "chat.write"],
+    capabilities: ["data-model", "actor-sheet", "quick-rolls", "actions", "conditions", "advancement", "rest", "compendium", "character-templates", "character-import", "encounter-builder", "monster-builder"]
   },
   {
     id: "mystic-noir",
@@ -59,6 +63,39 @@ export const installedSystems: SystemManifest[] = [
       actor: "/systems/mystic-noir/actor.schema.json",
       item: "/systems/mystic-noir/item.schema.json"
     },
-    permissions: ["actor.read", "actor.updateOwned", "dice.roll", "chat.write"]
+    permissions: ["actor.read", "actor.updateOwned", "dice.roll", "chat.write"],
+    capabilities: ["data-model", "actor-sheet", "quick-rolls", "actions", "conditions", "advancement", "rest", "compendium", "character-templates", "character-import", "encounter-builder", "monster-builder"]
   }
 ];
+
+export function registeredSystems(state: Pick<EngineState, "systemInstallations">): SystemManifest[] {
+  const manifests = [...installedSystems];
+  const ids = new Set(manifests.map((manifest) => manifest.id));
+  for (const installation of state.systemInstallations) {
+    try {
+      validateSystemManifest(installation.manifest);
+    } catch {
+      continue;
+    }
+    if (ids.has(installation.manifest.id)) continue;
+    manifests.push(structuredClone(installation.manifest));
+    ids.add(installation.manifest.id);
+  }
+  return manifests;
+}
+
+export function findRegisteredSystem(state: Pick<EngineState, "systemInstallations">, systemId: string): SystemManifest | undefined {
+  return registeredSystems(state).find((manifest) => manifest.id === systemId);
+}
+
+export function systemInstallationByManifestId(state: Pick<EngineState, "systemInstallations">, systemId: string): SystemInstallation | undefined {
+  return state.systemInstallations.find((installation) => installation.manifest.id === systemId);
+}
+
+export function systemRuntimeCapabilities(systemId: string): SystemCapability[] {
+  return installedSystems.find((manifest) => manifest.id === systemId)?.capabilities ?? ["data-model"];
+}
+
+export function isBundledSystem(systemId: string): boolean {
+  return installedSystems.some((manifest) => manifest.id === systemId);
+}

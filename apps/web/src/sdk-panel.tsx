@@ -3,7 +3,7 @@ import { ChevronRight, Plus, RefreshCw, RotateCcw, Shield, Swords, Upload, UserP
 import { useState } from "react";
 import { dnd5eSrdArcaneRecoverySelection } from "./actor-sheet-data.js";
 import type { CharacterTemplateInfo, PluginRuntimeInfo, SystemRuntimeInfo } from "./api.js";
-import { formatDateTime, formatNumber, registryHostLabel } from "./sheet-format.js";
+import { formatDateTime, formatNumber } from "./sheet-format.js";
 import { systemRollLabel, type AdvancementOptionInfo } from "./system-actions.js";
 import { AdvancementFlow } from "./advancement-flow.js";
 
@@ -33,20 +33,16 @@ export function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemR
   const marketplaceRiskSamples = props.plugins
     .filter((plugin) => !plugin.trust.installable || plugin.marketplaceReview?.installable === false || plugin.compatibleCore?.satisfied === false || !plugin.trust.signature?.verified || plugin.trust.errors.length > 0)
     .slice(0, 4);
-  const registryHistory = Array.from(registryPlugins.reduce((entries, plugin) => {
-    const registryUrl = plugin.source?.registryUrl ?? "untracked registry";
-    const existing = entries.get(registryUrl) ?? { registryUrl, packageCount: 0, installedCount: 0, warningCount: 0, latestSyncedAt: undefined as string | undefined };
-    const hasWarning = !plugin.trust.installable || plugin.marketplaceReview?.installable === false || plugin.compatibleCore?.satisfied === false || !plugin.trust.signature?.verified || plugin.trust.errors.length > 0;
-    const syncedAt = plugin.source?.syncedAt;
-    entries.set(registryUrl, {
-      registryUrl,
-      packageCount: existing.packageCount + 1,
-      installedCount: existing.installedCount + (plugin.installed ? 1 : 0),
-      warningCount: existing.warningCount + (hasWarning ? 1 : 0),
-      latestSyncedAt: syncedAt && (!existing.latestSyncedAt || Date.parse(syncedAt) > Date.parse(existing.latestSyncedAt)) ? syncedAt : existing.latestSyncedAt
-    });
-    return entries;
-  }, new Map<string, { registryUrl: string; packageCount: number; installedCount: number; warningCount: number; latestSyncedAt?: string }>()).values()).sort((left, right) => registryHostLabel(left.registryUrl).localeCompare(registryHostLabel(right.registryUrl)));
+  const registryHistory = registryPlugins.length > 0
+    ? [{
+        sourceKey: "registry-catalog",
+        sourceLabel: "Registry catalog",
+        packageCount: registryPlugins.length,
+        installedCount: registryPlugins.filter((plugin) => plugin.installed).length,
+        warningCount: registryPlugins.filter((plugin) => !plugin.trust.installable || plugin.marketplaceReview?.installable === false || plugin.compatibleCore?.satisfied === false || !plugin.trust.signature?.verified || plugin.trust.errors.length > 0).length,
+        latestSyncedAt: registryPlugins.map((plugin) => plugin.source?.syncedAt).filter((syncedAt): syncedAt is string => Boolean(syncedAt)).sort((left, right) => Date.parse(right) - Date.parse(left))[0]
+      }]
+    : [];
   const commandCount = props.plugins.reduce((total, plugin) => total + (plugin.chatCommands?.length ?? 0), 0);
   const normalizedPluginSearch = pluginSearch.trim().toLocaleLowerCase();
   const filteredPlugins = props.plugins.filter((plugin) => {
@@ -63,7 +59,6 @@ export function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemR
       plugin.id,
       plugin.version,
       plugin.source?.packageId ?? "",
-      plugin.source?.registryUrl ?? "",
       plugin.compatibleCore?.range ?? "",
       plugin.compatibleCore?.coreVersion ?? "",
       plugin.compatibleCore?.satisfied === false ? "incompatible core blocked" : "compatible core",
@@ -130,8 +125,8 @@ export function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemR
         ) : (
           <div className="asset-pressure-list">
             {registryHistory.map((registry) => (
-              <div className="operator-row tool-call-row" key={`marketplace-registry-${registry.registryUrl}`}>
-                <span>{registryHostLabel(registry.registryUrl)}</span>
+              <div className="operator-row tool-call-row" key={`marketplace-registry-${registry.sourceKey}`}>
+                <span>{registry.sourceLabel}</span>
                 <strong>{formatNumber(registry.packageCount)} packages - {formatNumber(registry.installedCount)} installed - {formatNumber(registry.warningCount)} warnings - last sync {registry.latestSyncedAt ? formatDateTime(registry.latestSyncedAt) : "unknown"}</strong>
               </div>
             ))}
@@ -195,9 +190,6 @@ export function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemR
               <span>Package: {plugin.source?.packageId ?? plugin.id}</span>
               <span>Synced: {plugin.source?.syncedAt ? formatDateTime(plugin.source.syncedAt) : "bundled"}</span>
             </div>
-            {(plugin.source?.registryUrl || plugin.source?.packageUrl) && (
-              <p>{[plugin.source.registryUrl ? `Registry ${plugin.source.registryUrl}` : undefined, plugin.source.packageUrl ? `Package ${plugin.source.packageUrl}` : undefined].filter(Boolean).join(" - ")}</p>
-            )}
             <div className="admin-meta">
               <span>Trust: {plugin.trust.status}</span>
               <span>Policy: {plugin.trust.policy}</span>

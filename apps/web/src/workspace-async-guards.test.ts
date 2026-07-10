@@ -63,4 +63,23 @@ describe("workspace-bound async operations", () => {
     expect(appSource).toContain("setAiAgentStatus(\"Agent ready\");");
     expect(appSource).toContain("if (result === \"sent\") setAiAgentStatus(\"Board capture sent\");");
   });
+
+  it("clears and guards side-loaded lore state across campaign and user switches", () => {
+    expect(appSource).toContain("function clearLoreWorkspaceState()");
+    expect(appSource).toContain("loreRealtimeRefreshPendingRef.current = false;");
+    expect(appSource).toContain('key={`worlds:${campaignId}:${currentUserId}`}');
+    expect(appSource).toContain('key={`handouts:${campaignId}:${currentUserId}`}');
+    expect(appSource).toContain('key={`sessions:${campaignId}:${currentUserId}`}');
+    expect(appSource).toContain('key={`memory:${campaignId}:${currentUserId}`}');
+    expect(appSource).toContain("const loreRequest = { campaignId, userId: currentUserId };");
+    expect(appSource).toContain("workspaceRequestIsCurrent(loreRequest.campaignId, loreRequest.userId)");
+    expect(appSource).toContain("if (workspaceRequestIsCurrent(campaignId, currentUserId)) setWorlds(nextWorlds);");
+    expect(appSource).toContain("if (workspaceRequestIsCurrent(campaignId, currentUserId)) setHandouts(items);");
+  });
+
+  it("coalesces realtime world and handout events into a side-collection reload", () => {
+    expect(appSource).toContain('event.type.startsWith("world.") || event.type.startsWith("handout.")');
+    expect(appSource).toContain("if (loreRealtimeRefreshPendingRef.current)");
+    expect(appSource).toContain("setLoreReloadVersion((version) => version + 1);");
+  });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDieToFormula, diceTraySides, rollHighlight, rollTermHighlight } from "./dice-insights.js";
+import { addDieToFormula, adjustDiceModifier, diceQuickPresets, diceTraySides, rollHighlight, rollTermHighlight } from "./dice-insights.js";
 
 describe("roll highlight", () => {
   it("flags a natural 20 on a d20 term", () => {
@@ -72,5 +72,16 @@ describe("dice tray formula building", () => {
 
   it("exposes the classic polyhedral set", () => {
     expect([...diceTraySides]).toEqual([4, 6, 8, 10, 12, 20, 100]);
+  });
+
+  it("exposes only notation the engine supports as quick presets", () => {
+    expect(diceQuickPresets.map((preset) => preset.formula)).toEqual(["adv", "dis", "4d6dl1", "d%"]);
+  });
+
+  it("adjusts a trailing modifier without growing a chain", () => {
+    expect(adjustDiceModifier("1d20+5", 1)).toBe("1d20+6");
+    expect(adjustDiceModifier("1d20-1", 1)).toBe("1d20");
+    expect(adjustDiceModifier("adv", -1)).toBe("adv-1");
+    expect(adjustDiceModifier("", 1)).toBe("1d20+1");
   });
 });

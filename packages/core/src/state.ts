@@ -1,5 +1,5 @@
 import { createId, nowIso } from "./ids.js";
-import type { Actor, Campaign, CampaignArchive, CampaignMember, DiceMacro, EngineState, JournalEntry, OrganizationMember, Scene, Token, User } from "./types.js";
+import type { Actor, AiMemoryFact, AiMemoryFactStatus, AiMemoryFactType, Campaign, CampaignArchive, CampaignMember, DiceMacro, EngineState, Handout, JournalEntry, OrganizationMember, Scene, Token, User } from "./types.js";
 
 export function emptyState(): EngineState {
   return {
@@ -29,6 +29,7 @@ export function emptyState(): EngineState {
     diceMacros: [],
     audioTracks: [],
     encounters: [],
+    campaignSessions: [],
     combats: [],
     compendia: [],
     proposals: [],
@@ -38,6 +39,7 @@ export function emptyState(): EngineState {
     aiToolCalls: [],
     auditLogs: [],
     permissionGrants: [],
+    systemInstallations: [],
     pluginStorage: [],
     pluginReviews: [],
     contentImports: [],
@@ -242,6 +244,7 @@ export function seedState(): EngineState {
 }
 
 export function makeArchive(state: EngineState, campaignId: string): CampaignArchive {
+  state = normalizeEngineState(state);
   const campaign = state.campaigns.find((item) => item.id === campaignId);
   if (!campaign) throw new Error(`Campaign not found: ${campaignId}`);
   const memberUserIds = new Set(state.members.filter((item) => item.campaignId === campaignId).map((item) => item.userId));
@@ -276,6 +279,7 @@ export function makeArchive(state: EngineState, campaignId: string): CampaignArc
     diceMacros: state.diceMacros.filter((item) => item.campaignId === campaignId),
     audioTracks: state.audioTracks.filter((item) => item.campaignId === campaignId),
     encounters: state.encounters.filter((item) => item.campaignId === campaignId),
+    campaignSessions: state.campaignSessions.filter((item) => item.campaignId === campaignId),
     combats: state.combats.filter((item) => item.campaignId === campaignId),
     compendia: state.compendia,
     proposals: state.proposals.filter((item) => item.campaignId === campaignId),
@@ -304,6 +308,74 @@ export function makeArchive(state: EngineState, campaignId: string): CampaignArc
     },
     data: structuredClone(campaignData)
   };
+}
+
+const aiMemoryFactTypes = new Set<AiMemoryFactType>([
+  "canon_fact",
+  "rumor",
+  "secret",
+  "npc_profile",
+  "location_profile",
+  "faction_profile",
+  "quest_hook",
+  "unresolved_thread",
+  "character_goal",
+  "session_summary",
+  "timeline_event",
+  "retconned_fact",
+  "ai_suggestion"
+]);
+
+const aiMemoryFactStatuses = new Set<AiMemoryFactStatus>(["candidate", "approved", "rejected", "retconned"]);
+
+/** Resolve legacy approval fields into the explicit memory lifecycle. */
+export function aiMemoryFactStatus(fact: AiMemoryFact): AiMemoryFactStatus {
+  if (fact.status && aiMemoryFactStatuses.has(fact.status)) return fact.status;
+  if (fact.retconnedAt || fact.retconnedByUserId) return "retconned";
+  if (fact.rejectedAt || fact.rejectedByUserId) return "rejected";
+  if (fact.approvedAt || fact.approvedByUserId) return "approved";
+  return "candidate";
+}
+
+export function normalizeAiMemoryFact(fact: AiMemoryFact): AiMemoryFact {
+  const status = aiMemoryFactStatus(fact);
+  const confidence = typeof fact.confidence === "number" && Number.isFinite(fact.confidence) ? Math.max(0, Math.min(1, fact.confidence)) : undefined;
+  const type = fact.type && aiMemoryFactTypes.has(fact.type) ? fact.type : status === "retconned" ? "retconned_fact" : "canon_fact";
+  return {
+    ...fact,
+    type,
+    status,
+    sourceIds: Array.isArray(fact.sourceIds) ? [...fact.sourceIds] : [],
+    ...(confidence === undefined ? {} : { confidence })
+  };
+}
+
+export function normalizeHandout(
+  handout: Handout,
+  fallbackUserId = "system"
+): Handout & Required<Pick<Handout, "visibleToUserIds" | "visibleToActorIds" | "tags" | "readByUserIds" | "createdBy" | "updatedBy">> {
+  return {
+    ...handout,
+    assetIds: Array.isArray(handout.assetIds) ? [...handout.assetIds] : [],
+    visibleToUserIds: Array.isArray(handout.visibleToUserIds) ? [...handout.visibleToUserIds] : [],
+    visibleToActorIds: Array.isArray(handout.visibleToActorIds) ? [...handout.visibleToActorIds] : [],
+    tags: Array.isArray(handout.tags) ? [...handout.tags] : [],
+    readByUserIds: Array.isArray(handout.readByUserIds) ? [...handout.readByUserIds] : [],
+    createdBy: handout.createdBy ?? fallbackUserId,
+    updatedBy: handout.updatedBy ?? handout.createdBy ?? fallbackUserId
+  };
+}
+
+/** Additive normalization used by persistence and archive imports. */
+export function normalizeEngineState(input: Partial<EngineState>): EngineState {
+  const state = { ...emptyState(), ...input } as EngineState;
+  for (const key of Object.keys(emptyState()) as Array<keyof EngineState>) {
+    if (!Array.isArray(state[key])) (state[key] as unknown[]) = [];
+  }
+  const ownerByCampaign = new Map(state.campaigns.map((campaign) => [campaign.id, campaign.ownerUserId]));
+  state.handouts = state.handouts.map((handout) => normalizeHandout(handout, ownerByCampaign.get(handout.campaignId)));
+  state.aiMemory = state.aiMemory.map(normalizeAiMemoryFact);
+  return state;
 }
 
 export function createTimestamped<T extends object>(prefix: string, data: T): T & { id: string; createdAt: string; updatedAt: string } {

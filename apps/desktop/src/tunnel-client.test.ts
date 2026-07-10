@@ -1,6 +1,13 @@
 import { Buffer } from "node:buffer";
 import { describe, expect, it } from "vitest";
-import { chunkBufferForTunnel, localRequestHeaders, localWebSocketProtocols, readResponseBodyChunks } from "./tunnel-client.js";
+import {
+  chunkBufferForTunnel,
+  localHttpRequestOptions,
+  localRequestHeaders,
+  localWebSocketProtocols,
+  readResponseBodyChunks,
+  relayHostWebSocketOptions
+} from "./tunnel-client.js";
 
 describe("desktop relay tunnel client", () => {
   it("splits local HTTP response bodies into bounded tunnel frames", () => {
@@ -31,5 +38,20 @@ describe("desktop relay tunnel client", () => {
 
     expect(localWebSocketProtocols(headers)).toEqual(["otte.v1", "otte.auth.ots_test"]);
     expect(localRequestHeaders(headers)).toEqual({ authorization: "Bearer legacy" });
+  });
+
+  it("keeps the relay host token out of the websocket URL", () => {
+    expect(relayHostWebSocketOptions("ott_host_secret")).toEqual({
+      headers: { authorization: "Bearer ott_host_secret" }
+    });
+  });
+
+  it("returns local redirects to the browser instead of following them off origin", () => {
+    expect(localHttpRequestOptions("GET", { accept: "text/html" }, "ignored")).toEqual({
+      method: "GET",
+      headers: { accept: "text/html" },
+      body: undefined,
+      redirect: "manual"
+    });
   });
 });

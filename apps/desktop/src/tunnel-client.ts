@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import WebSocket from "ws";
+import WebSocket, { type ClientOptions } from "ws";
 import { normalizeWebSocketCloseCode, parseTunnelFrameText, serializeTunnelFrame, tunnelFrameSchemaVersion, type TunnelFrame, type TunnelHeaders } from "@open-tabletop/tunnel-protocol";
 
 export interface RelayTunnelSessionOptions {
@@ -101,8 +101,7 @@ export class RelayTunnelSession {
   private async connectHostSocket(table: RelayTableResponse): Promise<void> {
     const socketUrl = new URL(`${normalizeBaseUrl(this.options.relayBaseUrl)}/v1/hosts/${table.slug}`);
     socketUrl.protocol = socketUrl.protocol === "https:" ? "wss:" : "ws:";
-    socketUrl.searchParams.set("token", table.hostToken);
-    const socket = new WebSocket(socketUrl);
+    const socket = new WebSocket(socketUrl, relayHostWebSocketOptions(table.hostToken));
     this.relaySocket = socket;
     await new Promise<void>((resolve, reject) => {
       socket.once("open", () => resolve());
@@ -159,11 +158,10 @@ export class RelayTunnelSession {
     if (!request) return;
     try {
       const body = request.chunks.length > 0 ? Buffer.concat(request.chunks) : undefined;
-      const response = await fetch(new URL(request.path, this.options.localWebBaseUrl), {
-        method: request.method,
-        headers: localRequestHeaders(request.headers),
-        body: request.method === "GET" || request.method === "HEAD" ? undefined : body
-      });
+      const response = await fetch(
+        new URL(request.path, this.options.localWebBaseUrl),
+        localHttpRequestOptions(request.method, request.headers, body)
+      );
       const headers: TunnelHeaders = {};
       response.headers.forEach((value, key) => {
         headers[key.toLowerCase()] = value;
@@ -262,6 +260,10 @@ export class RelayTunnelSession {
   }
 }
 
+export function relayHostWebSocketOptions(hostToken: string): ClientOptions {
+  return { headers: { authorization: `Bearer ${hostToken}` } };
+}
+
 function normalizeBaseUrl(value: string): string {
   return value.replace(/\/+$/, "");
 }
@@ -282,6 +284,15 @@ export function localRequestHeaders(headers: TunnelHeaders): TunnelHeaders {
     clean[lower] = value;
   }
   return clean;
+}
+
+export function localHttpRequestOptions(method: string, headers: TunnelHeaders, body?: BodyInit): RequestInit {
+  return {
+    method,
+    headers: localRequestHeaders(headers),
+    body: method === "GET" || method === "HEAD" ? undefined : body,
+    redirect: "manual"
+  };
 }
 
 export function localWebSocketProtocols(headers: TunnelHeaders): string[] {

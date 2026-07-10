@@ -24,7 +24,8 @@ See `plugins/example-system-generic-fantasy`, `plugins/example-system-stellar-fr
 
 ## System Author Checklist
 
-- Provide `system.manifest.json` with a stable id, semver-like version, display name, and clear compatibility notes.
+- Provide `system.manifest.json` with a lowercase kebab-case id, semantic version, display name, compatible core range, safe package-relative schema/entrypoint paths, least-privilege permissions, and explicit capabilities.
+- Treat manifest metadata as declarative. Registration never grants an external package executable runtime capabilities; the current server admits external packages only with `data-model`, and returns `unsupported_system_capability` for unavailable rules features.
 - Keep actor and item data schemas versioned and tolerant of older records; migration-impact notes should describe any field additions, removals, or default changes.
 - Ship character templates, compendium coverage, condition metadata, encounter threat catalogs, and action/rest/advancement hooks together so the GM-facing System Registry can show capability coverage before activation.
 - Keep legal boundaries explicit: include source/license metadata for reusable rules content and do not bundle proprietary material.
@@ -97,4 +98,4 @@ POST /api/v1/campaigns/camp_public_alpha_ember_vault/systems/generic-fantasy/ins
 POST /api/v1/campaigns/camp_public_alpha_ember_vault/systems/dnd-5e-srd/install
 ```
 
-Both calls require normal GM `campaign.update` permission. The API writes `system.install` audit entries with `actorType: "system"`, then restores the demo campaign to `dnd-5e-srd` so the one-shot remains SRD-scoped.
+Both activation calls require normal GM `campaign.update` permission. The API writes `system.activate` audit entries with `actorType: "user"`, then restores the demo campaign to `dnd-5e-srd` so the one-shot remains SRD-scoped. Registering a new external manifest is a separate server-admin action that also requires an explicit campaign context and writes `system.install`.

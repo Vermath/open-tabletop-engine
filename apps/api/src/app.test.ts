@@ -6,11 +6,11 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { AiProvider, AiProviderEvent, AiProviderRequest } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
-import { createTimestamped, emptyState, isPointInsideVisionPolygon, isPointInsideVisionPolygons, permissionsForRole, type Actor, type AssetStorageRef, type AuditLog, type AudioTrack, type CampaignArchive, type ChatMessage, type Combat, type CombatAction, type DiceMacro, type DiceRoll, type EngineState, type Item, type JournalEntry, type MapAsset, type PasswordResetToken, type PermissionGrant, type PluginReview, type Scene, type Token, type VisionSnapshot } from "@open-tabletop/core";
+import { createTimestamped, emptyState, isPointInsideVisionPolygon, isPointInsideVisionPolygons, permissionsForRole, type Actor, type AssetStorageRef, type AuditLog, type AudioTrack, type CampaignArchive, type ChatMessage, type Combat, type CombatAction, type ContentImportBatch, type DiceMacro, type DiceRoll, type EngineState, type Item, type JournalEntry, type MapAsset, type PasswordResetToken, type PermissionGrant, type PluginReview, type Proposal, type Scene, type Token, type VisionSnapshot, type WorkerJobRecord } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
 import { assetStorageKey, type AssetStorage } from "./asset-storage.js";
 import { buildApp, type ImageAssetGenerationInput, type ImageAssetGenerator } from "./app.js";
-import { loadPluginRegistry, pluginSignatureForPackage } from "./plugin-runtime.js";
+import { loadPluginRegistry, pluginPackageIdentityChecksum, pluginSignatureForPackage } from "./plugin-runtime.js";
 import { installedSystems } from "./registries.js";
 import { SqliteStateStore } from "./sqlite-store.js";
 import { MemoryStateStore } from "./store.js";
@@ -98,8 +98,11 @@ function classifyMcpRouteSurface(method: string, path: string): { tools?: string
     return method === "GET" ? { tools: ["read_campaign"] } : { excluded: "campaign_lifecycle" };
   }
   if (path === "/api/v1/campaigns/{campaignId}/snapshot") return { excluded: "client_state_aggregation" };
-  if (path.endsWith("/members")) return method === "GET" ? { tools: ["read_campaign"] } : { excluded: "campaign_member_admin" };
+  if (path.includes("/members")) return method === "GET" && path.endsWith("/members") ? { tools: ["read_campaign"] } : { excluded: "campaign_member_admin" };
+  if (path.includes("/campaign-sessions/") || path.endsWith("/sessions")) return method === "GET" ? { tools: ["read_campaign_session"] } : { excluded: "campaign_session_preparation" };
+  if (path.endsWith("/search")) return { tools: ["search_campaign"] };
   if (path.endsWith("/invites")) return method === "GET" ? { tools: ["read_campaign"] } : { excluded: "invite_admin" };
+  if (path.includes("/campaigns/{campaignId}/worlds") || path.includes("/worlds/{worldId}")) return method === "GET" ? { tools: ["read_world"] } : { tools: ["create_proposal"] };
   if (path.includes("/fog-presets")) return method === "GET" ? { tools: ["read_fog_preset"] } : { tools: ["draft_fog_preset", "create_proposal"] };
   if (path.includes("/assets/upload")) return { excluded: "binary_asset_upload" };
   if (path.includes("/assets/storage")) return { tools: ["read_asset"] };
@@ -123,13 +126,17 @@ function classifyMcpRouteSurface(method: string, path: string): { tools?: string
   if (path.includes("/campaigns/{campaignId}/actors") || path.includes("/actors/{actorId}")) return method === "GET" ? { tools: ["read_actor"] } : { tools: ["create_proposal", "draft_actor_update", "draft_actor_token_roster"] };
   if (path.includes("/campaigns/{campaignId}/items") || path.includes("/items/{itemId}")) return method === "GET" ? { tools: ["read_actor"] } : { tools: ["create_proposal", "draft_actor_update"] };
   if (path.includes("/campaigns/{campaignId}/journal") || path.includes("/journal/{entryId}")) return method === "GET" ? { tools: ["read_journal"] } : { tools: ["create_proposal", "draft_journal_entry"] };
+  if (path.includes("/campaigns/{campaignId}/handouts") || path.includes("/handouts/{handoutId}")) {
+    if (path.endsWith("/read")) return { excluded: "personal_read_receipt" };
+    return method === "GET" ? { tools: ["read_handout"] } : { tools: ["create_proposal"] };
+  }
   if (path.includes("/chat/export")) return { tools: ["read_chat"] };
   if (path.includes("/chat/messages")) return method === "GET" ? { tools: ["read_chat"] } : method === "POST" ? { tools: ["send_chat_message", "create_proposal"] } : { tools: ["create_proposal"] };
   if (path.includes("/dice/roll")) return { tools: ["roll_dice"] };
   if (path.includes("/rolls")) return { tools: ["read_roll"] };
   if (path.includes("/dice-macros")) return method === "GET" ? { tools: ["read_dice_macro"] } : { tools: ["draft_dice_macro", "create_proposal"] };
   if (path.includes("/campaigns/{campaignId}/audio") || path.includes("/audio/{trackId}")) return { excluded: "audio_soundboard" };
-  if (path.includes("/campaigns/{campaignId}/encounters")) return method === "GET" ? { tools: ["read_encounter"] } : { tools: ["draft_encounter", "create_proposal"] };
+  if (path.includes("/campaigns/{campaignId}/encounters") || path.includes("/encounters/{encounterId}")) return method === "GET" ? { tools: ["read_encounter"] } : { tools: ["draft_encounter", "create_proposal"] };
   if (path.includes("/campaigns/{campaignId}/combats")) return method === "GET" ? { tools: ["read_combat"] } : { excluded: "direct_combat_start" };
   if (path.includes("/combats/{combatId}/audit")) return { tools: ["read_combat"] };
   if (path.includes("/combats/{combatId}/actions")) return { tools: ["use_actor_action", "read_combat"] };
@@ -138,6 +145,7 @@ function classifyMcpRouteSurface(method: string, path: string): { tools?: string
   if (path.includes("/proposals/{proposalId}/approve")) return { excluded: "proposal_approval" };
   if (path.includes("/proposals/{proposalId}/reject")) return { excluded: "proposal_rejection" };
   if (path.includes("/proposals/{proposalId}/apply")) return { tools: ["apply_approved_proposal"] };
+  if (path.includes("/proposals/{proposalId}/revert")) return { excluded: "proposal_revert_approval" };
   if (path.includes("/proposals")) return method === "GET" ? { tools: ["list_proposals", "get_proposal"] } : { tools: ["create_proposal"] };
   if (path.includes("/ai/threads")) return method === "GET" ? { tools: ["read_ai_activity"] } : { excluded: "agent_thread_transport" };
   if (path.includes("/ai/usage") || path.includes("/ai/evaluations") || path.includes("/ai/tool-calls")) return method === "GET" ? { tools: ["read_ai_activity"] } : { excluded: "ai_operations" };
@@ -1319,6 +1327,7 @@ describe("api", () => {
         "JournalEntry",
         "Combat",
         "Proposal",
+        "ProposalRevertGuard",
         "Encounter",
         "AiThread",
         "AiToolCallRetryRequest",
@@ -1335,6 +1344,10 @@ describe("api", () => {
       expect(spec["x-otte-version-policy"]?.basePath).toBe("/api/v1");
       expect(spec["x-otte-error-policy"]?.schema).toBe("ErrorResponse");
       expect(spec["x-otte-idempotency-policy"]?.header).toBe("Idempotency-Key");
+      const idempotencyParameter = spec.paths["/api/v1/campaigns/{campaignId}/scenes"]?.post?.parameters?.find(
+        (parameter) => parameter.name === "Idempotency-Key" && parameter.in === "header"
+      ) as { schema?: { maxLength?: number } } | undefined;
+      expect(idempotencyParameter?.schema?.maxLength).toBe(160);
       expect(spec["x-otte-pagination-policy"]).toMatchObject({ limitParameter: "limit", cursorParameter: "cursor", offsetParameter: "offset" });
       expect(spec["x-otte-rate-limit-policy"]?.statusCode).toBe(429);
       expect(spec.paths["/api/v1/openapi.json"]?.get).toBeDefined();
@@ -1343,6 +1356,11 @@ describe("api", () => {
       expect(spec.paths["/api/v1/campaigns/{campaignId}/scenes"]?.post?.parameters?.some((parameter) => parameter.name === "Idempotency-Key" && parameter.in === "header")).toBe(true);
       expect(spec.paths["/api/v1/admin/storage/backup"]?.post?.parameters?.some((parameter) => parameter.name === "Idempotency-Key" && parameter.in === "header")).toBe(true);
       expect(spec.paths["/api/v1/content-imports/{importId}/apply"]?.post?.responses?.["409"]).toBeDefined();
+      const proposalSchema = spec.components.schemas.Proposal as { properties?: Record<string, unknown> };
+      expect(proposalSchema.properties?.revertGuardsJson).toMatchObject({
+        type: "array",
+        items: { $ref: "#/components/schemas/ProposalRevertGuard" }
+      });
       expect(spec.paths["/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/compendium"]?.post).toBeDefined();
       expect(jsonResponseSchema(spec.paths["/api/v1/health"]?.get)).toMatchObject({ $ref: "#/components/schemas/HealthStatus" });
       expect(jsonRequestSchema(spec.paths["/api/v1/auth/login"]?.post)).toMatchObject({ $ref: "#/components/schemas/LoginRequest" });
@@ -1546,6 +1564,8 @@ describe("api", () => {
       expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/content-imports/preview"]?.post)).toMatchObject({ $ref: "#/components/schemas/ContentImportBatch" });
       expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/export"]?.get)).toMatchObject({ $ref: "#/components/schemas/CampaignArchive" });
       expect(spec.paths["/api/v1/campaigns/{campaignId}/export"]?.get?.parameters?.some((parameter) => parameter.name === "redaction" && parameter.in === "query")).toBe(true);
+      expect(spec.paths["/api/v1/campaigns/{campaignId}/export"]?.get?.parameters?.some((parameter) => parameter.name === "scopeId" && parameter.in === "query")).toBe(true);
+      expect(spec.paths["/api/v1/campaigns/{campaignId}/export"]?.get?.parameters?.some((parameter) => parameter.name === "collections" && parameter.in === "query")).toBe(true);
       expect(jsonRequestSchema(spec.paths["/api/v1/import/campaign"]?.post)).toMatchObject({ $ref: "#/components/schemas/CampaignImportRequest" });
       expect(jsonResponseSchema(spec.paths["/api/v1/import/campaign"]?.post)).toMatchObject({ $ref: "#/components/schemas/CampaignImportResponse" });
 
@@ -1933,6 +1953,190 @@ describe("api", () => {
     }
   });
 
+  it("treats Idempotency-Key as opaque and rejects keys longer than 160 characters", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+    const payload = { name: "Opaque idempotency scene", width: 640, height: 480, gridSize: 40 };
+
+    try {
+      const encoded = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/scenes",
+        headers: { ...authHeaders, "Idempotency-Key": "logical%2Fkey" },
+        payload
+      });
+      const literal = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/scenes",
+        headers: { ...authHeaders, "Idempotency-Key": "logical/key" },
+        payload
+      });
+      expect(encoded.statusCode).toBe(200);
+      expect(literal.statusCode).toBe(200);
+      expect(literal.headers["idempotency-replayed"]).toBeUndefined();
+      expect(literal.json().id).not.toBe(encoded.json().id);
+
+      const prefix = "k".repeat(159);
+      const finalX = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/scenes",
+        headers: { ...authHeaders, "Idempotency-Key": `${prefix}x` },
+        payload
+      });
+      const finalY = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/scenes",
+        headers: { ...authHeaders, "Idempotency-Key": `${prefix}y` },
+        payload
+      });
+      expect(finalX.statusCode).toBe(200);
+      expect(finalY.statusCode).toBe(200);
+      expect(finalY.headers["idempotency-replayed"]).toBeUndefined();
+      expect(finalY.json().id).not.toBe(finalX.json().id);
+
+      const overlong = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/scenes",
+        headers: { ...authHeaders, "Idempotency-Key": "z".repeat(161) },
+        payload: { ...payload, name: "Must not be created" }
+      });
+      expect(overlong.statusCode).toBe(400);
+      expect(overlong.json().message).toContain("160 characters or fewer");
+      expect(store.state.scenes.some((scene) => scene.name === "Must not be created")).toBe(false);
+      expect(store.state.idempotencyRecords.map((record) => record.key)).toEqual(
+        expect.arrayContaining(["logical%2Fkey", "logical/key", `${prefix}x`, `${prefix}y`])
+      );
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("coalesces concurrent requests that use the same idempotency key", async () => {
+    const store = new MemoryStateStore();
+    const assetStorage = new MemoryAssetStorage("idempotent-generation");
+    let generationCount = 0;
+    let signalGenerationStarted!: () => void;
+    let releaseGeneration!: () => void;
+    const generationStarted = new Promise<void>((resolve) => {
+      signalGenerationStarted = resolve;
+    });
+    const generationGate = new Promise<void>((resolve) => {
+      releaseGeneration = resolve;
+    });
+    const imageAssetGenerator: ImageAssetGenerator = {
+      id: "delayed-idempotency-generator",
+      label: "Delayed Idempotency Generator",
+      async generate(input) {
+        generationCount += 1;
+        signalGenerationStarted();
+        await generationGate;
+        return {
+          body: tinyPng,
+          mimeType: `image/${input.outputFormat ?? "png"}`,
+          provider: "test-delayed-idempotency",
+          sourcePrompt: input.prompt
+        };
+      }
+    };
+    const app = await buildApp({ store, assetStorage, imageAssetGenerator });
+
+    try {
+      const request = {
+        method: "POST" as const,
+        url: "/api/v1/campaigns/camp_demo/ai/generate-map-asset",
+        headers: { ...authHeaders, "Idempotency-Key": "concurrent-map-generation" },
+        payload: {
+          prompt: "Create one moonlit forest battle map.",
+          name: "Idempotent Moonlit Forest",
+          sceneId: "scn_vault_entry",
+          outputFormat: "png"
+        }
+      };
+      const leader = app.inject(request);
+      await generationStarted;
+      const conflictingFollower = await app.inject({
+        ...request,
+        payload: { ...request.payload, prompt: "Create a different map with the same key." }
+      });
+      expect(conflictingFollower.statusCode).toBe(409);
+      expect(conflictingFollower.json().message).toContain("already in use for a different request");
+      const follower = app.inject(request);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(generationCount).toBe(1);
+
+      releaseGeneration();
+      const [leaderResponse, followerResponse] = await Promise.all([leader, follower]);
+      expect(leaderResponse.statusCode).toBe(200);
+      expect(followerResponse.statusCode).toBe(200);
+      expect(followerResponse.headers["idempotency-replayed"]).toBe("true");
+      expect(followerResponse.json()).toEqual(leaderResponse.json());
+      expect(generationCount).toBe(1);
+      expect(store.state.proposals.filter((proposal) => proposal.title.includes("Idempotent Moonlit Forest"))).toHaveLength(1);
+      expect(assetStorage.objects.size).toBe(1);
+      expect(store.state.idempotencyRecords).toHaveLength(1);
+    } finally {
+      releaseGeneration();
+      await app.close();
+    }
+  });
+
+  it("releases an in-flight idempotency reservation when the leader fails", async () => {
+    const store = new MemoryStateStore();
+    const assetStorage = new MemoryAssetStorage("idempotent-generation-retry");
+    let generationCount = 0;
+    let signalFirstGeneration!: () => void;
+    let releaseFirstGeneration!: () => void;
+    const firstGenerationStarted = new Promise<void>((resolve) => {
+      signalFirstGeneration = resolve;
+    });
+    const firstGenerationGate = new Promise<void>((resolve) => {
+      releaseFirstGeneration = resolve;
+    });
+    const imageAssetGenerator: ImageAssetGenerator = {
+      id: "retrying-idempotency-generator",
+      label: "Retrying Idempotency Generator",
+      async generate(input) {
+        generationCount += 1;
+        if (generationCount === 1) {
+          signalFirstGeneration();
+          await firstGenerationGate;
+          throw new Error("transient generator failure");
+        }
+        return {
+          body: tinyPng,
+          mimeType: `image/${input.outputFormat ?? "png"}`,
+          provider: "test-retrying-idempotency",
+          sourcePrompt: input.prompt
+        };
+      }
+    };
+    const app = await buildApp({ store, assetStorage, imageAssetGenerator });
+
+    try {
+      const request = {
+        method: "POST" as const,
+        url: "/api/v1/campaigns/camp_demo/ai/generate-map-asset",
+        headers: { ...authHeaders, "Idempotency-Key": "retry-failed-map-generation" },
+        payload: { prompt: "Create a retryable map.", sceneId: "scn_vault_entry", outputFormat: "png" }
+      };
+      const leader = app.inject(request);
+      await firstGenerationStarted;
+      const follower = app.inject(request);
+      releaseFirstGeneration();
+      const [leaderResponse, followerResponse] = await Promise.all([leader, follower]);
+
+      expect(leaderResponse.statusCode).toBe(502);
+      expect(followerResponse.statusCode).toBe(200);
+      expect(followerResponse.headers["idempotency-replayed"]).toBeUndefined();
+      expect(generationCount).toBe(2);
+      expect(store.state.idempotencyRecords).toHaveLength(1);
+      expect(assetStorage.objects.size).toBe(1);
+    } finally {
+      releaseFirstGeneration();
+      await app.close();
+    }
+  });
+
   it("persists idempotency replay records in the mutation save without a duplicate save", async () => {
     class SnapshotStore extends MemoryStateStore {
       saves: EngineState[] = [];
@@ -1982,6 +2186,269 @@ describe("api", () => {
       expect(replay.json().id).toBe(sceneId);
       expect(store.state.scenes.filter((scene) => scene.name === "Single Save Idempotent Scene")).toHaveLength(1);
       expect(store.saves).toHaveLength(1);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("persists SQLite proposal mutations and their replay record atomically before responding", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "otte-idempotency-sqlite-"));
+    const dbPath = join(directory, "state.sqlite");
+    const firstStore = new SqliteStateStore(dbPath);
+    const firstApp = await buildApp({ store: firstStore, rateLimit: { enabled: true, maxRequests: 100, windowMs: 60_000 } });
+    let firstAppOpen = true;
+    let reopenedStore: SqliteStateStore | undefined;
+    let reopenedApp: Awaited<ReturnType<typeof buildApp>> | undefined;
+
+    try {
+      const login = await firstApp.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { email: "gm@example.test" }
+      });
+      expect(login.statusCode).toBe(200);
+      const token = login.json().token as string;
+      const sessionId = login.json().session.id as string;
+      const session = firstStore.state.sessions.find((candidate) => candidate.id === sessionId)!;
+      session.lastSeenAt = "2020-01-01T00:00:00.000Z";
+
+      const scene = firstStore.state.scenes.find((candidate) => candidate.id === "scn_vault_entry")!;
+      const proposal = createTimestamped("prop", {
+        campaignId: "camp_demo",
+        createdByUserId: "usr_demo_gm",
+        createdByType: "ai" as const,
+        title: "Atomic SQLite scene rename",
+        summary: "Apply one scene rename and persist its idempotency replay atomically.",
+        status: "approved" as const,
+        changesJson: [{ entity: "scene" as const, action: "update" as const, id: scene.id, data: { name: "Atomic SQLite scene" } }],
+        diffJson: {},
+        approvalRequired: true,
+        approvedByUserId: "usr_demo_gm"
+      }) satisfies Proposal;
+      firstStore.state.proposals.push(proposal);
+      firstStore.save();
+      firstStore.flush();
+
+      const request = {
+        method: "POST" as const,
+        url: `/api/v1/proposals/${proposal.id}/apply`,
+        headers: { authorization: `Bearer ${token}`, "Idempotency-Key": "sqlite-atomic-proposal-apply" }
+      };
+      const applied = await firstApp.inject(request);
+      expect(applied.statusCode).toBe(200);
+      expect(applied.json()).toEqual(expect.objectContaining({ id: proposal.id, status: "applied" }));
+
+      const durableSnapshot = new SqliteStateStore(dbPath, { seedDemo: false });
+      try {
+        expect(durableSnapshot.state.proposals.find((candidate) => candidate.id === proposal.id)?.status).toBe("applied");
+        expect(durableSnapshot.state.scenes.find((candidate) => candidate.id === scene.id)?.name).toBe("Atomic SQLite scene");
+        expect(durableSnapshot.state.idempotencyRecords).toEqual([
+          expect.objectContaining({
+            key: "sqlite-atomic-proposal-apply",
+            method: "POST",
+            path: `/api/v1/proposals/${proposal.id}/apply`,
+            userId: "usr_demo_gm",
+            statusCode: 200
+          })
+        ]);
+      } finally {
+        durableSnapshot.close();
+      }
+
+      await firstApp.close();
+      firstAppOpen = false;
+      firstStore.close();
+
+      reopenedStore = new SqliteStateStore(dbPath, { seedDemo: false });
+      reopenedApp = await buildApp({ store: reopenedStore });
+      const replay = await reopenedApp.inject(request);
+      expect(replay.statusCode).toBe(200);
+      expect(replay.headers["idempotency-replayed"]).toBe("true");
+      expect(replay.json()).toEqual(applied.json());
+      expect(reopenedStore.state.proposals.find((candidate) => candidate.id === proposal.id)?.status).toBe("applied");
+      expect(reopenedStore.state.scenes.find((candidate) => candidate.id === scene.id)?.name).toBe("Atomic SQLite scene");
+    } finally {
+      if (reopenedApp) await reopenedApp.close();
+      reopenedStore?.close();
+      if (firstAppOpen) await firstApp.close();
+      firstStore.close();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("does not let a production x-user-id header replay another user's cached mutation response", async () => {
+    const previousEnv = snapshotEnv(["NODE_ENV", "OTTE_ALLOW_LEGACY_USER_HEADER"]);
+    process.env.NODE_ENV = "production";
+    process.env.OTTE_ALLOW_LEGACY_USER_HEADER = "true";
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    try {
+      const login = await loginDemoUser(app, store);
+      expect(login.statusCode).toBe(200);
+      const payload = { name: "Bearer-only replay", width: 640, height: 480, gridSize: 40 };
+      const first = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/scenes",
+        headers: {
+          authorization: `Bearer ${login.json().token as string}`,
+          "Idempotency-Key": "bearer-only-scene-create",
+        },
+        payload,
+      });
+      expect(first.statusCode).toBe(200);
+      expect(store.state.idempotencyRecords).toHaveLength(1);
+
+      const forgedReplay = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/scenes",
+        headers: {
+          "x-user-id": "usr_demo_gm",
+          "Idempotency-Key": "bearer-only-scene-create",
+        },
+        payload,
+      });
+
+      expect(forgedReplay.statusCode).toBe(401);
+      expect(forgedReplay.headers["idempotency-replayed"]).toBeUndefined();
+      expect(store.state.scenes.filter((scene) => scene.name === payload.name)).toHaveLength(1);
+    } finally {
+      await app.close();
+      restoreEnv(previousEnv);
+    }
+  });
+
+  it("persists bearer-session read activity for stale-session risk checks", async () => {
+    class SessionActivityStore extends MemoryStateStore {
+      saves = 0;
+
+      override save(): void {
+        this.saves += 1;
+      }
+    }
+
+    const store = new SessionActivityStore();
+    const app = await buildApp({ store });
+    try {
+      const login = await loginDemoUser(app, store);
+      expect(login.statusCode).toBe(200);
+      const session = store.state.sessions.find((item) => item.id === login.json().session.id);
+      expect(session).toBeDefined();
+      session!.lastSeenAt = "2026-01-01T00:00:00.000Z";
+      store.saves = 0;
+
+      const read = await app.inject({
+        method: "GET",
+        url: "/api/v1/auth/session",
+        headers: { authorization: `Bearer ${login.json().token as string}` },
+      });
+
+      expect(read.statusCode).toBe(200);
+      expect(Date.parse(session!.lastSeenAt)).toBeGreaterThan(Date.parse("2026-01-01T00:00:00.000Z"));
+      expect(store.saves).toBe(1);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("never records or replays authentication credentials", async () => {
+    const store = new MemoryStateStore();
+    const resetToken = "opr_idempotency_secret";
+    store.state.passwordResetTokens.push(
+      createTimestamped("reset", {
+        userId: "usr_demo_player",
+        email: "player@example.test",
+        tokenHash: `sha256:${createHash("sha256").update(resetToken).digest("hex")}`,
+        expiresAt: new Date(Date.now() + 60_000).toISOString()
+      }) satisfies PasswordResetToken
+    );
+    const app = await buildApp({ store });
+
+    try {
+      const first = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        headers: { "Idempotency-Key": "login-secret-response" },
+        payload: { email: "player@example.test" }
+      });
+      const second = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        headers: { "Idempotency-Key": "login-secret-response" },
+        payload: { email: "player@example.test" }
+      });
+
+      expect(first.statusCode).toBe(200);
+      expect(second.statusCode).toBe(200);
+      expect(first.json().token).toMatch(/^ots_/);
+      expect(second.json().token).toMatch(/^ots_/);
+      expect(second.json().token).not.toBe(first.json().token);
+      expect(second.headers["idempotency-replayed"]).toBeUndefined();
+
+      const reset = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/password-reset/confirm",
+        headers: { "Idempotency-Key": "password-reset-secret-response" },
+        payload: { token: resetToken, password: "updated player password" }
+      });
+      expect(reset.statusCode).toBe(200);
+      expect(reset.json().token).toMatch(/^ots_/);
+
+      const bearerHeaders = {
+        authorization: `Bearer ${reset.json().token}`,
+        "Idempotency-Key": "mfa-secret-response"
+      };
+      const enrolled = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/mfa/totp/enroll",
+        headers: bearerHeaders,
+        payload: { currentPassword: "updated player password" }
+      });
+      expect(enrolled.statusCode).toBe(200);
+      expect(enrolled.json().secret).toMatch(/^[A-Z2-7]+$/);
+
+      const confirmed = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/mfa/totp/confirm",
+        headers: { ...bearerHeaders, "Idempotency-Key": "mfa-recovery-secret-response" },
+        payload: { code: testTotpCode(enrolled.json().secret as string) }
+      });
+      expect(confirmed.statusCode).toBe(200);
+      expect(confirmed.json().recoveryCodes).toHaveLength(8);
+      expect(store.state.idempotencyRecords).toEqual([]);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("prunes persisted replay records containing raw tokens, password-reset, MFA, or recovery secrets", async () => {
+    const store = new MemoryStateStore();
+    const record = (key: string, responseBody: string) =>
+      createTimestamped("idem", {
+        key,
+        method: "POST",
+        path: "/api/v1/campaigns/camp_demo/scenes",
+        userId: "usr_demo_gm",
+        requestHash: `hash-${key}`,
+        statusCode: 200,
+        contentType: "application/json",
+        responseBody
+      });
+    store.state.idempotencyRecords.push(
+      record("safe", JSON.stringify({ id: "scn_safe" })),
+      record("raw-token", JSON.stringify({ token: "opaque-raw-token" })),
+      record("password-reset", JSON.stringify({ passwordResetToken: "opr_sensitive" })),
+      record("mfa-enrollment", JSON.stringify({ secret: "JBSWY3DPEHPK3PXP", otpauthUrl: "otpauth://totp/example" })),
+      record("recovery-codes", JSON.stringify({ recoveryCodes: ["recover-me"] })),
+      record("capability-url", JSON.stringify({ url: "https://assets.example.test/file?sessionToken=ots_sensitive" })),
+      { ...record("anonymous", JSON.stringify({ id: "anonymous-response" })), userId: undefined },
+      { ...record("excluded-path", JSON.stringify({ id: "auth-response" })), path: "/api/v1/auth/login" }
+    );
+
+    const app = await buildApp({ store });
+    try {
+      expect(store.state.idempotencyRecords).toHaveLength(1);
+      expect(store.state.idempotencyRecords[0]).toMatchObject({ key: "safe", responseBody: JSON.stringify({ id: "scn_safe" }) });
     } finally {
       await app.close();
     }
@@ -2253,10 +2720,13 @@ describe("api", () => {
     store.state.combats.push(combat);
     store.state.auditLogs.push(combatAuditEntry);
     const app = await buildApp({ store });
+    const initialPlugins = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/plugins", headers: { "x-user-id": "usr_demo_gm" } });
+    expect(initialPlugins.statusCode).toBe(200);
+    const initialPluginList = initialPlugins.json() as Array<{ marketplaceReview: { review: PluginReview } }>;
+    store.state.pluginReviews.push(...initialPluginList.map((plugin) => plugin.marketplaceReview.review));
     const expectedPlugins = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/plugins", headers: { "x-user-id": "usr_demo_gm" } });
     expect(expectedPlugins.statusCode).toBe(200);
     const expectedPluginList = expectedPlugins.json() as Array<{ marketplaceReview: { review: PluginReview } }>;
-    store.state.pluginReviews.push(...expectedPluginList.map((plugin) => plugin.marketplaceReview.review));
 
     const gmResponse = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/snapshot", headers: { "x-user-id": "usr_demo_gm" } });
     expect(gmResponse.statusCode).toBe(200);
@@ -2314,7 +2784,7 @@ describe("api", () => {
     expect(player.bundled).toEqual(
       expect.objectContaining({
         assetStorage: expect.objectContaining({ campaignId: "camp_demo" }),
-        audioTracks: expect.arrayContaining([expect.objectContaining({ id: track.id })]),
+        audioTracks: [],
         plugins: expect.any(Array),
         systems: expect.any(Array),
         characterTemplates: expect.any(Array),
@@ -2327,6 +2797,97 @@ describe("api", () => {
     expect(player.bundled).not.toHaveProperty("aiToolCalls");
 
     await app.close();
+  });
+
+  it("supports world, handout, entity, and structured memory lifecycles", async () => {
+    const store = new MemoryStateStore();
+    store.state.users.push(createTimestamped("usr", { id: "usr_lifecycle_guest", displayName: "Lifecycle Guest" }));
+    store.state.organizationMembers.push(createTimestamped("orgmem", { organizationId: "org_demo", userId: "usr_lifecycle_guest", role: "member" as const }));
+    const removableMember = createTimestamped("mem", { campaignId: "camp_demo", userId: "usr_lifecycle_guest", role: "observer" as const });
+    store.state.members.push(removableMember);
+    store.state.permissionGrants.push(createTimestamped("grant", { campaignId: "camp_demo", subjectType: "user" as const, subjectId: "usr_lifecycle_guest", permissions: ["chat.write" as const] }));
+    const app = await buildApp({ store });
+    try {
+      const worldResponse = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/worlds",
+        headers: authHeaders,
+        payload: { name: "Ashen Coast", description: "A shared setting atlas." }
+      });
+      expect(worldResponse.statusCode).toBe(200);
+      const world = worldResponse.json() as { id: string };
+
+      const actorResponse = await app.inject({ method: "PATCH", url: "/api/v1/actors/act_valen", headers: authHeaders, payload: { worldId: world.id } });
+      expect(actorResponse.statusCode).toBe(200);
+      expect(actorResponse.json().worldId).toBe(world.id);
+      expect((await app.inject({ method: "GET", url: "/api/v1/actors/act_valen", headers: authHeaders })).statusCode).toBe(200);
+
+      const journalResponse = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/journal",
+        headers: authHeaders,
+        payload: { worldId: world.id, title: "Valen's Letter", body: "For Valen alone.", visibility: "specific_characters", visibleToActorIds: ["act_valen"] }
+      });
+      expect(journalResponse.statusCode).toBe(200);
+      const playerJournals = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/journal", headers: { "x-user-id": "usr_demo_player" } });
+      expect(playerJournals.json()).toEqual(expect.arrayContaining([expect.objectContaining({ id: journalResponse.json().id })]));
+
+      const handoutResponse = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/handouts",
+        headers: authHeaders,
+        payload: { worldId: world.id, title: "Coastal Cipher", body: "A character-specific clue.", visibility: "specific_characters", visibleToActorIds: ["act_valen"], tags: ["clue"] }
+      });
+      expect(handoutResponse.statusCode).toBe(200);
+      const handoutId = handoutResponse.json().id as string;
+      const playerHandouts = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/handouts", headers: { "x-user-id": "usr_demo_player" } });
+      expect(playerHandouts.json()).toEqual(expect.arrayContaining([expect.objectContaining({ id: handoutId, readByUserIds: [] })]));
+      const markedRead = await app.inject({ method: "POST", url: `/api/v1/handouts/${handoutId}/read`, headers: { "x-user-id": "usr_demo_player" } });
+      expect(markedRead.json().readByUserIds).toContain("usr_demo_player");
+
+      const candidateResponse = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/ai/memory",
+        headers: authHeaders,
+        payload: { worldId: world.id, text: "The lighthouse lens opens the sea gate.", type: "canon_fact", subject: "Sea gate", visibility: "public", confidence: 0.9, source: { type: "journal", id: journalResponse.json().id } }
+      });
+      expect(candidateResponse.statusCode).toBe(200);
+      const candidate = candidateResponse.json() as { id: string };
+      expect(candidateResponse.json()).toMatchObject({ status: "candidate", type: "canon_fact", confidence: 0.9 });
+      const playerCandidates = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/ai/memory", headers: { "x-user-id": "usr_demo_player" } });
+      expect(playerCandidates.json().some((fact: { id: string }) => fact.id === candidate.id)).toBe(false);
+      const approved = await app.inject({ method: "POST", url: `/api/v1/ai/memory/${candidate.id}/approve`, headers: authHeaders });
+      expect(approved.json()).toMatchObject({ status: "approved", approvedByUserId: "usr_demo_gm" });
+      const playerCanon = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/ai/memory", headers: { "x-user-id": "usr_demo_player" } });
+      expect(playerCanon.json()).toEqual(expect.arrayContaining([expect.objectContaining({ id: candidate.id, status: "approved" })]));
+
+      const encounterResponse = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/encounters",
+        headers: authHeaders,
+        payload: { worldId: world.id, name: "Sea Gate Watch", summary: "A lighthouse defense.", tokenIds: ["tok_valen"] }
+      });
+      expect(encounterResponse.statusCode).toBe(200);
+      const encounterId = encounterResponse.json().id as string;
+      expect((await app.inject({ method: "GET", url: `/api/v1/encounters/${encounterId}`, headers: authHeaders })).statusCode).toBe(200);
+      expect((await app.inject({ method: "PATCH", url: `/api/v1/encounters/${encounterId}`, headers: authHeaders, payload: { difficulty: "hard" } })).json().difficulty).toBe("hard");
+      expect((await app.inject({ method: "DELETE", url: `/api/v1/encounters/${encounterId}`, headers: authHeaders })).statusCode).toBe(200);
+
+      const promotedMember = await app.inject({ method: "PATCH", url: `/api/v1/campaigns/camp_demo/members/${removableMember.id}`, headers: authHeaders, payload: { role: "player" } });
+      expect(promotedMember.json()).toMatchObject({ id: removableMember.id, role: "player" });
+      expect((await app.inject({ method: "DELETE", url: `/api/v1/campaigns/camp_demo/members/${removableMember.id}`, headers: authHeaders })).statusCode).toBe(200);
+      expect(store.state.members.some((member) => member.id === removableMember.id)).toBe(false);
+      expect(store.state.permissionGrants.some((grant) => grant.subjectType === "user" && grant.subjectId === removableMember.userId)).toBe(false);
+
+      const deletedWorld = await app.inject({ method: "DELETE", url: `/api/v1/worlds/${world.id}`, headers: authHeaders });
+      expect(deletedWorld.statusCode).toBe(200);
+      expect(deletedWorld.json().detachedRecords).toEqual(expect.objectContaining({ actors: 1, journals: 1, handouts: 1, aiMemory: 1 }));
+      expect(store.state.actors.find((actor) => actor.id === "act_valen")?.worldId).toBeUndefined();
+      expect(store.state.handouts.find((handout) => handout.id === handoutId)?.worldId).toBeUndefined();
+      expect(store.state.auditLogs.some((entry) => entry.action === "world.delete" && entry.targetId === world.id)).toBe(true);
+    } finally {
+      await app.close();
+    }
   });
 
   it("redacts private actor sheets and attached items across actor, snapshot, and system read routes", async () => {
@@ -3042,6 +3603,201 @@ describe("api", () => {
     await app.close();
   });
 
+  it("keeps archive identity server-owned, blocks cross-campaign id collisions, and regenerates copied audio ids", async () => {
+    const store = new MemoryStateStore();
+    const originalGm = structuredClone(store.state.users.find((user) => user.id === "usr_demo_gm")!);
+    const sourceAudio = createTimestamped("audio", {
+      id: "audio_archive_copy_guard",
+      campaignId: "camp_demo",
+      createdBy: "usr_demo_gm",
+      name: "Archive Copy Guard",
+      url: "/audio/archive-copy-guard.mp3",
+      kind: "ambient" as const,
+      loop: true,
+      volume: 0.5,
+      playing: false
+    }) satisfies AudioTrack;
+    store.state.audioTracks.push(sourceAudio);
+    const app = await buildApp({ store });
+    const exported = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/export", headers: authHeaders });
+    expect(exported.statusCode).toBe(200);
+
+    const maliciousCopy = structuredClone(exported.json()) as CampaignArchive;
+    const archivedGm = maliciousCopy.data.users.find((user) => user.id === "usr_demo_gm")!;
+    archivedGm.email = "attacker-controlled@example.test";
+    archivedGm.displayName = "Archive Overwrite";
+    maliciousCopy.data.chat.push(
+      createTimestamped("msg", {
+        id: "msg_archive_forged",
+        campaignId: "camp_demo",
+        userId: "usr_archive_forged",
+        type: "plain" as const,
+        body: "archive-forged-identity-marker",
+        visibility: "whisper" as const,
+        recipientUserIds: ["usr_archive_forged"]
+      })
+    );
+    const forgedToken = maliciousCopy.data.tokens[0]!;
+    forgedToken.ownerUserIds = ["usr_archive_forged"];
+    maliciousCopy.data.auditLogs.push(
+      createTimestamped("audit", {
+        id: "audit_archive_forged",
+        campaignId: "camp_demo",
+        actorUserId: "usr_demo_gm",
+        actorType: "user" as const,
+        action: "archive.forged.audit",
+        targetType: "campaign"
+      })
+    );
+    const copied = await app.inject({
+      method: "POST",
+      url: "/api/v1/import/campaign",
+      headers: { "x-user-id": "usr_demo_player" },
+      payload: { archive: maliciousCopy, regenerateIds: true }
+    });
+    expect(copied.statusCode).toBe(200);
+    expect(store.state.users.find((user) => user.id === "usr_demo_gm")).toMatchObject({
+      email: originalGm.email,
+      displayName: originalGm.displayName
+    });
+    const copiedCampaignId = copied.json().importedCampaignIds[0] as string;
+    expect(copiedCampaignId).not.toBe("camp_demo");
+    expect(store.state.campaigns.find((campaign) => campaign.id === copiedCampaignId)).toMatchObject({ ownerUserId: "usr_demo_player" });
+    expect(store.state.members.find((member) => member.campaignId === copiedCampaignId && member.userId === "usr_demo_player")).toMatchObject({ role: "owner" });
+    expect(store.state.auditLogs).toContainEqual(
+      expect.objectContaining({ campaignId: copiedCampaignId, actorUserId: "usr_demo_player", action: "campaign.import", targetType: "campaign_archive" })
+    );
+    expect(store.state.auditLogs.some((log) => log.action === "archive.forged.audit")).toBe(false);
+    expect(store.state.chat.find((message) => message.campaignId === copiedCampaignId && message.body === "archive-forged-identity-marker")).toMatchObject({
+      userId: "usr_demo_player",
+      recipientUserIds: []
+    });
+    expect(store.state.tokens.find((token) => token.sceneId === store.state.scenes.find((scene) => scene.campaignId === copiedCampaignId)?.id)?.ownerUserIds).not.toContain("usr_archive_forged");
+    const copiedAudio = store.state.audioTracks.find((track) => track.campaignId === copiedCampaignId && track.name === sourceAudio.name);
+    expect(copiedAudio?.id).toBeDefined();
+    expect(copiedAudio?.id).not.toBe(sourceAudio.id);
+    expect(store.state.audioTracks.find((track) => track.id === sourceAudio.id)?.campaignId).toBe("camp_demo");
+
+    const collisionArchive = structuredClone(exported.json()) as CampaignArchive;
+    const collisionData = emptyState();
+    collisionData.campaigns.push({ ...store.state.campaigns.find((campaign) => campaign.id === "camp_demo")!, id: "camp_unowned_collision", ownerUserId: "usr_demo_player" });
+    collisionData.members.push(createTimestamped("mem", { campaignId: "camp_unowned_collision", userId: "usr_demo_player", role: "owner" as const }));
+    collisionData.scenes.push({ ...store.state.scenes.find((scene) => scene.id === "scn_vault_entry")!, campaignId: "camp_unowned_collision" });
+    collisionArchive.manifest = { ...collisionArchive.manifest, campaignId: "camp_unowned_collision", name: "Collision Attempt" };
+    collisionArchive.data = collisionData;
+    collisionArchive.files = [];
+    const blockedCollision = await app.inject({
+      method: "POST",
+      url: "/api/v1/import/campaign",
+      headers: { "x-user-id": "usr_demo_player" },
+      payload: collisionArchive
+    });
+    expect(blockedCollision.statusCode).toBe(403);
+    expect(store.state.campaigns.some((campaign) => campaign.id === "camp_unowned_collision")).toBe(false);
+
+    const tokenInjectionArchive = structuredClone(exported.json()) as CampaignArchive;
+    const tokenInjectionData = emptyState();
+    const victimToken = store.state.tokens.find((token) => token.sceneId === "scn_vault_entry")!;
+    tokenInjectionData.tokens.push({ ...victimToken, id: "tok_unowned_scene_injection", name: "Injected into another campaign" });
+    tokenInjectionArchive.data = tokenInjectionData;
+    tokenInjectionArchive.files = [];
+    const blockedTokenInjection = await app.inject({
+      method: "POST",
+      url: "/api/v1/import/campaign",
+      headers: { "x-user-id": "usr_demo_player" },
+      payload: tokenInjectionArchive
+    });
+    expect(blockedTokenInjection.statusCode).toBe(403);
+    expect(store.state.tokens.some((token) => token.id === "tok_unowned_scene_injection")).toBe(false);
+
+    await app.close();
+  });
+
+  it("exports permission-safe world and selected-collection archive scopes", async () => {
+    const store = new MemoryStateStore();
+    const now = "2026-07-09T00:00:00.000Z";
+    store.state.worlds.push(
+      { id: "world_revealed", campaignId: "camp_demo", name: "Revealed Reach", description: "Known lands", createdAt: now, updatedAt: now },
+      { id: "world_secret", campaignId: "camp_demo", name: "Secret Dominion", description: "Hidden prep", createdAt: now, updatedAt: now }
+    );
+    store.state.scenes.find((scene) => scene.id === "scn_vault_entry")!.worldId = "world_revealed";
+    store.state.actors.find((actor) => actor.id === "act_valen")!.worldId = "world_revealed";
+    store.state.journals.push(
+      createTimestamped("jnl", {
+        id: "jnl_revealed_world",
+        campaignId: "camp_demo",
+        worldId: "world_revealed",
+        title: "Reach Gazetteer",
+        body: "Known roads",
+        visibility: "public" as const,
+        visibleToUserIds: [],
+        visibleToActorIds: [],
+        tags: ["world"],
+        createdBy: "usr_demo_gm",
+        updatedBy: "usr_demo_gm"
+      }),
+      createTimestamped("jnl", {
+        id: "jnl_secret_world",
+        campaignId: "camp_demo",
+        worldId: "world_secret",
+        title: "Secret Dominion Plan",
+        body: "Hidden finale",
+        visibility: "gm_only" as const,
+        visibleToUserIds: [],
+        visibleToActorIds: [],
+        tags: ["secret"],
+        createdBy: "usr_demo_gm",
+        updatedBy: "usr_demo_gm"
+      })
+    );
+    const app = await buildApp({ store });
+
+    const playerExport = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/export", headers: { "x-user-id": "usr_demo_player" } });
+    expect(playerExport.statusCode).toBe(403);
+
+    const worldExport = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/export?scope=world&scopeId=world_revealed",
+      headers: authHeaders
+    });
+    expect(worldExport.statusCode).toBe(200);
+    expect(worldExport.json().manifest).toMatchObject({
+      exportScope: "world",
+      exportScopeId: "world_revealed",
+      assetCount: expect.any(Number),
+      compatibilityNotes: expect.arrayContaining([expect.stringContaining("dependency-closed")])
+    });
+    expect(worldExport.json().data.worlds.map((world: { id: string }) => world.id)).toEqual(["world_revealed"]);
+    expect(worldExport.json().data.scenes.map((scene: { id: string }) => scene.id)).toContain("scn_vault_entry");
+    expect(worldExport.json().data.actors.map((actor: { id: string }) => actor.id)).toContain("act_valen");
+    expect(worldExport.json().data.journals.map((journal: { id: string }) => journal.id)).toContain("jnl_revealed_world");
+    expect(JSON.stringify(worldExport.json())).not.toContain("Secret Dominion");
+    expect(JSON.stringify(worldExport.json())).not.toContain("Hidden finale");
+
+    const selectedExport = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/export?scope=selected_collections&collections=actors,journals",
+      headers: authHeaders
+    });
+    expect(selectedExport.statusCode).toBe(200);
+    expect(selectedExport.json().manifest).toMatchObject({
+      exportScope: "selected_collections",
+      exportCollections: ["actors", "journals"],
+      dependencyWarnings: expect.arrayContaining([expect.stringContaining("worlds records may reference omitted scenes records")])
+    });
+    expect(selectedExport.json().data.campaigns).toHaveLength(1);
+    expect(selectedExport.json().data.actors.length).toBeGreaterThan(0);
+    expect(selectedExport.json().data.journals.length).toBeGreaterThan(0);
+    expect(selectedExport.json().data.scenes).toEqual([]);
+
+    const missingWorld = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/export?scope=world&scopeId=world_missing", headers: authHeaders });
+    expect(missingWorld.statusCode).toBe(404);
+    const unsupportedCollection = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/export?scope=selected_collections&collections=passwordResetTokens", headers: authHeaders });
+    expect(unsupportedCollection.statusCode).toBe(400);
+
+    await app.close();
+  });
+
   it("does not scan chat once per roll when listing campaign rolls", async () => {
     const store = new MemoryStateStore();
     const playerHeaders = { "x-user-id": "usr_demo_player" };
@@ -3389,7 +4145,7 @@ describe("api", () => {
     });
     expect(imported.statusCode).toBe(200);
     const merged = store.state.users.find((user) => user.id === "usr_demo_gm");
-    expect(merged?.displayName).toBe("Imported Demo GM");
+    expect(merged?.displayName).toBe("Demo GM");
     expect(merged?.passwordHash).toBeUndefined();
     expect(merged?.passwordResetRequired).toBe(false);
 
@@ -3538,7 +4294,7 @@ describe("api", () => {
     expect(scenes.statusCode).toBe(200);
     expect(scenes.json().filter((scene: Scene) => scene.active).map((scene: Scene) => scene.id)).toEqual([createdScene.json().id]);
 
-    const reactivatedScene = await app.inject({
+    const rejectedHistoryOverwrite = await app.inject({
       method: "PATCH",
       url: "/api/v1/scenes/scn_vault_entry",
       headers: authHeaders,
@@ -3546,6 +4302,16 @@ describe("api", () => {
         active: true,
         activationHistory: []
       }
+    });
+    expect(rejectedHistoryOverwrite.statusCode).toBe(400);
+    expect(rejectedHistoryOverwrite.json()).toEqual({ error: "bad_request", message: "Scene field is not editable: activationHistory" });
+    expect(store.state.scenes.filter((scene) => scene.active).map((scene) => scene.id)).toEqual([createdScene.json().id]);
+
+    const reactivatedScene = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/scenes/scn_vault_entry",
+      headers: authHeaders,
+      payload: { active: true }
     });
     expect(reactivatedScene.statusCode).toBe(200);
     expect(reactivatedScene.json().activationHistory).toEqual([
@@ -3891,6 +4657,48 @@ describe("api", () => {
     expect(updated.json().createdBy).toBeUndefined();
     expect(store.state.campaigns.map((campaign) => campaign.id)).toContain("camp_demo");
     expect(store.state.campaigns.map((campaign) => campaign.id)).not.toContain("camp_hijacked");
+
+    await app.close();
+  });
+
+  it("rejects immutable scene fields and accepts only validated scene edits", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+    const original = structuredClone(store.state.scenes.find((scene) => scene.id === "scn_vault_entry")!);
+
+    const rejected = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/scenes/scn_vault_entry",
+      headers: authHeaders,
+      payload: {
+        id: "scn_hijacked",
+        campaignId: "camp_other",
+        createdAt: "2000-01-01T00:00:00.000Z",
+        name: "Hijacked Scene"
+      }
+    });
+    expect(rejected.statusCode).toBe(400);
+    expect(rejected.json().message).toContain("Scene field is not editable");
+    expect(store.state.scenes.find((scene) => scene.id === original.id)).toEqual(original);
+
+    const updated = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/scenes/scn_vault_entry",
+      headers: authHeaders,
+      payload: { name: "Vault Entry Secured", width: 1300, metadata: { ...original.metadata, reviewed: true } }
+    });
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json()).toEqual(
+      expect.objectContaining({
+        id: original.id,
+        campaignId: original.campaignId,
+        createdAt: original.createdAt,
+        name: "Vault Entry Secured",
+        width: 1300,
+        metadata: expect.objectContaining({ reviewed: true })
+      })
+    );
+    expect(store.state.scenes.some((scene) => scene.id === "scn_hijacked")).toBe(false);
 
     await app.close();
   });
@@ -8965,7 +9773,7 @@ describe("api", () => {
       payload: { prompt: "A clockwork sentinel", difficulty: "hard" }
     });
     expect(encounter.statusCode).toBe(200);
-    expect(encounter.json().proposal.title).toBe("Encounter Designer Draft");
+    expect(encounter.json().proposal.title).toBe("Encounter: AI Draft Encounter");
 
     const recap = await app.inject({
       method: "POST",
@@ -8982,7 +9790,8 @@ describe("api", () => {
       headers: authHeaders
     });
     expect(memory.statusCode).toBe(200);
-    expect(memory.json()).toHaveLength(1);
+    expect(memory.json().length).toBeGreaterThanOrEqual(2);
+    expect(memory.json()).toEqual(expect.arrayContaining([expect.objectContaining({ status: "candidate" })]));
 
     await app.close();
   });
@@ -9035,11 +9844,52 @@ describe("api", () => {
       id: "item_auth_matrix",
       campaignId: "camp_demo",
       systemId: "generic-fantasy",
-      actorId: "act_valen",
       type: "gear",
       name: "Auth Matrix Item",
       data: {}
     }) satisfies EngineState["items"][number];
+    const authMatrixWorld = createTimestamped("world", {
+      id: "world_auth_matrix",
+      campaignId: "camp_demo",
+      name: "Auth Matrix World",
+      description: "Permission coverage fixture"
+    }) satisfies EngineState["worlds"][number];
+    const authMatrixHandout = createTimestamped("hnd", {
+      id: "hnd_auth_matrix",
+      campaignId: "camp_demo",
+      worldId: authMatrixWorld.id,
+      title: "Auth Matrix Handout",
+      body: "Permission coverage fixture",
+      visibility: "public" as const,
+      visibleToUserIds: [],
+      visibleToActorIds: [],
+      assetIds: [],
+      tags: ["auth-matrix"],
+      readByUserIds: [],
+      createdBy: "usr_demo_gm",
+      updatedBy: "usr_demo_gm"
+    }) satisfies EngineState["handouts"][number];
+    const authMatrixEncounter = createTimestamped("enc", {
+      id: "enc_auth_matrix",
+      campaignId: "camp_demo",
+      worldId: authMatrixWorld.id,
+      name: "Auth Matrix Encounter",
+      summary: "Permission coverage fixture",
+      tokenIds: ["tok_valen"]
+    }) satisfies EngineState["encounters"][number];
+    const authMatrixCampaignSession = createTimestamped("cses", {
+      id: "cses_auth_matrix",
+      campaignId: "camp_demo",
+      status: "planned" as const,
+      title: "Auth Matrix Session",
+      number: 1,
+      agenda: "Permission coverage fixture",
+      notes: "",
+      sceneIds: ["scn_vault_entry"],
+      encounterIds: [authMatrixEncounter.id],
+      createdBy: "usr_demo_gm",
+      updatedBy: "usr_demo_gm"
+    }) satisfies EngineState["campaignSessions"][number];
     const authMatrixChat = createTimestamped("msg", {
       id: "msg_auth_matrix",
       campaignId: "camp_demo",
@@ -9073,6 +9923,7 @@ describe("api", () => {
     const authMatrixCombat = createTimestamped("cmb", {
       id: "cmb_auth_matrix",
       campaignId: "camp_demo",
+      encounterId: authMatrixEncounter.id,
       active: true,
       round: 1,
       turnIndex: 0,
@@ -9204,6 +10055,10 @@ describe("api", () => {
       updatedAt: "2026-05-01T00:00:00.000Z"
     } satisfies Scene;
     store.state.assets.push(authMatrixAsset);
+    store.state.worlds.push(authMatrixWorld);
+    store.state.handouts.push(authMatrixHandout);
+    store.state.encounters.push(authMatrixEncounter);
+    store.state.campaignSessions.push(authMatrixCampaignSession);
     store.state.scenes.push(authMatrixAiEditScene);
     store.state.items.push(authMatrixItem);
     store.state.chat.push(authMatrixChat);
@@ -9265,6 +10120,16 @@ describe("api", () => {
       { method: "GET", url: "/api/v1/campaigns/camp_demo" },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/snapshot" },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/members" },
+      { method: "PATCH", url: "/api/v1/campaigns/camp_demo/members/mem_observer", payload: { role: "player" } },
+      { method: "DELETE", url: "/api/v1/campaigns/camp_demo/members/mem_observer" },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/sessions" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/sessions", payload: { title: "No Auth Session" } },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/search?q=vault" },
+      { method: "GET", url: "/api/v1/campaign-sessions/cses_auth_matrix" },
+      { method: "PATCH", url: "/api/v1/campaign-sessions/cses_auth_matrix", payload: { title: "No Auth Session Rename" } },
+      { method: "DELETE", url: "/api/v1/campaign-sessions/cses_auth_matrix" },
+      { method: "POST", url: "/api/v1/campaign-sessions/cses_auth_matrix/start", payload: { activateSceneId: "scn_vault_entry" } },
+      { method: "POST", url: "/api/v1/campaign-sessions/cses_auth_matrix/complete", payload: { notes: "blocked" } },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/invites" },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/invites", payload: { email: "invite@example.test" } },
       { method: "POST", url: "/api/v1/invites/inv_auth_matrix/revoke" },
@@ -9272,6 +10137,11 @@ describe("api", () => {
       { method: "POST", url: "/api/v1/campaigns/camp_demo/archive", payload: { reason: "missing auth" } },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/restore", payload: { reason: "missing auth" } },
       { method: "DELETE", url: "/api/v1/campaigns/camp_demo" },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/worlds" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/worlds", payload: { name: "No Auth World" } },
+      { method: "GET", url: "/api/v1/worlds/world_auth_matrix" },
+      { method: "PATCH", url: "/api/v1/worlds/world_auth_matrix", payload: { name: "No Auth World Rename" } },
+      { method: "DELETE", url: "/api/v1/worlds/world_auth_matrix" },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/scenes" },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/scenes", payload: { name: "No Auth Scene", width: 640, height: 480, gridSize: 40 } },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/fog-presets" },
@@ -9316,13 +10186,25 @@ describe("api", () => {
       { method: "DELETE", url: "/api/v1/tokens/tok_valen" },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/actors" },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/actors", payload: { name: "No Auth Actor" } },
+      { method: "GET", url: "/api/v1/actors/act_valen" },
       { method: "PATCH", url: "/api/v1/actors/act_valen", payload: { name: "No Auth Actor Rename" } },
+      { method: "DELETE", url: "/api/v1/actors/act_valen" },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/items" },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/items", payload: { name: "No Auth Item", systemId: "generic-fantasy", type: "gear" } },
+      { method: "GET", url: "/api/v1/items/item_auth_matrix" },
       { method: "PATCH", url: "/api/v1/items/item_auth_matrix", payload: { name: "No Auth Item Rename" } },
+      { method: "DELETE", url: "/api/v1/items/item_auth_matrix" },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/journal" },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/journal", payload: { title: "No Auth Entry", body: "blocked" } },
+      { method: "GET", url: "/api/v1/journal/jnl_hook" },
       { method: "PATCH", url: "/api/v1/journal/jnl_hook", payload: { title: "No Auth Journal Rename" } },
+      { method: "DELETE", url: "/api/v1/journal/jnl_hook" },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/handouts" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/handouts", payload: { title: "No Auth Handout" } },
+      { method: "GET", url: "/api/v1/handouts/hnd_auth_matrix" },
+      { method: "PATCH", url: "/api/v1/handouts/hnd_auth_matrix", payload: { title: "No Auth Handout Rename" } },
+      { method: "DELETE", url: "/api/v1/handouts/hnd_auth_matrix" },
+      { method: "POST", url: "/api/v1/handouts/hnd_auth_matrix/read" },
       { method: "POST", url: "/api/v1/dice/roll", payload: { campaignId: "camp_demo", formula: "1d20" } },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/rolls" },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/rolls/roll_auth_matrix/verify" },
@@ -9342,6 +10224,9 @@ describe("api", () => {
       { method: "GET", url: "/api/v1/campaigns/camp_demo/chat/export" },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/encounters" },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/encounters", payload: { name: "No Auth Encounter" } },
+      { method: "GET", url: "/api/v1/encounters/enc_auth_matrix" },
+      { method: "PATCH", url: "/api/v1/encounters/enc_auth_matrix", payload: { name: "No Auth Encounter Rename" } },
+      { method: "DELETE", url: "/api/v1/encounters/enc_auth_matrix" },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/encounter-threats" },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/encounter-plan", payload: { name: "No Auth Encounter Plan" } },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/combats" },
@@ -9358,6 +10243,7 @@ describe("api", () => {
       { method: "POST", url: "/api/v1/proposals/prop_auth_matrix/approve" },
       { method: "POST", url: "/api/v1/proposals/prop_auth_matrix/reject" },
       { method: "POST", url: "/api/v1/proposals/prop_auth_matrix/apply" },
+      { method: "POST", url: "/api/v1/proposals/prop_auth_matrix/revert" },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/content-imports" },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/content-imports/preview", payload: { sourceType: "json", records: [] } },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/content-imports/pdf/ai", headers: { "content-type": "application/pdf" }, payload: Buffer.alloc(0) },
@@ -9374,8 +10260,11 @@ describe("api", () => {
       { method: "POST", url: "/api/v1/campaigns/camp_demo/ai/memory", payload: { text: "blocked" } },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/ai/memory/extract", payload: { text: "blocked" } },
       { method: "POST", url: "/api/v1/ai/memory/aimem_auth_matrix/approve" },
+      { method: "POST", url: "/api/v1/ai/memory/aimem_auth_matrix/reject" },
+      { method: "GET", url: "/api/v1/ai/memory/aimem_auth_matrix" },
+      { method: "PATCH", url: "/api/v1/ai/memory/aimem_auth_matrix", payload: { subject: "blocked" } },
       { method: "DELETE", url: "/api/v1/ai/memory/aimem_auth_matrix" },
-      { method: "POST", url: "/api/v1/campaigns/camp_demo/ai/session-recap", payload: { transcript: "blocked" } },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/ai/session-recap", payload: { sessionId: "cses_auth_matrix", transcript: "blocked" } },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/ai/encounter-design", payload: { prompt: "blocked" } },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/ai/generate-map-asset", payload: { prompt: "blocked" } },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/ai/generate-token-asset", payload: { prompt: "blocked" } },
@@ -9546,6 +10435,7 @@ describe("api", () => {
       ["POST /api/v1/campaigns", "authenticated campaign creation in active workspace"],
       ["POST /api/v1/assets/{assetId}/delivery-url", "read-permitted signed asset delivery"],
       ["POST /api/v1/tokens/{tokenId}/target", "read-permitted personal targeting state"],
+      ["POST /api/v1/handouts/{handoutId}/read", "read-permitted personal handout acknowledgement"],
       ["POST /api/v1/campaigns/{campaignId}/systems/{systemId}/encounter-plan", "read-permitted encounter planning preview"],
       ["POST /api/v1/import/campaign", "authenticated archive import creates or updates scoped campaigns"]
     ]);
@@ -9569,11 +10459,14 @@ describe("api", () => {
       ["GET /api/v1/auth/session", "self-service bearer-session inspection"],
       ["GET /api/v1/auth/mfa", "self-service bearer-session MFA state"],
       ["GET /api/v1/auth/sessions", "self-service bearer-session listing"],
-      ["GET /api/v1/assets/{assetId}/blob", "blob fixture lacks backing local object"]
+      ["GET /api/v1/assets/{assetId}/blob", "blob fixture lacks backing local object"],
+      ["GET /api/v1/journal/{entryId}", "fixture is GM-only and deliberately hidden with not found"]
     ]);
     const observerReadForbiddenRouteKeys = new Map<string, string>([
       ["GET /api/v1/organization/invites", "organization admin invite roster"],
       ["GET /api/v1/campaigns/{campaignId}/invites", "campaign invite roster requires campaign update"],
+      ["GET /api/v1/campaigns/{campaignId}/sessions", "campaign session preparation requires campaign update"],
+      ["GET /api/v1/campaign-sessions/{sessionId}", "campaign session preparation requires campaign update"],
       ["GET /api/v1/campaigns/{campaignId}/fog-presets", "fog presets require token reveal"],
       ["GET /api/v1/scenes/{sceneId}/rendering/diagnostics", "rendering diagnostics require scene update"],
       ["GET /api/v1/scenes/{sceneId}/edits", "scene edit history requires scene update"],
@@ -9583,9 +10476,11 @@ describe("api", () => {
       ["GET /api/v1/campaigns/{campaignId}/ai/usage", "AI usage requires AI proposal permission"],
       ["GET /api/v1/campaigns/{campaignId}/ai/evaluations", "AI evaluations require AI proposal permission"],
       ["GET /api/v1/campaigns/{campaignId}/ai/memory", "AI memory requires AI memory permission"],
+      ["GET /api/v1/ai/memory/{factId}", "AI memory details require AI memory permission"],
       ["GET /api/v1/campaigns/{campaignId}/ai/tool-calls", "AI tool calls require AI proposal permission"],
       ["GET /api/v1/campaigns/{campaignId}/content-imports", "content import roster requires campaign update"],
       ["GET /api/v1/content-imports/{importId}", "content import details require campaign update"],
+      ["GET /api/v1/campaigns/{campaignId}/export", "portable campaign archives require campaign update"],
       ["GET /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/advancement", "actor advancement requires private actor access"],
       ["GET /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/sheet", "actor sheet requires private actor access"],
       ["GET /api/v1/campaigns/{campaignId}/plugins/{pluginId}/storage", "plugin storage requires plugin configure"],
@@ -9876,6 +10771,8 @@ describe("api", () => {
         if (key === "DELETE /api/v1/campaigns/{campaignId}/plugins/{pluginId}/storage/{key}") return -49;
         if (key === "POST /api/v1/campaigns/{campaignId}/plugins/{pluginId}/install") return 30;
         if (key === "POST /api/v1/campaigns/{campaignId}/plugins/{pluginId}/chat-command") return 40;
+        if (key === "POST /api/v1/campaign-sessions/{sessionId}/start") return -20;
+        if (key === "POST /api/v1/campaign-sessions/{sessionId}/complete") return -19;
         if (key === "DELETE /api/v1/campaigns/{campaignId}") return 100;
         if (key === "DELETE /api/v1/scenes/{sceneId}") return 90;
         if (key === "DELETE /api/v1/tokens/{tokenId}") return 80;
@@ -9893,6 +10790,9 @@ describe("api", () => {
       ["PATCH /api/v1/chat/messages/{messageId}/moderation", 400],
       ["POST /api/v1/combats/{combatId}/initiative/roll-npcs", 400],
       ["POST /api/v1/proposals/{proposalId}/apply", 409],
+      ["POST /api/v1/proposals/{proposalId}/revert", 409],
+      ["DELETE /api/v1/campaign-sessions/{sessionId}", 409],
+      ["POST /api/v1/ai/memory/{factId}/reject", 409],
       ["POST /api/v1/campaigns/{campaignId}/content-imports/preview", 400],
       ["POST /api/v1/campaigns/{campaignId}/content-imports/pdf/ai", 400],
       ["POST /api/v1/content-imports/{importId}/apply", 400],
@@ -9902,10 +10802,14 @@ describe("api", () => {
       ["POST /api/v1/campaigns/{campaignId}/ai/generate-token-asset", 502],
       ["POST /api/v1/plugins/install", 400],
       ["POST /api/v1/plugins/registry/sync", 400],
+      ["POST /api/v1/systems/install", 400],
       ["POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/compendium", 404],
-      ["POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/purchase", 400],
+      ["POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/purchase", 404],
       ["POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/conditions", 404],
-      ["DELETE /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/conditions/{conditionId}", 200],
+      ["DELETE /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/conditions/{conditionId}", 404],
+      ["POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/advance", 404],
+      ["POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/rest", 404],
+      ["POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/roll", 404],
       ["POST /api/v1/campaigns/{campaignId}/systems/{systemId}/characters", 404],
       ["POST /api/v1/campaigns/{campaignId}/systems/{systemId}/monsters", 400]
     ]);
@@ -9931,6 +10835,19 @@ describe("api", () => {
     const store = new MemoryStateStore();
     const gm = store.state.users.find((user) => user.id === "usr_demo_gm");
     if (gm) gm.serverAdmin = true;
+    let pluginGrant = store.state.permissionGrants.find(
+      (grant) => grant.subjectType === "plugin" && grant.subjectId === "example-macro-plugin" && grant.campaignId === "camp_demo"
+    );
+    if (!pluginGrant) {
+      pluginGrant = createTimestamped("grant", {
+        subjectType: "plugin" as const,
+        subjectId: "example-macro-plugin",
+        campaignId: "camp_demo",
+        permissions: ["plugin.configure"]
+      }) satisfies PermissionGrant;
+      store.state.permissionGrants.push(pluginGrant);
+    }
+    pluginGrant.permissions = [...new Set([...pluginGrant.permissions, "plugin.configure"])] as PermissionGrant["permissions"];
     store.state.chat.push(
       createTimestamped("msg", {
         id: "msg_malformed_body",
@@ -9943,6 +10860,33 @@ describe("api", () => {
         recipientUserIds: []
       }) satisfies ChatMessage
     );
+    const queuedJob = createTimestamped("job", {
+      type: "asset.storage.cleanup" as const,
+      status: "queued" as const,
+      payload: {},
+      attempts: 0,
+      maxAttempts: 3,
+      queuedAt: new Date().toISOString(),
+      createdByUserId: "usr_demo_gm",
+      updatedByUserId: "usr_demo_gm",
+      logs: []
+    }) satisfies WorkerJobRecord;
+    const runningJob = createTimestamped("job", {
+      type: "asset.storage.cleanup" as const,
+      status: "running" as const,
+      payload: {},
+      attempts: 1,
+      maxAttempts: 3,
+      queuedAt: new Date().toISOString(),
+      startedAt: new Date().toISOString(),
+      leasedBy: "worker-malformed-test",
+      leaseExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+      lastHeartbeatAt: new Date().toISOString(),
+      createdByUserId: "usr_demo_gm",
+      updatedByUserId: "usr_demo_gm",
+      logs: []
+    }) satisfies WorkerJobRecord;
+    store.state.jobs.push(queuedJob, runningJob);
     const app = await buildApp({ store });
     const scene = store.state.scenes.find((item) => item.id === "scn_vault_entry")!;
     const targetToken = store.state.tokens.find((item) => item.id === "tok_valen")!;
@@ -9959,12 +10903,15 @@ describe("api", () => {
       rolls: store.state.rolls.length,
       chat: store.state.chat.length,
       aiEvaluations: store.state.aiEvaluations.length,
-      jobs: store.state.jobs.length
+      aiMemory: JSON.stringify(store.state.aiMemory),
+      aiToolCalls: JSON.stringify(store.state.aiToolCalls),
+      pluginStorage: JSON.stringify(store.state.pluginStorage),
+      jobs: JSON.stringify(store.state.jobs)
     });
     const before = snapshot();
     const malformedRoutes: Array<{
       label: string;
-      method: "PATCH" | "POST";
+      method: "PATCH" | "POST" | "PUT";
       url: string;
       payload: Record<string, unknown>;
       expected: Record<string, unknown>;
@@ -10047,11 +10994,60 @@ describe("api", () => {
         expected: { error: "bad_request", message: "Plugin packagePath is required" }
       },
       {
+        label: "plugin grant permissions",
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/example-macro-plugin/install",
+        payload: { permissions: "chat.write" },
+        expected: { error: "bad_request", message: "Plugin permissions must be an array of strings" }
+      },
+      {
+        label: "plugin storage object",
+        method: "PUT",
+        url: "/api/v1/campaigns/camp_demo/plugins/example-macro-plugin/storage/settings",
+        payload: {},
+        expected: { error: "bad_request", message: "Plugin storage value must be JSON serializable" }
+      },
+      {
+        label: "plugin command arguments",
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/example-macro-plugin/chat-command",
+        payload: { command: "/spark", args: 42 },
+        expected: { error: "bad_request", message: "Plugin command args must be a string" }
+      },
+      {
         label: "ai evaluation thread id",
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/ai/evaluations",
         payload: { threadId: "" },
         expected: { error: "bad_request", message: "threadId is required" }
+      },
+      {
+        label: "ai memory sources",
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/ai/memory",
+        payload: { text: "Malformed memory", sourceIds: "chat-1" },
+        expected: { error: "bad_request", message: "AI memory sourceIds must be an array of strings" }
+      },
+      {
+        label: "ai memory extraction source",
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/ai/memory/extract",
+        payload: { sourceText: 42 },
+        expected: { error: "bad_request", message: "sourceText must be a string" }
+      },
+      {
+        label: "ai stale tool call dry run",
+        method: "POST",
+        url: "/api/v1/admin/ai/tool-calls/stale/fail",
+        payload: { dryRun: "yes" },
+        expected: { error: "bad_request", message: "dryRun must be a boolean" }
+      },
+      {
+        label: "ai tool call retry limit",
+        method: "POST",
+        url: "/api/v1/admin/ai/tool-calls/retry",
+        payload: { limit: 0 },
+        expected: { error: "bad_request", message: "limit must be an integer from 1 to 500" }
       },
       {
         label: "admin job type",
@@ -10066,6 +11062,41 @@ describe("api", () => {
         url: "/api/v1/admin/jobs",
         payload: { type: "asset.storage.cleanup", maxAttempts: 0 },
         expected: { error: "bad_request", message: "maxAttempts must be an integer from 1 to 10" }
+      },
+      {
+        label: "admin job payload",
+        method: "POST",
+        url: "/api/v1/admin/jobs",
+        payload: { type: "asset.storage.cleanup", payload: [] },
+        expected: { error: "bad_request", message: "Job payload must be a JSON object" }
+      },
+      {
+        label: "admin job lease types",
+        method: "POST",
+        url: "/api/v1/admin/jobs/lease",
+        payload: { types: "asset.storage.cleanup" },
+        expected: { error: "bad_request", message: "types must be an array of supported job types" }
+      },
+      {
+        label: "admin job alert force flag",
+        method: "POST",
+        url: "/api/v1/admin/jobs/alerts",
+        payload: { force: "yes" },
+        expected: { error: "bad_request", message: "force must be a boolean" }
+      },
+      {
+        label: "admin job patch is atomic",
+        method: "PATCH",
+        url: `/api/v1/admin/jobs/${queuedJob.id}`,
+        payload: { progress: { percent: 50 }, log: { level: "verbose", message: "invalid" } },
+        expected: { error: "bad_request", message: "Job log level must be info, warning, or error" }
+      },
+      {
+        label: "admin job heartbeat is atomic",
+        method: "POST",
+        url: `/api/v1/admin/jobs/${runningJob.id}/heartbeat`,
+        payload: { workerId: "worker-malformed-test", progress: { percent: 50 }, log: { level: "verbose", message: "invalid" } },
+        expected: { error: "bad_request", message: "Job log level must be info, warning, or error" }
       }
     ];
 
@@ -10118,6 +11149,127 @@ describe("api", () => {
         message: "Proposal change 1 creates a journal id that already exists"
       });
       expect(store.state.proposals.some((proposal) => proposal.title === "Duplicate journal proposal")).toBe(false);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("rejects immutable and lifecycle campaign fields in proposals", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    try {
+      for (const [field, value] of [
+        ["ownerUserId", "usr_demo_player"],
+        ["organizationId", "org_other"]
+      ] as const) {
+        const response = await app.inject({
+          method: "POST",
+          url: "/api/v1/campaigns/camp_demo/proposals",
+          headers: authHeaders,
+          payload: {
+            title: `Forbidden ${field} proposal`,
+            changesJson: [{ entity: "campaign", action: "update", id: "camp_demo", data: { [field]: value } }]
+          }
+        });
+
+        expect(response.statusCode, field).toBe(400);
+        expect(response.json(), field).toMatchObject({
+          error: "bad_request",
+          message: `Proposal change 1 cannot edit immutable or lifecycle campaign field ${field}`
+        });
+      }
+      expect(store.state.proposals.some((proposal) => proposal.title.startsWith("Forbidden "))).toBe(false);
+      expect(store.state.campaigns.find((campaign) => campaign.id === "camp_demo")).toMatchObject({
+        ownerUserId: "usr_demo_gm",
+        organizationId: "org_demo"
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("rechecks entity permissions when applying imported or legacy proposals", async () => {
+    const store = new MemoryStateStore();
+    store.state.permissionGrants.push(
+      createTimestamped("grant", {
+        subjectType: "user" as const,
+        subjectId: "usr_demo_player",
+        campaignId: "camp_demo",
+        permissions: ["ai.applyChanges" as const]
+      }) satisfies PermissionGrant
+    );
+    const proposal = createTimestamped("prop", {
+      campaignId: "camp_demo",
+      createdByUserId: "usr_demo_gm",
+      createdByType: "ai" as const,
+      title: "Legacy scene mutation",
+      summary: "Bypasses proposal creation-time permission checks.",
+      status: "approved" as const,
+      changesJson: [{ entity: "scene" as const, action: "update" as const, id: "scn_vault_entry", data: { name: "Unauthorized scene edit" } }],
+      diffJson: {},
+      approvalRequired: true,
+      approvedByUserId: "usr_demo_gm"
+    }) satisfies Proposal;
+    store.state.proposals.push(proposal);
+    const originalName = store.state.scenes.find((scene) => scene.id === "scn_vault_entry")!.name;
+    const app = await buildApp({ store });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: `/api/v1/proposals/${proposal.id}/apply`,
+        headers: { "x-user-id": "usr_demo_player" }
+      });
+
+      expect(response.statusCode).toBe(403);
+      expect(response.json()).toMatchObject({ error: "forbidden", message: "Missing permission: scene.update" });
+      expect(store.state.scenes.find((scene) => scene.id === "scn_vault_entry")?.name).toBe(originalName);
+      expect(store.state.proposals.find((item) => item.id === proposal.id)?.status).toBe("approved");
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("returns 409 instead of overwriting an intervening edit during proposal revert", async () => {
+    const store = new MemoryStateStore();
+    const actor = store.state.actors.find((item) => item.id === "act_valen")!;
+    const proposal = createTimestamped("prop", {
+      campaignId: actor.campaignId,
+      createdByUserId: "usr_demo_gm",
+      createdByType: "ai" as const,
+      title: "Rename actor",
+      summary: "A reversible actor update.",
+      status: "approved" as const,
+      changesJson: [{ entity: "actor" as const, action: "update" as const, id: actor.id, data: { name: "Proposal actor name" } }],
+      diffJson: {},
+      approvalRequired: true,
+      approvedByUserId: "usr_demo_gm"
+    }) satisfies Proposal;
+    store.state.proposals.push(proposal);
+    const app = await buildApp({ store });
+
+    try {
+      const applied = await app.inject({ method: "POST", url: `/api/v1/proposals/${proposal.id}/apply`, headers: authHeaders });
+      expect(applied.statusCode).toBe(200);
+      expect(applied.json()).toMatchObject({ status: "applied", revertGuardsJson: expect.any(Array) });
+
+      const edited = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/actors/${actor.id}`,
+        headers: authHeaders,
+        payload: { name: "Intervening actor edit" }
+      });
+      expect(edited.statusCode).toBe(200);
+
+      const reverted = await app.inject({ method: "POST", url: `/api/v1/proposals/${proposal.id}/revert`, headers: authHeaders });
+      expect(reverted.statusCode).toBe(409);
+      expect(reverted.json()).toMatchObject({
+        error: "proposal_not_revertible",
+        message: `Proposal revert conflict: actor:${actor.id} changed after the proposal was applied`
+      });
+      expect(store.state.actors.find((item) => item.id === actor.id)?.name).toBe("Intervening actor edit");
+      expect(store.state.proposals.find((item) => item.id === proposal.id)?.status).toBe("applied");
     } finally {
       await app.close();
     }
@@ -22351,6 +23503,201 @@ describe("api", () => {
     }
   });
 
+  it("sanitizes public plugin catalog and campaign DTOs without removing marketplace state", async () => {
+    const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-public-catalog-"));
+    let app: Awaited<ReturnType<typeof buildApp>> | undefined;
+    try {
+      const packageId = "registry-catalog-plugin-1";
+      const pluginId = "registry-catalog-plugin";
+      const registryUrl = "https://registry.sensitive.example.test/catalog.json";
+      const packageUrl = "https://registry.sensitive.example.test/packages/plugin.json";
+      const syncedAt = "2026-07-09T12:00:00.000Z";
+      writeVersionedPluginPackage(pluginRoot, packageId, pluginId, "1.0.0", "Catalog macro");
+      const packagePath = join(pluginRoot, packageId);
+      const manifestPath = join(packagePath, "plugin.manifest.json");
+      const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Record<string, unknown>;
+      manifest.package = {
+        publisher: "Safe Publisher",
+        license: "MIT",
+        homepage: "https://publisher.sensitive.example.test/plugin",
+        repository: "https://source.sensitive.example.test/plugin.git"
+      };
+      manifest.entrypoints = { client: "./client.js", server: "./server.js" };
+      writeFileSync(manifestPath, JSON.stringify(manifest));
+      writeFileSync(join(packagePath, "client.js"), "export const panel = true;");
+      writeFileSync(
+        join(packagePath, "plugin.registry.json"),
+        JSON.stringify({ registryUrl, packageUrl, packageChecksum: "sha256:catalog-package", syncedAt })
+      );
+      writePluginSignature(pluginRoot, packageId, "catalog-signing-key", "catalog-secret");
+
+      const store = new MemoryStateStore();
+      const pluginRegistry = loadPluginRegistry({
+        pluginRoot,
+        trustPolicy: { policy: "require_trusted", keys: { "catalog-signing-key": "catalog-secret" } }
+      });
+      const loadedPlugin = pluginRegistry.find(pluginId)!;
+      expect(loadedPlugin.entrypoints).toEqual({ client: "./client.js", server: "./server.js" });
+      expect(loadedPlugin.package).toEqual(expect.objectContaining({ homepage: expect.any(String), repository: expect.any(String) }));
+      expect(loadedPlugin.source).toEqual(
+        expect.objectContaining({
+          manifestPath: expect.any(String),
+          clientEntrypoint: expect.any(String),
+          serverEntrypoint: expect.any(String),
+          registryUrl,
+          packageUrl
+        })
+      );
+      expect(loadedPlugin.trust.signature).toEqual(expect.objectContaining({ signaturePath: expect.any(String), verified: true }));
+
+      app = await buildApp({ store, pluginRegistry });
+      const initialCampaignCatalog = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/plugins",
+        headers: authHeaders
+      });
+      expect(initialCampaignCatalog.statusCode).toBe(200);
+      const initialPlugin = (initialCampaignCatalog.json() as Array<{ id: string; marketplaceReview: { review: PluginReview } }>).find((plugin) => plugin.id === pluginId)!;
+      store.state.pluginReviews.push({
+        ...initialPlugin.marketplaceReview.review,
+        registryUrl,
+        packageUrl,
+        status: "approved",
+        notes: "Sensitive reviewer notes",
+        reviewedByUserId: "usr_sensitive_reviewer",
+        reviewedAt: "2026-07-09T12:05:00.000Z"
+      } satisfies PluginReview);
+      store.state.auditLogs.push(
+        createTimestamped("audit", {
+          campaignId: "camp_demo",
+          actorUserId: "usr_sensitive_installer",
+          actorType: "user" as const,
+          action: "plugin.install",
+          targetType: "plugin",
+          targetId: pluginId,
+          after: { version: "1.0.0" }
+        }) satisfies AuditLog
+      );
+
+      const forbiddenKeys = new Set([
+        "packagePath",
+        "manifestPath",
+        "clientEntrypoint",
+        "serverEntrypoint",
+        "entrypoints",
+        "registryUrl",
+        "packageUrl",
+        "signaturePath",
+        "homepage",
+        "repository",
+        "notes",
+        "reviewedByUserId",
+        "lastActorUserId"
+      ]);
+      const sensitiveValues = [
+        registryUrl,
+        packageUrl,
+        "publisher.sensitive.example.test",
+        "source.sensitive.example.test",
+        "Sensitive reviewer notes",
+        "usr_sensitive_reviewer",
+        "usr_sensitive_installer"
+      ];
+      const expectSanitizedPluginDto = (value: unknown): void => {
+        const visit = (current: unknown): void => {
+          if (Array.isArray(current)) {
+            current.forEach(visit);
+            return;
+          }
+          if (!current || typeof current !== "object") return;
+          for (const [key, nested] of Object.entries(current as Record<string, unknown>)) {
+            if (forbiddenKeys.has(key)) throw new Error(`Public plugin DTO exposed forbidden key: ${key}`);
+            visit(nested);
+          }
+        };
+        visit(value);
+        const serialized = JSON.stringify(value);
+        for (const sensitiveValue of sensitiveValues) expect(serialized).not.toContain(sensitiveValue);
+      };
+
+      const publicCatalog = await app.inject({ method: "GET", url: "/api/v1/plugins", headers: authHeaders });
+      expect(publicCatalog.statusCode).toBe(200);
+      const publicPlugin = (publicCatalog.json() as Array<Record<string, unknown>>).find((plugin) => plugin.id === pluginId)!;
+      expect(publicPlugin).toEqual(
+        expect.objectContaining({
+          id: pluginId,
+          package: { publisher: "Safe Publisher", license: "MIT" },
+          permissions: ["chat.write"],
+          source: expect.objectContaining({ type: "registry", packageId, sandbox: "vm", syncedAt }),
+          distribution: { availableVersions: ["1.0.0"], latestVersion: "1.0.0" },
+          trust: expect.objectContaining({ status: "trusted", signature: { keyId: "catalog-signing-key", algorithm: "hmac-sha256", verified: true } })
+        })
+      );
+      expectSanitizedPluginDto(publicPlugin);
+
+      const campaignCatalog = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/plugins",
+        headers: authHeaders
+      });
+      expect(campaignCatalog.statusCode).toBe(200);
+      const campaignPlugin = (campaignCatalog.json() as Array<Record<string, unknown>>).find((plugin) => plugin.id === pluginId)!;
+      expect(campaignPlugin).toEqual(
+        expect.objectContaining({
+          id: pluginId,
+          installed: false,
+          marketplaceReview: expect.objectContaining({
+            installable: true,
+            review: expect.objectContaining({ status: "approved", reviewedAt: "2026-07-09T12:05:00.000Z" })
+          }),
+          audit: { installCount: 1, lastInstallAt: expect.any(String), versions: ["1.0.0"] }
+        })
+      );
+      expectSanitizedPluginDto(campaignPlugin);
+
+      const snapshot = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/snapshot",
+        headers: authHeaders
+      });
+      expect(snapshot.statusCode).toBe(200);
+      const bundledPlugin = (snapshot.json().bundled.plugins as Array<Record<string, unknown>>).find((plugin) => plugin.id === pluginId)!;
+      expectSanitizedPluginDto(bundledPlugin);
+
+      const campaignInstall = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/plugins/${pluginId}/install`,
+        headers: authHeaders,
+        payload: { permissions: ["chat.write"] }
+      });
+      expect(campaignInstall.statusCode).toBe(200);
+      expect(campaignInstall.json()).toEqual(
+        expect.objectContaining({
+          plugin: expect.objectContaining({ id: pluginId, installed: true }),
+          grant: expect.objectContaining({ metadata: expect.objectContaining({ trust: expect.objectContaining({ status: "trusted" }) }) })
+        })
+      );
+      expectSanitizedPluginDto(campaignInstall.json());
+
+      const onDemandPackageId = "on-demand-plugin-1";
+      writeVersionedPluginPackage(pluginRoot, onDemandPackageId, "on-demand-plugin", "1.0.0", "On-demand macro");
+      const installedCatalogPackage = await app.inject({
+        method: "POST",
+        url: "/api/v1/plugins/install",
+        headers: authHeaders,
+        payload: { campaignId: "camp_demo", packagePath: join(pluginRoot, onDemandPackageId) }
+      });
+      expect(installedCatalogPackage.statusCode).toBe(200);
+      expect(installedCatalogPackage.json()).toEqual(
+        expect.objectContaining({ id: "on-demand-plugin", source: expect.objectContaining({ packageId: onDemandPackageId, sandbox: "vm" }) })
+      );
+      expectSanitizedPluginDto(installedCatalogPackage.json());
+    } finally {
+      await app?.close();
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
   it("enforces plugin trusted-only install and execution policy", async () => {
     const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-api-"));
     let app: Awaited<ReturnType<typeof buildApp>> | undefined;
@@ -22543,8 +23890,118 @@ describe("api", () => {
       });
       expect(deniedCommand.statusCode).toBe(403);
       expect(deniedCommand.json().message).toContain("rejected by marketplace review");
-      expect(store.state.auditLogs.map((log) => log.action)).toEqual(expect.arrayContaining(["admin.pluginReviews.list", "admin.pluginReview.update", "plugin.install", "plugin.chatCommand"]));
+      expect(store.state.auditLogs.map((log) => log.action)).toEqual(expect.arrayContaining(["admin.pluginReviews.list", "admin.pluginReview.update", "plugin.install", "plugin.chatCommand.proposed"]));
 
+    } finally {
+      await app?.close();
+      restoreEnv(previousEnv);
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("does not execute a same-version plugin package that differs from the installed grant identity", async () => {
+    const previousEnv = snapshotEnv(["OTTE_PLUGIN_REVIEW_POLICY"]);
+    process.env.OTTE_PLUGIN_REVIEW_POLICY = "allow_unreviewed";
+    const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-identity-"));
+    let app: Awaited<ReturnType<typeof buildApp>> | undefined;
+    try {
+      writeVersionedPluginPackage(pluginRoot, "identity-plugin-approved", "identity-plugin", "1.0.0", "Approved implementation");
+      const pluginRegistry = loadPluginRegistry({ pluginRoot });
+      const installedPlugin = pluginRegistry.find("identity-plugin")!;
+      const store = new MemoryStateStore();
+      app = await buildApp({ store, pluginRegistry });
+
+      const install = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/identity-plugin/install",
+        headers: authHeaders,
+        payload: { permissions: ["chat.write"] }
+      });
+      expect(install.statusCode).toBe(200);
+      expect(install.json().grant.metadata).toEqual(
+        expect.objectContaining({
+          packageId: "identity-plugin-approved",
+          version: "1.0.0",
+          checksum: pluginPackageIdentityChecksum(installedPlugin)
+        })
+      );
+
+      writeVersionedPluginPackage(pluginRoot, "identity-plugin-unapproved", "identity-plugin", "1.0.0", "Unapproved duplicate implementation");
+      const duplicate = pluginRegistry.registerPackage("identity-plugin-unapproved");
+      expect(duplicate.source.packageId).toBe("identity-plugin-unapproved");
+      const proposalCount = store.state.proposals.length;
+
+      const command = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/identity-plugin/chat-command",
+        headers: authHeaders,
+        payload: { command: "/version" }
+      });
+      expect(command.statusCode).toBe(403);
+      expect(command.json().message).toContain("package identity no longer matches");
+      expect(store.state.proposals).toHaveLength(proposalCount);
+      expect(store.state.pluginReviews.find((review) => review.packageId === "identity-plugin-unapproved")?.status).toBe("pending");
+    } finally {
+      await app?.close();
+      restoreEnv(previousEnv);
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("creates a new pending review when an installed plugin manifest changes without a runtime change", async () => {
+    const previousEnv = snapshotEnv(["OTTE_PLUGIN_REVIEW_POLICY", "OTTE_ADMIN_USER_IDS"]);
+    process.env.OTTE_PLUGIN_REVIEW_POLICY = "require_approved";
+    process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";
+    const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-manifest-review-"));
+    let app: Awaited<ReturnType<typeof buildApp>> | undefined;
+    try {
+      const packageId = "manifest-review-plugin-1";
+      writeVersionedPluginPackage(pluginRoot, packageId, "manifest-review-plugin", "1.0.0", "Stable runtime implementation");
+      const pluginRegistry = loadPluginRegistry({ pluginRoot });
+      const originalPlugin = pluginRegistry.find("manifest-review-plugin")!;
+      const store = new MemoryStateStore();
+      app = await buildApp({ store, pluginRegistry });
+
+      const reviews = await app.inject({ method: "GET", url: "/api/v1/admin/plugins/reviews", headers: authHeaders });
+      const originalReview = reviews.json().plugins.find((item: { plugin: { id: string } }) => item.plugin.id === "manifest-review-plugin").review;
+      const approved = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/admin/plugins/reviews/${encodeURIComponent(originalReview.reviewKey)}`,
+        headers: authHeaders,
+        payload: { status: "approved" }
+      });
+      expect(approved.statusCode).toBe(200);
+      const install = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/manifest-review-plugin/install",
+        headers: authHeaders,
+        payload: { permissions: ["chat.write"] }
+      });
+      expect(install.statusCode).toBe(200);
+
+      const manifestPath = join(pluginRoot, packageId, "plugin.manifest.json");
+      const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as { permissions: string[] };
+      manifest.permissions.push("token.read");
+      writeFileSync(manifestPath, JSON.stringify(manifest));
+      const changedPlugin = pluginRegistry.registerPackage(packageId);
+      expect(changedPlugin.source.checksum).toBe(originalPlugin.source.checksum);
+      expect(changedPlugin.source.manifestChecksum).not.toBe(originalPlugin.source.manifestChecksum);
+      expect(pluginPackageIdentityChecksum(changedPlugin)).not.toBe(pluginPackageIdentityChecksum(originalPlugin));
+
+      const changedReviews = await app.inject({ method: "GET", url: "/api/v1/admin/plugins/reviews", headers: authHeaders });
+      const changedReview = changedReviews.json().plugins.find((item: { plugin: { id: string } }) => item.plugin.id === "manifest-review-plugin").review;
+      expect(changedReview.reviewKey).not.toBe(originalReview.reviewKey);
+      expect(changedReview.status).toBe("pending");
+      expect(store.state.pluginReviews.find((review) => review.reviewKey === originalReview.reviewKey)?.status).toBe("approved");
+
+      const command = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/manifest-review-plugin/chat-command",
+        headers: authHeaders,
+        payload: { command: "/version" }
+      });
+      expect(command.statusCode).toBe(403);
+      expect(command.json().message).toContain("requires marketplace approval");
     } finally {
       await app?.close();
       restoreEnv(previousEnv);
@@ -22779,7 +24236,7 @@ describe("api", () => {
         metadata: {
           packageId: limitedPlugin.source.packageId,
           version: limitedPlugin.version,
-          checksum: limitedPlugin.source.checksum,
+          checksum: pluginPackageIdentityChecksum(limitedPlugin),
           trust: limitedPlugin.trust
         }
       });
@@ -22794,7 +24251,7 @@ describe("api", () => {
           metadata: {
             packageId: futurePlugin.source.packageId,
             version: futurePlugin.version,
-            checksum: futurePlugin.source.checksum,
+            checksum: pluginPackageIdentityChecksum(futurePlugin),
             trust: futurePlugin.trust
           }
         })
@@ -23650,6 +25107,115 @@ describe("api", () => {
     }
   });
 
+  it("delivers declared plugin events through permission-checked, reviewable bridges", async () => {
+    const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-events-"));
+    const packagePath = join(pluginRoot, "event-bridge-plugin");
+    mkdirSync(packagePath);
+    writeFileSync(
+      join(packagePath, "plugin.manifest.json"),
+      JSON.stringify({
+        id: "event-bridge-plugin",
+        name: "Event Bridge Plugin",
+        version: "1.0.0",
+        compatibleCore: ">=0.1.0",
+        entrypoints: { server: "./server.js" },
+        runtime: { apiVersion: "0.1", sandbox: "vm" },
+        permissions: ["token.read", "chat.write", "ai.proposeChanges"],
+        eventSubscriptions: [{ type: "token.moved", description: "Offer reviewed notes when a token moves" }]
+      })
+    );
+    writeFileSync(
+      join(packagePath, "server.js"),
+      `
+onEvent("token.moved", async (event, context) => {
+  if ("payload" in event) throw new Error("Event payload leaked into the plugin sandbox");
+  await context.postChatMessage({ body: "Reviewed move: " + event.targetId, visibility: "gm_only" });
+  await context.createProposal({
+    title: "Record moved token",
+    summary: "Add a reviewable journal note for the token movement",
+    changes: [{ entity: "journal", action: "create", data: { campaignId: event.campaignId, title: "Token moved", body: event.id } }]
+  });
+});
+`
+    );
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store, pluginRegistry: loadPluginRegistry({ pluginRoot }) });
+    try {
+      const limitedInstall = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/event-bridge-plugin/install",
+        headers: authHeaders,
+        payload: { permissions: ["token.read"] }
+      });
+      expect(limitedInstall.statusCode).toBe(200);
+
+      const baselineProposalCount = store.state.proposals.length;
+      const baselineChatCount = store.state.chat.length;
+      const baselineJournalCount = store.state.journals.length;
+      const firstMove = await app.inject({
+        method: "PATCH",
+        url: "/api/v1/tokens/tok_valen",
+        headers: authHeaders,
+        payload: { x: 470, y: 390 }
+      });
+      expect(firstMove.statusCode).toBe(200);
+      await waitForCondition(
+        () => store.state.auditLogs.some((log) => log.action === "plugin.event.failed" && log.targetId === "event-bridge-plugin"),
+        3000
+      );
+      expect(store.state.proposals).toHaveLength(baselineProposalCount);
+
+      const fullInstall = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/event-bridge-plugin/install",
+        headers: authHeaders,
+        payload: { permissions: ["token.read", "chat.write", "ai.proposeChanges"] }
+      });
+      expect(fullInstall.statusCode).toBe(200);
+      const secondMove = await app.inject({
+        method: "PATCH",
+        url: "/api/v1/tokens/tok_valen",
+        headers: authHeaders,
+        payload: { x: 480, y: 390 }
+      });
+      expect(secondMove.statusCode).toBe(200);
+      await waitForCondition(
+        () => store.state.proposals.filter((proposal) => proposal.sourceId === "event-bridge-plugin" && proposal.status === "pending").length === 2,
+        3000
+      );
+
+      const pluginProposals = store.state.proposals.filter((proposal) => proposal.sourceId === "event-bridge-plugin" && proposal.status === "pending");
+      expect(pluginProposals.map((proposal) => proposal.changesJson[0]?.entity).sort()).toEqual(["chat", "journal"]);
+      expect(pluginProposals).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            createdByType: "plugin",
+            approvalRequired: true,
+            diffJson: expect.objectContaining({
+              pluginId: "event-bridge-plugin",
+              trigger: expect.objectContaining({ kind: "event", eventType: "token.moved" })
+            })
+          })
+        ])
+      );
+      expect(store.state.chat).toHaveLength(baselineChatCount);
+      expect(store.state.journals).toHaveLength(baselineJournalCount);
+
+      for (const proposal of pluginProposals) {
+        const approved = await app.inject({ method: "POST", url: `/api/v1/proposals/${proposal.id}/approve`, headers: authHeaders });
+        expect(approved.statusCode).toBe(200);
+        const applied = await app.inject({ method: "POST", url: `/api/v1/proposals/${proposal.id}/apply`, headers: authHeaders });
+        expect(applied.statusCode).toBe(200);
+      }
+      expect(store.state.chat).toEqual(expect.arrayContaining([expect.objectContaining({ body: "Reviewed move: tok_valen", visibility: "gm_only" })]));
+      expect(store.state.journals).toEqual(expect.arrayContaining([expect.objectContaining({ title: "Token moved", createdBy: "event-bridge-plugin" })]));
+      expect(store.state.auditLogs.map((log) => log.action)).toEqual(expect.arrayContaining(["plugin.event.failed", "plugin.event.proposed", "proposal.apply"]));
+    } finally {
+      await app.close();
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
   it("persists plugin campaign storage through configure-gated APIs and command mutations", async () => {
     const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-storage-"));
     const packagePath = join(pluginRoot, "stateful-plugin");
@@ -23737,6 +25303,11 @@ registerCommand("/state", (input) => {
       expect(firstCommand.statusCode).toBe(200);
       expect(firstCommand.json()).toEqual(expect.objectContaining({ storageMutation: { set: [{ key: "counter", size: 26 }], deleted: [] } }));
       expect(firstCommand.json().chat.body).toBe("State count 1");
+      expect(store.state.pluginStorage.some((entry) => entry.key === "counter")).toBe(false);
+      const firstApproval = await app.inject({ method: "POST", url: `/api/v1/proposals/${firstCommand.json().proposal.id}/approve`, headers: authHeaders });
+      expect(firstApproval.statusCode).toBe(200);
+      const firstApply = await app.inject({ method: "POST", url: `/api/v1/proposals/${firstCommand.json().proposal.id}/apply`, headers: authHeaders });
+      expect(firstApply.statusCode).toBe(200);
 
       const secondCommand = await app.inject({
         method: "POST",
@@ -23746,6 +25317,10 @@ registerCommand("/state", (input) => {
       });
       expect(secondCommand.statusCode).toBe(200);
       expect(secondCommand.json().chat.body).toBe("State count 2");
+      const secondApproval = await app.inject({ method: "POST", url: `/api/v1/proposals/${secondCommand.json().proposal.id}/approve`, headers: authHeaders });
+      expect(secondApproval.statusCode).toBe(200);
+      const secondApply = await app.inject({ method: "POST", url: `/api/v1/proposals/${secondCommand.json().proposal.id}/apply`, headers: authHeaders });
+      expect(secondApply.statusCode).toBe(200);
 
       const storageList = await app.inject({
         method: "GET",
@@ -23776,7 +25351,7 @@ registerCommand("/state", (input) => {
       expect(storageDelete.statusCode).toBe(200);
       expect(storageDelete.json()).toEqual({ deleted: true, key: "settings" });
 
-      expect(store.state.auditLogs.map((log) => log.action)).toEqual(expect.arrayContaining(["plugin.storageSet", "plugin.storageMutation", "plugin.storageDelete"]));
+      expect(store.state.auditLogs.map((log) => log.action)).toEqual(expect.arrayContaining(["plugin.storageSet", "plugin.chatCommand.proposed", "proposal.apply", "plugin.storageDelete"]));
     } finally {
       await app.close();
       rmSync(pluginRoot, { recursive: true, force: true });
@@ -24055,7 +25630,7 @@ registerCommand("/state", (input) => {
     expect(playerContext.publicSummary).toContain("Public Rumor");
     expect(playerContext.publicSummary).not.toContain("Session Hook");
     expect(playerContext.gmSecrets).toEqual([]);
-    expect(provider.requests[0]!.tools.map((tool) => tool.name)).toEqual(["list_proposals", "get_proposal", "read_account", "read_workspace", "read_campaign", "read_ai_activity", "read_dice_macro", "read_systems", "send_chat_message", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_encounter", "read_actor", "roll_dice", "read_compendium"]);
+    expect(provider.requests[0]!.tools.map((tool) => tool.name)).toEqual(["list_proposals", "get_proposal", "read_account", "read_workspace", "read_campaign", "read_world", "read_handout", "search_campaign", "read_ai_activity", "read_dice_macro", "read_systems", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "read_compendium"]);
     expect(store.state.chat.find((message) => message.body === "Captured response 1")?.visibility).toBe("public");
 
     const gmThread = await app.inject({
@@ -24069,7 +25644,7 @@ registerCommand("/state", (input) => {
     const gmContext = provider.requests[1]!.context;
     expect(gmContext.publicSummary).toContain("Session Hook");
     expect(gmContext.gmSecrets.some((secret) => secret.includes("founder's oath"))).toBe(true);
-    expect(provider.requests[1]!.tools.map((tool) => tool.name)).toEqual(["create_proposal", "list_proposals", "get_proposal", "revise_proposal", "apply_approved_proposal", "read_account", "read_workspace", "read_campaign", "read_ai_activity", "read_dice_macro", "draft_dice_macro", "read_fog_preset", "draft_fog_preset", "read_systems", "read_plugins", "read_content_imports", "send_chat_message", "target_token", "draft_ai_edit_layer_apply", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_token_roster", "generate_map_asset", "generate_token_asset", "modify_asset_image", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
+    expect(provider.requests[1]!.tools.map((tool) => tool.name)).toEqual(["create_proposal", "list_proposals", "get_proposal", "revise_proposal", "apply_approved_proposal", "read_account", "read_workspace", "read_campaign", "read_world", "read_handout", "search_campaign", "read_campaign_session", "read_ai_activity", "read_dice_macro", "draft_dice_macro", "read_fog_preset", "draft_fog_preset", "read_systems", "read_plugins", "read_content_imports", "send_chat_message", "target_token", "draft_ai_edit_layer_apply", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_token_roster", "generate_map_asset", "generate_token_asset", "modify_asset_image", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
     expect(store.state.chat.find((message) => message.body === "Captured response 2")?.visibility).toBe("gm_only");
 
     const playerChat = await app.inject({
@@ -24738,6 +26313,515 @@ registerCommand("/state", (input) => {
     await app.close();
   });
 
+  it("keeps other users' account posture out of player-visible MCP roster tools", async () => {
+    const store = new MemoryStateStore();
+    const gm = store.state.users.find((user) => user.id === "usr_demo_gm")!;
+    gm.serverAdmin = true;
+    gm.disabledReason = "private administrator note";
+    gm.passwordResetRequired = true;
+    const app = await buildApp({ store });
+
+    try {
+      for (const [id, name] of ["read_workspace", "read_campaign"].entries()) {
+        const response = await app.inject({
+          method: "POST",
+          url: "/api/v1/mcp",
+          headers: { "x-user-id": "usr_demo_player" },
+          payload: { jsonrpc: "2.0", id, method: "tools/call", params: { campaignId: "camp_demo", name, arguments: {} } },
+        });
+        expect(response.statusCode).toBe(200);
+        const output = JSON.parse(response.json().result.content[0].text) as { members: Array<{ userId: string; user?: Record<string, unknown>; source?: unknown }> };
+        const gmMember = output.members.find((member) => member.userId === gm.id);
+        if (name === "read_workspace") {
+          expect(gmMember).toBeUndefined();
+          expect(output.members.map((member) => member.userId)).toEqual(["usr_demo_player"]);
+        } else {
+          expect(gmMember?.user).toEqual({ id: gm.id, displayName: gm.displayName });
+          expect(gmMember).not.toHaveProperty("source");
+        }
+        const serialized = JSON.stringify(output);
+        expect(serialized).not.toContain(gm.email);
+        expect(serialized).not.toContain("private administrator note");
+        expect(serialized).not.toContain("passwordResetRequired");
+        expect(serialized).not.toContain("serverAdmin");
+      }
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("keeps plugin reviews from other campaigns out of the MCP plugin context", async () => {
+    const store = new MemoryStateStore();
+    const sourceCampaign = store.state.campaigns.find((campaign) => campaign.id === "camp_demo")!;
+    store.state.campaigns.push({ ...sourceCampaign, id: "camp_foreign_plugins", organizationId: "org_foreign_plugins", name: "Foreign Plugin Campaign" });
+    store.state.permissionGrants.push(
+      createTimestamped("grant", {
+        campaignId: "camp_demo",
+        subjectType: "plugin" as const,
+        subjectId: "campaign-plugin",
+        permissions: ["chat.write"]
+      }),
+      createTimestamped("grant", {
+        campaignId: "camp_foreign_plugins",
+        subjectType: "plugin" as const,
+        subjectId: "foreign-plugin",
+        permissions: ["chat.write"]
+      })
+    );
+    store.state.pluginReviews.push(
+      createTimestamped("plugrev", {
+        reviewKey: "review_campaign_plugin",
+        pluginId: "campaign-plugin",
+        packageId: "campaign-plugin-1",
+        version: "1.0.0",
+        checksum: "sha256:campaign",
+        sourceType: "local" as const,
+        status: "approved" as const,
+        reviewedByUserId: "usr_demo_gm",
+        reviewedAt: "2026-07-01T00:00:00.000Z"
+      }) satisfies PluginReview,
+      createTimestamped("plugrev", {
+        reviewKey: "review_foreign_plugin",
+        pluginId: "foreign-plugin",
+        packageId: "foreign-plugin-1",
+        version: "9.9.9",
+        checksum: "sha256:foreign-secret",
+        sourceType: "registry" as const,
+        status: "rejected" as const,
+        reviewedByUserId: "usr_foreign_reviewer",
+        reviewedAt: "2026-07-02T00:00:00.000Z"
+      }) satisfies PluginReview
+    );
+    store.state.pluginStorage.push(
+      createTimestamped("plugstore", {
+        campaignId: "camp_demo",
+        pluginId: "foreign-plugin",
+        key: "orphan-secret",
+        value: { secret: "must not cross campaign plugin scope" },
+        updatedByType: "user" as const,
+        updatedById: "usr_foreign_reviewer"
+      })
+    );
+    const app = await buildApp({ store });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/v1/mcp",
+        headers: authHeaders,
+        payload: { jsonrpc: "2.0", id: 1, method: "tools/call", params: { campaignId: "camp_demo", name: "read_plugins", arguments: { includeStorage: true } } }
+      });
+      expect(response.statusCode).toBe(200);
+      const output = JSON.parse(response.json().result.content[0].text) as { installed: Array<{ pluginId: string }>; reviews: Array<Record<string, unknown>>; storage: Array<{ pluginId: string; key: string }> };
+      expect(output.installed.map((plugin) => plugin.pluginId)).toEqual(["campaign-plugin"]);
+      expect(output.reviews).toEqual([{ pluginId: "campaign-plugin", version: "1.0.0", status: "approved", reviewedAt: "2026-07-01T00:00:00.000Z" }]);
+      expect(output.storage).toEqual([]);
+      expect(JSON.stringify(output)).not.toContain("foreign-plugin");
+      expect(JSON.stringify(output)).not.toContain("usr_demo_gm");
+      expect(JSON.stringify(output)).not.toContain("usr_foreign_reviewer");
+
+      const foreignLookup = await app.inject({
+        method: "POST",
+        url: "/api/v1/mcp",
+        headers: authHeaders,
+        payload: { jsonrpc: "2.0", id: 2, method: "tools/call", params: { campaignId: "camp_demo", name: "read_plugins", arguments: { pluginId: "foreign-plugin" } } }
+      });
+      const foreignOutput = JSON.parse(foreignLookup.json().result.content[0].text) as { error?: string; entity?: string; id?: string };
+      expect(foreignOutput).toEqual(expect.objectContaining({ error: "not_found", entity: "plugin", id: "foreign-plugin" }));
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("keeps soft-deleted content imports out of the MCP import context", async () => {
+    const store = new MemoryStateStore();
+    const deletedImport = createTimestamped("import", {
+      id: "import_deleted_mcp",
+      campaignId: "camp_demo",
+      status: "deleted" as const,
+      source: {
+        sourceType: "manual" as const,
+        sourceName: "Deleted private import",
+        submittedByUserId: "usr_demo_gm",
+        submittedAt: "2026-07-01T00:00:00.000Z",
+        license: { name: "Private home game", usage: "private_home_game" as const }
+      },
+      entities: [],
+      selectedEntityIds: [],
+      appliedRecords: [],
+      deletedAt: "2026-07-02T00:00:00.000Z",
+      deletedByUserId: "usr_demo_gm"
+    }) satisfies ContentImportBatch;
+    store.state.contentImports.push(deletedImport);
+    const app = await buildApp({ store });
+
+    try {
+      const call = async (id: number, argumentsValue: Record<string, unknown>) => {
+        const response = await app.inject({
+          method: "POST",
+          url: "/api/v1/mcp",
+          headers: authHeaders,
+          payload: { jsonrpc: "2.0", id, method: "tools/call", params: { campaignId: "camp_demo", name: "read_content_imports", arguments: argumentsValue } }
+        });
+        expect(response.statusCode).toBe(200);
+        return JSON.parse(response.json().result.content[0].text) as Record<string, unknown>;
+      };
+
+      const listed = await call(1, {});
+      expect(listed.count).toBe(0);
+      expect(JSON.stringify(listed)).not.toContain(deletedImport.id);
+      expect(await call(2, { importId: deletedImport.id })).toEqual(
+        expect.objectContaining({ error: "not_found", entity: "contentImport", id: deletedImport.id })
+      );
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("keeps GM prep inventory out of the player MCP campaign summary", async () => {
+    const store = new MemoryStateStore();
+    store.state.scenes.push(
+      createTimestamped("scn", {
+        id: "scn_private_ai_edit",
+        campaignId: "camp_demo",
+        name: "Secret finale edit layer",
+        width: 800,
+        height: 600,
+        gridType: "square" as const,
+        gridSize: 50,
+        folder: "ai/edits",
+        active: false,
+        sortOrder: 99,
+        fog: [],
+        fogHistory: [],
+        walls: [],
+        lights: [],
+        annotations: [],
+        metadata: { targetSceneId: "scn_secret_finale" },
+      }),
+    );
+    const app = await buildApp({ store });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/v1/mcp",
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { jsonrpc: "2.0", id: 1, method: "tools/call", params: { campaignId: "camp_demo", name: "read_campaign", arguments: {} } },
+      });
+      expect(response.statusCode).toBe(200);
+      const output = JSON.parse(response.json().result.content[0].text) as { counts: Record<string, number>; aiEditLayers: unknown[] };
+      expect(output.aiEditLayers).toEqual([]);
+      expect(output.counts.scenes).toBe(1);
+      expect(output.counts).not.toHaveProperty("actors");
+      expect(output.counts).not.toHaveProperty("encounters");
+      expect(JSON.stringify(output)).not.toContain("Secret finale edit layer");
+      expect(JSON.stringify(output)).not.toContain("scn_secret_finale");
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("matches REST visibility for player MCP scenes, tokens, assets, encounters, and actor-targeted journals", async () => {
+    const store = new MemoryStateStore();
+    const activeScene = store.state.scenes.find((scene) => scene.id === "scn_vault_entry")!;
+    const playerActor = store.state.actors.find((actor) => actor.id === "act_valen")!;
+    playerActor.ownerUserId = "usr_demo_player";
+    const secretAsset = createTimestamped("asset", {
+      id: "asset_secret_mcp_prep",
+      campaignId: "camp_demo",
+      name: "Secret MCP Prep Map",
+      url: "https://secret.example.test/prep-map.png",
+      mimeType: "image/png",
+      sizeBytes: 128,
+      checksum: "sha256:secret-mcp-prep"
+    }) satisfies MapAsset;
+    const secretScene: Scene = {
+      ...activeScene,
+      id: "scn_secret_mcp_prep",
+      name: "Secret MCP Prep Scene",
+      active: false,
+      backgroundAssetId: secretAsset.id,
+      fog: [{ id: "fog_secret_mcp", x: 100, y: 100, radius: 50, hidden: false }],
+      fogHistory: [],
+      walls: [{ id: "wall_secret_mcp", x1: 0, y1: 0, x2: 100, y2: 100, blocksVision: true }],
+      lights: [{ id: "light_secret_mcp", x: 50, y: 50, radius: 30, color: "#ffffff" }],
+      annotations: [],
+      createdAt: "2026-07-01T00:00:00.000Z",
+      updatedAt: "2026-07-01T00:00:00.000Z"
+    };
+    const secretToken: Token = {
+      ...store.state.tokens.find((token) => token.id === "tok_valen")!,
+      id: "tok_secret_mcp_prep",
+      sceneId: secretScene.id,
+      name: "Secret MCP Prep Token",
+      imageAssetId: secretAsset.id,
+      hidden: false,
+      createdAt: "2026-07-01T00:00:00.000Z",
+      updatedAt: "2026-07-01T00:00:00.000Z"
+    };
+    const secretEncounter = createTimestamped("enc", {
+      id: "enc_secret_mcp_prep",
+      campaignId: "camp_demo",
+      name: "Secret MCP Prep Encounter",
+      summary: "Unrevealed final ambush",
+      tokenIds: [secretToken.id],
+      difficulty: "deadly"
+    });
+    const actorJournal = createTimestamped("journal", {
+      id: "journal_player_actor_secret",
+      campaignId: "camp_demo",
+      title: "Valen's Sealed Letter",
+      body: "Only Valen's owner should see this actor-targeted entry.",
+      visibility: "specific_characters" as const,
+      visibleToUserIds: [],
+      visibleToActorIds: [playerActor.id],
+      tags: ["actor-visible"],
+      createdBy: "usr_demo_gm",
+      updatedBy: "usr_demo_gm"
+    }) satisfies JournalEntry;
+    const playerVisibleCombat = createTimestamped("combat", {
+      id: "combat_player_mcp_read",
+      campaignId: "camp_demo",
+      active: true,
+      round: 2,
+      turnIndex: 0,
+      combatants: [{ id: "cmb_player_mcp", tokenId: "tok_valen", actorId: playerActor.id, name: "Valen", initiative: 17, defeated: false }]
+    }) satisfies Combat;
+    const readableWorld = createTimestamped("world", {
+      id: "world_player_mcp_read",
+      campaignId: "camp_demo",
+      name: "Player MCP World",
+      description: "A world visible through the dedicated MCP reader."
+    }) satisfies EngineState["worlds"][number];
+    const actorHandout = createTimestamped("hnd", {
+      id: "handout_player_actor_mcp",
+      campaignId: "camp_demo",
+      worldId: readableWorld.id,
+      title: "Valen's MCP Handout",
+      body: "A character-targeted handout visible to Valen's owner.",
+      visibility: "specific_characters" as const,
+      visibleToUserIds: [],
+      visibleToActorIds: [playerActor.id],
+      assetIds: [],
+      tags: ["actor-visible"],
+      readByUserIds: [],
+      createdBy: "usr_demo_gm",
+      updatedBy: "usr_demo_gm"
+    }) satisfies EngineState["handouts"][number];
+    const campaignSession = createTimestamped("cses", {
+      id: "session_mcp_read",
+      campaignId: "camp_demo",
+      status: "planned" as const,
+      title: "MCP Planning Session",
+      number: 7,
+      agenda: "Verify dedicated read tools",
+      notes: "GM-only campaign preparation",
+      sceneIds: [activeScene.id],
+      encounterIds: [],
+      createdBy: "usr_demo_gm",
+      updatedBy: "usr_demo_gm"
+    }) satisfies EngineState["campaignSessions"][number];
+    store.state.assets.push(secretAsset);
+    store.state.scenes.push(secretScene);
+    store.state.tokens.push(secretToken);
+    store.state.encounters.push(secretEncounter);
+    store.state.journals.push(actorJournal);
+    store.state.combats.push(playerVisibleCombat);
+    store.state.worlds.push(readableWorld);
+    store.state.handouts.push(actorHandout);
+    store.state.campaignSessions.push(campaignSession);
+    const app = await buildApp({ store });
+
+    try {
+      const callTool = async (id: number, name: string, args: Record<string, unknown>) => {
+        const response = await app.inject({
+          method: "POST",
+          url: "/api/v1/mcp",
+          headers: { "x-user-id": "usr_demo_player" },
+          payload: { jsonrpc: "2.0", id, method: "tools/call", params: { campaignId: "camp_demo", name, arguments: args } }
+        });
+        expect(response.statusCode).toBe(200);
+        return JSON.parse(response.json().result.content[0].text) as Record<string, unknown>;
+      };
+
+      for (const [index, [name, args]] of [
+        ["read_scene", { sceneId: secretScene.id }],
+        ["read_board_state", { sceneId: secretScene.id }],
+        ["capture_board_view", { sceneId: secretScene.id }],
+        ["read_token", { tokenId: secretToken.id }],
+        ["read_asset", { assetId: secretAsset.id }],
+        ["read_encounter", { encounterId: secretEncounter.id }]
+      ].entries()) {
+        expect(await callTool(index + 1, name as string, args as Record<string, unknown>)).toEqual(
+          expect.objectContaining({ error: "not_found" })
+        );
+      }
+
+      const journal = await callTool(20, "read_journal", {});
+      expect((journal.entries as Array<{ id: string }>).map((entry) => entry.id)).toContain(actorJournal.id);
+      const combat = await callTool(25, "read_combat", { combatId: playerVisibleCombat.id });
+      expect(combat).toEqual(expect.objectContaining({ count: 1 }));
+      expect((combat.combats as Array<{ id: string }>)[0]?.id).toBe(playerVisibleCombat.id);
+      const world = await callTool(26, "read_world", { worldId: readableWorld.id });
+      expect((world.worlds as Array<{ id: string }>)[0]?.id).toBe(readableWorld.id);
+      const handout = await callTool(27, "read_handout", { handoutId: actorHandout.id });
+      expect((handout.handouts as Array<{ id: string }>)[0]?.id).toBe(actorHandout.id);
+      const search = await callTool(28, "search_campaign", { query: "Valen's", types: ["journal", "handout"] });
+      expect((search.results as Array<{ id: string }>).map((result) => result.id)).toEqual(expect.arrayContaining([actorJournal.id, actorHandout.id]));
+      const sessionResponse = await app.inject({
+        method: "POST",
+        url: "/api/v1/mcp",
+        headers: authHeaders,
+        payload: { jsonrpc: "2.0", id: 29, method: "tools/call", params: { campaignId: "camp_demo", name: "read_campaign_session", arguments: { sessionId: campaignSession.id } } }
+      });
+      const sessionOutput = JSON.parse(sessionResponse.json().result.content[0].text) as { sessions: Array<{ id: string }> };
+      expect(sessionOutput.sessions[0]?.id).toBe(campaignSession.id);
+      const serialized = JSON.stringify(await callTool(21, "read_scene", {})) + JSON.stringify(await callTool(22, "read_token", {})) + JSON.stringify(await callTool(23, "read_asset", {})) + JSON.stringify(await callTool(24, "read_encounter", {}));
+      expect(serialized).not.toContain("Secret MCP Prep");
+      expect(serialized).not.toContain("Unrevealed final ambush");
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("does not expose worlds through REST or MCP search without world.read", async () => {
+    const store = new MemoryStateStore();
+    const playerMember = store.state.members.find((member) => member.campaignId === "camp_demo" && member.userId === "usr_demo_player")!;
+    playerMember.role = "ai_assistant";
+    store.state.permissionGrants.push(
+      createTimestamped("grant", {
+        campaignId: "camp_demo",
+        subjectType: "user" as const,
+        subjectId: "usr_demo_player",
+        permissions: ["campaign.read" as const]
+      })
+    );
+    const restrictedWorld = createTimestamped("world", {
+      id: "world_search_permission_regression",
+      campaignId: "camp_demo",
+      name: "Restricted Astral Vault",
+      description: "A world description hidden from this campaign-only member."
+    });
+    store.state.worlds.push(restrictedWorld);
+    const app = await buildApp({ store });
+    const headers = { "x-user-id": "usr_demo_player" };
+
+    try {
+      const restSearch = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/search?q=Restricted%20Astral&types=world",
+        headers
+      });
+      expect(restSearch.statusCode).toBe(200);
+      expect(restSearch.json()).toEqual([]);
+
+      const restScopedSearch = await app.inject({
+        method: "GET",
+        url: `/api/v1/campaigns/camp_demo/search?q=anything&types=handout&worldId=${restrictedWorld.id}`,
+        headers
+      });
+      expect(restScopedSearch.statusCode).toBe(404);
+
+      const listed = await app.inject({
+        method: "POST",
+        url: "/api/v1/mcp",
+        headers,
+        payload: { jsonrpc: "2.0", id: 1, method: "tools/list", params: { campaignId: "camp_demo" } }
+      });
+      const toolNames = (listed.json().result.tools as Array<{ name: string }>).map((tool) => tool.name);
+      expect(toolNames).toContain("search_campaign");
+      expect(toolNames).not.toContain("read_world");
+
+      const mcpSearch = await app.inject({
+        method: "POST",
+        url: "/api/v1/mcp",
+        headers,
+        payload: {
+          jsonrpc: "2.0",
+          id: 2,
+          method: "tools/call",
+          params: { campaignId: "camp_demo", name: "search_campaign", arguments: { query: "Restricted Astral", types: ["world"] } }
+        }
+      });
+      const mcpSearchOutput = JSON.parse(mcpSearch.json().result.content[0].text) as { results: unknown[] };
+      expect(mcpSearchOutput.results).toEqual([]);
+
+      const mcpScopedSearch = await app.inject({
+        method: "POST",
+        url: "/api/v1/mcp",
+        headers,
+        payload: {
+          jsonrpc: "2.0",
+          id: 3,
+          method: "tools/call",
+          params: {
+            campaignId: "camp_demo",
+            name: "search_campaign",
+            arguments: { query: "anything", types: ["handout"], worldId: restrictedWorld.id }
+          }
+        }
+      });
+      const mcpScopedOutput = JSON.parse(mcpScopedSearch.json().result.content[0].text) as Record<string, unknown>;
+      expect(mcpScopedOutput).toEqual(expect.objectContaining({ error: "not_found", entity: "world", id: restrictedWorld.id }));
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("keeps other users' AI thread activity out of the player MCP context", async () => {
+    const store = new MemoryStateStore();
+    const gmThread = createTimestamped("ait", {
+      id: "ait_private_gm_activity",
+      campaignId: "camp_demo",
+      userId: "usr_demo_gm",
+      provider: "test",
+      title: "Secret GM planning thread",
+      status: "failed" as const,
+      providerError: "private provider failure detail",
+    });
+    const playerThread = createTimestamped("ait", {
+      id: "ait_player_activity",
+      campaignId: "camp_demo",
+      userId: "usr_demo_player",
+      provider: "test",
+      title: "Player thread",
+      status: "completed" as const,
+    });
+    store.state.aiThreads.push(gmThread, playerThread);
+    store.state.aiEvaluations.push(
+      createTimestamped("aie", {
+        campaignId: "camp_demo",
+        userId: "usr_demo_gm",
+        threadId: gmThread.id,
+        provider: "test",
+        name: "Private GM evaluation",
+        status: "failed" as const,
+        score: 0,
+        summary: "private evaluation failure detail",
+        checks: [],
+      }),
+    );
+    const app = await buildApp({ store });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/v1/mcp",
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { jsonrpc: "2.0", id: 1, method: "tools/call", params: { campaignId: "camp_demo", name: "read_ai_activity", arguments: {} } },
+      });
+      expect(response.statusCode).toBe(200);
+      const output = JSON.parse(response.json().result.content[0].text) as { threads: Array<{ id: string }>; evaluations: Array<{ threadId: string }> };
+      expect(output.threads.map((thread) => thread.id)).toEqual([playerThread.id]);
+      expect(output.evaluations).toEqual([]);
+      expect(JSON.stringify(output)).not.toContain("Secret GM planning thread");
+      expect(JSON.stringify(output)).not.toContain("private provider failure detail");
+    } finally {
+      await app.close();
+    }
+  });
+
   it("covers non-admin application surfaces through MCP tools or explicit safety exclusions", async () => {
     const store = new MemoryStateStore();
     const scene = store.state.scenes.find((item) => item.id === "scn_vault_entry")!;
@@ -24850,6 +26934,10 @@ registerCommand("/state", (input) => {
         "read_account",
         "read_workspace",
         "read_campaign",
+        "read_world",
+        "read_handout",
+        "search_campaign",
+        "read_campaign_session",
         "read_ai_activity",
         "read_dice_macro",
         "draft_dice_macro",
@@ -24871,8 +26959,13 @@ registerCommand("/state", (input) => {
       const coverageGaps = uncoveredMcpRouteSurfaces(toolNames);
       expect(coverageGaps).toEqual([]);
 
-      for (const [index, toolName] of ["read_account", "read_workspace", "read_campaign", "read_ai_activity", "read_dice_macro", "read_fog_preset", "read_systems", "read_plugins", "read_content_imports"].entries()) {
-        const { output } = await mcp(10 + index, toolName, toolName === "read_systems" ? { systemId: "dnd-5e-srd", includeDetails: true, limit: 4 } : {});
+      for (const [index, toolName] of ["read_account", "read_workspace", "read_campaign", "read_world", "read_handout", "search_campaign", "read_campaign_session", "read_ai_activity", "read_dice_macro", "read_fog_preset", "read_systems", "read_plugins", "read_content_imports"].entries()) {
+        const args = toolName === "read_systems"
+          ? { systemId: "dnd-5e-srd", includeDetails: true, limit: 4 }
+          : toolName === "search_campaign"
+            ? { query: "Vault", limit: 4 }
+            : {};
+        const { output } = await mcp(10 + index, toolName, args);
         expect(output.error, toolName).toBeUndefined();
       }
 
@@ -25642,6 +27735,7 @@ registerCommand("/state", (input) => {
 
     const store = new MemoryStateStore();
     const app = await buildApp({ store, aiProvider: new EvaluationProvider() });
+    const rollCountBeforeThread = store.state.rolls.length;
 
     try {
       const thread = await app.inject({
@@ -25654,8 +27748,23 @@ registerCommand("/state", (input) => {
       expect(thread.json().thread.assistantMessage).toContain("safe GM prep guidance");
       expect(thread.json().thread.advertisedToolNames).toEqual(expect.arrayContaining(["roll_dice", "read_compendium"]));
       expect(thread.json().thread.advertisedTools).toEqual(
-        expect.arrayContaining([expect.objectContaining({ name: "roll_dice", requiredPermissions: ["dice.roll"] })])
+        expect.arrayContaining([expect.objectContaining({ name: "roll_dice", requiredPermissions: ["ai.proposeChanges", "dice.roll", "chat.write"], permissionSafe: false })])
       );
+      expect(store.state.rolls).toHaveLength(rollCountBeforeThread);
+      const rollProposal = store.state.proposals.find((proposal) => proposal.sourceId === thread.json().thread.id);
+      expect(rollProposal).toEqual(
+        expect.objectContaining({
+          sourceId: thread.json().thread.id,
+          createdByType: "ai",
+          status: "pending",
+          approvalRequired: true,
+          changesJson: [expect.objectContaining({ entity: "roll", action: "create" }), expect.objectContaining({ entity: "chat", action: "create" })]
+        })
+      );
+      const proposedChatId = rollProposal?.changesJson.find((change) => change.entity === "chat")?.data.id;
+      expect(proposedChatId).toEqual(expect.any(String));
+      expect(store.state.chat.some((message) => message.id === proposedChatId)).toBe(false);
+      expect(store.state.chat).toContainEqual(expect.objectContaining({ type: "ai", body: "Evaluation telemetry recorded with safe GM prep guidance." }));
 
       const evaluation = await app.inject({
         method: "POST",
@@ -25788,8 +27897,11 @@ registerCommand("/state", (input) => {
         headers: authHeaders
       });
       expect(operations.statusCode).toBe(200);
-      expect(operations.json().actionRequired).toBe(false);
-      expect(operations.json().actionReasons).toEqual([]);
+      expect(operations.json().actionRequired).toBe(true);
+      expect(operations.json().actionReasons).toEqual(["pending_ai_proposals"]);
+      expect(operations.json().proposalReview).toEqual(
+        expect.objectContaining({ proposalCount: 1, pendingCount: 1, approvalRequiredCount: 1, actionRequired: true, actionReasons: ["pending_ai_proposals"] })
+      );
       expect(operations.json().evaluations).toMatchObject({
         evaluationCount: 2,
         passedEvaluationCount: 1,
@@ -26311,6 +28423,17 @@ registerCommand("/state", (input) => {
         payload: { prompt: "Record a Codex operations smoke test." }
       });
       expect(thread.statusCode).toBe(200);
+      const rollAiProposal = store.state.proposals.find(
+        (proposal) => proposal.sourceId === thread.json().thread.id && proposal.changesJson.some((change) => change.entity === "roll")
+      );
+      expect(rollAiProposal).toEqual(
+        expect.objectContaining({
+          createdByType: "ai",
+          status: "pending",
+          approvalRequired: true,
+          changesJson: [expect.objectContaining({ entity: "roll" }), expect.objectContaining({ entity: "chat" })]
+        })
+      );
       const failedThread = createTimestamped("thr", {
         campaignId: "camp_demo",
         userId: "usr_demo_gm",
@@ -26604,7 +28727,7 @@ registerCommand("/state", (input) => {
           expect.objectContaining({
             code: "review_pending_ai_proposals",
             severity: "error",
-            affectedCount: 1,
+            affectedCount: 2,
             samples: expect.arrayContaining([expect.objectContaining({ proposalId: pendingAiProposal.id, campaignName: "The Ember Vault", entities: ["scene"] })])
           }),
           expect.objectContaining({
@@ -26721,14 +28844,14 @@ registerCommand("/state", (input) => {
           })
         ],
         toolCatalog: expect.objectContaining({
-          toolCount: 44,
-          permissionSafeToolCount: 27,
-          proposalGatedToolCount: 17,
+          toolCount: 48,
+          permissionSafeToolCount: 29,
+          proposalGatedToolCount: 19,
           failClosedToolCount: 0,
           actionRequired: false,
           actionReasons: [],
           remediation: "All provider-visible AI tools are either proposal-gated or explicitly permission-safe.",
-          permissionSafeAllowlist: ["apply_approved_proposal", "capture_board_view", "get_proposal", "list_proposals", "read_account", "read_actor", "read_ai_activity", "read_asset", "read_board_state", "read_campaign", "read_chat", "read_combat", "read_compendium", "read_content_imports", "read_dice_macro", "read_encounter", "read_fog_preset", "read_journal", "read_plugins", "read_roll", "read_scene", "read_systems", "read_token", "read_workspace", "roll_dice", "search_memory", "send_chat_message"],
+          permissionSafeAllowlist: ["apply_approved_proposal", "capture_board_view", "get_proposal", "list_proposals", "read_account", "read_actor", "read_ai_activity", "read_asset", "read_board_state", "read_campaign", "read_campaign_session", "read_chat", "read_combat", "read_compendium", "read_content_imports", "read_dice_macro", "read_encounter", "read_fog_preset", "read_handout", "read_journal", "read_plugins", "read_roll", "read_scene", "read_systems", "read_token", "read_workspace", "read_world", "search_campaign", "search_memory"],
           tools: expect.arrayContaining([
             expect.objectContaining({
               name: "draft_scene",
@@ -26802,9 +28925,9 @@ registerCommand("/state", (input) => {
               parameterSchemaType: "object",
               rejectsAdditionalProperties: true
             }),
-            expect.objectContaining({
-              name: "read_combat",
-              requiredPermissions: ["combat.manage"],
+              expect.objectContaining({
+                name: "read_combat",
+                requiredPermissions: ["campaign.read"],
               permissionSafe: true,
               proposalGated: false,
               failClosed: false,
@@ -26841,30 +28964,38 @@ registerCommand("/state", (input) => {
           ])
         }),
         proposalReview: expect.objectContaining({
-          proposalCount: 4,
-          pendingCount: 1,
+          proposalCount: 5,
+          pendingCount: 2,
           approvedCount: 1,
           appliedCount: 1,
           rejectedCount: 1,
           applyReadyCount: 1,
-          approvalRequiredCount: 4,
+          approvalRequiredCount: 5,
           staleReviewThresholdMs: 24 * 60 * 60 * 1000,
           stalePendingCount: 1,
           staleApprovedCount: 1,
           applyFailureCount: 1,
           actionRequired: true,
           actionReasons: ["pending_ai_proposals", "approved_ai_proposals_waiting_apply", "stale_pending_ai_proposals", "stale_approved_ai_proposals", "ai_proposal_apply_failures"],
-          entityCounts: { scene: 1, journal: 2, token: 1 },
+          entityCounts: { roll: 1, chat: 1, scene: 1, journal: 2, token: 1 },
           campaigns: [
             expect.objectContaining({
               campaignId: "camp_demo",
               campaignName: "The Ember Vault",
-              pendingCount: 1,
+              pendingCount: 2,
               oldestPendingAgeMs: expect.any(Number),
               oldestPendingAt: pendingAiProposal.createdAt
             })
           ],
-          recentPending: [
+          recentPending: expect.arrayContaining([
+            expect.objectContaining({
+              id: rollAiProposal!.id,
+              campaignId: "camp_demo",
+              campaignName: "The Ember Vault",
+              status: "pending",
+              changeCount: 2,
+              entities: ["roll", "chat"]
+            }),
             expect.objectContaining({
               id: pendingAiProposal.id,
               campaignId: "camp_demo",
@@ -26874,7 +29005,7 @@ registerCommand("/state", (input) => {
               changeCount: 1,
               entities: ["scene"]
             })
-          ],
+          ]),
           recentApproved: [
             expect.objectContaining({
               id: approvedAiProposal.id,
@@ -27171,16 +29302,18 @@ registerCommand("/state", (input) => {
       });
       expect(postProposalCleanupOperations.statusCode).toBe(200);
       expect(postProposalCleanupOperations.json().proposalReview).toMatchObject({
-        pendingCount: 0,
+        pendingCount: 1,
         rejectedCount: 2,
         stalePendingCount: 0,
         staleApprovedCount: 1
       });
-      expect(postProposalCleanupOperations.json().proposalReview.actionReasons).not.toContain("pending_ai_proposals");
+      expect(postProposalCleanupOperations.json().proposalReview.actionReasons).toContain("pending_ai_proposals");
       expect(postProposalCleanupOperations.json().proposalReview.actionReasons).not.toContain("stale_pending_ai_proposals");
-      expect(postProposalCleanupOperations.json().actionReasons).not.toContain("pending_ai_proposals");
+      expect(postProposalCleanupOperations.json().actionReasons).toContain("pending_ai_proposals");
       expect(postProposalCleanupOperations.json().actionReasons).not.toContain("stale_pending_ai_proposals");
-      expect(postProposalCleanupOperations.json().proposalReview.recentPending).toEqual([]);
+      expect(postProposalCleanupOperations.json().proposalReview.recentPending).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: rollAiProposal!.id, entities: ["roll", "chat"] })])
+      );
       expect(postProposalCleanupOperations.json().proposalReview.stalePending).toEqual([]);
 
       const dryRunApprovedProposalReject = await app.inject({
@@ -27236,7 +29369,7 @@ registerCommand("/state", (input) => {
       });
       expect(postApprovedProposalCleanupOperations.statusCode).toBe(200);
       expect(postApprovedProposalCleanupOperations.json().proposalReview).toMatchObject({
-        pendingCount: 0,
+        pendingCount: 1,
         rejectedCount: 3,
         stalePendingCount: 0,
         staleApprovedCount: 0
@@ -28752,7 +30885,7 @@ registerCommand("/state", (input) => {
       payload: { prompt: "Read the compendium, remember a key, draft an encounter, and roll dice." }
     });
     expect(gmThread.statusCode).toBe(200);
-    expect(gmProvider.requests[0]!.tools.map((tool) => tool.name)).toEqual(["create_proposal", "list_proposals", "get_proposal", "revise_proposal", "apply_approved_proposal", "read_account", "read_workspace", "read_campaign", "read_ai_activity", "read_dice_macro", "draft_dice_macro", "read_fog_preset", "draft_fog_preset", "read_systems", "read_plugins", "read_content_imports", "send_chat_message", "target_token", "draft_ai_edit_layer_apply", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_token_roster", "generate_map_asset", "generate_token_asset", "modify_asset_image", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
+    expect(gmProvider.requests[0]!.tools.map((tool) => tool.name)).toEqual(["create_proposal", "list_proposals", "get_proposal", "revise_proposal", "apply_approved_proposal", "read_account", "read_workspace", "read_campaign", "read_world", "read_handout", "search_campaign", "read_campaign_session", "read_ai_activity", "read_dice_macro", "draft_dice_macro", "read_fog_preset", "draft_fog_preset", "read_systems", "read_plugins", "read_content_imports", "send_chat_message", "target_token", "draft_ai_edit_layer_apply", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_token_roster", "generate_map_asset", "generate_token_asset", "modify_asset_image", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
     expect(gmProvider.requests[0]!.tools.find((tool) => tool.name === "draft_encounter")?.parameters?.required).toEqual(["name", "summary"]);
     expect(gmProvider.requests[0]!.tools.find((tool) => tool.name === "draft_token_update")?.requiredPermissions).toEqual(["ai.proposeChanges", "token.update"]);
     expect(gmProvider.requests[0]!.tools.find((tool) => tool.name === "generate_map_asset")?.requiredPermissions).toEqual(["ai.proposeChanges", "scene.update"]);
@@ -29047,8 +31180,10 @@ registerCommand("/state", (input) => {
     expect(actorActionProposal?.changesJson.map((change) => change.entity)).toEqual(["actor", "roll", "chat"]);
     expect(actorActionProposal?.changesJson.find((change) => change.entity === "roll")).toEqual(expect.objectContaining({ action: "create" }));
     expect(actorActionProposal?.changesJson.find((change) => change.entity === "chat")).toEqual(expect.objectContaining({ action: "create" }));
-    expect(gmStore.state.rolls).toHaveLength(4);
-    expect(gmStore.state.chat.some((message) => message.body.includes("AI Perception: 1d20+5"))).toBe(true);
+    const diceProposal = gmStore.state.proposals.find((proposal) => proposal.title === "Roll: AI Perception");
+    expect(diceProposal?.changesJson.map((change) => change.entity)).toEqual(["roll", "chat"]);
+    expect(gmStore.state.rolls).toHaveLength(3);
+    expect(gmStore.state.chat.some((message) => message.body.includes("AI Perception: 1d20+5"))).toBe(false);
     expect(gmStore.state.chat.some((message) => message.body.includes("Valen Ash Healing Word Healing"))).toBe(false);
     expect(gmStore.state.actors.find((actor) => actor.id === "act_valen")?.data.spellSlots).toEqual({ level1: { current: 1, max: 1, recovery: "long" } });
     expect(gmStore.state.actors.find((actor) => actor.id === "act_valen")?.data.hp).toEqual({ current: 18, max: 22 });
@@ -29181,7 +31316,7 @@ registerCommand("/state", (input) => {
       payload: { prompt: "Try expanded tools as a player." }
     });
     expect(playerThread.statusCode).toBe(200);
-    expect(playerProvider.requests[0]!.tools.map((tool) => tool.name)).toEqual(["list_proposals", "get_proposal", "read_account", "read_workspace", "read_campaign", "read_ai_activity", "read_dice_macro", "read_systems", "send_chat_message", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_encounter", "read_actor", "roll_dice", "read_compendium"]);
+    expect(playerProvider.requests[0]!.tools.map((tool) => tool.name)).toEqual(["list_proposals", "get_proposal", "read_account", "read_workspace", "read_campaign", "read_world", "read_handout", "search_campaign", "read_ai_activity", "read_dice_macro", "read_systems", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "read_compendium"]);
     const playerCompleted = playerThread.json().events.filter((event: { type: string }) => event.type === "tool.completed");
     expect(playerCompleted).toEqual(
       expect.arrayContaining([
@@ -29211,11 +31346,11 @@ registerCommand("/state", (input) => {
             ])
           })
         }),
-        expect.objectContaining({ toolName: "read_journal", output: { error: "missing_permission", permission: "journal.readSecret" } }),
+        expect.objectContaining({ toolName: "read_journal", output: expect.objectContaining({ query: "vault", visibility: "any", count: 0, entries: [] }) }),
         expect.objectContaining({ toolName: "read_scene", output: expect.objectContaining({ activeOnly: true, count: 1 }) }),
         expect.objectContaining({ toolName: "read_token", output: expect.objectContaining({ sceneId: "scn_vault_entry", query: "valen", count: 1, tokens: [expect.objectContaining({ id: "tok_valen", hidden: false })] }) }),
         expect.objectContaining({ toolName: "read_asset", output: expect.objectContaining({ query: "vault", count: 0 }) }),
-        expect.objectContaining({ toolName: "read_combat", output: { error: "missing_permission", permission: "combat.manage" } }),
+        expect.objectContaining({ toolName: "read_combat", output: expect.objectContaining({ activeOnly: true, count: 0, combats: [] }) }),
         expect.objectContaining({ toolName: "read_encounter", output: expect.objectContaining({ query: "ambush", count: 0 }) }),
         expect.objectContaining({ toolName: "read_actor", output: expect.objectContaining({ actorId: "act_valen", count: 1 }) }),
         expect.objectContaining({ toolName: "draft_encounter", output: { error: "missing_permission", permission: "ai.proposeChanges" } }),
@@ -29227,12 +31362,12 @@ registerCommand("/state", (input) => {
         expect.objectContaining({ toolName: "draft_actor_update", output: { error: "missing_permission", permission: "ai.proposeChanges" } }),
         expect.objectContaining({ toolName: "use_actor_action", output: { error: "missing_permission", permission: "ai.proposeChanges" } }),
         expect.objectContaining({ toolName: "read_compendium", output: expect.objectContaining({ systemId: "generic-fantasy" }) }),
-        expect.objectContaining({ toolName: "roll_dice", output: expect.objectContaining({ formula: "1d20+5" }) })
+        expect.objectContaining({ toolName: "roll_dice", output: { error: "missing_permission", permission: "ai.proposeChanges" } })
       ])
     );
     expect(playerStore.state.aiMemory.some((fact) => fact.text === "The moon key opens the observatory.")).toBe(false);
     expect(playerStore.state.proposals.some((proposal) => proposal.title === "Encounter: Mirror Knight")).toBe(false);
-    expect(playerStore.state.rolls).toHaveLength(4);
+    expect(playerStore.state.rolls).toHaveLength(3);
     await playerApp.close();
   });
 
@@ -29340,7 +31475,7 @@ registerCommand("/state", (input) => {
       }
     }
 
-    const permissionSafeTools = new Set(["list_proposals", "get_proposal", "apply_approved_proposal", "read_account", "read_workspace", "read_campaign", "read_ai_activity", "read_dice_macro", "read_fog_preset", "read_systems", "read_plugins", "read_content_imports", "send_chat_message", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "read_compendium"]);
+    const permissionSafeTools = new Set(["list_proposals", "get_proposal", "apply_approved_proposal", "read_account", "read_workspace", "read_campaign", "read_world", "read_handout", "search_campaign", "read_campaign_session", "read_ai_activity", "read_dice_macro", "read_fog_preset", "read_systems", "read_plugins", "read_content_imports", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "read_compendium"]);
     const provider = new ToolPolicyProvider();
     const store = new MemoryStateStore();
     store.state.users.push(
@@ -29406,7 +31541,7 @@ registerCommand("/state", (input) => {
       const gmTools = provider.requests[0]!.tools;
       const assistantTools = provider.requests[1]!.tools;
       const playerTools = provider.requests[2]!.tools;
-      expect(gmTools.map((tool) => tool.name)).toEqual(["create_proposal", "list_proposals", "get_proposal", "revise_proposal", "apply_approved_proposal", "read_account", "read_workspace", "read_campaign", "read_ai_activity", "read_dice_macro", "draft_dice_macro", "read_fog_preset", "draft_fog_preset", "read_systems", "read_plugins", "read_content_imports", "send_chat_message", "target_token", "draft_ai_edit_layer_apply", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_token_roster", "generate_map_asset", "generate_token_asset", "modify_asset_image", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
+      expect(gmTools.map((tool) => tool.name)).toEqual(["create_proposal", "list_proposals", "get_proposal", "revise_proposal", "apply_approved_proposal", "read_account", "read_workspace", "read_campaign", "read_world", "read_handout", "search_campaign", "read_campaign_session", "read_ai_activity", "read_dice_macro", "draft_dice_macro", "read_fog_preset", "draft_fog_preset", "read_systems", "read_plugins", "read_content_imports", "send_chat_message", "target_token", "draft_ai_edit_layer_apply", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_token_roster", "generate_map_asset", "generate_token_asset", "modify_asset_image", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
 
       for (const tool of gmTools) {
         expect(tool.requiredPermissions.length, `${tool.name} should declare required permissions`).toBeGreaterThan(0);
@@ -29419,13 +31554,13 @@ registerCommand("/state", (input) => {
         if (!advertisedTool.permissionSafe) expect(advertisedTool.requiredPermissions).toContain("ai.proposeChanges");
       }
 
-      expect(assistantTools.map((tool) => tool.name)).toEqual(["create_proposal", "list_proposals", "get_proposal", "revise_proposal", "read_account", "read_workspace", "read_campaign", "read_ai_activity", "read_dice_macro", "read_systems", "send_chat_message", "target_token", "draft_ai_edit_layer_apply", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_token_roster", "generate_map_asset", "generate_token_asset", "modify_asset_image", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
+      expect(assistantTools.map((tool) => tool.name)).toEqual(["create_proposal", "list_proposals", "get_proposal", "revise_proposal", "read_account", "read_workspace", "read_campaign", "read_world", "read_handout", "search_campaign", "read_ai_activity", "read_dice_macro", "read_systems", "send_chat_message", "target_token", "draft_ai_edit_layer_apply", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_token_roster", "generate_map_asset", "generate_token_asset", "modify_asset_image", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
       expect(assistantTools.map((tool) => tool.name)).not.toContain("draft_encounter");
       for (const tool of assistantTools) {
         expect(tool.requiredPermissions.every((permission) => permissionsForRole("assistant_gm").includes(permission))).toBe(true);
       }
 
-      expect(playerTools.map((tool) => tool.name)).toEqual(["list_proposals", "get_proposal", "read_account", "read_workspace", "read_campaign", "read_ai_activity", "read_dice_macro", "read_systems", "send_chat_message", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_encounter", "read_actor", "roll_dice", "read_compendium"]);
+      expect(playerTools.map((tool) => tool.name)).toEqual(["list_proposals", "get_proposal", "read_account", "read_workspace", "read_campaign", "read_world", "read_handout", "search_campaign", "read_ai_activity", "read_dice_macro", "read_systems", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "read_compendium"]);
       for (const tool of playerTools) {
         expect(tool.requiredPermissions.every((permission) => permissionsForRole("player").includes(permission))).toBe(true);
         expect(permissionSafeTools.has(tool.name)).toBe(true);
@@ -29529,6 +31664,145 @@ registerCommand("/state", (input) => {
     expect(directRestrictedProposal.statusCode).toBe(403);
     expect(directRestrictedProposal.json()).toMatchObject({ error: "forbidden", message: "Missing permission: journal.create" });
     expect(store.state.proposals.some((proposal) => proposal.title === "Restricted Direct AI Proposal")).toBe(false);
+
+    const restrictedHandoutProposal = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/proposals",
+      headers: { "x-user-id": "usr_demo_player" },
+      payload: {
+        title: "Restricted Handout Proposal",
+        createdByType: "ai",
+        changesJson: [{ entity: "handout", action: "create", data: { title: "Private Handout", body: "No handout grant", visibility: "gm_only" } }]
+      }
+    });
+    expect(restrictedHandoutProposal.statusCode).toBe(403);
+    expect(restrictedHandoutProposal.json()).toMatchObject({ error: "forbidden", message: "Missing permission: handout.create" });
+
+    const restrictedWorldProposal = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/proposals",
+      headers: { "x-user-id": "usr_demo_player" },
+      payload: {
+        title: "Restricted World Proposal",
+        createdByType: "ai",
+        changesJson: [{ entity: "world", action: "create", data: { name: "No World Grant", description: "Must stay blocked" } }]
+      }
+    });
+    expect(restrictedWorldProposal.statusCode).toBe(403);
+    expect(restrictedWorldProposal.json()).toMatchObject({ error: "forbidden", message: "Missing permission: world.create" });
+    await app.close();
+  });
+
+  it("keeps journal secret access isolated from handout secret records and proposals", async () => {
+    const store = new MemoryStateStore();
+    const userId = "usr_handout_isolation";
+    store.state.users.push(createTimestamped("usr", { id: userId, displayName: "Handout Isolation", email: "handout-isolation@example.test" }));
+    store.state.members.push(createTimestamped("mem", { campaignId: "camp_demo", userId, role: "observer" as const }));
+    store.state.permissionGrants.push(
+      createTimestamped("grant", {
+        subjectType: "user" as const,
+        subjectId: userId,
+        campaignId: "camp_demo",
+        permissions: ["journal.readSecret"]
+      })
+    );
+    const secret = createTimestamped("hnd", {
+      id: "hnd_permission_isolation",
+      campaignId: "camp_demo",
+      title: "Obsidian Handout",
+      body: "handout-only-secret-phrase",
+      visibility: "gm_only" as const,
+      assetIds: [],
+      visibleToUserIds: [],
+      visibleToActorIds: [],
+      tags: ["secret"],
+      readByUserIds: [],
+      createdBy: "usr_demo_gm",
+      updatedBy: "usr_demo_gm"
+    });
+    store.state.handouts.push(secret);
+    store.state.proposals.push(
+      createTimestamped("prop", {
+        id: "prop_handout_permission_isolation",
+        campaignId: "camp_demo",
+        createdByUserId: "usr_demo_gm",
+        createdByType: "user" as const,
+        title: "Secret handout revision",
+        summary: "Must require the handout secret permission.",
+        status: "pending" as const,
+        changesJson: [{ entity: "handout", action: "update", id: secret.id, data: { body: "handout-only-secret-phrase-updated" } }],
+        diffJson: {},
+        approvalRequired: true
+      })
+    );
+    const app = await buildApp({ store });
+    const headers = { "x-user-id": userId };
+
+    const hiddenList = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/handouts", headers });
+    const hiddenSearch = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/search?q=handout-only-secret-phrase&types=handout", headers });
+    const hiddenProposals = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/proposals", headers });
+    expect(hiddenList.statusCode).toBe(200);
+    expect(hiddenList.json()).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: secret.id })]));
+    expect(hiddenSearch.statusCode).toBe(200);
+    expect(hiddenSearch.body).not.toContain(secret.id);
+    expect(hiddenSearch.body).not.toContain("handout-only-secret-phrase");
+    expect(hiddenProposals.statusCode).toBe(200);
+    expect(hiddenProposals.json()).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: "prop_handout_permission_isolation" })]));
+
+    store.state.permissionGrants.push(
+      createTimestamped("grant", {
+        subjectType: "user" as const,
+        subjectId: userId,
+        campaignId: "camp_demo",
+        permissions: ["handout.readSecret"]
+      })
+    );
+    const visibleList = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/handouts", headers });
+    const visibleSearch = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/search?q=handout-only-secret-phrase&types=handout", headers });
+    const visibleProposals = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/proposals", headers });
+    expect(visibleList.json()).toEqual(expect.arrayContaining([expect.objectContaining({ id: secret.id })]));
+    expect(visibleSearch.json()).toEqual(expect.arrayContaining([expect.objectContaining({ id: secret.id, type: "handout" })]));
+    expect(visibleProposals.json()).toEqual(expect.arrayContaining([expect.objectContaining({ id: "prop_handout_permission_isolation" })]));
+
+    await app.close();
+  });
+
+  it("detaches direct token deletions from encounters and removes empty combats", async () => {
+    const store = new MemoryStateStore();
+    store.state.encounters.push(
+      createTimestamped("enc", {
+        id: "enc_direct_token_delete",
+        campaignId: "camp_demo",
+        name: "Direct token lifecycle",
+        summary: "Tracks the deleted token",
+        tokenIds: ["tok_valen"]
+      })
+    );
+    store.state.combats.push(
+      createTimestamped("cmb", {
+        id: "cmb_direct_token_delete",
+        campaignId: "camp_demo",
+        encounterId: "enc_direct_token_delete",
+        active: true,
+        round: 1,
+        turnIndex: 0,
+        combatants: [{ id: "cmbt_direct_token_delete", tokenId: "tok_valen", actorId: "act_valen", name: "Valen", initiative: 18, defeated: false }]
+      })
+    );
+    const app = await buildApp({ store });
+
+    const deleted = await app.inject({ method: "DELETE", url: "/api/v1/tokens/tok_valen", headers: authHeaders });
+    expect(deleted.statusCode).toBe(200);
+    expect(store.state.tokens.some((token) => token.id === "tok_valen")).toBe(false);
+    expect(store.state.encounters.find((encounter) => encounter.id === "enc_direct_token_delete")?.tokenIds).toEqual([]);
+    expect(store.state.combats.some((combat) => combat.id === "cmb_direct_token_delete")).toBe(false);
+    expect(store.state.auditLogs.find((log) => log.action === "token.delete" && log.targetId === "tok_valen")?.after).toEqual({
+      deleted: true,
+      detachedEncounters: 1,
+      detachedCombatants: 1,
+      removedEmptyCombats: 1
+    });
+
     await app.close();
   });
 
@@ -29730,7 +32004,7 @@ registerCommand("/state", (input) => {
       createdAt: now,
       updatedAt: now
     });
-    const app = await buildApp({ store });
+    const app = await buildApp({ store, aiProvider: new StaticAiProvider() });
 
     const encounterDraft = await app.inject({
       method: "POST",
@@ -33434,7 +35708,7 @@ registerCommand("/state", (input) => {
         aiThreads: 1,
         aiMemory: 1,
         aiToolCalls: 1,
-        auditLogs: 1
+        auditLogs: 0
       })
     );
 
@@ -33637,12 +35911,17 @@ registerCommand("/state", (input) => {
     });
     expect(genericSystemInstall.statusCode).toBe(200);
     expect(genericSystemInstall.json().campaign).toEqual(expect.objectContaining({ defaultSystemId: "generic-fantasy" }));
-    expect(store.state.auditLogs.at(-1)).toMatchObject({
-      actorType: "system",
-      action: "system.install",
-      targetType: "system",
-      targetId: "generic-fantasy"
-    });
+    expect(store.state.auditLogs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          actorType: "user",
+          actorUserId: "usr_demo_gm",
+          action: "system.activate",
+          targetType: "system",
+          targetId: "generic-fantasy"
+        })
+      ])
+    );
 
     const dndSystemInstall = await app.inject({
       method: "POST",
@@ -33671,6 +35950,7 @@ registerCommand("/state", (input) => {
       missingPermissions: ["token.read"]
     });
 
+    const chatCountBeforePluginCommand = store.state.chat.length;
     const pluginCommand = await app.inject({
       method: "POST",
       url: "/api/v1/campaigns/camp_public_alpha_ember_vault/plugins/example-macro-plugin/chat-command",
@@ -33686,17 +35966,23 @@ registerCommand("/state", (input) => {
       })
     );
     expect(pluginCommand.json().chat.body).not.toContain("near ");
-    expect(store.state.auditLogs.at(-1)).toMatchObject({
-      actorType: "plugin",
-      action: "plugin.chatCommand",
-      targetType: "chat",
+    expect(pluginCommand.json()).toEqual(expect.objectContaining({ approvalRequired: true, proposal: expect.objectContaining({ status: "pending", createdByType: "plugin" }) }));
+    expect(store.state.chat).toHaveLength(chatCountBeforePluginCommand);
+    expect(store.state.auditLogs).toEqual(expect.arrayContaining([expect.objectContaining({
+      action: "plugin.chatCommand.proposed",
+      targetType: "proposal",
       after: expect.objectContaining({
         pluginId: "example-macro-plugin",
         command: "/spark",
         sandbox: "vm",
         packageId: "example-macro-plugin"
       })
-    });
+    })]));
+    const pluginCommandApproval = await app.inject({ method: "POST", url: `/api/v1/proposals/${pluginCommand.json().proposal.id}/approve`, headers: authHeaders });
+    expect(pluginCommandApproval.statusCode).toBe(200);
+    const pluginCommandApply = await app.inject({ method: "POST", url: `/api/v1/proposals/${pluginCommand.json().proposal.id}/apply`, headers: authHeaders });
+    expect(pluginCommandApply.statusCode).toBe(200);
+    expect(store.state.chat).toEqual(expect.arrayContaining([expect.objectContaining({ body: "Spark macro: public alpha flare." })]));
 
     await app.close();
   });
@@ -34063,7 +36349,7 @@ registerCommand("/state", (input) => {
     expect(imported.json().importedCampaignIds).toEqual(["camp_beta_ember_vault"]);
     expect(imported.json().counts).toEqual(
       expect.objectContaining({
-        users: 4,
+        users: 2,
         campaigns: 1,
         members: 4,
         scenes: 2,
@@ -34082,7 +36368,7 @@ registerCommand("/state", (input) => {
         aiEvaluations: 1,
         aiMemory: 1,
         aiToolCalls: 3,
-        auditLogs: 4,
+        auditLogs: 0,
         permissionGrants: 1,
         pluginStorage: 1
       })
@@ -34291,7 +36577,8 @@ registerCommand("/state", (input) => {
     expect(exportedArchive.manifest.schemaVersion).toBe("0.2.0");
     expect(exportedArchive.data.journals.map((journal: { id: string }) => journal.id)).toEqual(expect.arrayContaining(["jnl_beta_session_1", "jnl_beta_session_2", "jnl_beta_session_3"]));
     expect(exportedArchive.data.items.map((item: { id: string }) => item.id)).toContain("item_beta_party_loot");
-    expect(exportedArchive.data.auditLogs.filter((log: { action: string }) => log.action === "campaign.exportCheckpoint")).toHaveLength(3);
+    expect(exportedArchive.data.auditLogs.filter((log: { action: string }) => log.action === "campaign.exportCheckpoint")).toHaveLength(0);
+    expect(exportedArchive.data.auditLogs.filter((log: { action: string }) => log.action === "campaign.import")).toHaveLength(1);
 
     const freshState: EngineState = emptyState();
     freshState.users.push({

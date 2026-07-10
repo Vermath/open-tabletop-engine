@@ -1,17 +1,29 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { basename, dirname, extname, join, relative } from "node:path";
 import { releaseEvidenceGates } from "./v1-release-gates.mjs";
 
 const root = process.cwd();
 const outputDir = join(root, "dist", "docs-site");
-const markdownRoots = [join(root, "README.md"), join(root, "CHANGELOG.md"), join(root, "docs")];
+const markdownRoots = [
+  join(root, "README.md"),
+  join(root, "CHANGELOG.md"),
+  join(root, "docs"),
+];
 const excludedPublicSources = new Set(
   [
     "docs/verification/mvp-acceptance-audit.md",
     "docs/verification/mvp-progress.md",
     "docs/verification/v0.3-dogfood-acceptance.md",
-    "docs/verification/v0.3-dogfood-progress.md"
-  ].map((file) => file.toLowerCase())
+    "docs/verification/v0.3-dogfood-progress.md",
+  ].map((file) => file.toLowerCase()),
 );
 
 rmSync(outputDir, { recursive: true, force: true });
@@ -24,7 +36,10 @@ for (const file of markdownFiles) {
   const relativePath = relative(root, file);
   const outputPath = htmlOutputPath(relativePath);
   mkdirSync(dirname(outputPath), { recursive: true });
-  writeFileSync(outputPath, renderPage(relativePath, readFileSync(file, "utf8")));
+  writeFileSync(
+    outputPath,
+    renderPage(relativePath, readFileSync(file, "utf8")),
+  );
   rendered.add(relativePath.replaceAll("\\", "/"));
 }
 
@@ -37,13 +52,20 @@ if (existsSync(publicIndex)) {
 const manifest = {
   generatedAt: new Date().toISOString(),
   sourceCount: rendered.size,
-  sources: Array.from(rendered).sort()
+  sources: Array.from(rendered).sort(),
 };
-writeFileSync(join(outputDir, "site-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+writeFileSync(
+  join(outputDir, "site-manifest.json"),
+  `${JSON.stringify(manifest, null, 2)}\n`,
+);
 
 if (process.argv.includes("--check")) {
   const requiredReleaseEvidenceOutputs = Array.from(
-    new Set(releaseEvidenceGates.map((gate) => gate.evidence.replace(/\.md$/i, ".html")))
+    new Set(
+      releaseEvidenceGates.map((gate) =>
+        gate.evidence.replace(/\.md$/i, ".html"),
+      ),
+    ),
   );
   const required = [
     "index.html",
@@ -55,31 +77,45 @@ if (process.argv.includes("--check")) {
     "docs/prd-v1-gap-closure.html",
     "docs/verification/v1-gap-closure-completion-audit.html",
     "docs/verification/v1-release-owner-handoff.html",
-    ...requiredReleaseEvidenceOutputs
+    ...requiredReleaseEvidenceOutputs,
   ];
   const missing = required.filter((file) => !existsSync(join(outputDir, file)));
   if (missing.length > 0) {
-    console.error(`Docs site build missing required outputs: ${missing.join(", ")}`);
+    console.error(
+      `Docs site build missing required outputs: ${missing.join(", ")}`,
+    );
     process.exit(1);
   }
-  const brokenLinks = markdownFiles.flatMap((file) => findBrokenMarkdownLinks(file));
+  const brokenLinks = markdownFiles.flatMap((file) =>
+    findBrokenMarkdownLinks(file),
+  );
   if (brokenLinks.length > 0) {
-    console.error(`Docs site build found broken markdown links:\n${brokenLinks.join("\n")}`);
+    console.error(
+      `Docs site build found broken markdown links:\n${brokenLinks.join("\n")}`,
+    );
     process.exit(1);
   }
-  const localPathLeaks = markdownFiles.flatMap((file) => findLocalPathLeaks(file));
+  const localPathLeaks = markdownFiles.flatMap((file) =>
+    findLocalPathLeaks(file),
+  );
   if (localPathLeaks.length > 0) {
-    console.error(`Docs site build found local filesystem paths in public docs:\n${localPathLeaks.join("\n")}`);
+    console.error(
+      `Docs site build found local filesystem paths in public docs:\n${localPathLeaks.join("\n")}`,
+    );
     process.exit(1);
   }
   const releaseGateGaps = findReleaseGateGaps();
   if (releaseGateGaps.length > 0) {
-    console.error(`Docs site build found missing release-gate references:\n${releaseGateGaps.join("\n")}`);
+    console.error(
+      `Docs site build found missing release-gate references:\n${releaseGateGaps.join("\n")}`,
+    );
     process.exit(1);
   }
   const staleReleaseEvidenceGaps = findStaleReleaseEvidenceGaps();
   if (staleReleaseEvidenceGaps.length > 0) {
-    console.error(`Docs site build found stale release evidence references:\n${staleReleaseEvidenceGaps.join("\n")}`);
+    console.error(
+      `Docs site build found stale release evidence references:\n${staleReleaseEvidenceGaps.join("\n")}`,
+    );
     process.exit(1);
   }
 }
@@ -88,14 +124,23 @@ function collectMarkdown(entry) {
   if (!existsSync(entry)) return [];
   const stats = statSync(entry);
   if (stats.isFile()) {
-    const relativePath = relative(root, entry).replaceAll("\\", "/").toLowerCase();
-    return extname(entry).toLowerCase() === ".md" && !excludedPublicSources.has(relativePath) ? [entry] : [];
+    const relativePath = relative(root, entry)
+      .replaceAll("\\", "/")
+      .toLowerCase();
+    return extname(entry).toLowerCase() === ".md" &&
+      !excludedPublicSources.has(relativePath)
+      ? [entry]
+      : [];
   }
-  return readdirSync(entry, { withFileTypes: true }).flatMap((item) => collectMarkdown(join(entry, item.name)));
+  return readdirSync(entry, { withFileTypes: true }).flatMap((item) =>
+    collectMarkdown(join(entry, item.name)),
+  );
 }
 
 function htmlOutputPath(relativePath) {
-  const normalized = relativePath.replaceAll("\\", "/").replace(/\.md$/i, ".html");
+  const normalized = relativePath
+    .replaceAll("\\", "/")
+    .replace(/\.md$/i, ".html");
   return join(outputDir, normalized);
 }
 
@@ -121,12 +166,23 @@ function findLocalPathLeaks(file) {
   const sourceRelative = relative(root, file).replaceAll("\\", "/");
   return markdown
     .split(/\r?\n/)
-    .flatMap((line, index) => (/(^|[^A-Za-z])[A-Za-z]:[\\/]/.test(line) ? [`${sourceRelative}:${index + 1}`] : []));
+    .flatMap((line, index) =>
+      /(^|[^A-Za-z])[A-Za-z]:[\\/]/.test(line)
+        ? [`${sourceRelative}:${index + 1}`]
+        : [],
+    );
 }
 
 function findReleaseGateGaps() {
-  const requiredCommands = ["pnpm release:smoke", "pnpm v1:completion:audit", "pnpm v1:evidence:check", "pnpm v1:issues:check"];
-  const requiredEvidenceTerms = releaseEvidenceGates.map((gate) => gate.publicDocsTerm);
+  const requiredCommands = [
+    "pnpm release:smoke",
+    "pnpm v1:completion:audit",
+    "pnpm v1:evidence:check",
+    "pnpm v1:issues:check",
+  ];
+  const requiredEvidenceTerms = releaseEvidenceGates.map(
+    (gate) => gate.publicDocsTerm,
+  );
   const requiredFiles = ["docs/release/v1.0.md", "docs/site/index.md"];
   const commandGaps = requiredFiles.flatMap((source) => {
     const markdown = readFileSync(join(root, source), "utf8");
@@ -139,7 +195,7 @@ function findReleaseGateGaps() {
     "docs/release/v1-release-checklist.md",
     "docs/prd-v1-gap-closure.md",
     "docs/verification/v1-gap-closure-completion-audit.md",
-    "docs/verification/v1-release-owner-handoff.md"
+    "docs/verification/v1-release-owner-handoff.md",
   ];
   const evidenceGaps = evidenceFiles.flatMap((source) => {
     const markdown = readFileSync(join(root, source), "utf8").toLowerCase();
@@ -151,31 +207,51 @@ function findReleaseGateGaps() {
 }
 
 function findStaleReleaseEvidenceGaps() {
-  const evidencePath = join(root, "docs", "verification", "release-workflow-evidence.md");
+  const evidencePath = join(
+    root,
+    "docs",
+    "verification",
+    "release-workflow-evidence.md",
+  );
   if (!existsSync(evidencePath)) {
     return ["docs/verification/release-workflow-evidence.md missing"];
   }
-  const releaseCommit = latestPassingHostedReleaseSmokeCommit(readFileSync(evidencePath, "utf8"));
+  const releaseCommit = latestPassingHostedReleaseSmokeCommit(
+    readFileSync(evidencePath, "utf8"),
+  );
   if (!releaseCommit) {
-    return ["docs/verification/release-workflow-evidence.md missing passing Hosted Workflow Evidence: Release Smoke commit"];
+    return [
+      "docs/verification/release-workflow-evidence.md missing passing Hosted Workflow Evidence: Release Smoke commit",
+    ];
   }
   const requiredCurrentEvidenceFiles = [
     "docs/prd-v1-gap-closure.md",
-    "docs/verification/v1-release-owner-handoff.md"
+    "docs/verification/v1-release-owner-handoff.md",
   ];
   return requiredCurrentEvidenceFiles
-    .filter((source) => !readFileSync(join(root, source), "utf8").includes(releaseCommit))
-    .map((source) => `${source} missing current hosted release-smoke commit ${releaseCommit}`);
+    .filter(
+      (source) =>
+        !readFileSync(join(root, source), "utf8").includes(releaseCommit),
+    )
+    .map(
+      (source) =>
+        `${source} missing current hosted release-smoke commit ${releaseCommit}`,
+    );
 }
 
 function latestPassingHostedReleaseSmokeCommit(markdown) {
   return markdown
     .split(/^## /m)
     .map((section) => section.trim())
-    .filter((section) => section.startsWith("Hosted Workflow Evidence: Release Smoke"))
+    .filter((section) =>
+      section.startsWith("Hosted Workflow Evidence: Release Smoke"),
+    )
     .map((section) => {
       const commit = section.match(/- Commit SHA:\s*`([0-9a-f]{40})`/i)?.[1];
-      const result = section.match(/- Result:\s*(.+)/i)?.[1]?.trim().toLowerCase();
+      const result = section
+        .match(/- Result:\s*(.+)/i)?.[1]
+        ?.trim()
+        .toLowerCase();
       return commit && result === "pass" ? commit : null;
     })
     .filter(Boolean)
@@ -183,7 +259,10 @@ function latestPassingHostedReleaseSmokeCommit(markdown) {
 }
 
 function renderPage(relativePath, markdown) {
-  const title = pageTitle(markdown, basename(relativePath, extname(relativePath)));
+  const title = pageTitle(
+    markdown,
+    basename(relativePath, extname(relativePath)),
+  );
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -272,7 +351,9 @@ function renderMarkdown(markdown, relativePath) {
       flushParagraph();
       closeList();
       const level = heading[1].length;
-      html.push(`      <h${level}>${inline(heading[2], relativePath)}</h${level}>`);
+      html.push(
+        `      <h${level}>${inline(heading[2], relativePath)}</h${level}>`,
+      );
       continue;
     }
     const bullet = line.match(/^\s*-\s+(.+)$/);
@@ -295,22 +376,36 @@ function renderMarkdown(markdown, relativePath) {
 function inline(value, relativePath) {
   return escapeHtml(value)
     .replace(/`([^`]+)`/g, "<code>$1</code>")
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, text, href) => `<a href="${escapeAttribute(rewriteMarkdownHref(href, relativePath))}">${text}</a>`);
+    .replace(
+      /\[([^\]]+)\]\(([^)]+)\)/g,
+      (_match, text, href) =>
+        `<a href="${escapeAttribute(rewriteMarkdownHref(href, relativePath))}">${text}</a>`,
+    );
 }
 
 function rewriteMarkdownHref(href, relativePath) {
-  if (/^[a-z]+:/i.test(href) || href.startsWith("#")) return href;
-  const [path, hash = ""] = href.split("#");
-  if (!path.endsWith(".md")) return href;
+  const normalized = href.trim();
+  if (normalized.startsWith("#")) return normalized;
+  const scheme = normalized.match(/^([a-z][a-z0-9+.-]*):/i)?.[1]?.toLowerCase();
+  if (scheme)
+    return ["http", "https", "mailto"].includes(scheme) ? normalized : "#";
+  if (normalized.startsWith("//")) return "#";
+  const [path, hash = ""] = normalized.split("#");
+  if (!path.endsWith(".md")) return normalized;
   const sourceDir = dirname(relativePath).replaceAll("\\", "/");
-  const target = join(sourceDir, path).replaceAll("\\", "/").replace(/\.md$/i, ".html");
+  const target = join(sourceDir, path)
+    .replaceAll("\\", "/")
+    .replace(/\.md$/i, ".html");
   return `${relativeLink(relativePath, target)}${hash ? `#${hash}` : ""}`;
 }
 
 function relativeLink(fromRelativePath, targetRelativePath) {
   const fromDir = dirname(fromRelativePath).replaceAll("\\", "/");
   const target = targetRelativePath.replaceAll("\\", "/");
-  let link = relative(fromDir === "." ? "" : fromDir, target).replaceAll("\\", "/");
+  let link = relative(fromDir === "." ? "" : fromDir, target).replaceAll(
+    "\\",
+    "/",
+  );
   if (!link.startsWith(".")) link = `./${link}`;
   return link;
 }
@@ -320,7 +415,10 @@ function pageTitle(markdown, fallback) {
 }
 
 function escapeHtml(value) {
-  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
 }
 
 function escapeAttribute(value) {

@@ -22,9 +22,20 @@ export function visibleAiAgentProposals(proposals: Proposal[], messages: AiAgent
   return proposals
     .filter((proposal) => !hiddenProposalIds.has(proposal.id))
     .filter((proposal) => proposal.status === "pending" || proposal.status === "approved")
-    .filter((proposal) => proposalIds.has(proposal.id) || proposal.createdByType === "ai")
+    .filter((proposal) => proposalIds.has(proposal.id) || proposal.createdByType === "ai" || proposal.createdByType === "plugin")
     .sort((left, right) => proposalStatusSort(left.status) - proposalStatusSort(right.status) || right.updatedAt.localeCompare(left.updatedAt))
     .slice(0, 4);
+}
+
+export function setProposalHidden(hiddenProposalIds: ReadonlySet<string>, proposalId: string, hidden: boolean): Set<string> {
+  const next = new Set(hiddenProposalIds);
+  if (hidden) next.add(proposalId);
+  else next.delete(proposalId);
+  return next;
+}
+
+export function proposalChangesExternalLore(proposal: Pick<Proposal, "changesJson">): boolean {
+  return proposal.changesJson.some((change) => change.entity === "world" || change.entity === "handout");
 }
 
 export function applyProposalChangesToSnapshot(snapshot: Snapshot, proposal: Proposal): Snapshot {
@@ -69,12 +80,20 @@ function applyProposalChangeToSnapshot(snapshot: Snapshot, change: ProposalChang
       return { ...snapshot, diceMacros: applyRecordChange(snapshot.diceMacros, change, updatedAt) };
     case "encounter":
       return { ...snapshot, encounters: applyRecordChange(snapshot.encounters, change, updatedAt) };
+    case "campaignSession":
+      return { ...snapshot, campaignSessions: applyRecordChange(snapshot.campaignSessions ?? [], change, updatedAt) };
     case "combat":
       return { ...snapshot, combats: applyRecordChange(snapshot.combats, change, updatedAt) };
     case "asset":
       return { ...snapshot, assets: applyRecordChange(snapshot.assets, change, updatedAt) };
     case "fogPreset":
       return { ...snapshot, fogPresets: applyRecordChange(snapshot.fogPresets, change, updatedAt) };
+    case "aiMemory":
+      return { ...snapshot, memory: applyRecordChange(snapshot.memory, change, updatedAt) };
+    case "world":
+    case "handout":
+    case "pluginStorage":
+      return snapshot;
   }
 }
 

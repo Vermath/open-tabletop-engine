@@ -14,6 +14,7 @@ export const tableNames = [
   "chat_messages",
   "dice_rolls",
   "encounters",
+  "campaign_sessions",
   "combats",
   "combat_turns",
   "compendium_packs",

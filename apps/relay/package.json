@@ -17,9 +17,9 @@
     "@open-tabletop/tunnel-protocol": "workspace:*"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260430.1",
+    "@cloudflare/workers-types": "^5.20260710.1",
     "typescript": "^5.7.2",
-    "vitest": "^2.1.8",
-    "wrangler": "^4.87.0"
+    "vitest": "^3.2.6",
+    "wrangler": "^4.110.0"
   }
 }

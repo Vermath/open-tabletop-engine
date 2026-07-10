@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   comparePluginVersions,
   parsePluginVersion,
+  pluginEventPermission,
   validatePluginManifest,
 } from "./index.js";
 
@@ -48,6 +49,83 @@ describe("plugin manifest validation", () => {
         "Plugin ui panel 1 must be an object",
         "Plugin chat command 1 must be an object",
         "Plugin command is duplicated: /duplicate",
+      ]),
+    );
+  });
+
+  it("validates event subscriptions against the supported event and permission surface", () => {
+    expect(
+      validatePluginManifest({
+        ...validManifest,
+        permissions: ["chat.write", "token.read", "ai.proposeChanges"],
+        eventSubscriptions: [
+          {
+            type: "token.moved",
+            description: "Offer follow-up chat when a token moves",
+          },
+          { type: "proposal.applied" },
+        ],
+      }),
+    ).toEqual([]);
+
+    expect(
+      validatePluginManifest({
+        ...validManifest,
+        eventSubscriptions: [
+          null,
+          { type: "token.moved" },
+          { type: "token.moved" },
+          { type: "ai.message.delta" },
+        ],
+      }),
+    ).toEqual(
+      expect.arrayContaining([
+        "Plugin event subscription 1 must be an object",
+        "Plugin event token.moved requires permission: token.read",
+        "Plugin event subscription is duplicated: token.moved",
+        "Unsupported plugin event type: ai.message.delta",
+      ]),
+    );
+  });
+
+  it("requires a server entrypoint for event subscriptions", () => {
+    expect(
+      validatePluginManifest({
+        ...validManifest,
+        entrypoints: { client: "./client.js" },
+        permissions: ["token.read"],
+        chatCommands: [],
+        eventSubscriptions: [{ type: "token.moved" }],
+      }),
+    ).toContain("Plugins with event subscriptions require a server entrypoint");
+  });
+
+  it("requires the dedicated world and handout read permissions for their events", () => {
+    expect(pluginEventPermission("world.updated")).toBe("world.read");
+    expect(pluginEventPermission("handout.updated")).toBe("handout.read");
+    expect(
+      validatePluginManifest({
+        ...validManifest,
+        permissions: ["world.read", "handout.read"],
+        eventSubscriptions: [
+          { type: "world.updated" },
+          { type: "handout.updated" },
+        ],
+      }),
+    ).toEqual([]);
+    expect(
+      validatePluginManifest({
+        ...validManifest,
+        permissions: ["campaign.read", "journal.read"],
+        eventSubscriptions: [
+          { type: "world.updated" },
+          { type: "handout.updated" },
+        ],
+      }),
+    ).toEqual(
+      expect.arrayContaining([
+        "Plugin event world.updated requires permission: world.read",
+        "Plugin event handout.updated requires permission: handout.read",
       ]),
     );
   });

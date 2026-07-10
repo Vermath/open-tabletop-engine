@@ -367,6 +367,27 @@ export async function switchOrganization(organizationId: string): Promise<Organi
   return apiPatch<OrganizationSwitchInfo>("/api/v1/organization/session", { organizationId });
 }
 
+export interface CampaignSessionInfo {
+  id: string;
+  campaignId: string;
+  status: "planned" | "live" | "completed";
+  title: string;
+  number: number;
+  agenda: string;
+  notes: string;
+  scheduledFor?: string;
+  startedAt?: string;
+  endedAt?: string;
+  sceneIds: string[];
+  encounterIds: string[];
+  recapProposalId?: string;
+  recapJournalId?: string;
+  createdBy: string;
+  updatedBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Snapshot {
   session?: SessionInfo;
   workspaceDefaults?: OrganizationWorkspace;
@@ -389,6 +410,7 @@ export interface Snapshot {
   diceMacros: DiceMacro[];
   audioTracks: AudioTrack[];
   encounters: Encounter[];
+  campaignSessions?: CampaignSessionInfo[];
   combats: Combat[];
   combatAudit: AuditLog[];
   proposals: Proposal[];
@@ -420,6 +442,7 @@ interface CampaignSnapshotPayload {
   rolls: DiceRoll[];
   diceMacros: DiceMacro[];
   encounters: Encounter[];
+  campaignSessions?: CampaignSessionInfo[];
   combats: Combat[];
   proposals: Proposal[];
   memory: AiMemoryFact[];
@@ -656,6 +679,12 @@ export interface PluginReviewInfo {
   updatedAt: string;
 }
 
+export type MarketplacePluginReviewInfo = {
+  review: Omit<PluginReviewInfo, "registryUrl" | "packageUrl" | "notes" | "reviewedByUserId">;
+  installable: boolean;
+  installBlock?: string;
+};
+
 export interface PluginRuntimeInfo {
   id: string;
   name: string;
@@ -683,13 +712,11 @@ export interface PluginRuntimeInfo {
     compatibilityBlock?: string;
   }>;
   source?: {
-    type: string;
+    type: "local" | "registry";
     packageId: string;
-    sandbox: string;
+    sandbox: "vm" | "manifest-only";
     manifestChecksum?: string;
     checksum?: string;
-    registryUrl?: string;
-    packageUrl?: string;
     packageChecksum?: string;
     syncedAt?: string;
   };
@@ -703,7 +730,6 @@ export interface PluginRuntimeInfo {
       keyId?: string;
       algorithm?: string;
       verified: boolean;
-      signaturePath?: string;
     };
   };
   distribution: {
@@ -714,12 +740,11 @@ export interface PluginRuntimeInfo {
     requestedPermissions: string[];
     grantRequired: boolean;
   };
-  marketplaceReview?: AdminPluginReviewInfo;
+  marketplaceReview?: MarketplacePluginReviewInfo;
   chatCommands?: Array<{ command: string; description: string }>;
   audit?: {
     installCount: number;
     lastInstallAt?: string;
-    lastActorUserId?: string;
     versions: string[];
   };
 }
@@ -738,7 +763,13 @@ export interface SystemRuntimeInfo {
     item?: string;
   };
   permissions?: PermissionName[];
+  capabilities?: string[];
   active: boolean;
+  source?: "bundled" | "api";
+  dataDriven?: boolean;
+  runtimeCapabilities?: string[];
+  unsupportedCapabilities?: string[];
+  installedAt?: string;
 }
 
 export interface CharacterTemplateInfo {
@@ -2125,9 +2156,17 @@ export interface AdminPluginReviewInfo {
     permissions: string[];
     chatCommands?: Array<{ command: string; description: string }>;
   };
-  source: NonNullable<PluginRuntimeInfo["source"]>;
+  source: NonNullable<PluginRuntimeInfo["source"]> & {
+    manifestPath: string;
+    clientEntrypoint?: string;
+    serverEntrypoint?: string;
+    registryUrl?: string;
+    packageUrl?: string;
+  };
   distribution: PluginRuntimeInfo["distribution"];
-  trust: PluginRuntimeInfo["trust"];
+  trust: Omit<PluginRuntimeInfo["trust"], "signature"> & {
+    signature?: NonNullable<PluginRuntimeInfo["trust"]["signature"]> & { signaturePath?: string };
+  };
   installable: boolean;
   installBlock?: string;
 }
@@ -2856,8 +2895,14 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
     bundled.systems !== undefined ? Promise.resolve(bundled.systems) : snapshotGet<SystemRuntimeInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/systems`),
     bundled.combatAudit !== undefined ? Promise.resolve(bundled.combatAudit) : activeCombatId ? snapshotGet<AuditLog[]>(`/api/v1/combats/${activeCombatId}/audit`) : Promise.resolve([])
   ]);
-  const activeSystemId = systems.find((system) => system.active)?.id ?? systems[0]?.id;
-  const characterTemplates = bundled.characterTemplates !== undefined ? bundled.characterTemplates : activeSystemId ? await snapshotGet<CharacterTemplateInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/systems/${activeSystemId}/character-templates`) : [];
+  const activeSystem = systems.find((system) => system.active) ?? systems[0];
+  const activeSystemId = activeSystem?.id;
+  const characterTemplates =
+    bundled.characterTemplates !== undefined
+      ? bundled.characterTemplates
+      : activeSystemId && (activeSystem.runtimeCapabilities ?? []).includes("character-templates")
+        ? await snapshotGet<CharacterTemplateInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/systems/${activeSystemId}/character-templates`)
+        : [];
   const [displayAssets, displayAudioTracks] = await Promise.all([withAssetDeliveryUrls(campaignSnapshot.assets), withAudioDeliveryUrls(audioTracks)]);
   return {
     session,
@@ -2881,6 +2926,7 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
     diceMacros: campaignSnapshot.diceMacros,
     audioTracks: displayAudioTracks,
     encounters: campaignSnapshot.encounters,
+    campaignSessions: campaignSnapshot.campaignSessions ?? [],
     combats: campaignSnapshot.combats,
     combatAudit,
     proposals: campaignSnapshot.proposals,

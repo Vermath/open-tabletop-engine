@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import { emptyState, seedState, type EngineState } from "@open-tabletop/core";
+import { emptyState, normalizeEngineState, seedState, type EngineState } from "@open-tabletop/core";
 
 export interface StateStore {
   state: EngineState;
   save(): void;
   flush?(): void;
-  replace(state: EngineState): void;
+  replace(state: EngineState, options?: { flush?: boolean }): void;
 }
 
 export interface StoreSeedOptions {
@@ -55,8 +55,15 @@ export class CoalescedStateWriter {
       this.timer = undefined;
     }
     if (!this.dirty) return;
-    this.dirty = false;
-    this.writeNow();
+    try {
+      this.writeNow();
+      this.dirty = false;
+    } catch (error) {
+      // Explicit flush callers must be able to retry the same pending state
+      // without first issuing an unrelated save.
+      this.dirty = true;
+      throw error;
+    }
   }
 
   close(): void {
@@ -82,10 +89,10 @@ export class FileStateStore implements StateStore {
     this.writer.flush();
   }
 
-  replace(state: EngineState): void {
-    this.state = state;
+  replace(state: EngineState, options: { flush?: boolean } = {}): void {
+    this.state = normalizeEngineState(state);
     this.save();
-    this.flush();
+    if (options.flush !== false) this.flush();
   }
 
   close(): void {
@@ -99,19 +106,23 @@ export class FileStateStore implements StateStore {
       return seeded;
     }
     const parsed = JSON.parse(readFileSync(this.filePath, "utf8")) as Partial<EngineState>;
-    return { ...emptyState(), ...parsed };
+    return normalizeEngineState(parsed);
   }
 }
 
 export class MemoryStateStore implements StateStore {
-  constructor(public state: EngineState = seedState()) {}
+  state: EngineState;
+
+  constructor(state: EngineState = seedState()) {
+    this.state = normalizeEngineState(state);
+  }
 
   save(): void {}
 
   flush(): void {}
 
-  replace(state: EngineState): void {
-    this.state = state;
+  replace(state: EngineState, _options: { flush?: boolean } = {}): void {
+    this.state = normalizeEngineState(state);
   }
 }
 

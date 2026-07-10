@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { makeArchive, seedState } from "./state.js";
+import { aiMemoryFactStatus, makeArchive, normalizeEngineState, seedState } from "./state.js";
 import type { Scene } from "./types.js";
 
 describe("campaign archives", () => {
@@ -49,5 +49,51 @@ describe("campaign archives", () => {
     expect(state.campaigns[0]!.name).toBe("The Ember Vault");
     expect((state.actors[0]!.data.hp as { current: number }).current).toBe(18);
     expect(state.tokens[0]!.metadata).toEqual({});
+  });
+
+  it("normalizes additive handout, memory, and campaign-session state without breaking legacy rows", () => {
+    const state = seedState();
+    const now = "2026-07-09T00:00:00.000Z";
+    state.handouts.push({
+      id: "hnd_legacy",
+      campaignId: "camp_demo",
+      title: "Legacy Handout",
+      body: "Imported before audience and read receipts existed.",
+      visibility: "public",
+      assetIds: [],
+      createdAt: now,
+      updatedAt: now
+    });
+    state.aiMemory.push({
+      id: "mem_legacy",
+      campaignId: "camp_demo",
+      text: "An already approved legacy fact.",
+      visibility: "public",
+      sourceIds: [],
+      approvedByUserId: "usr_demo_gm",
+      createdAt: now,
+      updatedAt: now
+    });
+    state.campaignSessions.push({
+      id: "cses_1",
+      campaignId: "camp_demo",
+      status: "planned",
+      title: "Session 1",
+      number: 1,
+      agenda: "Open the vault",
+      notes: "",
+      sceneIds: ["scn_vault_entry"],
+      encounterIds: [],
+      createdBy: "usr_demo_gm",
+      updatedBy: "usr_demo_gm",
+      createdAt: now,
+      updatedAt: now
+    });
+
+    const normalized = normalizeEngineState(state);
+    expect(normalized.handouts.at(-1)).toMatchObject({ visibleToUserIds: [], visibleToActorIds: [], tags: [], readByUserIds: [], createdBy: "usr_demo_gm", updatedBy: "usr_demo_gm" });
+    expect(normalized.aiMemory.at(-1)).toMatchObject({ type: "canon_fact", status: "approved" });
+    expect(aiMemoryFactStatus(normalized.aiMemory.at(-1)!)).toBe("approved");
+    expect(makeArchive(normalized, "camp_demo").data.campaignSessions).toHaveLength(1);
   });
 });
