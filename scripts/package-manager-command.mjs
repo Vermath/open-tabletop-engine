@@ -25,6 +25,14 @@ if (!packageManagerMatch)
   );
 
 export function packageManagerCommand(args) {
+  const inheritedCommand = inheritedPackageManagerCommand();
+  if (inheritedCommand) {
+    return {
+      executable: inheritedCommand.executable,
+      args: [...inheritedCommand.args, ...args],
+    };
+  }
+
   const [, name, version] = packageManagerMatch;
   const invokingEntrypoint = process.env.npm_execpath?.trim();
   const invokingAgent = process.env.npm_config_user_agent
@@ -76,6 +84,11 @@ export function packageManagerEnvironment() {
 
   const temporaryPrefix = resolve(tmpdir(), "otte-package-manager-");
   const shimDirectory = mkdtempSync(temporaryPrefix);
+  const resolvedCommand = packageManagerCommand([]);
+  const packageManagerEnvironment = {
+    ...process.env,
+    OTTE_PACKAGE_MANAGER_COMMAND: JSON.stringify(resolvedCommand),
+  };
   const runner = join(workspaceRoot, "scripts", "run-package-manager.mjs");
   writeFileSync(
     join(shimDirectory, "pnpm.cmd"),
@@ -90,7 +103,10 @@ export function packageManagerEnvironment() {
 
   return {
     env: withShimPath(
-      { ...process.env, OTTE_PACKAGE_MANAGER_SHIM_DIR: shimDirectory },
+      {
+        ...packageManagerEnvironment,
+        OTTE_PACKAGE_MANAGER_SHIM_DIR: shimDirectory,
+      },
       shimDirectory,
     ),
     cleanup() {
@@ -98,6 +114,27 @@ export function packageManagerEnvironment() {
         rmSync(shimDirectory, { recursive: true, force: true });
     },
   };
+}
+
+function inheritedPackageManagerCommand() {
+  const serialized = process.env.OTTE_PACKAGE_MANAGER_COMMAND?.trim();
+  if (!serialized) return undefined;
+  let parsed;
+  try {
+    parsed = JSON.parse(serialized);
+  } catch {
+    throw new Error("Invalid inherited package-manager command.");
+  }
+  if (
+    !parsed ||
+    typeof parsed !== "object" ||
+    typeof parsed.executable !== "string" ||
+    parsed.executable.length === 0 ||
+    !Array.isArray(parsed.args) ||
+    !parsed.args.every((arg) => typeof arg === "string")
+  )
+    throw new Error("Invalid inherited package-manager command.");
+  return parsed;
 }
 
 function withShimPath(environment, shimDirectory) {
