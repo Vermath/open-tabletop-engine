@@ -16,7 +16,10 @@ export type RulesCompendiumEntry = {
 };
 
 
-export type TokenVisionPatch = Partial<Pick<Token, "visionEnabled" | "visionRadius" | "dimVisionRadius">> & { brightVisionRadius?: number | null };
+export type TokenVisionPatch = Partial<Pick<Token, "visionEnabled" | "visionRadius">> & {
+  brightVisionRadius?: number | null;
+  dimVisionRadius?: number | null;
+};
 
 
 export const actorActionFormulaPattern = /\b\d{0,3}d\d{1,4}(?:\s*[+-]\s*(?:\d{0,3}d\d{1,4}|\d{1,5}))*\b/i;
@@ -1736,7 +1739,16 @@ export function formatSignedActionNumber(value: number): string {
 }
 
 
-export function tokenBrightVisionPatch(value: string): TokenVisionPatch {
+export function tokenBrightVisionPatch(value: string): TokenVisionPatch | undefined {
+  if (!value.trim()) return { brightVisionRadius: null };
   const radius = Number(value);
-  return Number.isFinite(radius) && radius > 0 ? { brightVisionRadius: radius } : { brightVisionRadius: null };
+  if (!Number.isFinite(radius) || radius < 0) return undefined;
+  return radius > 0 ? { brightVisionRadius: radius } : { brightVisionRadius: null };
+}
+
+
+export function tokenDimVisionPatch(value: string): TokenVisionPatch | undefined {
+  const radius = value.trim() ? Number(value) : 0;
+  if (!Number.isFinite(radius) || radius < 0) return undefined;
+  return { visionRadius: radius, dimVisionRadius: radius > 0 ? radius : null };
 }

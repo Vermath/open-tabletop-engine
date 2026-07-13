@@ -125,6 +125,55 @@ export interface CampaignSnapshotMember extends CampaignMember {
   permissions: PermissionName[];
 }
 
+export type CampaignPermissionTemplateId =
+  | "standard"
+  | "player_authoring"
+  | "ai_assisted"
+  | "assistant_ops";
+
+export interface CampaignCreateInput
+  extends Partial<
+    Pick<Campaign, "name" | "description" | "defaultSystemId" | "visibility">
+  > {
+  permissionTemplate?: CampaignPermissionTemplateId;
+  starterContent?: boolean;
+}
+
+export type CampaignUpdateInput = Partial<
+  Pick<Campaign, "name" | "description" | "defaultSystemId" | "visibility">
+>;
+
+export type EncounterCreateInput = Partial<
+  Pick<Encounter, "name" | "summary" | "tokenIds" | "difficulty" | "systemId" | "partyActorIds" | "threats">
+> & { worldId?: string | null };
+
+export type EncounterUpdateInput = EncounterCreateInput;
+
+export interface SystemEncounterPlanInput {
+  partyActorIds?: string[];
+  threats?: Array<{ id: string; count: number }>;
+  createEncounter?: boolean;
+  name?: string;
+}
+
+export interface SystemEncounterPlanResult {
+  plan: Record<string, unknown>;
+  encounter?: Encounter;
+}
+
+export interface CampaignSnapshotBundled {
+  assetStorage?: Record<string, unknown>;
+  audioTracks?: AudioTrack[];
+  plugins?: PluginCampaignInfo[];
+  systems?: SystemRuntimeInfo[];
+  characterTemplates?: Array<Record<string, unknown>>;
+  contentImports?: ContentImportBatch[];
+  aiThreads?: AiThread[];
+  aiUsage?: Record<string, unknown>;
+  aiToolCalls?: AiToolCall[];
+  combatAudit?: AuditLog[];
+}
+
 export interface CampaignSnapshot {
   generatedAt: string;
   campaign: Campaign;
@@ -149,6 +198,7 @@ export interface CampaignSnapshot {
   combats: Combat[];
   proposals: Proposal[];
   memory: AiMemoryFact[];
+  bundled: CampaignSnapshotBundled;
 }
 
 export interface CampaignArchiveImportOptions {
@@ -262,6 +312,22 @@ export interface PluginCampaignInfo extends PluginRuntimeInfo {
   grantedPermissions: PermissionName[];
   missingPermissions: PermissionName[];
   updateAvailable?: boolean;
+  versionCompatibility?: Array<{
+    version: string;
+    compatibleCore: { range: string; coreVersion: string; satisfied: boolean };
+    compatibilityBlock?: string;
+    permissions: PermissionName[];
+    permissionReview: { requestedPermissions: PermissionName[]; grantRequired: boolean };
+    trust: {
+      status: "trusted" | "unsigned" | "untrusted";
+      policy: "allow_unsigned" | "require_trusted";
+      required: boolean;
+      installable: boolean;
+      errors: string[];
+    };
+    source: { type: "local" | "registry"; packageId: string; sandbox: "vm" | "manifest-only" };
+    marketplaceReview?: { installable?: boolean };
+  }>;
   audit?: {
     installCount: number;
     lastInstallAt?: string;
@@ -635,7 +701,7 @@ export class OpenTabletopClient {
     return this.get(routes.campaigns);
   }
 
-  async createCampaign(input: Partial<Campaign>): Promise<Campaign> {
+  async createCampaign(input: CampaignCreateInput): Promise<Campaign> {
     return this.post(routes.campaigns, input);
   }
 
@@ -645,7 +711,7 @@ export class OpenTabletopClient {
 
   async updateCampaign(
     campaignId: string,
-    input: Partial<Campaign>,
+    input: CampaignUpdateInput,
   ): Promise<Campaign> {
     return this.patch(routes.campaign(campaignId), input);
   }
@@ -1378,7 +1444,7 @@ export class OpenTabletopClient {
 
   async createEncounter(
     campaignId: string,
-    input: Partial<Encounter>,
+    input: EncounterCreateInput,
   ): Promise<Encounter> {
     return this.post(routes.encounters(campaignId), input);
   }
@@ -1389,7 +1455,7 @@ export class OpenTabletopClient {
 
   async updateEncounter(
     encounterId: string,
-    input: Omit<Partial<Encounter>, "worldId"> & { worldId?: string | null },
+    input: EncounterUpdateInput,
   ): Promise<Encounter> {
     return this.patch(routes.encounter(encounterId), input);
   }
@@ -1404,7 +1470,7 @@ export class OpenTabletopClient {
 
   async createProposal(
     campaignId: string,
-    input: Partial<Proposal>,
+    input: Partial<Pick<Proposal, "title" | "summary" | "changesJson" | "diffJson">>,
   ): Promise<Proposal> {
     return this.post(routes.proposals(campaignId), input);
   }
@@ -1714,8 +1780,8 @@ export class OpenTabletopClient {
   async systemEncounterPlan(
     campaignId: string,
     systemId: string,
-    input: unknown,
-  ): Promise<unknown> {
+    input: SystemEncounterPlanInput,
+  ): Promise<SystemEncounterPlanResult> {
     return this.post(routes.systemEncounterPlan(campaignId, systemId), input);
   }
 
@@ -1928,7 +1994,8 @@ export class OpenTabletopClient {
     const hasOptions =
       options.mode !== undefined ||
       options.scope !== undefined ||
-      options.collections !== undefined;
+      options.collections !== undefined ||
+      options.regenerateIds !== undefined;
     return this.post(
       routes.importCampaign,
       hasOptions ? { archive, ...options } : archive,
@@ -2017,7 +2084,8 @@ export interface CampaignSearchResult {
     | "handout"
     | "encounter"
     | "memory"
-    | "chat";
+    | "chat"
+    | "roll";
   id: string;
   title: string;
   snippet: string;

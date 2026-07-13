@@ -43,8 +43,8 @@ async function deleteTokenById(page: Page, tokenId: string) {
 }
 
 async function openInspectorPanel(page: Page, panelName: string) {
-  const visiblePanelName = panelName === "SDK" ? "Plugins" : panelName;
-  await page.locator(".inspector-tabs").getByRole("button", { name: visiblePanelName, exact: true }).click();
+  const visiblePanelName = panelName === "SDK" ? "Plugins" : panelName === "Content" ? "Assets" : panelName;
+  await page.locator(".inspector-tabs").getByRole("tab", { name: visiblePanelName, exact: true }).click();
 }
 
 function selectedActorPanel(page: Page) {
@@ -68,14 +68,6 @@ async function clickElement(locator: Locator) {
   await locator.evaluate((element) => (element as HTMLElement).click());
 }
 
-async function shiftTabUntilFocused(page: Page, target: Locator, attempts = 140): Promise<void> {
-  for (let index = 0; index < attempts; index += 1) {
-    if (await target.evaluate((element) => element === document.activeElement).catch(() => false)) return;
-    await page.keyboard.press("Shift+Tab");
-  }
-  await expect(target).toBeFocused();
-}
-
 test("main tabletop controls expose accessible names and keyboard reachability", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
@@ -86,6 +78,8 @@ test("main tabletop controls expose accessible names and keyboard reachability",
   await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
   await expect(page.getByRole("main", { name: "OpenTabletop workspace" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Campaigns" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Live Table", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "Prep", exact: true })).toHaveAttribute("aria-pressed", "false");
   await expect(page.getByRole("button", { name: "Add token" })).toBeVisible();
   await openInspectorPanel(page, "Chat");
   await expect(page.getByRole("textbox", { name: "Chat message" })).toBeVisible();
@@ -233,7 +227,7 @@ test("main tabletop controls expose accessible names and keyboard reachability",
   await page.getByRole("button", { name: "Send chat command" }).click();
   await expect(page.getByRole("status").filter({ hasText: /^Rolled \d+$/ })).toBeVisible();
 
-  const chatTab = page.getByRole("button", { name: "Chat", exact: true });
+  const chatTab = page.getByRole("tab", { name: "Chat", exact: true });
   await chatTab.focus();
   await expect(chatTab).toBeFocused();
   await chatTab.press("Enter");
@@ -256,7 +250,7 @@ test("advanced panels expose labelled controls and keyboard focus states", async
   await expect(chatCommandLine).toHaveValue("/gm accessibility review prompt");
 
   await page.getByRole("button", { name: "Prep", exact: true }).click();
-  await page.getByRole("button", { name: "Content" }).click();
+  await page.getByRole("tab", { name: "Assets" }).click();
   const assetSearch = page.getByRole("textbox", { name: "Asset search" });
   await expect(page.locator('[aria-label="Asset quota management"]')).toContainText("Quota policy");
   await assetSearch.focus();
@@ -264,14 +258,16 @@ test("advanced panels expose labelled controls and keyboard focus states", async
   await assetSearch.fill("vault");
   await expect(assetSearch).toHaveValue("vault");
 
-  await page.getByRole("button", { name: "AI Agent", exact: true }).click();
+  const aiAgentToggle = page.getByRole("button", { name: "AI Agent", exact: true });
+  await aiAgentToggle.click();
   const aiAgent = page.getByRole("complementary", { name: "AI Agent" });
   const aiPrompt = aiAgent.getByLabel("AI Agent prompt");
-  await aiPrompt.focus();
   await expect(aiPrompt).toBeFocused();
   await aiPrompt.fill("accessibility review prompt");
   await expect(aiPrompt).toHaveValue("accessibility review prompt");
-  await aiAgent.getByRole("button", { name: "Close AI Agent" }).click();
+  await aiPrompt.press("Escape");
+  await expect(aiAgent).toBeHidden();
+  await expect(aiAgentToggle).toBeFocused();
 
   await page.getByRole("button", { name: "Prep", exact: true }).click();
   await openInspectorPanel(page, "SDK");
@@ -291,9 +287,19 @@ test("multi-panel keyboard journey remains operable without pointer input", asyn
 
   await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
 
-  const chatNav = page.getByRole("button", { name: "Chat", exact: true });
-  await tabUntilFocused(page, chatNav);
-  await chatNav.press("Enter");
+  const actorsNav = page.getByRole("tab", { name: "Actors", exact: true });
+  const handoutsNav = page.getByRole("tab", { name: "Handouts", exact: true });
+  const journalNav = page.getByRole("tab", { name: "Journal", exact: true });
+  const searchNav = page.getByRole("tab", { name: "Search", exact: true });
+  const chatNav = page.getByRole("tab", { name: "Chat", exact: true });
+  await tabUntilFocused(page, actorsNav);
+  await actorsNav.press("ArrowRight");
+  await handoutsNav.press("ArrowRight");
+  await journalNav.press("ArrowRight");
+  await expect(searchNav).toBeFocused();
+  await expect(page.getByRole("region", { name: "Campaign Search" })).toBeVisible();
+  await searchNav.press("ArrowRight");
+  await expect(chatNav).toBeFocused();
   await expect(page.locator('[aria-label="Chat messages"]')).toBeVisible();
 
   const chatCommandLine = page.getByRole("textbox", { name: "Chat message" });
@@ -305,7 +311,7 @@ test("multi-panel keyboard journey remains operable without pointer input", asyn
   await tabUntilFocused(page, prepWorkspace);
   await prepWorkspace.press("Enter");
 
-  const contentNav = page.getByRole("button", { name: "Content" });
+  const contentNav = page.getByRole("tab", { name: "Assets" });
   await tabUntilFocused(page, contentNav);
   await contentNav.press("Enter");
   await expect(page.getByRole("region", { name: "Asset library" })).toBeVisible();
@@ -315,15 +321,32 @@ test("multi-panel keyboard journey remains operable without pointer input", asyn
   await assetSearch.fill("vault");
   await expect(assetSearch).toHaveValue("vault");
 
-  const sdkNav = page.getByRole("button", { name: "Plugins", exact: true });
-  await shiftTabUntilFocused(page, sdkNav);
-  await sdkNav.press("Enter");
+  const sdkNav = page.getByRole("tab", { name: "Plugins", exact: true });
+  await contentNav.press("ArrowRight");
+  await expect(sdkNav).toBeFocused();
   await expect(page.getByRole("region", { name: "Plugin marketplace filters" })).toBeVisible();
 
   const pluginSearch = page.getByRole("textbox", { name: "Plugin marketplace search" });
   await tabUntilFocused(page, pluginSearch);
   await pluginSearch.fill("versioned");
   await expect(page.locator("article", { hasText: "Versioned Browser Plugin" })).toBeVisible();
+});
+
+test("desktop map focus mode moves and restores keyboard focus", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Demo GM" }).click();
+  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+
+  const journalTab = page.getByRole("tab", { name: "Journal", exact: true });
+  await journalTab.focus();
+  await journalTab.press("f");
+  const shell = page.getByRole("main", { name: "OpenTabletop workspace" });
+  await expect(shell).toHaveAttribute("data-table-focus", "true");
+  await expect(page.getByRole("button", { name: "Exit map focus mode" })).toBeFocused();
+
+  await page.keyboard.press("Escape");
+  await expect(shell).not.toHaveAttribute("data-table-focus", "true");
+  await expect(journalTab).toBeFocused();
 });
 
 test("actor sheet targeting controls expose screen-reader structure", async ({ page }) => {

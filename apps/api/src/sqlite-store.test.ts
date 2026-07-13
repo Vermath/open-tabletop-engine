@@ -5,6 +5,7 @@ import {
   emptyState,
   type Campaign,
   type EngineState,
+  type User,
 } from "@open-tabletop/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SqliteStateStore } from "./sqlite-store.js";
@@ -192,6 +193,7 @@ describe("SqliteStateStore", () => {
       path: "/api/v1/campaigns/camp_alpha/scenes",
       userId: "usr_test",
       requestHash: "request-hash",
+      authorizationHash: "authorization-hash",
       statusCode: 200,
       contentType: "application/json",
       responseBody: JSON.stringify({ id: "scn_alpha" }),
@@ -213,6 +215,27 @@ describe("SqliteStateStore", () => {
     const reopened = new SqliteStateStore(join(directory, "state.sqlite"), { seedDemo: false });
     expect(reopened.state.idempotencyRecords).toEqual([record]);
     reopened.close();
+  });
+
+  it("does not replace existing non-campaign data with the demo seed", () => {
+    const existingUser: User = {
+      id: "usr_existing_without_campaign",
+      displayName: "Existing User",
+      email: "existing@example.test",
+      createdAt: "2026-06-11T00:00:00.000Z",
+      updatedAt: "2026-06-11T00:00:00.000Z",
+    };
+    const state = emptyState();
+    state.users.push(existingUser);
+    store.replace(state);
+    store.close();
+
+    store = new SqliteStateStore(join(directory, "state.sqlite"), {
+      seedDemo: true,
+    });
+
+    expect(store.state.users).toEqual([existingUser]);
+    expect(store.state.campaigns).toEqual([]);
   });
 });
 

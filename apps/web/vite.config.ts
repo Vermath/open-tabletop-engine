@@ -1,10 +1,16 @@
 import react from "@vitejs/plugin-react";
-import { cpSync, existsSync } from "node:fs";
+import { cpSync, existsSync, rmSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vite";
 
 const projectDir = dirname(fileURLToPath(import.meta.url));
+
+export function syncDiceBoxAssets(source: string, target: string): void {
+  if (!existsSync(source)) return;
+  rmSync(target, { recursive: true, force: true });
+  cpSync(source, target, { recursive: true });
+}
 
 function copyDiceBoxAssets(): Plugin {
   return {
@@ -12,7 +18,7 @@ function copyDiceBoxAssets(): Plugin {
     buildStart() {
       const source = resolve(projectDir, "node_modules/@3d-dice/dice-box-threejs/public");
       const target = resolve(projectDir, "public/assets/dice-box");
-      if (existsSync(source) && !existsSync(target)) cpSync(source, target, { recursive: true });
+      syncDiceBoxAssets(source, target);
     }
   };
 }

@@ -10,7 +10,8 @@ export type WorkerJob =
   | { id: string; type: "storage.backup"; payload: { reason?: string } }
   | { id: string; type: "storage.restoreDrill"; payload: { backupFileName?: string } }
   | { id: string; type: "ai.memory.extract"; payload: { campaignId: string; sourceText?: string } }
-  | { id: string; type: "ai.session.recap"; payload: { campaignId: string; transcript?: string } };
+  | { id: string; type: "ai.session.recap"; payload: { campaignId: string; transcript?: string } }
+  | { id: string; type: "report.bundle"; payload: { campaignId: string } };
 
 export interface WorkerOptions {
   apiBaseUrl: string;
@@ -31,6 +32,18 @@ export interface WorkerLoopOptions extends WorkerOptions {
   maxRetainedResults?: number;
   sleep?: (milliseconds: number) => Promise<void>;
   onResult?: (result: WorkerLeaseResult) => void | Promise<void>;
+}
+
+export type WorkerShutdownSignal = "SIGINT" | "SIGTERM";
+
+export interface WorkerSignalSource {
+  once(signal: WorkerShutdownSignal, listener: () => void): unknown;
+  off(signal: WorkerShutdownSignal, listener: () => void): unknown;
+}
+
+export interface WorkerCliRuntimeOptions {
+  signalSource?: WorkerSignalSource;
+  shutdownTimeoutMs?: number;
 }
 
 export interface WorkerResult {
@@ -56,6 +69,18 @@ export interface WorkerLoopResult {
   results: WorkerLeaseResult[];
 }
 
+const workerSettlementTimeoutMs = 5_000;
+const workerShutdownTimeoutMs = 25_000;
+
+interface WorkerHeartbeatMonitor {
+  stop(): Promise<void>;
+}
+
+interface WorkerShutdownController {
+  signal: AbortSignal;
+  dispose(): void;
+}
+
 export function describeJob(job: WorkerJob): string {
   return `${job.type}:${job.id}`;
 }
@@ -73,20 +98,25 @@ export async function runWorkerJob(job: WorkerJob, options: WorkerOptions): Prom
 
 export async function runLeasedWorkerJob(options: WorkerOptions): Promise<WorkerLeaseResult> {
   const fetchImpl = options.fetch ?? fetch;
+  if (options.signal?.aborted) throw workerShutdownError(options.signal.reason);
   const leased = await fetchJson(fetchImpl, options, "POST", "/api/v1/admin/jobs/lease", compactPayload({ workerId: workerId(options), leaseSeconds: options.leaseSeconds }));
   if (leased === undefined) return { status: "idle" };
   const job = parseWorkerJob(leased);
-  const abortController = new AbortController();
-  await fetchJson(fetchImpl, options, "POST", `/api/v1/admin/jobs/${encodeURIComponent(job.id)}/heartbeat`, {
-    workerId: workerId(options),
-    leaseSeconds: options.leaseSeconds,
-    progress: { percent: 0, message: "Worker dispatch started" },
-    log: { level: "info", message: "Worker dispatch started" }
-  });
-  const stopHeartbeatMonitor = startLeasedJobHeartbeatMonitor(job, options, fetchImpl, abortController);
+  const leaseAbortController = new AbortController();
+  const dispatchSignal = composeWorkerAbortSignals(options.signal, leaseAbortController.signal);
+  let heartbeatMonitor: WorkerHeartbeatMonitor | undefined;
   try {
-    const result = await runWorkerJob(job, { ...options, fetch: fetchImpl, signal: abortController.signal });
-    if (abortController.signal.aborted) throw cancellationError(abortController);
+    await fetchJson(fetchImpl, { ...options, signal: dispatchSignal.signal }, "POST", `/api/v1/admin/jobs/${encodeURIComponent(job.id)}/heartbeat`, {
+      workerId: workerId(options),
+      leaseSeconds: options.leaseSeconds,
+      progress: { percent: 0, message: "Worker dispatch started" },
+      log: { level: "info", message: "Worker dispatch started" }
+    });
+    heartbeatMonitor = startLeasedJobHeartbeatMonitor(job, options, fetchImpl, leaseAbortController);
+    const result = await runWorkerJob(job, { ...options, fetch: fetchImpl, signal: dispatchSignal.signal });
+    await heartbeatMonitor.stop();
+    if (options.signal?.aborted) return settleInterruptedWorkerJob(job, options, fetchImpl);
+    if (leaseAbortController.signal.aborted) throw cancellationError(leaseAbortController);
     await fetchJson(fetchImpl, options, "PATCH", `/api/v1/admin/jobs/${encodeURIComponent(job.id)}`, {
       status: "succeeded",
       output: result.output,
@@ -95,8 +125,10 @@ export async function runLeasedWorkerJob(options: WorkerOptions): Promise<Worker
     });
     return result;
   } catch (error) {
-    if (abortController.signal.aborted) {
-      const message = cancellationError(abortController).message;
+    await heartbeatMonitor?.stop();
+    if (options.signal?.aborted) return settleInterruptedWorkerJob(job, options, fetchImpl);
+    if (leaseAbortController.signal.aborted) {
+      const message = cancellationError(leaseAbortController).message;
       return {
         id: job.id,
         type: job.type,
@@ -117,7 +149,8 @@ export async function runLeasedWorkerJob(options: WorkerOptions): Promise<Worker
       error: message
     };
   } finally {
-    stopHeartbeatMonitor();
+    dispatchSignal.dispose();
+    await heartbeatMonitor?.stop();
   }
 }
 
@@ -134,11 +167,12 @@ export async function runLeasedWorkerLoop(options: WorkerLoopOptions): Promise<W
   let failures = 0;
   let idlePolls = 0;
 
-  while (jobsRun < maxJobs && idlePolls < maxIdlePolls) {
+  while (jobsRun < maxJobs && idlePolls < maxIdlePolls && !options.signal?.aborted) {
     let result: WorkerLeaseResult;
     try {
       result = await runLeasedWorkerJob(options);
     } catch (error) {
+      if (options.signal?.aborted) break;
       result = { status: "failed", error: error instanceof Error ? error.message : String(error) };
     }
     if (maxRetainedResults > 0) {
@@ -154,7 +188,8 @@ export async function runLeasedWorkerLoop(options: WorkerLoopOptions): Promise<W
       if (result.status === "failed") failures += 1;
     }
     if (jobsRun >= maxJobs || idlePolls >= maxIdlePolls) break;
-    if (pollIntervalMs > 0) await sleep(pollIntervalMs);
+    if (options.signal?.aborted) break;
+    if (pollIntervalMs > 0 && !(await workerPollDelay(sleep, pollIntervalMs, options.signal))) break;
   }
 
   return {
@@ -171,11 +206,14 @@ export async function runWorkerCli(
   env: Record<string, string | undefined> = process.env,
   stdin: Readable = process.stdin,
   stdout: Writable = process.stdout,
-  stderr: Writable = process.stderr
+  stderr: Writable = process.stderr,
+  runtimeOptions: WorkerCliRuntimeOptions = {}
 ): Promise<number> {
+  const shutdown = workerShutdownController(runtimeOptions.signalSource ?? process);
+  const shutdownTimeout = normalizedWorkerShutdownTimeout(runtimeOptions.shutdownTimeoutMs ?? envNumber(env.OTTE_WORKER_SHUTDOWN_TIMEOUT_MS));
   try {
     if (env.OTTE_WORKER_LEASE_POLL === "true") {
-      const result = await runLeasedWorkerLoop({
+      const result = await drainWorkerOnShutdown(runLeasedWorkerLoop({
         apiBaseUrl: env.OTTE_API_URL ?? env.API_URL ?? "http://127.0.0.1:4000",
         sessionToken: env.OTTE_SESSION_TOKEN,
         userId: env.OTTE_USER_ID,
@@ -184,36 +222,45 @@ export async function runWorkerCli(
         pollIntervalMs: envNumber(env.OTTE_WORKER_POLL_INTERVAL_MS),
         maxIdlePolls: envNumber(env.OTTE_WORKER_MAX_IDLE_POLLS),
         maxJobs: envNumber(env.OTTE_WORKER_MAX_JOBS),
+        signal: shutdown.signal,
         onResult: (leaseResult) => {
           stdout.write(`${JSON.stringify(leaseResult)}\n`);
         }
-      });
+      }), shutdown.signal, shutdownTimeout);
       stdout.write(`${JSON.stringify(result)}\n`);
-      return result.failures > 0 ? 1 : 0;
+      return shutdown.signal.aborted ? 0 : result.failures > 0 ? 1 : 0;
     }
     if (env.OTTE_WORKER_LEASE_ONCE === "true") {
-      const result = await runLeasedWorkerJob({
+      const result = await drainWorkerOnShutdown(runLeasedWorkerJob({
         apiBaseUrl: env.OTTE_API_URL ?? env.API_URL ?? "http://127.0.0.1:4000",
         sessionToken: env.OTTE_SESSION_TOKEN,
         userId: env.OTTE_USER_ID,
         workerId: env.OTTE_WORKER_ID,
-        leaseSeconds: envNumber(env.OTTE_WORKER_LEASE_SECONDS)
-      });
+        leaseSeconds: envNumber(env.OTTE_WORKER_LEASE_SECONDS),
+        signal: shutdown.signal
+      }), shutdown.signal, shutdownTimeout);
       stdout.write(`${JSON.stringify(result)}\n`);
-      return result.status === "failed" ? 1 : 0;
+      return shutdown.signal.aborted ? 0 : result.status === "failed" ? 1 : 0;
     }
     const job = parseWorkerJob(JSON.parse(await readAll(stdin)) as unknown);
-    const result = await runWorkerJob(job, {
+    const result = await drainWorkerOnShutdown(runWorkerJob(job, {
       apiBaseUrl: env.OTTE_API_URL ?? env.API_URL ?? "http://127.0.0.1:4000",
       sessionToken: env.OTTE_SESSION_TOKEN,
-      userId: env.OTTE_USER_ID
-    });
+      userId: env.OTTE_USER_ID,
+      signal: shutdown.signal
+    }), shutdown.signal, shutdownTimeout);
     stdout.write(`${JSON.stringify(result)}\n`);
     return 0;
   } catch (error) {
+    if (shutdown.signal.aborted && !(error instanceof Error && error.name === "WorkerShutdownTimeoutError")) {
+      stdout.write(`${JSON.stringify({ status: "stopped", reason: shutdownReason(shutdown.signal.reason) })}\n`);
+      return 0;
+    }
     const message = error instanceof Error ? error.message : String(error);
     stderr.write(`${JSON.stringify({ status: "failed", error: message })}\n`);
     return 1;
+  } finally {
+    shutdown.dispose();
   }
 }
 
@@ -242,18 +289,22 @@ async function dispatchJob(job: WorkerJob, options: WorkerOptions, fetchImpl: ty
       return fetchJson(fetchImpl, options, "POST", `/api/v1/campaigns/${encodeURIComponent(job.payload.campaignId)}/ai/session-recap`, {
         transcript: job.payload.transcript
       });
+    case "report.bundle":
+      return fetchJson(fetchImpl, options, "GET", `/api/v1/campaigns/${encodeURIComponent(job.payload.campaignId)}/dogfood-report-bundle`);
   }
 }
 
 async function fetchJson(fetchImpl: typeof fetch, options: WorkerOptions, method: string, path: string, body?: unknown): Promise<unknown> {
-  const timeoutMs = Math.max(1, options.requestTimeoutMs ?? 30_000);
+  const configuredTimeoutMs = options.requestTimeoutMs ?? 30_000;
+  const timeoutMs = Number.isFinite(configuredTimeoutMs) ? Math.max(1, Math.floor(configuredTimeoutMs)) : 30_000;
   const headers = workerHeaders(options, body !== undefined);
   const requestAbortController = new AbortController();
   const forwardAbort = () => requestAbortController.abort(options.signal?.reason);
   if (options.signal?.aborted) forwardAbort();
   else options.signal?.addEventListener("abort", forwardAbort, { once: true });
-  const abortPromise = new Promise<Response>((_resolve, reject) => {
-    const rejectForAbort = () => {
+  let rejectForAbort: (() => void) | undefined;
+  const abortPromise = new Promise<never>((_resolve, reject) => {
+    rejectForAbort = () => {
       const reason = requestAbortController.signal.reason;
       reject(reason instanceof Error ? reason : new Error("Worker API request aborted"));
     };
@@ -261,7 +312,7 @@ async function fetchJson(fetchImpl: typeof fetch, options: WorkerOptions, method
     else requestAbortController.signal.addEventListener("abort", rejectForAbort, { once: true });
   });
   let timeout: ReturnType<typeof setTimeout> | undefined;
-  const timeoutPromise = new Promise<Response>((_resolve, reject) => {
+  const timeoutPromise = new Promise<never>((_resolve, reject) => {
     timeout = setTimeout(() => {
       const error = new Error(`Worker API request timed out after ${timeoutMs}ms`);
       requestAbortController.abort(error);
@@ -276,37 +327,192 @@ async function fetchJson(fetchImpl: typeof fetch, options: WorkerOptions, method
       signal: requestAbortController.signal
     })
   );
-  const response = await Promise.race([requestPromise, timeoutPromise, abortPromise]).finally(() => {
+  try {
+    const response = await Promise.race([requestPromise, timeoutPromise, abortPromise]);
+    const text = await Promise.race([response.text(), timeoutPromise, abortPromise]);
+    let payload: unknown;
+    if (text) {
+      try {
+        payload = JSON.parse(text) as unknown;
+      } catch {
+        payload = text;
+      }
+    }
+    if (!response.ok) {
+      const detail = typeof payload === "string" ? payload : JSON.stringify(payload);
+      throw new Error(`Worker API request failed with ${response.status} ${method} ${path}: ${(detail ?? "").slice(0, 500)}`);
+    }
+    return payload;
+  } finally {
     if (timeout) clearTimeout(timeout);
     options.signal?.removeEventListener("abort", forwardAbort);
-  });
-  const text = await response.text();
-  const payload = text ? (JSON.parse(text) as unknown) : undefined;
-  if (!response.ok) {
-    const detail = typeof payload === "string" ? payload : JSON.stringify(payload);
-    throw new Error(`Worker API request failed with ${response.status} ${method} ${path}: ${detail.slice(0, 500)}`);
+    if (rejectForAbort) requestAbortController.signal.removeEventListener("abort", rejectForAbort);
   }
-  return payload;
 }
 
-function startLeasedJobHeartbeatMonitor(job: WorkerJob, options: WorkerOptions, fetchImpl: typeof fetch, abortController: AbortController): () => void {
+function startLeasedJobHeartbeatMonitor(job: WorkerJob, options: WorkerOptions, fetchImpl: typeof fetch, abortController: AbortController): WorkerHeartbeatMonitor {
   const heartbeatIntervalMs = Math.max(1, options.heartbeatIntervalMs ?? Math.floor((options.leaseSeconds ?? 120) * 500));
-  let active = false;
+  const requestAbortController = new AbortController();
+  let active: Promise<void> | undefined;
+  let stopped = false;
   const timer = setInterval(() => {
-    if (active || abortController.signal.aborted) return;
-    active = true;
-    fetchJson(fetchImpl, { ...options, signal: undefined }, "POST", `/api/v1/admin/jobs/${encodeURIComponent(job.id)}/heartbeat`, {
+    if (stopped || active || abortController.signal.aborted) return;
+    const heartbeat = fetchJson(fetchImpl, { ...options, signal: requestAbortController.signal }, "POST", `/api/v1/admin/jobs/${encodeURIComponent(job.id)}/heartbeat`, {
       workerId: workerId(options),
       leaseSeconds: options.leaseSeconds,
       progress: { message: "Worker dispatch heartbeat" },
       log: { level: "info", message: "Worker dispatch heartbeat" }
     })
-      .catch((error) => abortController.abort(new Error(`Worker job cancelled or heartbeat rejected: ${error instanceof Error ? error.message : String(error)}`)))
+      .then(() => undefined)
+      .catch((error) => {
+        if (!stopped) abortController.abort(new Error(`Worker job cancelled or heartbeat rejected: ${error instanceof Error ? error.message : String(error)}`));
+      })
       .finally(() => {
-        active = false;
+        if (active === heartbeat) active = undefined;
       });
+    active = heartbeat;
   }, heartbeatIntervalMs);
-  return () => clearInterval(timer);
+  timer.unref?.();
+  return {
+    async stop(): Promise<void> {
+      if (!stopped) {
+        stopped = true;
+        clearInterval(timer);
+        requestAbortController.abort(new Error("Worker heartbeat monitor stopped"));
+      }
+      await active;
+    }
+  };
+}
+
+async function settleInterruptedWorkerJob(job: WorkerJob, options: WorkerOptions, fetchImpl: typeof fetch): Promise<WorkerLeaseResult> {
+  const reason = shutdownReason(options.signal?.reason);
+  const message = `${reason}; dispatch outcome is unknown and requires operator review`;
+  const configuredTimeoutMs = options.requestTimeoutMs ?? workerSettlementTimeoutMs;
+  const requestTimeoutMs = Math.min(workerSettlementTimeoutMs, Math.max(1, Number.isFinite(configuredTimeoutMs) ? Math.floor(configuredTimeoutMs) : workerSettlementTimeoutMs));
+  try {
+    await fetchJson(fetchImpl, { ...options, signal: undefined, requestTimeoutMs }, "PATCH", `/api/v1/admin/jobs/${encodeURIComponent(job.id)}`, {
+      status: "failed",
+      error: message,
+      progress: { message: "Worker shutdown interrupted dispatch" },
+      log: { level: "warning", message }
+    });
+    return {
+      id: job.id,
+      type: job.type,
+      status: "failed",
+      error: message
+    };
+  } catch (error) {
+    const settlementError = error instanceof Error ? error.message : String(error);
+    return {
+      id: job.id,
+      type: job.type,
+      status: "failed",
+      error: `${message}; failed to record terminal job state: ${settlementError}`
+    };
+  }
+}
+
+function composeWorkerAbortSignals(...signals: Array<AbortSignal | undefined>): { signal: AbortSignal; dispose(): void } {
+  const controller = new AbortController();
+  const listeners: Array<{ signal: AbortSignal; listener: () => void }> = [];
+  for (const signal of signals) {
+    if (!signal) continue;
+    if (signal.aborted) {
+      controller.abort(signal.reason);
+      break;
+    }
+    const listener = () => controller.abort(signal.reason);
+    signal.addEventListener("abort", listener, { once: true });
+    listeners.push({ signal, listener });
+  }
+  return {
+    signal: controller.signal,
+    dispose(): void {
+      for (const entry of listeners) entry.signal.removeEventListener("abort", entry.listener);
+    }
+  };
+}
+
+function workerShutdownController(signalSource: WorkerSignalSource): WorkerShutdownController {
+  const controller = new AbortController();
+  const handlers = new Map<WorkerShutdownSignal, () => void>();
+  for (const signal of ["SIGINT", "SIGTERM"] as const) {
+    const handler = () => {
+      if (!controller.signal.aborted) controller.abort(workerShutdownError(`Worker shutdown requested by ${signal}`));
+    };
+    handlers.set(signal, handler);
+    signalSource.once(signal, handler);
+  }
+  return {
+    signal: controller.signal,
+    dispose(): void {
+      for (const [signal, handler] of handlers) signalSource.off(signal, handler);
+    }
+  };
+}
+
+function workerShutdownError(reason: unknown): Error {
+  if (reason instanceof Error) return reason;
+  const error = new Error(typeof reason === "string" && reason.trim() ? reason : "Worker shutdown requested");
+  error.name = "WorkerShutdownError";
+  return error;
+}
+
+function shutdownReason(reason: unknown): string {
+  return reason instanceof Error ? reason.message : typeof reason === "string" && reason.trim() ? reason : "Worker shutdown requested";
+}
+
+function normalizedWorkerShutdownTimeout(value: number | undefined): number {
+  return typeof value === "number" && Number.isFinite(value) ? Math.max(1, Math.floor(value)) : workerShutdownTimeoutMs;
+}
+
+async function workerPollDelay(sleep: (milliseconds: number) => Promise<void>, milliseconds: number, signal?: AbortSignal): Promise<boolean> {
+  if (!signal) {
+    await sleep(milliseconds);
+    return true;
+  }
+  if (signal.aborted) return false;
+  return new Promise<boolean>((resolve, reject) => {
+    let settled = false;
+    const finish = (value: boolean) => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener("abort", onAbort);
+      resolve(value);
+    };
+    const onAbort = () => finish(false);
+    signal.addEventListener("abort", onAbort, { once: true });
+    Promise.resolve(sleep(milliseconds)).then(() => finish(true), (error) => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener("abort", onAbort);
+      reject(error);
+    });
+  });
+}
+
+async function drainWorkerOnShutdown<T>(operation: Promise<T>, signal: AbortSignal, timeoutMs: number): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: (() => void) | undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    onAbort = () => {
+      timeout = setTimeout(() => {
+        const error = new Error(`Worker shutdown did not drain within ${timeoutMs}ms`);
+        error.name = "WorkerShutdownTimeoutError";
+        reject(error);
+      }, timeoutMs);
+    };
+    if (signal.aborted) onAbort();
+    else signal.addEventListener("abort", onAbort, { once: true });
+  });
+  try {
+    return await Promise.race([operation, deadline]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+    if (onAbort) signal.removeEventListener("abort", onAbort);
+  }
 }
 
 function cancellationError(abortController: AbortController): Error {
@@ -387,6 +593,8 @@ function parseWorkerJob(value: unknown): WorkerJob {
       return { id: value.id, type: value.type, payload: { campaignId: requiredString(value.payload, "campaignId"), sourceText: optionalString(value.payload, "sourceText") } };
     case "ai.session.recap":
       return { id: value.id, type: value.type, payload: { campaignId: requiredString(value.payload, "campaignId"), transcript: optionalString(value.payload, "transcript") } };
+    case "report.bundle":
+      return { id: value.id, type: value.type, payload: { campaignId: requiredString(value.payload, "campaignId") } };
     default:
       throw new Error(`Unsupported worker job type: ${value.type}`);
   }

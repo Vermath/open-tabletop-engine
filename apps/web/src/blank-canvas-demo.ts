@@ -1,4 +1,5 @@
 import { permissionsForRole } from "@open-tabletop/core";
+import type { MapAsset } from "@open-tabletop/core";
 import type { Snapshot } from "./api.js";
 
 export const blankCanvasDemoUserId = "usr_blank_canvas_demo";
@@ -9,6 +10,32 @@ export const blankCanvasDemoSystemId = "generic-fantasy";
 export const blankCanvasDemoNotice = "Demo mode: changes are local to this tab and reset when you leave or refresh.";
 
 const blankCanvasDemoPermissions = permissionsForRole("gm");
+
+export function createBlankCanvasDemoAsset(input: {
+  id: string;
+  name: string;
+  url: string;
+  mimeType: string;
+  sizeBytes: number;
+  folder?: string;
+  tags?: string[];
+  timestamp?: string;
+}): MapAsset {
+  const timestamp = input.timestamp ?? new Date().toISOString();
+  return {
+    id: input.id,
+    campaignId: blankCanvasDemoCampaignId,
+    name: input.name,
+    url: input.url,
+    mimeType: input.mimeType,
+    sizeBytes: input.sizeBytes,
+    folder: input.folder,
+    tags: input.tags,
+    lifecycle: { status: "active", updatedAt: timestamp, updatedByUserId: blankCanvasDemoUserId },
+    createdAt: timestamp,
+    updatedAt: timestamp
+  };
+}
 
 export function createBlankCanvasDemoSnapshot(timestamp = new Date().toISOString()): Snapshot {
   const workspace: Snapshot["organizations"][number] = {

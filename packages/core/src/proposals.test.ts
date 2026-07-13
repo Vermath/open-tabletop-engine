@@ -11,6 +11,7 @@ import type {
   CombatAction,
   DiceRoll,
   EngineState,
+  Encounter,
   Handout,
   Item,
   JournalEntry,
@@ -200,7 +201,95 @@ const tokenAnnotationReferenceCases = [
   link: (scene: Scene, tokenId: string) => void;
 }>;
 
+function proposalDraftScene(state: EngineState, name: string, sortOrder = 2): Scene {
+  return createTimestamped("scn", {
+    campaignId: state.campaigns[0]!.id,
+    name,
+    width: 1000,
+    height: 700,
+    gridType: "square" as const,
+    gridSize: 50,
+    active: false,
+    sortOrder,
+    fog: [],
+    fogHistory: [],
+    activationHistory: [],
+    annotationHistory: [],
+    walls: [],
+    lights: [],
+    annotations: [],
+    metadata: {},
+  }) satisfies Scene;
+}
+
 describe("proposal domain semantics", () => {
+  it("keeps scene activation exclusive when a proposal activates a draft", () => {
+    const state = seedState();
+    const originalActiveId = state.scenes[0]!.id;
+    const draft = proposalDraftScene(state, "Proposal activation target");
+    state.scenes.push(draft);
+    const proposal = approvedProposal(state.campaigns[0]!.id, [
+      { entity: "scene", action: "update", id: draft.id, data: { active: true } },
+    ]);
+    state.proposals.push(proposal);
+
+    const applied = applyProposal(state, proposal, "usr_demo_gm");
+    expect(applied.scenes.filter((scene) => scene.active).map((scene) => scene.id)).toEqual([draft.id]);
+
+    const appliedProposal = applied.proposals.find((item) => item.id === proposal.id)!;
+    const reverted = revertProposal(applied, appliedProposal, "usr_demo_gm");
+    expect(reverted.scenes.filter((scene) => scene.active).map((scene) => scene.id)).toEqual([originalActiveId]);
+  });
+
+  it("keeps scene activation exclusive when a proposal creates an active scene", () => {
+    const state = seedState();
+    const originalActiveId = state.scenes[0]!.id;
+    const created = { ...proposalDraftScene(state, "Proposal active scene"), active: true };
+    const proposal = approvedProposal(state.campaigns[0]!.id, [
+      { entity: "scene", action: "create", data: created as unknown as Record<string, unknown> },
+    ]);
+    state.proposals.push(proposal);
+
+    const applied = applyProposal(state, proposal, "usr_demo_gm");
+    expect(applied.scenes.filter((scene) => scene.active).map((scene) => scene.id)).toEqual([created.id]);
+
+    const appliedProposal = applied.proposals.find((item) => item.id === proposal.id)!;
+    const reverted = revertProposal(applied, appliedProposal, "usr_demo_gm");
+    expect(reverted.scenes.filter((scene) => scene.active).map((scene) => scene.id)).toEqual([originalActiveId]);
+    expect(reverted.scenes.some((scene) => scene.id === created.id)).toBe(false);
+  });
+
+  it("activates a replacement when a proposal deletes the active scene", () => {
+    const state = seedState();
+    const original = state.scenes[0]!;
+    const replacement = proposalDraftScene(state, "Proposal deletion replacement");
+    state.scenes.push(replacement);
+    const proposal = approvedProposal(state.campaigns[0]!.id, [
+      { entity: "scene", action: "delete", id: original.id, data: {} },
+    ]);
+    state.proposals.push(proposal);
+
+    const applied = applyProposal(state, proposal, "usr_demo_gm");
+    expect(applied.scenes.filter((scene) => scene.active).map((scene) => scene.id)).toEqual([replacement.id]);
+
+    const appliedProposal = applied.proposals.find((item) => item.id === proposal.id)!;
+    const reverted = revertProposal(applied, appliedProposal, "usr_demo_gm");
+    expect(reverted.scenes.filter((scene) => scene.active).map((scene) => scene.id)).toEqual([original.id]);
+    expect(reverted.scenes.find((scene) => scene.id === replacement.id)?.active).toBe(false);
+  });
+
+  it("rejects a proposal that directly deactivates the current player scene", () => {
+    const state = seedState();
+    const activeScene = state.scenes[0]!;
+    const proposal = approvedProposal(state.campaigns[0]!.id, [
+      { entity: "scene", action: "update", id: activeScene.id, data: { active: false } },
+    ]);
+    state.proposals.push(proposal);
+    expect(() => applyProposal(state, proposal, "usr_demo_gm")).toThrow(
+      "Activate another scene before deactivating the current player scene",
+    );
+  });
+
   it("cascades scene deletion and restores every captured record on revert", () => {
     const state = seedState();
     const scene = state.scenes[0]!;
@@ -1019,5 +1108,38 @@ describe("proposal domain semantics", () => {
     expect(editedActor.name).toBe("Intervening manual edit");
     expect(editedActor.name).not.toBe(originalName);
     expect(appliedProposal.status).toBe("applied");
+  });
+
+  it("removes and reversibly restores saved encounter party references when deleting an actor", () => {
+    const state = seedState();
+    const actor = state.actors[0]!;
+    const encounter = createTimestamped("enc", {
+      id: "enc_actor_party_reference",
+      campaignId: actor.campaignId,
+      systemId: actor.systemId,
+      name: "Actor party reference",
+      summary: "",
+      tokenIds: [],
+      partyActorIds: [actor.id],
+      threats: [],
+    }) satisfies Encounter;
+    state.encounters.push(encounter);
+    const proposal = approvedProposal(actor.campaignId, [
+      { entity: "actor", action: "delete", id: actor.id, data: {} },
+    ]);
+    state.proposals.push(proposal);
+
+    const applied = applyProposal(state, proposal, "usr_demo_gm");
+    expect(applied.encounters.find((item) => item.id === encounter.id)?.partyActorIds).toEqual([]);
+    const appliedProposal = applied.proposals.find((item) => item.id === proposal.id)!;
+    expect(appliedProposal.inverseChangesJson).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ entity: "encounter", action: "update", id: encounter.id }),
+      ]),
+    );
+
+    const reverted = revertProposal(applied, appliedProposal, "usr_demo_gm");
+    expect(reverted.actors.some((item) => item.id === actor.id)).toBe(true);
+    expect(reverted.encounters.find((item) => item.id === encounter.id)?.partyActorIds).toEqual([actor.id]);
   });
 });

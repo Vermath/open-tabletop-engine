@@ -1080,7 +1080,7 @@ This document tracks verified MVP progress without treating the whole PRD as com
 
 - Implementation:
   - Added `apps/asset-edge`, a Cloudflare Worker package for signed asset blob delivery.
-  - The worker validates the API-compatible HMAC payload `${assetId}:${expiresAt}:${disposition}` before origin fetch, rejects expired or tampered URLs, strips `Authorization` and `Cookie` from origin requests, preserves range/conditional request headers, and caps edge cache TTL by both `expiresAt` and `ASSET_EDGE_MAX_TTL_SECONDS`.
+  - The worker validates the API-compatible HMAC payload `JSON.stringify({ assetId, expiresAt, disposition })` before origin fetch, rejects expired or tampered URLs, strips `Authorization` and `Cookie` from origin requests, preserves range/conditional request headers, and caps edge cache TTL by both `expiresAt` and `ASSET_EDGE_MAX_TTL_SECONDS`.
   - Added `apps/asset-edge/wrangler.jsonc` with deployable Worker settings for origin URL, optional route prefix, and edge TTL ceiling.
   - Added deployment docs in `docs/deployment/asset-edge.md` and linked the Worker from self-hosting and REST docs.
 - Automated validation:

@@ -10,7 +10,7 @@ const stylesSource = readFileSync(resolve(__dirname, "styles.css"), "utf8");
 describe("loot flow", () => {
   it("applies item mutation responses locally", () => {
     expect(appSource).toContain("function applyItemToSnapshot");
-    expect(appSource).toContain("applyItemToSnapshot(await apiPatch<Item>");
+    expect(appSource).toContain("applyItemToSnapshot(updated)");
   });
 
   it("lets party and adversary rail rows accept item drops", () => {

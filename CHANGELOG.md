@@ -76,7 +76,7 @@ Release notes: [docs/release/v1.0.md](docs/release/v1.0.md)
 
 ## v0.3.0 - Outside Dogfood
 
-Release evidence: [docs/verification/v0.3-dogfood-acceptance.md](docs/verification/v0.3-dogfood-acceptance.md)
+Release evidence: `docs/verification/v0.3-dogfood-acceptance.md` (internal repository record)
 
 ### Added
 

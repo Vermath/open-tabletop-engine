@@ -286,6 +286,25 @@ function applyProposalChange(
       );
   }
 
+  if (change.entity === "scene" && change.action === "create")
+    return createSceneWithDomainSemantics(
+      state,
+      change,
+      campaignId,
+      changedAt,
+      copiedCollections,
+      captureInverse,
+    );
+  if (change.entity === "scene" && change.action === "update")
+    return updateSceneWithDomainSemantics(
+      state,
+      change,
+      campaignId,
+      changedAt,
+      copiedCollections,
+      captureInverse,
+    );
+
   const bucketKey = collectionKeyForEntity(change.entity);
   const bucket = readCollection(state, bucketKey);
   if (change.action === "create") {
@@ -613,6 +632,9 @@ function proposalDeleteDependencyKeys(
         (item.visibleToActorIds ?? []).includes(id)
       )
         add("handout", item.id);
+    for (const item of state.encounters)
+      if (item.campaignId === campaignId && item.partyActorIds?.includes(id))
+        add("encounter", item.id);
   } else if (entity === "token") {
     for (const item of state.encounters)
       if (item.campaignId === campaignId && item.tokenIds.includes(id))
@@ -738,6 +760,142 @@ function proposalValuesEqual(left: unknown, right: unknown): boolean {
   );
 }
 
+function deactivateOtherProposalScenes(
+  state: EngineState,
+  campaignId: string,
+  activeSceneId: string,
+  changedAt: string,
+  copied: Set<CopyOnWriteCollectionKey>,
+  captureInverse: boolean,
+): ProposalChange[] {
+  const scenes = writableCollection(state, "scenes", copied);
+  const inverse: ProposalChange[] = [];
+  for (let index = 0; index < scenes.length; index += 1) {
+    const scene = scenes[index]!;
+    if (
+      scene.campaignId !== campaignId ||
+      scene.id === activeSceneId ||
+      !scene.active
+    )
+      continue;
+    if (captureInverse) {
+      inverse.push({
+        entity: "scene",
+        action: "update",
+        id: scene.id,
+        data: { active: true },
+      });
+    }
+    scenes[index] = { ...scene, active: false, updatedAt: changedAt };
+  }
+  return inverse;
+}
+
+function createSceneWithDomainSemantics(
+  state: EngineState,
+  change: ProposalChange,
+  campaignId: string,
+  changedAt: string,
+  copied: Set<CopyOnWriteCollectionKey>,
+  captureInverse: boolean,
+): ProposalChange[] {
+  const created = structuredClone(change.data) as Record<string, unknown>;
+  const createdId = entityId(created);
+  if (state.scenes.some((item) => item.id === createdId))
+    throw new Error(`Proposal create target already exists: scene:${createdId}`);
+  assertEntityInProposalCampaign(state, "scenes", created, campaignId);
+  const campaignScenes = state.scenes.filter(
+    (scene) => scene.campaignId === campaignId,
+  );
+  const shouldActivate =
+    created.active === true || !campaignScenes.some((scene) => scene.active);
+  created.active = shouldActivate;
+  const activationInverse = shouldActivate
+    ? deactivateOtherProposalScenes(
+        state,
+        campaignId,
+        createdId,
+        changedAt,
+        copied,
+        captureInverse,
+      )
+    : [];
+  writableCollection(state, "scenes", copied).push(created as never);
+  return captureInverse
+    ? [
+        ...activationInverse,
+        { entity: "scene", action: "delete", id: createdId, data: {} },
+      ]
+    : [];
+}
+
+function updateSceneWithDomainSemantics(
+  state: EngineState,
+  change: ProposalChange,
+  campaignId: string,
+  changedAt: string,
+  copied: Set<CopyOnWriteCollectionKey>,
+  captureInverse: boolean,
+): ProposalChange[] {
+  const index = state.scenes.findIndex((scene) => scene.id === change.id);
+  if (index < 0)
+    throw new Error(`Proposal target not found: scene:${change.id ?? ""}`);
+  const replacementId = change.data.id;
+  if (
+    Object.prototype.hasOwnProperty.call(change.data, "id") &&
+    replacementId !== change.id
+  )
+    throw new Error(
+      `Proposal update cannot change entity id: scene:${change.id ?? ""}`,
+    );
+  const before = structuredClone(state.scenes[index]!) as unknown as Record<
+    string,
+    unknown
+  >;
+  assertEntityInProposalCampaign(state, "scenes", before, campaignId);
+  if (change.data.active === false && before.active === true)
+    throw new Error(
+      "Activate another scene before deactivating the current player scene",
+    );
+  const activationInverse =
+    change.data.active === true
+      ? deactivateOtherProposalScenes(
+          state,
+          campaignId,
+          change.id!,
+          changedAt,
+          copied,
+          captureInverse,
+        )
+      : [];
+  const scenes = writableCollection(state, "scenes", copied);
+  const currentIndex = scenes.findIndex((scene) => scene.id === change.id);
+  const updated = {
+    ...(structuredClone(scenes[currentIndex]!) as Record<string, unknown>),
+    ...(structuredClone(change.data) as Record<string, unknown>),
+    updatedAt: changedAt,
+  };
+  assertEntityInProposalCampaign(state, "scenes", updated, campaignId);
+  scenes[currentIndex] = updated;
+  const inverseData = Object.fromEntries(
+    Object.keys(change.data).map((field) => [
+      field,
+      structuredClone(before[field]),
+    ]),
+  );
+  return captureInverse
+    ? [
+        ...activationInverse,
+        {
+          entity: "scene",
+          action: "update",
+          id: change.id,
+          data: inverseData,
+        },
+      ]
+    : [];
+}
+
 function deleteSceneWithDomainSemantics(
   state: EngineState,
   change: ProposalChange,
@@ -751,6 +909,21 @@ function deleteSceneWithDomainSemantics(
   );
   if (!scene)
     throw new Error(`Proposal target not found: scene:${change.id ?? ""}`);
+  const replacementScene = scene.active
+    ? state.scenes
+        .filter(
+          (item) => item.campaignId === campaignId && item.id !== scene.id,
+        )
+        .sort(
+          (left, right) =>
+            left.sortOrder - right.sortOrder ||
+            left.createdAt.localeCompare(right.createdAt) ||
+            left.id.localeCompare(right.id),
+        )[0]
+    : undefined;
+  const replacementNeedsActivation = Boolean(
+    replacementScene && !replacementScene.active,
+  );
   const tokens = state.tokens.filter((item) => item.sceneId === scene.id);
   const tokenIds = new Set(tokens.map((item) => item.id));
   const chat = state.chat.filter((item) => item.sceneId === scene.id);
@@ -777,8 +950,19 @@ function deleteSceneWithDomainSemantics(
         item.combatants.some((combatant) => tokenIds.has(combatant.tokenId)),
     )
     .map((item) => structuredClone(item));
-  writableCollection(state, "scenes", copied).splice(
-    state.scenes.findIndex((item) => item.id === scene.id),
+  const writableScenes = writableCollection(state, "scenes", copied);
+  if (replacementScene) {
+    const replacementIndex = writableScenes.findIndex(
+      (item) => item.id === replacementScene.id,
+    );
+    writableScenes[replacementIndex] = {
+      ...writableScenes[replacementIndex]!,
+      active: true,
+      updatedAt: changedAt,
+    };
+  }
+  writableScenes.splice(
+    writableScenes.findIndex((item) => item.id === scene.id),
     1,
   );
   state.tokens = writableCollection(state, "tokens", copied).filter(
@@ -872,6 +1056,16 @@ function deleteSceneWithDomainSemantics(
             data: item as unknown as Record<string, unknown>,
           },
     ),
+    ...(replacementNeedsActivation
+      ? [
+          {
+            entity: "scene" as const,
+            action: "update" as const,
+            id: replacementScene!.id,
+            data: { active: false },
+          },
+        ]
+      : []),
   ];
 }
 
@@ -1033,6 +1227,12 @@ function deleteActorWithDomainSemantics(
         (item.visibleToActorIds ?? []).includes(actor.id),
     )
     .map((item) => structuredClone(item));
+  const encounters = state.encounters
+    .filter(
+      (item) =>
+        item.campaignId === campaignId && item.partyActorIds?.includes(actor.id),
+    )
+    .map((item) => structuredClone(item));
   writableCollection(state, "actors", copied).splice(
     state.actors.findIndex((item) => item.id === actor.id),
     1,
@@ -1085,6 +1285,18 @@ function deleteActorWithDomainSemantics(
         }
       : item,
   );
+  state.encounters = writableCollection(state, "encounters", copied).map(
+    (item) =>
+      item.campaignId === campaignId && item.partyActorIds?.includes(actor.id)
+        ? {
+            ...item,
+            partyActorIds: item.partyActorIds.filter(
+              (id: string) => id !== actor.id,
+            ),
+            updatedAt: changedAt,
+          }
+        : item,
+  );
   if (!captureInverse) return [];
   return [
     {
@@ -1118,6 +1330,12 @@ function deleteActorWithDomainSemantics(
     })),
     ...handouts.map((item) => ({
       entity: "handout" as const,
+      action: "update" as const,
+      id: item.id,
+      data: item as unknown as Record<string, unknown>,
+    })),
+    ...encounters.map((item) => ({
+      entity: "encounter" as const,
       action: "update" as const,
       id: item.id,
       data: item as unknown as Record<string, unknown>,

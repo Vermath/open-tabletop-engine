@@ -200,7 +200,7 @@ export class SqliteStateStore implements StateStore {
     this.migrate();
     this.writer = new CoalescedStateWriter(() => this.flushNow());
     this.state = this.load();
-    if (this.state.campaigns.length === 0 && demoSeedEnabled(this.options)) {
+    if (this.isEmpty() && demoSeedEnabled(this.options)) {
       this.state = seedState();
       this.save();
       this.flush();
@@ -500,6 +500,10 @@ export class SqliteStateStore implements StateStore {
       (state[row.collection] as unknown[]).push(JSON.parse(row.data));
     }
     return normalizeEngineState(state);
+  }
+
+  private isEmpty(): boolean {
+    return stateCollections.every((collection) => this.state[collection].length === 0);
   }
 
   private campaignIdForRecord(collection: StateCollection, record: IdentifiedRecord): string | null {

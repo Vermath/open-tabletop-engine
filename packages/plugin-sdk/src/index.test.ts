@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   comparePluginVersions,
   parsePluginVersion,
+  pluginCoreCompatibility,
   pluginEventPermission,
   validatePluginManifest,
 } from "./index.js";
@@ -51,6 +52,77 @@ describe("plugin manifest validation", () => {
         "Plugin command is duplicated: /duplicate",
       ]),
     );
+  });
+
+  it("rejects unsafe entrypoints and duplicate permission or panel identities", () => {
+    const errors = validatePluginManifest({
+      ...validManifest,
+      entrypoints: {
+        client: "../outside.js",
+        server: ".",
+      },
+      permissions: ["chat.write", "chat.write"],
+      ui: {
+        panels: [
+          { id: "same-panel", title: "First" },
+          { id: "same-panel", title: "Second" },
+        ],
+      },
+    });
+
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        "Client entrypoint must be a safe package-relative path",
+        "Server entrypoint must be a safe package-relative path",
+        "Plugin permissions must not contain duplicates",
+        "Plugin ui panel id is duplicated: same-panel",
+      ]),
+    );
+  });
+
+  it("validates core range syntax while reporting compatibility separately", () => {
+    expect(pluginCoreCompatibility(">=0.2.0 <0.4.0")).toEqual({
+      valid: true,
+      satisfied: true,
+    });
+    expect(pluginCoreCompatibility("^0.0.3", "0.0.4")).toEqual({
+      valid: true,
+      satisfied: false,
+    });
+    expect(pluginCoreCompatibility("any")).toEqual({
+      valid: true,
+      satisfied: true,
+    });
+    expect(pluginCoreCompatibility("^0", "0.9.0")).toEqual({
+      valid: true,
+      satisfied: true,
+    });
+    expect(pluginCoreCompatibility("~0", "0.9.0")).toEqual({
+      valid: true,
+      satisfied: true,
+    });
+    expect(pluginCoreCompatibility(">=not-a-version")).toEqual({
+      valid: false,
+      satisfied: false,
+    });
+    expect(pluginCoreCompatibility("x")).toEqual({
+      valid: false,
+      satisfied: false,
+    });
+    expect(pluginCoreCompatibility(">9.0.0 not-a-version")).toEqual({
+      valid: false,
+      satisfied: false,
+    });
+    expect(pluginCoreCompatibility(">=9.0.0")).toEqual({
+      valid: true,
+      satisfied: false,
+    });
+    expect(
+      validatePluginManifest({ ...validManifest, compatibleCore: ">=9.0.0" }),
+    ).toEqual([]);
+    expect(
+      validatePluginManifest({ ...validManifest, compatibleCore: "latest" }),
+    ).toContain("Compatible core range must be a valid version range");
   });
 
   it("validates event subscriptions against the supported event and permission surface", () => {
@@ -130,6 +202,31 @@ describe("plugin manifest validation", () => {
     );
   });
 
+  it("allows explicitly reviewed read-only grants for private record event visibility", () => {
+    expect(
+      validatePluginManifest({
+        ...validManifest,
+        permissions: [
+          "actor.read",
+          "actor.readPrivate",
+          "journal.read",
+          "journal.readSecret",
+          "handout.read",
+          "handout.readSecret",
+          "ai.readPublicMemory",
+          "ai.readGmMemory",
+          "ai.proposeChanges",
+        ],
+        eventSubscriptions: [
+          { type: "item.updated" },
+          { type: "journal.updated" },
+          { type: "handout.updated" },
+          { type: "ai.memory.updated" },
+        ],
+      }),
+    ).toEqual([]);
+  });
+
   it("rejects malformed SemVer prereleases", () => {
     for (const version of [
       "1.0.0-.",
@@ -143,6 +240,38 @@ describe("plugin manifest validation", () => {
         "Plugin version must be valid semver",
       );
     }
+  });
+
+  it("bounds version and compatibility inputs before parsing numeric identifiers", () => {
+    const oversizedVersion = `${"1".repeat(257)}.0.0`;
+    const oversizedRange = `>=${"1".repeat(513)}.0.0`;
+    const oversizedRangeComponent = `>=${"1".repeat(500)}`;
+
+    expect(parsePluginVersion(oversizedVersion)).toBeUndefined();
+    expect(() => comparePluginVersions(oversizedVersion, "1.0.0")).toThrow(
+      "Plugin versions must be valid semantic versions",
+    );
+    expect(pluginCoreCompatibility(oversizedRange)).toEqual({
+      valid: false,
+      satisfied: false,
+    });
+    expect(pluginCoreCompatibility(oversizedRangeComponent)).toEqual({
+      valid: false,
+      satisfied: false,
+    });
+    expect(pluginCoreCompatibility(">=0.3.0", oversizedVersion)).toEqual({
+      valid: false,
+      satisfied: false,
+    });
+    expect(
+      validatePluginManifest({ ...validManifest, version: oversizedVersion }),
+    ).toContain("Plugin version must be valid semver");
+    expect(
+      validatePluginManifest({
+        ...validManifest,
+        compatibleCore: oversizedRange,
+      }),
+    ).toContain("Compatible core range must be a valid version range");
   });
 });
 

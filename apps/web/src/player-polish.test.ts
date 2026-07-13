@@ -29,10 +29,14 @@ describe("player seat polish", () => {
     expect(advancementFlowSource).toContain('advancing ? "Advancing..."');
   });
 
-  it("keeps Manage transient and closes it with Escape", () => {
+  it("keeps Manage transient and closes it with Escape unless scene edits are dirty", () => {
     expect(appSource).toContain('const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("live");');
     expect(appSource).toContain('if (workspaceMode !== "manage") return;');
-    expect(appSource).toContain('if (event.key === "Escape") setWorkspaceMode("live");');
+    expect(appSource).toContain('if (event.key !== "Escape") return;');
+    expect(appSource).toContain('if (blockCampaignSetupNavigation("leaving campaign setup")) return;');
+    expect(appSource).toContain('if (blockUnsavedSceneDraft("leaving Scene Manager")) return;');
+    expect(appSource).toContain('setStatus(`Save or discard scene changes before ${action}`);');
+    expect(appSource).toContain('setWorkspaceMode("live");');
     expect(appSource).not.toContain('initialStoredId("otte:workspaceMode"');
     expect(appSource).not.toContain('persistStoredId("otte:workspaceMode"');
   });

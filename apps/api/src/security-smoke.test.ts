@@ -31,6 +31,32 @@ describe("security smoke", () => {
 
   const snapshot = snapshotEnv(envKeys);
 
+  it("sanitizes unexpected server errors while preserving explicit client errors", async () => {
+    const app = await buildApp({ store: new MemoryStateStore() });
+    app.get("/__security-smoke/unexpected-error", async () => {
+      throw new Error("sensitive database connection detail");
+    });
+    app.get("/__security-smoke/client-error", async () => {
+      const error = new Error("Trusted request validation detail") as Error & { statusCode: number; code: string };
+      error.statusCode = 400;
+      error.code = "FST_ERR_VALIDATION";
+      throw error;
+    });
+
+    try {
+      const unexpected = await app.inject({ method: "GET", url: "/__security-smoke/unexpected-error" });
+      expect(unexpected.statusCode).toBe(500);
+      expect(unexpected.json()).toEqual({ error: "internal_server_error", message: "Internal server error" });
+      expect(unexpected.body).not.toContain("sensitive database connection detail");
+
+      const clientError = await app.inject({ method: "GET", url: "/__security-smoke/client-error" });
+      expect(clientError.statusCode).toBe(400);
+      expect(clientError.json()).toMatchObject({ statusCode: 400, message: "Trusted request validation detail" });
+    } finally {
+      await app.close();
+    }
+  });
+
   it("enforces server-admin auth boundaries", async () => {
     const app = await buildApp({ store: new MemoryStateStore() });
     try {
@@ -154,7 +180,7 @@ describe("security smoke", () => {
     }) satisfies MapAsset;
 
     try {
-      expect(assetStorageKey(asset)).toBe("___camp_demo/___asset_with_slashes.png");
+      expect(assetStorageKey(asset)).toMatch(/^camp_demo--[0-9a-f]{32}\/asset_with_slashes--[0-9a-f]{32}\.png$/);
       const traversalAsset = { ...asset, storage: { provider: "local" as const, key: "../escape.png" } };
       await expect(storage.put(traversalAsset, Buffer.from("bytes"))).rejects.toThrow("Invalid asset storage path");
       expect(existsSync(join(directory, "..", "escape.png"))).toBe(false);

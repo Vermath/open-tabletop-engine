@@ -729,13 +729,14 @@ export function validateSystemManifest(manifest: SystemManifest, options: { core
 }
 
 export function systemCoreCompatibility(range: string, coreVersion = OPEN_TABLETOP_CORE_VERSION): { valid: boolean; satisfied: boolean } {
+  if (typeof range !== "string" || range.length > 512) return { valid: false, satisfied: false };
   const current = parseSystemSemver(coreVersion);
-  if (!current || typeof range !== "string" || !range.trim() || range.includes("||")) return { valid: false, satisfied: false };
+  if (!current || !range.trim() || range.includes("||")) return { valid: false, satisfied: false };
   const comparators = range.trim().split(/\s+/);
   let valid = true;
-  const satisfied = comparators.every((comparator) => {
+  const satisfied = comparators.map((comparator) => {
     if (comparator === "*" || comparator.toLowerCase() === "x") return true;
-    const match = /^(\^|~|>=|<=|>|<|=)?(\d+\.\d+\.\d+)$/.exec(comparator);
+    const match = /^(\^|~|>=|<=|>|<|=)?(.+)$/.exec(comparator);
     if (!match) {
       valid = false;
       return false;
@@ -753,11 +754,12 @@ export function systemCoreCompatibility(range: string, coreVersion = OPEN_TABLET
     if (operator === "<") return comparison < 0;
     if (operator === "~") return comparison >= 0 && current.major === target.major && current.minor === target.minor;
     if (operator === "^") {
-      if (target.major > 0) return comparison >= 0 && current.major === target.major;
-      return comparison >= 0 && current.major === 0 && current.minor === target.minor;
+      if (target.major > 0n) return comparison >= 0 && current.major === target.major;
+      if (target.minor > 0n) return comparison >= 0 && current.major === 0n && current.minor === target.minor;
+      return comparison >= 0 && current.major === 0n && current.minor === 0n && current.patch === target.patch;
     }
     return comparison === 0;
-  });
+  }).every(Boolean);
   return { valid, satisfied: valid && satisfied };
 }
 
@@ -768,14 +770,51 @@ function safeSystemManifestPath(value: unknown): value is string {
   return !segments.includes("..") && (value.startsWith("./") || value.startsWith("/systems/") || !value.startsWith("/"));
 }
 
-function parseSystemSemver(value: string): { major: number; minor: number; patch: number } | undefined {
-  const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$/.exec(value.trim());
-  if (!match) return undefined;
-  return { major: Number(match[1]), minor: Number(match[2]), patch: Number(match[3]) };
+interface ParsedSystemSemver {
+  major: bigint;
+  minor: bigint;
+  patch: bigint;
+  prerelease: string[];
 }
 
-function compareSystemSemver(left: { major: number; minor: number; patch: number }, right: { major: number; minor: number; patch: number }): number {
-  return left.major - right.major || left.minor - right.minor || left.patch - right.patch;
+function parseSystemSemver(value: string): ParsedSystemSemver | undefined {
+  if (value.length > 256) return undefined;
+  const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.exec(value.trim());
+  if (!match) return undefined;
+  const prerelease = match[4]?.split(".") ?? [];
+  if (prerelease.some((identifier) => /^\d+$/.test(identifier) && identifier.length > 1 && identifier.startsWith("0"))) return undefined;
+  return { major: BigInt(match[1]!), minor: BigInt(match[2]!), patch: BigInt(match[3]!), prerelease };
+}
+
+function compareSystemSemver(left: ParsedSystemSemver, right: ParsedSystemSemver): number {
+  for (const key of ["major", "minor", "patch"] as const) {
+    if (left[key] < right[key]) return -1;
+    if (left[key] > right[key]) return 1;
+  }
+  if (left.prerelease.length === 0 && right.prerelease.length === 0) return 0;
+  if (left.prerelease.length === 0) return 1;
+  if (right.prerelease.length === 0) return -1;
+  const length = Math.max(left.prerelease.length, right.prerelease.length);
+  for (let index = 0; index < length; index += 1) {
+    const leftIdentifier = left.prerelease[index];
+    const rightIdentifier = right.prerelease[index];
+    if (leftIdentifier === undefined) return -1;
+    if (rightIdentifier === undefined) return 1;
+    const leftNumeric = /^\d+$/.test(leftIdentifier);
+    const rightNumeric = /^\d+$/.test(rightIdentifier);
+    if (leftNumeric && rightNumeric) {
+      const leftNumber = BigInt(leftIdentifier);
+      const rightNumber = BigInt(rightIdentifier);
+      if (leftNumber < rightNumber) return -1;
+      if (leftNumber > rightNumber) return 1;
+      continue;
+    }
+    if (leftNumeric) return -1;
+    if (rightNumeric) return 1;
+    if (leftIdentifier < rightIdentifier) return -1;
+    if (leftIdentifier > rightIdentifier) return 1;
+  }
+  return 0;
 }
 
 export function summarizeActor(actor: Actor): string {

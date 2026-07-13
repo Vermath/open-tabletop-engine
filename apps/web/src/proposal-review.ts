@@ -27,6 +27,14 @@ export function visibleAiAgentProposals(proposals: Proposal[], messages: AiAgent
     .slice(0, 4);
 }
 
+export type ProposalQueueAction = "review" | "revert" | "readonly";
+
+export function proposalQueueAction(proposal: Pick<Proposal, "status">): ProposalQueueAction {
+  if (proposal.status === "applied") return "revert";
+  if (proposal.status === "pending" || proposal.status === "approved") return "review";
+  return "readonly";
+}
+
 export function setProposalHidden(hiddenProposalIds: ReadonlySet<string>, proposalId: string, hidden: boolean): Set<string> {
   const next = new Set(hiddenProposalIds);
   if (hidden) next.add(proposalId);
@@ -98,7 +106,14 @@ function applyProposalChangeToSnapshot(snapshot: Snapshot, change: ProposalChang
 }
 
 function applyRecordChange<T extends { id?: string; updatedAt?: string }>(records: T[], change: ProposalChange, updatedAt: string): T[] {
-  if (change.action === "create") return [...records, change.data as T];
+  if (change.action === "create") {
+    const created = change.data as T;
+    // Realtime can deliver the authoritative created record before the apply
+    // request resolves. Keep that record instead of appending the proposal's
+    // draft payload a second time (or replacing server-populated fields).
+    if (created.id && records.some((record) => record.id === created.id)) return records;
+    return [...records, created];
+  }
   if (change.action === "delete") return records.filter((record) => record.id !== change.id);
   return records.map((record) => (record.id === change.id ? ({ ...record, ...change.data, updatedAt } as T) : record));
 }

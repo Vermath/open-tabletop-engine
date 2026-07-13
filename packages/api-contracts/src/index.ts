@@ -3529,6 +3529,23 @@ const componentSchemas = {
         type: "string",
         enum: ["standard", "player_authoring", "ai_assisted", "assistant_ops"],
       },
+      starterContent: { type: "boolean" },
+    },
+  },
+  CampaignSnapshotBundled: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      assetStorage: { type: "object", additionalProperties: true },
+      audioTracks: arrayOf(schemaRef("AudioTrack")),
+      plugins: arrayOf(schemaRef("PluginCampaignInfo")),
+      systems: arrayOf(schemaRef("SystemRuntimeInfo")),
+      characterTemplates: arrayOf({ type: "object", additionalProperties: true }),
+      contentImports: arrayOf(schemaRef("ContentImportBatch")),
+      aiThreads: arrayOf(schemaRef("AiThread")),
+      aiUsage: { type: "object", additionalProperties: true },
+      aiToolCalls: arrayOf(schemaRef("AiToolCall")),
+      combatAudit: arrayOf(schemaRef("AuditLog")),
     },
   },
   CampaignSnapshot: {
@@ -3555,6 +3572,7 @@ const componentSchemas = {
       "combats",
       "proposals",
       "memory",
+      "bundled",
     ],
     properties: {
       generatedAt: { type: "string", format: "date-time" },
@@ -3580,6 +3598,7 @@ const componentSchemas = {
       combats: arrayOf(schemaRef("Combat")),
       proposals: arrayOf(schemaRef("Proposal")),
       memory: arrayOf(schemaRef("AiMemoryFact")),
+      bundled: schemaRef("CampaignSnapshotBundled"),
     },
   },
   CampaignPatchRequest: {
@@ -3593,10 +3612,6 @@ const componentSchemas = {
         type: "string",
         enum: ["private", "invite_only", "public"],
       },
-      archivedAt: { type: "string", format: "date-time" },
-      archivedByUserId: idSchema,
-      restoredAt: { type: "string", format: "date-time" },
-      restoredByUserId: idSchema,
     },
   },
   World: {
@@ -3690,6 +3705,7 @@ const componentSchemas = {
           "encounter",
           "memory",
           "chat",
+          "roll",
         ],
       },
       id: idSchema,
@@ -4813,7 +4829,22 @@ const componentSchemas = {
     },
   },
   JournalEntryPatchRequest: {
-    $ref: "#/components/schemas/JournalEntryCreateRequest",
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+      worldId: { anyOf: [idSchema, { type: "null" }] },
+      parentId: idSchema,
+      title: stringSchema,
+      body: stringSchema,
+      visibility: {
+        type: "string",
+        enum: ["gm_only", "public", "specific_players", "specific_characters"],
+      },
+      visibleToUserIds: arrayOf(idSchema),
+      visibleToActorIds: arrayOf(idSchema),
+      tags: arrayOf(stringSchema),
+    },
   },
   Handout: {
     type: "object",
@@ -4857,6 +4888,25 @@ const componentSchemas = {
     type: "object",
     additionalProperties: false,
     properties: {
+      worldId: { anyOf: [idSchema, { type: "null" }] },
+      title: stringSchema,
+      body: stringSchema,
+      visibility: {
+        type: "string",
+        enum: ["gm_only", "public", "specific_players", "specific_characters"],
+      },
+      visibleToUserIds: arrayOf(idSchema),
+      visibleToActorIds: arrayOf(idSchema),
+      assetIds: arrayOf(idSchema),
+      tags: arrayOf(stringSchema),
+      readByUserIds: arrayOf(idSchema),
+    },
+  },
+  HandoutPatchRequest: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      expectedUpdatedAt: { type: "string", format: "date-time" },
       worldId: { anyOf: [idSchema, { type: "null" }] },
       title: stringSchema,
       body: stringSchema,
@@ -5298,12 +5348,19 @@ const componentSchemas = {
     type: "object",
     additionalProperties: false,
     properties: {
-      createdByType: { type: "string", enum: ["user", "ai", "plugin"] },
-      sourceId: idSchema,
       title: stringSchema,
       summary: stringSchema,
       changesJson: arrayOf(schemaRef("ProposalChange")),
       diffJson: { type: "object", additionalProperties: true },
+    },
+  },
+  EncounterThreatSelection: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "count"],
+    properties: {
+      id: idSchema,
+      count: { type: "integer", minimum: 1, maximum: 99 },
     },
   },
   Encounter: {
@@ -5322,10 +5379,13 @@ const componentSchemas = {
       ...idTimestampProperties,
       campaignId: idSchema,
       worldId: idSchema,
+      systemId: idSchema,
       name: stringSchema,
       summary: stringSchema,
       tokenIds: arrayOf(idSchema),
       difficulty: stringSchema,
+      partyActorIds: { ...arrayOf(idSchema), maxItems: 100, uniqueItems: true },
+      threats: { ...arrayOf(schemaRef("EncounterThreatSelection")), maxItems: 100 },
     },
   },
   EncounterCreateRequest: {
@@ -5333,10 +5393,13 @@ const componentSchemas = {
     additionalProperties: false,
     properties: {
       worldId: { anyOf: [idSchema, { type: "null" }] },
+      systemId: idSchema,
       name: stringSchema,
       summary: stringSchema,
       tokenIds: arrayOf(idSchema),
       difficulty: stringSchema,
+      partyActorIds: { ...arrayOf(idSchema), maxItems: 100, uniqueItems: true },
+      threats: { ...arrayOf(schemaRef("EncounterThreatSelection")), maxItems: 100 },
     },
   },
   EncounterPatchRequest: {
@@ -5971,6 +6034,38 @@ const componentSchemas = {
           installed: { type: "boolean" },
           grantedPermissions: arrayOf(stringSchema),
           missingPermissions: arrayOf(stringSchema),
+          versionCompatibility: arrayOf({
+            type: "object",
+            additionalProperties: true,
+            required: ["version", "compatibleCore", "permissions", "permissionReview", "trust", "source"],
+            properties: {
+              version: stringSchema,
+              compatibleCore: {
+                type: "object",
+                additionalProperties: false,
+                required: ["range", "coreVersion", "satisfied"],
+                properties: {
+                  range: stringSchema,
+                  coreVersion: stringSchema,
+                  satisfied: { type: "boolean" },
+                },
+              },
+              compatibilityBlock: stringSchema,
+              permissions: arrayOf(stringSchema),
+              permissionReview: {
+                type: "object",
+                additionalProperties: false,
+                required: ["requestedPermissions", "grantRequired"],
+                properties: {
+                  requestedPermissions: arrayOf(stringSchema),
+                  grantRequired: { type: "boolean" },
+                },
+              },
+              trust: looseObjectSchema,
+              source: looseObjectSchema,
+              marketplaceReview: looseObjectSchema,
+            },
+          }),
           audit: {
             type: "object",
             additionalProperties: false,
@@ -6276,8 +6371,8 @@ const componentSchemas = {
     type: "object",
     additionalProperties: false,
     properties: {
-      partyActorIds: arrayOf(idSchema),
-      threats: arrayOf({ type: "object", additionalProperties: true }),
+      partyActorIds: { ...arrayOf(idSchema), maxItems: 100, uniqueItems: true },
+      threats: { ...arrayOf(schemaRef("EncounterThreatSelection")), maxItems: 100 },
       createEncounter: { type: "boolean" },
       name: stringSchema,
     },
@@ -8358,6 +8453,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     requestBody: jsonRequestBody(schemaRef("JournalEntryPatchRequest")),
     responses: {
       "200": jsonResponse("Updated journal entry", schemaRef("JournalEntry")),
+      "409": jsonResponse("Journal entry changed after the editor loaded it", schemaRef("ErrorResponse")),
     },
   },
   "GET /api/v1/campaigns/{campaignId}/combats": {
@@ -9123,8 +9219,11 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "PATCH /api/v1/handouts/{handoutId}": {
-    requestBody: jsonRequestBody(schemaRef("HandoutWriteRequest")),
-    responses: { "200": jsonResponse("Updated handout", schemaRef("Handout")) },
+    requestBody: jsonRequestBody(schemaRef("HandoutPatchRequest")),
+    responses: {
+      "200": jsonResponse("Updated handout", schemaRef("Handout")),
+      "409": jsonResponse("Handout changed after the editor loaded it", schemaRef("ErrorResponse")),
+    },
   },
   "DELETE /api/v1/handouts/{handoutId}": {
     responses: {

@@ -5,6 +5,11 @@ import type {
 } from "@open-tabletop/core";
 
 export const PLUGIN_EVENT_TYPES = [
+  // asset.* and dice.macro.* are deliberately not exposed to plugins. Asset
+  // visibility is record-specific, while GM-only macro visibility requires
+  // campaign.update rather than the existing dice.* -> chat.read mapping.
+  // Forwarding either family through campaign-wide grants would disclose
+  // target ids that the subscribing plugin is not necessarily allowed to see.
   "campaign.updated",
   "campaign.member.joined",
   "campaign.member.updated",
@@ -153,20 +158,28 @@ export interface PluginManifest {
   eventSubscriptions?: PluginEventSubscription[];
 }
 
-export const PLUGIN_PERMISSION_ALLOWLIST: PermissionName[] = [
-  "campaign.read",
-  "world.read",
-  "scene.read",
-  "token.read",
-  "actor.read",
-  "journal.read",
-  "handout.read",
-  "chat.read",
-  "chat.write",
-  "plugin.configure",
-  "dice.roll",
-  "ai.proposeChanges",
-];
+export const PLUGIN_PERMISSION_ALLOWLIST: readonly PermissionName[] =
+  Object.freeze([
+    "campaign.read",
+    "world.read",
+    "scene.read",
+    "token.read",
+    "actor.read",
+    "actor.readPrivate",
+    "journal.read",
+    "journal.readSecret",
+    "handout.read",
+    "handout.readSecret",
+    "chat.read",
+    "chat.write",
+    "plugin.configure",
+    "dice.roll",
+    "ai.readPublicMemory",
+    "ai.readGmMemory",
+    "ai.proposeChanges",
+  ]);
+
+export const OPEN_TABLETOP_CORE_VERSION = "0.3.0";
 
 export interface ParsedPluginVersion {
   major: bigint;
@@ -182,6 +195,7 @@ const SEMVER_PATTERN =
 export function parsePluginVersion(
   value: string,
 ): ParsedPluginVersion | undefined {
+  if (typeof value !== "string" || value.length > 256) return undefined;
   const match = SEMVER_PATTERN.exec(value);
   if (!match) return undefined;
   const prerelease = match[4]?.split(".") ?? [];
@@ -213,6 +227,101 @@ export function comparePluginVersions(left: string, right: string): number {
     if (leftParsed[key] > rightParsed[key]) return 1;
   }
   return comparePrerelease(leftParsed.prerelease, rightParsed.prerelease);
+}
+
+export function pluginCoreCompatibility(
+  range: string,
+  coreVersion = OPEN_TABLETOP_CORE_VERSION,
+): { valid: boolean; satisfied: boolean } {
+  if (
+    typeof range !== "string" ||
+    range.length > 512 ||
+    typeof coreVersion !== "string" ||
+    coreVersion.length > 256 ||
+    !range.trim() ||
+    range.includes("||")
+  )
+    return { valid: false, satisfied: false };
+  const current = parsePluginVersion(coreVersion);
+  if (!current) return { valid: false, satisfied: false };
+  if (range.trim().toLowerCase() === "any")
+    return { valid: true, satisfied: true };
+  let valid = true;
+  const comparatorResults = range
+    .trim()
+    .split(/\s+/)
+    .map((comparator) => {
+      if (comparator === "*") return true;
+      const match = /^(\^|~|>=|<=|>|<|=)?(.+)$/.exec(comparator);
+      if (!match) {
+        valid = false;
+        return false;
+      }
+      const target = parsePluginRangeVersion(match[2]!);
+      if (!target) {
+        valid = false;
+        return false;
+      }
+      const comparison = comparePluginVersions(coreVersion, target.normalized);
+      const operator = match[1] ?? "=";
+      if (operator === ">=") return comparison >= 0;
+      if (operator === "<=") return comparison <= 0;
+      if (operator === ">") return comparison > 0;
+      if (operator === "<") return comparison < 0;
+      if (operator === "~")
+        return (
+          comparison >= 0 &&
+          current.major === target.version.major &&
+          (target.specifiedParts === 1 ||
+            current.minor === target.version.minor)
+        );
+      if (operator === "^") {
+        if (target.version.major > 0n || target.specifiedParts === 1)
+          return comparison >= 0 && current.major === target.version.major;
+        if (target.version.minor > 0n)
+          return (
+            comparison >= 0 &&
+            current.major === 0n &&
+            current.minor === target.version.minor
+          );
+        if (target.specifiedParts < 3)
+          return (
+            comparison >= 0 && current.major === 0n && current.minor === 0n
+          );
+        return (
+          comparison >= 0 &&
+          current.major === 0n &&
+          current.minor === 0n &&
+          current.patch === target.version.patch
+        );
+      }
+      return comparison === 0;
+    });
+  const satisfied = comparatorResults.every(Boolean);
+  return { valid, satisfied: valid && satisfied };
+}
+
+function parsePluginRangeVersion(value: string):
+  | {
+      version: ParsedPluginVersion;
+      normalized: string;
+      specifiedParts: number;
+    }
+  | undefined {
+  const partialMatch =
+    /^(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?(?:\.(0|[1-9]\d*))?$/.exec(value);
+  if (partialMatch) {
+    const specifiedParts = partialMatch[3] ? 3 : partialMatch[2] ? 2 : 1;
+    const normalized = `${partialMatch[1]}.${partialMatch[2] ?? "0"}.${partialMatch[3] ?? "0"}`;
+    const version = parsePluginVersion(normalized);
+    if (!version) return undefined;
+    return {
+      version,
+      normalized,
+      specifiedParts,
+    };
+  }
+  return undefined;
 }
 
 export interface PluginContext {
@@ -272,8 +381,13 @@ export function validatePluginManifest(manifest: unknown): string[] {
   if (
     typeof manifest.compatibleCore !== "string" ||
     !manifest.compatibleCore.trim()
-  )
+  ) {
     errors.push("Compatible core range is required");
+  } else {
+    const compatibility = pluginCoreCompatibility(manifest.compatibleCore);
+    if (!compatibility.valid)
+      errors.push("Compatible core range must be a valid version range");
+  }
   const entrypoints = isRecord(manifest.entrypoints)
     ? manifest.entrypoints
     : undefined;
@@ -291,6 +405,10 @@ export function validatePluginManifest(manifest: unknown): string[] {
   if (!clientEntrypoint && !serverEntrypoint) {
     errors.push("At least one plugin entrypoint is required");
   }
+  if (clientEntrypoint && !safePluginManifestPath(clientEntrypoint))
+    errors.push("Client entrypoint must be a safe package-relative path");
+  if (serverEntrypoint && !safePluginManifestPath(serverEntrypoint))
+    errors.push("Server entrypoint must be a safe package-relative path");
   if (manifest.package !== undefined)
     validateOptionalStringRecord(
       manifest.package,
@@ -326,6 +444,8 @@ export function validatePluginManifest(manifest: unknown): string[] {
       errors.push(
         `Unsupported plugin permissions: ${unknownPermissions.join(", ")}`,
       );
+    if (new Set(manifest.permissions).size !== manifest.permissions.length)
+      errors.push("Plugin permissions must not contain duplicates");
   }
   if (manifest.ui !== undefined) validatePluginUi(manifest.ui, errors);
   if (
@@ -456,6 +576,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function safePluginManifestPath(value: string): boolean {
+  if (
+    value !== value.trim() ||
+    value.length > 512 ||
+    value.includes("\\") ||
+    value.startsWith("/") ||
+    /^[a-z][a-z0-9+.-]*:/i.test(value)
+  )
+    return false;
+  const segments = value.split("/");
+  return (
+    segments.at(-1) !== "." &&
+    !segments.includes("..") &&
+    !segments.includes("")
+  );
+}
+
 function optionalNonEmptyString(
   value: unknown,
   label: string,
@@ -505,12 +642,20 @@ function validatePluginUi(value: unknown, errors: string[]): void {
     errors.push("Plugin ui panels must be an array");
     return;
   }
+  const seenPanelIds = new Set<string>();
   for (const [index, panel] of value.panels.entries()) {
     if (!isRecord(panel)) {
       errors.push(`Plugin ui panel ${index + 1} must be an object`);
       continue;
     }
-    requiredNonEmptyString(panel.id, `Plugin ui panel ${index + 1} id`, errors);
+    const panelId = requiredNonEmptyString(
+      panel.id,
+      `Plugin ui panel ${index + 1} id`,
+      errors,
+    );
+    if (panelId && seenPanelIds.has(panelId))
+      errors.push(`Plugin ui panel id is duplicated: ${panelId}`);
+    if (panelId) seenPanelIds.add(panelId);
     requiredNonEmptyString(
       panel.title,
       `Plugin ui panel ${index + 1} title`,

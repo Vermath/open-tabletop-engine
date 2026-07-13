@@ -134,8 +134,15 @@ describe("dice engine", () => {
   it("accounts for rerolled faces and rejects unbounded exploding ranges", () => {
     expect(probabilityRange("1d6r1")).toEqual({ min: 2, max: 6 });
     expect(probabilityRange("1d6r6")).toEqual({ min: 1, max: 5 });
+    expect(probabilityRange("1d6r6!")).toEqual({ min: 1, max: 5 });
     expect(probabilityRange("2d6r1-1d4r4")).toEqual({ min: 1, max: 11 });
     expect(() => probabilityRange("1d6!")).toThrow("Probability range is unbounded for exploding dice");
+  });
+
+  it("rejects empty terms instead of treating repeated operators as zero", () => {
+    for (const formula of ["+", "-", "1++2", "1--2", "1+-2", "1-+2"]) {
+      expect(() => parseFormula(formula), formula).toThrow("Unsupported dice token");
+    }
   });
 
   it("defaults keep-high without a count to one die", () => {

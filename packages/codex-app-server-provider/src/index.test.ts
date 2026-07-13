@@ -1,6 +1,15 @@
 import type { AiProviderRequest } from "@open-tabletop/ai-core";
 import { describe, expect, it } from "vitest";
-import { CodexAppServerAuthRequiredError, CodexAppServerProvider, CodexAppServerWebSocketTransport, codexAppServerCommandCandidates, type CodexAppServerStartOptions } from "./index";
+import {
+  CodexAppServerAuthRequiredError,
+  CodexAppServerProvider,
+  CodexAppServerWebSocketTransport,
+  codexAppServerCommandCandidates,
+  startLocalCodexAppServer,
+  stopLocalCodexAppServers,
+  type CodexAppServerStartDependencies,
+  type CodexAppServerStartOptions
+} from "./index";
 
 const baseRequest: AiProviderRequest = {
   threadId: "thr_test",
@@ -152,6 +161,182 @@ describe("CodexAppServerWebSocketTransport", () => {
     expect(socket?.completed).toBe(false);
   });
 
+  it("aborts a pending websocket connection even when provider timeouts are disabled", async () => {
+    const abortController = new AbortController();
+    let socket: NeverOpeningCodexSocket | undefined;
+    const provider = new CodexAppServerProvider({
+      transport: new CodexAppServerWebSocketTransport({
+        url: "ws://codex.test",
+        requestTimeoutMs: 0,
+        turnTimeoutMs: 0,
+        webSocketFactory: () => {
+          socket = new NeverOpeningCodexSocket();
+          return socket;
+        },
+      }),
+    });
+    const iterator = provider.stream({ ...baseRequest, signal: abortController.signal })[Symbol.asyncIterator]();
+    const next = iterator.next();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(socket).toBeDefined();
+    abortController.abort();
+
+    await expect(next).rejects.toMatchObject({ name: "AbortError" });
+    expect(socket?.closed).toBe(true);
+  });
+
+  it("aborts a managed startup wait even when provider timeouts are disabled", async () => {
+    const abortController = new AbortController();
+    let starterSignal: AbortSignal | undefined;
+    let starterCalled!: () => void;
+    const started = new Promise<void>((resolve) => { starterCalled = resolve; });
+    const provider = new CodexAppServerProvider({
+      transport: new CodexAppServerWebSocketTransport({
+        url: "ws://127.0.0.1:4500",
+        requestTimeoutMs: 0,
+        turnTimeoutMs: 0,
+        autoStart: true,
+        appServerStarter: async (options) => {
+          starterSignal = options.signal;
+          starterCalled();
+          await new Promise<void>(() => undefined);
+        },
+        webSocketFactory: () => new FailingCodexSocket("connection refused"),
+      }),
+    });
+    const iterator = provider.stream({ ...baseRequest, signal: abortController.signal })[Symbol.asyncIterator]();
+    const next = iterator.next();
+    await started;
+
+    abortController.abort();
+
+    await expect(next).rejects.toMatchObject({ name: "AbortError" });
+    expect(starterSignal?.aborted).toBe(true);
+  });
+
+  it("aborts the default managed startup, terminates its child, and permits a clean retry", async () => {
+    const children: FakeCodexChildProcess[] = [];
+    const fetchSignals: Array<AbortSignal | null | undefined> = [];
+    const dependencies: CodexAppServerStartDependencies = {
+      fetch: async (_input, init) => {
+        fetchSignals.push(init?.signal);
+        return new Response(null, { status: 503 });
+      },
+      spawn: (() => {
+        const child = new FakeCodexChildProcess();
+        children.push(child);
+        return child;
+      }) as unknown as CodexAppServerStartDependencies["spawn"]
+    };
+    const options = {
+      url: "ws://127.0.0.1:45988",
+      command: "C:\\fake\\codex.exe",
+      timeoutMs: 0
+    };
+
+    const firstAbort = new AbortController();
+    const first = startLocalCodexAppServer({ ...options, signal: firstAbort.signal }, dependencies);
+    await waitUntil(() => children.length === 1);
+    firstAbort.abort();
+
+    await expect(first).rejects.toMatchObject({ name: "AbortError" });
+    expect(children[0]?.killed).toBe(true);
+
+    const secondAbort = new AbortController();
+    const second = startLocalCodexAppServer({ ...options, signal: secondAbort.signal }, dependencies);
+    await waitUntil(() => children.length === 2);
+    secondAbort.abort();
+
+    await expect(second).rejects.toMatchObject({ name: "AbortError" });
+    expect(children[1]?.killed).toBe(true);
+    expect(fetchSignals.length).toBeGreaterThanOrEqual(4);
+    expect(fetchSignals.every((signal) => signal instanceof AbortSignal)).toBe(true);
+  });
+
+  it("awaits Windows process-tree cleanup when an aborted shell child ignores graceful termination", async () => {
+    const child = new FakeCodexChildProcess({ ignoreGracefulKill: true, pid: 45_991 });
+    const processTreeTerminations: number[] = [];
+    let spawnedWithShell: boolean | undefined;
+    let cleanupCompleted = false;
+    const abortController = new AbortController();
+    const start = startLocalCodexAppServer(
+      {
+        url: "ws://127.0.0.1:45991",
+        command: "C:\\fake\\codex.cmd",
+        timeoutMs: 0,
+        signal: abortController.signal
+      },
+      {
+        platform: "win32",
+        stopTimeoutMs: 0,
+        forceKillTimeoutMs: 20,
+        fetch: async () => new Response(null, { status: 503 }),
+        spawn: ((_command: string, _args: readonly string[], options?: { shell?: boolean }) => {
+          spawnedWithShell = options?.shell === true;
+          return child;
+        }) as unknown as CodexAppServerStartDependencies["spawn"],
+        terminateWindowsProcessTree: async (pid) => {
+          processTreeTerminations.push(pid);
+          await new Promise((resolve) => setTimeout(resolve, 1));
+          cleanupCompleted = true;
+          throw Object.assign(new Error("process already exited"), { code: 128 });
+        }
+      }
+    );
+    await waitUntil(() => spawnedWithShell !== undefined);
+    abortController.abort();
+
+    await expect(start).rejects.toMatchObject({ name: "AbortError" });
+
+    expect(spawnedWithShell).toBe(true);
+    expect(child.killSignals).toEqual([undefined]);
+    expect(processTreeTerminations).toEqual([45_991]);
+    expect(cleanupCompleted).toBe(true);
+  });
+
+  it("bounds readiness probes even when fetch never settles", async () => {
+    const children: FakeCodexChildProcess[] = [];
+    const start = startLocalCodexAppServer(
+      { url: "ws://127.0.0.1:45989", command: "C:\\fake\\codex.exe", timeoutMs: 15 },
+      {
+        fetch: async () => await new Promise<Response>(() => undefined),
+        spawn: (() => {
+          const child = new FakeCodexChildProcess();
+          children.push(child);
+          return child;
+        }) as unknown as CodexAppServerStartDependencies["spawn"]
+      }
+    );
+
+    await expect(Promise.race([
+      start,
+      new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error("readiness probe was not bounded")), 500))
+    ])).rejects.toThrow("Timed out waiting for Codex app-server readiness");
+    expect(children).toHaveLength(1);
+    expect(children[0]?.killed).toBe(true);
+  });
+
+  it("stops a successfully started managed app-server child", async () => {
+    const child = new FakeCodexChildProcess();
+    let spawned = false;
+    await startLocalCodexAppServer(
+      { url: "ws://127.0.0.1:45990", command: "C:\\fake\\codex.exe", timeoutMs: 100 },
+      {
+        fetch: async () => new Response(null, { status: spawned ? 200 : 503 }),
+        spawn: (() => {
+          spawned = true;
+          return child;
+        }) as unknown as CodexAppServerStartDependencies["spawn"]
+      }
+    );
+
+    expect(child.killed).toBe(false);
+    await stopLocalCodexAppServers({ timeoutMs: 20, forceKillTimeoutMs: 20 });
+
+    expect(child.killed).toBe(true);
+  });
+
   it("yields app-server item lifecycle activity as safe progress events", async () => {
     let socket: ActivityCodexSocket | undefined;
     const provider = new CodexAppServerProvider({
@@ -288,6 +473,61 @@ describe("CodexAppServerWebSocketTransport", () => {
     expect(socket?.toolResponse).toMatchObject({ id: 1, result: { success: true } });
   });
 
+  it("allows zero to disable request and turn timers", async () => {
+    let socket: ReasoningBeforeCompletionCodexSocket | undefined;
+    const provider = new CodexAppServerProvider({
+      transport: new CodexAppServerWebSocketTransport({
+        url: "ws://codex.test",
+        requestTimeoutMs: 0,
+        turnTimeoutMs: 0,
+        webSocketFactory: () => {
+          socket = new ReasoningBeforeCompletionCodexSocket();
+          return socket;
+        },
+      }),
+    });
+
+    const events = [];
+    for await (const event of provider.stream(baseRequest)) events.push(event);
+
+    expect(socket?.completed).toBe(true);
+    expect(events).toEqual(expect.arrayContaining([{ type: "message.completed", content: "Scene setup finished." }]));
+  });
+
+  it("rejects pending requests on a websocket error when timeouts are disabled", async () => {
+    const provider = new CodexAppServerProvider({
+      transport: new CodexAppServerWebSocketTransport({
+        url: "ws://codex.test",
+        requestTimeoutMs: 0,
+        turnTimeoutMs: 0,
+        webSocketFactory: () => new RpcErrorAfterOpenCodexSocket(),
+      }),
+    });
+
+    await expect(async () => {
+      for await (const _event of provider.stream(baseRequest)) {
+        // The RPC fails before any provider event is emitted.
+      }
+    }).rejects.toThrow("socket error: simulated RPC transport failure");
+  });
+
+  it("does not leak a rejected turn-completion promise when turn/start is rejected", async () => {
+    const provider = new CodexAppServerProvider({
+      transport: new CodexAppServerWebSocketTransport({
+        url: "ws://codex.test",
+        requestTimeoutMs: 0,
+        turnTimeoutMs: 0,
+        webSocketFactory: () => new RejectTurnStartCodexSocket(false)
+      })
+    });
+
+    await expect(async () => {
+      for await (const _event of provider.stream(baseRequest)) {
+        // turn/start rejects before a completion event can be emitted.
+      }
+    }).rejects.toThrow("turn_start_rejected");
+  });
+
   it("starts the managed ChatGPT login flow when Codex has no account", async () => {
     let socket: FakeCodexSocket | undefined;
     const provider = new CodexAppServerProvider({
@@ -376,10 +616,33 @@ describe("CodexAppServerWebSocketTransport", () => {
     const events = [];
     for await (const event of provider.stream(baseRequest)) events.push(event);
 
-    expect(starts).toEqual([{ url: "ws://127.0.0.1:4500", command: undefined, timeoutMs: 1000 }]);
+    expect(starts).toEqual([expect.objectContaining({ url: "ws://127.0.0.1:4500", command: undefined, timeoutMs: 1000, signal: expect.any(AbortSignal) })]);
     expect(attempts).toBe(2);
     expect(socket?.sent.find((message) => message.method === "account/read")).toBeTruthy();
     expect(events).toEqual(expect.arrayContaining([{ type: "message.completed", content: "The map request was handed to OpenTabletop." }]));
+  });
+
+  it("passes a disabled request timeout through to managed app-server startup", async () => {
+    const starts: CodexAppServerStartOptions[] = [];
+    const provider = new CodexAppServerProvider({
+      transport: new CodexAppServerWebSocketTransport({
+        url: "ws://127.0.0.1:4500",
+        requestTimeoutMs: 0,
+        turnTimeoutMs: 0,
+        autoStart: true,
+        appServerStarter: async (options) => {
+          starts.push(options);
+        },
+        webSocketFactory: () => new FailingCodexSocket("connection refused"),
+      }),
+    });
+
+    await expect(async () => {
+      for await (const _event of provider.stream(baseRequest)) {
+        // Both the initial and post-start connection attempts fail.
+      }
+    }).rejects.toThrow("still failed");
+    expect(starts).toEqual([expect.objectContaining({ url: "ws://127.0.0.1:4500", command: undefined, timeoutMs: 0, signal: expect.any(AbortSignal) })]);
   });
 
   it("reports Codex app-server command startup failures through the provider error", async () => {
@@ -436,7 +699,131 @@ describe("CodexAppServerWebSocketTransport", () => {
       ]
     });
   });
+
+  it("does not leak a rejected image-completion promise when turn/start is rejected", async () => {
+    const transport = new CodexAppServerWebSocketTransport({
+      url: "ws://codex.test",
+      requestTimeoutMs: 0,
+      turnTimeoutMs: 0,
+      webSocketFactory: () => new RejectTurnStartCodexSocket(true)
+    });
+
+    await expect(transport.generateImage({ prompt: "Generate a PNG battle map." })).rejects.toThrow("turn_start_rejected");
+  });
 });
+
+async function waitUntil(predicate: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  throw new Error("Timed out waiting for test condition");
+}
+
+class FakeCodexChildProcess {
+  exitCode: number | null = null;
+  killed = false;
+  readonly killSignals: Array<NodeJS.Signals | number | undefined> = [];
+  readonly stdout = undefined;
+  readonly stderr = undefined;
+  readonly pid: number;
+  private readonly listeners = new Map<string, Set<(...args: unknown[]) => void>>();
+
+  constructor(private readonly options: { ignoreGracefulKill?: boolean; pid?: number } = {}) {
+    this.pid = options.pid ?? 45_000;
+  }
+
+  once(event: string, listener: (...args: unknown[]) => void): this {
+    const wrapped = (...args: unknown[]) => {
+      this.off(event, wrapped);
+      listener(...args);
+    };
+    const listeners = this.listeners.get(event) ?? new Set();
+    listeners.add(wrapped);
+    this.listeners.set(event, listeners);
+    return this;
+  }
+
+  off(event: string, listener: (...args: unknown[]) => void): this {
+    const listeners = this.listeners.get(event);
+    if (!listeners) return this;
+    for (const registered of listeners) {
+      if (registered === listener || registered.name === listener.name) listeners.delete(registered);
+    }
+    return this;
+  }
+
+  kill(signal?: NodeJS.Signals | number): boolean {
+    this.killed = true;
+    this.killSignals.push(signal);
+    if (this.options.ignoreGracefulKill && signal !== "SIGKILL") return true;
+    this.markExited();
+    return true;
+  }
+
+  markExited(exitCode = 0): void {
+    this.exitCode = exitCode;
+    this.emit("exit", exitCode, null);
+  }
+
+  private emit(event: string, ...args: unknown[]): void {
+    for (const listener of [...(this.listeners.get(event) ?? [])]) listener(...args);
+  }
+}
+
+class RejectTurnStartCodexSocket {
+  private readonly listeners = new Map<string, Set<(event: { data?: unknown; reason?: string; message?: string }) => void>>();
+
+  constructor(private readonly imageGeneration: boolean) {
+    queueMicrotask(() => this.emit("open", {}));
+  }
+
+  send(data: string): void {
+    const message = JSON.parse(data) as { id?: string | number; method?: string };
+    if (message.method === "initialized") return;
+    if (message.method === "initialize") {
+      this.emitMessage({ id: message.id, result: { userAgent: "fake" } });
+      return;
+    }
+    if (message.method === "account/read") {
+      this.emitMessage({ id: message.id, result: { authMode: "chatgpt" } });
+      return;
+    }
+    if (message.method === "modelProvider/capabilities/read") {
+      this.emitMessage({ id: message.id, result: { imageGeneration: this.imageGeneration } });
+      return;
+    }
+    if (message.method === "thread/start") {
+      this.emitMessage({ id: message.id, result: { thread: { id: "codex_thread" } } });
+      return;
+    }
+    if (message.method === "turn/start") {
+      this.emitMessage({ id: message.id, error: { code: -32_000, message: "turn_start_rejected" } });
+    }
+  }
+
+  close(): void {
+    this.emit("close", {});
+  }
+
+  addEventListener(type: "open" | "message" | "error" | "close", listener: (event: { data?: unknown; reason?: string; message?: string }) => void): void {
+    const listeners = this.listeners.get(type) ?? new Set();
+    listeners.add(listener);
+    this.listeners.set(type, listeners);
+  }
+
+  removeEventListener(type: "open" | "message" | "error" | "close", listener: (event: { data?: unknown; reason?: string; message?: string }) => void): void {
+    this.listeners.get(type)?.delete(listener);
+  }
+
+  private emitMessage(message: unknown): void {
+    this.emit("message", { data: JSON.stringify(message) });
+  }
+
+  private emit(type: string, event: { data?: unknown; reason?: string; message?: string }): void {
+    for (const listener of this.listeners.get(type) ?? []) listener(event);
+  }
+}
 
 class FakeCodexSocket {
   readonly sent: Array<{ id?: string | number; method?: string; params?: unknown; result?: unknown; error?: unknown }> = [];
@@ -538,6 +925,62 @@ class FailingCodexSocket {
   send(_data: string): void {}
 
   close(): void {
+    this.emit("close", {});
+  }
+
+  addEventListener(type: "open" | "message" | "error" | "close", listener: (event: { data?: unknown; reason?: string; message?: string }) => void): void {
+    const listeners = this.listeners.get(type) ?? new Set();
+    listeners.add(listener);
+    this.listeners.set(type, listeners);
+  }
+
+  removeEventListener(type: "open" | "message" | "error" | "close", listener: (event: { data?: unknown; reason?: string; message?: string }) => void): void {
+    this.listeners.get(type)?.delete(listener);
+  }
+
+  private emit(type: string, event: { data?: unknown; reason?: string; message?: string }): void {
+    for (const listener of this.listeners.get(type) ?? []) listener(event);
+  }
+}
+
+class RpcErrorAfterOpenCodexSocket {
+  private readonly listeners = new Map<string, Set<(event: { data?: unknown; reason?: string; message?: string }) => void>>();
+
+  constructor() {
+    queueMicrotask(() => this.emit("open", {}));
+  }
+
+  send(_data: string): void {
+    queueMicrotask(() => this.emit("error", { message: "simulated RPC transport failure" }));
+  }
+
+  close(): void {
+    this.emit("close", {});
+  }
+
+  addEventListener(type: "open" | "message" | "error" | "close", listener: (event: { data?: unknown; reason?: string; message?: string }) => void): void {
+    const listeners = this.listeners.get(type) ?? new Set();
+    listeners.add(listener);
+    this.listeners.set(type, listeners);
+  }
+
+  removeEventListener(type: "open" | "message" | "error" | "close", listener: (event: { data?: unknown; reason?: string; message?: string }) => void): void {
+    this.listeners.get(type)?.delete(listener);
+  }
+
+  private emit(type: string, event: { data?: unknown; reason?: string; message?: string }): void {
+    for (const listener of this.listeners.get(type) ?? []) listener(event);
+  }
+}
+
+class NeverOpeningCodexSocket {
+  closed = false;
+  private readonly listeners = new Map<string, Set<(event: { data?: unknown; reason?: string; message?: string }) => void>>();
+
+  send(_data: string): void {}
+
+  close(): void {
+    this.closed = true;
     this.emit("close", {});
   }
 

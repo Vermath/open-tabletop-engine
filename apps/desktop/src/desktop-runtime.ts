@@ -8,6 +8,17 @@ export interface DesktopDataPaths {
   backupsDir: string;
 }
 
+export interface DesktopShutdownFailure {
+  resource: "relay" | "web" | "api";
+  message: string;
+}
+
+export interface DesktopShutdownResources {
+  relay?: { stop(): void | Promise<void> };
+  web?: { close(): void | Promise<void> };
+  api?: { close(): void | Promise<void> };
+}
+
 export function desktopDataPaths(userDataRoot: string): DesktopDataPaths {
   const root = normalizeDesktopPath(userDataRoot);
   return {
@@ -38,7 +49,12 @@ export function desktopRuntimeEnv(paths: DesktopDataPaths, baseEnv: NodeJS.Proce
 }
 
 export function joinDesktopPath(root: string, ...parts: string[]): string {
-  return [normalizeDesktopPath(root).replace(/\/+$/, ""), ...parts.map((part) => normalizeDesktopPath(part).replace(/^\/+|\/+$/g, ""))].filter(Boolean).join("/");
+  const normalizedRoot = normalizeDesktopPath(root);
+  const base = normalizedRoot === "/" ? "/" : normalizedRoot.replace(/\/+$/, "");
+  const suffix = parts.map((part) => normalizeDesktopPath(part).replace(/^\/+|\/+$/g, "")).filter(Boolean).join("/");
+  if (!base) return suffix;
+  if (!suffix) return base;
+  return `${base}${base.endsWith("/") ? "" : "/"}${suffix}`;
 }
 
 export function desktopRendererUrlAllowed(senderUrl: string, webRuntimeUrl: string): boolean {
@@ -52,5 +68,28 @@ export function desktopRendererUrlAllowed(senderUrl: string, webRuntimeUrl: stri
 }
 
 function normalizeDesktopPath(value: string): string {
-  return value.replace(/\\/g, "/").replace(/\/+/g, "/");
+  const slashed = value.replace(/\\/g, "/");
+  const isUnc = slashed.startsWith("//");
+  const normalized = slashed.replace(/\/+/g, "/");
+  return isUnc && normalized.startsWith("/") ? `/${normalized}` : normalized;
+}
+
+export async function shutdownDesktopResources(resources: DesktopShutdownResources): Promise<DesktopShutdownFailure[]> {
+  const failures: DesktopShutdownFailure[] = [];
+  if (resources.relay) {
+    try {
+      await resources.relay.stop();
+    } catch (error) {
+      failures.push({ resource: "relay", message: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  const operations = [
+    resources.web ? (["web", () => resources.web!.close()] as const) : undefined,
+    resources.api ? (["api", () => resources.api!.close()] as const) : undefined,
+  ].filter((operation): operation is readonly ["web" | "api", () => void | Promise<void>] => Boolean(operation));
+  const settled = await Promise.allSettled(operations.map(([, close]) => Promise.resolve().then(close)));
+  for (const [index, result] of settled.entries()) {
+    if (result.status === "rejected") failures.push({ resource: operations[index]![0], message: result.reason instanceof Error ? result.reason.message : String(result.reason) });
+  }
+  return failures;
 }

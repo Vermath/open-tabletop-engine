@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { AiProvider, AiProviderEvent, AiProviderRequest } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
+import { CodexAppServerWebSocketTransport } from "@open-tabletop/codex-app-server-provider";
 import { createTimestamped, emptyState, isPointInsideVisionPolygon, isPointInsideVisionPolygons, permissionsForRole, type Actor, type AssetStorageRef, type AuditLog, type AudioTrack, type CampaignArchive, type ChatMessage, type Combat, type CombatAction, type ContentImportBatch, type DiceMacro, type DiceRoll, type EngineState, type Item, type JournalEntry, type MapAsset, type PasswordResetToken, type PermissionGrant, type PluginReview, type Proposal, type Scene, type Token, type VisionSnapshot, type WorkerJobRecord } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
 import { assetStorageKey, type AssetStorage } from "./asset-storage.js";
@@ -208,7 +209,7 @@ class StaticAiProvider implements AiProvider {
 }
 
 describe("asset storage keys", () => {
-  it("normalizes campaign and asset ids before deriving object keys", () => {
+  it("derives safe collision-resistant keys from archive-controlled ids", () => {
     const asset = createTimestamped("asset", {
       id: "../asset/with\\slashes",
       campaignId: "../camp\\demo",
@@ -220,9 +221,11 @@ describe("asset storage keys", () => {
       createdByUserId: "usr_demo_gm"
     }) satisfies MapAsset;
 
-    expect(assetStorageKey(asset)).toBe("___camp_demo/___asset_with_slashes.png");
-    expect(assetStorageKey(asset)).not.toContain("..");
-    expect(assetStorageKey(asset)).not.toContain("\\");
+    const key = assetStorageKey(asset);
+    expect(key).toMatch(/^camp_demo--[0-9a-f]{32}\/asset_with_slashes--[0-9a-f]{32}\.png$/);
+    expect(key).not.toContain("..");
+    expect(key).not.toContain("\\");
+    expect(key).not.toBe("___camp_demo/___asset_with_slashes.png");
   });
 });
 
@@ -1077,7 +1080,7 @@ function sendJson(response: ServerResponse, body: unknown): void {
   response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(body));
 }
 
-function writeVersionedPluginPackage(pluginRoot: string, packageId: string, pluginId: string, version: string, body: string): void {
+function writeVersionedPluginPackage(pluginRoot: string, packageId: string, pluginId: string, version: string, body: string, permissions = ["chat.write"]): void {
   const packagePath = join(pluginRoot, packageId);
   mkdirSync(packagePath);
   writeFileSync(
@@ -1089,7 +1092,7 @@ function writeVersionedPluginPackage(pluginRoot: string, packageId: string, plug
       compatibleCore: ">=0.1.0",
       entrypoints: { server: "./server.js" },
       runtime: { apiVersion: "0.1", sandbox: "vm" },
-      permissions: ["chat.write"],
+      permissions,
       chatCommands: [{ command: "/version", description: "Report the installed plugin version" }]
     })
   );
@@ -1953,6 +1956,83 @@ describe("api", () => {
     }
   });
 
+  it("revalidates the current workspace before replaying an idempotent mutation", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    try {
+      const login = await loginDemoUser(app, store);
+      expect(login.statusCode).toBe(200);
+      const headers = {
+        authorization: `Bearer ${login.json().token as string}`,
+        "Idempotency-Key": "workspace-bound-scene-create"
+      };
+      const payload = { name: "Workspace-bound scene", width: 640, height: 480, gridSize: 40 };
+      const first = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/scenes",
+        headers,
+        payload
+      });
+      expect(first.statusCode).toBe(200);
+
+      const createdWorkspace = await app.inject({
+        method: "POST",
+        url: "/api/v1/organizations",
+        headers: { authorization: headers.authorization },
+        payload: { name: "Isolated replay workspace" }
+      });
+      expect(createdWorkspace.statusCode).toBe(201);
+
+      const retry = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/scenes",
+        headers,
+        payload
+      });
+      expect(retry.statusCode).toBe(403);
+      expect(retry.headers["idempotency-replayed"]).toBeUndefined();
+      expect(retry.json().message).toBe("Campaign belongs to a different active organization");
+      expect(store.state.scenes.filter((scene) => scene.name === payload.name)).toHaveLength(1);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("revalidates current permissions before replaying an idempotent mutation", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+    const headers = { ...authHeaders, "Idempotency-Key": "permission-bound-scene-create" };
+    const payload = { name: "Permission-bound scene", width: 640, height: 480, gridSize: 40 };
+
+    try {
+      const first = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/scenes",
+        headers,
+        payload
+      });
+      expect(first.statusCode).toBe(200);
+
+      const membership = store.state.members.find((member) => member.campaignId === "camp_demo" && member.userId === "usr_demo_gm")!;
+      membership.role = "observer";
+      membership.updatedAt = new Date().toISOString();
+
+      const retry = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/scenes",
+        headers,
+        payload
+      });
+      expect(retry.statusCode).toBe(403);
+      expect(retry.headers["idempotency-replayed"]).toBeUndefined();
+      expect(retry.json().message).toBe("Missing permission: scene.create");
+      expect(store.state.scenes.filter((scene) => scene.name === payload.name)).toHaveLength(1);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("treats Idempotency-Key as opaque and rejects keys longer than 160 characters", async () => {
     const store = new MemoryStateStore();
     const app = await buildApp({ store });
@@ -2430,6 +2510,7 @@ describe("api", () => {
         path: "/api/v1/campaigns/camp_demo/scenes",
         userId: "usr_demo_gm",
         requestHash: `hash-${key}`,
+        authorizationHash: `authorization-${key}`,
         statusCode: 200,
         contentType: "application/json",
         responseBody
@@ -5229,6 +5310,87 @@ describe("api", () => {
     await app.close();
   });
 
+  it("activates a replacement when the active scene is deleted", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+    try {
+      const replacement = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/scenes",
+        headers: authHeaders,
+        payload: { name: "Replacement Scene", active: false, sortOrder: 2 }
+      });
+      expect(replacement.statusCode).toBe(200);
+
+      const deleted = await app.inject({
+        method: "DELETE",
+        url: "/api/v1/scenes/scn_vault_entry",
+        headers: authHeaders
+      });
+      expect(deleted.statusCode).toBe(200);
+
+      const activeScenes = store.state.scenes.filter((scene) => scene.campaignId === "camp_demo" && scene.active);
+      expect(activeScenes).toHaveLength(1);
+      expect(activeScenes[0]).toMatchObject({ id: replacement.json().id, name: "Replacement Scene", active: true });
+      expect(activeScenes[0]?.activationHistory?.at(-1)).toMatchObject({
+        previousActiveSceneId: "scn_vault_entry",
+        source: "activate"
+      });
+      expect(store.state.auditLogs.find((log) => log.action === "scene.delete" && log.targetId === "scn_vault_entry")?.after).toEqual({
+        deleted: true,
+        activatedSceneId: replacement.json().id
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("preserves an active player scene across create and update API calls", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+    try {
+      const campaign = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns",
+        headers: authHeaders,
+        payload: { name: "Active Scene Invariant" }
+      });
+      expect(campaign.statusCode).toBe(200);
+
+      const firstScene = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/${campaign.json().id}/scenes`,
+        headers: authHeaders,
+        payload: { name: "First Scene", active: false }
+      });
+      expect(firstScene.statusCode).toBe(200);
+      expect(firstScene.json()).toMatchObject({ active: true });
+
+      const draftScene = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/${campaign.json().id}/scenes`,
+        headers: authHeaders,
+        payload: { name: "Draft Scene", active: false }
+      });
+      expect(draftScene.statusCode).toBe(200);
+      expect(draftScene.json()).toMatchObject({ active: false });
+
+      const deactivated = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/scenes/${firstScene.json().id}`,
+        headers: authHeaders,
+        payload: { active: false }
+      });
+      expect(deactivated.statusCode).toBe(400);
+      expect(deactivated.json()).toMatchObject({ message: "Activate another scene before deactivating the current player scene" });
+      expect(store.state.scenes.filter((scene) => scene.campaignId === campaign.json().id && scene.active)).toEqual([
+        expect.objectContaining({ id: firstScene.json().id, active: true })
+      ]);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("rejects realtime subscriptions outside the session active organization", async () => {
     type RealtimeTestSocket = {
       onmessage: ((event: { data: unknown }) => void) | null;
@@ -5277,6 +5439,111 @@ describe("api", () => {
     expect(unauthorized).toEqual({ error: "unauthorized" });
     socket.close();
     await app.close();
+  });
+
+  it("disconnects only the realtime sockets bound to a session that switches workspace", async () => {
+    type RealtimeTestSocket = {
+      onopen: (() => void) | null;
+      onmessage: ((event: { data: unknown }) => void) | null;
+      onerror: ((event: unknown) => void) | null;
+      onclose: (() => void) | null;
+      close(): void;
+    };
+    const maybeWebSocket = (globalThis as unknown as { WebSocket?: new (url: string, protocols?: string[]) => RealtimeTestSocket }).WebSocket;
+    if (!maybeWebSocket) throw new Error("WebSocket is not available in this Node runtime");
+    const TestWebSocket = maybeWebSocket;
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+    await app.listen({ port: 0, host: "127.0.0.1" });
+    const address = app.server.address() as AddressInfo;
+    const credentials = seedDemoPassword(store, "usr_demo_gm");
+    const [firstLogin, secondLogin] = await Promise.all([
+      app.inject({ method: "POST", url: "/api/v1/auth/login", payload: credentials }),
+      app.inject({ method: "POST", url: "/api/v1/auth/login", payload: credentials })
+    ]);
+    expect(firstLogin.statusCode).toBe(200);
+    expect(secondLogin.statusCode).toBe(200);
+    const firstToken = firstLogin.json().token as string;
+    const secondToken = secondLogin.json().token as string;
+    const firstHeaders = { authorization: `Bearer ${firstToken}` };
+    const secondHeaders = { authorization: `Bearer ${secondToken}` };
+    const createdWorkspace = await app.inject({
+      method: "POST",
+      url: "/api/v1/organizations",
+      headers: firstHeaders,
+      payload: { name: "Realtime Session Isolation" }
+    });
+    expect(createdWorkspace.statusCode).toBe(201);
+    const otherOrganizationId = createdWorkspace.json().organization.id as string;
+    const switchedBack = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/organization/session",
+      headers: firstHeaders,
+      payload: { organizationId: "org_demo" }
+    });
+    expect(switchedBack.statusCode).toBe(200);
+
+    const openSocket = async (token: string) => {
+      const socket = new TestWebSocket(`ws://127.0.0.1:${address.port}/api/v1/realtime?campaignId=camp_demo`, ["otte.v1", `otte.auth.${token}`]);
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("Timed out opening session-scoped realtime socket")), 1000);
+        socket.onopen = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+        socket.onerror = (event) => {
+          clearTimeout(timer);
+          reject(new Error(`Session-scoped realtime socket failed: ${String(event)}`));
+        };
+      });
+      return socket;
+    };
+    const [firstSocket, secondSocket] = await Promise.all([openSocket(firstToken), openSocket(secondToken)]);
+    let secondSocketClosed = false;
+    secondSocket.onclose = () => {
+      secondSocketClosed = true;
+    };
+    const firstSocketClosed = new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("Timed out waiting for switched session socket to close")), 1000);
+      firstSocket.onclose = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+    });
+    const secondSocketMessage = new Promise<{ type?: string; targetId?: string }>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("Timed out waiting for unaffected session realtime event")), 1000);
+      secondSocket.onmessage = (event) => {
+        const message = JSON.parse(String(event.data)) as { type?: string; targetId?: string };
+        if (message.type !== "chat.message.created") return;
+        clearTimeout(timer);
+        resolve(message);
+      };
+    });
+
+    try {
+      const switchedAway = await app.inject({
+        method: "PATCH",
+        url: "/api/v1/organization/session",
+        headers: firstHeaders,
+        payload: { organizationId: otherOrganizationId }
+      });
+      expect(switchedAway.statusCode).toBe(200);
+      await firstSocketClosed;
+
+      const chat = await app.inject({
+        method: "POST",
+        url: "/api/v1/chat/messages",
+        headers: secondHeaders,
+        payload: { campaignId: "camp_demo", body: "Other session stays connected", visibility: "public" }
+      });
+      expect(chat.statusCode).toBe(200);
+      await expect(secondSocketMessage).resolves.toMatchObject({ type: "chat.message.created", targetId: chat.json().id });
+      expect(secondSocketClosed).toBe(false);
+    } finally {
+      firstSocket.close();
+      secondSocket.close();
+      await app.close();
+    }
   });
 
   it("bootstraps the first owner from an empty deployment", async () => {
@@ -7590,6 +7857,164 @@ describe("api", () => {
     }
   });
 
+  it("keeps failed SCIM patches atomic and rejects username-to-email collisions", async () => {
+    const previousEnv = snapshotEnv(["OTTE_SCIM_BEARER_TOKEN"]);
+    process.env.OTTE_SCIM_BEARER_TOKEN = "scim-secret";
+    const store = new MemoryStateStore();
+    const targetUser = store.state.users.find((user) => user.id === "usr_demo_player")!;
+    const existingUser = store.state.users.find((user) => user.id === "usr_demo_gm")!;
+    targetUser.scim = { userName: "player-alias", syncedAt: "2026-07-11T00:00:00.000Z" };
+    existingUser.scim = { userName: "gm-alias", syncedAt: "2026-07-11T00:00:00.000Z" };
+    store.state.sessions.push(
+      createTimestamped("sess", {
+        userId: targetUser.id,
+        tokenHash: "sha256:scim-atomicity-session",
+        expiresAt: "2099-07-11T00:00:00.000Z",
+        lastSeenAt: "2026-07-11T00:00:00.000Z"
+      })
+    );
+    store.state.scimGroups.push(
+      createTimestamped("scimg", {
+        id: "scimg_atomic_source",
+        displayName: "Atomic Source",
+        externalId: "atomic-source",
+        memberUserIds: [targetUser.id]
+      }),
+      createTimestamped("scimg", {
+        id: "scimg_atomic_existing",
+        displayName: "Existing Group",
+        externalId: "atomic-existing",
+        memberUserIds: []
+      })
+    );
+    const app = await buildApp({ store });
+    const headers = { authorization: "Bearer scim-secret" };
+    try {
+      const partialUserPatch = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/scim/v2/Users/${targetUser.id}`,
+        headers,
+        payload: {
+          Operations: [
+            { op: "replace", path: "active", value: false },
+            { op: "replace", path: "unsupported", value: "ignored" }
+          ]
+        }
+      });
+      expect(partialUserPatch.statusCode).toBe(400);
+      expect(targetUser.disabledAt).toBeUndefined();
+      expect(store.state.sessions.some((session) => session.userId === targetUser.id)).toBe(true);
+
+      const duplicateEmailPatch = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/scim/v2/Users/${targetUser.id}`,
+        headers,
+        payload: { Operations: [{ op: "replace", path: "userName", value: existingUser.email }] }
+      });
+      expect(duplicateEmailPatch.statusCode).toBe(400);
+      expect(targetUser.email).toBe("player@example.test");
+      expect(targetUser.scim?.userName).toBe("player-alias");
+
+      targetUser.scim = { ...targetUser.scim!, externalId: "clear-user-external" };
+      const clearUserExternalId = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/scim/v2/Users/${targetUser.id}`,
+        headers,
+        payload: { Operations: [{ op: "replace", path: "externalId", value: null }] }
+      });
+      expect(clearUserExternalId.statusCode).toBe(200);
+      expect(targetUser.scim?.externalId).toBeUndefined();
+
+      const clearGroupExternalId = await app.inject({
+        method: "PATCH",
+        url: "/api/v1/scim/v2/Groups/scimg_atomic_source",
+        headers,
+        payload: { Operations: [{ op: "remove", path: "externalId" }] }
+      });
+      expect(clearGroupExternalId.statusCode).toBe(200);
+      expect(store.state.scimGroups.find((group) => group.id === "scimg_atomic_source")?.externalId).toBeUndefined();
+
+      const nullableUserCreate = await app.inject({
+        method: "POST",
+        url: "/api/v1/scim/v2/Users",
+        headers,
+        payload: { userName: "nullable.scim@example.test", displayName: null, externalId: null, name: { formatted: null, givenName: null, familyName: null } }
+      });
+      expect(nullableUserCreate.statusCode).toBe(201);
+
+      const duplicateGroupPatch = await app.inject({
+        method: "PATCH",
+        url: "/api/v1/scim/v2/Groups/scimg_atomic_source",
+        headers,
+        payload: { Operations: [{ op: "replace", path: "displayName", value: "Existing Group" }] }
+      });
+      expect(duplicateGroupPatch.statusCode).toBe(409);
+      expect(store.state.scimGroups.find((group) => group.id === "scimg_atomic_source")?.displayName).toBe("Atomic Source");
+
+      const malformedUserCreate = await app.inject({
+        method: "POST",
+        url: "/api/v1/scim/v2/Users",
+        headers,
+        payload: { userName: "malformed@example.test", emails: [null] }
+      });
+      expect(malformedUserCreate.statusCode).toBe(400);
+
+      const malformedUserScalar = await app.inject({
+        method: "POST",
+        url: "/api/v1/scim/v2/Users",
+        headers,
+        payload: { userName: 123, displayName: "Invalid User" }
+      });
+      expect(malformedUserScalar.statusCode).toBe(400);
+
+      const malformedUserPatch = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/scim/v2/Users/${targetUser.id}`,
+        headers,
+        payload: { Operations: [null] }
+      });
+      expect(malformedUserPatch.statusCode).toBe(400);
+
+      const malformedUserPatchValue = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/scim/v2/Users/${targetUser.id}`,
+        headers,
+        payload: { Operations: [{ op: "replace", path: "displayName", value: { invalid: true } }] }
+      });
+      expect(malformedUserPatchValue.statusCode).toBe(400);
+      expect(targetUser.displayName).toBe("Demo Player");
+
+      const malformedGroupPatch = await app.inject({
+        method: "PATCH",
+        url: "/api/v1/scim/v2/Groups/scimg_atomic_source",
+        headers,
+        payload: { Operations: [{ op: 1, path: "displayName", value: "Should Not Apply" }] }
+      });
+      expect(malformedGroupPatch.statusCode).toBe(400);
+      expect(store.state.scimGroups.find((group) => group.id === "scimg_atomic_source")?.displayName).toBe("Atomic Source");
+
+      const malformedGroupPatchValue = await app.inject({
+        method: "PATCH",
+        url: "/api/v1/scim/v2/Groups/scimg_atomic_source",
+        headers,
+        payload: { Operations: [{ op: "replace", path: "displayName", value: { invalid: true } }] }
+      });
+      expect(malformedGroupPatchValue.statusCode).toBe(400);
+      expect(store.state.scimGroups.find((group) => group.id === "scimg_atomic_source")?.displayName).toBe("Atomic Source");
+
+      const malformedGroupCreate = await app.inject({
+        method: "POST",
+        url: "/api/v1/scim/v2/Groups",
+        headers,
+        payload: { displayName: { invalid: true } }
+      });
+      expect(malformedGroupCreate.statusCode).toBe(400);
+    } finally {
+      await app.close();
+      restoreEnv(previousEnv);
+    }
+  });
+
   it("maps SCIM groups into campaign memberships", async () => {
     const previousEnv = snapshotEnv(["OTTE_SCIM_BEARER_TOKEN", "OTTE_ADMIN_USER_IDS"]);
     process.env.OTTE_SCIM_BEARER_TOKEN = "scim-secret";
@@ -8470,6 +8895,59 @@ describe("api", () => {
     }
   });
 
+  it("does not disclose disabled or reset-required account state before credentials verify", async () => {
+    const previousEnv = snapshotEnv(["NODE_ENV"]);
+    process.env.NODE_ENV = "production";
+    const store = new MemoryStateStore();
+    const disabled = store.state.users.find((user) => user.id === "usr_demo_gm")!;
+    const resetRequired = store.state.users.find((user) => user.id === "usr_demo_player")!;
+    disabled.passwordHash = testPasswordHash("disabled-password");
+    disabled.disabledAt = "2026-07-11T00:00:00.000Z";
+    resetRequired.passwordHash = testPasswordHash("reset-password");
+    resetRequired.passwordResetRequired = true;
+    const app = await buildApp({ store });
+    try {
+      for (const payload of [
+        { email: "missing@example.test", password: "wrong-password" },
+        { email: disabled.email, password: "wrong-password" },
+        { email: resetRequired.email, password: "wrong-password" }
+      ]) {
+        const response = await app.inject({ method: "POST", url: "/api/v1/auth/login", payload });
+        expect(response.statusCode).toBe(401);
+        expect(response.json().message).toBe("Invalid login credentials");
+      }
+
+      for (const payload of [
+        { email: 123, password: "wrong-password" },
+        { email: "missing@example.test", password: 123 },
+        { email: "missing@example.test", password: "wrong-password", mfaCode: 123 }
+      ]) {
+        const response = await app.inject({ method: "POST", url: "/api/v1/auth/login", payload });
+        expect(response.statusCode).toBe(400);
+        expect(response.json().message).toBe("Login fields must be strings");
+      }
+
+      const knownDisabled = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { email: disabled.email, password: "disabled-password" }
+      });
+      expect(knownDisabled.statusCode).toBe(403);
+      expect(knownDisabled.json().message).toBe("User account is disabled");
+
+      const knownResetRequired = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { email: resetRequired.email, password: "reset-password" }
+      });
+      expect(knownResetRequired.statusCode).toBe(403);
+      expect(knownResetRequired.json().message).toBe("Password reset required");
+    } finally {
+      await app.close();
+      restoreEnv(previousEnv);
+    }
+  });
+
   it("hard-fences legacy x-user-id auth in production even when compatibility mode is set", async () => {
     const previousEnv = snapshotEnv([
       "NODE_ENV",
@@ -8513,7 +8991,7 @@ describe("api", () => {
         payload: { userId: "usr_demo_gm" }
       });
       expect(login.statusCode).toBe(401);
-      expect(login.json().message).toBe("Unknown login identity");
+      expect(login.json().message).toBe("Invalid login credentials");
       const emailLogin = await loginDemoUser(app, store);
       expect(emailLogin.statusCode).toBe(200);
       const bearer = await app.inject({
@@ -9391,6 +9869,31 @@ describe("api", () => {
       expect(patched.statusCode).toBe(200);
       expect(patched.json()).toEqual(expect.objectContaining({ brightVisionRadius: 90, dimVisionRadius: 260, visionRadius: 260 }));
 
+      const disabledVision = await app.inject({
+        method: "PATCH",
+        url: "/api/v1/tokens/tok_valen",
+        headers: adminHeaders,
+        payload: { visionEnabled: false }
+      });
+      expect(disabledVision.statusCode).toBe(200);
+      expect(disabledVision.json()).toEqual(expect.objectContaining({ visionEnabled: false }));
+      const enabledVision = await app.inject({
+        method: "PATCH",
+        url: "/api/v1/tokens/tok_valen",
+        headers: adminHeaders,
+        payload: { visionEnabled: true }
+      });
+      expect(enabledVision.statusCode).toBe(200);
+      expect(enabledVision.json()).toEqual(expect.objectContaining({ visionEnabled: true }));
+      const invalidVisionToggle = await app.inject({
+        method: "PATCH",
+        url: "/api/v1/tokens/tok_valen",
+        headers: adminHeaders,
+        payload: { visionEnabled: "false" }
+      });
+      expect(invalidVisionToggle.statusCode).toBe(400);
+      expect(valen.visionEnabled).toBe(true);
+
       scene.fog = [{ id: "fog_center", x: 500, y: 380, radius: 320, hidden: false }];
       const vision = await app.inject({
         method: "GET",
@@ -9436,6 +9939,17 @@ describe("api", () => {
       );
       expect(operations.json().featureCoverage.requiredFeatures).toEqual(expect.arrayContaining([expect.objectContaining({ code: "dual_zone_token_vision", present: true })]));
       expect(operations.json().featureCoverage.missingRequiredFeatureCodes).not.toContain("dual_zone_token_vision");
+
+      const disabledDimVision = await app.inject({
+        method: "PATCH",
+        url: "/api/v1/tokens/tok_valen",
+        headers: adminHeaders,
+        payload: { brightVisionRadius: null, dimVisionRadius: null, visionRadius: 0 }
+      });
+      expect(disabledDimVision.statusCode).toBe(200);
+      expect(disabledDimVision.json()).toEqual(expect.objectContaining({ visionRadius: 0 }));
+      expect(disabledDimVision.json()).not.toHaveProperty("brightVisionRadius");
+      expect(disabledDimVision.json()).not.toHaveProperty("dimVisionRadius");
     } finally {
       await app.close();
       restoreEnv(previousEnv);
@@ -10481,6 +10995,7 @@ describe("api", () => {
       ["GET /api/v1/campaigns/{campaignId}/content-imports", "content import roster requires campaign update"],
       ["GET /api/v1/content-imports/{importId}", "content import details require campaign update"],
       ["GET /api/v1/campaigns/{campaignId}/export", "portable campaign archives require campaign update"],
+      ["GET /api/v1/campaigns/{campaignId}/dogfood-report-bundle", "diagnostic report bundles require campaign update"],
       ["GET /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/advancement", "actor advancement requires private actor access"],
       ["GET /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/sheet", "actor sheet requires private actor access"],
       ["GET /api/v1/campaigns/{campaignId}/plugins/{pluginId}/storage", "plugin storage requires plugin configure"],
@@ -11112,6 +11627,41 @@ describe("api", () => {
         expect(response.json(), route.label).toMatchObject(route.expected);
       }
       expect(snapshot()).toEqual(before);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("keeps AI and plugin proposal provenance server-owned on the REST create route", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+    const baselineProposalCount = store.state.proposals.length;
+
+    try {
+      for (const payload of [
+        { title: "Spoofed AI proposal", createdByType: "ai", sourceId: "thr_spoofed", changesJson: [] },
+        { title: "Spoofed plugin proposal", createdByType: "plugin", sourceId: "plugin_spoofed", changesJson: [] },
+        { title: "Spoofed user source", createdByType: "user", sourceId: "thr_spoofed", changesJson: [] }
+      ]) {
+        const response = await app.inject({
+          method: "POST",
+          url: "/api/v1/campaigns/camp_demo/proposals",
+          headers: authHeaders,
+          payload
+        });
+        expect(response.statusCode).toBe(400);
+      }
+      expect(store.state.proposals).toHaveLength(baselineProposalCount);
+
+      const userProposal = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/proposals",
+        headers: authHeaders,
+        payload: { title: "User-authored proposal", createdByType: "user", changesJson: [] }
+      });
+      expect(userProposal.statusCode).toBe(200);
+      expect(userProposal.json()).toMatchObject({ createdByType: "user", createdByUserId: "usr_demo_gm" });
+      expect(userProposal.json()).not.toHaveProperty("sourceId");
     } finally {
       await app.close();
     }
@@ -23332,7 +23882,11 @@ describe("api", () => {
     const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-api-"));
     try {
       writeVersionedPluginPackage(pluginRoot, "versioned-plugin-1", "versioned-plugin", "1.0.0", "Version 1 macro");
-      writeVersionedPluginPackage(pluginRoot, "versioned-plugin-2", "versioned-plugin", "2.0.0", "Version 2 macro");
+      writeVersionedPluginPackage(pluginRoot, "versioned-plugin-2", "versioned-plugin", "2.0.0", "Version 2 macro", ["chat.write", "token.read"]);
+      const latestManifestPath = join(pluginRoot, "versioned-plugin-2", "plugin.manifest.json");
+      const latestManifest = JSON.parse(readFileSync(latestManifestPath, "utf8")) as { compatibleCore: string };
+      latestManifest.compatibleCore = ">=0.1.0 *";
+      writeFileSync(latestManifestPath, JSON.stringify(latestManifest));
       const store = new MemoryStateStore();
       const app = await buildApp({ store, pluginRoot });
 
@@ -23349,8 +23903,8 @@ describe("api", () => {
           installed: false,
           distribution: { availableVersions: ["2.0.0", "1.0.0"], latestVersion: "2.0.0" },
           versionCompatibility: [
-            expect.objectContaining({ version: "2.0.0", compatibleCore: { range: ">=0.1.0", coreVersion: "0.3.0", satisfied: true } }),
-            expect.objectContaining({ version: "1.0.0", compatibleCore: { range: ">=0.1.0", coreVersion: "0.3.0", satisfied: true } })
+            expect.objectContaining({ version: "2.0.0", permissions: ["chat.write", "token.read"], permissionReview: expect.objectContaining({ requestedPermissions: ["chat.write", "token.read"] }), compatibleCore: { range: ">=0.1.0 *", coreVersion: "0.3.0", satisfied: true } }),
+            expect.objectContaining({ version: "1.0.0", permissions: ["chat.write"], permissionReview: expect.objectContaining({ requestedPermissions: ["chat.write"] }), compatibleCore: { range: ">=0.1.0", coreVersion: "0.3.0", satisfied: true } })
           ]
         })
       ]);
@@ -24068,6 +24622,77 @@ describe("api", () => {
     } finally {
       await app?.close();
       rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("uses semantic-version prerelease precedence for plugin install telemetry", async () => {
+    const previousEnv = snapshotEnv(["OTTE_ADMIN_USER_IDS"]);
+    process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";
+    const store = new MemoryStateStore();
+    const installAudit = (version: string, createdAt: string) =>
+      createTimestamped("audit", {
+        campaignId: "camp_demo",
+        actorUserId: "usr_demo_gm",
+        actorType: "user" as const,
+        action: "plugin.install",
+        targetType: "plugin",
+        targetId: "prerelease-plugin",
+        createdAt,
+        updatedAt: createdAt,
+        after: {
+          pluginId: "prerelease-plugin",
+          version,
+          requestedPermissions: ["chat.write"],
+          grantedPermissions: ["chat.write"],
+          missingPermissions: []
+        }
+      });
+    store.state.auditLogs.push(
+      installAudit("1.0.0", "2026-07-11T00:00:00.000Z"),
+      installAudit("1.0.0-rc.2", "2026-07-11T00:01:00.000Z"),
+      installAudit("1.0.0-rc.10", "2026-07-11T00:02:00.000Z")
+    );
+    const app = await buildApp({ store });
+    try {
+      const adminLogin = await loginDemoUser(app, store);
+      expect(adminLogin.statusCode).toBe(200);
+      const operations = await app.inject({
+        method: "GET",
+        url: "/api/v1/admin/plugins/operations",
+        headers: { authorization: `Bearer ${adminLogin.json().token}` }
+      });
+
+      expect(operations.statusCode).toBe(200);
+      expect(operations.json().installOperations).toEqual(
+        expect.objectContaining({
+          installCount: 3,
+          versionChangeCount: 2,
+          rollbackCount: 1,
+          recentInstalls: [
+            expect.objectContaining({ pluginId: "prerelease-plugin", version: "1.0.0-rc.10", operation: "upgrade" }),
+            expect.objectContaining({ pluginId: "prerelease-plugin", version: "1.0.0-rc.2", operation: "rollback" }),
+            expect.objectContaining({ pluginId: "prerelease-plugin", version: "1.0.0", operation: "install" })
+          ]
+        })
+      );
+      store.state.auditLogs.push(
+        installAudit("legacy-version", "2026-07-11T00:03:00.000Z"),
+        installAudit("still-not-semver", "2026-07-11T00:04:00.000Z")
+      );
+      const malformedLegacyOperations = await app.inject({
+        method: "GET",
+        url: "/api/v1/admin/plugins/operations",
+        headers: { authorization: `Bearer ${adminLogin.json().token}` }
+      });
+      expect(malformedLegacyOperations.statusCode).toBe(200);
+      expect(malformedLegacyOperations.json().installOperations).toEqual(expect.objectContaining({
+        installCount: 5,
+        versionChangeCount: 2,
+        rollbackCount: 1
+      }));
+    } finally {
+      await app.close();
+      restoreEnv(previousEnv);
     }
   });
 
@@ -25216,6 +25841,366 @@ onEvent("token.moved", async (event, context) => {
     }
   });
 
+  it("withholds private record event envelopes from basic-read plugins", async () => {
+    const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-private-events-"));
+    const packagePath = join(pluginRoot, "basic-event-reader");
+    mkdirSync(packagePath);
+    const eventTypes = [
+      "journal.created",
+      "handout.created",
+      "scene.created",
+      "token.created",
+      "item.created",
+      "chat.message.created",
+      "dice.roll.created"
+    ];
+    writeFileSync(
+      join(packagePath, "plugin.manifest.json"),
+      JSON.stringify({
+        id: "basic-event-reader",
+        name: "Basic Event Reader",
+        version: "1.0.0",
+        compatibleCore: ">=0.1.0",
+        entrypoints: { server: "./server.js" },
+        runtime: { apiVersion: "0.1", sandbox: "vm" },
+        permissions: [
+          "journal.read",
+          "handout.read",
+          "handout.readSecret",
+          "scene.read",
+          "token.read",
+          "actor.read",
+          "actor.readPrivate",
+          "chat.read",
+          "ai.proposeChanges"
+        ],
+        eventSubscriptions: eventTypes.map((type) => ({ type }))
+      })
+    );
+    writeFileSync(
+      join(packagePath, "server.js"),
+      `
+for (const eventType of ${JSON.stringify(eventTypes)}) {
+  onEvent(eventType, async (event, context) => {
+    await context.createProposal({
+      title: event.type + ":" + event.targetId,
+      summary: "Record the visible event envelope for the privacy test",
+      changes: [{ entity: "journal", action: "create", data: { campaignId: event.campaignId, title: "Observed event", body: event.id } }]
+    });
+  });
+}
+`
+    );
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store, pluginRegistry: loadPluginRegistry({ pluginRoot }) });
+
+    try {
+      const installed = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/basic-event-reader/install",
+        headers: authHeaders,
+        payload: {
+          permissions: ["journal.read", "handout.read", "scene.read", "token.read", "actor.read", "chat.read", "ai.proposeChanges"]
+        }
+      });
+      expect(installed.statusCode).toBe(200);
+
+      const publicJournal = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/journal",
+        headers: authHeaders,
+        payload: { title: "Public plugin event", body: "Visible", visibility: "public" }
+      });
+      const secretJournal = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/journal",
+        headers: authHeaders,
+        payload: { title: "Secret plugin event", body: "GM only", visibility: "gm_only" }
+      });
+      const publicHandout = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/handouts",
+        headers: authHeaders,
+        payload: { title: "Public plugin handout", body: "Visible", visibility: "public" }
+      });
+      const secretHandout = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/handouts",
+        headers: authHeaders,
+        payload: { title: "Private plugin handout", body: "GM only", visibility: "gm_only" }
+      });
+      const activeScene = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/scenes",
+        headers: authHeaders,
+        payload: { name: "Visible Plugin Event Scene", active: true }
+      });
+      const prepScene = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/scenes",
+        headers: authHeaders,
+        payload: { name: "Private Prep Scene", active: false }
+      });
+      const publicToken = await app.inject({
+        method: "POST",
+        url: `/api/v1/scenes/${activeScene.json().id}/tokens`,
+        headers: authHeaders,
+        payload: { name: "Visible Plugin Event Token", hidden: false, layer: "player" }
+      });
+      const hiddenToken = await app.inject({
+        method: "POST",
+        url: `/api/v1/scenes/${activeScene.json().id}/tokens`,
+        headers: authHeaders,
+        payload: { name: "Hidden Plugin Event Token", hidden: true, layer: "gm" }
+      });
+      const publicItem = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/items",
+        headers: authHeaders,
+        payload: { name: "Visible Plugin Event Item", type: "gear", data: {} }
+      });
+      const privateActorItem = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/items",
+        headers: authHeaders,
+        payload: { name: "Private Plugin Event Item", actorId: "act_valen", type: "gear", data: {} }
+      });
+      const publicChat = await app.inject({
+        method: "POST",
+        url: "/api/v1/chat/messages",
+        headers: authHeaders,
+        payload: { campaignId: "camp_demo", body: "Visible plugin event chat", visibility: "public" }
+      });
+      const whisper = await app.inject({
+        method: "POST",
+        url: "/api/v1/chat/messages",
+        headers: authHeaders,
+        payload: { campaignId: "camp_demo", body: "Private plugin event whisper", type: "whisper", recipientUserIds: ["usr_demo_player"] }
+      });
+      const publicRoll = await app.inject({
+        method: "POST",
+        url: "/api/v1/dice/roll",
+        headers: authHeaders,
+        payload: { campaignId: "camp_demo", formula: "1d20", label: "Visible plugin event roll", visibility: "public" }
+      });
+      const secretRoll = await app.inject({
+        method: "POST",
+        url: "/api/v1/dice/roll",
+        headers: authHeaders,
+        payload: { campaignId: "camp_demo", formula: "1d20", label: "Private plugin event roll", visibility: "gm_only" }
+      });
+      for (const response of [
+        publicJournal,
+        secretJournal,
+        publicHandout,
+        secretHandout,
+        activeScene,
+        prepScene,
+        publicToken,
+        hiddenToken,
+        publicItem,
+        privateActorItem,
+        publicChat,
+        whisper,
+        publicRoll,
+        secretRoll
+      ]) {
+        expect(response.statusCode).toBe(200);
+      }
+      const publicRollMessage = store.state.chat.find((message) => message.rollId === publicRoll.json().id)!;
+      const secretRollMessage = store.state.chat.find((message) => message.rollId === secretRoll.json().id)!;
+
+      const barrier = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/journal",
+        headers: authHeaders,
+        payload: { title: "Plugin Event Privacy Barrier", body: "Visible barrier", visibility: "public" }
+      });
+      expect(barrier.statusCode).toBe(200);
+      await waitForCondition(
+        () => store.state.proposals.some((proposal) => proposal.sourceId === "basic-event-reader" && proposal.title === `journal.created:${barrier.json().id}`),
+        3000
+      );
+
+      const observedTitles = store.state.proposals
+        .filter((proposal) => proposal.sourceId === "basic-event-reader")
+        .map((proposal) => proposal.title)
+        .sort();
+      expect(observedTitles).toEqual(
+        [
+          `journal.created:${publicJournal.json().id}`,
+          `handout.created:${publicHandout.json().id}`,
+          `scene.created:${activeScene.json().id}`,
+          `token.created:${publicToken.json().id}`,
+          `item.created:${publicItem.json().id}`,
+          `chat.message.created:${publicChat.json().id}`,
+          `dice.roll.created:${publicRoll.json().id}`,
+          `chat.message.created:${publicRollMessage.id}`,
+          `journal.created:${barrier.json().id}`
+        ].sort()
+      );
+      for (const privateTargetId of [
+        secretJournal.json().id,
+        secretHandout.json().id,
+        prepScene.json().id,
+        hiddenToken.json().id,
+        privateActorItem.json().id,
+        whisper.json().id,
+        secretRoll.json().id,
+        secretRollMessage.id
+      ]) {
+        expect(observedTitles.some((title) => title.endsWith(`:${privateTargetId}`))).toBe(false);
+      }
+
+      const elevatedInstall = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/basic-event-reader/install",
+        headers: authHeaders,
+        payload: {
+          permissions: [
+            "journal.read",
+            "handout.read",
+            "handout.readSecret",
+            "scene.read",
+            "token.read",
+            "actor.read",
+            "actor.readPrivate",
+            "chat.read",
+            "ai.proposeChanges"
+          ]
+        }
+      });
+      expect(elevatedInstall.statusCode).toBe(200);
+      const authorizedHandout = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/handouts",
+        headers: authHeaders,
+        payload: { title: "Authorized private plugin handout", body: "GM only", visibility: "gm_only" }
+      });
+      const authorizedActorItem = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/items",
+        headers: authHeaders,
+        payload: { name: "Authorized private actor item", actorId: "act_valen", type: "gear", data: {} }
+      });
+      expect(authorizedHandout.statusCode).toBe(200);
+      expect(authorizedActorItem.statusCode).toBe(200);
+      await waitForCondition(
+        () =>
+          store.state.proposals.some(
+            (proposal) => proposal.sourceId === "basic-event-reader" && proposal.title === `item.created:${authorizedActorItem.json().id}`
+          ),
+        3000
+      );
+      const elevatedTitles = store.state.proposals
+        .filter((proposal) => proposal.sourceId === "basic-event-reader")
+        .map((proposal) => proposal.title);
+      expect(elevatedTitles).toContain(`handout.created:${authorizedHandout.json().id}`);
+      expect(elevatedTitles).toContain(`item.created:${authorizedActorItem.json().id}`);
+    } finally {
+      await app.close();
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("withholds GM AI thread envelopes unless the plugin has GM memory access", async () => {
+    const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-private-ai-thread-events-"));
+    const packagePath = join(pluginRoot, "ai-thread-event-reader");
+    mkdirSync(packagePath);
+    writeFileSync(
+      join(packagePath, "plugin.manifest.json"),
+      JSON.stringify({
+        id: "ai-thread-event-reader",
+        name: "AI Thread Event Reader",
+        version: "1.0.0",
+        compatibleCore: ">=0.1.0",
+        entrypoints: { server: "./server.js" },
+        runtime: { apiVersion: "0.1", sandbox: "vm" },
+        permissions: ["journal.read", "ai.readGmMemory", "ai.proposeChanges"],
+        eventSubscriptions: [{ type: "ai.thread.started" }, { type: "journal.created" }]
+      })
+    );
+    writeFileSync(
+      join(packagePath, "server.js"),
+      `
+for (const eventType of ["ai.thread.started", "journal.created"]) {
+  onEvent(eventType, async (event, context) => {
+    await context.createProposal({
+      title: event.type + ":" + event.targetId,
+      summary: "Record an authorized event envelope",
+      changes: [{ entity: "journal", action: "create", data: { campaignId: event.campaignId, title: "Observed event", body: event.id } }]
+    });
+  });
+}
+`
+    );
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store, aiProvider: new StaticAiProvider(), pluginRegistry: loadPluginRegistry({ pluginRoot }) });
+
+    try {
+      const basicInstall = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/ai-thread-event-reader/install",
+        headers: authHeaders,
+        payload: { permissions: ["journal.read", "ai.proposeChanges"] }
+      });
+      expect(basicInstall.statusCode).toBe(200);
+      const privateThread = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/ai/threads",
+        headers: authHeaders,
+        payload: { prompt: "Private GM thread envelope" }
+      });
+      expect(privateThread.statusCode).toBe(200);
+
+      const barrier = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/journal",
+        headers: authHeaders,
+        payload: { title: "AI thread privacy barrier", body: "Visible barrier", visibility: "public" }
+      });
+      expect(barrier.statusCode).toBe(200);
+      await waitForCondition(
+        () =>
+          store.state.proposals.some(
+            (proposal) => proposal.sourceId === "ai-thread-event-reader" && proposal.title === `journal.created:${barrier.json().id}`
+          ),
+        3000
+      );
+      expect(
+        store.state.proposals.some(
+          (proposal) => proposal.sourceId === "ai-thread-event-reader" && proposal.title === `ai.thread.started:${privateThread.json().thread.id}`
+        )
+      ).toBe(false);
+
+      const elevatedInstall = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/ai-thread-event-reader/install",
+        headers: authHeaders,
+        payload: { permissions: ["journal.read", "ai.readGmMemory", "ai.proposeChanges"] }
+      });
+      expect(elevatedInstall.statusCode).toBe(200);
+      const authorizedThread = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/ai/threads",
+        headers: authHeaders,
+        payload: { prompt: "Authorized GM thread envelope" }
+      });
+      expect(authorizedThread.statusCode).toBe(200);
+      await waitForCondition(
+        () =>
+          store.state.proposals.some(
+            (proposal) =>
+              proposal.sourceId === "ai-thread-event-reader" && proposal.title === `ai.thread.started:${authorizedThread.json().thread.id}`
+          ),
+        3000
+      );
+    } finally {
+      await app.close();
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
   it("persists plugin campaign storage through configure-gated APIs and command mutations", async () => {
     const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-storage-"));
     const packagePath = join(pluginRoot, "stateful-plugin");
@@ -25814,7 +26799,7 @@ registerCommand("/state", (input) => {
     await app.close();
   });
 
-  it("preserves metadata-only external HTTPS reference images for image generation", async () => {
+  it("rejects metadata-only external HTTPS reference images before image generation", async () => {
     class ExternalReferenceProvider implements AiProvider {
       id = "external-reference-ai";
       label = "External Reference AI";
@@ -25834,7 +26819,7 @@ registerCommand("/state", (input) => {
       }
     }
 
-    const externalReferenceUrl = "https://cdn.example.test/reference-sketch.png";
+    const externalReferenceUrl = "https://127.0.0.1:4443/internal.png";
     const store = new MemoryStateStore();
     store.state.assets.push(
       createTimestamped("asset", {
@@ -25870,8 +26855,16 @@ registerCommand("/state", (input) => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(generatedImageInputs).toHaveLength(1);
-    expect(generatedImageInputs[0]).toEqual(expect.objectContaining({ sourceImageUrl: externalReferenceUrl, sourceImageMimeType: "image/png" }));
+    expect(generatedImageInputs).toHaveLength(0);
+    expect(response.json().events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "tool.completed",
+          toolName: "generate_map_asset",
+          output: expect.objectContaining({ error: "asset_bytes_unavailable", id: "asset_ai_external_reference" })
+        })
+      ])
+    );
     await app.close();
   });
 
@@ -25964,6 +26957,85 @@ registerCommand("/state", (input) => {
     });
     expect(store.state.aiThreads.at(-1)).toMatchObject({ status: "failed", providerError: "Codex app-server ChatGPT sign-in is required." });
     await app.close();
+  });
+
+  it("treats blank optional Codex app-server settings as unset", async () => {
+    const previousEnv = snapshotEnv(["OTTE_AI_PROVIDER", "OTTE_CODEX_APP_SERVER_URL", "OTTE_CODEX_APP_SERVER_CWD", "OTTE_CODEX_MODEL", "OTTE_CODEX_MODEL_PROVIDER", "OTTE_CODEX_APP_SERVER_AUTOSTART", "OTTE_AI_PROVIDER_TIMEOUT_MS", "OTTE_AI_PROVIDER_RETRY_ATTEMPTS"]);
+    const originalStreamTurn = CodexAppServerWebSocketTransport.prototype.streamTurn;
+    let configuredTransport: Record<string, unknown> | undefined;
+    CodexAppServerWebSocketTransport.prototype.streamTurn = async function* () {
+      const options = Reflect.get(this, "options") as Record<string, unknown>;
+      configuredTransport = {
+        url: Reflect.get(this, "url"),
+        cwd: options.cwd,
+        model: options.model,
+        modelProvider: options.modelProvider
+      };
+      throw new Error("test provider failure");
+    };
+
+    delete process.env.OTTE_AI_PROVIDER;
+    process.env.OTTE_CODEX_APP_SERVER_URL = "   ";
+    process.env.OTTE_CODEX_APP_SERVER_CWD = "   ";
+    process.env.OTTE_CODEX_MODEL = "   ";
+    process.env.OTTE_CODEX_MODEL_PROVIDER = "   ";
+    process.env.OTTE_CODEX_APP_SERVER_AUTOSTART = "false";
+    process.env.OTTE_AI_PROVIDER_TIMEOUT_MS = "25";
+    process.env.OTTE_AI_PROVIDER_RETRY_ATTEMPTS = "0";
+    const app = await buildApp({ store: new MemoryStateStore() });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/ai/threads",
+        headers: authHeaders,
+        payload: {
+          prompt: "Use the default app-server URL.",
+          surface: "agent_panel"
+        }
+      });
+
+      expect(response.statusCode).toBe(502);
+      expect(configuredTransport).toEqual({ url: "ws://127.0.0.1:4500", cwd: undefined, model: undefined, modelProvider: undefined });
+    } finally {
+      await app.close();
+      CodexAppServerWebSocketTransport.prototype.streamTurn = originalStreamTurn;
+      restoreEnv(previousEnv);
+    }
+  });
+
+  it("preserves a zero Codex timeout so operators can disable provider timers", async () => {
+    const previousEnv = snapshotEnv(["OTTE_AI_PROVIDER", "OTTE_CODEX_APP_SERVER_AUTOSTART", "OTTE_AI_PROVIDER_TIMEOUT_MS", "OTTE_AI_PROVIDER_RETRY_ATTEMPTS"]);
+    const originalStreamTurn = CodexAppServerWebSocketTransport.prototype.streamTurn;
+    let configuredTurnTimeout: unknown;
+    CodexAppServerWebSocketTransport.prototype.streamTurn = async function* () {
+      configuredTurnTimeout = Reflect.get(this, "turnTimeoutMs");
+      throw new Error("test provider failure");
+    };
+    delete process.env.OTTE_AI_PROVIDER;
+    process.env.OTTE_CODEX_APP_SERVER_AUTOSTART = "false";
+    process.env.OTTE_AI_PROVIDER_TIMEOUT_MS = "0";
+    process.env.OTTE_AI_PROVIDER_RETRY_ATTEMPTS = "0";
+    const app = await buildApp({ store: new MemoryStateStore() });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/ai/threads",
+        headers: authHeaders,
+        payload: {
+          prompt: "Use a provider with timers disabled.",
+          surface: "agent_panel"
+        }
+      });
+
+      expect(response.statusCode).toBe(502);
+      expect(configuredTurnTimeout).toBe(0);
+    } finally {
+      await app.close();
+      CodexAppServerWebSocketTransport.prototype.streamTurn = originalStreamTurn;
+      restoreEnv(previousEnv);
+    }
   });
 
   it("defaults agent threads to Codex app-server instead of local echo", async () => {
@@ -31642,13 +32714,18 @@ registerCommand("/state", (input) => {
     );
     expect(store.state.proposals.some((proposal) => proposal.title.startsWith("Restricted"))).toBe(false);
 
+    const directProposalGrant = store.state.permissionGrants.find(
+      (grant) => grant.subjectType === "user" && grant.subjectId === "usr_demo_player" && grant.campaignId === "camp_demo"
+    );
+    if (!directProposalGrant) throw new Error("Expected the restricted AI user grant fixture");
+    directProposalGrant.permissions.push("campaign.update");
+
     const directRestrictedProposal = await app.inject({
       method: "POST",
       url: "/api/v1/campaigns/camp_demo/proposals",
       headers: { "x-user-id": "usr_demo_player" },
       payload: {
         title: "Restricted Direct AI Proposal",
-        createdByType: "ai",
         changesJson: [
           {
             entity: "journal",
@@ -31671,7 +32748,6 @@ registerCommand("/state", (input) => {
       headers: { "x-user-id": "usr_demo_player" },
       payload: {
         title: "Restricted Handout Proposal",
-        createdByType: "ai",
         changesJson: [{ entity: "handout", action: "create", data: { title: "Private Handout", body: "No handout grant", visibility: "gm_only" } }]
       }
     });
@@ -31684,7 +32760,6 @@ registerCommand("/state", (input) => {
       headers: { "x-user-id": "usr_demo_player" },
       payload: {
         title: "Restricted World Proposal",
-        createdByType: "ai",
         changesJson: [{ entity: "world", action: "create", data: { name: "No World Grant", description: "Must stay blocked" } }]
       }
     });
@@ -32157,34 +33232,40 @@ registerCommand("/state", (input) => {
     expect(forgedApply.statusCode).toBe(409);
     expect(store.state.journals.some((journal) => journal.id === "jnl_forged_approval")).toBe(false);
 
-    const rejectDraft = await app.inject({
-      method: "POST",
-      url: "/api/v1/campaigns/camp_demo/proposals",
-      headers: authHeaders,
-      payload: {
-        title: "Rejectable AI Draft",
-        summary: "A proposal the GM decides not to apply.",
-        createdByType: "ai",
+    const seedAiJournalProposal = (title: string, journalId: string, body: string): Proposal => {
+      const proposal = createTimestamped("prop", {
+        campaignId: "camp_demo",
+        createdByUserId: "usr_demo_gm",
+        createdByType: "ai" as const,
+        sourceId: "test-ai",
+        title,
+        summary: "A trusted AI proposal fixture for approval workflow coverage.",
+        status: "pending" as const,
         changesJson: [
           {
-            entity: "journal",
-            action: "create",
+            entity: "journal" as const,
+            action: "create" as const,
             data: {
-              id: "jnl_rejected_ai_draft",
+              id: journalId,
               campaignId: "camp_demo",
-              title: "Rejected Draft",
-              body: "Should never be applied.",
+              title,
+              body,
               visibility: "gm_only",
               visibleToUserIds: [],
               visibleToActorIds: [],
               tags: []
             }
           }
-        ]
-      }
-    });
-    expect(rejectDraft.statusCode).toBe(200);
-    const rejectProposalId = rejectDraft.json().id as string;
+        ],
+        diffJson: {},
+        approvalRequired: true
+      }) satisfies Proposal;
+      store.state.proposals.push(proposal);
+      return proposal;
+    };
+
+    const rejectDraft = seedAiJournalProposal("Rejectable AI Draft", "jnl_rejected_ai_draft", "Should never be applied.");
+    const rejectProposalId = rejectDraft.id;
 
     const blockedReject = await app.inject({
       method: "POST",
@@ -32216,34 +33297,8 @@ registerCommand("/state", (input) => {
     });
     expect(JSON.stringify(store.state.auditLogs.find((log) => log.action === "ai.proposal.rejected" && log.targetId === rejectProposalId))).not.toContain("Should never be applied.");
 
-    const approvedRejectDraft = await app.inject({
-      method: "POST",
-      url: "/api/v1/campaigns/camp_demo/proposals",
-      headers: authHeaders,
-      payload: {
-        title: "Rejectable Approved Draft",
-        summary: "A proposal approved by mistake.",
-        createdByType: "ai",
-        changesJson: [
-          {
-            entity: "journal",
-            action: "create",
-            data: {
-              id: "jnl_rejected_approved_draft",
-              campaignId: "camp_demo",
-              title: "Rejected Approved Draft",
-              body: "Should never be applied.",
-              visibility: "gm_only",
-              visibleToUserIds: [],
-              visibleToActorIds: [],
-              tags: []
-            }
-          }
-        ]
-      }
-    });
-    expect(approvedRejectDraft.statusCode).toBe(200);
-    const approvedRejectId = approvedRejectDraft.json().id as string;
+    const approvedRejectDraft = seedAiJournalProposal("Rejectable Approved Draft", "jnl_rejected_approved_draft", "Should never be applied.");
+    const approvedRejectId = approvedRejectDraft.id;
     const approvedRejectApproval = await app.inject({
       method: "POST",
       url: `/api/v1/proposals/${approvedRejectId}/approve`,
@@ -35142,6 +36197,71 @@ registerCommand("/state", (input) => {
     await targetApp.close();
     rmSync(sourceUploadDir, { recursive: true, force: true });
     rmSync(targetUploadDir, { recursive: true, force: true });
+  });
+
+  it("does not trust managed storage references from archives without embedded bytes", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+    const archiveData = emptyState();
+    archiveData.assets.push(
+      createTimestamped("asset", {
+        id: "asset_foreign_storage_reference",
+        campaignId: "camp_demo",
+        name: "Foreign managed object",
+        url: "/api/v1/assets/asset_foreign_storage_reference/blob",
+        mimeType: "image/png",
+        sizeBytes: 12,
+        storage: {
+          provider: "s3" as const,
+          bucket: "foreign-assets",
+          key: "foreign/secret.png"
+        }
+      })
+    );
+    const archive: CampaignArchive = {
+      format: "ottx",
+      version: "0.2.0",
+      exportedAt: "2026-07-11T00:00:00.000Z",
+      manifest: {
+        campaignId: "camp_demo",
+        name: "Foreign Storage Reference",
+        schemaVersion: "0.2.0",
+        assetCount: 1
+      },
+      data: archiveData,
+      files: []
+    };
+
+    const malformedArchive = JSON.parse(JSON.stringify(archive)) as CampaignArchive;
+    (malformedArchive.data.assets[0] as unknown as { url: unknown }).url = null;
+    const malformedImport = await app.inject({
+      method: "POST",
+      url: "/api/v1/import/campaign",
+      headers: authHeaders,
+      payload: malformedArchive
+    });
+    expect(malformedImport.statusCode).toBe(400);
+    expect(store.state.assets.some((asset) => asset.id === "asset_foreign_storage_reference")).toBe(false);
+
+    const imported = await app.inject({
+      method: "POST",
+      url: "/api/v1/import/campaign",
+      headers: authHeaders,
+      payload: archive
+    });
+
+    expect(imported.statusCode).toBe(200);
+    expect(store.state.assets.find((asset) => asset.id === "asset_foreign_storage_reference")).toEqual(
+      expect.objectContaining({ url: "", storage: undefined })
+    );
+    const inaccessibleBlob = await app.inject({
+      method: "GET",
+      url: "/api/v1/assets/asset_foreign_storage_reference/blob",
+      headers: { "x-user-id": "usr_demo_gm" }
+    });
+    expect(inaccessibleBlob.statusCode).toBe(404);
+    expect(inaccessibleBlob.json()).toEqual({ error: "not_found", message: "Asset file not found" });
+    await app.close();
   });
 
   it("rejects corrupted archived asset files without merging campaign state or restored objects", async () => {

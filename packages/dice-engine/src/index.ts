@@ -167,7 +167,7 @@ export function probabilityRange(formula: string): { min: number; max: number } 
     (range, term) => {
       if (term.type === "modifier") return { min: range.min + term.value, max: range.max + term.value };
       if (term.type === "binding") return range;
-      if (term.explode) throw new Error("Probability range is unbounded for exploding dice");
+      if (term.explode && term.reroll !== term.sides) throw new Error("Probability range is unbounded for exploding dice");
       const keptCount = effectiveKeptCount(term);
       const faceMin = term.reroll === 1 ? 2 : 1;
       const faceMax = term.reroll === term.sides ? term.sides - 1 : term.sides;
@@ -181,6 +181,7 @@ export function probabilityRange(formula: string): { min: number; max: number } 
 function parseToken(rawToken: string): ParsedTerm {
   const sign = rawToken.startsWith("-") ? -1 : 1;
   const token = rawToken.replace(/^[+-]/, "");
+  if (!token) throw new Error(`Unsupported dice token: ${rawToken}`);
   const shorthand = token.toLowerCase();
   if (shorthand === "adv" || shorthand === "dis") {
     return compactParsedDie({

@@ -38,7 +38,7 @@ export function computeTokenVisionPolygon(scene: Pick<Scene, "width" | "height" 
     source: "token",
     sourceId: token.id,
     radius,
-    lightLevel: brightRadius && brightRadius > dimRadius ? "bright" : token.brightVisionRadius !== undefined || token.dimVisionRadius !== undefined ? "dim" : undefined,
+    lightLevel: brightRadius && brightRadius >= dimRadius ? "bright" : token.brightVisionRadius !== undefined || token.dimVisionRadius !== undefined ? "dim" : undefined,
     points: computeVisibilityPolygon(scene, tokenCenter(token), radius)
   };
 }
@@ -71,12 +71,14 @@ export function computeTokenVisionPolygons(scene: Pick<Scene, "width" | "height"
 }
 
 export function computeLightVisionPolygon(scene: Pick<Scene, "width" | "height" | "walls">, light: LightSource): VisionPolygon {
+  const dimRadius = normalizedLightRadius(light.dimRadius) ?? normalizedLightRadius(light.radius) ?? 0;
+  const brightRadius = normalizedLightRadius(light.brightRadius);
   return {
     id: `light_${light.id}`,
     source: "light",
     sourceId: light.id,
     radius: light.radius,
-    lightLevel: light.brightRadius !== undefined || light.dimRadius !== undefined ? "dim" : undefined,
+    lightLevel: brightRadius && brightRadius >= dimRadius ? "bright" : light.brightRadius !== undefined || light.dimRadius !== undefined ? "dim" : undefined,
     color: light.color,
     opacity: Math.max(0.05, Math.min(0.7, light.intensity ?? 0.28)),
     points: computeVisibilityPolygon(scene, { x: light.x, y: light.y }, light.radius)
@@ -86,7 +88,9 @@ export function computeLightVisionPolygon(scene: Pick<Scene, "width" | "height" 
 export function computeLightVisionPolygons(scene: Pick<Scene, "width" | "height" | "walls">, light: LightSource): VisionPolygon[] {
   const dimRadius = normalizedLightRadius(light.dimRadius) ?? normalizedLightRadius(light.radius) ?? 0;
   const brightRadius = normalizedLightRadius(light.brightRadius);
-  if (!brightRadius || brightRadius >= dimRadius) return [computeLightVisionPolygon(scene, { ...light, radius: dimRadius })];
+  const outerRadius = Math.max(dimRadius, brightRadius ?? 0);
+  if (outerRadius <= 0) return [];
+  if (!brightRadius || brightRadius >= dimRadius) return [computeLightVisionPolygon(scene, { ...light, radius: outerRadius })];
   return [
     {
       id: `light_${light.id}_dim`,

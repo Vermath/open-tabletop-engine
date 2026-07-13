@@ -28,6 +28,17 @@ export function worldFilterMatchesScene(scene: Scene, filter: WorldAtlasFilter):
   return sceneWorldId(scene) === filter;
 }
 
+export function selectedSceneForWorldFilter(scenes: Scene[], selectedSceneId: string, filter: WorldAtlasFilter): Scene | undefined {
+  const matchingScenes = scenes.filter((scene) => worldFilterMatchesScene(scene, filter));
+  return matchingScenes.find((scene) => scene.id === selectedSceneId)
+    ?? matchingScenes.find((scene) => scene.active)
+    ?? matchingScenes[0];
+}
+
+export function canonicalSceneIdForWorldFilter(scenes: Scene[], selectedSceneId: string, filter: WorldAtlasFilter): string {
+  return selectedSceneForWorldFilter(scenes, selectedSceneId, filter)?.id ?? "";
+}
+
 export function filterWorldAtlas(worlds: WorldAtlasWorld[], query: string): WorldAtlasWorld[] {
   const normalized = query.trim().toLocaleLowerCase();
   if (!normalized) return worlds;

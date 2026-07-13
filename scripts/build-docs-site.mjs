@@ -154,7 +154,8 @@ function findBrokenMarkdownLinks(file) {
     const [path] = href.split("#");
     if (!path || !path.endsWith(".md")) continue;
     const target = join(dirname(file), path);
-    if (!existsSync(target)) {
+    const targetRelative = relative(root, target).replaceAll("\\", "/");
+    if (!existsSync(target) || !rendered.has(targetRelative)) {
       broken.push(`${sourceRelative} -> ${href}`);
     }
   }

@@ -61,7 +61,8 @@ describe("desktop layout regressions", () => {
   });
 
   it("keeps the floating AI agent available while switching workspaces", () => {
-    expect(appSource).toContain("const selectWorkspaceMode = (mode: WorkspaceMode) => {\n    setWorkspaceMode(mode);\n  };");
+    expect(appSource).toContain("const selectWorkspaceMode = (mode: WorkspaceMode) => {");
+    expect(appSource).toContain("setWorkspaceMode(mode);");
     expect(appSource).not.toContain("const selectWorkspaceMode = (mode: WorkspaceMode) => {\n    setWorkspaceMode(mode);\n    setAiAgentOpen(false);");
     expect(appSource).not.toContain('if (workspaceMode === "manage" && aiAgentOpen) setAiAgentOpen(false);');
     expect(stylesSource).toContain(".rail-manage .ai-agent-toggle {\n  display: inline-flex;");
@@ -104,12 +105,13 @@ describe("desktop layout regressions", () => {
     expect(stylesSource).toContain("@media (max-width: 760px) {\n  .ai-agent-popout {\n    right: 8px;\n    bottom: calc(70px + env(safe-area-inset-bottom, 0px));");
   });
 
-  it("lets the AI agent auto-apply turn proposals and submit with Ctrl+Enter", () => {
+  it("defaults AI proposals to manual review while preserving explicit auto-apply and Ctrl+Enter", () => {
     expect(appSource).toContain('type AiAgentApprovalMode = "manual" | "auto";');
-    expect(appSource).toContain('const aiAgentApprovalModeStorageKey = "otte:aiAgentApprovalMode";');
-    expect(appSource).toContain('function initialAiAgentApprovalMode(): AiAgentApprovalMode');
-    expect(appSource).toContain('return localStorage.getItem(aiAgentApprovalModeStorageKey) === "manual" ? "manual" : "auto";');
-    expect(appSource).toContain("const [aiAgentApprovalMode, setAiAgentApprovalModeState] = useState<AiAgentApprovalMode>(initialAiAgentApprovalMode);");
+    expect(appSource).toContain('function aiAgentApprovalModeStorageKey(campaignId: string, userId: string | null): string');
+    expect(appSource).toContain('function initialAiAgentApprovalMode(campaignId: string, userId: string | null): AiAgentApprovalMode');
+    expect(appSource).toContain('return localStorage.getItem(aiAgentApprovalModeStorageKey(campaignId, userId)) === "auto" ? "auto" : "manual";');
+    expect(appSource).toContain('return "manual";');
+    expect(appSource).toContain("const [aiAgentApprovalMode, setAiAgentApprovalModeState] = useState<AiAgentApprovalMode>(() => initialAiAgentApprovalMode(campaignId, currentUserId));");
     expect(appSource).toContain('approvalMode={aiAgentApprovalMode}');
     expect(appSource).toContain('onApprovalModeChange={setAiAgentApprovalMode}');
     expect(appSource).toContain('aria-label="AI Agent approval mode"');
@@ -120,6 +122,8 @@ describe("desktop layout regressions", () => {
     expect(appSource).toContain('onKeyDown={handleAiAgentPromptKeyDown}');
     expect(appSource).toContain('aiAgentPendingAuthRequestRef.current = { prompt, requestMessages, selectedAssetId: requestSelectedAssetId };');
     expect(appSource).toContain('scheduleAiAgentAuthRetry();');
+    expect(appSource).toContain("Review proposed changes");
+    expect(appSource).toContain("proposal.changesJson.slice(0, 8)");
     expect(stylesSource).toContain(".ai-agent-controls {");
   });
 
@@ -168,6 +172,9 @@ describe("desktop layout regressions", () => {
     expect(appSource).toContain('visible: canManageArchives');
     expect(appSource).toContain('{ id: "manage", label: accountOnlyManageMode ? "Account" : "Manage"');
     expect(appSource).toContain('const activeManageCategory = visibleManageCategories.some((category) => category.id === manageCategory) ? manageCategory : (visibleManageCategories[0]?.id ?? "account");');
+    expect(appSource).toContain('canDraftEncounter={hasPermission("ai.proposeChanges") && hasPermission("combat.manage") && hasPermission("scene.create")}');
+    expect(appSource).toContain('canRecapSession={hasPermission("ai.proposeChanges") && hasPermission("journal.create")}');
+    expect(aiPanelSource).toContain('disabled={!props.canRecapSession}');
   });
 
   it("keeps prep header controls readable instead of turning filters into a tiny scrollbox", () => {
@@ -185,14 +192,19 @@ describe("desktop layout regressions", () => {
     expect(stylesSource).toContain(".rail-prep + .workspace .quick-create-form {\n  grid-area: create;");
   });
 
-  it("keeps scene tab quick actions compact and layer swaps reachable", () => {
+  it("keeps scene tab actions in Prep and routes deletion through review", () => {
     expect(appSource).toContain("const quickCreateSceneIndex = sceneQuickCreateIndex(visibleScenes.length);");
     expect(appSource).toContain("const showTrailingSceneCreateButton = showTrailingSceneCreate(visibleScenes.length);");
     expect(appSource).toContain('className="icon-button scene-tab-add"');
-    expect(appSource).toContain('aria-label="Add scene after newest scene"');
+    expect(appSource).toContain('aria-label="Add draft scene after newest scene"');
     expect(appSource).toContain('className="icon-button scene-tab-delete"');
-    expect(appSource).toContain("createScene({ insertBeforeScene: scene })");
-    expect(appSource).toContain("quickDeleteScene(scene)");
+    expect(appSource).toContain("createScene({ insertBeforeScene: scene, active: false })");
+    expect(appSource).toContain('const canQuickCreateScene = workspaceMode === "prep" && hasPermission("scene.create");');
+    expect(appSource).toContain('const canQuickDeleteScenes = workspaceMode === "prep" && hasPermission("scene.delete")');
+    expect(appSource).toContain("function openSceneDeleteReview(targetScene: Scene)");
+    expect(appSource).toContain('setManageCategory("scenes");');
+    expect(appSource).toContain("openSceneDeleteReview(scene)");
+    expect(appSource).toContain("const [newSceneActive, setNewSceneActive] = useState(false);");
     expect(appSource).toContain("onTokenLayerCycle={cycleTokenLayer}");
     expect(stylesSource).toContain(".scene-tab-wrap.selectable.deletable {\n  grid-template-columns: 28px minmax(0, auto) 30px;");
     expect(stylesSource).toContain(".scene-tab-add {\n  width: 38px;");
@@ -203,6 +215,37 @@ describe("desktop layout regressions", () => {
     expect(sceneCanvasSource).toContain("onContextMenu={(event) => {");
     expect(sceneCanvasSource).toContain("props.onTokenLayerCycle(token).catch(console.error);");
     expect(stylesSource).toContain(".token.inactive-layer {\n  opacity: 0.58;\n  cursor: context-menu;\n  pointer-events: auto;");
+  });
+
+  it("lets the desktop map reclaim collapsed chrome and offers a reversible focus mode", () => {
+    expect(appSource).toContain("const [tableFocusMode, setTableFocusMode] = useState(false);");
+    expect(appSource).toContain('data-table-focus={tableFocusMode ? "true" : undefined}');
+    expect(appSource).toContain('aria-label={tableFocusMode ? "Exit map focus mode" : "Enter map focus mode"}');
+    expect(appSource).toContain('case "f":');
+    expect(stylesSource).toContain('.table-area:has(.map-layer-dock[data-collapsed="true"]) {\n    grid-template-areas: "map";');
+    expect(stylesSource).toContain('.table-area:has(.map-layer-dock[data-collapsed="true"]) .table-tool-panel[aria-label="Canvas asset picker"] {\n    right: auto;\n    left: 88px;');
+    expect(stylesSource).toContain('.shell[data-table-focus="true"] {\n    grid-template-columns: 0 minmax(0, 1fr);');
+    expect(stylesSource).toContain('.shell[data-table-focus="true"] .inspector {\n    display: none;');
+  });
+
+  it("keeps all Prep destinations visible and makes inspector tabs keyboard-operable", () => {
+    expect(stylesSource).toContain(".workspace-prep .inspector-tabs {\n    display: grid;\n    grid-template-columns: repeat(4, minmax(0, 1fr));");
+    expect(sceneCanvasSource).toContain('role="tab" aria-controls={props.panelId} aria-selected={props.active} tabIndex={props.active ? 0 : -1}');
+    expect(appSource).toContain('role="tabpanel" id={`inspector-panel-${tab}`} aria-labelledby={`inspector-tab-${tab}`}');
+    expect(sceneCanvasSource).toContain('["ArrowLeft", "ArrowRight", "Home", "End"]');
+    expect(appSource).toContain('? ["actors", "handouts", "journal", "search", "chat", "combat"]');
+    expect(appSource).toContain('label="Search"');
+    expect(appSource).toContain('label="Canon"');
+    expect(appSource).toContain('label="Assets"');
+  });
+
+  it("keeps the phone toolbar to one primary row while retaining secondary tools", () => {
+    expect(sceneCanvasSource).toContain("tool tool-mobile-secondary");
+    expect(sceneCanvasSource).toContain('className="tool-more-mobile-only"');
+    expect(stylesSource).toContain(".toolbar:has(.tool-more) > .tool-mobile-secondary {\n    display: none;");
+    expect(stylesSource).toContain(".tool-more-mobile-only {\n    display: contents;");
+    expect(stylesSource).toContain(".workspace-live .inspector-tabs {\n    display: grid;\n    grid-template-columns: repeat(6, minmax(0, 1fr));");
+    expect(stylesSource).toContain(".workspace-live .inspector-tabs .tab {\n    min-width: 0;\n    min-height: 42px;");
   });
 
   it("keeps tablet prep/content panels from clipping controls and status labels", () => {
@@ -246,7 +289,7 @@ describe("desktop layout regressions", () => {
 
   it("keeps mobile token creation and map controls inside the viewport", () => {
     expect(stylesSource).not.toContain("grid-template-columns: minmax(84px, 1.4fr) minmax(70px, 1fr) minmax(62px, 0.8fr) minmax(58px, 0.7fr) 44px;");
-    expect(appSource).toContain('aria-label={mode.label} title={mode.label}');
+    expect(appSource).toContain('aria-label={mode.label} aria-pressed={workspaceMode === mode.id} title={mode.label}');
     expect(stylesSource).toContain(".rail-play + .workspace .quick-create-form,\n  .rail-prep + .workspace .quick-create-form {\n    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.2fr) minmax(56px, 0.7fr) minmax(90px, 1fr);");
     expect(stylesSource).toContain(".rail-play + .workspace .quick-create-form input,\n  .rail-play + .workspace .quick-create-form select,\n  .rail-play + .workspace .quick-create-form .primary-button,");
     expect(stylesSource).toContain("min-height: 40px;\n    padding-inline: 8px;\n    font-size: 14px;");
@@ -295,6 +338,7 @@ describe("desktop layout regressions", () => {
     expect(stylesSource).toContain("min-width: 0;\n    min-height: 38px;\n    padding: 0 4px;\n    font-size: 11px;");
     expect(appSource).toContain('aria-label="AI Agent" title="AI Agent"');
     expect(appSource).toContain("ai-agent-toggle-label-compact");
+    expect(appSource).toContain("Audio");
     expect(stylesSource).toContain(".rail-play .ai-agent-toggle {\n    flex: 0 0 62px;");
     expect(stylesSource).toContain("width: 62px;\n    min-width: 62px;\n    min-height: 36px;\n    padding: 0 6px;\n    gap: 4px;\n    font-size: 0;");
     expect(stylesSource).toContain(".rail-play .ai-agent-toggle-label-compact {\n    display: inline;\n    font-size: 11px;");
@@ -303,6 +347,8 @@ describe("desktop layout regressions", () => {
     expect(stylesSource).toContain(".workspace-prep .inspector-tabs,\n  .workspace-prep .inspector > .tabs {\n    grid-template-columns: repeat(4, minmax(0, 1fr));\n    gap: 5px;");
     expect(stylesSource).toContain(".workspace-prep .inspector-tabs .tab,\n  .workspace-prep .inspector > .tabs .tab {\n    min-height: 38px;\n    gap: 3px;\n    padding: 0 3px;\n    font-size: 11px;");
     expect(stylesSource).toContain(".chat-dice-box .icon-button {\n    width: 40px;\n    min-width: 40px;\n    height: 36px;");
+    expect(stylesSource).toContain("min-height: calc(64px + env(safe-area-inset-bottom, 0px));");
+    expect(stylesSource).toContain(".toast-stack {\n    bottom: calc(72px + env(safe-area-inset-bottom, 0px));");
   });
 
   it("keeps tablet play navigation visible without pushing the table below a full rail", () => {
@@ -426,7 +472,7 @@ describe("desktop layout regressions", () => {
   it("discards stale workspace results and aborts agent turns on campaign changes", () => {
     expect(appSource).toContain("function cancelAiAgentForWorkspaceChange()");
     expect(appSource).toContain("abortController?.abort();");
-    expect(appSource).toContain("function selectWorkspaceContext(nextCampaignId: string, nextSceneId = \"\", nextUserId = currentUserId)");
+    expect(appSource).toContain("function selectWorkspaceContext(nextCampaignId: string, nextSceneId = \"\", nextUserId = currentUserId, options: { preserveCampaignSetup?: boolean } = {})");
     expect(appSource).toContain("if (!workspaceRequestIsCurrent(nextCampaignId, requestUserId)) return snapshotRef.current;");
     expect(appSource).toContain("if (seq !== refreshSeqRef.current || !workspaceRequestIsCurrent(nextCampaignId, requestUserId)) return next;");
     expect(appSource).toContain("if (!workspaceRequestIsCurrent(requestCampaignId, requestUserId)) return;");
@@ -463,6 +509,12 @@ describe("desktop layout regressions", () => {
     expect(appSource).toContain('setNewJournalBody((current) => current === submittedBody ? "" : current);');
     expect(appSource).toContain('setNewSceneName((current) => current === submittedName ? "" : current);');
     expect(appSource).toContain('setFogPresetName((current) => current === submittedName ? "" : current);');
+    const importBody = appSource.slice(appSource.indexOf("async function importSystemCharacter"), appSource.indexOf("async function createSystemMonster"));
+    expect(importBody).toContain("const request = beginWorkspaceBoundRequest();");
+    expect(importBody).toContain("if (!workspaceBoundRequestIsCurrent(request)) return outcome;");
+    expect(importBody).toContain("`/api/v1/campaigns/${request.campaignId}/systems/${system.id}/characters/import`");
+    expect(importBody).toContain("{ signal: request.controller.signal }");
+    expect(importBody).toContain("finishWorkspaceBoundRequest(request);");
   });
 
   it("keeps direct actor HP edits local until blur", () => {
@@ -527,7 +579,7 @@ describe("desktop layout regressions", () => {
   it("hides unavailable GM-only table tools instead of filling player toolbars with disabled controls", () => {
     expect(toolbarSource).toContain("{props.canCreateToken && (\n        <button className=\"tool\" title=\"Token\"");
     expect(toolbarSource).toContain("{props.canRevealFog && (\n        <button className=\"tool\" title=\"Reveal fog\"");
-    expect(toolbarSource).toContain("{props.canUpdateScene && (\n        <button className={`tool ${props.activeAnnotationTool === \"drawing\" ? \"active\" : \"\"}`}");
+    expect(toolbarSource).toContain("{props.canUpdateScene && (\n        <button className={`tool tool-mobile-secondary ${props.activeAnnotationTool === \"drawing\" ? \"active\" : \"\"}`}");
     expect(toolbarSource).toContain("{props.canManageCombat && (\n              <button className=\"ghost-button\" type=\"button\" onClick={() => runToolAction(props.onStartCombat, { closeAdvanced: true })}>");
     expect(toolbarSource).toContain("{(props.canManageCombat || props.canRevealFog || props.canUpdateScene) && (");
     expect(toolbarSource).not.toContain("disabled={!props.canCreateToken}");
@@ -547,8 +599,9 @@ describe("desktop layout regressions", () => {
     expect(countOccurrences(toolbarSource, "<button className=\"tool\" title=\"Reveal fog\"")).toBe(1);
     expect(toolbarSource).not.toContain("<Eye size={15} /> Reveal fog");
     expect(toolbarSource).not.toContain("<MapPin size={15} /> Ping");
-    expect(toolbarSource).not.toContain("<Circle size={15} /> Measure circle");
-    expect(toolbarSource).not.toContain("<Triangle size={15} /> Measure cone");
+    expect(toolbarSource).toContain('className="tool-more-mobile-only"');
+    expect(toolbarSource).toContain("<Circle size={15} /> Measure circle");
+    expect(toolbarSource).toContain("<Triangle size={15} /> Measure cone");
     expect(toolbarSource).not.toContain("<Circle size={15} /> Template");
     expect(toolbarSource).not.toContain("<X size={15} /> Delete mark");
   });
@@ -593,9 +646,10 @@ describe("desktop layout regressions", () => {
   });
 
   it("lets the floating AI agent dismiss with Escape before it blocks navigation", () => {
-    expect(appSource).toContain('if (!aiAgentOpen) return;\n    const closeOnEscape = (event: KeyboardEvent) => {');
-    expect(appSource).toContain('if (event.key === "Escape") setAiAgentOpen(false);');
+    expect(appSource).toContain('if (!aiAgentOpen) return;\n    const focusFrame = window.requestAnimationFrame(() => aiAgentPromptRef.current?.focus());');
+    expect(appSource).toContain('event.stopImmediatePropagation();\n      closeAiAgent();');
+    expect(appSource).toContain('window.requestAnimationFrame(() => aiAgentToggleRef.current?.focus());');
     expect(appSource).toContain('document.addEventListener("keydown", closeOnEscape);');
-    expect(appSource).toContain('return () => document.removeEventListener("keydown", closeOnEscape);');
+    expect(appSource).toContain('window.cancelAnimationFrame(focusFrame);\n      document.removeEventListener("keydown", closeOnEscape);');
   });
 });

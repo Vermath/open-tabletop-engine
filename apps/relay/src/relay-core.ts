@@ -1,6 +1,11 @@
 export const relayLimits = {
   tableTtlMs: 12 * 60 * 60 * 1000,
   maxRequestBodyBytes: 8 * 1024 * 1024,
+  maxBufferedHttpRequestBytesPerTable: 64 * 1024 * 1024,
+  maxHttpResponseBodyBytes: 64 * 1024 * 1024,
+  maxBufferedHttpResponseBytesPerTable: 64 * 1024 * 1024,
+  maxPendingHttpRequestsPerTable: 64,
+  maxClientWebSocketMessageBytes: 1024 * 1024,
   maxClientWebSocketsPerTable: 64,
   maxHttpWaitMs: 30_000,
   rateLimitWindowMs: 60_000,
@@ -69,12 +74,17 @@ export interface RateLimitDecision {
 
 export class MemoryRateLimiter {
   private readonly buckets = new Map<string, { resetAt: number; count: number }>();
+  private readonly maxBuckets: number;
 
-  constructor(private readonly options: { windowMs: number; maxRequests: number }) {}
+  constructor(private readonly options: { windowMs: number; maxRequests: number; maxBuckets?: number }) {
+    const configuredMaxBuckets = options.maxBuckets;
+    this.maxBuckets = typeof configuredMaxBuckets === "number" && Number.isFinite(configuredMaxBuckets) && configuredMaxBuckets > 0 ? Math.floor(configuredMaxBuckets) : 10_000;
+  }
 
   check(key: string, nowMs = Date.now()): RateLimitDecision {
     const current = this.buckets.get(key);
     if (!current || current.resetAt <= nowMs) {
+      this.makeRoomForBucket(nowMs, key);
       this.buckets.set(key, { resetAt: nowMs + this.options.windowMs, count: 1 });
       return { allowed: true, remaining: this.options.maxRequests - 1, retryAfterMs: 0 };
     }
@@ -85,6 +95,18 @@ export class MemoryRateLimiter {
       remaining,
       retryAfterMs: Math.max(0, current.resetAt - nowMs)
     };
+  }
+
+  private makeRoomForBucket(nowMs: number, key: string): void {
+    if (this.buckets.has(key) || this.buckets.size < this.maxBuckets) return;
+    for (const [bucketKey, bucket] of this.buckets) {
+      if (bucket.resetAt <= nowMs) this.buckets.delete(bucketKey);
+    }
+    while (this.buckets.size >= this.maxBuckets) {
+      const oldestKey = this.buckets.keys().next().value as string | undefined;
+      if (oldestKey === undefined) break;
+      this.buckets.delete(oldestKey);
+    }
   }
 }
 

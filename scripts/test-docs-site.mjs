@@ -27,6 +27,7 @@ const finalEvidenceText = finalEvidenceTerms
 runPassesWithRequiredDocsAndExcludedInternalLogs();
 runFailsWhenRequiredReleasePageLeaksLocalPath();
 runFailsWhenPublicDocsLinkIsBroken();
+runFailsWhenPublicDocsLinkTargetsExcludedSource();
 runNeutralizesUnsafeLinkProtocols();
 runFailsWhenReleaseGateCommandsAreMissing();
 runFailsWhenCurrentHostedReleaseSmokeCommitIsMissing();
@@ -127,6 +128,38 @@ function runFailsWhenPublicDocsLinkIsBroken() {
     assert(
       result.stderr.includes("docs/site/index.md -> ../missing-page.md"),
       "docs check should name the broken source and target",
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runFailsWhenPublicDocsLinkTargetsExcludedSource() {
+  const root = fixtureRoot();
+  writeRequiredDocs(root);
+  const excludedPath = join(
+    root,
+    "docs",
+    "verification",
+    "v0.3-dogfood-acceptance.md",
+  );
+  writeFileSync(excludedPath, "# Internal acceptance evidence\n");
+  writeFileSync(
+    join(root, "CHANGELOG.md"),
+    "# Changelog\n\n[Internal evidence](docs/verification/v0.3-dogfood-acceptance.md)\n",
+  );
+
+  try {
+    const result = runBuilder(root);
+    assert(
+      result.status === 1,
+      "docs check should fail when a public page links to an excluded source",
+    );
+    assert(
+      result.stderr.includes(
+        "CHANGELOG.md -> docs/verification/v0.3-dogfood-acceptance.md",
+      ),
+      "docs check should name the public link to the unpublished target",
     );
   } finally {
     rmSync(root, { recursive: true, force: true });

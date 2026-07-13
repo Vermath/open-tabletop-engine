@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -10,15 +10,29 @@ function readWorkspaceFile(path: string): string {
 }
 
 describe("deployment smoke", () => {
+  it("pins every third-party workflow action to an immutable commit", () => {
+    const workflowDirectory = resolve(rootDir, ".github/workflows");
+    for (const file of readdirSync(workflowDirectory).filter((name) => name.endsWith(".yml"))) {
+      const workflow = readWorkspaceFile(`.github/workflows/${file}`);
+      const actionReferences = [...workflow.matchAll(/^\s*(?:-\s+)?uses:\s+["']?([^#\s"']+)["']?\s*(?:#.*)?$/gm)].map((match) => match[1]);
+      expect(actionReferences.length, `${file} should use at least one action`).toBeGreaterThan(0);
+      for (const reference of actionReferences) {
+        expect(reference, `${file} must pin ${reference} to a full commit SHA`).toMatch(/^[^@]+@[0-9a-f]{40}$/i);
+      }
+    }
+  });
+
   it("keeps the release gate wired to Docker Compose and production-like deployment checks", () => {
     const packageJson = JSON.parse(readWorkspaceFile("package.json")) as { scripts: Record<string, string> };
-    expect(packageJson.scripts["deployment:smoke"]).toBe('pnpm --filter @open-tabletop/api test -- --run -t "deployment smoke"');
-    expect(packageJson.scripts["release:smoke"]).toContain("pnpm v1:worktree:check");
-    expect(packageJson.scripts["release:smoke"]).toContain("pnpm deployment:smoke");
-    expect(packageJson.scripts["release:smoke"]).toContain("pnpm perf:soak");
-    expect(packageJson.scripts["release:smoke"]).toContain("pnpm docs:site:check");
-    expect(packageJson.scripts["release:smoke"]).toContain("pnpm v1:issues:test");
-    expect(packageJson.scripts["release:smoke"]).toContain("pnpm v1:issues:check");
+    expect(packageJson.scripts["deployment:smoke"]).toBe('node scripts/run-package-manager.mjs --filter @open-tabletop/api test -- --run -t "deployment smoke"');
+    expect(packageJson.scripts["release:smoke"]).toContain("run-package-scripts.mjs v1:worktree:check security:audit check e2e");
+    expect(packageJson.scripts["security:audit"]).toBe("node scripts/run-package-manager.mjs audit --prod --audit-level high");
+    expect(packageJson.scripts["release:smoke"]).toContain("deployment:smoke");
+    expect(packageJson.scripts["release:smoke"]).toContain("perf:soak");
+    expect(packageJson.scripts["release:smoke"]).toContain("docs:site:check");
+    expect(packageJson.scripts["release:smoke"]).toContain("sbom:test");
+    expect(packageJson.scripts["release:smoke"]).toContain("v1:issues:test");
+    expect(packageJson.scripts["release:smoke"]).toContain("v1:issues:check");
 
     const workflow = readWorkspaceFile(".github/workflows/release-smoke.yml");
     expect(workflow).toContain("contents: read");
@@ -51,6 +65,9 @@ describe("deployment smoke", () => {
     const desktopReleaseWorkflow = readWorkspaceFile(".github/workflows/desktop-release.yml");
     expect(desktopReleaseWorkflow).toContain("pnpm audit --audit-level high");
     expect(desktopReleaseWorkflow).not.toContain("pnpm audit --prod");
+    expect(desktopReleaseWorkflow).toContain("Verify release tag matches desktop package version");
+    expect(desktopReleaseWorkflow).toContain('desktop_version="$(node -p "require(\'./apps/desktop/package.json\').version\")"');
+    expect(desktopReleaseWorkflow).toContain('expected_tag="desktop-v${desktop_version}"');
     expect(desktopReleaseWorkflow).toContain('for artifact in *.dmg "$sbom" "$provenance"; do');
     expect(desktopReleaseWorkflow).toContain('if [ -f "$artifact" ]; then');
     expect(desktopReleaseWorkflow).toContain('if [ "${#checksum_files[@]}" -ne 3 ]; then');
@@ -72,20 +89,37 @@ describe("deployment smoke", () => {
     expect(compose).toContain("OTTE_ASSET_STORAGE: ${OTTE_ASSET_STORAGE:-s3}");
     expect(compose).toContain("OTTE_ALLOW_LEGACY_USER_HEADER: ${OTTE_ALLOW_LEGACY_USER_HEADER:-false}");
     expect(compose).toContain("OTTE_PLUGIN_TRUST_POLICY: ${OTTE_PLUGIN_TRUST_POLICY:-allow_unsigned}");
+    expect(compose).toContain("OTTE_PLUGIN_DIR: /app/storage/plugins");
+    expect(compose).toContain("OTTE_BUNDLED_PLUGIN_DIR: /app/plugins");
+    expect(compose).toContain("api-plugins:/app/storage/plugins");
+    expect(compose).not.toContain("api-plugins:/app/plugins");
     expect(compose).toContain("OTTE_AI_PROVIDER: ${OTTE_AI_PROVIDER:-codex-app-server}");
     expect(compose).toContain("wget -qO- http://127.0.0.1:4000/api/v1/health");
     expect(compose).toContain("condition: service_healthy");
     expect(compose).toContain("OTTE_WORKER_LEASE_POLL: \"true\"");
+    expect(compose).toContain('${INFRA_BIND_ADDRESS:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432');
+    expect(compose).toContain('${INFRA_BIND_ADDRESS:-127.0.0.1}:${REDIS_PORT:-6379}:6379');
+    expect(compose).toContain('${INFRA_BIND_ADDRESS:-127.0.0.1}:${MINIO_API_PORT:-9000}:9000');
     expect(compose).not.toContain("OTTE_USER_ID:");
     expect(compose).toContain("api-storage:");
     expect(compose).toContain("api-uploads:");
+    expect(compose).toContain("api-plugins:");
 
     const apiPackage = JSON.parse(readWorkspaceFile("apps/api/package.json")) as { dependencies: Record<string, string> };
     expect(apiPackage.dependencies["@openai/codex"]).toBeTruthy();
 
+    const apiDockerfile = readWorkspaceFile("infra/docker/api.Dockerfile");
+    expect(apiDockerfile).toContain("USER node");
+    expect(apiDockerfile).toContain("/app/storage /app/uploads");
+
+    const workerDockerfile = readWorkspaceFile("infra/docker/worker.Dockerfile");
+    expect(workerDockerfile).toContain("USER node");
+
     const railwayApi = readWorkspaceFile("railway.api.json");
     expect(railwayApi).toContain("OTTE_SQLITE_PATH=/app/storage/opentabletop.sqlite");
     expect(railwayApi).toContain("OTTE_UPLOAD_DIR=/app/storage/uploads");
+    expect(railwayApi).toContain("OTTE_PLUGIN_DIR=/app/storage/plugins");
+    expect(railwayApi).toContain("OTTE_BUNDLED_PLUGIN_DIR=/app/plugins");
     expect(railwayApi).toContain("OTTE_DEMO_SEED=false");
     expect(railwayApi).toContain("OTTE_SQLITE_BACKUP_RUN_ON_START=true");
     expect(railwayApi).toContain("OTTE_SQLITE_BACKUP_INTERVAL_SECONDS=86400");
@@ -93,25 +127,37 @@ describe("deployment smoke", () => {
     expect(railwayApi).toContain("\"numReplicas\": 1");
     expect(railwayApi).toContain("OTTE_CODEX_APP_SERVER_COMMAND=apps/api/node_modules/.bin/codex");
     expect(railwayApi).toContain("OTTE_CODEX_APP_SERVER_LOGIN_TYPE=chatgptDeviceCode");
+    const apiServer = readWorkspaceFile("apps/api/src/server.ts");
+    expect(apiServer).toContain("bundledPluginRoot: process.env.OTTE_BUNDLED_PLUGIN_DIR");
+
+    const railwayWeb = readWorkspaceFile("railway.web.json");
+    expect(railwayWeb).toContain('"startCommand": "NODE_ENV=production node apps/web/server.mjs"');
+    expect(railwayWeb).toContain('"healthcheckPath": "/api/v1/health"');
 
     const selfHosting = readWorkspaceFile("docs/deployment/self-hosting.md");
     expect(selfHosting).toContain("docker compose up --build");
     expect(selfHosting).toContain("docker compose --profile worker up -d worker");
     expect(selfHosting).toContain("docker compose --profile worker up -d --scale worker=3 worker");
     expect(selfHosting).toContain("OTTE_SESSION_TOKEN`/`OTTE_WORKER_SESSION_TOKEN");
+    expect(selfHosting).toContain("INFRA_BIND_ADDRESS=127.0.0.1");
     expect(selfHosting).toContain("preview-only");
 
     const hostedRecipes = readWorkspaceFile("docs/deployment/hosted-deployment-recipes.md");
     expect(hostedRecipes).toContain("Mount the API service volume at `/app/storage`");
+    expect(hostedRecipes).toContain("`OTTE_PLUGIN_DIR=/app/storage/plugins`");
     expect(hostedRecipes).toContain("[Railway Persistence](./railway-persistence.md)");
 
     const railwayPersistence = readWorkspaceFile("docs/deployment/railway-persistence.md");
     expect(railwayPersistence).toContain("Attach one Railway Volume to the API service");
     expect(railwayPersistence).toContain("/app/storage");
     expect(railwayPersistence).toContain("OTTE_SQLITE_PATH=/app/storage/opentabletop.sqlite");
+    expect(railwayPersistence).toContain("OTTE_PLUGIN_DIR=/app/storage/plugins");
+    expect(railwayPersistence).toContain("OTTE_BUNDLED_PLUGIN_DIR=/app/plugins");
+    expect(railwayPersistence).toContain("never overwrites an existing persisted package directory");
     expect(railwayPersistence).toContain("OTTE_SQLITE_BACKUP_INTERVAL_SECONDS=86400");
     expect(railwayPersistence).toContain("GET /api/v1/admin/storage/operations");
     expect(railwayPersistence).toContain("POST /api/v1/admin/storage/restore-drill");
+    expect(railwayPersistence).toContain("public `/api/v1/health`");
 
     const securityChecklist = readWorkspaceFile("docs/deployment/security-checklist.md");
     expect(securityChecklist).toContain("OTTE_PLUGIN_TRUST_POLICY=require_trusted");

@@ -822,7 +822,7 @@ onEvent("token.moved", async (event, context) => {
       expect(registry.list()).toEqual([]);
       expect(registry.errors).toHaveLength(1);
       expect(registry.errors.at(0)!.errors).toContain(
-        "server entrypoint must stay inside the plugin package",
+        "Server entrypoint must be a safe package-relative path",
       );
     } finally {
       rmSync(pluginRoot, { recursive: true, force: true });

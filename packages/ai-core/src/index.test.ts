@@ -3,6 +3,126 @@ import { describe, expect, it } from "vitest";
 import { buildPermissionFilteredContext } from "./index.js";
 
 describe("buildPermissionFilteredContext", () => {
+  it("requires each dedicated read permission before exposing provider context", () => {
+    const state = emptyState();
+    state.campaigns.push({
+      id: "camp_demo",
+      ownerUserId: "usr_demo_gm",
+      name: "Secret Campaign Name",
+      description: "",
+      defaultSystemId: "generic-fantasy",
+      visibility: "private",
+      createdAt: "2026-07-05T00:00:00.000Z",
+      updatedAt: "2026-07-05T00:00:00.000Z",
+    });
+    state.journals.push(
+      {
+        id: "jnl_public",
+        campaignId: "camp_demo",
+        title: "Public Journal Title",
+        body: "Public journal body",
+        visibility: "public",
+        visibleToUserIds: [],
+        visibleToActorIds: [],
+        tags: [],
+        createdBy: "usr_demo_gm",
+        updatedBy: "usr_demo_gm",
+        createdAt: "2026-07-05T00:00:00.000Z",
+        updatedAt: "2026-07-05T00:00:00.000Z",
+      },
+      {
+        id: "jnl_gm",
+        campaignId: "camp_demo",
+        title: "GM Journal Title",
+        body: "GM journal body",
+        visibility: "gm_only",
+        visibleToUserIds: [],
+        visibleToActorIds: [],
+        tags: [],
+        createdBy: "usr_demo_gm",
+        updatedBy: "usr_demo_gm",
+        createdAt: "2026-07-05T00:00:00.000Z",
+        updatedAt: "2026-07-05T00:00:00.000Z",
+      },
+    );
+    state.aiMemory.push(
+      memoryFact("aim_public", "public", "Public memory"),
+      memoryFact("aim_gm", "gm_only", "GM memory"),
+    );
+
+    const noReadPermissions = buildPermissionFilteredContext({
+      state,
+      campaignId: "camp_demo",
+      userId: "usr_limited",
+      permissions: ["ai.use"],
+    });
+
+    expect(noReadPermissions.publicSummary).toBe("Campaign: ");
+    expect(noReadPermissions.gmSecrets).toEqual([]);
+    expect(noReadPermissions.memory).toEqual([]);
+    expect(JSON.stringify(noReadPermissions)).not.toContain("Secret Campaign");
+    expect(JSON.stringify(noReadPermissions)).not.toContain("Public Journal");
+    expect(JSON.stringify(noReadPermissions)).not.toContain("Public memory");
+
+    const journalReader = buildPermissionFilteredContext({
+      state,
+      campaignId: "camp_demo",
+      userId: "usr_limited",
+      permissions: ["campaign.read", "journal.read"],
+    });
+    expect(journalReader.publicSummary).toBe(
+      "Secret Campaign Name: Public Journal Title",
+    );
+    expect(journalReader.gmSecrets).toEqual([]);
+
+    const secretOnlyJournalReader = buildPermissionFilteredContext({
+      state,
+      campaignId: "camp_demo",
+      userId: "usr_limited",
+      permissions: ["campaign.read", "journal.readSecret"],
+    });
+    expect(secretOnlyJournalReader.publicSummary).toBe(
+      "Secret Campaign Name: ",
+    );
+    expect(secretOnlyJournalReader.gmSecrets).toEqual([]);
+
+    const fullJournalReader = buildPermissionFilteredContext({
+      state,
+      campaignId: "camp_demo",
+      userId: "usr_limited",
+      permissions: [
+        "campaign.read",
+        "journal.read",
+        "journal.readSecret",
+      ],
+    });
+    expect(fullJournalReader.publicSummary).toBe(
+      "Secret Campaign Name: Public Journal Title, GM Journal Title",
+    );
+    expect(fullJournalReader.gmSecrets).toEqual(["GM journal body"]);
+
+    const publicMemoryReader = buildPermissionFilteredContext({
+      state,
+      campaignId: "camp_demo",
+      userId: "usr_limited",
+      permissions: ["ai.use", "ai.readPublicMemory"],
+    });
+    expect(publicMemoryReader.memory.map((item) => item.text)).toEqual([
+      "Public memory",
+    ]);
+
+    const gmMemoryReader = buildPermissionFilteredContext({
+      state,
+      campaignId: "camp_demo",
+      userId: "usr_limited",
+      permissions: ["ai.use", "ai.readGmMemory"],
+    });
+    expect(gmMemoryReader.memory.map((item) => item.text)).toEqual([
+      "Public memory",
+      "GM memory",
+    ]);
+  });
+
   it("does not expose GM AI memory through journal secret permission alone", () => {
     const state = emptyState();
     state.campaigns.push({
@@ -24,7 +144,11 @@ describe("buildPermissionFilteredContext", () => {
       state,
       campaignId: "camp_demo",
       userId: "usr_demo_player",
-      permissions: ["campaign.read", "journal.readSecret"],
+      permissions: [
+        "campaign.read",
+        "journal.readSecret",
+        "ai.readPublicMemory",
+      ],
     });
 
     expect(context.memory).toEqual([

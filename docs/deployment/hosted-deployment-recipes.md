@@ -121,7 +121,7 @@ For Railway, use the managed-app pattern with one API service, one mounted volum
 
 - Mount the API service volume at `/app/storage`.
 - Keep `railway.api.json` `numReplicas` at `1`.
-- Keep `OTTE_SQLITE_PATH=/app/storage/opentabletop.sqlite` and `OTTE_UPLOAD_DIR=/app/storage/uploads`.
+- Keep `OTTE_SQLITE_PATH=/app/storage/opentabletop.sqlite`, `OTTE_UPLOAD_DIR=/app/storage/uploads`, and `OTTE_PLUGIN_DIR=/app/storage/plugins` so mutable plugin packages share the durable volume.
 - Keep startup and daily SQLite backups enabled with `OTTE_SQLITE_BACKUP_RUN_ON_START=true`, `OTTE_SQLITE_BACKUP_INTERVAL_SECONDS=86400`, and `OTTE_SQLITE_BACKUP_REASON=railway-nightly`.
 - Run the validation flow in [Railway Persistence](./railway-persistence.md) after the first durable deploy.
 

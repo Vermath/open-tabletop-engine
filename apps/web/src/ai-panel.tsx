@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { apiPost, assetBlobUrl, type AiUsageSummary, type EncounterPlanInfo, type Snapshot } from "./api.js";
 import { aiToolCallErrorCode } from "./admin-panel.js";
 import { MetricTile } from "./metric-tile.js";
-import { proposalReviewActionLabel } from "./proposal-review.js";
+import { proposalQueueAction, proposalReviewActionLabel } from "./proposal-review.js";
 import { formatCost, formatDateTime, formatDuration, formatNumber, formatTime, recordValue, titleCaseLabel } from "./sheet-format.js";
 type AiPanelView = "create" | "review" | "memory" | "operations";
 type AiIntentId = "encounter" | "map" | "tokenBatch" | "selectedToken" | "recap" | "memory";
@@ -17,7 +17,7 @@ interface AiGenerationJob {
   detail?: string;
 }
 
-export function AiPanel(props: { prompt: string; setPrompt(value: string): void; askAi(): void; mapPrompt: string; setMapPrompt(value: string): void; generateMapAsset(): void; tokenPrompt: string; setTokenPrompt(value: string): void; generateTokenAsset(): void; generateSceneTokenAssets(): void; generationJobs: AiGenerationJob[]; selectedSceneName?: string; selectedTokenId?: string; selectedTokenName?: string; tokenOptions: Token[]; selectToken(tokenId: string): void; tokenArtMissingCount: number; tokenArtPendingCount: number; replayAiThread(thread: AiThread): void; retryAiToolCall(toolCall: AiToolCall): void; recapSession(): void; extractMemory(): void; activeSystemName?: string; encounterPlan?: EncounterPlanInfo; planEncounter(): void; proposals: Proposal[]; records: ProposalRecordCollections; memory: AiMemoryFact[]; aiThreads: AiThread[]; aiUsage?: AiUsageSummary; aiToolCalls: AiToolCall[]; approveAndApply(proposal: Proposal): void; rejectProposal(proposal: Proposal): void; approveMemory(fact: AiMemoryFact): void; deleteMemory(fact: AiMemoryFact): void; canDraftEncounter: boolean; canPropose: boolean; canApply: boolean; canPlanEncounter: boolean; canGenerateMap: boolean; canGenerateToken: boolean; canGenerateTokenBatch: boolean }) {
+export function AiPanel(props: { prompt: string; setPrompt(value: string): void; askAi(): void; mapPrompt: string; setMapPrompt(value: string): void; generateMapAsset(): void; tokenPrompt: string; setTokenPrompt(value: string): void; generateTokenAsset(): void; generateSceneTokenAssets(): void; generationJobs: AiGenerationJob[]; selectedSceneName?: string; selectedTokenId?: string; selectedTokenName?: string; tokenOptions: Token[]; selectToken(tokenId: string): void; tokenArtMissingCount: number; tokenArtPendingCount: number; replayAiThread(thread: AiThread): void; retryAiToolCall(toolCall: AiToolCall): void; recapSession(): void; extractMemory(): void; activeSystemName?: string; encounterPlan?: EncounterPlanInfo; planEncounter(): void; proposals: Proposal[]; records: ProposalRecordCollections; memory: AiMemoryFact[]; aiThreads: AiThread[]; aiUsage?: AiUsageSummary; aiToolCalls: AiToolCall[]; approveAndApply(proposal: Proposal): void; rejectProposal(proposal: Proposal): void; revertProposal(proposal: Proposal): Promise<void>; approveMemory(fact: AiMemoryFact): void; deleteMemory(fact: AiMemoryFact): void; canDraftEncounter: boolean; canPropose: boolean; canRecapSession: boolean; canApply: boolean; canRevert: boolean; canPlanEncounter: boolean; canGenerateMap: boolean; canGenerateToken: boolean; canGenerateTokenBatch: boolean }) {
   const [activeView, setActiveView] = useState<AiPanelView>("create");
   const [activeIntent, setActiveIntent] = useState<AiIntentId>("encounter");
   const [proposalStatusFilter, setProposalStatusFilter] = useState<Proposal["status"] | "all">("all");
@@ -59,7 +59,7 @@ export function AiPanel(props: { prompt: string; setPrompt(value: string): void;
     { id: "map", label: "Generate Map", detail: "Create raster battlemap art for the selected scene.", icon: <MapIcon size={16} />, disabled: !props.canGenerateMap },
     { id: "tokenBatch", label: "Missing Token Art", detail: "Generate art for every scene token missing imagery.", icon: <Boxes size={16} />, disabled: !props.canGenerateTokenBatch },
     { id: "selectedToken", label: "Selected Token Art", detail: "Generate art for the currently selected token.", icon: <ImageIcon size={16} />, disabled: !props.canGenerateToken },
-    { id: "recap", label: "Session Recap", detail: "Draft a recap proposal from current session context.", icon: <ScrollText size={16} />, disabled: !props.canPropose },
+    { id: "recap", label: "Session Recap", detail: "Draft a recap proposal from current session context.", icon: <ScrollText size={16} />, disabled: !props.canRecapSession },
     { id: "memory", label: "Extract Memory", detail: "Queue campaign memory facts for review.", icon: <FileText size={16} />, disabled: !props.canPropose }
   ] satisfies Array<{ id: AiIntentId; label: string; detail: string; icon: React.ReactNode; disabled: boolean }>;
   const activeIntentOption = intentOptions.find((intent) => intent.id === activeIntent) ?? intentOptions[0]!;
@@ -162,7 +162,7 @@ export function AiPanel(props: { prompt: string; setPrompt(value: string): void;
               <button className="primary-button" type="button" onClick={props.askAi} disabled={!props.canDraftEncounter}>
                 <Bot size={16} /> Draft Encounter
               </button>
-              <button className="ghost-button" type="button" onClick={props.recapSession} disabled={!props.canPropose}>
+              <button className="ghost-button" type="button" onClick={props.recapSession} disabled={!props.canRecapSession}>
                 <ScrollText size={16} /> Recap Session
               </button>
               <button className="ghost-button" type="button" onClick={props.extractMemory} disabled={!props.canPropose}>
@@ -349,6 +349,8 @@ export function AiPanel(props: { prompt: string; setPrompt(value: string): void;
                   records={props.records}
                   onApply={props.approveAndApply}
                   onReject={props.rejectProposal}
+                  onRevert={props.revertProposal}
+                  canRevert={props.canRevert}
                 />
               ))
             )}
@@ -435,8 +437,11 @@ export function AiPanel(props: { prompt: string; setPrompt(value: string): void;
   );
 }
 
-function AiProposalReviewCard(props: { proposal: Proposal; records: ProposalRecordCollections; canApply: boolean; onApply(proposal: Proposal): void; onReject(proposal: Proposal): void }) {
+function AiProposalReviewCard(props: { proposal: Proposal; records: ProposalRecordCollections; canApply: boolean; canRevert: boolean; onApply(proposal: Proposal): void; onReject(proposal: Proposal): void; onRevert(proposal: Proposal): Promise<void> }) {
   const generatedAssets = proposalAssetPreviews(props.proposal);
+  const queueAction = proposalQueueAction(props.proposal);
+  const [revertArmed, setRevertArmed] = useState(false);
+  const [reverting, setReverting] = useState(false);
   return (
     <article className="proposal ai-proposal-card">
       <div className="operator-heading">
@@ -457,7 +462,7 @@ function AiProposalReviewCard(props: { proposal: Proposal; records: ProposalReco
         <ProposalDiffPreview proposal={props.proposal} records={props.records} />
         <ProposalTimeline proposal={props.proposal} />
       </details>
-      {props.proposal.status !== "applied" && props.proposal.status !== "rejected" && (
+      {queueAction === "review" && (
         <div className="button-row ai-action-row">
           <button className="ghost-button" type="button" onClick={() => props.onApply(props.proposal)} disabled={!props.canApply}>
             <Check size={15} /> {proposalReviewActionLabel(props.proposal)}
@@ -465,6 +470,22 @@ function AiProposalReviewCard(props: { proposal: Proposal; records: ProposalReco
           <button className="ghost-button" type="button" onClick={() => props.onReject(props.proposal)} disabled={!props.canApply}>
             <X size={15} /> Reject
           </button>
+        </div>
+      )}
+      {queueAction === "revert" && (
+        <div className="button-row ai-action-row">
+          {revertArmed ? (
+            <>
+              <button className="danger-button" type="button" onClick={() => { setReverting(true); void props.onRevert(props.proposal).finally(() => setReverting(false)); }} disabled={!props.canRevert || reverting}>
+                <RotateCcw size={15} /> {reverting ? "Reverting…" : "Confirm revert"}
+              </button>
+              <button className="ghost-button" type="button" disabled={reverting} onClick={() => setRevertArmed(false)}>Cancel</button>
+            </>
+          ) : (
+            <button className="ghost-button" type="button" onClick={() => setRevertArmed(true)} disabled={!props.canRevert} title={props.canRevert ? "Restore previous records; records created by this proposal may be deleted" : "Revert requires AI apply permission and a persisted campaign"}>
+              <RotateCcw size={15} /> Revert applied changes
+            </button>
+          )}
         </div>
       )}
     </article>

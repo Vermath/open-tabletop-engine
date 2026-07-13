@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 const args = new Map();
@@ -53,18 +53,20 @@ function licenseEntry(license) {
 
 function visit(node, nameHint, isRoot = false) {
   if (!node || typeof node !== "object") return undefined;
+  if (typeof node.path === "string" && !existsSync(node.path)) return undefined;
   const manifest = packageManifest(node);
   const name =
-    typeof node.name === "string"
-      ? node.name
-      : typeof manifest.name === "string"
-        ? manifest.name
+    typeof manifest.name === "string"
+      ? manifest.name
+      : typeof node.name === "string"
+        ? node.name
         : nameHint;
   const version =
-    typeof node.version === "string"
-      ? node.version
-      : typeof manifest.version === "string"
-        ? manifest.version
+    typeof manifest.version === "string"
+      ? manifest.version
+      : typeof node.version === "string" &&
+          !/^(?:file|link|portal|workspace):/i.test(node.version)
+        ? node.version
         : undefined;
   if (!name || !version) return undefined;
 

@@ -39,6 +39,33 @@ describe("system manifest validation", () => {
     expect(systemCoreCompatibility(">=0.1.0 <1.0.0")).toEqual({ valid: true, satisfied: true });
   });
 
+  it("applies semver caret bounds correctly before 0.1.0", () => {
+    expect(systemCoreCompatibility("^0.0.3", "0.0.3")).toEqual({ valid: true, satisfied: true });
+    expect(systemCoreCompatibility("^0.0.3", "0.0.4")).toEqual({ valid: true, satisfied: false });
+    expect(systemCoreCompatibility("^0.0.3-beta.1", "0.0.3")).toEqual({ valid: true, satisfied: true });
+    expect(systemCoreCompatibility("^0.0.3-beta.1", "0.0.4-beta.1")).toEqual({ valid: true, satisfied: false });
+    expect(systemCoreCompatibility("^0.3.0", "0.3.9")).toEqual({ valid: true, satisfied: true });
+    expect(systemCoreCompatibility("^0.3.0", "0.4.0")).toEqual({ valid: true, satisfied: false });
+  });
+
+  it("uses semantic-version precedence for prereleases and build metadata", () => {
+    expect(() => validateSystemManifest({ ...validManifest, version: "1.0.0-beta.1+build.7" })).not.toThrow();
+    expect(() => validateSystemManifest({ ...validManifest, version: "1.0.0-01" })).toThrow("semantic version");
+    expect(systemCoreCompatibility("<0.3.0", "0.3.0-beta.1")).toEqual({ valid: true, satisfied: true });
+    expect(systemCoreCompatibility(">=0.3.0", "0.3.0-beta.1")).toEqual({ valid: true, satisfied: false });
+    expect(systemCoreCompatibility("=0.3.0", "0.3.0+build.1")).toEqual({ valid: true, satisfied: true });
+  });
+
+  it("rejects oversized semantic versions and compatibility ranges before parsing", () => {
+    expect(() => validateSystemManifest({ ...validManifest, version: `1.0.0+${"a".repeat(300)}` })).toThrow("semantic version");
+    expect(systemCoreCompatibility(`>=1.0.0+${"a".repeat(600)}`)).toEqual({ valid: false, satisfied: false });
+    expect(systemCoreCompatibility("*", `1.0.0+${"a".repeat(300)}`)).toEqual({ valid: false, satisfied: false });
+  });
+
+  it("validates every comparator even after an earlier bound is unsatisfied", () => {
+    expect(systemCoreCompatibility(">9.0.0 not-a-version", "1.0.0")).toEqual({ valid: false, satisfied: false });
+  });
+
   it("rejects duplicate ids and names in the in-memory SDK registry", () => {
     const registry = registerSystem(createSystemRegistry(), validManifest);
     expect(() => registerSystem(registry, validManifest)).toThrow("id is already registered");

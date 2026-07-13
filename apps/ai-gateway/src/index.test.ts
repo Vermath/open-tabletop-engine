@@ -14,4 +14,24 @@ describe("ai gateway provider configuration", () => {
   it("rejects unsupported provider names instead of silently using loopback", () => {
     expect(() => createCodexTransport({ OTTE_AI_PROVIDER: "typo-provider" })).toThrow('Unsupported OTTE_AI_PROVIDER "typo-provider"');
   });
+
+  it("treats blank compose-style app-server settings as unset", () => {
+    const transport = createCodexTransport({
+      OTTE_CODEX_APP_SERVER_URL: "   ",
+      OTTE_CODEX_APP_SERVER_CWD: "   ",
+      OTTE_CODEX_MODEL: "   ",
+      OTTE_CODEX_MODEL_PROVIDER: "   ",
+      OTTE_AI_PROVIDER_TIMEOUT_MS: "   "
+    }) as CodexAppServerWebSocketTransport;
+
+    expect((transport as unknown as { url: string }).url).toBe("ws://127.0.0.1:4500");
+    expect((transport as unknown as { requestTimeoutMs: number }).requestTimeoutMs).toBe(15 * 60_000);
+  });
+
+  it("preserves an explicit zero timeout for request and turn timers", () => {
+    const transport = createCodexTransport({ OTTE_AI_PROVIDER_TIMEOUT_MS: "0" }) as CodexAppServerWebSocketTransport;
+
+    expect((transport as unknown as { requestTimeoutMs: number }).requestTimeoutMs).toBe(0);
+    expect((transport as unknown as { turnTimeoutMs: number }).turnTimeoutMs).toBe(0);
+  });
 });

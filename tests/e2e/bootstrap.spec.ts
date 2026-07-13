@@ -108,7 +108,7 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
   await managePanel.getByRole("button", { name: "Logout", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Sign In" })).toBeVisible();
   await expect(page.getByRole("button", { name: "SSO" })).toHaveCount(0);
-  await page.getByRole("button", { name: "Reset" }).click();
+  await page.getByRole("button", { name: "Forgot password?" }).click();
   await expect(page.getByRole("heading", { name: "Reset Password" })).toBeVisible();
   await page.getByRole("textbox", { name: "Reset email" }).fill("owner.e2e@example.test");
   await page.getByRole("button", { name: "Send" }).click();

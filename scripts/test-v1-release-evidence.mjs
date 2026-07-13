@@ -52,6 +52,7 @@ runFailsWithPlaceholderHostedUrls();
 runFailsWithExampleHostedUrls();
 runFailsWithLocalHostedUrls();
 runFailsWithPrivateHostedUrls();
+runFailsWithNonPublicIpv6HostedUrls();
 runFailsWithLocalNetworkHostedUrls();
 runFailsWithReservedHostedUrls();
 runFailsWithCredentialHostedUrls();
@@ -788,6 +789,31 @@ function runFailsWithPrivateHostedUrls() {
     assert(result.stdout.includes(`No successful docs-site publication with an HTTPS published URL is recorded for commit ${commit}`), "private docs URLs should fail the docs publication gate");
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runFailsWithNonPublicIpv6HostedUrls() {
+  const cases = [
+    ["::ffff:127.0.0.1", "::", "fec0::1"],
+    ["::2", "100::1", "2001:2::1"],
+    ["64:ff9b:1::1", "2001:db8::1", "3fff::1"]
+  ];
+  for (const [releaseHost, docsRunHost, publishedHost] of cases) {
+    const files = completeEvidence(commit);
+    files.releaseWorkflow = files.releaseWorkflow
+      .replace("https://github.com/Vermath/open-tabletop-engine/actions/runs/1", `https://[${releaseHost}]/release-smoke`)
+      .replace("https://github.com/Vermath/open-tabletop-engine/actions/runs/2", `https://[${docsRunHost}]/docs-site`)
+      .replace("https://vermath.github.io/open-tabletop-engine", `https://[${publishedHost}]/open-tabletop`);
+    const root = fixtureRoot(files);
+
+    try {
+      const result = runChecker(root);
+      assert(result.status === 1, `non-public IPv6 hosted URLs should fail: ${releaseHost}, ${docsRunHost}, ${publishedHost}`);
+      assert(result.stdout.includes(`No hosted release-smoke pass is recorded for commit ${commit}`), `${releaseHost} should fail the hosted smoke gate`);
+      assert(result.stdout.includes(`No successful docs-site publication with an HTTPS published URL is recorded for commit ${commit}`), `${docsRunHost} and ${publishedHost} should fail the publication gate`);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   }
 }
 

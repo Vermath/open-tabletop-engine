@@ -144,19 +144,88 @@ export function markdownTitle(body: string): string | undefined {
 export function csvItemImportEntities(body: string, config: string): ContentImportDraftEntity[] {
   const csvConfig = parseCsvImportConfig(config);
   const nameIndex = Math.max(0, csvConfig.columns.indexOf("name"));
-  const bodyIndex = csvConfig.columns.includes("body") ? csvConfig.columns.indexOf("body") : csvConfig.columns.includes("notes") ? csvConfig.columns.indexOf("notes") : 1;
-  return body
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => line.split(csvConfig.delimiter).map((part) => part.trim()))
+  const bodyIndex = csvConfig.columns.includes("body") ? csvConfig.columns.indexOf("body") : csvConfig.columns.includes("notes") ? csvConfig.columns.indexOf("notes") : undefined;
+  return parseDelimitedRows(body, csvConfig.delimiter)
+    .map((parts) => parts.map((part) => part.trim()))
+    .filter((parts) => parts.some(Boolean))
     .filter((parts, index) => !(csvConfig.skipHeader && index === 0 && parts[nameIndex]?.toLowerCase() === "name"))
     .filter((parts) => Boolean(parts[nameIndex]))
     .map((parts) => ({
       kind: csvConfig.kind,
       name: parts[nameIndex]!,
-      body: parts[bodyIndex] || parts.slice(1).join(", ") || "Imported item"
+      body: (bodyIndex === undefined ? undefined : parts[bodyIndex]) || parts.filter((part, index) => index !== nameIndex && Boolean(part)).join(", ") || "Imported item"
     }));
+}
+
+
+/**
+ * Parses delimiter-separated rows without truncating quoted delimiters,
+ * escaped quotes, or line breaks. Content imports accept user-authored CSV,
+ * so a simple line/substring split is not safe for otherwise valid files.
+ */
+export function parseDelimitedRows(body: string, delimiter: string): string[][] {
+  const separator = delimiter || ",";
+  const input = body.replace(/^\uFEFF/, "");
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = "";
+  let quoted = false;
+
+  const finishField = () => {
+    row.push(field);
+    field = "";
+  };
+  const finishRow = () => {
+    finishField();
+    rows.push(row);
+    row = [];
+  };
+
+  for (let index = 0; index < input.length;) {
+    const character = input[index]!;
+    if (quoted) {
+      if (character === '"' && input[index + 1] === '"') {
+        field += '"';
+        index += 2;
+        continue;
+      }
+      if (character === '"') {
+        quoted = false;
+        index += 1;
+        continue;
+      }
+      if (character === "\r" && input[index + 1] === "\n") {
+        field += "\n";
+        index += 2;
+        continue;
+      }
+      field += character === "\r" ? "\n" : character;
+      index += 1;
+      continue;
+    }
+
+    if (character === '"' && field.trim().length === 0) {
+      field = "";
+      quoted = true;
+      index += 1;
+      continue;
+    }
+    if (input.startsWith(separator, index)) {
+      finishField();
+      index += separator.length;
+      continue;
+    }
+    if (character === "\n" || character === "\r") {
+      finishRow();
+      index += character === "\r" && input[index + 1] === "\n" ? 2 : 1;
+      continue;
+    }
+    field += character;
+    index += 1;
+  }
+
+  if (field.length > 0 || row.length > 0) finishRow();
+  return rows;
 }
 
 

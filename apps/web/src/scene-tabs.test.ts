@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sceneQuickCreateIndex, sceneTabWrapClass, showTrailingSceneCreate } from "./scene-tabs";
+import { sceneDeleteConfirmationMatches, sceneQuickCreateIndex, sceneTabWrapClass, showTrailingSceneCreate } from "./scene-tabs";
 
 describe("sceneTabWrapClass", () => {
   it("does not reserve checkbox layout space when scene selection is unavailable", () => {
@@ -25,5 +25,11 @@ describe("sceneTabWrapClass", () => {
     expect(showTrailingSceneCreate(0)).toBe(false);
     expect(showTrailingSceneCreate(1)).toBe(true);
     expect(showTrailingSceneCreate(4)).toBe(true);
+  });
+
+  it("confirms deletion against the persisted target name, not an unsaved draft", () => {
+    expect(sceneDeleteConfirmationMatches("Vault Entry", "Renamed Draft")).toBe(false);
+    expect(sceneDeleteConfirmationMatches("Vault Entry", "Vault Entry")).toBe(true);
+    expect(sceneDeleteConfirmationMatches(undefined, "Vault Entry")).toBe(false);
   });
 });

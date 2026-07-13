@@ -2,9 +2,17 @@ import { openApiSpec } from "@open-tabletop/api-contracts";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   OpenTabletopClient,
+  type CampaignCreateInput,
+  type CampaignSearchResult,
+  type CampaignSnapshot,
+  type CampaignSnapshotBundled,
   type CampaignSnapshotMember,
+  type CampaignUpdateInput,
+  type EncounterCreateInput,
+  type EncounterUpdateInput,
   type PluginCampaignInfo,
   type PluginInstallResult,
+  type SystemEncounterPlanInput,
 } from "./index.js";
 
 const campaignId = "camp_client";
@@ -116,7 +124,11 @@ describe("OpenTabletopClient", () => {
     });
 
     await client.campaigns();
-    await client.createCampaign({ name: "JSON Campaign" });
+    await client.createCampaign({
+      name: "JSON Campaign",
+      permissionTemplate: "player_authoring",
+      starterContent: false,
+    });
     await client.updateCampaign(campaignId, { name: "Renamed Campaign" });
     await client.deleteCampaign(campaignId);
     await client.uploadAsset(campaignId, "raw-svg-body", {
@@ -146,7 +158,13 @@ describe("OpenTabletopClient", () => {
     expect(requests[0]!.headers["content-type"]).toBeUndefined();
     expect(requests[0]!.body).toBeUndefined();
     expect(requests[1]!.headers["content-type"]).toBe("application/json");
-    expect(requests[1]!.body).toBe(JSON.stringify({ name: "JSON Campaign" }));
+    expect(requests[1]!.body).toBe(
+      JSON.stringify({
+        name: "JSON Campaign",
+        permissionTemplate: "player_authoring",
+        starterContent: false,
+      }),
+    );
     expect(requests[2]!.headers["content-type"]).toBe("application/json");
     expect(requests[2]!.body).toBe(
       JSON.stringify({ name: "Renamed Campaign" }),
@@ -288,6 +306,41 @@ describe("OpenTabletopClient", () => {
     );
   });
 
+  it("exposes complete campaign creation, snapshot, and search types", () => {
+    expectTypeOf<CampaignCreateInput>().toMatchTypeOf<{
+      permissionTemplate?:
+        | "standard"
+        | "player_authoring"
+        | "ai_assisted"
+        | "assistant_ops";
+      starterContent?: boolean;
+    }>();
+    expectTypeOf<CampaignSnapshot["bundled"]>().toEqualTypeOf<CampaignSnapshotBundled>();
+    expectTypeOf<keyof CampaignUpdateInput>().toEqualTypeOf<
+      "name" | "description" | "defaultSystemId" | "visibility"
+    >();
+    expectTypeOf<CampaignSearchResult["type"]>().toEqualTypeOf<
+      | "world"
+      | "scene"
+      | "actor"
+      | "item"
+      | "journal"
+      | "handout"
+      | "encounter"
+      | "memory"
+      | "chat"
+      | "roll"
+    >();
+  });
+
+  it("exposes saved encounter composition inputs without immutable fields", () => {
+    expectTypeOf<keyof EncounterCreateInput>().toEqualTypeOf<
+      "name" | "summary" | "tokenIds" | "difficulty" | "systemId" | "partyActorIds" | "threats" | "worldId"
+    >();
+    expectTypeOf<EncounterUpdateInput>().toEqualTypeOf<EncounterCreateInput>();
+    expectTypeOf<SystemEncounterPlanInput["threats"]>().toEqualTypeOf<Array<{ id: string; count: number }> | undefined>();
+  });
+
   it("supports archive and chat export runtime permutations", async () => {
     const requests: Array<{
       method: string;
@@ -336,6 +389,10 @@ describe("OpenTabletopClient", () => {
         collections: ["journals", "assets"],
       },
     );
+    await client.importCampaign(
+      { format: "ottx" },
+      { regenerateIds: true },
+    );
 
     expect(
       requests.map((request) => `${request.method} ${request.url.pathname}`),
@@ -343,6 +400,7 @@ describe("OpenTabletopClient", () => {
       "GET /api/v1/campaigns/camp_client/chat/export",
       "GET /api/v1/campaigns/camp_client/chat/export",
       "GET /api/v1/campaigns/camp_client/export",
+      "POST /api/v1/import/campaign",
       "POST /api/v1/import/campaign",
     ]);
     expect(
@@ -367,6 +425,12 @@ describe("OpenTabletopClient", () => {
         mode: "dry_run",
         scope: "selected_collections",
         collections: ["journals", "assets"],
+      }),
+    );
+    expect(requests[4]!.body).toBe(
+      JSON.stringify({
+        archive: { format: "ottx" },
+        regenerateIds: true,
       }),
     );
   });
@@ -584,7 +648,7 @@ describe("OpenTabletopClient", () => {
       client.updateEncounter(encounterId, { name: "Encounter 2" }),
       client.deleteEncounter(encounterId),
       client.proposals(campaignId),
-      client.createProposal(campaignId, { status: "pending" }),
+      client.createProposal(campaignId, { title: "Proposal" }),
       client.approveProposal(proposalId),
       client.applyProposal(proposalId),
       client.revertProposal(proposalId),
@@ -646,7 +710,10 @@ describe("OpenTabletopClient", () => {
       client.createSystemMonster(campaignId, systemId, { name: "Monster" }),
       client.importSystemCharacter(campaignId, systemId, { name: "Import" }),
       client.systemEncounterThreats(campaignId, systemId),
-      client.systemEncounterPlan(campaignId, systemId, { partyLevel: 1 }),
+      client.systemEncounterPlan(campaignId, systemId, {
+        partyActorIds: [],
+        threats: [{ id: "guard", count: 1 }],
+      }),
       client.systemCompendium(campaignId, systemId),
       client.addSystemCompendiumToActor(campaignId, systemId, actorId, {
         entryId: "spell",

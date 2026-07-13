@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
-import { realtimeConnectionIdentity, startRealtimeConnection } from "./realtime-connection.js";
+import { realtimeConnectionIdentity, realtimeUiLabel, startRealtimeConnection } from "./realtime-connection.js";
+
+const appSource = readFileSync(resolve(__dirname, "App.tsx"), "utf8").replace(/\r\n/g, "\n");
 
 interface RealtimeSocketLike {
   onopen: (() => void) | null;
@@ -113,5 +117,15 @@ describe("realtime connection", () => {
     expect(secondScene).toBe(firstScene);
     expect(realtimeConnectionIdentity({ blankCanvasDemoOpen: false, campaignId: "camp_other", sessionToken: "ots_test", sceneId: "scn_cavern" })).not.toBe(firstScene);
     expect(realtimeConnectionIdentity({ blankCanvasDemoOpen: true, campaignId: "camp_demo", sessionToken: "ots_test", sceneId: "scn_vault" })).toBeNull();
+  });
+
+  it("never presents a reconnecting socket as connected", () => {
+    expect(realtimeUiLabel("idle")).toBe("Ready");
+    expect(realtimeUiLabel("connecting")).toBe("Connecting");
+    expect(realtimeUiLabel("connected")).toBe("Connected");
+    expect(realtimeUiLabel("reconnecting")).toBe("Reconnecting");
+    expect(appSource).toContain('onUnavailable: () => {\n        setRealtimeUiState("reconnecting");');
+    expect(appSource).toContain('data-connection-state={realtimeUiState} role="status" aria-live="polite"');
+    expect(appSource).not.toContain('status.toLowerCase().includes("realtime")');
   });
 });

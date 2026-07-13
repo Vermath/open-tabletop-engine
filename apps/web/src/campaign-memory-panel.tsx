@@ -2,6 +2,7 @@ import type { AiMemoryFact, AiMemoryFactStatus, AiMemoryFactType, Visibility } f
 import { Brain, Check, History, Plus, RefreshCw, Save, Search, Shield, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { apiDelete, apiPatch, apiPost } from "./api.js";
+import { campaignSearchAnchorId } from "./campaign-search-panel.js";
 import { errorMessage, formatDateTime, formatNumber } from "./sheet-format.js";
 
 export type CampaignMemoryStatus = AiMemoryFactStatus;
@@ -26,7 +27,7 @@ export function filterCampaignMemory(facts: CampaignMemoryFact[], input: { view:
   const query = input.query.trim().toLocaleLowerCase();
   const subject = input.subject.trim().toLocaleLowerCase();
   return facts
-    .filter((fact) => input.view === "review" || ["approved", "retconned"].includes(memoryFactStatus(fact)))
+    .filter((fact) => input.view === "review" || memoryFactStatus(fact) === "approved")
     .filter((fact) => !input.type || (fact.type ?? "fact") === input.type)
     .filter((fact) => !input.status || memoryFactStatus(fact) === input.status)
     .filter((fact) => !input.visibility || fact.visibility === input.visibility)
@@ -56,11 +57,22 @@ export function createCampaignMemory(campaignId: string, input: MemoryDraft): Pr
 }
 
 export function updateCampaignMemory(factId: string, input: MemoryDraft): Promise<CampaignMemoryFact> {
-  return apiPatch<CampaignMemoryFact>(`/api/v1/ai/memory/${factId}`, memoryDraftPayload(input));
+  const editableFields = memoryDraftPayload(input);
+  return apiPatch<CampaignMemoryFact>(`/api/v1/ai/memory/${factId}`, {
+    text: editableFields.text,
+    type: editableFields.type,
+    subject: editableFields.subject,
+    visibility: editableFields.visibility,
+    confidence: editableFields.confidence
+  });
 }
 
 export function transitionCampaignMemory(factId: string, action: "approve" | "reject"): Promise<CampaignMemoryFact> {
   return apiPost<CampaignMemoryFact>(`/api/v1/ai/memory/${factId}/${action}`, {});
+}
+
+export function retconCampaignMemory(factId: string): Promise<CampaignMemoryFact> {
+  return apiPatch<CampaignMemoryFact>(`/api/v1/ai/memory/${factId}`, { status: "retconned" });
 }
 
 export function deleteCampaignMemory(factId: string): Promise<unknown> {
@@ -90,7 +102,7 @@ export function CampaignMemoryPanel(props: {
   const [busyId, setBusyId] = useState("");
   const filtered = useMemo(() => filterCampaignMemory(props.facts, { view, query, type: typeFilter, subject: subjectFilter, status: statusFilter, visibility: visibilityFilter }), [props.facts, query, statusFilter, subjectFilter, typeFilter, view, visibilityFilter]);
   const candidateCount = props.facts.filter((fact) => memoryFactStatus(fact) === "candidate").length;
-  const canonCount = props.facts.filter((fact) => ["approved", "retconned"].includes(memoryFactStatus(fact))).length;
+  const canonCount = props.facts.filter((fact) => memoryFactStatus(fact) === "approved").length;
 
   useEffect(() => {
     if (props.canReview) return;
@@ -140,6 +152,19 @@ export function CampaignMemoryPanel(props: {
       props.onStatus(action === "approve" ? "Memory approved into canon" : "Memory candidate rejected");
     } catch (error) {
       props.onStatus(`Memory ${action} failed: ${errorMessage(error)}`);
+    } finally {
+      setBusyId("");
+    }
+  }
+
+  async function retconFact(fact: CampaignMemoryFact) {
+    setBusyId(fact.id);
+    try {
+      const updated = await retconCampaignMemory(fact.id);
+      replaceFact(updated);
+      props.onStatus("Memory moved out of canon; add a replacement candidate if the fact changed");
+    } catch (error) {
+      props.onStatus(`Memory retcon failed: ${errorMessage(error)}`);
     } finally {
       setBusyId("");
     }
@@ -230,6 +255,7 @@ export function CampaignMemoryPanel(props: {
             onUpdate={(input) => updateFact(fact, input)}
             onApprove={() => transitionFact(fact, "approve")}
             onReject={() => transitionFact(fact, "reject")}
+            onRetcon={() => retconFact(fact)}
             onDelete={() => deleteFact(fact)}
           />
         ))}
@@ -246,8 +272,7 @@ export function memoryDraftPayload(input: MemoryDraft) {
     subject: input.subject.trim() || null,
     visibility: input.visibility,
     ...(typeof confidence === "number" && Number.isFinite(confidence) ? { confidence: Math.max(0, Math.min(1, confidence)) } : { confidence: null }),
-    source: input.source.trim() ? { type: "manual", label: input.source.trim() } : undefined,
-    sourceIds: []
+    source: input.source.trim() ? { type: "manual", label: input.source.trim() } : undefined
   };
 }
 
@@ -285,8 +310,8 @@ function MemoryEditor(props: { fact?: CampaignMemoryFact; busy: boolean; onSave(
         </label>
       </div>
       <label>
-        <span>Source note</span>
-        <input aria-label="Memory source" value={draft.source} placeholder="Session notes, chat, manual" onChange={(event) => setDraft((current) => ({ ...current, source: event.target.value }))} />
+        <span>{props.fact ? "Original source" : "Source note"}</span>
+        <input aria-label="Memory source" value={draft.source} readOnly={Boolean(props.fact)} placeholder="Session notes, chat, manual" onChange={(event) => setDraft((current) => ({ ...current, source: event.target.value }))} />
       </label>
       <div className="button-row wrap">
         <button className="primary-button" type="submit" disabled={props.busy || !draft.text.trim()}><Save size={14} /> Save candidate</button>
@@ -296,12 +321,13 @@ function MemoryEditor(props: { fact?: CampaignMemoryFact; busy: boolean; onSave(
   );
 }
 
-function MemoryCard(props: { fact: CampaignMemoryFact; busy: boolean; canReview: boolean; onUpdate(input: MemoryDraft): Promise<void>; onApprove(): Promise<void>; onReject(): Promise<void>; onDelete(): Promise<void> }) {
+function MemoryCard(props: { fact: CampaignMemoryFact; busy: boolean; canReview: boolean; onUpdate(input: MemoryDraft): Promise<void>; onApprove(): Promise<void>; onReject(): Promise<void>; onRetcon(): Promise<void>; onDelete(): Promise<void> }) {
   const status = memoryFactStatus(props.fact);
   const [editing, setEditing] = useState(false);
+  const [retconArmed, setRetconArmed] = useState(false);
   const [deleteArmed, setDeleteArmed] = useState(false);
   return (
-    <article className={`memory-fact-card status-${status}`} role="listitem">
+    <article id={campaignSearchAnchorId("memory", props.fact.id)} className={`memory-fact-card status-${status}`} role="listitem" tabIndex={-1}>
       <header>
         <div className="memory-fact-taxonomy">
           <span>{props.fact.type ?? "fact"}</span>
@@ -318,11 +344,14 @@ function MemoryCard(props: { fact: CampaignMemoryFact; busy: boolean; canReview:
         <div className="button-row wrap memory-card-actions">
           {status === "candidate" && <button className="ghost-button" type="button" disabled={props.busy} onClick={() => void props.onApprove()}><Check size={14} /> Approve</button>}
           {status === "candidate" && <button className="ghost-button" type="button" disabled={props.busy} onClick={() => void props.onReject()}><X size={14} /> Reject</button>}
-          <button className="ghost-button" type="button" disabled={props.busy} onClick={() => setEditing((open) => !open)}><History size={14} /> {editing ? "Close edit" : "Edit"}</button>
+          {status === "candidate" && <button className="ghost-button" type="button" disabled={props.busy} onClick={() => setEditing((open) => !open)}><History size={14} /> {editing ? "Close edit" : "Edit"}</button>}
+          {status === "approved" && (retconArmed
+            ? <button className="danger-button" type="button" disabled={props.busy} onClick={() => void props.onRetcon()}><History size={14} /> Confirm retcon</button>
+            : <button className="ghost-button" type="button" disabled={props.busy} onClick={() => setRetconArmed(true)}><History size={14} /> Retcon</button>)}
           {deleteArmed ? <button className="danger-button" type="button" disabled={props.busy} onClick={() => void props.onDelete()}><Trash2 size={14} /> Confirm</button> : <button className="ghost-button" type="button" disabled={props.busy} onClick={() => setDeleteArmed(true)}><Trash2 size={14} /> Delete</button>}
         </div>
       )}
-      {editing && <MemoryEditor fact={props.fact} busy={props.busy} onSave={async (input) => { await props.onUpdate(input); setEditing(false); }} onCancel={() => setEditing(false)} />}
+      {editing && status === "candidate" && <MemoryEditor fact={props.fact} busy={props.busy} onSave={async (input) => { await props.onUpdate(input); setEditing(false); }} onCancel={() => setEditing(false)} />}
     </article>
   );
 }

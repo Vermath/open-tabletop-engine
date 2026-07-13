@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, clipboard, ipcMain, shell, type IpcMainInvokeEvent } from "electron";
 import { startApiRuntime, type ApiRuntime } from "@open-tabletop/api/runtime";
 import { startWebStaticRuntime, type WebStaticRuntime } from "@open-tabletop/web/static-runtime";
-import { desktopDataPaths, desktopRendererUrlAllowed, desktopRuntimeEnv, type DesktopDataPaths } from "./desktop-runtime.js";
+import { desktopDataPaths, desktopRendererUrlAllowed, desktopRuntimeEnv, shutdownDesktopResources, type DesktopDataPaths } from "./desktop-runtime.js";
 import { RelayTunnelSession } from "./tunnel-client.js";
 import type { DesktopStatus, StartInternetShareInput } from "./desktop-api.js";
 
@@ -16,6 +16,8 @@ let apiRuntime: ApiRuntime | undefined;
 let webRuntime: WebStaticRuntime | undefined;
 let mainWindow: BrowserWindow | undefined;
 let shareSession: RelayTunnelSession | undefined;
+let shareStartPromise: Promise<unknown> | undefined;
+let shutdownStarted = false;
 
 async function main(): Promise<void> {
   await app.whenReady();
@@ -80,19 +82,34 @@ function registerIpcHandlers(): void {
     assertTrustedRenderer(event);
     if (!webRuntime) throw new Error("Desktop web runtime is not ready");
     if (shareSession?.status().state === "connected") return desktopStatus();
-    shareSession = new RelayTunnelSession({
+    if (shareStartPromise) {
+      await shareStartPromise;
+      return desktopStatus();
+    }
+    const session = new RelayTunnelSession({
       relayBaseUrl,
       localWebBaseUrl: webRuntime.url,
       inviteToken: input?.inviteToken,
       log: (message) => console.warn(`[desktop-relay] ${message}`)
     });
-    await shareSession.start();
-    return desktopStatus();
+    shareSession = session;
+    const starting = session.start();
+    shareStartPromise = starting;
+    try {
+      await starting;
+      return desktopStatus();
+    } finally {
+      if (shareStartPromise === starting) shareStartPromise = undefined;
+    }
   });
   ipcMain.handle("desktop:stopInternetShare", async (event) => {
     assertTrustedRenderer(event);
-    await shareSession?.stop();
-    shareSession = undefined;
+    const session = shareSession;
+    const starting = shareStartPromise;
+    await session?.stop();
+    await starting?.catch(() => undefined);
+    if (shareSession === session) shareSession = undefined;
+    if (shareStartPromise === starting) shareStartPromise = undefined;
     return desktopStatus();
   });
   ipcMain.handle("desktop:copyInviteLink", (event) => {
@@ -151,17 +168,24 @@ app.on("activate", () => {
   }
 });
 
-app.on("before-quit", () => {
-  void shareSession?.stop();
-  void webRuntime?.close();
-  void apiRuntime?.close();
+app.on("before-quit", (event) => {
+  if (shutdownStarted) return;
+  event.preventDefault();
+  shutdownStarted = true;
+  void shutdownDesktopResources({ relay: shareSession, web: webRuntime, api: apiRuntime })
+    .then((failures) => {
+      for (const failure of failures) console.error(`Failed to close desktop ${failure.resource} runtime: ${failure.message}`);
+    })
+    .finally(() => app.quit());
 });
 
 main().catch(async (error) => {
   const message = error instanceof Error ? error.stack ?? error.message : String(error);
+  const shutdownFailures = await shutdownDesktopResources({ relay: shareSession, web: webRuntime, api: apiRuntime });
   const crashPath = join(app.getPath("userData"), "logs", "startup-error.log");
   await mkdir(dirname(crashPath), { recursive: true });
-  await writeFile(crashPath, message);
+  const shutdownDetails = shutdownFailures.length > 0 ? `\n\nShutdown failures:\n${shutdownFailures.map((failure) => `- ${failure.resource}: ${failure.message}`).join("\n")}` : "";
+  await writeFile(crashPath, `${message}${shutdownDetails}`);
   console.error(message);
   app.exit(1);
 });

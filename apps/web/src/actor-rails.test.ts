@@ -1,6 +1,6 @@
 import type { Actor, Token } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
-import { adversaryActorsForSceneBoard } from "./actor-rails";
+import { actorForSelection, adversaryActorsForSceneBoard } from "./actor-rails";
 
 function actor(input: Partial<Actor> & Pick<Actor, "id" | "name">): Actor {
   const { id, name, ...rest } = input;
@@ -43,6 +43,16 @@ function token(input: Partial<Token> & Pick<Token, "id" | "sceneId" | "name">): 
 }
 
 describe("actor rails", () => {
+  it("keeps an explicitly selected off-board actor independent of token selection", () => {
+    const actors = [
+      actor({ id: "act_on_board", name: "On Board" }),
+      actor({ id: "act_off_board", name: "Off Board" })
+    ];
+
+    expect(actorForSelection(actors, "act_off_board", undefined, "generic-fantasy")?.id).toBe("act_off_board");
+    expect(actorForSelection(actors, "", "act_on_board", "generic-fantasy")?.id).toBe("act_on_board");
+  });
+
   it("shows only adversaries placed as board tokens in the selected scene", () => {
     const actors = [
       actor({ id: "act_goblin", name: "Scene Goblin", type: "monster" }),

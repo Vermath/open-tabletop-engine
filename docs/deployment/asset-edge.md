@@ -2,7 +2,7 @@
 
 `apps/asset-edge` is a Cloudflare Worker that fronts `GET /api/v1/assets/{assetId}/blob` signed URLs.
 
-The worker validates the same HMAC payload as the API, rejects expired or tampered URLs before origin fetch, strips browser credentials before proxying, and returns cache headers bounded by the signed URL expiry. The API still validates the signature at origin, so the edge layer is a cache and origin-protection layer rather than the only authorization check.
+The worker validates the same JSON-serialized HMAC payload as the API (`JSON.stringify({ assetId, expiresAt, disposition })`), rejects expired or tampered URLs before origin fetch, strips browser credentials before proxying, and returns cache headers bounded by the signed URL expiry. The API still validates the signature at origin, so the edge layer is a cache and origin-protection layer rather than the only authorization check.
 
 Configure the API to mint CDN URLs:
 

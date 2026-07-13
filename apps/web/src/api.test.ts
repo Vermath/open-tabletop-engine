@@ -1,6 +1,6 @@
 import type { MapAsset } from "@open-tabletop/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { apiDelete, apiGet, apiPatch, assetBlobUrl, loadSnapshot, logoutSession } from "./api.js";
+import { acceptInviteSession, apiDelete, apiGet, apiPatch, apiPost, assetBlobUrl, loadSnapshot, loginSession, logoutSession } from "./api.js";
 
 describe("abortable API requests", () => {
   beforeEach(() => {
@@ -23,6 +23,18 @@ describe("abortable API requests", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
     for (const [, init] of fetchMock.mock.calls) expect(init?.signal).toBe(controller.signal);
   });
+
+  it("forwards idempotency keys on authenticated mutations", async () => {
+    const fetchMock = vi.fn(async (_path: RequestInfo | URL, _init?: RequestInit) => jsonResponse({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await apiPost("/api/v1/test", { value: 1 }, { idempotencyKey: "setup-step-1" });
+    await apiPatch("/api/v1/test", { value: 2 }, { idempotencyKey: "setup-step-2" });
+    await apiDelete("/api/v1/test", { idempotencyKey: "setup-step-3" });
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    for (const [, init] of fetchMock.mock.calls) expect(new Headers(init?.headers).get("idempotency-key")).toMatch(/^setup-step-/);
+  });
 });
 
 describe("logoutSession", () => {
@@ -43,6 +55,98 @@ describe("logoutSession", () => {
     await expect(logoutSession()).rejects.toThrow("offline");
     expect(localStorage.removeItem).toHaveBeenCalledWith("otte:sessionToken");
     expect(localStorage.removeItem).toHaveBeenCalledWith("otte:sessionTokenUser");
+  });
+});
+
+describe("loginSession", () => {
+  beforeEach(() => {
+    stubSessionStorage();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("can defer persistence so only the latest UI session switch stores credentials", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({
+      token: "token-player",
+      user: { id: "usr_demo_player", displayName: "Demo Player" },
+      session: { id: "session-player", userId: "usr_demo_player" },
+      memberships: []
+    })));
+
+    const login = await loginSession("usr_demo_player", { persist: false });
+
+    expect(login.user.id).toBe("usr_demo_player");
+    expect(localStorage.setItem).not.toHaveBeenCalled();
+  });
+});
+
+describe("acceptInviteSession", () => {
+  beforeEach(() => {
+    stubSessionStorage();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("preserves the structured MFA challenge for the invite flow", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      error: "mfa_required",
+      message: "MFA code required",
+      mfaRequired: true,
+      userId: "usr_existing"
+    }), { status: 401, headers: { "content-type": "application/json" } })));
+
+    await expect(acceptInviteSession({ token: "oti_test", email: "player@example.test", password: "password1" })).rejects.toMatchObject({
+      name: "ApiError",
+      status: 401,
+      body: expect.objectContaining({ mfaRequired: true })
+    });
+  });
+
+  it("sends an MFA code while keeping display name optional for existing users", async () => {
+    const fetchMock = vi.fn(async (_path: RequestInfo | URL, _init?: RequestInit) => jsonResponse({
+      token: "token-invite",
+      user: { id: "usr_existing", displayName: "Existing Player" },
+      session: { id: "session-invite", userId: "usr_existing" },
+      memberships: [],
+      campaign: { id: "camp_invited", name: "Invited Campaign" }
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await acceptInviteSession({ token: "oti_test", email: "player@example.test", password: "password1", mfaCode: "123456" });
+
+    const [, init] = fetchMock.mock.calls[0] ?? [];
+    expect(JSON.parse(String(init?.body))).toEqual({
+      token: "oti_test",
+      email: "player@example.test",
+      password: "password1",
+      mfaCode: "123456"
+    });
+  });
+
+  it("supports recovery codes and lets callers guard session persistence", async () => {
+    const fetchMock = vi.fn(async (_path: RequestInfo | URL, _init?: RequestInit) => jsonResponse({
+      token: "token-invite",
+      user: { id: "usr_existing", displayName: "Existing Player" },
+      session: { id: "session-invite", userId: "usr_existing" },
+      memberships: [],
+      campaign: { id: "camp_invited", name: "Invited Campaign" }
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const controller = new AbortController();
+
+    await acceptInviteSession(
+      { token: "oti_test", email: "player@example.test", password: "password1", recoveryCode: "otte-recovery-code" },
+      { persist: false, signal: controller.signal }
+    );
+
+    const [, init] = fetchMock.mock.calls[0] ?? [];
+    expect(JSON.parse(String(init?.body))).toMatchObject({ recoveryCode: "otte-recovery-code" });
+    expect(init?.signal).toBe(controller.signal);
+    expect(localStorage.setItem).not.toHaveBeenCalled();
   });
 });
 
@@ -164,6 +268,18 @@ describe("loadSnapshot", () => {
     ]);
   });
 
+  it("does not fan out to permissioned side routes when the current snapshot intentionally omits them", async () => {
+    const { assetStorage: _assetStorage, characterTemplates: _characterTemplates, ...restrictedBundle } = bundledSnapshotResources();
+    const { requests } = mockLoadSnapshotFetch({ bundled: restrictedBundle, permissions: ["campaign.read"] });
+
+    const snapshot = await loadSnapshot("camp_demo");
+
+    expect(snapshot.assetStorage).toBeUndefined();
+    expect(snapshot.characterTemplates).toEqual([]);
+    expect(requests).not.toContain("/api/v1/campaigns/camp_demo/assets/storage");
+    expect(requests).not.toContain("/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/character-templates");
+  });
+
   it("adds signed delivery URLs to managed audio tracks", async () => {
     const bundled = {
       ...bundledSnapshotResources(),
@@ -227,7 +343,7 @@ function stubSessionStorage(): void {
 }
 type BundledSnapshotResources = ReturnType<typeof bundledSnapshotResources>;
 
-function mockLoadSnapshotFetch(input: { bundled?: BundledSnapshotResources; systems?: unknown[] }) {
+function mockLoadSnapshotFetch(input: { bundled?: Partial<BundledSnapshotResources>; systems?: unknown[]; permissions?: string[] }) {
   const requests: string[] = [];
   const routes = new Map<string, unknown>([
     ["/api/v1/auth/session", sessionFixture()],
@@ -235,7 +351,7 @@ function mockLoadSnapshotFetch(input: { bundled?: BundledSnapshotResources; syst
     ["/api/v1/organization/workspace-defaults", { id: "org_demo", name: "Demo Workspace" }],
     ["/api/v1/organization/members", []],
     ["/api/v1/organization/invites", []],
-    ["/api/v1/campaigns/camp_demo/snapshot", campaignSnapshotFixture(input.bundled)],
+    ["/api/v1/campaigns/camp_demo/snapshot", campaignSnapshotFixture(input.bundled, input.permissions)],
     ["/api/v1/campaigns/camp_demo/assets/storage", { campaignId: "camp_demo", assetCount: 1 }],
     ["/api/v1/campaigns/camp_demo/audio", [{ id: "aud_1", campaignId: "camp_demo", name: "Fallback Audio" }]],
     ["/api/v1/campaigns/camp_demo/content-imports", [{ id: "imp_1", campaignId: "camp_demo" }]],
@@ -282,7 +398,7 @@ function campaignFixture() {
   return { id: "camp_demo", name: "Demo Campaign", defaultSystemId: "dnd-5e-srd" };
 }
 
-function campaignSnapshotFixture(bundled?: BundledSnapshotResources) {
+function campaignSnapshotFixture(bundled?: Partial<BundledSnapshotResources>, permissions = ["campaign.update", "scene.read", "actor.read", "ai.proposeChanges"]) {
   return {
     generatedAt: "2026-07-04T00:00:00.000Z",
     campaign: campaignFixture(),
@@ -291,7 +407,7 @@ function campaignSnapshotFixture(bundled?: BundledSnapshotResources) {
         userId: "usr_demo_gm",
         role: "owner",
         user: { id: "usr_demo_gm", displayName: "Demo GM" },
-        permissions: ["campaign.update", "ai.proposeChanges"]
+        permissions
       }
     ],
     scenes: [],

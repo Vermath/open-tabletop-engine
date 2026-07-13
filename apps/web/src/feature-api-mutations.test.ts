@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createCampaignMemory,
   deleteCampaignMemory,
+  retconCampaignMemory,
   transitionCampaignMemory,
   updateCampaignMemory,
   type MemoryDraft
@@ -12,6 +13,8 @@ import {
   persistHandout,
   type HandoutDraft
 } from "./handout-library-panel.js";
+import { deleteJournalEntry, updateJournalEntry } from "./journal-panel.js";
+import { deleteSavedEncounter, persistEncounterComposition } from "./encounter-builder.js";
 import {
   completeCampaignSession,
   deleteCampaignSession,
@@ -46,6 +49,9 @@ describe("feature-surface API mutations", () => {
     } satisfies Storage);
     vi.stubGlobal("fetch", vi.fn(async (path: RequestInfo | URL, init: RequestInit = {}) => {
       requests.push({ path: String(path), init });
+      if (String(path).endsWith("/encounter-plan")) {
+        return jsonResponse({ plan: { difficulty: "standard" }, encounter: { id: "encounter-new", campaignId: "camp-1", name: "Returned encounter", threats: [{ id: "guard", count: 2 }] } });
+      }
       return jsonResponse({ id: "returned", title: "Returned", name: "Returned" });
     }));
   });
@@ -98,6 +104,64 @@ describe("feature-surface API mutations", () => {
     expect(requestBody(requests[1]!)).toMatchObject({ worldId: null, visibleToUserIds: [], visibleToActorIds: [] });
   });
 
+  it("wires journal edits and deletion to the existing lifecycle routes", async () => {
+    await updateJournalEntry("journal-1", {
+      title: " Updated clue ",
+      body: " The bell opens the western vault. ",
+      visibility: "specific_players",
+      visibleToUserIds: ["usr-1", "usr-1"],
+      visibleToActorIds: ["actor-hidden"],
+      tags: "clue, vault, clue"
+    });
+    await deleteJournalEntry("journal-1");
+
+    expect(requestSummary(requests)).toEqual([
+      ["PATCH", "/api/v1/journal/journal-1"],
+      ["DELETE", "/api/v1/journal/journal-1"]
+    ]);
+    expect(requestBody(requests[0]!)).toEqual({
+      title: "Updated clue",
+      body: "The bell opens the western vault.",
+      visibility: "specific_players",
+      visibleToUserIds: ["usr-1"],
+      visibleToActorIds: [],
+      tags: ["clue", "vault"]
+    });
+  });
+
+  it("creates, updates, and deletes reopenable encounter compositions", async () => {
+    const input = {
+      campaignId: "camp-1",
+      systemId: "generic-fantasy",
+      name: " Bridge Guard ",
+      summary: "standard encounter",
+      difficulty: "standard",
+      partyActorIds: [],
+      threats: [{ id: "guard", count: 2 }]
+    };
+    await persistEncounterComposition(input);
+    await persistEncounterComposition({ ...input, encounterId: "encounter-1", threats: [{ id: "guard", count: 3 }] });
+    await deleteSavedEncounter("encounter-1");
+
+    expect(requestSummary(requests)).toEqual([
+      ["POST", "/api/v1/campaigns/camp-1/systems/generic-fantasy/encounter-plan"],
+      ["PATCH", "/api/v1/encounters/encounter-1"],
+      ["DELETE", "/api/v1/encounters/encounter-1"]
+    ]);
+    expect(requestBody(requests[0]!)).toEqual({
+      partyActorIds: [],
+      threats: [{ id: "guard", count: 2 }],
+      createEncounter: true,
+      name: "Bridge Guard"
+    });
+    expect(requestBody(requests[1]!)).toMatchObject({
+      name: "Bridge Guard",
+      systemId: "generic-fantasy",
+      partyActorIds: [],
+      threats: [{ id: "guard", count: 3 }]
+    });
+  });
+
   it("wires memory candidates through create, edit, review, and delete lifecycle routes", async () => {
     const draft: MemoryDraft = {
       text: " The bridge is trapped. ",
@@ -111,6 +175,7 @@ describe("feature-surface API mutations", () => {
     await updateCampaignMemory("memory-1", draft);
     await transitionCampaignMemory("memory-1", "approve");
     await transitionCampaignMemory("memory-2", "reject");
+    await retconCampaignMemory("memory-3");
     await deleteCampaignMemory("memory-1");
 
     expect(requestSummary(requests)).toEqual([
@@ -118,9 +183,13 @@ describe("feature-surface API mutations", () => {
       ["PATCH", "/api/v1/ai/memory/memory-1"],
       ["POST", "/api/v1/ai/memory/memory-1/approve"],
       ["POST", "/api/v1/ai/memory/memory-2/reject"],
+      ["PATCH", "/api/v1/ai/memory/memory-3"],
       ["DELETE", "/api/v1/ai/memory/memory-1"]
     ]);
     expect(requestBody(requests[0]!)).toMatchObject({ text: "The bridge is trapped.", subject: "Old Bridge", confidence: 1, source: { type: "manual", label: "Session 4" } });
+    expect(requestBody(requests[1]!)).not.toHaveProperty("sourceIds");
+    expect(requestBody(requests[1]!)).not.toHaveProperty("source");
+    expect(requestBody(requests[4]!)).toEqual({ status: "retconned" });
   });
 
   it("wires session planning, start, completion, and deletion to the campaign-session lifecycle", async () => {

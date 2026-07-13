@@ -1,13 +1,22 @@
 import { spawn } from "node:child_process";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 
-const command = process.env.NODE_ENV === "production"
-  ? { file: process.execPath, args: ["server.mjs"], shell: false }
-  : { file: "pnpm", args: ["exec", "vite", "--host", "0.0.0.0"], shell: process.platform === "win32" };
+const packageManagerRunner = fileURLToPath(
+  new URL("../../../scripts/run-package-manager.mjs", import.meta.url),
+);
+const command =
+  process.env.NODE_ENV === "production"
+    ? { file: process.execPath, args: ["server.mjs"], shell: false }
+    : {
+        file: process.execPath,
+        args: [packageManagerRunner, "exec", "vite", "--host", "0.0.0.0"],
+        shell: false,
+      };
 
 const child = spawn(command.file, command.args, {
   stdio: "inherit",
-  shell: command.shell
+  shell: command.shell,
 });
 
 child.on("exit", (code, signal) => {

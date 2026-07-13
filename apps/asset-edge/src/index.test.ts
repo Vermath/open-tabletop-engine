@@ -13,7 +13,7 @@ const env: AssetEdgeEnv = {
 };
 
 function apiSignature(assetId: string, disposition = "inline"): string {
-  return createHmac("sha256", secret).update(`${assetId}:${expiresAt}:${disposition}`).digest("base64url");
+  return createHmac("sha256", secret).update(JSON.stringify({ assetId, expiresAt, disposition })).digest("base64url");
 }
 
 describe("asset edge worker", () => {
@@ -96,6 +96,42 @@ describe("asset edge worker", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(called).toBe(false);
     await expect(response.json()).resolves.toMatchObject({ error: "invalid_asset_signature" });
+  });
+
+  it("matches the API JSON signature contract and rejects the legacy delimited payload", async () => {
+    await expect(createAssetEdgeSignature("asset_demo", expiresAt, "inline", secret)).resolves.toBe(apiSignature("asset_demo"));
+    const legacySignature = createHmac("sha256", secret).update(`asset_demo:${expiresAt}:inline`).digest("base64url");
+    let called = false;
+    const response = await handleAssetEdgeRequest(
+      new Request(`https://assets.example.test/api/v1/assets/asset_demo/blob?expiresAt=${encodeURIComponent(expiresAt)}&signature=${legacySignature}`),
+      { ...env, ASSET_EDGE_ROUTE_PREFIX: "" },
+      async () => {
+        called = true;
+        return new Response("unreachable");
+      },
+      nowMs
+    );
+
+    expect(response.status).toBe(401);
+    expect(called).toBe(false);
+    await expect(response.json()).resolves.toMatchObject({ error: "invalid_asset_signature" });
+  });
+
+  it("normalizes signing-secret whitespace the same way as the API", async () => {
+    const signature = apiSignature("asset_demo");
+    let called = false;
+    const response = await handleAssetEdgeRequest(
+      new Request(`https://assets.example.test/api/v1/assets/asset_demo/blob?expiresAt=${encodeURIComponent(expiresAt)}&signature=${signature}`),
+      { ...env, ASSET_EDGE_ROUTE_PREFIX: "", ASSET_URL_SIGNING_SECRET: `  ${secret}  ` },
+      async () => {
+        called = true;
+        return new Response("asset");
+      },
+      nowMs
+    );
+
+    expect(response.status).toBe(200);
+    expect(called).toBe(true);
   });
 
   it("rejects expired signatures and non-blob routes before origin fetch", async () => {

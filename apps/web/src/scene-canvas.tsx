@@ -1,7 +1,7 @@
 import type { Actor, FogMode, MapAsset, Scene, SceneAnnotation, SceneAnnotationKind, SceneAnnotationLayer, SceneTemplateShape, Token, TokenLayer, VisionPoint, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
 import { assetBlobUrl } from "./api.js";
 import { BrickWall, ChevronLeft, ChevronRight, Circle, Crosshair, Eraser, Eye, Flame, Grip, Image as ImageIcon, Layers, Lightbulb, LockKeyhole, Map as MapIcon, MapPin, Paintbrush, PencilLine, Pentagon, Plus, Ruler, Swords, Trash2, Triangle, X, ZoomIn, ZoomOut, RefreshCw, Hand, RotateCcw, Boxes, ScrollText, Download, Upload, UserX } from "lucide-react";
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { BoardTokenFrameChange, BoardTokenPositionChange } from "./board-history.js";
 import { computeTokenMovements, formatGridDistance } from "./board-animation.js";
@@ -1794,10 +1794,10 @@ export function Toolbar(props: { onSelectTool: ToolAction; onCreateToken: ToolAc
       <button className={`tool ${props.activeAnnotationTool === "ruler" ? "active" : ""}`} title="Ruler - measure distance (R)" aria-label="Ruler" onClick={() => props.onToggleAnnotationTool("ruler")} disabled={!props.canAnnotate}>
         <Ruler size={17} />
       </button>
-      <button className={`tool ${props.activeAnnotationTool === "measure-circle" ? "active" : ""}`} title="Measure circle (C)" aria-label="Measure circle" onClick={() => props.onToggleAnnotationTool("measure-circle")} disabled={!props.canAnnotate}>
+      <button className={`tool tool-mobile-secondary ${props.activeAnnotationTool === "measure-circle" ? "active" : ""}`} title="Measure circle (C)" aria-label="Measure circle" onClick={() => props.onToggleAnnotationTool("measure-circle")} disabled={!props.canAnnotate}>
         <Circle size={17} />
       </button>
-      <button className={`tool ${props.activeAnnotationTool === "measure-cone" ? "active" : ""}`} title="Measure cone (O)" aria-label="Measure cone" onClick={() => props.onToggleAnnotationTool("measure-cone")} disabled={!props.canAnnotate}>
+      <button className={`tool tool-mobile-secondary ${props.activeAnnotationTool === "measure-cone" ? "active" : ""}`} title="Measure cone (O)" aria-label="Measure cone" onClick={() => props.onToggleAnnotationTool("measure-cone")} disabled={!props.canAnnotate}>
         <Triangle size={17} />
       </button>
       <button className={`tool ${props.activeAnnotationTool === "ping" ? "active" : ""}`} title="Ping - point everyone here (P)" aria-label="Ping" onClick={() => props.onToggleAnnotationTool("ping")} disabled={!props.canAnnotate}>
@@ -1810,22 +1810,22 @@ export function Toolbar(props: { onSelectTool: ToolAction; onCreateToken: ToolAc
         </button>
       )}
       {props.canUpdateScene && (
-        <button className={`tool ${props.activeAnnotationTool === "drawing" ? "active" : ""}`} title="Drawing (D)" aria-label="Drawing" onClick={() => props.onToggleAnnotationTool("drawing")}>
+        <button className={`tool tool-mobile-secondary ${props.activeAnnotationTool === "drawing" ? "active" : ""}`} title="Drawing (D)" aria-label="Drawing" onClick={() => props.onToggleAnnotationTool("drawing")}>
           <PencilLine size={17} />
         </button>
       )}
       {props.canUpdateScene && (
-        <button className={`tool ${props.activeAnnotationTool === "template" ? "active" : ""}`} title="Area template (A)" aria-label="Area template" onClick={() => props.onToggleAnnotationTool("template")}>
+        <button className={`tool tool-mobile-secondary ${props.activeAnnotationTool === "template" ? "active" : ""}`} title="Area template (A)" aria-label="Area template" onClick={() => props.onToggleAnnotationTool("template")}>
           <Circle size={17} />
         </button>
       )}
       {props.canUpdateScene && (
-        <button className="tool" title="Delete latest annotation" aria-label="Delete latest annotation" onClick={() => runToolAction(props.onDeleteLatestAnnotation)}>
+        <button className="tool tool-mobile-secondary" title="Delete latest annotation" aria-label="Delete latest annotation" onClick={() => runToolAction(props.onDeleteLatestAnnotation)}>
           <X size={17} />
         </button>
       )}
       {props.canUpdateScene && (
-        <button className="tool" title="Undo scene edit" aria-label="Undo scene edit" onClick={() => runToolAction(props.onUndoScene)}>
+        <button className="tool tool-mobile-secondary" title="Undo scene edit" aria-label="Undo scene edit" onClick={() => runToolAction(props.onUndoScene)}>
           <RotateCcw size={17} />
         </button>
       )}
@@ -1836,6 +1836,35 @@ export function Toolbar(props: { onSelectTool: ToolAction; onCreateToken: ToolAc
             <Boxes size={17} />
           </summary>
           <div className="tool-more-panel" aria-label="Advanced table tools">
+            <div className="tool-more-mobile-only">
+              <div className="tool-more-heading">Measure and mark</div>
+              <button className={`ghost-button ${props.activeAnnotationTool === "measure-circle" ? "active" : ""}`} type="button" onClick={() => runToolAction(() => props.onToggleAnnotationTool("measure-circle"), { closeAdvanced: true })} disabled={!props.canAnnotate}>
+                <Circle size={15} /> Measure circle
+              </button>
+              <button className={`ghost-button ${props.activeAnnotationTool === "measure-cone" ? "active" : ""}`} type="button" onClick={() => runToolAction(() => props.onToggleAnnotationTool("measure-cone"), { closeAdvanced: true })} disabled={!props.canAnnotate}>
+                <Triangle size={15} /> Measure cone
+              </button>
+              {props.canUpdateScene && (
+                <button className={`ghost-button ${props.activeAnnotationTool === "drawing" ? "active" : ""}`} type="button" onClick={() => runToolAction(() => props.onToggleAnnotationTool("drawing"), { closeAdvanced: true })}>
+                  <PencilLine size={15} /> Drawing
+                </button>
+              )}
+              {props.canUpdateScene && (
+                <button className={`ghost-button ${props.activeAnnotationTool === "template" ? "active" : ""}`} type="button" onClick={() => runToolAction(() => props.onToggleAnnotationTool("template"), { closeAdvanced: true })}>
+                  <Circle size={15} /> Area template
+                </button>
+              )}
+              {props.canUpdateScene && (
+                <button className="ghost-button" type="button" onClick={() => runToolAction(props.onDeleteLatestAnnotation, { closeAdvanced: true })}>
+                  <X size={15} /> Delete annotation
+                </button>
+              )}
+              {props.canUpdateScene && (
+                <button className="ghost-button" type="button" onClick={() => runToolAction(props.onUndoScene, { closeAdvanced: true })}>
+                  <RotateCcw size={15} /> Undo scene edit
+                </button>
+              )}
+            </div>
             {props.canManageCombat && <div className="tool-more-heading">Encounter</div>}
             {props.canManageCombat && (
               <button className="ghost-button" type="button" onClick={() => runToolAction(props.onStartCombat, { closeAdvanced: true })}>
@@ -1899,9 +1928,24 @@ export function Toolbar(props: { onSelectTool: ToolAction; onCreateToken: ToolAc
 }
 
 
-export function TabButton(props: { active: boolean; icon: React.ReactNode; label: string; onClick(): void }) {
+export function TabButton(props: { active: boolean; icon: React.ReactNode; label: string; tabId?: string; panelId?: string; onClick(): void }) {
+  const moveFocus = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    const tablist = event.currentTarget.closest('[role="tablist"]');
+    const tabs = Array.from(tablist?.querySelectorAll<HTMLButtonElement>('[role="tab"]:not([disabled])') ?? []);
+    const currentIndex = tabs.indexOf(event.currentTarget);
+    if (currentIndex < 0 || tabs.length === 0) return;
+    event.preventDefault();
+    const nextIndex = event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? tabs.length - 1
+        : (currentIndex + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+    tabs[nextIndex]?.focus();
+    tabs[nextIndex]?.click();
+  };
   return (
-    <button className={props.active ? "tab active" : "tab"} type="button" title={props.label} onClick={props.onClick}>
+    <button id={props.tabId} className={props.active ? "tab active" : "tab"} type="button" role="tab" aria-controls={props.panelId} aria-selected={props.active} tabIndex={props.active ? 0 : -1} title={props.label} onClick={props.onClick} onKeyDown={moveFocus}>
       {props.icon}
       {props.label}
     </button>

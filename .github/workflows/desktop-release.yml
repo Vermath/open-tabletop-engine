@@ -23,17 +23,28 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@b0f76dfb45f55f8421693e4803ac7bb65143bd34 # v6
         with:
           version: 8.7.0
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Verify release tag matches desktop package version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          desktop_version="$(node -p "require('./apps/desktop/package.json').version")"
+          expected_tag="desktop-v${desktop_version}"
+          actual_tag="${GITHUB_REF#refs/tags/}"
+          if [ "$actual_tag" != "$expected_tag" ]; then
+            echo "Release tag $actual_tag does not match $expected_tag." >&2
+            exit 1
+          fi
       - name: Dependency vulnerability gate
         run: pnpm audit --audit-level high
       - name: Install browser used by release smoke tests
@@ -49,13 +60,13 @@ jobs:
     needs: verify
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@b0f76dfb45f55f8421693e4803ac7bb65143bd34 # v6
         with:
           version: 8.7.0
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 22
           cache: pnpm
@@ -126,7 +137,7 @@ jobs:
           if ($checksumBytes -contains [byte]0x0d -or $checksumBytes[-1] -ne [byte]0x0a) {
             throw "Checksum manifest must use LF-only line endings and end with a newline."
           }
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: opentabletop-windows
           if-no-files-found: error
@@ -146,13 +157,13 @@ jobs:
       matrix:
         arch: [x64, arm64]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@b0f76dfb45f55f8421693e4803ac7bb65143bd34 # v6
         with:
           version: 8.7.0
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 22
           cache: pnpm
@@ -217,7 +228,7 @@ jobs:
             echo "No regular macOS release artifacts were produced." >&2
             exit 1
           fi
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: opentabletop-macos-${{ matrix.arch }}
           if-no-files-found: error
@@ -236,7 +247,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v6
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         with:
           path: artifacts
       - name: Verify downloaded artifact checksums
@@ -251,7 +262,7 @@ jobs:
             checksum_name="$(basename "$checksum_file")"
             (cd "$checksum_dir" && sha256sum --check "$checksum_name")
           done
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           fail_on_unmatched_files: true
           files: artifacts/**/*

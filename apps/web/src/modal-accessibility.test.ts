@@ -10,10 +10,13 @@ const encounterSource = readFileSync(resolve(__dirname, "encounter-builder.tsx")
 
 describe("modal accessibility", () => {
   it("filters hidden and programmatically unfocusable descendants", () => {
-    const focusable = { tabIndex: 0, getAttribute: () => null };
-    const hidden = { tabIndex: 0, getAttribute: (name: string) => name === "aria-hidden" ? "true" : null };
-    const programmatic = { tabIndex: -1, getAttribute: () => null };
-    const dialog = { querySelectorAll: () => [focusable, hidden, programmatic] } as unknown as HTMLElement;
+    const focusable = { tabIndex: 0, getAttribute: () => null, closest: () => null, matches: () => false };
+    const hidden = { tabIndex: 0, getAttribute: (name: string) => name === "aria-hidden" ? "true" : null, closest: () => hidden, matches: () => false };
+    const hiddenByAncestor = { tabIndex: 0, getAttribute: () => null, closest: () => ({ getAttribute: () => "true" }), matches: () => false };
+    const inertByAncestor = { tabIndex: 0, getAttribute: () => null, closest: () => ({ hasAttribute: () => true }), matches: () => false };
+    const disabledByFieldset = { tabIndex: 0, getAttribute: () => null, closest: () => null, matches: (selector: string) => selector === ":disabled" };
+    const programmatic = { tabIndex: -1, getAttribute: () => null, closest: () => null, matches: () => false };
+    const dialog = { querySelectorAll: () => [focusable, hidden, hiddenByAncestor, inertByAncestor, disabledByFieldset, programmatic] } as unknown as HTMLElement;
 
     expect(modalFocusableElements(dialog)).toEqual([focusable]);
   });
@@ -35,7 +38,8 @@ describe("modal accessibility", () => {
     expect(appSource).toContain("initialFocusRef: deleteConfirmRef");
     expect(appSource).toContain('type="button" ref={deleteConfirmRef} onClick={() => {');
     expect(creatorSource).toContain("useModalAccessibility<HTMLDivElement>(props.onClose)");
-    expect(encounterSource).toContain("useModalAccessibility<HTMLDivElement>(props.onClose)");
+    expect(encounterSource).toContain("useModalAccessibility<HTMLDivElement>(closeDialog)");
+    expect(encounterSource).toContain("spawnAbortRef.current?.abort();\n    props.onClose();");
     expect(creatorSource).toContain("ref={dialogRef}");
     expect(encounterSource).toContain("ref={dialogRef}");
   });

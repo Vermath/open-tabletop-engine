@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { createReadStream, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, resolve, sep } from "node:path";
 import { Readable } from "node:stream";
@@ -107,7 +108,7 @@ export class S3AssetStorage implements AssetStorage {
 
   async put(asset: MapAsset, body: Buffer): Promise<AssetStorageRef> {
     await this.ensureBucket();
-    const key = asset.storage?.provider === "s3" ? asset.storage.key : assetStorageKey(asset);
+    const key = this.configuredStorageKey(asset) ?? assetStorageKey(asset);
     await this.client.send(
       new PutObjectCommand({
         Bucket: this.options.bucket,
@@ -124,12 +125,13 @@ export class S3AssetStorage implements AssetStorage {
   }
 
   async read(asset: MapAsset): Promise<Buffer | undefined> {
+    const key = this.configuredStorageKey(asset);
+    if (!key) return undefined;
     await this.ensureBucket();
-    const key = asset.storage?.provider === "s3" ? asset.storage.key : assetStorageKey(asset);
     try {
       const object = await this.client.send(
         new GetObjectCommand({
-          Bucket: asset.storage?.bucket ?? this.options.bucket,
+          Bucket: this.options.bucket,
           Key: key
         })
       );
@@ -142,20 +144,32 @@ export class S3AssetStorage implements AssetStorage {
   }
 
   async delete(asset: MapAsset): Promise<boolean> {
+    const key = this.configuredStorageKey(asset);
+    if (!key) return false;
     await this.ensureBucket();
-    const key = asset.storage?.provider === "s3" ? asset.storage.key : assetStorageKey(asset);
     await this.client.send(
       new DeleteObjectCommand({
-        Bucket: asset.storage?.bucket ?? this.options.bucket,
+        Bucket: this.options.bucket,
         Key: key
       })
     );
     return true;
   }
 
-  private ensureBucket(): Promise<void> {
-    this.ready ??= this.createBucketIfMissing();
-    return this.ready;
+  private async ensureBucket(): Promise<void> {
+    const attempt = this.ready ??= this.createBucketIfMissing();
+    try {
+      await attempt;
+    } catch (error) {
+      if (this.ready === attempt) this.ready = undefined;
+      throw error;
+    }
+  }
+
+  private configuredStorageKey(asset: MapAsset): string | undefined {
+    if (asset.storage?.provider !== "s3") return assetStorageKey(asset);
+    if (asset.storage.bucket !== this.options.bucket) return undefined;
+    return asset.storage.key;
   }
 
   private async createBucketIfMissing(): Promise<void> {
@@ -173,7 +187,10 @@ export function assetStorageKey(asset: MapAsset): string {
 }
 
 function assetStorageKeyPart(value: string): string {
-  return value.replace(/[^a-zA-Z0-9_-]/g, "_") || "unknown";
+  if (/^[a-z0-9_-]+$/.test(value)) return value;
+  const label = value.toLowerCase().replace(/[^a-z0-9_-]/g, "_").replace(/^_+|_+$/g, "").slice(0, 32) || "unknown";
+  const digest = createHash("sha256").update(value, "utf8").digest("hex").slice(0, 32);
+  return `${label}--${digest}`;
 }
 
 function extensionForMimeType(mimeType: string): string {

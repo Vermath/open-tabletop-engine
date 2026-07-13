@@ -1,18 +1,54 @@
 import type { Actor } from "@open-tabletop/core";
-import { ChevronRight, Plus, RefreshCw, RotateCcw, Shield, Swords, Upload, UserPlus, WandSparkles } from "lucide-react";
+import { ChevronRight, Plus, RefreshCw, RotateCcw, Shield, Swords, Upload, UserPlus, WandSparkles, X } from "lucide-react";
 import { useState } from "react";
 import { dnd5eSrdArcaneRecoverySelection } from "./actor-sheet-data.js";
 import type { CharacterTemplateInfo, PluginRuntimeInfo, SystemRuntimeInfo } from "./api.js";
-import { formatDateTime, formatNumber } from "./sheet-format.js";
+import { errorMessage, formatDateTime, formatNumber } from "./sheet-format.js";
 import { systemRollLabel, type AdvancementOptionInfo } from "./system-actions.js";
 import { AdvancementFlow } from "./advancement-flow.js";
+import { useModalAccessibility } from "./modal-accessibility.js";
 
+interface PluginInstallReview {
+  plugin: PluginRuntimeInfo;
+  version: string;
+  requestedPermissions: string[];
+  actionLabel: string;
+  trust: PluginRuntimeInfo["trust"];
+  source?: PluginRuntimeInfo["source"];
+}
 
-export function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeInfo[]; characterTemplates: CharacterTemplateInfo[]; actor?: Actor; advancementOptions: AdvancementOptionInfo[]; advancementGrantsFeat: boolean; advancementFeats: Array<{ id: string; name: string; category: string; summary: string }>; multiclassOptions: Array<{ className: string; eligible: boolean; reasons: string[] }>; importedActor?: Actor; createdMonster?: Actor; onSyncPluginRegistries(): void; onInstallPlugin(plugin: PluginRuntimeInfo, version?: string): void; onInstallSystem(system: SystemRuntimeInfo): void; onCreateCharacter(template: CharacterTemplateInfo): void; onOpenCharacterCreator(): void; onImportCharacter(): void; onCreateMonster(): void; onAdvanceActor(optionId?: string, choices?: { featId?: string; abilityChoices?: Record<string, number>; multiclassInto?: string }): void; onRestActor(restType: "short" | "long", options?: { arcaneRecovery?: Record<string, number> }): void; onRunCommand(plugin: PluginRuntimeInfo, command: string): void; onSystemRoll(): void; canInstall: boolean; canInstallSystem: boolean; canCreateActor: boolean; canImportActor: boolean; canAdvanceActor: boolean; canRestActor: boolean; canRollSystem: boolean }) {
+type PluginVersionReview = NonNullable<PluginRuntimeInfo["versionCompatibility"]>[number];
+
+export function pluginVersionReview(plugin: PluginRuntimeInfo, version: string): PluginVersionReview | undefined {
+  return plugin.versionCompatibility?.find((candidate) => candidate.version === version);
+}
+
+export function initialPluginInstallPermissions(plugin: PluginRuntimeInfo, requested = plugin.permissionReview?.requestedPermissions ?? plugin.permissions): string[] {
+  if (!plugin.installed) return [...requested];
+  return requested.filter((permission) => plugin.grantedPermissions.includes(permission));
+}
+
+export function pluginInstallActionLabel(plugin: PluginRuntimeInfo, version = plugin.distribution.latestVersion): string {
+  if (!plugin.installed) return `Install ${version}`;
+  if (version === plugin.distribution.latestVersion) return `Upgrade to ${version}`;
+  return `Roll back to ${version}`;
+}
+
+export function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeInfo[]; characterTemplates: CharacterTemplateInfo[]; actor?: Actor; advancementOptions: AdvancementOptionInfo[]; advancementGrantsFeat: boolean; advancementFeats: Array<{ id: string; name: string; category: string; summary: string }>; multiclassOptions: Array<{ className: string; eligible: boolean; reasons: string[] }>; importedActor?: Actor; createdMonster?: Actor; onSyncPluginRegistries(): void; onInstallPlugin(plugin: PluginRuntimeInfo, version: string, permissions: string[]): void | Promise<void>; onInstallSystem(system: SystemRuntimeInfo): void; onCreateCharacter(template: CharacterTemplateInfo): void; onOpenCharacterCreator(): void; onImportCharacter(): void; onCreateMonster(): void; onAdvanceActor(optionId?: string, choices?: { featId?: string; abilityChoices?: Record<string, number>; multiclassInto?: string }): void; onRestActor(restType: "short" | "long", options?: { arcaneRecovery?: Record<string, number> }): void; onRunCommand(plugin: PluginRuntimeInfo, command: string): void; onSystemRoll(): void; canInstall: boolean; canInstallSystem: boolean; canCreateActor: boolean; canImportActor: boolean; canAdvanceActor: boolean; canRestActor: boolean; canRollSystem: boolean }) {
   const [pluginSearch, setPluginSearch] = useState("");
   const [pluginSourceFilter, setPluginSourceFilter] = useState<"all" | "local" | "registry">("all");
   const [pluginStatusFilter, setPluginStatusFilter] = useState<"all" | "installed" | "available" | "upgrade">("all");
   const [pluginCoreFilter, setPluginCoreFilter] = useState<"all" | "compatible" | "incompatible">("all");
+  const [installReview, setInstallReview] = useState<PluginInstallReview>();
+  const [selectedInstallPermissions, setSelectedInstallPermissions] = useState<string[]>([]);
+  const [installBusy, setInstallBusy] = useState(false);
+  const [installError, setInstallError] = useState("");
+  const closeInstallReview = () => {
+    if (installBusy) return;
+    setInstallReview(undefined);
+    setInstallError("");
+  };
+  const installReviewDialogRef = useModalAccessibility<HTMLDivElement>(closeInstallReview, { enabled: Boolean(installReview) });
   const activeSystem = props.systems.find((system) => system.active) ?? props.systems[0];
   const rollLabel = systemRollLabel(props.actor?.systemId);
   const arcaneRecovery = props.actor ? dnd5eSrdArcaneRecoverySelection(props.actor) : undefined;
@@ -66,6 +102,43 @@ export function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemR
       ...plugin.permissions
     ].some((value) => value.toLocaleLowerCase().includes(normalizedPluginSearch));
   });
+
+  function beginInstallReview(plugin: PluginRuntimeInfo, requestedVersion = plugin.distribution.latestVersion) {
+    const target = pluginVersionReview(plugin, requestedVersion);
+    const requestedPermissions = [...(target?.permissionReview.requestedPermissions ?? target?.permissions ?? plugin.permissionReview?.requestedPermissions ?? plugin.permissions)];
+    setInstallReview({
+      plugin,
+      version: requestedVersion,
+      requestedPermissions,
+      actionLabel: pluginInstallActionLabel(plugin, requestedVersion),
+      trust: target?.trust ?? plugin.trust,
+      source: target?.source ?? plugin.source
+    });
+    setSelectedInstallPermissions(initialPluginInstallPermissions(plugin, requestedPermissions));
+    setInstallError("");
+  }
+
+  function toggleInstallPermission(permission: string) {
+    setSelectedInstallPermissions((current) => current.includes(permission)
+      ? current.filter((candidate) => candidate !== permission)
+      : [...current, permission]);
+  }
+
+  async function confirmPluginInstall() {
+    if (!installReview || installBusy) return;
+    setInstallBusy(true);
+    setInstallError("");
+    try {
+      await props.onInstallPlugin(installReview.plugin, installReview.version, selectedInstallPermissions);
+      setInstallReview(undefined);
+      setSelectedInstallPermissions([]);
+    } catch (installFailure) {
+      setInstallError(errorMessage(installFailure));
+    } finally {
+      setInstallBusy(false);
+    }
+  }
+
   return (
     <div className="panel-stack">
       <div className="section-title">Runtime SDK</div>
@@ -169,7 +242,6 @@ export function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemR
       </section>
       {filteredPlugins.map((plugin) => {
         const compatibilityBlock = plugin.compatibilityBlock ?? (plugin.compatibleCore?.satisfied === false ? `Plugin requires core ${plugin.compatibleCore.range}; server core is ${plugin.compatibleCore.coreVersion}` : undefined);
-        const pluginActionBaseEnabled = props.canInstall && plugin.trust.installable && plugin.marketplaceReview?.installable !== false;
         const pluginCommandBlock = !plugin.trust.installable || plugin.marketplaceReview?.installable === false || Boolean(compatibilityBlock);
         const versionCompatibility = plugin.versionCompatibility ?? [];
         const compatibleVersionCount = versionCompatibility.length > 0 ? versionCompatibility.filter((version) => version.compatibleCore.satisfied).length : plugin.distribution.availableVersions.length;
@@ -179,7 +251,12 @@ export function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemR
           if (!versionInfo) return undefined;
           return versionInfo.compatibilityBlock ?? (versionInfo.compatibleCore.satisfied ? undefined : `Plugin requires core ${versionInfo.compatibleCore.range}; server core is ${versionInfo.compatibleCore.coreVersion}`);
         };
-        const canInstallVersion = (version: string) => pluginActionBaseEnabled && !targetVersionBlock(version);
+        const canInstallVersion = (version: string) => {
+          const versionInfo = versionCompatibility.find((candidate) => candidate.version === version);
+          const targetTrust = versionInfo?.trust ?? plugin.trust;
+          const targetReview = versionInfo?.marketplaceReview ?? plugin.marketplaceReview;
+          return props.canInstall && targetTrust.installable && targetReview?.installable !== false && !targetVersionBlock(version);
+        };
         return (
           <article className="proposal" key={plugin.id}>
             <span>{plugin.installed ? "installed plugin" : "available plugin"}</span>
@@ -217,11 +294,11 @@ export function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemR
             {plugin.trust.errors.length > 0 && <p>{plugin.trust.errors.join(", ")}</p>}
             {!plugin.installed ? (
               <div className="admin-actions">
-                <button className="ghost-button" onClick={() => props.onInstallPlugin(plugin)} disabled={!canInstallVersion(plugin.distribution.latestVersion)}>
+                <button className="ghost-button" onClick={() => beginInstallReview(plugin)} disabled={!canInstallVersion(plugin.distribution.latestVersion)}>
                   <Plus size={15} /> Review and install
                 </button>
                 {plugin.distribution.availableVersions.filter((version) => version !== plugin.distribution.latestVersion).map((version) => (
-                  <button className="ghost-button" type="button" key={`${plugin.id}-install-${version}`} onClick={() => props.onInstallPlugin(plugin, version)} disabled={!canInstallVersion(version)}>
+                  <button className="ghost-button" type="button" key={`${plugin.id}-install-${version}`} onClick={() => beginInstallReview(plugin, version)} disabled={!canInstallVersion(version)}>
                     <Plus size={15} /> Install {version}
                   </button>
                 ))}
@@ -234,11 +311,11 @@ export function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemR
                   <span>{plugin.rollbackVersions.length > 0 ? "rollback ready" : "no rollback"}</span>
                 </div>
                 <div className="admin-actions">
-                  <button className="ghost-button" type="button" onClick={() => props.onInstallPlugin(plugin, plugin.distribution.latestVersion)} disabled={!canInstallVersion(plugin.distribution.latestVersion) || !plugin.updateAvailable}>
+                  <button className="ghost-button" type="button" onClick={() => beginInstallReview(plugin, plugin.distribution.latestVersion)} disabled={!canInstallVersion(plugin.distribution.latestVersion) || !plugin.updateAvailable}>
                     <RefreshCw size={15} /> Upgrade to {plugin.distribution.latestVersion}
                   </button>
                   {plugin.rollbackVersions.map((version) => (
-                    <button className="ghost-button" type="button" key={`${plugin.id}-rollback-${version}`} onClick={() => props.onInstallPlugin(plugin, version)} disabled={!canInstallVersion(version)}>
+                    <button className="ghost-button" type="button" key={`${plugin.id}-rollback-${version}`} onClick={() => beginInstallReview(plugin, version)} disabled={!canInstallVersion(version)}>
                       <RotateCcw size={15} /> Roll back to {version}
                     </button>
                   ))}
@@ -329,6 +406,52 @@ export function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemR
       <button className="primary-button wide" onClick={props.onSystemRoll} disabled={!props.actor || !props.canRollSystem}>
         <ChevronRight size={16} /> {rollLabel}
       </button>
+      {installReview && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) closeInstallReview();
+        }}>
+          <div ref={installReviewDialogRef} className="modal-dialog plugin-permission-dialog" role="dialog" aria-modal="true" aria-labelledby="plugin-install-review-title" aria-describedby="plugin-install-review-description" tabIndex={-1}>
+            <header className="creator-header">
+              <div>
+                <div className="section-title">Permission review</div>
+                <h2 id="plugin-install-review-title">{installReview.actionLabel}</h2>
+              </div>
+              <button className="icon-button" type="button" aria-label="Close permission review" onClick={closeInstallReview} disabled={installBusy}>
+                <X size={18} />
+              </button>
+            </header>
+            <p id="plugin-install-review-description">
+              Choose the capabilities {installReview.plugin.name} can use in this campaign. Unchecked permissions stay blocked.
+            </p>
+            <div className="admin-meta">
+              <span>Trust: {installReview.trust.status}</span>
+              <span>Source: {installReview.source?.packageId ?? "local package"}</span>
+              <span>Version: {installReview.version}</span>
+            </div>
+            <div className="plugin-permission-review-list" role="group" aria-label="Permissions to grant">
+              {installReview.requestedPermissions.length === 0 ? (
+                <div className="empty-state compact">This plugin does not request campaign permissions.</div>
+              ) : installReview.requestedPermissions.map((permission) => (
+                <label className="plugin-permission-review-row" key={permission}>
+                  <input type="checkbox" checked={selectedInstallPermissions.includes(permission)} disabled={installBusy} onChange={() => toggleInstallPermission(permission)} />
+                  <span>
+                    <strong>{permission}</strong>
+                    <small>{installReview.plugin.grantedPermissions.includes(permission) ? "Currently granted" : "Requested by this version"}</small>
+                  </span>
+                </label>
+              ))}
+            </div>
+            <p className="panel-subtitle">Grant only what the plugin needs. Missing permissions cause the corresponding command or event handler to fail closed.</p>
+            {installError && <div className="lore-load-state error" role="alert">{installError}</div>}
+            <div className="button-row">
+              <button className="ghost-button" type="button" onClick={closeInstallReview} disabled={installBusy}>Cancel</button>
+              <button className="primary-button" type="button" onClick={() => void confirmPluginInstall()} disabled={installBusy}>
+                <Shield size={15} /> {installBusy ? "Applying..." : `${installReview.actionLabel} with ${selectedInstallPermissions.length} permission${selectedInstallPermissions.length === 1 ? "" : "s"}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

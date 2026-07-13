@@ -9,19 +9,30 @@ for (const suffix of ["", "-shm", "-wal"]) {
   rmSync(`${dbPath}${suffix}`, { force: true, maxRetries: 5, retryDelay: 100 });
 }
 
-const child = spawn("pnpm", ["--filter", "@open-tabletop/api", "exec", "tsx", "src/server.ts"], {
-  stdio: "inherit",
-  shell: process.platform === "win32",
-  env: {
-    ...process.env,
-    NODE_ENV: "test",
-    HOST: "127.0.0.1",
-    PORT: apiPort,
-    OTTE_SQLITE_PATH: dbPath,
-    OTTE_DEMO_SEED: process.env.OTTE_DEMO_SEED ?? "true",
-    OTTE_AI_PROVIDER: process.env.OTTE_AI_PROVIDER ?? "codex-loopback"
-  }
-});
+const packageManagerArgs = [
+  "--filter",
+  "@open-tabletop/api",
+  "exec",
+  "tsx",
+  "src/server.ts",
+];
+const child = spawn(
+  process.execPath,
+  ["scripts/run-package-manager.mjs", ...packageManagerArgs],
+  {
+    stdio: "inherit",
+    shell: false,
+    env: {
+      ...process.env,
+      NODE_ENV: "test",
+      HOST: "127.0.0.1",
+      PORT: apiPort,
+      OTTE_SQLITE_PATH: dbPath,
+      OTTE_DEMO_SEED: process.env.OTTE_DEMO_SEED ?? "true",
+      OTTE_AI_PROVIDER: process.env.OTTE_AI_PROVIDER ?? "codex-loopback",
+    },
+  },
+);
 
 for (const signal of ["SIGINT", "SIGTERM"]) {
   process.on(signal, () => {

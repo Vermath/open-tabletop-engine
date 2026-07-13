@@ -14,7 +14,7 @@ async function expectAndDeleteTokensByName(page: Page, name: string) {
 }
 
 async function deleteTokensByName(page: Page, name: string, options: { requireFound?: boolean } = {}) {
-  return page.evaluate(
+  const deletedCount = await page.evaluate(
     async ({ apiBaseUrl, name }) => {
       const bearer = localStorage.getItem("otte:sessionToken");
       if (!bearer) throw new Error("No browser session token available for token cleanup");
@@ -71,7 +71,8 @@ async function expectSceneTokenByName(page: Page, name: string) {
 }
 
 async function openInspectorPanel(page: Page, panelName: string) {
-  await page.locator(".inspector-tabs").getByRole("button", { name: panelName, exact: true }).click();
+  const visiblePanelName = panelName === "Content" ? "Assets" : panelName;
+  await page.locator(".inspector-tabs").getByRole("tab", { name: visiblePanelName, exact: true }).click();
 }
 
 async function openTokenQuickCreate(page: Page) {
@@ -132,6 +133,21 @@ for (const viewport of viewportCases) {
       expect(addTokenBox?.height ?? 0).toBeGreaterThanOrEqual(minimumToolTarget);
       expect(addTokenBox?.width ?? 0).toBeGreaterThanOrEqual(minimumToolTarget);
       expect(addTokenBox?.y ?? 0).toBeGreaterThan((tableAreaBox?.y ?? 0) + (tableAreaBox?.height ?? 0) * 0.45);
+      if (viewport.isMobile) {
+        await page.locator('summary[aria-label="Advanced tools"]').click();
+        const secondaryTool = page.getByLabel("Advanced table tools").getByRole("button", { name: "Measure circle" });
+        await expect(secondaryTool).toBeVisible();
+        const secondaryToolBox = await secondaryTool.boundingBox();
+        expect(secondaryToolBox?.height ?? 0).toBeGreaterThanOrEqual(40);
+        expect(secondaryToolBox?.width ?? 0).toBeGreaterThanOrEqual(40);
+        expect(await secondaryTool.evaluate((element) => {
+          const box = element.getBoundingClientRect();
+          const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+          return box.top >= 0 && box.bottom <= window.innerHeight && Boolean(hit && (hit === element || element.contains(hit)));
+        })).toBe(true);
+        await secondaryTool.click();
+        await expect(page.locator(".rail > .status")).toContainText("Circle measure tool active");
+      }
       await openInspectorPanel(page, "Chat");
       await expect(page.getByRole("textbox", { name: "Chat message" })).toBeVisible();
       await openTokenQuickCreate(page);
@@ -163,7 +179,7 @@ for (const viewport of viewportCases) {
       await expect(page.getByRole("textbox", { name: "Chat message" })).toBeVisible();
 
       await page.getByRole("button", { name: "Prep", exact: true }).click();
-      await page.getByRole("button", { name: "Content" }).click();
+      await page.getByRole("tab", { name: "Assets" }).click();
       await expect(page.getByRole("region", { name: "Asset library" })).toBeVisible();
       await expect(page.getByRole("textbox", { name: "Asset search" })).toBeVisible();
 
@@ -193,3 +209,78 @@ for (const viewport of viewportCases) {
     });
   });
 }
+
+test.describe("short phone viewport", () => {
+  test.use({
+    hasTouch: true,
+    isMobile: true,
+    viewport: { width: 320, height: 568 }
+  });
+
+  test("keeps the Prep inspector reachable above the mobile rail", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("button", { name: "Demo GM" }).click();
+    await page.getByRole("button", { name: "Prep", exact: true }).click();
+    await page.getByRole("tab", { name: "Assets", exact: true }).click();
+
+    const tableGrid = page.locator(".table-grid.workspace-prep");
+    const inspectorPanel = page.locator(".workspace-prep .inspector-panel-content");
+    const compactLayout = await tableGrid.evaluate((element) => {
+      const panel = element.querySelector<HTMLElement>(".inspector-panel-content");
+      return {
+        clientHeight: element.clientHeight,
+        scrollHeight: element.scrollHeight,
+        scrollTop: element.scrollTop,
+        panelHeight: panel?.getBoundingClientRect().height ?? 0
+      };
+    });
+    expect(compactLayout.scrollHeight).toBeLessThanOrEqual(compactLayout.clientHeight + 1);
+    expect(compactLayout.scrollTop).toBe(0);
+    expect(compactLayout.panelHeight).toBeGreaterThanOrEqual(48);
+
+    const assetSearch = page.getByRole("textbox", { name: "Asset search" });
+    await assetSearch.scrollIntoViewIfNeeded();
+    await expect(assetSearch).toBeInViewport();
+    expect(await assetSearch.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      const panel = element.closest<HTMLElement>(".inspector-panel-content")?.getBoundingClientRect();
+      const railTop = document.querySelector<HTMLElement>(".rail")?.getBoundingClientRect().top ?? window.innerHeight;
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+      return Boolean(
+        panel
+        && box.top >= panel.top
+        && box.bottom <= Math.min(panel.bottom, railTop, window.innerHeight)
+        && hit
+        && (hit === element || element.contains(hit))
+      );
+    })).toBe(true);
+    await expect(inspectorPanel).toBeVisible();
+  });
+
+  test("keeps blank-canvas demo controls inside the mobile rail", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("button", { name: "Try Blank Canvas" }).click();
+
+    await expect(page.getByRole("button", { name: "Prep", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("tab", { name: "Assets", exact: true })).toHaveAttribute("aria-selected", "true");
+    const demoBanner = page.getByRole("region", { name: "Demo mode" });
+    const exitButton = demoBanner.getByRole("button", { name: "Exit", exact: true });
+    const bannerBox = await demoBanner.boundingBox();
+    const railBox = await page.locator(".rail").boundingBox();
+    expect(bannerBox?.width ?? 0).toBeLessThanOrEqual(48);
+    expect(bannerBox?.height ?? 0).toBeLessThanOrEqual(44);
+    expect(bannerBox?.y ?? 0).toBeGreaterThanOrEqual((railBox?.y ?? 0) - 1);
+    await expect(exitButton).toBeVisible();
+    await expect(exitButton).toBeInViewport();
+
+    const assetSearch = page.getByRole("textbox", { name: "Asset search" });
+    await assetSearch.scrollIntoViewIfNeeded();
+    await expect(assetSearch).toBeInViewport();
+    expect(await assetSearch.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      const railTop = document.querySelector<HTMLElement>(".rail")?.getBoundingClientRect().top ?? window.innerHeight;
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+      return box.bottom <= railTop + 1 && Boolean(hit && (hit === element || element.contains(hit)));
+    })).toBe(true);
+  });
+});

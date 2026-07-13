@@ -461,6 +461,41 @@ describe("vision polygons", () => {
     expect(isPointInsideVisionPolygon({ x: 500, y: 375 }, polygons[1]!)).toBe(false);
   });
 
+  it("uses a larger bright light radius as the visible outer zone", () => {
+    const state = seedState();
+    const scene = state.scenes.find((item) => item.id === "scn_vault_entry")!;
+    scene.walls = [];
+
+    const polygons = computeLightVisionPolygons(scene, {
+      id: "light_bright_outer",
+      x: 325,
+      y: 375,
+      radius: 30,
+      brightRadius: 90,
+      dimRadius: 40,
+      color: "#fbbf24",
+      intensity: 0.4,
+    });
+
+    expect(polygons).toHaveLength(1);
+    expect(polygons[0]).toMatchObject({ radius: 90, lightLevel: "bright" });
+    expect(isPointInsideVisionPolygon({ x: 405, y: 375 }, polygons[0]!)).toBe(true);
+  });
+
+  it("classifies equal bright and dim radii as a bright-only zone", () => {
+    const state = seedState();
+    const scene = state.scenes.find((item) => item.id === "scn_vault_entry")!;
+    const token = state.tokens.find((item) => item.id === "tok_valen")!;
+    scene.walls = [];
+
+    expect(computeTokenVisionPolygons(scene, { ...token, visionRadius: 60, brightVisionRadius: 60, dimVisionRadius: 60 })).toEqual([
+      expect.objectContaining({ radius: 60, lightLevel: "bright" }),
+    ]);
+    expect(computeLightVisionPolygons(scene, { id: "light_equal", x: 325, y: 375, radius: 60, brightRadius: 60, dimRadius: 60, color: "#fbbf24", intensity: 0.4 })).toEqual([
+      expect.objectContaining({ radius: 60, lightLevel: "bright" }),
+    ]);
+  });
+
   it("supports polygon fog regions and hide fog modes", () => {
     const state = seedState();
     const scene = state.scenes.find((item) => item.id === "scn_vault_entry")!;

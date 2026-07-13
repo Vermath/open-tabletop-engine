@@ -42,7 +42,7 @@ OpenTabletop Engine is an API-first virtual tabletop platform for campaigns, wor
 - Public documentation index: `docs/site/index.md`
 - Versioned changelog: `CHANGELOG.md`
 - v1.0 release notes: `docs/release/v1.0.md`
-- Current feature-surface completion audit: `docs/verification/feature-surface-completion-2026-07-09.md`
+- Current contract-to-journey feature audit: `docs/verification/feature-audit-2026-07-12.md`
 - Self-hosting and deployment: `docs/deployment/self-hosting.md`
 - Desktop hosting: `docs/deployment/desktop-hosting.md`
 - Hosted deployment recipes: `docs/deployment/hosted-deployment-recipes.md`

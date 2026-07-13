@@ -17,7 +17,15 @@ export interface ModalAccessibilityOptions {
 }
 
 export function modalFocusableElements(dialog: HTMLElement): HTMLElement[] {
-  return Array.from(dialog.querySelectorAll<HTMLElement>(modalFocusableSelector)).filter((element) => element.tabIndex >= 0 && element.getAttribute("aria-hidden") !== "true");
+  return Array.from(dialog.querySelectorAll<HTMLElement>(modalFocusableSelector)).filter((element) => {
+    if (element.tabIndex < 0 || element.getAttribute("aria-hidden") === "true") return false;
+    if (typeof element.matches === "function" && element.matches(":disabled")) return false;
+    // aria-hidden, hidden, and inert remove complete subtrees from interaction;
+    // checking only the element itself lets the focus trap move focus into an
+    // invisible descendant and strand keyboard users there.
+    if (typeof element.closest === "function" && element.closest('[aria-hidden="true"], [hidden], [inert]')) return false;
+    return true;
+  });
 }
 
 function isTopmostModal(dialog: HTMLElement): boolean {

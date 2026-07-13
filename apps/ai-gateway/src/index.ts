@@ -11,7 +11,9 @@ export function createProviders(env: Record<string, string | undefined> = proces
 export const providers = createProviders();
 
 function aiProviderTimeoutMs(env: Record<string, string | undefined>): number {
-  const parsed = Number(env.OTTE_AI_PROVIDER_TIMEOUT_MS);
+  const rawValue = env.OTTE_AI_PROVIDER_TIMEOUT_MS?.trim();
+  if (!rawValue) return 15 * 60_000;
+  const parsed = Number(rawValue);
   if (!Number.isFinite(parsed) || parsed < 0) return 15 * 60_000;
   return Math.max(0, Math.min(30 * 60_000, Math.floor(parsed)));
 }
@@ -22,11 +24,16 @@ export function createCodexTransport(env: Record<string, string | undefined>) {
   if (provider !== "codex-app-server") throw new Error(`Unsupported OTTE_AI_PROVIDER "${provider}". Use codex-app-server or codex-loopback.`);
   const timeoutMs = aiProviderTimeoutMs(env);
   return new CodexAppServerWebSocketTransport({
-    url: env.OTTE_CODEX_APP_SERVER_URL,
-    cwd: env.OTTE_CODEX_APP_SERVER_CWD,
-    model: env.OTTE_CODEX_MODEL,
-    modelProvider: env.OTTE_CODEX_MODEL_PROVIDER,
+    url: trimmedEnvValue(env.OTTE_CODEX_APP_SERVER_URL),
+    cwd: trimmedEnvValue(env.OTTE_CODEX_APP_SERVER_CWD),
+    model: trimmedEnvValue(env.OTTE_CODEX_MODEL),
+    modelProvider: trimmedEnvValue(env.OTTE_CODEX_MODEL_PROVIDER),
     requestTimeoutMs: timeoutMs,
-    turnTimeoutMs: Math.max(timeoutMs, 180_000)
+    turnTimeoutMs: timeoutMs === 0 ? 0 : Math.max(timeoutMs, 180_000)
   });
+}
+
+function trimmedEnvValue(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed || undefined;
 }

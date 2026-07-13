@@ -11,5 +11,6 @@
     "actor": "./actor.schema.json",
     "item": "./item.schema.json"
   },
-  "permissions": ["actor.read", "actor.updateOwned", "dice.roll", "chat.write"]
+  "permissions": ["actor.read", "actor.updateOwned", "dice.roll", "chat.write"],
+  "capabilities": ["data-model"]
 }

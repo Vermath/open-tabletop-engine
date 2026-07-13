@@ -14,5 +14,5 @@ export const registry = registerDiceFormula(
     }),
     { systemId: "generic-fantasy", actorType: "character", componentId: "GenericCharacterSheet" }
   ),
-  { systemId: "generic-fantasy", id: "attack", label: "Attack", formula: "1d20 + @abilities.str.mod" }
+  { systemId: "generic-fantasy", id: "attack", label: "Attack", formula: "1d20 + @attributes.strength" }
 );

@@ -6,6 +6,15 @@ const apiBaseUrl = `http://127.0.0.1:${apiPort}`;
 const webBaseUrl = `http://127.0.0.1:${webPort}`;
 const reuseExistingServer = process.env.OTTE_E2E_REUSE_SERVER === "true";
 
+function quoteShellArgument(value: string): string {
+  if (process.platform === "win32") return `"${value.replaceAll('"', '""')}"`;
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function packageManagerCommand(args: string): string {
+  return `${quoteShellArgument(process.execPath)} scripts/run-package-manager.mjs ${args}`;
+}
+
 export default defineConfig({
   testDir: "./tests/e2e",
   testIgnore: "**/bootstrap.spec.ts",
@@ -13,12 +22,12 @@ export default defineConfig({
   workers: 1,
   timeout: 30_000,
   expect: {
-    timeout: 5_000
+    timeout: 5_000,
   },
   reporter: process.env.CI ? "github" : "list",
   use: {
     baseURL: webBaseUrl,
-    trace: "on-first-retry"
+    trace: "on-first-retry",
   },
   webServer: [
     {
@@ -28,24 +37,28 @@ export default defineConfig({
       reuseExistingServer,
       env: {
         ...process.env,
-        OTTE_E2E_API_PORT: String(apiPort)
-      }
+        OTTE_E2E_API_PORT: String(apiPort),
+      },
     },
     {
-      command: "pnpm --filter @open-tabletop/web exec vite --host 127.0.0.1 --port " + webPort + " --strictPort",
+      command: packageManagerCommand(
+        "--filter @open-tabletop/web exec vite --host 127.0.0.1 --port " +
+          webPort +
+          " --strictPort",
+      ),
       url: webBaseUrl,
       timeout: 30_000,
       reuseExistingServer,
       env: {
         ...process.env,
-        VITE_API_URL: apiBaseUrl
-      }
-    }
+        VITE_API_URL: apiBaseUrl,
+      },
+    },
   ],
   projects: [
     {
       name: "chromium",
-      use: { ...devices["Desktop Chrome"] }
-    }
-  ]
+      use: { ...devices["Desktop Chrome"] },
+    },
+  ],
 });

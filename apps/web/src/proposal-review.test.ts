@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Proposal } from "@open-tabletop/core";
 import type { Snapshot } from "./api.js";
-import { applyProposalChangesToSnapshot, proposalChangesExternalLore, proposalReviewActionLabel, proposalReviewSteps, setProposalHidden, visibleAiAgentProposals } from "./proposal-review.js";
+import { applyProposalChangesToSnapshot, proposalChangesExternalLore, proposalQueueAction, proposalReviewActionLabel, proposalReviewSteps, setProposalHidden, visibleAiAgentProposals } from "./proposal-review.js";
 
 describe("proposal review helpers", () => {
   it("approves pending proposals before applying them", () => {
@@ -19,6 +19,15 @@ describe("proposal review helpers", () => {
     expect(proposalReviewActionLabel({ status: "applied" })).toBe("Applied");
     expect(proposalReviewSteps({ status: "rejected" })).toEqual([]);
     expect(proposalReviewActionLabel({ status: "rejected" })).toBe("Rejected");
+  });
+
+  it("offers status-correct proposal queue actions", () => {
+    expect(proposalQueueAction({ status: "draft" })).toBe("readonly");
+    expect(proposalQueueAction({ status: "pending" })).toBe("review");
+    expect(proposalQueueAction({ status: "approved" })).toBe("review");
+    expect(proposalQueueAction({ status: "applied" })).toBe("revert");
+    expect(proposalQueueAction({ status: "rejected" })).toBe("readonly");
+    expect(proposalQueueAction({ status: "reverted" })).toBe("readonly");
   });
 
   it("hides agent proposals as soon as an action starts", () => {
@@ -87,6 +96,31 @@ describe("proposal review helpers", () => {
     expect(next.diceMacros).toEqual([expect.objectContaining({ id: "mac_ai", name: "AI Damage" })]);
     expect(next.fogPresets).toEqual([expect.objectContaining({ id: "fogp_ai", name: "AI Fog" })]);
     expect(next.proposals.find((item) => item.id === "prop_apply")).toMatchObject({ status: "applied" });
+  });
+
+  it("is idempotent when realtime delivered created records before apply completed", () => {
+    const proposal = proposalFixture({
+      id: "prop_realtime_race",
+      status: "applied",
+      changesJson: [
+        { entity: "token", action: "create", data: { id: "tok_ai", sceneId: "scn_demo", name: "Draft Guard", x: 200, y: 240 } }
+      ]
+    });
+    const authoritativeToken = {
+      id: "tok_ai",
+      sceneId: "scn_demo",
+      name: "Server-normalized Guard",
+      x: 200,
+      y: 240,
+      ownerUserIds: ["usr_demo_gm"]
+    } as Snapshot["tokens"][number];
+    const snapshot = snapshotFixture({ tokens: [authoritativeToken] });
+
+    const once = applyProposalChangesToSnapshot(snapshot, proposal);
+    const twice = applyProposalChangesToSnapshot(once, proposal);
+
+    expect(twice.tokens).toEqual([authoritativeToken]);
+    expect(twice.tokens.filter((token) => token.id === "tok_ai")).toHaveLength(1);
   });
 });
 

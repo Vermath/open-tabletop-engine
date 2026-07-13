@@ -325,10 +325,57 @@ function privateHost(hostname) {
       (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
       (octets[0] === 192 && octets[1] === 168) ||
       (octets[0] === 198 && (octets[1] === 18 || octets[1] === 19)) ||
-      (octets[0] === 169 && octets[1] === 254)
+      (octets[0] === 169 && octets[1] === 254) ||
+      octets[0] >= 224
     );
   }
-  return normalized.startsWith("fc") || normalized.startsWith("fd") || normalized.startsWith("fe80:");
+  const address = ipv6Value(normalized);
+  if (address === undefined) return false;
+  return nonPublicIpv6Ranges.some(([base, prefixLength]) => ipv6CidrContains(address, base, prefixLength));
+}
+
+const nonPublicIpv6Ranges = [
+  ["::", 96], // unspecified, loopback, and deprecated IPv4-compatible forms
+  ["::ffff:0:0", 96], // IPv4-mapped forms
+  ["64:ff9b::", 96], // translation-only well-known prefix
+  ["64:ff9b:1::", 48], // local-use translation prefix
+  ["100::", 64], // discard-only
+  ["2001:2::", 48], // benchmarking
+  ["2001:10::", 28], // deprecated ORCHID
+  ["2001:20::", 28], // ORCHIDv2
+  ["2001:db8::", 32], // documentation
+  ["3fff::", 20], // documentation
+  ["5f00::", 16], // segment-routing SIDs
+  ["fc00::", 7], // unique-local
+  ["fe80::", 10], // link-local
+  ["fec0::", 10], // deprecated site-local
+  ["ff00::", 8] // multicast
+].map(([base, prefixLength]) => [ipv6Value(base), prefixLength]);
+
+function ipv6CidrContains(address, base, prefixLength) {
+  if (base === undefined) return false;
+  const suffixBits = 128n - BigInt(prefixLength);
+  return address >> suffixBits === base >> suffixBits;
+}
+
+function ipv6Value(input) {
+  let normalized = input.toLowerCase();
+  if (!normalized.includes(":")) return undefined;
+  const ipv4Match = normalized.match(/(?:^|:)(\d{1,3}(?:\.\d{1,3}){3})$/);
+  if (ipv4Match) {
+    const octets = ipv4Match[1].split(".").map(Number);
+    if (octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) return undefined;
+    normalized = `${normalized.slice(0, -ipv4Match[1].length)}${((octets[0] << 8) | octets[1]).toString(16)}:${((octets[2] << 8) | octets[3]).toString(16)}`;
+  }
+  const halves = normalized.split("::");
+  if (halves.length > 2) return undefined;
+  const head = halves[0] ? halves[0].split(":") : [];
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(":") : [];
+  const missing = 8 - head.length - tail.length;
+  if ((halves.length === 1 && missing !== 0) || (halves.length === 2 && missing < 1)) return undefined;
+  const parts = [...head, ...Array(missing).fill("0"), ...tail];
+  if (parts.length !== 8 || parts.some((part) => !/^[0-9a-f]{1,4}$/.test(part))) return undefined;
+  return parts.reduce((value, part) => (value << 16n) | BigInt(Number.parseInt(part, 16)), 0n);
 }
 
 function reservedHost(hostname) {

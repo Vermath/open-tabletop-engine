@@ -60,16 +60,17 @@ export function consumeSsoRedirect(): string | undefined {
   return userId;
 }
 
-export async function loginSession(userId = getSessionUserId()): Promise<SessionLoginInfo> {
+export async function loginSession(userId = getSessionUserId(), options: { persist?: boolean; signal?: AbortSignal } = {}): Promise<SessionLoginInfo> {
   const demoEmail = demoLoginEmail(userId);
   const response = await fetch(`${baseUrl}/api/v1/auth/login`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(demoEmail ? { email: demoEmail } : { userId })
+    body: JSON.stringify(demoEmail ? { email: demoEmail } : { userId }),
+    signal: options.signal
   });
   if (!response.ok) throw new Error(await response.text());
   const login = (await response.json()) as SessionLoginInfo;
-  storeSession(login);
+  if (options.persist !== false) storeSession(login);
   return login;
 }
 
@@ -85,7 +86,7 @@ export async function loginPasswordSession(input: { email: string; password: str
     headers: { "content-type": "application/json" },
     body: JSON.stringify(input)
   });
-  if (!response.ok) throw new Error(await response.text());
+  if (!response.ok) throw await apiErrorFromResponse(response);
   const login = (await response.json()) as SessionLoginInfo;
   storeSession(login);
   return login;
@@ -116,51 +117,56 @@ export async function logoutSession(): Promise<{ ok: boolean }> {
   }
 }
 
-export async function changePasswordSession(input: { currentPassword: string; newPassword: string }): Promise<SessionLoginInfo> {
+export async function changePasswordSession(input: { currentPassword: string; newPassword: string }, options: { persist?: boolean; signal?: AbortSignal } = {}): Promise<SessionLoginInfo> {
   const response = await fetch(`${baseUrl}/api/v1/auth/password/change`, {
     method: "POST",
     headers: { "content-type": "application/json", ...(await sessionHeaders()) },
-    body: JSON.stringify(input)
+    body: JSON.stringify(input),
+    signal: options.signal
   });
   if (!response.ok) throw new Error(await response.text());
   const login = (await response.json()) as SessionLoginInfo;
-  storeSession(login);
+  if (options.persist !== false) storeSession(login);
   return login;
 }
 
-export async function loadMfaStatus(): Promise<MfaInfo> {
+export async function loadMfaStatus(options: ApiRequestOptions = {}): Promise<MfaInfo> {
   const response = await fetch(`${baseUrl}/api/v1/auth/mfa`, {
-    headers: await sessionHeaders()
+    headers: await sessionHeaders(),
+    signal: options.signal
   });
   if (!response.ok) throw new Error(await response.text());
   return response.json() as Promise<MfaInfo>;
 }
 
-export async function enrollTotpMfa(input: { currentPassword: string }): Promise<TotpEnrollInfo> {
+export async function enrollTotpMfa(input: { currentPassword: string }, options: ApiRequestOptions = {}): Promise<TotpEnrollInfo> {
   const response = await fetch(`${baseUrl}/api/v1/auth/mfa/totp/enroll`, {
     method: "POST",
     headers: { "content-type": "application/json", ...(await sessionHeaders()) },
-    body: JSON.stringify(input)
+    body: JSON.stringify(input),
+    signal: options.signal
   });
   if (!response.ok) throw new Error(await response.text());
   return response.json() as Promise<TotpEnrollInfo>;
 }
 
-export async function confirmTotpMfa(input: { code: string }): Promise<TotpConfirmInfo> {
+export async function confirmTotpMfa(input: { code: string }, options: ApiRequestOptions = {}): Promise<TotpConfirmInfo> {
   const response = await fetch(`${baseUrl}/api/v1/auth/mfa/totp/confirm`, {
     method: "POST",
     headers: { "content-type": "application/json", ...(await sessionHeaders()) },
-    body: JSON.stringify(input)
+    body: JSON.stringify(input),
+    signal: options.signal
   });
   if (!response.ok) throw new Error(await response.text());
   return response.json() as Promise<TotpConfirmInfo>;
 }
 
-export async function disableTotpMfa(input: { currentPassword: string; mfaCode?: string; recoveryCode?: string }): Promise<TotpConfirmInfo> {
+export async function disableTotpMfa(input: { currentPassword: string; mfaCode?: string; recoveryCode?: string }, options: ApiRequestOptions = {}): Promise<TotpConfirmInfo> {
   const response = await fetch(`${baseUrl}/api/v1/auth/mfa/totp`, {
     method: "DELETE",
     headers: { "content-type": "application/json", ...(await sessionHeaders()) },
-    body: JSON.stringify(input)
+    body: JSON.stringify(input),
+    signal: options.signal
   });
   if (!response.ok) throw new Error(await response.text());
   return response.json() as Promise<TotpConfirmInfo>;
@@ -206,15 +212,19 @@ export async function confirmPasswordResetSession(input: { token: string; passwo
   return login;
 }
 
-export async function acceptInviteSession(input: { token: string; email: string; displayName: string; password: string }): Promise<InviteAcceptInfo> {
+export async function acceptInviteSession(
+  input: { token: string; email: string; displayName?: string; password: string; mfaCode?: string; recoveryCode?: string },
+  options: { persist?: boolean; signal?: AbortSignal } = {}
+): Promise<InviteAcceptInfo> {
   const response = await fetch(`${baseUrl}/api/v1/invites/accept`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(input)
+    body: JSON.stringify(input),
+    signal: options.signal
   });
-  if (!response.ok) throw new Error(await response.text());
+  if (!response.ok) throw await apiErrorFromResponse(response);
   const accepted = (await response.json()) as InviteAcceptInfo;
-  storeSession(accepted);
+  if (options.persist !== false) storeSession(accepted);
   return accepted;
 }
 
@@ -274,6 +284,14 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 interface ApiRequestOptions {
   signal?: AbortSignal;
+  idempotencyKey?: string;
+}
+
+function mutationHeaders(options: ApiRequestOptions): Record<string, string> {
+  return {
+    "content-type": "application/json",
+    ...(options.idempotencyKey ? { "idempotency-key": options.idempotencyKey } : {})
+  };
 }
 
 export async function apiGet<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
@@ -288,7 +306,7 @@ export async function apiGet<T>(path: string, options: ApiRequestOptions = {}): 
 export async function apiPost<T>(path: string, body: unknown, options: ApiRequestOptions = {}): Promise<T> {
   const response = await fetch(`${baseUrl}${path}`, {
     method: "POST",
-    headers: { "content-type": "application/json", ...(await sessionHeaders()) },
+    headers: { ...mutationHeaders(options), ...(await sessionHeaders()) },
     body: JSON.stringify(body),
     signal: options.signal
   });
@@ -313,7 +331,7 @@ export async function apiAnalyzePdfContentImport(input: { campaignId: string; fi
 export async function apiPatch<T>(path: string, body: unknown, options: ApiRequestOptions = {}): Promise<T> {
   const response = await fetch(`${baseUrl}${path}`, {
     method: "PATCH",
-    headers: { "content-type": "application/json", ...(await sessionHeaders()) },
+    headers: { ...mutationHeaders(options), ...(await sessionHeaders()) },
     body: JSON.stringify(body),
     signal: options.signal
   });
@@ -324,7 +342,7 @@ export async function apiPatch<T>(path: string, body: unknown, options: ApiReque
 export async function apiDelete<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
   const response = await fetch(`${baseUrl}${path}`, {
     method: "DELETE",
-    headers: await sessionHeaders(),
+    headers: { ...(options.idempotencyKey ? { "idempotency-key": options.idempotencyKey } : {}), ...(await sessionHeaders()) },
     signal: options.signal
   });
   if (!response.ok) throw await apiErrorFromResponse(response);
@@ -710,6 +728,14 @@ export interface PluginRuntimeInfo {
       satisfied: boolean;
     };
     compatibilityBlock?: string;
+    permissions: string[];
+    permissionReview: {
+      requestedPermissions: string[];
+      grantRequired: boolean;
+    };
+    trust: PluginRuntimeInfo["trust"];
+    source: NonNullable<PluginRuntimeInfo["source"]>;
+    marketplaceReview?: { installable: boolean; status: PluginReviewStatus; installBlock?: string };
   }>;
   source?: {
     type: "local" | "registry";
@@ -2878,14 +2904,21 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
   const snapshotQuery = new URLSearchParams();
   if (sceneId) snapshotQuery.set("sceneId", sceneId);
   const campaignSnapshot = await snapshotGet<CampaignSnapshotPayload>(`/api/v1/campaigns/${selectedCampaignId}/snapshot${snapshotQuery.size > 0 ? `?${snapshotQuery.toString()}` : ""}`);
+  const hasBundledResources = campaignSnapshot.bundled !== undefined;
   const bundled = campaignSnapshot.bundled ?? {};
   const members = campaignSnapshot.members;
   const currentMember = members.find((member) => member.user.id === session.user.id);
   const canManageCampaign = currentMember?.permissions.includes("campaign.update") ?? false;
+  const canReadScenes = currentMember?.permissions.includes("scene.read") ?? false;
+  const canReadActors = currentMember?.permissions.includes("actor.read") ?? false;
   const canViewAiOperations = currentMember?.permissions.includes("ai.proposeChanges") ?? false;
   const activeCombatId = campaignSnapshot.combats.find((combat) => combat.active)?.id;
   const [assetStorage, audioTracks, contentImports, aiThreads, aiUsage, aiToolCalls, plugins, systems, combatAudit] = await Promise.all([
-    bundled.assetStorage !== undefined ? Promise.resolve(bundled.assetStorage) : snapshotGet<CampaignAssetStorageInfo>(`/api/v1/campaigns/${selectedCampaignId}/assets/storage`),
+    bundled.assetStorage !== undefined
+      ? Promise.resolve(bundled.assetStorage)
+      : !hasBundledResources && canReadScenes
+        ? snapshotGet<CampaignAssetStorageInfo>(`/api/v1/campaigns/${selectedCampaignId}/assets/storage`)
+        : Promise.resolve(undefined),
     bundled.audioTracks !== undefined ? Promise.resolve(bundled.audioTracks) : snapshotGet<AudioTrack[]>(`/api/v1/campaigns/${selectedCampaignId}/audio`),
     bundled.contentImports !== undefined ? Promise.resolve(bundled.contentImports) : canManageCampaign ? snapshotGet<ContentImportBatch[]>(`/api/v1/campaigns/${selectedCampaignId}/content-imports`) : Promise.resolve([]),
     bundled.aiThreads !== undefined ? Promise.resolve(bundled.aiThreads) : canViewAiOperations ? snapshotGet<AiThread[]>(`/api/v1/campaigns/${selectedCampaignId}/ai/threads`) : Promise.resolve([]),
@@ -2900,7 +2933,7 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
   const characterTemplates =
     bundled.characterTemplates !== undefined
       ? bundled.characterTemplates
-      : activeSystemId && (activeSystem.runtimeCapabilities ?? []).includes("character-templates")
+      : !hasBundledResources && canReadActors && activeSystemId && (activeSystem.runtimeCapabilities ?? []).includes("character-templates")
         ? await snapshotGet<CharacterTemplateInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/systems/${activeSystemId}/character-templates`)
         : [];
   const [displayAssets, displayAudioTracks] = await Promise.all([withAssetDeliveryUrls(campaignSnapshot.assets), withAudioDeliveryUrls(audioTracks)]);

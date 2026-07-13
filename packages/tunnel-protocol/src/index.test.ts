@@ -101,5 +101,38 @@ describe("tunnel protocol", () => {
     expect(() =>
       parseTunnelFrame({ type: "ws.close", socketId: "ws_1", code: 2000 }),
     ).toThrow("sendable WebSocket close code");
+    expect(() =>
+      parseTunnelFrame({ type: "ws.close", socketId: "ws_1", code: 1000, reason: "x".repeat(124) }),
+    ).toThrow("123 UTF-8 bytes");
+    expect(() =>
+      parseTunnelFrame({ type: "ws.close", socketId: "ws_1", code: 1000, reason: "🙂".repeat(31) }),
+    ).toThrow("123 UTF-8 bytes");
+  });
+
+  it("rejects malformed or incorrectly padded base64 payloads", () => {
+    for (const bodyBase64 of ["a", "abcde", "abc===", "ab=c"]) {
+      expect(() =>
+        parseTunnelFrame({ type: "http.body", requestId: "req_1", bodyBase64 }),
+      ).toThrow("base64 encoded");
+    }
+    expect(
+      parseTunnelFrame({
+        type: "http.body",
+        requestId: "req_1",
+        bodyBase64: "e30=",
+      }),
+    ).toMatchObject({ bodyBase64: "e30=" });
+  });
+
+  it("validates explicit HTTP tunnel errors", () => {
+    expect(parseTunnelFrame({ type: "http.error", requestId: "req_1", status: 502, code: "bad_gateway", message: "Local response failed" })).toEqual({
+      type: "http.error",
+      requestId: "req_1",
+      status: 502,
+      code: "bad_gateway",
+      message: "Local response failed",
+    });
+    expect(() => parseTunnelFrame({ type: "http.error", requestId: "req_1", status: 204, code: "bad_gateway", message: "failed" })).toThrow("HTTP error status code");
+    expect(() => parseTunnelFrame({ type: "http.error", requestId: "req_1", status: 99, code: "bad_gateway", message: "failed" })).toThrow("HTTP status code");
   });
 });

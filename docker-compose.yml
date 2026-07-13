@@ -6,14 +6,14 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-opentabletop}
       POSTGRES_DB: ${POSTGRES_DB:-opentabletop}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${INFRA_BIND_ADDRESS:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
 
   redis:
     image: redis:7-alpine
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "${INFRA_BIND_ADDRESS:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
 
   minio:
     image: minio/minio:latest
@@ -22,8 +22,8 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-opentabletop}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-opentabletop-dev}
     ports:
-      - "${MINIO_API_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+      - "${INFRA_BIND_ADDRESS:-127.0.0.1}:${MINIO_API_PORT:-9000}:9000"
+      - "${INFRA_BIND_ADDRESS:-127.0.0.1}:${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
       - minio-data:/data
 
@@ -71,11 +71,14 @@ services:
       OTTE_ALLOW_LEGACY_USER_HEADER: ${OTTE_ALLOW_LEGACY_USER_HEADER:-false}
       OTTE_PLUGIN_TRUST_POLICY: ${OTTE_PLUGIN_TRUST_POLICY:-allow_unsigned}
       OTTE_PLUGIN_TRUST_KEYS: ${OTTE_PLUGIN_TRUST_KEYS:-}
+      OTTE_PLUGIN_DIR: /app/storage/plugins
+      OTTE_BUNDLED_PLUGIN_DIR: /app/plugins
     ports:
       - "${API_PORT:-4000}:4000"
     volumes:
       - api-storage:/app/storage
       - api-uploads:/app/uploads
+      - api-plugins:/app/storage/plugins
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/api/v1/health >/dev/null"]
       interval: 10s
@@ -123,3 +126,4 @@ volumes:
   minio-data:
   api-storage:
   api-uploads:
+  api-plugins:

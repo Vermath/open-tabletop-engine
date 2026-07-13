@@ -48,10 +48,11 @@ export async function handleAssetEdgeRequest(request: Request, env: AssetEdgeEnv
 
   const ttlSeconds = remainingTtlSeconds(expiresAt, nowMs, edgeMaxTtlSeconds(env.ASSET_EDGE_MAX_TTL_SECONDS));
   if (ttlSeconds <= 0) return edgeError(401, "expired_asset_signature", "Signed asset URL has expired");
-  if (!env.ASSET_URL_SIGNING_SECRET?.trim()) return edgeError(500, "asset_edge_misconfigured", "Missing ASSET_URL_SIGNING_SECRET");
+  const signingSecret = env.ASSET_URL_SIGNING_SECRET?.trim();
+  if (!signingSecret) return edgeError(500, "asset_edge_misconfigured", "Missing ASSET_URL_SIGNING_SECRET");
   if (!env.ASSET_ORIGIN_URL?.trim()) return edgeError(500, "asset_edge_misconfigured", "Missing ASSET_ORIGIN_URL");
 
-  const expected = await createAssetEdgeSignature(assetId, expiresAt, disposition, env.ASSET_URL_SIGNING_SECRET);
+  const expected = await createAssetEdgeSignature(assetId, expiresAt, disposition, signingSecret);
   if (!constantTimeEqual(expected, signature)) return edgeError(401, "invalid_asset_signature", "Signed asset URL is invalid");
 
   let originUrl: URL;
@@ -84,7 +85,7 @@ export async function handleAssetEdgeRequest(request: Request, env: AssetEdgeEnv
 
 export async function createAssetEdgeSignature(assetId: string, expiresAt: string, disposition: string, secret: string): Promise<string> {
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${assetId}:${expiresAt}:${disposition}`));
+  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(JSON.stringify({ assetId, expiresAt, disposition })));
   return base64UrlEncode(new Uint8Array(signature));
 }
 

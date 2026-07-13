@@ -26,6 +26,7 @@ export type TunnelFrame =
       status: number;
       headers: TunnelHeaders;
     }
+  | { type: "http.error"; requestId: string; status: number; code: string; message: string }
   | { type: "ws.open"; socketId: string; path: string; headers: TunnelHeaders }
   | { type: "ws.message"; socketId: string; bodyBase64: string }
   | { type: "ws.close"; socketId: string; code?: number; reason?: string }
@@ -37,6 +38,7 @@ const supportedFrameTypes = new Set<TunnelFrame["type"]>([
   "http.body",
   "http.end",
   "http.response",
+  "http.error",
   "ws.open",
   "ws.message",
   "ws.close",
@@ -82,6 +84,14 @@ export function parseTunnelFrame(value: unknown): TunnelFrame {
         status: statusField(record),
         headers: headersField(record, "headers"),
       };
+    case "http.error":
+      return {
+        type,
+        requestId: stringField(record, "requestId"),
+        status: errorStatusField(record),
+        code: stringField(record, "code"),
+        message: stringField(record, "message"),
+      };
     case "ws.open":
       return {
         type,
@@ -100,7 +110,7 @@ export function parseTunnelFrame(value: unknown): TunnelFrame {
         type,
         socketId: stringField(record, "socketId"),
         code: optionalCode(record),
-        reason: optionalString(record, "reason"),
+        reason: optionalCloseReason(record),
       };
     case "control.ping":
       return { type, sentAt: stringField(record, "sentAt") };
@@ -193,7 +203,11 @@ function httpMethod(record: Record<string, unknown>): string {
 
 function base64Field(record: Record<string, unknown>, key: string): string {
   const value = stringField(record, key);
-  if (!/^[a-zA-Z0-9+/]*={0,2}$/.test(value))
+  if (
+    !/^(?:[a-zA-Z0-9+/]{4})*(?:[a-zA-Z0-9+/]{2}==|[a-zA-Z0-9+/]{3}=)?$/.test(
+      value,
+    )
+  )
     throw new Error(`${key} must be base64 encoded`);
   return value;
 }
@@ -205,12 +219,25 @@ function statusField(record: Record<string, unknown>): number {
   return status;
 }
 
+function errorStatusField(record: Record<string, unknown>): number {
+  const status = statusField(record);
+  if (status < 400) throw new Error("status must be an HTTP error status code");
+  return status;
+}
+
 function optionalCode(record: Record<string, unknown>): number | undefined {
   const value = record.code;
   if (value === undefined) return undefined;
   if (!isSendableWebSocketCloseCode(value))
     throw new Error("code must be a sendable WebSocket close code");
   return value;
+}
+
+function optionalCloseReason(record: Record<string, unknown>): string | undefined {
+  const reason = optionalString(record, "reason");
+  if (reason !== undefined && new TextEncoder().encode(reason).byteLength > 123)
+    throw new Error("reason must not exceed 123 UTF-8 bytes");
+  return reason;
 }
 
 export function isSendableWebSocketCloseCode(value: unknown): value is number {

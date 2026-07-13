@@ -1,6 +1,15 @@
 export const realtimeReconnectInitialDelayMs = 1_000;
 export const realtimeReconnectMaxDelayMs = 30_000;
 
+export type RealtimeUiState = "idle" | "connecting" | "connected" | "reconnecting";
+
+export function realtimeUiLabel(state: RealtimeUiState): "Ready" | "Connecting" | "Connected" | "Reconnecting" {
+  if (state === "connecting") return "Connecting";
+  if (state === "connected") return "Connected";
+  if (state === "reconnecting") return "Reconnecting";
+  return "Ready";
+}
+
 export interface RealtimeConnectionIdentityInput {
   blankCanvasDemoOpen: boolean;
   campaignId: string;

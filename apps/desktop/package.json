@@ -8,8 +8,8 @@
   "type": "module",
   "main": "dist/main.js",
   "scripts": {
-    "build": "pnpm --filter @open-tabletop/api build && pnpm --filter @open-tabletop/web build && pnpm --filter @open-tabletop/tunnel-protocol build && tsc -p tsconfig.json",
-    "dist": "pnpm build && electron-builder",
+    "build": "node ../../scripts/run-package-manager.mjs --filter @open-tabletop/api build && node ../../scripts/run-package-manager.mjs --filter @open-tabletop/web build && node ../../scripts/run-package-manager.mjs --filter @open-tabletop/tunnel-protocol build && tsc -p tsconfig.json",
+    "dist": "node ../../scripts/run-package-scripts.mjs build && electron-builder",
     "lint": "tsc -p tsconfig.json --noEmit",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
@@ -46,13 +46,17 @@
       }
     ],
     "win": {
-      "target": ["nsis"],
+      "target": [
+        "nsis"
+      ],
       "signtoolOptions": {
         "publisherName": "OpenTabletop"
       }
     },
     "mac": {
-      "target": ["dmg"],
+      "target": [
+        "dmg"
+      ],
       "category": "public.app-category.games"
     }
   }

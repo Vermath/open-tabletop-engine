@@ -374,6 +374,7 @@ export function ContentImportPanel(props: {
         <input
           id={uploadInputId}
           type="file"
+          aria-label="Upload asset file"
           accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml,application/pdf,text/plain,application/json"
           hidden
           onChange={async (event) => {
@@ -387,6 +388,7 @@ export function ContentImportPanel(props: {
         <input
           id={backgroundInputId}
           type="file"
+          aria-label="Upload background file"
           accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
           hidden
           onChange={async (event) => {

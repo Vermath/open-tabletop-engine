@@ -1,5 +1,8 @@
+import { EventEmitter } from "node:events";
+import { createServer } from "node:http";
+import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
-import { describeJob, runLeasedWorkerJob, runLeasedWorkerLoop, runWorkerJob, type WorkerJob } from "./index";
+import { describeJob, runLeasedWorkerJob, runLeasedWorkerLoop, runWorkerCli, runWorkerJob, type WorkerJob } from "./index";
 
 describe("worker job runner", () => {
   it("exports campaigns through the API with bearer auth", async () => {
@@ -23,6 +26,31 @@ describe("worker job runner", () => {
       type: "campaign.export",
       status: "succeeded",
       output: { format: "ottx", data: { campaigns: [{ id: "camp_demo" }] } }
+    });
+  });
+
+  it("builds redacted campaign report bundles through the authenticated API route", async () => {
+    const calls: Array<{ url: string | URL | Request; init?: RequestInit }> = [];
+    const job: WorkerJob = { id: "job_report", type: "report.bundle", payload: { campaignId: "camp dogfood" } };
+    const result = await runWorkerJob(job, {
+      apiBaseUrl: "http://api.test/",
+      sessionToken: "ots_reporter",
+      fetch: async (url, init) => {
+        calls.push({ url, init });
+        return new Response(JSON.stringify({ format: "otte-dogfood-report-bundle", privacy: { mode: "redacted" } }), { status: 200 });
+      }
+    });
+
+    expect(describeJob(job)).toBe("report.bundle:job_report");
+    expect(calls[0]!.url).toBe("http://api.test/api/v1/campaigns/camp%20dogfood/dogfood-report-bundle");
+    expect(calls[0]!.init!.method).toBe("GET");
+    expect(calls[0]!.init!.body).toBeUndefined();
+    expect(new Headers(calls[0]!.init!.headers).get("authorization")).toBe("Bearer ots_reporter");
+    expect(result).toEqual({
+      id: "job_report",
+      type: "report.bundle",
+      status: "succeeded",
+      output: { format: "otte-dogfood-report-bundle", privacy: { mode: "redacted" } }
     });
   });
 
@@ -196,6 +224,42 @@ describe("worker job runner", () => {
     expect(requestSignal?.reason).toEqual(expect.objectContaining({ message: "Worker API request timed out after 5ms" }));
   });
 
+  it("keeps the request timeout active while reading the response body", async () => {
+    let requestSignal: AbortSignal | undefined;
+    await expect(
+      runWorkerJob(
+        { id: "job_recap", type: "ai.session.recap", payload: { campaignId: "camp_demo" } },
+        {
+          apiBaseUrl: "http://api.test",
+          sessionToken: "ots_worker",
+          requestTimeoutMs: 5,
+          fetch: async (_url, init) => {
+            requestSignal = init?.signal as AbortSignal | undefined;
+            return {
+              ok: true,
+              status: 200,
+              text: () => new Promise<string>(() => undefined)
+            } as Response;
+          }
+        }
+      )
+    ).rejects.toThrow("Worker API request timed out after 5ms");
+    expect(requestSignal?.aborted).toBe(true);
+  });
+
+  it("preserves status and response text when an upstream error is not JSON", async () => {
+    await expect(
+      runWorkerJob(
+        { id: "job_recap", type: "ai.session.recap", payload: { campaignId: "camp_demo" } },
+        {
+          apiBaseUrl: "http://api.test",
+          sessionToken: "ots_worker",
+          fetch: async () => new Response("upstream gateway unavailable", { status: 502 })
+        }
+      )
+    ).rejects.toThrow("Worker API request failed with 502 POST /api/v1/campaigns/camp_demo/ai/session-recap: upstream gateway unavailable");
+  });
+
   it("leases the next queued admin job and records success", async () => {
     const calls: Array<{ url: string | URL | Request; init?: RequestInit }> = [];
     const result = await runLeasedWorkerJob({
@@ -238,6 +302,55 @@ describe("worker job runner", () => {
     expect(JSON.parse(calls[1]!.init!.body as string)).toMatchObject({ workerId: "worker-a", leaseSeconds: 45 });
     expect(JSON.parse(calls[3]!.init!.body as string)).toMatchObject({
       status: "succeeded",
+      progress: { percent: 100, message: "Worker dispatch completed" }
+    });
+  });
+
+  it("leases report bundle jobs and records their normal progress and result", async () => {
+    const calls: Array<{ url: string | URL | Request; init?: RequestInit }> = [];
+    const result = await runLeasedWorkerJob({
+      apiBaseUrl: "http://api.test",
+      sessionToken: "ots_admin",
+      workerId: "worker-report",
+      leaseSeconds: 45,
+      fetch: async (url, init) => {
+        calls.push({ url, init });
+        const path = String(url).replace("http://api.test", "");
+        if (path === "/api/v1/admin/jobs/lease") {
+          return new Response(JSON.stringify({ id: "job_report", type: "report.bundle", payload: { campaignId: "camp_demo" } }), { status: 200 });
+        }
+        if (path === "/api/v1/admin/jobs/job_report/heartbeat") {
+          return new Response(JSON.stringify({ ok: true }), { status: 200 });
+        }
+        if (path === "/api/v1/campaigns/camp_demo/dogfood-report-bundle") {
+          return new Response(JSON.stringify({ format: "otte-dogfood-report-bundle", privacy: { mode: "redacted" } }), { status: 200 });
+        }
+        if (path === "/api/v1/admin/jobs/job_report") {
+          return new Response(JSON.stringify({ ok: true }), { status: 200 });
+        }
+        return new Response(JSON.stringify({ error: "unexpected" }), { status: 500 });
+      }
+    });
+
+    expect(result).toEqual({
+      id: "job_report",
+      type: "report.bundle",
+      status: "succeeded",
+      output: { format: "otte-dogfood-report-bundle", privacy: { mode: "redacted" } }
+    });
+    expect(calls.map((call) => [call.init?.method, String(call.url)])).toEqual([
+      ["POST", "http://api.test/api/v1/admin/jobs/lease"],
+      ["POST", "http://api.test/api/v1/admin/jobs/job_report/heartbeat"],
+      ["GET", "http://api.test/api/v1/campaigns/camp_demo/dogfood-report-bundle"],
+      ["PATCH", "http://api.test/api/v1/admin/jobs/job_report"]
+    ]);
+    expect(JSON.parse(calls[1]!.init!.body as string)).toMatchObject({
+      workerId: "worker-report",
+      progress: { percent: 0, message: "Worker dispatch started" }
+    });
+    expect(JSON.parse(calls[3]!.init!.body as string)).toMatchObject({
+      status: "succeeded",
+      output: { format: "otte-dogfood-report-bundle", privacy: { mode: "redacted" } },
       progress: { percent: 100, message: "Worker dispatch completed" }
     });
   });
@@ -325,6 +438,110 @@ describe("worker job runner", () => {
       ["GET", "http://api.test/api/v1/campaigns/camp_demo/export"],
       ["POST", "http://api.test/api/v1/admin/jobs/job_export/heartbeat"]
     ]);
+  });
+
+  it("stops leasing and records an outcome-unknown failure when SIGTERM interrupts a long response", async () => {
+    const signals = new EventEmitter();
+    const stdin = new PassThrough();
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    let stdoutText = "";
+    let stderrText = "";
+    let leaseCalls = 0;
+    let patchBody: Record<string, unknown> | undefined;
+    let dispatchStartedResolve!: () => void;
+    const dispatchStarted = new Promise<void>((resolve) => {
+      dispatchStartedResolve = resolve;
+    });
+    stdout.setEncoding("utf8");
+    stderr.setEncoding("utf8");
+    stdout.on("data", (chunk: string) => {
+      stdoutText += chunk;
+    });
+    stderr.on("data", (chunk: string) => {
+      stderrText += chunk;
+    });
+
+    const server = createServer((request, response) => {
+      void (async () => {
+        const path = request.url ?? "";
+        if (request.method === "POST" && path === "/api/v1/admin/jobs/lease") {
+          leaseCalls += 1;
+          response.writeHead(200, { "content-type": "application/json" });
+          response.end(JSON.stringify({ id: "job_shutdown", type: "campaign.export", payload: { campaignId: "camp_slow" } }));
+          return;
+        }
+        if (request.method === "POST" && path === "/api/v1/admin/jobs/job_shutdown/heartbeat") {
+          response.writeHead(200, { "content-type": "application/json" });
+          response.end(JSON.stringify({ ok: true }));
+          return;
+        }
+        if (request.method === "GET" && path === "/api/v1/campaigns/camp_slow/export") {
+          dispatchStartedResolve();
+          response.writeHead(200, { "content-type": "application/json" });
+          response.write('{"format":"ottx","data":');
+          return;
+        }
+        if (request.method === "PATCH" && path === "/api/v1/admin/jobs/job_shutdown") {
+          const chunks: Buffer[] = [];
+          for await (const chunk of request) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+          patchBody = JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<string, unknown>;
+          response.writeHead(200, { "content-type": "application/json" });
+          response.end(JSON.stringify({ ok: true }));
+          return;
+        }
+        response.writeHead(404, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: "unexpected route" }));
+      })().catch((error) => {
+        response.destroy(error instanceof Error ? error : new Error(String(error)));
+      });
+    });
+
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("Worker integration server did not expose a TCP port");
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const cli = runWorkerCli(
+        {
+          OTTE_WORKER_LEASE_POLL: "true",
+          OTTE_API_URL: `http://127.0.0.1:${address.port}`,
+          OTTE_SESSION_TOKEN: "ots_worker",
+          OTTE_WORKER_ID: "worker-shutdown",
+          OTTE_WORKER_POLL_INTERVAL_MS: "0"
+        },
+        stdin,
+        stdout,
+        stderr,
+        { signalSource: signals, shutdownTimeoutMs: 500 }
+      );
+      await dispatchStarted;
+      signals.emit("SIGTERM");
+      const exitCode = await Promise.race([
+        cli,
+        new Promise<never>((_resolve, reject) => {
+          deadline = setTimeout(() => reject(new Error("Worker CLI did not drain after SIGTERM")), 1_500);
+        })
+      ]);
+
+      expect(exitCode).toBe(0);
+      expect(leaseCalls).toBe(1);
+      expect(patchBody).toMatchObject({
+        status: "failed",
+        progress: { message: "Worker shutdown interrupted dispatch" },
+        log: { level: "warning" }
+      });
+      expect(String(patchBody?.error)).toContain("Worker shutdown requested by SIGTERM");
+      expect(String(patchBody?.error)).toContain("dispatch outcome is unknown and requires operator review");
+      expect(stdoutText).toContain('"status":"failed"');
+      expect(stderrText).toBe("");
+      expect(signals.listenerCount("SIGINT")).toBe(0);
+      expect(signals.listenerCount("SIGTERM")).toBe(0);
+    } finally {
+      if (deadline) clearTimeout(deadline);
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
   });
 
   it("polls leased admin jobs until the configured idle threshold", async () => {

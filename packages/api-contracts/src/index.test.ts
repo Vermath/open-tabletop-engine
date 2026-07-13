@@ -136,6 +136,68 @@ describe("api contracts", () => {
     expect(proposalHistoryEntry.properties.action.enum).toContain("revised");
   });
 
+  it("documents campaign creation options and the bundled snapshot payload", () => {
+    const createRequest = openApiSpec.components.schemas.CampaignCreateRequest;
+    const snapshot = openApiSpec.components.schemas.CampaignSnapshot;
+    const bundled = openApiSpec.components.schemas.CampaignSnapshotBundled;
+    const searchResult = openApiSpec.components.schemas.CampaignSearchResult;
+
+    expect(createRequest.properties.starterContent).toEqual({ type: "boolean" });
+    expect(createRequest.properties.permissionTemplate.enum).toEqual([
+      "standard",
+      "player_authoring",
+      "ai_assisted",
+      "assistant_ops",
+    ]);
+    expect(snapshot.required).toContain("bundled");
+    expect(snapshot.properties.bundled).toEqual({
+      $ref: "#/components/schemas/CampaignSnapshotBundled",
+    });
+    expect(openApiSpec.components.schemas.CampaignPatchRequest.properties).not.toHaveProperty("archivedAt");
+    expect(openApiSpec.components.schemas.CampaignPatchRequest.properties).not.toHaveProperty("archivedByUserId");
+    expect(openApiSpec.components.schemas.CampaignPatchRequest.properties).not.toHaveProperty("restoredAt");
+    expect(openApiSpec.components.schemas.CampaignPatchRequest.properties).not.toHaveProperty("restoredByUserId");
+    expect(bundled.properties).toEqual(
+      expect.objectContaining({
+        assetStorage: expect.any(Object),
+        audioTracks: expect.any(Object),
+        plugins: expect.any(Object),
+        systems: expect.any(Object),
+        characterTemplates: expect.any(Object),
+        contentImports: expect.any(Object),
+        aiThreads: expect.any(Object),
+        aiUsage: expect.any(Object),
+        aiToolCalls: expect.any(Object),
+        combatAudit: expect.any(Object),
+      }),
+    );
+    expect(searchResult.properties.type.enum).toContain("roll");
+  });
+
+  it("documents reopenable saved encounter compositions", () => {
+    const encounter = openApiSpec.components.schemas.Encounter;
+    const createRequest = openApiSpec.components.schemas.EncounterCreateRequest;
+    const planRequest = openApiSpec.components.schemas.SystemEncounterPlanRequest;
+    const selection = openApiSpec.components.schemas.EncounterThreatSelection;
+
+    expect(encounter.properties).toEqual(expect.objectContaining({
+      systemId: { type: "string", minLength: 1 },
+      partyActorIds: expect.objectContaining({ type: "array", maxItems: 100, uniqueItems: true }),
+      threats: expect.objectContaining({ type: "array", maxItems: 100 })
+    }));
+    expect(createRequest.properties).toEqual(expect.objectContaining({
+      systemId: { type: "string", minLength: 1 },
+      partyActorIds: expect.any(Object),
+      threats: expect.any(Object)
+    }));
+    expect(planRequest.properties.threats.items).toEqual({ $ref: "#/components/schemas/EncounterThreatSelection" });
+    expect(selection).toMatchObject({
+      additionalProperties: false,
+      required: ["id", "count"],
+      properties: { count: { type: "integer", minimum: 1, maximum: 99 } }
+    });
+  });
+
   it("documents plugin commands and event bridges as proposal-only output", () => {
     const plugin = openApiSpec.components.schemas.PluginRuntimeInfo;
     const commandResponse =
@@ -160,6 +222,9 @@ describe("api contracts", () => {
     expect(plugin.properties.source.properties).not.toHaveProperty("packageUrl");
     expect(plugin.properties.trust.properties.signature.properties).not.toHaveProperty("signaturePath");
     expect(openApiSpec.components.schemas.PluginCampaignInfo.allOf[1].properties.audit.properties).not.toHaveProperty("lastActorUserId");
+    expect(openApiSpec.components.schemas.PluginCampaignInfo.allOf[1].properties.versionCompatibility.items.required).toEqual(
+      expect.arrayContaining(["version", "permissions", "permissionReview", "trust", "source"]),
+    );
   });
 
   it("defines the structured unsupported system capability response", () => {

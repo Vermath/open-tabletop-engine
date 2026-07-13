@@ -2,6 +2,7 @@ import type { ChatMessage, DiceRoll } from "@open-tabletop/core";
 import { Activity, Check, ChevronDown, Dices, MessageSquare, PencilLine, Plus, Save, Send, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { verifyDiceRoll, type DiceRollVerification, type Snapshot } from "./api.js";
+import { campaignSearchAnchorId } from "./campaign-search-panel.js";
 import { addDieToFormula, adjustDiceModifier, diceQuickPresets, diceTraySides, rollHighlight, rollTermHighlight } from "./dice-insights.js";
 import { errorMessage, formatDateTime, formatNumber, formatRollTermDetail, formatRollTermName, rollTermTotal, safeProbabilityRange, titleCaseLabel } from "./sheet-format.js";
 
@@ -116,7 +117,7 @@ export function ChatMessageItem(props: { campaignId: string; message: ChatMessag
   const recipientLabel = props.message.visibility === "whisper" ? props.message.recipientUserIds.map((recipientId) => props.memberNames.get(recipientId) ?? recipientId).join(", ") : "";
 
   return (
-    <article className={`chat-message chat-message-${messageKind}`} aria-label={`${titleCaseLabel(messageKind)} message`}>
+    <article id={campaignSearchAnchorId("chat", props.message.id)} className={`chat-message chat-message-${messageKind}`} aria-label={`${titleCaseLabel(messageKind)} message`} tabIndex={-1}>
       <header className="chat-message-header">
         <span className="chat-author">{messageKind === "emote" ? `${author} ${props.message.body}` : author}</span>
         <span className="chat-time">{formatDateTime(props.message.createdAt)}</span>
@@ -178,7 +179,7 @@ export function RollMessageCard(props: { campaignId: string; message: ChatMessag
     }
   };
   return (
-    <div className={className} aria-busy={props.concealed ? "true" : undefined}>
+    <div id={campaignSearchAnchorId("roll", props.roll.id)} className={className} aria-busy={props.concealed ? "true" : undefined} tabIndex={-1}>
       <button
         className="chat-roll-summary"
         type="button"

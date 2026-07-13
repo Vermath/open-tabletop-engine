@@ -40,8 +40,8 @@ async function closeManage(page: Page) {
 }
 
 async function openInspectorPanel(page: Page, panelName: string) {
-  const visiblePanelName = panelName === "SDK" ? "Plugins" : panelName;
-  await page.locator(".inspector-tabs").getByRole("button", { name: visiblePanelName, exact: true }).click();
+  const visiblePanelName = panelName === "SDK" ? "Plugins" : panelName === "Content" ? "Assets" : panelName;
+  await page.locator(".inspector-tabs").getByRole("tab", { name: visiblePanelName, exact: true }).click();
 }
 
 function selectedActorPanel(page: Page) {
@@ -49,11 +49,11 @@ function selectedActorPanel(page: Page) {
 }
 
 function sdkRuntimePanel(page: Page) {
-  return page.locator(".inspector > .panel-stack", { hasText: "Runtime SDK" });
+  return page.locator(".inspector .panel-stack", { hasText: "Runtime SDK" });
 }
 
 function combatTrackerPanel(page: Page) {
-  return page.locator(".inspector > .panel-stack").filter({ has: page.locator(".combat-hero") });
+  return page.locator(".inspector .panel-stack").filter({ has: page.locator(".combat-hero") });
 }
 
 async function openActorDisclosure(root: Locator, summaryText: string) {
@@ -529,16 +529,16 @@ test("GM can switch selected-token permission presets", async ({ page }) => {
   await expect(statusMessage(page, "Drawing deleted")).toBeVisible();
   await setCheckbox(page.getByRole("checkbox", { name: "Targeted" }), true);
   await expect(statusMessage(page, "Token targeted")).toBeVisible();
-  await clickElement(tokenPermissionPresets.getByRole("button", { name: "Party controlled" }));
-  await expect(statusMessage(page, "Token updated")).toBeVisible();
-  await expect(tokenPermissionPresets).toContainText("Party controlled");
-  await expect(page.locator(".metric-row", { hasText: "Token State" })).toContainText("Owners 1");
-
   await clickElement(tokenPermissionPresets.getByRole("button", { name: "GM locked" }));
   await expect(statusMessage(page, "Token updated")).toBeVisible();
   await expect(tokenPermissionPresets).toContainText("GM locked");
   await expect(page.locator(".metric-row", { hasText: "Token State" })).toContainText("Targeted 1");
   await expect(page.locator(".metric-row", { hasText: "Token State" })).not.toContainText("Owners");
+
+  await clickElement(tokenPermissionPresets.getByRole("button", { name: "Party controlled" }));
+  await expect(statusMessage(page, "Token updated")).toBeVisible();
+  await expect(tokenPermissionPresets).toContainText("Party controlled");
+  await expect(page.locator(".metric-row", { hasText: "Token State" })).toContainText("Owners 1");
   const selectedTargeted = page.getByRole("checkbox", { name: "Targeted" });
   if (await selectedTargeted.isChecked()) {
     await setCheckbox(selectedTargeted, false);
@@ -676,7 +676,7 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await page.getByRole("textbox", { name: "Confirm scene delete" }).fill("Vault Entry Reorder");
   await page.getByRole("button", { name: "Delete Scene", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Edit scene name" })).toHaveValue("Vault Entry");
-  await page.getByRole("button", { name: "Activate", exact: true }).click();
+  await expect(statusMessage(page, "Vault Entry Reorder deleted; Vault Entry is now live")).toBeVisible();
   await expect(page.getByRole("button", { name: "Activate", exact: true })).toBeDisabled();
   await expect(sceneActivationHistory).toContainText("2 activations");
   await closeManage(page);
@@ -723,8 +723,12 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await setCheckbox(tokenOwners.getByRole("checkbox", { name: "Demo Player" }), true);
   await expect(statusMessage(page, "Token updated")).toBeVisible();
   await expect(page.locator(".metric-row", { hasText: "Token State" })).toContainText("Owners 1");
-  await setCheckbox(page.getByRole("checkbox", { name: "Targeted" }), true);
-  await expect(statusMessage(page, "Token targeted")).toBeVisible();
+  const targetedCheckbox = page.getByRole("checkbox", { name: "Targeted" });
+  if (!(await targetedCheckbox.isChecked())) {
+    await setCheckbox(targetedCheckbox, true);
+    await expect(statusMessage(page, "Token targeted")).toBeVisible();
+  }
+  await expect(targetedCheckbox).toBeChecked();
   const sceneBoard = page.locator(".scene-board").first();
   await openTokenQuickCreate(page);
   await page.getByRole("combobox", { name: "Token actor" }).selectOption("act_valen");
@@ -904,7 +908,7 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(chatMessages.locator("article", { hasText: "E2E GM moderation checkpoint" }).first()).toContainText("GM");
 
   await page.getByRole("button", { name: "Prep", exact: true }).click();
-  await page.getByRole("button", { name: "Content" }).click();
+  await page.getByRole("tab", { name: "Assets" }).click();
   await expect(page.getByRole("region", { name: "Asset library" })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Asset search" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Asset lifecycle filter" })).toBeVisible();
@@ -1052,7 +1056,7 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(page.locator(".scene-background-preview")).toContainText("e2e-map.svg");
   await closeManage(page);
   await page.getByRole("button", { name: "Prep", exact: true }).click();
-  await page.getByRole("button", { name: "Content" }).click();
+  await page.getByRole("tab", { name: "Assets" }).click();
   const contentImportDrawer = page.locator("details.content-import-drawer");
   await openDetails(contentImportDrawer);
   await expect(contentImportDrawer).toContainText("Content import");
@@ -1103,7 +1107,7 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await importReport.getByRole("button", { name: "Apply Selected" }).click();
   await expect(statusMessage(page, "Content import applied")).toBeVisible();
   await expect(importReport).toContainText("applied to items");
-  await page.getByRole("button", { name: "Actors" }).click();
+  await page.getByRole("tab", { name: "Actors" }).click();
   await page.getByRole("tab", { name: "Loadout" }).click();
   const assignment = page.getByLabel("Assign item to actor");
   await expect(assignment.getByRole("combobox", { name: "Unassigned item" })).toContainText("E2E Import Ledger");
@@ -1130,7 +1134,7 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(statusMessage(page, "E2E Import Ledger updated")).toBeVisible();
   await expect(importedLoadoutItem).toContainText("E2E Import Ledger x1");
   await page.getByRole("button", { name: "Prep", exact: true }).click();
-  await page.getByRole("button", { name: "Content" }).click();
+  await page.getByRole("tab", { name: "Assets" }).click();
   await openDetails(contentImportDrawer);
   await importReport.getByRole("button", { name: "Rollback" }).click();
   await expect(statusMessage(page, "Content import rolled back")).toBeVisible();
@@ -1337,18 +1341,20 @@ test("World and handout panels reconcile realtime changes made by another client
 
 test("failed AI proposal actions remain available for retry", async ({ page }) => {
   const suffix = Date.now().toString(36);
-  const draft = await expectJsonResponse<{ id: string; title: string }>(
-    await page.request.post(`${apiBaseUrl}/api/v1/campaigns/camp_demo/proposals`, {
+  const draftResponse = await expectJsonResponse<{ proposal: { id: string; title: string } }>(
+    await page.request.post(`${apiBaseUrl}/api/v1/campaigns/camp_demo/ai/encounter-design`, {
       headers: gmApiHeaders,
       data: {
-        title: `Retry proposal ${suffix}`,
-        summary: "A no-op AI proposal used to verify transient action recovery.",
-        createdByType: "ai",
-        sourceId: `e2e_retry_${suffix}`,
-        changesJson: []
+        prompt: `A retry-only encounter proposal ${suffix}`,
+        difficulty: "standard",
+        sceneName: `Retry proposal scene ${suffix}`,
+        sceneWidth: 900,
+        sceneHeight: 700,
+        gridSize: 50
       }
     })
   );
+  const draft = draftResponse.proposal;
 
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
@@ -1383,6 +1389,73 @@ test("failed AI proposal actions remain available for retry", async ({ page }) =
   }
 });
 
+test("AI auto-apply consent is scoped to the current user and campaign", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Demo GM" }).click();
+  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  const aiAgent = await openAiAgent(page);
+  const approvalMode = aiAgent.getByRole("combobox", { name: "AI Agent approval mode" });
+  await expect(approvalMode).toHaveValue("manual");
+  await approvalMode.selectOption("auto");
+  await expect(approvalMode).toHaveValue("auto");
+
+  const campaignName = `Scoped AI ${Date.now().toString(36)}`;
+  const campaignId = await page.evaluate(async ({ apiBaseUrl, campaignName }) => {
+    const bearer = localStorage.getItem("otte:sessionToken");
+    if (!bearer) throw new Error("No browser session token available for campaign setup");
+    const response = await fetch(`${apiBaseUrl}/api/v1/campaigns`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${bearer}`, "content-type": "application/json" },
+      body: JSON.stringify({ name: campaignName, description: "AI preference scope test" })
+    });
+    if (!response.ok) throw new Error(await response.text());
+    return (await response.json()).id as string;
+  }, { apiBaseUrl, campaignName });
+
+  await page.reload();
+  await page.getByRole("navigation", { name: "Campaigns" }).getByRole("button", { name: campaignName }).click();
+  await expect(page.getByRole("heading", { name: campaignName })).toBeVisible();
+  const scopedAgent = await openAiAgent(page);
+  await expect(scopedAgent.getByRole("combobox", { name: "AI Agent approval mode" })).toHaveValue("manual");
+
+  await page.getByRole("navigation", { name: "Campaigns" }).getByRole("button", { name: "The Ember Vault" }).click();
+  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(scopedAgent.getByRole("combobox", { name: "AI Agent approval mode" })).toHaveValue("auto");
+
+  await page.evaluate(async ({ apiBaseUrl, campaignId }) => {
+    const bearer = localStorage.getItem("otte:sessionToken");
+    if (!bearer) return;
+    await fetch(`${apiBaseUrl}/api/v1/campaigns/${campaignId}`, { method: "DELETE", headers: { authorization: `Bearer ${bearer}` } });
+  }, { apiBaseUrl, campaignId });
+});
+
+test("blank canvas opens in actionable prep and accepts a local map", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Try Blank Canvas" }).click();
+  await expect(page.getByRole("button", { name: "Prep", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("tab", { name: "Assets" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("heading", { name: "Asset manager" })).toBeVisible();
+
+  const fileChooserPromise = page.waitForEvent("filechooser");
+  await page.getByRole("button", { name: "Upload Background" }).click();
+  const fileChooser = await fileChooserPromise;
+  await fileChooser.setFiles({
+    name: "local-demo-map.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64")
+  });
+
+  await expect(page.getByRole("status").filter({ hasText: "Demo map ready" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Asset library" })).toContainText("local-demo-map.png");
+  await expect(page.locator(".scene-map")).toBeVisible();
+
+  await page.getByRole("button", { name: "Manage", exact: true }).click();
+  await page.getByRole("region", { name: "Demo mode" }).getByRole("button", { name: "Exit" }).click();
+  await page.getByRole("button", { name: "Demo GM" }).click();
+  await expect(page.getByRole("button", { name: "Live Table", exact: true })).toHaveAttribute("aria-pressed", "true");
+});
+
 test("GM can create a campaign through the setup wizard", async ({ page }) => {
   await page.goto("/");
 
@@ -1409,15 +1482,15 @@ test("GM can create a campaign through the setup wizard", async ({ page }) => {
   await page.getByRole("button", { name: "Create Campaign Setup" }).click();
 
   await expect(page.locator("h1").filter({ hasText: "E2E Setup Campaign" })).toBeVisible();
-  await expect(page.getByRole("status").filter({ hasText: "E2E Setup Campaign created with First Session; player invite ready; Player authoring permissions applied" }).first()).toBeVisible();
-  await page.getByRole("button", { name: "Prep", exact: true }).click();
-  await expect(sceneTab(page, "First Session")).toBeVisible();
-  await openManageCategory(page, "People");
+  await expect(page.getByRole("status").filter({ hasText: "E2E Setup Campaign created with First Session; invite link ready to copy; Player authoring permissions applied" })).toBeVisible();
   await expect(page.locator('input[aria-label="Invite token"][readonly]')).toHaveValue(/^oti_/);
+  await expect(page.getByRole("textbox", { name: "Invite link" })).toHaveValue(/\/join\?invite=oti_/);
+  await expect(page.getByRole("textbox", { name: "Invite link" })).toBeFocused();
   await closeManage(page);
 
   await page.getByRole("button", { name: "Prep", exact: true }).click();
-  await page.getByRole("button", { name: "Journal" }).click();
+  await expect(sceneTab(page, "First Session")).toBeVisible();
+  await page.getByRole("tab", { name: "Journal" }).click();
   await expect(page.getByText("Running your first session")).toBeVisible();
   await expect(page.getByText("Create characters from the party rail character creator.")).toBeVisible();
   await expect(page.getByText("Generate a session recap from the Journal tab.")).toBeVisible();
@@ -1435,13 +1508,87 @@ test("GM can create a campaign through the setup wizard", async ({ page }) => {
   await page.getByRole("button", { name: "Create Campaign Setup" }).click();
 
   await expect(page.locator("h1").filter({ hasText: "E2E Bare Campaign" })).toBeVisible();
-  await expect(page.getByRole("status").filter({ hasText: "E2E Bare Campaign created with Bare Opening" }).first()).toBeVisible();
-  await page.getByRole("button", { name: "Prep", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "E2E Bare Campaign created with Bare Opening; opened session prep" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Prep", exact: true })).toBeFocused();
   await expect(sceneTab(page, "Bare Opening")).toBeVisible();
-  await page.getByRole("button", { name: "Journal" }).click();
+  await page.getByRole("tab", { name: "Journal" }).click();
   await expect(page.getByText("Bare Welcome")).toBeVisible();
   await expect(page.getByText("A handout for the bare setup path.")).toBeVisible();
   await expect(page.getByText("Running your first session")).not.toBeVisible();
+});
+
+test("campaign setup locks duplicate submits and resumes after a failed follow-up", async ({ page }) => {
+  let campaignPosts = 0;
+  let inviteAttempts = 0;
+  let releaseFirstCampaign!: () => void;
+  const firstCampaignGate = new Promise<void>((resolve) => {
+    releaseFirstCampaign = resolve;
+  });
+  let holdFirstCampaign = true;
+
+  await page.route("**/api/v1/campaigns", async (route) => {
+    if (route.request().method() !== "POST") {
+      await route.continue();
+      return;
+    }
+    campaignPosts += 1;
+    if (holdFirstCampaign) {
+      holdFirstCampaign = false;
+      await firstCampaignGate;
+    }
+    await route.continue();
+  });
+  await page.route("**/api/v1/campaigns/*/invites", async (route) => {
+    if (route.request().method() !== "POST") {
+      await route.continue();
+      return;
+    }
+    inviteAttempts += 1;
+    if (inviteAttempts === 1) {
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "simulated invite failure" })
+      });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Demo GM" }).click();
+  await openManageCategory(page, "Campaign");
+  await openCreateDrawer(page, "New campaign");
+  const campaignName = page.getByRole("textbox", { name: "Campaign name", exact: true });
+  await campaignName.fill("E2E Retry Safe Campaign");
+  await page.getByRole("checkbox", { name: "Create starter invite" }).check();
+  await page.getByRole("textbox", { name: "Setup invite email" }).fill("retry-safe@example.com");
+  const setupForm = page.locator("form.create-drawer-form");
+  const submitButton = setupForm.locator('button[type="submit"]');
+  await submitButton.click();
+  await expect.poll(() => campaignPosts).toBe(1);
+  try {
+    await expect(submitButton).toBeDisabled();
+    await expect(campaignName).toBeDisabled();
+    await submitButton.evaluate((button: HTMLButtonElement) => button.click());
+    expect(campaignPosts).toBe(1);
+  } finally {
+    releaseFirstCampaign();
+  }
+
+  await expect(page.getByRole("status").filter({ hasText: "simulated invite failure" })).toBeVisible();
+  await expect(submitButton).toHaveText(/Retry Campaign Setup/);
+  await expect(campaignName).toBeDisabled();
+  expect(campaignPosts).toBe(1);
+  expect(inviteAttempts).toBe(1);
+
+  await submitButton.click();
+  const inviteLink = page.getByRole("textbox", { name: "Invite link" });
+  await expect(page.getByRole("status").filter({ hasText: "E2E Retry Safe Campaign created with First Session; invite link ready to copy" })).toBeVisible();
+  await expect(inviteLink).toHaveValue(/\/join\?invite=oti_/);
+  await expect(inviteLink).toBeFocused();
+  expect(campaignPosts).toBe(1);
+  expect(inviteAttempts).toBe(2);
 });
 
 test("GM can export and safely re-import a campaign archive", async ({ page }) => {
@@ -1547,7 +1694,7 @@ test("GM can export and safely re-import a campaign archive", async ({ page }) =
   await expect(importWizard.getByLabel("Archive import validation")).toContainText("journals");
   await closeManage(page);
   await page.getByRole("button", { name: "Prep", exact: true }).click();
-  await page.getByRole("button", { name: "Journal" }).click();
+  await page.getByRole("tab", { name: "Journal" }).click();
   await expect(page.getByText(selectedJournalTitle)).toBeVisible();
   await expect(page.getByText("Imported through the selected-collection archive browser path.")).toBeVisible();
   await openManageCategory(page, "Archives");
@@ -1757,29 +1904,23 @@ test("player combat action requires GM confirmation and completes the browser fl
 });
 
 test("GM can draft and apply an AI proposal from the browser", async ({ page }) => {
-  const comparisonSeed = await page.request.post(`${apiBaseUrl}/api/v1/campaigns/camp_demo/proposals`, {
-    headers: { "x-user-id": "usr_demo_gm" },
-    data: {
-      title: "Scene comparison check",
-      summary: "Shows the current scene values beside the proposed update.",
-      createdByType: "ai",
-      sourceId: "thread_comparison_check",
-      changesJson: [
-        {
-          entity: "scene",
-          action: "update",
-          id: "scn_vault_entry",
-          data: { name: "Vault Entry Revised", folder: "comparison" }
-        }
-      ],
-      diffJson: {}
-    }
-  });
-  expect(comparisonSeed.ok()).toBeTruthy();
-
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
   await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+
+  const comparisonSeed = await expectJsonResponse<{ proposal: { id: string; title: string } }>(
+    await page.request.post(`${apiBaseUrl}/api/v1/campaigns/camp_demo/ai/encounter-design`, {
+      headers: gmApiHeaders,
+      data: {
+        prompt: "A comparison proposal for the current vault scene.",
+        difficulty: "standard",
+        sceneName: "Scene comparison check",
+        sceneWidth: 900,
+        sceneHeight: 700,
+        gridSize: 50
+      }
+    })
+  );
 
   const archiveResponse = await page.request.get(`${apiBaseUrl}/api/v1/campaigns/camp_demo/export`, {
     headers: { "x-user-id": "usr_demo_gm" }
@@ -1861,7 +2002,7 @@ test("GM can draft and apply an AI proposal from the browser", async ({ page }) 
 
   let aiAgent = await openAiAgent(page);
   await expect(aiAgent.getByLabel("AI Agent prompt")).toBeVisible();
-  await expect(aiAgent.locator(".ai-agent-proposal-row", { hasText: "Scene comparison check" })).toContainText("pending");
+  await expect(aiAgent.locator(".ai-agent-proposal-row", { hasText: comparisonSeed.proposal.title })).toContainText("pending");
 
   const replayThread = await expectJsonResponse<{ thread: { status: string }; assistantMessage: string }>(
     await page.request.post(`${apiBaseUrl}/api/v1/campaigns/camp_demo/ai/threads`, {
@@ -2006,7 +2147,7 @@ test("GM can draft and apply an AI proposal from the browser", async ({ page }) 
   await aiAgent.getByRole("button", { name: "Close AI Agent" }).click();
   await expect(aiAgent).toBeHidden();
   await page.getByRole("button", { name: "Prep", exact: true }).click();
-  await page.getByRole("button", { name: "Journal" }).click();
+  await page.getByRole("tab", { name: "Journal" }).click();
   const recapJournal = page.locator("article.journal-entry", { hasText: gmRecapChange!.data.title! });
   await expect(recapJournal).toContainText("gm_only");
   await expect(recapJournal).toContainText("ember vault clue");
@@ -2065,6 +2206,10 @@ test("GM can run SDK plugin and system workflows from the browser", async ({ pag
   await expect(pluginCard).toContainText("Core: >=0.1.0 on 0.3.0");
   await expect(pluginCard).toContainText("core compatible");
   await pluginCard.getByRole("button", { name: "Review and install" }).click();
+  const permissionReview = page.getByRole("dialog", { name: "Install 0.1.0" });
+  await expect(permissionReview.getByRole("group", { name: "Permissions to grant" })).toContainText("chat.write");
+  await expect(permissionReview.getByRole("group", { name: "Permissions to grant" })).toContainText("token.read");
+  await permissionReview.getByRole("button", { name: "Install 0.1.0 with 2 permissions" }).click();
   await expect(pluginCard).toContainText("installed plugin");
   await expect(pluginCard).toContainText("Installed v");
   await pluginCard.getByRole("button", { name: "/spark" }).click();
@@ -2080,6 +2225,7 @@ test("GM can run SDK plugin and system workflows from the browser", async ({ pag
   await expect(versionedPluginCard).toContainText("Compatibility: latest 2.0.0");
   await expect(versionedPluginCard).toContainText("Versions: 2 compatible, 0 blocked");
   await versionedPluginCard.getByRole("button", { name: "Install 1.0.0" }).click();
+  await page.getByRole("dialog", { name: "Install 1.0.0" }).getByRole("button", { name: "Install 1.0.0 with 1 permission" }).click();
   await expect(statusMessage(page, "Versioned Browser Plugin installed")).toBeVisible();
   await expect(versionedPluginCard).toContainText("Installed v1.0.0");
   await expect(versionedPluginCard.getByRole("button", { name: "Upgrade to 2.0.0" })).toBeEnabled();
@@ -2099,6 +2245,7 @@ test("GM can run SDK plugin and system workflows from the browser", async ({ pag
   await page.getByRole("button", { name: "Prep", exact: true }).click();
   await openInspectorPanel(page, "SDK");
   await versionedPluginCard.getByRole("button", { name: "Upgrade to 2.0.0" }).click();
+  await page.getByRole("dialog", { name: "Upgrade to 2.0.0" }).getByRole("button", { name: "Upgrade to 2.0.0 with 1 permission" }).click();
   await expect(statusMessage(page, "Versioned Browser Plugin upgraded")).toBeVisible();
   await expect(versionedPluginCard).toContainText("Installed v2.0.0");
   await versionedPluginCard.getByRole("button", { name: "/versioned" }).click();
@@ -2110,6 +2257,7 @@ test("GM can run SDK plugin and system workflows from the browser", async ({ pag
   await page.getByRole("button", { name: "Prep", exact: true }).click();
   await openInspectorPanel(page, "SDK");
   await versionedPluginCard.getByRole("button", { name: "Roll back to 1.0.0" }).click();
+  await page.getByRole("dialog", { name: "Roll back to 1.0.0" }).getByRole("button", { name: "Roll back to 1.0.0 with 1 permission" }).click();
   await expect(statusMessage(page, "Versioned Browser Plugin rolled back")).toBeVisible();
   await expect(versionedPluginCard).toContainText("Installed v1.0.0");
   await expect(versionedPluginCard).toContainText("Audit history: 3 plugin.install rows");
@@ -2617,10 +2765,326 @@ test("SDK marketplace is hidden from players in the browser", async ({ page }) =
   await expect(page.getByLabel("Session user")).toHaveValue("usr_demo_player");
 
   await expect(page.getByRole("button", { name: "Prep", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Plugins", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: "Plugins", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "AI Studio", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Account", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add token" })).toHaveCount(0);
+
+  const journalTab = page.getByRole("tab", { name: "Journal", exact: true });
+  await expect(journalTab).toHaveAttribute("aria-controls", "inspector-panel-journal");
+  await journalTab.click();
+  const journalPanel = page.getByRole("tabpanel");
+  await expect(journalPanel).toHaveAttribute("id", "inspector-panel-journal");
+  await expect(journalPanel.getByRole("region", { name: "Journal entries" })).toBeVisible();
+  await expect(journalPanel.getByText("New entry", { exact: true })).toHaveCount(0);
+  await expect(journalPanel.getByRole("button", { name: "Generate session recap" })).toHaveCount(0);
+});
+
+test("closing a delayed invite cannot replace a newer login", async ({ page }) => {
+  let releaseInvite!: () => void;
+  let markInviteStarted!: () => void;
+  const inviteStarted = new Promise<void>((resolve) => { markInviteStarted = resolve; });
+  const inviteReleased = new Promise<void>((resolve) => { releaseInvite = resolve; });
+  await page.route("**/api/v1/invites/accept", async (route) => {
+    markInviteStarted();
+    await inviteReleased;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        token: "stale-invite-token",
+        user: { id: "usr_stale_invite", displayName: "Stale Invite" },
+        session: { id: "ses_stale_invite", userId: "usr_stale_invite" },
+        memberships: [],
+        campaign: { id: "camp_stale_invite", name: "Stale Invite Campaign" }
+      })
+    }).catch(() => undefined);
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Have an invite token?" }).click();
+  await page.getByRole("textbox", { name: "Public invite token" }).fill("oti_delayed");
+  await page.getByRole("textbox", { name: "Join email" }).fill("delayed@example.test");
+  await page.getByLabel("Join password").fill("correct horse");
+  await page.getByRole("button", { name: "Accept Invite" }).click();
+  await inviteStarted;
+
+  await page.getByRole("button", { name: "Use sign in instead" }).click();
+  await page.getByRole("button", { name: "Demo GM" }).click();
+  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  releaseInvite();
+  await page.waitForTimeout(200);
+
+  expect(await page.evaluate(() => ({ userId: localStorage.getItem("otte:userId"), token: localStorage.getItem("otte:sessionToken") }))).toMatchObject({
+    userId: "usr_demo_gm"
+  });
+  expect(await page.evaluate(() => localStorage.getItem("otte:sessionToken"))).not.toBe("stale-invite-token");
+});
+
+test("invite acceptance sends only one in-flight one-time-token request", async ({ page }) => {
+  let requestCount = 0;
+  let releaseInvite!: () => void;
+  let markInviteStarted!: () => void;
+  const inviteStarted = new Promise<void>((resolve) => { markInviteStarted = resolve; });
+  const inviteReleased = new Promise<void>((resolve) => { releaseInvite = resolve; });
+  await page.route("**/api/v1/invites/accept", async (route) => {
+    requestCount += 1;
+    markInviteStarted();
+    await inviteReleased;
+    await route.fulfill({
+      status: 401,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "unauthorized", message: "Invite request rejected for test" })
+    });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Have an invite token?" }).click();
+  const inviteForm = page.locator("form.invite-accept-form");
+  await inviteForm.getByRole("textbox", { name: "Public invite token" }).fill("oti_single_flight");
+  await inviteForm.getByRole("textbox", { name: "Join email" }).fill("single-flight@example.test");
+  await inviteForm.getByLabel("Join password").fill("correct horse");
+  const submit = inviteForm.locator('button[type="submit"]');
+
+  await submit.evaluate((button) => {
+    if (!(button instanceof HTMLButtonElement)) throw new Error("Invite submit control is not a button");
+    button.click();
+    button.click();
+  });
+  await inviteStarted;
+
+  expect(requestCount).toBe(1);
+  await expect(inviteForm).toHaveAttribute("aria-busy", "true");
+  await expect(submit).toBeDisabled();
+  await expect(submit).toContainText("Accepting Invite");
+
+  releaseInvite();
+  await expect(inviteForm).toHaveAttribute("aria-busy", "false");
+  await expect(submit).toBeEnabled();
+  await expect(page.getByText("Invite request rejected for test")).toBeVisible();
+  expect(requestCount).toBe(1);
+});
+
+test("a delayed invite cannot replace a newer session switch", async ({ page }) => {
+  let releaseInvite!: () => void;
+  let markInviteStarted!: () => void;
+  const inviteStarted = new Promise<void>((resolve) => { markInviteStarted = resolve; });
+  const inviteReleased = new Promise<void>((resolve) => { releaseInvite = resolve; });
+  await page.route("**/api/v1/invites/accept", async (route) => {
+    markInviteStarted();
+    await inviteReleased;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        token: "stale-authenticated-invite-token",
+        user: { id: "usr_stale_authenticated_invite", displayName: "Stale Authenticated Invite" },
+        session: { id: "ses_stale_authenticated_invite", userId: "usr_stale_authenticated_invite" },
+        memberships: [],
+        campaign: { id: "camp_stale_authenticated_invite", name: "Stale Authenticated Invite Campaign" }
+      })
+    }).catch(() => undefined);
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Demo GM" }).click();
+  await openManageCategory(page, "People");
+  await openDetails(page.locator("details", { hasText: "Join with an invite token" }));
+  const joinButton = page.getByRole("button", { name: "Join", exact: true });
+  const joinForm = page.locator("form", { has: joinButton });
+  await joinForm.getByRole("textbox", { name: "Invite token" }).fill("oti_delayed_authenticated");
+  await joinForm.getByRole("textbox", { name: "Join email" }).fill("delayed-authenticated@example.test");
+  await joinForm.getByLabel("Password").fill("correct horse");
+  await joinButton.click();
+  await inviteStarted;
+
+  await page.getByLabel("Session user").selectOption("usr_demo_player");
+  await expect(page.getByLabel("Session user")).toHaveValue("usr_demo_player");
+  releaseInvite();
+  await page.waitForTimeout(200);
+
+  expect(await page.evaluate(() => ({ userId: localStorage.getItem("otte:userId"), token: localStorage.getItem("otte:sessionToken") }))).toMatchObject({
+    userId: "usr_demo_player"
+  });
+  expect(await page.evaluate(() => localStorage.getItem("otte:sessionToken"))).not.toBe("stale-authenticated-invite-token");
+});
+
+test("delayed GM actor and token mutations cannot apply after switching to a player", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Demo GM" }).click();
+  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+
+  const baseline = await page.evaluate(async ({ apiBaseUrl }) => {
+    const bearer = localStorage.getItem("otte:sessionToken");
+    if (!bearer) throw new Error("No browser session token available for stale mutation setup");
+    const headers = { authorization: `Bearer ${bearer}` };
+    const tokenResponse = await fetch(`${apiBaseUrl}/api/v1/scenes/scn_vault_entry/tokens`, { headers });
+    if (!tokenResponse.ok) throw new Error(await tokenResponse.text());
+    const tokens = await tokenResponse.json() as Array<{ id: string; actorId?: string; name: string }>;
+    const token = tokens.find((item) => item.id === "tok_valen");
+    if (!token) throw new Error("Valen token is unavailable for stale mutation setup");
+    if (!token.actorId) throw new Error("Valen token has no actor for stale mutation setup");
+    const actorResponse = await fetch(`${apiBaseUrl}/api/v1/actors/${token.actorId}`, { headers });
+    if (!actorResponse.ok) throw new Error(await actorResponse.text());
+    return { actor: await actorResponse.json() as { id: string; name: string }, token };
+  }, { apiBaseUrl });
+
+  const selectBaselineActor = async () => {
+    const token = page.locator(".token").filter({ hasText: baseline.token.name }).first();
+    if ((await token.getAttribute("aria-pressed")) !== "true") {
+      await token.focus();
+      await token.press("Enter");
+    }
+    await expect(selectedActorPanel(page)).toContainText(baseline.actor.name);
+  };
+  await selectBaselineActor();
+
+  let actorRelease!: () => void;
+  let actorStartedResolve!: () => void;
+  const actorStarted = new Promise<void>((resolve) => { actorStartedResolve = resolve; });
+  const actorReleased = new Promise<void>((resolve) => { actorRelease = resolve; });
+  await page.route(`**/api/v1/actors/${baseline.actor.id}`, async (route) => {
+    if (route.request().method() !== "PATCH") return route.continue();
+    actorStartedResolve();
+    await actorReleased;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ...baseline.actor, name: "GM stale actor response" })
+    }).catch(() => undefined);
+  });
+
+  await page.getByRole("button", { name: "Poisoned", exact: true }).click();
+  await actorStarted;
+  await page.getByLabel("Session user").selectOption("usr_demo_player");
+  await expect(page.getByLabel("Session user")).toHaveValue("usr_demo_player");
+  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  actorRelease();
+  await page.waitForTimeout(200);
+  await expect(page.getByText("GM stale actor response")).toHaveCount(0);
+
+  await page.getByLabel("Session user").selectOption("usr_demo_gm");
+  await expect(page.getByLabel("Session user")).toHaveValue("usr_demo_gm");
+  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await selectBaselineActor();
+
+  let tokenRelease!: () => void;
+  let tokenStartedResolve!: () => void;
+  const tokenStarted = new Promise<void>((resolve) => { tokenStartedResolve = resolve; });
+  const tokenReleased = new Promise<void>((resolve) => { tokenRelease = resolve; });
+  await page.route("**/api/v1/tokens/tok_valen", async (route) => {
+    if (route.request().method() !== "PATCH") return route.continue();
+    tokenStartedResolve();
+    await tokenReleased;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ...baseline.token, name: "GM stale token response", notes: "GM-only stale notes" })
+    }).catch(() => undefined);
+  });
+
+  const actorPanel = selectedActorPanel(page);
+  await openActorDisclosure(actorPanel, "Token settings");
+  const tokenName = page.getByRole("textbox", { name: "Token inspector name" });
+  await tokenName.fill("Attempted token update");
+  await tokenName.press("Tab");
+  await tokenStarted;
+  await page.getByLabel("Session user").selectOption("usr_demo_player");
+  await expect(page.getByLabel("Session user")).toHaveValue("usr_demo_player");
+  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  tokenRelease();
+  await page.waitForTimeout(200);
+
+  await expect(page.getByText("GM stale token response")).toHaveCount(0);
+  expect(await page.locator("textarea").evaluateAll((elements) => elements.map((element) => (element as HTMLTextAreaElement).value))).not.toContain("GM-only stale notes");
+  expect(await page.evaluate(() => localStorage.getItem("otte:userId"))).toBe("usr_demo_player");
+});
+
+test("closing Encounter Builder cancels the remaining monster placements", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Demo GM" }).click();
+  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+
+  const encounter = await page.evaluate(async ({ apiBaseUrl }) => {
+    const bearer = localStorage.getItem("otte:sessionToken");
+    if (!bearer) throw new Error("No browser session token available for encounter cancellation setup");
+    const headers = { authorization: `Bearer ${bearer}`, "content-type": "application/json" };
+    const campaignResponse = await fetch(`${apiBaseUrl}/api/v1/campaigns/camp_demo`, { headers });
+    if (!campaignResponse.ok) throw new Error(await campaignResponse.text());
+    const campaign = await campaignResponse.json() as { defaultSystemId?: string };
+    const systemId = campaign.defaultSystemId ?? "generic-fantasy";
+    const threatsResponse = await fetch(`${apiBaseUrl}/api/v1/campaigns/camp_demo/systems/${encodeURIComponent(systemId)}/encounter-threats`, { headers });
+    if (!threatsResponse.ok) throw new Error(await threatsResponse.text());
+    const threats = await threatsResponse.json() as Array<{ id: string; name: string }>;
+    const threat = threats[0];
+    if (!threat) throw new Error("No encounter threat available");
+    const name = `Cancelable Placement ${Date.now().toString(36)}`;
+    const response = await fetch(`${apiBaseUrl}/api/v1/campaigns/camp_demo/systems/${encodeURIComponent(systemId)}/encounter-plan`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ partyActorIds: [], threats: [{ id: threat.id, count: 3 }], createEncounter: true, name })
+    });
+    if (!response.ok) throw new Error(await response.text());
+    const result = await response.json() as { encounter?: { id: string; name: string } };
+    if (!result.encounter) throw new Error("Encounter setup did not return a saved encounter");
+    return result.encounter;
+  }, { apiBaseUrl });
+
+  let placementRelease!: () => void;
+  let placementStartedResolve!: () => void;
+  let placementRequestCount = 0;
+  const placementStarted = new Promise<void>((resolve) => { placementStartedResolve = resolve; });
+  const placementReleased = new Promise<void>((resolve) => { placementRelease = resolve; });
+  await page.route("**/api/v1/scenes/scn_vault_entry/tokens", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    placementRequestCount += 1;
+    placementStartedResolve();
+    await placementReleased;
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    const timestamp = new Date().toISOString();
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ...body,
+        id: `tok_cancelled_placement_${placementRequestCount}`,
+        sceneId: "scn_vault_entry",
+        rotation: 0,
+        layer: body.layer ?? "player",
+        hidden: false,
+        locked: false,
+        visionEnabled: false,
+        visionRadius: 0,
+        disposition: body.disposition ?? "hostile",
+        ownerUserIds: [],
+        metadata: {},
+        createdAt: timestamp,
+        updatedAt: timestamp
+      })
+    }).catch(() => undefined);
+  });
+
+  try {
+    await page.reload();
+    await openInspectorPanel(page, "Combat");
+    await page.getByRole("button", { name: "Plan Encounter" }).click();
+    const dialog = page.getByRole("dialog", { name: "Encounter builder" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: new RegExp(encounter.name) }).click();
+    const place = dialog.getByRole("button", { name: "Place monsters on scene" });
+    await expect(place).toBeEnabled();
+    await place.click();
+    await placementStarted;
+    await dialog.getByRole("button", { name: "Cancel monster placement and close encounter builder" }).click();
+    await expect(dialog).toBeHidden();
+    placementRelease();
+    await page.waitForTimeout(400);
+    expect(placementRequestCount).toBe(1);
+  } finally {
+    placementRelease();
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+    await page.request.delete(`${apiBaseUrl}/api/v1/encounters/${encounter.id}`, { headers: gmApiHeaders }).catch(() => undefined);
+  }
 });
 
 test("player can accept an invite from a private browser session", async ({ browser, page }) => {
@@ -2635,6 +3099,8 @@ test("player can accept an invite from a private browser session", async ({ brow
   await expect(createdInviteToken).toHaveValue(/^oti_/);
   const inviteToken = await createdInviteToken.inputValue();
   expect(inviteToken).toMatch(/^oti_/);
+  const createdInviteLink = page.getByRole("textbox", { name: "Invite link" });
+  await expect(createdInviteLink).toHaveValue(new RegExp(`/join\\?invite=${inviteToken}$`));
   await page.evaluate(async ({ apiBaseUrl }) => {
     const bearer = localStorage.getItem("otte:sessionToken");
     if (!bearer) throw new Error("No browser session token available for hidden-scene setup");
@@ -2669,7 +3135,7 @@ test("player can accept an invite from a private browser session", async ({ brow
     await expect(privatePage.getByText("Campaign Settings")).not.toBeVisible();
     await expect(sceneTab(privatePage, "Vault Entry")).toBeVisible();
     await expect(sceneTab(privatePage, "GM Prep Hidden Scene")).toHaveCount(0);
-    await expect(privatePage.getByRole("button", { name: "Chat", exact: true })).toBeVisible();
+    await expect(privatePage.getByRole("tab", { name: "Chat", exact: true })).toBeVisible();
 
     await submitChatCommand(page, "Realtime GM broadcast");
     await openInspectorPanel(privatePage, "Chat");
@@ -2693,7 +3159,7 @@ test("player can accept an invite from a private browser session", async ({ brow
       return (await response.json()) as Array<{ formula?: string; visibility?: string }>;
     }, { apiBaseUrl });
     expect(playerRolls.some((roll) => roll.formula === "1d20+1" && roll.visibility === "public")).toBe(true);
-    expect(playerRolls.some((roll) => roll.formula === "1d20+2" && roll.visibility === "gm_only")).toBe(true);
+    expect(playerRolls.some((roll) => roll.formula === "1d20+2" && roll.visibility === "gm_only")).toBe(false);
 
     const playerUserId = await privatePage.evaluate(() => localStorage.getItem("otte:userId"));
     expect(playerUserId).toBeTruthy();
@@ -2731,7 +3197,7 @@ test("player can accept an invite from a private browser session", async ({ brow
     await expect(privatePage.getByRole("button", { name: `Token ${ownedToken.name}` })).toBeVisible();
     await expect(privatePage.getByRole("button", { name: `Token ${unownedToken.name}` })).toBeVisible();
     await privatePage.getByRole("button", { name: `Token ${ownedToken.name}` }).click();
-    await privatePage.getByRole("button", { name: "Actors", exact: true }).click();
+    await privatePage.getByRole("tab", { name: "Actors", exact: true }).click();
     const actorPanel = selectedActorPanel(privatePage);
     await expect(actorPanel.getByRole("heading", { name: playerActor.name })).toBeVisible();
     await expect(actorPanel.locator(".metric-row", { hasText: "Resources" })).toContainText("Action Surge 1/1");
@@ -2765,6 +3231,74 @@ test("player can accept an invite from a private browser session", async ({ brow
   }
 });
 
+test("quick scene creation stays draft and dirty scene edits block navigation", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Demo GM" }).click();
+  await openManageCategory(page, "Scenes");
+  await openCreateDrawer(page, "New scene");
+
+  const sceneName = `Quick Draft ${Date.now().toString(36)}`;
+  const sceneFolder = `dirty-guard-${Date.now().toString(36)}`;
+  await page.getByRole("textbox", { name: "Scene name", exact: true }).fill(sceneName);
+  await page.getByRole("textbox", { name: "Scene folder", exact: true }).fill(sceneFolder);
+  await page.getByRole("checkbox", { name: "Activate for players", exact: true }).check();
+  await closeManage(page);
+  await page.getByRole("button", { name: "Prep", exact: true }).click();
+  await page.getByRole("button", { name: "Add draft scene after newest scene" }).click();
+  await expect(sceneTab(page, sceneName)).toBeVisible();
+
+  const createdScene = await page.evaluate(async ({ apiBaseUrl, sceneName }) => {
+    const bearer = localStorage.getItem("otte:sessionToken");
+    if (!bearer) throw new Error("No browser session token available for scene verification");
+    const headers = { authorization: `Bearer ${bearer}` };
+    const campaigns = await fetch(`${apiBaseUrl}/api/v1/campaigns`, { headers }).then((response) => response.json());
+    const campaign = campaigns.find((item: { name?: string }) => item.name === "The Ember Vault") ?? campaigns[0];
+    const scenes = await fetch(`${apiBaseUrl}/api/v1/campaigns/${campaign.id}/scenes`, { headers }).then((response) => response.json());
+    return scenes.find((scene: { name?: string }) => scene.name === sceneName) as { id: string; active: boolean } | undefined;
+  }, { apiBaseUrl, sceneName });
+  expect(createdScene).toMatchObject({ active: false });
+
+  await sceneTab(page, "Vault Entry").click();
+  await openManageCategory(page, "Scenes");
+  const editName = page.getByRole("textbox", { name: "Edit scene name" });
+  await expect(page.getByRole("checkbox", { name: /Active player scene/ })).toBeDisabled();
+  await editName.fill("Vault Entry unsaved");
+  const managePanel = page.getByRole("region", { name: "Manage workspace panel" });
+  const folderFilter = page.getByRole("combobox", { name: "Scene folder filter" });
+  await folderFilter.selectOption(sceneFolder);
+  await expect(folderFilter).toHaveValue("all");
+  await expect(editName).toHaveValue("Vault Entry unsaved");
+  await page.getByRole("button", { name: "Select visible scenes" }).click();
+  const duplicateSelectedButtons = page.locator("button", { hasText: "Duplicate selected scenes" });
+  await expect(duplicateSelectedButtons).toHaveCount(2);
+  await expect(duplicateSelectedButtons.nth(0)).toBeDisabled();
+  await expect(duplicateSelectedButtons.nth(1)).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await expect(managePanel).toBeVisible();
+  await expect(editName).toHaveValue("Vault Entry unsaved");
+  await page.keyboard.press("Control+K");
+  await page.getByRole("textbox", { name: "Command palette search" }).fill("Go to Prep");
+  await page.keyboard.press("Enter");
+  await expect(managePanel).toBeVisible();
+  await expect(editName).toHaveValue("Vault Entry unsaved");
+  await managePanel.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(managePanel).toBeVisible();
+  await expect(editName).toHaveValue("Vault Entry unsaved");
+  await expect(statusMessage(page, "Save or discard scene changes before leaving Scene Manager")).toBeVisible();
+  await page.getByRole("button", { name: "Discard", exact: true }).click();
+  await closeManage(page);
+  await page.getByRole("button", { name: "Prep", exact: true }).click();
+  await sceneTab(page, "Vault Entry").click();
+  await openManageCategory(page, "Scenes");
+  await expect(editName).toHaveValue("Vault Entry");
+
+  await page.evaluate(async ({ apiBaseUrl, sceneId }) => {
+    const bearer = localStorage.getItem("otte:sessionToken");
+    if (!bearer || !sceneId) return;
+    await fetch(`${apiBaseUrl}/api/v1/scenes/${sceneId}`, { method: "DELETE", headers: { authorization: `Bearer ${bearer}` } });
+  }, { apiBaseUrl, sceneId: createdScene?.id });
+});
+
 test("GM can bulk duplicate selected prep scenes", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
@@ -2773,7 +3307,7 @@ test("GM can bulk duplicate selected prep scenes", async ({ page }) => {
 
   const prefix = `Bulk Prep ${Date.now()}`;
   await openCreateDrawer(page, "New scene");
-  const activeForPlayers = page.getByRole("checkbox", { name: "Activate for players" });
+  const activeForPlayers = page.getByRole("checkbox", { name: "Activate for players", exact: true });
   if (await activeForPlayers.isChecked()) await activeForPlayers.uncheck();
 
   await page.getByRole("textbox", { name: "Scene name", exact: true }).fill(`${prefix} A`);

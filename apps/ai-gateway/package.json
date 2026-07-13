@@ -7,7 +7,7 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "pnpm --filter @open-tabletop/ai-gateway^... build && tsc -p tsconfig.json",
+    "build": "node ../../scripts/run-package-manager.mjs --filter @open-tabletop/ai-gateway^... build && tsc -p tsconfig.json",
     "lint": "tsc -p tsconfig.json --noEmit",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests"

@@ -31,9 +31,25 @@ export interface CodexAppServerStartOptions {
   url: string;
   command?: string;
   timeoutMs: number;
+  signal?: AbortSignal;
 }
 
 export type CodexAppServerStarter = (options: CodexAppServerStartOptions) => Promise<void>;
+
+export interface CodexAppServerStartDependencies {
+  fetch?: typeof fetch;
+  spawn?: typeof import("node:child_process").spawn;
+  delay?: (ms: number, signal?: AbortSignal) => Promise<void>;
+  platform?: NodeJS.Platform;
+  stopTimeoutMs?: number;
+  forceKillTimeoutMs?: number;
+  terminateWindowsProcessTree?: (pid: number, timeoutMs: number) => Promise<void>;
+}
+
+export interface CodexAppServerStopOptions {
+  timeoutMs?: number;
+  forceKillTimeoutMs?: number;
+}
 
 export interface CodexAppServerCommandCandidate {
   command: string;
@@ -125,8 +141,10 @@ interface CodexStreamingTurnTransport extends JsonRpcTransport {
 type PendingRpc = {
   resolve(value: unknown): void;
   reject(error: Error): void;
-  timer: ReturnType<typeof setTimeout>;
+  timer: TimeoutHandle;
 };
+
+type TimeoutHandle = ReturnType<typeof setTimeout> | undefined;
 
 interface CodexAccountRpc {
   request<TResponse = unknown>(method: string, params: unknown): Promise<TResponse>;
@@ -252,7 +270,7 @@ export class CodexAppServerWebSocketTransport implements JsonRpcTransport {
 
   async generateImage(input: CodexAppServerImageGenerationInput): Promise<CodexAppServerGeneratedImage> {
     if (input.signal?.aborted) throw codexTurnAbortError();
-    const socket = await this.connect();
+    const socket = await this.connect(input.signal);
     const rpc = new CodexAppServerImageRpc(socket, {
       requestTimeoutMs: this.requestTimeoutMs,
       turnTimeoutMs: this.turnTimeoutMs
@@ -302,6 +320,7 @@ export class CodexAppServerWebSocketTransport implements JsonRpcTransport {
       });
       if (input.signal?.aborted) throw codexTurnAbortError();
       const generated = rpc.waitForImageTurnCompleted();
+      void generated.catch(() => undefined);
       await rpc.request("turn/start", {
         threadId: thread.thread.id,
         input: imageGenerationTurnInput(input),
@@ -339,7 +358,7 @@ export class CodexAppServerWebSocketTransport implements JsonRpcTransport {
 
   private async runTurn(input: CodexProviderTurnStartParams, onEvent?: (event: AiProviderEvent) => void): Promise<AiProviderEvent[]> {
     if (input.signal?.aborted) throw codexTurnAbortError();
-    const socket = await this.connect();
+    const socket = await this.connect(input.signal);
     const rpc = new CodexAppServerRpc(socket, {
       requestTimeoutMs: this.requestTimeoutMs,
       turnTimeoutMs: this.turnTimeoutMs,
@@ -386,6 +405,7 @@ export class CodexAppServerWebSocketTransport implements JsonRpcTransport {
       });
       if (input.signal?.aborted) throw codexTurnAbortError();
       const turnCompleted = rpc.waitForTurnCompleted();
+      void turnCompleted.catch(() => undefined);
       await rpc.request("turn/start", {
         threadId: thread.thread.id,
         input: codexTurnInput(input),
@@ -405,37 +425,45 @@ export class CodexAppServerWebSocketTransport implements JsonRpcTransport {
     }
   }
 
-  private async connect(): Promise<CodexWebSocketLike> {
+  private async connect(signal?: AbortSignal): Promise<CodexWebSocketLike> {
+    if (signal?.aborted) throw codexTurnAbortError();
     try {
-      return await this.openSocket();
+      return await this.openSocket(signal);
     } catch (error) {
+      if (signal?.aborted) throw codexTurnAbortError();
       if (!this.autoStart || !isAutoStartableCodexUrl(this.url)) throw asError(error);
       try {
-        await this.appServerStarter({ url: this.url, command: this.options.codexCommand, timeoutMs: this.requestTimeoutMs });
+        const startOptions: CodexAppServerStartOptions = { url: this.url, command: this.options.codexCommand, timeoutMs: this.requestTimeoutMs };
+        if (signal) startOptions.signal = signal;
+        await abortableCodexOperation(this.appServerStarter(startOptions), signal);
       } catch (startError) {
+        if (signal?.aborted) throw codexTurnAbortError();
         throw new Error(`Failed to start Codex app-server for ${this.url}: ${errorMessage(startError)}. Original connection error: ${errorMessage(error)}`);
       }
+      if (signal?.aborted) throw codexTurnAbortError();
       try {
-        return await this.openSocket();
+        return await this.openSocket(signal);
       } catch (reconnectError) {
+        if (signal?.aborted) throw codexTurnAbortError();
         throw new Error(`Started Codex app-server for ${this.url}, but the WebSocket connection still failed: ${errorMessage(reconnectError)}. Original connection error: ${errorMessage(error)}`);
       }
     }
   }
 
-  private openSocket(): Promise<CodexWebSocketLike> {
+  private openSocket(signal?: AbortSignal): Promise<CodexWebSocketLike> {
     const socket = this.webSocketFactory(this.url);
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
+      const timer = optionalTimeout(this.requestTimeoutMs, () => {
         cleanup();
         reject(new Error(`Timed out connecting to Codex app-server at ${this.url}`));
         socket.close();
-      }, this.requestTimeoutMs);
+      });
       const cleanup = () => {
         clearTimeout(timer);
         removeListener(socket, "open", onOpen);
         removeListener(socket, "error", onError);
         removeListener(socket, "close", onClose);
+        signal?.removeEventListener("abort", onAbort);
       };
       const onOpen = () => {
         cleanup();
@@ -449,48 +477,112 @@ export class CodexAppServerWebSocketTransport implements JsonRpcTransport {
         cleanup();
         reject(new Error(`Codex app-server socket closed before connection opened${event.reason ? `: ${event.reason}` : ""}`));
       };
+      const onAbort = () => {
+        cleanup();
+        reject(codexTurnAbortError());
+        socket.close(4000, "OpenTabletop agent turn stopped by user");
+      };
       socket.addEventListener("open", onOpen);
       socket.addEventListener("error", onError);
       socket.addEventListener("close", onClose);
+      signal?.addEventListener("abort", onAbort, { once: true });
+      if (signal?.aborted) onAbort();
     });
   }
 }
 
-const codexAppServerStartups = new Map<string, Promise<void>>();
+interface CodexAppServerStartup {
+  controller: AbortController;
+  promise: Promise<void>;
+  settled: boolean;
+  waiters: number;
+}
+
+const codexAppServerStartups = new Map<string, CodexAppServerStartup>();
 const codexAppServerChildren = new Map<string, ChildProcess>();
 
-async function startLocalCodexAppServer(options: CodexAppServerStartOptions): Promise<void> {
+export async function startLocalCodexAppServer(options: CodexAppServerStartOptions, dependencies: CodexAppServerStartDependencies = {}): Promise<void> {
+  if (options.signal?.aborted) throw codexTurnAbortError();
   const listenUrl = codexListenUrl(options.url);
   if (!listenUrl) throw new Error(`Codex app-server auto-start only supports loopback ws://IP:PORT URLs without a path; received ${options.url}`);
-  if (await isCodexAppServerReady(listenUrl)) return;
+  if (await isCodexAppServerReady(listenUrl, options.signal, dependencies.fetch, initialReadinessProbeTimeoutMs(options.timeoutMs))) return;
 
-  const existing = codexAppServerStartups.get(listenUrl);
-  if (existing) return existing;
+  let startup = codexAppServerStartups.get(listenUrl);
+  if (!startup) {
+    const controller = new AbortController();
+    startup = {
+      controller,
+      promise: spawnAndWaitForCodexAppServer(listenUrl, { ...options, signal: controller.signal }, dependencies),
+      settled: false,
+      waiters: 0
+    };
+    codexAppServerStartups.set(listenUrl, startup);
+    const trackedStartup = startup;
+    const settle = () => {
+      trackedStartup.settled = true;
+      if (codexAppServerStartups.get(listenUrl) === trackedStartup) codexAppServerStartups.delete(listenUrl);
+    };
+    void startup.promise.then(settle, settle);
+  }
 
-  const startup = spawnAndWaitForCodexAppServer(listenUrl, options);
-  codexAppServerStartups.set(listenUrl, startup);
+  startup.waiters += 1;
   try {
-    await startup;
+    await abortableCodexOperation(startup.promise, options.signal);
   } finally {
-    codexAppServerStartups.delete(listenUrl);
+    startup.waiters -= 1;
+    if (startup.waiters === 0 && !startup.settled) {
+      if (codexAppServerStartups.get(listenUrl) === startup) codexAppServerStartups.delete(listenUrl);
+      startup.controller.abort();
+      await startup.promise.catch(() => undefined);
+    }
   }
 }
 
-async function spawnAndWaitForCodexAppServer(listenUrl: string, options: CodexAppServerStartOptions): Promise<void> {
+export async function stopLocalCodexAppServers(options: CodexAppServerStopOptions = {}): Promise<void> {
+  const startups = [...new Set(codexAppServerStartups.values())];
+  const childrenBeforeAbort = [...codexAppServerChildren.values()];
+  for (const startup of startups) startup.controller.abort();
+  await Promise.allSettled(startups.map((startup) => startup.promise));
+
+  const children = [...new Set([...childrenBeforeAbort, ...codexAppServerChildren.values()])];
+  const timeoutMs = normalizedStopTimeout(options.timeoutMs, 2_000);
+  const forceKillTimeoutMs = normalizedStopTimeout(options.forceKillTimeoutMs, 250);
+  const results = await Promise.allSettled(children.map((child) => stopCodexAppServerChild(child, timeoutMs, forceKillTimeoutMs)));
+  for (const [index, result] of results.entries()) {
+    const stoppedChild = children[index];
+    if (result.status !== "fulfilled" && stoppedChild?.exitCode === null) continue;
+    for (const [listenUrl, child] of codexAppServerChildren.entries()) {
+      if (child === stoppedChild) codexAppServerChildren.delete(listenUrl);
+    }
+  }
+  const failures = results
+    .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+    .map((result) => errorMessage(result.reason));
+  if (failures.length > 0) throw new Error(`Failed to stop ${failures.length} Codex app-server process(es): ${failures.join(" | ")}`);
+}
+
+async function spawnAndWaitForCodexAppServer(
+  listenUrl: string,
+  options: CodexAppServerStartOptions,
+  dependencies: CodexAppServerStartDependencies
+): Promise<void> {
+  if (options.signal?.aborted) throw codexTurnAbortError();
   const existingChild = codexAppServerChildren.get(listenUrl);
   if (existingChild && existingChild.exitCode === null && !existingChild.killed) {
-    await waitForCodexAppServerReady(listenUrl, options.timeoutMs, [], existingChild);
+    await waitForCodexAppServerReady(listenUrl, options.timeoutMs, [], options.signal, dependencies, existingChild);
     return;
   }
 
   const errors: string[] = [];
-  const { spawn } = await import("node:child_process");
-  const candidates = codexAppServerCommandCandidates({ command: options.command });
+  const spawn = dependencies.spawn ?? (await import("node:child_process")).spawn;
+  const candidates = codexAppServerCommandCandidates({ command: options.command, platform: dependencies.platform });
   for (const candidate of candidates) {
+    if (options.signal?.aborted) throw codexTurnAbortError();
     try {
-      await spawnCodexAppServerCandidate(listenUrl, options.timeoutMs, candidate, spawn);
+      await spawnCodexAppServerCandidate(listenUrl, options.timeoutMs, candidate, spawn, options.signal, dependencies);
       return;
     } catch (error) {
+      if (options.signal?.aborted) throw codexTurnAbortError();
       errors.push(`${candidate.command}: ${errorMessage(error)}`);
       if (!isRecoverableCodexSpawnError(error)) {
         throw new Error(`Failed to start Codex app-server with ${candidate.command}: ${errorMessage(error)}${formatStartupErrors(errors)}`);
@@ -504,7 +596,9 @@ async function spawnCodexAppServerCandidate(
   listenUrl: string,
   timeoutMs: number,
   candidate: CodexAppServerCommandCandidate,
-  spawn: typeof import("node:child_process").spawn
+  spawn: typeof import("node:child_process").spawn,
+  signal: AbortSignal | undefined,
+  dependencies: CodexAppServerStartDependencies
 ): Promise<void> {
   const output: string[] = [];
   const child = spawn(candidate.command, ["app-server", "--listen", listenUrl], {
@@ -515,45 +609,207 @@ async function spawnCodexAppServerCandidate(
   codexAppServerChildren.set(listenUrl, child);
   child.stdout?.on("data", (chunk) => appendStartupOutput(output, chunk));
   child.stderr?.on("data", (chunk) => appendStartupOutput(output, chunk));
+  let spawnFailureReject!: (error: Error) => void;
   const spawnFailed = new Promise<never>((_resolve, reject) => {
-    child.once("error", (error) => reject(error));
+    spawnFailureReject = reject;
   });
+  const onSpawnError = (error: Error) => spawnFailureReject(error);
+  child.once("error", onSpawnError);
+  let holdChildTracking = false;
   child.once("exit", () => {
-    if (codexAppServerChildren.get(listenUrl) === child) codexAppServerChildren.delete(listenUrl);
+    if (!holdChildTracking && codexAppServerChildren.get(listenUrl) === child) codexAppServerChildren.delete(listenUrl);
   });
 
   try {
-    await Promise.race([waitForCodexAppServerReady(listenUrl, timeoutMs, output, child), spawnFailed]);
+    await Promise.race([waitForCodexAppServerReady(listenUrl, timeoutMs, output, signal, dependencies, child), spawnFailed]);
   } catch (error) {
-    child.kill();
+    holdChildTracking = true;
+    let childTerminated = false;
+    try {
+      await stopCodexAppServerChild(
+        child,
+        normalizedStopTimeout(dependencies.stopTimeoutMs, 2_000),
+        normalizedStopTimeout(dependencies.forceKillTimeoutMs, 250),
+        dependencies
+      );
+      childTerminated = true;
+    } catch (cleanupError) {
+      throw new AggregateError([asError(error), asError(cleanupError)], "Codex app-server startup failed and its child process could not be terminated");
+    } finally {
+      holdChildTracking = false;
+      if ((childTerminated || child.exitCode !== null) && codexAppServerChildren.get(listenUrl) === child) codexAppServerChildren.delete(listenUrl);
+    }
     throw error;
+  } finally {
+    child.off("error", onSpawnError);
   }
 }
 
-async function waitForCodexAppServerReady(listenUrl: string, timeoutMs: number, output: string[], child?: ChildProcess): Promise<void> {
-  const deadline = Date.now() + Math.max(1_000, timeoutMs);
+async function waitForCodexAppServerReady(
+  listenUrl: string,
+  timeoutMs: number,
+  output: string[],
+  signal: AbortSignal | undefined,
+  dependencies: CodexAppServerStartDependencies,
+  child?: ChildProcess
+): Promise<void> {
+  const deadline = timeoutMs === 0 ? Number.POSITIVE_INFINITY : Date.now() + Math.max(1, timeoutMs);
   let lastProbeError = "";
   while (Date.now() < deadline) {
+    if (signal?.aborted) throw codexTurnAbortError();
     if (child && child.exitCode !== null) {
       throw new Error(`Codex app-server process exited with code ${child.exitCode}.${formatStartupOutput(output)}`);
     }
     try {
-      if (await isCodexAppServerReady(listenUrl)) return;
+      const remainingMs = deadline === Number.POSITIVE_INFINITY ? 0 : Math.max(1, deadline - Date.now());
+      if (await isCodexAppServerReady(listenUrl, signal, dependencies.fetch, remainingMs)) return;
     } catch (error) {
+      if (signal?.aborted) throw codexTurnAbortError();
       lastProbeError = errorMessage(error);
     }
-    await delay(100);
+    await (dependencies.delay ?? delay)(100, signal);
   }
   throw new Error(`Timed out waiting for Codex app-server readiness at ${readyzUrlForCodexListenUrl(listenUrl)}.${lastProbeError ? ` Last probe error: ${lastProbeError}.` : ""}${formatStartupOutput(output)}`);
 }
 
-async function isCodexAppServerReady(listenUrl: string): Promise<boolean> {
+async function isCodexAppServerReady(
+  listenUrl: string,
+  signal?: AbortSignal,
+  fetchImplementation: typeof fetch = fetch,
+  timeoutMs = 0
+): Promise<boolean> {
+  if (signal?.aborted) throw codexTurnAbortError();
+  const probe = readinessProbeSignal(signal, timeoutMs);
   try {
-    const response = await fetch(readyzUrlForCodexListenUrl(listenUrl));
+    const response = await abortableCodexOperation(
+      fetchImplementation(readyzUrlForCodexListenUrl(listenUrl), { signal: probe.signal }),
+      probe.signal
+    );
     return response.status === 200;
-  } catch {
+  } catch (error) {
+    if (signal?.aborted) throw codexTurnAbortError();
     return false;
+  } finally {
+    probe.dispose();
   }
+}
+
+function initialReadinessProbeTimeoutMs(timeoutMs: number): number {
+  if (timeoutMs === 0) return 0;
+  if (!Number.isFinite(timeoutMs) || timeoutMs < 0) return 1_000;
+  return Math.max(1, Math.min(1_000, timeoutMs));
+}
+
+function readinessProbeSignal(parent: AbortSignal | undefined, timeoutMs: number): { signal: AbortSignal; dispose(): void } {
+  if (!parent && timeoutMs === 0) return { signal: new AbortController().signal, dispose() {} };
+  const controller = new AbortController();
+  const onAbort = () => controller.abort(parent?.reason);
+  parent?.addEventListener("abort", onAbort, { once: true });
+  if (parent?.aborted) onAbort();
+  const timer = timeoutMs > 0 ? setTimeout(() => controller.abort(new Error(`Codex app-server readiness probe timed out after ${timeoutMs}ms`)), timeoutMs) : undefined;
+  return {
+    signal: controller.signal,
+    dispose() {
+      if (timer) clearTimeout(timer);
+      parent?.removeEventListener("abort", onAbort);
+    }
+  };
+}
+
+async function stopCodexAppServerChild(
+  child: ChildProcess,
+  timeoutMs: number,
+  forceKillTimeoutMs: number,
+  dependencies: Pick<CodexAppServerStartDependencies, "platform" | "terminateWindowsProcessTree"> = {}
+): Promise<void> {
+  if (child.exitCode !== null) return;
+  if (!child.killed) child.kill();
+  if (await waitForChildExit(child, timeoutMs)) return;
+
+  if ((dependencies.platform ?? process.platform) === "win32" && isProcessId(child.pid)) {
+    const terminateProcessTree = dependencies.terminateWindowsProcessTree ?? terminateWindowsProcessTree;
+    try {
+      await boundedProcessTreeTermination(terminateProcessTree, child.pid, forceKillTimeoutMs);
+    } catch (error) {
+      if (child.exitCode !== null || isAlreadyExitedProcessTreeError(error)) return;
+      child.kill("SIGKILL");
+      if (await waitForChildExit(child, forceKillTimeoutMs)) {
+        throw new Error(`Codex app-server launcher exited, but its Windows process tree could not be confirmed terminated: ${errorMessage(error)}`);
+      }
+      disposeChildProcess(child);
+      throw new Error(`Codex app-server Windows process tree could not be terminated: ${errorMessage(error)}`);
+    }
+    if (await waitForChildExit(child, forceKillTimeoutMs)) return;
+  }
+
+  child.kill("SIGKILL");
+  if (await waitForChildExit(child, forceKillTimeoutMs)) return;
+  disposeChildProcess(child);
+  throw new Error("Codex app-server process did not exit after SIGKILL");
+}
+
+function isProcessId(value: number | undefined): value is number {
+  return Number.isSafeInteger(value) && (value ?? 0) > 0;
+}
+
+async function terminateWindowsProcessTree(pid: number, timeoutMs: number): Promise<void> {
+  const { execFile } = await import("node:child_process");
+  await new Promise<void>((resolve, reject) => {
+    execFile(
+      "taskkill.exe",
+      ["/PID", String(pid), "/T", "/F"],
+      { windowsHide: true, timeout: Math.max(1, timeoutMs) },
+      (error) => error ? reject(error) : resolve()
+    );
+  });
+}
+
+async function boundedProcessTreeTermination(
+  terminateProcessTree: (pid: number, timeoutMs: number) => Promise<void>,
+  pid: number,
+  timeoutMs: number
+): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      terminateProcessTree(pid, timeoutMs),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`Windows process-tree termination timed out after ${timeoutMs}ms`)), timeoutMs);
+      })
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function isAlreadyExitedProcessTreeError(error: unknown): boolean {
+  if (!isRecord(error)) return false;
+  return error.code === 128 || error.code === "ESRCH";
+}
+
+function disposeChildProcess(child: ChildProcess): void {
+  child.stdout?.destroy();
+  child.stderr?.destroy();
+  child.unref();
+}
+
+function waitForChildExit(child: ChildProcess, timeoutMs: number): Promise<boolean> {
+  if (child.exitCode !== null) return Promise.resolve(true);
+  return new Promise<boolean>((resolve) => {
+    const finish = (exited: boolean) => {
+      clearTimeout(timer);
+      child.off("exit", onExit);
+      resolve(exited);
+    };
+    const onExit = () => finish(true);
+    const timer = setTimeout(() => finish(child.exitCode !== null), timeoutMs);
+    child.once("exit", onExit);
+  });
+}
+
+function normalizedStopTimeout(value: number | undefined, fallback: number): number {
+  if (value === undefined || !Number.isFinite(value) || value < 0) return fallback;
+  return Math.floor(value);
 }
 
 function codexListenUrl(url: string): string | undefined {
@@ -654,8 +910,20 @@ function formatStartupErrors(errors: string[]): string {
   return ` Startup attempts: ${errors.join(" | ")}`;
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.reject(codexTurnAbortError());
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      reject(codexTurnAbortError());
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 function asError(error: unknown): Error {
@@ -672,11 +940,34 @@ function codexTurnAbortError(): Error {
   return error;
 }
 
+function abortableCodexOperation<T>(operation: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return operation;
+  if (signal.aborted) return Promise.reject(codexTurnAbortError());
+  return new Promise<T>((resolve, reject) => {
+    const cleanup = () => signal.removeEventListener("abort", onAbort);
+    const onAbort = () => {
+      cleanup();
+      reject(codexTurnAbortError());
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    operation.then(
+      (value) => {
+        cleanup();
+        resolve(value);
+      },
+      (error: unknown) => {
+        cleanup();
+        reject(error);
+      }
+    );
+  });
+}
+
 class CodexAppServerImageRpc {
   private readonly pending = new Map<string, PendingRpc>();
   private readonly images: CodexAppServerGeneratedImage[] = [];
   private readonly agentMessages: string[] = [];
-  private turnCompleted?: { resolve(image: CodexAppServerGeneratedImage): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> };
+  private turnCompleted?: { resolve(image: CodexAppServerGeneratedImage): void; reject(error: Error): void; timer: TimeoutHandle };
   private nextId = 1;
 
   constructor(
@@ -691,10 +982,10 @@ class CodexAppServerImageRpc {
   request<TResponse = unknown>(method: string, params: unknown): Promise<TResponse> {
     const id = `otte-img-${this.nextId++}`;
     return new Promise<TResponse>((resolve, reject) => {
-      const timer = setTimeout(() => {
+      const timer = optionalTimeout(this.options.requestTimeoutMs, () => {
         this.pending.delete(id);
         reject(new Error(`Timed out waiting for Codex app-server method ${method}`));
-      }, this.options.requestTimeoutMs);
+      });
       this.pending.set(id, {
         resolve: (value) => resolve(value as TResponse),
         reject,
@@ -710,9 +1001,10 @@ class CodexAppServerImageRpc {
 
   waitForImageTurnCompleted(): Promise<CodexAppServerGeneratedImage> {
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
+      const timer = optionalTimeout(this.options.turnTimeoutMs, () => {
+        if (this.turnCompleted?.reject === reject) this.turnCompleted = undefined;
         reject(new Error(`Timed out waiting ${this.options.turnTimeoutMs}ms for Codex app-server image generation`));
-      }, this.options.turnTimeoutMs);
+      });
       this.turnCompleted = { resolve, reject, timer };
     });
   }
@@ -721,12 +1013,7 @@ class CodexAppServerImageRpc {
     this.socket.removeEventListener?.("message", this.onMessage);
     this.socket.removeEventListener?.("close", this.onClose);
     this.socket.removeEventListener?.("error", this.onError);
-    for (const [id, pending] of this.pending.entries()) {
-      clearTimeout(pending.timer);
-      pending.reject(new Error(`Codex app-server request ${id} was disposed`));
-    }
-    this.pending.clear();
-    if (this.turnCompleted) clearTimeout(this.turnCompleted.timer);
+    this.rejectOutstanding(new Error("Codex app-server image RPC was disposed"));
   }
 
   private readonly onMessage = (event: CodexWebSocketEvent): void => {
@@ -754,21 +1041,26 @@ class CodexAppServerImageRpc {
   };
 
   private readonly onClose = (event: CodexWebSocketEvent): void => {
-    const error = new Error(`Codex app-server socket closed${event.reason ? `: ${event.reason}` : ""}`);
+    this.rejectOutstanding(new Error(`Codex app-server socket closed${event.reason ? `: ${event.reason}` : ""}`));
+  };
+
+  private readonly onError = (event: CodexWebSocketEvent): void => {
+    this.rejectOutstanding(new Error(`Codex app-server socket error: ${event.message ?? "websocket error"}`));
+  };
+
+  private rejectOutstanding(error: Error): void {
     for (const pending of this.pending.values()) {
       clearTimeout(pending.timer);
       pending.reject(error);
     }
     this.pending.clear();
     if (this.turnCompleted) {
-      clearTimeout(this.turnCompleted.timer);
-      this.turnCompleted.reject(error);
+      const completed = this.turnCompleted;
+      this.turnCompleted = undefined;
+      clearTimeout(completed.timer);
+      completed.reject(error);
     }
-  };
-
-  private readonly onError = (event: CodexWebSocketEvent): void => {
-    if (this.turnCompleted) this.turnCompleted.reject(new Error(`Codex app-server socket error: ${event.message ?? "websocket error"}`));
-  };
+  }
 
   private handleServerRequest(id: unknown, method: string): void {
     if (method === "item/commandExecution/requestApproval") {
@@ -832,7 +1124,7 @@ class CodexAppServerImageRpc {
 class CodexAppServerRpc {
   private readonly pending = new Map<string, PendingRpc>();
   private readonly events: AiProviderEvent[] = [];
-  private turnCompleted?: { resolve(events: AiProviderEvent[]): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> };
+  private turnCompleted?: { resolve(events: AiProviderEvent[]): void; reject(error: Error): void; timer: TimeoutHandle };
   private nextId = 1;
 
   constructor(
@@ -847,10 +1139,10 @@ class CodexAppServerRpc {
   request<TResponse = unknown>(method: string, params: unknown): Promise<TResponse> {
     const id = `otte-${this.nextId++}`;
     return new Promise<TResponse>((resolve, reject) => {
-      const timer = setTimeout(() => {
+      const timer = optionalTimeout(this.options.requestTimeoutMs, () => {
         this.pending.delete(id);
         reject(new Error(`Timed out waiting for Codex app-server method ${method}`));
-      }, this.options.requestTimeoutMs);
+      });
       this.pending.set(id, {
         resolve: (value) => resolve(value as TResponse),
         reject,
@@ -875,12 +1167,7 @@ class CodexAppServerRpc {
     this.socket.removeEventListener?.("message", this.onMessage);
     this.socket.removeEventListener?.("close", this.onClose);
     this.socket.removeEventListener?.("error", this.onError);
-    for (const [id, pending] of this.pending.entries()) {
-      clearTimeout(pending.timer);
-      pending.reject(new Error(`Codex app-server request ${id} was disposed`));
-    }
-    this.pending.clear();
-    if (this.turnCompleted) clearTimeout(this.turnCompleted.timer);
+    this.rejectOutstanding(new Error("Codex app-server RPC was disposed"));
   }
 
   private readonly onMessage = (event: CodexWebSocketEvent): void => {
@@ -908,21 +1195,26 @@ class CodexAppServerRpc {
   };
 
   private readonly onClose = (event: CodexWebSocketEvent): void => {
-    const error = new Error(`Codex app-server socket closed${event.reason ? `: ${event.reason}` : ""}`);
+    this.rejectOutstanding(new Error(`Codex app-server socket closed${event.reason ? `: ${event.reason}` : ""}`));
+  };
+
+  private readonly onError = (event: CodexWebSocketEvent): void => {
+    this.rejectOutstanding(new Error(`Codex app-server socket error: ${event.message ?? "websocket error"}`));
+  };
+
+  private rejectOutstanding(error: Error): void {
     for (const pending of this.pending.values()) {
       clearTimeout(pending.timer);
       pending.reject(error);
     }
     this.pending.clear();
     if (this.turnCompleted) {
-      clearTimeout(this.turnCompleted.timer);
-      this.turnCompleted.reject(error);
+      const completed = this.turnCompleted;
+      this.turnCompleted = undefined;
+      clearTimeout(completed.timer);
+      completed.reject(error);
     }
-  };
-
-  private readonly onError = (event: CodexWebSocketEvent): void => {
-    if (this.turnCompleted) this.turnCompleted.reject(new Error(`Codex app-server socket error: ${event.message ?? "websocket error"}`));
-  };
+  }
 
   private async handleServerRequest(id: unknown, method: string, params: unknown): Promise<void> {
     if (method === "item/tool/call") {
@@ -1013,10 +1305,11 @@ class CodexAppServerRpc {
     this.turnCompleted.timer = this.createTurnTimeout(this.turnCompleted.reject);
   }
 
-  private createTurnTimeout(reject: (error: Error) => void): ReturnType<typeof setTimeout> {
-    return setTimeout(() => {
+  private createTurnTimeout(reject: (error: Error) => void): TimeoutHandle {
+    return optionalTimeout(this.options.turnTimeoutMs, () => {
+      if (this.turnCompleted?.reject === reject) this.turnCompleted = undefined;
       reject(new Error(`Timed out waiting ${this.options.turnTimeoutMs}ms for Codex app-server turn completion`));
-    }, this.options.turnTimeoutMs);
+    });
   }
 
   private recordEvent(event: AiProviderEvent): void {
@@ -1092,8 +1385,13 @@ function removeListener(socket: CodexWebSocketLike, type: "open" | "message" | "
 
 function normalizedTimeout(value: number | undefined, fallback: number): number {
   if (value === undefined) return fallback;
-  if (!Number.isFinite(value) || value <= 0) return fallback;
-  return Math.floor(value);
+  if (!Number.isFinite(value) || value < 0) return fallback;
+  if (value === 0) return 0;
+  return Math.max(1, Math.floor(value));
+}
+
+function optionalTimeout(timeoutMs: number, callback: () => void): TimeoutHandle {
+  return timeoutMs === 0 ? undefined : setTimeout(callback, timeoutMs);
 }
 
 async function ensureCodexAppServerAuthenticated(rpc: CodexAccountRpc, loginType: CodexAppServerLoginType = "chatgpt"): Promise<void> {

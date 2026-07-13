@@ -1,5 +1,12 @@
 import type { Actor, Token } from "@open-tabletop/core";
 
+export function actorForSelection(actors: Actor[], selectedActorId: string, selectedTokenActorId: string | undefined, activeSystemId: string | undefined): Actor | undefined {
+  return actors.find((actor) => actor.id === selectedTokenActorId)
+    ?? actors.find((actor) => actor.id === selectedActorId)
+    ?? actors.find((actor) => actor.systemId === activeSystemId)
+    ?? actors[0];
+}
+
 export function isAdversaryActor(actor: Actor, tokens: Token[]): boolean {
   if (isActorMarkedAdversary(actor)) return true;
   return tokens.some((token) => token.actorId === actor.id && token.disposition === "hostile");

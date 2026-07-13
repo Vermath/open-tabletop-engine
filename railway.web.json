@@ -16,9 +16,9 @@
     ]
   },
   "deploy": {
-    "startCommand": "node apps/web/server.mjs",
+    "startCommand": "NODE_ENV=production node apps/web/server.mjs",
     "numReplicas": 1,
-    "healthcheckPath": "/",
+    "healthcheckPath": "/api/v1/health",
     "healthcheckTimeout": 300,
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10,

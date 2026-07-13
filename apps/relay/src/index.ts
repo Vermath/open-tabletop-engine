@@ -16,9 +16,17 @@ interface StoredTable {
 interface PendingHttpResponse {
   response?: Extract<TunnelFrame, { type: "http.response" }>;
   chunks: Uint8Array[];
+  bytes: number;
+  method: string;
   resolve(response: Response): void;
   reject(error: Error): void;
   timer: ReturnType<typeof setTimeout>;
+}
+
+class RelayHttpResponseError extends Error {
+  constructor(readonly status: number, readonly code: string, message: string) {
+    super(message);
+  }
 }
 
 const rateLimiter = new MemoryRateLimiter({ windowMs: relayLimits.rateLimitWindowMs, maxRequests: relayLimits.maxRequestsPerWindow });
@@ -62,6 +70,9 @@ export default {
 export class TableTunnel {
   private hostSocket: WebSocket | undefined;
   private readonly pendingHttp = new Map<string, PendingHttpResponse>();
+  private bufferedHttpRequestBytes = 0;
+  private bufferedHttpResponseBytes = 0;
+  private activeHttpRequests = 0;
   private readonly playerSockets = new Map<string, WebSocket>();
 
   constructor(private readonly state: DurableObjectState, private readonly env: RelayEnv) {}
@@ -85,7 +96,7 @@ export class TableTunnel {
   private async status(): Promise<Response> {
     const table = await this.table();
     if (!table) return json({ error: "unknown_table" }, 404);
-    return json(relayTableStatus({ slug: table.slug, expiresAt: table.expiresAt, hostConnected: Boolean(this.hostSocket) }));
+    return json(relayTableStatus({ slug: table.slug, expiresAt: table.expiresAt, hostConnected: this.hostConnected() }));
   }
 
   private async acceptHost(request: Request): Promise<Response> {
@@ -99,11 +110,12 @@ export class TableTunnel {
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
     server.accept();
-    const previousHostSocket = this.hostSocket;
-    this.hostSocket = server;
-    previousHostSocket?.close(1012, "Host replaced by a newer tunnel connection");
+    this.replaceHostSocket(server);
     await this.renewTable(table);
-    server.addEventListener("message", (event) => this.handleHostMessage(String(event.data)).catch((error) => this.closeHost(server, 1011, error.message)));
+    server.addEventListener("message", (event) => {
+      if (this.hostSocket !== server) return;
+      this.handleHostMessage(String(event.data)).catch((error) => this.closeHost(server, 1011, error.message));
+    });
     server.addEventListener("close", () => this.closeHost(server, 1000, "Host disconnected"));
     server.addEventListener("error", () => this.closeHost(server, 1011, "Host socket error"));
     return new Response(null, { status: 101, webSocket: client });
@@ -113,30 +125,59 @@ export class TableTunnel {
     const table = await this.table();
     if (!table) return json({ error: "unknown_table" }, 404);
     if (isExpired(table)) return json({ error: "table_expired" }, 410);
-    if (!this.hostSocket) return json({ error: "host_offline" }, 503);
+    if (!this.hostConnected()) return json({ error: "host_offline" }, 503);
     let tunnelPath: string;
     try {
       tunnelPath = safeRelayPath(path);
     } catch {
       return json({ error: "bad_tunnel_path" }, 400);
     }
-    const declaredLength = Number(request.headers.get("content-length") ?? "0");
-    if (declaredLength > relayLimits.maxRequestBodyBytes) return json({ error: "request_too_large" }, 413);
-    const bodyBytes = request.method === "GET" || request.method === "HEAD" ? new Uint8Array() : new Uint8Array(await request.arrayBuffer());
-    if (bodyBytes.byteLength > relayLimits.maxRequestBodyBytes) return json({ error: "request_too_large" }, 413);
-    const requestId = crypto.randomUUID();
-    const responsePromise = this.waitForHttpResponse(requestId);
-    this.sendHost({ type: "http.request", requestId, method: request.method, path: tunnelPath, headers: requestHeaders(request.headers) });
-    if (bodyBytes.byteLength > 0) this.sendHost({ type: "http.body", requestId, bodyBase64: bytesToBase64(bodyBytes) });
-    this.sendHost({ type: "http.end", requestId });
-    return responsePromise;
+    if (this.activeHttpRequests >= relayLimits.maxPendingHttpRequestsPerTable || this.pendingHttp.size >= relayLimits.maxPendingHttpRequestsPerTable) {
+      return json({ error: "too_many_http_requests" }, 429);
+    }
+    this.activeHttpRequests += 1;
+    let reservedRequestBytes = 0;
+    try {
+      const declaredLength = Number(request.headers.get("content-length") ?? "0");
+      if (declaredLength > relayLimits.maxRequestBodyBytes) return json({ error: "request_too_large" }, 413);
+      const body = request.method === "GET" || request.method === "HEAD"
+        ? { chunks: [] as Uint8Array[], tooLarge: false, capacityExceeded: false }
+        : await readBoundedRequestBody(request, relayLimits.maxRequestBodyBytes, (bytes) => {
+            if (this.bufferedHttpRequestBytes + bytes > relayLimits.maxBufferedHttpRequestBytesPerTable) return false;
+            this.bufferedHttpRequestBytes += bytes;
+            reservedRequestBytes += bytes;
+            return true;
+          });
+      if (body.tooLarge) return json({ error: "request_too_large" }, 413);
+      if (body.capacityExceeded) return json({ error: "request_buffer_full" }, 429);
+      const requestId = crypto.randomUUID();
+      const responsePromise = this.waitForHttpResponse(requestId, request.method);
+      try {
+        this.sendHost({ type: "http.request", requestId, method: request.method, path: tunnelPath, headers: requestHeaders(request.headers) });
+        for (const chunk of body.chunks) this.sendHost({ type: "http.body", requestId, bodyBase64: bytesToBase64(chunk) });
+        this.sendHost({ type: "http.end", requestId });
+      } catch {
+        this.discardPendingHttpResponse(requestId, new RelayHttpResponseError(503, "host_offline", "Desktop host is not connected"));
+        void responsePromise.catch(() => undefined);
+        return json({ error: "host_offline" }, 503);
+      }
+      try {
+        return await responsePromise;
+      } catch (error) {
+        if (error instanceof RelayHttpResponseError) return json({ error: error.code }, error.status);
+        throw error;
+      }
+    } finally {
+      this.bufferedHttpRequestBytes = Math.max(0, this.bufferedHttpRequestBytes - reservedRequestBytes);
+      this.activeHttpRequests = Math.max(0, this.activeHttpRequests - 1);
+    }
   }
 
   private async proxyWebSocket(request: Request, path: string): Promise<Response> {
     const table = await this.table();
     if (!table) return json({ error: "unknown_table" }, 404);
     if (isExpired(table)) return json({ error: "table_expired" }, 410);
-    if (!this.hostSocket) return json({ error: "host_offline" }, 503);
+    if (!this.hostConnected()) return json({ error: "host_offline" }, 503);
     let tunnelPath: string;
     try {
       tunnelPath = safeRelayPath(path);
@@ -151,19 +192,23 @@ export class TableTunnel {
     const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
     const socketId = crypto.randomUUID();
     server.accept();
+    try {
+      this.sendHost({ type: "ws.open", socketId, path: tunnelPath, headers: requestHeaders(request.headers) });
+    } catch {
+      server.close(1011, "Desktop host is not connected");
+      return json({ error: "host_offline" }, 503);
+    }
     this.playerSockets.set(socketId, server);
-    this.sendHost({ type: "ws.open", socketId, path: tunnelPath, headers: requestHeaders(request.headers) });
     server.addEventListener("message", (event) => {
-      const bytes = typeof event.data === "string" ? new TextEncoder().encode(event.data) : new Uint8Array(event.data as ArrayBuffer);
-      this.sendHost({ type: "ws.message", socketId, bodyBase64: bytesToBase64(bytes) });
+      this.handlePlayerWebSocketMessage(socketId, server, event.data as string | ArrayBuffer);
     });
     server.addEventListener("close", (event) => {
       this.playerSockets.delete(socketId);
-      this.sendHost({ type: "ws.close", socketId, code: normalizeWebSocketCloseCode(event.code), reason: event.reason });
+      this.trySendHost({ type: "ws.close", socketId, code: normalizeWebSocketCloseCode(event.code), reason: event.reason });
     });
     server.addEventListener("error", () => {
       this.playerSockets.delete(socketId);
-      this.sendHost({ type: "ws.close", socketId, code: 1011, reason: "Relay client socket error" });
+      this.trySendHost({ type: "ws.close", socketId, code: 1011, reason: "Relay client socket error" });
     });
     return new Response(null, {
       status: 101,
@@ -184,21 +229,58 @@ export class TableTunnel {
       if (pending) pending.response = frame;
       return;
     }
+    if (frame.type === "http.error") {
+      const pending = this.takePendingHttpResponse(frame.requestId);
+      pending?.resolve(json({ error: frame.code, message: frame.message }, frame.status));
+      return;
+    }
     if (frame.type === "http.body") {
-      this.pendingHttp.get(frame.requestId)?.chunks.push(base64ToBytes(frame.bodyBase64));
+      const pending = this.pendingHttp.get(frame.requestId);
+      if (!pending) return;
+      const chunk = base64ToBytes(frame.bodyBase64);
+      if (
+        pending.bytes + chunk.byteLength > relayLimits.maxHttpResponseBodyBytes ||
+        this.bufferedHttpResponseBytes + chunk.byteLength > relayLimits.maxBufferedHttpResponseBytesPerTable
+      ) {
+        const rejected = this.takePendingHttpResponse(frame.requestId);
+        rejected?.resolve(json({ error: "host_response_too_large" }, 502));
+        return;
+      }
+      pending.chunks.push(chunk);
+      pending.bytes += chunk.byteLength;
+      this.bufferedHttpResponseBytes += chunk.byteLength;
       return;
     }
     if (frame.type === "http.end") {
-      const pending = this.pendingHttp.get(frame.requestId);
-      if (!pending?.response) return;
-      clearTimeout(pending.timer);
-      this.pendingHttp.delete(frame.requestId);
-      const body = concatBytes(pending.chunks);
-      pending.resolve(new Response(toArrayBuffer(body), { status: pending.response.status, headers: pending.response.headers }));
+      const pending = this.takePendingHttpResponse(frame.requestId, false);
+      if (!pending) return;
+      if (!pending.response) {
+        this.releaseBufferedHttpResponseBytes(pending.bytes);
+        pending.resolve(json({ error: "invalid_host_response" }, 502));
+        return;
+      }
+      const responseBody = pending.method === "HEAD" || responseStatusForbidsBody(pending.response.status)
+        ? null
+        : this.bufferedHttpResponseStream(pending.chunks, pending.bytes);
+      if (responseBody === null) this.releaseBufferedHttpResponseBytes(pending.bytes);
+      try {
+        pending.resolve(new Response(responseBody, { status: pending.response.status, headers: pending.response.headers }));
+      } catch {
+        if (responseBody) void responseBody.cancel().catch(() => undefined);
+        pending.resolve(json({ error: "invalid_host_response" }, 502));
+      }
       return;
     }
     if (frame.type === "ws.message") {
-      this.playerSockets.get(frame.socketId)?.send(base64ToBytes(frame.bodyBase64));
+      const socket = this.playerSockets.get(frame.socketId);
+      if (!socket) return;
+      const body = base64ToBytes(frame.bodyBase64);
+      if (body.byteLength > relayLimits.maxClientWebSocketMessageBytes) {
+        this.playerSockets.delete(frame.socketId);
+        socket.close(1009, "Desktop host message is too large");
+        return;
+      }
+      socket.send(body);
       return;
     }
     if (frame.type === "ws.close") {
@@ -208,19 +290,108 @@ export class TableTunnel {
     }
   }
 
-  private waitForHttpResponse(requestId: string): Promise<Response> {
+  private waitForHttpResponse(requestId: string, method: string): Promise<Response> {
     return new Promise<Response>((resolve, reject) => {
       const timer = setTimeout(() => {
-        this.pendingHttp.delete(requestId);
-        reject(new Error("Relay timed out waiting for desktop host response"));
+        const pending = this.takePendingHttpResponse(requestId);
+        pending?.reject(new RelayHttpResponseError(504, "host_response_timeout", "Relay timed out waiting for desktop host response"));
       }, relayLimits.maxHttpWaitMs);
-      this.pendingHttp.set(requestId, { chunks: [], resolve, reject, timer });
+      this.pendingHttp.set(requestId, { chunks: [], bytes: 0, method, resolve, reject, timer });
     });
   }
 
+  private discardPendingHttpResponse(requestId: string, error: Error): void {
+    this.takePendingHttpResponse(requestId)?.reject(error);
+  }
+
+  private takePendingHttpResponse(requestId: string, releaseBuffered = true): PendingHttpResponse | undefined {
+    const pending = this.pendingHttp.get(requestId);
+    if (!pending) return undefined;
+    clearTimeout(pending.timer);
+    this.pendingHttp.delete(requestId);
+    if (releaseBuffered) this.releaseBufferedHttpResponseBytes(pending.bytes);
+    return pending;
+  }
+
+  private bufferedHttpResponseStream(chunks: Uint8Array[], totalBytes: number): ReadableStream<Uint8Array> {
+    let index = 0;
+    let remainingBytes = totalBytes;
+    const release = (bytes: number) => {
+      const released = Math.min(bytes, remainingBytes);
+      remainingBytes -= released;
+      this.releaseBufferedHttpResponseBytes(released);
+    };
+    return new ReadableStream<Uint8Array>({
+      pull: (controller) => {
+        const chunk = chunks[index];
+        if (!chunk) {
+          release(remainingBytes);
+          chunks.length = 0;
+          controller.close();
+          return;
+        }
+        chunks[index] = new Uint8Array(0);
+        index += 1;
+        release(chunk.byteLength);
+        controller.enqueue(chunk);
+        if (index >= chunks.length) {
+          chunks.length = 0;
+          controller.close();
+        }
+      },
+      cancel: () => {
+        chunks.length = 0;
+        release(remainingBytes);
+      }
+    }, { highWaterMark: 0 });
+  }
+
+  private releaseBufferedHttpResponseBytes(bytes: number): void {
+    this.bufferedHttpResponseBytes = Math.max(0, this.bufferedHttpResponseBytes - bytes);
+  }
+
+  private hostConnected(): boolean {
+    return this.hostSocket?.readyState === 1;
+  }
+
+  private replaceHostSocket(socket: WebSocket): void {
+    const previous = this.hostSocket;
+    if (previous) {
+      this.closeHost(previous, 1012, "Host replaced by a newer tunnel connection");
+    }
+    this.hostSocket = socket;
+  }
+
   private sendHost(frame: TunnelFrame): void {
-    if (!this.hostSocket || this.hostSocket.readyState !== 1) throw new Error("Desktop host is not connected");
-    this.hostSocket.send(serializeTunnelFrame(frame));
+    const socket = this.hostSocket;
+    if (!socket || socket.readyState !== 1) throw new Error("Desktop host is not connected");
+    try {
+      socket.send(serializeTunnelFrame(frame));
+    } catch (error) {
+      this.closeHost(socket, 1011, "Host socket send failed");
+      throw error;
+    }
+  }
+
+  private trySendHost(frame: TunnelFrame): void {
+    if (!this.hostConnected()) return;
+    try {
+      this.sendHost(frame);
+    } catch {
+      // sendHost closes the failed host connection and all dependent player sockets.
+    }
+  }
+
+  private handlePlayerWebSocketMessage(socketId: string, socket: WebSocket, data: string | ArrayBuffer): void {
+    if (this.playerSockets.get(socketId) !== socket) return;
+    const body = typeof data === "string" ? new TextEncoder().encode(data) : new Uint8Array(data);
+    if (body.byteLength > relayLimits.maxClientWebSocketMessageBytes) {
+      this.playerSockets.delete(socketId);
+      socket.close(1009, "Relay client message is too large");
+      this.trySendHost({ type: "ws.close", socketId, code: 1009, reason: "Relay client message is too large" });
+      return;
+    }
+    this.trySendHost({ type: "ws.message", socketId, bodyBase64: bytesToBase64(body) });
   }
 
   private async table(): Promise<StoredTable | undefined> {
@@ -237,13 +408,41 @@ export class TableTunnel {
     this.hostSocket = undefined;
     for (const pending of this.pendingHttp.values()) {
       clearTimeout(pending.timer);
-      pending.reject(new Error(reason));
+      this.releaseBufferedHttpResponseBytes(pending.bytes);
+      pending.reject(new RelayHttpResponseError(502, "host_disconnected", reason));
     }
     this.pendingHttp.clear();
     const safeCode = normalizeWebSocketCloseCode(code);
-    for (const socket of this.playerSockets.values()) socket.close(safeCode, reason);
+    const closeReason = boundedWebSocketCloseReason(reason);
+    if (socket.readyState < 2) {
+      try {
+        socket.close(safeCode, closeReason);
+      } catch {
+        // The socket may have transitioned to closed between the state check and close.
+      }
+    }
+    for (const socket of this.playerSockets.values()) {
+      try {
+        socket.close(safeCode, closeReason);
+      } catch {
+        // Continue closing the remaining dependent sockets.
+      }
+    }
     this.playerSockets.clear();
   }
+}
+
+function boundedWebSocketCloseReason(reason: string): string {
+  const encoder = new TextEncoder();
+  let result = "";
+  let bytes = 0;
+  for (const character of reason) {
+    const characterBytes = encoder.encode(character).byteLength;
+    if (bytes + characterBytes > 123) break;
+    result += character;
+    bytes += characterBytes;
+  }
+  return result;
 }
 
 async function createTable(request: Request, env: RelayEnv): Promise<Response> {
@@ -302,7 +501,7 @@ export function selectRelayWebSocketProtocol(value: string | null): string | und
     .split(",")
     .map((protocol) => protocol.trim())
     .filter((protocol) => /^[!#$%&'*+\-.0-9A-Z^_`a-z|~]+$/.test(protocol));
-  return protocols.find((protocol) => protocol === "otte.v1") ?? protocols[0];
+  return protocols.find((protocol) => protocol === "otte.v1") ?? protocols.find((protocol) => !protocol.startsWith("otte.auth."));
 }
 
 export function safeRelayPath(path: string): string {
@@ -311,6 +510,10 @@ export function safeRelayPath(path: string): string {
 
 function isExpired(table: StoredTable): boolean {
   return Date.parse(table.expiresAt) <= Date.now();
+}
+
+function responseStatusForbidsBody(status: number): boolean {
+  return status === 204 || status === 205 || status === 304;
 }
 
 function json(body: unknown, status = 200, headers: HeadersInit = {}): Response {
@@ -332,19 +535,32 @@ function base64ToBytes(value: string): Uint8Array {
   return bytes;
 }
 
-function concatBytes(chunks: Uint8Array[]): Uint8Array {
-  const total = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
-  const output = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    output.set(chunk, offset);
-    offset += chunk.byteLength;
+async function readBoundedRequestBody(
+  request: Request,
+  maxBytes: number,
+  reserve: (bytes: number) => boolean
+): Promise<{ chunks: Uint8Array[]; tooLarge: boolean; capacityExceeded: boolean }> {
+  const reader = request.body?.getReader();
+  if (!reader) return { chunks: [], tooLarge: false, capacityExceeded: false };
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) return { chunks, tooLarge: false, capacityExceeded: false };
+      if (!value || value.byteLength === 0) continue;
+      totalBytes += value.byteLength;
+      if (totalBytes > maxBytes) {
+        await reader.cancel("Relay request body limit exceeded");
+        return { chunks: [], tooLarge: true, capacityExceeded: false };
+      }
+      if (!reserve(value.byteLength)) {
+        await reader.cancel("Relay aggregate request body limit exceeded");
+        return { chunks: [], tooLarge: false, capacityExceeded: true };
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
   }
-  return output;
-}
-
-function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
-  const buffer = new ArrayBuffer(bytes.byteLength);
-  new Uint8Array(buffer).set(bytes);
-  return buffer;
 }

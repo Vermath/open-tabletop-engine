@@ -650,10 +650,16 @@ export interface Encounter extends Timestamps {
   id: ID;
   campaignId: ID;
   worldId?: ID;
+  /** Rules package used to build this encounter. Omitted on legacy/freeform encounters. */
+  systemId?: ID;
   name: string;
   summary: string;
   tokenIds: ID[];
   difficulty?: string;
+  /** Exact party snapshot used for difficulty planning. */
+  partyActorIds?: ID[];
+  /** Reopenable threat composition from the system encounter builder. */
+  threats?: Array<{ id: ID; count: number }>;
 }
 
 export type CampaignSessionStatus = "planned" | "live" | "completed";
@@ -1254,6 +1260,7 @@ export interface IdempotencyRecord extends Timestamps {
   path: string;
   userId?: ID;
   requestHash: string;
+  authorizationHash: string;
   statusCode: number;
   contentType?: string;
   responseBody: string;

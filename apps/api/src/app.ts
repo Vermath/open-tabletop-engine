@@ -5,9 +5,9 @@ import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import { buildPermissionFilteredContext, type AiBoardCaptureResult, type AiMessage, type AiProvider, type AiProviderEvent, type AiProviderRequest, type AiReasoningEffort, type AiToolContext, type AiToolDefinition, type AiToolJsonSchema, type PermissionFilteredContext } from "@open-tabletop/ai-core";
 import { apiContractPolicy, openApiSpec } from "@open-tabletop/api-contracts";
-import { CodexAppServerProvider, CodexAppServerWebSocketTransport, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
+import { CodexAppServerProvider, CodexAppServerWebSocketTransport, LoopbackCodexTransport, stopLocalCodexAppServers } from "@open-tabletop/codex-app-server-provider";
 import { aiMemoryFactStatus, applyProposal, approveProposal, buildSmoothFogBrushPolygon, computeFogRevealPolygon, computeLightVisionPolygons, computeTokenVisionPolygons, createEvent, createId, createTimestamped, emptyState, hasPermission, isPointInsideVisionPolygon, isPointInsideVisionPolygons, makeArchive, normalizeAiMemoryFact, normalizeEngineState, normalizeHandout, nowIso, permissionsForRole, proposalHistoryEntry, rejectProposal, tokenCenter as centerOfToken, type Actor, type AudioTrack, type AudioTrackKind, type AiEvaluationCheck, type AiEvaluationRun, type AiMemoryFact, type AiMemoryFactSource, type AiMemoryFactStatus, type AiMemoryFactType, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type CampaignSession, type ChatMessage, type Combat, type CombatAction, type ContentImportAppliedRecord, type ContentImportBatch, type ContentImportEntity, type ContentImportEntityKind, type ContentImportSource, type DiceMacro, type DiceRoll, type DiceRollFairness, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogHistoryEntry, type FogMode, type FogPreset, type FogPresetRegion, type FogRegion, type FogShape, type Handout, type Item, type JobLogEntry, type JobProgress, type JobStatus, type JobType, type JournalEntry, type LightSource, type MapAsset, type MessageType, type OAuthLoginState, type OrganizationMember, type OrganizationMemberRole, type OrganizationWorkspace, type PasswordResetToken, type PermissionGrant, type PermissionName, type PluginReview, type PluginReviewStatus, type PluginStorageEntry, type Proposal, type ProposalChange, type Scene, type SceneAnnotation, type SceneAnnotationKind, type SceneAnnotationLayer, type SceneEditSnapshot, type SceneEditableState, type SceneTemplateShape, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type TokenLayer, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPointSample, type VisionPointSamplePolygon, type VisionPolygon, type VisionSnapshot, type Wall, type WallKind, type WorkerJobRecord, type World } from "@open-tabletop/core";
-import { isPluginEventType, pluginEventPermission, type PluginEventEnvelope } from "@open-tabletop/plugin-sdk";
+import { comparePluginVersions, isPluginEventType, pluginCoreCompatibility, pluginEventPermission, type PluginEventEnvelope } from "@open-tabletop/plugin-sdk";
 import { composeFairnessSeed, rollFormula, seededRng } from "@open-tabletop/dice-engine";
 import { revertProposal } from "@open-tabletop/core";
 import { DND_5E_SRD_SYSTEM_ID, applyDnd5eSrdAdvancement, applyDnd5eSrdCondition, applyDnd5eSrdFeat, applyDnd5eSrdMulticlassLevel, dnd5eSrdAbilityScoreImprovementLevels, dnd5eSrdCanMulticlassInto, dnd5eSrdGeneralFeats, dnd5eSrdMulticlassPrerequisites, dnd5eSrdXpProgress, applyDnd5eSrdRest, applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, dnd5eSrdActionFormula, dnd5eSrdAdvancementOptions, dnd5eSrdApplyCharacterOrigins, dnd5eSrdCharacterImport, dnd5eSrdCharacterOrigins, dnd5eSrdCharacterTemplates, dnd5eSrdCompendium, dnd5eSrdCompendiumEntry, dnd5eSrdEncounterPlan, dnd5eSrdEncounterThreats, dnd5eSrdEquipmentPurchase, dnd5eSrdInitiativeRoll, dnd5eSrdMonsterActorData, dnd5eSrdQuickRolls, dnd5eSrdSheet, genericFantasyActionFormula, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplates, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplates, mysticNoirCompendium, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeDnd5eSrdCondition, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, resolveDnd5eSrdAction, resolveDnd5eSrdConcentrationDamage, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplates, stellarFrontiersCompendium, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, summarizeActor, useDnd5eSrdAction, useGenericFantasyAction, useMysticNoirAction, useStellarFrontiersAction, type CharacterImportInput, type CharacterImportResult, type CharacterTemplate, type EncounterPlan, type EncounterThreatSelection, type RulesActionResolutionResult, type RulesSaveOutcome, type SystemActionUseResult, type SystemActionUseOptions, type SystemRestOptions, type SystemRestResult, type SystemRestType } from "@open-tabletop/system-sdk";
@@ -18,7 +18,7 @@ import { assetStorageKey, createAssetStorage, createAssetStorageForProvider, typ
 import { extractPdfTextPages, parsePdfContentImportEntities, pdfContentImportPagePrompt, type PdfTextExtractor, type PdfTextPage } from "./pdf-content-import.js";
 import { PluginPackageError, loadPluginRegistry, pluginPackageIdentityChecksum, type LoadedPlugin, type PluginBridgeRequest, type PluginChatCommandResult, type PluginCommandTokenContext, type PluginInventoryWarning, type PluginRuntimeRegistry } from "./plugin-runtime.js";
 import { findRegisteredSystem, isBundledSystem, registeredSystems, systemInstallationByManifestId, systemRuntimeCapabilities } from "./registries.js";
-import { RealtimeHub } from "./realtime.js";
+import { RealtimeHub, type RealtimeClient } from "./realtime.js";
 import { FileStateStore, type StateStore } from "./store.js";
 
 export interface BuildAppOptions {
@@ -258,9 +258,15 @@ type TokenPatchBody = Partial<
   dimVisionRadius?: number | null;
 };
 type ActorPatchBody = Partial<Pick<Actor, "systemId" | "ownerUserId" | "type" | "name" | "imageAssetId" | "data" | "permissions">> & { worldId?: string | null };
-type JournalEntryPatchBody = Partial<Pick<JournalEntry, "parentId" | "title" | "body" | "visibility" | "visibleToUserIds" | "visibleToActorIds" | "tags">> & { worldId?: string | null };
-type HandoutPatchBody = Partial<Pick<Handout, "title" | "body" | "visibility" | "visibleToUserIds" | "visibleToActorIds" | "assetIds" | "tags" | "readByUserIds">> & { worldId?: string | null };
-type EncounterPatchBody = Partial<Pick<Encounter, "name" | "summary" | "tokenIds" | "difficulty">> & { worldId?: string | null };
+type JournalEntryPatchBody = Partial<Pick<JournalEntry, "parentId" | "title" | "body" | "visibility" | "visibleToUserIds" | "visibleToActorIds" | "tags">> & {
+  worldId?: string | null;
+  expectedUpdatedAt?: string;
+};
+type HandoutPatchBody = Partial<Pick<Handout, "title" | "body" | "visibility" | "visibleToUserIds" | "visibleToActorIds" | "assetIds" | "tags" | "readByUserIds">> & {
+  worldId?: string | null;
+  expectedUpdatedAt?: string;
+};
+type EncounterPatchBody = Partial<Pick<Encounter, "name" | "summary" | "tokenIds" | "difficulty" | "systemId" | "partyActorIds" | "threats">> & { worldId?: string | null };
 type AiMemoryPatchBody = Partial<Pick<AiMemoryFact, "text" | "type" | "visibility" | "sourceIds" | "source" | "createdBy">> & {
   worldId?: string | null;
   subject?: string | null;
@@ -278,7 +284,7 @@ interface CampaignSessionCreateBody {
 interface CampaignSessionPatchBody extends CampaignSessionCreateBody {
   status?: unknown;
 }
-type CampaignSearchResultType = "world" | "scene" | "actor" | "item" | "journal" | "handout" | "encounter" | "memory" | "chat";
+type CampaignSearchResultType = "world" | "scene" | "actor" | "item" | "journal" | "handout" | "encounter" | "memory" | "chat" | "roll";
 interface CampaignSearchResult {
   type: CampaignSearchResultType;
   id: string;
@@ -299,7 +305,7 @@ interface StructuredSessionRecap {
   characterNotes: string[];
   prepSuggestions: string[];
 }
-type NormalizedEncounterPatch = Partial<Pick<Encounter, "name" | "summary" | "tokenIds" | "difficulty" | "worldId">>;
+type NormalizedEncounterPatch = Partial<Pick<Encounter, "name" | "summary" | "tokenIds" | "difficulty" | "worldId" | "systemId" | "partyActorIds" | "threats">>;
 type NormalizedAiMemoryPatch = Partial<Pick<AiMemoryFact, "text" | "type" | "visibility" | "sourceIds" | "source" | "createdBy" | "worldId" | "subject" | "confidence" | "status">>;
 interface StructuredEncounterDesign {
   name: string;
@@ -358,6 +364,7 @@ const IDEMPOTENCY_MAX_RECORDS = 1000;
 const PLUGIN_EVENT_QUEUE_MAX_PENDING = 256;
 const DEFAULT_RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 600;
+const AUTH_DUMMY_PASSWORD_HASH = "scrypt:open-tabletop-login-timing:QolQTrS3N3nn0ZKOxvK8ocMGR3Mv14FcDCIpIxcT0PU";
 const DEFAULT_ASSET_QUOTA_BYTES = 1024 * 1024 * 1024;
 const LIST_DEFAULT_LIMIT = apiContractPolicy.pagination.defaultLimit;
 const LIST_MAX_LIMIT = apiContractPolicy.pagination.maxLimit;
@@ -436,6 +443,12 @@ interface IdempotencyContext {
   path: string;
   userId?: string;
   requestHash: string;
+  authorizationHash: string;
+}
+
+interface IdempotencyIdentity {
+  userId: string;
+  authorizationHash: string;
 }
 
 interface IdempotencySaveScope {
@@ -533,6 +546,11 @@ interface CampaignPluginCatalogInfo extends Omit<PublicPluginCatalogInfo, "compa
     version: string;
     compatibleCore: { range: string; coreVersion: string; satisfied: boolean };
     compatibilityBlock?: string;
+    permissions: PermissionName[];
+    permissionReview: PublicPluginCatalogInfo["permissionReview"];
+    trust: PublicPluginCatalogInfo["trust"];
+    source: PublicPluginCatalogInfo["source"];
+    marketplaceReview: { installable: boolean; status: PluginReviewStatus; installBlock?: string };
   }>;
   audit: { installCount: number; lastInstallAt?: string; versions: string[] };
 }
@@ -652,6 +670,11 @@ interface OrganizationSwitchBody {
   organizationId?: unknown;
 }
 
+interface ProposalCreateBody extends Partial<Pick<Proposal, "title" | "summary" | "changesJson" | "diffJson">> {
+  createdByType?: unknown;
+  sourceId?: unknown;
+}
+
 type AdminAuthConnectionProvider = "oidc" | "scim";
 
 class UnsupportedSystemCapabilityError extends Error {
@@ -674,12 +697,19 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   let pendingPluginEventCount = 0;
   const broadcastToClients = (event: EngineEvent) => {
     const visibilityCache = createTokenVisibilityCache();
-    hub.broadcast(event, (candidate, client) => filterRealtimeEvent(store, candidate, client.userId, visibilityCache));
+    hub.broadcast(event, (candidate, client) => {
+      if (!realtimeClientAuthorizationIsCurrent(store, client)) {
+        if (client.sessionId) hub.disconnectSession(client.sessionId);
+        return undefined;
+      }
+      return filterRealtimeEvent(store, candidate, client.userId, visibilityCache);
+    });
   };
   const broadcast = (event: EngineEvent) => {
     broadcastToClients(event);
     const pluginEvent = pluginEventEnvelope(event);
     if (!pluginEvent) return;
+    const pluginSourceEvent = structuredClone(event);
     if (pendingPluginEventCount >= PLUGIN_EVENT_QUEUE_MAX_PENDING) {
       appendPluginEventFailureAudit(store, {
         event: pluginEvent,
@@ -691,7 +721,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }
     pendingPluginEventCount += 1;
     pluginEventQueue = pluginEventQueue
-      .then(() => dispatchInstalledPluginEvent(store, pluginRegistry, pluginEvent, broadcastToClients))
+      .then(() => dispatchInstalledPluginEvent(store, pluginRegistry, pluginEvent, pluginSourceEvent, broadcastToClients))
       .catch((error) => {
         appendPluginEventFailureAudit(store, { event: pluginEvent, reason: "dispatcher_error", message: errorMessage(error) });
         store.save();
@@ -720,7 +750,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       });
     }
     request.log.error(error);
-    return reply.send(error);
+    const statusCode = error instanceof Error ? (error as Error & { statusCode?: unknown }).statusCode : undefined;
+    if (typeof statusCode === "number" && statusCode >= 400 && statusCode < 500) return reply.send(error);
+    return reply.code(500).send({
+      error: "internal_server_error",
+      message: "Internal server error"
+    });
   });
 
   app.addContentTypeParser(/^image\/(png|jpeg|webp|gif|svg\+xml)$/i, { parseAs: "buffer", bodyLimit: maxAssetBytes }, (_request, body: Buffer, done) => {
@@ -947,12 +982,29 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   app.post<{ Body: { userId?: string; email?: string; password?: string; mfaCode?: string; recoveryCode?: string } }>("/api/v1/auth/login", async (request, reply) => {
     const body = request.body ?? {};
+    if (!isValidLoginInput(body)) {
+      appendAuthLoginFailureAudit(store, { reason: "invalid_request", statusCode: 400 });
+      store.save();
+      return badRequest(reply, "Login fields must be strings");
+    }
     pruneExpiredSessions(store);
     const user = findLoginUser(store, body);
     if (!user) {
+      verifyPassword(body.password ?? "", AUTH_DUMMY_PASSWORD_HASH);
       appendAuthLoginFailureAudit(store, { reason: "unknown_identity", statusCode: 401 });
       store.save();
-      return unauthorized(reply, "Unknown login identity");
+      return unauthorized(reply, "Invalid login credentials");
+    }
+    if (!user.passwordHash && !allowPasswordlessDevelopmentLogin(body)) {
+      verifyPassword(body.password ?? "", AUTH_DUMMY_PASSWORD_HASH);
+      appendAuthLoginFailureAudit(store, { userId: user.id, reason: "password_auth_unavailable", statusCode: 401 });
+      store.save();
+      return unauthorized(reply, "Invalid login credentials");
+    }
+    if (user.passwordHash && !verifyPassword(body.password ?? "", user.passwordHash)) {
+      appendAuthLoginFailureAudit(store, { userId: user.id, reason: "invalid_credentials", statusCode: 401 });
+      store.save();
+      return unauthorized(reply, "Invalid login credentials");
     }
     if (isDisabledUser(user)) {
       appendAuthLoginFailureAudit(store, { userId: user.id, reason: "disabled_user", statusCode: 403 });
@@ -963,16 +1015,6 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       appendAuthLoginFailureAudit(store, { userId: user.id, reason: "password_reset_required", statusCode: 403 });
       store.save();
       return forbidden(reply, "Password reset required");
-    }
-    if (!user.passwordHash && !allowPasswordlessDevelopmentLogin(body)) {
-      appendAuthLoginFailureAudit(store, { userId: user.id, reason: "password_auth_unavailable", statusCode: 401 });
-      store.save();
-      return unauthorized(reply, "Invalid login credentials");
-    }
-    if (user.passwordHash && !verifyPassword(body.password ?? "", user.passwordHash)) {
-      appendAuthLoginFailureAudit(store, { userId: user.id, reason: "invalid_credentials", statusCode: 401 });
-      store.save();
-      return unauthorized(reply, "Invalid login credentials");
     }
     const mfaResult = verifyLoginMfa(user, body.mfaCode, body.recoveryCode);
     if (mfaResult === "required") {
@@ -2338,8 +2380,21 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const user = store.state.users.find((item) => item.id === request.params.userId);
     if (!user) return scimError(reply, 404, "SCIM user not found");
     const before = publicUser(user);
-    const patched = applyScimPatchToUser(store, user, request.body);
-    if ("error" in patched) return scimError(reply, 400, patched.error);
+    const userSnapshot = structuredClone(user);
+    const sessionSnapshot = store.state.sessions;
+    let patched: ReturnType<typeof applyScimPatchToUser>;
+    try {
+      patched = applyScimPatchToUser(store, user, request.body);
+    } catch (error) {
+      restoreMutableRecord(user, userSnapshot);
+      store.state.sessions = sessionSnapshot;
+      throw error;
+    }
+    if ("error" in patched) {
+      restoreMutableRecord(user, userSnapshot);
+      store.state.sessions = sessionSnapshot;
+      return scimError(reply, 400, patched.error);
+    }
     appendSystemAuditLog(store, {
       action: "scim.user.patch",
       targetType: "user",
@@ -2440,9 +2495,22 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const group = store.state.scimGroups.find((item) => item.id === request.params.groupId);
     if (!group) return scimError(reply, 404, "SCIM group not found");
     const before = scimGroupResource(group, request.headers);
-    const patched = applyScimPatchToGroup(store, group, request.body);
-    if ("error" in patched) return scimError(reply, 400, patched.error);
-    if (findScimGroup(store, group.displayName, group.externalId, group.id)) return scimError(reply, 409, "SCIM group already exists");
+    const groupSnapshot = structuredClone(group);
+    let patched: ReturnType<typeof applyScimPatchToGroup>;
+    try {
+      patched = applyScimPatchToGroup(store, group, request.body);
+    } catch (error) {
+      restoreMutableRecord(group, groupSnapshot);
+      throw error;
+    }
+    if ("error" in patched) {
+      restoreMutableRecord(group, groupSnapshot);
+      return scimError(reply, 400, patched.error);
+    }
+    if (findScimGroup(store, group.displayName, group.externalId, group.id)) {
+      restoreMutableRecord(group, groupSnapshot);
+      return scimError(reply, 409, "SCIM group already exists");
+    }
     const sync = syncScimGroupRoleMappingsForGroup(store, group);
     appendSystemAuditLog(store, {
       action: "scim.group.patch",
@@ -2583,6 +2651,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       }) satisfies AuditLog
     );
     store.save();
+    hub.disconnectSession(identity.session.id);
     return reply.code(201).send({
       organization: publicOrganizationWorkspace(workspace),
       session: publicSession(identity.session),
@@ -2596,6 +2665,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const organizationId = typeof request.body?.organizationId === "string" ? request.body.organizationId.trim() : "";
     const organization = organizationWorkspaceRecordForUser(store, identity.user.id, organizationId);
     if (!organization || organization.id !== organizationId) return forbidden(reply, "Organization membership is required");
+    const previousOrganizationId = activeOrganizationIdForUser(store, identity.user.id, identity.session.activeOrganizationId);
     identity.session.activeOrganizationId = organization.id;
     identity.session.updatedAt = nowIso();
     store.state.auditLogs.push(
@@ -2611,6 +2681,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       }) satisfies AuditLog
     );
     store.save();
+    if (previousOrganizationId !== organization.id) hub.disconnectSession(identity.session.id);
     return {
       organization: publicOrganizationWorkspace(organization),
       session: publicSession(identity.session),
@@ -2780,7 +2851,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.get("/api/v1/realtime", { websocket: true }, (socket, request) => {
     const url = new URL(request.url ?? "/api/v1/realtime", "http://localhost");
     const campaignId = url.searchParams.get("campaignId") ?? undefined;
-    const userId = userIdFromRequest(store, request.url, request.headers);
+    const session = sessionFromRequest(store, request.url, request.headers);
+    const userId = session && isActiveUserId(store, session.userId) ? session.userId : userIdFromRequest(store, request.url, request.headers);
     if (!userId || !campaignId || !campaignActiveOrganizationAllowed(store, request.headers, userId, campaignId) || !canCampaign(store, userId, campaignId, "campaign.read")) {
       socket.send(JSON.stringify({ error: "unauthorized" }));
       socket.close();
@@ -2789,7 +2861,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const client = {
       campaignId,
       userId,
-      send: (data: string) => socket.send(data)
+      sessionId: session?.id,
+      send: (data: string) => socket.send(data),
+      close: () => socket.close()
     };
     hub.add(client);
     socket.on("close", () => hub.remove(client));
@@ -3268,8 +3342,21 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const campaign = store.state.campaigns.find((item) => item.id === request.params.campaignId);
     if (!campaign) return notFound(reply, "Campaign not found");
-    Object.assign(campaign, campaignPatchFromBody(request.body), { updatedAt: nowIso() });
+    const normalized = normalizeCampaignPatch(store, request.body);
+    if (!normalized.ok) return badRequest(reply, normalized.error);
+    const userId = currentUserId(store, request.headers)!;
+    const before = campaignUpdateAuditSummary(campaign);
+    Object.assign(campaign, normalized.value, { updatedAt: nowIso() });
+    appendServerAuditLog(store, userId, {
+      campaignId: campaign.id,
+      action: "campaign.update",
+      targetType: "campaign",
+      targetId: campaign.id,
+      before,
+      after: campaignUpdateAuditSummary(campaign)
+    });
     store.save();
+    broadcast(createEvent({ campaignId: campaign.id, type: "campaign.updated", actorUserId: userId, targetId: campaign.id, payload: campaign }));
     return campaign;
   });
 
@@ -3454,11 +3541,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (worldId && !store.state.worlds.some((world) => world.id === worldId && world.campaignId === request.params.campaignId)) {
       return badRequest(reply, "Scene worldId must reference a world in the same campaign");
     }
+    const campaignScenes = store.state.scenes.filter((scene) => scene.campaignId === request.params.campaignId);
+    const shouldActivate = Boolean(request.body.active) || !campaignScenes.some((scene) => scene.active);
     const activatedAt = nowIso();
     const deactivatedSceneIds: string[] = [];
-    if (request.body.active) {
-      for (const existingScene of store.state.scenes) {
-        if (existingScene.campaignId === request.params.campaignId && existingScene.active) {
+    if (shouldActivate) {
+      for (const existingScene of campaignScenes) {
+        if (existingScene.active) {
           deactivatedSceneIds.push(existingScene.id);
           existingScene.active = false;
           existingScene.updatedAt = activatedAt;
@@ -3475,7 +3564,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       gridSize: request.body.gridSize ?? 50,
       backgroundAssetId: request.body.backgroundAssetId,
       folder: normalizeAssetFolder(request.body.folder),
-      active: Boolean(request.body.active),
+      active: shouldActivate,
       sortOrder: request.body.sortOrder ?? store.state.scenes.filter((item) => item.campaignId === request.params.campaignId).length + 1,
       fog: request.body.fog ?? [],
       fogHistory: [],
@@ -3591,6 +3680,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.post<{ Params: { campaignId: string }; Body: Partial<MapAsset> }>("/api/v1/campaigns/:campaignId/assets", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "scene.create");
     if (allowed !== true) return allowed;
+    const userId = currentUserId(store, request.headers)!;
     const body = request.body ?? {};
     const sizeBytes = normalizeAssetSizeBytes(body.sizeBytes);
     if (sizeBytes === undefined) return badRequest(reply, "Asset sizeBytes must be a non-negative finite number");
@@ -3608,7 +3698,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       lifecycle: defaultAssetLifecycle()
     }) satisfies MapAsset;
     store.state.assets.push(asset);
+    appendServerAuditLog(store, userId, {
+      campaignId: asset.campaignId,
+      action: "asset.create",
+      targetType: "asset",
+      targetId: asset.id,
+      after: assetAuditSummary(asset)
+    });
     store.save();
+    broadcast(createEvent({ campaignId: asset.campaignId, type: "asset.created", actorUserId: userId, targetId: asset.id, payload: asset }));
     return asset;
   });
 
@@ -3619,6 +3717,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   }>("/api/v1/campaigns/:campaignId/assets/upload", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "scene.create");
     if (allowed !== true) return allowed;
+    const userId = currentUserId(store, request.headers)!;
     const shouldSetBackground = request.query.sceneId && truthyQuery(request.query.setAsBackground);
     if (shouldSetBackground) {
       const sceneUpdateAllowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "scene.update");
@@ -3663,7 +3762,19 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       scene.updatedAt = nowIso();
     }
 
+    appendServerAuditLog(store, userId, {
+      campaignId: asset.campaignId,
+      action: "asset.upload",
+      targetType: "asset",
+      targetId: asset.id,
+      after: {
+        ...assetAuditSummary(asset),
+        sceneId: scene?.id,
+        setAsBackground: Boolean(scene)
+      }
+    });
     store.save();
+    broadcast(createEvent({ campaignId: asset.campaignId, type: "asset.created", actorUserId: userId, targetId: asset.id, payload: asset }));
     if (scene)
       broadcast(
         createEvent({
@@ -3684,11 +3795,21 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (typeof userId !== "string") return userId;
     const allowed = requireCampaignPermissionForUser(store, reply, request.headers, userId, asset.campaignId, "scene.update");
     if (allowed !== true) return allowed;
+    const before = assetAuditSummary(asset);
     if (typeof body.name === "string" && body.name.trim()) asset.name = body.name.trim().slice(0, 160);
     if (body.folder !== undefined) asset.folder = normalizeAssetFolder(body.folder);
     if (body.tags !== undefined) asset.tags = normalizeAssetTags(body.tags);
     asset.updatedAt = nowIso();
+    appendServerAuditLog(store, userId, {
+      campaignId: asset.campaignId,
+      action: "asset.update",
+      targetType: "asset",
+      targetId: asset.id,
+      before,
+      after: assetAuditSummary(asset)
+    });
     store.save();
+    broadcast(createEvent({ campaignId: asset.campaignId, type: "asset.updated", actorUserId: userId, targetId: asset.id, payload: asset }));
     return asset;
   });
 
@@ -3722,6 +3843,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!status) return badRequest(reply, "Asset lifecycle status must be active, archived, or deleted");
     const expiresAt = normalizeOptionalIsoDate(body.expiresAt);
     if (body.expiresAt !== undefined && body.expiresAt !== null && !expiresAt) return badRequest(reply, "expiresAt must be an ISO date");
+    const before = assetAuditSummary(asset);
     asset.lifecycle = {
       status,
       expiresAt,
@@ -3730,7 +3852,24 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       reason: body.reason?.trim().slice(0, 160)
     };
     asset.updatedAt = nowIso();
+    appendServerAuditLog(store, userId, {
+      campaignId: asset.campaignId,
+      action: status === "deleted" ? "asset.delete" : "asset.lifecycle.update",
+      targetType: "asset",
+      targetId: asset.id,
+      before,
+      after: assetAuditSummary(asset)
+    });
     store.save();
+    broadcast(
+      createEvent({
+        campaignId: asset.campaignId,
+        type: status === "deleted" ? "asset.deleted" : "asset.updated",
+        actorUserId: userId,
+        targetId: asset.id,
+        payload: asset
+      })
+    );
     return asset;
   });
 
@@ -3766,6 +3905,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }
     const cacheControl = signedAccess ? signedAssetCacheControl(request.query.expiresAt) : "private, max-age=60";
     const contentDisposition = request.query.disposition === "attachment" ? `attachment; filename="${safeDownloadFileName(asset.name)}"` : undefined;
+    if (!asset.storage) {
+      appendAssetDeliveryAuditLog(store, asset, { status: "missing_bytes", accessMode: signedAccess ? "signed" : "session", reason: "asset_storage_reference_missing" });
+      return notFound(reply, "Asset file not found");
+    }
     const stream = await assetStorage.stream?.(asset);
     if (contentDisposition) reply.header("content-disposition", contentDisposition);
     if (stream) {
@@ -3968,6 +4111,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const normalizedBody = normalizeScenePatch(request.body);
     if (!normalizedBody.ok) return badRequest(reply, normalizedBody.error);
     const body = normalizedBody.value;
+    if (body.active === false && scene.active) {
+      return badRequest(reply, "Activate another scene before deactivating the current player scene");
+    }
     const requestedWorldId = body.worldId === null ? undefined : body.worldId;
     if (requestedWorldId && !store.state.worlds.some((world) => world.id === requestedWorldId && world.campaignId === campaignId)) {
       return badRequest(reply, "Scene worldId must reference a world in the same campaign");
@@ -4893,6 +5039,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (index < 0) return notFound(reply, "Scene not found");
     const deleted = store.state.scenes[index]!;
     const auditSummary = sceneDeletionAuditSummary(store, deleted);
+    const replacementScene = deleted.active
+      ? store.state.scenes
+          .filter((scene) => scene.campaignId === deleted.campaignId && scene.id !== deleted.id)
+          .sort((left, right) => left.sortOrder - right.sortOrder || left.createdAt.localeCompare(right.createdAt))[0]
+      : undefined;
+    if (replacementScene) activateSceneForCampaignSession(store, replacementScene, userId, nowIso());
     removeSceneRecords(store, deleted.id);
     appendServerAuditLog(store, userId, {
       campaignId: deleted.campaignId,
@@ -4900,7 +5052,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       targetType: "scene",
       targetId: deleted.id,
       before: auditSummary,
-      after: { deleted: true }
+      after: replacementScene ? { deleted: true, activatedSceneId: replacementScene.id } : { deleted: true }
     });
     store.save();
     broadcast(
@@ -4911,6 +5063,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         payload: deleted
       })
     );
+    if (replacementScene) {
+      broadcast(createEvent({
+        campaignId: replacementScene.campaignId,
+        type: "scene.activated",
+        actorUserId: userId,
+        targetId: replacementScene.id,
+        payload: replacementScene
+      }));
+    }
     return deleted;
   });
 
@@ -5121,11 +5282,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (worldId && !store.state.worlds.some((world) => world.id === worldId && world.campaignId === request.params.campaignId)) {
       return badRequest(reply, "Actor worldId must reference a world in the same campaign");
     }
+    const ownerUserId = campaignActorOwnerUserId(store, request.params.campaignId, request.body.ownerUserId);
+    if (!ownerUserId.ok) return badRequest(reply, ownerUserId.error);
     const actor = createTimestamped("act", {
       campaignId: request.params.campaignId,
       worldId,
       systemId: request.body.systemId ?? DEFAULT_SYSTEM_ID,
-      ownerUserId: request.body.ownerUserId,
+      ownerUserId: ownerUserId.value,
       type: request.body.type ?? "character",
       name: request.body.name ?? "New Actor",
       imageAssetId: request.body.imageAssetId,
@@ -5174,7 +5337,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (requestedWorldId && !store.state.worlds.some((world) => world.id === requestedWorldId && world.campaignId === actor.campaignId)) {
       return badRequest(reply, "Actor worldId must reference a world in the same campaign");
     }
-    Object.assign(actor, actorPatchFromBody(request.body), { updatedAt: nowIso() });
+    const patch = actorPatchFromBody(request.body);
+    if (request.body.ownerUserId !== undefined) {
+      const ownerUserId = campaignActorOwnerUserId(store, actor.campaignId, request.body.ownerUserId);
+      if (!ownerUserId.ok) return badRequest(reply, ownerUserId.error);
+      patch.ownerUserId = ownerUserId.value;
+    }
+    Object.assign(actor, patch, { updatedAt: nowIso() });
     store.save();
     broadcast(
       createEvent({
@@ -5194,6 +5363,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const allowed = requireCampaignPermission(store, reply, request.headers, actor.campaignId, "actor.delete");
     if (allowed !== true) return allowed;
     const userId = currentUserId(store, request.headers)!;
+    const changedAt = nowIso();
     store.state.actors.splice(index, 1);
     let tokenCount = 0;
     let itemCount = 0;
@@ -5201,13 +5371,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     for (const token of store.state.tokens) {
       if (token.actorId !== actor.id) continue;
       token.actorId = undefined;
-      token.updatedAt = nowIso();
+      token.updatedAt = changedAt;
       tokenCount += 1;
     }
     for (const item of store.state.items) {
       if (item.actorId !== actor.id) continue;
       item.actorId = undefined;
-      item.updatedAt = nowIso();
+      item.updatedAt = changedAt;
       itemCount += 1;
     }
     for (const combat of store.state.combats) {
@@ -5216,20 +5386,28 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         combatant.actorId = undefined;
         combatantCount += 1;
       }
-      if (combat.combatants.some((combatant) => combatant.actorId === undefined)) combat.updatedAt = nowIso();
+      if (combat.combatants.some((combatant) => combatant.actorId === undefined)) combat.updatedAt = changedAt;
     }
     for (const journal of store.state.journals) journal.visibleToActorIds = journal.visibleToActorIds.filter((id) => id !== actor.id);
     for (const handout of store.state.handouts) handout.visibleToActorIds = (handout.visibleToActorIds ?? []).filter((id) => id !== actor.id);
+    const updatedEncounters = store.state.encounters.filter((encounter) => encounter.campaignId === actor.campaignId && encounter.partyActorIds?.includes(actor.id));
+    for (const encounter of updatedEncounters) {
+      encounter.partyActorIds = encounter.partyActorIds?.filter((id) => id !== actor.id);
+      encounter.updatedAt = changedAt;
+    }
     appendServerAuditLog(store, userId, {
       campaignId: actor.campaignId,
       action: "actor.delete",
       targetType: "actor",
       targetId: actor.id,
       before: actor,
-      after: { deleted: true, detachedTokens: tokenCount, detachedItems: itemCount, detachedCombatants: combatantCount }
+      after: { deleted: true, detachedTokens: tokenCount, detachedItems: itemCount, detachedCombatants: combatantCount, updatedEncounters: updatedEncounters.length }
     });
     store.save();
     broadcast(createEvent({ campaignId: actor.campaignId, type: "actor.deleted", actorUserId: userId, targetId: actor.id, payload: actor }));
+    for (const encounter of updatedEncounters) {
+      broadcast(createEvent({ campaignId: encounter.campaignId, type: "encounter.updated", actorUserId: userId, targetId: encounter.id, payload: encounter }));
+    }
     return actor;
   });
 
@@ -5412,12 +5590,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
+    if (request.body.expectedUpdatedAt !== undefined && request.body.expectedUpdatedAt !== entry.updatedAt) {
+      return conflict(reply, "Journal entry changed after this edit was opened. Reload it before saving.");
+    }
     const requestedWorldId = request.body.worldId === null ? undefined : request.body.worldId;
     if (requestedWorldId && !store.state.worlds.some((world) => world.id === requestedWorldId && world.campaignId === entry.campaignId)) {
       return badRequest(reply, "Journal worldId must reference a world in the same campaign");
     }
     Object.assign(entry, journalEntryPatchFromBody(request.body), {
-      updatedAt: nowIso(),
+      updatedAt: nextRevisionTimestamp(entry.updatedAt),
       updatedBy: userId
     });
     store.save();
@@ -5503,11 +5684,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!existing) return notFound(reply, "Handout not found");
     const allowed = requireCampaignPermission(store, reply, request.headers, existing.campaignId, "handout.update");
     if (allowed !== true) return allowed;
+    if (request.body.expectedUpdatedAt !== undefined && request.body.expectedUpdatedAt !== existing.updatedAt) {
+      return conflict(reply, "Handout changed after this edit was opened. Reload it before saving.");
+    }
     const normalized = normalizeHandoutPatch(store, existing.campaignId, request.body ?? {});
     if (!normalized.ok) return badRequest(reply, normalized.error);
     const userId = currentUserId(store, request.headers)!;
     const before = normalizeHandout(existing);
-    const updated = normalizeHandout({ ...existing, ...normalized.value, updatedBy: userId, updatedAt: nowIso() });
+    const updated = normalizeHandout({ ...existing, ...normalized.value, updatedBy: userId, updatedAt: nextRevisionTimestamp(existing.updatedAt) });
     store.state.handouts[index] = updated;
     appendServerAuditLog(store, userId, { campaignId: updated.campaignId, action: "handout.update", targetType: "handout", targetId: updated.id, before, after: updated });
     store.save();
@@ -5528,7 +5712,6 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     handout.readByUserIds ??= [];
     if (!handout.readByUserIds.includes(userId)) {
       handout.readByUserIds.push(userId);
-      handout.updatedAt = nowIso();
       store.state.handouts[index] = handout;
       store.save();
       broadcast(createEvent({ campaignId: handout.campaignId, type: "handout.updated", actorUserId: userId, targetId: handout.id, payload: handout }));
@@ -5677,7 +5860,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       visibility: request.body.visibility === "gm_only" ? "gm_only" as const : "public" as const
     }) satisfies DiceMacro;
     store.state.diceMacros.push(macro);
+    appendServerAuditLog(store, userId, {
+      campaignId: macro.campaignId,
+      action: "diceMacro.create",
+      targetType: "dice_macro",
+      targetId: macro.id,
+      after: diceMacroAuditSummary(macro)
+    });
     store.save();
+    broadcast(createEvent({ campaignId: macro.campaignId, type: "dice.macro.created", actorUserId: userId, targetId: macro.id, payload: macro }));
     return macro;
   });
 
@@ -5686,26 +5877,31 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!macro) return notFound(reply, "Dice macro not found");
     const allowed = requireCampaignPermission(store, reply, request.headers, macro.campaignId, "campaign.update");
     if (allowed !== true) return allowed;
-    if (request.body.name !== undefined) {
-      const name = typeof request.body.name === "string" ? request.body.name.trim() : "";
-      if (!name) return badRequest(reply, "Dice macro name is required");
-      macro.name = name;
-    }
-    if (request.body.formula !== undefined) {
-      const formula = typeof request.body.formula === "string" ? request.body.formula.trim() : "";
-      if (!formula) return badRequest(reply, "Dice macro formula is required");
-      try {
-        rollFormula(formula);
-      } catch (error) {
-        return badRequest(reply, error instanceof Error ? error.message : "Invalid dice macro formula");
-      }
-      macro.formula = formula;
-    }
-    if (request.body.visibility === "public" || request.body.visibility === "gm_only") {
-      macro.visibility = request.body.visibility;
-    }
+    const userId = currentUserId(store, request.headers)!;
+    const normalized = normalizeDiceMacroPatch(request.body);
+    if (!normalized.ok) return badRequest(reply, normalized.error);
+    const before = diceMacroAuditSummary(macro);
+    const previousVisibility = macro.visibility;
+    Object.assign(macro, normalized.value);
     macro.updatedAt = nowIso();
+    appendServerAuditLog(store, userId, {
+      campaignId: macro.campaignId,
+      action: "diceMacro.update",
+      targetType: "dice_macro",
+      targetId: macro.id,
+      before,
+      after: diceMacroAuditSummary(macro)
+    });
     store.save();
+    broadcast(
+      createEvent({
+        campaignId: macro.campaignId,
+        type: "dice.macro.updated",
+        actorUserId: userId,
+        targetId: macro.id,
+        payload: { ...macro, previousVisibility }
+      })
+    );
     return macro;
   });
 
@@ -5714,8 +5910,18 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!macro) return notFound(reply, "Dice macro not found");
     const allowed = requireCampaignPermission(store, reply, request.headers, macro.campaignId, "campaign.update");
     if (allowed !== true) return allowed;
+    const userId = currentUserId(store, request.headers)!;
     store.state.diceMacros = store.state.diceMacros.filter((item) => item.id !== macro.id);
+    appendServerAuditLog(store, userId, {
+      campaignId: macro.campaignId,
+      action: "diceMacro.delete",
+      targetType: "dice_macro",
+      targetId: macro.id,
+      before: diceMacroAuditSummary(macro),
+      after: { deleted: true }
+    });
     store.save();
+    broadcast(createEvent({ campaignId: macro.campaignId, type: "dice.macro.deleted", actorUserId: userId, targetId: macro.id, payload: macro }));
     return macro;
   });
 
@@ -5864,6 +6070,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const visibility = body.type === "whisper" ? "whisper" : body.visibility ?? "public";
     const recipientUserIds = normalizeChatRecipients(store, body.campaignId, userId, visibility, body.recipientUserIds, reply);
     if (!Array.isArray(recipientUserIds)) return recipientUserIds;
+    const rollLink = normalizeChatRollLink(store, body.campaignId, userId, body.rollId, visibility, recipientUserIds, reply);
+    if (!rollLink.ok) return rollLink.reply;
     const replyToMessageId = normalizeChatReplyToMessageId(store, body.campaignId, userId, body.replyToMessageId, reply);
     if (replyToMessageId && typeof replyToMessageId !== "string") return replyToMessageId;
     const message = createTimestamped("msg", {
@@ -5874,7 +6082,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       body: body.body,
       visibility,
       recipientUserIds,
-      rollId: body.rollId,
+      rollId: rollLink.rollId,
       replyToMessageId
     }) satisfies ChatMessage;
     store.state.chat.push(message);
@@ -5993,9 +6201,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const activeEncounterIds = new Set(
       store.state.combats.filter((combat) => combat.campaignId === request.params.campaignId && combat.active && combat.encounterId).map((combat) => combat.encounterId!)
     );
-    return store.state.encounters.filter(
-      (item) => item.campaignId === request.params.campaignId && (canAccessPreparedScenes(store, userId, request.params.campaignId) || activeEncounterIds.has(item.id))
-    );
+    return store.state.encounters
+      .filter(
+        (item) => item.campaignId === request.params.campaignId && (canAccessPreparedScenes(store, userId, request.params.campaignId) || activeEncounterIds.has(item.id))
+      )
+      .map((encounter) => encounterPayloadForUser(store, userId, encounter));
   });
 
   app.post<{ Params: { campaignId: string }; Body: Partial<Encounter> }>("/api/v1/campaigns/:campaignId/encounters", async (request, reply) => {
@@ -6007,16 +6217,19 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const encounter = createTimestamped("enc", {
       campaignId: request.params.campaignId,
       worldId: normalized.value.worldId,
+      systemId: normalized.value.systemId,
       name: normalized.value.name!,
       summary: normalized.value.summary!,
       tokenIds: normalized.value.tokenIds ?? [],
-      difficulty: normalized.value.difficulty
+      difficulty: normalized.value.difficulty,
+      partyActorIds: normalized.value.partyActorIds,
+      threats: normalized.value.threats
     }) satisfies Encounter;
     store.state.encounters.push(encounter);
     appendServerAuditLog(store, userId, { campaignId: encounter.campaignId, action: "encounter.create", targetType: "encounter", targetId: encounter.id, after: encounter });
     store.save();
     broadcast(createEvent({ campaignId: encounter.campaignId, type: "encounter.created", actorUserId: userId, targetId: encounter.id, payload: encounter }));
-    return encounter;
+    return encounterPayloadForUser(store, userId, encounter);
   });
 
   app.get<{ Params: { encounterId: string } }>("/api/v1/encounters/:encounterId", async (request, reply) => {
@@ -6027,7 +6240,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const activeOrganization = requireCampaignActiveOrganization(store, reply, request.headers, userId, encounter.campaignId);
     if (activeOrganization !== true) return activeOrganization;
     if (!canReadEncounter(store, userId, encounter)) return notFound(reply, "Encounter not found");
-    return encounter;
+    return encounterPayloadForUser(store, userId, encounter);
   });
 
   app.patch<{ Params: { encounterId: string }; Body: EncounterPatchBody }>("/api/v1/encounters/:encounterId", async (request, reply) => {
@@ -6035,10 +6248,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!encounter) return notFound(reply, "Encounter not found");
     const allowed = requireCampaignPermission(store, reply, request.headers, encounter.campaignId, "combat.manage");
     if (allowed !== true) return allowed;
-    const normalized = normalizeEncounterPatch(store, encounter.campaignId, request.body ?? {});
+    const normalized = normalizeEncounterPatch(store, encounter.campaignId, request.body ?? {}, false, encounter);
     if (!normalized.ok) return badRequest(reply, normalized.error);
     const userId = currentUserId(store, request.headers)!;
-    const before = { ...encounter, tokenIds: [...encounter.tokenIds] };
+    const before = {
+      ...encounter,
+      tokenIds: [...encounter.tokenIds],
+      partyActorIds: encounter.partyActorIds ? [...encounter.partyActorIds] : undefined,
+      threats: encounter.threats?.map((threat) => ({ ...threat }))
+    };
     Object.assign(encounter, normalized.value, { updatedAt: nowIso() });
     appendServerAuditLog(store, userId, { campaignId: encounter.campaignId, action: "encounter.update", targetType: "encounter", targetId: encounter.id, before, after: encounter });
     store.save();
@@ -6053,17 +6271,30 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const allowed = requireCampaignPermission(store, reply, request.headers, encounter.campaignId, "combat.manage");
     if (allowed !== true) return allowed;
     const userId = currentUserId(store, request.headers)!;
+    const changedAt = nowIso();
+    const previouslyActive = store.state.combats.some((combat) => combat.campaignId === encounter.campaignId && combat.active && combat.encounterId === encounter.id);
     store.state.encounters.splice(index, 1);
-    for (const combat of store.state.combats) if (combat.encounterId === encounter.id) combat.encounterId = undefined;
-    for (const session of store.state.campaignSessions) {
+    const updatedCombats = store.state.combats.filter((combat) => combat.campaignId === encounter.campaignId && combat.encounterId === encounter.id);
+    for (const combat of updatedCombats) {
+      combat.encounterId = undefined;
+      combat.updatedAt = changedAt;
+    }
+    const updatedSessions = store.state.campaignSessions.filter((session) => session.campaignId === encounter.campaignId && session.encounterIds.includes(encounter.id));
+    for (const session of updatedSessions) {
       if (!session.encounterIds.includes(encounter.id)) continue;
       session.encounterIds = session.encounterIds.filter((id) => id !== encounter.id);
-      session.updatedAt = nowIso();
+      session.updatedAt = changedAt;
       session.updatedBy = userId;
     }
     appendServerAuditLog(store, userId, { campaignId: encounter.campaignId, action: "encounter.delete", targetType: "encounter", targetId: encounter.id, before: encounter, after: { deleted: true } });
     store.save();
-    broadcast(createEvent({ campaignId: encounter.campaignId, type: "encounter.deleted", actorUserId: userId, targetId: encounter.id, payload: encounter }));
+    broadcast(createEvent({ campaignId: encounter.campaignId, type: "encounter.deleted", actorUserId: userId, targetId: encounter.id, payload: { ...encounter, previouslyActive } }));
+    for (const combat of updatedCombats) {
+      broadcast(createEvent({ campaignId: combat.campaignId, type: "combat.turnChanged", actorUserId: userId, targetId: combat.id, payload: combat }));
+    }
+    for (const session of updatedSessions) {
+      broadcast(createEvent({ campaignId: session.campaignId, type: "campaign.session.updated", actorUserId: userId, targetId: session.id, payload: session }));
+    }
     return encounter;
   });
 
@@ -6077,26 +6308,57 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   app.post<{
     Params: { campaignId: string; systemId: string };
-    Body: { partyActorIds?: string[]; threats?: EncounterThreatSelection[]; createEncounter?: boolean; name?: string };
+    Body: unknown;
   }>("/api/v1/campaigns/:campaignId/systems/:systemId/encounter-plan", async (request, reply) => {
-    const body = request.body ?? {};
-    const permission: PermissionName = body.createEncounter ? "combat.manage" : "campaign.read";
+    const rawBody = request.body ?? {};
+    const createEncounter = isRecord(rawBody) && rawBody.createEncounter === true;
+    const permission: PermissionName = createEncounter ? "combat.manage" : "campaign.read";
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, permission);
     if (allowed !== true) return allowed;
     const system = findRegisteredSystem(store.state, request.params.systemId);
     if (!system) return notFound(reply, "System not found");
+    const normalizedBody = normalizeSystemEncounterPlanBody(store, request.params.campaignId, system, rawBody);
+    if (!normalizedBody.ok) return badRequest(reply, normalizedBody.error);
+    const body = normalizedBody.value;
     const party = partyActorsForSystem(store, request.params.campaignId, system.id, body.partyActorIds);
-    const plan = encounterPlanForSystem(system.id, party, body.threats ?? []);
+    const plan = encounterPlanForSystem(system.id, party, body.threats);
     if (!body.createEncounter) return { plan };
+    const normalized = normalizeEncounterPatch(
+      store,
+      request.params.campaignId,
+      {
+        name: body.name?.trim() || `${system.name} ${titleCase(plan.difficulty)} Encounter`,
+        summary: plan.summary,
+        tokenIds: [],
+        difficulty: plan.difficulty,
+        systemId: system.id,
+        partyActorIds: party.map((actor) => actor.id),
+        threats: plan.threats.map((threat) => ({ id: threat.id, count: threat.count }))
+      },
+      true
+    );
+    if (!normalized.ok) return badRequest(reply, normalized.error);
+    const userId = currentUserId(store, request.headers)!;
     const encounter = createTimestamped("enc", {
       campaignId: request.params.campaignId,
-      name: body.name?.trim() || `${system.name} ${titleCase(plan.difficulty)} Encounter`,
-      summary: plan.summary,
-      tokenIds: [],
-      difficulty: plan.difficulty
+      systemId: normalized.value.systemId,
+      name: normalized.value.name!,
+      summary: normalized.value.summary!,
+      tokenIds: normalized.value.tokenIds ?? [],
+      difficulty: normalized.value.difficulty,
+      partyActorIds: normalized.value.partyActorIds,
+      threats: normalized.value.threats
     }) satisfies Encounter;
     store.state.encounters.push(encounter);
+    appendServerAuditLog(store, userId, {
+      campaignId: encounter.campaignId,
+      action: "encounter.create",
+      targetType: "encounter",
+      targetId: encounter.id,
+      after: encounter
+    });
     store.save();
+    broadcast(createEvent({ campaignId: encounter.campaignId, type: "encounter.created", actorUserId: userId, targetId: encounter.id, payload: encounter }));
     return { plan, encounter };
   });
 
@@ -6433,11 +6695,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return visibleProposalsForUser(store.state, userId, request.params.campaignId, permissionsForUser(store, userId, request.params.campaignId));
   });
 
-  app.post<{ Params: { campaignId: string }; Body: Partial<Proposal> }>("/api/v1/campaigns/:campaignId/proposals", async (request, reply) => {
-    const createdByType = request.body.createdByType ?? "user";
-    if (createdByType !== "user" && createdByType !== "ai" && createdByType !== "plugin") return badRequest(reply, "Proposal createdByType must be user, ai, or plugin");
-    const proposalPermission: PermissionName = createdByType === "ai" || createdByType === "plugin" ? "ai.proposeChanges" : "campaign.update";
-    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, proposalPermission);
+  app.post<{ Params: { campaignId: string }; Body: ProposalCreateBody }>("/api/v1/campaigns/:campaignId/proposals", async (request, reply) => {
+    if (request.body.createdByType !== undefined && request.body.createdByType !== "user") return badRequest(reply, "REST proposals must use user provenance");
+    if (request.body.sourceId !== undefined) return badRequest(reply, "REST proposals cannot set a trusted provenance sourceId");
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.update");
     if (allowed !== true) return allowed;
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
@@ -6448,8 +6709,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const proposal: Proposal = createTimestamped("prop", {
       campaignId: request.params.campaignId,
       createdByUserId: userId,
-      createdByType,
-      sourceId: request.body.sourceId,
+      createdByType: "user" as const,
       title: request.body.title ?? "Untitled Proposal",
       summary: request.body.summary ?? "",
       status: "pending" as const,
@@ -6510,6 +6770,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       const rejected = rejectProposal(proposal, userId);
       Object.assign(proposal, rejected);
       assetCleanup = await cleanupRejectedProposalAssets(store, assetStorage, uploadDir, [proposal], userId, "Rejected proposal");
+      unlinkRecapFromSession(store, proposal, userId);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Proposal could not be rejected";
       return reply.code(409).send({ error: "proposal_not_ready", message });
@@ -6561,9 +6822,16 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       if ("error" in preparedChanges) throw new Error(preparedChanges.message);
       const missingPermission = missingProposalChangePermission(preparedChanges.changes, permissionsForUser(store, userId, proposal.campaignId));
       if (missingPermission) return forbidden(reply, `Missing permission: ${missingPermission}`);
-      proposal.changesJson = preparedChanges.changes;
-      appliedChanges = structuredClone(proposal.changesJson);
-      store.replace(applyProposal(store.state, proposal, userId));
+      appliedChanges = structuredClone(preparedChanges.changes);
+      const applyState = structuredClone(store.state);
+      const applyStateProposal = applyState.proposals.find((item) => item.id === proposal.id);
+      if (!applyStateProposal) throw new Error("Proposal could not be prepared for apply");
+      applyStateProposal.changesJson = structuredClone(preparedChanges.changes);
+      const nextState = applyProposal(applyState, applyStateProposal, userId);
+      const nextProposal = nextState.proposals.find((item) => item.id === proposal.id);
+      if (!nextProposal) throw new Error("Applied proposal record was not prepared");
+      linkAppliedRecapToSessionState(nextState, nextProposal, userId);
+      store.replace(nextState);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Proposal could not be applied";
       store.state.auditLogs.push(
@@ -6591,7 +6859,6 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }
     const applied = store.state.proposals.find((item) => item.id === request.params.proposalId);
     if (!applied) return reply.code(500).send({ error: "proposal_apply_incomplete", message: "Applied proposal record was not persisted" });
-    linkAppliedRecapToSession(store, applied, userId);
     appendServerAuditLog(store, userId, {
       campaignId: applied.campaignId,
       action: "proposal.apply",
@@ -6620,9 +6887,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const userId = currentUserId(store, request.headers)!;
     const inverseChanges = structuredClone(proposal.inverseChangesJson ?? []);
+    const missingPermission = missingProposalChangePermission(inverseChanges, permissionsForUser(store, userId, proposal.campaignId));
+    if (missingPermission) return forbidden(reply, `Missing permission: ${missingPermission}`);
     const beforeState = store.state;
     try {
-      store.replace(revertProposal(store.state, proposal, userId));
+      const revertState = structuredClone(store.state);
+      const revertStateProposal = revertState.proposals.find((item) => item.id === proposal.id);
+      if (!revertStateProposal) throw new Error("Proposal could not be prepared for revert");
+      unlinkRecapFromSessionState(revertState, revertStateProposal, userId);
+      store.replace(revertProposal(revertState, revertStateProposal, userId));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Proposal could not be reverted";
       appendServerAuditLog(store, userId, {
@@ -7395,7 +7668,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
           type: "ai.thread.started",
           actorUserId: userId,
           targetId: thread.id,
-          payload: thread
+          payload: { ...thread, visibility: aiThreadRealtimeVisibility }
         })
       );
       responseFinished = true;
@@ -7894,11 +8167,6 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const memoryCandidates = sessionRecapMemoryCandidates(request.params.campaignId, userId, proposal.id, session, recap);
     store.state.proposals.push(proposal);
     store.state.aiMemory.push(...memoryCandidates);
-    if (session) {
-      session.recapProposalId = proposal.id;
-      session.updatedBy = userId;
-      session.updatedAt = nowIso();
-    }
     store.save();
     broadcast(createEvent({ campaignId: proposal.campaignId, type: "ai.proposal.created", actorUserId: userId, targetId: proposal.id, payload: proposal }));
     for (const memory of memoryCandidates) {
@@ -8534,6 +8802,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       })
     );
     store.save();
+    broadcast(createEvent({ campaignId: campaign.id, type: "campaign.updated", actorUserId: userId, targetId: campaign.id, payload: campaign }));
     return { system: systemRuntimeInfo(store, system, true), campaign };
   });
 
@@ -8564,6 +8833,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (typeof userId !== "string") return userId;
     const template = characterTemplatesForSystem(request.params.systemId).find((item) => item.id === request.body.templateId);
     if (!template) return notFound(reply, "Character template not found");
+    const ownerUserId = campaignActorOwnerUserId(store, request.params.campaignId, request.body.ownerUserId, userId);
+    if (!ownerUserId.ok) return badRequest(reply, ownerUserId.error);
     const originOptions = {
       backgroundId: request.body.backgroundId,
       speciesId: request.body.speciesId,
@@ -8594,7 +8865,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const actor = createTimestamped("act", {
       campaignId: request.params.campaignId,
       systemId: template.systemId,
-      ownerUserId: request.body.ownerUserId ?? userId,
+      ownerUserId: ownerUserId.value,
       type: template.actorType,
       name: request.body.name?.trim() || template.name,
       data: cloneRecord(characterData),
@@ -8637,10 +8908,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!threat) return notFound(reply, "Encounter threat not found");
     const data = dnd5eSrdMonsterActorData(threat.id);
     if (!data) return notFound(reply, "Monster stat block not found");
+    const ownerUserId = campaignActorOwnerUserId(store, request.params.campaignId, request.body.ownerUserId, userId);
+    if (!ownerUserId.ok) return badRequest(reply, ownerUserId.error);
     const actor = createTimestamped("act", {
       campaignId: request.params.campaignId,
       systemId: system.id,
-      ownerUserId: request.body.ownerUserId ?? userId,
+      ownerUserId: ownerUserId.value,
       type: "monster",
       name: request.body.name?.trim() || threat.name,
       data: cloneRecord(data),
@@ -8674,11 +8947,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (typeof userId !== "string") return userId;
     const system = findRegisteredSystem(store.state, request.params.systemId);
     if (!system) return notFound(reply, "System not found");
+    const ownerUserId = campaignActorOwnerUserId(store, request.params.campaignId, request.body?.ownerUserId, userId);
+    if (!ownerUserId.ok) return badRequest(reply, ownerUserId.error);
     const imported = characterImportForSystem(system.id, request.body ?? {});
     const actor = createTimestamped("act", {
       campaignId: request.params.campaignId,
       systemId: imported.systemId,
-      ownerUserId: request.body?.ownerUserId ?? userId,
+      ownerUserId: ownerUserId.value,
       type: imported.actorType,
       name: imported.name,
       data: cloneRecord(imported.data),
@@ -9532,8 +9807,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   });
 
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/dogfood-report-bundle", async (request, reply) => {
-    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.read");
-    if (allowed !== true) return allowed;
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    if (!isServerAdminUser(store, userId)) {
+      const allowed = requireCampaignPermissionForUser(store, reply, request.headers, userId, request.params.campaignId, "campaign.update");
+      if (allowed !== true) return allowed;
+    }
     flushStore(store);
     return makeDogfoodReportBundle(store.state, request.params.campaignId);
   });
@@ -9541,10 +9820,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.post<{ Body: CampaignImportPayload }>("/api/v1/import/campaign", async (request, reply) => {
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
+    if (!isRecord(request.body)) return badRequest(reply, "Campaign import payload must be an object");
     const payload = request.body as CampaignImportPayload;
     const wrappedPayload = "archive" in payload;
     const workspace = organizationWorkspaceRecordForRequest(store, userId, request.headers);
-    const archive = normalizeArchiveForImport(wrappedPayload ? payload.archive : payload, workspace.id);
+    const archiveShape = validateArchiveForImport(wrappedPayload ? payload.archive : payload);
+    if (!archiveShape.ok) return badRequest(reply, archiveShape.error);
+    const archive = normalizeArchiveForImport(archiveShape.value, workspace.id);
     const mode = wrappedPayload ? (payload.mode ?? "upsert") : "upsert";
     const scope = wrappedPayload ? (payload.scope ?? "all") : "all";
     const regenerateIds = wrappedPayload && payload.regenerateIds === true;
@@ -9681,6 +9963,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     storageBackupScheduler.stop();
     await pluginEventQueue;
     flushStore(store);
+    await stopLocalCodexAppServers();
   });
 
   return app;
@@ -9701,14 +9984,14 @@ function createConfiguredAiProvider(): AiProvider {
     const providerTimeoutMs = aiProviderTimeoutMs();
     return new CodexAppServerProvider({
       transport: new CodexAppServerWebSocketTransport({
-        url: process.env.OTTE_CODEX_APP_SERVER_URL,
-        cwd: process.env.OTTE_CODEX_APP_SERVER_CWD,
-        model: process.env.OTTE_CODEX_MODEL,
-        modelProvider: process.env.OTTE_CODEX_MODEL_PROVIDER,
+        url: trimmedEnvValue(process.env.OTTE_CODEX_APP_SERVER_URL),
+        cwd: trimmedEnvValue(process.env.OTTE_CODEX_APP_SERVER_CWD),
+        model: trimmedEnvValue(process.env.OTTE_CODEX_MODEL),
+        modelProvider: trimmedEnvValue(process.env.OTTE_CODEX_MODEL_PROVIDER),
         reasoningEffort: agentReasoningEffort(),
         loginType: codexAppServerLoginType(),
         requestTimeoutMs: providerTimeoutMs,
-        turnTimeoutMs: providerTimeoutMs === undefined ? undefined : Math.max(providerTimeoutMs, 180_000),
+        turnTimeoutMs: providerTimeoutMs === 0 ? 0 : Math.max(providerTimeoutMs, 180_000),
         autoStart: codexAppServerAutoStartEnabled(),
         codexCommand: trimmedEnvValue(process.env.OTTE_CODEX_APP_SERVER_COMMAND)
       }),
@@ -9731,10 +10014,10 @@ function createConfiguredImageAssetGenerator(): ImageAssetGenerator {
   if (configuredProvider === "codex-app-server") {
     const timeoutMs = aiImageProviderTimeoutMs();
     return new CodexAppServerImageAssetGenerator({
-      url: process.env.OTTE_CODEX_APP_SERVER_URL,
-      cwd: process.env.OTTE_CODEX_APP_SERVER_CWD,
-      model: process.env.OTTE_CODEX_IMAGE_MODEL ?? process.env.OTTE_CODEX_MODEL,
-      modelProvider: process.env.OTTE_CODEX_MODEL_PROVIDER,
+      url: trimmedEnvValue(process.env.OTTE_CODEX_APP_SERVER_URL),
+      cwd: trimmedEnvValue(process.env.OTTE_CODEX_APP_SERVER_CWD),
+      model: trimmedEnvValue(process.env.OTTE_CODEX_IMAGE_MODEL) ?? trimmedEnvValue(process.env.OTTE_CODEX_MODEL),
+      modelProvider: trimmedEnvValue(process.env.OTTE_CODEX_MODEL_PROVIDER),
       loginType: codexAppServerLoginType(),
       requestTimeoutMs: timeoutMs,
       turnTimeoutMs: timeoutMs,
@@ -12550,13 +12833,13 @@ function createAiThreadTools(): AiToolDefinition[] {
     },
     {
       name: "search_campaign",
-      description: "Search permission-filtered campaign worlds, scenes, actors, items, journals, handouts, encounters, memory, and chat.",
+      description: "Search permission-filtered campaign worlds, scenes, actors, items, journals, handouts, encounters, memory, chat, and rolls.",
       requiredPermissions: ["campaign.read"],
       parameters: {
         type: "object",
         properties: {
           query: { type: "string", description: "Required text search query, from 1 to 200 characters." },
-          types: { type: "array", description: "Optional result types to include.", items: { type: "string", enum: ["world", "scene", "actor", "item", "journal", "handout", "encounter", "memory", "chat"] } },
+          types: { type: "array", description: "Optional result types to include.", items: { type: "string", enum: ["world", "scene", "actor", "item", "journal", "handout", "encounter", "memory", "chat", "roll"] } },
           worldId: { type: "string", description: "Optional world id scope." },
           limit: { type: "number", description: "Maximum results to return, from 1 to 100." }
         },
@@ -15191,15 +15474,21 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
       if ("error" in preparedChanges) return toolError(preparedChanges.error, { message: preparedChanges.message });
       const missingPermission = missingProposalChangePermission(preparedChanges.changes, permissions);
       if (missingPermission) return missingPermissionToolOutput(missingPermission);
-      proposal.changesJson = preparedChanges.changes;
-      const boardStateChanged = proposalTouchesBoardState(proposal);
       const beforeState = store.state;
-      const appliedChanges = structuredClone(proposal.changesJson);
-      store.replace(applyProposal(store.state, proposal, userId));
+      const appliedChanges = structuredClone(preparedChanges.changes);
+      const applyState = structuredClone(store.state);
+      const applyStateProposal = applyState.proposals.find((item) => item.id === proposal.id);
+      if (!applyStateProposal) return toolError("proposal_apply_incomplete", { proposalId });
+      applyStateProposal.changesJson = structuredClone(preparedChanges.changes);
+      const boardStateChanged = proposalTouchesBoardState(applyStateProposal);
+      const nextState = applyProposal(applyState, applyStateProposal, userId);
+      const nextProposal = nextState.proposals.find((item) => item.id === proposal.id);
+      if (!nextProposal) return toolError("proposal_apply_incomplete", { proposalId });
+      linkAppliedRecapToSessionState(nextState, nextProposal, userId);
+      store.replace(nextState);
       refreshAiToolContextState(context, store.state);
       const applied = store.state.proposals.find((item) => item.id === proposalId);
       if (!applied) return toolError("proposal_apply_incomplete", { proposalId });
-      linkAppliedRecapToSession(store, applied, userId);
       appendServerAuditLog(store, userId, {
         campaignId,
         action: "proposal.apply",
@@ -16495,10 +16784,10 @@ function proposalPermissionsIncludePrepAccess(permissions: PermissionName[]): bo
   return ["campaign.update", "scene.create", "scene.update", "scene.delete", "scene.activate", "token.reveal", "combat.manage"].some((permission) => permissions.includes(permission as PermissionName));
 }
 
-function linkAppliedRecapToSession(store: StateStore, proposal: Proposal, userId: string): void {
+function linkAppliedRecapToSessionState(state: EngineState, proposal: Proposal, userId: string): void {
   const sessionId = typeof proposal.diffJson.sessionId === "string" ? proposal.diffJson.sessionId : undefined;
   if (!sessionId) return;
-  const session = store.state.campaignSessions.find((item) => item.id === sessionId && item.campaignId === proposal.campaignId);
+  const session = state.campaignSessions.find((item) => item.id === sessionId && item.campaignId === proposal.campaignId);
   if (!session) return;
   const recapJournalId = proposal.changesJson
     .filter((change) => change.entity === "journal" && change.action === "create")
@@ -16506,6 +16795,21 @@ function linkAppliedRecapToSession(store: StateStore, proposal: Proposal, userId
     .find((id): id is string => Boolean(id));
   session.recapProposalId = proposal.id;
   session.recapJournalId = recapJournalId;
+  session.updatedBy = userId;
+  session.updatedAt = nowIso();
+}
+
+function unlinkRecapFromSession(store: StateStore, proposal: Proposal, userId: string): void {
+  unlinkRecapFromSessionState(store.state, proposal, userId);
+}
+
+function unlinkRecapFromSessionState(state: EngineState, proposal: Proposal, userId: string): void {
+  const sessionId = typeof proposal.diffJson.sessionId === "string" ? proposal.diffJson.sessionId : undefined;
+  if (!sessionId) return;
+  const session = state.campaignSessions.find((item) => item.id === sessionId && item.campaignId === proposal.campaignId);
+  if (!session || session.recapProposalId !== proposal.id) return;
+  session.recapProposalId = undefined;
+  session.recapJournalId = undefined;
   session.updatedBy = userId;
   session.updatedAt = nowIso();
 }
@@ -16518,9 +16822,19 @@ function broadcastProposalEntityChanges(
   userId: string,
   broadcastEvent: (event: EngineEvent) => void
 ): void {
+  const explicitEntityKeys = new Set(changes.map((change) => `${change.entity}:${proposalChangeEntityId(change) ?? ""}`));
   for (const change of changes) {
     const id = proposalChangeEntityId(change);
-    const payload = proposalChangeRecordFromState(change.action === "delete" ? beforeState : store.state, campaignId, change) ?? { id, campaignId, deleted: change.action === "delete" };
+    let payload = proposalChangeRecordFromState(change.action === "delete" ? beforeState : store.state, campaignId, change) ?? { id, campaignId, deleted: change.action === "delete" };
+    if (change.entity === "diceMacro" && change.action === "update" && isRecord(payload)) {
+      const previous = proposalChangeRecordFromState(beforeState, campaignId, change);
+      payload = {
+        ...payload,
+        ...(isRecord(previous) && (previous.visibility === "public" || previous.visibility === "gm_only")
+          ? { previousVisibility: previous.visibility }
+          : {})
+      };
+    }
     appendServerAuditLog(store, userId, {
       campaignId,
       action: `proposal.entity.${change.action}`,
@@ -16540,6 +16854,24 @@ function broadcastProposalEntityChanges(
       if (campaign) broadcastEvent(createEvent({ campaignId, type: "campaign.updated", actorUserId: userId, targetId: campaignId, payload: campaign }));
     }
   }
+  const deletedActorIds = new Set(
+    changes.filter((change) => change.entity === "actor" && change.action === "delete").map((change) => proposalChangeEntityId(change)).filter((id): id is string => Boolean(id))
+  );
+  if (deletedActorIds.size === 0) return;
+  for (const beforeEncounter of beforeState.encounters) {
+    if (beforeEncounter.campaignId !== campaignId || !beforeEncounter.partyActorIds?.some((id) => deletedActorIds.has(id))) continue;
+    if (explicitEntityKeys.has(`encounter:${beforeEncounter.id}`)) continue;
+    const encounter = store.state.encounters.find((item) => item.id === beforeEncounter.id && item.campaignId === campaignId);
+    if (!encounter) continue;
+    appendServerAuditLog(store, userId, {
+      campaignId,
+      action: "proposal.entity.update",
+      targetType: "encounter",
+      targetId: encounter.id,
+      after: { proposalEntity: "encounter", proposalAction: "update", fieldNames: ["partyActorIds"] }
+    });
+    broadcastEvent(createEvent({ campaignId, type: "encounter.updated", actorUserId: userId, targetId: encounter.id, payload: encounter }));
+  }
 }
 
 function proposalEntityEventType(change: ProposalChange): EngineEvent["type"] | undefined {
@@ -16551,9 +16883,11 @@ function proposalEntityEventType(change: ProposalChange): EngineEvent["type"] | 
   if (change.entity === "item") return `item.${suffix}` as EngineEvent["type"];
   if (change.entity === "journal") return `journal.${suffix}` as EngineEvent["type"];
   if (change.entity === "handout") return `handout.${suffix}` as EngineEvent["type"];
+  if (change.entity === "asset") return `asset.${suffix}` as EngineEvent["type"];
   if (change.entity === "chat") return `chat.message.${suffix}` as EngineEvent["type"];
   if (change.entity === "encounter") return `encounter.${suffix}` as EngineEvent["type"];
   if (change.entity === "roll" && change.action === "create") return "dice.roll.created";
+  if (change.entity === "diceMacro") return `dice.macro.${suffix}` as EngineEvent["type"];
   if (change.entity === "combat") return change.action === "create" ? "combat.started" : change.action === "delete" ? "combat.ended" : "combat.turnChanged";
   if (change.entity === "campaign") return "campaign.updated";
   return undefined;
@@ -16647,10 +16981,16 @@ function autoApplyAiThreadProposal(store: StateStore, runtime: AiToolRuntime, ca
     if (proposal.status !== "approved") return undefined;
     const beforeState = store.state;
     const appliedChanges = structuredClone(proposal.changesJson);
-    store.replace(applyProposal(store.state, proposal, userId));
+    const applyState = structuredClone(store.state);
+    const applyStateProposal = applyState.proposals.find((item) => item.id === proposal.id);
+    if (!applyStateProposal) throw new Error("Proposal could not be prepared for apply");
+    const nextState = applyProposal(applyState, applyStateProposal, userId);
+    const nextProposal = nextState.proposals.find((item) => item.id === proposal.id);
+    if (!nextProposal) throw new Error("Applied proposal record was not prepared");
+    linkAppliedRecapToSessionState(nextState, nextProposal, userId);
+    store.replace(nextState);
     const applied = store.state.proposals.find((item) => item.id === proposal.id);
     if (!applied) throw new Error("Applied proposal record was not persisted");
-    linkAppliedRecapToSession(store, applied, userId);
     appendServerAuditLog(store, userId, {
       campaignId: proposal.campaignId,
       action: "proposal.apply",
@@ -16854,25 +17194,9 @@ function inferredSourceAssetKind(asset: MapAsset, scene?: Scene): "map" | "token
   return "token";
 }
 
-function signedAssetUrlForInternalAgent(asset: MapAsset, requestedTtlSeconds = 15 * 60): string {
-  if (/^https?:\/\//i.test(asset.url) && !asset.url.includes(`/api/v1/assets/${asset.id}/blob`)) return asset.url;
-  const expiresAt = new Date(Date.now() + assetUrlTtlSeconds(requestedTtlSeconds) * 1000).toISOString();
-  const url = new URL(`${apiBaseUrlForInternalAgent()}/api/v1/assets/${asset.id}/blob`);
-  url.searchParams.set("expiresAt", expiresAt);
-  url.searchParams.set("signature", signAssetUrl(asset.id, expiresAt, "inline"));
-  return url.toString();
-}
-
 async function sourceImageUrlForInternalAgent(context: AiToolContext, asset: MapAsset): Promise<string | ToolErrorOutput> {
-  try {
-    const directUrl = new URL(asset.url);
-    if (directUrl.protocol === "https:" && directUrl.pathname !== `/api/v1/assets/${asset.id}/blob`) return directUrl.toString();
-  } catch {
-    // Relative and malformed URLs must resolve through authenticated asset storage.
-  }
   const resolver = (context as OpenTabletopAiToolContext).sourceImageDataUrlForAsset;
-  if (!resolver) return signedAssetUrlForInternalAgent(asset);
-  const dataUrl = await resolver(asset);
+  const dataUrl = resolver ? await resolver(asset) : undefined;
   if (dataUrl) return dataUrl;
   return toolError("asset_bytes_unavailable", {
     entity: "asset",
@@ -17669,13 +17993,66 @@ function tokenLayer(token: Partial<Pick<Token, "layer">>): TokenLayer {
   return isTokenLayer(token.layer) ? token.layer : "player";
 }
 
-function campaignPatchFromBody(body: CampaignPatchBody): CampaignPatchBody {
+function normalizeCampaignPatch(
+  store: StateStore,
+  rawBody: unknown
+): { ok: true; value: CampaignPatchBody } | { ok: false; error: string } {
+  if (!isRecord(rawBody)) return { ok: false, error: "Campaign body must be a JSON object" };
   const patch: CampaignPatchBody = {};
-  if (body.name !== undefined) patch.name = body.name;
-  if (body.description !== undefined) patch.description = body.description;
-  if (body.defaultSystemId !== undefined) patch.defaultSystemId = body.defaultSystemId;
-  if (body.visibility !== undefined) patch.visibility = body.visibility;
-  return patch;
+  if ("name" in rawBody) {
+    const name = normalizeBoundedText(rawBody.name, 160);
+    if (!name) return { ok: false, error: "Campaign name must be 1-160 characters" };
+    patch.name = name;
+  }
+  if ("description" in rawBody) {
+    const description = normalizeBoundedText(rawBody.description, 20_000);
+    if (description === undefined) return { ok: false, error: "Campaign description must be no longer than 20000 characters" };
+    patch.description = description;
+  }
+  if ("defaultSystemId" in rawBody) {
+    const systemId = normalizeNonEmptyString(rawBody.defaultSystemId);
+    if (!systemId || !findRegisteredSystem(store.state, systemId)) return { ok: false, error: "Campaign defaultSystemId must reference an installed system" };
+    patch.defaultSystemId = systemId;
+  }
+  if ("visibility" in rawBody) {
+    if (rawBody.visibility !== "private" && rawBody.visibility !== "invite_only" && rawBody.visibility !== "public") {
+      return { ok: false, error: "Campaign visibility must be private, invite_only, or public" };
+    }
+    patch.visibility = rawBody.visibility;
+  }
+  return { ok: true, value: patch };
+}
+
+function normalizeDiceMacroPatch(
+  rawBody: unknown
+):
+  | { ok: true; value: Partial<Pick<DiceMacro, "name" | "formula" | "visibility">> }
+  | { ok: false; error: string } {
+  if (!isRecord(rawBody)) return { ok: false, error: "Dice macro body must be a JSON object" };
+  const patch: Partial<Pick<DiceMacro, "name" | "formula" | "visibility">> = {};
+  if ("name" in rawBody) {
+    const name = typeof rawBody.name === "string" ? rawBody.name.trim() : "";
+    if (!name) return { ok: false, error: "Dice macro name is required" };
+    patch.name = name;
+  }
+  if ("formula" in rawBody) {
+    const formula = typeof rawBody.formula === "string" ? rawBody.formula.trim() : "";
+    if (!formula) return { ok: false, error: "Dice macro formula is required" };
+    try {
+      rollFormula(formula);
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : "Invalid dice macro formula" };
+    }
+    patch.formula = formula;
+  }
+  if ("visibility" in rawBody) {
+    if (rawBody.visibility !== "public" && rawBody.visibility !== "gm_only") {
+      return { ok: false, error: "Dice macro visibility must be public or gm_only" };
+    }
+    patch.visibility = rawBody.visibility;
+  }
+  if (Object.keys(patch).length === 0) return { ok: false, error: "Dice macro update must include at least one field" };
+  return { ok: true, value: patch };
 }
 
 const SCENE_PATCH_FIELDS = new Set<keyof ScenePatchBody>([
@@ -17859,7 +18236,8 @@ function normalizeEncounterPatch(
   store: StateStore,
   campaignId: string,
   rawBody: unknown,
-  create = false
+  create = false,
+  existing?: Encounter
 ): { ok: true; value: NormalizedEncounterPatch } | { ok: false; error: string } {
   if (!isRecord(rawBody)) return { ok: false, error: "Encounter body must be a JSON object" };
   const patch: NormalizedEncounterPatch = {};
@@ -17891,7 +18269,109 @@ function normalizeEncounterPatch(
     }
     patch.worldId = typeof rawBody.worldId === "string" ? rawBody.worldId : undefined;
   }
+  if ("systemId" in rawBody) {
+    if (typeof rawBody.systemId !== "string" || rawBody.systemId.trim().length === 0) return { ok: false, error: "Encounter systemId must be a non-empty string" };
+    const systemId = rawBody.systemId.trim();
+    if (!findRegisteredSystem(store.state, systemId)) return { ok: false, error: "Encounter systemId must reference a registered system" };
+    if (!hasSystemRuntimeCapability(systemId, "encounter-builder")) return { ok: false, error: "Encounter systemId must support encounter building" };
+    patch.systemId = systemId;
+  }
+  const nextSystemId = patch.systemId ?? existing?.systemId;
+  if ("partyActorIds" in rawBody) {
+    if (!nextSystemId) return { ok: false, error: "Encounter partyActorIds require systemId" };
+    const partyActorIds = normalizedEncounterPartyActorIds(store, campaignId, nextSystemId, rawBody.partyActorIds);
+    if (!partyActorIds.ok) return partyActorIds;
+    patch.partyActorIds = partyActorIds.value;
+  }
+  if ("threats" in rawBody) {
+    if (!nextSystemId) return { ok: false, error: "Encounter threats require systemId" };
+    const threats = normalizedEncounterThreatSelections(rawBody.threats, nextSystemId);
+    if (!threats.ok) return threats;
+    patch.threats = threats.value;
+  }
+  if (patch.systemId && existing?.systemId && patch.systemId !== existing.systemId) {
+    const retainedParty = patch.partyActorIds ?? existing.partyActorIds;
+    if (retainedParty) {
+      const normalized = normalizedEncounterPartyActorIds(store, campaignId, patch.systemId, retainedParty);
+      if (!normalized.ok) return normalized;
+    }
+    const retainedThreats = patch.threats ?? existing.threats;
+    if (retainedThreats) {
+      const normalized = normalizedEncounterThreatSelections(retainedThreats, patch.systemId);
+      if (!normalized.ok) return normalized;
+    }
+  }
   return { ok: true, value: patch };
+}
+
+function normalizeSystemEncounterPlanBody(
+  store: StateStore,
+  campaignId: string,
+  system: SystemManifest,
+  rawBody: unknown
+): { ok: true; value: { partyActorIds?: string[]; threats: EncounterThreatSelection[]; createEncounter: boolean; name?: string } } | { ok: false; error: string } {
+  if (!isRecord(rawBody)) return { ok: false, error: "Encounter plan body must be a JSON object" };
+  if (rawBody.createEncounter !== undefined && typeof rawBody.createEncounter !== "boolean") return { ok: false, error: "createEncounter must be a boolean" };
+  if (rawBody.name !== undefined && typeof rawBody.name !== "string") return { ok: false, error: "Encounter name must be a string" };
+  const name = typeof rawBody.name === "string" ? normalizeBoundedText(rawBody.name, 200) : undefined;
+  if (typeof rawBody.name === "string" && name === undefined) return { ok: false, error: "Encounter name must be no longer than 200 characters" };
+  let partyActorIds: string[] | undefined;
+  if (rawBody.partyActorIds !== undefined) {
+    const normalized = normalizedEncounterPartyActorIds(store, campaignId, system.id, rawBody.partyActorIds);
+    if (!normalized.ok) return normalized;
+    partyActorIds = normalized.value;
+  }
+  const threats = normalizedEncounterThreatSelections(rawBody.threats, system.id);
+  if (!threats.ok) return threats;
+  return {
+    ok: true,
+    value: {
+      partyActorIds,
+      threats: threats.value,
+      createEncounter: rawBody.createEncounter === true,
+      name
+    }
+  };
+}
+
+function normalizedEncounterPartyActorIds(
+  store: StateStore,
+  campaignId: string,
+  systemId: string,
+  value: unknown
+): { ok: true; value: string[] } | { ok: false; error: string } {
+  const actorIds = normalizedStringIds(value, 100);
+  if (!actorIds) return { ok: false, error: "Encounter partyActorIds must be an array of non-empty strings" };
+  if (actorIds.some((id) => !store.state.actors.some((actor) => actor.id === id && actor.campaignId === campaignId && actor.systemId === systemId && actor.type === "character"))) {
+    return { ok: false, error: "Encounter partyActorIds must reference character actors from the same campaign and system" };
+  }
+  return { ok: true, value: actorIds };
+}
+
+function normalizedEncounterThreatSelections(
+  value: unknown,
+  systemId: string
+): { ok: true; value: Array<{ id: string; count: number }> } | { ok: false; error: string } {
+  if (value === undefined) return { ok: true, value: [] };
+  if (!Array.isArray(value) || value.length > 100) return { ok: false, error: "Encounter threats must be an array with at most 100 selections" };
+  const catalogIds = new Set(encounterThreatsForSystem(systemId).map((threat) => threat.id));
+  const seen = new Set<string>();
+  const threats: Array<{ id: string; count: number }> = [];
+  for (const selection of value) {
+    if (!isRecord(selection) || typeof selection.id !== "string" || selection.id.trim().length === 0 || selection.id.trim().length > 160) {
+      return { ok: false, error: "Each encounter threat must include a valid id" };
+    }
+    const id = selection.id.trim();
+    if (seen.has(id)) return { ok: false, error: "Encounter threat IDs must be unique" };
+    if (!catalogIds.has(id)) return { ok: false, error: `Encounter threat ${id} does not exist in system ${systemId}` };
+    const count = selection.count === undefined ? 1 : selection.count;
+    if (typeof count !== "number" || !Number.isInteger(count) || count < 1 || count > 99) {
+      return { ok: false, error: "Encounter threat counts must be integers from 1 to 99" };
+    }
+    seen.add(id);
+    threats.push({ id, count });
+  }
+  return { ok: true, value: threats };
 }
 
 function normalizeAiMemoryPatch(
@@ -17979,6 +18459,10 @@ function normalizeTokenLayerPatch(body: Partial<Pick<Token, "layer">>): { patch:
 
 function normalizeTokenVisionPatch(body: Partial<Pick<Token, "visionEnabled" | "visionRadius">> & { brightVisionRadius?: number | null; dimVisionRadius?: number | null }, current?: Partial<Pick<Token, "visionEnabled" | "visionRadius" | "brightVisionRadius" | "dimVisionRadius">>): { patch: Partial<Token> } | { error: string } {
   const patch: Partial<Token> = {};
+  if (body.visionEnabled !== undefined) {
+    if (typeof body.visionEnabled !== "boolean") return { error: "Token visionEnabled must be a boolean" };
+    patch.visionEnabled = body.visionEnabled;
+  }
   if (body.visionRadius !== undefined) {
     if (!Number.isFinite(body.visionRadius) || body.visionRadius < 0) return { error: "Token visionRadius must be a nonnegative number" };
     patch.visionRadius = body.visionRadius;
@@ -18227,7 +18711,7 @@ function registerIdempotencyReplay(app: FastifyInstance, store: StateStore): voi
     }
   };
 
-  const flightKey = (context: IdempotencyContext): string => stableJson([context.method, context.userId, context.key]);
+  const flightKey = (context: IdempotencyContext): string => stableJson([context.method, context.userId, context.authorizationHash, context.key]);
   const releaseFlight = (request: FastifyRequest, record?: IdempotencyRecord): void => {
     const flight = Reflect.get(request, idempotencyFlightSymbol) as IdempotencyFlight | undefined;
     if (!flight || flight.settled) return;
@@ -18236,13 +18720,16 @@ function registerIdempotencyReplay(app: FastifyInstance, store: StateStore): voi
     if (inFlight.get(key) === flight) inFlight.delete(key);
     flight.resolve(record);
   };
-  const replayRecord = (request: FastifyRequest, reply: FastifyReply, record: IdempotencyRecord): void => {
+  const replayRecord = (request: FastifyRequest, reply: FastifyReply, record: IdempotencyRecord): boolean => {
+    const authorizationHash = idempotencyAuthorizationHash(store, request.headers, record.userId);
+    if (!authorizationHash || authorizationHash !== record.authorizationHash) return false;
     Reflect.set(request, idempotencyReplaySymbol, true);
     reply
       .code(record.statusCode)
       .header("Idempotency-Replayed", "true")
       .type(record.contentType ?? "application/json")
       .send(record.responseBody);
+    return true;
   };
 
   app.addHook("preHandler", async (request, reply) => {
@@ -18254,24 +18741,24 @@ function registerIdempotencyReplay(app: FastifyInstance, store: StateStore): voi
     if (key.length > IDEMPOTENCY_MAX_KEY_LENGTH) {
       return badRequest(reply, `Idempotency-Key must be ${IDEMPOTENCY_MAX_KEY_LENGTH} characters or fewer`);
     }
-    const userId = idempotencyUserIdFromHeaders(store, request.headers);
+    const identity = idempotencyIdentityFromHeaders(store, request.headers);
     // Anonymous mutation responses include bootstrap, login, registration, invite,
     // password-reset, and OIDC credentials. They are deliberately never replayed.
-    if (!userId) return;
+    if (!identity) return;
     const context: IdempotencyContext = {
       key,
       method: request.method.toUpperCase(),
       path: request.url,
-      userId,
-      requestHash: hashStableJson(request.body ?? null)
+      userId: identity.userId,
+      requestHash: hashStableJson(request.body ?? null),
+      authorizationHash: identity.authorizationHash
     };
     const reservationKey = flightKey(context);
     while (true) {
       const existing = store.state.idempotencyRecords.find((record) => record.key === context.key && record.method === context.method && record.userId === context.userId);
       if (existing) {
         if (existing.path !== context.path || existing.requestHash !== context.requestHash) return conflict(reply, "Idempotency-Key was already used for a different request");
-        replayRecord(request, reply, existing);
-        return;
+        if (replayRecord(request, reply, existing)) return;
       }
       const activeFlight = inFlight.get(reservationKey);
       if (activeFlight) {
@@ -18279,10 +18766,7 @@ function registerIdempotencyReplay(app: FastifyInstance, store: StateStore): voi
           return conflict(reply, "Idempotency-Key is already in use for a different request");
         }
         const completed = await activeFlight.completion;
-        if (completed) {
-          replayRecord(request, reply, completed);
-          return;
-        }
+        if (completed && replayRecord(request, reply, completed)) return;
         continue;
       }
       let resolveFlight!: (record: IdempotencyRecord | undefined) => void;
@@ -18333,9 +18817,19 @@ function registerIdempotencyReplay(app: FastifyInstance, store: StateStore): voi
       }
       return payload;
     }
+    const authorizationHash = idempotencyAuthorizationHash(store, request.headers, context.userId);
+    if (!authorizationHash) {
+      try {
+        flushSaveScope(request, false);
+      } finally {
+        releaseFlight(request);
+      }
+      return payload;
+    }
     const now = nowIso();
     const record: IdempotencyRecord = {
       ...context,
+      authorizationHash,
       statusCode: reply.statusCode,
       contentType: reply.getHeader("content-type")?.toString(),
       responseBody,
@@ -18378,7 +18872,7 @@ function registerIdempotencyReplay(app: FastifyInstance, store: StateStore): voi
 }
 
 function idempotencyRecordIsSafe(record: EngineState["idempotencyRecords"][number]): boolean {
-  return Boolean(record.userId) && idempotencyPathIsEligible(record.path) && !idempotencyResponseContainsSecret(record.responseBody);
+  return Boolean(record.userId && record.authorizationHash) && idempotencyPathIsEligible(record.path) && !idempotencyResponseContainsSecret(record.responseBody);
 }
 
 function idempotencyPathIsEligible(path: string): boolean {
@@ -18448,13 +18942,99 @@ function isIdempotentReplayCandidate(method: string): boolean {
   return method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE";
 }
 
-function idempotencyUserIdFromHeaders(store: StateStore, headers: Record<string, string | string[] | undefined>): string | undefined {
+function idempotencyIdentityFromHeaders(store: StateStore, headers: Record<string, string | string[] | undefined>): IdempotencyIdentity | undefined {
   const session = sessionFromRequest(store, undefined, headers);
-  if (session && isActiveUserId(store, session.userId)) return session.userId;
+  if (session && isActiveUserId(store, session.userId)) {
+    return {
+      userId: session.userId,
+      authorizationHash: idempotencyAuthorizationHashForUser(store, session.userId, session.id, session.activeOrganizationId)
+    };
+  }
   if (!legacyUserHeaderEnabled()) return undefined;
   const header = headers["x-user-id"];
   const userId = Array.isArray(header) ? header[0] : header;
-  return userId && isActiveUserId(store, userId) ? userId : undefined;
+  if (!userId || !isActiveUserId(store, userId)) return undefined;
+  return {
+    userId,
+    authorizationHash: idempotencyAuthorizationHashForUser(store, userId, "legacy-user-header")
+  };
+}
+
+function idempotencyAuthorizationHash(store: StateStore, headers: Record<string, string | string[] | undefined>, expectedUserId?: string): string | undefined {
+  const identity = idempotencyIdentityFromHeaders(store, headers);
+  if (!identity || (expectedUserId && identity.userId !== expectedUserId)) return undefined;
+  return identity.authorizationHash;
+}
+
+function idempotencyAuthorizationHashForUser(store: StateStore, userId: string, sessionId: string, requestedOrganizationId?: string): string {
+  const user = store.state.users.find((candidate) => candidate.id === userId);
+  const organizationMemberships = store.state.organizationMembers
+    .filter((member) => member.userId === userId)
+    .map((member) => ({ organizationId: member.organizationId, role: member.role }))
+    .sort((left, right) => left.organizationId.localeCompare(right.organizationId) || left.role.localeCompare(right.role));
+  const campaignMemberships = store.state.members
+    .filter((member) => member.userId === userId)
+    .map((member) => ({ campaignId: member.campaignId, role: member.role }))
+    .sort((left, right) => left.campaignId.localeCompare(right.campaignId) || left.role.localeCompare(right.role));
+  const rolesByCampaign = new Map(campaignMemberships.map((member) => [member.campaignId, member.role]));
+  const effectiveGrants = store.state.permissionGrants
+    .filter((grant) => {
+      if (grant.expiresAt && Date.parse(grant.expiresAt) <= Date.now()) return false;
+      if (grant.subjectType === "user") return grant.subjectId === userId;
+      return grant.subjectType === "role" && rolesByCampaign.get(grant.campaignId) === grant.subjectId;
+    })
+    .map((grant) => ({
+      campaignId: grant.campaignId,
+      subjectType: grant.subjectType,
+      subjectId: grant.subjectId,
+      permissions: [...grant.permissions].sort(),
+      expiresAt: grant.expiresAt
+    }))
+    .sort((left, right) => stableJson(left).localeCompare(stableJson(right)));
+  const accessibleOrganizationIds = new Set([
+    ...store.state.organizations.filter((organization) => organization.ownerUserId === userId).map((organization) => organization.id),
+    ...organizationMemberships.map((membership) => membership.organizationId)
+  ]);
+  const accessibleOrganizations = store.state.organizations
+    .filter((organization) => accessibleOrganizationIds.has(organization.id))
+    .map((organization) => ({ id: organization.id, ownerUserId: organization.ownerUserId }))
+    .sort((left, right) => left.id.localeCompare(right.id));
+  const campaigns = campaignMemberships
+    .map((membership) => store.state.campaigns.find((campaign) => campaign.id === membership.campaignId))
+    .filter((campaign): campaign is Campaign => Boolean(campaign))
+    .map((campaign) => ({ id: campaign.id, organizationId: campaign.organizationId }))
+    .sort((left, right) => left.id.localeCompare(right.id));
+  return hashStableJson({
+    sessionId,
+    requestedOrganizationId,
+    activeOrganizationId: activeOrganizationIdForUser(store, userId, requestedOrganizationId),
+    user: user
+      ? {
+          id: user.id,
+          disabledAt: user.disabledAt,
+          passwordResetRequired: user.passwordResetRequired,
+          serverAdmin: isServerAdminUser(store, userId)
+        }
+      : undefined,
+    accessibleOrganizations,
+    organizationMemberships,
+    campaigns,
+    campaignMemberships,
+    effectiveGrants
+  });
+}
+
+function activeOrganizationIdForUser(store: StateStore, userId: string, requestedOrganizationId?: string): string | undefined {
+  if (requestedOrganizationId && canAccessOrganization(store, requestedOrganizationId, userId)) return requestedOrganizationId;
+  const owned = store.state.organizations.find((organization) => organization.ownerUserId === userId);
+  if (owned) return owned.id;
+  const membership = store.state.organizationMembers.find((member) => member.userId === userId);
+  const memberOrganization = membership ? store.state.organizations.find((organization) => organization.id === membership.organizationId) : undefined;
+  if (memberOrganization) return memberOrganization.id;
+  return store.state.members
+    .filter((member) => member.userId === userId)
+    .map((member) => store.state.campaigns.find((campaign) => campaign.id === member.campaignId)?.organizationId)
+    .find((organizationId): organizationId is string => Boolean(organizationId));
 }
 
 function hashStableJson(value: unknown): string {
@@ -19886,6 +20466,19 @@ function positiveInteger(value: unknown): number | undefined {
   return Math.round(numberValue);
 }
 
+function realtimeClientAuthorizationIsCurrent(store: StateStore, client: RealtimeClient): boolean {
+  if (!client.userId || !client.campaignId || !isActiveUserId(store, client.userId)) return false;
+  if (!canCampaign(store, client.userId, client.campaignId, "campaign.read")) return false;
+  if (!client.sessionId) return true;
+  const session = store.state.sessions.find(
+    (candidate) => candidate.id === client.sessionId && candidate.userId === client.userId && Date.parse(candidate.expiresAt) > Date.now()
+  );
+  if (!session) return false;
+  const campaign = store.state.campaigns.find((candidate) => candidate.id === client.campaignId);
+  if (!campaign) return false;
+  return !campaign.organizationId || activeOrganizationIdForUser(store, client.userId, session.activeOrganizationId) === campaign.organizationId;
+}
+
 function filterRealtimeEvent(store: StateStore, event: EngineEvent, userId: string | undefined, visibilityCache?: TokenVisibilityCache): EngineEvent | undefined {
   if (!userId || !canCampaign(store, userId, event.campaignId, "campaign.read")) return undefined;
   if (event.type === "agent.boardCaptureRequested") {
@@ -19916,6 +20509,14 @@ function filterRealtimeEvent(store: StateStore, event: EngineEvent, userId: stri
     const handout = store.state.handouts.find((item) => item.id === event.targetId && item.campaignId === event.campaignId) ?? payload;
     return handout && canReadHandout(store, userId, handout) ? redactedRealtimeEvent(event, normalizeHandout(handout)) : undefined;
   }
+  if (event.type.startsWith("asset.")) {
+    const asset = assetFromRealtimeEvent(store, event);
+    if (!asset) return undefined;
+    if (event.type === "asset.deleted" && canAccessPreparedScenes(store, userId, event.campaignId)) {
+      return redactedRealtimeEvent(event, asset);
+    }
+    return canReadAssetRecord(store, userId, asset) ? redactedRealtimeEvent(event, asset) : undefined;
+  }
   if (event.type.startsWith("ai.memory.")) {
     const payload = isRecord(event.payload) ? (event.payload as unknown as AiMemoryFact) : undefined;
     const rawFact = store.state.aiMemory.find((item) => item.id === event.targetId && item.campaignId === event.campaignId) ?? payload;
@@ -19926,13 +20527,35 @@ function filterRealtimeEvent(store: StateStore, event: EngineEvent, userId: stri
       ? redactedRealtimeEvent(event, fact)
       : undefined;
   }
+  if (event.type.startsWith("dice.macro.")) {
+    const macro = diceMacroFromRealtimeEvent(store, event);
+    if (!macro || !canCampaign(store, userId, event.campaignId, "dice.roll")) return undefined;
+    if (macro.visibility === "public" || canCampaign(store, userId, event.campaignId, "campaign.update")) {
+      return redactedRealtimeEvent(event, macro);
+    }
+    const payload = isRecord(event.payload) ? event.payload : undefined;
+    if (event.type === "dice.macro.updated" && payload?.previousVisibility === "public") {
+      return {
+        ...event,
+        type: "dice.macro.deleted",
+        payload: { id: macro.id, campaignId: macro.campaignId, redacted: true }
+      };
+    }
+    return undefined;
+  }
   if (event.type === "dice.roll.created") {
     const roll = diceRollFromRealtimeEvent(store, event);
     if (!roll || !canCampaign(store, userId, roll.campaignId, "chat.read")) return undefined;
     const linkedMessage = store.state.chat.find((message) => message.rollId === roll.id && message.campaignId === roll.campaignId);
     return canReadDiceRoll(store, userId, roll, linkedMessage) ? event : undefined;
   }
-  if (event.type.startsWith("ai.message.") || event.type.startsWith("ai.reasoning.") || event.type.startsWith("ai.activity.") || event.type.startsWith("ai.tool.")) {
+  if (
+    event.type === "ai.thread.started" ||
+    event.type.startsWith("ai.message.") ||
+    event.type.startsWith("ai.reasoning.") ||
+    event.type.startsWith("ai.activity.") ||
+    event.type.startsWith("ai.tool.")
+  ) {
     const payload = isRecord(event.payload) ? event.payload : {};
     if (payload.visibility === "gm_only" && event.actorUserId !== userId && !canCampaign(store, userId, event.campaignId, "ai.readGmMemory") && !canCampaign(store, userId, event.campaignId, "chat.moderate")) return undefined;
     return event;
@@ -19957,9 +20580,14 @@ function filterRealtimeEvent(store: StateStore, event: EngineEvent, userId: stri
     return redactedRealtimeEvent(event, itemPayloadForUser(store, userId, item));
   }
   if (event.type.startsWith("encounter.")) {
-    const payload = isRecord(event.payload) ? (event.payload as unknown as Encounter) : undefined;
+    const payload = isRecord(event.payload) ? (event.payload as unknown as Encounter & { previouslyActive?: boolean }) : undefined;
     const encounter = store.state.encounters.find((item) => item.id === event.targetId && item.campaignId === event.campaignId) ?? payload;
-    return encounter && canReadEncounter(store, userId, encounter) ? event : undefined;
+    if (!encounter) return undefined;
+    const previouslyActive = payload?.previouslyActive === true;
+    if (!canReadEncounter(store, userId, encounter) && !(event.type === "encounter.deleted" && previouslyActive && canCampaign(store, userId, encounter.campaignId, "campaign.read"))) {
+      return undefined;
+    }
+    return redactedRealtimeEvent(event, encounterPayloadForUser(store, userId, encounter));
   }
   if (event.type.startsWith("combat.")) {
     const combat = combatFromRealtimeEvent(store, event);
@@ -20053,6 +20681,17 @@ function canReadEncounter(store: StateStore, userId: string, encounter: Encounte
   );
 }
 
+function encounterPayloadForUser(store: StateStore, userId: string, encounter: Encounter): Encounter & { redacted?: true } {
+  if (canAccessPreparedScenes(store, userId, encounter.campaignId)) return encounter;
+  const { difficulty: _difficulty, partyActorIds: _partyActorIds, threats: _threats, ...visible } = encounter;
+  return {
+    ...visible,
+    summary: "",
+    tokenIds: [],
+    redacted: true
+  };
+}
+
 function diceRollFromRealtimeEvent(store: StateStore, event: EngineEvent): DiceRoll | undefined {
   const payload = isRecord(event.payload) ? event.payload : undefined;
   const payloadId = typeof payload?.id === "string" ? payload.id : undefined;
@@ -20070,6 +20709,44 @@ function isDiceRollPayload(payload: Record<string, unknown> | undefined, campaig
     (payload.visibility === "public" || payload.visibility === "gm_only" || payload.visibility === "whisper") &&
     Array.isArray(payload.terms) &&
     typeof payload.total === "number"
+  );
+}
+
+function assetFromRealtimeEvent(store: StateStore, event: EngineEvent): MapAsset | undefined {
+  const payload = isRecord(event.payload) ? event.payload : undefined;
+  const payloadId = typeof payload?.id === "string" ? payload.id : undefined;
+  const id = payloadId ?? event.targetId;
+  return store.state.assets.find((asset) => asset.id === id && asset.campaignId === event.campaignId) ?? (isMapAssetPayload(payload, event.campaignId) ? (payload as unknown as MapAsset) : undefined);
+}
+
+function isMapAssetPayload(payload: Record<string, unknown> | undefined, campaignId: string): boolean {
+  return Boolean(
+    payload &&
+      typeof payload.id === "string" &&
+      payload.campaignId === campaignId &&
+      typeof payload.name === "string" &&
+      typeof payload.url === "string" &&
+      typeof payload.mimeType === "string" &&
+      typeof payload.sizeBytes === "number"
+  );
+}
+
+function diceMacroFromRealtimeEvent(store: StateStore, event: EngineEvent): DiceMacro | undefined {
+  const payload = isRecord(event.payload) ? event.payload : undefined;
+  const payloadId = typeof payload?.id === "string" ? payload.id : undefined;
+  const id = payloadId ?? event.targetId;
+  return store.state.diceMacros.find((macro) => macro.id === id && macro.campaignId === event.campaignId) ?? (isDiceMacroPayload(payload, event.campaignId) ? (payload as unknown as DiceMacro) : undefined);
+}
+
+function isDiceMacroPayload(payload: Record<string, unknown> | undefined, campaignId: string): boolean {
+  return Boolean(
+    payload &&
+      typeof payload.id === "string" &&
+      payload.campaignId === campaignId &&
+      typeof payload.createdBy === "string" &&
+      typeof payload.name === "string" &&
+      typeof payload.formula === "string" &&
+      (payload.visibility === "public" || payload.visibility === "gm_only")
   );
 }
 
@@ -20718,6 +21395,11 @@ function findLoginUser(store: StateStore, input: { userId?: string; email?: stri
   return undefined;
 }
 
+function isValidLoginInput(value: unknown): value is { userId?: string; email?: string; password?: string; mfaCode?: string; recoveryCode?: string } {
+  if (!isRecord(value)) return false;
+  return [value.userId, value.email, value.password, value.mfaCode, value.recoveryCode].every(isOptionalString);
+}
+
 function allowPasswordlessDevelopmentLogin(input: { password?: string; mfaCode?: string; recoveryCode?: string }): boolean {
   return process.env.NODE_ENV !== "production" && input.password === undefined && input.mfaCode === undefined && input.recoveryCode === undefined;
 }
@@ -20872,8 +21554,8 @@ function totpUri(user: User, secret: string): string {
   return `otpauth://totp/${label}?${params.toString()}`;
 }
 
-function verifyTotpCode(secret: string | undefined, code: string | undefined, nowMs = Date.now()): boolean {
-  const normalizedCode = code?.trim();
+function verifyTotpCode(secret: string | undefined, code: unknown, nowMs = Date.now()): boolean {
+  const normalizedCode = typeof code === "string" ? code.trim() : undefined;
   if (!secret || !normalizedCode || !/^\d{6}$/.test(normalizedCode)) return false;
   const counter = Math.floor(nowMs / 30_000);
   for (let offset = -1; offset <= 1; offset += 1) {
@@ -20908,8 +21590,8 @@ function consumeRecoveryCode(user: User, recoveryCode: string | undefined): bool
   return true;
 }
 
-function normalizeRecoveryCode(value: string | undefined): string | undefined {
-  const normalized = value?.trim().toLowerCase();
+function normalizeRecoveryCode(value: unknown): string | undefined {
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : undefined;
   return normalized || undefined;
 }
 
@@ -22661,12 +23343,19 @@ function scimGroupResource(group: ScimGroup, headers: Record<string, string | st
 }
 
 function normalizeScimUserInput(input: ScimUserInput, existing?: User): NormalizedScimUser | { error: string } {
+  if (!isRecord(input)) return { error: "SCIM user payload must be an object" };
+  if (![input.userName, input.externalId, input.displayName].every(isOptionalNullableString)) return { error: "SCIM user text fields must be strings" };
+  if (input.name !== undefined && input.name !== null && (!isRecord(input.name) || ![input.name.formatted, input.name.givenName, input.name.familyName].every(isOptionalNullableString))) {
+    return { error: "SCIM name fields must be strings" };
+  }
+  if (input.emails !== undefined && !isValidScimEmails(input.emails)) return { error: "SCIM emails must be an array of email records" };
+  if (input.active !== undefined && typeof input.active !== "boolean") return { error: "SCIM active must be a boolean" };
   const inputEmail = scimEmail(input);
   const userName = normalizeScimText(input.userName) ?? existing?.scim?.userName ?? inputEmail ?? existing?.email;
   if (!userName) return { error: "SCIM userName is required" };
   const email = inputEmail ?? normalizeEmail(userName) ?? existing?.email;
   const displayName = normalizeDisplayName(input.displayName) ?? normalizeDisplayName(input.name?.formatted) ?? existing?.displayName ?? email ?? userName;
-  const externalId = normalizeScimText(input.externalId) ?? existing?.scim?.externalId;
+  const externalId = Object.prototype.hasOwnProperty.call(input, "externalId") ? normalizeScimText(input.externalId) : existing?.scim?.externalId;
   return {
     userName,
     email,
@@ -22677,12 +23366,25 @@ function normalizeScimUserInput(input: ScimUserInput, existing?: User): Normaliz
 }
 
 function scimEmail(input: ScimUserInput): string | undefined {
-  const primary = input.emails?.find((email) => email.primary)?.value ?? input.emails?.[0]?.value;
+  if (!isValidScimEmails(input.emails)) return undefined;
+  const primary = input.emails.find((email) => email.primary)?.value ?? input.emails[0]?.value;
   return normalizeEmail(primary);
 }
 
-function normalizeScimText(value: string | undefined): string | undefined {
-  const trimmed = value?.trim();
+function isValidScimEmails(value: unknown): value is Array<{ value: string; primary?: boolean }> {
+  return Array.isArray(value) && value.every((email) => isRecord(email) && typeof email.value === "string" && (email.primary === undefined || typeof email.primary === "boolean") && (email.type === undefined || typeof email.type === "string"));
+}
+
+function isOptionalNullableString(value: unknown): value is string | null | undefined {
+  return value === undefined || value === null || typeof value === "string";
+}
+
+function isOptionalString(value: unknown): value is string | undefined {
+  return value === undefined || typeof value === "string";
+}
+
+function normalizeScimText(value: unknown): string | undefined {
+  const trimmed = typeof value === "string" ? value.trim() : undefined;
   return trimmed || undefined;
 }
 
@@ -22860,10 +23562,13 @@ function applyScimPatchToUser(store: StateStore, user: User, body: ScimPatchInpu
   const operations = body?.Operations;
   if (!Array.isArray(operations)) return { error: "SCIM patch Operations are required" };
   for (const operation of operations) {
-    const op = operation.op?.toLowerCase();
+    if (!isRecord(operation) || typeof operation.op !== "string" || (operation.path !== undefined && typeof operation.path !== "string")) {
+      return { error: "SCIM patch operations must contain string op and path values" };
+    }
+    const op = operation.op.toLowerCase();
     if (op !== "replace" && op !== "add") return { error: "Only SCIM add and replace operations are supported" };
     const path = operation.path?.toLowerCase();
-    if (!path && typeof operation.value === "object" && operation.value !== null) {
+    if (!path && isRecord(operation.value)) {
       const normalized = normalizeScimUserInput(operation.value as ScimUserInput, user);
       if ("error" in normalized) return normalized;
       const duplicate = findScimUser(store, normalized.userName, normalized.email, user.id);
@@ -22871,6 +23576,7 @@ function applyScimPatchToUser(store: StateStore, user: User, body: ScimPatchInpu
       applyScimUserInput(store, user, normalized);
       continue;
     }
+    if (!path) return { error: "SCIM root patch value must be an object" };
     const result = applyScimUserPath(store, user, path, operation.value);
     if ("error" in result) return result;
   }
@@ -22885,30 +23591,35 @@ function applyScimPatchToUser(store: StateStore, user: User, body: ScimPatchInpu
 
 function applyScimUserPath(store: StateStore, user: User, path: string | undefined, value: unknown): { ok: true } | { error: string } {
   if (path === "active") {
-    setScimUserActive(store, user, Boolean(value));
+    if (typeof value !== "boolean") return { error: "SCIM active must be a boolean" };
+    setScimUserActive(store, user, value);
     return { ok: true };
   }
   if (path === "displayname") {
-    const displayName = normalizeDisplayName(String(value ?? ""));
+    if (typeof value !== "string") return { error: "SCIM displayName must be a string" };
+    const displayName = normalizeDisplayName(value);
     if (!displayName) return { error: "SCIM displayName is required" };
     user.displayName = displayName;
     return { ok: true };
   }
   if (path === "username") {
-    const userName = normalizeScimText(String(value ?? ""));
+    if (typeof value !== "string") return { error: "SCIM userName must be a string" };
+    const userName = normalizeScimText(value);
     if (!userName) return { error: "SCIM userName is required" };
-    if (findScimUser(store, userName, undefined, user.id)) return { error: "SCIM user already exists" };
-    user.scim = { ...(user.scim ?? {}), userName };
     const email = normalizeEmail(userName);
+    if (findScimUser(store, userName, email, user.id)) return { error: "SCIM user already exists" };
+    user.scim = { ...(user.scim ?? {}), userName };
     if (email) user.email = email;
     return { ok: true };
   }
   if (path === "externalid") {
-    user.scim = { ...(user.scim ?? {}), externalId: normalizeScimText(String(value ?? "")) };
+    if (value !== null && typeof value !== "string") return { error: "SCIM externalId must be a string or null" };
+    user.scim = { ...(user.scim ?? {}), externalId: normalizeScimText(value) };
     return { ok: true };
   }
   if (path === "emails" || path === "emails.value") {
-    const email = Array.isArray(value) ? scimEmail({ emails: value as ScimUserInput["emails"] }) : normalizeEmail(String(value ?? ""));
+    if (!Array.isArray(value) && typeof value !== "string") return { error: "SCIM email must be a string or email array" };
+    const email = Array.isArray(value) ? scimEmail({ emails: value as ScimUserInput["emails"] }) : normalizeEmail(value);
     if (!email) return { error: "SCIM email is invalid" };
     if (findScimUser(store, undefined, email, user.id)) return { error: "SCIM user already exists" };
     user.email = email;
@@ -22918,14 +23629,20 @@ function applyScimUserPath(store: StateStore, user: User, path: string | undefin
 }
 
 function normalizeScimGroupInput(store: StateStore, input: ScimGroupInput, existing?: ScimGroup): NormalizedScimGroup | { error: string } {
+  if (!isRecord(input)) return { error: "SCIM group payload must be an object" };
+  if (![input.displayName, input.externalId].every(isOptionalNullableString)) return { error: "SCIM group text fields must be strings" };
   const displayName = normalizeDisplayName(input.displayName) ?? existing?.displayName;
   if (!displayName) return { error: "SCIM group displayName is required" };
-  const memberUserIds = (input.members ?? existing?.memberUserIds.map((value) => ({ value })) ?? []).map((member) => member.value).filter((value): value is string => Boolean(value));
+  const members = input.members ?? existing?.memberUserIds.map((value) => ({ value })) ?? [];
+  if (!Array.isArray(members) || !members.every((member) => isRecord(member) && typeof member.value === "string" && member.value.length > 0)) {
+    return { error: "SCIM group members must be an array of user references" };
+  }
+  const memberUserIds = members.map((member) => member.value).filter((value): value is string => typeof value === "string");
   const missingUserId = memberUserIds.find((userId) => !store.state.users.some((user) => user.id === userId));
   if (missingUserId) return { error: `SCIM group member not found: ${missingUserId}` };
   return {
     displayName,
-    externalId: normalizeScimText(input.externalId) ?? existing?.externalId,
+    externalId: Object.prototype.hasOwnProperty.call(input, "externalId") ? normalizeScimText(input.externalId) : existing?.externalId,
     memberUserIds: Array.from(new Set(memberUserIds))
   };
 }
@@ -22934,24 +23651,34 @@ function applyScimPatchToGroup(store: StateStore, group: ScimGroup, body: ScimPa
   const operations = body?.Operations;
   if (!Array.isArray(operations)) return { error: "SCIM patch Operations are required" };
   for (const operation of operations) {
-    const op = operation.op?.toLowerCase();
+    if (!isRecord(operation) || typeof operation.op !== "string" || (operation.path !== undefined && typeof operation.path !== "string")) {
+      return { error: "SCIM patch operations must contain string op and path values" };
+    }
+    const op = operation.op.toLowerCase();
     if (op !== "replace" && op !== "add" && op !== "remove") return { error: "Only SCIM add, replace, and remove operations are supported" };
     const path = operation.path?.toLowerCase();
     if (op === "remove" && path?.startsWith("members")) {
       const userId = scimPatchMemberValue(path, operation.value);
+      if (!userId && (path !== "members" || operation.value !== undefined)) return { error: "SCIM member removal requires a user reference" };
       group.memberUserIds = userId ? group.memberUserIds.filter((item) => item !== userId) : [];
       continue;
     }
     if (path === "displayname") {
-      const displayName = normalizeDisplayName(String(operation.value ?? ""));
+      if (typeof operation.value !== "string") return { error: "SCIM group displayName must be a string" };
+      const displayName = normalizeDisplayName(operation.value);
       if (!displayName) return { error: "SCIM group displayName is required" };
       group.displayName = displayName;
     } else if (path === "externalid") {
-      group.externalId = normalizeScimText(String(operation.value ?? ""));
+      if (op === "remove") {
+        group.externalId = undefined;
+      } else {
+        if (operation.value !== null && typeof operation.value !== "string") return { error: "SCIM group externalId must be a string or null" };
+        group.externalId = normalizeScimText(operation.value);
+      }
     } else if (path === "members") {
       const normalized = normalizeScimGroupInput(store, { displayName: group.displayName, externalId: group.externalId, members: operation.value as ScimGroupInput["members"] }, group);
       if ("error" in normalized) return normalized;
-      group.memberUserIds = operation.op?.toLowerCase() === "add" ? Array.from(new Set([...group.memberUserIds, ...normalized.memberUserIds])) : normalized.memberUserIds;
+      group.memberUserIds = op === "add" ? Array.from(new Set([...group.memberUserIds, ...normalized.memberUserIds])) : normalized.memberUserIds;
     } else {
       return { error: `Unsupported SCIM group patch path: ${path ?? "root"}` };
     }
@@ -22960,10 +23687,15 @@ function applyScimPatchToGroup(store: StateStore, group: ScimGroup, body: ScimPa
   return { ok: true };
 }
 
+function restoreMutableRecord<T extends object>(target: T, snapshot: T): void {
+  for (const key of Object.keys(target)) Reflect.deleteProperty(target, key);
+  Object.assign(target, snapshot);
+}
+
 function scimPatchMemberValue(path: string | undefined, value: unknown): string | undefined {
   const pathMatch = path?.match(/members\[value eq "([^"]+)"\]/i)?.[1];
   if (pathMatch) return pathMatch;
-  if (typeof value === "object" && value !== null && "value" in value) return String((value as { value?: unknown }).value ?? "");
+  if (isRecord(value) && typeof value.value === "string") return value.value;
   return typeof value === "string" ? value : undefined;
 }
 
@@ -23092,14 +23824,14 @@ function inviteExpirationDays(value: number | undefined): number {
   return Math.min(30, Math.max(1, Math.trunc(value)));
 }
 
-function normalizeEmail(value: string | undefined): string | undefined {
-  const email = value?.trim().toLowerCase();
+function normalizeEmail(value: unknown): string | undefined {
+  const email = typeof value === "string" ? value.trim().toLowerCase() : undefined;
   if (!email || !email.includes("@") || email.length > 254) return undefined;
   return email;
 }
 
-function normalizeDisplayName(value: string | undefined): string | undefined {
-  const displayName = value?.trim();
+function normalizeDisplayName(value: unknown): string | undefined {
+  const displayName = typeof value === "string" ? value.trim() : undefined;
   return displayName && displayName.length <= 80 ? displayName : undefined;
 }
 
@@ -23247,6 +23979,32 @@ function normalizeChatRecipients(store: StateStore, campaignId: string, userId: 
   return uniqueRecipientIds;
 }
 
+function normalizeChatRollLink(
+  store: StateStore,
+  campaignId: string,
+  userId: string,
+  rollId: string | undefined,
+  visibility: ChatMessage["visibility"],
+  recipientUserIds: string[],
+  reply: FastifyReply
+): { ok: true; rollId?: string } | { ok: false; reply: FastifyReply } {
+  if (!rollId) return { ok: true };
+  const roll = store.state.rolls.find((item) => item.id === rollId && item.campaignId === campaignId);
+  if (!roll || !canReadDiceRoll(store, userId, roll)) {
+    return { ok: false, reply: notFound(reply, "Dice roll not found") };
+  }
+  if (store.state.chat.some((message) => message.campaignId === campaignId && message.rollId === roll.id)) {
+    return { ok: false, reply: conflict(reply, "Dice roll is already linked to a chat message") };
+  }
+  if (visibility !== roll.visibility) {
+    return { ok: false, reply: badRequest(reply, "Chat visibility must match the linked dice roll") };
+  }
+  if (roll.visibility === "whisper" && recipientUserIds.length === 0) {
+    return { ok: false, reply: badRequest(reply, "Whisper roll links require at least one recipient") };
+  }
+  return { ok: true, rollId: roll.id };
+}
+
 function normalizeChatReplyToMessageId(store: StateStore, campaignId: string, userId: string, value: unknown, reply: FastifyReply): string | undefined | FastifyReply {
   if (value === undefined || value === null || value === "") return undefined;
   if (typeof value !== "string") return badRequest(reply, "Reply target must be a chat message id");
@@ -23271,10 +24029,14 @@ function canReadChatMessage(store: StateStore, userId: string, message: ChatMess
 }
 
 function canReadDiceRoll(store: StateStore, userId: string, roll: DiceRoll, linkedMessage?: ChatMessage): boolean {
-  if (linkedMessage) return canReadChatMessage(store, userId, linkedMessage);
+  const canModerate = canCampaign(store, userId, roll.campaignId, "chat.moderate");
+  const linkedMessageVisible = linkedMessage ? canReadChatMessage(store, userId, linkedMessage) : true;
+  if (!linkedMessageVisible) return false;
   if (roll.visibility === "public") return true;
-  if (roll.visibility === "whisper") return roll.userId === userId || canCampaign(store, userId, roll.campaignId, "chat.moderate");
-  return canCampaign(store, userId, roll.campaignId, "chat.moderate") || canCampaign(store, userId, roll.campaignId, "journal.readSecret") || canCampaign(store, userId, roll.campaignId, "ai.readGmMemory");
+  if (roll.visibility === "whisper") {
+    return roll.userId === userId || canModerate || Boolean(linkedMessage && linkedMessage.visibility === "whisper" && linkedMessage.recipientUserIds.includes(userId));
+  }
+  return canModerate || canCampaign(store, userId, roll.campaignId, "journal.readSecret") || canCampaign(store, userId, roll.campaignId, "ai.readGmMemory");
 }
 
 function normalizeClientSeed(value: unknown): string | undefined {
@@ -23742,7 +24504,8 @@ function hashPassword(password: string): string {
   return `scrypt:${salt}:${scryptSync(password, salt, 32).toString("base64url")}`;
 }
 
-function verifyPassword(password: string, storedHash: string): boolean {
+function verifyPassword(password: unknown, storedHash: string): boolean {
+  if (typeof password !== "string") return false;
   const [algorithm, salt, expected] = storedHash.split(":");
   if (algorithm !== "scrypt" || !salt || !expected) return false;
   const expectedBytes = Buffer.from(expected, "base64url");
@@ -24244,7 +25007,7 @@ function campaignSessionAuditSummary(session: CampaignSession): Record<string, u
   };
 }
 
-const CAMPAIGN_SEARCH_TYPES = new Set<CampaignSearchResultType>(["world", "scene", "actor", "item", "journal", "handout", "encounter", "memory", "chat"]);
+const CAMPAIGN_SEARCH_TYPES = new Set<CampaignSearchResultType>(["world", "scene", "actor", "item", "journal", "handout", "encounter", "memory", "chat", "roll"]);
 
 function normalizeCampaignSearchTypes(value: string | undefined): { ok: true; value: Set<CampaignSearchResultType> } | { ok: false; error: string } {
   if (!value?.trim()) return { ok: true, value: new Set(CAMPAIGN_SEARCH_TYPES) };
@@ -24342,7 +25105,8 @@ function campaignSearchResults(
     const activeEncounterIds = new Set(store.state.combats.filter((combat) => combat.campaignId === campaignId && combat.active && combat.encounterId).map((combat) => combat.encounterId!));
     for (const encounter of store.state.encounters) {
       if (encounter.campaignId !== campaignId || !inWorld(encounter.worldId) || (!canViewPrep && !activeEncounterIds.has(encounter.id))) continue;
-      add({ type: "encounter", id: encounter.id, title: encounter.name, searchable: `${encounter.difficulty ?? ""} ${encounter.summary}`, snippetSource: encounter.summary, updatedAt: encounter.updatedAt, worldId: encounter.worldId });
+      const searchable = canViewPrep ? `${encounter.difficulty ?? ""} ${encounter.summary}` : "Active encounter";
+      add({ type: "encounter", id: encounter.id, title: encounter.name, searchable, snippetSource: searchable, updatedAt: encounter.updatedAt, worldId: encounter.worldId });
     }
   }
   if (types.has("memory")) {
@@ -24369,6 +25133,27 @@ function campaignSearchResults(
       if (message.campaignId !== campaignId || !canReadChatMessage(store, userId, message)) continue;
       const author = store.state.users.find((candidate) => candidate.id === message.userId)?.displayName ?? message.userId;
       add({ type: "chat", id: message.id, title: `${author} - ${message.type}`, searchable: message.body, snippetSource: message.body, updatedAt: message.updatedAt, visibility: message.visibility });
+    }
+  }
+  if (types.has("roll") && !worldId && canCampaign(store, userId, campaignId, "chat.read")) {
+    const linkedMessagesByRollId = new Map(
+      store.state.chat
+        .filter((message) => message.campaignId === campaignId && message.rollId)
+        .map((message) => [message.rollId!, message] as const)
+    );
+    for (const roll of store.state.rolls) {
+      if (roll.campaignId !== campaignId || !canReadDiceRoll(store, userId, roll, linkedMessagesByRollId.get(roll.id))) continue;
+      const title = roll.label?.trim() || roll.formula;
+      const summary = `${roll.formula} = ${roll.total}`;
+      add({
+        type: "roll",
+        id: roll.id,
+        title,
+        searchable: `${roll.label ?? ""} ${summary}`,
+        snippetSource: summary,
+        updatedAt: roll.updatedAt,
+        visibility: roll.visibility
+      });
     }
   }
   return results.sort((left, right) => right.score - left.score || right.updatedAt.localeCompare(left.updatedAt) || left.title.localeCompare(right.title));
@@ -24724,6 +25509,41 @@ function campaignLifecycleAuditSummary(campaign: Campaign): Record<string, unkno
     restoredAt: campaign.restoredAt,
     restoredByUserId: campaign.restoredByUserId
   };
+}
+
+function campaignUpdateAuditSummary(campaign: Campaign): Record<string, unknown> {
+  return {
+    id: campaign.id,
+    name: campaign.name,
+    descriptionLength: campaign.description.length,
+    visibility: campaign.visibility,
+    defaultSystemId: campaign.defaultSystemId
+  };
+}
+
+function diceMacroAuditSummary(macro: DiceMacro): Record<string, unknown> {
+  return {
+    id: macro.id,
+    campaignId: macro.campaignId,
+    createdBy: macro.createdBy,
+    name: macro.name,
+    formula: macro.formula,
+    visibility: macro.visibility
+  };
+}
+
+function campaignActorOwnerUserId(
+  store: StateStore,
+  campaignId: string,
+  requestedOwnerUserId: unknown,
+  fallbackOwnerUserId?: string
+): { ok: true; value: string | undefined } | { ok: false; error: string } {
+  const ownerUserId = requestedOwnerUserId === undefined ? fallbackOwnerUserId : normalizeNonEmptyString(requestedOwnerUserId);
+  if (requestedOwnerUserId !== undefined && !ownerUserId) return { ok: false, error: "Actor ownerUserId must be a non-empty string" };
+  if (ownerUserId && !store.state.members.some((member) => member.campaignId === campaignId && member.userId === ownerUserId)) {
+    return { ok: false, error: "Actor ownerUserId must reference a member of the same campaign" };
+  }
+  return { ok: true, value: ownerUserId };
 }
 
 function sceneDeletionAuditSummary(store: StateStore, scene: Scene) {
@@ -25192,10 +26012,260 @@ function pluginEventEnvelope(event: EngineEvent): PluginEventEnvelope | undefine
   };
 }
 
+function pluginEventVisibleToGrant(store: StateStore, event: EngineEvent, permissions: PermissionName[]): boolean {
+  const has = (permission: PermissionName) => permissions.includes(permission);
+  if (event.type === "campaign.updated" || event.type.startsWith("campaign.member.")) return true;
+  if (event.type.startsWith("campaign.session.")) return has("campaign.update");
+  if (event.type.startsWith("world.")) return true;
+  if (event.type.startsWith("journal.")) {
+    const journal = journalEntryFromRealtimeEvent(store, event);
+    return Boolean(journal && (journal.visibility === "public" || has("journal.readSecret")));
+  }
+  if (event.type.startsWith("handout.")) {
+    const handout = handoutFromPluginEvent(store, event);
+    return Boolean(handout && (handout.visibility === "public" || has("handout.readSecret")));
+  }
+  if (event.type.startsWith("scene.")) {
+    const scene = sceneFromPluginEvent(store, event);
+    return Boolean(scene && (scene.active || pluginCanAccessPreparedScenes(permissions)));
+  }
+  if (event.type.startsWith("token.")) {
+    const token = tokenFromPluginEvent(store, event);
+    if (!token) return false;
+    const scene = store.state.scenes.find((candidate) => candidate.id === token.sceneId && candidate.campaignId === event.campaignId);
+    if (!scene || (!scene.active && !pluginCanAccessPreparedScenes(permissions))) return false;
+    if ((token.hidden || tokenLayer(token) === "gm") && !pluginCanReadHiddenTokens(permissions)) return false;
+    return true;
+  }
+  if (event.type.startsWith("actor.")) return true;
+  if (event.type.startsWith("item.")) {
+    const item = itemFromPluginEvent(store, event);
+    return Boolean(item && (!item.actorId || has("actor.readPrivate")));
+  }
+  if (event.type.startsWith("chat.message.")) {
+    const message = chatMessageFromPluginEvent(store, event);
+    if (!message) return false;
+    if (message.visibility === "public") return true;
+    if (message.visibility === "whisper") return has("chat.moderate");
+    return has("chat.moderate") || has("journal.readSecret") || has("ai.readGmMemory");
+  }
+  if (event.type === "dice.roll.created") {
+    const roll = diceRollFromRealtimeEvent(store, event);
+    if (!roll) return false;
+    const linkedMessage = store.state.chat.find((message) => message.rollId === roll.id && message.campaignId === roll.campaignId);
+    if (linkedMessage?.visibility === "whisper" && !has("chat.moderate")) return false;
+    if (roll.visibility === "public") return true;
+    if (roll.visibility === "whisper") return has("chat.moderate");
+    return has("chat.moderate") || has("journal.readSecret") || has("ai.readGmMemory");
+  }
+  if (event.type.startsWith("audio.")) {
+    const track = audioTrackFromPluginEvent(store, event);
+    return Boolean(track && (track.playing || pluginCanAccessPreparedScenes(permissions)));
+  }
+  if (event.type.startsWith("combat.")) return true;
+  if (event.type.startsWith("encounter.")) {
+    const encounter = encounterFromPluginEvent(store, event);
+    if (!encounter) return false;
+    if (pluginCanAccessPreparedScenes(permissions)) return true;
+    const payload = isRecord(event.payload) ? event.payload : undefined;
+    if (event.type === "encounter.deleted" && payload?.previouslyActive === true) return true;
+    return store.state.combats.some(
+      (combat) => combat.campaignId === event.campaignId && combat.active && combat.encounterId === encounter.id
+    );
+  }
+  if (event.type.startsWith("proposal.") || event.type === "ai.proposal.created") {
+    const proposal = proposalFromRealtimeEvent(store, event);
+    return Boolean(proposal && proposalVisibleToPluginGrant(store, proposal, permissions));
+  }
+  if (event.type.startsWith("contentImport.")) return has("campaign.update");
+  if (event.type.startsWith("ai.memory.")) {
+    const memory = aiMemoryFromPluginEvent(store, event);
+    if (!memory) return false;
+    if (has("ai.readGmMemory")) return true;
+    return has("ai.readPublicMemory") && memory.visibility === "public" && aiMemoryFactStatus(memory) === "approved";
+  }
+  if (
+    event.type === "ai.thread.started" ||
+    event.type.startsWith("ai.message.") ||
+    event.type.startsWith("ai.reasoning.") ||
+    event.type.startsWith("ai.activity.") ||
+    event.type.startsWith("ai.tool.")
+  ) {
+    const payload = isRecord(event.payload) ? event.payload : undefined;
+    if (payload?.visibility === "public") return true;
+    return payload?.visibility === "gm_only" && (has("ai.readGmMemory") || has("chat.moderate"));
+  }
+  // New plugin event families must define an explicit record-visibility rule.
+  return false;
+}
+
+function pluginCanAccessPreparedScenes(permissions: PermissionName[]): boolean {
+  const preparedScenePermissions: PermissionName[] = ["campaign.update", "scene.create", "scene.update", "scene.delete", "scene.activate", "token.reveal", "combat.manage"];
+  return preparedScenePermissions.some((permission) => permissions.includes(permission));
+}
+
+function pluginCanReadHiddenTokens(permissions: PermissionName[]): boolean {
+  return permissions.includes("token.update") || permissions.includes("scene.update") || permissions.includes("token.reveal");
+}
+
+function sceneFromPluginEvent(store: StateStore, event: EngineEvent): Scene | undefined {
+  const stored = store.state.scenes.find((scene) => scene.id === event.targetId && scene.campaignId === event.campaignId);
+  if (stored) return stored;
+  const payload = isRecord(event.payload) ? event.payload : undefined;
+  if (!payload || payload.id !== event.targetId || payload.campaignId !== event.campaignId || typeof payload.active !== "boolean") return undefined;
+  return payload as unknown as Scene;
+}
+
+function tokenFromPluginEvent(store: StateStore, event: EngineEvent): Token | undefined {
+  const stored = store.state.tokens.find((token) => token.id === event.targetId && campaignIdForScene(store, token.sceneId) === event.campaignId);
+  if (stored) return stored;
+  const payload = isRecord(event.payload) ? event.payload : undefined;
+  if (!payload || payload.id !== event.targetId || typeof payload.sceneId !== "string") return undefined;
+  return payload as unknown as Token;
+}
+
+function handoutFromPluginEvent(store: StateStore, event: EngineEvent): Handout | undefined {
+  const stored = store.state.handouts.find((handout) => handout.id === event.targetId && handout.campaignId === event.campaignId);
+  if (stored) return normalizeHandout(stored);
+  const payload = isRecord(event.payload) ? event.payload : undefined;
+  if (!payload || payload.id !== event.targetId || payload.campaignId !== event.campaignId) return undefined;
+  if (
+    payload.visibility !== "public" &&
+    payload.visibility !== "gm_only" &&
+    payload.visibility !== "specific_players" &&
+    payload.visibility !== "specific_characters"
+  )
+    return undefined;
+  return normalizeHandout(payload as unknown as Handout);
+}
+
+function itemFromPluginEvent(store: StateStore, event: EngineEvent): Item | undefined {
+  const stored = store.state.items.find((item) => item.id === event.targetId && item.campaignId === event.campaignId);
+  if (stored) return stored;
+  const payload = isRecord(event.payload) ? event.payload : undefined;
+  if (!payload || payload.id !== event.targetId || payload.campaignId !== event.campaignId) return undefined;
+  if (payload.actorId !== undefined && typeof payload.actorId !== "string") return undefined;
+  return payload as unknown as Item;
+}
+
+function audioTrackFromPluginEvent(store: StateStore, event: EngineEvent): AudioTrack | undefined {
+  const stored = store.state.audioTracks.find((track) => track.id === event.targetId && track.campaignId === event.campaignId);
+  if (stored) return stored;
+  const payload = isRecord(event.payload) ? event.payload : undefined;
+  if (!payload || payload.id !== event.targetId || payload.campaignId !== event.campaignId || typeof payload.playing !== "boolean") return undefined;
+  return payload as unknown as AudioTrack;
+}
+
+function encounterFromPluginEvent(store: StateStore, event: EngineEvent): Encounter | undefined {
+  const stored = store.state.encounters.find((encounter) => encounter.id === event.targetId && encounter.campaignId === event.campaignId);
+  if (stored) return stored;
+  const payload = isRecord(event.payload) ? event.payload : undefined;
+  if (!payload || payload.id !== event.targetId || payload.campaignId !== event.campaignId || !Array.isArray(payload.tokenIds)) return undefined;
+  return payload as unknown as Encounter;
+}
+
+function aiMemoryFromPluginEvent(store: StateStore, event: EngineEvent): AiMemoryFact | undefined {
+  const stored = store.state.aiMemory.find((memory) => memory.id === event.targetId && memory.campaignId === event.campaignId);
+  if (stored) return normalizeAiMemoryFact(stored);
+  const payload = isRecord(event.payload) ? event.payload : undefined;
+  if (!payload || payload.id !== event.targetId || payload.campaignId !== event.campaignId) return undefined;
+  if (payload.visibility !== "public" && payload.visibility !== "gm_only") return undefined;
+  return normalizeAiMemoryFact(payload as unknown as AiMemoryFact);
+}
+
+function proposalVisibleToPluginGrant(store: StateStore, proposal: Proposal, permissions: PermissionName[]): boolean {
+  if (permissions.includes("ai.applyChanges")) return true;
+  if (proposal.createdByType === "ai" && proposal.status === "pending") return false;
+  return proposal.changesJson.every((change) => proposalChangeVisibleToPluginGrant(store, proposal.campaignId, change, permissions));
+}
+
+function proposalChangeVisibleToPluginGrant(
+  store: StateStore,
+  campaignId: string,
+  change: ProposalChange,
+  permissions: PermissionName[]
+): boolean {
+  const has = (permission: PermissionName) => permissions.includes(permission);
+  const changeId = proposalChangeEntityId(change);
+  if (change.entity === "campaign" || change.entity === "campaignSession") return has("campaign.update");
+  if (change.entity === "world") return has("world.read") && pluginCanAccessPreparedScenes(permissions);
+  if (change.entity === "scene") {
+    const existing = changeId ? store.state.scenes.find((scene) => scene.id === changeId && scene.campaignId === campaignId) : undefined;
+    const active = typeof change.data.active === "boolean" ? change.data.active : existing?.active ?? false;
+    return active || pluginCanAccessPreparedScenes(permissions);
+  }
+  if (change.entity === "token") {
+    const existing = changeId ? store.state.tokens.find((token) => token.id === changeId) : undefined;
+    const sceneId = typeof change.data.sceneId === "string" ? change.data.sceneId : existing?.sceneId;
+    const scene = sceneId ? store.state.scenes.find((candidate) => candidate.id === sceneId && candidate.campaignId === campaignId) : undefined;
+    if (!scene || (!scene.active && !pluginCanAccessPreparedScenes(permissions))) return false;
+    const hidden = typeof change.data.hidden === "boolean" ? change.data.hidden : existing?.hidden ?? false;
+    const layer = change.data.layer === "map" || change.data.layer === "player" || change.data.layer === "gm" ? change.data.layer : existing?.layer ?? "player";
+    return (!hidden && layer !== "gm") || pluginCanReadHiddenTokens(permissions);
+  }
+  if (change.entity === "actor" || change.entity === "item") return has("actor.readPrivate");
+  if (change.entity === "journal") {
+    const existing = changeId ? store.state.journals.find((journal) => journal.id === changeId && journal.campaignId === campaignId) : undefined;
+    const visibility = visibilityFromRecord(change.data, "visibility", existing?.visibility ?? "gm_only");
+    return visibility === "public" || has("journal.readSecret");
+  }
+  if (change.entity === "handout") {
+    const existing = changeId ? store.state.handouts.find((handout) => handout.id === changeId && handout.campaignId === campaignId) : undefined;
+    const visibility = visibilityFromRecord(change.data, "visibility", existing?.visibility ?? "gm_only");
+    return visibility === "public" || has("handout.readSecret");
+  }
+  if (change.entity === "chat" || change.entity === "roll") {
+    const existing =
+      change.entity === "chat"
+        ? changeId
+          ? store.state.chat.find((message) => message.id === changeId && message.campaignId === campaignId)
+          : undefined
+        : changeId
+          ? store.state.rolls.find((roll) => roll.id === changeId && roll.campaignId === campaignId)
+          : undefined;
+    const visibility =
+      change.data.visibility === "public" || change.data.visibility === "gm_only" || change.data.visibility === "whisper"
+        ? change.data.visibility
+        : existing?.visibility;
+    return visibility === "public" || ((visibility === "gm_only" || visibility === "whisper") && has("chat.moderate"));
+  }
+  if (change.entity === "diceMacro") {
+    const existing = changeId ? store.state.diceMacros.find((macro) => macro.id === changeId && macro.campaignId === campaignId) : undefined;
+    const visibility = change.data.visibility === "public" || change.data.visibility === "gm_only" ? change.data.visibility : existing?.visibility;
+    return visibility === "public" || has("campaign.update");
+  }
+  if (change.entity === "encounter") {
+    return (
+      pluginCanAccessPreparedScenes(permissions) ||
+      Boolean(changeId && store.state.combats.some((combat) => combat.campaignId === campaignId && combat.active && combat.encounterId === changeId))
+    );
+  }
+  if (change.entity === "combat") return has("combat.manage");
+  if (change.entity === "asset") return pluginCanAccessPreparedScenes(permissions);
+  if (change.entity === "fogPreset") return has("token.reveal");
+  if (change.entity === "pluginStorage") return has("plugin.configure");
+  if (change.entity === "aiMemory") {
+    const existing = changeId ? store.state.aiMemory.find((memory) => memory.id === changeId && memory.campaignId === campaignId) : undefined;
+    const visibility = visibilityFromRecord(change.data, "visibility", existing?.visibility ?? "gm_only");
+    return visibility === "public" ? has("ai.readPublicMemory") : has("ai.readGmMemory");
+  }
+  return false;
+}
+
+function chatMessageFromPluginEvent(store: StateStore, event: EngineEvent): ChatMessage | undefined {
+  const stored = store.state.chat.find((message) => message.id === event.targetId && message.campaignId === event.campaignId);
+  if (stored) return stored;
+  const payload = isRecord(event.payload) ? event.payload : undefined;
+  if (!payload || payload.id !== event.targetId || payload.campaignId !== event.campaignId) return undefined;
+  if (payload.visibility !== "public" && payload.visibility !== "gm_only" && payload.visibility !== "whisper") return undefined;
+  return payload as unknown as ChatMessage;
+}
+
 async function dispatchInstalledPluginEvent(
   store: StateStore,
   pluginRegistry: PluginRuntimeRegistry,
   event: PluginEventEnvelope,
+  sourceEvent: EngineEvent,
   broadcastToClients: (event: EngineEvent) => void
 ): Promise<void> {
   const grants = store.state.permissionGrants.filter((grant) => grant.subjectType === "plugin" && grant.campaignId === event.campaignId);
@@ -25203,6 +26273,7 @@ async function dispatchInstalledPluginEvent(
     const plugin = pluginRegistry.find(grant.subjectId, pluginVersionFromGrant(grant));
     if (!plugin?.eventSubscriptions?.some((subscription) => subscription.type === event.type)) continue;
     if (!grant.permissions.includes(pluginEventPermission(event.type))) continue;
+    if (!pluginEventVisibleToGrant(store, sourceEvent, grant.permissions)) continue;
     if (!plugin.trust.installable) continue;
     if (pluginReviewInstallBlockForReview(plugin, pluginReviewForDisplay(store, plugin))) continue;
     if (pluginCoreCompatibilityBlock(plugin)) continue;
@@ -25649,9 +26720,18 @@ function pluginInstallOperationsSummary(installAuditLogs: AuditLog[]) {
     const requestedPermissions = Array.isArray(after.requestedPermissions) ? after.requestedPermissions.filter((permission): permission is string => typeof permission === "string") : [];
     const missingPermissions = Array.isArray(after.missingPermissions) ? after.missingPermissions.filter((permission): permission is string => typeof permission === "string") : [];
     const grantedPermissionCount = grantedPermissions.length;
+    let versionComparison: number | undefined;
+    if (previous?.version && version && previous.version !== version) {
+      try {
+        versionComparison = comparePluginVersions(version, previous.version);
+      } catch {
+        versionComparison = undefined;
+      }
+    }
     const operation =
       previous && previous.version && version && previous.version !== version
-        ? compareVersionAscending(version, previous.version) < 0
+        && versionComparison !== undefined
+        ? versionComparison < 0
           ? "rollback"
           : "upgrade"
         : previous && previous.grantedPermissionCount !== grantedPermissionCount
@@ -26980,53 +28060,7 @@ function pluginCoreCompatibilityBlock(plugin: LoadedPlugin): string | undefined 
 }
 
 function pluginCoreRangeSatisfied(range: string): boolean {
-  const normalized = range.trim();
-  if (!normalized || normalized === "*" || normalized.toLowerCase() === "any") return true;
-  const constraints = normalized.split(/\s+/).filter(Boolean);
-  return constraints.every((constraint) => pluginCoreConstraintSatisfied(constraint));
-}
-
-function pluginCoreConstraintSatisfied(constraint: string): boolean {
-  const match = constraint.match(/^(>=|>|<=|<|=|\^|~)?\s*(\d+(?:\.\d+){0,2})$/);
-  if (!match) return false;
-  const operator = match[1] ?? "=";
-  const version = match[2]!;
-  const comparison = compareVersionAscending(CORE_COMPATIBILITY_VERSION, version);
-  if (operator === ">=") return comparison >= 0;
-  if (operator === ">") return comparison > 0;
-  if (operator === "<=") return comparison <= 0;
-  if (operator === "<") return comparison < 0;
-  if (operator === "^") {
-    const [coreMajor, coreMinor, corePatch] = semverPartsLocal(CORE_COMPATIBILITY_VERSION);
-    const [rangeMajor, rangeMinor, rangePatch] = semverPartsLocal(version);
-    const specifiedParts = version.split(".").length;
-    if (comparison < 0 || coreMajor !== rangeMajor) return false;
-    if (rangeMajor > 0 || specifiedParts === 1) return true;
-    if (coreMinor !== rangeMinor) return false;
-    return rangeMinor > 0 || specifiedParts < 3 || corePatch === rangePatch;
-  }
-  if (operator === "~") {
-    const [coreMajor, coreMinor] = semverPartsLocal(CORE_COMPATIBILITY_VERSION);
-    const [rangeMajor, rangeMinor] = semverPartsLocal(version);
-    const specifiedParts = version.split(".").length;
-    return comparison >= 0 && coreMajor === rangeMajor && (specifiedParts === 1 || coreMinor === rangeMinor);
-  }
-  return comparison === 0;
-}
-
-function compareVersionAscending(left: string, right: string): number {
-  const leftParts = semverPartsLocal(left);
-  const rightParts = semverPartsLocal(right);
-  for (let index = 0; index < 3; index++) {
-    const diff = leftParts[index]! - rightParts[index]!;
-    if (diff !== 0) return diff;
-  }
-  return 0;
-}
-
-function semverPartsLocal(version: string): [number, number, number] {
-  const [major = "0", minor = "0", patch = "0"] = version.split(".", 3);
-  return [Number.parseInt(major, 10) || 0, Number.parseInt(minor, 10) || 0, Number.parseInt(patch, 10) || 0];
+  return pluginCoreCompatibility(range, CORE_COMPATIBILITY_VERSION).satisfied;
 }
 
 function publicPluginReviewInfo(plugin: LoadedPlugin, review: PluginReview): AdminPluginReviewInfo {
@@ -27263,10 +28297,21 @@ function pluginCampaignInfo(
     const versionPlugin = pluginRegistry.find(plugin.id, version);
     if (!versionPlugin) return [];
     const compatibilityBlock = pluginCoreCompatibilityBlock(versionPlugin);
+    const publicVersion = publicPluginCatalogInfo(versionPlugin);
+    const versionReview = marketplacePluginReviewInfo(versionPlugin, pluginReviewForDisplay(store, versionPlugin));
     return [
       {
         version,
         compatibleCore: pluginCoreCompatibilityInfo(versionPlugin),
+        permissions: [...versionPlugin.permissions],
+        permissionReview: publicVersion.permissionReview,
+        trust: publicVersion.trust,
+        source: publicVersion.source,
+        marketplaceReview: {
+          installable: versionReview.installable,
+          status: versionReview.review.status,
+          ...(versionReview.installBlock ? { installBlock: versionReview.installBlock } : {})
+        },
         ...(compatibilityBlock ? { compatibilityBlock } : {})
       }
     ];
@@ -27560,8 +28605,8 @@ function encounterPlanForSystem(systemId: string, party: Actor[], threats: Encou
 }
 
 function partyActorsForSystem(store: StateStore, campaignId: string, systemId: string, actorIds?: string[]): Actor[] {
-  const selectedIds = new Set(actorIds ?? []);
-  return store.state.actors.filter((actor) => actor.campaignId === campaignId && actor.systemId === systemId && actor.type === "character" && (selectedIds.size === 0 || selectedIds.has(actor.id)));
+  const selectedIds = actorIds === undefined ? undefined : new Set(actorIds);
+  return store.state.actors.filter((actor) => actor.campaignId === campaignId && actor.systemId === systemId && actor.type === "character" && (!selectedIds || selectedIds.has(actor.id)));
 }
 
 function cloneRecord(value: Record<string, unknown>): Record<string, unknown> {
@@ -29181,6 +30226,23 @@ function defaultAssetLifecycle(): NonNullable<MapAsset["lifecycle"]> {
   return {
     status: "active",
     expiresAt: assetRetentionExpiresAt()
+  };
+}
+
+function assetAuditSummary(asset: MapAsset): Record<string, unknown> {
+  return {
+    id: asset.id,
+    campaignId: asset.campaignId,
+    name: asset.name,
+    mimeType: asset.mimeType,
+    sizeBytes: asset.sizeBytes,
+    checksum: asset.checksum,
+    folder: asset.folder,
+    tags: asset.tags ?? [],
+    storageProvider: asset.storage?.provider ?? "external",
+    lifecycle: asset.lifecycle ? { ...asset.lifecycle } : undefined,
+    securityStatus: asset.security?.status,
+    securityFindingCount: asset.security?.findings.length ?? 0
   };
 }
 
@@ -30857,6 +31919,7 @@ function closeArchiveRecordDependencies(data: EngineState, source: EngineState):
       ...data.items.map((record) => record.actorId),
       ...data.journals.flatMap((record) => record.visibleToActorIds),
       ...data.handouts.flatMap((record) => record.visibleToActorIds ?? []),
+      ...data.encounters.flatMap((record) => record.partyActorIds ?? []),
       ...data.combats.flatMap((record) => record.combatants.map((combatant) => combatant.actorId)),
       ...data.combats.flatMap((record) => record.actions?.flatMap((action) => [action.actorId, ...action.targetActorIds]) ?? [])
     ].filter((id): id is string => Boolean(id));
@@ -30963,7 +32026,13 @@ function archiveForExportScope(
   const sceneIds = new Set(data.scenes.map((scene) => scene.id));
   data.tokens = archive.data.tokens.filter((token) => sceneIds.has(token.sceneId));
   const tokenIds = new Set(data.tokens.map((token) => token.id));
-  const linkedActorIds = new Set(data.tokens.map((token) => token.actorId).filter((id): id is string => Boolean(id)));
+  data.encounters = archive.data.encounters.filter((encounter) => encounter.worldId === worldId || encounter.tokenIds.some((id) => tokenIds.has(id)));
+  const linkedActorIds = new Set(
+    [
+      ...data.tokens.map((token) => token.actorId),
+      ...data.encounters.flatMap((encounter) => encounter.partyActorIds ?? [])
+    ].filter((id): id is string => Boolean(id))
+  );
   data.actors = archive.data.actors.filter((actor) => actor.worldId === worldId || linkedActorIds.has(actor.id));
   const actorIds = new Set(data.actors.map((actor) => actor.id));
   data.items = archive.data.items.filter((item) => item.worldId === worldId || (item.actorId !== undefined && actorIds.has(item.actorId)));
@@ -30979,7 +32048,6 @@ function archiveForExportScope(
   }
   data.journals = archive.data.journals.filter((journal) => journalIds.has(journal.id));
   data.handouts = archive.data.handouts.filter((handout) => handout.worldId === worldId);
-  data.encounters = archive.data.encounters.filter((encounter) => encounter.worldId === worldId || encounter.tokenIds.some((id) => tokenIds.has(id)));
   const encounterIds = new Set(data.encounters.map((encounter) => encounter.id));
   data.combats = archive.data.combats.filter(
     (combat) => (combat.encounterId !== undefined && encounterIds.has(combat.encounterId)) || combat.combatants.some((combatant) => tokenIds.has(combatant.tokenId) || (combatant.actorId !== undefined && actorIds.has(combatant.actorId)))
@@ -31129,6 +32197,37 @@ function normalizeArchiveForImport(archive: CampaignArchive, organizationId: str
       contentImports: data.contentImports ?? []
     })
   };
+}
+
+function validateArchiveForImport(value: unknown): { ok: true; value: CampaignArchive } | { ok: false; error: string } {
+  if (!isRecord(value) || typeof value.format !== "string" || typeof value.version !== "string" || !isRecord(value.manifest) || !isRecord(value.data)) {
+    return { ok: false, error: "Campaign archive must include format, version, manifest, and data" };
+  }
+  const defaults = emptyState() as unknown as Record<string, unknown>;
+  for (const [collection, defaultValue] of Object.entries(defaults)) {
+    if (!Array.isArray(defaultValue)) continue;
+    const records = value.data[collection];
+    if (records === undefined) continue;
+    if (!Array.isArray(records) || records.some((record) => !isRecord(record) || typeof record.id !== "string" || record.id.length === 0)) {
+      return { ok: false, error: `Campaign archive ${collection} must be an array of records with ids` };
+    }
+  }
+  const assets = value.data.assets;
+  if (Array.isArray(assets) && assets.some((asset) =>
+    typeof asset.campaignId !== "string" || typeof asset.url !== "string" || typeof asset.mimeType !== "string" || typeof asset.sizeBytes !== "number" || !Number.isFinite(asset.sizeBytes)
+  )) {
+    return { ok: false, error: "Campaign archive assets must contain valid campaignId, url, mimeType, and sizeBytes fields" };
+  }
+  if (value.files !== undefined) {
+    if (!Array.isArray(value.files) || value.files.some((file) =>
+      !isRecord(file) || typeof file.assetId !== "string" || typeof file.name !== "string" || typeof file.mimeType !== "string" ||
+      typeof file.sizeBytes !== "number" || !Number.isFinite(file.sizeBytes) || typeof file.checksum !== "string" ||
+      file.encoding !== "base64" || typeof file.data !== "string"
+    )) {
+      return { ok: false, error: "Campaign archive files must be valid base64 asset records" };
+    }
+  }
+  return { ok: true, value: value as unknown as CampaignArchive };
 }
 
 function normalizeContentImportSource(source: Partial<Omit<ContentImportSource, "submittedByUserId" | "submittedAt">> | undefined, submittedByUserId: string): ContentImportSource {
@@ -31666,7 +32765,15 @@ function archiveWithoutConflicts(archive: CampaignArchive, conflicts: Array<{ co
 }
 
 function mergeArchive(state: EngineState, archive: CampaignArchive): Record<keyof EngineState, number> {
+  const archivedFileAssetIds = new Set((archive.files ?? []).map((file) => file.assetId));
   const importedAssets = archive.data.assets.map((asset) => {
+    if (!archivedFileAssetIds.has(asset.id)) {
+      return {
+        ...asset,
+        url: asset.url.startsWith("/api/v1/assets/") ? "" : asset.url,
+        storage: undefined
+      };
+    }
     if (!asset.storage) return asset;
     if (asset.storage.provider === "local") return { ...asset, storage: { provider: "local", key: assetStorageKey(asset) } };
     if (asset.storage.provider === "s3") {
@@ -31905,9 +33012,39 @@ function archiveReferenceProtection(state: EngineState, archive: CampaignArchive
     if (error) return { ok: false, error };
   }
   for (const encounter of archive.data.encounters) {
-    const error =
+    let error =
       validateReference(encounter.campaignId, "worlds", encounter.worldId, `Encounter ${encounter.id}`) ??
       validateMany(encounter.campaignId, "tokens", encounter.tokenIds, `Encounter ${encounter.id}`);
+    const rawEncounter = encounter as unknown as Record<string, unknown>;
+    const systemId = rawEncounter.systemId;
+    if (systemId !== undefined && (typeof systemId !== "string" || !systemId.trim())) {
+      return { ok: false, error: `Encounter ${encounter.id} has an invalid systemId` };
+    }
+    const normalizedSystemId = typeof systemId === "string" ? systemId.trim() : undefined;
+    if (normalizedSystemId && (!findRegisteredSystem(state, normalizedSystemId) || !hasSystemRuntimeCapability(normalizedSystemId, "encounter-builder"))) {
+      return { ok: false, error: `Encounter ${encounter.id} references an unavailable encounter system ${normalizedSystemId}` };
+    }
+    const rawPartyActorIds = rawEncounter.partyActorIds;
+    if (rawPartyActorIds !== undefined) {
+      if (!normalizedSystemId || !Array.isArray(rawPartyActorIds) || rawPartyActorIds.length > 100 || rawPartyActorIds.some((id) => typeof id !== "string" || !id.trim())) {
+        return { ok: false, error: `Encounter ${encounter.id} has invalid partyActorIds` };
+      }
+      const partyActorIds = rawPartyActorIds.map((id) => (id as string).trim());
+      if (new Set(partyActorIds).size !== partyActorIds.length) return { ok: false, error: `Encounter ${encounter.id} has duplicate partyActorIds` };
+      for (const actorId of partyActorIds) {
+        error ??= validateReference(encounter.campaignId, "actors", actorId, `Encounter ${encounter.id}`, true);
+        const actor = recordFor("actors", actorId) as unknown as Actor | undefined;
+        if (actor && (actor.systemId !== normalizedSystemId || actor.type !== "character")) {
+          error ??= `Encounter ${encounter.id} party actor ${actorId} must be a character from system ${normalizedSystemId}`;
+        }
+      }
+    }
+    const rawThreats = rawEncounter.threats;
+    if (rawThreats !== undefined) {
+      if (!normalizedSystemId) return { ok: false, error: `Encounter ${encounter.id} threats require systemId` };
+      const threats = normalizedEncounterThreatSelections(rawThreats, normalizedSystemId);
+      if (!threats.ok) return { ok: false, error: `Encounter ${encounter.id}: ${threats.error}` };
+    }
     if (error) return { ok: false, error };
   }
   for (const session of archive.data.campaignSessions) {
@@ -32089,6 +33226,12 @@ function forbidden(reply: FastifyReply, message: string): FastifyReply {
 
 function conflict(reply: FastifyReply, message: string): FastifyReply {
   return reply.code(409).send({ error: "conflict", message });
+}
+
+function nextRevisionTimestamp(current: string): string {
+  const now = Date.now();
+  const currentTime = Date.parse(current);
+  return new Date(Number.isFinite(currentTime) && currentTime >= now ? currentTime + 1 : now).toISOString();
 }
 
 function pendingResolution(reply: FastifyReply, message: string, resolution: RulesActionResolutionResult | undefined, actor: Actor, sheet: unknown): FastifyReply {

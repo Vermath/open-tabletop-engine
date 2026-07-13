@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 const apiBaseUrl = `http://127.0.0.1:${process.env.OTTE_E2E_API_PORT ?? 4100}`;
 
 async function openInspectorPanel(page: Page, panelName: string) {
-  await page.locator(".inspector-tabs").getByRole("button", { name: panelName, exact: true }).click();
+  await page.locator(".inspector-tabs").getByRole("tab", { name: panelName, exact: true }).click();
 }
 
 async function loginDemoGm(page: Page) {

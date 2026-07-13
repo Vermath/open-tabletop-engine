@@ -298,6 +298,9 @@ export function buildPermissionFilteredContext(input: {
   );
   const canReadJournalSecrets =
     input.permissions.includes("journal.readSecret");
+  const canReadJournals = input.permissions.includes("journal.read");
+  const canReadPublicMemory =
+    input.permissions.includes("ai.readPublicMemory");
   const canReadMemorySecrets = input.permissions.includes("ai.readGmMemory");
   const canReadActors = input.permissions.includes("actor.read");
   const canReadScenes = input.permissions.includes("scene.read");
@@ -342,9 +345,11 @@ export function buildPermissionFilteredContext(input: {
       )
       .map((token) => token.actorId!),
   );
-  const journals = input.state.journals.filter(
-    (item) => item.campaignId === input.campaignId,
-  );
+  const journals = canReadJournals
+    ? input.state.journals.filter(
+        (item) => item.campaignId === input.campaignId,
+      )
+    : [];
   const visibleJournals = journals.filter(
     (item) =>
       item.visibility === "public" ||
@@ -355,7 +360,11 @@ export function buildPermissionFilteredContext(input: {
   const memory = input.state.aiMemory
     .filter((item) => item.campaignId === input.campaignId)
     .filter((item) => aiMemoryFactStatus(item) === "approved")
-    .filter((item) => item.visibility === "public" || canReadMemorySecrets)
+    .filter((item) =>
+      item.visibility === "public"
+        ? canReadPublicMemory || canReadMemorySecrets
+        : canReadMemorySecrets,
+    )
     .map((item) => ({
       text: item.text,
       visibility: item.visibility,
@@ -364,8 +373,8 @@ export function buildPermissionFilteredContext(input: {
 
   return {
     campaignId: input.campaignId,
-    publicSummary: `${campaign?.name ?? "Unknown campaign"}: ${visibleJournals.map((item) => item.title).join(", ")}`,
-    gmSecrets: canReadJournalSecrets
+    publicSummary: `${canReadCampaign ? (campaign?.name ?? "Unknown campaign") : "Campaign"}: ${visibleJournals.map((item) => item.title).join(", ")}`,
+    gmSecrets: canReadJournals && canReadJournalSecrets
       ? journals
           .filter((item) => item.visibility === "gm_only")
           .map((item) => item.body)

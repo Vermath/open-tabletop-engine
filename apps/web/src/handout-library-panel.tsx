@@ -2,6 +2,7 @@ import type { Actor, MapAsset, Visibility } from "@open-tabletop/core";
 import { BookOpen, Check, Eye, FileText, Link2, Plus, Save, Search, Trash2, Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { apiDelete, apiPatch, apiPost, type Snapshot } from "./api.js";
+import { campaignSearchAnchorId } from "./campaign-search-panel.js";
 import { errorMessage, formatNumber } from "./sheet-format.js";
 import type { LoreCollectionLoadState, WorldAtlasWorld } from "./world-atlas-panel.js";
 
@@ -27,6 +28,7 @@ export type HandoutReadFilter = "all" | "unread" | "read";
 
 export interface HandoutDraft {
   id?: string;
+  expectedUpdatedAt?: string;
   worldId: string;
   title: string;
   body: string;
@@ -35,6 +37,27 @@ export interface HandoutDraft {
   visibleToActorIds: string[];
   assetIds: string[];
   tags: string;
+}
+
+export type HandoutLibraryUpdate = (current: HandoutLibraryItem[]) => HandoutLibraryItem[];
+
+export function upsertHandoutItem(items: HandoutLibraryItem[], updated: HandoutLibraryItem, prependNew = false): HandoutLibraryItem[] {
+  if (items.some((item) => item.id === updated.id)) {
+    return items.map((item) => {
+      if (item.id !== updated.id) return item;
+      const content = item.updatedAt.localeCompare(updated.updatedAt) > 0 ? item : updated;
+      return { ...content, readByUserIds: [...new Set([...item.readByUserIds, ...updated.readByUserIds])] };
+    });
+  }
+  // Only a create response may introduce an item. A delayed read/update
+  // response must not resurrect an item removed by a concurrent delete.
+  return prependNew ? [updated, ...items] : items;
+}
+
+export function mergeHandoutReadReceipt(items: HandoutLibraryItem[], receipt: HandoutLibraryItem): HandoutLibraryItem[] {
+  return items.map((item) => item.id === receipt.id
+    ? { ...item, readByUserIds: [...new Set([...item.readByUserIds, ...receipt.readByUserIds])] }
+    : item);
 }
 
 export function parseHandoutTags(value: string): string[] {
@@ -90,7 +113,7 @@ export function HandoutLibraryPanel(props: {
   loadState?: LoreCollectionLoadState;
   loadError?: string;
   onRetryLoad?(): void;
-  onHandoutsChange(items: HandoutLibraryItem[]): void;
+  onHandoutsChange(update: HandoutLibraryUpdate): void;
   onStatus(message: string): void;
 }) {
   const [query, setQuery] = useState("");
@@ -115,7 +138,7 @@ export function HandoutLibraryPanel(props: {
     if (item.readByUserIds.includes(props.currentUserId)) return;
     try {
       const updated = await markHandoutRead(item.id);
-      props.onHandoutsChange(props.handouts.map((entry) => (entry.id === updated.id ? updated : entry)));
+      props.onHandoutsChange((current) => mergeHandoutReadReceipt(current, updated));
     } catch {
       // Reading remains available even when an older server does not support read receipts.
     }
@@ -126,10 +149,7 @@ export function HandoutLibraryPanel(props: {
     setBusy(true);
     try {
       const updated = await persistHandout(props.campaignId, input);
-      const next = input.id
-        ? props.handouts.map((item) => (item.id === updated.id ? updated : item))
-        : [updated, ...props.handouts];
-      props.onHandoutsChange(next);
+      props.onHandoutsChange((current) => upsertHandoutItem(current, updated, !input.id));
       setSelectedId(updated.id);
       setCreating(false);
       props.onStatus(`${updated.title} ${input.id ? "updated" : "shared"}`);
@@ -145,7 +165,7 @@ export function HandoutLibraryPanel(props: {
     setBusy(true);
     try {
       await deleteLibraryHandout(selected.id);
-      props.onHandoutsChange(props.handouts.filter((item) => item.id !== selected.id));
+      props.onHandoutsChange((current) => current.filter((item) => item.id !== selected.id));
       setSelectedId("");
       setDeleteArmed(false);
       props.onStatus(`${selected.title} deleted`);
@@ -210,7 +230,7 @@ export function HandoutLibraryPanel(props: {
           const unread = !item.readByUserIds.includes(props.currentUserId);
           return (
             <div role="listitem" key={item.id}>
-              <button className={selectedId === item.id ? "handout-list-item active" : "handout-list-item"} type="button" aria-current={selectedId === item.id ? "true" : undefined} onClick={() => void openHandout(item)}>
+              <button id={campaignSearchAnchorId("handout", item.id)} className={selectedId === item.id ? "handout-list-item active" : "handout-list-item"} type="button" aria-current={selectedId === item.id ? "true" : undefined} onClick={() => void openHandout(item)}>
                 <span className={unread ? "handout-read-dot unread" : "handout-read-dot"} aria-label={unread ? "Unread" : "Read"} />
                 <span>
                   <strong>{item.title}</strong>
@@ -253,6 +273,7 @@ export function HandoutLibraryPanel(props: {
 
 export function handoutPayload(input: HandoutDraft) {
   return {
+    ...(input.expectedUpdatedAt ? { expectedUpdatedAt: input.expectedUpdatedAt } : {}),
     worldId: input.worldId || (input.id ? null : undefined),
     title: input.title.trim(),
     body: input.body.trim(),
@@ -277,6 +298,7 @@ function HandoutEditor(props: {
 }) {
   const [draft, setDraft] = useState<HandoutDraft>(() => ({
     id: props.item?.id,
+    expectedUpdatedAt: props.item?.updatedAt,
     worldId: props.item?.worldId ?? "",
     title: props.item?.title ?? "",
     body: props.item?.body ?? "",

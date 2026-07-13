@@ -6,6 +6,10 @@ export function showTrailingSceneCreate(sceneCount: number): boolean {
   return sceneCount > 0;
 }
 
+export function sceneDeleteConfirmationMatches(sceneName: string | undefined, confirmation: string): boolean {
+  return Boolean(sceneName && confirmation === sceneName);
+}
+
 export function sceneTabWrapClass(canSelectScene: boolean, selected: boolean, canDeleteScene = false): string {
   return [
     "scene-tab-wrap",
