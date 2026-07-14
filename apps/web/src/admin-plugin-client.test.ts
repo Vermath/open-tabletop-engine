@@ -1,43 +1,45 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  createAdminPluginMutationClient,
-  type AdminPluginTransport,
+  syncAdminPluginRegistry,
+  syncCampaignPluginRegistry,
+  updateAdminPluginReview,
 } from "./admin-plugin-client.js";
-import type { AdminPluginReviewInfo } from "./api.js";
+import { apiPatch, apiPost, type AdminPluginReviewInfo } from "./api.js";
+
+vi.mock("./api.js", () => ({ apiPatch: vi.fn(), apiPost: vi.fn() }));
 
 const updatedAt = "2026-07-13T12:00:00.000Z";
 const registryRevision =
   "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 function fixture() {
+  vi.clearAllMocks();
   const calls: Array<{
     method: string;
     path: string;
     body: Record<string, unknown>;
     options?: { idempotencyKey?: string };
   }> = [];
-  const transport: AdminPluginTransport = {
-    post: vi.fn(async (path, body, options) => {
-      calls.push({
-        method: "POST",
-        path,
-        body: body as Record<string, unknown>,
-        options,
-      });
-      return { registryRevision } as never;
-    }),
-    patch: vi.fn(async (path, body, options) => {
-      calls.push({
-        method: "PATCH",
-        path,
-        body: body as Record<string, unknown>,
-        options,
-      });
-      return body as never;
-    }),
-  };
-  return { client: createAdminPluginMutationClient(transport), calls };
+  vi.mocked(apiPost).mockImplementation(async (path, body, options) => {
+    calls.push({
+      method: "POST",
+      path,
+      body: body as Record<string, unknown>,
+      options,
+    });
+    return { registryRevision } as never;
+  });
+  vi.mocked(apiPatch).mockImplementation(async (path, body, options) => {
+    calls.push({
+      method: "PATCH",
+      path,
+      body: body as Record<string, unknown>,
+      options,
+    });
+    return body as never;
+  });
+  return { calls };
 }
 
 const review = {
@@ -79,8 +81,8 @@ const review = {
 
 describe("admin plugin mutation client", () => {
   it("uses K+R for review changes", async () => {
-    const { client, calls } = fixture();
-    await client.updateReview(review, "approved");
+    const { calls } = fixture();
+    await updateAdminPluginReview(review, "approved");
 
     expect(calls).toHaveLength(1);
     expect(calls[0]).toMatchObject({
@@ -95,9 +97,9 @@ describe("admin plugin mutation client", () => {
   });
 
   it("uses K+R for both registry sync entrypoints", async () => {
-    const { client, calls } = fixture();
-    await client.syncAdminRegistry(registryRevision);
-    await client.syncCampaignRegistry("camp/one", registryRevision);
+    const { calls } = fixture();
+    await syncAdminPluginRegistry(registryRevision);
+    await syncCampaignPluginRegistry("camp/one", registryRevision);
 
     expect(calls).toHaveLength(2);
     for (const call of calls) {

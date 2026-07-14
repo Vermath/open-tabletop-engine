@@ -1,3 +1,5 @@
+import { win32 } from "node:path";
+
 export interface DesktopDataPaths {
   root: string;
   dataDir: string;
@@ -49,12 +51,7 @@ export function desktopRuntimeEnv(paths: DesktopDataPaths, baseEnv: NodeJS.Proce
 }
 
 export function joinDesktopPath(root: string, ...parts: string[]): string {
-  const normalizedRoot = normalizeDesktopPath(root);
-  const base = normalizedRoot === "/" ? "/" : normalizedRoot.replace(/\/+$/, "");
-  const suffix = parts.map((part) => normalizeDesktopPath(part).replace(/^\/+|\/+$/g, "")).filter(Boolean).join("/");
-  if (!base) return suffix;
-  if (!suffix) return base;
-  return `${base}${base.endsWith("/") ? "" : "/"}${suffix}`;
+  return normalizeDesktopPath(win32.join(root, ...parts));
 }
 
 export function desktopRendererUrlAllowed(senderUrl: string, webRuntimeUrl: string): boolean {
@@ -68,10 +65,7 @@ export function desktopRendererUrlAllowed(senderUrl: string, webRuntimeUrl: stri
 }
 
 function normalizeDesktopPath(value: string): string {
-  const slashed = value.replace(/\\/g, "/");
-  const isUnc = slashed.startsWith("//");
-  const normalized = slashed.replace(/\/+/g, "/");
-  return isUnc && normalized.startsWith("/") ? `/${normalized}` : normalized;
+  return value ? win32.normalize(value).replaceAll("\\", "/") : value;
 }
 
 export async function shutdownDesktopResources(resources: DesktopShutdownResources): Promise<DesktopShutdownFailure[]> {

@@ -111,7 +111,6 @@ import {
   type SceneEditSnapshot,
   type SceneEditableState,
   type SceneTemplateShape,
-  type ScimAssignableRole,
   type ScimGroup,
   type ScimGroupRoleMapping,
   type Token,
@@ -270,11 +269,12 @@ import { FileStateStore, MemoryStateStore, type StateStore } from "./store.js";
 import type { AssetSnapshotIdentity, AssetSnapshotProvider, SqliteBackupOptions, SqliteRestoreDrillOptions } from "./sqlite-store.js";
 import { activeWorkerLeaseError, authenticateWorkerPrincipal, normalizeCampaignImportWorkerPayload, workerAuthorizationRequested, workerDispatchMatches, workerIdempotencyAuthorizationHash, workerIdentityRuntimePosture, workerJobIdFromHeaders, workerLeaseRevisionFromHeaders, type WorkerDispatchRequest, type WorkerPrincipal } from "./worker-identity.js";
 import { ADMIN_JOB_TYPES, adminJobMetrics, adminJobOperations, appendJobLog, deliverJobAlert, jobAlertWebhookUrl, jobLeaseRequestHash, leaseNextAdminJob, leasedJobInfo, normalizeAdminJobLeaseSeconds, normalizeAdminJobLimit, normalizeAdminJobMaxAttempts, normalizeJobExpectedUpdatedAt, normalizeJobLeaseRequestId, normalizeJobLeaseRevision, normalizeJobLogEntry, normalizeJobProgress, normalizeJobStatus, normalizeJobType, normalizeJobTypeFilter, normalizeWorkerId, publicJobInfo, transitionAdminJob, type PublicJobInfo } from "./admin-job-operations.js";
+import { adminSessionRiskReport, normalizeSessionRiskStaleDays, pruneExpiredPasswordResetTokens, publicSession, type AdminSessionRiskReason } from "./admin-identity-operations.js";
 import { registerAdminIdentityRoutes } from "./admin-identity-routes.js";
 import { registerAdminAssetRoutes } from "./admin-asset-routes.js";
 import { registerScimRoutes, scimIdempotencyIdentityFromHeaders, scimIdempotencyRequestRepresentation, scimReplayResponseHeaders } from "./scim-routes.js";
 import { PluginOperatorMutationError, assertPluginRegistryRevision, assertPluginReviewRevision, pluginInstallAuditSummary, pluginRegistryRevision, withPluginRegistryMutationLock } from "./plugin-system-operator.js";
-import { deliverEmailMessage as deliverDurableEmailMessage, publicEmailOutboxMessage } from "./email-outbox.js";
+import { deliverEmailMessage, publicEmailOutboxMessage } from "./email-outbox.js";
 import { normalizeOperatorDeliveryId } from "./operator-mutation.js";
 import { aiRetentionExpiresAt, annotateAiToolOutput, normalizeAiCampaignPolicyInput, resolveAiInstallationPolicy, resolveEffectiveAiPolicy, validateAiContextScopes } from "./ai-safety.js";
 import { measureScenePath, type CoverLevel, type DifficultTerrainRegion, type SceneCoverOverride, type ScenePathMeasurement } from "@open-tabletop/core";
@@ -734,7 +734,6 @@ const PLUGIN_EVENT_QUEUE_MAX_PENDING = 256;
 const DEFAULT_RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 600;
 const AUTH_DUMMY_PASSWORD_HASH = "scrypt:open-tabletop-login-timing:QolQTrS3N3nn0ZKOxvK8ocMGR3Mv14FcDCIpIxcT0PU";
-const DEFAULT_ASSET_QUOTA_BYTES = 1024 * 1024 * 1024;
 const LIST_DEFAULT_LIMIT = apiContractPolicy.pagination.defaultLimit;
 const LIST_MAX_LIMIT = apiContractPolicy.pagination.maxLimit;
 const CHAT_MESSAGE_BODY_MAX_LENGTH = apiContractPolicy.chat.messageBodyMaxLength;
@@ -889,27 +888,6 @@ interface CampaignPluginCatalogInfo extends Omit<PublicPluginCatalogInfo, "compa
   audit: { installCount: number; lastInstallAt?: string; versions: string[] };
 }
 
-interface ScimListQuery {
-  filter?: string;
-  startIndex?: string;
-  count?: string;
-}
-
-interface ScimUserInput {
-  userName?: string | null;
-  externalId?: string | null;
-  displayName?: string | null;
-  active?: boolean;
-  name?: { formatted?: string | null; givenName?: string | null; familyName?: string | null } | null;
-  emails?: Array<{ value?: string; primary?: boolean; type?: string }>;
-}
-
-interface ScimGroupInput {
-  displayName?: string;
-  externalId?: string;
-  members?: Array<{ value?: string }>;
-}
-
 interface AiEvaluationInput {
   threadId?: string;
   name?: string;
@@ -952,35 +930,10 @@ interface AiToolOutputFieldExpectationInput {
   equals?: unknown;
 }
 
-interface AssetS3RuntimeConfig {
-  configuredProvider: string;
-  active: boolean;
-  bucketConfigured: boolean;
-  endpointConfigured: boolean;
-  endpointValid: boolean;
-  endpointInsecureInProduction: boolean;
-  regionConfigured: boolean;
-  forcePathStyle: boolean;
-  explicitCredentialsConfigured: boolean;
-  partialExplicitCredentials: boolean;
-}
-
 interface RuntimeUrlConfig {
   configured: boolean;
   valid: boolean;
   insecureInProduction: boolean;
-}
-
-interface ScimPatchInput {
-  Operations?: Array<{ op?: string; path?: string; value?: unknown }>;
-}
-
-interface AdminScimGroupRoleMappingInput {
-  groupId?: string;
-  groupExternalId?: string;
-  groupDisplayName?: string;
-  campaignId?: string;
-  role?: string;
 }
 
 interface OrganizationMemberCreateBody {
@@ -12177,20 +12130,7 @@ function createAiEncounterScene(input: { state: EngineState; campaignId: string;
   return createTimestamped("scn", { campaignId: input.campaignId, name: input.name?.trim() || aiEncounterSceneName(input.encounterName), width: input.width ?? 1200, height: input.height ?? 800, gridType: "square" as const, gridSize: input.gridSize ?? 50, folder: "ai/encounters", active: false, sortOrder: input.state.scenes.filter((item) => item.campaignId === input.campaignId).length + 1, fog: [], fogHistory: [], walls: [], lights: [], annotations: [], metadata: { source: "ai_encounter_design", encounterId: input.encounterId, encounterName: input.encounterName, prompt: input.summary.slice(0, 500) } }) satisfies Scene;
 }
 
-function aiGeneratedMapEditSceneName(assetName: string): string {
-  const name = assetName.trim() || "Generated Map";
-  return name.toLowerCase().startsWith("ai edits:") ? name : `AI edits: ${name}`;
-}
-
 const AI_EDIT_SCENE_FOLDER = "ai/edits";
-
-function createAiGeneratedMapEditScene(input: { state: EngineState; campaignId: string; targetScene: Scene; assetId: string; assetName: string; sourcePrompt: string }): Scene {
-  return createTimestamped("scn", { campaignId: input.campaignId, name: aiGeneratedMapEditSceneName(input.assetName), width: input.targetScene.width, height: input.targetScene.height, gridType: input.targetScene.gridType, gridSize: input.targetScene.gridSize, backgroundAssetId: input.assetId, folder: AI_EDIT_SCENE_FOLDER, active: false, sortOrder: input.state.scenes.filter((item) => item.campaignId === input.campaignId).length + 1, fog: [], fogHistory: [], walls: [], lights: [], annotations: [], metadata: { source: "ai_edit_layer", targetSceneId: input.targetScene.id, generatedBackgroundAssetId: input.assetId, generatedBackgroundPrompt: input.sourcePrompt } }) satisfies Scene;
-}
-
-function createAiEditSceneForTarget(input: { state: EngineState; campaignId: string; targetScene: Scene; name: string; sourcePrompt?: string }): Scene {
-  return createTimestamped("scn", { campaignId: input.campaignId, name: aiGeneratedMapEditSceneName(input.name), width: input.targetScene.width, height: input.targetScene.height, gridType: input.targetScene.gridType, gridSize: input.targetScene.gridSize, backgroundAssetId: input.targetScene.backgroundAssetId, folder: AI_EDIT_SCENE_FOLDER, active: false, sortOrder: input.state.scenes.filter((item) => item.campaignId === input.campaignId).length + 1, fog: [], fogHistory: [], walls: [], lights: [], annotations: [], metadata: { source: "ai_edit_layer", targetSceneId: input.targetScene.id, prompt: input.sourcePrompt?.slice(0, 500) } }) satisfies Scene;
-}
 
 function findAiEditSceneForTarget(state: EngineState, campaignId: string, targetSceneId: string): Scene | undefined {
   return state.scenes.filter((scene) => scene.campaignId === campaignId && scene.folder === AI_EDIT_SCENE_FOLDER && scene.metadata.targetSceneId === targetSceneId).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt))[0];
@@ -18358,10 +18298,6 @@ function publicOrganizationWorkspace(workspace: OrganizationWorkspace): Organiza
   return { ...workspace };
 }
 
-function organizationWorkspaceForUser(store: StateStore, userId: string): OrganizationWorkspace {
-  return publicOrganizationWorkspace(organizationWorkspaceRecordForUser(store, userId));
-}
-
 function organizationWorkspaceForRequest(store: StateStore, userId: string, headers: Record<string, string | string[] | undefined>): OrganizationWorkspace {
   return publicOrganizationWorkspace(organizationWorkspaceRecordForRequest(store, userId, headers));
 }
@@ -19472,21 +19408,6 @@ function base32Decode(input: string): Buffer {
   return Buffer.from(bytes);
 }
 
-function setUserDisabled(store: StateStore, user: User, disabled: boolean, adminUserId: string, reason: string | undefined): void {
-  const now = nowIso();
-  if (disabled) {
-    user.disabledAt = user.disabledAt ?? now;
-    user.disabledByUserId = adminUserId;
-    user.disabledReason = normalizeDisplayName(reason) ?? reason?.trim().slice(0, 160);
-    store.state.sessions = store.state.sessions.filter((session) => session.userId !== user.id);
-  } else {
-    user.disabledAt = undefined;
-    user.disabledByUserId = undefined;
-    user.disabledReason = undefined;
-  }
-  user.updatedAt = now;
-}
-
 function passwordResetUrl(token: string, requestedReturnTo: string | undefined): string | undefined {
   const configured = process.env.OTTE_PASSWORD_RESET_URL?.trim();
   const returnTo = configured || sanitizeReturnTo(requestedReturnTo) || (process.env.OTTE_WEB_ORIGIN ? `${process.env.OTTE_WEB_ORIGIN.replace(/\/+$/, "")}/reset-password` : undefined);
@@ -19498,40 +19419,6 @@ function passwordResetUrl(token: string, requestedReturnTo: string | undefined):
   } catch {
     return undefined;
   }
-}
-
-async function deliverEmailMessage(message: EmailOutboxMessage): Promise<void> {
-  await deliverDurableEmailMessage(message);
-}
-
-async function retryEmailOutboxMessages(store: StateStore, body: AdminEmailOutboxRetryAllBody) {
-  const dryRun = body.dryRun === true;
-  const statuses = normalizeEmailOutboxRetryStatuses(body.status);
-  const limit = normalizeEmailOutboxRetryLimit(body.limit);
-  const retryable = store.state.emailOutbox.filter((message) => statuses.has(message.status)).sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
-  const selected = retryable.slice(0, limit);
-  const skipped = Math.max(0, retryable.length - selected.length);
-  const messages: Array<{ id: string; to: string; subject: string; before: EmailOutboxMessage["status"]; after: EmailOutboxMessage["status"]; provider: EmailOutboxMessage["provider"]; error?: string }> = [];
-
-  for (const message of selected) {
-    const before = message.status;
-    if (!dryRun) await deliverEmailMessage(message);
-    messages.push({ id: message.id, to: message.to, subject: message.subject, before, after: dryRun ? before : message.status, provider: message.provider, error: dryRun ? message.error : message.error });
-  }
-
-  return { dryRun, limit, statuses: Array.from(statuses), matched: retryable.length, retried: dryRun ? 0 : selected.length, planned: dryRun ? selected.length : 0, delivered: dryRun ? 0 : selected.filter((message) => message.status === "delivered").length, failed: dryRun ? 0 : selected.filter((message) => message.status === "failed").length, skipped, messages };
-}
-
-function normalizeEmailOutboxRetryStatuses(status: AdminEmailOutboxRetryAllBody["status"]): Set<EmailOutboxMessage["status"]> {
-  if (status === "pending") return new Set(["pending"]);
-  if (status === "failed") return new Set(["failed"]);
-  return new Set(["pending", "failed"]);
-}
-
-function normalizeEmailOutboxRetryLimit(value: unknown): number {
-  const limit = Number(value ?? 25);
-  if (!Number.isFinite(limit)) return 25;
-  return Math.max(1, Math.min(100, Math.floor(limit)));
 }
 
 function emailWebhookUrl(): string | undefined {
@@ -19639,116 +19526,8 @@ function scimRuntimePosture(store?: StateStore): { configured: boolean; bearerTo
   return { configured: Boolean(envText("OTTE_SCIM_BEARER_TOKEN")), bearerTokenConfigured: Boolean(envText("OTTE_SCIM_BEARER_TOKEN")), serviceProviderConfigPath: "/api/v1/scim/v2/ServiceProviderConfig", usersPath: "/api/v1/scim/v2/Users", groupsPath: "/api/v1/scim/v2/Groups", userCount: store?.state.users.filter((user) => Boolean(user.scim)).length ?? 0, groupCount: store?.state.scimGroups.length ?? 0, mappingCount: mappings.length, matchedMappingCount: store ? mappings.filter((mapping) => Boolean(findGroupForScimGroupRoleMapping(store, mapping))).length : 0 };
 }
 
-function publicPasswordResetToken(reset: PasswordResetToken): Omit<PasswordResetToken, "tokenHash"> {
-  const { tokenHash: _tokenHash, ...safeReset } = reset;
-  return safeReset;
-}
-
 interface AdminSessionRiskQuery {
   staleDays?: string | number;
-}
-
-interface AdminSessionRiskRevokeBody {
-  staleDays?: string | number;
-  dryRun?: boolean;
-  reasons?: AdminSessionRiskReason[];
-}
-
-interface AdminSessionPruneBody {
-  dryRun?: boolean;
-}
-
-interface AdminPasswordResetPruneBody {
-  dryRun?: boolean;
-  includeExpired?: boolean;
-  includeUsed?: boolean;
-}
-
-interface AdminEmailOutboxRetryAllBody {
-  dryRun?: boolean;
-  status?: "pending" | "failed" | "retryable";
-  limit?: number;
-}
-
-type AdminSessionRiskReason = "expired" | "stale" | "disabled_user" | "unknown_user";
-
-interface AdminSessionRiskItem {
-  session: ReturnType<typeof publicSession>;
-  user: PublicUser | { id: string; displayName: string };
-  reasons: AdminSessionRiskReason[];
-  lastSeenAgeDays?: number;
-  expiresInMs: number;
-}
-
-function adminSessionRiskReport(store: StateStore, staleDays: number): { generatedAt: string; staleDays: number; totals: { totalSessionCount: number; activeSessionCount: number; expiredSessionCount: number; staleSessionCount: number; disabledUserSessionCount: number; unknownUserSessionCount: number; riskSessionCount: number }; sessions: AdminSessionRiskItem[] } {
-  const now = Date.now();
-  const staleMs = staleDays * 24 * 60 * 60 * 1000;
-  const sessions: AdminSessionRiskItem[] = [];
-  const totals = { totalSessionCount: store.state.sessions.length, activeSessionCount: 0, expiredSessionCount: 0, staleSessionCount: 0, disabledUserSessionCount: 0, unknownUserSessionCount: 0, riskSessionCount: 0 };
-
-  for (const session of store.state.sessions) {
-    const user = store.state.users.find((item) => item.id === session.userId);
-    const expiresAt = Date.parse(session.expiresAt);
-    const lastSeenAt = Date.parse(session.lastSeenAt);
-    const expired = !Number.isFinite(expiresAt) || expiresAt <= now;
-    const lastSeenAgeMs = Number.isFinite(lastSeenAt) ? now - lastSeenAt : undefined;
-    const stale = !expired && lastSeenAgeMs !== undefined && lastSeenAgeMs >= staleMs;
-    const reasons: AdminSessionRiskReason[] = [];
-
-    if (expired) {
-      totals.expiredSessionCount += 1;
-      reasons.push("expired");
-    } else {
-      totals.activeSessionCount += 1;
-    }
-    if (stale) {
-      totals.staleSessionCount += 1;
-      reasons.push("stale");
-    }
-    if (user && isDisabledUser(user)) {
-      totals.disabledUserSessionCount += 1;
-      reasons.push("disabled_user");
-    }
-    if (!user) {
-      totals.unknownUserSessionCount += 1;
-      reasons.push("unknown_user");
-    }
-    if (reasons.length === 0) continue;
-
-    sessions.push({ session: publicSession(session), user: user ? publicUser(user) : { id: session.userId, displayName: "Unknown user" }, reasons, lastSeenAgeDays: lastSeenAgeMs === undefined ? undefined : Math.max(0, Math.floor(lastSeenAgeMs / (24 * 60 * 60 * 1000))), expiresInMs: Number.isFinite(expiresAt) ? expiresAt - now : 0 });
-  }
-
-  totals.riskSessionCount = sessions.length;
-  return { generatedAt: nowIso(), staleDays, totals, sessions };
-}
-
-function normalizeSessionRiskStaleDays(value: string | number | undefined): number | undefined {
-  if (value === undefined || value === "") return 30;
-  const staleDays = Number(value);
-  if (!Number.isInteger(staleDays) || staleDays < 1 || staleDays > 365) return undefined;
-  return staleDays;
-}
-
-function normalizeSessionRiskReasons(value: unknown): Set<AdminSessionRiskReason> | undefined {
-  const allowed: AdminSessionRiskReason[] = ["expired", "stale", "disabled_user", "unknown_user"];
-  if (value === undefined) return new Set(allowed);
-  if (!Array.isArray(value)) return undefined;
-  const reasons = new Set<AdminSessionRiskReason>();
-  for (const item of value) {
-    if (typeof item !== "string" || !allowed.includes(item as AdminSessionRiskReason)) return undefined;
-    reasons.add(item as AdminSessionRiskReason);
-  }
-  return reasons;
-}
-
-function revokeRiskSessions(store: StateStore, staleDays: number, reasons: Set<AdminSessionRiskReason>, dryRun: boolean) {
-  const report = adminSessionRiskReport(store, staleDays);
-  const matchedSessions = report.sessions.filter((item) => item.reasons.some((reason) => reasons.has(reason)));
-  const matchedSessionIds = new Set(matchedSessions.map((item) => item.session.id));
-  if (!dryRun && matchedSessionIds.size > 0) {
-    store.state.sessions = store.state.sessions.filter((session) => !matchedSessionIds.has(session.id));
-  }
-  return { generatedAt: nowIso(), staleDays, dryRun, reasons: [...reasons], matched: matchedSessionIds.size, revoked: dryRun ? 0 : matchedSessionIds.size, remainingRiskSessionCount: dryRun ? report.totals.riskSessionCount : adminSessionRiskReport(store, staleDays).totals.riskSessionCount, sessions: matchedSessions.map((item) => ({ session: item.session, user: item.user, reasons: item.reasons })) };
 }
 
 function summarizeSessionCleanupOperations(auditLogs: AuditLog[]) {
@@ -20127,229 +19906,8 @@ function adminAuditLogExportSummary(auditLogs: AuditLog[], options: AdminAuditLo
   };
 }
 
-interface NormalizedScimUser {
-  userName: string;
-  email?: string;
-  displayName: string;
-  externalId?: string;
-  active: boolean;
-}
-
-interface NormalizedScimGroup {
-  displayName: string;
-  externalId?: string;
-  memberUserIds: string[];
-}
-
-function requireScimBearer(reply: FastifyReply, headers: Record<string, string | string[] | undefined>): true | FastifyReply {
-  const expected = process.env.OTTE_SCIM_BEARER_TOKEN?.trim();
-  if (!expected) return notFound(reply, "SCIM is not configured");
-  const authorization = headerValue(headers.authorization);
-  const token = authorization?.toLowerCase().startsWith("bearer ") ? authorization.slice("bearer ".length).trim() : undefined;
-  if (!token || !safeStringEqual(token, expected)) return unauthorized(reply, "SCIM bearer token required");
-  return true;
-}
-
-function scimLocation(headers: Record<string, string | string[] | undefined>, path: string): string {
-  const host = headerValue(headers["x-forwarded-host"]) ?? headerValue(headers.host) ?? "localhost";
-  const protocol = headerValue(headers["x-forwarded-proto"]) ?? (host.startsWith("localhost") || host.startsWith("127.0.0.1") ? "http" : "https");
-  return `${protocol}://${host}${path}`;
-}
-
-function scimListResponse<T>(items: T[], query: ScimListQuery, mapItem: (item: T) => unknown): unknown {
-  const startIndex = Math.max(1, Number.parseInt(query.startIndex ?? "1", 10) || 1);
-  const count = Math.max(0, Math.min(200, Number.parseInt(query.count ?? "100", 10) || 100));
-  const resources = items.slice(startIndex - 1, startIndex - 1 + count).map(mapItem);
-  return { schemas: ["urn:ietf:params:scim:api:messages:2.0:ListResponse"], totalResults: items.length, startIndex, itemsPerPage: resources.length, Resources: resources };
-}
-
-function filterScimUsers(users: User[], query: ScimListQuery): User[] {
-  const filter = parseScimEqFilter(query.filter);
-  if (!filter) return users;
-  return users.filter((user) => {
-    const value = filter.value.toLowerCase();
-    if (filter.path === "username" || filter.path === "userName".toLowerCase()) return (user.scim?.userName ?? user.email ?? "").toLowerCase() === value;
-    if (filter.path === "externalid") return (user.scim?.externalId ?? "").toLowerCase() === value;
-    if (filter.path === "email" || filter.path === "emails.value") return (user.email ?? "").toLowerCase() === value;
-    return false;
-  });
-}
-
-function filterScimGroups(groups: ScimGroup[], query: ScimListQuery): ScimGroup[] {
-  const filter = parseScimEqFilter(query.filter);
-  if (!filter) return groups;
-  return groups.filter((group) => {
-    const value = filter.value.toLowerCase();
-    if (filter.path === "displayname") return group.displayName.toLowerCase() === value;
-    if (filter.path === "externalid") return (group.externalId ?? "").toLowerCase() === value;
-    return false;
-  });
-}
-
-function parseScimEqFilter(filter: string | undefined): { path: string; value: string } | undefined {
-  const match = filter?.trim().match(/^([\w.]+)\s+eq\s+"([^"]+)"$/i);
-  if (!match) return undefined;
-  return { path: match[1]!.toLowerCase(), value: match[2]! };
-}
-
-function scimUserResource(user: User, headers: Record<string, string | string[] | undefined>): unknown {
-  const userName = user.scim?.userName ?? user.email ?? user.id;
-  return { schemas: ["urn:ietf:params:scim:schemas:core:2.0:User"], id: user.id, externalId: user.scim?.externalId, userName, displayName: user.displayName, name: { formatted: user.displayName }, active: !isDisabledUser(user), emails: user.email ? [{ value: user.email, primary: true, type: "work" }] : [], meta: { resourceType: "User", created: user.createdAt, lastModified: user.updatedAt, location: scimLocation(headers, `/api/v1/scim/v2/Users/${user.id}`) } };
-}
-
-function scimGroupResource(group: ScimGroup, headers: Record<string, string | string[] | undefined>): unknown {
-  return { schemas: ["urn:ietf:params:scim:schemas:core:2.0:Group"], id: group.id, externalId: group.externalId, displayName: group.displayName, members: group.memberUserIds.map((userId) => ({ value: userId, $ref: scimLocation(headers, `/api/v1/scim/v2/Users/${userId}`) })), meta: { resourceType: "Group", created: group.createdAt, lastModified: group.updatedAt, location: scimLocation(headers, `/api/v1/scim/v2/Groups/${group.id}`) } };
-}
-
-function normalizeScimUserInput(input: ScimUserInput, existing?: User): NormalizedScimUser | { error: string } {
-  if (!isRecord(input)) return { error: "SCIM user payload must be an object" };
-  if (![input.userName, input.externalId, input.displayName].every(isOptionalNullableString)) return { error: "SCIM user text fields must be strings" };
-  if (input.name !== undefined && input.name !== null && (!isRecord(input.name) || ![input.name.formatted, input.name.givenName, input.name.familyName].every(isOptionalNullableString))) {
-    return { error: "SCIM name fields must be strings" };
-  }
-  if (input.emails !== undefined && !isValidScimEmails(input.emails)) return { error: "SCIM emails must be an array of email records" };
-  if (input.active !== undefined && typeof input.active !== "boolean") return { error: "SCIM active must be a boolean" };
-  const inputEmail = scimEmail(input);
-  const userName = normalizeScimText(input.userName) ?? existing?.scim?.userName ?? inputEmail ?? existing?.email;
-  if (!userName) return { error: "SCIM userName is required" };
-  const email = inputEmail ?? normalizeEmail(userName) ?? existing?.email;
-  const displayName = normalizeDisplayName(input.displayName) ?? normalizeDisplayName(input.name?.formatted) ?? existing?.displayName ?? email ?? userName;
-  const externalId = Object.prototype.hasOwnProperty.call(input, "externalId") ? normalizeScimText(input.externalId) : existing?.scim?.externalId;
-  return { userName, email, displayName, externalId, active: input.active ?? (existing ? !isDisabledUser(existing) : true) };
-}
-
-function scimEmail(input: ScimUserInput): string | undefined {
-  if (!isValidScimEmails(input.emails)) return undefined;
-  const primary = input.emails.find((email) => email.primary)?.value ?? input.emails[0]?.value;
-  return normalizeEmail(primary);
-}
-
-function isValidScimEmails(value: unknown): value is Array<{ value: string; primary?: boolean }> {
-  return Array.isArray(value) && value.every((email) => isRecord(email) && typeof email.value === "string" && (email.primary === undefined || typeof email.primary === "boolean") && (email.type === undefined || typeof email.type === "string"));
-}
-
-function isOptionalNullableString(value: unknown): value is string | null | undefined {
-  return value === undefined || value === null || typeof value === "string";
-}
-
 function isOptionalString(value: unknown): value is string | undefined {
   return value === undefined || typeof value === "string";
-}
-
-function normalizeScimText(value: unknown): string | undefined {
-  const trimmed = typeof value === "string" ? value.trim() : undefined;
-  return trimmed || undefined;
-}
-
-function findScimUser(store: StateStore, userName: string | undefined, email: string | undefined, exceptUserId?: string): User | undefined {
-  const normalizedUserName = userName?.toLowerCase();
-  const normalizedEmail = normalizeEmail(email);
-  return store.state.users.find((user) => {
-    if (exceptUserId && user.id === exceptUserId) return false;
-    if (normalizedUserName && (user.scim?.userName ?? user.email ?? "").toLowerCase() === normalizedUserName) return true;
-    return Boolean(normalizedEmail && normalizeEmail(user.email) === normalizedEmail);
-  });
-}
-
-function findScimGroup(store: StateStore, displayName: string | undefined, externalId: string | undefined, exceptGroupId?: string): ScimGroup | undefined {
-  const normalizedDisplayName = displayName?.toLowerCase();
-  return store.state.scimGroups.find((group) => {
-    if (exceptGroupId && group.id === exceptGroupId) return false;
-    if (normalizedDisplayName && group.displayName.toLowerCase() === normalizedDisplayName) return true;
-    return Boolean(externalId && group.externalId === externalId);
-  });
-}
-
-interface ScimGroupRoleSyncResult {
-  matchedGroups: number;
-  createdMemberships: number;
-  updatedMemberships: number;
-  removedMemberships: number;
-  preservedManualMemberships: number;
-}
-
-const scimAssignableRoles = new Set<ScimAssignableRole>(["gm", "assistant_gm", "player", "observer"]);
-
-function normalizeScimGroupRoleMappingInput(store: StateStore, input: AdminScimGroupRoleMappingInput): Omit<ScimGroupRoleMapping, "id" | "createdAt" | "updatedAt"> | { error: string } {
-  const role = normalizeScimAssignableRole(input.role);
-  if (!role) return { error: "SCIM group role mapping role must be gm, assistant_gm, player, or observer" };
-  const campaignId = normalizeScimText(input.campaignId);
-  if (!campaignId || !store.state.campaigns.some((campaign) => campaign.id === campaignId)) return { error: "SCIM group role mapping campaignId is required" };
-  const groupId = normalizeScimText(input.groupId);
-  const groupExternalId = normalizeScimText(input.groupExternalId);
-  const groupDisplayName = normalizeScimText(input.groupDisplayName);
-  if ([groupId, groupExternalId, groupDisplayName].filter(Boolean).length !== 1) return { error: "SCIM group role mapping requires exactly one of groupId, groupExternalId, or groupDisplayName" };
-  if (groupId && !store.state.scimGroups.some((group) => group.id === groupId)) return { error: "SCIM group role mapping groupId was not found" };
-  return { groupId, groupExternalId, groupDisplayName, campaignId, role };
-}
-
-function normalizeScimAssignableRole(value: string | undefined): ScimAssignableRole | undefined {
-  return scimAssignableRoles.has(value as ScimAssignableRole) ? (value as ScimAssignableRole) : undefined;
-}
-
-function scimGroupRoleMappingIdentity(mapping: Pick<ScimGroupRoleMapping, "groupId" | "groupExternalId" | "groupDisplayName">): string {
-  if (mapping.groupId) return `id:${mapping.groupId}`;
-  if (mapping.groupExternalId) return `externalId:${mapping.groupExternalId}`;
-  return `displayName:${mapping.groupDisplayName?.toLowerCase() ?? ""}`;
-}
-
-function publicScimGroupRoleMapping(store: StateStore, mapping: ScimGroupRoleMapping): ScimGroupRoleMapping & { group?: Pick<ScimGroup, "id" | "displayName" | "externalId" | "memberUserIds"> } {
-  const group = findGroupForScimGroupRoleMapping(store, mapping);
-  return { ...mapping, group: group ? { id: group.id, displayName: group.displayName, externalId: group.externalId, memberUserIds: [...group.memberUserIds] } : undefined };
-}
-
-function syncScimGroupRoleMappingsForGroup(store: StateStore, group: ScimGroup): ScimGroupRoleSyncResult {
-  const mappings = store.state.scimGroupRoleMappings.filter((mapping) => scimGroupRoleMappingMatchesGroup(mapping, group) || store.state.members.some((member) => member.source?.type === "scim_group" && member.source.groupId === group.id && member.source.mappingId === mapping.id));
-  return combineScimGroupRoleSyncResults(mappings.map((mapping) => syncScimGroupRoleMapping(store, mapping, group)));
-}
-
-function syncScimGroupRoleMapping(store: StateStore, mapping: ScimGroupRoleMapping, knownGroup?: ScimGroup): ScimGroupRoleSyncResult {
-  const group = knownGroup ? (scimGroupRoleMappingMatchesGroup(mapping, knownGroup) ? knownGroup : undefined) : findGroupForScimGroupRoleMapping(store, mapping);
-  if (!group) return { matchedGroups: 0, createdMemberships: 0, updatedMemberships: 0, removedMemberships: removeScimGroupRoleMappingMemberships(store, mapping.id), preservedManualMemberships: 0 };
-  const desiredUserIds = new Set(group.memberUserIds.filter((userId) => store.state.users.some((user) => user.id === userId)));
-  let createdMemberships = 0;
-  let updatedMemberships = 0;
-  let preservedManualMemberships = 0;
-
-  for (const userId of desiredUserIds) {
-    const sourceMember = store.state.members.find((member) => member.source?.type === "scim_group" && member.source.mappingId === mapping.id && member.userId === userId);
-    if (sourceMember) {
-      if (sourceMember.role !== mapping.role || sourceMember.campaignId !== mapping.campaignId || sourceMember.source?.groupId !== group.id) {
-        sourceMember.campaignId = mapping.campaignId;
-        sourceMember.role = mapping.role;
-        sourceMember.source = { type: "scim_group", groupId: group.id, mappingId: mapping.id };
-        sourceMember.updatedAt = nowIso();
-        updatedMemberships += 1;
-      }
-      continue;
-    }
-    const existingOtherMember = store.state.members.find((member) => member.campaignId === mapping.campaignId && member.userId === userId);
-    if (existingOtherMember) {
-      preservedManualMemberships += 1;
-      continue;
-    }
-    const member = createTimestamped("mem", { campaignId: mapping.campaignId, userId, role: mapping.role, source: { type: "scim_group" as const, groupId: group.id, mappingId: mapping.id } }) satisfies CampaignMember;
-    store.state.members.push(member);
-    createdMemberships += 1;
-  }
-
-  const before = store.state.members.length;
-  store.state.members = store.state.members.filter((member) => member.source?.type !== "scim_group" || member.source.mappingId !== mapping.id || desiredUserIds.has(member.userId));
-  const removedMemberships = before - store.state.members.length;
-  return { matchedGroups: 1, createdMemberships, updatedMemberships, removedMemberships, preservedManualMemberships };
-}
-
-function removeScimGroupRoleMembershipsForGroup(store: StateStore, group: ScimGroup): number {
-  const mappingIds = new Set(store.state.scimGroupRoleMappings.filter((mapping) => scimGroupRoleMappingMatchesGroup(mapping, group)).map((mapping) => mapping.id));
-  const before = store.state.members.length;
-  store.state.members = store.state.members.filter((member) => member.source?.type !== "scim_group" || !mappingIds.has(member.source.mappingId));
-  return before - store.state.members.length;
-}
-
-function removeScimGroupRoleMappingMemberships(store: StateStore, mappingId: string): number {
-  const before = store.state.members.length;
-  store.state.members = store.state.members.filter((member) => member.source?.type !== "scim_group" || member.source.mappingId !== mappingId);
-  return before - store.state.members.length;
 }
 
 function findGroupForScimGroupRoleMapping(store: StateStore, mapping: ScimGroupRoleMapping): ScimGroup | undefined {
@@ -20362,175 +19920,10 @@ function scimGroupRoleMappingMatchesGroup(mapping: ScimGroupRoleMapping, group: 
   return Boolean(mapping.groupDisplayName && mapping.groupDisplayName.toLowerCase() === group.displayName.toLowerCase());
 }
 
-function combineScimGroupRoleSyncResults(results: ScimGroupRoleSyncResult[]): ScimGroupRoleSyncResult {
-  return results.reduce<ScimGroupRoleSyncResult>((total, item) => ({ matchedGroups: total.matchedGroups + item.matchedGroups, createdMemberships: total.createdMemberships + item.createdMemberships, updatedMemberships: total.updatedMemberships + item.updatedMemberships, removedMemberships: total.removedMemberships + item.removedMemberships, preservedManualMemberships: total.preservedManualMemberships + item.preservedManualMemberships }), { matchedGroups: 0, createdMemberships: 0, updatedMemberships: 0, removedMemberships: 0, preservedManualMemberships: 0 });
-}
-
-function applyScimUserInput(store: StateStore, user: User, input: NormalizedScimUser): void {
-  const now = nowIso();
-  user.displayName = input.displayName;
-  user.email = input.email;
-  user.scim = { userName: input.userName, externalId: input.externalId, syncedAt: now };
-  setScimUserActive(store, user, input.active);
-  user.updatedAt = nowIso();
-}
-
-function setScimUserActive(store: StateStore, user: User, active: boolean): void {
-  const now = nowIso();
-  if (active) {
-    user.disabledAt = undefined;
-    user.disabledByUserId = undefined;
-    user.disabledReason = undefined;
-  } else {
-    user.disabledAt = user.disabledAt ?? now;
-    user.disabledByUserId = undefined;
-    user.disabledReason = "SCIM inactive";
-    store.state.sessions = store.state.sessions.filter((session) => session.userId !== user.id);
-  }
-  user.updatedAt = now;
-}
-
-function applyScimPatchToUser(store: StateStore, user: User, body: ScimPatchInput | undefined): { ok: true } | { error: string } {
-  const operations = body?.Operations;
-  if (!Array.isArray(operations)) return { error: "SCIM patch Operations are required" };
-  for (const operation of operations) {
-    if (!isRecord(operation) || typeof operation.op !== "string" || (operation.path !== undefined && typeof operation.path !== "string")) {
-      return { error: "SCIM patch operations must contain string op and path values" };
-    }
-    const op = operation.op.toLowerCase();
-    if (op !== "replace" && op !== "add") return { error: "Only SCIM add and replace operations are supported" };
-    const path = operation.path?.toLowerCase();
-    if (!path && isRecord(operation.value)) {
-      const normalized = normalizeScimUserInput(operation.value as ScimUserInput, user);
-      if ("error" in normalized) return normalized;
-      const duplicate = findScimUser(store, normalized.userName, normalized.email, user.id);
-      if (duplicate) return { error: "SCIM user already exists" };
-      applyScimUserInput(store, user, normalized);
-      continue;
-    }
-    if (!path) return { error: "SCIM root patch value must be an object" };
-    const result = applyScimUserPath(store, user, path, operation.value);
-    if ("error" in result) return result;
-  }
-  user.scim = { ...(user.scim ?? {}), userName: user.scim?.userName ?? user.email ?? user.id, syncedAt: nowIso() };
-  user.updatedAt = nowIso();
-  return { ok: true };
-}
-
-function applyScimUserPath(store: StateStore, user: User, path: string | undefined, value: unknown): { ok: true } | { error: string } {
-  if (path === "active") {
-    if (typeof value !== "boolean") return { error: "SCIM active must be a boolean" };
-    setScimUserActive(store, user, value);
-    return { ok: true };
-  }
-  if (path === "displayname") {
-    if (typeof value !== "string") return { error: "SCIM displayName must be a string" };
-    const displayName = normalizeDisplayName(value);
-    if (!displayName) return { error: "SCIM displayName is required" };
-    user.displayName = displayName;
-    return { ok: true };
-  }
-  if (path === "username") {
-    if (typeof value !== "string") return { error: "SCIM userName must be a string" };
-    const userName = normalizeScimText(value);
-    if (!userName) return { error: "SCIM userName is required" };
-    const email = normalizeEmail(userName);
-    if (findScimUser(store, userName, email, user.id)) return { error: "SCIM user already exists" };
-    user.scim = { ...(user.scim ?? {}), userName };
-    if (email) user.email = email;
-    return { ok: true };
-  }
-  if (path === "externalid") {
-    if (value !== null && typeof value !== "string") return { error: "SCIM externalId must be a string or null" };
-    user.scim = { ...(user.scim ?? {}), externalId: normalizeScimText(value) };
-    return { ok: true };
-  }
-  if (path === "emails" || path === "emails.value") {
-    if (!Array.isArray(value) && typeof value !== "string") return { error: "SCIM email must be a string or email array" };
-    const email = Array.isArray(value) ? scimEmail({ emails: value as ScimUserInput["emails"] }) : normalizeEmail(value);
-    if (!email) return { error: "SCIM email is invalid" };
-    if (findScimUser(store, undefined, email, user.id)) return { error: "SCIM user already exists" };
-    user.email = email;
-    return { ok: true };
-  }
-  return { error: `Unsupported SCIM user patch path: ${path ?? "root"}` };
-}
-
-function normalizeScimGroupInput(store: StateStore, input: ScimGroupInput, existing?: ScimGroup): NormalizedScimGroup | { error: string } {
-  if (!isRecord(input)) return { error: "SCIM group payload must be an object" };
-  if (![input.displayName, input.externalId].every(isOptionalNullableString)) return { error: "SCIM group text fields must be strings" };
-  const displayName = normalizeDisplayName(input.displayName) ?? existing?.displayName;
-  if (!displayName) return { error: "SCIM group displayName is required" };
-  const members = input.members ?? existing?.memberUserIds.map((value) => ({ value })) ?? [];
-  if (!Array.isArray(members) || !members.every((member) => isRecord(member) && typeof member.value === "string" && member.value.length > 0)) {
-    return { error: "SCIM group members must be an array of user references" };
-  }
-  const memberUserIds = members.map((member) => member.value).filter((value): value is string => typeof value === "string");
-  const missingUserId = memberUserIds.find((userId) => !store.state.users.some((user) => user.id === userId));
-  if (missingUserId) return { error: `SCIM group member not found: ${missingUserId}` };
-  return { displayName, externalId: Object.prototype.hasOwnProperty.call(input, "externalId") ? normalizeScimText(input.externalId) : existing?.externalId, memberUserIds: Array.from(new Set(memberUserIds)) };
-}
-
-function applyScimPatchToGroup(store: StateStore, group: ScimGroup, body: ScimPatchInput | undefined): { ok: true } | { error: string } {
-  const operations = body?.Operations;
-  if (!Array.isArray(operations)) return { error: "SCIM patch Operations are required" };
-  for (const operation of operations) {
-    if (!isRecord(operation) || typeof operation.op !== "string" || (operation.path !== undefined && typeof operation.path !== "string")) {
-      return { error: "SCIM patch operations must contain string op and path values" };
-    }
-    const op = operation.op.toLowerCase();
-    if (op !== "replace" && op !== "add" && op !== "remove") return { error: "Only SCIM add, replace, and remove operations are supported" };
-    const path = operation.path?.toLowerCase();
-    if (op === "remove" && path?.startsWith("members")) {
-      const userId = scimPatchMemberValue(path, operation.value);
-      if (!userId && (path !== "members" || operation.value !== undefined)) return { error: "SCIM member removal requires a user reference" };
-      group.memberUserIds = userId ? group.memberUserIds.filter((item) => item !== userId) : [];
-      continue;
-    }
-    if (path === "displayname") {
-      if (typeof operation.value !== "string") return { error: "SCIM group displayName must be a string" };
-      const displayName = normalizeDisplayName(operation.value);
-      if (!displayName) return { error: "SCIM group displayName is required" };
-      group.displayName = displayName;
-    } else if (path === "externalid") {
-      if (op === "remove") {
-        group.externalId = undefined;
-      } else {
-        if (operation.value !== null && typeof operation.value !== "string") return { error: "SCIM group externalId must be a string or null" };
-        group.externalId = normalizeScimText(operation.value);
-      }
-    } else if (path === "members") {
-      const normalized = normalizeScimGroupInput(store, { displayName: group.displayName, externalId: group.externalId, members: operation.value as ScimGroupInput["members"] }, group);
-      if ("error" in normalized) return normalized;
-      group.memberUserIds = op === "add" ? Array.from(new Set([...group.memberUserIds, ...normalized.memberUserIds])) : normalized.memberUserIds;
-    } else {
-      return { error: `Unsupported SCIM group patch path: ${path ?? "root"}` };
-    }
-  }
-  group.updatedAt = nowIso();
-  return { ok: true };
-}
-
-function restoreMutableRecord<T extends object>(target: T, snapshot: T): void {
-  for (const key of Object.keys(target)) Reflect.deleteProperty(target, key);
-  Object.assign(target, snapshot);
-}
-
-function scimPatchMemberValue(path: string | undefined, value: unknown): string | undefined {
-  const pathMatch = path?.match(/members\[value eq "([^"]+)"\]/i)?.[1];
-  if (pathMatch) return pathMatch;
-  if (isRecord(value) && typeof value.value === "string") return value.value;
-  return typeof value === "string" ? value : undefined;
-}
-
 function appendSystemAuditLog(store: StateStore, input: Omit<ServerAuditLogInput, "campaignId"> & { campaignId?: string }): AuditLog {
   const log = createTimestamped("audit", { campaignId: input.campaignId, actorType: "system" as const, action: input.action, targetType: input.targetType, targetId: input.targetId, before: input.before, after: input.after }) satisfies AuditLog;
   store.state.auditLogs.push(log);
   return log;
-}
-
-function scimError(reply: FastifyReply, status: number, detail: string): FastifyReply {
-  return reply.code(status).send({ schemas: ["urn:ietf:params:scim:api:messages:2.0:Error"], status: String(status), detail });
 }
 
 function normalizeAuditLogLimit(value: string | number | undefined): number | undefined {
@@ -21280,42 +20673,6 @@ function hashSessionToken(token: string): string {
 function pruneExpiredSessions(store: StateStore): void {
   const now = Date.now();
   store.state.sessions = store.state.sessions.filter((session) => Date.parse(session.expiresAt) > now);
-}
-
-function pruneSessionsForAdmin(store: StateStore, input: AdminSessionPruneBody) {
-  const dryRun = Boolean(input.dryRun);
-  const now = Date.now();
-  const matchedSessions = store.state.sessions.filter((session) => Date.parse(session.expiresAt) <= now);
-  if (!dryRun && matchedSessions.length > 0) {
-    const matchedIds = new Set(matchedSessions.map((session) => session.id));
-    store.state.sessions = store.state.sessions.filter((session) => !matchedIds.has(session.id));
-  }
-  return { generatedAt: nowIso(), dryRun, matched: matchedSessions.length, pruned: dryRun ? 0 : matchedSessions.length, activeRemaining: store.state.sessions.filter((session) => Date.parse(session.expiresAt) > now).length, expiredRemaining: store.state.sessions.filter((session) => Date.parse(session.expiresAt) <= now).length, sessions: matchedSessions.map(publicSession) };
-}
-
-function pruneExpiredPasswordResetTokens(store: StateStore): void {
-  const now = Date.now();
-  store.state.passwordResetTokens = store.state.passwordResetTokens.filter((reset) => !reset.usedAt && Date.parse(reset.expiresAt) > now);
-}
-
-function prunePasswordResetTokensForAdmin(store: StateStore, input: AdminPasswordResetPruneBody) {
-  const includeExpired = input.includeExpired ?? true;
-  const includeUsed = input.includeUsed ?? true;
-  const dryRun = Boolean(input.dryRun);
-  const now = Date.now();
-  const matchedResets = store.state.passwordResetTokens.filter((reset) => {
-    if (includeUsed && reset.usedAt) return true;
-    return includeExpired && Date.parse(reset.expiresAt) <= now;
-  });
-  if (!dryRun && matchedResets.length > 0) {
-    const matchedIds = new Set(matchedResets.map((reset) => reset.id));
-    store.state.passwordResetTokens = store.state.passwordResetTokens.filter((reset) => !matchedIds.has(reset.id));
-  }
-  return { dryRun, includeExpired, includeUsed, matched: matchedResets.length, pruned: dryRun ? 0 : matchedResets.length, activeRemaining: store.state.passwordResetTokens.filter((reset) => !reset.usedAt && Date.parse(reset.expiresAt) > now).length, expiredRemaining: store.state.passwordResetTokens.filter((reset) => !reset.usedAt && Date.parse(reset.expiresAt) <= now).length, usedRemaining: store.state.passwordResetTokens.filter((reset) => Boolean(reset.usedAt)).length, resets: matchedResets.map(publicPasswordResetToken) };
-}
-
-function publicSession(session: UserSession): Pick<UserSession, "id" | "userId" | "activeOrganizationId" | "expiresAt" | "lastSeenAt" | "createdAt" | "updatedAt"> {
-  return { id: session.id, userId: session.userId, activeOrganizationId: session.activeOrganizationId, expiresAt: session.expiresAt, lastSeenAt: session.lastSeenAt, createdAt: session.createdAt, updatedAt: session.updatedAt };
 }
 
 function headerValue(value: string | string[] | undefined): string | undefined {
@@ -22711,25 +22068,6 @@ function pluginStorageProposalChanges(store: StateStore, campaignId: string, plu
   return { changes, summary };
 }
 
-function applyPluginStorageMutation(store: StateStore, campaignId: string, pluginId: string, storage: PluginChatCommandResult["storage"], updatedByType: "user" | "plugin", updatedById: string): { set: Array<{ key: string; size: number }>; deleted: string[] } {
-  const mutation = { set: [] as Array<{ key: string; size: number }>, deleted: [] as string[] };
-  if (!storage) return mutation;
-  for (const [rawKey, rawValue] of Object.entries(storage.set ?? {})) {
-    const key = normalizePluginStorageKey(rawKey);
-    if (!key) throw new Error(`Invalid plugin storage key: ${rawKey}`);
-    const value = normalizePluginStorageValue(rawValue);
-    if (!value.ok) throw new Error(value.error);
-    const entry = upsertPluginStorageEntry(store, campaignId, pluginId, key, value.value, updatedByType, updatedById);
-    mutation.set.push({ key: entry.key, size: pluginStorageValueSize(entry.value) });
-  }
-  for (const rawKey of storage.delete ?? []) {
-    const key = normalizePluginStorageKey(rawKey);
-    if (!key) throw new Error(`Invalid plugin storage key: ${rawKey}`);
-    if (deletePluginStorageEntry(store, campaignId, pluginId, key)) mutation.deleted.push(key);
-  }
-  return mutation;
-}
-
 function normalizePluginStorageKey(value: string): string | undefined {
   const key = value.trim();
   return /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,79}$/.test(key) ? key : undefined;
@@ -22750,6 +22088,8 @@ function pluginStorageValueSize(value: unknown): number {
   return Buffer.byteLength(JSON.stringify(value), "utf8");
 }
 
+// JSON round-trip, not structuredClone: also canonicalizes (drops undefined members)
+// so stored state stays byte-comparable with HTTP JSON bodies in stableJson diffs.
 function cloneJsonValue(value: unknown): unknown {
   return JSON.parse(JSON.stringify(value)) as unknown;
 }
@@ -24098,6 +23438,8 @@ function partyActorsForSystem(store: StateStore, campaignId: string, systemId: s
   return store.state.actors.filter((actor) => actor.campaignId === campaignId && actor.systemId === systemId && actor.type === "character" && (!selectedIds || selectedIds.has(actor.id)));
 }
 
+// JSON round-trip, not structuredClone: also canonicalizes (drops undefined members)
+// so stored state stays byte-comparable with HTTP JSON bodies in stableJson diffs.
 function cloneRecord(value: Record<string, unknown>): Record<string, unknown> {
   return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
 }
@@ -24147,21 +23489,6 @@ function isCombatantConcentrationCondition(condition: string): boolean {
 
 function isCombatantConcentrationBreakingCondition(condition: string): boolean {
   return ["incapacitated", "stunned", "unconscious", "paralyzed", "petrified", "dead"].includes(combatantConditionBase(condition));
-}
-
-function advanceTimedCombatantConditions(combatants: Combat["combatants"], roundDelta: number): Combat["combatants"] {
-  if (roundDelta <= 0) return combatants;
-  return combatants.map((combatant) => applyCombatantRulesAutomation({ ...combatant, conditions: normalizeCombatantConditionList(combatant.conditions).flatMap((condition) => advanceTimedCombatantCondition(condition, roundDelta)) }));
-}
-
-function advanceTimedCombatantCondition(condition: string, roundDelta: number): string[] {
-  const match = condition.match(/^(.+?):(\d+)$/);
-  if (!match) return [condition];
-  const name = match[1]?.trim();
-  const duration = Number(match[2]);
-  if (!name || !Number.isFinite(duration)) return [condition];
-  const remaining = duration - roundDelta;
-  return remaining > 0 ? [`${name}:${remaining}`] : [];
 }
 
 function syncCombatantToActorSheet(actor: Actor, previousCombatant: Combat["combatants"][number], combatant: Combat["combatants"][number], syncedAt: string): string | undefined {

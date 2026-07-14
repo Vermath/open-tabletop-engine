@@ -16,7 +16,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "node dist/server.js",
-    "build": "node ../../scripts/run-package-manager.mjs --filter @open-tabletop/api^... build && tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json",
     "lint": "tsc -p tsconfig.json --noEmit",
     "storage:maintenance": "tsx src/sqlite-maintenance-cli.ts",
     "storage:fixture:generate": "node scripts/generate-sqlite-v1-fixture.mjs",

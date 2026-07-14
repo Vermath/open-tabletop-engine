@@ -8,15 +8,6 @@ const emailWebhookPort = Number(
 const apiBaseUrl = `http://127.0.0.1:${apiPort}`;
 const webBaseUrl = `http://127.0.0.1:${webPort}`;
 
-function quoteShellArgument(value: string): string {
-  if (process.platform === "win32") return `"${value.replaceAll('"', '""')}"`;
-  return `'${value.replaceAll("'", "'\\''")}'`;
-}
-
-function packageManagerCommand(args: string): string {
-  return `${quoteShellArgument(process.execPath)} scripts/run-package-manager.mjs ${args}`;
-}
-
 export default defineConfig({
   testDir: "./tests/e2e",
   testMatch: "**/bootstrap.spec.ts",
@@ -45,11 +36,7 @@ export default defineConfig({
       },
     },
     {
-      command: packageManagerCommand(
-        "--filter @open-tabletop/web exec vite --host 127.0.0.1 --port " +
-          webPort +
-          " --strictPort",
-      ),
+      command: `pnpm --filter @open-tabletop/web exec vite --host 127.0.0.1 --port ${webPort} --strictPort`,
       url: webBaseUrl,
       timeout: 60_000,
       reuseExistingServer: false,

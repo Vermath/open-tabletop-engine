@@ -1,6 +1,6 @@
 import type { MapAsset } from "@open-tabletop/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { acceptInviteSession, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, assetOptimizedUrl, assetThumbnailUrl, loadSnapshot, loginSession, logoutSession, transferCampaignOwnership } from "./api.js";
+import { acceptInviteSession, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, assetThumbnailUrl, loadSnapshot, loginSession, logoutSession, transferCampaignOwnership } from "./api.js";
 
 describe("abortable API requests", () => {
   beforeEach(() => {
@@ -226,7 +226,6 @@ describe("assetBlobUrl", () => {
     });
 
     expect(assetThumbnailUrl(asset)).toBe("https://assets.example.test/api/v1/assets/asset_renditions/blob?expiresAt=1&signature=sig&variant=thumbnail");
-    expect(assetOptimizedUrl(asset)).toBe("https://assets.example.test/api/v1/assets/asset_renditions/blob?expiresAt=1&signature=sig&variant=optimized");
     expect(assetThumbnailUrl(assetFixture({ id: "asset_original", url: "/api/v1/assets/asset_original/blob" }))).toBe("/api/v1/assets/asset_original/blob");
   });
 

@@ -5,6 +5,7 @@ OpenTabletop Engine is organized as a TypeScript monorepo. Keep changes API-firs
 ## Local Setup
 
 ```bash
+corepack enable # one-time: provides the pinned pnpm from package.json
 pnpm install --frozen-lockfile
 pnpm check
 pnpm --filter @open-tabletop/api dev

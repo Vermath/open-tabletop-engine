@@ -1111,6 +1111,8 @@ export function remapArchiveReferences(value: unknown, idMap: Map<string, string
   return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, remapArchiveReferences(item, idMap)]));
 }
 
+// JSON round-trip, not structuredClone: also canonicalizes (drops undefined members)
+// so restored state stays byte-comparable with HTTP JSON bodies in stableJson diffs.
 export function clonePlain<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }

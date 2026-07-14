@@ -121,17 +121,6 @@ async function waitForReadyDiceBox(maxWaitMs: number): Promise<DiceBoxLike | nul
   }
 }
 
-/** True when the physics box took the roll; false means the caller should use the CSS fallback. */
-export function castPhysicsDice(plan: DiceCastPlan, lingerMs = physicsDiceLingerMs): boolean {
-  const notation = diceBoxNotation(plan);
-  if (!notation) return false;
-  if (!readyBox) {
-    void prepareDiceBox();
-    return false;
-  }
-  return runPhysicsDiceRoll(readyBox, notation, lingerMs);
-}
-
 /** Waits briefly for a warming dice box so cold-start rolls do not immediately downgrade. */
 export async function castPhysicsDiceWhenReady(plan: DiceCastPlan, lingerMs = physicsDiceLingerMs, maxWaitMs = physicsDiceReadyWaitMs): Promise<boolean> {
   const notation = diceBoxNotation(plan);

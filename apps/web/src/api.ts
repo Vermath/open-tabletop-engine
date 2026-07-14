@@ -22,12 +22,6 @@ export function getSessionUserId(): string {
   return localStorage.getItem("otte:userId") ?? "usr_demo_gm";
 }
 
-export function setSessionUserId(userId: string): void {
-  localStorage.setItem("otte:userId", userId);
-  localStorage.removeItem(sessionTokenKey);
-  localStorage.removeItem(sessionTokenUserKey);
-}
-
 export function getSessionToken(): string {
   return localStorage.getItem(sessionTokenKey) ?? "";
 }
@@ -2954,10 +2948,6 @@ export function assetBlobUrl(asset: MapAsset): string {
 
 export function assetThumbnailUrl(asset: MapAsset): string {
   return assetRenditionUrl(asset, "thumbnail");
-}
-
-export function assetOptimizedUrl(asset: MapAsset): string {
-  return assetRenditionUrl(asset, "optimized");
 }
 
 function assetRenditionUrl(asset: MapAsset, kind: "thumbnail" | "optimized"): string {

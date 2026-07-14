@@ -37,7 +37,7 @@ describe("workspace-bound async operations", () => {
     expect(audioBody).toContain("signal: request.controller.signal");
     expect(audioBody).toContain("idempotencyKey:");
     expect(appSource).toContain("`/api/v1/campaigns/${request.campaignId}/plugins/${plugin.id}/install`");
-    expect(appSource).toContain("adminPluginMutations.syncCampaignRegistry(request.campaignId, expectedRegistryRevision, request.controller.signal)");
+    expect(appSource).toContain("syncCampaignPluginRegistry(request.campaignId, expectedRegistryRevision, request.controller.signal)");
     expect(adminPluginClientSource).toContain('"/api/v1/plugins/registry/sync"');
     expect(adminPluginClientSource).toContain('"plugin-registry-sync"');
     expect(appSource).toContain("idempotencyKey: attempt.idempotencyKey");

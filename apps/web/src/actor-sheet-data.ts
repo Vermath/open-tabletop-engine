@@ -287,11 +287,6 @@ export function itemEquippedLabel(item: Item): string {
 }
 
 
-export function actorActionLabels(actor: Actor, items: Item[]): string[] {
-  return actorActionOptions(actor, items).map((option) => option.description);
-}
-
-
 export function actorArmorClass(actor: Actor, items: Item[]): { value: number; label?: string } | undefined {
   const storedArmorClass = numericValue(actor.data.armorClass, NaN);
   if (Number.isFinite(storedArmorClass)) return { value: storedArmorClass };
@@ -905,12 +900,6 @@ export function dnd5eSrdHasChampionSuperiorCritical(actor: Actor): boolean {
 export function dnd5eSrdHasChampionSurvivor(actor: Actor): boolean {
   const features = Array.isArray(actor.data.features) ? actor.data.features : [];
   return (stringValue(actor.data.class) === "Fighter" && numericValue(actor.data.level, 1) >= 18) || features.includes("Survivor");
-}
-
-
-export function dnd5eSrdHasChannelDivinity(actor: Actor): boolean {
-  const features = Array.isArray(actor.data.features) ? actor.data.features : [];
-  return (stringValue(actor.data.class) === "Cleric" && numericValue(actor.data.level, 1) >= 2) || features.includes("Channel Divinity") || "channelDivinity" in recordValue(actor.data.resources);
 }
 
 

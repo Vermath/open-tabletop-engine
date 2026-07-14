@@ -6,7 +6,7 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "build": "node ../../scripts/run-package-manager.mjs --filter @open-tabletop/tunnel-protocol build && tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json",
     "deploy": "wrangler deploy",
     "deploy:dry-run": "wrangler deploy --dry-run",
     "lint": "tsc -p tsconfig.json --noEmit",

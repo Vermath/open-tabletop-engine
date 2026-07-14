@@ -46,9 +46,9 @@ import { combatRewardAttemptForIntent, combatRewardIntentFingerprint, type Comba
 import { appendMutationAttemptForIntent, appendMutationFingerprint, type AppendMutationAttempt } from "./append-mutation-idempotency.js";
 import { AdvancementFlow, type AdvancementChoicePayload, type AdvancementFeatInfo, type AdvancementMulticlassOption, type AdvancementPreviewEnvelope, type AdvancementSubclassOption, type AdvancementWeaponMasteryInfo } from "./advancement-flow.js";
 import { AdminPanel, aiToolCallErrorCode, scimMappingLabel } from "./admin-panel.js";
-import { createAdminAssetMutationClient } from "./admin-asset-client.js";
-import { createAdminIdentityMutationClient } from "./admin-identity-client.js";
-import { createAdminPluginMutationClient } from "./admin-plugin-client.js";
+import { cleanupAdminStoredAssets, migrateAdminStoredAssets, purgeAdminAssetCdnCache, quarantineAdminAssetIntegrityFailures } from "./admin-asset-client.js";
+import { issueAdminPasswordReset as requestAdminPasswordReset, pruneExpiredPasswordResets as requestPruneExpiredPasswordResets, retryAdminEmail as requestRetryAdminEmail, retryAllAdminEmails as requestRetryAllAdminEmails, revokeAdminRiskSessions as requestRevokeAdminRiskSessions, revokeAdminSession as requestRevokeAdminSession, revokeAdminUserSessions as requestRevokeAdminUserSessions, updateAdminUser } from "./admin-identity-client.js";
+import { syncAdminPluginRegistry, syncCampaignPluginRegistry, updateAdminPluginReview } from "./admin-plugin-client.js";
 import { AiPanel } from "./ai-panel.js";
 import { MapLayerStack, MapSelectionStatus, MapZoomControls, SceneCanvas, TabButton, Toolbar, annotationColor, annotationGroupKey, annotationToolLabel, annotationToolShowsSettings, battleMapZoomStep, clampBattleMapZoom, defaultAnnotationLayer, distanceBetween, nextTokenLayer, tokenCenter, tokenCoordinatesFromCenter, tokenFrame, tokenLayer, tokenLayerLabel, tokenLayers, type TokenFrame, type TokenMovePersistenceChange, type TokenSelectionOptions } from "./scene-canvas.js";
 import { campaignPermissionTemplates, type CampaignPermissionTemplateId } from "./admin-data.js";
@@ -398,9 +398,6 @@ function initialAiAgentPanelPosition(): FloatingPanelPosition {
   };
 }
 
-const adminIdentityMutations = createAdminIdentityMutationClient();
-const adminPluginMutations = createAdminPluginMutationClient();
-const adminAssetMutations = createAdminAssetMutationClient();
 
 export function App() {
   const [snapshot, setSnapshot] = useState<Snapshot>({
@@ -3619,13 +3616,13 @@ export function App() {
       folder: scene.folder,
       active: false,
       sortOrder,
-      fog: JSON.parse(JSON.stringify(scene.fog)) as Scene["fog"],
-      walls: JSON.parse(JSON.stringify(scene.walls)) as Scene["walls"],
-      lights: JSON.parse(JSON.stringify(scene.lights)) as Scene["lights"],
-      annotations: JSON.parse(JSON.stringify(scene.annotations ?? [])) as Scene["annotations"],
-      difficultTerrain: JSON.parse(JSON.stringify(scene.difficultTerrain ?? [])) as Scene["difficultTerrain"],
-      coverOverrides: JSON.parse(JSON.stringify(scene.coverOverrides ?? [])) as Scene["coverOverrides"],
-      metadata: JSON.parse(JSON.stringify(scene.metadata)) as Scene["metadata"]
+      fog: structuredClone(scene.fog),
+      walls: structuredClone(scene.walls),
+      lights: structuredClone(scene.lights),
+      annotations: structuredClone(scene.annotations ?? []),
+      difficultTerrain: structuredClone(scene.difficultTerrain ?? []),
+      coverOverrides: structuredClone(scene.coverOverrides ?? []),
+      metadata: structuredClone(scene.metadata)
     };
   }
 
@@ -7377,7 +7374,7 @@ export function App() {
         (request) => {
           const expectedRegistryRevision = adminSnapshot?.pluginOperations.registryRevision ?? adminSnapshot?.pluginReviews.registryRevision;
           if (!expectedRegistryRevision) throw new Error("Refresh server administration before synchronizing plugin registries.");
-          return adminPluginMutations.syncCampaignRegistry(request.campaignId, expectedRegistryRevision, request.controller.signal);
+          return syncCampaignPluginRegistry(request.campaignId, expectedRegistryRevision, request.controller.signal);
         },
         async (result, request) => {
           setStatus(`Plugin registries synced: ${result.registries.length} registries, ${result.plugins.length} packages`);
@@ -7917,42 +7914,42 @@ export function App() {
 
   async function disableAdminUser(user: AdminUserInfo) {
     await runWorkspaceAdminAction(
-      (request) => adminIdentityMutations.updateUser(user, { disabled: true, disabledReason: "Disabled from admin console" }, request.controller.signal),
+      (request) => updateAdminUser(user, { disabled: true, disabledReason: "Disabled from admin console" }, request.controller.signal),
       () => `${user.displayName} disabled`
     );
   }
 
   async function enableAdminUser(user: AdminUserInfo) {
     await runWorkspaceAdminAction(
-      (request) => adminIdentityMutations.updateUser(user, { disabled: false }, request.controller.signal),
+      (request) => updateAdminUser(user, { disabled: false }, request.controller.signal),
       () => `${user.displayName} enabled`
     );
   }
 
   async function requireAdminPasswordReset(user: AdminUserInfo) {
     await runWorkspaceAdminAction(
-      (request) => adminIdentityMutations.updateUser(user, { passwordResetRequired: true }, request.controller.signal),
+      (request) => updateAdminUser(user, { passwordResetRequired: true }, request.controller.signal),
       () => `${user.displayName} must reset password`
     );
   }
 
   async function issueAdminPasswordReset(user: AdminUserInfo) {
     await runWorkspaceAdminAction(
-      (request) => adminIdentityMutations.issuePasswordReset(user, `${window.location.origin}/reset-password`, request.controller.signal),
+      (request) => requestAdminPasswordReset(user, `${window.location.origin}/reset-password`, request.controller.signal),
       (reset) => `Queued ${reset.email.status} reset email for ${reset.email.to}`
     );
   }
 
   async function revokeAdminUserSessions(user: AdminUserInfo) {
     await runWorkspaceAdminAction(
-      (request) => adminIdentityMutations.revokeUserSessions(user, request.controller.signal),
+      (request) => requestRevokeAdminUserSessions(user, request.controller.signal),
       (result) => `Revoked ${result.revoked} sessions for ${user.displayName}`
     );
   }
 
   async function revokeAdminSession(session: AdminSessionInfo) {
     await runWorkspaceAdminAction(
-      (request) => adminIdentityMutations.revokeSession(session, request.controller.signal),
+      (request) => requestRevokeAdminSession(session, request.controller.signal),
       () => `Revoked session for ${session.user.displayName}`
     );
   }
@@ -7960,28 +7957,28 @@ export function App() {
   async function revokeAdminRiskSessions() {
     const staleDays = adminSnapshot?.authOperations.sessions.staleDays ?? 30;
     await runWorkspaceAdminAction(
-      (request) => adminIdentityMutations.revokeRiskSessions(staleDays, request.controller.signal),
+      (request) => requestRevokeAdminRiskSessions(staleDays, request.controller.signal),
       (result) => `Revoked ${result.revoked} of ${result.matched} risk sessions; ${result.remainingRiskSessionCount} remain`
     );
   }
 
   async function pruneExpiredPasswordResets() {
     await runWorkspaceAdminAction(
-      (request) => adminIdentityMutations.pruneExpiredPasswordResets(request.controller.signal),
+      (request) => requestPruneExpiredPasswordResets(request.controller.signal),
       (result) => `Pruned ${result.pruned} of ${result.matched} expired password resets; ${result.expiredRemaining} remain`
     );
   }
 
   async function retryAdminEmail(email: EmailOutboxMessage) {
     await runWorkspaceAdminAction(
-      (request) => adminIdentityMutations.retryEmail(email, request.controller.signal),
+      (request) => requestRetryAdminEmail(email, request.controller.signal),
       (retried) => `Email to ${retried.to} is ${retried.status}`
     );
   }
 
   async function retryAllAdminEmails() {
     await runWorkspaceAdminAction(
-      (request) => adminIdentityMutations.retryAllEmails(request.controller.signal),
+      (request) => requestRetryAllAdminEmails(request.controller.signal),
       (result) => `Retried ${result.retried} emails; ${result.delivered} delivered, ${result.failed} failed, ${result.skipped} skipped`
     );
   }
@@ -8022,22 +8019,22 @@ export function App() {
 
   async function cleanupStoredAssetBytes() {
     await runWorkspaceAdminAction(
-      (request) => adminAssetMutations.cleanupStoredAssets(request.controller.signal),
+      (request) => cleanupAdminStoredAssets(request.controller.signal),
       (result) => `Cleaned ${result.deleted} asset objects, marked ${result.missingMarked} missing, skipped ${result.skipped}, failed ${result.failed}`
     );
   }
 
   async function migrateStoredAssetBytes() {
     await runWorkspaceAdminAction(
-      (request) => adminAssetMutations.migrateStoredAssets(request.controller.signal),
+      (request) => migrateAdminStoredAssets(request.controller.signal),
       (result) => `Migrated ${result.migrated} assets to ${result.targetProvider}, skipped ${result.skipped}, failed ${result.failed}`
     );
   }
 
   async function purgeAssetCdnCache(assetId: string, assetName: string, assetUpdatedAt: string) {
     await runWorkspaceAdminAction(
-      (request) => adminAssetMutations.purgeCdnCache(
-        { assetId, name: assetName, updatedAt: assetUpdatedAt },
+      (request) => purgeAdminAssetCdnCache(
+        { assetId, updatedAt: assetUpdatedAt },
         "Purged from admin console",
         request.controller.signal
       ),
@@ -8047,7 +8044,7 @@ export function App() {
 
   async function quarantineAssetIntegrityFailures() {
     await runWorkspaceAdminAction(
-      (request) => adminAssetMutations.quarantineIntegrityFailures("Archived from admin integrity console", request.controller.signal),
+      (request) => quarantineAdminAssetIntegrityFailures("Archived from admin integrity console", request.controller.signal),
       (result) => `Archived ${result.archived} broken assets, skipped ${result.skipped}, failed ${result.failed}`,
       { refreshWorkspace: true }
     );
@@ -8055,7 +8052,7 @@ export function App() {
 
   async function updatePluginReview(review: AdminPluginReviewInfo, status: PluginReviewStatus) {
     await runWorkspaceAdminAction(
-      (request) => adminPluginMutations.updateReview(review, status, request.controller.signal),
+      (request) => updateAdminPluginReview(review, status, request.controller.signal),
       () => `${review.plugin.name} ${status}`,
       { refreshWorkspace: true }
     );
@@ -8065,7 +8062,7 @@ export function App() {
     const expectedRegistryRevision = adminSnapshot?.pluginOperations.registryRevision ?? adminSnapshot?.pluginReviews.registryRevision;
     if (!expectedRegistryRevision) throw new Error("Refresh server administration before synchronizing plugin registries.");
     await runWorkspaceAdminAction(
-      (request) => adminPluginMutations.syncAdminRegistry(expectedRegistryRevision, request.controller.signal),
+      (request) => syncAdminPluginRegistry(expectedRegistryRevision, request.controller.signal),
       (result) => `Synced ${result.registries.length} registries and imported ${result.plugins.length} plugin packages`,
       { refreshWorkspace: true }
     );

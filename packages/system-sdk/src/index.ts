@@ -17372,6 +17372,7 @@ function recordValue(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
+// JSON round-trip, not structuredClone: canonicalizes (drops undefined members) so persisted actor data stays JSON-canonical for stableJson diffing.
 function cloneJsonRecord(value: Record<string, unknown>): Record<string, unknown> {
   return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
 }

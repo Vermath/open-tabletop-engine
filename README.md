@@ -19,7 +19,6 @@ OpenTabletop Engine is an API-first virtual tabletop platform for campaigns, wor
 
 - `apps/api`: Fastify REST and WebSocket server.
 - `apps/web`: React VTT client.
-- `apps/ai-gateway`: provider-agnostic AI gateway entrypoint.
 - `apps/desktop`: Electron desktop host that runs the API and web client locally.
 - `apps/relay`: Cloudflare Worker and Durable Object relay for internet sharing from a desktop host.
 - `apps/worker`: HTTP-backed worker runner for exports, imports, and AI jobs.
@@ -35,7 +34,6 @@ OpenTabletop Engine is an API-first virtual tabletop platform for campaigns, wor
 - `packages/ai-core`: provider interface, tools, redaction, proposal helpers.
 - `packages/codex-app-server-provider`: Codex app-server transport for AI turns, tools, and asset generation.
 - `packages/tunnel-protocol`: validated relay frame protocol shared by desktop and relay.
-- `packages/database`: Drizzle-ready schema definitions and migration notes.
 
 ## Documentation
 
@@ -64,6 +62,7 @@ pnpm docs:site:check
 ## Development
 
 ```bash
+corepack enable # one-time: provides the pinned pnpm from package.json
 pnpm install --frozen-lockfile
 pnpm check
 ```

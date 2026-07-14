@@ -1,8 +1,4 @@
 import { execSync, spawnSync } from "node:child_process";
-import {
-  packageManagerCommand,
-  packageManagerEnvironment,
-} from "./package-manager-command.mjs";
 
 const headCommit = git("rev-parse HEAD");
 const auditCommit = process.env.OTTE_RELEASE_COMMIT ?? headCommit;
@@ -30,19 +26,19 @@ if (
 const checks = [
   {
     name: "Release worktree cleanliness",
-    command: ["pnpm", "v1:worktree:check"],
+    command: ["node", "scripts/check-release-worktree-clean.mjs"],
   },
   {
     name: "Final release evidence",
-    command: ["pnpm", "v1:evidence:check"],
+    command: ["node", "scripts/check-v1-release-evidence.mjs"],
   },
   {
     name: "Open P0/P1 issue audit",
-    command: ["pnpm", "v1:issues:check"],
+    command: ["node", "scripts/check-v1-open-issues.mjs"],
   },
   {
     name: "Public docs site guard",
-    command: ["pnpm", "docs:site:check"],
+    command: ["node", "scripts/build-docs-site.mjs", "--check"],
   },
 ];
 
@@ -77,15 +73,11 @@ function runCheck(check) {
   console.log(`## ${check.name}`);
   console.log(`$ ${check.command.join(" ")}`);
 
-  const command = packageManagerCommand(check.command.slice(1));
-  const environment = packageManagerEnvironment();
-  const result = spawnSync(command.executable, command.args, {
+  const result = spawnSync(process.execPath, check.command.slice(1), {
     encoding: "utf8",
-    env: environment.env,
     shell: false,
     stdio: ["ignore", "pipe", "pipe"],
   });
-  environment.cleanup();
 
   if (result.stdout) process.stdout.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);

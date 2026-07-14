@@ -44,6 +44,7 @@ describe("desktop runtime configuration", () => {
   it("preserves filesystem roots and UNC shares when joining desktop paths", () => {
     expect(joinDesktopPath("/", "data", "opentabletop.sqlite")).toBe("/data/opentabletop.sqlite");
     expect(joinDesktopPath("\\\\server\\share\\", "uploads")).toBe("//server/share/uploads");
+    expect(joinDesktopPath("C:\\Users\\alice\\OpenTabletop\\", "data", "..", "uploads")).toBe("C:/Users/alice/OpenTabletop/uploads");
   });
 
   it("trusts only the exact local renderer origin for privileged desktop IPC", () => {

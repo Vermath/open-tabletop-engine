@@ -1,9 +1,5 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "globalPassThroughEnv": [
-    "OTTE_PACKAGE_MANAGER_COMMAND",
-    "OTTE_PACKAGE_MANAGER_SHIM_DIR"
-  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
