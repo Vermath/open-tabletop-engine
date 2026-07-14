@@ -1,7 +1,7 @@
 import type { AiProvider, AiProviderEvent, AiProviderRequest } from "@open-tabletop/ai-core";
 import { createTimestamped, type ContentImportBatch, type PermissionGrant } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
-import { buildApp } from "./app.js";
+import { buildApp } from "./fixtures/legacy-build-app.js";
 import { MemoryStateStore } from "./store.js";
 
 class PdfImportAiProvider implements AiProvider {

@@ -23,8 +23,9 @@ describe("deployment smoke", () => {
   });
 
   it("keeps the release gate wired to Docker Compose and production-like deployment checks", () => {
-    const packageJson = JSON.parse(readWorkspaceFile("package.json")) as { scripts: Record<string, string> };
-    expect(packageJson.scripts["deployment:smoke"]).toBe('node scripts/run-package-manager.mjs --filter @open-tabletop/api test -- --run -t "deployment smoke"');
+    const packageJson = JSON.parse(readWorkspaceFile("package.json")) as { packageManager: string; scripts: Record<string, string> };
+    expect(packageJson.packageManager).toBe("pnpm@10.28.0");
+    expect(packageJson.scripts["deployment:smoke"]).toBe("node scripts/run-package-manager.mjs --filter @open-tabletop/api exec vitest run src/deployment-smoke.test.ts");
     expect(packageJson.scripts["release:smoke"]).toContain("run-package-scripts.mjs v1:worktree:check security:audit check e2e");
     expect(packageJson.scripts["security:audit"]).toBe("node scripts/run-package-manager.mjs audit --prod --audit-level high");
     expect(packageJson.scripts["release:smoke"]).toContain("deployment:smoke");
@@ -33,6 +34,15 @@ describe("deployment smoke", () => {
     expect(packageJson.scripts["release:smoke"]).toContain("sbom:test");
     expect(packageJson.scripts["release:smoke"]).toContain("v1:issues:test");
     expect(packageJson.scripts["release:smoke"]).toContain("v1:issues:check");
+
+    const lockfile = readWorkspaceFile("pnpm-lock.yaml");
+    expect(lockfile).toContain("lockfileVersion: '9.0'");
+    expect(lockfile).toContain("overrides:\n  '@babel/core': 7.29.6");
+    expect(lockfile).toContain("tsx>esbuild: 0.28.1");
+    const workspace = readWorkspaceFile("pnpm-workspace.yaml");
+    for (const dependency of ["electron", "electron-winstaller", "esbuild", "sharp", "workerd"]) {
+      expect(workspace).toContain(`  ${dependency}: true`);
+    }
 
     const workflow = readWorkspaceFile(".github/workflows/release-smoke.yml");
     expect(workflow).toContain("contents: read");
@@ -88,17 +98,26 @@ describe("deployment smoke", () => {
     expect(compose).toContain("OTTE_SQLITE_PATH: /app/storage/opentabletop.sqlite");
     expect(compose).toContain("OTTE_ASSET_STORAGE: ${OTTE_ASSET_STORAGE:-s3}");
     expect(compose).toContain("OTTE_ALLOW_LEGACY_USER_HEADER: ${OTTE_ALLOW_LEGACY_USER_HEADER:-false}");
-    expect(compose).toContain("OTTE_PLUGIN_TRUST_POLICY: ${OTTE_PLUGIN_TRUST_POLICY:-allow_unsigned}");
+    expect(compose).toContain("OTTE_PLUGIN_TRUST_POLICY: ${OTTE_PLUGIN_TRUST_POLICY:-require_trusted}");
+    expect(compose).toContain("OTTE_PLUGIN_REVIEW_POLICY: ${OTTE_PLUGIN_REVIEW_POLICY:-require_approved}");
     expect(compose).toContain("OTTE_PLUGIN_DIR: /app/storage/plugins");
     expect(compose).toContain("OTTE_BUNDLED_PLUGIN_DIR: /app/plugins");
     expect(compose).toContain("api-plugins:/app/storage/plugins");
     expect(compose).not.toContain("api-plugins:/app/plugins");
     expect(compose).toContain("OTTE_AI_PROVIDER: ${OTTE_AI_PROVIDER:-codex-app-server}");
+    expect(compose).toContain("OTTE_ASSET_URL_SIGNING_SECRET: ${OTTE_ASSET_URL_SIGNING_SECRET:?");
+    expect(compose).toContain("OTTE_SQLITE_BACKUP_RETENTION_COUNT: ${OTTE_SQLITE_BACKUP_RETENTION_COUNT:-30}");
     expect(compose).toContain("wget -qO- http://127.0.0.1:4000/api/v1/health");
     expect(compose).toContain("condition: service_healthy");
     expect(compose).toContain("OTTE_WORKER_LEASE_POLL: \"true\"");
-    expect(compose).toContain('${INFRA_BIND_ADDRESS:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432');
-    expect(compose).toContain('${INFRA_BIND_ADDRESS:-127.0.0.1}:${REDIS_PORT:-6379}:6379');
+    expect(compose).toContain("OTTE_WORKER_PROFILE_ENABLED: ${OTTE_WORKER_PROFILE_ENABLED:-false}");
+    expect(compose).toContain("OTTE_WORKER_TOKEN_HASHES: ${OTTE_WORKER_TOKEN_HASHES:-}");
+    expect(compose).toContain("OTTE_WORKER_TOKEN: ${OTTE_WORKER_TOKEN:-}");
+    expect(compose).not.toContain("OTTE_SESSION_TOKEN: ${OTTE_WORKER_SESSION_TOKEN:-}");
+    expect(compose).not.toContain("postgres:");
+    expect(compose).not.toContain("redis:");
+    expect(compose).not.toContain("POSTGRES_");
+    expect(compose).not.toContain("REDIS_");
     expect(compose).toContain('${INFRA_BIND_ADDRESS:-127.0.0.1}:${MINIO_API_PORT:-9000}:9000');
     expect(compose).not.toContain("OTTE_USER_ID:");
     expect(compose).toContain("api-storage:");
@@ -107,6 +126,16 @@ describe("deployment smoke", () => {
 
     const apiPackage = JSON.parse(readWorkspaceFile("apps/api/package.json")) as { dependencies: Record<string, string> };
     expect(apiPackage.dependencies["@openai/codex"]).toBeTruthy();
+
+    const systemSdkPackage = JSON.parse(readWorkspaceFile("packages/system-sdk/package.json")) as { license?: string; contentLicense?: string; contentNotice?: string; files?: string[] };
+    expect(systemSdkPackage.license).toBe("MIT");
+    expect(systemSdkPackage.contentLicense).toBe("CC-BY-4.0");
+    expect(systemSdkPackage.contentNotice).toBe("CONTENT_NOTICE.md");
+    expect(systemSdkPackage.files).toEqual(expect.arrayContaining(["dist", "LICENSE", "CONTENT_NOTICE.md"]));
+    const systemSdkContentNotice = readWorkspaceFile("packages/system-sdk/CONTENT_NOTICE.md");
+    expect(systemSdkContentNotice).toContain("System Reference Document 5.2.1");
+    expect(systemSdkContentNotice).toContain("Creative Commons Attribution 4.0 International License");
+    expect(systemSdkContentNotice).toContain("official SRD 5.2.1 PDF");
 
     const apiDockerfile = readWorkspaceFile("infra/docker/api.Dockerfile");
     expect(apiDockerfile).toContain("USER node");
@@ -138,7 +167,9 @@ describe("deployment smoke", () => {
     expect(selfHosting).toContain("docker compose up --build");
     expect(selfHosting).toContain("docker compose --profile worker up -d worker");
     expect(selfHosting).toContain("docker compose --profile worker up -d --scale worker=3 worker");
-    expect(selfHosting).toContain("OTTE_SESSION_TOKEN`/`OTTE_WORKER_SESSION_TOKEN");
+    expect(selfHosting).toContain("Authorization: Worker");
+    expect(selfHosting).toContain("OTTE_WORKER_TOKEN_HASHES=worker-primary=sha256:<new-hex>,worker-primary=sha256:<old-hex>");
+    expect(selfHosting).toContain("production hard-refuses them");
     expect(selfHosting).toContain("INFRA_BIND_ADDRESS=127.0.0.1");
     expect(selfHosting).toContain("preview-only");
 
@@ -146,6 +177,7 @@ describe("deployment smoke", () => {
     expect(hostedRecipes).toContain("Mount the API service volume at `/app/storage`");
     expect(hostedRecipes).toContain("`OTTE_PLUGIN_DIR=/app/storage/plugins`");
     expect(hostedRecipes).toContain("[Railway Persistence](./railway-persistence.md)");
+    expect(hostedRecipes).toContain("OTTE_WORKER_PROFILE_ENABLED=true");
 
     const railwayPersistence = readWorkspaceFile("docs/deployment/railway-persistence.md");
     expect(railwayPersistence).toContain("Attach one Railway Volume to the API service");

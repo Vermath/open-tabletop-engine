@@ -1,14 +1,18 @@
-import type { Actor, AuditLog, Combat, CombatAction, Token } from "@open-tabletop/core";
+import type { Actor, AuditLog, Combat, CombatAction, DndRulesMutationUndoDescriptor, Token } from "@open-tabletop/core";
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Clock, ScrollText, Swords, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { actorCombatResource } from "./actor-sheet-data.js";
-import { formatDateTime, formatNumber, numericValue, titleCaseLabel } from "./sheet-format.js";
+import { AdvancedCombatMechanics } from "./advanced-combat-mechanics.js";
+import { errorMessage, formatDateTime, formatNumber, numericValue, titleCaseLabel } from "./sheet-format.js";
+import { RetryableActionNotice, useRetryableAction } from "./retryable-action.js";
 
 
-export function CombatPanel(props: { combat?: Combat; recentCombats: Combat[]; auditLogs: AuditLog[]; actors: Actor[]; tokens: Token[]; onFocusCombatant(combatant: Combat["combatants"][number]): void; onStart(): Promise<void>; onPlanEncounter(): void; onNext(combat: Combat): Promise<void>; onPrevious(combat: Combat): Promise<void>; onEnd(combat: Combat): Promise<void>; onAwardPartyXp(total: number): void; onAwardPartyGold(totalGp: number): void; canAwardXp: boolean; onUpdateCombatant(combat: Combat, combatantId: string, patch: Partial<Combat["combatants"][number]>): Promise<void>; onConfirmAction(combat: Combat, action: CombatAction): Promise<void>; onRejectAction(combat: Combat, action: CombatAction): Promise<void>; canManage: boolean }) {
+export function CombatPanel(props: { campaignId: string; combat?: Combat; recentCombats: Combat[]; auditLogs: AuditLog[]; actors: Actor[]; tokens: Token[]; onFocusCombatant(combatant: Combat["combatants"][number]): void; onStart(): Promise<void>; onPlanEncounter(): void; onNext(combat: Combat): Promise<void>; onPrevious(combat: Combat): Promise<void>; onEnd(combat: Combat): Promise<void>; onAwardPartyXp(total: number): Promise<void>; onAwardPartyGold(totalGp: number): Promise<void>; onRecordLoot(loot: string, note?: string): Promise<void>; canAwardRewards: boolean; onUpdateCombatant(combat: Combat, combatantId: string, patch: Partial<Combat["combatants"][number]>): Promise<void>; onConfirmAction(combat: Combat, action: CombatAction): Promise<void>; onRejectAction(combat: Combat, action: CombatAction): Promise<void>; onCombatUpdated(combat: Combat): void; onRefresh(): Promise<void>; onStatus(message: string): void; onRulesMutationApplied?(undo: DndRulesMutationUndoDescriptor): void; canManage: boolean; canManageEffects: boolean; canPreviewEffects: boolean }) {
   const [expandedCombatantId, setExpandedCombatantId] = useState("");
+  const [endConfirmationId, setEndConfirmationId] = useState("");
   const [pendingControls, setPendingControls] = useState<Set<string>>(() => new Set());
   const pendingControlsRef = useRef<Set<string>>(new Set());
+  const action = useRetryableAction(`${props.campaignId}:${props.combat?.id ?? "none"}`);
   const combatants = props.combat?.combatants ?? [];
   const activeCombatant = props.combat && combatants.length > 0 ? combatants[props.combat.turnIndex] ?? combatants[0] : undefined;
   const readyCount = combatants.filter((combatant) => combatant.readiness === "ready").length;
@@ -24,18 +28,13 @@ export function CombatPanel(props: { combat?: Combat; recentCombats: Combat[]; a
     return linkedActorId ? actorById.get(linkedActorId) : undefined;
   };
 
-  function runPendingControl(key: string, action: () => void | Promise<void>) {
+  function runPendingControl(key: string, label: string, taskAction: () => void | Promise<void>) {
     if (pendingControlsRef.current.has(key)) return;
     pendingControlsRef.current.add(key);
     setPendingControls((current) => new Set(current).add(key));
-    let task: void | Promise<void>;
-    try {
-      task = action();
-    } catch (error) {
-      task = Promise.reject(error);
-    }
-    void Promise.resolve(task)
-      .catch(console.error)
+    void action.runAction(label, async () => {
+      await taskAction();
+    })
       .finally(() => {
         pendingControlsRef.current.delete(key);
         setPendingControls((current) => {
@@ -46,6 +45,20 @@ export function CombatPanel(props: { combat?: Combat; recentCombats: Combat[]; a
         });
       });
   }
+
+  useEffect(() => {
+    setEndConfirmationId("");
+  }, [props.combat?.id, props.combat?.round, props.combat?.turnIndex]);
+
+  function requestCombatEnd(combat: Combat) {
+    if (endConfirmationId !== combat.id) {
+      setEndConfirmationId(combat.id);
+      return;
+    }
+    setEndConfirmationId("");
+    runPendingControl(`turn:${combat.id}`, "End combat", () => props.onEnd(combat));
+  }
+
   return (
     <div className="panel-stack">
       <header className="panel-hero combat-hero">
@@ -55,6 +68,7 @@ export function CombatPanel(props: { combat?: Combat; recentCombats: Combat[]; a
           {activeCombatant && <p className="panel-subtitle">{activeCombatant.name} is up</p>}
         </div>
       </header>
+      <RetryableActionNotice operation={action.operation} onRetry={action.retryAction ? () => void action.retryAction?.() : undefined} onDismiss={action.clearAction} />
       {props.combat ? (
         <>
           <p className="panel-status-line" aria-label="Combat summary">
@@ -83,10 +97,10 @@ export function CombatPanel(props: { combat?: Combat; recentCombats: Combat[]; a
                       <span>{action.applyEffect ? "effect previewed" : "roll only"}</span>
                     </div>
                     <div className="admin-actions">
-                      <button className="ghost-button" onClick={() => runPendingControl(`action:${action.id}`, () => props.onRejectAction(props.combat!, action))} disabled={!props.canManage || actionPending}>
+                      <button className="ghost-button" onClick={() => runPendingControl(`action:${action.id}`, `Reject ${action.actionLabel}`, () => props.onRejectAction(props.combat!, action))} disabled={!props.canManage || actionPending}>
                         <X size={14} /> Reject
                       </button>
-                      <button className="primary-button" onClick={() => runPendingControl(`action:${action.id}`, () => props.onConfirmAction(props.combat!, action))} disabled={!props.canManage || actionPending}>
+                      <button className="primary-button" onClick={() => runPendingControl(`action:${action.id}`, `Confirm ${action.actionLabel}`, () => props.onConfirmAction(props.combat!, action))} disabled={!props.canManage || actionPending}>
                         <Check size={14} /> Confirm
                       </button>
                     </div>
@@ -103,7 +117,7 @@ export function CombatPanel(props: { combat?: Combat; recentCombats: Combat[]; a
               const hp = actor?.data.hp as { current?: number; max?: number } | undefined;
               const hpRatio = hp && typeof hp.current === "number" && typeof hp.max === "number" && hp.max > 0 ? Math.max(0, Math.min(1, hp.current / hp.max)) : undefined;
               const hpTone = hpRatio === undefined ? "" : hpRatio <= 0.25 ? "danger" : hpRatio <= 0.5 ? "warning" : "healthy";
-              const stateLabel = combatant.defeated ? "Defeated" : isTurn ? "Taking turn" : combatant.readiness === "ready" ? "Ready action" : combatant.readiness === "delayed" ? "Delayed" : hp && typeof hp.current === "number" && typeof hp.max === "number" ? `${formatNumber(hp.current)}/${formatNumber(hp.max)} HP` : "Waiting";
+              const stateLabel = combatant.defeated ? "Defeated" : combatant.surprised ? (isTurn ? "Surprised turn" : "Surprised") : isTurn ? "Taking turn" : combatant.readiness === "ready" ? "Ready action" : combatant.readiness === "delayed" ? "Delayed" : hp && typeof hp.current === "number" && typeof hp.max === "number" ? `${formatNumber(hp.current)}/${formatNumber(hp.max)} HP` : "Waiting";
               const readinessPending = pendingControls.has(`combatant:${combatant.id}:readiness`);
               const defeatedPending = pendingControls.has(`combatant:${combatant.id}:defeated`);
               const resourcePending = pendingControls.has(`combatant:${combatant.id}:resource`);
@@ -135,6 +149,7 @@ export function CombatPanel(props: { combat?: Combat; recentCombats: Combat[]; a
                         value={String(combatant.initiative)}
                         disabled={!props.canManage}
                         onCommit={(value) => props.onUpdateCombatant(props.combat!, combatant.id, { initiative: Number(value) })}
+                        onError={props.onStatus}
                       />
                     ) : (
                       <span className="combatant-initiative combatant-initiative-static" title="Initiative">{formatNumber(combatant.initiative)}</span>
@@ -148,7 +163,7 @@ export function CombatPanel(props: { combat?: Combat; recentCombats: Combat[]; a
                       <div className="combatant-controls">
                         <label>
                           <span>Readiness</span>
-                          <select aria-label={`${combatant.name} readiness`} value={combatant.readiness ?? "normal"} disabled={!props.canManage || readinessPending} onChange={(event) => runPendingControl(`combatant:${combatant.id}:readiness`, () => props.onUpdateCombatant(props.combat!, combatant.id, { readiness: event.target.value as NonNullable<typeof combatant.readiness> }))}>
+                          <select aria-label={`${combatant.name} readiness`} value={combatant.readiness ?? "normal"} disabled={!props.canManage || readinessPending} onChange={(event) => runPendingControl(`combatant:${combatant.id}:readiness`, `Update ${combatant.name} readiness`, () => props.onUpdateCombatant(props.combat!, combatant.id, { readiness: event.target.value as NonNullable<typeof combatant.readiness> }))}>
                             <option value="normal">Normal turn</option>
                             <option value="ready">Ready action</option>
                             <option value="delayed">Delayed turn</option>
@@ -156,28 +171,29 @@ export function CombatPanel(props: { combat?: Combat; recentCombats: Combat[]; a
                         </label>
                         <label>
                           <span>Conditions</span>
-                          <CombatantDraftInput ariaLabel={`${combatant.name} combat conditions`} placeholder="prone, stunned" value={formatCombatantConditions(combatant)} disabled={!props.canManage} onCommit={(value) => props.onUpdateCombatant(props.combat!, combatant.id, { conditions: parseCombatantConditions(value) })} />
+                          <CombatantDraftInput ariaLabel={`${combatant.name} combat conditions`} placeholder="prone, stunned" value={formatCombatantConditions(combatant)} disabled={!props.canManage} onCommit={(value) => props.onUpdateCombatant(props.combat!, combatant.id, { conditions: parseCombatantConditions(value) })} onError={props.onStatus} />
                         </label>
                         <label>
                           <span>Successes</span>
-                          <CombatantDraftInput ariaLabel={`${combatant.name} death save successes`} type="number" min={0} max={3} value={String(combatant.deathSaveSuccesses ?? 0)} disabled={!props.canManage} onCommit={(value) => props.onUpdateCombatant(props.combat!, combatant.id, { deathSaveSuccesses: boundedCombatCounter(value) })} />
+                          <CombatantDraftInput ariaLabel={`${combatant.name} death save successes`} type="number" min={0} max={3} value={String(combatant.deathSaveSuccesses ?? 0)} disabled={!props.canManage} onCommit={(value) => props.onUpdateCombatant(props.combat!, combatant.id, { deathSaveSuccesses: boundedCombatCounter(value) })} onError={props.onStatus} />
                         </label>
                         <label>
                           <span>Failures</span>
-                          <CombatantDraftInput ariaLabel={`${combatant.name} death save failures`} type="number" min={0} max={3} value={String(combatant.deathSaveFailures ?? 0)} disabled={!props.canManage} onCommit={(value) => props.onUpdateCombatant(props.combat!, combatant.id, { deathSaveFailures: boundedCombatCounter(value) })} />
+                          <CombatantDraftInput ariaLabel={`${combatant.name} death save failures`} type="number" min={0} max={3} value={String(combatant.deathSaveFailures ?? 0)} disabled={!props.canManage} onCommit={(value) => props.onUpdateCombatant(props.combat!, combatant.id, { deathSaveFailures: boundedCombatCounter(value) })} onError={props.onStatus} />
                         </label>
                       </div>
                       <div className="combatant-flags">
                         <label className="inline-check">
-                          <input type="checkbox" checked={combatant.defeated} disabled={!props.canManage || defeatedPending} onChange={(event) => runPendingControl(`combatant:${combatant.id}:defeated`, () => props.onUpdateCombatant(props.combat!, combatant.id, { defeated: event.target.checked }))} />
+                          <input type="checkbox" checked={combatant.defeated} disabled={!props.canManage || defeatedPending} onChange={(event) => runPendingControl(`combatant:${combatant.id}:defeated`, `Update ${combatant.name} defeated state`, () => props.onUpdateCombatant(props.combat!, combatant.id, { defeated: event.target.checked }))} />
                           <span>Defeated</span>
                         </label>
                         <label className="inline-check">
-                          <input type="checkbox" checked={combatant.resourceUsed ?? false} disabled={!props.canManage || resourcePending} onChange={(event) => runPendingControl(`combatant:${combatant.id}:resource`, () => props.onUpdateCombatant(props.combat!, combatant.id, { resourceUsed: event.target.checked }))} />
+                          <input type="checkbox" checked={combatant.resourceUsed ?? false} disabled={!props.canManage || resourcePending} onChange={(event) => runPendingControl(`combatant:${combatant.id}:resource`, `Update ${combatant.name} resource use`, () => props.onUpdateCombatant(props.combat!, combatant.id, { resourceUsed: event.target.checked }))} />
                           <span>{combatant.resourceLabel ? `${combatant.resourceLabel} used` : "Resource used"}</span>
                         </label>
                       </div>
                       <p className="panel-status-line" aria-label={`${combatant.name} combat state`}>
+                        {combatant.surprised && <span>Surprised at combat start</span>}
                         <span>Death saves {combatant.deathSaveSuccesses ?? 0}/3 - {combatant.deathSaveFailures ?? 0}/3</span>
                         {combatant.deathSaveOutcome && <span>{titleCaseLabel(combatant.deathSaveOutcome)}</span>}
                         {combatant.resourceSpent && <span>{combatant.resourceLabel ?? "Resource"} depleted</span>}
@@ -191,35 +207,78 @@ export function CombatPanel(props: { combat?: Combat; recentCombats: Combat[]; a
               );
             })}
           </div>
-          {(props.canManage || props.canAwardXp) && (
-            <div className="combat-turn-controls" role="group" aria-label="Turn controls">
+          {(props.canManage || props.canAwardRewards) && (
+            <div className="combat-turn-controls">
               {props.canManage && (
-                <>
-                  <button className="ghost-button" onClick={() => runPendingControl(`turn:${props.combat!.id}`, () => props.onPrevious(props.combat!))} disabled={combatants.length === 0 || turnPending}>
+                <div className="combat-turn-navigation" role="group" aria-label="Turn controls">
+                  <button className="ghost-button" type="button" onClick={() => runPendingControl(`turn:${props.combat!.id}`, "Move to the previous turn", () => props.onPrevious(props.combat!))} disabled={combatants.length === 0 || turnPending}>
                     <ChevronLeft size={14} /> Prev
                   </button>
-                  <button className="primary-button" onClick={() => runPendingControl(`turn:${props.combat!.id}`, () => props.onNext(props.combat!))} disabled={combatants.length === 0 || turnPending}>
+                  <button className="primary-button combat-next-turn" type="button" onClick={() => runPendingControl(`turn:${props.combat!.id}`, "Move to the next turn", () => props.onNext(props.combat!))} disabled={combatants.length === 0 || turnPending}>
                     Next turn <ChevronRight size={14} />
                   </button>
-                  <button className="ghost-button" onClick={() => runPendingControl(`turn:${props.combat!.id}`, () => props.onEnd(props.combat!))} disabled={turnPending}>
-                    <X size={14} /> End
+                  <button
+                    className={endConfirmationId === props.combat.id ? "danger-button" : "ghost-button"}
+                    type="button"
+                    aria-label={endConfirmationId === props.combat.id ? "Confirm end combat" : "End combat"}
+                    onClick={() => requestCombatEnd(props.combat!)}
+                    disabled={turnPending}
+                  >
+                    <X size={14} /> {endConfirmationId === props.combat.id ? "Confirm end" : "End"}
                   </button>
-                </>
+                </div>
               )}
-              {props.canAwardXp && (
-                <>
-                  <form className="xp-award" onSubmit={(event) => { event.preventDefault(); const input = event.currentTarget.elements.namedItem("party-xp-award") as HTMLInputElement; const amount = Number(input.value); if (Number.isFinite(amount) && amount > 0) { props.onAwardPartyXp(amount); input.value = ""; } }}>
+              {props.canAwardRewards && (
+                <div className="combat-reward-controls" aria-label="Combat rewards">
+                  <form className="xp-award" onSubmit={(event) => { event.preventDefault(); const input = event.currentTarget.elements.namedItem("party-xp-award") as HTMLInputElement; const amount = Number(input.value); if (Number.isFinite(amount) && amount > 0) runPendingControl("reward:xp", "Award party XP", async () => { await props.onAwardPartyXp(amount); input.value = ""; }); }}>
                     <input name="party-xp-award" aria-label="Party XP award" type="number" placeholder="XP" />
-                    <button className="ghost-button small" type="submit">Split XP</button>
+                    <button className="ghost-button small" type="submit" disabled={pendingControls.has("reward:xp")}>Split XP</button>
                   </form>
-                  <form className="xp-award" aria-label="Party gold award" onSubmit={(event) => { event.preventDefault(); const input = event.currentTarget.elements.namedItem("party-gp-award") as HTMLInputElement; const amount = Number(input.value); if (Number.isFinite(amount) && amount > 0) { props.onAwardPartyGold(amount); input.value = ""; } }}>
+                  <form className="xp-award" aria-label="Party gold award" onSubmit={(event) => { event.preventDefault(); const input = event.currentTarget.elements.namedItem("party-gp-award") as HTMLInputElement; const amount = Number(input.value); if (Number.isFinite(amount) && amount > 0) runPendingControl("reward:gp", "Award party gold", async () => { await props.onAwardPartyGold(amount); input.value = ""; }); }}>
                     <input name="party-gp-award" aria-label="Party gold award" type="number" placeholder="GP" />
-                    <button className="ghost-button small" type="submit">Split GP</button>
+                    <button className="ghost-button small" type="submit" disabled={pendingControls.has("reward:gp")}>Split GP</button>
                   </form>
-                </>
+                  <form className="xp-award combat-loot-award" aria-label="Combat loot award" onSubmit={(event) => { event.preventDefault(); const lootInput = event.currentTarget.elements.namedItem("combat-loot-award") as HTMLInputElement; const noteInput = event.currentTarget.elements.namedItem("combat-loot-note") as HTMLInputElement; if (lootInput.value.trim()) runPendingControl("reward:loot", "Record combat loot", async () => { await props.onRecordLoot(lootInput.value, noteInput.value); lootInput.value = ""; noteInput.value = ""; }); }}>
+                    <input name="combat-loot-award" aria-label="Combat loot items" type="text" placeholder="Loot (comma separated)" />
+                    <input name="combat-loot-note" aria-label="Combat loot note" type="text" placeholder="Source or note" />
+                    <button className="ghost-button small" type="submit" disabled={pendingControls.has("reward:loot")}>Record loot</button>
+                  </form>
+                </div>
               )}
             </div>
           )}
+          {(props.combat.rewards?.length ?? 0) > 0 && (
+            <section className="admin-list combat-reward-history" aria-label="Combat reward history">
+              <div className="section-title">Rewards &amp; loot history</div>
+              {[...(props.combat.rewards ?? [])].reverse().map((reward) => (
+                <article className="operator-item admin-item" key={reward.id}>
+                  <div className="combatant-header">
+                    <strong>{combatRewardSummary(reward)}</strong>
+                    <span className="status-pill">recorded</span>
+                  </div>
+                  {reward.loot.length > 0 && <p>{reward.loot.join(", ")}</p>}
+                  {reward.note && <p>{reward.note}</p>}
+                  <div className="admin-meta">
+                    <span>{formatNumber(reward.recipientActorIds.length)} recipient{reward.recipientActorIds.length === 1 ? "" : "s"}</span>
+                    <span>{formatDateTime(reward.createdAt)}</span>
+                    {(reward.unallocatedXp > 0 || reward.unallocatedGp > 0) && <span>{combatRewardRemainderLabel(reward)}</span>}
+                  </div>
+                </article>
+              ))}
+            </section>
+          )}
+          <AdvancedCombatMechanics
+            campaignId={props.campaignId}
+            combat={props.combat}
+            actors={props.actors}
+            canManage={props.canManage}
+            canManageEffects={props.canManageEffects}
+            canPreviewEffects={props.canPreviewEffects}
+            onCombatUpdated={props.onCombatUpdated}
+            onRefresh={props.onRefresh}
+            onStatus={props.onStatus}
+            onRulesMutationApplied={props.onRulesMutationApplied}
+          />
           <details className="create-drawer diagnostics-drawer" aria-label="Combat audit">
             <summary><ScrollText size={15} /> Combat audit <strong>{formatNumber(props.auditLogs.length)}</strong></summary>
             {props.auditLogs.length === 0 ? (
@@ -237,18 +296,18 @@ export function CombatPanel(props: { combat?: Combat; recentCombats: Combat[]; a
         </>
       ) : (
         <>
-          <section className="combat-empty-state" aria-label="Start combat from scene tokens">
+          <section className="combat-empty-state" aria-label="Review scene combatants">
             <div>
               <Swords size={18} />
               <div>
-                <strong>Ready to roll initiative</strong>
-                <p>Build the first round from every token in the active scene.</p>
+                <strong>Review combatants first</strong>
+                <p>Confirm participants and initiative before round 1.</p>
               </div>
             </div>
             {props.canManage && (
               <div className="button-row">
-                <button className="primary-button" onClick={() => runPendingControl("combat:start", props.onStart)} disabled={startPending}>
-                  <Swords size={15} /> {startPending ? "Starting..." : "Start combat"}
+                <button className="primary-button" onClick={() => runPendingControl("combat:start", "Start combat", props.onStart)} disabled={startPending}>
+                  <Swords size={15} /> {startPending ? "Opening..." : "Review combatants"}
                 </button>
                 <button className="ghost-button" type="button" onClick={props.onPlanEncounter}>
                   <Swords size={15} /> Plan encounter
@@ -263,7 +322,8 @@ export function CombatPanel(props: { combat?: Combat; recentCombats: Combat[]; a
                 <article className="operator-item admin-item" key={combat.id}>
                   <strong>Round {combat.round}</strong>
                   <span>{formatDateTime(combat.updatedAt)}</span>
-                  <p>{combat.combatants.length} combatants, {combat.combatants.filter((combatant) => combatant.defeated).length} defeated, {combat.actions?.filter((action) => action.status === "confirmed").length ?? 0} confirmed actions</p>
+                  <p>{combat.combatants.length} combatants, {combat.combatants.filter((combatant) => combatant.defeated).length} defeated, {combat.actions?.filter((action) => action.status === "confirmed").length ?? 0} confirmed actions, {combat.rewards?.length ?? 0} reward records</p>
+                  {(combat.rewards?.length ?? 0) > 0 && <p>{combat.rewards!.map(combatRewardSummary).join("; ")}</p>}
                 </article>
               ))}
             </details>
@@ -286,6 +346,7 @@ function CombatantDraftInput(props: {
   max?: number;
   placeholder?: string;
   disabled?: boolean;
+  onError?(message: string): void;
 }) {
   const [draft, setDraft] = useState(props.value);
   const [pending, setPending] = useState(false);
@@ -309,7 +370,7 @@ function CombatantDraftInput(props: {
       await props.onCommit(draft);
     } catch (error) {
       setDraft(props.value);
-      console.error(error);
+      props.onError?.(`${props.ariaLabel} failed: ${errorMessage(error)}. Edit the field again to retry.`);
     } finally {
       pendingRef.current = false;
       setPending(false);
@@ -395,6 +456,24 @@ export function combatantConditionTimingLabels(combatant: Combat["combatants"][n
     if (!name || !Number.isFinite(rounds)) return [];
     return [`${name} expires in ${rounds} ${rounds === 1 ? "round" : "rounds"}`];
   });
+}
+
+type CombatRewardRecord = NonNullable<Combat["rewards"]>[number];
+
+export function combatRewardSummary(reward: CombatRewardRecord): string {
+  const parts = [
+    reward.totalXp > 0 ? `${formatNumber(reward.totalXp)} XP (${formatNumber(reward.xpPerActor)} each)` : "",
+    reward.totalGp > 0 ? `${formatNumber(reward.totalGp)} gp (${formatNumber(reward.gpPerActor)} each)` : "",
+    reward.loot.length > 0 ? `${formatNumber(reward.loot.length)} loot ${reward.loot.length === 1 ? "item" : "items"}` : ""
+  ].filter(Boolean);
+  return parts.join(" + ") || "Reward record";
+}
+
+export function combatRewardRemainderLabel(reward: CombatRewardRecord): string {
+  return [
+    reward.unallocatedXp > 0 ? `${formatNumber(reward.unallocatedXp)} XP` : "",
+    reward.unallocatedGp > 0 ? `${formatNumber(reward.unallocatedGp)} gp` : ""
+  ].filter(Boolean).join(" + ") + " unallocated";
 }
 
 

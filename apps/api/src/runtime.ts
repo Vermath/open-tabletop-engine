@@ -107,6 +107,7 @@ export function seedBundledPluginPackages(bundledPluginRoot: string, pluginRoot:
 
 export async function startApiRuntime(options: ApiRuntimeOptions = {}): Promise<ApiRuntime> {
   applyApiRuntimeEnv(options);
+  validateApiRuntimeEnvironment(options);
   const pluginRoot = options.pluginRoot ?? process.env.OTTE_PLUGIN_DIR;
   const bundledPluginRoot = options.bundledPluginRoot ?? process.env.OTTE_BUNDLED_PLUGIN_DIR;
   if (options.sqlitePath) mkdirSync(dirname(options.sqlitePath), { recursive: true });
@@ -136,6 +137,32 @@ export async function startApiRuntime(options: ApiRuntimeOptions = {}): Promise<
     url: `http://${boundHost}:${address.port}`,
     close: () => app.close()
   };
+}
+
+export function validateApiRuntimeEnvironment(options: Pick<ApiRuntimeOptions, "sqlitePath"> = {}): void {
+  if (process.env.NODE_ENV !== "production") return;
+  const missing: string[] = [];
+  if (!(options.sqlitePath ?? process.env.OTTE_SQLITE_PATH)?.trim()) missing.push("OTTE_SQLITE_PATH");
+  if (!process.env.OTTE_ASSET_URL_SIGNING_SECRET?.trim()) missing.push("OTTE_ASSET_URL_SIGNING_SECRET");
+  const assetProvider = process.env.OTTE_ASSET_STORAGE?.trim().toLowerCase() ?? "local";
+  if (assetProvider === "s3" || assetProvider === "minio") {
+    if (!process.env.OTTE_S3_BUCKET?.trim()) missing.push("OTTE_S3_BUCKET");
+    if (!process.env.OTTE_S3_REGION?.trim()) missing.push("OTTE_S3_REGION");
+    const hasAccessKey = Boolean(process.env.OTTE_S3_ACCESS_KEY_ID?.trim());
+    const hasSecretKey = Boolean(process.env.OTTE_S3_SECRET_ACCESS_KEY?.trim());
+    if (hasAccessKey !== hasSecretKey) missing.push(hasAccessKey ? "OTTE_S3_SECRET_ACCESS_KEY" : "OTTE_S3_ACCESS_KEY_ID");
+    const endpoint = process.env.OTTE_S3_ENDPOINT?.trim();
+    if (endpoint && !endpoint.startsWith("https://")) missing.push("OTTE_S3_ENDPOINT(https)");
+  }
+  if ((process.env.OTTE_PLUGIN_TRUST_POLICY?.trim().toLowerCase() ?? "require_trusted") !== "require_trusted") {
+    missing.push("OTTE_PLUGIN_TRUST_POLICY=require_trusted");
+  }
+  if ((process.env.OTTE_PLUGIN_REVIEW_POLICY?.trim().toLowerCase() ?? "require_approved") !== "require_approved") {
+    missing.push("OTTE_PLUGIN_REVIEW_POLICY=require_approved");
+  }
+  if (missing.length > 0) {
+    throw new Error(`Production runtime configuration is incomplete: ${[...new Set(missing)].sort().join(", ")}`);
+  }
 }
 
 function applyApiRuntimeEnv(options: ApiRuntimeOptions): void {

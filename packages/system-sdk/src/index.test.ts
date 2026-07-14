@@ -399,7 +399,7 @@ describe("dnd 5.5e srd rules", () => {
 
   it("applies a multiclass level with combined level, proficiency, HP, and shared slots", () => {
     // Cleric 5 with Dex 14, Con 13 → eligible to add Rogue (Dex 13).
-    const cleric5 = { ...srdActor, data: { ...srdActor.data, class: "Cleric", level: 5, attributes: { strength: 10, dexterity: 14, constitution: 13, intelligence: 11, wisdom: 16, charisma: 10 }, hp: { current: 33, max: 33 }, hitDice: { current: 5, max: 5, size: "d8" } } };
+    const cleric5 = { ...srdActor, data: { ...srdActor.data, class: "Cleric", subclass: "Life Domain", subclasses: { Cleric: "life-domain" }, level: 5, attributes: { strength: 10, dexterity: 14, constitution: 13, intelligence: 11, wisdom: 16, charisma: 10 }, hp: { current: 33, max: 33 }, hitDice: { current: 5, max: 5, size: "d8" } } };
     const advanced = applyDnd5eSrdMulticlassLevel(cleric5, "Rogue");
     expect(advanced.level).toBe(6);
     expect(advanced.classes).toEqual([{ className: "Cleric", level: 5 }, { className: "Rogue", level: 1 }]);
@@ -421,7 +421,7 @@ describe("dnd 5.5e srd rules", () => {
 
 
   it("tracks per-class hit-dice pools for multiclass SRD characters", () => {
-    const fighter5 = { ...srdActor, data: { ...srdActor.data, class: "Fighter", level: 5, attributes: { strength: 15, dexterity: 12, constitution: 14, intelligence: 13, wisdom: 11, charisma: 10 }, hp: { current: 44, max: 44 }, hitDice: { current: 5, max: 5, size: "d10" } } };
+    const fighter5 = { ...srdActor, data: { ...srdActor.data, class: "Fighter", subclass: "Champion", subclasses: { Fighter: "champion" }, level: 5, attributes: { strength: 15, dexterity: 12, constitution: 14, intelligence: 13, wisdom: 11, charisma: 10 }, hp: { current: 44, max: 44 }, hitDice: { current: 5, max: 5, size: "d10" } } };
     const fighterWizard = applyDnd5eSrdMulticlassLevel(fighter5, "Wizard");
     expect(fighterWizard.hitDicePools).toEqual([
       { className: "Fighter", size: "d10", current: 5, max: 5 },
@@ -451,7 +451,7 @@ describe("dnd 5.5e srd rules", () => {
   });
 
   it("keeps single-class hit dice unchanged and initializes legacy multiclass pools from aggregate dice", () => {
-    const fighter5 = { ...srdActor, data: { ...srdActor.data, class: "Fighter", level: 5, attributes: { strength: 15, dexterity: 12, constitution: 14, intelligence: 10, wisdom: 11, charisma: 10 }, hp: { current: 44, max: 44 }, hitDice: { current: 3, max: 5, size: "d10" } } };
+    const fighter5 = { ...srdActor, data: { ...srdActor.data, class: "Fighter", subclass: "Champion", subclasses: { Fighter: "champion" }, level: 5, attributes: { strength: 15, dexterity: 12, constitution: 14, intelligence: 10, wisdom: 11, charisma: 10 }, hp: { current: 44, max: 44 }, hitDice: { current: 3, max: 5, size: "d10" } } };
     const singleClassLevel = applyDnd5eSrdAdvancement(fighter5, "level-up");
     expect(singleClassLevel.hitDice).toEqual({ current: 4, max: 6, size: "d10" });
     expect(singleClassLevel).not.toHaveProperty("hitDicePools");
@@ -505,7 +505,7 @@ describe("dnd 5.5e srd rules", () => {
     ]);
     expect(longRest.recovered).toEqual(expect.objectContaining({ hitDiceRecovered: 3 }));
 
-    const shortRest = applyDnd5eSrdRest({ ...multiclassActor, data: { ...multiclassActor.data, hitDice: { current: 6, max: 7, size: "d10" }, hitDicePools: [{ className: "Fighter", size: "d10", current: 4, max: 5 }, { className: "Wizard", size: "d6", current: 2, max: 2 }] } }, "short");
+    const shortRest = applyDnd5eSrdRest({ ...multiclassActor, data: { ...multiclassActor.data, hitDice: { current: 6, max: 7, size: "d10" }, hitDicePools: [{ className: "Fighter", size: "d10", current: 4, max: 5 }, { className: "Wizard", size: "d6", current: 2, max: 2 }] } }, "short", { hitDice: [{ className: "Fighter", roll: 6 }] });
     expect(shortRest.data.hitDice).toEqual({ current: 5, max: 7, size: "d10" });
     expect(shortRest.data.hitDicePools).toEqual([
       { className: "Fighter", size: "d10", current: 3, max: 5 },
@@ -515,7 +515,7 @@ describe("dnd 5.5e srd rules", () => {
   });
   it("keeps multiclass features, resources, and Extra Attack per class instead of single-class", () => {
     // Fighter 5 (Extra Attack, 2 attacks) with Str 15 → eligible to add Barbarian.
-    const fighter5 = { ...srdActor, data: { ...srdActor.data, class: "Fighter", level: 5, attributes: { strength: 15, dexterity: 12, constitution: 14, intelligence: 10, wisdom: 11, charisma: 10 }, hp: { current: 44, max: 44 }, hitDice: { current: 5, max: 5, size: "d10" }, combat: { attacksPerAction: 2 } } };
+    const fighter5 = { ...srdActor, data: { ...srdActor.data, class: "Fighter", subclass: "Champion", subclasses: { Fighter: "champion" }, level: 5, attributes: { strength: 15, dexterity: 12, constitution: 14, intelligence: 10, wisdom: 11, charisma: 10 }, hp: { current: 44, max: 44 }, hitDice: { current: 5, max: 5, size: "d10" }, combat: { attacksPerAction: 2 } } };
     const barb = applyDnd5eSrdMulticlassLevel(fighter5, "Barbarian");
     const features = barb.features as string[];
     // Both classes contribute: Second Wind (Fighter), Rage (Barbarian 1).
@@ -538,6 +538,12 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdAdvancementOptions(level3)[0]?.summary).toContain("Ability Score Improvement or a feat");
     const level4 = { ...srdActor, data: { ...srdActor.data, level: 4 } };
     expect(dnd5eSrdAdvancementOptions(level4)[0]?.summary).not.toContain("Ability Score Improvement or a feat");
+    const fighter5 = { ...srdActor, data: { ...srdActor.data, class: "Fighter", level: 5 } };
+    const fighter13 = { ...srdActor, data: { ...srdActor.data, class: "Fighter", level: 13 } };
+    const rogue9 = { ...srdActor, data: { ...srdActor.data, class: "Rogue", level: 9 } };
+    expect(dnd5eSrdAdvancementOptions(fighter5)[0]?.summary).toContain("Ability Score Improvement or a feat");
+    expect(dnd5eSrdAdvancementOptions(fighter13)[0]?.summary).toContain("Ability Score Improvement or a feat");
+    expect(dnd5eSrdAdvancementOptions(rogue9)[0]?.summary).toContain("Ability Score Improvement or a feat");
 
     const feats = dnd5eSrdGeneralFeats();
     expect(feats.some((feat) => feat.id === "ability-score-improvement")).toBe(true);
@@ -545,8 +551,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(feats.filter((feat) => feat.category === "epic-boon").length).toBeGreaterThanOrEqual(10);
     expect(dnd5eSrdFeatEntry("grappler")?.data.attacksAgainstGrappled).toBe("advantage");
 
-    const wisActor = { ...srdActor, data: { ...srdActor.data, class: "Cleric", attributes: { strength: 10, dexterity: 12, constitution: 13, intelligence: 11, wisdom: 16, charisma: 10 } } };
-    const asi = applyDnd5eSrdFeat(wisActor, "ability-score-improvement");
+    const wisActor = { ...srdActor, data: { ...srdActor.data, class: "Cleric", level: 4, attributes: { strength: 10, dexterity: 12, constitution: 13, intelligence: 11, wisdom: 16, charisma: 10 } } };
+    const asi = applyDnd5eSrdFeat(wisActor, "ability-score-improvement", { abilities: { wisdom: 2 } });
     expect((asi.attributes as Record<string, number>).wisdom).toBe(18);
     expect(asi.feats).toContain("ability-score-improvement");
 
@@ -555,22 +561,18 @@ describe("dnd 5.5e srd rules", () => {
     expect((chosen.attributes as Record<string, number>).dexterity).toBe(13);
 
     // A cheating client cannot exceed the feat's ability-point budget (ASI = 2).
-    const cheat = applyDnd5eSrdFeat(wisActor, "ability-score-improvement", { abilities: { strength: 2, dexterity: 2, constitution: 2, intelligence: 2, wisdom: 2, charisma: 2 } });
-    const cheatAttrs = cheat.attributes as Record<string, number>;
-    const baseAttrs: Record<string, number> = { strength: 10, dexterity: 12, constitution: 13, intelligence: 11, wisdom: 16, charisma: 10 };
-    const spent = Object.keys(baseAttrs).reduce((sum, key) => sum + ((cheatAttrs[key] ?? 0) - baseAttrs[key]!), 0);
-    expect(spent).toBe(2);
+    expect(() => applyDnd5eSrdFeat(wisActor, "ability-score-improvement", { abilities: { strength: 2, dexterity: 2, constitution: 2, intelligence: 2, wisdom: 2, charisma: 2 } })).toThrow("grants only 2 ability points");
 
-    const grappler = applyDnd5eSrdFeat(wisActor, "grappler", { abilities: { wisdom: 1, strength: 1 } });
+    const grapplerEligible = { ...wisActor, data: { ...wisActor.data, attributes: { ...(wisActor.data.attributes as Record<string, number>), dexterity: 13 } } };
+    const grappler = applyDnd5eSrdFeat(grapplerEligible, "grappler", { abilities: { strength: 1 } });
     expect((grappler.attributes as Record<string, number>).wisdom).toBe(16);
     expect((grappler.attributes as Record<string, number>).strength).toBe(11);
 
-    const bogus = applyDnd5eSrdFeat(wisActor, "ability-score-improvement", { abilities: { luck: 2 } });
-    expect((bogus.attributes as Record<string, number>).luck).toBeUndefined();
+    expect(() => applyDnd5eSrdFeat(wisActor, "ability-score-improvement", { abilities: { luck: 2 } })).toThrow("cannot increase Luck");
 
     // Fortitude boon raises the HP maximum by 40 (fixture max is 12) and caps scores.
-    const maxedWisdom = { ...wisActor, data: { ...wisActor.data, attributes: { strength: 10, dexterity: 12, constitution: 13, intelligence: 11, wisdom: 30, charisma: 10 } } };
-    const boon = applyDnd5eSrdFeat(maxedWisdom, "boon-of-fortitude");
+    const maxedWisdom = { ...wisActor, data: { ...wisActor.data, level: 19, attributes: { strength: 10, dexterity: 12, constitution: 13, intelligence: 11, wisdom: 30, charisma: 10 } } };
+    const boon = applyDnd5eSrdFeat(maxedWisdom, "boon-of-fortitude", { abilities: { strength: 1 } });
     expect((boon.hp as { max: number }).max).toBe(52);
     expect((boon.attributes as Record<string, number>).wisdom).toBe(30);
   });
@@ -688,7 +690,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(warlock?.data.resources).toEqual({});
     expect(warlock?.data.spellSlots).toEqual({ level1: { current: 1, max: 1, recovery: "short" } });
     expect(warlock?.items.map((item) => item.entryId)).toEqual(["eldritch-blast", "hex", "leather-armor", "sickle", "dagger", "arcane-focus"]);
-    expect(wizard?.data.features).toEqual(["Spellcasting", "Arcane Recovery"]);
+    expect(wizard?.data.features).toEqual(["Spellcasting", "Ritual Adept", "Arcane Recovery"]);
     expect(wizard?.data.resources).toEqual({ arcaneRecovery: { current: 1, max: 1, recovery: "long" } });
     expect(rogue?.data.features).toEqual(["Expertise", "Sneak Attack", "Thieves' Cant", "Weapon Mastery"]);
     expect(rogue?.data.saveProficiencies).toEqual(["dexterity", "intelligence"]);
@@ -1878,7 +1880,9 @@ describe("dnd 5.5e srd rules", () => {
         updatedAt: "2026-05-01T00:00:00.000Z"
       };
     });
-    const protectedSheet = dnd5eSrdSheet(srdActor, [cloakOfProtection, ringOfProtection]);
+    const protectedActor: Actor = { ...srdActor, data: { ...srdActor.data, rulesEngine: { attunedItemIds: [cloakOfProtection.id, ringOfProtection.id, bracersOfDefense.id] } } };
+    const staffActor: Actor = { ...srdActor, data: { ...srdActor.data, rulesEngine: { attunedItemIds: [staffOfStriking.id] } } };
+    const protectedSheet = dnd5eSrdSheet(protectedActor, [cloakOfProtection, ringOfProtection]);
     expect(protectedSheet.data.armorClass).toBe(13);
     expect(protectedSheet.data.armorClassDetails).toEqual(expect.objectContaining({ value: 13, armorClassBonus: 2, armorClassBonusItemIds: ["itm_cloak_of_protection", "itm_ring_of_protection"] }));
     expect(protectedSheet.quickRolls).toEqual(
@@ -1887,9 +1891,9 @@ describe("dnd 5.5e srd rules", () => {
         expect.objectContaining({ id: "save-wisdom", formula: "1d20+7", metadata: expect.objectContaining({ itemBonus: 2 }) })
       ])
     );
-    expect(dnd5eSrdSheet(srdActor, [bracersOfDefense]).data.armorClass).toBe(13);
-    expect(dnd5eSrdSheet(srdActor, [bracersOfDefense, bracersChainMail]).data.armorClass).toBe(16);
-    expect(dnd5eSrdSheet(srdActor, [staffOfStriking]).quickRolls).toEqual(
+    expect(dnd5eSrdSheet(protectedActor, [bracersOfDefense]).data.armorClass).toBe(13);
+    expect(dnd5eSrdSheet(protectedActor, [bracersOfDefense, bracersChainMail]).data.armorClass).toBe(16);
+    expect(dnd5eSrdSheet(staffActor, [staffOfStriking]).quickRolls).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: "item-itm_staff_of_striking-attack", formula: "1d20+5", metadata: expect.objectContaining({ attackType: "weapon", itemBonus: 3, proficiencyBonus: 2 }) }),
         expect.objectContaining({ id: "item-itm_staff_of_striking-damage", formula: "1d6+3" }),
@@ -2627,7 +2631,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdSheet(srdActor, [levelNineScroll, chromaticOrb]).quickRolls).toEqual(
       expect.arrayContaining([expect.objectContaining({ id: "spell-itm_chromatic_orb-attack", formula: "1d20+5", metadata: expect.not.objectContaining({ itemBonus: 11 }) })])
     );
-    expect(dnd5eSrdSheet(srdActor, [wandOfTheWarMage, chromaticOrb]).quickRolls).toEqual(
+    const wandAttunedActor: Actor = { ...srdActor, data: { ...srdActor.data, rulesEngine: { attunedItemIds: [wandOfTheWarMage.id] } } };
+    expect(dnd5eSrdSheet(wandAttunedActor, [wandOfTheWarMage, chromaticOrb]).quickRolls).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: "spell-itm_chromatic_orb-attack", formula: "1d20+6", metadata: expect.objectContaining({ itemBonus: 1, itemBonusItemIds: ["itm_wand_of_the_war_mage_plus_1"] }) })
       ])
@@ -2792,7 +2797,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdActionFormula(levelTwoClericActor, [], "feature-divine-spark-damage")).toBe("1d8+3");
     expect(dnd5eSrdActionFormula(levelTwoClericActor, [], "feature-turn-undead")).toBe("0");
     let levelThreeClericData = levelTwoClericData;
-    levelThreeClericData = applyDnd5eSrdAdvancement({ ...clericActor, data: levelThreeClericData }, "level-up");
+    levelThreeClericData = applyDnd5eSrdAdvancement({ ...clericActor, data: levelThreeClericData }, "level-up", { subclassId: "life-domain" });
     const levelThreeClericActor: Actor = { ...clericActor, data: levelThreeClericData };
     expect(levelThreeClericData.features).toEqual(expect.arrayContaining(["Life Domain", "Disciple of Life", "Life Domain Spells", "Preserve Life"]));
     expect(dnd5eSrdQuickRolls(levelThreeClericActor, [])).toEqual(
@@ -2802,10 +2807,10 @@ describe("dnd 5.5e srd rules", () => {
       ])
     );
     expect(dnd5eSrdActionFormula(levelThreeClericActor, [], "feature-life-preserve-life")).toBe("15");
-    expect(dnd5eSrdActionFormula(levelThreeClericActor, [clericCureWounds], "spell-itm_life_cure_wounds-healing")).toBe("1d8+4+3");
+    expect(dnd5eSrdActionFormula(levelThreeClericActor, [clericCureWounds], "spell-itm_life_cure_wounds-healing")).toBe("1d8+3+3");
     let levelFiveClericData = clericActor.data;
     for (let level = 2; level <= 5; level += 1) {
-      levelFiveClericData = applyDnd5eSrdAdvancement({ ...clericActor, data: levelFiveClericData }, "level-up");
+      levelFiveClericData = applyDnd5eSrdAdvancement({ ...clericActor, data: levelFiveClericData }, "level-up", level === 3 ? { subclassId: "life-domain" } : {});
     }
     const levelFiveClericActor: Actor = { ...clericActor, data: levelFiveClericData };
     const levelFiveClericAttributes = typeof levelFiveClericActor.data.attributes === "object" && levelFiveClericActor.data.attributes !== null ? levelFiveClericActor.data.attributes : {};
@@ -2814,14 +2819,14 @@ describe("dnd 5.5e srd rules", () => {
     expect(levelFiveClericData.resources).toEqual({ channelDivinity: { current: 2, max: 2, recovery: "short" } });
     expect(dnd5eSrdQuickRolls(levelFiveClericActor, [])).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: "feature-turn-undead", formula: "0", metadata: expect.objectContaining({ searUndead: { formula: "5d8", damageType: "Radiant" } }) }),
-        expect.objectContaining({ id: "feature-sear-undead-damage", label: "Sear Undead Damage", formula: "5d8", metadata: expect.objectContaining({ trigger: "Turn Undead failed save", damageType: "Radiant" }) }),
+        expect.objectContaining({ id: "feature-turn-undead", formula: "0", metadata: expect.objectContaining({ searUndead: { formula: "3d8", damageType: "Radiant" } }) }),
+        expect.objectContaining({ id: "feature-sear-undead-damage", label: "Sear Undead Damage", formula: "3d8", metadata: expect.objectContaining({ trigger: "Turn Undead failed save", damageType: "Radiant" }) }),
         expect.objectContaining({ id: "feature-life-preserve-life", formula: "25" })
       ])
     );
-    expect(dnd5eSrdActionFormula(levelFiveClericActor, [], "feature-sear-undead-damage")).toBe("5d8");
+    expect(dnd5eSrdActionFormula(levelFiveClericActor, [], "feature-sear-undead-damage")).toBe("3d8");
     expect(dnd5eSrdActionFormula(levelFiveClericOvercapWisdomActor, [], "feature-sear-undead-damage")).toBe("10d8");
-    expect(dnd5eSrdActionFormula(levelFiveClericActor, [clericCureWounds], "spell-itm_life_cure_wounds-healing", { spellSlotLevel: 3 })).toBe("1d8+5+2d8+5");
+    expect(dnd5eSrdActionFormula(levelFiveClericActor, [clericCureWounds], "spell-itm_life_cure_wounds-healing", { spellSlotLevel: 3 })).toBe("1d8+3+2d8+5");
     let levelSixClericData = levelFiveClericData;
     levelSixClericData = applyDnd5eSrdAdvancement({ ...clericActor, data: levelSixClericData }, "level-up");
     const levelSixClericActor: Actor = { ...clericActor, data: levelSixClericData };
@@ -2839,7 +2844,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdQuickRolls(levelSeventeenClericActor, [])).toEqual(
       expect.arrayContaining([expect.objectContaining({ id: "feature-life-supreme-healing", formula: "0", metadata: expect.objectContaining({ maximizeHealingDice: true }) })])
     );
-    expect(dnd5eSrdActionFormula(levelSeventeenClericActor, [clericCureWounds], "spell-itm_life_cure_wounds-healing", { spellSlotLevel: 3 })).toBe("8+11+16+5");
+    expect(dnd5eSrdActionFormula(levelSeventeenClericActor, [clericCureWounds], "spell-itm_life_cure_wounds-healing", { spellSlotLevel: 3 })).toBe("8+3+16+5");
     const fighterActor: Actor = { ...srdActor, data: { ...fighter!.data } };
     expect(dnd5eSrdQuickRolls(fighterActor, [])).toEqual(
       expect.arrayContaining([{ id: "feature-second-wind-healing", label: "Second Wind Healing", formula: "1d10+1" }])
@@ -2862,7 +2867,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdActionFormula(levelTwoFighterActor, [], "feature-tactical-mind-bonus")).toBe("1d10");
     let levelFiveFighterData = fighterActor.data;
     for (let level = 2; level <= 5; level += 1) {
-      levelFiveFighterData = applyDnd5eSrdAdvancement({ ...fighterActor, data: levelFiveFighterData }, "level-up");
+      levelFiveFighterData = applyDnd5eSrdAdvancement({ ...fighterActor, data: levelFiveFighterData }, "level-up", level === 3 ? { subclassId: "champion" } : {});
     }
     const levelFiveFighterActor: Actor = { ...fighterActor, data: levelFiveFighterData };
     const fighterLongsword: Item = {
@@ -2884,7 +2889,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdQuickRolls(levelFiveFighterActor, [])).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: "initiative", label: "Initiative", formula: "2d20kh1+1", metadata: expect.objectContaining({ feature: "Remarkable Athlete", advantage: true }) }),
-        expect.objectContaining({ id: "skill-athletics", label: "Athletics Check", formula: "2d20kh1+8", metadata: expect.objectContaining({ feature: "Remarkable Athlete", advantage: true }) }),
+        expect.objectContaining({ id: "skill-athletics", label: "Athletics Check", formula: "2d20kh1+6", metadata: expect.objectContaining({ feature: "Remarkable Athlete", advantage: true }) }),
         expect.objectContaining({ id: "feature-champion-critical-range", label: "Improved Critical", formula: "0", metadata: expect.objectContaining({ minimumD20: 19, range: "19-20" }) }),
         expect.objectContaining({ id: "feature-champion-remarkable-athlete", label: "Remarkable Athlete", formula: "0", metadata: expect.objectContaining({ initiativeAdvantage: true, athleticsAdvantage: true }) })
       ])
@@ -2894,19 +2899,19 @@ describe("dnd 5.5e srd rules", () => {
         expect.objectContaining({
           id: "item-itm_fighter_longsword-attack",
           label: "Longsword Attack",
-          formula: "1d20+8",
+          formula: "1d20+6",
           metadata: expect.objectContaining({ attacksPerAction: 2, feature: "Extra Attack", attackType: "weapon", proficiencyBonus: 3, criticalHitOn: "19-20", criticalRange: expect.objectContaining({ feature: "Improved Critical", minimumD20: 19 }) })
         }),
         expect.objectContaining({
           id: "item-itm_fighter_longsword-damage",
           label: "Longsword Damage",
-          formula: "1d8+5",
+          formula: "1d8+3",
           metadata: { attacksPerAction: 2, feature: "Extra Attack" }
         }),
         expect.objectContaining({
           id: "item-itm_greatsword-damage",
           label: "Greatsword Damage",
-          formula: "2d6+5",
+          formula: "2d6+3",
           metadata: { attacksPerAction: 2, feature: "Extra Attack" }
         })
       ])
@@ -2969,7 +2974,7 @@ describe("dnd 5.5e srd rules", () => {
     );
     let levelFiveBarbarianData = barbarianActor.data;
     for (let level = 2; level <= 5; level += 1) {
-      levelFiveBarbarianData = applyDnd5eSrdAdvancement({ ...barbarianActor, data: levelFiveBarbarianData }, "level-up");
+      levelFiveBarbarianData = applyDnd5eSrdAdvancement({ ...barbarianActor, data: levelFiveBarbarianData }, "level-up", level === 3 ? { subclassId: "path-of-the-berserker" } : {});
     }
     const levelFiveBarbarianActor: Actor = { ...barbarianActor, data: levelFiveBarbarianData };
     expect(levelFiveBarbarianData.features).toEqual(expect.arrayContaining(["Rage", "Danger Sense", "Reckless Attack", "Extra Attack", "Fast Movement"]));
@@ -2981,7 +2986,7 @@ describe("dnd 5.5e srd rules", () => {
         expect.objectContaining({
           id: "item-itm_barbarian_spear-damage",
           label: "Spear Damage",
-          formula: "1d6+5",
+          formula: "1d6+3",
           metadata: { attacksPerAction: 2, feature: "Extra Attack" }
         })
       ])
@@ -3028,7 +3033,7 @@ describe("dnd 5.5e srd rules", () => {
     );
     let levelThreeBardData = bardActor.data;
     for (let level = 2; level <= 3; level += 1) {
-      levelThreeBardData = applyDnd5eSrdAdvancement({ ...bardActor, data: levelThreeBardData }, "level-up");
+      levelThreeBardData = applyDnd5eSrdAdvancement({ ...bardActor, data: levelThreeBardData }, "level-up", level === 3 ? { subclassId: "college-of-lore" } : {});
     }
     const levelThreeBardActor: Actor = { ...bardActor, data: levelThreeBardData };
     expect(levelThreeBardData.features).toEqual(expect.arrayContaining(["College of Lore", "Bonus Proficiencies", "Cutting Words"]));
@@ -3040,11 +3045,11 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdActionFormula(levelThreeBardActor, [], "feature-lore-cutting-words")).toBe("1d6");
     let levelFiveBardData = bardActor.data;
     for (let level = 2; level <= 5; level += 1) {
-      levelFiveBardData = applyDnd5eSrdAdvancement({ ...bardActor, data: levelFiveBardData }, "level-up");
+      levelFiveBardData = applyDnd5eSrdAdvancement({ ...bardActor, data: levelFiveBardData }, "level-up", level === 3 ? { subclassId: "college-of-lore" } : {});
     }
     const levelFiveBardActor: Actor = { ...bardActor, data: levelFiveBardData };
     expect(levelFiveBardData.features).toEqual(expect.arrayContaining(["Bardic Inspiration", "Jack of All Trades", "Font of Inspiration"]));
-    expect(levelFiveBardData.resources).toEqual({ bardicInspiration: { current: 3, max: 5, recovery: "short" } });
+    expect(levelFiveBardData.resources).toEqual({ bardicInspiration: { current: 3, max: 3, recovery: "short" } });
     expect(levelFiveBardData.spellSlots).toEqual({
       level1: { current: 2, max: 4, recovery: "long" },
       level2: { current: 2, max: 3, recovery: "long" },
@@ -3085,7 +3090,7 @@ describe("dnd 5.5e srd rules", () => {
     const berserkerActor: Actor = { ...srdActor, data: { ...dnd5eSrdCharacterTemplate("barbarian")!.data } };
     let levelThreeBarbarianData = berserkerActor.data;
     for (let level = 2; level <= 3; level += 1) {
-      levelThreeBarbarianData = applyDnd5eSrdAdvancement({ ...berserkerActor, data: levelThreeBarbarianData }, "level-up");
+      levelThreeBarbarianData = applyDnd5eSrdAdvancement({ ...berserkerActor, data: levelThreeBarbarianData }, "level-up", level === 3 ? { subclassId: "path-of-the-berserker" } : {});
     }
     const levelThreeBarbarianActor: Actor = { ...berserkerActor, data: levelThreeBarbarianData };
     expect(levelThreeBarbarianData.features).toEqual(expect.arrayContaining(["Path of the Berserker", "Frenzy"]));
@@ -3164,7 +3169,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdActionFormula(paladinActor, [], "feature-lay-on-hands-healing", { resourceAmount: 3 })).toBe("3");
     let levelFivePaladinData = paladinActor.data;
     for (let level = 2; level <= 5; level += 1) {
-      levelFivePaladinData = applyDnd5eSrdAdvancement({ ...paladinActor, data: levelFivePaladinData }, "level-up");
+      levelFivePaladinData = applyDnd5eSrdAdvancement({ ...paladinActor, data: levelFivePaladinData }, "level-up", level === 3 ? { subclassId: "oath-of-devotion" } : {});
     }
     const levelFivePaladinActor: Actor = { ...paladinActor, data: levelFivePaladinData };
     expect(levelFivePaladinData.features).toEqual(expect.arrayContaining(["Lay On Hands", "Paladin's Smite", "Oath of Devotion", "Sacred Weapon", "Extra Attack", "Faithful Steed"]));
@@ -3183,7 +3188,7 @@ describe("dnd 5.5e srd rules", () => {
       expect.arrayContaining([
         expect.objectContaining({ id: "feature-divine-smite-damage", label: "Divine Smite Damage", formula: "2d8", metadata: expect.objectContaining({ freeCastResource: "paladinsSmite", creatureTypeBonus: { types: ["Fiend", "Undead"], formula: "1d8" } }) }),
         expect.objectContaining({ id: "feature-faithful-steed", label: "Faithful Steed", formula: "0", metadata: expect.objectContaining({ resource: "faithfulSteed", spell: "Find Steed" }) }),
-        expect.objectContaining({ id: "feature-devotion-sacred-weapon", label: "Sacred Weapon", formula: "0", metadata: expect.objectContaining({ resource: "channelDivinity", attackBonus: 4, light: { bright: 20, dim: 20 } }) }),
+        expect.objectContaining({ id: "feature-devotion-sacred-weapon", label: "Sacred Weapon", formula: "0", metadata: expect.objectContaining({ resource: "channelDivinity", attackBonus: 2, light: { bright: 20, dim: 20 } }) }),
         expect.objectContaining({ id: "item-itm_paladin_longsword-damage", formula: "1d8+3", metadata: { attacksPerAction: 2, feature: "Extra Attack" } })
       ])
     );
@@ -3221,10 +3226,10 @@ describe("dnd 5.5e srd rules", () => {
     expect(levelTwentyPaladinData.resources).toEqual(expect.objectContaining({ holyNimbus: { current: 1, max: 1, recovery: "long" } }));
     expect(dnd5eSrdQuickRolls(levelTwentyPaladinActor, [])).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: "feature-devotion-holy-nimbus-damage", label: "Holy Nimbus Radiant Damage", formula: "17", metadata: expect.objectContaining({ resource: "holyNimbus", action: "Bonus Action", damageType: "Radiant", restoreUse: { spellSlotLevel: 5, actionRequired: false } }) })
+        expect.objectContaining({ id: "feature-devotion-holy-nimbus-damage", label: "Holy Nimbus Radiant Damage", formula: "8", metadata: expect.objectContaining({ resource: "holyNimbus", action: "Bonus Action", damageType: "Radiant", restoreUse: { spellSlotLevel: 5, actionRequired: false } }) })
       ])
     );
-    expect(dnd5eSrdActionFormula(levelTwentyPaladinActor, [], "feature-devotion-holy-nimbus-damage")).toBe("17");
+    expect(dnd5eSrdActionFormula(levelTwentyPaladinActor, [], "feature-devotion-holy-nimbus-damage")).toBe("8");
     const druidActor: Actor = { ...srdActor, data: { ...druid!.data } };
     const druidCureWounds: Item = {
       id: "itm_druid_cure_wounds",
@@ -3247,10 +3252,10 @@ describe("dnd 5.5e srd rules", () => {
     );
     let levelFiveDruidData = druidActor.data;
     for (let level = 2; level <= 5; level += 1) {
-      levelFiveDruidData = applyDnd5eSrdAdvancement({ ...druidActor, data: levelFiveDruidData }, "level-up");
+      levelFiveDruidData = applyDnd5eSrdAdvancement({ ...druidActor, data: levelFiveDruidData }, "level-up", level === 3 ? { subclassId: "circle-of-the-land" } : {});
     }
     const levelFiveDruidActor: Actor = { ...druidActor, data: levelFiveDruidData };
-    expect(levelFiveDruidData.features).toEqual(expect.arrayContaining(["Wild Shape", "Wild Companion", "Druid Subclass", "Circle of the Moon", "Circle Forms", "Circle of the Moon Spells", "Wild Resurgence"]));
+    expect(levelFiveDruidData.features).toEqual(expect.arrayContaining(["Wild Shape", "Wild Companion", "Druid Subclass", "Circle of the Land", "Circle of the Land Spells", "Land's Aid", "Wild Resurgence"]));
     expect(levelFiveDruidData.resources).toEqual({
       wildShape: { current: 2, max: 2, recovery: "short" },
       wildResurgence: { current: 1, max: 1, recovery: "long" }
@@ -3262,11 +3267,10 @@ describe("dnd 5.5e srd rules", () => {
     });
     expect(dnd5eSrdQuickRolls(levelFiveDruidActor, [])).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: "feature-wild-shape", label: "Wild Shape", formula: "0", metadata: expect.objectContaining({ resource: "wildShape", maxUses: 2, knownForms: 6, maxChallengeRating: "1", temporaryHitPoints: 15 }) }),
+        expect.objectContaining({ id: "feature-wild-shape", label: "Wild Shape", formula: "0", metadata: expect.objectContaining({ resource: "wildShape", maxUses: 2, knownForms: 6, maxChallengeRating: "1/2", temporaryHitPoints: 5 }) }),
         expect.objectContaining({ id: "feature-wild-companion", label: "Wild Companion", formula: "0", metadata: expect.objectContaining({ spell: "Find Familiar", resource: "wildShape" }) }),
         expect.objectContaining({ id: "feature-wild-resurgence-wild-shape", label: "Wild Resurgence: Wild Shape", formula: "0", metadata: expect.objectContaining({ restores: "wildShape", cost: "spell slot" }) }),
-        expect.objectContaining({ id: "feature-wild-resurgence-spell-slot", label: "Wild Resurgence: Spell Slot", formula: "0", metadata: expect.objectContaining({ resource: "wildResurgence", restores: "level1 spell slot" }) }),
-        expect.objectContaining({ id: "feature-moon-circle-forms", formula: "0", metadata: expect.objectContaining({ maxChallengeRating: "1", armorClassFloor: 18, temporaryHitPoints: 15, castCircleSpellsInWildShape: true }) })
+        expect.objectContaining({ id: "feature-wild-resurgence-spell-slot", label: "Wild Resurgence: Spell Slot", formula: "0", metadata: expect.objectContaining({ resource: "wildResurgence", restores: "level1 spell slot" }) })
       ])
     );
     expect(dnd5eSrdActionFormula(levelFiveDruidActor, [], "feature-wild-shape")).toBe("0");
@@ -3278,16 +3282,10 @@ describe("dnd 5.5e srd rules", () => {
       levelFourteenDruidData = applyDnd5eSrdAdvancement({ ...druidActor, data: levelFourteenDruidData }, "level-up");
     }
     const levelFourteenDruidActor: Actor = { ...druidActor, data: levelFourteenDruidData };
-    expect(levelFourteenDruidData.features).toEqual(expect.arrayContaining(["Improved Circle Forms", "Moonlight Step", "Lunar Form"]));
-    expect(levelFourteenDruidData.resources).toEqual(expect.objectContaining({ moonlightStep: { current: 7, max: 9, recovery: "long" } }));
-    expect(dnd5eSrdQuickRolls(levelFourteenDruidActor, [])).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: "feature-moon-improved-circle-forms", metadata: expect.objectContaining({ concentrationSaveBonus: 9 }) }),
-        expect.objectContaining({ id: "feature-moon-moonlight-step", formula: "0", metadata: expect.objectContaining({ resource: "moonlightStep", maxUses: 9, teleportFt: 30 }) }),
-        expect.objectContaining({ id: "feature-moon-lunar-form-damage", formula: "2d10", metadata: expect.objectContaining({ damageType: "Radiant", sharedMoonlight: { trigger: "Moonlight Step", willingCreatureWithinFt: 10 } }) })
-      ])
-    );
-    expect(dnd5eSrdActionFormula(levelFourteenDruidActor, [], "feature-moon-lunar-form-damage")).toBe("2d10");
+    expect(levelFourteenDruidData.features).toEqual(expect.arrayContaining(["Natural Recovery", "Nature's Ward", "Nature's Sanctuary"]));
+    expect(levelFourteenDruidData.features).not.toEqual(expect.arrayContaining(["Improved Circle Forms", "Moonlight Step", "Lunar Form"]));
+    expect(levelFourteenDruidData.resources).not.toHaveProperty("moonlightStep");
+    expect(dnd5eSrdQuickRolls(levelFourteenDruidActor, []).map((roll) => roll.id).some((id) => id.startsWith("feature-moon-"))).toBe(false);
     const rangerActor: Actor = { ...srdActor, data: { ...ranger!.data } };
     const rangerLongbow: Item = {
       id: "itm_ranger_longbow",
@@ -3313,7 +3311,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdActionFormula(rangerActor, [], "feature-hunters-mark-damage")).toBe("1d6");
     let levelFiveRangerData = rangerActor.data;
     for (let level = 2; level <= 5; level += 1) {
-      levelFiveRangerData = applyDnd5eSrdAdvancement({ ...rangerActor, data: levelFiveRangerData }, "level-up");
+      levelFiveRangerData = applyDnd5eSrdAdvancement({ ...rangerActor, data: levelFiveRangerData }, "level-up", level === 3 ? { subclassId: "hunter" } : {});
     }
     const levelFiveRangerActor: Actor = { ...rangerActor, data: levelFiveRangerData };
     expect(levelFiveRangerData.features).toEqual(expect.arrayContaining(["Favored Enemy", "Deft Explorer", "Fighting Style", "Ranger Subclass", "Extra Attack"]));
@@ -3373,7 +3371,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdActionFormula(monkActor, [monkSpear], "item-itm_monk_spear-damage")).toBe("1d6+3");
     let levelFiveMonkData = monkActor.data;
     for (let level = 2; level <= 5; level += 1) {
-      levelFiveMonkData = applyDnd5eSrdAdvancement({ ...monkActor, data: levelFiveMonkData }, "level-up");
+      levelFiveMonkData = applyDnd5eSrdAdvancement({ ...monkActor, data: levelFiveMonkData }, "level-up", level === 3 ? { subclassId: "warrior-of-the-open-hand" } : {});
     }
     const levelFiveMonkActor: Actor = { ...monkActor, data: levelFiveMonkData };
     expect(levelFiveMonkData.features).toEqual(expect.arrayContaining(["Monk's Focus", "Flurry of Blows", "Patient Defense", "Step of the Wind", "Uncanny Metabolism", "Deflect Attacks", "Monk Subclass", "Warrior of the Open Hand", "Open Hand Technique", "Extra Attack", "Stunning Strike"]));
@@ -3384,18 +3382,18 @@ describe("dnd 5.5e srd rules", () => {
     expect(levelFiveMonkData.combat).toEqual(expect.objectContaining({ attacksPerAction: 2, unarmoredMovement: { bonusFt: 10, armorRestriction: "not wearing armor or wielding a Shield" } }));
     expect(dnd5eSrdQuickRolls(levelFiveMonkActor, [monkSpear])).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: "feature-martial-arts-damage", formula: "1d8+5", metadata: expect.objectContaining({ martialArtsDie: "d8" }) }),
+        expect.objectContaining({ id: "feature-martial-arts-damage", formula: "1d8+3", metadata: expect.objectContaining({ martialArtsDie: "d8" }) }),
         expect.objectContaining({ id: "feature-flurry-of-blows", formula: "0", metadata: expect.objectContaining({ resource: "focus", unarmedStrikes: 2 }) }),
         expect.objectContaining({ id: "feature-patient-defense", formula: "0", metadata: expect.objectContaining({ resource: "focus", focusedAction: ["Disengage", "Dodge"] }) }),
         expect.objectContaining({ id: "feature-step-of-the-wind", formula: "0", metadata: expect.objectContaining({ resource: "focus", jumpDistance: "doubled for the turn" }) }),
         expect.objectContaining({ id: "feature-uncanny-metabolism-healing", formula: "1d8+5", metadata: expect.objectContaining({ resource: "uncannyMetabolism", focusRestoredTo: 5 }) }),
-        expect.objectContaining({ id: "feature-deflect-attacks-damage", formula: "2d8+5", metadata: expect.objectContaining({ resource: "focus", reductionFormula: "1d10+5+5", save: { ability: "dexterity", dc: 13 } }) }),
+        expect.objectContaining({ id: "feature-deflect-attacks-damage", formula: "2d8+3", metadata: expect.objectContaining({ resource: "focus", reductionFormula: "1d10+3+5", save: { ability: "dexterity", dc: 13 } }) }),
         expect.objectContaining({ id: "feature-stunning-strike", formula: "0", metadata: expect.objectContaining({ resource: "focus", save: { ability: "constitution", dc: 13 } }) }),
         expect.objectContaining({ id: "feature-open-hand-technique", formula: "0", metadata: expect.objectContaining({ flurryOfBlowsRollId: "feature-flurry-of-blows", options: expect.arrayContaining([expect.objectContaining({ name: "Addle" }), expect.objectContaining({ name: "Push", save: { ability: "strength", dc: 13 } }), expect.objectContaining({ name: "Topple", save: { ability: "dexterity", dc: 13 }, condition: "Prone" })]) }) }),
-        expect.objectContaining({ id: "item-itm_monk_spear-damage", formula: "1d8+5", metadata: expect.objectContaining({ attacksPerAction: 2, feature: "Extra Attack", martialArts: { die: "d8", dexterousAttacks: true } }) })
+        expect.objectContaining({ id: "item-itm_monk_spear-damage", formula: "1d8+3", metadata: expect.objectContaining({ attacksPerAction: 2, feature: "Extra Attack", martialArts: { die: "d8", dexterousAttacks: true } }) })
       ])
     );
-    expect(dnd5eSrdActionFormula(levelFiveMonkActor, [monkSpear], "feature-deflect-attacks-damage")).toBe("2d8+5");
+    expect(dnd5eSrdActionFormula(levelFiveMonkActor, [monkSpear], "feature-deflect-attacks-damage")).toBe("2d8+3");
     expect(dnd5eSrdActionFormula(levelFiveMonkActor, [monkSpear], "feature-uncanny-metabolism-healing")).toBe("1d8+5");
     let levelSeventeenMonkData = levelFiveMonkData;
     for (let level = 6; level <= 17; level += 1) {
@@ -3455,7 +3453,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdActionFormula(sorcererActor, [], "feature-innate-sorcery")).toBe("0");
     let levelFiveSorcererData = sorcererActor.data;
     for (let level = 2; level <= 5; level += 1) {
-      levelFiveSorcererData = applyDnd5eSrdAdvancement({ ...sorcererActor, data: levelFiveSorcererData }, "level-up");
+      levelFiveSorcererData = applyDnd5eSrdAdvancement({ ...sorcererActor, data: levelFiveSorcererData }, "level-up", level === 3 ? { subclassId: "draconic-sorcery" } : {});
     }
     const levelFiveSorcererActor: Actor = { ...sorcererActor, data: levelFiveSorcererData };
     expect(levelFiveSorcererData.features).toEqual(expect.arrayContaining(["Font of Magic", "Metamagic", "Sorcerer Subclass", "Draconic Sorcery", "Draconic Resilience", "Draconic Spells", "Ability Score Improvement", "Sorcerous Restoration"]));
@@ -3471,12 +3469,12 @@ describe("dnd 5.5e srd rules", () => {
     });
     expect(dnd5eSrdQuickRolls(levelFiveSorcererActor, [sorcerousBurst, sorcererChromaticOrb])).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: "feature-innate-sorcery", metadata: expect.objectContaining({ spellSaveDc: 17 }) }),
+        expect.objectContaining({ id: "feature-innate-sorcery", metadata: expect.objectContaining({ spellSaveDc: 15 }) }),
         expect.objectContaining({ id: "feature-convert-spell-slot-to-sorcery-points", metadata: expect.objectContaining({ max: 5, availableSlotLevels: [1, 2, 3] }) }),
         expect.objectContaining({ id: "feature-create-spell-slot", metadata: expect.objectContaining({ availableSlotLevels: [1, 2, 3] }) }),
-        expect.objectContaining({ id: "feature-metamagic-empowered-spell", metadata: expect.objectContaining({ cost: 1, rerollDamageDiceUpTo: 5 }) }),
+        expect.objectContaining({ id: "feature-metamagic-empowered-spell", metadata: expect.objectContaining({ cost: 1, rerollDamageDiceUpTo: 3 }) }),
         expect.objectContaining({ id: "feature-metamagic-quickened-spell", metadata: expect.objectContaining({ cost: 2, castingTime: "Bonus Action" }) }),
-        expect.objectContaining({ id: "feature-draconic-resilience", formula: "0", metadata: expect.objectContaining({ hitPointMaximumBonus: 5, unarmoredArmorClass: 17, draconicSpells: expect.arrayContaining([expect.objectContaining({ sorcererLevel: 3, spells: ["alter-self", "chromatic-orb", "command", "dragons-breath"] })]) }) })
+        expect.objectContaining({ id: "feature-draconic-resilience", formula: "0", metadata: expect.objectContaining({ hitPointMaximumBonus: 5, unarmoredArmorClass: 15, draconicSpells: expect.arrayContaining([expect.objectContaining({ sorcererLevel: 3, spells: ["alter-self", "chromatic-orb", "command", "dragons-breath"] })]) }) })
       ])
     );
     let levelEighteenSorcererData = levelFiveSorcererData;
@@ -3489,11 +3487,11 @@ describe("dnd 5.5e srd rules", () => {
       dragonWings: { current: 1, max: 1, recovery: "long" },
       dragonCompanion: { current: 1, max: 1, recovery: "long" }
     }));
-    expect(dnd5eSrdSheet(levelEighteenSorcererActor, []).data.armorClassDetails).toEqual(expect.objectContaining({ armorName: "Draconic Resilience", value: 23 }));
+    expect(dnd5eSrdSheet(levelEighteenSorcererActor, []).data.armorClassDetails).toEqual(expect.objectContaining({ armorName: "Draconic Resilience", value: 15 }));
     expect(dnd5eSrdQuickRolls(levelEighteenSorcererActor, [])).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: "feature-draconic-resilience", metadata: expect.objectContaining({ hitPointMaximumBonus: 18, unarmoredArmorClass: 23 }) }),
-        expect.objectContaining({ id: "feature-draconic-elemental-affinity", formula: "11", metadata: expect.objectContaining({ damageBonus: 11, damageTypeChoices: ["Acid", "Cold", "Fire", "Lightning", "Poison"] }) }),
+        expect.objectContaining({ id: "feature-draconic-resilience", metadata: expect.objectContaining({ hitPointMaximumBonus: 18, unarmoredArmorClass: 15 }) }),
+        expect.objectContaining({ id: "feature-draconic-elemental-affinity", formula: "3", metadata: expect.objectContaining({ damageBonus: 3, damageTypeChoices: ["Acid", "Cold", "Fire", "Lightning", "Poison"] }) }),
         expect.objectContaining({ id: "feature-draconic-wings", formula: "0", metadata: expect.objectContaining({ resource: "dragonWings", flySpeedFt: 60, restoreUse: { resource: "sorceryPoints", cost: 3, actionRequired: false } }) }),
         expect.objectContaining({ id: "feature-draconic-companion", formula: "0", metadata: expect.objectContaining({ resource: "dragonCompanion", spell: "summon-dragon", canRemoveConcentration: true }) })
       ])
@@ -3550,16 +3548,16 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdActionFormula(rogueActor, [], "feature-sneak-attack-damage")).toBe("1d6");
     let levelFiveRogueData = rogueActor.data;
     for (let level = 2; level <= 5; level += 1) {
-      levelFiveRogueData = applyDnd5eSrdAdvancement({ ...rogueActor, data: levelFiveRogueData }, "level-up");
+      levelFiveRogueData = applyDnd5eSrdAdvancement({ ...rogueActor, data: levelFiveRogueData }, "level-up", level === 3 ? { subclassId: "thief" } : {});
     }
     const levelFiveRogueActor: Actor = { ...rogueActor, data: levelFiveRogueData };
     expect(levelFiveRogueData.features).toEqual(expect.arrayContaining(["Thief", "Fast Hands", "Second-Story Work", "Cunning Action", "Steady Aim", "Cunning Strike", "Uncanny Dodge"]));
     expect(dnd5eSrdQuickRolls(levelFiveRogueActor, [])).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: "feature-sneak-attack-damage", formula: "3d6", metadata: expect.objectContaining({ cunningStrike: expect.objectContaining({ saveDc: 16, reducedSneakAttackFormula: "2d6" }) }) }),
-        expect.objectContaining({ id: "feature-cunning-strike", label: "Cunning Strike", formula: "0", metadata: expect.objectContaining({ saveDc: 16, sneakAttackDice: 3 }) }),
+        expect.objectContaining({ id: "feature-sneak-attack-damage", formula: "3d6", metadata: expect.objectContaining({ cunningStrike: expect.objectContaining({ saveDc: 14, reducedSneakAttackFormula: "2d6" }) }) }),
+        expect.objectContaining({ id: "feature-cunning-strike", label: "Cunning Strike", formula: "0", metadata: expect.objectContaining({ saveDc: 14, sneakAttackDice: 3 }) }),
         expect.objectContaining({ id: "feature-thief-fast-hands", label: "Fast Hands", formula: "0", metadata: expect.objectContaining({ actionEconomy: "Bonus Action", grantedBy: "Cunning Action" }) }),
-        expect.objectContaining({ id: "feature-thief-second-story-work", label: "Second-Story Work", formula: "0", metadata: expect.objectContaining({ climbSpeedFt: 30, jumpDistanceBonusFt: 5 }) })
+        expect.objectContaining({ id: "feature-thief-second-story-work", label: "Second-Story Work", formula: "0", metadata: expect.objectContaining({ climbSpeedFt: 30, jumpDistanceBonusFt: 3 }) })
       ])
     );
     expect(dnd5eSrdActionFormula(levelFiveRogueActor, [], "feature-cunning-strike")).toBe("0");
@@ -3777,7 +3775,7 @@ describe("dnd 5.5e srd rules", () => {
 
     let levelFiveWarlockData = warlockActor.data;
     for (let level = 2; level <= 5; level += 1) {
-      levelFiveWarlockData = applyDnd5eSrdAdvancement({ ...warlockActor, data: levelFiveWarlockData }, "level-up");
+      levelFiveWarlockData = applyDnd5eSrdAdvancement({ ...warlockActor, data: levelFiveWarlockData }, "level-up", level === 3 ? { subclassId: "fiend-patron" } : {});
     }
     const levelFiveWarlockActor: Actor = { ...warlockActor, data: levelFiveWarlockData };
     expect(levelFiveWarlockData.features).toEqual(expect.arrayContaining(["Eldritch Invocations", "Pact Magic", "Magical Cunning", "Warlock Subclass", "Fiend Patron", "Dark One's Blessing", "Fiend Spells", "Ability Score Improvement"]));
@@ -3787,7 +3785,7 @@ describe("dnd 5.5e srd rules", () => {
       expect.arrayContaining([
         expect.objectContaining({ id: "feature-eldritch-invocations", formula: "0", metadata: expect.objectContaining({ known: 5 }) }),
         expect.objectContaining({ id: "feature-magical-cunning", formula: "0", metadata: expect.objectContaining({ maxRecoveredSlots: 1, pactMagic: { slotLevel: 3, maxSlots: 2, recovery: "short" } }) }),
-        expect.objectContaining({ id: "feature-fiend-dark-ones-blessing", formula: "10", metadata: expect.objectContaining({ temporaryHitPoints: 10, patronSpells: expect.arrayContaining([expect.objectContaining({ warlockLevel: 3, spells: ["burning-hands", "command", "scorching-ray", "suggestion"] })]) }) })
+        expect.objectContaining({ id: "feature-fiend-dark-ones-blessing", formula: "8", metadata: expect.objectContaining({ temporaryHitPoints: 8, patronSpells: expect.arrayContaining([expect.objectContaining({ warlockLevel: 3, spells: ["burning-hands", "command", "scorching-ray", "suggestion"] })]) }) })
       ])
     );
 
@@ -3798,14 +3796,14 @@ describe("dnd 5.5e srd rules", () => {
     const levelFourteenWarlockActor: Actor = { ...warlockActor, data: levelFourteenWarlockData };
     expect(levelFourteenWarlockData.features).toEqual(expect.arrayContaining(["Dark One's Own Luck", "Fiendish Resilience", "Hurl Through Hell"]));
     expect(levelFourteenWarlockData.resources).toEqual(expect.objectContaining({
-      fiendLuck: { current: 5, max: 9, recovery: "long" },
+      fiendLuck: { current: 3, max: 3, recovery: "long" },
       hurlThroughHell: { current: 1, max: 1, recovery: "long" }
     }));
     expect(dnd5eSrdQuickRolls(levelFourteenWarlockActor, [])).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: "feature-fiend-dark-ones-own-luck", formula: "1d10", metadata: expect.objectContaining({ resource: "fiendLuck", maxUses: 9 }) }),
+        expect.objectContaining({ id: "feature-fiend-dark-ones-own-luck", formula: "1d10", metadata: expect.objectContaining({ resource: "fiendLuck", maxUses: 3 }) }),
         expect.objectContaining({ id: "feature-fiendish-resilience", formula: "0", metadata: expect.objectContaining({ excludedDamageTypes: ["Force"] }) }),
-        expect.objectContaining({ id: "feature-fiend-hurl-through-hell-damage", formula: "8d10", metadata: expect.objectContaining({ resource: "hurlThroughHell", damageType: "Psychic", save: { ability: "charisma", dc: 22 } }) })
+        expect.objectContaining({ id: "feature-fiend-hurl-through-hell-damage", formula: "8d10", metadata: expect.objectContaining({ resource: "hurlThroughHell", damageType: "Psychic", save: { ability: "charisma", dc: 16 } }) })
       ])
     );
 
@@ -3814,7 +3812,8 @@ describe("dnd 5.5e srd rules", () => {
       expect.objectContaining({
         systemId: "dnd-5e-srd",
         slotLevel: 3,
-        consumed: [{ type: "spellSlot", key: "level3", label: "Level 3 Spell Slot", amount: 1, remaining: 1 }],
+        slotPool: "spellSlots",
+        consumed: [{ type: "pactSlot", key: "level3", label: "Level 3 Pact Magic Slot", amount: 1, remaining: 1 }],
         data: expect.objectContaining({ spellSlots: { level3: { current: 1, max: 2, recovery: "short" } } })
       })
     );
@@ -3835,8 +3834,8 @@ describe("dnd 5.5e srd rules", () => {
     const darkLuck = useDnd5eSrdAction(levelFourteenWarlockActor, [], "feature-fiend-dark-ones-own-luck");
     expect(darkLuck).toEqual(
       expect.objectContaining({
-        consumed: [{ type: "resource", key: "fiendLuck", label: "Dark One's Own Luck", amount: 1, remaining: 4 }],
-        data: expect.objectContaining({ resources: expect.objectContaining({ fiendLuck: { current: 4, max: 9, recovery: "long" } }) })
+        consumed: [{ type: "resource", key: "fiendLuck", label: "Dark One's Own Luck", amount: 1, remaining: 2 }],
+        data: expect.objectContaining({ resources: expect.objectContaining({ fiendLuck: { current: 2, max: 3, recovery: "long" } }) })
       })
     );
     const hurlThroughHell = useDnd5eSrdAction(levelFourteenWarlockActor, [], "feature-fiend-hurl-through-hell-damage");
@@ -3952,10 +3951,10 @@ describe("dnd 5.5e srd rules", () => {
     const dwarfActor: Actor = { ...srdActor, data: dwarf.data };
     expect(dnd5eSrdQuickRolls(dwarfActor, [])).toEqual(expect.arrayContaining([expect.objectContaining({ id: "species-dwarf-stonecunning", metadata: expect.objectContaining({ sense: "Tremorsense", rangeFt: 60 }) })]));
     const advancedDwarf = applyDnd5eSrdAdvancement(dwarfActor, "level-up");
-    expect(advancedDwarf.hp).toEqual({ current: 19, max: 19 });
+    expect(advancedDwarf.hp).toEqual({ current: 22, max: 22 });
 
     const dragonborn = dnd5eSrdApplyCharacterOrigins(dnd5eSrdCharacterTemplate("fighter")!, { speciesId: "dragonborn" });
-    const levelFiveDragonbornActor: Actor = { ...srdActor, data: Array.from({ length: 4 }).reduce((data) => applyDnd5eSrdAdvancement({ ...srdActor, data: data as Record<string, unknown> }, "level-up"), dragonborn.data) as Record<string, unknown> };
+    const levelFiveDragonbornActor: Actor = { ...srdActor, data: Array.from({ length: 4 }).reduce((data, _value, index) => applyDnd5eSrdAdvancement({ ...srdActor, data: data as Record<string, unknown> }, "level-up", index === 1 ? { subclassId: "champion" } : {}), dragonborn.data) as Record<string, unknown> };
     expect(levelFiveDragonbornActor.data.resources).toEqual(expect.objectContaining({ breathWeapon: { current: 2, max: 3, recovery: "long" }, draconicFlight: { current: 1, max: 1, recovery: "long" } }));
     expect(dnd5eSrdQuickRolls(levelFiveDragonbornActor, [])).toEqual(
       expect.arrayContaining([
@@ -3966,7 +3965,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(useDnd5eSrdAction(levelFiveDragonbornActor, [], "species-dragonborn-breath-weapon").consumed).toEqual([{ type: "resource", key: "breathWeapon", label: "Breath Weapon", amount: 1, remaining: 1 }]);
 
     const goliath = dnd5eSrdApplyCharacterOrigins(dnd5eSrdCharacterTemplate("barbarian")!, { speciesId: "goliath" });
-    const levelFiveGoliathActor: Actor = { ...srdActor, data: Array.from({ length: 4 }).reduce((data) => applyDnd5eSrdAdvancement({ ...srdActor, data: data as Record<string, unknown> }, "level-up"), goliath.data) as Record<string, unknown> };
+    const levelFiveGoliathActor: Actor = { ...srdActor, data: Array.from({ length: 4 }).reduce((data, _value, index) => applyDnd5eSrdAdvancement({ ...srdActor, data: data as Record<string, unknown> }, "level-up", index === 1 ? { subclassId: "path-of-the-berserker" } : {}), goliath.data) as Record<string, unknown> };
     expect(levelFiveGoliathActor.data.resources).toEqual(expect.objectContaining({ giantAncestry: { current: 2, max: 3, recovery: "long" }, largeForm: { current: 1, max: 1, recovery: "long" } }));
     expect(dnd5eSrdQuickRolls(levelFiveGoliathActor, [])).toEqual(
       expect.arrayContaining([
@@ -4028,7 +4027,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdQuickRolls(drowElfActor, drowElfItems).map((roll) => roll.id)).not.toContain("spell-itm_faerie_fire-effect");
     const levelThreeElfActor: Actor = {
       ...drowElfActor,
-      data: Array.from({ length: 2 }).reduce((data) => applyDnd5eSrdAdvancement({ ...drowElfActor, data: data as Record<string, unknown> }, "level-up"), drowElf.data) as Record<string, unknown>
+      data: Array.from({ length: 2 }).reduce((data, _value, index) => applyDnd5eSrdAdvancement({ ...drowElfActor, data: data as Record<string, unknown> }, "level-up", index === 1 ? { subclassId: "evoker" } : {}), drowElf.data) as Record<string, unknown>
     };
     expect(levelThreeElfActor.data.resources).toEqual(expect.objectContaining({ elfLineageLevel3: { current: 1, max: 1, recovery: "long" } }));
     expect(dnd5eSrdQuickRolls(levelThreeElfActor, drowElfItems)).toEqual(expect.arrayContaining([expect.objectContaining({ id: "spell-itm_faerie_fire-effect", formula: "0" })]));
@@ -4123,7 +4122,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdQuickRolls(tieflingActor, tieflingItems).map((roll) => roll.id)).not.toContain("spell-itm_ray_of_sickness-damage");
     const levelThreeTieflingActor: Actor = {
       ...tieflingActor,
-      data: Array.from({ length: 2 }).reduce((data) => applyDnd5eSrdAdvancement({ ...tieflingActor, data: data as Record<string, unknown> }, "level-up"), tiefling.data) as Record<string, unknown>
+      data: Array.from({ length: 2 }).reduce((data, _value, index) => applyDnd5eSrdAdvancement({ ...tieflingActor, data: data as Record<string, unknown> }, "level-up", index === 1 ? { subclassId: "champion" } : {}), tiefling.data) as Record<string, unknown>
     };
     expect(levelThreeTieflingActor.data.resources).toEqual(expect.objectContaining({ tieflingLegacyLevel3: { current: 1, max: 1, recovery: "long" } }));
     expect(dnd5eSrdQuickRolls(levelThreeTieflingActor, tieflingItems)).toEqual(expect.arrayContaining([expect.objectContaining({ id: "spell-itm_ray_of_sickness-damage", formula: "2d8" })]));
@@ -4147,7 +4146,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdAdvancementOptions(srdActor)).toContainEqual(expect.objectContaining({ systemId: "dnd-5e-srd", id: "level-up" }));
     const advanced = applyDnd5eSrdAdvancement(srdActor, "level-up");
     expect(advanced).toEqual(expect.objectContaining({ ruleset: "SRD 5.2.1", level: 2 }));
-    expect((advanced.attributes as Record<string, number>).wisdom).toBe(17);
+    expect((advanced.attributes as Record<string, number>).wisdom).toBe(16);
     expect(applyDnd5eSrdRest(srdActor, "long")).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd" }));
     expect(dnd5eSrdEncounterThreats().map((threat) => threat.id)).toContain("goblin-minion");
     expect(dnd5eSrdEncounterThreats().map((threat) => threat.id)).toEqual(
@@ -8747,7 +8746,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(() =>
       useDnd5eSrdAction({ ...levelTwoClericActor, data: { ...levelTwoClericActor.data, resources: { channelDivinity: { current: 0, max: 2, recovery: "short" } } } }, [], "feature-divine-spark-damage")
     ).toThrow("Insufficient channel divinity");
-    const levelThreeClericActor: Actor = { ...clericActor, data: applyDnd5eSrdAdvancement(levelTwoClericActor, "level-up") };
+    const levelThreeClericActor: Actor = { ...clericActor, data: applyDnd5eSrdAdvancement(levelTwoClericActor, "level-up", { subclassId: "life-domain" }) };
     expect(useDnd5eSrdAction(levelThreeClericActor, [], "feature-life-preserve-life")).toEqual(
       expect.objectContaining({
         systemId: "dnd-5e-srd",
@@ -8757,7 +8756,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(useDnd5eSrdAction(levelThreeClericActor, [], "feature-life-disciple-of-life").consumed).toEqual([]);
     let levelFiveClericData = clericActor.data;
     for (let level = 2; level <= 5; level += 1) {
-      levelFiveClericData = applyDnd5eSrdAdvancement({ ...clericActor, data: levelFiveClericData }, "level-up");
+      levelFiveClericData = applyDnd5eSrdAdvancement({ ...clericActor, data: levelFiveClericData }, "level-up", level === 3 ? { subclassId: "life-domain" } : {});
     }
     expect(useDnd5eSrdAction({ ...clericActor, data: levelFiveClericData }, [], "feature-sear-undead-damage")).toEqual(
       expect.objectContaining({
@@ -8781,7 +8780,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(() => useDnd5eSrdAction({ ...paladinActor, data: layOnHands.data }, [], "feature-lay-on-hands-healing", { resourceAmount: 3 })).toThrow("Insufficient lay on hands");
     let levelFivePaladinData = paladinActor.data;
     for (let level = 2; level <= 5; level += 1) {
-      levelFivePaladinData = applyDnd5eSrdAdvancement({ ...paladinActor, data: levelFivePaladinData }, "level-up");
+      levelFivePaladinData = applyDnd5eSrdAdvancement({ ...paladinActor, data: levelFivePaladinData }, "level-up", level === 3 ? { subclassId: "oath-of-devotion" } : {});
     }
     const levelFivePaladinActor: Actor = { ...paladinActor, data: levelFivePaladinData };
     expect(useDnd5eSrdAction(levelFivePaladinActor, [], "feature-divine-smite-damage", { spellSlotLevel: 2 })).toEqual(
@@ -8846,7 +8845,7 @@ describe("dnd 5.5e srd rules", () => {
     const rangerActor: Actor = { ...srdActor, data: { ...dnd5eSrdCharacterTemplate("ranger")!.data } };
     let levelFiveRangerData = rangerActor.data;
     for (let level = 2; level <= 5; level += 1) {
-      levelFiveRangerData = applyDnd5eSrdAdvancement({ ...rangerActor, data: levelFiveRangerData }, "level-up");
+      levelFiveRangerData = applyDnd5eSrdAdvancement({ ...rangerActor, data: levelFiveRangerData }, "level-up", level === 3 ? { subclassId: "hunter" } : {});
     }
     const levelFiveRangerActor: Actor = { ...rangerActor, data: levelFiveRangerData };
     expect(useDnd5eSrdAction(levelFiveRangerActor, [], "feature-hunters-mark-damage", { useFreeResource: true })).toEqual(
@@ -8893,7 +8892,7 @@ describe("dnd 5.5e srd rules", () => {
     const monkActor: Actor = { ...srdActor, data: { ...dnd5eSrdCharacterTemplate("monk")!.data } };
     let levelFiveMonkData = monkActor.data;
     for (let level = 2; level <= 5; level += 1) {
-      levelFiveMonkData = applyDnd5eSrdAdvancement({ ...monkActor, data: levelFiveMonkData }, "level-up");
+      levelFiveMonkData = applyDnd5eSrdAdvancement({ ...monkActor, data: levelFiveMonkData }, "level-up", level === 3 ? { subclassId: "warrior-of-the-open-hand" } : {});
     }
     const levelFiveMonkActor: Actor = { ...monkActor, data: levelFiveMonkData };
     expect(useDnd5eSrdAction(levelFiveMonkActor, [], "feature-flurry-of-blows")).toEqual(
@@ -8970,7 +8969,7 @@ describe("dnd 5.5e srd rules", () => {
     const sorcererActor: Actor = { ...srdActor, data: { ...dnd5eSrdCharacterTemplate("sorcerer")!.data } };
     let levelFiveSorcererData = sorcererActor.data;
     for (let level = 2; level <= 5; level += 1) {
-      levelFiveSorcererData = applyDnd5eSrdAdvancement({ ...sorcererActor, data: levelFiveSorcererData }, "level-up");
+      levelFiveSorcererData = applyDnd5eSrdAdvancement({ ...sorcererActor, data: levelFiveSorcererData }, "level-up", level === 3 ? { subclassId: "draconic-sorcery" } : {});
     }
     const levelFiveSorcererActor: Actor = { ...sorcererActor, data: levelFiveSorcererData };
     expect(useDnd5eSrdAction(levelFiveSorcererActor, [], "feature-innate-sorcery")).toEqual(
@@ -9037,7 +9036,7 @@ describe("dnd 5.5e srd rules", () => {
     const druidActor: Actor = { ...srdActor, data: { ...dnd5eSrdCharacterTemplate("druid")!.data } };
     let levelFiveDruidData = druidActor.data;
     for (let level = 2; level <= 5; level += 1) {
-      levelFiveDruidData = applyDnd5eSrdAdvancement({ ...druidActor, data: levelFiveDruidData }, "level-up");
+      levelFiveDruidData = applyDnd5eSrdAdvancement({ ...druidActor, data: levelFiveDruidData }, "level-up", level === 3 ? { subclassId: "circle-of-the-land" } : {});
     }
     const levelFiveDruidActor: Actor = { ...druidActor, data: levelFiveDruidData };
     expect(useDnd5eSrdAction(levelFiveDruidActor, [], "feature-wild-shape")).toEqual(
@@ -9057,38 +9056,10 @@ describe("dnd 5.5e srd rules", () => {
       levelFourteenDruidData = applyDnd5eSrdAdvancement({ ...druidActor, data: levelFourteenDruidData }, "level-up");
     }
     const levelFourteenDruidActor: Actor = { ...druidActor, data: levelFourteenDruidData };
-    expect(useDnd5eSrdAction(levelFourteenDruidActor, [], "feature-moon-moonlight-step")).toEqual(
-      expect.objectContaining({
-        systemId: "dnd-5e-srd",
-        consumed: [{ type: "resource", key: "moonlightStep", label: "Moonlight Step", amount: 1, remaining: 6 }],
-        data: expect.objectContaining({ resources: expect.objectContaining({ moonlightStep: { current: 6, max: 9, recovery: "long" } }) })
-      })
-    );
-    expect(
-      useDnd5eSrdAction(
-        {
-          ...levelFourteenDruidActor,
-          data: {
-            ...levelFourteenDruidData,
-            resources: { ...(levelFourteenDruidData.resources as Record<string, unknown>), moonlightStep: { current: 0, max: 9, recovery: "long" } },
-            spellSlots: { ...(levelFourteenDruidData.spellSlots as Record<string, unknown>), level2: { current: 3, max: 3, recovery: "long" } }
-          }
-        },
-        [],
-        "feature-moon-moonlight-step",
-        { spellSlotLevel: 2 }
-      )
-    ).toEqual(
-      expect.objectContaining({
-        systemId: "dnd-5e-srd",
-        slotLevel: 2,
-        consumed: [{ type: "spellSlot", key: "level2", label: "Level 2 Spell Slot", amount: 1, remaining: 2 }],
-        data: expect.objectContaining({
-          resources: expect.objectContaining({ moonlightStep: { current: 1, max: 9, recovery: "long" } }),
-          spellSlots: expect.objectContaining({ level2: { current: 2, max: 3, recovery: "long" } })
-        })
-      })
-    );
+    expect(levelFourteenDruidData.features).toEqual(expect.arrayContaining(["Natural Recovery", "Nature's Ward", "Nature's Sanctuary"]));
+    expect(levelFourteenDruidData.features).not.toEqual(expect.arrayContaining(["Improved Circle Forms", "Moonlight Step", "Lunar Form"]));
+    expect(levelFourteenDruidData.resources).not.toHaveProperty("moonlightStep");
+    expect(dnd5eSrdQuickRolls(levelFourteenDruidActor, []).map((roll) => roll.id).some((id) => id.startsWith("feature-moon-"))).toBe(false);
     expect(useDnd5eSrdAction(levelFiveDruidActor, [], "feature-wild-companion")).toEqual(
       expect.objectContaining({
         systemId: "dnd-5e-srd",
@@ -9211,7 +9182,7 @@ describe("dnd 5.5e srd rules", () => {
     );
     let levelNineWizardData = dnd5eSrdCharacterTemplate("wizard")!.data;
     for (let level = 2; level <= 9; level += 1) {
-      levelNineWizardData = applyDnd5eSrdAdvancement({ ...wizardActor, data: levelNineWizardData }, "level-up");
+      levelNineWizardData = applyDnd5eSrdAdvancement({ ...wizardActor, data: levelNineWizardData }, "level-up", level === 3 ? { subclassId: "evoker" } : {});
     }
     const levelNineWizardActor: Actor = { ...wizardActor, data: levelNineWizardData };
     expect(levelNineWizardData.spellSlots).toEqual({
@@ -9273,14 +9244,14 @@ describe("dnd 5.5e srd rules", () => {
     expect(levelFourteenWizardData.resources).toEqual(expect.objectContaining({ overchannel: { current: 1, max: 1, recovery: "long" } }));
     expect(dnd5eSrdQuickRolls(levelFourteenWizardActor, [levelFourteenMagicMissile])).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: "feature-evoker-potent-cantrip", label: "Potent Cantrip", formula: "0", metadata: expect.objectContaining({ saveDc: 22 }) }),
+        expect.objectContaining({ id: "feature-evoker-potent-cantrip", label: "Potent Cantrip", formula: "0", metadata: expect.objectContaining({ saveDc: 16 }) }),
         expect.objectContaining({ id: "feature-evoker-sculpt-spells", label: "Sculpt Spells", formula: "0", metadata: expect.objectContaining({ protectedCreatures: "1 + spell level" }) }),
-        expect.objectContaining({ id: "feature-evoker-empowered-evocation", label: "Empowered Evocation", formula: "9", metadata: expect.objectContaining({ damageBonus: 9 }) }),
+        expect.objectContaining({ id: "feature-evoker-empowered-evocation", label: "Empowered Evocation", formula: "3", metadata: expect.objectContaining({ damageBonus: 3 }) }),
         expect.objectContaining({ id: "feature-evoker-overchannel", label: "Overchannel", formula: "0", metadata: expect.objectContaining({ resource: "overchannel", maximizesDamageDice: true }) }),
-        expect.objectContaining({ id: "spell-itm_level_fourteen_magic_missile-damage", label: "Magic Missile Damage", formula: "3d4+3+9" })
+        expect.objectContaining({ id: "spell-itm_level_fourteen_magic_missile-damage", label: "Magic Missile Damage", formula: "3d4+3+3" })
       ])
     );
-    expect(dnd5eSrdActionFormula(levelFourteenWizardActor, [levelFourteenMagicMissile], "spell-itm_level_fourteen_magic_missile-damage", { spellSlotLevel: 2 })).toBe("3d4+3+1d4+1+9");
+    expect(dnd5eSrdActionFormula(levelFourteenWizardActor, [levelFourteenMagicMissile], "spell-itm_level_fourteen_magic_missile-damage", { spellSlotLevel: 2 })).toBe("3d4+3+1d4+1+3");
     expect(useDnd5eSrdAction(levelFourteenWizardActor, [], "feature-evoker-overchannel").consumed).toEqual([{ type: "resource", key: "overchannel", label: "Overchannel", amount: 1, remaining: 0 }]);
     const barbarianActionActor: Actor = { ...srdActor, data: { ...dnd5eSrdCharacterTemplate("barbarian")!.data } };
     expect(useDnd5eSrdAction(barbarianActionActor, [], "feature-rage")).toEqual(
@@ -9306,7 +9277,7 @@ describe("dnd 5.5e srd rules", () => {
         data: expect.objectContaining({ features: expect.arrayContaining(["Reckless Attack"]) })
       })
     );
-    const actionLevelThreeBarbarianActor: Actor = { ...barbarianActionActor, data: applyDnd5eSrdAdvancement(actionLevelTwoBarbarianActor, "level-up") };
+    const actionLevelThreeBarbarianActor: Actor = { ...barbarianActionActor, data: applyDnd5eSrdAdvancement(actionLevelTwoBarbarianActor, "level-up", { subclassId: "path-of-the-berserker" }) };
     expect(useDnd5eSrdAction(actionLevelThreeBarbarianActor, [], "feature-berserker-frenzy-damage")).toEqual(
       expect.objectContaining({
         systemId: "dnd-5e-srd",
@@ -9316,7 +9287,7 @@ describe("dnd 5.5e srd rules", () => {
     );
     let actionLevelFourteenBarbarianData = actionLevelThreeBarbarianActor.data;
     for (let level = 4; level <= 14; level += 1) {
-      actionLevelFourteenBarbarianData = applyDnd5eSrdAdvancement({ ...barbarianActionActor, data: actionLevelFourteenBarbarianData }, "level-up");
+      actionLevelFourteenBarbarianData = applyDnd5eSrdAdvancement({ ...barbarianActionActor, data: actionLevelFourteenBarbarianData }, "level-up", level === 3 ? { subclassId: "path-of-the-berserker" } : {});
     }
     const actionLevelFourteenBarbarianActor: Actor = { ...barbarianActionActor, data: actionLevelFourteenBarbarianData };
     expect(useDnd5eSrdAction(actionLevelFourteenBarbarianActor, [], "feature-berserker-mindless-rage").consumed).toEqual([]);
@@ -9345,7 +9316,7 @@ describe("dnd 5.5e srd rules", () => {
     });
     let levelFiveBardData = bardActor.data;
     for (let level = 2; level <= 5; level += 1) {
-      levelFiveBardData = applyDnd5eSrdAdvancement({ ...bardActor, data: levelFiveBardData }, "level-up");
+      levelFiveBardData = applyDnd5eSrdAdvancement({ ...bardActor, data: levelFiveBardData }, "level-up", level === 3 ? { subclassId: "college-of-lore" } : {});
     }
     const levelFiveBardActor: Actor = { ...bardActor, data: levelFiveBardData };
     expect(applyDnd5eSrdRest({ ...levelFiveBardActor, data: { ...levelFiveBardActor.data, resources: { bardicInspiration: { current: 0, max: 5, recovery: "short" } } } }, "short")).toEqual(
@@ -9391,7 +9362,7 @@ describe("dnd 5.5e srd rules", () => {
     );
     let levelFiveRogueData = rogueActor.data;
     for (let level = 2; level <= 5; level += 1) {
-      levelFiveRogueData = applyDnd5eSrdAdvancement({ ...rogueActor, data: levelFiveRogueData }, "level-up");
+      levelFiveRogueData = applyDnd5eSrdAdvancement({ ...rogueActor, data: levelFiveRogueData }, "level-up", level === 3 ? { subclassId: "thief" } : {});
     }
     expect(useDnd5eSrdAction({ ...rogueActor, data: levelFiveRogueData }, [], "feature-cunning-strike")).toEqual(
       expect.objectContaining({
@@ -9651,9 +9622,10 @@ describe("dnd 5.5e srd rules", () => {
       createdAt: "2026-05-01T00:00:00.000Z",
       updatedAt: "2026-05-01T00:00:00.000Z"
     };
-    const paralysisRoll = dnd5eSrdQuickRolls(srdActor, [wand]).find((roll) => roll.id === "item-itm_rules_wand-effect")!;
+    const wandActor: Actor = { ...srdActor, data: { ...srdActor.data, rulesEngine: { attunedItemIds: [wand.id] } } };
+    const paralysisRoll = dnd5eSrdQuickRolls(wandActor, [wand]).find((roll) => roll.id === "item-itm_rules_wand-effect")!;
     const pendingParalysis = resolveDnd5eSrdAction({
-      actor: srdActor,
+      actor: wandActor,
       items: [wand],
       roll: paralysisRoll,
       targets: [{ actor: target }],
@@ -9665,7 +9637,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(pendingParalysis.actorUpdates.find((update) => update.actorId === target.id)).toBeUndefined();
 
     const paralysis = resolveDnd5eSrdAction({
-      actor: srdActor,
+      actor: wandActor,
       items: [wand],
       roll: paralysisRoll,
       targets: [{ actor: target }],

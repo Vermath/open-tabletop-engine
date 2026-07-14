@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 const appSource = readFileSync(resolve(__dirname, "App.tsx"), "utf8").replace(/\r\n/g, "\n");
 const apiSource = readFileSync(resolve(__dirname, "api.ts"), "utf8").replace(/\r\n/g, "\n");
 const adminSource = readFileSync(resolve(__dirname, "admin-panel.tsx"), "utf8").replace(/\r\n/g, "\n");
+const adminPluginClientSource = readFileSync(resolve(__dirname, "admin-plugin-client.ts"), "utf8").replace(/\r\n/g, "\n");
 const workspaceBoundActionSource = readFileSync(resolve(__dirname, "workspace-bound-action.ts"), "utf8").replace(/\r\n/g, "\n");
 
 describe("workspace-bound async operations", () => {
@@ -30,10 +31,16 @@ describe("workspace-bound async operations", () => {
     expect(appSource).toContain("async function runWorkspaceAdminAction<T>(");
     expect(appSource).toContain("loadAdminSnapshot({ signal: request.controller.signal })");
     expect(appSource).toContain("apiUploadAsset({");
-    expect(appSource).toContain("}, { signal: request.controller.signal })");
-    expect(appSource).toContain("`/api/v1/audio/${track.id}`, { playing: !track.playing }, { signal: request.controller.signal }");
+    expect(appSource).toContain("idempotencyKey: uploadAttempt.idempotencyKey");
+    const audioBody = appSource.slice(appSource.indexOf("async function toggleAudioTrack"), appSource.indexOf("function createBlankCanvasDemoRoll"));
+    expect(audioBody).toContain("expectedUpdatedAt: latest.updatedAt");
+    expect(audioBody).toContain("signal: request.controller.signal");
+    expect(audioBody).toContain("idempotencyKey:");
     expect(appSource).toContain("`/api/v1/campaigns/${request.campaignId}/plugins/${plugin.id}/install`");
-    expect(appSource).toContain('"/api/v1/plugins/registry/sync", { campaignId: request.campaignId }, { signal: request.controller.signal }');
+    expect(appSource).toContain("adminPluginMutations.syncCampaignRegistry(request.campaignId, expectedRegistryRevision, request.controller.signal)");
+    expect(adminPluginClientSource).toContain('"/api/v1/plugins/registry/sync"');
+    expect(adminPluginClientSource).toContain('"plugin-registry-sync"');
+    expect(appSource).toContain("idempotencyKey: attempt.idempotencyKey");
   });
 
   it("reports committed plugin, character-import, and proposal actions separately from reconciliation failures", () => {
@@ -75,7 +82,8 @@ describe("workspace-bound async operations", () => {
 
   it("drops token-vision mutation responses after the campaign or user changes", () => {
     expect(appSource).toContain("const tokenId = selectedToken.id;");
-    expect(appSource).toContain("`/api/v1/tokens/${tokenId}`, patch, { signal: request.controller.signal }");
+    expect(appSource).toContain("`/api/v1/tokens/${tokenId}`, payload, { signal: request.controller.signal, idempotencyKey:");
+    expect(appSource).toContain("const payload = { ...patch, expectedUpdatedAt: latest.updatedAt };");
     expect(appSource).toContain("if (updated.id !== tokenId) return;");
     expect(appSource).toContain("return applied;");
   });
@@ -85,7 +93,9 @@ describe("workspace-bound async operations", () => {
     const assignItemBody = appSource.slice(appSource.indexOf("async function assignItemToActor"), appSource.indexOf("function canAssignItemFromSheet"));
     for (const body of [updateItemBody, assignItemBody]) {
       expect(body).toContain("await runWorkspaceBoundAction(");
-      expect(body).toContain("{ signal: request.controller.signal }");
+      expect(body).toContain("signal: request.controller.signal");
+      expect(body).toContain("idempotencyKey:");
+      expect(body).toContain("expectedUpdatedAt: latest.updatedAt");
       expect(body).toContain("applyItemToSnapshot(updated);");
     }
   });
@@ -96,7 +106,9 @@ describe("workspace-bound async operations", () => {
     for (const body of [importBody, purchaseBody]) {
       expect(body).toContain("await runWorkspaceBoundAction(");
       expect(body).toContain("request.campaignId");
-      expect(body).toContain("{ signal: request.controller.signal }");
+      expect(body).toContain("signal: request.controller.signal");
+      expect(body).toContain("idempotencyKey:");
+      expect(body).toContain("expectedUpdatedAt: actor.updatedAt");
       expect(body).toContain("await refresh(request.campaignId, realtimeSelectionRef.current.sceneId);");
     }
   });

@@ -1,0 +1,16 @@
+export const realtimeHistoryLimit = 200;
+
+export function upsertRealtimeRecord<T extends { id: string }>(records: readonly T[], next: T): T[] {
+  return records.some((record) => record.id === next.id)
+    ? records.map((record) => (record.id === next.id ? next : record))
+    : [...records, next];
+}
+
+export function upsertBoundedRealtimeRecord<T extends { id: string }>(records: readonly T[], next: T, limit = realtimeHistoryLimit): T[] {
+  const updated = upsertRealtimeRecord(records, next);
+  return updated.length > limit ? updated.slice(updated.length - limit) : updated;
+}
+
+export function removeRealtimeRecord<T extends { id: string }>(records: readonly T[], id: string): T[] {
+  return records.filter((record) => record.id !== id);
+}

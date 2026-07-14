@@ -1,6 +1,6 @@
 # Plugin SDK
 
-Plugins declare a manifest, requested permissions, UI panels, optional chat commands, and optional event subscriptions. The runtime grants only declared capabilities, and plugin-authored campaign writes always enter the normal proposal review workflow.
+Plugins declare a manifest, requested permissions, UI panels, optional chat commands, and optional event subscriptions. The runtime grants only declared capabilities, and plugin-authored campaign writes must enter a typed, permission-, revision-, validation-, and audit-checked application command. A plugin never writes campaign storage directly. The current chat-command and event bridges use reviewable proposals as one such command path.
 
 See:
 
@@ -47,7 +47,7 @@ The exported `PLUGIN_EVENT_TYPES` list is the authoritative supported surface. H
 
 ## Registry Distribution
 
-Remote registries are server-allowlisted with `OTTE_PLUGIN_REGISTRY_URLS`. A GM with `plugin.install` can sync the configured registry set from the Runtime SDK marketplace panel, and a server admin can run the same sync from Admin Plugin Operations. Both flows write audit rows and refuse registries that are not configured on the server.
+Remote registries are server-allowlisted with `OTTE_PLUGIN_REGISTRY_URLS`. Campaign-scoped sync and package registration require both server-admin authority and the campaign's `plugin.install` permission; the operations-wide sync requires server-admin authority. Every sync request supplies an `Idempotency-Key` and the exact `expectedRegistryRevision` shown by Admin Plugin Reviews or Plugin Operations. A successful response returns both `previousRegistryRevision` and `registryRevision`; a competing stale generation returns `409` without importing another package. Safe retries with the same key replay the original result. All flows write redacted audit rows and refuse registries that are not configured on the server.
 
 A registry catalog is a JSON document with a `plugins` array:
 
@@ -83,7 +83,7 @@ Registry-imported packages are loaded through the same manifest validation, VM s
 - Request only the permissions required by commands or UI surfaces.
 - Include `plugin.signature.json` and publish package checksums for any registry beyond local development.
 - Exercise install, subset permission grant, command execution, upgrade, rollback, rejected-review, and tampered-checksum paths before publishing.
-- Treat every plugin-authored campaign write as a proposal; plugin grants authorize what may be proposed, never a direct state mutation.
+- Use only typed application commands that enforce the human caller's permission, the plugin grant, exact revisions, validation, attribution, audit, and recovery. The current chat/event bridge deliberately maps its output to proposals; that bridge is an implementation choice, not a rule that every future plugin command must be proposal-only.
 - Run the [extension package CI](../extension-ci.md) checks for manifest validation, permission denial cases, signatures, checksums, and install smoke evidence before sharing a package.
 
 ## Public Alpha Smoke Path

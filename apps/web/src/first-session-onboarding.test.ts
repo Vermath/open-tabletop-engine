@@ -61,6 +61,8 @@ describe("first-session onboarding", () => {
     expect(appSource).toContain('setInviteAcceptUrl("")');
     expect(appSource).toContain("progress.inviteEmail");
     expect(appSource).toContain("progress.inviteRole");
-    expect(appSource).toContain("inviteLinkRef.current?.focus()");
+    expect(appSource).toContain("focusInviteLinkAfterSetupRef.current = true");
+    expect(appSource).toContain('workspaceMode !== "manage" || manageCategory !== "people" || !inviteAcceptUrl');
+    expect(appSource).toContain("inviteLink.focus()");
   });
 });

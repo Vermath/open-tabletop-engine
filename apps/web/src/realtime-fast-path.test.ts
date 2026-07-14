@@ -13,4 +13,9 @@ describe("realtime fast path wiring", () => {
   it("guards against applying redacted realtime payloads", () => {
     expect(appSource).toContain("payload.redacted !== true");
   });
+
+  it("falls back to authoritative snapshots for cascade-sensitive deletions", () => {
+    expect(appSource).toContain('if (event.type === "world.deleted") return "snapshot"');
+    expect(appSource).toContain('if (event.type === "combat.ended") return "snapshot"');
+  });
 });

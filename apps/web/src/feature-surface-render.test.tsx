@@ -9,13 +9,17 @@ import type { Actor } from "@open-tabletop/core";
 import type { CampaignSessionInfo } from "./api.js";
 
 const noop = vi.fn();
+const refreshNoop = vi.fn(async () => undefined);
 
 describe("feature-surface states and permissions", () => {
   it("renders World Atlas loading and empty states without mutation controls for readers", () => {
     const html = renderToStaticMarkup(
       <WorldAtlasPanel
         campaignId="camp-1"
+        campaignUpdatedAt="2026-01-01T00:00:00.000Z"
         worlds={[]}
+        worldRecords={[]}
+        worldRelations={[]}
         scenes={[]}
         selectedWorldId="all"
         canCreate={false}
@@ -24,8 +28,11 @@ describe("feature-surface states and permissions", () => {
         canDelete={false}
         loadState="loading"
         onWorldsChange={noop}
+        onWorldRecordsChange={noop}
+        onWorldRelationsChange={noop}
         onSelectWorld={noop}
         onSceneUpdated={noop}
+        onRefreshSharedState={refreshNoop}
         onStatus={noop}
       />
     );
@@ -38,6 +45,7 @@ describe("feature-surface states and permissions", () => {
     const html = renderToStaticMarkup(
       <HandoutLibraryPanel
         campaignId="camp-1"
+        campaignUpdatedAt="2026-01-01T00:00:00.000Z"
         currentUserId="usr-1"
         handouts={[]}
         worlds={[]}
@@ -51,6 +59,7 @@ describe("feature-surface states and permissions", () => {
         loadError="Handouts could not be loaded: offline"
         onRetryLoad={noop}
         onHandoutsChange={noop}
+        onRefreshSharedState={refreshNoop}
         onStatus={noop}
       />
     );
@@ -78,6 +87,7 @@ describe("feature-surface states and permissions", () => {
     const handout = renderToStaticMarkup(
       <HandoutLibraryPanel
         campaignId="camp-1"
+        campaignUpdatedAt="2026-01-01T00:00:00.000Z"
         currentUserId="usr-1"
         handouts={[{
           id: "handout-1",
@@ -101,6 +111,7 @@ describe("feature-surface states and permissions", () => {
         canUpdate={false}
         canDelete={false}
         onHandoutsChange={noop}
+        onRefreshSharedState={refreshNoop}
         onStatus={noop}
       />
     );
@@ -128,7 +139,10 @@ describe("feature-surface states and permissions", () => {
     const world = renderToStaticMarkup(
       <WorldAtlasPanel
         campaignId="camp-1"
+        campaignUpdatedAt="2026-01-01T00:00:00.000Z"
         worlds={[{ id: "world-1", campaignId: "camp-1", name: "Ashen Coast", description: "Stormy", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" }]}
+        worldRecords={[]}
+        worldRelations={[]}
         scenes={[]}
         selectedWorldId="world-1"
         canCreate={false}
@@ -136,8 +150,11 @@ describe("feature-surface states and permissions", () => {
         canAssignScenes={false}
         canDelete={false}
         onWorldsChange={noop}
+        onWorldRecordsChange={noop}
+        onWorldRelationsChange={noop}
         onSelectWorld={noop}
         onSceneUpdated={noop}
+        onRefreshSharedState={refreshNoop}
         onStatus={noop}
       />
     );
@@ -153,5 +170,7 @@ describe("feature-surface states and permissions", () => {
     expect(world).toMatch(/aria-label="World description"[^>]*readOnly/);
     expect(recovery).toContain("Wizard");
     expect(recovery).toContain("1/2d6");
+    expect(recovery).toContain('aria-label="Wizard hit dice to spend"');
+    expect(recovery).toContain("zero-die short rest still restores eligible short-rest resources");
   });
 });

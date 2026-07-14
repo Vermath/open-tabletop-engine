@@ -4,7 +4,7 @@ import type { JournalEntry } from "@open-tabletop/core";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { JournalPanel, journalDraftPayload, journalVisibilityHasTargets } from "./journal-panel.js";
+import { JournalPanel, journalDraftPayload, journalHierarchyRows, journalLinkDisplay, journalRevisionStateKey, journalUpdateIdempotencyKey, journalVisibilityHasTargets, type JournalDraft } from "./journal-panel.js";
 
 describe("journal visibility targeting", () => {
   it("requires a matching target for scoped visibility", () => {
@@ -18,9 +18,9 @@ describe("journal visibility targeting", () => {
 
   it("submits both scoped ids and character-owner user ids", () => {
     const appSource = readFileSync(resolve(__dirname, "App.tsx"), "utf8");
-    expect(appSource).toContain("const actorOwnerUserIds = targets.visibleToActorIds");
+    expect(appSource).toContain("const actorOwnerUserIds = options.visibleToActorIds");
     expect(appSource).toContain("visibleToUserIds,");
-    expect(appSource).toContain("visibleToActorIds: targets.visibleToActorIds");
+    expect(appSource).toContain("visibleToActorIds: options.visibleToActorIds");
   });
 
   it("keeps create failures visible and retryable instead of logging them only to the console", () => {
@@ -33,21 +33,61 @@ describe("journal visibility targeting", () => {
   it("normalizes editable journal fields without leaking stale visibility targets", () => {
     expect(journalDraftPayload({
       expectedUpdatedAt: "2026-01-01T00:00:00.000Z",
+      kind: "entry",
       title: " Updated clue ",
       body: " Keep the bell safe. ",
       visibility: "specific_characters",
       visibleToUserIds: ["usr-1"],
       visibleToActorIds: ["actor-1", "actor-1"],
-      tags: "clue, bell, clue"
+      tags: "clue, bell, clue",
+      links: []
     })).toEqual({
       expectedUpdatedAt: "2026-01-01T00:00:00.000Z",
+      kind: "entry",
+      parentId: null,
       title: "Updated clue",
       body: "Keep the bell safe.",
       visibility: "specific_characters",
       visibleToUserIds: [],
       visibleToActorIds: ["actor-1"],
-      tags: ["clue", "bell"]
+      tags: ["clue", "bell"],
+      links: []
     });
+  });
+
+  it("reuses a retry key for one draft but allocates a different opaque key for a corrected draft at the same revision", () => {
+    const draft: JournalDraft = {
+      expectedUpdatedAt: "2026-01-01T00:00:00.000Z",
+      kind: "entry",
+      title: "Vault clue",
+      body: "First wording",
+      visibility: "public",
+      visibleToUserIds: [],
+      visibleToActorIds: [],
+      tags: "clue",
+      links: []
+    };
+    const first = journalUpdateIdempotencyKey("journal-1", draft);
+    const retry = journalUpdateIdempotencyKey("journal-1", { ...draft });
+    const corrected = journalUpdateIdempotencyKey("journal-1", { ...draft, body: "Corrected wording" });
+    expect(retry).toBe(first);
+    expect(corrected).not.toBe(first);
+    expect(corrected).not.toContain("Corrected wording");
+  });
+
+  it("resets transient editor, history, and retry state when a realtime journal revision arrives", () => {
+    const before = journalRevisionStateKey({ updatedAt: "2026-01-01T00:00:00.000Z", canonStatus: "in_review" });
+    const revised = journalRevisionStateKey({ updatedAt: "2026-01-01T00:01:00.000Z", canonStatus: "in_review" });
+    const reviewed = journalRevisionStateKey({ updatedAt: "2026-01-01T00:01:00.000Z", canonStatus: "canonical" });
+    const panelSource = readFileSync(resolve(__dirname, "journal-panel.tsx"), "utf8");
+
+    expect(revised).not.toBe(before);
+    expect(reviewed).not.toBe(revised);
+    expect(panelSource).toContain("}, [revisionStateKey]);");
+    expect(panelSource).toContain("setHistory(null)");
+    expect(panelSource).toContain("deleteKeyRef.current = null");
+    expect(panelSource).toContain("reviewAttemptRef.current = null");
+    expect(panelSource).toContain("<JournalEntryEditor key={revisionStateKey}");
   });
 
   it("shows journal lifecycle controls only to seats with matching permissions", () => {
@@ -69,6 +109,7 @@ describe("journal visibility targeting", () => {
       journals: [journal],
       members: [],
       actors: [],
+      linkTargets: [],
       title: "",
       setTitle: () => undefined,
       body: "",
@@ -80,8 +121,11 @@ describe("journal visibility targeting", () => {
       onCreate: async () => undefined,
       onUpdate: async () => undefined,
       onDelete: async () => undefined,
-      onGenerateRecap: () => undefined,
-      canCreate: false
+      onGenerateRecap: async () => undefined,
+      onCanonReview: async () => undefined,
+      canCreate: false,
+      canReadHistory: false,
+      canCanonReview: false
     };
     const reader = renderToStaticMarkup(createElement(JournalPanel, { ...props, canUpdate: false, canDelete: false }));
     const editor = renderToStaticMarkup(createElement(JournalPanel, { ...props, canUpdate: true, canDelete: true }));
@@ -90,5 +134,76 @@ describe("journal visibility targeting", () => {
     expect(reader).not.toContain(" Delete</button>");
     expect(editor).toContain(" Edit</button>");
     expect(editor).toContain(" Delete</button>");
+  });
+
+  it("orders visible folder hierarchies without relying on array order", () => {
+    const base: JournalEntry = {
+      id: "entry-child",
+      campaignId: "camp-1",
+      parentId: "folder-lore",
+      kind: "entry",
+      title: "Ancient bell",
+      body: "Ring it once.",
+      visibility: "public",
+      visibleToUserIds: [],
+      visibleToActorIds: [],
+      tags: [],
+      links: [],
+      revision: 1,
+      canonStatus: "in_review",
+      createdBy: "usr-1",
+      updatedBy: "usr-1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+    const folder: JournalEntry = { ...base, id: "folder-lore", parentId: undefined, kind: "folder", title: "Lore" };
+    expect(journalHierarchyRows([base, folder])).toEqual([
+      { journal: folder, depth: 0 },
+      { journal: base, depth: 1 }
+    ]);
+  });
+
+  it("renders typed links plus permission-gated history and canon review controls", () => {
+    const journal: JournalEntry = {
+      id: "journal-linked",
+      campaignId: "camp-1",
+      kind: "entry",
+      title: "Founder",
+      body: "The founder sealed the vault.",
+      visibility: "public",
+      visibleToUserIds: [],
+      visibleToActorIds: [],
+      tags: ["lore"],
+      links: [{ id: "link-founder", targetType: "actor", targetId: "actor-founder", label: "Founder" }],
+      revision: 3,
+      canonStatus: "canonical",
+      createdBy: "usr-1",
+      updatedBy: "usr-1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-02T00:00:00.000Z"
+    };
+    const common = {
+      journals: [journal], members: [], actors: [], linkTargets: [{ type: "actor" as const, id: "actor-founder", label: "Elian Vale" }], title: "", setTitle: () => undefined,
+      body: "", setBody: () => undefined, visibility: "gm_only" as const, setVisibility: () => undefined,
+      tags: "", setTags: () => undefined, onCreate: async () => undefined, onUpdate: async () => undefined,
+      onDelete: async () => undefined, onGenerateRecap: async () => undefined, onCanonReview: async () => undefined,
+      canCreate: false, canUpdate: false, canDelete: false
+    };
+    const player = renderToStaticMarkup(createElement(JournalPanel, { ...common, canReadHistory: false, canCanonReview: false }));
+    const gm = renderToStaticMarkup(createElement(JournalPanel, { ...common, canReadHistory: true, canCanonReview: true }));
+    expect(player).toContain("Knowledge graph");
+    expect(player).toContain("Elian Vale");
+    expect(player).toContain("Founder");
+    expect(player).not.toContain("History</button>");
+    expect(player).not.toContain("Campaign canon review");
+    expect(gm).toContain("History</button>");
+    expect(gm).toContain("Campaign canon review");
+  });
+
+  it("resolves typed graph targets while preserving relationship labels", () => {
+    expect(journalLinkDisplay(
+      { id: "link-one", targetType: "scene", targetId: "scene-one", label: "Located in" },
+      [{ type: "scene", id: "scene-one", label: "Ember Vault" }],
+    )).toEqual({ type: "scene", target: "Ember Vault", relationship: "Located in" });
   });
 });

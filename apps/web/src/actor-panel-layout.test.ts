@@ -3,14 +3,15 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const appSource = readFileSync(resolve(__dirname, "App.tsx"), "utf8");
+const actorPanelSource = readFileSync(resolve(__dirname, "actor-panel.tsx"), "utf8");
 const sceneCanvasSource = readFileSync(resolve(__dirname, "scene-canvas.tsx"), "utf8");
 const stylesSource = readFileSync(resolve(__dirname, "styles.css"), "utf8");
 
 describe("actor panel layout", () => {
   it("keeps dense actor and token details collapsed in the inspector and exposes a wide sheet surface", () => {
-    expect(appSource).toContain("actor-sidebar-summary");
-    expect(appSource).toContain("actor-detail-disclosure");
-    expect(appSource).toContain("actor-token-editor");
+    expect(actorPanelSource).toContain("actor-sidebar-summary");
+    expect(actorPanelSource).toContain("actor-detail-disclosure");
+    expect(actorPanelSource).toContain("actor-token-editor");
     expect(stylesSource).toContain(".actor-sheet-popout");
     expect(stylesSource).toContain(".actor-sidebar-summary");
   });

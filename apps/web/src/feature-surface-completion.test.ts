@@ -4,13 +4,16 @@ import type { Actor, Encounter, Scene } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
 import { filterCampaignMemory, memoryFactStatus, type CampaignMemoryFact } from "./campaign-memory-panel.js";
 import { filterHandoutLibrary, parseHandoutTags, type HandoutLibraryItem } from "./handout-library-panel.js";
-import { actorHitDicePools, nextShortRestPool } from "./hit-dice-rest-card.js";
+import { actorHitDicePools, preparedRestHitDieRolls, restPreviewPath, restPreviewValue, selectNextShortRestHitDie, selectedShortRestHitDice } from "./hit-dice-rest-card.js";
 import { campaignSessionSort } from "./session-desk-panel.js";
 import type { CampaignSessionInfo } from "./api.js";
 import { canonicalSceneIdForWorldFilter, sceneWorldId, selectedSceneForWorldFilter, worldFilterMatchesScene } from "./world-atlas-panel.js";
 import { encounterThreatCounts, encounterThreatFingerprint, savedEncountersForSystem } from "./encounter-builder.js";
 
 const appSource = readFileSync(resolve(__dirname, "App.tsx"), "utf8");
+const actorPanelSource = readFileSync(resolve(__dirname, "actor-panel.tsx"), "utf8");
+const advancementSource = readFileSync(resolve(__dirname, "advancement-flow.tsx"), "utf8");
+const restSource = readFileSync(resolve(__dirname, "hit-dice-rest-card.tsx"), "utf8");
 const chatSource = readFileSync(resolve(__dirname, "chat-rail.tsx"), "utf8");
 const stylesSource = readFileSync(resolve(__dirname, "styles.css"), "utf8");
 
@@ -116,21 +119,71 @@ describe("saved encounter builder lifecycle", () => {
     expect(builderSource).toContain("deleteConfirmationId !== savedEncounter.id");
     expect(builderSource).toContain("savedEncounter && props.canSave");
     expect(builderSource).toContain("Update encounter");
+    expect(builderSource).toContain("Place & review combat");
+    expect(builderSource).toContain("onLaunchThreats");
+    expect(appSource).toContain("launchEncounterThreatTokens");
+    expect(appSource).toContain("setCombatSetupOpen(true)");
+    expect(appSource).toContain("actorId: createdMonster.actor.id");
+    expect(appSource).toContain("encounter-place:${placementAttemptId}:${threat.id}:${index}:token");
   });
 });
 
 describe("player recovery and chat completion", () => {
-  it("surfaces multiclass hit-dice pools and spends the largest available die first", () => {
+  it("surfaces multiclass hit-dice pools and submits the explicitly selected dice", () => {
     const actor = { data: { hitDicePools: [{ className: "Wizard", size: "d6", current: 2, max: 2 }, { className: "Fighter", size: "d10", current: 4, max: 5 }] } } as unknown as Actor;
     const pools = actorHitDicePools(actor);
     expect(pools).toHaveLength(2);
-    expect(nextShortRestPool(pools)?.className).toBe("Fighter");
-    expect(appSource).toContain("<HitDiceRestCard");
+    expect(selectedShortRestHitDice(pools, { Wizard: 2, Fighter: 1 })).toEqual([
+      { className: "Wizard" },
+      { className: "Wizard" },
+      { className: "Fighter" }
+    ]);
+    expect(selectedShortRestHitDice(pools, {})).toEqual([]);
+    expect(selectNextShortRestHitDie(pools, "Wizard", true)).toEqual({ Wizard: 1 });
+    expect(selectNextShortRestHitDie(pools, "Fighter", true)).toEqual({ Fighter: 1 });
+    expect(selectNextShortRestHitDie(pools, "Unknown", true)).toEqual({});
+    expect(actorPanelSource).toContain("<HitDiceRestCard");
+    expect(appSource).toContain("...(choices.hitPointMode ? { hitPointMode: choices.hitPointMode } : {})");
+    expect(appSource).toContain("{ signal: request.controller.signal, idempotencyKey }");
+  });
+
+  it("prepares and reviews the exact advancement before an idempotent commit", () => {
+    expect(appSource).toContain("prepare: true");
+    expect(appSource).toContain("preparedPreviewKey");
+    expect(appSource).toContain("onPreviewActor={previewSelectedActorAdvancement}");
+    expect(advancementSource).toContain("advancement-preview:${window.crypto.randomUUID()}");
+    expect(advancementSource).toContain("advancement-commit:${window.crypto.randomUUID()}");
+    expect(advancementSource).toContain("Reviewed the exact proposed changes");
+    expect(advancementSource).toContain("change.source.rulesVersion");
+  });
+
+  it("prepares and reviews exact server-rolled rests before an idempotent commit", () => {
+    expect(appSource).toContain("onPreviewRestActor={previewSelectedActorRest}");
+    expect(appSource).toContain('operation: "rest"');
+    expect(appSource).toContain("...(preparedPreviewKey ? { preparedPreviewKey }");
+    expect(restSource).toContain("-rest-preview:${globalThis.crypto.randomUUID()}");
+    expect(restSource).toContain("const preparedPreviewKey = restReview.preview.preparation.preparedPreviewKey ?? restReview.preview.preparation.idempotencyKey");
+    expect(restSource).toContain("preparedPreviewKey,");
+    expect(restSource).toContain("Reviewed the exact proposed rest changes");
+    expect(restSource).toContain("change.source.rulesVersion");
+    expect(preparedRestHitDieRolls({ preparation: { idempotencyKey: "preview", actorUpdatedAt: "now", request: { restType: "short", hitDice: [{ className: "Wizard", roll: 4 }, { className: "Fighter" }] } } })).toEqual([{ className: "Wizard", roll: 4 }]);
+    expect(restPreviewPath("/hp/current")).toBe("Hp · Current");
+    expect(restPreviewValue({ current: 7, max: 12 })).toBe('{"current":7,"max":12}');
   });
 
   it("exposes inline edit-own-message controls and supported dice presets accessibly", () => {
     expect(chatSource).toContain("onEditMessage");
     expect(chatSource).toContain('aria-label="Edit chat message"');
+    expect(chatSource).toContain("onReplyToMessage");
+    expect(chatSource).toContain("onDeleteMessage");
+    expect(chatSource).toContain("onModerateMessage");
+    expect(chatSource).toContain("Select delete again to confirm.");
+    expect(chatSource).toContain("Moderation status for message from");
+    expect(appSource).toContain("onReplyToMessage={(message) => setChatReplyToMessageId(message.id)}");
+    expect(appSource).toContain('canModerate={hasPermission("chat.moderate")}');
+    expect(chatSource).toContain("Send failed:");
+    expect(chatSource).toContain("Saving formula...");
+    expect(chatSource).not.toContain("props.onSubmitCommand().catch(console.error)");
     expect(chatSource).toContain("diceQuickPresets.map");
     expect(chatSource).toContain("Reduce dice modifier by 1");
     expect(stylesSource).toContain("@media (max-width: 640px)");
@@ -146,5 +199,12 @@ describe("portable scoped exports", () => {
     expect(appSource).toContain('params.set("collections", archiveExportCollections.join(","))');
     expect(appSource).toContain('aria-label="Archive export collection selection"');
     expect(stylesSource).toContain(".archive-export-collections");
+  });
+
+  it("reuses one idempotency key and immutable options when retrying an archive import", () => {
+    expect(appSource).toContain("archive-import:${window.crypto.randomUUID()}");
+    expect(appSource).toContain("{ idempotencyKey: attempt.idempotencyKey }");
+    expect(appSource).toContain("setFailedArchiveImport({ file, message, attempt })");
+    expect(appSource).toContain("failedArchiveImport.file, undefined, failedArchiveImport.attempt");
   });
 });

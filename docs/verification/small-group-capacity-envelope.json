@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "single-node-sqlite-small-group",
+  "claimBoundary": "Deterministic local compatibility gate for the supported single-node and single-writer small-group topology; not production observation, hosted SLO evidence, or a multi-node claim.",
+  "topology": {
+    "apiNodes": 1,
+    "apiWriters": 1,
+    "stateStore": "sqlite",
+    "activeCampaigns": 1
+  },
+  "group": {
+    "gameMasters": 1,
+    "players": 5,
+    "realtimeConnections": 6
+  },
+  "campaignSurface": {
+    "sceneTokens": 200,
+    "chatMessages": 300,
+    "journalEntries": 60
+  },
+  "workload": {
+    "cycles": 3,
+    "parallelReadsPerCycle": 3,
+    "sequentialMutationsPerCycle": 2,
+    "reconnectsPerCycle": 1
+  },
+  "thresholdsMs": {
+    "initialConnectP95": 5000,
+    "readP95": 4000,
+    "mutationP95": 4000,
+    "eventFanoutP95": 6000,
+    "reconnectP95": 5000,
+    "workloadTotal": 30000
+  }
+}

@@ -8,6 +8,9 @@ export interface StateStore {
   save(): void;
   flush?(): void;
   replace(state: EngineState, options?: { flush?: boolean }): void;
+  /** Restore the last successfully persisted state without serializing a request-wide clone. */
+  restoreDurableState?(): void;
+  readiness?(): { ok: boolean; reason?: string } | Promise<{ ok: boolean; reason?: string }>;
 }
 
 export interface StoreSeedOptions {
@@ -70,6 +73,14 @@ export class CoalescedStateWriter {
     this.flush();
     this.unregisterShutdownFlush();
   }
+
+  discard(): void {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = undefined;
+    }
+    this.dirty = false;
+  }
 }
 
 export class FileStateStore implements StateStore {
@@ -93,6 +104,11 @@ export class FileStateStore implements StateStore {
     this.state = normalizeEngineState(state);
     this.save();
     if (options.flush !== false) this.flush();
+  }
+
+  restoreDurableState(): void {
+    this.writer.discard();
+    this.state = this.load();
   }
 
   close(): void {

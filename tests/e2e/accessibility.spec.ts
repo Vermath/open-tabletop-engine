@@ -15,13 +15,23 @@ async function createSceneToken(page: Page, input: { name: string; x: number; y:
     async ({ apiBaseUrl, input }) => {
       const bearer = localStorage.getItem("otte:sessionToken");
       if (!bearer) throw new Error("No browser session token available for token setup");
+      const sceneResponse = await fetch(`${apiBaseUrl}/api/v1/scenes/scn_vault_entry`, {
+        headers: { authorization: `Bearer ${bearer}` }
+      });
+      if (!sceneResponse.ok) throw new Error(await sceneResponse.text());
+      const scene = await sceneResponse.json() as { updatedAt?: string };
+      if (!scene.updatedAt) throw new Error("Scene has no revision for token setup");
       const response = await fetch(`${apiBaseUrl}/api/v1/scenes/scn_vault_entry/tokens`, {
         method: "POST",
-        headers: { authorization: `Bearer ${bearer}`, "content-type": "application/json" },
-        body: JSON.stringify({ ...input, width: 50, height: 50, hidden: false, locked: false, disposition: "neutral" })
+        headers: {
+          authorization: `Bearer ${bearer}`,
+          "content-type": "application/json",
+          "idempotency-key": `e2e-token-create-${encodeURIComponent(input.name)}-${scene.updatedAt}`
+        },
+        body: JSON.stringify({ ...input, width: 50, height: 50, hidden: false, locked: false, disposition: "neutral", expectedUpdatedAt: scene.updatedAt })
       });
       if (!response.ok) throw new Error(await response.text());
-      return response.json() as Promise<{ id: string; name: string }>;
+      return response.json() as Promise<{ id: string; name: string; updatedAt: string }>;
     },
     { apiBaseUrl, input }
   );
@@ -32,9 +42,19 @@ async function deleteTokenById(page: Page, tokenId: string) {
     async ({ apiBaseUrl, tokenId }) => {
       const bearer = localStorage.getItem("otte:sessionToken");
       if (!bearer) throw new Error("No browser session token available for token cleanup");
-      const response = await fetch(`${apiBaseUrl}/api/v1/tokens/${tokenId}`, {
-        method: "DELETE",
+      const tokensResponse = await fetch(`${apiBaseUrl}/api/v1/scenes/scn_vault_entry/tokens`, {
         headers: { authorization: `Bearer ${bearer}` }
+      });
+      if (!tokensResponse.ok) throw new Error(await tokensResponse.text());
+      const tokens = await tokensResponse.json() as Array<{ id: string; updatedAt: string }>;
+      const token = tokens.find((candidate) => candidate.id === tokenId);
+      if (!token) return;
+      const response = await fetch(`${apiBaseUrl}/api/v1/tokens/${tokenId}?expectedUpdatedAt=${encodeURIComponent(token.updatedAt)}`, {
+        method: "DELETE",
+        headers: {
+          authorization: `Bearer ${bearer}`,
+          "idempotency-key": `e2e-token-delete-${tokenId}-${token.updatedAt}`
+        }
       });
       if (!response.ok && response.status !== 404) throw new Error(await response.text());
     },
@@ -164,13 +184,26 @@ test("main tabletop controls expose accessible names and keyboard reachability",
     }
 
     function effectiveBackground(element: Element): [number, number, number] {
+      const layers: Array<[number, number, number, number]> = [];
       let current: Element | null = element;
       while (current) {
         const parsed = parseRgb(window.getComputedStyle(current).backgroundColor);
-        if (parsed && parsed[3] > 0) return [parsed[0], parsed[1], parsed[2]];
+        if (parsed && parsed[3] > 0) {
+          layers.push(parsed);
+          if (parsed[3] >= 1) break;
+        }
         current = current.parentElement;
       }
-      return [255, 255, 255];
+      let composite: [number, number, number] = [255, 255, 255];
+      for (let index = layers.length - 1; index >= 0; index -= 1) {
+        const layer = layers[index]!;
+        composite = [
+          layer[0] * layer[3] + composite[0] * (1 - layer[3]),
+          layer[1] * layer[3] + composite[1] * (1 - layer[3]),
+          layer[2] * layer[3] + composite[2] * (1 - layer[3])
+        ];
+      }
+      return composite;
     }
 
     function isVisible(element: Element): boolean {

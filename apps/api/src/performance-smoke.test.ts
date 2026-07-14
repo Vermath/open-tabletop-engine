@@ -1,7 +1,7 @@
 import { performance } from "node:perf_hooks";
 import { createTimestamped, type CampaignMember, type ChatMessage, type JournalEntry, type Token, type User } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
-import { buildApp } from "./app.js";
+import { buildApp } from "./fixtures/legacy-build-app.js";
 import { MemoryStateStore } from "./store.js";
 
 const gmHeaders = { "x-user-id": "usr_demo_gm" };

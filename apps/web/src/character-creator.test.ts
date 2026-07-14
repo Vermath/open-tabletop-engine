@@ -18,12 +18,37 @@ describe("character creator", () => {
 
   it("collects the SRD origin choices the API validates", () => {
     expect(creatorSource).toContain("abilityScoreIncreases");
+    expect(creatorSource).toContain("classSkillProficiencies");
+    expect(creatorSource).toContain("classSkillChoices");
+    expect(creatorSource).toContain("originLanguageChoices");
+    expect(creatorSource).toContain("classLanguageChoices");
+    expect(creatorSource).toContain("draconicAncestry");
+    expect(creatorSource).toContain("giantAncestry");
+    expect(creatorSource).toContain("classEquipmentPackageId");
+    expect(creatorSource).toContain("backgroundEquipmentPackageId");
+    expect(creatorSource).toContain("classToolProficiencyChoices");
+    expect(creatorSource).toContain("backgroundToolProficiencyChoice");
+    expect(creatorSource).toContain("weaponMasteryChoices");
     expect(creatorSource).toContain("elfLineage");
     expect(creatorSource).toContain("gnomeLineage");
     expect(creatorSource).toContain("tieflingLegacy");
     expect(creatorSource).toContain("speciesSpellcastingAbility");
+    expect(creatorSource).toContain('creationMode = "level-one-srd"');
+    expect(creatorSource).toContain("validateCharacterCreatorInput");
+    expect(creatorSource).toContain("validationIssues.length > 0");
     expect(creatorSource).toContain('aria-label="Human skill proficiency"');
+    expect(creatorSource).toContain('aria-label="Draconic ancestry"');
+    expect(creatorSource).toContain('aria-label="Giant ancestry"');
+    expect(creatorSource).toContain('name="class-starting-equipment"');
+    expect(creatorSource).toContain('name="background-starting-equipment"');
+    expect(creatorSource).toContain("You do not need to start with or equip the weapon");
     expect(creatorSource).toContain('aria-label="Plus two ability"');
+    expect(creatorSource).toContain("Origin language ${language.label}");
+    expect(creatorSource).toContain("class language ${language.label}");
+    expect(creatorSource).toContain("Common is included automatically");
+    expect(creatorSource).toContain("Standard or Rare tables");
+    expect(creatorSource).toContain('type="checkbox"');
+    expect(creatorSource).toContain("classSkillProficiencies.length >= classSkillChoice.count");
   });
 
   it("is reachable from the party rail and the SDK panel", () => {

@@ -2,10 +2,12 @@ import { createHash } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import {
   createTimestamped,
+  type Actor,
   type CampaignSession,
   type CampaignMember,
   type ChatMessage,
   type Combat,
+  type CombatAction,
   type DiceRoll,
   type Encounter,
   type EngineState,
@@ -16,7 +18,7 @@ import {
   type World,
 } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
-import { buildApp } from "./app.js";
+import { buildApp } from "./fixtures/legacy-build-app.js";
 import { MemoryStateStore } from "./store.js";
 
 const gmHeaders = { "x-user-id": "usr_demo_gm" };
@@ -50,7 +52,6 @@ describe("feature completeness regressions", () => {
       const originalCampaign = structuredClone(
         store.state.campaigns.find((campaign) => campaign.id === "camp_demo")!,
       );
-      const baselineSaveCount = store.saveCount;
       const baselineAuditCount = store.state.auditLogs.filter(
         (entry) => entry.action === "campaign.update",
       ).length;
@@ -72,7 +73,6 @@ describe("feature completeness regressions", () => {
       expect(
         store.state.campaigns.find((campaign) => campaign.id === "camp_demo"),
       ).toEqual(originalCampaign);
-      expect(store.saveCount).toBe(baselineSaveCount);
       expect(
         store.state.auditLogs.filter((entry) => entry.action === "campaign.update"),
       ).toHaveLength(baselineAuditCount);
@@ -127,7 +127,7 @@ describe("feature completeness regressions", () => {
       });
 
       const encounterCount = store.state.encounters.length;
-      const encounterSaveCount = store.saveCount;
+      const encounterCreateAuditCount = store.state.auditLogs.filter((entry) => entry.action === "encounter.create").length;
       for (const payload of [
         { threats: "skeletal-guard" },
         { threats: [{ id: "skeletal-guard", count: 0 }] },
@@ -144,7 +144,7 @@ describe("feature completeness regressions", () => {
         expect(invalidPlan.statusCode).toBe(400);
       }
       expect(store.state.encounters).toHaveLength(encounterCount);
-      expect(store.saveCount).toBe(encounterSaveCount);
+      expect(store.state.auditLogs.filter((entry) => entry.action === "encounter.create")).toHaveLength(encounterCreateAuditCount);
 
       const createEncounter = await app.inject({
         method: "POST",
@@ -157,7 +157,7 @@ describe("feature completeness regressions", () => {
           name: "  Regression Encounter  ",
         },
       });
-      expect(createEncounter.statusCode).toBe(200);
+      expect(createEncounter.statusCode, createEncounter.body).toBe(200);
       expect(createEncounter.json().encounter).toMatchObject({
         name: "Regression Encounter",
         campaignId: "camp_demo",
@@ -199,7 +199,7 @@ describe("feature completeness regressions", () => {
       expect(await encounterUpdated).toMatchObject({ type: "encounter.updated", targetId: encounterId });
 
       const beforeInvalidPatch = structuredClone(store.state.encounters.find((encounter) => encounter.id === encounterId));
-      const invalidPatchSaveCount = store.saveCount;
+      const encounterUpdateAuditCount = store.state.auditLogs.filter((entry) => entry.action === "encounter.update").length;
       const invalidPatch = await app.inject({
         method: "PATCH",
         url: `/api/v1/encounters/${encounterId}`,
@@ -208,7 +208,7 @@ describe("feature completeness regressions", () => {
       });
       expect(invalidPatch.statusCode).toBe(400);
       expect(store.state.encounters.find((encounter) => encounter.id === encounterId)).toEqual(beforeInvalidPatch);
-      expect(store.saveCount).toBe(invalidPatchSaveCount);
+      expect(store.state.auditLogs.filter((entry) => entry.action === "encounter.update")).toHaveLength(encounterUpdateAuditCount);
 
       const encounterDeleted = realtime.waitFor("encounter.deleted", encounterId);
       const deleteEncounter = await app.inject({
@@ -417,7 +417,7 @@ describe("feature completeness regressions", () => {
         method: "PATCH",
         url: `/api/v1/actors/${actor.id}`,
         headers: gmHeaders,
-        payload: { ownerUserId: "usr_not_a_member" },
+        payload: { ownerUserId: "usr_not_a_member", expectedUpdatedAt: actor.updatedAt },
       });
       expect(invalidOwner.statusCode).toBe(400);
       expect(actor.ownerUserId).toBe(originalOwner);
@@ -432,7 +432,7 @@ describe("feature completeness regressions", () => {
     const encounter = createTimestamped("enc", {
       id: "enc_player_redaction",
       campaignId: "camp_demo",
-      systemId: "generic-fantasy",
+      systemId: "dnd-5e-srd",
       name: "Visible battle name",
       summary: "SECRET AMBUSH SUMMARY",
       tokenIds: ["tok_valen"],
@@ -490,9 +490,18 @@ describe("feature completeness regressions", () => {
     }
   });
 
-  it("removes deleted actors from saved encounter party snapshots", async () => {
+  it("removes every deleted-actor combat action reference and keeps the campaign archive valid", async () => {
     const store = new MemoryStateStore();
     const actor = store.state.actors.find((item) => item.id === "act_valen")!;
+    const survivor: Actor = createTimestamped("act", {
+      id: "act_actor_delete_survivor",
+      campaignId: actor.campaignId,
+      systemId: actor.systemId,
+      type: "npc",
+      name: "Archive Survivor",
+      data: { hp: { current: 5, max: 5 }, attributes: {} },
+      permissions: {},
+    }) satisfies Actor;
     const encounter = createTimestamped("enc", {
       id: "enc_actor_delete_party",
       campaignId: actor.campaignId,
@@ -503,13 +512,112 @@ describe("feature completeness regressions", () => {
       partyActorIds: [actor.id],
       threats: [],
     }) satisfies Encounter;
+    const combat: Combat = createTimestamped("cmt", {
+      id: "cmt_actor_delete_actions",
+      campaignId: actor.campaignId,
+      active: false,
+      round: 2,
+      turnIndex: 0,
+      combatants: [],
+      actions: [],
+    }) satisfies Combat;
+    const action = (id: string, patch: Partial<CombatAction> = {}): CombatAction => createTimestamped("cact", {
+      id,
+      campaignId: actor.campaignId,
+      combatId: combat.id,
+      actorId: survivor.id,
+      actorName: survivor.name,
+      requestedByUserId: "usr_demo_gm",
+      status: "confirmed" as const,
+      rollId: `roll_${id}`,
+      actionLabel: id,
+      targetActorIds: [],
+      applyEffect: true,
+      consumeResources: false,
+      rolls: [],
+      actorUpdates: [],
+      ...patch,
+    }) satisfies CombatAction;
+    combat.actions = [
+      action("cact_deleted_source", { actorId: actor.id, actorName: actor.name }),
+      action("cact_deleted_target", { targetActorIds: [actor.id] }),
+      action("cact_deleted_update", { actorUpdates: [{ actorId: actor.id, before: {}, after: {} }] }),
+      action("cact_deleted_effect", { effects: [{ type: "damage", targetActorId: actor.id, amount: 1 }] }),
+      action("cact_deleted_roll", { rolls: [{ label: "Targeted roll", formula: "1d20", terms: [], total: 10, targetActorId: actor.id, visibility: "public" }] }),
+      action("cact_deleted_revision", { expectedActorUpdatedAt: { [actor.id]: actor.updatedAt } }),
+      action("cact_survives"),
+    ];
+    const journal = createTimestamped("jnl", {
+      id: "jnl_actor_delete_reference",
+      campaignId: actor.campaignId,
+      title: "Actor reference",
+      body: "Live reference cleanup",
+      visibility: "specific_characters" as const,
+      visibleToUserIds: [],
+      visibleToActorIds: [actor.id],
+      tags: [],
+      links: [{ id: "jlnk_actor_delete", targetType: "actor" as const, targetId: actor.id }],
+      createdBy: "usr_demo_gm",
+      updatedBy: "usr_demo_gm",
+    });
+    const handout = createTimestamped("hnd", {
+      id: "hnd_actor_delete_reference",
+      campaignId: actor.campaignId,
+      title: "Actor handout",
+      body: "Live visibility cleanup",
+      visibility: "specific_characters" as const,
+      visibleToUserIds: [],
+      visibleToActorIds: [actor.id],
+      assetIds: [],
+      tags: [],
+      readByUserIds: [],
+      createdBy: "usr_demo_gm",
+      updatedBy: "usr_demo_gm",
+    });
+    store.state.characterTransfers.push(createTimestamped("charxfer", { id: "charxfer_actor_delete", campaignId: actor.campaignId, actorId: actor.id, toUserId: "usr_demo_gm", initiatedByUserId: "usr_demo_gm", actorUpdatedAt: actor.updatedAt, status: "cancelled" as const }));
+    store.state.calculationOverrides.push(createTimestamped("calcovr", { id: "calcovr_actor_delete", campaignId: actor.campaignId, actorId: actor.id, fieldId: "hp.max", source: "gm_manual" as const, baseValue: 10, effectiveValue: 11, reason: "Regression", createdByUserId: "usr_demo_gm" }));
+    store.state.pendingAdvancements.push(createTimestamped("adv", { id: "adv_actor_delete", campaignId: actor.campaignId, actorId: actor.id, systemId: "dnd-5e-srd" as const, status: "ready" as const, request: {}, actorUpdatedAt: actor.updatedAt, createdByUserId: "usr_demo_gm" }));
+    store.state.dndRulesMutations.push(createTimestamped("drmut", { id: "drmut_actor_delete", campaignId: actor.campaignId, kind: "typed_damage" as const, preparedPreviewKey: "actor-delete", committedByUserId: "usr_demo_gm", status: "applied" as const, roots: { actors: [{ actorId: actor.id, before: { data: structuredClone(actor.data), revision: actor.updatedAt }, afterRevision: actor.updatedAt }], items: [] } }));
+    store.state.actors.push(survivor);
     store.state.encounters.push(encounter);
+    store.state.combats.push(combat);
+    store.state.journals.push(journal);
+    store.state.handouts.push(handout);
     const app = await buildApp({ store });
     try {
+      survivor.data = { ...survivor.data, rulesEngine: { activeEffects: [{ id: "effect_actor_delete", sourceActorId: actor.id }] } };
+      const blocked = await app.inject({ method: "DELETE", url: `/api/v1/actors/${actor.id}`, headers: gmHeaders });
+      expect(blocked.statusCode).toBe(409);
+      expect(blocked.json().message).toContain("active effect or concentration");
+      expect(store.state.actors.some((candidate) => candidate.id === actor.id)).toBe(true);
+      expect(combat.actions).toHaveLength(7);
+      survivor.data = { ...survivor.data, rulesEngine: { activeEffects: [] } };
+
       const deleted = await app.inject({ method: "DELETE", url: `/api/v1/actors/${actor.id}`, headers: gmHeaders });
       expect(deleted.statusCode).toBe(200);
       expect(encounter.partyActorIds).toEqual([]);
-      expect(store.state.auditLogs.at(-1)).toMatchObject({ action: "actor.delete", after: expect.objectContaining({ updatedEncounters: 1 }) });
+      expect(combat.actions?.map((candidate) => candidate.id)).toEqual(["cact_survives"]);
+      expect(store.state.characterTransfers.some((candidate) => candidate.actorId === actor.id)).toBe(false);
+      expect(store.state.calculationOverrides.some((candidate) => candidate.actorId === actor.id)).toBe(false);
+      expect(store.state.pendingAdvancements.some((candidate) => candidate.actorId === actor.id)).toBe(false);
+      expect(store.state.dndRulesMutations.some((candidate) => candidate.id === "drmut_actor_delete")).toBe(false);
+      expect(journal.visibleToActorIds).toEqual([]);
+      expect(journal.links).toEqual([]);
+      expect(handout.visibleToActorIds).toEqual([]);
+      expect(store.state.auditLogs.at(-1)).toMatchObject({ action: "actor.delete", after: expect.objectContaining({ removedCombatActions: 6, removedCharacterTransfers: 1, removedCalculationOverrides: 1, removedPendingAdvancements: 1, removedDndRulesMutations: 1, updatedJournals: 1, updatedHandouts: 1, updatedEncounters: 1 }) });
+
+      const exported = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/export", headers: gmHeaders });
+      expect(exported.statusCode).toBe(200);
+      const archiveCombat = exported.json().data.combats.find((candidate: Combat) => candidate.id === combat.id) as Combat;
+      expect(archiveCombat.actions?.map((candidate) => candidate.id)).toEqual(["cact_survives"]);
+      const validated = await app.inject({
+        method: "POST",
+        url: "/api/v1/import/campaign",
+        headers: { ...gmHeaders, "idempotency-key": "actor-delete-archive-validation" },
+        payload: { archive: exported.json(), mode: "dry_run" },
+      });
+      expect(validated.statusCode).toBe(200);
+      expect(validated.json()).toMatchObject({ dryRun: true, importedCampaignIds: [actor.campaignId] });
     } finally {
       await app.close();
     }
@@ -526,7 +634,7 @@ describe("feature completeness regressions", () => {
       summary: "",
       tokenIds: [],
       partyActorIds: [actor.id],
-      threats: [{ id: "skeletal-guard", count: 1 }],
+      threats: [{ id: "goblin-minion", count: 1 }],
     }) satisfies Encounter;
     store.state.encounters.push(encounter);
     const app = await buildApp({ store });
@@ -551,7 +659,7 @@ describe("feature completeness regressions", () => {
       expect(missingParty.json().message).toContain("missing actors record act_missing_from_archive");
 
       const invalidThreatArchive = structuredClone(selected.json());
-      invalidThreatArchive.data.encounters[0].threats = [{ id: "skeletal-guard", count: 100 }];
+      invalidThreatArchive.data.encounters[0].threats = [{ id: "goblin-minion", count: 100 }];
       const invalidThreat = await app.inject({
         method: "POST",
         url: "/api/v1/import/campaign",

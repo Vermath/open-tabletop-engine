@@ -155,10 +155,21 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
       if (!bearer) throw new Error("No browser session token available for reset setup");
       const userId = localStorage.getItem("otte:userId");
       if (!userId) throw new Error("No browser user id available for reset setup");
+      const usersResponse = await fetch(`${apiBaseUrl}/api/v1/admin/users`, {
+        headers: { authorization: `Bearer ${bearer}` }
+      });
+      if (!usersResponse.ok) throw new Error(await usersResponse.text());
+      const users = await usersResponse.json();
+      const user = Array.isArray(users) ? users.find((candidate) => candidate?.id === userId) : undefined;
+      if (typeof user?.updatedAt !== "string") throw new Error("Current owner revision not found for reset setup");
       const response = await fetch(`${apiBaseUrl}/api/v1/admin/users/${encodeURIComponent(userId)}/password-reset`, {
         method: "POST",
-        headers: { authorization: `Bearer ${bearer}`, "content-type": "application/json" },
-        body: JSON.stringify({ returnTo: `${window.location.origin}/reset-password` })
+        headers: {
+          authorization: `Bearer ${bearer}`,
+          "content-type": "application/json",
+          "Idempotency-Key": `bootstrap-password-reset-${crypto.randomUUID()}`
+        },
+        body: JSON.stringify({ expectedUpdatedAt: user.updatedAt, returnTo: `${window.location.origin}/reset-password` })
       });
       if (!response.ok) throw new Error(await response.text());
       const payload = await response.json();
@@ -276,6 +287,9 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
   let assetCdnPurgeRequests = 0;
   let assetStorageMigrationRequests = 0;
   let assetStorageCleanupRequests = 0;
+  const assetQuarantineTargetSetHash = `sha256:${"a".repeat(64)}`;
+  const assetMigrationTargetSetHash = `sha256:${"b".repeat(64)}`;
+  const assetCleanupTargetSetHash = `sha256:${"c".repeat(64)}`;
   await page.route("**/api/v1/admin/assets/storage", async (route) => {
     const response = await route.fetch();
     const body = await response.json();
@@ -343,12 +357,21 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
   });
   await page.route("**/api/v1/admin/assets/integrity/quarantine", async (route) => {
+    const request = route.request().postDataJSON() as { dryRun?: boolean };
+    if (request.dryRun) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ dryRun: true, targetSetHash: assetQuarantineTargetSetHash, assetCount: 1, matched: 1, archived: 0, planned: 1, skipped: 0, failed: 0, changed: false, reason: "Archived from admin integrity console" })
+      });
+      return;
+    }
     quarantineRequests += 1;
     assetIntegrityQuarantined = true;
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ dryRun: false, assetCount: 1, matched: 1, archived: 1, planned: 0, skipped: 0, failed: 0, changed: true, reason: "Archived from admin integrity console" })
+      body: JSON.stringify({ dryRun: false, targetSetHash: assetQuarantineTargetSetHash, assetCount: 1, matched: 1, archived: 1, planned: 0, skipped: 0, failed: 0, changed: true, reason: "Archived from admin integrity console" })
     });
   });
   await page.route("**/api/v1/admin/assets/*/purge-cache", async (route) => {
@@ -356,12 +379,22 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ assetId: "asset_missing_e2e", status: "purged", reason: "Purged from admin console" }) });
   });
   await page.route("**/api/v1/admin/assets/migrate", async (route) => {
+    const request = route.request().postDataJSON() as { dryRun?: boolean };
+    if (request.dryRun) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ dryRun: true, targetSetHash: assetMigrationTargetSetHash, assetCount: 1, migrated: 0, planned: 1, skipped: 0, failed: 0, targetProvider: "local", changed: false }) });
+      return;
+    }
     assetStorageMigrationRequests += 1;
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ migrated: 1, skipped: 0, failed: 0, targetProvider: "local", changed: true }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ dryRun: false, targetSetHash: assetMigrationTargetSetHash, assetCount: 1, migrated: 1, planned: 0, skipped: 0, failed: 0, targetProvider: "local", changed: true }) });
   });
   await page.route("**/api/v1/admin/assets/cleanup", async (route) => {
+    const request = route.request().postDataJSON() as { dryRun?: boolean };
+    if (request.dryRun) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ dryRun: true, targetSetHash: assetCleanupTargetSetHash, assetCount: 1, deleted: 0, missingMarked: 0, planned: 1, skipped: 0, failed: 0, changed: false }) });
+      return;
+    }
     assetStorageCleanupRequests += 1;
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ deleted: 1, missingMarked: 0, skipped: 0, failed: 0, changed: true }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ dryRun: false, targetSetHash: assetCleanupTargetSetHash, assetCount: 1, deleted: 1, missingMarked: 0, planned: 0, skipped: 0, failed: 0, changed: true }) });
   });
   let staleAiThreadsCleared = false;
   let staleAiToolsCleared = false;
@@ -551,7 +584,8 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
   await expect(storageOps.getByRole("button", { name: "Create Backup" })).toBeVisible();
   await expect(storageOps.getByRole("button", { name: "Run Restore Drill" })).toBeVisible();
   await storageOps.getByRole("button", { name: "Create Backup" }).click();
-  await expect(storageOps).toContainText("Backup created");
+  await expect(storageOps).toContainText(/Database-only backup created: opentabletop-.*\.sqlite/);
+  await expect(storageOps).toContainText("asset snapshot pairing is still required");
   await expect(storageOps.getByRole("button", { name: "Run Restore Drill" })).toBeEnabled();
   await storageOps.getByRole("button", { name: "Run Restore Drill" }).click();
   await expect(storageOps).toContainText("Restore drill passed");

@@ -43,6 +43,17 @@ function approvedProposal(
   });
 }
 
+function approvedPluginProposal(
+  campaignId: string,
+  changesJson: Proposal["changesJson"],
+): Proposal {
+  return {
+    ...approvedProposal(campaignId, changesJson),
+    createdByType: "plugin",
+    sourceId: "plugin_test",
+  };
+}
+
 function sceneEditableState(
   scene: Scene,
   overrides: Partial<SceneEditableState> = {},
@@ -223,6 +234,49 @@ function proposalDraftScene(state: EngineState, name: string, sortOrder = 2): Sc
 }
 
 describe("proposal domain semantics", () => {
+  it("allows plugin renames but rejects raw actor and item rules patches at apply time", () => {
+    const state = seedState();
+    const actor = state.actors[0]!;
+    const item = createTimestamped("itm", {
+      campaignId: actor.campaignId,
+      systemId: actor.systemId,
+      actorId: actor.id,
+      type: "feature",
+      name: "Rules-managed feature",
+      data: {},
+    }) satisfies Item;
+    state.items.push(item);
+
+    const renamed = applyProposal(
+      state,
+      approvedPluginProposal(actor.campaignId, [
+        { entity: "actor", action: "update", id: actor.id, data: { name: "Reviewed rename" } },
+      ]),
+      "usr_demo_gm",
+    );
+    expect(renamed.actors.find((candidate) => candidate.id === actor.id)?.name).toBe("Reviewed rename");
+
+    expect(() =>
+      applyProposal(
+        state,
+        approvedPluginProposal(actor.campaignId, [
+          { entity: "actor", action: "update", id: actor.id, data: { data: { hp: { current: 999 } } } },
+        ]),
+        "usr_demo_gm",
+      ),
+    ).toThrow("rules-managed changes require a typed system transaction");
+
+    expect(() =>
+      applyProposal(
+        state,
+        approvedPluginProposal(actor.campaignId, [
+          { entity: "item", action: "delete", id: item.id, data: {} },
+        ]),
+        "usr_demo_gm",
+      ),
+    ).toThrow("rules-managed changes require a typed system transaction");
+  });
+
   it("keeps scene activation exclusive when a proposal activates a draft", () => {
     const state = seedState();
     const originalActiveId = state.scenes[0]!.id;

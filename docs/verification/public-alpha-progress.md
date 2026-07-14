@@ -269,7 +269,7 @@ Commands and evidence inspected:
 Results:
 
 - Updated `CONTRIBUTING.md` to use the current clean-checkout commands and to spell out public-alpha content restrictions.
-- Updated `SECURITY.md` with public-alpha expectations for proposal-only AI/plugin mutation, smallest useful plugin permission grants, importer safety, and secret handling.
+- Updated `SECURITY.md` with the then-current proposal review language, smallest useful plugin permission grants, importer safety, and secret handling. Current product-owner direction preserves both existing AI proposal and automatic-execution modes while retaining the plugin permission boundary.
 - Added README license notes for AGPL platform code, MIT SDK packages, CC BY docs, and example package license metadata.
 - Added `docs/ROADMAP.md` with public-alpha commitments, post-alpha work, and explicit out-of-scope proprietary content/workflows.
 - Updated readiness status so launch docs are Ready pending final acceptance re-read.

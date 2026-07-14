@@ -4,7 +4,7 @@ Last updated: 2026-05-11
 
 ## Objective
 
-Ship OpenTabletop Engine beta v0.2 from the public-alpha baseline. Beta should move from "demo works" to a dogfoodable engine for real multi-session campaigns: reliable persistence, safer self-hosting, clearer contributor paths, SRD-only campaign play, proposal-based AI/plugins, and explicit outside-dogfood proof.
+Ship OpenTabletop Engine beta v0.2 from the public-alpha baseline. Beta should move from "demo works" to a dogfoodable engine for real multi-session campaigns: reliable persistence, safer self-hosting, clearer contributor paths, SRD-only campaign play, both governed AI execution modes, permission-checked plugins, and explicit outside-dogfood proof.
 
 ## Status Key
 
@@ -17,12 +17,12 @@ Ship OpenTabletop Engine beta v0.2 from the public-alpha baseline. Beta should m
 
 | Artifact | Current evidence |
 | --- | --- |
-| `AGENTS.md` | Confirms API-first VTT scope, scoped edits, shared `packages/core` types, proposal-only AI/plugin state changes, explicit permissions, and permissive SDK licensing. |
+| `AGENTS.md` | Confirms API-first VTT scope, scoped edits, shared `packages/core` types, unchanged existing AI behavior, permissioned plugin application boundaries, explicit permissions, and permissive SDK licensing. |
 | `README.md` | Current public-alpha quickstart, beta dogfood/runbook pointers, content-safety notes, release/ops pointers, package layout, and validation commands exist. |
 | `docs/ROADMAP.md` | Public alpha is complete and beta v0.2 scope, acceptance gates, and post-beta boundaries are explicit. |
 | `docs/verification/public-alpha-acceptance.md` | Public alpha has proof for clean install/check, runtime, GM/player, SRD demo, AI, export/import, plugin/system, and legal guardrails. Beta cannot reuse this as final proof without new multi-session/reliability validation. |
 | `docs/verification/public-alpha-progress.md` | Records alpha fixes and validation slices, including archive import/export, WebSocket proxy, campaign switching, two-browser proof, and clean-copy validation. |
-| `docs/ai/overview.md` | Documents proposal/approval AI, permission-filtered tools, provider posture, admin operations, stale cleanup, retry, and audit surfaces. Beta eval pass/fail proof is recorded in `docs/verification/beta-acceptance.md`. |
+| `docs/ai/overview.md` | Documents the existing proposal and governed automatic-execution modes, permission-filtered tools, provider posture, admin operations, stale cleanup, retry, and audit surfaces. Beta eval pass/fail proof is recorded in `docs/verification/beta-acceptance.md`. |
 | `docs/deployment/self-hosting.md` | Documents SQLite default, Docker Compose, asset storage, AI config, auth/admin, plugin trust, worker jobs, asset scanner, cleanup, local dev, archives, safe content import boundaries, and beta ops links. |
 | `apps/api` | API includes campaign state, realtime, import/export, asset storage, plugin runtime, system runtime, AI routes, admin operations, SQLite store, safe content imports, and beta tests. |
 | `apps/web` | React client has campaign, scene, chat, combat, AI/admin, import, plugin/system surfaces, import status, focus treatment, permission titles, and status regions. |
@@ -41,7 +41,7 @@ Ship OpenTabletop Engine beta v0.2 from the public-alpha baseline. Beta should m
 | 4. GM/player UX hardening | Ready | Web shows archive import progress/result summaries with `aria-live`, disables duplicate imports while in flight, switches to the imported campaign, clears file inputs, adds disabled-control permission titles, adds scene tab `aria-pressed`, adds visible focus outlines, and includes a favicon. Browser smoke verified beta campaign loading. | Post-beta: deeper accessibility audit. |
 | 5. Realtime and scale smoke | Ready | A beta API realtime regression opens WebSockets for 1 GM + 3 players, verifies token movement, dice, chat, journal, combat, and reconnect delivery. A beta-scale API smoke loads/exports 80 added actors, tokens, journals, and assets. Browser smoke showed realtime connected on the imported beta campaign. | Post-beta: larger soak/load testing. |
 | 6. D&D/SRD beta slice | Ready | `docs/system-sdk/dnd-srd-beta-support.md` documents supported and unsupported beta SRD features. The beta dogfood archive covers leveling metadata, rests/resources, conditions, spells/items, monsters, loot, encounter math, and character import/export metadata. API/browser proof passed. | Post-beta: broader SRD rules coverage. |
-| 7. AI beta quality | Ready | AI routes/tools are proposal and permission based. The beta fixture includes a passing `beta-quality-smoke` eval. The beta API regression runs `beta-v0.2-ai-quality-gate` against encounter design, combat advice, recap/memory, rules lookup, proposal safety, advertised tools, tool outputs, and forbidden permissions. | Post-beta: expand eval corpus. |
+| 7. AI beta quality | Ready | AI routes/tools retain their existing proposal and governed automatic-execution modes under permission, revision, validation, and audit boundaries. The beta fixture includes a passing `beta-quality-smoke` eval. The beta API regression runs `beta-v0.2-ai-quality-gate` against encounter design, combat advice, recap/memory, rules lookup, configured-mode integrity, advertised tools, tool outputs, and forbidden permissions. | Post-beta: expand eval corpus. |
 | 8. Plugin/system beta story | Ready | The beta dogfood regression lists systems, installs `generic-fantasy`, restores `dnd-5e-srd`, installs `example-macro-plugin` with only `chat.write`, verifies missing `token.read`, and runs `/spark` without token context. Plugin signing/review/registry/storage/sandbox operations are documented. | Post-beta: third-party plugin review workflows. |
 | 9. Safe content import primitives | Ready | Core defines content import source adapters, provenance/license metadata, preview entities, applied records, and campaign-local import batches. API endpoints preview, list, apply, roll back, and delete user-provided actor/item/journal/handout imports with audit logs. Focused API tests verify selective import, rollback/delete, provenance/license warnings, and no hidden plugin/AI mutation path. | Post-beta: more source adapters. |
 | 10. Release and ops | Ready | README points to the beta dogfood runbook and release/ops docs. Release notes, upgrade guide, backup/restore guide, deployment checklist, admin/observability checklist, security checklist, and issue template exist. | Post-beta: deployment-specific runbooks. |

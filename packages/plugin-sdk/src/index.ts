@@ -342,8 +342,28 @@ export interface PluginContext {
 export interface PluginProposalRequest {
   title: string;
   summary: string;
-  changes: ProposalChange[];
+  changes: PluginProposalChange[];
 }
+
+/**
+ * Plugins may author ordinary reviewable proposal changes, but rules-managed
+ * Actor and Item payloads are deliberately not a generic Record patch surface.
+ * Those records must use the engine's typed system transactions. The only
+ * presentation-only exception exposed by the bridge is an explicit rename.
+ */
+export type PluginProposalChange =
+  | (Omit<ProposalChange, "entity"> & {
+      entity: Exclude<
+        ProposalChange["entity"],
+        "actor" | "item" | "campaignSession" | "aiMemory"
+      >;
+    })
+  | {
+      entity: "actor" | "item";
+      action: "update";
+      id: string;
+      data: { name: string };
+    };
 
 export interface PluginChatMessageRequest {
   body: string;

@@ -63,7 +63,9 @@ Google Workspace does not provide generic SCIM provisioning for all editions. Us
 
 OIDC providers must support issuer discovery and authorization-code login. Configure the provider callback to the API callback path and ensure the browser return origin matches the deployed web app.
 
-SCIM clients should call the service-provider config first, then provision users and groups through the Users and Groups endpoints. Group-to-campaign role mapping is intentionally explicit: provisioning a group creates directory inventory, while Admin Auth Setup decides which campaign role that group receives.
+For email-based account linking, the configured provider's UserInfo response must include the email address and `email_verified` as the literal JSON boolean `true`. OpenTabletop treats missing, false, or string-valued verification claims as unverified and will not use that email to claim an existing local account. A first-time unverified identity still gets an isolated OIDC account, while a returning identity continues to resolve by its exact issuer and subject pair. This policy assumes the configured issuer is trusted to validate address ownership before emitting `email_verified: true`.
+
+SCIM clients should call the service-provider config first, then provision users and groups through the Users and Groups endpoints. OpenTabletop advertises strong ETag support: create requests require `Idempotency-Key`, while replace, patch, and delete requests require both `Idempotency-Key` and the latest strong `ETag` copied into `If-Match`. Retrying the same logical request with the same key replays its durable result; stale or malformed validators never mutate the resource. Group-to-campaign role mapping is intentionally explicit: provisioning a group creates directory inventory, while Admin Auth Setup previews the selected group/member target set and uses its hash to decide which campaign role that exact set receives.
 
 ## Verification
 

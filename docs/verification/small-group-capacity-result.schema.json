@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://open-tabletop-engine.local/schemas/small-group-capacity-result-v1",
+  "title": "Open Tabletop Engine small-group capacity gate result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schemaVersion",
+    "kind",
+    "generatedAt",
+    "envelope",
+    "transport",
+    "measurements",
+    "verification",
+    "checks",
+    "passed",
+    "caveat"
+  ],
+  "properties": {
+    "schema": {
+      "const": "https://open-tabletop-engine.local/schemas/small-group-capacity-result-v1"
+    },
+    "schemaVersion": { "const": "1.0.0" },
+    "kind": { "const": "small-group-capacity-gate" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "envelope": {
+      "type": "object",
+      "required": [
+        "schemaVersion",
+        "id",
+        "claimBoundary",
+        "topology",
+        "group",
+        "campaignSurface",
+        "workload",
+        "thresholdsMs"
+      ]
+    },
+    "transport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rest", "realtime", "bindHost"],
+      "properties": {
+        "rest": { "const": "tcp-http" },
+        "realtime": { "const": "tcp-websocket" },
+        "bindHost": { "const": "127.0.0.1" }
+      }
+    },
+    "measurements": {
+      "type": "object",
+      "required": [
+        "samples",
+        "initialConnectP95Ms",
+        "readP95Ms",
+        "mutationP95Ms",
+        "eventFanoutP95Ms",
+        "reconnectP95Ms",
+        "workloadTotalMs",
+        "sqliteBytes"
+      ]
+    },
+    "verification": {
+      "type": "object",
+      "required": ["observed", "expectedMinimum", "persistedAfterReopen"]
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 6,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "actualMs", "maximumMs", "passed"],
+        "properties": {
+          "name": { "type": "string" },
+          "actualMs": { "type": "number", "minimum": 0 },
+          "maximumMs": { "type": "number", "exclusiveMinimum": 0 },
+          "passed": { "type": "boolean" }
+        }
+      }
+    },
+    "passed": { "type": "boolean" },
+    "caveat": { "type": "string", "minLength": 20 }
+  }
+}

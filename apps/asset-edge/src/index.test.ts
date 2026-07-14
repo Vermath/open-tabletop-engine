@@ -80,6 +80,27 @@ describe("asset edge worker", () => {
     expect(originRequests[0]!.init).toBeUndefined();
   });
 
+  it("forwards signed rendition variants and isolates their edge cache keys", async () => {
+    const signature = apiSignature("asset_demo");
+    let originUrl = "";
+    let cacheKey = "";
+    const response = await handleAssetEdgeRequest(
+      new Request(`https://assets.example.test/api/v1/assets/asset_demo/blob?expiresAt=${encodeURIComponent(expiresAt)}&signature=${signature}&variant=thumbnail`),
+      { ...env, ASSET_EDGE_ROUTE_PREFIX: "" },
+      async (request, init) => {
+        originUrl = request.url;
+        cacheKey = (init as { cf?: { cacheKey?: string } } | undefined)?.cf?.cacheKey ?? "";
+        return new Response("thumbnail", { status: 200, headers: { "content-type": "image/webp" } });
+      },
+      nowMs
+    );
+
+    expect(response.status).toBe(200);
+    expect(originUrl).toContain("variant=thumbnail");
+    expect(cacheKey).toContain("variant=thumbnail");
+    expect(cacheKey).not.toContain("signature=");
+  });
+
   it("rejects tampered signatures without calling origin", async () => {
     let called = false;
     const response = await handleAssetEdgeRequest(

@@ -1,5 +1,7 @@
 # MVP Acceptance Audit
 
+> Historical evidence notice (2026-07-13): the product owner accepts the existing AI agent's manual-proposal and governed automatic-execution modes. Older proposal-only descriptions below record the MVP-era exercise and are superseded; they are not a current product, security, or release constraint.
+
 This audit maps the requested OpenTabletop Engine PRD MVP scope to implementation evidence. It is evidence-first: a requirement is counted only when there is product behavior, automated validation, and manual acceptance evidence.
 
 ## Objective

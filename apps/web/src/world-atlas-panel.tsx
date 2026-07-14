@@ -1,8 +1,10 @@
-import type { Scene } from "@open-tabletop/core";
+import type { Scene, WorldRecord, WorldRelation } from "@open-tabletop/core";
 import { Globe2, MapPin, Plus, Save, Search, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { apiDelete, apiPatch, apiPost } from "./api.js";
 import { errorMessage, formatNumber } from "./sheet-format.js";
+import { isStaleWriteError, sharedMutationIdempotencyKey, staleDraftPreservedMessage } from "./shared-mutation.js";
+import { WorldGraphPanel } from "./world-graph-panel.js";
 
 export interface WorldAtlasWorld {
   id: string;
@@ -45,25 +47,37 @@ export function filterWorldAtlas(worlds: WorldAtlasWorld[], query: string): Worl
   return worlds.filter((world) => [world.name, world.description].some((value) => value.toLocaleLowerCase().includes(normalized)));
 }
 
-export function createWorldAtlasWorld(campaignId: string, input: { name: string; description: string }): Promise<WorldAtlasWorld> {
-  return apiPost<WorldAtlasWorld>(`/api/v1/campaigns/${campaignId}/worlds`, input);
+export function createWorldAtlasWorld(campaignId: string, input: { name: string; description: string; expectedUpdatedAt: string }): Promise<WorldAtlasWorld> {
+  return apiPost<WorldAtlasWorld>(`/api/v1/campaigns/${campaignId}/worlds`, input, {
+    idempotencyKey: sharedMutationIdempotencyKey(`world:create:${campaignId}`, input.expectedUpdatedAt, input)
+  });
 }
 
-export function updateWorldAtlasWorld(worldId: string, input: { name: string; description: string }): Promise<WorldAtlasWorld> {
-  return apiPatch<WorldAtlasWorld>(`/api/v1/worlds/${worldId}`, input);
+export function updateWorldAtlasWorld(worldId: string, input: { name: string; description: string; expectedUpdatedAt: string }): Promise<WorldAtlasWorld> {
+  return apiPatch<WorldAtlasWorld>(`/api/v1/worlds/${worldId}`, input, {
+    idempotencyKey: sharedMutationIdempotencyKey(`world:update:${worldId}`, input.expectedUpdatedAt, input)
+  });
 }
 
-export function deleteWorldAtlasWorld(worldId: string): Promise<unknown> {
-  return apiDelete<unknown>(`/api/v1/worlds/${worldId}`);
+export function deleteWorldAtlasWorld(worldId: string, expectedUpdatedAt: string): Promise<unknown> {
+  return apiDelete<unknown>(`/api/v1/worlds/${worldId}?expectedUpdatedAt=${encodeURIComponent(expectedUpdatedAt)}`, {
+    idempotencyKey: sharedMutationIdempotencyKey(`world:delete:${worldId}`, expectedUpdatedAt, {})
+  });
 }
 
-export function assignSceneToWorld(sceneId: string, worldId: string): Promise<Scene> {
-  return apiPatch<Scene>(`/api/v1/scenes/${sceneId}`, { worldId: worldId || null });
+export function assignSceneToWorld(sceneId: string, worldId: string, expectedUpdatedAt: string): Promise<Scene> {
+  const payload = { worldId: worldId || null, expectedUpdatedAt };
+  return apiPatch<Scene>(`/api/v1/scenes/${sceneId}`, payload, {
+    idempotencyKey: sharedMutationIdempotencyKey(`scene:world:${sceneId}`, expectedUpdatedAt, payload)
+  });
 }
 
 export function WorldAtlasPanel(props: {
   campaignId: string;
+  campaignUpdatedAt: string;
   worlds: WorldAtlasWorld[];
+  worldRecords: WorldRecord[];
+  worldRelations: WorldRelation[];
   scenes: Scene[];
   selectedWorldId: WorldAtlasFilter;
   canCreate: boolean;
@@ -74,8 +88,11 @@ export function WorldAtlasPanel(props: {
   loadError?: string;
   onRetryLoad?(): void;
   onWorldsChange(worlds: WorldAtlasWorld[]): void;
+  onWorldRecordsChange(records: WorldRecord[]): void;
+  onWorldRelationsChange(relations: WorldRelation[]): void;
   onSelectWorld(worldId: WorldAtlasFilter): void;
   onSceneUpdated(scene: Scene): void;
+  onRefreshSharedState(): Promise<void>;
   onStatus(message: string): void;
 }) {
   const [query, setQuery] = useState("");
@@ -93,7 +110,16 @@ export function WorldAtlasPanel(props: {
     setEditName(selectedWorld?.name ?? "");
     setEditDescription(selectedWorld?.description ?? "");
     setDeleteArmed(false);
-  }, [selectedWorld?.description, selectedWorld?.id, selectedWorld?.name]);
+  }, [selectedWorld?.id]);
+
+  async function handleMutationError(prefix: string, error: unknown) {
+    if (isStaleWriteError(error)) {
+      await props.onRefreshSharedState();
+      props.onStatus(`${prefix}: ${staleDraftPreservedMessage}`);
+      return;
+    }
+    props.onStatus(`${prefix}: ${errorMessage(error)}`);
+  }
 
   async function createWorld() {
     const name = newName.trim();
@@ -102,15 +128,17 @@ export function WorldAtlasPanel(props: {
     try {
       const world = await createWorldAtlasWorld(props.campaignId, {
         name,
-        description: newDescription.trim()
+        description: newDescription.trim(),
+        expectedUpdatedAt: props.campaignUpdatedAt
       });
       props.onWorldsChange([...props.worlds, world].sort((left, right) => left.name.localeCompare(right.name)));
       props.onSelectWorld(world.id);
       setNewName("");
       setNewDescription("");
       props.onStatus(`${world.name} added to the atlas`);
+      await props.onRefreshSharedState();
     } catch (error) {
-      props.onStatus(`World creation failed: ${errorMessage(error)}`);
+      await handleMutationError("World creation failed", error);
     } finally {
       setBusy(false);
     }
@@ -122,12 +150,13 @@ export function WorldAtlasPanel(props: {
     try {
       const world = await updateWorldAtlasWorld(selectedWorld.id, {
         name: editName.trim(),
-        description: editDescription.trim()
+        description: editDescription.trim(),
+        expectedUpdatedAt: selectedWorld.updatedAt
       });
       props.onWorldsChange(props.worlds.map((item) => (item.id === world.id ? world : item)).sort((left, right) => left.name.localeCompare(right.name)));
       props.onStatus(`${world.name} updated`);
     } catch (error) {
-      props.onStatus(`World update failed: ${errorMessage(error)}`);
+      await handleMutationError("World update failed", error);
     } finally {
       setBusy(false);
     }
@@ -137,16 +166,13 @@ export function WorldAtlasPanel(props: {
     if (!selectedWorld || busy) return;
     setBusy(true);
     try {
-      await deleteWorldAtlasWorld(selectedWorld.id);
-      const detachedAt = new Date().toISOString();
-      for (const scene of props.scenes.filter((item) => sceneWorldId(item) === selectedWorld.id)) {
-        props.onSceneUpdated({ ...scene, worldId: undefined, updatedAt: detachedAt } as SceneWithWorld);
-      }
+      await deleteWorldAtlasWorld(selectedWorld.id, selectedWorld.updatedAt);
       props.onWorldsChange(props.worlds.filter((item) => item.id !== selectedWorld.id));
       props.onSelectWorld("all");
       props.onStatus(`${selectedWorld.name} removed; its scenes are now unfiled`);
+      await props.onRefreshSharedState();
     } catch (error) {
-      props.onStatus(`World deletion failed: ${errorMessage(error)}`);
+      await handleMutationError("World deletion failed", error);
     } finally {
       setBusy(false);
       setDeleteArmed(false);
@@ -157,11 +183,11 @@ export function WorldAtlasPanel(props: {
     if (busy) return;
     setBusy(true);
     try {
-      const updated = await assignSceneToWorld(scene.id, worldId);
+      const updated = await assignSceneToWorld(scene.id, worldId, scene.updatedAt);
       props.onSceneUpdated(updated);
       props.onStatus(`${scene.name} moved to ${props.worlds.find((world) => world.id === worldId)?.name ?? "Unfiled"}`);
     } catch (error) {
-      props.onStatus(`Scene assignment failed: ${errorMessage(error)}`);
+      await handleMutationError("Scene assignment failed", error);
     } finally {
       setBusy(false);
     }
@@ -250,6 +276,21 @@ export function WorldAtlasPanel(props: {
           </article>
         ))}
       </section>
+
+      <WorldGraphPanel
+        campaignId={props.campaignId}
+        campaignUpdatedAt={props.campaignUpdatedAt}
+        selectedWorldId={props.selectedWorldId}
+        records={props.worldRecords}
+        relations={props.worldRelations}
+        canCreate={props.canCreate}
+        canUpdate={props.canUpdateWorld}
+        canDelete={props.canDelete}
+        onRecordsChange={props.onWorldRecordsChange}
+        onRelationsChange={props.onWorldRelationsChange}
+        onRefreshSharedState={props.onRefreshSharedState}
+        onStatus={props.onStatus}
+      />
 
       {props.canCreate && (
         <details className="lore-create-drawer" open={props.worlds.length === 0}>

@@ -1,20 +1,4 @@
 services:
-  postgres:
-    image: postgres:17-alpine
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-opentabletop}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-opentabletop}
-      POSTGRES_DB: ${POSTGRES_DB:-opentabletop}
-    ports:
-      - "${INFRA_BIND_ADDRESS:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "${INFRA_BIND_ADDRESS:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
-
   minio:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
@@ -46,7 +30,7 @@ services:
       OTTE_ASSET_QUOTA_BYTES: ${OTTE_ASSET_QUOTA_BYTES:-}
       OTTE_ASSET_RETENTION_DAYS: ${OTTE_ASSET_RETENTION_DAYS:-}
       OTTE_ASSET_CDN_BASE_URL: ${OTTE_ASSET_CDN_BASE_URL:-}
-      OTTE_ASSET_URL_SIGNING_SECRET: ${OTTE_ASSET_URL_SIGNING_SECRET:-}
+      OTTE_ASSET_URL_SIGNING_SECRET: ${OTTE_ASSET_URL_SIGNING_SECRET:?OTTE_ASSET_URL_SIGNING_SECRET must be set for production asset delivery}
       OTTE_ASSET_URL_TTL_SECONDS: ${OTTE_ASSET_URL_TTL_SECONDS:-300}
       OTTE_ASSET_URL_MAX_TTL_SECONDS: ${OTTE_ASSET_URL_MAX_TTL_SECONDS:-3600}
       OTTE_ASSET_CLEANUP_GRACE_DAYS: ${OTTE_ASSET_CLEANUP_GRACE_DAYS:-7}
@@ -58,21 +42,29 @@ services:
       OTTE_ASSET_CLEANUP_CAMPAIGN_ID: ${OTTE_ASSET_CLEANUP_CAMPAIGN_ID:-}
       OTTE_ASSET_CLEANUP_USER_ID: ${OTTE_ASSET_CLEANUP_USER_ID:-system_asset_cleanup}
       OTTE_AI_PROVIDER: ${OTTE_AI_PROVIDER:-codex-app-server}
+      OTTE_AI_ENABLED: ${OTTE_AI_ENABLED:-false}
+      OTTE_AI_CONTEXT_SCOPES: ${OTTE_AI_CONTEXT_SCOPES:-public,gm_private}
+      OTTE_AI_RETENTION_DAYS: ${OTTE_AI_RETENTION_DAYS:-30}
+      OTTE_AI_PROVIDER_TRANSMISSION_DISCLOSURE: ${OTTE_AI_PROVIDER_TRANSMISSION_DISCLOSURE:-Permission-filtered campaign data in selected scopes is transmitted to the configured AI provider; local retention controls do not delete provider-held data.}
       OTTE_CODEX_APP_SERVER_URL: ${OTTE_CODEX_APP_SERVER_URL:-}
       OTTE_CODEX_APP_SERVER_CWD: ${OTTE_CODEX_APP_SERVER_CWD:-}
       OTTE_CODEX_MODEL: ${OTTE_CODEX_MODEL:-}
       OTTE_CODEX_MODEL_PROVIDER: ${OTTE_CODEX_MODEL_PROVIDER:-}
       OTTE_ADMIN_USER_IDS: ${OTTE_ADMIN_USER_IDS:-}
+      OTTE_WORKER_PROFILE_ENABLED: ${OTTE_WORKER_PROFILE_ENABLED:-false}
+      OTTE_WORKER_TOKEN_HASHES: ${OTTE_WORKER_TOKEN_HASHES:-}
       OTTE_PASSWORD_RESET_URL: ${OTTE_PASSWORD_RESET_URL:-}
       OTTE_PASSWORD_RESET_TTL_MINUTES: ${OTTE_PASSWORD_RESET_TTL_MINUTES:-60}
       OTTE_EMAIL_WEBHOOK_URL: ${OTTE_EMAIL_WEBHOOK_URL:-}
       OTTE_EMAIL_WEBHOOK_TOKEN: ${OTTE_EMAIL_WEBHOOK_TOKEN:-}
       OTTE_EMAIL_WEBHOOK_TIMEOUT_MS: ${OTTE_EMAIL_WEBHOOK_TIMEOUT_MS:-5000}
       OTTE_ALLOW_LEGACY_USER_HEADER: ${OTTE_ALLOW_LEGACY_USER_HEADER:-false}
-      OTTE_PLUGIN_TRUST_POLICY: ${OTTE_PLUGIN_TRUST_POLICY:-allow_unsigned}
+      OTTE_PLUGIN_TRUST_POLICY: ${OTTE_PLUGIN_TRUST_POLICY:-require_trusted}
+      OTTE_PLUGIN_REVIEW_POLICY: ${OTTE_PLUGIN_REVIEW_POLICY:-require_approved}
       OTTE_PLUGIN_TRUST_KEYS: ${OTTE_PLUGIN_TRUST_KEYS:-}
       OTTE_PLUGIN_DIR: /app/storage/plugins
       OTTE_BUNDLED_PLUGIN_DIR: /app/plugins
+      OTTE_SQLITE_BACKUP_RETENTION_COUNT: ${OTTE_SQLITE_BACKUP_RETENTION_COUNT:-30}
     ports:
       - "${API_PORT:-4000}:4000"
     volumes:
@@ -85,8 +77,6 @@ services:
       timeout: 3s
       retries: 12
     depends_on:
-      - postgres
-      - redis
       - minio
 
   worker:
@@ -98,9 +88,12 @@ services:
     restart: unless-stopped
     environment:
       OTTE_API_URL: http://api:4000
-      OTTE_SESSION_TOKEN: ${OTTE_WORKER_SESSION_TOKEN:-}
+      OTTE_WORKER_TOKEN: ${OTTE_WORKER_TOKEN:-}
+      # Deprecated non-production bridge only. Production workers hard-refuse it.
+      OTTE_WORKER_SESSION_TOKEN: ${OTTE_WORKER_SESSION_TOKEN:-}
+      OTTE_WORKER_ALLOW_LEGACY_SESSION_TOKEN: ${OTTE_WORKER_ALLOW_LEGACY_SESSION_TOKEN:-false}
       OTTE_WORKER_LEASE_POLL: "true"
-      OTTE_WORKER_ID: ${OTTE_WORKER_ID:-}
+      OTTE_WORKER_ID: ${OTTE_WORKER_ID:-worker-primary}
       OTTE_WORKER_LEASE_SECONDS: ${OTTE_WORKER_LEASE_SECONDS:-120}
       OTTE_WORKER_POLL_INTERVAL_MS: ${OTTE_WORKER_POLL_INTERVAL_MS:-5000}
       OTTE_WORKER_MAX_JOBS: ${OTTE_WORKER_MAX_JOBS:-}
@@ -122,7 +115,6 @@ services:
       - api
 
 volumes:
-  postgres-data:
   minio-data:
   api-storage:
   api-uploads:

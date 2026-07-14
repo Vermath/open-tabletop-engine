@@ -1,4 +1,39 @@
-import type { Actor, Combat, Item, PermissionName, SystemCapability, SystemManifestData } from "@open-tabletop/core";
+import type { Actor, ActorCalculationExplanation, CalculationSource, CalculationTerm, Combat, CompendiumCatalogEntry, CompendiumProvenance, Item, PermissionName, SystemCapability, SystemManifestData } from "@open-tabletop/core";
+import type { Dnd5eSrdConcentrationCleanup, RulesResolutionActorUpdate } from "./dnd-resolution-types.js";
+import { DND_5E_SRD_MONSTER_STAT_BLOCKS, type Dnd5eSrdMonsterAction, type Dnd5eSrdMonsterStatBlock } from "./dnd-monster-stat-blocks.js";
+import { buildDnd5eSrdCalculationExplanation, type Dnd5eSrdCalculationFlagInput, type Dnd5eSrdRollCalculationInput, type Dnd5eSrdScalarCalculationInput } from "./dnd-calculation-explanations.js";
+import {
+  DND_5E_SRD_SUBCLASS_OPTIONS,
+  dnd5eSrdFeatGrantAtClassLevel,
+  dnd5eSrdSubclassFeatures,
+  dnd5eSrdSubclassOption,
+  resolveDnd5eSrdDamageComponents,
+  type Dnd5eSrdDamageComponent,
+  type Dnd5eSrdDamageResolution,
+  type Dnd5eSrdSubclassOption
+} from "./dnd-rules-completion.js";
+import { dnd5eSrdWizardRitualSpellAvailable } from "./dnd-spell-preparation.js";
+import * as dndRollIds from "./dnd-roll-identifiers.js";
+import * as dndStaticContent from "./dnd-static-content.js";
+
+export * from "./dnd-calculation-explanations.js";
+export * from "./dnd-roll-identifiers.js";
+export { DND_5E_SRD_SYSTEM_ID, DND_5E_SRD_VERSION, dnd5eSrdXpThresholds, dnd5eSrdMulticlassPrerequisites, dnd5eSrdAbilityScoreImprovementLevels } from "./dnd-static-content.js";
+export * from "./dnd-validation-preview.js";
+export * from "./dnd-effect-lifecycle.js";
+export * from "./dnd-custom-content.js";
+export * from "./dnd-monster-variants.js";
+export * from "./dnd-inventory-commerce.js";
+export * from "./dnd-controlled-creatures.js";
+export * from "./dnd-advanced-mechanics.js";
+export * from "./dnd-spell-preparation.js";
+export * from "./dnd-rules-completion.js";
+export * from "./dnd-combat-progression.js";
+export * from "./dnd-resolution-types.js";
+export type { Dnd5eSrdMonsterAction, Dnd5eSrdMonsterStatBlock } from "./dnd-monster-stat-blocks.js";
+
+const { DND_5E_SRD_DEATH_SAVE_ROLL_ID, DND_5E_SRD_CONCENTRATION_ROLL_ID, DND_5E_SRD_UNARMED_STRIKE_ROLL_ID, DND_5E_SRD_SECOND_WIND_ROLL_ID, DND_5E_SRD_ACTION_SURGE_ROLL_ID, DND_5E_SRD_TACTICAL_MIND_ROLL_ID, DND_5E_SRD_CHAMPION_CRITICAL_ROLL_ID, DND_5E_SRD_CHAMPION_REMARKABLE_ATHLETE_ROLL_ID, DND_5E_SRD_CHAMPION_HEROIC_WARRIOR_ROLL_ID, DND_5E_SRD_CHAMPION_SURVIVOR_ROLL_ID, DND_5E_SRD_RAGE_ROLL_ID, DND_5E_SRD_RAGE_DAMAGE_ROLL_ID, DND_5E_SRD_RECKLESS_ATTACK_ROLL_ID, DND_5E_SRD_BERSERKER_FRENZY_ROLL_ID, DND_5E_SRD_BERSERKER_MINDLESS_RAGE_ROLL_ID, DND_5E_SRD_BERSERKER_RETALIATION_ROLL_ID, DND_5E_SRD_BERSERKER_INTIMIDATING_PRESENCE_ROLL_ID, DND_5E_SRD_BARDIC_INSPIRATION_ROLL_ID, DND_5E_SRD_FONT_OF_INSPIRATION_ROLL_ID, DND_5E_SRD_LORE_CUTTING_WORDS_ROLL_ID, DND_5E_SRD_LORE_MAGICAL_DISCOVERIES_ROLL_ID, DND_5E_SRD_LORE_PEERLESS_SKILL_ROLL_ID, DND_5E_SRD_LAY_ON_HANDS_ROLL_ID, DND_5E_SRD_DIVINE_SMITE_ROLL_ID, DND_5E_SRD_FAITHFUL_STEED_ROLL_ID, DND_5E_SRD_DEVOTION_SACRED_WEAPON_ROLL_ID, DND_5E_SRD_DEVOTION_AURA_ROLL_ID, DND_5E_SRD_DEVOTION_SMITE_PROTECTION_ROLL_ID, DND_5E_SRD_DEVOTION_HOLY_NIMBUS_ROLL_ID, DND_5E_SRD_HUNTERS_MARK_DAMAGE_ROLL_ID, DND_5E_SRD_HUNTER_LORE_ROLL_ID, DND_5E_SRD_HUNTER_PREY_ROLL_ID, DND_5E_SRD_HUNTER_DEFENSIVE_TACTICS_ROLL_ID, DND_5E_SRD_HUNTER_SUPERIOR_PREY_ROLL_ID, DND_5E_SRD_HUNTER_SUPERIOR_DEFENSE_ROLL_ID, DND_5E_SRD_MARTIAL_ARTS_DAMAGE_ROLL_ID, DND_5E_SRD_FLURRY_OF_BLOWS_ROLL_ID, DND_5E_SRD_PATIENT_DEFENSE_ROLL_ID, DND_5E_SRD_STEP_OF_THE_WIND_ROLL_ID, DND_5E_SRD_UNCANNY_METABOLISM_ROLL_ID, DND_5E_SRD_DEFLECT_ATTACKS_DAMAGE_ROLL_ID, DND_5E_SRD_STUNNING_STRIKE_ROLL_ID, DND_5E_SRD_OPEN_HAND_TECHNIQUE_ROLL_ID, DND_5E_SRD_OPEN_HAND_WHOLENESS_ROLL_ID, DND_5E_SRD_OPEN_HAND_FLEET_STEP_ROLL_ID, DND_5E_SRD_OPEN_HAND_QUIVERING_PALM_ROLL_ID, DND_5E_SRD_INNATE_SORCERY_ROLL_ID, DND_5E_SRD_CONVERT_SPELL_SLOT_ROLL_ID, DND_5E_SRD_CREATE_SPELL_SLOT_ROLL_ID, DND_5E_SRD_METAMAGIC_EMPOWERED_ROLL_ID, DND_5E_SRD_METAMAGIC_QUICKENED_ROLL_ID, DND_5E_SRD_DRACONIC_RESILIENCE_ROLL_ID, DND_5E_SRD_DRACONIC_ELEMENTAL_AFFINITY_ROLL_ID, DND_5E_SRD_DRACONIC_WINGS_ROLL_ID, DND_5E_SRD_DRACONIC_COMPANION_ROLL_ID, DND_5E_SRD_EVOKER_POTENT_CANTRIP_ROLL_ID, DND_5E_SRD_EVOKER_SCULPT_SPELLS_ROLL_ID, DND_5E_SRD_EVOKER_EMPOWERED_EVOCATION_ROLL_ID, DND_5E_SRD_EVOKER_OVERCHANNEL_ROLL_ID, DND_5E_SRD_ELDRITCH_INVOCATIONS_ROLL_ID, DND_5E_SRD_MAGICAL_CUNNING_ROLL_ID, DND_5E_SRD_FIEND_DARK_BLESSING_ROLL_ID, DND_5E_SRD_FIEND_DARK_LUCK_ROLL_ID, DND_5E_SRD_FIEND_RESILIENCE_ROLL_ID, DND_5E_SRD_FIEND_HURL_THROUGH_HELL_ROLL_ID, DND_5E_SRD_WILD_SHAPE_ROLL_ID, DND_5E_SRD_WILD_COMPANION_ROLL_ID, DND_5E_SRD_WILD_RESURGENCE_WILD_SHAPE_ROLL_ID, DND_5E_SRD_WILD_RESURGENCE_SPELL_SLOT_ROLL_ID, DND_5E_SRD_MOON_CIRCLE_FORMS_ROLL_ID, DND_5E_SRD_MOON_IMPROVED_CIRCLE_FORMS_ROLL_ID, DND_5E_SRD_MOON_MOONLIGHT_STEP_ROLL_ID, DND_5E_SRD_MOON_LUNAR_FORM_ROLL_ID, DND_5E_SRD_DIVINE_SPARK_HEALING_ROLL_ID, DND_5E_SRD_DIVINE_SPARK_DAMAGE_ROLL_ID, DND_5E_SRD_TURN_UNDEAD_ROLL_ID, DND_5E_SRD_SEAR_UNDEAD_DAMAGE_ROLL_ID, DND_5E_SRD_LIFE_DISCIPLE_ROLL_ID, DND_5E_SRD_LIFE_PRESERVE_LIFE_ROLL_ID, DND_5E_SRD_LIFE_BLESSED_HEALER_ROLL_ID, DND_5E_SRD_LIFE_SUPREME_HEALING_ROLL_ID, DND_5E_SRD_SNEAK_ATTACK_DAMAGE_ROLL_ID, DND_5E_SRD_CUNNING_STRIKE_ROLL_ID, DND_5E_SRD_THIEF_FAST_HANDS_ROLL_ID, DND_5E_SRD_THIEF_SECOND_STORY_WORK_ROLL_ID, DND_5E_SRD_THIEF_SUPREME_SNEAK_ROLL_ID, DND_5E_SRD_THIEF_USE_MAGIC_DEVICE_ROLL_ID, DND_5E_SRD_THIEF_REFLEXES_ROLL_ID, DND_5E_SRD_DRAGONBORN_BREATH_WEAPON_ROLL_ID, DND_5E_SRD_DRACONIC_FLIGHT_ROLL_ID, DND_5E_SRD_DWARF_STONECUNNING_ROLL_ID, DND_5E_SRD_GOLIATH_GIANT_ANCESTRY_ROLL_ID, DND_5E_SRD_GOLIATH_LARGE_FORM_ROLL_ID, DND_5E_SRD_HUMAN_RESOURCEFUL_ROLL_ID, DND_5E_SRD_HUMAN_SKILLFUL_ROLL_ID, DND_5E_SRD_HUMAN_VERSATILE_ROLL_ID, DND_5E_SRD_ELF_ELVEN_LINEAGE_ROLL_ID, DND_5E_SRD_ELF_FEY_ANCESTRY_ROLL_ID, DND_5E_SRD_ELF_TRANCE_ROLL_ID, DND_5E_SRD_GNOME_GNOMISH_CUNNING_ROLL_ID, DND_5E_SRD_GNOME_LINEAGE_ROLL_ID, DND_5E_SRD_HALFLING_LUCK_ROLL_ID, DND_5E_SRD_HALFLING_BRAVE_ROLL_ID, DND_5E_SRD_HALFLING_NIMBLENESS_ROLL_ID, DND_5E_SRD_HALFLING_NATURALLY_STEALTHY_ROLL_ID, DND_5E_SRD_TIEFLING_FIENDISH_LEGACY_ROLL_ID, DND_5E_SRD_TIEFLING_OTHERWORLDLY_PRESENCE_ROLL_ID, DND_5E_SRD_ORC_ADRENALINE_RUSH_ROLL_ID, DND_5E_SRD_ORC_RELENTLESS_ENDURANCE_ROLL_ID } = dndRollIds;
+const { DND_5E_SRD_SYSTEM_ID, DND_5E_SRD_VERSION, DND_5E_SRD_CANTRIP_D6_SCALING, DND_5E_SRD_CANTRIP_D8_SCALING, DND_5E_SRD_CANTRIP_D10_SCALING, DND_5E_SRD_CANTRIP_D12_SCALING, dnd5eSrdXpThresholds, dnd5eSrdFullCasterClasses, dnd5eSrdHalfCasterClasses, dnd5eSrdMulticlassPrerequisites, dnd5eSrdMulticlassSlotTable, dnd5eSrdAbilityScoreImprovementLevels, DND_5E_SRD_CONDITION_ENTRIES, DND_5E_SRD_LEVEL_ONE_SPELL_CLASS_OVERRIDES, DND_5E_SRD_ENCOUNTER_XP_BUDGETS_BY_LEVEL, DND_5E_SRD_DAMAGE_TYPE_IDS, DND_5E_SRD_ATTUNEMENT_MODIFIER_KEYS } = dndStaticContent;
 
 export interface JsonSchema {
   $schema?: string;
@@ -37,13 +72,6 @@ export class SystemManifestValidationError extends Error {
   }
 }
 
-export const DND_5E_SRD_SYSTEM_ID = "dnd-5e-srd";
-export const DND_5E_SRD_VERSION = "SRD 5.2.1";
-
-const DND_5E_SRD_CANTRIP_D6_SCALING = { level5: "2d6", level11: "3d6", level17: "4d6" };
-const DND_5E_SRD_CANTRIP_D8_SCALING = { level5: "2d8", level11: "3d8", level17: "4d8" };
-const DND_5E_SRD_CANTRIP_D10_SCALING = { level5: "2d10", level11: "3d10", level17: "4d10" };
-const DND_5E_SRD_CANTRIP_D12_SCALING = { level5: "2d12", level11: "3d12", level17: "4d12" };
 
 export interface ActorSheetRegistration {
   systemId: string;
@@ -103,9 +131,226 @@ export interface Dnd5eSrdCharacterSpecies {
   source: typeof DND_5E_SRD_VERSION;
 }
 
+export interface Dnd5eSrdDraconicAncestor {
+  id: string;
+  name: string;
+  damageType: "acid" | "cold" | "fire" | "lightning" | "poison";
+  source: typeof DND_5E_SRD_VERSION;
+}
+
+export interface Dnd5eSrdGiantAncestryChoice {
+  id: string;
+  name: string;
+  giantType: string;
+  activation: "bonus-action" | "on-hit" | "reaction";
+  summary: string;
+  teleportRangeFt?: number;
+  damageFormula?: string;
+  damageType?: "cold" | "fire" | "thunder";
+  speedReductionFt?: number;
+  condition?: "Prone";
+  targetMaxSize?: "Large";
+  damageReductionFormula?: string;
+  damageReductionAbility?: "constitution";
+  triggerRangeFt?: number;
+  source: typeof DND_5E_SRD_VERSION;
+}
+
+export interface Dnd5eSrdClassSkillChoice {
+  templateId: string;
+  className: string;
+  count: number;
+  skillIds: string[];
+  source: typeof DND_5E_SRD_VERSION;
+}
+
+export interface Dnd5eSrdLanguageOption {
+  id: string;
+  label: string;
+  category: "standard" | "rare";
+  source: typeof DND_5E_SRD_VERSION;
+}
+
+export interface Dnd5eSrdOriginLanguageChoice {
+  count: number;
+  fixedLanguageIds: string[];
+  languageIds: string[];
+  source: typeof DND_5E_SRD_VERSION;
+}
+
+export interface Dnd5eSrdClassLanguageChoice {
+  templateId: string;
+  className: string;
+  count: number;
+  fixedLanguageIds: string[];
+  languageIds: string[];
+  source: typeof DND_5E_SRD_VERSION;
+}
+
+export interface Dnd5eSrdEquipmentGrant {
+  entryId: string;
+  quantity?: number;
+  data?: Record<string, unknown>;
+}
+
+export interface Dnd5eSrdEquipmentChoice {
+  id: string;
+  label: string;
+  count: 1;
+  optionIds: string[];
+  /** When present, the equipment must match an independently required proficiency choice. */
+  matchSelection?: "class-tool-proficiency" | "background-tool-proficiency";
+}
+
+export interface Dnd5eSrdStartingEquipmentPackage {
+  id: string;
+  label: string;
+  gp: number;
+  grants: Dnd5eSrdEquipmentGrant[];
+  choices: Dnd5eSrdEquipmentChoice[];
+}
+
+export interface Dnd5eSrdToolProficiencyChoice {
+  count: number;
+  optionIds: string[];
+}
+
+export interface Dnd5eSrdClassStartingEquipment {
+  templateId: string;
+  className: string;
+  packages: Dnd5eSrdStartingEquipmentPackage[];
+  toolProficiencyChoice: Dnd5eSrdToolProficiencyChoice;
+  fixedToolProficiencyIds: string[];
+  source: typeof DND_5E_SRD_VERSION;
+  sourcePage: number;
+  sourcePdfPage: number;
+}
+
+export interface Dnd5eSrdBackgroundStartingEquipment {
+  backgroundId: string;
+  backgroundName: string;
+  packages: Dnd5eSrdStartingEquipmentPackage[];
+  toolProficiencyChoice: Dnd5eSrdToolProficiencyChoice;
+  source: typeof DND_5E_SRD_VERSION;
+  sourcePage: number;
+  sourcePdfPage: number;
+}
+
+export interface Dnd5eSrdWeaponMasteryOption {
+  id: string;
+  name: string;
+  weaponCategory: "simple" | "martial";
+  weaponKind: "melee" | "ranged";
+  properties: string[];
+  mastery: string;
+  source: typeof DND_5E_SRD_VERSION;
+  sourcePage: 91;
+  sourcePdfPage: 90;
+}
+
+export interface Dnd5eSrdClassWeaponMasteryChoice {
+  templateId: string;
+  className: string;
+  count: number;
+  weaponIds: string[];
+  source: typeof DND_5E_SRD_VERSION;
+  sourcePage: number;
+  sourcePdfPage: number;
+}
+
+export interface Dnd5eSrdSpellChoiceOption {
+  id: string;
+  name: string;
+  level: 0 | 1;
+  classes: string[];
+  ritual: boolean;
+  source: typeof DND_5E_SRD_VERSION;
+}
+
+export interface Dnd5eSrdClassSpellChoice {
+  templateId: string;
+  className: string;
+  spellcastingAbility?: "intelligence" | "wisdom" | "charisma";
+  cantripCount: number;
+  preparedSpellCount: number;
+  spellbookSpellCount: number;
+  cantripIds: string[];
+  levelOneSpellIds: string[];
+  alwaysPreparedSpellIds: string[];
+  slotPool: "none" | "spellcasting" | "pact-magic";
+  slotCount: number;
+  slotRecovery: "none" | "long" | "short";
+  changeTiming: "none" | "long-rest" | "class-level";
+  source: typeof DND_5E_SRD_VERSION;
+  sourcePage: number;
+  sourcePdfPage: number;
+}
+
+export interface Dnd5eSrdLevelOneClassFeatureChoice {
+  templateId: string;
+  field: "fightingStyle" | "divineOrder" | "primalOrder" | "rogueExpertiseChoices" | "eldritchInvocation";
+  count: number;
+  optionIds: string[];
+  source: typeof DND_5E_SRD_VERSION;
+  sourcePage: number;
+  sourcePdfPage: number;
+}
+
+export interface Dnd5eSrdEldritchInvocationOption {
+  id: string;
+  name: string;
+  minimumWarlockLevel: number;
+  grantedSpellId?: string;
+  pactTomeCantripCount?: number;
+  pactTomeRitualCount?: number;
+  summary: string;
+  automation: "item" | "manual";
+  source: typeof DND_5E_SRD_VERSION;
+  sourcePage: number;
+  sourcePdfPage: number;
+}
+
+export interface Dnd5eSrdOriginFeatOption {
+  id: string;
+  name: string;
+  magicInitiateClass?: "cleric" | "druid" | "wizard";
+  cantripCount?: 2;
+  levelOneSpellCount?: 1;
+  skilledProficiencyCount?: 3;
+  source: typeof DND_5E_SRD_VERSION;
+  sourcePage: 87;
+  sourcePdfPage: 86;
+}
+
+export interface Dnd5eSrdSkilledProficiencyOption {
+  id: string;
+  label: string;
+  category: "skill" | "tool";
+  source: typeof DND_5E_SRD_VERSION;
+}
+
 export interface Dnd5eSrdCharacterOrigins {
   backgrounds: Dnd5eSrdCharacterBackground[];
   species: Dnd5eSrdCharacterSpecies[];
+  draconicAncestors: Dnd5eSrdDraconicAncestor[];
+  giantAncestries: Dnd5eSrdGiantAncestryChoice[];
+  classSkillChoices: Dnd5eSrdClassSkillChoice[];
+  languages: Dnd5eSrdLanguageOption[];
+  originLanguageChoice: Dnd5eSrdOriginLanguageChoice;
+  classLanguageChoices: Dnd5eSrdClassLanguageChoice[];
+  classStartingEquipment: Dnd5eSrdClassStartingEquipment[];
+  backgroundStartingEquipment: Dnd5eSrdBackgroundStartingEquipment[];
+  weaponMasteryOptions: Dnd5eSrdWeaponMasteryOption[];
+  classWeaponMasteryChoices: Dnd5eSrdClassWeaponMasteryChoice[];
+  spellOptions: Dnd5eSrdSpellChoiceOption[];
+  classSpellChoices: Dnd5eSrdClassSpellChoice[];
+  levelOneClassFeatureChoices: Dnd5eSrdLevelOneClassFeatureChoice[];
+  fightingStyles: Array<{ id: string; name: string; summary: string; automation: "manual"; source: typeof DND_5E_SRD_VERSION; sourcePage: number; sourcePdfPage: number }>;
+  divineOrders: Array<{ id: string; name: string; summary: string; automation: "manual"; source: typeof DND_5E_SRD_VERSION; sourcePage: 37; sourcePdfPage: 36 }>;
+  primalOrders: Array<{ id: string; name: string; summary: string; automation: "manual"; source: typeof DND_5E_SRD_VERSION; sourcePage: 42; sourcePdfPage: 41 }>;
+  eldritchInvocations: Dnd5eSrdEldritchInvocationOption[];
+  originFeatOptions: Dnd5eSrdOriginFeatOption[];
+  skilledProficiencyOptions: Dnd5eSrdSkilledProficiencyOption[];
   elfLineages: Array<{ id: string; name: string; cantrip: string; level3Spell: string; level5Spell: string }>;
   gnomeLineages: Array<{ id: string; name: string }>;
   tieflingLegacies: Array<{ id: string; name: string; resistance: string }>;
@@ -119,6 +364,11 @@ export interface Dnd5eSrdCharacterOriginOptions {
   backgroundId?: string;
   speciesId?: string;
   abilityScoreIncreases?: unknown;
+  classSkillProficiencies?: string[];
+  originLanguageChoices?: string[];
+  classLanguageChoices?: string[];
+  draconicAncestry?: string;
+  giantAncestry?: string;
   skillProficiency?: string;
   originFeat?: string;
   elfLineage?: string;
@@ -126,6 +376,30 @@ export interface Dnd5eSrdCharacterOriginOptions {
   gnomeLineage?: string;
   tieflingLegacy?: string;
   speciesSpellcastingAbility?: string;
+  classEquipmentPackageId?: string;
+  backgroundEquipmentPackageId?: string;
+  classEquipmentChoices?: Record<string, string>;
+  backgroundEquipmentChoices?: Record<string, string>;
+  classToolProficiencyChoices?: string[];
+  backgroundToolProficiencyChoice?: string;
+  weaponMasteryChoices?: string[];
+  classCantripChoices?: string[];
+  classPreparedSpellChoices?: string[];
+  wizardSpellbookChoices?: string[];
+  backgroundMagicInitiateCantrips?: string[];
+  backgroundMagicInitiateSpell?: string;
+  backgroundMagicInitiateAbility?: string;
+  originFeatMagicInitiateCantrips?: string[];
+  originFeatMagicInitiateSpell?: string;
+  originFeatMagicInitiateAbility?: string;
+  skilledProficiencyChoices?: string[];
+  fightingStyle?: string;
+  divineOrder?: string;
+  primalOrder?: string;
+  rogueExpertiseChoices?: string[];
+  eldritchInvocation?: string;
+  pactTomeCantripChoices?: string[];
+  pactTomeRitualChoices?: string[];
 }
 
 export interface Dnd5eSrdCharacterOriginBuild {
@@ -133,6 +407,19 @@ export interface Dnd5eSrdCharacterOriginBuild {
   items: CharacterTemplateItem[];
   background: Dnd5eSrdCharacterBackground;
   species: Dnd5eSrdCharacterSpecies;
+}
+
+export const DND_5E_SRD_LEVEL_ONE_CREATION_MODE = "level-one-srd" as const;
+
+export interface Dnd5eSrdLevelOneCreationIssue {
+  code: string;
+  field: keyof Dnd5eSrdCharacterOriginOptions | "templateId";
+  message: string;
+}
+
+export interface Dnd5eSrdLevelOneCreationValidation {
+  ok: boolean;
+  issues: Dnd5eSrdLevelOneCreationIssue[];
 }
 
 export interface CharacterImportInput {
@@ -159,10 +446,30 @@ export interface AdvancementOption {
   nextValue: number;
 }
 
+export interface Dnd5eSrdAdvancementChoices {
+  /** Optional rolled Hit Point Die result. Omit to use the class's fixed value. */
+  hitPointRoll?: number;
+  /** Required when the advanced class first reaches its subclass level. */
+  subclassId?: string;
+  /** Complete replacement selection when a class gains another Weapon Mastery choice. */
+  weaponMasteryChoices?: string[];
+}
+
 export type SystemRestType = "short" | "long";
+
+export interface Dnd5eSrdHitDieSpend {
+  /** Required for multiclass characters so the correct pool is spent. */
+  className?: string;
+  /** The server-authoritative result of the selected Hit Point Die roll. */
+  roll: number;
+}
+
+export type Dnd5eSrdHitDieSize = "d6" | "d8" | "d10" | "d12";
 
 export interface SystemRestOptions {
   arcaneRecovery?: Record<string, number>;
+  /** Explicit, ordered Hit Point Dice selected during a D&D Short Rest. */
+  hitDice?: Dnd5eSrdHitDieSpend[];
 }
 
 export interface SystemRestResult {
@@ -175,7 +482,7 @@ export interface SystemRestResult {
   data: Record<string, unknown>;
 }
 
-export type SystemActionConsumptionType = "spellSlot" | "resource" | "strain" | "itemQuantity" | "composure";
+export type SystemActionConsumptionType = "spellSlot" | "pactSlot" | "resource" | "strain" | "itemQuantity" | "composure";
 
 export interface SystemActionConsumption {
   type: SystemActionConsumptionType;
@@ -187,8 +494,14 @@ export interface SystemActionConsumption {
 
 export interface SystemActionUseOptions {
   spellSlotLevel?: number;
+  /** Spend the actor's independently tracked Pact Magic slot pool. */
+  usePactSlot?: boolean;
   resourceAmount?: number;
   useFreeResource?: boolean;
+  /** Cast an eligible Wizard spell from the spellbook using Ritual Adept. */
+  ritualCast?: boolean;
+  /** Marks a resolved damage roll as a critical hit, including the two failed Death Saves rider at 0 HP. */
+  criticalHit?: boolean;
 }
 
 export interface SystemActionUseResult {
@@ -196,6 +509,8 @@ export interface SystemActionUseResult {
   actorId: string;
   rollId: string;
   slotLevel?: number;
+  slotPool?: "spellSlots" | "pactSlots";
+  ritualCast?: boolean;
   consumed: SystemActionConsumption[];
   data: Record<string, unknown>;
   items: Item[];
@@ -217,6 +532,12 @@ export interface RulesResolverOptions extends SystemActionUseOptions {
   consumeResources?: boolean;
   applyEffect?: boolean;
   commit?: boolean;
+  /**
+   * Synthetic external-effect previews may reuse the target as the resolution
+   * actor even though that creature is not taking an action. In that narrow
+   * case its Incapacitated/Unconscious action restrictions do not block damage.
+   */
+  ignoreSourceActionRestrictions?: boolean;
   effectChoice?: string;
   saveOutcomes?: Record<string, RulesSaveOutcome>;
   reactionUse?: boolean;
@@ -233,13 +554,6 @@ export interface RulesResolutionRoll {
   advantageSources: string[];
   disadvantageSources: string[];
   saveOutcome?: RulesSaveOutcome;
-}
-
-export interface RulesResolutionActorUpdate {
-  actorId: string;
-  before: Record<string, unknown>;
-  after: Record<string, unknown>;
-  reason: string;
 }
 
 export interface RulesResolutionConditionChange {
@@ -342,6 +656,7 @@ export interface RulesActionResolutionResult {
     metadata: Record<string, unknown>;
   };
   attunement?: Dnd5eSrdAttunementState;
+  concentrationCleanups?: Dnd5eSrdConcentrationCleanup[];
 }
 
 export interface Dnd5eSrdActionResolutionInput {
@@ -359,13 +674,37 @@ export interface Dnd5eSrdConcentrationDamageResult {
   pendingSave?: RulesResolutionPendingSave;
   condition?: RulesResolutionConditionChange;
   auditEvent?: RulesResolutionAuditEvent;
+  cleanup?: Dnd5eSrdConcentrationCleanup;
+}
+
+export interface Dnd5eSrdConcentrationCleanupResult {
+  data: Record<string, unknown>;
+  removedEffectIds: string[];
+  removedConditionIds: string[];
 }
 
 export interface Dnd5eSrdAttunementState {
   limit: number;
   attunedItemIds: string[];
+  activeAttunedItemIds: string[];
+  inactiveAttunedItemIds: string[];
   overLimitBy: number;
   canAttuneMore: boolean;
+  overrideReason?: string;
+}
+
+export interface Dnd5eSrdAttunementChangeOptions {
+  /** Required to intentionally exceed the normal active-attunement limit. */
+  overrideReason?: string;
+  /** Records that Remove Curse or an equivalent table ruling broke a cursed attunement. */
+  breakCurse?: boolean;
+}
+
+export interface Dnd5eSrdAttunementPrerequisiteResult {
+  requirement?: string;
+  supported: boolean;
+  eligible: boolean;
+  reason?: string;
 }
 
 export interface Dnd5eSrdEquipmentPurchaseResult {
@@ -379,116 +718,6 @@ export interface Dnd5eSrdEquipmentPurchaseResult {
   data: Record<string, unknown>;
   itemData: Record<string, unknown>;
 }
-
-export const DND_5E_SRD_DEATH_SAVE_ROLL_ID = "death-save";
-export const DND_5E_SRD_CONCENTRATION_ROLL_ID = "concentration-check";
-export const DND_5E_SRD_UNARMED_STRIKE_ROLL_ID = "unarmed-strike";
-export const DND_5E_SRD_SECOND_WIND_ROLL_ID = "feature-second-wind-healing";
-export const DND_5E_SRD_ACTION_SURGE_ROLL_ID = "feature-action-surge";
-export const DND_5E_SRD_TACTICAL_MIND_ROLL_ID = "feature-tactical-mind-bonus";
-export const DND_5E_SRD_CHAMPION_CRITICAL_ROLL_ID = "feature-champion-critical-range";
-export const DND_5E_SRD_CHAMPION_REMARKABLE_ATHLETE_ROLL_ID = "feature-champion-remarkable-athlete";
-export const DND_5E_SRD_CHAMPION_HEROIC_WARRIOR_ROLL_ID = "feature-champion-heroic-warrior";
-export const DND_5E_SRD_CHAMPION_SURVIVOR_ROLL_ID = "feature-champion-survivor";
-export const DND_5E_SRD_RAGE_ROLL_ID = "feature-rage";
-export const DND_5E_SRD_RAGE_DAMAGE_ROLL_ID = "feature-rage-damage-bonus";
-export const DND_5E_SRD_RECKLESS_ATTACK_ROLL_ID = "feature-reckless-attack";
-export const DND_5E_SRD_BERSERKER_FRENZY_ROLL_ID = "feature-berserker-frenzy-damage";
-export const DND_5E_SRD_BERSERKER_MINDLESS_RAGE_ROLL_ID = "feature-berserker-mindless-rage";
-export const DND_5E_SRD_BERSERKER_RETALIATION_ROLL_ID = "feature-berserker-retaliation";
-export const DND_5E_SRD_BERSERKER_INTIMIDATING_PRESENCE_ROLL_ID = "feature-berserker-intimidating-presence";
-export const DND_5E_SRD_BARDIC_INSPIRATION_ROLL_ID = "feature-bardic-inspiration";
-export const DND_5E_SRD_FONT_OF_INSPIRATION_ROLL_ID = "feature-font-of-inspiration";
-export const DND_5E_SRD_LORE_CUTTING_WORDS_ROLL_ID = "feature-lore-cutting-words";
-export const DND_5E_SRD_LORE_MAGICAL_DISCOVERIES_ROLL_ID = "feature-lore-magical-discoveries";
-export const DND_5E_SRD_LORE_PEERLESS_SKILL_ROLL_ID = "feature-lore-peerless-skill";
-export const DND_5E_SRD_LAY_ON_HANDS_ROLL_ID = "feature-lay-on-hands-healing";
-export const DND_5E_SRD_DIVINE_SMITE_ROLL_ID = "feature-divine-smite-damage";
-export const DND_5E_SRD_FAITHFUL_STEED_ROLL_ID = "feature-faithful-steed";
-export const DND_5E_SRD_DEVOTION_SACRED_WEAPON_ROLL_ID = "feature-devotion-sacred-weapon";
-export const DND_5E_SRD_DEVOTION_AURA_ROLL_ID = "feature-devotion-aura";
-export const DND_5E_SRD_DEVOTION_SMITE_PROTECTION_ROLL_ID = "feature-devotion-smite-of-protection";
-export const DND_5E_SRD_DEVOTION_HOLY_NIMBUS_ROLL_ID = "feature-devotion-holy-nimbus-damage";
-export const DND_5E_SRD_HUNTERS_MARK_DAMAGE_ROLL_ID = "feature-hunters-mark-damage";
-export const DND_5E_SRD_HUNTER_LORE_ROLL_ID = "feature-hunter-lore";
-export const DND_5E_SRD_HUNTER_PREY_ROLL_ID = "feature-hunter-prey";
-export const DND_5E_SRD_HUNTER_DEFENSIVE_TACTICS_ROLL_ID = "feature-hunter-defensive-tactics";
-export const DND_5E_SRD_HUNTER_SUPERIOR_PREY_ROLL_ID = "feature-hunter-superior-prey";
-export const DND_5E_SRD_HUNTER_SUPERIOR_DEFENSE_ROLL_ID = "feature-hunter-superior-defense";
-export const DND_5E_SRD_MARTIAL_ARTS_DAMAGE_ROLL_ID = "feature-martial-arts-damage";
-export const DND_5E_SRD_FLURRY_OF_BLOWS_ROLL_ID = "feature-flurry-of-blows";
-export const DND_5E_SRD_PATIENT_DEFENSE_ROLL_ID = "feature-patient-defense";
-export const DND_5E_SRD_STEP_OF_THE_WIND_ROLL_ID = "feature-step-of-the-wind";
-export const DND_5E_SRD_UNCANNY_METABOLISM_ROLL_ID = "feature-uncanny-metabolism-healing";
-export const DND_5E_SRD_DEFLECT_ATTACKS_DAMAGE_ROLL_ID = "feature-deflect-attacks-damage";
-export const DND_5E_SRD_STUNNING_STRIKE_ROLL_ID = "feature-stunning-strike";
-export const DND_5E_SRD_OPEN_HAND_TECHNIQUE_ROLL_ID = "feature-open-hand-technique";
-export const DND_5E_SRD_OPEN_HAND_WHOLENESS_ROLL_ID = "feature-open-hand-wholeness-of-body";
-export const DND_5E_SRD_OPEN_HAND_FLEET_STEP_ROLL_ID = "feature-open-hand-fleet-step";
-export const DND_5E_SRD_OPEN_HAND_QUIVERING_PALM_ROLL_ID = "feature-open-hand-quivering-palm-damage";
-export const DND_5E_SRD_INNATE_SORCERY_ROLL_ID = "feature-innate-sorcery";
-export const DND_5E_SRD_CONVERT_SPELL_SLOT_ROLL_ID = "feature-convert-spell-slot-to-sorcery-points";
-export const DND_5E_SRD_CREATE_SPELL_SLOT_ROLL_ID = "feature-create-spell-slot";
-export const DND_5E_SRD_METAMAGIC_EMPOWERED_ROLL_ID = "feature-metamagic-empowered-spell";
-export const DND_5E_SRD_METAMAGIC_QUICKENED_ROLL_ID = "feature-metamagic-quickened-spell";
-export const DND_5E_SRD_DRACONIC_RESILIENCE_ROLL_ID = "feature-draconic-resilience";
-export const DND_5E_SRD_DRACONIC_ELEMENTAL_AFFINITY_ROLL_ID = "feature-draconic-elemental-affinity";
-export const DND_5E_SRD_DRACONIC_WINGS_ROLL_ID = "feature-draconic-wings";
-export const DND_5E_SRD_DRACONIC_COMPANION_ROLL_ID = "feature-draconic-companion";
-export const DND_5E_SRD_EVOKER_POTENT_CANTRIP_ROLL_ID = "feature-evoker-potent-cantrip";
-export const DND_5E_SRD_EVOKER_SCULPT_SPELLS_ROLL_ID = "feature-evoker-sculpt-spells";
-export const DND_5E_SRD_EVOKER_EMPOWERED_EVOCATION_ROLL_ID = "feature-evoker-empowered-evocation";
-export const DND_5E_SRD_EVOKER_OVERCHANNEL_ROLL_ID = "feature-evoker-overchannel";
-export const DND_5E_SRD_ELDRITCH_INVOCATIONS_ROLL_ID = "feature-eldritch-invocations";
-export const DND_5E_SRD_MAGICAL_CUNNING_ROLL_ID = "feature-magical-cunning";
-export const DND_5E_SRD_FIEND_DARK_BLESSING_ROLL_ID = "feature-fiend-dark-ones-blessing";
-export const DND_5E_SRD_FIEND_DARK_LUCK_ROLL_ID = "feature-fiend-dark-ones-own-luck";
-export const DND_5E_SRD_FIEND_RESILIENCE_ROLL_ID = "feature-fiendish-resilience";
-export const DND_5E_SRD_FIEND_HURL_THROUGH_HELL_ROLL_ID = "feature-fiend-hurl-through-hell-damage";
-export const DND_5E_SRD_WILD_SHAPE_ROLL_ID = "feature-wild-shape";
-export const DND_5E_SRD_WILD_COMPANION_ROLL_ID = "feature-wild-companion";
-export const DND_5E_SRD_WILD_RESURGENCE_WILD_SHAPE_ROLL_ID = "feature-wild-resurgence-wild-shape";
-export const DND_5E_SRD_WILD_RESURGENCE_SPELL_SLOT_ROLL_ID = "feature-wild-resurgence-spell-slot";
-export const DND_5E_SRD_MOON_CIRCLE_FORMS_ROLL_ID = "feature-moon-circle-forms";
-export const DND_5E_SRD_MOON_IMPROVED_CIRCLE_FORMS_ROLL_ID = "feature-moon-improved-circle-forms";
-export const DND_5E_SRD_MOON_MOONLIGHT_STEP_ROLL_ID = "feature-moon-moonlight-step";
-export const DND_5E_SRD_MOON_LUNAR_FORM_ROLL_ID = "feature-moon-lunar-form-damage";
-export const DND_5E_SRD_DIVINE_SPARK_HEALING_ROLL_ID = "feature-divine-spark-healing";
-export const DND_5E_SRD_DIVINE_SPARK_DAMAGE_ROLL_ID = "feature-divine-spark-damage";
-export const DND_5E_SRD_TURN_UNDEAD_ROLL_ID = "feature-turn-undead";
-export const DND_5E_SRD_SEAR_UNDEAD_DAMAGE_ROLL_ID = "feature-sear-undead-damage";
-export const DND_5E_SRD_LIFE_DISCIPLE_ROLL_ID = "feature-life-disciple-of-life";
-export const DND_5E_SRD_LIFE_PRESERVE_LIFE_ROLL_ID = "feature-life-preserve-life";
-export const DND_5E_SRD_LIFE_BLESSED_HEALER_ROLL_ID = "feature-life-blessed-healer";
-export const DND_5E_SRD_LIFE_SUPREME_HEALING_ROLL_ID = "feature-life-supreme-healing";
-export const DND_5E_SRD_SNEAK_ATTACK_DAMAGE_ROLL_ID = "feature-sneak-attack-damage";
-export const DND_5E_SRD_CUNNING_STRIKE_ROLL_ID = "feature-cunning-strike";
-export const DND_5E_SRD_THIEF_FAST_HANDS_ROLL_ID = "feature-thief-fast-hands";
-export const DND_5E_SRD_THIEF_SECOND_STORY_WORK_ROLL_ID = "feature-thief-second-story-work";
-export const DND_5E_SRD_THIEF_SUPREME_SNEAK_ROLL_ID = "feature-thief-supreme-sneak";
-export const DND_5E_SRD_THIEF_USE_MAGIC_DEVICE_ROLL_ID = "feature-thief-use-magic-device";
-export const DND_5E_SRD_THIEF_REFLEXES_ROLL_ID = "feature-thief-reflexes";
-export const DND_5E_SRD_DRAGONBORN_BREATH_WEAPON_ROLL_ID = "species-dragonborn-breath-weapon";
-export const DND_5E_SRD_DRACONIC_FLIGHT_ROLL_ID = "species-draconic-flight";
-export const DND_5E_SRD_DWARF_STONECUNNING_ROLL_ID = "species-dwarf-stonecunning";
-export const DND_5E_SRD_GOLIATH_GIANT_ANCESTRY_ROLL_ID = "species-goliath-giant-ancestry";
-export const DND_5E_SRD_GOLIATH_LARGE_FORM_ROLL_ID = "species-goliath-large-form";
-export const DND_5E_SRD_HUMAN_RESOURCEFUL_ROLL_ID = "species-human-resourceful";
-export const DND_5E_SRD_HUMAN_SKILLFUL_ROLL_ID = "species-human-skillful";
-export const DND_5E_SRD_HUMAN_VERSATILE_ROLL_ID = "species-human-versatile";
-export const DND_5E_SRD_ELF_ELVEN_LINEAGE_ROLL_ID = "species-elf-elven-lineage";
-export const DND_5E_SRD_ELF_FEY_ANCESTRY_ROLL_ID = "species-elf-fey-ancestry";
-export const DND_5E_SRD_ELF_TRANCE_ROLL_ID = "species-elf-trance";
-export const DND_5E_SRD_GNOME_GNOMISH_CUNNING_ROLL_ID = "species-gnome-gnomish-cunning";
-export const DND_5E_SRD_GNOME_LINEAGE_ROLL_ID = "species-gnome-lineage";
-export const DND_5E_SRD_HALFLING_LUCK_ROLL_ID = "species-halfling-luck";
-export const DND_5E_SRD_HALFLING_BRAVE_ROLL_ID = "species-halfling-brave";
-export const DND_5E_SRD_HALFLING_NIMBLENESS_ROLL_ID = "species-halfling-nimbleness";
-export const DND_5E_SRD_HALFLING_NATURALLY_STEALTHY_ROLL_ID = "species-halfling-naturally-stealthy";
-export const DND_5E_SRD_TIEFLING_FIENDISH_LEGACY_ROLL_ID = "species-tiefling-fiendish-legacy";
-export const DND_5E_SRD_TIEFLING_OTHERWORLDLY_PRESENCE_ROLL_ID = "species-tiefling-otherworldly-presence";
-export const DND_5E_SRD_ORC_ADRENALINE_RUSH_ROLL_ID = "species-orc-adrenaline-rush";
-export const DND_5E_SRD_ORC_RELENTLESS_ENDURANCE_ROLL_ID = "species-orc-relentless-endurance";
 
 export interface Dnd5eSrdArmorClassDetails {
   value: number;
@@ -556,55 +785,13 @@ export interface EncounterPlan {
   threats: EncounterPlanThreat[];
 }
 
-export interface Dnd5eSrdMonsterAction {
-  name: string;
-  kind: "action" | "bonusAction" | "reaction";
-  attackBonus?: number;
-  range?: string;
-  damageFormula?: string;
-  damageType?: string;
-  save?: { ability: string; dc: number; success?: string };
-  condition?: string;
-  effects?: string[];
-  recharge?: string;
-  summary?: string;
-  summaryMetadata?: boolean;
-}
-
-export interface Dnd5eSrdMonsterStatBlock {
-  source: typeof DND_5E_SRD_VERSION;
-  size: string;
-  creatureType: string;
-  alignment: string;
-  armorClass: number;
-  initiative: number;
-  hitPoints: number;
-  hitDice: string;
-  speed: string;
-  challengeRating: string;
-  xp: number;
-  proficiencyBonus: number;
-  abilities: Record<string, number>;
-  saves: Record<string, number>;
-  skills?: Record<string, number>;
-  senses: string[];
-  languages: string[];
-  gear?: string[];
-  traits?: Array<{ name: string; summary: string }>;
-  actions: Dnd5eSrdMonsterAction[];
-}
-
 export type GenericFantasyCompendiumType = "item" | "spell" | "condition";
 export type StellarFrontiersCompendiumType = "gear" | "talent" | "condition";
 export type MysticNoirCompendiumType = "clue" | "ritual" | "condition";
 export type RulesCompendiumType = GenericFantasyCompendiumType | StellarFrontiersCompendiumType | MysticNoirCompendiumType;
 
-export interface RulesCompendiumEntry {
-  id: string;
+export interface RulesCompendiumEntry extends CompendiumCatalogEntry {
   type: RulesCompendiumType;
-  name: string;
-  summary: string;
-  data: Record<string, unknown>;
 }
 
 export interface GenericFantasyCompendiumEntry extends RulesCompendiumEntry {
@@ -617,6 +804,55 @@ export interface StellarFrontiersCompendiumEntry extends RulesCompendiumEntry {
 
 export interface MysticNoirCompendiumEntry extends RulesCompendiumEntry {
   type: MysticNoirCompendiumType;
+}
+
+type GenericFantasyCompendiumEntrySeed = Omit<GenericFantasyCompendiumEntry, "provenance">;
+
+const DND_5E_SRD_COMPENDIUM_PROVENANCE: CompendiumProvenance = {
+  sourceKind: "srd",
+  sourceName: "Dungeons & Dragons System Reference Document",
+  sourceVersion: "5.2.1",
+  contentVersion: "5.2.1",
+  systemId: DND_5E_SRD_SYSTEM_ID,
+  systemVersion: "5.2.1",
+  rulesVersion: DND_5E_SRD_VERSION,
+  license: {
+    name: "Creative Commons Attribution 4.0 International",
+    url: "https://creativecommons.org/licenses/by/4.0/",
+    usage: "srd",
+    attribution: "Dungeons & Dragons System Reference Document 5.2.1 by Wizards of the Coast LLC, licensed under CC BY 4.0."
+  }
+};
+
+function bundledExampleCompendiumProvenance(systemId: string, sourceName: string): CompendiumProvenance {
+  return {
+    sourceKind: "bundled",
+    sourceName,
+    sourceVersion: "0.1.0",
+    contentVersion: "0.1.0",
+    systemId,
+    systemVersion: "0.1.0",
+    rulesVersion: `${sourceName} 0.1.0`,
+    license: {
+      name: "MIT",
+      usage: "open",
+      attribution: "Open Tabletop Engine example system content."
+    }
+  };
+}
+
+const GENERIC_FANTASY_COMPENDIUM_PROVENANCE = bundledExampleCompendiumProvenance("generic-fantasy", "Generic Fantasy");
+const STELLAR_FRONTIERS_COMPENDIUM_PROVENANCE = bundledExampleCompendiumProvenance("stellar-frontiers", "Stellar Frontiers");
+const MYSTIC_NOIR_COMPENDIUM_PROVENANCE = bundledExampleCompendiumProvenance("mystic-noir", "Mystic Noir");
+
+function withCompendiumProvenance<T extends RulesCompendiumEntry>(
+  entries: Array<Omit<T, "provenance"> | T>,
+  provenance: CompendiumProvenance
+): T[] {
+  return entries.map((entry) => ({
+    ...entry,
+    provenance: { ...provenance, license: { ...provenance.license } }
+  } as T));
 }
 
 export interface AppliedCondition {
@@ -635,6 +871,9 @@ interface NormalizedConditionRecord {
 
 export interface Dnd5eSrdConditionApplyOptions {
   level?: unknown;
+  items?: Item[];
+  /** Explicit table override for immunity; preserved by the caller's audit record. */
+  overrideReason?: string;
 }
 
 export interface GenericFantasySheet {
@@ -1720,7 +1959,7 @@ export function dnd5eSrdSpeciesTraitRolls(actor: Actor): QuickRoll[] {
     rolls.push({
       id: DND_5E_SRD_GOLIATH_GIANT_ANCESTRY_ROLL_ID,
       label: "Giant Ancestry",
-      formula: "0",
+      formula: dnd5eSrdGiantAncestryFormula(actor),
       metadata: dnd5eSrdGiantAncestryMetadata(actor)
     });
   }
@@ -1892,6 +2131,7 @@ function dnd5eSrdGenericActionRollMetadata(actor: Actor, items: Item[], roll: Qu
     const damageType = stringValue(isSecondaryDamage ? data.secondaryDamageType : data.damageType);
     const damageTypes = normalizeStringArray(data.damageTypes);
     const damageTypeOptions = normalizeStringArray(data.damageTypeOptions);
+    const damageBreakdown = recordValue(data.damageBreakdown);
     if (!isSecondaryDamage && damageTypes.length > 0) {
       metadata.damageTypes = damageTypes;
       hasResolutionMetadata = true;
@@ -1900,12 +2140,23 @@ function dnd5eSrdGenericActionRollMetadata(actor: Actor, items: Item[], roll: Qu
       metadata.damageTypeOptions = damageTypeOptions;
       hasResolutionMetadata = true;
     }
+    if (!isSecondaryDamage && Object.keys(damageBreakdown).length > 0) {
+      metadata.damageBreakdown = cloneJsonRecord(damageBreakdown);
+      hasResolutionMetadata = true;
+    }
     const save = dnd5eSrdEffectSaveMetadata(actor, data, item.type === "spell");
     if (Object.keys(save).length > 0) {
       metadata.save = save;
       hasResolutionMetadata = true;
     }
     if (hasResolutionMetadata && damageType) metadata.damageType = damageType;
+  }
+  if (isHealing) {
+    const healing = stringValue(data.healing);
+    if (healing) metadata.healing = healing;
+    if (data.temporaryHitPoints !== undefined) metadata.temporaryHitPoints = data.temporaryHitPoints;
+    if (data.temporaryHitPointsFormula !== undefined) metadata.temporaryHitPointsFormula = data.temporaryHitPointsFormula;
+    hasResolutionMetadata = Boolean(healing || data.temporaryHitPoints !== undefined || data.temporaryHitPointsFormula !== undefined);
   }
   if ((isDamage || isHealing) && hasResolutionMetadata) {
     const action = stringValue(data.action);
@@ -1923,11 +2174,16 @@ function dnd5eSrdGenericActionRollMetadata(actor: Actor, items: Item[], roll: Qu
 
 function dnd5eSrdActionAvailableItems(actor: Actor, items: Item[]): Item[] {
   const level = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
-  return items.filter((item) => {
-    if (!itemBelongsToActor(actor, item)) return false;
-    const minimumCharacterLevel = numericValue(recordValue(item.data).minimumCharacterLevel, Number.NaN);
-    return !Number.isFinite(minimumCharacterLevel) || level >= minimumCharacterLevel;
-  });
+  const attunement = dnd5eSrdAttunementStateForData(actor.data);
+  return items
+    .filter((item) => {
+      if (!itemBelongsToActor(actor, item) || item.campaignId !== actor.campaignId || item.systemId !== actor.systemId) return false;
+      if (dnd5eSrdItemRequiresAttunement(item) && !attunement.activeAttunedItemIds.includes(item.id)) return false;
+      if (item.type === "spell" && recordValue(item.data).prepared === false && !dnd5eSrdWizardRitualSpellAvailable(actor, item)) return false;
+      const minimumCharacterLevel = numericValue(recordValue(item.data).minimumCharacterLevel, Number.NaN);
+      return !Number.isFinite(minimumCharacterLevel) || level >= minimumCharacterLevel;
+    })
+    .map((item) => dnd5eSrdItemWithActiveModifiers(actor, item));
 }
 
 function dnd5eSrdAttackRolls(actor: Actor, items: Item[], attacksPerAction = dnd5eSrdAttacksPerAction(actor)): QuickRoll[] {
@@ -1960,7 +2216,7 @@ function dnd5eSrdWeaponAttackRoll(actor: Actor, items: Item[], item: Item, data:
   if (weaponKind) metadata.weaponKind = weaponKind;
   if (weaponCategory) metadata.weaponCategory = weaponCategory;
   if (range) metadata.range = range;
-  if (mastery) metadata.mastery = mastery;
+  if (mastery && dnd5eSrdActorHasWeaponMastery(actor, item, data)) metadata.mastery = mastery;
   if (itemBonus !== 0) metadata.itemBonus = itemBonus;
   const championCritical = dnd5eSrdChampionCriticalMetadata(actor);
   if (championCritical.minimumD20 < 20) {
@@ -1998,13 +2254,15 @@ function dnd5eSrdSpellAttackRoll(actor: Actor, items: Item[], item: Item, data: 
   const range = stringValue(data.range);
   const damageType = stringValue(data.damageType);
   const speciesSpellResource = stringValue(data.speciesSpellResource);
+  const freeCastResource = stringValue(data.freeCastResource) ?? speciesSpellResource;
   if (Number.isFinite(spellLevel)) metadata.spellLevel = spellLevel;
   if (range) metadata.range = range;
   if (damageType) metadata.damageType = damageType;
   if (itemBonus !== 0) metadata.itemBonus = itemBonus;
   if (equippedBonus.itemIds.length > 0) metadata.itemBonusItemIds = equippedBonus.itemIds;
   if (booleanValue(data.speciesSpell)) metadata.speciesSpell = true;
-  if (speciesSpellResource) metadata.freeCastResource = speciesSpellResource;
+  if (freeCastResource) metadata.freeCastResource = freeCastResource;
+  if (normalizeStringArray(data.freeCastResources).length > 0) metadata.freeCastResources = normalizeStringArray(data.freeCastResources);
   return {
     id: `spell-${item.id}-attack`,
     label: `${item.name} Attack`,
@@ -2273,10 +2531,12 @@ function dnd5eSrdEffectMetadata(actor: Actor, data: Record<string, unknown>, def
   const recharge = stringValue(data.recharge);
   const summary = stringValue(data.summary);
   const speciesSpellResource = stringValue(data.speciesSpellResource);
+  const freeCastResource = stringValue(data.freeCastResource) ?? speciesSpellResource;
   if (recharge) metadata.recharge = recharge;
   if (summary) metadata.summary = summary;
   if (booleanValue(data.speciesSpell)) metadata.speciesSpell = true;
-  if (speciesSpellResource) metadata.freeCastResource = speciesSpellResource;
+  if (freeCastResource) metadata.freeCastResource = freeCastResource;
+  if (normalizeStringArray(data.freeCastResources).length > 0) metadata.freeCastResources = normalizeStringArray(data.freeCastResources);
   return metadata;
 }
 
@@ -2646,7 +2906,6 @@ export function dnd5eSrdCoverBonus(cover: "half" | "three-quarters" | "total"): 
   return { acBonus: 0, dexteritySaveBonus: 0, targetable: false };
 }
 
-export const dnd5eSrdXpThresholds: readonly number[] = [0, 300, 900, 2700, 6500, 14000, 23000, 34000, 48000, 64000, 85000, 100000, 120000, 140000, 165000, 195000, 225000, 265000, 305000, 355000];
 
 export function dnd5eSrdLevelForXp(xp: number): number {
   const safeXp = Number.isFinite(xp) ? Math.max(0, xp) : 0;
@@ -2703,11 +2962,11 @@ function dnd5eSrdPrimaryClassForHitDice(actor: Actor, classes: Dnd5eSrdClassLeve
   return [...classes].sort((left, right) => right.level - left.level)[0]?.className ?? "Fighter";
 }
 
-function dnd5eSrdAggregateHitDiceFromPools(pools: Dnd5eSrdHitDicePool[], primaryClassName: string): { current: number; max: number; size: string } {
+function dnd5eSrdAggregateHitDiceFromPools(actor: Actor, pools: Dnd5eSrdHitDicePool[], primaryClassName: string): { current: number; max: number; size: string } {
   return {
     current: pools.reduce((sum, pool) => sum + pool.current, 0),
     max: pools.reduce((sum, pool) => sum + pool.max, 0),
-    size: dnd5eSrdHitDieSize(primaryClassName)
+    size: dnd5eSrdClassHitDieSize(primaryClassName, actor)
   };
 }
 
@@ -2736,7 +2995,7 @@ function dnd5eSrdLegacyHitDicePools(actor: Actor, classes: Dnd5eSrdClassLevel[])
   const hitDice = recordValue(actor.data.hitDice);
   const aggregateCurrent = Math.max(0, Math.min(totalMax, numericValue(hitDice.current, totalMax)));
   const primaryClassName = dnd5eSrdPrimaryClassForHitDice(actor, classes);
-  const pools = classes.map((entry) => ({ className: entry.className, size: dnd5eSrdHitDieSize(entry.className), current: entry.level, max: entry.level }));
+  const pools = classes.map((entry) => ({ className: entry.className, size: dnd5eSrdClassHitDieSize(entry.className, actor), current: entry.level, max: entry.level }));
   let deficit = Math.max(0, totalMax - aggregateCurrent);
   const ordered = [primaryClassName, ...classes.map((entry) => entry.className).filter((className) => className !== primaryClassName)];
   for (const className of ordered) {
@@ -2761,7 +3020,7 @@ function dnd5eSrdStoredHitDicePools(actor: Actor, classes: Dnd5eSrdClassLevel[])
   if (stored.length === 0) return undefined;
   const pools = classes.map((entry) => {
     const current = Math.max(0, Math.min(entry.level, numericValue(stored.find((pool) => pool.className === entry.className)?.current, entry.level)));
-    return { className: entry.className, size: dnd5eSrdHitDieSize(entry.className), current, max: entry.level };
+    return { className: entry.className, size: dnd5eSrdClassHitDieSize(entry.className, actor), current, max: entry.level };
   });
   const aggregate = recordValue(actor.data.hitDice);
   const max = pools.reduce((sum, pool) => sum + pool.max, 0);
@@ -2779,23 +3038,132 @@ export function dnd5eSrdHitDicePools(actor: Actor): Dnd5eSrdHitDicePool[] {
   return dnd5eSrdHitDicePoolsForClasses(actor, dnd5eSrdActorClassLevels(actor));
 }
 
-const dnd5eSrdFullCasterClasses = ["Bard", "Cleric", "Druid", "Sorcerer", "Wizard"];
-const dnd5eSrdHalfCasterClasses = ["Paladin", "Ranger"];
 
-export const dnd5eSrdMulticlassPrerequisites: Record<string, { all?: Array<{ ability: string; minimum: number }>; any?: Array<{ ability: string; minimum: number }> }> = {
-  Barbarian: { all: [{ ability: "strength", minimum: 13 }] },
-  Bard: { all: [{ ability: "charisma", minimum: 13 }] },
-  Cleric: { all: [{ ability: "wisdom", minimum: 13 }] },
-  Druid: { all: [{ ability: "wisdom", minimum: 13 }] },
-  Fighter: { any: [{ ability: "strength", minimum: 13 }, { ability: "dexterity", minimum: 13 }] },
-  Monk: { all: [{ ability: "dexterity", minimum: 13 }, { ability: "wisdom", minimum: 13 }] },
-  Paladin: { all: [{ ability: "strength", minimum: 13 }, { ability: "charisma", minimum: 13 }] },
-  Ranger: { all: [{ ability: "dexterity", minimum: 13 }, { ability: "wisdom", minimum: 13 }] },
-  Rogue: { all: [{ ability: "dexterity", minimum: 13 }] },
-  Sorcerer: { all: [{ ability: "charisma", minimum: 13 }] },
-  Warlock: { all: [{ ability: "charisma", minimum: 13 }] },
-  Wizard: { all: [{ ability: "intelligence", minimum: 13 }] }
-};
+export interface Dnd5eSrdClassAdvancementProfile {
+  id: string;
+  name: string;
+  custom: boolean;
+  hitDie: Dnd5eSrdHitDieSize;
+  featLevels: number[];
+  subclassSelectionLevel: number;
+  spellcastingProgression: "none" | "full" | "half" | "third" | "pact";
+  features: Array<{ level: number; name: string; description?: string }>;
+  primaryAbilities: string[];
+  multiclassPrerequisiteMode: "all" | "any";
+  multiclassPrerequisites: Array<{ ability: string; minimum: number }>;
+}
+
+const dnd5eSrdStandardClassNames = Object.keys(dnd5eSrdMulticlassPrerequisites);
+
+function dnd5eSrdCustomCatalogEntries(actor: Actor, key: "dnd5eCustomClasses" | "dnd5eCustomSubclasses", kind: "class" | "subclass"): Record<string, unknown>[] {
+  const entries = actor.data[key];
+  if (!Array.isArray(entries)) return [];
+  return entries.flatMap((entry) => {
+    const value = recordValue(entry);
+    const data = recordValue(value.data);
+    const provenance = recordValue(value.provenance);
+    return value.type === kind
+      && data.customContentKind === kind
+      && data.builderSchemaVersion === "1.0.0"
+      && provenance.sourceKind === "user"
+      && provenance.systemId === DND_5E_SRD_SYSTEM_ID
+      ? [value]
+      : [];
+  });
+}
+
+function dnd5eSrdCustomClassProfile(actor: Actor, selection: string): Dnd5eSrdClassAdvancementProfile | undefined {
+  const normalized = selection.trim().toLowerCase();
+  for (const entry of dnd5eSrdCustomCatalogEntries(actor, "dnd5eCustomClasses", "class")) {
+    const id = stringValue(entry.id);
+    const name = stringValue(entry.name);
+    if (!id || !name || (id.toLowerCase() !== normalized && name.toLowerCase() !== normalized)) continue;
+    const data = recordValue(entry.data);
+    const hitDie = stringValue(data.hitDie);
+    if (hitDie !== "d6" && hitDie !== "d8" && hitDie !== "d10" && hitDie !== "d12") continue;
+    const progression = stringValue(data.spellcastingProgression);
+    const spellcastingProgression = progression === "full" || progression === "half" || progression === "third" || progression === "pact" ? progression : "none";
+    const features = Array.isArray(data.features) ? data.features.flatMap((raw) => {
+      const feature = recordValue(raw);
+      const level = Math.floor(numericValue(feature.level, 0));
+      const featureName = stringValue(feature.name);
+      const description = stringValue(feature.description);
+      return level >= 1 && level <= 20 && featureName ? [{ level, name: featureName, ...(description ? { description } : {}) }] : [];
+    }) : [];
+    const featLevels = Array.isArray(data.featLevels)
+      ? [...new Set(data.featLevels.filter((level): level is number => Number.isInteger(level) && level >= 1 && level <= 20))].sort((left, right) => left - right)
+      : [4, 8, 12, 16, 19];
+    const multiclassPrerequisites = Array.isArray(data.multiclassPrerequisites) ? data.multiclassPrerequisites.flatMap((raw) => {
+      const requirement = recordValue(raw);
+      const ability = stringValue(requirement.ability)?.toLowerCase();
+      const minimum = Math.floor(numericValue(requirement.minimum, 0));
+      return ability && dnd5eSrdAbilityNames.includes(ability) && minimum >= 1 && minimum <= 30 ? [{ ability, minimum }] : [];
+    }) : [];
+    return {
+      id,
+      name,
+      custom: true,
+      hitDie,
+      featLevels,
+      subclassSelectionLevel: Math.max(1, Math.min(20, Math.floor(numericValue(data.subclassSelectionLevel, 3)))),
+      spellcastingProgression,
+      features,
+      primaryAbilities: normalizeStringArray(data.primaryAbilities).map((ability) => ability.toLowerCase()).filter((ability) => dnd5eSrdAbilityNames.includes(ability)),
+      multiclassPrerequisiteMode: data.multiclassPrerequisiteMode === "any" ? "any" : "all",
+      multiclassPrerequisites,
+    };
+  }
+  return undefined;
+}
+
+/** Versioned class progression used by advancement; custom entries must be explicitly attached to the actor. */
+export function dnd5eSrdClassAdvancementProfile(actor: Actor, className: string): Dnd5eSrdClassAdvancementProfile | undefined {
+  const standard = dnd5eSrdStandardClassNames.find((name) => name.toLowerCase() === className.trim().toLowerCase());
+  if (standard) {
+    return {
+      id: standard.toLowerCase(),
+      name: standard,
+      custom: false,
+      hitDie: dnd5eSrdHitDieSize(standard),
+      featLevels: [4, 8, 12, 16, 19, ...(standard === "Fighter" ? [6, 14] : []), ...(standard === "Rogue" ? [10] : [])].sort((left, right) => left - right),
+      subclassSelectionLevel: 3,
+      spellcastingProgression: dnd5eSrdFullCasterClasses.includes(standard) ? "full" : dnd5eSrdHalfCasterClasses.includes(standard) ? "half" : standard === "Warlock" ? "pact" : "none",
+      features: [],
+      primaryAbilities: [dnd5eSrdPrimaryAbility(standard)],
+      multiclassPrerequisiteMode: dnd5eSrdMulticlassPrerequisites[standard]?.any ? "any" : "all",
+      multiclassPrerequisites: structuredClone(dnd5eSrdMulticlassPrerequisites[standard]?.any ?? dnd5eSrdMulticlassPrerequisites[standard]?.all ?? []),
+    };
+  }
+  return dnd5eSrdCustomClassProfile(actor, className);
+}
+
+/** Standard and actor-attached user-authored subclass options for one class. */
+export function dnd5eSrdSubclassOptionsForActor(actor: Actor, className: string): Dnd5eSrdSubclassOption[] {
+  const standard = DND_5E_SRD_SUBCLASS_OPTIONS.filter((option) => option.className.toLowerCase() === className.toLowerCase());
+  const custom = dnd5eSrdCustomCatalogEntries(actor, "dnd5eCustomSubclasses", "subclass").flatMap((entry) => {
+    const id = stringValue(entry.id);
+    const name = stringValue(entry.name);
+    const data = recordValue(entry.data);
+    const parentClass = stringValue(data.parentClass);
+    const selectionLevel = Math.floor(numericValue(data.selectionLevel, 0));
+    if (!id || !name || !parentClass || parentClass.toLowerCase() !== className.toLowerCase() || selectionLevel < 1 || selectionLevel > 20 || !Array.isArray(data.features)) return [];
+    const grouped = new Map<number, string[]>();
+    for (const raw of data.features) {
+      const feature = recordValue(raw);
+      const level = Math.floor(numericValue(feature.level, 0));
+      const featureName = stringValue(feature.name);
+      if (level < 1 || level > 20 || !featureName) continue;
+      grouped.set(level, [...new Set([...(grouped.get(level) ?? []), featureName])]);
+    }
+    return [{ id, name, className, selectionLevel, features: [...grouped.entries()].sort(([left], [right]) => left - right).map(([level, names]) => ({ level, names })) }];
+  });
+  return [...standard, ...custom].sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function dnd5eSrdSubclassOptionForActor(actor: Actor, className: string, selection: string): Dnd5eSrdSubclassOption | undefined {
+  const normalized = selection.trim().toLowerCase();
+  return dnd5eSrdSubclassOptionsForActor(actor, className).find((option) => option.id.toLowerCase() === normalized || option.name.toLowerCase() === normalized);
+}
 
 export function dnd5eSrdActorClassLevels(actor: Actor): Dnd5eSrdClassLevel[] {
   const classesValue = actor.data.classes;
@@ -2812,9 +3180,25 @@ export function dnd5eSrdActorClassLevels(actor: Actor): Dnd5eSrdClassLevel[] {
   return className ? [{ className, level: Math.max(1, Math.floor(numericValue(actor.data.level, 1))) }] : [];
 }
 
+/** Class advanced by the SDK's plain `level-up` path, including multiclass tie-breaking. */
+export function dnd5eSrdAdvancementClassName(actor: Actor): string {
+  return [...dnd5eSrdActorClassLevels(actor)].sort((left, right) => right.level - left.level)[0]?.className
+    ?? stringValue(actor.data.class)
+    ?? "Fighter";
+}
+
+/** Hit Point Die used by a class for advancement and Short Rest recovery. */
+export function dnd5eSrdClassHitDieSize(className: string, actor?: Actor): Dnd5eSrdHitDieSize {
+  return actor ? dnd5eSrdClassAdvancementProfile(actor, className)?.hitDie ?? dnd5eSrdHitDieSize(className) : dnd5eSrdHitDieSize(className);
+}
+
 export function dnd5eSrdMeetsMulticlassPrerequisite(actor: Actor, className: string): { eligible: boolean; requirement: string; missing: string[] } {
-  const prerequisite = dnd5eSrdMulticlassPrerequisites[className];
-  if (!prerequisite) return { eligible: false, requirement: "Unknown class", missing: [className] };
+  const standardName = Object.keys(dnd5eSrdMulticlassPrerequisites).find((name) => name.toLowerCase() === className.toLowerCase());
+  const standard = standardName ? dnd5eSrdMulticlassPrerequisites[standardName] : undefined;
+  const custom = standard ? undefined : dnd5eSrdCustomClassProfile(actor, className);
+  const customChecks = custom?.multiclassPrerequisites ?? [];
+  if (!standard && (!custom || customChecks.length === 0)) return { eligible: false, requirement: custom ? "Authored multiclass prerequisites" : "Unknown class", missing: [className] };
+  const prerequisite = standard ?? (custom?.multiclassPrerequisiteMode === "any" ? { any: customChecks } : { all: customChecks });
   const attributes = recordValue(actor.data.attributes);
   const scoreOf = (ability: string) => numericValue(attributes[ability], 10);
   const describe = (checks: Array<{ ability: string; minimum: number }>, joiner: string) => checks.map((check) => `${titleCaseWords(check.ability)} ${check.minimum}`).join(joiner);
@@ -2836,64 +3220,61 @@ export function dnd5eSrdCanMulticlassInto(actor: Actor, targetClassName: string)
   for (const entry of dnd5eSrdActorClassLevels(actor)) {
     const current = dnd5eSrdMeetsMulticlassPrerequisite(actor, entry.className);
     if (!current.eligible) reasons.push(`Current class ${entry.className} requires ${current.requirement}`);
-    if (entry.className === targetClassName) reasons.push(`Already leveled in ${targetClassName}`);
   }
   const target = dnd5eSrdMeetsMulticlassPrerequisite(actor, targetClassName);
   if (!target.eligible) reasons.push(`${targetClassName} requires ${target.requirement}`);
   return { eligible: reasons.length === 0, reasons };
 }
 
-export function dnd5eSrdMulticlassCasterLevel(classes: Dnd5eSrdClassLevel[]): number {
+export function dnd5eSrdMulticlassCasterLevel(classes: Dnd5eSrdClassLevel[], actor?: Actor): number {
   return classes.reduce((total, entry) => {
     const level = Math.max(0, Math.floor(entry.level));
     if (dnd5eSrdFullCasterClasses.includes(entry.className)) return total + level;
     // Multiclass spellcasting adds HALF of Paladin/Ranger levels, rounded down.
     if (dnd5eSrdHalfCasterClasses.includes(entry.className)) return total + Math.floor(level / 2);
+    const progression = actor ? dnd5eSrdCustomClassProfile(actor, entry.className)?.spellcastingProgression : undefined;
+    if (progression === "full") return total + level;
+    if (progression === "half") return total + Math.floor(level / 2);
+    if (progression === "third") return total + Math.floor(level / 3);
     return total;
   }, 0);
 }
 
-const dnd5eSrdMulticlassSlotTable: readonly number[][] = [
-  [2],
-  [3],
-  [4, 2],
-  [4, 3],
-  [4, 3, 2],
-  [4, 3, 3],
-  [4, 3, 3, 1],
-  [4, 3, 3, 2],
-  [4, 3, 3, 3, 1],
-  [4, 3, 3, 3, 2],
-  [4, 3, 3, 3, 2, 1],
-  [4, 3, 3, 3, 2, 1],
-  [4, 3, 3, 3, 2, 1, 1],
-  [4, 3, 3, 3, 2, 1, 1],
-  [4, 3, 3, 3, 2, 1, 1, 1],
-  [4, 3, 3, 3, 2, 1, 1, 1],
-  [4, 3, 3, 3, 2, 1, 1, 1, 1],
-  [4, 3, 3, 3, 3, 1, 1, 1, 1],
-  [4, 3, 3, 3, 3, 2, 1, 1, 1],
-  [4, 3, 3, 3, 3, 2, 2, 1, 1]
-];
 
-export function dnd5eSrdMulticlassSpellSlots(classes: Dnd5eSrdClassLevel[]): Record<string, { current: number; max: number; recovery: "long" }> {
-  const casterLevel = Math.min(20, dnd5eSrdMulticlassCasterLevel(classes));
+export function dnd5eSrdMulticlassSpellSlots(classes: Dnd5eSrdClassLevel[], actor?: Actor): Record<string, { current: number; max: number; recovery: "long" }> {
+  const casterLevel = Math.min(20, dnd5eSrdMulticlassCasterLevel(classes, actor));
   if (casterLevel < 1) return {};
   const row = dnd5eSrdMulticlassSlotTable[casterLevel - 1] ?? [];
   return Object.fromEntries(row.map((max, index) => [`level${index + 1}`, { current: max, max, recovery: "long" as const }]));
 }
 
-export function dnd5eSrdMulticlassSpellcasting(actor: Actor): { classes: Dnd5eSrdClassLevel[]; casterLevel: number; slots: Record<string, { current: number; max: number; recovery: "long" }>; warlockLevels: number } {
+export function dnd5eSrdMulticlassSpellcasting(actor: Actor): {
+  classes: Dnd5eSrdClassLevel[];
+  casterLevel: number;
+  slots: Record<string, { current: number; max: number; recovery: "long" }>;
+  warlockLevels: number;
+  pactSlots: Record<string, Record<string, unknown> & { current: number; max: number }>;
+} {
   const classes = dnd5eSrdActorClassLevels(actor);
+  const warlockLevels = classes.filter((entry) => entry.className === "Warlock").reduce((total, entry) => total + entry.level, 0);
   return {
     classes,
-    casterLevel: dnd5eSrdMulticlassCasterLevel(classes),
-    slots: dnd5eSrdMulticlassSpellSlots(classes),
-    warlockLevels: classes.filter((entry) => entry.className === "Warlock").reduce((total, entry) => total + entry.level, 0)
+    casterLevel: dnd5eSrdMulticlassCasterLevel(classes, actor),
+    slots: dnd5eSrdMulticlassSpellSlots(classes, actor),
+    warlockLevels,
+    pactSlots: warlockLevels > 0
+      ? normalizeExactResourcePools(actor.data.pactSlots, defaultDnd5eSrdWarlockPactMagicSlots(warlockLevels), { raiseMaxToDefault: true })
+      : {}
   };
 }
 
-export const dnd5eSrdAbilityScoreImprovementLevels: readonly number[] = [4, 8, 12, 16, 19];
+
+/** Class-aware replacement for the legacy shared ASI-level list. */
+export function dnd5eSrdAdvancementFeatGrant(className: string, classLevel: number, actor?: Actor): "general" | "epic-boon" | undefined {
+  const custom = actor ? dnd5eSrdCustomClassProfile(actor, className) : undefined;
+  if (custom) return custom.featLevels.includes(classLevel) ? (classLevel === 19 ? "epic-boon" : "general") : undefined;
+  return dnd5eSrdFeatGrantAtClassLevel(className, classLevel);
+}
 
 export interface Dnd5eSrdFeat {
   id: string;
@@ -2903,10 +3284,23 @@ export interface Dnd5eSrdFeat {
   data: Record<string, unknown>;
 }
 
+export interface Dnd5eSrdAdvancementFeatContext {
+  /** The class level granted by the advancement being evaluated. */
+  nextClassLevel: number;
+  /** The character's total level after the advancement is applied. */
+  nextCharacterLevel: number;
+}
+
+export interface Dnd5eSrdFeatEligibility {
+  featId: string;
+  eligible: boolean;
+  reasons: string[];
+}
+
 export function dnd5eSrdGeneralFeats(): Dnd5eSrdFeat[] {
   return [
     { id: "ability-score-improvement", name: "Ability Score Improvement", category: "general", summary: "Increase one ability score by 2, or two ability scores by 1 each (maximum 20).", data: { abilityPoints: 2, maximumScore: 20, repeatable: true } },
-    { id: "grappler", name: "Grappler", category: "general", summary: "+1 Strength or Dexterity; advantage on attacks against creatures you grapple; move grappled creatures at full speed.", data: { abilityChoices: ["strength", "dexterity"], abilityIncrease: 1, attacksAgainstGrappled: "advantage", fullSpeedGrappleDrag: true } },
+    { id: "grappler", name: "Grappler", category: "general", summary: "+1 Strength or Dexterity; advantage on attacks against creatures you grapple; move grappled creatures at full speed.", data: { prerequisite: { minimumLevel: 4, anyAbility: ["strength", "dexterity"], minimumScore: 13 }, abilityChoices: ["strength", "dexterity"], abilityIncrease: 1, attacksAgainstGrappled: "advantage", fullSpeedGrappleDrag: true } },
     { id: "fighting-style-archery", name: "Fighting Style: Archery", category: "fighting-style", summary: "+2 bonus to attack rolls with ranged weapons.", data: { rangedAttackBonus: 2 } },
     { id: "fighting-style-blind-fighting", name: "Fighting Style: Blind Fighting", category: "fighting-style", summary: "Blindsight with a range of 10 feet.", data: { blindsightFt: 10 } },
     { id: "fighting-style-defense", name: "Fighting Style: Defense", category: "fighting-style", summary: "+1 bonus to AC while wearing armor.", data: { armoredAcBonus: 1 } },
@@ -2938,53 +3332,165 @@ export function dnd5eSrdFeatEntry(featId: string): Dnd5eSrdFeat | undefined {
 
 const dnd5eSrdAbilityNames = ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"];
 
-export function applyDnd5eSrdFeat(actor: Actor, featId: string, choices: { abilities?: Record<string, number> } = {}): Record<string, unknown> {
+function dnd5eSrdFeatEligibilityReasons(actor: Actor, feat: Dnd5eSrdFeat, characterLevel: number): string[] {
+  const reasons: string[] = [];
+  const feats = normalizeStringArray(actor.data.feats);
+  const features = normalizeStringArray(actor.data.features);
+  if ((feats.includes(feat.id) || features.includes(feat.name)) && feat.data.repeatable !== true) {
+    reasons.push(`${feat.name} is not repeatable and has already been selected`);
+  }
+  const categoryMinimumLevel = feat.category === "epic-boon" ? 19 : feat.category === "general" ? 4 : 1;
+  const prerequisite = recordValue(feat.data.prerequisite);
+  const minimumLevel = Math.max(categoryMinimumLevel, Math.floor(numericValue(prerequisite.minimumLevel, categoryMinimumLevel)));
+  if (characterLevel < minimumLevel) reasons.push(`${feat.name} requires character level ${minimumLevel}`);
+  if (feat.category === "fighting-style" && !features.some((feature) => feature.toLowerCase().includes("fighting style"))) {
+    reasons.push(`${feat.name} requires the Fighting Style feature`);
+  }
+  const anyAbility = normalizeStringArray(prerequisite.anyAbility);
+  const minimumScore = Math.max(1, Math.floor(numericValue(prerequisite.minimumScore, 1)));
+  if (anyAbility.length > 0) {
+    const attributes = recordValue(actor.data.attributes);
+    const qualifies = anyAbility.some((ability) => numericValue(attributes[ability], 0) >= minimumScore);
+    if (!qualifies) reasons.push(`${feat.name} requires ${anyAbility.map(titleCaseWords).join(" or ")} ${minimumScore}`);
+  }
+  return reasons;
+}
+
+export function dnd5eSrdAdvancementFeatEligibility(
+  actor: Actor,
+  featId: string,
+  context: Dnd5eSrdAdvancementFeatContext
+): Dnd5eSrdFeatEligibility {
+  const feat = dnd5eSrdFeatEntry(featId);
+  if (!feat) return { featId, eligible: false, reasons: [`Unknown feat: ${featId}`] };
+  const reasons = dnd5eSrdFeatEligibilityReasons(actor, feat, context.nextCharacterLevel);
+  if (feat.category === "fighting-style") reasons.push(`${feat.name} cannot be selected through Ability Score Improvement advancement`);
+  if (feat.category === "epic-boon" && context.nextClassLevel < 19) reasons.push(`${feat.name} requires an Epic Boon advancement at class level 19 or higher`);
+  return { featId, eligible: reasons.length === 0, reasons: [...new Set(reasons)] };
+}
+
+export function dnd5eSrdAdvancementEligibleFeats(actor: Actor, context: Dnd5eSrdAdvancementFeatContext): Dnd5eSrdFeat[] {
+  return dnd5eSrdGeneralFeats().filter((feat) => dnd5eSrdAdvancementFeatEligibility(actor, feat.id, context).eligible);
+}
+
+export function applyDnd5eSrdFeat(
+  actor: Actor,
+  featId: string,
+  choices: { abilities?: Record<string, number>; advancement?: Dnd5eSrdAdvancementFeatContext } = {}
+): Record<string, unknown> {
   const feat = dnd5eSrdFeatEntry(featId);
   if (!feat) throw new Error(`Unknown feat: ${featId}`);
+  const reasons = choices.advancement
+    ? dnd5eSrdAdvancementFeatEligibility(actor, featId, choices.advancement).reasons
+    : dnd5eSrdFeatEligibilityReasons(actor, feat, Math.max(1, Math.floor(numericValue(actor.data.level, 1))));
+  if (reasons.length > 0) throw new Error(reasons.join("; "));
   const attributes = { ...((actor.data.attributes as Record<string, number> | undefined) ?? {}) };
+  const constitutionModifierBefore = Math.floor((numericValue(attributes.constitution, 10) - 10) / 2);
   const maximumScore = numericValue(feat.data.maximumScore, 20);
-  const abilityChoices = choices.abilities ?? (() => {
-    if (featId === "ability-score-improvement") {
-      const primary = dnd5eSrdPrimaryAbility(stringValue(actor.data.class) ?? "Fighter");
-      return { [primary]: 2 };
-    }
-    const increase = numericValue(feat.data.abilityIncrease, 0);
-    if (increase <= 0) return {};
-    const options = normalizeStringArray(feat.data.abilityChoices);
-    const primary = dnd5eSrdPrimaryAbility(stringValue(actor.data.class) ?? "Fighter");
-    const ability = options.length > 0 && !options.includes(primary) ? options[0]! : primary;
-    return { [ability]: increase };
-  })();
-  // Enforce the feat's ability-point budget (ASI = 2, most feats = 1) so a
-  // client cannot claim more increases than the feat grants.
   const abilityBudget = numericValue(feat.data.abilityPoints, numericValue(feat.data.abilityIncrease, 0));
   const featAbilityOptions = normalizeStringArray(feat.data.abilityChoices);
   const allowedAbilities = featAbilityOptions.length > 0 ? featAbilityOptions : dnd5eSrdAbilityNames;
+  const abilityChoices = choices.abilities ?? {};
   let abilityPointsSpent = 0;
   for (const [ability, amount] of Object.entries(abilityChoices)) {
-    if (!allowedAbilities.includes(ability)) continue;
-    const allowed = Math.max(0, Math.min(Math.max(0, Math.floor(amount)), abilityBudget - abilityPointsSpent));
-    if (allowed <= 0) continue;
-    attributes[ability] = Math.min(maximumScore, numericValue(attributes[ability], 10) + allowed);
-    abilityPointsSpent += allowed;
+    if (!allowedAbilities.includes(ability)) throw new Error(`${feat.name} cannot increase ${titleCaseWords(ability)}`);
+    if (!Number.isInteger(amount) || amount <= 0) throw new Error(`${feat.name} ability increases must be positive whole numbers`);
+    abilityPointsSpent += amount;
+    if (abilityPointsSpent > abilityBudget) throw new Error(`${feat.name} grants only ${abilityBudget} ability point${abilityBudget === 1 ? "" : "s"}`);
+    const current = numericValue(attributes[ability], 10);
+    if (current + amount > maximumScore) throw new Error(`${feat.name} cannot increase ${titleCaseWords(ability)} above ${maximumScore}`);
+    attributes[ability] = current + amount;
+  }
+  if (abilityPointsSpent !== abilityBudget) {
+    throw new Error(`${feat.name} requires explicit ability choices totaling ${abilityBudget} point${abilityBudget === 1 ? "" : "s"}`);
   }
   const feats = normalizeStringArray(actor.data.feats);
   if (!feats.includes(feat.id)) feats.push(feat.id);
   const features = normalizeStringArray(actor.data.features);
   if (!features.includes(feat.name)) features.push(feat.name);
   const data: Record<string, unknown> = { ...actor.data, attributes, feats, features };
+  const constitutionModifierAfter = Math.floor((numericValue(attributes.constitution, 10) - 10) / 2);
+  const constitutionModifierDelta = constitutionModifierAfter - constitutionModifierBefore;
+  if (constitutionModifierDelta !== 0) {
+    const characterLevel = Math.max(1, dnd5eSrdActorClassLevels(actor).reduce((sum, entry) => sum + entry.level, 0) || Math.floor(numericValue(actor.data.level, 1)));
+    const hp = normalizePool(actor.data.hp, 1);
+    const retroactiveHitPoints = constitutionModifierDelta * characterLevel;
+    data.hp = {
+      ...recordValue(actor.data.hp),
+      current: Math.max(0, hp.current + retroactiveHitPoints),
+      max: Math.max(1, hp.max + retroactiveHitPoints)
+    };
+  }
   const hpMaximumBonus = numericValue(feat.data.hpMaximumBonus, 0);
   if (hpMaximumBonus > 0) {
-    const hp = normalizePool(actor.data.hp, 1);
-    data.hp = { ...recordValue(actor.data.hp), current: hp.current + hpMaximumBonus, max: hp.max + hpMaximumBonus };
+    const hp = normalizePool(data.hp, 1);
+    data.hp = { ...recordValue(data.hp), current: hp.current + hpMaximumBonus, max: hp.max + hpMaximumBonus };
   }
   return data;
 }
 
-/** Union of every class's features taken at that class's own level. */
-function dnd5eSrdCombinedClassFeatures(baseFeatures: string[], classes: Dnd5eSrdClassLevel[]): string[] {
-  let features = normalizeStringArray(baseFeatures);
-  for (const entry of classes) features = dnd5eSrdApplyClassFeatures(features, entry.className, entry.level);
+function dnd5eSrdStoredSubclassId(actor: Actor, className: string): string | undefined {
+  const subclasses = recordValue(actor.data.subclasses);
+  const stored = Object.entries(subclasses).find(([key]) => key.toLowerCase() === className.toLowerCase())?.[1];
+  if (typeof stored === "string") return dnd5eSrdSubclassOptionForActor(actor, className, stored)?.id;
+  const primaryClass = stringValue(actor.data.class);
+  const legacy = primaryClass?.toLowerCase() === className.toLowerCase() ? stringValue(actor.data.subclass) : undefined;
+  return legacy ? dnd5eSrdSubclassOptionForActor(actor, className, legacy)?.id : undefined;
+}
+
+function dnd5eSrdResolveAdvancementSubclasses(
+  actor: Actor,
+  classes: Dnd5eSrdClassLevel[],
+  leveledClassName: string,
+  choices: Dnd5eSrdAdvancementChoices
+): Record<string, string> {
+  const subclasses = Object.fromEntries(classes.flatMap((entry) => {
+    const stored = dnd5eSrdStoredSubclassId(actor, entry.className);
+    return stored ? [[entry.className, stored]] : [];
+  }));
+  const leveledClass = classes.find((entry) => entry.className.toLowerCase() === leveledClassName.toLowerCase());
+  if (!leveledClass) throw new Error(`No class level exists for ${leveledClassName}`);
+  const requested = choices.subclassId ? dnd5eSrdSubclassOptionForActor(actor, leveledClass.className, choices.subclassId) : undefined;
+  if (choices.subclassId && !requested) throw new Error(`${choices.subclassId} is not an available subclass for ${leveledClass.className}`);
+  if (requested && leveledClass.level < requested.selectionLevel) throw new Error(`${requested.name} cannot be selected before ${leveledClass.className} level ${requested.selectionLevel}`);
+  const existing = subclasses[leveledClass.className];
+  if (requested && existing && existing !== requested.id) throw new Error(`${leveledClass.className} already selected ${dnd5eSrdSubclassOptionForActor(actor, leveledClass.className, existing)?.name ?? existing}`);
+  if (requested) subclasses[leveledClass.className] = requested.id;
+  for (const entry of classes) {
+    const profile = dnd5eSrdClassAdvancementProfile(actor, entry.className);
+    if (!profile) throw new Error(`${entry.className} has no reviewed advancement progression attached to this actor`);
+    if (entry.level >= profile.subclassSelectionLevel && !subclasses[entry.className]) throw new Error(`${entry.className} level ${entry.level} requires an explicit subclass choice`);
+  }
+  return subclasses;
+}
+
+const DND_5E_SRD_SUBCLASS_FEATURE_NAMES = new Set([
+  "Circle of the Moon",
+  "Circle Forms",
+  "Circle of the Moon Spells",
+  "Improved Circle Forms",
+  "Moonlight Step",
+  "Lunar Form",
+  ...DND_5E_SRD_SUBCLASS_OPTIONS.flatMap((option) => [option.name, ...option.features.flatMap((entry) => entry.names)])
+]);
+
+/** Union of every class's base and explicitly selected subclass features at its own level. */
+function dnd5eSrdCombinedClassFeatures(actor: Actor, baseFeatures: string[], classes: Dnd5eSrdClassLevel[], subclasses: Record<string, string>): string[] {
+  let features = normalizeStringArray(baseFeatures).filter((feature) => !DND_5E_SRD_SUBCLASS_FEATURE_NAMES.has(feature));
+  for (const entry of classes) {
+    const profile = dnd5eSrdClassAdvancementProfile(actor, entry.className);
+    if (!profile) throw new Error(`${entry.className} has no reviewed advancement progression attached to this actor`);
+    if (profile.custom) {
+      features.push(...profile.features.filter((feature) => feature.level <= entry.level).map((feature) => feature.name));
+      if (profile.featLevels.some((level) => level <= entry.level && level !== 19)) features.push("Ability Score Improvement");
+      if (profile.featLevels.some((level) => level <= entry.level && level === 19)) features.push("Epic Boon");
+    } else {
+      features = dnd5eSrdApplyClassFeatures(features, entry.className, entry.level);
+    }
+    const selected = subclasses[entry.className];
+    const option = selected ? dnd5eSrdSubclassOptionForActor(actor, entry.className, selected) : undefined;
+    if (option) features.push(...dnd5eSrdSubclassFeatures(option, entry.level));
+  }
   return [...new Set(features)];
 }
 
@@ -3021,11 +3527,45 @@ function dnd5eSrdCombinedClassResources(value: unknown, classes: Dnd5eSrdClassLe
  * resources, and the shared multiclass spell-slot table — instead of treating
  * the whole character as a single class of the summed level.
  */
-function dnd5eSrdApplyClassLevels(actor: Actor, classes: Dnd5eSrdClassLevel[], leveledClassName: string): Record<string, unknown> {
+function dnd5eSrdAdvancementHitPointGain(actor: Actor, className: string, choices: Dnd5eSrdAdvancementChoices): number {
+  const profile = dnd5eSrdClassAdvancementProfile(actor, className);
+  if (!profile) throw new Error(`${className} has no reviewed advancement progression attached to this actor`);
+  const hitDieSize = profile.hitDie;
+  const hitDieFaces = dnd5eSrdHitDieFaces(hitDieSize);
+  const rolledHitPoints = choices.hitPointRoll;
+  if (rolledHitPoints !== undefined && (!Number.isInteger(rolledHitPoints) || rolledHitPoints < 1 || rolledHitPoints > hitDieFaces)) {
+    throw new Error(`${className} Hit Point Die result must be a whole number from 1 to ${hitDieFaces}`);
+  }
+  return Math.max(1, (rolledHitPoints ?? averageHitDie(hitDieSize)) + genericFantasyAttributeModifier(actor, "constitution"));
+}
+
+function dnd5eSrdAdvancementSpellSlots(
+  actor: Actor,
+  classes: Dnd5eSrdClassLevel[],
+  className: string,
+  classLevel: number,
+): Record<string, Record<string, unknown> & { current: number; max: number }> {
+  const profile = dnd5eSrdClassAdvancementProfile(actor, className);
+  if (!profile?.custom) return normalizeDnd5eSrdSpellSlots(actor.data.spellSlots, className, classLevel, { raiseMaxToDefault: true });
+  if (profile.spellcastingProgression === "full" || profile.spellcastingProgression === "half" || profile.spellcastingProgression === "third") {
+    return normalizeResourcePools(actor.data.spellSlots, dnd5eSrdMulticlassSpellSlots(classes, actor), { raiseMaxToDefault: true });
+  }
+  // Pact/custom slot tables are exception-heavy; preserve explicitly authored
+  // pools rather than silently applying Warlock or full-caster assumptions.
+  return normalizeResourcePools(actor.data.spellSlots);
+}
+
+function dnd5eSrdApplyClassLevels(
+  actor: Actor,
+  classes: Dnd5eSrdClassLevel[],
+  leveledClassName: string,
+  choices: Dnd5eSrdAdvancementChoices = {}
+): Record<string, unknown> {
   const totalLevel = classes.reduce((sum, entry) => sum + entry.level, 0);
   const primary = [...classes].sort((left, right) => right.level - left.level)[0]!.className;
-  const constitutionModifier = genericFantasyAttributeModifier(actor, "constitution");
-  const hpGain = Math.max(1, averageHitDie(dnd5eSrdHitDieSize(leveledClassName)) + constitutionModifier);
+  const subclasses = dnd5eSrdResolveAdvancementSubclasses(actor, classes, leveledClassName, choices);
+  const primarySubclass = subclasses[primary] ? dnd5eSrdSubclassOptionForActor(actor, primary, subclasses[primary]!) : undefined;
+  const hpGain = dnd5eSrdAdvancementHitPointGain(actor, leveledClassName, choices);
   const hp = normalizePool(actor.data.hp, 1);
   const previousClasses = dnd5eSrdActorClassLevels(actor);
   const previousPools = previousClasses.length === 1 ? dnd5eSrdLegacyHitDicePools(actor, previousClasses) : dnd5eSrdHitDicePoolsForClasses(actor, previousClasses);
@@ -3037,46 +3577,73 @@ function dnd5eSrdApplyClassLevels(actor: Actor, classes: Dnd5eSrdClassLevel[], l
         const gainedLevels = Math.max(0, entry.level - previousLevel);
         const previousPool = previousPoolByClass.get(entry.className);
         const current = Math.min(entry.level, numericValue(previousPool?.current, 0) + gainedLevels);
-        return { className: entry.className, size: dnd5eSrdHitDieSize(entry.className), current, max: entry.level };
+        const profile = dnd5eSrdClassAdvancementProfile(actor, entry.className);
+        if (!profile) throw new Error(`${entry.className} has no reviewed advancement progression attached to this actor`);
+        return { className: entry.className, size: profile.hitDie, current, max: entry.level };
       })
     : [];
-  const nextData = { ...actor.data, classes, level: totalLevel, class: primary };
-  return {
+  const combinedFeatures = dnd5eSrdCombinedClassFeatures(actor, normalizeStringArray(actor.data.features), classes, subclasses);
+  const nextData = { ...actor.data, classes, level: totalLevel, class: primary, subclasses, features: combinedFeatures, ...(primarySubclass ? { subclass: primarySubclass.name } : {}) };
+  const warlockLevel = classes.find((entry) => entry.className === "Warlock")?.level ?? 0;
+  const previousClassesWereSingleWarlock = previousClasses.length === 1 && previousClasses[0]?.className === "Warlock";
+  const priorPactSlots = Object.keys(recordValue(actor.data.pactSlots)).length > 0
+    ? actor.data.pactSlots
+    : previousClassesWereSingleWarlock
+      ? actor.data.spellSlots
+      : {};
+  const sharedSlotDefaults = dnd5eSrdMulticlassSpellSlots(classes, actor);
+  const sharedSpellSlots = normalizeExactResourcePools(
+    previousClassesWereSingleWarlock ? {} : actor.data.spellSlots,
+    sharedSlotDefaults,
+    { raiseMaxToDefault: true }
+  );
+  const pactSlots = warlockLevel > 0
+    ? normalizeExactResourcePools(priorPactSlots, defaultDnd5eSrdWarlockPactMagicSlots(warlockLevel), { raiseMaxToDefault: true })
+    : undefined;
+  const advanced: Record<string, unknown> = {
     ...actor.data,
     class: primary,
     classes,
+    subclasses,
+    ...(primarySubclass ? { subclass: primarySubclass.name } : {}),
     level: totalLevel,
     hp: { current: hp.current + hpGain, max: hp.max + hpGain },
     hitDice: hitDicePools.length > 0
-      ? dnd5eSrdAggregateHitDiceFromPools(hitDicePools, primary)
+      ? dnd5eSrdAggregateHitDiceFromPools(actor, hitDicePools, primary)
       : {
           current: numericValue(recordValue(actor.data.hitDice).current, totalLevel - 1) + 1,
           max: numericValue(recordValue(actor.data.hitDice).max, totalLevel - 1) + 1,
-          size: stringValue(recordValue(actor.data.hitDice).size) ?? dnd5eSrdHitDieSize(primary)
+          size: stringValue(recordValue(actor.data.hitDice).size) ?? dnd5eSrdClassHitDieSize(primary, actor)
         },
     ...(hitDicePools.length > 0 ? { hitDicePools } : {}),
     proficiencyBonus: Math.max(2, 2 + Math.floor((totalLevel - 1) / 4)),
-    features: dnd5eSrdCombinedClassFeatures(normalizeStringArray(actor.data.features), classes),
+    features: combinedFeatures,
     combat: dnd5eSrdCombinedClassCombat(recordValue(actor.data.combat), classes, actor.data.speed),
     resources: dnd5eSrdCombinedClassResources(actor.data.resources, classes, nextData, totalLevel, { raiseMaxToDefault: true }),
-    spellSlots: normalizeResourcePools(actor.data.spellSlots, dnd5eSrdMulticlassSpellSlots(classes), { raiseMaxToDefault: true }),
+    spellSlots: sharedSpellSlots,
+    ...(pactSlots ? { pactSlots } : {}),
     ruleset: DND_5E_SRD_VERSION
   };
+  if (choices.weaponMasteryChoices !== undefined || "weaponMasteries" in actor.data || "weaponMasteriesByClass" in actor.data) {
+    const leveledClassLevel = classes.find((entry) => entry.className.toLowerCase() === leveledClassName.toLowerCase())?.level ?? 0;
+    return applyDnd5eSrdWeaponMasteryAdvancement({ ...actor, data: advanced }, leveledClassName, leveledClassLevel, choices.weaponMasteryChoices);
+  }
+  return advanced;
 }
 
-export function applyDnd5eSrdMulticlassLevel(actor: Actor, className: string): Record<string, unknown> {
+export function applyDnd5eSrdMulticlassLevel(actor: Actor, className: string, choices: Dnd5eSrdAdvancementChoices = {}): Record<string, unknown> {
   const eligibility = dnd5eSrdCanMulticlassInto(actor, className);
   const existing = dnd5eSrdActorClassLevels(actor);
   const totalLevel = existing.reduce((total, entry) => total + entry.level, 0);
   if (totalLevel >= 20) throw new Error("Cannot advance beyond total level 20");
   const alreadyIn = existing.some((entry) => entry.className === className);
-  if (!alreadyIn && !eligibility.eligible) {
+  if (!eligibility.eligible) {
     throw new Error(eligibility.reasons[0] ?? `Cannot multiclass into ${className}`);
   }
   const classes = alreadyIn
     ? existing.map((entry) => (entry.className === className ? { ...entry, level: entry.level + 1 } : entry))
     : [...existing, { className, level: 1 }];
-  return dnd5eSrdApplyClassLevels(actor, classes, className);
+  return dnd5eSrdApplyClassLevels(actor, classes, className, choices);
 }
 
 export function dnd5eSrdImprovisedWeapon(actor: Actor): QuickRoll {
@@ -3164,7 +3731,7 @@ export function dnd5eSrdSpellScrollCraftingPlan(spellLevel: number): { spellLeve
 }
 
 export function genericFantasyCompendium(): GenericFantasyCompendiumEntry[] {
-  return [
+  return withCompendiumProvenance<GenericFantasyCompendiumEntry>([
     {
       id: "longsword",
       type: "item",
@@ -3235,7 +3802,7 @@ export function genericFantasyCompendium(): GenericFantasyCompendiumEntry[] {
       summary: "Marks the actor as unable to freely move.",
       data: { speedMultiplier: 0, shortRestClears: true }
     }
-  ];
+  ], GENERIC_FANTASY_COMPENDIUM_PROVENANCE);
 }
 
 export function genericFantasyCompendiumEntry(entryId: string): GenericFantasyCompendiumEntry | undefined {
@@ -3274,7 +3841,7 @@ interface Dnd5eSrdMagicItemEntrySeed {
   data?: Record<string, unknown>;
 }
 
-function dnd5eSrdToolEntry(seed: Dnd5eSrdToolEntrySeed): GenericFantasyCompendiumEntry {
+function dnd5eSrdToolEntry(seed: Dnd5eSrdToolEntrySeed): GenericFantasyCompendiumEntrySeed {
   return {
     id: seed.id,
     type: "item",
@@ -3289,12 +3856,12 @@ function dnd5eSrdToolEntry(seed: Dnd5eSrdToolEntrySeed): GenericFantasyCompendiu
       weightLb: seed.weightLb,
       ...(seed.toolGroup ? { toolGroup: seed.toolGroup } : {}),
       ...(seed.variantOf ? { variantOf: seed.variantOf } : {}),
-      source: DND_5E_SRD_VERSION
+      source: DND_5E_SRD_VERSION as typeof DND_5E_SRD_VERSION
     }
   };
 }
 
-function dnd5eSrdGearEntry(seed: Dnd5eSrdGearEntrySeed): GenericFantasyCompendiumEntry {
+function dnd5eSrdGearEntry(seed: Dnd5eSrdGearEntrySeed): GenericFantasyCompendiumEntrySeed {
   return {
     id: seed.id,
     type: "item",
@@ -3311,7 +3878,7 @@ function dnd5eSrdGearEntry(seed: Dnd5eSrdGearEntrySeed): GenericFantasyCompendiu
   };
 }
 
-function dnd5eSrdMagicItemEntry(seed: Dnd5eSrdMagicItemEntrySeed): GenericFantasyCompendiumEntry {
+function dnd5eSrdMagicItemEntry(seed: Dnd5eSrdMagicItemEntrySeed): GenericFantasyCompendiumEntrySeed {
   return {
     id: seed.id,
     type: "item",
@@ -3347,7 +3914,7 @@ function dnd5eSrdMagicItemCraftingMetadata(rarity: Dnd5eSrdMagicItemEntrySeed["r
   return consumable ? { craftingDays: entry.craftingDays / 2, craftingCostGp: entry.craftingCostGp / 2 } : entry;
 }
 
-function dnd5eSrdToolCompendiumEntries(): GenericFantasyCompendiumEntry[] {
+function dnd5eSrdToolCompendiumEntries(): GenericFantasyCompendiumEntrySeed[] {
   const tools: Dnd5eSrdToolEntrySeed[] = [
     { id: "alchemists-supplies", name: "Alchemist's Supplies", ability: "intelligence", costGp: 50, weightLb: 8 },
     { id: "brewers-supplies", name: "Brewer's Supplies", ability: "intelligence", costGp: 20, weightLb: 9 },
@@ -3389,7 +3956,7 @@ function dnd5eSrdToolCompendiumEntries(): GenericFantasyCompendiumEntry[] {
   return tools.map(dnd5eSrdToolEntry);
 }
 
-function dnd5eSrdAdventuringGearCompendiumEntries(): GenericFantasyCompendiumEntry[] {
+function dnd5eSrdAdventuringGearCompendiumEntries(): GenericFantasyCompendiumEntrySeed[] {
   const gear: Dnd5eSrdGearEntrySeed[] = [
     { id: "acid", name: "Acid", costGp: 25, weightLb: 1, data: { consumable: true, thrownRange: "20", damageFormula: "2d6", damageType: "acid", save: { ability: "dexterity" } } },
     { id: "alchemists-fire", name: "Alchemist's Fire", costGp: 50, weightLb: 1, data: { consumable: true, thrownRange: "20", damageFormula: "1d4", damageType: "fire", save: { ability: "dexterity" }, condition: "burning" } },
@@ -3413,6 +3980,14 @@ function dnd5eSrdAdventuringGearCompendiumEntries(): GenericFantasyCompendiumEnt
     { id: "blanket", name: "Blanket", costGp: 0.5, weightLb: 3 },
     { id: "block-and-tackle", name: "Block and Tackle", costGp: 1, weightLb: 5, data: { liftMultiplier: 4 } },
     { id: "book", name: "Book", costGp: 25, weightLb: 5, data: { knowledgeCheckBonus: 5 } },
+    {
+      id: "spellbook",
+      name: "Spellbook",
+      costGp: 50,
+      weightLb: 3,
+      summary: "A Wizard's 100-page spellbook; spell selection is handled separately from starting equipment.",
+      data: { pages: 100, spellbook: true, spellcastingFocus: "wizard", initialSpellSelection: "manual" }
+    },
     { id: "glass-bottle", name: "Bottle, Glass", costGp: 2, weightLb: 2, data: { capacityPints: 1.5 } },
     { id: "bucket", name: "Bucket", costGp: 0.05, weightLb: 2, data: { capacityCubicFt: 0.5 } },
     { id: "burglars-pack", name: "Burglar's Pack", costGp: 16, weightLb: 42, data: { pack: true, contents: ["backpack", "ball-bearings", "bell", "candle", "crowbar", "hooded-lantern", "oil", "rations", "rope", "tinderbox", "waterskin"] } },
@@ -3489,7 +4064,7 @@ function dnd5eSrdAdventuringGearCompendiumEntries(): GenericFantasyCompendiumEnt
   return gear.map(dnd5eSrdGearEntry);
 }
 
-function dnd5eSrdMagicItemCompendiumEntries(): GenericFantasyCompendiumEntry[] {
+function dnd5eSrdMagicItemCompendiumEntries(): GenericFantasyCompendiumEntrySeed[] {
   const creatureTypes = ["aberration", "beast", "celestial", "construct", "dragon", "elemental", "fey", "fiend", "giant", "humanoid", "monstrosity", "ooze", "plant", "undead"];
   const resistanceTypes = ["acid", "cold", "fire", "force", "lightning", "necrotic", "poison", "psychic", "radiant", "thunder"];
   const magicItems: Dnd5eSrdMagicItemEntrySeed[] = [
@@ -3785,116 +4360,9 @@ function dnd5eSrdMagicItemCompendiumEntries(): GenericFantasyCompendiumEntry[] {
   return magicItems.map(dnd5eSrdMagicItemEntry);
 }
 
-const DND_5E_SRD_CONDITION_ENTRIES: GenericFantasyCompendiumEntry[] = [
-  {
-    id: "blinded",
-    type: "condition",
-    name: "Blinded",
-    summary: "Prevents sight, fails sight-based checks, worsens attacks made by and against the actor.",
-    data: { sightBlocked: true, sightChecksFail: true, attackRolls: "disadvantage", attacksAgainst: "advantage", source: DND_5E_SRD_VERSION }
-  },
-  {
-    id: "charmed",
-    type: "condition",
-    name: "Charmed",
-    summary: "Prevents harming the charmer and gives the charmer advantage on social checks.",
-    data: { cannotAttackCharmer: true, socialChecksByCharmer: "advantage", source: DND_5E_SRD_VERSION }
-  },
-  {
-    id: "deafened",
-    type: "condition",
-    name: "Deafened",
-    summary: "Prevents hearing and fails hearing-based checks.",
-    data: { hearingBlocked: true, hearingChecksFail: true, source: DND_5E_SRD_VERSION }
-  },
-  {
-    id: "exhaustion",
-    type: "condition",
-    name: "Exhaustion",
-    summary: "Tracks cumulative exhaustion levels that penalize D20 Tests and speed.",
-    data: { stackable: true, maxLevel: 6, d20TestPenaltyPerLevel: 2, speedPenaltyFtPerLevel: 5, deathAtLevel: 6, longRestReducesLevelBy: 1, source: DND_5E_SRD_VERSION }
-  },
-  {
-    id: "frightened",
-    type: "condition",
-    name: "Frightened",
-    summary: "Imposes disadvantage while the fear source is visible and prevents moving closer to it.",
-    data: { abilityChecksWhileSourceVisible: "disadvantage", attackRollsWhileSourceVisible: "disadvantage", cannotMoveCloserToSource: true, source: DND_5E_SRD_VERSION }
-  },
-  {
-    id: "grappled",
-    type: "condition",
-    name: "Grappled",
-    summary: "Sets speed to 0, limits attacks away from the grappler, and allows the grappler to move the target.",
-    data: { speedSetTo: 0, cannotIncreaseSpeed: true, attacksAgainstNonGrappler: "disadvantage", movableByGrappler: true, source: DND_5E_SRD_VERSION }
-  },
-  {
-    id: "incapacitated",
-    type: "condition",
-    name: "Incapacitated",
-    summary: "Prevents actions, bonus actions, reactions, concentration, and speech.",
-    data: { actions: false, bonusActions: false, reactions: false, concentrationEnds: true, speech: false, initiativeDisadvantage: true, source: DND_5E_SRD_VERSION }
-  },
-  {
-    id: "invisible",
-    type: "condition",
-    name: "Invisible",
-    summary: "Conceals the actor, improves initiative and attacks, and hinders attacks against them.",
-    data: { initiative: "advantage", concealed: true, attackRolls: "advantage", attacksAgainst: "disadvantage", seenCreaturesIgnoreAttackEffect: true, source: DND_5E_SRD_VERSION }
-  },
-  {
-    id: "paralyzed",
-    type: "condition",
-    name: "Paralyzed",
-    summary: "Includes incapacitation, sets speed to 0, fails Strength and Dexterity saves, and enables close critical hits.",
-    data: { includes: ["incapacitated"], speedSetTo: 0, cannotIncreaseSpeed: true, savingThrowsFail: ["strength", "dexterity"], attacksAgainst: "advantage", closeHitsCritical: true, source: DND_5E_SRD_VERSION }
-  },
-  {
-    id: "petrified",
-    type: "condition",
-    name: "Petrified",
-    summary: "Turns the actor into an inanimate substance with incapacitation, speed 0, broad resistance, and poison immunity.",
-    data: { transformedIntoInanimateSubstance: true, includes: ["incapacitated"], speedSetTo: 0, cannotIncreaseSpeed: true, attacksAgainst: "advantage", savingThrowsFail: ["strength", "dexterity"], resistance: ["all"], conditionImmunity: ["poisoned"], source: DND_5E_SRD_VERSION }
-  },
-  {
-    id: "poisoned",
-    type: "condition",
-    name: "Poisoned",
-    summary: "Imposes disadvantage on SRD attack rolls and ability checks.",
-    data: { attackRolls: "disadvantage", abilityChecks: "disadvantage", skillChecks: "disadvantage", toolChecks: "disadvantage", rollMode: "disadvantage", longRestClears: false, source: DND_5E_SRD_VERSION }
-  },
-  {
-    id: "prone",
-    type: "condition",
-    name: "Prone",
-    summary: "Restricts movement, imposes attack disadvantage, and changes attacks against the actor by range.",
-    data: { movement: "crawl-or-stand", standCost: "half-speed", attackRolls: "disadvantage", meleeAttacksAgainst: "advantage", rangedAttacksAgainst: "disadvantage", cannotStandIfSpeedZero: true, source: DND_5E_SRD_VERSION }
-  },
-  {
-    id: "restrained",
-    type: "condition",
-    name: "Restrained",
-    summary: "Sets speed to 0, worsens attacks made by and against the actor, and hinders Dexterity saves.",
-    data: { speedSetTo: 0, speedMultiplier: 0, cannotIncreaseSpeed: true, attackRolls: "disadvantage", attacksAgainst: "advantage", savingThrowsDisadvantage: ["dexterity"], shortRestClears: false, source: DND_5E_SRD_VERSION }
-  },
-  {
-    id: "stunned",
-    type: "condition",
-    name: "Stunned",
-    summary: "Includes incapacitation, fails Strength and Dexterity saves, and gives attacks against the actor advantage.",
-    data: { includes: ["incapacitated"], savingThrowsFail: ["strength", "dexterity"], attacksAgainst: "advantage", source: DND_5E_SRD_VERSION }
-  },
-  {
-    id: "unconscious",
-    type: "condition",
-    name: "Unconscious",
-    summary: "Includes incapacitated and prone, drops held items, sets speed to 0, and enables close critical hits.",
-    data: { includes: ["incapacitated", "prone"], dropsHeldItems: true, remainsProneAfterEnding: true, speedSetTo: 0, cannotIncreaseSpeed: true, attacksAgainst: "advantage", savingThrowsFail: ["strength", "dexterity"], closeHitsCritical: true, unaware: true, source: DND_5E_SRD_VERSION }
-  }
-];
 
 export function dnd5eSrdCompendium(): GenericFantasyCompendiumEntry[] {
-  return [
+  return withCompendiumProvenance<GenericFantasyCompendiumEntry>([
     ...genericFantasyCompendium().map((entry) => {
       const dndConditionOverride = DND_5E_SRD_CONDITION_ENTRIES.find((condition) => condition.id === entry.id);
       const dndDataOverrides =
@@ -6679,7 +7147,10 @@ export function dnd5eSrdCompendium(): GenericFantasyCompendiumEntry[] {
     ...dnd5eSrdToolCompendiumEntries(),
     ...dnd5eSrdAdventuringGearCompendiumEntries(),
     ...dnd5eSrdMagicItemCompendiumEntries()
-  ];
+  ], DND_5E_SRD_COMPENDIUM_PROVENANCE).map((entry) => {
+    const classes = DND_5E_SRD_LEVEL_ONE_SPELL_CLASS_OVERRIDES[entry.id];
+    return classes ? { ...entry, data: { ...entry.data, classes: [...classes] } } : entry;
+  });
 }
 
 export function dnd5eSrdCompendiumEntry(entryId: string): GenericFantasyCompendiumEntry | undefined {
@@ -6741,6 +7212,83 @@ const DND_5E_SRD_SPECIES: Dnd5eSrdCharacterSpecies[] = [
   { id: "tiefling", name: "Tiefling", creatureType: "Humanoid", size: "Medium or Small", speed: 30, traits: ["Darkvision", "Fiendish Legacy", "Otherworldly Presence"], senses: ["Darkvision 60 ft."], source: DND_5E_SRD_VERSION }
 ];
 
+const DND_5E_SRD_DRACONIC_ANCESTORS: Dnd5eSrdDraconicAncestor[] = [
+  { id: "black", name: "Black Dragon", damageType: "acid", source: DND_5E_SRD_VERSION },
+  { id: "blue", name: "Blue Dragon", damageType: "lightning", source: DND_5E_SRD_VERSION },
+  { id: "brass", name: "Brass Dragon", damageType: "fire", source: DND_5E_SRD_VERSION },
+  { id: "bronze", name: "Bronze Dragon", damageType: "lightning", source: DND_5E_SRD_VERSION },
+  { id: "copper", name: "Copper Dragon", damageType: "acid", source: DND_5E_SRD_VERSION },
+  { id: "gold", name: "Gold Dragon", damageType: "fire", source: DND_5E_SRD_VERSION },
+  { id: "green", name: "Green Dragon", damageType: "poison", source: DND_5E_SRD_VERSION },
+  { id: "red", name: "Red Dragon", damageType: "fire", source: DND_5E_SRD_VERSION },
+  { id: "silver", name: "Silver Dragon", damageType: "cold", source: DND_5E_SRD_VERSION },
+  { id: "white", name: "White Dragon", damageType: "cold", source: DND_5E_SRD_VERSION }
+];
+
+const DND_5E_SRD_GIANT_ANCESTRIES: Dnd5eSrdGiantAncestryChoice[] = [
+  {
+    id: "cloud",
+    name: "Cloud's Jaunt",
+    giantType: "Cloud Giant",
+    activation: "bonus-action",
+    summary: "Teleport up to 30 feet to an unoccupied space you can see.",
+    teleportRangeFt: 30,
+    source: DND_5E_SRD_VERSION
+  },
+  {
+    id: "fire",
+    name: "Fire's Burn",
+    giantType: "Fire Giant",
+    activation: "on-hit",
+    summary: "After an attack roll hits and deals damage, deal 1d10 additional Fire damage to that target.",
+    damageFormula: "1d10",
+    damageType: "fire",
+    source: DND_5E_SRD_VERSION
+  },
+  {
+    id: "frost",
+    name: "Frost's Chill",
+    giantType: "Frost Giant",
+    activation: "on-hit",
+    summary: "After an attack roll hits and deals damage, deal 1d6 additional Cold damage and reduce that target's Speed by 10 feet until your next turn starts.",
+    damageFormula: "1d6",
+    damageType: "cold",
+    speedReductionFt: 10,
+    source: DND_5E_SRD_VERSION
+  },
+  {
+    id: "hill",
+    name: "Hill's Tumble",
+    giantType: "Hill Giant",
+    activation: "on-hit",
+    summary: "After an attack roll hits and deals damage, give a Large or smaller target the Prone condition.",
+    condition: "Prone",
+    targetMaxSize: "Large",
+    source: DND_5E_SRD_VERSION
+  },
+  {
+    id: "stone",
+    name: "Stone's Endurance",
+    giantType: "Stone Giant",
+    activation: "reaction",
+    summary: "When you take damage, roll 1d12 and add your Constitution modifier to reduce that damage by the total.",
+    damageReductionFormula: "1d12",
+    damageReductionAbility: "constitution",
+    source: DND_5E_SRD_VERSION
+  },
+  {
+    id: "storm",
+    name: "Storm's Thunder",
+    giantType: "Storm Giant",
+    activation: "reaction",
+    summary: "When a creature within 60 feet damages you, deal 1d8 Thunder damage to it.",
+    damageFormula: "1d8",
+    damageType: "thunder",
+    triggerRangeFt: 60,
+    source: DND_5E_SRD_VERSION
+  }
+];
+
 type Dnd5eSrdElfLineageId = "drow" | "high-elf" | "wood-elf";
 type Dnd5eSrdGnomeLineageId = "forest-gnome" | "rock-gnome";
 type Dnd5eSrdTieflingLegacyId = "abyssal" | "chthonic" | "infernal";
@@ -6792,18 +7340,1463 @@ const DND_5E_SRD_TIEFLING_LEGACIES: Record<Dnd5eSrdTieflingLegacyId, Dnd5eSrdTie
   infernal: { id: "infernal", name: "Infernal", resistance: "fire", cantrip: "fire-bolt", level3Spell: "hellish-rebuke", level5Spell: "darkness" }
 };
 
+const DND_5E_SRD_CLASS_SKILL_CHOICES: Dnd5eSrdClassSkillChoice[] = [
+  { templateId: "barbarian", className: "Barbarian", count: 2, skillIds: ["animal-handling", "athletics", "intimidation", "nature", "perception", "survival"], source: DND_5E_SRD_VERSION },
+  { templateId: "bard", className: "Bard", count: 3, skillIds: ["acrobatics", "animal-handling", "arcana", "athletics", "deception", "history", "insight", "intimidation", "investigation", "medicine", "nature", "perception", "performance", "persuasion", "religion", "sleight-of-hand", "stealth", "survival"], source: DND_5E_SRD_VERSION },
+  { templateId: "cleric", className: "Cleric", count: 2, skillIds: ["history", "insight", "medicine", "persuasion", "religion"], source: DND_5E_SRD_VERSION },
+  { templateId: "druid", className: "Druid", count: 2, skillIds: ["animal-handling", "arcana", "insight", "medicine", "nature", "perception", "religion", "survival"], source: DND_5E_SRD_VERSION },
+  { templateId: "fighter", className: "Fighter", count: 2, skillIds: ["acrobatics", "animal-handling", "athletics", "history", "insight", "intimidation", "persuasion", "perception", "survival"], source: DND_5E_SRD_VERSION },
+  { templateId: "monk", className: "Monk", count: 2, skillIds: ["acrobatics", "athletics", "history", "insight", "religion", "stealth"], source: DND_5E_SRD_VERSION },
+  { templateId: "paladin", className: "Paladin", count: 2, skillIds: ["athletics", "insight", "intimidation", "medicine", "persuasion", "religion"], source: DND_5E_SRD_VERSION },
+  { templateId: "ranger", className: "Ranger", count: 3, skillIds: ["animal-handling", "athletics", "insight", "investigation", "nature", "perception", "stealth", "survival"], source: DND_5E_SRD_VERSION },
+  { templateId: "rogue", className: "Rogue", count: 4, skillIds: ["acrobatics", "athletics", "deception", "insight", "intimidation", "investigation", "perception", "persuasion", "sleight-of-hand", "stealth"], source: DND_5E_SRD_VERSION },
+  { templateId: "sorcerer", className: "Sorcerer", count: 2, skillIds: ["arcana", "deception", "insight", "intimidation", "persuasion", "religion"], source: DND_5E_SRD_VERSION },
+  { templateId: "warlock", className: "Warlock", count: 2, skillIds: ["arcana", "deception", "history", "intimidation", "investigation", "nature", "religion"], source: DND_5E_SRD_VERSION },
+  { templateId: "wizard", className: "Wizard", count: 2, skillIds: ["arcana", "history", "insight", "investigation", "medicine", "nature", "religion"], source: DND_5E_SRD_VERSION }
+];
+
+const DND_5E_SRD_LANGUAGE_OPTIONS: Dnd5eSrdLanguageOption[] = [
+  { id: "common", label: "Common", category: "standard", source: DND_5E_SRD_VERSION },
+  { id: "common-sign-language", label: "Common Sign Language", category: "standard", source: DND_5E_SRD_VERSION },
+  { id: "draconic", label: "Draconic", category: "standard", source: DND_5E_SRD_VERSION },
+  { id: "dwarvish", label: "Dwarvish", category: "standard", source: DND_5E_SRD_VERSION },
+  { id: "elvish", label: "Elvish", category: "standard", source: DND_5E_SRD_VERSION },
+  { id: "giant", label: "Giant", category: "standard", source: DND_5E_SRD_VERSION },
+  { id: "gnomish", label: "Gnomish", category: "standard", source: DND_5E_SRD_VERSION },
+  { id: "goblin", label: "Goblin", category: "standard", source: DND_5E_SRD_VERSION },
+  { id: "halfling", label: "Halfling", category: "standard", source: DND_5E_SRD_VERSION },
+  { id: "orc", label: "Orc", category: "standard", source: DND_5E_SRD_VERSION },
+  { id: "abyssal", label: "Abyssal", category: "rare", source: DND_5E_SRD_VERSION },
+  { id: "celestial", label: "Celestial", category: "rare", source: DND_5E_SRD_VERSION },
+  { id: "deep-speech", label: "Deep Speech", category: "rare", source: DND_5E_SRD_VERSION },
+  { id: "druidic", label: "Druidic", category: "rare", source: DND_5E_SRD_VERSION },
+  { id: "infernal", label: "Infernal", category: "rare", source: DND_5E_SRD_VERSION },
+  { id: "primordial", label: "Primordial", category: "rare", source: DND_5E_SRD_VERSION },
+  { id: "sylvan", label: "Sylvan", category: "rare", source: DND_5E_SRD_VERSION },
+  { id: "thieves-cant", label: "Thieves' Cant", category: "rare", source: DND_5E_SRD_VERSION },
+  { id: "undercommon", label: "Undercommon", category: "rare", source: DND_5E_SRD_VERSION }
+];
+
+const DND_5E_SRD_ORIGIN_LANGUAGE_CHOICE: Dnd5eSrdOriginLanguageChoice = {
+  count: 2,
+  fixedLanguageIds: ["common"],
+  languageIds: DND_5E_SRD_LANGUAGE_OPTIONS.filter((language) => language.category === "standard" && language.id !== "common").map((language) => language.id),
+  source: DND_5E_SRD_VERSION
+};
+
+const DND_5E_SRD_CLASS_LANGUAGE_CHOICES: Dnd5eSrdClassLanguageChoice[] = DND_5E_SRD_CLASS_SKILL_CHOICES.map(({ templateId, className }) => ({
+  templateId,
+  className,
+  count: templateId === "rogue" ? 1 : 0,
+  fixedLanguageIds: templateId === "druid" ? ["druidic"] : templateId === "rogue" ? ["thieves-cant"] : [],
+  languageIds: templateId === "rogue" ? DND_5E_SRD_LANGUAGE_OPTIONS.filter((language) => language.id !== "thieves-cant").map((language) => language.id) : [],
+  source: DND_5E_SRD_VERSION
+}));
+
+const DND_5E_SRD_ARTISAN_TOOL_IDS = [
+  "alchemists-supplies", "brewers-supplies", "calligraphers-supplies", "carpenters-tools", "cartographers-tools",
+  "cobblers-tools", "cooks-utensils", "glassblowers-tools", "jewelers-tools", "leatherworkers-tools", "masons-tools",
+  "painters-supplies", "potters-tools", "smiths-tools", "tinkers-tools", "weavers-tools", "woodcarvers-tools"
+];
+const DND_5E_SRD_GAMING_SET_IDS = ["dice-set", "dragonchess-set", "playing-cards", "three-dragon-ante-set"];
+const DND_5E_SRD_MUSICAL_INSTRUMENT_IDS = ["bagpipes", "drum", "dulcimer", "flute", "horn", "lute", "lyre", "pan-flute", "shawm", "viol"];
+const DND_5E_SRD_HOLY_SYMBOL_IDS = ["holy-symbol-amulet", "holy-symbol-emblem", "holy-symbol-reliquary"];
+
+const equipmentGrant = (entryId: string, quantity?: number, data?: Record<string, unknown>): Dnd5eSrdEquipmentGrant => ({
+  entryId,
+  ...(quantity === undefined ? {} : { quantity }),
+  ...(data ? { data } : {})
+});
+const equipmentChoice = (
+  id: string,
+  label: string,
+  optionIds: string[],
+  matchSelection?: Dnd5eSrdEquipmentChoice["matchSelection"]
+): Dnd5eSrdEquipmentChoice => ({ id, label, count: 1, optionIds, ...(matchSelection ? { matchSelection } : {}) });
+const equipmentPackage = (
+  id: string,
+  label: string,
+  gp: number,
+  grants: Dnd5eSrdEquipmentGrant[] = [],
+  choices: Dnd5eSrdEquipmentChoice[] = []
+): Dnd5eSrdStartingEquipmentPackage => ({ id, label, gp, grants, choices });
+
+const DND_5E_SRD_CLASS_STARTING_EQUIPMENT: Dnd5eSrdClassStartingEquipment[] = [
+  {
+    templateId: "barbarian", className: "Barbarian", source: DND_5E_SRD_VERSION, sourcePage: 28, sourcePdfPage: 27,
+    toolProficiencyChoice: { count: 0, optionIds: [] }, fixedToolProficiencyIds: [],
+    packages: [
+      equipmentPackage("equipment-a", "Greataxe, four Handaxes, Explorer's Pack, and 15 GP", 15, [equipmentGrant("greataxe"), equipmentGrant("handaxe", 4), equipmentGrant("explorers-pack")]),
+      equipmentPackage("gold", "75 GP", 75)
+    ]
+  },
+  {
+    templateId: "bard", className: "Bard", source: DND_5E_SRD_VERSION, sourcePage: 31, sourcePdfPage: 30,
+    toolProficiencyChoice: { count: 3, optionIds: DND_5E_SRD_MUSICAL_INSTRUMENT_IDS }, fixedToolProficiencyIds: [],
+    packages: [
+      equipmentPackage("equipment-a", "Leather Armor, two Daggers, a Musical Instrument, Entertainer's Pack, and 19 GP", 19, [equipmentGrant("leather-armor"), equipmentGrant("dagger", 2), equipmentGrant("entertainers-pack")], [equipmentChoice("instrument", "Musical Instrument", DND_5E_SRD_MUSICAL_INSTRUMENT_IDS)]),
+      equipmentPackage("gold", "90 GP", 90)
+    ]
+  },
+  {
+    templateId: "cleric", className: "Cleric", source: DND_5E_SRD_VERSION, sourcePage: 36, sourcePdfPage: 35,
+    toolProficiencyChoice: { count: 0, optionIds: [] }, fixedToolProficiencyIds: [],
+    packages: [
+      equipmentPackage("equipment-a", "Chain Shirt, Shield, Mace, Holy Symbol, Priest's Pack, and 7 GP", 7, [equipmentGrant("chain-shirt"), equipmentGrant("shield-armor"), equipmentGrant("mace"), equipmentGrant("priests-pack")], [equipmentChoice("holy-symbol", "Holy Symbol", DND_5E_SRD_HOLY_SYMBOL_IDS)]),
+      equipmentPackage("gold", "110 GP", 110)
+    ]
+  },
+  {
+    templateId: "druid", className: "Druid", source: DND_5E_SRD_VERSION, sourcePage: 41, sourcePdfPage: 40,
+    toolProficiencyChoice: { count: 0, optionIds: [] }, fixedToolProficiencyIds: ["herbalism-kit"],
+    packages: [
+      equipmentPackage("equipment-a", "Leather Armor, Shield, Sickle, Druidic Focus (Quarterstaff), Explorer's Pack, Herbalism Kit, and 9 GP", 9, [equipmentGrant("leather-armor"), equipmentGrant("shield-armor"), equipmentGrant("sickle"), equipmentGrant("druidic-focus-wooden-staff"), equipmentGrant("explorers-pack"), equipmentGrant("herbalism-kit")]),
+      equipmentPackage("gold", "50 GP", 50)
+    ]
+  },
+  {
+    templateId: "fighter", className: "Fighter", source: DND_5E_SRD_VERSION, sourcePage: 47, sourcePdfPage: 46,
+    toolProficiencyChoice: { count: 0, optionIds: [] }, fixedToolProficiencyIds: [],
+    packages: [
+      equipmentPackage("equipment-a", "Chain Mail, Greatsword, Flail, eight Javelins, Dungeoneer's Pack, and 4 GP", 4, [equipmentGrant("chain-mail"), equipmentGrant("greatsword"), equipmentGrant("flail"), equipmentGrant("javelin", 8), equipmentGrant("dungeoneers-pack")]),
+      equipmentPackage("equipment-b", "Studded Leather Armor, Scimitar, Shortsword, Longbow, 20 Arrows, Quiver, Dungeoneer's Pack, and 11 GP", 11, [equipmentGrant("studded-leather-armor"), equipmentGrant("scimitar"), equipmentGrant("shortsword"), equipmentGrant("longbow"), equipmentGrant("arrows"), equipmentGrant("quiver"), equipmentGrant("dungeoneers-pack")]),
+      equipmentPackage("gold", "155 GP", 155)
+    ]
+  },
+  {
+    templateId: "monk", className: "Monk", source: DND_5E_SRD_VERSION, sourcePage: 49, sourcePdfPage: 48,
+    toolProficiencyChoice: { count: 1, optionIds: [...DND_5E_SRD_ARTISAN_TOOL_IDS, ...DND_5E_SRD_MUSICAL_INSTRUMENT_IDS] }, fixedToolProficiencyIds: [],
+    packages: [
+      equipmentPackage("equipment-a", "Spear, five Daggers, the chosen Artisan's Tools or Musical Instrument, Explorer's Pack, and 11 GP", 11, [equipmentGrant("spear"), equipmentGrant("dagger", 5), equipmentGrant("explorers-pack")], [equipmentChoice("chosen-tool", "Chosen Tool Proficiency", [...DND_5E_SRD_ARTISAN_TOOL_IDS, ...DND_5E_SRD_MUSICAL_INSTRUMENT_IDS], "class-tool-proficiency")]),
+      equipmentPackage("gold", "50 GP", 50)
+    ]
+  },
+  {
+    templateId: "paladin", className: "Paladin", source: DND_5E_SRD_VERSION, sourcePage: 53, sourcePdfPage: 52,
+    toolProficiencyChoice: { count: 0, optionIds: [] }, fixedToolProficiencyIds: [],
+    packages: [
+      equipmentPackage("equipment-a", "Chain Mail, Shield, Longsword, six Javelins, Holy Symbol, Priest's Pack, and 9 GP", 9, [equipmentGrant("chain-mail"), equipmentGrant("shield-armor"), equipmentGrant("longsword"), equipmentGrant("javelin", 6), equipmentGrant("priests-pack")], [equipmentChoice("holy-symbol", "Holy Symbol", DND_5E_SRD_HOLY_SYMBOL_IDS)]),
+      equipmentPackage("gold", "150 GP", 150)
+    ]
+  },
+  {
+    templateId: "ranger", className: "Ranger", source: DND_5E_SRD_VERSION, sourcePage: 57, sourcePdfPage: 56,
+    toolProficiencyChoice: { count: 0, optionIds: [] }, fixedToolProficiencyIds: [],
+    packages: [
+      equipmentPackage("equipment-a", "Studded Leather Armor, Scimitar, Shortsword, Longbow, 20 Arrows, Quiver, Druidic Focus (sprig of mistletoe), Explorer's Pack, and 7 GP", 7, [equipmentGrant("studded-leather-armor"), equipmentGrant("scimitar"), equipmentGrant("shortsword"), equipmentGrant("longbow"), equipmentGrant("arrows"), equipmentGrant("quiver"), equipmentGrant("druidic-focus-sprig-of-mistletoe"), equipmentGrant("explorers-pack")]),
+      equipmentPackage("gold", "150 GP", 150)
+    ]
+  },
+  {
+    templateId: "rogue", className: "Rogue", source: DND_5E_SRD_VERSION, sourcePage: 61, sourcePdfPage: 60,
+    toolProficiencyChoice: { count: 0, optionIds: [] }, fixedToolProficiencyIds: ["thieves-tools"],
+    packages: [
+      equipmentPackage("equipment-a", "Leather Armor, two Daggers, Shortsword, Shortbow, 20 Arrows, Quiver, Thieves' Tools, Burglar's Pack, and 8 GP", 8, [equipmentGrant("leather-armor"), equipmentGrant("dagger", 2), equipmentGrant("shortsword"), equipmentGrant("shortbow"), equipmentGrant("arrows"), equipmentGrant("quiver"), equipmentGrant("thieves-tools"), equipmentGrant("burglars-pack")]),
+      equipmentPackage("gold", "100 GP", 100)
+    ]
+  },
+  {
+    templateId: "sorcerer", className: "Sorcerer", source: DND_5E_SRD_VERSION, sourcePage: 64, sourcePdfPage: 63,
+    toolProficiencyChoice: { count: 0, optionIds: [] }, fixedToolProficiencyIds: [],
+    packages: [
+      equipmentPackage("equipment-a", "Spear, two Daggers, Arcane Focus (crystal), Dungeoneer's Pack, and 28 GP", 28, [equipmentGrant("spear"), equipmentGrant("dagger", 2), equipmentGrant("arcane-focus-crystal"), equipmentGrant("dungeoneers-pack")]),
+      equipmentPackage("gold", "50 GP", 50)
+    ]
+  },
+  {
+    templateId: "warlock", className: "Warlock", source: DND_5E_SRD_VERSION, sourcePage: 70, sourcePdfPage: 69,
+    toolProficiencyChoice: { count: 0, optionIds: [] }, fixedToolProficiencyIds: [],
+    packages: [
+      equipmentPackage("equipment-a", "Leather Armor, Sickle, two Daggers, Arcane Focus (orb), Book (occult lore), Scholar's Pack, and 15 GP", 15, [equipmentGrant("leather-armor"), equipmentGrant("sickle"), equipmentGrant("dagger", 2), equipmentGrant("arcane-focus-orb"), equipmentGrant("book", undefined, { subject: "occult lore" }), equipmentGrant("scholars-pack")]),
+      equipmentPackage("gold", "100 GP", 100)
+    ]
+  },
+  {
+    templateId: "wizard", className: "Wizard", source: DND_5E_SRD_VERSION, sourcePage: 77, sourcePdfPage: 76,
+    toolProficiencyChoice: { count: 0, optionIds: [] }, fixedToolProficiencyIds: [],
+    packages: [
+      equipmentPackage("equipment-a", "Two Daggers, Arcane Focus (Quarterstaff), Robe, Spellbook, Scholar's Pack, and 5 GP", 5, [equipmentGrant("dagger", 2), equipmentGrant("arcane-focus-staff"), equipmentGrant("robe"), equipmentGrant("spellbook"), equipmentGrant("scholars-pack")]),
+      equipmentPackage("gold", "55 GP", 55)
+    ]
+  }
+];
+
+const DND_5E_SRD_BACKGROUND_STARTING_EQUIPMENT: Dnd5eSrdBackgroundStartingEquipment[] = [
+  {
+    backgroundId: "acolyte", backgroundName: "Acolyte", source: DND_5E_SRD_VERSION, sourcePage: 83, sourcePdfPage: 82,
+    toolProficiencyChoice: { count: 0, optionIds: [] },
+    packages: [
+      equipmentPackage("equipment-a", "Calligrapher's Supplies, Book (prayers), Holy Symbol, ten Parchment sheets, Robe, and 8 GP", 8, [equipmentGrant("calligraphers-supplies"), equipmentGrant("book", undefined, { subject: "prayers" }), equipmentGrant("parchment", 10), equipmentGrant("robe")], [equipmentChoice("holy-symbol", "Holy Symbol", DND_5E_SRD_HOLY_SYMBOL_IDS)]),
+      equipmentPackage("gold", "50 GP", 50)
+    ]
+  },
+  {
+    backgroundId: "criminal", backgroundName: "Criminal", source: DND_5E_SRD_VERSION, sourcePage: 83, sourcePdfPage: 82,
+    toolProficiencyChoice: { count: 0, optionIds: [] },
+    packages: [
+      equipmentPackage("equipment-a", "Two Daggers, Thieves' Tools, Crowbar, two Pouches, Traveler's Clothes, and 16 GP", 16, [equipmentGrant("dagger", 2), equipmentGrant("thieves-tools"), equipmentGrant("crowbar"), equipmentGrant("pouch", 2), equipmentGrant("travelers-clothes")]),
+      equipmentPackage("gold", "50 GP", 50)
+    ]
+  },
+  {
+    backgroundId: "sage", backgroundName: "Sage", source: DND_5E_SRD_VERSION, sourcePage: 83, sourcePdfPage: 82,
+    toolProficiencyChoice: { count: 0, optionIds: [] },
+    packages: [
+      equipmentPackage("equipment-a", "Quarterstaff, Calligrapher's Supplies, Book (history), eight Parchment sheets, Robe, and 8 GP", 8, [equipmentGrant("quarterstaff"), equipmentGrant("calligraphers-supplies"), equipmentGrant("book", undefined, { subject: "history" }), equipmentGrant("parchment", 8), equipmentGrant("robe")]),
+      equipmentPackage("gold", "50 GP", 50)
+    ]
+  },
+  {
+    backgroundId: "soldier", backgroundName: "Soldier", source: DND_5E_SRD_VERSION, sourcePage: 83, sourcePdfPage: 82,
+    toolProficiencyChoice: { count: 1, optionIds: DND_5E_SRD_GAMING_SET_IDS },
+    packages: [
+      equipmentPackage("equipment-a", "Spear, Shortbow, 20 Arrows, chosen Gaming Set, Healer's Kit, Quiver, Traveler's Clothes, and 14 GP", 14, [equipmentGrant("spear"), equipmentGrant("shortbow"), equipmentGrant("arrows"), equipmentGrant("healers-kit"), equipmentGrant("quiver"), equipmentGrant("travelers-clothes")], [equipmentChoice("chosen-gaming-set", "Chosen Gaming Set Proficiency", DND_5E_SRD_GAMING_SET_IDS, "background-tool-proficiency")]),
+      equipmentPackage("gold", "50 GP", 50)
+    ]
+  }
+];
+
+const DND_5E_SRD_WEAPON_IDS = [
+  "club", "dagger", "greatclub", "handaxe", "javelin", "light-hammer", "mace", "quarterstaff", "sickle", "spear",
+  "dart", "light-crossbow", "shortbow", "sling", "battleaxe", "flail", "glaive", "greataxe", "greatsword", "halberd",
+  "lance", "longsword", "maul", "morningstar", "pike", "rapier", "scimitar", "shortsword", "trident", "warhammer",
+  "war-pick", "whip", "blowgun", "hand-crossbow", "heavy-crossbow", "longbow", "musket", "pistol"
+];
+
+function dnd5eSrdWeaponMasteryOptions(): Dnd5eSrdWeaponMasteryOption[] {
+  return DND_5E_SRD_WEAPON_IDS.flatMap((id) => {
+    const entry = dnd5eSrdCompendiumEntry(id);
+    const weaponCategory = stringValue(entry?.data.weaponCategory);
+    const weaponKind = stringValue(entry?.data.weaponKind);
+    const mastery = stringValue(entry?.data.mastery);
+    if (!entry || (weaponCategory !== "simple" && weaponCategory !== "martial") || (weaponKind !== "melee" && weaponKind !== "ranged") || !mastery) return [];
+    return [{
+      id,
+      name: entry.name,
+      weaponCategory,
+      weaponKind,
+      properties: normalizeStringArray(entry.data.properties),
+      mastery,
+      source: DND_5E_SRD_VERSION,
+      sourcePage: 91 as const,
+      sourcePdfPage: 90 as const
+    }];
+  });
+}
+
+function dnd5eSrdClassWeaponIds(templateId: string): string[] {
+  const options = dnd5eSrdWeaponMasteryOptions();
+  if (templateId === "barbarian") return options.filter((weapon) => weapon.weaponKind === "melee").map((weapon) => weapon.id);
+  if (["fighter", "paladin", "ranger"].includes(templateId)) return options.map((weapon) => weapon.id);
+  if (templateId === "rogue") {
+    return options.filter((weapon) => weapon.weaponCategory === "simple" || weapon.properties.includes("finesse") || weapon.properties.includes("light")).map((weapon) => weapon.id);
+  }
+  return [];
+}
+
+/** Number of simultaneously selected Weapon Mastery weapons at a class level. */
+export function dnd5eSrdWeaponMasteryChoiceCount(className: string, classLevel: number): number {
+  const normalizedClass = className.trim().toLowerCase();
+  const level = Math.max(0, Math.min(20, Math.floor(classLevel)));
+  if (normalizedClass === "fighter") {
+    if (level >= 16) return 6;
+    if (level >= 10) return 5;
+    if (level >= 4) return 4;
+    return level >= 1 ? 3 : 0;
+  }
+  if (normalizedClass === "barbarian") {
+    if (level >= 10) return 4;
+    if (level >= 4) return 3;
+    return level >= 1 ? 2 : 0;
+  }
+  return level >= 1 && ["paladin", "ranger", "rogue"].includes(normalizedClass) ? 2 : 0;
+}
+
+/** Compendium weapon ids eligible for this class's Weapon Mastery selections. */
+export function dnd5eSrdWeaponMasteryEligibleWeaponIds(className: string): string[] {
+  return [...dnd5eSrdClassWeaponIds(className.trim().toLowerCase())];
+}
+
+function dnd5eSrdWeaponMasteryRecord(
+  weaponId: string,
+  className: string,
+  selectedAtLevel: number
+): Record<string, unknown> {
+  const weapon = dnd5eSrdWeaponMasteryOptions().find((option) => option.id === weaponId);
+  if (!weapon) throw new Error(`Unknown Weapon Mastery weapon: ${weaponId}`);
+  return {
+    weaponId,
+    weaponName: weapon.name,
+    weaponCategory: weapon.weaponCategory,
+    weaponKind: weapon.weaponKind,
+    mastery: weapon.mastery,
+    className,
+    source: DND_5E_SRD_VERSION,
+    selectedAtLevel,
+    swapTiming: "manual-long-rest"
+  };
+}
+
+function dnd5eSrdStoredWeaponMasteriesByClass(actor: Actor): Record<string, Record<string, unknown>[]> {
+  const result: Record<string, Record<string, unknown>[]> = {};
+  const storedByClass = recordValue(actor.data.weaponMasteriesByClass);
+  for (const [className, raw] of Object.entries(storedByClass)) {
+    if (!Array.isArray(raw)) continue;
+    result[className] = raw.map((entry) => cloneJsonRecord(recordValue(entry))).filter((entry) => stringValue(entry.weaponId));
+  }
+  const primaryClass = stringValue(actor.data.class);
+  const flat = Array.isArray(actor.data.weaponMasteries) ? actor.data.weaponMasteries : [];
+  for (const raw of flat) {
+    const entry = cloneJsonRecord(recordValue(raw));
+    const weaponId = stringValue(entry.weaponId);
+    const className = stringValue(entry.className) ?? primaryClass;
+    if (!weaponId || !className) continue;
+    const key = Object.keys(result).find((candidate) => candidate.toLowerCase() === className.toLowerCase()) ?? className;
+    result[key] ??= [];
+    if (!result[key]!.some((candidate) => stringValue(candidate.weaponId) === weaponId)) result[key]!.push({ ...entry, className: key });
+  }
+  return result;
+}
+
+/**
+ * Applies a complete replacement mastery selection for the advanced class.
+ * Existing complete selections are preserved; missing or newly increased
+ * selections are never filled silently.
+ */
+export function applyDnd5eSrdWeaponMasteryAdvancement(
+  actor: Actor,
+  className: string,
+  classLevel: number,
+  weaponMasteryChoices?: string[]
+): Record<string, unknown> {
+  const canonicalClassName = Object.keys(dnd5eSrdMulticlassPrerequisites).find((candidate) => candidate.toLowerCase() === className.toLowerCase()) ?? className;
+  const requiredCount = dnd5eSrdWeaponMasteryChoiceCount(canonicalClassName, classLevel);
+  const byClass = dnd5eSrdStoredWeaponMasteriesByClass(actor);
+  const storedKey = Object.keys(byClass).find((candidate) => candidate.toLowerCase() === canonicalClassName.toLowerCase());
+  const existing = storedKey ? byClass[storedKey]! : [];
+  if (storedKey && storedKey !== canonicalClassName) {
+    delete byClass[storedKey];
+    byClass[canonicalClassName] = existing;
+  }
+
+  if (weaponMasteryChoices !== undefined) {
+    const normalized = weaponMasteryChoices.map((choice) => normalizeDnd5eSrdOriginId(choice));
+    if (requiredCount === 0 && normalized.length > 0) throw new Error(`${canonicalClassName} has no Weapon Mastery selections at level ${classLevel}`);
+    if (normalized.length !== requiredCount) throw new Error(`${canonicalClassName} level ${classLevel} requires exactly ${requiredCount} Weapon Mastery weapons`);
+    if (new Set(normalized).size !== normalized.length) throw new Error("Weapon Mastery choices cannot repeat a weapon");
+    const eligible = new Set(dnd5eSrdWeaponMasteryEligibleWeaponIds(canonicalClassName));
+    const invalid = normalized.find((weaponId) => !eligible.has(weaponId));
+    if (invalid) throw new Error(`${invalid} is not eligible for ${canonicalClassName} Weapon Mastery`);
+    if (requiredCount > 0) byClass[canonicalClassName] = normalized.map((weaponId) => dnd5eSrdWeaponMasteryRecord(weaponId, canonicalClassName, classLevel));
+    else delete byClass[canonicalClassName];
+  } else if (existing.length !== requiredCount) {
+    throw new Error(`${canonicalClassName} level ${classLevel} requires an explicit complete selection of ${requiredCount} Weapon Mastery weapons`);
+  }
+
+  const flattened: Record<string, unknown>[] = [];
+  const seen = new Set<string>();
+  for (const entries of Object.values(byClass)) {
+    for (const entry of entries) {
+      const weaponId = stringValue(entry.weaponId);
+      if (!weaponId || seen.has(weaponId)) continue;
+      seen.add(weaponId);
+      flattened.push(cloneJsonRecord(entry));
+    }
+  }
+  return { ...actor.data, weaponMasteriesByClass: byClass, weaponMasteries: flattened };
+}
+
+function dnd5eSrdActorHasWeaponMastery(actor: Actor, item: Item, itemData: Record<string, unknown>): boolean {
+  const candidateIds = new Set([
+    stringValue(itemData.compendiumId),
+    stringValue(itemData.weaponId),
+    DND_5E_SRD_WEAPON_IDS.includes(item.id) ? item.id : undefined,
+    normalizeDnd5eSrdOriginId(item.name)
+  ].filter((value): value is string => Boolean(value)));
+  const masteries = Array.isArray(actor.data.weaponMasteries) ? actor.data.weaponMasteries : [];
+  return masteries.some((raw) => {
+    const entry = recordValue(raw);
+    const weaponId = stringValue(entry.weaponId);
+    return Boolean(weaponId && candidateIds.has(weaponId));
+  });
+}
+
+const DND_5E_SRD_CLASS_WEAPON_MASTERY_CHOICES: Dnd5eSrdClassWeaponMasteryChoice[] = DND_5E_SRD_CLASS_SKILL_CHOICES.map(({ templateId, className }) => {
+  const pageByClass: Record<string, [number, number]> = {
+    barbarian: [29, 28], fighter: [48, 47], paladin: [54, 53], ranger: [58, 57], rogue: [62, 61]
+  };
+  const [sourcePage, sourcePdfPage] = pageByClass[templateId] ?? [0, 0];
+  return {
+    templateId,
+    className,
+    count: templateId === "fighter" ? 3 : ["barbarian", "paladin", "ranger", "rogue"].includes(templateId) ? 2 : 0,
+    weaponIds: dnd5eSrdClassWeaponIds(templateId),
+    source: DND_5E_SRD_VERSION,
+    sourcePage,
+    sourcePdfPage
+  };
+});
+
+function dnd5eSrdSpellChoiceOptions(): Dnd5eSrdSpellChoiceOption[] {
+  return dnd5eSrdCompendium()
+    .filter((entry) => entry.type === "spell" && (entry.data.level === 0 || entry.data.level === 1) && normalizeStringArray(entry.data.classes).length > 0)
+    .map((entry) => ({
+      id: entry.id,
+      name: entry.name,
+      level: entry.data.level as 0 | 1,
+      classes: [...normalizeStringArray(entry.data.classes)],
+      ritual: booleanValue(entry.data.ritual),
+      source: DND_5E_SRD_VERSION as typeof DND_5E_SRD_VERSION
+    }))
+    .sort((left, right) => left.level - right.level || left.name.localeCompare(right.name));
+}
+
+const DND_5E_SRD_CLASS_SPELL_CHOICE_SEEDS: Array<Omit<Dnd5eSrdClassSpellChoice, "cantripIds" | "levelOneSpellIds" | "source">> = [
+  { templateId: "barbarian", className: "Barbarian", cantripCount: 0, preparedSpellCount: 0, spellbookSpellCount: 0, alwaysPreparedSpellIds: [], slotPool: "none", slotCount: 0, slotRecovery: "none", changeTiming: "none", sourcePage: 28, sourcePdfPage: 27 },
+  { templateId: "bard", className: "Bard", spellcastingAbility: "charisma", cantripCount: 2, preparedSpellCount: 4, spellbookSpellCount: 0, alwaysPreparedSpellIds: [], slotPool: "spellcasting", slotCount: 2, slotRecovery: "long", changeTiming: "class-level", sourcePage: 31, sourcePdfPage: 30 },
+  { templateId: "cleric", className: "Cleric", spellcastingAbility: "wisdom", cantripCount: 3, preparedSpellCount: 4, spellbookSpellCount: 0, alwaysPreparedSpellIds: [], slotPool: "spellcasting", slotCount: 2, slotRecovery: "long", changeTiming: "long-rest", sourcePage: 36, sourcePdfPage: 35 },
+  { templateId: "druid", className: "Druid", spellcastingAbility: "wisdom", cantripCount: 2, preparedSpellCount: 4, spellbookSpellCount: 0, alwaysPreparedSpellIds: ["speak-with-animals"], slotPool: "spellcasting", slotCount: 2, slotRecovery: "long", changeTiming: "long-rest", sourcePage: 41, sourcePdfPage: 40 },
+  { templateId: "fighter", className: "Fighter", cantripCount: 0, preparedSpellCount: 0, spellbookSpellCount: 0, alwaysPreparedSpellIds: [], slotPool: "none", slotCount: 0, slotRecovery: "none", changeTiming: "none", sourcePage: 47, sourcePdfPage: 46 },
+  { templateId: "monk", className: "Monk", cantripCount: 0, preparedSpellCount: 0, spellbookSpellCount: 0, alwaysPreparedSpellIds: [], slotPool: "none", slotCount: 0, slotRecovery: "none", changeTiming: "none", sourcePage: 49, sourcePdfPage: 48 },
+  { templateId: "paladin", className: "Paladin", spellcastingAbility: "charisma", cantripCount: 0, preparedSpellCount: 2, spellbookSpellCount: 0, alwaysPreparedSpellIds: [], slotPool: "spellcasting", slotCount: 2, slotRecovery: "long", changeTiming: "long-rest", sourcePage: 53, sourcePdfPage: 52 },
+  { templateId: "ranger", className: "Ranger", spellcastingAbility: "wisdom", cantripCount: 0, preparedSpellCount: 2, spellbookSpellCount: 0, alwaysPreparedSpellIds: ["hunters-mark"], slotPool: "spellcasting", slotCount: 2, slotRecovery: "long", changeTiming: "class-level", sourcePage: 57, sourcePdfPage: 56 },
+  { templateId: "rogue", className: "Rogue", cantripCount: 0, preparedSpellCount: 0, spellbookSpellCount: 0, alwaysPreparedSpellIds: [], slotPool: "none", slotCount: 0, slotRecovery: "none", changeTiming: "none", sourcePage: 61, sourcePdfPage: 60 },
+  { templateId: "sorcerer", className: "Sorcerer", spellcastingAbility: "charisma", cantripCount: 4, preparedSpellCount: 2, spellbookSpellCount: 0, alwaysPreparedSpellIds: [], slotPool: "spellcasting", slotCount: 2, slotRecovery: "long", changeTiming: "class-level", sourcePage: 64, sourcePdfPage: 63 },
+  { templateId: "warlock", className: "Warlock", spellcastingAbility: "charisma", cantripCount: 2, preparedSpellCount: 2, spellbookSpellCount: 0, alwaysPreparedSpellIds: [], slotPool: "pact-magic", slotCount: 1, slotRecovery: "short", changeTiming: "class-level", sourcePage: 70, sourcePdfPage: 69 },
+  { templateId: "wizard", className: "Wizard", spellcastingAbility: "intelligence", cantripCount: 3, preparedSpellCount: 4, spellbookSpellCount: 6, alwaysPreparedSpellIds: [], slotPool: "spellcasting", slotCount: 2, slotRecovery: "long", changeTiming: "long-rest", sourcePage: 77, sourcePdfPage: 76 }
+];
+
+function dnd5eSrdClassSpellChoices(): Dnd5eSrdClassSpellChoice[] {
+  const spells = dnd5eSrdSpellChoiceOptions();
+  return DND_5E_SRD_CLASS_SPELL_CHOICE_SEEDS.map((seed) => ({
+    ...seed,
+    cantripIds: spells.filter((spell) => spell.level === 0 && spell.classes.includes(seed.templateId)).map((spell) => spell.id),
+    levelOneSpellIds: spells.filter((spell) => spell.level === 1 && spell.classes.includes(seed.templateId)).map((spell) => spell.id),
+    alwaysPreparedSpellIds: [...seed.alwaysPreparedSpellIds],
+    source: DND_5E_SRD_VERSION
+  }));
+}
+
+const DND_5E_SRD_FIGHTING_STYLES = [
+  { id: "archery", name: "Archery", summary: "+2 to attack rolls made with Ranged weapons.", automation: "manual" as const, source: DND_5E_SRD_VERSION as typeof DND_5E_SRD_VERSION, sourcePage: 87 as const, sourcePdfPage: 86 as const },
+  { id: "defense", name: "Defense", summary: "+1 Armor Class while wearing Light, Medium, or Heavy armor.", automation: "manual" as const, source: DND_5E_SRD_VERSION as typeof DND_5E_SRD_VERSION, sourcePage: 88 as const, sourcePdfPage: 87 as const },
+  { id: "great-weapon-fighting", name: "Great Weapon Fighting", summary: "Treat a 1 or 2 on a two-handed or versatile melee weapon damage die as a 3.", automation: "manual" as const, source: DND_5E_SRD_VERSION as typeof DND_5E_SRD_VERSION, sourcePage: 88 as const, sourcePdfPage: 87 as const },
+  { id: "two-weapon-fighting", name: "Two-Weapon Fighting", summary: "Add the attack ability modifier to the extra attack damage granted by the Light property.", automation: "manual" as const, source: DND_5E_SRD_VERSION as typeof DND_5E_SRD_VERSION, sourcePage: 88 as const, sourcePdfPage: 87 as const }
+];
+
+const DND_5E_SRD_DIVINE_ORDERS = [
+  { id: "protector", name: "Protector", summary: "Gain Martial weapon proficiency and Heavy armor training.", automation: "manual" as const, source: DND_5E_SRD_VERSION as typeof DND_5E_SRD_VERSION, sourcePage: 37 as const, sourcePdfPage: 36 as const },
+  { id: "thaumaturge", name: "Thaumaturge", summary: "Learn one extra Cleric cantrip and add Wisdom modifier (minimum +1) to Intelligence (Arcana or Religion) checks.", automation: "manual" as const, source: DND_5E_SRD_VERSION as typeof DND_5E_SRD_VERSION, sourcePage: 37 as const, sourcePdfPage: 36 as const }
+];
+
+const DND_5E_SRD_PRIMAL_ORDERS = [
+  { id: "magician", name: "Magician", summary: "Learn one extra Druid cantrip and add Wisdom modifier (minimum +1) to Intelligence (Arcana or Nature) checks.", automation: "manual" as const, source: DND_5E_SRD_VERSION as typeof DND_5E_SRD_VERSION, sourcePage: 42 as const, sourcePdfPage: 41 as const },
+  { id: "warden", name: "Warden", summary: "Gain Martial weapon proficiency and Medium armor training.", automation: "manual" as const, source: DND_5E_SRD_VERSION as typeof DND_5E_SRD_VERSION, sourcePage: 42 as const, sourcePdfPage: 41 as const }
+];
+
+const DND_5E_SRD_LEVEL_ONE_ELDRITCH_INVOCATIONS: Dnd5eSrdEldritchInvocationOption[] = [
+  { id: "armor-of-shadows", name: "Armor of Shadows", minimumWarlockLevel: 1, grantedSpellId: "mage-armor", summary: "Cast Mage Armor on yourself without expending a spell slot.", automation: "item", source: DND_5E_SRD_VERSION, sourcePage: 72, sourcePdfPage: 71 },
+  { id: "eldritch-mind", name: "Eldritch Mind", minimumWarlockLevel: 1, summary: "Advantage on Constitution saving throws made to maintain Concentration.", automation: "manual", source: DND_5E_SRD_VERSION, sourcePage: 72, sourcePdfPage: 71 },
+  { id: "pact-of-the-blade", name: "Pact of the Blade", minimumWarlockLevel: 1, summary: "Conjure or bond a pact weapon; weapon selection and active bond remain manual runtime choices.", automation: "manual", source: DND_5E_SRD_VERSION, sourcePage: 74, sourcePdfPage: 73 },
+  { id: "pact-of-the-chain", name: "Pact of the Chain", minimumWarlockLevel: 1, grantedSpellId: "find-familiar", summary: "Learn Find Familiar and cast it as a Magic action without expending a spell slot.", automation: "item", source: DND_5E_SRD_VERSION, sourcePage: 74, sourcePdfPage: 73 },
+  { id: "pact-of-the-tome", name: "Pact of the Tome", minimumWarlockLevel: 1, pactTomeCantripCount: 3, pactTomeRitualCount: 2, summary: "Choose three cantrips and two level 1 ritual spells from any class list; the book keeps them prepared as Warlock spells.", automation: "item", source: DND_5E_SRD_VERSION, sourcePage: 74, sourcePdfPage: 73 }
+];
+
+const DND_5E_SRD_ORIGIN_FEAT_OPTIONS: Dnd5eSrdOriginFeatOption[] = [
+  { id: "Alert", name: "Alert", source: DND_5E_SRD_VERSION, sourcePage: 87, sourcePdfPage: 86 },
+  { id: "Magic Initiate (Cleric)", name: "Magic Initiate (Cleric)", magicInitiateClass: "cleric", cantripCount: 2, levelOneSpellCount: 1, source: DND_5E_SRD_VERSION, sourcePage: 87, sourcePdfPage: 86 },
+  { id: "Magic Initiate (Druid)", name: "Magic Initiate (Druid)", magicInitiateClass: "druid", cantripCount: 2, levelOneSpellCount: 1, source: DND_5E_SRD_VERSION, sourcePage: 87, sourcePdfPage: 86 },
+  { id: "Magic Initiate (Wizard)", name: "Magic Initiate (Wizard)", magicInitiateClass: "wizard", cantripCount: 2, levelOneSpellCount: 1, source: DND_5E_SRD_VERSION, sourcePage: 87, sourcePdfPage: 86 },
+  { id: "Savage Attacker", name: "Savage Attacker", source: DND_5E_SRD_VERSION, sourcePage: 87, sourcePdfPage: 86 },
+  { id: "Skilled", name: "Skilled", skilledProficiencyCount: 3, source: DND_5E_SRD_VERSION, sourcePage: 87, sourcePdfPage: 86 }
+];
+
+const DND_5E_SRD_LEVEL_ONE_CLASS_FEATURE_CHOICES: Dnd5eSrdLevelOneClassFeatureChoice[] = [
+  { templateId: "fighter", field: "fightingStyle", count: 1, optionIds: DND_5E_SRD_FIGHTING_STYLES.map((option) => option.id), source: DND_5E_SRD_VERSION, sourcePage: 47, sourcePdfPage: 46 },
+  { templateId: "cleric", field: "divineOrder", count: 1, optionIds: DND_5E_SRD_DIVINE_ORDERS.map((option) => option.id), source: DND_5E_SRD_VERSION, sourcePage: 37, sourcePdfPage: 36 },
+  { templateId: "druid", field: "primalOrder", count: 1, optionIds: DND_5E_SRD_PRIMAL_ORDERS.map((option) => option.id), source: DND_5E_SRD_VERSION, sourcePage: 42, sourcePdfPage: 41 },
+  { templateId: "rogue", field: "rogueExpertiseChoices", count: 2, optionIds: [], source: DND_5E_SRD_VERSION, sourcePage: 61, sourcePdfPage: 60 },
+  { templateId: "warlock", field: "eldritchInvocation", count: 1, optionIds: DND_5E_SRD_LEVEL_ONE_ELDRITCH_INVOCATIONS.map((option) => option.id), source: DND_5E_SRD_VERSION, sourcePage: 70, sourcePdfPage: 69 }
+];
+
 export function dnd5eSrdCharacterOrigins(): Dnd5eSrdCharacterOrigins {
   return {
     backgrounds: DND_5E_SRD_BACKGROUNDS.map((background) => ({ ...background, abilityScores: [...background.abilityScores], skillProficiencies: [...background.skillProficiencies], toolProficiencies: [...background.toolProficiencies] })),
     species: DND_5E_SRD_SPECIES.map((species) => ({ ...species, traits: [...species.traits], senses: species.senses ? [...species.senses] : undefined })),
+    draconicAncestors: DND_5E_SRD_DRACONIC_ANCESTORS.map((ancestor) => ({ ...ancestor })),
+    giantAncestries: DND_5E_SRD_GIANT_ANCESTRIES.map((ancestry) => ({ ...ancestry })),
+    classSkillChoices: DND_5E_SRD_CLASS_SKILL_CHOICES.map((choice) => ({ ...choice, skillIds: [...choice.skillIds] })),
+    languages: DND_5E_SRD_LANGUAGE_OPTIONS.map((language) => ({ ...language })),
+    originLanguageChoice: {
+      ...DND_5E_SRD_ORIGIN_LANGUAGE_CHOICE,
+      fixedLanguageIds: [...DND_5E_SRD_ORIGIN_LANGUAGE_CHOICE.fixedLanguageIds],
+      languageIds: [...DND_5E_SRD_ORIGIN_LANGUAGE_CHOICE.languageIds]
+    },
+    classLanguageChoices: DND_5E_SRD_CLASS_LANGUAGE_CHOICES.map((choice) => ({
+      ...choice,
+      fixedLanguageIds: [...choice.fixedLanguageIds],
+      languageIds: [...choice.languageIds]
+    })),
+    classStartingEquipment: DND_5E_SRD_CLASS_STARTING_EQUIPMENT.map((entry) => ({
+      ...entry,
+      fixedToolProficiencyIds: [...entry.fixedToolProficiencyIds],
+      toolProficiencyChoice: { ...entry.toolProficiencyChoice, optionIds: [...entry.toolProficiencyChoice.optionIds] },
+      packages: entry.packages.map((pkg) => ({
+        ...pkg,
+        grants: pkg.grants.map((grant) => ({ ...grant, ...(grant.data ? { data: cloneJsonRecord(grant.data) } : {}) })),
+        choices: pkg.choices.map((choice) => ({ ...choice, optionIds: [...choice.optionIds] }))
+      }))
+    })),
+    backgroundStartingEquipment: DND_5E_SRD_BACKGROUND_STARTING_EQUIPMENT.map((entry) => ({
+      ...entry,
+      toolProficiencyChoice: { ...entry.toolProficiencyChoice, optionIds: [...entry.toolProficiencyChoice.optionIds] },
+      packages: entry.packages.map((pkg) => ({
+        ...pkg,
+        grants: pkg.grants.map((grant) => ({ ...grant, ...(grant.data ? { data: cloneJsonRecord(grant.data) } : {}) })),
+        choices: pkg.choices.map((choice) => ({ ...choice, optionIds: [...choice.optionIds] }))
+      }))
+    })),
+    weaponMasteryOptions: dnd5eSrdWeaponMasteryOptions().map((option) => ({ ...option, properties: [...option.properties] })),
+    classWeaponMasteryChoices: DND_5E_SRD_CLASS_WEAPON_MASTERY_CHOICES.map((choice) => ({ ...choice, weaponIds: [...choice.weaponIds] })),
+    spellOptions: dnd5eSrdSpellChoiceOptions().map((option) => ({ ...option, classes: [...option.classes] })),
+    classSpellChoices: dnd5eSrdClassSpellChoices().map((choice) => ({ ...choice, cantripIds: [...choice.cantripIds], levelOneSpellIds: [...choice.levelOneSpellIds], alwaysPreparedSpellIds: [...choice.alwaysPreparedSpellIds] })),
+    levelOneClassFeatureChoices: DND_5E_SRD_LEVEL_ONE_CLASS_FEATURE_CHOICES.map((choice) => ({ ...choice, optionIds: [...choice.optionIds] })),
+    fightingStyles: DND_5E_SRD_FIGHTING_STYLES.map((option) => ({ ...option })),
+    divineOrders: DND_5E_SRD_DIVINE_ORDERS.map((option) => ({ ...option })),
+    primalOrders: DND_5E_SRD_PRIMAL_ORDERS.map((option) => ({ ...option })),
+    eldritchInvocations: DND_5E_SRD_LEVEL_ONE_ELDRITCH_INVOCATIONS.map((option) => ({ ...option })),
+    originFeatOptions: DND_5E_SRD_ORIGIN_FEAT_OPTIONS.map((option) => ({ ...option })),
+    skilledProficiencyOptions: [
+      ...dnd5eSrdSkills().map((skill) => ({ id: skill.id, label: skill.label, category: "skill" as const, source: DND_5E_SRD_VERSION as typeof DND_5E_SRD_VERSION })),
+      ...dnd5eSrdTools().map((tool) => ({ id: tool.id, label: tool.label, category: "tool" as const, source: DND_5E_SRD_VERSION as typeof DND_5E_SRD_VERSION }))
+    ],
     elfLineages: Object.values(DND_5E_SRD_ELF_LINEAGES).map((lineage) => ({ id: lineage.id, name: lineage.name, cantrip: lineage.cantrip, level3Spell: lineage.level3Spell, level5Spell: lineage.level5Spell })),
     gnomeLineages: Object.values(DND_5E_SRD_GNOME_LINEAGES).map((lineage) => ({ id: lineage.id, name: lineage.name })),
     tieflingLegacies: Object.values(DND_5E_SRD_TIEFLING_LEGACIES).map((legacy) => ({ id: legacy.id, name: legacy.name, resistance: legacy.resistance })),
     highElfCantrips: [...DND_5E_SRD_HIGH_ELF_WIZARD_CANTRIPS],
     skills: dnd5eSrdSkills(),
-    originFeats: ["Alert", "Magic Initiate (Cleric)", "Magic Initiate (Wizard)", "Savage Attacker", "Skilled"],
+    originFeats: DND_5E_SRD_ORIGIN_FEAT_OPTIONS.map((feat) => feat.id),
     spellcastingAbilities: [...DND_5E_SRD_SPECIES_SPELLCASTING_ABILITIES]
   };
+}
+
+function dnd5eSrdClassSkillChoiceForTemplate(templateId: string): Dnd5eSrdClassSkillChoice | undefined {
+  return DND_5E_SRD_CLASS_SKILL_CHOICES.find((choice) => choice.templateId === templateId);
+}
+
+function dnd5eSrdClassLanguageChoiceForTemplate(templateId: string): Dnd5eSrdClassLanguageChoice | undefined {
+  return DND_5E_SRD_CLASS_LANGUAGE_CHOICES.find((choice) => choice.templateId === templateId);
+}
+
+function dnd5eSrdDraconicAncestorById(value: string): Dnd5eSrdDraconicAncestor | undefined {
+  const id = normalizeDnd5eSrdOriginId(value).replace(/-dragon$/, "");
+  return DND_5E_SRD_DRACONIC_ANCESTORS.find((ancestor) => ancestor.id === id);
+}
+
+function dnd5eSrdGiantAncestryById(value: string): Dnd5eSrdGiantAncestryChoice | undefined {
+  const id = normalizeDnd5eSrdOriginId(value).replace(/-giant$/, "");
+  return DND_5E_SRD_GIANT_ANCESTRIES.find((ancestry) => ancestry.id === id);
+}
+
+function dnd5eSrdAssertClassSkillSelection(
+  template: CharacterTemplate,
+  background: Dnd5eSrdCharacterBackground,
+  value: unknown
+): string[] {
+  const choice = dnd5eSrdClassSkillChoiceForTemplate(template.id);
+  if (!choice) throw new Error("D&D SRD class skill choices are unavailable for this class template");
+  if (!Array.isArray(value) || value.some((skill) => typeof skill !== "string" || !skill.trim())) {
+    throw new Error(`D&D SRD ${choice.className} skill proficiencies must be a list of ${choice.count} skills`);
+  }
+  const skills = value.map((skill) => normalizeDnd5eSrdSkillId(skill));
+  if (skills.length !== choice.count) throw new Error(`D&D SRD ${choice.className} requires exactly ${choice.count} class skill proficiencies`);
+  if (new Set(skills).size !== skills.length) throw new Error("D&D SRD class skill proficiencies cannot repeat a skill");
+  const allowed = new Set(choice.skillIds);
+  if (skills.some((skill) => !allowed.has(skill))) throw new Error(`D&D SRD class skill proficiencies must come from the ${choice.className} skill list`);
+  const duplicateBackgroundSkill = skills.find((skill) => background.skillProficiencies.includes(skill));
+  if (duplicateBackgroundSkill) {
+    const label = dnd5eSrdSkills().find((skill) => skill.id === duplicateBackgroundSkill)?.label ?? duplicateBackgroundSkill;
+    throw new Error(`D&D SRD ${choice.className} class skills cannot repeat ${label} from ${background.name}`);
+  }
+  return skills;
+}
+
+interface Dnd5eSrdLanguageSelectionBuild {
+  originLanguageChoices: string[];
+  classLanguageChoices: string[];
+  classFeatureLanguages: string[];
+}
+
+interface Dnd5eSrdStartingSelectionBuild {
+  items: CharacterTemplateItem[];
+  gp: number;
+  classToolProficiencyIds: string[];
+  backgroundToolProficiencyIds: string[];
+  weaponMasteries: Array<{
+    weaponId: string;
+    weaponName: string;
+    weaponCategory: "simple" | "martial";
+    weaponKind: "melee" | "ranged";
+    mastery: string;
+    source: typeof DND_5E_SRD_VERSION;
+    selectedAtLevel: 1;
+    swapTiming: "manual-long-rest";
+  }>;
+  origin: Record<string, unknown>;
+}
+
+interface Dnd5eSrdLevelOneRuleSelectionBuild {
+  items: CharacterTemplateItem[];
+  resources: Record<string, Record<string, unknown> & { current: number; max: number }>;
+  skillProficiencyIds: string[];
+  toolProficiencyIds: string[];
+  features: string[];
+  data: Record<string, unknown>;
+  origin: Record<string, unknown>;
+}
+
+type Dnd5eSrdCreationIssueAdder = (
+  field: Dnd5eSrdLevelOneCreationIssue["field"],
+  code: string,
+  message: string
+) => void;
+
+function dnd5eSrdNormalizeStringList(value: unknown): string[] | undefined {
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string" || !entry.trim())) return undefined;
+  return value.map((entry) => normalizeDnd5eSrdOriginId(entry as string));
+}
+
+function dnd5eSrdNormalizeEquipmentChoiceRecord(value: unknown): Record<string, string> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.some(([, choice]) => typeof choice !== "string" || !choice.trim())) return undefined;
+  return Object.fromEntries(entries.map(([key, choice]) => [normalizeDnd5eSrdOriginId(key), normalizeDnd5eSrdOriginId(choice as string)]));
+}
+
+function dnd5eSrdResolveStartingSelections(
+  template: CharacterTemplate,
+  background: Dnd5eSrdCharacterBackground | undefined,
+  options: Dnd5eSrdCharacterOriginOptions,
+  addIssue: Dnd5eSrdCreationIssueAdder
+): Dnd5eSrdStartingSelectionBuild | undefined {
+  let invalid = false;
+  const issue: Dnd5eSrdCreationIssueAdder = (field, code, message) => {
+    invalid = true;
+    addIssue(field, code, message);
+  };
+  const classEquipment = DND_5E_SRD_CLASS_STARTING_EQUIPMENT.find((entry) => entry.templateId === template.id);
+  const backgroundEquipment = background
+    ? DND_5E_SRD_BACKGROUND_STARTING_EQUIPMENT.find((entry) => entry.backgroundId === background.id)
+    : undefined;
+  if (!classEquipment) issue("classEquipmentPackageId", "unsupported_class", "Starting equipment is unavailable for this D&D SRD class template");
+  if (background && !backgroundEquipment) issue("backgroundEquipmentPackageId", "unsupported_background", "Starting equipment is unavailable for this D&D SRD background");
+
+  const classPackageId = stringValue(options.classEquipmentPackageId);
+  const backgroundPackageId = stringValue(options.backgroundEquipmentPackageId);
+  const classPackage = classEquipment?.packages.find((pkg) => pkg.id === classPackageId);
+  const backgroundPackage = backgroundEquipment?.packages.find((pkg) => pkg.id === backgroundPackageId);
+  if (!classPackageId) issue("classEquipmentPackageId", "required", `Choose a ${classEquipment?.className ?? "class"} starting-equipment package`);
+  else if (classEquipment && !classPackage) issue("classEquipmentPackageId", "invalid_choice", `Choose a starting-equipment package published for ${classEquipment.className}`);
+  if (!backgroundPackageId) issue("backgroundEquipmentPackageId", "required", `Choose a ${backgroundEquipment?.backgroundName ?? "background"} starting-equipment package`);
+  else if (backgroundEquipment && !backgroundPackage) issue("backgroundEquipmentPackageId", "invalid_choice", `Choose a starting-equipment package published for ${backgroundEquipment.backgroundName}`);
+
+  let classToolChoices: string[] = [];
+  if (classEquipment) {
+    const raw = options.classToolProficiencyChoices;
+    if (raw === undefined && classEquipment.toolProficiencyChoice.count > 0) {
+      issue("classToolProficiencyChoices", "required", `Choose exactly ${classEquipment.toolProficiencyChoice.count} ${classEquipment.className} tool ${classEquipment.toolProficiencyChoice.count === 1 ? "proficiency" : "proficiencies"}`);
+    } else if (raw !== undefined) {
+      const normalized = dnd5eSrdNormalizeStringList(raw);
+      if (!normalized) issue("classToolProficiencyChoices", "invalid_type", "Class tool proficiency choices must be a list of tool identifiers");
+      else {
+        classToolChoices = normalized;
+        if (classEquipment.toolProficiencyChoice.count === 0 && normalized.length > 0) issue("classToolProficiencyChoices", "not_available", `${classEquipment.className} has no selectable level-one tool proficiency`);
+        else if (normalized.length !== classEquipment.toolProficiencyChoice.count) issue("classToolProficiencyChoices", "invalid_count", `Choose exactly ${classEquipment.toolProficiencyChoice.count} ${classEquipment.className} tool ${classEquipment.toolProficiencyChoice.count === 1 ? "proficiency" : "proficiencies"}`);
+        if (new Set(normalized).size !== normalized.length) issue("classToolProficiencyChoices", "duplicate_tool", "Class tool proficiency choices cannot repeat a tool");
+        const allowed = new Set(classEquipment.toolProficiencyChoice.optionIds);
+        if (normalized.some((id) => !allowed.has(id))) issue("classToolProficiencyChoices", "outside_class_list", `Choose ${classEquipment.className} tools from its published tool list`);
+      }
+    }
+  }
+
+  let backgroundToolChoices: string[] = [];
+  if (backgroundEquipment) {
+    const raw = options.backgroundToolProficiencyChoice;
+    if (!raw && backgroundEquipment.toolProficiencyChoice.count > 0) {
+      issue("backgroundToolProficiencyChoice", "required", `Choose the ${backgroundEquipment.backgroundName} tool proficiency`);
+    } else if (raw) {
+      const normalized = normalizeDnd5eSrdOriginId(raw);
+      backgroundToolChoices = [normalized];
+      if (backgroundEquipment.toolProficiencyChoice.count === 0) issue("backgroundToolProficiencyChoice", "not_available", `${backgroundEquipment.backgroundName} has no selectable tool proficiency`);
+      else if (!backgroundEquipment.toolProficiencyChoice.optionIds.includes(normalized)) issue("backgroundToolProficiencyChoice", "outside_background_list", `Choose the ${backgroundEquipment.backgroundName} tool from its published tool list`);
+    }
+  }
+
+  const resolveChoices = (
+    field: "classEquipmentChoices" | "backgroundEquipmentChoices",
+    raw: unknown,
+    pkg: Dnd5eSrdStartingEquipmentPackage | undefined,
+    sourceLabel: string
+  ): Record<string, string> => {
+    const explicitChoices = pkg?.choices.filter((choice) => !choice.matchSelection) ?? [];
+    if (raw === undefined) {
+      if (explicitChoices.length > 0) issue(field, "required", `Complete the ${sourceLabel} equipment choices`);
+      return {};
+    }
+    const record = dnd5eSrdNormalizeEquipmentChoiceRecord(raw);
+    if (!record) {
+      issue(field, "invalid_type", `${sourceLabel} equipment choices must map choice identifiers to option identifiers`);
+      return {};
+    }
+    const expected = new Set(explicitChoices.map((choice) => choice.id));
+    const provided = Object.keys(record);
+    if (provided.some((id) => !expected.has(id))) issue(field, "unexpected_choice", `${sourceLabel} equipment choices include a choice not published for the selected package`);
+    for (const choice of explicitChoices) {
+      const selected = record[choice.id];
+      if (!selected) issue(field, "required_choice", `Choose ${choice.label} for the ${sourceLabel} equipment package`);
+      else if (!choice.optionIds.includes(selected)) issue(field, "invalid_choice", `Choose ${choice.label} from the published equipment options`);
+    }
+    return record;
+  };
+  const classEquipmentChoices = resolveChoices("classEquipmentChoices", options.classEquipmentChoices, classPackage, "class");
+  const backgroundEquipmentChoices = resolveChoices("backgroundEquipmentChoices", options.backgroundEquipmentChoices, backgroundPackage, "background");
+
+  const masteryChoice = DND_5E_SRD_CLASS_WEAPON_MASTERY_CHOICES.find((entry) => entry.templateId === template.id);
+  let selectedMasteryIds: string[] = [];
+  const rawMasteries = options.weaponMasteryChoices;
+  if (!masteryChoice) {
+    issue("weaponMasteryChoices", "unsupported_class", "Weapon Mastery choices are unavailable for this D&D SRD class template");
+  } else if (rawMasteries === undefined && masteryChoice.count > 0) {
+    issue("weaponMasteryChoices", "required", `Choose exactly ${masteryChoice.count} ${masteryChoice.className} Weapon Mastery weapons`);
+  } else if (rawMasteries !== undefined) {
+    const normalized = dnd5eSrdNormalizeStringList(rawMasteries);
+    if (!normalized) issue("weaponMasteryChoices", "invalid_type", "Weapon Mastery choices must be a list of weapon identifiers");
+    else {
+      selectedMasteryIds = normalized;
+      if (masteryChoice.count === 0 && normalized.length > 0) issue("weaponMasteryChoices", "not_available", `${masteryChoice.className} has no level-one Weapon Mastery choices`);
+      else if (normalized.length !== masteryChoice.count) issue("weaponMasteryChoices", "invalid_count", `Choose exactly ${masteryChoice.count} ${masteryChoice.className} Weapon Mastery weapons`);
+      if (new Set(normalized).size !== normalized.length) issue("weaponMasteryChoices", "duplicate_weapon", "Weapon Mastery choices cannot repeat a weapon kind");
+      if (normalized.some((id) => !masteryChoice.weaponIds.includes(id))) issue("weaponMasteryChoices", "outside_proficiency", `Choose weapons eligible for ${masteryChoice.className} Weapon Mastery`);
+    }
+  }
+
+  if (invalid || !classEquipment || !backgroundEquipment || !classPackage || !backgroundPackage || !masteryChoice) return undefined;
+
+  const grants = (
+    kind: "class" | "background",
+    sourceId: string,
+    pkg: Dnd5eSrdStartingEquipmentPackage,
+    selectedChoices: Record<string, string>,
+    linkedClassTools: string[],
+    linkedBackgroundTools: string[]
+  ): CharacterTemplateItem[] => {
+    const provenance: Record<string, unknown> = { source: DND_5E_SRD_VERSION, kind, sourceId, packageId: pkg.id };
+    const items = pkg.grants.map((grant) => ({
+      entryId: grant.entryId,
+      ...(grant.quantity === undefined ? {} : { quantity: grant.quantity }),
+      data: { ...(grant.data ? cloneJsonRecord(grant.data) : {}), startingEquipment: provenance }
+    }));
+    for (const choice of pkg.choices) {
+      const selected = choice.matchSelection === "class-tool-proficiency"
+        ? linkedClassTools[0]
+        : choice.matchSelection === "background-tool-proficiency"
+          ? linkedBackgroundTools[0]
+          : selectedChoices[choice.id];
+      if (selected) items.push({ entryId: selected, data: { startingEquipment: { ...provenance, choiceId: choice.id } } });
+    }
+    return items;
+  };
+  const classToolProficiencyIds = uniqueStrings([...classEquipment.fixedToolProficiencyIds, ...classToolChoices]);
+  const backgroundToolProficiencyIds = background!.id === "soldier" ? backgroundToolChoices : [...background!.toolProficiencies];
+  const masteryOptions = new Map(dnd5eSrdWeaponMasteryOptions().map((option) => [option.id, option]));
+  const weaponMasteries = selectedMasteryIds.map((weaponId) => {
+    const weapon = masteryOptions.get(weaponId)!;
+    return {
+      weaponId,
+      weaponName: weapon.name,
+      weaponCategory: weapon.weaponCategory,
+      weaponKind: weapon.weaponKind,
+      mastery: weapon.mastery,
+      className: masteryChoice.className,
+      source: DND_5E_SRD_VERSION as typeof DND_5E_SRD_VERSION,
+      selectedAtLevel: 1 as const,
+      swapTiming: "manual-long-rest" as const
+    };
+  });
+  return {
+    items: [
+      ...grants("class", classEquipment.templateId, classPackage, classEquipmentChoices, classToolChoices, backgroundToolChoices),
+      ...grants("background", backgroundEquipment.backgroundId, backgroundPackage, backgroundEquipmentChoices, classToolChoices, backgroundToolChoices)
+    ],
+    gp: classPackage.gp + backgroundPackage.gp,
+    classToolProficiencyIds,
+    backgroundToolProficiencyIds,
+    weaponMasteries,
+    origin: {
+      startingEquipment: {
+        source: DND_5E_SRD_VERSION,
+        class: { templateId: classEquipment.templateId, packageId: classPackage.id, choices: classEquipmentChoices, gp: classPackage.gp },
+        background: { backgroundId: backgroundEquipment.backgroundId, packageId: backgroundPackage.id, choices: backgroundEquipmentChoices, gp: backgroundPackage.gp },
+        totalGp: classPackage.gp + backgroundPackage.gp
+      },
+      toolProficiencyChoices: {
+        class: [...classToolChoices],
+        background: [...backgroundToolChoices]
+      },
+      weaponMasteryChoices: selectedMasteryIds
+    }
+  };
+}
+
+function dnd5eSrdResolveLevelOneRuleSelections(
+  template: CharacterTemplate,
+  background: Dnd5eSrdCharacterBackground | undefined,
+  species: Dnd5eSrdCharacterSpecies | undefined,
+  classSkillProficiencies: string[],
+  options: Dnd5eSrdCharacterOriginOptions,
+  addIssue: Dnd5eSrdCreationIssueAdder
+): Dnd5eSrdLevelOneRuleSelectionBuild | undefined {
+  let invalid = false;
+  const issue: Dnd5eSrdCreationIssueAdder = (field, code, message) => {
+    invalid = true;
+    addIssue(field, code, message);
+  };
+  const spellChoice = dnd5eSrdClassSpellChoices().find((choice) => choice.templateId === template.id);
+  if (!spellChoice) {
+    issue("classCantripChoices", "unsupported_class", "Spell choices are unavailable for this D&D SRD class template");
+    return undefined;
+  }
+
+  const normalizeList = (
+    field: keyof Dnd5eSrdCharacterOriginOptions,
+    raw: unknown,
+    count: number,
+    allowedIds: string[],
+    label: string,
+    required = count > 0
+  ): string[] => {
+    if (raw === undefined) {
+      if (required) issue(field, "required", `Choose exactly ${count} ${label}`);
+      return [];
+    }
+    const normalized = dnd5eSrdNormalizeStringList(raw);
+    if (!normalized) {
+      issue(field, "invalid_type", `${label} must be a list of spell or proficiency identifiers`);
+      return [];
+    }
+    if (normalized.length !== count) issue(field, "invalid_count", `Choose exactly ${count} ${label}`);
+    if (new Set(normalized).size !== normalized.length) issue(field, "duplicate_choice", `${label} cannot repeat a choice`);
+    const allowed = new Set(allowedIds);
+    if (normalized.some((id) => !allowed.has(id))) issue(field, "outside_list", `Choose ${label} from the published SRD options`);
+    return normalized;
+  };
+
+  const normalizeSingle = (
+    field: keyof Dnd5eSrdCharacterOriginOptions,
+    raw: unknown,
+    allowedIds: string[],
+    label: string,
+    required: boolean
+  ): string | undefined => {
+    if (raw === undefined) {
+      if (required) issue(field, "required", `Choose ${label}`);
+      return undefined;
+    }
+    if (typeof raw !== "string" || !raw.trim()) {
+      issue(field, "invalid_type", `${label} must be a supported identifier`);
+      return undefined;
+    }
+    const normalized = normalizeDnd5eSrdOriginId(raw);
+    if (!allowedIds.includes(normalized)) issue(field, "invalid_choice", `Choose ${label} from the published SRD options`);
+    return normalized;
+  };
+
+  const fightingStyle = normalizeSingle("fightingStyle", options.fightingStyle, DND_5E_SRD_FIGHTING_STYLES.map((choice) => choice.id), "a Fighter Fighting Style", template.id === "fighter");
+  const divineOrder = normalizeSingle("divineOrder", options.divineOrder, DND_5E_SRD_DIVINE_ORDERS.map((choice) => choice.id), "a Cleric Divine Order", template.id === "cleric");
+  const primalOrder = normalizeSingle("primalOrder", options.primalOrder, DND_5E_SRD_PRIMAL_ORDERS.map((choice) => choice.id), "a Druid Primal Order", template.id === "druid");
+  const eldritchInvocation = normalizeSingle("eldritchInvocation", options.eldritchInvocation, DND_5E_SRD_LEVEL_ONE_ELDRITCH_INVOCATIONS.map((choice) => choice.id), "a level-one Eldritch Invocation", template.id === "warlock");
+  if (template.id !== "fighter" && options.fightingStyle !== undefined) issue("fightingStyle", "not_available", "Fighting Style is only a level-one choice for Fighters");
+  if (template.id !== "cleric" && options.divineOrder !== undefined) issue("divineOrder", "not_available", "Divine Order is only available to Clerics");
+  if (template.id !== "druid" && options.primalOrder !== undefined) issue("primalOrder", "not_available", "Primal Order is only available to Druids");
+  if (template.id !== "warlock" && options.eldritchInvocation !== undefined) issue("eldritchInvocation", "not_available", "Eldritch Invocations are only available to Warlocks");
+
+  const expectedCantripCount = spellChoice.cantripCount
+    + (template.id === "cleric" && divineOrder === "thaumaturge" ? 1 : 0)
+    + (template.id === "druid" && primalOrder === "magician" ? 1 : 0);
+  const classCantrips = normalizeList("classCantripChoices", options.classCantripChoices, expectedCantripCount, spellChoice.cantripIds, `${spellChoice.className} cantrips`, expectedCantripCount > 0);
+  const classPrepared = normalizeList("classPreparedSpellChoices", options.classPreparedSpellChoices, spellChoice.preparedSpellCount, spellChoice.levelOneSpellIds, `${spellChoice.className} level 1 prepared spells`, spellChoice.preparedSpellCount > 0);
+  const wizardSpellbook = normalizeList("wizardSpellbookChoices", options.wizardSpellbookChoices, spellChoice.spellbookSpellCount, spellChoice.levelOneSpellIds, "Wizard spellbook level 1 spells", spellChoice.spellbookSpellCount > 0);
+  if (expectedCantripCount === 0 && classCantrips.length > 0) issue("classCantripChoices", "not_available", `${spellChoice.className} has no level-one class cantrip choices`);
+  if (spellChoice.preparedSpellCount === 0 && classPrepared.length > 0) issue("classPreparedSpellChoices", "not_available", `${spellChoice.className} has no level-one class spell choices`);
+  if (template.id !== "wizard" && wizardSpellbook.length > 0) issue("wizardSpellbookChoices", "not_available", "A level-one spellbook selection is only available to Wizards");
+  if (template.id === "wizard" && classPrepared.some((id) => !wizardSpellbook.includes(id))) issue("classPreparedSpellChoices", "outside_spellbook", "Wizard prepared spells must be selected from the six spells in the Wizard's spellbook");
+  if (classPrepared.some((id) => spellChoice.alwaysPreparedSpellIds.includes(id))) issue("classPreparedSpellChoices", "duplicate_always_prepared", "Always-prepared class spells do not count toward the normal prepared-spell choices");
+
+  const backgroundFeat = background?.feat;
+  const humanOriginFeat = species?.id === "human" ? stringValue(options.originFeat) : undefined;
+  const originFeatOption = DND_5E_SRD_ORIGIN_FEAT_OPTIONS.find((feat) => feat.id === humanOriginFeat);
+  const magicInitiateClassForFeat = (feat: string | undefined): "cleric" | "druid" | "wizard" | undefined =>
+    DND_5E_SRD_ORIGIN_FEAT_OPTIONS.find((option) => option.id === feat)?.magicInitiateClass;
+  const backgroundMagicInitiateClass = magicInitiateClassForFeat(backgroundFeat);
+  const originMagicInitiateClass = originFeatOption?.magicInitiateClass;
+  const spellOptions = dnd5eSrdSpellChoiceOptions();
+  const magicInitiateAbilities = ["intelligence", "wisdom", "charisma"];
+
+  interface MagicInitiateSelection {
+    feat: string;
+    spellClass: "cleric" | "druid" | "wizard";
+    cantrips: string[];
+    spell: string;
+    ability: string;
+    resourceId: string;
+    sourceKind: "background" | "human-origin-feat";
+  }
+  const resolveMagicInitiate = (
+    spellClass: "cleric" | "druid" | "wizard" | undefined,
+    feat: string | undefined,
+    cantripField: "backgroundMagicInitiateCantrips" | "originFeatMagicInitiateCantrips",
+    spellField: "backgroundMagicInitiateSpell" | "originFeatMagicInitiateSpell",
+    abilityField: "backgroundMagicInitiateAbility" | "originFeatMagicInitiateAbility",
+    resourceId: string,
+    sourceKind: "background" | "human-origin-feat"
+  ): MagicInitiateSelection | undefined => {
+    const hasAny = options[cantripField] !== undefined || options[spellField] !== undefined || options[abilityField] !== undefined;
+    if (!spellClass) {
+      if (hasAny) issue(cantripField, "not_available", `${sourceKind === "background" ? "The selected background" : "The Human origin feat"} does not grant Magic Initiate choices`);
+      return undefined;
+    }
+    const cantripIds = spellOptions.filter((spell) => spell.level === 0 && spell.classes.includes(spellClass)).map((spell) => spell.id);
+    const spellIds = spellOptions.filter((spell) => spell.level === 1 && spell.classes.includes(spellClass)).map((spell) => spell.id);
+    const cantrips = normalizeList(cantripField, options[cantripField], 2, cantripIds, `${feat} cantrips`, true);
+    const spell = normalizeSingle(spellField, options[spellField], spellIds, `a ${feat} level 1 spell`, true);
+    const ability = normalizeSingle(abilityField, options[abilityField], magicInitiateAbilities, `an Intelligence, Wisdom, or Charisma ability for ${feat}`, true);
+    if (!spell || !ability || !feat) return undefined;
+    return { feat, spellClass, cantrips, spell, ability, resourceId, sourceKind };
+  };
+  const backgroundMagicInitiate = resolveMagicInitiate(backgroundMagicInitiateClass, backgroundFeat, "backgroundMagicInitiateCantrips", "backgroundMagicInitiateSpell", "backgroundMagicInitiateAbility", "backgroundMagicInitiate", "background");
+  const originMagicInitiate = resolveMagicInitiate(originMagicInitiateClass, humanOriginFeat, "originFeatMagicInitiateCantrips", "originFeatMagicInitiateSpell", "originFeatMagicInitiateAbility", "humanMagicInitiate", "human-origin-feat");
+
+  const classEquipment = DND_5E_SRD_CLASS_STARTING_EQUIPMENT.find((entry) => entry.templateId === template.id);
+  const backgroundEquipment = background ? DND_5E_SRD_BACKGROUND_STARTING_EQUIPMENT.find((entry) => entry.backgroundId === background.id) : undefined;
+  const selectedClassTools = dnd5eSrdNormalizeStringList(options.classToolProficiencyChoices) ?? [];
+  const selectedBackgroundTools = stringValue(options.backgroundToolProficiencyChoice) ? [normalizeDnd5eSrdOriginId(options.backgroundToolProficiencyChoice!)] : [];
+  const knownSkills = uniqueStrings([
+    ...(background?.skillProficiencies ?? []),
+    ...classSkillProficiencies,
+    ...(species?.id === "human" && stringValue(options.skillProficiency) ? [normalizeDnd5eSrdSkillId(options.skillProficiency!)] : [])
+  ]);
+  const knownTools = uniqueStrings([
+    ...(background?.id === "soldier" ? selectedBackgroundTools : background?.toolProficiencies ?? []),
+    ...(classEquipment?.fixedToolProficiencyIds ?? []),
+    ...selectedClassTools,
+    ...(backgroundEquipment?.toolProficiencyChoice.count && background?.id !== "soldier" ? selectedBackgroundTools : [])
+  ]);
+  const skilledActive = species?.id === "human" && humanOriginFeat === "Skilled";
+  const skilledAllowed: Dnd5eSrdSkilledProficiencyOption[] = [
+    ...dnd5eSrdSkills().map((skill) => ({ id: skill.id, label: skill.label, category: "skill" as const, source: DND_5E_SRD_VERSION as typeof DND_5E_SRD_VERSION })),
+    ...dnd5eSrdTools().map((tool) => ({ id: tool.id, label: tool.label, category: "tool" as const, source: DND_5E_SRD_VERSION as typeof DND_5E_SRD_VERSION }))
+  ];
+  const skilled = normalizeList("skilledProficiencyChoices", options.skilledProficiencyChoices, skilledActive ? 3 : 0, skilledAllowed.map((option) => option.id), "Skilled skill or tool proficiencies", skilledActive);
+  if (!skilledActive && skilled.length > 0) issue("skilledProficiencyChoices", "not_available", "Skilled proficiency choices require the Human Versatile Skilled feat");
+  for (const id of skilled) {
+    const option = skilledAllowed.find((candidate) => candidate.id === id);
+    if (option?.category === "skill" && knownSkills.includes(id)) issue("skilledProficiencyChoices", "duplicate_proficiency", `Skilled cannot repeat the existing ${option.label} skill proficiency`);
+    if (option?.category === "tool" && knownTools.includes(id)) issue("skilledProficiencyChoices", "duplicate_proficiency", `Skilled cannot repeat the existing ${option.label} tool proficiency`);
+  }
+  const skilledSkills = skilled.filter((id) => skilledAllowed.find((option) => option.id === id)?.category === "skill");
+  const skilledTools = skilled.filter((id) => skilledAllowed.find((option) => option.id === id)?.category === "tool");
+
+  const finalSkillProficiencies = uniqueStrings([...knownSkills, ...skilledSkills]);
+  const rogueExpertise = normalizeList("rogueExpertiseChoices", options.rogueExpertiseChoices, template.id === "rogue" ? 2 : 0, finalSkillProficiencies, "Rogue Expertise skills", template.id === "rogue");
+  if (template.id !== "rogue" && rogueExpertise.length > 0) issue("rogueExpertiseChoices", "not_available", "Level-one Expertise choices are only available to Rogues");
+
+  const invocation = DND_5E_SRD_LEVEL_ONE_ELDRITCH_INVOCATIONS.find((choice) => choice.id === eldritchInvocation);
+  const allCantripIds = spellOptions.filter((spell) => spell.level === 0).map((spell) => spell.id);
+  const allRitualIds = spellOptions.filter((spell) => spell.level === 1 && spell.ritual).map((spell) => spell.id);
+  const pactTomeActive = invocation?.id === "pact-of-the-tome";
+  const pactTomeCantrips = normalizeList("pactTomeCantripChoices", options.pactTomeCantripChoices, pactTomeActive ? 3 : 0, allCantripIds, "Pact of the Tome cantrips", pactTomeActive);
+  const pactTomeRituals = normalizeList("pactTomeRitualChoices", options.pactTomeRitualChoices, pactTomeActive ? 2 : 0, allRitualIds, "Pact of the Tome level 1 ritual spells", pactTomeActive);
+  if (!pactTomeActive && (pactTomeCantrips.length > 0 || pactTomeRituals.length > 0)) issue("pactTomeCantripChoices", "not_available", "Pact Tome spell choices require the Pact of the Tome invocation");
+
+  const classGrantIds = uniqueStrings([
+    ...classCantrips,
+    ...(template.id === "wizard" ? wizardSpellbook : classPrepared),
+    ...spellChoice.alwaysPreparedSpellIds
+  ]);
+  const duplicateSources: Array<{ field: keyof Dnd5eSrdCharacterOriginOptions; label: string; ids: string[] }> = [
+    { field: "classPreparedSpellChoices", label: "class spell choices", ids: classGrantIds },
+    ...(backgroundMagicInitiate ? [{ field: "backgroundMagicInitiateCantrips" as const, label: "background Magic Initiate", ids: [...backgroundMagicInitiate.cantrips, backgroundMagicInitiate.spell] }] : []),
+    ...(originMagicInitiate ? [{ field: "originFeatMagicInitiateCantrips" as const, label: "Human Magic Initiate", ids: [...originMagicInitiate.cantrips, originMagicInitiate.spell] }] : []),
+    ...(pactTomeActive ? [{ field: "pactTomeCantripChoices" as const, label: "Pact of the Tome", ids: [...pactTomeCantrips, ...pactTomeRituals] }] : [])
+  ];
+  const seenSpells = new Set<string>();
+  for (const source of duplicateSources) {
+    if (source.ids.some((id) => seenSpells.has(id))) issue(source.field, "duplicate_spell", `${source.label} cannot duplicate a spell granted by another level-one choice`);
+    source.ids.forEach((id) => seenSpells.add(id));
+  }
+
+  if (invalid) return undefined;
+
+  const spellItem = (entryId: string, data: Record<string, unknown>): CharacterTemplateItem => ({
+    entryId,
+    data: { ...data, source: DND_5E_SRD_VERSION }
+  });
+  const classSpellData = (kind: "cantrip" | "prepared" | "spellbook" | "always-prepared"): Record<string, unknown> => ({
+    classSpell: true,
+    spellcastingAbility: spellChoice.spellcastingAbility,
+    prepared: kind !== "spellbook",
+    ...(kind === "cantrip" ? { cantrip: true, known: true, alwaysPrepared: true, preparationMode: "known" } : {}),
+    ...(kind === "prepared" ? { preparationMode: "prepared" } : {}),
+    ...(kind === "spellbook" ? { inSpellbook: true, preparationMode: "spellbook" } : {}),
+    ...(kind === "always-prepared" ? { alwaysPrepared: true, preparationMode: "always-prepared" } : {}),
+    spellSources: [{ kind: "class", className: spellChoice.className, selection: kind, selectedAtLevel: 1 }]
+  });
+  const items: CharacterTemplateItem[] = [];
+  for (const id of classCantrips) items.push(spellItem(id, classSpellData("cantrip")));
+  if (template.id === "wizard") {
+    for (const id of wizardSpellbook) items.push(spellItem(id, { ...classSpellData("spellbook"), inSpellbook: true, prepared: classPrepared.includes(id) }));
+  } else {
+    for (const id of classPrepared) items.push(spellItem(id, classSpellData("prepared")));
+  }
+  for (const id of spellChoice.alwaysPreparedSpellIds) {
+    items.push(spellItem(id, {
+      ...classSpellData("always-prepared"),
+      ...(id === "hunters-mark" ? { freeCastResource: "favoredEnemy", freeCastResourceLabel: "Favored Enemy" } : {})
+    }));
+  }
+  const resources: Dnd5eSrdLevelOneRuleSelectionBuild["resources"] = {};
+  const magicInitiateItems = (selection: MagicInitiateSelection): CharacterTemplateItem[] => {
+    resources[selection.resourceId] = { current: 1, max: 1, recovery: "long" };
+    const base = {
+      originFeatSpell: true,
+      originFeat: selection.feat,
+      originFeatSource: selection.sourceKind,
+      spellcastingAbility: selection.ability,
+      prepared: true,
+      alwaysPrepared: true,
+      spellSources: [{ kind: "origin-feat", feat: selection.feat, sourceKind: selection.sourceKind, selectedAtLevel: 1 }]
+    };
+    return [
+      ...selection.cantrips.map((id) => spellItem(id, { ...base, cantrip: true, known: true, preparationMode: "known" })),
+      spellItem(selection.spell, { ...base, preparationMode: "always-prepared", freeCastResource: selection.resourceId, freeCastResourceLabel: selection.feat })
+    ];
+  };
+  if (backgroundMagicInitiate) items.push(...magicInitiateItems(backgroundMagicInitiate));
+  if (originMagicInitiate) items.push(...magicInitiateItems(originMagicInitiate));
+  if (invocation?.grantedSpellId) items.push(spellItem(invocation.grantedSpellId, {
+    invocationSpell: true,
+    eldritchInvocation: invocation.id,
+    spellcastingAbility: "charisma",
+    prepared: true,
+    alwaysPrepared: true,
+    known: true,
+    atWill: true,
+    noSpellSlotRequired: true,
+    spellSources: [{ kind: "eldritch-invocation", invocationId: invocation.id, selectedAtLevel: 1 }]
+  }));
+  if (pactTomeActive) {
+    const tomeData = {
+      pactTomeSpell: true,
+      eldritchInvocation: "pact-of-the-tome",
+      spellcastingAbility: "charisma",
+      prepared: true,
+      alwaysPrepared: true,
+      preparationMode: "pact-tome",
+      inPactTome: true,
+      countsAsClass: "warlock",
+      spellSources: [{ kind: "eldritch-invocation", invocationId: "pact-of-the-tome", selectedAtLevel: 1 }]
+    };
+    for (const id of [...pactTomeCantrips, ...pactTomeRituals]) items.push(spellItem(id, tomeData));
+  }
+
+  const fightingStyleOption = DND_5E_SRD_FIGHTING_STYLES.find((choice) => choice.id === fightingStyle);
+  const divineOrderOption = DND_5E_SRD_DIVINE_ORDERS.find((choice) => choice.id === divineOrder);
+  const primalOrderOption = DND_5E_SRD_PRIMAL_ORDERS.find((choice) => choice.id === primalOrder);
+  const levelOneChoices: Record<string, unknown> = {
+    source: DND_5E_SRD_VERSION,
+    ...(fightingStyleOption ? { fightingStyle: { ...fightingStyleOption, selectedAtLevel: 1 } } : {}),
+    ...(divineOrderOption ? { divineOrder: { ...divineOrderOption, selectedAtLevel: 1 } } : {}),
+    ...(primalOrderOption ? { primalOrder: { ...primalOrderOption, selectedAtLevel: 1 } } : {}),
+    ...(rogueExpertise.length ? { rogueExpertise: [...rogueExpertise] } : {}),
+    ...(invocation ? { eldritchInvocation: { ...invocation, selectedAtLevel: 1, ...(pactTomeActive ? { cantrips: [...pactTomeCantrips], rituals: [...pactTomeRituals] } : {}) } } : {}),
+    ...(skilled.length ? { skilledProficiencies: [...skilled] } : {})
+  };
+  const armorTraining = divineOrder === "protector" ? ["heavy"] : primalOrder === "warden" ? ["medium"] : [];
+  const weaponProficiencies = divineOrder === "protector" || primalOrder === "warden" ? ["martial"] : [];
+  const orderSkillCheckBonus = divineOrder === "thaumaturge"
+    ? { abilityModifier: "wisdom", minimumBonus: 1, checks: ["intelligence-arcana", "intelligence-religion"], automation: "manual" }
+    : primalOrder === "magician"
+      ? { abilityModifier: "wisdom", minimumBonus: 1, checks: ["intelligence-arcana", "intelligence-nature"], automation: "manual" }
+      : undefined;
+  return {
+    items,
+    resources,
+    skillProficiencyIds: skilledSkills,
+    toolProficiencyIds: skilledTools,
+    features: [fightingStyleOption?.name, divineOrderOption?.name, primalOrderOption?.name, invocation?.name].filter((value): value is string => Boolean(value)),
+    data: {
+      levelOneChoices,
+      spellcasting: {
+        source: DND_5E_SRD_VERSION,
+        className: spellChoice.className,
+        ability: spellChoice.spellcastingAbility,
+        cantrips: [...classCantrips],
+        preparedSpells: [...classPrepared],
+        preparedSpellCapacity: spellChoice.preparedSpellCount,
+        preparedSpellCapacityLevel: 1,
+        ...(template.id === "wizard" ? { spellbookSpells: [...wizardSpellbook] } : {}),
+        alwaysPreparedSpells: [...spellChoice.alwaysPreparedSpellIds],
+        slotPool: spellChoice.slotPool,
+        changeTiming: spellChoice.changeTiming
+      },
+      spellSlots: spellChoice.slotPool === "none" ? {} : { level1: { current: spellChoice.slotCount, max: spellChoice.slotCount, recovery: spellChoice.slotRecovery } },
+      ...(rogueExpertise.length ? { skillExpertise: [...rogueExpertise] } : {}),
+      ...(invocation ? { eldritchInvocations: [{ id: invocation.id, name: invocation.name, selectedAtLevel: 1, source: DND_5E_SRD_VERSION }] } : {}),
+      ...(armorTraining.length ? { armorTraining } : {}),
+      ...(weaponProficiencies.length ? { weaponProficiencies } : {}),
+      ...(orderSkillCheckBonus ? { orderSkillCheckBonus } : {})
+    },
+    origin: {
+      levelOneChoices,
+      ...(backgroundMagicInitiate ? { backgroundMagicInitiate: { feat: backgroundMagicInitiate.feat, cantrips: [...backgroundMagicInitiate.cantrips], spell: backgroundMagicInitiate.spell, ability: backgroundMagicInitiate.ability, freeCastResource: backgroundMagicInitiate.resourceId } } : {}),
+      ...(originMagicInitiate ? { humanMagicInitiate: { feat: originMagicInitiate.feat, cantrips: [...originMagicInitiate.cantrips], spell: originMagicInitiate.spell, ability: originMagicInitiate.ability, freeCastResource: originMagicInitiate.resourceId } } : {})
+    }
+  };
+}
+
+function dnd5eSrdMergeLevelOneSpellGrants(items: CharacterTemplateItem[]): CharacterTemplateItem[] {
+  const merged: CharacterTemplateItem[] = [];
+  const spellIndexByEntryId = new Map<string, number>();
+  for (const item of items) {
+    const isSpell = dnd5eSrdCompendiumEntry(item.entryId)?.type === "spell";
+    const existingIndex = isSpell ? spellIndexByEntryId.get(item.entryId) : undefined;
+    if (existingIndex === undefined) {
+      const clone = { ...item, ...(item.data ? { data: cloneJsonRecord(item.data) } : {}) };
+      merged.push(clone);
+      if (isSpell) spellIndexByEntryId.set(item.entryId, merged.length - 1);
+      continue;
+    }
+    const existing = merged[existingIndex]!;
+    const existingData = cloneJsonRecord(existing.data ?? {});
+    const nextData = cloneJsonRecord(item.data ?? {});
+    const spellSources = [...(Array.isArray(existingData.spellSources) ? existingData.spellSources : []), ...(Array.isArray(nextData.spellSources) ? nextData.spellSources : [])];
+    const abilities = uniqueStrings([
+      ...normalizeStringArray(existingData.spellcastingAbilities),
+      ...normalizeStringArray(nextData.spellcastingAbilities),
+      ...(stringValue(existingData.spellcastingAbility) ? [stringValue(existingData.spellcastingAbility)!] : []),
+      ...(stringValue(nextData.spellcastingAbility) ? [stringValue(nextData.spellcastingAbility)!] : [])
+    ]);
+    const freeCastResources = uniqueStrings([
+      ...normalizeStringArray(existingData.freeCastResources),
+      ...normalizeStringArray(nextData.freeCastResources),
+      ...(stringValue(existingData.freeCastResource) ? [stringValue(existingData.freeCastResource)!] : []),
+      ...(stringValue(nextData.freeCastResource) ? [stringValue(nextData.freeCastResource)!] : []),
+      ...(stringValue(existingData.speciesSpellResource) ? [stringValue(existingData.speciesSpellResource)!] : []),
+      ...(stringValue(nextData.speciesSpellResource) ? [stringValue(nextData.speciesSpellResource)!] : [])
+    ]);
+    const data = { ...nextData, ...existingData };
+    for (const flag of ["prepared", "alwaysPrepared", "known", "inSpellbook", "classSpell", "originFeatSpell", "speciesSpell", "pactTomeSpell", "invocationSpell"] as const) {
+      if (booleanValue(existingData[flag]) || booleanValue(nextData[flag])) data[flag] = true;
+    }
+    if (spellSources.length > 0) data.spellSources = spellSources.filter((source, index) => spellSources.findIndex((candidate) => JSON.stringify(candidate) === JSON.stringify(source)) === index);
+    if (abilities.length > 0) data.spellcastingAbilities = abilities;
+    if (freeCastResources.length > 0) {
+      data.freeCastResources = freeCastResources;
+      data.freeCastResource = stringValue(existingData.freeCastResource) ?? stringValue(nextData.freeCastResource) ?? freeCastResources[0];
+    }
+    existing.data = data;
+  }
+  return merged;
+}
+
+function dnd5eSrdAssertLanguageSelections(
+  template: CharacterTemplate,
+  originValue: unknown,
+  classValue: unknown
+): Dnd5eSrdLanguageSelectionBuild {
+  if (!Array.isArray(originValue) || originValue.some((language) => typeof language !== "string" || !language.trim())) {
+    throw new Error(`D&D SRD origin languages must be a list of ${DND_5E_SRD_ORIGIN_LANGUAGE_CHOICE.count} languages`);
+  }
+  const originLanguageChoices = originValue.map((language) => normalizeDnd5eSrdOriginId(language));
+  if (originLanguageChoices.length !== DND_5E_SRD_ORIGIN_LANGUAGE_CHOICE.count) {
+    throw new Error(`D&D SRD origins require exactly ${DND_5E_SRD_ORIGIN_LANGUAGE_CHOICE.count} language choices`);
+  }
+  if (new Set(originLanguageChoices).size !== originLanguageChoices.length) {
+    throw new Error("D&D SRD origin language choices cannot repeat a language");
+  }
+  const standardChoices = new Set(DND_5E_SRD_ORIGIN_LANGUAGE_CHOICE.languageIds);
+  if (originLanguageChoices.some((language) => !standardChoices.has(language))) {
+    throw new Error("D&D SRD origin languages must come from the selectable Standard Languages list");
+  }
+
+  const classChoice = dnd5eSrdClassLanguageChoiceForTemplate(template.id);
+  if (!classChoice) throw new Error("D&D SRD class language choices are unavailable for this class template");
+  if (classValue === undefined && classChoice.count > 0) {
+    throw new Error(`D&D SRD ${classChoice.className} requires exactly ${classChoice.count} class language choice`);
+  }
+  if (classValue !== undefined && (!Array.isArray(classValue) || classValue.some((language) => typeof language !== "string" || !language.trim()))) {
+    throw new Error("D&D SRD class language choices must be a list of language identifiers");
+  }
+  const classLanguageChoices = Array.isArray(classValue)
+    ? classValue.map((language) => normalizeDnd5eSrdOriginId(language as string))
+    : [];
+  if (classChoice.count === 0 && classLanguageChoices.length > 0) {
+    throw new Error(`D&D SRD ${classChoice.className} has no selectable level-one class language`);
+  }
+  if (classLanguageChoices.length !== classChoice.count) {
+    throw new Error(`D&D SRD ${classChoice.className} requires exactly ${classChoice.count} class language ${classChoice.count === 1 ? "choice" : "choices"}`);
+  }
+  if (new Set(classLanguageChoices).size !== classLanguageChoices.length) {
+    throw new Error("D&D SRD class language choices cannot repeat a language");
+  }
+  const allowedClassLanguages = new Set(classChoice.languageIds);
+  if (classLanguageChoices.some((language) => !allowedClassLanguages.has(language))) {
+    throw new Error(`D&D SRD ${classChoice.className} language choices must come from its allowed language tables`);
+  }
+  const alreadyKnown = new Set(["common", ...originLanguageChoices, ...classChoice.fixedLanguageIds]);
+  if (classLanguageChoices.some((language) => alreadyKnown.has(language))) {
+    throw new Error(`D&D SRD ${classChoice.className} class language choices cannot repeat a language the character already knows`);
+  }
+  return {
+    originLanguageChoices,
+    classLanguageChoices,
+    classFeatureLanguages: [...classChoice.fixedLanguageIds, ...classLanguageChoices]
+  };
+}
+
+/**
+ * Validates the complete, guided level-one path exposed by the bundled SRD
+ * creator. Template-only creation remains available for integrations that
+ * intentionally rely on the template defaults.
+ */
+export function dnd5eSrdValidateLevelOneCharacterCreation(
+  template: CharacterTemplate,
+  options: Dnd5eSrdCharacterOriginOptions
+): Dnd5eSrdLevelOneCreationValidation {
+  const issues: Dnd5eSrdLevelOneCreationIssue[] = [];
+  const addIssue = (field: Dnd5eSrdLevelOneCreationIssue["field"], code: string, message: string): void => {
+    if (!issues.some((issue) => issue.field === field && issue.code === code)) issues.push({ field, code, message });
+  };
+
+  if (template.systemId !== DND_5E_SRD_SYSTEM_ID || template.actorType !== "character" || numericValue(template.data.level, 0) !== 1) {
+    addIssue("templateId", "unsupported_template", "Choose a supported level-one D&D SRD class template");
+  }
+
+  const backgroundId = stringValue(options.backgroundId);
+  const background = backgroundId ? dnd5eSrdBackgroundById(backgroundId) : undefined;
+  if (!backgroundId) addIssue("backgroundId", "required", "Choose a background");
+  else if (!background) addIssue("backgroundId", "unknown", "Choose a background from the supported D&D SRD list");
+
+  const classSkillChoice = dnd5eSrdClassSkillChoiceForTemplate(template.id);
+  const rawClassSkills: unknown = options.classSkillProficiencies;
+  let classSkillProficiencies: string[] = [];
+  if (!classSkillChoice) {
+    addIssue("classSkillProficiencies", "unsupported_class", "Class skill choices are unavailable for this D&D SRD class template");
+  } else if (rawClassSkills === undefined) {
+    addIssue("classSkillProficiencies", "required", `Choose ${classSkillChoice.count} ${classSkillChoice.className} class skills`);
+  } else if (!Array.isArray(rawClassSkills)) {
+    addIssue("classSkillProficiencies", "invalid_type", "Class skill proficiencies must be a list of skill identifiers");
+  } else {
+    const malformed = rawClassSkills.some((skill) => typeof skill !== "string" || !skill.trim());
+    if (malformed) addIssue("classSkillProficiencies", "invalid_choice", "Class skill proficiencies must be non-empty skill identifiers");
+    classSkillProficiencies = rawClassSkills
+      .filter((skill): skill is string => typeof skill === "string" && Boolean(skill.trim()))
+      .map(normalizeDnd5eSrdSkillId);
+    if (classSkillProficiencies.length !== classSkillChoice.count) {
+      addIssue("classSkillProficiencies", "invalid_count", `Choose exactly ${classSkillChoice.count} ${classSkillChoice.className} class skills`);
+    }
+    if (new Set(classSkillProficiencies).size !== classSkillProficiencies.length) {
+      addIssue("classSkillProficiencies", "duplicate_skill", "Class skill proficiencies cannot repeat a skill");
+    }
+    const allowed = new Set(classSkillChoice.skillIds);
+    if (classSkillProficiencies.some((skill) => !allowed.has(skill))) {
+      addIssue("classSkillProficiencies", "outside_class_list", `Choose class skills from the ${classSkillChoice.className} skill list`);
+    }
+    if (background && classSkillProficiencies.some((skill) => background.skillProficiencies.includes(skill))) {
+      addIssue("classSkillProficiencies", "duplicate_background_skill", `Choose ${classSkillChoice.className} class skills not already granted by ${background.name}`);
+    }
+  }
+
+  const rawOriginLanguages: unknown = options.originLanguageChoices;
+  let originLanguageChoices: string[] = [];
+  if (rawOriginLanguages === undefined) {
+    addIssue("originLanguageChoices", "required", `Choose ${DND_5E_SRD_ORIGIN_LANGUAGE_CHOICE.count} origin languages`);
+  } else if (!Array.isArray(rawOriginLanguages)) {
+    addIssue("originLanguageChoices", "invalid_type", "Origin language choices must be a list of language identifiers");
+  } else {
+    const malformed = rawOriginLanguages.some((language) => typeof language !== "string" || !language.trim());
+    if (malformed) addIssue("originLanguageChoices", "invalid_choice", "Origin language choices must be non-empty language identifiers");
+    originLanguageChoices = rawOriginLanguages
+      .filter((language): language is string => typeof language === "string" && Boolean(language.trim()))
+      .map(normalizeDnd5eSrdOriginId);
+    if (originLanguageChoices.length !== DND_5E_SRD_ORIGIN_LANGUAGE_CHOICE.count) {
+      addIssue("originLanguageChoices", "invalid_count", `Choose exactly ${DND_5E_SRD_ORIGIN_LANGUAGE_CHOICE.count} origin languages`);
+    }
+    if (new Set(originLanguageChoices).size !== originLanguageChoices.length) {
+      addIssue("originLanguageChoices", "duplicate_language", "Origin language choices cannot repeat a language");
+    }
+    const allowed = new Set(DND_5E_SRD_ORIGIN_LANGUAGE_CHOICE.languageIds);
+    if (originLanguageChoices.some((language) => !allowed.has(language))) {
+      addIssue("originLanguageChoices", "outside_standard_list", "Choose origin languages from the selectable Standard Languages list");
+    }
+  }
+
+  const classLanguageChoice = dnd5eSrdClassLanguageChoiceForTemplate(template.id);
+  const rawClassLanguages: unknown = options.classLanguageChoices;
+  let classLanguageChoices: string[] = [];
+  if (!classLanguageChoice) {
+    addIssue("classLanguageChoices", "unsupported_class", "Class language choices are unavailable for this D&D SRD class template");
+  } else if (rawClassLanguages === undefined) {
+    if (classLanguageChoice.count > 0) {
+      addIssue("classLanguageChoices", "required", `Choose ${classLanguageChoice.count} ${classLanguageChoice.className} class language`);
+    }
+  } else if (!Array.isArray(rawClassLanguages)) {
+    addIssue("classLanguageChoices", "invalid_type", "Class language choices must be a list of language identifiers");
+  } else {
+    const malformed = rawClassLanguages.some((language) => typeof language !== "string" || !language.trim());
+    if (malformed) addIssue("classLanguageChoices", "invalid_choice", "Class language choices must be non-empty language identifiers");
+    classLanguageChoices = rawClassLanguages
+      .filter((language): language is string => typeof language === "string" && Boolean(language.trim()))
+      .map(normalizeDnd5eSrdOriginId);
+    if (classLanguageChoice.count === 0 && classLanguageChoices.length > 0) {
+      addIssue("classLanguageChoices", "not_available", `${classLanguageChoice.className} has no selectable level-one class language`);
+    } else if (classLanguageChoices.length !== classLanguageChoice.count) {
+      addIssue("classLanguageChoices", "invalid_count", `Choose exactly ${classLanguageChoice.count} ${classLanguageChoice.className} class language ${classLanguageChoice.count === 1 ? "choice" : "choices"}`);
+    }
+    if (new Set(classLanguageChoices).size !== classLanguageChoices.length) {
+      addIssue("classLanguageChoices", "duplicate_language", "Class language choices cannot repeat a language");
+    }
+    const allowed = new Set(classLanguageChoice.languageIds);
+    if (classLanguageChoice.count > 0 && classLanguageChoices.some((language) => !allowed.has(language))) {
+      addIssue("classLanguageChoices", "outside_class_list", `Choose ${classLanguageChoice.className} class languages from its allowed language tables`);
+    }
+    const alreadyKnown = new Set(["common", ...originLanguageChoices, ...classLanguageChoice.fixedLanguageIds]);
+    if (classLanguageChoices.some((language) => alreadyKnown.has(language))) {
+      addIssue("classLanguageChoices", "duplicate_known_language", "Choose a class language the character does not already know");
+    }
+  }
+
+  const speciesId = stringValue(options.speciesId);
+  const species = speciesId ? dnd5eSrdSpeciesById(speciesId) : undefined;
+  if (!speciesId) addIssue("speciesId", "required", "Choose a species");
+  else if (!species) addIssue("speciesId", "unknown", "Choose a species from the supported D&D SRD list");
+
+  const rawDraconicAncestry: unknown = options.draconicAncestry;
+  if (species?.id === "dragonborn") {
+    if (rawDraconicAncestry === undefined) addIssue("draconicAncestry", "required", "Choose a Dragonborn Draconic Ancestry");
+    else if (typeof rawDraconicAncestry !== "string" || !rawDraconicAncestry.trim()) addIssue("draconicAncestry", "invalid_type", "Draconic Ancestry must be a supported dragon identifier");
+    else if (!dnd5eSrdDraconicAncestorById(rawDraconicAncestry)) addIssue("draconicAncestry", "invalid_choice", "Choose a Draconic Ancestry from the supported SRD list");
+  } else if (rawDraconicAncestry !== undefined) {
+    addIssue("draconicAncestry", "not_available", "Draconic Ancestry is only available to Dragonborn characters");
+  }
+
+  const rawGiantAncestry: unknown = options.giantAncestry;
+  if (species?.id === "goliath") {
+    if (rawGiantAncestry === undefined) addIssue("giantAncestry", "required", "Choose a Goliath Giant Ancestry benefit");
+    else if (typeof rawGiantAncestry !== "string" || !rawGiantAncestry.trim()) addIssue("giantAncestry", "invalid_type", "Giant Ancestry must be a supported giant identifier");
+    else if (!dnd5eSrdGiantAncestryById(rawGiantAncestry)) addIssue("giantAncestry", "invalid_choice", "Choose a Giant Ancestry benefit from the supported SRD list");
+  } else if (rawGiantAncestry !== undefined) {
+    addIssue("giantAncestry", "not_available", "Giant Ancestry is only available to Goliath characters");
+  }
+
+  if (!options.abilityScoreIncreases || typeof options.abilityScoreIncreases !== "object" || Array.isArray(options.abilityScoreIncreases)) {
+    addIssue("abilityScoreIncreases", "required", "Choose either a +2/+1 or +1/+1/+1 background ability spread");
+  } else if (background) {
+    const rawEntries = Object.entries(options.abilityScoreIncreases as Record<string, unknown>);
+    const normalizedEntries = rawEntries.map(([ability, value]) => [normalizeDnd5eSrdOriginId(ability), value] as const);
+    const normalizedAbilities = normalizedEntries.map(([ability]) => ability);
+    const allowedAbilities = new Set(background.abilityScores);
+    if (normalizedEntries.some(([ability, value]) => !allowedAbilities.has(ability) || typeof value !== "number" || !Number.isInteger(value) || (value !== 1 && value !== 2))) {
+      addIssue(
+        "abilityScoreIncreases",
+        "invalid_choice",
+        `${background.name} ability increases must use ${background.abilityScores.join(", ")} with values of 1 or 2`
+      );
+    }
+    if (new Set(normalizedAbilities).size !== normalizedAbilities.length) {
+      addIssue("abilityScoreIncreases", "duplicate_ability", "Ability score increases cannot repeat an ability");
+    }
+    const values = normalizedEntries.map(([, value]) => value).filter((value): value is number => typeof value === "number").sort((a, b) => b - a);
+    const validTwoOne = values.length === 2 && values[0] === 2 && values[1] === 1;
+    const validThreeOnes = values.length === 3 && values.every((value) => value === 1);
+    if (!validTwoOne && !validThreeOnes) {
+      addIssue("abilityScoreIncreases", "invalid_spread", "Ability score increases must be exactly +2/+1 or +1/+1/+1");
+    }
+  }
+
+  const skillProficiency = stringValue(options.skillProficiency);
+  const originFeat = stringValue(options.originFeat);
+  if (species?.id === "human") {
+    if (!skillProficiency) addIssue("skillProficiency", "required", "Choose the Human Skillful proficiency");
+    else {
+      const skillId = normalizeDnd5eSrdSkillId(skillProficiency);
+      const skill = dnd5eSrdSkills().find((candidate) => candidate.id === skillId);
+      if (!skill) addIssue("skillProficiency", "unknown", "Choose a valid skill for Human Skillful");
+      else if (background?.skillProficiencies.includes(skill.id)) {
+        addIssue("skillProficiency", "duplicate_background_skill", `Choose a Human Skillful proficiency not already granted by ${background.name}`);
+      } else if (classSkillProficiencies.includes(skill.id)) {
+        addIssue("skillProficiency", "duplicate_class_skill", `Choose a Human Skillful proficiency not already granted by the ${classSkillChoice?.className ?? "class"}`);
+      }
+    }
+    if (!originFeat) addIssue("originFeat", "required", "Choose the Human Versatile origin feat");
+    else if (!dnd5eSrdCharacterOrigins().originFeats.includes(originFeat)) {
+      addIssue("originFeat", "unknown", "Choose a supported origin feat for Human Versatile");
+    } else if (background?.feat === originFeat) {
+      addIssue("originFeat", "duplicate_background_feat", `Choose a Human Versatile feat other than ${background.feat}, which ${background.name} already grants`);
+    }
+  }
+
+  const spellcastingAbility = stringValue(options.speciesSpellcastingAbility);
+  if (species && ["elf", "gnome", "tiefling"].includes(species.id)) {
+    if (!spellcastingAbility) addIssue("speciesSpellcastingAbility", "required", `Choose the ${species.name} spellcasting ability`);
+    else if (!DND_5E_SRD_SPECIES_SPELLCASTING_ABILITIES.includes(normalizeDnd5eSrdOriginId(spellcastingAbility))) {
+      addIssue("speciesSpellcastingAbility", "invalid_choice", "Species spellcasting ability must be Intelligence, Wisdom, or Charisma");
+    }
+  }
+
+  if (species?.id === "elf") {
+    const lineageChoice = stringValue(options.elfLineage);
+    const lineageId = lineageChoice ? normalizeDnd5eSrdElfLineageId(lineageChoice) : undefined;
+    const lineage = lineageId ? DND_5E_SRD_ELF_LINEAGES[lineageId] : undefined;
+    if (!lineageChoice) addIssue("elfLineage", "required", "Choose an Elven Lineage");
+    else if (!lineage) addIssue("elfLineage", "invalid_choice", "Elven Lineage must be Drow, High Elf, or Wood Elf");
+    const cantripChoice = stringValue(options.elfCantrip);
+    if (lineage?.id === "high-elf") {
+      if (!cantripChoice) addIssue("elfCantrip", "required", "Choose the High Elf Wizard cantrip");
+      else if (!DND_5E_SRD_HIGH_ELF_WIZARD_CANTRIPS.includes(normalizeDnd5eSrdOriginId(cantripChoice))) {
+        addIssue("elfCantrip", "invalid_choice", "Choose a supported High Elf Wizard cantrip");
+      }
+    } else if (lineage && cantripChoice) {
+      addIssue("elfCantrip", "not_available", "Only a High Elf can choose a replacement Wizard cantrip");
+    }
+  }
+
+  if (species?.id === "gnome") {
+    const lineageChoice = stringValue(options.gnomeLineage);
+    const lineageId = lineageChoice ? normalizeDnd5eSrdGnomeLineageId(lineageChoice) : undefined;
+    if (!lineageChoice) addIssue("gnomeLineage", "required", "Choose a Gnomish Lineage");
+    else if (!lineageId || !DND_5E_SRD_GNOME_LINEAGES[lineageId]) addIssue("gnomeLineage", "invalid_choice", "Gnomish Lineage must be Forest Gnome or Rock Gnome");
+  }
+
+  if (species?.id === "tiefling") {
+    const legacyChoice = stringValue(options.tieflingLegacy);
+    const legacyId = legacyChoice ? normalizeDnd5eSrdOriginId(legacyChoice) as Dnd5eSrdTieflingLegacyId : undefined;
+    if (!legacyChoice) addIssue("tieflingLegacy", "required", "Choose a Tiefling Fiendish Legacy");
+    else if (!legacyId || !DND_5E_SRD_TIEFLING_LEGACIES[legacyId]) addIssue("tieflingLegacy", "invalid_choice", "Fiendish Legacy must be Abyssal, Chthonic, or Infernal");
+  }
+
+  dnd5eSrdResolveLevelOneRuleSelections(template, background, species, classSkillProficiencies, options, addIssue);
+  dnd5eSrdResolveStartingSelections(template, background, options, addIssue);
+
+  if (species && issues.length === 0) {
+    try {
+      dnd5eSrdApplyCharacterOrigins(template, options);
+    } catch (error) {
+      addIssue("speciesId", "inconsistent_choices", error instanceof Error ? error.message : "Origin choices are inconsistent");
+    }
+  }
+
+  return { ok: issues.length === 0, issues };
 }
 
 export function dnd5eSrdApplyCharacterOrigins(template: CharacterTemplate, options: Dnd5eSrdCharacterOriginOptions = {}): Dnd5eSrdCharacterOriginBuild {
@@ -6817,8 +8810,56 @@ export function dnd5eSrdApplyCharacterOrigins(template: CharacterTemplate, optio
   const features = new Set([...normalizeStringArray(data.features), ...species.traits]);
   const className = stringValue(data.class) || "Fighter";
   const level = numericValue(data.level, 1);
+  const hasStartingSelections = options.classEquipmentPackageId !== undefined
+    || options.backgroundEquipmentPackageId !== undefined
+    || options.classEquipmentChoices !== undefined
+    || options.backgroundEquipmentChoices !== undefined
+    || options.classToolProficiencyChoices !== undefined
+    || options.backgroundToolProficiencyChoice !== undefined
+    || options.weaponMasteryChoices !== undefined;
+  const startingSelectionIssues: Dnd5eSrdLevelOneCreationIssue[] = [];
+  const startingSelections = hasStartingSelections
+    ? dnd5eSrdResolveStartingSelections(template, background, options, (field, code, message) => startingSelectionIssues.push({ field, code, message }))
+    : undefined;
+  if (hasStartingSelections && !startingSelections) {
+    throw new Error(startingSelectionIssues.map((issue) => issue.message).join("; ") || "Invalid D&D SRD starting-equipment choices");
+  }
+  const hasClassSkillSelection = options.classSkillProficiencies !== undefined;
+  const classSkillProficiencies = hasClassSkillSelection
+    ? dnd5eSrdAssertClassSkillSelection(template, background, options.classSkillProficiencies)
+    : [];
+  const hasRuleSelections = options.classCantripChoices !== undefined
+    || options.classPreparedSpellChoices !== undefined
+    || options.wizardSpellbookChoices !== undefined
+    || options.backgroundMagicInitiateCantrips !== undefined
+    || options.backgroundMagicInitiateSpell !== undefined
+    || options.backgroundMagicInitiateAbility !== undefined
+    || options.originFeatMagicInitiateCantrips !== undefined
+    || options.originFeatMagicInitiateSpell !== undefined
+    || options.originFeatMagicInitiateAbility !== undefined
+    || options.skilledProficiencyChoices !== undefined
+    || options.fightingStyle !== undefined
+    || options.divineOrder !== undefined
+    || options.primalOrder !== undefined
+    || options.rogueExpertiseChoices !== undefined
+    || options.eldritchInvocation !== undefined
+    || options.pactTomeCantripChoices !== undefined
+    || options.pactTomeRitualChoices !== undefined;
+  const ruleSelectionIssues: Dnd5eSrdLevelOneCreationIssue[] = [];
+  const ruleSelections = hasRuleSelections
+    ? dnd5eSrdResolveLevelOneRuleSelections(template, background, species, classSkillProficiencies, options, (field, code, message) => ruleSelectionIssues.push({ field, code, message }))
+    : undefined;
+  if (hasRuleSelections && !ruleSelections) {
+    throw new Error(ruleSelectionIssues.map((issue) => issue.message).join("; ") || "Invalid D&D SRD level-one class or spell choices");
+  }
+  const hasLanguageSelection = options.originLanguageChoices !== undefined || options.classLanguageChoices !== undefined;
+  const languageSelection = hasLanguageSelection
+    ? dnd5eSrdAssertLanguageSelections(template, options.originLanguageChoices, options.classLanguageChoices)
+    : undefined;
   dnd5eSrdAssertSpeciesSpellcastingAbilityAvailable(species, options);
-  const humanChoices = dnd5eSrdHumanOriginChoices(species, options, background);
+  const dragonbornChoices = dnd5eSrdDragonbornAncestryChoices(species, options);
+  const goliathChoices = dnd5eSrdGoliathAncestryChoices(species, options);
+  const humanChoices = dnd5eSrdHumanOriginChoices(species, options, background, classSkillProficiencies);
   const elfChoices = dnd5eSrdElfOriginChoices(species, options);
   const gnomeChoices = dnd5eSrdGnomeOriginChoices(species, options);
   const tieflingChoices = dnd5eSrdTieflingOriginChoices(species, options);
@@ -6826,16 +8867,26 @@ export function dnd5eSrdApplyCharacterOrigins(template: CharacterTemplate, optio
     source: DND_5E_SRD_VERSION,
     backgroundId: background.id,
     speciesId: species.id,
+    ...(hasClassSkillSelection ? { classSkillProficiencies: [...classSkillProficiencies] } : {}),
+    ...(languageSelection ? {
+      originLanguageChoices: [...languageSelection.originLanguageChoices],
+      classLanguageChoices: [...languageSelection.classLanguageChoices]
+    } : {}),
+    ...dragonbornChoices.origin,
+    ...goliathChoices.origin,
     ...humanChoices.origin,
     ...elfChoices.origin,
     ...gnomeChoices.origin,
-    ...tieflingChoices.origin
+    ...tieflingChoices.origin,
+    ...(startingSelections?.origin ?? {}),
+    ...(ruleSelections?.origin ?? {})
   };
   const resourceData = { ...data, origin };
   const resources = normalizeDnd5eSrdResources(data.resources, className, level, resourceData);
   for (const [resourceId, resource] of Object.entries(dnd5eSrdSpeciesResources(species, proficiencyBonus, level, resourceData))) {
     resources[resourceId] = resource;
   }
+  for (const [resourceId, resource] of Object.entries(ruleSelections?.resources ?? {})) resources[resourceId] = { ...resource };
   data.ruleset = DND_5E_SRD_VERSION;
   data.background = background.name;
   data.species = species.name;
@@ -6844,12 +8895,32 @@ export function dnd5eSrdApplyCharacterOrigins(template: CharacterTemplate, optio
   data.speed = elfChoices.speed ?? species.speed;
   data.origin = origin;
   data.proficiencyBonus = proficiencyBonus;
-  data.skillProficiencies = uniqueStrings([...background.skillProficiencies, ...humanChoices.skillProficiencies]);
-  data.toolProficiencies = [...background.toolProficiencies];
+  data.skillProficiencies = uniqueStrings([...background.skillProficiencies, ...classSkillProficiencies, ...humanChoices.skillProficiencies, ...(ruleSelections?.skillProficiencyIds ?? [])]);
+  data.toolProficiencies = startingSelections
+    ? uniqueStrings([...startingSelections.backgroundToolProficiencyIds, ...startingSelections.classToolProficiencyIds, ...(ruleSelections?.toolProficiencyIds ?? [])])
+    : uniqueStrings([...background.toolProficiencies, ...(ruleSelections?.toolProficiencyIds ?? [])]);
+  if (languageSelection) {
+    data.languages = uniqueStrings(["common", ...languageSelection.originLanguageChoices, ...languageSelection.classFeatureLanguages]);
+    data.languageProficiencies = {
+      source: DND_5E_SRD_VERSION,
+      common: ["common"],
+      origin: [...languageSelection.originLanguageChoices],
+      classFeature: [...languageSelection.classFeatureLanguages]
+    };
+  }
   data.feats = uniqueStrings([background.feat, ...humanChoices.feats]);
-  if (tieflingChoices.resistances.length > 0) data.resistances = uniqueStrings([...normalizeStringArray(data.resistances), ...tieflingChoices.resistances]);
-  data.currency = dnd5eSrdCurrency({ gp: background.startingGp });
+  if (dragonbornChoices.resistances.length > 0 || tieflingChoices.resistances.length > 0) {
+    data.resistances = uniqueStrings([...normalizeStringArray(data.resistances), ...dragonbornChoices.resistances, ...tieflingChoices.resistances]);
+  }
+  data.currency = dnd5eSrdCurrency({ gp: startingSelections?.gp ?? background.startingGp });
+  if (startingSelections) {
+    const masteries = startingSelections.weaponMasteries.map((mastery) => ({ ...mastery }));
+    data.weaponMasteries = masteries;
+    data.weaponMasteriesByClass = masteries.length > 0 ? { [className]: masteries.map((mastery) => ({ ...mastery })) } : {};
+  }
+  if (ruleSelections) Object.assign(data, cloneJsonRecord(ruleSelections.data));
   data.resources = resources;
+  for (const feature of ruleSelections?.features ?? []) features.add(feature);
   data.features = [...features];
   if (elfChoices.senses?.length) data.senses = [...elfChoices.senses];
   else if (species.senses?.length) data.senses = [...species.senses];
@@ -6863,7 +8934,16 @@ export function dnd5eSrdApplyCharacterOrigins(template: CharacterTemplate, optio
   data.resources = originResources;
   return {
     data,
-    items: [...template.items, ...elfChoices.items, ...gnomeChoices.items, ...tieflingChoices.items].map((item) => ({ ...item, ...(item.data ? { data: cloneJsonRecord(item.data) } : {}) })),
+    items: dnd5eSrdMergeLevelOneSpellGrants([
+      ...(startingSelections
+        ? (ruleSelections ? [] : template.items.filter((item) => dnd5eSrdCompendiumEntry(item.entryId)?.type === "spell"))
+        : (ruleSelections ? template.items.filter((item) => dnd5eSrdCompendiumEntry(item.entryId)?.type !== "spell") : template.items)),
+      ...(startingSelections?.items ?? []),
+      ...(ruleSelections?.items ?? []),
+      ...elfChoices.items,
+      ...gnomeChoices.items,
+      ...tieflingChoices.items
+    ]),
     background: { ...background },
     species: { ...species, traits: [...species.traits], senses: species.senses ? [...species.senses] : undefined }
   };
@@ -6937,7 +9017,7 @@ export function dnd5eSrdCharacterTemplates(): CharacterTemplate[] {
         resources: { secondWind: { current: 2, max: 2, recovery: "short" } },
         spellSlots: {},
         conditions: [],
-        features: ["Fighting Style", "Second Wind"],
+        features: ["Fighting Style", "Second Wind", "Weapon Mastery"],
         feats: ["Savage Attacker"]
       },
       items: [{ entryId: "longsword" }]
@@ -7217,7 +9297,7 @@ export function dnd5eSrdCharacterTemplates(): CharacterTemplate[] {
         resources: { arcaneRecovery: { current: 1, max: 1, recovery: "long" } },
         spellSlots: { level1: { current: 2, max: 2, recovery: "long" } },
         conditions: [],
-        features: ["Spellcasting", "Arcane Recovery"],
+        features: ["Spellcasting", "Ritual Adept", "Arcane Recovery"],
         feats: []
       },
       items: [{ entryId: "fire-bolt" }, { entryId: "shield" }]
@@ -7361,8003 +9441,7 @@ export function genericFantasyEncounterThreats(): EncounterThreat[] {
   ];
 }
 
-const DND_5E_SRD_MONSTER_STAT_BLOCKS: Record<string, Dnd5eSrdMonsterStatBlock> = {
-  aboleth: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Aberration",
-    alignment: "Lawful Evil",
-    armorClass: 17,
-    initiative: 7,
-    hitPoints: 150,
-    hitDice: "20d10+40",
-    speed: "10 ft., Swim 40 ft.",
-    challengeRating: "10",
-    xp: 5900,
-    proficiencyBonus: 4,
-    abilities: { strength: 21, dexterity: 9, constitution: 15, intelligence: 18, wisdom: 15, charisma: 18 },
-    saves: { strength: 5, dexterity: 3, constitution: 6, intelligence: 8, wisdom: 6, charisma: 4 },
-    skills: { history: 12, perception: 10 },
-    senses: ["Darkvision 120 ft.", "Passive Perception 20"],
-    languages: ["Deep Speech", "telepathy 120 ft."],
-    traits: [
-      { name: "Amphibious", summary: "Can breathe air and water." },
-      { name: "Eldritch Restoration", summary: "Regains Hit Points at the start of each turn while not dead." },
-      { name: "Legendary Resistance", summary: "Can choose to succeed on a failed save a limited number of times." },
-      { name: "Mucus Cloud", summary: "A creature that touches the aboleth or hits it with a melee attack while within 5 feet can be affected by its mucus." },
-      { name: "Probing Telepathy", summary: "Learns the greatest desires of creatures it communicates with telepathically." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Tentacle attacks and one Consume Memories attack." },
-      { name: "Tentacle", kind: "action", attackBonus: 9, range: "reach 15 ft.", damageFormula: "2d6+5", damageType: "bludgeoning", condition: "Grappled", summary: "The target is grappled by the tentacle.", summaryMetadata: true },
-      { name: "Consume Memories", kind: "action", range: "30 ft.; Charmed or Grappled target", damageFormula: "3d6", damageType: "psychic", save: { ability: "intelligence", dc: 16, success: "half" }, summary: "The aboleth consumes memories from a Charmed or Grappled creature.", summaryMetadata: true },
-      { name: "Dominate Mind", kind: "action", range: "90 ft.", save: { ability: "wisdom", dc: 16 }, condition: "Charmed", effects: ["The target is Charmed by the aboleth and follows telepathic commands."], summary: "The target repeats the save when it takes damage or ends a turn more than 1 mile from the aboleth.", summaryMetadata: true },
-      { name: "Legendary Actions", kind: "reaction", effects: ["The aboleth can take legendary actions after another creature's turn, including Lash or Psychic Drain."], summary: "Use this effect roll to track legendary action availability and selected option.", summaryMetadata: true }
-    ]
-  },
-  "animated-armor": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Construct",
-    alignment: "Unaligned",
-    armorClass: 18,
-    initiative: 2,
-    hitPoints: 33,
-    hitDice: "6d8+6",
-    speed: "25 ft.",
-    challengeRating: "1",
-    xp: 200,
-    proficiencyBonus: 2,
-    abilities: { strength: 14, dexterity: 11, constitution: 13, intelligence: 1, wisdom: 3, charisma: 1 },
-    saves: { strength: 2, dexterity: 0, constitution: 1, intelligence: -5, wisdom: -4, charisma: -5 },
-    senses: ["Blindsight 60 ft.", "Passive Perception 6"],
-    languages: [],
-    traits: [
-      { name: "Antimagic Susceptibility", summary: "Incapacitated while in an Antimagic Field and can be affected by Dispel Magic." },
-      { name: "False Appearance", summary: "Indistinguishable from a normal suit of armor while motionless." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Slam attacks." },
-      { name: "Slam", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d6+2", damageType: "bludgeoning" }
-    ]
-  },
-  "flying-sword": {
-    source: DND_5E_SRD_VERSION,
-    size: "Small",
-    creatureType: "Construct",
-    alignment: "Unaligned",
-    armorClass: 17,
-    initiative: 4,
-    hitPoints: 14,
-    hitDice: "4d6",
-    speed: "5 ft., Fly 50 ft. (hover)",
-    challengeRating: "1/4",
-    xp: 50,
-    proficiencyBonus: 2,
-    abilities: { strength: 12, dexterity: 15, constitution: 11, intelligence: 1, wisdom: 5, charisma: 1 },
-    saves: { strength: 1, dexterity: 4, constitution: 0, intelligence: -5, wisdom: -3, charisma: -5 },
-    senses: ["Blindsight 60 ft.", "Passive Perception 7"],
-    languages: [],
-    traits: [
-      { name: "Antimagic Susceptibility", summary: "Incapacitated while in an Antimagic Field and can be affected by Dispel Magic." },
-      { name: "False Appearance", summary: "Indistinguishable from a normal sword while motionless." }
-    ],
-    actions: [{ name: "Slash", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d8+2", damageType: "slashing" }]
-  },
-  "rug-of-smothering": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Construct",
-    alignment: "Unaligned",
-    armorClass: 12,
-    initiative: 4,
-    hitPoints: 27,
-    hitDice: "5d10",
-    speed: "10 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 17, dexterity: 14, constitution: 10, intelligence: 1, wisdom: 3, charisma: 1 },
-    saves: { strength: 3, dexterity: 2, constitution: 0, intelligence: -5, wisdom: -4, charisma: -5 },
-    senses: ["Blindsight 60 ft.", "Passive Perception 6"],
-    languages: [],
-    traits: [
-      { name: "Antimagic Susceptibility", summary: "Incapacitated while in an Antimagic Field and can be affected by Dispel Magic." },
-      { name: "Damage Transfer", summary: "While grappling a creature, the rug takes only half the damage dealt to it, and the grappled creature takes the other half." },
-      { name: "False Appearance", summary: "Indistinguishable from a normal rug while motionless." }
-    ],
-    actions: [{ name: "Smother", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "2d6+3", damageType: "bludgeoning", condition: "Blinded/Restrained", summary: "The target is Blinded, Restrained, and unable to breathe while smothered.", summaryMetadata: true }]
-  },
-  allosaurus: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Beast (Dinosaur)",
-    alignment: "Unaligned",
-    armorClass: 13,
-    initiative: 1,
-    hitPoints: 51,
-    hitDice: "6d10+18",
-    speed: "60 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 19, dexterity: 13, constitution: 17, intelligence: 2, wisdom: 12, charisma: 5 },
-    saves: { strength: 4, dexterity: 1, constitution: 3, intelligence: -4, wisdom: 1, charisma: -3 },
-    skills: { perception: 5 },
-    senses: ["Passive Perception 15"],
-    languages: [],
-    actions: [
-      { name: "Bite", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "2d10+4", damageType: "piercing" },
-      { name: "Claws", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "1d8+4", damageType: "slashing", condition: "Prone", summary: "If the target is Large or smaller and the allosaurus moved 30+ feet straight toward it before the hit, the target has the Prone condition, and the allosaurus can make one Bite attack against it.", summaryMetadata: true }
-    ]
-  },
-  ankylosaurus: {
-    source: DND_5E_SRD_VERSION,
-    size: "Huge",
-    creatureType: "Beast (Dinosaur)",
-    alignment: "Unaligned",
-    armorClass: 15,
-    initiative: 0,
-    hitPoints: 68,
-    hitDice: "8d12+16",
-    speed: "30 ft.",
-    challengeRating: "3",
-    xp: 700,
-    proficiencyBonus: 2,
-    abilities: { strength: 19, dexterity: 11, constitution: 15, intelligence: 2, wisdom: 12, charisma: 5 },
-    saves: { strength: 6, dexterity: 0, constitution: 2, intelligence: -4, wisdom: 1, charisma: -3 },
-    senses: ["Passive Perception 11"],
-    languages: [],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Tail attacks." },
-      { name: "Tail", kind: "action", attackBonus: 6, range: "reach 10 ft.", damageFormula: "1d10+4", damageType: "bludgeoning", condition: "Prone", summary: "If the target is a Huge or smaller creature, it has the Prone condition.", summaryMetadata: true }
-    ]
-  },
-  ape: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 12,
-    initiative: 2,
-    hitPoints: 19,
-    hitDice: "3d8+6",
-    speed: "30 ft., Climb 30 ft.",
-    challengeRating: "1/2",
-    xp: 100,
-    proficiencyBonus: 2,
-    abilities: { strength: 16, dexterity: 14, constitution: 14, intelligence: 6, wisdom: 12, charisma: 7 },
-    saves: { strength: 3, dexterity: 2, constitution: 2, intelligence: -2, wisdom: 1, charisma: -2 },
-    skills: { athletics: 5, perception: 3 },
-    senses: ["Passive Perception 13"],
-    languages: [],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Fist attacks." },
-      { name: "Fist", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d4+3", damageType: "bludgeoning" },
-      { name: "Rock", kind: "action", attackBonus: 5, range: "25/50 ft.", recharge: "6", damageFormula: "2d6+3", damageType: "bludgeoning" }
-    ]
-  },
-  archelon: {
-    source: DND_5E_SRD_VERSION,
-    size: "Huge",
-    creatureType: "Beast (Dinosaur)",
-    alignment: "Unaligned",
-    armorClass: 17,
-    initiative: 3,
-    hitPoints: 90,
-    hitDice: "12d12+12",
-    speed: "20 ft., Swim 80 ft.",
-    challengeRating: "4",
-    xp: 1100,
-    proficiencyBonus: 2,
-    abilities: { strength: 18, dexterity: 16, constitution: 13, intelligence: 4, wisdom: 14, charisma: 6 },
-    saves: { strength: 4, dexterity: 3, constitution: 1, intelligence: -3, wisdom: 2, charisma: -2 },
-    skills: { stealth: 5 },
-    senses: ["Passive Perception 12"],
-    languages: [],
-    traits: [{ name: "Amphibious", summary: "Can breathe air and water." }],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Bite attacks." },
-      { name: "Bite", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "3d6+4", damageType: "piercing" }
-    ]
-  },
-  ankheg: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Monstrosity",
-    alignment: "Unaligned",
-    armorClass: 14,
-    initiative: 0,
-    hitPoints: 45,
-    hitDice: "6d10+12",
-    speed: "30 ft., Burrow 10 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 17, dexterity: 11, constitution: 14, intelligence: 1, wisdom: 13, charisma: 6 },
-    saves: { strength: 3, dexterity: 0, constitution: 2, intelligence: -5, wisdom: 1, charisma: -2 },
-    senses: ["Darkvision 60 ft.", "Tremorsense 60 ft.", "Passive Perception 11"],
-    languages: [],
-    traits: [{ name: "Tunneler", summary: "Can burrow through solid rock at half its Burrow Speed and leaves a tunnel in its wake." }],
-    actions: [
-      { name: "Bite", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "2d6+3+1d6", damageType: "slashing/acid", save: { ability: "strength", dc: 13 }, condition: "Grappled", summary: "A Large or smaller target can be grappled by the ankheg; escape DC 13.", summaryMetadata: true },
-      { name: "Acid Spray", kind: "action", range: "30-foot line", damageFormula: "4d6", damageType: "acid", save: { ability: "dexterity", dc: 12, success: "half" }, recharge: "6" }
-    ]
-  },
-  assassin: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium or Small",
-    creatureType: "Humanoid",
-    alignment: "Neutral",
-    armorClass: 16,
-    initiative: 10,
-    hitPoints: 97,
-    hitDice: "15d8+30",
-    speed: "30 ft.",
-    challengeRating: "8",
-    xp: 3900,
-    proficiencyBonus: 3,
-    abilities: { strength: 11, dexterity: 18, constitution: 14, intelligence: 16, wisdom: 11, charisma: 10 },
-    saves: { strength: 0, dexterity: 7, constitution: 2, intelligence: 6, wisdom: 0, charisma: 0 },
-    skills: { acrobatics: 7, perception: 6, stealth: 10 },
-    senses: ["Passive Perception 16"],
-    languages: ["Common", "Thieves' Cant"],
-    gear: ["Light Crossbow", "Shortsword", "Studded Leather Armor"],
-    traits: [
-      { name: "Poison Resistance", summary: "Resistant to Poison damage." },
-      { name: "Evasion", summary: "Can avoid or reduce damage from certain Dexterity saves." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Shortsword or Light Crossbow attacks." },
-      { name: "Shortsword", kind: "action", attackBonus: 7, range: "reach 5 ft.", damageFormula: "1d6+4+5d6", damageType: "piercing/poison", condition: "Poisoned", summary: "The attack deals extra poison damage and can impose Poisoned metadata.", summaryMetadata: true },
-      { name: "Light Crossbow", kind: "action", attackBonus: 7, range: "80/320 ft.", damageFormula: "1d8+4+6d6", damageType: "piercing/poison", summary: "The attack includes extra poison damage.", summaryMetadata: true },
-      { name: "Cunning Action", kind: "bonusAction", effects: ["Takes the Dash, Disengage, or Hide action."], summary: "The assassin uses a bonus action to reposition or hide.", summaryMetadata: true }
-    ]
-  },
-  "awakened-shrub": {
-    source: DND_5E_SRD_VERSION,
-    size: "Small",
-    creatureType: "Plant",
-    alignment: "Neutral",
-    armorClass: 9,
-    initiative: -1,
-    hitPoints: 10,
-    hitDice: "3d6",
-    speed: "20 ft.",
-    challengeRating: "0",
-    xp: 10,
-    proficiencyBonus: 2,
-    abilities: { strength: 3, dexterity: 8, constitution: 11, intelligence: 10, wisdom: 10, charisma: 6 },
-    saves: { strength: -4, dexterity: -1, constitution: 0, intelligence: 0, wisdom: 0, charisma: -2 },
-    senses: ["Passive Perception 10"],
-    languages: ["Common plus one other language"],
-    traits: [
-      { name: "Fire Vulnerability", summary: "Vulnerable to Fire damage." },
-      { name: "Piercing Resistance", summary: "Resistant to Piercing damage." }
-    ],
-    actions: [{ name: "Rake", kind: "action", attackBonus: 1, range: "reach 5 ft.", damageFormula: "1", damageType: "slashing" }]
-  },
-  "awakened-tree": {
-    source: DND_5E_SRD_VERSION,
-    size: "Huge",
-    creatureType: "Plant",
-    alignment: "Neutral",
-    armorClass: 13,
-    initiative: -2,
-    hitPoints: 59,
-    hitDice: "7d12+14",
-    speed: "20 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 19, dexterity: 6, constitution: 15, intelligence: 10, wisdom: 10, charisma: 7 },
-    saves: { strength: 4, dexterity: -2, constitution: 2, intelligence: 0, wisdom: 0, charisma: -2 },
-    senses: ["Passive Perception 10"],
-    languages: ["Common plus one other language"],
-    traits: [
-      { name: "Fire Vulnerability", summary: "Vulnerable to Fire damage." },
-      { name: "Bludgeoning and Piercing Resistance", summary: "Resistant to Bludgeoning and Piercing damage." }
-    ],
-    actions: [{ name: "Slam", kind: "action", attackBonus: 6, range: "reach 10 ft.", damageFormula: "3d6+4", damageType: "bludgeoning" }]
-  },
-  "axe-beak": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Monstrosity",
-    alignment: "Unaligned",
-    armorClass: 11,
-    initiative: 1,
-    hitPoints: 19,
-    hitDice: "3d10+3",
-    speed: "50 ft.",
-    challengeRating: "1/4",
-    xp: 50,
-    proficiencyBonus: 2,
-    abilities: { strength: 14, dexterity: 12, constitution: 12, intelligence: 2, wisdom: 10, charisma: 5 },
-    saves: { strength: 2, dexterity: 1, constitution: 1, intelligence: -4, wisdom: 0, charisma: -3 },
-    senses: ["Passive Perception 10"],
-    languages: [],
-    actions: [{ name: "Beak", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d8+2", damageType: "slashing" }]
-  },
-  "azer-sentinel": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Elemental",
-    alignment: "Lawful Neutral",
-    armorClass: 17,
-    initiative: 1,
-    hitPoints: 39,
-    hitDice: "6d8+12",
-    speed: "30 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 17, dexterity: 12, constitution: 15, intelligence: 12, wisdom: 13, charisma: 10 },
-    saves: { strength: 3, dexterity: 1, constitution: 4, intelligence: 1, wisdom: 1, charisma: 0 },
-    senses: ["Passive Perception 11"],
-    languages: ["Primordial (Ignan)"],
-    traits: [
-      { name: "Fire and Poison Immunity", summary: "Immune to Fire and Poison damage and to the Poisoned condition." },
-      { name: "Fire Aura", summary: "At the end of each turn, chosen creatures in a 5-foot emanation take 1d10 Fire damage unless the azer has the Incapacitated condition." },
-      { name: "Illumination", summary: "Sheds Bright Light in a 10-foot radius and Dim Light for an additional 10 feet." }
-    ],
-    actions: [{ name: "Burning Hammer", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d10+3+1d6", damageType: "bludgeoning/fire" }]
-  },
-  behir: {
-    source: DND_5E_SRD_VERSION,
-    size: "Huge",
-    creatureType: "Monstrosity",
-    alignment: "Neutral Evil",
-    armorClass: 17,
-    initiative: 13,
-    hitPoints: 168,
-    hitDice: "16d12+64",
-    speed: "50 ft., Climb 50 ft.",
-    challengeRating: "11",
-    xp: 7200,
-    proficiencyBonus: 4,
-    abilities: { strength: 23, dexterity: 16, constitution: 18, intelligence: 7, wisdom: 14, charisma: 12 },
-    saves: { strength: 6, dexterity: 3, constitution: 4, intelligence: -2, wisdom: 2, charisma: 1 },
-    skills: { perception: 6, stealth: 7 },
-    senses: ["Darkvision 90 ft.", "Passive Perception 16"],
-    languages: ["Draconic"],
-    traits: [{ name: "Lightning Immunity", summary: "Immune to Lightning damage." }],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes one Bite attack and uses Constrict." },
-      { name: "Bite", kind: "action", attackBonus: 10, range: "reach 10 ft.", damageFormula: "2d12+6+2d10", damageType: "piercing/lightning", summary: "Deals Piercing plus Lightning damage.", summaryMetadata: true },
-      { name: "Constrict", kind: "action", range: "5 ft.", damageFormula: "5d8+6", damageType: "bludgeoning", save: { ability: "strength", dc: 18 }, condition: "Grappled/Restrained", summary: "A Large or smaller target takes Bludgeoning damage and is Grappled and Restrained on a failed save; escape DC 16.", summaryMetadata: true },
-      { name: "Lightning Breath", kind: "action", range: "90-foot line", damageFormula: "12d10", damageType: "lightning", save: { ability: "dexterity", dc: 16, success: "half" }, recharge: "5-6", summary: "Creatures in a 90-foot by 5-foot line take half damage on a successful save.", summaryMetadata: true },
-      { name: "Swallow", kind: "bonusAction", range: "5 ft.", damageFormula: "6d6", damageType: "acid", save: { ability: "dexterity", dc: 18 }, condition: "Blinded/Restrained", effects: ["Targets one Large or smaller creature Grappled by the behir. On a failed save, the target is swallowed, has Total Cover from outside effects, and takes Acid damage at the start of each of the behir's turns. If the behir takes 30 or more damage on a turn from a swallowed creature, it must succeed on a DC 14 Constitution save or regurgitate all swallowed creatures."], summary: "Swallows a Grappled creature, dealing recurring Acid damage.", summaryMetadata: true }
-    ]
-  },
-  baboon: {
-    source: DND_5E_SRD_VERSION,
-    size: "Small",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 12,
-    initiative: 2,
-    hitPoints: 3,
-    hitDice: "1d6",
-    speed: "30 ft., Climb 30 ft.",
-    challengeRating: "0",
-    xp: 10,
-    proficiencyBonus: 2,
-    abilities: { strength: 8, dexterity: 14, constitution: 11, intelligence: 4, wisdom: 12, charisma: 6 },
-    saves: { strength: -1, dexterity: 2, constitution: 0, intelligence: -3, wisdom: 1, charisma: -2 },
-    senses: ["Passive Perception 11"],
-    languages: [],
-    traits: [{ name: "Pack Tactics", summary: "Has Advantage on an attack roll against a creature if at least one ally is within 5 feet of the creature and the ally doesn't have the Incapacitated condition." }],
-    actions: [{ name: "Bite", kind: "action", attackBonus: 1, range: "reach 5 ft.", damageFormula: "1d4-1", damageType: "piercing" }]
-  },
-  badger: {
-    source: DND_5E_SRD_VERSION,
-    size: "Tiny",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 11,
-    initiative: 0,
-    hitPoints: 5,
-    hitDice: "1d4+3",
-    speed: "20 ft., Burrow 5 ft.",
-    challengeRating: "0",
-    xp: 10,
-    proficiencyBonus: 2,
-    abilities: { strength: 10, dexterity: 11, constitution: 16, intelligence: 2, wisdom: 12, charisma: 5 },
-    saves: { strength: 0, dexterity: 0, constitution: 3, intelligence: -4, wisdom: 1, charisma: -3 },
-    skills: { perception: 3 },
-    senses: ["Darkvision 30 ft.", "Passive Perception 13"],
-    languages: [],
-    traits: [{ name: "Poison Resistance", summary: "Resistant to Poison damage." }],
-    actions: [{ name: "Bite", kind: "action", attackBonus: 2, range: "reach 5 ft.", damageFormula: "1", damageType: "piercing" }]
-  },
-  berserker: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium or Small",
-    creatureType: "Humanoid",
-    alignment: "Neutral",
-    armorClass: 13,
-    initiative: 11,
-    hitPoints: 67,
-    hitDice: "9d8+27",
-    speed: "30 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 16, dexterity: 12, constitution: 17, intelligence: 9, wisdom: 11, charisma: 9 },
-    saves: { strength: 3, dexterity: 1, constitution: 3, intelligence: -1, wisdom: 0, charisma: -1 },
-    senses: ["Passive Perception 10"],
-    languages: ["Common"],
-    traits: [{ name: "Bloodied Frenzy", summary: "While Bloodied, has Advantage on attack rolls and saving throws." }],
-    actions: [{ name: "Greataxe", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d12+3", damageType: "slashing" }]
-  },
-  bat: {
-    source: DND_5E_SRD_VERSION,
-    size: "Tiny",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 12,
-    initiative: 2,
-    hitPoints: 1,
-    hitDice: "1d4-1",
-    speed: "5 ft., Fly 30 ft.",
-    challengeRating: "0",
-    xp: 10,
-    proficiencyBonus: 2,
-    abilities: { strength: 2, dexterity: 15, constitution: 8, intelligence: 2, wisdom: 12, charisma: 4 },
-    saves: { strength: -4, dexterity: 2, constitution: -1, intelligence: -4, wisdom: 1, charisma: -3 },
-    senses: ["Blindsight 60 ft.", "Passive Perception 11"],
-    languages: [],
-    actions: [{ name: "Bite", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1", damageType: "piercing" }]
-  },
-  "blood-hawk": {
-    source: DND_5E_SRD_VERSION,
-    size: "Small",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 12,
-    initiative: 2,
-    hitPoints: 7,
-    hitDice: "2d6",
-    speed: "10 ft., Fly 60 ft.",
-    challengeRating: "1/8",
-    xp: 25,
-    proficiencyBonus: 2,
-    abilities: { strength: 6, dexterity: 14, constitution: 10, intelligence: 3, wisdom: 14, charisma: 5 },
-    saves: { strength: -2, dexterity: 2, constitution: 0, intelligence: -4, wisdom: 2, charisma: -3 },
-    skills: { perception: 6 },
-    senses: ["Passive Perception 16"],
-    languages: [],
-    traits: [{ name: "Pack Tactics", summary: "Has Advantage on an attack roll against a creature if at least one ally is within 5 feet of the creature and the ally doesn't have the Incapacitated condition." }],
-    actions: [{ name: "Beak", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d4+2", damageType: "piercing", summary: "Deals 1d8+2 Piercing damage instead if the target is Bloodied.", summaryMetadata: true }]
-  },
-  "black-pudding": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Ooze",
-    alignment: "Unaligned",
-    armorClass: 7,
-    initiative: 7,
-    hitPoints: 68,
-    hitDice: "8d10+24",
-    speed: "20 ft., Climb 20 ft.",
-    challengeRating: "4",
-    xp: 1100,
-    proficiencyBonus: 2,
-    abilities: { strength: 16, dexterity: 5, constitution: 16, intelligence: 1, wisdom: 6, charisma: 1 },
-    saves: { strength: 3, dexterity: -3, constitution: 3, intelligence: -5, wisdom: -2, charisma: -5 },
-    senses: ["Blindsight 60 ft.", "Passive Perception 8"],
-    languages: [],
-    traits: [
-      { name: "Damage Immunities", summary: "Immune to Acid, Cold, Lightning, and Slashing damage." },
-      { name: "Condition Immunities", summary: "Immune to Charmed, Deafened, Exhaustion, Frightened, Grappled, Prone, and Restrained." },
-      { name: "Amorphous", summary: "Can move through a space as narrow as 1 inch without spending extra movement." },
-      { name: "Corrosive Form", summary: "A creature that hits the pudding with a melee attack while within 5 feet takes Acid damage; the pudding corrodes nonmagical weapons, ammunition, armor, metal, and wood." },
-      { name: "Spider Climb", summary: "Can climb difficult surfaces, including along ceilings, without needing to make an ability check." }
-    ],
-    actions: [
-      { name: "Dissolving Pseudopod", kind: "action", attackBonus: 5, range: "reach 10 ft.", damageFormula: "4d6+3", damageType: "acid", summary: "Nonmagical armor worn by the target takes a cumulative -1 AC penalty until repaired; armor is destroyed if the penalty reduces it to AC 10.", summaryMetadata: true },
-      { name: "Split", kind: "reaction", effects: ["When Large or Medium, has 10 or more Hit Points, and becomes Bloodied or takes Lightning or Slashing damage, splits into two smaller Black Puddings and divides its Hit Points evenly between them."], summary: "Splits into two smaller puddings when Bloodied or hit by Lightning or Slashing damage.", summaryMetadata: true }
-    ]
-  },
-  "blink-dog": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Fey",
-    alignment: "Lawful Good",
-    armorClass: 13,
-    initiative: 13,
-    hitPoints: 22,
-    hitDice: "4d8+4",
-    speed: "40 ft.",
-    challengeRating: "1/4",
-    xp: 50,
-    proficiencyBonus: 2,
-    abilities: { strength: 12, dexterity: 17, constitution: 12, intelligence: 10, wisdom: 13, charisma: 11 },
-    saves: { strength: 1, dexterity: 3, constitution: 1, intelligence: 0, wisdom: 1, charisma: 0 },
-    skills: { perception: 5, stealth: 5 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 15"],
-    languages: ["Blink Dog", "Understands Elvish and Sylvan but can't speak them"],
-    actions: [
-      { name: "Bite", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d4+3", damageType: "piercing" },
-      { name: "Teleport", kind: "bonusAction", recharge: "4-6", effects: ["Teleports up to 40 feet to an unoccupied space it can see."], summary: "Teleports to a visible unoccupied space.", summaryMetadata: true }
-    ]
-  },
-  boar: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 11,
-    initiative: 0,
-    hitPoints: 13,
-    hitDice: "2d8+4",
-    speed: "40 ft.",
-    challengeRating: "1/4",
-    xp: 50,
-    proficiencyBonus: 2,
-    abilities: { strength: 13, dexterity: 11, constitution: 14, intelligence: 2, wisdom: 9, charisma: 5 },
-    saves: { strength: 1, dexterity: 0, constitution: 2, intelligence: -4, wisdom: -1, charisma: -3 },
-    senses: ["Passive Perception 9"],
-    languages: [],
-    traits: [{ name: "Bloodied Fury", summary: "Has Advantage on attack rolls while Bloodied." }],
-    actions: [{ name: "Gore", kind: "action", attackBonus: 3, range: "reach 5 ft.", damageFormula: "1d6+1", damageType: "piercing", condition: "Prone", summary: "If the target is Medium or smaller and the boar moved 20+ feet straight toward it before the hit, the target takes an extra 1d6 Piercing damage and has the Prone condition.", summaryMetadata: true }]
-  },
-  "bugbear-stalker": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Fey (Goblinoid)",
-    alignment: "Chaotic Evil",
-    armorClass: 15,
-    initiative: 12,
-    hitPoints: 65,
-    hitDice: "10d8+20",
-    speed: "30 ft.",
-    challengeRating: "3",
-    xp: 700,
-    proficiencyBonus: 2,
-    abilities: { strength: 17, dexterity: 14, constitution: 14, intelligence: 11, wisdom: 12, charisma: 11 },
-    saves: { strength: 3, dexterity: 2, constitution: 4, intelligence: 0, wisdom: 3, charisma: 0 },
-    skills: { stealth: 6, survival: 3 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 11"],
-    languages: ["Common", "Goblin"],
-    traits: [{ name: "Abduct", summary: "Does not spend extra movement to move a creature Grappled by it." }],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two attacks, using Javelin or Morningstar in any combination." },
-      { name: "Javelin", kind: "action", attackBonus: 5, range: "reach 10 ft. or range 30/120 ft.", damageFormula: "3d6+3", damageType: "piercing" },
-      { name: "Morningstar", kind: "action", attackBonus: 5, range: "reach 10 ft.", damageFormula: "2d8+3", damageType: "piercing", summary: "Has Advantage if the target is Grappled by the bugbear.", summaryMetadata: true },
-      { name: "Quick Grapple", kind: "bonusAction", range: "10 ft.", save: { ability: "dexterity", dc: 13 }, condition: "Grappled", effects: ["One Medium or smaller visible creature within 10 feet is Grappled on a failed save; escape DC 13."], summary: "Grapples a nearby Medium or smaller creature.", summaryMetadata: true }
-    ]
-  },
-  "bugbear-warrior": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Fey (Goblinoid)",
-    alignment: "Chaotic Evil",
-    armorClass: 14,
-    initiative: 12,
-    hitPoints: 33,
-    hitDice: "6d8+6",
-    speed: "30 ft.",
-    challengeRating: "1",
-    xp: 200,
-    proficiencyBonus: 2,
-    abilities: { strength: 15, dexterity: 14, constitution: 13, intelligence: 8, wisdom: 11, charisma: 9 },
-    saves: { strength: 2, dexterity: 2, constitution: 1, intelligence: -1, wisdom: 0, charisma: -1 },
-    skills: { stealth: 6, survival: 2 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 10"],
-    languages: ["Common", "Goblin"],
-    traits: [{ name: "Abduct", summary: "Does not spend extra movement to move a creature Grappled by it." }],
-    actions: [
-      { name: "Grab", kind: "action", attackBonus: 4, range: "reach 10 ft.", damageFormula: "2d6+2", damageType: "bludgeoning", condition: "Grappled", summary: "A Medium or smaller target is Grappled; escape DC 12.", summaryMetadata: true },
-      { name: "Light Hammer", kind: "action", attackBonus: 4, range: "reach 10 ft. or range 20/60 ft.", damageFormula: "3d4+2", damageType: "bludgeoning", summary: "Has Advantage if the target is Grappled by the bugbear.", summaryMetadata: true }
-    ]
-  },
-  bulette: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Monstrosity",
-    alignment: "Unaligned",
-    armorClass: 17,
-    initiative: 10,
-    hitPoints: 94,
-    hitDice: "9d10+45",
-    speed: "40 ft., Burrow 40 ft.",
-    challengeRating: "5",
-    xp: 1800,
-    proficiencyBonus: 3,
-    abilities: { strength: 19, dexterity: 11, constitution: 21, intelligence: 2, wisdom: 10, charisma: 5 },
-    saves: { strength: 4, dexterity: 0, constitution: 5, intelligence: -4, wisdom: 0, charisma: -3 },
-    skills: { perception: 6 },
-    senses: ["Darkvision 60 ft.", "Tremorsense 120 ft.", "Passive Perception 16"],
-    languages: [],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Bite attacks." },
-      { name: "Bite", kind: "action", attackBonus: 7, range: "reach 5 ft.", damageFormula: "2d12+4", damageType: "piercing" },
-      { name: "Deadly Leap", kind: "action", range: "15 ft.", damageFormula: "3d12", damageType: "bludgeoning", save: { ability: "dexterity", dc: 15, success: "half" }, condition: "Prone", effects: ["Spends 5 feet of movement to jump to a space within 15 feet. Creatures in the destination space are pushed 5 feet away on a successful save."], summary: "Leaps into a nearby space, knocking creatures Prone on a failed save.", summaryMetadata: true },
-      { name: "Leap", kind: "bonusAction", effects: ["Spends 10 feet of movement to jump up to 30 feet."], summary: "Jumps up to 30 feet by spending 10 feet of movement.", summaryMetadata: true }
-    ]
-  },
-  camel: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 10,
-    initiative: -1,
-    hitPoints: 17,
-    hitDice: "2d10+6",
-    speed: "50 ft.",
-    challengeRating: "1/8",
-    xp: 25,
-    proficiencyBonus: 2,
-    abilities: { strength: 15, dexterity: 8, constitution: 17, intelligence: 2, wisdom: 11, charisma: 5 },
-    saves: { strength: 2, dexterity: -1, constitution: 5, intelligence: -4, wisdom: 0, charisma: -3 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 10"],
-    languages: [],
-    actions: [{ name: "Bite", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d4+2", damageType: "bludgeoning" }]
-  },
-  cat: {
-    source: DND_5E_SRD_VERSION,
-    size: "Tiny",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 12,
-    initiative: 2,
-    hitPoints: 2,
-    hitDice: "1d4",
-    speed: "40 ft., Climb 40 ft.",
-    challengeRating: "0",
-    xp: 10,
-    proficiencyBonus: 2,
-    abilities: { strength: 3, dexterity: 15, constitution: 10, intelligence: 3, wisdom: 12, charisma: 7 },
-    saves: { strength: -4, dexterity: 4, constitution: 0, intelligence: -4, wisdom: 1, charisma: -2 },
-    skills: { perception: 3, stealth: 4 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 13"],
-    languages: [],
-    traits: [{ name: "Jumper", summary: "Can use Dexterity instead of Strength to determine jump distance." }],
-    actions: [{ name: "Scratch", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1", damageType: "slashing" }]
-  },
-  "centaur-trooper": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Fey",
-    alignment: "Neutral Good",
-    armorClass: 16,
-    initiative: 12,
-    hitPoints: 45,
-    hitDice: "6d10+12",
-    speed: "50 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 18, dexterity: 14, constitution: 14, intelligence: 9, wisdom: 13, charisma: 11 },
-    saves: { strength: 4, dexterity: 2, constitution: 2, intelligence: -1, wisdom: 1, charisma: 0 },
-    skills: { athletics: 6, perception: 3 },
-    senses: ["Passive Perception 13"],
-    languages: ["Elvish", "Sylvan"],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two attacks, using Pike or Longbow in any combination." },
-      { name: "Pike", kind: "action", attackBonus: 6, range: "reach 10 ft.", damageFormula: "1d10+4", damageType: "piercing" },
-      { name: "Longbow", kind: "action", attackBonus: 4, range: "150/600 ft.", damageFormula: "1d8+2", damageType: "piercing" },
-      { name: "Trampling Charge", kind: "bonusAction", damageFormula: "1d6+4", damageType: "bludgeoning", save: { ability: "strength", dc: 14 }, condition: "Prone", recharge: "5-6", effects: ["Moves up to its Speed without provoking Opportunity Attacks and can move through Medium or smaller creature spaces. Each creature whose space it enters must save."], summary: "Moves through Medium or smaller creatures, damaging and knocking Prone on failed saves.", summaryMetadata: true }
-    ]
-  },
-  chimera: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Monstrosity",
-    alignment: "Chaotic Evil",
-    armorClass: 14,
-    initiative: 10,
-    hitPoints: 114,
-    hitDice: "12d10+48",
-    speed: "30 ft., Fly 60 ft.",
-    challengeRating: "6",
-    xp: 2300,
-    proficiencyBonus: 3,
-    abilities: { strength: 19, dexterity: 11, constitution: 19, intelligence: 3, wisdom: 14, charisma: 10 },
-    saves: { strength: 4, dexterity: 0, constitution: 4, intelligence: -4, wisdom: 2, charisma: 0 },
-    skills: { perception: 8 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 18"],
-    languages: ["Understands Draconic but can't speak"],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes one Ram, one Bite, and one Claw attack. It can replace Claw with Fire Breath if available." },
-      { name: "Ram", kind: "action", attackBonus: 7, range: "reach 5 ft.", damageFormula: "1d12+4", damageType: "bludgeoning", condition: "Prone", summary: "If the target is Medium or smaller, it has the Prone condition.", summaryMetadata: true },
-      { name: "Bite", kind: "action", attackBonus: 7, range: "reach 5 ft.", damageFormula: "2d6+4", damageType: "piercing", summary: "Deals 4d6+4 Piercing damage if the attack roll has Advantage.", summaryMetadata: true },
-      { name: "Claw", kind: "action", attackBonus: 7, range: "reach 5 ft.", damageFormula: "1d6+4", damageType: "slashing" },
-      { name: "Fire Breath", kind: "action", range: "15-foot cone", damageFormula: "7d8", damageType: "fire", save: { ability: "dexterity", dc: 15, success: "half" }, recharge: "5-6", summary: "Creatures in a 15-foot cone take half damage on a successful save.", summaryMetadata: true }
-    ]
-  },
-  chuul: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Aberration",
-    alignment: "Chaotic Evil",
-    armorClass: 16,
-    initiative: 10,
-    hitPoints: 76,
-    hitDice: "9d10+27",
-    speed: "30 ft., Swim 30 ft.",
-    challengeRating: "4",
-    xp: 1100,
-    proficiencyBonus: 2,
-    abilities: { strength: 19, dexterity: 10, constitution: 16, intelligence: 5, wisdom: 11, charisma: 5 },
-    saves: { strength: 4, dexterity: 0, constitution: 3, intelligence: -3, wisdom: 0, charisma: -3 },
-    skills: { perception: 4 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 14"],
-    languages: ["Understands Deep Speech but can't speak"],
-    traits: [
-      { name: "Poison Immunity", summary: "Immune to Poison damage and the Poisoned condition." },
-      { name: "Amphibious", summary: "Can breathe air and water." },
-      { name: "Sense Magic", summary: "Senses magic within 120 feet of itself, otherwise working like Detect Magic but not magical." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Pincer attacks and uses Paralyzing Tentacles." },
-      { name: "Pincer", kind: "action", attackBonus: 6, range: "reach 10 ft.", damageFormula: "1d10+4", damageType: "bludgeoning", condition: "Grappled", summary: "A Large or smaller target is Grappled; escape DC 14.", summaryMetadata: true },
-      { name: "Paralyzing Tentacles", kind: "action", save: { ability: "constitution", dc: 13 }, condition: "Poisoned/Paralyzed", effects: ["Targets one creature Grappled by the chuul. On a failed save, the target is Poisoned and repeats the save at the end of each of its turns, ending the effect on a success. While Poisoned this way, the target is Paralyzed."], summary: "Poisons and paralyzes a creature Grappled by the chuul.", summaryMetadata: true }
-    ]
-  },
-  "clay-golem": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Construct",
-    alignment: "Unaligned",
-    armorClass: 14,
-    initiative: 13,
-    hitPoints: 123,
-    hitDice: "13d10+52",
-    speed: "30 ft.",
-    challengeRating: "9",
-    xp: 5000,
-    proficiencyBonus: 4,
-    abilities: { strength: 20, dexterity: 9, constitution: 18, intelligence: 3, wisdom: 8, charisma: 1 },
-    saves: { strength: 5, dexterity: -1, constitution: 4, intelligence: -4, wisdom: -1, charisma: -5 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 9"],
-    languages: ["Common plus one other language"],
-    traits: [
-      { name: "Damage Resistances", summary: "Resistant to Bludgeoning, Piercing, and Slashing damage." },
-      { name: "Damage Immunities", summary: "Immune to Acid, Poison, and Psychic damage." },
-      { name: "Condition Immunities", summary: "Immune to Charmed, Exhaustion, Frightened, Paralyzed, Petrified, and Poisoned." },
-      { name: "Acid Absorption", summary: "Whenever subjected to Acid damage, takes no damage and regains Hit Points equal to the Acid damage dealt." },
-      { name: "Berserk", summary: "Whenever it starts its turn Bloodied, roll 1d6. On a 6, it goes berserk and attacks the nearest creature or object until destroyed or no longer Bloodied." },
-      { name: "Immutable Form", summary: "Can't shape-shift." },
-      { name: "Magic Resistance", summary: "Has Advantage on saving throws against spells and other magical effects." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Slam attacks, or three Slam attacks if it used Hasten this turn." },
-      { name: "Slam", kind: "action", attackBonus: 9, range: "reach 5 ft.", damageFormula: "1d10+5+1d12", damageType: "bludgeoning/acid", summary: "The target's Hit Point maximum decreases by the Acid damage taken.", summaryMetadata: true },
-      { name: "Hasten", kind: "bonusAction", recharge: "5-6", effects: ["Takes the Dash and Disengage actions."], summary: "Dashes and Disengages.", summaryMetadata: true }
-    ]
-  },
-  cloaker: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Aberration",
-    alignment: "Chaotic Neutral",
-    armorClass: 14,
-    initiative: 15,
-    hitPoints: 91,
-    hitDice: "14d10+14",
-    speed: "10 ft., Fly 40 ft.",
-    challengeRating: "8",
-    xp: 3900,
-    proficiencyBonus: 3,
-    abilities: { strength: 17, dexterity: 15, constitution: 12, intelligence: 13, wisdom: 14, charisma: 7 },
-    saves: { strength: 3, dexterity: 2, constitution: 1, intelligence: 1, wisdom: 2, charisma: -2 },
-    skills: { stealth: 5 },
-    senses: ["Darkvision 120 ft.", "Passive Perception 12"],
-    languages: ["Deep Speech", "Undercommon"],
-    traits: [
-      { name: "Frightened Immunity", summary: "Immune to the Frightened condition." },
-      { name: "Light Sensitivity", summary: "While in Bright Light, has Disadvantage on attack rolls." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes one Attach attack and two Tail attacks." },
-      { name: "Attach", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "3d6+3", damageType: "piercing", condition: "Blinded", summary: "Attaches to a Large or smaller target, Blinding it; while attached, the cloaker halves damage it takes and the target takes the same amount.", summaryMetadata: true },
-      { name: "Tail", kind: "action", attackBonus: 6, range: "reach 10 ft.", damageFormula: "1d10+3", damageType: "slashing" },
-      { name: "Moan", kind: "bonusAction", range: "60-foot emanation", save: { ability: "wisdom", dc: 13 }, condition: "Frightened", effects: ["Creatures in the emanation that fail are Frightened until the end of the cloaker's next turn. A creature that succeeds is immune to this cloaker's Moan for 24 hours."], summary: "Frightens creatures in a 60-foot emanation.", summaryMetadata: true },
-      { name: "Phantasms", kind: "bonusAction", recharge: "short/long rest", effects: ["Casts Mirror Image without spell components using Wisdom. The spell ends early if the cloaker starts or ends its turn in Bright Light."], summary: "Casts Mirror Image using Wisdom.", summaryMetadata: true }
-    ]
-  },
-  "cloud-giant": {
-    source: DND_5E_SRD_VERSION,
-    size: "Huge",
-    creatureType: "Giant",
-    alignment: "Neutral",
-    armorClass: 14,
-    initiative: 14,
-    hitPoints: 200,
-    hitDice: "16d12+96",
-    speed: "40 ft., Fly 20 ft. (hover)",
-    challengeRating: "9",
-    xp: 5000,
-    proficiencyBonus: 4,
-    abilities: { strength: 27, dexterity: 10, constitution: 22, intelligence: 12, wisdom: 16, charisma: 16 },
-    saves: { strength: 8, dexterity: 0, constitution: 10, intelligence: 1, wisdom: 7, charisma: 3 },
-    skills: { insight: 7, perception: 11 },
-    senses: ["Passive Perception 21"],
-    languages: ["Common", "Giant"],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two attacks, using Thunderous Mace or Thundercloud in any combination. It can replace one attack with Spellcasting to cast Fog Cloud." },
-      { name: "Thunderous Mace", kind: "action", attackBonus: 12, range: "reach 10 ft.", damageFormula: "3d8+8+2d6", damageType: "bludgeoning/thunder" },
-      { name: "Thundercloud", kind: "action", attackBonus: 12, range: "240 ft.", damageFormula: "3d6+8", damageType: "thunder", condition: "Incapacitated", summary: "The target is Incapacitated until the end of its next turn.", summaryMetadata: true },
-      { name: "Spellcasting", kind: "action", save: { ability: "charisma", dc: 15 }, effects: ["Casts Detect Magic, Fog Cloud, and Light at will, and Control Weather, Gaseous Form, and Telekinesis once per day using Charisma."], summary: "Casts its SRD spell list using Charisma; spell save DC 15.", summaryMetadata: true },
-      { name: "Misty Step", kind: "bonusAction", effects: ["Casts Misty Step using the same spellcasting ability as Spellcasting."], summary: "Casts Misty Step.", summaryMetadata: true }
-    ]
-  },
-  commoner: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium or Small",
-    creatureType: "Humanoid",
-    alignment: "Neutral",
-    armorClass: 10,
-    initiative: 10,
-    hitPoints: 4,
-    hitDice: "1d8",
-    speed: "30 ft.",
-    challengeRating: "0",
-    xp: 10,
-    proficiencyBonus: 2,
-    abilities: { strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10 },
-    saves: { strength: 0, dexterity: 0, constitution: 0, intelligence: 0, wisdom: 0, charisma: 0 },
-    senses: ["Passive Perception 10"],
-    languages: ["Common"],
-    traits: [{ name: "Training", summary: "Has proficiency in one skill of the GM's choice and has Advantage whenever it makes an ability check using that skill." }],
-    actions: [{ name: "Club", kind: "action", attackBonus: 2, range: "reach 5 ft.", damageFormula: "1d4", damageType: "bludgeoning" }]
-  },
-  "constrictor-snake": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 13,
-    initiative: 2,
-    hitPoints: 13,
-    hitDice: "2d10+2",
-    speed: "30 ft., Swim 30 ft.",
-    challengeRating: "1/4",
-    xp: 50,
-    proficiencyBonus: 2,
-    abilities: { strength: 15, dexterity: 14, constitution: 12, intelligence: 1, wisdom: 10, charisma: 3 },
-    saves: { strength: 2, dexterity: 2, constitution: 1, intelligence: -5, wisdom: 0, charisma: -4 },
-    skills: { perception: 2, stealth: 4 },
-    senses: ["Blindsight 10 ft.", "Passive Perception 12"],
-    languages: [],
-    actions: [
-      { name: "Bite", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d8+2", damageType: "piercing" },
-      { name: "Constrict", kind: "action", range: "5 ft.; one Medium or smaller creature", damageFormula: "3d4", damageType: "bludgeoning", save: { ability: "strength", dc: 12 }, condition: "Grappled", summary: "A target that fails the Strength save takes 3d4 Bludgeoning damage and has the Grappled condition, escape DC 12.", summaryMetadata: true }
-    ]
-  },
-  crab: {
-    source: DND_5E_SRD_VERSION,
-    size: "Tiny",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 11,
-    initiative: 0,
-    hitPoints: 3,
-    hitDice: "1d4+1",
-    speed: "20 ft., Swim 20 ft.",
-    challengeRating: "0",
-    xp: 10,
-    proficiencyBonus: 2,
-    abilities: { strength: 6, dexterity: 11, constitution: 12, intelligence: 1, wisdom: 8, charisma: 2 },
-    saves: { strength: -2, dexterity: 0, constitution: 1, intelligence: -5, wisdom: -1, charisma: -4 },
-    skills: { stealth: 2 },
-    senses: ["Blindsight 30 ft.", "Passive Perception 9"],
-    languages: [],
-    traits: [{ name: "Amphibious", summary: "Can breathe air and water." }],
-    actions: [{ name: "Claw", kind: "action", attackBonus: 2, range: "reach 5 ft.", damageFormula: "1", damageType: "bludgeoning" }]
-  },
-  crocodile: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 12,
-    initiative: 0,
-    hitPoints: 13,
-    hitDice: "2d10+2",
-    speed: "20 ft., Swim 30 ft.",
-    challengeRating: "1/2",
-    xp: 100,
-    proficiencyBonus: 2,
-    abilities: { strength: 15, dexterity: 10, constitution: 13, intelligence: 2, wisdom: 10, charisma: 5 },
-    saves: { strength: 2, dexterity: 0, constitution: 3, intelligence: -4, wisdom: 0, charisma: -3 },
-    skills: { stealth: 2 },
-    senses: ["Passive Perception 10"],
-    languages: [],
-    traits: [{ name: "Hold Breath", summary: "Can hold its breath for 1 hour." }],
-    actions: [{ name: "Bite", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d8+2", damageType: "piercing", condition: "Grappled/Restrained", summary: "If the target is Medium or smaller, it has the Grappled condition, escape DC 12, and is Restrained while Grappled.", summaryMetadata: true }]
-  },
-  darkmantle: {
-    source: DND_5E_SRD_VERSION,
-    size: "Small",
-    creatureType: "Aberration",
-    alignment: "Unaligned",
-    armorClass: 11,
-    initiative: 3,
-    hitPoints: 22,
-    hitDice: "5d6+5",
-    speed: "10 ft., Fly 30 ft.",
-    challengeRating: "1/2",
-    xp: 100,
-    proficiencyBonus: 2,
-    abilities: { strength: 16, dexterity: 12, constitution: 13, intelligence: 2, wisdom: 10, charisma: 5 },
-    saves: { strength: 3, dexterity: 1, constitution: 1, intelligence: -4, wisdom: 0, charisma: -3 },
-    skills: { stealth: 3 },
-    senses: ["Blindsight 60 ft.", "Passive Perception 10"],
-    languages: [],
-    actions: [
-      { name: "Crush", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d6+3", damageType: "bludgeoning", condition: "Blinded/Suffocating", summary: "Attaches to the target. If the target is Medium or smaller and the darkmantle had Advantage on the attack, it covers the target, which is Blinded and suffocating while attached. A creature can detach it with a DC 13 Strength (Athletics) check.", summaryMetadata: true },
-      { name: "Darkness Aura", kind: "action", range: "15-foot emanation", recharge: "1/day", effects: ["Magical Darkness fills a 15-foot Emanation while the darkmantle maintains Concentration, up to 10 minutes. Darkvision can't penetrate it, and no light can illuminate it."], summary: "Creates a 15-foot magical Darkness aura.", summaryMetadata: true }
-    ]
-  },
-  "death-dog": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Monstrosity",
-    alignment: "Neutral Evil",
-    armorClass: 12,
-    initiative: 2,
-    hitPoints: 39,
-    hitDice: "6d8+12",
-    speed: "40 ft.",
-    challengeRating: "1",
-    xp: 200,
-    proficiencyBonus: 2,
-    abilities: { strength: 15, dexterity: 14, constitution: 14, intelligence: 3, wisdom: 13, charisma: 6 },
-    saves: { strength: 2, dexterity: 2, constitution: 2, intelligence: -4, wisdom: 1, charisma: -2 },
-    skills: { perception: 5, stealth: 4 },
-    senses: ["Darkvision 120 ft.", "Passive Perception 15"],
-    languages: [],
-    traits: [{ name: "Condition Immunities", summary: "Immune to Blinded, Charmed, Deafened, Frightened, Stunned, and Unconscious." }],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Bite attacks." },
-      { name: "Bite", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d4+2", damageType: "piercing", condition: "Poisoned", save: { ability: "constitution", dc: 12 }, effects: ["On a failed save, the target is Poisoned. While Poisoned this way, its Hit Point maximum does not return to normal when finishing a Long Rest, and the target repeats the save every 24 hours, ending the effect on a success. Its Hit Point maximum decreases by 1d10."], summary: "Poisoned target suffers recurring maximum Hit Point reduction.", summaryMetadata: true }
-    ]
-  },
-  doppelganger: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Monstrosity",
-    alignment: "Neutral",
-    armorClass: 14,
-    initiative: 4,
-    hitPoints: 52,
-    hitDice: "8d8+16",
-    speed: "30 ft.",
-    challengeRating: "3",
-    xp: 700,
-    proficiencyBonus: 2,
-    abilities: { strength: 11, dexterity: 18, constitution: 14, intelligence: 11, wisdom: 12, charisma: 14 },
-    saves: { strength: 0, dexterity: 4, constitution: 2, intelligence: 0, wisdom: 1, charisma: 2 },
-    skills: { deception: 6, insight: 3 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 11"],
-    languages: ["Common plus three other languages"],
-    traits: [{ name: "Charmed Immunity", summary: "Immune to the Charmed condition." }],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Slam attacks and uses Unsettling Visage if available." },
-      { name: "Slam", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "2d6+4", damageType: "bludgeoning", summary: "Has Advantage during the first round of each combat.", summaryMetadata: true },
-      { name: "Read Thoughts", kind: "action", effects: ["Casts Detect Thoughts without spell components using Charisma; spell save DC 12."], summary: "Casts Detect Thoughts using Charisma.", summaryMetadata: true },
-      { name: "Unsettling Visage", kind: "action", range: "15-foot emanation", save: { ability: "wisdom", dc: 12 }, condition: "Frightened", recharge: "6", effects: ["On a failed save, the target is Frightened and repeats the save at the end of each of its turns, ending the effect on a success. After 1 minute, it succeeds automatically."], summary: "Frightens nearby creatures that can see the doppelganger.", summaryMetadata: true },
-      { name: "Shape-Shift", kind: "bonusAction", effects: ["Shape-shifts into a Medium or Small Humanoid or returns to true form; statistics other than size are unchanged, and equipment is not transformed."], summary: "Shape-shifts into a Medium or Small Humanoid.", summaryMetadata: true }
-    ]
-  },
-  "dragon-turtle": {
-    source: DND_5E_SRD_VERSION,
-    size: "Gargantuan",
-    creatureType: "Dragon",
-    alignment: "Neutral",
-    armorClass: 20,
-    initiative: 6,
-    hitPoints: 356,
-    hitDice: "23d20+115",
-    speed: "20 ft., Swim 50 ft.",
-    challengeRating: "17",
-    xp: 18000,
-    proficiencyBonus: 6,
-    abilities: { strength: 25, dexterity: 10, constitution: 20, intelligence: 10, wisdom: 12, charisma: 12 },
-    saves: { strength: 7, dexterity: 0, constitution: 11, intelligence: 0, wisdom: 7, charisma: 1 },
-    senses: ["Darkvision 120 ft.", "Passive Perception 11"],
-    languages: ["Draconic", "Primordial (Aquan)"],
-    traits: [
-      { name: "Amphibious", summary: "Can breathe air and water." },
-      { name: "Fire Resistance", summary: "Resistant to Fire damage." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Bite attacks. It can replace one attack with a Tail attack." },
-      { name: "Bite", kind: "action", attackBonus: 13, range: "reach 15 ft.", damageFormula: "3d10+7+2d6", damageType: "piercing/fire", summary: "Being underwater doesn't grant Resistance to the Fire damage.", summaryMetadata: true },
-      { name: "Tail", kind: "action", attackBonus: 13, range: "reach 15 ft.", damageFormula: "2d10+7", damageType: "bludgeoning", condition: "Prone", summary: "If the target is Huge or smaller, it has the Prone condition.", summaryMetadata: true },
-      { name: "Steam Breath", kind: "action", range: "60-foot cone", damageFormula: "16d6", damageType: "fire", save: { ability: "constitution", dc: 19, success: "half" }, recharge: "5-6", summary: "Being underwater doesn't grant Resistance to this Fire damage.", summaryMetadata: true }
-    ]
-  },
-  drider: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Monstrosity",
-    alignment: "Chaotic Evil",
-    armorClass: 19,
-    initiative: 4,
-    hitPoints: 123,
-    hitDice: "13d10+52",
-    speed: "30 ft., Climb 30 ft.",
-    challengeRating: "6",
-    xp: 2300,
-    proficiencyBonus: 3,
-    abilities: { strength: 16, dexterity: 19, constitution: 18, intelligence: 13, wisdom: 16, charisma: 12 },
-    saves: { strength: 3, dexterity: 4, constitution: 4, intelligence: 1, wisdom: 3, charisma: 1 },
-    skills: { perception: 6, stealth: 10 },
-    senses: ["Darkvision 120 ft.", "Passive Perception 16"],
-    languages: ["Elvish", "Undercommon"],
-    traits: [
-      { name: "Spider Climb", summary: "Can climb difficult surfaces, including along ceilings, without needing to make an ability check." },
-      { name: "Sunlight Sensitivity", summary: "Has Disadvantage on ability checks and attack rolls while in sunlight." },
-      { name: "Web Walker", summary: "Ignores movement restrictions caused by webs and knows the location of any other creature in contact with the same web." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three attacks, using Foreleg or Poison Burst in any combination." },
-      { name: "Foreleg", kind: "action", attackBonus: 7, range: "reach 10 ft.", damageFormula: "2d8+4", damageType: "piercing" },
-      { name: "Poison Burst", kind: "action", attackBonus: 6, range: "120 ft.", damageFormula: "3d6+3", damageType: "poison" },
-      { name: "Magic of the Spider Queen", kind: "bonusAction", recharge: "5-6", save: { ability: "wisdom", dc: 14 }, effects: ["Casts Darkness, Faerie Fire, or Web without Material components using Wisdom; spell save DC 14."], summary: "Casts Darkness, Faerie Fire, or Web.", summaryMetadata: true }
-    ]
-  },
-  druid: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium or Small",
-    creatureType: "Humanoid (Druid)",
-    alignment: "Neutral",
-    armorClass: 13,
-    initiative: 1,
-    hitPoints: 44,
-    hitDice: "8d8+8",
-    speed: "30 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 10, dexterity: 12, constitution: 13, intelligence: 12, wisdom: 16, charisma: 11 },
-    saves: { strength: 0, dexterity: 1, constitution: 1, intelligence: 1, wisdom: 3, charisma: 0 },
-    skills: { medicine: 5, nature: 3, perception: 5 },
-    senses: ["Passive Perception 15"],
-    languages: ["Common", "Druidic", "Sylvan"],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two attacks, using Vine Staff or Verdant Wisp in any combination." },
-      { name: "Vine Staff", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d8+3+1d4", damageType: "bludgeoning/poison" },
-      { name: "Verdant Wisp", kind: "action", attackBonus: 5, range: "90 ft.", damageFormula: "3d6", damageType: "radiant" },
-      { name: "Spellcasting", kind: "action", save: { ability: "wisdom", dc: 13 }, effects: ["Casts Druidcraft and Speak with Animals at will; Entangle and Thunderwave twice per day; Animal Messenger, Longstrider, and Moonbeam once per day using Wisdom."], summary: "Casts its SRD spell list using Wisdom; spell save DC 13.", summaryMetadata: true }
-    ]
-  },
-  dryad: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Fey",
-    alignment: "Neutral",
-    armorClass: 16,
-    initiative: 1,
-    hitPoints: 22,
-    hitDice: "5d8",
-    speed: "30 ft.",
-    challengeRating: "1",
-    xp: 200,
-    proficiencyBonus: 2,
-    abilities: { strength: 10, dexterity: 12, constitution: 11, intelligence: 14, wisdom: 15, charisma: 18 },
-    saves: { strength: 0, dexterity: 1, constitution: 0, intelligence: 2, wisdom: 2, charisma: 4 },
-    skills: { perception: 4, stealth: 5 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 14"],
-    languages: ["Elvish", "Sylvan"],
-    traits: [
-      { name: "Magic Resistance", summary: "Has Advantage on saving throws against spells and other magical effects." },
-      { name: "Speak with Beasts and Plants", summary: "Can communicate with Beasts and Plants as if they shared a language." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes one Vine Lash or Thorn Burst attack, and can use Spellcasting to cast Charm Monster." },
-      { name: "Vine Lash", kind: "action", attackBonus: 6, range: "reach 10 ft.", damageFormula: "1d8+4", damageType: "slashing" },
-      { name: "Thorn Burst", kind: "action", attackBonus: 6, range: "60 ft.", damageFormula: "1d6+4", damageType: "piercing" },
-      { name: "Spellcasting", kind: "action", save: { ability: "charisma", dc: 14 }, effects: ["Casts Animal Friendship, Charm Monster, and Druidcraft at will, and Entangle and Pass without Trace once per day using Charisma. Charm Monster lasts 24 hours and ends early if the dryad casts it again."], summary: "Casts its SRD spell list using Charisma; spell save DC 14.", summaryMetadata: true },
-      { name: "Tree Stride", kind: "bonusAction", effects: ["If within 5 feet of a Large or bigger tree, teleports to an unoccupied space within 5 feet of a second Large or bigger tree within 60 feet of the previous tree."], summary: "Teleports between nearby Large or bigger trees.", summaryMetadata: true }
-    ]
-  },
-  efreeti: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Elemental (Genie)",
-    alignment: "Neutral",
-    armorClass: 17,
-    initiative: 1,
-    hitPoints: 212,
-    hitDice: "17d10+119",
-    speed: "40 ft., Fly 60 ft. (hover)",
-    challengeRating: "11",
-    xp: 7200,
-    proficiencyBonus: 4,
-    abilities: { strength: 22, dexterity: 12, constitution: 24, intelligence: 16, wisdom: 15, charisma: 19 },
-    saves: { strength: 6, dexterity: 1, constitution: 7, intelligence: 3, wisdom: 6, charisma: 8 },
-    senses: ["Darkvision 120 ft.", "Passive Perception 12"],
-    languages: ["Primordial (Ignan)"],
-    traits: [
-      { name: "Fire Immunity", summary: "Immune to Fire damage." },
-      { name: "Elemental Restoration", summary: "If it dies outside the Elemental Plane of Fire, its body dissolves into ash and it gains a new body in 1d4 days somewhere on the Plane of Fire." },
-      { name: "Magic Resistance", summary: "Has Advantage on saving throws against spells and other magical effects." },
-      { name: "Wishes", summary: "Has a 30 percent chance of knowing Wish, which it can cast only on behalf of a non-genie creature that communicates a wish it can understand. After casting Wish three times, it cannot do so again for 365 days." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three attacks, using Heated Blade or Hurl Flame in any combination." },
-      { name: "Heated Blade", kind: "action", attackBonus: 10, range: "reach 5 ft.", damageFormula: "2d6+6+2d12", damageType: "slashing/fire" },
-      { name: "Hurl Flame", kind: "action", attackBonus: 8, range: "120 ft.", damageFormula: "7d6", damageType: "fire" },
-      { name: "Spellcasting", kind: "action", save: { ability: "charisma", dc: 16 }, effects: ["Casts Detect Magic and Elementalism at will, and Gaseous Form, Invisibility, Major Image, Plane Shift, Tongues, and Wall of Fire at level 7 once per day using Charisma."], summary: "Casts its SRD spell list using Charisma; spell save DC 16.", summaryMetadata: true }
-    ]
-  },
-  ettercap: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Monstrosity",
-    alignment: "Neutral Evil",
-    armorClass: 13,
-    initiative: 12,
-    hitPoints: 44,
-    hitDice: "8d8+8",
-    speed: "30 ft., Climb 30 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 14, dexterity: 15, constitution: 13, intelligence: 7, wisdom: 12, charisma: 8 },
-    saves: { strength: 2, dexterity: 2, constitution: 1, intelligence: -2, wisdom: 1, charisma: -1 },
-    skills: { perception: 3, stealth: 4, survival: 3 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 13"],
-    languages: [],
-    traits: [
-      { name: "Spider Climb", summary: "Can climb difficult surfaces, including along ceilings, without needing to make an ability check." },
-      { name: "Web Walker", summary: "Ignores movement restrictions caused by webs and knows the location of any other creature in contact with the same web." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes one Bite attack and one Claw attack." },
-      { name: "Bite", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d6+2+1d4", damageType: "piercing/poison", condition: "Poisoned", summary: "Target is Poisoned until the start of the ettercap's next turn.", summaryMetadata: true },
-      { name: "Claw", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "2d4+2", damageType: "slashing" },
-      { name: "Web Strand", kind: "action", range: "30 ft.", save: { ability: "dexterity", dc: 12 }, condition: "Restrained", recharge: "5-6", effects: ["On a failed save, the target is Restrained until the web is destroyed. The web has AC 10, HP 5, vulnerability to Fire, and immunity to Bludgeoning, Poison, and Psychic damage."], summary: "Restrains one Large or smaller creature with a destructible web.", summaryMetadata: true },
-      { name: "Reel", kind: "bonusAction", effects: ["Pulls one creature within 30 feet that is Restrained by Web Strand up to 25 feet straight toward the ettercap."], summary: "Reels in a Web Strand target.", summaryMetadata: true }
-    ]
-  },
-  ettin: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Giant",
-    alignment: "Chaotic Evil",
-    armorClass: 12,
-    initiative: 9,
-    hitPoints: 85,
-    hitDice: "10d10+30",
-    speed: "40 ft.",
-    challengeRating: "4",
-    xp: 1100,
-    proficiencyBonus: 2,
-    abilities: { strength: 21, dexterity: 8, constitution: 17, intelligence: 6, wisdom: 10, charisma: 8 },
-    saves: { strength: 5, dexterity: -1, constitution: 3, intelligence: -2, wisdom: 0, charisma: -1 },
-    skills: { perception: 4 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 14"],
-    languages: ["Giant"],
-    traits: [{ name: "Condition Immunities", summary: "Immune to Blinded, Charmed, Deafened, Frightened, Stunned, and Unconscious." }],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes one Battleaxe attack and one Morningstar attack." },
-      { name: "Battleaxe", kind: "action", attackBonus: 7, range: "reach 5 ft.", damageFormula: "2d8+5", damageType: "slashing", condition: "Prone", summary: "If the target is Large or smaller, it has the Prone condition.", summaryMetadata: true },
-      { name: "Morningstar", kind: "action", attackBonus: 7, range: "reach 5 ft.", damageFormula: "2d8+5", damageType: "piercing", effects: ["The target has Disadvantage on the next attack roll it makes before the end of its next turn."], summary: "Imposes Disadvantage on the target's next attack roll before the end of its next turn.", summaryMetadata: true }
-    ]
-  },
-  "flesh-golem": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Construct",
-    alignment: "Neutral",
-    armorClass: 9,
-    initiative: -1,
-    hitPoints: 127,
-    hitDice: "15d8+60",
-    speed: "30 ft.",
-    challengeRating: "5",
-    xp: 1800,
-    proficiencyBonus: 3,
-    abilities: { strength: 19, dexterity: 9, constitution: 18, intelligence: 6, wisdom: 10, charisma: 5 },
-    saves: { strength: 4, dexterity: -1, constitution: 4, intelligence: -2, wisdom: 0, charisma: -3 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 10"],
-    languages: ["Understands Common plus one other language but can't speak"],
-    traits: [
-      { name: "Lightning and Poison Immunity", summary: "Immune to Lightning and Poison damage." },
-      { name: "Condition Immunities", summary: "Immune to Charmed, Exhaustion, Frightened, Paralyzed, Petrified, and Poisoned." },
-      { name: "Aversion to Fire", summary: "If it takes Fire damage, it has Disadvantage on attack rolls and ability checks until the end of its next turn." },
-      { name: "Berserk", summary: "Whenever it starts its turn Bloodied, roll 1d6. On a 6, it attacks the nearest creature or object until destroyed or no longer Bloodied; its creator can calm it within 60 feet with a DC 15 Charisma (Persuasion) check." },
-      { name: "Immutable Form", summary: "Can't shape-shift." },
-      { name: "Lightning Absorption", summary: "Whenever it is subjected to Lightning damage, it regains Hit Points equal to the Lightning damage dealt." },
-      { name: "Magic Resistance", summary: "Has Advantage on saving throws against spells and other magical effects." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Slam attacks." },
-      { name: "Slam", kind: "action", attackBonus: 7, range: "reach 5 ft.", damageFormula: "2d8+4+1d8", damageType: "bludgeoning/lightning", summary: "Deals Bludgeoning plus Lightning damage.", summaryMetadata: true }
-    ]
-  },
-  "frost-giant": {
-    source: DND_5E_SRD_VERSION,
-    size: "Huge",
-    creatureType: "Giant",
-    alignment: "Neutral Evil",
-    armorClass: 15,
-    initiative: 2,
-    hitPoints: 149,
-    hitDice: "13d12+65",
-    speed: "40 ft.",
-    challengeRating: "8",
-    xp: 3900,
-    proficiencyBonus: 3,
-    abilities: { strength: 23, dexterity: 9, constitution: 21, intelligence: 9, wisdom: 10, charisma: 12 },
-    saves: { strength: 6, dexterity: -1, constitution: 8, intelligence: -1, wisdom: 3, charisma: 4 },
-    skills: { athletics: 9, perception: 3 },
-    senses: ["Passive Perception 13"],
-    languages: ["Giant"],
-    traits: [{ name: "Cold Immunity", summary: "Immune to Cold damage." }],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two attacks, using Frost Axe or Great Bow in any combination." },
-      { name: "Frost Axe", kind: "action", attackBonus: 9, range: "reach 10 ft.", damageFormula: "2d12+6+2d8", damageType: "slashing/cold", summary: "Deals Slashing plus Cold damage.", summaryMetadata: true },
-      { name: "Great Bow", kind: "action", attackBonus: 9, range: "150/600 ft.", damageFormula: "2d10+6+2d6", damageType: "piercing/cold", summary: "The target's Speed decreases by 10 feet until the end of its next turn.", summaryMetadata: true },
-      { name: "War Cry", kind: "bonusAction", recharge: "5-6", effects: ["The frost giant or one creature of its choice that can see or hear it gains 16 (2d10+5) Temporary Hit Points and has Advantage on attack rolls until the start of the giant's next turn."], summary: "Grants Temporary Hit Points and attack Advantage to itself or an ally.", summaryMetadata: true }
-    ]
-  },
-  "fire-giant": {
-    source: DND_5E_SRD_VERSION,
-    size: "Huge",
-    creatureType: "Giant",
-    alignment: "Lawful Evil",
-    armorClass: 18,
-    initiative: 3,
-    hitPoints: 162,
-    hitDice: "13d12+78",
-    speed: "30 ft.",
-    challengeRating: "9",
-    xp: 5000,
-    proficiencyBonus: 4,
-    abilities: { strength: 25, dexterity: 9, constitution: 23, intelligence: 10, wisdom: 14, charisma: 13 },
-    saves: { strength: 7, dexterity: 3, constitution: 10, intelligence: 0, wisdom: 2, charisma: 5 },
-    skills: { athletics: 11, perception: 6 },
-    senses: ["Passive Perception 16"],
-    languages: ["Giant"],
-    traits: [{ name: "Fire Immunity", summary: "Immune to Fire damage." }],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two attacks, using Flame Sword or Hammer Throw in any combination." },
-      { name: "Flame Sword", kind: "action", attackBonus: 11, range: "reach 10 ft.", damageFormula: "4d6+7+3d6", damageType: "slashing/fire" },
-      { name: "Hammer Throw", kind: "action", attackBonus: 11, range: "60/240 ft.", damageFormula: "3d10+7+1d8", damageType: "bludgeoning/fire", summary: "Pushes the target up to 15 feet straight away and gives it Disadvantage on the next attack roll it makes before the end of its next turn.", summaryMetadata: true }
-    ]
-  },
-  "shrieker-fungus": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Plant",
-    alignment: "Unaligned",
-    armorClass: 5,
-    initiative: -5,
-    hitPoints: 13,
-    hitDice: "3d8",
-    speed: "5 ft.",
-    challengeRating: "0",
-    xp: 0,
-    proficiencyBonus: 2,
-    abilities: { strength: 1, dexterity: 1, constitution: 10, intelligence: 1, wisdom: 3, charisma: 1 },
-    saves: { strength: -5, dexterity: -5, constitution: 0, intelligence: -5, wisdom: -4, charisma: -5 },
-    senses: ["Blindsight 30 ft.", "Passive Perception 6"],
-    languages: [],
-    traits: [{ name: "Condition Immunities", summary: "Immune to Blinded, Charmed, Deafened, and Frightened." }],
-    actions: [
-      { name: "Shriek", kind: "reaction", effects: ["When a creature or source of Bright Light moves within 30 feet, emits a shriek audible within 300 feet for 1 minute or until it dies."], summary: "Reacts to nearby creatures or Bright Light by shrieking.", summaryMetadata: true }
-    ]
-  },
-  "violet-fungus": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Plant",
-    alignment: "Unaligned",
-    armorClass: 5,
-    initiative: -5,
-    hitPoints: 18,
-    hitDice: "4d8",
-    speed: "5 ft.",
-    challengeRating: "1/4",
-    xp: 50,
-    proficiencyBonus: 2,
-    abilities: { strength: 3, dexterity: 1, constitution: 10, intelligence: 1, wisdom: 3, charisma: 1 },
-    saves: { strength: -4, dexterity: -5, constitution: 0, intelligence: -5, wisdom: -4, charisma: -5 },
-    senses: ["Blindsight 30 ft.", "Passive Perception 6"],
-    languages: [],
-    traits: [{ name: "Condition Immunities", summary: "Immune to Blinded, Charmed, Deafened, and Frightened." }],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Rotting Touch attacks." },
-      { name: "Rotting Touch", kind: "action", attackBonus: 2, range: "reach 10 ft.", damageFormula: "1d8", damageType: "necrotic" }
-    ]
-  },
-  gargoyle: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Elemental",
-    alignment: "Chaotic Evil",
-    armorClass: 15,
-    initiative: 2,
-    hitPoints: 67,
-    hitDice: "9d8+27",
-    speed: "30 ft., Fly 60 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 15, dexterity: 11, constitution: 16, intelligence: 6, wisdom: 11, charisma: 7 },
-    saves: { strength: 2, dexterity: 0, constitution: 3, intelligence: -2, wisdom: 0, charisma: -2 },
-    skills: { stealth: 4 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 10"],
-    languages: ["Primordial (Terran)"],
-    traits: [
-      { name: "Poison Immunity", summary: "Immune to Poison damage." },
-      { name: "Condition Immunities", summary: "Immune to Exhaustion, Petrified, and Poisoned." },
-      { name: "Flyby", summary: "Doesn't provoke Opportunity Attacks when it flies out of an enemy's reach." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Claw attacks." },
-      { name: "Claw", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "2d4+2", damageType: "slashing" }
-    ]
-  },
-  deer: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 13,
-    initiative: 3,
-    hitPoints: 4,
-    hitDice: "1d8",
-    speed: "50 ft.",
-    challengeRating: "0",
-    xp: 10,
-    proficiencyBonus: 2,
-    abilities: { strength: 11, dexterity: 16, constitution: 11, intelligence: 2, wisdom: 14, charisma: 5 },
-    saves: { strength: 0, dexterity: 3, constitution: 0, intelligence: -4, wisdom: 2, charisma: -3 },
-    skills: { perception: 4 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 14"],
-    languages: [],
-    traits: [{ name: "Agile", summary: "Doesn't provoke Opportunity Attacks when it moves out of an enemy's reach." }],
-    actions: [{ name: "Ram", kind: "action", attackBonus: 2, range: "reach 5 ft.", damageFormula: "1d4", damageType: "bludgeoning" }]
-  },
-  "draft-horse": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 10,
-    initiative: 0,
-    hitPoints: 15,
-    hitDice: "2d10+4",
-    speed: "40 ft.",
-    challengeRating: "1/4",
-    xp: 50,
-    proficiencyBonus: 2,
-    abilities: { strength: 18, dexterity: 10, constitution: 15, intelligence: 2, wisdom: 11, charisma: 7 },
-    saves: { strength: 4, dexterity: 0, constitution: 2, intelligence: -4, wisdom: 0, charisma: -2 },
-    senses: ["Passive Perception 10"],
-    languages: [],
-    actions: [{ name: "Hooves", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "1d4+4", damageType: "bludgeoning" }]
-  },
-  eagle: {
-    source: DND_5E_SRD_VERSION,
-    size: "Small",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 12,
-    initiative: 2,
-    hitPoints: 4,
-    hitDice: "1d6+1",
-    speed: "10 ft., Fly 60 ft.",
-    challengeRating: "0",
-    xp: 10,
-    proficiencyBonus: 2,
-    abilities: { strength: 6, dexterity: 15, constitution: 12, intelligence: 2, wisdom: 14, charisma: 7 },
-    saves: { strength: -2, dexterity: 2, constitution: 1, intelligence: -4, wisdom: 2, charisma: -2 },
-    skills: { perception: 6 },
-    senses: ["Passive Perception 16"],
-    languages: [],
-    actions: [{ name: "Talons", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d4+2", damageType: "slashing" }]
-  },
-  elephant: {
-    source: DND_5E_SRD_VERSION,
-    size: "Huge",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 12,
-    initiative: -1,
-    hitPoints: 76,
-    hitDice: "8d12+24",
-    speed: "40 ft.",
-    challengeRating: "4",
-    xp: 1100,
-    proficiencyBonus: 2,
-    abilities: { strength: 22, dexterity: 9, constitution: 17, intelligence: 3, wisdom: 11, charisma: 6 },
-    saves: { strength: 6, dexterity: -1, constitution: 3, intelligence: -4, wisdom: 0, charisma: -2 },
-    senses: ["Passive Perception 10"],
-    languages: [],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Gore attacks." },
-      { name: "Gore", kind: "action", attackBonus: 8, range: "reach 5 ft.", damageFormula: "2d8+6", damageType: "piercing", condition: "Prone", summary: "If the target is Huge or smaller and the elephant moved 20+ feet straight toward it before the hit, the target has the Prone condition.", summaryMetadata: true },
-      { name: "Trample", kind: "bonusAction", range: "5 ft.; one Prone creature", damageFormula: "2d10+6", damageType: "bludgeoning", save: { ability: "dexterity", dc: 16, success: "half" } }
-    ]
-  },
-  elk: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 10,
-    initiative: 0,
-    hitPoints: 11,
-    hitDice: "2d10",
-    speed: "50 ft.",
-    challengeRating: "1/4",
-    xp: 50,
-    proficiencyBonus: 2,
-    abilities: { strength: 16, dexterity: 10, constitution: 11, intelligence: 2, wisdom: 10, charisma: 6 },
-    saves: { strength: 3, dexterity: 0, constitution: 0, intelligence: -4, wisdom: 0, charisma: -2 },
-    skills: { perception: 2 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 12"],
-    languages: [],
-    actions: [{ name: "Ram", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d6+3", damageType: "bludgeoning", condition: "Prone", summary: "If the target is Large or smaller and the elk moved 20+ feet straight toward it before the hit, the target takes an extra 1d6 Bludgeoning damage and has the Prone condition.", summaryMetadata: true }]
-  },
-  "flying-snake": {
-    source: DND_5E_SRD_VERSION,
-    size: "Tiny",
-    creatureType: "Monstrosity",
-    alignment: "Unaligned",
-    armorClass: 14,
-    initiative: 2,
-    hitPoints: 5,
-    hitDice: "2d4",
-    speed: "30 ft., Fly 60 ft., Swim 30 ft.",
-    challengeRating: "1/8",
-    xp: 25,
-    proficiencyBonus: 2,
-    abilities: { strength: 4, dexterity: 15, constitution: 11, intelligence: 2, wisdom: 12, charisma: 5 },
-    saves: { strength: -3, dexterity: 2, constitution: 0, intelligence: -4, wisdom: 1, charisma: -3 },
-    senses: ["Blindsight 10 ft.", "Passive Perception 11"],
-    languages: [],
-    traits: [{ name: "Flyby", summary: "Doesn't provoke Opportunity Attacks when it flies out of an enemy's reach." }],
-    actions: [{ name: "Bite", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1+2d4", damageType: "piercing/poison", summary: "Deals 1 Piercing damage plus 2d4 Poison damage.", summaryMetadata: true }]
-  },
-  frog: {
-    source: DND_5E_SRD_VERSION,
-    size: "Tiny",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 11,
-    initiative: 1,
-    hitPoints: 1,
-    hitDice: "1d4-1",
-    speed: "20 ft., Swim 20 ft.",
-    challengeRating: "0",
-    xp: 10,
-    proficiencyBonus: 2,
-    abilities: { strength: 1, dexterity: 13, constitution: 8, intelligence: 1, wisdom: 8, charisma: 3 },
-    saves: { strength: -5, dexterity: 1, constitution: -1, intelligence: -5, wisdom: -1, charisma: -4 },
-    skills: { perception: 1, stealth: 3 },
-    senses: ["Darkvision 30 ft.", "Passive Perception 11"],
-    languages: [],
-    traits: [
-      { name: "Amphibious", summary: "Can breathe air and water." },
-      { name: "Standing Leap", summary: "Long Jump up to 10 ft. and High Jump up to 5 ft. with or without a running start." }
-    ],
-    actions: [{ name: "Bite", kind: "action", attackBonus: 3, range: "reach 5 ft.", damageFormula: "1", damageType: "piercing" }]
-  },
-  "giant-badger": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 13,
-    initiative: 0,
-    hitPoints: 15,
-    hitDice: "2d8+6",
-    speed: "30 ft., Burrow 10 ft.",
-    challengeRating: "1/4",
-    xp: 50,
-    proficiencyBonus: 2,
-    abilities: { strength: 13, dexterity: 10, constitution: 17, intelligence: 2, wisdom: 12, charisma: 5 },
-    saves: { strength: 1, dexterity: 0, constitution: 3, intelligence: -4, wisdom: 1, charisma: -3 },
-    skills: { perception: 3 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 13"],
-    languages: [],
-    traits: [{ name: "Poison Resistance", summary: "Resistant to Poison damage." }],
-    actions: [{ name: "Bite", kind: "action", attackBonus: 3, range: "reach 5 ft.", damageFormula: "2d4+1", damageType: "piercing" }]
-  },
-  "giant-bat": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 13,
-    initiative: 3,
-    hitPoints: 22,
-    hitDice: "4d10",
-    speed: "10 ft., Fly 60 ft.",
-    challengeRating: "1/4",
-    xp: 50,
-    proficiencyBonus: 2,
-    abilities: { strength: 15, dexterity: 16, constitution: 11, intelligence: 2, wisdom: 12, charisma: 6 },
-    saves: { strength: 2, dexterity: 3, constitution: 0, intelligence: -4, wisdom: 1, charisma: -2 },
-    senses: ["Blindsight 120 ft.", "Passive Perception 11"],
-    languages: [],
-    actions: [{ name: "Bite", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d6+3", damageType: "piercing" }]
-  },
-  "giant-boar": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 13,
-    initiative: 0,
-    hitPoints: 42,
-    hitDice: "5d10+15",
-    speed: "40 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 17, dexterity: 10, constitution: 16, intelligence: 2, wisdom: 7, charisma: 5 },
-    saves: { strength: 5, dexterity: 0, constitution: 3, intelligence: -4, wisdom: -2, charisma: -3 },
-    senses: ["Passive Perception 8"],
-    languages: [],
-    traits: [{ name: "Bloodied Fury", summary: "Has advantage on melee attack rolls while Bloodied." }],
-    actions: [{ name: "Gore", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "2d6+3", damageType: "piercing", condition: "Prone", summary: "If the target is Large or smaller and the boar moved 20+ feet straight toward it before the hit, the target takes an extra 2d6 Piercing damage and has the Prone condition.", summaryMetadata: true }]
-  },
-  "giant-centipede": {
-    source: DND_5E_SRD_VERSION,
-    size: "Small",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 14,
-    initiative: 2,
-    hitPoints: 9,
-    hitDice: "2d6+2",
-    speed: "30 ft., Climb 30 ft.",
-    challengeRating: "1/4",
-    xp: 50,
-    proficiencyBonus: 2,
-    abilities: { strength: 5, dexterity: 14, constitution: 12, intelligence: 1, wisdom: 7, charisma: 3 },
-    saves: { strength: -3, dexterity: 2, constitution: 1, intelligence: -5, wisdom: -2, charisma: -4 },
-    senses: ["Blindsight 30 ft.", "Passive Perception 8"],
-    languages: [],
-    actions: [{ name: "Bite", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d4+2", damageType: "piercing", condition: "Poisoned", summary: "Target has the Poisoned condition until the start of the centipede's next turn.", summaryMetadata: true }]
-  },
-  "giant-constrictor-snake": {
-    source: DND_5E_SRD_VERSION,
-    size: "Huge",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 12,
-    initiative: 2,
-    hitPoints: 60,
-    hitDice: "8d12+8",
-    speed: "30 ft., Swim 30 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 19, dexterity: 14, constitution: 12, intelligence: 1, wisdom: 10, charisma: 3 },
-    saves: { strength: 4, dexterity: 2, constitution: 1, intelligence: -5, wisdom: 0, charisma: -4 },
-    skills: { perception: 2 },
-    senses: ["Blindsight 10 ft.", "Passive Perception 12"],
-    languages: [],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes one Bite attack and uses Constrict." },
-      { name: "Bite", kind: "action", attackBonus: 6, range: "reach 10 ft.", damageFormula: "2d6+4", damageType: "piercing" },
-      { name: "Constrict", kind: "action", range: "10 ft.; one Large or smaller creature", damageFormula: "2d8+4", damageType: "bludgeoning", save: { ability: "strength", dc: 14 }, condition: "Grappled", summary: "Failure: damage and Grappled condition, escape DC 14.", summaryMetadata: true }
-    ]
-  },
-  "giant-crab": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 15,
-    initiative: 1,
-    hitPoints: 13,
-    hitDice: "3d8",
-    speed: "30 ft., Swim 30 ft.",
-    challengeRating: "1/8",
-    xp: 25,
-    proficiencyBonus: 2,
-    abilities: { strength: 13, dexterity: 13, constitution: 11, intelligence: 1, wisdom: 9, charisma: 3 },
-    saves: { strength: 1, dexterity: 1, constitution: 0, intelligence: -5, wisdom: -1, charisma: -4 },
-    skills: { stealth: 3 },
-    senses: ["Blindsight 30 ft.", "Passive Perception 9"],
-    languages: [],
-    traits: [{ name: "Amphibious", summary: "Can breathe air and water." }],
-    actions: [{ name: "Claw", kind: "action", attackBonus: 3, range: "reach 5 ft.", damageFormula: "1d6+1", damageType: "bludgeoning", condition: "Grappled", summary: "Target is Grappled if it is Medium or smaller; escape DC 11. The crab has two claws, each of which can grapple one target.", summaryMetadata: true }]
-  },
-  "giant-crocodile": {
-    source: DND_5E_SRD_VERSION,
-    size: "Huge",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 14,
-    initiative: -1,
-    hitPoints: 85,
-    hitDice: "9d12+27",
-    speed: "30 ft., Swim 50 ft.",
-    challengeRating: "5",
-    xp: 1800,
-    proficiencyBonus: 3,
-    abilities: { strength: 21, dexterity: 9, constitution: 17, intelligence: 2, wisdom: 10, charisma: 7 },
-    saves: { strength: 5, dexterity: -1, constitution: 3, intelligence: -4, wisdom: 0, charisma: -2 },
-    skills: { stealth: 5 },
-    senses: ["Passive Perception 10"],
-    languages: [],
-    traits: [{ name: "Hold Breath", summary: "Can hold its breath for 1 hour." }],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes one Bite attack and one Tail attack." },
-      { name: "Bite", kind: "action", attackBonus: 8, range: "reach 5 ft.", damageFormula: "3d10+5", damageType: "piercing", condition: "Grappled/Restrained", summary: "Target is Grappled if it is Large or smaller; escape DC 15. Until the grapple ends, the target has the Restrained condition, and the crocodile can't use Bite against another target.", summaryMetadata: true },
-      { name: "Tail", kind: "action", attackBonus: 8, range: "reach 10 ft.", damageFormula: "3d8+5", damageType: "bludgeoning", condition: "Prone", summary: "If the target is Large or smaller, it has the Prone condition.", summaryMetadata: true }
-    ]
-  },
-  "giant-elk": {
-    source: DND_5E_SRD_VERSION,
-    size: "Huge",
-    creatureType: "Celestial",
-    alignment: "Neutral Good",
-    armorClass: 14,
-    initiative: 6,
-    hitPoints: 42,
-    hitDice: "5d12+10",
-    speed: "60 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 19, dexterity: 18, constitution: 14, intelligence: 7, wisdom: 14, charisma: 10 },
-    saves: { strength: 6, dexterity: 6, constitution: 2, intelligence: -2, wisdom: 2, charisma: 0 },
-    skills: { perception: 4 },
-    senses: ["Darkvision 90 ft.", "Passive Perception 14"],
-    languages: ["Celestial", "Understands Common, Elvish, and Sylvan but can't speak them"],
-    traits: [{ name: "Radiant and Necrotic Resistance", summary: "Resistant to Radiant and Necrotic damage." }],
-    actions: [{ name: "Ram", kind: "action", attackBonus: 6, range: "reach 10 ft.", damageFormula: "2d6+4+2d4", damageType: "bludgeoning/radiant", condition: "Prone", summary: "If the target is Huge or smaller and the elk moved 20+ feet straight toward it before the hit, the target takes an extra 2d4 Bludgeoning damage and has the Prone condition.", summaryMetadata: true }]
-  },
-  "giant-fire-beetle": {
-    source: DND_5E_SRD_VERSION,
-    size: "Small",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 13,
-    initiative: 0,
-    hitPoints: 4,
-    hitDice: "1d6+1",
-    speed: "30 ft., Climb 30 ft.",
-    challengeRating: "0",
-    xp: 10,
-    proficiencyBonus: 2,
-    abilities: { strength: 8, dexterity: 10, constitution: 12, intelligence: 1, wisdom: 7, charisma: 3 },
-    saves: { strength: -1, dexterity: 0, constitution: 1, intelligence: -5, wisdom: -2, charisma: -4 },
-    senses: ["Blindsight 30 ft.", "Passive Perception 8"],
-    languages: [],
-    traits: [
-      { name: "Fire Resistance", summary: "Resistant to Fire damage." },
-      { name: "Illumination", summary: "Emits Bright Light in a 10-foot radius and Dim Light for an additional 10 feet." }
-    ],
-    actions: [{ name: "Bite", kind: "action", attackBonus: 1, range: "reach 5 ft.", damageFormula: "1", damageType: "fire" }]
-  },
-  "giant-frog": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 11,
-    initiative: 1,
-    hitPoints: 18,
-    hitDice: "4d8",
-    speed: "30 ft., Swim 30 ft.",
-    challengeRating: "1/4",
-    xp: 50,
-    proficiencyBonus: 2,
-    abilities: { strength: 12, dexterity: 13, constitution: 11, intelligence: 2, wisdom: 10, charisma: 3 },
-    saves: { strength: 1, dexterity: 1, constitution: 0, intelligence: -4, wisdom: 0, charisma: -4 },
-    skills: { perception: 2, stealth: 4 },
-    senses: ["Darkvision 30 ft.", "Passive Perception 12"],
-    languages: [],
-    traits: [
-      { name: "Amphibious", summary: "Can breathe air and water." },
-      { name: "Standing Leap", summary: "Long Jump up to 20 ft. and High Jump up to 10 ft. with or without a running start." }
-    ],
-    actions: [
-      { name: "Bite", kind: "action", attackBonus: 3, range: "reach 5 ft.", damageFormula: "1d6+2", damageType: "piercing", condition: "Grappled", summary: "Target is Grappled if it is Medium or smaller; escape DC 11.", summaryMetadata: true },
-      { name: "Swallow", kind: "action", range: "one Small or smaller creature Grappled by the frog", damageFormula: "2d4", damageType: "acid", condition: "Blinded/Restrained/Prone", summary: "The frog swallows the target, ending the grapple. The swallowed target has Blinded, Restrained, and Prone, has Total Cover, and takes 2d4 Acid damage at the end of the frog's next turn before being regurgitated.", summaryMetadata: true }
-    ]
-  },
-  "giant-goat": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 11,
-    initiative: 1,
-    hitPoints: 19,
-    hitDice: "3d10+3",
-    speed: "40 ft., Climb 30 ft.",
-    challengeRating: "1/2",
-    xp: 100,
-    proficiencyBonus: 2,
-    abilities: { strength: 17, dexterity: 13, constitution: 12, intelligence: 3, wisdom: 12, charisma: 6 },
-    saves: { strength: 5, dexterity: 1, constitution: 1, intelligence: -4, wisdom: 1, charisma: -2 },
-    skills: { perception: 3 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 13"],
-    languages: [],
-    actions: [{ name: "Ram", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d6+3+2d4", damageType: "bludgeoning", condition: "Prone", summary: "If the target is Large or smaller and the goat moved 20+ feet straight toward it before the hit, the target takes an extra 2d4 Bludgeoning damage and has the Prone condition.", summaryMetadata: true }]
-  },
-  "giant-hyena": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 12,
-    initiative: 2,
-    hitPoints: 45,
-    hitDice: "6d10+12",
-    speed: "50 ft.",
-    challengeRating: "1",
-    xp: 200,
-    proficiencyBonus: 2,
-    abilities: { strength: 16, dexterity: 14, constitution: 14, intelligence: 2, wisdom: 12, charisma: 7 },
-    saves: { strength: 3, dexterity: 2, constitution: 2, intelligence: -4, wisdom: 1, charisma: -2 },
-    skills: { perception: 3 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 13"],
-    languages: [],
-    actions: [
-      { name: "Bite", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "2d6+3", damageType: "piercing" },
-      { name: "Rampage", kind: "bonusAction", effects: ["Once per day, after damaging a creature that is already Bloodied, the hyena moves up to half its Speed and makes one Bite attack."], summary: "Once per day after damaging an already Bloodied creature, moves up to half Speed and makes one Bite attack.", summaryMetadata: true }
-    ]
-  },
-  "giant-lizard": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 12,
-    initiative: 1,
-    hitPoints: 19,
-    hitDice: "3d10+3",
-    speed: "40 ft., Climb 40 ft.",
-    challengeRating: "1/4",
-    xp: 50,
-    proficiencyBonus: 2,
-    abilities: { strength: 15, dexterity: 12, constitution: 13, intelligence: 2, wisdom: 10, charisma: 5 },
-    saves: { strength: 2, dexterity: 3, constitution: 1, intelligence: -4, wisdom: 0, charisma: -3 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 10"],
-    languages: [],
-    traits: [{ name: "Spider Climb", summary: "Can climb difficult surfaces, including along ceilings, without needing to make an ability check." }],
-    actions: [{ name: "Bite", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d8+2", damageType: "piercing" }]
-  },
-  "giant-octopus": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 11,
-    initiative: 1,
-    hitPoints: 45,
-    hitDice: "7d10+7",
-    speed: "10 ft., Swim 60 ft.",
-    challengeRating: "1",
-    xp: 200,
-    proficiencyBonus: 2,
-    abilities: { strength: 17, dexterity: 13, constitution: 13, intelligence: 5, wisdom: 10, charisma: 4 },
-    saves: { strength: 3, dexterity: 1, constitution: 1, intelligence: -3, wisdom: 0, charisma: -3 },
-    skills: { perception: 4, stealth: 5 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 14"],
-    languages: [],
-    traits: [{ name: "Water Breathing", summary: "Can breathe only underwater, but can hold its breath for 1 hour outside water." }],
-    actions: [
-      { name: "Tentacles", kind: "action", attackBonus: 5, range: "reach 10 ft.", damageFormula: "2d6+3", damageType: "bludgeoning", condition: "Grappled/Restrained", summary: "Target is Grappled if it is Medium or smaller; escape DC 13. Until the grapple ends, the target has the Restrained condition, and the octopus can't use Tentacles against another target.", summaryMetadata: true },
-      { name: "Ink Cloud", kind: "reaction", range: "10-foot Cube", recharge: "1/day", effects: ["When it takes damage while underwater, releases ink that heavily obscures a 10-foot Cube centered on itself for 1 minute or until dispersed, then moves up to its Swim Speed."], summary: "When damaged underwater, heavily obscures a 10-foot Cube with ink and moves up to its Swim Speed.", summaryMetadata: true }
-    ]
-  },
-  "giant-owl": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Celestial",
-    alignment: "Neutral",
-    armorClass: 12,
-    initiative: 2,
-    hitPoints: 19,
-    hitDice: "3d10+3",
-    speed: "5 ft., Fly 60 ft.",
-    challengeRating: "1/4",
-    xp: 50,
-    proficiencyBonus: 2,
-    abilities: { strength: 13, dexterity: 15, constitution: 12, intelligence: 10, wisdom: 14, charisma: 10 },
-    saves: { strength: 1, dexterity: 2, constitution: 1, intelligence: 0, wisdom: 4, charisma: 0 },
-    skills: { perception: 6, stealth: 6 },
-    senses: ["Darkvision 120 ft.", "Passive Perception 16"],
-    languages: ["Celestial", "Understands Common, Elvish, and Sylvan but can't speak them"],
-    traits: [{ name: "Flyby", summary: "Doesn't provoke Opportunity Attacks when flying out of an enemy's reach." }],
-    actions: [
-      { name: "Talons", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d10+2", damageType: "slashing" },
-      { name: "Spellcasting", kind: "action", effects: ["Casts Detect Evil and Good and Detect Magic at will, or Clairvoyance once per day, using Wisdom and no spell components."], summary: "Casts Detect Evil and Good, Detect Magic, or 1/day Clairvoyance using Wisdom and no spell components.", summaryMetadata: true }
-    ]
-  },
-  "giant-scorpion": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 15,
-    initiative: 1,
-    hitPoints: 52,
-    hitDice: "7d10+14",
-    speed: "40 ft.",
-    challengeRating: "3",
-    xp: 700,
-    proficiencyBonus: 2,
-    abilities: { strength: 16, dexterity: 13, constitution: 15, intelligence: 1, wisdom: 9, charisma: 3 },
-    saves: { strength: 3, dexterity: 1, constitution: 2, intelligence: -5, wisdom: -1, charisma: -4 },
-    senses: ["Blindsight 60 ft.", "Passive Perception 9"],
-    languages: [],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Claw attacks and one Sting attack." },
-      { name: "Claw", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d6+3", damageType: "bludgeoning", condition: "Grappled", summary: "Target is Grappled if it is Large or smaller; escape DC 13. The scorpion has two claws, each of which can grapple one target.", summaryMetadata: true },
-      { name: "Sting", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d8+3+2d10", damageType: "piercing/poison" }
-    ]
-  },
-  "giant-seahorse": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 14,
-    initiative: 1,
-    hitPoints: 16,
-    hitDice: "3d10",
-    speed: "5 ft., Swim 40 ft.",
-    challengeRating: "1/2",
-    xp: 100,
-    proficiencyBonus: 2,
-    abilities: { strength: 15, dexterity: 12, constitution: 11, intelligence: 2, wisdom: 12, charisma: 5 },
-    saves: { strength: 2, dexterity: 1, constitution: 0, intelligence: -4, wisdom: 1, charisma: -3 },
-    senses: ["Passive Perception 11"],
-    languages: [],
-    traits: [{ name: "Water Breathing", summary: "Can breathe only underwater." }],
-    actions: [
-      { name: "Ram", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "2d6+2", damageType: "bludgeoning", summary: "Damage is 2d8+2 instead if the seahorse moved 20+ feet straight toward the target before the hit.", summaryMetadata: true },
-      { name: "Bubble Dash", kind: "bonusAction", effects: ["While underwater, moves up to half its Swim Speed without provoking Opportunity Attacks."], summary: "While underwater, moves up to half its Swim Speed without provoking Opportunity Attacks.", summaryMetadata: true }
-    ]
-  },
-  "giant-shark": {
-    source: DND_5E_SRD_VERSION,
-    size: "Huge",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 13,
-    initiative: 3,
-    hitPoints: 92,
-    hitDice: "8d12+40",
-    speed: "5 ft., Swim 60 ft.",
-    challengeRating: "5",
-    xp: 1800,
-    proficiencyBonus: 3,
-    abilities: { strength: 23, dexterity: 11, constitution: 21, intelligence: 1, wisdom: 10, charisma: 5 },
-    saves: { strength: 6, dexterity: 0, constitution: 5, intelligence: -5, wisdom: 0, charisma: -3 },
-    skills: { perception: 3 },
-    senses: ["Blindsight 60 ft.", "Passive Perception 13"],
-    languages: [],
-    traits: [{ name: "Water Breathing", summary: "Can breathe only underwater." }],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Bite attacks." },
-      { name: "Bite", kind: "action", attackBonus: 9, range: "reach 5 ft.", damageFormula: "3d10+6", damageType: "piercing", summary: "Has Advantage on the attack roll if the target is missing any Hit Points.", summaryMetadata: true }
-    ]
-  },
-  "giant-toad": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 11,
-    initiative: 1,
-    hitPoints: 39,
-    hitDice: "6d10+6",
-    speed: "30 ft., Swim 30 ft.",
-    challengeRating: "1",
-    xp: 200,
-    proficiencyBonus: 2,
-    abilities: { strength: 15, dexterity: 13, constitution: 13, intelligence: 2, wisdom: 10, charisma: 3 },
-    saves: { strength: 2, dexterity: 1, constitution: 1, intelligence: -4, wisdom: 0, charisma: -4 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 10"],
-    languages: [],
-    traits: [
-      { name: "Amphibious", summary: "Can breathe air and water." },
-      { name: "Standing Leap", summary: "Long jump is up to 20 feet and high jump is up to 10 feet, with or without a running start." }
-    ],
-    actions: [
-      { name: "Bite", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d6+2+2d4", damageType: "piercing/poison", condition: "Grappled", summary: "If the target is Medium or smaller, it has the Grappled condition (escape DC 12).", summaryMetadata: true },
-      { name: "Swallow", kind: "action", range: "one Medium or smaller creature Grappled by the toad", damageFormula: "3d6", damageType: "acid", condition: "Blinded/Restrained/Prone", summary: "Swallows one Medium or smaller creature Grappled by the toad. The target is no longer Grappled, has Blinded and Restrained, has total cover, and takes 3d6 Acid damage at the end of each of the toad's turns. The toad can have only one target swallowed and can't Bite while it does. If the toad dies, the swallowed target can escape using 5 feet of movement and exits Prone.", summaryMetadata: true }
-    ]
-  },
-  "giant-venomous-snake": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 14,
-    initiative: 4,
-    hitPoints: 11,
-    hitDice: "2d8+2",
-    speed: "40 ft., Swim 40 ft.",
-    challengeRating: "1/4",
-    xp: 50,
-    proficiencyBonus: 2,
-    abilities: { strength: 10, dexterity: 18, constitution: 13, intelligence: 2, wisdom: 10, charisma: 3 },
-    saves: { strength: 0, dexterity: 4, constitution: 1, intelligence: -4, wisdom: 0, charisma: -4 },
-    skills: { perception: 2 },
-    senses: ["Blindsight 10 ft.", "Passive Perception 12"],
-    languages: [],
-    actions: [{ name: "Bite", kind: "action", attackBonus: 6, range: "reach 10 ft.", damageFormula: "1d4+4+1d8", damageType: "piercing/poison" }]
-  },
-  "giant-vulture": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Monstrosity",
-    alignment: "Neutral Evil",
-    armorClass: 10,
-    initiative: 0,
-    hitPoints: 25,
-    hitDice: "3d10+9",
-    speed: "10 ft., Fly 60 ft.",
-    challengeRating: "1",
-    xp: 200,
-    proficiencyBonus: 2,
-    abilities: { strength: 15, dexterity: 10, constitution: 16, intelligence: 6, wisdom: 12, charisma: 7 },
-    saves: { strength: 2, dexterity: 0, constitution: 3, intelligence: -2, wisdom: 1, charisma: -2 },
-    skills: { perception: 3 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 13"],
-    languages: ["Understands Common but can't speak"],
-    traits: [
-      { name: "Necrotic Resistance", summary: "Has Resistance to Necrotic damage." },
-      { name: "Pack Tactics", summary: "Has Advantage on an attack roll against a creature if at least one ally is within 5 feet of the creature and the ally doesn't have the Incapacitated condition." }
-    ],
-    actions: [{ name: "Gouge", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "2d6+2", damageType: "piercing", condition: "Poisoned", summary: "The target has the Poisoned condition until the end of its next turn.", summaryMetadata: true }]
-  },
-  "giant-wasp": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 13,
-    initiative: 2,
-    hitPoints: 22,
-    hitDice: "5d8",
-    speed: "10 ft., Fly 50 ft.",
-    challengeRating: "1/2",
-    xp: 100,
-    proficiencyBonus: 2,
-    abilities: { strength: 10, dexterity: 14, constitution: 10, intelligence: 1, wisdom: 10, charisma: 3 },
-    saves: { strength: 0, dexterity: 2, constitution: 0, intelligence: -5, wisdom: 0, charisma: -4 },
-    senses: ["Passive Perception 10"],
-    languages: [],
-    traits: [{ name: "Flyby", summary: "Doesn't provoke Opportunity Attacks when it flies out of an enemy's reach." }],
-    actions: [{ name: "Sting", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d6+2+2d4", damageType: "piercing/poison" }]
-  },
-  "giant-weasel": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 13,
-    initiative: 3,
-    hitPoints: 9,
-    hitDice: "2d8",
-    speed: "40 ft., Climb 30 ft.",
-    challengeRating: "1/8",
-    xp: 25,
-    proficiencyBonus: 2,
-    abilities: { strength: 11, dexterity: 17, constitution: 10, intelligence: 4, wisdom: 12, charisma: 5 },
-    saves: { strength: 0, dexterity: 3, constitution: 0, intelligence: -3, wisdom: 1, charisma: -3 },
-    skills: { acrobatics: 5, perception: 3, stealth: 5 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 13"],
-    languages: [],
-    actions: [{ name: "Bite", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d4+3", damageType: "piercing" }]
-  },
-  "giant-wolf-spider": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 13,
-    initiative: 3,
-    hitPoints: 11,
-    hitDice: "2d8+2",
-    speed: "40 ft., Climb 40 ft.",
-    challengeRating: "1/4",
-    xp: 50,
-    proficiencyBonus: 2,
-    abilities: { strength: 12, dexterity: 16, constitution: 13, intelligence: 3, wisdom: 12, charisma: 4 },
-    saves: { strength: 1, dexterity: 3, constitution: 1, intelligence: -4, wisdom: 1, charisma: -3 },
-    skills: { perception: 3, stealth: 7 },
-    senses: ["Blindsight 10 ft.", "Darkvision 60 ft.", "Passive Perception 13"],
-    languages: [],
-    traits: [{ name: "Spider Climb", summary: "Can climb difficult surfaces, including along ceilings, without needing to make an ability check." }],
-    actions: [{ name: "Bite", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d4+3+2d4", damageType: "piercing/poison" }]
-  },
-  goat: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 10,
-    initiative: 0,
-    hitPoints: 4,
-    hitDice: "1d8",
-    speed: "40 ft., Climb 30 ft.",
-    challengeRating: "0",
-    xp: 10,
-    proficiencyBonus: 2,
-    abilities: { strength: 11, dexterity: 10, constitution: 11, intelligence: 2, wisdom: 10, charisma: 5 },
-    saves: { strength: 2, dexterity: 0, constitution: 0, intelligence: -4, wisdom: 0, charisma: -3 },
-    skills: { perception: 2 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 12"],
-    languages: [],
-    actions: [{ name: "Ram", kind: "action", attackBonus: 2, range: "reach 5 ft.", damageFormula: "1", damageType: "bludgeoning", summary: "Deals 1d4 Bludgeoning damage instead if the goat moved 20+ feet straight toward the target before the hit.", summaryMetadata: true }]
-  },
-  hawk: {
-    source: DND_5E_SRD_VERSION,
-    size: "Tiny",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 13,
-    initiative: 3,
-    hitPoints: 1,
-    hitDice: "1d4-1",
-    speed: "10 ft., Fly 60 ft.",
-    challengeRating: "0",
-    xp: 10,
-    proficiencyBonus: 2,
-    abilities: { strength: 5, dexterity: 16, constitution: 8, intelligence: 2, wisdom: 14, charisma: 6 },
-    saves: { strength: -3, dexterity: 3, constitution: -1, intelligence: -4, wisdom: 2, charisma: -2 },
-    skills: { perception: 6 },
-    senses: ["Passive Perception 16"],
-    languages: [],
-    actions: [{ name: "Talons", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1", damageType: "slashing" }]
-  },
-  jackal: {
-    source: DND_5E_SRD_VERSION,
-    size: "Small",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 12,
-    initiative: 2,
-    hitPoints: 3,
-    hitDice: "1d6",
-    speed: "40 ft.",
-    challengeRating: "0",
-    xp: 10,
-    proficiencyBonus: 2,
-    abilities: { strength: 8, dexterity: 15, constitution: 11, intelligence: 3, wisdom: 12, charisma: 6 },
-    saves: { strength: -1, dexterity: 2, constitution: 0, intelligence: -4, wisdom: 1, charisma: -2 },
-    skills: { perception: 5, stealth: 4 },
-    senses: ["Darkvision 90 ft.", "Passive Perception 15"],
-    languages: [],
-    actions: [{ name: "Bite", kind: "action", attackBonus: 1, range: "reach 5 ft.", damageFormula: "1d4-1", damageType: "piercing" }]
-  },
-  "killer-whale": {
-    source: DND_5E_SRD_VERSION,
-    size: "Huge",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 12,
-    initiative: 2,
-    hitPoints: 90,
-    hitDice: "12d12+12",
-    speed: "5 ft., Swim 60 ft.",
-    challengeRating: "3",
-    xp: 700,
-    proficiencyBonus: 2,
-    abilities: { strength: 19, dexterity: 14, constitution: 13, intelligence: 3, wisdom: 12, charisma: 7 },
-    saves: { strength: 4, dexterity: 2, constitution: 1, intelligence: -4, wisdom: 1, charisma: -2 },
-    skills: { perception: 3, stealth: 4 },
-    senses: ["Blindsight 120 ft.", "Passive Perception 13"],
-    languages: [],
-    traits: [{ name: "Hold Breath", summary: "Can hold its breath for 30 minutes." }],
-    actions: [{ name: "Bite", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "5d6+4", damageType: "piercing" }]
-  },
-  lion: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 12,
-    initiative: 2,
-    hitPoints: 22,
-    hitDice: "4d10",
-    speed: "50 ft.",
-    challengeRating: "1",
-    xp: 200,
-    proficiencyBonus: 2,
-    abilities: { strength: 17, dexterity: 15, constitution: 11, intelligence: 3, wisdom: 12, charisma: 8 },
-    saves: { strength: 3, dexterity: 2, constitution: 0, intelligence: -4, wisdom: 1, charisma: -1 },
-    skills: { perception: 3, stealth: 4 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 13"],
-    languages: [],
-    traits: [
-      { name: "Pack Tactics", summary: "Has Advantage on an attack roll against a creature if at least one ally is within 5 feet of the creature and the ally doesn't have the Incapacitated condition." },
-      { name: "Running Leap", summary: "With a 10-foot running start, can Long Jump up to 25 feet." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Rend attacks. It can replace one attack with Roar." },
-      { name: "Rend", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d8+3", damageType: "slashing" },
-      { name: "Roar", kind: "action", range: "15 ft.", save: { ability: "wisdom", dc: 11 }, condition: "Frightened", effects: ["One creature within 15 feet that fails the save has the Frightened condition until the start of the lion's next turn."], summary: "Frightens one nearby creature until the start of the lion's next turn.", summaryMetadata: true }
-    ]
-  },
-  lizard: {
-    source: DND_5E_SRD_VERSION,
-    size: "Tiny",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 10,
-    initiative: 0,
-    hitPoints: 2,
-    hitDice: "1d4",
-    speed: "20 ft., Climb 20 ft.",
-    challengeRating: "0",
-    xp: 10,
-    proficiencyBonus: 2,
-    abilities: { strength: 2, dexterity: 11, constitution: 10, intelligence: 1, wisdom: 8, charisma: 3 },
-    saves: { strength: -4, dexterity: 0, constitution: 0, intelligence: -5, wisdom: -1, charisma: -4 },
-    senses: ["Darkvision 30 ft.", "Passive Perception 9"],
-    languages: [],
-    traits: [{ name: "Spider Climb", summary: "Can climb difficult surfaces, including along ceilings, without needing to make an ability check." }],
-    actions: [{ name: "Bite", kind: "action", attackBonus: 2, range: "reach 5 ft.", damageFormula: "1", damageType: "piercing" }]
-  },
-  "gibbering-mouther": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Aberration",
-    alignment: "Neutral",
-    armorClass: 9,
-    initiative: -1,
-    hitPoints: 67,
-    hitDice: "9d8+27",
-    speed: "20 ft., Swim 20 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 10, dexterity: 8, constitution: 16, intelligence: 3, wisdom: 10, charisma: 6 },
-    saves: { strength: 0, dexterity: -1, constitution: 3, intelligence: -4, wisdom: 0, charisma: -2 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 10"],
-    languages: [],
-    traits: [
-      { name: "Aberrant Ground", summary: "Ground within 10 feet of the mouther is Difficult Terrain for enemies." },
-      { name: "Gibbering", summary: "An enemy that starts its turn within 20 feet makes a DC 10 Wisdom save or can't take Reactions and rolls for random behavior." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Bite attacks and uses Blinding Spittle if available." },
-      { name: "Bite", kind: "action", attackBonus: 2, range: "reach 5 ft.", damageFormula: "4d6", damageType: "piercing" },
-      { name: "Blinding Spittle", kind: "action", range: "15-foot cone", save: { ability: "dexterity", dc: 13 }, condition: "Blinded", recharge: "5-6", effects: ["Creatures in the cone that fail the save have the Blinded condition until the end of the mouther's next turn."], summary: "Creatures in the cone that fail the DC 13 Dexterity save are Blinded until the end of the mouther's next turn.", summaryMetadata: true }
-    ]
-  },
-  glabrezu: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Fiend (Demon)",
-    alignment: "Chaotic Evil",
-    armorClass: 17,
-    initiative: 2,
-    hitPoints: 157,
-    hitDice: "15d10+75",
-    speed: "40 ft.",
-    challengeRating: "9",
-    xp: 5000,
-    proficiencyBonus: 4,
-    abilities: { strength: 20, dexterity: 15, constitution: 21, intelligence: 19, wisdom: 17, charisma: 16 },
-    saves: { strength: 9, dexterity: 2, constitution: 9, intelligence: 4, wisdom: 7, charisma: 7 },
-    skills: { perception: 7 },
-    senses: ["Truesight 120 ft.", "Passive Perception 17"],
-    languages: ["Abyssal", "Telepathy 120 ft."],
-    traits: [
-      { name: "Demonic Restoration", summary: "If it dies outside the Abyss, its body dissolves and it gains a new body instantly, reviving with all Hit Points somewhere in the Abyss." },
-      { name: "Legendary Resistance", summary: "2/Day. If the glabrezu fails a saving throw, it can choose to succeed instead." },
-      { name: "Magic Resistance", summary: "Has Advantage on saving throws against spells and other magical effects." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Pincer attacks and two Fist attacks." },
-      { name: "Pincer", kind: "action", attackBonus: 9, range: "reach 10 ft.", damageFormula: "2d10+5", damageType: "bludgeoning", condition: "Grappled", summary: "If the target is Large or smaller, it has the Grappled condition (escape DC 15). The glabrezu has two pincers.", summaryMetadata: true },
-      { name: "Fist", kind: "action", attackBonus: 9, range: "reach 5 ft.", damageFormula: "2d4+5", damageType: "bludgeoning" },
-      { name: "Spellcasting", kind: "action", effects: ["Casts Detect Magic, Dispel Magic, Darkness, Confusion, Fly, or Power Word Stun using Intelligence."], summary: "Casts Detect Magic, Dispel Magic, Darkness, Confusion, Fly, or Power Word Stun using Intelligence.", summaryMetadata: true }
-    ]
-  },
-  gladiator: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Humanoid",
-    alignment: "Neutral",
-    armorClass: 16,
-    initiative: 2,
-    hitPoints: 112,
-    hitDice: "15d8+45",
-    speed: "30 ft.",
-    challengeRating: "5",
-    xp: 1800,
-    proficiencyBonus: 3,
-    abilities: { strength: 18, dexterity: 15, constitution: 16, intelligence: 10, wisdom: 12, charisma: 15 },
-    saves: { strength: 7, dexterity: 5, constitution: 6, intelligence: 0, wisdom: 1, charisma: 2 },
-    skills: { athletics: 7, intimidation: 5 },
-    senses: ["Passive Perception 11"],
-    languages: ["Common"],
-    gear: ["Shield", "Spear", "Studded Leather Armor"],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Spear attacks." },
-      { name: "Spear", kind: "action", attackBonus: 7, range: "reach 5 ft. or 20/60 ft.", damageFormula: "2d6+4", damageType: "piercing" },
-      { name: "Shield Bash", kind: "action", range: "reach 5 ft.", damageFormula: "2d4+4", damageType: "bludgeoning", save: { ability: "strength", dc: 15 }, condition: "Prone", summary: "The target must succeed on a DC 15 Strength save or have the Prone condition.", summaryMetadata: true },
-      { name: "Parry", kind: "reaction", effects: ["Adds 3 to AC against one melee attack that would hit it while holding a weapon."], summary: "Adds 3 to AC against one melee attack that would hit it while holding a weapon.", summaryMetadata: true }
-    ]
-  },
-  "gnoll-warrior": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Fiend (Gnoll)",
-    alignment: "Chaotic Evil",
-    armorClass: 15,
-    initiative: 1,
-    hitPoints: 22,
-    hitDice: "5d8",
-    speed: "30 ft.",
-    challengeRating: "1/2",
-    xp: 100,
-    proficiencyBonus: 2,
-    abilities: { strength: 14, dexterity: 12, constitution: 11, intelligence: 6, wisdom: 10, charisma: 7 },
-    saves: { strength: 2, dexterity: 1, constitution: 0, intelligence: -2, wisdom: 0, charisma: -2 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 10"],
-    languages: ["Abyssal", "Gnoll"],
-    gear: ["Longbow", "Shield", "Spear"],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Spear attacks or two Longbow attacks." },
-      { name: "Spear", kind: "action", attackBonus: 4, range: "reach 5 ft. or 20/60 ft.", damageFormula: "1d8+2", damageType: "piercing" },
-      { name: "Longbow", kind: "action", attackBonus: 3, range: "150/600 ft.", damageFormula: "1d8+1", damageType: "piercing" }
-    ]
-  },
-  "gold-dragon-wyrmling": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Dragon (Metallic)",
-    alignment: "Lawful Good",
-    armorClass: 17,
-    initiative: 4,
-    hitPoints: 60,
-    hitDice: "8d8+24",
-    speed: "30 ft., Fly 60 ft., Swim 30 ft.",
-    challengeRating: "3",
-    xp: 700,
-    proficiencyBonus: 2,
-    abilities: { strength: 19, dexterity: 14, constitution: 17, intelligence: 14, wisdom: 11, charisma: 16 },
-    saves: { strength: 4, dexterity: 2, constitution: 3, intelligence: 2, wisdom: 0, charisma: 3 },
-    skills: { perception: 4, stealth: 4 },
-    senses: ["Blindsight 10 ft.", "Darkvision 60 ft.", "Passive Perception 14"],
-    languages: ["Draconic"],
-    traits: [
-      { name: "Amphibious", summary: "Can breathe air and water." },
-      { name: "Fire Immunity", summary: "Immune to Fire damage." }
-    ],
-    actions: [
-      { name: "Bite", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "1d10+4", damageType: "piercing" },
-      { name: "Fire Breath", kind: "action", range: "15-foot cone", damageFormula: "7d6", damageType: "fire", save: { ability: "dexterity", dc: 13, success: "half" }, recharge: "5-6" }
-    ]
-  },
-  "young-gold-dragon": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Dragon (Metallic)",
-    alignment: "Lawful Good",
-    armorClass: 18,
-    initiative: 6,
-    hitPoints: 178,
-    hitDice: "17d10+85",
-    speed: "40 ft., Fly 80 ft., Swim 40 ft.",
-    challengeRating: "10",
-    xp: 5900,
-    proficiencyBonus: 4,
-    abilities: { strength: 25, dexterity: 14, constitution: 21, intelligence: 16, wisdom: 13, charisma: 20 },
-    saves: { strength: 7, dexterity: 6, constitution: 9, intelligence: 3, wisdom: 5, charisma: 5 },
-    skills: { insight: 5, perception: 9, persuasion: 9, stealth: 6 },
-    senses: ["Blindsight 30 ft.", "Darkvision 120 ft.", "Passive Perception 19"],
-    languages: ["Common", "Draconic"],
-    traits: [
-      { name: "Amphibious", summary: "Can breathe air and water." },
-      { name: "Fire Immunity", summary: "Immune to Fire damage." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Rend attacks." },
-      { name: "Rend", kind: "action", attackBonus: 11, range: "reach 10 ft.", damageFormula: "2d10+7", damageType: "slashing" },
-      { name: "Fire Breath", kind: "action", range: "30-foot cone", damageFormula: "10d6", damageType: "fire", save: { ability: "dexterity", dc: 17, success: "half" }, recharge: "5-6" }
-    ]
-  },
-  "adult-gold-dragon": {
-    source: DND_5E_SRD_VERSION,
-    size: "Huge",
-    creatureType: "Dragon (Metallic)",
-    alignment: "Lawful Good",
-    armorClass: 19,
-    initiative: 14,
-    hitPoints: 243,
-    hitDice: "18d12+126",
-    speed: "40 ft., Fly 80 ft., Swim 40 ft.",
-    challengeRating: "17",
-    xp: 18000,
-    proficiencyBonus: 6,
-    abilities: { strength: 27, dexterity: 14, constitution: 25, intelligence: 16, wisdom: 15, charisma: 24 },
-    saves: { strength: 8, dexterity: 8, constitution: 7, intelligence: 3, wisdom: 8, charisma: 7 },
-    skills: { insight: 8, perception: 14, persuasion: 13, stealth: 8 },
-    senses: ["Blindsight 60 ft.", "Darkvision 120 ft.", "Passive Perception 24"],
-    languages: ["Common", "Draconic"],
-    traits: [
-      { name: "Amphibious", summary: "Can breathe air and water." },
-      { name: "Fire Immunity", summary: "Immune to Fire damage." },
-      { name: "Legendary Resistance", summary: "3/Day, or 4/Day in Lair. If the dragon fails a saving throw, it can choose to succeed instead." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Rend attacks. It can replace one attack with Spellcasting or Weakening Breath." },
-      { name: "Rend", kind: "action", attackBonus: 14, range: "reach 10 ft.", damageFormula: "2d8+8+1d8", damageType: "slashing/fire" },
-      { name: "Fire Breath", kind: "action", range: "60-foot cone", damageFormula: "12d10", damageType: "fire", save: { ability: "dexterity", dc: 21, success: "half" }, recharge: "5-6" },
-      { name: "Spellcasting", kind: "action", effects: ["Casts spells requiring no Material components using Charisma; spell save DC 21, +13 to hit with spell attacks."], summary: "Casts Detect Magic, Guiding Bolt at level 2, Shapechange, Flame Strike, or Zone of Truth using Charisma; spell save DC 21, +13 to hit with spell attacks.", summaryMetadata: true },
-      { name: "Weakening Breath", kind: "action", range: "60-foot cone", save: { ability: "strength", dc: 21 }, condition: "Weakened", effects: ["Creatures in the cone that fail the save have Disadvantage on Strength-based D20 Tests and subtract 1d6 from damage rolls."], summary: "Failed DC 21 Strength save gives Disadvantage on Strength-based D20 Tests and subtracts 1d6 from damage rolls.", summaryMetadata: true },
-      { name: "Legendary Actions", kind: "action", effects: ["Has 3 Legendary Action uses, or 4 in Lair, including Banish, Guiding Light, and Pounce."], summary: "Has 3 Legendary Action uses, or 4 in Lair, including Banish, Guiding Light, and Pounce.", summaryMetadata: true }
-    ]
-  },
-  "ancient-gold-dragon": {
-    source: DND_5E_SRD_VERSION,
-    size: "Gargantuan",
-    creatureType: "Dragon (Metallic)",
-    alignment: "Lawful Good",
-    armorClass: 22,
-    initiative: 16,
-    hitPoints: 546,
-    hitDice: "28d20+252",
-    speed: "40 ft., Fly 80 ft., Swim 40 ft.",
-    challengeRating: "24",
-    xp: 62000,
-    proficiencyBonus: 7,
-    abilities: { strength: 30, dexterity: 14, constitution: 29, intelligence: 18, wisdom: 17, charisma: 28 },
-    saves: { strength: 10, dexterity: 9, constitution: 9, intelligence: 4, wisdom: 10, charisma: 9 },
-    skills: { insight: 10, perception: 17, persuasion: 16, stealth: 9 },
-    senses: ["Blindsight 60 ft.", "Darkvision 120 ft.", "Passive Perception 27"],
-    languages: ["Common", "Draconic"],
-    traits: [
-      { name: "Amphibious", summary: "Can breathe air and water." },
-      { name: "Fire Immunity", summary: "Immune to Fire damage." },
-      { name: "Legendary Resistance", summary: "4/Day, or 5/Day in Lair. If the dragon fails a saving throw, it can choose to succeed instead." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Rend attacks. It can replace one attack with Spellcasting or Weakening Breath." },
-      { name: "Rend", kind: "action", attackBonus: 17, range: "reach 15 ft.", damageFormula: "2d8+10+2d8", damageType: "slashing/fire" },
-      { name: "Fire Breath", kind: "action", range: "90-foot cone", damageFormula: "13d10", damageType: "fire", save: { ability: "dexterity", dc: 24, success: "half" }, recharge: "5-6" },
-      { name: "Spellcasting", kind: "action", effects: ["Casts spells requiring no Material components using Charisma; spell save DC 24, +16 to hit with spell attacks."], summary: "Casts Detect Magic, Guiding Bolt at level 4, Shapechange, Flame Strike at level 6, Word of Recall, or Zone of Truth using Charisma; spell save DC 24, +16 to hit with spell attacks.", summaryMetadata: true },
-      { name: "Weakening Breath", kind: "action", range: "90-foot cone", save: { ability: "strength", dc: 24 }, condition: "Weakened", effects: ["Creatures in the cone that fail the save have Disadvantage on Strength-based D20 Tests and subtract 1d10 from damage rolls."], summary: "Failed DC 24 Strength save gives Disadvantage on Strength-based D20 Tests and subtracts 1d10 from damage rolls.", summaryMetadata: true },
-      { name: "Legendary Actions", kind: "action", effects: ["Has 3 Legendary Action uses, or 4 in Lair, including Banish, Guiding Light, and Pounce."], summary: "Has 3 Legendary Action uses, or 4 in Lair, including Banish, Guiding Light, and Pounce.", summaryMetadata: true }
-    ]
-  },
-  gorgon: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Construct",
-    alignment: "Unaligned",
-    armorClass: 19,
-    initiative: 0,
-    hitPoints: 114,
-    hitDice: "12d10+48",
-    speed: "40 ft.",
-    challengeRating: "5",
-    xp: 1800,
-    proficiencyBonus: 3,
-    abilities: { strength: 20, dexterity: 11, constitution: 18, intelligence: 2, wisdom: 12, charisma: 7 },
-    saves: { strength: 5, dexterity: 0, constitution: 4, intelligence: -4, wisdom: 1, charisma: -2 },
-    skills: { perception: 7 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 17"],
-    languages: [],
-    traits: [{ name: "Condition Immunities", summary: "Immune to Exhaustion and Petrified." }],
-    actions: [
-      { name: "Gore", kind: "action", attackBonus: 8, range: "reach 5 ft.", damageFormula: "2d12+5", damageType: "piercing", condition: "Prone", summary: "If the gorgon moved 20+ feet straight toward the target before the hit, a Large or smaller target has the Prone condition.", summaryMetadata: true },
-      { name: "Petrifying Breath", kind: "action", range: "30-foot cone", save: { ability: "constitution", dc: 15 }, condition: "Restrained/Petrified", recharge: "5-6", effects: ["Creatures in the cone that fail the save begin turning to stone and can become Petrified after the follow-up save."], summary: "Failed DC 15 Constitution save begins petrification; the target can become Petrified after the follow-up save.", summaryMetadata: true },
-      { name: "Trample", kind: "bonusAction", range: "reach 5 ft.", damageFormula: "2d10+5", damageType: "bludgeoning", save: { ability: "dexterity", dc: 16, success: "half" }, summary: "Targets one Prone creature; it takes half damage on a successful DC 16 Dexterity save.", summaryMetadata: true }
-    ]
-  },
-  "gray-ooze": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Ooze",
-    alignment: "Unaligned",
-    armorClass: 9,
-    initiative: -2,
-    hitPoints: 22,
-    hitDice: "3d8+9",
-    speed: "10 ft., Climb 10 ft.",
-    challengeRating: "1/2",
-    xp: 100,
-    proficiencyBonus: 2,
-    abilities: { strength: 12, dexterity: 6, constitution: 16, intelligence: 1, wisdom: 6, charisma: 2 },
-    saves: { strength: 1, dexterity: -2, constitution: 3, intelligence: -5, wisdom: -2, charisma: -4 },
-    skills: { stealth: 2 },
-    senses: ["Blindsight 60 ft.", "Passive Perception 8"],
-    languages: [],
-    traits: [
-      { name: "Damage Resistances", summary: "Resistant to Acid, Cold, and Fire damage." },
-      { name: "Condition Immunities", summary: "Immune to Blinded, Charmed, Deafened, Exhaustion, Frightened, Grappled, Prone, and Restrained." },
-      { name: "Amorphous", summary: "Can move through a space as narrow as 1 inch without spending extra movement." },
-      { name: "Corrosive Form", summary: "Can corrode nonmagical weapons, ammunition, armor, metal, and wood." }
-    ],
-    actions: [{ name: "Pseudopod", kind: "action", attackBonus: 3, range: "reach 5 ft.", damageFormula: "2d8+1", damageType: "acid", summary: "Nonmagical armor worn by the target takes a cumulative AC penalty.", summaryMetadata: true }]
-  },
-  "green-hag": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Fey",
-    alignment: "Neutral Evil",
-    armorClass: 17,
-    initiative: 1,
-    hitPoints: 82,
-    hitDice: "11d8+33",
-    speed: "30 ft., Swim 30 ft.",
-    challengeRating: "3",
-    xp: 700,
-    proficiencyBonus: 2,
-    abilities: { strength: 18, dexterity: 12, constitution: 16, intelligence: 13, wisdom: 14, charisma: 14 },
-    saves: { strength: 4, dexterity: 1, constitution: 3, intelligence: 1, wisdom: 2, charisma: 2 },
-    skills: { arcana: 5, deception: 4, perception: 4, stealth: 3 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 14"],
-    languages: ["Common", "Elvish", "Sylvan"],
-    traits: [
-      { name: "Amphibious", summary: "Can breathe air and water." },
-      { name: "Coven Magic", summary: "Near two hag allies, can cast coven spells with Intelligence spellcasting." },
-      { name: "Mimicry", summary: "Can mimic animal sounds and humanoid voices; a listener can detect the mimicry with a DC 14 Wisdom (Insight) check." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Claw attacks." },
-      { name: "Claw", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "1d8+4+1d6", damageType: "slashing/poison" },
-      { name: "Spellcasting", kind: "action", range: "Self", effects: ["Wisdom spellcasting DC 12, +4 to hit; at will Dancing Lights, Disguise Self, Invisibility (self only), Minor Illusion, and Ray of Sickness (level 3)."], summary: "Casts one of the hag's at-will spells.", summaryMetadata: true }
-    ]
-  },
-  grick: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Aberration",
-    alignment: "Unaligned",
-    armorClass: 14,
-    initiative: 2,
-    hitPoints: 54,
-    hitDice: "12d8",
-    speed: "30 ft., Climb 30 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 14, dexterity: 14, constitution: 11, intelligence: 3, wisdom: 14, charisma: 5 },
-    saves: { strength: 2, dexterity: 2, constitution: 0, intelligence: -4, wisdom: 2, charisma: -3 },
-    skills: { stealth: 4 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 12"],
-    languages: [],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes one Beak attack and one Tentacles attack." },
-      { name: "Beak", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "2d6+2", damageType: "piercing" },
-      { name: "Tentacles", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d10+2", damageType: "slashing", condition: "Grappled", summary: "A Medium or smaller target has the Grappled condition (escape DC 12).", summaryMetadata: true }
-    ]
-  },
-  griffon: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Monstrosity",
-    alignment: "Unaligned",
-    armorClass: 12,
-    initiative: 2,
-    hitPoints: 59,
-    hitDice: "7d10+21",
-    speed: "30 ft., Fly 80 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 18, dexterity: 15, constitution: 16, intelligence: 2, wisdom: 13, charisma: 8 },
-    saves: { strength: 4, dexterity: 2, constitution: 3, intelligence: -4, wisdom: 1, charisma: -1 },
-    skills: { perception: 5 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 15"],
-    languages: [],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Rend attacks." },
-      { name: "Rend", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "1d8+4", damageType: "piercing", condition: "Grappled", summary: "A Medium or smaller target has the Grappled condition (escape DC 14).", summaryMetadata: true }
-    ]
-  },
-  grimlock: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Aberration",
-    alignment: "Neutral Evil",
-    armorClass: 11,
-    initiative: 1,
-    hitPoints: 11,
-    hitDice: "2d8+2",
-    speed: "30 ft., Climb 30 ft.",
-    challengeRating: "1/4",
-    xp: 50,
-    proficiencyBonus: 2,
-    abilities: { strength: 16, dexterity: 12, constitution: 12, intelligence: 9, wisdom: 8, charisma: 6 },
-    saves: { strength: 3, dexterity: 1, constitution: 1, intelligence: -1, wisdom: -1, charisma: -2 },
-    skills: { athletics: 5, perception: 3, stealth: 5 },
-    senses: ["Blindsight 30 ft.", "Passive Perception 13"],
-    languages: [],
-    actions: [{ name: "Bone Cudgel", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d6+3+1d4", damageType: "bludgeoning/psychic" }]
-  },
-  "guardian-naga": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Celestial",
-    alignment: "Lawful Good",
-    armorClass: 18,
-    initiative: 4,
-    hitPoints: 136,
-    hitDice: "16d10+48",
-    speed: "40 ft., Climb 40 ft., Swim 40 ft.",
-    challengeRating: "10",
-    xp: 5900,
-    proficiencyBonus: 4,
-    abilities: { strength: 19, dexterity: 18, constitution: 16, intelligence: 16, wisdom: 19, charisma: 18 },
-    saves: { strength: 4, dexterity: 8, constitution: 7, intelligence: 7, wisdom: 8, charisma: 8 },
-    skills: { arcana: 11, history: 11, religion: 11 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 14"],
-    languages: ["Celestial", "Common"],
-    traits: [
-      { name: "Celestial Restoration", summary: "Restores itself after death unless prevented by specific magic." },
-      { name: "Poison Immunity", summary: "Immune to Poison damage and the Poisoned condition." },
-      { name: "Condition Immunities", summary: "Immune to Charmed, Paralyzed, Poisoned, and Restrained." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Bite attacks, and can replace attacks with Poisonous Spittle." },
-      { name: "Bite", kind: "action", attackBonus: 8, range: "reach 10 ft.", damageFormula: "2d12+4+4d10", damageType: "piercing/poison" },
-      { name: "Poisonous Spittle", kind: "action", range: "60 ft.", damageFormula: "7d8", damageType: "poison", save: { ability: "constitution", dc: 16, success: "half" }, condition: "Blinded", summary: "One target that fails is also Blinded until the start of the naga's next turn.", summaryMetadata: true },
-      { name: "Spellcasting", kind: "action", range: "Self", effects: ["At will Thaumaturgy; 1/day each Clairvoyance, Cure Wounds (level 6), Flame Strike (level 6), Geas, and True Seeing."], summary: "Casts one of the naga's prepared spells.", summaryMetadata: true }
-    ]
-  },
-  "half-dragon": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Dragon",
-    alignment: "Neutral",
-    armorClass: 18,
-    initiative: 5,
-    hitPoints: 105,
-    hitDice: "14d8+42",
-    speed: "40 ft.",
-    challengeRating: "5",
-    xp: 1800,
-    proficiencyBonus: 3,
-    abilities: { strength: 19, dexterity: 14, constitution: 16, intelligence: 10, wisdom: 15, charisma: 14 },
-    saves: { strength: 4, dexterity: 5, constitution: 3, intelligence: 0, wisdom: 5, charisma: 2 },
-    skills: { athletics: 7, perception: 5, stealth: 5 },
-    senses: ["Blindsight 10 ft.", "Darkvision 60 ft.", "Passive Perception 15"],
-    languages: ["Common", "Draconic"],
-    traits: [{ name: "Draconic Origin", summary: "Choose Acid, Cold, Fire, Lightning, or Poison resistance and matching damage type." }],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Claw attacks." },
-      { name: "Claw", kind: "action", attackBonus: 7, range: "reach 10 ft.", damageFormula: "1d4+4+2d6", damageType: "slashing/origin" },
-      { name: "Dragon's Breath", kind: "action", range: "30-foot cone", damageFormula: "8d6", damageType: "origin", save: { ability: "dexterity", dc: 14, success: "half" }, recharge: "5-6" },
-      { name: "Leap", kind: "bonusAction", range: "Self", effects: ["Jumps up to 30 feet by spending 10 feet of movement."], summary: "Jumps up to 30 feet by spending 10 feet of movement.", summaryMetadata: true }
-    ]
-  },
-  harpy: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Monstrosity",
-    alignment: "Chaotic Evil",
-    armorClass: 11,
-    initiative: 1,
-    hitPoints: 38,
-    hitDice: "7d8+7",
-    speed: "20 ft., Fly 40 ft.",
-    challengeRating: "1",
-    xp: 200,
-    proficiencyBonus: 2,
-    abilities: { strength: 12, dexterity: 13, constitution: 12, intelligence: 7, wisdom: 10, charisma: 13 },
-    saves: { strength: 1, dexterity: 1, constitution: 1, intelligence: -2, wisdom: 0, charisma: 1 },
-    senses: ["Passive Perception 10"],
-    languages: ["Common"],
-    actions: [
-      { name: "Claw", kind: "action", attackBonus: 3, range: "reach 5 ft.", damageFormula: "2d4+1", damageType: "slashing" },
-      { name: "Luring Song", kind: "action", range: "300-foot emanation", save: { ability: "wisdom", dc: 11 }, condition: "Charmed/Incapacitated", effects: ["Humanoids and Giants that fail are Charmed and Incapacitated, with repeat saves and 24-hour immunity after success or end."], summary: "Failed Wisdom save charms and incapacitates Humanoids and Giants in the emanation.", summaryMetadata: true }
-    ]
-  },
-  "hell-hound": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Fiend",
-    alignment: "Lawful Evil",
-    armorClass: 15,
-    initiative: 1,
-    hitPoints: 58,
-    hitDice: "9d8+18",
-    speed: "50 ft.",
-    challengeRating: "3",
-    xp: 700,
-    proficiencyBonus: 2,
-    abilities: { strength: 17, dexterity: 12, constitution: 14, intelligence: 6, wisdom: 13, charisma: 6 },
-    saves: { strength: 3, dexterity: 1, constitution: 2, intelligence: -2, wisdom: 1, charisma: -2 },
-    skills: { perception: 5 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 15"],
-    languages: ["Understands Infernal but can't speak"],
-    traits: [
-      { name: "Fire Immunity", summary: "Immune to Fire damage." },
-      { name: "Pack Tactics", summary: "Has Advantage on attack rolls against a creature if an ally is within 5 feet of it." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Bite attacks." },
-      { name: "Bite", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d8+3+1d6", damageType: "piercing/fire" },
-      { name: "Fire Breath", kind: "action", range: "15-foot cone", damageFormula: "5d6", damageType: "fire", save: { ability: "dexterity", dc: 12, success: "half" }, recharge: "5-6" }
-    ]
-  },
-  hezrou: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Fiend (Demon)",
-    alignment: "Chaotic Evil",
-    armorClass: 18,
-    initiative: 6,
-    hitPoints: 157,
-    hitDice: "15d10+75",
-    speed: "30 ft.",
-    challengeRating: "8",
-    xp: 3900,
-    proficiencyBonus: 3,
-    abilities: { strength: 19, dexterity: 17, constitution: 20, intelligence: 5, wisdom: 12, charisma: 13 },
-    saves: { strength: 7, dexterity: 3, constitution: 8, intelligence: -3, wisdom: 4, charisma: 1 },
-    senses: ["Darkvision 120 ft.", "Passive Perception 11"],
-    languages: ["Abyssal", "telepathy 120 ft."],
-    traits: [
-      { name: "Demonic Restoration", summary: "Can restore itself unless killed under specific circumstances." },
-      { name: "Magic Resistance", summary: "Has Advantage on saving throws against spells and other magical effects." },
-      { name: "Stench", summary: "Creatures that start close must succeed on a DC 16 Constitution save or be Poisoned until the start of their next turn." },
-      { name: "Damage Resistances", summary: "Resistant to Cold, Fire, and Lightning damage." },
-      { name: "Poison Immunity", summary: "Immune to Poison damage and the Poisoned condition." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Rend attacks." },
-      { name: "Rend", kind: "action", attackBonus: 7, range: "reach 5 ft.", damageFormula: "1d4+4+2d8", damageType: "slashing/poison" },
-      { name: "Leap", kind: "bonusAction", range: "Self", effects: ["Jumps up to 30 feet by spending 10 feet of movement."], summary: "Jumps up to 30 feet by spending 10 feet of movement.", summaryMetadata: true }
-    ]
-  },
-  "hill-giant": {
-    source: DND_5E_SRD_VERSION,
-    size: "Huge",
-    creatureType: "Giant",
-    alignment: "Chaotic Evil",
-    armorClass: 13,
-    initiative: 2,
-    hitPoints: 105,
-    hitDice: "10d12+40",
-    speed: "40 ft.",
-    challengeRating: "5",
-    xp: 1800,
-    proficiencyBonus: 3,
-    abilities: { strength: 21, dexterity: 8, constitution: 19, intelligence: 5, wisdom: 9, charisma: 6 },
-    saves: { strength: 5, dexterity: -1, constitution: 4, intelligence: -3, wisdom: -1, charisma: -2 },
-    skills: { perception: 2 },
-    senses: ["Passive Perception 12"],
-    languages: ["Giant"],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two attacks using Tree Club or Trash Lob." },
-      { name: "Tree Club", kind: "action", attackBonus: 8, range: "reach 10 ft.", damageFormula: "3d8+5", damageType: "bludgeoning", condition: "Prone", summary: "A Large or smaller target also has the Prone condition.", summaryMetadata: true },
-      { name: "Trash Lob", kind: "action", attackBonus: 8, range: "60/240 ft.", damageFormula: "2d10+5", damageType: "bludgeoning", condition: "Poisoned", summary: "The target also has the Poisoned condition until the end of its next turn.", summaryMetadata: true }
-    ]
-  },
-  hippogriff: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Monstrosity",
-    alignment: "Unaligned",
-    armorClass: 11,
-    initiative: 1,
-    hitPoints: 26,
-    hitDice: "4d10+4",
-    speed: "40 ft., Fly 60 ft.",
-    challengeRating: "1",
-    xp: 200,
-    proficiencyBonus: 2,
-    abilities: { strength: 17, dexterity: 13, constitution: 13, intelligence: 2, wisdom: 12, charisma: 8 },
-    saves: { strength: 3, dexterity: 1, constitution: 1, intelligence: -4, wisdom: 1, charisma: -1 },
-    skills: { perception: 5 },
-    senses: ["Passive Perception 15"],
-    languages: [],
-    traits: [{ name: "Flyby", summary: "Doesn't provoke Opportunity Attacks when it flies out of an enemy's reach." }],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Rend attacks." },
-      { name: "Rend", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d8+3", damageType: "slashing" }
-    ]
-  },
-  hippopotamus: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 14,
-    initiative: -2,
-    hitPoints: 82,
-    hitDice: "11d10+22",
-    speed: "30 ft., Swim 30 ft.",
-    challengeRating: "4",
-    xp: 1100,
-    proficiencyBonus: 2,
-    abilities: { strength: 21, dexterity: 7, constitution: 15, intelligence: 2, wisdom: 12, charisma: 4 },
-    saves: { strength: 7, dexterity: -2, constitution: 2, intelligence: -4, wisdom: 1, charisma: -3 },
-    skills: { perception: 3 },
-    senses: ["Passive Perception 13"],
-    languages: [],
-    traits: [{ name: "Hold Breath", summary: "Can hold its breath for 10 minutes." }],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Bite attacks." },
-      { name: "Bite", kind: "action", attackBonus: 7, range: "reach 5 ft.", damageFormula: "2d10+5", damageType: "piercing" }
-    ]
-  },
-  "hobgoblin-warrior": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Fey (Goblinoid)",
-    alignment: "Lawful Evil",
-    armorClass: 18,
-    initiative: 3,
-    hitPoints: 11,
-    hitDice: "2d8+2",
-    speed: "30 ft.",
-    challengeRating: "1/2",
-    xp: 100,
-    proficiencyBonus: 2,
-    abilities: { strength: 13, dexterity: 12, constitution: 12, intelligence: 10, wisdom: 10, charisma: 9 },
-    saves: { strength: 1, dexterity: 1, constitution: 1, intelligence: 0, wisdom: 0, charisma: -1 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 10"],
-    languages: ["Common", "Goblin"],
-    gear: ["Half Plate Armor", "Longbow", "Longsword", "Shield"],
-    traits: [{ name: "Pack Tactics", summary: "Has Advantage on an attack roll against a creature if an ally is within 5 feet of it and isn't Incapacitated." }],
-    actions: [
-      { name: "Longsword", kind: "action", attackBonus: 3, range: "reach 5 ft.", damageFormula: "2d10+1", damageType: "slashing" },
-      { name: "Longbow", kind: "action", attackBonus: 3, range: "150/600 ft.", damageFormula: "1d8+1+3d4", damageType: "piercing/poison" }
-    ]
-  },
-  homunculus: {
-    source: DND_5E_SRD_VERSION,
-    size: "Tiny",
-    creatureType: "Construct",
-    alignment: "Neutral",
-    armorClass: 13,
-    initiative: 2,
-    hitPoints: 4,
-    hitDice: "1d4+2",
-    speed: "20 ft., Fly 40 ft.",
-    challengeRating: "0",
-    xp: 10,
-    proficiencyBonus: 2,
-    abilities: { strength: 4, dexterity: 15, constitution: 14, intelligence: 10, wisdom: 10, charisma: 7 },
-    saves: { strength: -3, dexterity: 2, constitution: 2, intelligence: 0, wisdom: 2, charisma: 0 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 10"],
-    languages: ["Understands Common plus one other language but can't speak"],
-    traits: [
-      { name: "Poison Immunity", summary: "Immune to Poison damage and the Poisoned condition." },
-      { name: "Condition Immunities", summary: "Immune to Charmed and Poisoned." },
-      { name: "Telepathic Bond", summary: "Can communicate telepathically with its master while on the same plane of existence." }
-    ],
-    actions: [{ name: "Bite", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1", damageType: "piercing", save: { ability: "constitution", dc: 12 }, condition: "Poisoned/Unconscious", summary: "A failed Constitution save poisons the target; failure by 5 or more also makes it Unconscious while Poisoned.", summaryMetadata: true }]
-  },
-  "hunter-shark": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 12,
-    initiative: 2,
-    hitPoints: 45,
-    hitDice: "6d10+12",
-    speed: "5 ft., Swim 40 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 18, dexterity: 14, constitution: 15, intelligence: 1, wisdom: 10, charisma: 4 },
-    saves: { strength: 4, dexterity: 2, constitution: 2, intelligence: -5, wisdom: 0, charisma: -3 },
-    skills: { perception: 2 },
-    senses: ["Blindsight 60 ft.", "Passive Perception 12"],
-    languages: [],
-    traits: [{ name: "Water Breathing", summary: "Can breathe only underwater." }],
-    actions: [{ name: "Bite", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "3d6+4", damageType: "piercing", summary: "Has Advantage on the attack roll if the target doesn't have all its Hit Points.", summaryMetadata: true }]
-  },
-  hyena: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 11,
-    initiative: 1,
-    hitPoints: 5,
-    hitDice: "1d8+1",
-    speed: "50 ft.",
-    challengeRating: "0",
-    xp: 10,
-    proficiencyBonus: 2,
-    abilities: { strength: 11, dexterity: 13, constitution: 12, intelligence: 2, wisdom: 12, charisma: 5 },
-    saves: { strength: 0, dexterity: 1, constitution: 1, intelligence: -4, wisdom: 1, charisma: -3 },
-    skills: { perception: 3 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 13"],
-    languages: [],
-    traits: [{ name: "Pack Tactics", summary: "Has Advantage on an attack roll against a creature if an ally is within 5 feet of it and isn't Incapacitated." }],
-    actions: [{ name: "Bite", kind: "action", attackBonus: 2, range: "reach 5 ft.", damageFormula: "1d6", damageType: "piercing" }]
-  },
-  "ice-mephit": {
-    source: DND_5E_SRD_VERSION,
-    size: "Small",
-    creatureType: "Elemental",
-    alignment: "Neutral Evil",
-    armorClass: 11,
-    initiative: 1,
-    hitPoints: 21,
-    hitDice: "6d6",
-    speed: "30 ft., Fly 30 ft.",
-    challengeRating: "1/2",
-    xp: 100,
-    proficiencyBonus: 2,
-    abilities: { strength: 7, dexterity: 13, constitution: 10, intelligence: 9, wisdom: 11, charisma: 12 },
-    saves: { strength: -2, dexterity: 1, constitution: 0, intelligence: -1, wisdom: 0, charisma: 1 },
-    skills: { perception: 2, stealth: 3 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 12"],
-    languages: ["Primordial (Aquan, Auran)"],
-    traits: [
-      { name: "Fire Vulnerability", summary: "Vulnerable to Fire damage." },
-      { name: "Cold and Poison Immunity", summary: "Immune to Cold and Poison damage and to the Exhaustion and Poisoned conditions." },
-      { name: "Death Burst", summary: "When it dies, creatures in a 5-foot emanation make a DC 10 Constitution save or take 2d4 Cold damage, half on success." }
-    ],
-    actions: [
-      { name: "Claw", kind: "action", attackBonus: 3, range: "reach 5 ft.", damageFormula: "1d4+1+1d4", damageType: "slashing/cold" },
-      { name: "Fog Cloud", kind: "action", range: "Self", recharge: "1/day", effects: ["Casts Fog Cloud without spell components, using Charisma as the spellcasting ability."], summary: "Casts Fog Cloud once per day.", summaryMetadata: true },
-      { name: "Frost Breath", kind: "action", range: "15-foot cone", damageFormula: "3d4", damageType: "cold", save: { ability: "constitution", dc: 10, success: "half" }, recharge: "6" }
-    ]
-  },
-  "magma-mephit": {
-    source: DND_5E_SRD_VERSION,
-    size: "Small",
-    creatureType: "Elemental",
-    alignment: "Neutral Evil",
-    armorClass: 11,
-    initiative: 1,
-    hitPoints: 18,
-    hitDice: "4d6+4",
-    speed: "30 ft., Fly 30 ft.",
-    challengeRating: "1/2",
-    xp: 100,
-    proficiencyBonus: 2,
-    abilities: { strength: 8, dexterity: 12, constitution: 12, intelligence: 7, wisdom: 10, charisma: 10 },
-    saves: { strength: -1, dexterity: 1, constitution: 1, intelligence: -2, wisdom: 0, charisma: 0 },
-    skills: { stealth: 3 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 10"],
-    languages: ["Primordial (Ignan, Terran)"],
-    traits: [
-      { name: "Cold Vulnerability", summary: "Vulnerable to Cold damage." },
-      { name: "Fire and Poison Immunity", summary: "Immune to Fire and Poison damage and to the Exhaustion and Poisoned conditions." },
-      { name: "Death Burst", summary: "When it dies, creatures in a 5-foot emanation make a DC 11 Dexterity save or take 2d6 Fire damage, half on success." }
-    ],
-    actions: [
-      { name: "Claw", kind: "action", attackBonus: 3, range: "reach 5 ft.", damageFormula: "1d4+1+1d6", damageType: "slashing/fire" },
-      { name: "Fire Breath", kind: "action", range: "15-foot cone", damageFormula: "2d6", damageType: "fire", save: { ability: "dexterity", dc: 11, success: "half" }, recharge: "6" }
-    ]
-  },
-  "steam-mephit": {
-    source: DND_5E_SRD_VERSION,
-    size: "Small",
-    creatureType: "Elemental",
-    alignment: "Neutral Evil",
-    armorClass: 10,
-    initiative: 0,
-    hitPoints: 17,
-    hitDice: "5d6",
-    speed: "30 ft., Fly 30 ft.",
-    challengeRating: "1/4",
-    xp: 50,
-    proficiencyBonus: 2,
-    abilities: { strength: 5, dexterity: 11, constitution: 10, intelligence: 11, wisdom: 10, charisma: 12 },
-    saves: { strength: -3, dexterity: 0, constitution: 0, intelligence: 0, wisdom: 0, charisma: 1 },
-    skills: { stealth: 2 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 10"],
-    languages: ["Primordial (Aquan, Ignan)"],
-    traits: [
-      { name: "Blurred Form", summary: "Attack rolls against it have Disadvantage unless it has the Incapacitated condition." },
-      { name: "Fire and Poison Immunity", summary: "Immune to Fire and Poison damage and to the Exhaustion and Poisoned conditions." },
-      { name: "Death Burst", summary: "When it dies, creatures in a 5-foot emanation make a DC 10 Dexterity save or take 2d4 Fire damage, half on success." }
-    ],
-    actions: [
-      { name: "Claw", kind: "action", attackBonus: 2, range: "reach 5 ft.", damageFormula: "1d4+1d4", damageType: "slashing/fire" },
-      { name: "Steam Breath", kind: "action", range: "15-foot cone", damageFormula: "2d4", damageType: "fire", save: { ability: "constitution", dc: 10, success: "half" }, condition: "Slowed", recharge: "6", summary: "A creature that fails the save also has its Speed reduced by 10 feet until the end of the mephit's next turn.", summaryMetadata: true }
-    ]
-  },
-  "merfolk-skirmisher": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Elemental",
-    alignment: "Neutral",
-    armorClass: 11,
-    initiative: 1,
-    hitPoints: 11,
-    hitDice: "2d8+2",
-    speed: "10 ft., Swim 40 ft.",
-    challengeRating: "1/8",
-    xp: 25,
-    proficiencyBonus: 2,
-    abilities: { strength: 10, dexterity: 13, constitution: 12, intelligence: 11, wisdom: 14, charisma: 12 },
-    saves: { strength: 0, dexterity: 1, constitution: 1, intelligence: 0, wisdom: 2, charisma: 1 },
-    senses: ["Passive Perception 12"],
-    languages: ["Common", "Primordial (Aquan)"],
-    traits: [{ name: "Amphibious", summary: "Can breathe air and water." }],
-    actions: [{ name: "Ocean Spear", kind: "action", attackBonus: 2, range: "reach 5 ft. or range 20/60 ft.", damageFormula: "1d6+1d4", damageType: "piercing/cold", condition: "Slowed", summary: "If the target is a creature, its Speed decreases by 10 feet until the end of its next turn.", summaryMetadata: true }]
-  },
-  merrow: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Monstrosity",
-    alignment: "Chaotic Evil",
-    armorClass: 13,
-    initiative: 2,
-    hitPoints: 45,
-    hitDice: "6d10+12",
-    speed: "10 ft., Swim 40 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 18, dexterity: 15, constitution: 15, intelligence: 8, wisdom: 10, charisma: 9 },
-    saves: { strength: 4, dexterity: 2, constitution: 2, intelligence: -1, wisdom: 0, charisma: -1 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 10"],
-    languages: ["Abyssal", "Primordial (Aquan)"],
-    traits: [{ name: "Amphibious", summary: "Can breathe air and water." }],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two attacks, using Bite, Claw, or Harpoon in any combination." },
-      { name: "Bite", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "1d4+4", damageType: "piercing", condition: "Poisoned", summary: "The target has the Poisoned condition until the end of the merrow's next turn.", summaryMetadata: true },
-      { name: "Claw", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "2d4+4", damageType: "slashing" },
-      { name: "Harpoon", kind: "action", attackBonus: 6, range: "reach 5 ft. or range 20/60 ft.", damageFormula: "2d6+4", damageType: "piercing", summary: "If the target is Large or smaller, the merrow pulls it up to 15 feet straight toward itself.", summaryMetadata: true }
-    ]
-  },
-  mimic: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Monstrosity",
-    alignment: "Neutral",
-    armorClass: 12,
-    initiative: 1,
-    hitPoints: 58,
-    hitDice: "9d8+18",
-    speed: "20 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 17, dexterity: 12, constitution: 15, intelligence: 5, wisdom: 13, charisma: 8 },
-    saves: { strength: 3, dexterity: 1, constitution: 2, intelligence: -3, wisdom: 1, charisma: -1 },
-    skills: { stealth: 5 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 11"],
-    languages: [],
-    traits: [
-      { name: "Acid Immunity", summary: "Immune to Acid damage and to the Prone condition." },
-      { name: "Adhesive", summary: "A creature Grappled by the mimic has Disadvantage on ability checks made to escape the grapple." }
-    ],
-    actions: [
-      { name: "Bite", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d8+3+1d8", damageType: "piercing/acid", summary: "Has Advantage against a target Grappled by the mimic; piercing damage is 2d8+3 instead if the target is Grappled.", summaryMetadata: true },
-      { name: "Pseudopod", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d8+3+1d8", damageType: "bludgeoning/acid", condition: "Grappled", summary: "If the target is Large or smaller, it has the Grappled condition, escape DC 13; checks to escape have Disadvantage.", summaryMetadata: true },
-      { name: "Shape-Shift", kind: "bonusAction", effects: ["Shape-shifts to resemble a Medium or Small object or returns to blob form."], summary: "Shape-shifts into an object form or back to true form.", summaryMetadata: true }
-    ]
-  },
-  nalfeshnee: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Fiend (Demon)",
-    alignment: "Chaotic Evil",
-    armorClass: 18,
-    initiative: 0,
-    hitPoints: 184,
-    hitDice: "16d10+96",
-    speed: "20 ft., Fly 30 ft.",
-    challengeRating: "13",
-    xp: 10000,
-    proficiencyBonus: 5,
-    abilities: { strength: 21, dexterity: 10, constitution: 22, intelligence: 19, wisdom: 12, charisma: 15 },
-    saves: { strength: 5, dexterity: 0, constitution: 11, intelligence: 9, wisdom: 6, charisma: 7 },
-    senses: ["Truesight 120 ft.", "Passive Perception 11"],
-    languages: ["Abyssal", "telepathy 120 ft."],
-    traits: [
-      { name: "Cold, Fire, and Lightning Resistance", summary: "Resistant to Cold, Fire, and Lightning damage." },
-      { name: "Poison Immunity", summary: "Immune to Poison damage and to the Frightened and Poisoned conditions." },
-      { name: "Demonic Restoration", summary: "If it dies outside the Abyss, its body dissolves and it gains a new body in the Abyss." },
-      { name: "Magic Resistance", summary: "Has Advantage on saving throws against spells and other magical effects." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Rend attacks." },
-      { name: "Rend", kind: "action", attackBonus: 10, range: "reach 10 ft.", damageFormula: "2d10+5+2d10", damageType: "slashing/force" },
-      { name: "Teleport", kind: "action", range: "120 ft.", effects: ["Teleports up to 120 feet to an unoccupied space it can see."], summary: "Teleports up to 120 feet.", summaryMetadata: true },
-      { name: "Horror Nimbus", kind: "bonusAction", range: "15-foot emanation", damageFormula: "8d6", damageType: "psychic", save: { ability: "wisdom", dc: 15, success: "half" }, condition: "Frightened", recharge: "5-6", summary: "Creatures in the emanation that fail the save take Psychic damage and have the Frightened condition until the end of the nalfeshnee's next turn.", summaryMetadata: true },
-      { name: "Pursuit", kind: "reaction", range: "120 ft.", effects: ["When a creature the nalfeshnee can see ends its movement within 120 feet, the nalfeshnee teleports to an unoccupied space it can see within 10 feet of that creature."], summary: "Teleports near a creature that ends movement within 120 feet.", summaryMetadata: true }
-    ]
-  },
-  "night-hag": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Fiend",
-    alignment: "Neutral Evil",
-    armorClass: 17,
-    initiative: 2,
-    hitPoints: 112,
-    hitDice: "15d8+45",
-    speed: "30 ft.",
-    challengeRating: "5",
-    xp: 1800,
-    proficiencyBonus: 3,
-    abilities: { strength: 18, dexterity: 15, constitution: 16, intelligence: 16, wisdom: 14, charisma: 16 },
-    saves: { strength: 4, dexterity: 2, constitution: 3, intelligence: 3, wisdom: 2, charisma: 3 },
-    skills: { deception: 6, insight: 5, perception: 5, stealth: 5 },
-    senses: ["Darkvision 120 ft.", "Passive Perception 15"],
-    languages: ["Abyssal", "Common", "Infernal", "Primordial"],
-    traits: [
-      { name: "Cold and Fire Resistance", summary: "Resistant to Cold and Fire damage." },
-      { name: "Charmed Immunity", summary: "Immune to the Charmed condition." },
-      { name: "Coven Magic", summary: "While within 30 feet of two or more allied hag coven members, shares coven spellcasting with Intelligence spell save DC 14." },
-      { name: "Magic Resistance", summary: "Has Advantage on saving throws against spells and other magical effects." },
-      { name: "Soul Bag", summary: "Carries a soul bag needed for Nightmare Haunting." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Claw attacks." },
-      { name: "Claw", kind: "action", attackBonus: 7, range: "reach 5 ft.", damageFormula: "2d8+4", damageType: "slashing" },
-      { name: "Nightmare Haunting", kind: "action", range: "one creature on the Material Plane while the hag is Ethereal", recharge: "1/day", effects: ["Requires the hag's Soul Bag and casts Dream; damage from the dream reduces the target's Hit Point maximum until Greater Restoration or similar magic."], summary: "Haunts a sleeping creature from the Ethereal Plane and can trap its soul if the target dies.", summaryMetadata: true },
-      { name: "Spellcasting", kind: "action", effects: ["Casts Detect Magic, Etherealness, Magic Missile at level 4, Phantasmal Killer, or Plane Shift on self only using Intelligence; spell save DC 14."], summary: "Casts at-will Detect Magic, Etherealness, and Magic Missile at level 4, or 2/day Phantasmal Killer and self-only Plane Shift.", summaryMetadata: true },
-      { name: "Shape-Shift", kind: "bonusAction", effects: ["Shape-shifts into a Small or Medium Humanoid or returns to true form; statistics are unchanged."], summary: "Shape-shifts into Humanoid form or back to true form.", summaryMetadata: true }
-    ]
-  },
-  nightmare: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Fiend",
-    alignment: "Neutral Evil",
-    armorClass: 13,
-    initiative: 2,
-    hitPoints: 68,
-    hitDice: "8d10+24",
-    speed: "60 ft., Fly 90 ft. (hover)",
-    challengeRating: "3",
-    xp: 700,
-    proficiencyBonus: 2,
-    abilities: { strength: 18, dexterity: 15, constitution: 16, intelligence: 10, wisdom: 13, charisma: 15 },
-    saves: { strength: 4, dexterity: 2, constitution: 3, intelligence: 0, wisdom: 1, charisma: 2 },
-    senses: ["Passive Perception 11"],
-    languages: ["Understands Abyssal, Common, and Infernal but can't speak"],
-    traits: [
-      { name: "Fire Immunity", summary: "Immune to Fire damage." },
-      { name: "Confer Fire Resistance", summary: "A rider on the nightmare has Resistance to Fire damage." },
-      { name: "Illumination", summary: "Sheds Bright Light in a 10-foot radius and Dim Light for an additional 10 feet." }
-    ],
-    actions: [
-      { name: "Hooves", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "2d8+4+3d6", damageType: "bludgeoning/fire" },
-      { name: "Ethereal Stride", kind: "action", range: "Self and willing creatures within 5 ft.", effects: ["The nightmare and up to three willing creatures within 5 feet teleport from the Material Plane to the Ethereal Plane, or vice versa."], summary: "Moves between the Material Plane and Ethereal Plane with up to three nearby willing creatures.", summaryMetadata: true }
-    ]
-  },
-  noble: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium or Small",
-    creatureType: "Humanoid",
-    alignment: "Neutral",
-    armorClass: 15,
-    initiative: 1,
-    hitPoints: 9,
-    hitDice: "2d8",
-    speed: "30 ft.",
-    challengeRating: "1/8",
-    xp: 25,
-    proficiencyBonus: 2,
-    abilities: { strength: 11, dexterity: 12, constitution: 11, intelligence: 12, wisdom: 14, charisma: 16 },
-    saves: { strength: 0, dexterity: 1, constitution: 0, intelligence: 1, wisdom: 2, charisma: 3 },
-    skills: { deception: 5, insight: 4, persuasion: 5 },
-    senses: ["Passive Perception 12"],
-    languages: ["Common plus two other languages"],
-    gear: ["Breastplate", "Rapier"],
-    actions: [
-      { name: "Rapier", kind: "action", attackBonus: 3, range: "reach 5 ft.", damageFormula: "1d8+1", damageType: "piercing" },
-      { name: "Parry", kind: "reaction", effects: ["Adds 2 to AC against one melee attack that would hit it while holding a weapon."], summary: "Adds 2 to AC against one melee attack that would hit it while holding a weapon.", summaryMetadata: true }
-    ]
-  },
-  "ochre-jelly": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Ooze",
-    alignment: "Unaligned",
-    armorClass: 8,
-    initiative: -2,
-    hitPoints: 52,
-    hitDice: "7d10+14",
-    speed: "20 ft., Climb 20 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 15, dexterity: 6, constitution: 14, intelligence: 2, wisdom: 6, charisma: 1 },
-    saves: { strength: 2, dexterity: -2, constitution: 2, intelligence: -4, wisdom: -2, charisma: -5 },
-    senses: ["Blindsight 60 ft.", "Passive Perception 8"],
-    languages: [],
-    traits: [
-      { name: "Acid Resistance", summary: "Resistant to Acid damage." },
-      { name: "Lightning and Slashing Immunity", summary: "Immune to Lightning and Slashing damage and to the Charmed, Deafened, Exhaustion, Frightened, Grappled, Prone, and Restrained conditions." },
-      { name: "Amorphous", summary: "Can move through a space as narrow as 1 inch without expending extra movement." },
-      { name: "Spider Climb", summary: "Can climb difficult surfaces, including ceilings, without an ability check." }
-    ],
-    actions: [
-      { name: "Pseudopod", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "3d6+2", damageType: "acid" },
-      { name: "Split", kind: "reaction", effects: ["When Large or Medium, has 10 or more Hit Points, and becomes Bloodied or takes Lightning or Slashing damage, splits into two smaller jellies with Hit Points divided evenly."], summary: "Splits into two smaller jellies when damaged under the SRD trigger.", summaryMetadata: true }
-    ]
-  },
-  oni: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Fiend",
-    alignment: "Lawful Evil",
-    armorClass: 17,
-    initiative: 0,
-    hitPoints: 119,
-    hitDice: "14d10+42",
-    speed: "30 ft., Fly 30 ft. (hover)",
-    challengeRating: "7",
-    xp: 2900,
-    proficiencyBonus: 3,
-    abilities: { strength: 19, dexterity: 11, constitution: 16, intelligence: 14, wisdom: 12, charisma: 15 },
-    saves: { strength: 4, dexterity: 3, constitution: 6, intelligence: 2, wisdom: 4, charisma: 5 },
-    skills: { arcana: 5, deception: 8, perception: 4 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 14"],
-    languages: ["Common", "Giant"],
-    traits: [
-      { name: "Cold Resistance", summary: "Resistant to Cold damage." },
-      { name: "Regeneration", summary: "Regains 10 Hit Points at the start of each turn while it has at least 1 Hit Point." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two attacks, using Claw or Nightmare Ray. It can replace one attack with Spellcasting." },
-      { name: "Claw", kind: "action", attackBonus: 7, range: "reach 10 ft.", damageFormula: "1d12+4+2d8", damageType: "slashing/necrotic" },
-      { name: "Nightmare Ray", kind: "action", attackBonus: 5, range: "60 ft.", damageFormula: "2d6+2", damageType: "psychic", condition: "Frightened", summary: "The target has the Frightened condition until the start of the oni's next turn.", summaryMetadata: true },
-      { name: "Shape-Shift", kind: "action", effects: ["Shape-shifts into a Small or Medium Humanoid, a Large Giant, or true form. Statistics are unchanged."], summary: "Shape-shifts into Humanoid, Giant, or true form.", summaryMetadata: true },
-      { name: "Spellcasting", kind: "action", effects: ["Casts Charm Person at level 2, Darkness, Gaseous Form, or Sleep once per day using Charisma; spell save DC 13."], summary: "Casts one of its 1/day spells using Charisma.", summaryMetadata: true },
-      { name: "Invisibility", kind: "bonusAction", effects: ["Casts Invisibility on itself."], summary: "Casts Invisibility on itself.", summaryMetadata: true }
-    ]
-  },
-  otyugh: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Aberration",
-    alignment: "Neutral",
-    armorClass: 14,
-    initiative: 0,
-    hitPoints: 104,
-    hitDice: "11d10+44",
-    speed: "30 ft.",
-    challengeRating: "5",
-    xp: 1800,
-    proficiencyBonus: 3,
-    abilities: { strength: 16, dexterity: 11, constitution: 19, intelligence: 6, wisdom: 13, charisma: 6 },
-    saves: { strength: 3, dexterity: 0, constitution: 7, intelligence: -2, wisdom: 1, charisma: -2 },
-    senses: ["Darkvision 120 ft.", "Passive Perception 11"],
-    languages: ["Otyugh", "telepathy 120 ft."],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes one Bite attack and two Tentacle attacks." },
-      { name: "Bite", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "2d8+3", damageType: "piercing", save: { ability: "constitution", dc: 15 }, condition: "Poisoned", summary: "Failed save poisons the target. After each Long Rest, a poisoned target repeats the save; failure reduces Hit Point maximum by 1d10, success ends the poison.", summaryMetadata: true },
-      { name: "Tentacle", kind: "action", attackBonus: 6, range: "reach 10 ft.", damageFormula: "2d8+3", damageType: "piercing", condition: "Grappled", summary: "If the target is Medium or smaller, it has the Grappled condition, escape DC 13. The otyugh has two tentacles.", summaryMetadata: true },
-      { name: "Tentacle Slam", kind: "action", range: "each creature Grappled by the otyugh", damageFormula: "3d8+3", damageType: "bludgeoning", save: { ability: "constitution", dc: 14, success: "half" }, condition: "Stunned", summary: "A target that fails the save also has the Stunned condition until the start of the otyugh's next turn.", summaryMetadata: true }
-    ]
-  },
-  pegasus: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Celestial",
-    alignment: "Chaotic Good",
-    armorClass: 12,
-    initiative: 2,
-    hitPoints: 59,
-    hitDice: "7d10+21",
-    speed: "60 ft., Fly 90 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 18, dexterity: 15, constitution: 16, intelligence: 10, wisdom: 15, charisma: 13 },
-    saves: { strength: 4, dexterity: 4, constitution: 5, intelligence: 0, wisdom: 4, charisma: 3 },
-    skills: { perception: 6 },
-    senses: ["Passive Perception 16"],
-    languages: ["Understands Celestial, Common, Elvish, and Sylvan but can't speak"],
-    actions: [{ name: "Hooves", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "1d6+4+2d4", damageType: "bludgeoning/radiant" }]
-  },
-  "phase-spider": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Monstrosity",
-    alignment: "Unaligned",
-    armorClass: 14,
-    initiative: 3,
-    hitPoints: 45,
-    hitDice: "7d10+7",
-    speed: "30 ft., Climb 30 ft.",
-    challengeRating: "3",
-    xp: 700,
-    proficiencyBonus: 2,
-    abilities: { strength: 15, dexterity: 16, constitution: 12, intelligence: 6, wisdom: 10, charisma: 6 },
-    saves: { strength: 2, dexterity: 3, constitution: 1, intelligence: -2, wisdom: 0, charisma: -2 },
-    skills: { stealth: 7 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 10"],
-    languages: [],
-    traits: [
-      { name: "Ethereal Sight", summary: "Can see 60 feet into the Ethereal Plane while on the Material Plane, and vice versa." },
-      { name: "Spider Climb", summary: "Can climb difficult surfaces, including ceilings, without an ability check." },
-      { name: "Web Walker", summary: "Ignores movement restrictions caused by webs." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Bite attacks." },
-      { name: "Bite", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d10+3+2d8", damageType: "piercing/poison", condition: "Poisoned/Paralyzed", summary: "If the poison damage reduces the target to 0 Hit Points, the target is stable and Poisoned for 1 hour; while Poisoned this way, it also has the Paralyzed condition.", summaryMetadata: true },
-      { name: "Ethereal Jaunt", kind: "bonusAction", effects: ["Teleports from the Material Plane to the Ethereal Plane, or vice versa."], summary: "Teleports between the Material Plane and Ethereal Plane.", summaryMetadata: true }
-    ]
-  },
-  pirate: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium or Small",
-    creatureType: "Humanoid",
-    alignment: "Neutral",
-    armorClass: 14,
-    initiative: 3,
-    hitPoints: 33,
-    hitDice: "6d8+6",
-    speed: "30 ft.",
-    challengeRating: "1",
-    xp: 200,
-    proficiencyBonus: 2,
-    abilities: { strength: 10, dexterity: 16, constitution: 12, intelligence: 8, wisdom: 12, charisma: 14 },
-    saves: { strength: 0, dexterity: 5, constitution: 1, intelligence: -1, wisdom: 1, charisma: 4 },
-    senses: ["Passive Perception 11"],
-    languages: ["Common plus one other language"],
-    gear: ["Daggers (6)", "Leather Armor"],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Dagger attacks. It can replace one attack with Enthralling Panache." },
-      { name: "Dagger", kind: "action", attackBonus: 5, range: "reach 5 ft. or range 20/60 ft.", damageFormula: "1d4+3", damageType: "piercing" },
-      { name: "Enthralling Panache", kind: "action", range: "30 ft.", save: { ability: "wisdom", dc: 12 }, condition: "Charmed", effects: ["The target has the Charmed condition until the start of the pirate's next turn."], summary: "Failed save charms the target until the start of the pirate's next turn.", summaryMetadata: true }
-    ]
-  },
-  "pirate-captain": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium or Small",
-    creatureType: "Humanoid",
-    alignment: "Neutral",
-    armorClass: 17,
-    initiative: 4,
-    hitPoints: 84,
-    hitDice: "13d8+26",
-    speed: "30 ft.",
-    challengeRating: "6",
-    xp: 2300,
-    proficiencyBonus: 3,
-    abilities: { strength: 10, dexterity: 18, constitution: 14, intelligence: 10, wisdom: 14, charisma: 17 },
-    saves: { strength: 3, dexterity: 7, constitution: 2, intelligence: 0, wisdom: 5, charisma: 6 },
-    skills: { acrobatics: 7, perception: 5 },
-    senses: ["Passive Perception 15"],
-    languages: ["Common plus one other language"],
-    gear: ["Pistol", "Rapier"],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three attacks, using Rapier or Pistol in any combination." },
-      { name: "Rapier", kind: "action", attackBonus: 7, range: "reach 5 ft.", damageFormula: "2d8+4", damageType: "piercing", summary: "After the attack, the captain has Advantage on the next attack roll it makes before the end of the current turn.", summaryMetadata: true },
-      { name: "Pistol", kind: "action", attackBonus: 7, range: "30/90 ft.", damageFormula: "2d10+4", damageType: "piercing" },
-      { name: "Captain's Charm", kind: "bonusAction", range: "30 ft.", save: { ability: "wisdom", dc: 14 }, condition: "Charmed", effects: ["The target has the Charmed condition until the start of the pirate captain's next turn."], summary: "Failed save charms the target until the start of the captain's next turn.", summaryMetadata: true },
-      { name: "Riposte", kind: "reaction", effects: ["When hit by a melee attack while holding a weapon, adds 3 to AC against the attack. If the attack misses, makes one Rapier attack against the triggering creature if in range."], summary: "Adds 3 AC against a melee hit and may counterattack with Rapier if the attack misses.", summaryMetadata: true }
-    ]
-  },
-  planetar: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Celestial (Angel)",
-    alignment: "Lawful Good",
-    armorClass: 19,
-    initiative: 10,
-    hitPoints: 262,
-    hitDice: "21d10+147",
-    speed: "40 ft., Fly 120 ft. (hover)",
-    challengeRating: "16",
-    xp: 15000,
-    proficiencyBonus: 5,
-    abilities: { strength: 24, dexterity: 20, constitution: 24, intelligence: 19, wisdom: 22, charisma: 25 },
-    saves: { strength: 12, dexterity: 5, constitution: 12, intelligence: 4, wisdom: 11, charisma: 12 },
-    skills: { perception: 11 },
-    senses: ["Truesight 120 ft.", "Passive Perception 21"],
-    languages: ["All", "telepathy 120 ft."],
-    traits: [
-      { name: "Radiant Resistance", summary: "Resistant to Radiant damage." },
-      { name: "Celestial Immunities", summary: "Immune to the Charmed, Exhaustion, and Frightened conditions." },
-      { name: "Divine Awareness", summary: "Knows if it hears a lie." },
-      { name: "Exalted Restoration", summary: "If it dies outside Mount Celestia, its body disappears and it revives with all Hit Points somewhere in Mount Celestia." },
-      { name: "Magic Resistance", summary: "Has Advantage on saving throws against spells and other magical effects." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Radiant Sword attacks or uses Holy Burst twice." },
-      { name: "Radiant Sword", kind: "action", attackBonus: 12, range: "reach 10 ft.", damageFormula: "2d6+7+4d8", damageType: "slashing/radiant" },
-      { name: "Holy Burst", kind: "action", range: "120 ft.; 20-foot-radius sphere", damageFormula: "7d6", damageType: "radiant", save: { ability: "dexterity", dc: 20, success: "half" } },
-      { name: "Spellcasting", kind: "action", effects: ["Casts Detect Evil and Good at will, and Commune, Control Weather, Dispel Evil and Good, and Raise Dead once per day using Charisma; spell save DC 20."], summary: "Casts its SRD spell list using Charisma; spell save DC 20.", summaryMetadata: true },
-      { name: "Divine Aid", kind: "bonusAction", effects: ["Twice per day, casts Cure Wounds, Invisibility, Lesser Restoration, or Remove Curse without spell components using the same spellcasting ability as Spellcasting."], summary: "Twice per day, casts Cure Wounds, Invisibility, Lesser Restoration, or Remove Curse.", summaryMetadata: true }
-    ]
-  },
-  plesiosaurus: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Beast (Dinosaur)",
-    alignment: "Unaligned",
-    armorClass: 13,
-    initiative: 2,
-    hitPoints: 68,
-    hitDice: "8d10+24",
-    speed: "20 ft., Swim 40 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 18, dexterity: 15, constitution: 16, intelligence: 2, wisdom: 12, charisma: 5 },
-    saves: { strength: 4, dexterity: 2, constitution: 3, intelligence: -4, wisdom: 1, charisma: -3 },
-    skills: { perception: 3, stealth: 4 },
-    senses: ["Passive Perception 13"],
-    languages: ["None"],
-    traits: [{ name: "Hold Breath", summary: "Can hold its breath for 1 hour." }],
-    actions: [{ name: "Bite", kind: "action", attackBonus: 6, range: "reach 10 ft.", damageFormula: "2d6+4", damageType: "piercing" }]
-  },
-  priest: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium or Small",
-    creatureType: "Humanoid (Cleric)",
-    alignment: "Neutral",
-    armorClass: 13,
-    initiative: 0,
-    hitPoints: 38,
-    hitDice: "7d8+7",
-    speed: "30 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 16, dexterity: 10, constitution: 12, intelligence: 13, wisdom: 16, charisma: 13 },
-    saves: { strength: 3, dexterity: 0, constitution: 1, intelligence: 1, wisdom: 3, charisma: 1 },
-    skills: { medicine: 7, perception: 5, religion: 5 },
-    senses: ["Passive Perception 15"],
-    languages: ["Common plus one other language"],
-    gear: ["Chain Shirt", "Holy Symbol", "Mace"],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two attacks, using Mace or Radiant Flame in any combination." },
-      { name: "Mace", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d6+3+2d4", damageType: "bludgeoning/radiant" },
-      { name: "Radiant Flame", kind: "action", attackBonus: 5, range: "60 ft.", damageFormula: "2d10", damageType: "radiant" },
-      { name: "Spellcasting", kind: "action", effects: ["Casts Light and Thaumaturgy at will, and Spirit Guardians once per day using Wisdom; spell save DC 13."], summary: "Casts its SRD spell list using Wisdom; spell save DC 13.", summaryMetadata: true },
-      { name: "Divine Aid", kind: "bonusAction", effects: ["Three times per day, casts Bless, Dispel Magic, Healing Word, or Lesser Restoration without spell components using the same spellcasting ability as Spellcasting."], summary: "Three times per day, casts Bless, Dispel Magic, Healing Word, or Lesser Restoration.", summaryMetadata: true }
-    ]
-  },
-  pseudodragon: {
-    source: DND_5E_SRD_VERSION,
-    size: "Tiny",
-    creatureType: "Dragon",
-    alignment: "Neutral Good",
-    armorClass: 14,
-    initiative: 2,
-    hitPoints: 10,
-    hitDice: "3d4+3",
-    speed: "15 ft., Fly 60 ft.",
-    challengeRating: "1/4",
-    xp: 50,
-    proficiencyBonus: 2,
-    abilities: { strength: 6, dexterity: 15, constitution: 13, intelligence: 10, wisdom: 12, charisma: 10 },
-    saves: { strength: -2, dexterity: 2, constitution: 1, intelligence: 0, wisdom: 1, charisma: 0 },
-    skills: { perception: 5, stealth: 4 },
-    senses: ["Blindsight 10 ft.", "Darkvision 60 ft.", "Passive Perception 15"],
-    languages: ["Understands Common and Draconic but can't speak"],
-    traits: [{ name: "Magic Resistance", summary: "Has Advantage on saving throws against spells and other magical effects." }],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Bite attacks." },
-      { name: "Bite", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d4+2", damageType: "piercing" },
-      { name: "Sting", kind: "action", range: "5 ft.", damageFormula: "2d4", damageType: "poison", save: { ability: "constitution", dc: 12 }, condition: "Poisoned/Unconscious", summary: "A failed save poisons the target for 1 hour. If the save fails by 5 or more, the target also has the Unconscious condition while Poisoned this way; damage or another creature's action can end the unconsciousness.", summaryMetadata: true }
-    ]
-  },
-  rat: {
-    source: DND_5E_SRD_VERSION,
-    size: "Tiny",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 10,
-    initiative: 0,
-    hitPoints: 1,
-    hitDice: "1d4-1",
-    speed: "20 ft., Climb 20 ft.",
-    challengeRating: "0",
-    xp: 10,
-    proficiencyBonus: 2,
-    abilities: { strength: 2, dexterity: 11, constitution: 9, intelligence: 2, wisdom: 10, charisma: 4 },
-    saves: { strength: -4, dexterity: 0, constitution: -1, intelligence: -4, wisdom: 0, charisma: -3 },
-    skills: { perception: 2 },
-    senses: ["Darkvision 30 ft.", "Passive Perception 12"],
-    languages: ["None"],
-    traits: [{ name: "Agile", summary: "Doesn't provoke Opportunity Attacks when moving out of an enemy's reach." }],
-    actions: [{ name: "Bite", kind: "action", attackBonus: 2, range: "reach 5 ft.", damageFormula: "1", damageType: "piercing" }]
-  },
-  raven: {
-    source: DND_5E_SRD_VERSION,
-    size: "Tiny",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 12,
-    initiative: 2,
-    hitPoints: 2,
-    hitDice: "1d4",
-    speed: "10 ft., Fly 50 ft.",
-    challengeRating: "0",
-    xp: 10,
-    proficiencyBonus: 2,
-    abilities: { strength: 2, dexterity: 14, constitution: 10, intelligence: 5, wisdom: 13, charisma: 6 },
-    saves: { strength: -4, dexterity: 2, constitution: 0, intelligence: -3, wisdom: 1, charisma: -2 },
-    skills: { perception: 3 },
-    senses: ["Passive Perception 13"],
-    languages: ["None"],
-    traits: [{ name: "Mimicry", summary: "Can mimic simple sounds it has heard, such as a whisper or animal chitter; a listener can discern the imitation with a successful DC 10 Wisdom (Insight) check." }],
-    actions: [{ name: "Beak", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1", damageType: "piercing" }]
-  },
-  "swarm-of-bats": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Swarm of Tiny Beasts",
-    alignment: "Unaligned",
-    armorClass: 12,
-    initiative: 2,
-    hitPoints: 11,
-    hitDice: "2d10",
-    speed: "5 ft., Fly 30 ft.",
-    challengeRating: "1/4",
-    xp: 50,
-    proficiencyBonus: 2,
-    abilities: { strength: 5, dexterity: 15, constitution: 10, intelligence: 2, wisdom: 12, charisma: 4 },
-    saves: { strength: -3, dexterity: 2, constitution: 0, intelligence: -4, wisdom: 1, charisma: -3 },
-    senses: ["Blindsight 60 ft.", "Passive Perception 11"],
-    languages: ["None"],
-    traits: [
-      { name: "Damage Resistances", summary: "Resistant to Bludgeoning, Piercing, and Slashing damage." },
-      { name: "Condition Immunities", summary: "Immune to Charmed, Frightened, Grappled, Paralyzed, Petrified, Prone, Restrained, and Stunned." },
-      { name: "Swarm", summary: "Can occupy another creature's space and vice versa, can move through any opening large enough for a Tiny bat, and can't regain Hit Points or gain Temporary Hit Points." }
-    ],
-    actions: [{ name: "Bites", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "2d4", damageType: "piercing", summary: "Deals 1d4 Piercing damage instead if the swarm is Bloodied.", summaryMetadata: true }]
-  },
-  "swarm-of-insects": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Swarm of Tiny Beasts",
-    alignment: "Unaligned",
-    armorClass: 11,
-    initiative: 1,
-    hitPoints: 19,
-    hitDice: "3d8+6",
-    speed: "20 ft., Climb or Fly 20 ft. (GM's choice)",
-    challengeRating: "1/2",
-    xp: 100,
-    proficiencyBonus: 2,
-    abilities: { strength: 3, dexterity: 13, constitution: 14, intelligence: 1, wisdom: 7, charisma: 1 },
-    saves: { strength: -4, dexterity: 1, constitution: 2, intelligence: -5, wisdom: -2, charisma: -5 },
-    senses: ["Blindsight 30 ft.", "Passive Perception 8"],
-    languages: ["None"],
-    traits: [
-      { name: "Damage Resistances", summary: "Resistant to Bludgeoning, Piercing, and Slashing damage." },
-      { name: "Condition Immunities", summary: "Immune to Charmed, Frightened, Grappled, Paralyzed, Petrified, Prone, Restrained, and Stunned." },
-      { name: "Spider Climb", summary: "If the swarm has a Climb Speed, it can climb difficult surfaces, including along ceilings, without needing to make an ability check." },
-      { name: "Swarm", summary: "Can occupy another creature's space and vice versa, can move through any opening large enough for a Tiny insect, and can't regain Hit Points or gain Temporary Hit Points." }
-    ],
-    actions: [{ name: "Bites", kind: "action", attackBonus: 3, range: "reach 5 ft.", damageFormula: "2d4+1", damageType: "poison", summary: "Deals 1d4+1 Poison damage instead if the swarm is Bloodied.", summaryMetadata: true }]
-  },
-  "swarm-of-piranhas": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Swarm of Tiny Beasts",
-    alignment: "Unaligned",
-    armorClass: 13,
-    initiative: 3,
-    hitPoints: 28,
-    hitDice: "8d8-8",
-    speed: "5 ft., Swim 40 ft.",
-    challengeRating: "1",
-    xp: 200,
-    proficiencyBonus: 2,
-    abilities: { strength: 13, dexterity: 16, constitution: 9, intelligence: 1, wisdom: 7, charisma: 2 },
-    saves: { strength: 1, dexterity: 3, constitution: -1, intelligence: -5, wisdom: -2, charisma: -4 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 8"],
-    languages: ["None"],
-    traits: [
-      { name: "Damage Resistances", summary: "Resistant to Bludgeoning, Piercing, and Slashing damage." },
-      { name: "Condition Immunities", summary: "Immune to Charmed, Frightened, Grappled, Paralyzed, Petrified, Prone, Restrained, and Stunned." },
-      { name: "Swarm", summary: "Can occupy another creature's space and vice versa, can move through any opening large enough for a Tiny piranha, and can't regain Hit Points or gain Temporary Hit Points." },
-      { name: "Water Breathing", summary: "Can breathe only underwater." }
-    ],
-    actions: [{ name: "Bites", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "2d4+3", damageType: "piercing", summary: "Has Advantage on the attack roll if the target doesn't have all its Hit Points; deals 1d4+3 Piercing damage instead if Bloodied.", summaryMetadata: true }]
-  },
-  "swarm-of-rats": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Swarm of Tiny Beasts",
-    alignment: "Unaligned",
-    armorClass: 10,
-    initiative: 0,
-    hitPoints: 14,
-    hitDice: "4d8-4",
-    speed: "30 ft., Climb 30 ft.",
-    challengeRating: "1/4",
-    xp: 50,
-    proficiencyBonus: 2,
-    abilities: { strength: 9, dexterity: 11, constitution: 9, intelligence: 2, wisdom: 10, charisma: 3 },
-    saves: { strength: -1, dexterity: 2, constitution: -1, intelligence: -4, wisdom: 0, charisma: -4 },
-    senses: ["Darkvision 30 ft.", "Passive Perception 10"],
-    languages: ["None"],
-    traits: [
-      { name: "Damage Resistances", summary: "Resistant to Bludgeoning, Piercing, and Slashing damage." },
-      { name: "Condition Immunities", summary: "Immune to Charmed, Frightened, Grappled, Paralyzed, Petrified, Prone, Restrained, and Stunned." },
-      { name: "Swarm", summary: "Can occupy another creature's space and vice versa, can move through any opening large enough for a Tiny rat, and can't regain Hit Points or gain Temporary Hit Points." }
-    ],
-    actions: [{ name: "Bites", kind: "action", attackBonus: 2, range: "reach 5 ft.", damageFormula: "2d4", damageType: "piercing", summary: "Deals 1d4 Piercing damage instead if the swarm is Bloodied.", summaryMetadata: true }]
-  },
-  "swarm-of-ravens": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Swarm of Tiny Beasts",
-    alignment: "Unaligned",
-    armorClass: 12,
-    initiative: 2,
-    hitPoints: 11,
-    hitDice: "2d8+2",
-    speed: "10 ft., Fly 50 ft.",
-    challengeRating: "1/4",
-    xp: 50,
-    proficiencyBonus: 2,
-    abilities: { strength: 6, dexterity: 14, constitution: 12, intelligence: 5, wisdom: 12, charisma: 6 },
-    saves: { strength: -2, dexterity: 2, constitution: 1, intelligence: -3, wisdom: 1, charisma: -2 },
-    skills: { perception: 5 },
-    senses: ["Passive Perception 15"],
-    languages: ["None"],
-    traits: [
-      { name: "Damage Resistances", summary: "Resistant to Bludgeoning, Piercing, and Slashing damage." },
-      { name: "Condition Immunities", summary: "Immune to Charmed, Frightened, Grappled, Paralyzed, Petrified, Prone, Restrained, and Stunned." },
-      { name: "Swarm", summary: "Can occupy another creature's space and vice versa, can move through any opening large enough for a Tiny raven, and can't regain Hit Points or gain Temporary Hit Points." }
-    ],
-    actions: [{ name: "Beaks", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d6+2", damageType: "piercing", summary: "Deals 1d4 Piercing damage instead if the swarm is Bloodied.", summaryMetadata: true }]
-  },
-  "swarm-of-venomous-snakes": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Swarm of Tiny Beasts",
-    alignment: "Unaligned",
-    armorClass: 14,
-    initiative: 4,
-    hitPoints: 36,
-    hitDice: "8d8",
-    speed: "30 ft., Swim 30 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 8, dexterity: 18, constitution: 11, intelligence: 1, wisdom: 10, charisma: 3 },
-    saves: { strength: -1, dexterity: 4, constitution: 0, intelligence: -5, wisdom: 0, charisma: -4 },
-    senses: ["Blindsight 10 ft.", "Passive Perception 10"],
-    languages: ["None"],
-    traits: [
-      { name: "Damage Resistances", summary: "Resistant to Bludgeoning, Piercing, and Slashing damage." },
-      { name: "Condition Immunities", summary: "Immune to Charmed, Frightened, Grappled, Paralyzed, Petrified, Prone, Restrained, and Stunned." },
-      { name: "Swarm", summary: "Can occupy another creature's space and vice versa, can move through any opening large enough for a Tiny snake, and can't regain Hit Points or gain Temporary Hit Points." }
-    ],
-    actions: [{ name: "Bites", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "1d8+4+3d6", damageType: "piercing/poison", summary: "Deals 1d4+4 Piercing damage plus 3d6 Poison damage instead if the swarm is Bloodied.", summaryMetadata: true }]
-  },
-  "reef-shark": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 12,
-    initiative: 2,
-    hitPoints: 22,
-    hitDice: "4d8+4",
-    speed: "5 ft., Swim 30 ft.",
-    challengeRating: "1/2",
-    xp: 100,
-    proficiencyBonus: 2,
-    abilities: { strength: 14, dexterity: 15, constitution: 13, intelligence: 1, wisdom: 10, charisma: 4 },
-    saves: { strength: 2, dexterity: 2, constitution: 1, intelligence: -5, wisdom: 0, charisma: -3 },
-    skills: { perception: 2 },
-    senses: ["Blindsight 30 ft.", "Passive Perception 12"],
-    languages: ["None"],
-    traits: [
-      { name: "Pack Tactics", summary: "Has Advantage on an attack roll against a creature if at least one ally is within 5 feet of the creature and the ally doesn't have the Incapacitated condition." },
-      { name: "Water Breathing", summary: "Can breathe only underwater." }
-    ],
-    actions: [{ name: "Bite", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "2d4+2", damageType: "piercing" }]
-  },
-  rhinoceros: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 13,
-    initiative: -1,
-    hitPoints: 45,
-    hitDice: "6d10+12",
-    speed: "40 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 21, dexterity: 8, constitution: 15, intelligence: 2, wisdom: 12, charisma: 6 },
-    saves: { strength: 5, dexterity: -1, constitution: 2, intelligence: -4, wisdom: 1, charisma: -2 },
-    senses: ["Passive Perception 11"],
-    languages: ["None"],
-    actions: [{ name: "Gore", kind: "action", attackBonus: 7, range: "reach 5 ft.", damageFormula: "2d8+5", damageType: "piercing", condition: "Prone", summary: "If the rhinoceros moved 20+ feet straight toward a Large or smaller target immediately before the hit, the target takes an extra 2d8 Piercing damage and has the Prone condition.", summaryMetadata: true }]
-  },
-  "riding-horse": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 11,
-    initiative: 1,
-    hitPoints: 13,
-    hitDice: "2d10+2",
-    speed: "60 ft.",
-    challengeRating: "1/4",
-    xp: 50,
-    proficiencyBonus: 2,
-    abilities: { strength: 16, dexterity: 13, constitution: 12, intelligence: 2, wisdom: 11, charisma: 7 },
-    saves: { strength: 3, dexterity: 1, constitution: 1, intelligence: -4, wisdom: 0, charisma: -2 },
-    senses: ["Passive Perception 10"],
-    languages: ["None"],
-    actions: [{ name: "Hooves", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d8+3", damageType: "bludgeoning" }]
-  },
-  roc: {
-    source: DND_5E_SRD_VERSION,
-    size: "Gargantuan",
-    creatureType: "Monstrosity",
-    alignment: "Unaligned",
-    armorClass: 15,
-    initiative: 8,
-    hitPoints: 248,
-    hitDice: "16d20+80",
-    speed: "20 ft., Fly 120 ft.",
-    challengeRating: "11",
-    xp: 7200,
-    proficiencyBonus: 4,
-    abilities: { strength: 28, dexterity: 10, constitution: 20, intelligence: 3, wisdom: 10, charisma: 9 },
-    saves: { strength: 9, dexterity: 4, constitution: 5, intelligence: -4, wisdom: 4, charisma: -1 },
-    skills: { perception: 8 },
-    senses: ["Passive Perception 18"],
-    languages: ["None"],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Beak attacks. It can replace one attack with Talons." },
-      { name: "Beak", kind: "action", attackBonus: 13, range: "reach 10 ft.", damageFormula: "3d12+9", damageType: "piercing" },
-      { name: "Talons", kind: "action", attackBonus: 13, range: "reach 5 ft.", damageFormula: "4d6+9", damageType: "slashing", condition: "Grappled/Restrained", summary: "A Huge or smaller target is Grappled, escape DC 19, and Restrained until the grapple ends.", summaryMetadata: true },
-      { name: "Swoop", kind: "bonusAction", recharge: "5-6", effects: ["If grappling a creature, flies up to half its Fly Speed without provoking Opportunity Attacks and drops that creature."], summary: "Carries a grappled creature aloft and drops it.", summaryMetadata: true }
-    ]
-  },
-  roper: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Aberration",
-    alignment: "Neutral Evil",
-    armorClass: 20,
-    initiative: 5,
-    hitPoints: 93,
-    hitDice: "11d10+33",
-    speed: "10 ft., Climb 20 ft.",
-    challengeRating: "5",
-    xp: 1800,
-    proficiencyBonus: 3,
-    abilities: { strength: 18, dexterity: 8, constitution: 17, intelligence: 7, wisdom: 16, charisma: 6 },
-    saves: { strength: 4, dexterity: -1, constitution: 3, intelligence: -2, wisdom: 3, charisma: -2 },
-    skills: { perception: 6, stealth: 5 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 16"],
-    languages: ["None"],
-    traits: [{ name: "Spider Climb", summary: "Can climb difficult surfaces, including along ceilings, without needing to make an ability check." }],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Tentacle attacks, uses Reel, and makes two Bite attacks." },
-      { name: "Bite", kind: "action", attackBonus: 7, range: "reach 5 ft.", damageFormula: "3d8+4", damageType: "piercing" },
-      { name: "Tentacle", kind: "action", attackBonus: 7, range: "reach 60 ft.", condition: "Grappled/Poisoned", summary: "A target is Grappled, escape DC 14, and Poisoned until the grapple ends. The roper has six tentacles, each AC 20, HP 10, and Poison/Psychic immunity.", summaryMetadata: true },
-      { name: "Reel", kind: "action", effects: ["Pulls each creature Grappled by the roper up to 30 feet straight toward it."], summary: "Pulls grappled creatures closer.", summaryMetadata: true }
-    ]
-  },
-  "saber-toothed-tiger": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 13,
-    initiative: 3,
-    hitPoints: 52,
-    hitDice: "7d10+14",
-    speed: "40 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 18, dexterity: 17, constitution: 15, intelligence: 3, wisdom: 12, charisma: 8 },
-    saves: { strength: 6, dexterity: 5, constitution: 2, intelligence: -4, wisdom: 1, charisma: -1 },
-    skills: { perception: 5, stealth: 7 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 15"],
-    languages: ["None"],
-    traits: [{ name: "Running Leap", summary: "With a 10-foot running start, can Long Jump up to 25 feet." }],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Rend attacks." },
-      { name: "Rend", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "2d6+4", damageType: "slashing" },
-      { name: "Nimble Escape", kind: "bonusAction", effects: ["Takes the Disengage or Hide action."], summary: "Takes the Disengage or Hide action.", summaryMetadata: true }
-    ]
-  },
-  scorpion: {
-    source: DND_5E_SRD_VERSION,
-    size: "Tiny",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 11,
-    initiative: 0,
-    hitPoints: 1,
-    hitDice: "1d4-1",
-    speed: "10 ft.",
-    challengeRating: "0",
-    xp: 10,
-    proficiencyBonus: 2,
-    abilities: { strength: 2, dexterity: 11, constitution: 8, intelligence: 1, wisdom: 8, charisma: 2 },
-    saves: { strength: -4, dexterity: 0, constitution: -1, intelligence: -5, wisdom: -1, charisma: -4 },
-    senses: ["Blindsight 10 ft.", "Passive Perception 9"],
-    languages: ["None"],
-    actions: [{ name: "Sting", kind: "action", attackBonus: 2, range: "reach 5 ft.", damageFormula: "1+1d6", damageType: "piercing/poison" }]
-  },
-  seahorse: {
-    source: DND_5E_SRD_VERSION,
-    size: "Tiny",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 12,
-    initiative: 1,
-    hitPoints: 1,
-    hitDice: "1d4-1",
-    speed: "5 ft., Swim 20 ft.",
-    challengeRating: "0",
-    xp: 0,
-    proficiencyBonus: 2,
-    abilities: { strength: 1, dexterity: 12, constitution: 8, intelligence: 1, wisdom: 10, charisma: 2 },
-    saves: { strength: -5, dexterity: 1, constitution: -1, intelligence: -5, wisdom: 0, charisma: -4 },
-    skills: { perception: 2, stealth: 5 },
-    senses: ["Passive Perception 12"],
-    languages: ["None"],
-    traits: [{ name: "Water Breathing", summary: "Can breathe only underwater." }],
-    actions: [{ name: "Bubble Dash", kind: "action", effects: ["While underwater, moves up to its Swim Speed without provoking Opportunity Attacks."], summary: "Underwater movement without provoking Opportunity Attacks.", summaryMetadata: true }]
-  },
-  spider: {
-    source: DND_5E_SRD_VERSION,
-    size: "Tiny",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 12,
-    initiative: 2,
-    hitPoints: 1,
-    hitDice: "1d4-1",
-    speed: "20 ft., Climb 20 ft.",
-    challengeRating: "0",
-    xp: 10,
-    proficiencyBonus: 2,
-    abilities: { strength: 2, dexterity: 14, constitution: 8, intelligence: 1, wisdom: 10, charisma: 2 },
-    saves: { strength: -4, dexterity: 2, constitution: -1, intelligence: -5, wisdom: 0, charisma: -4 },
-    skills: { stealth: 4 },
-    senses: ["Darkvision 30 ft.", "Passive Perception 10"],
-    languages: ["None"],
-    traits: [
-      { name: "Spider Climb", summary: "Can climb difficult surfaces, including along ceilings, without needing to make an ability check." },
-      { name: "Web Walker", summary: "Ignores movement restrictions caused by webs and knows the location of any other creature in contact with the same web." }
-    ],
-    actions: [{ name: "Bite", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1+1d4", damageType: "piercing/poison" }]
-  },
-  tiger: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 13,
-    initiative: 3,
-    hitPoints: 30,
-    hitDice: "4d10+8",
-    speed: "40 ft.",
-    challengeRating: "1",
-    xp: 200,
-    proficiencyBonus: 2,
-    abilities: { strength: 17, dexterity: 16, constitution: 14, intelligence: 3, wisdom: 12, charisma: 8 },
-    saves: { strength: 3, dexterity: 3, constitution: 2, intelligence: -4, wisdom: 1, charisma: -1 },
-    skills: { perception: 3, stealth: 7 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 13"],
-    languages: ["None"],
-    actions: [
-      { name: "Rend", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "2d6+3", damageType: "slashing", condition: "Prone", summary: "If the target is a Large or smaller creature, it has the Prone condition.", summaryMetadata: true },
-      { name: "Nimble Escape", kind: "bonusAction", effects: ["Takes the Disengage or Hide action."], summary: "Takes the Disengage or Hide action.", summaryMetadata: true }
-    ]
-  },
-  triceratops: {
-    source: DND_5E_SRD_VERSION,
-    size: "Huge",
-    creatureType: "Beast (Dinosaur)",
-    alignment: "Unaligned",
-    armorClass: 14,
-    initiative: -1,
-    hitPoints: 114,
-    hitDice: "12d12+36",
-    speed: "50 ft.",
-    challengeRating: "5",
-    xp: 1800,
-    proficiencyBonus: 3,
-    abilities: { strength: 22, dexterity: 9, constitution: 17, intelligence: 2, wisdom: 11, charisma: 5 },
-    saves: { strength: 6, dexterity: -1, constitution: 3, intelligence: -4, wisdom: 0, charisma: -3 },
-    senses: ["Passive Perception 10"],
-    languages: ["None"],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Gore attacks." },
-      { name: "Gore", kind: "action", attackBonus: 9, range: "reach 5 ft.", damageFormula: "2d12+6", damageType: "piercing", condition: "Prone", summary: "If the target is Huge or smaller and the triceratops moved 20+ feet straight toward it immediately before the hit, the target takes an extra 2d8 Piercing damage and has the Prone condition.", summaryMetadata: true }
-    ]
-  },
-  "tyrannosaurus-rex": {
-    source: DND_5E_SRD_VERSION,
-    size: "Huge",
-    creatureType: "Beast (Dinosaur)",
-    alignment: "Unaligned",
-    armorClass: 13,
-    initiative: 3,
-    hitPoints: 136,
-    hitDice: "13d12+52",
-    speed: "50 ft.",
-    challengeRating: "8",
-    xp: 3900,
-    proficiencyBonus: 3,
-    abilities: { strength: 25, dexterity: 10, constitution: 19, intelligence: 2, wisdom: 12, charisma: 9 },
-    saves: { strength: 10, dexterity: 0, constitution: 4, intelligence: -4, wisdom: 4, charisma: -1 },
-    skills: { perception: 4 },
-    senses: ["Passive Perception 14"],
-    languages: ["None"],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes one Bite attack and one Tail attack." },
-      { name: "Bite", kind: "action", attackBonus: 10, range: "reach 10 ft.", damageFormula: "4d12+7", damageType: "piercing", condition: "Grappled/Restrained", summary: "A Large or smaller target has the Grappled condition, escape DC 17. While Grappled, the target has the Restrained condition and can't be targeted by the tyrannosaurus's Tail.", summaryMetadata: true },
-      { name: "Tail", kind: "action", attackBonus: 10, range: "reach 15 ft.", damageFormula: "4d8+7", damageType: "bludgeoning", condition: "Prone", summary: "If the target is a Huge or smaller creature, it has the Prone condition.", summaryMetadata: true }
-    ]
-  },
-  "venomous-snake": {
-    source: DND_5E_SRD_VERSION,
-    size: "Tiny",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 12,
-    initiative: 2,
-    hitPoints: 5,
-    hitDice: "2d4",
-    speed: "30 ft., Swim 30 ft.",
-    challengeRating: "1/8",
-    xp: 25,
-    proficiencyBonus: 2,
-    abilities: { strength: 2, dexterity: 15, constitution: 11, intelligence: 1, wisdom: 10, charisma: 3 },
-    saves: { strength: -4, dexterity: 2, constitution: 0, intelligence: -5, wisdom: 0, charisma: -4 },
-    senses: ["Blindsight 10 ft.", "Passive Perception 10"],
-    languages: ["None"],
-    actions: [{ name: "Bite", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d4+2+1d6", damageType: "piercing/poison" }]
-  },
-  vulture: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 10,
-    initiative: 0,
-    hitPoints: 5,
-    hitDice: "1d8+1",
-    speed: "10 ft., Fly 50 ft.",
-    challengeRating: "0",
-    xp: 10,
-    proficiencyBonus: 2,
-    abilities: { strength: 7, dexterity: 10, constitution: 13, intelligence: 2, wisdom: 12, charisma: 4 },
-    saves: { strength: -2, dexterity: 0, constitution: 1, intelligence: -4, wisdom: 1, charisma: -3 },
-    skills: { perception: 3 },
-    senses: ["Passive Perception 13"],
-    languages: ["None"],
-    traits: [{ name: "Pack Tactics", summary: "Has Advantage on an attack roll against a creature if at least one ally is within 5 feet of the creature and the ally doesn't have the Incapacitated condition." }],
-    actions: [{ name: "Beak", kind: "action", attackBonus: 2, range: "reach 5 ft.", damageFormula: "1d4", damageType: "piercing" }]
-  },
-  warhorse: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 11,
-    initiative: 1,
-    hitPoints: 19,
-    hitDice: "3d10+3",
-    speed: "60 ft.",
-    challengeRating: "1/2",
-    xp: 100,
-    proficiencyBonus: 2,
-    abilities: { strength: 18, dexterity: 12, constitution: 13, intelligence: 2, wisdom: 12, charisma: 7 },
-    saves: { strength: 4, dexterity: 1, constitution: 1, intelligence: -4, wisdom: 3, charisma: -2 },
-    senses: ["Passive Perception 11"],
-    languages: ["None"],
-    actions: [{ name: "Hooves", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "2d4+4", damageType: "bludgeoning", condition: "Prone", summary: "If the target is a Large or smaller creature and the horse moved 20+ feet straight toward it immediately before the hit, the target takes an extra 2d4 Bludgeoning damage and has the Prone condition.", summaryMetadata: true }]
-  },
-  weasel: {
-    source: DND_5E_SRD_VERSION,
-    size: "Tiny",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 13,
-    initiative: 3,
-    hitPoints: 1,
-    hitDice: "1d4-1",
-    speed: "30 ft., Climb 30 ft.",
-    challengeRating: "0",
-    xp: 10,
-    proficiencyBonus: 2,
-    abilities: { strength: 3, dexterity: 16, constitution: 8, intelligence: 2, wisdom: 12, charisma: 3 },
-    saves: { strength: -4, dexterity: 3, constitution: -1, intelligence: -4, wisdom: 1, charisma: -4 },
-    skills: { acrobatics: 5, perception: 3, stealth: 5 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 13"],
-    languages: ["None"],
-    actions: [{ name: "Bite", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1", damageType: "piercing" }]
-  },
-  wight: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Undead",
-    alignment: "Neutral Evil",
-    armorClass: 14,
-    initiative: 4,
-    hitPoints: 82,
-    hitDice: "11d8+33",
-    speed: "30 ft.",
-    challengeRating: "3",
-    xp: 700,
-    proficiencyBonus: 2,
-    abilities: { strength: 15, dexterity: 14, constitution: 16, intelligence: 10, wisdom: 13, charisma: 15 },
-    saves: { strength: 2, dexterity: 2, constitution: 3, intelligence: 0, wisdom: 1, charisma: 2 },
-    skills: { perception: 3, stealth: 4 },
-    gear: ["Studded Leather Armor"],
-    senses: ["Darkvision 60 ft.", "Passive Perception 13"],
-    languages: ["Common plus one other language"],
-    traits: [
-      { name: "Necrotic Resistance", summary: "Resistant to Necrotic damage." },
-      { name: "Poison Immunity", summary: "Immune to Poison damage and the Exhaustion and Poisoned conditions." },
-      { name: "Sunlight Sensitivity", summary: "While in sunlight, has Disadvantage on ability checks and attack rolls." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two attacks, using Necrotic Sword or Necrotic Bow in any combination. Can replace one attack with Life Drain." },
-      { name: "Necrotic Sword", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d8+2+1d8", damageType: "slashing/necrotic" },
-      { name: "Necrotic Bow", kind: "action", attackBonus: 4, range: "range 150/600 ft.", damageFormula: "1d8+2+1d8", damageType: "piercing/necrotic" },
-      { name: "Life Drain", kind: "action", range: "one creature within 5 ft.", damageFormula: "1d8+2", damageType: "necrotic", save: { ability: "constitution", dc: 13 }, summary: "On a failed save, the target's Hit Point maximum decreases by the damage taken. A Humanoid slain by this attack rises 24 hours later as a Zombie under the wight's control unless restored to life or destroyed.", summaryMetadata: true }
-    ]
-  },
-  "will-o-wisp": {
-    source: DND_5E_SRD_VERSION,
-    size: "Tiny",
-    creatureType: "Undead",
-    alignment: "Chaotic Evil",
-    armorClass: 19,
-    initiative: 9,
-    hitPoints: 27,
-    hitDice: "11d4",
-    speed: "5 ft., Fly 50 ft. (hover)",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 1, dexterity: 28, constitution: 10, intelligence: 13, wisdom: 14, charisma: 11 },
-    saves: { strength: -5, dexterity: 9, constitution: 0, intelligence: 1, wisdom: 2, charisma: 0 },
-    senses: ["Darkvision 120 ft.", "Passive Perception 12"],
-    languages: ["Common plus one other language"],
-    traits: [
-      { name: "Damage Resistances", summary: "Resistant to Acid, Bludgeoning, Cold, Fire, Necrotic, Piercing, and Slashing damage." },
-      { name: "Damage Immunities", summary: "Immune to Lightning and Poison damage." },
-      { name: "Condition Immunities", summary: "Immune to Exhaustion, Grappled, Paralyzed, Petrified, Poisoned, Prone, Restrained, and Unconscious." },
-      { name: "Ephemeral", summary: "Can't wear or carry anything." },
-      { name: "Illumination", summary: "Sheds Bright Light in a 20-foot radius and Dim Light for an additional 20 feet." },
-      { name: "Incorporeal Movement", summary: "Can move through creatures and objects as Difficult Terrain, taking 5 (1d10) Force damage if it ends its turn inside an object." }
-    ],
-    actions: [
-      { name: "Shock", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "2d8+2", damageType: "lightning" },
-      { name: "Consume Life", kind: "bonusAction", range: "one living creature within 5 ft. with 0 Hit Points", save: { ability: "constitution", dc: 10 }, effects: ["On a failed save, the target dies and the will-o'-wisp regains 10 (3d6) Hit Points."], summary: "Kills a nearby living creature at 0 Hit Points on a failed save and heals the wisp.", summaryMetadata: true },
-      { name: "Vanish", kind: "bonusAction", effects: ["The wisp and its light have the Invisible condition until Concentration ends, ending early after an attack roll or Consume Life."], summary: "Turns invisible while concentrating until attacking or using Consume Life.", summaryMetadata: true }
-    ]
-  },
-  "winter-wolf": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Monstrosity",
-    alignment: "Neutral Evil",
-    armorClass: 13,
-    initiative: 1,
-    hitPoints: 75,
-    hitDice: "10d10+20",
-    speed: "50 ft.",
-    challengeRating: "3",
-    xp: 700,
-    proficiencyBonus: 2,
-    abilities: { strength: 18, dexterity: 13, constitution: 14, intelligence: 7, wisdom: 12, charisma: 8 },
-    saves: { strength: 4, dexterity: 1, constitution: 2, intelligence: -2, wisdom: 1, charisma: -1 },
-    skills: { perception: 5, stealth: 5 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 14"],
-    languages: ["Common", "Giant"],
-    traits: [
-      { name: "Cold Immunity", summary: "Immune to Cold damage." },
-      { name: "Pack Tactics", summary: "Has Advantage on an attack roll against a creature if at least one ally is within 5 feet of the creature and the ally doesn't have the Incapacitated condition." }
-    ],
-    actions: [
-      { name: "Bite", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "2d6+4", damageType: "piercing", condition: "Prone", summary: "If the target is a Large or smaller creature, it has the Prone condition.", summaryMetadata: true },
-      { name: "Cold Breath", kind: "action", recharge: "5-6", range: "15-foot Cone", damageFormula: "4d8", damageType: "cold", save: { ability: "constitution", dc: 12 }, summary: "Constitution save; failure takes Cold damage, success half.", summaryMetadata: true }
-    ]
-  },
-  worg: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Fey",
-    alignment: "Neutral Evil",
-    armorClass: 13,
-    initiative: 1,
-    hitPoints: 26,
-    hitDice: "4d10+4",
-    speed: "50 ft.",
-    challengeRating: "1/2",
-    xp: 100,
-    proficiencyBonus: 2,
-    abilities: { strength: 16, dexterity: 13, constitution: 13, intelligence: 7, wisdom: 11, charisma: 8 },
-    saves: { strength: 3, dexterity: 1, constitution: 1, intelligence: -2, wisdom: 0, charisma: -1 },
-    skills: { perception: 4 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 14"],
-    languages: ["Goblin", "Worg"],
-    actions: [{ name: "Bite", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d8+3", damageType: "piercing", summary: "The next attack roll made against the target before the start of the worg's next turn has Advantage.", summaryMetadata: true }]
-  },
-  "ogre-zombie": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Undead",
-    alignment: "Neutral Evil",
-    armorClass: 8,
-    initiative: -2,
-    hitPoints: 85,
-    hitDice: "9d10+36",
-    speed: "30 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 19, dexterity: 6, constitution: 18, intelligence: 3, wisdom: 6, charisma: 5 },
-    saves: { strength: 4, dexterity: -2, constitution: 4, intelligence: -4, wisdom: 0, charisma: -3 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 8"],
-    languages: ["Understands Common and Giant but can't speak"],
-    traits: [
-      { name: "Poison Immunity", summary: "Immune to Poison damage and the Exhaustion and Poisoned conditions." },
-      { name: "Undead Fortitude", summary: "If damage reduces it to 0 Hit Points, makes a Constitution save against DC 5 plus damage taken unless the damage is Radiant or from a Critical Hit. On success, drops to 1 Hit Point instead." }
-    ],
-    actions: [{ name: "Slam", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "2d8+4", damageType: "bludgeoning" }]
-  },
-  scout: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium or Small",
-    creatureType: "Humanoid",
-    alignment: "Neutral",
-    armorClass: 13,
-    initiative: 2,
-    hitPoints: 16,
-    hitDice: "3d8+3",
-    speed: "30 ft.",
-    challengeRating: "1/2",
-    xp: 100,
-    proficiencyBonus: 2,
-    abilities: { strength: 11, dexterity: 14, constitution: 12, intelligence: 11, wisdom: 13, charisma: 11 },
-    saves: { strength: 0, dexterity: 2, constitution: 1, intelligence: 0, wisdom: 1, charisma: 0 },
-    skills: { nature: 4, perception: 5, stealth: 6, survival: 5 },
-    senses: ["Passive Perception 15"],
-    languages: ["Common plus one other language"],
-    gear: ["Leather Armor", "Longbow", "Shortsword"],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two attacks, using Shortsword or Longbow in any combination." },
-      { name: "Shortsword", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d6+2", damageType: "piercing" },
-      { name: "Longbow", kind: "action", attackBonus: 4, range: "150/600 ft.", damageFormula: "1d8+2", damageType: "piercing" }
-    ]
-  },
-  "sea-hag": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Fey",
-    alignment: "Chaotic Evil",
-    armorClass: 14,
-    initiative: 1,
-    hitPoints: 52,
-    hitDice: "7d8+21",
-    speed: "30 ft., Swim 40 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 16, dexterity: 13, constitution: 16, intelligence: 12, wisdom: 12, charisma: 13 },
-    saves: { strength: 3, dexterity: 1, constitution: 3, intelligence: 1, wisdom: 1, charisma: 1 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 11"],
-    languages: ["Common", "Giant", "Primordial (Aquan)"],
-    traits: [
-      { name: "Amphibious", summary: "Can breathe air and water." },
-      { name: "Coven Magic", summary: "While within 30 feet of at least two hag allies, can cast its coven spell list without Material components using Intelligence; spell save DC 11, and each spell recharges on Long Rest." },
-      { name: "Vile Appearance", summary: "A Beast or Humanoid that starts its turn within 30 feet and can see the hag's true form must succeed on a DC 11 Wisdom save or be Frightened until the start of its next turn; success grants 24-hour immunity." }
-    ],
-    actions: [
-      { name: "Claw", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "2d6+3", damageType: "slashing" },
-      { name: "Death Glare", kind: "action", recharge: "5-6", range: "30 ft.; one Frightened creature", damageFormula: "3d8", damageType: "psychic", save: { ability: "wisdom", dc: 11 }, summary: "On a failed save, the target drops to 0 Hit Points if it has 20 or fewer Hit Points; otherwise it takes Psychic damage.", summaryMetadata: true },
-      { name: "Illusory Appearance", kind: "action", save: { ability: "constitution", dc: 13 }, effects: ["Casts Disguise Self using Constitution; duration 24 hours."], summary: "Casts Disguise Self using Constitution; duration 24 hours.", summaryMetadata: true }
-    ]
-  },
-  bandit: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium or Small",
-    creatureType: "Humanoid",
-    alignment: "Neutral",
-    armorClass: 12,
-    initiative: 1,
-    hitPoints: 11,
-    hitDice: "2d8+2",
-    speed: "30 ft.",
-    challengeRating: "1/8",
-    xp: 25,
-    proficiencyBonus: 2,
-    abilities: { strength: 11, dexterity: 12, constitution: 12, intelligence: 10, wisdom: 10, charisma: 10 },
-    saves: { strength: 0, dexterity: 1, constitution: 1, intelligence: 0, wisdom: 0, charisma: 0 },
-    senses: ["Passive Perception 10"],
-    languages: ["Common", "Thieves' Cant"],
-    gear: ["Leather Armor", "Light Crossbow", "Scimitar"],
-    actions: [
-      { name: "Scimitar", kind: "action", attackBonus: 3, range: "reach 5 ft.", damageFormula: "1d6+1", damageType: "slashing" },
-      { name: "Light Crossbow", kind: "action", attackBonus: 3, range: "80/320 ft.", damageFormula: "1d8+1", damageType: "piercing" }
-    ]
-  },
-  "bandit-captain": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium or Small",
-    creatureType: "Humanoid",
-    alignment: "Neutral",
-    armorClass: 15,
-    initiative: 3,
-    hitPoints: 52,
-    hitDice: "8d8+16",
-    speed: "30 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 15, dexterity: 16, constitution: 14, intelligence: 14, wisdom: 11, charisma: 14 },
-    saves: { strength: 4, dexterity: 5, constitution: 2, intelligence: 2, wisdom: 2, charisma: 2 },
-    skills: { athletics: 4, deception: 4 },
-    senses: ["Passive Perception 10"],
-    languages: ["Common", "Thieves' Cant"],
-    gear: ["Pistol", "Scimitar", "Studded Leather Armor"],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two attacks, using Scimitar and Pistol in any combination." },
-      { name: "Scimitar", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d6+3", damageType: "slashing" },
-      { name: "Pistol", kind: "action", attackBonus: 5, range: "30/90 ft.", damageFormula: "1d10+3", damageType: "piercing" },
-      { name: "Parry", kind: "reaction", summary: "Adds 2 to AC against a melee attack roll while holding a weapon, possibly causing it to miss." }
-    ]
-  },
-  "goblin-warrior": {
-    source: DND_5E_SRD_VERSION,
-    size: "Small",
-    creatureType: "Fey (Goblinoid)",
-    alignment: "Chaotic Neutral",
-    armorClass: 15,
-    initiative: 2,
-    hitPoints: 10,
-    hitDice: "3d6",
-    speed: "30 ft.",
-    challengeRating: "1/4",
-    xp: 50,
-    proficiencyBonus: 2,
-    abilities: { strength: 8, dexterity: 14, constitution: 10, intelligence: 10, wisdom: 8, charisma: 8 },
-    saves: { strength: -1, dexterity: 2, constitution: 0, intelligence: 0, wisdom: -1, charisma: -1 },
-    skills: { stealth: 6 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 9"],
-    languages: ["Common", "Goblin"],
-    gear: ["Scimitar", "Shortbow"],
-    traits: [{ name: "Nimble Escape", summary: "Can disengage or hide as a bonus action." }],
-    actions: [
-      { name: "Scimitar", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d6+2", damageType: "slashing" },
-      { name: "Shortbow", kind: "action", attackBonus: 4, range: "80/320 ft.", damageFormula: "1d6+2", damageType: "piercing" },
-      { name: "Nimble Escape", kind: "bonusAction", summary: "Disengage or Hide." }
-    ]
-  },
-  "goblin-boss": {
-    source: DND_5E_SRD_VERSION,
-    size: "Small",
-    creatureType: "Fey (Goblinoid)",
-    alignment: "Chaotic Neutral",
-    armorClass: 17,
-    initiative: 2,
-    hitPoints: 21,
-    hitDice: "6d6",
-    speed: "30 ft.",
-    challengeRating: "1",
-    xp: 200,
-    proficiencyBonus: 2,
-    abilities: { strength: 10, dexterity: 15, constitution: 10, intelligence: 10, wisdom: 8, charisma: 10 },
-    saves: { strength: 0, dexterity: 2, constitution: 0, intelligence: 0, wisdom: -1, charisma: 0 },
-    skills: { stealth: 6 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 9"],
-    languages: ["Common", "Goblin"],
-    gear: ["Chain Shirt", "Scimitar", "Shield", "Shortbow"],
-    traits: [{ name: "Nimble Escape", summary: "Can disengage or hide as a bonus action." }],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Scimitar or Shortbow attacks." },
-      { name: "Scimitar", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d6+2", damageType: "slashing" },
-      { name: "Shortbow", kind: "action", attackBonus: 4, range: "80/320 ft.", damageFormula: "1d6+2", damageType: "piercing" },
-      { name: "Nimble Escape", kind: "bonusAction", summary: "Disengage or Hide." },
-      { name: "Redirect Attack", kind: "reaction", summary: "Can swap with a nearby ally targeted by an attack." }
-    ]
-  },
-  skeleton: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Undead",
-    alignment: "Lawful Evil",
-    armorClass: 14,
-    initiative: 3,
-    hitPoints: 13,
-    hitDice: "2d8+4",
-    speed: "30 ft.",
-    challengeRating: "1/4",
-    xp: 50,
-    proficiencyBonus: 2,
-    abilities: { strength: 10, dexterity: 16, constitution: 15, intelligence: 6, wisdom: 8, charisma: 5 },
-    saves: { strength: 0, dexterity: 3, constitution: 2, intelligence: -2, wisdom: -1, charisma: -3 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 9"],
-    languages: ["Understands Common plus one other language but can't speak"],
-    gear: ["Shortbow", "Shortsword"],
-    traits: [{ name: "Bludgeoning Vulnerability", summary: "Vulnerable to Bludgeoning damage." }, { name: "Undead Immunities", summary: "Immune to Poison damage and the Exhaustion and Poisoned conditions." }],
-    actions: [
-      { name: "Shortsword", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d6+3", damageType: "piercing" },
-      { name: "Shortbow", kind: "action", attackBonus: 5, range: "80/320 ft.", damageFormula: "1d6+3", damageType: "piercing" }
-    ]
-  },
-  zombie: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Undead",
-    alignment: "Neutral Evil",
-    armorClass: 8,
-    initiative: -2,
-    hitPoints: 15,
-    hitDice: "2d8+6",
-    speed: "20 ft.",
-    challengeRating: "1/4",
-    xp: 50,
-    proficiencyBonus: 2,
-    abilities: { strength: 13, dexterity: 6, constitution: 16, intelligence: 3, wisdom: 6, charisma: 5 },
-    saves: { strength: 1, dexterity: -2, constitution: 3, intelligence: -4, wisdom: 0, charisma: -3 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 8"],
-    languages: ["Understands Common plus one other language but can't speak"],
-    traits: [
-      { name: "Undead Fortitude", summary: "When damage would reduce the zombie to 0 HP, it can drop to 1 HP instead on a Constitution save unless the damage is Radiant or from a Critical Hit." },
-      { name: "Undead Immunities", summary: "Immune to Poison damage and the Exhaustion and Poisoned conditions." }
-    ],
-    actions: [{ name: "Slam", kind: "action", attackBonus: 3, range: "reach 5 ft.", damageFormula: "1d8+1", damageType: "bludgeoning" }]
-  },
-  ghoul: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Undead",
-    alignment: "Chaotic Evil",
-    armorClass: 12,
-    initiative: 2,
-    hitPoints: 22,
-    hitDice: "5d8",
-    speed: "30 ft.",
-    challengeRating: "1",
-    xp: 200,
-    proficiencyBonus: 2,
-    abilities: { strength: 13, dexterity: 15, constitution: 10, intelligence: 7, wisdom: 10, charisma: 6 },
-    saves: { strength: 1, dexterity: 2, constitution: 0, intelligence: -2, wisdom: 0, charisma: -2 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 10"],
-    languages: ["Common"],
-    traits: [{ name: "Undead Immunities", summary: "Immune to Poison damage and the Charmed, Exhaustion, and Poisoned conditions." }],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Bite attacks." },
-      { name: "Bite", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d6+2+1d6", damageType: "piercing/necrotic" },
-      { name: "Claw", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d4+2", damageType: "slashing", save: { ability: "constitution", dc: 10 }, condition: "Paralyzed", summary: "A non-Undead, non-elf creature target that fails the save has the Paralyzed condition until the end of its next turn." }
-    ]
-  },
-  ghost: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Undead",
-    alignment: "Neutral",
-    armorClass: 11,
-    initiative: 1,
-    hitPoints: 45,
-    hitDice: "10d8",
-    speed: "5 ft., Fly 40 ft. (hover)",
-    challengeRating: "4",
-    xp: 1100,
-    proficiencyBonus: 2,
-    abilities: { strength: 7, dexterity: 13, constitution: 10, intelligence: 10, wisdom: 12, charisma: 17 },
-    saves: { strength: -2, dexterity: 1, constitution: 0, intelligence: 0, wisdom: 1, charisma: 3 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 11"],
-    languages: ["Common plus one other language"],
-    traits: [
-      { name: "Damage Resistances", summary: "Resistant to Acid, Bludgeoning, Cold, Fire, Lightning, Piercing, Slashing, and Thunder damage." },
-      { name: "Damage Immunities", summary: "Immune to Necrotic and Poison damage." },
-      { name: "Condition Immunities", summary: "Immune to Charmed, Exhaustion, Frightened, Grappled, Paralyzed, Petrified, Poisoned, Prone, and Restrained." },
-      { name: "Ethereal Sight", summary: "Can see 60 feet into the Ethereal Plane while on the Material Plane." },
-      { name: "Incorporeal Movement", summary: "Can move through creatures and objects as Difficult Terrain and takes 1d10 Force damage if it ends its turn inside an object." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Withering Touch attacks." },
-      { name: "Withering Touch", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "3d10+3", damageType: "necrotic" },
-      { name: "Etherealness", kind: "action", effects: ["Casts Etherealness without spell components using Charisma as the spellcasting ability."], summary: "Shifts between the Material Plane and Border Ethereal.", summaryMetadata: true },
-      { name: "Horrific Visage", kind: "action", range: "60-foot cone", damageFormula: "2d6+3", damageType: "psychic", save: { ability: "wisdom", dc: 13 }, condition: "Frightened", effects: ["A non-Undead creature that can see the ghost takes Psychic damage and is Frightened until the start of the ghost's next turn on a failed save; on a success, it is immune to this ghost's Horrific Visage for 24 hours."], summary: "Frightens visible non-Undead creatures in a cone.", summaryMetadata: true },
-      { name: "Possession", kind: "action", recharge: "6", save: { ability: "charisma", dc: 13 }, condition: "Incapacitated/Possessed", effects: ["A Humanoid that fails the save is possessed. The ghost disappears and controls the body until it drops to 0 Hit Points or the ghost leaves as a Bonus Action."], summary: "Possesses a nearby Humanoid on a failed Charisma save.", summaryMetadata: true }
-    ]
-  },
-  ghast: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Undead",
-    alignment: "Chaotic Evil",
-    armorClass: 13,
-    initiative: 3,
-    hitPoints: 36,
-    hitDice: "8d8",
-    speed: "30 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 16, dexterity: 17, constitution: 10, intelligence: 11, wisdom: 10, charisma: 8 },
-    saves: { strength: 3, dexterity: 3, constitution: 0, intelligence: 0, wisdom: 2, charisma: -1 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 10"],
-    languages: ["Common"],
-    traits: [
-      { name: "Necrotic Resistance", summary: "Resistant to Necrotic damage." },
-      { name: "Undead Immunities", summary: "Immune to Poison damage and the Charmed, Exhaustion, and Poisoned conditions." },
-      { name: "Stench", summary: "A creature that starts its turn in a 5-foot Emanation makes a DC 10 Constitution save or has the Poisoned condition until the start of its next turn; a successful save grants 24-hour immunity to this ghast's Stench." }
-    ],
-    actions: [
-      { name: "Bite", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d8+3+2d8", damageType: "piercing/necrotic" },
-      { name: "Claw", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "2d6+3", damageType: "slashing", save: { ability: "constitution", dc: 10 }, condition: "Paralyzed", summary: "A non-Undead creature target that fails the save has the Paralyzed condition until the end of its next turn." }
-    ]
-  },
-  specter: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Undead",
-    alignment: "Chaotic Evil",
-    armorClass: 12,
-    initiative: 2,
-    hitPoints: 22,
-    hitDice: "5d8",
-    speed: "30 ft., Fly 50 ft. (hover)",
-    challengeRating: "1",
-    xp: 200,
-    proficiencyBonus: 2,
-    abilities: { strength: 1, dexterity: 14, constitution: 11, intelligence: 10, wisdom: 10, charisma: 11 },
-    saves: { strength: -5, dexterity: 2, constitution: 0, intelligence: 0, wisdom: 0, charisma: 0 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 10"],
-    languages: ["Understands Common plus one other language but can't speak"],
-    traits: [
-      { name: "Damage Resistances", summary: "Resistant to Acid, Bludgeoning, Cold, Fire, Lightning, Piercing, Slashing, and Thunder damage." },
-      { name: "Incorporeal Immunities", summary: "Immune to Necrotic and Poison damage and the Charmed, Exhaustion, Grappled, Paralyzed, Petrified, Poisoned, Prone, Restrained, and Unconscious conditions." },
-      { name: "Incorporeal Movement", summary: "Can move through other creatures and objects as Difficult Terrain; takes 1d10 Force damage if it ends its turn inside an object." },
-      { name: "Sunlight Sensitivity", summary: "While in sunlight, has Disadvantage on ability checks and attack rolls." }
-    ],
-    actions: [
-      { name: "Life Drain", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "2d6", damageType: "necrotic", summary: "If the target is a creature, its Hit Point maximum decreases by an amount equal to the damage taken.", summaryMetadata: true }
-    ]
-  },
-  "sphinx-of-wonder": {
-    source: DND_5E_SRD_VERSION,
-    size: "Tiny",
-    creatureType: "Celestial",
-    alignment: "Lawful Good",
-    armorClass: 13,
-    initiative: 3,
-    hitPoints: 24,
-    hitDice: "7d4+7",
-    speed: "20 ft., Fly 40 ft.",
-    challengeRating: "1",
-    xp: 200,
-    proficiencyBonus: 2,
-    abilities: { strength: 6, dexterity: 17, constitution: 13, intelligence: 15, wisdom: 12, charisma: 11 },
-    saves: { strength: -2, dexterity: 3, constitution: 1, intelligence: 2, wisdom: 1, charisma: 0 },
-    skills: { arcana: 4, religion: 4, stealth: 5 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 11"],
-    languages: ["Celestial", "Common"],
-    traits: [
-      { name: "Damage Resistances", summary: "Resistant to Necrotic, Psychic, and Radiant damage." },
-      { name: "Magic Resistance", summary: "Has Advantage on saving throws against spells and other magical effects." }
-    ],
-    actions: [
-      { name: "Rend", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d4+3+2d6", damageType: "slashing/radiant" },
-      { name: "Burst of Ingenuity", kind: "reaction", range: "30 ft.", effects: ["Twice per day, when the sphinx or another creature within 30 feet makes an ability check or saving throw, the sphinx adds 2 to the roll."], summary: "Twice per day, adds 2 to an ability check or saving throw within 30 feet.", summaryMetadata: true }
-    ]
-  },
-  "sphinx-of-lore": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Celestial",
-    alignment: "Lawful Neutral",
-    armorClass: 17,
-    initiative: 10,
-    hitPoints: 170,
-    hitDice: "20d10+60",
-    speed: "40 ft., Fly 60 ft.",
-    challengeRating: "11",
-    xp: 7200,
-    proficiencyBonus: 4,
-    abilities: { strength: 18, dexterity: 15, constitution: 16, intelligence: 18, wisdom: 18, charisma: 18 },
-    saves: { strength: 4, dexterity: 2, constitution: 3, intelligence: 4, wisdom: 4, charisma: 4 },
-    skills: { arcana: 12, history: 12, perception: 8, religion: 12 },
-    senses: ["Truesight 120 ft.", "Passive Perception 18"],
-    languages: ["Celestial", "Common"],
-    traits: [
-      { name: "Damage Resistances", summary: "Resistant to Necrotic and Radiant damage." },
-      { name: "Sphinx Immunities", summary: "Immune to Psychic damage and the Charmed and Frightened conditions." },
-      { name: "Inscrutable", summary: "No magic can observe the sphinx remotely or detect its thoughts without permission, and Wisdom (Insight) checks to ascertain its intentions or sincerity have Disadvantage." },
-      { name: "Legendary Resistance", summary: "If the sphinx fails a saving throw, it can choose to succeed instead three times per day, or four times per day in its lair." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Claw attacks." },
-      { name: "Claw", kind: "action", attackBonus: 8, range: "reach 5 ft.", damageFormula: "3d6+4", damageType: "slashing" },
-      { name: "Mind-Rending Roar", kind: "action", range: "300-foot emanation; each enemy", damageFormula: "10d6", damageType: "psychic", save: { ability: "wisdom", dc: 16 }, condition: "Incapacitated", recharge: "5-6", summary: "On a failed save, the target takes Psychic damage and is Incapacitated until the start of the sphinx's next turn.", summaryMetadata: true },
-      { name: "Spellcasting", kind: "action", effects: ["Casts Detect Magic, Identify, Mage Hand, Minor Illusion, and Prestidigitation at will, and Dispel Magic, Legend Lore, Locate Object, Plane Shift, Remove Curse, and Tongues once per day using Intelligence; spell save DC 16."], summary: "Casts its SRD spell list using Intelligence; spell save DC 16.", summaryMetadata: true },
-      { name: "Legendary Actions", kind: "action", effects: ["Has 3 legendary action uses, or 4 in its lair. Options include Arcane Prowl and Weight of Years."], summary: "Legendary actions include Arcane Prowl and Weight of Years.", summaryMetadata: true }
-    ]
-  },
-  "sphinx-of-valor": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Celestial",
-    alignment: "Lawful Neutral",
-    armorClass: 17,
-    initiative: 12,
-    hitPoints: 199,
-    hitDice: "19d10+95",
-    speed: "40 ft., Fly 60 ft.",
-    challengeRating: "17",
-    xp: 18000,
-    proficiencyBonus: 6,
-    abilities: { strength: 22, dexterity: 10, constitution: 20, intelligence: 16, wisdom: 23, charisma: 18 },
-    saves: { strength: 6, dexterity: 6, constitution: 11, intelligence: 9, wisdom: 12, charisma: 4 },
-    skills: { arcana: 9, perception: 12, religion: 15 },
-    senses: ["Truesight 120 ft.", "Passive Perception 22"],
-    languages: ["Celestial", "Common"],
-    traits: [
-      { name: "Damage Resistances", summary: "Resistant to Necrotic and Radiant damage." },
-      { name: "Sphinx Immunities", summary: "Immune to Psychic damage and the Charmed and Frightened conditions." },
-      { name: "Inscrutable", summary: "No magic can observe the sphinx remotely or detect its thoughts without permission, and Wisdom (Insight) checks to ascertain its intentions or sincerity have Disadvantage." },
-      { name: "Legendary Resistance", summary: "If the sphinx fails a saving throw, it can choose to succeed instead three times per day, or four times per day in its lair." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Claw attacks and uses Roar." },
-      { name: "Claw", kind: "action", attackBonus: 12, range: "reach 5 ft.", damageFormula: "4d6+6", damageType: "slashing" },
-      { name: "Roar", kind: "action", range: "500-foot emanation; each enemy", damageFormula: "8d10", damageType: "thunder", save: { ability: "constitution", dc: 20, success: "half" }, condition: "Frightened/Paralyzed/Prone", recharge: "3/day", summary: "Sequential magical roars frighten, paralyze, then deal Thunder damage and knock targets Prone; the sequence resets on a Long Rest.", summaryMetadata: true },
-      { name: "Spellcasting", kind: "action", effects: ["Casts Detect Evil and Good and Thaumaturgy at will, and Detect Magic, Dispel Magic, Greater Restoration, Heroes' Feast, and Zone of Truth once per day using Wisdom; spell save DC 20."], summary: "Casts its SRD spell list using Wisdom; spell save DC 20.", summaryMetadata: true },
-      { name: "Legendary Actions", kind: "action", effects: ["Has 3 legendary action uses, or 4 in its lair. Options include Arcane Prowl and Weight of Years."], summary: "Legendary actions include Arcane Prowl and Weight of Years.", summaryMetadata: true }
-    ]
-  },
-  wraith: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium or Small",
-    creatureType: "Undead",
-    alignment: "Neutral Evil",
-    armorClass: 13,
-    initiative: 3,
-    hitPoints: 67,
-    hitDice: "9d8+27",
-    speed: "5 ft., Fly 60 ft. (hover)",
-    challengeRating: "5",
-    xp: 1800,
-    proficiencyBonus: 3,
-    abilities: { strength: 6, dexterity: 16, constitution: 16, intelligence: 12, wisdom: 14, charisma: 15 },
-    saves: { strength: -2, dexterity: 3, constitution: 3, intelligence: 1, wisdom: 2, charisma: 2 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 12"],
-    languages: ["Common plus two other languages"],
-    traits: [
-      { name: "Damage Resistances", summary: "Resistant to Acid, Bludgeoning, Cold, Fire, Piercing, and Slashing damage." },
-      { name: "Incorporeal Immunities", summary: "Immune to Necrotic and Poison damage and the Charmed, Exhaustion, Grappled, Paralyzed, Petrified, Poisoned, Prone, Restrained, and Unconscious conditions." },
-      { name: "Incorporeal Movement", summary: "Can move through other creatures and objects as Difficult Terrain; takes 1d10 Force damage if it ends its turn inside an object." },
-      { name: "Sunlight Sensitivity", summary: "While in sunlight, has Disadvantage on ability checks and attack rolls." }
-    ],
-    actions: [
-      { name: "Life Drain", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "4d8+3", damageType: "necrotic", summary: "If the target is a creature, its Hit Point maximum decreases by an amount equal to the damage taken.", summaryMetadata: true },
-      { name: "Create Specter", kind: "action", range: "10 ft.; Humanoid corpse dead no longer than 1 minute", effects: ["Raises a Specter in the corpse's space or the nearest unoccupied space under the wraith's control, up to seven controlled specters."], summary: "Creates a controlled Specter from a recently dead Humanoid corpse." }
-    ]
-  },
-  "air-elemental": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Elemental",
-    alignment: "Neutral",
-    armorClass: 15,
-    initiative: 5,
-    hitPoints: 90,
-    hitDice: "12d10+24",
-    speed: "10 ft., Fly 90 ft. (hover)",
-    challengeRating: "5",
-    xp: 1800,
-    proficiencyBonus: 3,
-    abilities: { strength: 14, dexterity: 20, constitution: 14, intelligence: 6, wisdom: 10, charisma: 6 },
-    saves: { strength: 2, dexterity: 5, constitution: 2, intelligence: -2, wisdom: 0, charisma: -2 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 10"],
-    languages: ["Primordial (Auran)"],
-    traits: [
-      { name: "Elemental Resistances", summary: "Resistant to Bludgeoning, Lightning, Piercing, and Slashing damage." },
-      { name: "Airy Immunities", summary: "Immune to Poison and Thunder damage and the Exhaustion, Grappled, Paralyzed, Petrified, Poisoned, Prone, Restrained, and Unconscious conditions." },
-      { name: "Air Form", summary: "Can enter and stop in a creature's space and move through a space as narrow as 1 inch without expending extra movement." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Thunderous Slam attacks." },
-      { name: "Thunderous Slam", kind: "action", attackBonus: 8, range: "reach 10 ft.", damageFormula: "2d8+5", damageType: "thunder" },
-      { name: "Whirlwind", kind: "action", range: "elemental's space; one Medium or smaller creature", damageFormula: "4d10+2", damageType: "thunder", save: { ability: "strength", dc: 13, success: "half" }, condition: "Prone", recharge: "4-6", summary: "A failed save also pushes the target up to 20 feet straight away." }
-    ]
-  },
-  "earth-elemental": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Elemental",
-    alignment: "Neutral",
-    armorClass: 17,
-    initiative: -1,
-    hitPoints: 147,
-    hitDice: "14d10+70",
-    speed: "30 ft., Burrow 30 ft.",
-    challengeRating: "5",
-    xp: 1800,
-    proficiencyBonus: 3,
-    abilities: { strength: 20, dexterity: 8, constitution: 20, intelligence: 5, wisdom: 10, charisma: 5 },
-    saves: { strength: 5, dexterity: -1, constitution: 5, intelligence: -3, wisdom: 0, charisma: -3 },
-    senses: ["Darkvision 60 ft.", "Tremorsense 60 ft.", "Passive Perception 10"],
-    languages: ["Primordial (Terran)"],
-    traits: [
-      { name: "Thunder Vulnerability", summary: "Vulnerable to Thunder damage." },
-      { name: "Elemental Immunities", summary: "Immune to Poison damage and the Exhaustion, Paralyzed, Petrified, Poisoned, and Unconscious conditions." },
-      { name: "Earth Glide", summary: "Can burrow through nonmagical, unworked earth and stone without disturbing the material." },
-      { name: "Siege Monster", summary: "Deals double damage to objects and structures." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two attacks, using Slam or Rock Launch in any combination." },
-      { name: "Slam", kind: "action", attackBonus: 8, range: "reach 10 ft.", damageFormula: "2d8+5", damageType: "bludgeoning" },
-      { name: "Rock Launch", kind: "action", attackBonus: 8, range: "60 ft.", damageFormula: "1d6+5", damageType: "bludgeoning", condition: "Prone", summary: "A Large or smaller target hit by the attack has the Prone condition." }
-    ]
-  },
-  "fire-elemental": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Elemental",
-    alignment: "Neutral",
-    armorClass: 13,
-    initiative: 3,
-    hitPoints: 93,
-    hitDice: "11d10+33",
-    speed: "50 ft.",
-    challengeRating: "5",
-    xp: 1800,
-    proficiencyBonus: 3,
-    abilities: { strength: 10, dexterity: 17, constitution: 16, intelligence: 6, wisdom: 10, charisma: 7 },
-    saves: { strength: 0, dexterity: 3, constitution: 3, intelligence: -2, wisdom: 0, charisma: -2 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 10"],
-    languages: ["Primordial (Ignan)"],
-    traits: [
-      { name: "Elemental Resistances", summary: "Resistant to Bludgeoning, Piercing, and Slashing damage." },
-      { name: "Fiery Immunities", summary: "Immune to Fire and Poison damage and the Exhaustion, Grappled, Paralyzed, Petrified, Poisoned, Prone, Restrained, and Unconscious conditions." },
-      { name: "Fire Aura", summary: "At the end of each of its turns, creatures in a 10-foot Emanation take 1d10 Fire damage and creatures and flammable objects start burning." },
-      { name: "Fire Form", summary: "Can move through a 1-inch space and enter a creature's space; the first creature space it enters on a turn takes 1d10 Fire damage." },
-      { name: "Illumination", summary: "Sheds Bright Light in a 30-foot radius and Dim Light for an additional 30 feet." },
-      { name: "Water Susceptibility", summary: "Takes 1d6 Cold damage for every 5 feet it moves in water or every gallon of water splashed on it." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Burn attacks." },
-      { name: "Burn", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "2d6+3", damageType: "fire", summary: "If the target is a creature or a flammable object, it starts burning.", summaryMetadata: true }
-    ]
-  },
-  "water-elemental": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Elemental",
-    alignment: "Neutral",
-    armorClass: 14,
-    initiative: 2,
-    hitPoints: 114,
-    hitDice: "12d10+48",
-    speed: "30 ft., Swim 90 ft.",
-    challengeRating: "5",
-    xp: 1800,
-    proficiencyBonus: 3,
-    abilities: { strength: 18, dexterity: 14, constitution: 18, intelligence: 5, wisdom: 10, charisma: 8 },
-    saves: { strength: 4, dexterity: 2, constitution: 4, intelligence: -3, wisdom: 0, charisma: -1 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 10"],
-    languages: ["Primordial (Aquan)"],
-    traits: [
-      { name: "Elemental Resistances", summary: "Resistant to Acid and Fire damage." },
-      { name: "Watery Immunities", summary: "Immune to Poison damage and the Exhaustion, Grappled, Paralyzed, Petrified, Poisoned, Prone, Restrained, and Unconscious conditions." },
-      { name: "Freeze", summary: "If the elemental takes Cold damage, its Speed decreases by 20 feet until the end of its next turn." },
-      { name: "Water Form", summary: "Can enter and stop in an enemy's space and move through a space as narrow as 1 inch without expending extra movement." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Slam attacks." },
-      { name: "Slam", kind: "action", attackBonus: 7, range: "reach 5 ft.", damageFormula: "2d8+4", damageType: "bludgeoning", condition: "Prone", summary: "A Medium or smaller target hit by the attack has the Prone condition." },
-      { name: "Whelm", kind: "action", range: "elemental's space", damageFormula: "4d8+4", damageType: "bludgeoning", save: { ability: "strength", dc: 15, success: "half" }, condition: "Grappled", recharge: "4-6", summary: "A Large or smaller target that fails is Grappled, Restrained, suffocating unless it can breathe water, and takes 2d8 Bludgeoning damage at the start of each of the elemental's turns." }
-    ]
-  },
-  basilisk: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Monstrosity",
-    alignment: "Unaligned",
-    armorClass: 15,
-    initiative: -1,
-    hitPoints: 52,
-    hitDice: "8d8+16",
-    speed: "20 ft.",
-    challengeRating: "3",
-    xp: 700,
-    proficiencyBonus: 2,
-    abilities: { strength: 16, dexterity: 8, constitution: 15, intelligence: 2, wisdom: 8, charisma: 7 },
-    saves: { strength: 3, dexterity: -1, constitution: 2, intelligence: -4, wisdom: -1, charisma: -2 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 9"],
-    languages: ["None"],
-    actions: [
-      { name: "Bite", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "2d6+3+2d6", damageType: "piercing/poison" },
-      { name: "Petrifying Gaze", kind: "bonusAction", range: "30-foot Cone", save: { ability: "constitution", dc: 12 }, condition: "Restrained", recharge: "4-6", summary: "A first failed save Restrains the target; a second failed save gives it the Petrified condition instead. If the basilisk sees its reflection in the Cone, it must make the save." }
-    ]
-  },
-  cockatrice: {
-    source: DND_5E_SRD_VERSION,
-    size: "Small",
-    creatureType: "Monstrosity",
-    alignment: "Unaligned",
-    armorClass: 11,
-    initiative: 1,
-    hitPoints: 22,
-    hitDice: "5d6+5",
-    speed: "20 ft., Fly 40 ft.",
-    challengeRating: "1/2",
-    xp: 100,
-    proficiencyBonus: 2,
-    abilities: { strength: 6, dexterity: 12, constitution: 12, intelligence: 2, wisdom: 13, charisma: 5 },
-    saves: { strength: -2, dexterity: 1, constitution: 1, intelligence: -4, wisdom: 1, charisma: -3 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 11"],
-    languages: ["None"],
-    traits: [{ name: "Petrified Immunity", summary: "Immune to the Petrified condition." }],
-    actions: [
-      { name: "Petrifying Bite", kind: "action", attackBonus: 3, range: "reach 5 ft.", damageFormula: "1d4+1", damageType: "piercing", save: { ability: "constitution", dc: 11 }, condition: "Restrained", summary: "A first failed save Restrains the target; a second failed save gives it the Petrified condition instead for 24 hours.", summaryMetadata: true }
-    ]
-  },
-  manticore: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Monstrosity",
-    alignment: "Lawful Evil",
-    armorClass: 14,
-    initiative: 3,
-    hitPoints: 68,
-    hitDice: "8d10+24",
-    speed: "30 ft., Fly 50 ft.",
-    challengeRating: "3",
-    xp: 700,
-    proficiencyBonus: 2,
-    abilities: { strength: 17, dexterity: 16, constitution: 17, intelligence: 7, wisdom: 12, charisma: 8 },
-    saves: { strength: 3, dexterity: 3, constitution: 3, intelligence: -2, wisdom: 1, charisma: -1 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 11"],
-    languages: ["Common"],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three attacks, using Rend or Tail Spike in any combination." },
-      { name: "Rend", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d8+3", damageType: "slashing" },
-      { name: "Tail Spike", kind: "action", attackBonus: 5, range: "100/200 ft.", damageFormula: "1d8+3", damageType: "piercing" }
-    ]
-  },
-  "minotaur-of-baphomet": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Monstrosity",
-    alignment: "Chaotic Evil",
-    armorClass: 14,
-    initiative: 0,
-    hitPoints: 85,
-    hitDice: "10d10+30",
-    speed: "40 ft.",
-    challengeRating: "3",
-    xp: 700,
-    proficiencyBonus: 2,
-    abilities: { strength: 18, dexterity: 11, constitution: 16, intelligence: 6, wisdom: 16, charisma: 9 },
-    saves: { strength: 4, dexterity: 0, constitution: 3, intelligence: -2, wisdom: 3, charisma: -1 },
-    skills: { perception: 7, survival: 7 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 17"],
-    languages: ["Abyssal"],
-    actions: [
-      { name: "Abyssal Glaive", kind: "action", attackBonus: 6, range: "reach 10 ft.", damageFormula: "1d12+4+3d6", damageType: "slashing/necrotic" },
-      { name: "Gore", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "4d6+4", damageType: "piercing", condition: "Prone", recharge: "5-6", summary: "If the target is Large or smaller and the minotaur moved 10+ feet straight toward it immediately before the hit, the target takes an extra 3d6 Piercing damage and has the Prone condition." }
-    ]
-  },
-  "rust-monster": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Monstrosity",
-    alignment: "Unaligned",
-    armorClass: 14,
-    initiative: 1,
-    hitPoints: 33,
-    hitDice: "6d8+6",
-    speed: "40 ft.",
-    challengeRating: "1/2",
-    xp: 100,
-    proficiencyBonus: 2,
-    abilities: { strength: 13, dexterity: 12, constitution: 13, intelligence: 2, wisdom: 13, charisma: 6 },
-    saves: { strength: 1, dexterity: 1, constitution: 1, intelligence: -4, wisdom: 1, charisma: -2 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 11"],
-    languages: ["None"],
-    traits: [{ name: "Iron Scent", summary: "Can pinpoint ferrous metal within 30 feet." }],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes one Bite attack and uses Antennae twice." },
-      { name: "Bite", kind: "action", attackBonus: 3, range: "reach 5 ft.", damageFormula: "1d8+1", damageType: "piercing" },
-      { name: "Antennae", kind: "action", range: "5 ft.; nonmagical metal armor or weapon", save: { ability: "dexterity", dc: 11 }, effects: ["Apply a -1 penalty to the AC a metal armor object offers or to a metal weapon's attack rolls."], summary: "Armor is destroyed if reduced to AC 10; a weapon is destroyed if its penalty reaches -5. Mending removes the penalty." },
-      { name: "Destroy Metal", kind: "action", range: "5 ft.; unattended nonmagical metal object", effects: ["Destroys a 1-foot Cube of the object."] },
-      { name: "Reflexive Antennae", kind: "reaction", range: "5 ft.; triggering attacker's nonmagical metal armor or weapon", save: { ability: "dexterity", dc: 11 }, effects: ["Uses Antennae after an attack roll hits the rust monster."], summary: "A hit can trigger Antennae against a nonmagical metal object worn or carried by the attacker." }
-    ]
-  },
-  "sahuagin-warrior": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Fiend",
-    alignment: "Lawful Evil",
-    armorClass: 12,
-    initiative: 0,
-    hitPoints: 22,
-    hitDice: "4d8+4",
-    speed: "30 ft., Swim 40 ft.",
-    challengeRating: "1/2",
-    xp: 100,
-    proficiencyBonus: 2,
-    abilities: { strength: 13, dexterity: 11, constitution: 12, intelligence: 12, wisdom: 13, charisma: 9 },
-    saves: { strength: 1, dexterity: 0, constitution: 1, intelligence: 1, wisdom: 1, charisma: -1 },
-    skills: { perception: 5 },
-    senses: ["Darkvision 120 ft.", "Passive Perception 15"],
-    languages: ["Sahuagin"],
-    traits: [
-      { name: "Acid and Cold Resistance", summary: "Resistant to Acid and Cold damage." },
-      { name: "Blood Frenzy", summary: "Has Advantage on attack rolls against any creature that doesn't have all its Hit Points." },
-      { name: "Limited Amphibiousness", summary: "Can breathe air and water, but must be submerged at least once every 4 hours to avoid suffocating outside water." },
-      { name: "Shark Telepathy", summary: "Can magically control sharks within 120 feet using a special telepathy." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Claw attacks." },
-      { name: "Claw", kind: "action", attackBonus: 3, range: "reach 5 ft.", damageFormula: "1d6+1", damageType: "slashing" },
-      { name: "Aquatic Charge", kind: "bonusAction", range: "Swim Speed", effects: ["Swims up to its Swim Speed straight toward an enemy it can see."] }
-    ]
-  },
-  salamander: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Elemental",
-    alignment: "Neutral Evil",
-    armorClass: 15,
-    initiative: 2,
-    hitPoints: 90,
-    hitDice: "12d10+24",
-    speed: "30 ft., Climb 30 ft.",
-    challengeRating: "5",
-    xp: 1800,
-    proficiencyBonus: 3,
-    abilities: { strength: 18, dexterity: 14, constitution: 15, intelligence: 11, wisdom: 10, charisma: 12 },
-    saves: { strength: 4, dexterity: 2, constitution: 2, intelligence: 0, wisdom: 0, charisma: 1 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 10"],
-    languages: ["Primordial (Ignan)"],
-    traits: [
-      { name: "Cold Vulnerability", summary: "Vulnerable to Cold damage." },
-      { name: "Fire Immunity", summary: "Immune to Fire damage." },
-      { name: "Fire Aura", summary: "At the end of each of its turns, each creature of its choice in a 5-foot Emanation takes 2d6 Fire damage." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Flame Spear attacks. It can replace one attack with Constrict." },
-      { name: "Flame Spear", kind: "action", attackBonus: 7, range: "reach 5 ft. or range 20/60 ft.", damageFormula: "2d8+4+2d6", damageType: "piercing/fire", summary: "Hit or miss, the spear magically returns to the salamander's hand immediately after a ranged attack." },
-      { name: "Constrict", kind: "action", range: "10 ft.; one Large or smaller creature", damageFormula: "2d6+4+2d6", damageType: "bludgeoning/fire", save: { ability: "strength", dc: 15 }, condition: "Grappled", summary: "On a failed save, the target has the Grappled condition, escape DC 14, and is Restrained until the grapple ends.", summaryMetadata: true }
-    ]
-  },
-  satyr: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Fey",
-    alignment: "Chaotic Neutral",
-    armorClass: 13,
-    initiative: 3,
-    hitPoints: 31,
-    hitDice: "7d8",
-    speed: "40 ft.",
-    challengeRating: "1/2",
-    xp: 100,
-    proficiencyBonus: 2,
-    abilities: { strength: 12, dexterity: 16, constitution: 11, intelligence: 12, wisdom: 10, charisma: 14 },
-    saves: { strength: 1, dexterity: 3, constitution: 0, intelligence: 1, wisdom: 0, charisma: 2 },
-    skills: { perception: 2, performance: 6, stealth: 5 },
-    senses: ["Passive Perception 12"],
-    languages: ["Common", "Elvish", "Sylvan"],
-    traits: [{ name: "Magic Resistance", summary: "Has Advantage on saving throws against spells and other magical effects." }],
-    actions: [
-      { name: "Hooves", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d4+3", damageType: "bludgeoning", summary: "If the target is Medium or smaller, the satyr pushes it up to 10 feet straight away.", summaryMetadata: true },
-      { name: "Mockery", kind: "action", range: "90 ft.", damageFormula: "1d6+2", damageType: "psychic", save: { ability: "wisdom", dc: 12 } }
-    ]
-  },
-  shadow: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Undead",
-    alignment: "Chaotic Evil",
-    armorClass: 12,
-    initiative: 2,
-    hitPoints: 27,
-    hitDice: "5d8+5",
-    speed: "40 ft.",
-    challengeRating: "1/2",
-    xp: 100,
-    proficiencyBonus: 2,
-    abilities: { strength: 6, dexterity: 14, constitution: 13, intelligence: 6, wisdom: 10, charisma: 8 },
-    saves: { strength: -2, dexterity: 2, constitution: 1, intelligence: -2, wisdom: 0, charisma: -1 },
-    skills: { stealth: 6 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 10"],
-    languages: ["None"],
-    traits: [
-      { name: "Radiant Vulnerability", summary: "Vulnerable to Radiant damage." },
-      { name: "Elemental Resistances", summary: "Resistant to Acid, Cold, Fire, Lightning, and Thunder damage." },
-      { name: "Undead Immunities", summary: "Immune to Necrotic and Poison damage and the Exhaustion, Frightened, Grappled, Paralyzed, Petrified, Poisoned, Prone, Restrained, and Unconscious conditions." },
-      { name: "Amorphous", summary: "Can move through a space as narrow as 1 inch without expending extra movement." },
-      { name: "Sunlight Weakness", summary: "While in sunlight, has Disadvantage on D20 Tests." }
-    ],
-    actions: [
-      { name: "Draining Swipe", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d6+2", damageType: "necrotic", summary: "The target's Strength score decreases by 1d4. The target dies if this reduces that score to 0; a Humanoid slain by this attack rises as a Shadow after 1d4 hours.", summaryMetadata: true },
-      { name: "Shadow Stealth", kind: "bonusAction", range: "Dim Light or Darkness", effects: ["While in Dim Light or Darkness, the shadow takes the Hide action."] }
-    ]
-  },
-  "shambling-mound": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Plant",
-    alignment: "Unaligned",
-    armorClass: 15,
-    initiative: -1,
-    hitPoints: 110,
-    hitDice: "13d10+39",
-    speed: "30 ft., Swim 20 ft.",
-    challengeRating: "5",
-    xp: 1800,
-    proficiencyBonus: 3,
-    abilities: { strength: 18, dexterity: 8, constitution: 16, intelligence: 5, wisdom: 10, charisma: 5 },
-    saves: { strength: 4, dexterity: -1, constitution: 3, intelligence: -3, wisdom: 0, charisma: -3 },
-    skills: { stealth: 3 },
-    senses: ["Blindsight 60 ft.", "Passive Perception 10"],
-    languages: ["None"],
-    traits: [
-      { name: "Cold and Fire Resistance", summary: "Resistant to Cold and Fire damage." },
-      { name: "Lightning Absorption", summary: "Whenever subjected to Lightning damage, regains Hit Points equal to the Lightning damage dealt." },
-      { name: "Plant Immunities", summary: "Immune to Lightning damage and the Deafened and Exhaustion conditions." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Charged Tendril attacks. It can replace one attack with Engulf." },
-      { name: "Charged Tendril", kind: "action", attackBonus: 7, range: "reach 10 ft.", damageFormula: "1d6+4+2d4", damageType: "bludgeoning/lightning", summary: "If the target is Medium or smaller, the mound pulls it up to 5 feet toward itself.", summaryMetadata: true },
-      { name: "Engulf", kind: "action", range: "5 ft.; one Medium or smaller creature", damageFormula: "3d6", damageType: "lightning", save: { ability: "strength", dc: 15 }, condition: "Grappled", summary: "On a failed save, the target is pulled into the mound's space and Grappled, escape DC 14. Until the grapple ends, the target is Blinded and Restrained, takes 3d6 Lightning damage at the start of each of the mound's turns, and moves with the mound. The mound can have only one creature grappled by this action.", summaryMetadata: true }
-    ]
-  },
-  "shield-guardian": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Construct",
-    alignment: "Unaligned",
-    armorClass: 17,
-    initiative: -1,
-    hitPoints: 142,
-    hitDice: "15d10+60",
-    speed: "30 ft.",
-    challengeRating: "7",
-    xp: 2900,
-    proficiencyBonus: 3,
-    abilities: { strength: 18, dexterity: 8, constitution: 18, intelligence: 7, wisdom: 10, charisma: 3 },
-    saves: { strength: 4, dexterity: -1, constitution: 4, intelligence: -2, wisdom: 0, charisma: -4 },
-    senses: ["Blindsight 10 ft.", "Darkvision 60 ft.", "Passive Perception 10"],
-    languages: ["Understands commands given in any language but can't speak"],
-    traits: [
-      { name: "Construct Immunities", summary: "Immune to Poison damage and the Charmed, Exhaustion, Frightened, Paralyzed, Petrified, and Poisoned conditions." },
-      { name: "Bound", summary: "Bound to an amulet. If within 60 feet of the amulet wearer, half any damage the wearer takes, rounded up, transfers to the guardian." },
-      { name: "Regeneration", summary: "Regains 10 Hit Points at the start of each of its turns if it has at least 1 Hit Point." },
-      { name: "Spell Storing", summary: "The amulet wearer can store one level 4 or lower spell in the guardian, which can cast it using the original caster's spellcasting ability." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Fist attacks." },
-      { name: "Fist", kind: "action", attackBonus: 7, range: "reach 10 ft.", damageFormula: "2d6+4+2d6", damageType: "bludgeoning/force" },
-      { name: "Protection", kind: "reaction", range: "5 ft.; amulet wearer", effects: ["When an attack roll hits the amulet wearer within 5 feet, the wearer gains a +5 bonus to AC, including against the triggering attack, until the start of the guardian's next turn."] }
-    ]
-  },
-  "brass-dragon-wyrmling": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Dragon (Metallic)",
-    alignment: "Chaotic Good",
-    armorClass: 15,
-    initiative: 2,
-    hitPoints: 22,
-    hitDice: "4d8+4",
-    speed: "30 ft., Burrow 15 ft., Fly 60 ft.",
-    challengeRating: "1",
-    xp: 200,
-    proficiencyBonus: 2,
-    abilities: { strength: 15, dexterity: 10, constitution: 13, intelligence: 10, wisdom: 11, charisma: 13 },
-    saves: { strength: 2, dexterity: 2, constitution: 1, intelligence: 0, wisdom: 2, charisma: 1 },
-    skills: { perception: 4, stealth: 2 },
-    senses: ["Blindsight 10 ft.", "Darkvision 60 ft.", "Passive Perception 14"],
-    languages: ["Draconic"],
-    traits: [{ name: "Fire Immunity", summary: "Immune to Fire damage." }],
-    actions: [
-      { name: "Rend", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d10+2", damageType: "slashing" },
-      { name: "Fire Breath", kind: "action", range: "20-foot line", damageFormula: "4d6", damageType: "fire", save: { ability: "dexterity", dc: 11, success: "half" }, recharge: "5-6" },
-      { name: "Sleep Breath", kind: "action", range: "15-foot cone", save: { ability: "constitution", dc: 11 }, condition: "Incapacitated/Unconscious", effects: ["On a failed save, the target is Incapacitated until the end of its next turn, when it repeats the save. On a second failed save, the target is Unconscious for 1 minute. The effect ends if the target takes damage or a creature within 5 feet takes an action to wake it."], summary: "Failed saves escalate from Incapacitated to Unconscious, with wake-up and damage-ending clauses.", summaryMetadata: true }
-    ]
-  },
-  "young-brass-dragon": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Dragon (Metallic)",
-    alignment: "Chaotic Good",
-    armorClass: 17,
-    initiative: 3,
-    hitPoints: 110,
-    hitDice: "13d10+39",
-    speed: "40 ft., Burrow 20 ft., Fly 80 ft.",
-    challengeRating: "6",
-    xp: 2300,
-    proficiencyBonus: 3,
-    abilities: { strength: 19, dexterity: 10, constitution: 17, intelligence: 12, wisdom: 11, charisma: 15 },
-    saves: { strength: 4, dexterity: 3, constitution: 3, intelligence: 1, wisdom: 3, charisma: 2 },
-    skills: { perception: 6, persuasion: 5, stealth: 3 },
-    senses: ["Blindsight 30 ft.", "Darkvision 120 ft.", "Passive Perception 16"],
-    languages: ["Common", "Draconic"],
-    traits: [{ name: "Fire Immunity", summary: "Immune to Fire damage." }],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Rend attacks. It can replace two attacks with Sleep Breath." },
-      { name: "Rend", kind: "action", attackBonus: 7, range: "reach 10 ft.", damageFormula: "2d10+4", damageType: "slashing" },
-      { name: "Fire Breath", kind: "action", range: "40-foot line", damageFormula: "11d6", damageType: "fire", save: { ability: "dexterity", dc: 14, success: "half" }, recharge: "5-6" },
-      { name: "Sleep Breath", kind: "action", range: "30-foot cone", save: { ability: "constitution", dc: 14 }, condition: "Incapacitated/Unconscious", effects: ["On a failed save, the target is Incapacitated until the end of its next turn, when it repeats the save. On a second failed save, the target is Unconscious for 1 minute. The effect ends if the target takes damage or a creature within 5 feet takes an action to wake it."], summary: "Failed saves escalate from Incapacitated to Unconscious, with wake-up and damage-ending clauses.", summaryMetadata: true }
-    ]
-  },
-  "adult-brass-dragon": {
-    source: DND_5E_SRD_VERSION,
-    size: "Huge",
-    creatureType: "Dragon (Metallic)",
-    alignment: "Chaotic Good",
-    armorClass: 18,
-    initiative: 10,
-    hitPoints: 172,
-    hitDice: "15d12+75",
-    speed: "40 ft., Burrow 30 ft., Fly 80 ft.",
-    challengeRating: "13",
-    xp: 10000,
-    proficiencyBonus: 5,
-    abilities: { strength: 23, dexterity: 10, constitution: 21, intelligence: 14, wisdom: 13, charisma: 17 },
-    saves: { strength: 6, dexterity: 5, constitution: 5, intelligence: 2, wisdom: 6, charisma: 3 },
-    skills: { history: 7, perception: 11, persuasion: 8, stealth: 5 },
-    senses: ["Blindsight 60 ft.", "Darkvision 120 ft.", "Passive Perception 21"],
-    languages: ["Common", "Draconic"],
-    traits: [
-      { name: "Fire Immunity", summary: "Immune to Fire damage." },
-      { name: "Legendary Resistance", summary: "If the dragon fails a saving throw, it can choose to succeed instead three times per day, or four times per day in its lair." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Rend attacks. It can replace one attack with Sleep Breath or Spellcasting to cast Scorching Ray." },
-      { name: "Rend", kind: "action", attackBonus: 11, range: "reach 10 ft.", damageFormula: "2d10+6+1d8", damageType: "slashing/fire" },
-      { name: "Fire Breath", kind: "action", range: "60-foot line", damageFormula: "10d8", damageType: "fire", save: { ability: "dexterity", dc: 18, success: "half" }, recharge: "5-6" },
-      { name: "Sleep Breath", kind: "action", range: "60-foot cone", save: { ability: "constitution", dc: 18 }, condition: "Incapacitated/Unconscious", effects: ["On a failed save, the target is Incapacitated until the end of its next turn, when it repeats the save. On a second failed save, the target is Unconscious for 10 minutes. The effect ends if the target takes damage or a creature within 5 feet takes an action to wake it."], summary: "Failed saves escalate from Incapacitated to Unconscious, with wake-up and damage-ending clauses.", summaryMetadata: true },
-      { name: "Spellcasting", kind: "action", effects: ["Casts Detect Magic, Minor Illusion, Scorching Ray, Shapechange, and Speak with Animals at will, and Control Weather and Detect Thoughts once per day using Charisma; spell save DC 16."], summary: "Casts its SRD spell list using Charisma; spell save DC 16.", summaryMetadata: true },
-      { name: "Legendary Actions", kind: "action", effects: ["Has 3 legendary action uses, or 4 in its lair. Options include Blazing Light, Pounce, and Scorching Sands."], summary: "Legendary actions include Blazing Light, Pounce, and Scorching Sands.", summaryMetadata: true }
-    ]
-  },
-  "ancient-brass-dragon": {
-    source: DND_5E_SRD_VERSION,
-    size: "Gargantuan",
-    creatureType: "Dragon (Metallic)",
-    alignment: "Chaotic Good",
-    armorClass: 20,
-    initiative: 12,
-    hitPoints: 332,
-    hitDice: "19d20+133",
-    speed: "40 ft., Burrow 40 ft., Fly 80 ft.",
-    challengeRating: "20",
-    xp: 25000,
-    proficiencyBonus: 6,
-    abilities: { strength: 27, dexterity: 10, constitution: 25, intelligence: 16, wisdom: 15, charisma: 22 },
-    saves: { strength: 8, dexterity: 6, constitution: 7, intelligence: 3, wisdom: 8, charisma: 6 },
-    skills: { history: 9, perception: 14, persuasion: 12, stealth: 6 },
-    senses: ["Blindsight 60 ft.", "Darkvision 120 ft.", "Passive Perception 24"],
-    languages: ["Common", "Draconic"],
-    traits: [
-      { name: "Fire Immunity", summary: "Immune to Fire damage." },
-      { name: "Legendary Resistance", summary: "If the dragon fails a saving throw, it can choose to succeed instead four times per day, or five times per day in its lair." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Rend attacks. It can replace one attack with Sleep Breath or Spellcasting to cast Scorching Ray at level 3." },
-      { name: "Rend", kind: "action", attackBonus: 14, range: "reach 15 ft.", damageFormula: "2d10+8+2d6", damageType: "slashing/fire" },
-      { name: "Fire Breath", kind: "action", range: "90-foot line", damageFormula: "13d8", damageType: "fire", save: { ability: "dexterity", dc: 21, success: "half" }, recharge: "5-6" },
-      { name: "Sleep Breath", kind: "action", range: "90-foot cone", save: { ability: "constitution", dc: 21 }, condition: "Incapacitated/Unconscious", effects: ["On a failed save, the target is Incapacitated until the end of its next turn, when it repeats the save. On a second failed save, the target is Unconscious for 10 minutes. The effect ends if the target takes damage or a creature within 5 feet takes an action to wake it."], summary: "Failed saves escalate from Incapacitated to Unconscious, with wake-up and damage-ending clauses.", summaryMetadata: true },
-      { name: "Spellcasting", kind: "action", effects: ["Casts Detect Magic, Minor Illusion, Scorching Ray at level 3, Shapechange, and Speak with Animals at will, and Control Weather and Detect Thoughts once per day using Charisma; spell save DC 20."], summary: "Casts its SRD spell list using Charisma; spell save DC 20.", summaryMetadata: true },
-      { name: "Legendary Actions", kind: "action", effects: ["Has 3 legendary action uses, or 4 in its lair. Options include Blazing Light, Pounce, and Scorching Sands dealing 8d8 Fire damage on a failed DC 20 Dexterity save."], summary: "Legendary actions include Blazing Light, Pounce, and Scorching Sands.", summaryMetadata: true }
-    ]
-  },
-  "bronze-dragon-wyrmling": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Dragon (Metallic)",
-    alignment: "Lawful Good",
-    armorClass: 15,
-    initiative: 2,
-    hitPoints: 39,
-    hitDice: "6d8+12",
-    speed: "30 ft., Fly 60 ft., Swim 30 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 17, dexterity: 10, constitution: 15, intelligence: 12, wisdom: 11, charisma: 15 },
-    saves: { strength: 3, dexterity: 2, constitution: 2, intelligence: 1, wisdom: 2, charisma: 2 },
-    skills: { perception: 4, stealth: 2 },
-    senses: ["Blindsight 10 ft.", "Darkvision 60 ft.", "Passive Perception 14"],
-    languages: ["Draconic"],
-    traits: [
-      { name: "Amphibious", summary: "Can breathe air and water." },
-      { name: "Lightning Immunity", summary: "Immune to Lightning damage." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Rend attacks." },
-      { name: "Rend", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d10+3", damageType: "slashing" },
-      { name: "Lightning Breath", kind: "action", range: "40-foot line", damageFormula: "3d10", damageType: "lightning", save: { ability: "dexterity", dc: 12, success: "half" }, recharge: "5-6" },
-      { name: "Repulsion Breath", kind: "action", range: "30-foot cone", save: { ability: "strength", dc: 12 }, condition: "Prone", effects: ["On a failed save, the target is pushed up to 30 feet straight away from the dragon and has the Prone condition."], summary: "Pushes failed targets away and knocks them Prone.", summaryMetadata: true }
-    ]
-  },
-  "young-bronze-dragon": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Dragon (Metallic)",
-    alignment: "Lawful Good",
-    armorClass: 17,
-    initiative: 3,
-    hitPoints: 142,
-    hitDice: "15d10+60",
-    speed: "40 ft., Fly 80 ft., Swim 40 ft.",
-    challengeRating: "8",
-    xp: 3900,
-    proficiencyBonus: 3,
-    abilities: { strength: 21, dexterity: 10, constitution: 19, intelligence: 14, wisdom: 13, charisma: 17 },
-    saves: { strength: 5, dexterity: 3, constitution: 4, intelligence: 2, wisdom: 4, charisma: 3 },
-    skills: { insight: 4, perception: 7, stealth: 3 },
-    senses: ["Blindsight 30 ft.", "Darkvision 120 ft.", "Passive Perception 17"],
-    languages: ["Common", "Draconic"],
-    traits: [
-      { name: "Amphibious", summary: "Can breathe air and water." },
-      { name: "Lightning Immunity", summary: "Immune to Lightning damage." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Rend attacks. It can replace one attack with Repulsion Breath." },
-      { name: "Rend", kind: "action", attackBonus: 8, range: "reach 10 ft.", damageFormula: "2d10+5", damageType: "slashing" },
-      { name: "Lightning Breath", kind: "action", range: "60-foot line", damageFormula: "9d10", damageType: "lightning", save: { ability: "dexterity", dc: 15, success: "half" }, recharge: "5-6" },
-      { name: "Repulsion Breath", kind: "action", range: "30-foot cone", save: { ability: "strength", dc: 15 }, condition: "Prone", effects: ["On a failed save, the target is pushed up to 40 feet straight away from the dragon and has the Prone condition."], summary: "Pushes failed targets away and knocks them Prone.", summaryMetadata: true }
-    ]
-  },
-  "adult-bronze-dragon": {
-    source: DND_5E_SRD_VERSION,
-    size: "Huge",
-    creatureType: "Dragon (Metallic)",
-    alignment: "Lawful Good",
-    armorClass: 18,
-    initiative: 10,
-    hitPoints: 212,
-    hitDice: "17d12+102",
-    speed: "40 ft., Fly 80 ft., Swim 40 ft.",
-    challengeRating: "15",
-    xp: 13000,
-    proficiencyBonus: 5,
-    abilities: { strength: 25, dexterity: 10, constitution: 23, intelligence: 16, wisdom: 15, charisma: 20 },
-    saves: { strength: 7, dexterity: 5, constitution: 6, intelligence: 3, wisdom: 7, charisma: 5 },
-    skills: { insight: 7, perception: 12, stealth: 5 },
-    senses: ["Blindsight 60 ft.", "Darkvision 120 ft.", "Passive Perception 22"],
-    languages: ["Common", "Draconic"],
-    traits: [
-      { name: "Amphibious", summary: "Can breathe air and water." },
-      { name: "Lightning Immunity", summary: "Immune to Lightning damage." },
-      { name: "Legendary Resistance", summary: "If the dragon fails a saving throw, it can choose to succeed instead three times per day, or four times per day in its lair." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Rend attacks. It can replace one attack with Repulsion Breath or Spellcasting to cast Guiding Bolt at level 2." },
-      { name: "Rend", kind: "action", attackBonus: 12, range: "reach 10 ft.", damageFormula: "2d8+7+1d10", damageType: "slashing/lightning" },
-      { name: "Lightning Breath", kind: "action", range: "90-foot line", damageFormula: "10d10", damageType: "lightning", save: { ability: "dexterity", dc: 19, success: "half" }, recharge: "5-6" },
-      { name: "Repulsion Breath", kind: "action", range: "30-foot cone", save: { ability: "strength", dc: 19 }, condition: "Prone", effects: ["On a failed save, the target is pushed up to 60 feet straight away from the dragon and has the Prone condition."], summary: "Pushes failed targets away and knocks them Prone.", summaryMetadata: true },
-      { name: "Spellcasting", kind: "action", effects: ["Casts Detect Magic, Guiding Bolt at level 2, Shapechange, Speak with Animals, and Thaumaturgy at will, and Detect Thoughts and Water Breathing once per day using Charisma; spell save DC 17, +10 to hit with spell attacks."], summary: "Casts its SRD spell list using Charisma; spell save DC 17, +10 to hit.", summaryMetadata: true },
-      { name: "Legendary Actions", kind: "action", effects: ["Has 3 legendary action uses, or 4 in its lair. Options include Guiding Light, Pounce, and Thunderclap dealing 3d6 Thunder damage and Deafened on a failed DC 17 Constitution save."], summary: "Legendary actions include Guiding Light, Pounce, and Thunderclap.", summaryMetadata: true }
-    ]
-  },
-  "ancient-bronze-dragon": {
-    source: DND_5E_SRD_VERSION,
-    size: "Gargantuan",
-    creatureType: "Dragon (Metallic)",
-    alignment: "Lawful Good",
-    armorClass: 22,
-    initiative: 14,
-    hitPoints: 444,
-    hitDice: "24d20+192",
-    speed: "40 ft., Fly 80 ft., Swim 40 ft.",
-    challengeRating: "22",
-    xp: 41000,
-    proficiencyBonus: 7,
-    abilities: { strength: 29, dexterity: 10, constitution: 27, intelligence: 18, wisdom: 17, charisma: 25 },
-    saves: { strength: 9, dexterity: 7, constitution: 8, intelligence: 4, wisdom: 10, charisma: 7 },
-    skills: { insight: 10, perception: 17, stealth: 7 },
-    senses: ["Blindsight 60 ft.", "Darkvision 120 ft.", "Passive Perception 27"],
-    languages: ["Common", "Draconic"],
-    traits: [
-      { name: "Amphibious", summary: "Can breathe air and water." },
-      { name: "Lightning Immunity", summary: "Immune to Lightning damage." },
-      { name: "Legendary Resistance", summary: "If the dragon fails a saving throw, it can choose to succeed instead four times per day, or five times per day in its lair." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Rend attacks. It can replace one attack with Repulsion Breath or Spellcasting to cast Guiding Bolt at level 2." },
-      { name: "Rend", kind: "action", attackBonus: 16, range: "reach 15 ft.", damageFormula: "2d8+9+2d8", damageType: "slashing/lightning" },
-      { name: "Lightning Breath", kind: "action", range: "120-foot line", damageFormula: "15d10", damageType: "lightning", save: { ability: "dexterity", dc: 23, success: "half" }, recharge: "5-6" },
-      { name: "Repulsion Breath", kind: "action", range: "30-foot cone", save: { ability: "strength", dc: 23 }, condition: "Prone", effects: ["On a failed save, the target is pushed up to 60 feet straight away from the dragon and has the Prone condition."], summary: "Pushes failed targets away and knocks them Prone.", summaryMetadata: true },
-      { name: "Spellcasting", kind: "action", effects: ["Casts Detect Magic, Guiding Bolt at level 2, Shapechange, Speak with Animals, and Thaumaturgy at will, and Control Water, Detect Thoughts, Scrying, and Water Breathing once per day using Charisma; spell save DC 22, +14 to hit with spell attacks."], summary: "Casts its SRD spell list using Charisma; spell save DC 22, +14 to hit.", summaryMetadata: true },
-      { name: "Legendary Actions", kind: "action", effects: ["Has 3 legendary action uses, or 4 in its lair. Options include Guiding Light, Pounce, and Thunderclap dealing 3d8 Thunder damage and Deafened on a failed DC 22 Constitution save."], summary: "Legendary actions include Guiding Light, Pounce, and Thunderclap.", summaryMetadata: true }
-    ]
-  },
-  "copper-dragon-wyrmling": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Dragon (Metallic)",
-    alignment: "Chaotic Good",
-    armorClass: 16,
-    initiative: 3,
-    hitPoints: 22,
-    hitDice: "4d8+4",
-    speed: "30 ft., Climb 30 ft., Fly 60 ft.",
-    challengeRating: "1",
-    xp: 200,
-    proficiencyBonus: 2,
-    abilities: { strength: 15, dexterity: 12, constitution: 13, intelligence: 14, wisdom: 11, charisma: 13 },
-    saves: { strength: 2, dexterity: 3, constitution: 1, intelligence: 2, wisdom: 2, charisma: 1 },
-    skills: { perception: 4, stealth: 3 },
-    senses: ["Blindsight 10 ft.", "Darkvision 60 ft.", "Passive Perception 14"],
-    languages: ["Draconic"],
-    traits: [{ name: "Acid Immunity", summary: "Immune to Acid damage." }],
-    actions: [
-      { name: "Rend", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d10+2", damageType: "slashing" },
-      { name: "Acid Breath", kind: "action", range: "20-foot line", damageFormula: "4d8", damageType: "acid", save: { ability: "dexterity", dc: 11, success: "half" }, recharge: "5-6" },
-      { name: "Slowing Breath", kind: "action", range: "15-foot cone", save: { ability: "constitution", dc: 11 }, condition: "Slowed", effects: ["On a failed save, a target cannot take reactions, its speed is halved, and it can take only an action or a bonus action until the end of its next turn."], summary: "Limits reactions, movement, and action economy on a failed save.", summaryMetadata: true }
-    ]
-  },
-  "young-copper-dragon": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Dragon (Metallic)",
-    alignment: "Chaotic Good",
-    armorClass: 17,
-    initiative: 4,
-    hitPoints: 119,
-    hitDice: "14d10+42",
-    speed: "40 ft., Climb 40 ft., Fly 80 ft.",
-    challengeRating: "7",
-    xp: 2900,
-    proficiencyBonus: 3,
-    abilities: { strength: 19, dexterity: 12, constitution: 17, intelligence: 16, wisdom: 13, charisma: 15 },
-    saves: { strength: 4, dexterity: 4, constitution: 3, intelligence: 3, wisdom: 4, charisma: 2 },
-    skills: { deception: 5, perception: 7, stealth: 4 },
-    senses: ["Blindsight 30 ft.", "Darkvision 120 ft.", "Passive Perception 17"],
-    languages: ["Common", "Draconic"],
-    traits: [{ name: "Acid Immunity", summary: "Immune to Acid damage." }],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Rend attacks. It can replace one attack with Slowing Breath." },
-      { name: "Rend", kind: "action", attackBonus: 7, range: "reach 10 ft.", damageFormula: "2d10+4", damageType: "slashing" },
-      { name: "Acid Breath", kind: "action", range: "40-foot line", damageFormula: "9d8", damageType: "acid", save: { ability: "dexterity", dc: 14, success: "half" }, recharge: "5-6" },
-      { name: "Slowing Breath", kind: "action", range: "30-foot cone", save: { ability: "constitution", dc: 14 }, condition: "Slowed", effects: ["On a failed save, a target cannot take reactions, its speed is halved, and it can take only an action or a bonus action until the end of its next turn."], summary: "Limits reactions, movement, and action economy on a failed save.", summaryMetadata: true }
-    ]
-  },
-  "adult-copper-dragon": {
-    source: DND_5E_SRD_VERSION,
-    size: "Huge",
-    creatureType: "Dragon (Metallic)",
-    alignment: "Chaotic Good",
-    armorClass: 18,
-    initiative: 11,
-    hitPoints: 184,
-    hitDice: "16d12+80",
-    speed: "40 ft., Climb 40 ft., Fly 80 ft.",
-    challengeRating: "14",
-    xp: 11500,
-    proficiencyBonus: 5,
-    abilities: { strength: 23, dexterity: 12, constitution: 21, intelligence: 18, wisdom: 15, charisma: 18 },
-    saves: { strength: 6, dexterity: 6, constitution: 5, intelligence: 4, wisdom: 7, charisma: 4 },
-    skills: { deception: 9, perception: 12, stealth: 6 },
-    senses: ["Blindsight 60 ft.", "Darkvision 120 ft.", "Passive Perception 22"],
-    languages: ["Common", "Draconic"],
-    traits: [
-      { name: "Acid Immunity", summary: "Immune to Acid damage." },
-      { name: "Legendary Resistance", summary: "If the dragon fails a saving throw, it can choose to succeed instead three times per day, or four times per day in its lair." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Rend attacks. It can replace one attack with Slowing Breath or Spellcasting to cast Mind Spike at level 4." },
-      { name: "Rend", kind: "action", attackBonus: 11, range: "reach 10 ft.", damageFormula: "2d10+6+1d8", damageType: "slashing/acid" },
-      { name: "Acid Breath", kind: "action", range: "60-foot line", damageFormula: "12d8", damageType: "acid", save: { ability: "dexterity", dc: 18, success: "half" }, recharge: "5-6" },
-      { name: "Slowing Breath", kind: "action", range: "60-foot cone", save: { ability: "constitution", dc: 18 }, condition: "Slowed", effects: ["On a failed save, a target cannot take reactions, its speed is halved, and it can take only an action or a bonus action until the end of its next turn."], summary: "Limits reactions, movement, and action economy on a failed save.", summaryMetadata: true },
-      { name: "Spellcasting", kind: "action", effects: ["Casts Detect Magic, Mind Spike at level 4, Minor Illusion, and Shapechange at will, and Greater Restoration and Major Image once per day using Charisma; spell save DC 17."], summary: "Casts its SRD spell list using Charisma; spell save DC 17.", summaryMetadata: true },
-      { name: "Legendary Actions", kind: "action", effects: ["Has 3 legendary action uses, or 4 in its lair. Options include Giggling Magic dealing 7d6 Psychic damage and imposing a d6 penalty on a failed DC 17 Charisma save, Mind Jolt, and Pounce."], summary: "Legendary actions include Giggling Magic, Mind Jolt, and Pounce.", summaryMetadata: true }
-    ]
-  },
-  "ancient-copper-dragon": {
-    source: DND_5E_SRD_VERSION,
-    size: "Gargantuan",
-    creatureType: "Dragon (Metallic)",
-    alignment: "Chaotic Good",
-    armorClass: 21,
-    initiative: 15,
-    hitPoints: 367,
-    hitDice: "21d20+147",
-    speed: "40 ft., Climb 40 ft., Fly 80 ft.",
-    challengeRating: "21",
-    xp: 33000,
-    proficiencyBonus: 7,
-    abilities: { strength: 27, dexterity: 12, constitution: 25, intelligence: 20, wisdom: 17, charisma: 22 },
-    saves: { strength: 8, dexterity: 8, constitution: 7, intelligence: 5, wisdom: 10, charisma: 6 },
-    skills: { deception: 13, perception: 17, stealth: 8 },
-    senses: ["Blindsight 60 ft.", "Darkvision 120 ft.", "Passive Perception 27"],
-    languages: ["Common", "Draconic"],
-    traits: [
-      { name: "Acid Immunity", summary: "Immune to Acid damage." },
-      { name: "Legendary Resistance", summary: "If the dragon fails a saving throw, it can choose to succeed instead four times per day, or five times per day in its lair." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Rend attacks. It can replace one attack with Slowing Breath or Spellcasting to cast Mind Spike at level 5." },
-      { name: "Rend", kind: "action", attackBonus: 15, range: "reach 15 ft.", damageFormula: "2d10+8+2d8", damageType: "slashing/acid" },
-      { name: "Acid Breath", kind: "action", range: "90-foot line, 10 feet wide", damageFormula: "14d8", damageType: "acid", save: { ability: "dexterity", dc: 22, success: "half" }, recharge: "5-6" },
-      { name: "Slowing Breath", kind: "action", range: "90-foot cone", save: { ability: "constitution", dc: 22 }, condition: "Slowed", effects: ["On a failed save, a target cannot take reactions, its speed is halved, and it can take only an action or a bonus action until the end of its next turn."], summary: "Limits reactions, movement, and action economy on a failed save.", summaryMetadata: true },
-      { name: "Spellcasting", kind: "action", effects: ["Casts Detect Magic, Mind Spike at level 5, Minor Illusion, and Shapechange at will, and Greater Restoration, Major Image, and Project Image once per day using Charisma; spell save DC 21."], summary: "Casts its SRD spell list using Charisma; spell save DC 21.", summaryMetadata: true },
-      { name: "Legendary Actions", kind: "action", effects: ["Has 3 legendary action uses, or 4 in its lair. Options include Giggling Magic dealing 9d6 Psychic damage and imposing a d8 penalty on a failed DC 21 Charisma save, Mind Jolt, and Pounce."], summary: "Legendary actions include Giggling Magic, Mind Jolt, and Pounce.", summaryMetadata: true }
-    ]
-  },
-  "silver-dragon-wyrmling": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Dragon (Metallic)",
-    alignment: "Lawful Good",
-    armorClass: 17,
-    initiative: 2,
-    hitPoints: 45,
-    hitDice: "6d8+18",
-    speed: "30 ft., Fly 60 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 19, dexterity: 10, constitution: 17, intelligence: 12, wisdom: 11, charisma: 15 },
-    saves: { strength: 4, dexterity: 2, constitution: 3, intelligence: 1, wisdom: 2, charisma: 2 },
-    skills: { perception: 4, stealth: 2 },
-    senses: ["Blindsight 10 ft.", "Darkvision 60 ft.", "Passive Perception 14"],
-    languages: ["Draconic"],
-    traits: [{ name: "Cold Immunity", summary: "Immune to Cold damage." }],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Rend attacks." },
-      { name: "Rend", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "1d10+4", damageType: "piercing" },
-      { name: "Cold Breath", kind: "action", range: "15-foot cone", damageFormula: "4d8", damageType: "cold", save: { ability: "constitution", dc: 13, success: "half" }, recharge: "5-6" },
-      { name: "Paralyzing Breath", kind: "action", range: "15-foot cone", save: { ability: "constitution", dc: 13 }, condition: "Incapacitated/Paralyzed", effects: ["On a first failed save, the target is Incapacitated until the end of its next turn, when it repeats the save. On a second failed save, the target is Paralyzed and repeats the save at the end of each of its turns, ending the effect on a success. After 1 minute, it succeeds automatically."], summary: "Failed saves escalate from Incapacitated to Paralyzed, with repeat saves and automatic success after 1 minute.", summaryMetadata: true }
-    ]
-  },
-  "young-silver-dragon": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Dragon (Metallic)",
-    alignment: "Lawful Good",
-    armorClass: 18,
-    initiative: 4,
-    hitPoints: 168,
-    hitDice: "16d10+80",
-    speed: "40 ft., Fly 80 ft.",
-    challengeRating: "9",
-    xp: 5000,
-    proficiencyBonus: 4,
-    abilities: { strength: 23, dexterity: 10, constitution: 21, intelligence: 14, wisdom: 11, charisma: 19 },
-    saves: { strength: 6, dexterity: 4, constitution: 5, intelligence: 2, wisdom: 4, charisma: 4 },
-    skills: { history: 6, perception: 8, stealth: 4 },
-    senses: ["Blindsight 30 ft.", "Darkvision 120 ft.", "Passive Perception 18"],
-    languages: ["Common", "Draconic"],
-    traits: [{ name: "Cold Immunity", summary: "Immune to Cold damage." }],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Rend attacks. It can replace one attack with Paralyzing Breath." },
-      { name: "Rend", kind: "action", attackBonus: 10, range: "reach 10 ft.", damageFormula: "2d8+6", damageType: "slashing" },
-      { name: "Cold Breath", kind: "action", range: "30-foot cone", damageFormula: "11d8", damageType: "cold", save: { ability: "constitution", dc: 17, success: "half" }, recharge: "5-6" },
-      { name: "Paralyzing Breath", kind: "action", range: "30-foot cone", save: { ability: "constitution", dc: 17 }, condition: "Incapacitated/Paralyzed", effects: ["On a first failed save, the target is Incapacitated until the end of its next turn, when it repeats the save. On a second failed save, the target is Paralyzed and repeats the save at the end of each of its turns, ending the effect on a success. After 1 minute, it succeeds automatically."], summary: "Failed saves escalate from Incapacitated to Paralyzed, with repeat saves and automatic success after 1 minute.", summaryMetadata: true }
-    ]
-  },
-  "adult-silver-dragon": {
-    source: DND_5E_SRD_VERSION,
-    size: "Huge",
-    creatureType: "Dragon (Metallic)",
-    alignment: "Lawful Good",
-    armorClass: 19,
-    initiative: 10,
-    hitPoints: 216,
-    hitDice: "16d12+112",
-    speed: "40 ft., Fly 80 ft.",
-    challengeRating: "16",
-    xp: 15000,
-    proficiencyBonus: 5,
-    abilities: { strength: 27, dexterity: 10, constitution: 25, intelligence: 16, wisdom: 13, charisma: 22 },
-    saves: { strength: 8, dexterity: 5, constitution: 7, intelligence: 3, wisdom: 6, charisma: 6 },
-    skills: { history: 8, perception: 11, stealth: 5 },
-    senses: ["Blindsight 60 ft.", "Darkvision 120 ft.", "Passive Perception 21"],
-    languages: ["Common", "Draconic"],
-    traits: [
-      { name: "Cold Immunity", summary: "Immune to Cold damage." },
-      { name: "Legendary Resistance", summary: "If the dragon fails a saving throw, it can choose to succeed instead three times per day, or four times per day in its lair." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Rend attacks. It can replace one attack with Paralyzing Breath or Spellcasting to cast Ice Knife." },
-      { name: "Rend", kind: "action", attackBonus: 13, range: "reach 10 ft.", damageFormula: "2d8+8+1d8", damageType: "slashing/cold" },
-      { name: "Cold Breath", kind: "action", range: "60-foot cone", damageFormula: "12d8", damageType: "cold", save: { ability: "constitution", dc: 20, success: "half" }, recharge: "5-6" },
-      { name: "Paralyzing Breath", kind: "action", range: "60-foot cone", save: { ability: "constitution", dc: 20 }, condition: "Incapacitated/Paralyzed", effects: ["On a first failed save, the target is Incapacitated until the end of its next turn, when it repeats the save. On a second failed save, the target is Paralyzed and repeats the save at the end of each of its turns, ending the effect on a success. After 1 minute, it succeeds automatically."], summary: "Failed saves escalate from Incapacitated to Paralyzed, with repeat saves and automatic success after 1 minute.", summaryMetadata: true },
-      { name: "Spellcasting", kind: "action", effects: ["Casts Detect Magic, Hold Monster, Ice Knife, and Shapechange at will, and Ice Storm (level 5 version) and Zone of Truth once per day using Charisma; spell save DC 19, +11 to hit with spell attacks."], summary: "Casts its SRD spell list using Charisma; spell save DC 19, +11 to hit.", summaryMetadata: true },
-      { name: "Legendary Actions", kind: "action", effects: ["Has 3 legendary action uses, or 4 in its lair. Options include Chill, Cold Gale, and Pounce."], summary: "Legendary actions include Chill, Cold Gale, and Pounce.", summaryMetadata: true }
-    ]
-  },
-  "ancient-silver-dragon": {
-    source: DND_5E_SRD_VERSION,
-    size: "Gargantuan",
-    creatureType: "Dragon (Metallic)",
-    alignment: "Lawful Good",
-    armorClass: 22,
-    initiative: 14,
-    hitPoints: 468,
-    hitDice: "24d20+216",
-    speed: "40 ft., Fly 80 ft.",
-    challengeRating: "23",
-    xp: 50000,
-    proficiencyBonus: 7,
-    abilities: { strength: 30, dexterity: 10, constitution: 29, intelligence: 18, wisdom: 15, charisma: 26 },
-    saves: { strength: 10, dexterity: 7, constitution: 9, intelligence: 4, wisdom: 9, charisma: 8 },
-    skills: { history: 11, perception: 16, stealth: 7 },
-    senses: ["Blindsight 60 ft.", "Darkvision 120 ft.", "Passive Perception 26"],
-    languages: ["Common", "Draconic"],
-    traits: [
-      { name: "Cold Immunity", summary: "Immune to Cold damage." },
-      { name: "Legendary Resistance", summary: "If the dragon fails a saving throw, it can choose to succeed instead four times per day, or five times per day in its lair." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Rend attacks. It can replace one attack with Paralyzing Breath or Spellcasting to cast Ice Knife at level 2." },
-      { name: "Rend", kind: "action", attackBonus: 17, range: "reach 15 ft.", damageFormula: "2d8+10+2d8", damageType: "slashing/cold" },
-      { name: "Cold Breath", kind: "action", range: "90-foot cone", damageFormula: "15d8", damageType: "cold", save: { ability: "constitution", dc: 24, success: "half" }, recharge: "5-6" },
-      { name: "Paralyzing Breath", kind: "action", range: "90-foot cone", save: { ability: "constitution", dc: 24 }, condition: "Incapacitated/Paralyzed", effects: ["On a first failed save, the target is Incapacitated until the end of its next turn, when it repeats the save. On a second failed save, the target is Paralyzed and repeats the save at the end of each of its turns, ending the effect on a success. After 1 minute, it succeeds automatically."], summary: "Failed saves escalate from Incapacitated to Paralyzed, with repeat saves and automatic success after 1 minute.", summaryMetadata: true },
-      { name: "Spellcasting", kind: "action", effects: ["Casts Detect Magic, Hold Monster, Ice Knife (level 2 version), and Shapechange at will, and Control Weather, Ice Storm (level 7 version), Teleport, and Zone of Truth once per day using Charisma; spell save DC 23, +15 to hit with spell attacks."], summary: "Casts its SRD spell list using Charisma; spell save DC 23, +15 to hit.", summaryMetadata: true },
-      { name: "Legendary Actions", kind: "action", effects: ["Has 3 legendary action uses, or 4 in its lair. Options include Chill, Cold Gale, and Pounce."], summary: "Legendary actions include Chill, Cold Gale, and Pounce.", summaryMetadata: true }
-    ]
-  },
-  solar: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Celestial (Angel)",
-    alignment: "Lawful Good",
-    armorClass: 21,
-    initiative: 20,
-    hitPoints: 297,
-    hitDice: "22d10+176",
-    speed: "50 ft., Fly 150 ft. (hover)",
-    challengeRating: "21",
-    xp: 33000,
-    proficiencyBonus: 7,
-    abilities: { strength: 26, dexterity: 22, constitution: 26, intelligence: 25, wisdom: 25, charisma: 30 },
-    saves: { strength: 8, dexterity: 6, constitution: 8, intelligence: 7, wisdom: 7, charisma: 10 },
-    skills: { perception: 14 },
-    senses: ["Truesight 120 ft.", "Passive Perception 24"],
-    languages: ["All", "telepathy 120 ft."],
-    traits: [
-      { name: "Celestial Immunities", summary: "Immune to Poison and Radiant damage, and to the Charmed, Exhaustion, Frightened, and Poisoned conditions." },
-      { name: "Divine Awareness", summary: "Knows if it hears a lie." },
-      { name: "Exalted Restoration", summary: "If it dies outside Mount Celestia, its body disappears and it revives with all Hit Points somewhere in Mount Celestia." },
-      { name: "Legendary Resistance", summary: "If the solar fails a saving throw, it can choose to succeed instead four times per day." },
-      { name: "Magic Resistance", summary: "Has Advantage on saving throws against spells and other magical effects." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Flying Sword attacks. It can replace one attack with Slaying Bow." },
-      { name: "Flying Sword", kind: "action", attackBonus: 15, range: "reach 10 ft. or range 120 ft.", damageFormula: "4d6+8+8d8", damageType: "slashing/radiant", summary: "After a ranged attack, hit or miss, the sword magically returns to the solar's hand or hovers within 5 feet of it.", summaryMetadata: true },
-      { name: "Slaying Bow", kind: "action", range: "600 ft.; one creature the solar can see", damageFormula: "4d8+6+8d8", damageType: "piercing/radiant", save: { ability: "dexterity", dc: 21 }, condition: "Slain", effects: ["On a failed save, if the creature has 100 Hit Points or fewer, it dies. Otherwise, it takes the listed Piercing and Radiant damage."], summary: "Failed save kills a creature with 100 or fewer Hit Points; otherwise deals piercing and radiant damage.", summaryMetadata: true },
-      { name: "Spellcasting", kind: "action", effects: ["Casts Detect Evil and Good at will, and Commune, Control Weather, Dispel Evil and Good, and Resurrection once per day using Charisma; spell save DC 25."], summary: "Casts its SRD spell list using Charisma; spell save DC 25.", summaryMetadata: true },
-      { name: "Divine Aid", kind: "bonusAction", effects: ["Three times per day, casts Cure Wounds (level 2 version), Lesser Restoration, or Remove Curse using the same spellcasting ability as Spellcasting."], summary: "Three times per day, casts Cure Wounds at level 2, Lesser Restoration, or Remove Curse.", summaryMetadata: true },
-      { name: "Legendary Actions", kind: "action", effects: ["Has 3 legendary action uses. Options include Blinding Gaze and Radiant Teleport."], summary: "Legendary actions include Blinding Gaze and Radiant Teleport.", summaryMetadata: true }
-    ]
-  },
-  sprite: {
-    source: DND_5E_SRD_VERSION,
-    size: "Tiny",
-    creatureType: "Fey",
-    alignment: "Neutral Good",
-    armorClass: 15,
-    initiative: 4,
-    hitPoints: 10,
-    hitDice: "4d4",
-    speed: "10 ft., Fly 40 ft.",
-    challengeRating: "1/4",
-    xp: 50,
-    proficiencyBonus: 2,
-    abilities: { strength: 3, dexterity: 18, constitution: 10, intelligence: 14, wisdom: 13, charisma: 11 },
-    saves: { strength: -4, dexterity: 4, constitution: 0, intelligence: 2, wisdom: 1, charisma: 0 },
-    skills: { perception: 3, stealth: 8 },
-    senses: ["Passive Perception 13"],
-    languages: ["Common", "Elvish", "Sylvan"],
-    actions: [
-      { name: "Needle Sword", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "1d4+4", damageType: "piercing" },
-      { name: "Enchanting Bow", kind: "action", attackBonus: 6, range: "40/160 ft.", damageFormula: "1", damageType: "piercing", condition: "Charmed", summary: "The target has the Charmed condition until the start of the sprite's next turn.", summaryMetadata: true },
-      { name: "Heart Sight", kind: "action", range: "5 ft.; one creature the sprite can see", save: { ability: "charisma", dc: 10 }, effects: ["On a failed save, the sprite knows the target's emotions and alignment. Celestials, Fiends, and Undead automatically fail the save."] },
-      { name: "Invisibility", kind: "action", effects: ["Casts Invisibility on itself, requiring no spell components and using Charisma as the spellcasting ability."] }
-    ]
-  },
-  "stone-giant": {
-    source: DND_5E_SRD_VERSION,
-    size: "Huge",
-    creatureType: "Giant",
-    alignment: "Neutral",
-    armorClass: 17,
-    initiative: 5,
-    hitPoints: 126,
-    hitDice: "11d12+55",
-    speed: "40 ft.",
-    challengeRating: "7",
-    xp: 2900,
-    proficiencyBonus: 3,
-    abilities: { strength: 23, dexterity: 15, constitution: 20, intelligence: 10, wisdom: 12, charisma: 9 },
-    saves: { strength: 6, dexterity: 5, constitution: 8, intelligence: 0, wisdom: 4, charisma: -1 },
-    skills: { athletics: 12, perception: 4, stealth: 5 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 14"],
-    languages: ["Giant"],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two attacks, using Stone Club or Boulder in any combination." },
-      { name: "Stone Club", kind: "action", attackBonus: 9, range: "reach 15 ft.", damageFormula: "3d10+6", damageType: "bludgeoning" },
-      { name: "Boulder", kind: "action", attackBonus: 9, range: "60/240 ft.", damageFormula: "2d8+6", damageType: "bludgeoning", condition: "Prone", summary: "If the target is a Large or smaller creature, it has the Prone condition.", summaryMetadata: true },
-      { name: "Deflect Missile", kind: "reaction", range: "60 ft.; one creature the giant can see", damageFormula: "1d10+6", damageType: "force", recharge: "5-6", save: { ability: "dexterity", dc: 17 }, summary: "When hit by a ranged Bludgeoning, Piercing, or Slashing attack, reduces damage by 1d10+6. If reduced to 0, redirects force; failed save takes 1d10+6 Force damage.", summaryMetadata: true }
-    ]
-  },
-  "stone-golem": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Construct",
-    alignment: "Unaligned",
-    armorClass: 18,
-    initiative: 3,
-    hitPoints: 220,
-    hitDice: "21d10+105",
-    speed: "30 ft.",
-    challengeRating: "10",
-    xp: 5900,
-    proficiencyBonus: 4,
-    abilities: { strength: 22, dexterity: 9, constitution: 20, intelligence: 3, wisdom: 11, charisma: 1 },
-    saves: { strength: 6, dexterity: -1, constitution: 5, intelligence: -4, wisdom: 0, charisma: -5 },
-    senses: ["Darkvision 120 ft.", "Passive Perception 10"],
-    languages: ["Understands Common plus two other languages but can't speak"],
-    traits: [
-      { name: "Construct Immunities", summary: "Immune to Poison and Psychic damage and the Charmed, Exhaustion, Frightened, Paralyzed, Petrified, and Poisoned conditions." },
-      { name: "Immutable Form", summary: "Can't shape-shift." },
-      { name: "Magic Resistance", summary: "Has Advantage on saving throws against spells and other magical effects." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two attacks, using Slam or Force Bolt in any combination." },
-      { name: "Slam", kind: "action", attackBonus: 10, range: "reach 5 ft.", damageFormula: "2d8+6+2d8", damageType: "bludgeoning/force" },
-      { name: "Force Bolt", kind: "action", attackBonus: 9, range: "120 ft.", damageFormula: "4d10", damageType: "force" },
-      { name: "Slow", kind: "bonusAction", range: "spell save DC 17", recharge: "5-6", effects: ["Casts the Slow spell, requiring no spell components and using Constitution as the spellcasting ability."] }
-    ]
-  },
-  "storm-giant": {
-    source: DND_5E_SRD_VERSION,
-    size: "Huge",
-    creatureType: "Giant",
-    alignment: "Chaotic Good",
-    armorClass: 16,
-    initiative: 7,
-    hitPoints: 230,
-    hitDice: "20d12+100",
-    speed: "50 ft., Fly 25 ft. (hover), Swim 50 ft.",
-    challengeRating: "13",
-    xp: 10000,
-    proficiencyBonus: 5,
-    abilities: { strength: 29, dexterity: 14, constitution: 20, intelligence: 16, wisdom: 20, charisma: 18 },
-    saves: { strength: 14, dexterity: 2, constitution: 10, intelligence: 3, wisdom: 10, charisma: 9 },
-    skills: { arcana: 8, athletics: 14, history: 8, perception: 10 },
-    senses: ["Darkvision 120 ft.", "Truesight 30 ft.", "Passive Perception 20"],
-    languages: ["Common", "Giant"],
-    traits: [
-      { name: "Cold Resistance", summary: "Resistant to Cold damage." },
-      { name: "Lightning and Thunder Immunity", summary: "Immune to Lightning and Thunder damage." },
-      { name: "Amphibious", summary: "Can breathe air and water." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two attacks, using Storm Sword or Thunderbolt in any combination." },
-      { name: "Storm Sword", kind: "action", attackBonus: 14, range: "reach 10 ft.", damageFormula: "4d6+9+3d8", damageType: "slashing/lightning" },
-      { name: "Thunderbolt", kind: "action", attackBonus: 14, range: "500 ft.", damageFormula: "2d12+9", damageType: "lightning", condition: "Blinded/Deafened", summary: "The target has the Blinded and Deafened conditions until the start of the giant's next turn.", summaryMetadata: true },
-      { name: "Lightning Storm", kind: "action", range: "10-foot-radius, 40-foot-high cylinder within 500 ft.", damageFormula: "10d10", damageType: "lightning", save: { ability: "dexterity", dc: 18, success: "half" }, recharge: "5-6" },
-      { name: "Spellcasting", kind: "action", summary: "Casts Detect Magic and Light at will, and Control Weather once per day, requiring no Material components and using Wisdom as the spellcasting ability; spell save DC 18." }
-    ]
-  },
-  succubus: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Fiend",
-    alignment: "Neutral Evil",
-    armorClass: 15,
-    initiative: 3,
-    hitPoints: 71,
-    hitDice: "13d8+13",
-    speed: "30 ft., Fly 60 ft.",
-    challengeRating: "4",
-    xp: 1100,
-    proficiencyBonus: 2,
-    abilities: { strength: 8, dexterity: 17, constitution: 13, intelligence: 15, wisdom: 12, charisma: 20 },
-    saves: { strength: -1, dexterity: 3, constitution: 1, intelligence: 2, wisdom: 1, charisma: 5 },
-    skills: { deception: 9, insight: 5, perception: 5, persuasion: 9, stealth: 7 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 15"],
-    languages: ["Abyssal", "Common", "Infernal", "telepathy 60 ft."],
-    traits: [
-      { name: "Fiendish Resistances", summary: "Resistant to Cold, Fire, Poison, and Psychic damage." },
-      { name: "Incubus Form", summary: "When it finishes a Long Rest, can shape-shift into an Incubus, using that stat block instead of this one." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes one Fiendish Touch attack and uses Charm or Draining Kiss." },
-      { name: "Fiendish Touch", kind: "action", attackBonus: 7, range: "reach 5 ft.", damageFormula: "2d10+5", damageType: "psychic" },
-      { name: "Charm", kind: "action", range: "spell save DC 15", effects: ["Casts Dominate Person at level 8, requiring no spell components and using Charisma as the spellcasting ability."] },
-      { name: "Draining Kiss", kind: "action", range: "5 ft.; one creature Charmed by the succubus", damageFormula: "3d8", damageType: "psychic", save: { ability: "constitution", dc: 15, success: "half" }, summary: "The target's Hit Point maximum decreases by an amount equal to the damage taken.", summaryMetadata: true },
-      { name: "Shape-Shift", kind: "bonusAction", effects: ["Shape-shifts into a Medium or Small Humanoid, or returns to true form. Statistics are unchanged except Fly Speed is available only in true form."] }
-    ]
-  },
-  balor: {
-    source: DND_5E_SRD_VERSION,
-    size: "Huge",
-    creatureType: "Fiend (Demon)",
-    alignment: "Chaotic Evil",
-    armorClass: 19,
-    initiative: 14,
-    hitPoints: 287,
-    hitDice: "23d12+138",
-    speed: "40 ft., Fly 80 ft.",
-    challengeRating: "19",
-    xp: 22000,
-    proficiencyBonus: 6,
-    abilities: { strength: 26, dexterity: 15, constitution: 22, intelligence: 20, wisdom: 16, charisma: 22 },
-    saves: { strength: 8, dexterity: 2, constitution: 12, intelligence: 5, wisdom: 9, charisma: 6 },
-    skills: { perception: 9 },
-    senses: ["Truesight 120 ft.", "Passive Perception 19"],
-    languages: ["Abyssal", "telepathy 120 ft."],
-    traits: [
-      { name: "Fire Aura", summary: "At the end of each of the balor's turns, each creature in a 5-foot Emanation takes 3d8 Fire damage." },
-      { name: "Demonic Resistances", summary: "Resistant to Cold and Lightning damage." },
-      { name: "Demon Immunities", summary: "Immune to Fire and Poison damage and the Charmed, Frightened, and Poisoned conditions." },
-      { name: "Death Throes", summary: "When it dies, creatures in a 30-foot Emanation make a DC 20 Dexterity save against 9d6 Fire plus 9d6 Force damage; if outside the Abyss, the balor revives there with all Hit Points." },
-      { name: "Legendary Resistance", summary: "Three times per day, can choose to succeed on a failed saving throw." },
-      { name: "Magic Resistance", summary: "Has Advantage on saving throws against spells and other magical effects." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes one Flame Whip attack and one Lightning Blade attack." },
-      { name: "Flame Whip", kind: "action", attackBonus: 14, range: "reach 30 ft.", damageFormula: "3d6+8+5d6", damageType: "force/fire", condition: "Prone", summary: "A Huge or smaller target hit by the attack is pulled up to 25 feet straight toward the balor and has the Prone condition.", summaryMetadata: true },
-      { name: "Lightning Blade", kind: "action", attackBonus: 14, range: "reach 10 ft.", damageFormula: "3d8+8+4d10", damageType: "force/lightning", summary: "A target hit by the attack can't take Reactions until the start of the balor's next turn.", summaryMetadata: true },
-      { name: "Teleport", kind: "bonusAction", effects: ["Teleports itself or a willing demon within 10 feet up to 60 feet to an unoccupied space the balor can see."], summary: "Teleports itself or a willing nearby demon up to 60 feet.", summaryMetadata: true }
-    ]
-  },
-  dretch: {
-    source: DND_5E_SRD_VERSION,
-    size: "Small",
-    creatureType: "Fiend (Demon)",
-    alignment: "Chaotic Evil",
-    armorClass: 11,
-    initiative: 0,
-    hitPoints: 18,
-    hitDice: "4d6+4",
-    speed: "20 ft.",
-    challengeRating: "1/4",
-    xp: 50,
-    proficiencyBonus: 2,
-    abilities: { strength: 12, dexterity: 11, constitution: 12, intelligence: 5, wisdom: 8, charisma: 3 },
-    saves: { strength: 1, dexterity: 0, constitution: 1, intelligence: -3, wisdom: -1, charisma: -4 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 9"],
-    languages: ["Abyssal", "telepathy 60 ft. (works only with creatures that understand Abyssal)"],
-    traits: [
-      { name: "Demonic Resistances", summary: "Resistant to Cold, Fire, and Lightning damage." },
-      { name: "Demon Immunities", summary: "Immune to Poison damage and the Poisoned condition." }
-    ],
-    actions: [
-      { name: "Rend", kind: "action", attackBonus: 3, range: "reach 5 ft.", damageFormula: "1d6+1", damageType: "slashing" },
-      { name: "Fetid Cloud", kind: "action", range: "10-foot Emanation", save: { ability: "constitution", dc: 11 }, condition: "Poisoned", effects: ["Poisoned creatures can take either an action or a Bonus Action on their turn, not both, and can't take Reactions."], summary: "Once per day, each creature in the emanation that fails the save is Poisoned until the end of its next turn.", summaryMetadata: true }
-    ]
-  },
-  quasit: {
-    source: DND_5E_SRD_VERSION,
-    size: "Tiny",
-    creatureType: "Fiend (Demon)",
-    alignment: "Chaotic Evil",
-    armorClass: 13,
-    initiative: 3,
-    hitPoints: 25,
-    hitDice: "10d4",
-    speed: "40 ft.",
-    challengeRating: "1",
-    xp: 200,
-    proficiencyBonus: 2,
-    abilities: { strength: 5, dexterity: 17, constitution: 10, intelligence: 7, wisdom: 10, charisma: 10 },
-    saves: { strength: -3, dexterity: 3, constitution: 0, intelligence: -2, wisdom: 0, charisma: 0 },
-    skills: { stealth: 5 },
-    senses: ["Darkvision 120 ft.", "Passive Perception 10"],
-    languages: ["Abyssal", "Common"],
-    traits: [
-      { name: "Demonic Resistances", summary: "Resistant to Cold, Fire, and Lightning damage." },
-      { name: "Demon Immunities", summary: "Immune to Poison damage and the Poisoned condition." },
-      { name: "Magic Resistance", summary: "Has Advantage on saving throws against spells and other magical effects." }
-    ],
-    actions: [
-      { name: "Rend", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d4+3", damageType: "slashing", condition: "Poisoned", summary: "A hit poisons the target until the start of the quasit's next turn.", summaryMetadata: true },
-      { name: "Invisibility", kind: "action", effects: ["Casts Invisibility on itself without spell components using Charisma."], summary: "Casts Invisibility on itself without spell components using Charisma.", summaryMetadata: true },
-      { name: "Scare", kind: "action", range: "20 ft.; one creature", save: { ability: "wisdom", dc: 10 }, condition: "Frightened", effects: ["The target repeats the save at the end of each of its turns, ending the effect on itself on a success. After 1 minute, it succeeds automatically."], summary: "Once per day, frightens one creature within 20 feet on a failed Wisdom save.", summaryMetadata: true },
-      { name: "Shape-Shift", kind: "action", effects: ["Shape-shifts to resemble a bat, centipede, toad, or true form; statistics are unchanged except Speed."], summary: "Shape-shifts to resemble a bat, centipede, toad, or true form; statistics are unchanged except Speed.", summaryMetadata: true }
-    ]
-  },
-  vrock: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Fiend (Demon)",
-    alignment: "Chaotic Evil",
-    armorClass: 15,
-    initiative: 2,
-    hitPoints: 152,
-    hitDice: "16d10+64",
-    speed: "40 ft., Fly 60 ft.",
-    challengeRating: "6",
-    xp: 2300,
-    proficiencyBonus: 3,
-    abilities: { strength: 17, dexterity: 15, constitution: 18, intelligence: 8, wisdom: 13, charisma: 8 },
-    saves: { strength: 3, dexterity: 5, constitution: 4, intelligence: -1, wisdom: 4, charisma: 2 },
-    senses: ["Darkvision 120 ft.", "Passive Perception 11"],
-    languages: ["Abyssal", "telepathy 120 ft."],
-    traits: [
-      { name: "Demonic Resistances", summary: "Resistant to Cold, Fire, and Lightning damage." },
-      { name: "Demon Immunities", summary: "Immune to Poison damage and the Poisoned condition." },
-      { name: "Demonic Restoration", summary: "If it dies outside the Abyss, it dissolves into ichor and revives with all Hit Points somewhere in the Abyss." },
-      { name: "Magic Resistance", summary: "Has Advantage on saving throws against spells and other magical effects." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Shred attacks." },
-      { name: "Shred", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "2d6+3+3d6", damageType: "piercing/poison" },
-      { name: "Spores", kind: "action", range: "20-foot Emanation", damageFormula: "1d10", damageType: "poison", save: { ability: "constitution", dc: 15 }, condition: "Poisoned", recharge: "6", summary: "On a failed save, the target is Poisoned and takes 1d10 Poison damage at the start of each of its turns until it succeeds on an end-of-turn save; Holy Water ends the effect early.", summaryMetadata: true },
-      { name: "Stunning Screech", kind: "action", range: "20-foot Emanation", damageFormula: "3d6", damageType: "thunder", save: { ability: "constitution", dc: 15 }, condition: "Stunned", summary: "Once per day, non-demon targets that fail the save take Thunder damage and are Stunned until the end of the vrock's next turn.", summaryMetadata: true }
-    ]
-  },
-  lemure: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Fiend (Devil)",
-    alignment: "Lawful Evil",
-    armorClass: 9,
-    initiative: -3,
-    hitPoints: 9,
-    hitDice: "2d8",
-    speed: "20 ft.",
-    challengeRating: "0",
-    xp: 10,
-    proficiencyBonus: 2,
-    abilities: { strength: 10, dexterity: 5, constitution: 11, intelligence: 1, wisdom: 11, charisma: 3 },
-    saves: { strength: 0, dexterity: -3, constitution: 0, intelligence: -5, wisdom: 0, charisma: -4 },
-    senses: ["Darkvision 120 ft. (unimpeded by magical Darkness)", "Passive Perception 10"],
-    languages: ["Understands Infernal but can't speak"],
-    traits: [
-      { name: "Cold Resistance", summary: "Resistant to Cold damage." },
-      { name: "Devil Immunities", summary: "Immune to Fire and Poison damage and the Charmed, Frightened, and Poisoned conditions." },
-      { name: "Hellish Restoration", summary: "If it dies in the Nine Hells, it revives with all Hit Points in 1d10 days unless killed while affected by Bless or sprinkled with Holy Water." }
-    ],
-    actions: [{ name: "Vile Slime", kind: "action", attackBonus: 2, range: "reach 5 ft.", damageFormula: "1d4", damageType: "poison" }]
-  },
-  imp: {
-    source: DND_5E_SRD_VERSION,
-    size: "Tiny",
-    creatureType: "Fiend (Devil)",
-    alignment: "Lawful Evil",
-    armorClass: 13,
-    initiative: 3,
-    hitPoints: 21,
-    hitDice: "6d4+6",
-    speed: "20 ft., Fly 40 ft.",
-    challengeRating: "1",
-    xp: 200,
-    proficiencyBonus: 2,
-    abilities: { strength: 6, dexterity: 17, constitution: 13, intelligence: 11, wisdom: 12, charisma: 14 },
-    saves: { strength: -2, dexterity: 3, constitution: 1, intelligence: 0, wisdom: 1, charisma: 2 },
-    skills: { deception: 4, insight: 3, stealth: 5 },
-    senses: ["Darkvision 120 ft. (unimpeded by magical Darkness)", "Passive Perception 11"],
-    languages: ["Common", "Infernal"],
-    traits: [
-      { name: "Cold Resistance", summary: "Resistant to Cold damage." },
-      { name: "Devil Immunities", summary: "Immune to Fire and Poison damage and the Poisoned condition." },
-      { name: "Magic Resistance", summary: "Has Advantage on saving throws against spells and other magical effects." }
-    ],
-    actions: [
-      { name: "Sting", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d6+3+2d6", damageType: "piercing/poison" },
-      { name: "Invisibility", kind: "action", effects: ["Casts Invisibility on itself without spell components using Charisma."], summary: "Casts Invisibility on itself without spell components using Charisma.", summaryMetadata: true },
-      { name: "Shape-Shift", kind: "action", effects: ["Shape-shifts into a rat, raven, spider, or true form; statistics are unchanged except Speed."], summary: "Shape-shifts into a rat, raven, spider, or true form; statistics are unchanged except Speed.", summaryMetadata: true }
-    ]
-  },
-  incubus: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Fiend",
-    alignment: "Neutral Evil",
-    armorClass: 15,
-    initiative: 3,
-    hitPoints: 66,
-    hitDice: "12d8+12",
-    speed: "30 ft., Fly 60 ft.",
-    challengeRating: "4",
-    xp: 1100,
-    proficiencyBonus: 2,
-    abilities: { strength: 8, dexterity: 17, constitution: 13, intelligence: 15, wisdom: 12, charisma: 20 },
-    saves: { strength: -1, dexterity: 3, constitution: 1, intelligence: 2, wisdom: 1, charisma: 5 },
-    skills: { deception: 9, insight: 5, perception: 5, persuasion: 9, stealth: 7 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 15"],
-    languages: ["Abyssal", "Common", "Infernal", "telepathy 60 ft."],
-    traits: [
-      { name: "Damage Resistances", summary: "Resistant to Cold, Fire, Poison, and Psychic damage." },
-      { name: "Succubus Form", summary: "When it finishes a Long Rest, it can shape-shift into a Succubus, using that stat block instead of this one." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Restless Touch attacks." },
-      { name: "Restless Touch", kind: "action", attackBonus: 7, range: "reach 5 ft.", damageFormula: "3d6+5", damageType: "psychic", condition: "Cursed", summary: "The target is cursed for 24 hours or until the incubus dies; while cursed, it gains no benefit from Short Rests.", summaryMetadata: true },
-      { name: "Spellcasting", kind: "action", save: { ability: "charisma", dc: 15 }, effects: ["At will: Disguise Self, Etherealness. 1/day each: Dream, Hypnotic Pattern."], summary: "Casts innate spells without Material components using Charisma.", summaryMetadata: true },
-      { name: "Nightmare", kind: "bonusAction", range: "60 ft.; one creature the incubus can see", damageFormula: "4d8", damageType: "psychic", save: { ability: "wisdom", dc: 15 }, condition: "Unconscious", recharge: "6", summary: "A target with 20 Hit Points or fewer falls Unconscious on a failed save; otherwise it takes Psychic damage.", summaryMetadata: true }
-    ]
-  },
-  "invisible-stalker": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Elemental",
-    alignment: "Neutral",
-    armorClass: 14,
-    initiative: 7,
-    hitPoints: 97,
-    hitDice: "13d10+26",
-    speed: "50 ft., Fly 50 ft. (hover)",
-    challengeRating: "6",
-    xp: 2300,
-    proficiencyBonus: 3,
-    abilities: { strength: 16, dexterity: 19, constitution: 14, intelligence: 10, wisdom: 15, charisma: 11 },
-    saves: { strength: 3, dexterity: 4, constitution: 2, intelligence: 0, wisdom: 2, charisma: 0 },
-    skills: { perception: 8, stealth: 10 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 18"],
-    languages: ["Common", "Primordial (Auran)"],
-    traits: [
-      { name: "Damage Resistances", summary: "Resistant to Bludgeoning, Piercing, and Slashing damage." },
-      { name: "Poison Immunity", summary: "Immune to Poison damage." },
-      { name: "Condition Immunities", summary: "Immune to Exhaustion, Grappled, Paralyzed, Petrified, Poisoned, Prone, Restrained, and Unconscious." },
-      { name: "Air Form", summary: "Can enter an enemy's space and move through a space as narrow as 1 inch without extra movement." },
-      { name: "Invisibility", summary: "Has the Invisible condition." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Wind Swipe attacks and can replace one attack with Vortex." },
-      { name: "Wind Swipe", kind: "action", attackBonus: 7, range: "reach 5 ft.", damageFormula: "2d6+4", damageType: "force" },
-      { name: "Vortex", kind: "action", range: "one Large or smaller creature in the stalker's space", damageFormula: "1d8+3", damageType: "thunder", save: { ability: "constitution", dc: 14 }, condition: "Grappled", summary: "On a failed save, the target is Grappled, escape DC 13, and can't cast spells with Verbal components while grappled.", summaryMetadata: true }
-    ]
-  },
-  "iron-golem": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Construct",
-    alignment: "Unaligned",
-    armorClass: 20,
-    initiative: 9,
-    hitPoints: 252,
-    hitDice: "24d10+120",
-    speed: "30 ft.",
-    challengeRating: "16",
-    xp: 15000,
-    proficiencyBonus: 5,
-    abilities: { strength: 24, dexterity: 9, constitution: 20, intelligence: 3, wisdom: 11, charisma: 1 },
-    saves: { strength: 7, dexterity: -1, constitution: 5, intelligence: -4, wisdom: 0, charisma: -5 },
-    senses: ["Darkvision 120 ft.", "Passive Perception 10"],
-    languages: ["Understands Common plus two other languages but can't speak"],
-    traits: [
-      { name: "Damage Immunities", summary: "Immune to Fire, Poison, and Psychic damage." },
-      { name: "Condition Immunities", summary: "Immune to Charmed, Exhaustion, Frightened, Paralyzed, Petrified, and Poisoned." },
-      { name: "Fire Absorption", summary: "Whenever subjected to Fire damage, regains Hit Points equal to the Fire damage dealt." },
-      { name: "Immutable Form", summary: "Can't shape-shift." },
-      { name: "Magic Resistance", summary: "Has Advantage on saving throws against spells and other magical effects." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two attacks, using Bladed Arm or Fiery Bolt in any combination." },
-      { name: "Bladed Arm", kind: "action", attackBonus: 12, range: "reach 10 ft.", damageFormula: "3d8+7+3d6", damageType: "slashing/fire" },
-      { name: "Fiery Bolt", kind: "action", attackBonus: 10, range: "120 ft.", damageFormula: "8d8", damageType: "fire" },
-      { name: "Poison Breath", kind: "action", range: "60-foot cone", damageFormula: "10d10", damageType: "poison", save: { ability: "constitution", dc: 18, success: "half" }, recharge: "6", summary: "Each creature in the cone makes a Constitution save, taking half damage on success.", summaryMetadata: true }
-    ]
-  },
-  "bearded-devil": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Fiend (Devil)",
-    alignment: "Lawful Evil",
-    armorClass: 13,
-    initiative: 2,
-    hitPoints: 58,
-    hitDice: "9d8+18",
-    speed: "30 ft.",
-    challengeRating: "3",
-    xp: 700,
-    proficiencyBonus: 2,
-    abilities: { strength: 16, dexterity: 15, constitution: 15, intelligence: 9, wisdom: 11, charisma: 14 },
-    saves: { strength: 5, dexterity: 2, constitution: 4, intelligence: -1, wisdom: 0, charisma: 4 },
-    senses: ["Darkvision 120 ft. (unimpeded by magical Darkness)", "Passive Perception 10"],
-    languages: ["Infernal", "telepathy 120 ft."],
-    traits: [
-      { name: "Cold Resistance", summary: "Resistant to Cold damage." },
-      { name: "Devil Immunities", summary: "Immune to Fire and Poison damage and the Frightened and Poisoned conditions." },
-      { name: "Magic Resistance", summary: "Has Advantage on saving throws against spells and other magical effects." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes one Beard attack and one Infernal Glaive attack." },
-      { name: "Beard", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d8+3", damageType: "piercing", condition: "Poisoned", summary: "A hit poisons the target until the start of the devil's next turn; while poisoned this way, the target can't regain Hit Points.", summaryMetadata: true },
-      { name: "Infernal Glaive", kind: "action", attackBonus: 5, range: "reach 10 ft.", damageFormula: "1d10+3", damageType: "slashing", save: { ability: "constitution", dc: 12 }, summary: "A creature target that fails the save receives an infernal wound and loses 1d10 Hit Points at the start of each of its turns until the wound closes.", summaryMetadata: true }
-    ]
-  },
-  "barbed-devil": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Fiend (Devil)",
-    alignment: "Lawful Evil",
-    armorClass: 15,
-    initiative: 3,
-    hitPoints: 110,
-    hitDice: "13d8+52",
-    speed: "30 ft., Climb 30 ft.",
-    challengeRating: "5",
-    xp: 1800,
-    proficiencyBonus: 3,
-    abilities: { strength: 16, dexterity: 17, constitution: 18, intelligence: 12, wisdom: 14, charisma: 14 },
-    saves: { strength: 6, dexterity: 3, constitution: 7, intelligence: 1, wisdom: 5, charisma: 5 },
-    skills: { deception: 5, insight: 5, perception: 8 },
-    senses: ["Darkvision 120 ft. (unimpeded by magical Darkness)", "Passive Perception 18"],
-    languages: ["Infernal", "telepathy 120 ft."],
-    traits: [
-      { name: "Barbed Hide", summary: "At the start of each turn, deals 1d10 Piercing damage to any creature it is grappling or any creature grappling it." },
-      { name: "Cold Resistance", summary: "Resistant to Cold damage." },
-      { name: "Devil Immunities", summary: "Immune to Fire and Poison damage and the Poisoned condition." },
-      { name: "Diabolical Restoration", summary: "If it dies outside the Nine Hells, it disappears and revives with all Hit Points somewhere in the Nine Hells." },
-      { name: "Magic Resistance", summary: "Has Advantage on saving throws against spells and other magical effects." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes one Claws attack and one Tail attack, or two Hurl Flame attacks." },
-      { name: "Claws", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "2d6+3", damageType: "piercing", condition: "Grappled", summary: "A Large or smaller target is Grappled, escape DC 13, from both claws.", summaryMetadata: true },
-      { name: "Tail", kind: "action", attackBonus: 6, range: "reach 10 ft.", damageFormula: "2d10+3", damageType: "slashing" },
-      { name: "Hurl Flame", kind: "action", attackBonus: 5, range: "150 ft.", damageFormula: "5d6", damageType: "fire", summary: "A flammable object hit by the attack starts burning." }
-    ]
-  },
-  "bone-devil": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Fiend (Devil)",
-    alignment: "Lawful Evil",
-    armorClass: 16,
-    initiative: 7,
-    hitPoints: 161,
-    hitDice: "17d10+68",
-    speed: "40 ft., Fly 40 ft.",
-    challengeRating: "9",
-    xp: 5000,
-    proficiencyBonus: 4,
-    abilities: { strength: 18, dexterity: 16, constitution: 18, intelligence: 13, wisdom: 14, charisma: 16 },
-    saves: { strength: 8, dexterity: 3, constitution: 4, intelligence: 5, wisdom: 6, charisma: 7 },
-    skills: { deception: 7, insight: 6 },
-    senses: ["Darkvision 120 ft. (unimpeded by magical Darkness)", "Passive Perception 12"],
-    languages: ["Infernal", "telepathy 120 ft."],
-    traits: [
-      { name: "Cold Resistance", summary: "Resistant to Cold damage." },
-      { name: "Devil Immunities", summary: "Immune to Fire and Poison damage and the Poisoned condition." },
-      { name: "Diabolical Restoration", summary: "If it dies outside the Nine Hells, it disappears and revives with all Hit Points somewhere in the Nine Hells." },
-      { name: "Magic Resistance", summary: "Has Advantage on saving throws against spells and other magical effects." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Claw attacks and one Infernal Sting attack." },
-      { name: "Claw", kind: "action", attackBonus: 8, range: "reach 10 ft.", damageFormula: "2d8+4", damageType: "slashing" },
-      { name: "Infernal Sting", kind: "action", attackBonus: 8, range: "reach 10 ft.", damageFormula: "2d10+4+4d8", damageType: "piercing/poison", condition: "Poisoned", summary: "A hit poisons the target until the start of the devil's next turn; while poisoned this way, the target can't regain Hit Points.", summaryMetadata: true }
-    ]
-  },
-  "chain-devil": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Fiend (Devil)",
-    alignment: "Lawful Evil",
-    armorClass: 15,
-    initiative: 5,
-    hitPoints: 85,
-    hitDice: "10d8+40",
-    speed: "30 ft.",
-    challengeRating: "8",
-    xp: 3900,
-    proficiencyBonus: 3,
-    abilities: { strength: 18, dexterity: 15, constitution: 18, intelligence: 11, wisdom: 12, charisma: 14 },
-    saves: { strength: 4, dexterity: 2, constitution: 7, intelligence: 0, wisdom: 4, charisma: 2 },
-    senses: ["Darkvision 120 ft. (unimpeded by magical Darkness)", "Passive Perception 11"],
-    languages: ["Infernal", "telepathy 120 ft."],
-    traits: [
-      { name: "Devil Resistances", summary: "Resistant to Bludgeoning, Cold, Piercing, and Slashing damage." },
-      { name: "Devil Immunities", summary: "Immune to Fire and Poison damage and the Poisoned condition." },
-      { name: "Diabolical Restoration", summary: "If it dies outside the Nine Hells, it disappears and revives with all Hit Points somewhere in the Nine Hells." },
-      { name: "Magic Resistance", summary: "Has Advantage on saving throws against spells and other magical effects." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Chain attacks and uses Conjure Infernal Chain." },
-      { name: "Chain", kind: "action", attackBonus: 7, range: "reach 10 ft.", damageFormula: "2d6+4", damageType: "slashing", condition: "Grappled/Restrained", summary: "A Large or smaller target is Grappled, escape DC 14, from one of two chains and is Restrained until the grapple ends.", summaryMetadata: true },
-      { name: "Conjure Infernal Chain", kind: "action", range: "60 ft.; one creature", damageFormula: "2d4+4", damageType: "fire", save: { ability: "dexterity", dc: 15 }, condition: "Restrained", summary: "On a failed save, the target is Restrained until the end of the devil's next turn and, if Large or smaller, is moved up to 30 feet straight toward the devil.", summaryMetadata: true },
-      { name: "Unnerving Gaze", kind: "reaction", range: "30 ft.; one creature that starts its turn and can see the devil", save: { ability: "wisdom", dc: 15 }, condition: "Frightened", effects: ["On a failed save, the target is Frightened until the end of its turn. On success, it is immune to this devil's Unnerving Gaze for 24 hours."], summary: "Reaction that frightens a nearby creature that starts its turn and can see the devil.", summaryMetadata: true }
-    ]
-  },
-  "horned-devil": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Fiend (Devil)",
-    alignment: "Lawful Evil",
-    armorClass: 18,
-    initiative: 7,
-    hitPoints: 199,
-    hitDice: "19d10+95",
-    speed: "30 ft., Fly 60 ft.",
-    challengeRating: "11",
-    xp: 7200,
-    proficiencyBonus: 4,
-    abilities: { strength: 22, dexterity: 17, constitution: 21, intelligence: 12, wisdom: 16, charisma: 18 },
-    saves: { strength: 10, dexterity: 7, constitution: 5, intelligence: 1, wisdom: 7, charisma: 8 },
-    senses: ["Darkvision 150 ft. (unimpeded by magical Darkness)", "Passive Perception 13"],
-    languages: ["Infernal", "telepathy 120 ft."],
-    traits: [
-      { name: "Cold Resistance", summary: "Resistant to Cold damage." },
-      { name: "Devil Immunities", summary: "Immune to Fire and Poison damage and the Poisoned condition." },
-      { name: "Diabolical Restoration", summary: "If it dies outside the Nine Hells, it disappears and revives with all Hit Points somewhere in the Nine Hells." },
-      { name: "Magic Resistance", summary: "Has Advantage on saving throws against spells and other magical effects." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three attacks, using Searing Fork or Hurl Flame in any combination. Can replace one attack with Infernal Tail." },
-      { name: "Searing Fork", kind: "action", attackBonus: 10, range: "reach 10 ft.", damageFormula: "2d8+6+2d8", damageType: "piercing/fire" },
-      { name: "Hurl Flame", kind: "action", attackBonus: 8, range: "150 ft.", damageFormula: "5d8+4", damageType: "fire", summary: "A flammable object hit by the attack starts burning." },
-      { name: "Infernal Tail", kind: "action", range: "10 ft.; one creature", damageFormula: "1d8+6", damageType: "necrotic", save: { ability: "dexterity", dc: 17 }, summary: "On a failed save, the target receives an infernal wound and loses 3d6 Hit Points at the start of each of its turns until the wound closes.", summaryMetadata: true }
-    ]
-  },
-  "ice-devil": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Fiend (Devil)",
-    alignment: "Lawful Evil",
-    armorClass: 18,
-    initiative: 7,
-    hitPoints: 228,
-    hitDice: "24d10+96",
-    speed: "40 ft.",
-    challengeRating: "14",
-    xp: 11500,
-    proficiencyBonus: 5,
-    abilities: { strength: 21, dexterity: 14, constitution: 18, intelligence: 18, wisdom: 15, charisma: 18 },
-    saves: { strength: 5, dexterity: 7, constitution: 9, intelligence: 4, wisdom: 7, charisma: 9 },
-    skills: { insight: 7, perception: 7, persuasion: 9 },
-    senses: ["Blindsight 120 ft.", "Passive Perception 17"],
-    languages: ["Infernal", "telepathy 120 ft."],
-    traits: [
-      { name: "Devil Immunities", summary: "Immune to Cold, Fire, and Poison damage and the Poisoned condition." },
-      { name: "Diabolical Restoration", summary: "If it dies outside the Nine Hells, it disappears and revives with all Hit Points somewhere in the Nine Hells." },
-      { name: "Magic Resistance", summary: "Has Advantage on saving throws against spells and other magical effects." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Ice Spear attacks. Can replace one attack with Tail." },
-      { name: "Ice Spear", kind: "action", attackBonus: 10, range: "reach 5 ft. or range 30/120 ft.", damageFormula: "2d8+5+3d6", damageType: "piercing/cold", summary: "Until the end of the devil's next turn, the target can't take a Bonus Action or Reaction, its Speed decreases by 10 feet, and it can move or take one action on its turn, not both. A thrown spear magically returns.", summaryMetadata: true },
-      { name: "Tail", kind: "action", attackBonus: 10, range: "reach 10 ft.", damageFormula: "3d6+5+4d8", damageType: "bludgeoning/cold" },
-      { name: "Ice Wall", kind: "action", recharge: "6", effects: ["Casts Wall of Ice at level 8 without spell components using Intelligence; spell save DC 17."], summary: "Casts Wall of Ice at level 8 without spell components using Intelligence; spell save DC 17.", summaryMetadata: true }
-    ]
-  },
-  erinyes: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Fiend (Devil)",
-    alignment: "Lawful Evil",
-    armorClass: 18,
-    initiative: 7,
-    hitPoints: 178,
-    hitDice: "21d8+84",
-    speed: "30 ft., Fly 60 ft.",
-    challengeRating: "12",
-    xp: 8400,
-    proficiencyBonus: 4,
-    abilities: { strength: 18, dexterity: 16, constitution: 18, intelligence: 14, wisdom: 14, charisma: 18 },
-    saves: { strength: 4, dexterity: 7, constitution: 8, intelligence: 2, wisdom: 2, charisma: 8 },
-    skills: { perception: 6, persuasion: 8 },
-    senses: ["Truesight 120 ft.", "Passive Perception 16"],
-    languages: ["Infernal", "telepathy 120 ft."],
-    traits: [
-      { name: "Cold Resistance", summary: "Resistant to Cold damage." },
-      { name: "Devil Immunities", summary: "Immune to Fire and Poison damage and the Poisoned condition." },
-      { name: "Diabolical Restoration", summary: "If it dies outside the Nine Hells, it disappears in sulfurous smoke and revives with all Hit Points somewhere in the Nine Hells." },
-      { name: "Magic Resistance", summary: "Has Advantage on saving throws against spells and other magical effects." },
-      { name: "Magic Rope", summary: "Can use Entangling Rope while bearing its magic rope; the rope has AC 20, HP 90, and Poison/Psychic immunity, and can be restored after a Short or Long Rest." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Withering Sword attacks and can use Entangling Rope." },
-      { name: "Withering Sword", kind: "action", attackBonus: 8, range: "reach 5 ft.", damageFormula: "2d8+4+2d10", damageType: "slashing/necrotic" },
-      { name: "Entangling Rope", kind: "action", range: "120 ft.; one creature", damageFormula: "4d6", damageType: "force", save: { ability: "strength", dc: 16 }, condition: "Restrained", summary: "Requires Magic Rope. On a failed save, the target is Restrained until the rope is destroyed, the erinyes releases it as a Bonus Action, or the erinyes uses Entangling Rope again.", summaryMetadata: true },
-      { name: "Parry", kind: "reaction", effects: ["When hit by a melee attack roll while holding a weapon, adds 4 to AC against that attack, possibly causing it to miss."], summary: "Adds 4 AC against a triggering melee attack while holding a weapon.", summaryMetadata: true }
-    ]
-  },
-  werebear: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium or Small",
-    creatureType: "Monstrosity (Lycanthrope)",
-    alignment: "Neutral Good",
-    armorClass: 15,
-    initiative: 3,
-    hitPoints: 135,
-    hitDice: "18d8+54",
-    speed: "30 ft., 40 ft. (bear form only), Climb 30 ft. (bear form only)",
-    challengeRating: "5",
-    xp: 1800,
-    proficiencyBonus: 3,
-    abilities: { strength: 19, dexterity: 10, constitution: 17, intelligence: 11, wisdom: 12, charisma: 12 },
-    saves: { strength: 4, dexterity: 0, constitution: 3, intelligence: 0, wisdom: 1, charisma: 1 },
-    skills: { perception: 7 },
-    gear: ["Handaxes (4)"],
-    senses: ["Darkvision 60 ft.", "Passive Perception 17"],
-    languages: ["Common (can't speak in bear form)"],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two attacks, using Handaxe or Rend in any combination. It can replace one attack with Bite." },
-      { name: "Bite", kind: "action", attackBonus: 7, range: "reach 5 ft.; bear or hybrid form only", damageFormula: "2d12+4", damageType: "piercing", save: { ability: "constitution", dc: 14 }, summary: "If the target is a Humanoid, failed save curses it. If the cursed target drops to 0 Hit Points, it becomes a Werebear under the GM's control with 10 Hit Points. Success grants immunity to this werebear's curse for 24 hours.", summaryMetadata: true },
-      { name: "Handaxe", kind: "action", attackBonus: 7, range: "reach 5 ft. or range 20/60 ft.; humanoid or hybrid form only", damageFormula: "3d6+4", damageType: "slashing" },
-      { name: "Rend", kind: "action", attackBonus: 7, range: "reach 5 ft.; bear or hybrid form only", damageFormula: "2d8+4", damageType: "slashing" },
-      { name: "Shape-Shift", kind: "bonusAction", effects: ["Shape-shifts into a Large bear-humanoid hybrid or a Large bear, or returns to true humanoid form. Statistics other than size are unchanged, and equipment is not transformed."] }
-    ]
-  },
-  wereboar: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium or Small",
-    creatureType: "Monstrosity (Lycanthrope)",
-    alignment: "Neutral Evil",
-    armorClass: 15,
-    initiative: 2,
-    hitPoints: 97,
-    hitDice: "15d8+30",
-    speed: "30 ft., 40 ft. (boar form only)",
-    challengeRating: "4",
-    xp: 1100,
-    proficiencyBonus: 2,
-    abilities: { strength: 17, dexterity: 10, constitution: 15, intelligence: 10, wisdom: 11, charisma: 8 },
-    saves: { strength: 3, dexterity: 0, constitution: 2, intelligence: 0, wisdom: 0, charisma: -1 },
-    skills: { perception: 2 },
-    gear: ["Javelins (6)"],
-    senses: ["Passive Perception 12"],
-    languages: ["Common (can't speak in boar form)"],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two attacks, using Javelin or Tusk in any combination. It can replace one attack with Gore." },
-      { name: "Gore", kind: "action", attackBonus: 5, range: "reach 5 ft.; boar or hybrid form only", damageFormula: "2d8+3", damageType: "piercing", save: { ability: "constitution", dc: 12 }, summary: "If the target is a Humanoid, failed save curses it. If the cursed target drops to 0 Hit Points, it becomes a Wereboar under the GM's control with 10 Hit Points. Success grants immunity to this wereboar's curse for 24 hours.", summaryMetadata: true },
-      { name: "Javelin", kind: "action", attackBonus: 5, range: "reach 5 ft. or range 30/120 ft.; humanoid or hybrid form only", damageFormula: "3d6+3", damageType: "piercing" },
-      { name: "Tusk", kind: "action", attackBonus: 5, range: "reach 5 ft.; boar or hybrid form only", damageFormula: "2d6+3", damageType: "piercing", condition: "Prone", summary: "If the target is Medium or smaller and the wereboar moved 20+ feet straight toward it before the hit, the target takes an extra 2d6 Piercing damage and has the Prone condition.", summaryMetadata: true },
-      { name: "Shape-Shift", kind: "bonusAction", effects: ["Shape-shifts into a Medium boar-humanoid hybrid or a Small boar, or returns to true humanoid form. Statistics other than size are unchanged, and equipment is not transformed."] }
-    ]
-  },
-  wererat: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium or Small",
-    creatureType: "Monstrosity (Lycanthrope)",
-    alignment: "Lawful Evil",
-    armorClass: 13,
-    initiative: 3,
-    hitPoints: 60,
-    hitDice: "11d8+11",
-    speed: "30 ft., Climb 30 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 10, dexterity: 16, constitution: 12, intelligence: 11, wisdom: 10, charisma: 8 },
-    saves: { strength: 0, dexterity: 3, constitution: 1, intelligence: 0, wisdom: 0, charisma: -1 },
-    skills: { perception: 4, stealth: 5 },
-    gear: ["Hand Crossbow"],
-    senses: ["Darkvision 60 ft.", "Passive Perception 14"],
-    languages: ["Common (can't speak in rat form)"],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two attacks, using Scratch or Hand Crossbow in any combination. It can replace one attack with Bite." },
-      { name: "Bite", kind: "action", attackBonus: 5, range: "reach 5 ft.; rat or hybrid form only", damageFormula: "2d4+3", damageType: "piercing", save: { ability: "constitution", dc: 11 }, summary: "If the target is a Humanoid, failed save curses it. If the cursed target drops to 0 Hit Points, it becomes a Wererat under the GM's control with 10 Hit Points. Success grants immunity to this wererat's curse for 24 hours.", summaryMetadata: true },
-      { name: "Scratch", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d6+3", damageType: "slashing" },
-      { name: "Hand Crossbow", kind: "action", attackBonus: 5, range: "30/120 ft.; humanoid or hybrid form only", damageFormula: "1d6+3", damageType: "piercing" },
-      { name: "Shape-Shift", kind: "bonusAction", effects: ["Shape-shifts into a Medium rat-humanoid hybrid or a Small rat, or returns to true humanoid form. Statistics other than size are unchanged, and equipment is not transformed."] }
-    ]
-  },
-  weretiger: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium or Small",
-    creatureType: "Monstrosity (Lycanthrope)",
-    alignment: "Neutral",
-    armorClass: 12,
-    initiative: 2,
-    hitPoints: 120,
-    hitDice: "16d8+48",
-    speed: "30 ft., 40 ft. (tiger form only)",
-    challengeRating: "4",
-    xp: 1100,
-    proficiencyBonus: 2,
-    abilities: { strength: 17, dexterity: 15, constitution: 16, intelligence: 10, wisdom: 13, charisma: 11 },
-    saves: { strength: 3, dexterity: 2, constitution: 3, intelligence: 0, wisdom: 1, charisma: 0 },
-    skills: { perception: 5, stealth: 4 },
-    gear: ["Longbow"],
-    senses: ["Darkvision 60 ft.", "Passive Perception 15"],
-    languages: ["Common (can't speak in tiger form)"],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two attacks, using Scratch or Longbow in any combination. It can replace one attack with Bite." },
-      { name: "Bite", kind: "action", attackBonus: 5, range: "reach 5 ft.; tiger or hybrid form only", damageFormula: "2d8+3", damageType: "piercing", save: { ability: "constitution", dc: 13 }, summary: "If the target is a Humanoid, failed save curses it. If the cursed target drops to 0 Hit Points, it becomes a Weretiger under the GM's control with 10 Hit Points. Success grants immunity to this weretiger's curse for 24 hours.", summaryMetadata: true },
-      { name: "Scratch", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "2d6+3", damageType: "slashing" },
-      { name: "Longbow", kind: "action", attackBonus: 4, range: "150/600 ft.; humanoid or hybrid form only", damageFormula: "2d8+2", damageType: "piercing" },
-      { name: "Prowl", kind: "bonusAction", range: "tiger or hybrid form only", effects: ["Moves up to its Speed without provoking Opportunity Attacks, then can take the Hide action."] },
-      { name: "Shape-Shift", kind: "bonusAction", effects: ["Shape-shifts into a Large tiger-humanoid hybrid or a Large tiger, or returns to true humanoid form. Statistics other than size are unchanged, and equipment is not transformed."] }
-    ]
-  },
-  werewolf: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium or Small",
-    creatureType: "Monstrosity (Lycanthrope)",
-    alignment: "Chaotic Evil",
-    armorClass: 15,
-    initiative: 4,
-    hitPoints: 71,
-    hitDice: "11d8+22",
-    speed: "30 ft., 40 ft. (wolf form only)",
-    challengeRating: "3",
-    xp: 700,
-    proficiencyBonus: 2,
-    abilities: { strength: 16, dexterity: 14, constitution: 14, intelligence: 10, wisdom: 11, charisma: 10 },
-    saves: { strength: 3, dexterity: 2, constitution: 2, intelligence: 0, wisdom: 0, charisma: 0 },
-    skills: { perception: 4, stealth: 4 },
-    gear: ["Longbow"],
-    senses: ["Darkvision 60 ft.", "Passive Perception 14"],
-    languages: ["Common (can't speak in wolf form)"],
-    traits: [{ name: "Pack Tactics", summary: "Has Advantage on an attack roll against a creature if at least one ally is within 5 feet of the creature and the ally doesn't have the Incapacitated condition." }],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two attacks, using Scratch or Longbow in any combination. It can replace one attack with Bite." },
-      { name: "Bite", kind: "action", attackBonus: 5, range: "reach 5 ft.; wolf or hybrid form only", damageFormula: "2d8+3", damageType: "piercing", save: { ability: "constitution", dc: 12 }, summary: "If the target is a Humanoid, failed save curses it. If the cursed target drops to 0 Hit Points, it becomes a Werewolf under the GM's control with 10 Hit Points. Success grants immunity to this werewolf's curse for 24 hours.", summaryMetadata: true },
-      { name: "Scratch", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "2d6+3", damageType: "slashing" },
-      { name: "Longbow", kind: "action", attackBonus: 4, range: "150/600 ft.; humanoid or hybrid form only", damageFormula: "2d8+2", damageType: "piercing" },
-      { name: "Shape-Shift", kind: "bonusAction", effects: ["Shape-shifts into a Large wolf-humanoid hybrid or a Medium wolf, or returns to true humanoid form. Statistics other than size are unchanged, and equipment is not transformed."] }
-    ]
-  },
-  xorn: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Elemental",
-    alignment: "Neutral",
-    armorClass: 19,
-    initiative: 0,
-    hitPoints: 84,
-    hitDice: "8d8+48",
-    speed: "20 ft., Burrow 20 ft.",
-    challengeRating: "5",
-    xp: 1800,
-    proficiencyBonus: 3,
-    abilities: { strength: 17, dexterity: 10, constitution: 22, intelligence: 11, wisdom: 10, charisma: 11 },
-    saves: { strength: 3, dexterity: 0, constitution: 6, intelligence: 0, wisdom: 0, charisma: 0 },
-    skills: { perception: 6, stealth: 6 },
-    senses: ["Darkvision 60 ft.", "Tremorsense 60 ft.", "Passive Perception 16"],
-    languages: ["Primordial (Terran)"],
-    traits: [
-      { name: "Elemental Immunities", summary: "Immune to Poison damage and the Paralyzed, Petrified, and Poisoned conditions." },
-      { name: "Earth Glide", summary: "Can burrow through nonmagical, unworked earth and stone without disturbing the material." },
-      { name: "Treasure Sense", summary: "Can pinpoint precious metals and stones within 60 feet." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes one Bite attack and three Claw attacks." },
-      { name: "Bite", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "4d6+3", damageType: "piercing" },
-      { name: "Claw", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "1d10+3", damageType: "slashing" },
-      { name: "Charge", kind: "bonusAction", range: "Speed or Burrow Speed", effects: ["Moves up to its Speed or Burrow Speed straight toward an enemy it can sense."], summary: "Moves straight toward a sensed enemy." }
-    ]
-  },
-  guard: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium or Small",
-    creatureType: "Humanoid",
-    alignment: "Neutral",
-    armorClass: 16,
-    initiative: 1,
-    hitPoints: 11,
-    hitDice: "2d8+2",
-    speed: "30 ft.",
-    challengeRating: "1/8",
-    xp: 25,
-    proficiencyBonus: 2,
-    abilities: { strength: 13, dexterity: 12, constitution: 12, intelligence: 10, wisdom: 11, charisma: 10 },
-    saves: { strength: 1, dexterity: 1, constitution: 1, intelligence: 0, wisdom: 0, charisma: 0 },
-    skills: { perception: 2 },
-    senses: ["Passive Perception 12"],
-    languages: ["Common"],
-    gear: ["Chain Shirt", "Shield", "Spear"],
-    actions: [{ name: "Spear", kind: "action", attackBonus: 3, range: "reach 5 ft. or range 20/60 ft.", damageFormula: "1d6+1", damageType: "piercing" }]
-  },
-  tough: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium or Small",
-    creatureType: "Humanoid",
-    alignment: "Neutral",
-    armorClass: 12,
-    initiative: 1,
-    hitPoints: 32,
-    hitDice: "5d8+10",
-    speed: "30 ft.",
-    challengeRating: "1/2",
-    xp: 100,
-    proficiencyBonus: 2,
-    abilities: { strength: 15, dexterity: 12, constitution: 14, intelligence: 10, wisdom: 10, charisma: 11 },
-    saves: { strength: 2, dexterity: 1, constitution: 2, intelligence: 0, wisdom: 0, charisma: 0 },
-    senses: ["Passive Perception 10"],
-    languages: ["Common"],
-    gear: ["Heavy Crossbow", "Leather Armor", "Mace"],
-    traits: [{ name: "Pack Tactics", summary: "Has advantage when an ally threatens the target nearby." }],
-    actions: [
-      { name: "Mace", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d6+2", damageType: "bludgeoning" },
-      { name: "Heavy Crossbow", kind: "action", attackBonus: 3, range: "100/400 ft.", damageFormula: "1d10+1", damageType: "piercing" }
-    ]
-  },
-  wolf: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 12,
-    initiative: 2,
-    hitPoints: 11,
-    hitDice: "2d8+2",
-    speed: "40 ft.",
-    challengeRating: "1/4",
-    xp: 50,
-    proficiencyBonus: 2,
-    abilities: { strength: 14, dexterity: 15, constitution: 12, intelligence: 3, wisdom: 12, charisma: 6 },
-    saves: { strength: 2, dexterity: 2, constitution: 1, intelligence: -4, wisdom: 1, charisma: -2 },
-    skills: { perception: 5, stealth: 4 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 15"],
-    languages: ["None"],
-    traits: [{ name: "Pack Tactics", summary: "Has advantage on attack rolls when an ally is within 5 feet of the target and isn't Incapacitated." }],
-    actions: [{ name: "Bite", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d6+2", damageType: "piercing", summary: "If the target is Medium or smaller, it has the Prone condition." }]
-  },
-  "dire-wolf": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 14,
-    initiative: 2,
-    hitPoints: 22,
-    hitDice: "3d10+6",
-    speed: "50 ft.",
-    challengeRating: "1",
-    xp: 200,
-    proficiencyBonus: 2,
-    abilities: { strength: 17, dexterity: 15, constitution: 15, intelligence: 3, wisdom: 12, charisma: 7 },
-    saves: { strength: 3, dexterity: 2, constitution: 2, intelligence: -4, wisdom: 1, charisma: -2 },
-    skills: { perception: 5, stealth: 4 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 15"],
-    languages: ["None"],
-    traits: [{ name: "Pack Tactics", summary: "Has advantage on attack rolls when an ally is within 5 feet of the target and isn't Incapacitated." }],
-    actions: [{ name: "Bite", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d10+3", damageType: "piercing", summary: "If the target is Large or smaller, it has the Prone condition." }]
-  },
-  "black-bear": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 11,
-    initiative: 1,
-    hitPoints: 19,
-    hitDice: "3d8+6",
-    speed: "30 ft., Climb 30 ft., Swim 30 ft.",
-    challengeRating: "1/2",
-    xp: 100,
-    proficiencyBonus: 2,
-    abilities: { strength: 15, dexterity: 12, constitution: 14, intelligence: 2, wisdom: 12, charisma: 7 },
-    saves: { strength: 2, dexterity: 1, constitution: 2, intelligence: -4, wisdom: 1, charisma: -2 },
-    skills: { perception: 5 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 15"],
-    languages: ["None"],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Rend attacks." },
-      { name: "Rend", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d6+2", damageType: "slashing" }
-    ]
-  },
-  "brown-bear": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 11,
-    initiative: 1,
-    hitPoints: 22,
-    hitDice: "3d10+6",
-    speed: "40 ft., Climb 30 ft.",
-    challengeRating: "1",
-    xp: 200,
-    proficiencyBonus: 2,
-    abilities: { strength: 17, dexterity: 12, constitution: 15, intelligence: 2, wisdom: 13, charisma: 7 },
-    saves: { strength: 3, dexterity: 1, constitution: 2, intelligence: -4, wisdom: 1, charisma: -2 },
-    skills: { perception: 3 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 13"],
-    languages: ["None"],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes one Bite attack and one Claw attack." },
-      { name: "Bite", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d8+3", damageType: "piercing" },
-      { name: "Claw", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d8+2", damageType: "slashing" }
-    ]
-  },
-  ogre: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Giant",
-    alignment: "Chaotic Evil",
-    armorClass: 11,
-    initiative: -1,
-    hitPoints: 68,
-    hitDice: "8d10+24",
-    speed: "40 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 19, dexterity: 8, constitution: 16, intelligence: 5, wisdom: 7, charisma: 7 },
-    saves: { strength: 4, dexterity: -1, constitution: 3, intelligence: -3, wisdom: -2, charisma: -2 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 8"],
-    languages: ["Common", "Giant"],
-    gear: ["Greatclub", "Javelins (3)"],
-    actions: [
-      { name: "Greatclub", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "2d8+4", damageType: "bludgeoning" },
-      { name: "Javelin", kind: "action", attackBonus: 6, range: "reach 5 ft. or range 30/120 ft.", damageFormula: "2d6+4", damageType: "piercing" }
-    ]
-  },
-  "guard-captain": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium or Small",
-    creatureType: "Humanoid",
-    alignment: "Neutral",
-    armorClass: 18,
-    initiative: 4,
-    hitPoints: 75,
-    hitDice: "10d8+30",
-    speed: "30 ft.",
-    challengeRating: "4",
-    xp: 1100,
-    proficiencyBonus: 2,
-    abilities: { strength: 18, dexterity: 14, constitution: 16, intelligence: 12, wisdom: 14, charisma: 13 },
-    saves: { strength: 4, dexterity: 2, constitution: 3, intelligence: 1, wisdom: 2, charisma: 1 },
-    skills: { athletics: 6, perception: 4 },
-    senses: ["Passive Perception 14"],
-    languages: ["Common"],
-    gear: ["Breastplate", "Javelins (6)", "Longsword", "Shield"],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two attacks, using Javelin or Longsword in any combination." },
-      { name: "Javelin", kind: "action", attackBonus: 6, range: "reach 5 ft. or range 30/120 ft.", damageFormula: "3d6+4", damageType: "piercing" },
-      { name: "Longsword", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "2d10+4", damageType: "slashing" }
-    ]
-  },
-  "hobgoblin-captain": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Fey (Goblinoid)",
-    alignment: "Lawful Evil",
-    armorClass: 17,
-    initiative: 4,
-    hitPoints: 58,
-    hitDice: "9d8+18",
-    speed: "30 ft.",
-    challengeRating: "3",
-    xp: 700,
-    proficiencyBonus: 2,
-    abilities: { strength: 15, dexterity: 14, constitution: 14, intelligence: 12, wisdom: 10, charisma: 13 },
-    saves: { strength: 2, dexterity: 2, constitution: 2, intelligence: 1, wisdom: 0, charisma: 1 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 10"],
-    languages: ["Common", "Goblin"],
-    gear: ["Greatsword", "Half-Plate Armor", "Longbow"],
-    traits: [{ name: "Pack Tactics", summary: "Pairs well with lower-CR allies in a mixed encounter." }],
-    actions: [{ name: "Multiattack", kind: "action", summary: "Makes multiple weapon attacks." }]
-  },
-  knight: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium or Small",
-    creatureType: "Humanoid",
-    alignment: "Neutral",
-    armorClass: 18,
-    initiative: 0,
-    hitPoints: 52,
-    hitDice: "8d8+16",
-    speed: "30 ft.",
-    challengeRating: "3",
-    xp: 700,
-    proficiencyBonus: 2,
-    abilities: { strength: 16, dexterity: 11, constitution: 14, intelligence: 11, wisdom: 11, charisma: 15 },
-    saves: { strength: 3, dexterity: 0, constitution: 4, intelligence: 0, wisdom: 2, charisma: 2 },
-    senses: ["Passive Perception 10"],
-    languages: ["Common plus one other language"],
-    gear: ["Greatsword", "Heavy Crossbow", "Plate Armor"],
-    traits: [{ name: "Frightened Immunity", summary: "Immune to the Frightened condition." }],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two attacks, using Greatsword or Heavy Crossbow in any combination." },
-      { name: "Greatsword", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "2d6+3+1d8", damageType: "slashing/radiant" },
-      { name: "Heavy Crossbow", kind: "action", attackBonus: 2, range: "100/400 ft.", damageFormula: "2d10+1d8", damageType: "piercing/radiant" },
-      { name: "Parry", kind: "reaction", summary: "Adds 2 to AC against a melee attack roll while holding a weapon, possibly causing it to miss." }
-    ]
-  },
-  "kobold-warrior": {
-    source: DND_5E_SRD_VERSION,
-    size: "Small",
-    creatureType: "Dragon",
-    alignment: "Neutral",
-    armorClass: 14,
-    initiative: 2,
-    hitPoints: 7,
-    hitDice: "3d6-3",
-    speed: "30 ft.",
-    challengeRating: "1/8",
-    xp: 25,
-    proficiencyBonus: 2,
-    abilities: { strength: 7, dexterity: 15, constitution: 9, intelligence: 8, wisdom: 7, charisma: 8 },
-    saves: { strength: -2, dexterity: 2, constitution: -1, intelligence: -1, wisdom: -2, charisma: -1 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 8"],
-    languages: ["Common", "Draconic"],
-    gear: ["Daggers (3)"],
-    traits: [
-      { name: "Pack Tactics", summary: "Has Advantage on attack rolls when an ally is within 5 feet of the target and isn't Incapacitated." },
-      { name: "Sunlight Sensitivity", summary: "While in sunlight, has Disadvantage on ability checks and attack rolls." }
-    ],
-    actions: [{ name: "Dagger", kind: "action", attackBonus: 4, range: "reach 5 ft. or range 20/60 ft.", damageFormula: "1d4+2", damageType: "piercing" }]
-  },
-  kraken: {
-    source: DND_5E_SRD_VERSION,
-    size: "Gargantuan",
-    creatureType: "Monstrosity (Titan)",
-    alignment: "Chaotic Evil",
-    armorClass: 18,
-    initiative: 14,
-    hitPoints: 481,
-    hitDice: "26d20+208",
-    speed: "30 ft., Swim 120 ft.",
-    challengeRating: "23",
-    xp: 50000,
-    proficiencyBonus: 7,
-    abilities: { strength: 30, dexterity: 11, constitution: 26, intelligence: 22, wisdom: 18, charisma: 20 },
-    saves: { strength: 17, dexterity: 7, constitution: 15, intelligence: 6, wisdom: 11, charisma: 5 },
-    skills: { history: 13, perception: 11 },
-    senses: ["Truesight 120 ft.", "Passive Perception 21"],
-    languages: ["Understands Abyssal, Celestial, Infernal, and Primordial but can't speak", "Telepathy 120 ft."],
-    traits: [
-      { name: "Damage Immunities", summary: "Immune to Cold and Lightning damage." },
-      { name: "Condition Immunities", summary: "Immune to the Frightened, Grappled, Paralyzed, and Restrained conditions." },
-      { name: "Amphibious", summary: "Can breathe air and water." },
-      { name: "Legendary Resistance", summary: "4/Day, or 5/Day in Lair. If the kraken fails a saving throw, it can choose to succeed instead." },
-      { name: "Siege Monster", summary: "Deals double damage to objects and structures." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Tentacle attacks and uses Fling, Lightning Strike, or Swallow." },
-      { name: "Tentacle", kind: "action", attackBonus: 17, range: "reach 30 ft.", damageFormula: "4d6+10", damageType: "bludgeoning", condition: "Grappled/Restrained", summary: "The target is Grappled (escape DC 20) by one of ten tentacles and Restrained until the grapple ends." },
-      { name: "Fling", kind: "action", range: "60 ft.", damageFormula: "4d8", damageType: "bludgeoning", save: { ability: "dexterity", dc: 25, success: "half" }, condition: "Prone", summary: "Throws a Large or smaller Grappled creature to a visible space; the thrown creature and creatures in the destination space save." },
-      { name: "Lightning Strike", kind: "action", range: "120 ft.", damageFormula: "6d10", damageType: "lightning", save: { ability: "dexterity", dc: 23, success: "half" } },
-      { name: "Swallow", kind: "action", range: "Grappled creature", damageFormula: "3d8+10+7d6", damageType: "piercing/acid", save: { ability: "dexterity", dc: 25 }, condition: "Restrained", summary: "On a failed save, the target takes Piercing damage and, if Large or smaller, is swallowed, Restrained, and takes 7d6 Acid damage at the start of each of its turns." },
-      { name: "Legendary Actions", kind: "action", effects: ["Has 3 Legendary Action uses, or 4 in Lair, including Storm Bolt and Toxic Ink."], summary: "Has 3 Legendary Action uses, or 4 in Lair, including Storm Bolt and Toxic Ink.", summaryMetadata: true },
-      { name: "Storm Bolt", kind: "action", range: "120 ft.", damageFormula: "6d10", damageType: "lightning", save: { ability: "dexterity", dc: 23, success: "half" }, summary: "Uses Lightning Strike as a legendary action." },
-      { name: "Toxic Ink", kind: "action", range: "15-foot emanation underwater", save: { ability: "constitution", dc: 23 }, condition: "Blinded/Poisoned", summary: "Each creature in the underwater emanation saves or is Blinded and Poisoned until the end of the kraken's next turn; the kraken then moves up to its Speed." }
-    ]
-  },
-  lamia: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Fiend",
-    alignment: "Chaotic Evil",
-    armorClass: 13,
-    initiative: 1,
-    hitPoints: 97,
-    hitDice: "13d10+26",
-    speed: "40 ft.",
-    challengeRating: "4",
-    xp: 1100,
-    proficiencyBonus: 2,
-    abilities: { strength: 16, dexterity: 13, constitution: 15, intelligence: 14, wisdom: 15, charisma: 16 },
-    saves: { strength: 3, dexterity: 1, constitution: 2, intelligence: 2, wisdom: 2, charisma: 3 },
-    skills: { deception: 7, insight: 4, stealth: 5 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 12"],
-    languages: ["Abyssal", "Common"],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Claw attacks. It can replace one attack with Corrupting Touch." },
-      { name: "Claw", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d8+3+2d6", damageType: "slashing/psychic" },
-      { name: "Corrupting Touch", kind: "action", range: "5 ft.", damageFormula: "3d8", damageType: "psychic", save: { ability: "wisdom", dc: 13 }, condition: "Charmed/Poisoned", summary: "On a failed save, the target is cursed for 1 hour and has the Charmed and Poisoned conditions until the curse ends." },
-      { name: "Spellcasting", kind: "action", save: { ability: "charisma", dc: 13 }, effects: ["At will: Disguise Self, Minor Illusion. 1/Day each: Geas, Major Image, Scrying."], summary: "Casts SRD innate spells without Material components using Charisma." },
-      { name: "Leap", kind: "bonusAction", effects: ["Jumps up to 30 feet by spending 10 feet of movement."], summary: "Jumps up to 30 feet by spending 10 feet of movement.", summaryMetadata: true }
-    ]
-  },
-  mage: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium or Small",
-    creatureType: "Humanoid (Wizard)",
-    alignment: "Neutral",
-    armorClass: 15,
-    initiative: 2,
-    hitPoints: 81,
-    hitDice: "18d8",
-    speed: "30 ft.",
-    challengeRating: "6",
-    xp: 2300,
-    proficiencyBonus: 3,
-    abilities: { strength: 9, dexterity: 14, constitution: 11, intelligence: 17, wisdom: 12, charisma: 11 },
-    saves: { strength: -1, dexterity: 2, constitution: 0, intelligence: 6, wisdom: 4, charisma: 0 },
-    skills: { arcana: 6, history: 6, perception: 4 },
-    senses: ["Passive Perception 14"],
-    languages: ["Common plus three other languages"],
-    gear: ["Wand"],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Arcane Burst attacks." },
-      { name: "Arcane Burst", kind: "action", attackBonus: 6, range: "reach 5 ft. or range 120 ft.", damageFormula: "3d8+3", damageType: "force" },
-      { name: "Spellcasting", kind: "action", save: { ability: "intelligence", dc: 14 }, effects: ["At will: Detect Magic, Light, Mage Armor, Mage Hand, Prestidigitation. 2/Day each: Fireball (level 4 version), Invisibility. 1/Day each: Cone of Cold, Fly."], summary: "Casts SRD wizard spells using Intelligence." }
-    ]
-  },
-  mammoth: {
-    source: DND_5E_SRD_VERSION,
-    size: "Huge",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 13,
-    initiative: 2,
-    hitPoints: 126,
-    hitDice: "11d12+55",
-    speed: "50 ft.",
-    challengeRating: "6",
-    xp: 2300,
-    proficiencyBonus: 3,
-    abilities: { strength: 24, dexterity: 9, constitution: 21, intelligence: 3, wisdom: 11, charisma: 6 },
-    saves: { strength: 10, dexterity: -1, constitution: 8, intelligence: -4, wisdom: 0, charisma: -2 },
-    senses: ["Passive Perception 10"],
-    languages: ["None"],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Gore attacks." },
-      { name: "Gore", kind: "action", attackBonus: 10, range: "reach 10 ft.", damageFormula: "2d10+7", damageType: "piercing", condition: "Prone", summary: "If the target is Huge or smaller and the mammoth moved 20+ feet straight toward it before the hit, the target has the Prone condition." },
-      { name: "Trample", kind: "bonusAction", range: "5 ft.", damageFormula: "4d10+7", damageType: "bludgeoning", save: { ability: "dexterity", dc: 18, success: "half" }, summary: "Targets one creature within 5 feet that has the Prone condition." }
-    ]
-  },
-  mastiff: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 12,
-    initiative: 2,
-    hitPoints: 5,
-    hitDice: "1d8+1",
-    speed: "40 ft.",
-    challengeRating: "1/8",
-    xp: 25,
-    proficiencyBonus: 2,
-    abilities: { strength: 13, dexterity: 14, constitution: 12, intelligence: 3, wisdom: 12, charisma: 7 },
-    saves: { strength: 1, dexterity: 2, constitution: 1, intelligence: -4, wisdom: 3, charisma: -2 },
-    skills: { perception: 5 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 15"],
-    languages: ["None"],
-    actions: [{ name: "Bite", kind: "action", attackBonus: 3, range: "reach 5 ft.", damageFormula: "1d6+1", damageType: "piercing", condition: "Prone", summary: "If the target is a Medium or smaller creature, it has the Prone condition." }]
-  },
-  mule: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 10,
-    initiative: 0,
-    hitPoints: 11,
-    hitDice: "2d8+2",
-    speed: "40 ft.",
-    challengeRating: "1/8",
-    xp: 25,
-    proficiencyBonus: 2,
-    abilities: { strength: 14, dexterity: 10, constitution: 13, intelligence: 2, wisdom: 10, charisma: 5 },
-    saves: { strength: 4, dexterity: 0, constitution: 1, intelligence: -4, wisdom: 0, charisma: -3 },
-    senses: ["Passive Perception 10"],
-    languages: ["None"],
-    traits: [{ name: "Beast of Burden", summary: "Counts as one size larger for the purpose of determining carrying capacity." }],
-    actions: [{ name: "Hooves", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d4+2", damageType: "bludgeoning" }]
-  },
-  octopus: {
-    source: DND_5E_SRD_VERSION,
-    size: "Small",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 12,
-    initiative: 2,
-    hitPoints: 3,
-    hitDice: "1d6",
-    speed: "5 ft., Swim 30 ft.",
-    challengeRating: "0",
-    xp: 10,
-    proficiencyBonus: 2,
-    abilities: { strength: 4, dexterity: 15, constitution: 11, intelligence: 3, wisdom: 10, charisma: 4 },
-    saves: { strength: -3, dexterity: 2, constitution: 0, intelligence: -4, wisdom: 0, charisma: -3 },
-    skills: { perception: 2, stealth: 6 },
-    senses: ["Darkvision 30 ft.", "Passive Perception 12"],
-    languages: ["None"],
-    traits: [
-      { name: "Compression", summary: "Can move through a space as narrow as 1 inch without expending extra movement." },
-      { name: "Water Breathing", summary: "Can breathe only underwater." }
-    ],
-    actions: [
-      { name: "Tentacles", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1", damageType: "bludgeoning" },
-      { name: "Ink Cloud", kind: "reaction", range: "5-foot Cube underwater", effects: ["1/Day, releases a heavily obscuring ink cloud and moves up to its Swim Speed when a creature ends its turn within 5 feet underwater."], summary: "1/Day underwater reaction that creates a Heavily Obscured 5-foot Cube and lets the octopus move up to its Swim Speed.", summaryMetadata: true }
-    ]
-  },
-  owl: {
-    source: DND_5E_SRD_VERSION,
-    size: "Tiny",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 11,
-    initiative: 1,
-    hitPoints: 1,
-    hitDice: "1d4-1",
-    speed: "5 ft., Fly 60 ft.",
-    challengeRating: "0",
-    xp: 10,
-    proficiencyBonus: 2,
-    abilities: { strength: 3, dexterity: 13, constitution: 8, intelligence: 2, wisdom: 12, charisma: 7 },
-    saves: { strength: -4, dexterity: 1, constitution: -1, intelligence: -4, wisdom: 1, charisma: -2 },
-    skills: { perception: 5, stealth: 5 },
-    senses: ["Darkvision 120 ft.", "Passive Perception 15"],
-    languages: ["None"],
-    traits: [{ name: "Flyby", summary: "Doesn't provoke Opportunity Attacks when flying out of an enemy's reach." }],
-    actions: [{ name: "Talons", kind: "action", attackBonus: 3, range: "reach 5 ft.", damageFormula: "1", damageType: "slashing" }]
-  },
-  panther: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 13,
-    initiative: 3,
-    hitPoints: 13,
-    hitDice: "3d8",
-    speed: "50 ft., Climb 40 ft.",
-    challengeRating: "1/4",
-    xp: 50,
-    proficiencyBonus: 2,
-    abilities: { strength: 14, dexterity: 16, constitution: 10, intelligence: 3, wisdom: 14, charisma: 7 },
-    saves: { strength: 2, dexterity: 3, constitution: 0, intelligence: -4, wisdom: 2, charisma: -2 },
-    skills: { perception: 4, stealth: 7 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 14"],
-    languages: ["None"],
-    actions: [
-      { name: "Rend", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d6+3", damageType: "slashing" },
-      { name: "Nimble Escape", kind: "bonusAction", effects: ["Takes the Disengage or Hide action."], summary: "Takes the Disengage or Hide action.", summaryMetadata: true }
-    ]
-  },
-  piranha: {
-    source: DND_5E_SRD_VERSION,
-    size: "Tiny",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 13,
-    initiative: 3,
-    hitPoints: 1,
-    hitDice: "1d4-1",
-    speed: "5 ft., Swim 40 ft.",
-    challengeRating: "0",
-    xp: 10,
-    proficiencyBonus: 2,
-    abilities: { strength: 2, dexterity: 16, constitution: 9, intelligence: 1, wisdom: 7, charisma: 2 },
-    saves: { strength: -4, dexterity: 3, constitution: -1, intelligence: -5, wisdom: -2, charisma: -4 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 8"],
-    languages: ["None"],
-    traits: [{ name: "Water Breathing", summary: "Can breathe only underwater." }],
-    actions: [{ name: "Bite", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1", damageType: "piercing", summary: "Has Advantage on the attack roll if the target doesn't have all its Hit Points." }]
-  },
-  "polar-bear": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 12,
-    initiative: 2,
-    hitPoints: 42,
-    hitDice: "5d10+15",
-    speed: "40 ft., Swim 40 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 20, dexterity: 14, constitution: 16, intelligence: 2, wisdom: 13, charisma: 7 },
-    saves: { strength: 5, dexterity: 2, constitution: 3, intelligence: -4, wisdom: 1, charisma: -2 },
-    skills: { perception: 5, stealth: 4 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 15"],
-    languages: ["None"],
-    traits: [{ name: "Cold Resistance", summary: "Resistant to Cold damage." }],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Rend attacks." },
-      { name: "Rend", kind: "action", attackBonus: 7, range: "reach 5 ft.", damageFormula: "1d8+5", damageType: "slashing" }
-    ]
-  },
-  pony: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 10,
-    initiative: 0,
-    hitPoints: 11,
-    hitDice: "2d8+2",
-    speed: "40 ft.",
-    challengeRating: "1/8",
-    xp: 25,
-    proficiencyBonus: 2,
-    abilities: { strength: 15, dexterity: 10, constitution: 13, intelligence: 2, wisdom: 11, charisma: 7 },
-    saves: { strength: 4, dexterity: 0, constitution: 1, intelligence: -4, wisdom: 0, charisma: -2 },
-    senses: ["Passive Perception 10"],
-    languages: ["None"],
-    actions: [{ name: "Hooves", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d4+2", damageType: "bludgeoning" }]
-  },
-  pteranodon: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Beast (Dinosaur)",
-    alignment: "Unaligned",
-    armorClass: 13,
-    initiative: 2,
-    hitPoints: 13,
-    hitDice: "3d8",
-    speed: "10 ft., Fly 60 ft.",
-    challengeRating: "1/4",
-    xp: 50,
-    proficiencyBonus: 2,
-    abilities: { strength: 12, dexterity: 15, constitution: 10, intelligence: 2, wisdom: 9, charisma: 5 },
-    saves: { strength: 1, dexterity: 2, constitution: 0, intelligence: -4, wisdom: -1, charisma: -3 },
-    skills: { perception: 1 },
-    senses: ["Passive Perception 11"],
-    languages: ["None"],
-    traits: [{ name: "Flyby", summary: "Doesn't provoke Opportunity Attacks when flying out of an enemy's reach." }],
-    actions: [{ name: "Bite", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d8+2", damageType: "piercing" }]
-  },
-  owlbear: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Monstrosity",
-    alignment: "Unaligned",
-    armorClass: 13,
-    initiative: 1,
-    hitPoints: 59,
-    hitDice: "7d10+21",
-    speed: "40 ft., Climb 40 ft.",
-    challengeRating: "3",
-    xp: 700,
-    proficiencyBonus: 2,
-    abilities: { strength: 20, dexterity: 12, constitution: 17, intelligence: 3, wisdom: 12, charisma: 7 },
-    saves: { strength: 5, dexterity: 1, constitution: 3, intelligence: -4, wisdom: 1, charisma: -2 },
-    skills: { perception: 5 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 15"],
-    languages: ["None"],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Rend attacks." },
-      { name: "Rend", kind: "action", attackBonus: 7, range: "reach 5 ft.", damageFormula: "2d8+5", damageType: "slashing" }
-    ]
-  },
-  mummy: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium or Small",
-    creatureType: "Undead",
-    alignment: "Lawful Evil",
-    armorClass: 11,
-    initiative: -1,
-    hitPoints: 58,
-    hitDice: "9d8+18",
-    speed: "20 ft.",
-    challengeRating: "3",
-    xp: 700,
-    proficiencyBonus: 2,
-    abilities: { strength: 16, dexterity: 8, constitution: 15, intelligence: 6, wisdom: 12, charisma: 12 },
-    saves: { strength: 3, dexterity: -1, constitution: 2, intelligence: -2, wisdom: 3, charisma: 1 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 11"],
-    languages: ["Common plus two other languages"],
-    traits: [
-      { name: "Fire Vulnerability", summary: "Vulnerable to Fire damage." },
-      { name: "Undead Immunities", summary: "Immune to Necrotic and Poison damage and the Charmed, Exhaustion, Frightened, Paralyzed, and Poisoned conditions." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Rotting Fist attacks and uses Dreadful Glare." },
-      { name: "Rotting Fist", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d10+3+3d6", damageType: "bludgeoning/necrotic", summary: "A creature target is cursed; while cursed, it can't regain Hit Points and its Hit Point maximum decreases by 3d6 every 24 hours." },
-      { name: "Dreadful Glare", kind: "action", range: "60 ft.", save: { ability: "wisdom", dc: 11 }, condition: "Frightened", summary: "On a failed save, the target has the Frightened condition until the end of the mummy's next turn." }
-    ]
-  },
-  spy: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium or Small",
-    creatureType: "Humanoid",
-    alignment: "Neutral",
-    armorClass: 12,
-    initiative: 4,
-    hitPoints: 27,
-    hitDice: "6d8",
-    speed: "30 ft., Climb 30 ft.",
-    challengeRating: "1",
-    xp: 200,
-    proficiencyBonus: 2,
-    abilities: { strength: 10, dexterity: 15, constitution: 10, intelligence: 12, wisdom: 14, charisma: 16 },
-    saves: { strength: 0, dexterity: 2, constitution: 0, intelligence: 1, wisdom: 2, charisma: 3 },
-    skills: { deception: 5, insight: 4, investigation: 5, perception: 6, "sleight-of-hand": 4, stealth: 6 },
-    senses: ["Passive Perception 16"],
-    languages: ["Common plus one other language"],
-    gear: ["Hand Crossbow", "Shortsword", "Thieves' Tools"],
-    actions: [
-      { name: "Shortsword", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d6+2+2d6", damageType: "piercing/poison" },
-      { name: "Hand Crossbow", kind: "action", attackBonus: 4, range: "30/120 ft.", damageFormula: "1d6+2+2d6", damageType: "piercing/poison" },
-      { name: "Cunning Action", kind: "bonusAction", summary: "Takes the Dash, Disengage, or Hide action." }
-    ]
-  },
-  troll: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Giant",
-    alignment: "Chaotic Evil",
-    armorClass: 15,
-    initiative: 1,
-    hitPoints: 94,
-    hitDice: "9d10+45",
-    speed: "30 ft.",
-    challengeRating: "5",
-    xp: 1800,
-    proficiencyBonus: 3,
-    abilities: { strength: 18, dexterity: 13, constitution: 20, intelligence: 7, wisdom: 9, charisma: 7 },
-    saves: { strength: 4, dexterity: 1, constitution: 5, intelligence: -2, wisdom: -1, charisma: -2 },
-    skills: { perception: 5 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 15"],
-    languages: ["Giant"],
-    traits: [
-      { name: "Loathsome Limbs", summary: "When Bloodied after heavy Slashing damage, a limb can become a Troll Limb and impose Exhaustion until regrown." },
-      { name: "Regeneration", summary: "Regains 15 HP at the start of each turn unless it took Acid or Fire damage since its last turn." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Rend attacks." },
-      { name: "Rend", kind: "action", attackBonus: 7, range: "reach 10 ft.", damageFormula: "2d6+4", damageType: "slashing" },
-      { name: "Charge", kind: "bonusAction", summary: "Moves up to half its Speed straight toward an enemy it can see." }
-    ]
-  },
-  remorhaz: {
-    source: DND_5E_SRD_VERSION,
-    size: "Huge",
-    creatureType: "Monstrosity",
-    alignment: "Unaligned",
-    armorClass: 17,
-    initiative: 5,
-    hitPoints: 195,
-    hitDice: "17d12+85",
-    speed: "40 ft., Burrow 30 ft.",
-    challengeRating: "11",
-    xp: 7200,
-    proficiencyBonus: 4,
-    abilities: { strength: 24, dexterity: 13, constitution: 21, intelligence: 4, wisdom: 10, charisma: 5 },
-    saves: { strength: 7, dexterity: 1, constitution: 5, intelligence: -3, wisdom: 0, charisma: -3 },
-    senses: ["Darkvision 60 ft.", "Tremorsense 60 ft.", "Passive Perception 10"],
-    languages: ["None"],
-    traits: [
-      { name: "Cold and Fire Immunity", summary: "Immune to Cold and Fire damage." },
-      { name: "Heat Aura", summary: "At the end of each of the remorhaz's turns, each creature in a 5-foot Emanation takes 3d10 Fire damage." }
-    ],
-    actions: [
-      { name: "Bite", kind: "action", attackBonus: 11, range: "reach 10 ft.", damageFormula: "2d10+7+4d6", damageType: "piercing/fire", summary: "A Large or smaller target is Grappled, escape DC 17, and Restrained until the grapple ends." },
-      { name: "Swallow", kind: "bonusAction", range: "one Large or smaller Grappled creature", damageFormula: "3d6+3d6", damageType: "acid/fire", save: { ability: "strength", dc: 19 }, summary: "On a failed save, the target is swallowed, Blinded and Restrained, has Total Cover, and takes Acid plus Fire damage at the start of each remorhaz turn." }
-    ]
-  },
-  "purple-worm": {
-    source: DND_5E_SRD_VERSION,
-    size: "Gargantuan",
-    creatureType: "Monstrosity",
-    alignment: "Unaligned",
-    armorClass: 18,
-    initiative: 3,
-    hitPoints: 247,
-    hitDice: "15d20+90",
-    speed: "50 ft., Burrow 50 ft.",
-    challengeRating: "15",
-    xp: 13000,
-    proficiencyBonus: 5,
-    abilities: { strength: 28, dexterity: 7, constitution: 22, intelligence: 1, wisdom: 8, charisma: 4 },
-    saves: { strength: 9, dexterity: -2, constitution: 11, intelligence: -5, wisdom: 4, charisma: -3 },
-    senses: ["Blindsight 30 ft.", "Tremorsense 60 ft.", "Passive Perception 9"],
-    languages: ["None"],
-    traits: [{ name: "Tunneler", summary: "Can burrow through solid rock at half its Burrow Speed and leaves a 10-foot-diameter tunnel in its wake." }],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes one Bite attack and one Tail Stinger attack." },
-      { name: "Bite", kind: "action", attackBonus: 14, range: "reach 10 ft.", damageFormula: "3d8+9", damageType: "piercing", summary: "A Large or smaller target is Grappled, escape DC 19, and Restrained until the grapple ends." },
-      { name: "Tail Stinger", kind: "action", attackBonus: 14, range: "reach 10 ft.", damageFormula: "2d6+9+10d6", damageType: "piercing/poison" },
-      { name: "Swallow", kind: "bonusAction", range: "one Large or smaller Grappled creature", damageFormula: "5d6", damageType: "acid", save: { ability: "strength", dc: 19 }, summary: "On a failed save, the target is swallowed, Blinded and Restrained, has Total Cover, and takes Acid damage at the start of each worm turn." }
-    ]
-  },
-  "mummy-lord": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium or Small",
-    creatureType: "Undead (Cleric)",
-    alignment: "Lawful Evil",
-    armorClass: 17,
-    initiative: 10,
-    hitPoints: 187,
-    hitDice: "25d8+75",
-    speed: "30 ft.",
-    challengeRating: "15",
-    xp: 13000,
-    proficiencyBonus: 5,
-    abilities: { strength: 18, dexterity: 10, constitution: 17, intelligence: 11, wisdom: 19, charisma: 16 },
-    saves: { strength: 4, dexterity: 0, constitution: 3, intelligence: 5, wisdom: 9, charisma: 3 },
-    skills: { history: 5, perception: 9, religion: 5 },
-    senses: ["Truesight 60 ft.", "Passive Perception 19"],
-    languages: ["Common plus three other languages"],
-    traits: [
-      { name: "Fire Vulnerability", summary: "Vulnerable to Fire damage." },
-      { name: "Legendary Resistance", summary: "3/Day, or 4/Day in Lair. If the mummy fails a saving throw, it can choose to succeed instead." },
-      { name: "Magic Resistance", summary: "Has Advantage on saving throws against spells and other magical effects." },
-      { name: "Undead Restoration", summary: "If destroyed, gains a new body in 24 hours if its heart is intact, reviving with all its Hit Points." },
-      { name: "Undead Immunities", summary: "Immune to Necrotic and Poison damage and the Charmed, Exhaustion, Frightened, Paralyzed, and Poisoned conditions." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes one Rotting Fist or Channel Negative Energy attack, and uses Dreadful Glare." },
-      { name: "Rotting Fist", kind: "action", attackBonus: 9, range: "reach 5 ft.", damageFormula: "2d10+4+3d6", damageType: "bludgeoning/necrotic", summary: "A creature target is cursed; while cursed, it can't regain Hit Points, gains no benefit from Long Rests, and its Hit Point maximum decreases by 3d6 every 24 hours." },
-      { name: "Channel Negative Energy", kind: "action", attackBonus: 9, range: "60 ft.", damageFormula: "6d6+4", damageType: "necrotic" },
-      { name: "Dreadful Glare", kind: "action", range: "60 ft.", damageFormula: "6d6+4", damageType: "psychic", save: { ability: "wisdom", dc: 17 }, condition: "Paralyzed", summary: "On a failed save, the target takes Psychic damage and has the Paralyzed condition until the end of the mummy's next turn." },
-      { name: "Legendary Actions", kind: "action", summary: "Has 3 Legendary Action uses, or 4 in Lair, including Dread Command and Necrotic Strike." }
-    ]
-  },
-  lich: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Undead (Wizard)",
-    alignment: "Neutral Evil",
-    armorClass: 20,
-    initiative: 17,
-    hitPoints: 315,
-    hitDice: "42d8+126",
-    speed: "30 ft.",
-    challengeRating: "21",
-    xp: 33000,
-    proficiencyBonus: 7,
-    abilities: { strength: 11, dexterity: 16, constitution: 16, intelligence: 21, wisdom: 14, charisma: 16 },
-    saves: { strength: 0, dexterity: 10, constitution: 10, intelligence: 12, wisdom: 9, charisma: 3 },
-    skills: { arcana: 19, history: 12, insight: 9, perception: 9 },
-    senses: ["Truesight 120 ft.", "Passive Perception 19"],
-    languages: ["All"],
-    gear: ["Component Pouch"],
-    traits: [
-      { name: "Damage Resistances", summary: "Resistant to Cold and Lightning damage." },
-      { name: "Undead Immunities", summary: "Immune to Necrotic and Poison damage and the Charmed, Exhaustion, Frightened, Paralyzed, and Poisoned conditions." },
-      { name: "Legendary Resistance", summary: "4/Day, or 5/Day in Lair. If the lich fails a saving throw, it can choose to succeed instead." },
-      { name: "Spirit Jar", summary: "If destroyed, reforms in 1d10 days if it has a spirit jar, reviving with all Hit Points in its lair." }
-    ],
-    actions: [
-      { name: "Paralyzing Touch", kind: "action", attackBonus: 12, range: "reach 5 ft.", damageFormula: "3d6+5", damageType: "cold", condition: "Paralyzed", summary: "On a hit, the target has the Paralyzed condition until the start of the lich's next turn." },
-      { name: "Spellcasting", kind: "action", summary: "Casts spells using Intelligence, spell save DC 20: Detect Magic, Detect Thoughts, Dispel Magic, Fireball (level 5), Invisibility, Lightning Bolt (level 5), Mage Hand, Prestidigitation, Animate Dead, Dimension Door, Plane Shift, Chain Lightning, Finger of Death, Power Word Kill, and Scrying." },
-      { name: "Protective Magic", kind: "reaction", summary: "Casts Counterspell or Shield in response to the spell's trigger." },
-      { name: "Legendary Actions", kind: "action", summary: "Has 3 Legendary Action uses, or 4 in Lair, including Deathly Teleport, Disrupt Life, and Frightening Gaze." },
-      { name: "Deathly Teleport", kind: "action", range: "60-foot teleport; 10-foot departure burst", damageFormula: "2d10", damageType: "necrotic", summary: "Teleports up to 60 feet; each creature within 10 feet of the space it left takes Necrotic damage." },
-      { name: "Disrupt Life", kind: "action", range: "20-foot emanation", damageFormula: "9d6", damageType: "necrotic", save: { ability: "constitution", dc: 20, success: "half" }, summary: "Each non-Undead creature in the emanation takes Necrotic damage; the lich can't take this action again until the start of its next turn." },
-      { name: "Frightening Gaze", kind: "action", range: "Fear spell", save: { ability: "wisdom", dc: 20 }, condition: "Frightened", summary: "Casts Fear using Intelligence; the lich can't take this action again until the start of its next turn." }
-    ]
-  },
-  "vampire-spawn": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium or Small",
-    creatureType: "Undead",
-    alignment: "Neutral Evil",
-    armorClass: 16,
-    initiative: 3,
-    hitPoints: 90,
-    hitDice: "12d8+36",
-    speed: "30 ft.",
-    challengeRating: "5",
-    xp: 1800,
-    proficiencyBonus: 3,
-    abilities: { strength: 16, dexterity: 16, constitution: 16, intelligence: 11, wisdom: 10, charisma: 12 },
-    saves: { strength: 3, dexterity: 6, constitution: 3, intelligence: 0, wisdom: 3, charisma: 1 },
-    skills: { perception: 3, stealth: 6 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 13"],
-    languages: ["Common plus one other language"],
-    traits: [
-      { name: "Necrotic Resistance", summary: "Resistant to Necrotic damage." },
-      { name: "Spider Climb", summary: "Can climb difficult surfaces, including along ceilings, without needing to make an ability check." },
-      { name: "Vampire Weakness", summary: "Forbiddance, running water, stake to the heart, and sunlight weaknesses apply." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Claw attacks and uses Bite." },
-      { name: "Claw", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "2d4+3", damageType: "slashing", condition: "Grappled", summary: "A Medium or smaller creature target has the Grappled condition, escape DC 13, from one of two claws." },
-      { name: "Bite", kind: "action", range: "5 ft.; willing, Grappled, Incapacitated, or Restrained creature", damageFormula: "1d4+3+3d6", damageType: "piercing/necrotic", save: { ability: "constitution", dc: 14 }, summary: "The target's Hit Point maximum decreases by the Necrotic damage taken, and the vampire regains Hit Points equal to that amount." },
-      { name: "Deathless Agility", kind: "bonusAction", summary: "Takes the Dash or Disengage action." }
-    ]
-  },
-  vampire: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium or Small",
-    creatureType: "Undead",
-    alignment: "Lawful Evil",
-    armorClass: 16,
-    initiative: 14,
-    hitPoints: 195,
-    hitDice: "23d8+92",
-    speed: "40 ft., Climb 40 ft.",
-    challengeRating: "13",
-    xp: 10000,
-    proficiencyBonus: 5,
-    abilities: { strength: 18, dexterity: 18, constitution: 18, intelligence: 17, wisdom: 15, charisma: 18 },
-    saves: { strength: 4, dexterity: 9, constitution: 9, intelligence: 3, wisdom: 7, charisma: 9 },
-    skills: { perception: 7, stealth: 9 },
-    senses: ["Darkvision 120 ft.", "Passive Perception 17"],
-    languages: ["Common plus two other languages"],
-    traits: [
-      { name: "Necrotic Resistance", summary: "Resistant to Necrotic damage." },
-      { name: "Legendary Resistance", summary: "3/Day, or 4/Day in Lair. If the vampire fails a saving throw, it can choose to succeed instead." },
-      { name: "Misty Escape", summary: "If reduced to 0 Hit Points outside its resting place, shape-shifts into mist and must reach its resting place within 2 hours or be destroyed." },
-      { name: "Spider Climb", summary: "Can climb difficult surfaces, including along ceilings, without needing to make an ability check." },
-      { name: "Vampire Weakness", summary: "Forbiddance, running water, stake to the heart, and sunlight weaknesses apply." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "In vampire form, makes two Grave Strike attacks and uses Bite." },
-      { name: "Grave Strike", kind: "action", attackBonus: 9, range: "reach 5 ft.", damageFormula: "1d8+4+2d6", damageType: "bludgeoning/necrotic", condition: "Grappled", summary: "A Large or smaller creature target has the Grappled condition, escape DC 14, from one of two hands." },
-      { name: "Bite", kind: "action", range: "5 ft.; willing, Grappled, Incapacitated, or Restrained creature", damageFormula: "1d4+4+3d8", damageType: "piercing/necrotic", save: { ability: "constitution", dc: 17 }, summary: "The target's Hit Point maximum decreases by the Necrotic damage taken, the vampire regains Hit Points equal to that amount, and a slain Humanoid can rise as a Vampire Spawn." },
-      { name: "Charm", kind: "bonusAction", range: "30 ft.", save: { ability: "wisdom", dc: 17 }, condition: "Charmed", recharge: "5-6", summary: "Casts Charm Person with no components using Charisma; the Charmed target is a willing recipient of the vampire's Bite and is unaware it was Charmed when the spell ends." },
-      { name: "Shape-Shift", kind: "bonusAction", summary: "Shape-shifts into a Tiny bat, a Medium cloud of mist, or back to vampire form if not in sunlight or running water." },
-      { name: "Legendary Actions", kind: "action", summary: "Has 3 Legendary Action uses, or 4 in Lair, including Beguile and Deathless Strike." },
-      { name: "Beguile", kind: "action", range: "Command spell", save: { ability: "wisdom", dc: 17 }, summary: "Casts Command with no components using Charisma; can't take this legendary action again until the start of its next turn." },
-      { name: "Deathless Strike", kind: "action", summary: "Moves up to half its Speed and makes one Grave Strike attack." }
-    ]
-  },
-  medusa: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Monstrosity",
-    alignment: "Lawful Evil",
-    armorClass: 15,
-    initiative: 6,
-    hitPoints: 127,
-    hitDice: "17d8+51",
-    speed: "30 ft.",
-    challengeRating: "6",
-    xp: 2300,
-    proficiencyBonus: 3,
-    abilities: { strength: 10, dexterity: 17, constitution: 16, intelligence: 12, wisdom: 13, charisma: 15 },
-    saves: { strength: 0, dexterity: 3, constitution: 3, intelligence: 1, wisdom: 4, charisma: 2 },
-    skills: { deception: 5, perception: 4, stealth: 6 },
-    senses: ["Darkvision 150 ft.", "Passive Perception 14"],
-    languages: ["Common plus one other language"],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Claw attacks and one Snake Hair attack, or three Poison Ray attacks." },
-      { name: "Claw", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "2d6+3", damageType: "slashing" },
-      { name: "Snake Hair", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "1d4+3+4d6", damageType: "piercing/poison" },
-      { name: "Poison Ray", kind: "action", attackBonus: 5, range: "150 ft.", damageFormula: "2d8+2", damageType: "poison" },
-      { name: "Petrifying Gaze", kind: "bonusAction", range: "30-foot cone", save: { ability: "constitution", dc: 13 }, condition: "Restrained", recharge: "5-6", summary: "First failure applies Restrained and repeats the save at the end of the target's next turn; second failure changes the condition to Petrified." }
-    ]
-  },
-  hydra: {
-    source: DND_5E_SRD_VERSION,
-    size: "Huge",
-    creatureType: "Monstrosity",
-    alignment: "Unaligned",
-    armorClass: 15,
-    initiative: 4,
-    hitPoints: 184,
-    hitDice: "16d12+80",
-    speed: "40 ft., Swim 40 ft.",
-    challengeRating: "8",
-    xp: 3900,
-    proficiencyBonus: 3,
-    abilities: { strength: 20, dexterity: 12, constitution: 20, intelligence: 2, wisdom: 10, charisma: 7 },
-    saves: { strength: 5, dexterity: 1, constitution: 5, intelligence: -4, wisdom: 0, charisma: -2 },
-    skills: { perception: 6 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 16"],
-    languages: ["None"],
-    traits: [
-      { name: "Hold Breath", summary: "Can hold its breath for 1 hour." },
-      { name: "Multiple Heads", summary: "Starts with five heads. A head dies when the hydra takes 25 or more damage on a single turn; it dies when all heads are dead. At the end of its turn, it grows two heads for each head that died since its last turn unless it took Fire damage, regaining 20 Hit Points when it grows new heads." },
-      { name: "Reactive Heads", summary: "For each head beyond one, gains an extra Reaction that can be used only for Opportunity Attacks." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes as many Bite attacks as it has heads." },
-      { name: "Bite", kind: "action", attackBonus: 8, range: "reach 10 ft.", damageFormula: "1d10+5", damageType: "piercing" }
-    ]
-  },
-  wyvern: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Dragon",
-    alignment: "Unaligned",
-    armorClass: 14,
-    initiative: 0,
-    hitPoints: 127,
-    hitDice: "15d10+45",
-    speed: "30 ft., Fly 80 ft.",
-    challengeRating: "6",
-    xp: 2300,
-    proficiencyBonus: 3,
-    abilities: { strength: 19, dexterity: 10, constitution: 16, intelligence: 5, wisdom: 12, charisma: 6 },
-    saves: { strength: 4, dexterity: 0, constitution: 3, intelligence: -3, wisdom: 1, charisma: -2 },
-    skills: { perception: 4 },
-    senses: ["Darkvision 120 ft.", "Passive Perception 14"],
-    languages: ["None"],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes one Bite attack and one Sting attack." },
-      { name: "Bite", kind: "action", attackBonus: 7, range: "reach 5 ft.", damageFormula: "2d8+4", damageType: "piercing" },
-      { name: "Sting", kind: "action", attackBonus: 7, range: "reach 10 ft.", damageFormula: "2d6+4+7d6", damageType: "piercing/poison", condition: "Poisoned", summary: "The target has the Poisoned condition until the start of the wyvern's next turn." }
-    ]
-  },
-  "giant-rat": {
-    source: DND_5E_SRD_VERSION,
-    size: "Small",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 13,
-    initiative: 3,
-    hitPoints: 7,
-    hitDice: "2d6",
-    speed: "30 ft., Climb 30 ft.",
-    challengeRating: "1/8",
-    xp: 25,
-    proficiencyBonus: 2,
-    abilities: { strength: 7, dexterity: 16, constitution: 11, intelligence: 2, wisdom: 10, charisma: 4 },
-    saves: { strength: -2, dexterity: 5, constitution: 0, intelligence: -4, wisdom: 0, charisma: -3 },
-    skills: { perception: 2 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 12"],
-    languages: ["None"],
-    traits: [{ name: "Pack Tactics", summary: "Has advantage on attack rolls when an ally is within 5 feet of the target and isn't Incapacitated." }],
-    actions: [{ name: "Bite", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d4+3", damageType: "piercing" }]
-  },
-  "giant-spider": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 14,
-    initiative: 3,
-    hitPoints: 26,
-    hitDice: "4d10+4",
-    speed: "30 ft., Climb 30 ft.",
-    challengeRating: "1",
-    xp: 200,
-    proficiencyBonus: 2,
-    abilities: { strength: 14, dexterity: 16, constitution: 12, intelligence: 2, wisdom: 11, charisma: 4 },
-    saves: { strength: 2, dexterity: 3, constitution: 1, intelligence: -4, wisdom: 0, charisma: -3 },
-    skills: { perception: 4, stealth: 7 },
-    senses: ["Darkvision 60 ft.", "Passive Perception 14"],
-    languages: ["None"],
-    traits: [
-      { name: "Spider Climb", summary: "Can climb difficult surfaces, including ceilings, without needing an ability check." },
-      { name: "Web Walker", summary: "Ignores movement restrictions caused by webs and knows the location of creatures in contact with the same web." }
-    ],
-    actions: [
-      { name: "Bite", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d8+3+2d6", damageType: "piercing/poison" },
-      { name: "Web", kind: "action", range: "60 ft.", recharge: "5-6", save: { ability: "dexterity", dc: 13 }, condition: "Restrained", summary: "On a failed save, the target has the Restrained condition until the web is destroyed." }
-    ]
-  },
-  "gelatinous-cube": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Ooze",
-    alignment: "Unaligned",
-    armorClass: 6,
-    initiative: -4,
-    hitPoints: 63,
-    hitDice: "6d10+30",
-    speed: "15 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 14, dexterity: 3, constitution: 20, intelligence: 1, wisdom: 6, charisma: 1 },
-    saves: { strength: 2, dexterity: -4, constitution: 5, intelligence: -5, wisdom: -2, charisma: -5 },
-    senses: ["Blindsight 60 ft.", "Passive Perception 8"],
-    languages: ["None"],
-    traits: [
-      { name: "Acid Immunity", summary: "Immune to Acid damage." },
-      { name: "Condition Immunities", summary: "Immune to the Blinded, Charmed, Deafened, Exhaustion, Frightened, and Prone conditions." },
-      { name: "Ooze Cube", summary: "Fills its entire space, is transparent, can hold one Large creature or up to four Medium or Small creatures, and creatures inside it have Total Cover." },
-      { name: "Transparent", summary: "A creature must succeed on a DC 15 Wisdom (Perception) check to notice the cube if it has not witnessed the cube move or otherwise act." }
-    ],
-    actions: [
-      { name: "Pseudopod", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "3d6+2", damageType: "acid" },
-      { name: "Engulf", kind: "action", range: "Speed", damageFormula: "3d6", damageType: "acid", save: { ability: "dexterity", dc: 12, success: "half" }, condition: "Restrained", summary: "Moves up to its Speed without provoking Opportunity Attacks. Large or smaller targets whose spaces it enters can be engulfed; engulfed targets are suffocating, cannot cast spells with Verbal components, have the Restrained condition, and take this Acid damage at the start of each cube turn." }
-    ]
-  },
-  "giant-ape": {
-    source: DND_5E_SRD_VERSION,
-    size: "Huge",
-    creatureType: "Beast",
-    alignment: "Unaligned",
-    armorClass: 12,
-    initiative: 5,
-    hitPoints: 168,
-    hitDice: "16d12+64",
-    speed: "40 ft., Climb 40 ft.",
-    challengeRating: "7",
-    xp: 2900,
-    proficiencyBonus: 3,
-    abilities: { strength: 23, dexterity: 14, constitution: 18, intelligence: 5, wisdom: 12, charisma: 7 },
-    saves: { strength: 6, dexterity: 2, constitution: 4, intelligence: -3, wisdom: 1, charisma: -2 },
-    skills: { athletics: 9, perception: 4, survival: 4 },
-    senses: ["Passive Perception 14"],
-    languages: ["None"],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Fist attacks." },
-      { name: "Fist", kind: "action", attackBonus: 9, range: "reach 10 ft.", damageFormula: "3d10+6", damageType: "bludgeoning" },
-      { name: "Boulder Toss", kind: "action", range: "90 ft.", damageFormula: "7d6", damageType: "bludgeoning", save: { ability: "dexterity", dc: 17, success: "half" }, condition: "Prone", recharge: "6", summary: "A Large or smaller target that fails also has the Prone condition." },
-      { name: "Leap", kind: "bonusAction", summary: "Jumps up to 30 feet by spending 10 feet of movement." }
-    ]
-  },
-  "giant-eagle": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Celestial",
-    alignment: "Neutral Good",
-    armorClass: 13,
-    initiative: 3,
-    hitPoints: 26,
-    hitDice: "4d10+4",
-    speed: "10 ft., Fly 80 ft.",
-    challengeRating: "1",
-    xp: 200,
-    proficiencyBonus: 2,
-    abilities: { strength: 16, dexterity: 17, constitution: 13, intelligence: 8, wisdom: 14, charisma: 10 },
-    saves: { strength: 3, dexterity: 3, constitution: 1, intelligence: -1, wisdom: 2, charisma: 0 },
-    skills: { perception: 6 },
-    senses: ["Passive Perception 16"],
-    languages: ["Celestial", "Understands Common and Primordial (Auran) but can't speak them"],
-    traits: [{ name: "Radiant and Necrotic Resistance", summary: "Resistant to Necrotic and Radiant damage." }],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Rend attacks." },
-      { name: "Rend", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d4+3+1d6", damageType: "slashing/radiant" }
-    ]
-  },
-  couatl: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Celestial",
-    alignment: "Lawful Good",
-    armorClass: 19,
-    initiative: 5,
-    hitPoints: 60,
-    hitDice: "8d8+24",
-    speed: "30 ft., Fly 90 ft.",
-    challengeRating: "4",
-    xp: 1100,
-    proficiencyBonus: 2,
-    abilities: { strength: 16, dexterity: 20, constitution: 17, intelligence: 18, wisdom: 20, charisma: 18 },
-    saves: { strength: 3, dexterity: 5, constitution: 5, intelligence: 4, wisdom: 7, charisma: 4 },
-    senses: ["Truesight 120 ft.", "Passive Perception 15"],
-    languages: ["All", "telepathy 120 ft."],
-    traits: [
-      { name: "Celestial Resistances", summary: "Resistant to Bludgeoning, Piercing, and Slashing damage." },
-      { name: "Celestial Immunities", summary: "Immune to Psychic and Radiant damage." },
-      { name: "Shielded Mind", summary: "The couatl's thoughts can't be read, and other creatures can communicate with it telepathically only if it allows them." }
-    ],
-    actions: [
-      { name: "Bite", kind: "action", attackBonus: 7, range: "reach 5 ft.", damageFormula: "1d12+5", damageType: "piercing", condition: "Poisoned", summary: "A hit poisons the target until the end of the couatl's next turn.", summaryMetadata: true },
-      { name: "Constrict", kind: "action", range: "5 ft.; one Medium or smaller creature", damageFormula: "1d6+5", damageType: "bludgeoning", save: { ability: "strength", dc: 15 }, condition: "Grappled/Restrained", summary: "On a failed save, the target is Grappled, escape DC 13, and Restrained until the grapple ends.", summaryMetadata: true },
-      { name: "Spellcasting", kind: "action", effects: ["Casts Detect Evil and Good, Detect Magic, Detect Thoughts, Shapechange, Create Food and Water, Dream, Greater Restoration, Scrying, or Sleep without spell components using Wisdom; spell save DC 15."], summary: "Casts its SRD spell list without spell components using Wisdom; spell save DC 15.", summaryMetadata: true },
-      { name: "Divine Aid", kind: "bonusAction", effects: ["Twice per day, casts Bless, Lesser Restoration, or Sanctuary without spell components using the same spellcasting ability as Spellcasting."], summary: "Twice per day, casts Bless, Lesser Restoration, or Sanctuary without spell components.", summaryMetadata: true }
-    ]
-  },
-  "swarm-of-crawling-claws": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Swarm of Tiny Undead",
-    alignment: "Neutral Evil",
-    armorClass: 12,
-    initiative: 2,
-    hitPoints: 49,
-    hitDice: "11d8",
-    speed: "30 ft., Climb 30 ft.",
-    challengeRating: "3",
-    xp: 700,
-    proficiencyBonus: 2,
-    abilities: { strength: 14, dexterity: 14, constitution: 11, intelligence: 5, wisdom: 10, charisma: 4 },
-    saves: { strength: 2, dexterity: 2, constitution: 0, intelligence: -3, wisdom: 0, charisma: -3 },
-    senses: ["Blindsight 30 ft.", "Passive Perception 10"],
-    languages: ["Understands Common but can't speak"],
-    traits: [
-      { name: "Damage Resistances", summary: "Resistant to Bludgeoning, Piercing, and Slashing damage." },
-      { name: "Damage Immunities", summary: "Immune to Necrotic and Poison damage." },
-      { name: "Condition Immunities", summary: "Immune to Charmed, Exhaustion, Frightened, Grappled, Incapacitated, Paralyzed, Petrified, Poisoned, Prone, Restrained, and Stunned." },
-      { name: "Swarm", summary: "Can occupy another creature's space and move through Tiny openings; can't regain Hit Points or gain Temporary Hit Points." }
-    ],
-    actions: [
-      { name: "Swarm of Grasping Hands", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "4d8+2", damageType: "necrotic", condition: "Prone", summary: "Deals 2d8+2 Necrotic damage instead while Bloodied. A Medium or smaller target is knocked Prone.", summaryMetadata: true }
-    ]
-  },
-  cultist: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium or Small",
-    creatureType: "Humanoid",
-    alignment: "Neutral",
-    armorClass: 12,
-    initiative: 1,
-    hitPoints: 9,
-    hitDice: "2d8",
-    speed: "30 ft.",
-    challengeRating: "1/8",
-    xp: 25,
-    proficiencyBonus: 2,
-    abilities: { strength: 11, dexterity: 12, constitution: 10, intelligence: 10, wisdom: 11, charisma: 10 },
-    saves: { strength: 0, dexterity: 1, constitution: 0, intelligence: 0, wisdom: 2, charisma: 0 },
-    skills: { deception: 2, religion: 2 },
-    senses: ["Passive Perception 10"],
-    languages: ["Common"],
-    traits: [{ name: "Gear", summary: "Leather Armor and Sickle." }],
-    actions: [{ name: "Ritual Sickle", kind: "action", attackBonus: 3, range: "reach 5 ft.", damageFormula: "1d4+1+1", damageType: "slashing/necrotic" }]
-  },
-  "cultist-fanatic": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium or Small",
-    creatureType: "Humanoid",
-    alignment: "Neutral",
-    armorClass: 13,
-    initiative: 2,
-    hitPoints: 44,
-    hitDice: "8d8+8",
-    speed: "30 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 11, dexterity: 14, constitution: 12, intelligence: 10, wisdom: 14, charisma: 13 },
-    saves: { strength: 0, dexterity: 2, constitution: 1, intelligence: 0, wisdom: 4, charisma: 1 },
-    skills: { deception: 3, persuasion: 3, religion: 2 },
-    senses: ["Passive Perception 12"],
-    languages: ["Common"],
-    traits: [{ name: "Gear", summary: "Holy Symbol and Leather Armor." }],
-    actions: [
-      { name: "Pact Blade", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d8+2+2d6", damageType: "slashing/necrotic" },
-      { name: "Spellcasting", kind: "action", attackBonus: 4, save: { ability: "wisdom", dc: 12 }, effects: ["Casts Light and Thaumaturgy at will, Command twice per day, and Hold Person once per day using Wisdom."], summary: "Casts its SRD spell list using Wisdom; spell save DC 12, +4 to hit with spell attacks.", summaryMetadata: true },
-      { name: "Spiritual Weapon", kind: "bonusAction", recharge: "2/day", effects: ["Casts Spiritual Weapon using the same spellcasting ability as Spellcasting."], summary: "Twice per day, casts Spiritual Weapon.", summaryMetadata: true }
-    ]
-  },
-  djinni: {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Elemental (Genie)",
-    alignment: "Neutral",
-    armorClass: 17,
-    initiative: 2,
-    hitPoints: 218,
-    hitDice: "19d10+114",
-    speed: "30 ft., Fly 90 ft. (hover)",
-    challengeRating: "11",
-    xp: 7200,
-    proficiencyBonus: 4,
-    abilities: { strength: 21, dexterity: 15, constitution: 22, intelligence: 15, wisdom: 16, charisma: 20 },
-    saves: { strength: 5, dexterity: 6, constitution: 6, intelligence: 2, wisdom: 7, charisma: 5 },
-    senses: ["Darkvision 120 ft.", "Passive Perception 13"],
-    languages: ["Primordial (Auran)"],
-    traits: [
-      { name: "Damage Immunities", summary: "Immune to Lightning and Thunder damage." },
-      { name: "Elemental Restoration", summary: "If it dies outside the Elemental Plane of Air, it gains a new body in 1d4 days somewhere on the Plane of Air." },
-      { name: "Magic Resistance", summary: "Has Advantage on saving throws against spells and other magical effects." },
-      { name: "Wishes", summary: "Has a 30 percent chance of knowing Wish, which it can cast only on behalf of a non-genie creature; after three casts it can't cast Wish again for 365 days." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three attacks, using Storm Blade or Storm Bolt in any combination." },
-      { name: "Storm Blade", kind: "action", attackBonus: 9, range: "reach 5 ft.", damageFormula: "2d6+5+2d6", damageType: "slashing/lightning" },
-      { name: "Storm Bolt", kind: "action", attackBonus: 9, range: "120 ft.", damageFormula: "3d8", damageType: "thunder", condition: "Prone", summary: "A Large or smaller target is knocked Prone.", summaryMetadata: true },
-      { name: "Create Whirlwind", kind: "action", range: "120 ft.; 20-foot-radius, 60-foot-high cylinder", damageFormula: "6d6", damageType: "thunder", save: { ability: "strength", dc: 17 }, condition: "Restrained", effects: ["Conjures a concentration whirlwind. A creature in the whirlwind that fails the save is Restrained, moves with it, takes Thunder damage at the start of each turn, and repeats the save at the end of each turn."], summary: "Creates a movable concentration whirlwind that Restrains and damages creatures.", summaryMetadata: true },
-      { name: "Spellcasting", kind: "action", save: { ability: "charisma", dc: 17 }, effects: ["Casts Detect Evil and Good and Detect Magic at will; Create Food and Water, Tongues, and Wind Walk twice per day; and Creation, Gaseous Form, Invisibility, Major Image, and Plane Shift once per day using Charisma."], summary: "Casts its SRD spell list using Charisma; spell save DC 17.", summaryMetadata: true }
-    ]
-  },
-  deva: {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Celestial (Angel)",
-    alignment: "Lawful Good",
-    armorClass: 17,
-    initiative: 4,
-    hitPoints: 229,
-    hitDice: "27d8+108",
-    speed: "30 ft., Fly 90 ft. (hover)",
-    challengeRating: "10",
-    xp: 5900,
-    proficiencyBonus: 4,
-    abilities: { strength: 18, dexterity: 18, constitution: 18, intelligence: 17, wisdom: 20, charisma: 20 },
-    saves: { strength: 4, dexterity: 4, constitution: 4, intelligence: 3, wisdom: 9, charisma: 9 },
-    skills: { insight: 9, perception: 9 },
-    senses: ["Darkvision 120 ft.", "Passive Perception 19"],
-    languages: ["All", "telepathy 120 ft."],
-    traits: [
-      { name: "Radiant Resistance", summary: "Resistant to Radiant damage." },
-      { name: "Celestial Immunities", summary: "Immune to the Charmed, Exhaustion, and Frightened conditions." },
-      { name: "Exalted Restoration", summary: "If it dies outside Mount Celestia, its body disappears and it revives with all Hit Points somewhere in Mount Celestia." },
-      { name: "Magic Resistance", summary: "Has Advantage on saving throws against spells and other magical effects." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Holy Mace attacks." },
-      { name: "Holy Mace", kind: "action", attackBonus: 8, range: "reach 5 ft.", damageFormula: "1d6+4+4d8", damageType: "bludgeoning/radiant" },
-      { name: "Spellcasting", kind: "action", effects: ["Casts Detect Evil and Good, Shapechange, Commune, or Raise Dead without Material components using Charisma; spell save DC 17."], summary: "Casts its SRD spell list without Material components using Charisma; spell save DC 17.", summaryMetadata: true },
-      { name: "Divine Aid", kind: "bonusAction", effects: ["Twice per day, casts Cure Wounds, Lesser Restoration, or Remove Curse using the same spellcasting ability as Spellcasting."], summary: "Twice per day, casts Cure Wounds, Lesser Restoration, or Remove Curse.", summaryMetadata: true }
-    ]
-  },
-  "red-dragon-wyrmling": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Dragon (Chromatic)",
-    alignment: "Chaotic Evil",
-    armorClass: 17,
-    initiative: 2,
-    hitPoints: 75,
-    hitDice: "10d8+30",
-    speed: "30 ft., Climb 30 ft., Fly 60 ft.",
-    challengeRating: "4",
-    xp: 1100,
-    proficiencyBonus: 2,
-    abilities: { strength: 19, dexterity: 10, constitution: 17, intelligence: 12, wisdom: 11, charisma: 15 },
-    saves: { strength: 4, dexterity: 2, constitution: 3, intelligence: 1, wisdom: 2, charisma: 2 },
-    skills: { perception: 4, stealth: 2 },
-    senses: ["Blindsight 10 ft.", "Darkvision 60 ft.", "Passive Perception 14"],
-    languages: ["Draconic"],
-    traits: [{ name: "Fire Immunity", summary: "Immune to Fire damage." }],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Rend attacks." },
-      { name: "Rend", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "1d10+4+1d6", damageType: "slashing/fire" },
-      { name: "Fire Breath", kind: "action", range: "15-foot cone", damageFormula: "7d6", damageType: "fire", save: { ability: "dexterity", dc: 13, success: "half" }, recharge: "5-6" }
-    ]
-  },
-  "young-red-dragon": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Dragon (Chromatic)",
-    alignment: "Chaotic Evil",
-    armorClass: 18,
-    initiative: 4,
-    hitPoints: 178,
-    hitDice: "17d10+85",
-    speed: "40 ft., Climb 40 ft., Fly 80 ft.",
-    challengeRating: "10",
-    xp: 5900,
-    proficiencyBonus: 4,
-    abilities: { strength: 23, dexterity: 10, constitution: 21, intelligence: 14, wisdom: 11, charisma: 19 },
-    saves: { strength: 6, dexterity: 4, constitution: 5, intelligence: 2, wisdom: 4, charisma: 4 },
-    skills: { perception: 8, stealth: 4 },
-    senses: ["Blindsight 30 ft.", "Darkvision 120 ft.", "Passive Perception 18"],
-    languages: ["Common", "Draconic"],
-    traits: [{ name: "Fire Immunity", summary: "Immune to Fire damage." }],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Rend attacks." },
-      { name: "Rend", kind: "action", attackBonus: 10, range: "reach 10 ft.", damageFormula: "2d6+6+1d6", damageType: "slashing/fire" },
-      { name: "Fire Breath", kind: "action", range: "30-foot cone", damageFormula: "16d6", damageType: "fire", save: { ability: "dexterity", dc: 17, success: "half" }, recharge: "5-6" }
-    ]
-  },
-  "adult-red-dragon": {
-    source: DND_5E_SRD_VERSION,
-    size: "Huge",
-    creatureType: "Dragon (Chromatic)",
-    alignment: "Chaotic Evil",
-    armorClass: 19,
-    initiative: 12,
-    hitPoints: 256,
-    hitDice: "19d12+133",
-    speed: "40 ft., Climb 40 ft., Fly 80 ft.",
-    challengeRating: "17",
-    xp: 18000,
-    proficiencyBonus: 6,
-    abilities: { strength: 27, dexterity: 10, constitution: 25, intelligence: 16, wisdom: 13, charisma: 23 },
-    saves: { strength: 8, dexterity: 6, constitution: 7, intelligence: 3, wisdom: 7, charisma: 6 },
-    skills: { perception: 13, stealth: 6 },
-    senses: ["Blindsight 60 ft.", "Darkvision 120 ft.", "Passive Perception 23"],
-    languages: ["Common", "Draconic"],
-    traits: [
-      { name: "Fire Immunity", summary: "Immune to Fire damage." },
-      { name: "Legendary Resistance", summary: "3/Day, or 4/Day in Lair. If the dragon fails a saving throw, it can choose to succeed instead." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Rend attacks. It can replace one attack with Spellcasting to cast Scorching Ray." },
-      { name: "Rend", kind: "action", attackBonus: 14, range: "reach 10 ft.", damageFormula: "1d10+8+2d4", damageType: "slashing/fire" },
-      { name: "Fire Breath", kind: "action", range: "60-foot cone", damageFormula: "17d6", damageType: "fire", save: { ability: "dexterity", dc: 21, success: "half" }, recharge: "5-6" },
-      { name: "Spellcasting", kind: "action", summary: "Casts spells requiring no Material components using Charisma: Command, Detect Magic, Scorching Ray, and Fireball once per day." }
-    ]
-  },
-  "ancient-red-dragon": {
-    source: DND_5E_SRD_VERSION,
-    size: "Gargantuan",
-    creatureType: "Dragon (Chromatic)",
-    alignment: "Chaotic Evil",
-    armorClass: 22,
-    initiative: 14,
-    hitPoints: 507,
-    hitDice: "26d20+234",
-    speed: "40 ft., Climb 40 ft., Fly 80 ft.",
-    challengeRating: "24",
-    xp: 62000,
-    proficiencyBonus: 7,
-    abilities: { strength: 30, dexterity: 10, constitution: 29, intelligence: 18, wisdom: 15, charisma: 27 },
-    saves: { strength: 10, dexterity: 7, constitution: 9, intelligence: 4, wisdom: 9, charisma: 8 },
-    skills: { perception: 16, stealth: 7 },
-    senses: ["Blindsight 60 ft.", "Darkvision 120 ft.", "Passive Perception 26"],
-    languages: ["Common", "Draconic"],
-    traits: [
-      { name: "Fire Immunity", summary: "Immune to Fire damage." },
-      { name: "Legendary Resistance", summary: "4/Day, or 5/Day in Lair. If the dragon fails a saving throw, it can choose to succeed instead." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Rend attacks. It can replace one attack with Spellcasting to cast Scorching Ray at level 3." },
-      { name: "Rend", kind: "action", attackBonus: 17, range: "reach 15 ft.", damageFormula: "2d8+10+3d6", damageType: "slashing/fire" },
-      { name: "Fire Breath", kind: "action", range: "90-foot cone", damageFormula: "26d6", damageType: "fire", save: { ability: "dexterity", dc: 24, success: "half" }, recharge: "5-6" },
-      { name: "Spellcasting", kind: "action", summary: "Casts spells requiring no Material components using Charisma; spell save DC 23 and +15 to hit with spell attacks." },
-      { name: "Legendary Actions", kind: "action", summary: "Has 3 Legendary Action uses, or 4 in Lair, including Commanding Presence, Fiery Rays, and Pounce." }
-    ]
-  },
-  "blue-dragon-wyrmling": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Dragon (Chromatic)",
-    alignment: "Lawful Evil",
-    armorClass: 17,
-    initiative: 2,
-    hitPoints: 65,
-    hitDice: "10d8+20",
-    speed: "30 ft., Burrow 15 ft., Fly 60 ft.",
-    challengeRating: "3",
-    xp: 700,
-    proficiencyBonus: 2,
-    abilities: { strength: 17, dexterity: 10, constitution: 15, intelligence: 12, wisdom: 11, charisma: 15 },
-    saves: { strength: 3, dexterity: 2, constitution: 2, intelligence: 1, wisdom: 2, charisma: 2 },
-    skills: { perception: 4, stealth: 2 },
-    senses: ["Blindsight 10 ft.", "Darkvision 60 ft.", "Passive Perception 14"],
-    languages: ["Draconic"],
-    traits: [{ name: "Lightning Immunity", summary: "Immune to Lightning damage." }],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Rend attacks." },
-      { name: "Rend", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d10+3+1d6", damageType: "slashing/lightning" },
-      { name: "Lightning Breath", kind: "action", range: "30-foot line", damageFormula: "6d6", damageType: "lightning", save: { ability: "dexterity", dc: 12, success: "half" }, recharge: "5-6" }
-    ]
-  },
-  "young-blue-dragon": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Dragon (Chromatic)",
-    alignment: "Lawful Evil",
-    armorClass: 18,
-    initiative: 4,
-    hitPoints: 152,
-    hitDice: "16d10+64",
-    speed: "40 ft., Burrow 20 ft., Fly 80 ft.",
-    challengeRating: "9",
-    xp: 5000,
-    proficiencyBonus: 4,
-    abilities: { strength: 21, dexterity: 10, constitution: 19, intelligence: 14, wisdom: 13, charisma: 17 },
-    saves: { strength: 5, dexterity: 4, constitution: 4, intelligence: 2, wisdom: 5, charisma: 3 },
-    skills: { perception: 9, stealth: 4 },
-    senses: ["Blindsight 30 ft.", "Darkvision 120 ft.", "Passive Perception 19"],
-    languages: ["Common", "Draconic"],
-    traits: [{ name: "Lightning Immunity", summary: "Immune to Lightning damage." }],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Rend attacks." },
-      { name: "Rend", kind: "action", attackBonus: 9, range: "reach 10 ft.", damageFormula: "2d6+5+1d10", damageType: "slashing/lightning" },
-      { name: "Lightning Breath", kind: "action", range: "60-foot line", damageFormula: "10d10", damageType: "lightning", save: { ability: "dexterity", dc: 16, success: "half" }, recharge: "5-6" }
-    ]
-  },
-  "adult-blue-dragon": {
-    source: DND_5E_SRD_VERSION,
-    size: "Huge",
-    creatureType: "Dragon (Chromatic)",
-    alignment: "Lawful Evil",
-    armorClass: 19,
-    initiative: 10,
-    hitPoints: 212,
-    hitDice: "17d12+102",
-    speed: "40 ft., Burrow 30 ft., Fly 80 ft.",
-    challengeRating: "16",
-    xp: 15000,
-    proficiencyBonus: 5,
-    abilities: { strength: 25, dexterity: 10, constitution: 23, intelligence: 16, wisdom: 15, charisma: 20 },
-    saves: { strength: 7, dexterity: 5, constitution: 6, intelligence: 3, wisdom: 7, charisma: 5 },
-    skills: { perception: 12, stealth: 5 },
-    senses: ["Blindsight 60 ft.", "Darkvision 120 ft.", "Passive Perception 22"],
-    languages: ["Common", "Draconic"],
-    traits: [
-      { name: "Lightning Immunity", summary: "Immune to Lightning damage." },
-      { name: "Legendary Resistance", summary: "3/Day, or 4/Day in Lair. If the dragon fails a saving throw, it can choose to succeed instead." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Rend attacks. It can replace one attack with Spellcasting to cast Shatter." },
-      { name: "Rend", kind: "action", attackBonus: 12, range: "reach 10 ft.", damageFormula: "2d8+7+1d10", damageType: "slashing/lightning" },
-      { name: "Lightning Breath", kind: "action", range: "90-foot line", damageFormula: "11d10", damageType: "lightning", save: { ability: "dexterity", dc: 19, success: "half" }, recharge: "5-6" },
-      { name: "Spellcasting", kind: "action", summary: "Casts spells requiring no Material components using Charisma: Detect Magic, Invisibility, Mage Hand, Shatter, Scrying, and Sending." },
-      { name: "Legendary Actions", kind: "action", effects: ["Has 3 Legendary Action uses, or 4 in Lair, including Cloaked Flight, Sonic Boom, and Tail Swipe."], summary: "Has 3 Legendary Action uses, or 4 in Lair, including Cloaked Flight, Sonic Boom, and Tail Swipe.", summaryMetadata: true }
-    ]
-  },
-  "ancient-blue-dragon": {
-    source: DND_5E_SRD_VERSION,
-    size: "Gargantuan",
-    creatureType: "Dragon (Chromatic)",
-    alignment: "Lawful Evil",
-    armorClass: 22,
-    initiative: 14,
-    hitPoints: 481,
-    hitDice: "26d20+208",
-    speed: "40 ft., Burrow 40 ft., Fly 80 ft.",
-    challengeRating: "23",
-    xp: 50000,
-    proficiencyBonus: 7,
-    abilities: { strength: 29, dexterity: 10, constitution: 27, intelligence: 18, wisdom: 17, charisma: 25 },
-    saves: { strength: 9, dexterity: 7, constitution: 8, intelligence: 4, wisdom: 10, charisma: 7 },
-    skills: { perception: 17, stealth: 7 },
-    senses: ["Blindsight 60 ft.", "Darkvision 120 ft.", "Passive Perception 27"],
-    languages: ["Common", "Draconic"],
-    traits: [
-      { name: "Lightning Immunity", summary: "Immune to Lightning damage." },
-      { name: "Legendary Resistance", summary: "4/Day, or 5/Day in Lair. If the dragon fails a saving throw, it can choose to succeed instead." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Rend attacks. It can replace one attack with Spellcasting to cast Shatter at level 3." },
-      { name: "Rend", kind: "action", attackBonus: 16, range: "reach 15 ft.", damageFormula: "2d8+9+2d10", damageType: "slashing/lightning" },
-      { name: "Lightning Breath", kind: "action", range: "120-foot line", damageFormula: "16d10", damageType: "lightning", save: { ability: "dexterity", dc: 23, success: "half" }, recharge: "5-6" },
-      { name: "Spellcasting", kind: "action", summary: "Casts spells requiring no Material components using Charisma; spell save DC 22." },
-      { name: "Legendary Actions", kind: "action", effects: ["Has 3 Legendary Action uses, or 4 in Lair, including Cloaked Flight, Sonic Boom, and Tail Swipe."], summary: "Has 3 Legendary Action uses, or 4 in Lair, including Cloaked Flight, Sonic Boom, and Tail Swipe.", summaryMetadata: true }
-    ]
-  },
-  "green-dragon-wyrmling": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Dragon (Chromatic)",
-    alignment: "Lawful Evil",
-    armorClass: 17,
-    initiative: 3,
-    hitPoints: 38,
-    hitDice: "7d8+7",
-    speed: "30 ft., Fly 60 ft., Swim 30 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 15, dexterity: 12, constitution: 13, intelligence: 14, wisdom: 11, charisma: 13 },
-    saves: { strength: 2, dexterity: 3, constitution: 1, intelligence: 2, wisdom: 2, charisma: 1 },
-    skills: { perception: 4, stealth: 3 },
-    senses: ["Blindsight 10 ft.", "Darkvision 60 ft.", "Passive Perception 14"],
-    languages: ["Draconic"],
-    traits: [
-      { name: "Poison Immunity", summary: "Immune to Poison damage and the Poisoned condition." },
-      { name: "Amphibious", summary: "Can breathe air and water." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Rend attacks." },
-      { name: "Rend", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d10+2+1d6", damageType: "slashing/poison" },
-      { name: "Poison Breath", kind: "action", range: "15-foot cone", damageFormula: "6d6", damageType: "poison", save: { ability: "constitution", dc: 11, success: "half" }, recharge: "5-6" }
-    ]
-  },
-  "young-green-dragon": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Dragon (Chromatic)",
-    alignment: "Lawful Evil",
-    armorClass: 18,
-    initiative: 4,
-    hitPoints: 136,
-    hitDice: "16d10+48",
-    speed: "40 ft., Fly 80 ft., Swim 40 ft.",
-    challengeRating: "8",
-    xp: 3900,
-    proficiencyBonus: 3,
-    abilities: { strength: 19, dexterity: 12, constitution: 17, intelligence: 16, wisdom: 13, charisma: 15 },
-    saves: { strength: 4, dexterity: 4, constitution: 3, intelligence: 3, wisdom: 4, charisma: 2 },
-    skills: { deception: 5, perception: 7, stealth: 4 },
-    senses: ["Blindsight 30 ft.", "Darkvision 120 ft.", "Passive Perception 17"],
-    languages: ["Common", "Draconic"],
-    traits: [
-      { name: "Poison Immunity", summary: "Immune to Poison damage and the Poisoned condition." },
-      { name: "Amphibious", summary: "Can breathe air and water." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Rend attacks." },
-      { name: "Rend", kind: "action", attackBonus: 7, range: "reach 10 ft.", damageFormula: "2d6+4+2d6", damageType: "slashing/poison" },
-      { name: "Poison Breath", kind: "action", range: "30-foot cone", damageFormula: "12d6", damageType: "poison", save: { ability: "constitution", dc: 14, success: "half" }, recharge: "5-6" }
-    ]
-  },
-  "adult-green-dragon": {
-    source: DND_5E_SRD_VERSION,
-    size: "Huge",
-    creatureType: "Dragon (Chromatic)",
-    alignment: "Lawful Evil",
-    armorClass: 19,
-    initiative: 11,
-    hitPoints: 207,
-    hitDice: "18d12+90",
-    speed: "40 ft., Fly 80 ft., Swim 40 ft.",
-    challengeRating: "15",
-    xp: 13000,
-    proficiencyBonus: 5,
-    abilities: { strength: 23, dexterity: 12, constitution: 21, intelligence: 18, wisdom: 15, charisma: 18 },
-    saves: { strength: 6, dexterity: 6, constitution: 5, intelligence: 4, wisdom: 7, charisma: 4 },
-    skills: { deception: 9, perception: 12, persuasion: 9, stealth: 6 },
-    senses: ["Blindsight 60 ft.", "Darkvision 120 ft.", "Passive Perception 22"],
-    languages: ["Common", "Draconic"],
-    traits: [
-      { name: "Poison Immunity", summary: "Immune to Poison damage and the Poisoned condition." },
-      { name: "Amphibious", summary: "Can breathe air and water." },
-      { name: "Legendary Resistance", summary: "3/Day, or 4/Day in Lair. If the dragon fails a saving throw, it can choose to succeed instead." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Rend attacks. It can replace one attack with Spellcasting to cast Mind Spike at level 3." },
-      { name: "Rend", kind: "action", attackBonus: 11, range: "reach 10 ft.", damageFormula: "2d8+6+2d6", damageType: "slashing/poison" },
-      { name: "Poison Breath", kind: "action", range: "60-foot cone", damageFormula: "16d6", damageType: "poison", save: { ability: "constitution", dc: 18, success: "half" }, recharge: "5-6" },
-      { name: "Spellcasting", kind: "action", summary: "Casts spells requiring no Material components using Charisma: Detect Magic, Mind Spike at level 3, and Geas." },
-      { name: "Legendary Actions", kind: "action", effects: ["Has 3 Legendary Action uses, or 4 in Lair, including Mind Invasion, Noxious Miasma, and Pounce."], summary: "Has 3 Legendary Action uses, or 4 in Lair, including Mind Invasion, Noxious Miasma, and Pounce.", summaryMetadata: true }
-    ]
-  },
-  "ancient-green-dragon": {
-    source: DND_5E_SRD_VERSION,
-    size: "Gargantuan",
-    creatureType: "Dragon (Chromatic)",
-    alignment: "Lawful Evil",
-    armorClass: 21,
-    initiative: 15,
-    hitPoints: 402,
-    hitDice: "23d20+161",
-    speed: "40 ft., Fly 80 ft., Swim 40 ft.",
-    challengeRating: "22",
-    xp: 41000,
-    proficiencyBonus: 7,
-    abilities: { strength: 27, dexterity: 12, constitution: 25, intelligence: 20, wisdom: 17, charisma: 22 },
-    saves: { strength: 8, dexterity: 8, constitution: 7, intelligence: 5, wisdom: 10, charisma: 6 },
-    skills: { deception: 13, perception: 17, persuasion: 13, stealth: 8 },
-    senses: ["Blindsight 60 ft.", "Darkvision 120 ft.", "Passive Perception 27"],
-    languages: ["Common", "Draconic"],
-    traits: [
-      { name: "Poison Immunity", summary: "Immune to Poison damage and the Poisoned condition." },
-      { name: "Amphibious", summary: "Can breathe air and water." },
-      { name: "Legendary Resistance", summary: "4/Day, or 5/Day in Lair. If the dragon fails a saving throw, it can choose to succeed instead." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Rend attacks. It can replace one attack with Spellcasting to cast Mind Spike at level 5." },
-      { name: "Rend", kind: "action", attackBonus: 15, range: "reach 15 ft.", damageFormula: "2d8+8+3d6", damageType: "slashing/poison" },
-      { name: "Poison Breath", kind: "action", range: "90-foot cone", damageFormula: "22d6", damageType: "poison", save: { ability: "constitution", dc: 22, success: "half" }, recharge: "5-6" },
-      { name: "Spellcasting", kind: "action", summary: "Casts spells requiring no Material components using Charisma; spell save DC 21." },
-      { name: "Legendary Actions", kind: "action", effects: ["Has 3 Legendary Action uses, or 4 in Lair, including Mind Invasion, Noxious Miasma, and Pounce."], summary: "Has 3 Legendary Action uses, or 4 in Lair, including Mind Invasion, Noxious Miasma, and Pounce.", summaryMetadata: true }
-    ]
-  },
-  "white-dragon-wyrmling": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Dragon (Chromatic)",
-    alignment: "Chaotic Evil",
-    armorClass: 16,
-    initiative: 2,
-    hitPoints: 32,
-    hitDice: "5d8+10",
-    speed: "30 ft., Burrow 15 ft., Fly 60 ft., Swim 30 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 14, dexterity: 10, constitution: 14, intelligence: 5, wisdom: 10, charisma: 11 },
-    saves: { strength: 2, dexterity: 2, constitution: 2, intelligence: -3, wisdom: 2, charisma: 0 },
-    skills: { perception: 4, stealth: 2 },
-    senses: ["Blindsight 10 ft.", "Darkvision 60 ft.", "Passive Perception 14"],
-    languages: ["Draconic"],
-    traits: [
-      { name: "Cold Immunity", summary: "Immune to Cold damage." },
-      { name: "Ice Walk", summary: "Can move across and climb icy surfaces without an ability check, and ice or snow Difficult Terrain doesn't cost extra movement." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Rend attacks." },
-      { name: "Rend", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d8+2+1d4", damageType: "slashing/cold" },
-      { name: "Cold Breath", kind: "action", range: "15-foot cone", damageFormula: "5d8", damageType: "cold", save: { ability: "constitution", dc: 12, success: "half" }, recharge: "5-6" }
-    ]
-  },
-  "young-white-dragon": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Dragon (Chromatic)",
-    alignment: "Chaotic Evil",
-    armorClass: 17,
-    initiative: 3,
-    hitPoints: 123,
-    hitDice: "13d10+52",
-    speed: "40 ft., Burrow 20 ft., Fly 80 ft., Swim 40 ft.",
-    challengeRating: "6",
-    xp: 2300,
-    proficiencyBonus: 3,
-    abilities: { strength: 18, dexterity: 10, constitution: 18, intelligence: 6, wisdom: 11, charisma: 12 },
-    saves: { strength: 4, dexterity: 3, constitution: 4, intelligence: -2, wisdom: 3, charisma: 1 },
-    skills: { perception: 6, stealth: 3 },
-    senses: ["Blindsight 30 ft.", "Darkvision 120 ft.", "Passive Perception 16"],
-    languages: ["Common", "Draconic"],
-    traits: [
-      { name: "Cold Immunity", summary: "Immune to Cold damage." },
-      { name: "Ice Walk", summary: "Can move across and climb icy surfaces without an ability check, and ice or snow Difficult Terrain doesn't cost extra movement." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Rend attacks." },
-      { name: "Rend", kind: "action", attackBonus: 7, range: "reach 10 ft.", damageFormula: "2d4+4+1d4", damageType: "slashing/cold" },
-      { name: "Cold Breath", kind: "action", range: "30-foot cone", damageFormula: "9d8", damageType: "cold", save: { ability: "constitution", dc: 15, success: "half" }, recharge: "5-6" }
-    ]
-  },
-  "adult-white-dragon": {
-    source: DND_5E_SRD_VERSION,
-    size: "Huge",
-    creatureType: "Dragon (Chromatic)",
-    alignment: "Chaotic Evil",
-    armorClass: 18,
-    initiative: 10,
-    hitPoints: 200,
-    hitDice: "16d12+96",
-    speed: "40 ft., Burrow 30 ft., Fly 80 ft., Swim 40 ft.",
-    challengeRating: "13",
-    xp: 10000,
-    proficiencyBonus: 5,
-    abilities: { strength: 22, dexterity: 10, constitution: 22, intelligence: 8, wisdom: 12, charisma: 12 },
-    saves: { strength: 6, dexterity: 5, constitution: 6, intelligence: -1, wisdom: 6, charisma: 1 },
-    skills: { perception: 11, stealth: 5 },
-    senses: ["Blindsight 60 ft.", "Darkvision 120 ft.", "Passive Perception 21"],
-    languages: ["Common", "Draconic"],
-    traits: [
-      { name: "Cold Immunity", summary: "Immune to Cold damage." },
-      { name: "Ice Walk", summary: "Can move across and climb icy surfaces without an ability check, and ice or snow Difficult Terrain doesn't cost extra movement." },
-      { name: "Legendary Resistance", summary: "3/Day, or 4/Day in Lair. If the dragon fails a saving throw, it can choose to succeed instead." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Rend attacks." },
-      { name: "Rend", kind: "action", attackBonus: 11, range: "reach 10 ft.", damageFormula: "2d6+6+1d8", damageType: "slashing/cold" },
-      { name: "Cold Breath", kind: "action", range: "60-foot cone", damageFormula: "12d8", damageType: "cold", save: { ability: "constitution", dc: 19, success: "half" }, recharge: "5-6" },
-      { name: "Legendary Actions", kind: "action", effects: ["Has 3 Legendary Action uses, or 4 in Lair, including Freezing Burst, Frightful Presence, and Pounce."], summary: "Has 3 Legendary Action uses, or 4 in Lair, including Freezing Burst, Frightful Presence, and Pounce.", summaryMetadata: true }
-    ]
-  },
-  "ancient-white-dragon": {
-    source: DND_5E_SRD_VERSION,
-    size: "Gargantuan",
-    creatureType: "Dragon (Chromatic)",
-    alignment: "Chaotic Evil",
-    armorClass: 20,
-    initiative: 12,
-    hitPoints: 333,
-    hitDice: "18d20+144",
-    speed: "40 ft., Burrow 40 ft., Fly 80 ft., Swim 40 ft.",
-    challengeRating: "20",
-    xp: 25000,
-    proficiencyBonus: 6,
-    abilities: { strength: 26, dexterity: 10, constitution: 26, intelligence: 10, wisdom: 13, charisma: 18 },
-    saves: { strength: 8, dexterity: 6, constitution: 8, intelligence: 0, wisdom: 7, charisma: 4 },
-    skills: { perception: 13, stealth: 6 },
-    senses: ["Blindsight 60 ft.", "Darkvision 120 ft.", "Passive Perception 23"],
-    languages: ["Common", "Draconic"],
-    traits: [
-      { name: "Cold Immunity", summary: "Immune to Cold damage." },
-      { name: "Ice Walk", summary: "Can move across and climb icy surfaces without an ability check, and ice or snow Difficult Terrain doesn't cost extra movement." },
-      { name: "Legendary Resistance", summary: "4/Day, or 5/Day in Lair. If the dragon fails a saving throw, it can choose to succeed instead." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Rend attacks." },
-      { name: "Rend", kind: "action", attackBonus: 14, range: "reach 15 ft.", damageFormula: "2d8+8+2d6", damageType: "slashing/cold" },
-      { name: "Cold Breath", kind: "action", range: "90-foot cone", damageFormula: "14d8", damageType: "cold", save: { ability: "constitution", dc: 22, success: "half" }, recharge: "5-6" },
-      { name: "Legendary Actions", kind: "action", effects: ["Has 3 Legendary Action uses, or 4 in Lair, including Freezing Burst, Frightful Presence, and Pounce."], summary: "Has 3 Legendary Action uses, or 4 in Lair, including Freezing Burst, Frightful Presence, and Pounce.", summaryMetadata: true }
-    ]
-  },
-  "black-dragon-wyrmling": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium",
-    creatureType: "Dragon (Chromatic)",
-    alignment: "Chaotic Evil",
-    armorClass: 17,
-    initiative: 4,
-    hitPoints: 33,
-    hitDice: "6d8+6",
-    speed: "30 ft., Fly 60 ft., Swim 30 ft.",
-    challengeRating: "2",
-    xp: 450,
-    proficiencyBonus: 2,
-    abilities: { strength: 15, dexterity: 14, constitution: 13, intelligence: 10, wisdom: 11, charisma: 13 },
-    saves: { strength: 2, dexterity: 4, constitution: 1, intelligence: 0, wisdom: 2, charisma: 1 },
-    skills: { perception: 4, stealth: 4 },
-    senses: ["Blindsight 10 ft.", "Darkvision 60 ft.", "Passive Perception 14"],
-    languages: ["Draconic"],
-    traits: [
-      { name: "Acid Immunity", summary: "Immune to Acid damage." },
-      { name: "Amphibious", summary: "Can breathe air and water." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Rend attacks." },
-      { name: "Rend", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d6+2+1d4", damageType: "slashing/acid" },
-      { name: "Acid Breath", kind: "action", range: "15-foot line", damageFormula: "5d8", damageType: "acid", save: { ability: "dexterity", dc: 11, success: "half" }, recharge: "5-6" }
-    ]
-  },
-  "young-black-dragon": {
-    source: DND_5E_SRD_VERSION,
-    size: "Large",
-    creatureType: "Dragon (Chromatic)",
-    alignment: "Chaotic Evil",
-    armorClass: 18,
-    initiative: 5,
-    hitPoints: 127,
-    hitDice: "15d10+45",
-    speed: "40 ft., Fly 80 ft., Swim 40 ft.",
-    challengeRating: "7",
-    xp: 2900,
-    proficiencyBonus: 3,
-    abilities: { strength: 19, dexterity: 14, constitution: 17, intelligence: 12, wisdom: 11, charisma: 15 },
-    saves: { strength: 4, dexterity: 5, constitution: 3, intelligence: 1, wisdom: 3, charisma: 2 },
-    skills: { perception: 6, stealth: 5 },
-    senses: ["Blindsight 30 ft.", "Darkvision 120 ft.", "Passive Perception 16"],
-    languages: ["Common", "Draconic"],
-    traits: [
-      { name: "Acid Immunity", summary: "Immune to Acid damage." },
-      { name: "Amphibious", summary: "Can breathe air and water." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Rend attacks." },
-      { name: "Rend", kind: "action", attackBonus: 7, range: "reach 10 ft.", damageFormula: "2d4+4+1d6", damageType: "slashing/acid" },
-      { name: "Acid Breath", kind: "action", range: "30-foot line", damageFormula: "14d6", damageType: "acid", save: { ability: "dexterity", dc: 14, success: "half" }, recharge: "5-6" }
-    ]
-  },
-  "adult-black-dragon": {
-    source: DND_5E_SRD_VERSION,
-    size: "Huge",
-    creatureType: "Dragon (Chromatic)",
-    alignment: "Chaotic Evil",
-    armorClass: 19,
-    initiative: 12,
-    hitPoints: 195,
-    hitDice: "17d12+85",
-    speed: "40 ft., Fly 80 ft., Swim 40 ft.",
-    challengeRating: "14",
-    xp: 11500,
-    proficiencyBonus: 5,
-    abilities: { strength: 23, dexterity: 14, constitution: 21, intelligence: 14, wisdom: 13, charisma: 19 },
-    saves: { strength: 6, dexterity: 7, constitution: 5, intelligence: 2, wisdom: 6, charisma: 4 },
-    skills: { perception: 11, stealth: 7 },
-    senses: ["Blindsight 60 ft.", "Darkvision 120 ft.", "Passive Perception 21"],
-    languages: ["Common", "Draconic"],
-    traits: [
-      { name: "Acid Immunity", summary: "Immune to Acid damage." },
-      { name: "Amphibious", summary: "Can breathe air and water." },
-      { name: "Legendary Resistance", summary: "3/Day, or 4/Day in Lair. If the dragon fails a saving throw, it can choose to succeed instead." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Rend attacks. It can replace one attack with Spellcasting to cast Acid Arrow at level 3." },
-      { name: "Rend", kind: "action", attackBonus: 11, range: "reach 10 ft.", damageFormula: "2d6+6+1d8", damageType: "slashing/acid" },
-      { name: "Acid Breath", kind: "action", range: "60-foot line", damageFormula: "12d8", damageType: "acid", save: { ability: "dexterity", dc: 18, success: "half" }, recharge: "5-6" },
-      { name: "Spellcasting", kind: "action", summary: "Casts spells requiring no Material components using Charisma: Acid Arrow at level 3, Detect Magic, Fear, Speak with Dead, and Vitriolic Sphere." },
-      { name: "Legendary Actions", kind: "action", effects: ["Has 3 Legendary Action uses, or 4 in Lair, including Cloud of Insects, Frightful Presence, and Pounce."], summary: "Has 3 Legendary Action uses, or 4 in Lair, including Cloud of Insects, Frightful Presence, and Pounce.", summaryMetadata: true }
-    ]
-  },
-  "ancient-black-dragon": {
-    source: DND_5E_SRD_VERSION,
-    size: "Gargantuan",
-    creatureType: "Dragon (Chromatic)",
-    alignment: "Chaotic Evil",
-    armorClass: 22,
-    initiative: 16,
-    hitPoints: 367,
-    hitDice: "21d20+147",
-    speed: "40 ft., Fly 80 ft., Swim 40 ft.",
-    challengeRating: "21",
-    xp: 33000,
-    proficiencyBonus: 7,
-    abilities: { strength: 27, dexterity: 14, constitution: 25, intelligence: 16, wisdom: 15, charisma: 22 },
-    saves: { strength: 8, dexterity: 9, constitution: 7, intelligence: 3, wisdom: 9, charisma: 6 },
-    skills: { perception: 16, stealth: 9 },
-    senses: ["Blindsight 60 ft.", "Darkvision 120 ft.", "Passive Perception 26"],
-    languages: ["Common", "Draconic"],
-    traits: [
-      { name: "Acid Immunity", summary: "Immune to Acid damage." },
-      { name: "Amphibious", summary: "Can breathe air and water." },
-      { name: "Legendary Resistance", summary: "4/Day, or 5/Day in Lair. If the dragon fails a saving throw, it can choose to succeed instead." }
-    ],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes three Rend attacks. It can replace one attack with Spellcasting to cast Acid Arrow at level 4." },
-      { name: "Rend", kind: "action", attackBonus: 15, range: "reach 15 ft.", damageFormula: "2d8+8+2d8", damageType: "slashing/acid" },
-      { name: "Acid Breath", kind: "action", range: "90-foot line", damageFormula: "15d8", damageType: "acid", save: { ability: "dexterity", dc: 22, success: "half" }, recharge: "5-6" },
-      { name: "Spellcasting", kind: "action", summary: "Casts spells requiring no Material components using Charisma; spell save DC 21 and +13 to hit with spell attacks." },
-      { name: "Legendary Actions", kind: "action", effects: ["Has 3 Legendary Action uses, or 4 in Lair, including Cloud of Insects, Frightful Presence, and Pounce."], summary: "Has 3 Legendary Action uses, or 4 in Lair, including Cloud of Insects, Frightful Presence, and Pounce.", summaryMetadata: true }
-    ]
-  },
-  "warrior-veteran": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium or Small",
-    creatureType: "Humanoid",
-    alignment: "Neutral",
-    armorClass: 17,
-    initiative: 3,
-    hitPoints: 65,
-    hitDice: "10d8+20",
-    speed: "30 ft.",
-    challengeRating: "3",
-    xp: 700,
-    proficiencyBonus: 2,
-    abilities: { strength: 16, dexterity: 13, constitution: 14, intelligence: 10, wisdom: 11, charisma: 10 },
-    saves: { strength: 3, dexterity: 1, constitution: 2, intelligence: 0, wisdom: 0, charisma: 0 },
-    skills: { athletics: 5, perception: 2 },
-    senses: ["Passive Perception 12"],
-    languages: ["Common plus one other language"],
-    gear: ["Greatsword", "Heavy Crossbow", "Splint Armor"],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Greatsword or Heavy Crossbow attacks." },
-      { name: "Greatsword", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "2d6+3", damageType: "slashing" },
-      { name: "Heavy Crossbow", kind: "action", attackBonus: 3, range: "100/400 ft.", damageFormula: "2d10+1", damageType: "piercing" },
-      { name: "Parry", kind: "reaction", summary: "Adds 2 to AC against a melee attack roll while holding a weapon, possibly causing it to miss." }
-    ]
-  },
-  "tough-boss": {
-    source: DND_5E_SRD_VERSION,
-    size: "Medium or Small",
-    creatureType: "Humanoid",
-    alignment: "Neutral",
-    armorClass: 16,
-    initiative: 2,
-    hitPoints: 82,
-    hitDice: "11d8+33",
-    speed: "30 ft.",
-    challengeRating: "4",
-    xp: 1100,
-    proficiencyBonus: 2,
-    abilities: { strength: 17, dexterity: 14, constitution: 16, intelligence: 11, wisdom: 10, charisma: 11 },
-    saves: { strength: 5, dexterity: 2, constitution: 5, intelligence: 0, wisdom: 0, charisma: 2 },
-    senses: ["Passive Perception 10"],
-    languages: ["Common plus one other language"],
-    gear: ["Chain Mail", "Heavy Crossbow", "Warhammer"],
-    traits: [{ name: "Pack Tactics", summary: "Has advantage when an ally threatens the target nearby." }],
-    actions: [
-      { name: "Multiattack", kind: "action", summary: "Makes two Warhammer or Heavy Crossbow attacks." },
-      { name: "Warhammer", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "2d8+3", damageType: "bludgeoning" },
-      { name: "Heavy Crossbow", kind: "action", attackBonus: 4, range: "100/400 ft.", damageFormula: "2d10+2", damageType: "piercing" }
-    ]
-  }
-};
+
 
 function dnd5eSrdMonsterThreat(id: string, name: string, role: string, summary: string): EncounterThreat {
   const statBlock = DND_5E_SRD_MONSTER_STAT_BLOCKS[id];
@@ -15741,28 +9825,6 @@ export function dnd5eSrdEncounterPlan(party: Actor[], selections: EncounterThrea
   });
 }
 
-const DND_5E_SRD_ENCOUNTER_XP_BUDGETS_BY_LEVEL: Record<number, { easy: number; standard: number; hard: number }> = {
-  1: { easy: 50, standard: 75, hard: 100 },
-  2: { easy: 100, standard: 150, hard: 200 },
-  3: { easy: 150, standard: 225, hard: 400 },
-  4: { easy: 250, standard: 375, hard: 500 },
-  5: { easy: 500, standard: 750, hard: 1100 },
-  6: { easy: 600, standard: 1000, hard: 1400 },
-  7: { easy: 750, standard: 1300, hard: 1700 },
-  8: { easy: 1000, standard: 1700, hard: 2100 },
-  9: { easy: 1300, standard: 2000, hard: 2600 },
-  10: { easy: 1600, standard: 2300, hard: 3100 },
-  11: { easy: 1900, standard: 2900, hard: 4100 },
-  12: { easy: 2200, standard: 3700, hard: 4700 },
-  13: { easy: 2600, standard: 4200, hard: 5400 },
-  14: { easy: 2900, standard: 4900, hard: 6200 },
-  15: { easy: 3300, standard: 5400, hard: 7800 },
-  16: { easy: 3800, standard: 6100, hard: 9800 },
-  17: { easy: 4500, standard: 7200, hard: 11700 },
-  18: { easy: 5000, standard: 8700, hard: 14200 },
-  19: { easy: 5500, standard: 10700, hard: 17200 },
-  20: { easy: 6400, standard: 13200, hard: 22000 }
-};
 
 export function dnd5eSrdEncounterXpBudgets(party: Actor[]): { easy: number; standard: number; hard: number } {
   const levels = party.length > 0 ? party.map((actor) => numericValue(actor.data.level, 1)) : [1];
@@ -15807,12 +9869,15 @@ export function dnd5eSrdAdvancementOptions(actor: Actor): AdvancementOption[] {
   const effectiveActor = classes.length > 1
     ? { ...actor, data: { ...actor.data, level: classes.reduce((total, entry) => total + entry.level, 0) } }
     : actor;
+  const advancementClassName = dnd5eSrdAdvancementClassName(actor);
+  const nextClassLevel = (classes.find((entry) => entry.className.toLowerCase() === advancementClassName.toLowerCase())?.level ?? 0) + 1;
+  const featGrant = dnd5eSrdAdvancementFeatGrant(advancementClassName, nextClassLevel, actor);
   return genericFantasyAdvancementOptions(effectiveActor).map((option) => ({
     ...option,
     systemId: DND_5E_SRD_SYSTEM_ID,
-    summary: dnd5eSrdAbilityScoreImprovementLevels.includes(option.nextValue)
-      ? `Reach level ${option.nextValue}: increase hit points and proficiency, and choose an Ability Score Improvement or a feat.`
-      : "Increase level, hit point maximum, proficiency bonus, and a class ability for SRD 5.2.1 play."
+    summary: featGrant
+      ? `Reach ${advancementClassName} level ${nextClassLevel}: increase hit points and choose ${featGrant === "epic-boon" ? "an Epic Boon" : "an Ability Score Improvement or a feat"}.`
+      : "Increase level, hit point maximum, proficiency bonus, and class features for SRD 5.2.1 play."
   }));
 }
 
@@ -15850,42 +9915,59 @@ export function applyGenericFantasyAdvancement(actor: Actor, optionId: string): 
   };
 }
 
-export function applyDnd5eSrdAdvancement(actor: Actor, optionId: string): Record<string, unknown> {
+export function applyDnd5eSrdAdvancement(actor: Actor, optionId: string, choices: Dnd5eSrdAdvancementChoices = {}): Record<string, unknown> {
   const option = dnd5eSrdAdvancementOptions(actor).find((item) => item.id === optionId);
   if (!option) throw new Error(`Unknown advancement: ${optionId}`);
   // A multiclass character's plain level-up advances its primary class through
   // the class-array recompute so features/resources stay per-class correct.
   const existingClasses = dnd5eSrdActorClassLevels(actor);
   if (existingClasses.length > 1) {
-    const primary = [...existingClasses].sort((left, right) => right.level - left.level)[0]!.className;
+    const primary = dnd5eSrdAdvancementClassName(actor);
     const leveled = existingClasses.map((entry) => (entry.className === primary ? { ...entry, level: entry.level + 1 } : entry));
-    return dnd5eSrdApplyClassLevels(actor, leveled, primary);
+    return dnd5eSrdApplyClassLevels(actor, leveled, primary, choices);
   }
-  const next = applyGenericFantasyAdvancement(actor, option.id);
   const className = typeof actor.data.class === "string" ? actor.data.class : "Fighter";
-  const genericPrimary = className === "Mender" ? "wisdom" : "strength";
-  const srdPrimary = dnd5eSrdPrimaryAbility(className);
-  const attributes = { ...((next.attributes as Record<string, number> | undefined) ?? {}) };
-  if (srdPrimary !== genericPrimary) {
-    attributes[genericPrimary] = numericValue(attributes[genericPrimary], 10) - 1;
-    attributes[srdPrimary] = numericValue(attributes[srdPrimary], 10) + 1;
-  }
-  const level = numericValue(next.level, numericValue(actor.data.level, 1) + 1);
-  const hitDice = recordValue(next.hitDice);
-  const features = dnd5eSrdApplyClassFeatures(normalizeStringArray(next.features), className, level);
-  const combat = dnd5eSrdApplyClassCombat(recordValue(next.combat), className, level, next.speed);
-  const nextWithSrdAttributes = { ...next, attributes };
-  const advanced = {
-    ...next,
-    ruleset: DND_5E_SRD_VERSION,
+  const level = option.nextValue;
+  const classes = [{ className, level }];
+  const subclasses = dnd5eSrdResolveAdvancementSubclasses(actor, classes, className, choices);
+  const selectedSubclass = subclasses[className] ? dnd5eSrdSubclassOptionForActor(actor, className, subclasses[className]!) : undefined;
+  const hitDieSize = dnd5eSrdClassHitDieSize(className, actor);
+  const hpGain = dnd5eSrdAdvancementHitPointGain(actor, className, choices);
+  const hp = normalizePool(actor.data.hp, 1);
+  const hitDice = recordValue(actor.data.hitDice);
+  const nextHitDice = {
+    current: numericValue(hitDice.current, numericValue(hitDice.max, Math.max(1, level - 1))) + 1,
+    max: numericValue(hitDice.max, Math.max(1, level - 1)) + 1,
+    size: stringValue(hitDice.size) ?? hitDieSize
+  };
+  const attributes = { ...((actor.data.attributes as Record<string, number> | undefined) ?? {}) };
+  const combinedFeatures = dnd5eSrdCombinedClassFeatures(actor, normalizeStringArray(actor.data.features), classes, subclasses);
+  const baseData = {
+    ...actor.data,
+    level,
+    classes,
+    subclasses,
+    ...(selectedSubclass ? { subclass: selectedSubclass.name } : {}),
+    hp: { current: hp.current + hpGain, max: hp.max + hpGain },
+    hitDice: nextHitDice,
     attributes,
-    hitDice: { ...hitDice, size: stringValue(hitDice.size) ?? dnd5eSrdHitDieSize(className) },
-    features,
-    combat,
-    resources: normalizeDnd5eSrdResources(next.resources, className, level, nextWithSrdAttributes, { raiseMaxToDefault: true }),
-    spellSlots: normalizeDnd5eSrdSpellSlots(next.spellSlots, className, level, { raiseMaxToDefault: true })
+    proficiencyBonus: Math.max(2, 2 + Math.floor((level - 1) / 4)),
+    features: combinedFeatures
+  };
+  const advanced: Record<string, unknown> = {
+    ...baseData,
+    ruleset: DND_5E_SRD_VERSION,
+    features: combinedFeatures,
+    combat: dnd5eSrdApplyClassCombat(recordValue(actor.data.combat), className, level, actor.data.speed),
+    resources: dnd5eSrdClassAdvancementProfile(actor, className)?.custom
+      ? normalizeResourcePools(actor.data.resources)
+      : normalizeDnd5eSrdResources(actor.data.resources, className, level, baseData, { raiseMaxToDefault: true }),
+    spellSlots: dnd5eSrdAdvancementSpellSlots(actor, classes, className, level)
   };
   if (dnd5eSrdHasDwarvenToughnessData(actor.data)) dnd5eSrdApplyDwarvenToughness(advanced, 1);
+  if (choices.weaponMasteryChoices !== undefined || "weaponMasteries" in actor.data || "weaponMasteriesByClass" in actor.data) {
+    return applyDnd5eSrdWeaponMasteryAdvancement({ ...actor, data: advanced }, className, level, choices.weaponMasteryChoices);
+  }
   return advanced;
 }
 
@@ -15932,47 +10014,189 @@ export function applyGenericFantasyRest(actor: Actor, restType: SystemRestType):
   };
 }
 
-function dnd5eSrdApplyRestHitDicePools(actor: Actor, data: Record<string, unknown>): Record<string, unknown> {
+function dnd5eSrdApplyRestHitDice(
+  actor: Actor,
+  data: Record<string, unknown>,
+  restType: SystemRestType,
+  options: SystemRestOptions
+): { data: Record<string, unknown>; recovered: Record<string, unknown> } {
   const classes = dnd5eSrdActorClassLevels(actor);
-  if (classes.length <= 1) return data;
-  const beforePools = dnd5eSrdHitDicePoolsForClasses(actor, classes);
-  if (beforePools.length === 0) return data;
   const primaryClassName = dnd5eSrdPrimaryClassForHitDice(actor, classes);
-  const beforeAggregate = dnd5eSrdAggregateHitDiceFromPools(beforePools, primaryClassName);
-  const nextHitDice = recordValue(data.hitDice);
-  const desiredCurrent = Math.max(0, Math.min(beforeAggregate.max, numericValue(nextHitDice.current, beforeAggregate.current)));
-  const nextPools = dnd5eSrdApplyHitDicePoolDelta(beforePools, desiredCurrent - beforeAggregate.current);
+  const aggregate = normalizePool(actor.data.hitDice, Math.max(1, numericValue(actor.data.level, 1)));
+  const aggregateRecord = recordValue(actor.data.hitDice);
+  const pools = classes.length > 1
+    ? dnd5eSrdHitDicePoolsForClasses(actor, classes).map((pool) => ({ ...pool }))
+    : [{
+        className: primaryClassName,
+        size: stringValue(aggregateRecord.size) ?? dnd5eSrdClassHitDieSize(primaryClassName, actor),
+        current: aggregate.current,
+        max: aggregate.max
+      }];
+  const hp = normalizePool(actor.data.hp, 1);
+  let currentHp = restType === "long" ? hp.max : hp.current;
+  const recovered: Record<string, unknown> = {};
+
+  if (restType === "short") {
+    const constitutionModifier = genericFantasyAttributeModifier(actor, "constitution");
+    const spent: Array<{ className: string; size: string; roll: number; modifier: number; healed: number }> = [];
+    for (const selection of options.hitDice ?? []) {
+      if (currentHp >= hp.max) break;
+      const selectedClassName = selection.className ?? (classes.length <= 1 ? primaryClassName : undefined);
+      if (!selectedClassName) throw new Error("A className is required when spending a multiclass Hit Point Die");
+      const pool = pools.find((candidate) => candidate.className.toLowerCase() === selectedClassName.toLowerCase());
+      if (!pool) throw new Error(`No Hit Point Dice pool exists for ${selectedClassName}`);
+      if (pool.current <= 0) throw new Error(`${pool.className} has no Hit Point Dice remaining`);
+      const faces = dnd5eSrdHitDieFaces(pool.size);
+      if (!Number.isInteger(selection.roll) || selection.roll < 1 || selection.roll > faces) {
+        throw new Error(`${pool.className} ${pool.size} result must be a whole number from 1 to ${faces}`);
+      }
+      pool.current -= 1;
+      const healed = Math.min(hp.max - currentHp, Math.max(0, selection.roll + constitutionModifier));
+      currentHp += healed;
+      spent.push({ className: pool.className, size: pool.size, roll: selection.roll, modifier: constitutionModifier, healed });
+    }
+    if (spent.length > 0) {
+      recovered.hp = currentHp - hp.current;
+      recovered.hitDiceSpent = spent.length;
+      recovered.hitDice = spent;
+    }
+  } else {
+    const beforeCurrent = pools.reduce((sum, pool) => sum + pool.current, 0);
+    for (const pool of pools) pool.current = pool.max;
+    recovered.hp = Math.max(0, currentHp - hp.current);
+    recovered.hitDiceRecovered = pools.reduce((sum, pool) => sum + pool.current, 0) - beforeCurrent;
+  }
+
+  const nextHitDice = classes.length > 1
+    ? dnd5eSrdAggregateHitDiceFromPools(actor, pools, primaryClassName)
+    : { current: pools[0]!.current, max: pools[0]!.max, size: pools[0]!.size };
   return {
-    ...data,
-    hitDice: dnd5eSrdAggregateHitDiceFromPools(nextPools, primaryClassName),
-    hitDicePools: nextPools
+    data: {
+      ...data,
+      hp: { ...recordValue(actor.data.hp), current: currentHp, max: hp.max },
+      hitDice: { ...aggregateRecord, ...nextHitDice },
+      ...(classes.length > 1 ? { hitDicePools: pools } : {})
+    },
+    recovered
   };
 }
 
+function dnd5eSrdApplyLongRestStateRecovery(actor: Actor, dataInput: Record<string, unknown>): {
+  data: Record<string, unknown>;
+  recovered: Record<string, unknown>;
+  removedConditions: AppliedCondition[];
+} {
+  let data = cloneJsonRecord(dataInput);
+  const recovered: Record<string, unknown> = {};
+  const removedConditions: AppliedCondition[] = [];
+  const temporaryHitPoints = dnd5eSrdTemporaryHitPoints(data);
+  if (temporaryHitPoints.current > 0) {
+    data[temporaryHitPoints.key] = temporaryHitPoints.record ? { ...temporaryHitPoints.record, current: 0 } : 0;
+    recovered.temporaryHitPointsCleared = temporaryHitPoints.current;
+  }
+
+  const conditions = normalizeConditionRecords(data.conditions);
+  const exhaustion = conditions.find((condition) => condition.id === "exhaustion");
+  if (exhaustion) {
+    const before = clampInteger(exhaustion.level, 1, 6, 1);
+    if (before <= 1) {
+      data.conditions = conditions.filter((condition) => condition !== exhaustion);
+      removedConditions.push({ id: "exhaustion", name: "Exhaustion", summary: dnd5eSrdCompendiumEntry("exhaustion")?.summary ?? "", appliedAt: exhaustion.appliedAt, level: before });
+    } else {
+      exhaustion.level = before - 1;
+      data.conditions = conditions;
+    }
+    recovered.exhaustionReducedBy = 1;
+  }
+
+  const hp = recordValue(data.hp);
+  const hpMaxReduction = Math.max(0, Math.floor(numericValue(hp.maxReduction, numericValue(data.hitPointMaximumReduction, 0))));
+  const unreducedMax = numericValue(hp.unreducedMax, numericValue(hp.baseMax, Number.NaN));
+  if (hpMaxReduction > 0 || Number.isFinite(unreducedMax)) {
+    const currentMax = Math.max(1, Math.floor(numericValue(hp.max, 1)));
+    const restoredMax = Number.isFinite(unreducedMax) ? Math.max(currentMax, Math.floor(unreducedMax)) : currentMax + hpMaxReduction;
+    // A Long Rest restores the reduced maximum before completing its full-HP
+    // recovery. Filling only to the temporary maximum leaves the creature
+    // incorrectly wounded after that maximum is restored.
+    data.hp = { ...hp, max: restoredMax, current: restoredMax, maxReduction: 0 };
+    delete data.hitPointMaximumReduction;
+    recovered.hitPointMaximumRestored = Math.max(0, restoredMax - currentMax);
+  }
+
+  const abilityReductions = recordValue(data.abilityScoreReductions);
+  if (Object.keys(abilityReductions).length > 0) {
+    const attributes = { ...recordValue(data.attributes) };
+    const restored: Record<string, number> = {};
+    for (const ability of dnd5eSrdAbilityNames) {
+      const reduction = Math.max(0, Math.floor(numericValue(abilityReductions[ability], 0)));
+      if (reduction <= 0) continue;
+      attributes[ability] = Math.min(30, numericValue(attributes[ability], 10) + reduction);
+      restored[ability] = reduction;
+    }
+    if (Object.keys(restored).length > 0) {
+      data.attributes = attributes;
+      data.abilityScoreReductions = {};
+      recovered.abilityScoresRestored = restored;
+    }
+  }
+
+  const rules = dnd5eSrdRulesEngineState(data);
+  const activeEffects = Array.isArray(rules.activeEffects) ? rules.activeEffects.map((effect) => cloneJsonRecord(recordValue(effect))) : [];
+  const remainingEffects = activeEffects.filter((effect) => effect.endsOnLongRest !== true && stringValue(effect.recovery)?.toLowerCase() !== "long rest");
+  if (remainingEffects.length !== activeEffects.length) {
+    rules.activeEffects = remainingEffects;
+    data = dnd5eSrdDataWithRulesEngineState(data, rules);
+    recovered.effectsEnded = activeEffects.length - remainingEffects.length;
+  }
+
+  return { data, recovered, removedConditions };
+}
+
 export function applyDnd5eSrdRest(actor: Actor, restType: SystemRestType, options: SystemRestOptions = {}): SystemRestResult {
+  const hpBeforeRest = normalizePool(actor.data.hp, 1);
+  if (hpBeforeRest.current <= 0) throw new Error("A creature at 0 Hit Points cannot start or finish a Short or Long Rest");
   const rest = applyGenericFantasyRest(actor, restType);
+  const restHitDice = dnd5eSrdApplyRestHitDice(actor, rest.data, restType, options);
+  const { hp: _genericHp, hitDiceSpent: _genericHitDiceSpent, hitDiceRecovered: _genericHitDiceRecovered, ...restRecovered } = rest.recovered;
   const className = stringValue(actor.data.class) || "";
   const level = numericValue(actor.data.level, 1);
+  const classes = dnd5eSrdActorClassLevels(actor);
+  const multiclass = classes.length > 1;
+  const warlockLevel = classes.find((entry) => entry.className === "Warlock")?.level ?? 0;
   const dataWithDefaults = {
-    ...rest.data,
-    resources: normalizeDnd5eSrdResources(rest.data.resources, className, level, actor.data, { raiseMaxToDefault: true }),
-    spellSlots: normalizeDnd5eSrdSpellSlots(rest.data.spellSlots, className, level, { raiseMaxToDefault: true })
+    ...restHitDice.data,
+    resources: multiclass
+      ? dnd5eSrdCombinedClassResources(restHitDice.data.resources, classes, restHitDice.data, Math.floor(level), { raiseMaxToDefault: true })
+      : normalizeDnd5eSrdResources(restHitDice.data.resources, className, level, actor.data, { raiseMaxToDefault: true }),
+    spellSlots: multiclass
+      ? normalizeExactResourcePools(restHitDice.data.spellSlots, dnd5eSrdMulticlassSpellSlots(classes, actor), { raiseMaxToDefault: true })
+      : normalizeDnd5eSrdSpellSlots(restHitDice.data.spellSlots, className, level, { raiseMaxToDefault: true }),
+    ...(multiclass && warlockLevel > 0
+      ? { pactSlots: normalizeExactResourcePools(restHitDice.data.pactSlots, defaultDnd5eSrdWarlockPactMagicSlots(warlockLevel), { raiseMaxToDefault: true }) }
+      : {})
   };
   const dataAfterRestLimits = restType === "short" ? dnd5eSrdApplyShortRestResourceLimits(actor, dataWithDefaults) : dnd5eSrdApplyLongRestResourceLimits(actor, dataWithDefaults);
   const pactMagic = dnd5eSrdApplyPactMagicRecovery(actor, dataAfterRestLimits, restType);
   const arcaneRecovery = dnd5eSrdApplyArcaneRecovery(actor, pactMagic.data, restType, options);
   const sorcerousRestoration = dnd5eSrdApplySorcerousRestoration(actor, arcaneRecovery.data, restType);
   const humanResourceful = dnd5eSrdApplyHumanResourceful(actor, sorcerousRestoration.data, restType);
-  const finalData = dnd5eSrdApplyRestHitDicePools(actor, humanResourceful.data);
+  const longRestState = restType === "long"
+    ? dnd5eSrdApplyLongRestStateRecovery(actor, humanResourceful.data)
+    : { data: humanResourceful.data, recovered: {}, removedConditions: [] as AppliedCondition[] };
+  const rechargeRecovery = dnd5eSrdRecoverRechargeState(longRestState.data, restType);
+  const finalData = rechargeRecovery.data;
   const recovered = dnd5eSrdRestRecovered(
     actor,
     finalData,
     {
-      ...rest.recovered,
+      ...restRecovered,
+      ...restHitDice.recovered,
       ...(pactMagic.recovered ?? {}),
       ...(arcaneRecovery.recovered ?? {}),
       ...(sorcerousRestoration.recovered ?? {}),
-      ...(humanResourceful.recovered ?? {})
+      ...(humanResourceful.recovered ?? {}),
+      ...longRestState.recovered,
+      ...(rechargeRecovery.recoveredActionIds.length > 0 ? { rechargedActions: rechargeRecovery.recoveredActionIds } : {})
     }
   );
   return {
@@ -15980,6 +10204,7 @@ export function applyDnd5eSrdRest(actor: Actor, restType: SystemRestType, option
     systemId: DND_5E_SRD_SYSTEM_ID,
     summary: `${actor.name} completed a ${restType} rest using ${DND_5E_SRD_VERSION}`,
     recovered,
+    removedConditions: [...rest.removedConditions, ...longRestState.removedConditions],
     data: finalData
   };
 }
@@ -16019,6 +10244,7 @@ function dnd5eSrdEquippedItemNumericBonus(actor: Actor, items: Item[], bonusKey:
     .flatMap((item) => {
       const data = recordValue(item.data);
       if (data.equipped === false) return [];
+      if (!dnd5eSrdItemModifiersAreActive(actor, item)) return [];
       if (bonusKey === "spellAttackBonus" && booleanValue(data.consumable)) return [];
       if (bonusKey === "armorClassBonus" && options.hasEquippedArmorOrShield && booleanValue(data.requiresNoArmorOrShield)) return [];
       const bonus = numericValue(data[bonusKey], Number.NaN);
@@ -16166,6 +10392,355 @@ export function dnd5eSrdSpeed(actor: Actor, items: Item[] = []): Dnd5eSrdSpeedDe
   };
 }
 
+export function dnd5eSrdCalculationExplanation(actor: Actor, items: Item[] = []): ActorCalculationExplanation {
+  const actorItems = items
+    .filter((item) => itemBelongsToActor(actor, item) && item.campaignId === actor.campaignId && item.systemId === actor.systemId)
+    .sort((left, right) => left.id.localeCompare(right.id));
+  const itemById = new Map(actorItems.map((item) => [item.id, item]));
+  const actorSource: CalculationSource = { kind: "actor", id: actor.id, name: actor.name };
+  const systemSource: CalculationSource = {
+    kind: "system",
+    id: DND_5E_SRD_SYSTEM_ID,
+    name: "D&D 5.5e SRD",
+    version: DND_5E_SRD_COMPENDIUM_PROVENANCE.systemVersion,
+    url: DND_5E_SRD_COMPENDIUM_PROVENANCE.license.url
+  };
+  const className = stringValue(actor.data.class);
+  const classSource: CalculationSource = className
+    ? { kind: "class", id: slugId(className), name: className, version: DND_5E_SRD_VERSION }
+    : systemSource;
+  const itemSource = (itemId: string): CalculationSource => {
+    const item = itemById.get(itemId);
+    if (!item) return systemSource;
+    const provenance = recordValue(item.data.compendiumProvenance);
+    const license = recordValue(provenance.license);
+    return {
+      kind: "item",
+      id: item.id,
+      name: item.name,
+      ...(stringValue(provenance.contentVersion) ? { version: stringValue(provenance.contentVersion) } : {}),
+      ...(stringValue(license.url) ? { url: stringValue(license.url) } : {})
+    };
+  };
+  const featureSource = (name: string): CalculationSource => ({ kind: "feature", id: slugId(name), name, version: DND_5E_SRD_VERSION });
+  const conditionSource = (conditionId: string): CalculationSource => ({
+    kind: "condition",
+    id: conditionId,
+    name: dnd5eSrdCompendiumEntry(conditionId)?.name ?? titleCaseWords(conditionId),
+    version: DND_5E_SRD_VERSION
+  });
+  const rollModeSource = (automation: Dnd5eSrdD20Automation): CalculationSource => {
+    const metadata = recordValue(automation.metadata);
+    const feature = stringValue(metadata.feature);
+    if (feature) return featureSource(feature);
+    const conditionId = normalizeStringArray(metadata.conditionSources)[0];
+    return conditionId ? conditionSource(conditionId) : systemSource;
+  };
+  const d20Term = (automation: Dnd5eSrdD20Automation): CalculationTerm => ({
+    label: "d20 roll mode",
+    formula: automation.d20,
+    source: rollModeSource(automation)
+  });
+  const adjustmentTerm = (automation: Dnd5eSrdD20Automation): CalculationTerm[] => automation.modifier === 0
+    ? []
+    : [{ label: "Condition adjustment", signedValue: automation.modifier, source: conditionSource("exhaustion") }];
+  const activeNumericItemTerms = (itemIds: string[], key: string, label: string): CalculationTerm[] => itemIds.flatMap((itemId) => {
+    const item = itemById.get(itemId);
+    const value = numericValue(recordValue(item?.data)[key], Number.NaN);
+    return Number.isFinite(value) ? [{ label: `${label}: ${item?.name ?? itemId}`, signedValue: value, source: itemSource(itemId) }] : [];
+  });
+
+  const attributes = recordValue(actor.data.attributes);
+  const abilities = dnd5eSrdAbilityKeys().map((ability) => ({
+    id: ability,
+    label: titleCaseWords(ability),
+    score: numericValue(attributes[ability], 10),
+    modifier: genericFantasyAttributeModifier(actor, ability),
+    actorSource,
+    systemSource
+  }));
+
+  const level = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
+  const defaultProficiency = 2 + Math.floor((level - 1) / 4);
+  const proficiency = dnd5eSrdProficiencyBonus(actor);
+  const explicitProficiency = typeof actor.data.proficiencyBonus === "number" && Number.isFinite(actor.data.proficiencyBonus);
+  const storedProficiency = explicitProficiency ? actor.data.proficiencyBonus as number : undefined;
+  const proficiencyFlags: Dnd5eSrdCalculationFlagInput = explicitProficiency
+    ? {
+        override: true,
+        reasons: [storedProficiency === proficiency
+          ? `Stored proficiency bonus ${storedProficiency} overrides the level-${level} SRD value of ${defaultProficiency}.`
+          : `Stored proficiency bonus ${storedProficiency} is normalized by the authoritative helper to ${proficiency}; the level-${level} SRD value is ${defaultProficiency}.`]
+      }
+    : {};
+  const proficiencyInput: Dnd5eSrdScalarCalculationInput = {
+    id: "proficiency-bonus",
+    label: "Proficiency bonus",
+    result: proficiency,
+    terms: explicitProficiency
+      ? [{ label: "Stored proficiency bonus (normalized)", signedValue: proficiency, source: { kind: "override", id: actor.id, name: actor.name } }]
+      : [
+          { label: "Base proficiency", signedValue: 2, source: systemSource },
+          { label: `Level ${level} scaling`, signedValue: proficiency - 2, source: classSource }
+        ],
+    flags: proficiencyFlags
+  };
+
+  const armor = dnd5eSrdArmorClass(actor, actorItems);
+  const explicitArmorClass = typeof actor.data.armorClass === "number" && Number.isFinite(actor.data.armorClass);
+  const armorResult = explicitArmorClass ? Math.floor(actor.data.armorClass as number) : armor.value;
+  const armorBonus = numericValue(armor.armorClassBonus, 0);
+  const armorSource = armor.armorItemId
+    ? itemSource(armor.armorItemId)
+    : armor.armorName === "Unarmored Defense"
+      ? classSource
+      : armor.armorName === "Draconic Resilience"
+        ? featureSource(armor.armorName)
+        : systemSource;
+  const shieldIds = [...armor.shieldItemIds].sort((left, right) => left.localeCompare(right));
+  const extraArmorContribution = armor.value - armor.base - armor.dexModifier - armor.shieldBonus - armorBonus;
+  const armorTerms: CalculationTerm[] = explicitArmorClass
+    ? [{ label: "Stored armor class override", signedValue: armorResult, source: { kind: "override", id: actor.id, name: actor.name } }]
+    : [
+        { label: armor.armorName, signedValue: armor.base, source: armorSource },
+        { label: "Dexterity modifier", signedValue: armor.dexModifier, source: actorSource },
+        ...(extraArmorContribution !== 0 ? [{ label: `${armor.armorName} ability contribution`, signedValue: extraArmorContribution, source: armorSource }] : []),
+        ...(armor.shieldBonus !== 0 ? [{ label: `Shield: ${itemById.get(shieldIds[0] ?? "")?.name ?? "equipped shield"}`, signedValue: armor.shieldBonus, source: shieldIds[0] ? itemSource(shieldIds[0]) : systemSource }] : []),
+        ...activeNumericItemTerms(armor.armorClassBonusItemIds ?? [], "armorClassBonus", "Armor class bonus")
+      ];
+  const armorFlags: Dnd5eSrdCalculationFlagInput = explicitArmorClass
+    ? { override: true, reasons: [`Stored armor class is authoritative; equipped-item calculation would be ${armor.value}.`] }
+    : shieldIds.length > 1
+      ? { ambiguous: true, reasons: ["Multiple equipped shields provide the same highest bonus; only one shield bonus is applied."] }
+      : {};
+  const armorInput: Dnd5eSrdScalarCalculationInput = {
+    id: "armor-class",
+    label: "Armor class",
+    result: armorResult,
+    terms: armorTerms,
+    flags: armorFlags
+  };
+
+  const hp = recordValue(actor.data.hp);
+  const hpValue = (key: "max" | "current"): Dnd5eSrdScalarCalculationInput => {
+    const value = typeof hp[key] === "number" && Number.isFinite(hp[key]) ? Math.floor(hp[key] as number) : undefined;
+    return {
+      id: `hit-points-${key === "max" ? "maximum" : "current"}`,
+      label: key === "max" ? "Maximum hit points" : "Current hit points",
+      result: value ?? "Unavailable",
+      terms: value === undefined
+        ? [{ label: "Stored hit point value", formula: "not recorded", source: actorSource }]
+        : [{ label: "Stored hit point value", signedValue: value, source: actorSource }],
+      flags: value === undefined
+        ? { manual: true, unsupported: true, reasons: [`Actor data does not contain a finite hp.${key} value.`] }
+        : {}
+    };
+  };
+  const temporaryHp = dnd5eSrdTemporaryHitPoints(actor.data);
+  const temporaryHpInput: Dnd5eSrdScalarCalculationInput = {
+    id: "hit-points-temporary",
+    label: "Temporary hit points",
+    result: temporaryHp.current,
+    terms: [{ label: `Stored ${temporaryHp.key}`, signedValue: temporaryHp.current, source: actorSource }]
+  };
+
+  const initiativeAutomation = dnd5eSrdD20Automation(actor, "initiative", "dexterity");
+  const initiativeRoll = dnd5eSrdInitiativeRoll(actor);
+  const remarkableInitiative = dnd5eSrdHasChampionRemarkableAthlete(actor)
+    ? dnd5eSrdFeatureAdvantageRoll(initiativeAutomation, "Remarkable Athlete")
+    : initiativeAutomation;
+  const initiativeTerms: CalculationTerm[] = [
+    d20Term(remarkableInitiative),
+    { label: "Dexterity modifier", signedValue: genericFantasyAttributeModifier(actor, "dexterity"), source: actorSource },
+    ...adjustmentTerm(remarkableInitiative)
+  ];
+  const storedInitiative = typeof actor.data.initiative === "number" && Number.isFinite(actor.data.initiative) ? actor.data.initiative : undefined;
+  const initiativeFlags: Dnd5eSrdCalculationFlagInput = storedInitiative !== undefined
+    ? { unsupported: true, ambiguous: true, reasons: [`Stored initiative ${storedInitiative} is preserved, but session rolls use the authoritative formula shown here.`] }
+    : {};
+  const initiativeInput: Dnd5eSrdRollCalculationInput = {
+    id: "initiative",
+    label: "Initiative",
+    result: initiativeRoll.formula,
+    formula: initiativeRoll.formula,
+    terms: initiativeTerms,
+    flags: initiativeFlags
+  };
+
+  const savingThrows: Dnd5eSrdRollCalculationInput[] = dnd5eSrdAbilityKeys().map((ability) => {
+    const automation = dnd5eSrdD20Automation(actor, "saving-throw", ability);
+    const roll = dnd5eSrdSavingThrow(actor, ability, actorItems);
+    const abilityBonus = genericFantasyAttributeModifier(actor, ability);
+    const saveProficiency = dnd5eSrdSaveProficiencies(actor).includes(ability) ? proficiency : 0;
+    const itemBonus = dnd5eSrdEquippedItemNumericBonus(actor, actorItems, "savingThrowBonus");
+    const blessed = dnd5eSrdActorConditions(actor).some((condition) => condition.id === "blessed");
+    const terms: CalculationTerm[] = automation.automaticFailure
+      ? [{ label: "Automatic failure", formula: "0", source: rollModeSource(automation) }]
+      : [
+          d20Term(automation),
+          { label: `${titleCaseWords(ability)} modifier`, signedValue: abilityBonus, source: actorSource },
+          ...(saveProficiency ? [{ label: "Save proficiency", signedValue: saveProficiency, source: classSource }] : []),
+          ...activeNumericItemTerms(itemBonus.itemIds, "savingThrowBonus", "Saving throw bonus"),
+          ...adjustmentTerm(automation),
+          ...(blessed ? [{ label: "Blessed", formula: "+1d4", source: conditionSource("blessed") }] : [])
+        ];
+    return {
+      id: `saving-throw.${ability}`,
+      label: `${titleCaseWords(ability)} saving throw`,
+      result: roll.formula,
+      formula: roll.formula,
+      terms
+    };
+  });
+
+  const skillCalculations = dnd5eSrdSkills().map((skill) => {
+    const baseAutomation = dnd5eSrdD20Automation(actor, "skill-check", skill.ability);
+    const automation = skill.id === "athletics" && dnd5eSrdHasChampionRemarkableAthlete(actor)
+      ? dnd5eSrdFeatureAdvantageRoll(baseAutomation, "Remarkable Athlete")
+      : baseAutomation;
+    const abilityBonus = genericFantasyAttributeModifier(actor, skill.ability);
+    const proficiencyMultiplier = dnd5eSrdSkillProficiencyMultiplier(actor, skill.id);
+    const proficiencyContribution = proficiencyMultiplier * proficiency;
+    const jackOfAllTrades = proficiencyMultiplier === 0 && dnd5eSrdHasJackOfAllTrades(actor) ? Math.floor(proficiency / 2) : 0;
+    const numericModifier = abilityBonus + proficiencyContribution + jackOfAllTrades + automation.modifier;
+    const roll = dnd5eSrdSkillCheck(actor, skill.id);
+    const terms: CalculationTerm[] = [
+      d20Term(automation),
+      { label: `${titleCaseWords(skill.ability)} modifier`, signedValue: abilityBonus, source: actorSource },
+      ...(proficiencyContribution ? [{ label: proficiencyMultiplier === 2 ? "Expertise" : "Skill proficiency", signedValue: proficiencyContribution, source: classSource }] : []),
+      ...(jackOfAllTrades ? [{ label: "Jack of All Trades", signedValue: jackOfAllTrades, source: featureSource("Jack of All Trades") }] : []),
+      ...adjustmentTerm(automation)
+    ];
+    return {
+      skill,
+      automation,
+      numericModifier,
+      input: {
+        id: `skill.${skill.id}`,
+        label: skill.label,
+        result: roll.formula,
+        formula: roll.formula,
+        terms
+      } satisfies Dnd5eSrdRollCalculationInput
+    };
+  });
+  const perception = skillCalculations.find((entry) => entry.skill.id === "perception")!;
+  const perceptionMode = stringValue(recordValue(perception.automation.metadata).conditionRollMode);
+  const passivePerceptionInput: Dnd5eSrdScalarCalculationInput = {
+    id: "passive-perception",
+    label: "Passive Perception",
+    result: 10 + perception.numericModifier,
+    terms: [
+      { label: "Passive base", signedValue: 10, source: systemSource },
+      ...perception.input.terms.filter((term) => term.label !== "d20 roll mode")
+    ],
+    flags: perceptionMode
+      ? { ambiguous: true, reasons: [`Active Perception rolls currently use ${perceptionMode}; this passive score does not guess an additional roll-mode adjustment.`] }
+      : {}
+  };
+
+  const speed = dnd5eSrdSpeed(actor, actorItems);
+  const speedTerms: CalculationTerm[] = [
+    { label: "Base speed", signedValue: speed.base, source: actorSource },
+    ...(speed.armorPenalty ? [{ label: "Armor strength penalty", signedValue: speed.armorPenalty, source: armor.armorItemId ? itemSource(armor.armorItemId) : systemSource }] : []),
+    ...(speed.conditionPenalty ? [{ label: "Exhaustion penalty", signedValue: speed.conditionPenalty, source: conditionSource("exhaustion") }] : []),
+    ...(speed.conditionMultiplier !== 1 ? [{ label: "Condition multiplier", formula: `× ${speed.conditionMultiplier}`, source: conditionSource(speed.conditionSources[0] ?? "condition") }] : []),
+    ...(speed.conditionSetTo !== undefined ? [{ label: "Condition maximum", formula: `min(result, ${speed.conditionSetTo} ft)`, source: conditionSource(speed.conditionSources[0] ?? "condition") }] : [])
+  ];
+  const speedInput: Dnd5eSrdScalarCalculationInput = {
+    id: "speed",
+    label: "Speed",
+    result: speed.value,
+    unit: "ft",
+    terms: speedTerms
+  };
+
+  const classIsSpellcaster = typeof className === "string" && DND_5E_SRD_SPELLCASTER_CLASSES.has(className.toLowerCase());
+  const spellcastingApplicable = classIsSpellcaster || actorItems.some((item) => item.type === "spell") || Object.keys(recordValue(actor.data.spellSlots)).length > 0 || Object.keys(recordValue(actor.data.spellcasting)).length > 0;
+  const spellcastingAbility = dnd5eSrdPrimaryAbility(className ?? "");
+  const spellAbilityBonus = genericFantasyAttributeModifier(actor, spellcastingAbility);
+  const spellAttackItems = dnd5eSrdEquippedItemNumericBonus(actor, actorItems, "spellAttackBonus");
+  const spellSaveUnsupportedItems = actorItems.filter((item) => dnd5eSrdItemModifiersAreActive(actor, item) && Number.isFinite(numericValue(recordValue(item.data).spellSaveDcBonus, Number.NaN)));
+  const storedSpellSaveDc = typeof actor.data.spellSaveDc === "number" && Number.isFinite(actor.data.spellSaveDc) ? actor.data.spellSaveDc : undefined;
+  const spellSaveFlags: Dnd5eSrdCalculationFlagInput = spellSaveUnsupportedItems.length > 0 || storedSpellSaveDc !== undefined
+    ? {
+        unsupported: true,
+        ambiguous: true,
+        reasons: [
+          ...(storedSpellSaveDc !== undefined ? [`Stored spell save DC ${storedSpellSaveDc} is preserved but is not used by the current class-based action path.`] : []),
+          ...(spellSaveUnsupportedItems.length > 0 ? [`Active item spell-save bonuses are preserved but are not applied by the current action path: ${spellSaveUnsupportedItems.map((item) => item.name).join(", ")}.`] : [])
+        ]
+      }
+    : {};
+  const spellcasting = spellcastingApplicable
+    ? {
+        saveDc: {
+          id: "spell-save-dc",
+          label: "Spell save DC",
+          result: dnd5eSrdSpellSaveDc(actor, spellcastingAbility),
+          terms: [
+            { label: "SRD base", signedValue: 8, source: systemSource },
+            { label: "Proficiency bonus", signedValue: proficiency, source: explicitProficiency ? actorSource : classSource },
+            { label: `${titleCaseWords(spellcastingAbility)} modifier`, signedValue: spellAbilityBonus, source: actorSource }
+          ],
+          flags: spellSaveFlags
+        } satisfies Dnd5eSrdScalarCalculationInput,
+        attackBonus: {
+          id: "spell-attack-bonus",
+          label: "Spell attack bonus",
+          result: proficiency + spellAbilityBonus + spellAttackItems.total,
+          terms: [
+            { label: "Proficiency bonus", signedValue: proficiency, source: explicitProficiency ? actorSource : classSource },
+            { label: `${titleCaseWords(spellcastingAbility)} modifier`, signedValue: spellAbilityBonus, source: actorSource },
+            ...activeNumericItemTerms(spellAttackItems.itemIds, "spellAttackBonus", "Spell attack bonus")
+          ]
+        } satisfies Dnd5eSrdScalarCalculationInput
+      }
+    : undefined;
+
+  const coreRollIds = new Set([
+    "initiative",
+    ...dnd5eSrdAbilityKeys().flatMap((ability) => [`ability-${ability}`, `save-${ability}`]),
+    ...dnd5eSrdSkills().map((skill) => `skill-${skill.id}`)
+  ]);
+  const actionRolls: Dnd5eSrdRollCalculationInput[] = dnd5eSrdQuickRolls(actor, actorItems)
+    .filter((roll) => !coreRollIds.has(roll.id))
+    .map((roll) => {
+      const item = actorItems.find((candidate) => roll.id.startsWith(`item-${candidate.id}-`) || roll.id.startsWith(`spell-${candidate.id}-`));
+      const source = item ? itemSource(item.id) : roll.id.startsWith("monster-") ? actorSource : featureSource(roll.label.replace(/ (Attack|Damage|Healing|Check|Effect)$/, ""));
+      const manual = roll.formula === "0";
+      return {
+        id: `roll.${roll.id}`,
+        label: roll.label,
+        result: roll.formula,
+        formula: roll.formula,
+        terms: [{ label: "Authoritative action formula", formula: roll.formula, source }],
+        flags: manual ? { manual: true, reasons: ["This action has no numeric roll formula and requires its feature/effect instructions to resolve."] } : {}
+      };
+    });
+
+  return buildDnd5eSrdCalculationExplanation({
+    actorId: actor.id,
+    systemId: DND_5E_SRD_SYSTEM_ID,
+    systemVersion: DND_5E_SRD_COMPENDIUM_PROVENANCE.systemVersion,
+    rulesVersion: DND_5E_SRD_VERSION,
+    sourceName: DND_5E_SRD_COMPENDIUM_PROVENANCE.sourceName,
+    sourceVersion: DND_5E_SRD_COMPENDIUM_PROVENANCE.sourceVersion,
+    license: DND_5E_SRD_COMPENDIUM_PROVENANCE.license,
+    abilities,
+    proficiency: proficiencyInput,
+    armorClass: armorInput,
+    hitPoints: { maximum: hpValue("max"), current: hpValue("current"), temporary: temporaryHpInput },
+    initiative: initiativeInput,
+    savingThrows,
+    skills: skillCalculations.map((entry) => entry.input),
+    passivePerception: passivePerceptionInput,
+    speed: speedInput,
+    ...(spellcasting ? { spellcasting } : {}),
+    actionRolls
+  });
+}
+
 export function genericFantasyActionFormula(actor: Actor, items: Item[] = [], rollId: string, options: SystemActionUseOptions = {}): string | undefined {
   const item = actionItemForRoll(actor, items, rollId, ["spell", "item"]);
   if (!item) return undefined;
@@ -16264,6 +10839,7 @@ export function dnd5eSrdActionFormula(actor: Actor, items: Item[] = [], rollId: 
   ) return "0";
   if (rollId === DND_5E_SRD_THIEF_USE_MAGIC_DEVICE_ROLL_ID) return "1d6";
   if (rollId === DND_5E_SRD_DRAGONBORN_BREATH_WEAPON_ROLL_ID) return dnd5eSrdDragonbornBreathWeaponFormula(actor);
+  if (rollId === DND_5E_SRD_GOLIATH_GIANT_ANCESTRY_ROLL_ID) return dnd5eSrdGiantAncestryFormula(actor);
   if (
     rollId === DND_5E_SRD_HUMAN_RESOURCEFUL_ROLL_ID ||
     rollId === DND_5E_SRD_HUMAN_SKILLFUL_ROLL_ID ||
@@ -16296,20 +10872,46 @@ export function resolveDnd5eSrdAction(input: Dnd5eSrdActionResolutionInput): Rul
   const options = input.options ?? {};
   const now = input.now ?? new Date().toISOString();
   const commitMode: RulesResolutionCommitMode = options.commit === false ? "preview" : "commit";
-  const metadata = recordValue(input.roll.metadata);
+  const metadata = cloneJsonRecord(recordValue(input.roll.metadata));
   const actionKind = dnd5eSrdResolutionActionKind(input.roll);
   const warnings: string[] = [];
   const conditions: RulesResolutionConditionChange[] = [];
   const pendingSaves: RulesResolutionPendingSave[] = [];
   const pendingReactions: RulesResolutionPendingReaction[] = [];
   const auditEvents: RulesResolutionAuditEvent[] = [];
+  const concentrationCleanups: Dnd5eSrdConcentrationCleanup[] = [];
   const effects: RulesResolutionEffectResult[] = [];
   const actorUpdates = new Map<string, RulesResolutionActorUpdate>();
   const itemUpdates = new Map<string, Item>();
   const targetDataByActorId = new Map<string, Record<string, unknown>>();
   let actorData = cloneJsonRecord(input.actor.data);
   let usage: SystemActionUseResult | undefined;
-  let blocked = dnd5eSrdResolutionBlock(input.actor, actionKind);
+  const requestedItem = actionItemForRoll(input.actor, items, input.roll.id, ["spell", "item"]);
+  if (
+    requestedItem &&
+    dnd5eSrdRollEffectType(input.roll) === "damage" &&
+    !stringValue(metadata.damageType) &&
+    normalizeStringArray(metadata.damageTypes).length === 0 &&
+    normalizeStringArray(metadata.damageTypeOptions).length === 0 &&
+    Object.keys(recordValue(metadata.damageBreakdown)).length === 0
+  ) {
+    const itemData = recordValue(requestedItem.data);
+    const storedDamageType = stringValue(input.roll.id.endsWith("-secondary-damage") ? itemData.secondaryDamageType : itemData.damageType);
+    // Basic weapon/item damage rolls historically omitted redundant metadata.
+    // Recover the authoritative stored type at resolution so defenses and
+    // temporary Hit Points are never bypassed by that presentation shortcut.
+    if (storedDamageType) metadata.damageType = storedDamageType;
+  }
+  const ritualAvailable = requestedItem?.type === "spell" && dnd5eSrdWizardRitualSpellAvailable(input.actor, requestedItem);
+  let blocked = options.ritualCast && requestedItem?.type === "spell" && !ritualAvailable
+    ? { code: "ritual_cast_unavailable", reason: `${requestedItem.name} is not an eligible Wizard ritual in this actor's stored spellbook.` }
+    : requestedItem?.type === "spell" && recordValue(requestedItem.data).prepared === false && !(options.ritualCast && ritualAvailable)
+    ? { code: "spell_not_prepared", reason: `${requestedItem.name} must be prepared or explicitly cast as an eligible Wizard ritual before its actions can be used.` }
+    : requestedItem && dnd5eSrdItemRequiresAttunement(requestedItem) && !dnd5eSrdItemModifiersAreActive(input.actor, requestedItem)
+    ? { code: "attunement_required", reason: `${requestedItem.name} requires active attunement before its actions can be used.` }
+    : options.ignoreSourceActionRestrictions
+    ? undefined
+    : dnd5eSrdResolutionBlock(input.actor, actionKind);
   const targetInputs = targets.length > 0 ? targets : [];
   const rolls = dnd5eSrdResolutionRolls(input.actor, targetInputs, input.roll, options);
   const targetActorForResolution = (target: RulesResolutionTargetInput): Actor => ({
@@ -16329,6 +10931,20 @@ export function resolveDnd5eSrdAction(input: Dnd5eSrdActionResolutionInput): Rul
       reason
     });
   };
+
+  if ((options.reactionUse || actionKind === "reaction") && !blocked) {
+    const reactionResult = dnd5eSrdApplyReactionUse(actorData, input.actor.id, input.roll.id, input.combat, now);
+    actorData = reactionResult.data;
+    auditEvents.push(...reactionResult.auditEvents);
+    if (reactionResult.blocked) blocked = reactionResult.blocked;
+  }
+
+  if (actionKind === "bonusAction" && !blocked) {
+    const bonusActionResult = dnd5eSrdApplyBonusActionUse(actorData, input.actor.id, input.roll.id, input.combat, now);
+    actorData = bonusActionResult.data;
+    auditEvents.push(...bonusActionResult.auditEvents);
+    if (bonusActionResult.blocked) blocked = bonusActionResult.blocked;
+  }
 
   if (options.consumeResources && !blocked) {
     try {
@@ -16352,19 +10968,13 @@ export function resolveDnd5eSrdAction(input: Dnd5eSrdActionResolutionInput): Rul
     if (rechargeResult.blocked) blocked = rechargeResult.blocked;
   }
 
-  if ((options.reactionUse || actionKind === "reaction") && !blocked) {
-    const reactionResult = dnd5eSrdApplyReactionUse(actorData, input.actor.id, input.roll.id, input.combat, now);
-    actorData = reactionResult.data;
-    auditEvents.push(...reactionResult.auditEvents);
-    if (reactionResult.blocked) blocked = reactionResult.blocked;
-  }
-
   if (metadata.concentration === true && !blocked) {
-    const concentrationResult = dnd5eSrdStartConcentration(actorData, input.actor, input.roll, targetInputs.map((target) => target.actor.id), now);
+    const concentrationResult = dnd5eSrdStartConcentration(actorData, input.actor, input.roll, targetInputs.map((target) => target.actor.id), input.combat, now);
     actorData = concentrationResult.data;
     conditions.push(...concentrationResult.conditions);
     warnings.push(...concentrationResult.warnings);
     auditEvents.push(...concentrationResult.auditEvents);
+    if (concentrationResult.cleanup) concentrationCleanups.push(concentrationResult.cleanup);
   }
 
   for (const target of targetInputs) {
@@ -16375,6 +10985,7 @@ export function resolveDnd5eSrdAction(input: Dnd5eSrdActionResolutionInput): Rul
     if (concentrationDamage.pendingSave) pendingSaves.push(concentrationDamage.pendingSave);
     if (concentrationDamage.condition) conditions.push(concentrationDamage.condition);
     if (concentrationDamage.auditEvent) auditEvents.push(concentrationDamage.auditEvent);
+    if (concentrationDamage.cleanup) concentrationCleanups.push(concentrationDamage.cleanup);
     if (JSON.stringify(concentrationDamage.data) !== JSON.stringify(resolvedTarget.data)) {
       setResolvedTargetData(target, concentrationDamage.data, "concentration-damage");
     }
@@ -16400,12 +11011,13 @@ export function resolveDnd5eSrdAction(input: Dnd5eSrdActionResolutionInput): Rul
   if (options.applyEffect && !blocked) {
     for (const target of targetInputs) {
       const resolvedTarget = targetActorForResolution(target);
-      const effectResult = dnd5eSrdApplyTargetEffectResolution(resolvedTarget, input.actor.id, input.roll, metadata, target.rollTotal, dnd5eSrdTargetSaveOutcome(target.actor.id, target, options), options, input.combat, now);
+      const effectResult = dnd5eSrdApplyTargetEffectResolution(resolvedTarget, target.items ?? [], input.actor.id, input.roll, metadata, target.rollTotal, dnd5eSrdTargetSaveOutcome(target.actor.id, target, options), options, input.combat, now);
       if (!effectResult) continue;
       effects.push(...effectResult.effects);
       conditions.push(...effectResult.conditions);
       pendingSaves.push(...effectResult.pendingSaves);
       auditEvents.push(...effectResult.auditEvents);
+      concentrationCleanups.push(...effectResult.concentrationCleanups);
       if (JSON.stringify(effectResult.data) !== JSON.stringify(resolvedTarget.data)) {
         setResolvedTargetData(target, effectResult.data, "target-effect");
       }
@@ -16421,7 +11033,9 @@ export function resolveDnd5eSrdAction(input: Dnd5eSrdActionResolutionInput): Rul
 
   const attunement = dnd5eSrdAttunementStateForData(actorData);
   if (attunement.overLimitBy > 0) {
-    warnings.push(`Attunement limit exceeded by ${attunement.overLimitBy}; attuned item effects should be corrected before play continues.`);
+    warnings.push(attunement.overrideReason
+      ? `Attunement limit exceeded by ${attunement.overLimitBy} under override: ${attunement.overrideReason}.`
+      : `Attunement limit exceeded by ${attunement.overLimitBy}; ${attunement.inactiveAttunedItemIds.length} over-limit item effect${attunement.inactiveAttunedItemIds.length === 1 ? " is" : "s are"} inactive.`);
   }
 
   if (JSON.stringify(actorData) !== JSON.stringify(input.actor.data)) {
@@ -16457,7 +11071,24 @@ export function resolveDnd5eSrdAction(input: Dnd5eSrdActionResolutionInput): Rul
     ...(blocked ? { blocked } : {}),
     ...(pendingChoice ? { pendingChoice } : {}),
     ...(manualResolutionRequired ? { manualResolutionRequired } : {}),
-    attunement
+    attunement,
+    ...(concentrationCleanups.length > 0 ? { concentrationCleanups: [...new Map(concentrationCleanups.map((cleanup) => [`${cleanup.sourceActorId}:${cleanup.rollId}:${cleanup.startedAt ?? "legacy"}:${cleanup.reason}`, cleanup])).values()] } : {})
+  };
+}
+
+function dnd5eSrdConcentrationCleanupDescriptor(
+  fallbackSourceActorId: string,
+  concentration: Record<string, unknown>,
+  reason: Dnd5eSrdConcentrationCleanup["reason"]
+): Dnd5eSrdConcentrationCleanup | undefined {
+  const rollId = stringValue(concentration.rollId);
+  if (!rollId) return undefined;
+  return {
+    sourceActorId: stringValue(concentration.sourceActorId) ?? fallbackSourceActorId,
+    rollId,
+    ...(stringValue(concentration.startedAt) ? { startedAt: stringValue(concentration.startedAt) } : {}),
+    targetActorIds: uniqueStrings(normalizeStringArray(concentration.targetActorIds)),
+    reason
   };
 }
 
@@ -16474,7 +11105,9 @@ export function resolveDnd5eSrdConcentrationDamage(
   const rollId = stringValue(concentration.rollId) ?? "concentration";
   if (!Object.keys(concentration).length) return { data };
   const dc = dnd5eSrdConcentrationDc(damageTaken);
-  if (!saveOutcome) {
+  const concentrationBreakingCondition = dnd5eSrdConditionIds(data.conditions).some((conditionId) => ["incapacitated", "paralyzed", "petrified", "stunned", "unconscious", "dead"].includes(conditionId));
+  const resolvedOutcome = concentrationBreakingCondition ? "failure" : saveOutcome;
+  if (!resolvedOutcome) {
     return {
       data,
       pendingSave: {
@@ -16486,8 +11119,12 @@ export function resolveDnd5eSrdConcentrationDamage(
       }
     };
   }
-  if (saveOutcome === "success") return { data };
+  if (resolvedOutcome === "success") return { data };
+  const cleanup = dnd5eSrdConcentrationCleanupDescriptor(actor.id, concentration, "broken");
   delete rules.concentration;
+  if (Array.isArray(rules.activeEffects)) {
+    rules.activeEffects = rules.activeEffects.filter((effect) => recordValue(effect).concentration !== true);
+  }
   const nextData = dnd5eSrdDataWithRulesEngineState(data, rules);
   return {
     data: nextData,
@@ -16496,7 +11133,7 @@ export function resolveDnd5eSrdConcentrationDamage(
       operation: "breakConcentration",
       conditionId: "concentration",
       conditionName: "Concentration",
-      reason: `Failed DC ${dc} Constitution save after ${damageTaken} damage`
+      reason: concentrationBreakingCondition ? "An incapacitating condition ended concentration" : `Failed DC ${dc} Constitution save after ${damageTaken} damage`
     },
     auditEvent: {
       code: "concentration.broken",
@@ -16504,8 +11141,65 @@ export function resolveDnd5eSrdConcentrationDamage(
       rollId: sourceRollId,
       message: `${actor.name} lost concentration on ${stringValue(concentration.label) ?? rollId}`,
       data: { damageTaken, dc, concentration: cloneJsonRecord(concentration) }
-    }
+    },
+    ...(cleanup ? { cleanup } : {})
   };
+}
+
+function dnd5eSrdConditionValueId(value: unknown): string | undefined {
+  if (typeof value === "string") return dnd5eSrdConditionId(value);
+  return stringValue(recordValue(value).id);
+}
+
+export function applyDnd5eSrdConcentrationCleanup(target: Actor, cleanup: Dnd5eSrdConcentrationCleanup): Dnd5eSrdConcentrationCleanupResult {
+  const data = cloneJsonRecord(target.data);
+  if (!cleanup.targetActorIds.includes(target.id)) return { data, removedEffectIds: [], removedConditionIds: [] };
+  const rules = dnd5eSrdRulesEngineState(data);
+  const activeEffects = Array.isArray(rules.activeEffects) ? rules.activeEffects.map((effect) => cloneJsonRecord(recordValue(effect))) : [];
+  const removedEffects = activeEffects.filter((effect) =>
+    stringValue(effect.sourceActorId) === cleanup.sourceActorId &&
+    stringValue(effect.rollId) === cleanup.rollId &&
+    (!cleanup.startedAt || stringValue(effect.startedAt) === cleanup.startedAt)
+  );
+  if (removedEffects.length === 0) return { data, removedEffectIds: [], removedConditionIds: [] };
+  const remainingEffects = activeEffects.filter((effect) => !removedEffects.includes(effect));
+  rules.activeEffects = remainingEffects;
+  const removedOwnedConditionIds = uniqueStrings(removedEffects.flatMap((effect) => normalizeStringArray(effect.ownedConditionIds)));
+  const remainingOwnedConditionIds = new Set(remainingEffects.flatMap((effect) => normalizeStringArray(effect.ownedConditionIds)));
+  const removedConditionIds = removedOwnedConditionIds.filter((conditionId) => !remainingOwnedConditionIds.has(conditionId));
+  const nextData: Record<string, unknown> = dnd5eSrdDataWithRulesEngineState(data, rules);
+  if (removedConditionIds.length > 0 && Array.isArray(data.conditions)) {
+    nextData.conditions = data.conditions.filter((condition) => {
+      const conditionId = dnd5eSrdConditionValueId(condition);
+      return !conditionId || !removedConditionIds.includes(conditionId);
+    });
+  }
+  return {
+    data: nextData,
+    removedEffectIds: removedEffects.map((effect) => stringValue(effect.id)).filter((effectId): effectId is string => Boolean(effectId)),
+    removedConditionIds
+  };
+}
+
+export function dnd5eSrdConcentrationCleanupActorUpdates(
+  actors: Actor[],
+  cleanups: Dnd5eSrdConcentrationCleanup[]
+): RulesResolutionActorUpdate[] {
+  const updates: RulesResolutionActorUpdate[] = [];
+  for (const actor of actors) {
+    const before = cloneJsonRecord(actor.data);
+    let data = before;
+    const applied: string[] = [];
+    for (const cleanup of cleanups) {
+      const result = applyDnd5eSrdConcentrationCleanup({ ...actor, data }, cleanup);
+      data = result.data;
+      if (result.removedEffectIds.length > 0) applied.push(`${cleanup.sourceActorId}:${cleanup.rollId}`);
+    }
+    if (JSON.stringify(data) !== JSON.stringify(before)) {
+      updates.push({ actorId: actor.id, before, after: data, reason: `concentration-cleanup:${applied.join(",")}` });
+    }
+  }
+  return updates;
 }
 
 export function dnd5eSrdAttunementLimit(actor: Actor): number {
@@ -16608,19 +11302,27 @@ function dnd5eSrdStartConcentration(
   actor: Actor,
   roll: QuickRoll,
   targetActorIds: string[],
+  combat: Combat | undefined,
   now: string
-): { data: Record<string, unknown>; conditions: RulesResolutionConditionChange[]; warnings: string[]; auditEvents: RulesResolutionAuditEvent[] } {
+): { data: Record<string, unknown>; conditions: RulesResolutionConditionChange[]; warnings: string[]; auditEvents: RulesResolutionAuditEvent[]; cleanup?: Dnd5eSrdConcentrationCleanup } {
   const rules = dnd5eSrdRulesEngineState(data);
   const previous = recordValue(rules.concentration);
   const previousRollId = stringValue(previous.rollId);
+  const cleanup = Object.keys(previous).length > 0 ? dnd5eSrdConcentrationCleanupDescriptor(actor.id, previous, "replaced") : undefined;
   const metadata = recordValue(roll.metadata);
+  const duration = stringValue(metadata.duration);
+  const durationRounds = dnd5eSrdDurationRounds(duration);
+  const expiresAtRound = durationRounds && combat ? combat.round + durationRounds : undefined;
   const concentration = {
     rollId: roll.id,
     label: roll.label,
     startedAt: now,
     targetActorIds,
-    duration: stringValue(metadata.duration),
-    sourceActorId: actor.id
+    duration,
+    sourceActorId: actor.id,
+    ...(combat ? { startedAtRound: combat.round } : {}),
+    ...(durationRounds ? { durationRounds } : {}),
+    ...(expiresAtRound ? { expiresAtRound } : {})
   };
   rules.concentration = concentration;
   const activeEffects = Array.isArray(rules.activeEffects) ? rules.activeEffects.filter((effect) => recordValue(effect).concentration !== true) : [];
@@ -16632,11 +11334,15 @@ function dnd5eSrdStartConcentration(
       label: roll.label,
       startedAt: now,
       targetActorIds,
+      sourceActorId: actor.id,
       concentration: true,
-      duration: stringValue(metadata.duration)
+      duration,
+      ...(combat ? { startedAtRound: combat.round } : {}),
+      ...(durationRounds ? { durationRounds } : {}),
+      ...(expiresAtRound ? { expiresAtRound } : {})
     }
   ];
-  const replaced = previousRollId && previousRollId !== roll.id;
+  const replaced = Object.keys(previous).length > 0;
   return {
     data: dnd5eSrdDataWithRulesEngineState(data, rules),
     conditions: [
@@ -16657,7 +11363,8 @@ function dnd5eSrdStartConcentration(
         message: replaced ? `${actor.name} replaced concentration with ${roll.label}` : `${actor.name} started concentration on ${roll.label}`,
         data: { previous: previousRollId ? cloneJsonRecord(previous) : undefined, concentration }
       }
-    ]
+    ],
+    ...(cleanup ? { cleanup } : {})
   };
 }
 
@@ -16668,19 +11375,21 @@ function dnd5eSrdApplyReactionUse(
   combat: Combat | undefined,
   now: string
 ): { data: Record<string, unknown>; blocked?: RulesResolutionBlocked; auditEvents: RulesResolutionAuditEvent[] } {
+  // Outside initiative there is no persistent reaction interval to consume.
+  if (!combat) return { data, auditEvents: [] };
   const rules = dnd5eSrdRulesEngineState(data);
-  const combatId = combat?.id ?? "out-of-combat";
-  const round = combat?.round ?? 0;
+  const combatId = combat.id;
+  const round = combat.round;
   const reactions = recordValue(rules.reactions);
   const used = recordValue(reactions[combatId]);
-  if (numericValue(used.round, Number.NaN) === round && stringValue(used.rollId)) {
+  if (stringValue(used.rollId)) {
     return {
       data,
-      blocked: { code: "reaction_already_used", reason: "Reaction already used this combat round." },
+      blocked: { code: "reaction_already_used", reason: "Reaction already used since the start of this actor's last turn." },
       auditEvents: []
     };
   }
-  reactions[combatId] = { round, rollId, usedAt: now };
+  reactions[combatId] = { round, turnIndex: combat.turnIndex, actorId, rollId, usedAt: now };
   rules.reactions = reactions;
   return {
     data: dnd5eSrdDataWithRulesEngineState(data, rules),
@@ -16696,6 +11405,105 @@ function dnd5eSrdApplyReactionUse(
   };
 }
 
+function dnd5eSrdApplyBonusActionUse(
+  data: Record<string, unknown>,
+  actorId: string,
+  rollId: string,
+  combat: Combat | undefined,
+  now: string
+): { data: Record<string, unknown>; blocked?: RulesResolutionBlocked; auditEvents: RulesResolutionAuditEvent[] } {
+  if (!combat) return { data, auditEvents: [] };
+  if (combat.combatants[combat.turnIndex]?.actorId !== actorId) {
+    return {
+      data,
+      blocked: { code: "bonus_action_out_of_turn", reason: "A Bonus Action can be taken only on this actor's turn." },
+      auditEvents: []
+    };
+  }
+  const rules = dnd5eSrdRulesEngineState(data);
+  const actionEconomy = recordValue(rules.actionEconomy);
+  const bonusActions = recordValue(actionEconomy.bonusActions);
+  const used = recordValue(bonusActions[combat.id]);
+  if (numericValue(used.round, Number.NaN) === combat.round && numericValue(used.turnIndex, Number.NaN) === combat.turnIndex && stringValue(used.rollId)) {
+    return {
+      data,
+      blocked: { code: "bonus_action_already_used", reason: "Bonus Action already used on this turn." },
+      auditEvents: []
+    };
+  }
+  bonusActions[combat.id] = { round: combat.round, turnIndex: combat.turnIndex, actorId, rollId, usedAt: now };
+  actionEconomy.bonusActions = bonusActions;
+  rules.actionEconomy = actionEconomy;
+  return {
+    data: dnd5eSrdDataWithRulesEngineState(data, rules),
+    auditEvents: [{ code: "bonus_action.used", actorId, rollId, message: "Bonus Action used", data: { combatId: combat.id, round: combat.round, turnIndex: combat.turnIndex } }]
+  };
+}
+
+export interface Dnd5eSrdRechargeProfile {
+  kind: "roll" | "uses";
+  label: string;
+  minimumRoll?: number;
+  maximumRoll?: number;
+  maxUses?: number;
+  recovery?: "short" | "long";
+}
+
+/** Parses every recharge form shipped by the SRD catalog. Unknown forms fail closed. */
+export function dnd5eSrdRechargeProfile(recharge: string): Dnd5eSrdRechargeProfile | undefined {
+  const normalized = recharge.trim().toLowerCase().replace(/\s+/g, " ");
+  const range = /^(\d+)\s*-\s*(\d+)$/.exec(normalized);
+  if (range) {
+    const minimumRoll = Number(range[1]);
+    const maximumRoll = Number(range[2]);
+    return minimumRoll >= 1 && maximumRoll <= 6 && minimumRoll <= maximumRoll
+      ? { kind: "roll", label: recharge, minimumRoll, maximumRoll }
+      : undefined;
+  }
+  const single = /^(\d+)$/.exec(normalized);
+  if (single) {
+    const minimumRoll = Number(single[1]);
+    return minimumRoll >= 1 && minimumRoll <= 6 ? { kind: "roll", label: recharge, minimumRoll, maximumRoll: 6 } : undefined;
+  }
+  const daily = /^(\d+)\s*\/\s*day$/.exec(normalized);
+  if (daily) {
+    const maxUses = Number(daily[1]);
+    return maxUses > 0 ? { kind: "uses", label: recharge, maxUses, recovery: "long" } : undefined;
+  }
+  if (["short/long rest", "short or long rest", "short rest"].includes(normalized)) {
+    return { kind: "uses", label: recharge, maxUses: 1, recovery: "short" };
+  }
+  if (normalized === "long rest") return { kind: "uses", label: recharge, maxUses: 1, recovery: "long" };
+  return undefined;
+}
+
+export function dnd5eSrdRecoverRechargeState(
+  data: Record<string, unknown>,
+  restType: SystemRestType
+): { data: Record<string, unknown>; recoveredActionIds: string[] } {
+  const rules = dnd5eSrdRulesEngineState(data);
+  const rechargeState = recordValue(rules.recharge);
+  const recoveredActionIds: string[] = [];
+  const nextState: Record<string, unknown> = { ...rechargeState };
+  for (const [rollId, raw] of Object.entries(rechargeState)) {
+    const current = recordValue(raw);
+    const recharge = stringValue(current.recharge);
+    const profile = recharge ? dnd5eSrdRechargeProfile(recharge) : undefined;
+    if (!profile || profile.kind !== "uses" || !profile.recovery) continue;
+    const recovers = profile.recovery === "short" || restType === "long";
+    if (!recovers) continue;
+    const maxUses = profile.maxUses ?? 1;
+    if (numericValue(current.remaining, maxUses) >= maxUses && current.available !== false) continue;
+    nextState[rollId] = { ...current, available: true, remaining: maxUses, recoveredBy: restType };
+    recoveredActionIds.push(rollId);
+  }
+  if (recoveredActionIds.length === 0) return { data, recoveredActionIds };
+  return {
+    data: dnd5eSrdDataWithRulesEngineState(data, { ...rules, recharge: nextState }),
+    recoveredActionIds: recoveredActionIds.sort()
+  };
+}
+
 function dnd5eSrdApplyRechargeResolution(
   data: Record<string, unknown>,
   roll: QuickRoll,
@@ -16706,12 +11514,25 @@ function dnd5eSrdApplyRechargeResolution(
   const rules = dnd5eSrdRulesEngineState(data);
   const rechargeState = recordValue(rules.recharge);
   const current = recordValue(rechargeState[roll.id]);
-  let available = current.available !== false;
+  const profile = dnd5eSrdRechargeProfile(recharge);
   const warnings: string[] = [];
   const auditEvents: RulesResolutionAuditEvent[] = [];
-  if (Number.isFinite(numericValue(options.rechargeCheck, Number.NaN))) {
+  if (!profile) {
+    return {
+      data,
+      blocked: { code: "recharge_unsupported", reason: `${roll.label} uses an unsupported recharge form (${recharge}); resolve it manually.` },
+      warnings,
+      auditEvents
+    };
+  }
+  let remaining = profile.kind === "uses" ? Math.max(0, Math.min(profile.maxUses ?? 1, Math.floor(numericValue(current.remaining, profile.maxUses ?? 1)))) : undefined;
+  let available = profile.kind === "uses" ? (remaining ?? 0) > 0 : current.available !== false;
+  if (profile.kind === "roll" && Number.isFinite(numericValue(options.rechargeCheck, Number.NaN))) {
     const check = Math.floor(numericValue(options.rechargeCheck, 0));
-    available = dnd5eSrdRechargeRollSucceeds(recharge, check);
+    if (check < 1 || check > 6) {
+      return { data, blocked: { code: "recharge_check_invalid", reason: "Recharge checks must be whole-number d6 results from 1 to 6." }, warnings, auditEvents };
+    }
+    available = check >= (profile.minimumRoll ?? 7) && check <= (profile.maximumRoll ?? 6);
     rechargeState[roll.id] = { ...current, recharge, available, lastCheck: check, checkedAt: now };
     auditEvents.push({
       code: available ? "recharge.available" : "recharge.unavailable",
@@ -16729,19 +11550,15 @@ function dnd5eSrdApplyRechargeResolution(
       auditEvents
     };
   }
-  rechargeState[roll.id] = { ...current, recharge, available: false, spentAt: now };
+  if (profile.kind === "uses") {
+    remaining = Math.max(0, (remaining ?? profile.maxUses ?? 1) - 1);
+    rechargeState[roll.id] = { ...current, recharge, remaining, maxUses: profile.maxUses, available: remaining > 0, spentAt: now };
+  } else {
+    rechargeState[roll.id] = { ...current, recharge, available: false, spentAt: now };
+  }
   rules.recharge = rechargeState;
-  warnings.push(`${roll.label} will need recharge ${recharge} before it can be used again.`);
+  if (profile.kind === "roll" || remaining === 0) warnings.push(`${roll.label} will need recharge ${recharge} before it can be used again.`);
   return { data: dnd5eSrdDataWithRulesEngineState(data, rules), warnings, auditEvents };
-}
-
-function dnd5eSrdRechargeRollSucceeds(recharge: string, roll: number): boolean {
-  const normalized = recharge.trim().toLowerCase();
-  const range = /^(\d+)\s*-\s*(\d+)$/.exec(normalized);
-  if (range) return roll >= Number(range[1]) && roll <= Number(range[2]);
-  const single = /^(\d+)$/.exec(normalized);
-  if (single) return roll >= Number(single[1]);
-  return !normalized.includes("/day");
 }
 
 function dnd5eSrdPendingReaction(actor: Actor, roll: QuickRoll, metadata: Record<string, unknown>): RulesResolutionPendingReaction | undefined {
@@ -16801,6 +11618,20 @@ function dnd5eSrdSelectedEffectOption(metadata: Record<string, unknown>, options
 
 function dnd5eSrdManualResolution(roll: QuickRoll, metadata: Record<string, unknown>, pendingChoice: RulesResolutionChoice | undefined, options: RulesResolverOptions): RulesActionResolutionResult["manualResolutionRequired"] | undefined {
   if (pendingChoice) return { reason: pendingChoice.reason, metadata };
+  if (metadata.requiresManualResolution === true) {
+    return { reason: `${roll.label} has a selected SRD benefit that still needs GM/manual resolution.`, metadata };
+  }
+  const damageTypes = dnd5eSrdRollEffectType(roll) === "damage"
+    ? uniqueStrings([...dnd5eSrdDamageBreakdownTypes(metadata), ...dnd5eSrdDamageTypes(metadata, options)])
+    : [];
+  const unsupportedDamageTypes = damageTypes.filter((damageType) => !DND_5E_SRD_DAMAGE_TYPE_IDS.some((supported) => supported === damageType.toLowerCase()));
+  if (unsupportedDamageTypes.length > 0) {
+    return { reason: `${roll.label} uses unsupported damage type${unsupportedDamageTypes.length === 1 ? "" : "s"} ${unsupportedDamageTypes.join(", ")}; resolve it manually.`, metadata };
+  }
+  if (damageTypes.length > 1) {
+    const resolvedComponents = dnd5eSrdDamageBreakdownComponents(metadata);
+    if (resolvedComponents.length !== damageTypes.length) return { reason: `${roll.label} has multiple typed damage components without an authoritative total for each component.`, metadata };
+  }
   const complexKeys = ["summon", "behaviorTable", "commandOptions", "spellcastingAbilityCheck", "blockedBy", "counteredBy", "rayRollFormula"];
   const hasComplexMetadata = complexKeys.some((key) => key in metadata);
   const effectType = stringValue(metadata.effectType);
@@ -16813,6 +11644,7 @@ function dnd5eSrdManualResolution(roll: QuickRoll, metadata: Record<string, unkn
 
 function dnd5eSrdApplyTargetEffectResolution(
   target: Actor,
+  targetItems: Item[],
   sourceActorId: string,
   roll: QuickRoll,
   metadata: Record<string, unknown>,
@@ -16821,24 +11653,26 @@ function dnd5eSrdApplyTargetEffectResolution(
   options: RulesResolverOptions,
   combat: Combat | undefined,
   now: string
-): { data: Record<string, unknown>; effects: RulesResolutionEffectResult[]; conditions: RulesResolutionConditionChange[]; pendingSaves: RulesResolutionPendingSave[]; auditEvents: RulesResolutionAuditEvent[] } | undefined {
+): { data: Record<string, unknown>; effects: RulesResolutionEffectResult[]; conditions: RulesResolutionConditionChange[]; pendingSaves: RulesResolutionPendingSave[]; auditEvents: RulesResolutionAuditEvent[]; concentrationCleanups: Dnd5eSrdConcentrationCleanup[] } | undefined {
   let data = cloneJsonRecord(target.data);
   const effects: RulesResolutionEffectResult[] = [];
   const conditions: RulesResolutionConditionChange[] = [];
   const pendingSaves: RulesResolutionPendingSave[] = [];
   const auditEvents: RulesResolutionAuditEvent[] = [];
+  const concentrationCleanups: Dnd5eSrdConcentrationCleanup[] = [];
 
-  const poolEffect = dnd5eSrdApplyRollTotalEffectResolution({ ...target, data }, roll, metadata, rollTotal, saveOutcome, options, now);
+  const poolEffect = dnd5eSrdApplyRollTotalEffectResolution({ ...target, data }, targetItems, roll, metadata, rollTotal, saveOutcome, options, now);
   if (poolEffect) {
     data = poolEffect.data;
     effects.push(poolEffect.effect);
     if (poolEffect.condition) conditions.push(poolEffect.condition);
     if (poolEffect.pendingSave) pendingSaves.push(poolEffect.pendingSave);
     if (poolEffect.auditEvent) auditEvents.push(poolEffect.auditEvent);
+    if (poolEffect.cleanup) concentrationCleanups.push(poolEffect.cleanup);
   }
 
   const conditionBefore = dnd5eSrdConditionIds(data.conditions);
-  const conditionResult = dnd5eSrdApplyTargetConditionResolution({ ...target, data }, sourceActorId, roll, metadata, saveOutcome, options, combat, now);
+  const conditionResult = dnd5eSrdApplyTargetConditionResolution({ ...target, data }, targetItems, sourceActorId, roll, metadata, saveOutcome, options, combat, now);
   if (conditionResult) {
     data = conditionResult.data;
     const conditionAfter = dnd5eSrdConditionIds(data.conditions);
@@ -16870,7 +11704,7 @@ function dnd5eSrdApplyTargetEffectResolution(
   }
 
   if (effects.length === 0 && conditions.length === 0 && pendingSaves.length === 0 && auditEvents.length === 0) return undefined;
-  return { data, effects, conditions, pendingSaves, auditEvents };
+  return { data, effects, conditions, pendingSaves, auditEvents, concentrationCleanups };
 }
 
 function dnd5eSrdUtilityTraits(metadata: Record<string, unknown>, options: RulesResolverOptions): { resistance: string[]; immunity: string[]; vulnerability: string[]; hasTraits: boolean } {
@@ -16907,6 +11741,7 @@ function dnd5eSrdApplyUtilityEffectResolution(
     sourceActorId,
     targetActorId: target.id,
     startedAt: now,
+    ...(metadata.concentration === true ? { concentration: true } : {}),
     ...(duration ? { duration } : {}),
     ...(traits.resistance.length > 0 ? { resistance: traits.resistance } : {}),
     ...(traits.immunity.length > 0 ? { immunity: traits.immunity } : {}),
@@ -16937,29 +11772,200 @@ function dnd5eSrdApplyUtilityEffectResolution(
   };
 }
 
+
+function dnd5eSrdDamageDefenseValues(data: Record<string, unknown>, keys: string[]): string[] {
+  return uniqueStrings(keys.flatMap((key) => {
+    const value = data[key];
+    if (typeof value === "string") return dnd5eSrdSplitDamageTypes(value);
+    return normalizeStringArray(value).flatMap(dnd5eSrdSplitDamageTypes);
+  }).map((value) => value.toLowerCase()));
+}
+
+function dnd5eSrdMonsterTraitDamageDefenses(actor: Actor): { resistance: string[]; immunity: string[]; vulnerability: string[] } {
+  const statBlock = recordValue(recordValue(actor.data.monster).statBlock);
+  const traits = Array.isArray(statBlock.traits) ? statBlock.traits.map((trait) => recordValue(trait)) : [];
+  const result = { resistance: [] as string[], immunity: [] as string[], vulnerability: [] as string[] };
+  for (const trait of traits) {
+    const text = `${stringValue(trait.name) ?? ""}. ${stringValue(trait.summary) ?? ""}`.toLowerCase();
+    for (const damageType of DND_5E_SRD_DAMAGE_TYPE_IDS) {
+      const escapedType = damageType.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      if (new RegExp(`(?:${escapedType} immunity|immune to [^.]*\\b${escapedType}\\b[^.]* damage)`).test(text)) result.immunity.push(damageType);
+      if (new RegExp(`(?:${escapedType} resistance|resistant to [^.]*\\b${escapedType}\\b[^.]* damage)`).test(text)) result.resistance.push(damageType);
+      if (new RegExp(`(?:${escapedType} vulnerability|vulnerable to [^.]*\\b${escapedType}\\b[^.]* damage)`).test(text)) result.vulnerability.push(damageType);
+    }
+  }
+  return {
+    resistance: uniqueStrings(result.resistance),
+    immunity: uniqueStrings(result.immunity),
+    vulnerability: uniqueStrings(result.vulnerability)
+  };
+}
+
+function dnd5eSrdActorDamageDefenses(actor: Actor, items: Item[] = []): { resistance: string[]; immunity: string[]; vulnerability: string[] } {
+  const rules = dnd5eSrdRulesEngineState(actor.data);
+  const activeEffects = Array.isArray(rules.activeEffects) ? rules.activeEffects.map((effect) => recordValue(effect)) : [];
+  const activeItems = items
+    .filter((item) => itemBelongsToActor(actor, item))
+    .filter((item) => itemQuantity(recordValue(item.data)) > 0)
+    .filter((item) => recordValue(item.data).equipped !== false)
+    .filter((item) => dnd5eSrdItemModifiersAreActive(actor, item))
+    .map((item) => recordValue(item.data));
+  const monster = dnd5eSrdMonsterTraitDamageDefenses(actor);
+  return {
+    resistance: uniqueStrings([
+      ...dnd5eSrdDamageDefenseValues(actor.data, ["resistance", "resistances", "damageResistance", "damageResistances"]),
+      ...activeEffects.flatMap((effect) => dnd5eSrdDamageDefenseValues(effect, ["resistance", "resistances"])),
+      ...activeItems.flatMap((item) => dnd5eSrdDamageDefenseValues(item, ["resistance", "resistances", "damageResistance", "damageResistances"])),
+      ...monster.resistance
+    ]),
+    immunity: uniqueStrings([
+      ...dnd5eSrdDamageDefenseValues(actor.data, ["immunity", "immunities", "damageImmunity", "damageImmunities"]),
+      ...activeEffects.flatMap((effect) => dnd5eSrdDamageDefenseValues(effect, ["immunity", "immunities"])),
+      ...activeItems.flatMap((item) => dnd5eSrdDamageDefenseValues(item, ["immunity", "immunities", "damageImmunity", "damageImmunities"])),
+      ...monster.immunity
+    ]),
+    vulnerability: uniqueStrings([
+      ...dnd5eSrdDamageDefenseValues(actor.data, ["vulnerability", "vulnerabilities", "damageVulnerability", "damageVulnerabilities"]),
+      ...activeEffects.flatMap((effect) => dnd5eSrdDamageDefenseValues(effect, ["vulnerability", "vulnerabilities"])),
+      ...activeItems.flatMap((item) => dnd5eSrdDamageDefenseValues(item, ["vulnerability", "vulnerabilities", "damageVulnerability", "damageVulnerabilities"])),
+      ...monster.vulnerability
+    ])
+  };
+}
+
+function dnd5eSrdAdjustedTypedDamage(actor: Actor, items: Item[], amount: number, damageTypes: string[]): { amount: number; resistance: string[]; immunity: string[]; vulnerability: string[] } {
+  const result = { amount, resistance: [] as string[], immunity: [] as string[], vulnerability: [] as string[] };
+  // A single combined total with multiple damage types cannot be partitioned
+  // safely. Keep it unmodified so the existing GM/manual path remains usable.
+  if (damageTypes.length !== 1) return result;
+  const damageType = damageTypes[0]!.toLowerCase();
+  const defenses = dnd5eSrdActorDamageDefenses(actor, items);
+  if (defenses.immunity.includes(damageType)) {
+    result.immunity = [damageType];
+    result.amount = 0;
+    return result;
+  }
+  if (defenses.resistance.includes(damageType)) {
+    result.resistance = [damageType];
+    result.amount = Math.floor(result.amount / 2);
+  }
+  if (defenses.vulnerability.includes(damageType)) {
+    result.vulnerability = [damageType];
+    result.amount *= 2;
+  }
+  return result;
+}
+
+function dnd5eSrdTemporaryHitPoints(data: Record<string, unknown>): { key: "temporaryHitPoints" | "temporaryHp" | "tempHp"; current: number; record?: Record<string, unknown> } {
+  for (const key of ["temporaryHitPoints", "temporaryHp", "tempHp"] as const) {
+    if (!(key in data)) continue;
+    const value = data[key];
+    const record = recordValue(value);
+    const current = typeof value === "number" ? value : numericValue(record.current, 0);
+    return { key, current: Math.max(0, Math.floor(current)), ...(typeof value === "object" && value !== null ? { record } : {}) };
+  }
+  return { key: "temporaryHitPoints", current: 0 };
+}
+
+export function dnd5eSrdResolveDamageComponents(
+  actor: Actor,
+  items: Item[],
+  components: readonly Dnd5eSrdDamageComponent[],
+  options: { criticalHit?: boolean } = {}
+): Dnd5eSrdDamageResolution {
+  const hp = recordValue(actor.data.hp);
+  const current = numericValue(hp.current, Number.NaN);
+  const max = numericValue(hp.max, Number.NaN);
+  if (!Number.isFinite(current) || !Number.isFinite(max)) throw new Error("Damage resolution requires finite current and maximum Hit Points");
+  const temporaryHitPoints = dnd5eSrdTemporaryHitPoints(actor.data);
+  const defenses = dnd5eSrdActorDamageDefenses(actor, items);
+  const deathSaves = recordValue(actor.data.deathSaves);
+  return resolveDnd5eSrdDamageComponents({
+    actor,
+    hitPoints: { current, max },
+    temporaryHitPoints: temporaryHitPoints.current,
+    components,
+    defenses,
+    deathSaves: { successes: numericValue(deathSaves.successes, 0), failures: numericValue(deathSaves.failures, 0) },
+    criticalHit: options.criticalHit
+  });
+}
+
 function dnd5eSrdApplyRollTotalEffectResolution(
   target: Actor,
+  targetItems: Item[],
   roll: QuickRoll,
   metadata: Record<string, unknown>,
   rollTotal: number | undefined,
   saveOutcome: RulesSaveOutcome | undefined,
   options: RulesResolverOptions,
   now: string
-): { data: Record<string, unknown>; effect: RulesResolutionEffectResult; pendingSave?: RulesResolutionPendingSave; condition?: RulesResolutionConditionChange; auditEvent?: RulesResolutionAuditEvent } | undefined {
+): { data: Record<string, unknown>; effect: RulesResolutionEffectResult; pendingSave?: RulesResolutionPendingSave; condition?: RulesResolutionConditionChange; auditEvent?: RulesResolutionAuditEvent; cleanup?: Dnd5eSrdConcentrationCleanup } | undefined {
   const type = dnd5eSrdRollEffectType(roll);
   if (!type || !Number.isFinite(numericValue(rollTotal, Number.NaN))) return undefined;
+  const damageTypes = type === "damage" ? uniqueStrings([...dnd5eSrdDamageBreakdownTypes(metadata), ...dnd5eSrdDamageTypes(metadata, options)]) : [];
+  if (damageTypes.some((damageType) => !DND_5E_SRD_DAMAGE_TYPE_IDS.some((supported) => supported === damageType.toLowerCase()))) return undefined;
+  const damageComponents = type === "damage" ? dnd5eSrdDamageBreakdownComponents(metadata) : [];
+  if (damageTypes.length > 1 && damageComponents.length !== damageTypes.length) return undefined;
   const saveAbility = stringValue(recordValue(metadata.save).ability);
   if (saveAbility && !saveOutcome) return undefined;
   const adjustedTotal = dnd5eSrdRollEffectTotalForSave(type, metadata, numericValue(rollTotal, 0), saveOutcome);
   if (adjustedTotal === undefined) return undefined;
+  const temporaryHitPointHealing = type === "healing" && (
+    stringValue(metadata.healing)?.toLowerCase() === "temporaryhitpoints" ||
+    metadata.temporaryHitPoints !== undefined ||
+    metadata.temporaryHitPointsFormula !== undefined
+  );
+  if (temporaryHitPointHealing) {
+    const temporaryHitPoints = dnd5eSrdTemporaryHitPoints(target.data);
+    const amount = Math.max(0, Math.floor(adjustedTotal));
+    const after = Math.max(temporaryHitPoints.current, amount);
+    const data = {
+      ...target.data,
+      [temporaryHitPoints.key]: temporaryHitPoints.record ? { ...temporaryHitPoints.record, current: after } : after
+    };
+    return {
+      data,
+      effect: {
+        type: "healing",
+        targetActorId: target.id,
+        targetActorName: target.name,
+        pool: temporaryHitPoints.key,
+        amount,
+        before: temporaryHitPoints.current,
+        after,
+        max: after
+      }
+    };
+  }
   const pool = dnd5eSrdEffectPool(target);
   if (!pool) return undefined;
   const poolValue = recordValue(target.data[pool]);
   const current = numericValue(poolValue.current, Number.NaN);
   const max = numericValue(poolValue.max, Number.NaN);
   if (!Number.isFinite(current) || !Number.isFinite(max)) return undefined;
-  const amount = Math.max(0, Math.floor(adjustedTotal));
-  const after = type === "healing" ? Math.min(max, current + amount) : Math.max(0, current - amount);
+  const damageResolution = type === "damage"
+    ? dnd5eSrdResolveDamageComponents(
+        target,
+        targetItems,
+        damageComponents.length > 0
+          ? damageComponents.map((component) => ({ ...component, amount: dnd5eSrdRollEffectTotalForSave("damage", metadata, component.amount, saveOutcome) ?? 0 }))
+          : [{ amount: Math.max(0, Math.floor(adjustedTotal)), damageType: damageTypes[0] ?? "untyped" }],
+        { criticalHit: options.criticalHit === true || metadata.criticalHit === true }
+      )
+    : undefined;
+  const typedDamage = damageResolution
+    ? {
+        amount: damageResolution.totalDamage,
+        resistance: damageResolution.components.filter((component) => component.defense === "resistance").map((component) => component.damageType),
+        immunity: damageResolution.components.filter((component) => component.defense === "immunity").map((component) => component.damageType),
+        vulnerability: damageResolution.components.filter((component) => component.defense === "vulnerability").map((component) => component.damageType)
+      }
+    : { amount: Math.max(0, Math.floor(adjustedTotal)), resistance: [] as string[], immunity: [] as string[], vulnerability: [] as string[] };
+  const amount = typedDamage.amount;
+  const temporaryHitPoints = dnd5eSrdTemporaryHitPoints(target.data);
+  const absorbedByTemporaryHitPoints = damageResolution?.absorbedByTemporaryHitPoints ?? 0;
+  const after = type === "healing" ? Math.min(max, current + amount) : damageResolution?.hitPointsAfter ?? current;
   let data: Record<string, unknown> = {
     ...target.data,
     [pool]: {
@@ -16967,17 +11973,59 @@ function dnd5eSrdApplyRollTotalEffectResolution(
       current: after
     }
   };
+  if (type === "damage" && damageResolution && temporaryHitPoints.current !== damageResolution.temporaryHitPointsAfter) {
+    const remaining = damageResolution.temporaryHitPointsAfter;
+    data = {
+      ...data,
+      [temporaryHitPoints.key]: temporaryHitPoints.record ? { ...temporaryHitPoints.record, current: remaining } : remaining
+    };
+  }
   let pendingSave: RulesResolutionPendingSave | undefined;
   let condition: RulesResolutionConditionChange | undefined;
   let auditEvent: RulesResolutionAuditEvent | undefined;
+  let cleanup: Dnd5eSrdConcentrationCleanup | undefined;
+  if (type === "damage" && damageResolution && damageResolution.totalDamage > 0) {
+    const transient = new Set(["unconscious", "stable", "dead"]);
+    const nextConditions = normalizeConditionRecords(data.conditions).filter((entry) => !transient.has(entry.id));
+    for (const conditionId of damageResolution.lifecycle.conditionIds) nextConditions.push({ id: conditionId, appliedAt: now });
+    data = {
+      ...data,
+      conditions: nextConditions,
+      deathSaves: {
+        successes: damageResolution.lifecycle.deathSaveSuccesses,
+        failures: damageResolution.lifecycle.deathSaveFailures
+      },
+      lifeState: damageResolution.lifecycle.state,
+      ...(damageResolution.lifecycle.state === "defeated" || damageResolution.lifecycle.state === "dead" ? { defeated: true } : {})
+    };
+    const conditionId = damageResolution.lifecycle.conditionIds[0];
+    if (conditionId) {
+      condition = {
+        actorId: target.id,
+        operation: "apply",
+        conditionId,
+        conditionName: titleCaseWords(conditionId),
+        reason: damageResolution.lifecycle.massiveDamage ? "Massive damage caused instant death" : `Damage reduced ${target.name} to 0 Hit Points`
+      };
+    }
+  } else if (type === "healing" && current === 0 && after > 0) {
+    const transient = new Set(["unconscious", "stable"]);
+    data = {
+      ...data,
+      conditions: normalizeConditionRecords(data.conditions).filter((entry) => !transient.has(entry.id)),
+      deathSaves: { successes: 0, failures: 0 },
+      lifeState: "conscious",
+      defeated: false
+    };
+  }
   if (type === "damage" && amount > 0) {
     const concentration = resolveDnd5eSrdConcentrationDamage({ ...target, data }, amount, options.saveOutcomes?.[`${target.id}:concentration`], now, roll.id);
     data = concentration.data;
     pendingSave = concentration.pendingSave;
-    condition = concentration.condition;
+    condition = concentration.condition ?? condition;
     auditEvent = concentration.auditEvent;
+    cleanup = concentration.cleanup;
   }
-  const damageTypes = type === "damage" ? dnd5eSrdDamageTypes(metadata, options) : [];
   const resolvedChoice = dnd5eSrdResolvedChoice(metadata, options);
   return {
     data,
@@ -16992,11 +12040,15 @@ function dnd5eSrdApplyRollTotalEffectResolution(
       max,
       ...(damageTypes.length === 1 ? { damageType: damageTypes[0] } : {}),
       ...(damageTypes.length > 1 ? { damageTypes } : {}),
+      ...(typedDamage.resistance.length > 0 ? { resistance: typedDamage.resistance } : {}),
+      ...(typedDamage.immunity.length > 0 ? { immunity: typedDamage.immunity } : {}),
+      ...(typedDamage.vulnerability.length > 0 ? { vulnerability: typedDamage.vulnerability } : {}),
       ...(resolvedChoice ? { effectChoice: resolvedChoice.value, choiceKind: resolvedChoice.kind } : {})
     },
     ...(pendingSave ? { pendingSave } : {}),
     ...(condition ? { condition } : {}),
-    ...(auditEvent ? { auditEvent } : {})
+    ...(auditEvent ? { auditEvent } : {}),
+    ...(cleanup ? { cleanup } : {})
   };
 }
 
@@ -17025,6 +12077,17 @@ function dnd5eSrdDamageTypes(metadata: Record<string, unknown>, options: RulesRe
   return singleOption.length === 1 ? [singleOption[0]!.toLowerCase()] : [];
 }
 
+function dnd5eSrdDamageBreakdownTypes(metadata: Record<string, unknown>): string[] {
+  return Object.keys(recordValue(metadata.damageBreakdown)).map((damageType) => damageType.toLowerCase());
+}
+
+function dnd5eSrdDamageBreakdownComponents(metadata: Record<string, unknown>): Dnd5eSrdDamageComponent[] {
+  return Object.entries(recordValue(metadata.damageBreakdown)).flatMap(([damageType, rawAmount]) => {
+    const amount = numericValue(rawAmount, Number.NaN);
+    return Number.isInteger(amount) && amount >= 0 ? [{ damageType: damageType.toLowerCase(), amount }] : [];
+  });
+}
+
 function dnd5eSrdSplitDamageTypes(value: string): string[] {
   return uniqueStrings(
     value
@@ -17045,6 +12108,7 @@ function dnd5eSrdConditionIds(value: unknown): string[] {
 
 function dnd5eSrdApplyTargetConditionResolution(
   target: Actor,
+  targetItems: Item[],
   sourceActorId: string,
   roll: QuickRoll,
   metadata: Record<string, unknown>,
@@ -17059,7 +12123,19 @@ function dnd5eSrdApplyTargetConditionResolution(
   const saveAbility = stringValue(save.ability) ?? stringValue(metadata.repeatSaveAbility);
   const saveDc = Number.isFinite(numericValue(save.dc, Number.NaN)) ? numericValue(save.dc, Number.NaN) : undefined;
   if (saveAbility && saveOutcome !== "failure") return undefined;
-  const conditionIds = conditionNames.map(dnd5eSrdConditionId);
+  const requestedConditionIds = conditionNames.map(dnd5eSrdConditionId);
+  const immunities = new Set(dnd5eSrdConditionImmunities(target, targetItems));
+  const conditionIds = requestedConditionIds.filter((conditionId) => !immunities.has(conditionId));
+  const appliedConditionNames = conditionNames.filter((_conditionName, index) => conditionIds.includes(requestedConditionIds[index]!));
+  const immunityAuditEvents: RulesResolutionAuditEvent[] = requestedConditionIds.flatMap((conditionId, index) => immunities.has(conditionId) ? [{
+    code: "condition.immune",
+    actorId: sourceActorId,
+    targetActorId: target.id,
+    rollId: roll.id,
+    message: `${target.name} is immune to ${conditionNames[index] ?? titleCaseWords(conditionId)}`,
+    data: { conditionId }
+  }] : []);
+  if (conditionIds.length === 0) return { data: target.data, conditions: [], pendingSaves: [], auditEvents: immunityAuditEvents };
   const duration = stringValue(metadata.conditionDuration) ?? stringValue(metadata.duration);
   const durationRounds = dnd5eSrdDurationRounds(duration);
   const repeatSave = dnd5eSrdRepeatSaveTiming(metadata);
@@ -17067,6 +12143,8 @@ function dnd5eSrdApplyTargetConditionResolution(
   const resolvedChoice = dnd5eSrdResolvedChoice(metadata, options);
   const rules = dnd5eSrdRulesEngineState(target.data);
   const activeEffects = Array.isArray(rules.activeEffects) ? rules.activeEffects.map((effect) => cloneJsonRecord(recordValue(effect))) : [];
+  const existingConditionIds = dnd5eSrdConditionIds(target.data.conditions);
+  const ownedConditionIds = conditionIds.filter((conditionId) => !existingConditionIds.includes(conditionId));
   const nextEffect = {
     id: `${roll.id}:${target.id}:${now}`,
     rollId: roll.id,
@@ -17074,8 +12152,10 @@ function dnd5eSrdApplyTargetConditionResolution(
     sourceActorId,
     targetActorId: target.id,
     conditionIds,
-    conditionNames,
+    conditionNames: appliedConditionNames,
+    ownedConditionIds,
     startedAt: now,
+    ...(metadata.concentration === true ? { concentration: true } : {}),
     ...(duration ? { duration } : {}),
     ...(durationRounds ? { durationRounds } : {}),
     ...(expiresAtRound ? { expiresAtRound } : {}),
@@ -17106,7 +12186,7 @@ function dnd5eSrdApplyTargetConditionResolution(
   const reasonParts = [duration ? `duration ${duration}` : undefined, repeatSave ? `repeat save ${repeatSave}` : undefined].filter((part): part is string => Boolean(part));
   return {
     data,
-    conditions: conditionNames.map((conditionName, index) => ({
+    conditions: appliedConditionNames.map((conditionName, index) => ({
       actorId: target.id,
       operation: "apply",
       conditionId: conditionIds[index],
@@ -17118,13 +12198,13 @@ function dnd5eSrdApplyTargetConditionResolution(
       reason: reasonParts.length > 0 ? `${roll.label} applies ${conditionName} (${reasonParts.join(", ")})` : `${roll.label} applies ${conditionName}`
     })),
     pendingSaves,
-    auditEvents: [
+    auditEvents: [...immunityAuditEvents,
       {
         code: "condition.applied",
         actorId: sourceActorId,
         targetActorId: target.id,
         rollId: roll.id,
-        message: `${roll.label} applied ${conditionNames.join(", ")} to ${target.name}`,
+        message: `${roll.label} applied ${appliedConditionNames.join(", ")} to ${target.name}`,
         data: nextEffect
       }
     ]
@@ -17199,7 +12279,125 @@ function dnd5eSrdAttunementStateForData(data: Record<string, unknown>): Dnd5eSrd
   const pseudoActor = { data } as Actor;
   const limit = dnd5eSrdAttunementLimit(pseudoActor);
   const overLimitBy = Math.max(0, attunedItemIds.length - limit);
-  return { limit, attunedItemIds, overLimitBy, canAttuneMore: attunedItemIds.length < limit };
+  const overrideReason = stringValue(recordValue(rules.attunementOverride).reason);
+  const activeAttunedItemIds = overrideReason ? [...attunedItemIds] : attunedItemIds.slice(0, limit);
+  const inactiveAttunedItemIds = attunedItemIds.filter((itemId) => !activeAttunedItemIds.includes(itemId));
+  return {
+    limit,
+    attunedItemIds,
+    activeAttunedItemIds,
+    inactiveAttunedItemIds,
+    overLimitBy,
+    canAttuneMore: attunedItemIds.length < limit,
+    ...(overrideReason ? { overrideReason } : {})
+  };
+}
+
+export function applyDnd5eSrdAttunement(
+  actor: Actor,
+  item: Item,
+  attuned: boolean,
+  options: Dnd5eSrdAttunementChangeOptions = {}
+): Record<string, unknown> {
+  const normalizedItemId = item.id.trim();
+  if (!normalizedItemId) throw new Error("An item is required to change attunement");
+  if (!itemBelongsToActor(actor, item) || item.campaignId !== actor.campaignId || item.systemId !== actor.systemId) {
+    throw new Error(`${item.name || normalizedItemId} does not belong to ${actor.name}`);
+  }
+  if (!dnd5eSrdItemRequiresAttunement(item)) throw new Error(`${item.name || normalizedItemId} does not require attunement`);
+  if (attuned) {
+    const prerequisite = dnd5eSrdAttunementPrerequisite(actor, item);
+    if (!prerequisite.eligible && !stringValue(options.overrideReason)) throw new Error(prerequisite.reason ?? `${actor.name} does not meet the attunement prerequisite for ${item.name}`);
+  } else {
+    const itemData = recordValue(item.data);
+    if ((booleanValue(itemData.cursed) || booleanValue(itemData.cursePersistsAfterRemovingShield) || booleanValue(itemData.cannotUnattune)) && !options.breakCurse) {
+      throw new Error(`${item.name || normalizedItemId} is cursed and cannot be unattuned until the curse is broken`);
+    }
+  }
+  const state = dnd5eSrdAttunementStateForData(actor.data);
+  const isAdding = attuned && !state.attunedItemIds.includes(normalizedItemId);
+  const nextIds = state.attunedItemIds.filter((candidate) => candidate !== normalizedItemId);
+  if (isAdding) nextIds.push(normalizedItemId);
+  const overrideReason = stringValue(options.overrideReason)?.trim() || state.overrideReason;
+  if (isAdding && nextIds.length > state.limit && !overrideReason) {
+    throw new Error(`Attuning ${normalizedItemId} would exceed the attunement limit of ${state.limit}; an override reason is required`);
+  }
+  const rules = dnd5eSrdRulesEngineState(actor.data);
+  rules.attunedItemIds = nextIds;
+  if (nextIds.length > state.limit && overrideReason) rules.attunementOverride = { reason: overrideReason };
+  else delete rules.attunementOverride;
+  const data: Record<string, unknown> = { ...actor.data, rulesEngine: rules };
+  if (normalizeStringArray(actor.data.attunedItemIds).length > 0) data.attunedItemIds = nextIds;
+  return data;
+}
+
+const DND_5E_SRD_SPELLCASTER_CLASSES = new Set(["bard", "cleric", "druid", "paladin", "ranger", "sorcerer", "warlock", "wizard"]);
+const DND_5E_SRD_CLASS_NAMES = [...Object.keys(dnd5eSrdMulticlassPrerequisites)];
+
+/**
+ * Evaluates prerequisites that the bundled SRD data can represent without
+ * guessing. Unknown/homebrew requirement prose is preserved and reported as
+ * unsupported so callers can leave it to the GM instead of rejecting it on a
+ * brittle text interpretation.
+ */
+export function dnd5eSrdAttunementPrerequisite(actor: Actor, item: Item): Dnd5eSrdAttunementPrerequisiteResult {
+  const requirement = stringValue(recordValue(item.data).attunementRequirement)?.trim();
+  if (!requirement) return { supported: true, eligible: true };
+  const normalized = requirement.toLowerCase();
+  const actorClasses = new Set(dnd5eSrdActorClassLevels(actor).map((entry) => entry.className.toLowerCase()));
+  if (normalized === "spellcaster") {
+    const spellSlots = recordValue(actor.data.spellSlots);
+    const eligible = [...actorClasses].some((className) => DND_5E_SRD_SPELLCASTER_CLASSES.has(className)) || Object.keys(spellSlots).length > 0 || Object.keys(recordValue(actor.data.spellcasting)).length > 0;
+    return {
+      requirement,
+      supported: true,
+      eligible,
+      ...(eligible ? {} : { reason: `${item.name} requires attunement by a spellcaster` })
+    };
+  }
+  const requiredClasses = DND_5E_SRD_CLASS_NAMES.filter((className) => new RegExp(`\\b${className}\\b`, "i").test(requirement));
+  const remainder = requiredClasses.reduce((value, className) => value.replace(new RegExp(`\\b${className}\\b`, "gi"), ""), requirement)
+    .replace(/\bor\b/gi, "")
+    .replace(/[,&/\s]+/g, "");
+  if (requiredClasses.length > 0 && remainder.length === 0) {
+    const eligible = requiredClasses.some((className) => actorClasses.has(className.toLowerCase()));
+    return {
+      requirement,
+      supported: true,
+      eligible,
+      ...(eligible ? {} : { reason: `${item.name} requires attunement by ${requirement}` })
+    };
+  }
+  const species = stringValue(actor.data.species) ?? stringValue(recordValue(actor.data.origin).species);
+  if (species && normalized === species.toLowerCase()) return { requirement, supported: true, eligible: true };
+  const knownSpecies = ["dragonborn", "dwarf", "elf", "gnome", "goliath", "halfling", "human", "orc", "tiefling"];
+  if (knownSpecies.includes(normalized)) {
+    return {
+      requirement,
+      supported: true,
+      eligible: false,
+      reason: `${item.name} requires attunement by a ${requirement}`
+    };
+  }
+  return { requirement, supported: false, eligible: false, reason: `${item.name} has an unsupported attunement prerequisite (${requirement}); a reviewed override is required` };
+}
+
+function dnd5eSrdItemRequiresAttunement(item: Item): boolean {
+  const data = recordValue(item.data);
+  return booleanValue(data.requiresAttunement) || Boolean(stringValue(data.attunementRequirement));
+}
+
+function dnd5eSrdItemModifiersAreActive(actor: Actor, item: Item): boolean {
+  if (!dnd5eSrdItemRequiresAttunement(item)) return true;
+  return dnd5eSrdAttunementStateForData(actor.data).activeAttunedItemIds.includes(item.id);
+}
+
+
+function dnd5eSrdItemWithActiveModifiers(actor: Actor, item: Item): Item {
+  if (dnd5eSrdItemModifiersAreActive(actor, item)) return item;
+  const data = { ...recordValue(item.data) };
+  for (const key of DND_5E_SRD_ATTUNEMENT_MODIFIER_KEYS) delete data[key];
+  return { ...item, data };
 }
 
 export function useGenericFantasyAction(actor: Actor, items: Item[] = [], rollId: string, options: SystemActionUseOptions = {}): SystemActionUseResult {
@@ -17207,6 +12405,7 @@ export function useGenericFantasyAction(actor: Actor, items: Item[] = [], rollId
   const consumed: SystemActionConsumption[] = [];
   let data = { ...actor.data };
   let slotLevel: number | undefined;
+  let slotPool: SystemActionUseResult["slotPool"];
   const updatedItems: Item[] = [];
   if (item?.type === "spell" && rollId.startsWith(`spell-${item.id}-`)) {
     const level = Math.floor(numericValue(recordValue(item.data).level, 0));
@@ -17215,6 +12414,7 @@ export function useGenericFantasyAction(actor: Actor, items: Item[] = [], rollId
       const result = consumeResourcePool(data.spellSlots, `level${slotLevel}`, 1, `Level ${slotLevel} Spell Slot`, "spellSlot");
       data = { ...data, spellSlots: result.pools };
       consumed.push(result.consumed);
+      slotPool = "spellSlots";
     }
   } else if (item?.type === "item" && rollId.startsWith(`item-${item.id}-`) && booleanValue(recordValue(item.data).consumable)) {
     const itemData = recordValue(item.data);
@@ -17237,7 +12437,7 @@ export function useGenericFantasyAction(actor: Actor, items: Item[] = [], rollId
     }
     data = applyGenericFantasyActionSideEffects(data, itemData);
   }
-  return { systemId: "generic-fantasy", actorId: actor.id, rollId, slotLevel, consumed, data, items: updatedItems };
+  return { systemId: "generic-fantasy", actorId: actor.id, rollId, slotLevel, ...(slotPool ? { slotPool } : {}), consumed, data, items: updatedItems };
 }
 
 function applyGenericFantasyActionSideEffects(data: Record<string, unknown>, itemData: Record<string, unknown>): Record<string, unknown> {
@@ -17254,6 +12454,17 @@ function applyGenericFantasyActionSideEffects(data: Record<string, unknown>, ite
 }
 
 export function useDnd5eSrdAction(actor: Actor, items: Item[] = [], rollId: string, options: SystemActionUseOptions = {}): SystemActionUseResult {
+  const requestedItem = actionItemForRoll(actor, items, rollId, ["spell", "item"]);
+  const ritualAvailable = requestedItem?.type === "spell" && dnd5eSrdWizardRitualSpellAvailable(actor, requestedItem);
+  if (options.ritualCast && requestedItem?.type === "spell" && !ritualAvailable) {
+    throw new Error(`${requestedItem.name} is not an eligible Wizard ritual in this actor's stored spellbook`);
+  }
+  if (requestedItem?.type === "spell" && recordValue(requestedItem.data).prepared === false && !(options.ritualCast && ritualAvailable)) {
+    throw new Error(`${requestedItem.name} must be prepared or explicitly cast as an eligible Wizard ritual before its actions can be used`);
+  }
+  if (requestedItem && dnd5eSrdItemRequiresAttunement(requestedItem) && !dnd5eSrdItemModifiersAreActive(actor, requestedItem)) {
+    throw new Error(`${requestedItem.name} requires active attunement before its actions can be used`);
+  }
   if (rollId === DND_5E_SRD_SECOND_WIND_ROLL_ID) {
     const className = stringValue(actor.data.class) || "Fighter";
     const resources = normalizeDnd5eSrdResources(actor.data.resources, className, numericValue(actor.data.level, 1), actor.data);
@@ -18014,6 +13225,28 @@ export function dnd5eSrdActorConditions(actor: Actor): AppliedCondition[] {
   });
 }
 
+export function dnd5eSrdConditionImmunities(actor: Actor, items: Item[] = []): string[] {
+  const conditionIds = new Set(dnd5eSrdCompendium().filter((entry) => entry.type === "condition").map((entry) => entry.id));
+  const collect = (data: Record<string, unknown>): string[] => uniqueStrings([
+    ...normalizeStringArray(data.conditionImmunity),
+    ...normalizeStringArray(data.conditionImmunities),
+    ...normalizeStringArray(data.immunity),
+    ...normalizeStringArray(data.immunities)
+  ].map((value) => dnd5eSrdConditionId(value)).filter((value) => conditionIds.has(value)));
+  const rules = dnd5eSrdRulesEngineState(actor.data);
+  const activeEffects = Array.isArray(rules.activeEffects) ? rules.activeEffects.map((effect) => recordValue(effect)) : [];
+  const activeItems = items
+    .filter((item) => itemBelongsToActor(actor, item) && itemQuantity(recordValue(item.data)) > 0 && recordValue(item.data).equipped !== false)
+    .filter((item) => dnd5eSrdItemModifiersAreActive(actor, item));
+  const statBlock = recordValue(recordValue(actor.data.monster).statBlock);
+  return uniqueStrings([
+    ...collect(actor.data),
+    ...collect(statBlock),
+    ...activeEffects.flatMap(collect),
+    ...activeItems.flatMap((item) => collect(recordValue(item.data)))
+  ]);
+}
+
 export function applyGenericFantasyCondition(actor: Actor, conditionId: string, appliedAt?: string): Record<string, unknown> {
   const entry = genericFantasyCompendiumEntry(conditionId);
   if (!entry || entry.type !== "condition") throw new Error(`Unknown condition: ${conditionId}`);
@@ -18025,6 +13258,10 @@ export function applyGenericFantasyCondition(actor: Actor, conditionId: string, 
 export function applyDnd5eSrdCondition(actor: Actor, conditionId: string, appliedAt?: string, options: Dnd5eSrdConditionApplyOptions = {}): Record<string, unknown> {
   const entry = dnd5eSrdCompendiumEntry(conditionId);
   if (!entry || entry.type !== "condition") throw new Error(`Unknown condition: ${conditionId}`);
+  const normalizedConditionId = dnd5eSrdConditionId(conditionId);
+  if (dnd5eSrdConditionImmunities(actor, options.items).includes(normalizedConditionId) && !stringValue(options.overrideReason)) {
+    throw new Error(`${actor.name} is immune to ${entry.name}`);
+  }
   const conditions = normalizeConditionRecords(actor.data.conditions);
   if (conditionId === "exhaustion") {
     const existing = conditions.find((condition) => condition.id === conditionId);
@@ -18129,7 +13366,7 @@ export function stellarFrontiersQuickRolls(actor: Actor, items: Item[] = []): Qu
 }
 
 export function stellarFrontiersCompendium(): StellarFrontiersCompendiumEntry[] {
-  return [
+  return withCompendiumProvenance<StellarFrontiersCompendiumEntry>([
     {
       id: "laser-carbine",
       type: "gear",
@@ -18193,7 +13430,7 @@ export function stellarFrontiersCompendium(): StellarFrontiersCompendiumEntry[] 
       summary: "Marks a character exposed to hard vacuum or suit breach.",
       data: { hazard: "vacuum", longRestClears: true }
     }
-  ];
+  ], STELLAR_FRONTIERS_COMPENDIUM_PROVENANCE);
 }
 
 export function stellarFrontiersCompendiumEntry(entryId: string): StellarFrontiersCompendiumEntry | undefined {
@@ -18566,7 +13803,7 @@ export function mysticNoirQuickRolls(actor: Actor, items: Item[] = []): QuickRol
 }
 
 export function mysticNoirCompendium(): MysticNoirCompendiumEntry[] {
-  return [
+  return withCompendiumProvenance<MysticNoirCompendiumEntry>([
     {
       id: "case-notebook",
       type: "clue",
@@ -18644,7 +13881,7 @@ export function mysticNoirCompendium(): MysticNoirCompendiumEntry[] {
       summary: "Adds 1d6 to Resolve and Occult checks until a short rest.",
       data: { rollBonusFormula: "1d6", affectedSkills: ["resolve", "occult"], shortRestClears: true }
     }
-  ];
+  ], MYSTIC_NOIR_COMPENDIUM_PROVENANCE);
 }
 
 export function mysticNoirCompendiumEntry(entryId: string): MysticNoirCompendiumEntry | undefined {
@@ -19024,16 +14261,19 @@ function dnd5eSrdProficiencyBonusForLevel(level: number, explicit: unknown): num
 }
 
 function dnd5eSrdSaveProficiencies(actor: Actor): string[] {
-  return dnd5eSrdSaveProficienciesForClass(stringValue(actor.data.class) || "Fighter", actor.data.saveProficiencies);
+  return dnd5eSrdSaveProficienciesForClass(stringValue(actor.data.class), actor.data.saveProficiencies);
 }
 
-function dnd5eSrdSaveProficienciesForClass(className: string, explicit: unknown): string[] {
+function dnd5eSrdSaveProficienciesForClass(className: string | undefined, explicit: unknown): string[] {
   const defaultAttributes = defaultDnd5eSrdAttributes();
   const explicitProficiencies = normalizeStringArray(explicit).map((ability) => ability.toLowerCase()).filter((ability) => ability in defaultAttributes);
-  if (explicitProficiencies.length > 0) return explicitProficiencies;
+  if (Array.isArray(explicit)) return explicitProficiencies;
+  if (!className) return [];
   const normalizedClass = className.toLowerCase();
+  if (normalizedClass === "barbarian" || normalizedClass === "fighter") return ["strength", "constitution"];
   if (normalizedClass === "bard") return ["dexterity", "charisma"];
   if (normalizedClass === "cleric") return ["wisdom", "charisma"];
+  if (normalizedClass === "druid") return ["intelligence", "wisdom"];
   if (normalizedClass === "paladin") return ["wisdom", "charisma"];
   if (normalizedClass === "ranger") return ["strength", "dexterity"];
   if (normalizedClass === "monk") return ["strength", "dexterity"];
@@ -19041,7 +14281,7 @@ function dnd5eSrdSaveProficienciesForClass(className: string, explicit: unknown)
   if (normalizedClass === "warlock") return ["wisdom", "charisma"];
   if (normalizedClass === "wizard") return ["intelligence", "wisdom"];
   if (normalizedClass === "rogue") return ["dexterity", "intelligence"];
-  return ["strength", "constitution"];
+  return [];
 }
 
 function dnd5eSrdSkillProficiencyMultiplier(actor: Actor, skillId: string): number {
@@ -19052,12 +14292,13 @@ function dnd5eSrdSkillProficiencyMultiplier(actor: Actor, skillId: string): numb
 
 function dnd5eSrdSkillProficiencies(actor: Actor, field: "skillProficiencies" | "skillExpertise"): string[] {
   if (field === "skillExpertise") return dnd5eSrdSkillProficienciesFromExplicit(actor.data.skillExpertise);
-  return dnd5eSrdSkillProficienciesForClass(stringValue(actor.data.class) || "Fighter", actor.data.skillProficiencies);
+  return dnd5eSrdSkillProficienciesForClass(stringValue(actor.data.class), actor.data.skillProficiencies);
 }
 
-function dnd5eSrdSkillProficienciesForClass(className: string, explicit: unknown): string[] {
+function dnd5eSrdSkillProficienciesForClass(className: string | undefined, explicit: unknown): string[] {
   const explicitProficiencies = dnd5eSrdSkillProficienciesFromExplicit(explicit);
-  if (explicitProficiencies.length > 0) return explicitProficiencies;
+  if (Array.isArray(explicit)) return explicitProficiencies;
+  if (!className) return [];
   const normalizedClass = className.toLowerCase();
   if (normalizedClass === "bard") return ["performance", "persuasion", "perception"];
   if (normalizedClass === "cleric") return ["medicine", "religion"];
@@ -19068,7 +14309,8 @@ function dnd5eSrdSkillProficienciesForClass(className: string, explicit: unknown
   if (normalizedClass === "warlock") return ["arcana", "intimidation"];
   if (normalizedClass === "wizard") return ["arcana", "history"];
   if (normalizedClass === "rogue") return ["stealth", "sleight-of-hand"];
-  return ["athletics", "intimidation"];
+  if (normalizedClass === "fighter" || normalizedClass === "barbarian") return ["athletics", "intimidation"];
+  return [];
 }
 
 function dnd5eSrdSkillProficienciesFromExplicit(explicit: unknown): string[] {
@@ -19200,10 +14442,56 @@ function dnd5eSrdApplyDwarvenToughness(data: Record<string, unknown>, levels: nu
   };
 }
 
+function dnd5eSrdDragonbornAncestryChoices(
+  species: Dnd5eSrdCharacterSpecies,
+  options: Dnd5eSrdCharacterOriginOptions
+): { origin: Record<string, unknown>; resistances: string[] } {
+  const value: unknown = options.draconicAncestry;
+  if (species.id !== "dragonborn") {
+    if (value !== undefined) throw new Error("D&D SRD Draconic Ancestry is only available to Dragonborn characters");
+    return { origin: {}, resistances: [] };
+  }
+  if (value === undefined) return { origin: {}, resistances: [] };
+  if (typeof value !== "string" || !value.trim()) throw new Error("D&D SRD Draconic Ancestry must be a supported dragon identifier");
+  const ancestor = dnd5eSrdDraconicAncestorById(value);
+  if (!ancestor) throw new Error("Unknown D&D SRD Draconic Ancestry");
+  return {
+    origin: {
+      draconicAncestry: ancestor.id,
+      draconicAncestryName: ancestor.name,
+      draconicAncestryDamageType: ancestor.damageType
+    },
+    resistances: [ancestor.damageType]
+  };
+}
+
+function dnd5eSrdGoliathAncestryChoices(
+  species: Dnd5eSrdCharacterSpecies,
+  options: Dnd5eSrdCharacterOriginOptions
+): { origin: Record<string, unknown> } {
+  const value: unknown = options.giantAncestry;
+  if (species.id !== "goliath") {
+    if (value !== undefined) throw new Error("D&D SRD Giant Ancestry is only available to Goliath characters");
+    return { origin: {} };
+  }
+  if (value === undefined) return { origin: {} };
+  if (typeof value !== "string" || !value.trim()) throw new Error("D&D SRD Giant Ancestry must be a supported giant identifier");
+  const ancestry = dnd5eSrdGiantAncestryById(value);
+  if (!ancestry) throw new Error("Unknown D&D SRD Giant Ancestry");
+  return {
+    origin: {
+      giantAncestry: ancestry.id,
+      giantAncestryBenefit: ancestry.name,
+      giantAncestryType: ancestry.giantType
+    }
+  };
+}
+
 function dnd5eSrdHumanOriginChoices(
   species: Dnd5eSrdCharacterSpecies,
   options: Dnd5eSrdCharacterOriginOptions,
-  background: Dnd5eSrdCharacterBackground
+  background: Dnd5eSrdCharacterBackground,
+  classSkillProficiencies: string[] = []
 ): { origin: Record<string, unknown>; skillProficiencies: string[]; feats: string[] } {
   const skillProficiency = stringValue(options.skillProficiency);
   const originFeat = stringValue(options.originFeat);
@@ -19219,6 +14507,7 @@ function dnd5eSrdHumanOriginChoices(
     const skill = dnd5eSrdSkills().find((candidate) => candidate.id === skillId);
     if (!skill) throw new Error("D&D SRD Human Skillful requires a valid skill proficiency");
     if (background.skillProficiencies.includes(skill.id)) throw new Error(`D&D SRD Human Skillful already has ${skill.label} from ${background.name}`);
+    if (classSkillProficiencies.includes(skill.id)) throw new Error(`D&D SRD Human Skillful already has ${skill.label} from the character's class`);
     origin.humanSkillProficiency = skill.id;
     skillProficiencies.push(skill.id);
   }
@@ -19255,7 +14544,8 @@ function dnd5eSrdElfOriginChoices(
     elfLineage: lineage.id,
     spellcastingAbility,
     prepared: true,
-    alwaysPrepared: true
+    alwaysPrepared: true,
+    spellSources: [{ kind: "species", speciesId: "elf", lineageId: lineage.id, selectedAtLevel: 1 }]
   };
   return {
     origin: {
@@ -19295,7 +14585,8 @@ function dnd5eSrdGnomeOriginChoices(
     gnomeLineage: lineage.id,
     spellcastingAbility,
     prepared: true,
-    alwaysPrepared: true
+    alwaysPrepared: true,
+    spellSources: [{ kind: "species", speciesId: "gnome", lineageId: lineage.id, selectedAtLevel: 1 }]
   };
   const items: CharacterTemplateItem[] = lineage.cantrips.map((entryId) => ({ entryId, data: { ...baseSpellData, trait: "Gnomish Lineage" } }));
   if (lineage.spell) {
@@ -19334,7 +14625,8 @@ function dnd5eSrdTieflingOriginChoices(
     tieflingLegacy: legacy.id,
     spellcastingAbility,
     prepared: true,
-    alwaysPrepared: true
+    alwaysPrepared: true,
+    spellSources: [{ kind: "species", speciesId: "tiefling", legacyId: legacy.id, selectedAtLevel: 1 }]
   };
   const origin = {
     tieflingLegacy: legacy.id,
@@ -19653,28 +14945,38 @@ function dnd5eSrdHasChampionCritical(actor: Actor): boolean {
   return dnd5eSrdHasChampionImprovedCritical(actor) || dnd5eSrdHasChampionSuperiorCritical(actor);
 }
 
+function dnd5eSrdHasSelectedSubclassLevel(actor: Actor, className: string, minimumLevel: number, ...selections: string[]): boolean {
+  const classLevel = dnd5eSrdActorClassLevels(actor).find((entry) => entry.className.toLowerCase() === className.toLowerCase())?.level ?? 0;
+  if (classLevel < minimumLevel) return false;
+  const subclasses = recordValue(actor.data.subclasses);
+  const stored = Object.entries(subclasses).find(([key]) => key.toLowerCase() === className.toLowerCase())?.[1];
+  const legacy = stringValue(actor.data.class)?.toLowerCase() === className.toLowerCase() ? actor.data.subclass : undefined;
+  const selected = stringValue(stored) ?? stringValue(legacy);
+  return Boolean(selected && selections.some((selection) => selection.toLowerCase() === selected.toLowerCase()));
+}
+
 function dnd5eSrdHasChampionImprovedCritical(actor: Actor): boolean {
-  if (stringValue(actor.data.class) === "Fighter" && Math.floor(numericValue(actor.data.level, 1)) >= 3) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Fighter", 3, "champion")) return true;
   return normalizeStringArray(actor.data.features).includes("Improved Critical");
 }
 
 function dnd5eSrdHasChampionRemarkableAthlete(actor: Actor): boolean {
-  if (stringValue(actor.data.class) === "Fighter" && Math.floor(numericValue(actor.data.level, 1)) >= 3) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Fighter", 3, "champion")) return true;
   return normalizeStringArray(actor.data.features).includes("Remarkable Athlete");
 }
 
 function dnd5eSrdHasChampionHeroicWarrior(actor: Actor): boolean {
-  if (stringValue(actor.data.class) === "Fighter" && Math.floor(numericValue(actor.data.level, 1)) >= 10) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Fighter", 10, "champion")) return true;
   return normalizeStringArray(actor.data.features).includes("Heroic Warrior");
 }
 
 function dnd5eSrdHasChampionSuperiorCritical(actor: Actor): boolean {
-  if (stringValue(actor.data.class) === "Fighter" && Math.floor(numericValue(actor.data.level, 1)) >= 15) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Fighter", 15, "champion")) return true;
   return normalizeStringArray(actor.data.features).includes("Superior Critical");
 }
 
 function dnd5eSrdHasChampionSurvivor(actor: Actor): boolean {
-  if (stringValue(actor.data.class) === "Fighter" && Math.floor(numericValue(actor.data.level, 1)) >= 18) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Fighter", 18, "champion")) return true;
   return normalizeStringArray(actor.data.features).includes("Survivor");
 }
 
@@ -19696,22 +14998,22 @@ function dnd5eSrdHasSearUndead(actor: Actor): boolean {
 }
 
 function dnd5eSrdHasLifeDisciple(actor: Actor): boolean {
-  if (stringValue(actor.data.class) === "Cleric" && Math.floor(numericValue(actor.data.level, 1)) >= 3) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Cleric", 3, "life-domain", "Life Domain")) return true;
   return normalizeStringArray(actor.data.features).includes("Disciple of Life");
 }
 
 function dnd5eSrdHasLifePreserveLife(actor: Actor): boolean {
-  if (stringValue(actor.data.class) === "Cleric" && Math.floor(numericValue(actor.data.level, 1)) >= 3) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Cleric", 3, "life-domain", "Life Domain")) return true;
   return normalizeStringArray(actor.data.features).includes("Preserve Life");
 }
 
 function dnd5eSrdHasLifeBlessedHealer(actor: Actor): boolean {
-  if (stringValue(actor.data.class) === "Cleric" && Math.floor(numericValue(actor.data.level, 1)) >= 6) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Cleric", 6, "life-domain", "Life Domain")) return true;
   return normalizeStringArray(actor.data.features).includes("Blessed Healer");
 }
 
 function dnd5eSrdHasLifeSupremeHealing(actor: Actor): boolean {
-  if (stringValue(actor.data.class) === "Cleric" && Math.floor(numericValue(actor.data.level, 1)) >= 17) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Cleric", 17, "life-domain", "Life Domain")) return true;
   return normalizeStringArray(actor.data.features).includes("Supreme Healing");
 }
 
@@ -19732,19 +15034,19 @@ function dnd5eSrdHasFontOfInspiration(actor: Actor): boolean {
 
 function dnd5eSrdHasLoreCuttingWords(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
-  if (stringValue(actor.data.class) === "Bard" && Math.floor(numericValue(actor.data.level, 1)) >= 3) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Bard", 3, "college-of-lore", "College of Lore")) return true;
   return features.includes("College of Lore") || features.includes("Cutting Words");
 }
 
 function dnd5eSrdHasLoreMagicalDiscoveries(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
-  if (stringValue(actor.data.class) === "Bard" && Math.floor(numericValue(actor.data.level, 1)) >= 6) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Bard", 6, "college-of-lore", "College of Lore")) return true;
   return features.includes("Magical Discoveries");
 }
 
 function dnd5eSrdHasLorePeerlessSkill(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
-  if (stringValue(actor.data.class) === "Bard" && Math.floor(numericValue(actor.data.level, 1)) >= 14) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Bard", 14, "college-of-lore", "College of Lore")) return true;
   return features.includes("Peerless Skill");
 }
 
@@ -19765,25 +15067,25 @@ function dnd5eSrdHasFaithfulSteed(actor: Actor): boolean {
 
 function dnd5eSrdHasDevotionSacredWeapon(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
-  if (stringValue(actor.data.class) === "Paladin" && Math.floor(numericValue(actor.data.level, 1)) >= 3) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Paladin", 3, "oath-of-devotion", "Oath of Devotion")) return true;
   return features.includes("Oath of Devotion") || features.includes("Sacred Weapon");
 }
 
 function dnd5eSrdHasDevotionAura(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
-  if (stringValue(actor.data.class) === "Paladin" && Math.floor(numericValue(actor.data.level, 1)) >= 7) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Paladin", 7, "oath-of-devotion", "Oath of Devotion")) return true;
   return features.includes("Aura of Devotion");
 }
 
 function dnd5eSrdHasDevotionSmiteProtection(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
-  if (stringValue(actor.data.class) === "Paladin" && Math.floor(numericValue(actor.data.level, 1)) >= 15) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Paladin", 15, "oath-of-devotion", "Oath of Devotion")) return true;
   return features.includes("Smite of Protection");
 }
 
 function dnd5eSrdHasDevotionHolyNimbus(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
-  if (stringValue(actor.data.class) === "Paladin" && Math.floor(numericValue(actor.data.level, 1)) >= 20) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Paladin", 20, "oath-of-devotion", "Oath of Devotion")) return true;
   return features.includes("Holy Nimbus") || "holyNimbus" in recordValue(actor.data.resources);
 }
 
@@ -19794,31 +15096,31 @@ function dnd5eSrdHasHuntersMark(actor: Actor): boolean {
 
 function dnd5eSrdHasHunterLore(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
-  if (stringValue(actor.data.class) === "Ranger" && Math.floor(numericValue(actor.data.level, 1)) >= 3) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Ranger", 3, "hunter")) return true;
   return features.includes("Hunter") || features.includes("Hunter's Lore");
 }
 
 function dnd5eSrdHasHunterPrey(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
-  if (stringValue(actor.data.class) === "Ranger" && Math.floor(numericValue(actor.data.level, 1)) >= 3) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Ranger", 3, "hunter")) return true;
   return features.includes("Hunter's Prey");
 }
 
 function dnd5eSrdHasHunterDefensiveTactics(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
-  if (stringValue(actor.data.class) === "Ranger" && Math.floor(numericValue(actor.data.level, 1)) >= 7) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Ranger", 7, "hunter")) return true;
   return features.includes("Defensive Tactics");
 }
 
 function dnd5eSrdHasHunterSuperiorPrey(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
-  if (stringValue(actor.data.class) === "Ranger" && Math.floor(numericValue(actor.data.level, 1)) >= 11) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Ranger", 11, "hunter")) return true;
   return features.includes("Superior Hunter's Prey");
 }
 
 function dnd5eSrdHasHunterSuperiorDefense(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
-  if (stringValue(actor.data.class) === "Ranger" && Math.floor(numericValue(actor.data.level, 1)) >= 15) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Ranger", 15, "hunter")) return true;
   return features.includes("Superior Hunter's Defense");
 }
 
@@ -19833,7 +15135,7 @@ function dnd5eSrdHasMonkFocus(actor: Actor): boolean {
 }
 
 function dnd5eSrdHasDeflectAttacks(actor: Actor): boolean {
-  if (stringValue(actor.data.class) === "Monk" && Math.floor(numericValue(actor.data.level, 1)) >= 3) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Monk", 3, "warrior-of-the-open-hand", "Warrior of the Open Hand")) return true;
   return normalizeStringArray(actor.data.features).includes("Deflect Attacks");
 }
 
@@ -19850,19 +15152,19 @@ function dnd5eSrdHasOpenHandTechnique(actor: Actor): boolean {
 
 function dnd5eSrdHasOpenHandWholeness(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
-  if (stringValue(actor.data.class) === "Monk" && Math.floor(numericValue(actor.data.level, 1)) >= 6) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Monk", 6, "warrior-of-the-open-hand", "Warrior of the Open Hand")) return true;
   return features.includes("Wholeness of Body") || "wholenessOfBody" in recordValue(actor.data.resources);
 }
 
 function dnd5eSrdHasOpenHandFleetStep(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
-  if (stringValue(actor.data.class) === "Monk" && Math.floor(numericValue(actor.data.level, 1)) >= 11) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Monk", 11, "warrior-of-the-open-hand", "Warrior of the Open Hand")) return true;
   return features.includes("Fleet Step");
 }
 
 function dnd5eSrdHasOpenHandQuiveringPalm(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
-  if (stringValue(actor.data.class) === "Monk" && Math.floor(numericValue(actor.data.level, 1)) >= 17) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Monk", 17, "warrior-of-the-open-hand", "Warrior of the Open Hand")) return true;
   return features.includes("Quivering Palm");
 }
 
@@ -19883,49 +15185,49 @@ function dnd5eSrdHasMetamagic(actor: Actor): boolean {
 
 function dnd5eSrdHasDraconicResilience(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
-  if (stringValue(actor.data.class) === "Sorcerer" && Math.floor(numericValue(actor.data.level, 1)) >= 3) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Sorcerer", 3, "draconic-sorcery", "Draconic Sorcery")) return true;
   return features.includes("Draconic Sorcery") || features.includes("Draconic Resilience");
 }
 
 function dnd5eSrdHasDraconicElementalAffinity(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
-  if (stringValue(actor.data.class) === "Sorcerer" && Math.floor(numericValue(actor.data.level, 1)) >= 6) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Sorcerer", 6, "draconic-sorcery", "Draconic Sorcery")) return true;
   return features.includes("Elemental Affinity");
 }
 
 function dnd5eSrdHasDraconicWings(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
-  if (stringValue(actor.data.class) === "Sorcerer" && Math.floor(numericValue(actor.data.level, 1)) >= 14) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Sorcerer", 14, "draconic-sorcery", "Draconic Sorcery")) return true;
   return features.includes("Dragon Wings") || "dragonWings" in recordValue(actor.data.resources);
 }
 
 function dnd5eSrdHasDraconicCompanion(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
-  if (stringValue(actor.data.class) === "Sorcerer" && Math.floor(numericValue(actor.data.level, 1)) >= 18) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Sorcerer", 18, "draconic-sorcery", "Draconic Sorcery")) return true;
   return features.includes("Dragon Companion") || "dragonCompanion" in recordValue(actor.data.resources);
 }
 
 function dnd5eSrdHasEvokerPotentCantrip(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
-  if (stringValue(actor.data.class) === "Wizard" && Math.floor(numericValue(actor.data.level, 1)) >= 3) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Wizard", 3, "evoker")) return true;
   return features.includes("Evoker") || features.includes("Potent Cantrip");
 }
 
 function dnd5eSrdHasEvokerSculptSpells(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
-  if (stringValue(actor.data.class) === "Wizard" && Math.floor(numericValue(actor.data.level, 1)) >= 6) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Wizard", 6, "evoker")) return true;
   return features.includes("Sculpt Spells");
 }
 
 function dnd5eSrdHasEvokerEmpoweredEvocation(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
-  if (stringValue(actor.data.class) === "Wizard" && Math.floor(numericValue(actor.data.level, 1)) >= 10) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Wizard", 10, "evoker")) return true;
   return features.includes("Empowered Evocation");
 }
 
 function dnd5eSrdHasEvokerOverchannel(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
-  if (stringValue(actor.data.class) === "Wizard" && Math.floor(numericValue(actor.data.level, 1)) >= 14) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Wizard", 14, "evoker")) return true;
   return features.includes("Overchannel") || "overchannel" in recordValue(actor.data.resources);
 }
 
@@ -19946,25 +15248,25 @@ function dnd5eSrdHasMagicalCunning(actor: Actor): boolean {
 
 function dnd5eSrdHasFiendDarkBlessing(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
-  if (stringValue(actor.data.class) === "Warlock" && Math.floor(numericValue(actor.data.level, 1)) >= 3) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Warlock", 3, "fiend-patron", "Fiend Patron")) return true;
   return features.includes("Fiend Patron") || features.includes("Dark One's Blessing");
 }
 
 function dnd5eSrdHasFiendDarkLuck(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
-  if (stringValue(actor.data.class) === "Warlock" && Math.floor(numericValue(actor.data.level, 1)) >= 6) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Warlock", 6, "fiend-patron", "Fiend Patron")) return true;
   return features.includes("Dark One's Own Luck") || "fiendLuck" in recordValue(actor.data.resources);
 }
 
 function dnd5eSrdHasFiendResilience(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
-  if (stringValue(actor.data.class) === "Warlock" && Math.floor(numericValue(actor.data.level, 1)) >= 10) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Warlock", 10, "fiend-patron", "Fiend Patron")) return true;
   return features.includes("Fiendish Resilience");
 }
 
 function dnd5eSrdHasFiendHurlThroughHell(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
-  if (stringValue(actor.data.class) === "Warlock" && Math.floor(numericValue(actor.data.level, 1)) >= 14) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Warlock", 14, "fiend-patron", "Fiend Patron")) return true;
   return features.includes("Hurl Through Hell") || "hurlThroughHell" in recordValue(actor.data.resources);
 }
 
@@ -19985,25 +15287,25 @@ function dnd5eSrdHasWildResurgence(actor: Actor): boolean {
 
 function dnd5eSrdHasMoonCircleForms(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
-  if (stringValue(actor.data.class) === "Druid" && Math.floor(numericValue(actor.data.level, 1)) >= 3) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Druid", 3, "circle-of-the-moon", "Circle of the Moon")) return true;
   return features.includes("Circle of the Moon") || features.includes("Circle Forms");
 }
 
 function dnd5eSrdHasMoonImprovedCircleForms(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
-  if (stringValue(actor.data.class) === "Druid" && Math.floor(numericValue(actor.data.level, 1)) >= 6) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Druid", 6, "circle-of-the-moon", "Circle of the Moon")) return true;
   return features.includes("Improved Circle Forms");
 }
 
 function dnd5eSrdHasMoonlightStep(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
-  if (stringValue(actor.data.class) === "Druid" && Math.floor(numericValue(actor.data.level, 1)) >= 10) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Druid", 10, "circle-of-the-moon", "Circle of the Moon")) return true;
   return features.includes("Moonlight Step") || "moonlightStep" in recordValue(actor.data.resources);
 }
 
 function dnd5eSrdHasMoonLunarForm(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
-  if (stringValue(actor.data.class) === "Druid" && Math.floor(numericValue(actor.data.level, 1)) >= 14) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Druid", 14, "circle-of-the-moon", "Circle of the Moon")) return true;
   return features.includes("Lunar Form");
 }
 
@@ -20018,27 +15320,27 @@ function dnd5eSrdHasCunningStrike(actor: Actor): boolean {
 }
 
 function dnd5eSrdHasThiefFastHands(actor: Actor): boolean {
-  if (stringValue(actor.data.class) === "Rogue" && Math.floor(numericValue(actor.data.level, 1)) >= 3) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Rogue", 3, "thief")) return true;
   return normalizeStringArray(actor.data.features).includes("Fast Hands");
 }
 
 function dnd5eSrdHasThiefSecondStoryWork(actor: Actor): boolean {
-  if (stringValue(actor.data.class) === "Rogue" && Math.floor(numericValue(actor.data.level, 1)) >= 3) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Rogue", 3, "thief")) return true;
   return normalizeStringArray(actor.data.features).includes("Second-Story Work");
 }
 
 function dnd5eSrdHasThiefSupremeSneak(actor: Actor): boolean {
-  if (stringValue(actor.data.class) === "Rogue" && Math.floor(numericValue(actor.data.level, 1)) >= 9) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Rogue", 9, "thief")) return true;
   return normalizeStringArray(actor.data.features).includes("Supreme Sneak");
 }
 
 function dnd5eSrdHasThiefUseMagicDevice(actor: Actor): boolean {
-  if (stringValue(actor.data.class) === "Rogue" && Math.floor(numericValue(actor.data.level, 1)) >= 13) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Rogue", 13, "thief")) return true;
   return normalizeStringArray(actor.data.features).includes("Use Magic Device");
 }
 
 function dnd5eSrdHasThiefReflexes(actor: Actor): boolean {
-  if (stringValue(actor.data.class) === "Rogue" && Math.floor(numericValue(actor.data.level, 1)) >= 17) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Rogue", 17, "thief")) return true;
   return normalizeStringArray(actor.data.features).includes("Thief's Reflexes");
 }
 
@@ -20058,39 +15360,48 @@ function dnd5eSrdHasRecklessAttack(actor: Actor): boolean {
 }
 
 function dnd5eSrdHasBerserkerFrenzy(actor: Actor): boolean {
-  if (stringValue(actor.data.class) === "Barbarian" && Math.floor(numericValue(actor.data.level, 1)) >= 3) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Barbarian", 3, "path-of-the-berserker", "Path of the Berserker")) return true;
   return normalizeStringArray(actor.data.features).includes("Frenzy");
 }
 
 function dnd5eSrdHasBerserkerMindlessRage(actor: Actor): boolean {
-  if (stringValue(actor.data.class) === "Barbarian" && Math.floor(numericValue(actor.data.level, 1)) >= 6) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Barbarian", 6, "path-of-the-berserker", "Path of the Berserker")) return true;
   return normalizeStringArray(actor.data.features).includes("Mindless Rage");
 }
 
 function dnd5eSrdHasBerserkerRetaliation(actor: Actor): boolean {
-  if (stringValue(actor.data.class) === "Barbarian" && Math.floor(numericValue(actor.data.level, 1)) >= 10) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Barbarian", 10, "path-of-the-berserker", "Path of the Berserker")) return true;
   return normalizeStringArray(actor.data.features).includes("Retaliation");
 }
 
 function dnd5eSrdHasBerserkerIntimidatingPresence(actor: Actor): boolean {
-  if (stringValue(actor.data.class) === "Barbarian" && Math.floor(numericValue(actor.data.level, 1)) >= 14) return true;
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Barbarian", 14, "path-of-the-berserker", "Path of the Berserker")) return true;
   return normalizeStringArray(actor.data.features).includes("Intimidating Presence");
 }
 
+/** Complete cumulative base-class schedule at this class level. */
+export function dnd5eSrdClassFeaturesForLevel(className: string, level: number): string[] {
+  const canonicalClassName = Object.keys(dnd5eSrdMulticlassPrerequisites).find((candidate) => candidate.toLowerCase() === className.toLowerCase()) ?? className;
+  const classFeatures = canonicalClassName === "Fighter" ? dnd5eSrdFighterFeaturesForLevel(level)
+    : canonicalClassName === "Barbarian" ? dnd5eSrdBarbarianFeaturesForLevel(level)
+    : canonicalClassName === "Bard" ? dnd5eSrdBardFeaturesForLevel(level)
+    : canonicalClassName === "Cleric" ? dnd5eSrdClericFeaturesForLevel(level)
+    : canonicalClassName === "Paladin" ? dnd5eSrdPaladinFeaturesForLevel(level)
+    : canonicalClassName === "Druid" ? dnd5eSrdDruidFeaturesForLevel(level)
+    : canonicalClassName === "Ranger" ? dnd5eSrdRangerFeaturesForLevel(level)
+    : canonicalClassName === "Monk" ? dnd5eSrdMonkFeaturesForLevel(level)
+    : canonicalClassName === "Sorcerer" ? dnd5eSrdSorcererFeaturesForLevel(level)
+    : canonicalClassName === "Warlock" ? dnd5eSrdWarlockFeaturesForLevel(level)
+    : canonicalClassName === "Wizard" ? dnd5eSrdWizardFeaturesForLevel(level)
+    : canonicalClassName === "Rogue" ? dnd5eSrdRogueFeaturesForLevel(level)
+    : [];
+  if (Array.from({ length: level }, (_, index) => dnd5eSrdFeatGrantAtClassLevel(canonicalClassName, index + 1)).includes("general")) classFeatures.push("Ability Score Improvement");
+  if (Array.from({ length: level }, (_, index) => dnd5eSrdFeatGrantAtClassLevel(canonicalClassName, index + 1)).includes("epic-boon")) classFeatures.push("Epic Boon");
+  return [...new Set(classFeatures)];
+}
+
 function dnd5eSrdApplyClassFeatures(features: string[], className: string, level: number): string[] {
-  if (className === "Fighter") return [...new Set([...features, ...dnd5eSrdFighterFeaturesForLevel(level)])];
-  if (className === "Barbarian") return [...new Set([...features, ...dnd5eSrdBarbarianFeaturesForLevel(level)])];
-  if (className === "Bard") return [...new Set([...features, ...dnd5eSrdBardFeaturesForLevel(level)])];
-  if (className === "Cleric") return [...new Set([...features, ...dnd5eSrdClericFeaturesForLevel(level)])];
-  if (className === "Paladin") return [...new Set([...features, ...dnd5eSrdPaladinFeaturesForLevel(level)])];
-  if (className === "Druid") return [...new Set([...features, ...dnd5eSrdDruidFeaturesForLevel(level)])];
-  if (className === "Ranger") return [...new Set([...features, ...dnd5eSrdRangerFeaturesForLevel(level)])];
-  if (className === "Monk") return [...new Set([...features, ...dnd5eSrdMonkFeaturesForLevel(level)])];
-  if (className === "Sorcerer") return [...new Set([...features, ...dnd5eSrdSorcererFeaturesForLevel(level)])];
-  if (className === "Warlock") return [...new Set([...features, ...dnd5eSrdWarlockFeaturesForLevel(level)])];
-  if (className === "Wizard") return [...new Set([...features, ...dnd5eSrdWizardFeaturesForLevel(level)])];
-  if (className === "Rogue") return [...new Set([...features, ...dnd5eSrdRogueFeaturesForLevel(level)])];
-  return features;
+  return [...new Set([...features, ...dnd5eSrdClassFeaturesForLevel(className, level)])];
 }
 
 function dnd5eSrdApplyClassCombat(combat: Record<string, unknown>, className: string, level: number, speed: unknown): Record<string, unknown> {
@@ -20115,76 +15426,79 @@ function dnd5eSrdApplyClassCombat(combat: Record<string, unknown>, className: st
 }
 
 function dnd5eSrdFighterFeaturesForLevel(level: number): string[] {
-  const features = ["Fighting Style", "Second Wind"];
+  const features = ["Fighting Style", "Second Wind", "Weapon Mastery"];
   if (level >= 2) features.push("Action Surge", "Tactical Mind");
-  if (level >= 3) features.push("Fighter Subclass", "Champion", "Improved Critical", "Remarkable Athlete");
+  if (level >= 3) features.push("Fighter Subclass");
   if (level >= 5) features.push("Extra Attack", "Tactical Shift");
-  if (level >= 7) features.push("Additional Fighting Style");
-  if (level >= 10) features.push("Heroic Warrior");
-  if (level >= 15) features.push("Superior Critical");
-  if (level >= 18) features.push("Survivor");
+  if (level >= 9) features.push("Indomitable", "Tactical Master");
+  if (level >= 11) features.push("Two Extra Attacks");
+  if (level >= 13) features.push("Studied Attacks");
+  if (level >= 20) features.push("Three Extra Attacks");
   return features;
 }
 
 function dnd5eSrdBarbarianFeaturesForLevel(level: number): string[] {
   const features = ["Rage", "Unarmored Defense", "Weapon Mastery"];
   if (level >= 2) features.push("Danger Sense", "Reckless Attack");
-  if (level >= 3) features.push("Barbarian Subclass", "Path of the Berserker", "Frenzy", "Primal Knowledge");
-  if (level >= 4) features.push("Ability Score Improvement");
+  if (level >= 3) features.push("Barbarian Subclass", "Primal Knowledge");
   if (level >= 5) features.push("Extra Attack", "Fast Movement");
-  if (level >= 6) features.push("Mindless Rage");
-  if (level >= 10) features.push("Retaliation");
-  if (level >= 14) features.push("Intimidating Presence");
+  if (level >= 7) features.push("Feral Instinct", "Instinctive Pounce");
+  if (level >= 9) features.push("Brutal Strike");
+  if (level >= 11) features.push("Relentless Rage");
+  if (level >= 13) features.push("Improved Brutal Strike");
+  if (level >= 15) features.push("Persistent Rage");
+  if (level >= 18) features.push("Indomitable Might");
+  if (level >= 20) features.push("Primal Champion");
   return features;
 }
 
 function dnd5eSrdBardFeaturesForLevel(level: number): string[] {
   const features = ["Bardic Inspiration", "Spellcasting"];
   if (level >= 2) features.push("Expertise", "Jack of All Trades");
-  if (level >= 3) features.push("Bard Subclass", "College of Lore", "Bonus Proficiencies", "Cutting Words");
-  if (level >= 4) features.push("Ability Score Improvement");
+  if (level >= 3) features.push("Bard Subclass");
   if (level >= 5) features.push("Font of Inspiration");
-  if (level >= 6) features.push("Magical Discoveries");
-  if (level >= 14) features.push("Peerless Skill");
+  if (level >= 7) features.push("Countercharm");
+  if (level >= 9) features.push("Expertise");
+  if (level >= 10) features.push("Magical Secrets");
+  if (level >= 18) features.push("Superior Inspiration");
+  if (level >= 20) features.push("Words of Creation");
   return features;
 }
 
 function dnd5eSrdClericFeaturesForLevel(level: number): string[] {
   const features = ["Spellcasting", "Divine Order"];
   if (level >= 2) features.push("Channel Divinity", "Divine Spark", "Turn Undead");
-  if (level >= 3) features.push("Cleric Subclass", "Life Domain", "Disciple of Life", "Life Domain Spells", "Preserve Life");
+  if (level >= 3) features.push("Cleric Subclass");
   if (level >= 5) features.push("Sear Undead");
-  if (level >= 6) features.push("Blessed Healer");
-  if (level >= 17) features.push("Supreme Healing");
+  if (level >= 7) features.push("Blessed Strikes");
+  if (level >= 10) features.push("Divine Intervention");
+  if (level >= 14) features.push("Improved Blessed Strikes");
+  if (level >= 20) features.push("Greater Divine Intervention");
   return features;
 }
 
 function dnd5eSrdPaladinFeaturesForLevel(level: number): string[] {
   const features = ["Lay On Hands", "Spellcasting", "Weapon Mastery"];
   if (level >= 2) features.push("Fighting Style", "Paladin's Smite");
-  if (level >= 3) features.push("Channel Divinity", "Paladin Subclass", "Oath of Devotion", "Oath of Devotion Spells", "Sacred Weapon");
-  if (level >= 4) features.push("Ability Score Improvement");
+  if (level >= 3) features.push("Channel Divinity", "Paladin Subclass");
   if (level >= 5) features.push("Extra Attack", "Faithful Steed");
   if (level >= 6) features.push("Aura of Protection");
-  if (level >= 7) features.push("Aura of Devotion");
-  if (level >= 15) features.push("Smite of Protection");
-  if (level >= 20) features.push("Holy Nimbus");
+  if (level >= 9) features.push("Abjure Foes");
+  if (level >= 10) features.push("Aura of Courage");
+  if (level >= 11) features.push("Radiant Strikes");
+  if (level >= 14) features.push("Restoring Touch");
+  if (level >= 18) features.push("Aura Expansion");
   return features;
 }
 
 function dnd5eSrdDruidFeaturesForLevel(level: number): string[] {
   const features = ["Spellcasting", "Druidic", "Primal Order"];
   if (level >= 2) features.push("Wild Shape", "Wild Companion");
-  if (level >= 3) features.push("Druid Subclass", "Circle of the Moon", "Circle Forms", "Circle of the Moon Spells");
-  if (level >= 4) features.push("Ability Score Improvement");
+  if (level >= 3) features.push("Druid Subclass");
   if (level >= 5) features.push("Wild Resurgence");
-  if (level >= 6) features.push("Improved Circle Forms");
   if (level >= 7) features.push("Elemental Fury");
-  if (level >= 10) features.push("Moonlight Step");
-  if (level >= 14) features.push("Lunar Form");
   if (level >= 15) features.push("Improved Elemental Fury");
   if (level >= 18) features.push("Beast Spells");
-  if (level >= 19) features.push("Epic Boon");
   if (level >= 20) features.push("Archdruid");
   return features;
 }
@@ -20192,20 +15506,15 @@ function dnd5eSrdDruidFeaturesForLevel(level: number): string[] {
 function dnd5eSrdRangerFeaturesForLevel(level: number): string[] {
   const features = ["Spellcasting", "Favored Enemy", "Weapon Mastery"];
   if (level >= 2) features.push("Deft Explorer", "Fighting Style");
-  if (level >= 3) features.push("Ranger Subclass", "Hunter", "Hunter's Lore", "Hunter's Prey");
-  if (level >= 4) features.push("Ability Score Improvement");
+  if (level >= 3) features.push("Ranger Subclass");
   if (level >= 5) features.push("Extra Attack");
   if (level >= 6) features.push("Roving");
-  if (level >= 7) features.push("Defensive Tactics");
   if (level >= 9) features.push("Expertise");
   if (level >= 10) features.push("Tireless");
-  if (level >= 11) features.push("Superior Hunter's Prey");
   if (level >= 13) features.push("Relentless Hunter");
   if (level >= 14) features.push("Nature's Veil");
-  if (level >= 15) features.push("Superior Hunter's Defense");
   if (level >= 17) features.push("Precise Hunter");
   if (level >= 18) features.push("Feral Senses");
-  if (level >= 19) features.push("Epic Boon");
   if (level >= 20) features.push("Foe Slayer");
   return features;
 }
@@ -20213,20 +15522,17 @@ function dnd5eSrdRangerFeaturesForLevel(level: number): string[] {
 function dnd5eSrdMonkFeaturesForLevel(level: number): string[] {
   const features = ["Martial Arts", "Unarmored Defense"];
   if (level >= 2) features.push("Monk's Focus", "Flurry of Blows", "Patient Defense", "Step of the Wind", "Unarmored Movement", "Uncanny Metabolism");
-  if (level >= 3) features.push("Deflect Attacks", "Monk Subclass", "Warrior of the Open Hand", "Open Hand Technique");
-  if (level >= 4) features.push("Ability Score Improvement", "Slow Fall");
+  if (level >= 3) features.push("Deflect Attacks", "Monk Subclass");
+  if (level >= 4) features.push("Slow Fall");
   if (level >= 5) features.push("Extra Attack", "Stunning Strike");
-  if (level >= 6) features.push("Empowered Strikes", "Wholeness of Body");
+  if (level >= 6) features.push("Empowered Strikes");
   if (level >= 7) features.push("Evasion");
   if (level >= 9) features.push("Acrobatic Movement");
   if (level >= 10) features.push("Heightened Focus", "Self-Restoration");
-  if (level >= 11) features.push("Fleet Step");
   if (level >= 13) features.push("Deflect Energy");
   if (level >= 14) features.push("Disciplined Survivor");
   if (level >= 15) features.push("Perfect Focus");
-  if (level >= 17) features.push("Quivering Palm");
   if (level >= 18) features.push("Superior Defense");
-  if (level >= 19) features.push("Epic Boon");
   if (level >= 20) features.push("Body and Mind");
   return features;
 }
@@ -20234,14 +15540,9 @@ function dnd5eSrdMonkFeaturesForLevel(level: number): string[] {
 function dnd5eSrdSorcererFeaturesForLevel(level: number): string[] {
   const features = ["Spellcasting", "Innate Sorcery"];
   if (level >= 2) features.push("Font of Magic", "Metamagic");
-  if (level >= 3) features.push("Sorcerer Subclass", "Draconic Sorcery", "Draconic Resilience", "Draconic Spells");
-  if (level >= 4) features.push("Ability Score Improvement");
+  if (level >= 3) features.push("Sorcerer Subclass");
   if (level >= 5) features.push("Sorcerous Restoration");
-  if (level >= 6) features.push("Elemental Affinity");
   if (level >= 7) features.push("Sorcery Incarnate");
-  if (level >= 14) features.push("Dragon Wings");
-  if (level >= 18) features.push("Dragon Companion");
-  if (level >= 19) features.push("Epic Boon");
   if (level >= 20) features.push("Arcane Apotheosis");
   return features;
 }
@@ -20249,38 +15550,38 @@ function dnd5eSrdSorcererFeaturesForLevel(level: number): string[] {
 function dnd5eSrdWarlockFeaturesForLevel(level: number): string[] {
   const features = ["Eldritch Invocations", "Pact Magic"];
   if (level >= 2) features.push("Magical Cunning");
-  if (level >= 3) features.push("Warlock Subclass", "Fiend Patron", "Dark One's Blessing", "Fiend Spells");
-  if (level >= 4) features.push("Ability Score Improvement");
-  if (level >= 6) features.push("Dark One's Own Luck");
+  if (level >= 3) features.push("Warlock Subclass");
   if (level >= 9) features.push("Contact Patron");
-  if (level >= 10) features.push("Fiendish Resilience");
-  if (level >= 11) features.push("Mystic Arcanum");
-  if (level >= 14) features.push("Hurl Through Hell");
-  if (level >= 19) features.push("Epic Boon");
+  if (level >= 11) features.push("Mystic Arcanum (Level 6 Spell)");
+  if (level >= 13) features.push("Mystic Arcanum (Level 7 Spell)");
+  if (level >= 15) features.push("Mystic Arcanum (Level 8 Spell)");
+  if (level >= 17) features.push("Mystic Arcanum (Level 9 Spell)");
   if (level >= 20) features.push("Eldritch Master");
   return features;
 }
 
 function dnd5eSrdWizardFeaturesForLevel(level: number): string[] {
-  const features = ["Spellcasting", "Arcane Recovery"];
-  if (level >= 2) features.push("Arcane Tradition");
-  if (level >= 3) features.push("Wizard Subclass", "Evoker", "Evocation Savant", "Potent Cantrip");
-  if (level >= 4) features.push("Ability Score Improvement");
-  if (level >= 6) features.push("Sculpt Spells");
-  if (level >= 10) features.push("Empowered Evocation");
-  if (level >= 14) features.push("Overchannel");
+  const features = ["Spellcasting", "Ritual Adept", "Arcane Recovery"];
+  if (level >= 2) features.push("Scholar");
+  if (level >= 3) features.push("Wizard Subclass");
+  if (level >= 5) features.push("Memorize Spell");
+  if (level >= 18) features.push("Spell Mastery");
+  if (level >= 20) features.push("Signature Spells");
   return features;
 }
 
 function dnd5eSrdRogueFeaturesForLevel(level: number): string[] {
   const features = ["Expertise", "Sneak Attack", "Thieves' Cant", "Weapon Mastery"];
   if (level >= 2) features.push("Cunning Action");
-  if (level >= 3) features.push("Rogue Subclass", "Thief", "Fast Hands", "Second-Story Work", "Steady Aim");
-  if (level >= 4) features.push("Ability Score Improvement");
+  if (level >= 3) features.push("Rogue Subclass", "Steady Aim");
   if (level >= 5) features.push("Cunning Strike", "Uncanny Dodge");
-  if (level >= 9) features.push("Supreme Sneak");
-  if (level >= 13) features.push("Use Magic Device");
-  if (level >= 17) features.push("Thief's Reflexes");
+  if (level >= 6) features.push("Expertise");
+  if (level >= 7) features.push("Evasion", "Reliable Talent");
+  if (level >= 11) features.push("Improved Cunning Strike");
+  if (level >= 14) features.push("Devious Strikes");
+  if (level >= 15) features.push("Slippery Mind");
+  if (level >= 18) features.push("Elusive");
+  if (level >= 20) features.push("Stroke of Luck");
   return features;
 }
 
@@ -21045,7 +16346,42 @@ function dnd5eSrdStonecunningMetadata(actor: Actor): Record<string, unknown> {
   };
 }
 
+function dnd5eSrdSelectedGiantAncestry(actor: Actor): Dnd5eSrdGiantAncestryChoice | undefined {
+  const ancestryId = stringValue(recordValue(actor.data.origin).giantAncestry);
+  return ancestryId ? dnd5eSrdGiantAncestryById(ancestryId) : undefined;
+}
+
+function dnd5eSrdGiantAncestryFormula(actor: Actor): string {
+  const ancestry = dnd5eSrdSelectedGiantAncestry(actor);
+  if (!ancestry) return "0";
+  if (ancestry.damageFormula) return ancestry.damageFormula;
+  if (ancestry.damageReductionFormula) {
+    return appendFormulaBonus(ancestry.damageReductionFormula, genericFantasyAttributeModifier(actor, ancestry.damageReductionAbility ?? "constitution"));
+  }
+  return "0";
+}
+
 function dnd5eSrdGiantAncestryMetadata(actor: Actor): Record<string, unknown> {
+  const selected = dnd5eSrdSelectedGiantAncestry(actor);
+  if (selected) {
+    const selectedBenefit: Record<string, unknown> = {
+      ...selected,
+      ...(selected.damageReductionFormula
+        ? { reductionFormula: appendFormulaBonus(selected.damageReductionFormula, genericFantasyAttributeModifier(actor, selected.damageReductionAbility ?? "constitution")) }
+        : {})
+    };
+    return {
+      resource: "giantAncestry",
+      uses: dnd5eSrdProficiencyBonus(actor),
+      recovery: "long",
+      ancestryId: selected.id,
+      ancestryName: selected.name,
+      giantType: selected.giantType,
+      activation: selected.activation,
+      selectedBenefit,
+      requiresManualResolution: true
+    };
+  }
   return {
     resource: "giantAncestry",
     uses: dnd5eSrdProficiencyBonus(actor),
@@ -21726,8 +17062,13 @@ function dnd5eSrdApplyShortRestResourceLimits(actor: Actor, data: Record<string,
   if (Object.keys(limitedRecovery).length === 0) return data;
   const className = stringValue(actor.data.class) || "Fighter";
   const level = numericValue(actor.data.level, 1);
-  const beforeResources = normalizeDnd5eSrdResources(actor.data.resources, className, level, actor.data, { raiseMaxToDefault: true });
-  const afterResources = normalizeDnd5eSrdResources(data.resources, className, level, data, { raiseMaxToDefault: true });
+  const classes = dnd5eSrdActorClassLevels(actor);
+  const beforeResources = classes.length > 1
+    ? dnd5eSrdCombinedClassResources(actor.data.resources, classes, actor.data, Math.floor(level), { raiseMaxToDefault: true })
+    : normalizeDnd5eSrdResources(actor.data.resources, className, level, actor.data, { raiseMaxToDefault: true });
+  const afterResources = classes.length > 1
+    ? dnd5eSrdCombinedClassResources(data.resources, classes, data, Math.floor(level), { raiseMaxToDefault: true })
+    : normalizeDnd5eSrdResources(data.resources, className, level, data, { raiseMaxToDefault: true });
   const resources = { ...afterResources };
   for (const [resourceId, maxRecovered] of Object.entries(limitedRecovery)) {
     const before = beforeResources[resourceId];
@@ -21745,7 +17086,10 @@ function dnd5eSrdApplyShortRestResourceLimits(actor: Actor, data: Record<string,
 function dnd5eSrdApplyLongRestResourceLimits(actor: Actor, data: Record<string, unknown>): Record<string, unknown> {
   const className = stringValue(actor.data.class) || "Fighter";
   const level = numericValue(actor.data.level, 1);
-  const afterResources = normalizeDnd5eSrdResources(data.resources, className, level, data, { raiseMaxToDefault: true });
+  const classes = dnd5eSrdActorClassLevels(actor);
+  const afterResources = classes.length > 1
+    ? dnd5eSrdCombinedClassResources(data.resources, classes, data, Math.floor(level), { raiseMaxToDefault: true })
+    : normalizeDnd5eSrdResources(data.resources, className, level, data, { raiseMaxToDefault: true });
   return {
     ...data,
     resources: Object.fromEntries(Object.entries(afterResources).map(([key, pool]) => [key, { ...pool, current: stringValue(pool.recovery) === "long" || stringValue(pool.recovery) === "short" ? pool.max : pool.current }]))
@@ -21753,20 +17097,22 @@ function dnd5eSrdApplyLongRestResourceLimits(actor: Actor, data: Record<string, 
 }
 
 function dnd5eSrdApplyPactMagicRecovery(actor: Actor, data: Record<string, unknown>, restType: SystemRestType): { data: Record<string, unknown>; recovered?: Record<string, unknown> } {
-  const className = stringValue(actor.data.class) || "";
-  if (restType !== "short" || className !== "Warlock") return { data };
-  const level = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
-  const spellSlots = normalizeDnd5eSrdSpellSlots(data.spellSlots, className, level, { raiseMaxToDefault: true });
-  const recoveredSpellSlots: Record<string, number> = {};
-  for (const [key, slot] of Object.entries(spellSlots)) {
+  const classes = dnd5eSrdActorClassLevels(actor);
+  const warlockLevel = classes.find((entry) => entry.className === "Warlock")?.level ?? 0;
+  if (warlockLevel <= 0 || (restType !== "short" && restType !== "long")) return { data };
+  const multiclass = classes.length > 1;
+  const poolKey = multiclass ? "pactSlots" : "spellSlots";
+  const slots = normalizeExactResourcePools(data[poolKey], defaultDnd5eSrdWarlockPactMagicSlots(warlockLevel), { raiseMaxToDefault: true });
+  const recoveredSlots: Record<string, number> = {};
+  for (const [key, slot] of Object.entries(slots)) {
     if (stringValue(slot.recovery) !== "short") continue;
     const recovered = Math.max(0, slot.max - slot.current);
     if (recovered <= 0) continue;
-    spellSlots[key] = { ...slot, current: slot.max };
-    recoveredSpellSlots[key] = recovered;
+    slots[key] = { ...slot, current: slot.max };
+    recoveredSlots[key] = recovered;
   }
-  const nextData = { ...data, spellSlots };
-  return Object.keys(recoveredSpellSlots).length > 0 ? { data: nextData, recovered: { spellSlots: recoveredSpellSlots } } : { data: nextData };
+  const nextData = { ...data, [poolKey]: slots };
+  return Object.keys(recoveredSlots).length > 0 ? { data: nextData, recovered: { [poolKey]: recoveredSlots } } : { data: nextData };
 }
 
 function dnd5eSrdApplyArcaneRecovery(actor: Actor, data: Record<string, unknown>, restType: SystemRestType, options: SystemRestOptions): { data: Record<string, unknown>; recovered?: Record<string, unknown> } {
@@ -21859,7 +17205,14 @@ function dnd5eSrdRestRecovered(actor: Actor, data: Record<string, unknown>, reco
     if (amount > 0) resourcesRecovered[resourceId] = amount;
     else delete resourcesRecovered[resourceId];
   }
-  return { ...recovered, resources: resourcesRecovered };
+  const beforeHp = normalizePool(actor.data.hp, 1);
+  const afterHp = normalizePool(data.hp, beforeHp.max);
+  const hpRecovered = Math.max(0, afterHp.current - beforeHp.current);
+  return {
+    ...recovered,
+    ...(hpRecovered > 0 ? { hp: hpRecovered } : {}),
+    resources: resourcesRecovered
+  };
 }
 
 function dnd5eSrdShortRestLimitedResources(actor: Actor): Record<string, number> {
@@ -21883,15 +17236,24 @@ function spellActionSlotLevel(spellLevel: number, requestedSlotLevel: number | u
 }
 
 function dnd5eSrdSpellActionSlotLevel(actor: Actor, items: Item[], rollId: string, options: SystemActionUseOptions): number | undefined {
-  if (typeof options.spellSlotLevel === "number" && Number.isFinite(options.spellSlotLevel)) return Math.floor(options.spellSlotLevel);
+  if (options.ritualCast) return undefined;
   const item = actionItemForRoll(actor, items, rollId, ["spell"]);
   if (!item || item.type !== "spell") return undefined;
   const data = recordValue(item.data);
   const spellLevel = Math.floor(numericValue(data.level, 0));
   if (spellLevel <= 0) return undefined;
-  if (options.useFreeResource && stringValue(data.speciesSpellResource)) return spellLevel;
-  if (stringValue(actor.data.class) !== "Warlock") return undefined;
-  return dnd5eSrdWarlockPactMagicSlotLevel(numericValue(actor.data.level, 1));
+  if (options.useFreeResource && (stringValue(data.freeCastResource) || stringValue(data.speciesSpellResource))) return spellLevel;
+  const classes = dnd5eSrdActorClassLevels(actor);
+  const warlockLevel = classes.find((entry) => entry.className === "Warlock")?.level ?? 0;
+  const multiclass = classes.length > 1;
+  const usePactSlot = warlockLevel > 0 && (
+    !multiclass ||
+    options.usePactSlot === true ||
+    Object.keys(recordValue(actor.data.spellSlots)).length === 0
+  );
+  if (usePactSlot) return dnd5eSrdWarlockPactMagicSlotLevel(warlockLevel);
+  if (typeof options.spellSlotLevel === "number" && Number.isFinite(options.spellSlotLevel)) return Math.floor(options.spellSlotLevel);
+  return undefined;
 }
 
 function useDnd5eSrdSpellAction(actor: Actor, items: Item[], rollId: string, options: SystemActionUseOptions): SystemActionUseResult | undefined {
@@ -21899,14 +17261,26 @@ function useDnd5eSrdSpellAction(actor: Actor, items: Item[], rollId: string, opt
   if (!item || item.type !== "spell" || !rollId.startsWith(`spell-${item.id}-`)) return undefined;
   const data = recordValue(item.data);
   const spellLevel = Math.floor(numericValue(data.level, 0));
+  if (options.ritualCast) {
+    if (!dnd5eSrdWizardRitualSpellAvailable(actor, item)) throw new Error(`${item.name} is not an eligible Wizard ritual in this actor's stored spellbook`);
+    return {
+      systemId: DND_5E_SRD_SYSTEM_ID,
+      actorId: actor.id,
+      rollId,
+      ritualCast: true,
+      consumed: [],
+      data: { ...actor.data },
+      items: []
+    };
+  }
   if (spellLevel <= 0) return { systemId: DND_5E_SRD_SYSTEM_ID, actorId: actor.id, rollId, consumed: [], data: { ...actor.data }, items: [] };
   const level = numericValue(actor.data.level, 1);
-  const speciesSpellResource = stringValue(data.speciesSpellResource);
-  if (options.useFreeResource && speciesSpellResource) {
+  const freeCastResource = stringValue(data.freeCastResource) ?? stringValue(data.speciesSpellResource);
+  if (options.useFreeResource && freeCastResource) {
     const className = stringValue(actor.data.class) || "Fighter";
     const resources = normalizeDnd5eSrdResources(actor.data.resources, className, level, actor.data, { raiseMaxToDefault: true });
-    const label = stringValue(data.speciesSpellResourceLabel) ?? item.name;
-    const result = consumeResourcePool(resources, speciesSpellResource, 1, label, "resource");
+    const label = stringValue(data.freeCastResourceLabel) ?? stringValue(data.speciesSpellResourceLabel) ?? item.name;
+    const result = consumeResourcePool(resources, freeCastResource, 1, label, "resource");
     return {
       systemId: DND_5E_SRD_SYSTEM_ID,
       actorId: actor.id,
@@ -21917,17 +17291,35 @@ function useDnd5eSrdSpellAction(actor: Actor, items: Item[], rollId: string, opt
       items: []
     };
   }
-  if (stringValue(actor.data.class) !== "Warlock") return undefined;
-  const slotLevel = spellActionSlotLevel(spellLevel, dnd5eSrdSpellActionSlotLevel(actor, items, rollId, options));
-  const spellSlots = normalizeDnd5eSrdSpellSlots(actor.data.spellSlots, "Warlock", level, { raiseMaxToDefault: true });
-  const result = consumeResourcePool(spellSlots, `level${slotLevel}`, 1, `Level ${slotLevel} Spell Slot`, "spellSlot");
+  if (booleanValue(data.noSpellSlotRequired) || booleanValue(data.atWill)) {
+    return { systemId: DND_5E_SRD_SYSTEM_ID, actorId: actor.id, rollId, slotLevel: spellLevel, consumed: [], data: { ...actor.data }, items: [] };
+  }
+  const classes = dnd5eSrdActorClassLevels(actor);
+  const warlockLevel = classes.find((entry) => entry.className === "Warlock")?.level ?? 0;
+  if (options.usePactSlot && warlockLevel <= 0) throw new Error(`${actor.name} has no Pact Magic slots`);
+  const multiclass = classes.length > 1;
+  const usePactSlot = warlockLevel > 0 && (
+    !multiclass ||
+    options.usePactSlot === true ||
+    Object.keys(recordValue(actor.data.spellSlots)).length === 0
+  );
+  if (!usePactSlot) return undefined;
+  const slotLevel = dnd5eSrdWarlockPactMagicSlotLevel(warlockLevel);
+  if (spellLevel > slotLevel) throw new Error(`${item.name} requires a level ${spellLevel} slot, but this actor's Pact Magic slots are level ${slotLevel}`);
+  if (typeof options.spellSlotLevel === "number" && Math.floor(options.spellSlotLevel) !== slotLevel) {
+    throw new Error(`Pact Magic uses this actor's fixed level ${slotLevel} slots`);
+  }
+  const slotPool = multiclass ? "pactSlots" : "spellSlots";
+  const pactSlots = normalizeExactResourcePools(actor.data[slotPool], defaultDnd5eSrdWarlockPactMagicSlots(warlockLevel), { raiseMaxToDefault: true });
+  const result = consumeResourcePool(pactSlots, `level${slotLevel}`, 1, `Level ${slotLevel} Pact Magic Slot`, "pactSlot");
   return {
     systemId: DND_5E_SRD_SYSTEM_ID,
     actorId: actor.id,
     rollId,
     slotLevel,
+    slotPool,
     consumed: [result.consumed],
-    data: { ...actor.data, spellSlots: result.pools },
+    data: { ...actor.data, [slotPool]: result.pools },
     items: []
   };
 }
@@ -22025,6 +17417,16 @@ function normalizeResourcePools(
   );
 }
 
+/** Normalize only the declared pool keys, preventing one slot system from leaking into another. */
+function normalizeExactResourcePools(
+  value: unknown,
+  defaults: Record<string, Record<string, unknown>>,
+  options: { raiseMaxToDefault?: boolean } = {}
+): Record<string, Record<string, unknown> & { current: number; max: number }> {
+  const normalized = normalizeResourcePools(value, defaults, options);
+  return Object.fromEntries(Object.keys(defaults).map((key) => [key, normalized[key]!]));
+}
+
 function recoverResourcePools(value: unknown, restType: SystemRestType): { value: Record<string, Record<string, unknown> & { current: number; max: number }>; recovered: Record<string, number> } {
   const pools = normalizeResourcePools(value);
   const recovered: Record<string, number> = {};
@@ -22105,7 +17507,7 @@ function dnd5eSrdPrimaryAbility(className: string): string {
   return "strength";
 }
 
-function dnd5eSrdHitDieSize(className: string): string {
+function dnd5eSrdHitDieSize(className: string): Dnd5eSrdHitDieSize {
   if (className === "Barbarian") return "d12";
   if (className === "Sorcerer") return "d6";
   if (className === "Wizard") return "d6";
@@ -22125,7 +17527,18 @@ function normalizeDnd5eSrdResources(
   data: Record<string, unknown> = {},
   options: { raiseMaxToDefault?: boolean } = {}
 ): Record<string, Record<string, unknown> & { current: number; max: number }> {
-  const defaults = defaultDnd5eSrdResources(className, level, data);
+  const classes = Array.isArray(data.classes) ? data.classes.flatMap((entry) => {
+    const record = recordValue(entry);
+    const storedClassName = stringValue(record.className) ?? stringValue(record.class);
+    const storedLevel = Math.max(0, Math.floor(numericValue(record.level, 0)));
+    return storedClassName && storedLevel > 0 ? [{ className: storedClassName, level: storedLevel }] : [];
+  }) : [];
+  const defaults: Record<string, Record<string, unknown>> = classes.length > 1
+    ? {
+        ...defaultDnd5eSrdSpeciesResourcesForData(data, classes.reduce((sum, entry) => sum + entry.level, 0)),
+        ...Object.assign({}, ...classes.map((entry) => defaultDnd5eSrdClassResources(entry.className, entry.level, data)))
+      }
+    : defaultDnd5eSrdResources(className, level, data);
   const pools = normalizeResourcePools(value, defaults, options);
   for (const [key, defaultPool] of Object.entries(defaults)) {
     const recovery = stringValue(defaultPool.recovery);
@@ -22187,7 +17600,7 @@ function defaultDnd5eSrdClassResources(className: string, level = 1, data: Recor
     if (normalized >= 2) resources.paladinsSmite = { current: 1, max: 1, recovery: "long" };
     if (normalized >= 3) resources.channelDivinity = { current: dnd5eSrdChannelDivinityMax(normalized), max: dnd5eSrdChannelDivinityMax(normalized), recovery: "short" };
     if (normalized >= 5) resources.faithfulSteed = { current: 1, max: 1, recovery: "long" };
-    if (normalized >= 20) resources.holyNimbus = { current: 1, max: 1, recovery: "long" };
+    if (normalized >= 20 && normalizeStringArray(data.features).includes("Holy Nimbus")) resources.holyNimbus = { current: 1, max: 1, recovery: "long" };
     return resources;
   }
   if (className === "Ranger") {
@@ -22201,7 +17614,7 @@ function defaultDnd5eSrdClassResources(className: string, level = 1, data: Recor
       focus: { current: dnd5eSrdMonkFocusMax(normalized), max: dnd5eSrdMonkFocusMax(normalized), recovery: "short" },
       uncannyMetabolism: { current: 1, max: 1, recovery: "long" }
     };
-    if (normalized >= 6) {
+    if (normalized >= 6 && normalizeStringArray(data.features).includes("Wholeness of Body")) {
       const wholenessMax = dnd5eSrdOpenHandWholenessMaxFromData(data);
       resources.wholenessOfBody = { current: wholenessMax, max: wholenessMax, recovery: "long" };
     }
@@ -22215,20 +17628,20 @@ function defaultDnd5eSrdClassResources(className: string, level = 1, data: Recor
     const sorceryPointsMax = dnd5eSrdSorceryPointsMax(normalized);
     if (sorceryPointsMax > 0) resources.sorceryPoints = { current: sorceryPointsMax, max: sorceryPointsMax, recovery: "long" };
     if (normalized >= 5) resources.sorcerousRestoration = { current: 1, max: 1, recovery: "long" };
-    if (normalized >= 14) resources.dragonWings = { current: 1, max: 1, recovery: "long" };
-    if (normalized >= 18) resources.dragonCompanion = { current: 1, max: 1, recovery: "long" };
+    if (normalized >= 14 && normalizeStringArray(data.features).includes("Dragon Wings")) resources.dragonWings = { current: 1, max: 1, recovery: "long" };
+    if (normalized >= 18 && normalizeStringArray(data.features).includes("Dragon Companion")) resources.dragonCompanion = { current: 1, max: 1, recovery: "long" };
     return resources;
   }
   if (className === "Warlock") {
     const normalized = Math.max(1, Math.floor(level));
     const resources: Record<string, Record<string, unknown>> = {};
     if (normalized >= 2) resources.magicalCunning = { current: 1, max: 1, recovery: "long" };
-    if (normalized >= 6) {
+    if (normalized >= 6 && normalizeStringArray(data.features).includes("Dark One's Own Luck")) {
       const attributes = recordValue(data.attributes);
       const max = Math.max(1, abilityModifier(numericValue(attributes.charisma, 10)));
       resources.fiendLuck = { current: max, max, recovery: "long" };
     }
-    if (normalized >= 14) resources.hurlThroughHell = { current: 1, max: 1, recovery: "long" };
+    if (normalized >= 14 && normalizeStringArray(data.features).includes("Hurl Through Hell")) resources.hurlThroughHell = { current: 1, max: 1, recovery: "long" };
     return resources;
   }
   if (className === "Druid") {
@@ -22237,7 +17650,7 @@ function defaultDnd5eSrdClassResources(className: string, level = 1, data: Recor
     const wildShapeMax = dnd5eSrdWildShapeMax(normalized);
     if (wildShapeMax > 0) resources.wildShape = { current: wildShapeMax, max: wildShapeMax, recovery: "short" };
     if (normalized >= 5) resources.wildResurgence = { current: 1, max: 1, recovery: "long" };
-    if (normalized >= 10) {
+    if (normalized >= 10 && normalizeStringArray(data.features).includes("Moonlight Step")) {
       const attributes = recordValue(data.attributes);
       const moonlightStepMax = Math.max(1, abilityModifier(numericValue(attributes.wisdom, 10)));
       resources.moonlightStep = { current: moonlightStepMax, max: moonlightStepMax, recovery: "long" };
@@ -22247,7 +17660,7 @@ function defaultDnd5eSrdClassResources(className: string, level = 1, data: Recor
   if (className === "Wizard") {
     const normalized = Math.max(1, Math.floor(level));
     const resources: Record<string, Record<string, unknown>> = { arcaneRecovery: { current: 1, max: 1, recovery: "long" } };
-    if (normalized >= 14) resources.overchannel = { current: 1, max: 1, recovery: "long" };
+    if (normalized >= 14 && normalizeStringArray(data.features).includes("Overchannel")) resources.overchannel = { current: 1, max: 1, recovery: "long" };
     return resources;
   }
   return {};

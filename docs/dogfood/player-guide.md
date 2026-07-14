@@ -1,5 +1,7 @@
 # Player Guide
 
+Before joining, check the [supported browser statement](./supported-browsers.md). Current desktop Chromium is the automated compatibility baseline; other desktop and mobile browsers remain explicitly unverified unless release evidence says otherwise.
+
 ## Join
 
 1. Get the invite token or invite URL from the GM.

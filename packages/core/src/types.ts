@@ -27,6 +27,14 @@ export interface User extends Timestamps {
   disabledReason?: string;
   passwordUpdatedAt?: string;
   passwordResetRequired?: boolean;
+  preferences?: UserPreferences;
+}
+
+export interface UserPreferences {
+  theme: "midnight" | "ember";
+  dice3dEnabled: boolean;
+  reducedMotion: boolean;
+  chatNotifications: "all" | "mentions" | "none";
 }
 
 export interface UserMfaSettings {
@@ -102,6 +110,11 @@ export interface PasswordResetToken extends Timestamps {
 
 export interface EmailOutboxMessage extends Timestamps {
   id: ID;
+  /** Stable logical delivery identity reused across transport retries. */
+  deliveryId?: ID;
+  /** Monotonic local attempt counter for transport diagnostics. */
+  deliveryAttempts?: number;
+  lastDeliveryAttemptAt?: string;
   to: string;
   subject: string;
   text: string;
@@ -145,6 +158,14 @@ export interface Campaign extends Timestamps {
   description: string;
   defaultSystemId: ID;
   visibility: "private" | "invite_only" | "public";
+  /** Last committed authoritative realtime event cursor. Legacy campaigns start at zero. */
+  eventSequence?: number;
+  /** Campaign-scoped AI transmission and local-retention policy. Legacy rows use the conservative API defaults. */
+  aiPolicy?: AiCampaignPolicy;
+  /** Undefined preserves the legacy optional character-review workflow. */
+  characterReviewPolicy?: DndCharacterReviewPolicy;
+  /** Versioned campaign-level rules choices. Unknown toggle keys are preserved for installed systems. */
+  rulesProfile?: CampaignRulesProfile;
   archivedAt?: string;
   archivedByUserId?: ID;
   restoredAt?: string;
@@ -187,6 +208,53 @@ export interface World extends Timestamps {
   description: string;
 }
 
+export type WorldRecordKind = "npc" | "location" | "quest" | "faction";
+export type WorldRecordLifecycle = "draft" | "active" | "inactive" | "resolved" | "archived";
+
+/** Typed campaign knowledge independent of free-form journal prose. */
+export interface WorldRecord extends Timestamps {
+  id: ID;
+  campaignId: ID;
+  worldId?: ID;
+  kind: WorldRecordKind;
+  name: string;
+  summary: string;
+  description: string;
+  lifecycle: WorldRecordLifecycle;
+  visibility: Visibility;
+  tags: string[];
+  metadata: Record<string, unknown>;
+  createdByUserId: ID;
+  updatedByUserId: ID;
+  resolvedAt?: string;
+  archivedAt?: string;
+}
+
+export type WorldRelationType =
+  | "located_in"
+  | "member_of"
+  | "allied_with"
+  | "opposed_to"
+  | "serves"
+  | "leads"
+  | "involved_in"
+  | "related_to";
+
+/** A typed, revisioned edge between two world records. */
+export interface WorldRelation extends Timestamps {
+  id: ID;
+  campaignId: ID;
+  worldId?: ID;
+  sourceRecordId: ID;
+  targetRecordId: ID;
+  type: WorldRelationType;
+  label?: string;
+  notes?: string;
+  visibility: Visibility;
+  createdByUserId: ID;
+  updatedByUserId: ID;
+}
+
 export interface Scene extends Timestamps {
   id: ID;
   campaignId: ID;
@@ -207,7 +275,13 @@ export interface Scene extends Timestamps {
   walls: Wall[];
   lights: LightSource[];
   annotations: SceneAnnotation[];
+  /** Explicitly authored movement-cost areas. Missing on legacy scenes. */
+  difficultTerrain?: DifficultTerrainRegion[];
+  /** GM-authored cover rulings between a source and target token. Missing on legacy scenes. */
+  coverOverrides?: SceneCoverOverride[];
   metadata: Record<string, unknown>;
+  /** Optional member-specific delegation scoped to this scene only. */
+  permissions?: Record<ID, PermissionName[]>;
   sceneEditHistory?: SceneEditSnapshot[];
 }
 
@@ -225,6 +299,8 @@ export interface SceneEditableState {
   walls: Wall[];
   lights: LightSource[];
   annotations: SceneAnnotation[];
+  difficultTerrain?: DifficultTerrainRegion[];
+  coverOverrides?: SceneCoverOverride[];
   metadata: Record<string, unknown>;
 }
 
@@ -285,7 +361,7 @@ export interface FogHistoryEntry extends Timestamps {
 
 export type FogHistoryAction = "create" | "delete" | "undo";
 
-export type WallKind = "wall" | "terrain";
+export type WallKind = "wall" | "terrain" | "door" | "window";
 
 export interface Wall {
   id: ID;
@@ -296,7 +372,17 @@ export interface Wall {
   blocksVision: boolean;
   blocksMovement?: boolean;
   kind?: WallKind;
+  /** Open doors and windows do not block vision or movement. */
+  open?: boolean;
 }
+
+export interface CampaignRulesProfile {
+  profileId: string;
+  rulesVersion: string;
+  toggles: Record<string, boolean>;
+}
+
+export type LightSourceKind = "light" | "darkness";
 
 export interface LightSource {
   id: ID;
@@ -307,6 +393,46 @@ export interface LightSource {
   dimRadius?: number;
   color: string;
   intensity?: number;
+  /** Defaults to light for records created before typed lighting. */
+  kind?: LightSourceKind;
+  /** Distinguishes effects such as magical darkness from mundane darkness. */
+  magical?: boolean;
+}
+
+export interface DifficultTerrainRegion extends Timestamps {
+  id: ID;
+  sceneId: ID;
+  label: string;
+  /** Polygon vertices in scene-space coordinates. */
+  points: VisionPoint[];
+  color?: string;
+  createdByUserId: ID;
+}
+
+export type CoverLevel = "none" | "half" | "three_quarters" | "total";
+
+export interface SceneCoverOverride extends Timestamps {
+  id: ID;
+  sceneId: ID;
+  sourceTokenId: ID;
+  targetTokenId: ID;
+  level: CoverLevel;
+  note?: string;
+  createdByUserId: ID;
+}
+
+export interface ScenePathMeasurement {
+  sceneId: ID;
+  points: VisionPoint[];
+  /** Physical distance outside authored difficult-terrain regions. */
+  normalDistance: number;
+  /** Physical distance inside one or more authored difficult-terrain regions. */
+  difficultTerrainDistance: number;
+  /** Physical path length before terrain cost is applied. */
+  totalDistance: number;
+  /** Movement cost with difficult-terrain distance counted twice. */
+  movementCostDistance: number;
+  unit: "scene" | "feet";
 }
 
 export type SceneAnnotationKind = "ping" | "ruler" | "template" | "drawing";
@@ -374,6 +500,9 @@ export interface VisionPolygon {
   color?: string;
   opacity?: number;
   mode?: FogMode;
+  senseType?: TokenSenseType;
+  lightingEffect?: LightSourceKind;
+  magical?: boolean;
 }
 
 export interface VisionSnapshot {
@@ -404,6 +533,9 @@ export interface VisionPointSamplePolygon {
   lightLevel?: "bright" | "dim";
   color?: string;
   opacity?: number;
+  senseType?: TokenSenseType;
+  lightingEffect?: LightSourceKind;
+  magical?: boolean;
 }
 
 export interface VisionPointSampleWall {
@@ -430,6 +562,28 @@ export interface MapAsset extends Timestamps {
   storage?: AssetStorageRef;
   lifecycle?: AssetLifecycle;
   security?: AssetSecurityScan;
+  /** Optional, rebuildable image derivatives. Original bytes remain authoritative. */
+  renditions?: AssetRendition[];
+  image?: AssetImageMetadata;
+}
+
+export type AssetRenditionKind = "thumbnail" | "optimized";
+
+export interface AssetImageMetadata {
+  width: number;
+  height: number;
+  animated?: boolean;
+}
+
+export interface AssetRendition {
+  kind: AssetRenditionKind;
+  mimeType: "image/webp";
+  sizeBytes: number;
+  checksum: string;
+  width: number;
+  height: number;
+  storage: AssetStorageRef;
+  createdAt: string;
 }
 
 export interface AssetStorageRef {
@@ -463,6 +617,14 @@ export interface AssetSecurityFinding {
 
 export type TokenLayer = "map" | "player" | "gm";
 
+export type TokenSenseType = "normal" | "darkvision" | "blindsight" | "tremorsense" | "truesight";
+
+export interface TokenSense {
+  type: TokenSenseType;
+  /** Range in scene-space units, matching the existing token vision radii. */
+  range: number;
+}
+
 export interface Token extends Timestamps {
   id: ID;
   sceneId: ID;
@@ -473,6 +635,8 @@ export interface Token extends Timestamps {
   width: number;
   height: number;
   rotation: number;
+  /** Vertical position in game-world feet; zero is ground level. */
+  elevation?: number;
   layer?: TokenLayer;
   hidden: boolean;
   locked: boolean;
@@ -480,6 +644,8 @@ export interface Token extends Timestamps {
   visionRadius: number;
   brightVisionRadius?: number;
   dimVisionRadius?: number;
+  /** Optional typed senses layered on top of legacy bright/dim vision. */
+  senses?: TokenSense[];
   disposition: "friendly" | "neutral" | "hostile";
   imageAssetId?: ID;
   ownerUserIds?: ID[];
@@ -526,10 +692,663 @@ export interface Item extends Timestamps {
   data: Record<string, unknown>;
 }
 
-export interface JournalEntry extends Timestamps {
+export type CharacterTransferStatus = "pending" | "accepted" | "declined" | "cancelled";
+
+export interface CharacterTransfer extends Timestamps {
   id: ID;
   campaignId: ID;
-  worldId?: ID;
+  actorId: ID;
+  fromUserId?: ID;
+  toUserId: ID;
+  initiatedByUserId: ID;
+  actorUpdatedAt: string;
+  status: CharacterTransferStatus;
+  resolvedAt?: string;
+  resolvedByUserId?: ID;
+}
+
+/** Prepared D&D commit families whose exact state roots can be undone. */
+export type DndRulesMutationKind = "typed_damage" | "action" | "effect_schedule" | "concentration";
+
+export type DndRulesMutationStatus = "applied" | "undone";
+
+/**
+ * Exact pre-commit actor root plus the revision written by the commit.
+ * Undo must require the current Actor.updatedAt to equal `afterRevision`.
+ */
+export interface DndRulesMutationActorRoot {
+  actorId: ID;
+  before: {
+    data: Record<string, unknown>;
+    revision: string;
+  };
+  afterRevision: string;
+}
+
+/**
+ * Exact pre-commit item root plus the revision written by the commit.
+ * Undo must require the current Item.updatedAt to equal `afterRevision`.
+ */
+export interface DndRulesMutationItemRoot {
+  itemId: ID;
+  before: {
+    data: Record<string, unknown>;
+    revision: string;
+  };
+  afterRevision: string;
+}
+
+/**
+ * Combat mutations retain the full pre-commit row because scheduled effects
+ * can change combatants, history, and schedule events in one atomic commit.
+ */
+export interface DndRulesMutationCombatRoot {
+  combatId: ID;
+  before: Combat;
+  afterRevision: string;
+}
+
+export interface DndRulesMutationRoots {
+  actors: DndRulesMutationActorRoot[];
+  items: DndRulesMutationItemRoot[];
+  combat?: DndRulesMutationCombatRoot;
+}
+
+/**
+ * Durable, server-authored undo ledger for prepared D&D rules commits.
+ * Root snapshots must be captured before mutation and stored as detached data.
+ */
+export interface DndRulesMutation extends Timestamps {
+  id: ID;
+  campaignId: ID;
+  kind: DndRulesMutationKind;
+  preparedPreviewKey: string;
+  committedByUserId: ID;
+  status: DndRulesMutationStatus;
+  roots: DndRulesMutationRoots;
+  undoneAt?: string;
+  undoneByUserId?: ID;
+}
+
+export interface DndRulesMutationUndoDescriptor {
+  mutationId: ID;
+  expectedActorUpdatedAt: Record<ID, string>;
+  expectedItemUpdatedAt: Record<ID, string>;
+  expectedCombatUpdatedAt?: string;
+}
+
+export type DndRulesMutationUndoRequest = Omit<DndRulesMutationUndoDescriptor, "mutationId">;
+
+export interface DndRulesMutationUndoResult {
+  undone: true;
+  mutation: DndRulesMutation;
+  actors: Actor[];
+  items: Item[];
+  combat?: Combat;
+}
+
+export interface Dnd5eSrdPreparedActionCommitRequest {
+  preparedPreviewKey: string;
+  expectedUpdatedAt: string;
+}
+
+export interface Dnd5eSrdTypedDamageApplyRequest {
+  preparedPreviewKey: string;
+  expectedActorUpdatedAt: Record<ID, string>;
+  expectedItemUpdatedAt: Record<ID, string>;
+  /** Required when the reviewed targets participate in an active combat. */
+  expectedCombatUpdatedAt?: string;
+}
+
+export interface Dnd5eSrdTypedDamageApplyResult {
+  applied: true;
+  actor: Actor;
+  actors: Actor[];
+  /** Present when applying damage synchronized an active combatant lifecycle. */
+  combat?: Combat;
+  previews: Array<{ actorId: ID; actorName: string; preview: Record<string, unknown> }>;
+  rulesMutationId: ID;
+  undo: DndRulesMutationUndoDescriptor;
+}
+
+export interface Dnd5eSrdPendingAdvancementCancelRequest {
+  pendingAdvancementId: ID;
+  expectedUpdatedAt: string;
+}
+
+export interface Dnd5eSrdPendingAdvancementCancelResult {
+  cancelled: true;
+  actorId: ID;
+  pendingAdvancementId: ID;
+}
+
+/** Durable lifecycle for a rules-previewed actor advancement awaiting confirmation. */
+export type Dnd5eSrdPendingAdvancementStatus = "draft" | "ready";
+
+/**
+ * Server-authored advancement state. `preparedPreviewKey` binds the stored
+ * request to the preview that was prepared against `actorUpdatedAt`.
+ */
+export interface Dnd5eSrdPendingAdvancement extends Timestamps {
+  id: ID;
+  campaignId: ID;
+  actorId: ID;
+  systemId: "dnd-5e-srd";
+  status: Dnd5eSrdPendingAdvancementStatus;
+  request: Record<string, unknown>;
+  preparedPreviewKey?: string;
+  actorUpdatedAt: string;
+  createdByUserId: ID;
+}
+
+export type Dnd5eSrdSpellPreparationTiming = "long-rest" | "class-level";
+
+export type Dnd5eSrdSpellPreparationBlockerCode =
+  | "unsupported_actor"
+  | "manual_legacy_spellcasting"
+  | "capacity_unverified"
+  | "later_level_spell_acquisition_manual"
+  | "timing_mismatch"
+  | "always_prepared_excluded"
+  | "spell_not_owned"
+  | "class_spell_unverified"
+  | "class_source_ambiguous"
+  | "spell_level_unavailable"
+  | "wizard_spellbook_unverified"
+  | "capacity_exceeded"
+  | "change_limit_exceeded"
+  | "duplicate_selection";
+
+export interface Dnd5eSrdSpellPreparationBlocker {
+  code: Dnd5eSrdSpellPreparationBlockerCode;
+  message: string;
+  itemId?: ID;
+}
+
+export interface Dnd5eSrdSpellPreparationCapacity {
+  className: string;
+  limit: number;
+  selected: number;
+  alwaysPrepared: number;
+  source: "stored" | "class-progression" | "level-one-class";
+  classes?: Array<{ className: string; limit: number; selected: number }>;
+}
+
+export interface Dnd5eSrdSpellPreparationChange {
+  itemId: ID;
+  name: string;
+  compendiumEntryId: string;
+  fromPrepared: boolean;
+  toPrepared: boolean;
+}
+
+export interface Dnd5eSrdSpellPreparationPlan {
+  status: "ready" | "blocked";
+  actorId: ID;
+  className?: string;
+  timing: Dnd5eSrdSpellPreparationTiming;
+  requiredTiming?: Dnd5eSrdSpellPreparationTiming;
+  capacity?: Dnd5eSrdSpellPreparationCapacity;
+  selectedSpellIds: ID[];
+  eligibleSpellIds: ID[];
+  alwaysPreparedSpellIds: ID[];
+  ritualCastableSpellIds?: ID[];
+  changes: Dnd5eSrdSpellPreparationChange[];
+  blockers: Dnd5eSrdSpellPreparationBlocker[];
+  warnings: string[];
+}
+
+export interface Dnd5eSrdSpellPreparationPreviewRequest {
+  selectedSpellIds: ID[];
+  timing: Dnd5eSrdSpellPreparationTiming;
+  expectedActorUpdatedAt: string;
+  expectedItemUpdatedAt: Record<ID, string>;
+}
+
+export interface Dnd5eSrdSpellPreparationPreviewResponse extends Dnd5eSrdSpellPreparationPlan {
+  preparedPreviewKey: string;
+  actorUpdatedAt: string;
+  itemUpdatedAt: Record<ID, string>;
+}
+
+export interface Dnd5eSrdSpellPreparationApplyRequest {
+  preparedPreviewKey: string;
+  expectedActorUpdatedAt: string;
+  expectedItemUpdatedAt: Record<ID, string>;
+}
+
+export interface Dnd5eSrdSpellPreparationMutationResult {
+  applied: true;
+  actor: Actor;
+  items: Item[];
+  plan: Dnd5eSrdSpellPreparationPlan;
+}
+
+export type DndControlledCreatureKind = "summon" | "transformation" | "persistent_companion";
+
+export interface DndControlledCreatureSource {
+  kind: "spell" | "feature";
+  /** Actor that cast the spell or used the feature. */
+  actorId: ID;
+  /** Actor-owned spell or feature Item. */
+  itemId: ID;
+  name: string;
+  systemId: "dnd-5e-srd";
+  rulesVersion: string;
+}
+
+export type DndControlledCreatureDuration =
+  | { mode: "rounds"; combatId: ID; expiresAtRound: number }
+  | { mode: "until_time"; expiresAt: string }
+  | { mode: "until_dismissed" }
+  | { mode: "persistent" };
+
+export interface DndControlledCreatureConcentration {
+  sourceActorId: ID;
+  groupId: string;
+}
+
+export type DndControlledCreatureInitiative =
+  | { mode: "shared"; sourceActorId: ID }
+  | { mode: "independent"; value?: number };
+
+export interface DndControlledCreatureCommandRequirement {
+  required: boolean;
+  action: "action" | "bonus_action" | "reaction" | "free" | "none";
+  note?: string;
+}
+
+export interface DndControlledCreatureLastCommand {
+  commandedAt: string;
+  commandedByUserId: ID;
+  action: DndControlledCreatureCommandRequirement["action"];
+  note?: string;
+  combatId?: ID;
+  round?: number;
+}
+
+export interface DndControlledCreatureTransformationSnapshot {
+  actor: {
+    name: string;
+    type: string;
+    imageAssetId?: ID;
+    data: Record<string, unknown>;
+  };
+  /** Only items changed by the transformation are captured. */
+  items: Array<{
+    id: ID;
+    actorId?: ID;
+    data: Record<string, unknown>;
+  }>;
+  combatants: Array<{
+    combatId: ID;
+    combatantId: ID;
+    initiative: number;
+  }>;
+}
+
+/** Typed metadata stored at Actor.data.dnd5eControlledCreature. */
+export interface DndControlledCreatureRecord extends Timestamps {
+  version: 1;
+  id: ID;
+  campaignId: ID;
+  kind: DndControlledCreatureKind;
+  status: "active" | "dismissed" | "expired" | "concentration_ended" | "reverted";
+  source: DndControlledCreatureSource;
+  controllerUserId: ID;
+  controllerActorId: ID;
+  ownerUserId: ID;
+  linkedActorId: ID;
+  linkedTokenIds: ID[];
+  duration: DndControlledCreatureDuration;
+  concentration?: DndControlledCreatureConcentration;
+  initiative: DndControlledCreatureInitiative;
+  command: DndControlledCreatureCommandRequirement;
+  lastCommand?: DndControlledCreatureLastCommand;
+  transformation?: {
+    hpCarryover: "preserve" | "replace";
+    equipmentCarryover: "preserve" | "suppress";
+    snapshot: DndControlledCreatureTransformationSnapshot;
+  };
+}
+
+export interface DndControlledCreatureActorTemplate {
+  name: string;
+  type: string;
+  imageAssetId?: ID;
+  data: Record<string, unknown>;
+}
+
+export interface DndControlledCreatureTokenTemplate {
+  name?: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation?: number;
+  hidden?: boolean;
+  disposition: "friendly" | "neutral" | "hostile";
+  imageAssetId?: ID;
+}
+
+export interface DndControlledCreatureCreateRequest {
+  kind: DndControlledCreatureKind;
+  sceneId?: ID;
+  combatId?: ID;
+  targetActorId?: ID;
+  source: DndControlledCreatureSource;
+  controllerUserId: ID;
+  controllerActorId: ID;
+  ownerUserId: ID;
+  actor: DndControlledCreatureActorTemplate;
+  token?: DndControlledCreatureTokenTemplate;
+  duration: DndControlledCreatureDuration;
+  concentration?: DndControlledCreatureConcentration;
+  initiative: DndControlledCreatureInitiative;
+  command: DndControlledCreatureCommandRequirement;
+  transformation?: {
+    hpCarryover?: "preserve" | "replace";
+    equipmentCarryover?: "preserve" | "suppress";
+  };
+  /** A human confirmed every warning returned by the immediately preceding preview. */
+  manualReviewConfirmed?: boolean;
+}
+
+export type DndControlledCreatureManualReviewCategory = "stat_block" | "hit_points" | "equipment" | "concentration" | "initiative";
+
+export interface DndControlledCreatureManualReview {
+  id: string;
+  category: DndControlledCreatureManualReviewCategory;
+  message: string;
+  resolution: string;
+}
+
+export interface DndControlledCreatureRevisionSet {
+  actors: Record<ID, string>;
+  items: Record<ID, string>;
+  tokens: Record<ID, string>;
+  combats: Record<ID, string>;
+  scenes: Record<ID, string>;
+  encounters: Record<ID, string>;
+}
+
+export interface DndControlledCreaturePreview {
+  campaignId: ID;
+  systemId: "dnd-5e-srd";
+  previewToken: string;
+  ready: boolean;
+  summary: string;
+  errors: string[];
+  manualReview: DndControlledCreatureManualReview[];
+  warnings: string[];
+  requiredRevisions: DndControlledCreatureRevisionSet;
+  affected: {
+    actorIds: ID[];
+    itemIds: ID[];
+    tokenIds: ID[];
+    combatIds: ID[];
+    sceneIds: ID[];
+  };
+}
+
+export interface DndControlledCreatureConfirmRequest {
+  request: DndControlledCreatureCreateRequest;
+  previewToken: string;
+  expectedUpdatedAt: DndControlledCreatureRevisionSet;
+}
+
+export interface DndControlledCreatureEndRequest {
+  reason: "dismissed" | "expired";
+  expectedUpdatedAt: DndControlledCreatureRevisionSet;
+}
+
+export interface DndControlledCreatureCommandRequest {
+  expectedUpdatedAt: DndControlledCreatureRevisionSet;
+  note?: string;
+  combatId?: ID;
+  round?: number;
+}
+
+export interface DndControlledCreatureConcentrationEndRequest {
+  sourceActorId: ID;
+  groupId: string;
+  reason?: string;
+  expectedUpdatedAt: DndControlledCreatureRevisionSet;
+}
+
+export interface DndControlledCreatureMutationResult {
+  action: "created" | "transformed" | "commanded" | "dismissed" | "expired" | "concentration_ended" | "reverted";
+  records: DndControlledCreatureRecord[];
+  actors: Actor[];
+  tokens: Token[];
+  combats: Combat[];
+  removedActorIds: ID[];
+  removedTokenIds: ID[];
+}
+
+export interface DndCharacterReviewPolicy {
+  mode: "optional" | "required";
+  updatedAt: string;
+  updatedByUserId: ID;
+}
+
+/**
+ * Portable provenance for characters created through the strict bundled
+ * level-one workflow. Imported, homebrew, and legacy actors intentionally do
+ * not need this marker.
+ */
+export interface Dnd5eLevelOneCharacterCreationProvenance {
+  version: 1;
+  mode: "level-one-srd";
+  templateId: string;
+  options: Record<string, unknown>;
+}
+
+export interface DndCharacterReviewValidationIssue {
+  entityKind: "actor" | "item";
+  entityId: ID;
+  path: string;
+  severity: "error" | "warning";
+  code: string;
+  message: string;
+}
+
+/** Portable validation evidence captured at submission time. */
+export interface DndCharacterReviewValidationSnapshot {
+  systemId: "dnd-5e-srd";
+  rulesVersion: string;
+  actorSchemaVersion: string;
+  itemSchemaVersion: string;
+  errors: number;
+  warnings: number;
+  issues: DndCharacterReviewValidationIssue[];
+}
+
+export interface DndCharacterReviewDecision {
+  status: "approved" | "changes_requested";
+  decidedAt: string;
+  decidedByUserId: ID;
+  /** Required for changes_requested and for approval that overrides validation errors. */
+  reason?: string;
+  overrideValidation: boolean;
+}
+
+/** Typed metadata stored at Actor.data.dnd5eCharacterReview. */
+export interface DndCharacterReviewState {
+  version: 1;
+  id: ID;
+  status: "submitted" | "approved" | "changes_requested";
+  fingerprint: string;
+  submittedAt: string;
+  submittedByUserId: ID;
+  validation: DndCharacterReviewValidationSnapshot;
+  decision?: DndCharacterReviewDecision;
+}
+
+export type DndCharacterReviewEffectiveStatus = "not_submitted" | "submitted" | "approved" | "changes_requested" | "stale";
+
+export interface DndCharacterReviewEntry {
+  actor: Actor;
+  review?: DndCharacterReviewState;
+  effectiveStatus: DndCharacterReviewEffectiveStatus;
+  stale: boolean;
+  currentFingerprint: string;
+  currentValidation: DndCharacterReviewValidationSnapshot;
+  expectedActorUpdatedAt: string;
+  expectedItemUpdatedAt: Record<ID, string>;
+}
+
+export interface DndCharacterReviewListResponse {
+  policy: { mode: DndCharacterReviewPolicy["mode"]; configured: boolean };
+  campaignUpdatedAt: string;
+  entries: DndCharacterReviewEntry[];
+}
+
+export interface DndCharacterReviewSubmitRequest {
+  expectedActorUpdatedAt: string;
+  expectedItemUpdatedAt: Record<ID, string>;
+}
+
+export interface DndCharacterReviewDecisionRequest {
+  action: "approve" | "request_changes";
+  expectedActorUpdatedAt: string;
+  expectedFingerprint: string;
+  reason?: string;
+  overrideValidation?: boolean;
+}
+
+export interface DndCharacterReviewPolicyUpdateRequest {
+  mode: DndCharacterReviewPolicy["mode"];
+  expectedCampaignUpdatedAt: string;
+}
+
+/** D&D inventory ownership is explicit for actorless party-stash items. Actor-bound items continue to use Item.actorId. */
+export type Dnd5eInventoryOwnerRef =
+  | { kind: "actor"; actorId: ID }
+  | { kind: "party_stash"; stashId: ID };
+
+/** Typed metadata stored under Item.data.dnd5eInventory by the strict inventory routes. */
+export interface Dnd5eInventoryMetadata {
+  version: 1;
+  quantity: number;
+  weightLb: number;
+  storage?: { kind: "party_stash"; stashId: ID };
+  parentItemId?: ID;
+  container?: {
+    capacityLb: number;
+    extradimensional?: boolean;
+  };
+  /** Selected ammunition stack for a weapon. The stack must share the same owner and match the weapon's ammunition kind. */
+  ammunitionSourceItemId?: ID;
+}
+
+export interface Dnd5eContainerSummary {
+  itemId: ID;
+  name: string;
+  capacityLb: number;
+  contentsWeightLb: number;
+  remainingCapacityLb: number;
+  overCapacityByLb: number;
+  depth: number;
+  extradimensional: boolean;
+}
+
+export interface Dnd5eCarryingSummary {
+  owner: Dnd5eInventoryOwnerRef;
+  itemCount: number;
+  totalQuantity: number;
+  carriedWeightLb: number;
+  capacityLb?: number;
+  remainingCapacityLb?: number;
+  overCapacityByLb: number;
+  status: "within_capacity" | "over_capacity" | "manual_review";
+  containers: Dnd5eContainerSummary[];
+  warnings: string[];
+}
+
+/** Campaign-scoped Item.data.dnd5ePartyStash payload. */
+export interface Dnd5ePartyStashData {
+  version: 1;
+  name: string;
+  capacityLb?: number;
+  currency: Record<string, number>;
+}
+
+export interface Dnd5eMerchantCatalogEntry {
+  id: ID;
+  name: string;
+  type: string;
+  unitPriceGp: number;
+  sellPriceGp?: number;
+  /** Undefined means the merchant does not track stock for this entry. */
+  availableQuantity?: number;
+  compendiumEntryId?: ID;
+  data: Record<string, unknown>;
+}
+
+/** Campaign-scoped Item.data.dnd5eMerchant payload. */
+export interface Dnd5eMerchantData {
+  version: 1;
+  name: string;
+  description: string;
+  buybackRate: number;
+  /** Undefined means merchant liquidity is resolved manually by the GM. */
+  currency?: Record<string, number>;
+  catalog: Dnd5eMerchantCatalogEntry[];
+}
+
+/** Typed combat-loot lifecycle stored under Item.data.dnd5eLoot. */
+export interface Dnd5eLootData {
+  version: 1;
+  combatId: ID;
+  rewardId: ID;
+  status: "available" | "claimed" | "assigned";
+  claimedByUserId?: ID;
+  claimedForActorId?: ID;
+  assignedByUserId?: ID;
+  assignedToActorId?: ID;
+  assignedAt?: string;
+}
+
+export interface Dnd5eInventoryOverview {
+  campaignId: ID;
+  campaignUpdatedAt: string;
+  actor?: Actor;
+  actorItems: Item[];
+  actorSummary?: Dnd5eCarryingSummary;
+  partyStash?: Item;
+  partyStashItems: Item[];
+  partyStashSummary?: Dnd5eCarryingSummary;
+  merchants: Item[];
+  lootItems: Item[];
+  warnings: string[];
+}
+
+export type JournalEntryKind = "folder" | "entry";
+
+export type JournalEntityType =
+  | "actor"
+  | "scene"
+  | "item"
+  | "journal"
+  | "handout"
+  | "encounter";
+
+/** A deliberate knowledge-graph edge authored on a journal entry. */
+export interface JournalEntityLink {
+  id: ID;
+  targetType: JournalEntityType;
+  targetId: ID;
+  label?: string;
+}
+
+export type JournalCanonStatus = "draft" | "in_review" | "canonical" | "rejected";
+
+/** Immutable content snapshot captured before each journal mutation. */
+export interface JournalEntryRevision {
+  id: ID;
+  revision: number;
+  kind: JournalEntryKind;
   parentId?: ID;
   title: string;
   body: string;
@@ -537,6 +1356,42 @@ export interface JournalEntry extends Timestamps {
   visibleToUserIds: ID[];
   visibleToActorIds: ID[];
   tags: string[];
+  links: JournalEntityLink[];
+  canonStatus: JournalCanonStatus;
+  changedBy: ID;
+  createdAt: string;
+}
+
+export interface JournalBacklink {
+  sourceEntryId: ID;
+  sourceTitle: string;
+  link: JournalEntityLink;
+}
+
+export interface JournalEntry extends Timestamps {
+  id: ID;
+  campaignId: ID;
+  worldId?: ID;
+  parentId?: ID;
+  /** Legacy entries normalize to `entry`. */
+  kind?: JournalEntryKind;
+  title: string;
+  body: string;
+  visibility: Visibility;
+  visibleToUserIds: ID[];
+  visibleToActorIds: ID[];
+  tags: string[];
+  /** Legacy entries normalize to an empty list. API payloads filter inaccessible targets. */
+  links?: JournalEntityLink[];
+  /** Monotonic content revision; legacy entries normalize to 1. */
+  revision?: number;
+  /** Internal immutable history. Normal journal reads omit this field. */
+  revisions?: JournalEntryRevision[];
+  /** AI- or player-authored content is never canonical without an explicit DM review action. */
+  canonStatus?: JournalCanonStatus;
+  canonReviewedBy?: ID;
+  canonReviewedAt?: string;
+  canonReviewNote?: string;
   createdBy: ID;
   updatedBy: ID;
 }
@@ -693,12 +1548,130 @@ export interface Combat extends Timestamps {
   manualTurnOrder?: boolean;
   combatants: Combatant[];
   actions?: CombatAction[];
+  /** Immutable, server-authored encounter reward distributions. */
+  rewards?: CombatReward[];
+  /** GM-authored lair actions and regional effects. These remain prompts, not an executable rules DSL. */
+  environmentMechanics?: CombatEnvironmentMechanic[];
+  /** Bounded, server-authored history of explicit environment-mechanic triggers. */
+  environmentMechanicTriggers?: CombatEnvironmentMechanicTrigger[];
+  /** Bounded, server-authored history of deterministic scheduled-effect evaluations. */
+  effectScheduleEvents?: RulesEffectScheduleEvent[];
+}
+
+export type CombatEnvironmentMechanicKind = "lair_action" | "regional_effect";
+export type CombatEnvironmentMechanicTiming = "initiative_count" | "round_start" | "round_end" | "manual";
+
+export interface CombatEnvironmentMechanicSchedule {
+  timing: CombatEnvironmentMechanicTiming;
+  /** Required only for initiative-count scheduling. */
+  initiativeCount?: number;
+  startsAtRound: number;
+  intervalRounds: number;
+}
+
+export interface CombatEnvironmentMechanicOption {
+  id: ID;
+  name: string;
+  description: string;
+}
+
+export interface CombatEnvironmentMechanic extends Timestamps {
+  id: ID;
+  kind: CombatEnvironmentMechanicKind;
+  name: string;
+  description: string;
+  visibility: "public" | "gm_only";
+  enabled: boolean;
+  schedule: CombatEnvironmentMechanicSchedule;
+  options: CombatEnvironmentMechanicOption[];
+  triggerCount: number;
+  lastTriggeredRound?: number;
+  lastTriggeredAt?: string;
+  lastOptionId?: ID;
+}
+
+export interface CombatEnvironmentMechanicTrigger extends Timestamps {
+  id: ID;
+  mechanicId: ID;
+  mechanicKind: CombatEnvironmentMechanicKind;
+  mechanicName: string;
+  round: number;
+  turnIndex: number;
+  optionId?: ID;
+  optionName?: string;
+  summary: string;
+  visibility: "public" | "gm_only";
+  triggeredByUserId: ID;
+}
+
+export type RulesEffectScheduleTiming =
+  | "start_turn"
+  | "end_turn"
+  | "start_round"
+  | "end_round"
+  | "initiative_count"
+  | "time"
+  | "manual";
+
+export interface RulesEffectRepeatSave {
+  ability: string;
+  dc?: number;
+  endsOn: "success" | "failure";
+}
+
+/** Optional shape embedded in actor rulesEngine.activeEffects records. */
+export interface RulesEffectSchedule {
+  timing: RulesEffectScheduleTiming;
+  anchorActorId?: ID;
+  initiativeCount?: number;
+  nextRound?: number;
+  intervalRounds?: number;
+  remainingTriggers?: number;
+  expiresAtRound?: number;
+  expiresAt?: string;
+  repeatSave?: RulesEffectRepeatSave;
+}
+
+export interface RulesEffectScheduleEvent extends Timestamps {
+  id: ID;
+  effectId: ID;
+  actorId: ID;
+  label: string;
+  phase: RulesEffectScheduleTiming;
+  round: number;
+  turnIndex: number;
+  status: "triggered" | "save_required" | "save_succeeded" | "save_failed" | "expired";
+  saveAbility?: string;
+  saveDc?: number;
+  outcome?: "success" | "failure";
+}
+
+export interface CombatReward extends Timestamps {
+  id: ID;
+  campaignId: ID;
+  combatId: ID;
+  awardedByUserId: ID;
+  recipientActorIds: ID[];
+  totalXp: number;
+  xpPerActor: number;
+  unallocatedXp: number;
+  totalGp: number;
+  gpPerActor: number;
+  unallocatedGp: number;
+  loot: string[];
+  /** Durable Item records created by the strict D&D loot workflow. */
+  lootItemIds?: ID[];
+  note?: string;
 }
 
 export interface Combatant {
   id: ID;
   tokenId: ID;
   actorId?: ID;
+  /** GM-reviewed hidden participants are omitted from non-manager combat payloads until revealed. */
+  hidden?: boolean;
+  /** Surprise is reviewed at combat start and imposes disadvantage on D&D initiative. */
+  surprised?: boolean;
   name: string;
   initiative: number;
   defeated: boolean;
@@ -726,6 +1699,12 @@ export interface CombatAction extends Timestamps {
   targetActorIds: ID[];
   applyEffect: boolean;
   consumeResources: boolean;
+  /** Prepared preview that authored this consequential action. */
+  preparedPreviewKey?: string;
+  /** Exact mutable roots required when a GM confirms the pending action. */
+  expectedActorUpdatedAt?: Record<ID, string>;
+  expectedItemUpdatedAt?: Record<ID, string>;
+  expectedCombatUpdatedAt?: string;
   resolution?: unknown;
   rolls: CombatActionRoll[];
   actorUpdates: CombatActionActorUpdate[];
@@ -767,6 +1746,224 @@ export interface CombatActionEffect {
   amount?: number;
 }
 
+export type CompendiumSourceKind = "srd" | "bundled" | "user";
+
+/** Portable content identity kept beside every compendium entry and imported actor item. */
+export interface CompendiumProvenance {
+  sourceKind: CompendiumSourceKind;
+  sourceName: string;
+  sourceVersion: string;
+  contentVersion: string;
+  systemId: ID;
+  systemVersion: string;
+  rulesVersion: string;
+  license: ContentImportLicense;
+}
+
+export interface CompendiumCatalogEntry {
+  id: ID;
+  type: string;
+  name: string;
+  summary: string;
+  data: Record<string, unknown>;
+  provenance: CompendiumProvenance;
+}
+
+export interface CompendiumProvenanceSummary {
+  totalEntries: number;
+  filteredEntries: number;
+  types: Record<string, number>;
+  sources: Array<{
+    sourceKind: CompendiumSourceKind;
+    sourceName: string;
+    sourceVersion: string;
+    contentVersion: string;
+    license: ContentImportLicense;
+    entryCount: number;
+  }>;
+}
+
+export type CompendiumConflictKind = "exact_duplicate" | "version_conflict";
+export type CompendiumConflictChoice = "keep_existing" | "replace_existing" | "merge_existing";
+
+export interface CompendiumConflict {
+  kind: CompendiumConflictKind;
+  entryId: ID;
+  requestedVersion: string;
+  existingVersion?: string;
+  existingItemId?: ID;
+  choices: CompendiumConflictChoice[];
+}
+
+export type CalculationSourceKind = "actor" | "system" | "class" | "feature" | "item" | "condition" | "override" | "manual";
+
+export interface CalculationSource {
+  kind: CalculationSourceKind;
+  id: ID;
+  name: string;
+  version?: string;
+  url?: string;
+}
+
+export interface CalculationTerm {
+  label: string;
+  /** Numeric contribution. Negative values are penalties. */
+  signedValue?: number;
+  /** Dice, multiplication, cap, or other non-additive contribution. */
+  formula?: string;
+  source: CalculationSource;
+}
+
+export interface CalculationFlags {
+  manual: boolean;
+  override: boolean;
+  unsupported: boolean;
+  ambiguous: boolean;
+  reasons: string[];
+}
+
+export interface CalculationFieldExplanation {
+  id: ID;
+  group: "abilities" | "defenses" | "vitality" | "checks" | "skills" | "magic" | "actions";
+  label: string;
+  result: number | string;
+  unit?: string;
+  /** Terms are intentionally ordered in evaluation/display order. */
+  terms: CalculationTerm[];
+  flags: CalculationFlags;
+}
+
+export interface ActorCalculationExplanation {
+  actorId: ID;
+  systemId: ID;
+  systemVersion: string;
+  rulesVersion: string;
+  source: {
+    name: string;
+    version: string;
+    license: ContentImportLicense;
+  };
+  fields: CalculationFieldExplanation[];
+}
+
+export type CalculationOverrideSource = "gm_manual" | "house_rule" | "migration" | "plugin";
+
+/** Durable, reasoned per-field override ledger entry. Cleared rows remain as history. */
+export interface CalculationOverride extends Timestamps {
+  id: ID;
+  campaignId: ID;
+  actorId: ID;
+  fieldId: ID;
+  source: CalculationOverrideSource;
+  baseValue: number | string;
+  effectiveValue: number | string;
+  reason: string;
+  createdByUserId: ID;
+  clearedAt?: string;
+  clearedByUserId?: ID;
+  clearReason?: string;
+}
+
+export type CampaignCompatibilityStatus = "compatible" | "warning" | "blocking";
+export type CampaignCompatibilityIssueSeverity = Exclude<CampaignCompatibilityStatus, "compatible">;
+export type CampaignCompatibilityIssueGroup = "core" | "archive" | "system" | "reference" | "validation" | "compendium" | "manual";
+
+export interface CampaignCompatibilityIssue {
+  id: ID;
+  group: CampaignCompatibilityIssueGroup;
+  severity: CampaignCompatibilityIssueSeverity;
+  code: string;
+  title: string;
+  detail: string;
+  action: string;
+  entityType?: "campaign" | "system" | "actor" | "item" | "condition";
+  entityId?: ID;
+}
+
+export interface CampaignSystemCoverage {
+  systemId: ID;
+  name?: string;
+  installedVersion?: string;
+  compatibleCore?: string;
+  coreCompatible: boolean;
+  bundled: boolean;
+  default: boolean;
+  actorCount: number;
+  itemCount: number;
+  actorRulesVersions: Record<string, number>;
+  itemContentVersions: Record<string, number>;
+}
+
+export interface CampaignCompatibilityRepairCandidate {
+  id: ID;
+  entityKind: "actor" | "item";
+  entityId: ID;
+  path: string;
+  operation: "add" | "remove" | "replace";
+  before?: unknown;
+  after: unknown;
+  issue: {
+    severity: "error" | "warning";
+    code: string;
+    message: string;
+  };
+  rationale: string;
+  inverse: {
+    operation: "add" | "remove" | "replace";
+    path: string;
+    before?: unknown;
+    after?: unknown;
+  };
+}
+
+export interface CampaignCompatibilityReport {
+  campaignId: ID;
+  readOnly: true;
+  status: CampaignCompatibilityStatus;
+  summary: {
+    compatible: number;
+    warning: number;
+    blocking: number;
+    totalIssues: number;
+  };
+  platform: {
+    coreVersion: string;
+    currentArchiveVersion: CampaignArchiveVersion;
+    supportedArchiveVersions: CampaignArchiveVersion[];
+    dndRulesVersion: string;
+    dndActorSchemaVersion: string;
+    dndItemSchemaVersion: string;
+  };
+  systems: CampaignSystemCoverage[];
+  validation: {
+    actorReports: number;
+    itemReports: number;
+    errors: number;
+    warnings: number;
+    repairPreview: {
+      /** Deterministic candidates only; the read-only report never applies them. */
+      automaticChanges: number;
+      manualIssues: number;
+      note: string;
+      candidates: CampaignCompatibilityRepairCandidate[];
+    };
+  };
+  compendium: {
+    trackedEntries: number;
+    currentEntries: number;
+    driftedEntries: number;
+    missingProvenance: number;
+    unknownEntries: number;
+  };
+  calculationFlags: {
+    manualFields: number;
+    overrideFields: number;
+    unsupportedFields: number;
+    ambiguousFields: number;
+  };
+  issues: CampaignCompatibilityIssue[];
+}
+
 export interface CompendiumPack extends Timestamps {
   id: ID;
   systemId: ID;
@@ -779,6 +1976,7 @@ export interface CompendiumEntry {
   type: "actor" | "item" | "journal" | "scene";
   name: string;
   data: unknown;
+  provenance?: CompendiumProvenance;
 }
 
 export interface Proposal extends Timestamps {
@@ -871,7 +2069,79 @@ export interface AiThread extends Timestamps {
   advertisedTools?: AiThreadAdvertisedTool[];
   providerError?: string;
   assistantMessage?: string;
+  /** Permission-filtered source registry advertised to the provider for this turn. */
+  sources?: AiSourceReference[];
+  /** Structured claims validated against `sources`; unsupported claims are retained for review, never promoted. */
+  citations?: AiCitation[];
+  citationWarnings?: AiCitationWarning[];
+  contextScopes?: AiContextScope[];
+  policyRevision?: number;
+  /** Local operational-retention deadline. This does not assert deletion by an upstream provider. */
+  retentionExpiresAt?: string;
   usage?: AiUsageMetrics;
+}
+
+export type AiSourceKind =
+  | "official_open_rules"
+  | "campaign_canon"
+  | "campaign_note"
+  | "chat"
+  | "roll"
+  | "scene"
+  | "actor"
+  | "item"
+  | "generated_model";
+
+export type AiSourceTrust =
+  | "authoritative_open_rules"
+  | "reviewed_canon"
+  | "untrusted_campaign_content"
+  | "model_generated";
+
+export type AiContextScope = "public" | "gm_private";
+
+export interface AiSourceProvenance {
+  sourceName: string;
+  sourceVersion?: string;
+  contentVersion?: string;
+  license?: string;
+}
+
+export interface AiSourceReference {
+  id: ID;
+  kind: AiSourceKind;
+  title: string;
+  locator?: string;
+  provenance?: AiSourceProvenance;
+  visibility: AiContextScope;
+  trust: AiSourceTrust;
+}
+
+export interface AiCitationClaim {
+  sourceId: ID;
+  locator?: string;
+}
+
+export interface AiCitation extends AiCitationClaim {
+  status: "verified" | "unsupported";
+  reason?: "unknown_source" | "locator_mismatch";
+  source?: AiSourceReference;
+}
+
+export interface AiCitationWarning {
+  code: "rules_answer_without_verified_open_rules_citation" | "unsupported_citation";
+  message: string;
+}
+
+export interface AiCampaignPolicy {
+  enabled: boolean;
+  status: "enabled" | "disabled";
+  contextScopes: AiContextScope[];
+  providerTransmissionDisclosure: string;
+  retentionDays: number;
+  revision: number;
+  updatedByUserId?: ID;
+  updatedAt?: string;
 }
 
 export interface AiThreadAdvertisedTool {
@@ -1208,6 +2478,129 @@ export interface CampaignArchiveFile {
   data: string;
 }
 
+/**
+ * Explicitly supported outbound campaign webhook events. Chat, dice, member,
+ * content-import, AI, and agent events are intentionally absent because their
+ * payloads may contain private or unbounded user-authored content.
+ */
+export type CampaignWebhookEventType =
+  | "campaign.updated"
+  | "campaign.session.created"
+  | "campaign.session.updated"
+  | "campaign.session.started"
+  | "campaign.session.completed"
+  | "campaign.session.deleted"
+  | "world.created"
+  | "world.updated"
+  | "world.deleted"
+  | "scene.created"
+  | "scene.updated"
+  | "scene.deleted"
+  | "scene.activated"
+  | "token.created"
+  | "token.updated"
+  | "token.moved"
+  | "token.deleted"
+  | "actor.created"
+  | "actor.updated"
+  | "actor.deleted"
+  | "item.created"
+  | "item.updated"
+  | "item.deleted"
+  | "journal.created"
+  | "journal.updated"
+  | "journal.deleted"
+  | "handout.created"
+  | "handout.updated"
+  | "handout.deleted"
+  | "asset.created"
+  | "asset.updated"
+  | "asset.deleted"
+  | "audio.updated"
+  | "audio.deleted"
+  | "combat.started"
+  | "combat.roundAdvanced"
+  | "combat.turnChanged"
+  | "combat.ended"
+  | "encounter.created"
+  | "encounter.updated"
+  | "encounter.deleted"
+  | "proposal.created"
+  | "proposal.updated"
+  | "proposal.approved"
+  | "proposal.rejected"
+  | "proposal.applied"
+  | "proposal.reverted";
+
+export type CampaignWebhookEnvelopeEventType = CampaignWebhookEventType | "webhook.test";
+
+/** Internal replay metadata. Raw idempotency keys and signing secrets are never stored here. */
+export interface CampaignWebhookRotationIdempotencyRecord {
+  keyHash: string;
+  requestHash: string;
+  userId: ID;
+  createdAt: string;
+}
+
+/** Stored server-side. `signingSecret` must be removed from every public DTO. */
+export interface CampaignWebhookSubscription extends Timestamps {
+  id: ID;
+  campaignId: ID;
+  name: string;
+  url: string;
+  eventTypes: CampaignWebhookEventType[];
+  enabled: boolean;
+  signingSecret: string;
+  secretHint: string;
+  createdByUserId: ID;
+  updatedByUserId: ID;
+  creationIdempotencyKeyHash?: string;
+  creationRequestHash?: string;
+  rotationIdempotencyRecords?: CampaignWebhookRotationIdempotencyRecord[];
+  /** @deprecated Retained only to recognize replay metadata written by early builds. */
+  lastRotationIdempotencyKeyHash?: string;
+}
+
+export type CampaignWebhookDeliveryStatus = "queued" | "delivered" | "failed";
+
+/**
+ * A metadata-only delivery ledger. Request/response bodies and signing headers
+ * are deliberately not persisted.
+ */
+export interface CampaignWebhookDelivery extends Timestamps {
+  id: ID;
+  campaignId: ID;
+  webhookId: ID;
+  eventId: ID;
+  eventType: CampaignWebhookEnvelopeEventType;
+  occurredAt: string;
+  resourceType?: string;
+  resourceId?: ID;
+  attempt: number;
+  status: CampaignWebhookDeliveryStatus;
+  responseStatus?: number;
+  responseBytes?: number;
+  durationMs?: number;
+  deliveredAt?: string;
+  failedAt?: string;
+  errorCode?: string;
+  retryOfDeliveryId?: ID;
+  initiatedByUserId?: ID;
+}
+
+/** Stable v1 metadata envelope. It intentionally has no arbitrary payload. */
+export interface CampaignWebhookEnvelopeV1 {
+  version: "1.0";
+  eventId: ID;
+  eventType: CampaignWebhookEnvelopeEventType;
+  occurredAt: string;
+  campaignId: ID;
+  resource?: {
+    type: string;
+    id: ID;
+  };
+}
+
 export interface EngineState {
   users: User[];
   sessions: UserSession[];
@@ -1223,11 +2616,17 @@ export interface EngineState {
   campaigns: Campaign[];
   members: CampaignMember[];
   worlds: World[];
+  worldRecords: WorldRecord[];
+  worldRelations: WorldRelation[];
   scenes: Scene[];
   assets: MapAsset[];
   tokens: Token[];
   actors: Actor[];
+  calculationOverrides: CalculationOverride[];
+  characterTransfers: CharacterTransfer[];
   items: Item[];
+  dndRulesMutations: DndRulesMutation[];
+  pendingAdvancements: Dnd5eSrdPendingAdvancement[];
   journals: JournalEntry[];
   handouts: Handout[];
   chat: ChatMessage[];
@@ -1250,6 +2649,8 @@ export interface EngineState {
   pluginReviews: PluginReview[];
   contentImports: ContentImportBatch[];
   fogPresets: FogPreset[];
+  campaignWebhooks: CampaignWebhookSubscription[];
+  campaignWebhookDeliveries: CampaignWebhookDelivery[];
   idempotencyRecords: IdempotencyRecord[];
   jobs: WorkerJobRecord[];
 }
@@ -1309,8 +2710,15 @@ export interface WorkerJobRecord extends Timestamps {
   cancelledAt?: string;
   cancelledByUserId?: ID;
   leasedBy?: string;
+  /** Caller-supplied durable identity for the state transition that acquired the current/last lease. */
+  leaseRequestId?: string;
+  /** Stable request fingerprint used to distinguish an exact lease replay from token reuse. */
+  leaseRequestHash?: string;
+  /** Monotonic lease epoch. Every fresh or reclaimed lease increments this value. */
+  leaseRevision?: number;
   leaseExpiresAt?: string;
   lastHeartbeatAt?: string;
+  dispatchStartedAt?: string;
   createdByUserId?: ID;
   updatedByUserId?: ID;
   logs: JobLogEntry[];

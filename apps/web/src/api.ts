@@ -1,4 +1,4 @@
-import type { Actor, AiEvaluationRun, AiMemoryFact, AiThread, AiToolCall, AiUsageMetrics, AudioTrack, AuditLog, Campaign, CampaignMember, ChatMessage, Combat, ContentImportBatch, DiceMacro, DiceRoll, DiceRollFairness, EmailOutboxMessage, Encounter, FogPreset, Item, JobStatus, JobType, JournalEntry, MapAsset, OrganizationMember, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, ScimAssignableRole, ScimGroup, ScimGroupRoleMapping, Token, User, UserRole, UserSession, VisionSnapshot } from "@open-tabletop/core";
+import type { Actor, AiEvaluationRun, AiMemoryFact, AiThread, AiToolCall, AiUsageMetrics, AudioTrack, AuditLog, CalculationOverride, Campaign, CampaignMember, CampaignPresence, ChatMessage, Combat, ContentImportBatch, DiceMacro, DiceRoll, DiceRollFairness, EmailOutboxMessage, Encounter, FogPreset, Item, JobStatus, JobType, JournalEntry, MapAsset, OrganizationMember, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, ScimAssignableRole, ScimGroup, ScimGroupRoleMapping, Token, User, UserRole, UserSession, VisionSnapshot, WorldRecord, WorldRelation } from "@open-tabletop/core";
 
 export const baseUrl = import.meta.env.VITE_API_URL ?? "";
 
@@ -214,12 +214,17 @@ export async function confirmPasswordResetSession(input: { token: string; passwo
 
 export async function acceptInviteSession(
   input: { token: string; email: string; displayName?: string; password: string; mfaCode?: string; recoveryCode?: string },
-  options: { persist?: boolean; signal?: AbortSignal } = {}
+  options: { persist?: boolean; signal?: AbortSignal; idempotencyKey: string }
 ): Promise<InviteAcceptInfo> {
+  const previewResponse = await fetch(`${baseUrl}/api/v1/invites/preview?token=${encodeURIComponent(input.token)}`, {
+    signal: options.signal
+  });
+  if (!previewResponse.ok) throw await apiErrorFromResponse(previewResponse);
+  const preview = (await previewResponse.json()) as { expectedUpdatedAt: string };
   const response = await fetch(`${baseUrl}/api/v1/invites/accept`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(input),
+    headers: { "content-type": "application/json", "idempotency-key": options.idempotencyKey },
+    body: JSON.stringify({ ...input, expectedUpdatedAt: preview.expectedUpdatedAt }),
     signal: options.signal
   });
   if (!response.ok) throw await apiErrorFromResponse(response);
@@ -285,6 +290,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 interface ApiRequestOptions {
   signal?: AbortSignal;
   idempotencyKey?: string;
+  body?: unknown;
 }
 
 function mutationHeaders(options: ApiRequestOptions): Record<string, string> {
@@ -314,15 +320,20 @@ export async function apiPost<T>(path: string, body: unknown, options: ApiReques
   return response.json() as Promise<T>;
 }
 
-export async function apiAnalyzePdfContentImport(input: { campaignId: string; file: File }): Promise<ContentImportBatch> {
+export async function apiAnalyzePdfContentImport(
+  input: { campaignId: string; file: File },
+  options: ApiRequestOptions & { idempotencyKey: string }
+): Promise<ContentImportBatch> {
   const response = await fetch(`${baseUrl}/api/v1/campaigns/${input.campaignId}/content-imports/pdf/ai`, {
     method: "POST",
     headers: {
       "content-type": "application/pdf",
       "x-source-name": encodeURIComponent(input.file.name || "uploaded.pdf"),
+      "idempotency-key": options.idempotencyKey,
       ...(await sessionHeaders())
     },
-    body: input.file
+    body: input.file,
+    signal: options.signal
   });
   if (!response.ok) throw await apiErrorFromResponse(response);
   return response.json() as Promise<ContentImportBatch>;
@@ -342,7 +353,12 @@ export async function apiPatch<T>(path: string, body: unknown, options: ApiReque
 export async function apiDelete<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
   const response = await fetch(`${baseUrl}${path}`, {
     method: "DELETE",
-    headers: { ...(options.idempotencyKey ? { "idempotency-key": options.idempotencyKey } : {}), ...(await sessionHeaders()) },
+    headers: {
+      ...(options.body !== undefined ? { "content-type": "application/json" } : {}),
+      ...(options.idempotencyKey ? { "idempotency-key": options.idempotencyKey } : {}),
+      ...(await sessionHeaders())
+    },
+    body: options.body === undefined ? undefined : JSON.stringify(options.body),
     signal: options.signal
   });
   if (!response.ok) throw await apiErrorFromResponse(response);
@@ -353,32 +369,32 @@ export async function updateWorkspaceDefaults(input: Partial<OrganizationWorkspa
   return apiPatch<OrganizationWorkspace>("/api/v1/organization/workspace-defaults", input, options);
 }
 
-export async function createOrganizationWorkspace(input: Partial<OrganizationWorkspace> & { name: string }): Promise<{ organization: OrganizationWorkspace; session: UserSession; organizations: OrganizationWorkspaceInfo[] }> {
-  return apiPost<{ organization: OrganizationWorkspace; session: UserSession; organizations: OrganizationWorkspaceInfo[] }>("/api/v1/organizations", input);
+export async function createOrganizationWorkspace(input: Partial<OrganizationWorkspace> & { name: string }, options: ApiRequestOptions & { idempotencyKey: string }): Promise<{ organization: OrganizationWorkspace; session: UserSession; organizations: OrganizationWorkspaceInfo[] }> {
+  return apiPost<{ organization: OrganizationWorkspace; session: UserSession; organizations: OrganizationWorkspaceInfo[] }>("/api/v1/organizations", input, options);
 }
 
 export async function loadOrganizationMembers(options: ApiRequestOptions = {}): Promise<OrganizationMemberInfo[]> {
   return apiGet<OrganizationMemberInfo[]>("/api/v1/organization/members", options);
 }
 
-export async function upsertOrganizationMember(input: { email?: string; userId?: string; role: Exclude<OrganizationMemberRole, "owner"> }, options: ApiRequestOptions = {}): Promise<OrganizationMemberInfo> {
+export async function upsertOrganizationMember(input: { email?: string; userId?: string; role: Exclude<OrganizationMemberRole, "owner">; expectedOrganizationUpdatedAt: string }, options: ApiRequestOptions & { idempotencyKey: string }): Promise<OrganizationMemberInfo> {
   return apiPost<OrganizationMemberInfo>("/api/v1/organization/members", input, options);
 }
 
-export async function updateOrganizationMemberRole(memberId: string, role: Exclude<OrganizationMemberRole, "owner">, options: ApiRequestOptions = {}): Promise<OrganizationMemberInfo> {
-  return apiPatch<OrganizationMemberInfo>(`/api/v1/organization/members/${memberId}`, { role }, options);
+export async function updateOrganizationMemberRole(memberId: string, role: Exclude<OrganizationMemberRole, "owner">, expectedUpdatedAt: string, options: ApiRequestOptions & { idempotencyKey: string }): Promise<OrganizationMemberInfo> {
+  return apiPatch<OrganizationMemberInfo>(`/api/v1/organization/members/${memberId}`, { role, expectedUpdatedAt }, options);
 }
 
-export async function removeOrganizationMember(memberId: string, options: ApiRequestOptions = {}): Promise<{ removed: boolean; memberId: string; userId: string; removedCampaignMemberships: number }> {
-  return apiDelete<{ removed: boolean; memberId: string; userId: string; removedCampaignMemberships: number }>(`/api/v1/organization/members/${memberId}`, options);
+export async function removeOrganizationMember(memberId: string, expectedUpdatedAt: string, options: ApiRequestOptions & { idempotencyKey: string }): Promise<{ removed: boolean; memberId: string; userId: string; removedCampaignMemberships: number }> {
+  return apiDelete<{ removed: boolean; memberId: string; userId: string; removedCampaignMemberships: number }>(`/api/v1/organization/members/${memberId}?expectedUpdatedAt=${encodeURIComponent(expectedUpdatedAt)}`, options);
 }
 
 export async function loadOrganizationInvites(): Promise<OrganizationInviteInfo[]> {
   return apiGet<OrganizationInviteInfo[]>("/api/v1/organization/invites");
 }
 
-export async function revokeInvite(inviteId: string): Promise<CampaignInviteInfo> {
-  return apiPost<CampaignInviteInfo>(`/api/v1/invites/${inviteId}/revoke`, {});
+export async function revokeInvite(inviteId: string, expectedUpdatedAt: string, options: ApiRequestOptions & { idempotencyKey: string }): Promise<CampaignInviteInfo> {
+  return apiPost<CampaignInviteInfo>(`/api/v1/invites/${inviteId}/revoke`, { expectedUpdatedAt }, options);
 }
 
 export async function switchOrganization(organizationId: string): Promise<OrganizationSwitchInfo> {
@@ -414,12 +430,19 @@ export interface Snapshot {
   organizationInvites: OrganizationInviteInfo[];
   campaigns: Campaign[];
   members: CampaignMemberInfo[];
+  presences: CampaignPresence[];
+  eventSequence: number;
+  realtimeRecovery: "refetch_snapshot_on_gap";
+  history?: SnapshotHistoryMeta;
   scenes: Scene[];
+  worldRecords: WorldRecord[];
+  worldRelations: WorldRelation[];
   fogPresets: FogPreset[];
   assets: MapAsset[];
   assetStorage?: CampaignAssetStorageInfo;
   tokens: Token[];
   actors: Actor[];
+  calculationOverrides: CalculationOverride[];
   items: Item[];
   vision?: VisionSnapshot;
   journals: JournalEntry[];
@@ -442,11 +465,22 @@ export interface Snapshot {
   characterTemplates: CharacterTemplateInfo[];
 }
 
+export interface SnapshotHistoryMeta {
+  limit: number;
+  collections: Record<string, { total: number; returned: number; truncated: boolean }>;
+}
+
 interface CampaignSnapshotPayload {
   generatedAt: string;
+  eventSequence: number;
+  realtimeRecovery: "refetch_snapshot_on_gap";
+  history?: SnapshotHistoryMeta;
   campaign: Campaign;
   members: CampaignMemberInfo[];
+  presences: CampaignPresence[];
   scenes: Scene[];
+  worldRecords: WorldRecord[];
+  worldRelations: WorldRelation[];
   selectedSceneId?: string;
   activeSceneId?: string;
   vision?: VisionSnapshot;
@@ -454,6 +488,7 @@ interface CampaignSnapshotPayload {
   fogPresets: FogPreset[];
   assets: MapAsset[];
   actors: Actor[];
+  calculationOverrides: CalculationOverride[];
   items: Item[];
   journals: JournalEntry[];
   chat: ChatMessage[];
@@ -674,7 +709,27 @@ export type OidcConfigInfo =
 
 export interface CampaignMemberInfo extends CampaignMember {
   user: Pick<User, "id" | "displayName" | "email">;
+  active: boolean;
   permissions: PermissionName[];
+}
+
+export interface CampaignOwnershipTransferResult {
+  campaign: Campaign;
+  previousOwner: CampaignMemberInfo;
+  newOwner: CampaignMemberInfo;
+}
+
+export async function transferCampaignOwnership(
+  campaignId: string,
+  input: { targetUserId: string; expectedUpdatedAt: string; reason?: string },
+  idempotencyKey: string,
+  options: ApiRequestOptions = {}
+): Promise<CampaignOwnershipTransferResult> {
+  return apiPost<CampaignOwnershipTransferResult>(
+    `/api/v1/campaigns/${encodeURIComponent(campaignId)}/ownership-transfer`,
+    input,
+    { ...options, idempotencyKey }
+  );
 }
 
 export type PluginReviewStatus = "pending" | "approved" | "rejected";
@@ -1420,7 +1475,11 @@ export interface AdminAuthConnectionTestResult {
 }
 
 export interface AdminEmailOutboxRetryAllResult {
+  generatedAt: string;
   dryRun: boolean;
+  deduplicated: boolean;
+  batchDeliveryId?: string;
+  targetSetHash: string;
   limit: number;
   statuses: string[];
   matched: number;
@@ -1666,6 +1725,7 @@ export interface AdminAssetStorageInfo {
           status: string;
           reason?: string;
           cdnUrl?: string;
+          deliveryId?: string;
           error?: string;
           createdAt: string;
         }>;
@@ -1758,6 +1818,7 @@ export interface AdminAssetIntegrityReport {
     assetId: string;
     name: string;
     campaignId: string;
+    updatedAt: string;
     provider: string;
     status: "verified" | "missing" | "mismatched" | "cleanup_eligible" | "skipped" | "failed";
     reason?: string;
@@ -2199,6 +2260,7 @@ export interface AdminPluginReviewInfo {
 
 export interface AdminPluginReviewSnapshot {
   generatedAt: string;
+  registryRevision: string;
   policy: {
     mode: "allow_unreviewed" | "require_approved";
   };
@@ -2213,6 +2275,7 @@ export interface AdminPluginReviewSnapshot {
 
 export interface AdminPluginOperations {
   generatedAt: string;
+  registryRevision: string;
   actionRequired: boolean;
   actionReasons: string[];
   policy: {
@@ -2483,7 +2546,8 @@ export interface AdminPluginReviewOperationSample {
 }
 
 export interface AdminScimGroupRoleMapping extends ScimGroupRoleMapping {
-  group?: Pick<ScimGroup, "id" | "displayName" | "externalId" | "memberUserIds">;
+  group?: Pick<ScimGroup, "id" | "displayName" | "externalId" | "memberUserIds" | "updatedAt">;
+  targetSetHash: string;
 }
 
 export interface AdminScimGroupRoleMappingInput {
@@ -2503,6 +2567,49 @@ export interface AdminScimGroupRoleMappingResult {
     removedMemberships: number;
     preservedManualMemberships: number;
   };
+}
+
+export interface AdminScimGroupRoleMappingPreview {
+  selection: AdminScimGroupRoleMappingInput;
+  group?: Pick<ScimGroup, "id" | "displayName" | "externalId" | "memberUserIds" | "updatedAt">;
+  memberCount: number;
+  affectedCampaignMembershipCount: number;
+  targetSetHash: string;
+}
+
+interface PreparedAdminScimMapping {
+  fingerprint: string;
+  payload: AdminScimGroupRoleMappingInput & { preparedTargetSetHash: string };
+}
+
+const preparedAdminScimMappings = new Map<string, PreparedAdminScimMapping>();
+
+export async function previewAdminScimGroupRoleMapping(input: AdminScimGroupRoleMappingInput, options: ApiRequestOptions = {}): Promise<AdminScimGroupRoleMappingPreview> {
+  const query = new URLSearchParams({ campaignId: input.campaignId, role: input.role });
+  if (input.groupId) query.set("groupId", input.groupId);
+  if (input.groupExternalId) query.set("groupExternalId", input.groupExternalId);
+  if (input.groupDisplayName) query.set("groupDisplayName", input.groupDisplayName);
+  return apiGet<AdminScimGroupRoleMappingPreview>(`/api/v1/admin/scim/group-role-mappings/preview?${query}`, options);
+}
+
+export async function createAdminScimGroupRoleMapping(input: AdminScimGroupRoleMappingInput, options: ApiRequestOptions & { idempotencyKey: string }): Promise<AdminScimGroupRoleMappingResult> {
+  const fingerprint = JSON.stringify(input);
+  let prepared = preparedAdminScimMappings.get(options.idempotencyKey);
+  if (!prepared || prepared.fingerprint !== fingerprint) {
+    const preview = await previewAdminScimGroupRoleMapping(input, options);
+    prepared = { fingerprint, payload: { ...input, preparedTargetSetHash: preview.targetSetHash } };
+    preparedAdminScimMappings.set(options.idempotencyKey, prepared);
+  }
+  const result = await apiPost<AdminScimGroupRoleMappingResult>("/api/v1/admin/scim/group-role-mappings", prepared.payload, options);
+  preparedAdminScimMappings.delete(options.idempotencyKey);
+  return result;
+}
+
+export async function deleteAdminScimGroupRoleMapping(mapping: AdminScimGroupRoleMapping, options: ApiRequestOptions & { idempotencyKey: string }): Promise<{ removedMemberships: number }> {
+  return apiDelete<{ removedMemberships: number }>(`/api/v1/admin/scim/group-role-mappings/${encodeURIComponent(mapping.id)}`, {
+    ...options,
+    body: { expectedUpdatedAt: mapping.updatedAt, preparedTargetSetHash: mapping.targetSetHash }
+  });
 }
 
 export interface AdminUserInfo extends Omit<User, "passwordHash" | "mfa"> {
@@ -2586,7 +2693,7 @@ export interface AdminStorageOperations {
   };
   backups?: {
     directoryName: string;
-    latest?: { fileName: string; sizeBytes: number; createdAt: string };
+    latest?: AdminStorageBackupSummary;
   };
   scheduledBackups?: {
     enabled: boolean;
@@ -2605,23 +2712,66 @@ export interface AdminStorageOperations {
       error?: string;
     };
   };
+  restoreStateRevision?: string;
   actionRequired: boolean;
   actionReasons: string[];
   remediation?: string;
 }
 
-export interface AdminStorageBackupResult {
-  status: "created";
+export interface AdminAssetSnapshotIdentity {
+  provider: "local" | "s3";
+  snapshotId: string;
+  createdAt: string;
+}
+
+export interface AdminStorageRecoveryPoint {
+  manifestFileName: string;
+  manifestStatus: "present" | "missing" | "invalid";
+  paired: boolean;
+  actionRequired: boolean;
+  actionReasons: string[];
+  manifest?: {
+    kind: "open-tabletop-recovery-point";
+    version: 1;
+    createdAt: string;
+    database: {
+      fileName: string;
+      sizeBytes: number;
+      checksumAlgorithm: "sha256";
+      checksum: string;
+    };
+    assetInventory: {
+      provider: "local" | "s3" | "unknown";
+      assetCount: number;
+      objectCount: number;
+      sizeBytes: number;
+      digestAlgorithm: "sha256";
+      digest: string;
+    };
+    assetSnapshot?: AdminAssetSnapshotIdentity;
+  };
+}
+
+export interface AdminStorageBackupSummary {
   fileName: string;
   sizeBytes: number;
   createdAt: string;
+  recoveryPoint: AdminStorageRecoveryPoint;
+}
+
+export interface AdminStorageBackupResult extends AdminStorageBackupSummary {
+  status: "created";
   reason?: string;
+  prunedFileNames?: string[];
 }
 
 export interface AdminStorageRestoreDrillResult {
   status: "passed" | "failed";
   checkedAt: string;
-  backup?: { fileName: string; sizeBytes: number; createdAt: string };
+  backup?: AdminStorageBackupSummary;
+  recoveryPoint?: AdminStorageRecoveryPoint;
+  actionRequired: boolean;
+  actionReasons: string[];
   integrity?: { checkedAt: string; ok: boolean; result: string };
   campaignCount?: number;
   recordCount?: number;
@@ -2632,6 +2782,20 @@ export interface AdminStorageRestoreDrillResult {
 export interface AdminStorageRestoreResult extends AdminStorageRestoreDrillResult {
   restoredAt?: string;
   reason?: string;
+  reconciliation?: {
+    policy: "preserve-live-security-plane";
+    usersPreserved: number;
+    sessionsPreserved: number;
+    oauthStatesCleared: number;
+    passwordResetTokensCleared: number;
+    invitesPreserved: number;
+    pendingEmailsQuarantined: number;
+    webhooksDisabled: number;
+    pendingWebhookDeliveriesQuarantined: number;
+    jobsCancelled: number;
+    idempotencyRecordsCleared: number;
+    backupOnlyCampaignsAssignedToRecoveryAdmin: number;
+  };
 }
 
 export interface AdminJob {
@@ -2654,6 +2818,12 @@ export interface AdminJob {
   completedAt?: string;
   cancelledAt?: string;
   cancelledByUserId?: string;
+  leasedBy?: string;
+  leaseRequestId?: string;
+  leaseRevision?: number;
+  leaseExpiresAt?: string;
+  lastHeartbeatAt?: string;
+  dispatchStartedAt?: string;
   createdByUserId?: string;
   updatedByUserId?: string;
   logs: Array<{ at: string; level: "info" | "warning" | "error"; message: string; details?: Record<string, unknown> }>;
@@ -2718,6 +2888,7 @@ export interface AdminJobOperations {
 }
 
 export interface AdminJobAlertResult {
+  deliveryId: string;
   status: "dry_run" | "delivered" | "skipped" | "failed";
   configured: boolean;
   actionRequired: boolean;
@@ -2781,6 +2952,21 @@ export function assetBlobUrl(asset: MapAsset): string {
   return absoluteApiUrl(url);
 }
 
+export function assetThumbnailUrl(asset: MapAsset): string {
+  return assetRenditionUrl(asset, "thumbnail");
+}
+
+export function assetOptimizedUrl(asset: MapAsset): string {
+  return assetRenditionUrl(asset, "optimized");
+}
+
+function assetRenditionUrl(asset: MapAsset, kind: "thumbnail" | "optimized"): string {
+  if (!asset.renditions?.some((rendition) => rendition.kind === kind)) return assetBlobUrl(asset);
+  const url = assetBlobUrl(asset);
+  if (url.startsWith("data:") || url.startsWith("blob:")) return url;
+  return `${url}${url.includes("?") ? "&" : "?"}variant=${kind}`;
+}
+
 function absoluteApiUrl(url: string): string {
   if (!baseUrl) return url;
   const normalizedUrl = url.startsWith("/") ? url : `/${url}`;
@@ -2826,10 +3012,14 @@ function managedAssetIdFromUrl(url: string | undefined): string | undefined {
   return match?.[1];
 }
 
-export async function apiUploadAsset(input: { campaignId: string; sceneId?: string; file: File; setAsBackground?: boolean; folder?: string; tags?: string[] }, options: ApiRequestOptions = {}): Promise<{ asset: MapAsset; scene?: Scene }> {
+export async function apiUploadAsset(input: { campaignId: string; sceneId?: string; expectedSceneUpdatedAt?: string; file: File; setAsBackground?: boolean; folder?: string; tags?: string[] }, options: ApiRequestOptions & { idempotencyKey: string }): Promise<{ asset: MapAsset; scene?: Scene }> {
   const params = new URLSearchParams();
   if (input.sceneId) params.set("sceneId", input.sceneId);
   if (input.setAsBackground) params.set("setAsBackground", "true");
+  if (input.setAsBackground) {
+    if (!input.sceneId || !input.expectedSceneUpdatedAt) throw new Error("Background uploads require the current scene revision.");
+    params.set("expectedSceneUpdatedAt", input.expectedSceneUpdatedAt);
+  }
   const response = await fetch(`${baseUrl}/api/v1/campaigns/${input.campaignId}/assets/upload?${params.toString()}`, {
     method: "POST",
     headers: {
@@ -2837,6 +3027,7 @@ export async function apiUploadAsset(input: { campaignId: string; sceneId?: stri
       "x-asset-name": encodeURIComponent(input.file.name),
       ...(input.folder ? { "x-asset-folder": encodeURIComponent(input.folder) } : {}),
       ...(input.tags && input.tags.length > 0 ? { "x-asset-tags": encodeURIComponent(input.tags.join(",")) } : {}),
+      "idempotency-key": options.idempotencyKey,
       ...(await sessionHeaders())
     },
     body: input.file,
@@ -2876,12 +3067,18 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
       organizationInvites,
       campaigns,
       members: [],
+      presences: [],
+      eventSequence: 0,
+      realtimeRecovery: "refetch_snapshot_on_gap",
       scenes: [],
+      worldRecords: [],
+      worldRelations: [],
       fogPresets: [],
       assets: [],
       assetStorage: undefined,
       tokens: [],
       actors: [],
+      calculationOverrides: [],
       items: [],
       journals: [],
       chat: [],
@@ -2945,13 +3142,20 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
     organizationInvites,
     campaigns,
     members,
+    presences: campaignSnapshot.presences,
+    eventSequence: campaignSnapshot.eventSequence ?? 0,
+    realtimeRecovery: campaignSnapshot.realtimeRecovery ?? "refetch_snapshot_on_gap",
+    history: campaignSnapshot.history,
     scenes: campaignSnapshot.scenes,
+    worldRecords: campaignSnapshot.worldRecords ?? [],
+    worldRelations: campaignSnapshot.worldRelations ?? [],
     fogPresets: campaignSnapshot.fogPresets,
     assets: displayAssets,
     assetStorage,
     tokens: campaignSnapshot.tokens,
     vision: campaignSnapshot.vision,
     actors: campaignSnapshot.actors,
+    calculationOverrides: campaignSnapshot.calculationOverrides ?? [],
     items: campaignSnapshot.items,
     journals: campaignSnapshot.journals,
     chat: campaignSnapshot.chat,

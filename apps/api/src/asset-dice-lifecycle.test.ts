@@ -38,7 +38,7 @@ describe("asset and dice-macro lifecycle consistency", () => {
       const detached = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/assets",
-        headers: gmHeaders,
+        headers: { ...gmHeaders, "idempotency-key": "asset-lifecycle-create-detached" },
         payload: {
           name: "Detached GM prep map",
           url: "https://assets.example.test/gm-prep.png",
@@ -56,8 +56,8 @@ describe("asset and dice-macro lifecycle consistency", () => {
       const detachedUpdated = await app.inject({
         method: "PATCH",
         url: `/api/v1/assets/${detachedId}`,
-        headers: gmHeaders,
-        payload: { name: "Renamed detached GM prep map" },
+        headers: { ...gmHeaders, "idempotency-key": "asset-lifecycle-update-detached" },
+        payload: { name: "Renamed detached GM prep map", expectedUpdatedAt: detached.json().updatedAt },
       });
       expect(detachedUpdated.statusCode).toBe(200);
       await gmRealtime.waitFor("asset.updated", detachedId);
@@ -67,9 +67,10 @@ describe("asset and dice-macro lifecycle consistency", () => {
 
       const uploaded = await app.inject({
         method: "POST",
-        url: "/api/v1/campaigns/camp_demo/assets/upload?sceneId=scn_vault_entry&setAsBackground=true",
+        url: `/api/v1/campaigns/camp_demo/assets/upload?sceneId=scn_vault_entry&setAsBackground=true&expectedSceneUpdatedAt=${encodeURIComponent(store.state.scenes.find((scene) => scene.id === "scn_vault_entry")!.updatedAt)}`,
         headers: {
           ...gmHeaders,
+          "idempotency-key": "asset-lifecycle-upload-shared-map",
           "content-type": "image/png",
           "x-asset-name": "Shared active map.png",
         },
@@ -86,8 +87,8 @@ describe("asset and dice-macro lifecycle consistency", () => {
       const renamed = await app.inject({
         method: "PATCH",
         url: `/api/v1/assets/${uploadedId}`,
-        headers: gmHeaders,
-        payload: { name: "Shared active battle map", tags: ["shared", "active"] },
+        headers: { ...gmHeaders, "idempotency-key": "asset-lifecycle-rename-shared-map" },
+        payload: { name: "Shared active battle map", tags: ["shared", "active"], expectedUpdatedAt: uploaded.json().asset.updatedAt },
       });
       expect(renamed.statusCode).toBe(200);
       await Promise.all([
@@ -99,8 +100,8 @@ describe("asset and dice-macro lifecycle consistency", () => {
       const archived = await app.inject({
         method: "PATCH",
         url: `/api/v1/assets/${uploadedId}/lifecycle`,
-        headers: gmHeaders,
-        payload: { status: "archived", reason: "Session complete" },
+        headers: { ...gmHeaders, "idempotency-key": "asset-lifecycle-archive-shared-map" },
+        payload: { status: "archived", reason: "Session complete", expectedUpdatedAt: renamed.json().updatedAt },
       });
       expect(archived.statusCode).toBe(200);
       await Promise.all([
@@ -112,8 +113,8 @@ describe("asset and dice-macro lifecycle consistency", () => {
       const deleted = await app.inject({
         method: "PATCH",
         url: `/api/v1/assets/${uploadedId}/lifecycle`,
-        headers: gmHeaders,
-        payload: { status: "deleted", reason: "Cleanup" },
+        headers: { ...gmHeaders, "idempotency-key": "asset-lifecycle-delete-shared-map" },
+        payload: { status: "deleted", reason: "Cleanup", expectedUpdatedAt: archived.json().updatedAt },
       });
       expect(deleted.statusCode).toBe(200);
       await Promise.all([
@@ -162,7 +163,7 @@ describe("asset and dice-macro lifecycle consistency", () => {
       const gmOnly = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/dice-macros",
-        headers: gmHeaders,
+        headers: { ...gmHeaders, "idempotency-key": "dice-lifecycle-create-gm-only" },
         payload: { name: "Secret trap damage", formula: "4d6", visibility: "gm_only" },
       });
       expect(gmOnly.statusCode).toBe(200);
@@ -175,7 +176,7 @@ describe("asset and dice-macro lifecycle consistency", () => {
       const created = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/dice-macros",
-        headers: gmHeaders,
+        headers: { ...gmHeaders, "idempotency-key": "dice-lifecycle-create-public" },
         payload: { name: "Shared initiative", formula: "1d20+2", visibility: "public" },
       });
       expect(created.statusCode).toBe(200);
@@ -193,8 +194,8 @@ describe("asset and dice-macro lifecycle consistency", () => {
       const invalid = await app.inject({
         method: "PATCH",
         url: `/api/v1/dice-macros/${macroId}`,
-        headers: gmHeaders,
-        payload: { name: "Should not persist", formula: "not a dice formula" },
+        headers: { ...gmHeaders, "idempotency-key": "dice-lifecycle-invalid-update" },
+        payload: { name: "Should not persist", formula: "not a dice formula", expectedUpdatedAt: created.json().updatedAt },
       });
       expect(invalid.statusCode).toBe(400);
       expect(store.state.diceMacros.find((macro) => macro.id === macroId)?.name).toBe("Shared initiative");
@@ -209,8 +210,8 @@ describe("asset and dice-macro lifecycle consistency", () => {
       const updated = await app.inject({
         method: "PATCH",
         url: `/api/v1/dice-macros/${macroId}`,
-        headers: gmHeaders,
-        payload: { formula: "1d20+4" },
+        headers: { ...gmHeaders, "idempotency-key": "dice-lifecycle-valid-update" },
+        payload: { formula: "1d20+4", expectedUpdatedAt: created.json().updatedAt },
       });
       expect(updated.statusCode).toBe(200);
       await Promise.all([
@@ -221,8 +222,8 @@ describe("asset and dice-macro lifecycle consistency", () => {
       const hidden = await app.inject({
         method: "PATCH",
         url: `/api/v1/dice-macros/${macroId}`,
-        headers: gmHeaders,
-        payload: { visibility: "gm_only" },
+        headers: { ...gmHeaders, "idempotency-key": "dice-lifecycle-hide" },
+        payload: { visibility: "gm_only", expectedUpdatedAt: updated.json().updatedAt },
       });
       expect(hidden.statusCode).toBe(200);
       await gmRealtime.waitFor("dice.macro.updated", macroId, 1);
@@ -235,8 +236,8 @@ describe("asset and dice-macro lifecycle consistency", () => {
       const renamedWhileHidden = await app.inject({
         method: "PATCH",
         url: `/api/v1/dice-macros/${macroId}`,
-        headers: gmHeaders,
-        payload: { name: "Secret initiative override" },
+        headers: { ...gmHeaders, "idempotency-key": "dice-lifecycle-rename-hidden" },
+        payload: { name: "Secret initiative override", expectedUpdatedAt: hidden.json().updatedAt },
       });
       expect(renamedWhileHidden.statusCode).toBe(200);
       await gmRealtime.waitFor("dice.macro.updated", macroId, 2);
@@ -246,8 +247,8 @@ describe("asset and dice-macro lifecycle consistency", () => {
       const revealed = await app.inject({
         method: "PATCH",
         url: `/api/v1/dice-macros/${macroId}`,
-        headers: gmHeaders,
-        payload: { visibility: "public" },
+        headers: { ...gmHeaders, "idempotency-key": "dice-lifecycle-reveal" },
+        payload: { visibility: "public", expectedUpdatedAt: renamedWhileHidden.json().updatedAt },
       });
       expect(revealed.statusCode).toBe(200);
       await Promise.all([
@@ -257,8 +258,8 @@ describe("asset and dice-macro lifecycle consistency", () => {
 
       const removed = await app.inject({
         method: "DELETE",
-        url: `/api/v1/dice-macros/${macroId}`,
-        headers: gmHeaders,
+        url: `/api/v1/dice-macros/${macroId}?expectedUpdatedAt=${encodeURIComponent(revealed.json().updatedAt)}`,
+        headers: { ...gmHeaders, "idempotency-key": "dice-lifecycle-remove" },
       });
       expect(removed.statusCode).toBe(200);
       await Promise.all([

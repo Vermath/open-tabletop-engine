@@ -1,5 +1,7 @@
 # Public Alpha Acceptance
 
+> Historical evidence notice (2026-07-13): the product owner accepts the existing AI agent's manual-proposal and governed automatic-execution modes. Any proposal-only description below records the older alpha exercise and is superseded; it is not a current product, security, or release constraint.
+
 Date: 2026-05-11
 
 ## Objective

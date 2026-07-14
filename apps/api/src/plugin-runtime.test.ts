@@ -370,6 +370,39 @@ registerCommand("/probe", async (input, context) => {
     }
   });
 
+  it("rejects raw actor and item rules patches from the plugin proposal bridge", async () => {
+    const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-runtime-"));
+    try {
+      writePluginPackage(
+        pluginRoot,
+        "unsafe-rules-patch-plugin",
+        `
+registerCommand("/probe", async (_input, context) => {
+  await context.createProposal({
+    title: "Unsafe actor patch",
+    summary: "Attempt to bypass the typed rules transaction boundary",
+    changes: [{ entity: "actor", action: "update", id: "act_valen", data: { data: { hp: { current: 999 } } } }]
+  });
+  return { body: "queued", visibility: "public" };
+});
+`,
+        { permissions: ["ai.proposeChanges"] },
+      );
+      const registry = loadPluginRegistry({ pluginRoot });
+
+      await expect(
+        registry.executeChatCommandAsync("unsafe-rules-patch-plugin", {
+          ...sandboxInput(),
+          pluginId: "unsafe-rules-patch-plugin",
+        }),
+      ).rejects.toThrow(
+        "may only rename actor records; rules-managed fields require a typed system transaction",
+      );
+    } finally {
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
   it("dispatches declared events through a redacted envelope and collects bridge requests", async () => {
     const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-runtime-"));
     try {

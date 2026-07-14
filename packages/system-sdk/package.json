@@ -3,9 +3,16 @@
   "version": "0.3.0",
   "private": true,
   "license": "MIT",
+  "contentLicense": "CC-BY-4.0",
+  "contentNotice": "CONTENT_NOTICE.md",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "LICENSE",
+    "CONTENT_NOTICE.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "lint": "tsc -p tsconfig.json --noEmit",

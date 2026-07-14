@@ -4,7 +4,7 @@ Date: 2026-05-11
 
 ## Summary
 
-Beta v0.2 moved OpenTabletop Engine from public-alpha one-shot proof toward outside dogfood for real multi-session campaigns. The beta baseline keeps the API-first shape, SRD-only content policy, proposal-based AI/plugins, and self-hostable default.
+Beta v0.2 moved OpenTabletop Engine from public-alpha one-shot proof toward outside dogfood for real multi-session campaigns. The archived beta fixture uses a pending AI proposal, while the current product supports governed manual and automatic AI execution; plugins remain permission-checked and auditable.
 
 ## Highlights
 

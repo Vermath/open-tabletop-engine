@@ -50,7 +50,7 @@ describe("createRealtimeHandlers", () => {
   it("does not schedule a refresh when board capture handles the realtime event", async () => {
     const refresh = vi.fn(async () => undefined);
     const handleBoardCaptureEvent = vi.fn(() => true);
-    const applyRealtimeEvent = vi.fn();
+    const applyRealtimeEvent = vi.fn(() => "applied" as const);
     const handlers = createRealtimeHandlers({
       refresh,
       handleBoardCaptureEvent,
@@ -69,10 +69,10 @@ describe("createRealtimeHandlers", () => {
     handlers.dispose();
   });
 
-  it("applies realtime events immediately and still schedules the reconciler refresh", async () => {
+  it("does not reload a snapshot after an event was applied authoritatively", async () => {
     const refresh = vi.fn(async () => undefined);
     const handleBoardCaptureEvent = vi.fn(() => false);
-    const applyRealtimeEvent = vi.fn();
+    const applyRealtimeEvent = vi.fn(() => "applied" as const);
     const handlers = createRealtimeHandlers({
       refresh,
       handleBoardCaptureEvent,
@@ -88,7 +88,31 @@ describe("createRealtimeHandlers", () => {
     expect(refresh).not.toHaveBeenCalled();
 
     await vi.advanceTimersByTimeAsync(realtimeRefreshDebounceMs);
-    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(refresh).not.toHaveBeenCalled();
+
+    handlers.dispose();
+  });
+
+  it("coalesces targeted reconciliation scopes and lets a snapshot supersede them", async () => {
+    const refresh = vi.fn(async () => undefined);
+    const reconcile = vi.fn(async () => undefined);
+    const results = ["vision", "lore", "vision", "snapshot", "lore"] as const;
+    const applyRealtimeEvent = vi.fn(() => results[applyRealtimeEvent.mock.calls.length - 1] ?? "ignored");
+    const handlers = createRealtimeHandlers({
+      refresh,
+      reconcile,
+      handleBoardCaptureEvent: vi.fn(() => false),
+      applyRealtimeEvent,
+      setStatus: vi.fn(),
+      onRefreshError: vi.fn()
+    });
+
+    for (let index = 0; index < results.length; index += 1) handlers.onMessage({ index });
+    await vi.advanceTimersByTimeAsync(realtimeRefreshDebounceMs);
+
+    expect(reconcile).toHaveBeenCalledTimes(1);
+    expect(reconcile).toHaveBeenCalledWith(["snapshot"]);
+    expect(refresh).not.toHaveBeenCalled();
 
     handlers.dispose();
   });
@@ -110,7 +134,7 @@ describe("createRealtimeHandlers", () => {
     handlers.dispose();
   });
 
-  it("preserves realtime status transitions", () => {
+  it("preserves realtime status transitions", async () => {
     const setStatus = vi.fn();
     const handlers = createRealtimeHandlers({
       refresh: vi.fn(async () => undefined),
@@ -119,7 +143,7 @@ describe("createRealtimeHandlers", () => {
       onRefreshError: vi.fn()
     });
 
-    handlers.onOpen();
+    await handlers.onOpen();
     const updateStatus = setStatus.mock.calls[0]?.[0] as (current: string) => string;
     expect(updateStatus("Loading campaign")).toBe("Realtime connected");
     expect(updateStatus("API offline at http://127.0.0.1:4000")).toBe("Realtime connected");
@@ -128,6 +152,22 @@ describe("createRealtimeHandlers", () => {
     handlers.onError();
     expect(setStatus).toHaveBeenLastCalledWith("Realtime unavailable");
 
+    handlers.dispose();
+  });
+
+  it("authoritatively refreshes every successful reconnect before reporting ready", async () => {
+    const refresh = vi.fn(async () => undefined);
+    const handlers = createRealtimeHandlers({
+      refresh,
+      handleBoardCaptureEvent: vi.fn(() => false),
+      setStatus: vi.fn(),
+      onRefreshError: vi.fn()
+    });
+
+    await handlers.onOpen(true);
+    await handlers.onOpen(true);
+
+    expect(refresh).toHaveBeenCalledTimes(2);
     handlers.dispose();
   });
 });

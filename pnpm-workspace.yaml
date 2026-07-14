@@ -2,3 +2,15 @@ packages:
   - "apps/*"
   - "packages/*"
   - "plugins/*"
+allowBuilds:
+  electron: true
+  electron-winstaller: true
+  esbuild: true
+  sharp: true
+  workerd: true
+overrides:
+  "@babel/core": 7.29.6
+  "tsx>esbuild": 0.28.1
+  fast-uri: 3.1.2
+  fast-xml-builder: 1.1.7
+  ws: 8.21.0

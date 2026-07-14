@@ -61,21 +61,23 @@ describe("feature-surface API mutations", () => {
   });
 
   it("wires world create, update, assignment, and delete to their REST resources", async () => {
-    await createWorldAtlasWorld("camp-1", { name: " Astral Sea ", description: "Wildspace" });
-    await updateWorldAtlasWorld("world-1", { name: "Astral Sea", description: "Crystal spheres" });
-    await assignSceneToWorld("scene-1", "world-1");
-    await assignSceneToWorld("scene-2", "");
-    await deleteWorldAtlasWorld("world-1");
+    const revision = "2026-07-13T00:00:00.000Z";
+    await createWorldAtlasWorld("camp-1", { name: " Astral Sea ", description: "Wildspace", expectedUpdatedAt: revision });
+    await updateWorldAtlasWorld("world-1", { name: "Astral Sea", description: "Crystal spheres", expectedUpdatedAt: revision });
+    await assignSceneToWorld("scene-1", "world-1", revision);
+    await assignSceneToWorld("scene-2", "", revision);
+    await deleteWorldAtlasWorld("world-1", revision);
 
     expect(requestSummary(requests)).toEqual([
       ["POST", "/api/v1/campaigns/camp-1/worlds"],
       ["PATCH", "/api/v1/worlds/world-1"],
       ["PATCH", "/api/v1/scenes/scene-1"],
       ["PATCH", "/api/v1/scenes/scene-2"],
-      ["DELETE", "/api/v1/worlds/world-1"]
+      ["DELETE", "/api/v1/worlds/world-1?expectedUpdatedAt=2026-07-13T00%3A00%3A00.000Z"]
     ]);
-    expect(requestBody(requests[2]!)).toEqual({ worldId: "world-1" });
-    expect(requestBody(requests[3]!)).toEqual({ worldId: null });
+    expect(requestBody(requests[2]!)).toEqual({ worldId: "world-1", expectedUpdatedAt: revision });
+    expect(requestBody(requests[3]!)).toEqual({ worldId: null, expectedUpdatedAt: revision });
+    for (const request of requests) expect(new Headers(request.init.headers).get("idempotency-key")).toBeTruthy();
   });
 
   it("wires handout create, update, read receipt, and delete with normalized targeting", async () => {
@@ -89,16 +91,17 @@ describe("feature-surface API mutations", () => {
       assetIds: ["asset-1"],
       tags: "vault, clue, vault"
     };
-    await persistHandout("camp-1", draft);
-    await persistHandout("camp-1", { ...draft, id: "handout-1", worldId: "", visibility: "public" });
+    const revision = "2026-07-13T00:00:00.000Z";
+    await persistHandout("camp-1", revision, draft);
+    await persistHandout("camp-1", revision, { ...draft, id: "handout-1", expectedUpdatedAt: revision, worldId: "", visibility: "public" });
     await markHandoutRead("handout-1");
-    await deleteLibraryHandout("handout-1");
+    await deleteLibraryHandout("handout-1", revision);
 
     expect(requestSummary(requests)).toEqual([
       ["POST", "/api/v1/campaigns/camp-1/handouts"],
       ["PATCH", "/api/v1/handouts/handout-1"],
       ["POST", "/api/v1/handouts/handout-1/read"],
-      ["DELETE", "/api/v1/handouts/handout-1"]
+      ["DELETE", "/api/v1/handouts/handout-1?expectedUpdatedAt=2026-07-13T00%3A00%3A00.000Z"]
     ]);
     expect(requestBody(requests[0]!)).toMatchObject({ title: "Vault Warning", body: "Do not wake it.", visibleToUserIds: ["usr-1"], visibleToActorIds: [], tags: ["vault", "clue"] });
     expect(requestBody(requests[1]!)).toMatchObject({ worldId: null, visibleToUserIds: [], visibleToActorIds: [] });
@@ -106,33 +109,43 @@ describe("feature-surface API mutations", () => {
 
   it("wires journal edits and deletion to the existing lifecycle routes", async () => {
     await updateJournalEntry("journal-1", {
+      expectedUpdatedAt: "2026-07-13T00:00:00.000Z",
+      kind: "entry",
       title: " Updated clue ",
       body: " The bell opens the western vault. ",
       visibility: "specific_players",
       visibleToUserIds: ["usr-1", "usr-1"],
       visibleToActorIds: ["actor-hidden"],
-      tags: "clue, vault, clue"
+      tags: "clue, vault, clue",
+      links: []
     });
-    await deleteJournalEntry("journal-1");
+    await deleteJournalEntry("journal-1", "2026-07-13T00:00:01.000Z", "journal-delete-test");
 
     expect(requestSummary(requests)).toEqual([
       ["PATCH", "/api/v1/journal/journal-1"],
-      ["DELETE", "/api/v1/journal/journal-1"]
+      ["DELETE", "/api/v1/journal/journal-1?expectedUpdatedAt=2026-07-13T00%3A00%3A01.000Z"]
     ]);
     expect(requestBody(requests[0]!)).toEqual({
+      expectedUpdatedAt: "2026-07-13T00:00:00.000Z",
+      kind: "entry",
+      parentId: null,
       title: "Updated clue",
       body: "The bell opens the western vault.",
       visibility: "specific_players",
       visibleToUserIds: ["usr-1"],
       visibleToActorIds: [],
-      tags: ["clue", "vault"]
+      tags: ["clue", "vault"],
+      links: []
     });
+    expect(new Headers(requests[0]!.init.headers).get("idempotency-key")).toMatch(/^journal-update:journal-1:2026-07-13T00:00:00.000Z:[a-f0-9]{16}$/);
+    expect(new Headers(requests[1]!.init.headers).get("idempotency-key")).toBe("journal-delete-test");
   });
 
   it("creates, updates, and deletes reopenable encounter compositions", async () => {
     const input = {
       campaignId: "camp-1",
       systemId: "generic-fantasy",
+      expectedUpdatedAt: "2026-07-13T00:00:00.000Z",
       name: " Bridge Guard ",
       summary: "standard encounter",
       difficulty: "standard",
@@ -141,18 +154,19 @@ describe("feature-surface API mutations", () => {
     };
     await persistEncounterComposition(input);
     await persistEncounterComposition({ ...input, encounterId: "encounter-1", threats: [{ id: "guard", count: 3 }] });
-    await deleteSavedEncounter("encounter-1");
+    await deleteSavedEncounter("encounter-1", input.expectedUpdatedAt);
 
     expect(requestSummary(requests)).toEqual([
       ["POST", "/api/v1/campaigns/camp-1/systems/generic-fantasy/encounter-plan"],
       ["PATCH", "/api/v1/encounters/encounter-1"],
-      ["DELETE", "/api/v1/encounters/encounter-1"]
+      ["DELETE", "/api/v1/encounters/encounter-1?expectedUpdatedAt=2026-07-13T00%3A00%3A00.000Z"]
     ]);
     expect(requestBody(requests[0]!)).toEqual({
       partyActorIds: [],
       threats: [{ id: "guard", count: 2 }],
       createEncounter: true,
-      name: "Bridge Guard"
+      name: "Bridge Guard",
+      expectedUpdatedAt: input.expectedUpdatedAt
     });
     expect(requestBody(requests[1]!)).toMatchObject({
       name: "Bridge Guard",
@@ -160,6 +174,7 @@ describe("feature-surface API mutations", () => {
       partyActorIds: [],
       threats: [{ id: "guard", count: 3 }]
     });
+    for (const request of requests) expect(new Headers(request.init.headers).get("idempotency-key")).toBeTruthy();
   });
 
   it("wires memory candidates through create, edit, review, and delete lifecycle routes", async () => {
@@ -202,21 +217,23 @@ describe("feature-surface API mutations", () => {
       encounterIds: ["encounter-1"]
     };
     await persistCampaignSession("camp-1", draft);
-    await persistCampaignSession("camp-1", { ...draft, id: "session-1" });
-    await startCampaignSession("session-1", "scene-1");
-    await completeCampaignSession("session-1", "Vault cleared");
-    await deleteCampaignSession("session-1");
+    await persistCampaignSession("camp-1", { ...draft, id: "session-1" }, "2026-07-13T00:00:00.000Z");
+    await startCampaignSession("session-1", "scene-1", "2026-07-13T00:00:00.000Z");
+    await completeCampaignSession("session-1", "Vault cleared", "2026-07-13T00:00:00.000Z");
+    await deleteCampaignSession("session-1", "2026-07-13T00:00:00.000Z");
 
     expect(requestSummary(requests)).toEqual([
       ["POST", "/api/v1/campaigns/camp-1/sessions"],
       ["PATCH", "/api/v1/campaign-sessions/session-1"],
       ["POST", "/api/v1/campaign-sessions/session-1/start"],
       ["POST", "/api/v1/campaign-sessions/session-1/complete"],
-      ["DELETE", "/api/v1/campaign-sessions/session-1"]
+      ["DELETE", "/api/v1/campaign-sessions/session-1?expectedUpdatedAt=2026-07-13T00%3A00%3A00.000Z"]
     ]);
     expect(requestBody(requests[0]!)).toEqual({ title: "Session 12", agenda: "Enter the vault", notes: "", scheduledFor: null, sceneIds: ["scene-1"], encounterIds: ["encounter-1"] });
-    expect(requestBody(requests[2]!)).toEqual({ activateSceneId: "scene-1" });
-    expect(requestBody(requests[3]!)).toEqual({ notes: "Vault cleared" });
+    expect(requestBody(requests[1]!)).toMatchObject({ expectedUpdatedAt: "2026-07-13T00:00:00.000Z" });
+    expect(requestBody(requests[2]!)).toEqual({ expectedUpdatedAt: "2026-07-13T00:00:00.000Z", activateSceneId: "scene-1" });
+    expect(requestBody(requests[3]!)).toEqual({ notes: "Vault cleared", expectedUpdatedAt: "2026-07-13T00:00:00.000Z" });
+    for (const request of requests) expect(new Headers(request.init.headers).get("idempotency-key")).toBeTruthy();
   });
 });
 

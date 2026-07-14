@@ -1,13 +1,20 @@
 export const realtimeReconnectInitialDelayMs = 1_000;
 export const realtimeReconnectMaxDelayMs = 30_000;
+export const realtimePresenceHeartbeatIntervalMs = 15_000;
 
-export type RealtimeUiState = "idle" | "connecting" | "connected" | "reconnecting";
+export type RealtimeUiState = "idle" | "connecting" | "connected" | "reconnecting" | "syncing";
 
-export function realtimeUiLabel(state: RealtimeUiState): "Ready" | "Connecting" | "Connected" | "Reconnecting" {
+export function realtimeUiLabel(state: RealtimeUiState): "Ready" | "Connecting" | "Connected" | "Reconnecting" | "Syncing" {
   if (state === "connecting") return "Connecting";
   if (state === "connected") return "Connected";
   if (state === "reconnecting") return "Reconnecting";
+  if (state === "syncing") return "Syncing";
   return "Ready";
+}
+
+export interface RealtimeOpenContext {
+  /** True whenever this socket was created after the connection's first socket attempt. */
+  reconnected: boolean;
 }
 
 export interface RealtimeConnectionIdentityInput {
@@ -22,6 +29,7 @@ export interface RealtimeSocketLike {
   onmessage: ((event: { data: unknown }) => void) | null;
   onerror: (() => void) | null;
   onclose: (() => void) | null;
+  send: (data: string) => void;
   close: () => void;
 }
 
@@ -35,8 +43,10 @@ export interface StartRealtimeConnectionOptions {
   socketFactory?: (url: string, protocols: string[]) => RealtimeSocketLike;
   scheduleTimeout?: (callback: () => void, delayMs: number) => RealtimeTimerId;
   clearScheduledTimeout?: (timerId: RealtimeTimerId) => void;
+  activeSceneId?: () => string | undefined;
+  heartbeatIntervalMs?: number;
   onMessage: (data: unknown) => void;
-  onOpen?: () => void;
+  onOpen?: (context: RealtimeOpenContext) => void;
   onUnavailable?: () => void;
   onReconnectScheduled?: (delayMs: number) => void;
 }
@@ -62,12 +72,20 @@ export function startRealtimeConnection(options: StartRealtimeConnectionOptions)
   let stopped = false;
   let socket: RealtimeSocketLike | null = null;
   let reconnectTimer: RealtimeTimerId | null = null;
+  let heartbeatTimer: RealtimeTimerId | null = null;
   let reconnectAttempt = 0;
+  let socketAttempt = 0;
 
   function clearReconnectTimer() {
     if (reconnectTimer === null) return;
     clearScheduledTimeout(reconnectTimer);
     reconnectTimer = null;
+  }
+
+  function clearHeartbeatTimer() {
+    if (heartbeatTimer === null) return;
+    clearScheduledTimeout(heartbeatTimer);
+    heartbeatTimer = null;
   }
 
   function scheduleReconnect() {
@@ -83,6 +101,8 @@ export function startRealtimeConnection(options: StartRealtimeConnectionOptions)
 
   function connect() {
     if (stopped) return;
+    const reconnected = socketAttempt > 0;
+    socketAttempt += 1;
     const url = realtimeWebSocketUrl({ apiBase: options.apiBase, origin: options.origin, campaignId: options.campaignId });
     const protocols = ["otte.v1", `otte.auth.${options.sessionToken}`];
     try {
@@ -98,18 +118,38 @@ export function startRealtimeConnection(options: StartRealtimeConnectionOptions)
     const scheduleReconnectForCurrentSocket = () => {
       if (stopped || reconnectScheduledForSocket) return;
       reconnectScheduledForSocket = true;
+      clearHeartbeatTimer();
       if (socket === currentSocket) socket = null;
       options.onUnavailable?.();
       scheduleReconnect();
     };
+    const sendPresenceHeartbeat = () => {
+      if (stopped || socket !== currentSocket || reconnectScheduledForSocket) return;
+      try {
+        const sceneId = options.activeSceneId?.();
+        currentSocket.send(JSON.stringify({ type: "presence.heartbeat", ...(sceneId ? { sceneId } : {}) }));
+      } catch {
+        scheduleReconnectForCurrentSocket();
+        currentSocket.close();
+        return;
+      }
+      heartbeatTimer = scheduleTimeout(sendPresenceHeartbeat, options.heartbeatIntervalMs ?? realtimePresenceHeartbeatIntervalMs);
+    };
 
     currentSocket.onopen = () => {
-      if (stopped) return;
+      // A failed socket can still dispatch a late open in some runtimes. Never
+      // let that stale transport supersede the current connection attempt.
+      if (stopped || socket !== currentSocket || reconnectScheduledForSocket) return;
       reconnectAttempt = 0;
-      options.onOpen?.();
+      clearHeartbeatTimer();
+      sendPresenceHeartbeat();
+      options.onOpen?.({ reconnected });
     };
     currentSocket.onmessage = (event) => {
-      if (!stopped) options.onMessage(event.data);
+      // Error/close can be followed by queued messages from that transport.
+      // Only the socket that still owns the active attempt may update state.
+      if (stopped || socket !== currentSocket || reconnectScheduledForSocket) return;
+      options.onMessage(event.data);
     };
     currentSocket.onerror = () => {
       scheduleReconnectForCurrentSocket();
@@ -125,6 +165,7 @@ export function startRealtimeConnection(options: StartRealtimeConnectionOptions)
   return () => {
     stopped = true;
     clearReconnectTimer();
+    clearHeartbeatTimer();
     const activeSocket = socket;
     socket = null;
     if (!activeSocket) return;

@@ -25,6 +25,8 @@ export type EngineEventType =
   | "actor.created"
   | "actor.updated"
   | "actor.deleted"
+  | "character.transfer.created"
+  | "character.transfer.resolved"
   | "item.created"
   | "item.updated"
   | "item.deleted"
@@ -72,6 +74,8 @@ export type EngineEventType =
   | "ai.tool.started"
   | "ai.tool.completed"
   | "ai.proposal.created"
+  | "ai.policy.updated"
+  | "ai.privacy.pruned"
   | "ai.memory.created"
   | "ai.memory.updated"
   | "ai.memory.approved"
@@ -86,9 +90,34 @@ export interface EngineEvent<TPayload = unknown> {
   actorUserId?: ID;
   targetId?: ID;
   timestamp: string;
+  /** Monotonic per-campaign cursor for authoritative persisted state events. */
+  sequence?: number;
   payload: TPayload;
   causationId?: ID;
   correlationId?: ID;
+}
+
+/** Ephemeral online state. Presence never consumes the authoritative event sequence. */
+export interface CampaignPresence {
+  campaignId: ID;
+  userId: ID;
+  displayName: string;
+  role: string;
+  connectionCount: number;
+  connectedAt: string;
+  lastSeenAt: string;
+  activeSceneIds: ID[];
+}
+
+export type RealtimePresenceEventType = "presence.snapshot" | "presence.joined" | "presence.updated" | "presence.left";
+
+export interface RealtimePresenceEnvelope {
+  channel: "presence";
+  type: RealtimePresenceEventType;
+  campaignId: ID;
+  timestamp: string;
+  presence?: CampaignPresence;
+  presences?: CampaignPresence[];
 }
 
 export function createEvent<TPayload>(input: Omit<EngineEvent<TPayload>, "id" | "timestamp">): EngineEvent<TPayload> {

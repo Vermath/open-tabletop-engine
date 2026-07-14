@@ -14,7 +14,7 @@ describe("editor optimistic concurrency", () => {
       const first = await app.inject({
         method: "PATCH",
         url: "/api/v1/journal/jnl_hook",
-        headers: gmHeaders,
+        headers: { ...gmHeaders, "idempotency-key": "editor-journal-first" },
         payload: { expectedUpdatedAt: openedAt, title: "First editor won" }
       });
 
@@ -24,12 +24,12 @@ describe("editor optimistic concurrency", () => {
       const stale = await app.inject({
         method: "PATCH",
         url: "/api/v1/journal/jnl_hook",
-        headers: gmHeaders,
+        headers: { ...gmHeaders, "idempotency-key": "editor-journal-stale" },
         payload: { expectedUpdatedAt: openedAt, title: "Stale overwrite" }
       });
 
       expect(stale.statusCode).toBe(409);
-      expect(stale.json()).toMatchObject({ error: "conflict" });
+      expect(stale.json()).toMatchObject({ error: "conflict", code: "stale_write" });
       expect(store.state.journals.find((entry) => entry.id === "jnl_hook")?.title).toBe("First editor won");
     } finally {
       await app.close();
@@ -43,8 +43,13 @@ describe("editor optimistic concurrency", () => {
       const created = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/handouts",
-        headers: gmHeaders,
-        payload: { title: "Shared clue", body: "Original", visibility: "public" }
+        headers: { ...gmHeaders, "idempotency-key": "editor-handout-create" },
+        payload: {
+          expectedUpdatedAt: store.state.campaigns.find((campaign) => campaign.id === "camp_demo")!.updatedAt,
+          title: "Shared clue",
+          body: "Original",
+          visibility: "public"
+        }
       });
       expect(created.statusCode).toBe(200);
       const handout = created.json() as { id: string; updatedAt: string };
@@ -60,7 +65,7 @@ describe("editor optimistic concurrency", () => {
       const first = await app.inject({
         method: "PATCH",
         url: `/api/v1/handouts/${handout.id}`,
-        headers: gmHeaders,
+        headers: { ...gmHeaders, "idempotency-key": "editor-handout-first" },
         payload: { expectedUpdatedAt: handout.updatedAt, body: "Current content" }
       });
       expect(first.statusCode).toBe(200);
@@ -69,7 +74,7 @@ describe("editor optimistic concurrency", () => {
       const stale = await app.inject({
         method: "PATCH",
         url: `/api/v1/handouts/${handout.id}`,
-        headers: gmHeaders,
+        headers: { ...gmHeaders, "idempotency-key": "editor-handout-stale" },
         payload: { expectedUpdatedAt: handout.updatedAt, body: "Stale content" }
       });
 

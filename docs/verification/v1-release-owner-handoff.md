@@ -1,5 +1,7 @@
 # v1 Release Owner Handoff
 
+> Historical evidence notice (2026-07-13): this handoff describes the May candidate and verifier target below. It is not evidence for the current dirty working tree and its three-item blocker list is superseded by the July audit set. Use `docs/FEATURE_AUDIT.md`, `docs/PRODUCT_ASSESSMENT.md`, `docs/PRODUCT_ROADMAP.md`, `docs/IMPLEMENTATION_BACKLOG.md`, and `docs/verification/implementation-2026-07-13.md` for the current implementation and full external/manual release queue.
+
 Status: final external-evidence checklist for the v1.0 release candidate. This is not completion evidence by itself.
 
 The local implementation, browser coverage, release-smoke wiring, docs renderer, hosted release-smoke evidence, and public docs publication evidence are covered by `docs/verification/v1-gap-closure-completion-audit.md`. The remaining v1 blockers require OIDC/SCIM release-owner credentials, manual assistive-technology testing, and external GM validation.

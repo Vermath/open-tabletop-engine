@@ -92,6 +92,23 @@ describe("FileStateStore", () => {
     expect(persisted.state.campaigns).toEqual([expect.objectContaining({ id: "camp_closed" })]);
   });
 
+  it("restores the last durable file state and discards a pending mutation", () => {
+    const filePath = join(directory, "state.json");
+    const store = new FileStateStore(filePath, { seedDemo: false });
+    store.state = stateWithCampaign("camp_durable", "Durable Campaign");
+    store.save();
+    store.flush();
+
+    store.state.campaigns[0]!.name = "Uncommitted Campaign";
+    store.save();
+    store.restoreDurableState();
+
+    expect(store.state.campaigns[0]!.name).toBe("Durable Campaign");
+    store.flush();
+    const persisted = new FileStateStore(filePath, { seedDemo: false });
+    expect(persisted.state.campaigns[0]!.name).toBe("Durable Campaign");
+  });
+
   it("preserves existing state and retries the pending write after replacement fails", () => {
     const filePath = join(directory, "state.json");
     writeFileSync(filePath, JSON.stringify(stateWithCampaign("camp_existing", "Existing Campaign"), null, 2));

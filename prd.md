@@ -14,7 +14,7 @@ Do **not** build “Roll20 but cheaper.”
 
 Build:
 
-> **An open-source, API-first VTT operating system for tabletop games, where every core feature is exposed through a public API, every rule system is modular, every campaign is portable, and AI assistance is permissioned, auditable, and optional.**
+> **An open-source, API-first VTT operating system for tabletop games, where every core feature is exposed through a public API, every rule system is modular, every campaign is portable, and a first-class AI agent can act through permissioned, auditable proposal and automatic-execution modes.**
 
 The main differentiators:
 
@@ -180,7 +180,7 @@ These should go in the project README.
 4. Plugins are first-class citizens.
 5. Rules systems are data-driven.
 6. The GM owns campaign state.
-7. AI proposes; humans approve.
+7. AI operates within campaign-configured governance: manual review or governed automatic execution.
 8. Secrets are permissioned.
 9. Everything important is exportable.
 10. Every destructive action is reversible or auditable.
@@ -251,7 +251,7 @@ Permissioned VTT Tools
    |---- scene.createDraft
 ```
 
-The AI should **never** directly mutate campaign state. It proposes changes through structured tools. The GM approves.
+The AI agent is a first-class operator. Its existing structured tools support both reviewable proposals and governed automatic execution under the invoking user's permissions, revisions, validation, and audit trail. Proposal review is a mode, not a universal restriction.
 
 ---
 
@@ -1429,8 +1429,9 @@ System Builder Assistant
 
 ```text
 The AI can read only what it has permission to read.
-The AI can write only drafts.
-The AI can apply changes only after approval.
+The AI can act only through typed, permission-checked tools.
+Each campaign can use proposal review or governed automatic execution.
+Automatic execution still requires current revisions, validation, attribution, audit, and recovery.
 The AI must distinguish canon from suggestion.
 ```
 
@@ -1520,7 +1521,7 @@ Codex file change proposal
   -> ai.proposal.created
 ```
 
-Codex App Server has explicit approval flows for command execution and file changes, and it can send server-initiated JSON-RPC approval requests to the client. ([OpenAI Developers][1]) We should mirror that for VTT state changes: proposed scene edits, journal edits, actor patches, encounter creation, and memory updates all become approval requests.
+Codex App Server has explicit approval flows for command execution and file changes, and it can send server-initiated JSON-RPC approval requests to the client. ([OpenAI Developers][1]) Manual-review mode should map VTT changes to those reviewable requests. Governed automatic mode should execute eligible scene, journal, actor, encounter, and memory commands immediately through the same permission, validation, revision, audit, and recovery boundary; approval is a configured mode, not a universal prerequisite.
 
 ## 19.5 Codex dynamic tools
 
@@ -1641,9 +1642,9 @@ Redaction
 8. Provider may request tools.
 9. AI Gateway validates tool permission.
 10. Tool returns scoped result.
-11. AI creates draft/proposal.
-12. GM reviews and approves/rejects.
-13. Approved proposal applies through normal API.
+11. AI creates a reviewable proposal or requests governed automatic execution according to the campaign's selected mode.
+12. In manual mode, the GM reviews and approves/rejects; automatic mode does not impose that extra review step on an eligible action.
+13. An approved proposal or governed automatic action applies through the same permissioned, revision-checked, validated API path.
 14. All actions are logged.
 ```
 
@@ -2110,7 +2111,7 @@ Audit logs
 Separate GM/player visibility paths
 AI context redaction
 Secret-aware retrieval
-Proposal-based writes
+Typed, permission-checked writes in the campaign's configured manual-review or governed-auto mode
 No direct DB access for plugins
 No direct DB access for AI
 ```
@@ -2122,7 +2123,7 @@ Treat campaign text as untrusted input.
 Treat plugin text as untrusted input.
 Treat uploaded rules docs as untrusted input.
 Never let retrieved text override system/developer instructions.
-Never let AI apply destructive actions without approval.
+Require destructive AI actions to satisfy configured governance, eligibility, current permission/revision, audit, and recovery controls; manual-review mode requires approval.
 Redact GM-only data from player assistant contexts.
 Log all tool calls.
 ```
@@ -2676,7 +2677,7 @@ Implement server worker runtime
 Implement plugin event hooks
 Implement plugin UI panels
 Implement plugin chat commands
-Implement plugin proposal creation
+Implement typed plugin application commands and proposal review where appropriate
 Build example plugin
 Write plugin SDK docs
 ```
@@ -2824,7 +2825,7 @@ GM can start a Codex-backed assistant thread from the VTT, stream responses, app
 
 ### Goal
 
-AI can design and balance encounters, then create reviewable drafts.
+AI can design and balance encounters, then execute through the campaign's configured proposal-review or governed automatic mode.
 
 ### Deliverables
 
@@ -2856,7 +2857,7 @@ Add encounter proposal review UI
 ### Definition of done
 
 ```text
-GM can ask for an encounter, receive a structured design, and approve creation of encounter notes and token drafts.
+GM can ask for an encounter, receive a structured design, and have the configured autonomy mode either request review or execute authorized changes with a visible audit trail.
 ```
 
 ---
@@ -2865,7 +2866,7 @@ GM can ask for an encounter, receive a structured design, and approve creation o
 
 ### Goal
 
-AI can summarize sessions and extract campaign facts for GM approval.
+AI can summarize sessions and extract campaign facts through the campaign's configured review or governed automatic mode.
 
 ### Deliverables
 
@@ -3223,7 +3224,7 @@ Player cannot read GM notes
 Player cannot move unowned token
 Plugin cannot access undeclared permission
 AI cannot read excluded context
-AI cannot apply proposal without approval
+AI proposal mode cannot apply an approval-required proposal without approval; governed automatic-execution mode remains available
 WebSocket rejects unauthorized user
 Journal HTML sanitization blocks XSS
 ```
@@ -3443,7 +3444,7 @@ Journals and handouts are permissioned.
 Plugins can extend everything.
 Developers have real APIs.
 Campaign data can be exported.
-AI can help prep, summarize, search, and draft.
+AI can help prep, summarize, search, draft, and carry out authorized campaign operations under the configured autonomy mode.
 Codex can help build modules and run rich assistant workflows.
 Nothing important happens without permission.
 ```

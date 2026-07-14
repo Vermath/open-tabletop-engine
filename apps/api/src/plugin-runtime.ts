@@ -23,6 +23,7 @@ import {
   type PluginEventEnvelope,
   type PluginEventType,
   type PluginManifest,
+  type PluginProposalChange,
 } from "@open-tabletop/plugin-sdk";
 
 const PLUGIN_COMMAND_EXECUTION_TIMEOUT_MS = 1000;
@@ -175,7 +176,7 @@ export type PluginBridgeRequest =
   | {
       kind: "proposal.create";
       requestId: string;
-      input: { title: string; summary: string; changes: ProposalChange[] };
+      input: { title: string; summary: string; changes: PluginProposalChange[] };
     }
   | {
       kind: "chat.post";
@@ -1141,7 +1142,7 @@ function normalizePluginBridgeRequests(value: unknown): PluginBridgeRequest[] {
   });
 }
 
-const PLUGIN_BRIDGE_PROPOSAL_ENTITIES = new Set<ProposalChange["entity"]>([
+const PLUGIN_BRIDGE_PROPOSAL_ENTITIES = new Set<PluginProposalChange["entity"]>([
   "campaign",
   "world",
   "scene",
@@ -1164,12 +1165,12 @@ function normalizePluginBridgeProposalChange(
   value: unknown,
   requestId: string,
   index: number,
-): ProposalChange {
+): PluginProposalChange {
   if (!isRecord(value))
     throw new Error(
       `Plugin bridge request ${requestId} proposal change ${index + 1} must be an object`,
     );
-  const entity = value.entity as ProposalChange["entity"];
+  const entity = value.entity as PluginProposalChange["entity"];
   const action = value.action as ProposalChange["action"];
   if (!PLUGIN_BRIDGE_PROPOSAL_ENTITIES.has(entity))
     throw new Error(
@@ -1195,6 +1196,29 @@ function normalizePluginBridgeProposalChange(
     value.data,
     `Plugin bridge request ${requestId} proposal change ${index + 1} data`,
   );
+  if (entity === "actor" || entity === "item") {
+    if (action !== "update" || !id) {
+      throw new Error(
+        `Plugin bridge request ${requestId} proposal change ${index + 1} must use a typed system transaction to create or delete ${entity} records`,
+      );
+    }
+    if (
+      Object.keys(data).length !== 1 ||
+      typeof data.name !== "string" ||
+      !data.name.trim() ||
+      data.name.trim().length > 160
+    ) {
+      throw new Error(
+        `Plugin bridge request ${requestId} proposal change ${index + 1} may only rename ${entity} records; rules-managed fields require a typed system transaction`,
+      );
+    }
+    return {
+      entity,
+      action: "update",
+      id,
+      data: { name: data.name.trim() },
+    };
+  }
   return id ? { entity, action, id, data } : { entity, action, data };
 }
 
@@ -1561,11 +1585,9 @@ export function pluginSignatureForPackage(
 }
 
 function pluginTrustPolicyFromEnv(): PluginTrustPolicyConfig {
+  const requireTrusted = process.env.NODE_ENV === "production" || process.env.OTTE_PLUGIN_TRUST_POLICY === "require_trusted";
   return normalizePluginTrustPolicy({
-    policy:
-      process.env.OTTE_PLUGIN_TRUST_POLICY === "require_trusted"
-        ? "require_trusted"
-        : "allow_unsigned",
+    policy: requireTrusted ? "require_trusted" : "allow_unsigned",
     keys: parsePluginTrustKeys(process.env.OTTE_PLUGIN_TRUST_KEYS),
   });
 }

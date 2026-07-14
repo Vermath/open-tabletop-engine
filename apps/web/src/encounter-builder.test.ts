@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Actor } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
-import { encounterPartyEligibility } from "./encounter-builder.js";
+import { ENCOUNTER_CATALOG_WINDOW_SIZE, encounterCatalogWindow, encounterPartyEligibility } from "./encounter-builder.js";
 
 const appSource = readFileSync(resolve(__dirname, "App.tsx"), "utf8");
 const combatPanelSource = readFileSync(resolve(__dirname, "combat-panel.tsx"), "utf8");
@@ -68,5 +68,28 @@ describe("encounter builder", () => {
     expect(builderSource).toContain("not included. Encounter math only uses character actors created for");
     expect(builderSource).toContain("Difficulty preview uses the system baseline until you create or import a compatible character.");
     expect(stylesSource).toContain(".encounter-party .encounter-party-exclusion");
+  });
+
+  it("keeps large party rosters operable above the encounter footer", () => {
+    expect(builderSource).toContain(">Select all</button>");
+    expect(builderSource).toContain(">Clear party</button>");
+    expect(builderSource).toContain("setPartyActorIds(new Set())");
+    expect(builderSource).toContain('className="encounter-party-roster"');
+    expect(stylesSource).toContain(".encounter-party-roster");
+    expect(stylesSource).toContain("scroll-padding-bottom: 4.5rem");
+  });
+
+  it("keeps mounted threat rows bounded for a full-size catalog", () => {
+    const fullCatalog = Array.from({ length: 10_000 }, (_, index) => `threat-${index}`);
+    const first = encounterCatalogWindow(fullCatalog, 0);
+    const middle = encounterCatalogWindow(fullCatalog, 127);
+    const last = encounterCatalogWindow(fullCatalog, Number.MAX_SAFE_INTEGER);
+
+    expect(first.items).toHaveLength(ENCOUNTER_CATALOG_WINDOW_SIZE);
+    expect(middle.items).toHaveLength(ENCOUNTER_CATALOG_WINDOW_SIZE);
+    expect(last.items.length).toBeLessThanOrEqual(ENCOUNTER_CATALOG_WINDOW_SIZE);
+    expect(last.end).toBe(fullCatalog.length);
+    expect(builderSource).toContain("renderedThreats.map");
+    expect(builderSource).toContain("data-catalog-window-size={ENCOUNTER_CATALOG_WINDOW_SIZE}");
   });
 });

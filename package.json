@@ -5,7 +5,7 @@
   "description": "API-first virtual tabletop engine with permissioned plugins and AI assistance.",
   "license": "AGPL-3.0-only",
   "type": "module",
-  "packageManager": "pnpm@8.7.0",
+  "packageManager": "pnpm@10.28.0",
   "scripts": {
     "build": "node scripts/run-turbo.mjs run build",
     "dev": "node scripts/run-turbo.mjs run dev --parallel",
@@ -25,14 +25,16 @@
     "v1:issues:test": "node scripts/test-v1-open-issues.mjs",
     "v1:completion:audit": "node scripts/v1-completion-audit.mjs",
     "v1:release:handoff": "node scripts/v1-release-handoff.mjs",
-    "release:smoke": "node scripts/run-package-scripts.mjs v1:worktree:check security:audit check e2e security:smoke migration:smoke deployment:smoke perf:smoke perf:soak docs:site:test docs:site:check sbom:test v1:evidence:test v1:issues:test v1:issues:check",
-    "identity:smoke": "node scripts/run-package-manager.mjs --filter @open-tabletop/api test -- --run src/identity-smoke.test.ts",
-    "migration:smoke": "node scripts/run-package-manager.mjs --filter @open-tabletop/api test -- --run -t \"migration smoke\"",
-    "deployment:smoke": "node scripts/run-package-manager.mjs --filter @open-tabletop/api test -- --run -t \"deployment smoke\"",
-    "perf:smoke": "node scripts/run-package-manager.mjs --filter @open-tabletop/api test -- --run -t \"performance smoke\"",
-    "perf:soak": "node scripts/run-package-manager.mjs --filter @open-tabletop/api test -- --run -t \"performance soak\"",
+    "release:smoke": "node scripts/run-package-scripts.mjs v1:worktree:check security:audit check e2e security:smoke migration:smoke deployment:smoke perf:smoke perf:soak perf:capacity docs:site:test docs:site:check sbom:test v1:evidence:test v1:issues:test v1:issues:check",
+    "identity:smoke": "node scripts/run-package-manager.mjs --filter @open-tabletop/api exec vitest run src/identity-smoke.test.ts",
+    "migration:smoke": "node scripts/run-package-manager.mjs --filter @open-tabletop/api exec vitest run src/migration-smoke.test.ts -t \"migration smoke\"",
+    "storage:maintenance": "node scripts/run-package-manager.mjs --filter @open-tabletop/api storage:maintenance --",
+    "deployment:smoke": "node scripts/run-package-manager.mjs --filter @open-tabletop/api exec vitest run src/deployment-smoke.test.ts",
+    "perf:smoke": "node scripts/run-package-manager.mjs --filter @open-tabletop/api exec vitest run src/performance-smoke.test.ts -t \"performance smoke\"",
+    "perf:soak": "node scripts/run-package-manager.mjs --filter @open-tabletop/api exec vitest run src/performance-smoke.test.ts -t \"performance soak\"",
+    "perf:capacity": "node scripts/run-package-manager.mjs --filter @open-tabletop/api exec tsx src/small-group-capacity-cli.ts",
     "security:audit": "node scripts/run-package-manager.mjs audit --prod --audit-level high",
-    "security:smoke": "node scripts/run-package-manager.mjs --filter @open-tabletop/api test -- --run -t \"security smoke\"",
+    "security:smoke": "node scripts/run-package-manager.mjs --filter @open-tabletop/api exec vitest run src/security-smoke.test.ts",
     "typecheck": "node scripts/run-turbo.mjs run typecheck",
     "format": "prettier --write .",
     "check": "node scripts/run-package-scripts.mjs lint typecheck e2e:typecheck test build"
@@ -46,14 +48,5 @@
     "turbo": "^2.9.18",
     "typescript": "^5.9.3",
     "vitest": "^3.2.6"
-  },
-  "pnpm": {
-    "overrides": {
-      "@babel/core": "7.29.6",
-      "tsx>esbuild": "0.28.1",
-      "fast-uri": "3.1.2",
-      "fast-xml-builder": "1.1.7",
-      "ws": "8.21.0"
-    }
   }
 }

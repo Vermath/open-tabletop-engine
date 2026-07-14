@@ -1,11 +1,12 @@
-import type { Actor } from "@open-tabletop/core";
+import type { Actor, Dnd5eSrdPendingAdvancement } from "@open-tabletop/core";
 import { ChevronRight, Plus, RefreshCw, RotateCcw, Shield, Swords, Upload, UserPlus, WandSparkles, X } from "lucide-react";
 import { useState } from "react";
 import { dnd5eSrdArcaneRecoverySelection } from "./actor-sheet-data.js";
 import type { CharacterTemplateInfo, PluginRuntimeInfo, SystemRuntimeInfo } from "./api.js";
 import { errorMessage, formatDateTime, formatNumber } from "./sheet-format.js";
 import { systemRollLabel, type AdvancementOptionInfo } from "./system-actions.js";
-import { AdvancementFlow } from "./advancement-flow.js";
+import { AdvancementFlow, type AdvancementChoicePayload, type AdvancementFeatInfo, type AdvancementMulticlassOption, type AdvancementPreviewEnvelope, type AdvancementSubclassOption, type AdvancementWeaponMasteryInfo } from "./advancement-flow.js";
+import { HitDiceRestCard, type ActorRestOptions, type RestPreviewEnvelope } from "./hit-dice-rest-card.js";
 import { useModalAccessibility } from "./modal-accessibility.js";
 
 interface PluginInstallReview {
@@ -34,7 +35,7 @@ export function pluginInstallActionLabel(plugin: PluginRuntimeInfo, version = pl
   return `Roll back to ${version}`;
 }
 
-export function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeInfo[]; characterTemplates: CharacterTemplateInfo[]; actor?: Actor; advancementOptions: AdvancementOptionInfo[]; advancementGrantsFeat: boolean; advancementFeats: Array<{ id: string; name: string; category: string; summary: string }>; multiclassOptions: Array<{ className: string; eligible: boolean; reasons: string[] }>; importedActor?: Actor; createdMonster?: Actor; onSyncPluginRegistries(): void; onInstallPlugin(plugin: PluginRuntimeInfo, version: string, permissions: string[]): void | Promise<void>; onInstallSystem(system: SystemRuntimeInfo): void; onCreateCharacter(template: CharacterTemplateInfo): void; onOpenCharacterCreator(): void; onImportCharacter(): void; onCreateMonster(): void; onAdvanceActor(optionId?: string, choices?: { featId?: string; abilityChoices?: Record<string, number>; multiclassInto?: string }): void; onRestActor(restType: "short" | "long", options?: { arcaneRecovery?: Record<string, number> }): void; onRunCommand(plugin: PluginRuntimeInfo, command: string): void; onSystemRoll(): void; canInstall: boolean; canInstallSystem: boolean; canCreateActor: boolean; canImportActor: boolean; canAdvanceActor: boolean; canRestActor: boolean; canRollSystem: boolean }) {
+export function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeInfo[]; characterTemplates: CharacterTemplateInfo[]; actor?: Actor; advancementOptions: AdvancementOptionInfo[]; advancementGrantsFeat: boolean; advancementFeats: AdvancementFeatInfo[]; multiclassOptions: AdvancementMulticlassOption[]; advancementClassName?: string; nextClassLevel?: number; requiresSubclass?: boolean; subclassOptions: AdvancementSubclassOption[]; weaponMastery?: AdvancementWeaponMasteryInfo; pendingAdvancement?: Dnd5eSrdPendingAdvancement; importedActor?: Actor; createdMonster?: Actor; onSyncPluginRegistries(): void; onInstallPlugin(plugin: PluginRuntimeInfo, version: string, permissions: string[]): void | Promise<void>; onInstallSystem(system: SystemRuntimeInfo): void; onCreateCharacter(template: CharacterTemplateInfo): void; onOpenCharacterCreator(): void; onImportCharacter(): void; onCreateMonster(): void; onPreviewActor(optionId: string | undefined, choices: AdvancementChoicePayload, idempotencyKey: string): Promise<AdvancementPreviewEnvelope>; onAdvanceActor(optionId?: string, choices?: AdvancementChoicePayload): void | Promise<void>; onCancelPendingAdvancement?(pending: Dnd5eSrdPendingAdvancement): void | Promise<void>; onPreviewRestActor(restType: "short" | "long", options: ActorRestOptions, idempotencyKey: string): Promise<RestPreviewEnvelope>; onRestActor(restType: "short" | "long", options?: ActorRestOptions): void | Promise<void>; onRunCommand(plugin: PluginRuntimeInfo, command: string): void; onSystemRoll(): void; canInstall: boolean; canInstallSystem: boolean; canCreateActor: boolean; canImportActor: boolean; canAdvanceActor: boolean; canRestActor: boolean; canRollSystem: boolean }) {
   const [pluginSearch, setPluginSearch] = useState("");
   const [pluginSourceFilter, setPluginSourceFilter] = useState<"all" | "local" | "registry">("all");
   const [pluginStatusFilter, setPluginStatusFilter] = useState<"all" | "installed" | "available" | "upgrade">("all");
@@ -373,7 +374,7 @@ export function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemR
         <span>Sheet Actor</span>
         <strong>{props.actor?.name ?? "No actor"}</strong>
       </div>
-      <AdvancementFlow actor={props.actor} advancementOptions={props.advancementOptions} advancementGrantsFeat={props.advancementGrantsFeat} advancementFeats={props.advancementFeats} multiclassOptions={props.multiclassOptions} onAdvanceActor={props.onAdvanceActor} canAdvanceActor={props.canAdvanceActor} />
+      <AdvancementFlow actor={props.actor} advancementOptions={props.advancementOptions} advancementGrantsFeat={props.advancementGrantsFeat} advancementFeats={props.advancementFeats} multiclassOptions={props.multiclassOptions} advancementClassName={props.advancementClassName} nextClassLevel={props.nextClassLevel} requiresSubclass={props.requiresSubclass} subclassOptions={props.subclassOptions} weaponMastery={props.weaponMastery} pendingAdvancement={props.pendingAdvancement} onPreviewActor={props.onPreviewActor} onAdvanceActor={props.onAdvanceActor} onCancelPendingAdvancement={props.onCancelPendingAdvancement} canAdvanceActor={props.canAdvanceActor} />
       <button className="ghost-button wide" onClick={props.onImportCharacter} disabled={!activeSystem || !props.canImportActor}>
         <Upload size={16} /> Import Character
       </button>
@@ -392,17 +393,23 @@ export function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemR
           <strong>{props.createdMonster.name}</strong>
         </div>
       )}
-      <button className="ghost-button wide" onClick={() => props.onRestActor("short")} disabled={!props.actor || !props.canRestActor}>
-        <RefreshCw size={16} /> Short Rest
-      </button>
-      {arcaneRecovery && (
-        <button className="ghost-button wide" onClick={() => props.onRestActor("short", { arcaneRecovery })} disabled={!props.actor || !props.canRestActor}>
-          <RefreshCw size={16} /> Arcane Recovery
-        </button>
+      {props.actor?.systemId === "dnd-5e-srd" ? (
+        <HitDiceRestCard actor={props.actor} canRest={props.canRestActor} onPreviewRest={props.onPreviewRestActor} onRest={props.onRestActor} />
+      ) : (
+        <>
+          <button className="ghost-button wide" onClick={() => props.onRestActor("short", { hitDice: [] })} disabled={!props.actor || !props.canRestActor}>
+            <RefreshCw size={16} /> Short Rest (no hit dice)
+          </button>
+          {arcaneRecovery && (
+            <button className="ghost-button wide" onClick={() => props.onRestActor("short", { hitDice: [], arcaneRecovery })} disabled={!props.actor || !props.canRestActor}>
+              <RefreshCw size={16} /> Arcane Recovery (no hit dice)
+            </button>
+          )}
+          <button className="ghost-button wide" onClick={() => props.onRestActor("long")} disabled={!props.actor || !props.canRestActor}>
+            <RefreshCw size={16} /> Long Rest
+          </button>
+        </>
       )}
-      <button className="ghost-button wide" onClick={() => props.onRestActor("long")} disabled={!props.actor || !props.canRestActor}>
-        <RefreshCw size={16} /> Long Rest
-      </button>
       <button className="primary-button wide" onClick={props.onSystemRoll} disabled={!props.actor || !props.canRollSystem}>
         <ChevronRight size={16} /> {rollLabel}
       </button>

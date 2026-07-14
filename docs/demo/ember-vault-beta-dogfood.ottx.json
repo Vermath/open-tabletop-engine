@@ -376,10 +376,19 @@
         "type": "character",
         "name": "Valen Ash",
         "data": {
+          "attributes": {
+            "strength": 16,
+            "dexterity": 12,
+            "constitution": 10,
+            "intelligence": 10,
+            "wisdom": 10,
+            "charisma": 10
+          },
           "level": 3,
           "class": "fighter",
           "xp": 900,
           "hp": { "current": 24, "max": 28, "temp": 0 },
+          "hitDice": { "current": 2, "max": 3, "size": "d10" },
           "armorClass": 17,
           "proficiencyBonus": 2,
           "conditions": [],
@@ -409,9 +418,18 @@
         "type": "character",
         "name": "Nia Reed",
         "data": {
+          "attributes": {
+            "strength": 10,
+            "dexterity": 10,
+            "constitution": 10,
+            "intelligence": 10,
+            "wisdom": 16,
+            "charisma": 10
+          },
           "level": 3,
           "class": "cleric",
           "hp": { "current": 19, "max": 22, "temp": 0 },
+          "hitDice": { "current": 3, "max": 3, "size": "d8" },
           "armorClass": 16,
           "conditions": ["blessed"],
           "resources": {
@@ -436,9 +454,18 @@
         "type": "character",
         "name": "Orren Vale",
         "data": {
+          "attributes": {
+            "strength": 10,
+            "dexterity": 10,
+            "constitution": 10,
+            "intelligence": 16,
+            "wisdom": 10,
+            "charisma": 10
+          },
           "level": 3,
           "class": "wizard",
           "hp": { "current": 12, "max": 17, "temp": 0 },
+          "hitDice": { "current": 3, "max": 3, "size": "d6" },
           "armorClass": 13,
           "conditions": [],
           "resources": {
@@ -462,6 +489,14 @@
         "type": "npc",
         "name": "Mira the Archivist",
         "data": {
+          "attributes": {
+            "strength": 10,
+            "dexterity": 10,
+            "constitution": 10,
+            "intelligence": 10,
+            "wisdom": 10,
+            "charisma": 10
+          },
           "role": "quest-giver",
           "secret": "Mira knows the vault key was split into three asterite shards."
         },
@@ -478,6 +513,14 @@
         "type": "monster",
         "name": "Ember Warden",
         "data": {
+          "attributes": {
+            "strength": 10,
+            "dexterity": 10,
+            "constitution": 10,
+            "intelligence": 10,
+            "wisdom": 10,
+            "charisma": 10
+          },
           "challengeRating": "2",
           "armorClass": 14,
           "hp": { "current": 13, "max": 45 },
@@ -498,6 +541,14 @@
         "type": "monster",
         "name": "Cinder Scout",
         "data": {
+          "attributes": {
+            "strength": 10,
+            "dexterity": 16,
+            "constitution": 10,
+            "intelligence": 10,
+            "wisdom": 10,
+            "charisma": 10
+          },
           "challengeRating": "1/2",
           "armorClass": 13,
           "hp": { "current": 18, "max": 18 },

@@ -31,6 +31,8 @@ describe("combatant draft editing", () => {
     expect(source).toContain("runPendingControl(`combatant:${combatant.id}:readiness`");
     expect(source).toContain("runPendingControl(`combatant:${combatant.id}:defeated`");
     expect(source).toContain("runPendingControl(`combatant:${combatant.id}:resource`");
-    expect(source).toContain('runPendingControl("combat:start", props.onStart)');
+    expect(source).toContain('runPendingControl("combat:start", "Start combat", props.onStart)');
+    expect(source).toContain("<RetryableActionNotice");
+    expect(source).not.toContain("console.error");
   });
 });

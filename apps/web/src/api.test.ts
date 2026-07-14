@@ -1,6 +1,6 @@
 import type { MapAsset } from "@open-tabletop/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { acceptInviteSession, apiDelete, apiGet, apiPatch, apiPost, assetBlobUrl, loadSnapshot, loginSession, logoutSession } from "./api.js";
+import { acceptInviteSession, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, assetOptimizedUrl, assetThumbnailUrl, loadSnapshot, loginSession, logoutSession, transferCampaignOwnership } from "./api.js";
 
 describe("abortable API requests", () => {
   beforeEach(() => {
@@ -34,6 +34,32 @@ describe("abortable API requests", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
     for (const [, init] of fetchMock.mock.calls) expect(new Headers(init?.headers).get("idempotency-key")).toMatch(/^setup-step-/);
+  });
+
+  it("submits ownership transfer revision and retry identity separately", async () => {
+    const fetchMock = vi.fn(async (_path: RequestInfo | URL, _init?: RequestInit) => jsonResponse({
+      campaign: { id: "camp_1" },
+      previousOwner: { userId: "usr_owner" },
+      newOwner: { userId: "usr_player" }
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const controller = new AbortController();
+
+    await transferCampaignOwnership("camp/1", {
+      targetUserId: "usr_player",
+      expectedUpdatedAt: "2026-07-13T00:00:00.000Z",
+      reason: "New season"
+    }, "campaign-transfer-attempt-1", { signal: controller.signal });
+
+    const [path, init] = fetchMock.mock.calls[0] ?? [];
+    expect(path).toBe("/api/v1/campaigns/camp%2F1/ownership-transfer");
+    expect(new Headers(init?.headers).get("idempotency-key")).toBe("campaign-transfer-attempt-1");
+    expect(init?.signal).toBe(controller.signal);
+    expect(JSON.parse(String(init?.body))).toEqual({
+      targetUserId: "usr_player",
+      expectedUpdatedAt: "2026-07-13T00:00:00.000Z",
+      reason: "New season"
+    });
   });
 });
 
@@ -92,14 +118,16 @@ describe("acceptInviteSession", () => {
   });
 
   it("preserves the structured MFA challenge for the invite flow", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
-      error: "mfa_required",
-      message: "MFA code required",
-      mfaRequired: true,
-      userId: "usr_existing"
-    }), { status: 401, headers: { "content-type": "application/json" } })));
+    vi.stubGlobal("fetch", vi.fn(async (path: RequestInfo | URL) => String(path).includes("/invites/preview")
+      ? jsonResponse({ expectedUpdatedAt: "2026-07-13T00:00:00.000Z" })
+      : new Response(JSON.stringify({
+          error: "mfa_required",
+          message: "MFA code required",
+          mfaRequired: true,
+          userId: "usr_existing"
+        }), { status: 401, headers: { "content-type": "application/json" } })));
 
-    await expect(acceptInviteSession({ token: "oti_test", email: "player@example.test", password: "password1" })).rejects.toMatchObject({
+    await expect(acceptInviteSession({ token: "oti_test", email: "player@example.test", password: "password1" }, { idempotencyKey: "invite-accept-mfa-test" })).rejects.toMatchObject({
       name: "ApiError",
       status: 401,
       body: expect.objectContaining({ mfaRequired: true })
@@ -107,43 +135,49 @@ describe("acceptInviteSession", () => {
   });
 
   it("sends an MFA code while keeping display name optional for existing users", async () => {
-    const fetchMock = vi.fn(async (_path: RequestInfo | URL, _init?: RequestInit) => jsonResponse({
-      token: "token-invite",
-      user: { id: "usr_existing", displayName: "Existing Player" },
-      session: { id: "session-invite", userId: "usr_existing" },
-      memberships: [],
-      campaign: { id: "camp_invited", name: "Invited Campaign" }
-    }));
+    const fetchMock = vi.fn(async (path: RequestInfo | URL, _init?: RequestInit) => String(path).includes("/invites/preview")
+      ? jsonResponse({ expectedUpdatedAt: "2026-07-13T00:00:00.000Z" })
+      : jsonResponse({
+          token: "token-invite",
+          user: { id: "usr_existing", displayName: "Existing Player" },
+          session: { id: "session-invite", userId: "usr_existing" },
+          memberships: [],
+          campaign: { id: "camp_invited", name: "Invited Campaign" }
+        }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await acceptInviteSession({ token: "oti_test", email: "player@example.test", password: "password1", mfaCode: "123456" });
+    await acceptInviteSession({ token: "oti_test", email: "player@example.test", password: "password1", mfaCode: "123456" }, { idempotencyKey: "invite-accept-code-test" });
 
-    const [, init] = fetchMock.mock.calls[0] ?? [];
+    const [, init] = fetchMock.mock.calls[1] ?? [];
     expect(JSON.parse(String(init?.body))).toEqual({
       token: "oti_test",
       email: "player@example.test",
       password: "password1",
-      mfaCode: "123456"
+      mfaCode: "123456",
+      expectedUpdatedAt: "2026-07-13T00:00:00.000Z"
     });
+    expect(new Headers(init?.headers).get("idempotency-key")).toBe("invite-accept-code-test");
   });
 
   it("supports recovery codes and lets callers guard session persistence", async () => {
-    const fetchMock = vi.fn(async (_path: RequestInfo | URL, _init?: RequestInit) => jsonResponse({
-      token: "token-invite",
-      user: { id: "usr_existing", displayName: "Existing Player" },
-      session: { id: "session-invite", userId: "usr_existing" },
-      memberships: [],
-      campaign: { id: "camp_invited", name: "Invited Campaign" }
-    }));
+    const fetchMock = vi.fn(async (path: RequestInfo | URL, _init?: RequestInit) => String(path).includes("/invites/preview")
+      ? jsonResponse({ expectedUpdatedAt: "2026-07-13T00:00:00.000Z" })
+      : jsonResponse({
+          token: "token-invite",
+          user: { id: "usr_existing", displayName: "Existing Player" },
+          session: { id: "session-invite", userId: "usr_existing" },
+          memberships: [],
+          campaign: { id: "camp_invited", name: "Invited Campaign" }
+        }));
     vi.stubGlobal("fetch", fetchMock);
     const controller = new AbortController();
 
     await acceptInviteSession(
       { token: "oti_test", email: "player@example.test", password: "password1", recoveryCode: "otte-recovery-code" },
-      { persist: false, signal: controller.signal }
+      { persist: false, signal: controller.signal, idempotencyKey: "invite-accept-recovery-test" }
     );
 
-    const [, init] = fetchMock.mock.calls[0] ?? [];
+    const [, init] = fetchMock.mock.calls[1] ?? [];
     expect(JSON.parse(String(init?.body))).toMatchObject({ recoveryCode: "otte-recovery-code" });
     expect(init?.signal).toBe(controller.signal);
     expect(localStorage.setItem).not.toHaveBeenCalled();
@@ -180,6 +214,22 @@ describe("assetBlobUrl", () => {
     expect(assetBlobUrl(asset)).toBe("https://assets.example.test/api/v1/assets/asset_signed_map/blob?expiresAt=2026-05-24T16%3A00%3A00.000Z&signature=sig");
   });
 
+  it("selects persisted thumbnail and optimized variants without changing authorization", () => {
+    const asset = assetFixture({
+      id: "asset_renditions",
+      url: "/api/v1/assets/asset_renditions/blob",
+      deliveryUrl: "https://assets.example.test/api/v1/assets/asset_renditions/blob?expiresAt=1&signature=sig",
+      renditions: [
+        { kind: "thumbnail", mimeType: "image/webp", sizeBytes: 100, checksum: "sha256:thumb", width: 320, height: 180, storage: { provider: "local", key: "thumb" }, createdAt: "2026-07-13T00:00:00.000Z" },
+        { kind: "optimized", mimeType: "image/webp", sizeBytes: 500, checksum: "sha256:optimized", width: 2048, height: 1152, storage: { provider: "local", key: "optimized" }, createdAt: "2026-07-13T00:00:00.000Z" }
+      ]
+    });
+
+    expect(assetThumbnailUrl(asset)).toBe("https://assets.example.test/api/v1/assets/asset_renditions/blob?expiresAt=1&signature=sig&variant=thumbnail");
+    expect(assetOptimizedUrl(asset)).toBe("https://assets.example.test/api/v1/assets/asset_renditions/blob?expiresAt=1&signature=sig&variant=optimized");
+    expect(assetThumbnailUrl(assetFixture({ id: "asset_original", url: "/api/v1/assets/asset_original/blob" }))).toBe("/api/v1/assets/asset_original/blob");
+  });
+
   it("normalizes trailing API base URLs for managed asset blob URLs without query tokens", async () => {
     vi.stubEnv("VITE_API_URL", "https://api.example.test/");
     vi.resetModules();
@@ -190,6 +240,36 @@ describe("assetBlobUrl", () => {
     });
 
     expect(assetBlobUrlWithBase(asset)).toBe("https://api.example.test/api/v1/assets/asset_railway_map/blob");
+  });
+});
+
+describe("apiUploadAsset mutation guards", () => {
+  beforeEach(() => {
+    stubSessionStorage();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("sends a stable key and the exact scene revision for background uploads", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => jsonResponse({ asset: { id: "asset-one" }, scene: { id: "scene-one" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const file = { name: "vault.png", type: "image/png", size: 123, lastModified: 1 } as File;
+
+    await apiUploadAsset({ campaignId: "camp-one", sceneId: "scene-one", expectedSceneUpdatedAt: "2026-07-13T00:00:00.000Z", setAsBackground: true, file }, { idempotencyKey: "asset-upload-attempt", signal: new AbortController().signal });
+
+    const [path, init] = fetchMock.mock.calls[0] ?? [];
+    expect(String(path)).toContain("sceneId=scene-one&setAsBackground=true&expectedSceneUpdatedAt=2026-07-13T00%3A00%3A00.000Z");
+    expect(new Headers(init?.headers).get("idempotency-key")).toBe("asset-upload-attempt");
+    expect(init?.body).toBe(file);
+  });
+
+  it("refuses a background upload without a reviewed scene revision", async () => {
+    vi.stubGlobal("fetch", vi.fn());
+    const file = { name: "vault.png", type: "image/png", size: 123, lastModified: 1 } as File;
+    await expect(apiUploadAsset({ campaignId: "camp-one", sceneId: "scene-one", setAsBackground: true, file }, { idempotencyKey: "asset-upload-attempt" })).rejects.toThrow("current scene revision");
+    expect(fetch).not.toHaveBeenCalled();
   });
 });
 
@@ -209,6 +289,8 @@ describe("loadSnapshot", () => {
 
     const snapshot = await loadSnapshot("camp_demo");
 
+    expect(snapshot.presences).toEqual([expect.objectContaining({ userId: "usr_demo_gm", displayName: "Demo GM" })]);
+    expect(snapshot.eventSequence).toBe(7);
     expect(snapshot.audioTracks).toEqual([{ id: "aud_1", campaignId: "camp_demo", name: "Fallback Audio" }]);
     expect(snapshot.systems).toEqual([expect.objectContaining({ id: "dnd-5e-srd", active: true, runtimeCapabilities: expect.arrayContaining(["character-templates"]) })]);
     expect(snapshot.characterTemplates).toEqual([{ id: "template_fallback", systemId: "dnd-5e-srd", name: "Fallback Template" }]);
@@ -401,6 +483,8 @@ function campaignFixture() {
 function campaignSnapshotFixture(bundled?: Partial<BundledSnapshotResources>, permissions = ["campaign.update", "scene.read", "actor.read", "ai.proposeChanges"]) {
   return {
     generatedAt: "2026-07-04T00:00:00.000Z",
+    eventSequence: 7,
+    realtimeRecovery: "refetch_snapshot_on_gap",
     campaign: campaignFixture(),
     members: [
       {
@@ -410,6 +494,7 @@ function campaignSnapshotFixture(bundled?: Partial<BundledSnapshotResources>, pe
         permissions
       }
     ],
+    presences: [{ campaignId: "camp_demo", userId: "usr_demo_gm", displayName: "Demo GM", role: "owner", connectionCount: 1, connectedAt: "2026-07-04T00:00:00.000Z", lastSeenAt: "2026-07-04T00:00:01.000Z", activeSceneIds: [] }],
     scenes: [],
     tokens: [],
     fogPresets: [],

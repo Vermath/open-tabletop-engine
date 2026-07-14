@@ -1,5 +1,7 @@
 # First-Run GM Guide
 
+Use a browser in the [supported browser statement](./supported-browsers.md) for the table and ask players to do the same. Current desktop Chromium is the automated compatibility baseline.
+
 ## Setup
 
 1. Install dependencies with `pnpm install --frozen-lockfile`.
@@ -23,7 +25,7 @@ Use `docs/demo/beta-dogfood-runbook.md` for the three-session script. After each
 - Export the campaign archive.
 - Export the redacted Report Bundle if anything felt broken.
 - Record any issue with the v0.3 outside dogfood template.
-- Keep AI/plugin changes in proposal review until the GM approves them.
+- Use the AI agent's configured proposal or automatic-execution mode as intended. Review plugin-originated changes through the normal permissioned application flow.
 
 ## Content Import
 

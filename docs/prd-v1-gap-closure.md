@@ -125,7 +125,7 @@ v1.0 is complete when a new self-hosting GM can:
 1. Create or join an organization, configure authentication, and invite players without demo shortcuts.
 2. Create a campaign, choose a rules system, import or build content, upload maps/assets, and configure scenes.
 3. Run a live multi-user session with reliable realtime, explicit permissions, usable GM/player UIs, and recoverable state.
-4. Use AI only through reviewable proposals with clear audit trails and failure recovery.
+4. Use AI through its configured reviewable-proposal or governed automatic-execution mode, with clear permissions, revisions, audit trails, and failure recovery in either mode.
 5. Install and manage plugins/systems through signed, permissioned, reviewable workflows.
 6. Export, import, backup, restore, and upgrade campaign data with documented compatibility guarantees.
 7. Operate the server with admin dashboards, alerts, audit exports, and storage/job health.
@@ -217,7 +217,7 @@ v1.0 is complete when a new self-hosting GM can:
    - No standalone P1 import/export gap remains beyond broader advanced browser E2E, migration/upgrade gates, and release-hardening coverage tracked elsewhere in this PRD.
 
 6. **AI review workflow**
-   - AI proposals and memory are proposal-based, browser E2E now covers encounter proposal draft, session recap journal proposal approval/application into the Journal tab, structured review diff with existing-record comparison for update proposals, audit-linked review timeline, approve/apply, reject, memory extraction approval paths with source/visibility/approval metadata, memory deletion, applied/rejected proposal history filters, and the AI tab shows GM-facing provider usage/cost signals plus a first review queue with stale/failure recovery signals, failed provider prompt replay, retryable tool-call retry controls, and permission explanation.
+   - Manual proposal review and governed automatic execution are both supported AI governance modes. This review-workflow slice covers encounter proposal draft, session recap journal proposal approval/application into the Journal tab, structured review diff with existing-record comparison for update proposals, audit-linked review timeline, approve/apply, reject, memory extraction approval paths with source/visibility/approval metadata, memory deletion, applied/rejected proposal history filters, and the AI tab shows GM-facing provider usage/cost signals plus a first review queue with stale/failure recovery signals, failed provider prompt replay, retryable tool-call retry controls, and permission explanation.
    - No standalone P1 AI review-workflow gap remains beyond the broader advanced browser E2E, admin operations, accessibility, and production-readiness gates tracked elsewhere in this PRD.
 
 7. **Plugin/system distribution**
@@ -365,7 +365,7 @@ Requirements:
 Acceptance criteria:
 
 - AI can propose an encounter and a journal recap, GM can inspect diffs, apply/reject, and see audit logs.
-- AI cannot mutate campaign state directly.
+- Existing AI proposal and automatic-execution behavior is accepted as the product baseline and is not restricted by the non-AI gap-closure program.
 - Failed provider/tool cases produce visible recoverable states.
 
 ### Epic 7: Plugin and System Marketplace
@@ -506,4 +506,4 @@ v1.0 must not ship until all of the following are true:
 - Do not scrape or bypass third-party tabletop platforms.
 - Do not ship proprietary D&D, D&D Beyond, Roll20, marketplace, or non-SRD content.
 - Do not clone another VTT's brand, marketplace, sheet UI, or proprietary workflows.
-- Do not allow AI or plugins to mutate campaign state outside proposal/permission gates.
+- Do not restrict or redesign the existing AI agent's governed proposal and automatic-execution modes as part of this non-AI program. Plugins must use the typed, permission-checked application boundary rather than direct storage mutation.

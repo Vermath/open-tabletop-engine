@@ -54,6 +54,8 @@ const socket = new WebSocket(realtimeUrl, ["otte.v1", `otte.auth.${token}`]);
 
 The client wraps the public session, workspace, campaign/member/session/search, world, scene, token, actor, item, journal, handout/read-receipt, chat, dice, combat, encounter, proposal/revert, structured AI-memory lifecycle, plugin, system, content-import, archive, asset upload/delivery metadata, chat export, and dogfood report surfaces.
 
+`campaignSnapshot(campaignId, sceneId?, historyLimit?)` accepts an optional per-history collection bound up to 200. The returned `history` metadata identifies which permission-filtered collections were truncated and their original and returned counts.
+
 The reusable client intentionally excludes server-admin routes, SCIM bearer-provisioning routes, OIDC browser redirects, the websocket endpoint as a REST fetch wrapper, and raw asset blob delivery. Those surfaces either require privileged operator handling, browser redirects, direct media fetches, or the dedicated realtime helpers above.
 
 ## Rules-system registration
@@ -70,7 +72,7 @@ const registered = await client.registerSystem("camp_demo", {
   schemas: { actor: "schemas/actor.json", item: "schemas/item.json" },
   permissions: ["actor.read"],
   capabilities: ["data-model"]
-});
+}, "system-register:camp_demo:my-data-system:attempt-1");
 
 const activated = await client.installSystem("camp_demo", registered.id);
 console.log(activated.campaign.defaultSystemId);
@@ -78,11 +80,13 @@ console.log(activated.campaign.defaultSystemId);
 
 Treat `400 invalid_system_manifest`, `403`, `409`, and `422 unsupported_system_capabilities` as expected registration outcomes. The catalog's `runtimeCapabilities` and `unsupportedCapabilities` fields are authoritative; manifest claims do not load or execute arbitrary server code.
 
+Package registration and registry synchronization are operator mutations. Pass a stable idempotency key to `registerPlugin(...)` and `syncPluginRegistry(...)`; registry sync also requires the exact `expectedRegistryRevision` from `GET /api/v1/admin/plugins/reviews` or `GET /api/v1/admin/plugins/operations`. A successful sync returns its previous and resulting revisions. Reuse the same key only when retrying the same request after an uncertain transport outcome.
+
 ## Author Checklist
 
 - Keep `@open-tabletop/api-client`, `@open-tabletop/api-contracts`, and `@open-tabletop/core` versions aligned.
 - Prefer exported core types such as `Campaign`, `Scene`, `Token`, `Actor`, `JournalEntry`, `ChatMessage`, `Proposal`, and `EngineEvent` instead of duplicating schemas.
-- Treat AI and plugin/system mutations as permissioned proposals or explicit API calls; do not mutate campaign state locally and expect the server to reconcile it.
+- Preserve the AI agent's existing proposal and automatic-execution modes. Plugins and systems must use permissioned proposals or explicit typed API calls; clients must never mutate local campaign state and expect the server to reconcile it.
 - Handle `401`, `403`, `409`, `429`, and structured error bodies as normal integration states.
 - Preserve idempotency keys for retried mutating requests when your integration can retry after a network failure.
 - Use the archive and chat-export helpers for backup/reporting tools instead of reading storage internals.

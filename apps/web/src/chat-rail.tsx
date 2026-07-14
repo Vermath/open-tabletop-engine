@@ -1,5 +1,5 @@
 import type { ChatMessage, DiceRoll } from "@open-tabletop/core";
-import { Activity, Check, ChevronDown, Dices, MessageSquare, PencilLine, Plus, Save, Send, X } from "lucide-react";
+import { Activity, Check, ChevronDown, Dices, MessageSquare, PencilLine, Plus, Reply, Save, Send, ShieldCheck, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { verifyDiceRoll, type DiceRollVerification, type Snapshot } from "./api.js";
 import { campaignSearchAnchorId } from "./campaign-search-panel.js";
@@ -16,6 +16,8 @@ export type ChatRailProps = {
   rolls: DiceRoll[];
   concealedRollIds: ReadonlySet<string>;
   members: Snapshot["members"];
+  presences: Snapshot["presences"];
+  scenes: Snapshot["scenes"];
   diceFormula: string;
   setDiceFormula(value: string): void;
   diceVisibility: DiceRoll["visibility"];
@@ -27,32 +29,72 @@ export type ChatRailProps = {
   onSubmitCommand(): Promise<void>;
   onClearReply(): void;
   currentUserId: string;
+  onReplyToMessage(message: ChatMessage): void;
   onEditMessage(message: ChatMessage, body: string): Promise<void>;
+  onDeleteMessage(message: ChatMessage): Promise<void>;
+  onModerateMessage(message: ChatMessage, status: "open" | "follow_up" | "reviewed"): Promise<void>;
+  canModerate: boolean;
   canRollDice: boolean;
   dice3dEnabled: boolean;
   onToggleDice3d(): void;
+  notificationPreference: "all" | "mentions" | "none";
+  connectionState: "idle" | "connecting" | "connected" | "reconnecting" | "syncing" | "offline";
 };
 
+export function diceFormulaRangeLabel(formula: string): string {
+  if (!formula.trim()) return "Enter a formula to preview its possible total.";
+  const range = safeProbabilityRange(formula.trim());
+  return range ? `Possible total: ${formatNumber(range.min)} to ${formatNumber(range.max)}` : "Range unavailable: check the notation or use a bounded formula.";
+}
 
 export function ChatRail(props: ChatRailProps) {
   const streamRef = useRef<HTMLDivElement>(null);
+  const [diceActionStatus, setDiceActionStatus] = useState("");
   const memberNames = new Map(props.members.map((member) => [member.user.id, member.user.displayName]));
   const messageById = new Map(props.messages.map((message) => [message.id, message]));
   const rollById = new Map(props.rolls.map((roll) => [roll.id, roll]));
+  const sceneNames = new Map(props.scenes.map((scene) => [scene.id, scene.name]));
   const savedFormulaOptions = [...props.diceMacros.map((macro) => ({ label: macro.name === macro.formula ? macro.formula : `${macro.name} - ${macro.formula}`, formula: macro.formula })), ...props.savedDiceFormulas.map((formula) => ({ label: formula, formula }))].filter((option, index, options) => options.findIndex((item) => item.formula === option.formula) === index);
 
   useEffect(() => {
     streamRef.current?.scrollTo({ top: streamRef.current.scrollHeight });
   }, [props.messages.length]);
 
+  const runDiceAction = async (pending: string, action: () => Promise<void>) => {
+    setDiceActionStatus(pending);
+    try {
+      await action();
+      setDiceActionStatus("");
+    } catch (error) {
+      setDiceActionStatus(`${pending.replace(/\.{3}$/, "")} failed: ${errorMessage(error)}`);
+    }
+  };
+
   return (
     <section className="chat-rail" aria-label="Chat">
+      <div className="chat-presence-summary" aria-label="Campaign chat status">
+        <span><span className={`presence-dot presence-${props.connectionState}`} aria-hidden="true" /> {props.connectionState === "connected" ? "Table connected" : props.connectionState === "syncing" ? "Syncing table" : props.connectionState === "reconnecting" || props.connectionState === "connecting" ? "Reconnecting table" : "Table offline"}</span>
+        <details className="chat-presence-disclosure">
+          <summary>{formatNumber(props.presences.length)} online</summary>
+          {props.presences.length === 0 ? <span>No participants are connected.</span> : (
+            <ul className="chat-presence-list" aria-label="Online campaign participants">
+              {props.presences.map((presence) => (
+                <li key={presence.userId}>
+                  <strong>{presence.displayName}</strong>
+                  <span>{presence.activeSceneIds.map((id) => sceneNames.get(id) ?? "Visible scene").join(", ") || "Campaign lobby"}{presence.connectionCount > 1 ? ` · ${presence.connectionCount} connections` : ""}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </details>
+        <span>{props.notificationPreference === "all" ? "All message alerts" : props.notificationPreference === "mentions" ? "Mention & whisper alerts" : "Alerts muted"}</span>
+      </div>
       <form
         className="dice-box chat-dice-box"
         aria-label="Dice roller"
         onSubmit={(event) => {
           event.preventDefault();
-          props.onRollDice().catch(console.error);
+          void runDiceAction("Rolling...", props.onRollDice);
         }}
       >
         <Activity size={16} />
@@ -64,7 +106,7 @@ export function ChatRail(props: ChatRailProps) {
           <option value="public">Public</option>
           <option value="gm_only">GM only</option>
         </select>
-        <button className="icon-button" type="button" title="Save dice formula" aria-label="Save dice formula" disabled={!props.diceFormula.trim()} onClick={() => props.onSaveDiceFormula().catch(console.error)}>
+        <button className="icon-button" type="button" title="Save dice formula" aria-label="Save dice formula" disabled={!props.diceFormula.trim()} onClick={() => void runDiceAction("Saving formula...", props.onSaveDiceFormula)}>
           <Plus size={15} />
         </button>
         <select aria-label="Saved dice formula" value="" onChange={(event) => event.target.value && props.setDiceFormula(event.target.value)}>
@@ -91,13 +133,21 @@ export function ChatRail(props: ChatRailProps) {
             <Dices size={13} aria-hidden="true" /> 3D
           </button>
         </div>
+        <div className="dice-formula-guidance">
+          <p role="status" aria-live="polite">{diceFormulaRangeLabel(props.diceFormula)}</p>
+          <details>
+            <summary>Dice notation</summary>
+            <p><code>NdS</code> dice, <code>d%</code> percentile, <code>+/-</code> modifiers, <code>kh/kl/dh/dl</code> keep or drop, <code>rN</code> reroll a face, <code>!</code> explode, and <code>adv/dis</code> advantage or disadvantage.</p>
+          </details>
+        </div>
+        {diceActionStatus && <p className="chat-action-status chat-dice-status" role="alert">{diceActionStatus}</p>}
       </form>
       <div className="chat-rail-stream" aria-label="Chat messages" ref={streamRef}>
         {props.messages.length === 0 ? (
           <div className="empty-state compact">No messages yet.</div>
         ) : (
           props.messages.map((message) => (
-            <ChatMessageItem key={message.id} campaignId={props.campaignId} message={message} roll={message.rollId ? rollById.get(message.rollId) : undefined} rollConcealed={message.rollId ? props.concealedRollIds.has(message.rollId) : false} memberNames={memberNames} messageById={messageById} canEdit={message.userId === props.currentUserId && !message.rollId && message.type !== "roll"} onEditMessage={props.onEditMessage} />
+            <ChatMessageItem key={message.id} campaignId={props.campaignId} message={message} roll={message.rollId ? rollById.get(message.rollId) : undefined} rollConcealed={message.rollId ? props.concealedRollIds.has(message.rollId) : false} memberNames={memberNames} messageById={messageById} canEdit={message.userId === props.currentUserId && !message.rollId && message.type !== "roll"} canModerate={props.canModerate} onReplyToMessage={props.onReplyToMessage} onEditMessage={props.onEditMessage} onDeleteMessage={props.onDeleteMessage} onModerateMessage={props.onModerateMessage} />
           ))
         )}
       </div>
@@ -107,10 +157,12 @@ export function ChatRail(props: ChatRailProps) {
 }
 
 
-export function ChatMessageItem(props: { campaignId: string; message: ChatMessage; roll?: DiceRoll; rollConcealed?: boolean; memberNames: Map<string, string>; messageById: Map<string, ChatMessage>; canEdit?: boolean; onEditMessage?(message: ChatMessage, body: string): Promise<void> }) {
+export function ChatMessageItem(props: { campaignId: string; message: ChatMessage; roll?: DiceRoll; rollConcealed?: boolean; memberNames: Map<string, string>; messageById: Map<string, ChatMessage>; canEdit?: boolean; canModerate?: boolean; onReplyToMessage?(message: ChatMessage): void; onEditMessage?(message: ChatMessage, body: string): Promise<void>; onDeleteMessage?(message: ChatMessage): Promise<void>; onModerateMessage?(message: ChatMessage, status: "open" | "follow_up" | "reviewed"): Promise<void> }) {
   const [editing, setEditing] = useState(false);
   const [editBody, setEditBody] = useState(props.message.body);
   const [editStatus, setEditStatus] = useState("");
+  const [deleteConfirmation, setDeleteConfirmation] = useState(false);
+  const [moderationStatus, setModerationStatus] = useState("");
   const messageKind = props.roll || props.message.type === "roll" ? "roll" : props.message.type;
   const author = props.memberNames.get(props.message.userId) ?? props.message.userId;
   const replyMessage = props.message.replyToMessageId ? props.messageById.get(props.message.replyToMessageId) : undefined;
@@ -123,7 +175,24 @@ export function ChatMessageItem(props: { campaignId: string; message: ChatMessag
         <span className="chat-time">{formatDateTime(props.message.createdAt)}</span>
         <span className={`chat-visibility chat-visibility-${props.message.visibility}`}>{chatVisibilityLabel(props.message.visibility)}</span>
         {props.message.editedAt && <span className="chat-edited-label" title={`Edited ${formatDateTime(props.message.editedAt)}`}>edited</span>}
-        {props.canEdit && !editing && <button className="chat-message-action" type="button" aria-label={`Edit message from ${author}`} title="Edit message" onClick={() => { setEditBody(props.message.body); setEditing(true); }}><PencilLine size={12} /></button>}
+        <span className="chat-message-actions">
+          {props.onReplyToMessage && <button className="chat-message-action" type="button" aria-label={`Reply to message from ${author}`} title="Reply" onClick={() => props.onReplyToMessage?.(props.message)}><Reply size={12} /></button>}
+          {props.canEdit && !editing && <button className="chat-message-action" type="button" aria-label={`Edit message from ${author}`} title="Edit message" onClick={() => { setEditBody(props.message.body); setEditing(true); }}><PencilLine size={12} /></button>}
+          {props.canModerate && props.onDeleteMessage && (
+            <button className={deleteConfirmation ? "chat-message-action danger" : "chat-message-action"} type="button" aria-label={deleteConfirmation ? `Confirm delete message from ${author}` : `Delete message from ${author}`} title={deleteConfirmation ? "Confirm delete" : "Delete message"} onClick={() => {
+              if (!deleteConfirmation) {
+                setDeleteConfirmation(true);
+                setModerationStatus("Select delete again to confirm.");
+                return;
+              }
+              setModerationStatus("Deleting...");
+              props.onDeleteMessage?.(props.message).catch((error) => {
+                setDeleteConfirmation(false);
+                setModerationStatus(`Delete failed: ${errorMessage(error)}`);
+              });
+            }}><Trash2 size={12} /></button>
+          )}
+        </span>
       </header>
       {replyMessage && (
         <div className="chat-reply-context" aria-label="Chat reply context">
@@ -153,6 +222,22 @@ export function ChatMessageItem(props: { campaignId: string; message: ChatMessag
       )}
       {props.message.visibility === "whisper" && recipientLabel && <p className="chat-recipient-line">To {recipientLabel}</p>}
       {props.message.rollId && !props.roll && <p className="chat-recipient-line">Roll result is not available in this snapshot.</p>}
+      {props.canModerate && props.onModerateMessage && (
+        <label className="chat-moderation-control">
+          <ShieldCheck size={12} aria-hidden="true" />
+          <span>Moderation</span>
+          <select aria-label={`Moderation status for message from ${author}`} value={props.message.moderationStatus ?? "open"} onChange={(event) => {
+            const status = event.target.value as "open" | "follow_up" | "reviewed";
+            setModerationStatus("Saving moderation...");
+            props.onModerateMessage?.(props.message, status).then(() => setModerationStatus("Moderation saved.")).catch((error) => setModerationStatus(`Moderation failed: ${errorMessage(error)}`));
+          }}>
+            <option value="open">Open</option>
+            <option value="follow_up">Follow up</option>
+            <option value="reviewed">Reviewed</option>
+          </select>
+        </label>
+      )}
+      {moderationStatus && <p className="chat-action-status" role="status">{moderationStatus}</p>}
     </article>
   );
 }
@@ -215,7 +300,7 @@ export function RollMessageCard(props: { campaignId: string; message: ChatMessag
             })}
           </div>
           <div className="chat-roll-verification">
-            <button className="ghost-button small" type="button" onClick={() => verify().catch(console.error)}>
+            <button className="ghost-button small" type="button" onClick={() => void verify()}>
               <Check size={13} /> Verify fairness
             </button>
             {verificationStatus && (
@@ -250,8 +335,18 @@ export function diceVerificationReasonLabel(reason: DiceRollVerification["reason
 
 
 export function ChatComposer(props: { command: string; setCommand(value: string): void; replyTarget?: ChatMessage; onSubmitCommand(): Promise<void>; onClearReply(): void }) {
+  const [submitStatus, setSubmitStatus] = useState("");
+  const submit = async () => {
+    setSubmitStatus("Sending...");
+    try {
+      await props.onSubmitCommand();
+      setSubmitStatus("");
+    } catch (error) {
+      setSubmitStatus(`Send failed: ${errorMessage(error)}`);
+    }
+  };
   return (
-    <form className="chat-composer-dock" aria-label="Chat composer" onSubmit={(event) => { event.preventDefault(); props.onSubmitCommand().catch(console.error); }}>
+    <form className="chat-composer-dock" aria-label="Chat composer" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
       {props.replyTarget && (
         <div className="chat-reply-draft" role="status" aria-label="Chat reply target">
           <span>Replying to {props.replyTarget.body.slice(0, 80)}</span>
@@ -269,13 +364,14 @@ export function ChatComposer(props: { command: string; setCommand(value: string)
           onKeyDown={(event) => {
             if (event.key !== "Enter" || event.shiftKey) return;
             event.preventDefault();
-            props.onSubmitCommand().catch(console.error);
+            void submit();
           }}
         />
         <button className="icon-button chat-send-button" type="submit" title="Send chat command" aria-label="Send chat command" disabled={!props.command.trim()}>
           <Send size={16} />
         </button>
       </div>
+      {submitStatus && <p className="chat-action-status" role="alert">{submitStatus}</p>}
       <p className="chat-command-reference">/roll /r /gmroll /gm /w /me /ooc</p>
     </form>
   );

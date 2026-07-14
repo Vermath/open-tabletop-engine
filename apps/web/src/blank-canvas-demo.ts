@@ -133,11 +133,17 @@ export function createBlankCanvasDemoSnapshot(timestamp = new Date().toISOString
           displayName: "Demo GM",
           email: "demo@example.test"
         },
+        active: true,
         permissions: blankCanvasDemoPermissions,
         createdAt: timestamp,
         updatedAt: timestamp
       }
     ],
+    presences: [],
+    eventSequence: 0,
+    realtimeRecovery: "refetch_snapshot_on_gap",
+    worldRecords: [],
+    worldRelations: [],
     scenes: [
       {
         id: blankCanvasDemoSceneId,
@@ -163,6 +169,7 @@ export function createBlankCanvasDemoSnapshot(timestamp = new Date().toISOString
     assets: [],
     tokens: [],
     actors: [],
+    calculationOverrides: [],
     items: [],
     vision: {
       sceneId: blankCanvasDemoSceneId,

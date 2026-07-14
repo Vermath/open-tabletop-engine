@@ -1,4 +1,4 @@
-import type { Actor, Item, Token, VisionPoint } from "@open-tabletop/core";
+import type { Actor, CompendiumCatalogEntry, Item, Token, VisionPoint } from "@open-tabletop/core";
 import type { Snapshot } from "./api.js";
 import { numericValue, recordValue, slugId, stringValue, titleCaseLabel } from "./sheet-format.js";
 
@@ -7,13 +7,7 @@ function tokenLayer(token?: Pick<Token, "layer">): Token["layer"] {
 }
 
 
-export type RulesCompendiumEntry = {
-  id: string;
-  type: string;
-  name: string;
-  summary: string;
-  data: Record<string, unknown>;
-};
+export type RulesCompendiumEntry = CompendiumCatalogEntry;
 
 
 export type TokenVisionPatch = Partial<Pick<Token, "visionEnabled" | "visionRadius">> & {
@@ -282,6 +276,7 @@ export function itemDisplayLabel(item: Item): string {
 
 export function itemPreparedLabel(item: Item): string {
   if (item.type !== "spell" && item.type !== "ritual" && item.type !== "talent") return "preparation n/a";
+  if (recordValue(item.data).alwaysPrepared === true) return "always prepared";
   return recordValue(item.data).prepared === false ? "unprepared" : "prepared";
 }
 
@@ -334,7 +329,18 @@ export function isPurchasableCompendiumEntry(actor: Actor, entry: RulesCompendiu
 }
 
 
-export type ActorActionOption = { rollId: string; label: string; description: string };
+export type ActorActionOption = { rollId: string; label: string; description: string; resolutionNote?: string };
+
+export function unmodeledMixedDamageRiderNote(data: Record<string, unknown>): string | undefined {
+  const secondaryFormula = stringValue(data.secondaryDamageFormula);
+  const secondaryType = stringValue(data.secondaryDamageType);
+  const damageTypes = [stringValue(data.damageType), stringValue(data.damageTypes)]
+    .flatMap((value) => (value ?? "").split(/[\/,]/).map((part) => part.trim()).filter(Boolean));
+  const breakdownEntries = Object.entries(recordValue(data.damageBreakdown));
+  const hasAuthoritativeBreakdown = breakdownEntries.length > 1 && breakdownEntries.every(([, amount]) => typeof amount === "number" && Number.isInteger(amount) && amount >= 0);
+  if (!secondaryFormula && !secondaryType && damageTypes.length <= 1 && (breakdownEntries.length <= 1 || hasAuthoritativeBreakdown)) return undefined;
+  return "Mixed rider is not combined into this roll; resolve each component with Reviewed typed damage.";
+}
 
 
 export function actorActionSupportsEffect(action: ActorActionOption | undefined): boolean {
@@ -372,7 +378,8 @@ export function dnd5eSrdMonsterActionOptions(actor: Actor): ActorActionOption[] 
     }
     const damageFormula = stringValue(action.damageFormula);
     if (damageFormula) {
-      options.push({ rollId: `monster-${id}-damage`, label: `${name} Damage`, description: `${name} Damage: ${damageFormula}` });
+      const resolutionNote = unmodeledMixedDamageRiderNote(action);
+      options.push({ rollId: `monster-${id}-damage`, label: `${name} Damage`, description: `${name} Damage: ${damageFormula}`, ...(resolutionNote ? { resolutionNote } : {}) });
     }
     if (stringValue(action.condition) || stringValue(action.summary) || Object.keys(recordValue(action.save)).length > 0) {
       options.push({ rollId: `monster-${id}-effect`, label: `${name} Effect`, description: `${name} Effect: ${dnd5eSrdMonsterActionEffectSummary(action)}` });
@@ -1595,12 +1602,89 @@ export function dnd5eSrdAttacksPerAction(actor: Actor): number {
 
 export function dnd5eSrdItemActionOptions(actor: Actor, items: Item[]): ActorActionOption[] {
   const attacksPerAction = dnd5eSrdAttacksPerAction(actor);
-  return genericFantasyActionOptions(actor, items).map((option) => {
+  return genericFantasyActionOptions(actor, items.filter((item) => dnd5eSrdItemActionIsAvailable(actor, item))).map((option) => {
     const martialArtsFormula = dnd5eSrdMonkWeaponDamageFormulaForRoll(actor, items, option.rollId);
     const nextOption = martialArtsFormula ? { ...option, description: `${option.label}: ${martialArtsFormula}` } : option;
     if (attacksPerAction <= 1 || !dnd5eSrdIsWeaponDamageOption(actor, items, option.rollId)) return nextOption;
     return { ...nextOption, description: `${nextOption.description}; ${attacksPerAction} attacks/action` };
   });
+}
+
+
+export function dnd5eSrdItemActionIsAvailable(actor: Actor, item: Item): boolean {
+  if (item.actorId !== actor.id || item.campaignId !== actor.campaignId || item.systemId !== actor.systemId) return false;
+  const data = recordValue(item.data);
+  if (item.type === "spell" && data.prepared === false) return false;
+  const requiresAttunement = data.requiresAttunement === true || Boolean(stringValue(data.attunementRequirement));
+  if (!requiresAttunement) return true;
+  const attunement = recordValue(actor.data.attunement);
+  const activeIds = [
+    ...(Array.isArray(actor.data.attunedItemIds) ? actor.data.attunedItemIds.map(String) : []),
+    ...(Array.isArray(attunement.activeAttunedItemIds) ? attunement.activeAttunedItemIds.map(String) : [])
+  ];
+  return activeIds.includes(item.id);
+}
+
+
+export function dnd5eSrdWeaponAttackFormula(actor: Actor, items: Item[], item: Item): string | undefined {
+  const data = recordValue(item.data);
+  if (!dnd5eSrdIsWeaponData(data) || !stringValue(data.damage)) return undefined;
+  const ability = dnd5eSrdWeaponAttackAbility(actor, data);
+  const abilityBonus = genericFantasyAttributeModifier(actor, ability);
+  const proficiencyBonus = dnd5eSrdProficiencyBonus(actor) * dnd5eSrdWeaponProficiencyMultiplier(actor, items, data);
+  return appendActionFormulaBonus("1d20", abilityBonus + proficiencyBonus + numericValue(data.attackBonus, 0));
+}
+
+
+export function dnd5eSrdWeaponAttackAbility(actor: Actor, data: Record<string, unknown>): string {
+  const ability = stringValue(data.ability) || "strength";
+  const properties = Array.isArray(data.properties) ? data.properties.map(String).map((property) => property.toLowerCase()) : [];
+  const canUseDexterity = properties.includes("finesse") || (dnd5eSrdHasMartialArts(actor) && dnd5eSrdIsMonkWeapon(data));
+  return canUseDexterity && genericFantasyAttributeModifier(actor, "dexterity") > genericFantasyAttributeModifier(actor, ability) ? "dexterity" : ability;
+}
+
+
+export function dnd5eSrdWeaponProficiencyMultiplier(actor: Actor, items: Item[], data: Record<string, unknown>): number {
+  if (data.proficient === false) return 0;
+  if (data.proficient === true) return 1;
+  const explicitProficiencies = [
+    ...(Array.isArray(actor.data.weaponProficiencies) ? actor.data.weaponProficiencies.map(String) : []),
+    ...items
+      .filter((item) => item.actorId === actor.id && itemQuantity(recordValue(item.data)) > 0)
+      .flatMap((item) => Array.isArray(recordValue(item.data).weaponProficiencies) ? (recordValue(item.data).weaponProficiencies as unknown[]).map(String) : [])
+  ];
+  if (explicitProficiencies.some((proficiency) => dnd5eSrdWeaponMatchesProficiency(proficiency, data))) return 1;
+  const weaponCategory = (stringValue(data.weaponCategory) || "simple").toLowerCase();
+  if (weaponCategory === "simple") return 1;
+  const className = (stringValue(actor.data.class) ?? "").toLowerCase();
+  if (["barbarian", "fighter", "paladin", "ranger"].includes(className)) return 1;
+  if (className === "rogue") {
+    const properties = Array.isArray(data.properties) ? data.properties.map(String).map((property) => property.toLowerCase()) : [];
+    return properties.includes("finesse") || properties.includes("light") ? 1 : 0;
+  }
+  return 0;
+}
+
+
+export function dnd5eSrdWeaponMatchesProficiency(proficiency: string, data: Record<string, unknown>): boolean {
+  const normalized = slugId(proficiency);
+  return [
+    stringValue(data.compendiumId),
+    stringValue(data.weaponCategory),
+    stringValue(data.weaponCategory) ? `${stringValue(data.weaponCategory)}-weapon` : undefined,
+    stringValue(data.weaponCategory) ? `${stringValue(data.weaponCategory)}-weapons` : undefined,
+    stringValue(data.weaponKind),
+    stringValue(data.weaponKind) ? `${stringValue(data.weaponKind)}-weapon` : undefined,
+    stringValue(data.weaponKind) ? `${stringValue(data.weaponKind)}-weapons` : undefined
+  ]
+    .filter((value): value is string => Boolean(value))
+    .map(slugId)
+    .includes(normalized);
+}
+
+
+export function dnd5eSrdIsWeaponData(data: Record<string, unknown>): boolean {
+  return stringValue(data.category) === "weapon" || stringValue(data.equipmentCategory) === "weapon";
 }
 
 
@@ -1653,11 +1737,22 @@ export function genericFantasyActionOptions(actor: Actor, items: Item[]): ActorA
     const prefix = item.type === "spell" ? "spell" : "item";
     const ability = stringValue(data.ability);
     const damage = stringValue(data.damage);
-    if (damage && ability) options.push({ rollId: `${prefix}-${item.id}-damage`, label: `${item.name} Damage`, description: `${item.name} Damage: ${appendActionFormulaBonus(damage, genericFantasyAttributeModifier(actor, ability))}` });
+    const mixedDamageResolutionNote = unmodeledMixedDamageRiderNote(data);
+    if (actor.systemId === "dnd-5e-srd" && prefix === "item") {
+      const attackFormula = dnd5eSrdWeaponAttackFormula(actor, items, item);
+      if (attackFormula) {
+        options.push({
+          rollId: `item-${item.id}-attack`,
+          label: `${item.name} Attack`,
+          description: `${item.name} Attack: ${attackFormula}; server verifies ability, proficiency, item, and condition modifiers`
+        });
+      }
+    }
+    if (damage && ability) options.push({ rollId: `${prefix}-${item.id}-damage`, label: `${item.name} Damage`, description: `${item.name} Damage: ${appendActionFormulaBonus(damage, genericFantasyAttributeModifier(actor, ability))}`, ...(mixedDamageResolutionNote ? { resolutionNote: mixedDamageResolutionNote } : {}) });
     const damageFormula = stringValue(data.damageFormula);
-    if (damageFormula) options.push({ rollId: `${prefix}-${item.id}-damage`, label: `${item.name} Damage`, description: `${item.name} Damage: ${resolveGenericFantasyActionFormula(damageFormula, actor)}` });
+    if (damageFormula) options.push({ rollId: `${prefix}-${item.id}-damage`, label: `${item.name} Damage`, description: `${item.name} Damage: ${resolveGenericFantasyActionFormula(damageFormula, actor)}`, ...(mixedDamageResolutionNote ? { resolutionNote: mixedDamageResolutionNote } : {}) });
     const secondaryDamageFormula = stringValue(data.secondaryDamageFormula);
-    if (secondaryDamageFormula) options.push({ rollId: `${prefix}-${item.id}-secondary-damage`, label: `${item.name} Secondary Damage`, description: `${item.name} Secondary Damage: ${resolveGenericFantasyActionFormula(secondaryDamageFormula, actor)}` });
+    if (secondaryDamageFormula) options.push({ rollId: `${prefix}-${item.id}-secondary-damage`, label: `${item.name} Secondary Damage`, description: `${item.name} Secondary Damage: ${resolveGenericFantasyActionFormula(secondaryDamageFormula, actor)}`, resolutionNote: "This is a separate rider roll; use Reviewed typed damage to combine components against defenses." });
     const versatileDamage = stringValue(data.versatileDamage);
     if (versatileDamage && ability) options.push({ rollId: `${prefix}-${item.id}-versatile-damage`, label: `${item.name} Versatile`, description: `${item.name} Versatile: ${appendActionFormulaBonus(versatileDamage, genericFantasyAttributeModifier(actor, ability))}` });
     const healingFormula = stringValue(data.healingFormula);
@@ -1751,4 +1846,25 @@ export function tokenDimVisionPatch(value: string): TokenVisionPatch | undefined
   const radius = value.trim() ? Number(value) : 0;
   if (!Number.isFinite(radius) || radius < 0) return undefined;
   return { visionRadius: radius, dimVisionRadius: radius > 0 ? radius : null };
+}
+
+
+export function formatTokenSenses(token?: Pick<Token, "senses">): string {
+  return (token?.senses ?? []).map((sense) => `${sense.type}:${sense.range}`).join(", ");
+}
+
+
+export function parseTokenSenses(value: string): Token["senses"] | undefined {
+  if (!value.trim()) return [];
+  const allowed = new Set(["normal", "darkvision", "blindsight", "tremorsense", "truesight"] as const);
+  const senses: NonNullable<Token["senses"]> = [];
+  for (const entry of value.split(",")) {
+    const match = entry.trim().toLowerCase().match(/^([a-z]+)\s*(?::|\s)\s*(\d+(?:\.\d+)?)$/);
+    if (!match) return undefined;
+    const type = match[1] as NonNullable<Token["senses"]>[number]["type"];
+    const range = Number(match[2]);
+    if (!allowed.has(type) || !Number.isFinite(range) || range <= 0 || senses.some((sense) => sense.type === type)) return undefined;
+    senses.push({ type, range });
+  }
+  return senses;
 }

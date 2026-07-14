@@ -10,7 +10,7 @@ OpenTabletop Engine is an API-first virtual tabletop platform for campaigns, wor
 4. Plugins are first-class citizens.
 5. Rules systems are data-driven.
 6. The GM owns campaign state.
-7. AI creates reviewable proposals by default; explicit auto-accept is a user choice.
+7. AI is a first-class agent with governed proposal and automatic-execution modes; neither mode is treated as a second-class fallback.
 8. Secrets are permissioned.
 9. Everything important is exportable.
 10. Every destructive action is reversible or auditable.
@@ -183,7 +183,7 @@ Current release tracks:
 
 - API-first campaign, world, scene, token, actor, item, handout, journal, session, encounter, search, chat, dice, combat, proposal, plugin, system, and scoped export/import surfaces.
 - `dnd-5e-srd` as the primary rules runtime for the demo slice.
-- Permission-filtered AI provider flow with candidate-to-approved campaign memory, encounter and recap workflows, proposal approval/revert semantics, and a deterministic local structured fallback; provider setup is documented in `docs/ai/overview.md`.
+- Permission-filtered AI provider flow with candidate-to-approved campaign memory, encounter and recap workflows, both manual proposal review and governed automatic execution, revert/audit semantics, and a deterministic local structured fallback; provider setup is documented in `docs/ai/overview.md`.
 - Permissioned plugin and system SDK examples documented under `docs/api/rest.md`, `docs/plugin-sdk/overview.md`, and `docs/system-sdk/overview.md`; plugin commands and subscribed events can request proposal-backed chat/storage changes, while system manifests are validated and installed durably under server-admin authority.
 - Public-alpha extension smoke path: install `plugins/example-macro-plugin` on the imported demo with only `chat.write`, run `/spark`, and inspect installed systems or switch through `generic-fantasy` before restoring `dnd-5e-srd`.
 - Beta dogfood path: accepted in `docs/verification/beta-acceptance.md`.
@@ -197,7 +197,7 @@ D&D Beyond import is not implemented as a scraper or auth-bypass flow. Do not sc
 
 ## Licensing
 
-The platform core is AGPL-3.0-only. SDK packages such as `packages/api-client`, `packages/plugin-sdk`, and `packages/system-sdk` are MIT-licensed so third-party plugin and system authors can reuse them without inheriting the platform license. Documentation under `docs/` is CC BY 4.0.
+The platform core is AGPL-3.0-only. SDK source code such as `packages/api-client`, `packages/plugin-sdk`, and `packages/system-sdk` is MIT-licensed so third-party plugin and system authors can reuse it without inheriting the platform license. Structured SRD-derived records distributed with `packages/system-sdk` remain CC BY 4.0 content and carry a package-local `CONTENT_NOTICE.md`; the published [System SDK code and content notice](docs/legal/system-sdk-content-notice.md) records the same distribution boundary and attribution. Documentation under `docs/` is CC BY 4.0.
 
 Example plugins and systems should keep clear license metadata and must not bundle proprietary tabletop content.
 

@@ -1,4 +1,6 @@
 export const apiVersion = "v1";
+export const apiVersionHeader = "OpenTabletop-API-Version";
+export const campaignArchiveStreamContentType = "application/vnd.open-tabletop.ottx-stream";
 
 function pathPart(value: string): string {
   return encodeURIComponent(value);
@@ -8,6 +10,7 @@ export const routes = {
   health: "/api/v1/health",
   bootstrap: "/api/v1/auth/bootstrap",
   session: "/api/v1/auth/session",
+  profile: "/api/v1/auth/profile",
   register: "/api/v1/auth/register",
   login: "/api/v1/auth/login",
   logout: "/api/v1/auth/logout",
@@ -37,6 +40,8 @@ export const routes = {
     `/api/v1/admin/users/${pathPart(userId)}/password-reset`,
   adminUserSessions: (userId: string) =>
     `/api/v1/admin/users/${pathPart(userId)}/sessions`,
+  adminUserSessionsRevocationPlan: (userId: string) =>
+    `/api/v1/admin/users/${pathPart(userId)}/sessions/revocation-plan`,
   adminSessions: "/api/v1/admin/sessions",
   adminSession: (sessionId: string) =>
     `/api/v1/admin/sessions/${pathPart(sessionId)}`,
@@ -45,6 +50,7 @@ export const routes = {
   adminPluginReview: (reviewKey: string) =>
     `/api/v1/admin/plugins/reviews/${pathPart(reviewKey)}`,
   adminScimGroupRoleMappings: "/api/v1/admin/scim/group-role-mappings",
+  adminScimGroupRoleMappingPreview: "/api/v1/admin/scim/group-role-mappings/preview",
   adminScimGroupRoleMapping: (mappingId: string) =>
     `/api/v1/admin/scim/group-role-mappings/${pathPart(mappingId)}`,
   scimServiceProviderConfig: "/api/v1/scim/v2/ServiceProviderConfig",
@@ -68,12 +74,45 @@ export const routes = {
     `/api/v1/admin/jobs/${pathPart(jobId)}/retry`,
   adminJobCancel: (jobId: string) =>
     `/api/v1/admin/jobs/${pathPart(jobId)}/cancel`,
+  adminAiPolicy: "/api/v1/admin/ai/policy",
   campaigns: "/api/v1/campaigns",
   campaign: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}`,
   campaignMembers: (campaignId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/members`,
+  campaignPresence: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/presence`,
   campaignMember: (campaignId: string, memberId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/members/${pathPart(memberId)}`,
+  campaignOwnershipTransfer: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/ownership-transfer`,
+  campaignDuplicate: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/duplicate`,
+  characterTransfers: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/character-transfers`,
+  characterTransferCreate: (campaignId: string, actorId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/actors/${pathPart(actorId)}/transfers`,
+  characterTransferAccept: (campaignId: string, transferId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/character-transfers/${pathPart(transferId)}/accept`,
+  characterTransferDecline: (campaignId: string, transferId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/character-transfers/${pathPart(transferId)}/decline`,
+  characterTransferCancel: (campaignId: string, transferId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/character-transfers/${pathPart(transferId)}/cancel`,
+  campaignWebhooks: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/webhooks`,
+  campaignWebhook: (campaignId: string, webhookId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/webhooks/${pathPart(webhookId)}`,
+  campaignWebhookDisable: (campaignId: string, webhookId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/webhooks/${pathPart(webhookId)}/disable`,
+  campaignWebhookRotateSecret: (campaignId: string, webhookId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/webhooks/${pathPart(webhookId)}/rotate-secret`,
+  campaignWebhookDeliveries: (campaignId: string, webhookId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/webhooks/${pathPart(webhookId)}/deliveries`,
+  campaignWebhookTest: (campaignId: string, webhookId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/webhooks/${pathPart(webhookId)}/test`,
+  campaignWebhookRetry: (campaignId: string, webhookId: string, deliveryId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/webhooks/${pathPart(webhookId)}/deliveries/${pathPart(deliveryId)}/retry`,
+  campaignWebhookDeliveryRetry: (campaignId: string, webhookId: string, deliveryId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/webhooks/${pathPart(webhookId)}/deliveries/${pathPart(deliveryId)}/retry`,
   campaignSessions: (campaignId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/sessions`,
   campaignSearch: (campaignId: string) =>
@@ -91,11 +130,22 @@ export const routes = {
   campaignInvites: (campaignId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/invites`,
   acceptInvite: "/api/v1/invites/accept",
+  invitePreview: "/api/v1/invites/preview",
   revokeInvite: (inviteId: string) =>
     `/api/v1/invites/${pathPart(inviteId)}/revoke`,
   worlds: (campaignId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/worlds`,
   world: (worldId: string) => `/api/v1/worlds/${pathPart(worldId)}`,
+  worldRecords: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/world-records`,
+  worldRecord: (recordId: string) =>
+    `/api/v1/world-records/${pathPart(recordId)}`,
+  worldRecordLifecycle: (recordId: string) =>
+    `/api/v1/world-records/${pathPart(recordId)}/lifecycle`,
+  worldRelations: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/world-relations`,
+  worldRelation: (relationId: string) =>
+    `/api/v1/world-relations/${pathPart(relationId)}`,
   scenes: (campaignId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/scenes`,
   fogPresets: (campaignId: string) =>
@@ -115,10 +165,24 @@ export const routes = {
   assetLifecycle: (assetId: string) =>
     `/api/v1/assets/${pathPart(assetId)}/lifecycle`,
   scene: (sceneId: string) => `/api/v1/scenes/${pathPart(sceneId)}`,
+  sceneDelegations: (sceneId: string) =>
+    `/api/v1/scenes/${pathPart(sceneId)}/delegations`,
+  sceneDelegation: (sceneId: string, userId: string) =>
+    `/api/v1/scenes/${pathPart(sceneId)}/delegations/${pathPart(userId)}`,
   sceneVision: (sceneId: string) =>
     `/api/v1/scenes/${pathPart(sceneId)}/vision`,
   sceneVisionSample: (sceneId: string) =>
     `/api/v1/scenes/${pathPart(sceneId)}/vision/sample`,
+  scenePathMeasurement: (sceneId: string) =>
+    `/api/v1/scenes/${pathPart(sceneId)}/path-measurement`,
+  sceneDifficultTerrain: (sceneId: string) =>
+    `/api/v1/scenes/${pathPart(sceneId)}/difficult-terrain`,
+  sceneDifficultTerrainRegion: (sceneId: string, regionId: string) =>
+    `/api/v1/scenes/${pathPart(sceneId)}/difficult-terrain/${pathPart(regionId)}`,
+  sceneCoverOverrides: (sceneId: string) =>
+    `/api/v1/scenes/${pathPart(sceneId)}/cover-overrides`,
+  sceneCoverOverride: (sceneId: string, overrideId: string) =>
+    `/api/v1/scenes/${pathPart(sceneId)}/cover-overrides/${pathPart(overrideId)}`,
   sceneRenderingDiagnostics: (sceneId: string) =>
     `/api/v1/scenes/${pathPart(sceneId)}/rendering/diagnostics`,
   sceneAiEditsApply: (sceneId: string) =>
@@ -152,12 +216,24 @@ export const routes = {
   actors: (campaignId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/actors`,
   actor: (actorId: string) => `/api/v1/actors/${pathPart(actorId)}`,
+  actorCalculationOverrides: (campaignId: string, actorId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/actors/${pathPart(actorId)}/calculation-overrides`,
+  calculationOverrideClear: (overrideId: string) =>
+    `/api/v1/calculation-overrides/${pathPart(overrideId)}/clear`,
+  actorConcentrationEnd: (actorId: string) =>
+    `/api/v1/actors/${pathPart(actorId)}/concentration/end`,
   items: (campaignId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/items`,
   item: (itemId: string) => `/api/v1/items/${pathPart(itemId)}`,
   journals: (campaignId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/journal`,
   journal: (entryId: string) => `/api/v1/journal/${pathPart(entryId)}`,
+  journalBacklinks: (entryId: string) =>
+    `/api/v1/journal/${pathPart(entryId)}/backlinks`,
+  journalHistory: (entryId: string) =>
+    `/api/v1/journal/${pathPart(entryId)}/history`,
+  journalCanonReview: (entryId: string) =>
+    `/api/v1/journal/${pathPart(entryId)}/canon-review`,
   handouts: (campaignId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/handouts`,
   handout: (handoutId: string) => `/api/v1/handouts/${pathPart(handoutId)}`,
@@ -183,11 +259,27 @@ export const routes = {
     `/api/v1/encounters/${pathPart(encounterId)}`,
   combats: (campaignId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/combats`,
+  combatStart: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/combats/start`,
   combat: (combatId: string) => `/api/v1/combats/${pathPart(combatId)}`,
   combatant: (combatId: string, combatantId: string) =>
     `/api/v1/combats/${pathPart(combatId)}/combatants/${pathPart(combatantId)}`,
   combatAudit: (combatId: string) =>
     `/api/v1/combats/${pathPart(combatId)}/audit`,
+  combatRewards: (combatId: string) =>
+    `/api/v1/combats/${pathPart(combatId)}/rewards`,
+  combatEnvironmentMechanics: (combatId: string) =>
+    `/api/v1/combats/${pathPart(combatId)}/environment-mechanics`,
+  combatEnvironmentMechanic: (combatId: string, mechanicId: string) =>
+    `/api/v1/combats/${pathPart(combatId)}/environment-mechanics/${pathPart(mechanicId)}`,
+  combatEnvironmentMechanicTrigger: (combatId: string, mechanicId: string) =>
+    `/api/v1/combats/${pathPart(combatId)}/environment-mechanics/${pathPart(mechanicId)}/trigger`,
+  combatEffectSchedulePreview: (combatId: string) =>
+    `/api/v1/combats/${pathPart(combatId)}/effects/preview`,
+  combatEffectScheduleAdvance: (combatId: string) =>
+    `/api/v1/combats/${pathPart(combatId)}/effects/advance`,
+  dnd5eSpellHelperPreview: (campaignId: string, systemId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/spell-helper/preview`,
   combatActionConfirm: (combatId: string, actionId: string) =>
     `/api/v1/combats/${pathPart(combatId)}/actions/${pathPart(actionId)}/confirm`,
   combatActionReject: (combatId: string, actionId: string) =>
@@ -205,6 +297,12 @@ export const routes = {
     `/api/v1/proposals/${pathPart(proposalId)}/revert`,
   aiThreads: (campaignId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/ai/threads`,
+  aiPolicy: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/ai/policy`,
+  aiPrivacyPreview: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/ai/privacy/preview`,
+  aiPrivacyPrune: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/ai/privacy/prune`,
   aiUsage: (campaignId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/ai/usage`,
   aiEvaluations: (campaignId: string) =>
@@ -238,6 +336,8 @@ export const routes = {
   systems: "/api/v1/systems",
   campaignSystems: (campaignId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/systems`,
+  campaignCompatibility: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/compatibility`,
   campaignSystem: (campaignId: string, systemId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}`,
   systemCharacterTemplates: (campaignId: string, systemId: string) =>
@@ -254,8 +354,68 @@ export const routes = {
     `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/encounter-threats`,
   systemEncounterPlan: (campaignId: string, systemId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/encounter-plan`,
-  systemCompendium: (campaignId: string, systemId: string) =>
-    `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/compendium`,
+  systemCompendium: (campaignId: string, systemId: string, query: { q?: string; type?: string; types?: string[] } = {}) => {
+    const path = `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/compendium`;
+    const params = new URLSearchParams();
+    if (query.q?.trim()) params.set("q", query.q.trim());
+    if (query.type?.trim()) params.set("type", query.type.trim());
+    const types = query.types?.map((type) => type.trim()).filter(Boolean) ?? [];
+    if (types.length > 0) params.set("types", types.join(","));
+    const suffix = params.toString();
+    return suffix ? `${path}?${suffix}` : path;
+  },
+  dndCustomContent: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/dnd/custom-content`,
+  dndCustomContentPreview: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/dnd/custom-content/preview`,
+  dndCustomContentItem: (campaignId: string, itemId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/dnd/custom-content/${pathPart(itemId)}`,
+  dndMonsterTemplates: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/dnd/monster-templates`,
+  dndMonsterTemplatesPreview: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/dnd/monster-templates/preview`,
+  dndMonsterTemplate: (campaignId: string, templateId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/dnd/monster-templates/${pathPart(templateId)}`,
+  dndMonsterBases: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/dnd/monster-bases`,
+  dndMonsterVariants: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/dnd/monster-variants`,
+  dndMonsterVariantsPreview: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/dnd/monster-variants/preview`,
+  dndCharacterReviews: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/dnd/character-reviews`,
+  dndCharacterReviewPolicy: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/dnd/character-review-policy`,
+  dndCharacterReviewSubmit: (campaignId: string, actorId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/dnd/character-reviews/${pathPart(actorId)}/submit`,
+  dndCharacterReviewDecision: (campaignId: string, actorId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/dnd/character-reviews/${pathPart(actorId)}/decision`,
+  dndInventory: (campaignId: string, actorId?: string) => {
+    const path = `/api/v1/campaigns/${pathPart(campaignId)}/dnd/inventory`;
+    return actorId ? `${path}?actorId=${pathPart(actorId)}` : path;
+  },
+  dndPartyStash: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/dnd/party-stash`,
+  dndMerchants: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/dnd/merchants`,
+  dndMerchant: (campaignId: string, merchantId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/dnd/merchants/${pathPart(merchantId)}`,
+  dndMerchantBuy: (campaignId: string, merchantId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/dnd/merchants/${pathPart(merchantId)}/buy`,
+  dndMerchantSell: (campaignId: string, merchantId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/dnd/merchants/${pathPart(merchantId)}/sell`,
+  dndInventoryItem: (campaignId: string, itemId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/dnd/inventory/items/${pathPart(itemId)}`,
+  dndInventoryTransfer: (campaignId: string, itemId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/dnd/inventory/items/${pathPart(itemId)}/transfer`,
+  dndInventoryConsumeAmmunition: (campaignId: string, weaponItemId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/dnd/inventory/items/${pathPart(weaponItemId)}/consume-ammunition`,
+  dndCombatLoot: (combatId: string) =>
+    `/api/v1/combats/${pathPart(combatId)}/dnd/loot`,
+  dndLootClaim: (campaignId: string, itemId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/dnd/loot/${pathPart(itemId)}/claim`,
+  dndLootAssignment: (campaignId: string, itemId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/dnd/loot/${pathPart(itemId)}/assignment`,
   systemActorCompendium: (
     campaignId: string,
     systemId: string,
@@ -287,6 +447,34 @@ export const routes = {
     actorId: string,
   ) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/actors/${pathPart(actorId)}/advancement`,
+  systemActorRulesValidation: (campaignId: string, systemId: string, actorId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/actors/${pathPart(actorId)}/rules-validation`,
+  systemActorCalculationExplanation: (campaignId: string, systemId: string, actorId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/actors/${pathPart(actorId)}/calculation-explanation`,
+  systemControlledCreatures: (campaignId: string, systemId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/controlled-creatures`,
+  systemControlledCreaturesPreview: (campaignId: string, systemId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/controlled-creatures/preview`,
+  systemControlledCreatureCommand: (campaignId: string, systemId: string, actorId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/controlled-creatures/${pathPart(actorId)}/command`,
+  systemControlledCreatureEnd: (campaignId: string, systemId: string, actorId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/controlled-creatures/${pathPart(actorId)}/end`,
+  systemControlledCreatureConcentrationEnd: (campaignId: string, systemId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/controlled-creatures/concentration/end`,
+  systemActorRulesPreview: (campaignId: string, systemId: string, actorId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/actors/${pathPart(actorId)}/rules-preview`,
+  systemActorTypedDamageApply: (campaignId: string, systemId: string, actorId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/actors/${pathPart(actorId)}/typed-damage/apply`,
+  systemActorPendingAdvancement: (campaignId: string, systemId: string, actorId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/actors/${pathPart(actorId)}/advancement/pending`,
+  dndRulesMutationUndo: (campaignId: string, mutationId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/dnd/rules-mutations/${pathPart(mutationId)}/undo`,
+  systemActorSpellPreparationPreview: (campaignId: string, systemId: string, actorId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/actors/${pathPart(actorId)}/spell-preparation/preview`,
+  systemActorSpellPreparationApply: (campaignId: string, systemId: string, actorId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/actors/${pathPart(actorId)}/spell-preparation/apply`,
+  systemActorAttunement: (campaignId: string, systemId: string, actorId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/actors/${pathPart(actorId)}/attunement`,
   systemActorAdvance: (campaignId: string, systemId: string, actorId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/actors/${pathPart(actorId)}/advance`,
   systemActorRest: (campaignId: string, systemId: string, actorId: string) =>
@@ -309,9 +497,12 @@ export const routes = {
     `/api/v1/campaigns/${pathPart(campaignId)}/plugins/${pathPart(pluginId)}/chat-command`,
   exportCampaign: (campaignId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/export`,
+  exportCampaignStream: (campaignId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/export/stream`,
   dogfoodReportBundle: (campaignId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/dogfood-report-bundle`,
   importCampaign: "/api/v1/import/campaign",
+  importCampaignStream: "/api/v1/import/campaign/stream",
   campaignRolls: (campaignId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/rolls`,
   campaignRollVerify: (campaignId: string, rollId: string) =>
@@ -422,6 +613,8 @@ const endpointSpecs = [
   ["POST", routes.mfaTotpConfirm],
   ["DELETE", routes.mfaTotpDisable],
   ["GET", routes.session],
+  ["GET", routes.profile],
+  ["PATCH", routes.profile],
   ["GET", routes.authSessions],
   ["DELETE", "/api/v1/auth/sessions/{sessionId}"],
   ["GET", routes.oidcConfig],
@@ -443,6 +636,7 @@ const endpointSpecs = [
   ["PATCH", "/api/v1/admin/users/{userId}"],
   ["POST", "/api/v1/admin/users/{userId}/password-reset"],
   ["POST", "/api/v1/admin/password-resets/prune"],
+  ["GET", "/api/v1/admin/users/{userId}/sessions/revocation-plan"],
   ["DELETE", "/api/v1/admin/users/{userId}/sessions"],
   ["GET", routes.adminSessions],
   ["POST", "/api/v1/admin/sessions/prune"],
@@ -473,6 +667,7 @@ const endpointSpecs = [
   ["POST", "/api/v1/admin/ai/tool-calls/stale/fail"],
   ["POST", "/api/v1/admin/ai/tool-calls/retry"],
   ["GET", "/api/v1/admin/ai/evaluations"],
+  ["GET", routes.adminAiPolicy],
   ["GET", routes.adminPluginReviews],
   ["PATCH", "/api/v1/admin/plugins/reviews/{reviewKey}"],
   ["POST", "/api/v1/admin/plugins/registry/sync"],
@@ -480,6 +675,7 @@ const endpointSpecs = [
   ["GET", "/api/v1/admin/systems/operations"],
   ["GET", "/api/v1/admin/rendering/operations"],
   ["GET", routes.adminScimGroupRoleMappings],
+  ["GET", routes.adminScimGroupRoleMappingPreview],
   ["POST", routes.adminScimGroupRoleMappings],
   ["DELETE", "/api/v1/admin/scim/group-role-mappings/{mappingId}"],
   ["GET", routes.scimServiceProviderConfig],
@@ -511,8 +707,25 @@ const endpointSpecs = [
   ["PATCH", "/api/v1/campaigns/{campaignId}"],
   ["DELETE", "/api/v1/campaigns/{campaignId}"],
   ["GET", "/api/v1/campaigns/{campaignId}/members"],
+  ["GET", "/api/v1/campaigns/{campaignId}/presence"],
   ["PATCH", "/api/v1/campaigns/{campaignId}/members/{memberId}"],
   ["DELETE", "/api/v1/campaigns/{campaignId}/members/{memberId}"],
+  ["POST", "/api/v1/campaigns/{campaignId}/ownership-transfer"],
+  ["POST", "/api/v1/campaigns/{campaignId}/duplicate"],
+  ["GET", "/api/v1/campaigns/{campaignId}/character-transfers"],
+  ["POST", "/api/v1/campaigns/{campaignId}/actors/{actorId}/transfers"],
+  ["POST", "/api/v1/campaigns/{campaignId}/character-transfers/{transferId}/accept"],
+  ["POST", "/api/v1/campaigns/{campaignId}/character-transfers/{transferId}/decline"],
+  ["POST", "/api/v1/campaigns/{campaignId}/character-transfers/{transferId}/cancel"],
+  ["GET", "/api/v1/campaigns/{campaignId}/webhooks"],
+  ["POST", "/api/v1/campaigns/{campaignId}/webhooks"],
+  ["PATCH", "/api/v1/campaigns/{campaignId}/webhooks/{webhookId}"],
+  ["DELETE", "/api/v1/campaigns/{campaignId}/webhooks/{webhookId}"],
+  ["POST", "/api/v1/campaigns/{campaignId}/webhooks/{webhookId}/disable"],
+  ["POST", "/api/v1/campaigns/{campaignId}/webhooks/{webhookId}/rotate-secret"],
+  ["GET", "/api/v1/campaigns/{campaignId}/webhooks/{webhookId}/deliveries"],
+  ["POST", "/api/v1/campaigns/{campaignId}/webhooks/{webhookId}/test"],
+  ["POST", "/api/v1/campaigns/{campaignId}/webhooks/{webhookId}/deliveries/{deliveryId}/retry"],
   ["GET", "/api/v1/campaigns/{campaignId}/sessions"],
   ["POST", "/api/v1/campaigns/{campaignId}/sessions"],
   ["GET", "/api/v1/campaigns/{campaignId}/search"],
@@ -526,12 +739,22 @@ const endpointSpecs = [
   ["GET", "/api/v1/campaigns/{campaignId}/invites"],
   ["POST", "/api/v1/campaigns/{campaignId}/invites"],
   ["POST", routes.acceptInvite],
+  ["GET", routes.invitePreview],
   ["POST", "/api/v1/invites/{inviteId}/revoke"],
   ["GET", "/api/v1/campaigns/{campaignId}/worlds"],
   ["POST", "/api/v1/campaigns/{campaignId}/worlds"],
   ["GET", "/api/v1/worlds/{worldId}"],
   ["PATCH", "/api/v1/worlds/{worldId}"],
   ["DELETE", "/api/v1/worlds/{worldId}"],
+  ["GET", "/api/v1/campaigns/{campaignId}/world-records"],
+  ["POST", "/api/v1/campaigns/{campaignId}/world-records"],
+  ["PATCH", "/api/v1/world-records/{recordId}"],
+  ["POST", "/api/v1/world-records/{recordId}/lifecycle"],
+  ["DELETE", "/api/v1/world-records/{recordId}"],
+  ["GET", "/api/v1/campaigns/{campaignId}/world-relations"],
+  ["POST", "/api/v1/campaigns/{campaignId}/world-relations"],
+  ["PATCH", "/api/v1/world-relations/{relationId}"],
+  ["DELETE", "/api/v1/world-relations/{relationId}"],
   ["GET", "/api/v1/campaigns/{campaignId}/scenes"],
   ["POST", "/api/v1/campaigns/{campaignId}/scenes"],
   ["GET", "/api/v1/campaigns/{campaignId}/fog-presets"],
@@ -546,11 +769,19 @@ const endpointSpecs = [
   ["POST", "/api/v1/assets/{assetId}/delivery-url"],
   ["PATCH", "/api/v1/assets/{assetId}/lifecycle"],
   ["GET", "/api/v1/scenes/{sceneId}"],
+  ["GET", "/api/v1/scenes/{sceneId}/delegations"],
+  ["PATCH", "/api/v1/scenes/{sceneId}/delegations/{userId}"],
   ["PATCH", "/api/v1/scenes/{sceneId}"],
   ["DELETE", "/api/v1/scenes/{sceneId}"],
   ["POST", "/api/v1/scenes/{sceneId}/ai-edits/apply-to-target"],
   ["GET", "/api/v1/scenes/{sceneId}/vision"],
   ["GET", "/api/v1/scenes/{sceneId}/vision/sample"],
+  ["POST", "/api/v1/scenes/{sceneId}/path-measurement"],
+  ["POST", "/api/v1/scenes/{sceneId}/difficult-terrain"],
+  ["PATCH", "/api/v1/scenes/{sceneId}/difficult-terrain/{regionId}"],
+  ["DELETE", "/api/v1/scenes/{sceneId}/difficult-terrain/{regionId}"],
+  ["POST", "/api/v1/scenes/{sceneId}/cover-overrides"],
+  ["DELETE", "/api/v1/scenes/{sceneId}/cover-overrides/{overrideId}"],
   ["GET", "/api/v1/scenes/{sceneId}/rendering/diagnostics"],
   ["POST", "/api/v1/scenes/{sceneId}/fog"],
   ["GET", "/api/v1/scenes/{sceneId}/fog/history"],
@@ -578,7 +809,11 @@ const endpointSpecs = [
   ["POST", "/api/v1/campaigns/{campaignId}/actors"],
   ["GET", "/api/v1/actors/{actorId}"],
   ["PATCH", "/api/v1/actors/{actorId}"],
+  ["POST", "/api/v1/actors/{actorId}/concentration/end"],
   ["DELETE", "/api/v1/actors/{actorId}"],
+  ["GET", "/api/v1/campaigns/{campaignId}/actors/{actorId}/calculation-overrides"],
+  ["POST", "/api/v1/campaigns/{campaignId}/actors/{actorId}/calculation-overrides"],
+  ["POST", "/api/v1/calculation-overrides/{overrideId}/clear"],
   ["GET", "/api/v1/campaigns/{campaignId}/items"],
   ["POST", "/api/v1/campaigns/{campaignId}/items"],
   ["GET", "/api/v1/items/{itemId}"],
@@ -589,6 +824,9 @@ const endpointSpecs = [
   ["GET", "/api/v1/journal/{entryId}"],
   ["PATCH", "/api/v1/journal/{entryId}"],
   ["DELETE", "/api/v1/journal/{entryId}"],
+  ["GET", "/api/v1/journal/{entryId}/backlinks"],
+  ["GET", "/api/v1/journal/{entryId}/history"],
+  ["POST", "/api/v1/journal/{entryId}/canon-review"],
   ["GET", "/api/v1/campaigns/{campaignId}/handouts"],
   ["POST", "/api/v1/campaigns/{campaignId}/handouts"],
   ["GET", "/api/v1/handouts/{handoutId}"],
@@ -615,12 +853,20 @@ const endpointSpecs = [
   ["DELETE", "/api/v1/dice-macros/{macroId}"],
   ["GET", "/api/v1/campaigns/{campaignId}/combats"],
   ["POST", "/api/v1/campaigns/{campaignId}/combats"],
+  ["POST", "/api/v1/campaigns/{campaignId}/combats/start"],
   ["GET", "/api/v1/campaigns/{campaignId}/encounters"],
   ["POST", "/api/v1/campaigns/{campaignId}/encounters"],
   ["GET", "/api/v1/encounters/{encounterId}"],
   ["PATCH", "/api/v1/encounters/{encounterId}"],
   ["DELETE", "/api/v1/encounters/{encounterId}"],
   ["GET", "/api/v1/combats/{combatId}/audit"],
+  ["POST", "/api/v1/combats/{combatId}/rewards"],
+  ["POST", "/api/v1/combats/{combatId}/environment-mechanics"],
+  ["PATCH", "/api/v1/combats/{combatId}/environment-mechanics/{mechanicId}"],
+  ["DELETE", "/api/v1/combats/{combatId}/environment-mechanics/{mechanicId}"],
+  ["POST", "/api/v1/combats/{combatId}/environment-mechanics/{mechanicId}/trigger"],
+  ["POST", "/api/v1/combats/{combatId}/effects/preview"],
+  ["POST", "/api/v1/combats/{combatId}/effects/advance"],
   ["POST", "/api/v1/combats/{combatId}/actions/{actionId}/confirm"],
   ["POST", "/api/v1/combats/{combatId}/actions/{actionId}/reject"],
   ["POST", "/api/v1/combats/{combatId}/initiative/roll-npcs"],
@@ -635,6 +881,10 @@ const endpointSpecs = [
   ["POST", "/api/v1/proposals/{proposalId}/revert"],
   ["GET", "/api/v1/campaigns/{campaignId}/ai/threads"],
   ["POST", "/api/v1/campaigns/{campaignId}/ai/threads"],
+  ["GET", "/api/v1/campaigns/{campaignId}/ai/policy"],
+  ["PATCH", "/api/v1/campaigns/{campaignId}/ai/policy"],
+  ["POST", "/api/v1/campaigns/{campaignId}/ai/privacy/preview"],
+  ["POST", "/api/v1/campaigns/{campaignId}/ai/privacy/prune"],
   ["GET", "/api/v1/campaigns/{campaignId}/ai/usage"],
   ["GET", "/api/v1/campaigns/{campaignId}/ai/evaluations"],
   ["POST", "/api/v1/campaigns/{campaignId}/ai/evaluations"],
@@ -665,6 +915,7 @@ const endpointSpecs = [
   ["GET", routes.systems],
   ["POST", "/api/v1/systems/install"],
   ["GET", "/api/v1/campaigns/{campaignId}/systems"],
+  ["GET", "/api/v1/campaigns/{campaignId}/compatibility"],
   ["POST", "/api/v1/campaigns/{campaignId}/systems/{systemId}/install"],
   [
     "GET",
@@ -686,6 +937,36 @@ const endpointSpecs = [
   ],
   ["POST", "/api/v1/campaigns/{campaignId}/systems/{systemId}/encounter-plan"],
   ["GET", "/api/v1/campaigns/{campaignId}/systems/{systemId}/compendium"],
+  ["POST", "/api/v1/campaigns/{campaignId}/systems/{systemId}/spell-helper/preview"],
+  ["GET", "/api/v1/campaigns/{campaignId}/dnd/custom-content"],
+  ["POST", "/api/v1/campaigns/{campaignId}/dnd/custom-content/preview"],
+  ["POST", "/api/v1/campaigns/{campaignId}/dnd/custom-content"],
+  ["PATCH", "/api/v1/campaigns/{campaignId}/dnd/custom-content/{itemId}"],
+  ["DELETE", "/api/v1/campaigns/{campaignId}/dnd/custom-content/{itemId}"],
+  ["GET", "/api/v1/campaigns/{campaignId}/dnd/monster-templates"],
+  ["POST", "/api/v1/campaigns/{campaignId}/dnd/monster-templates/preview"],
+  ["POST", "/api/v1/campaigns/{campaignId}/dnd/monster-templates"],
+  ["PATCH", "/api/v1/campaigns/{campaignId}/dnd/monster-templates/{templateId}"],
+  ["DELETE", "/api/v1/campaigns/{campaignId}/dnd/monster-templates/{templateId}"],
+  ["GET", "/api/v1/campaigns/{campaignId}/dnd/monster-bases"],
+  ["POST", "/api/v1/campaigns/{campaignId}/dnd/monster-variants/preview"],
+  ["POST", "/api/v1/campaigns/{campaignId}/dnd/monster-variants"],
+  ["GET", "/api/v1/campaigns/{campaignId}/dnd/character-reviews"],
+  ["PATCH", "/api/v1/campaigns/{campaignId}/dnd/character-review-policy"],
+  ["POST", "/api/v1/campaigns/{campaignId}/dnd/character-reviews/{actorId}/submit"],
+  ["POST", "/api/v1/campaigns/{campaignId}/dnd/character-reviews/{actorId}/decision"],
+  ["GET", "/api/v1/campaigns/{campaignId}/dnd/inventory"],
+  ["POST", "/api/v1/campaigns/{campaignId}/dnd/party-stash"],
+  ["POST", "/api/v1/campaigns/{campaignId}/dnd/merchants"],
+  ["PATCH", "/api/v1/campaigns/{campaignId}/dnd/merchants/{merchantId}"],
+  ["PATCH", "/api/v1/campaigns/{campaignId}/dnd/inventory/items/{itemId}"],
+  ["POST", "/api/v1/campaigns/{campaignId}/dnd/inventory/items/{itemId}/transfer"],
+  ["POST", "/api/v1/campaigns/{campaignId}/dnd/inventory/items/{weaponItemId}/consume-ammunition"],
+  ["POST", "/api/v1/campaigns/{campaignId}/dnd/merchants/{merchantId}/buy"],
+  ["POST", "/api/v1/campaigns/{campaignId}/dnd/merchants/{merchantId}/sell"],
+  ["POST", "/api/v1/combats/{combatId}/dnd/loot"],
+  ["POST", "/api/v1/campaigns/{campaignId}/dnd/loot/{itemId}/claim"],
+  ["POST", "/api/v1/campaigns/{campaignId}/dnd/loot/{itemId}/assignment"],
   [
     "POST",
     "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/compendium",
@@ -703,8 +984,50 @@ const endpointSpecs = [
     "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/conditions/{conditionId}",
   ],
   [
+    "POST",
+    "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/attunement",
+  ],
+  [
     "GET",
     "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/advancement",
+  ],
+  [
+    "DELETE",
+    "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/advancement/pending",
+  ],
+  [
+    "GET",
+    "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/rules-validation",
+  ],
+  [
+    "GET",
+    "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/calculation-explanation",
+  ],
+  ["GET", "/api/v1/campaigns/{campaignId}/systems/{systemId}/controlled-creatures"],
+  ["POST", "/api/v1/campaigns/{campaignId}/systems/{systemId}/controlled-creatures/preview"],
+  ["POST", "/api/v1/campaigns/{campaignId}/systems/{systemId}/controlled-creatures"],
+  ["POST", "/api/v1/campaigns/{campaignId}/systems/{systemId}/controlled-creatures/{actorId}/command"],
+  ["POST", "/api/v1/campaigns/{campaignId}/systems/{systemId}/controlled-creatures/concentration/end"],
+  ["POST", "/api/v1/campaigns/{campaignId}/systems/{systemId}/controlled-creatures/{actorId}/end"],
+  [
+    "POST",
+    "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/rules-preview",
+  ],
+  [
+    "POST",
+    "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/typed-damage/apply",
+  ],
+  [
+    "POST",
+    "/api/v1/campaigns/{campaignId}/dnd/rules-mutations/{mutationId}/undo",
+  ],
+  [
+    "POST",
+    "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/spell-preparation/preview",
+  ],
+  [
+    "POST",
+    "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/spell-preparation/apply",
   ],
   [
     "POST",
@@ -723,8 +1046,10 @@ const endpointSpecs = [
     "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/roll",
   ],
   ["GET", "/api/v1/campaigns/{campaignId}/export"],
+  ["GET", "/api/v1/campaigns/{campaignId}/export/stream"],
   ["GET", "/api/v1/campaigns/{campaignId}/dogfood-report-bundle"],
   ["POST", routes.importCampaign],
+  ["POST", routes.importCampaignStream],
   ["GET", "/api/v1/campaigns/{campaignId}/content-imports"],
   ["POST", "/api/v1/campaigns/{campaignId}/content-imports/preview"],
   ["POST", "/api/v1/campaigns/{campaignId}/content-imports/pdf/ai"],
@@ -783,6 +1108,20 @@ const idempotencyKeyParameter: OpenApiParameter = {
     minLength: 8,
     maxLength: 160,
   },
+};
+
+const requiredWebhookIdempotencyKeyParameter: OpenApiParameter = {
+  ...idempotencyKeyParameter,
+  required: true,
+  description:
+    "Stable opaque key reused only when retrying the same human-confirmed webhook mutation.",
+};
+
+const requiredOperatorIdempotencyKeyParameter: OpenApiParameter = {
+  ...idempotencyKeyParameter,
+  required: true,
+  description:
+    "Stable caller-generated retry identity for one logical privileged operator mutation.",
 };
 
 const paginationParameters: OpenApiParameter[] = [
@@ -863,6 +1202,12 @@ function jsonResponse(
   };
 }
 
+function scimCompatibleErrorResponse(description: string): OpenApiResponse {
+  return jsonResponse(description, {
+    oneOf: [schemaRef("ScimError"), schemaRef("ErrorResponse")],
+  });
+}
+
 const unsupportedSystemCapabilityResponse = jsonResponse(
   "The requested rules-system runtime does not implement this capability",
   schemaRef("UnsupportedSystemCapabilityResponse"),
@@ -890,6 +1235,17 @@ function jsonRequestBody(
   };
 }
 
+function optionalJsonRequestBody(
+  schema: Record<string, unknown>,
+  description?: string,
+): OpenApiRequestBody {
+  return {
+    required: false,
+    ...(description ? { description } : {}),
+    content: jsonContent(schema),
+  };
+}
+
 function binaryRequestBody(
   contentType: string,
   description: string,
@@ -910,6 +1266,55 @@ function binaryRequestBody(
 
 const stringSchema = {
   type: "string",
+};
+
+const nullableStringSchema = {
+  anyOf: [stringSchema, { type: "null" }],
+};
+
+const dateTimeSchema = {
+  type: "string",
+  format: "date-time",
+};
+
+const operatorTargetSetHashSchema = {
+  type: "string",
+  pattern: "^sha256:[a-f0-9]{64}$",
+};
+
+const scimStrongEtagSchema = {
+  type: "string",
+  pattern: '^"scim-sha256-[a-f0-9]{64}"$',
+};
+
+const requiredScimIdempotencyKeyParameter: OpenApiParameter = {
+  ...idempotencyKeyParameter,
+  required: true,
+  description: "Stable credential-scoped retry identity for one logical SCIM mutation.",
+};
+
+const requiredScimIfMatchParameter: OpenApiParameter = {
+  name: "If-Match",
+  in: "header",
+  required: true,
+  description: "The single strong ETag returned by the latest read of this exact SCIM resource.",
+  schema: scimStrongEtagSchema,
+};
+
+const scimEtagResponseHeaders = {
+  ETag: {
+    description: "Deterministic strong validator, identical to the resource meta.version value.",
+    schema: scimStrongEtagSchema,
+  },
+};
+
+function scimVersionedJsonResponse(description: string, schema: Record<string, unknown>): OpenApiResponse {
+  return { ...jsonResponse(description, schema), headers: scimEtagResponseHeaders };
+}
+
+const scimPreconditionResponses = {
+  "412": scimCompatibleErrorResponse("The supplied strong SCIM validator is stale"),
+  "428": scimCompatibleErrorResponse("A strong If-Match validator is required"),
 };
 
 const chatMessageBodySchema = {
@@ -945,6 +1350,51 @@ const looseObjectSchema = {
   additionalProperties: true,
 };
 
+const organizationWorkspaceRequired = [
+  "id",
+  "name",
+  "ownerUserId",
+  "defaultSystemId",
+  "defaultCampaignVisibility",
+  "defaultPermissionTemplate",
+  "defaultInviteRole",
+  "defaultSceneName",
+  "defaultSceneFolder",
+  "defaultSceneWidth",
+  "defaultSceneHeight",
+  "defaultSceneGridSize",
+  "onboardingTitle",
+  "onboardingBody",
+  "createdAt",
+  "updatedAt",
+];
+
+const organizationWorkspaceProperties = {
+  ...idTimestampProperties,
+  name: stringSchema,
+  ownerUserId: idSchema,
+  defaultSystemId: idSchema,
+  defaultCampaignVisibility: {
+    type: "string",
+    enum: ["private", "invite_only", "public"],
+  },
+  defaultPermissionTemplate: {
+    type: "string",
+    enum: ["standard", "player_authoring", "ai_assisted", "assistant_ops"],
+  },
+  defaultInviteRole: {
+    type: "string",
+    enum: ["gm", "assistant_gm", "player", "observer"],
+  },
+  defaultSceneName: stringSchema,
+  defaultSceneFolder: stringSchema,
+  defaultSceneWidth: { type: "integer", minimum: 1 },
+  defaultSceneHeight: { type: "integer", minimum: 1 },
+  defaultSceneGridSize: { type: "integer", minimum: 1 },
+  onboardingTitle: stringSchema,
+  onboardingBody: stringSchema,
+};
+
 const positiveLimitSchema = {
   anyOf: [
     { type: "integer", minimum: 1, maximum: 500 },
@@ -966,6 +1416,66 @@ const systemCapabilityValues = [
   "character-origins",
   "encounter-builder",
   "monster-builder",
+] as const;
+
+/**
+ * Stable outbound event names accepted by the campaign webhook API. Sensitive,
+ * unbounded user-authored surfaces such as chat, dice, AI, and imported content
+ * are intentionally absent from the v1 webhook contract.
+ */
+export const campaignWebhookEventTypeValues = [
+  "campaign.updated",
+  "campaign.session.created",
+  "campaign.session.updated",
+  "campaign.session.started",
+  "campaign.session.completed",
+  "campaign.session.deleted",
+  "world.created",
+  "world.updated",
+  "world.deleted",
+  "scene.created",
+  "scene.updated",
+  "scene.deleted",
+  "scene.activated",
+  "token.created",
+  "token.updated",
+  "token.moved",
+  "token.deleted",
+  "actor.created",
+  "actor.updated",
+  "actor.deleted",
+  "item.created",
+  "item.updated",
+  "item.deleted",
+  "journal.created",
+  "journal.updated",
+  "journal.deleted",
+  "handout.created",
+  "handout.updated",
+  "handout.deleted",
+  "asset.created",
+  "asset.updated",
+  "asset.deleted",
+  "audio.updated",
+  "audio.deleted",
+  "combat.started",
+  "combat.roundAdvanced",
+  "combat.turnChanged",
+  "combat.ended",
+  "encounter.created",
+  "encounter.updated",
+  "encounter.deleted",
+  "proposal.created",
+  "proposal.updated",
+  "proposal.approved",
+  "proposal.rejected",
+  "proposal.applied",
+  "proposal.reverted",
+] as const;
+
+const campaignWebhookEnvelopeEventTypeValues = [
+  ...campaignWebhookEventTypeValues,
+  "webhook.test",
 ] as const;
 
 const componentSchemas = {
@@ -997,6 +1507,37 @@ const componentSchemas = {
         description:
           "Optional request correlation identifier when the deployment provides one.",
       },
+    },
+  },
+  StaleWriteConflictResponse: {
+    type: "object",
+    additionalProperties: true,
+    required: ["error", "message"],
+    properties: {
+      error: { type: "string", enum: ["conflict"] },
+      code: stringSchema,
+      message: stringSchema,
+      resourceType: stringSchema,
+      resourceId: idSchema,
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+      currentUpdatedAt: { type: "string", format: "date-time" },
+      current: { type: "object", additionalProperties: true },
+    },
+  },
+  RulesManagedPatchConflictResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["error", "code", "message", "resourceType", "resourceId", "managedRoots"],
+    properties: {
+      error: { type: "string", enum: ["conflict"] },
+      code: {
+        type: "string",
+        enum: ["character_review_route_required", "rules_managed_patch_requires_review"],
+      },
+      message: stringSchema,
+      resourceType: { type: "string", enum: ["actor", "item"] },
+      resourceId: idSchema,
+      managedRoots: { type: "array", minItems: 1, uniqueItems: true, items: stringSchema },
     },
   },
   UnsupportedSystemCapabilityResponse: {
@@ -1050,6 +1591,64 @@ const componentSchemas = {
       ok: { type: "boolean" },
       version: stringSchema,
       service: stringSchema,
+      error: stringSchema,
+      workerPrincipals: schemaRef("WorkerPrincipalPosture"),
+      dependencies: schemaRef("HealthDependencies"),
+      aiPolicy: schemaRef("HealthAiPolicyStatus"),
+    },
+  },
+  HealthDependencyStatus: {
+    type: "object",
+    additionalProperties: false,
+    required: ["ok"],
+    properties: {
+      ok: { type: "boolean" },
+      reason: stringSchema,
+    },
+  },
+  HealthDependencies: {
+    type: "object",
+    additionalProperties: false,
+    required: ["state", "assets", "assetSigning"],
+    properties: {
+      state: schemaRef("HealthDependencyStatus"),
+      assets: schemaRef("HealthDependencyStatus"),
+      assetSigning: schemaRef("HealthDependencyStatus"),
+    },
+  },
+  HealthAiPolicyStatus: {
+    type: "object",
+    additionalProperties: false,
+    required: ["enabled", "status", "contextScopes", "retentionDays"],
+    properties: {
+      enabled: { type: "boolean" },
+      status: stringSchema,
+      contextScopes: arrayOf(stringSchema),
+      retentionDays: { type: "integer", minimum: 0 },
+    },
+  },
+  WorkerPrincipalPosture: {
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "profileEnabled",
+      "configured",
+      "ready",
+      "identityCount",
+      "tokenHashCount",
+      "invalidEntryCount",
+      "missingInProduction",
+      "invalidInProduction",
+    ],
+    properties: {
+      profileEnabled: { type: "boolean" },
+      configured: { type: "boolean" },
+      ready: { type: "boolean" },
+      identityCount: { type: "integer", minimum: 0 },
+      tokenHashCount: { type: "integer", minimum: 0 },
+      invalidEntryCount: { type: "integer", minimum: 0 },
+      missingInProduction: { type: "boolean" },
+      invalidInProduction: { type: "boolean" },
     },
   },
   ServerAdminPosture: {
@@ -1151,7 +1750,7 @@ const componentSchemas = {
   PublicUser: {
     type: "object",
     additionalProperties: true,
-    required: ["id", "displayName", "email", "createdAt", "updatedAt"],
+    required: ["id", "displayName", "createdAt", "updatedAt"],
     properties: {
       ...idTimestampProperties,
       displayName: stringSchema,
@@ -1160,6 +1759,43 @@ const componentSchemas = {
       disabledAt: { type: "string", format: "date-time" },
       mfa: {
         $ref: "#/components/schemas/PublicMfaInfo",
+      },
+      preferences: schemaRef("UserPreferences"),
+    },
+  },
+  UserPreferences: {
+    type: "object",
+    additionalProperties: false,
+    required: ["theme", "dice3dEnabled", "reducedMotion", "chatNotifications"],
+    properties: {
+      theme: { type: "string", enum: ["midnight", "ember"] },
+      dice3dEnabled: { type: "boolean" },
+      reducedMotion: { type: "boolean" },
+      chatNotifications: { type: "string", enum: ["all", "mentions", "none"] },
+    },
+  },
+  UserProfileResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["user"],
+    properties: { user: schemaRef("PublicUser") },
+  },
+  UserProfilePatchRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["expectedUpdatedAt"],
+    properties: {
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+      displayName: { type: "string", minLength: 1, maxLength: 100 },
+      preferences: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          theme: { type: "string", enum: ["midnight", "ember"] },
+          dice3dEnabled: { type: "boolean" },
+          reducedMotion: { type: "boolean" },
+          chatNotifications: { type: "string", enum: ["all", "mentions", "none"] },
+        },
       },
     },
   },
@@ -1327,6 +1963,7 @@ const componentSchemas = {
         ],
       },
       user: schemaRef("CampaignMemberUser"),
+      active: { type: "boolean" },
       permissions: arrayOf(stringSchema),
     },
   },
@@ -1339,6 +1976,21 @@ const componentSchemas = {
       displayName: stringSchema,
       email: { type: "string", format: "email" },
     },
+  },
+  CampaignMemberSnapshot: {
+    allOf: [
+      schemaRef("CampaignMember"),
+      {
+        type: "object",
+        additionalProperties: true,
+        required: ["user", "active", "permissions"],
+        properties: {
+          user: schemaRef("CampaignMemberUser"),
+          active: { type: "boolean" },
+          permissions: arrayOf(stringSchema),
+        },
+      },
+    ],
   },
   CampaignInvite: {
     type: "object",
@@ -1373,25 +2025,46 @@ const componentSchemas = {
     },
   },
   OrganizationInvite: {
-    allOf: [
-      schemaRef("CampaignInvite"),
-      {
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "id",
+      "campaignId",
+      "role",
+      "invitedByUserId",
+      "expiresAt",
+      "createdAt",
+      "updatedAt",
+      "status",
+      "campaign",
+    ],
+    properties: {
+      ...idTimestampProperties,
+      campaignId: idSchema,
+      email: { type: "string", format: "email" },
+      role: {
+        type: "string",
+        enum: ["gm", "assistant_gm", "player", "observer"],
+      },
+      invitedByUserId: idSchema,
+      acceptedByUserId: idSchema,
+      acceptedAt: { type: "string", format: "date-time" },
+      expiresAt: { type: "string", format: "date-time" },
+      revokedAt: { type: "string", format: "date-time" },
+      status: {
+        type: "string",
+        enum: ["pending", "accepted", "expired", "revoked"],
+      },
+      campaign: {
         type: "object",
         additionalProperties: false,
-        required: ["campaign"],
+        required: ["id", "name"],
         properties: {
-          campaign: {
-            type: "object",
-            additionalProperties: false,
-            required: ["id", "name"],
-            properties: {
-              id: idSchema,
-              name: stringSchema,
-            },
-          },
+          id: idSchema,
+          name: stringSchema,
         },
       },
-    ],
+    },
   },
   CampaignInviteCreateRequest: {
     type: "object",
@@ -1403,12 +2076,13 @@ const componentSchemas = {
         enum: ["gm", "assistant_gm", "player", "observer"],
       },
       expiresInDays: { type: "integer", minimum: 1, maximum: 30 },
+      expectedUpdatedAt: dateTimeSchema,
     },
   },
   OrganizationInviteCreateRequest: {
     type: "object",
     additionalProperties: false,
-    required: ["campaignId"],
+    required: ["campaignId", "expectedCampaignUpdatedAt"],
     properties: {
       campaignId: idSchema,
       email: { type: "string", format: "email" },
@@ -1417,6 +2091,7 @@ const componentSchemas = {
         enum: ["gm", "assistant_gm", "player", "observer"],
       },
       expiresInDays: { type: "integer", minimum: 1, maximum: 30 },
+      expectedCampaignUpdatedAt: dateTimeSchema,
     },
   },
   CampaignInviteCreateResponse: {
@@ -1439,31 +2114,49 @@ const componentSchemas = {
       email: { type: "string", format: "email" },
       displayName: { type: "string", minLength: 1, maxLength: 80 },
       password: { type: "string", minLength: 8 },
+      expectedUpdatedAt: dateTimeSchema,
+      mfaCode: stringSchema,
+      recoveryCode: stringSchema,
     },
   },
   InviteAcceptResponse: {
-    allOf: [
-      schemaRef("LoginResponse"),
-      {
+    type: "object",
+    additionalProperties: false,
+    required: ["token", "session", "user", "serverAdmin", "invite", "membership", "campaign"],
+    properties: {
+      token: { type: "string", pattern: "^ots_" },
+      session: schemaRef("UserSession"),
+      user: schemaRef("PublicUser"),
+      serverAdmin: { type: "boolean" },
+      invite: schemaRef("CampaignInvite"),
+      membership: schemaRef("CampaignMember"),
+      campaign: schemaRef("Campaign"),
+    },
+  },
+  InvitePreviewResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["invite", "campaign", "expectedUpdatedAt"],
+    properties: {
+      invite: schemaRef("CampaignInvite"),
+      campaign: {
         type: "object",
-        additionalProperties: true,
-        required: ["invite", "membership", "campaign"],
-        properties: {
-          invite: schemaRef("CampaignInvite"),
-          membership: schemaRef("CampaignMember"),
-          campaign: schemaRef("Campaign"),
-        },
+        additionalProperties: false,
+        required: ["id", "name", "description"],
+        properties: { id: idSchema, name: stringSchema, description: stringSchema },
       },
-    ],
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+    },
   },
   ScimMeta: {
     type: "object",
     additionalProperties: false,
-    required: ["resourceType", "created", "lastModified", "location"],
+    required: ["resourceType", "created", "lastModified", "version", "location"],
     properties: {
       resourceType: { type: "string", enum: ["User", "Group"] },
       created: { type: "string", format: "date-time" },
       lastModified: { type: "string", format: "date-time" },
+      version: scimStrongEtagSchema,
       location: stringSchema,
     },
   },
@@ -1481,7 +2174,9 @@ const componentSchemas = {
     type: "object",
     additionalProperties: false,
     properties: {
-      formatted: stringSchema,
+      formatted: nullableStringSchema,
+      givenName: nullableStringSchema,
+      familyName: nullableStringSchema,
     },
   },
   ScimUser: {
@@ -1512,10 +2207,10 @@ const componentSchemas = {
     type: "object",
     additionalProperties: true,
     properties: {
-      userName: stringSchema,
-      externalId: stringSchema,
-      displayName: stringSchema,
-      name: schemaRef("ScimUserName"),
+      userName: nullableStringSchema,
+      externalId: nullableStringSchema,
+      displayName: nullableStringSchema,
+      name: { anyOf: [schemaRef("ScimUserName"), { type: "null" }] },
       emails: arrayOf(schemaRef("ScimEmail")),
       active: { type: "boolean" },
     },
@@ -1666,7 +2361,7 @@ const componentSchemas = {
         type: "object",
         additionalProperties: false,
         required: ["supported"],
-        properties: { supported: { type: "boolean" } },
+        properties: { supported: { type: "boolean", const: true } },
       },
       authenticationSchemes: arrayOf({
         type: "object",
@@ -1693,18 +2388,19 @@ const componentSchemas = {
   AdminScimGroupSnapshot: {
     type: "object",
     additionalProperties: false,
-    required: ["id", "displayName", "memberUserIds"],
+    required: ["id", "displayName", "memberUserIds", "updatedAt"],
     properties: {
       id: idSchema,
       displayName: stringSchema,
       externalId: stringSchema,
       memberUserIds: arrayOf(idSchema),
+      updatedAt: dateTimeSchema,
     },
   },
   AdminScimGroupRoleMapping: {
     type: "object",
     additionalProperties: false,
-    required: ["id", "campaignId", "role", "createdAt", "updatedAt"],
+    required: ["id", "campaignId", "role", "createdAt", "updatedAt", "targetSetHash"],
     properties: {
       ...idTimestampProperties,
       groupId: idSchema,
@@ -1716,12 +2412,13 @@ const componentSchemas = {
         enum: ["gm", "assistant_gm", "player", "observer"],
       },
       group: schemaRef("AdminScimGroupSnapshot"),
+      targetSetHash: operatorTargetSetHashSchema,
     },
   },
   AdminScimGroupRoleMappingInput: {
     type: "object",
     additionalProperties: false,
-    required: ["campaignId", "role"],
+    required: ["campaignId", "role", "preparedTargetSetHash"],
     properties: {
       groupId: idSchema,
       groupExternalId: stringSchema,
@@ -1731,6 +2428,40 @@ const componentSchemas = {
         type: "string",
         enum: ["gm", "assistant_gm", "player", "observer"],
       },
+      preparedTargetSetHash: operatorTargetSetHashSchema,
+    },
+  },
+  AdminScimGroupRoleMappingSelection: {
+    type: "object",
+    additionalProperties: false,
+    required: ["campaignId", "role"],
+    properties: {
+      groupId: idSchema,
+      groupExternalId: stringSchema,
+      groupDisplayName: stringSchema,
+      campaignId: idSchema,
+      role: { type: "string", enum: ["gm", "assistant_gm", "player", "observer"] },
+    },
+  },
+  AdminScimGroupRoleMappingPreview: {
+    type: "object",
+    additionalProperties: false,
+    required: ["selection", "memberCount", "affectedCampaignMembershipCount", "targetSetHash"],
+    properties: {
+      selection: schemaRef("AdminScimGroupRoleMappingSelection"),
+      group: schemaRef("AdminScimGroupSnapshot"),
+      memberCount: { type: "integer", minimum: 0 },
+      affectedCampaignMembershipCount: { type: "integer", minimum: 0 },
+      targetSetHash: operatorTargetSetHashSchema,
+    },
+  },
+  AdminScimGroupRoleMappingDeleteRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["expectedUpdatedAt", "preparedTargetSetHash"],
+    properties: {
+      expectedUpdatedAt: dateTimeSchema,
+      preparedTargetSetHash: operatorTargetSetHashSchema,
     },
   },
   ScimGroupRoleSyncResult: {
@@ -1796,7 +2527,9 @@ const componentSchemas = {
   AdminUserPatchRequest: {
     type: "object",
     additionalProperties: false,
+    required: ["expectedUpdatedAt"],
     properties: {
+      expectedUpdatedAt: dateTimeSchema,
       displayName: { type: "string", minLength: 1, maxLength: 80 },
       email: { anyOf: [{ type: "string", format: "email" }, { type: "null" }] },
       disabled: { type: "boolean" },
@@ -1832,6 +2565,9 @@ const componentSchemas = {
     ],
     properties: {
       ...idTimestampProperties,
+      deliveryId: { type: "string", minLength: 1, maxLength: 160 },
+      deliveryAttempts: { type: "integer", minimum: 0 },
+      lastDeliveryAttemptAt: dateTimeSchema,
       to: { type: "string", format: "email" },
       subject: stringSchema,
       text: stringSchema,
@@ -1846,7 +2582,9 @@ const componentSchemas = {
   AdminUserPasswordResetRequest: {
     type: "object",
     additionalProperties: false,
+    required: ["expectedUpdatedAt"],
     properties: {
+      expectedUpdatedAt: dateTimeSchema,
       returnTo: stringSchema,
     },
   },
@@ -1866,6 +2604,7 @@ const componentSchemas = {
       dryRun: { type: "boolean" },
       includeExpired: { type: "boolean" },
       includeUsed: { type: "boolean" },
+      targetSetHash: operatorTargetSetHashSchema,
     },
   },
   AdminPasswordResetPruneResult: {
@@ -1874,21 +2613,25 @@ const componentSchemas = {
     required: [
       "generatedAt",
       "dryRun",
+      "targetSetHash",
       "includeExpired",
       "includeUsed",
       "matched",
       "pruned",
+      "activeRemaining",
       "expiredRemaining",
       "usedRemaining",
       "resets",
     ],
     properties: {
-      generatedAt: { type: "string", format: "date-time" },
+      generatedAt: dateTimeSchema,
       dryRun: { type: "boolean" },
+      targetSetHash: operatorTargetSetHashSchema,
       includeExpired: { type: "boolean" },
       includeUsed: { type: "boolean" },
       matched: { type: "integer", minimum: 0 },
       pruned: { type: "integer", minimum: 0 },
+      activeRemaining: { type: "integer", minimum: 0 },
       expiredRemaining: { type: "integer", minimum: 0 },
       usedRemaining: { type: "integer", minimum: 0 },
       resets: arrayOf(schemaRef("PublicPasswordResetToken")),
@@ -1910,9 +2653,33 @@ const componentSchemas = {
   AdminSessionRevokeResponse: {
     type: "object",
     additionalProperties: false,
-    required: ["revoked"],
+    required: ["generatedAt", "userId", "targetSetHash", "revoked", "sessions"],
     properties: {
+      generatedAt: dateTimeSchema,
+      userId: idSchema,
+      targetSetHash: operatorTargetSetHashSchema,
       revoked: { type: "integer", minimum: 0 },
+      sessions: arrayOf(schemaRef("UserSession")),
+    },
+  },
+  AdminUserSessionRevocationPlan: {
+    type: "object",
+    additionalProperties: false,
+    required: ["generatedAt", "userId", "targetSetHash", "matched", "sessions"],
+    properties: {
+      generatedAt: dateTimeSchema,
+      userId: idSchema,
+      targetSetHash: operatorTargetSetHashSchema,
+      matched: { type: "integer", minimum: 0 },
+      sessions: arrayOf(schemaRef("UserSession")),
+    },
+  },
+  AdminUserSessionRevokeRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["targetSetHash"],
+    properties: {
+      targetSetHash: operatorTargetSetHashSchema,
     },
   },
   AdminSessionPruneRequest: {
@@ -1920,6 +2687,15 @@ const componentSchemas = {
     additionalProperties: false,
     properties: {
       dryRun: { type: "boolean" },
+      targetSetHash: operatorTargetSetHashSchema,
+    },
+  },
+  AdminSessionRevokeRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["expectedUpdatedAt"],
+    properties: {
+      expectedUpdatedAt: dateTimeSchema,
     },
   },
   AdminSessionPruneResult: {
@@ -1928,6 +2704,7 @@ const componentSchemas = {
     required: [
       "generatedAt",
       "dryRun",
+      "targetSetHash",
       "matched",
       "pruned",
       "activeRemaining",
@@ -1937,6 +2714,7 @@ const componentSchemas = {
     properties: {
       generatedAt: { type: "string", format: "date-time" },
       dryRun: { type: "boolean" },
+      targetSetHash: operatorTargetSetHashSchema,
       matched: { type: "integer", minimum: 0 },
       pruned: { type: "integer", minimum: 0 },
       activeRemaining: { type: "integer", minimum: 0 },
@@ -2012,6 +2790,30 @@ const componentSchemas = {
       staleDays: { type: "integer", minimum: 1, maximum: 365 },
       dryRun: { type: "boolean" },
       reasons: arrayOf(schemaRef("AdminSessionRiskReason")),
+      targetSetHash: operatorTargetSetHashSchema,
+    },
+  },
+  AdminSessionRiskRevokeItem: {
+    type: "object",
+    additionalProperties: false,
+    required: ["session", "user", "reasons"],
+    properties: {
+      session: schemaRef("UserSession"),
+      user: {
+        anyOf: [
+          schemaRef("PublicUser"),
+          {
+            type: "object",
+            additionalProperties: true,
+            required: ["id", "displayName"],
+            properties: {
+              id: idSchema,
+              displayName: stringSchema,
+            },
+          },
+        ],
+      },
+      reasons: arrayOf(schemaRef("AdminSessionRiskReason")),
     },
   },
   AdminSessionRiskRevokeResult: {
@@ -2021,6 +2823,7 @@ const componentSchemas = {
       "generatedAt",
       "staleDays",
       "dryRun",
+      "targetSetHash",
       "reasons",
       "matched",
       "revoked",
@@ -2031,11 +2834,12 @@ const componentSchemas = {
       generatedAt: { type: "string", format: "date-time" },
       staleDays: { type: "integer", minimum: 1, maximum: 365 },
       dryRun: { type: "boolean" },
+      targetSetHash: operatorTargetSetHashSchema,
       reasons: arrayOf(schemaRef("AdminSessionRiskReason")),
       matched: { type: "integer", minimum: 0 },
       revoked: { type: "integer", minimum: 0 },
       remainingRiskSessionCount: { type: "integer", minimum: 0 },
-      sessions: arrayOf(schemaRef("AdminSessionRiskItem")),
+      sessions: arrayOf(schemaRef("AdminSessionRiskRevokeItem")),
     },
   },
   AdminAuthRuntimeConfig: {
@@ -2049,6 +2853,7 @@ const componentSchemas = {
       "oidc",
       "scim",
       "serverAdmins",
+      "workerPrincipals",
     ],
     properties: {
       nodeEnv: stringSchema,
@@ -2058,6 +2863,7 @@ const componentSchemas = {
       oidc: { type: "object", additionalProperties: true },
       scim: { type: "object", additionalProperties: true },
       serverAdmins: { type: "object", additionalProperties: true },
+      workerPrincipals: schemaRef("WorkerPrincipalPosture"),
     },
   },
   AdminAuthOperations: {
@@ -2136,6 +2942,22 @@ const componentSchemas = {
       dryRun: { type: "boolean" },
       status: { type: "string", enum: ["pending", "failed", "retryable"] },
       limit: { type: "integer", minimum: 1, maximum: 1000 },
+      targetSetHash: operatorTargetSetHashSchema,
+    },
+  },
+  AdminEmailOutboxRetryAllMessage: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "to", "subject", "before", "after", "provider"],
+    properties: {
+      id: idSchema,
+      deliveryId: { type: "string", minLength: 1, maxLength: 160 },
+      to: { type: "string", format: "email" },
+      subject: stringSchema,
+      before: { type: "string", enum: ["pending", "delivered", "failed"] },
+      after: { type: "string", enum: ["pending", "delivered", "failed"] },
+      provider: { type: "string", enum: ["outbox", "webhook"] },
+      error: stringSchema,
     },
   },
   AdminEmailOutboxRetryAllResult: {
@@ -2144,26 +2966,41 @@ const componentSchemas = {
     required: [
       "generatedAt",
       "dryRun",
+      "deduplicated",
+      "targetSetHash",
       "statuses",
       "limit",
       "matched",
       "retried",
+      "planned",
       "delivered",
       "failed",
       "skipped",
       "messages",
     ],
     properties: {
-      generatedAt: { type: "string", format: "date-time" },
+      generatedAt: dateTimeSchema,
       dryRun: { type: "boolean" },
+      deduplicated: { type: "boolean" },
+      batchDeliveryId: { type: "string", minLength: 1, maxLength: 160 },
+      targetSetHash: operatorTargetSetHashSchema,
       statuses: arrayOf({ type: "string", enum: ["pending", "failed"] }),
       limit: { type: "integer", minimum: 1 },
       matched: { type: "integer", minimum: 0 },
       retried: { type: "integer", minimum: 0 },
+      planned: { type: "integer", minimum: 0 },
       delivered: { type: "integer", minimum: 0 },
       failed: { type: "integer", minimum: 0 },
       skipped: { type: "integer", minimum: 0 },
-      messages: arrayOf(schemaRef("EmailOutboxMessage")),
+      messages: arrayOf(schemaRef("AdminEmailOutboxRetryAllMessage")),
+    },
+  },
+  AdminEmailOutboxRetryRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["expectedUpdatedAt"],
+    properties: {
+      expectedUpdatedAt: dateTimeSchema,
     },
   },
   AdminAuditLogExport: {
@@ -2201,7 +3038,7 @@ const componentSchemas = {
   },
   AdminJob: {
     type: "object",
-    additionalProperties: true,
+    additionalProperties: false,
     required: [
       "id",
       "type",
@@ -2246,8 +3083,11 @@ const componentSchemas = {
       cancelledAt: { type: "string", format: "date-time" },
       cancelledByUserId: idSchema,
       leasedBy: stringSchema,
+      leaseRequestId: { type: "string", minLength: 1, maxLength: 160 },
+      leaseRevision: { type: "integer", minimum: 1 },
       leaseExpiresAt: { type: "string", format: "date-time" },
       lastHeartbeatAt: { type: "string", format: "date-time" },
+      dispatchStartedAt: { type: "string", format: "date-time" },
       createdByUserId: idSchema,
       updatedByUserId: idSchema,
       logs: arrayOf(schemaRef("AdminJobLogEntry")),
@@ -2257,6 +3097,18 @@ const componentSchemas = {
     type: "object",
     additionalProperties: false,
     required: ["type"],
+    allOf: [
+      {
+        if: {
+          required: ["type"],
+          properties: { type: { const: "campaign.import" } },
+        },
+        then: {
+          required: ["payload"],
+          properties: { payload: schemaRef("AdminCampaignImportJobPayload") },
+        },
+      },
+    ],
     properties: {
       type: {
         type: "string",
@@ -2276,10 +3128,22 @@ const componentSchemas = {
       maxAttempts: { type: "integer", minimum: 1, maximum: 10 },
     },
   },
+  AdminCampaignImportJobPayload: {
+    type: "object",
+    additionalProperties: false,
+    required: ["archive", "expectedUpdatedAt"],
+    properties: {
+      archive: looseObjectSchema,
+      mode: { type: "string", enum: ["upsert", "reject_conflicts"] },
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+    },
+  },
   AdminJobLeaseRequest: {
     type: "object",
     additionalProperties: false,
+    required: ["leaseRequestId"],
     properties: {
+      leaseRequestId: { type: "string", minLength: 1, maxLength: 160 },
       workerId: { type: "string", maxLength: 120 },
       leaseSeconds: { type: "integer", minimum: 1, maximum: 3600 },
       types: arrayOf({
@@ -2301,7 +3165,10 @@ const componentSchemas = {
   AdminJobPatchRequest: {
     type: "object",
     additionalProperties: false,
+    anyOf: [{ required: ["expectedUpdatedAt"] }, { required: ["leaseRevision"] }],
     properties: {
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+      leaseRevision: { type: "integer", minimum: 1 },
       status: {
         type: "string",
         enum: ["queued", "running", "succeeded", "failed", "cancelled"],
@@ -2324,7 +3191,10 @@ const componentSchemas = {
   AdminJobHeartbeatRequest: {
     type: "object",
     additionalProperties: false,
+    anyOf: [{ required: ["expectedUpdatedAt"] }, { required: ["leaseRevision"] }],
     properties: {
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+      leaseRevision: { type: "integer", minimum: 1 },
       workerId: { type: "string", maxLength: 120 },
       leaseSeconds: { type: "integer", minimum: 1, maximum: 3600 },
       progress: schemaRef("AdminJobProgress"),
@@ -2343,8 +3213,18 @@ const componentSchemas = {
   AdminJobCancelRequest: {
     type: "object",
     additionalProperties: false,
+    required: ["expectedUpdatedAt"],
     properties: {
+      expectedUpdatedAt: { type: "string", format: "date-time" },
       reason: { type: "string", maxLength: 240 },
+    },
+  },
+  AdminJobRetryRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["expectedUpdatedAt"],
+    properties: {
+      expectedUpdatedAt: { type: "string", format: "date-time" },
     },
   },
   AdminJobOperationSample: {
@@ -2384,6 +3264,8 @@ const componentSchemas = {
       queuedAt: { type: "string", format: "date-time" },
       updatedAt: { type: "string", format: "date-time" },
       leasedBy: stringSchema,
+      leaseRequestId: { type: "string", minLength: 1, maxLength: 160 },
+      leaseRevision: { type: "integer", minimum: 1 },
       leaseExpiresAt: { type: "string", format: "date-time" },
       lastHeartbeatAt: { type: "string", format: "date-time" },
       error: stringSchema,
@@ -2522,7 +3404,9 @@ const componentSchemas = {
   AdminJobAlertRequest: {
     type: "object",
     additionalProperties: false,
+    required: ["deliveryId"],
     properties: {
+      deliveryId: { type: "string", minLength: 1, maxLength: 160 },
       dryRun: { type: "boolean" },
       force: { type: "boolean" },
       reason: { type: "string", maxLength: 240 },
@@ -2533,6 +3417,7 @@ const componentSchemas = {
     additionalProperties: false,
     required: [
       "status",
+      "deliveryId",
       "configured",
       "actionRequired",
       "actionReasons",
@@ -2540,6 +3425,7 @@ const componentSchemas = {
       "generatedAt",
     ],
     properties: {
+      deliveryId: { type: "string", minLength: 1, maxLength: 160 },
       status: {
         type: "string",
         enum: ["dry_run", "delivered", "skipped", "failed"],
@@ -2572,7 +3458,7 @@ const componentSchemas = {
     required: ["code", "severity", "action"],
     properties: {
       code: stringSchema,
-      severity: { type: "string", enum: ["warning", "error"] },
+      severity: { type: "string", enum: ["warning", "error", "critical"] },
       action: stringSchema,
       affectedCount: { type: "integer", minimum: 0 },
       samples: arrayOf(looseObjectSchema),
@@ -2820,9 +3706,10 @@ const componentSchemas = {
   AdminPluginReviewSnapshot: {
     type: "object",
     additionalProperties: false,
-    required: ["generatedAt", "policy", "totals", "plugins"],
+    required: ["generatedAt", "registryRevision", "policy", "totals", "plugins"],
     properties: {
       generatedAt: { type: "string", format: "date-time" },
+      registryRevision: operatorTargetSetHashSchema,
       policy: looseObjectSchema,
       totals: looseObjectSchema,
       plugins: arrayOf(schemaRef("AdminPluginReviewInfo")),
@@ -2831,27 +3718,62 @@ const componentSchemas = {
   AdminPluginReviewPatchRequest: {
     type: "object",
     additionalProperties: false,
-    required: ["status"],
+    required: ["status", "expectedUpdatedAt"],
     properties: {
       status: { type: "string", enum: ["pending", "approved", "rejected"] },
       notes: { type: "string", maxLength: 500 },
+      expectedUpdatedAt: { type: "string", format: "date-time" },
     },
   },
   AdminPluginRegistrySyncRequest: {
     type: "object",
     additionalProperties: false,
+    required: ["expectedRegistryRevision"],
     properties: {
       registryUrl: stringSchema,
+      expectedRegistryRevision: operatorTargetSetHashSchema,
+    },
+  },
+  AdminPluginRegistrySyncPlugin: {
+    type: "object",
+    additionalProperties: true,
+    required: ["id", "name", "version", "compatibleCore", "source"],
+    properties: {
+      id: idSchema,
+      name: stringSchema,
+      version: stringSchema,
+      compatibleCore: stringSchema,
+      source: {
+        type: "object",
+        additionalProperties: false,
+        required: ["type", "packageId", "manifestPath", "manifestChecksum", "sandbox"],
+        properties: {
+          type: { type: "string", enum: ["local", "registry"] },
+          packageId: stringSchema,
+          manifestPath: stringSchema,
+          manifestChecksum: stringSchema,
+          clientEntrypoint: stringSchema,
+          serverEntrypoint: stringSchema,
+          sandbox: { type: "string", enum: ["vm", "manifest-only"] },
+          checksum: stringSchema,
+          registryUrl: stringSchema,
+          packageUrl: stringSchema,
+          packageChecksum: stringSchema,
+          syncedAt: { type: "string", format: "date-time" },
+        },
+      },
     },
   },
   AdminPluginRegistrySyncResponse: {
     type: "object",
-    additionalProperties: true,
-    required: ["syncedAt", "registries", "plugins"],
+    additionalProperties: false,
+    required: ["syncedAt", "previousRegistryRevision", "registryRevision", "registries", "plugins"],
     properties: {
       syncedAt: { type: "string", format: "date-time" },
+      previousRegistryRevision: operatorTargetSetHashSchema,
+      registryRevision: operatorTargetSetHashSchema,
       registries: arrayOf(looseObjectSchema),
-      plugins: arrayOf(schemaRef("PluginRuntimeInfo")),
+      plugins: arrayOf(schemaRef("AdminPluginRegistrySyncPlugin")),
     },
   },
   AdminPluginOperations: {
@@ -2859,6 +3781,7 @@ const componentSchemas = {
     additionalProperties: true,
     required: [
       "generatedAt",
+      "registryRevision",
       "actionRequired",
       "actionReasons",
       "policy",
@@ -2868,6 +3791,7 @@ const componentSchemas = {
     ],
     properties: {
       generatedAt: { type: "string", format: "date-time" },
+      registryRevision: operatorTargetSetHashSchema,
       actionRequired: { type: "boolean" },
       actionReasons: arrayOf(stringSchema),
       policy: looseObjectSchema,
@@ -2909,10 +3833,35 @@ const componentSchemas = {
       actorSystemCounts: looseObjectSchema,
       itemSystemCounts: looseObjectSchema,
       activityOperations: looseObjectSchema,
-      productionGapCounts: looseObjectSchema,
+      productionGapCounts: arrayOf(schemaRef("AdminSystemProductionGap")),
       promotionBlockers: arrayOf(looseObjectSchema),
       remediationQueue: arrayOf(schemaRef("AdminOperationRemediation")),
       systems: arrayOf(looseObjectSchema),
+    },
+  },
+  AdminSystemProductionGapSystem: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "name", "activeCampaignCount", "actorCount", "itemCount"],
+    properties: {
+      id: idSchema,
+      name: stringSchema,
+      activeCampaignCount: { type: "integer", minimum: 0 },
+      actorCount: { type: "integer", minimum: 0 },
+      itemCount: { type: "integer", minimum: 0 },
+    },
+  },
+  AdminSystemProductionGap: {
+    type: "object",
+    additionalProperties: false,
+    required: ["code", "count", "systems", "severity", "message", "remediation"],
+    properties: {
+      code: stringSchema,
+      count: { type: "integer", minimum: 1 },
+      systems: arrayOf(schemaRef("AdminSystemProductionGapSystem")),
+      severity: { type: "string", enum: ["warning", "critical"] },
+      message: stringSchema,
+      remediation: stringSchema,
     },
   },
   AdminRenderingOperations: {
@@ -2977,20 +3926,76 @@ const componentSchemas = {
     properties: {
       dryRun: { type: "boolean" },
       campaignId: idSchema,
-      assetIds: arrayOf(idSchema),
+      assetIds: {
+        type: "array",
+        minItems: 1,
+        maxItems: 1000,
+        uniqueItems: true,
+        items: { ...idSchema, maxLength: 160 },
+      },
+      expectedTargetSetHash: operatorTargetSetHashSchema,
       includeDeleted: { type: "boolean" },
       includeExpired: { type: "boolean" },
       overwrite: { type: "boolean" },
-      graceDays: { type: "integer", minimum: 0, maximum: 365 },
+      graceDays: { type: "integer", minimum: 0, maximum: 3650 },
       reason: { type: "string", maxLength: 160 },
+    },
+  },
+  AdminAssetOperationItem: {
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "operationId",
+      "assetId",
+      "campaignId",
+      "name",
+      "fromProvider",
+      "toProvider",
+      "status",
+    ],
+    properties: {
+      operationId: {
+        type: "string",
+        pattern: "^assetop_[a-f0-9]{32}$",
+      },
+      assetId: idSchema,
+      campaignId: idSchema,
+      name: stringSchema,
+      fromProvider: stringSchema,
+      toProvider: stringSchema,
+      status: {
+        type: "string",
+        enum: [
+          "migrated",
+          "deleted",
+          "planned",
+          "skipped",
+          "failed",
+          "missing_marked",
+          "archived",
+        ],
+      },
+      reason: stringSchema,
+      sizeBytes: { type: "integer", minimum: 0 },
+      storage: looseObjectSchema,
     },
   },
   AdminAssetOperationResult: {
     type: "object",
-    additionalProperties: true,
-    required: ["dryRun", "assetCount", "changed", "results"],
+    additionalProperties: false,
+    required: [
+      "dryRun",
+      "targetSetHash",
+      "assetCount",
+      "planned",
+      "skipped",
+      "failed",
+      "changed",
+      "results",
+    ],
     properties: {
       dryRun: { type: "boolean" },
+      targetSetHash: operatorTargetSetHashSchema,
       targetProvider: stringSchema,
       graceDays: { type: "integer", minimum: 0 },
       assetCount: { type: "integer", minimum: 0 },
@@ -3004,7 +4009,17 @@ const componentSchemas = {
       failed: { type: "integer", minimum: 0 },
       changed: { type: "boolean" },
       reason: stringSchema,
-      results: arrayOf(looseObjectSchema),
+      results: arrayOf(schemaRef("AdminAssetOperationItem")),
+    },
+  },
+  AdminAssetTargetSetConflictResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["error", "message", "currentTargetSetHash"],
+    properties: {
+      error: { type: "string", enum: ["stale_target_set"] },
+      message: stringSchema,
+      currentTargetSetHash: operatorTargetSetHashSchema,
     },
   },
   AdminAssetIntegrityReport: {
@@ -3044,20 +4059,30 @@ const componentSchemas = {
   AdminAssetCdnPurgeRequest: {
     type: "object",
     additionalProperties: false,
+    required: ["expectedUpdatedAt", "deliveryId"],
     properties: {
       reason: { type: "string", maxLength: 160 },
+      expectedUpdatedAt: dateTimeSchema,
+      deliveryId: { type: "string", minLength: 1, maxLength: 160 },
     },
   },
   AdminAssetCdnPurgeResult: {
     type: "object",
-    additionalProperties: true,
-    required: ["assetId", "campaignId", "name", "status"],
+    additionalProperties: false,
+    required: [
+      "assetId",
+      "campaignId",
+      "name",
+      "deliveryId",
+      "status",
+    ],
     properties: {
       assetId: idSchema,
       campaignId: idSchema,
       name: stringSchema,
       cdnUrl: stringSchema,
       reason: stringSchema,
+      deliveryId: { type: "string", minLength: 1, maxLength: 160 },
       status: { type: "string", enum: ["purged", "failed", "not_configured"] },
       purgedAt: { type: "string", format: "date-time" },
       error: stringSchema,
@@ -3072,14 +4097,74 @@ const componentSchemas = {
       count: { type: "integer", minimum: 0 },
     },
   },
+  StorageAssetSnapshotIdentity: {
+    type: "object",
+    additionalProperties: false,
+    required: ["provider", "snapshotId", "createdAt"],
+    properties: {
+      provider: { type: "string", enum: ["local", "s3"] },
+      snapshotId: { type: "string", minLength: 1, maxLength: 200 },
+      createdAt: { type: "string", format: "date-time" },
+    },
+  },
+  StorageAssetMetadataInventory: {
+    type: "object",
+    additionalProperties: false,
+    required: ["provider", "assetCount", "objectCount", "sizeBytes", "digestAlgorithm", "digest"],
+    properties: {
+      provider: { type: "string", enum: ["local", "s3", "unknown"] },
+      assetCount: { type: "integer", minimum: 0 },
+      objectCount: { type: "integer", minimum: 0 },
+      sizeBytes: { type: "integer", minimum: 0 },
+      digestAlgorithm: { type: "string", enum: ["sha256"] },
+      digest: { type: "string", pattern: "^[a-f0-9]{64}$" },
+    },
+  },
+  StorageRecoveryPointManifest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["kind", "version", "createdAt", "database", "assetInventory"],
+    properties: {
+      kind: { type: "string", enum: ["open-tabletop-recovery-point"] },
+      version: { type: "integer", enum: [1] },
+      createdAt: { type: "string", format: "date-time" },
+      database: {
+        type: "object",
+        additionalProperties: false,
+        required: ["fileName", "sizeBytes", "checksumAlgorithm", "checksum"],
+        properties: {
+          fileName: { type: "string", maxLength: 255 },
+          sizeBytes: { type: "integer", minimum: 0 },
+          checksumAlgorithm: { type: "string", enum: ["sha256"] },
+          checksum: { type: "string", pattern: "^[a-f0-9]{64}$" },
+        },
+      },
+      assetInventory: schemaRef("StorageAssetMetadataInventory"),
+      assetSnapshot: schemaRef("StorageAssetSnapshotIdentity"),
+    },
+  },
+  StorageRecoveryPointSummary: {
+    type: "object",
+    additionalProperties: false,
+    required: ["manifestFileName", "manifestStatus", "paired", "actionRequired", "actionReasons"],
+    properties: {
+      manifestFileName: { type: "string", maxLength: 280 },
+      manifestStatus: { type: "string", enum: ["present", "missing", "invalid"] },
+      paired: { type: "boolean" },
+      actionRequired: { type: "boolean" },
+      actionReasons: arrayOf(stringSchema),
+      manifest: schemaRef("StorageRecoveryPointManifest"),
+    },
+  },
   StorageBackupSummary: {
     type: "object",
     additionalProperties: false,
-    required: ["fileName", "sizeBytes", "createdAt"],
+    required: ["fileName", "sizeBytes", "createdAt", "recoveryPoint"],
     properties: {
       fileName: stringSchema,
       sizeBytes: { type: "integer", minimum: 0 },
       createdAt: { type: "string", format: "date-time" },
+      recoveryPoint: schemaRef("StorageRecoveryPointSummary"),
     },
   },
   StorageBackupRequest: {
@@ -3087,21 +4172,23 @@ const componentSchemas = {
     additionalProperties: false,
     properties: {
       reason: { type: "string", maxLength: 160 },
+      requireAssetSnapshot: { type: "boolean" },
+      assetSnapshot: schemaRef("StorageAssetSnapshotIdentity"),
     },
   },
   StorageBackupResult: {
-    allOf: [
-      schemaRef("StorageBackupSummary"),
-      {
-        type: "object",
-        additionalProperties: false,
-        required: ["status"],
-        properties: {
-          status: { type: "string", enum: ["created"] },
-          reason: { type: "string", maxLength: 160 },
-        },
-      },
-    ],
+    type: "object",
+    additionalProperties: false,
+    required: ["status", "fileName", "sizeBytes", "createdAt", "recoveryPoint"],
+    properties: {
+      status: { type: "string", enum: ["created"] },
+      fileName: stringSchema,
+      sizeBytes: { type: "integer", minimum: 0 },
+      createdAt: { type: "string", format: "date-time" },
+      recoveryPoint: schemaRef("StorageRecoveryPointSummary"),
+      reason: { type: "string", maxLength: 160 },
+      prunedFileNames: arrayOf(stringSchema),
+    },
   },
   StorageIntegrityCheck: {
     type: "object",
@@ -3204,13 +4291,19 @@ const componentSchemas = {
       backups: {
         type: "object",
         additionalProperties: false,
-        required: ["directoryName"],
+        required: ["directoryName", "count", "retentionCount"],
         properties: {
           directoryName: stringSchema,
+          count: { type: "integer", minimum: 0 },
+          retentionCount: { type: "integer", minimum: 0 },
           latest: schemaRef("StorageBackupSummary"),
         },
       },
       scheduledBackups: schemaRef("StorageScheduledBackupStatus"),
+      restoreStateRevision: {
+        type: "string",
+        pattern: "^sha256:[a-f0-9]{64}$",
+      },
       actionRequired: { type: "boolean" },
       actionReasons: arrayOf(stringSchema),
       remediation: stringSchema,
@@ -3221,16 +4314,21 @@ const componentSchemas = {
     additionalProperties: false,
     properties: {
       backupFileName: stringSchema,
+      requireAssetSnapshot: { type: "boolean" },
+      expectedAssetSnapshot: schemaRef("StorageAssetSnapshotIdentity"),
     },
   },
   StorageRestoreDrillResult: {
     type: "object",
     additionalProperties: false,
-    required: ["status", "checkedAt"],
+    required: ["status", "checkedAt", "actionRequired", "actionReasons"],
     properties: {
       status: { type: "string", enum: ["passed", "failed"] },
       backup: schemaRef("StorageBackupSummary"),
       checkedAt: { type: "string", format: "date-time" },
+      recoveryPoint: schemaRef("StorageRecoveryPointSummary"),
+      actionRequired: { type: "boolean" },
+      actionReasons: arrayOf(stringSchema),
       integrity: schemaRef("StorageIntegrityCheck"),
       campaignCount: { type: "integer", minimum: 0 },
       recordCount: { type: "integer", minimum: 0 },
@@ -3241,25 +4339,74 @@ const componentSchemas = {
   StorageRestoreRequest: {
     type: "object",
     additionalProperties: false,
-    required: ["backupFileName", "confirmFileName"],
+    required: ["backupFileName", "confirmFileName", "expectedStateRevision"],
     properties: {
       backupFileName: stringSchema,
       confirmFileName: stringSchema,
+      expectedStateRevision: {
+        type: "string",
+        pattern: "^sha256:[a-f0-9]{64}$",
+      },
       reason: { type: "string", maxLength: 160 },
+      requireAssetSnapshot: { type: "boolean" },
+      expectedAssetSnapshot: schemaRef("StorageAssetSnapshotIdentity"),
     },
   },
   StorageRestoreResult: {
-    allOf: [
-      schemaRef("StorageRestoreDrillResult"),
-      {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          restoredAt: { type: "string", format: "date-time" },
-          reason: { type: "string", maxLength: 160 },
-        },
-      },
+    type: "object",
+    additionalProperties: false,
+    required: ["status", "checkedAt", "actionRequired", "actionReasons"],
+    properties: {
+      status: { type: "string", enum: ["passed", "failed"] },
+      backup: schemaRef("StorageBackupSummary"),
+      checkedAt: { type: "string", format: "date-time" },
+      recoveryPoint: schemaRef("StorageRecoveryPointSummary"),
+      actionRequired: { type: "boolean" },
+      actionReasons: arrayOf(stringSchema),
+      integrity: schemaRef("StorageIntegrityCheck"),
+      campaignCount: { type: "integer", minimum: 0 },
+      recordCount: { type: "integer", minimum: 0 },
+      collections: arrayOf(schemaRef("StorageRecordCollectionCount")),
+      reconciliation: schemaRef("StorageRestoreReconciliation"),
+      error: stringSchema,
+      restoredAt: { type: "string", format: "date-time" },
+      reason: { type: "string", maxLength: 160 },
+    },
+  },
+  StorageRestoreReconciliation: {
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "policy",
+      "usersPreserved",
+      "sessionsPreserved",
+      "oauthStatesCleared",
+      "passwordResetTokensCleared",
+      "invitesPreserved",
+      "pendingEmailsQuarantined",
+      "webhooksDisabled",
+      "pendingWebhookDeliveriesQuarantined",
+      "jobsCancelled",
+      "idempotencyRecordsCleared",
+      "backupOnlyCampaignsAssignedToRecoveryAdmin",
     ],
+    properties: {
+      policy: { type: "string", enum: ["preserve-live-security-plane"] },
+      usersPreserved: { type: "integer", minimum: 0 },
+      sessionsPreserved: { type: "integer", minimum: 0 },
+      oauthStatesCleared: { type: "integer", minimum: 0 },
+      passwordResetTokensCleared: { type: "integer", minimum: 0 },
+      invitesPreserved: { type: "integer", minimum: 0 },
+      pendingEmailsQuarantined: { type: "integer", minimum: 0 },
+      webhooksDisabled: { type: "integer", minimum: 0 },
+      pendingWebhookDeliveriesQuarantined: { type: "integer", minimum: 0 },
+      jobsCancelled: { type: "integer", minimum: 0 },
+      idempotencyRecordsCleared: { type: "integer", minimum: 0 },
+      backupOnlyCampaignsAssignedToRecoveryAdmin: {
+        type: "integer",
+        minimum: 0,
+      },
+    },
   },
   LoginResponse: {
     type: "object",
@@ -3295,64 +4442,19 @@ const componentSchemas = {
   OrganizationWorkspace: {
     type: "object",
     additionalProperties: false,
-    required: [
-      "id",
-      "name",
-      "ownerUserId",
-      "defaultSystemId",
-      "defaultCampaignVisibility",
-      "defaultPermissionTemplate",
-      "defaultInviteRole",
-      "defaultSceneName",
-      "defaultSceneFolder",
-      "defaultSceneWidth",
-      "defaultSceneHeight",
-      "defaultSceneGridSize",
-      "onboardingTitle",
-      "onboardingBody",
-      "createdAt",
-      "updatedAt",
-    ],
-    properties: {
-      ...idTimestampProperties,
-      name: stringSchema,
-      ownerUserId: idSchema,
-      defaultSystemId: idSchema,
-      defaultCampaignVisibility: {
-        type: "string",
-        enum: ["private", "invite_only", "public"],
-      },
-      defaultPermissionTemplate: {
-        type: "string",
-        enum: ["standard", "player_authoring", "ai_assisted", "assistant_ops"],
-      },
-      defaultInviteRole: {
-        type: "string",
-        enum: ["gm", "assistant_gm", "player", "observer"],
-      },
-      defaultSceneName: stringSchema,
-      defaultSceneFolder: stringSchema,
-      defaultSceneWidth: { type: "integer", minimum: 1 },
-      defaultSceneHeight: { type: "integer", minimum: 1 },
-      defaultSceneGridSize: { type: "integer", minimum: 1 },
-      onboardingTitle: stringSchema,
-      onboardingBody: stringSchema,
-    },
+    required: organizationWorkspaceRequired,
+    properties: organizationWorkspaceProperties,
   },
   OrganizationWorkspaceInfo: {
-    allOf: [
-      schemaRef("OrganizationWorkspace"),
-      {
-        type: "object",
-        additionalProperties: false,
-        required: ["role", "memberCount", "campaignCount"],
-        properties: {
-          role: { type: "string", enum: ["owner", "admin", "member"] },
-          memberCount: { type: "integer", minimum: 0 },
-          campaignCount: { type: "integer", minimum: 0 },
-        },
-      },
-    ],
+    type: "object",
+    additionalProperties: false,
+    required: [...organizationWorkspaceRequired, "role", "memberCount", "campaignCount"],
+    properties: {
+      ...organizationWorkspaceProperties,
+      role: { type: "string", enum: ["owner", "admin", "member"] },
+      memberCount: { type: "integer", minimum: 0 },
+      campaignCount: { type: "integer", minimum: 0 },
+    },
   },
   OrganizationSwitchRequest: {
     type: "object",
@@ -3403,7 +4505,9 @@ const componentSchemas = {
   OrganizationWorkspaceDefaultsPatchRequest: {
     type: "object",
     additionalProperties: false,
+    required: ["expectedUpdatedAt"],
     properties: {
+      expectedUpdatedAt: { type: "string", format: "date-time" },
       name: stringSchema,
       defaultSystemId: idSchema,
       defaultCampaignVisibility: {
@@ -3463,14 +4567,16 @@ const componentSchemas = {
       userId: idSchema,
       email: stringSchema,
       role: { type: "string", enum: ["admin", "member"] },
+      expectedOrganizationUpdatedAt: dateTimeSchema,
     },
   },
   OrganizationMemberUpdateRequest: {
     type: "object",
     additionalProperties: false,
-    required: ["role"],
+    required: ["role", "expectedUpdatedAt"],
     properties: {
       role: { type: "string", enum: ["admin", "member"] },
+      expectedUpdatedAt: dateTimeSchema,
     },
   },
   OrganizationMemberDeleteResponse: {
@@ -3508,10 +4614,23 @@ const componentSchemas = {
         type: "string",
         enum: ["private", "invite_only", "public"],
       },
+      eventSequence: { type: "integer", minimum: 0 },
+      aiPolicy: schemaRef("AiCampaignPolicy"),
+      rulesProfile: schemaRef("CampaignRulesProfile"),
       archivedAt: { type: "string", format: "date-time" },
       archivedByUserId: idSchema,
       restoredAt: { type: "string", format: "date-time" },
       restoredByUserId: idSchema,
+    },
+  },
+  CampaignRulesProfile: {
+    type: "object",
+    additionalProperties: false,
+    required: ["profileId", "rulesVersion", "toggles"],
+    properties: {
+      profileId: { type: "string", minLength: 1, maxLength: 100 },
+      rulesVersion: { type: "string", minLength: 1, maxLength: 100 },
+      toggles: { type: "object", maxProperties: 100, additionalProperties: { type: "boolean" } },
     },
   },
   CampaignCreateRequest: {
@@ -3548,20 +4667,65 @@ const componentSchemas = {
       combatAudit: arrayOf(schemaRef("AuditLog")),
     },
   },
+  CampaignPresence: {
+    type: "object",
+    additionalProperties: false,
+    required: ["campaignId", "userId", "displayName", "role", "connectionCount", "connectedAt", "lastSeenAt", "activeSceneIds"],
+    properties: {
+      campaignId: idSchema,
+      userId: idSchema,
+      displayName: stringSchema,
+      role: stringSchema,
+      connectionCount: { type: "integer", minimum: 1 },
+      connectedAt: { type: "string", format: "date-time" },
+      lastSeenAt: { type: "string", format: "date-time" },
+      activeSceneIds: arrayOf(idSchema),
+    },
+  },
+  SnapshotHistoryCollectionMeta: {
+    type: "object",
+    additionalProperties: false,
+    required: ["total", "returned", "truncated"],
+    properties: {
+      total: { type: "integer", minimum: 0 },
+      returned: { type: "integer", minimum: 0 },
+      truncated: { type: "boolean" },
+    },
+  },
+  SnapshotHistoryMeta: {
+    type: "object",
+    additionalProperties: false,
+    required: ["limit", "collections"],
+    properties: {
+      limit: { type: "integer", minimum: 1, maximum: 200 },
+      collections: {
+        type: "object",
+        additionalProperties: schemaRef("SnapshotHistoryCollectionMeta"),
+      },
+    },
+  },
   CampaignSnapshot: {
     type: "object",
     additionalProperties: true,
     required: [
       "generatedAt",
+      "eventSequence",
+      "realtimeRecovery",
+      "user",
       "campaign",
       "members",
+      "presences",
       "campaignSessions",
       "worlds",
+      "worldRecords",
+      "worldRelations",
       "scenes",
       "tokens",
       "fogPresets",
       "assets",
       "actors",
+      "calculationOverrides",
+      "characterTransfers",
       "items",
       "journals",
       "handouts",
@@ -3576,10 +4740,17 @@ const componentSchemas = {
     ],
     properties: {
       generatedAt: { type: "string", format: "date-time" },
+      eventSequence: { type: "integer", minimum: 0 },
+      realtimeRecovery: { type: "string", enum: ["refetch_snapshot_on_gap"] },
+      history: schemaRef("SnapshotHistoryMeta"),
+      user: schemaRef("PublicUser"),
       campaign: schemaRef("Campaign"),
       members: arrayOf(schemaRef("CampaignMember")),
+      presences: arrayOf(schemaRef("CampaignPresence")),
       campaignSessions: arrayOf(schemaRef("CampaignSession")),
       worlds: arrayOf(schemaRef("World")),
+      worldRecords: arrayOf(schemaRef("WorldRecord")),
+      worldRelations: arrayOf(schemaRef("WorldRelation")),
       scenes: arrayOf(schemaRef("Scene")),
       selectedSceneId: idSchema,
       activeSceneId: idSchema,
@@ -3588,6 +4759,8 @@ const componentSchemas = {
       fogPresets: arrayOf(schemaRef("FogPreset")),
       assets: arrayOf(schemaRef("MapAsset")),
       actors: arrayOf(schemaRef("Actor")),
+      calculationOverrides: arrayOf(schemaRef("CalculationOverride")),
+      characterTransfers: arrayOf(schemaRef("CharacterTransfer")),
       items: arrayOf(schemaRef("Item")),
       journals: arrayOf(schemaRef("JournalEntry")),
       handouts: arrayOf(schemaRef("Handout")),
@@ -3604,7 +4777,9 @@ const componentSchemas = {
   CampaignPatchRequest: {
     type: "object",
     additionalProperties: false,
+    required: ["expectedUpdatedAt"],
     properties: {
+      expectedUpdatedAt: { type: "string", format: "date-time" },
       name: stringSchema,
       description: stringSchema,
       defaultSystemId: idSchema,
@@ -3612,6 +4787,331 @@ const componentSchemas = {
         type: "string",
         enum: ["private", "invite_only", "public"],
       },
+      rulesProfile: schemaRef("CampaignRulesProfile"),
+    },
+  },
+  CharacterTransfer: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "campaignId", "actorId", "toUserId", "initiatedByUserId", "actorUpdatedAt", "status", "createdAt", "updatedAt"],
+    properties: {
+      ...idTimestampProperties,
+      campaignId: idSchema,
+      actorId: idSchema,
+      fromUserId: idSchema,
+      toUserId: idSchema,
+      initiatedByUserId: idSchema,
+      actorUpdatedAt: { type: "string", format: "date-time" },
+      status: { type: "string", enum: ["pending", "accepted", "declined", "cancelled"] },
+      resolvedAt: { type: "string", format: "date-time" },
+      resolvedByUserId: idSchema,
+    },
+  },
+  CharacterTransferCreateRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["toUserId", "expectedUpdatedAt"],
+    properties: {
+      toUserId: idSchema,
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+    },
+  },
+  CharacterTransferCreateResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["transfer"],
+    properties: { transfer: schemaRef("CharacterTransfer") },
+  },
+  CharacterTransferResolutionRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["expectedUpdatedAt"],
+    properties: { expectedUpdatedAt: { type: "string", format: "date-time" } },
+  },
+  CharacterTransferResolutionResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["transfer"],
+    properties: { transfer: schemaRef("CharacterTransfer"), actor: schemaRef("Actor") },
+  },
+  CampaignOwnershipTransferRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["targetUserId", "expectedUpdatedAt"],
+    properties: {
+      targetUserId: idSchema,
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+      reason: { type: "string", maxLength: 160 },
+    },
+  },
+  CampaignOwnershipTransferResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["campaign", "previousOwner", "newOwner"],
+    properties: {
+      campaign: schemaRef("Campaign"),
+      previousOwner: schemaRef("CampaignMemberSnapshot"),
+      newOwner: schemaRef("CampaignMemberSnapshot"),
+    },
+  },
+  CampaignDuplicateRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["expectedUpdatedAt"],
+    properties: {
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+      name: { type: "string", minLength: 1, maxLength: 160 },
+    },
+  },
+  CampaignDuplicateResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["campaign", "counts", "assetFiles"],
+    properties: {
+      campaign: schemaRef("Campaign"),
+      counts: { type: "object", additionalProperties: { type: "integer", minimum: 0 } },
+      assetFiles: { type: "integer", minimum: 0 },
+    },
+  },
+  CampaignWebhookEventType: {
+    type: "string",
+    enum: campaignWebhookEventTypeValues,
+    description:
+      "A bounded metadata event that may be delivered to an outbound campaign webhook.",
+  },
+  CampaignWebhookEnvelopeEventType: {
+    type: "string",
+    enum: campaignWebhookEnvelopeEventTypeValues,
+  },
+  CampaignWebhookDelivery: {
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "id",
+      "campaignId",
+      "webhookId",
+      "eventId",
+      "eventType",
+      "occurredAt",
+      "attempt",
+      "status",
+      "createdAt",
+      "updatedAt",
+    ],
+    properties: {
+      ...idTimestampProperties,
+      campaignId: idSchema,
+      webhookId: idSchema,
+      eventId: idSchema,
+      eventType: schemaRef("CampaignWebhookEnvelopeEventType"),
+      occurredAt: { type: "string", format: "date-time" },
+      resourceType: { type: "string", minLength: 1, maxLength: 80 },
+      resourceId: idSchema,
+      attempt: { type: "integer", minimum: 1 },
+      status: {
+        type: "string",
+        enum: ["queued", "delivered", "failed"],
+      },
+      responseStatus: { type: "integer", minimum: 100, maximum: 599 },
+      responseBytes: { type: "integer", minimum: 0 },
+      durationMs: { type: "integer", minimum: 0 },
+      deliveredAt: { type: "string", format: "date-time" },
+      failedAt: { type: "string", format: "date-time" },
+      errorCode: { type: "string", minLength: 1, maxLength: 120 },
+      retryOfDeliveryId: idSchema,
+      initiatedByUserId: idSchema,
+    },
+    description:
+      "Metadata-only outbound delivery ledger entry. Request bodies, response bodies, signing headers, and secrets are never returned.",
+  },
+  CampaignWebhook: {
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "id",
+      "campaignId",
+      "name",
+      "url",
+      "eventTypes",
+      "enabled",
+      "secretConfigured",
+      "secretHint",
+      "createdByUserId",
+      "updatedByUserId",
+      "createdAt",
+      "updatedAt",
+    ],
+    properties: {
+      ...idTimestampProperties,
+      campaignId: idSchema,
+      name: { type: "string", minLength: 1, maxLength: 80 },
+      url: { type: "string", format: "uri", minLength: 1, maxLength: 2048 },
+      eventTypes: {
+        type: "array",
+        minItems: 1,
+        maxItems: campaignWebhookEventTypeValues.length,
+        uniqueItems: true,
+        items: schemaRef("CampaignWebhookEventType"),
+      },
+      enabled: { type: "boolean" },
+      secretConfigured: { type: "boolean" },
+      secretHint: { type: "string", minLength: 1, maxLength: 32 },
+      createdByUserId: idSchema,
+      updatedByUserId: idSchema,
+      latestDelivery: schemaRef("CampaignWebhookDelivery"),
+    },
+    description:
+      "Public webhook configuration. The signing secret and internal idempotency hashes are never included.",
+  },
+  CampaignWebhookEnvelopeV1: {
+    type: "object",
+    additionalProperties: false,
+    required: ["version", "eventId", "eventType", "occurredAt", "campaignId"],
+    properties: {
+      version: { type: "string", enum: ["1.0"] },
+      eventId: idSchema,
+      eventType: schemaRef("CampaignWebhookEnvelopeEventType"),
+      occurredAt: { type: "string", format: "date-time" },
+      campaignId: idSchema,
+      resource: {
+        type: "object",
+        additionalProperties: false,
+        required: ["type", "id"],
+        properties: {
+          type: { type: "string", minLength: 1, maxLength: 80 },
+          id: idSchema,
+        },
+      },
+    },
+    description:
+      "Stable metadata-only webhook envelope. It contains no arbitrary campaign, chat, journal, AI, or imported-content payload.",
+  },
+  CampaignWebhookListResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["items", "supportedEventTypes"],
+    properties: {
+      items: arrayOf(schemaRef("CampaignWebhook")),
+      supportedEventTypes: {
+        type: "array",
+        items: schemaRef("CampaignWebhookEventType"),
+        minItems: 1,
+        uniqueItems: true,
+      },
+    },
+  },
+  CampaignWebhookCreateRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["name", "url", "eventTypes", "expectedCampaignUpdatedAt"],
+    properties: {
+      name: { type: "string", minLength: 1, maxLength: 80 },
+      url: { type: "string", format: "uri", minLength: 1, maxLength: 2048 },
+      eventTypes: {
+        type: "array",
+        minItems: 1,
+        maxItems: campaignWebhookEventTypeValues.length,
+        uniqueItems: true,
+        items: schemaRef("CampaignWebhookEventType"),
+      },
+      enabled: { type: "boolean", default: true },
+      expectedCampaignUpdatedAt: { type: "string", format: "date-time" },
+    },
+  },
+  CampaignWebhookUpdateRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["expectedUpdatedAt"],
+    anyOf: [
+      { required: ["name"] },
+      { required: ["url"] },
+      { required: ["eventTypes"] },
+      { required: ["enabled"] },
+    ],
+    properties: {
+      name: { type: "string", minLength: 1, maxLength: 80 },
+      url: { type: "string", format: "uri", minLength: 1, maxLength: 2048 },
+      eventTypes: {
+        type: "array",
+        minItems: 1,
+        maxItems: campaignWebhookEventTypeValues.length,
+        uniqueItems: true,
+        items: schemaRef("CampaignWebhookEventType"),
+      },
+      enabled: { type: "boolean" },
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+    },
+  },
+  CampaignWebhookMutationRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["expectedUpdatedAt"],
+    properties: {
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+    },
+  },
+  CampaignWebhookCreateResponse: {
+    oneOf: [
+      {
+        type: "object",
+        additionalProperties: false,
+        required: ["webhook", "signingSecret", "campaignUpdatedAt"],
+        properties: {
+          webhook: schemaRef("CampaignWebhook"),
+          signingSecret: {
+            type: "string",
+            minLength: 32,
+            description:
+              "One-time plaintext secret. Store it immediately; it cannot be listed or recovered.",
+          },
+          campaignUpdatedAt: { type: "string", format: "date-time" },
+        },
+      },
+      {
+        type: "object",
+        additionalProperties: false,
+        required: ["webhook", "signingSecretAlreadyShown"],
+        properties: {
+          webhook: schemaRef("CampaignWebhook"),
+          signingSecretAlreadyShown: { type: "boolean", enum: [true] },
+        },
+      },
+    ],
+  },
+  CampaignWebhookRotateSecretResponse: {
+    oneOf: [
+      {
+        type: "object",
+        additionalProperties: false,
+        required: ["webhook", "signingSecret"],
+        properties: {
+          webhook: schemaRef("CampaignWebhook"),
+          signingSecret: {
+            type: "string",
+            minLength: 32,
+            description:
+              "One-time replacement secret. Rotation invalidates the previous secret immediately.",
+          },
+        },
+      },
+      {
+        type: "object",
+        additionalProperties: false,
+        required: ["webhook", "signingSecretAlreadyShown"],
+        properties: {
+          webhook: schemaRef("CampaignWebhook"),
+          signingSecretAlreadyShown: { type: "boolean", enum: [true] },
+        },
+      },
+    ],
+  },
+  CampaignWebhookDeleteResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["webhook", "deleted"],
+    properties: {
+      webhook: schemaRef("CampaignWebhook"),
+      deleted: { type: "boolean", enum: [true] },
     },
   },
   World: {
@@ -3636,6 +5136,105 @@ const componentSchemas = {
     type: "object",
     additionalProperties: false,
     properties: { name: stringSchema, description: stringSchema },
+  },
+  WorldRecord: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "campaignId", "kind", "name", "summary", "description", "lifecycle", "visibility", "tags", "metadata", "createdByUserId", "updatedByUserId", "createdAt", "updatedAt"],
+    properties: {
+      ...idTimestampProperties,
+      campaignId: idSchema,
+      worldId: idSchema,
+      kind: { type: "string", enum: ["npc", "location", "quest", "faction"] },
+      name: { type: "string", minLength: 1, maxLength: 160 },
+      summary: { type: "string", maxLength: 500 },
+      description: { type: "string", maxLength: 20000 },
+      lifecycle: { type: "string", enum: ["draft", "active", "inactive", "resolved", "archived"] },
+      visibility: { type: "string", enum: ["gm_only", "public"] },
+      tags: { type: "array", maxItems: 50, items: { type: "string", maxLength: 40 } },
+      metadata: { type: "object", maxProperties: 256, additionalProperties: true },
+      createdByUserId: idSchema,
+      updatedByUserId: idSchema,
+      resolvedAt: { type: "string", format: "date-time" },
+      archivedAt: { type: "string", format: "date-time" },
+    },
+  },
+  WorldRecordWriteRequest: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      worldId: { oneOf: [idSchema, { type: "null" }] },
+      kind: { type: "string", enum: ["npc", "location", "quest", "faction"] },
+      name: { type: "string", minLength: 1, maxLength: 160 },
+      summary: { type: "string", maxLength: 500 },
+      description: { type: "string", maxLength: 20000 },
+      lifecycle: { type: "string", enum: ["draft", "active", "inactive", "resolved", "archived"] },
+      visibility: { type: "string", enum: ["gm_only", "public"] },
+      tags: { type: "array", maxItems: 50, items: { type: "string", maxLength: 40 } },
+      metadata: { type: "object", maxProperties: 256, additionalProperties: true },
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+      expectedCampaignUpdatedAt: { type: "string", format: "date-time" },
+    },
+  },
+  WorldRecordCreateRequest: {
+    allOf: [
+      schemaRef("WorldRecordWriteRequest"),
+      { type: "object", required: ["kind", "name", "expectedCampaignUpdatedAt"] },
+    ],
+  },
+  WorldRecordLifecycleRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["lifecycle", "expectedUpdatedAt"],
+    properties: {
+      lifecycle: { type: "string", enum: ["draft", "active", "inactive", "resolved", "archived"] },
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+    },
+  },
+  WorldRecordDeleteResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["record", "deletedRelationIds"],
+    properties: { record: schemaRef("WorldRecord"), deletedRelationIds: arrayOf(idSchema) },
+  },
+  WorldRelation: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "campaignId", "sourceRecordId", "targetRecordId", "type", "visibility", "createdByUserId", "updatedByUserId", "createdAt", "updatedAt"],
+    properties: {
+      ...idTimestampProperties,
+      campaignId: idSchema,
+      worldId: idSchema,
+      sourceRecordId: idSchema,
+      targetRecordId: idSchema,
+      type: { type: "string", enum: ["located_in", "member_of", "allied_with", "opposed_to", "serves", "leads", "involved_in", "related_to"] },
+      label: { type: "string", maxLength: 160 },
+      notes: { type: "string", maxLength: 2000 },
+      visibility: { type: "string", enum: ["gm_only", "public"] },
+      createdByUserId: idSchema,
+      updatedByUserId: idSchema,
+    },
+  },
+  WorldRelationWriteRequest: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      worldId: { oneOf: [idSchema, { type: "null" }] },
+      sourceRecordId: idSchema,
+      targetRecordId: idSchema,
+      type: { type: "string", enum: ["located_in", "member_of", "allied_with", "opposed_to", "serves", "leads", "involved_in", "related_to"] },
+      label: { type: "string", maxLength: 160 },
+      notes: { type: "string", maxLength: 2000 },
+      visibility: { type: "string", enum: ["gm_only", "public"] },
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+      expectedCampaignUpdatedAt: { type: "string", format: "date-time" },
+    },
+  },
+  WorldRelationCreateRequest: {
+    allOf: [
+      schemaRef("WorldRelationWriteRequest"),
+      { type: "object", required: ["sourceRecordId", "targetRecordId", "type", "expectedCampaignUpdatedAt"] },
+    ],
   },
   CampaignSession: {
     type: "object",
@@ -3686,6 +5285,20 @@ const componentSchemas = {
       },
       sceneIds: arrayOf(idSchema),
       encounterIds: arrayOf(idSchema),
+    },
+  },
+  CampaignSessionMutationRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["expectedUpdatedAt"],
+    properties: {
+      title: stringSchema,
+      agenda: stringSchema,
+      notes: stringSchema,
+      scheduledFor: { oneOf: [{ type: "string", format: "date-time" }, { type: "null" }] },
+      sceneIds: arrayOf(idSchema),
+      encounterIds: arrayOf(idSchema),
+      expectedUpdatedAt: { type: "string", format: "date-time" },
     },
   },
   CampaignSearchResult: {
@@ -3742,7 +5355,6 @@ const componentSchemas = {
       "fog",
       "walls",
       "lights",
-      "annotations",
       "metadata",
       "createdAt",
       "updatedAt",
@@ -3767,7 +5379,13 @@ const componentSchemas = {
       walls: arrayOf(schemaRef("Wall")),
       lights: arrayOf(schemaRef("LightSource")),
       annotations: arrayOf(schemaRef("SceneAnnotation")),
+      difficultTerrain: arrayOf(schemaRef("DifficultTerrainRegion")),
+      coverOverrides: arrayOf(schemaRef("SceneCoverOverride")),
       metadata: { type: "object", additionalProperties: true },
+      permissions: {
+        type: "object",
+        additionalProperties: { type: "array", items: { type: "string", enum: ["scene.read", "scene.update"] }, uniqueItems: true }
+      },
     },
   },
   SceneActivationHistoryEntry: {
@@ -3802,6 +5420,8 @@ const componentSchemas = {
       walls: arrayOf(schemaRef("Wall")),
       lights: arrayOf(schemaRef("LightSource")),
       annotations: arrayOf(schemaRef("SceneAnnotation")),
+      difficultTerrain: arrayOf(schemaRef("DifficultTerrainRegion")),
+      coverOverrides: arrayOf(schemaRef("SceneCoverOverride")),
       metadata: { type: "object", additionalProperties: true },
     },
   },
@@ -3815,7 +5435,7 @@ const componentSchemas = {
       height: { type: "number", minimum: 1 },
       gridType: { type: "string", enum: ["square", "gridless"] },
       gridSize: { type: "number", minimum: 1 },
-      backgroundAssetId: idSchema,
+      backgroundAssetId: { anyOf: [idSchema, { type: "null" }] },
       folder: { anyOf: [stringSchema, { type: "null" }] },
       active: { type: "boolean" },
       sortOrder: { type: "number" },
@@ -3894,18 +5514,23 @@ const componentSchemas = {
   FogPresetCreateRequest: {
     type: "object",
     additionalProperties: false,
+    required: ["expectedSceneUpdatedAt"],
     properties: {
       name: stringSchema,
       description: stringSchema,
       sceneId: idSchema,
+      expectedSceneUpdatedAt: dateTimeSchema,
+      expectedUpdatedAt: dateTimeSchema,
     },
   },
   FogPresetApplyRequest: {
     type: "object",
     additionalProperties: false,
+    required: ["expectedUpdatedAt"],
     properties: {
       presetId: idSchema,
       mode: { type: "string", enum: ["append", "replace"] },
+      expectedUpdatedAt: dateTimeSchema,
     },
   },
   FogHistoryEntry: {
@@ -3960,6 +5585,89 @@ const componentSchemas = {
       y: { type: "number" },
     },
   },
+  DifficultTerrainRegion: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "sceneId", "label", "points", "createdByUserId", "createdAt", "updatedAt"],
+    properties: {
+      ...idTimestampProperties,
+      sceneId: idSchema,
+      label: { type: "string", minLength: 1, maxLength: 80 },
+      points: { type: "array", minItems: 3, maxItems: 64, items: schemaRef("VisionPoint") },
+      color: { type: "string", pattern: "^#[0-9a-fA-F]{6}$" },
+      createdByUserId: idSchema,
+    },
+  },
+  DifficultTerrainCreateRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["points", "expectedUpdatedAt"],
+    properties: {
+      label: { type: "string", minLength: 1, maxLength: 80 },
+      points: { type: "array", minItems: 3, maxItems: 64, items: schemaRef("VisionPoint") },
+      color: { type: "string", pattern: "^#[0-9a-fA-F]{6}$" },
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+    },
+  },
+  DifficultTerrainPatchRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["expectedUpdatedAt"],
+    properties: {
+      label: { type: "string", minLength: 1, maxLength: 80 },
+      points: { type: "array", minItems: 3, maxItems: 64, items: schemaRef("VisionPoint") },
+      color: { type: "string", pattern: "^#[0-9a-fA-F]{6}$" },
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+    },
+  },
+  SceneCoverOverride: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "sceneId", "sourceTokenId", "targetTokenId", "level", "createdByUserId", "createdAt", "updatedAt"],
+    properties: {
+      ...idTimestampProperties,
+      sceneId: idSchema,
+      sourceTokenId: idSchema,
+      targetTokenId: idSchema,
+      level: { type: "string", enum: ["none", "half", "three_quarters", "total"] },
+      note: { type: "string", maxLength: 500 },
+      createdByUserId: idSchema,
+    },
+  },
+  SceneCoverOverrideRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["sourceTokenId", "targetTokenId", "level", "expectedUpdatedAt"],
+    properties: {
+      sourceTokenId: idSchema,
+      targetTokenId: idSchema,
+      level: { type: "string", enum: ["none", "half", "three_quarters", "total"] },
+      note: { type: "string", maxLength: 500 },
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+    },
+  },
+  ScenePathMeasurementRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["points"],
+    properties: {
+      points: { type: "array", minItems: 2, maxItems: 64, items: schemaRef("VisionPoint") },
+    },
+  },
+  ScenePathMeasurement: {
+    type: "object",
+    additionalProperties: false,
+    required: ["sceneId", "points", "normalDistance", "difficultTerrainDistance", "totalDistance", "movementCostDistance", "unit"],
+    properties: {
+      sceneId: idSchema,
+      points: { type: "array", minItems: 2, maxItems: 64, items: schemaRef("VisionPoint") },
+      normalDistance: { type: "number", minimum: 0 },
+      difficultTerrainDistance: { type: "number", minimum: 0 },
+      totalDistance: { type: "number", minimum: 0 },
+      movementCostDistance: { type: "number", minimum: 0 },
+      unit: { type: "string", enum: ["scene", "feet"] },
+    },
+  },
   VisionPolygon: {
     type: "object",
     additionalProperties: true,
@@ -3974,6 +5682,9 @@ const componentSchemas = {
       color: stringSchema,
       opacity: { type: "number", minimum: 0 },
       mode: { type: "string", enum: ["reveal", "hide"] },
+      senseType: { type: "string", enum: ["normal", "darkvision", "blindsight", "tremorsense", "truesight"] },
+      lightingEffect: { type: "string", enum: ["light", "darkness"] },
+      magical: { type: "boolean" },
     },
   },
   VisionSnapshot: {
@@ -4025,7 +5736,8 @@ const componentSchemas = {
       y2: { type: "number" },
       blocksVision: { type: "boolean" },
       blocksMovement: { type: "boolean" },
-      kind: { type: "string", enum: ["wall", "terrain"] },
+      kind: { type: "string", enum: ["wall", "terrain", "door", "window"] },
+      open: { type: "boolean" },
     },
   },
   WallInput: {
@@ -4038,7 +5750,8 @@ const componentSchemas = {
       y2: { type: "number" },
       blocksVision: { type: "boolean" },
       blocksMovement: { type: "boolean" },
-      kind: { type: "string", enum: ["wall", "terrain"] },
+      kind: { type: "string", enum: ["wall", "terrain", "door", "window"] },
+      open: { type: "boolean" },
     },
   },
   LightSource: {
@@ -4054,6 +5767,8 @@ const componentSchemas = {
       dimRadius: { type: "number", minimum: 0 },
       color: stringSchema,
       intensity: { type: "number", minimum: 0 },
+      kind: { type: "string", enum: ["light", "darkness"] },
+      magical: { type: "boolean" },
     },
   },
   LightSourceInput: {
@@ -4067,6 +5782,8 @@ const componentSchemas = {
       dimRadius: { type: "number", minimum: 0 },
       color: stringSchema,
       intensity: { type: "number", minimum: 0 },
+      kind: { type: "string", enum: ["light", "darkness"] },
+      magical: { type: "boolean" },
     },
   },
   SceneAnnotation: {
@@ -4211,6 +5928,15 @@ const componentSchemas = {
       targeted: { type: "boolean" },
     },
   },
+  TokenSense: {
+    type: "object",
+    additionalProperties: false,
+    required: ["type", "range"],
+    properties: {
+      type: { type: "string", enum: ["normal", "darkvision", "blindsight", "tremorsense", "truesight"] },
+      range: { type: "number", exclusiveMinimum: 0, maximum: 1000000 },
+    },
+  },
   Token: {
     type: "object",
     additionalProperties: true,
@@ -4242,6 +5968,7 @@ const componentSchemas = {
       width: { type: "number", minimum: 0 },
       height: { type: "number", minimum: 0 },
       rotation: { type: "number" },
+      elevation: { type: "number", minimum: -1000000, maximum: 1000000, description: "Vertical position in game-world feet." },
       layer: { type: "string", enum: ["map", "player", "gm"] },
       hidden: { type: "boolean" },
       locked: { type: "boolean" },
@@ -4249,6 +5976,7 @@ const componentSchemas = {
       visionRadius: { type: "number", minimum: 0 },
       brightVisionRadius: { type: "number", minimum: 0 },
       dimVisionRadius: { type: "number", minimum: 0 },
+      senses: arrayOf(schemaRef("TokenSense")),
       disposition: { type: "string", enum: ["friendly", "neutral", "hostile"] },
       imageAssetId: idSchema,
       ownerUserIds: arrayOf(idSchema),
@@ -4271,6 +5999,7 @@ const componentSchemas = {
       width: { type: "number", minimum: 0 },
       height: { type: "number", minimum: 0 },
       rotation: { type: "number" },
+      elevation: { type: "number", minimum: -1000000, maximum: 1000000, description: "Vertical position in game-world feet." },
       layer: { type: "string", enum: ["map", "player", "gm"] },
       hidden: { type: "boolean" },
       locked: { type: "boolean" },
@@ -4278,6 +6007,7 @@ const componentSchemas = {
       visionRadius: { type: "number", minimum: 0 },
       brightVisionRadius: { type: "number", minimum: 0 },
       dimVisionRadius: { type: "number", minimum: 0 },
+      senses: arrayOf(schemaRef("TokenSense")),
       disposition: { type: "string", enum: ["friendly", "neutral", "hostile"] },
       imageAssetId: idSchema,
       ownerUserIds: arrayOf(idSchema),
@@ -4288,7 +6018,34 @@ const componentSchemas = {
     },
   },
   TokenPatchRequest: {
-    $ref: "#/components/schemas/TokenCreateRequest",
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      actorId: idSchema,
+      name: stringSchema,
+      x: { type: "number" },
+      y: { type: "number" },
+      width: { type: "number", minimum: 0 },
+      height: { type: "number", minimum: 0 },
+      rotation: { type: "number" },
+      elevation: { type: "number", minimum: -1000000, maximum: 1000000, description: "Vertical position in game-world feet." },
+      layer: { type: "string", enum: ["map", "player", "gm"] },
+      hidden: { type: "boolean" },
+      locked: { type: "boolean" },
+      visionEnabled: { type: "boolean" },
+      visionRadius: { type: "number", minimum: 0 },
+      brightVisionRadius: { type: ["number", "null"], minimum: 0 },
+      dimVisionRadius: { type: ["number", "null"], minimum: 0 },
+      senses: arrayOf(schemaRef("TokenSense")),
+      disposition: { type: "string", enum: ["friendly", "neutral", "hostile"] },
+      imageAssetId: idSchema,
+      ownerUserIds: arrayOf(idSchema),
+      notes: stringSchema,
+      conditions: arrayOf({ type: "object", additionalProperties: true }),
+      auras: arrayOf({ type: "object", additionalProperties: true }),
+      targetedByUserIds: arrayOf(idSchema),
+      metadata: { type: "object", additionalProperties: true },
+    },
   },
   ChatMessage: {
     type: "object",
@@ -4517,6 +6274,42 @@ const componentSchemas = {
       storage: schemaRef("AssetStorageRef"),
       lifecycle: schemaRef("AssetLifecycle"),
       security: schemaRef("AssetSecurityScan"),
+      image: schemaRef("AssetImageMetadata"),
+      renditions: arrayOf(schemaRef("AssetRendition")),
+    },
+  },
+  AssetImageMetadata: {
+    type: "object",
+    additionalProperties: false,
+    required: ["width", "height"],
+    properties: {
+      width: { type: "integer", minimum: 1 },
+      height: { type: "integer", minimum: 1 },
+      animated: { type: "boolean" },
+    },
+  },
+  AssetRendition: {
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "kind",
+      "mimeType",
+      "sizeBytes",
+      "checksum",
+      "width",
+      "height",
+      "storage",
+      "createdAt",
+    ],
+    properties: {
+      kind: { type: "string", enum: ["thumbnail", "optimized"] },
+      mimeType: { type: "string", enum: ["image/webp"] },
+      sizeBytes: { type: "integer", minimum: 0 },
+      checksum: stringSchema,
+      width: { type: "integer", minimum: 1 },
+      height: { type: "integer", minimum: 1 },
+      storage: schemaRef("AssetStorageRef"),
+      createdAt: { type: "string", format: "date-time" },
     },
   },
   AssetStorageRef: {
@@ -4584,6 +6377,20 @@ const componentSchemas = {
     properties: {
       asset: schemaRef("MapAsset"),
       scene: schemaRef("Scene"),
+      deduplicated: { type: "boolean" },
+      renditionWarnings: arrayOf(schemaRef("AssetRenditionWarning")),
+    },
+  },
+  AssetRenditionWarning: {
+    type: "object",
+    additionalProperties: false,
+    required: ["code", "message"],
+    properties: {
+      code: {
+        type: "string",
+        enum: ["unsupported_mime", "invalid_image", "rendition_failed"],
+      },
+      message: stringSchema,
     },
   },
   AssetDeliveryUrlRequest: {
@@ -4727,7 +6534,70 @@ const componentSchemas = {
     },
   },
   ActorPatchRequest: {
-    $ref: "#/components/schemas/ActorCreateRequest",
+    type: "object",
+    additionalProperties: false,
+    required: ["expectedUpdatedAt"],
+    properties: {
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+      manualOverrideReason: { type: "string", maxLength: 500 },
+      worldId: idSchema,
+      systemId: idSchema,
+      ownerUserId: idSchema,
+      type: stringSchema,
+      name: stringSchema,
+      imageAssetId: idSchema,
+      data: { type: "object", additionalProperties: true },
+      permissions: {
+        type: "object",
+        additionalProperties: arrayOf(stringSchema),
+      },
+    },
+  },
+  Dnd5eSrdConcentrationEndRequest: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      prepare: { type: "boolean" },
+      preparedPreviewKey: stringSchema,
+      expectedActorUpdatedAt: schemaRef("DndRulesRevisionMap"),
+      expectedCombatUpdatedAt: schemaRef("DndRulesRevisionMap"),
+      reason: { type: "string", maxLength: 500 },
+    },
+  },
+  Dnd5eSrdConcentrationEndResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["actor", "concentrationEnded"],
+    properties: {
+      actor: schemaRef("Actor"),
+      concentrationEnded: { type: "boolean", enum: [true] },
+      status: { type: "string", enum: ["ready"] },
+      review: { type: "object", additionalProperties: true },
+      preparation: {
+        type: "object",
+        additionalProperties: false,
+        required: ["preparedPreviewKey", "actorId", "request", "revisions", "resolutionHash"],
+        properties: {
+          preparedPreviewKey: stringSchema,
+          actorId: idSchema,
+          request: { type: "object", additionalProperties: true },
+          revisions: {
+            type: "object",
+            additionalProperties: false,
+            required: ["actorUpdatedAt", "combatUpdatedAt"],
+            properties: {
+              actorUpdatedAt: schemaRef("DndRulesRevisionMap"),
+              combatUpdatedAt: schemaRef("DndRulesRevisionMap"),
+            },
+          },
+          resolutionHash: stringSchema,
+        },
+      },
+      updatedActors: arrayOf(schemaRef("Actor")),
+      updatedCombats: arrayOf(schemaRef("Combat")),
+      rulesMutationId: idSchema,
+      undo: schemaRef("DndRulesMutationUndoDescriptor"),
+    },
   },
   Item: {
     type: "object",
@@ -4768,12 +6638,103 @@ const componentSchemas = {
   ItemPatchRequest: {
     type: "object",
     additionalProperties: false,
+    required: ["expectedUpdatedAt"],
     properties: {
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+      manualOverrideReason: { type: "string", maxLength: 500 },
       worldId: { anyOf: [idSchema, { type: "null" }] },
       actorId: { anyOf: [idSchema, { type: "null" }] },
       type: stringSchema,
       name: stringSchema,
       data: { type: "object", additionalProperties: true },
+    },
+  },
+  JournalEntityLink: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "targetType", "targetId"],
+    properties: {
+      id: idSchema,
+      targetType: {
+        type: "string",
+        enum: ["actor", "scene", "item", "journal", "handout", "encounter"],
+      },
+      targetId: idSchema,
+      label: { type: "string", maxLength: 120 },
+    },
+  },
+  JournalEntityLinkInput: {
+    type: "object",
+    additionalProperties: false,
+    required: ["targetType", "targetId"],
+    properties: {
+      id: idSchema,
+      targetType: {
+        type: "string",
+        enum: ["actor", "scene", "item", "journal", "handout", "encounter"],
+      },
+      targetId: idSchema,
+      label: { type: "string", maxLength: 120 },
+    },
+  },
+  JournalEntryRevision: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "revision", "kind", "title", "body", "visibility", "visibleToUserIds", "visibleToActorIds", "tags", "links", "canonStatus", "changedBy", "createdAt"],
+    properties: {
+      id: idSchema,
+      revision: { type: "integer", minimum: 1 },
+      kind: { type: "string", enum: ["folder", "entry"] },
+      parentId: idSchema,
+      title: stringSchema,
+      body: stringSchema,
+      visibility: { type: "string", enum: ["gm_only", "public", "specific_players", "specific_characters"] },
+      visibleToUserIds: arrayOf(idSchema),
+      visibleToActorIds: arrayOf(idSchema),
+      tags: arrayOf(stringSchema),
+      links: arrayOf(schemaRef("JournalEntityLink")),
+      canonStatus: { type: "string", enum: ["draft", "in_review", "canonical", "rejected"] },
+      changedBy: idSchema,
+      createdAt: { type: "string", format: "date-time" },
+    },
+  },
+  JournalBacklink: {
+    type: "object",
+    additionalProperties: false,
+    required: ["sourceEntryId", "sourceTitle", "link"],
+    properties: {
+      sourceEntryId: idSchema,
+      sourceTitle: stringSchema,
+      link: schemaRef("JournalEntityLink"),
+    },
+  },
+  JournalBacklinksResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["entryId", "backlinks"],
+    properties: {
+      entryId: idSchema,
+      backlinks: arrayOf(schemaRef("JournalBacklink")),
+    },
+  },
+  JournalHistoryResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["entryId", "currentRevision", "revisions"],
+    properties: {
+      entryId: idSchema,
+      currentRevision: { type: "integer", minimum: 1 },
+      revisions: arrayOf(schemaRef("JournalEntryRevision")),
+    },
+  },
+  JournalCanonReviewRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["status", "expectedUpdatedAt"],
+    properties: {
+      status: { type: "string", enum: ["draft", "in_review", "canonical", "rejected"] },
+      note: { type: "string", maxLength: 500 },
+      expectedUpdatedAt: { type: "string", format: "date-time" },
     },
   },
   JournalEntry: {
@@ -4782,12 +6743,16 @@ const componentSchemas = {
     required: [
       "id",
       "campaignId",
+      "kind",
       "title",
       "body",
       "visibility",
       "visibleToUserIds",
       "visibleToActorIds",
       "tags",
+      "links",
+      "revision",
+      "canonStatus",
       "createdBy",
       "updatedBy",
       "createdAt",
@@ -4798,6 +6763,7 @@ const componentSchemas = {
       campaignId: idSchema,
       worldId: idSchema,
       parentId: idSchema,
+      kind: { type: "string", enum: ["folder", "entry"] },
       title: stringSchema,
       body: stringSchema,
       visibility: {
@@ -4807,6 +6773,12 @@ const componentSchemas = {
       visibleToUserIds: arrayOf(idSchema),
       visibleToActorIds: arrayOf(idSchema),
       tags: arrayOf(stringSchema),
+      links: arrayOf(schemaRef("JournalEntityLink")),
+      revision: { type: "integer", minimum: 1 },
+      canonStatus: { type: "string", enum: ["draft", "in_review", "canonical", "rejected"] },
+      canonReviewedBy: idSchema,
+      canonReviewedAt: { type: "string", format: "date-time" },
+      canonReviewNote: { type: "string", maxLength: 500 },
       createdBy: idSchema,
       updatedBy: idSchema,
     },
@@ -4816,7 +6788,8 @@ const componentSchemas = {
     additionalProperties: false,
     properties: {
       worldId: { anyOf: [idSchema, { type: "null" }] },
-      parentId: idSchema,
+      parentId: { anyOf: [idSchema, { type: "null" }] },
+      kind: { type: "string", enum: ["folder", "entry"] },
       title: stringSchema,
       body: stringSchema,
       visibility: {
@@ -4826,6 +6799,7 @@ const componentSchemas = {
       visibleToUserIds: arrayOf(idSchema),
       visibleToActorIds: arrayOf(idSchema),
       tags: arrayOf(stringSchema),
+      links: { type: "array", maxItems: 100, items: schemaRef("JournalEntityLinkInput") },
     },
   },
   JournalEntryPatchRequest: {
@@ -4834,7 +6808,8 @@ const componentSchemas = {
     properties: {
       expectedUpdatedAt: { type: "string", format: "date-time" },
       worldId: { anyOf: [idSchema, { type: "null" }] },
-      parentId: idSchema,
+      parentId: { anyOf: [idSchema, { type: "null" }] },
+      kind: { type: "string", enum: ["folder", "entry"] },
       title: stringSchema,
       body: stringSchema,
       visibility: {
@@ -4844,6 +6819,7 @@ const componentSchemas = {
       visibleToUserIds: arrayOf(idSchema),
       visibleToActorIds: arrayOf(idSchema),
       tags: arrayOf(stringSchema),
+      links: { type: "array", maxItems: 100, items: schemaRef("JournalEntityLinkInput") },
     },
   },
   Handout: {
@@ -4921,6 +6897,263 @@ const componentSchemas = {
       readByUserIds: arrayOf(idSchema),
     },
   },
+  CombatEnvironmentMechanicSchedule: {
+    type: "object",
+    additionalProperties: false,
+    required: ["timing", "startsAtRound", "intervalRounds"],
+    properties: {
+      timing: { type: "string", enum: ["initiative_count", "round_start", "round_end", "manual"] },
+      initiativeCount: { type: "number", minimum: -1000, maximum: 1000 },
+      startsAtRound: { type: "integer", minimum: 1, maximum: 1_000_000 },
+      intervalRounds: { type: "integer", minimum: 1, maximum: 1_000_000 },
+    },
+  },
+  CombatEnvironmentMechanicOption: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "name", "description"],
+    properties: {
+      id: idSchema,
+      name: { type: "string", minLength: 1, maxLength: 120 },
+      description: { type: "string", minLength: 1, maxLength: 1_000 },
+    },
+  },
+  CombatEnvironmentMechanic: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "kind", "name", "description", "visibility", "enabled", "schedule", "options", "triggerCount", "createdAt", "updatedAt"],
+    properties: {
+      ...idTimestampProperties,
+      kind: { type: "string", enum: ["lair_action", "regional_effect"] },
+      name: { type: "string", minLength: 1, maxLength: 120 },
+      description: { type: "string", minLength: 1, maxLength: 2_000 },
+      visibility: { type: "string", enum: ["public", "gm_only"] },
+      enabled: { type: "boolean" },
+      schedule: schemaRef("CombatEnvironmentMechanicSchedule"),
+      options: { type: "array", maxItems: 20, items: schemaRef("CombatEnvironmentMechanicOption") },
+      triggerCount: { type: "integer", minimum: 0 },
+      lastTriggeredRound: { type: "integer", minimum: 1 },
+      lastTriggeredAt: { type: "string", format: "date-time" },
+      lastOptionId: idSchema,
+    },
+  },
+  CombatEnvironmentMechanicTrigger: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "mechanicId", "mechanicKind", "mechanicName", "round", "turnIndex", "summary", "visibility", "triggeredByUserId", "createdAt", "updatedAt"],
+    properties: {
+      ...idTimestampProperties,
+      mechanicId: idSchema,
+      mechanicKind: { type: "string", enum: ["lair_action", "regional_effect"] },
+      mechanicName: { type: "string", minLength: 1, maxLength: 120 },
+      round: { type: "integer", minimum: 1 },
+      turnIndex: { type: "integer", minimum: 0 },
+      optionId: idSchema,
+      optionName: { type: "string", minLength: 1, maxLength: 120 },
+      summary: { type: "string", minLength: 1, maxLength: 1_000 },
+      visibility: { type: "string", enum: ["public", "gm_only"] },
+      triggeredByUserId: idSchema,
+    },
+  },
+  RulesEffectScheduleEvent: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "effectId", "actorId", "label", "phase", "round", "turnIndex", "status", "createdAt", "updatedAt"],
+    properties: {
+      ...idTimestampProperties,
+      effectId: idSchema,
+      actorId: idSchema,
+      label: stringSchema,
+      phase: { type: "string", enum: ["start_turn", "end_turn", "start_round", "end_round", "initiative_count", "time", "manual"] },
+      round: { type: "integer", minimum: 1 },
+      turnIndex: { type: "integer", minimum: 0 },
+      status: { type: "string", enum: ["triggered", "save_required", "save_succeeded", "save_failed", "expired"] },
+      saveAbility: stringSchema,
+      saveDc: { type: "number" },
+      outcome: { type: "string", enum: ["success", "failure"] },
+    },
+  },
+  CombatEnvironmentMechanicMutationRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["expectedUpdatedAt"],
+    properties: {
+      kind: { type: "string", enum: ["lair_action", "regional_effect"] },
+      name: { type: "string", minLength: 1, maxLength: 120 },
+      description: { type: "string", minLength: 1, maxLength: 2_000 },
+      visibility: { type: "string", enum: ["public", "gm_only"] },
+      enabled: { type: "boolean" },
+      schedule: schemaRef("CombatEnvironmentMechanicSchedule"),
+      options: {
+        type: "array",
+        maxItems: 20,
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["name", "description"],
+          properties: {
+            id: idSchema,
+            name: { type: "string", minLength: 1, maxLength: 120 },
+            description: { type: "string", minLength: 1, maxLength: 1_000 },
+          },
+        },
+      },
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+    },
+  },
+  CombatEnvironmentMechanicTriggerRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["expectedUpdatedAt"],
+    properties: {
+      optionId: idSchema,
+      summary: { type: "string", minLength: 1, maxLength: 1_000 },
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+    },
+  },
+  CombatEffectScheduleRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["phase"],
+    properties: {
+      phase: { type: "string", enum: ["start_turn", "end_turn", "start_round", "end_round", "initiative_count", "time", "manual"] },
+      now: { type: "string", format: "date-time" },
+      saveOutcomes: {
+        type: "object",
+        maxProperties: 100,
+        additionalProperties: { type: "string", enum: ["success", "failure"] },
+      },
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+      prepare: { type: "boolean" },
+    },
+  },
+  CombatEffectScheduleAdvanceRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["preparedPreviewKey", "expectedUpdatedAt"],
+    properties: {
+      preparedPreviewKey: stringSchema,
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+    },
+  },
+  CombatEffectScheduleEvaluation: {
+    type: "object",
+    additionalProperties: false,
+    required: ["phase", "round", "turnIndex", "events", "actorChanges", "unresolvedEventIds", "canApply", "combatUpdatedAt"],
+    properties: {
+      phase: { type: "string", enum: ["start_turn", "end_turn", "start_round", "end_round", "initiative_count", "time", "manual"] },
+      round: { type: "integer", minimum: 1 },
+      turnIndex: { type: "integer", minimum: 0 },
+      events: arrayOf(schemaRef("RulesEffectScheduleEvent")),
+      actorChanges: arrayOf({
+        type: "object",
+        additionalProperties: false,
+        required: ["actorId", "reason"],
+        properties: { actorId: idSchema, reason: stringSchema },
+      }),
+      unresolvedEventIds: arrayOf(idSchema),
+      canApply: { type: "boolean" },
+      combatUpdatedAt: { type: "string", format: "date-time" },
+      preparedPreviewKey: stringSchema,
+      preparation: {
+        type: "object",
+        additionalProperties: false,
+        required: ["preparedPreviewKey", "combatId", "request", "revisions", "resolutionHash"],
+        properties: {
+          preparedPreviewKey: stringSchema,
+          combatId: idSchema,
+          request: { type: "object", additionalProperties: true },
+          revisions: {
+            type: "object",
+            additionalProperties: false,
+            required: ["combatUpdatedAt", "actorUpdatedAt"],
+            properties: {
+              combatUpdatedAt: { type: "string", format: "date-time" },
+              actorUpdatedAt: schemaRef("DndRulesRevisionMap"),
+            },
+          },
+          resolutionHash: stringSchema,
+        },
+      },
+    },
+  },
+  CombatEffectScheduleAdvanceResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["combat", "evaluation", "rulesMutationId", "undo"],
+    properties: {
+      combat: schemaRef("Combat"),
+      evaluation: schemaRef("CombatEffectScheduleEvaluation"),
+      rulesMutationId: idSchema,
+      undo: schemaRef("DndRulesMutationUndoDescriptor"),
+    },
+  },
+  Dnd5eSpellHelperPreviewRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["casterActorId", "spellId", "targetActorIds", "slotLevel"],
+    properties: {
+      casterActorId: idSchema,
+      spellId: idSchema,
+      targetActorIds: { type: "array", maxItems: 100, uniqueItems: true, items: idSchema },
+      slotLevel: { type: "integer", minimum: 1, maximum: 9 },
+      options: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          roundsHeld: { type: "integer", minimum: 0, maximum: 10 },
+          dartAssignments: { type: "object", maxProperties: 100, additionalProperties: { type: "integer", minimum: 0, maximum: 100 } },
+        },
+      },
+    },
+  },
+  Dnd5eSpellHelperRoll: {
+    type: "object",
+    additionalProperties: false,
+    required: ["label", "formula"],
+    properties: {
+      label: stringSchema,
+      formula: stringSchema,
+      targetActorId: idSchema,
+      save: {
+        type: "object",
+        additionalProperties: false,
+        required: ["ability"],
+        properties: { ability: stringSchema, success: stringSchema },
+      },
+    },
+  },
+  Dnd5eSpellHelperPreview: {
+    type: "object",
+    additionalProperties: false,
+    required: ["spellId", "spellName", "supported", "automation", "summary", "rolls", "scheduleTemplates", "manualSteps", "warnings"],
+    properties: {
+      spellId: idSchema,
+      spellName: stringSchema,
+      supported: { type: "boolean" },
+      automation: { type: "string", enum: ["preview_only", "schedule_template", "manual"] },
+      summary: stringSchema,
+      targetLimit: { type: "integer", minimum: 0 },
+      rolls: arrayOf(schemaRef("Dnd5eSpellHelperRoll")),
+      scheduleTemplates: arrayOf({ type: "object", additionalProperties: true }),
+      manualSteps: arrayOf(stringSchema),
+      warnings: arrayOf(stringSchema),
+    },
+  },
+  Dnd5eSpellHelperPreviewResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["preview", "source"],
+    properties: {
+      preview: schemaRef("Dnd5eSpellHelperPreview"),
+      source: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "provenance"],
+        properties: { id: idSchema, provenance: { type: "object", additionalProperties: true } },
+      },
+    },
+  },
   Combat: {
     type: "object",
     additionalProperties: true,
@@ -4944,6 +7177,46 @@ const componentSchemas = {
       manualTurnOrder: { type: "boolean" },
       combatants: arrayOf(schemaRef("Combatant")),
       actions: arrayOf(schemaRef("CombatAction")),
+      rewards: arrayOf(schemaRef("CombatReward")),
+      environmentMechanics: arrayOf(schemaRef("CombatEnvironmentMechanic")),
+      environmentMechanicTriggers: arrayOf(schemaRef("CombatEnvironmentMechanicTrigger")),
+      effectScheduleEvents: arrayOf(schemaRef("RulesEffectScheduleEvent")),
+    },
+  },
+  CombatReward: {
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "id",
+      "campaignId",
+      "combatId",
+      "awardedByUserId",
+      "recipientActorIds",
+      "totalXp",
+      "xpPerActor",
+      "unallocatedXp",
+      "totalGp",
+      "gpPerActor",
+      "unallocatedGp",
+      "loot",
+      "createdAt",
+      "updatedAt",
+    ],
+    properties: {
+      ...idTimestampProperties,
+      campaignId: idSchema,
+      combatId: idSchema,
+      awardedByUserId: idSchema,
+      recipientActorIds: arrayOf(idSchema),
+      totalXp: { type: "integer", minimum: 0 },
+      xpPerActor: { type: "integer", minimum: 0 },
+      unallocatedXp: { type: "integer", minimum: 0 },
+      totalGp: { type: "integer", minimum: 0 },
+      gpPerActor: { type: "integer", minimum: 0 },
+      unallocatedGp: { type: "integer", minimum: 0 },
+      loot: arrayOf(stringSchema),
+      lootItemIds: arrayOf(idSchema),
+      note: stringSchema,
     },
   },
   Combatant: {
@@ -4954,6 +7227,8 @@ const componentSchemas = {
       id: idSchema,
       tokenId: idSchema,
       actorId: idSchema,
+      hidden: { type: "boolean" },
+      surprised: { type: "boolean" },
       name: stringSchema,
       initiative: { type: "number" },
       defeated: { type: "boolean" },
@@ -5005,6 +7280,10 @@ const componentSchemas = {
       targetActorIds: arrayOf(idSchema),
       applyEffect: { type: "boolean" },
       consumeResources: { type: "boolean" },
+      preparedPreviewKey: stringSchema,
+      expectedActorUpdatedAt: schemaRef("DndRulesRevisionMap"),
+      expectedItemUpdatedAt: schemaRef("DndRulesRevisionMap"),
+      expectedCombatUpdatedAt: { type: "string", format: "date-time" },
       resolution: { type: "object", additionalProperties: true },
       rolls: arrayOf(schemaRef("CombatActionRoll")),
       actorUpdates: arrayOf(schemaRef("CombatActionActorUpdate")),
@@ -5072,6 +7351,18 @@ const componentSchemas = {
       updatedActors: arrayOf(schemaRef("Actor")),
       rolls: arrayOf(schemaRef("DiceRoll")),
       chatMessages: arrayOf(schemaRef("ChatMessage")),
+      rulesMutationId: idSchema,
+      undo: schemaRef("DndRulesMutationUndoDescriptor"),
+    },
+  },
+  CombatActionConfirmRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["expectedUpdatedAt", "expectedActorUpdatedAt", "expectedItemUpdatedAt"],
+    properties: {
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+      expectedActorUpdatedAt: schemaRef("DndRulesRevisionMap"),
+      expectedItemUpdatedAt: schemaRef("DndRulesRevisionMap"),
     },
   },
   CombatInitiativeRollNpcsResponse: {
@@ -5089,6 +7380,184 @@ const componentSchemas = {
     additionalProperties: false,
     properties: {
       reason: stringSchema,
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+    },
+  },
+  CombatRewardCreateRequest: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      recipientActorIds: { type: "array", maxItems: 100, uniqueItems: true, items: idSchema },
+      totalXp: { type: "integer", minimum: 0, maximum: 1_000_000_000 },
+      totalGp: { type: "integer", minimum: 0, maximum: 1_000_000_000 },
+      loot: { type: "array", maxItems: 100, items: { type: "string", minLength: 1, maxLength: 500 } },
+      note: { type: "string", maxLength: 1_000 },
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+      expectedActorUpdatedAt: {
+        type: "object",
+        maxProperties: 100,
+        additionalProperties: { type: "string", format: "date-time" },
+      },
+    },
+  },
+  CombatRewardMutationResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["combat", "actors", "reward"],
+    properties: {
+      combat: schemaRef("Combat"),
+      actors: arrayOf(schemaRef("Actor")),
+      reward: schemaRef("CombatReward"),
+    },
+  },
+  DndInventoryOwnerRef: {
+    oneOf: [
+      { type: "object", additionalProperties: false, required: ["kind", "actorId"], properties: { kind: { type: "string", enum: ["actor"] }, actorId: idSchema } },
+      { type: "object", additionalProperties: false, required: ["kind", "stashId"], properties: { kind: { type: "string", enum: ["party_stash"] }, stashId: idSchema } },
+    ],
+  },
+  DndInventoryOverviewResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["campaignId", "campaignUpdatedAt", "actorItems", "partyStashItems", "merchants", "lootItems", "warnings"],
+    properties: {
+      campaignId: idSchema,
+      campaignUpdatedAt: { type: "string", format: "date-time" },
+      actor: schemaRef("Actor"),
+      actorItems: arrayOf(schemaRef("Item")),
+      actorSummary: { type: "object", additionalProperties: true },
+      partyStash: schemaRef("Item"),
+      partyStashItems: arrayOf(schemaRef("Item")),
+      partyStashSummary: { type: "object", additionalProperties: true },
+      merchants: arrayOf(schemaRef("Item")),
+      lootItems: arrayOf(schemaRef("Item")),
+      warnings: arrayOf(stringSchema),
+    },
+  },
+  DndPartyStashCreateRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["expectedCampaignUpdatedAt"],
+    properties: {
+      name: { type: "string", minLength: 1, maxLength: 120 },
+      capacityLb: { type: "number", exclusiveMinimum: 0, maximum: 10_000_000 },
+      currency: { type: "object", additionalProperties: { type: "integer", minimum: 0 } },
+      expectedCampaignUpdatedAt: { type: "string", format: "date-time" },
+    },
+  },
+  DndMerchantCatalogEntry: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      id: idSchema,
+      name: { type: "string", minLength: 1, maxLength: 160 },
+      type: { type: "string", minLength: 1, maxLength: 80 },
+      unitPriceGp: { type: "number", minimum: 0, maximum: 10_000_000 },
+      sellPriceGp: { type: "number", minimum: 0, maximum: 10_000_000 },
+      availableQuantity: { type: "integer", minimum: 0, maximum: 999_999 },
+      compendiumEntryId: idSchema,
+      data: { type: "object", additionalProperties: true },
+    },
+  },
+  DndMerchantMutationRequest: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      name: { type: "string", minLength: 1, maxLength: 120 },
+      description: { type: "string", maxLength: 1_000 },
+      buybackRate: { type: "number", minimum: 0, maximum: 1 },
+      currency: { anyOf: [{ type: "object", additionalProperties: { type: "integer", minimum: 0 } }, { type: "null" }] },
+      catalog: { type: "array", maxItems: 200, items: schemaRef("DndMerchantCatalogEntry") },
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+      expectedCampaignUpdatedAt: { type: "string", format: "date-time" },
+    },
+  },
+  DndInventoryItemPatchRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["expectedUpdatedAt", "expectedOwnerUpdatedAt"],
+    properties: {
+      quantity: { type: "integer", minimum: 0, maximum: 999_999 },
+      weightLb: { type: "number", minimum: 0, maximum: 1_000_000 },
+      parentItemId: { anyOf: [idSchema, { type: "null" }] },
+      containerCapacityLb: { anyOf: [{ type: "number", exclusiveMinimum: 0, maximum: 1_000_000 }, { type: "null" }] },
+      extradimensional: { type: "boolean" },
+      ammunitionSourceItemId: { anyOf: [idSchema, { type: "null" }] },
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+      expectedOwnerUpdatedAt: { type: "string", format: "date-time" },
+    },
+  },
+  DndInventoryTransferRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["quantity", "destination", "expectedUpdatedAt", "expectedSourceUpdatedAt", "expectedDestinationUpdatedAt"],
+    properties: {
+      quantity: { type: "integer", minimum: 1, maximum: 999_999 },
+      destination: schemaRef("DndInventoryOwnerRef"),
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+      expectedSourceUpdatedAt: { type: "string", format: "date-time" },
+      expectedDestinationUpdatedAt: { type: "string", format: "date-time" },
+    },
+  },
+  DndInventoryAmmunitionRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["expectedUpdatedAt", "expectedAmmunitionUpdatedAt", "expectedActorUpdatedAt"],
+    properties: {
+      ammunitionItemId: idSchema,
+      amount: { type: "integer", minimum: 1, maximum: 999_999 },
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+      expectedAmmunitionUpdatedAt: { type: "string", format: "date-time" },
+      expectedActorUpdatedAt: { type: "string", format: "date-time" },
+    },
+  },
+  DndMerchantCommerceRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["actorId", "quantity", "expectedActorUpdatedAt", "expectedMerchantUpdatedAt"],
+    properties: {
+      actorId: idSchema,
+      catalogEntryId: idSchema,
+      itemId: idSchema,
+      quantity: { type: "integer", minimum: 1, maximum: 999_999 },
+      expectedActorUpdatedAt: { type: "string", format: "date-time" },
+      expectedMerchantUpdatedAt: { type: "string", format: "date-time" },
+      expectedItemUpdatedAt: { type: "string", format: "date-time" },
+    },
+  },
+  DndCombatLootCreateRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["stashId", "items", "expectedUpdatedAt", "expectedStashUpdatedAt"],
+    properties: {
+      stashId: idSchema,
+      items: { type: "array", minItems: 1, maxItems: 50, items: { type: "object", additionalProperties: true } },
+      note: { type: "string", maxLength: 500 },
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+      expectedStashUpdatedAt: { type: "string", format: "date-time" },
+    },
+  },
+  DndLootClaimRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["actorId", "expectedUpdatedAt", "expectedStashUpdatedAt", "expectedActorUpdatedAt"],
+    properties: {
+      actorId: idSchema,
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+      expectedStashUpdatedAt: { type: "string", format: "date-time" },
+      expectedActorUpdatedAt: { type: "string", format: "date-time" },
+    },
+  },
+  DndLootAssignmentRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["action", "expectedUpdatedAt", "expectedStashUpdatedAt", "expectedActorUpdatedAt"],
+    properties: {
+      action: { type: "string", enum: ["assign", "release"] },
+      actorId: idSchema,
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+      expectedStashUpdatedAt: { type: "string", format: "date-time" },
+      expectedActorUpdatedAt: { type: "string", format: "date-time" },
     },
   },
   CombatCreateRequest: {
@@ -5100,28 +7569,77 @@ const componentSchemas = {
       combatants: arrayOf(schemaRef("Combatant")),
     },
   },
+  CombatStartParticipantRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["tokenId", "initiativeMode"],
+    properties: {
+      tokenId: idSchema,
+      initiativeMode: { type: "string", enum: ["manual", "server"] },
+      initiative: { type: "number" },
+      surprised: { type: "boolean" },
+    },
+  },
+  CombatStartRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["sceneId", "participants"],
+    properties: {
+      sceneId: idSchema,
+      participants: arrayOf(schemaRef("CombatStartParticipantRequest")),
+      manualTurnOrder: { type: "boolean" },
+    },
+  },
+  CombatStartResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["combat", "rolls", "chatMessages"],
+    properties: {
+      combat: schemaRef("Combat"),
+      rolls: arrayOf(schemaRef("DiceRoll")),
+      chatMessages: arrayOf(schemaRef("ChatMessage")),
+    },
+  },
   CombatPatchRequest: {
     type: "object",
     additionalProperties: false,
     properties: {
+      expectedUpdatedAt: { type: "string", format: "date-time" },
       active: { type: "boolean" },
       round: { type: "integer", minimum: 1 },
       turnIndex: { type: "integer", minimum: 0 },
       manualTurnOrder: { type: "boolean" },
       combatants: arrayOf(schemaRef("Combatant")),
+      saveOutcomes: {
+        type: "object",
+        additionalProperties: { type: "string", enum: ["success", "failure"] },
+      },
     },
   },
   CombatantPatchRequest: {
-    allOf: [
-      { $ref: "#/components/schemas/Combatant" },
-      {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          syncActorSheet: { type: "boolean" },
-        },
-      },
-    ],
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      id: idSchema,
+      tokenId: idSchema,
+      actorId: idSchema,
+      hidden: { type: "boolean" },
+      surprised: { type: "boolean" },
+      name: stringSchema,
+      initiative: { type: "number" },
+      defeated: { type: "boolean" },
+      readiness: { type: "string", enum: ["normal", "ready", "delayed"] },
+      conditions: arrayOf(stringSchema),
+      deathSaveSuccesses: { type: "integer", minimum: 0, maximum: 3 },
+      deathSaveFailures: { type: "integer", minimum: 0, maximum: 3 },
+      deathSaveOutcome: { type: "string", enum: ["stable", "dead"] },
+      resourceKey: stringSchema,
+      resourceLabel: stringSchema,
+      resourceUsed: { type: "boolean" },
+      resourceSpent: { type: "boolean" },
+      syncActorSheet: { type: "boolean" },
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+    },
   },
   AuditLog: {
     type: "object",
@@ -5352,6 +7870,7 @@ const componentSchemas = {
       summary: stringSchema,
       changesJson: arrayOf(schemaRef("ProposalChange")),
       diffJson: { type: "object", additionalProperties: true },
+      expectedUpdatedAt: dateTimeSchema,
     },
   },
   EncounterThreatSelection: {
@@ -5499,6 +8018,119 @@ const componentSchemas = {
       playing: { type: "boolean" },
     },
   },
+  AiSourceReference: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "kind", "title", "visibility", "trust"],
+    properties: {
+      id: idSchema,
+      kind: {
+        type: "string",
+        enum: ["official_open_rules", "campaign_canon", "campaign_note", "chat", "roll", "scene", "actor", "item", "generated_model"],
+      },
+      title: stringSchema,
+      locator: stringSchema,
+      provenance: {
+        type: "object",
+        additionalProperties: false,
+        required: ["sourceName"],
+        properties: {
+          sourceName: stringSchema,
+          sourceVersion: stringSchema,
+          contentVersion: stringSchema,
+          license: stringSchema,
+        },
+      },
+      visibility: { type: "string", enum: ["public", "gm_private"] },
+      trust: { type: "string", enum: ["authoritative_open_rules", "reviewed_canon", "untrusted_campaign_content", "model_generated"] },
+    },
+  },
+  AiCitation: {
+    type: "object",
+    additionalProperties: false,
+    required: ["sourceId", "status"],
+    properties: {
+      sourceId: idSchema,
+      locator: stringSchema,
+      status: { type: "string", enum: ["verified", "unsupported"] },
+      reason: { type: "string", enum: ["unknown_source", "locator_mismatch"] },
+      source: schemaRef("AiSourceReference"),
+    },
+  },
+  AiCitationWarning: {
+    type: "object",
+    additionalProperties: false,
+    required: ["code", "message"],
+    properties: {
+      code: { type: "string", enum: ["rules_answer_without_verified_open_rules_citation", "unsupported_citation"] },
+      message: stringSchema,
+    },
+  },
+  AiCampaignPolicy: {
+    type: "object",
+    additionalProperties: false,
+    required: ["enabled", "status", "contextScopes", "providerTransmissionDisclosure", "retentionDays", "revision"],
+    properties: {
+      enabled: { type: "boolean" },
+      status: { type: "string", enum: ["enabled", "disabled"] },
+      contextScopes: arrayOf({ type: "string", enum: ["public", "gm_private"] }),
+      providerTransmissionDisclosure: stringSchema,
+      retentionDays: { type: "integer", minimum: 1, maximum: 3650 },
+      revision: { type: "integer", minimum: 0 },
+      updatedByUserId: idSchema,
+      updatedAt: { type: "string", format: "date-time" },
+    },
+  },
+  AiEffectivePolicy: {
+    type: "object",
+    additionalProperties: true,
+    required: ["enabled", "status", "contextScopes", "retentionDays", "campaign", "installation"],
+    properties: {
+      enabled: { type: "boolean" },
+      status: { type: "string", enum: ["enabled", "disabled", "unsafe_configuration"] },
+      contextScopes: arrayOf({ type: "string", enum: ["public", "gm_private"] }),
+      retentionDays: { type: "integer", minimum: 1, maximum: 3650 },
+      legacyDefault: { type: "boolean" },
+      readinessIssues: arrayOf(stringSchema),
+      campaign: schemaRef("AiCampaignPolicy"),
+      installation: { type: "object", additionalProperties: true },
+    },
+  },
+  AiPolicyUpdateRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["expectedRevision", "enabled", "contextScopes", "providerTransmissionDisclosure", "retentionDays"],
+    properties: {
+      expectedRevision: { type: "integer", minimum: 0 },
+      enabled: { type: "boolean" },
+      contextScopes: arrayOf({ type: "string", enum: ["public", "gm_private"] }),
+      providerTransmissionDisclosure: stringSchema,
+      retentionDays: { type: "integer", minimum: 1, maximum: 3650 },
+    },
+  },
+  AiPrivacyRequest: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      mode: { type: "string", enum: ["expired", "all"] },
+      before: { type: "string", format: "date-time" },
+      limit: { type: "integer", minimum: 1, maximum: 1000 },
+      dryRun: { type: "boolean" },
+      confirmation: stringSchema,
+    },
+  },
+  AiPrivacyResult: {
+    type: "object",
+    additionalProperties: true,
+    required: ["localOperationalHistoryOnly", "providerDeletion", "dryRun", "categories", "preserved"],
+    properties: {
+      localOperationalHistoryOnly: { type: "boolean" },
+      providerDeletion: { type: "string", enum: ["not_requested_or_verified"] },
+      dryRun: { type: "boolean" },
+      categories: { type: "object", additionalProperties: { type: "integer", minimum: 0 } },
+      preserved: { type: "object", additionalProperties: { type: "integer", minimum: 0 } },
+    },
+  },
   AiThread: {
     type: "object",
     additionalProperties: true,
@@ -5524,8 +8156,27 @@ const componentSchemas = {
       },
       assistantMessage: stringSchema,
       providerError: stringSchema,
-      usage: schemaRef("AiUsageMetrics"),
+      sources: arrayOf(schemaRef("AiSourceReference")),
+      citations: arrayOf(schemaRef("AiCitation")),
+      citationWarnings: arrayOf(schemaRef("AiCitationWarning")),
+      contextScopes: arrayOf({ type: "string", enum: ["public", "gm_private"] }),
+      policyRevision: { type: "integer", minimum: 0 },
+      retentionExpiresAt: { type: "string", format: "date-time" },
+      usage: schemaRef("AiThreadUsageMetrics"),
       advertisedTools: arrayOf({ type: "object", additionalProperties: true }),
+    },
+  },
+  AiThreadUsageMetrics: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      promptCharacters: { type: "integer", minimum: 0 },
+      contextCharacters: { type: "integer", minimum: 0 },
+      responseCharacters: { type: "integer", minimum: 0 },
+      inputTokens: { type: "integer", minimum: 0 },
+      outputTokens: { type: "integer", minimum: 0 },
+      totalTokens: { type: "integer", minimum: 0 },
+      estimatedCostUsd: { type: "number", minimum: 0 },
     },
   },
   AiUsageMetrics: {
@@ -5603,6 +8254,7 @@ const componentSchemas = {
         type: "string",
         enum: ["none", "minimal", "low", "medium", "high", "xhigh"],
       },
+      contextScopes: arrayOf({ type: "string", enum: ["public", "gm_private"] }),
       selectedSceneId: idSchema,
       selectedAssetId: idSchema,
       selectedTokenIds: arrayOf(idSchema),
@@ -5930,6 +8582,16 @@ const componentSchemas = {
       encounter: schemaRef("Encounter"),
     },
   },
+  PluginCoreCompatibility: {
+    type: "object",
+    additionalProperties: false,
+    required: ["range", "coreVersion", "satisfied"],
+    properties: {
+      range: stringSchema,
+      coreVersion: stringSchema,
+      satisfied: { type: "boolean" },
+    },
+  },
   PluginRuntimeInfo: {
     type: "object",
     additionalProperties: true,
@@ -5938,7 +8600,9 @@ const componentSchemas = {
       id: idSchema,
       name: stringSchema,
       version: stringSchema,
-      compatibleCore: stringSchema,
+      compatibleCore: {
+        oneOf: [stringSchema, schemaRef("PluginCoreCompatibility")],
+      },
       package: {
         type: "object",
         additionalProperties: false,
@@ -6030,7 +8694,9 @@ const componentSchemas = {
       {
         type: "object",
         additionalProperties: true,
+        required: ["compatibleCore"],
         properties: {
+          compatibleCore: schemaRef("PluginCoreCompatibility"),
           installed: { type: "boolean" },
           grantedPermissions: arrayOf(stringSchema),
           missingPermissions: arrayOf(stringSchema),
@@ -6040,16 +8706,7 @@ const componentSchemas = {
             required: ["version", "compatibleCore", "permissions", "permissionReview", "trust", "source"],
             properties: {
               version: stringSchema,
-              compatibleCore: {
-                type: "object",
-                additionalProperties: false,
-                required: ["range", "coreVersion", "satisfied"],
-                properties: {
-                  range: stringSchema,
-                  coreVersion: stringSchema,
-                  satisfied: { type: "boolean" },
-                },
-              },
+              compatibleCore: schemaRef("PluginCoreCompatibility"),
               compatibilityBlock: stringSchema,
               permissions: arrayOf(stringSchema),
               permissionReview: {
@@ -6146,6 +8803,8 @@ const componentSchemas = {
     additionalProperties: false,
     properties: {
       value: {},
+      expectedUpdatedAt: dateTimeSchema,
+      expectedCampaignUpdatedAt: dateTimeSchema,
     },
   },
   PluginStorageDeleteResponse: {
@@ -6192,6 +8851,7 @@ const componentSchemas = {
   PluginPackageInstallRequest: {
     type: "object",
     additionalProperties: false,
+    required: ["packagePath"],
     properties: {
       campaignId: idSchema,
       packagePath: stringSchema,
@@ -6200,16 +8860,23 @@ const componentSchemas = {
   PluginRegistrySyncRequest: {
     type: "object",
     additionalProperties: false,
+    required: ["expectedRegistryRevision"],
     properties: {
       campaignId: idSchema,
       registryUrl: stringSchema,
+      expectedRegistryRevision: operatorTargetSetHashSchema,
     },
   },
   PluginRegistrySyncResponse: {
     type: "object",
-    additionalProperties: true,
+    additionalProperties: false,
+    required: ["syncedAt", "previousRegistryRevision", "registryRevision", "registries", "plugins"],
     properties: {
+      syncedAt: { type: "string", format: "date-time" },
+      previousRegistryRevision: operatorTargetSetHashSchema,
+      registryRevision: operatorTargetSetHashSchema,
       registries: arrayOf({ type: "object", additionalProperties: true }),
+      plugins: arrayOf(schemaRef("AdminPluginRegistrySyncPlugin")),
     },
   },
   SystemRuntimeInfo: {
@@ -6240,6 +8907,344 @@ const componentSchemas = {
       runtimeCapabilities: arrayOf(stringSchema),
       unsupportedCapabilities: arrayOf(stringSchema),
       installedAt: { type: "string", format: "date-time" },
+    },
+  },
+  CalculationSource: {
+    type: "object",
+    additionalProperties: false,
+    required: ["kind", "id", "name"],
+    properties: {
+      kind: { type: "string", enum: ["actor", "system", "class", "feature", "item", "condition", "override", "manual"] },
+      id: idSchema,
+      name: stringSchema,
+      version: stringSchema,
+      url: { type: "string", format: "uri" },
+    },
+  },
+  CalculationTerm: {
+    type: "object",
+    additionalProperties: false,
+    required: ["label", "source"],
+    properties: {
+      label: stringSchema,
+      signedValue: { type: "number" },
+      formula: stringSchema,
+      source: schemaRef("CalculationSource"),
+    },
+  },
+  CalculationFlags: {
+    type: "object",
+    additionalProperties: false,
+    required: ["manual", "override", "unsupported", "ambiguous", "reasons"],
+    properties: {
+      manual: { type: "boolean" },
+      override: { type: "boolean" },
+      unsupported: { type: "boolean" },
+      ambiguous: { type: "boolean" },
+      reasons: arrayOf(stringSchema),
+    },
+  },
+  CalculationFieldExplanation: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "group", "label", "result", "terms", "flags"],
+    properties: {
+      id: idSchema,
+      group: { type: "string", enum: ["abilities", "defenses", "vitality", "checks", "skills", "magic", "actions"] },
+      label: stringSchema,
+      result: { oneOf: [{ type: "number" }, { type: "string" }] },
+      unit: stringSchema,
+      terms: arrayOf(schemaRef("CalculationTerm")),
+      flags: schemaRef("CalculationFlags"),
+    },
+  },
+  ActorCalculationExplanation: {
+    type: "object",
+    additionalProperties: false,
+    required: ["actorId", "systemId", "systemVersion", "rulesVersion", "source", "fields"],
+    properties: {
+      actorId: idSchema,
+      systemId: idSchema,
+      systemVersion: stringSchema,
+      rulesVersion: stringSchema,
+      source: {
+        type: "object",
+        additionalProperties: false,
+        required: ["name", "version", "license"],
+        properties: {
+          name: stringSchema,
+          version: stringSchema,
+          license: schemaRef("CompendiumLicense"),
+        },
+      },
+      fields: arrayOf(schemaRef("CalculationFieldExplanation")),
+    },
+  },
+  CalculationOverride: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "campaignId", "actorId", "fieldId", "source", "baseValue", "effectiveValue", "reason", "createdByUserId", "createdAt", "updatedAt"],
+    properties: {
+      ...idTimestampProperties,
+      campaignId: idSchema,
+      actorId: idSchema,
+      fieldId: { type: "string", minLength: 1, maxLength: 200 },
+      source: { type: "string", enum: ["gm_manual", "house_rule", "migration", "plugin"] },
+      baseValue: { oneOf: [{ type: "number" }, { type: "string" }] },
+      effectiveValue: { oneOf: [{ type: "number" }, { type: "string", minLength: 1, maxLength: 500 }] },
+      reason: { type: "string", minLength: 1, maxLength: 500 },
+      createdByUserId: idSchema,
+      clearedAt: { type: "string", format: "date-time" },
+      clearedByUserId: idSchema,
+      clearReason: { type: "string", minLength: 1, maxLength: 500 },
+    },
+  },
+  CalculationOverrideCreateRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["fieldId", "source", "effectiveValue", "reason", "expectedActorUpdatedAt"],
+    properties: {
+      fieldId: { type: "string", minLength: 1, maxLength: 200 },
+      source: { type: "string", enum: ["gm_manual", "house_rule"] },
+      effectiveValue: { oneOf: [{ type: "number" }, { type: "string", minLength: 1, maxLength: 500 }] },
+      reason: { type: "string", minLength: 1, maxLength: 500 },
+      expectedActorUpdatedAt: { type: "string", format: "date-time" },
+    },
+  },
+  CalculationOverrideClearRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["reason", "expectedUpdatedAt", "expectedActorUpdatedAt"],
+    properties: {
+      reason: { type: "string", minLength: 1, maxLength: 500 },
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+      expectedActorUpdatedAt: { type: "string", format: "date-time" },
+    },
+  },
+  DndControlledCreatureRevisionSet: {
+    type: "object",
+    additionalProperties: false,
+    required: ["actors", "items", "tokens", "combats", "scenes", "encounters"],
+    properties: {
+      actors: { type: "object", additionalProperties: { type: "string", format: "date-time" } },
+      items: { type: "object", additionalProperties: { type: "string", format: "date-time" } },
+      tokens: { type: "object", additionalProperties: { type: "string", format: "date-time" } },
+      combats: { type: "object", additionalProperties: { type: "string", format: "date-time" } },
+      scenes: { type: "object", additionalProperties: { type: "string", format: "date-time" } },
+      encounters: { type: "object", additionalProperties: { type: "string", format: "date-time" } },
+    },
+  },
+  DndControlledCreatureCreateRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["kind", "source", "controllerUserId", "controllerActorId", "ownerUserId", "actor", "duration", "initiative", "command"],
+    properties: {
+      kind: { type: "string", enum: ["summon", "transformation", "persistent_companion"] },
+      sceneId: idSchema,
+      combatId: idSchema,
+      targetActorId: idSchema,
+      source: {
+        type: "object",
+        additionalProperties: false,
+        required: ["kind", "actorId", "itemId", "name", "systemId", "rulesVersion"],
+        properties: {
+          kind: { type: "string", enum: ["spell", "feature"] },
+          actorId: idSchema,
+          itemId: idSchema,
+          name: stringSchema,
+          systemId: { type: "string", enum: ["dnd-5e-srd"] },
+          rulesVersion: stringSchema,
+        },
+      },
+      controllerUserId: idSchema,
+      controllerActorId: idSchema,
+      ownerUserId: idSchema,
+      actor: { type: "object", additionalProperties: true, required: ["name", "type", "data"], properties: { name: stringSchema, type: stringSchema, imageAssetId: idSchema, data: { type: "object", additionalProperties: true } } },
+      token: { type: "object", additionalProperties: true },
+      duration: { type: "object", additionalProperties: true, required: ["mode"], properties: { mode: { type: "string", enum: ["rounds", "until_time", "until_dismissed", "persistent"] } } },
+      concentration: { type: "object", additionalProperties: false, required: ["sourceActorId", "groupId"], properties: { sourceActorId: idSchema, groupId: stringSchema } },
+      initiative: { type: "object", additionalProperties: true, required: ["mode"], properties: { mode: { type: "string", enum: ["shared", "independent"] } } },
+      command: { type: "object", additionalProperties: false, required: ["required", "action"], properties: { required: { type: "boolean" }, action: { type: "string", enum: ["action", "bonus_action", "reaction", "free", "none"] }, note: stringSchema } },
+      transformation: { type: "object", additionalProperties: false, properties: { hpCarryover: { type: "string", enum: ["preserve", "replace"] }, equipmentCarryover: { type: "string", enum: ["preserve", "suppress"] } } },
+      manualReviewConfirmed: { type: "boolean" },
+    },
+  },
+  DndControlledCreaturePreview: {
+    type: "object",
+    additionalProperties: false,
+    required: ["campaignId", "systemId", "previewToken", "ready", "summary", "errors", "manualReview", "warnings", "requiredRevisions", "affected"],
+    properties: {
+      campaignId: idSchema,
+      systemId: { type: "string", enum: ["dnd-5e-srd"] },
+      previewToken: stringSchema,
+      ready: { type: "boolean" },
+      summary: stringSchema,
+      errors: arrayOf(stringSchema),
+      manualReview: arrayOf({ type: "object", additionalProperties: true }),
+      warnings: arrayOf(stringSchema),
+      requiredRevisions: schemaRef("DndControlledCreatureRevisionSet"),
+      affected: { type: "object", additionalProperties: true },
+    },
+  },
+  DndControlledCreatureConfirmRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["request", "previewToken", "expectedUpdatedAt"],
+    properties: { request: schemaRef("DndControlledCreatureCreateRequest"), previewToken: stringSchema, expectedUpdatedAt: schemaRef("DndControlledCreatureRevisionSet") },
+  },
+  DndControlledCreatureMutationResult: {
+    type: "object",
+    additionalProperties: false,
+    required: ["action", "records", "actors", "tokens", "combats", "removedActorIds", "removedTokenIds"],
+    properties: {
+      action: { type: "string", enum: ["created", "transformed", "commanded", "dismissed", "expired", "concentration_ended", "reverted"] },
+      records: arrayOf({ type: "object", additionalProperties: true }),
+      actors: arrayOf(schemaRef("Actor")),
+      tokens: arrayOf(schemaRef("Token")),
+      combats: arrayOf(schemaRef("Combat")),
+      removedActorIds: arrayOf(idSchema),
+      removedTokenIds: arrayOf(idSchema),
+    },
+  },
+  CampaignCompatibilityIssue: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "group", "severity", "code", "title", "detail", "action"],
+    properties: {
+      id: idSchema,
+      group: { type: "string", enum: ["core", "archive", "system", "reference", "validation", "compendium", "manual"] },
+      severity: { type: "string", enum: ["warning", "blocking"] },
+      code: stringSchema,
+      title: stringSchema,
+      detail: stringSchema,
+      action: stringSchema,
+      entityType: { type: "string", enum: ["campaign", "system", "actor", "item", "condition"] },
+      entityId: idSchema,
+    },
+  },
+  CampaignSystemCoverage: {
+    type: "object",
+    additionalProperties: false,
+    required: ["systemId", "coreCompatible", "bundled", "default", "actorCount", "itemCount", "actorRulesVersions", "itemContentVersions"],
+    properties: {
+      systemId: idSchema,
+      name: stringSchema,
+      installedVersion: stringSchema,
+      compatibleCore: stringSchema,
+      coreCompatible: { type: "boolean" },
+      bundled: { type: "boolean" },
+      default: { type: "boolean" },
+      actorCount: { type: "integer", minimum: 0 },
+      itemCount: { type: "integer", minimum: 0 },
+      actorRulesVersions: { type: "object", additionalProperties: { type: "integer", minimum: 0 } },
+      itemContentVersions: { type: "object", additionalProperties: { type: "integer", minimum: 0 } },
+    },
+  },
+  CampaignCompatibilityRepairCandidate: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "entityKind", "entityId", "path", "operation", "after", "issue", "rationale", "inverse"],
+    properties: {
+      id: stringSchema,
+      entityKind: { type: "string", enum: ["actor", "item"] },
+      entityId: idSchema,
+      path: { type: "string" },
+      operation: { type: "string", enum: ["add", "remove", "replace"] },
+      before: {},
+      after: {},
+      issue: {
+        type: "object",
+        additionalProperties: false,
+        required: ["severity", "code", "message"],
+        properties: {
+          severity: { type: "string", enum: ["error", "warning"] },
+          code: stringSchema,
+          message: stringSchema,
+        },
+      },
+      rationale: stringSchema,
+      inverse: schemaRef("Dnd5eSrdRepairPatch"),
+    },
+  },
+  CampaignCompatibilityReport: {
+    type: "object",
+    additionalProperties: false,
+    required: ["campaignId", "readOnly", "status", "summary", "platform", "systems", "validation", "compendium", "calculationFlags", "issues"],
+    properties: {
+      campaignId: idSchema,
+      readOnly: { type: "boolean", enum: [true] },
+      status: { type: "string", enum: ["compatible", "warning", "blocking"] },
+      summary: {
+        type: "object",
+        additionalProperties: false,
+        required: ["compatible", "warning", "blocking", "totalIssues"],
+        properties: {
+          compatible: { type: "integer", minimum: 0 },
+          warning: { type: "integer", minimum: 0 },
+          blocking: { type: "integer", minimum: 0 },
+          totalIssues: { type: "integer", minimum: 0 },
+        },
+      },
+      platform: {
+        type: "object",
+        additionalProperties: false,
+        required: ["coreVersion", "currentArchiveVersion", "supportedArchiveVersions", "dndRulesVersion", "dndActorSchemaVersion", "dndItemSchemaVersion"],
+        properties: {
+          coreVersion: stringSchema,
+          currentArchiveVersion: { type: "string", enum: ["0.2.0"] },
+          supportedArchiveVersions: arrayOf({ type: "string", enum: ["0.1.0", "0.2.0"] }),
+          dndRulesVersion: stringSchema,
+          dndActorSchemaVersion: stringSchema,
+          dndItemSchemaVersion: stringSchema,
+        },
+      },
+      systems: arrayOf(schemaRef("CampaignSystemCoverage")),
+      validation: {
+        type: "object",
+        additionalProperties: false,
+        required: ["actorReports", "itemReports", "errors", "warnings", "repairPreview"],
+        properties: {
+          actorReports: { type: "integer", minimum: 0 },
+          itemReports: { type: "integer", minimum: 0 },
+          errors: { type: "integer", minimum: 0 },
+          warnings: { type: "integer", minimum: 0 },
+          repairPreview: {
+            type: "object",
+            additionalProperties: false,
+            required: ["automaticChanges", "manualIssues", "note", "candidates"],
+            properties: {
+              automaticChanges: { type: "integer", minimum: 0 },
+              manualIssues: { type: "integer", minimum: 0 },
+              note: stringSchema,
+              candidates: arrayOf(schemaRef("CampaignCompatibilityRepairCandidate")),
+            },
+          },
+        },
+      },
+      compendium: {
+        type: "object",
+        additionalProperties: false,
+        required: ["trackedEntries", "currentEntries", "driftedEntries", "missingProvenance", "unknownEntries"],
+        properties: {
+          trackedEntries: { type: "integer", minimum: 0 },
+          currentEntries: { type: "integer", minimum: 0 },
+          driftedEntries: { type: "integer", minimum: 0 },
+          missingProvenance: { type: "integer", minimum: 0 },
+          unknownEntries: { type: "integer", minimum: 0 },
+        },
+      },
+      calculationFlags: {
+        type: "object",
+        additionalProperties: false,
+        required: ["manualFields", "overrideFields", "unsupportedFields", "ambiguousFields"],
+        properties: {
+          manualFields: { type: "integer", minimum: 0 },
+          overrideFields: { type: "integer", minimum: 0 },
+          unsupportedFields: { type: "integer", minimum: 0 },
+          ambiguousFields: { type: "integer", minimum: 0 },
+        },
+      },
+      issues: arrayOf(schemaRef("CampaignCompatibilityIssue")),
     },
   },
   SystemInstallResponse: {
@@ -6283,13 +9288,356 @@ const componentSchemas = {
       },
     },
   },
+  SystemCharacterTemplateItem: {
+    type: "object",
+    additionalProperties: false,
+    required: ["entryId"],
+    properties: {
+      entryId: idSchema,
+      quantity: { type: "integer", minimum: 0 },
+      data: { type: "object", additionalProperties: true },
+    },
+  },
+  SystemCharacterTemplate: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "systemId", "name", "summary", "actorType", "data", "items"],
+    properties: {
+      id: idSchema,
+      systemId: idSchema,
+      name: stringSchema,
+      summary: stringSchema,
+      actorType: stringSchema,
+      data: { type: "object", additionalProperties: true },
+      items: arrayOf(schemaRef("SystemCharacterTemplateItem")),
+    },
+  },
   SystemCharacterCreateRequest: {
     type: "object",
     additionalProperties: true,
     properties: {
+      creationMode: { type: "string", enum: ["level-one-srd"] },
       templateId: idSchema,
       name: stringSchema,
       ownerUserId: idSchema,
+      backgroundId: idSchema,
+      speciesId: idSchema,
+      abilityScoreIncreases: {
+        type: "object",
+        additionalProperties: { type: "integer", minimum: 1, maximum: 2 },
+      },
+      classSkillProficiencies: arrayOf(idSchema),
+      originLanguageChoices: arrayOf(idSchema),
+      classLanguageChoices: arrayOf(idSchema),
+      draconicAncestry: idSchema,
+      giantAncestry: idSchema,
+      skillProficiency: idSchema,
+      originFeat: stringSchema,
+      elfLineage: idSchema,
+      elfCantrip: idSchema,
+      gnomeLineage: idSchema,
+      tieflingLegacy: idSchema,
+      speciesSpellcastingAbility: idSchema,
+      classEquipmentPackageId: idSchema,
+      backgroundEquipmentPackageId: idSchema,
+      classEquipmentChoices: { type: "object", additionalProperties: idSchema },
+      backgroundEquipmentChoices: { type: "object", additionalProperties: idSchema },
+      classToolProficiencyChoices: arrayOf(idSchema),
+      backgroundToolProficiencyChoice: idSchema,
+      weaponMasteryChoices: arrayOf(idSchema),
+      classCantripChoices: arrayOf(idSchema),
+      classPreparedSpellChoices: arrayOf(idSchema),
+      wizardSpellbookChoices: arrayOf(idSchema),
+      backgroundMagicInitiateCantrips: arrayOf(idSchema),
+      backgroundMagicInitiateSpell: idSchema,
+      backgroundMagicInitiateAbility: idSchema,
+      originFeatMagicInitiateCantrips: arrayOf(idSchema),
+      originFeatMagicInitiateSpell: idSchema,
+      originFeatMagicInitiateAbility: idSchema,
+      skilledProficiencyChoices: arrayOf(idSchema),
+      fightingStyle: idSchema,
+      divineOrder: idSchema,
+      primalOrder: idSchema,
+      rogueExpertiseChoices: arrayOf(idSchema),
+      eldritchInvocation: idSchema,
+      pactTomeCantripChoices: arrayOf(idSchema),
+      pactTomeRitualChoices: arrayOf(idSchema),
+    },
+  },
+  SystemCharacterCreateResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["template", "actor", "items"],
+    properties: {
+      template: schemaRef("SystemCharacterTemplate"),
+      origins: { type: "object", additionalProperties: true },
+      actor: schemaRef("Actor"),
+      items: arrayOf(schemaRef("Item")),
+      sheet: { type: "object", additionalProperties: true },
+    },
+  },
+  Dnd5eSrdClassSkillChoice: {
+    type: "object",
+    additionalProperties: false,
+    required: ["templateId", "className", "count", "skillIds", "source"],
+    properties: {
+      templateId: idSchema,
+      className: stringSchema,
+      count: { type: "integer", minimum: 1 },
+      skillIds: arrayOf(idSchema),
+      source: stringSchema,
+    },
+  },
+  Dnd5eSrdLanguageOption: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "label", "category", "source"],
+    properties: {
+      id: idSchema,
+      label: stringSchema,
+      category: { type: "string", enum: ["standard", "rare"] },
+      source: stringSchema,
+    },
+  },
+  Dnd5eSrdOriginLanguageChoice: {
+    type: "object",
+    additionalProperties: false,
+    required: ["count", "fixedLanguageIds", "languageIds", "source"],
+    properties: {
+      count: { type: "integer", minimum: 1 },
+      fixedLanguageIds: arrayOf(idSchema),
+      languageIds: arrayOf(idSchema),
+      source: stringSchema,
+    },
+  },
+  Dnd5eSrdClassLanguageChoice: {
+    type: "object",
+    additionalProperties: false,
+    required: ["templateId", "className", "count", "fixedLanguageIds", "languageIds", "source"],
+    properties: {
+      templateId: idSchema,
+      className: stringSchema,
+      count: { type: "integer", minimum: 0 },
+      fixedLanguageIds: arrayOf(idSchema),
+      languageIds: arrayOf(idSchema),
+      source: stringSchema,
+    },
+  },
+  Dnd5eSrdDraconicAncestor: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "name", "damageType", "source"],
+    properties: {
+      id: idSchema,
+      name: stringSchema,
+      damageType: { type: "string", enum: ["acid", "cold", "fire", "lightning", "poison"] },
+      source: stringSchema,
+    },
+  },
+  Dnd5eSrdGiantAncestryChoice: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "name", "giantType", "activation", "summary", "source"],
+    properties: {
+      id: idSchema,
+      name: stringSchema,
+      giantType: stringSchema,
+      activation: { type: "string", enum: ["bonus-action", "on-hit", "reaction"] },
+      summary: stringSchema,
+      teleportRangeFt: { type: "integer", minimum: 0 },
+      damageFormula: stringSchema,
+      damageType: { type: "string", enum: ["cold", "fire", "thunder"] },
+      speedReductionFt: { type: "integer", minimum: 0 },
+      condition: { type: "string", enum: ["Prone"] },
+      targetMaxSize: { type: "string", enum: ["Large"] },
+      damageReductionFormula: stringSchema,
+      damageReductionAbility: { type: "string", enum: ["constitution"] },
+      triggerRangeFt: { type: "integer", minimum: 0 },
+      source: stringSchema,
+    },
+  },
+  Dnd5eSrdEquipmentGrant: {
+    type: "object",
+    additionalProperties: false,
+    required: ["entryId"],
+    properties: {
+      entryId: idSchema,
+      quantity: { type: "integer", minimum: 1 },
+      data: { type: "object", additionalProperties: true },
+    },
+  },
+  Dnd5eSrdEquipmentChoice: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "label", "count", "optionIds"],
+    properties: {
+      id: idSchema,
+      label: stringSchema,
+      count: { type: "integer", enum: [1] },
+      optionIds: arrayOf(idSchema),
+      matchSelection: { type: "string", enum: ["class-tool-proficiency", "background-tool-proficiency"] },
+    },
+  },
+  Dnd5eSrdStartingEquipmentPackage: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "label", "gp", "grants", "choices"],
+    properties: {
+      id: idSchema,
+      label: stringSchema,
+      gp: { type: "number", minimum: 0 },
+      grants: arrayOf(schemaRef("Dnd5eSrdEquipmentGrant")),
+      choices: arrayOf(schemaRef("Dnd5eSrdEquipmentChoice")),
+    },
+  },
+  Dnd5eSrdToolProficiencyChoice: {
+    type: "object",
+    additionalProperties: false,
+    required: ["count", "optionIds"],
+    properties: {
+      count: { type: "integer", minimum: 0 },
+      optionIds: arrayOf(idSchema),
+    },
+  },
+  Dnd5eSrdClassStartingEquipment: {
+    type: "object",
+    additionalProperties: false,
+    required: ["templateId", "className", "packages", "toolProficiencyChoice", "fixedToolProficiencyIds", "source", "sourcePage", "sourcePdfPage"],
+    properties: {
+      templateId: idSchema,
+      className: stringSchema,
+      packages: arrayOf(schemaRef("Dnd5eSrdStartingEquipmentPackage")),
+      toolProficiencyChoice: schemaRef("Dnd5eSrdToolProficiencyChoice"),
+      fixedToolProficiencyIds: arrayOf(idSchema),
+      source: stringSchema,
+      sourcePage: { type: "integer", minimum: 1 },
+      sourcePdfPage: { type: "integer", minimum: 0 },
+    },
+  },
+  Dnd5eSrdBackgroundStartingEquipment: {
+    type: "object",
+    additionalProperties: false,
+    required: ["backgroundId", "backgroundName", "packages", "toolProficiencyChoice", "source", "sourcePage", "sourcePdfPage"],
+    properties: {
+      backgroundId: idSchema,
+      backgroundName: stringSchema,
+      packages: arrayOf(schemaRef("Dnd5eSrdStartingEquipmentPackage")),
+      toolProficiencyChoice: schemaRef("Dnd5eSrdToolProficiencyChoice"),
+      source: stringSchema,
+      sourcePage: { type: "integer", minimum: 1 },
+      sourcePdfPage: { type: "integer", minimum: 0 },
+    },
+  },
+  Dnd5eSrdWeaponMasteryOption: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "name", "weaponCategory", "weaponKind", "properties", "mastery", "source", "sourcePage", "sourcePdfPage"],
+    properties: {
+      id: idSchema,
+      name: stringSchema,
+      weaponCategory: { type: "string", enum: ["simple", "martial"] },
+      weaponKind: { type: "string", enum: ["melee", "ranged"] },
+      properties: arrayOf(stringSchema),
+      mastery: idSchema,
+      source: stringSchema,
+      sourcePage: { type: "integer", minimum: 1 },
+      sourcePdfPage: { type: "integer", minimum: 0 },
+    },
+  },
+  Dnd5eSrdClassWeaponMasteryChoice: {
+    type: "object",
+    additionalProperties: false,
+    required: ["templateId", "className", "count", "weaponIds", "source", "sourcePage", "sourcePdfPage"],
+    properties: {
+      templateId: idSchema,
+      className: stringSchema,
+      count: { type: "integer", minimum: 0 },
+      weaponIds: arrayOf(idSchema),
+      source: stringSchema,
+      sourcePage: { type: "integer", minimum: 0 },
+      sourcePdfPage: { type: "integer", minimum: 0 },
+    },
+  },
+  Dnd5eSrdSpellChoiceOption: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "name", "level", "classes", "ritual", "source"],
+    properties: { id: idSchema, name: stringSchema, level: { type: "integer", enum: [0, 1] }, classes: arrayOf(idSchema), ritual: { type: "boolean" }, source: stringSchema },
+  },
+  Dnd5eSrdClassSpellChoice: {
+    type: "object",
+    additionalProperties: false,
+    required: ["templateId", "className", "cantripCount", "preparedSpellCount", "spellbookSpellCount", "cantripIds", "levelOneSpellIds", "alwaysPreparedSpellIds", "slotPool", "slotCount", "slotRecovery", "changeTiming", "source", "sourcePage", "sourcePdfPage"],
+    properties: {
+      templateId: idSchema, className: stringSchema, spellcastingAbility: idSchema,
+      cantripCount: { type: "integer", minimum: 0 }, preparedSpellCount: { type: "integer", minimum: 0 }, spellbookSpellCount: { type: "integer", minimum: 0 },
+      cantripIds: arrayOf(idSchema), levelOneSpellIds: arrayOf(idSchema), alwaysPreparedSpellIds: arrayOf(idSchema),
+      slotPool: { type: "string", enum: ["none", "spellcasting", "pact-magic"] }, slotCount: { type: "integer", minimum: 0 }, slotRecovery: { type: "string", enum: ["none", "long", "short"] }, changeTiming: { type: "string", enum: ["none", "long-rest", "class-level"] },
+      source: stringSchema, sourcePage: { type: "integer", minimum: 1 }, sourcePdfPage: { type: "integer", minimum: 0 },
+    },
+  },
+  Dnd5eSrdLevelOneClassFeatureChoice: {
+    type: "object",
+    additionalProperties: false,
+    required: ["templateId", "field", "count", "optionIds", "source", "sourcePage", "sourcePdfPage"],
+    properties: { templateId: idSchema, field: idSchema, count: { type: "integer", minimum: 1 }, optionIds: arrayOf(idSchema), source: stringSchema, sourcePage: { type: "integer", minimum: 1 }, sourcePdfPage: { type: "integer", minimum: 0 } },
+  },
+  Dnd5eSrdManualLevelOneOption: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "name", "summary", "automation", "source", "sourcePage", "sourcePdfPage"],
+    properties: {
+      id: idSchema,
+      name: stringSchema,
+      summary: stringSchema,
+      automation: { type: "string", enum: ["manual"] },
+      source: stringSchema,
+      sourcePage: { type: "integer", minimum: 1 },
+      sourcePdfPage: { type: "integer", minimum: 0 },
+    },
+  },
+  Dnd5eSrdEldritchInvocationOption: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "name", "minimumWarlockLevel", "summary", "automation", "source", "sourcePage", "sourcePdfPage"],
+    properties: { id: idSchema, name: stringSchema, minimumWarlockLevel: { type: "integer", minimum: 1 }, grantedSpellId: idSchema, pactTomeCantripCount: { type: "integer", minimum: 0 }, pactTomeRitualCount: { type: "integer", minimum: 0 }, summary: stringSchema, automation: { type: "string", enum: ["item", "manual"] }, source: stringSchema, sourcePage: { type: "integer", minimum: 1 }, sourcePdfPage: { type: "integer", minimum: 0 } },
+  },
+  Dnd5eSrdOriginFeatOption: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "name", "source", "sourcePage", "sourcePdfPage"],
+    properties: { id: stringSchema, name: stringSchema, magicInitiateClass: idSchema, cantripCount: { type: "integer", minimum: 0 }, levelOneSpellCount: { type: "integer", minimum: 0 }, skilledProficiencyCount: { type: "integer", minimum: 0 }, source: stringSchema, sourcePage: { type: "integer", minimum: 1 }, sourcePdfPage: { type: "integer", minimum: 0 } },
+  },
+  Dnd5eSrdSkilledProficiencyOption: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "label", "category", "source"],
+    properties: { id: idSchema, label: stringSchema, category: { type: "string", enum: ["skill", "tool"] }, source: stringSchema },
+  },
+  Dnd5eSrdCharacterOrigins: {
+    type: "object",
+    additionalProperties: true,
+    required: ["draconicAncestors", "giantAncestries", "classSkillChoices", "languages", "originLanguageChoice", "classLanguageChoices", "classStartingEquipment", "backgroundStartingEquipment", "weaponMasteryOptions", "classWeaponMasteryChoices", "spellOptions", "classSpellChoices", "levelOneClassFeatureChoices", "fightingStyles", "divineOrders", "primalOrders", "eldritchInvocations", "originFeatOptions", "skilledProficiencyOptions"],
+    properties: {
+      draconicAncestors: arrayOf(schemaRef("Dnd5eSrdDraconicAncestor")),
+      giantAncestries: arrayOf(schemaRef("Dnd5eSrdGiantAncestryChoice")),
+      classSkillChoices: arrayOf(schemaRef("Dnd5eSrdClassSkillChoice")),
+      languages: arrayOf(schemaRef("Dnd5eSrdLanguageOption")),
+      originLanguageChoice: schemaRef("Dnd5eSrdOriginLanguageChoice"),
+      classLanguageChoices: arrayOf(schemaRef("Dnd5eSrdClassLanguageChoice")),
+      classStartingEquipment: arrayOf(schemaRef("Dnd5eSrdClassStartingEquipment")),
+      backgroundStartingEquipment: arrayOf(schemaRef("Dnd5eSrdBackgroundStartingEquipment")),
+      weaponMasteryOptions: arrayOf(schemaRef("Dnd5eSrdWeaponMasteryOption")),
+      classWeaponMasteryChoices: arrayOf(schemaRef("Dnd5eSrdClassWeaponMasteryChoice")),
+      spellOptions: arrayOf(schemaRef("Dnd5eSrdSpellChoiceOption")),
+      classSpellChoices: arrayOf(schemaRef("Dnd5eSrdClassSpellChoice")),
+      levelOneClassFeatureChoices: arrayOf(schemaRef("Dnd5eSrdLevelOneClassFeatureChoice")),
+      fightingStyles: arrayOf(schemaRef("Dnd5eSrdManualLevelOneOption")),
+      divineOrders: arrayOf(schemaRef("Dnd5eSrdManualLevelOneOption")),
+      primalOrders: arrayOf(schemaRef("Dnd5eSrdManualLevelOneOption")),
+      eldritchInvocations: arrayOf(schemaRef("Dnd5eSrdEldritchInvocationOption")),
+      originFeatOptions: arrayOf(schemaRef("Dnd5eSrdOriginFeatOption")),
+      skilledProficiencyOptions: arrayOf(schemaRef("Dnd5eSrdSkilledProficiencyOption")),
     },
   },
   SystemMonsterCreateRequest: {
@@ -6297,6 +9645,7 @@ const componentSchemas = {
     additionalProperties: false,
     properties: {
       threatId: idSchema,
+      customMonsterItemId: idSchema,
       name: stringSchema,
       ownerUserId: idSchema,
     },
@@ -6312,6 +9661,8 @@ const componentSchemas = {
     type: "object",
     additionalProperties: true,
     properties: {
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+      preparedPreviewKey: stringSchema,
       entryId: idSchema,
       conditionId: idSchema,
       optionId: idSchema,
@@ -6336,16 +9687,731 @@ const componentSchemas = {
       rechargeCheck: { type: "number" },
       commit: { type: "boolean" },
       preview: { type: "boolean" },
+      prepare: { type: "boolean" },
+    },
+  },
+  SystemActorAdvanceRequest: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      optionId: idSchema,
+      featId: idSchema,
+      abilityChoices: {
+        type: "object",
+        additionalProperties: { type: "number" },
+      },
+      multiclassInto: stringSchema,
+      hitPointMode: { type: "string", enum: ["fixed", "roll"] },
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+      preparedPreviewKey: stringSchema,
+    },
+  },
+  SystemActorAdvanceResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["advancement", "actor"],
+    properties: {
+      advancement: { type: "object", additionalProperties: true },
+      advancementRoll: { type: "object", additionalProperties: true },
+      actor: schemaRef("Actor"),
+      sheet: { type: "object", additionalProperties: true },
+    },
+  },
+  SystemActorRestRequest: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      restType: { type: "string", enum: ["short", "long"] },
+      arcaneRecovery: {
+        type: "object",
+        additionalProperties: { type: "number" },
+      },
+      hitDice: arrayOf({
+        type: "object",
+        additionalProperties: false,
+        properties: { className: stringSchema },
+      }),
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+      preparedPreviewKey: stringSchema,
+    },
+  },
+  SystemActorRestResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["rest", "actor"],
+    properties: {
+      rest: { type: "object", additionalProperties: true },
+      actor: schemaRef("Actor"),
+      sheet: { type: "object", additionalProperties: true },
+    },
+  },
+  DndRulesRevisionMap: {
+    type: "object",
+    maxProperties: 500,
+    additionalProperties: { type: "string", format: "date-time" },
+  },
+  DndRulesMutationUndoDescriptor: {
+    type: "object",
+    additionalProperties: false,
+    required: ["mutationId", "expectedActorUpdatedAt", "expectedItemUpdatedAt"],
+    properties: {
+      mutationId: idSchema,
+      expectedActorUpdatedAt: schemaRef("DndRulesRevisionMap"),
+      expectedItemUpdatedAt: schemaRef("DndRulesRevisionMap"),
+      expectedCombatUpdatedAt: { type: "string", format: "date-time" },
+    },
+  },
+  DndRulesMutationUndoRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["expectedActorUpdatedAt", "expectedItemUpdatedAt"],
+    properties: {
+      expectedActorUpdatedAt: schemaRef("DndRulesRevisionMap"),
+      expectedItemUpdatedAt: schemaRef("DndRulesRevisionMap"),
+      expectedCombatUpdatedAt: { type: "string", format: "date-time" },
+    },
+  },
+  DndRulesMutation: {
+    type: "object",
+    additionalProperties: true,
+    required: ["id", "campaignId", "kind", "preparedPreviewKey", "committedByUserId", "status", "roots", "createdAt", "updatedAt"],
+    properties: {
+      ...idTimestampProperties,
+      campaignId: idSchema,
+      kind: { type: "string", enum: ["typed_damage", "action", "effect_schedule", "concentration"] },
+      preparedPreviewKey: stringSchema,
+      committedByUserId: idSchema,
+      status: { type: "string", enum: ["applied", "undone"] },
+      roots: { type: "object", additionalProperties: true },
+      undoneAt: { type: "string", format: "date-time" },
+      undoneByUserId: idSchema,
+    },
+  },
+  DndRulesMutationUndoResult: {
+    type: "object",
+    additionalProperties: false,
+    required: ["undone", "mutation", "actors", "items"],
+    properties: {
+      undone: { type: "boolean", enum: [true] },
+      mutation: schemaRef("DndRulesMutation"),
+      actors: arrayOf(schemaRef("Actor")),
+      items: arrayOf(schemaRef("Item")),
+      combat: schemaRef("Combat"),
+    },
+  },
+  Dnd5eSrdPendingAdvancement: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "campaignId", "actorId", "systemId", "status", "request", "actorUpdatedAt", "createdByUserId", "createdAt", "updatedAt"],
+    properties: {
+      ...idTimestampProperties,
+      campaignId: idSchema,
+      actorId: idSchema,
+      systemId: { type: "string", enum: ["dnd-5e-srd"] },
+      status: { type: "string", enum: ["draft", "ready"] },
+      request: { type: "object", additionalProperties: true },
+      preparedPreviewKey: stringSchema,
+      actorUpdatedAt: { type: "string", format: "date-time" },
+      createdByUserId: idSchema,
+    },
+  },
+  Dnd5eSrdPendingAdvancementCancelRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["pendingAdvancementId", "expectedUpdatedAt"],
+    properties: {
+      pendingAdvancementId: idSchema,
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+    },
+  },
+  Dnd5eSrdPendingAdvancementCancelResult: {
+    type: "object",
+    additionalProperties: false,
+    required: ["cancelled", "actorId", "pendingAdvancementId"],
+    properties: {
+      cancelled: { type: "boolean", enum: [true] },
+      actorId: idSchema,
+      pendingAdvancementId: idSchema,
+    },
+  },
+  Dnd5eSrdTypedDamageApplyRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["preparedPreviewKey", "expectedActorUpdatedAt", "expectedItemUpdatedAt"],
+    properties: {
+      preparedPreviewKey: stringSchema,
+      expectedActorUpdatedAt: schemaRef("DndRulesRevisionMap"),
+      expectedItemUpdatedAt: schemaRef("DndRulesRevisionMap"),
+      expectedCombatUpdatedAt: { type: "string", format: "date-time" },
+    },
+  },
+  Dnd5eSrdTypedDamageApplyResult: {
+    type: "object",
+    additionalProperties: false,
+    required: ["applied", "actor", "actors", "previews", "rulesMutationId", "undo"],
+    properties: {
+      applied: { type: "boolean", enum: [true] },
+      actor: schemaRef("Actor"),
+      actors: arrayOf(schemaRef("Actor")),
+      combat: schemaRef("Combat"),
+      previews: arrayOf({
+        type: "object",
+        additionalProperties: false,
+        required: ["actorId", "actorName", "preview"],
+        properties: {
+          actorId: idSchema,
+          actorName: stringSchema,
+          preview: { type: "object", additionalProperties: true },
+        },
+      }),
+      rulesMutationId: idSchema,
+      undo: schemaRef("DndRulesMutationUndoDescriptor"),
+    },
+  },
+  Dnd5eSrdRulesPreviewRequest: {
+    oneOf: [
+      {
+        type: "object",
+        additionalProperties: false,
+        required: ["operation"],
+        properties: {
+          operation: { type: "string", enum: ["advancement"] },
+          prepare: { type: "boolean" },
+          optionId: idSchema,
+          className: stringSchema,
+          subclassId: idSchema,
+          weaponMasteryChoices: {
+            type: "array",
+            maxItems: 10,
+            uniqueItems: true,
+            items: { type: "string", minLength: 1, maxLength: 80 },
+          },
+          featId: idSchema,
+          hitPointMode: { type: "string", enum: ["fixed", "roll"] },
+          hitPointRoll: { type: "number" },
+          abilityChoices: {
+            type: "object",
+            additionalProperties: { type: "number" },
+          },
+        },
+      },
+      {
+        type: "object",
+        additionalProperties: false,
+        required: ["operation", "restType"],
+        properties: {
+          operation: { type: "string", enum: ["rest"] },
+          prepare: { type: "boolean" },
+          restType: { type: "string", enum: ["short", "long"] },
+          hitDice: arrayOf({
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              className: stringSchema,
+              roll: { type: "number" },
+            },
+          }),
+          arcaneRecovery: {
+            type: "object",
+            additionalProperties: { type: "number" },
+          },
+        },
+      },
+      {
+        type: "object",
+        additionalProperties: false,
+        required: ["operation", "damageType"],
+        properties: {
+          operation: { type: "string", enum: ["typed-damage"] },
+          prepare: { type: "boolean" },
+          criticalHit: { type: "boolean" },
+          amount: { type: "number", minimum: 0 },
+          formula: stringSchema,
+          components: {
+            type: "array",
+            maxItems: 50,
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["amount", "damageType"],
+              properties: {
+                amount: { type: "number", minimum: 0 },
+                damageType: { type: "string", minLength: 1, maxLength: 80 },
+              },
+            },
+          },
+          targetActorIds: { ...arrayOf(idSchema), maxItems: 50, uniqueItems: true },
+          targetDamages: {
+            type: "array",
+            maxItems: 50,
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["actorId", "amount"],
+              properties: {
+                actorId: idSchema,
+                amount: { type: "number", minimum: 0 },
+                damageType: { anyOf: [stringSchema, arrayOf(stringSchema)] },
+              },
+            },
+          },
+          damageType: {
+            anyOf: [stringSchema, arrayOf(stringSchema)],
+          },
+        },
+      },
+    ],
+  },
+  Dnd5eSrdSpellPreparationBlocker: {
+    type: "object",
+    additionalProperties: false,
+    required: ["code", "message"],
+    properties: {
+      code: {
+        type: "string",
+        enum: [
+          "unsupported_actor",
+          "manual_legacy_spellcasting",
+          "capacity_unverified",
+          "later_level_spell_acquisition_manual",
+          "timing_mismatch",
+          "always_prepared_excluded",
+          "spell_not_owned",
+          "class_spell_unverified",
+          "wizard_spellbook_unverified",
+          "capacity_exceeded",
+          "duplicate_selection",
+        ],
+      },
+      message: stringSchema,
+      itemId: idSchema,
+    },
+  },
+  Dnd5eSrdSpellPreparationCapacity: {
+    type: "object",
+    additionalProperties: false,
+    required: ["className", "limit", "selected", "alwaysPrepared", "source"],
+    properties: {
+      className: stringSchema,
+      limit: { type: "integer", minimum: 0 },
+      selected: { type: "integer", minimum: 0 },
+      alwaysPrepared: { type: "integer", minimum: 0 },
+      source: { type: "string", enum: ["stored", "class-progression", "level-one-class"] },
+      classes: arrayOf({
+        type: "object",
+        additionalProperties: false,
+        required: ["className", "limit", "selected"],
+        properties: {
+          className: stringSchema,
+          limit: { type: "integer", minimum: 0 },
+          selected: { type: "integer", minimum: 0 },
+        },
+      }),
+    },
+  },
+  Dnd5eSrdSpellPreparationChange: {
+    type: "object",
+    additionalProperties: false,
+    required: ["itemId", "name", "compendiumEntryId", "fromPrepared", "toPrepared"],
+    properties: {
+      itemId: idSchema,
+      name: stringSchema,
+      compendiumEntryId: idSchema,
+      fromPrepared: { type: "boolean" },
+      toPrepared: { type: "boolean" },
+    },
+  },
+  Dnd5eSrdSpellPreparationPlan: {
+    type: "object",
+    additionalProperties: false,
+    required: ["status", "actorId", "timing", "selectedSpellIds", "eligibleSpellIds", "alwaysPreparedSpellIds", "changes", "blockers", "warnings"],
+    properties: {
+      status: { type: "string", enum: ["ready", "blocked"] },
+      actorId: idSchema,
+      className: stringSchema,
+      timing: { type: "string", enum: ["long-rest", "class-level"] },
+      requiredTiming: { type: "string", enum: ["long-rest", "class-level"] },
+      capacity: schemaRef("Dnd5eSrdSpellPreparationCapacity"),
+      selectedSpellIds: arrayOf(idSchema),
+      eligibleSpellIds: arrayOf(idSchema),
+      alwaysPreparedSpellIds: arrayOf(idSchema),
+      ritualCastableSpellIds: arrayOf(idSchema),
+      changes: arrayOf(schemaRef("Dnd5eSrdSpellPreparationChange")),
+      blockers: arrayOf(schemaRef("Dnd5eSrdSpellPreparationBlocker")),
+      warnings: arrayOf(stringSchema),
+    },
+  },
+  Dnd5eSrdSpellPreparationPreviewRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["selectedSpellIds", "timing", "expectedActorUpdatedAt", "expectedItemUpdatedAt"],
+    properties: {
+      selectedSpellIds: arrayOf(idSchema),
+      timing: { type: "string", enum: ["long-rest", "class-level"] },
+      expectedActorUpdatedAt: { type: "string", format: "date-time" },
+      expectedItemUpdatedAt: { type: "object", additionalProperties: { type: "string", format: "date-time" } },
+    },
+  },
+  Dnd5eSrdSpellPreparationPreviewResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["status", "actorId", "timing", "selectedSpellIds", "eligibleSpellIds", "alwaysPreparedSpellIds", "changes", "blockers", "warnings", "preparedPreviewKey", "actorUpdatedAt", "itemUpdatedAt"],
+    properties: {
+      status: { type: "string", enum: ["ready", "blocked"] },
+      actorId: idSchema,
+      className: stringSchema,
+      timing: { type: "string", enum: ["long-rest", "class-level"] },
+      requiredTiming: { type: "string", enum: ["long-rest", "class-level"] },
+      capacity: schemaRef("Dnd5eSrdSpellPreparationCapacity"),
+      selectedSpellIds: arrayOf(idSchema),
+      eligibleSpellIds: arrayOf(idSchema),
+      alwaysPreparedSpellIds: arrayOf(idSchema),
+      ritualCastableSpellIds: arrayOf(idSchema),
+      changes: arrayOf(schemaRef("Dnd5eSrdSpellPreparationChange")),
+      blockers: arrayOf(schemaRef("Dnd5eSrdSpellPreparationBlocker")),
+      warnings: arrayOf(stringSchema),
+      preparedPreviewKey: stringSchema,
+      actorUpdatedAt: { type: "string", format: "date-time" },
+      itemUpdatedAt: { type: "object", additionalProperties: { type: "string", format: "date-time" } },
+    },
+  },
+  Dnd5eSrdSpellPreparationApplyRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["preparedPreviewKey", "expectedActorUpdatedAt", "expectedItemUpdatedAt"],
+    properties: {
+      preparedPreviewKey: stringSchema,
+      expectedActorUpdatedAt: { type: "string", format: "date-time" },
+      expectedItemUpdatedAt: { type: "object", additionalProperties: { type: "string", format: "date-time" } },
+    },
+  },
+  Dnd5eSrdSpellPreparationMutationResult: {
+    type: "object",
+    additionalProperties: false,
+    required: ["applied", "actor", "items", "plan"],
+    properties: {
+      applied: { type: "boolean", enum: [true] },
+      actor: schemaRef("Actor"),
+      items: arrayOf(schemaRef("Item")),
+      plan: schemaRef("Dnd5eSrdSpellPreparationPlan"),
+    },
+  },
+  Dnd5eSrdValidationIssue: {
+    type: "object",
+    additionalProperties: false,
+    required: ["path", "severity", "code", "message"],
+    properties: {
+      path: { type: "string" },
+      severity: { type: "string", enum: ["error", "warning"] },
+      code: stringSchema,
+      message: stringSchema,
+    },
+  },
+  Dnd5eSrdRepairPatch: {
+    type: "object",
+    additionalProperties: false,
+    required: ["operation", "path"],
+    properties: {
+      operation: { type: "string", enum: ["add", "remove", "replace"] },
+      path: { type: "string" },
+      before: {},
+      after: {},
+    },
+  },
+  Dnd5eSrdRepairCandidate: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "entityKind", "entityId", "confidence", "application", "operation", "path", "after", "issue", "rationale", "inverse", "source"],
+    properties: {
+      id: stringSchema,
+      entityKind: { type: "string", enum: ["actor", "item"] },
+      entityId: idSchema,
+      confidence: { type: "string", enum: ["deterministic"] },
+      application: { type: "string", enum: ["confirmation_required"] },
+      operation: { type: "string", enum: ["add", "replace"] },
+      path: { type: "string" },
+      before: {},
+      after: {},
+      issue: schemaRef("Dnd5eSrdValidationIssue"),
+      rationale: stringSchema,
+      inverse: schemaRef("Dnd5eSrdRepairPatch"),
+      source: {
+        type: "object",
+        additionalProperties: false,
+        required: ["systemId", "rulesVersion", "schemaVersion", "previewVersion"],
+        properties: {
+          systemId: idSchema,
+          rulesVersion: stringSchema,
+          schemaVersion: stringSchema,
+          previewVersion: stringSchema,
+        },
+      },
+    },
+  },
+  Dnd5eSrdRepairPreview: {
+    type: "object",
+    additionalProperties: false,
+    required: ["previewVersion", "entityKind", "entityId", "status", "readOnly", "candidates", "manualIssues"],
+    properties: {
+      previewVersion: stringSchema,
+      entityKind: { type: "string", enum: ["actor", "item"] },
+      entityId: idSchema,
+      status: { type: "string", enum: ["no_changes", "changes_available"] },
+      readOnly: { type: "boolean", enum: [true] },
+      candidates: arrayOf(schemaRef("Dnd5eSrdRepairCandidate")),
+      manualIssues: arrayOf(schemaRef("Dnd5eSrdValidationIssue")),
+      proposedEntity: { type: "object", additionalProperties: true },
+    },
+  },
+  Dnd5eSrdValidationReport: {
+    type: "object",
+    additionalProperties: false,
+    required: ["entityKind", "entityId", "systemId", "rulesVersion", "schemaVersion", "valid", "issues"],
+    properties: {
+      entityKind: { type: "string", enum: ["actor", "item"] },
+      entityId: idSchema,
+      systemId: idSchema,
+      rulesVersion: stringSchema,
+      schemaVersion: stringSchema,
+      valid: { type: "boolean" },
+      issues: arrayOf(schemaRef("Dnd5eSrdValidationIssue")),
+    },
+  },
+  Dnd5eSrdRulesValidationResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["actor", "items", "repairPreview"],
+    properties: {
+      actor: schemaRef("Dnd5eSrdValidationReport"),
+      items: arrayOf(schemaRef("Dnd5eSrdValidationReport")),
+      repairPreview: {
+        type: "object",
+        additionalProperties: false,
+        required: ["actor", "items"],
+        properties: {
+          actor: schemaRef("Dnd5eSrdRepairPreview"),
+          items: arrayOf(schemaRef("Dnd5eSrdRepairPreview")),
+        },
+      },
+    },
+  },
+  Dnd5eSrdRulesPreviewResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["previewVersion", "rulesVersion", "actorSchemaVersion", "itemSchemaVersion", "operation", "actorId", "status", "blockers", "serverRolls", "validation", "changes"],
+    properties: {
+      previewVersion: stringSchema,
+      rulesVersion: stringSchema,
+      actorSchemaVersion: stringSchema,
+      itemSchemaVersion: stringSchema,
+      operation: { type: "string", enum: ["advancement", "rest", "typed-damage"] },
+      actorId: idSchema,
+      status: { type: "string", enum: ["ready", "blocked"] },
+      blockers: arrayOf({
+        type: "object",
+        additionalProperties: false,
+        required: ["path", "code", "message"],
+        properties: { path: { type: "string" }, code: stringSchema, message: stringSchema },
+      }),
+      serverRolls: arrayOf({
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "path", "formula", "reason"],
+        properties: { id: idSchema, path: { type: "string" }, formula: stringSchema, reason: stringSchema },
+      }),
+      validation: {
+        type: "object",
+        additionalProperties: false,
+        required: ["actor", "items"],
+        properties: {
+          actor: schemaRef("Dnd5eSrdValidationReport"),
+          items: arrayOf(schemaRef("Dnd5eSrdValidationReport")),
+        },
+      },
+      changes: arrayOf({
+        type: "object",
+        additionalProperties: false,
+        required: ["path", "operation", "source"],
+        properties: {
+          path: { type: "string" },
+          operation: { type: "string", enum: ["add", "remove", "replace"] },
+          before: {},
+          after: {},
+          source: {
+            type: "object",
+            additionalProperties: false,
+            required: ["systemId", "rulesVersion", "schemaVersion", "rule"],
+            properties: {
+              systemId: idSchema,
+              rulesVersion: stringSchema,
+              schemaVersion: stringSchema,
+              rule: { type: "string", enum: ["advancement", "rest", "typed-damage"] },
+            },
+          },
+        },
+      }),
+      proposedData: { type: "object", additionalProperties: true },
+      details: { type: "object", additionalProperties: true },
+      batch: {
+        type: "object",
+        additionalProperties: false,
+        required: ["targets"],
+        properties: {
+          targets: {
+            type: "array",
+            maxItems: 50,
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["actorId", "actorName", "preview"],
+              properties: {
+                actorId: idSchema,
+                actorName: stringSchema,
+                preview: { type: "object", additionalProperties: true },
+              },
+            },
+          },
+        },
+      },
+      draft: {
+        type: "object",
+        additionalProperties: false,
+        required: ["pendingAdvancement"],
+        properties: { pendingAdvancement: schemaRef("Dnd5eSrdPendingAdvancement") },
+      },
+      preparation: {
+        type: "object",
+        additionalProperties: false,
+        required: ["preparedPreviewKey", "actorUpdatedAt", "request"],
+        properties: {
+          preparedPreviewKey: stringSchema,
+          idempotencyKey: stringSchema,
+          actorUpdatedAt: {
+            oneOf: [
+              { type: "string", format: "date-time" },
+              schemaRef("DndRulesRevisionMap"),
+            ],
+          },
+          itemUpdatedAt: schemaRef("DndRulesRevisionMap"),
+          combatId: idSchema,
+          combatUpdatedAt: { type: "string", format: "date-time" },
+          request: { type: "object", additionalProperties: true },
+          pendingAdvancement: schemaRef("Dnd5eSrdPendingAdvancement"),
+          advancementRoll: { type: "object", additionalProperties: true },
+          damageRoll: { type: "object", additionalProperties: true },
+          resolutionHash: stringSchema,
+        },
+      },
+    },
+  },
+  SystemActorConditionApplyRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["conditionId", "expectedUpdatedAt"],
+    properties: {
+      conditionId: idSchema,
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+      level: { type: "integer", minimum: 1, maximum: 6 },
+      overrideReason: stringSchema,
+    },
+  },
+  SystemActorConditionResponse: {
+    type: "object",
+    additionalProperties: true,
+    required: ["actor"],
+    properties: {
+      entry: { type: "object", additionalProperties: true },
+      actor: schemaRef("Actor"),
+      sheet: { type: "object", additionalProperties: true },
+    },
+  },
+  SystemMonsterCreateResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["threat", "actor"],
+    properties: {
+      threat: { type: "object", additionalProperties: true },
+      actor: schemaRef("Actor"),
+      sheet: { type: "object", additionalProperties: true },
+    },
+  },
+  SystemCharacterImportResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["import", "actor", "items"],
+    properties: {
+      import: { type: "object", additionalProperties: true },
+      actor: schemaRef("Actor"),
+      items: arrayOf(schemaRef("Item")),
+      sheet: { type: "object", additionalProperties: true },
+    },
+  },
+  SystemActorCompendiumRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["entryId", "expectedUpdatedAt"],
+    properties: {
+      entryId: idSchema,
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+      conflictChoice: { type: "string", enum: ["keep_existing", "replace_existing", "merge_existing"] },
+    },
+  },
+  SystemActorCompendiumResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["entry", "actor", "resolution"],
+    properties: {
+      entry: schemaRef("CompendiumCatalogEntry"),
+      actor: schemaRef("Actor"),
+      item: schemaRef("Item"),
+      sheet: { type: "object", additionalProperties: true },
+      resolution: { type: "string", enum: ["added", "kept_existing", "replaced_existing"] },
+    },
+  },
+  SystemEquipmentPurchaseRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["entryId", "expectedUpdatedAt"],
+    properties: {
+      entryId: idSchema,
+      quantity: { type: "integer", minimum: 1 },
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+      conflictChoice: { type: "string", enum: ["keep_existing", "replace_existing", "merge_existing"] },
+    },
+  },
+  SystemEquipmentPurchaseResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["entry", "purchase", "actor", "item", "resolution"],
+    properties: {
+      entry: schemaRef("CompendiumCatalogEntry"),
+      purchase: { type: "object", additionalProperties: true },
+      actor: schemaRef("Actor"),
+      item: schemaRef("Item"),
+      sheet: { type: "object", additionalProperties: true },
+      resolution: { type: "string", enum: ["purchased", "kept_existing", "merged_existing", "replaced_existing"] },
     },
   },
   SystemActorResponse: {
     type: "object",
     additionalProperties: true,
+    required: ["actor"],
     properties: {
       actor: schemaRef("Actor"),
       item: schemaRef("Item"),
       items: arrayOf(schemaRef("Item")),
       sheet: { type: "object", additionalProperties: true },
+    },
+  },
+  SystemPreparedRollResult: {
+    type: "object",
+    additionalProperties: false,
+    required: ["formula", "total", "terms"],
+    properties: {
+      formula: stringSchema,
+      targetActorId: idSchema,
+      total: { type: "number" },
+      terms: arrayOf(schemaRef("DiceRollTerm")),
     },
   },
   SystemRollResponse: {
@@ -6354,7 +10420,12 @@ const componentSchemas = {
     required: ["actor", "sheet"],
     properties: {
       roll: schemaRef("DiceRoll"),
-      rolls: arrayOf(schemaRef("DiceRoll")),
+      rolls: arrayOf({
+        anyOf: [
+          schemaRef("DiceRoll"),
+          schemaRef("SystemPreparedRollResult"),
+        ],
+      }),
       chat: schemaRef("ChatMessage"),
       chatMessages: arrayOf(schemaRef("ChatMessage")),
       actor: schemaRef("Actor"),
@@ -6365,6 +10436,23 @@ const componentSchemas = {
       effect: { type: "object", additionalProperties: true },
       effects: arrayOf({ type: "object", additionalProperties: true }),
       resolution: { type: "object", additionalProperties: true },
+      status: { type: "string", enum: ["ready"] },
+      preparation: {
+        type: "object",
+        additionalProperties: true,
+        required: ["preparedPreviewKey", "sourceActorId", "preparedAt", "request", "revisions", "rolledResults", "resolutionHash"],
+        properties: {
+          preparedPreviewKey: stringSchema,
+          sourceActorId: idSchema,
+          preparedAt: { type: "string", format: "date-time" },
+          request: { type: "object", additionalProperties: true },
+          revisions: { type: "object", additionalProperties: true },
+          rolledResults: { type: "array", items: { type: "object", additionalProperties: true } },
+          resolutionHash: stringSchema,
+        },
+      },
+      rulesMutationId: idSchema,
+      undo: schemaRef("DndRulesMutationUndoDescriptor"),
     },
   },
   SystemEncounterPlanRequest: {
@@ -6375,7 +10463,12 @@ const componentSchemas = {
       threats: { ...arrayOf(schemaRef("EncounterThreatSelection")), maxItems: 100 },
       createEncounter: { type: "boolean" },
       name: stringSchema,
+      expectedUpdatedAt: dateTimeSchema,
     },
+    allOf: [{
+      if: { required: ["createEncounter"], properties: { createEncounter: { const: true } } },
+      then: { required: ["expectedUpdatedAt"] },
+    }],
   },
   SystemEncounterPlanResponse: {
     type: "object",
@@ -6386,14 +10479,476 @@ const componentSchemas = {
       encounter: schemaRef("Encounter"),
     },
   },
+  CompendiumLicense: {
+    type: "object",
+    additionalProperties: false,
+    required: ["name", "usage"],
+    properties: {
+      name: stringSchema,
+      url: { type: "string", format: "uri" },
+      usage: { type: "string", enum: ["srd", "open", "user_provided", "private_home_game"] },
+      attribution: stringSchema,
+    },
+  },
+  CompendiumProvenance: {
+    type: "object",
+    additionalProperties: false,
+    required: ["sourceKind", "sourceName", "sourceVersion", "contentVersion", "systemId", "systemVersion", "rulesVersion", "license"],
+    properties: {
+      sourceKind: { type: "string", enum: ["srd", "bundled", "user"] },
+      sourceName: stringSchema,
+      sourceVersion: stringSchema,
+      contentVersion: stringSchema,
+      systemId: idSchema,
+      systemVersion: stringSchema,
+      rulesVersion: stringSchema,
+      license: schemaRef("CompendiumLicense"),
+    },
+  },
+  CompendiumCatalogEntry: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "type", "name", "summary", "data", "provenance"],
+    properties: {
+      id: idSchema,
+      type: stringSchema,
+      name: stringSchema,
+      summary: { type: "string" },
+      data: { type: "object", additionalProperties: true },
+      provenance: schemaRef("CompendiumProvenance"),
+    },
+  },
+  CompendiumProvenanceSummary: {
+    type: "object",
+    additionalProperties: false,
+    required: ["totalEntries", "filteredEntries", "types", "sources"],
+    properties: {
+      totalEntries: { type: "integer", minimum: 0 },
+      filteredEntries: { type: "integer", minimum: 0 },
+      types: { type: "object", additionalProperties: { type: "integer", minimum: 0 } },
+      sources: arrayOf({
+        type: "object",
+        additionalProperties: false,
+        required: ["sourceKind", "sourceName", "sourceVersion", "contentVersion", "license", "entryCount"],
+        properties: {
+          sourceKind: { type: "string", enum: ["srd", "bundled", "user"] },
+          sourceName: stringSchema,
+          sourceVersion: stringSchema,
+          contentVersion: stringSchema,
+          license: schemaRef("CompendiumLicense"),
+          entryCount: { type: "integer", minimum: 0 },
+        },
+      }),
+    },
+  },
+  CompendiumConflict: {
+    type: "object",
+    additionalProperties: false,
+    required: ["kind", "entryId", "requestedVersion", "choices"],
+    properties: {
+      kind: { type: "string", enum: ["exact_duplicate", "version_conflict"] },
+      entryId: idSchema,
+      requestedVersion: stringSchema,
+      existingVersion: stringSchema,
+      existingItemId: idSchema,
+      choices: arrayOf({ type: "string", enum: ["keep_existing", "replace_existing", "merge_existing"] }),
+    },
+  },
+  CompendiumConflictResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["error", "code", "message", "conflict", "entry"],
+    properties: {
+      error: { type: "string", enum: ["conflict"] },
+      code: { type: "string", enum: ["compendium_conflict"] },
+      message: stringSchema,
+      conflict: schemaRef("CompendiumConflict"),
+      entry: schemaRef("CompendiumCatalogEntry"),
+    },
+  },
   SystemCompendium: {
     type: "object",
-    additionalProperties: true,
-    required: ["systemId", "entries"],
+    additionalProperties: false,
+    required: ["systemId", "entries", "provenanceSummary", "filters"],
     properties: {
       systemId: idSchema,
-      entries: arrayOf({ type: "object", additionalProperties: true }),
+      entries: arrayOf(schemaRef("CompendiumCatalogEntry")),
+      provenanceSummary: schemaRef("CompendiumProvenanceSummary"),
+      filters: {
+        type: "object",
+        additionalProperties: false,
+        required: ["q", "types"],
+        properties: {
+          q: { type: "string" },
+          types: arrayOf(stringSchema),
+        },
+      },
     },
+  },
+  DndCharacterReviewValidationIssue: {
+    type: "object",
+    additionalProperties: false,
+    required: ["entityKind", "entityId", "path", "severity", "code", "message"],
+    properties: {
+      entityKind: { type: "string", enum: ["actor", "item"] },
+      entityId: idSchema,
+      path: stringSchema,
+      severity: { type: "string", enum: ["error", "warning"] },
+      code: stringSchema,
+      message: stringSchema,
+    },
+  },
+  DndCharacterReviewValidationSnapshot: {
+    type: "object",
+    additionalProperties: false,
+    required: ["systemId", "rulesVersion", "actorSchemaVersion", "itemSchemaVersion", "errors", "warnings", "issues"],
+    properties: {
+      systemId: { type: "string", enum: ["dnd-5e-srd"] },
+      rulesVersion: stringSchema,
+      actorSchemaVersion: stringSchema,
+      itemSchemaVersion: stringSchema,
+      errors: { type: "integer", minimum: 0 },
+      warnings: { type: "integer", minimum: 0 },
+      issues: arrayOf(schemaRef("DndCharacterReviewValidationIssue")),
+    },
+  },
+  DndCharacterReviewDecision: {
+    type: "object",
+    additionalProperties: false,
+    required: ["status", "decidedAt", "decidedByUserId", "overrideValidation"],
+    properties: {
+      status: { type: "string", enum: ["approved", "changes_requested"] },
+      decidedAt: { type: "string", format: "date-time" },
+      decidedByUserId: idSchema,
+      reason: stringSchema,
+      overrideValidation: { type: "boolean" },
+    },
+  },
+  DndCharacterReviewState: {
+    type: "object",
+    additionalProperties: false,
+    required: ["version", "id", "status", "fingerprint", "submittedAt", "submittedByUserId", "validation"],
+    properties: {
+      version: { type: "integer", enum: [1] },
+      id: idSchema,
+      status: { type: "string", enum: ["submitted", "approved", "changes_requested"] },
+      fingerprint: { type: "string", pattern: "^sha256:" },
+      submittedAt: { type: "string", format: "date-time" },
+      submittedByUserId: idSchema,
+      validation: schemaRef("DndCharacterReviewValidationSnapshot"),
+      decision: schemaRef("DndCharacterReviewDecision"),
+    },
+  },
+  DndCharacterReviewEntry: {
+    type: "object",
+    additionalProperties: false,
+    required: ["actor", "effectiveStatus", "stale", "currentFingerprint", "currentValidation", "expectedActorUpdatedAt", "expectedItemUpdatedAt"],
+    properties: {
+      actor: schemaRef("Actor"),
+      review: schemaRef("DndCharacterReviewState"),
+      effectiveStatus: { type: "string", enum: ["not_submitted", "submitted", "approved", "changes_requested", "stale"] },
+      stale: { type: "boolean" },
+      currentFingerprint: stringSchema,
+      currentValidation: schemaRef("DndCharacterReviewValidationSnapshot"),
+      expectedActorUpdatedAt: { type: "string", format: "date-time" },
+      expectedItemUpdatedAt: { type: "object", additionalProperties: { type: "string", format: "date-time" } },
+    },
+  },
+  DndCharacterReviewListResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["policy", "campaignUpdatedAt", "entries"],
+    properties: {
+      policy: { type: "object", additionalProperties: false, required: ["mode", "configured"], properties: { mode: { type: "string", enum: ["optional", "required"] }, configured: { type: "boolean" } } },
+      campaignUpdatedAt: { type: "string", format: "date-time" },
+      entries: arrayOf(schemaRef("DndCharacterReviewEntry")),
+    },
+  },
+  DndCustomContentDraft: {
+    type: "object",
+    additionalProperties: false,
+    required: ["kind", "name", "summary", "sourceName", "sourceVersion", "contentVersion", "license", "data"],
+    properties: {
+      kind: { type: "string", enum: ["monster", "spell", "item", "feat", "species", "background", "subclass", "condition"] },
+      name: { type: "string", minLength: 1, maxLength: 120 },
+      summary: { type: "string", minLength: 1, maxLength: 600 },
+      sourceName: { type: "string", minLength: 1, maxLength: 160 },
+      sourceVersion: { type: "string", minLength: 1, maxLength: 64 },
+      contentVersion: { type: "string", minLength: 1, maxLength: 64 },
+      license: {
+        allOf: [schemaRef("CompendiumLicense")],
+        description: "Custom content may be open, user-provided, or private home-game content; the SRD usage label is rejected by the runtime.",
+      },
+      data: {
+        type: "object",
+        additionalProperties: true,
+        description: "D&D-specific fields validated by the selected builder kind; this is not a universal rules DSL.",
+      },
+      expectedUpdatedAt: { type: "string", format: "date-time" },
+    },
+  },
+  DndCustomContentIssue: {
+    type: "object",
+    additionalProperties: false,
+    required: ["path", "code", "message"],
+    properties: {
+      path: stringSchema,
+      code: stringSchema,
+      message: stringSchema,
+    },
+  },
+  DndCustomContentMutationRequest: {
+    allOf: [
+      schemaRef("DndCustomContentDraft"),
+      {
+        type: "object",
+        required: ["expectedUpdatedAt"],
+        properties: { expectedUpdatedAt: { type: "string", format: "date-time" } },
+      },
+    ],
+  },
+  DndCustomContentResponse: {
+    type: "object",
+    additionalProperties: true,
+    required: ["item", "entry", "draft"],
+    properties: {
+      item: schemaRef("Item"),
+      entry: schemaRef("CompendiumCatalogEntry"),
+      draft: schemaRef("DndCustomContentDraft"),
+      warnings: arrayOf(schemaRef("DndCustomContentIssue")),
+      campaignUpdatedAt: { type: "string", format: "date-time" },
+    },
+  },
+  DndCustomContentPreviewResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["preview", "entry", "warnings"],
+    properties: {
+      preview: { type: "boolean", enum: [true] },
+      entry: schemaRef("CompendiumCatalogEntry"),
+      warnings: arrayOf(schemaRef("DndCustomContentIssue")),
+    },
+  },
+  DndCustomContentInvalidResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["error", "issues", "warnings"],
+    properties: {
+      error: { type: "string", enum: ["custom_content_invalid", "monster_template_invalid", "monster_variant_invalid"] },
+      issues: arrayOf(schemaRef("DndCustomContentIssue")),
+      warnings: arrayOf(schemaRef("DndCustomContentIssue")),
+    },
+  },
+  DndMonsterNamedFeature: {
+    type: "object",
+    additionalProperties: false,
+    required: ["name", "description"],
+    properties: {
+      name: { type: "string", minLength: 1, maxLength: 120 },
+      description: { type: "string", minLength: 1, maxLength: 4_000 },
+    },
+  },
+  DndMonsterActionOverride: {
+    type: "object",
+    additionalProperties: false,
+    required: ["name", "description"],
+    properties: {
+      name: { type: "string", minLength: 1, maxLength: 120 },
+      description: { type: "string", minLength: 1, maxLength: 4_000 },
+      kind: { type: "string", enum: ["action", "bonusAction", "reaction"] },
+      attackBonus: { type: "integer", minimum: -20, maximum: 40 },
+      range: { type: "string", maxLength: 160 },
+      damageFormula: { type: "string", maxLength: 160 },
+      damageType: { type: "string", maxLength: 80 },
+      save: {
+        type: "object",
+        additionalProperties: false,
+        required: ["ability", "dc"],
+        properties: {
+          ability: { type: "string", enum: ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"] },
+          dc: { type: "integer", minimum: 1, maximum: 40 },
+          success: { type: "string", maxLength: 160 },
+        },
+      },
+      condition: { type: "string", maxLength: 160 },
+      effects: arrayOf({ type: "string", maxLength: 500 }),
+      recharge: { type: "string", maxLength: 80 },
+    },
+  },
+  DndMonsterOverrides: {
+    type: "object",
+    additionalProperties: false,
+    description: "Typed campaign monster replacements. Combat-bearing changes must explicitly include both challengeRating and xp; the runtime never infers either value.",
+    properties: {
+      size: { type: "string", enum: ["tiny", "small", "medium", "large", "huge", "gargantuan"] },
+      creatureType: { type: "string", minLength: 1, maxLength: 80 },
+      alignment: { type: "string", maxLength: 80 },
+      armorClass: { type: "integer", minimum: 1, maximum: 40 },
+      initiative: { type: "integer", minimum: -20, maximum: 30 },
+      hitPoints: { type: "integer", minimum: 1, maximum: 1_000_000 },
+      hitDice: { type: "string", minLength: 1, maxLength: 80 },
+      challengeRating: { type: "string", minLength: 1, maxLength: 16 },
+      xp: { type: "integer", minimum: 0, maximum: 100_000_000 },
+      proficiencyBonus: { type: "integer", minimum: 2, maximum: 9 },
+      speed: { type: "object", additionalProperties: { type: "integer", minimum: 0, maximum: 1_000 } },
+      abilities: { type: "object", additionalProperties: { type: "integer", minimum: 1, maximum: 30 } },
+      actions: arrayOf(schemaRef("DndMonsterActionOverride")),
+      savingThrows: { type: "object", additionalProperties: { type: "number", minimum: -20, maximum: 30 } },
+      skills: { type: "object", additionalProperties: { type: "number", minimum: -20, maximum: 30 } },
+      senses: arrayOf({ type: "string", maxLength: 120 }),
+      languages: arrayOf({ type: "string", maxLength: 80 }),
+      gear: arrayOf({ type: "string", maxLength: 160 }),
+      traits: arrayOf(schemaRef("DndMonsterNamedFeature")),
+      reactions: arrayOf(schemaRef("DndMonsterNamedFeature")),
+      legendaryActions: arrayOf(schemaRef("DndMonsterNamedFeature")),
+      manualAdjudication: { type: "string", maxLength: 2_000 },
+    },
+  },
+  DndMonsterTemplateDraft: {
+    type: "object",
+    additionalProperties: false,
+    required: ["name", "description", "overrides"],
+    properties: {
+      name: { type: "string", minLength: 1, maxLength: 120 },
+      description: { type: "string", minLength: 1, maxLength: 600 },
+      overrides: schemaRef("DndMonsterOverrides"),
+      expectedCampaignUpdatedAt: dateTimeSchema,
+      expectedUpdatedAt: dateTimeSchema,
+    },
+  },
+  DndMonsterTemplateRecord: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "version", "name", "description", "overrides"],
+    properties: {
+      id: idSchema,
+      version: stringSchema,
+      name: { type: "string", minLength: 1, maxLength: 120 },
+      description: { type: "string", minLength: 1, maxLength: 600 },
+      overrides: schemaRef("DndMonsterOverrides"),
+    },
+  },
+  DndMonsterTemplateResponse: {
+    type: "object",
+    additionalProperties: true,
+    required: ["item", "template"],
+    properties: {
+      item: schemaRef("Item"),
+      template: schemaRef("DndMonsterTemplateRecord"),
+      warnings: arrayOf(schemaRef("DndCustomContentIssue")),
+      campaignUpdatedAt: dateTimeSchema,
+    },
+  },
+  DndMonsterTemplatePreviewResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["preview", "template", "warnings"],
+    properties: {
+      preview: { type: "boolean", enum: [true] },
+      template: schemaRef("DndMonsterTemplateRecord"),
+      warnings: arrayOf(schemaRef("DndCustomContentIssue")),
+    },
+  },
+  DndMonsterBaseReference: {
+    type: "object",
+    additionalProperties: false,
+    required: ["kind", "id", "version", "name", "provenance"],
+    properties: {
+      kind: { type: "string", enum: ["bundled", "campaign"] },
+      id: idSchema,
+      version: stringSchema,
+      name: stringSchema,
+      provenance: schemaRef("CompendiumProvenance"),
+    },
+  },
+  DndMonsterBase: {
+    type: "object",
+    additionalProperties: false,
+    required: ["kind", "id", "version", "name", "provenance", "data"],
+    properties: {
+      kind: { type: "string", enum: ["bundled", "campaign"] },
+      id: idSchema,
+      version: stringSchema,
+      name: stringSchema,
+      provenance: schemaRef("CompendiumProvenance"),
+      data: { type: "object", additionalProperties: true },
+    },
+  },
+  DndMonsterVariantDraft: {
+    type: "object",
+    additionalProperties: false,
+    required: ["name", "summary", "sourceName", "sourceVersion", "contentVersion", "license", "base", "overrides"],
+    properties: {
+      name: { type: "string", minLength: 1, maxLength: 120 },
+      summary: { type: "string", minLength: 1, maxLength: 600 },
+      sourceName: { type: "string", minLength: 1, maxLength: 160 },
+      sourceVersion: { type: "string", minLength: 1, maxLength: 64 },
+      contentVersion: { type: "string", minLength: 1, maxLength: 64 },
+      license: schemaRef("CompendiumLicense"),
+      base: {
+        type: "object",
+        additionalProperties: false,
+        required: ["kind", "id", "version"],
+        properties: { kind: { type: "string", enum: ["bundled", "campaign"] }, id: idSchema, version: stringSchema },
+      },
+      template: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "version"],
+        properties: { id: idSchema, version: stringSchema },
+      },
+      overrides: schemaRef("DndMonsterOverrides"),
+      expectedCampaignUpdatedAt: dateTimeSchema,
+    },
+  },
+  DndMonsterVariantMetadata: {
+    type: "object",
+    additionalProperties: false,
+    required: ["schemaVersion", "base", "overrides", "appliedOverrides"],
+    properties: {
+      schemaVersion: { type: "string", enum: ["1.0.0"] },
+      base: schemaRef("DndMonsterBaseReference"),
+      template: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "version", "name", "overrides"],
+        properties: { id: idSchema, version: stringSchema, name: stringSchema, overrides: schemaRef("DndMonsterOverrides") },
+      },
+      overrides: schemaRef("DndMonsterOverrides"),
+      appliedOverrides: schemaRef("DndMonsterOverrides"),
+    },
+  },
+  DndMonsterVariantDiffEntry: {
+    type: "object",
+    additionalProperties: false,
+    required: ["path"],
+    properties: { path: stringSchema, before: {}, after: {} },
+  },
+  DndMonsterVariantPreviewResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["preview", "entry", "variant", "diff", "warnings"],
+    properties: {
+      preview: { type: "boolean", enum: [true] },
+      entry: schemaRef("CompendiumCatalogEntry"),
+      variant: schemaRef("DndMonsterVariantMetadata"),
+      diff: arrayOf(schemaRef("DndMonsterVariantDiffEntry")),
+      warnings: arrayOf(schemaRef("DndCustomContentIssue")),
+    },
+  },
+  DndMonsterVariantResponse: {
+    allOf: [
+      schemaRef("DndCustomContentResponse"),
+      {
+        type: "object",
+        required: ["variant", "diff", "warnings"],
+        properties: {
+          variant: schemaRef("DndMonsterVariantMetadata"),
+          diff: arrayOf(schemaRef("DndMonsterVariantDiffEntry")),
+          warnings: arrayOf(schemaRef("DndCustomContentIssue")),
+        },
+      },
+    ],
   },
   ContentImportSource: {
     type: "object",
@@ -6409,6 +10964,18 @@ const componentSchemas = {
     type: "object",
     additionalProperties: true,
     required: ["id", "kind", "name"],
+    properties: {
+      id: idSchema,
+      kind: stringSchema,
+      name: stringSchema,
+      selectedByDefault: { type: "boolean" },
+      data: { type: "object", additionalProperties: true },
+    },
+  },
+  ContentImportEntityDraft: {
+    type: "object",
+    additionalProperties: false,
+    required: ["kind", "name"],
     properties: {
       id: idSchema,
       kind: stringSchema,
@@ -6450,14 +11017,24 @@ const componentSchemas = {
     required: ["entities"],
     properties: {
       source: schemaRef("ContentImportSource"),
-      entities: arrayOf(schemaRef("ContentImportEntity")),
+      entities: arrayOf(schemaRef("ContentImportEntityDraft")),
     },
   },
   ContentImportApplyRequest: {
     type: "object",
     additionalProperties: false,
+    required: ["expectedUpdatedAt"],
     properties: {
       selectedEntityIds: arrayOf(idSchema),
+      expectedUpdatedAt: dateTimeSchema,
+    },
+  },
+  ContentImportRollbackRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["expectedUpdatedAt"],
+    properties: {
+      expectedUpdatedAt: dateTimeSchema,
     },
   },
   CampaignArchive: {
@@ -6511,6 +11088,7 @@ const componentSchemas = {
           },
           collections: { type: "array", items: { type: "string" } },
           regenerateIds: { type: "boolean" },
+          expectedUpdatedAt: dateTimeSchema,
         },
       },
     ],
@@ -6560,6 +11138,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
   "GET /api/v1/health": {
     responses: {
       "200": jsonResponse("API health status", schemaRef("HealthStatus")),
+      "503": jsonResponse("API readiness configuration is incomplete", schemaRef("HealthStatus")),
     },
   },
   "POST /api/v1/mcp": {
@@ -6806,6 +11385,17 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
       ),
     },
   },
+  "GET /api/v1/auth/profile": {
+    responses: { "200": jsonResponse("Authenticated user's persisted profile and preferences", schemaRef("UserProfileResponse")) },
+  },
+  "PATCH /api/v1/auth/profile": {
+    parameters: [{ name: "Idempotency-Key", in: "header", required: true, schema: { type: "string", minLength: 1, maxLength: 160 } }],
+    requestBody: jsonRequestBody(schemaRef("UserProfilePatchRequest")),
+    responses: {
+      "200": jsonResponse("Updated authenticated user's profile", schemaRef("UserProfileResponse")),
+      "409": jsonResponse("Profile revision conflict", schemaRef("ErrorResponse")),
+    },
+  },
   "GET /api/v1/organizations": {
     responses: {
       "200": jsonResponse(
@@ -6841,6 +11431,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "PATCH /api/v1/organization/workspace-defaults": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
     requestBody: jsonRequestBody(
       schemaRef("OrganizationWorkspaceDefaultsPatchRequest"),
     ),
@@ -6882,6 +11473,9 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "DELETE /api/v1/organization/members/{memberId}": {
+    parameters: [
+      { name: "expectedUpdatedAt", in: "query", required: true, schema: dateTimeSchema },
+    ],
     responses: {
       "200": jsonResponse(
         "Removed organization member and campaign access",
@@ -6915,6 +11509,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "PATCH /api/v1/admin/users/{userId}": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
     requestBody: jsonRequestBody(schemaRef("AdminUserPatchRequest")),
     responses: {
       "200": jsonResponse(
@@ -6924,6 +11519,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/admin/users/{userId}/password-reset": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
     requestBody: jsonRequestBody(schemaRef("AdminUserPasswordResetRequest")),
     responses: {
       "200": jsonResponse(
@@ -6933,6 +11529,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/admin/password-resets/prune": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
     requestBody: jsonRequestBody(schemaRef("AdminPasswordResetPruneRequest")),
     responses: {
       "200": jsonResponse(
@@ -6941,7 +11538,17 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
       ),
     },
   },
+  "GET /api/v1/admin/users/{userId}/sessions/revocation-plan": {
+    responses: {
+      "200": jsonResponse(
+        "Prepared the exact current session target set for an all-user revocation",
+        schemaRef("AdminUserSessionRevocationPlan"),
+      ),
+    },
+  },
   "DELETE /api/v1/admin/users/{userId}/sessions": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody(schemaRef("AdminUserSessionRevokeRequest")),
     responses: {
       "200": jsonResponse(
         "Revoked all sessions for a user",
@@ -6958,6 +11565,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/admin/sessions/prune": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
     requestBody: jsonRequestBody(schemaRef("AdminSessionPruneRequest")),
     responses: {
       "200": jsonResponse(
@@ -6985,6 +11593,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/admin/sessions/risk/revoke": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
     requestBody: jsonRequestBody(schemaRef("AdminSessionRiskRevokeRequest")),
     responses: {
       "200": jsonResponse(
@@ -6994,6 +11603,8 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "DELETE /api/v1/admin/sessions/{sessionId}": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody(schemaRef("AdminSessionRevokeRequest")),
     responses: {
       "200": jsonResponse(
         "Revoked one server-admin selected session",
@@ -7045,6 +11656,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/admin/email-outbox/retry-all": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
     requestBody: jsonRequestBody(schemaRef("AdminEmailOutboxRetryAllRequest")),
     responses: {
       "200": jsonResponse(
@@ -7054,6 +11666,8 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/admin/email-outbox/{messageId}/retry": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody(schemaRef("AdminEmailOutboxRetryRequest")),
     responses: {
       "200": jsonResponse(
         "Retried email outbox message",
@@ -7192,6 +11806,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/admin/jobs": {
+    parameters: [{ name: "Idempotency-Key", in: "header", required: true, schema: { type: "string", minLength: 1, maxLength: 160 } }],
     requestBody: jsonRequestBody(schemaRef("AdminJobCreateRequest")),
     responses: {
       "201": jsonResponse(
@@ -7201,6 +11816,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/admin/jobs/lease": {
+    parameters: [{ name: "Idempotency-Key", in: "header", required: true, schema: { type: "string", minLength: 1, maxLength: 160 } }],
     requestBody: jsonRequestBody(schemaRef("AdminJobLeaseRequest")),
     responses: {
       "200": jsonResponse(
@@ -7228,6 +11844,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/admin/jobs/alerts": {
+    parameters: [{ name: "Idempotency-Key", in: "header", required: true, schema: { type: "string", minLength: 1, maxLength: 160 } }],
     requestBody: jsonRequestBody(schemaRef("AdminJobAlertRequest")),
     responses: {
       "200": jsonResponse(
@@ -7249,6 +11866,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "PATCH /api/v1/admin/jobs/{jobId}": {
+    parameters: [{ name: "Idempotency-Key", in: "header", required: true, schema: { type: "string", minLength: 1, maxLength: 160 } }],
     requestBody: jsonRequestBody(schemaRef("AdminJobPatchRequest")),
     responses: {
       "200": jsonResponse(
@@ -7258,6 +11876,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/admin/jobs/{jobId}/heartbeat": {
+    parameters: [{ name: "Idempotency-Key", in: "header", required: true, schema: { type: "string", minLength: 1, maxLength: 160 } }],
     requestBody: jsonRequestBody(schemaRef("AdminJobHeartbeatRequest")),
     responses: {
       "200": jsonResponse(
@@ -7267,6 +11886,8 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/admin/jobs/{jobId}/retry": {
+    parameters: [{ name: "Idempotency-Key", in: "header", required: true, schema: { type: "string", minLength: 1, maxLength: 160 } }],
+    requestBody: jsonRequestBody(schemaRef("AdminJobRetryRequest")),
     responses: {
       "200": jsonResponse(
         "Requeued a failed or cancelled server-admin job",
@@ -7275,6 +11896,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/admin/jobs/{jobId}/cancel": {
+    parameters: [{ name: "Idempotency-Key", in: "header", required: true, schema: { type: "string", minLength: 1, maxLength: 160 } }],
     requestBody: jsonRequestBody(schemaRef("AdminJobCancelRequest")),
     responses: {
       "200": jsonResponse(
@@ -7289,6 +11911,11 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
         "Server-admin AI runtime, safety, evaluation, tool, and proposal operations posture",
         schemaRef("AdminAiOperations"),
       ),
+    },
+  },
+  "GET /api/v1/admin/ai/policy": {
+    responses: {
+      "200": jsonResponse("Redacted installation AI policy and production readiness", { type: "object", additionalProperties: true }),
     },
   },
   "POST /api/v1/admin/ai/proposals/stale/reject": {
@@ -7377,21 +12004,27 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "PATCH /api/v1/admin/plugins/reviews/{reviewKey}": {
+    parameters: [requiredOperatorIdempotencyKeyParameter],
     requestBody: jsonRequestBody(schemaRef("AdminPluginReviewPatchRequest")),
     responses: {
       "200": jsonResponse(
         "Updated marketplace plugin review state",
         schemaRef("AdminPluginReviewInfo"),
       ),
+      "400": jsonResponse("Missing retry identity or exact review revision", schemaRef("ErrorResponse")),
+      "409": jsonResponse("Plugin review revision is stale", schemaRef("ErrorResponse")),
     },
   },
   "POST /api/v1/admin/plugins/registry/sync": {
+    parameters: [requiredOperatorIdempotencyKeyParameter],
     requestBody: jsonRequestBody(schemaRef("AdminPluginRegistrySyncRequest")),
     responses: {
       "200": jsonResponse(
         "Synchronized configured plugin registries",
         schemaRef("AdminPluginRegistrySyncResponse"),
       ),
+      "400": jsonResponse("Missing retry identity or registry generation", schemaRef("ErrorResponse")),
+      "409": jsonResponse("Plugin registry generation is stale", schemaRef("ErrorResponse")),
     },
   },
   "GET /api/v1/admin/plugins/operations": {
@@ -7426,7 +12059,20 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
       ),
     },
   },
+  "GET /api/v1/admin/scim/group-role-mappings/preview": {
+    parameters: [
+      { name: "campaignId", in: "query", required: true, schema: idSchema },
+      { name: "role", in: "query", required: true, schema: { type: "string", enum: ["gm", "assistant_gm", "player", "observer"] } },
+      { name: "groupId", in: "query", required: false, schema: idSchema },
+      { name: "groupExternalId", in: "query", required: false, schema: stringSchema },
+      { name: "groupDisplayName", in: "query", required: false, schema: stringSchema },
+    ],
+    responses: {
+      "200": jsonResponse("Prepared SCIM group and affected campaign membership target set", schemaRef("AdminScimGroupRoleMappingPreview")),
+    },
+  },
   "POST /api/v1/admin/scim/group-role-mappings": {
+    parameters: [requiredScimIdempotencyKeyParameter],
     requestBody: jsonRequestBody(schemaRef("AdminScimGroupRoleMappingInput")),
     responses: {
       "200": jsonResponse(
@@ -7440,6 +12086,8 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "DELETE /api/v1/admin/scim/group-role-mappings/{mappingId}": {
+    parameters: [requiredScimIdempotencyKeyParameter],
+    requestBody: jsonRequestBody(schemaRef("AdminScimGroupRoleMappingDeleteRequest")),
     responses: {
       "200": jsonResponse(
         "Deleted SCIM group role mapping cleanup summary",
@@ -7480,34 +12128,41 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/scim/v2/Users": {
+    parameters: [requiredScimIdempotencyKeyParameter],
     requestBody: jsonRequestBody(schemaRef("ScimUserInput")),
     responses: {
-      "200": jsonResponse("Created SCIM user resource", schemaRef("ScimUser")),
-      "201": jsonResponse("Created SCIM user resource", schemaRef("ScimUser")),
+      "200": scimVersionedJsonResponse("Created SCIM user resource", schemaRef("ScimUser")),
+      "201": scimVersionedJsonResponse("Created SCIM user resource", schemaRef("ScimUser")),
     },
   },
   "GET /api/v1/scim/v2/Users/{userId}": {
     responses: {
-      "200": jsonResponse("SCIM user resource", schemaRef("ScimUser")),
+      "200": scimVersionedJsonResponse("SCIM user resource", schemaRef("ScimUser")),
     },
   },
   "PUT /api/v1/scim/v2/Users/{userId}": {
+    parameters: [requiredScimIdempotencyKeyParameter, requiredScimIfMatchParameter],
     requestBody: jsonRequestBody(schemaRef("ScimUserInput")),
     responses: {
-      "200": jsonResponse("Replaced SCIM user resource", schemaRef("ScimUser")),
+      "200": scimVersionedJsonResponse("Replaced SCIM user resource", schemaRef("ScimUser")),
+      ...scimPreconditionResponses,
     },
   },
   "PATCH /api/v1/scim/v2/Users/{userId}": {
+    parameters: [requiredScimIdempotencyKeyParameter, requiredScimIfMatchParameter],
     requestBody: jsonRequestBody(schemaRef("ScimPatchRequest")),
     responses: {
-      "200": jsonResponse("Patched SCIM user resource", schemaRef("ScimUser")),
+      "200": scimVersionedJsonResponse("Patched SCIM user resource", schemaRef("ScimUser")),
+      ...scimPreconditionResponses,
     },
   },
   "DELETE /api/v1/scim/v2/Users/{userId}": {
+    parameters: [requiredScimIdempotencyKeyParameter, requiredScimIfMatchParameter],
     responses: {
       "204": {
         description: "SCIM user deactivated and active sessions revoked",
       },
+      ...scimPreconditionResponses,
     },
   },
   "GET /api/v1/scim/v2/Groups": {
@@ -7535,13 +12190,14 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/scim/v2/Groups": {
+    parameters: [requiredScimIdempotencyKeyParameter],
     requestBody: jsonRequestBody(schemaRef("ScimGroupInput")),
     responses: {
-      "200": jsonResponse(
+      "200": scimVersionedJsonResponse(
         "Created SCIM group resource",
         schemaRef("ScimGroup"),
       ),
-      "201": jsonResponse(
+      "201": scimVersionedJsonResponse(
         "Created SCIM group resource",
         schemaRef("ScimGroup"),
       ),
@@ -7549,32 +12205,38 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
   },
   "GET /api/v1/scim/v2/Groups/{groupId}": {
     responses: {
-      "200": jsonResponse("SCIM group resource", schemaRef("ScimGroup")),
+      "200": scimVersionedJsonResponse("SCIM group resource", schemaRef("ScimGroup")),
     },
   },
   "PUT /api/v1/scim/v2/Groups/{groupId}": {
+    parameters: [requiredScimIdempotencyKeyParameter, requiredScimIfMatchParameter],
     requestBody: jsonRequestBody(schemaRef("ScimGroupInput")),
     responses: {
-      "200": jsonResponse(
+      "200": scimVersionedJsonResponse(
         "Replaced SCIM group resource",
         schemaRef("ScimGroup"),
       ),
+      ...scimPreconditionResponses,
     },
   },
   "PATCH /api/v1/scim/v2/Groups/{groupId}": {
+    parameters: [requiredScimIdempotencyKeyParameter, requiredScimIfMatchParameter],
     requestBody: jsonRequestBody(schemaRef("ScimPatchRequest")),
     responses: {
-      "200": jsonResponse(
+      "200": scimVersionedJsonResponse(
         "Patched SCIM group resource and synchronized mapped memberships",
         schemaRef("ScimGroup"),
       ),
+      ...scimPreconditionResponses,
     },
   },
   "DELETE /api/v1/scim/v2/Groups/{groupId}": {
+    parameters: [requiredScimIdempotencyKeyParameter, requiredScimIfMatchParameter],
     responses: {
       "204": {
         description: "SCIM group deleted and mapped memberships cleaned up",
       },
+      ...scimPreconditionResponses,
     },
   },
   "GET /api/v1/admin/storage/operations": {
@@ -7586,6 +12248,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/admin/storage/backup": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
     requestBody: jsonRequestBody(schemaRef("StorageBackupRequest")),
     responses: {
       "200": jsonResponse(
@@ -7595,7 +12258,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/admin/storage/restore-drill": {
-    requestBody: jsonRequestBody(schemaRef("StorageRestoreDrillRequest")),
+    requestBody: optionalJsonRequestBody(schemaRef("StorageRestoreDrillRequest")),
     responses: {
       "200": jsonResponse(
         "Restore drill passed against a copied SQLite backup",
@@ -7608,6 +12271,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/admin/storage/restore": {
+    parameters: [{ name: "Idempotency-Key", in: "header", required: true, schema: { type: "string", minLength: 1, maxLength: 160 } }],
     requestBody: jsonRequestBody(schemaRef("StorageRestoreRequest")),
     responses: {
       "200": jsonResponse(
@@ -7660,37 +12324,80 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/admin/assets/integrity/quarantine": {
+    parameters: [requiredOperatorIdempotencyKeyParameter],
     requestBody: jsonRequestBody(schemaRef("AdminAssetOperationRequest")),
     responses: {
       "200": jsonResponse(
         "Dry-run or archive assets with integrity failures",
         schemaRef("AdminAssetOperationResult"),
       ),
+      "400": jsonResponse(
+        "The request is malformed or execution lacks a prepared target set",
+        schemaRef("ErrorResponse"),
+      ),
+      "409": jsonResponse(
+        "Asset revisions or integrity evidence changed after preparation",
+        schemaRef("AdminAssetTargetSetConflictResponse"),
+      ),
     },
   },
   "POST /api/v1/admin/assets/migrate": {
+    parameters: [requiredOperatorIdempotencyKeyParameter],
     requestBody: jsonRequestBody(schemaRef("AdminAssetOperationRequest")),
     responses: {
       "200": jsonResponse(
         "Dry-run or migrate stored asset bytes to the active provider",
         schemaRef("AdminAssetOperationResult"),
       ),
+      "400": jsonResponse(
+        "The request is malformed or execution lacks a prepared target set",
+        schemaRef("ErrorResponse"),
+      ),
+      "409": jsonResponse(
+        "Asset revisions or migration inputs changed after preparation",
+        schemaRef("AdminAssetTargetSetConflictResponse"),
+      ),
     },
   },
   "POST /api/v1/admin/assets/cleanup": {
+    parameters: [requiredOperatorIdempotencyKeyParameter],
     requestBody: jsonRequestBody(schemaRef("AdminAssetOperationRequest")),
     responses: {
       "200": jsonResponse(
         "Dry-run or delete stored bytes for deleted or expired assets",
         schemaRef("AdminAssetOperationResult"),
       ),
+      "400": jsonResponse(
+        "The request is malformed or execution lacks a prepared target set",
+        schemaRef("ErrorResponse"),
+      ),
+      "409": jsonResponse(
+        "Asset revisions or cleanup eligibility changed after preparation",
+        schemaRef("AdminAssetTargetSetConflictResponse"),
+      ),
     },
   },
   "POST /api/v1/admin/assets/{assetId}/purge-cache": {
+    parameters: [requiredOperatorIdempotencyKeyParameter],
     requestBody: jsonRequestBody(schemaRef("AdminAssetCdnPurgeRequest")),
     responses: {
       "200": jsonResponse(
         "Requested CDN cache purge for one asset",
+        schemaRef("AdminAssetCdnPurgeResult"),
+      ),
+      "400": jsonResponse("Invalid purge input or unconfigured CDN purge", {
+        anyOf: [
+          schemaRef("ErrorResponse"),
+          schemaRef("AdminAssetCdnPurgeResult"),
+        ],
+      }),
+      "404": jsonResponse("Asset not found", schemaRef("ErrorResponse")),
+      "409": jsonResponse(
+        "The asset revision changed after it was loaded",
+        schemaRef("ErrorResponse"),
+      ),
+      "502": jsonResponse(
+        "The downstream CDN purge delivery failed",
         schemaRef("AdminAssetCdnPurgeResult"),
       ),
     },
@@ -7715,6 +12422,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "PATCH /api/v1/campaigns/{campaignId}": {
+    parameters: [{ name: "Idempotency-Key", in: "header", required: true, schema: { type: "string", minLength: 1, maxLength: 160 } }],
     requestBody: jsonRequestBody(schemaRef("CampaignPatchRequest")),
     responses: {
       "200": jsonResponse("Updated campaign", schemaRef("Campaign")),
@@ -7726,6 +12434,12 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/campaigns/{campaignId}/archive": {
+    requestBody: jsonRequestBody({
+      type: "object",
+      additionalProperties: false,
+      required: ["expectedUpdatedAt"],
+      properties: { reason: { type: "string", maxLength: 500 }, expectedUpdatedAt: dateTimeSchema },
+    }),
     responses: {
       "200": jsonResponse(
         "Archived campaign with lifecycle metadata",
@@ -7734,6 +12448,12 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/campaigns/{campaignId}/restore": {
+    requestBody: jsonRequestBody({
+      type: "object",
+      additionalProperties: false,
+      required: ["expectedUpdatedAt"],
+      properties: { reason: { type: "string", maxLength: 500 }, expectedUpdatedAt: dateTimeSchema },
+    }),
     responses: {
       "200": jsonResponse(
         "Restored campaign with lifecycle metadata",
@@ -7748,6 +12468,37 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
         arrayOf(schemaRef("CampaignMember")),
       ),
     },
+  },
+  "GET /api/v1/campaigns/{campaignId}/presence": {
+    responses: {
+      "200": jsonResponse("Ephemeral campaign presence", {
+        type: "object",
+        additionalProperties: false,
+        required: ["campaignId", "generatedAt", "presences"],
+        properties: {
+          campaignId: stringSchema,
+          generatedAt: dateTimeSchema,
+          presences: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["campaignId", "userId", "displayName", "role", "connectionCount", "connectedAt", "lastSeenAt", "activeSceneIds"],
+              properties: {
+                campaignId: stringSchema,
+                userId: stringSchema,
+                displayName: stringSchema,
+                role: stringSchema,
+                connectionCount: { type: "integer", minimum: 1 },
+                connectedAt: dateTimeSchema,
+                lastSeenAt: dateTimeSchema,
+                activeSceneIds: arrayOf(stringSchema)
+              }
+            }
+          }
+        }
+      })
+    }
   },
   "PATCH /api/v1/campaigns/{campaignId}/members/{memberId}": {
     requestBody: jsonRequestBody({
@@ -7776,6 +12527,180 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
       ),
     },
   },
+  "POST /api/v1/campaigns/{campaignId}/ownership-transfer": {
+    parameters: [
+      {
+        name: "Idempotency-Key",
+        in: "header",
+        required: true,
+        schema: { type: "string", minLength: 1, maxLength: 160 },
+        description: "Stable key reused when retrying the same ownership transfer.",
+      },
+    ],
+    requestBody: jsonRequestBody(
+      schemaRef("CampaignOwnershipTransferRequest"),
+    ),
+    responses: {
+      "200": jsonResponse(
+        "Transferred campaign ownership and demoted the previous owner to GM",
+        schemaRef("CampaignOwnershipTransferResponse"),
+      ),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/duplicate": {
+    parameters: [{ name: "Idempotency-Key", in: "header", required: true, schema: { type: "string", minLength: 1, maxLength: 160 } }],
+    requestBody: jsonRequestBody(schemaRef("CampaignDuplicateRequest")),
+    responses: {
+      "201": jsonResponse("Atomically duplicated campaign content and embedded asset objects", schemaRef("CampaignDuplicateResponse")),
+      "409": jsonResponse("Source campaign revision conflict", schemaRef("ErrorResponse")),
+      "413": jsonResponse("Campaign assets exceed the configured duplication limit", schemaRef("ErrorResponse")),
+    },
+  },
+  "GET /api/v1/campaigns/{campaignId}/character-transfers": {
+    responses: { "200": jsonResponse("Visible pending and resolved character transfers", arrayOf(schemaRef("CharacterTransfer"))) },
+  },
+  "POST /api/v1/campaigns/{campaignId}/actors/{actorId}/transfers": {
+    parameters: [{ name: "Idempotency-Key", in: "header", required: true, schema: { type: "string", minLength: 1, maxLength: 160 } }],
+    requestBody: jsonRequestBody(schemaRef("CharacterTransferCreateRequest")),
+    responses: {
+      "201": jsonResponse("Created a recipient-confirmed character transfer request", schemaRef("CharacterTransferCreateResponse")),
+      "409": jsonResponse("Actor revision or pending-transfer conflict", schemaRef("ErrorResponse")),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/character-transfers/{transferId}/accept": {
+    parameters: [{ name: "Idempotency-Key", in: "header", required: true, schema: { type: "string", minLength: 1, maxLength: 160 } }],
+    requestBody: jsonRequestBody(schemaRef("CharacterTransferResolutionRequest")),
+    responses: {
+      "200": jsonResponse("Accepted character transfer and changed actor ownership", schemaRef("CharacterTransferResolutionResponse")),
+      "409": jsonResponse("Actor revision or transfer status conflict", schemaRef("ErrorResponse")),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/character-transfers/{transferId}/decline": {
+    parameters: [{ name: "Idempotency-Key", in: "header", required: true, schema: { type: "string", minLength: 1, maxLength: 160 } }],
+    requestBody: jsonRequestBody(schemaRef("CharacterTransferResolutionRequest")),
+    responses: {
+      "200": jsonResponse("Declined character transfer", schemaRef("CharacterTransferResolutionResponse")),
+      "409": jsonResponse("Transfer revision or status conflict", schemaRef("ErrorResponse")),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/character-transfers/{transferId}/cancel": {
+    parameters: [{ name: "Idempotency-Key", in: "header", required: true, schema: { type: "string", minLength: 1, maxLength: 160 } }],
+    requestBody: jsonRequestBody(schemaRef("CharacterTransferResolutionRequest")),
+    responses: {
+      "200": jsonResponse("Cancelled a pending character transfer", schemaRef("CharacterTransferResolutionResponse")),
+      "409": jsonResponse("Transfer revision or status conflict", schemaRef("ErrorResponse")),
+    },
+  },
+  "GET /api/v1/campaigns/{campaignId}/webhooks": {
+    summary: "List outbound campaign webhooks",
+    description:
+      "Lists public webhook configuration and the supported bounded metadata event types. Requires campaign.update and never returns a signing secret.",
+    responses: {
+      "200": jsonResponse(
+        "Public webhook configurations and supported event types",
+        schemaRef("CampaignWebhookListResponse"),
+      ),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/webhooks": {
+    summary: "Create an outbound campaign webhook",
+    description:
+      "Creates one campaign webhook after human confirmation. The plaintext signing secret is returned once on the fresh 201 response; an idempotent replay reports that the secret was already shown.",
+    parameters: [requiredWebhookIdempotencyKeyParameter],
+    requestBody: jsonRequestBody(schemaRef("CampaignWebhookCreateRequest")),
+    responses: {
+      "200": jsonResponse(
+        "Idempotent replay; the one-time secret is not returned again",
+        schemaRef("CampaignWebhookCreateResponse"),
+      ),
+      "201": jsonResponse(
+        "Created webhook with one-time plaintext signing secret",
+        schemaRef("CampaignWebhookCreateResponse"),
+      ),
+    },
+  },
+  "PATCH /api/v1/campaigns/{campaignId}/webhooks/{webhookId}": {
+    summary: "Update an outbound campaign webhook",
+    description:
+      "Updates explicit webhook fields with the exact public webhook revision. The server revalidates the outbound target before saving.",
+    parameters: [requiredWebhookIdempotencyKeyParameter],
+    requestBody: jsonRequestBody(schemaRef("CampaignWebhookUpdateRequest")),
+    responses: {
+      "200": jsonResponse("Updated public webhook configuration", schemaRef("CampaignWebhook")),
+    },
+  },
+  "DELETE /api/v1/campaigns/{campaignId}/webhooks/{webhookId}": {
+    summary: "Delete an outbound campaign webhook",
+    description:
+      "Deletes a webhook after an exact-revision, human-confirmed request. Existing metadata-only delivery ledger rows remain available only according to server retention policy.",
+    parameters: [requiredWebhookIdempotencyKeyParameter],
+    requestBody: jsonRequestBody(schemaRef("CampaignWebhookMutationRequest")),
+    responses: {
+      "200": jsonResponse("Deleted webhook confirmation", schemaRef("CampaignWebhookDeleteResponse")),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/webhooks/{webhookId}/disable": {
+    summary: "Disable an outbound campaign webhook",
+    description:
+      "Stops future delivery attempts with an exact-revision, replay-safe mutation.",
+    parameters: [requiredWebhookIdempotencyKeyParameter],
+    requestBody: jsonRequestBody(schemaRef("CampaignWebhookMutationRequest")),
+    responses: {
+      "200": jsonResponse("Disabled public webhook configuration", schemaRef("CampaignWebhook")),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/webhooks/{webhookId}/rotate-secret": {
+    summary: "Rotate an outbound campaign webhook secret",
+    description:
+      "Immediately invalidates the previous secret. A fresh response returns the replacement once; an idempotent replay reports that it was already shown and never re-exposes it.",
+    parameters: [requiredWebhookIdempotencyKeyParameter],
+    requestBody: jsonRequestBody(schemaRef("CampaignWebhookMutationRequest")),
+    responses: {
+      "200": jsonResponse(
+        "Rotated webhook or safe replay result",
+        schemaRef("CampaignWebhookRotateSecretResponse"),
+      ),
+    },
+  },
+  "GET /api/v1/campaigns/{campaignId}/webhooks/{webhookId}/deliveries": {
+    summary: "List outbound webhook delivery metadata",
+    description:
+      "Returns a bounded newest-first ledger with status and transport metadata only. It excludes request/response bodies, headers, and secrets.",
+    parameters: [
+      {
+        name: "limit",
+        in: "query",
+        required: false,
+        schema: { type: "integer", minimum: 1, maximum: 100, default: 50 },
+      },
+    ],
+    responses: {
+      "200": jsonResponse(
+        "Metadata-only outbound delivery ledger",
+        arrayOf(schemaRef("CampaignWebhookDelivery")),
+      ),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/webhooks/{webhookId}/test": {
+    summary: "Queue a test webhook delivery",
+    description:
+      "Queues a signed metadata-only webhook.test envelope after exact-revision, human confirmation.",
+    parameters: [requiredWebhookIdempotencyKeyParameter],
+    requestBody: jsonRequestBody(schemaRef("CampaignWebhookMutationRequest")),
+    responses: {
+      "202": jsonResponse("Queued test delivery metadata", schemaRef("CampaignWebhookDelivery")),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/webhooks/{webhookId}/deliveries/{deliveryId}/retry": {
+    summary: "Retry one failed webhook delivery",
+    description:
+      "Queues a new delivery linked to one failed ledger row. Delivered or queued rows cannot be retried.",
+    parameters: [requiredWebhookIdempotencyKeyParameter],
+    requestBody: jsonRequestBody(schemaRef("CampaignWebhookMutationRequest")),
+    responses: {
+      "202": jsonResponse("Queued retry delivery metadata", schemaRef("CampaignWebhookDelivery")),
+    },
+  },
   "GET /api/v1/campaigns/{campaignId}/sessions": {
     responses: {
       "200": jsonResponse(
@@ -7785,6 +12710,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/campaigns/{campaignId}/sessions": {
+    parameters: [{ name: "Idempotency-Key", in: "header", required: true, schema: { type: "string", minLength: 1, maxLength: 160 } }],
     requestBody: jsonRequestBody(schemaRef("CampaignSessionWriteRequest")),
     responses: {
       "200": jsonResponse(
@@ -7821,7 +12747,8 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "PATCH /api/v1/campaign-sessions/{sessionId}": {
-    requestBody: jsonRequestBody(schemaRef("CampaignSessionWriteRequest")),
+    parameters: [{ name: "Idempotency-Key", in: "header", required: true, schema: { type: "string", minLength: 1, maxLength: 160 } }],
+    requestBody: jsonRequestBody(schemaRef("CampaignSessionMutationRequest")),
     responses: {
       "200": jsonResponse(
         "Updated campaign session",
@@ -7830,6 +12757,10 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "DELETE /api/v1/campaign-sessions/{sessionId}": {
+    parameters: [
+      { name: "Idempotency-Key", in: "header", required: true, schema: { type: "string", minLength: 1, maxLength: 160 } },
+      { name: "expectedUpdatedAt", in: "query", required: true, schema: { type: "string", format: "date-time" } },
+    ],
     responses: {
       "200": jsonResponse(
         "Deleted planned campaign session",
@@ -7838,10 +12769,12 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/campaign-sessions/{sessionId}/start": {
+    parameters: [{ name: "Idempotency-Key", in: "header", required: true, schema: { type: "string", minLength: 1, maxLength: 160 } }],
     requestBody: jsonRequestBody({
       type: "object",
       additionalProperties: false,
-      properties: { activateSceneId: idSchema },
+      required: ["expectedUpdatedAt"],
+      properties: { activateSceneId: idSchema, expectedUpdatedAt: { type: "string", format: "date-time" } },
     }),
     responses: {
       "200": jsonResponse(
@@ -7851,10 +12784,12 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/campaign-sessions/{sessionId}/complete": {
+    parameters: [{ name: "Idempotency-Key", in: "header", required: true, schema: { type: "string", minLength: 1, maxLength: 160 } }],
     requestBody: jsonRequestBody({
       type: "object",
       additionalProperties: false,
-      properties: { notes: stringSchema },
+      required: ["expectedUpdatedAt"],
+      properties: { notes: stringSchema, expectedUpdatedAt: { type: "string", format: "date-time" } },
     }),
     responses: {
       "200": jsonResponse(
@@ -7889,6 +12824,13 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
       ),
     },
   },
+  "GET /api/v1/invites/preview": {
+    parameters: [{ name: "token", in: "query", required: true, schema: { type: "string", minLength: 1 } }],
+    responses: {
+      "200": jsonResponse("Public invite and campaign preview with the exact invite revision", schemaRef("InvitePreviewResponse")),
+      "401": errorResponse("Invite token is invalid"),
+    },
+  },
   "POST /api/v1/invites/{inviteId}/revoke": {
     responses: {
       "200": jsonResponse(
@@ -7915,6 +12857,53 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     responses: {
       "200": jsonResponse("Requested scene", schemaRef("Scene")),
     },
+  },
+  "GET /api/v1/scenes/{sceneId}/delegations": {
+    responses: {
+      "200": jsonResponse("Scene-scoped member delegations", {
+        type: "object",
+        additionalProperties: false,
+        required: ["sceneId", "updatedAt", "delegations"],
+        properties: {
+          sceneId: stringSchema,
+          updatedAt: dateTimeSchema,
+          delegations: arrayOf({
+            type: "object",
+            additionalProperties: false,
+            required: ["userId", "permissions"],
+            properties: {
+              userId: stringSchema,
+              permissions: { type: "array", items: { type: "string", enum: ["scene.read", "scene.update"] }, uniqueItems: true }
+            }
+          })
+        }
+      })
+    }
+  },
+  "PATCH /api/v1/scenes/{sceneId}/delegations/{userId}": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody({
+      type: "object",
+      additionalProperties: false,
+      required: ["permissions", "expectedUpdatedAt"],
+      properties: {
+        permissions: { type: "array", items: { type: "string", enum: ["scene.read", "scene.update"] }, uniqueItems: true },
+        expectedUpdatedAt: dateTimeSchema
+      }
+    }),
+    responses: {
+      "200": jsonResponse("Updated scene delegation", {
+        type: "object",
+        additionalProperties: false,
+        required: ["sceneId", "userId", "permissions", "updatedAt"],
+        properties: {
+          sceneId: stringSchema,
+          userId: stringSchema,
+          permissions: { type: "array", items: { type: "string", enum: ["scene.read", "scene.update"] }, uniqueItems: true },
+          updatedAt: dateTimeSchema
+        }
+      })
+    }
   },
   "PATCH /api/v1/scenes/{sceneId}": {
     requestBody: jsonRequestBody(schemaRef("ScenePatchRequest")),
@@ -7953,6 +12942,9 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "DELETE /api/v1/campaigns/{campaignId}/fog-presets/{presetId}": {
+    parameters: [
+      { name: "expectedUpdatedAt", in: "query", required: true, schema: dateTimeSchema },
+    ],
     responses: {
       "200": jsonResponse(
         "Deleted fog preset snapshot",
@@ -7961,6 +12953,15 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "GET /api/v1/scenes/{sceneId}/vision": {
+    parameters: [
+      {
+        name: "previewUserId",
+        in: "query",
+        required: false,
+        description: "Campaign member whose permission-filtered vision to preview. Requires scene.update when different from the caller.",
+        schema: idSchema,
+      },
+    ],
     responses: {
       "200": jsonResponse(
         "Permission-filtered scene vision snapshot",
@@ -7973,14 +12974,14 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
       {
         name: "x",
         in: "query",
-        required: false,
+        required: true,
         description: "Scene-space x coordinate to sample.",
         schema: { type: "number" },
       },
       {
         name: "y",
         in: "query",
-        required: false,
+        required: true,
         description: "Scene-space y coordinate to sample.",
         schema: { type: "number" },
       },
@@ -7990,6 +12991,51 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
         "Visibility, fog, lighting, and wall sample for one scene point",
         schemaRef("VisionPointSample"),
       ),
+    },
+  },
+  "POST /api/v1/scenes/{sceneId}/path-measurement": {
+    requestBody: jsonRequestBody(schemaRef("ScenePathMeasurementRequest")),
+    responses: {
+      "200": jsonResponse("Advisory normal and difficult-terrain path distances without moving a token", schemaRef("ScenePathMeasurement")),
+    },
+  },
+  "POST /api/v1/scenes/{sceneId}/difficult-terrain": {
+    parameters: [{ name: "Idempotency-Key", in: "header", required: true, schema: { type: "string", minLength: 1, maxLength: 160 } }],
+    requestBody: jsonRequestBody(schemaRef("DifficultTerrainCreateRequest")),
+    responses: {
+      "200": jsonResponse("Updated scene with an authored difficult-terrain region", schemaRef("Scene")),
+    },
+  },
+  "PATCH /api/v1/scenes/{sceneId}/difficult-terrain/{regionId}": {
+    parameters: [{ name: "Idempotency-Key", in: "header", required: true, schema: { type: "string", minLength: 1, maxLength: 160 } }],
+    requestBody: jsonRequestBody(schemaRef("DifficultTerrainPatchRequest")),
+    responses: {
+      "200": jsonResponse("Updated scene with difficult-terrain changes", schemaRef("Scene")),
+    },
+  },
+  "DELETE /api/v1/scenes/{sceneId}/difficult-terrain/{regionId}": {
+    parameters: [
+      { name: "Idempotency-Key", in: "header", required: true, schema: { type: "string", minLength: 1, maxLength: 160 } },
+      { name: "expectedUpdatedAt", in: "query", required: true, schema: { type: "string", format: "date-time" } },
+    ],
+    responses: {
+      "200": jsonResponse("Updated scene with difficult terrain removed", schemaRef("Scene")),
+    },
+  },
+  "POST /api/v1/scenes/{sceneId}/cover-overrides": {
+    parameters: [{ name: "Idempotency-Key", in: "header", required: true, schema: { type: "string", minLength: 1, maxLength: 160 } }],
+    requestBody: jsonRequestBody(schemaRef("SceneCoverOverrideRequest")),
+    responses: {
+      "200": jsonResponse("Updated scene with an explicit source-target cover ruling", schemaRef("Scene")),
+    },
+  },
+  "DELETE /api/v1/scenes/{sceneId}/cover-overrides/{overrideId}": {
+    parameters: [
+      { name: "Idempotency-Key", in: "header", required: true, schema: { type: "string", minLength: 1, maxLength: 160 } },
+      { name: "expectedUpdatedAt", in: "query", required: true, schema: { type: "string", format: "date-time" } },
+    ],
+    responses: {
+      "200": jsonResponse("Updated scene with the cover ruling removed", schemaRef("Scene")),
     },
   },
   "GET /api/v1/scenes/{sceneId}/rendering/diagnostics": {
@@ -8247,6 +13293,15 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "GET /api/v1/campaigns/{campaignId}/snapshot": {
+    parameters: [
+      {
+        name: "historyLimit",
+        in: "query",
+        required: false,
+        description: "Maximum newest records returned from each append-only history collection (default and maximum 200).",
+        schema: { type: "integer", minimum: 1, maximum: 200, default: 200 },
+      },
+    ],
     responses: {
       "200": jsonResponse(
         "Permission-filtered campaign state composed into a single payload",
@@ -8277,6 +13332,29 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/campaigns/{campaignId}/assets/upload": {
+    parameters: [
+      {
+        name: "sceneId",
+        in: "query",
+        required: false,
+        description: "Scene to update when setAsBackground is enabled.",
+        schema: idSchema,
+      },
+      {
+        name: "setAsBackground",
+        in: "query",
+        required: false,
+        description: "Set the uploaded asset as the selected scene background when 1, true, or yes.",
+        schema: { type: "string", enum: ["1", "true", "yes"] },
+      },
+      {
+        name: "expectedSceneUpdatedAt",
+        in: "query",
+        required: false,
+        description: "Required exact scene revision when setAsBackground is enabled.",
+        schema: dateTimeSchema,
+      },
+    ],
     requestBody: {
       required: true,
       description:
@@ -8341,6 +13419,14 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
         description: "Requested content disposition.",
         schema: { type: "string", enum: ["inline", "attachment"] },
       },
+      {
+        name: "variant",
+        in: "query",
+        required: false,
+        description:
+          "Optional rebuildable image rendition. Missing renditions safely fall back to original bytes.",
+        schema: { type: "string", enum: ["thumbnail", "optimized"] },
+      },
     ],
     responses: {
       "200": {
@@ -8397,6 +13483,21 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     requestBody: jsonRequestBody(schemaRef("ActorPatchRequest")),
     responses: {
       "200": jsonResponse("Updated actor", schemaRef("Actor")),
+      "409": jsonResponse("Actor revision conflict or rules-managed raw patch rejection", {
+        anyOf: [schemaRef("StaleWriteConflictResponse"), schemaRef("RulesManagedPatchConflictResponse"), schemaRef("ErrorResponse")],
+      }),
+    },
+  },
+  "POST /api/v1/actors/{actorId}/concentration/end": {
+    description: "Prepares or commits exact D&D concentration cleanup. Set prepare=true to review every actor/combat consequence; commit with the returned key and exact revision maps.",
+    parameters: [{
+      name: "Idempotency-Key", in: "header", required: true,
+      schema: { type: "string", minLength: 1, maxLength: 160 },
+      description: "Stable key reused when retrying one concentration preview or commit",
+    }],
+    requestBody: jsonRequestBody(schemaRef("Dnd5eSrdConcentrationEndRequest")),
+    responses: {
+      "200": jsonResponse("Ended actor concentration and cleaned linked effects", schemaRef("Dnd5eSrdConcentrationEndResponse")),
     },
   },
   "GET /api/v1/campaigns/{campaignId}/items": {
@@ -8425,6 +13526,9 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     requestBody: jsonRequestBody(schemaRef("ItemPatchRequest")),
     responses: {
       "200": jsonResponse("Updated item", schemaRef("Item")),
+      "409": jsonResponse("Item revision conflict or rules-managed raw patch rejection", {
+        anyOf: [schemaRef("StaleWriteConflictResponse"), schemaRef("RulesManagedPatchConflictResponse"), schemaRef("ErrorResponse")],
+      }),
     },
   },
   "GET /api/v1/campaigns/{campaignId}/journal": {
@@ -8436,6 +13540,15 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/campaigns/{campaignId}/journal": {
+    parameters: [
+      {
+        name: "Idempotency-Key",
+        in: "header",
+        required: true,
+        schema: { type: "string", minLength: 1, maxLength: 160 },
+        description: "Stable key reused when retrying the same journal creation",
+      },
+    ],
     requestBody: jsonRequestBody(schemaRef("JournalEntryCreateRequest")),
     responses: {
       "200": jsonResponse("Created journal entry", schemaRef("JournalEntry")),
@@ -8450,10 +13563,45 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "PATCH /api/v1/journal/{entryId}": {
+    parameters: [
+      {
+        name: "Idempotency-Key",
+        in: "header",
+        required: true,
+        schema: { type: "string", minLength: 1, maxLength: 160 },
+        description: "Stable key reused when retrying the same reviewed edit",
+      },
+    ],
     requestBody: jsonRequestBody(schemaRef("JournalEntryPatchRequest")),
     responses: {
       "200": jsonResponse("Updated journal entry", schemaRef("JournalEntry")),
       "409": jsonResponse("Journal entry changed after the editor loaded it", schemaRef("ErrorResponse")),
+    },
+  },
+  "GET /api/v1/journal/{entryId}/backlinks": {
+    responses: {
+      "200": jsonResponse("Visible journal entries linking to this entry", schemaRef("JournalBacklinksResponse")),
+    },
+  },
+  "GET /api/v1/journal/{entryId}/history": {
+    responses: {
+      "200": jsonResponse("GM-visible immutable journal revision history", schemaRef("JournalHistoryResponse")),
+    },
+  },
+  "POST /api/v1/journal/{entryId}/canon-review": {
+    parameters: [
+      {
+        name: "Idempotency-Key",
+        in: "header",
+        required: true,
+        schema: { type: "string", minLength: 1, maxLength: 160 },
+        description: "Stable key reused when retrying the same canon review action",
+      },
+    ],
+    requestBody: jsonRequestBody(schemaRef("JournalCanonReviewRequest")),
+    responses: {
+      "200": jsonResponse("Journal entry after explicit DM canon review", schemaRef("JournalEntry")),
+      "409": jsonResponse("Journal entry changed after review opened", schemaRef("StaleWriteConflictResponse")),
     },
   },
   "GET /api/v1/campaigns/{campaignId}/combats": {
@@ -8468,16 +13616,120 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
       }),
     },
   },
-  "POST /api/v1/combats/{combatId}/actions/{actionId}/confirm": {
+  "POST /api/v1/combats/{combatId}/rewards": {
+    parameters: [
+      {
+        name: "Idempotency-Key",
+        in: "header",
+        required: true,
+        schema: { type: "string", minLength: 1, maxLength: 160 },
+        description: "Stable key reused when retrying the same reward distribution",
+      },
+    ],
+    requestBody: jsonRequestBody(schemaRef("CombatRewardCreateRequest")),
+    responses: {
+      "200": jsonResponse("Atomically awarded combat XP, GP, and loot history", schemaRef("CombatRewardMutationResponse")),
+      "409": jsonResponse("Combat or recipient actor changed after reward review", schemaRef("StaleWriteConflictResponse")),
+    },
+  },
+  "POST /api/v1/combats/{combatId}/environment-mechanics": {
+    parameters: [{
+      name: "Idempotency-Key", in: "header", required: true,
+      schema: { type: "string", minLength: 1, maxLength: 160 },
+      description: "Stable key reused when retrying the same environment-mechanic creation",
+    }],
+    requestBody: jsonRequestBody(schemaRef("CombatEnvironmentMechanicMutationRequest")),
+    responses: {
+      "200": jsonResponse("Combat with the GM-authored environment mechanic added", schemaRef("Combat")),
+      "409": jsonResponse("Combat changed after the mechanic was reviewed", schemaRef("StaleWriteConflictResponse")),
+    },
+  },
+  "PATCH /api/v1/combats/{combatId}/environment-mechanics/{mechanicId}": {
+    parameters: [{
+      name: "Idempotency-Key", in: "header", required: true,
+      schema: { type: "string", minLength: 1, maxLength: 160 },
+      description: "Stable key reused when retrying the same environment-mechanic edit",
+    }],
+    requestBody: jsonRequestBody(schemaRef("CombatEnvironmentMechanicMutationRequest")),
+    responses: {
+      "200": jsonResponse("Combat with the environment mechanic updated", schemaRef("Combat")),
+      "409": jsonResponse("Combat changed after the mechanic was reviewed", schemaRef("StaleWriteConflictResponse")),
+    },
+  },
+  "DELETE /api/v1/combats/{combatId}/environment-mechanics/{mechanicId}": {
+    parameters: [{
+      name: "Idempotency-Key", in: "header", required: true,
+      schema: { type: "string", minLength: 1, maxLength: 160 },
+      description: "Stable key reused when retrying the same environment-mechanic deletion",
+    }],
     requestBody: jsonRequestBody({
-      type: "object",
-      additionalProperties: false,
+      type: "object", additionalProperties: false, required: ["expectedUpdatedAt"],
+      properties: { expectedUpdatedAt: { type: "string", format: "date-time" } },
     }),
+    responses: {
+      "200": jsonResponse("Combat with the environment mechanic removed", schemaRef("Combat")),
+      "409": jsonResponse("Combat changed after the mechanic was reviewed", schemaRef("StaleWriteConflictResponse")),
+    },
+  },
+  "POST /api/v1/combats/{combatId}/environment-mechanics/{mechanicId}/trigger": {
+    parameters: [{
+      name: "Idempotency-Key", in: "header", required: true,
+      schema: { type: "string", minLength: 1, maxLength: 160 },
+      description: "Stable key reused when retrying one explicit GM trigger",
+    }],
+    requestBody: jsonRequestBody(schemaRef("CombatEnvironmentMechanicTriggerRequest")),
+    responses: {
+      "200": jsonResponse("Combat with a server-authored mechanic trigger record", schemaRef("Combat")),
+      "409": jsonResponse("Combat changed or the mechanic is disabled", schemaRef("ErrorResponse")),
+    },
+  },
+  "POST /api/v1/combats/{combatId}/effects/preview": {
+    description: "Deterministically previews one explicit scheduled-effect phase without mutating actors or combat. Set prepare=true with an Idempotency-Key to persist the exact reviewed result for commit.",
+    parameters: [{
+      ...idempotencyKeyParameter,
+      required: false,
+      description: "Required when prepare=true; this becomes the preparedPreviewKey for the exact reviewed schedule.",
+    }],
+    requestBody: jsonRequestBody(schemaRef("CombatEffectScheduleRequest")),
+    responses: {
+      "200": jsonResponse("Scheduled-effect evaluation preview", schemaRef("CombatEffectScheduleEvaluation")),
+    },
+  },
+  "POST /api/v1/combats/{combatId}/effects/advance": {
+    description: "Commits a stored reviewed schedule by preparedPreviewKey and exact combat revision. It applies only deterministic expiry, repeat-save, and rescheduling outcomes; it never infers damage, movement, or targets.",
+    parameters: [{
+      name: "Idempotency-Key", in: "header", required: true,
+      schema: { type: "string", minLength: 1, maxLength: 160 },
+      description: "Stable key reused when retrying one reviewed effect-schedule advancement",
+    }],
+    requestBody: jsonRequestBody(schemaRef("CombatEffectScheduleAdvanceRequest")),
+    responses: {
+      "200": jsonResponse("Combat and applied scheduled-effect evaluation", schemaRef("CombatEffectScheduleAdvanceResponse")),
+      "409": jsonResponse("Combat changed after the effect outcomes were reviewed", schemaRef("StaleWriteConflictResponse")),
+      "422": jsonResponse("One or more due repeat saves still need an explicit outcome", schemaRef("ErrorResponse")),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/spell-helper/preview": {
+    description: "Returns source-backed, preview-only helpers for selected D&D 5e SRD spells. Unsupported or geometry-dependent steps remain explicit manual work.",
+    requestBody: jsonRequestBody(schemaRef("Dnd5eSpellHelperPreviewRequest")),
+    responses: {
+      "200": jsonResponse("Specialized D&D spell preview with SRD provenance", schemaRef("Dnd5eSpellHelperPreviewResponse")),
+      "400": jsonResponse("Unsupported system or invalid spell-helper input", schemaRef("ErrorResponse")),
+    },
+  },
+  "POST /api/v1/combats/{combatId}/actions/{actionId}/confirm": {
+    parameters: [{
+      name: "Idempotency-Key", in: "header", required: true,
+      schema: { type: "string", minLength: 1, maxLength: 160 },
+      description: "Stable key reused when retrying one reviewed pending-action confirmation",
+    }],
+    requestBody: jsonRequestBody(schemaRef("CombatActionConfirmRequest")),
     responses: {
       "200": jsonResponse(
         "Confirmed combat action",
         schemaRef("CombatActionMutationResponse"),
       ),
+      "409": jsonResponse("Combat changed after the action was reviewed", schemaRef("StaleWriteConflictResponse")),
     },
   },
   "POST /api/v1/combats/{combatId}/actions/{actionId}/reject": {
@@ -8487,6 +13739,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
         "Rejected combat action",
         schemaRef("CombatActionMutationResponse"),
       ),
+      "409": jsonResponse("Combat changed after the action was reviewed", schemaRef("StaleWriteConflictResponse")),
     },
   },
   "POST /api/v1/combats/{combatId}/initiative/roll-npcs": {
@@ -8507,10 +13760,19 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
       "200": jsonResponse("Started combat", schemaRef("Combat")),
     },
   },
+  "POST /api/v1/campaigns/{campaignId}/combats/start": {
+    requestBody: jsonRequestBody(schemaRef("CombatStartRequest")),
+    responses: {
+      "200": jsonResponse("Atomically started reviewed combat", schemaRef("CombatStartResponse")),
+      "400": jsonResponse("Invalid scene, participant, or initiative selection", schemaRef("ErrorResponse")),
+      "409": jsonResponse("A combat is already active or the idempotency key conflicts", schemaRef("ErrorResponse")),
+    },
+  },
   "PATCH /api/v1/combats/{combatId}": {
     requestBody: jsonRequestBody(schemaRef("CombatPatchRequest")),
     responses: {
       "200": jsonResponse("Updated combat", schemaRef("Combat")),
+      "409": jsonResponse("Combat changed after the mutation was prepared", schemaRef("StaleWriteConflictResponse")),
     },
   },
   "PATCH /api/v1/combats/{combatId}/combatants/{combatantId}": {
@@ -8520,6 +13782,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
         "Updated combatant within combat",
         schemaRef("Combat"),
       ),
+      "409": jsonResponse("Combat changed after the combatant mutation was prepared", schemaRef("StaleWriteConflictResponse")),
     },
   },
   "DELETE /api/v1/combats/{combatId}": {
@@ -8642,6 +13905,29 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     requestBody: jsonRequestBody(schemaRef("EncounterCreateRequest")),
     responses: {
       "200": jsonResponse("Created encounter", schemaRef("Encounter")),
+    },
+  },
+  "GET /api/v1/campaigns/{campaignId}/ai/policy": {
+    responses: {
+      "200": jsonResponse("Effective installation and campaign AI policy", schemaRef("AiEffectivePolicy")),
+    },
+  },
+  "PATCH /api/v1/campaigns/{campaignId}/ai/policy": {
+    requestBody: jsonRequestBody(schemaRef("AiPolicyUpdateRequest")),
+    responses: {
+      "200": jsonResponse("Updated effective campaign AI policy", schemaRef("AiEffectivePolicy")),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/ai/privacy/preview": {
+    requestBody: jsonRequestBody(schemaRef("AiPrivacyRequest")),
+    responses: {
+      "200": jsonResponse("Exact local AI operational-history category counts without hidden content", schemaRef("AiPrivacyResult")),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/ai/privacy/prune": {
+    requestBody: jsonRequestBody(schemaRef("AiPrivacyRequest")),
+    responses: {
+      "200": jsonResponse("Dry-run or bounded local AI operational-history pruning result", schemaRef("AiPrivacyResult")),
     },
   },
   "GET /api/v1/campaigns/{campaignId}/ai/threads": {
@@ -8767,21 +14053,29 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/plugins/install": {
+    parameters: [requiredOperatorIdempotencyKeyParameter],
     requestBody: jsonRequestBody(schemaRef("PluginPackageInstallRequest")),
     responses: {
       "200": jsonResponse(
         "Registered plugin package",
         schemaRef("PluginRuntimeInfo"),
       ),
+      "400": jsonResponse("Invalid package request or missing retry identity", schemaRef("ErrorResponse")),
+      "403": jsonResponse("Campaign or server-admin permission denied", schemaRef("ErrorResponse")),
+      "409": jsonResponse("Idempotency identity was reused for another package request", schemaRef("ErrorResponse")),
     },
   },
   "POST /api/v1/plugins/registry/sync": {
+    parameters: [requiredOperatorIdempotencyKeyParameter],
     requestBody: jsonRequestBody(schemaRef("PluginRegistrySyncRequest")),
     responses: {
       "200": jsonResponse(
         "Plugin registry sync result",
         schemaRef("PluginRegistrySyncResponse"),
       ),
+      "400": jsonResponse("Missing retry identity or registry generation", schemaRef("ErrorResponse")),
+      "403": jsonResponse("Campaign or server-admin permission denied", schemaRef("ErrorResponse")),
+      "409": jsonResponse("Plugin registry generation is stale", schemaRef("ErrorResponse")),
     },
   },
   "GET /api/v1/campaigns/{campaignId}/plugins": {
@@ -8852,6 +14146,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/systems/install": {
+    parameters: [requiredOperatorIdempotencyKeyParameter],
     requestBody: jsonRequestBody(schemaRef("SystemInstallRequest")),
     responses: {
       "200": jsonResponse(
@@ -8872,6 +14167,15 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
       ),
     },
   },
+  "GET /api/v1/campaigns/{campaignId}/compatibility": {
+    responses: {
+      "200": jsonResponse(
+        "Read-only campaign rules, schema, reference, compendium, and manual-calculation compatibility report",
+        schemaRef("CampaignCompatibilityReport"),
+      ),
+      "403": jsonResponse("Campaign update permission denied", schemaRef("ErrorResponse")),
+    },
+  },
   "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/install": {
     responses: {
       "200": jsonResponse(
@@ -8886,17 +14190,14 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     responses: {
       "200": jsonResponse(
         "System character templates",
-        arrayOf({ type: "object", additionalProperties: true }),
+        arrayOf(schemaRef("SystemCharacterTemplate")),
       ),
       "422": unsupportedSystemCapabilityResponse,
     },
   },
   "GET /api/v1/campaigns/{campaignId}/systems/{systemId}/character-origins": {
     responses: {
-      "200": jsonResponse("System character origins", {
-        type: "object",
-        additionalProperties: true,
-      }),
+      "200": jsonResponse("System character origins", schemaRef("Dnd5eSrdCharacterOrigins")),
       "422": unsupportedSystemCapabilityResponse,
     },
   },
@@ -8905,8 +14206,9 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     responses: {
       "200": jsonResponse(
         "Created system character actor and starter items",
-        schemaRef("SystemActorResponse"),
+        schemaRef("SystemCharacterCreateResponse"),
       ),
+      "400": jsonResponse("Invalid or incomplete guided character choices", schemaRef("ErrorResponse")),
       "422": unsupportedSystemCapabilityResponse,
     },
   },
@@ -8915,7 +14217,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     responses: {
       "200": jsonResponse(
         "Created system monster actor",
-        schemaRef("SystemActorResponse"),
+        schemaRef("SystemMonsterCreateResponse"),
       ),
     },
   },
@@ -8924,7 +14226,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     responses: {
       "200": jsonResponse(
         "Imported system character actor and items",
-        schemaRef("SystemActorResponse"),
+        schemaRef("SystemCharacterImportResponse"),
       ),
       "422": unsupportedSystemCapabilityResponse,
     },
@@ -8949,6 +14251,11 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "GET /api/v1/campaigns/{campaignId}/systems/{systemId}/compendium": {
+    parameters: [
+      { name: "q", in: "query", required: false, schema: { type: "string", maxLength: 160 }, description: "Case-insensitive search across name, summary, type, and source" },
+      { name: "type", in: "query", required: false, schema: { type: "string" }, description: "Single compendium entry type" },
+      { name: "types", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated compendium entry types" },
+    ],
     responses: {
       "200": jsonResponse(
         "System compendium entries",
@@ -8957,47 +14264,442 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
       "422": unsupportedSystemCapabilityResponse,
     },
   },
+  "GET /api/v1/campaigns/{campaignId}/dnd/custom-content": {
+    responses: {
+      "200": jsonResponse("Campaign D&D custom content editable by a GM or campaign editor", arrayOf(schemaRef("DndCustomContentResponse"))),
+      "403": jsonResponse("Campaign update permission denied", schemaRef("ErrorResponse")),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/dnd/custom-content/preview": {
+    requestBody: jsonRequestBody(schemaRef("DndCustomContentDraft")),
+    responses: {
+      "200": jsonResponse("Validated D&D custom content preview without a state mutation", schemaRef("DndCustomContentPreviewResponse")),
+      "403": jsonResponse("Campaign update permission denied", schemaRef("ErrorResponse")),
+      "422": jsonResponse("D&D custom content validation failed", schemaRef("DndCustomContentInvalidResponse")),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/dnd/custom-content": {
+    parameters: [{
+      name: "Idempotency-Key",
+      in: "header",
+      required: true,
+      schema: { type: "string", minLength: 1, maxLength: 160 },
+      description: "Stable key reused when retrying one reviewed custom-content creation",
+    }],
+    requestBody: jsonRequestBody(schemaRef("DndCustomContentMutationRequest")),
+    responses: {
+      "201": jsonResponse("Created a provenance-bearing D&D custom compendium entry", schemaRef("DndCustomContentResponse")),
+      "409": jsonResponse("Campaign revision changed after preview", schemaRef("StaleWriteConflictResponse")),
+      "422": jsonResponse("D&D custom content validation failed", schemaRef("DndCustomContentInvalidResponse")),
+    },
+  },
+  "PATCH /api/v1/campaigns/{campaignId}/dnd/custom-content/{itemId}": {
+    parameters: [{
+      name: "Idempotency-Key",
+      in: "header",
+      required: true,
+      schema: { type: "string", minLength: 1, maxLength: 160 },
+      description: "Stable key reused when retrying one reviewed custom-content update",
+    }],
+    requestBody: jsonRequestBody(schemaRef("DndCustomContentMutationRequest")),
+    responses: {
+      "200": jsonResponse("Updated D&D custom content", schemaRef("DndCustomContentResponse")),
+      "404": jsonResponse("Custom content not found", schemaRef("ErrorResponse")),
+      "409": jsonResponse("Custom content revision changed after preview", schemaRef("StaleWriteConflictResponse")),
+      "422": jsonResponse("D&D custom content validation failed", schemaRef("DndCustomContentInvalidResponse")),
+    },
+  },
+  "DELETE /api/v1/campaigns/{campaignId}/dnd/custom-content/{itemId}": {
+    parameters: [
+      {
+        name: "Idempotency-Key",
+        in: "header",
+        required: true,
+        schema: { type: "string", minLength: 1, maxLength: 160 },
+        description: "Stable key reused when retrying one reviewed custom-content deletion",
+      },
+      {
+        name: "expectedUpdatedAt",
+        in: "query",
+        required: false,
+        schema: { type: "string", format: "date-time" },
+        description: "Exact custom-content revision expected by clients that cannot send a DELETE request body",
+      },
+    ],
+    requestBody: optionalJsonRequestBody({
+      type: "object",
+      additionalProperties: false,
+      required: ["expectedUpdatedAt"],
+      properties: { expectedUpdatedAt: { type: "string", format: "date-time" } },
+    }),
+    responses: {
+      "200": jsonResponse("Deleted D&D custom content", { type: "object", additionalProperties: true }),
+      "404": jsonResponse("Custom content not found", schemaRef("ErrorResponse")),
+      "409": jsonResponse("Custom content revision changed before deletion", schemaRef("StaleWriteConflictResponse")),
+    },
+  },
+  "GET /api/v1/campaigns/{campaignId}/dnd/monster-templates": {
+    responses: {
+      "200": jsonResponse("Campaign-scoped reusable typed monster override templates", arrayOf(schemaRef("DndMonsterTemplateResponse"))),
+      "403": jsonResponse("Campaign update permission denied", schemaRef("ErrorResponse")),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/dnd/monster-templates/preview": {
+    description: "Validates a typed monster override template without mutating campaign state.",
+    requestBody: jsonRequestBody(schemaRef("DndMonsterTemplateDraft")),
+    responses: {
+      "200": jsonResponse("Validated monster template preview", schemaRef("DndMonsterTemplatePreviewResponse")),
+      "422": jsonResponse("Monster template validation failed", schemaRef("DndCustomContentInvalidResponse")),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/dnd/monster-templates": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody({
+      allOf: [
+        schemaRef("DndMonsterTemplateDraft"),
+        { type: "object", required: ["expectedCampaignUpdatedAt"], properties: { expectedCampaignUpdatedAt: dateTimeSchema } },
+      ],
+    }),
+    responses: {
+      "201": jsonResponse("Created a replay-safe campaign monster template", schemaRef("DndMonsterTemplateResponse")),
+      "409": jsonResponse("Campaign revision changed after review", schemaRef("StaleWriteConflictResponse")),
+      "422": jsonResponse("Monster template validation failed", schemaRef("DndCustomContentInvalidResponse")),
+    },
+  },
+  "PATCH /api/v1/campaigns/{campaignId}/dnd/monster-templates/{templateId}": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody({
+      allOf: [
+        schemaRef("DndMonsterTemplateDraft"),
+        { type: "object", required: ["expectedUpdatedAt"], properties: { expectedUpdatedAt: dateTimeSchema } },
+      ],
+    }),
+    responses: {
+      "200": jsonResponse("Updated a revision-guarded monster template", schemaRef("DndMonsterTemplateResponse")),
+      "404": jsonResponse("Monster template not found", schemaRef("ErrorResponse")),
+      "409": jsonResponse("Monster template revision changed after review", schemaRef("StaleWriteConflictResponse")),
+      "422": jsonResponse("Monster template validation failed", schemaRef("DndCustomContentInvalidResponse")),
+    },
+  },
+  "DELETE /api/v1/campaigns/{campaignId}/dnd/monster-templates/{templateId}": {
+    parameters: [
+      { ...idempotencyKeyParameter, required: true },
+      { name: "expectedUpdatedAt", in: "query", required: false, schema: dateTimeSchema, description: "Exact template revision for clients that cannot send a DELETE body" },
+    ],
+    requestBody: optionalJsonRequestBody({ type: "object", additionalProperties: false, required: ["expectedUpdatedAt"], properties: { expectedUpdatedAt: dateTimeSchema } }),
+    responses: {
+      "200": jsonResponse("Deleted a revision-guarded monster template", { type: "object", additionalProperties: true }),
+      "404": jsonResponse("Monster template not found", schemaRef("ErrorResponse")),
+      "409": jsonResponse("Monster template revision changed before deletion", schemaRef("StaleWriteConflictResponse")),
+    },
+  },
+  "GET /api/v1/campaigns/{campaignId}/dnd/monster-bases": {
+    responses: {
+      "200": jsonResponse("Immutable bundled and campaign custom monster bases available to the editor", arrayOf(schemaRef("DndMonsterBase"))),
+      "403": jsonResponse("Campaign update permission denied", schemaRef("ErrorResponse")),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/dnd/monster-variants/preview": {
+    description: "Resolves an immutable base plus optional template, returns an exact base-to-result diff, and performs no mutation.",
+    requestBody: jsonRequestBody(schemaRef("DndMonsterVariantDraft")),
+    responses: {
+      "200": jsonResponse("Reviewed monster variant preview", schemaRef("DndMonsterVariantPreviewResponse")),
+      "404": jsonResponse("Monster base or template not found", schemaRef("ErrorResponse")),
+      "409": jsonResponse("Monster base or template version changed after review", schemaRef("ErrorResponse")),
+      "422": jsonResponse("Monster variant validation failed", schemaRef("DndCustomContentInvalidResponse")),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/dnd/monster-variants": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody({
+      allOf: [
+        schemaRef("DndMonsterVariantDraft"),
+        { type: "object", required: ["expectedCampaignUpdatedAt"], properties: { expectedCampaignUpdatedAt: dateTimeSchema } },
+      ],
+    }),
+    responses: {
+      "201": jsonResponse("Created an immutable provenance-bearing campaign monster variant", schemaRef("DndMonsterVariantResponse")),
+      "404": jsonResponse("Monster base or template not found", schemaRef("ErrorResponse")),
+      "409": jsonResponse("Campaign, base, or template revision changed after review", schemaRef("ErrorResponse")),
+      "422": jsonResponse("Monster variant validation failed", schemaRef("DndCustomContentInvalidResponse")),
+    },
+  },
+  "GET /api/v1/campaigns/{campaignId}/dnd/character-reviews": {
+    responses: {
+      "200": jsonResponse("Permission-filtered D&D character review queue and validation previews", schemaRef("DndCharacterReviewListResponse")),
+    },
+  },
+  "PATCH /api/v1/campaigns/{campaignId}/dnd/character-review-policy": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody({
+      type: "object",
+      additionalProperties: false,
+      required: ["mode", "expectedCampaignUpdatedAt"],
+      properties: {
+        mode: { type: "string", enum: ["optional", "required"] },
+        expectedCampaignUpdatedAt: { type: "string", format: "date-time" },
+      },
+    }),
+    responses: {
+      "200": jsonResponse("Updated the explicit campaign character approval policy", {
+        type: "object",
+        additionalProperties: false,
+        required: ["policy", "campaignUpdatedAt"],
+        properties: {
+          policy: { type: "object", additionalProperties: false, required: ["mode", "configured"], properties: { mode: { type: "string", enum: ["optional", "required"] }, configured: { type: "boolean" } } },
+          campaignUpdatedAt: { type: "string", format: "date-time" },
+        },
+      }),
+      "409": jsonResponse("Campaign revision changed before policy update", schemaRef("StaleWriteConflictResponse")),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/dnd/character-reviews/{actorId}/submit": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody({
+      type: "object",
+      additionalProperties: false,
+      required: ["expectedActorUpdatedAt", "expectedItemUpdatedAt"],
+      properties: {
+        expectedActorUpdatedAt: { type: "string", format: "date-time" },
+        expectedItemUpdatedAt: { type: "object", additionalProperties: { type: "string", format: "date-time" } },
+      },
+    }),
+    responses: {
+      "200": jsonResponse("Submitted or resubmitted a character with a validation snapshot", schemaRef("DndCharacterReviewEntry")),
+      "404": jsonResponse("D&D character not found", schemaRef("ErrorResponse")),
+      "409": jsonResponse("Actor or owned item revision changed before submission", { type: "object", additionalProperties: true }),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/dnd/character-reviews/{actorId}/decision": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody({
+      type: "object",
+      additionalProperties: false,
+      required: ["action", "expectedActorUpdatedAt", "expectedFingerprint"],
+      properties: {
+        action: { type: "string", enum: ["approve", "request_changes"] },
+        expectedActorUpdatedAt: { type: "string", format: "date-time" },
+        expectedFingerprint: { type: "string", pattern: "^sha256:" },
+        reason: stringSchema,
+        overrideValidation: { type: "boolean" },
+      },
+    }),
+    responses: {
+      "200": jsonResponse("Approved a character or requested changes with an auditable reason", schemaRef("DndCharacterReviewEntry")),
+      "404": jsonResponse("D&D character not found", schemaRef("ErrorResponse")),
+      "409": jsonResponse("Submission is missing, stale, changed, or blocked by validation", { type: "object", additionalProperties: true }),
+    },
+  },
+  "GET /api/v1/campaigns/{campaignId}/dnd/inventory": {
+    parameters: [{ name: "actorId", in: "query", required: false, schema: idSchema, description: "Optional D&D actor whose private inventory should be included" }],
+    responses: {
+      "200": jsonResponse("Permission-safe D&D inventory, carrying, stash, merchant, and loot overview", schemaRef("DndInventoryOverviewResponse")),
+      "403": jsonResponse("Actor private-data permission denied", schemaRef("ErrorResponse")),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/dnd/party-stash": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody(schemaRef("DndPartyStashCreateRequest")),
+    responses: {
+      "201": jsonResponse("Created the campaign party stash", { type: "object", additionalProperties: true }),
+      "409": jsonResponse("Campaign revision changed or a party stash already exists", schemaRef("ErrorResponse")),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/dnd/merchants": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody(schemaRef("DndMerchantMutationRequest")),
+    responses: {
+      "201": jsonResponse("Created a D&D merchant with an optional tracked cash balance", { type: "object", additionalProperties: true }),
+      "409": jsonResponse("Campaign revision changed", schemaRef("StaleWriteConflictResponse")),
+    },
+  },
+  "PATCH /api/v1/campaigns/{campaignId}/dnd/merchants/{merchantId}": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody(schemaRef("DndMerchantMutationRequest")),
+    responses: {
+      "200": jsonResponse("Updated a D&D merchant", { type: "object", additionalProperties: true }),
+      "409": jsonResponse("Campaign or merchant revision changed", schemaRef("StaleWriteConflictResponse")),
+    },
+  },
+  "PATCH /api/v1/campaigns/{campaignId}/dnd/inventory/items/{itemId}": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody(schemaRef("DndInventoryItemPatchRequest")),
+    responses: {
+      "200": jsonResponse("Updated quantity, weight, container, extradimensional, or ammunition metadata", { type: "object", additionalProperties: true }),
+      "409": jsonResponse("Item or owner inventory revision changed", schemaRef("StaleWriteConflictResponse")),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/dnd/inventory/items/{itemId}/transfer": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody(schemaRef("DndInventoryTransferRequest")),
+    responses: {
+      "200": jsonResponse("Atomically transferred a stack or full container subtree", { type: "object", additionalProperties: true }),
+      "409": jsonResponse("Item, source, or destination revision changed", schemaRef("StaleWriteConflictResponse")),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/dnd/inventory/items/{weaponItemId}/consume-ammunition": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody(schemaRef("DndInventoryAmmunitionRequest")),
+    responses: {
+      "200": jsonResponse("Consumed linked ammunition and returned the remaining quantity", { type: "object", additionalProperties: true }),
+      "409": jsonResponse("Weapon, ammunition, or actor revision changed", schemaRef("StaleWriteConflictResponse")),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/dnd/merchants/{merchantId}/buy": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody(schemaRef("DndMerchantCommerceRequest")),
+    responses: {
+      "200": jsonResponse("Purchased merchant inventory with copper-exact accounting", { type: "object", additionalProperties: true }),
+      "409": jsonResponse("Revision, stock, or currency conflict", schemaRef("ErrorResponse")),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/dnd/merchants/{merchantId}/sell": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody(schemaRef("DndMerchantCommerceRequest")),
+    responses: {
+      "200": jsonResponse("Sold actor inventory with copper-exact accounting", { type: "object", additionalProperties: true }),
+      "409": jsonResponse("Revision or tracked merchant liquidity conflict", schemaRef("ErrorResponse")),
+    },
+  },
+  "POST /api/v1/combats/{combatId}/dnd/loot": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody(schemaRef("DndCombatLootCreateRequest")),
+    responses: {
+      "201": jsonResponse("Recorded typed combat loot in the campaign party stash", { type: "object", additionalProperties: true }),
+      "409": jsonResponse("Combat or stash revision changed", schemaRef("StaleWriteConflictResponse")),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/dnd/loot/{itemId}/claim": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody(schemaRef("DndLootClaimRequest")),
+    responses: {
+      "200": jsonResponse("Claimed available loot for an owned actor", { type: "object", additionalProperties: true }),
+      "409": jsonResponse("Loot, stash, or actor revision changed", schemaRef("StaleWriteConflictResponse")),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/dnd/loot/{itemId}/assignment": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody(schemaRef("DndLootAssignmentRequest")),
+    responses: {
+      "200": jsonResponse("Assigned claimed loot or released it back to the party stash", { type: "object", additionalProperties: true }),
+      "409": jsonResponse("Loot, stash, or actor revision changed", schemaRef("StaleWriteConflictResponse")),
+    },
+  },
   "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/compendium":
     {
-      requestBody: jsonRequestBody(schemaRef("SystemActorActionRequest")),
+      parameters: [
+        {
+          name: "Idempotency-Key",
+          in: "header",
+          required: true,
+          schema: { type: "string", minLength: 1, maxLength: 160 },
+          description: "Stable key reused when retrying the same compendium import",
+        },
+      ],
+      requestBody: jsonRequestBody(schemaRef("SystemActorCompendiumRequest")),
       responses: {
         "200": jsonResponse(
           "Applied compendium entry to actor",
-          schemaRef("SystemActorResponse"),
+          schemaRef("SystemActorCompendiumResponse"),
         ),
+        "409": jsonResponse("Actor revision or compendium entry conflict", {
+          anyOf: [schemaRef("StaleWriteConflictResponse"), schemaRef("CompendiumConflictResponse"), schemaRef("ErrorResponse")],
+        }),
         "422": unsupportedSystemCapabilityResponse,
       },
     },
   "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/purchase":
     {
-      requestBody: jsonRequestBody(schemaRef("SystemActorActionRequest")),
+      parameters: [
+        {
+          name: "Idempotency-Key",
+          in: "header",
+          required: true,
+          schema: { type: "string", minLength: 1, maxLength: 160 },
+          description: "Stable key reused when retrying the same equipment purchase",
+        },
+      ],
+      requestBody: jsonRequestBody(schemaRef("SystemEquipmentPurchaseRequest")),
       responses: {
         "200": jsonResponse(
           "Purchased compendium equipment for actor",
-          schemaRef("SystemActorResponse"),
+          schemaRef("SystemEquipmentPurchaseResponse"),
         ),
+        "409": jsonResponse("Actor revision, compendium entry, or currency conflict", {
+          anyOf: [schemaRef("StaleWriteConflictResponse"), schemaRef("CompendiumConflictResponse"), schemaRef("ErrorResponse")],
+        }),
         "422": unsupportedSystemCapabilityResponse,
       },
     },
   "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/conditions":
     {
-      requestBody: jsonRequestBody(schemaRef("SystemActorActionRequest")),
+      parameters: [
+        {
+          name: "Idempotency-Key",
+          in: "header",
+          required: true,
+          schema: { type: "string", minLength: 1, maxLength: 160 },
+          description: "Stable key reused when retrying the same condition application",
+        },
+      ],
+      requestBody: jsonRequestBody(schemaRef("SystemActorConditionApplyRequest")),
       responses: {
         "200": jsonResponse(
           "Applied system condition to actor",
-          schemaRef("SystemActorResponse"),
+          schemaRef("SystemActorConditionResponse"),
         ),
+        "409": jsonResponse("Actor changed after condition application was prepared", schemaRef("StaleWriteConflictResponse")),
         "422": unsupportedSystemCapabilityResponse,
       },
     },
   "DELETE /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/conditions/{conditionId}":
     {
+      parameters: [
+        {
+          name: "expectedUpdatedAt",
+          in: "query",
+          required: true,
+          schema: { type: "string", format: "date-time" },
+          description: "Actor revision observed before removing the condition",
+        },
+      ],
       responses: {
         "200": jsonResponse(
           "Removed system condition from actor",
-          schemaRef("SystemActorResponse"),
+          schemaRef("SystemActorConditionResponse"),
         ),
+        "409": jsonResponse("Actor changed after condition removal was prepared", schemaRef("StaleWriteConflictResponse")),
         "422": unsupportedSystemCapabilityResponse,
+      },
+    },
+  "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/attunement":
+    {
+      requestBody: jsonRequestBody({
+        type: "object",
+        additionalProperties: false,
+        required: ["itemId", "attuned", "expectedUpdatedAt"],
+        properties: {
+          itemId: idSchema,
+          attuned: { type: "boolean" },
+          expectedUpdatedAt: { type: "string", format: "date-time" },
+          overrideReason: stringSchema,
+          breakCurse: { type: "boolean" },
+        },
+      }),
+      responses: {
+        "200": jsonResponse("Changed D&D actor item attunement", {
+          type: "object",
+          additionalProperties: true,
+          required: ["actor", "item"],
+          properties: {
+            actor: schemaRef("Actor"),
+            item: schemaRef("Item"),
+            attunement: { type: "object", additionalProperties: true },
+            prerequisite: { type: "object", additionalProperties: true },
+            sheet: { type: "object", additionalProperties: true },
+          },
+        }),
+        "409": jsonResponse("Actor revision conflict", schemaRef("StaleWriteConflictResponse")),
       },
     },
   "GET /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/advancement":
@@ -9006,29 +14708,160 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
         "200": jsonResponse("System actor advancement options", {
           type: "object",
           additionalProperties: true,
+          properties: { pendingAdvancement: schemaRef("Dnd5eSrdPendingAdvancement") },
         }),
         "422": unsupportedSystemCapabilityResponse,
       },
     },
+  "DELETE /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/advancement/pending": {
+    description: "Cancels the exact durable D&D advancement draft or ready preview without changing the actor.",
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody(schemaRef("Dnd5eSrdPendingAdvancementCancelRequest")),
+    responses: {
+      "200": jsonResponse("Pending advancement cancelled", schemaRef("Dnd5eSrdPendingAdvancementCancelResult")),
+      "403": jsonResponse("Actor update permission denied", schemaRef("ErrorResponse")),
+      "409": jsonResponse("Pending advancement or actor revision is stale", schemaRef("ErrorResponse")),
+    },
+  },
+  "GET /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/rules-validation":
+    {
+      responses: {
+        "200": jsonResponse("Read-only D&D actor and item validation report", schemaRef("Dnd5eSrdRulesValidationResponse")),
+      },
+    },
+  "GET /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/calculation-explanation":
+    {
+      responses: {
+        "200": jsonResponse("Ordered authoritative D&D calculation terms with explicit review flags and provenance", schemaRef("ActorCalculationExplanation")),
+        "400": jsonResponse("Calculation explanations are unavailable for this system", schemaRef("ErrorResponse")),
+        "403": jsonResponse("Actor private-data permission denied", schemaRef("ErrorResponse")),
+      },
+    },
+  "GET /api/v1/campaigns/{campaignId}/systems/{systemId}/controlled-creatures": {
+    responses: {
+      "200": jsonResponse("Visible D&D controlled-creature lifecycle records", { type: "object", additionalProperties: true, required: ["records"], properties: { records: arrayOf({ type: "object", additionalProperties: true }) } }),
+      "400": jsonResponse("Controlled creatures are unavailable for this system", schemaRef("ErrorResponse")),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/controlled-creatures/preview": {
+    requestBody: jsonRequestBody(schemaRef("DndControlledCreatureCreateRequest")),
+    responses: {
+      "200": jsonResponse("Side-effect-free D&D controlled-creature preview with manual-review fallbacks", schemaRef("DndControlledCreaturePreview")),
+      "403": jsonResponse("Controlled-creature preparation permission denied", schemaRef("ErrorResponse")),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/controlled-creatures": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody(schemaRef("DndControlledCreatureConfirmRequest")),
+    responses: {
+      "200": jsonResponse("Confirmed atomic D&D controlled-creature lifecycle", schemaRef("DndControlledCreatureMutationResult")),
+      "409": jsonResponse("Preview, manual review, or root revision is stale", schemaRef("ErrorResponse")),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/controlled-creatures/{actorId}/command": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody({ type: "object", additionalProperties: false, required: ["expectedUpdatedAt"], properties: { expectedUpdatedAt: schemaRef("DndControlledCreatureRevisionSet"), note: { type: "string", maxLength: 500 }, combatId: idSchema, round: { type: "integer", minimum: 1 } } }),
+    responses: { "200": jsonResponse("Recorded a reviewed command and its D&D action cost", schemaRef("DndControlledCreatureMutationResult")), "409": jsonResponse("Controlled-creature revision is stale", schemaRef("ErrorResponse")) },
+  },
+  "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/controlled-creatures/concentration/end": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody({ type: "object", additionalProperties: false, required: ["sourceActorId", "groupId", "expectedUpdatedAt"], properties: { sourceActorId: idSchema, groupId: stringSchema, reason: { type: "string", maxLength: 500 }, expectedUpdatedAt: schemaRef("DndControlledCreatureRevisionSet") } }),
+    responses: { "200": jsonResponse("Ended concentration and cleaned every linked controlled creature atomically", schemaRef("DndControlledCreatureMutationResult")), "409": jsonResponse("Concentration group or a changed root is stale", schemaRef("ErrorResponse")) },
+  },
+  "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/controlled-creatures/{actorId}/end": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody({ type: "object", additionalProperties: false, required: ["reason", "expectedUpdatedAt"], properties: { reason: { type: "string", enum: ["dismissed", "expired"] }, expectedUpdatedAt: schemaRef("DndControlledCreatureRevisionSet") } }),
+    responses: { "200": jsonResponse("Atomically dismissed, expired, or reverted a controlled creature", schemaRef("DndControlledCreatureMutationResult")), "409": jsonResponse("Lifecycle is not ready or a root revision is stale", schemaRef("ErrorResponse")) },
+  },
+  "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/rules-preview":
+    {
+      parameters: [
+        {
+          name: "Idempotency-Key",
+          in: "header",
+          required: false,
+          schema: { type: "string", minLength: 1, maxLength: 160 },
+          description: "Required when prepare is true so the exact server-owned preview can be committed or safely replayed.",
+        },
+      ],
+      requestBody: jsonRequestBody(schemaRef("Dnd5eSrdRulesPreviewRequest")),
+      responses: {
+        "200": jsonResponse("Side-effect-free D&D rules preview envelope", schemaRef("Dnd5eSrdRulesPreviewResponse")),
+      },
+    },
+  "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/typed-damage/apply": {
+    description: "Atomically applies a stored reviewed D&D typed-damage preview to every target using exact actor, item, and relevant active-combat revisions.",
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody(schemaRef("Dnd5eSrdTypedDamageApplyRequest")),
+    responses: {
+      "200": jsonResponse("Reviewed typed damage applied atomically", schemaRef("Dnd5eSrdTypedDamageApplyResult")),
+      "403": jsonResponse("One or more target actors cannot be updated", schemaRef("ErrorResponse")),
+      "409": jsonResponse("Prepared typed damage or one of its exact roots is stale", schemaRef("ErrorResponse")),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/dnd/rules-mutations/{mutationId}/undo": {
+    description: "Restores the exact pre-commit actor, item, and optional combat roots for one current D&D rules mutation.",
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody(schemaRef("DndRulesMutationUndoRequest")),
+    responses: {
+      "200": jsonResponse("D&D rules mutation undone", schemaRef("DndRulesMutationUndoResult")),
+      "403": jsonResponse("One or more exact roots cannot be updated", schemaRef("ErrorResponse")),
+      "409": jsonResponse("Mutation was already undone or one of its exact roots is stale", schemaRef("ErrorResponse")),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/spell-preparation/preview": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody(schemaRef("Dnd5eSrdSpellPreparationPreviewRequest")),
+    responses: {
+      "200": jsonResponse("Rules-aware prepared-spell capacity, timing, blockers, and exact proposed changes", schemaRef("Dnd5eSrdSpellPreparationPreviewResponse")),
+      "400": jsonResponse("Invalid spell-preparation selection or revision envelope", schemaRef("ErrorResponse")),
+      "403": jsonResponse("Actor update permission denied", schemaRef("ErrorResponse")),
+      "409": jsonResponse("Actor or spell item revision is stale", schemaRef("StaleWriteConflictResponse")),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/spell-preparation/apply": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody(schemaRef("Dnd5eSrdSpellPreparationApplyRequest")),
+    responses: {
+      "200": jsonResponse("Atomically applied a reviewed spell-preparation plan", schemaRef("Dnd5eSrdSpellPreparationMutationResult")),
+      "400": jsonResponse("Invalid prepared-preview or revision envelope", schemaRef("ErrorResponse")),
+      "403": jsonResponse("Actor update permission denied", schemaRef("ErrorResponse")),
+      "409": jsonResponse("Reviewed preview or an actor/item revision is stale", schemaRef("ErrorResponse")),
+    },
+  },
   "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/advance":
     {
-      requestBody: jsonRequestBody(schemaRef("SystemActorActionRequest")),
+      description: "Advances a system actor. D&D 5e SRD requires a stored preparedPreviewKey, the exact actor revision, and a separate commit Idempotency-Key.",
+      parameters: [{
+        ...idempotencyKeyParameter,
+        required: false,
+        description: "Required for D&D 5e SRD commits; use a key distinct from the preview key.",
+      }],
+      requestBody: jsonRequestBody(schemaRef("SystemActorAdvanceRequest")),
       responses: {
         "200": jsonResponse(
           "Advanced system actor",
-          schemaRef("SystemActorResponse"),
+          schemaRef("SystemActorAdvanceResponse"),
         ),
+        "409": jsonResponse("Actor changed after advancement was prepared", schemaRef("StaleWriteConflictResponse")),
         "422": unsupportedSystemCapabilityResponse,
       },
     },
   "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/rest":
     {
-      requestBody: jsonRequestBody(schemaRef("SystemActorActionRequest")),
+      description: "Applies a system rest. D&D 5e SRD requires a stored preparedPreviewKey, the exact actor revision, and a separate commit Idempotency-Key.",
+      parameters: [{
+        ...idempotencyKeyParameter,
+        required: false,
+        description: "Required for D&D 5e SRD commits; use a key distinct from the preview key.",
+      }],
+      requestBody: jsonRequestBody(schemaRef("SystemActorRestRequest")),
       responses: {
         "200": jsonResponse(
           "Applied system rest to actor",
-          schemaRef("SystemActorResponse"),
+          schemaRef("SystemActorRestResponse"),
         ),
+        "409": jsonResponse("Actor changed after rest was prepared", schemaRef("StaleWriteConflictResponse")),
         "422": unsupportedSystemCapabilityResponse,
       },
     },
@@ -9044,12 +14877,21 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/roll":
     {
+      description: "Previews or executes a system roll. D&D actions that consume resources or apply effects must first be stored with prepare=true, then committed by preparedPreviewKey, exact revisions, and a separate Idempotency-Key.",
+      parameters: [{
+        ...idempotencyKeyParameter,
+        required: false,
+        description: "Required for D&D prepared consequence previews and commits.",
+      }],
       requestBody: jsonRequestBody(schemaRef("SystemActorActionRequest")),
       responses: {
         "200": jsonResponse(
           "Executed system actor roll",
           schemaRef("SystemRollResponse"),
         ),
+        "409": jsonResponse("Actor changed or the requested action has a domain conflict", {
+          anyOf: [schemaRef("StaleWriteConflictResponse"), schemaRef("ErrorResponse")],
+        }),
         "422": unsupportedSystemCapabilityResponse,
       },
     },
@@ -9104,6 +14946,32 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
       ),
     },
   },
+  "GET /api/v1/campaigns/{campaignId}/export/stream": {
+    description: "Backpressured campaign archive export with JSON metadata and raw checksum-framed asset bytes. This avoids whole-archive base64 materialization while preserving the same archive scope and redaction semantics.",
+    parameters: [
+      {
+        name: "scope",
+        in: "query",
+        required: false,
+        schema: { type: "string", enum: ["campaign", "world", "selected_collections"] },
+      },
+      { name: "scopeId", in: "query", required: false, schema: { type: "string" } },
+      { name: "collections", in: "query", required: false, schema: { type: "string" } },
+      { name: "version", in: "query", required: false, schema: { type: "string", enum: ["0.2.0"] } },
+      { name: "redaction", in: "query", required: false, schema: { type: "string", enum: ["portable"] } },
+    ],
+    responses: {
+      "200": {
+        description: "Framed OTTX campaign archive stream",
+        content: {
+          [campaignArchiveStreamContentType]: {
+            schema: { type: "string", format: "binary" },
+          },
+        },
+      },
+      "413": jsonResponse("Campaign archive exceeds the configured streaming envelope", schemaRef("ErrorResponse")),
+    },
+  },
   "GET /api/v1/campaigns/{campaignId}/dogfood-report-bundle": {
     responses: {
       "200": jsonResponse(
@@ -9113,12 +14981,34 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/import/campaign": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
     requestBody: jsonRequestBody(schemaRef("CampaignImportRequest")),
     responses: {
       "200": jsonResponse(
         "Campaign import result",
         schemaRef("CampaignImportResponse"),
       ),
+    },
+  },
+  "POST /api/v1/import/campaign/stream": {
+    description: "Stages and validates a framed OTTX stream before applying the same permission, reference, conflict, atomic-state, and compensating object rollback rules as JSON campaign import.",
+    parameters: [
+      { ...idempotencyKeyParameter, required: true },
+      { name: "mode", in: "query", required: false, schema: { type: "string", enum: ["upsert", "reject_conflicts", "skip_conflicts", "dry_run"] } },
+      { name: "scope", in: "query", required: false, schema: { type: "string", enum: ["all", "assets_only", "selected_collections"] } },
+      { name: "collections", in: "query", required: false, schema: { type: "string" } },
+      { name: "regenerateIds", in: "query", required: false, schema: { type: "boolean" } },
+      { name: "expectedUpdatedAt", in: "query", required: false, schema: dateTimeSchema, description: "Required for a non-dry-run import that targets an existing campaign; must equal that campaign's current revision." },
+    ],
+    requestBody: binaryRequestBody(
+      campaignArchiveStreamContentType,
+      "Framed OTTX campaign archive stream returned by the streaming export route.",
+    ),
+    responses: {
+      "200": jsonResponse("Campaign stream import result", schemaRef("CampaignImportResponse")),
+      "400": jsonResponse("Invalid framing, archive metadata, checksum, references, or import options", schemaRef("ErrorResponse")),
+      "409": jsonResponse("Archive import conflict or stale existing-campaign revision", schemaRef("ErrorResponse")),
+      "413": jsonResponse("Campaign archive stream exceeds configured limits", schemaRef("ErrorResponse")),
     },
   },
   "GET /api/v1/campaigns/{campaignId}/content-imports": {
@@ -9191,11 +15081,26 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "DELETE /api/v1/journal/{entryId}": {
+    parameters: [
+      {
+        name: "expectedUpdatedAt",
+        in: "query",
+        required: true,
+        schema: { type: "string", format: "date-time" },
+      },
+      {
+        name: "Idempotency-Key",
+        in: "header",
+        required: true,
+        schema: { type: "string", minLength: 1, maxLength: 160 },
+      },
+    ],
     responses: {
       "200": jsonResponse(
         "Deleted journal entry snapshot",
         schemaRef("JournalEntry"),
       ),
+      "409": jsonResponse("Journal entry changed after delete was prepared", schemaRef("StaleWriteConflictResponse")),
     },
   },
   "GET /api/v1/campaigns/{campaignId}/handouts": {
@@ -9272,6 +15177,60 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
       }),
     },
   },
+  "GET /api/v1/campaigns/{campaignId}/world-records": {
+    parameters: [
+      { name: "worldId", in: "query", schema: idSchema },
+      { name: "kind", in: "query", schema: { type: "string", enum: ["npc", "location", "quest", "faction"] } },
+      { name: "lifecycle", in: "query", schema: { type: "string", enum: ["draft", "active", "inactive", "resolved", "archived"] } },
+    ],
+    responses: { "200": jsonResponse("Permission-filtered typed campaign world records", arrayOf(schemaRef("WorldRecord"))) },
+  },
+  "POST /api/v1/campaigns/{campaignId}/world-records": {
+    requestBody: jsonRequestBody(schemaRef("WorldRecordCreateRequest")),
+    responses: { "201": jsonResponse("Created typed world record with server-owned provenance", schemaRef("WorldRecord")) },
+  },
+  "PATCH /api/v1/world-records/{recordId}": {
+    requestBody: jsonRequestBody(schemaRef("WorldRecordWriteRequest")),
+    responses: { "200": jsonResponse("Updated typed world record", schemaRef("WorldRecord")) },
+  },
+  "POST /api/v1/world-records/{recordId}/lifecycle": {
+    requestBody: jsonRequestBody(schemaRef("WorldRecordLifecycleRequest")),
+    responses: { "200": jsonResponse("Updated typed world-record lifecycle", schemaRef("WorldRecord")) },
+  },
+  "DELETE /api/v1/world-records/{recordId}": {
+    parameters: [{ name: "expectedUpdatedAt", in: "query", required: true, schema: { type: "string", format: "date-time" } }],
+    responses: { "200": jsonResponse("Deleted world record and its typed relations", schemaRef("WorldRecordDeleteResponse")) },
+  },
+  "GET /api/v1/campaigns/{campaignId}/world-relations": {
+    parameters: [
+      { name: "recordId", in: "query", schema: idSchema },
+      { name: "worldId", in: "query", schema: idSchema },
+    ],
+    responses: { "200": jsonResponse("Permission- and endpoint-filtered typed world relations", arrayOf(schemaRef("WorldRelation"))) },
+  },
+  "POST /api/v1/campaigns/{campaignId}/world-relations": {
+    requestBody: jsonRequestBody(schemaRef("WorldRelationCreateRequest")),
+    responses: { "201": jsonResponse("Created typed world relation with server-owned provenance", schemaRef("WorldRelation")) },
+  },
+  "PATCH /api/v1/world-relations/{relationId}": {
+    requestBody: jsonRequestBody(schemaRef("WorldRelationWriteRequest")),
+    responses: { "200": jsonResponse("Updated typed world relation", schemaRef("WorldRelation")) },
+  },
+  "DELETE /api/v1/world-relations/{relationId}": {
+    parameters: [{ name: "expectedUpdatedAt", in: "query", required: true, schema: { type: "string", format: "date-time" } }],
+    responses: { "200": jsonResponse("Deleted typed world relation", schemaRef("WorldRelation")) },
+  },
+  "GET /api/v1/campaigns/{campaignId}/actors/{actorId}/calculation-overrides": {
+    responses: { "200": jsonResponse("Active and cleared calculation override history", arrayOf(schemaRef("CalculationOverride"))) },
+  },
+  "POST /api/v1/campaigns/{campaignId}/actors/{actorId}/calculation-overrides": {
+    requestBody: jsonRequestBody(schemaRef("CalculationOverrideCreateRequest")),
+    responses: { "201": jsonResponse("Created calculation override with server-derived base value and author", schemaRef("CalculationOverride")) },
+  },
+  "POST /api/v1/calculation-overrides/{overrideId}/clear": {
+    requestBody: jsonRequestBody(schemaRef("CalculationOverrideClearRequest")),
+    responses: { "200": jsonResponse("Cleared calculation override retained as immutable history", schemaRef("CalculationOverride")) },
+  },
   "POST /api/v1/campaigns/{campaignId}/content-imports/pdf/ai": {
     requestBody: binaryRequestBody(
       "application/pdf",
@@ -9306,6 +15265,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/content-imports/{importId}/rollback": {
+    requestBody: jsonRequestBody(schemaRef("ContentImportRollbackRequest")),
     responses: {
       "200": jsonResponse(
         "Rolled back content import batch",
@@ -9314,6 +15274,9 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "DELETE /api/v1/content-imports/{importId}": {
+    parameters: [
+      { name: "expectedUpdatedAt", in: "query", required: true, schema: dateTimeSchema },
+    ],
     responses: {
       "200": jsonResponse(
         "Deleted content import batch snapshot",
@@ -9390,20 +15353,146 @@ function pathParameters(path: string): OpenApiParameter[] {
     }));
 }
 
+function openApiParameterKey(parameter: OpenApiParameter): string {
+  const name = parameter.in === "header" ? parameter.name.toLowerCase() : parameter.name;
+  return `${parameter.in}:${name}`;
+}
+
+const sharedRevisionRoutePatterns: ReadonlyArray<{ methods: ReadonlySet<HttpMethod>; pattern: RegExp }> = [
+  { methods: new Set(["POST"]), pattern: /^\/api\/v1\/campaigns\/[^/]+\/(?:worlds|scenes|actors|items|handouts|encounters|combats(?:\/start)?)$/ },
+  { methods: new Set(["POST"]), pattern: /^\/api\/v1\/scenes\/[^/]+\/tokens$/ },
+  { methods: new Set(["PATCH", "DELETE"]), pattern: /^\/api\/v1\/campaigns\/[^/]+$/ },
+  { methods: new Set(["POST"]), pattern: /^\/api\/v1\/campaigns\/[^/]+\/(?:archive|restore)$/ },
+  { methods: new Set(["PATCH", "DELETE"]), pattern: /^\/api\/v1\/worlds\/[^/]+$/ },
+  { methods: new Set(["PATCH", "DELETE"]), pattern: /^\/api\/v1\/scenes\/[^/]+$/ },
+  { methods: new Set(["POST"]), pattern: /^\/api\/v1\/scenes\/[^/]+\/(?:undo|fog\/undo|fog\/apply-preset)$/ },
+  { methods: new Set(["POST", "PATCH", "DELETE"]), pattern: /^\/api\/v1\/scenes\/[^/]+\/(?:annotations|fog|walls|lights|difficult-terrain|cover-overrides|delegations)(?:\/[^/]+)?$/ },
+  { methods: new Set(["POST", "PATCH", "DELETE"]), pattern: /^\/api\/v1\/tokens\/[^/]+(?:\/target)?$/ },
+  { methods: new Set(["PATCH", "DELETE"]), pattern: /^\/api\/v1\/actors\/[^/]+$/ },
+  { methods: new Set(["PATCH", "DELETE"]), pattern: /^\/api\/v1\/items\/[^/]+$/ },
+  { methods: new Set(["PATCH", "DELETE"]), pattern: /^\/api\/v1\/handouts\/[^/]+$/ },
+  { methods: new Set(["PATCH", "DELETE"]), pattern: /^\/api\/v1\/encounters\/[^/]+$/ },
+  { methods: new Set(["PATCH", "DELETE"]), pattern: /^\/api\/v1\/combats\/[^/]+$/ },
+  { methods: new Set(["POST"]), pattern: /^\/api\/v1\/combats\/[^/]+\/initiative\/roll-npcs$/ },
+  { methods: new Set(["PATCH"]), pattern: /^\/api\/v1\/combats\/[^/]+\/combatants\/[^/]+$/ },
+  { methods: new Set(["POST", "PATCH", "DELETE"]), pattern: /^\/api\/v1\/combats\/[^/]+\/environment-mechanics(?:\/[^/]+(?:\/trigger)?)?$/ },
+  { methods: new Set(["POST"]), pattern: /^\/api\/v1\/combats\/[^/]+\/effects\/advance$/ },
+  { methods: new Set(["POST"]), pattern: /^\/api\/v1\/combats\/[^/]+\/actions\/[^/]+\/reject$/ },
+  { methods: new Set(["PATCH", "DELETE"]), pattern: /^\/api\/v1\/campaigns\/[^/]+\/members\/[^/]+$/ },
+  { methods: new Set(["POST"]), pattern: /^\/api\/v1\/invites\/[^/]+\/revoke$/ },
+  { methods: new Set(["PATCH", "DELETE"]), pattern: /^\/api\/v1\/campaigns\/[^/]+\/webhooks\/[^/]+$/ },
+  { methods: new Set(["POST"]), pattern: /^\/api\/v1\/campaigns\/[^/]+\/webhooks\/[^/]+\/(?:disable|test)$/ },
+  { methods: new Set(["POST"]), pattern: /^\/api\/v1\/campaigns\/[^/]+\/webhooks\/[^/]+\/deliveries\/[^/]+\/retry$/ },
+  { methods: new Set(["POST", "DELETE"]), pattern: /^\/api\/v1\/content-imports\/[^/]+(?:\/(?:apply|rollback))?$/ },
+  { methods: new Set(["POST"]), pattern: /^\/api\/v1\/campaigns\/[^/]+\/plugins\/[^/]+\/install$/ },
+  { methods: new Set(["POST"]), pattern: /^\/api\/v1\/campaigns\/[^/]+\/systems\/[^/]+\/install$/ },
+  { methods: new Set(["DELETE"]), pattern: /^\/api\/v1\/campaigns\/[^/]+\/systems\/[^/]+\/actors\/[^/]+\/conditions\/[^/]+$/ },
+  { methods: new Set(["POST"]), pattern: /^\/api\/v1\/campaigns\/[^/]+\/systems\/[^/]+\/actors\/[^/]+\/attunement$/ },
+  { methods: new Set(["DELETE"]), pattern: /^\/api\/v1\/campaigns\/[^/]+\/fog-presets\/[^/]+$/ },
+  { methods: new Set(["PATCH"]), pattern: /^\/api\/v1\/assets\/[^/]+(?:\/lifecycle)?$/ },
+  { methods: new Set(["PATCH", "DELETE"]), pattern: /^\/api\/v1\/dice-macros\/[^/]+$/ },
+  { methods: new Set(["PATCH", "DELETE"]), pattern: /^\/api\/v1\/audio\/[^/]+$/ },
+  { methods: new Set(["PATCH", "DELETE"]), pattern: /^\/api\/v1\/chat\/messages\/[^/]+(?:\/moderation)?$/ },
+];
+
+function sharedRevisionRoute(method: HttpMethod, path: string): boolean {
+  return sharedRevisionRoutePatterns.some((entry) => entry.methods.has(method) && entry.pattern.test(path));
+}
+
+function revisionedOperation(method: HttpMethod, path: string, operation: OpenApiOperation): OpenApiOperation {
+  if (!sharedRevisionRoute(method, path)) return operation;
+  if (method === "DELETE") {
+    const expectedRevision: OpenApiParameter = {
+      name: "expectedUpdatedAt",
+      in: "query",
+      required: true,
+      schema: dateTimeSchema,
+    };
+    const parameters = operation.parameters ?? [];
+    const { requestBody: _legacyDeleteBody, ...deleteOperation } = operation;
+    return {
+      ...deleteOperation,
+      parameters: parameters.some((parameter) => openApiParameterKey(parameter) === openApiParameterKey(expectedRevision))
+        ? parameters.map((parameter) => openApiParameterKey(parameter) === openApiParameterKey(expectedRevision) ? expectedRevision : parameter)
+        : [...parameters, expectedRevision],
+    };
+  }
+
+  const jsonBody = operation.requestBody?.content?.["application/json"] as { schema?: Record<string, unknown> } | undefined;
+  const schema = jsonBody?.schema;
+  const revisionedSchema = requireRevisionProperty(schema ?? {
+    type: "object",
+    additionalProperties: false,
+    properties: {},
+  });
+  return {
+    ...operation,
+    requestBody: {
+      ...(operation.requestBody ?? { required: true }),
+      required: true,
+      content: {
+        ...(operation.requestBody?.content ?? {}),
+        "application/json": { ...(jsonBody ?? {}), schema: revisionedSchema },
+      },
+    },
+  };
+}
+
+function requireRevisionProperty(schema: Record<string, unknown>, seen = new Set<string>()): Record<string, unknown> {
+  const ref = typeof schema.$ref === "string" ? schema.$ref : undefined;
+  if (ref?.startsWith("#/components/schemas/")) {
+    const name = ref.slice("#/components/schemas/".length);
+    if (seen.has(name)) throw new Error(`Recursive request schema cannot be revision-augmented: ${name}`);
+    const component = (componentSchemas as Record<string, Record<string, unknown>>)[name];
+    if (!component) throw new Error(`Missing request schema component: ${name}`);
+    return requireRevisionProperty(component, new Set([...seen, name]));
+  }
+  const branches = ["allOf", "oneOf", "anyOf"] as const;
+  for (const branch of branches) {
+    if (Array.isArray(schema[branch])) {
+      return {
+        ...schema,
+        [branch]: (schema[branch] as Record<string, unknown>[]).map((candidate) => requireRevisionProperty(candidate, new Set(seen))),
+      };
+    }
+  }
+  const required = Array.isArray(schema.required) ? schema.required.filter((value): value is string => typeof value === "string") : [];
+  const properties = schema.properties && typeof schema.properties === "object" && !Array.isArray(schema.properties)
+    ? schema.properties as Record<string, unknown>
+    : {};
+  return {
+    ...schema,
+    type: schema.type ?? "object",
+    required: Array.from(new Set([...required, "expectedUpdatedAt"])),
+    properties: { ...properties, expectedUpdatedAt: dateTimeSchema },
+  };
+}
+
 function buildOperation(method: HttpMethod, path: string): OpenApiOperation {
   const parameters = [...pathParameters(path)];
   if (isListRoute(method, path)) parameters.push(...paginationParameters);
   if (isMutatingMethod(method) && idempotencyPathIsEligible(path))
     parameters.push(idempotencyKeyParameter);
   const override = routeOperationOverrides[`${method} ${path}`] ?? {};
+  const overrideParameterKeys = new Set(
+    (override.parameters ?? []).map(openApiParameterKey),
+  );
   const mergedParameters = override.parameters
-    ? [...parameters, ...override.parameters]
+    ? [
+        ...parameters.filter(
+          (parameter) => !overrideParameterKeys.has(openApiParameterKey(parameter)),
+        ),
+        ...override.parameters,
+      ]
     : parameters;
   const overrideResponseStatuses = Object.keys(override.responses ?? {});
   const includeDefaultOkResponse =
     overrideResponseStatuses.length === 0 ||
     overrideResponseStatuses.includes("200");
   const security = operationSecurity(method, path);
+  const sharedErrorResponse = path.startsWith("/api/v1/scim/v2/")
+    ? scimCompatibleErrorResponse
+    : errorResponse;
 
   const operation: OpenApiOperation = {
     operationId: operationId(method, path),
@@ -9413,14 +15502,14 @@ function buildOperation(method: HttpMethod, path: string): OpenApiOperation {
     ...(mergedParameters.length > 0 ? { parameters: mergedParameters } : {}),
     responses: {
       ...(includeDefaultOkResponse ? { "200": { description: "OK" } } : {}),
-      "400": errorResponse("Bad request"),
-      "401": errorResponse("Unauthenticated"),
-      "403": errorResponse("Forbidden"),
-      "404": errorResponse("Not found"),
-      "409": errorResponse("Conflict"),
-      "422": errorResponse("Domain validation failed"),
+      "400": sharedErrorResponse("Bad request"),
+      "401": sharedErrorResponse("Unauthenticated"),
+      "403": sharedErrorResponse("Forbidden"),
+      "404": sharedErrorResponse("Not found"),
+      "409": sharedErrorResponse("Conflict"),
+      "422": sharedErrorResponse("Domain validation failed"),
       "429": {
-        ...errorResponse("Rate limit exceeded"),
+        ...sharedErrorResponse("Rate limit exceeded"),
         headers: {
           "Retry-After": {
             schema: {
@@ -9444,11 +15533,11 @@ function buildOperation(method: HttpMethod, path: string): OpenApiOperation {
           },
         },
       },
-      "500": errorResponse("Unexpected server error"),
+      "500": sharedErrorResponse("Unexpected server error"),
     },
   };
 
-  return {
+  return revisionedOperation(method, path, {
     ...operation,
     ...override,
     operationId: override.operationId ?? operation.operationId,
@@ -9459,7 +15548,7 @@ function buildOperation(method: HttpMethod, path: string): OpenApiOperation {
       ...operation.responses,
       ...(override.responses ?? {}),
     },
-  };
+  });
 }
 
 function idempotencyPathIsEligible(path: string): boolean {
@@ -9471,10 +15560,17 @@ function idempotencyPathIsEligible(path: string): boolean {
     return false;
   if (
     path === "/api/v1/campaigns/{campaignId}/invites" ||
-    path === "/api/v1/assets/{assetId}/delivery-url"
+    path === "/api/v1/assets/{assetId}/delivery-url" ||
+    path === "/api/v1/campaigns/{campaignId}/webhooks" ||
+    path === "/api/v1/campaigns/{campaignId}/webhooks/{webhookId}/rotate-secret"
   )
     return false;
   if (path === "/api/v1/admin/users/{userId}/password-reset") return false;
+  if (
+    path === "/api/v1/campaigns/{campaignId}/dnd/custom-content/preview" ||
+    path === "/api/v1/campaigns/{campaignId}/dnd/monster-templates/preview" ||
+    path === "/api/v1/campaigns/{campaignId}/dnd/monster-variants/preview"
+  ) return false;
   if (
     path === "/api/v1/admin/email-outbox/retry-all" ||
     path === "/api/v1/admin/email-outbox/{messageId}/retry"

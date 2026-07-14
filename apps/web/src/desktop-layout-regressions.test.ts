@@ -6,8 +6,9 @@ const appSource = readFileSync(resolve(__dirname, "App.tsx"), "utf8").replace(/\
 const apiSource = readFileSync(resolve(__dirname, "api.ts"), "utf8").replace(/\r\n/g, "\n");
 const stylesSource = readFileSync(resolve(__dirname, "styles.css"), "utf8").replace(/\r\n/g, "\n");
 const sceneCanvasSource = readFileSync(resolve(__dirname, "scene-canvas.tsx"), "utf8").replace(/\r\n/g, "\n");
+const movablePanelSource = readFileSync(resolve(__dirname, "movable-panel.ts"), "utf8").replace(/\r\n/g, "\n");
 const toolbarSource = sceneCanvasSource.slice(sceneCanvasSource.indexOf("function Toolbar("), sceneCanvasSource.indexOf("function TabButton("));
-const actorPanelSource = appSource.slice(appSource.indexOf("function ActorPanel("), appSource.indexOf("function actorConditionLabels("));
+const actorPanelSource = readFileSync(resolve(__dirname, "actor-panel.tsx"), "utf8").replace(/\r\n/g, "\n");
 const combatPanelSource = readFileSync(resolve(__dirname, "combat-panel.tsx"), "utf8").replace(/\r\n/g, "\n");
 const chatRailSource = readFileSync(resolve(__dirname, "chat-rail.tsx"), "utf8").replace(/\r\n/g, "\n");
 const aiPanelSource = readFileSync(resolve(__dirname, "ai-panel.tsx"), "utf8").replace(/\r\n/g, "\n");
@@ -152,7 +153,7 @@ describe("desktop layout regressions", () => {
     expect(chatRailSource).toContain('aria-label="Dice formula"');
     expect(chatRailSource).toContain('aria-label="Roll dice"');
     expect(chatRailSource).toContain('aria-label="Saved dice formula"');
-    expect(stylesSource).toContain(".chat-rail {\n  display: grid;\n  grid-template-rows: auto minmax(0, 1fr) auto;");
+    expect(stylesSource).toContain(".chat-rail {\n  display: grid;\n  grid-template-rows: auto auto minmax(0, 1fr) auto;");
     expect(stylesSource).toContain(".chat-dice-box {\n  grid-area: auto;\n  margin: 10px 10px 0;");
     expect(stylesSource).toContain(".dice-box input[aria-label=\"Dice formula\"] {\n  grid-area: formula;\n  min-height: 32px;");
     expect(stylesSource).toContain(".table-grid:has(.chat-rail) {\n    grid-template-rows: minmax(84px, 24%) minmax(0, 1fr);");
@@ -213,7 +214,7 @@ describe("desktop layout regressions", () => {
     expect(sceneCanvasSource).toContain("export function nextTokenLayer(layer: TokenLayer): TokenLayer");
     expect(sceneCanvasSource).toContain("if (event.button !== 0) return;");
     expect(sceneCanvasSource).toContain("onContextMenu={(event) => {");
-    expect(sceneCanvasSource).toContain("props.onTokenLayerCycle(token).catch(console.error);");
+    expect(sceneCanvasSource).toContain("mutationAction.runAction(`Move ${token.name} to the next layer`");
     expect(stylesSource).toContain(".token.inactive-layer {\n  opacity: 0.58;\n  cursor: context-menu;\n  pointer-events: auto;");
   });
 
@@ -233,7 +234,7 @@ describe("desktop layout regressions", () => {
     expect(sceneCanvasSource).toContain('role="tab" aria-controls={props.panelId} aria-selected={props.active} tabIndex={props.active ? 0 : -1}');
     expect(appSource).toContain('role="tabpanel" id={`inspector-panel-${tab}`} aria-labelledby={`inspector-tab-${tab}`}');
     expect(sceneCanvasSource).toContain('["ArrowLeft", "ArrowRight", "Home", "End"]');
-    expect(appSource).toContain('? ["actors", "handouts", "journal", "search", "chat", "combat"]');
+    expect(appSource).toContain('? ["actors", "compendium", "sessions", "worlds", "handouts", "journal", "memory", "search", "content", "plugins"]');
     expect(appSource).toContain('label="Search"');
     expect(appSource).toContain('label="Canon"');
     expect(appSource).toContain('label="Assets"');
@@ -400,24 +401,24 @@ describe("desktop layout regressions", () => {
   });
 
   it("keeps advanced and fog tool popups closeable, movable, and away from the layer stack", () => {
-    expect(appSource).toContain("function useMovablePanel(");
-    expect(appSource).toContain("interface FloatingPanelSize {");
-    expect(appSource).toContain("interface FloatingPanelResize {");
-    expect(appSource).toContain("const resizeRef = useRef<FloatingPanelResize | null>(null);");
-    expect(appSource).toContain("const [collapsed, setCollapsed] = useState(false);");
-    expect(appSource).toContain("const floatingPanelInteractiveSelector =");
-    expect(appSource).toContain("function clampFloatingPanelSize(");
-    expect(appSource).toContain('"--floating-panel-width": `${size.width}px`,');
-    expect(appSource).toContain('"--floating-panel-height": `${size.height}px`');
-    expect(appSource).toContain('"data-floating-panel-collapsed": collapsed ? "true" : undefined');
-    expect(appSource.match(/event\.target instanceof Element/g)?.length).toBeGreaterThanOrEqual(2);
-    expect(appSource).toContain("onDoubleClick: toggleCollapsed");
-    expect(appSource).toContain("resizeHandleProps:");
+    expect(movablePanelSource).toContain("function useMovablePanel(");
+    expect(movablePanelSource).toContain("interface FloatingPanelSize {");
+    expect(movablePanelSource).toContain("interface FloatingPanelResize {");
+    expect(movablePanelSource).toContain("const resizeRef = useRef<FloatingPanelResize | null>(null);");
+    expect(movablePanelSource).toContain("const [collapsed, setCollapsed] = useState(false);");
+    expect(movablePanelSource).toContain("const floatingPanelInteractiveSelector =");
+    expect(movablePanelSource).toContain("function clampFloatingPanelSize(");
+    expect(movablePanelSource).toContain('"--floating-panel-width": `${size.width}px`,');
+    expect(movablePanelSource).toContain('"--floating-panel-height": `${size.height}px`');
+    expect(movablePanelSource).toContain('"data-floating-panel-collapsed": collapsed ? "true" : undefined');
+    expect(movablePanelSource.match(/event\.target instanceof Element/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(movablePanelSource).toContain("onDoubleClick: toggleCollapsed");
+    expect(movablePanelSource).toContain("resizeHandleProps:");
     expect(appSource).toContain('aria-label="Close fog and vision panel"');
     expect(appSource).toContain('aria-label="Resize fog and vision panel"');
     expect(appSource).toContain('aria-label="Resize annotation panel"');
     expect(appSource).toContain('aria-label="Resize AI Agent panel"');
-    expect(appSource).toContain("if (event) updateDragPosition(drag, event.clientX, event.clientY);");
+    expect(movablePanelSource).toContain("if (event) updateDragPosition(drag, event.clientX, event.clientY);");
     expect(appSource).toContain("setFogBrushMode(null);");
     expect(appSource).toContain("setToolReport(\"\");\n    setToolReportTitle(\"Fog and vision\");");
     expect(appSource).toContain("async function showFogHistory() {\n    if (!selectedScene) return;\n    setAnnotationPanelOpen(false);\n    setAnnotationTool(null);");
@@ -478,7 +479,7 @@ describe("desktop layout regressions", () => {
     expect(appSource).toContain("if (!workspaceRequestIsCurrent(requestCampaignId, requestUserId)) return;");
     expect(appSource).toContain("if (scene.campaignId !== realtimeSelectionRef.current.campaignId) return;");
     expect(appSource).toContain('selectWorkspaceContext(campaign.id, "");');
-    expect(appSource).toContain('refresh(campaign.id, "").catch(console.error)');
+    expect(appSource).toContain('refresh(campaign.id, "").catch((error) => setStatus(`Could not load ${campaign.name}:');
   });
 
   it("synchronously deduplicates paid AI generation jobs", () => {
@@ -513,7 +514,8 @@ describe("desktop layout regressions", () => {
     expect(importBody).toContain("const request = beginWorkspaceBoundRequest();");
     expect(importBody).toContain("if (!workspaceBoundRequestIsCurrent(request)) return outcome;");
     expect(importBody).toContain("`/api/v1/campaigns/${request.campaignId}/systems/${system.id}/characters/import`");
-    expect(importBody).toContain("{ signal: request.controller.signal }");
+    expect(importBody).toContain("signal: request.controller.signal");
+    expect(importBody).toContain("idempotencyKey: attempt.idempotencyKey");
     expect(importBody).toContain("finishWorkspaceBoundRequest(request);");
   });
 
@@ -612,10 +614,10 @@ describe("desktop layout regressions", () => {
     expect(appSource).toContain("setStatus(apiOfflineStatus(message));");
     expect(appSource).toContain("setStatus(apiOfflineStatus(error));");
     expect(appSource).toContain('const apiOffline = status.startsWith("API offline");');
-    expect(appSource).toContain('{apiOffline ? "API connection required" : "Loading campaign"}');
-    expect(appSource).toContain('status reset-status ${apiOffline ? "connection-status" : ""}');
+    expect(appSource).toContain('{apiOffline ? "API connection required" : campaignLoadFailed ? "Campaign load failed" : "Loading campaign"}');
+    expect(appSource).toContain('status reset-status ${loadFailed ? "connection-status" : ""}');
     expect(stylesSource).toContain(".reset-panel .connection-status {\n  line-height: 1.45;\n  text-transform: none;");
-    expect(appSource).toContain("Retry connection");
+    expect(appSource).toContain("Retry campaign load");
     expect(appSource).toContain("onClick={() => window.location.reload()}");
   });
 
@@ -634,10 +636,10 @@ describe("desktop layout regressions", () => {
   });
 
   it("keeps the empty combat state compact instead of stretching a huge primary CTA", () => {
-    expect(combatPanelSource).toContain('className="combat-empty-state" aria-label="Start combat from scene tokens"');
-    expect(combatPanelSource).toContain("Ready to roll initiative");
-    expect(combatPanelSource).toContain('<Swords size={15} /> {startPending ? "Starting..." : "Start combat"}');
-    expect(countOccurrences(combatPanelSource, "Start combat")).toBe(2);
+    expect(combatPanelSource).toContain('className="combat-empty-state" aria-label="Review scene combatants"');
+    expect(combatPanelSource).toContain("Review combatants first");
+    expect(combatPanelSource).toContain('<Swords size={15} /> {startPending ? "Opening..." : "Review combatants"}');
+    expect(countOccurrences(combatPanelSource, "Review combatants")).toBe(2);
     expect(combatPanelSource).not.toContain('className="primary-button wide" onClick={props.onStart}');
     expect(combatPanelSource).not.toContain('title="Start combat" aria-label="Start combat"');
     expect(stylesSource).toContain(".combat-empty-state {\n  display: grid;\n  gap: 12px;\n  align-self: start;");

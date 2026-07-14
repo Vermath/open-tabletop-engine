@@ -18,11 +18,14 @@
     "start": "node dist/server.js",
     "build": "node ../../scripts/run-package-manager.mjs --filter @open-tabletop/api^... build && tsc -p tsconfig.json",
     "lint": "tsc -p tsconfig.json --noEmit",
+    "storage:maintenance": "tsx src/sqlite-maintenance-cli.ts",
+    "storage:fixture:generate": "node scripts/generate-sqlite-v1-fixture.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1040.0",
+    "@fastify/ajv-compiler": "4.0.5",
     "@fastify/cors": "^10.0.2",
     "@fastify/websocket": "^11.0.1",
     "@open-tabletop/ai-core": "workspace:*",
@@ -34,7 +37,8 @@
     "@open-tabletop/system-sdk": "workspace:*",
     "@openai/codex": "^0.133.0",
     "fastify": "^5.1.0",
-    "pdfjs-dist": "^6.1.200"
+    "pdfjs-dist": "^6.1.200",
+    "sharp": "0.34.5"
   },
   "devDependencies": {
     "tsx": "^4.19.2",

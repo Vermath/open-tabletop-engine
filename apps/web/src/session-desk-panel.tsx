@@ -1,7 +1,7 @@
 import type { Encounter, Scene } from "@open-tabletop/core";
 import { CalendarDays, CheckCircle2, Clock3, Play, Plus, Save, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { apiDelete, apiPatch, apiPost, type CampaignSessionInfo } from "./api.js";
+import { ApiError, apiDelete, apiGet, apiPatch, apiPost, type CampaignSessionInfo } from "./api.js";
 import { errorMessage, formatDateTime, formatNumber } from "./sheet-format.js";
 
 function toggleId(values: string[], id: string, checked: boolean): string[] {
@@ -42,23 +42,44 @@ export function sessionDraftPayload(input: SessionDraft) {
   };
 }
 
-export function persistCampaignSession(campaignId: string, input: SessionDraft): Promise<CampaignSessionInfo> {
+export function campaignSessionMutationKey(operation: string, sessionId = "new"): string {
+  return `campaign-session:${operation}:${sessionId}:${globalThis.crypto.randomUUID()}`;
+}
+
+export function persistCampaignSession(campaignId: string, input: SessionDraft, expectedUpdatedAt?: string, idempotencyKey = campaignSessionMutationKey(input.id ? "update" : "create", input.id)): Promise<CampaignSessionInfo> {
   const payload = sessionDraftPayload(input);
   return input.id
-    ? apiPatch<CampaignSessionInfo>(`/api/v1/campaign-sessions/${input.id}`, payload)
-    : apiPost<CampaignSessionInfo>(`/api/v1/campaigns/${campaignId}/sessions`, payload);
+    ? apiPatch<CampaignSessionInfo>(`/api/v1/campaign-sessions/${input.id}`, { ...payload, expectedUpdatedAt }, { idempotencyKey })
+    : apiPost<CampaignSessionInfo>(`/api/v1/campaigns/${campaignId}/sessions`, payload, { idempotencyKey });
 }
 
-export function startCampaignSession(sessionId: string, activateSceneId: string): Promise<CampaignSessionInfo> {
-  return apiPost<CampaignSessionInfo>(`/api/v1/campaign-sessions/${sessionId}/start`, activateSceneId ? { activateSceneId } : {});
+export function startCampaignSession(sessionId: string, activateSceneId: string, expectedUpdatedAt: string, idempotencyKey = campaignSessionMutationKey("start", sessionId)): Promise<CampaignSessionInfo> {
+  return apiPost<CampaignSessionInfo>(`/api/v1/campaign-sessions/${sessionId}/start`, { expectedUpdatedAt, ...(activateSceneId ? { activateSceneId } : {}) }, { idempotencyKey });
 }
 
-export function completeCampaignSession(sessionId: string, notes: string): Promise<CampaignSessionInfo> {
-  return apiPost<CampaignSessionInfo>(`/api/v1/campaign-sessions/${sessionId}/complete`, { notes });
+export function completeCampaignSession(sessionId: string, notes: string, expectedUpdatedAt: string, idempotencyKey = campaignSessionMutationKey("complete", sessionId)): Promise<CampaignSessionInfo> {
+  return apiPost<CampaignSessionInfo>(`/api/v1/campaign-sessions/${sessionId}/complete`, { notes, expectedUpdatedAt }, { idempotencyKey });
 }
 
-export function deleteCampaignSession(sessionId: string): Promise<unknown> {
-  return apiDelete<unknown>(`/api/v1/campaign-sessions/${sessionId}`);
+export function deleteCampaignSession(sessionId: string, expectedUpdatedAt: string, idempotencyKey = campaignSessionMutationKey("delete", sessionId)): Promise<unknown> {
+  return apiDelete<unknown>(`/api/v1/campaign-sessions/${sessionId}?expectedUpdatedAt=${encodeURIComponent(expectedUpdatedAt)}`, { idempotencyKey });
+}
+
+export function staleCampaignSession(error: unknown): CampaignSessionInfo | undefined {
+  if (!(error instanceof ApiError) || error.status !== 409 || typeof error.body !== "object" || error.body === null) return undefined;
+  const current = (error.body as { current?: unknown }).current;
+  if (typeof current !== "object" || current === null) return undefined;
+  const candidate = current as Partial<CampaignSessionInfo>;
+  return typeof candidate.id === "string" && typeof candidate.updatedAt === "string" && typeof candidate.title === "string" ? candidate as CampaignSessionInfo : undefined;
+}
+
+async function refreshStaleCampaignSession(error: unknown, sessionId: string): Promise<CampaignSessionInfo | undefined> {
+  if (!(error instanceof ApiError) || error.status !== 409) return undefined;
+  try {
+    return await apiGet<CampaignSessionInfo>(`/api/v1/campaign-sessions/${sessionId}`);
+  } catch {
+    return staleCampaignSession(error);
+  }
 }
 
 export function LiveSessionBanner(props: { session: CampaignSessionInfo; sceneName?: string; canComplete: boolean; onOpen(): void; onComplete(): void }) {
@@ -90,6 +111,7 @@ export function SessionDeskPanel(props: {
   const [selectedId, setSelectedId] = useState("");
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [retryAction, setRetryAction] = useState<{ label: string; run(): Promise<void> }>();
   const selected = props.sessions.find((session) => session.id === selectedId);
   const sessions = campaignSessionSort(props.sessions);
 
@@ -101,61 +123,79 @@ export function SessionDeskPanel(props: {
     props.onSessionsChange(props.sessions.some((session) => session.id === updated.id) ? props.sessions.map((session) => session.id === updated.id ? updated : session) : [...props.sessions, updated]);
   }
 
-  async function saveSession(input: SessionDraft) {
+  async function saveSession(input: SessionDraft, expectedUpdatedAt = selected?.updatedAt, idempotencyKey = campaignSessionMutationKey(input.id ? "update" : "create", input.id)) {
     if (!input.title.trim() || busy) return;
     setBusy(true);
     try {
-      const updated = await persistCampaignSession(props.campaignId, input);
+      const updated = await persistCampaignSession(props.campaignId, input, expectedUpdatedAt, idempotencyKey);
       replaceSession(updated);
       setSelectedId(updated.id);
       setCreating(false);
+      setRetryAction(undefined);
       props.onStatus(`${updated.title} ${input.id ? "updated" : "planned"}`);
     } catch (error) {
-      props.onStatus(`Session save failed: ${errorMessage(error)}`);
+      const latest = input.id ? await refreshStaleCampaignSession(error, input.id) : undefined;
+      if (latest) replaceSession(latest);
+      const retryExpected = latest?.updatedAt ?? expectedUpdatedAt;
+      const retryKey = latest ? campaignSessionMutationKey("update", input.id) : idempotencyKey;
+      setRetryAction({ label: "Retry session save", run: () => saveSession(input, retryExpected, retryKey) });
+      props.onStatus(latest ? "Session changed elsewhere. The latest revision is loaded; review and retry." : `Session save failed: ${errorMessage(error)}`);
     } finally {
       setBusy(false);
     }
   }
 
-  async function startSession(session: CampaignSessionInfo, activateSceneId: string) {
+  async function startSession(session: CampaignSessionInfo, activateSceneId: string, expectedUpdatedAt = session.updatedAt, idempotencyKey = campaignSessionMutationKey("start", session.id)) {
     if (busy) return;
     setBusy(true);
     try {
-      const updated = await startCampaignSession(session.id, activateSceneId);
+      const updated = await startCampaignSession(session.id, activateSceneId, expectedUpdatedAt, idempotencyKey);
       replaceSession(updated);
       if (activateSceneId) props.onSceneActivated(activateSceneId);
+      setRetryAction(undefined);
       props.onStatus(`${updated.title} is live`);
     } catch (error) {
-      props.onStatus(`Session start failed: ${errorMessage(error)}`);
+      const latest = await refreshStaleCampaignSession(error, session.id);
+      if (latest) replaceSession(latest);
+      setRetryAction({ label: "Retry session start", run: () => startSession(latest ?? session, activateSceneId, latest?.updatedAt ?? expectedUpdatedAt, latest ? campaignSessionMutationKey("start", session.id) : idempotencyKey) });
+      props.onStatus(latest ? "Session changed elsewhere. The latest revision is loaded; review and retry." : `Session start failed: ${errorMessage(error)}`);
     } finally {
       setBusy(false);
     }
   }
 
-  async function completeSession(session: CampaignSessionInfo, notes: string) {
+  async function completeSession(session: CampaignSessionInfo, notes: string, expectedUpdatedAt = session.updatedAt, idempotencyKey = campaignSessionMutationKey("complete", session.id)) {
     if (busy) return;
     setBusy(true);
     try {
-      const updated = await completeCampaignSession(session.id, notes);
+      const updated = await completeCampaignSession(session.id, notes, expectedUpdatedAt, idempotencyKey);
       replaceSession(updated);
+      setRetryAction(undefined);
       props.onStatus(`${updated.title} completed`);
     } catch (error) {
-      props.onStatus(`Session completion failed: ${errorMessage(error)}`);
+      const latest = await refreshStaleCampaignSession(error, session.id);
+      if (latest) replaceSession(latest);
+      setRetryAction({ label: "Retry session completion", run: () => completeSession(latest ?? session, notes, latest?.updatedAt ?? expectedUpdatedAt, latest ? campaignSessionMutationKey("complete", session.id) : idempotencyKey) });
+      props.onStatus(latest ? "Session changed elsewhere. The latest revision is loaded; review and retry." : `Session completion failed: ${errorMessage(error)}`);
     } finally {
       setBusy(false);
     }
   }
 
-  async function deleteSession(session: CampaignSessionInfo) {
+  async function deleteSession(session: CampaignSessionInfo, expectedUpdatedAt = session.updatedAt, idempotencyKey = campaignSessionMutationKey("delete", session.id)) {
     if (busy) return;
     setBusy(true);
     try {
-      await deleteCampaignSession(session.id);
+      await deleteCampaignSession(session.id, expectedUpdatedAt, idempotencyKey);
       props.onSessionsChange(props.sessions.filter((item) => item.id !== session.id));
       setSelectedId("");
+      setRetryAction(undefined);
       props.onStatus(`${session.title} deleted`);
     } catch (error) {
-      props.onStatus(`Session deletion failed: ${errorMessage(error)}`);
+      const latest = await refreshStaleCampaignSession(error, session.id);
+      if (latest) replaceSession(latest);
+      setRetryAction({ label: "Retry session deletion", run: () => deleteSession(latest ?? session, latest?.updatedAt ?? expectedUpdatedAt, latest ? campaignSessionMutationKey("delete", session.id) : idempotencyKey) });
+      props.onStatus(latest ? "Session changed elsewhere. The latest revision is loaded; review and retry." : `Session deletion failed: ${errorMessage(error)}`);
     } finally {
       setBusy(false);
     }
@@ -171,6 +211,7 @@ export function SessionDeskPanel(props: {
         <CalendarDays size={20} aria-hidden="true" />
       </div>
       <p className="account-summary">Link the scenes and encounters you expect to use, then start the session when the table gathers.</p>
+      {retryAction && <div className="lore-load-state error" role="alert"><span>The last session action was not confirmed.</span><button className="ghost-button small" type="button" disabled={busy} onClick={() => void retryAction.run()}>{retryAction.label}</button></div>}
       <div className="lore-list-heading">
         <span>Campaign sessions</span>
         <div><strong>{formatNumber(sessions.length)}</strong>{props.canManage && <button className="icon-button" type="button" aria-label="Plan session" title="Plan session" onClick={() => { setCreating(true); setSelectedId(""); }}><Plus size={14} /></button>}</div>

@@ -1,9 +1,12 @@
-import type { EngineEvent } from "@open-tabletop/core";
+import type { EngineEvent, RealtimePresenceEnvelope } from "@open-tabletop/core";
 
 export interface RealtimeClient {
   campaignId?: string;
   userId?: string;
   sessionId?: string;
+  connectedAt?: string;
+  lastSeenAt?: string;
+  activeSceneId?: string;
   send(data: string): void;
   close?(): void;
 }
@@ -17,8 +20,12 @@ export class RealtimeHub {
     this.clients.add(client);
   }
 
-  remove(client: RealtimeClient): void {
-    this.clients.delete(client);
+  remove(client: RealtimeClient): boolean {
+    return this.clients.delete(client);
+  }
+
+  clientsMatching(input: { campaignId: string; userId?: string }): RealtimeClient[] {
+    return [...this.clients].filter((client) => client.campaignId === input.campaignId && (!input.userId || client.userId === input.userId));
   }
 
   countMatching(input: { campaignId: string; userId?: string }): number {
@@ -31,15 +38,30 @@ export class RealtimeHub {
     return count;
   }
 
-  disconnectSession(sessionId: string): void {
+  disconnectSession(sessionId: string): RealtimeClient[] {
+    const removed: RealtimeClient[] = [];
     for (const client of this.clients) {
       if (client.sessionId !== sessionId) continue;
       this.clients.delete(client);
+      removed.push(client);
       try {
         client.close?.();
       } catch {
         // The socket may already be closing. It has still been removed from
         // the hub, so later broadcasts cannot cross the changed auth scope.
+      }
+    }
+    return removed;
+  }
+
+  broadcastPresence(envelope: RealtimePresenceEnvelope, filter?: (client: RealtimeClient) => boolean): void {
+    const serialized = JSON.stringify(envelope);
+    for (const client of this.clients) {
+      if (client.campaignId !== envelope.campaignId || (filter && !filter(client))) continue;
+      try {
+        client.send(serialized);
+      } catch {
+        this.clients.delete(client);
       }
     }
   }

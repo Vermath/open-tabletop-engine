@@ -2,6 +2,18 @@ import { describe, expect, it } from "vitest";
 import { aiMemoryFactStatus, makeArchive, normalizeEngineState, seedState } from "./state.js";
 import type { Scene } from "./types.js";
 
+describe("development seed", () => {
+  it("uses the D&D-first campaign system for the tokened demo character", () => {
+    const state = seedState();
+    const campaign = state.campaigns.find((item) => item.id === "camp_demo")!;
+    const actor = state.actors.find((item) => item.id === "act_valen")!;
+
+    expect(campaign.defaultSystemId).toBe("dnd-5e-srd");
+    expect(actor.systemId).toBe(campaign.defaultSystemId);
+    expect(state.actors).toContainEqual(expect.objectContaining({ id: "act_generic_demo", systemId: "generic-fantasy" }));
+  });
+});
+
 describe("campaign archives", () => {
   it("uses one campaign scene collection to archive scenes and tokens", () => {
     const state = seedState();
@@ -49,6 +61,47 @@ describe("campaign archives", () => {
     expect(state.campaigns[0]!.name).toBe("The Ember Vault");
     expect((state.actors[0]!.data.hp as { current: number }).current).toBe(18);
     expect(state.tokens[0]!.metadata).toEqual({});
+  });
+
+  it("omits installation-local webhook targets, secrets, and delivery ledgers from portable archives", () => {
+    const state = seedState();
+    const now = "2026-07-13T12:00:00.000Z";
+    state.campaignWebhooks.push({
+      id: "whk_archive_secret",
+      campaignId: "camp_demo",
+      name: "Private integration",
+      url: "https://hooks.example.test/private-path",
+      eventTypes: ["campaign.updated"],
+      enabled: true,
+      signingSecret: "otte_whsec_must_never_enter_archive",
+      secretHint: "rchive",
+      createdByUserId: "usr_demo_gm",
+      updatedByUserId: "usr_demo_gm",
+      createdAt: now,
+      updatedAt: now,
+    });
+    state.campaignWebhookDeliveries.push({
+      id: "whdel_archive_secret",
+      campaignId: "camp_demo",
+      webhookId: "whk_archive_secret",
+      eventId: "evt_archive_secret",
+      eventType: "campaign.updated",
+      occurredAt: now,
+      attempt: 1,
+      status: "failed",
+      errorCode: "network_error",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const archive = makeArchive(state, "camp_demo");
+    const serialized = JSON.stringify(archive);
+
+    expect(archive.data.campaignWebhooks).toEqual([]);
+    expect(archive.data.campaignWebhookDeliveries).toEqual([]);
+    expect(serialized).not.toContain("otte_whsec_must_never_enter_archive");
+    expect(serialized).not.toContain("hooks.example.test");
+    expect(serialized).not.toContain("whdel_archive_secret");
   });
 
   it("normalizes additive handout, memory, and campaign-session state without breaking legacy rows", () => {

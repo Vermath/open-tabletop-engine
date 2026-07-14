@@ -17,6 +17,7 @@ This page is the Markdown source for the public documentation site. `pnpm docs:s
 - [First-run GM guide](../dogfood/first-run-gm-guide.md)
 - [Invite and session guide](../dogfood/invite-session-guide.md)
 - [Player guide](../dogfood/player-guide.md)
+- [Supported browsers](../dogfood/supported-browsers.md)
 - [Run your first session checklist](../dogfood/run-your-first-session-checklist.md)
 - [Troubleshooting](../dogfood/troubleshooting.md)
 - [Issue reporting](../dogfood/issue-reporting.md)
@@ -31,6 +32,7 @@ This page is the Markdown source for the public documentation site. `pnpm docs:s
 - [Identity provider setup](../deployment/identity-providers.md)
 - [Audio and video integrations](../deployment/audio-video-integrations.md)
 - [Security checklist](../deployment/security-checklist.md)
+- [Deployment threat model](../deployment/threat-model.md)
 - [Admin observability checklist](../deployment/admin-observability-checklist.md)
 
 ## Developer and Extension Guides

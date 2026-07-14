@@ -1,0 +1,11 @@
+# Level-one SRD language verification
+
+The guided `level-one-srd` creator follows the official [System Reference Document 5.2.1](https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf). Character Creation (printed page 20, PDF page 19) says every character knows Common plus exactly two languages rolled or chosen from the Standard Languages table. The selectable Standard choices are Common Sign Language, Draconic, Dwarvish, Elvish, Giant, Gnomish, Goblin, Halfling, and Orc; Common is fixed and is not offered as one of the two choices.
+
+Class-feature languages remain separate from origin choices. Druidic is granted by the level-one Druid feature (printed page 42, PDF page 41). Thieves' Cant and one additional choice from the language tables are granted by the level-one Rogue feature (printed page 62, PDF page 61). The Rogue choice uses the published Standard and Rare language catalogs, but cannot repeat Common, an origin choice, or fixed Thieves' Cant.
+
+The server publishes typed language and per-class rule metadata for all twelve exposed class templates. Guided creation enforces exact counts, uniqueness, allowed lists, and class availability before state is written. Accepted builds persist a normalized `data.languages` list and a `data.languageProficiencies` provenance record with separate `common`, `origin`, and `classFeature` entries. The origin record keeps only the player selections. Template-only legacy creation omits these new fields and retains its existing defaults.
+
+Focused verification on 2026-07-13 passed for the system SDK, API, web creator, and API contracts. Coverage includes all twelve class paths, Druid and Rogue grants, forged Rare origin choices, duplicate and malformed arrays, unavailable class-language injection, persistence, and legacy compatibility.
+
+This focused slice predated the remaining creator work. Later slices completed starting-equipment and gold-package choices, Weapon Mastery, other level-one class-feature decisions, spell/cantrip selection and preparation counts, feat subchoices, tool-choice handling, and the campaign character-review workflow; see [equipment and mastery](level-one-starting-equipment-weapon-mastery-2026-07-13.md), [spells, feats, and class choices](level-one-spells-feats-class-choices-2026-07-13.md), and [character review](dnd-character-review-2026-07-13.md).

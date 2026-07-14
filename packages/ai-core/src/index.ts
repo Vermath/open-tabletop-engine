@@ -1,5 +1,10 @@
 import {
   aiMemoryFactStatus,
+  type AiCitation,
+  type AiCitationClaim,
+  type AiCitationWarning,
+  type AiContextScope,
+  type AiSourceReference,
   type AiUsageMetrics,
   type EngineState,
   type MapAsset,
@@ -248,7 +253,7 @@ export interface AiProviderRequest {
 
 export type AiProviderEvent =
   | { type: "message.delta"; delta: string }
-  | { type: "message.completed"; content: string }
+  | { type: "message.completed"; content: string; citations?: AiCitationClaim[]; requiresOpenRulesCitation?: boolean }
   | { type: "reasoning.delta"; delta: string; summaryIndex?: number }
   | { type: "reasoning.completed"; content: string }
   | {
@@ -266,6 +271,10 @@ export type AiProviderEvent =
 
 export interface PermissionFilteredContext {
   campaignId: string;
+  /** Exact source registry available for structured citation validation. */
+  sources?: AiSourceReference[];
+  /** Campaign-authored/imported text is always isolated in an explicit data envelope. */
+  contentBlocks?: AiContextContentBlock[];
   publicSummary: string;
   gmSecrets: string[];
   memory: Array<{ text: string; visibility: Visibility; sourceIds: string[] }>;
@@ -285,6 +294,93 @@ export interface PermissionFilteredContext {
     summary: string;
     difficulty?: string;
   }>;
+}
+
+export interface AiContextContentBlock {
+  sourceId: string;
+  content: string;
+  boundary: "authoritative_data" | "untrusted_data";
+}
+
+/**
+ * Produces the provider payload without duplicating campaign prose in legacy
+ * convenience fields. Text is present only inside explicitly labelled data
+ * blocks and is never represented as provider/system instructions.
+ */
+export function permissionFilteredContextForProvider(context: PermissionFilteredContext): Record<string, unknown> {
+  return {
+    campaignId: context.campaignId,
+    sourceRegistry: context.sources ?? [],
+    contentBlocks: context.contentBlocks ?? [],
+    structured: {
+      actors: context.actors?.map(({ summary: _summary, name: _name, ...actor }) => actor) ?? [],
+      scenes: context.scenes?.map(({ name: _name, ...scene }) => scene) ?? [],
+      encounters: context.encounters?.map(({ name: _name, summary: _summary, ...encounter }) => encounter) ?? []
+    }
+  };
+}
+
+export function filterPermissionFilteredContextByScopes(
+  context: PermissionFilteredContext,
+  scopes: readonly AiContextScope[]
+): PermissionFilteredContext {
+  const allowed = new Set(scopes);
+  const retainedSources = (context.sources ?? []).filter((source) => allowed.has(source.visibility));
+  const retainedIds = new Set(retainedSources.map((source) => source.id));
+  const sourceVisible = (prefix: string, id: string) => {
+    const sourceId = `${prefix}:${id}`;
+    return !context.sources?.some((source) => source.id === sourceId) || retainedIds.has(sourceId);
+  };
+  return {
+    ...context,
+    sources: retainedSources,
+    contentBlocks: (context.contentBlocks ?? []).filter((block) => retainedIds.has(block.sourceId)),
+    gmSecrets: allowed.has("gm_private") ? context.gmSecrets : [],
+    memory: context.memory.filter((item) => item.visibility !== "gm_only" || allowed.has("gm_private")),
+    actors: context.actors?.filter((actor) => sourceVisible("actor", actor.id)),
+    scenes: context.scenes?.filter((scene) => sourceVisible("scene", scene.id)),
+    encounters: context.encounters?.filter((encounter) => sourceVisible("encounter", encounter.id))
+  };
+}
+
+export function validateAiCitationClaims(
+  claims: readonly AiCitationClaim[] | undefined,
+  registry: readonly AiSourceReference[]
+): AiCitation[] {
+  const sources = new Map(registry.map((source) => [source.id, source]));
+  return (claims ?? []).map((claim) => {
+    const source = sources.get(claim.sourceId);
+    if (!source) return { ...claim, status: "unsupported", reason: "unknown_source" };
+    if (claim.locator !== undefined && claim.locator !== source.locator) {
+      return { ...claim, status: "unsupported", reason: "locator_mismatch" };
+    }
+    return { ...claim, status: "verified", source };
+  });
+}
+
+export function aiCitationWarnings(input: {
+  citations: readonly AiCitation[];
+  requiresOpenRulesCitation?: boolean;
+}): AiCitationWarning[] {
+  const warnings: AiCitationWarning[] = [];
+  if (input.citations.some((citation) => citation.status === "unsupported")) {
+    warnings.push({
+      code: "unsupported_citation",
+      message: "One or more model citations were not present in the permission-filtered source registry."
+    });
+  }
+  if (
+    input.requiresOpenRulesCitation &&
+    !input.citations.some(
+      (citation) => citation.status === "verified" && citation.source?.kind === "official_open_rules"
+    )
+  ) {
+    warnings.push({
+      code: "rules_answer_without_verified_open_rules_citation",
+      message: "This rules answer does not include a verified citation to the open-rules source returned for this turn."
+    });
+  }
+  return warnings;
 }
 
 export function buildPermissionFilteredContext(input: {
@@ -371,8 +467,69 @@ export function buildPermissionFilteredContext(input: {
       sourceIds: item.sourceIds,
     }));
 
+  const sources: AiSourceReference[] = [];
+  const contentBlocks: AiContextContentBlock[] = [];
+  const addContent = (source: AiSourceReference, content: string) => {
+    sources.push(source);
+    contentBlocks.push({
+      sourceId: source.id,
+      content,
+      boundary: source.trust === "authoritative_open_rules" ? "authoritative_data" : "untrusted_data"
+    });
+  };
+
+  if (canReadCampaign && campaign) {
+    addContent(
+      {
+        id: `campaign:${campaign.id}`,
+        kind: "campaign_note",
+        title: campaign.name,
+        locator: `campaign:${campaign.id}`,
+        visibility: "public",
+        trust: "untrusted_campaign_content"
+      },
+      `${campaign.name}\n${campaign.description}`.trim()
+    );
+  }
+  for (const journal of visibleJournals) {
+    const canonical = journal.canonStatus === "canonical";
+    addContent(
+      {
+        id: `journal:${journal.id}`,
+        kind: canonical ? "campaign_canon" : "campaign_note",
+        title: journal.title,
+        locator: `journal:${journal.id}@revision:${journal.revision ?? 1}`,
+        visibility: journal.visibility === "gm_only" ? "gm_private" : "public",
+        trust: canonical ? "reviewed_canon" : "untrusted_campaign_content"
+      },
+      `${journal.title}\n${journal.body}`.trim()
+    );
+  }
+  for (const item of input.state.aiMemory
+    .filter((entry) => entry.campaignId === input.campaignId)
+    .filter((entry) => aiMemoryFactStatus(entry) === "approved")
+    .filter((entry) =>
+      entry.visibility === "public"
+        ? canReadPublicMemory || canReadMemorySecrets
+        : canReadMemorySecrets
+    )) {
+    addContent(
+      {
+        id: `memory:${item.id}`,
+        kind: "campaign_canon",
+        title: item.subject?.trim() || "Reviewed campaign memory",
+        locator: `ai-memory:${item.id}`,
+        visibility: item.visibility === "gm_only" ? "gm_private" : "public",
+        trust: "reviewed_canon"
+      },
+      item.text
+    );
+  }
+
   return {
     campaignId: input.campaignId,
+    sources,
+    contentBlocks,
     publicSummary: `${canReadCampaign ? (campaign?.name ?? "Unknown campaign") : "Campaign"}: ${visibleJournals.map((item) => item.title).join(", ")}`,
     gmSecrets: canReadJournals && canReadJournalSecrets
       ? journals
@@ -401,15 +558,27 @@ export function buildPermissionFilteredContext(input: {
             const hp = privateDataVisible
               ? (item.data.hp as { current?: number; max?: number } | undefined)
               : undefined;
+            const summary = hp
+              ? `${item.name} (${hp.current ?? "?"}/${hp.max ?? "?"} HP)`
+              : item.name;
+            addContent(
+              {
+                id: `actor:${item.id}`,
+                kind: "actor",
+                title: item.name,
+                locator: `actor:${item.id}@updated:${item.updatedAt}`,
+                visibility: privateDataVisible ? "gm_private" : "public",
+                trust: "untrusted_campaign_content"
+              },
+              summary
+            );
             return {
               id: item.id,
               name: item.name,
               type: item.type,
               systemId: item.systemId,
               privateDataVisible,
-              summary: hp
-                ? `${item.name} (${hp.current ?? "?"}/${hp.max ?? "?"} HP)`
-                : item.name,
+              summary,
             };
           })
       : [],
@@ -420,22 +589,39 @@ export function buildPermissionFilteredContext(input: {
               item.campaignId === input.campaignId &&
               (canReadPreparedScenes || item.active),
           )
-          .map((item) => ({
-            id: item.id,
-            name: item.name,
-            active: item.active,
-          }))
+          .map((item) => {
+            addContent(
+              {
+                id: `scene:${item.id}`,
+                kind: "scene",
+                title: item.name,
+                locator: `scene:${item.id}@updated:${item.updatedAt}`,
+                visibility: item.active ? "public" : "gm_private",
+                trust: "untrusted_campaign_content"
+              },
+              item.name
+            );
+            return { id: item.id, name: item.name, active: item.active };
+          })
       : [],
     encounters:
       canReadCampaign && canReadPreparedEncounters
         ? input.state.encounters
             .filter((item) => item.campaignId === input.campaignId)
-            .map((item) => ({
-              id: item.id,
-              name: item.name,
-              summary: item.summary,
-              difficulty: item.difficulty,
-            }))
+            .map((item) => {
+              addContent(
+                {
+                  id: `encounter:${item.id}`,
+                  kind: "campaign_note",
+                  title: item.name,
+                  locator: `encounter:${item.id}@updated:${item.updatedAt}`,
+                  visibility: "gm_private",
+                  trust: "untrusted_campaign_content"
+                },
+                `${item.name}\n${item.summary}`.trim()
+              );
+              return { id: item.id, name: item.name, summary: item.summary, difficulty: item.difficulty };
+            })
         : [],
   };
 }

@@ -1,8 +1,8 @@
-import type { AiMemoryFact, AiThread, AiToolCall, MapAsset, Proposal, Token } from "@open-tabletop/core";
+import type { AiCampaignPolicy, AiContextScope, AiMemoryFact, AiThread, AiToolCall, MapAsset, Proposal, Token } from "@open-tabletop/core";
 import { Activity, Bot, Boxes, Check, Crosshair, FileText, Image as ImageIcon, Map as MapIcon, RefreshCw, RotateCcw, ScrollText, Shield, Swords, Timer, X } from "lucide-react";
 import type React from "react";
 import { useEffect, useState } from "react";
-import { apiPost, assetBlobUrl, type AiUsageSummary, type EncounterPlanInfo, type Snapshot } from "./api.js";
+import { apiGet, apiPatch, apiPost, assetBlobUrl, type AiUsageSummary, type EncounterPlanInfo, type Snapshot } from "./api.js";
 import { aiToolCallErrorCode } from "./admin-panel.js";
 import { MetricTile } from "./metric-tile.js";
 import { proposalQueueAction, proposalReviewActionLabel } from "./proposal-review.js";
@@ -17,7 +17,7 @@ interface AiGenerationJob {
   detail?: string;
 }
 
-export function AiPanel(props: { prompt: string; setPrompt(value: string): void; askAi(): void; mapPrompt: string; setMapPrompt(value: string): void; generateMapAsset(): void; tokenPrompt: string; setTokenPrompt(value: string): void; generateTokenAsset(): void; generateSceneTokenAssets(): void; generationJobs: AiGenerationJob[]; selectedSceneName?: string; selectedTokenId?: string; selectedTokenName?: string; tokenOptions: Token[]; selectToken(tokenId: string): void; tokenArtMissingCount: number; tokenArtPendingCount: number; replayAiThread(thread: AiThread): void; retryAiToolCall(toolCall: AiToolCall): void; recapSession(): void; extractMemory(): void; activeSystemName?: string; encounterPlan?: EncounterPlanInfo; planEncounter(): void; proposals: Proposal[]; records: ProposalRecordCollections; memory: AiMemoryFact[]; aiThreads: AiThread[]; aiUsage?: AiUsageSummary; aiToolCalls: AiToolCall[]; approveAndApply(proposal: Proposal): void; rejectProposal(proposal: Proposal): void; revertProposal(proposal: Proposal): Promise<void>; approveMemory(fact: AiMemoryFact): void; deleteMemory(fact: AiMemoryFact): void; canDraftEncounter: boolean; canPropose: boolean; canRecapSession: boolean; canApply: boolean; canRevert: boolean; canPlanEncounter: boolean; canGenerateMap: boolean; canGenerateToken: boolean; canGenerateTokenBatch: boolean }) {
+export function AiPanel(props: { campaignId?: string; canManagePolicy: boolean; prompt: string; setPrompt(value: string): void; askAi(): void; mapPrompt: string; setMapPrompt(value: string): void; generateMapAsset(): void; tokenPrompt: string; setTokenPrompt(value: string): void; generateTokenAsset(): void; generateSceneTokenAssets(): void; generationJobs: AiGenerationJob[]; selectedSceneName?: string; selectedTokenId?: string; selectedTokenName?: string; tokenOptions: Token[]; selectToken(tokenId: string): void; tokenArtMissingCount: number; tokenArtPendingCount: number; replayAiThread(thread: AiThread): void; retryAiToolCall(toolCall: AiToolCall): void; recapSession(): void; extractMemory(): void; activeSystemName?: string; encounterPlan?: EncounterPlanInfo; planEncounter(): void; proposals: Proposal[]; records: ProposalRecordCollections; memory: AiMemoryFact[]; aiThreads: AiThread[]; aiUsage?: AiUsageSummary; aiToolCalls: AiToolCall[]; approveAndApply(proposal: Proposal): void; rejectProposal(proposal: Proposal): void; revertProposal(proposal: Proposal): Promise<void>; approveMemory(fact: AiMemoryFact): void; deleteMemory(fact: AiMemoryFact): void; canDraftEncounter: boolean; canPropose: boolean; canRecapSession: boolean; canApply: boolean; canRevert: boolean; canPlanEncounter: boolean; canGenerateMap: boolean; canGenerateToken: boolean; canGenerateTokenBatch: boolean }) {
   const [activeView, setActiveView] = useState<AiPanelView>("create");
   const [activeIntent, setActiveIntent] = useState<AiIntentId>("encounter");
   const [proposalStatusFilter, setProposalStatusFilter] = useState<Proposal["status"] | "all">("all");
@@ -397,6 +397,7 @@ export function AiPanel(props: { prompt: string; setPrompt(value: string): void;
 
       {activeView === "operations" && (
         <section className="ai-view-panel" aria-label="AI operations and recovery">
+          {props.campaignId && <AiPolicyPanel campaignId={props.campaignId} canManage={props.canManagePolicy} />}
           {props.canPropose && <AiOperationsPanel summary={props.aiUsage} threads={props.aiThreads} toolCalls={props.aiToolCalls} />}
           <section className="operator-section" aria-label="AI recovery controls">
             <div className="operator-heading">
@@ -440,12 +441,14 @@ export function AiPanel(props: { prompt: string; setPrompt(value: string): void;
 function AiProposalReviewCard(props: { proposal: Proposal; records: ProposalRecordCollections; canApply: boolean; canRevert: boolean; onApply(proposal: Proposal): void; onReject(proposal: Proposal): void; onRevert(proposal: Proposal): Promise<void> }) {
   const generatedAssets = proposalAssetPreviews(props.proposal);
   const queueAction = proposalQueueAction(props.proposal);
+  const affectedEntities = [...new Set(props.proposal.changesJson.map((change) => change.entity))];
+  const revertable = props.proposal.status === "applied" && Boolean(props.proposal.inverseChangesJson?.length && props.proposal.revertGuardsJson?.length);
   const [revertArmed, setRevertArmed] = useState(false);
   const [reverting, setReverting] = useState(false);
   return (
     <article className="proposal ai-proposal-card">
       <div className="operator-heading">
-        <span>{props.proposal.status}</span>
+        <span>{revertable ? "applied · revertable with stale-state guards" : props.proposal.status}</span>
         <strong>{formatNumber(props.proposal.changesJson.length)} changes</strong>
       </div>
       <h3>{props.proposal.title}</h3>
@@ -457,6 +460,7 @@ function AiProposalReviewCard(props: { proposal: Proposal; records: ProposalReco
         </div>
       )}
       <p>{props.proposal.summary}</p>
+      <p className="account-summary">Affected entities: {affectedEntities.join(", ") || "none"}</p>
       <details className="proposal-detail">
         <summary>Review details</summary>
         <ProposalDiffPreview proposal={props.proposal} records={props.records} />
@@ -482,7 +486,7 @@ function AiProposalReviewCard(props: { proposal: Proposal; records: ProposalReco
               <button className="ghost-button" type="button" disabled={reverting} onClick={() => setRevertArmed(false)}>Cancel</button>
             </>
           ) : (
-            <button className="ghost-button" type="button" onClick={() => setRevertArmed(true)} disabled={!props.canRevert} title={props.canRevert ? "Restore previous records; records created by this proposal may be deleted" : "Revert requires AI apply permission and a persisted campaign"}>
+            <button className="ghost-button" type="button" onClick={() => setRevertArmed(true)} disabled={!props.canRevert || !revertable} title={props.canRevert ? "Restore previous records only if every affected entity still matches its post-apply stale-state guard" : "Revert requires AI apply permission and a persisted campaign"}>
               <RotateCcw size={15} /> Revert applied changes
             </button>
           )}
@@ -806,6 +810,194 @@ function formatProposalValue(value: unknown): string {
   return JSON.stringify(value);
 }
 
+interface EffectiveAiPolicyView {
+  enabled: boolean;
+  status: "enabled" | "disabled" | "unsafe_configuration";
+  contextScopes: AiContextScope[];
+  retentionDays: number;
+  legacyDefault: boolean;
+  readinessIssues: string[];
+  campaign: AiCampaignPolicy;
+  installation: {
+    enabled: boolean;
+    status: "enabled" | "disabled" | "unsafe_configuration";
+    providerTransmissionDisclosure: string;
+  };
+}
+
+interface AiPrivacyView {
+  dryRun: boolean;
+  categories: { aiThreads: number; aiToolCalls: number; aiEvaluations: number };
+  preserved: { approvedCanonMemory: number; proposals: number; auditLogs: number };
+  providerDeletion: "not_requested_or_verified";
+}
+
+function AiPolicyPanel(props: { campaignId: string; canManage: boolean }) {
+  const [policy, setPolicy] = useState<EffectiveAiPolicyView>();
+  const [draft, setDraft] = useState<AiCampaignPolicy>();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [privacy, setPrivacy] = useState<AiPrivacyView>();
+  const [clearArmed, setClearArmed] = useState(false);
+
+  const load = async (signal?: AbortSignal) => {
+    setLoading(true);
+    setError("");
+    try {
+      const next = await apiGet<EffectiveAiPolicyView>(`/api/v1/campaigns/${encodeURIComponent(props.campaignId)}/ai/policy`, { signal });
+      setPolicy(next);
+      setDraft(next.campaign);
+    } catch (loadError) {
+      if (!signal?.aborted) setError(loadError instanceof Error ? loadError.message : "AI policy could not be loaded.");
+    } finally {
+      if (!signal?.aborted) setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void load(controller.signal);
+    return () => controller.abort();
+  }, [props.campaignId]);
+
+  const save = async () => {
+    if (!draft || !policy || !props.canManage) return;
+    setSaving(true);
+    setError("");
+    try {
+      const next = await apiPatch<EffectiveAiPolicyView>(
+        `/api/v1/campaigns/${encodeURIComponent(props.campaignId)}/ai/policy`,
+        {
+          expectedRevision: policy.campaign.revision,
+          enabled: draft.enabled,
+          contextScopes: draft.contextScopes,
+          providerTransmissionDisclosure: draft.providerTransmissionDisclosure,
+          retentionDays: draft.retentionDays
+        },
+        { idempotencyKey: crypto.randomUUID() }
+      );
+      setPolicy(next);
+      setDraft(next.campaign);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "AI policy could not be saved.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const previewPrivacy = async () => {
+    setSaving(true);
+    setError("");
+    try {
+      setPrivacy(await apiPost<AiPrivacyView>(`/api/v1/campaigns/${encodeURIComponent(props.campaignId)}/ai/privacy/preview`, { mode: "all", limit: 1000 }));
+    } catch (previewError) {
+      setError(previewError instanceof Error ? previewError.message : "AI retention preview failed.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const clearLocalHistory = async () => {
+    if (!clearArmed) return;
+    setSaving(true);
+    setError("");
+    try {
+      setPrivacy(await apiPost<AiPrivacyView>(
+        `/api/v1/campaigns/${encodeURIComponent(props.campaignId)}/ai/privacy/prune`,
+        { mode: "all", limit: 1000, dryRun: false, confirmation: "CLEAR_AI_OPERATIONAL_HISTORY" },
+        { idempotencyKey: crypto.randomUUID() }
+      ));
+      setClearArmed(false);
+    } catch (clearError) {
+      setError(clearError instanceof Error ? clearError.message : "AI operational history could not be cleared.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleScope = (scope: AiContextScope, enabled: boolean) => {
+    if (!draft) return;
+    setDraft({
+      ...draft,
+      contextScopes: enabled ? [...new Set([...draft.contextScopes, scope])] : draft.contextScopes.filter((candidate) => candidate !== scope)
+    });
+  };
+
+  return (
+    <section className="operator-section" aria-label="AI safety and privacy policy" aria-busy={loading || saving}>
+      <div className="operator-heading">
+        <div>
+          <div className="section-title">Safety & Privacy</div>
+          <p className="account-summary">{policy ? `${policy.status} · local retention ${policy.retentionDays} days` : "Loading policy"}</p>
+        </div>
+        <Shield size={15} />
+      </div>
+      {loading && <div className="empty-state compact" role="status">Loading AI policy…</div>}
+      {error && (
+        <div className="empty-state compact" role="alert">
+          {error} <button className="ghost-button" type="button" onClick={() => void load()}>Retry</button>
+        </div>
+      )}
+      {policy && draft && (
+        <>
+          {policy.status !== "enabled" && (
+            <div className="ai-trust-note" role="status">
+              <Shield size={15} />
+              <span>{policy.status === "unsafe_configuration" ? policy.readinessIssues.join(" ") : "AI calls are disabled by installation or campaign policy."}</span>
+            </div>
+          )}
+          <p>{policy.installation.providerTransmissionDisclosure}</p>
+          <p className="account-summary">This controls OpenTabletop's local operational history only. Provider-side retention or deletion is separate and is not claimed here.</p>
+          <div className="admin-form-grid">
+            <label>
+              Campaign AI
+              <select aria-label="Campaign AI status" value={draft.enabled ? "enabled" : "disabled"} disabled={!props.canManage || saving} onChange={(event) => setDraft({ ...draft, enabled: event.target.value === "enabled", status: event.target.value === "enabled" ? "enabled" : "disabled" })}>
+                <option value="enabled">Enabled</option>
+                <option value="disabled">Disabled</option>
+              </select>
+            </label>
+            <label>
+              Local retention days
+              <input aria-label="AI local retention days" type="number" min={1} max={3650} value={draft.retentionDays} disabled={!props.canManage || saving} onChange={(event) => setDraft({ ...draft, retentionDays: Number(event.target.value) })} />
+            </label>
+          </div>
+          <fieldset disabled={!props.canManage || saving}>
+            <legend>Provider context scopes</legend>
+            <label><input type="checkbox" checked={draft.contextScopes.includes("public")} onChange={(event) => toggleScope("public", event.target.checked)} /> Public campaign context</label>
+            <label><input type="checkbox" checked={draft.contextScopes.includes("gm_private")} onChange={(event) => toggleScope("gm_private", event.target.checked)} /> GM-private context</label>
+          </fieldset>
+          <label className="ai-field">
+            Provider transmission disclosure
+            <textarea aria-label="AI provider transmission disclosure" value={draft.providerTransmissionDisclosure} disabled={!props.canManage || saving} onChange={(event) => setDraft({ ...draft, providerTransmissionDisclosure: event.target.value })} />
+          </label>
+          <div className="button-row ai-action-row">
+            <button className="primary-button" type="button" disabled={!props.canManage || saving} onClick={() => void save()}>{saving ? "Saving…" : "Save policy"}</button>
+            <button className="ghost-button" type="button" disabled={!props.canManage || saving} onClick={() => void previewPrivacy()}>Preview local history</button>
+          </div>
+          {privacy && (
+            <div className="ai-trust-note" role="status">
+              <span>{privacy.categories.aiThreads} threads, {privacy.categories.aiToolCalls} tool calls, and {privacy.categories.aiEvaluations} evaluations selected. {privacy.preserved.approvedCanonMemory} approved canon memories and {privacy.preserved.proposals} proposals are preserved.</span>
+            </div>
+          )}
+          {props.canManage && (
+            <div className="button-row ai-action-row">
+              {clearArmed ? (
+                <>
+                  <button className="danger-button" type="button" disabled={saving} onClick={() => void clearLocalHistory()}>Confirm local history clear</button>
+                  <button className="ghost-button" type="button" disabled={saving} onClick={() => setClearArmed(false)}>Cancel</button>
+                </>
+              ) : (
+                <button className="ghost-button" type="button" disabled={saving} onClick={() => setClearArmed(true)}>Clear local operational history…</button>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
 function AiOperationsPanel(props: { summary?: AiUsageSummary; threads: AiThread[]; toolCalls: AiToolCall[] }) {
   const summary = props.summary;
   const recentThreads = props.threads.slice(0, 4);
@@ -855,6 +1047,7 @@ function AiOperationsPanel(props: { summary?: AiUsageSummary; threads: AiThread[
                 <span>{formatNumber(thread.usage?.totalTokens)} tokens</span>
                 <span>{formatCost(thread.usage?.estimatedCostUsd)}</span>
               </div>
+              <AiThreadSources thread={thread} />
             </article>
           ))
         )}
@@ -872,6 +1065,41 @@ function AiOperationsPanel(props: { summary?: AiUsageSummary; threads: AiThread[
           ))
         )}
       </div>
+    </section>
+  );
+}
+
+function AiThreadSources(props: { thread: AiThread }) {
+  const sources = props.thread.sources ?? [];
+  const citations = props.thread.citations ?? [];
+  const verified = citations.filter((citation) => citation.status === "verified").length;
+  const unsupported = citations.filter((citation) => citation.status === "unsupported").length;
+  const untrusted = sources.filter((source) => source.trust === "untrusted_campaign_content").length;
+  if (sources.length === 0 && citations.length === 0 && !(props.thread.citationWarnings?.length)) return null;
+  return (
+    <section aria-label={`${props.thread.title} sources and citations`}>
+      <div className="button-row ai-action-row" aria-label="Citation status badges">
+        <span className="status-pill completed">{verified} verified citations</span>
+        {unsupported > 0 && <span className="status-pill failed">{unsupported} unsupported</span>}
+        {untrusted > 0 && <span className="status-pill running">{untrusted} untrusted data sources</span>}
+      </div>
+      {(props.thread.citationWarnings ?? []).map((warning) => (
+        <p className="account-summary" role="alert" key={warning.code}>{warning.message}</p>
+      ))}
+      {sources.length > 0 && (
+        <details className="proposal-detail">
+          <summary>Sources and provenance ({sources.length})</summary>
+          <ul>
+            {sources.map((source) => (
+              <li key={source.id}>
+                <strong>{source.title}</strong> — {titleCaseLabel(source.kind)} · {titleCaseLabel(source.trust)}
+                {source.provenance && <span> · {source.provenance.sourceName}{source.provenance.contentVersion ? ` ${source.provenance.contentVersion}` : ""}{source.provenance.license ? ` · ${source.provenance.license}` : ""}</span>}
+                {source.locator && <code> {source.locator}</code>}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
     </section>
   );
 }

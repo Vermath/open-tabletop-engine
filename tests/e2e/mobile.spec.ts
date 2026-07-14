@@ -31,9 +31,13 @@ async function deleteTokensByName(page: Page, name: string, options: { requireFo
       const scene = scenes.find((item: { name?: string }) => item.name === "Vault Entry") ?? scenes.find((item: { active?: boolean }) => item.active) ?? scenes[0];
       if (!scene) throw new Error("No scene available for token cleanup");
       const tokens = await getJson(`/api/v1/scenes/${scene.id}/tokens`);
-      const matchingTokens = tokens.filter((item: { name?: string }) => item.name === name);
+      const matchingTokens = tokens.filter((item: { name?: string; updatedAt?: string }) => item.name === name);
       for (const token of matchingTokens) {
-        const response = await fetch(`${apiBaseUrl}/api/v1/tokens/${token.id}`, { method: "DELETE", headers });
+        if (typeof token.updatedAt !== "string" || !token.updatedAt) throw new Error(`Token ${token.id} has no revision for cleanup`);
+        const response = await fetch(`${apiBaseUrl}/api/v1/tokens/${token.id}?expectedUpdatedAt=${encodeURIComponent(token.updatedAt)}`, {
+          method: "DELETE",
+          headers: { ...headers, "idempotency-key": `e2e-token-delete-${token.id}-${token.updatedAt}` }
+        });
         if (!response.ok) throw new Error(await response.text());
       }
       return matchingTokens.length;

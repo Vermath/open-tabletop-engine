@@ -334,6 +334,46 @@ describe("proposal application", () => {
 });
 
 describe("vision polygons", () => {
+  it("treats closed doors as vision blockers and open doors as passable", () => {
+    const state = seedState();
+    const scene = state.scenes.find((item) => item.id === "scn_vault_entry")!;
+    const token = state.tokens.find((item) => item.id === "tok_valen")!;
+    token.visionRadius = 220;
+    scene.walls = [{ id: "door_screen", x1: 200, y1: 300, x2: 600, y2: 300, blocksVision: true, blocksMovement: true, kind: "door", open: false }];
+
+    expect(isPointInsideVisionPolygon({ x: 325, y: 225 }, computeTokenVisionPolygon(scene, token)!)).toBe(false);
+
+    scene.walls[0]!.open = true;
+    expect(isPointInsideVisionPolygon({ x: 325, y: 225 }, computeTokenVisionPolygon(scene, token)!)).toBe(true);
+  });
+
+  it("emits independently ranged polygons for typed senses", () => {
+    const state = seedState();
+    const scene = state.scenes.find((item) => item.id === "scn_vault_entry")!;
+    const token = state.tokens.find((item) => item.id === "tok_valen")!;
+    scene.walls = [];
+    token.visionRadius = 0;
+    token.senses = [
+      { type: "darkvision", range: 120 },
+      { type: "blindsight", range: 30 }
+    ];
+
+    expect(computeTokenVisionPolygons(scene, token)).toEqual([
+      expect.objectContaining({ sourceId: token.id, senseType: "darkvision", radius: 120 }),
+      expect.objectContaining({ sourceId: token.id, senseType: "blindsight", radius: 30 })
+    ]);
+  });
+
+  it("preserves typed magical darkness metadata in visibility polygons", () => {
+    const state = seedState();
+    const scene = state.scenes.find((item) => item.id === "scn_vault_entry")!;
+    scene.walls = [];
+
+    expect(computeLightVisionPolygons(scene, { id: "darkness", x: 325, y: 375, radius: 90, color: "#111827", kind: "darkness", magical: true })).toEqual([
+      expect.objectContaining({ source: "light", sourceId: "darkness", lightingEffect: "darkness", magical: true, radius: 90 })
+    ]);
+  });
+
   it("clips token sight at vision-blocking walls", () => {
     const state = seedState();
     const scene = state.scenes.find((item) => item.id === "scn_vault_entry")!;

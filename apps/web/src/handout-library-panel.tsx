@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { apiDelete, apiPatch, apiPost, type Snapshot } from "./api.js";
 import { campaignSearchAnchorId } from "./campaign-search-panel.js";
 import { errorMessage, formatNumber } from "./sheet-format.js";
+import { isStaleWriteError, sharedMutationIdempotencyKey, staleDraftPreservedMessage } from "./shared-mutation.js";
 import type { LoreCollectionLoadState, WorldAtlasWorld } from "./world-atlas-panel.js";
 
 export interface HandoutLibraryItem {
@@ -77,15 +78,23 @@ export function markHandoutRead(handoutId: string): Promise<HandoutLibraryItem> 
   return apiPost<HandoutLibraryItem>(`/api/v1/handouts/${handoutId}/read`, {});
 }
 
-export function persistHandout(campaignId: string, input: HandoutDraft): Promise<HandoutLibraryItem> {
-  const payload = handoutPayload(input);
+export function persistHandout(campaignId: string, campaignUpdatedAt: string, input: HandoutDraft): Promise<HandoutLibraryItem> {
+  const expectedUpdatedAt = input.id ? input.expectedUpdatedAt : campaignUpdatedAt;
+  if (!expectedUpdatedAt) return Promise.reject(new Error("The handout revision is unavailable. Refresh and try again."));
+  const payload = { ...handoutPayload(input), expectedUpdatedAt };
   return input.id
-    ? apiPatch<HandoutLibraryItem>(`/api/v1/handouts/${input.id}`, payload)
-    : apiPost<HandoutLibraryItem>(`/api/v1/campaigns/${campaignId}/handouts`, payload);
+    ? apiPatch<HandoutLibraryItem>(`/api/v1/handouts/${input.id}`, payload, {
+      idempotencyKey: sharedMutationIdempotencyKey(`handout:update:${input.id}`, expectedUpdatedAt, payload)
+    })
+    : apiPost<HandoutLibraryItem>(`/api/v1/campaigns/${campaignId}/handouts`, payload, {
+      idempotencyKey: sharedMutationIdempotencyKey(`handout:create:${campaignId}`, expectedUpdatedAt, payload)
+    });
 }
 
-export function deleteLibraryHandout(handoutId: string): Promise<unknown> {
-  return apiDelete<unknown>(`/api/v1/handouts/${handoutId}`);
+export function deleteLibraryHandout(handoutId: string, expectedUpdatedAt: string): Promise<unknown> {
+  return apiDelete<unknown>(`/api/v1/handouts/${handoutId}?expectedUpdatedAt=${encodeURIComponent(expectedUpdatedAt)}`, {
+    idempotencyKey: sharedMutationIdempotencyKey(`handout:delete:${handoutId}`, expectedUpdatedAt, {})
+  });
 }
 
 function toggleId(values: string[], id: string, checked: boolean): string[] {
@@ -101,6 +110,7 @@ function visibilityLabel(visibility: Visibility): string {
 
 export function HandoutLibraryPanel(props: {
   campaignId: string;
+  campaignUpdatedAt: string;
   currentUserId: string;
   handouts: HandoutLibraryItem[];
   worlds: WorldAtlasWorld[];
@@ -114,6 +124,7 @@ export function HandoutLibraryPanel(props: {
   loadError?: string;
   onRetryLoad?(): void;
   onHandoutsChange(update: HandoutLibraryUpdate): void;
+  onRefreshSharedState(): Promise<void>;
   onStatus(message: string): void;
 }) {
   const [query, setQuery] = useState("");
@@ -130,6 +141,15 @@ export function HandoutLibraryPanel(props: {
     if (!selectedId || props.handouts.some((item) => item.id === selectedId)) return;
     setSelectedId("");
   }, [props.handouts, selectedId]);
+
+  async function handleMutationError(prefix: string, error: unknown) {
+    if (isStaleWriteError(error)) {
+      await props.onRefreshSharedState();
+      props.onStatus(`${prefix}: ${staleDraftPreservedMessage}`);
+      return;
+    }
+    props.onStatus(`${prefix}: ${errorMessage(error)}`);
+  }
 
   async function openHandout(item: HandoutLibraryItem) {
     setSelectedId(item.id);
@@ -148,13 +168,14 @@ export function HandoutLibraryPanel(props: {
     if (busy || !input.title.trim()) return;
     setBusy(true);
     try {
-      const updated = await persistHandout(props.campaignId, input);
+      const updated = await persistHandout(props.campaignId, props.campaignUpdatedAt, input);
       props.onHandoutsChange((current) => upsertHandoutItem(current, updated, !input.id));
       setSelectedId(updated.id);
       setCreating(false);
       props.onStatus(`${updated.title} ${input.id ? "updated" : "shared"}`);
+      if (!input.id) await props.onRefreshSharedState();
     } catch (error) {
-      props.onStatus(`Handout save failed: ${errorMessage(error)}`);
+      await handleMutationError("Handout save failed", error);
     } finally {
       setBusy(false);
     }
@@ -164,13 +185,13 @@ export function HandoutLibraryPanel(props: {
     if (!selected || busy) return;
     setBusy(true);
     try {
-      await deleteLibraryHandout(selected.id);
+      await deleteLibraryHandout(selected.id, selected.updatedAt);
       props.onHandoutsChange((current) => current.filter((item) => item.id !== selected.id));
       setSelectedId("");
       setDeleteArmed(false);
       props.onStatus(`${selected.title} deleted`);
     } catch (error) {
-      props.onStatus(`Handout deletion failed: ${errorMessage(error)}`);
+      await handleMutationError("Handout deletion failed", error);
     } finally {
       setBusy(false);
     }
@@ -308,6 +329,12 @@ function HandoutEditor(props: {
     assetIds: props.item?.assetIds ?? [],
     tags: props.item?.tags.join(", ") ?? ""
   }));
+  useEffect(() => {
+    if (!props.item || props.item.id !== draft.id || props.item.updatedAt === draft.expectedUpdatedAt) return;
+    // Advance only the concurrency token. User-authored fields stay intact so
+    // a stale-write refresh never destroys the draft they were reviewing.
+    setDraft((current) => ({ ...current, expectedUpdatedAt: props.item?.updatedAt }));
+  }, [draft.expectedUpdatedAt, draft.id, props.item?.id, props.item?.updatedAt]);
   const canSaveTargets = draft.visibility !== "specific_players" || draft.visibleToUserIds.length > 0;
   const canSaveCharacters = draft.visibility !== "specific_characters" || draft.visibleToActorIds.length > 0;
   const readCount = props.item?.readByUserIds.length ?? 0;

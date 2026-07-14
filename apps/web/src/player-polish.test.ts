@@ -25,7 +25,7 @@ describe("player seat polish", () => {
     expect(advancementFlowSource).toContain("const advancingRef = useRef(false);");
     expect(advancementFlowSource).toContain("if (advancingRef.current || !selectedAdvancementOption) return;");
     expect(advancementFlowSource).toContain("await props.onAdvanceActor(selectedAdvancementOption.id");
-    expect(advancementFlowSource).toContain("}, [advancementMode, selectedFeatId, selectedMulticlass]);");
+    expect(advancementFlowSource).toContain("}, [advancementMode, selectedFeatId, selectedMulticlass, selectedSubclassId]);");
     expect(advancementFlowSource).toContain('advancing ? "Advancing..."');
   });
 
@@ -44,7 +44,7 @@ describe("player seat polish", () => {
   it("keeps player feature gates tied to owned actor and journal permissions", () => {
     expect(appSource).toContain('canUpdateSelectedActor = hasPermission("actor.update") || (selectedActor?.ownerUserId === currentUserId && hasPermission("actor.updateOwned"))');
     expect(appSource).toContain("canUpdateActor={canUpdateSelectedActor}");
-    expect(appSource).toContain('canAwardXp={hasPermission("actor.update")}');
+    expect(appSource).toContain('canAwardRewards={hasPermission("combat.manage") && hasPermission("actor.update")}');
     expect(appSource).toContain("function canAssignItemFromSheet(item: Item)");
     expect(appSource).toContain("if (!canAssignItemFromSheet(item)) return;");
     expect(journalPanelSource).toContain("{props.canCreate &&");

@@ -9,7 +9,7 @@ Use this checklist before an outside dogfood group runs beta v0.2.
 - [ ] API starts on the intended host/port.
 - [ ] Web client starts and points at the intended API origin.
 - [ ] Realtime WebSocket connection succeeds through the web proxy or deployment edge.
-- [ ] Worker jobs can authenticate with `OTTE_SESSION_TOKEN`.
+- [ ] Worker jobs authenticate with a dedicated scoped `OTTE_WORKER_TOKEN` whose matching SHA-256 entry is configured in `OTTE_WORKER_TOKEN_HASHES`; no human or server-admin session token is supplied to the worker.
 
 ## Persistence
 
@@ -31,4 +31,4 @@ Use this checklist before an outside dogfood group runs beta v0.2.
 - [ ] No Roll20 UI, brand, assets, sheets, marketplace data, or proprietary workflows are included.
 - [ ] No proprietary D&D or D&D Beyond content is included.
 - [ ] D&D Beyond and other external services remain safe adapter boundaries only.
-- [ ] AI/plugins create proposals or permissioned storage records instead of secret state mutation.
+- [ ] AI uses its configured proposal or governed automatic-execution mode, and plugins use permission-checked application commands; neither path bypasses authorization, revision, validation, or audit boundaries with direct storage mutation.

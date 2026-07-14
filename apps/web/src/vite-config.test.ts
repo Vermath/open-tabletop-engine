@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { syncDiceBoxAssets } from "../vite.config.js";
+import { ENTRY_CHUNK_BUDGET_BYTES, entryChunkBudgetFailures, syncDiceBoxAssets, webManualChunk } from "../vite.config.js";
 
 const temporaryRoots: string[] = [];
 
@@ -26,5 +26,21 @@ describe("Dice Box build assets", () => {
 
     expect(readFileSync(join(target, "texture.webp"), "utf8")).toBe("new-version");
     expect(existsSync(join(target, "removed-by-upgrade.webp"))).toBe(false);
+  });
+});
+
+describe("web bundle boundaries", () => {
+  it("fails an oversized initial entry but ignores deferred chunks", () => {
+    expect(entryChunkBudgetFailures([
+      { type: "chunk", fileName: "index.js", isEntry: true, code: "x", imports: ["react-vendor.js"] },
+      { type: "chunk", fileName: "react-vendor.js", isEntry: false, code: "x".repeat(ENTRY_CHUNK_BUDGET_BYTES) },
+      { type: "chunk", fileName: "compendium.js", isEntry: false, code: "x".repeat(ENTRY_CHUNK_BUDGET_BYTES + 1) }
+    ])).toEqual([expect.stringContaining("index.js")]);
+  });
+
+  it("keeps expensive vendor runtimes out of the application entry", () => {
+    expect(webManualChunk("D:/repo/node_modules/react-dom/client.js")).toBe("react-vendor");
+    expect(webManualChunk("D:/repo/node_modules/html-to-image/es/index.js")).toBe("image-export");
+    expect(webManualChunk("D:/repo/node_modules/@3d-dice/dice-box-threejs/dist/index.js")).toBe("dice-runtime");
   });
 });

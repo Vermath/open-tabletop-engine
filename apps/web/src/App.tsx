@@ -1,41 +1,54 @@
-import type { Actor, AiMemoryFact, AiThread, AiToolCall, AudioTrack, AuditLog, Campaign, CampaignArchive, ChatMessage, Combat, CombatAction, ContentImportBatch, ContentImportEntityKind, ContentImportSource, DiceRoll, EmailOutboxMessage, Encounter, FogHistoryEntry, FogMode, FogPreset, Item, JournalEntry, MapAsset, MessageType, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, SceneAnnotation, SceneAnnotationKind, SceneAnnotationLayer, SceneTemplateShape, ScimAssignableRole, Token, TokenLayer, UserRole, Visibility, VisionPoint, VisionPointSample, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
+import type { Actor, AiMemoryFact, AiThread, AiToolCall, AudioTrack, AuditLog, Campaign, CampaignArchive, ChatMessage, Combat, CombatAction, ContentImportBatch, ContentImportEntityKind, ContentImportSource, DiceRoll, EmailOutboxMessage, Encounter, FogHistoryEntry, FogMode, FogPreset, Item, JournalCanonStatus, JournalEntry, MapAsset, MessageType, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, SceneAnnotation, SceneAnnotationKind, SceneAnnotationLayer, SceneTemplateShape, ScimAssignableRole, Token, TokenLayer, User, UserRole, Visibility, VisionPoint, VisionPointSample, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
+import type { Dnd5eSrdPendingAdvancement, Dnd5eSrdSpellPreparationMutationResult, DndRulesMutationUndoDescriptor, DndRulesMutationUndoResult } from "@open-tabletop/core";
 import { probabilityRange, rollFormula } from "@open-tabletop/dice-engine";
 import { toPng } from "html-to-image";
-import { Activity, BookOpen, Bot, Boxes, Brain, BrickWall, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Circle, Copy, Crosshair, Dices, Download, Eraser, Eye, FileText, Flame, Globe2, Grip, Hand, Image as ImageIcon, KeyRound, Layers, Lightbulb, LockKeyhole, Mail, Map as MapIcon, MapPin, Maximize2, MessageSquare, Minimize2, Moon, Music, Paintbrush, Pause, PencilLine, Pentagon, Play, Plus, RefreshCw, RotateCcw, Ruler, ScrollText, Search, Send, Shield, Swords, Timer, Trash2, Triangle, Upload, UserCog, UserPlus, Users, UserX, Volume2, VolumeX, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
+import { Activity, BookOpen, Bot, Boxes, Brain, BrickWall, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Circle, Copy, Crosshair, Dices, Download, Eraser, Eye, FileText, Flame, Globe2, Grip, Hand, Image as ImageIcon, KeyRound, Layers, Lightbulb, LockKeyhole, Mail, Map as MapIcon, MapPin, Maximize2, MessageSquare, Minimize2, Moon, Music, Paintbrush, PencilLine, Pentagon, Play, Plus, RefreshCw, RotateCcw, Ruler, ScrollText, Search, Send, Shield, Swords, Timer, Trash2, Triangle, Upload, UserCog, UserPlus, Users, UserX, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
 import type { CSSProperties, DragEvent as ReactDragEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { acceptInviteSession, ApiError, apiAnalyzePdfContentImport, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, bootstrapOwnerSession, changePasswordSession, clearSession, confirmPasswordResetSession, confirmTotpMfa, consumeSsoRedirect, createOrganizationWorkspace, disableTotpMfa, enrollTotpMfa, getSessionToken, getSessionUserId, loadAdminSnapshot, loadBootstrapStatus, loadMfaStatus, loadOidcConfig, loadOrganizationInvites, loadOrganizationMembers, loadSnapshot, loginPasswordSession, loginSession, logoutSession, registerSession, removeOrganizationMember, requestPasswordReset, revokeInvite, setStatelessDemoApiMode, startOidcLogin, storeSession, switchOrganization, updateOrganizationMemberRole, updateWorkspaceDefaults, upsertOrganizationMember, verifyDiceRoll, type AdminAssetIntegrityQuarantineResult, type AdminAuthConnectionTestResult, type AdminEmailOutboxRetryAllResult, type AdminJob, type AdminJobAlertResult, type AdminPasswordResetInfo, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminScimGroupRoleMappingResult, type AdminSessionInfo, type AdminSnapshot, type AdminStorageBackupResult, type AdminStorageRestoreDrillResult, type AdminStorageRestoreResult, type AdminUserInfo, type AiUsageSummary, type CampaignAssetStorageInfo, type CampaignSessionInfo, type CharacterTemplateInfo, type DiceRollVerification, type EncounterPlanInfo, type InviteCreateInfo, type MfaInfo, type OrganizationMemberInfo, type PluginReviewStatus, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
+import { Fragment, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { acceptInviteSession, ApiError, apiAnalyzePdfContentImport, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, bootstrapOwnerSession, changePasswordSession, clearSession, confirmPasswordResetSession, confirmTotpMfa, consumeSsoRedirect, createAdminScimGroupRoleMapping, createOrganizationWorkspace, deleteAdminScimGroupRoleMapping, disableTotpMfa, enrollTotpMfa, getSessionToken, getSessionUserId, loadAdminSnapshot, loadBootstrapStatus, loadMfaStatus, loadOidcConfig, loadOrganizationInvites, loadOrganizationMembers, loadSnapshot, loginPasswordSession, loginSession, logoutSession, registerSession, removeOrganizationMember, requestPasswordReset, revokeInvite, setStatelessDemoApiMode, startOidcLogin, storeSession, switchOrganization, transferCampaignOwnership, updateOrganizationMemberRole, updateWorkspaceDefaults, upsertOrganizationMember, verifyDiceRoll, type AdminAssetIntegrityQuarantineResult, type AdminAuthConnectionTestResult, type AdminJob, type AdminJobAlertResult, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminSessionInfo, type AdminSnapshot, type AdminStorageBackupResult, type AdminStorageRestoreDrillResult, type AdminStorageRestoreResult, type AdminUserInfo, type AiUsageSummary, type CampaignAssetStorageInfo, type CampaignSessionInfo, type CharacterTemplateInfo, type DiceRollVerification, type EncounterPlanInfo, type InviteCreateInfo, type MfaInfo, type OrganizationMemberInfo, type PluginReviewStatus, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
 import { actorForSelection, adversaryActorsForSceneBoard, isAdversaryActor } from "./actor-rails.js";
+import { assetThumbnailUrl } from "./api.js";
 import { activeSceneAnnotations, nextAnnotationExpiryMs } from "./annotation-expiry.js";
 import { applyLocalBoardHistoryAction, createTokenCopies, type BoardHistoryAction, type BoardHistoryDirection, type BoardTokenFrameChange, type BoardTokenPositionChange } from "./board-history.js";
 import { blankCanvasDemoCampaignId, blankCanvasDemoNotice, blankCanvasDemoSceneId, blankCanvasDemoUserId, createBlankCanvasDemoAsset, createBlankCanvasDemoSnapshot } from "./blank-canvas-demo.js";
 import { scenePointFromClient } from "./board-geometry.js";
 import { boardKeyboardAction } from "./board-keyboard.js";
 import { computeTokenMovements, formatGridDistance } from "./board-animation.js";
-import { activeAudioCount, desiredAudioStates } from "./audio-sync.js";
+import { AudioPlaybackLayer, AudioSoundboard, audioTrackNameFromFile } from "./audio-workspace.js";
 import { parseChatCommand } from "./chat-command.js";
 import { filterPaletteCommands, movePaletteIndex, paletteDiceFormula, type PaletteCommand } from "./command-palette.js";
 import type { DesktopStatus } from "./desktop-api.js";
 import { addDieToFormula, diceTraySides, rollHighlight, rollTermHighlight } from "./dice-insights.js";
-import { dice3dStorageKey, diceCastPlan, dieShapeName, dieShapePoints, initialDice3dEnabled, newDiceCastRolls, type DiceCastPlan, type Dice3dPreferenceEnvironment } from "./dice-3d.js";
+import { dice3dStorageKey, diceCastPlan, dieShapeName, dieShapePoints, initialDice3dEnabled, newDiceCastRolls, type DiceCastPlan } from "./dice-3d.js";
 import { castPhysicsDiceWhenReady, clearPhysicsDice, diceBoxContainerId, diceBoxStatus, physicsDiceLabelDelayMs, primePhysicsDiceStage } from "./dice-box-stage.js";
 import { initialUiTheme, nextUiTheme, uiThemeLabel, uiThemeStorageKey, type UiTheme } from "./ui-theme.js";
 import { applyProposalChangesToSnapshot, proposalChangesExternalLore, proposalReviewActionLabel, proposalReviewSteps, setProposalHidden, visibleAiAgentProposals } from "./proposal-review.js";
-import { realtimeConnectionIdentity, realtimeUiLabel, startRealtimeConnection, type RealtimeUiState } from "./realtime-connection.js";
-import { boardCaptureRequestDecision, createRealtimeHandlers, workspaceSelectionMatches, type BoardCaptureRequestDecision } from "./realtime-refresh.js";
+import { realtimeConnectionIdentity, realtimeReconnectDelayMs, realtimeUiLabel, startRealtimeConnection, type RealtimeUiState } from "./realtime-connection.js";
+import { boardCaptureRequestDecision, createRealtimeHandlers, workspaceSelectionMatches, type BoardCaptureRequestDecision, type RealtimeApplyResult, type RealtimeReconcileScope } from "./realtime-refresh.js";
+import { removeRealtimeRecord, upsertBoundedRealtimeRecord, upsertRealtimeRecord } from "./realtime-snapshot-delta.js";
+import { applyPresenceEnvelope, realtimeSequenceDecision } from "./realtime-sequence.js";
 import { settleWorkspaceLoreLoad } from "./workspace-lore-load.js";
 import { settleWorkspaceBoundAction, type WorkspaceBoundRequest, type WorkspaceRequestIdentity } from "./workspace-bound-action.js";
 import { templateConePoints } from "./scene-annotations.js";
 import { normalizeSceneSizeValue, sceneDimensionsFromCells, sceneGridCellSummary, sceneSizePresets, type SceneSizePreset } from "./scene-size.js";
 import { sceneDeleteConfirmationMatches, sceneQuickCreateIndex, sceneTabWrapClass, showTrailingSceneCreate } from "./scene-tabs.js";
+import { appendGridCalibrationPoint, GridCalibrationPanel } from "./grid-calibration.js";
+import { SceneDelegationPanel } from "./scene-delegation-panel.js";
+import { ProfilePreferences, resolvedUserPreferences, updateUserProfile } from "./profile-preferences.js";
 import { HpBar } from "./hp-bar.js";
-import { deleteJournalEntry, JournalPanel, updateJournalEntry, type JournalDraft } from "./journal-panel.js";
+import { deleteJournalEntry, JournalPanel, updateJournalEntry, type JournalCreateOptions, type JournalDraft, type JournalLinkTargetOption } from "./journal-panel.js";
 import { ChatRail } from "./chat-rail.js";
+import { CampaignOwnershipTransfer, type CampaignOwnershipTransferInput } from "./campaign-ownership-transfer.js";
+import { campaignSurpriseEnabled, CampaignRulesProfilePanel } from "./campaign-rules-profile.js";
+import { CharacterTransferPanel } from "./character-transfer-panel.js";
 import { CombatPanel, nextCombatTurnPosition } from "./combat-panel.js";
-import { SdkPanel } from "./sdk-panel.js";
-import { AdvancementFlow } from "./advancement-flow.js";
-import { ContentImportPanel } from "./content-import-panel.js";
+import { combatRewardAttemptForIntent, combatRewardIntentFingerprint, type CombatRewardAttempt } from "./combat-reward-idempotency.js";
+import { appendMutationAttemptForIntent, appendMutationFingerprint, type AppendMutationAttempt } from "./append-mutation-idempotency.js";
+import { AdvancementFlow, type AdvancementChoicePayload, type AdvancementFeatInfo, type AdvancementMulticlassOption, type AdvancementPreviewEnvelope, type AdvancementSubclassOption, type AdvancementWeaponMasteryInfo } from "./advancement-flow.js";
 import { AdminPanel, aiToolCallErrorCode, scimMappingLabel } from "./admin-panel.js";
+import { createAdminAssetMutationClient } from "./admin-asset-client.js";
+import { createAdminIdentityMutationClient } from "./admin-identity-client.js";
+import { createAdminPluginMutationClient } from "./admin-plugin-client.js";
 import { AiPanel } from "./ai-panel.js";
 import { MapLayerStack, MapSelectionStatus, MapZoomControls, SceneCanvas, TabButton, Toolbar, annotationColor, annotationGroupKey, annotationToolLabel, annotationToolShowsSettings, battleMapZoomStep, clampBattleMapZoom, defaultAnnotationLayer, distanceBetween, nextTokenLayer, tokenCenter, tokenCoordinatesFromCenter, tokenFrame, tokenLayer, tokenLayerLabel, tokenLayers, type TokenFrame, type TokenMovePersistenceChange, type TokenSelectionOptions } from "./scene-canvas.js";
 import { campaignPermissionTemplates, type CampaignPermissionTemplateId } from "./admin-data.js";
@@ -46,17 +59,34 @@ import { CharacterCreatorDialog, type CharacterCreateInput, type CharacterOrigin
 import { CharacterImportDialog, type CharacterImportOutcome } from "./character-import-dialog.js";
 import type { CharacterImportPayload } from "./character-import.js";
 import { EncounterBuilderDialog, type EncounterBuilderThreatSelection } from "./encounter-builder.js";
+import { CombatSetupDialog } from "./combat-setup-dialog.js";
+import type { CombatSetupSubmission } from "./combat-setup.js";
 import { canonicalSceneIdForWorldFilter, selectedSceneForWorldFilter, WorldAtlasPanel, worldFilterMatchesScene, type LoreCollectionLoadState, type WorldAtlasFilter, type WorldAtlasWorld } from "./world-atlas-panel.js";
 import { HandoutLibraryPanel, type HandoutLibraryItem } from "./handout-library-panel.js";
 import { CampaignMemoryPanel, type CampaignMemoryFact } from "./campaign-memory-panel.js";
 import { CampaignSearchPanel, campaignSearchAnchorId, campaignSearchDestination, campaignSearchItemActorId, campaignSearchTypeHasRenderedAnchor, type CampaignSearchResult } from "./campaign-search-panel.js";
-import { HitDiceRestCard } from "./hit-dice-rest-card.js";
+import { HitDiceRestCard, type ActorRestOptions, type RestPreviewEnvelope } from "./hit-dice-rest-card.js";
+import { TypedDamageCard, type TypedDamageApplyResult } from "./typed-damage-card.js";
+import { ActorLoadoutPanel, filterActorLoadoutItems, type ActorLoadoutFilter } from "./actor-loadout-panel.js";
+import { TacticalMapAids, coverLevelLabel, sceneCoverOverrideBetween } from "./tactical-map-aids.js";
+import { CalculationExplanationPanel } from "./calculation-explanation-panel.js";
+import { LazyActorPanel as ActorPanel, LazyCampaignWebhooksPanel, LazyCompatibilityPanel, LazyCompendiumPanel, LazyContentImportPanel, LazyControlledCreaturesPanel, LazyDndCharacterReviewPanel, LazyDndCustomContentPanel, LazyDndInventoryCommercePanel, LazySdkPanel } from "./deferred-panels.js";
 import { LiveSessionBanner, SessionDeskPanel } from "./session-desk-panel.js";
 import { useModalAccessibility } from "./modal-accessibility.js";
 import { beginSessionSwitch, sessionSwitchIsCurrent } from "./session-switch-guard.js";
-import { actorActionDiceFormula, actorActionOptions, actorActionSupportsEffect, actorArmorClass, actorCombatResource, actorCombatStateLabels, actorConditionLabels, actorHitPoints, actorResourceControls, actorResourceLabels, actorResourceUpdate, actorSaveFormula, adjustedTemplateDamage, appendActorCondition, formatActorConditions, isPointInsidePoints, isPurchasableCompendiumEntry, itemDisplayLabel, itemEquippedLabel, itemPreparedLabel, parseActorConditions, quickActorConditionIds, targetConditionLabels, tokenBrightVisionPatch, tokenDimVisionPatch, tokenPermissionPresetLabel, tokenPlayerOwnerIds, type ActorActionOption, type RulesCompendiumEntry, type TokenVisionPatch } from "./actor-sheet-data.js";
+import { actorActionDiceFormula, actorActionOptions, actorActionSupportsEffect, actorArmorClass, actorCombatStateLabels, actorConditionLabels, actorHitPoints, actorResourceControls, actorResourceLabels, actorResourceUpdate, actorSaveFormula, adjustedTemplateDamage, appendActorCondition, formatActorConditions, isPointInsidePoints, isPurchasableCompendiumEntry, itemDisplayLabel, parseActorConditions, quickActorConditionIds, targetConditionLabels, tokenBrightVisionPatch, tokenDimVisionPatch, tokenPermissionPresetLabel, tokenPlayerOwnerIds, type ActorActionOption, type RulesCompendiumEntry, type TokenVisionPatch } from "./actor-sheet-data.js";
 import { actorRailSubtitle, clampNumber, contentImportStatusClass, downloadJson, errorMessage, formatAdminList, formatCost, formatCurrency, formatDateTime, formatDuration, formatDurationSeconds, formatFogHistoryEntry, formatGp, formatNumber, formatPercent, formatRollTermDetail, formatRollTermName, formatStorageBytes, formatTime, formatVisionPoint, formatVisionPointSample, jobStatusClass, numericValue, registryHostLabel, prettyOriginId, readinessStatusClass, recordValue, rollTermTotal, safeProbabilityRange, slugId, stringArrayValue, stringValue, titleCaseLabel } from "./sheet-format.js";
-import { hasItemDropData, hasTokenDropData, readItemDropData, readTokenDropData, setTokenDropPreview, writeItemDropData, writeTokenDropData, type TokenDropPayload } from "./token-drag.js";
+import { formatTokenSenses, parseTokenSenses } from "./actor-sheet-data.js";
+import { hasItemDropData, hasTokenDropData, readItemDropData, readTokenDropData, setTokenDropPreview, writeTokenDropData, type TokenDropPayload } from "./token-drag.js";
+import { RetryableActionNotice, useRetryableAction } from "./retryable-action.js";
+import { isStaleWriteError, sharedMutationIdempotencyKey } from "./shared-mutation.js";
+import { KeyedMutationQueue } from "./keyed-mutation-queue.js";
+import { clampFloatingPanel, useMovablePanel, type FloatingPanelPosition, type FloatingPanelSize } from "./movable-panel.js";
+import { CommandPalette, DiceCastOverlay } from "./tabletop-overlays.js";
+import { preparedActorActionReviewText, type CommittedActorActionResponse, type PreparedActorActionResponse, type PreparedTypedDamageResponse } from "./actor-action-review.js";
+import type { CampaignSetupIdempotencyKeys, CampaignSetupProgress } from "./campaign-setup-state.js";
+import { isInspectorTabAllowed, keyboardShortcutRows, mapDockOpenStorageKey, quickCreateOpenStorageKey } from "./workspace-ui-constants.js";
+import { absoluteInviteUrl, clearJoinUrl, clearResetUrl, dice3dPreferenceEnvironment, initialInviteToken, initialResetMode, initialResetToken, initialSavedDiceFormulas, initialStoredId, initialStoredPanelFlag, mfaCredential, persistSavedDiceFormulas, persistStoredId, persistStoredPanelFlag } from "./startup-state.js";
 
 const apiBase = import.meta.env.VITE_API_URL ?? "";
 const boardHistoryLimit = 50;
@@ -67,14 +97,12 @@ const aiAgentAuthRetryIntervalMs = 3_000;
 const aiAgentAuthRetryTimeoutMs = 10 * 60_000;
 const rollingDiceStatus = "Rolling dice...";
 
-function audioTrackNameFromFile(file: File): string {
-  return file.name.replace(/\.[^.]+$/, "").trim() || file.name || "Uploaded audio";
+function DeferredPanelFallback({ label = "workspace tool" }: { label?: string }) {
+  return <div className="deferred-panel-fallback" role="status" aria-live="polite"><RefreshCw className="spin" size={16} aria-hidden="true" /> Loading {label}...</div>;
 }
 
-function authenticatedAudioUrl(url: string): string {
-  if (/^(https?:|data:|blob:)/.test(url)) return url;
-  if (!apiBase) return url;
-  return `${apiBase.replace(/\/+$/, "")}${url.startsWith("/") ? url : `/${url}`}`;
+export function hasUnmodeledMixedDamageType(value: string | undefined): boolean {
+  return (value ?? "").split(/[\/,]/).map((part) => part.trim()).filter(Boolean).length > 1;
 }
 
 function apiOfflineStatus(detail?: unknown): string {
@@ -86,46 +114,16 @@ function apiOfflineStatus(detail?: unknown): string {
 interface FailedArchiveImport {
   file: File;
   message: string;
+  attempt: ArchiveImportAttempt;
 }
 
-interface FloatingPanelPosition {
-  x: number;
-  y: number;
+interface ArchiveImportAttempt {
+  idempotencyKey: string;
+  mode: ArchiveImportMode;
+  scope: ArchiveImportScope;
+  collections: ArchiveImportCollection[];
 }
 
-interface FloatingPanelSize {
-  width: number;
-  height: number;
-}
-
-interface FloatingPanelDrag {
-  pointerId: number;
-  handle: HTMLElement;
-  startClientX: number;
-  startClientY: number;
-  startX: number;
-  startY: number;
-  maxX: number;
-  maxY: number;
-}
-
-interface FloatingPanelResize {
-  pointerId: number;
-  handle: HTMLElement;
-  startClientX: number;
-  startClientY: number;
-  startWidth: number;
-  startHeight: number;
-  minWidth: number;
-  minHeight: number;
-  maxWidth: number;
-  maxHeight: number;
-}
-
-interface FloatingPanelResizeOptions {
-  minWidth?: number;
-  minHeight?: number;
-}
 
 interface SceneViewportSize {
   width: number;
@@ -154,45 +152,19 @@ type ArchiveRedactionMode = "portable";
 type ArchiveImportMode = "upsert" | "reject_conflicts" | "skip_conflicts" | "dry_run";
 type ManageCategoryId = "account" | "campaign" | "people" | "scenes" | "archives" | "serverAdmin";
 type WorkspaceMode = "live" | "prep" | "ai" | "manage";
-type InspectorTab = "actors" | "sessions" | "worlds" | "handouts" | "journal" | "memory" | "search" | "chat" | "combat" | "content" | "plugins";
+type InspectorTab = "actors" | "compendium" | "sessions" | "worlds" | "handouts" | "journal" | "memory" | "search" | "chat" | "combat" | "content" | "plugins";
 type AiAgentApprovalMode = "manual" | "auto";
 type AiGenerationJobKind = "map" | "token" | "tokenBatch";
 type RulesSaveOutcome = "success" | "failure";
 type ActorActionCommitOptions = { targetActorId?: string; applyEffect?: boolean; consumeResources?: boolean; saveOutcomes?: Record<string, RulesSaveOutcome>; effectChoice?: string };
-
-interface CampaignSetupProgress {
-  key: string;
-  organizationId: string;
-  userId: string;
-  campaign: Campaign;
-  scene?: Scene;
-  onboardingCreated: boolean;
-  invite?: InviteCreateInfo;
-  inviteEmail?: string;
-  inviteRole?: UserRole;
-  inviteRequestStarted?: boolean;
-  inviteCreatedWithoutLink?: boolean;
-}
-
-interface CampaignSetupIdempotencyKeys {
-  draftKey: string;
-  campaign: string;
-  scene: string;
-  journal: string;
-}
-
-interface ActorActionResolutionPreview {
-  commitMode: "commit" | "preview";
-  blocked?: { reason: string; code: string };
-  rolls?: Array<{ rollId: string; label: string; formula: string; d20Mode?: string; targetActorId?: string; advantageSources?: string[]; disadvantageSources?: string[] }>;
-  resourceConsumption?: Array<{ label: string; amount: number; remaining: number }>;
-  conditions?: Array<{ actorId: string; operation: string; conditionName?: string; reason: string }>;
-  pendingSaves?: Array<{ actorId: string; ability: string; dc?: number; reason: string; requiredForCommit?: boolean }>;
-  pendingReactions?: Array<{ actorId: string; reason: string }>;
-  warnings?: string[];
-  pendingChoice?: { kind?: "effect" | "damageType" | "resistance" | "manual"; reason: string; options: string[] };
-  manualResolutionRequired?: { reason: string };
-  attunement?: { limit: number; attunedItemIds: string[]; overLimitBy: number };
+interface CombatRewardRequestPayload {
+  recipientActorIds: string[];
+  totalXp?: number;
+  totalGp?: number;
+  loot?: string[];
+  note?: string;
+  expectedUpdatedAt: string;
+  expectedActorUpdatedAt: Record<string, string>;
 }
 
 interface AiGenerationJob {
@@ -259,75 +231,6 @@ interface AiAgentCodexAuthPrompt extends CodexAuthStart {
 
 const annotationLayers: SceneAnnotationLayer[] = ["measurement", "effects", "drawings", "notes"];
 
-function initialResetToken(): string {
-  return new URLSearchParams(window.location.search).get("token") ?? "";
-}
-
-function dice3dPreferenceEnvironment(): Dice3dPreferenceEnvironment {
-  const connection = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection;
-  return {
-    prefersReducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
-    saveData: Boolean(connection?.saveData),
-    hardwareConcurrency: navigator.hardwareConcurrency
-  };
-}
-
-function initialInviteToken(): string {
-  return new URLSearchParams(window.location.search).get("invite") ?? "";
-}
-
-function initialResetMode(): boolean {
-  return window.location.pathname.endsWith("/reset-password") || initialResetToken().startsWith("opr_");
-}
-
-function clearResetUrl(): void {
-  const nextPath = window.location.pathname.endsWith("/reset-password") ? "/" : window.location.pathname;
-  window.history.replaceState(null, "", nextPath || "/");
-}
-
-function clearJoinUrl(): void {
-  if (window.location.pathname.endsWith("/join") || new URLSearchParams(window.location.search).has("invite")) {
-    window.history.replaceState(null, "", "/");
-  }
-}
-
-function absoluteInviteUrl(acceptUrl: string): string {
-  return new URL(acceptUrl, window.location.origin).toString();
-}
-
-function initialSavedDiceFormulas(): string[] {
-  const fallback = ["1d20+5", "2d20kh1+5", "2d20kl1+5", "1d8+3", "2d6"];
-  try {
-    const parsed = JSON.parse(localStorage.getItem("otte:savedDiceFormulas") ?? "[]") as unknown;
-    if (!Array.isArray(parsed)) return fallback;
-    const formulas = parsed.filter((value): value is string => typeof value === "string" && value.trim().length > 0).map((value) => value.trim()).slice(0, 12);
-    return formulas.length > 0 ? formulas : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function persistSavedDiceFormulas(formulas: string[]): void {
-  localStorage.setItem("otte:savedDiceFormulas", JSON.stringify(formulas.slice(0, 12)));
-}
-
-function initialStoredId(key: string, fallback: string): string {
-  try {
-    return localStorage.getItem(key) || fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function persistStoredId(key: string, value: string): void {
-  try {
-    if (value) localStorage.setItem(key, value);
-    else localStorage.removeItem(key);
-  } catch {
-    // Selection persistence is a convenience; private-mode storage failures should not block the table.
-  }
-}
-
 function aiAgentApprovalModeStorageKey(campaignId: string, userId: string | null): string {
   return `otte:aiAgentApprovalMode:${campaignId || "none"}:${userId ?? "anonymous"}`;
 }
@@ -346,12 +249,6 @@ function persistAiAgentApprovalMode(campaignId: string, userId: string | null, v
   } catch {
     // Approval mode persistence is a convenience; the UI still has an explicit selector.
   }
-}
-
-function mfaCredential(value: string): { mfaCode?: string; recoveryCode?: string } {
-  const credential = value.trim();
-  if (!credential) return {};
-  return /^\d{6}$/.test(credential) ? { mfaCode: credential } : { recoveryCode: credential };
 }
 
 function aiAgentHistoryStorageKey(campaignId: string, userId: string | null): string {
@@ -442,8 +339,6 @@ type XpProgressInfo = {
 type MeasurementTool = "measure-circle" | "measure-cone";
 type AnnotationTool = SceneAnnotationKind | MeasurementTool | null;
 type ActiveAnnotationTool = NonNullable<AnnotationTool>;
-type ActorLoadoutFilter = "all" | "equipped" | "consumable" | "magic";
-
 function compareScenesForDisplay(left: Scene, right: Scene): number {
   return left.sortOrder - right.sortOrder || left.createdAt.localeCompare(right.createdAt) || left.name.localeCompare(right.name);
 }
@@ -483,14 +378,6 @@ function useAnnotationExpiryClock(annotations: readonly Pick<SceneAnnotation, "e
   return nowMs;
 }
 
-function clampFloatingPanel(value: number, max: number): number {
-  return Math.max(8, Math.min(Math.max(8, max), Math.round(value)));
-}
-
-function clampFloatingPanelSize(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(Math.max(min, max), Math.round(value)));
-}
-
 function initialAiAgentPanelSize(): FloatingPanelSize {
   return {
     width: Math.min(420, Math.max(340, window.innerWidth - 32)),
@@ -511,301 +398,9 @@ function initialAiAgentPanelPosition(): FloatingPanelPosition {
   };
 }
 
-function initialSoundboardPanelSize(): FloatingPanelSize {
-  return {
-    width: Math.min(300, Math.max(260, window.innerWidth - 32)),
-    height: Math.min(440, Math.max(320, window.innerHeight - 96))
-  };
-}
-
-function initialSoundboardPanelPosition(): FloatingPanelPosition {
-  const { width } = initialSoundboardPanelSize();
-  return {
-    x: clampFloatingPanel(window.innerWidth - floatingPanelInspectorAllowance() - width - 16, window.innerWidth - 48),
-    y: clampFloatingPanel(96, window.innerHeight - 48)
-  };
-}
-
-function initialActorSheetPanelSize(): FloatingPanelSize {
-  return {
-    width: Math.min(620, Math.max(380, window.innerWidth - 48)),
-    height: Math.min(660, Math.max(400, window.innerHeight - 96))
-  };
-}
-
-function initialActorSheetPanelPosition(): FloatingPanelPosition {
-  const { width } = initialActorSheetPanelSize();
-  return {
-    x: clampFloatingPanel(window.innerWidth - floatingPanelInspectorAllowance() - width - 24, window.innerWidth - 48),
-    y: clampFloatingPanel(64, window.innerHeight - 48)
-  };
-}
-
-const keyboardShortcutRows: Array<{ keys: string; label: string }> = [
-  { keys: "Ctrl+K", label: "Command palette" },
-  { keys: "F", label: "Focus the battle map" },
-  { keys: "V", label: "Select tool" },
-  { keys: "R", label: "Ruler" },
-  { keys: "C", label: "Measure circle" },
-  { keys: "O", label: "Measure cone" },
-  { keys: "P", label: "Ping" },
-  { keys: "D", label: "Draw" },
-  { keys: "A", label: "Area template" },
-  { keys: "Shift+Click", label: "Multi-select tokens" },
-  { keys: "Alt+Drag", label: "Pan the map" },
-  { keys: "Ctrl+Scroll", label: "Zoom the map" },
-  { keys: "Esc", label: "Close panels and dialogs" },
-  { keys: "?", label: "Toggle this overlay" }
-];
-
-const mapDockOpenStorageKey = "otte:mapDockOpen";
-const quickCreateOpenStorageKey = "otte:quickCreateOpen";
-const floatingPanelInteractiveSelector = "button,input,select,textarea,a,label,[role='button']";
-
-function initialStoredPanelFlag(key: string, fallback: boolean): boolean {
-  try {
-    const stored = window.localStorage.getItem(key);
-    return stored === null ? fallback : stored === "true";
-  } catch {
-    return fallback;
-  }
-}
-
-function persistStoredPanelFlag(key: string, value: boolean): void {
-  try {
-    window.localStorage.setItem(key, String(value));
-  } catch {
-    // Storage may be unavailable in private sessions; the preference is non-essential.
-  }
-}
-
-function useMovablePanel(initialPosition: FloatingPanelPosition | (() => FloatingPanelPosition), initialSize: FloatingPanelSize | (() => FloatingPanelSize) = { width: 320, height: 280 }, resizeOptions: FloatingPanelResizeOptions = {}) {
-  const [position, setPosition] = useState<FloatingPanelPosition>(() => (typeof initialPosition === "function" ? initialPosition() : initialPosition));
-  const [size, setSize] = useState<FloatingPanelSize>(() => (typeof initialSize === "function" ? initialSize() : initialSize));
-  const [collapsed, setCollapsed] = useState(false);
-  const dragRef = useRef<FloatingPanelDrag | null>(null);
-  const resizeRef = useRef<FloatingPanelResize | null>(null);
-  const minWidth = resizeOptions.minWidth ?? 280;
-  const minHeight = resizeOptions.minHeight ?? 180;
-  const style = useMemo(
-    () =>
-      ({
-        "--floating-panel-x": `${position.x}px`,
-        "--floating-panel-y": `${position.y}px`,
-        "--floating-panel-width": `${size.width}px`,
-        "--floating-panel-height": `${size.height}px`
-      }) as CSSProperties,
-    [position, size]
-  );
-
-  const releaseDrag = (drag: FloatingPanelDrag) => {
-    try {
-      drag.handle.releasePointerCapture(drag.pointerId);
-    } catch {
-      // The browser may already have released capture if the pointer left the viewport.
-    }
-  };
-
-  const updateDragPosition = (drag: FloatingPanelDrag, clientX: number, clientY: number) => {
-    setPosition({
-      x: clampFloatingPanel(drag.startX + clientX - drag.startClientX, drag.maxX),
-      y: clampFloatingPanel(drag.startY + clientY - drag.startClientY, drag.maxY)
-    });
-  };
-
-  const releaseResize = (resize: FloatingPanelResize) => {
-    try {
-      resize.handle.releasePointerCapture(resize.pointerId);
-    } catch {
-      // The browser may already have released capture if the pointer left the viewport.
-    }
-  };
-
-  const updateResizeSize = (resize: FloatingPanelResize, clientX: number, clientY: number) => {
-    setSize({
-      width: clampFloatingPanelSize(resize.startWidth + clientX - resize.startClientX, resize.minWidth, resize.maxWidth),
-      height: clampFloatingPanelSize(resize.startHeight + clientY - resize.startClientY, resize.minHeight, resize.maxHeight)
-    });
-  };
-
-  const endCurrentDrag = (event?: PointerEvent) => {
-    const drag = dragRef.current;
-    if (!drag) return;
-    if (event && drag.pointerId !== event.pointerId) return;
-    if (event) updateDragPosition(drag, event.clientX, event.clientY);
-    dragRef.current = null;
-    releaseDrag(drag);
-  };
-
-  const endCurrentResize = (event?: PointerEvent) => {
-    const resize = resizeRef.current;
-    if (!resize) return;
-    if (event && resize.pointerId !== event.pointerId) return;
-    if (event) updateResizeSize(resize, event.clientX, event.clientY);
-    resizeRef.current = null;
-    releaseResize(resize);
-  };
-
-  useEffect(() => {
-    const endWindowPointer = (event: PointerEvent) => {
-      endCurrentDrag(event);
-      endCurrentResize(event);
-    };
-    const cancelWindowPointer = (event: PointerEvent) => {
-      endCurrentDrag(event);
-      endCurrentResize(event);
-    };
-    const endPointerOnBlur = () => {
-      endCurrentDrag();
-      endCurrentResize();
-    };
-    window.addEventListener("pointerup", endWindowPointer);
-    window.addEventListener("pointercancel", cancelWindowPointer);
-    window.addEventListener("blur", endPointerOnBlur);
-    return () => {
-      window.removeEventListener("pointerup", endWindowPointer);
-      window.removeEventListener("pointercancel", cancelWindowPointer);
-      window.removeEventListener("blur", endPointerOnBlur);
-    };
-  }, []);
-
-  const endDrag = (event: ReactPointerEvent<HTMLElement>) => {
-    const drag = dragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    updateDragPosition(drag, event.clientX, event.clientY);
-    dragRef.current = null;
-    try {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    } catch {
-      // The browser may already have released capture if the pointer left the viewport.
-    }
-  };
-
-  const endResize = (event: ReactPointerEvent<HTMLElement>) => {
-    const resize = resizeRef.current;
-    if (!resize || resize.pointerId !== event.pointerId) return;
-    updateResizeSize(resize, event.clientX, event.clientY);
-    resizeRef.current = null;
-    try {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    } catch {
-      // The browser may already have released capture if the pointer left the viewport.
-    }
-  };
-
-  const resizeByKeyboard = (event: ReactKeyboardEvent<HTMLElement>, deltaWidth: number, deltaHeight: number) => {
-    const panel = event.currentTarget.closest<HTMLElement>(".movable-panel");
-    if (!panel) return;
-    const container = panel.offsetParent instanceof HTMLElement ? panel.offsetParent : document.documentElement;
-    const panelRect = panel.getBoundingClientRect();
-    const containerRect = container.getBoundingClientRect();
-    const maxWidth = containerRect.right - panelRect.left - 8;
-    const maxHeight = containerRect.bottom - panelRect.top - 8;
-    setSize((current) => ({
-      width: clampFloatingPanelSize(current.width + deltaWidth, minWidth, maxWidth),
-      height: clampFloatingPanelSize(current.height + deltaHeight, minHeight, maxHeight)
-    }));
-    event.preventDefault();
-    event.stopPropagation();
-  };
-
-  const toggleCollapsed = (event: ReactMouseEvent<HTMLElement>) => {
-    const target = event.target instanceof Element ? event.target : null;
-    if (target?.closest(floatingPanelInteractiveSelector)) return;
-    if (dragRef.current || resizeRef.current) return;
-    setCollapsed((current) => !current);
-    event.preventDefault();
-    event.stopPropagation();
-  };
-
-  return {
-    style,
-    collapsed,
-    panelProps: {
-      "data-floating-panel-collapsed": collapsed ? "true" : undefined
-    },
-    dragHandleProps: {
-      onDoubleClick: toggleCollapsed,
-      onPointerDown(event: ReactPointerEvent<HTMLElement>) {
-        if (event.button !== 0) return;
-        const target = event.target instanceof Element ? event.target : null;
-        if (target?.closest(floatingPanelInteractiveSelector)) return;
-        const panel = event.currentTarget.closest<HTMLElement>(".movable-panel");
-        if (!panel) return;
-        const container = panel.offsetParent instanceof HTMLElement ? panel.offsetParent : document.documentElement;
-        const panelRect = panel.getBoundingClientRect();
-        const containerRect = container.getBoundingClientRect();
-        dragRef.current = {
-          pointerId: event.pointerId,
-          handle: event.currentTarget,
-          startClientX: event.clientX,
-          startClientY: event.clientY,
-          startX: panelRect.left - containerRect.left,
-          startY: panelRect.top - containerRect.top,
-          maxX: containerRect.width - 48,
-          maxY: containerRect.height - 48
-        };
-        event.currentTarget.setPointerCapture(event.pointerId);
-        event.preventDefault();
-      },
-      onPointerMove(event: ReactPointerEvent<HTMLElement>) {
-        const drag = dragRef.current;
-        if (!drag || drag.pointerId !== event.pointerId) return;
-        if (event.buttons === 0) {
-          endDrag(event);
-          return;
-        }
-        updateDragPosition(drag, event.clientX, event.clientY);
-      },
-      onPointerUp: endDrag,
-      onPointerCancel: endDrag
-    },
-    resizeHandleProps: {
-      onKeyDown(event: ReactKeyboardEvent<HTMLElement>) {
-        const step = event.shiftKey ? 48 : 16;
-        if (event.key === "ArrowRight") resizeByKeyboard(event, step, 0);
-        else if (event.key === "ArrowLeft") resizeByKeyboard(event, -step, 0);
-        else if (event.key === "ArrowDown") resizeByKeyboard(event, 0, step);
-        else if (event.key === "ArrowUp") resizeByKeyboard(event, 0, -step);
-      },
-      onPointerDown(event: ReactPointerEvent<HTMLElement>) {
-        if (event.button !== 0) return;
-        const panel = event.currentTarget.closest<HTMLElement>(".movable-panel");
-        if (!panel) return;
-        const container = panel.offsetParent instanceof HTMLElement ? panel.offsetParent : document.documentElement;
-        const panelRect = panel.getBoundingClientRect();
-        const containerRect = container.getBoundingClientRect();
-        dragRef.current = null;
-        resizeRef.current = {
-          pointerId: event.pointerId,
-          handle: event.currentTarget,
-          startClientX: event.clientX,
-          startClientY: event.clientY,
-          startWidth: panelRect.width,
-          startHeight: panelRect.height,
-          minWidth,
-          minHeight,
-          maxWidth: containerRect.right - panelRect.left - 8,
-          maxHeight: containerRect.bottom - panelRect.top - 8
-        };
-        event.currentTarget.setPointerCapture(event.pointerId);
-        event.preventDefault();
-        event.stopPropagation();
-      },
-      onPointerMove(event: ReactPointerEvent<HTMLElement>) {
-        const resize = resizeRef.current;
-        if (!resize || resize.pointerId !== event.pointerId) return;
-        if (event.buttons === 0) {
-          endResize(event);
-          return;
-        }
-        updateResizeSize(resize, event.clientX, event.clientY);
-      },
-      onPointerUp: endResize,
-      onPointerCancel: endResize
-    }
-  };
-}
+const adminIdentityMutations = createAdminIdentityMutationClient();
+const adminPluginMutations = createAdminPluginMutationClient();
+const adminAssetMutations = createAdminAssetMutationClient();
 
 export function App() {
   const [snapshot, setSnapshot] = useState<Snapshot>({
@@ -814,11 +409,17 @@ export function App() {
     organizationMembers: [],
     organizationInvites: [],
     members: [],
+    presences: [],
+    eventSequence: 0,
+    realtimeRecovery: "refetch_snapshot_on_gap",
     scenes: [],
+    worldRecords: [],
+    worldRelations: [],
     fogPresets: [],
     assets: [],
     tokens: [],
     actors: [],
+    calculationOverrides: [],
     items: [],
     journals: [],
     chat: [],
@@ -855,6 +456,8 @@ export function App() {
   const [fogBrushMode, setFogBrushMode] = useState<FogMode | null>(null);
   const [annotationTool, setAnnotationTool] = useState<AnnotationTool>(null);
   const [annotationPanelOpen, setAnnotationPanelOpen] = useState(false);
+  const [gridCalibrationOpen, setGridCalibrationOpen] = useState(false);
+  const [gridCalibrationPoints, setGridCalibrationPoints] = useState<VisionPoint[]>([]);
   const [annotationLayer, setAnnotationLayer] = useState<SceneAnnotationLayer>("measurement");
   const [visibleAnnotationLayers, setVisibleAnnotationLayers] = useState<Record<SceneAnnotationLayer, boolean>>({ measurement: true, effects: true, drawings: true, notes: true });
   const [annotationGroupLabel, setAnnotationGroupLabel] = useState("Session prep");
@@ -877,12 +480,17 @@ export function App() {
   const loreRealtimeRefreshPendingRef = useRef(false);
   const [selectedWorldId, setSelectedWorldId] = useState<WorldAtlasFilter>("all");
   const [manageCategory, setManageCategory] = useState<ManageCategoryId>("campaign");
+  const [characterTransferRevision, setCharacterTransferRevision] = useState(0);
+  const [characterTransferPendingCount, setCharacterTransferPendingCount] = useState(0);
   const [status, setStatus] = useState("Loading campaign");
+  const campaignAction = useRetryableAction(`${campaignId}:${currentUserId}`);
   const [realtimeUiState, setRealtimeUiState] = useState<RealtimeUiState>("idle");
   const [diceFormula, setDiceFormula] = useState("1d20+5");
   const [diceVisibility, setDiceVisibility] = useState<DiceRoll["visibility"]>("public");
   const [savedDiceFormulas, setSavedDiceFormulas] = useState<string[]>(initialSavedDiceFormulas);
   const [chatBody, setChatBody] = useState("");
+  const [chatUnreadCount, setChatUnreadCount] = useState(0);
+  const seenChatMessageIdsRef = useRef<Set<string> | null>(null);
   const [uiTheme, setUiTheme] = useState<UiTheme>(() => initialUiTheme((key) => window.localStorage.getItem(key)));
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [dice3dEnabled, setDice3dEnabled] = useState(() => initialDice3dEnabled((key) => window.localStorage.getItem(key), dice3dPreferenceEnvironment()));
@@ -908,6 +516,8 @@ export function App() {
   const [quickCreateOpen, setQuickCreateOpen] = useState(() => initialStoredPanelFlag(quickCreateOpenStorageKey, false));
   const [shortcutOverlayOpen, setShortcutOverlayOpen] = useState(false);
   const [selectedOverlay, setSelectedOverlay] = useState<{ type: "annotation" | "wall" | "light"; id: string } | null>(null);
+  const [playerVisionPreviewUserId, setPlayerVisionPreviewUserId] = useState("");
+  const playerVisionPreviewUserIdRef = useRef("");
   const [toasts, setToasts] = useState<Array<{ id: number; text: string; tone: "info" | "error" }>>([]);
   const toastIdRef = useRef(0);
   const lastToastStatusRef = useRef("");
@@ -950,6 +560,7 @@ export function App() {
   const aiAgentToggleRef = useRef<HTMLButtonElement | null>(null);
   const aiAgentPromptRef = useRef<HTMLTextAreaElement | null>(null);
   const inviteLinkRef = useRef<HTMLInputElement | null>(null);
+  const focusInviteLinkAfterSetupRef = useRef(false);
   const campaignSetupSubmitRef = useRef<HTMLButtonElement | null>(null);
   const workspaceModeButtonRefs = useRef<Partial<Record<WorkspaceMode, HTMLButtonElement | null>>>({});
   const blankCanvasAssetUrlsRef = useRef<Set<string>>(new Set());
@@ -1011,6 +622,7 @@ export function App() {
   const [adminStatus, setAdminStatus] = useState("Admin idle");
   const [encounterPlan, setEncounterPlan] = useState<EncounterPlanInfo>();
   const [encounterBuilderOpen, setEncounterBuilderOpen] = useState(false);
+  const [combatSetupOpen, setCombatSetupOpen] = useState(false);
   const [characterImportOpen, setCharacterImportOpen] = useState(false);
   const [importedActor, setImportedActor] = useState<Actor>();
   const [createdMonster, setCreatedMonster] = useState<Actor>();
@@ -1069,12 +681,17 @@ export function App() {
   const campaignSetupGenerationRef = useRef(0);
   const campaignSetupAbortRef = useRef<AbortController | null>(null);
   const campaignSetupIdempotencyRef = useRef<CampaignSetupIdempotencyKeys | null>(null);
+  const combatRewardAttemptRef = useRef<CombatRewardAttempt<CombatRewardRequestPayload> | null>(null);
+  const appendMutationAttemptsRef = useRef(new Map<string, AppendMutationAttempt>());
   const campaignSetupProgressRef = useRef<CampaignSetupProgress | null>(null);
   const setupDefaultsAppliedRef = useRef("");
   const [campaignEditName, setCampaignEditName] = useState("");
   const [campaignEditDescription, setCampaignEditDescription] = useState("");
   const [campaignEditSystemId, setCampaignEditSystemId] = useState("dnd-5e-srd");
   const [campaignEditVisibility, setCampaignEditVisibility] = useState<Campaign["visibility"]>("private");
+  const [campaignDuplicateName, setCampaignDuplicateName] = useState("");
+  const [campaignDuplicateBusy, setCampaignDuplicateBusy] = useState(false);
+  const [campaignDuplicateError, setCampaignDuplicateError] = useState("");
   const [campaignDeleteConfirm, setCampaignDeleteConfirm] = useState("");
   const [newSceneName, setNewSceneName] = useState("");
   const [newSceneFolder, setNewSceneFolder] = useState("prep");
@@ -1120,9 +737,16 @@ export function App() {
   const [compendiumStatus, setCompendiumStatus] = useState("No compendium entry imported this session");
   const [advancementOptions, setAdvancementOptions] = useState<AdvancementOptionInfo[]>([]);
   const [advancementGrantsFeat, setAdvancementGrantsFeat] = useState(false);
-  const [advancementFeats, setAdvancementFeats] = useState<Array<{ id: string; name: string; category: string; summary: string }>>([]);
-  const [multiclassOptions, setMulticlassOptions] = useState<Array<{ className: string; eligible: boolean; reasons: string[] }>>([]);
+  const [advancementFeats, setAdvancementFeats] = useState<AdvancementFeatInfo[]>([]);
+  const [multiclassOptions, setMulticlassOptions] = useState<AdvancementMulticlassOption[]>([]);
+  const [advancementClassName, setAdvancementClassName] = useState("");
+  const [advancementNextClassLevel, setAdvancementNextClassLevel] = useState<number | undefined>();
+  const [advancementRequiresSubclass, setAdvancementRequiresSubclass] = useState(false);
+  const [advancementSubclassOptions, setAdvancementSubclassOptions] = useState<AdvancementSubclassOption[]>([]);
+  const [advancementWeaponMastery, setAdvancementWeaponMastery] = useState<AdvancementWeaponMasteryInfo>();
+  const [pendingAdvancement, setPendingAdvancement] = useState<Dnd5eSrdPendingAdvancement>();
   const [xpProgress, setXpProgress] = useState<XpProgressInfo | undefined>(undefined);
+  const [lastDndRulesUndo, setLastDndRulesUndo] = useState<DndRulesMutationUndoDescriptor>();
   const [advancementModalOpen, setAdvancementModalOpen] = useState(false);
   const [characterCreatorOpen, setCharacterCreatorOpen] = useState(false);
   const [characterOrigins, setCharacterOrigins] = useState<CharacterOriginsInfo | undefined>(undefined);
@@ -1142,10 +766,16 @@ export function App() {
   const blankCanvasDemoIdRef = useRef(0);
   const realtimeSelectionRef = useRef({ campaignId, sceneId, userId: currentUserId });
   const realtimeRefreshRef = useRef<() => Promise<unknown>>(() => Promise.resolve());
+  const realtimeReconcileRef = useRef<(scopes: RealtimeReconcileScope[]) => Promise<unknown>>(() => Promise.resolve());
   const realtimeBoardCaptureHandlerRef = useRef<(data: unknown) => boolean>(() => false);
-  const realtimeApplyRef = useRef<(data: unknown) => void>(() => {});
+  const realtimeApplyRef = useRef<(data: unknown) => RealtimeApplyResult>(() => "ignored");
+  const realtimeSequenceRef = useRef(snapshot.eventSequence);
   const hpAdjustRef = useRef<Map<string, { current: number; max: number; timer: number; actor: Actor; request: WorkspaceBoundRequest }>>(new Map());
   const actorConditionQueueRef = useRef<Map<string, Promise<Actor | undefined>>>(new Map());
+  const actorSheetMutationQueueRef = useRef(new KeyedMutationQueue());
+  const actorSheetAuthoritativeRef = useRef<Map<string, Actor>>(new Map());
+  const tokenMutationQueueRef = useRef(new KeyedMutationQueue());
+  const tokenAuthoritativeRef = useRef<Map<string, Token>>(new Map());
   const snapshotRef = useRef(snapshot);
   snapshotRef.current = snapshot;
   realtimeSelectionRef.current = { campaignId, sceneId, userId: currentUserId };
@@ -1154,6 +784,7 @@ export function App() {
   const selectedCampaign = snapshot.campaigns.find((campaign) => campaign.id === campaignId);
   const activeOrganizationId = snapshot.session?.organization?.id ?? snapshot.session?.session?.activeOrganizationId ?? snapshot.organizations[0]?.id ?? "";
   const currentMember = snapshot.members.find((member) => member.user.id === currentUserId);
+  const playerVisionPreviewMember = snapshot.members.find((member) => member.user.id === playerVisionPreviewUserId);
   const hasPermission = (permission: PermissionName) => currentMember?.permissions.includes(permission) ?? false;
   const orderedScenes = [...snapshot.scenes].sort(compareScenesForDisplay);
   const accessibleScenes = hasPermission("scene.update") ? orderedScenes : orderedScenes.filter((scene) => scene.active);
@@ -1194,11 +825,20 @@ export function App() {
   const selectedAiAgentReferenceAsset = aiAgentReferenceAssetId ? snapshot.assets.find((asset) => asset.id === aiAgentReferenceAssetId && isUsableImageAsset(asset)) : undefined;
   const canDeleteSelectedBoardTokens = hasPermission("token.delete");
   const sessionPulseStatus = realtimeUiLabel(realtimeUiState);
+  const onlineParticipantLabel = `${formatNumber(snapshot.presences.length)} online${snapshot.presences.length > 0 ? `: ${snapshot.presences.map((presence) => presence.displayName).join(", ")}` : ""}`;
   const hasUnsavedSceneDraft = workspaceMode === "manage" && manageCategory === "scenes" && sceneEditDirty;
   const activeSystemId = snapshot.systems.find((system) => system.active)?.id ?? selectedCampaign?.defaultSystemId;
   const selectedActor = actorForSelection(snapshot.actors, selectedActorId, selectedToken?.actorId, activeSystemId);
   const adversaryActors = adversaryActorsForSceneBoard(snapshot.actors, snapshot.tokens, selectedScene?.id);
   const partyActors = snapshot.actors.filter((actor) => !isAdversaryActor(actor, snapshot.tokens));
+  const journalLinkTargets = useMemo<JournalLinkTargetOption[]>(() => [
+    ...snapshot.actors.map((actor) => ({ type: "actor" as const, id: actor.id, label: actor.name })),
+    ...snapshot.scenes.map((scene) => ({ type: "scene" as const, id: scene.id, label: scene.name })),
+    ...snapshot.items.map((item) => ({ type: "item" as const, id: item.id, label: item.name })),
+    ...snapshot.journals.map((journal) => ({ type: "journal" as const, id: journal.id, label: journal.title })),
+    ...handouts.map((handout) => ({ type: "handout" as const, id: handout.id, label: handout.title })),
+    ...snapshot.encounters.map((encounter) => ({ type: "encounter" as const, id: encounter.id, label: encounter.name })),
+  ], [handouts, snapshot.actors, snapshot.encounters, snapshot.items, snapshot.journals, snapshot.scenes]);
   const activeCombat = snapshot.combats.find((combat) => combat.active);
   const campaignSessions = snapshot.campaignSessions ?? [];
   const liveCampaignSession = campaignSessions.find((session) => session.status === "live");
@@ -1360,6 +1000,7 @@ export function App() {
     return counts;
   }, {});
   const latestAreaTemplate = [...selectedCurrentAnnotations].reverse().find((annotation) => annotation.kind === "template");
+  const latestAreaTemplateHasMixedDamage = hasUnmodeledMixedDamageType(latestAreaTemplate?.templateDamageType);
   const canUpdateSelectedActor = hasPermission("actor.update") || (selectedActor?.ownerUserId === currentUserId && hasPermission("actor.updateOwned"));
   const activeOrganization = snapshot.organizations.find((organization) => organization.id === activeOrganizationId);
   const canManageActiveOrganization = activeOrganization?.role === "owner" || activeOrganization?.role === "admin";
@@ -1389,7 +1030,14 @@ export function App() {
 
   useEffect(() => {
     setSelectedOverlay(null);
+    setCombatSetupOpen(false);
+    setGridCalibrationOpen(false);
+    setGridCalibrationPoints([]);
   }, [selectedScene?.id]);
+
+  useEffect(() => {
+    if (activeCombat) setCombatSetupOpen(false);
+  }, [activeCombat?.id]);
 
   useEffect(() => {
     const handleBoardKeyboard = (event: KeyboardEvent) => {
@@ -1505,6 +1153,7 @@ export function App() {
     resetCampaignSetupDraft();
     selectWorkspaceContext(progress.campaign.id, targetSceneId, currentUserId);
     if (setupInvite) {
+      focusInviteLinkAfterSetupRef.current = true;
       setInviteToken(setupInvite.token);
       setInviteAcceptUrl(absoluteInviteUrl(setupInvite.acceptUrl));
       setInviteEmail(progress.inviteEmail ?? "");
@@ -1518,10 +1167,7 @@ export function App() {
     setWorkspaceMode("manage");
     await refresh(progress.campaign.id, targetSceneId, { syncStatus: false });
     setStatus(progress.inviteCreatedWithoutLink ? `${progress.campaign.name} kept; revoke the existing invite and create a new one to get a fresh link` : `${progress.campaign.name} kept as-is`);
-    window.requestAnimationFrame(() => {
-      if (setupInvite) inviteLinkRef.current?.focus();
-      else workspaceModeButtonRefs.current.manage?.focus();
-    });
+    if (!setupInvite) window.requestAnimationFrame(() => workspaceModeButtonRefs.current.manage?.focus());
   }
 
   function resetWorkspaceNavigation(mode: WorkspaceMode = "live", nextTab: InspectorTab = "actors") {
@@ -1593,6 +1239,10 @@ export function App() {
     for (const pending of hpAdjustRef.current.values()) window.clearTimeout(pending.timer);
     hpAdjustRef.current.clear();
     actorConditionQueueRef.current.clear();
+    actorSheetMutationQueueRef.current.clear();
+    actorSheetAuthoritativeRef.current.clear();
+    tokenMutationQueueRef.current.clear();
+    tokenAuthoritativeRef.current.clear();
     boardSyncQueueRef.current = Promise.resolve();
     setBoardUndoStack([]);
     setBoardRedoStack([]);
@@ -1613,6 +1263,7 @@ export function App() {
     setCharacterImportOpen(false);
     setAdvancementModalOpen(false);
     setEncounterBuilderOpen(false);
+    setCombatSetupOpen(false);
     setCommandPaletteOpen(false);
     setShortcutOverlayOpen(false);
     setAudioSoundboardOpen(false);
@@ -1633,6 +1284,10 @@ export function App() {
     const current = realtimeSelectionRef.current;
     const identityChanged = current.campaignId !== nextCampaignId || current.userId !== nextUserId;
     if (identityChanged) {
+      setLastDndRulesUndo(undefined);
+      setPendingAdvancement(undefined);
+      playerVisionPreviewUserIdRef.current = "";
+      setPlayerVisionPreviewUserId("");
       cancelInviteAcceptance();
       refreshSeqRef.current += 1;
       invalidatePendingSessionSwitch();
@@ -1683,6 +1338,16 @@ export function App() {
     };
   }
 
+  function beginAppendMutation(scope: string, intent: unknown): AppendMutationAttempt {
+    const attempt = appendMutationAttemptForIntent(appendMutationAttemptsRef.current.get(scope), scope, appendMutationFingerprint(intent), () => window.crypto.randomUUID());
+    appendMutationAttemptsRef.current.set(scope, attempt);
+    return attempt;
+  }
+
+  function completeAppendMutation(scope: string, attempt: AppendMutationAttempt) {
+    if (appendMutationAttemptsRef.current.get(scope)?.idempotencyKey === attempt.idempotencyKey) appendMutationAttemptsRef.current.delete(scope);
+  }
+
   function workspaceBoundRequestIsCurrent(request: WorkspaceBoundRequest): boolean {
     return !request.controller.signal.aborted && workspaceRequestIsCurrent(request.campaignId, request.userId);
   }
@@ -1698,7 +1363,23 @@ export function App() {
 
   async function runWorkspaceBoundAction<T>(task: (request: WorkspaceBoundRequest) => Promise<T>, onCurrentResult: (result: T, request: WorkspaceBoundRequest) => void | Promise<void>) {
     const request = beginWorkspaceBoundRequest();
-    await settleWorkspaceBoundAction(request, workspaceBoundRequestIsCurrent, task, onCurrentResult, finishWorkspaceBoundRequest);
+    try {
+      await settleWorkspaceBoundAction(request, workspaceBoundRequestIsCurrent, task, onCurrentResult, finishWorkspaceBoundRequest);
+    } catch (error) {
+      if (!isStaleWriteError(error) || !workspaceRequestIsCurrent(request.campaignId, request.userId)) throw error;
+      await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });
+      throw new Error("This record changed elsewhere. The latest revision is loaded; your draft is preserved. Review and retry.");
+    }
+  }
+
+  async function runSharedMutation<T>(task: () => Promise<T>, targetCampaignId = realtimeSelectionRef.current.campaignId, targetSceneId = realtimeSelectionRef.current.sceneId): Promise<T> {
+    try {
+      return await task();
+    } catch (error) {
+      if (!isStaleWriteError(error) || !workspaceRequestIsCurrent(targetCampaignId, realtimeSelectionRef.current.userId)) throw error;
+      await refresh(targetCampaignId, targetSceneId, { syncStatus: false });
+      throw new Error("This record changed elsewhere. The latest revision is loaded; your draft is preserved. Review and retry.");
+    }
   }
 
   async function refresh(nextCampaignId = campaignId, nextSceneId = sceneId, options: { syncStatus?: boolean } = {}) {
@@ -1707,8 +1388,8 @@ export function App() {
       if (options.syncStatus !== false) setStatus(blankCanvasDemoNotice);
       return snapshot;
     }
-    // Snapshot loads overlap constantly (every realtime event triggers one).
-    // Only the most recently started refresh may apply; anything older would
+    // Snapshot loads can overlap with reconnects, explicit refreshes, and
+    // fallback reconciliation. Only the most recently started refresh may apply; anything older would
     // overwrite the UI with pre-action state and make actions "revert".
     const requestUserId = getSessionUserId();
     if (!workspaceRequestIsCurrent(nextCampaignId, requestUserId)) return snapshotRef.current;
@@ -1716,11 +1397,29 @@ export function App() {
     let next: Snapshot;
     try {
       next = await loadSnapshot(nextCampaignId, nextSceneId);
+      const previewUserId = playerVisionPreviewUserIdRef.current;
+      const previewScene = next.scenes.find((item) => item.id === nextSceneId) ?? next.scenes.find((item) => item.active) ?? next.scenes[0];
+      if (previewUserId && previewScene && next.members.some((member) => member.user.id === previewUserId && member.role === "player" && member.active !== false)) {
+        try {
+          next = {
+            ...next,
+            vision: await apiGet<VisionSnapshot>(`/api/v1/scenes/${previewScene.id}/vision?previewUserId=${encodeURIComponent(previewUserId)}`)
+          };
+        } catch {
+          playerVisionPreviewUserIdRef.current = "";
+          setPlayerVisionPreviewUserId("");
+        }
+      } else if (previewUserId) {
+        playerVisionPreviewUserIdRef.current = "";
+        setPlayerVisionPreviewUserId("");
+      }
     } catch (error) {
       if (seq !== refreshSeqRef.current || !workspaceRequestIsCurrent(nextCampaignId, requestUserId)) return snapshotRef.current;
       throw error;
     }
     if (seq !== refreshSeqRef.current || !workspaceRequestIsCurrent(nextCampaignId, requestUserId)) return next;
+    realtimeSequenceRef.current = next.eventSequence;
+    snapshotRef.current = next;
     setSnapshot(next);
     setSessionToken(getSessionToken());
     const campaign = next.campaigns.find((item) => item.id === nextCampaignId) ?? next.campaigns[0];
@@ -1753,7 +1452,8 @@ export function App() {
   // A snapshot load that started BEFORE a mutation resolved would deliver
   // pre-mutation state after we applied the authoritative response locally,
   // making the action appear to revert. Bumping the sequence discards any
-  // in-flight load; the mutation's own realtime event schedules a fresh one.
+  // in-flight load; the authoritative mutation response is already applied
+  // locally and its realtime event can request any narrower reconciliation.
   function invalidateInFlightRefreshes() {
     refreshSeqRef.current += 1;
   }
@@ -1788,6 +1488,7 @@ export function App() {
     const activeSceneIds = new Set(snapshotRef.current.scenes.filter((scene) => scene.campaignId === realtimeSelectionRef.current.campaignId).map((scene) => scene.id));
     const scopedTokens = nextTokens.filter((token) => activeSceneIds.has(token.sceneId));
     if (scopedTokens.length === 0) return;
+    for (const token of scopedTokens) tokenAuthoritativeRef.current.set(token.id, token);
     invalidateInFlightRefreshes();
     const byId = new Map(scopedTokens.map((token) => [token.id, token]));
     setSnapshot((current) => ({
@@ -1796,6 +1497,25 @@ export function App() {
         ...current.tokens.map((token) => byId.get(token.id) ?? token),
         ...scopedTokens.filter((token) => !current.tokens.some((item) => item.id === token.id))
       ]
+    }));
+  }
+
+  function latestAuthoritativeToken(tokenId: string, fallback?: Token): Token | undefined {
+    const snapshotToken = snapshotRef.current.tokens.find((candidate) => candidate.id === tokenId);
+    const queuedToken = tokenAuthoritativeRef.current.get(tokenId);
+    if (!queuedToken) return snapshotToken ?? fallback;
+    if (!snapshotToken || queuedToken.updatedAt >= snapshotToken.updatedAt) return queuedToken;
+    return snapshotToken;
+  }
+
+  function applyCombatToSnapshot(combat: Combat) {
+    if (combat.campaignId !== realtimeSelectionRef.current.campaignId) return;
+    invalidateInFlightRefreshes();
+    setSnapshot((current) => ({
+      ...current,
+      combats: current.combats.some((item) => item.id === combat.id)
+        ? current.combats.map((item) => (item.id === combat.id ? combat : item))
+        : [...current.combats, combat]
     }));
   }
 
@@ -1863,7 +1583,15 @@ export function App() {
   async function updateOrganizationWorkspaceDefaults(input: Partial<OrganizationWorkspace>) {
     setAdminStatus("Saving workspace defaults");
     await runWorkspaceBoundAction(
-      (request) => updateWorkspaceDefaults(input, { signal: request.controller.signal }),
+      (request) => {
+        const workspace = snapshotRef.current.workspaceDefaults;
+        if (!workspace) throw new Error("Reload the workspace before changing its defaults.");
+        const payload = { ...input, expectedUpdatedAt: workspace.updatedAt };
+        return updateWorkspaceDefaults(payload, {
+          signal: request.controller.signal,
+          idempotencyKey: sharedMutationIdempotencyKey(`organization:update:${workspace.id}`, workspace.updatedAt, payload)
+        });
+      },
       (next) => {
         setSnapshot((current) => ({ ...current, workspaceDefaults: next, session: current.session ? { ...current.session, organization: next } : current.session }));
         setAdminStatus("Workspace defaults saved");
@@ -1875,12 +1603,26 @@ export function App() {
     setAdminStatus("Adding organization member");
     await runWorkspaceBoundAction(
       async (request) => {
-        const member = await upsertOrganizationMember(input, { signal: request.controller.signal });
-        const members = await loadOrganizationMembers({ signal: request.controller.signal });
-        return { member, members };
+        const workspace = snapshotRef.current.workspaceDefaults;
+        if (!workspace) throw new Error("Reload the workspace before adding a member.");
+        const payload = { ...input, expectedOrganizationUpdatedAt: workspace.updatedAt };
+        const scope = `organization-member:create:${workspace.id}`;
+        const attempt = beginAppendMutation(scope, payload);
+        const member = await upsertOrganizationMember(payload, { signal: request.controller.signal, idempotencyKey: attempt.idempotencyKey });
+        completeAppendMutation(scope, attempt);
+        const [members, updatedWorkspace] = await Promise.all([
+          loadOrganizationMembers({ signal: request.controller.signal }),
+          apiGet<OrganizationWorkspace>("/api/v1/organization/workspace-defaults", { signal: request.controller.signal })
+        ]);
+        return { member, members, updatedWorkspace };
       },
-      ({ member, members }) => {
-        setSnapshot((current) => ({ ...current, organizationMembers: members }));
+      ({ member, members, updatedWorkspace }) => {
+        setSnapshot((current) => ({
+          ...current,
+          organizationMembers: members,
+          workspaceDefaults: updatedWorkspace,
+          session: current.session ? { ...current.session, organization: updatedWorkspace } : current.session
+        }));
         setAdminStatus(`Organization member ${member.user.displayName} is ${member.role}`);
       }
     );
@@ -1890,7 +1632,12 @@ export function App() {
     setAdminStatus("Updating organization member");
     await runWorkspaceBoundAction(
       async (request) => {
-        const updated = await updateOrganizationMemberRole(member.id, role, { signal: request.controller.signal });
+        const latest = snapshotRef.current.organizationMembers.find((candidate) => candidate.id === member.id) ?? member;
+        const payload = { role, expectedUpdatedAt: latest.updatedAt };
+        const updated = await updateOrganizationMemberRole(member.id, role, latest.updatedAt, {
+          signal: request.controller.signal,
+          idempotencyKey: sharedMutationIdempotencyKey(`organization-member:update:${member.id}`, latest.updatedAt, payload)
+        });
         const members = await loadOrganizationMembers({ signal: request.controller.signal });
         return { updated, members };
       },
@@ -1905,7 +1652,11 @@ export function App() {
     setAdminStatus("Removing organization member");
     await runWorkspaceBoundAction(
       async (request) => {
-        const result = await removeOrganizationMember(member.id, { signal: request.controller.signal });
+        const latest = snapshotRef.current.organizationMembers.find((candidate) => candidate.id === member.id) ?? member;
+        const result = await removeOrganizationMember(member.id, latest.updatedAt, {
+          signal: request.controller.signal,
+          idempotencyKey: sharedMutationIdempotencyKey(`organization-member:delete:${member.id}`, latest.updatedAt, {})
+        });
         const members = await loadOrganizationMembers({ signal: request.controller.signal });
         return { result, members };
       },
@@ -1925,11 +1676,52 @@ export function App() {
     }
     return next;
   };
+  realtimeReconcileRef.current = async (scopes) => {
+    if (scopes.includes("snapshot")) return realtimeRefreshRef.current();
+    const selection = { ...realtimeSelectionRef.current };
+    const selectedScene = snapshotRef.current.scenes.find((scene) => scene.id === selection.sceneId);
+    const previewUserId = playerVisionPreviewUserIdRef.current;
+    const visionPath = selectedScene
+      ? `/api/v1/scenes/${selectedScene.id}/vision${previewUserId ? `?previewUserId=${encodeURIComponent(previewUserId)}` : ""}`
+      : undefined;
+    const [vision, lore] = await Promise.all([
+      scopes.includes("vision") && visionPath ? apiGet<VisionSnapshot>(visionPath) : Promise.resolve(undefined),
+      scopes.includes("lore")
+        ? Promise.all([
+            apiGet<WorldAtlasWorld[]>(`/api/v1/campaigns/${selection.campaignId}/worlds`),
+            apiGet<HandoutLibraryItem[]>(`/api/v1/campaigns/${selection.campaignId}/handouts`),
+            apiGet<Snapshot["worldRecords"]>(`/api/v1/campaigns/${selection.campaignId}/world-records`),
+            apiGet<Snapshot["worldRelations"]>(`/api/v1/campaigns/${selection.campaignId}/world-relations`)
+          ])
+        : Promise.resolve(undefined)
+    ]);
+    if (!workspaceRequestIsCurrent(selection.campaignId, selection.userId) || realtimeSelectionRef.current.sceneId !== selection.sceneId) return undefined;
+    if (vision) setSnapshot((current) => ({ ...current, vision }));
+    if (lore) {
+      const [nextWorlds, nextHandouts, worldRecords, worldRelations] = lore;
+      loreRealtimeRefreshPendingRef.current = false;
+      setWorlds([...nextWorlds].sort((left, right) => left.name.localeCompare(right.name)));
+      setHandouts(nextHandouts);
+      setWorldsLoadState("ready");
+      setHandoutsLoadState("ready");
+      setSnapshot((current) => ({ ...current, worldRecords, worldRelations }));
+    }
+    return undefined;
+  };
   realtimeBoardCaptureHandlerRef.current = handleBoardCaptureRealtimeEvent;
   const applyAiAgentRealtimeEvent = (event: AiAgentRealtimeEvent) => {
     if (!aiAgentBusyRef.current || event.actorUserId !== currentUserId) return false;
     if (event.type !== "ai.message.delta" && event.type !== "ai.message.completed" && event.type !== "ai.reasoning.delta" && event.type !== "ai.reasoning.completed" && event.type !== "ai.activity.reported" && event.type !== "ai.tool.started" && event.type !== "ai.tool.completed") return false;
     const payload = event.payload;
+    if (event.type.includes("character.transfer") || event.type.includes("actor.transfer")) {
+      setCharacterTransferRevision((revision) => revision + 1);
+      const transferPayload = recordValue(payload?.transfer) ?? payload;
+      if (transferPayload?.toUserId === currentUserId && transferPayload.status === "pending") {
+        setStatus("A character ownership transfer needs your response in Manage > Account");
+      } else {
+        setStatus("Character ownership transfer updated");
+      }
+    }
     const threadId = typeof payload?.threadId === "string" && payload.threadId.trim() ? payload.threadId : event.targetId;
     if (!threadId) return false;
     const activeThreadId = aiAgentLiveThreadIdRef.current;
@@ -1967,31 +1759,96 @@ export function App() {
     });
     return true;
   };
-  realtimeApplyRef.current = (data: unknown) => {
+  realtimeApplyRef.current = (data: unknown): RealtimeApplyResult => {
     let event: AiAgentRealtimeEvent;
     try {
       event = typeof data === "string" ? JSON.parse(data) : (data as typeof event);
     } catch {
-      return;
+      return "ignored";
     }
-    if (!event || typeof event.type !== "string" || event.campaignId !== campaignId) return;
+    if (!event || typeof event.type !== "string" || event.campaignId !== campaignId) return "ignored";
     const payload = event.payload;
-    if (event.type.startsWith("world.") || event.type.startsWith("handout.")) loreRealtimeRefreshPendingRef.current = true;
-    if (applyAiAgentRealtimeEvent(event)) return;
-    if (event.type === "actor.updated" && payload && payload.redacted !== true && typeof payload.id === "string" && payload.data && typeof payload.data === "object") {
-      applyActorToSnapshot(payload as unknown as Actor);
-      return;
+    if (payload?.refreshRequired === true) return "snapshot";
+    // Deleting a world detaches world-linked actors, journals, handouts, and
+    // records. Reconcile that cascade from the authoritative snapshot.
+    if (event.type === "world.deleted") return "snapshot";
+    if (event.type.startsWith("world.") || event.type.startsWith("handout.")) {
+      loreRealtimeRefreshPendingRef.current = true;
+      return "lore";
     }
-    if ((event.type === "token.created" || event.type === "token.updated") && payload && payload.redacted !== true && typeof payload.id === "string" && typeof payload.sceneId === "string") {
+    if (applyAiAgentRealtimeEvent(event)) return "applied";
+    if ((event.type === "actor.created" || event.type === "actor.updated") && payload && payload.redacted !== true && typeof payload.id === "string" && payload.data && typeof payload.data === "object") {
+      applyActorToSnapshot(payload as unknown as Actor);
+      return "vision";
+    }
+    if ((event.type === "token.created" || event.type === "token.updated" || event.type === "token.moved") && payload && payload.redacted !== true && typeof payload.id === "string" && typeof payload.sceneId === "string") {
       applyTokensToSnapshot([payload as unknown as Token]);
-      return;
+      return "vision";
     }
     if (event.type === "token.deleted") {
       const tokenId = typeof payload?.id === "string" ? (payload.id as string) : event.targetId;
-      if (!tokenId) return;
+      if (!tokenId) return "snapshot";
       invalidateInFlightRefreshes();
       setSnapshot((current) => ({ ...current, tokens: current.tokens.filter((token) => token.id !== tokenId) }));
+      // Token deletion can also detach encounter/combat references, so retain a
+      // full reconciliation for this uncommon destructive operation.
+      return "snapshot";
     }
+    if (event.type === "scene.updated" && payload && typeof payload.id === "string" && payload.campaignId === campaignId) {
+      applySceneToSnapshot(payload as unknown as Scene);
+      return "vision";
+    }
+    if (event.type === "chat.message.created" || event.type === "chat.message.updated") {
+      if (!payload || typeof payload.id !== "string" || payload.campaignId !== campaignId) return "snapshot";
+      setSnapshot((current) => ({ ...current, chat: upsertBoundedRealtimeRecord(current.chat, payload as unknown as ChatMessage) }));
+      return "applied";
+    }
+    if (event.type === "chat.message.deleted") {
+      const messageId = typeof payload?.id === "string" ? payload.id : event.targetId;
+      if (!messageId) return "snapshot";
+      setSnapshot((current) => ({ ...current, chat: removeRealtimeRecord(current.chat, messageId) }));
+      return "applied";
+    }
+    if (event.type === "dice.roll.created") {
+      if (!payload || typeof payload.id !== "string" || payload.campaignId !== campaignId) return "snapshot";
+      setSnapshot((current) => ({ ...current, rolls: upsertBoundedRealtimeRecord(current.rolls, payload as unknown as DiceRoll) }));
+      return "applied";
+    }
+    if (event.type === "item.created" || event.type === "item.updated") {
+      if (!payload || typeof payload.id !== "string" || payload.campaignId !== campaignId) return "snapshot";
+      setSnapshot((current) => ({ ...current, items: upsertRealtimeRecord(current.items, payload as unknown as Item) }));
+      return "applied";
+    }
+    if (event.type === "item.deleted") {
+      const itemId = typeof payload?.id === "string" ? payload.id : event.targetId;
+      if (!itemId) return "snapshot";
+      setSnapshot((current) => ({ ...current, items: removeRealtimeRecord(current.items, itemId) }));
+      return "applied";
+    }
+    // `combat.ended` also represents proposal-driven combat deletion. The
+    // payload intentionally carries the prior record, so a snapshot is the
+    // only reliable way to distinguish deactivation from removal.
+    if (event.type === "combat.ended") return "snapshot";
+    if (event.type.startsWith("combat.") && payload && typeof payload.id === "string" && payload.campaignId === campaignId) {
+      applyCombatToSnapshot(payload as unknown as Combat);
+      return "applied";
+    }
+    if ((event.type === "encounter.created" || event.type === "encounter.updated") && payload && typeof payload.id === "string" && payload.campaignId === campaignId) {
+      applyEncounterToSnapshot(payload as unknown as Encounter);
+      return "applied";
+    }
+    if (event.type === "journal.created" || event.type === "journal.updated") {
+      if (!payload || typeof payload.id !== "string" || payload.campaignId !== campaignId) return "snapshot";
+      setSnapshot((current) => ({ ...current, journals: upsertRealtimeRecord(current.journals, payload as unknown as JournalEntry) }));
+      return "applied";
+    }
+    if (event.type === "journal.deleted") {
+      const journalId = typeof payload?.id === "string" ? payload.id : event.targetId;
+      if (!journalId) return "snapshot";
+      setSnapshot((current) => ({ ...current, journals: removeRealtimeRecord(current.journals, journalId) }));
+      return "applied";
+    }
+    return "snapshot";
   };
 
   useEffect(() => {
@@ -2013,6 +1870,17 @@ export function App() {
     setSetupOnboardingBody(defaults.onboardingBody);
     setupDefaultsAppliedRef.current = defaultsKey;
   }, [campaignSetupRecoveryPending, isCreatingCampaignSetup, snapshot.workspaceDefaults]);
+
+  useEffect(() => {
+    if (!focusInviteLinkAfterSetupRef.current || workspaceMode !== "manage" || manageCategory !== "people" || !inviteAcceptUrl) return;
+    const frame = window.requestAnimationFrame(() => {
+      const inviteLink = inviteLinkRef.current;
+      if (!inviteLink) return;
+      focusInviteLinkAfterSetupRef.current = false;
+      inviteLink.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [inviteAcceptUrl, manageCategory, workspaceMode]);
 
   useEffect(() => {
     if (blankCanvasDemoOpen) return;
@@ -2167,30 +2035,124 @@ export function App() {
       setRealtimeUiState("idle");
       return;
     }
+    let cancelled = false;
+    let resyncGeneration = 0;
+    let resyncRetryTimer: number | undefined;
+    let resyncing = false;
+    const queuedMessages: unknown[] = [];
     setRealtimeUiState("connecting");
     const realtimeHandlers = createRealtimeHandlers({
       refresh: () => realtimeRefreshRef.current(),
+      reconcile: (scopes) => realtimeReconcileRef.current(scopes),
       handleBoardCaptureEvent: (data) => realtimeBoardCaptureHandlerRef.current(data),
       applyRealtimeEvent: (data) => realtimeApplyRef.current(data),
       setStatus,
       onRefreshError: () => setStatus("Realtime refresh failed")
     });
+    const clearResyncRetry = () => {
+      if (resyncRetryTimer === undefined) return;
+      window.clearTimeout(resyncRetryTimer);
+      resyncRetryTimer = undefined;
+    };
+    const applyPresenceMessage = (data: unknown): boolean => {
+      const decision = realtimeSequenceDecision(data, realtimeSequenceRef.current);
+      if (decision.kind !== "presence") return false;
+      if (decision.envelope.campaignId !== realtimeSelectionRef.current.campaignId) return true;
+      setSnapshot((current) => ({ ...current, presences: applyPresenceEnvelope(current.presences, decision.envelope) }));
+      return true;
+    };
+    let startAuthoritativeResync: (reason: string) => void = () => {};
+    const dispatchDomainMessage = (data: unknown, recoverGap: boolean): void => {
+      const decision = realtimeSequenceDecision(data, realtimeSequenceRef.current);
+      if (decision.kind === "presence") {
+        if (decision.envelope.campaignId === realtimeSelectionRef.current.campaignId) {
+          setSnapshot((current) => ({ ...current, presences: applyPresenceEnvelope(current.presences, decision.envelope) }));
+        }
+        return;
+      }
+      if (decision.kind === "duplicate") return;
+      if (decision.kind === "gap") {
+        if (recoverGap) startAuthoritativeResync(`Realtime event gap detected (${decision.expectedSequence}-${decision.sequence - 1}) - refreshing shared table state`);
+        return;
+      }
+      if (decision.kind === "contiguous") realtimeSequenceRef.current = decision.sequence;
+      realtimeHandlers.onMessage(decision.event);
+    };
+    const reconcileReconnect = async (generation: number, retryAttempt: number): Promise<void> => {
+      try {
+        await realtimeHandlers.onOpen(true);
+        if (cancelled || generation !== resyncGeneration) return;
+        // Events can arrive while the snapshot request is in flight. Apply the
+        // permitted fast paths, then take one more authoritative snapshot so an
+        // event racing the first response cannot leave the table stale.
+        while (queuedMessages.length > 0) {
+          const messages = queuedMessages.splice(0);
+          for (const message of messages) dispatchDomainMessage(message, false);
+          await realtimeHandlers.onOpen(true);
+          if (cancelled || generation !== resyncGeneration) return;
+        }
+        resyncing = false;
+        setRealtimeUiState("connected");
+        setStatus("Realtime connected and synced");
+      } catch (error) {
+        if (cancelled || generation !== resyncGeneration) return;
+        const delayMs = realtimeReconnectDelayMs(retryAttempt);
+        setStatus(`Realtime refresh failed: ${errorMessage(error)}. Retrying in ${formatDuration(delayMs)}.`);
+        resyncRetryTimer = window.setTimeout(() => {
+          resyncRetryTimer = undefined;
+          void reconcileReconnect(generation, retryAttempt + 1);
+        }, delayMs);
+      }
+    };
+    startAuthoritativeResync = (reason: string) => {
+      clearResyncRetry();
+      const generation = ++resyncGeneration;
+      resyncing = true;
+      queuedMessages.length = 0;
+      setRealtimeUiState("syncing");
+      setStatus(reason);
+      void reconcileReconnect(generation, 0);
+    };
     const stopRealtime = startRealtimeConnection({
       apiBase,
       origin: window.location.origin,
       campaignId,
       sessionToken,
-      onOpen: () => {
-        setRealtimeUiState("connected");
-        realtimeHandlers.onOpen();
+      activeSceneId: () => realtimeSelectionRef.current.sceneId || undefined,
+      onOpen: ({ reconnected }) => {
+        clearResyncRetry();
+        const generation = ++resyncGeneration;
+        if (!reconnected) {
+          resyncing = false;
+          setRealtimeUiState("connected");
+          void realtimeHandlers.onOpen(false);
+          return;
+        }
+        resyncing = true;
+        queuedMessages.length = 0;
+        setRealtimeUiState("syncing");
+        setStatus("Realtime reconnected - refreshing shared table state");
+        void reconcileReconnect(generation, 0);
       },
-      onMessage: realtimeHandlers.onMessage,
+      onMessage: (data) => {
+        if (applyPresenceMessage(data)) return;
+        if (resyncing) queuedMessages.push(data);
+        else dispatchDomainMessage(data, true);
+      },
       onUnavailable: () => {
         setRealtimeUiState("reconnecting");
+        resyncGeneration += 1;
+        resyncing = false;
+        queuedMessages.length = 0;
+        clearResyncRetry();
         setStatus("Realtime unavailable - reconnecting");
       }
     });
     return () => {
+      cancelled = true;
+      resyncGeneration += 1;
+      clearResyncRetry();
+      queuedMessages.length = 0;
       realtimeHandlers.dispose();
       stopRealtime();
     };
@@ -2202,9 +2164,9 @@ export function App() {
   }, [blankCanvasDemoOpen, campaignId, currentUserId, manageCategory, workspaceMode, snapshot.session?.serverAdmin]);
 
   useEffect(() => {
-    if (workspaceMode === "live" && tab !== "actors" && tab !== "handouts" && tab !== "journal" && tab !== "search" && tab !== "chat" && tab !== "combat") setTab("actors");
-    if (workspaceMode === "prep" && !["actors", "sessions", "worlds", "handouts", "journal", "memory", "search", "content", "plugins"].includes(tab)) setTab("content");
-    if (workspaceMode === "manage" && !["actors", "journal", "content", "plugins"].includes(tab)) setTab("actors");
+    if (workspaceMode === "live" && !isInspectorTabAllowed("live", tab)) setTab("actors");
+    if (workspaceMode === "prep" && !isInspectorTabAllowed("prep", tab)) setTab("content");
+    if (workspaceMode === "manage" && !isInspectorTabAllowed("manage", tab)) setTab("actors");
   }, [tab, workspaceMode]);
 
   useEffect(() => {
@@ -2284,6 +2246,47 @@ export function App() {
       /* storage unavailable */
     }
   }, [uiTheme]);
+
+  function applyPreferenceRuntime(user: User): void {
+    const preferences = resolvedUserPreferences(user);
+    setUiTheme(preferences.theme);
+    setDice3dEnabled(preferences.dice3dEnabled);
+    document.documentElement.dataset.reducedMotion = preferences.reducedMotion ? "true" : "false";
+    document.documentElement.dataset.chatNotifications = preferences.chatNotifications;
+  }
+
+  function applyAuthenticatedUser(user: User): void {
+    applyPreferenceRuntime(user);
+    setSnapshot((current) => ({
+      ...current,
+      session: current.session ? { ...current.session, user } : current.session,
+      members: current.members.map((member) => member.user.id === user.id ? { ...member, user: { ...member.user, displayName: user.displayName, email: user.email } } : member),
+      organizationMembers: current.organizationMembers.map((member) => member.user.id === user.id ? { ...member, user: { ...member.user, displayName: user.displayName, email: user.email } } : member)
+    }));
+    setStatus("Profile preferences synced");
+  }
+
+  function persistQuickPreferences(patch: Partial<NonNullable<User["preferences"]>>, label: string): void {
+    const user = snapshotRef.current.session?.user;
+    if (!user) return;
+    const previous = resolvedUserPreferences(user);
+    const preferences = { ...previous, ...patch };
+    const attemptKey = `profile-quick-preference:${user.id}:${globalThis.crypto.randomUUID()}`;
+    applyPreferenceRuntime({ ...user, preferences });
+    void campaignAction.runAction(label, async () => {
+      try {
+        const result = await updateUserProfile({ user, displayName: user.displayName, preferences, idempotencyKey: attemptKey });
+        applyAuthenticatedUser(result.user);
+      } catch (failure) {
+        applyPreferenceRuntime({ ...user, preferences: previous });
+        throw failure;
+      }
+    });
+  }
+
+  useEffect(() => {
+    if (snapshot.session?.user) applyPreferenceRuntime(snapshot.session.user);
+  }, [snapshot.session?.user.id, snapshot.session?.user.updatedAt]);
 
   function enterTableFocusMode() {
     if (!window.matchMedia("(min-width: 1041px)").matches) return;
@@ -2450,7 +2453,7 @@ export function App() {
     if (!dice3dEnabled || fresh.length === 0) return;
     const casts = fresh.slice(-2).map((roll) => diceCastPlan(roll)).filter((cast) => cast.dice.length > 0);
     if (casts.length === 0) return;
-    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const reduceMotion = resolvedUserPreferences(snapshot.session?.user ?? {}).reducedMotion || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     for (const cast of casts) {
       if (reduceMotion) {
         setActiveDiceCasts((current) => [...current.slice(-2), cast].slice(-3));
@@ -2486,6 +2489,47 @@ export function App() {
   }, [dice3dEnabled, snapshot.rolls, snapshotReady]);
 
   useEffect(() => {
+    if (!snapshotReady) return;
+    if (!seenChatMessageIdsRef.current) {
+      seenChatMessageIdsRef.current = new Set(snapshot.chat.map((message) => message.id));
+      return;
+    }
+    const seen = seenChatMessageIdsRef.current;
+    const fresh = snapshot.chat.filter((message) => !seen.has(message.id));
+    for (const message of fresh) seen.add(message.id);
+    if (fresh.length === 0 || tab === "chat") return;
+    const preferences = resolvedUserPreferences(snapshot.session?.user ?? {});
+    if (preferences.chatNotifications === "none") return;
+    const displayName = snapshot.session?.user.displayName.toLowerCase() ?? "";
+    const firstName = displayName.split(/\s+/)[0] ?? "";
+    const alertable = fresh.filter((message) => {
+      if (message.userId === currentUserId) return false;
+      if (preferences.chatNotifications === "all") return true;
+      if (message.visibility === "whisper" && message.recipientUserIds.includes(currentUserId)) return true;
+      const body = message.body.toLowerCase();
+      return Boolean(displayName && body.includes(`@${displayName}`)) || Boolean(firstName && body.includes(`@${firstName}`));
+    });
+    if (alertable.length === 0) return;
+    setChatUnreadCount((count) => count + alertable.length);
+    const latest = alertable[alertable.length - 1]!;
+    const author = snapshot.members.find((member) => member.user.id === latest.userId)?.user.displayName ?? "A campaign member";
+    toastIdRef.current += 1;
+    const id = toastIdRef.current;
+    const text = `${author}: ${latest.body.slice(0, 96)}`;
+    setToasts((current) => [...current.slice(-2), { id, text, tone: "info" }]);
+    window.setTimeout(() => setToasts((current) => current.filter((toast) => toast.id !== id)), 6000);
+  }, [currentUserId, snapshot.chat, snapshot.members, snapshot.session?.user, snapshotReady, tab]);
+
+  useEffect(() => {
+    if (tab === "chat") setChatUnreadCount(0);
+  }, [tab]);
+
+  useEffect(() => {
+    seenChatMessageIdsRef.current = null;
+    setChatUnreadCount(0);
+  }, [campaignId, currentUserId]);
+
+  useEffect(() => {
     if (!snapshot.session) return;
     if (manageCategory === "campaign" && !canManageCampaignSettings) setManageCategory("account");
     if (manageCategory === "people" && !canManagePeople) setManageCategory("account");
@@ -2515,6 +2559,12 @@ export function App() {
       setAdvancementGrantsFeat(false);
       setAdvancementFeats([]);
       setMulticlassOptions([]);
+      setAdvancementClassName("");
+      setAdvancementNextClassLevel(undefined);
+      setAdvancementRequiresSubclass(false);
+      setAdvancementSubclassOptions([]);
+      setAdvancementWeaponMastery(undefined);
+      setPendingAdvancement(undefined);
       setXpProgress(undefined);
     };
     if (blankCanvasDemoOpen || !selectedActor) {
@@ -2522,13 +2572,19 @@ export function App() {
       return;
     }
     let cancelled = false;
-    apiGet<{ actorId: string; options: AdvancementOptionInfo[]; grantsFeat?: boolean; feats?: Array<{ id: string; name: string; category: string; summary: string }>; multiclassOptions?: Array<{ className: string; eligible: boolean; reasons: string[] }>; xp?: XpProgressInfo }>(`/api/v1/campaigns/${campaignId}/systems/${selectedActor.systemId}/actors/${selectedActor.id}/advancement`)
+    apiGet<{ actorId: string; options: AdvancementOptionInfo[]; advancementClassName?: string; nextClassLevel?: number; requiresSubclass?: boolean; subclassOptions?: AdvancementSubclassOption[]; weaponMastery?: AdvancementWeaponMasteryInfo; grantsFeat?: boolean; feats?: AdvancementFeatInfo[]; multiclassOptions?: AdvancementMulticlassOption[]; xp?: XpProgressInfo; pendingAdvancement?: Dnd5eSrdPendingAdvancement }>(`/api/v1/campaigns/${campaignId}/systems/${selectedActor.systemId}/actors/${selectedActor.id}/advancement`)
       .then((result) => {
         if (cancelled) return;
         setAdvancementOptions(result.options);
         setAdvancementGrantsFeat(result.grantsFeat ?? false);
         setAdvancementFeats(result.feats ?? []);
         setMulticlassOptions(result.multiclassOptions ?? []);
+        setAdvancementClassName(result.advancementClassName ?? "");
+        setAdvancementNextClassLevel(result.nextClassLevel);
+        setAdvancementRequiresSubclass(result.requiresSubclass ?? false);
+        setAdvancementSubclassOptions(result.subclassOptions ?? []);
+        setAdvancementWeaponMastery(result.weaponMastery);
+        setPendingAdvancement(result.pendingAdvancement);
         setXpProgress(result.xp);
       })
       .catch(() => {
@@ -2545,6 +2601,8 @@ export function App() {
     setCampaignEditDescription(selectedCampaign.description);
     setCampaignEditSystemId(selectedCampaign.defaultSystemId);
     setCampaignEditVisibility(selectedCampaign.visibility);
+    setCampaignDuplicateName(`${selectedCampaign.name} Copy`);
+    setCampaignDuplicateError("");
     setCampaignDeleteConfirm("");
   }, [selectedCampaign?.id, selectedCampaign?.name, selectedCampaign?.description, selectedCampaign?.defaultSystemId, selectedCampaign?.visibility]);
 
@@ -2639,7 +2697,10 @@ export function App() {
     const name = newWorkspaceName.trim();
     setStatus(`Creating workspace ${name}`);
     setAccountStatus(`Creating workspace ${name}`);
-    const result = await createOrganizationWorkspace({ name });
+    const scope = "organization:create";
+    const attempt = beginAppendMutation(scope, { name });
+    const result = await createOrganizationWorkspace({ name }, { idempotencyKey: attempt.idempotencyKey });
+    completeAppendMutation(scope, attempt);
     setSnapshot((current) => ({
       ...current,
       session: current.session ? { ...current.session, organization: result.organization, session: result.session, organizations: result.organizations } : current.session,
@@ -2732,7 +2793,12 @@ export function App() {
     setSelectedTokenIdState("tok_valen");
     setSelectedTokenIds(["tok_valen"]);
     setStatus("Seeded demo signed in");
-    await refresh("camp_demo");
+    try {
+      await refresh("camp_demo");
+    } catch (error) {
+      setStatus(`Campaign load failed: ${errorMessage(error)}`);
+      throw error;
+    }
   }
 
   async function submitLogin() {
@@ -2751,7 +2817,12 @@ export function App() {
     setAuthStatus("Signed in");
     setSnapshotReady(false);
     setStatus("Signed in");
-    await refresh();
+    try {
+      await refresh();
+    } catch (error) {
+      setStatus(`Campaign load failed: ${errorMessage(error)}`);
+      throw error;
+    }
   }
 
   async function submitRegister() {
@@ -2769,7 +2840,12 @@ export function App() {
     setAuthStatus("Account created");
     setSnapshotReady(false);
     setStatus("Account created");
-    await refresh();
+    try {
+      await refresh();
+    } catch (error) {
+      setStatus(`Campaign load failed: ${errorMessage(error)}`);
+      throw error;
+    }
   }
 
   async function submitLogout() {
@@ -2914,16 +2990,45 @@ export function App() {
   }
 
   async function createInvite() {
-    const result = await apiPost<InviteCreateInfo>(canManageActiveOrganization ? "/api/v1/organization/invites" : `/api/v1/campaigns/${campaignId}/invites`, {
-      ...(canManageActiveOrganization ? { campaignId } : {}),
+    const latestCampaign = snapshotRef.current.campaigns.find((campaign) => campaign.id === campaignId);
+    if (!latestCampaign) throw new Error("Reload the campaign before creating an invite.");
+    const path = canManageActiveOrganization ? "/api/v1/organization/invites" : `/api/v1/campaigns/${campaignId}/invites`;
+    const payload = {
+      ...(canManageActiveOrganization ? { campaignId, expectedCampaignUpdatedAt: latestCampaign.updatedAt } : {}),
       email: inviteEmail.trim() || undefined,
       role: inviteRole
-    });
+    };
+    const scope = `campaign-invite:create:${campaignId}`;
+    const attempt = beginAppendMutation(scope, { path, payload });
+    const result = await apiPost<InviteCreateInfo>(path, payload, { idempotencyKey: attempt.idempotencyKey });
+    completeAppendMutation(scope, attempt);
     setInviteToken(result.token);
     setInviteAcceptUrl(absoluteInviteUrl(result.acceptUrl));
     const invites = await loadOrganizationInvites().catch(() => snapshot.organizationInvites);
     setSnapshot((current) => ({ ...current, organizationInvites: invites }));
     setStatus("Invite link ready to copy");
+  }
+
+  async function transferSelectedCampaignOwnership(input: CampaignOwnershipTransferInput, idempotencyKey: string) {
+    const reviewedCampaign = snapshotRef.current.campaigns.find((campaign) => campaign.id === campaignId);
+    if (!reviewedCampaign) throw new Error("Campaign not found");
+    if (reviewedCampaign.ownerUserId !== currentUserId) throw new Error("Only the current campaign owner can transfer ownership");
+    try {
+      await runWorkspaceBoundAction(
+        (request) => transferCampaignOwnership(reviewedCampaign.id, input, idempotencyKey, { signal: request.controller.signal }),
+        async (result, request) => {
+          await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });
+          if (!workspaceBoundRequestIsCurrent(request)) return;
+          setStatus(`Campaign ownership transferred to ${result.newOwner.user.displayName}`);
+        }
+      );
+    } catch (error) {
+      if (error instanceof ApiError && (error.status === 403 || error.status === 409) && workspaceRequestIsCurrent(reviewedCampaign.id, currentUserId)) {
+        await refresh(reviewedCampaign.id, realtimeSelectionRef.current.sceneId, { syncStatus: false }).catch(() => undefined);
+        if (workspaceRequestIsCurrent(reviewedCampaign.id, currentUserId)) setStatus(errorMessage(error));
+      }
+      throw error;
+    }
   }
 
   async function copyInviteLink() {
@@ -2975,7 +3080,11 @@ export function App() {
   }
 
   async function revokeOrganizationInvite(inviteId: string) {
-    const invite = await revokeInvite(inviteId);
+    const currentInvite = snapshotRef.current.organizationInvites.find((item) => item.id === inviteId);
+    if (!currentInvite) throw new Error("Reload invites before revoking this link.");
+    const invite = await revokeInvite(inviteId, currentInvite.updatedAt, {
+      idempotencyKey: sharedMutationIdempotencyKey(`campaign-invite:revoke:${inviteId}`, currentInvite.updatedAt, {})
+    });
     const invites = await loadOrganizationInvites().catch(() => snapshot.organizationInvites.map((item) => item.id === invite.id ? { ...item, ...invite } : item));
     setSnapshot((current) => ({ ...current, organizationInvites: invites }));
     setInviteToken("");
@@ -2994,13 +3103,17 @@ export function App() {
     try {
       let result: Awaited<ReturnType<typeof acceptInviteSession>>;
       try {
-        result = await acceptInviteSession({
+        const payload = {
           token: joinToken.trim(),
           email: joinEmail.trim(),
           displayName: joinName.trim() || undefined,
           password: joinPassword,
           ...mfaCredential(joinMfaCode)
-        }, { persist: false, signal: controller.signal });
+        };
+        const scope = "campaign-invite:accept";
+        const attempt = beginAppendMutation(scope, payload);
+        result = await acceptInviteSession(payload, { persist: false, signal: controller.signal, idempotencyKey: attempt.idempotencyKey });
+        completeAppendMutation(scope, attempt);
       } catch (error) {
         if (controller.signal.aborted || requestSequence !== inviteAcceptSequenceRef.current) return;
         const body = error instanceof ApiError && typeof error.body === "object" && error.body !== null ? error.body as { mfaRequired?: unknown } : undefined;
@@ -3071,7 +3184,8 @@ export function App() {
       draftKey: progressKey,
       campaign: `campaign-setup:${window.crypto.randomUUID()}:campaign`,
       scene: `campaign-setup:${window.crypto.randomUUID()}:scene`,
-      journal: `campaign-setup:${window.crypto.randomUUID()}:journal`
+      journal: `campaign-setup:${window.crypto.randomUUID()}:journal`,
+      invite: `campaign-setup:${window.crypto.randomUUID()}:invite`
     };
     campaignSetupIdempotencyRef.current = setupIdempotencyKeys;
     try {
@@ -3094,17 +3208,20 @@ export function App() {
       }
       const campaign = progress.campaign;
       if (!setupStarterContent && !progress.scene) {
-        const scene = await apiPost<Scene>(`/api/v1/campaigns/${campaign.id}/scenes`, {
+        const scenePayload = {
           name: sceneName,
           folder: setupSceneFolder.trim() || undefined,
           width: Math.max(200, setupSceneWidth),
           height: Math.max(200, setupSceneHeight),
           gridSize: Math.max(10, setupSceneGridSize),
           active: true,
-          sortOrder: 1
-        }, { signal: controller.signal, idempotencyKey: setupIdempotencyKeys.scene });
+          sortOrder: 1,
+          expectedUpdatedAt: campaign.updatedAt
+        };
+        const scene = await apiPost<Scene>(`/api/v1/campaigns/${campaign.id}/scenes`, scenePayload, { signal: controller.signal, idempotencyKey: setupIdempotencyKeys.scene });
         if (!setupRequestIsCurrent()) return;
         progress.scene = scene;
+        progress.campaign = await apiGet<Campaign>(`/api/v1/campaigns/${campaign.id}`, { signal: controller.signal });
       }
       const onboardingBody = setupOnboardingBody.trim();
       if (!setupStarterContent && !progress.onboardingCreated) {
@@ -3141,7 +3258,7 @@ export function App() {
           const invite = await apiPost<InviteCreateInfo>(`/api/v1/campaigns/${campaign.id}/invites`, {
             email: inviteEmailDraft || undefined,
             role: inviteRoleDraft
-          }, { signal: controller.signal });
+          }, { signal: controller.signal, idempotencyKey: setupIdempotencyKeys.invite });
           if (!setupRequestIsCurrent()) return;
           progress.invite = invite;
         }
@@ -3151,6 +3268,7 @@ export function App() {
       selectWorkspaceContext(campaign.id, progress.scene?.id ?? "", currentUserId, { preserveCampaignSetup: true });
       campaignSetupProgressRef.current = progress;
       if (setupInvite) {
+        focusInviteLinkAfterSetupRef.current = true;
         setInviteToken(setupInvite.token);
         setInviteAcceptUrl(absoluteInviteUrl(setupInvite.acceptUrl));
         setInviteEmail(progress.inviteEmail ?? "");
@@ -3179,10 +3297,7 @@ export function App() {
         : setupInvite
           ? `${campaign.name} created${createdWith}; invite link ready to copy${permissionSummary}`
           : `${campaign.name} created${createdWith}; opened session prep${permissionSummary}`);
-      window.requestAnimationFrame(() => {
-        if (setupInvite) inviteLinkRef.current?.focus();
-        else workspaceModeButtonRefs.current[hasSetupInvite ? "manage" : "prep"]?.focus();
-      });
+      if (!setupInvite) window.requestAnimationFrame(() => workspaceModeButtonRefs.current[hasSetupInvite ? "manage" : "prep"]?.focus());
     } catch (error) {
       if (isAbortError(error)) return;
       throw error;
@@ -3198,38 +3313,85 @@ export function App() {
 
   async function saveCampaignSettings() {
     if (!selectedCampaign) return;
-    const campaign = await apiPatch<Campaign>(`/api/v1/campaigns/${selectedCampaign.id}`, {
-      name: campaignEditName.trim() || selectedCampaign.name,
+    const targetCampaign = snapshotRef.current.campaigns.find((campaign) => campaign.id === selectedCampaign.id) ?? selectedCampaign;
+    const payload = {
+      name: campaignEditName.trim() || targetCampaign.name,
       description: campaignEditDescription.trim(),
       defaultSystemId: campaignEditSystemId,
-      visibility: campaignEditVisibility
-    });
+      visibility: campaignEditVisibility,
+      expectedUpdatedAt: targetCampaign.updatedAt
+    };
+    const campaign = await runSharedMutation(() => apiPatch<Campaign>(`/api/v1/campaigns/${targetCampaign.id}`, payload, { idempotencyKey: sharedMutationIdempotencyKey(`campaign:update:${targetCampaign.id}`, targetCampaign.updatedAt, payload) }), targetCampaign.id, sceneId);
     setStatus(`${campaign.name} updated`);
     await refresh(campaign.id, sceneId);
   }
 
   async function archiveSelectedCampaign() {
     if (!selectedCampaign) return;
-    const campaign = await apiPost<Campaign>(`/api/v1/campaigns/${selectedCampaign.id}/archive`, {
-      reason: "Archived from campaign settings"
-    });
+    const targetCampaign = snapshotRef.current.campaigns.find((campaign) => campaign.id === selectedCampaign.id) ?? selectedCampaign;
+    const payload = { reason: "Archived from campaign settings", expectedUpdatedAt: targetCampaign.updatedAt };
+    const campaign = await runSharedMutation(() => apiPost<Campaign>(`/api/v1/campaigns/${targetCampaign.id}/archive`, payload, { idempotencyKey: sharedMutationIdempotencyKey(`campaign:archive:${targetCampaign.id}`, targetCampaign.updatedAt, payload) }), targetCampaign.id, sceneId);
     setStatus(`${campaign.name} archived`);
     await refresh(campaign.id, sceneId);
   }
 
   async function restoreSelectedCampaign() {
     if (!selectedCampaign) return;
-    const campaign = await apiPost<Campaign>(`/api/v1/campaigns/${selectedCampaign.id}/restore`, {
-      reason: "Restored from campaign settings"
-    });
+    const targetCampaign = snapshotRef.current.campaigns.find((campaign) => campaign.id === selectedCampaign.id) ?? selectedCampaign;
+    const payload = { reason: "Restored from campaign settings", expectedUpdatedAt: targetCampaign.updatedAt };
+    const campaign = await runSharedMutation(() => apiPost<Campaign>(`/api/v1/campaigns/${targetCampaign.id}/restore`, payload, { idempotencyKey: sharedMutationIdempotencyKey(`campaign:restore:${targetCampaign.id}`, targetCampaign.updatedAt, payload) }), targetCampaign.id, sceneId);
     setStatus(`${campaign.name} restored`);
     await refresh(campaign.id, sceneId);
   }
 
+  async function duplicateSelectedCampaign(idempotencyKey: string): Promise<void> {
+    if (!selectedCampaign || campaignDuplicateBusy) return;
+    const duplicateName = campaignDuplicateName.trim();
+    if (!duplicateName) {
+      setCampaignDuplicateError("Enter a name for the duplicated campaign.");
+      return;
+    }
+    const sourceCampaign = selectedCampaign;
+    setCampaignDuplicateBusy(true);
+    setCampaignDuplicateError("");
+    setStatus(`Preparing ${sourceCampaign.name} for duplication`);
+    try {
+      const archive = await apiGet<CampaignArchive>(`/api/v1/campaigns/${sourceCampaign.id}/export?scope=campaign&version=0.2.0&redaction=portable`);
+      const duplicateArchive = structuredClone(archive);
+      const campaignRecord = duplicateArchive.data.campaigns.find((campaign) => campaign.id === sourceCampaign.id) ?? duplicateArchive.data.campaigns[0];
+      if (!campaignRecord) throw new Error("The campaign export did not contain a campaign record.");
+      campaignRecord.name = duplicateName;
+      campaignRecord.archivedAt = undefined;
+      campaignRecord.archivedByUserId = undefined;
+      duplicateArchive.manifest.name = duplicateName;
+      const result = await apiPost<CampaignImportResult>("/api/v1/import/campaign", {
+        archive: duplicateArchive,
+        mode: "upsert",
+        scope: "all",
+        regenerateIds: true
+      }, { idempotencyKey });
+      const duplicatedCampaignId = result.importedCampaignIds[0];
+      if (!duplicatedCampaignId) throw new Error("The duplicate import completed without returning a campaign ID.");
+      selectWorkspaceContext(duplicatedCampaignId, "");
+      await refresh(duplicatedCampaignId, "", { syncStatus: false });
+      setWorkspaceMode("prep");
+      setTab("sessions");
+      setStatus(`${duplicateName} duplicated and opened in Prep`);
+    } catch (failure) {
+      const message = errorMessage(failure);
+      setCampaignDuplicateError(message);
+      setStatus(`Campaign duplication failed: ${message}`);
+      throw failure;
+    } finally {
+      setCampaignDuplicateBusy(false);
+    }
+  }
+
   async function deleteSelectedCampaign() {
     if (!selectedCampaign || campaignDeleteConfirm !== selectedCampaign.name) return;
-    const nextCampaign = snapshot.campaigns.find((campaign) => campaign.id !== selectedCampaign.id);
-    await apiDelete<Campaign>(`/api/v1/campaigns/${selectedCampaign.id}`);
+    const targetCampaign = snapshotRef.current.campaigns.find((campaign) => campaign.id === selectedCampaign.id) ?? selectedCampaign;
+    const nextCampaign = snapshotRef.current.campaigns.find((campaign) => campaign.id !== targetCampaign.id);
+    await runSharedMutation(() => apiDelete<Campaign>(`/api/v1/campaigns/${targetCampaign.id}?expectedUpdatedAt=${encodeURIComponent(targetCampaign.updatedAt)}`, { idempotencyKey: sharedMutationIdempotencyKey(`campaign:delete:${targetCampaign.id}`, targetCampaign.updatedAt, {}) }), targetCampaign.id, sceneId);
     setCampaignDeleteConfirm("");
     setStatus(`${selectedCampaign.name} deleted; audit logged`);
     selectWorkspaceContext(nextCampaign?.id ?? "", "");
@@ -3280,7 +3442,9 @@ export function App() {
         ? previousScene.sortOrder + (insertBeforeScene.sortOrder - previousScene.sortOrder) / 2
         : insertBeforeScene.sortOrder - 1
       : (orderedScenes.at(-1)?.sortOrder ?? 0) + 1;
-    const scene = await apiPost<Scene>(`/api/v1/campaigns/${request.campaignId}/scenes`, {
+    const targetCampaign = snapshotRef.current.campaigns.find((campaign) => campaign.id === request.campaignId);
+    if (!targetCampaign) throw new Error("Campaign is unavailable. Refresh and try again.");
+    const payload = {
       name: name || `Scene ${snapshot.scenes.length + 1}`,
       folder: newSceneFolder.trim() || undefined,
       width: Math.max(200, normalizeSceneSizeValue(newSceneWidth, 1200)),
@@ -3288,8 +3452,10 @@ export function App() {
       gridSize,
       backgroundAssetId: newSceneBackgroundAssetId || undefined,
       active: (options.active ?? newSceneActive) || snapshot.scenes.length === 0,
-      sortOrder
-    });
+      sortOrder,
+      expectedUpdatedAt: targetCampaign.updatedAt
+    };
+    const scene = await runSharedMutation(() => apiPost<Scene>(`/api/v1/campaigns/${request.campaignId}/scenes`, payload, { idempotencyKey: sharedMutationIdempotencyKey(`scene:create:${request.campaignId}`, targetCampaign.updatedAt, payload) }), request.campaignId, sceneId);
     if (!workspaceIdentityIsCurrent(request)) return;
     setSceneId(scene.id);
     setNewSceneName((current) => current === submittedName ? "" : current);
@@ -3311,7 +3477,7 @@ export function App() {
     const draftActive = sceneFormChecked(form, "sceneEditActive", sceneEditActive);
     const draftGridOverlayVisible = sceneFormChecked(form, "sceneEditGridOverlayVisible", sceneEditGridOverlayVisible);
 
-    const scene = await apiPatch<Scene>(`/api/v1/scenes/${targetScene.id}`, {
+    const payload = {
       name: draftName.trim() || targetScene.name,
       folder: draftFolder.trim() || null,
       width: Math.max(200, normalizeSceneSizeValue(draftWidth, targetScene.width)),
@@ -3322,8 +3488,10 @@ export function App() {
       metadata: {
         ...targetScene.metadata,
         gridOverlayVisible: draftGridOverlayVisible
-      }
-    });
+      },
+      expectedUpdatedAt: targetScene.updatedAt
+    };
+    const scene = await runSharedMutation(() => apiPatch<Scene>(`/api/v1/scenes/${targetScene.id}`, payload, { idempotencyKey: sharedMutationIdempotencyKey(`scene:update:${targetScene.id}`, targetScene.updatedAt, payload) }), targetCampaignId, targetScene.id);
     setSnapshot((current) => ({
       ...current,
       scenes: current.scenes.map((item) => (item.id === scene.id ? scene : item))
@@ -3341,6 +3509,28 @@ export function App() {
     setSceneDuplicateName(`${scene.name} Copy`);
     setStatus(`${scene.name} updated`);
     await refresh(targetCampaignId, scene.id, { syncStatus: false });
+  }
+
+  async function applySceneGridCalibration(gridSize: number): Promise<void> {
+    if (!selectedScene) throw new Error("Select a scene before calibrating its grid.");
+    const targetScene = currentSceneForMutation(selectedScene);
+    const calibratedSize = Math.max(10, Math.min(500, Math.round(gridSize * 100) / 100));
+    await runWorkspaceBoundAction(
+      (request) => {
+        const payload = {
+        gridType: "square",
+        gridSize: calibratedSize,
+        metadata: { ...targetScene.metadata, gridOverlayVisible: true },
+        expectedUpdatedAt: targetScene.updatedAt
+        };
+        return apiPatch<Scene>(`/api/v1/scenes/${targetScene.id}`, payload, { signal: request.controller.signal, idempotencyKey: sharedMutationIdempotencyKey(`scene:grid-calibration:${targetScene.id}`, targetScene.updatedAt, payload) });
+      },
+      (scene) => {
+        applySceneToSnapshot(scene);
+        setGridCalibrationPoints([]);
+        setStatus(`${scene.name} grid calibrated to ${formatNumber(scene.gridSize)} px`);
+      }
+    );
   }
 
   function discardSceneEdits() {
@@ -3369,7 +3559,8 @@ export function App() {
     const folder = bulkSceneFolder.trim();
     const nextSceneId = selectedScene?.id ?? visibleScenes[0]?.id ?? "";
     for (const scene of visibleScenes) {
-      await apiPatch<Scene>(`/api/v1/scenes/${scene.id}`, { folder: folder || null });
+      const payload = { folder: folder || null, expectedUpdatedAt: scene.updatedAt };
+      await runSharedMutation(() => apiPatch<Scene>(`/api/v1/scenes/${scene.id}`, payload, { idempotencyKey: sharedMutationIdempotencyKey(`scene:folder:${scene.id}`, scene.updatedAt, payload) }), scene.campaignId, scene.id);
     }
     setSceneFolderFilter(folder || "all");
     setSceneSearch("");
@@ -3407,7 +3598,8 @@ export function App() {
     const folder = bulkSceneFolder.trim();
     const nextSceneId = selectedScene?.id ?? selectedPrepScenes[0]?.id ?? "";
     for (const scene of selectedPrepScenes) {
-      await apiPatch<Scene>(`/api/v1/scenes/${scene.id}`, { folder: folder || null });
+      const payload = { folder: folder || null, expectedUpdatedAt: scene.updatedAt };
+      await runSharedMutation(() => apiPatch<Scene>(`/api/v1/scenes/${scene.id}`, payload, { idempotencyKey: sharedMutationIdempotencyKey(`scene:folder:${scene.id}`, scene.updatedAt, payload) }), scene.campaignId, scene.id);
     }
     setSceneFolderFilter(folder || "all");
     setSceneSearch("");
@@ -3431,6 +3623,8 @@ export function App() {
       walls: JSON.parse(JSON.stringify(scene.walls)) as Scene["walls"],
       lights: JSON.parse(JSON.stringify(scene.lights)) as Scene["lights"],
       annotations: JSON.parse(JSON.stringify(scene.annotations ?? [])) as Scene["annotations"],
+      difficultTerrain: JSON.parse(JSON.stringify(scene.difficultTerrain ?? [])) as Scene["difficultTerrain"],
+      coverOverrides: JSON.parse(JSON.stringify(scene.coverOverrides ?? [])) as Scene["coverOverrides"],
       metadata: JSON.parse(JSON.stringify(scene.metadata)) as Scene["metadata"]
     };
   }
@@ -3446,8 +3640,11 @@ export function App() {
     }
     const createdScenes: Scene[] = [];
     let sortOrder = orderedScenes.length + 1;
+    let campaignRevision = await apiGet<Campaign>(`/api/v1/campaigns/${campaignId}`);
     for (const scene of selectedPrepScenes) {
-      createdScenes.push(await apiPost<Scene>(`/api/v1/campaigns/${scene.campaignId}/scenes`, sceneDuplicatePayload(scene, `${scene.name} Copy`, sortOrder)));
+      const payload = { ...sceneDuplicatePayload(scene, `${scene.name} Copy`, sortOrder), expectedUpdatedAt: campaignRevision.updatedAt };
+      createdScenes.push(await runSharedMutation(() => apiPost<Scene>(`/api/v1/campaigns/${scene.campaignId}/scenes`, payload, { idempotencyKey: sharedMutationIdempotencyKey(`scene:duplicate:${scene.id}`, campaignRevision.updatedAt, payload) }), scene.campaignId, selectedScene?.id));
+      campaignRevision = await apiGet<Campaign>(`/api/v1/campaigns/${scene.campaignId}`);
       sortOrder += 1;
     }
     const nextScene = createdScenes.at(-1);
@@ -3465,15 +3662,18 @@ export function App() {
     const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
     const targetScene = orderedScenes[targetIndex];
     if (currentIndex < 0 || !targetScene) return;
-    await apiPatch<Scene>(`/api/v1/scenes/${targetScene.id}`, { sortOrder: currentIndex + 1 });
-    const scene = await apiPatch<Scene>(`/api/v1/scenes/${selectedScene.id}`, { sortOrder: targetIndex + 1 });
+    const targetPayload = { sortOrder: currentIndex + 1, expectedUpdatedAt: targetScene.updatedAt };
+    await runSharedMutation(() => apiPatch<Scene>(`/api/v1/scenes/${targetScene.id}`, targetPayload, { idempotencyKey: sharedMutationIdempotencyKey(`scene:sort:${targetScene.id}`, targetScene.updatedAt, targetPayload) }), campaignId, targetScene.id);
+    const selectedPayload = { sortOrder: targetIndex + 1, expectedUpdatedAt: selectedScene.updatedAt };
+    const scene = await runSharedMutation(() => apiPatch<Scene>(`/api/v1/scenes/${selectedScene.id}`, selectedPayload, { idempotencyKey: sharedMutationIdempotencyKey(`scene:sort:${selectedScene.id}`, selectedScene.updatedAt, selectedPayload) }), campaignId, selectedScene.id);
     setStatus(`${scene.name} moved ${direction}`);
     await refresh(campaignId, scene.id);
   }
 
   async function activateSelectedScene() {
     if (!selectedScene) return;
-    const scene = await apiPatch<Scene>(`/api/v1/scenes/${selectedScene.id}`, { active: true });
+    const payload = { active: true, expectedUpdatedAt: selectedScene.updatedAt };
+    const scene = await runSharedMutation(() => apiPatch<Scene>(`/api/v1/scenes/${selectedScene.id}`, payload, { idempotencyKey: sharedMutationIdempotencyKey(`scene:activate:${selectedScene.id}`, selectedScene.updatedAt, payload) }), campaignId, selectedScene.id);
     setSceneEditActive(true);
     setStatus(`${scene.name} activated`);
     await refresh(campaignId, scene.id);
@@ -3485,7 +3685,10 @@ export function App() {
       setStatus("Save or discard scene changes before duplicating this scene");
       return;
     }
-    const scene = await apiPost<Scene>(`/api/v1/campaigns/${selectedScene.campaignId}/scenes`, sceneDuplicatePayload(selectedScene, sceneDuplicateName.trim() || `${selectedScene.name} Copy`, orderedScenes.length + 1));
+    const targetCampaign = snapshotRef.current.campaigns.find((campaign) => campaign.id === selectedScene.campaignId);
+    if (!targetCampaign) throw new Error("Campaign is unavailable. Refresh and try again.");
+    const payload = { ...sceneDuplicatePayload(selectedScene, sceneDuplicateName.trim() || `${selectedScene.name} Copy`, orderedScenes.length + 1), expectedUpdatedAt: targetCampaign.updatedAt };
+    const scene = await runSharedMutation(() => apiPost<Scene>(`/api/v1/campaigns/${selectedScene.campaignId}/scenes`, payload, { idempotencyKey: sharedMutationIdempotencyKey(`scene:duplicate:${selectedScene.id}`, targetCampaign.updatedAt, payload) }), campaignId, selectedScene.id);
     setSceneId(scene.id);
     setSceneDuplicateName(`${scene.name} Copy`);
     setStatus(`${scene.name} duplicated`);
@@ -3513,7 +3716,7 @@ export function App() {
       setSceneDuplicateName(`${nextScene.name} Copy`);
     }
     try {
-      await apiDelete<Scene>(`/api/v1/scenes/${targetScene.id}`);
+      await runSharedMutation(() => apiDelete<Scene>(`/api/v1/scenes/${targetScene.id}?expectedUpdatedAt=${encodeURIComponent(targetScene.updatedAt)}`, { idempotencyKey: sharedMutationIdempotencyKey(`scene:delete:${targetScene.id}`, targetScene.updatedAt, {}) }), campaignId, targetScene.id);
       await refresh(campaignId, nextSceneId, { syncStatus: false });
       setStatus(targetScene.active && nextScene ? `${targetScene.name} deleted; ${nextScene.name} is now live` : `${targetScene.name} deleted; audit logged`);
     } catch (error) {
@@ -3539,9 +3742,9 @@ export function App() {
     setStatus(`Review ${targetScene.name} before deleting it`);
   }
 
-  async function createToken(options: Partial<TokenDropPayload> & { x?: number; y?: number } = {}, existingRequest?: WorkspaceBoundRequest): Promise<Token | undefined> {
+  async function createToken(options: Partial<TokenDropPayload> & { x?: number; y?: number; idempotencyKey?: string } = {}, existingRequest?: WorkspaceBoundRequest): Promise<Token | undefined> {
     if (!selectedScene) return;
-    const targetScene = selectedScene;
+    const targetScene = snapshotRef.current.scenes.find((scene) => scene.id === selectedScene.id) ?? selectedScene;
     const actorId = (options.actorId ?? newTokenActorId) || undefined;
     const actor = actorId ? snapshot.actors.find((item) => item.id === actorId) : undefined;
     const imageAssetId = options.imageAssetId;
@@ -3567,6 +3770,7 @@ export function App() {
         width,
         height,
         rotation: 0,
+        elevation: 0,
         layer,
         hidden: false,
         locked: false,
@@ -3587,7 +3791,7 @@ export function App() {
       setStatus(`${token.name} ${options.x !== undefined || options.y !== undefined ? "placed on scene" : "created"} for this demo tab`);
       return token;
     }
-    const create = (request: WorkspaceBoundRequest) => apiPost<Token>(`/api/v1/scenes/${targetScene.id}/tokens`, {
+    const createPayload = {
         actorId,
         imageAssetId,
         name: tokenName,
@@ -3596,8 +3800,14 @@ export function App() {
         width,
         height,
         layer,
-        disposition
-      }, { signal: request.controller.signal });
+        disposition,
+        expectedUpdatedAt: targetScene.updatedAt
+      };
+    const create = async (request: WorkspaceBoundRequest) => {
+      const token = await apiPost<Token>(`/api/v1/scenes/${targetScene.id}/tokens`, createPayload, { signal: request.controller.signal, idempotencyKey: options.idempotencyKey ?? sharedMutationIdempotencyKey(`token:create:${targetScene.id}`, targetScene.updatedAt, createPayload) });
+      const scene = await apiGet<Scene>(`/api/v1/scenes/${targetScene.id}`, { signal: request.controller.signal });
+      return { token, scene };
+    };
     const applyCreatedToken = (token: Token, request: WorkspaceBoundRequest) => {
       if (!workspaceBoundRequestIsCurrent(request)) return;
       applyTokensToSnapshot([token]);
@@ -3610,14 +3820,16 @@ export function App() {
     };
     if (existingRequest) {
       if (!workspaceBoundRequestIsCurrent(existingRequest)) return;
-      const token = await create(existingRequest);
-      applyCreatedToken(token, existingRequest);
-      return workspaceBoundRequestIsCurrent(existingRequest) ? token : undefined;
+      const createdResult = await create(existingRequest);
+      applySceneToSnapshot(createdResult.scene);
+      applyCreatedToken(createdResult.token, existingRequest);
+      return workspaceBoundRequestIsCurrent(existingRequest) ? createdResult.token : undefined;
     }
     let created: Token | undefined;
-    await runWorkspaceBoundAction(create, (token, request) => {
-      applyCreatedToken(token, request);
-      created = token;
+    await runWorkspaceBoundAction(create, (result, request) => {
+      applySceneToSnapshot(result.scene);
+      applyCreatedToken(result.token, request);
+      created = result.token;
     });
     return created;
   }
@@ -3633,6 +3845,31 @@ export function App() {
       x: point.x,
       y: point.y
     });
+  }
+
+  async function placeActorOnSelectedScene(actor: Actor, placementAttemptId: string): Promise<void> {
+    if (!selectedScene) throw new Error("Select a scene before placing an actor.");
+    const existingToken = snapshot.tokens.find((token) => token.sceneId === selectedScene.id && token.actorId === actor.id && tokenLayer(token) !== "map");
+    if (existingToken) {
+      setActiveTokenLayer(tokenLayer(existingToken));
+      selectSingleToken(existingToken.id);
+      setStatus(`${actor.name} is already on ${selectedScene.name}`);
+      return;
+    }
+    const partyTokenCount = snapshot.tokens.filter((token) => token.sceneId === selectedScene.id && token.disposition === "friendly" && tokenLayer(token) !== "map").length;
+    const spacing = Math.max(24, selectedScene.gridSize || 50);
+    const column = partyTokenCount % 4;
+    const row = Math.floor(partyTokenCount / 4) % 3;
+    const token = await createToken({
+      actorId: actor.id,
+      name: actor.name,
+      disposition: "friendly",
+      layer: "player",
+      x: selectedScene.width * 0.35 + column * spacing,
+      y: selectedScene.height * 0.65 + row * spacing,
+      idempotencyKey: `actor-place:${selectedScene.id}:${actor.id}:${placementAttemptId}`
+    });
+    if (!token) throw new Error(`${actor.name} could not be placed on the selected scene.`);
   }
 
   async function createTokenFromAssetDragEnd(asset: MapAsset, clientX: number, clientY: number) {
@@ -3722,12 +3959,13 @@ export function App() {
     await runWorkspaceBoundAction(
       async (request) => {
         let lastToken: Token | undefined;
+        let sceneRevision = await apiGet<Scene>(`/api/v1/scenes/${targetScene.id}`, { signal: request.controller.signal });
         for (let index = 0; index < count; index += 1) {
           const offset = (index - (count - 1) / 2) * spacing;
           const centerX = targetScene.width / 2 + offset;
           const centerY = targetScene.height / 2;
           const position = tokenCoordinatesFromCenter(targetScene, width, height, centerX, centerY);
-          lastToken = await apiPost<Token>(`/api/v1/scenes/${targetScene.id}/tokens`, {
+          const payload = {
             imageAssetId: asset.id,
             name: asset.name,
             x: position.x,
@@ -3735,8 +3973,11 @@ export function App() {
             width,
             height,
             layer: "map",
-            disposition: "neutral"
-          }, { signal: request.controller.signal });
+            disposition: "neutral",
+            expectedUpdatedAt: sceneRevision.updatedAt
+          };
+          lastToken = await apiPost<Token>(`/api/v1/scenes/${targetScene.id}/tokens`, payload, { signal: request.controller.signal, idempotencyKey: sharedMutationIdempotencyKey(`token:create:asset:${targetScene.id}:${index}`, sceneRevision.updatedAt, payload) });
+          sceneRevision = await apiGet<Scene>(`/api/v1/scenes/${targetScene.id}`, { signal: request.controller.signal });
         }
         return lastToken;
       },
@@ -3774,15 +4015,25 @@ export function App() {
     });
   }
 
-  async function importCampaignArchive(file: File, input?: HTMLInputElement) {
+  async function importCampaignArchive(file: File, input?: HTMLInputElement, retryAttempt?: ArchiveImportAttempt) {
     setIsImportingArchive(true);
     setImportStatus(`Importing ${file.name}`);
     setStatus("Importing archive");
+    const attempt = retryAttempt ?? {
+      idempotencyKey: `archive-import:${window.crypto.randomUUID()}`,
+      mode: archiveImportModeRef.current,
+      scope: archiveImportScopeRef.current,
+      collections: [...archiveImportCollectionsRef.current]
+    };
     try {
       const archive = JSON.parse(await file.text()) as unknown;
-      const currentImportMode = archiveImportModeRef.current;
-      const currentImportScope = archiveImportScopeRef.current;
-      const currentImportCollections = archiveImportCollectionsRef.current;
+      const currentImportMode = attempt.mode;
+      const currentImportScope = attempt.scope;
+      const currentImportCollections = attempt.collections;
+      const archiveCampaignId = (archive as Partial<CampaignArchive>)?.data?.campaigns?.[0]?.id;
+      const existingCampaign = archiveCampaignId
+        ? snapshotRef.current.campaigns.find((candidate) => candidate.id === archiveCampaignId)
+        : undefined;
       if (currentImportMode !== "dry_run" && campaignId) {
         const rollback = await apiGet<CampaignArchive>(`/api/v1/campaigns/${campaignId}/export?scope=campaign&version=0.2.0&redaction=portable`);
         setArchiveRollbackSnapshot(rollback);
@@ -3790,7 +4041,16 @@ export function App() {
       }
       const result = await apiPost<CampaignImportResult>(
         "/api/v1/import/campaign",
-        currentImportMode === "upsert" && currentImportScope === "all" ? archive : { archive, mode: currentImportMode, scope: currentImportScope, collections: currentImportScope === "selected_collections" ? currentImportCollections : undefined }
+        currentImportMode === "upsert" && currentImportScope === "all" && !existingCampaign
+          ? archive
+          : {
+              archive,
+              mode: currentImportMode,
+              scope: currentImportScope,
+              collections: currentImportScope === "selected_collections" ? currentImportCollections : undefined,
+              ...(existingCampaign ? { expectedUpdatedAt: existingCampaign.updatedAt } : {})
+            },
+        { idempotencyKey: attempt.idempotencyKey }
       );
       setArchiveImportReport(result);
       setArchiveImportReportFileName(file.name);
@@ -3810,7 +4070,7 @@ export function App() {
       await refresh(nextCampaignId);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      setFailedArchiveImport({ file, message });
+      setFailedArchiveImport({ file, message, attempt });
       setImportStatus(`${file.name}: ${message}`);
       setStatus("Archive import failed");
     } finally {
@@ -3821,7 +4081,7 @@ export function App() {
 
   async function retryArchiveImport() {
     if (!failedArchiveImport) return;
-    await importCampaignArchive(failedArchiveImport.file);
+    await importCampaignArchive(failedArchiveImport.file, undefined, failedArchiveImport.attempt);
   }
 
   function dismissArchiveImportFailure() {
@@ -3849,7 +4109,11 @@ export function App() {
       const requestSceneId = selectedScene?.id ?? sceneId;
       let applied = false;
       await runWorkspaceBoundAction(
-        (request) => apiPatch<Token>(`/api/v1/tokens/${tokenId}`, patch, { signal: request.controller.signal }),
+        (request) => {
+          const latest = snapshotRef.current.tokens.find((token) => token.id === tokenId) ?? selectedToken;
+          const payload = { ...patch, expectedUpdatedAt: latest.updatedAt };
+          return apiPatch<Token>(`/api/v1/tokens/${tokenId}`, payload, { signal: request.controller.signal, idempotencyKey: sharedMutationIdempotencyKey(`token:vision:${tokenId}`, latest.updatedAt, payload) });
+        },
         (updated, request) => {
           if (updated.id !== tokenId) return;
           applyTokensToSnapshot([updated]);
@@ -3876,13 +4140,27 @@ export function App() {
       setStatus(`${statusLabel} for this demo tab`);
       return;
     }
-    await runWorkspaceBoundAction(
-      (request) => apiPatch<Token>(`/api/v1/tokens/${targetToken.id}`, patch, { signal: request.controller.signal }),
-      (updated) => {
-        applyTokensToSnapshot([updated]);
-        setStatus(statusLabel);
-      }
-    );
+    const queuedRequest = beginWorkspaceBoundRequest();
+    try {
+      await tokenMutationQueueRef.current.enqueue(targetToken.id, async () => {
+        if (!workspaceBoundRequestIsCurrent(queuedRequest)) return;
+        await runWorkspaceBoundAction(
+          (request) => {
+            const latest = latestAuthoritativeToken(targetToken.id, targetToken)!;
+            const payload = { ...patch, expectedUpdatedAt: latest.updatedAt };
+            return apiPatch<Token>(`/api/v1/tokens/${targetToken.id}`, payload, { signal: request.controller.signal, idempotencyKey: sharedMutationIdempotencyKey(`token:update:${targetToken.id}`, latest.updatedAt, payload) });
+          },
+          (updated) => {
+            applyTokensToSnapshot([updated]);
+            setStatus(statusLabel);
+          }
+        );
+      });
+    } catch (error) {
+      if (workspaceBoundRequestIsCurrent(queuedRequest)) setStatus(`Token update failed: ${errorMessage(error)}`);
+    } finally {
+      finishWorkspaceBoundRequest(queuedRequest);
+    }
   }
 
   async function cycleTokenLayer(token: Token) {
@@ -3899,7 +4177,11 @@ export function App() {
       return;
     }
     await runWorkspaceBoundAction(
-      (request) => apiPatch<Token>(`/api/v1/tokens/${token.id}`, { layer: nextLayer }, { signal: request.controller.signal }),
+      (request) => {
+        const latest = snapshotRef.current.tokens.find((candidate) => candidate.id === token.id) ?? token;
+        const payload = { layer: nextLayer, expectedUpdatedAt: latest.updatedAt };
+        return apiPatch<Token>(`/api/v1/tokens/${token.id}`, payload, { signal: request.controller.signal, idempotencyKey: sharedMutationIdempotencyKey(`token:layer:${token.id}`, latest.updatedAt, payload) });
+      },
       (updated) => {
         applyTokensToSnapshot([updated]);
         setActiveTokenLayer(nextLayer);
@@ -3926,6 +4208,7 @@ export function App() {
       width: token.width,
       height: token.height,
       rotation: token.rotation,
+      elevation: token.elevation,
       layer: token.layer,
       hidden: token.hidden,
       locked: token.locked,
@@ -3933,6 +4216,7 @@ export function App() {
       visionRadius: token.visionRadius,
       brightVisionRadius: token.brightVisionRadius,
       dimVisionRadius: token.dimVisionRadius,
+      senses: token.senses,
       disposition: token.disposition,
       imageAssetId: token.imageAssetId,
       ownerUserIds: token.ownerUserIds,
@@ -3958,7 +4242,11 @@ export function App() {
     }
 
     await runWorkspaceBoundAction(
-      (request) => Promise.all(changes.map(({ token, position }) => apiPatch<Token>(`/api/v1/tokens/${token.id}`, position, { signal: request.controller.signal }))),
+      (request) => Promise.all(changes.map(({ token, position }) => {
+        const latest = snapshotRef.current.tokens.find((candidate) => candidate.id === token.id) ?? token;
+        const payload = { ...position, expectedUpdatedAt: latest.updatedAt };
+        return apiPatch<Token>(`/api/v1/tokens/${token.id}`, payload, { signal: request.controller.signal, idempotencyKey: sharedMutationIdempotencyKey(`token:move:${token.id}`, latest.updatedAt, payload) });
+      })),
       (updated) => applyTokensToSnapshot(updated)
     );
   }
@@ -3974,22 +4262,31 @@ export function App() {
     }
 
     await runWorkspaceBoundAction(
-      (request) => apiPatch<Token>(`/api/v1/tokens/${token.id}`, frame, { signal: request.controller.signal }),
+      (request) => {
+        const latest = snapshotRef.current.tokens.find((candidate) => candidate.id === token.id) ?? token;
+        const payload = { ...frame, expectedUpdatedAt: latest.updatedAt };
+        return apiPatch<Token>(`/api/v1/tokens/${token.id}`, payload, { signal: request.controller.signal, idempotencyKey: sharedMutationIdempotencyKey(`token:resize:${token.id}`, latest.updatedAt, payload) });
+      },
       (updated) => applyTokensToSnapshot([updated])
     );
   }
 
   async function createTokensOnServer(tokens: Token[], request: WorkspaceBoundRequest) {
+    const sceneRevisions = new Map<string, Scene>();
     for (const token of tokens) {
       if (!workspaceBoundRequestIsCurrent(request)) return;
-      await apiPost<Token>(`/api/v1/scenes/${token.sceneId}/tokens`, tokenRestorePayload(token), { signal: request.controller.signal });
+      const scene = sceneRevisions.get(token.sceneId) ?? await apiGet<Scene>(`/api/v1/scenes/${token.sceneId}`, { signal: request.controller.signal });
+      const payload = { ...tokenRestorePayload(token), expectedUpdatedAt: scene.updatedAt };
+      await apiPost<Token>(`/api/v1/scenes/${token.sceneId}/tokens`, payload, { signal: request.controller.signal, idempotencyKey: sharedMutationIdempotencyKey(`token:restore:${token.id}`, scene.updatedAt, payload) });
+      sceneRevisions.set(token.sceneId, await apiGet<Scene>(`/api/v1/scenes/${token.sceneId}`, { signal: request.controller.signal }));
     }
   }
 
   async function deleteTokensOnServer(tokens: Token[], request: WorkspaceBoundRequest) {
     for (const token of tokens) {
       if (!workspaceBoundRequestIsCurrent(request)) return;
-      await apiDelete<Token>(`/api/v1/tokens/${token.id}`, { signal: request.controller.signal });
+      const latest = snapshotRef.current.tokens.find((candidate) => candidate.id === token.id) ?? token;
+      await apiDelete<Token>(`/api/v1/tokens/${token.id}?expectedUpdatedAt=${encodeURIComponent(latest.updatedAt)}`, { signal: request.controller.signal, idempotencyKey: sharedMutationIdempotencyKey(`token:delete:${token.id}`, latest.updatedAt, {}) });
     }
   }
 
@@ -4015,7 +4312,11 @@ export function App() {
       const target = direction === "undo" ? "before" : "after";
       for (const change of action.changes) {
         if (!workspaceBoundRequestIsCurrent(request)) return;
-        await apiPatch<Token>(`/api/v1/tokens/${change.tokenId}`, change[target], { signal: request.controller.signal });
+        const latest = snapshotRef.current.tokens.find((token) => token.id === change.tokenId);
+        if (!latest) throw new Error("The token no longer exists. The board will refresh.");
+        const payload = { ...change[target], expectedUpdatedAt: latest.updatedAt };
+        const updated = await apiPatch<Token>(`/api/v1/tokens/${change.tokenId}`, payload, { signal: request.controller.signal, idempotencyKey: sharedMutationIdempotencyKey(`token:history:${direction}:${change.tokenId}`, latest.updatedAt, payload) });
+        applyTokensToSnapshot([updated]);
       }
       return;
     }
@@ -4157,14 +4458,29 @@ export function App() {
       return;
     }
     const targetSceneId = selectedScene?.id ?? sceneId;
-    setStatus(statusLabel);
-    await runWorkspaceBoundAction(
-      (request) => apiPost<Token>(`/api/v1/tokens/${tokenId}/target`, { targeted }, { signal: request.controller.signal }),
-      async (_updated, request) => {
-        await refresh(request.campaignId, targetSceneId, { syncStatus: false });
-        if (workspaceBoundRequestIsCurrent(request)) setStatus(statusLabel);
-      }
-    );
+    const queuedRequest = beginWorkspaceBoundRequest();
+    try {
+      await tokenMutationQueueRef.current.enqueue(tokenId, async () => {
+        if (!workspaceBoundRequestIsCurrent(queuedRequest)) return;
+        await runWorkspaceBoundAction(
+          (request) => {
+            const token = latestAuthoritativeToken(tokenId);
+            if (!token) throw new Error("The token no longer exists.");
+            const payload = { targeted, expectedUpdatedAt: token.updatedAt };
+            return apiPost<Token>(`/api/v1/tokens/${tokenId}/target`, payload, { signal: request.controller.signal, idempotencyKey: sharedMutationIdempotencyKey(`token:target:${tokenId}`, token.updatedAt, payload) });
+          },
+          async (updated, request) => {
+            applyTokensToSnapshot([updated]);
+            await refresh(request.campaignId, targetSceneId, { syncStatus: false });
+            if (workspaceBoundRequestIsCurrent(request)) setStatus(statusLabel);
+          }
+        );
+      });
+    } catch (error) {
+      if (workspaceBoundRequestIsCurrent(queuedRequest)) setStatus(`Token target update failed: ${errorMessage(error)}`);
+    } finally {
+      finishWorkspaceBoundRequest(queuedRequest);
+    }
   }
 
   async function setTokenTargets(tokenIds: string[], targeted: boolean) {
@@ -4191,32 +4507,47 @@ export function App() {
     }
     const statusLabel = targeted ? `Targeted ${uniqueTokenIds.length} tokens` : `Cleared ${uniqueTokenIds.length} targets`;
     const targetSceneId = selectedScene?.id ?? sceneId;
-    setStatus(statusLabel);
-    await runWorkspaceBoundAction(
-      async (request) => {
-        for (const tokenId of uniqueTokenIds) {
-          if (!workspaceBoundRequestIsCurrent(request)) return;
-          await apiPost<Token>(`/api/v1/tokens/${tokenId}/target`, { targeted }, { signal: request.controller.signal });
+    try {
+      await runWorkspaceBoundAction(
+        async (request) => {
+          for (const tokenId of uniqueTokenIds) {
+            if (!workspaceBoundRequestIsCurrent(request)) return;
+            await tokenMutationQueueRef.current.enqueue(tokenId, async () => {
+              if (!workspaceBoundRequestIsCurrent(request)) return;
+              const token = latestAuthoritativeToken(tokenId);
+              if (!token) return;
+              const payload = { targeted, expectedUpdatedAt: token.updatedAt };
+              const updated = await apiPost<Token>(`/api/v1/tokens/${tokenId}/target`, payload, { signal: request.controller.signal, idempotencyKey: sharedMutationIdempotencyKey(`token:target:${tokenId}`, token.updatedAt, payload) });
+              applyTokensToSnapshot([updated]);
+            });
+          }
+        },
+        async (_result, request) => {
+          await refresh(request.campaignId, targetSceneId, { syncStatus: false });
+          if (workspaceBoundRequestIsCurrent(request)) setStatus(statusLabel);
         }
-      },
-      async (_result, request) => {
-        await refresh(request.campaignId, targetSceneId, { syncStatus: false });
-        if (workspaceBoundRequestIsCurrent(request)) setStatus(statusLabel);
-      }
-    );
+      );
+    } catch (error) {
+      setStatus(`Token target update failed: ${errorMessage(error)}`);
+    }
   }
 
   async function uploadMap(file: File) {
     if (!selectedScene) return;
     const targetSceneId = selectedScene.id;
+    const latestScene = currentSceneForMutation(selectedScene);
+    const uploadScope = `asset-map:${targetSceneId}`;
+    const uploadAttempt = beginAppendMutation(uploadScope, { campaignId, sceneId: targetSceneId, sceneUpdatedAt: latestScene.updatedAt, name: file.name, size: file.size, type: file.type, lastModified: file.lastModified });
     await runWorkspaceBoundAction(
       (request) => apiUploadAsset({
         campaignId: request.campaignId,
         sceneId: targetSceneId,
+        expectedSceneUpdatedAt: latestScene.updatedAt,
         file,
         setAsBackground: true
-      }, { signal: request.controller.signal }),
+      }, { signal: request.controller.signal, idempotencyKey: uploadAttempt.idempotencyKey }),
       async (_result, request) => {
+        completeAppendMutation(uploadScope, uploadAttempt);
         setStatus("Map uploaded");
         await refresh(request.campaignId, targetSceneId);
       }
@@ -4227,6 +4558,8 @@ export function App() {
     if (!selectedCampaign || !selectedToken) return;
     const targetSceneId = selectedScene?.id ?? sceneId;
     const targetToken = selectedToken;
+    const uploadScope = `asset-token:${targetToken.id}`;
+    const uploadAttempt = beginAppendMutation(uploadScope, { campaignId, tokenId: targetToken.id, name: file.name, size: file.size, type: file.type, lastModified: file.lastModified });
     if (input) input.value = "";
     setStatus(`Uploading ${file.name} for ${targetToken.name}...`);
     try {
@@ -4238,10 +4571,13 @@ export function App() {
             file,
             folder: "tokens",
             tags: ["token"]
-          }, { signal: request.controller.signal });
-          await apiPatch<Token>(`/api/v1/tokens/${targetToken.id}`, { imageAssetId: result.asset.id }, { signal: request.controller.signal });
+          }, { signal: request.controller.signal, idempotencyKey: uploadAttempt.idempotencyKey });
+          const latest = snapshotRef.current.tokens.find((token) => token.id === targetToken.id) ?? targetToken;
+          const payload = { imageAssetId: result.asset.id, expectedUpdatedAt: latest.updatedAt };
+          await apiPatch<Token>(`/api/v1/tokens/${targetToken.id}`, payload, { signal: request.controller.signal, idempotencyKey: sharedMutationIdempotencyKey(`token:image:${targetToken.id}`, latest.updatedAt, payload) });
         },
         async (_result, request) => {
+          completeAppendMutation(uploadScope, uploadAttempt);
           setStatus(`${targetToken.name} image updated`);
           await refresh(request.campaignId, targetSceneId);
         }
@@ -4259,6 +4595,8 @@ export function App() {
       return;
     }
     const targetSceneId = selectedScene?.id ?? sceneId;
+    const uploadScope = "asset-agent-reference";
+    const uploadAttempt = beginAppendMutation(uploadScope, { campaignId, sceneId: targetSceneId, name: file.name, size: file.size, type: file.type, lastModified: file.lastModified });
     if (input) input.value = "";
     setAiAgentReferenceUploadStatus(`Uploading ${file.name}...`);
     try {
@@ -4269,8 +4607,9 @@ export function App() {
           file,
           folder: "ai/references",
           tags: ["ai", "reference"]
-        }, { signal: request.controller.signal }),
+        }, { signal: request.controller.signal, idempotencyKey: uploadAttempt.idempotencyKey }),
         async (result, request) => {
+          completeAppendMutation(uploadScope, uploadAttempt);
           setAiAgentReferenceAssetId(result.asset.id);
           setAiAgentReferenceUploadStatus("");
           await refresh(request.campaignId, targetSceneId);
@@ -4319,17 +4658,23 @@ export function App() {
       setStatus(setAsBackground ? "Demo map ready" : "Demo asset added");
       return;
     }
+    const backgroundScene = setAsBackground ? snapshotRef.current.scenes.find((candidate) => candidate.id === targetSceneId) : undefined;
+    const uploadScope = `asset-library:${setAsBackground ? targetSceneId : "general"}`;
+    const uploadAttempt = beginAppendMutation(uploadScope, { campaignId, sceneId: setAsBackground ? targetSceneId : undefined, sceneUpdatedAt: backgroundScene?.updatedAt, setAsBackground, folder: folder.trim(), tags: assetTagsFromInput(tags), name: file.name, size: file.size, type: file.type, lastModified: file.lastModified });
     try {
+      if (setAsBackground && !backgroundScene) throw new Error("Reload the selected scene before setting its background.");
       await runWorkspaceBoundAction(
         (request) => apiUploadAsset({
           campaignId: request.campaignId,
           sceneId: setAsBackground ? targetSceneId : undefined,
+          expectedSceneUpdatedAt: backgroundScene?.updatedAt,
           file,
           setAsBackground,
           folder: folder.trim() || undefined,
           tags: assetTagsFromInput(tags)
-        }, { signal: request.controller.signal }),
+        }, { signal: request.controller.signal, idempotencyKey: uploadAttempt.idempotencyKey }),
         async (result, request) => {
+          completeAppendMutation(uploadScope, uploadAttempt);
           setFailedAssetUpload(undefined);
           setAssetStatus(`${result.asset.name} uploaded${result.scene ? " and set as scene background" : ""}`);
           setStatus("Asset uploaded");
@@ -4369,11 +4714,11 @@ export function App() {
       return;
     }
     await runWorkspaceBoundAction(
-      (request) => apiPatch<MapAsset>(`/api/v1/assets/${asset.id}`, {
-        name: input.name,
-        folder: input.folder.trim() || null,
-        tags: assetTagsFromInput(input.tags)
-      }, { signal: request.controller.signal }),
+      (request) => {
+        const latest = snapshotRef.current.assets.find((candidate) => candidate.id === asset.id) ?? asset;
+        const payload = { name: input.name, folder: input.folder.trim() || null, tags: assetTagsFromInput(input.tags), expectedUpdatedAt: latest.updatedAt };
+        return apiPatch<MapAsset>(`/api/v1/assets/${asset.id}`, payload, { signal: request.controller.signal, idempotencyKey: sharedMutationIdempotencyKey(`asset:metadata:${asset.id}`, latest.updatedAt, payload) });
+      },
       async (updated, request) => {
         setAssetStatus(`${updated.name} metadata updated`);
         setStatus("Asset metadata updated");
@@ -4396,7 +4741,11 @@ export function App() {
       return;
     }
     await runWorkspaceBoundAction(
-      (request) => apiPatch<Scene>(`/api/v1/scenes/${targetScene.id}`, { backgroundAssetId: asset.id }, { signal: request.controller.signal }),
+      (request) => {
+        const latest = currentSceneForMutation(targetScene);
+        const payload = { backgroundAssetId: asset.id, expectedUpdatedAt: latest.updatedAt };
+        return apiPatch<Scene>(`/api/v1/scenes/${targetScene.id}`, payload, { signal: request.controller.signal, idempotencyKey: sharedMutationIdempotencyKey(`scene:background:${targetScene.id}`, latest.updatedAt, payload) });
+      },
       async (_updated, request) => {
         setAssetStatus(`${asset.name} set as ${targetScene.name} background`);
         setStatus("Scene background updated");
@@ -4418,7 +4767,11 @@ export function App() {
       return;
     }
     await runWorkspaceBoundAction(
-      (request) => apiPatch<MapAsset>(`/api/v1/assets/${asset.id}/lifecycle`, { status, reason }, { signal: request.controller.signal }),
+      (request) => {
+        const latest = snapshotRef.current.assets.find((candidate) => candidate.id === asset.id) ?? asset;
+        const payload = { status, reason, expectedUpdatedAt: latest.updatedAt };
+        return apiPatch<MapAsset>(`/api/v1/assets/${asset.id}/lifecycle`, payload, { signal: request.controller.signal, idempotencyKey: sharedMutationIdempotencyKey(`asset:lifecycle:${asset.id}`, latest.updatedAt, payload) });
+      },
       async (updated, request) => {
         setAssetStatus(`${updated.name} marked ${updated.lifecycle?.status ?? status}`);
         setStatus("Asset lifecycle updated");
@@ -4448,16 +4801,40 @@ export function App() {
     );
   }
 
+  function currentSceneForMutation(scene: Scene): Scene {
+    const candidate = snapshotRef.current.scenes.find((item) => item.id === scene.id);
+    return candidate && candidate.updatedAt > scene.updatedAt ? candidate : scene;
+  }
+
+  async function postSceneMutation(scene: Scene, path: string, input: Record<string, unknown>, scope: string): Promise<Scene> {
+    const latest = currentSceneForMutation(scene);
+    const payload = { ...input, expectedUpdatedAt: latest.updatedAt };
+    return runSharedMutation(() => apiPost<Scene>(path, payload, { idempotencyKey: sharedMutationIdempotencyKey(`${scope}:${latest.id}`, latest.updatedAt, payload) }), latest.campaignId, latest.id);
+  }
+
+  async function patchSceneChildMutation(scene: Scene, path: string, input: Record<string, unknown>, scope: string): Promise<Scene> {
+    const latest = currentSceneForMutation(scene);
+    const payload = { ...input, expectedUpdatedAt: latest.updatedAt };
+    return runSharedMutation(() => apiPatch<Scene>(path, payload, { idempotencyKey: sharedMutationIdempotencyKey(`${scope}:${latest.id}`, latest.updatedAt, payload) }), latest.campaignId, latest.id);
+  }
+
+  async function deleteSceneChildMutation(scene: Scene, path: string, scope: string): Promise<Scene> {
+    const latest = currentSceneForMutation(scene);
+    const separator = path.includes("?") ? "&" : "?";
+    return runSharedMutation(() => apiDelete<Scene>(`${path}${separator}expectedUpdatedAt=${encodeURIComponent(latest.updatedAt)}`, { idempotencyKey: sharedMutationIdempotencyKey(`${scope}:${latest.id}`, latest.updatedAt, {}) }), latest.campaignId, latest.id);
+  }
+
   async function revealFog() {
     if (!selectedScene) return;
     const center = selectedToken ? tokenCenter(selectedToken) : { x: selectedScene.width / 2, y: selectedScene.height / 2 };
-    await apiPost<Scene>(`/api/v1/scenes/${selectedScene.id}/fog`, {
+    const scene = await postSceneMutation(selectedScene, `/api/v1/scenes/${selectedScene.id}/fog`, {
       x: center.x,
       y: center.y,
       radius: 160,
       mode: "reveal",
       hidden: false
-    });
+    }, "scene:fog:reveal");
+    applySceneToSnapshot(scene);
     setStatus("Fog updated");
     await refresh();
   }
@@ -4465,13 +4842,14 @@ export function App() {
   async function hideFog() {
     if (!selectedScene) return;
     const center = selectedToken ? tokenCenter(selectedToken) : { x: selectedScene.width / 2, y: selectedScene.height / 2 };
-    await apiPost<Scene>(`/api/v1/scenes/${selectedScene.id}/fog`, {
+    const scene = await postSceneMutation(selectedScene, `/api/v1/scenes/${selectedScene.id}/fog`, {
       x: center.x,
       y: center.y,
       radius: 95,
       mode: "hide",
       hidden: false
-    });
+    }, "scene:fog:hide");
+    applySceneToSnapshot(scene);
     setStatus("Fog hidden");
     await refresh();
   }
@@ -4480,7 +4858,7 @@ export function App() {
     if (!selectedScene) return;
     const center = selectedToken ? tokenCenter(selectedToken) : { x: selectedScene.width / 2, y: selectedScene.height / 2 };
     const radius = selectedScene.gridSize * 3;
-    await apiPost<Scene>(`/api/v1/scenes/${selectedScene.id}/fog`, {
+    const scene = await postSceneMutation(selectedScene, `/api/v1/scenes/${selectedScene.id}/fog`, {
       shape: "polygon",
       mode: "reveal",
       points: [
@@ -4489,7 +4867,8 @@ export function App() {
         { x: center.x, y: center.y + radius },
         { x: center.x - radius, y: center.y }
       ]
-    });
+    }, "scene:fog:polygon");
+    applySceneToSnapshot(scene);
     setStatus("Fog polygon revealed");
     await refresh();
   }
@@ -4621,7 +5000,7 @@ export function App() {
 
   async function createSceneAnnotation(kind: SceneAnnotationKind, points: VisionPoint[], radius?: number) {
     if (!selectedScene || points.length === 0) return;
-    const scene = await apiPost<Scene>(`/api/v1/scenes/${selectedScene.id}/annotations`, {
+    const scene = await postSceneMutation(selectedScene, `/api/v1/scenes/${selectedScene.id}/annotations`, {
       kind,
       points,
       radius,
@@ -4636,7 +5015,7 @@ export function App() {
       templateDamageType: kind === "template" ? templateDamageType.trim() || undefined : undefined,
       snapToGrid: kind === "ruler" ? false : annotationSnapToGrid,
       expiresInSeconds: kind === "ping" ? pingAnnotationTtlSeconds : undefined
-    });
+    }, `scene:annotation:create:${kind}`);
     // Pings render locally the instant they are placed; skip the reconcile.
     if (kind === "ping") {
       setStatus("Ping sent");
@@ -4654,7 +5033,7 @@ export function App() {
       setStatus("No annotation to delete");
       return;
     }
-    applySceneToSnapshot(await apiDelete<Scene>(`/api/v1/scenes/${selectedScene.id}/annotations/${annotation.id}`));
+    applySceneToSnapshot(await deleteSceneChildMutation(selectedScene, `/api/v1/scenes/${selectedScene.id}/annotations/${annotation.id}`, `scene:annotation:delete:${annotation.id}`));
     setStatus(`${annotationToolLabel(annotation.kind)} deleted`);
   }
 
@@ -4667,7 +5046,8 @@ export function App() {
     }
     let scene: Scene | undefined;
     for (const annotation of annotations) {
-      scene = await apiDelete<Scene>(`/api/v1/scenes/${selectedScene.id}/annotations/${annotation.id}`);
+      scene = await deleteSceneChildMutation(scene ?? selectedScene, `/api/v1/scenes/${selectedScene.id}/annotations/${annotation.id}`, `scene:annotation:delete:${annotation.id}`);
+      applySceneToSnapshot(scene);
     }
     if (scene) applySceneToSnapshot(scene);
     setStatus(`Deleted ${annotations.length} annotations in ${group}`);
@@ -4683,9 +5063,10 @@ export function App() {
     const delta = Math.max(1, selectedScene.gridSize || 25);
     let scene: Scene | undefined;
     for (const annotation of annotations) {
-      scene = await apiPatch<Scene>(`/api/v1/scenes/${selectedScene.id}/annotations/${annotation.id}`, {
+      scene = await patchSceneChildMutation(scene ?? selectedScene, `/api/v1/scenes/${selectedScene.id}/annotations/${annotation.id}`, {
         points: annotation.points.map((point) => ({ x: point.x + delta, y: point.y }))
-      });
+      }, `scene:annotation:nudge:${annotation.id}`);
+      applySceneToSnapshot(scene);
     }
     if (scene) applySceneToSnapshot(scene);
     setStatus(`Moved ${annotations.length} annotations in ${group}`);
@@ -4700,7 +5081,8 @@ export function App() {
     }
     let scene: Scene | undefined;
     for (const annotation of annotations) {
-      scene = await apiPatch<Scene>(`/api/v1/scenes/${selectedScene.id}/annotations/${annotation.id}`, { color: annotationGroupColor });
+      scene = await patchSceneChildMutation(scene ?? selectedScene, `/api/v1/scenes/${selectedScene.id}/annotations/${annotation.id}`, { color: annotationGroupColor }, `scene:annotation:recolor:${annotation.id}`);
+      applySceneToSnapshot(scene);
     }
     if (scene) applySceneToSnapshot(scene);
     setStatus(`Recolored ${annotations.length} annotations in ${group}`);
@@ -4708,20 +5090,28 @@ export function App() {
 
   async function deleteSceneAnnotation(annotation: SceneAnnotation) {
     if (!selectedScene) return;
-    applySceneToSnapshot(await apiDelete<Scene>(`/api/v1/scenes/${selectedScene.id}/annotations/${annotation.id}`));
+    applySceneToSnapshot(await deleteSceneChildMutation(selectedScene, `/api/v1/scenes/${selectedScene.id}/annotations/${annotation.id}`, `scene:annotation:delete:${annotation.id}`));
     setStatus(`${annotationToolLabel(annotation.kind)} deleted`);
   }
 
   async function deleteSceneWall(wallId: string) {
     if (!selectedScene) return;
-    applySceneToSnapshot(await apiDelete<Scene>(`/api/v1/scenes/${selectedScene.id}/walls/${wallId}`));
+    applySceneToSnapshot(await deleteSceneChildMutation(selectedScene, `/api/v1/scenes/${selectedScene.id}/walls/${wallId}`, `scene:wall:delete:${wallId}`));
     setStatus("Wall deleted");
     void refresh(campaignId, selectedScene?.id ?? sceneId, { syncStatus: false });
   }
 
+  async function toggleScenePortal(wall: Scene["walls"][number]) {
+    if (!selectedScene || (wall.kind !== "door" && wall.kind !== "window")) return;
+    const open = !wall.open;
+    applySceneToSnapshot(await patchSceneChildMutation(selectedScene, `/api/v1/scenes/${selectedScene.id}/walls/${wall.id}`, { open }, `scene:wall:toggle:${wall.id}`));
+    setStatus(`${wall.kind === "door" ? "Door" : "Window"} ${open ? "opened" : "closed"}`);
+    void refresh(campaignId, selectedScene.id, { syncStatus: false });
+  }
+
   async function deleteSceneLight(lightId: string) {
     if (!selectedScene) return;
-    applySceneToSnapshot(await apiDelete<Scene>(`/api/v1/scenes/${selectedScene.id}/lights/${lightId}`));
+    applySceneToSnapshot(await deleteSceneChildMutation(selectedScene, `/api/v1/scenes/${selectedScene.id}/lights/${lightId}`, `scene:light:delete:${lightId}`));
     setStatus("Light deleted");
     void refresh(campaignId, selectedScene?.id ?? sceneId, { syncStatus: false });
   }
@@ -4732,32 +5122,32 @@ export function App() {
     if (annotation.kind === "template" && points.length >= 2) {
       patch.radius = Math.round(distanceBetween(points[0]!, points[1]!));
     }
-    applySceneToSnapshot(await apiPatch<Scene>(`/api/v1/scenes/${selectedScene.id}/annotations/${annotation.id}`, patch));
+    applySceneToSnapshot(await patchSceneChildMutation(selectedScene, `/api/v1/scenes/${selectedScene.id}/annotations/${annotation.id}`, patch, `scene:annotation:move:${annotation.id}`));
     setStatus(`Moved ${annotationToolLabel(annotation.kind)} annotation`);
   }
 
   async function paintFogStroke(mode: FogMode, points: VisionPoint[]) {
     if (!selectedScene || points.length === 0) return;
-    applySceneToSnapshot(await apiPost<Scene>(`/api/v1/scenes/${selectedScene.id}/fog`, {
+    applySceneToSnapshot(await postSceneMutation(selectedScene, `/api/v1/scenes/${selectedScene.id}/fog`, {
       shape: "brush",
       mode,
       brushRadius: Math.max(28, Math.min(110, selectedScene.gridSize * 1.35)),
       points
-    }));
+    }, `scene:fog:brush:${mode}`));
     setStatus(`${mode === "hide" ? "Hide" : "Reveal"} fog brush applied`);
     void refresh(campaignId, selectedScene?.id ?? sceneId, { syncStatus: false });
   }
 
   async function undoFog() {
     if (!selectedScene) return;
-    applySceneToSnapshot(await apiPost<Scene>(`/api/v1/scenes/${selectedScene.id}/fog/undo`, {}));
+    applySceneToSnapshot(await postSceneMutation(selectedScene, `/api/v1/scenes/${selectedScene.id}/fog/undo`, {}, "scene:fog:undo"));
     setStatus("Fog change undone");
     void refresh(campaignId, selectedScene?.id ?? sceneId, { syncStatus: false });
   }
 
   async function undoSceneEdit() {
     if (!selectedScene) return;
-    applySceneToSnapshot(await apiPost<Scene>(`/api/v1/scenes/${selectedScene.id}/undo`, {}));
+    applySceneToSnapshot(await postSceneMutation(selectedScene, `/api/v1/scenes/${selectedScene.id}/undo`, {}, "scene:undo"));
     setStatus("Scene edit undone");
     void refresh(campaignId, selectedScene?.id ?? sceneId, { syncStatus: false });
   }
@@ -4805,10 +5195,15 @@ export function App() {
     const request = currentWorkspaceRequestIdentity();
     const submittedName = fogPresetName;
     const name = submittedName.trim() || `${selectedScene.name} fog preset`;
-    await apiPost(`/api/v1/campaigns/${request.campaignId}/fog-presets`, {
+    const payload = {
       name,
-      sceneId: selectedScene.id
-    });
+      sceneId: selectedScene.id,
+      expectedSceneUpdatedAt: (snapshotRef.current.scenes.find((scene) => scene.id === selectedScene.id) ?? selectedScene).updatedAt
+    };
+    const attemptScope = `fog-preset:${selectedScene.id}`;
+    const attempt = beginAppendMutation(attemptScope, payload);
+    await apiPost(`/api/v1/campaigns/${request.campaignId}/fog-presets`, payload, { idempotencyKey: attempt.idempotencyKey });
+    completeAppendMutation(attemptScope, attempt);
     if (!workspaceIdentityIsCurrent(request)) return;
     setFogPresetName((current) => current === submittedName ? "" : current);
     setStatus("Fog preset saved");
@@ -4819,10 +5214,11 @@ export function App() {
     if (!selectedScene) return;
     const preset = snapshot.fogPresets[0];
     if (!preset) return;
-    await apiPost<Scene>(`/api/v1/scenes/${selectedScene.id}/fog/apply-preset`, {
+    const scene = await postSceneMutation(selectedScene, `/api/v1/scenes/${selectedScene.id}/fog/apply-preset`, {
       presetId: preset.id,
       mode: fogPresetMode
-    });
+    }, `scene:fog:preset:${preset.id}`);
+    applySceneToSnapshot(scene);
     setStatus(`${fogPresetMode === "append" ? "Appended" : "Applied"} ${preset.name}`);
     await refresh();
   }
@@ -4830,27 +5226,30 @@ export function App() {
   async function deleteFogPreset() {
     const preset = snapshot.fogPresets[0];
     if (!preset) return;
-    await apiDelete(`/api/v1/campaigns/${campaignId}/fog-presets/${preset.id}`);
+    const latest = snapshotRef.current.fogPresets.find((candidate) => candidate.id === preset.id) ?? preset;
+    await runSharedMutation(() => apiDelete(`/api/v1/campaigns/${campaignId}/fog-presets/${preset.id}?expectedUpdatedAt=${encodeURIComponent(latest.updatedAt)}`, {
+      idempotencyKey: sharedMutationIdempotencyKey(`fog-preset:delete:${preset.id}`, latest.updatedAt, {})
+    }));
     setStatus(`Deleted ${preset.name}`);
     await refresh();
   }
 
   async function addWall() {
     if (!selectedScene) return;
-    applySceneToSnapshot(await apiPost<Scene>(`/api/v1/scenes/${selectedScene.id}/walls`, {
+    applySceneToSnapshot(await postSceneMutation(selectedScene, `/api/v1/scenes/${selectedScene.id}/walls`, {
       x1: Math.round(selectedScene.width * 0.25),
       y1: Math.round(selectedScene.height * 0.28),
       x2: Math.round(selectedScene.width * 0.75),
       y2: Math.round(selectedScene.height * 0.28),
       blocksVision: true
-    }));
+    }, "scene:wall:add"));
     setStatus("Wall added");
     void refresh(campaignId, selectedScene?.id ?? sceneId, { syncStatus: false });
   }
 
   async function addTerrainWall() {
     if (!selectedScene) return;
-    applySceneToSnapshot(await apiPost<Scene>(`/api/v1/scenes/${selectedScene.id}/walls`, {
+    applySceneToSnapshot(await postSceneMutation(selectedScene, `/api/v1/scenes/${selectedScene.id}/walls`, {
       x1: Math.round(selectedScene.width * 0.28),
       y1: Math.round(selectedScene.height * 0.42),
       x2: Math.round(selectedScene.width * 0.72),
@@ -4858,14 +5257,42 @@ export function App() {
       blocksVision: true,
       blocksMovement: false,
       kind: "terrain"
-    }));
+    }, "scene:wall:add-terrain"));
     setStatus("Terrain wall added");
     void refresh(campaignId, selectedScene?.id ?? sceneId, { syncStatus: false });
   }
 
+  async function addDoor() {
+    if (!selectedScene) return;
+    applySceneToSnapshot(await postSceneMutation(selectedScene, `/api/v1/scenes/${selectedScene.id}/walls`, {
+      x1: Math.round(selectedScene.width * 0.42),
+      y1: Math.round(selectedScene.height * 0.34),
+      x2: Math.round(selectedScene.width * 0.58),
+      y2: Math.round(selectedScene.height * 0.34),
+      kind: "door",
+      open: false
+    }, "scene:wall:add-door"));
+    setStatus("Closed door added; double-click its handle to open it");
+    void refresh(campaignId, selectedScene.id, { syncStatus: false });
+  }
+
+  async function addWindow() {
+    if (!selectedScene) return;
+    applySceneToSnapshot(await postSceneMutation(selectedScene, `/api/v1/scenes/${selectedScene.id}/walls`, {
+      x1: Math.round(selectedScene.width * 0.42),
+      y1: Math.round(selectedScene.height * 0.5),
+      x2: Math.round(selectedScene.width * 0.58),
+      y2: Math.round(selectedScene.height * 0.5),
+      kind: "window",
+      open: false
+    }, "scene:wall:add-window"));
+    setStatus("Closed window added; double-click its handle to open it");
+    void refresh(campaignId, selectedScene.id, { syncStatus: false });
+  }
+
   async function addLight() {
     if (!selectedScene) return;
-    applySceneToSnapshot(await apiPost<Scene>(`/api/v1/scenes/${selectedScene.id}/lights`, {
+    applySceneToSnapshot(await postSceneMutation(selectedScene, `/api/v1/scenes/${selectedScene.id}/lights`, {
       x: selectedToken ? selectedToken.x + selectedToken.width / 2 : selectedScene.width / 2,
       y: selectedToken ? selectedToken.y + selectedToken.height / 2 : selectedScene.height / 2,
       radius: 210,
@@ -4873,13 +5300,46 @@ export function App() {
       dimRadius: 210,
       color: "#38bdf8",
       intensity: 0.32
-    }));
+    }, "scene:light:add"));
     setStatus("Dual-zone light added");
     void refresh(campaignId, selectedScene?.id ?? sceneId, { syncStatus: false });
   }
 
+  async function addDarkness() {
+    if (!selectedScene) return;
+    applySceneToSnapshot(await postSceneMutation(selectedScene, `/api/v1/scenes/${selectedScene.id}/lights`, {
+      x: selectedToken ? selectedToken.x + selectedToken.width / 2 : selectedScene.width / 2,
+      y: selectedToken ? selectedToken.y + selectedToken.height / 2 : selectedScene.height / 2,
+      radius: 180,
+      color: "#111827",
+      intensity: 0.86,
+      kind: "darkness",
+      magical: true
+    }, "scene:light:add-darkness"));
+    setStatus("Magical darkness added");
+    void refresh(campaignId, selectedScene.id, { syncStatus: false });
+  }
+
+  async function cyclePlayerVisionPreview() {
+    if (!selectedScene) return;
+    const players = snapshotRef.current.members.filter((member) => member.role === "player" && member.active !== false && member.user.id !== currentUserId);
+    if (players.length === 0) {
+      setStatus("Add a player member before previewing player vision");
+      return;
+    }
+    const currentIndex = players.findIndex((member) => member.user.id === playerVisionPreviewUserIdRef.current);
+    const nextMember = currentIndex >= 0 && currentIndex === players.length - 1 ? undefined : players[currentIndex + 1] ?? players[0];
+    const nextUserId = nextMember?.user.id ?? "";
+    const vision = await apiGet<VisionSnapshot>(`/api/v1/scenes/${selectedScene.id}/vision${nextUserId ? `?previewUserId=${encodeURIComponent(nextUserId)}` : ""}`);
+    playerVisionPreviewUserIdRef.current = nextUserId;
+    setPlayerVisionPreviewUserId(nextUserId);
+    setSnapshot((current) => ({ ...current, vision }));
+    setStatus(nextMember ? `Previewing ${nextMember.user.displayName}'s player vision` : "Player vision preview ended");
+  }
+
   function applyActorToSnapshot(actor: Actor) {
     if (actor.campaignId !== realtimeSelectionRef.current.campaignId) return;
+    actorSheetAuthoritativeRef.current.set(actor.id, actor);
     invalidateInFlightRefreshes();
     setSnapshot((current) => ({
       ...current,
@@ -4887,6 +5347,39 @@ export function App() {
         ? current.actors.map((item) => (item.id === actor.id ? actor : item))
         : [...current.actors, actor]
     }));
+  }
+
+  function latestAuthoritativeActor(actor: Actor): Actor {
+    const snapshotActor = snapshotRef.current.actors.find((candidate) => candidate.id === actor.id && candidate.campaignId === actor.campaignId);
+    const queuedActor = actorSheetAuthoritativeRef.current.get(actor.id);
+    if (!queuedActor || queuedActor.campaignId !== actor.campaignId) return snapshotActor ?? actor;
+    if (!snapshotActor || queuedActor.updatedAt >= snapshotActor.updatedAt) return queuedActor;
+    return snapshotActor;
+  }
+
+  function reconcileStaleWriteConflict(error: unknown): boolean {
+    if (!(error instanceof ApiError) || error.status !== 409) return false;
+    const body = recordValue(error.body);
+    if (body.code !== "stale_write") return false;
+    const current = recordValue(body.current);
+    if (body.resourceType === "actor" && typeof current.id === "string" && typeof current.campaignId === "string" && typeof current.updatedAt === "string") {
+      applyActorToSnapshot(current as unknown as Actor);
+    } else if (body.resourceType === "item" && typeof current.id === "string" && typeof current.campaignId === "string" && typeof current.updatedAt === "string") {
+      applyItemToSnapshot(current as unknown as Item);
+    } else if (body.resourceType === "combat" && typeof current.id === "string" && typeof current.campaignId === "string" && typeof current.updatedAt === "string" && Array.isArray(current.combatants)) {
+      const combat = current as unknown as Combat;
+      if (combat.campaignId === realtimeSelectionRef.current.campaignId) {
+        invalidateInFlightRefreshes();
+        setSnapshot((snapshot) => ({
+          ...snapshot,
+          combats: snapshot.combats.some((item) => item.id === combat.id)
+            ? snapshot.combats.map((item) => (item.id === combat.id ? combat : item))
+            : [...snapshot.combats, combat]
+        }));
+      }
+    }
+    setStatus(`${error.message} Latest state loaded; review and retry.`);
+    return true;
   }
 
   function applyActorHpToSnapshot(actorId: string, hp: { current: number; max: number }) {
@@ -4901,11 +5394,17 @@ export function App() {
   async function persistActorHp(actor: Actor, hp: { current: number; max: number }, request: WorkspaceBoundRequest) {
     try {
       if (!workspaceBoundRequestIsCurrent(request)) return;
-      const updated = await apiPatch<Actor>(`/api/v1/actors/${actor.id}`, { data: { ...actor.data, hp } }, { signal: request.controller.signal });
+      const latest = latestAuthoritativeActor(actor);
+      const payload = {
+        data: { ...latest.data, hp },
+        expectedUpdatedAt: latest.updatedAt,
+        ...(latest.systemId === "dnd-5e-srd" ? { manualOverrideReason: "Manual character-sheet HP correction" } : {})
+      };
+      const updated = await apiPatch<Actor>(`/api/v1/actors/${actor.id}`, payload, { signal: request.controller.signal, idempotencyKey: sharedMutationIdempotencyKey(`actor:hp:${actor.id}`, latest.updatedAt, payload) });
       if (workspaceBoundRequestIsCurrent(request)) applyActorToSnapshot(updated);
     } catch (error) {
       if (workspaceBoundRequestIsCurrent(request)) {
-        setStatus(errorMessage(error));
+        if (!reconcileStaleWriteConflict(error)) setStatus(errorMessage(error));
         void refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });
       }
     } finally {
@@ -4930,7 +5429,13 @@ export function App() {
     }
     const request = beginWorkspaceBoundRequest();
     const timer = window.setTimeout(() => {
-      void persistActorHp(actor, next, request);
+      void actorSheetMutationQueueRef.current.enqueue(actor.id, async () => {
+        if (!workspaceBoundRequestIsCurrent(request)) return;
+        await persistActorHp(actor, next, request);
+      }).finally(() => {
+        if (hpAdjustRef.current.get(actor.id)?.request === request) hpAdjustRef.current.delete(actor.id);
+        finishWorkspaceBoundRequest(request);
+      });
     }, 220);
     hpAdjustRef.current.set(actor.id, { ...next, timer, actor, request });
   }
@@ -4943,29 +5448,62 @@ export function App() {
     const safeCurrent = Math.max(0, Math.floor(current));
     const next = { current: safeCurrent, max: hp?.max ?? safeCurrent };
     applyActorHpToSnapshot(actor.id, next);
-    await persistActorHp(actor, next, beginWorkspaceBoundRequest());
+    const queuedRequest = beginWorkspaceBoundRequest();
+    try {
+      await actorSheetMutationQueueRef.current.enqueue(actor.id, async () => {
+        if (!workspaceBoundRequestIsCurrent(queuedRequest)) return;
+        await persistActorHp(actor, next, beginWorkspaceBoundRequest());
+      });
+    } finally {
+      finishWorkspaceBoundRequest(queuedRequest);
+    }
   }
 
   async function updateActorData(actor: Actor, patch: Record<string, unknown>) {
     // Apply the authoritative response immediately so sheet edits (conditions,
     // attributes) reflect on the board without waiting on a snapshot reload.
-    await runWorkspaceBoundAction(
-      (request) => apiPatch<Actor>(`/api/v1/actors/${actor.id}`, {
-        data: { ...actor.data, ...patch }
-      }, { signal: request.controller.signal }),
-      (updated) => {
-        applyActorToSnapshot(updated);
-        setStatus(`${actor.name} sheet updated`);
-      }
-    );
+    const queuedRequest = beginWorkspaceBoundRequest();
+    try {
+      await actorSheetMutationQueueRef.current.enqueue(actor.id, async () => {
+        if (!workspaceBoundRequestIsCurrent(queuedRequest)) return;
+        await runWorkspaceBoundAction(
+          (request) => {
+            const latest = latestAuthoritativeActor(actor);
+            const payload = {
+              data: { ...latest.data, ...patch },
+              expectedUpdatedAt: latest.updatedAt,
+              ...(latest.systemId === "dnd-5e-srd" ? { manualOverrideReason: "Manual character-sheet state correction" } : {})
+            };
+            return apiPatch<Actor>(`/api/v1/actors/${actor.id}`, payload, { signal: request.controller.signal, idempotencyKey: sharedMutationIdempotencyKey(`actor:data:${actor.id}`, latest.updatedAt, payload) });
+          },
+          (updated) => {
+            applyActorToSnapshot(updated);
+            setStatus(`${actor.name} sheet updated`);
+          }
+        );
+      });
+    } catch (error) {
+      if (workspaceBoundRequestIsCurrent(queuedRequest)) setStatus(errorMessage(error));
+    } finally {
+      finishWorkspaceBoundRequest(queuedRequest);
+    }
   }
 
   async function awardActorXp(actor: Actor, amount: number) {
     if (!Number.isFinite(amount) || amount === 0) return;
-    const currentXp = Math.max(0, Math.floor(numericValue(actor.data.xp, 0)));
+    const latestActor = snapshotRef.current.actors.find((candidate) => candidate.id === actor.id) ?? actor;
+    const currentXp = Math.max(0, Math.floor(numericValue(latestActor.data.xp, 0)));
     const nextXp = Math.max(0, currentXp + Math.floor(amount));
     await runWorkspaceBoundAction(
-      (request) => apiPatch<Actor>(`/api/v1/actors/${actor.id}`, { data: { ...actor.data, xp: nextXp } }, { signal: request.controller.signal }),
+      (request) => {
+        const latest = snapshotRef.current.actors.find((candidate) => candidate.id === actor.id) ?? latestActor;
+        const payload = {
+          data: { ...latest.data, xp: nextXp },
+          expectedUpdatedAt: latest.updatedAt,
+          ...(latest.systemId === "dnd-5e-srd" ? { manualOverrideReason: "Manual character-sheet XP adjustment" } : {})
+        };
+        return apiPatch<Actor>(`/api/v1/actors/${actor.id}`, payload, { signal: request.controller.signal, idempotencyKey: sharedMutationIdempotencyKey(`actor:xp:${actor.id}`, latest.updatedAt, payload) });
+      },
       (updated) => {
         applyActorToSnapshot(updated);
         if (actor.id === selectedActor?.id && xpProgress?.nextLevelXp !== undefined && nextXp >= xpProgress.nextLevelXp) {
@@ -4977,69 +5515,102 @@ export function App() {
     );
   }
 
-  function awardPartyXp(total: number) {
-    const party = snapshot.actors.filter((actor) => !isAdversaryActor(actor, snapshot.tokens));
-    if (party.length === 0 || !Number.isFinite(total) || total <= 0) {
-      setStatus("No party actors to award XP");
-      return;
-    }
-    const share = Math.floor(total / party.length);
-    if (share <= 0) return;
-    void runWorkspaceBoundAction(
-      (request) => Promise.all(party.map((actor) => apiPatch<Actor>(`/api/v1/actors/${actor.id}`, {
-        data: { ...actor.data, xp: Math.max(0, Math.floor(numericValue(actor.data.xp, 0)) + share) }
-      }, { signal: request.controller.signal }))),
-      (actors) => {
-        actors.forEach(applyActorToSnapshot);
-        setStatus(`Awarded ${formatNumber(share)} XP to each of ${party.length} party members`);
-      }
-    ).catch((error) => {
-      if (workspaceRequestIsCurrent(campaignId, currentUserId)) setStatus(errorMessage(error));
+  async function awardCombatRewards(input: { totalXp?: number; totalGp?: number; loot?: string[]; note?: string }) {
+    const current = snapshotRef.current;
+    const combat = current.combats.find((candidate) => candidate.active);
+    if (!combat) throw new Error("Start combat before recording encounter rewards");
+    const party = current.actors.filter((actor) => !isAdversaryActor(actor, current.tokens));
+    const awardsCurrency = (input.totalXp ?? 0) > 0 || (input.totalGp ?? 0) > 0;
+    if (awardsCurrency && party.length === 0) throw new Error("No party actors to award rewards");
+    const actorRevisions = party.map((actor): [string, string] => [actor.id, actor.updatedAt]);
+    const fingerprint = combatRewardIntentFingerprint({
+      combatId: combat.id,
+      recipientActorIds: party.map((actor) => actor.id),
+      ...input
     });
+    const attempt = combatRewardAttemptForIntent(combatRewardAttemptRef.current, fingerprint, () => window.crypto.randomUUID(), () => ({
+      recipientActorIds: party.map((actor) => actor.id),
+      totalXp: input.totalXp,
+      totalGp: input.totalGp,
+      loot: input.loot,
+      note: input.note,
+      expectedUpdatedAt: combat.updatedAt,
+      expectedActorUpdatedAt: Object.fromEntries(actorRevisions)
+    }));
+    combatRewardAttemptRef.current = attempt;
+    try {
+      await runWorkspaceBoundAction(
+        (request) => apiPost<{ combat: Combat; actors: Actor[]; reward: NonNullable<Combat["rewards"]>[number] }>(`/api/v1/combats/${combat.id}/rewards`, attempt.request, { signal: request.controller.signal, idempotencyKey: attempt.idempotencyKey }),
+        (result) => {
+          invalidateInFlightRefreshes();
+          const actorsById = new Map(result.actors.map((actor) => [actor.id, actor]));
+          setSnapshot((snapshot) => ({
+            ...snapshot,
+            actors: snapshot.actors.map((actor) => actorsById.get(actor.id) ?? actor),
+            combats: snapshot.combats.map((candidate) => (candidate.id === result.combat.id ? result.combat : candidate))
+          }));
+          const parts = [
+            result.reward.totalXp > 0 ? `${formatNumber(result.reward.totalXp)} XP (${formatNumber(result.reward.xpPerActor)} each)` : "",
+            result.reward.totalGp > 0 ? `${formatNumber(result.reward.totalGp)} gp (${formatNumber(result.reward.gpPerActor)} each)` : "",
+            result.reward.loot.length > 0 ? `${formatNumber(result.reward.loot.length)} loot ${result.reward.loot.length === 1 ? "entry" : "entries"}` : ""
+          ].filter(Boolean);
+          setStatus(`Encounter rewards recorded: ${parts.join(", ")}`);
+          if (combatRewardAttemptRef.current?.idempotencyKey === attempt.idempotencyKey) combatRewardAttemptRef.current = null;
+        }
+      );
+    } catch (error) {
+      if (error instanceof ApiError && error.status >= 400 && error.status < 500 && combatRewardAttemptRef.current?.idempotencyKey === attempt.idempotencyKey) {
+        combatRewardAttemptRef.current = null;
+      }
+      if (!reconcileStaleWriteConflict(error)) setStatus(errorMessage(error));
+      throw error;
+    }
   }
 
-  function awardPartyGold(totalGp: number) {
-    const party = snapshot.actors.filter((actor) => !isAdversaryActor(actor, snapshot.tokens));
-    if (party.length === 0 || !Number.isFinite(totalGp) || totalGp <= 0) {
-      setStatus("No party actors to award gold");
-      return;
-    }
-    const share = Math.floor(totalGp / party.length);
-    if (share <= 0) return;
-    void runWorkspaceBoundAction(
-      (request) => Promise.all(party.map((actor) => {
-        const currency = recordValue(actor.data.currency);
-        const gp = numericValue(currency.gp, 0);
-        return apiPatch<Actor>(`/api/v1/actors/${actor.id}`, { data: { ...actor.data, currency: { ...currency, gp: gp + share } } }, { signal: request.controller.signal });
-      })),
-      (actors) => {
-        actors.forEach(applyActorToSnapshot);
-        setStatus(`Split ${formatNumber(Math.floor(totalGp))} gp - ${formatNumber(share)} gp to each of ${party.length} party members`);
-      }
-    ).catch((error) => {
-      if (workspaceRequestIsCurrent(campaignId, currentUserId)) setStatus(errorMessage(error));
-    });
+  function awardPartyXp(total: number): Promise<void> {
+    if (!Number.isFinite(total) || total <= 0) return Promise.reject(new Error("XP award must be greater than zero"));
+    return awardCombatRewards({ totalXp: Math.floor(total) });
+  }
+
+  function awardPartyGold(totalGp: number): Promise<void> {
+    if (!Number.isFinite(totalGp) || totalGp <= 0) return Promise.reject(new Error("Gold award must be greater than zero"));
+    return awardCombatRewards({ totalGp: Math.floor(totalGp) });
+  }
+
+  function recordCombatLoot(loot: string, note?: string): Promise<void> {
+    const entries = loot.split(/\r?\n|,/).map((entry) => entry.trim()).filter(Boolean);
+    if (entries.length === 0) return Promise.reject(new Error("Enter at least one loot item"));
+    return awardCombatRewards({ loot: entries, note: note?.trim() || undefined });
   }
 
   // Condition toggles queue per actor and recompute from the latest known
-  // data at execution time, so rapid clicks on different chips cannot
-  // overwrite each other with stale render-time condition arrays.
-  function toggleActorCondition(actor: Actor, conditionId: string) {
+  // actor revision at execution time. Applications use a stable retry key;
+  // removals carry the same optimistic revision in the query string.
+  function toggleActorCondition(actor: Actor, conditionId: string, options?: { overrideReason?: string }) {
     const previous = actorConditionQueueRef.current.get(actor.id) ?? Promise.resolve(undefined);
     const request = beginWorkspaceBoundRequest();
     const run = previous.then(async (previousActor) => {
       if (!workspaceBoundRequestIsCurrent(request)) return undefined;
       const latest = previousActor ?? snapshotRef.current.actors.find((item) => item.id === actor.id) ?? actor;
       const active = parseActorConditions(formatActorConditions(latest));
-      const next = active.includes(conditionId) ? active.filter((id) => id !== conditionId) : [...active, conditionId];
-      const updated = await apiPatch<Actor>(`/api/v1/actors/${actor.id}`, { data: { ...latest.data, conditions: next } }, { signal: request.controller.signal });
+      const removing = active.includes(conditionId);
+      const conditionPath = `/api/v1/campaigns/${latest.campaignId}/systems/${latest.systemId}/actors/${latest.id}/conditions`;
+      const idempotencyKey = `condition:${latest.id}:${conditionId}:${removing ? "remove" : options?.overrideReason ? "override" : "apply"}:${latest.updatedAt}`;
+      const result = removing
+        ? await apiDelete<{ actor: Actor }>(`${conditionPath}/${encodeURIComponent(conditionId)}?expectedUpdatedAt=${encodeURIComponent(latest.updatedAt)}`, { signal: request.controller.signal, idempotencyKey })
+        : await apiPost<{ actor: Actor }>(conditionPath, {
+            conditionId,
+            expectedUpdatedAt: latest.updatedAt,
+            ...(options?.overrideReason ? { overrideReason: options.overrideReason } : {})
+          }, { signal: request.controller.signal, idempotencyKey });
+      const updated = result.actor;
       if (!workspaceBoundRequestIsCurrent(request)) return undefined;
       applyActorToSnapshot(updated);
       setStatus(`${updated.name} conditions updated`);
       return updated;
     });
     const settled = run.catch((error) => {
-      if (workspaceBoundRequestIsCurrent(request)) setStatus(errorMessage(error));
+      if (workspaceBoundRequestIsCurrent(request) && !reconcileStaleWriteConflict(error)) setStatus(errorMessage(error));
       return undefined;
     }).finally(() => {
       finishWorkspaceBoundRequest(request);
@@ -5050,9 +5621,15 @@ export function App() {
 
   async function updateItemData(item: Item, patch: Record<string, unknown>) {
     await runWorkspaceBoundAction(
-      (request) => apiPatch<Item>(`/api/v1/items/${item.id}`, {
-        data: { ...item.data, ...patch }
-      }, { signal: request.controller.signal }),
+      (request) => {
+        const latest = snapshotRef.current.items.find((candidate) => candidate.id === item.id) ?? item;
+        const payload = {
+          data: { ...latest.data, ...patch },
+          expectedUpdatedAt: latest.updatedAt,
+          ...(latest.systemId === "dnd-5e-srd" ? { manualOverrideReason: "Manual character-sheet item state correction" } : {})
+        };
+        return apiPatch<Item>(`/api/v1/items/${item.id}`, payload, { signal: request.controller.signal, idempotencyKey: sharedMutationIdempotencyKey(`item:data:${item.id}`, latest.updatedAt, payload) });
+      },
       (updated) => {
         applyItemToSnapshot(updated);
         setStatus(`${item.name} updated`);
@@ -5060,9 +5637,40 @@ export function App() {
     );
   }
 
+  async function changeActorAttunement(actor: Actor, item: Item, attuned: boolean, options?: { breakCurse?: boolean; overrideReason?: string }) {
+    await runWorkspaceBoundAction(
+      (request) => {
+        const latest = snapshotRef.current.actors.find((candidate) => candidate.id === actor.id) ?? actor;
+        return apiPost<{ actor: Actor; item: Item }>(`/api/v1/campaigns/${request.campaignId}/systems/${latest.systemId}/actors/${latest.id}/attunement`, {
+          itemId: item.id,
+          attuned,
+          expectedUpdatedAt: latest.updatedAt,
+          ...(options?.breakCurse ? { breakCurse: true } : {}),
+          ...(options?.overrideReason ? { overrideReason: options.overrideReason } : {})
+        }, {
+          signal: request.controller.signal,
+          idempotencyKey: `attunement:${latest.id}:${item.id}:${attuned}:${options?.breakCurse ? "break-curse" : "standard"}:${latest.updatedAt}`
+        });
+      },
+      (updated) => {
+        applyActorToSnapshot(updated.actor);
+        applyItemToSnapshot(updated.item);
+        setStatus(`${item.name} ${attuned ? "attuned" : options?.breakCurse ? "curse broken and unattuned" : "unattuned"}`);
+      }
+    );
+  }
+
   async function assignItemToActor(item: Item, actor: Actor) {
     await runWorkspaceBoundAction(
-      (request) => apiPatch<Item>(`/api/v1/items/${item.id}`, { actorId: actor.id }, { signal: request.controller.signal }),
+      (request) => {
+        const latest = snapshotRef.current.items.find((candidate) => candidate.id === item.id) ?? item;
+        const payload = {
+          actorId: actor.id,
+          expectedUpdatedAt: latest.updatedAt,
+          ...(latest.systemId === "dnd-5e-srd" ? { manualOverrideReason: "Manual inventory reassignment" } : {})
+        };
+        return apiPatch<Item>(`/api/v1/items/${item.id}`, payload, { signal: request.controller.signal, idempotencyKey: sharedMutationIdempotencyKey(`item:assign:${item.id}`, latest.updatedAt, payload) });
+      },
       (updated) => {
         applyItemToSnapshot(updated);
         setStatus(`Gave ${item.name} to ${actor.name}`);
@@ -5101,10 +5709,13 @@ export function App() {
   }
 
   async function createAudioTrack(input: { name: string; url: string; kind: AudioTrack["kind"]; loop: boolean }) {
+    const attemptScope = "audio-track:url";
+    const attempt = beginAppendMutation(attemptScope, { campaignId, ...input });
     try {
       await runWorkspaceBoundAction(
-        (request) => apiPost<AudioTrack>(`/api/v1/campaigns/${request.campaignId}/audio`, input, { signal: request.controller.signal }),
+        (request) => apiPost<AudioTrack>(`/api/v1/campaigns/${request.campaignId}/audio`, input, { signal: request.controller.signal, idempotencyKey: attempt.idempotencyKey }),
         async (_track, request) => {
+          completeAppendMutation(attemptScope, attempt);
           setStatus(`Added ${input.name} to the soundboard`);
           await refresh(request.campaignId, realtimeSelectionRef.current.sceneId);
         }
@@ -5116,6 +5727,10 @@ export function App() {
 
   async function uploadAudioTrack(file: File, input: { name?: string; kind: AudioTrack["kind"]; loop: boolean }) {
     const name = input.name?.trim() || audioTrackNameFromFile(file);
+    const uploadScope = "asset-audio";
+    const uploadAttempt = beginAppendMutation(uploadScope, { campaignId, name: file.name, size: file.size, type: file.type, lastModified: file.lastModified, kind: input.kind });
+    const trackScope = "audio-track:upload";
+    let trackAttempt: AppendMutationAttempt | undefined;
     try {
       setStatus(`Uploading ${file.name} to the soundboard...`);
       await runWorkspaceBoundAction(
@@ -5125,15 +5740,19 @@ export function App() {
             file,
             folder: "audio",
             tags: ["audio", input.kind]
-          }, { signal: request.controller.signal });
-          return apiPost<AudioTrack>(`/api/v1/campaigns/${request.campaignId}/audio`, {
+          }, { signal: request.controller.signal, idempotencyKey: uploadAttempt.idempotencyKey });
+          const payload = {
             name,
             url: result.asset.url,
             kind: input.kind,
             loop: input.loop
-          }, { signal: request.controller.signal });
+          };
+          trackAttempt = beginAppendMutation(trackScope, { campaignId: request.campaignId, ...payload });
+          return apiPost<AudioTrack>(`/api/v1/campaigns/${request.campaignId}/audio`, payload, { signal: request.controller.signal, idempotencyKey: trackAttempt.idempotencyKey });
         },
         async (_track, request) => {
+          completeAppendMutation(uploadScope, uploadAttempt);
+          if (trackAttempt) completeAppendMutation(trackScope, trackAttempt);
           setStatus(`Uploaded ${name} to the soundboard`);
           await refresh(request.campaignId, realtimeSelectionRef.current.sceneId);
         }
@@ -5146,7 +5765,11 @@ export function App() {
   async function toggleAudioTrack(track: AudioTrack) {
     try {
       await runWorkspaceBoundAction(
-        (request) => apiPatch<AudioTrack>(`/api/v1/audio/${track.id}`, { playing: !track.playing }, { signal: request.controller.signal }),
+        (request) => {
+          const latest = snapshotRef.current.audioTracks.find((candidate) => candidate.id === track.id) ?? track;
+          const payload = { playing: !latest.playing, expectedUpdatedAt: latest.updatedAt };
+          return apiPatch<AudioTrack>(`/api/v1/audio/${track.id}`, payload, { signal: request.controller.signal, idempotencyKey: sharedMutationIdempotencyKey(`audio:toggle:${track.id}`, latest.updatedAt, payload) });
+        },
         async (_updated, request) => {
           await refresh(request.campaignId, realtimeSelectionRef.current.sceneId);
         }
@@ -5159,7 +5782,10 @@ export function App() {
   async function deleteAudioTrack(track: AudioTrack) {
     try {
       await runWorkspaceBoundAction(
-        (request) => apiDelete<AudioTrack>(`/api/v1/audio/${track.id}`, { signal: request.controller.signal }),
+        (request) => {
+          const latest = snapshotRef.current.audioTracks.find((candidate) => candidate.id === track.id) ?? track;
+          return apiDelete<AudioTrack>(`/api/v1/audio/${track.id}?expectedUpdatedAt=${encodeURIComponent(latest.updatedAt)}`, { signal: request.controller.signal, idempotencyKey: sharedMutationIdempotencyKey(`audio:delete:${track.id}`, latest.updatedAt, {}) });
+        },
         async (_deleted, request) => {
           setStatus(`Removed ${track.name} from the soundboard`);
           await refresh(request.campaignId, realtimeSelectionRef.current.sceneId);
@@ -5207,7 +5833,7 @@ export function App() {
 
   function shouldDelayDiceResult(roll: DiceRoll): boolean {
     if (!dice3dEnabled) return false;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return false;
+    if (resolvedUserPreferences(snapshot.session?.user ?? {}).reducedMotion || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return false;
     // A GM-only roll made by a player is returned to the caller once, but the
     // permission-filtered snapshot intentionally omits it. The 3D scheduler is
     // driven by snapshot rolls, so waiting for that hidden roll would leave the
@@ -5271,7 +5897,7 @@ export function App() {
       setRollStatusAfterDiceReveal(roll, `Rolled ${roll.total} for this demo tab`);
       return;
     }
-    const roll = await apiPost<DiceRoll>("/api/v1/dice/roll", {
+    const roll = await postDiceRoll("table", {
       campaignId,
       formula,
       visibility: diceVisibility,
@@ -5287,7 +5913,7 @@ export function App() {
       return;
     }
     const saveLabel = annotation.templateSaveDc ? ` DC ${annotation.templateSaveDc}` : "";
-    const roll = await apiPost<DiceRoll>("/api/v1/dice/roll", {
+    const roll = await postDiceRoll(`template:${annotation.id}`, {
       campaignId,
       formula: annotation.templateDamageFormula,
       visibility: diceVisibility,
@@ -5297,20 +5923,65 @@ export function App() {
     await refresh(campaignId, sceneId, { syncStatus: false });
   }
 
+  async function prepareAndApplyDndTypedDamage(targets: Actor[], amount: number, damageType: string | undefined, reviewLabel: string, request: WorkspaceBoundRequest, targetAmounts?: Map<string, number>): Promise<TypedDamageApplyResult | undefined> {
+    const uniqueTargets = [...new Map(targets.map((actor) => [actor.id, actor])).values()];
+    const primary = uniqueTargets[0];
+    if (!primary) return undefined;
+    const path = `/api/v1/campaigns/${request.campaignId}/systems/dnd-5e-srd/actors/${primary.id}`;
+    const prepared = await apiPost<PreparedTypedDamageResponse>(`${path}/rules-preview`, {
+      operation: "typed-damage",
+      prepare: true,
+      amount,
+      damageType: damageType?.trim() || "untyped",
+      targetActorIds: uniqueTargets.slice(1).map((actor) => actor.id),
+      ...(targetAmounts ? { targetDamages: uniqueTargets.map((actor) => ({ actorId: actor.id, amount: targetAmounts.get(actor.id) ?? amount })) } : {})
+    }, {
+      signal: request.controller.signal,
+      idempotencyKey: `template-damage-preview:${globalThis.crypto.randomUUID()}`
+    });
+    if (prepared.status !== "ready" || !prepared.preparation) throw new Error(prepared.blockers[0]?.message ?? "Template damage is not ready to apply.");
+    const exactReview = JSON.stringify({
+      label: reviewLabel,
+      damageType: damageType?.trim() || "untyped",
+      amount,
+      ...(targetAmounts ? { targetAmounts: Object.fromEntries(targetAmounts) } : {}),
+      targets: prepared.batch.targets
+    }, null, 2);
+    if (!window.confirm(`Review exact D&D template damage\n\n${exactReview}\n\nCommit every target atomically?`)) {
+      throw new Error("Template damage cancelled after review.");
+    }
+    const applied = await apiPost<TypedDamageApplyResult>(`${path}/typed-damage/apply`, {
+      preparedPreviewKey: prepared.preparation.preparedPreviewKey,
+      expectedActorUpdatedAt: prepared.preparation.actorUpdatedAt,
+      expectedItemUpdatedAt: prepared.preparation.itemUpdatedAt,
+      ...(prepared.preparation.combatUpdatedAt ? { expectedCombatUpdatedAt: prepared.preparation.combatUpdatedAt } : {})
+    }, {
+      signal: request.controller.signal,
+      idempotencyKey: `template-damage-commit:${globalThis.crypto.randomUUID()}`
+    });
+    if (workspaceBoundRequestIsCurrent(request)) applyTypedDamageResult(applied);
+    return applied;
+  }
+
   async function applyDamageToAffectedToken(token: Token, amount: number, damageType: string | undefined, outcomeLabel: string | undefined, actorOverrides: Map<string, Actor>, request: WorkspaceBoundRequest): Promise<boolean> {
     if (!workspaceBoundRequestIsCurrent(request)) return false;
     const actor = token.actorId ? actorOverrides.get(token.actorId) ?? snapshot.actors.find((item) => item.id === token.actorId) : undefined;
     const adjusted = adjustedTemplateDamage(actor, token, amount, damageType);
     const hp = actorHitPoints(actor);
+    if (actor?.systemId === "dnd-5e-srd" && hp && hasPermission("actor.update")) {
+      throw new Error("D&D actor damage must use the reviewed typed-damage flow.");
+    }
     if (actor && hp && hasPermission("actor.update")) {
       const concentrationNote = adjusted.notes.find((note) => note.startsWith("concentration DC "));
-      const nextActor = await apiPatch<Actor>(`/api/v1/actors/${actor.id}`, {
+      const payload = {
         data: {
           ...actor.data,
           hp: { ...hp, current: Math.max(0, hp.current - adjusted.amount) },
           ...(concentrationNote ? { conditions: appendActorCondition(actor, concentrationNote) } : {})
-        }
-      }, { signal: request.controller.signal });
+        },
+        expectedUpdatedAt: actor.updatedAt
+      };
+      const nextActor = await apiPatch<Actor>(`/api/v1/actors/${actor.id}`, payload, { signal: request.controller.signal, idempotencyKey: sharedMutationIdempotencyKey(`actor:template-damage:${actor.id}`, actor.updatedAt, payload) });
       if (!workspaceBoundRequestIsCurrent(request)) return false;
       actorOverrides.set(actor.id, nextActor);
       applyActorToSnapshot(nextActor);
@@ -5320,10 +5991,24 @@ export function App() {
     const noteLabel = adjusted.notes.length > 0 ? ` (${adjusted.notes.join("; ")})` : "";
     const damageLabel = `${outcomeLabel ? `${outcomeLabel} - ` : ""}Damaged ${adjusted.amount}${damageType ? ` ${damageType}` : ""}${noteLabel}`;
     const nextConditions = [...(token.conditions ?? []).filter((condition) => condition.id !== slugId(damageLabel)), { id: slugId(damageLabel), name: damageLabel }];
-    const updated = await apiPatch<Token>(`/api/v1/tokens/${token.id}`, { conditions: nextConditions }, { signal: request.controller.signal });
+    const latestToken = snapshotRef.current.tokens.find((candidate) => candidate.id === token.id) ?? token;
+    const tokenPayload = { conditions: nextConditions, expectedUpdatedAt: latestToken.updatedAt };
+    const updated = await apiPatch<Token>(`/api/v1/tokens/${token.id}`, tokenPayload, { signal: request.controller.signal, idempotencyKey: sharedMutationIdempotencyKey(`token:template-damage:${token.id}`, latestToken.updatedAt, tokenPayload) });
     if (!workspaceBoundRequestIsCurrent(request)) return false;
     applyTokensToSnapshot([updated]);
     return true;
+  }
+
+  async function postDiceRoll(
+    scope: string,
+    payload: { campaignId: string; formula: string; visibility?: DiceRoll["visibility"]; label?: string; clientSeed?: string },
+    signal?: AbortSignal
+  ): Promise<DiceRoll> {
+    const attemptScope = `dice-roll:${scope}`;
+    const attempt = beginAppendMutation(attemptScope, payload);
+    const roll = await apiPost<DiceRoll>("/api/v1/dice/roll", payload, { signal, idempotencyKey: attempt.idempotencyKey });
+    completeAppendMutation(attemptScope, attempt);
+    return roll;
   }
 
   async function applyTemplateDamage(annotation: SceneAnnotation) {
@@ -5331,6 +6016,7 @@ export function App() {
       setStatus("No template damage formula");
       return;
     }
+    const damageFormula = annotation.templateDamageFormula;
     const affectedTokenIds = annotation.affectedTokenIds ?? [];
     const affectedTokens = snapshot.tokens.filter((token) => affectedTokenIds.includes(token.id));
     if (affectedTokens.length === 0) {
@@ -5341,15 +6027,26 @@ export function App() {
     const targetSceneId = selectedScene?.id ?? sceneId;
     await runWorkspaceBoundAction(
       async (request) => {
-        const roll = await apiPost<DiceRoll>("/api/v1/dice/roll", {
+        const roll = await postDiceRoll(`template-damage:${annotation.id}`, {
           campaignId: request.campaignId,
-          formula: annotation.templateDamageFormula,
+          formula: damageFormula,
           visibility: diceVisibility,
           label: `${titleCaseLabel(annotation.templateShape ?? "circle")} template${saveLabel} damage`
-        }, { signal: request.controller.signal });
+        }, request.controller.signal);
         let appliedCount = 0;
         const actorOverrides = new Map<string, Actor>();
+        const dndTargets = affectedTokens.flatMap((token) => {
+          const actor = token.actorId ? snapshot.actors.find((candidate) => candidate.id === token.actorId) : undefined;
+          return actor?.systemId === "dnd-5e-srd" && hasPermission("actor.update") ? [actor] : [];
+        });
+        const dndResult = await prepareAndApplyDndTypedDamage(dndTargets, roll.total, annotation.templateDamageType, `${titleCaseLabel(annotation.templateShape ?? "circle")} template${saveLabel}`, request);
+        const appliedDndActorIds = new Set(dndResult?.actors.map((actor) => actor.id) ?? []);
+        for (const actor of dndResult?.actors ?? []) actorOverrides.set(actor.id, actor);
         for (const token of affectedTokens) {
+          if (token.actorId && appliedDndActorIds.has(token.actorId)) {
+            appliedCount += 1;
+            continue;
+          }
           if (await applyDamageToAffectedToken(token, roll.total, annotation.templateDamageType, undefined, actorOverrides, request)) appliedCount += 1;
         }
         return appliedCount;
@@ -5366,6 +6063,7 @@ export function App() {
       setStatus("No template damage formula");
       return;
     }
+    const damageFormula = annotation.templateDamageFormula;
     const saveAbility = annotation.templateSaveAbility;
     if (!saveAbility || saveAbility === "none" || !annotation.templateSaveDc) {
       setStatus("No template save configured");
@@ -5384,27 +6082,51 @@ export function App() {
     const targetSceneId = selectedScene?.id ?? sceneId;
     await runWorkspaceBoundAction(
       async (request) => {
-        const damageRoll = await apiPost<DiceRoll>("/api/v1/dice/roll", {
+        const damageRoll = await postDiceRoll(`template-save-damage:${annotation.id}`, {
           campaignId: request.campaignId,
-          formula: annotation.templateDamageFormula,
+          formula: damageFormula,
           visibility: diceVisibility,
           label: `${titleCaseLabel(annotation.templateShape ?? "circle")} template save damage`
-        }, { signal: request.controller.signal });
-        let appliedCount = 0;
-        const actorOverrides = new Map<string, Actor>();
+        }, request.controller.signal);
+        const resolvedTokens: Array<{ token: Token; actor?: Actor; damage: number; outcomeLabel: string }> = [];
         for (const token of affectedTokens) {
           if (!workspaceBoundRequestIsCurrent(request)) break;
-          const actor = token.actorId ? actorOverrides.get(token.actorId) ?? snapshot.actors.find((item) => item.id === token.actorId) : undefined;
-          const saveRoll = await apiPost<DiceRoll>("/api/v1/dice/roll", {
+          const actor = token.actorId ? snapshot.actors.find((item) => item.id === token.actorId) : undefined;
+          const saveRoll = await postDiceRoll(`template-save:${annotation.id}:${token.id}`, {
             campaignId: request.campaignId,
             formula: actorSaveFormula(actor, saveAbility),
             visibility: diceVisibility,
             label: `${token.name} ${titleCaseLabel(saveAbility)} save`
-          }, { signal: request.controller.signal });
+          }, request.controller.signal);
           const success = saveRoll.total >= saveDc;
           const damage = success ? Math.floor(damageRoll.total / 2) : damageRoll.total;
           const outcomeLabel = `${success ? "Saved" : "Failed"} ${titleCaseLabel(saveAbility)} ${saveRoll.total} vs DC ${saveDc}`;
-          if (await applyDamageToAffectedToken(token, damage, annotation.templateDamageType, outcomeLabel, actorOverrides, request)) appliedCount += 1;
+          resolvedTokens.push({ token, ...(actor ? { actor } : {}), damage, outcomeLabel });
+        }
+        const dndTargets: Actor[] = [];
+        const dndTargetAmounts = new Map<string, number>();
+        const groupedDndActorIds = new Set<string>();
+        for (const result of resolvedTokens) {
+          if (result.actor?.systemId !== "dnd-5e-srd" || !hasPermission("actor.update")) continue;
+          if (groupedDndActorIds.has(result.actor.id)) continue;
+          groupedDndActorIds.add(result.actor.id);
+          dndTargets.push(result.actor);
+          dndTargetAmounts.set(result.actor.id, result.damage);
+        }
+        const actorOverrides = new Map<string, Actor>();
+        const appliedDndActorIds = new Set<string>();
+        const appliedDnd = await prepareAndApplyDndTypedDamage(dndTargets, damageRoll.total, annotation.templateDamageType, `${titleCaseLabel(saveAbility)} save damage`, request, dndTargetAmounts);
+        for (const actor of appliedDnd?.actors ?? []) {
+          actorOverrides.set(actor.id, actor);
+          appliedDndActorIds.add(actor.id);
+        }
+        let appliedCount = 0;
+        for (const result of resolvedTokens) {
+          if (result.actor && appliedDndActorIds.has(result.actor.id)) {
+            appliedCount += 1;
+            continue;
+          }
+          if (await applyDamageToAffectedToken(result.token, result.damage, annotation.templateDamageType, result.outcomeLabel, actorOverrides, request)) appliedCount += 1;
         }
         return appliedCount;
       },
@@ -5430,11 +6152,15 @@ export function App() {
         setStatus(`Campaign macro already saved: ${existing.name}`);
         return;
       }
-      await apiPost(`/api/v1/campaigns/${campaignId}/dice-macros`, {
+      const payload = {
         name: formula,
         formula,
         visibility: "public"
-      });
+      };
+      const attemptScope = "dice-macro:create";
+      const attempt = beginAppendMutation(attemptScope, { campaignId, ...payload });
+      await apiPost(`/api/v1/campaigns/${campaignId}/dice-macros`, payload, { idempotencyKey: attempt.idempotencyKey });
+      completeAppendMutation(attemptScope, attempt);
       setStatus(`Shared campaign macro ${formula}`);
       await refresh();
       return;
@@ -5476,7 +6202,7 @@ export function App() {
         return;
       }
       const request = currentWorkspaceRequestIdentity();
-      const roll = await apiPost<DiceRoll>("/api/v1/dice/roll", {
+      const roll = await postDiceRoll("chat-command", {
         campaignId: request.campaignId,
         formula: parsed.formula,
         visibility: parsed.visibility,
@@ -5510,14 +6236,18 @@ export function App() {
       return;
     }
     const request = currentWorkspaceRequestIdentity();
-    await apiPost<ChatMessage>("/api/v1/chat/messages", {
+    const payload = {
       campaignId: request.campaignId,
       body: parsed.body,
       type: parsed.messageType,
       visibility: parsed.visibility,
       recipientUserIds: recipientUserId ? [recipientUserId] : [],
       replyToMessageId: submittedReplyTargetId
-    });
+    };
+    const attemptScope = "chat:create";
+    const attempt = beginAppendMutation(attemptScope, payload);
+    await apiPost<ChatMessage>("/api/v1/chat/messages", payload, { idempotencyKey: attempt.idempotencyKey });
+    completeAppendMutation(attemptScope, attempt);
     if (!workspaceIdentityIsCurrent(request)) return;
     setChatBody((current) => current === submittedBody ? "" : current);
     setChatReplyToMessageId((current) => current === submittedReplyToMessageId ? "" : current);
@@ -5536,7 +6266,11 @@ export function App() {
       setStatus("Demo message edited locally");
       return;
     }
-    const updated = await apiPatch<ChatMessage>(`/api/v1/chat/messages/${message.id}`, { body });
+    const latest = snapshotRef.current.chat.find((candidate) => candidate.id === message.id) ?? message;
+    const payload = { body, expectedUpdatedAt: latest.updatedAt };
+    const updated = await runSharedMutation(() => apiPatch<ChatMessage>(`/api/v1/chat/messages/${message.id}`, payload, {
+      idempotencyKey: sharedMutationIdempotencyKey(`chat:edit:${message.id}`, latest.updatedAt, payload)
+    }), request.campaignId, realtimeSelectionRef.current.sceneId);
     if (!workspaceIdentityIsCurrent(request)) return;
     setSnapshot((current) => ({ ...current, chat: current.chat.map((item) => item.id === updated.id ? updated : item) }));
     setStatus("Message edited");
@@ -5544,7 +6278,15 @@ export function App() {
 
   async function deleteChatMessage(message: ChatMessage) {
     const request = currentWorkspaceRequestIdentity();
-    await apiDelete<ChatMessage>(`/api/v1/chat/messages/${message.id}`);
+    if (blankCanvasDemoOpen) {
+      setSnapshot((current) => ({ ...current, chat: current.chat.filter((item) => item.id !== message.id) }));
+      setStatus("Demo message deleted locally");
+      return;
+    }
+    const latest = snapshotRef.current.chat.find((candidate) => candidate.id === message.id) ?? message;
+    await runSharedMutation(() => apiDelete<ChatMessage>(`/api/v1/chat/messages/${message.id}?expectedUpdatedAt=${encodeURIComponent(latest.updatedAt)}`, {
+      idempotencyKey: sharedMutationIdempotencyKey(`chat:delete:${message.id}`, latest.updatedAt, {})
+    }), request.campaignId, realtimeSelectionRef.current.sceneId);
     if (!workspaceIdentityIsCurrent(request)) return;
     setStatus("Chat message deleted");
     await refresh(request.campaignId, realtimeSelectionRef.current.sceneId);
@@ -5552,7 +6294,20 @@ export function App() {
 
   async function moderateChatMessage(message: ChatMessage, moderationStatus: ChatModerationResolution) {
     const request = currentWorkspaceRequestIdentity();
-    await apiPatch<ChatMessage>(`/api/v1/chat/messages/${message.id}/moderation`, { moderationStatus });
+    if (blankCanvasDemoOpen) {
+      const moderatedAt = new Date().toISOString();
+      setSnapshot((current) => ({
+        ...current,
+        chat: current.chat.map((item) => item.id === message.id ? { ...item, moderationStatus, moderatedByUserId: currentUserId, moderatedAt, updatedAt: moderatedAt } : item)
+      }));
+      setStatus(`Demo message marked ${titleCaseLabel(moderationStatus)}`);
+      return;
+    }
+    const latest = snapshotRef.current.chat.find((candidate) => candidate.id === message.id) ?? message;
+    const payload = { moderationStatus, expectedUpdatedAt: latest.updatedAt };
+    await runSharedMutation(() => apiPatch<ChatMessage>(`/api/v1/chat/messages/${message.id}/moderation`, payload, {
+      idempotencyKey: sharedMutationIdempotencyKey(`chat:moderate:${message.id}`, latest.updatedAt, payload)
+    }), request.campaignId, realtimeSelectionRef.current.sceneId);
     if (!workspaceIdentityIsCurrent(request)) return;
     setStatus(`Chat message marked ${titleCaseLabel(moderationStatus)}`);
     await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });
@@ -5586,23 +6341,26 @@ export function App() {
     }));
   }
 
-  async function createJournal(targets: { visibleToUserIds: string[]; visibleToActorIds: string[] } = { visibleToUserIds: [], visibleToActorIds: [] }) {
+  async function createJournal(options: JournalCreateOptions) {
     const request = currentWorkspaceRequestIdentity();
     const submittedTitle = newJournalTitle;
     const submittedBody = newJournalBody;
     const title = submittedTitle.trim();
-    const actorOwnerUserIds = targets.visibleToActorIds
+    const actorOwnerUserIds = options.visibleToActorIds
       .map((actorId) => snapshotRef.current.actors.find((actor) => actor.id === actorId)?.ownerUserId)
       .filter((userId): userId is string => Boolean(userId));
-    const visibleToUserIds = [...new Set([...targets.visibleToUserIds, ...actorOwnerUserIds])];
+    const visibleToUserIds = [...new Set([...options.visibleToUserIds, ...actorOwnerUserIds])];
     const journal = await apiPost<JournalEntry>(`/api/v1/campaigns/${request.campaignId}/journal`, {
+      kind: options.kind,
+      parentId: options.parentId,
       title: title || "New Journal Entry",
       body: submittedBody.trim(),
       visibility: newJournalVisibility,
       visibleToUserIds,
-      visibleToActorIds: targets.visibleToActorIds,
-      tags: newJournalTags.split(",").map((tag) => tag.trim()).filter(Boolean)
-    });
+      visibleToActorIds: options.visibleToActorIds,
+      tags: newJournalTags.split(",").map((tag) => tag.trim()).filter(Boolean),
+      links: options.links,
+    }, { idempotencyKey: options.idempotencyKey });
     if (!workspaceIdentityIsCurrent(request)) return;
     applyJournalToSnapshot(journal);
     setNewJournalTitle((current) => current === submittedTitle ? "" : current);
@@ -5618,13 +6376,25 @@ export function App() {
     setStatus(`${updated.title} updated`);
   }
 
-  async function deleteJournal(journal: JournalEntry) {
+  async function deleteJournal(journal: JournalEntry, idempotencyKey: string) {
     const request = currentWorkspaceRequestIdentity();
-    await deleteJournalEntry(journal.id);
+    await deleteJournalEntry(journal.id, journal.updatedAt, idempotencyKey);
     if (!workspaceIdentityIsCurrent(request)) return;
     invalidateInFlightRefreshes();
     setSnapshot((current) => ({ ...current, journals: current.journals.filter((candidate) => candidate.id !== journal.id) }));
     setStatus(`${journal.title} deleted`);
+  }
+
+  async function reviewJournalCanon(journal: JournalEntry, canonStatus: JournalCanonStatus, note: string, idempotencyKey: string) {
+    const request = currentWorkspaceRequestIdentity();
+    const reviewed = await apiPost<JournalEntry>(`/api/v1/journal/${journal.id}/canon-review`, {
+      status: canonStatus,
+      note: note.trim() || undefined,
+      expectedUpdatedAt: journal.updatedAt,
+    }, { idempotencyKey });
+    if (!workspaceIdentityIsCurrent(request)) return;
+    applyJournalToSnapshot(reviewed);
+    setStatus(`${reviewed.title} canon review: ${(reviewed.canonStatus ?? "draft").replace("_", " ")}`);
   }
 
   function recapWindowStart(): Date {
@@ -5687,7 +6457,7 @@ export function App() {
     return sections.length > 0 ? sections.join("\n\n") : `No table activity recorded since ${formatDateTime(since)}.`;
   }
 
-  async function generateSessionRecap() {
+  async function generateSessionRecap(idempotencyKey: string) {
     const request = currentWorkspaceRequestIdentity();
     const windowStart = recapWindowStart();
     const journal = await apiPost<JournalEntry>(`/api/v1/campaigns/${request.campaignId}/journal`, {
@@ -5695,51 +6465,86 @@ export function App() {
       body: generateSessionRecapBody(windowStart),
       visibility: newJournalVisibility,
       tags: ["recap"]
-    });
+    }, { idempotencyKey });
     if (!workspaceIdentityIsCurrent(request)) return;
     applyJournalToSnapshot(journal);
     setStatus("Session recap added to the journal");
   }
 
-  async function startCombat() {
-    const request = currentWorkspaceRequestIdentity();
-    const combatants = selectedSceneTokens.map((token, index) => {
-      const actor = snapshot.actors.find((candidate) => candidate.id === token.actorId);
-      const resource = actor ? actorCombatResource(actor) : undefined;
-      return {
-        id: `cmbt_${token.id}`,
-        tokenId: token.id,
-        actorId: token.actorId,
-        name: token.name,
-        initiative: 20 - index,
-        defeated: false,
-        readiness: "normal" as const,
-        conditions: token.conditions?.map((condition) => condition.name) ?? [],
-        deathSaveSuccesses: 0,
-        deathSaveFailures: 0,
-        resourceKey: resource?.key,
-        resourceLabel: resource?.label,
-        resourceUsed: false
-      };
-    });
-    const combat = await apiPost<Combat>(`/api/v1/campaigns/${request.campaignId}/combats`, {
-      combatants
-    });
-    if (!workspaceIdentityIsCurrent(request)) return;
+  async function openCombatSetup() {
+    if (activeCombat) {
+      setTab("combat");
+      setStatus("End the active combat before starting another");
+      return;
+    }
+    if (!selectedScene) {
+      setStatus("Select a scene before starting combat");
+      return;
+    }
     setTab("combat");
-    await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });
+    setCombatSetupOpen(true);
+  }
+
+  async function startCombat(input: CombatSetupSubmission) {
+    const request = currentWorkspaceRequestIdentity();
+    const requestSceneId = realtimeSelectionRef.current.sceneId;
+    const latest = await refresh(request.campaignId, requestSceneId, { syncStatus: false });
+    if (!workspaceIdentityIsCurrent(request) || realtimeSelectionRef.current.sceneId !== requestSceneId) {
+      throw new Error("The active scene changed. Review combatants again.");
+    }
+    const requestedTokenIds = new Set(input.tokenIds);
+    const participantTokens = latest.tokens.filter((token) => token.sceneId === requestSceneId && token.layer !== "map" && requestedTokenIds.has(token.id));
+    if (participantTokens.length !== requestedTokenIds.size) {
+      throw new Error("One or more selected tokens changed. Review combatants again.");
+    }
+    const tokenById = new Map(participantTokens.map((token) => [token.id, token]));
+    const surprisedTokenIds = new Set(input.surprisedTokenIds);
+    const participants = input.tokenIds.map((tokenId) => {
+      const initiative = input.manualInitiatives[tokenId];
+      if (Number.isFinite(initiative)) return { tokenId, initiativeMode: "manual" as const, initiative, ...(input.surpriseEnabled ? { surprised: surprisedTokenIds.has(tokenId) } : {}) };
+      if (!input.rollNpcInitiative) throw new Error(`Initiative is required for ${tokenById.get(tokenId)?.name ?? tokenId}.`);
+      return { tokenId, initiativeMode: "server" as const, ...(input.surpriseEnabled ? { surprised: surprisedTokenIds.has(tokenId) } : {}) };
+    });
+    const campaign = latest.campaigns.find((candidate) => candidate.id === request.campaignId);
+    if (!campaign) throw new Error("Campaign changed while combat setup was open. Review and retry.");
+    const combatPayload = {
+      sceneId: requestSceneId,
+      participants,
+      manualTurnOrder: input.manualTurnOrder,
+      expectedUpdatedAt: campaign.updatedAt
+    };
+    const result = await apiPost<{ combat: Combat; rolls: DiceRoll[]; chatMessages: ChatMessage[] }>(`/api/v1/campaigns/${request.campaignId}/combats/start`, combatPayload, { idempotencyKey: input.idempotencyKey });
     if (!workspaceIdentityIsCurrent(request)) return;
-    selectCombatantToken(combat.combatants[combat.turnIndex] ?? combat.combatants[0]);
+    const startedCombat = result.combat;
+    setCombatSetupOpen(false);
+    setTab("combat");
+    try {
+      await refresh(request.campaignId, requestSceneId, { syncStatus: false });
+    } catch (error) {
+      setStatus(`Combat started; refresh failed: ${errorMessage(error)}`);
+      return;
+    }
+    if (!workspaceIdentityIsCurrent(request)) return;
+    setStatus(`Combat started with ${formatNumber(startedCombat.combatants.length)} confirmed combatants`);
+    selectCombatantToken(startedCombat.combatants[startedCombat.turnIndex] ?? startedCombat.combatants[0]);
   }
 
   async function updateCombat(combat: Combat, patch: Partial<Combat>) {
     const request = currentWorkspaceRequestIdentity();
-    const updated = await apiPatch<Combat>(`/api/v1/combats/${combat.id}`, patch);
-    if (!workspaceIdentityIsCurrent(request)) return;
-    setStatus("Combat updated");
-    await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });
-    if (!workspaceIdentityIsCurrent(request)) return;
-    selectCombatantToken(updated.combatants[updated.turnIndex] ?? updated.combatants[0]);
+    try {
+      const latest = snapshotRef.current.combats.find((candidate) => candidate.id === combat.id) ?? combat;
+      const payload = { ...patch, expectedUpdatedAt: latest.updatedAt };
+      const updated = await apiPatch<Combat>(`/api/v1/combats/${combat.id}`, payload, { idempotencyKey: sharedMutationIdempotencyKey(`combat:update:${combat.id}`, latest.updatedAt, payload) });
+      if (!workspaceIdentityIsCurrent(request)) return;
+      applyCombatToSnapshot(updated);
+      setStatus("Combat updated");
+      await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });
+      if (!workspaceIdentityIsCurrent(request)) return;
+      selectCombatantToken(updated.combatants[updated.turnIndex] ?? updated.combatants[0]);
+    } catch (error) {
+      if (workspaceIdentityIsCurrent(request) && !reconcileStaleWriteConflict(error)) setStatus(errorMessage(error));
+      throw error;
+    }
   }
 
   async function advanceCombatTurn(combat: Combat, direction: 1 | -1) {
@@ -5759,17 +6564,26 @@ export function App() {
         hasPermission("actor.update") &&
         (patch.readiness !== undefined || patch.defeated !== undefined || patch.conditions !== undefined || patch.deathSaveSuccesses !== undefined || patch.deathSaveFailures !== undefined || patch.resourceUsed !== undefined)
     );
-    const updated = await apiPatch<Combat>(`/api/v1/combats/${combat.id}/combatants/${combatantId}`, { ...patch, syncActorSheet });
-    if (!workspaceIdentityIsCurrent(request)) return;
-    setStatus("Combatant updated");
-    await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });
-    if (!workspaceIdentityIsCurrent(request)) return;
-    selectCombatantToken(updated.combatants.find((candidate) => candidate.id === combatantId));
+    try {
+      const latest = snapshotRef.current.combats.find((candidate) => candidate.id === combat.id) ?? combat;
+      const payload = { ...patch, syncActorSheet, expectedUpdatedAt: latest.updatedAt };
+      const updated = await apiPatch<Combat>(`/api/v1/combats/${combat.id}/combatants/${combatantId}`, payload, { idempotencyKey: sharedMutationIdempotencyKey(`combat:combatant:${combat.id}:${combatantId}`, latest.updatedAt, payload) });
+      if (!workspaceIdentityIsCurrent(request)) return;
+      applyCombatToSnapshot(updated);
+      setStatus("Combatant updated");
+      await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });
+      if (!workspaceIdentityIsCurrent(request)) return;
+      selectCombatantToken(updated.combatants.find((candidate) => candidate.id === combatantId));
+    } catch (error) {
+      if (workspaceIdentityIsCurrent(request) && !reconcileStaleWriteConflict(error)) setStatus(errorMessage(error));
+      throw error;
+    }
   }
 
   async function endCombat(combat: Combat) {
     const request = currentWorkspaceRequestIdentity();
-    await apiDelete<Combat>(`/api/v1/combats/${combat.id}`);
+    const latest = snapshotRef.current.combats.find((candidate) => candidate.id === combat.id) ?? combat;
+    await runSharedMutation(() => apiDelete<Combat>(`/api/v1/combats/${combat.id}?expectedUpdatedAt=${encodeURIComponent(latest.updatedAt)}`, { idempotencyKey: sharedMutationIdempotencyKey(`combat:end:${combat.id}`, latest.updatedAt, {}) }), request.campaignId, realtimeSelectionRef.current.sceneId);
     if (!workspaceIdentityIsCurrent(request)) return;
     setStatus("Combat ended");
     await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });
@@ -5777,7 +6591,22 @@ export function App() {
 
   async function confirmCombatAction(combat: Combat, action: CombatAction) {
     const request = currentWorkspaceRequestIdentity();
-    await apiPost(`/api/v1/combats/${combat.id}/actions/${action.id}/confirm`, {});
+    if (!action.preparedPreviewKey || !action.expectedCombatUpdatedAt || !action.expectedActorUpdatedAt || !action.expectedItemUpdatedAt) {
+      setStatus("This legacy pending action must be reviewed and prepared again before it can be confirmed.");
+      return;
+    }
+    try {
+      const result = await apiPost<CommittedActorActionResponse>(`/api/v1/combats/${combat.id}/actions/${action.id}/confirm`, {
+        expectedUpdatedAt: action.expectedCombatUpdatedAt,
+        expectedActorUpdatedAt: action.expectedActorUpdatedAt,
+        expectedItemUpdatedAt: action.expectedItemUpdatedAt
+      }, { idempotencyKey: `pending-action-confirm:${action.id}` });
+      if (!workspaceIdentityIsCurrent(request)) return;
+      if (result.undo) setLastDndRulesUndo(result.undo);
+    } catch (error) {
+      if (workspaceIdentityIsCurrent(request) && !reconcileStaleWriteConflict(error)) setStatus(errorMessage(error));
+      throw error;
+    }
     if (!workspaceIdentityIsCurrent(request)) return;
     setStatus(`${action.actionLabel} confirmed`);
     await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });
@@ -5785,7 +6614,16 @@ export function App() {
 
   async function rejectCombatAction(combat: Combat, action: CombatAction) {
     const request = currentWorkspaceRequestIdentity();
-    await apiPost(`/api/v1/combats/${combat.id}/actions/${action.id}/reject`, {});
+    const latest = snapshotRef.current.combats.find((candidate) => candidate.id === combat.id) ?? combat;
+    const payload = { expectedUpdatedAt: latest.updatedAt };
+    try {
+      await apiPost(`/api/v1/combats/${combat.id}/actions/${action.id}/reject`, payload, {
+        idempotencyKey: sharedMutationIdempotencyKey(`combat-action:reject:${combat.id}:${action.id}`, latest.updatedAt, payload)
+      });
+    } catch (error) {
+      if (workspaceIdentityIsCurrent(request) && !reconcileStaleWriteConflict(error)) setStatus(errorMessage(error));
+      throw error;
+    }
     if (!workspaceIdentityIsCurrent(request)) return;
     setStatus(`${action.actionLabel} rejected`);
     await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });
@@ -6505,10 +7343,20 @@ export function App() {
   async function installPlugin(plugin: PluginRuntimeInfo, version: string, permissions: string[]) {
     const action = plugin.installed ? (version === plugin.distribution.latestVersion ? "upgraded" : "rolled back") : "installed";
     await runWorkspaceBoundAction(
-      (request) => apiPost(`/api/v1/campaigns/${request.campaignId}/plugins/${plugin.id}/install`, {
-        permissions,
-        version
-      }, { signal: request.controller.signal }),
+      (request) => {
+        const campaign = snapshotRef.current.campaigns.find((candidate) => candidate.id === request.campaignId);
+        if (!campaign) throw new Error("Reload the campaign before installing a plugin.");
+        const payload = { permissions, version, expectedUpdatedAt: campaign.updatedAt };
+        const scope = `plugin:install:${campaign.id}:${plugin.id}`;
+        const attempt = beginAppendMutation(scope, payload);
+        return apiPost(`/api/v1/campaigns/${request.campaignId}/plugins/${plugin.id}/install`, payload, {
+          signal: request.controller.signal,
+          idempotencyKey: attempt.idempotencyKey
+        }).then((result) => {
+          completeAppendMutation(scope, attempt);
+          return result;
+        });
+      },
       async (_result, request) => {
         const successStatus = `${plugin.name} ${action}`;
         setStatus(successStatus);
@@ -6526,7 +7374,11 @@ export function App() {
   async function syncPluginRegistries() {
     try {
       await runWorkspaceBoundAction(
-        (request) => apiPost<{ registries: unknown[]; plugins: unknown[] }>("/api/v1/plugins/registry/sync", { campaignId: request.campaignId }, { signal: request.controller.signal }),
+        (request) => {
+          const expectedRegistryRevision = adminSnapshot?.pluginOperations.registryRevision ?? adminSnapshot?.pluginReviews.registryRevision;
+          if (!expectedRegistryRevision) throw new Error("Refresh server administration before synchronizing plugin registries.");
+          return adminPluginMutations.syncCampaignRegistry(request.campaignId, expectedRegistryRevision, request.controller.signal);
+        },
         async (result, request) => {
           setStatus(`Plugin registries synced: ${result.registries.length} registries, ${result.plugins.length} packages`);
           await refresh(request.campaignId, realtimeSelectionRef.current.sceneId);
@@ -6539,7 +7391,20 @@ export function App() {
 
   async function installSystem(system: SystemRuntimeInfo) {
     await runWorkspaceBoundAction(
-      (request) => apiPost(`/api/v1/campaigns/${request.campaignId}/systems/${system.id}/install`, {}, { signal: request.controller.signal }),
+      (request) => {
+        const campaign = snapshotRef.current.campaigns.find((candidate) => candidate.id === request.campaignId);
+        if (!campaign) throw new Error("Reload the campaign before activating a rules system.");
+        const payload = { expectedUpdatedAt: campaign.updatedAt };
+        const scope = `system:install:${campaign.id}:${system.id}`;
+        const attempt = beginAppendMutation(scope, payload);
+        return apiPost(`/api/v1/campaigns/${request.campaignId}/systems/${system.id}/install`, payload, {
+          signal: request.controller.signal,
+          idempotencyKey: attempt.idempotencyKey
+        }).then((result) => {
+          completeAppendMutation(scope, attempt);
+          return result;
+        });
+      },
       async (_result, request) => {
         setStatus(`${system.name} activated`);
         await refresh(request.campaignId, realtimeSelectionRef.current.sceneId);
@@ -6549,10 +7414,18 @@ export function App() {
 
   async function runPluginCommand(plugin: PluginRuntimeInfo, command: string) {
     await runWorkspaceBoundAction(
-      (request) => apiPost<{ proposal: Proposal; approvalRequired: boolean }>(`/api/v1/campaigns/${request.campaignId}/plugins/${plugin.id}/chat-command`, {
-        command,
-        args: "from the browser tabletop"
-      }, { signal: request.controller.signal }),
+      (request) => {
+        const payload = { command, args: "from the browser tabletop" };
+        const scope = `plugin-command:${request.campaignId}:${plugin.id}`;
+        const attempt = beginAppendMutation(scope, payload);
+        return apiPost<{ proposal: Proposal; approvalRequired: boolean }>(`/api/v1/campaigns/${request.campaignId}/plugins/${plugin.id}/chat-command`, payload, {
+          signal: request.controller.signal,
+          idempotencyKey: attempt.idempotencyKey
+        }).then((result) => {
+          completeAppendMutation(scope, attempt);
+          return result;
+        });
+      },
       async (result, request) => {
         setStatus(result.approvalRequired ? `${plugin.name} command awaiting approval` : `${plugin.name} command ran`);
         await refresh(request.campaignId, realtimeSelectionRef.current.sceneId);
@@ -6564,9 +7437,18 @@ export function App() {
     if (!selectedActor) return;
     const actor = selectedActor;
     await runWorkspaceBoundAction(
-      (request) => apiPost(`/api/v1/campaigns/${request.campaignId}/systems/${actor.systemId}/actors/${actor.id}/roll`, {
-        rollId: systemRollId(actor.systemId)
-      }, { signal: request.controller.signal }),
+      (request) => {
+        const payload = { rollId: systemRollId(actor.systemId) };
+        const scope = `system-roll:${request.campaignId}:${actor.id}`;
+        const attempt = beginAppendMutation(scope, payload);
+        return apiPost(`/api/v1/campaigns/${request.campaignId}/systems/${actor.systemId}/actors/${actor.id}/roll`, payload, {
+          signal: request.controller.signal,
+          idempotencyKey: attempt.idempotencyKey
+        }).then((result) => {
+          completeAppendMutation(scope, attempt);
+          return result;
+        });
+      },
       async (_result, request) => {
         setStatus("System roll posted");
         await refresh(request.campaignId, realtimeSelectionRef.current.sceneId);
@@ -6577,18 +7459,48 @@ export function App() {
   async function useActorAction(rollId: string, options: ActorActionCommitOptions = {}) {
     if (!selectedActor) return;
     const actor = selectedActor;
+    const consumeResources = options.consumeResources ?? true;
+    const consequentialDndAction = actor.systemId === "dnd-5e-srd" && Boolean(consumeResources || options.applyEffect);
+    const actionRequest = {
+      rollId,
+      expectedUpdatedAt: actor.updatedAt,
+      consumeResources,
+      applyEffect: options.applyEffect,
+      targetActorId: options.targetActorId,
+      saveOutcomes: options.saveOutcomes,
+      effectChoice: options.effectChoice
+    };
     try {
       await runWorkspaceBoundAction(
-        (request) => apiPost<{ actor?: Actor; updatedActors?: Actor[]; usage?: { consumed?: Array<{ label: string; remaining: number }> }; effect?: { type: string; targetActorId: string; amount?: number }; resolution?: ActorActionResolutionPreview; combatAction?: CombatAction }>(`/api/v1/campaigns/${request.campaignId}/systems/${actor.systemId}/actors/${actor.id}/roll`, {
-          rollId,
-          consumeResources: options.consumeResources ?? true,
-          applyEffect: options.applyEffect,
-          targetActorId: options.targetActorId,
-          saveOutcomes: options.saveOutcomes,
-          effectChoice: options.effectChoice
-        }, { signal: request.controller.signal }),
+        async (request): Promise<CommittedActorActionResponse | { cancelled: true }> => {
+          const path = `/api/v1/campaigns/${request.campaignId}/systems/${actor.systemId}/actors/${actor.id}/roll`;
+          if (!consequentialDndAction) {
+            return apiPost<CommittedActorActionResponse>(path, actionRequest, { signal: request.controller.signal });
+          }
+          const prepared = await apiPost<PreparedActorActionResponse>(path, {
+            ...actionRequest,
+            prepare: true,
+            commit: false
+          }, {
+            signal: request.controller.signal,
+            idempotencyKey: `dnd-action-preview:${window.crypto.randomUUID()}`
+          });
+          if (!window.confirm(preparedActorActionReviewText(actor.name, prepared))) return { cancelled: true };
+          return apiPost<CommittedActorActionResponse>(path, {
+            preparedPreviewKey: prepared.preparation.preparedPreviewKey,
+            expectedUpdatedAt: actor.updatedAt
+          }, {
+            signal: request.controller.signal,
+            idempotencyKey: `dnd-action-commit:${window.crypto.randomUUID()}`
+          });
+        },
         async (used, request) => {
+          if ("cancelled" in used) {
+            setStatus(`${actor.name} action cancelled after review`);
+            return;
+          }
           if (used.combatAction?.status === "pending_gm") {
+            if (used.undo) setLastDndRulesUndo(used.undo);
             setStatus(`${actor.name} action pending GM confirmation`);
             await refresh(request.campaignId, realtimeSelectionRef.current.sceneId);
             return;
@@ -6600,51 +7512,107 @@ export function App() {
             const updates = new Map(updatedActors.map((updatedActor) => [updatedActor.id, updatedActor]));
             setSnapshot((current) => ({ ...current, actors: current.actors.map((currentActor) => updates.get(currentActor.id) ?? currentActor) }));
           }
+          if (used.undo) setLastDndRulesUndo(used.undo);
           setStatus(spent ? `${actor.name} used action: ${spent}${applied}` : `${actor.name} action posted${applied}`);
         }
       );
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : String(error));
+      if (!reconcileStaleWriteConflict(error)) setStatus(error instanceof Error ? error.message : String(error));
     }
+  }
+
+  async function undoLastDndRulesMutation() {
+    const undo = lastDndRulesUndo;
+    if (!undo) return;
+    try {
+      const result = await apiPost<DndRulesMutationUndoResult>(`/api/v1/campaigns/${campaignId}/dnd/rules-mutations/${undo.mutationId}/undo`, {
+        expectedActorUpdatedAt: undo.expectedActorUpdatedAt,
+        expectedItemUpdatedAt: undo.expectedItemUpdatedAt,
+        ...(undo.expectedCombatUpdatedAt ? { expectedCombatUpdatedAt: undo.expectedCombatUpdatedAt } : {})
+      }, { idempotencyKey: `dnd-rules-undo:${undo.mutationId}` });
+      const actors = new Map(result.actors.map((actor) => [actor.id, actor]));
+      const items = new Map(result.items.map((item) => [item.id, item]));
+      setSnapshot((current) => ({
+        ...current,
+        actors: current.actors.map((actor) => actors.get(actor.id) ?? actor),
+        items: current.items.map((item) => items.get(item.id) ?? item),
+        combats: result.combat ? current.combats.map((combat) => combat.id === result.combat!.id ? result.combat! : combat) : current.combats
+      }));
+      setLastDndRulesUndo(undefined);
+      setStatus("Last reviewed D&D rules change undone");
+    } catch (error) {
+      if (!reconcileStaleWriteConflict(error)) setStatus(`Undo blocked: ${errorMessage(error)}`);
+    }
+  }
+
+  function applyTypedDamageResult(result: TypedDamageApplyResult) {
+    const actors = new Map(result.actors.map((actor) => [actor.id, actor]));
+    setSnapshot((current) => ({
+      ...current,
+      actors: current.actors.map((actor) => actors.get(actor.id) ?? actor),
+      combats: result.combat ? current.combats.map((combat) => combat.id === result.combat!.id ? result.combat! : combat) : current.combats
+    }));
+    setLastDndRulesUndo(result.undo);
+    setStatus(`Typed damage applied atomically to ${formatNumber(result.actors.length)} actor${result.actors.length === 1 ? "" : "s"}`);
   }
 
   async function importCompendiumEntry(entry: RulesCompendiumEntry) {
     if (!selectedActor) return;
     const actor = selectedActor;
-    await runWorkspaceBoundAction(
-      (request) => apiPost<{ entry: RulesCompendiumEntry; item?: Item; actor: Actor }>(`/api/v1/campaigns/${request.campaignId}/systems/${actor.systemId}/actors/${actor.id}/compendium`, {
-        entryId: entry.id
-      }, { signal: request.controller.signal }),
-      async (imported, request) => {
-        setCompendiumStatus(`${imported.entry.name} ${imported.item ? "added to sheet" : "applied to actor"}`);
-        setStatus(`${imported.entry.name} imported`);
-        await refresh(request.campaignId, realtimeSelectionRef.current.sceneId);
-      }
-    );
+    try {
+      await runWorkspaceBoundAction(
+        (request) => apiPost<{ entry: RulesCompendiumEntry; item?: Item; actor: Actor; resolution: string }>(`/api/v1/campaigns/${request.campaignId}/systems/${actor.systemId}/actors/${actor.id}/compendium`, {
+          entryId: entry.id,
+          expectedUpdatedAt: actor.updatedAt
+        }, { signal: request.controller.signal, idempotencyKey: `compendium-import:${window.crypto.randomUUID()}` }),
+        async (imported, request) => {
+          setCompendiumStatus(`${imported.entry.name} ${imported.item ? "added to sheet" : "applied to actor"}`);
+          setStatus(`${imported.entry.name} imported`);
+          await refresh(request.campaignId, realtimeSelectionRef.current.sceneId);
+        }
+      );
+    } catch (error) {
+      if (reconcileStaleWriteConflict(error)) return;
+      const message = `${errorMessage(error)} Open the standalone Compendium tab to review duplicate or version choices.`;
+      setCompendiumStatus(message);
+      setStatus(message);
+    }
   }
 
   async function purchaseCompendiumEntry(entry: RulesCompendiumEntry, quantity: number) {
     if (!selectedActor) return;
     const actor = selectedActor;
-    await runWorkspaceBoundAction(
-      (request) => apiPost<{ entry: RulesCompendiumEntry; purchase: { totalCostGp: number; currency: Record<string, number> }; item: Item; actor: Actor }>(`/api/v1/campaigns/${request.campaignId}/systems/${actor.systemId}/actors/${actor.id}/purchase`, {
-        entryId: entry.id,
-        quantity
-      }, { signal: request.controller.signal }),
-      async (purchased, request) => {
-        setCompendiumStatus(`${purchased.entry.name} purchased for ${formatGp(purchased.purchase.totalCostGp)}; ${formatCurrency(purchased.purchase.currency)} remaining`);
-        setStatus(`${purchased.entry.name} purchased`);
-        await refresh(request.campaignId, realtimeSelectionRef.current.sceneId);
-      }
-    );
+    try {
+      await runWorkspaceBoundAction(
+        (request) => apiPost<{ entry: RulesCompendiumEntry; purchase: { totalCostGp: number; currency: Record<string, number> }; item: Item; actor: Actor; resolution: string }>(`/api/v1/campaigns/${request.campaignId}/systems/${actor.systemId}/actors/${actor.id}/purchase`, {
+          entryId: entry.id,
+          quantity,
+          expectedUpdatedAt: actor.updatedAt
+        }, { signal: request.controller.signal, idempotencyKey: `compendium-purchase:${window.crypto.randomUUID()}` }),
+        async (purchased, request) => {
+          setCompendiumStatus(`${purchased.entry.name} purchased for ${formatGp(purchased.purchase.totalCostGp)}; ${formatCurrency(purchased.purchase.currency)} remaining`);
+          setStatus(`${purchased.entry.name} purchased`);
+          await refresh(request.campaignId, realtimeSelectionRef.current.sceneId);
+        }
+      );
+    } catch (error) {
+      if (reconcileStaleWriteConflict(error)) return;
+      const message = `${errorMessage(error)} Open the standalone Compendium tab to review duplicate or version choices.`;
+      setCompendiumStatus(message);
+      setStatus(message);
+    }
   }
 
   async function createCharacterFromTemplate(template: CharacterTemplateInfo) {
-    const created = await apiPost<{ actor: Actor }>(`/api/v1/campaigns/${campaignId}/systems/${template.systemId}/characters`, {
+    const payload = {
       templateId: template.id,
       name: template.name,
       ownerUserId: currentUserId
-    });
+    };
+    const scope = `system-character:create:${campaignId}`;
+    const attempt = beginAppendMutation(scope, payload);
+    const created = await apiPost<{ actor: Actor }>(`/api/v1/campaigns/${campaignId}/systems/${template.systemId}/characters`, payload, { idempotencyKey: attempt.idempotencyKey });
+    completeAppendMutation(scope, attempt);
     setStatus(`${created.actor.name} created`);
     await refresh();
   }
@@ -6672,11 +7640,15 @@ export function App() {
 
   async function createCharacterFromCreator(template: CharacterTemplateInfo, input: CharacterCreateInput) {
     const request = currentWorkspaceRequestIdentity();
-    const created = await apiPost<{ actor: Actor }>(`/api/v1/campaigns/${request.campaignId}/systems/${template.systemId}/characters`, {
+    const payload = {
       templateId: template.id,
       ...input,
       name: input.name.trim() || template.name
-    });
+    };
+    const scope = `system-character:create:${request.campaignId}`;
+    const attempt = beginAppendMutation(scope, payload);
+    const created = await apiPost<{ actor: Actor }>(`/api/v1/campaigns/${request.campaignId}/systems/${template.systemId}/characters`, payload, { idempotencyKey: attempt.idempotencyKey });
+    completeAppendMutation(scope, attempt);
     if (!workspaceIdentityIsCurrent(request)) return;
     setCharacterCreatorOpen(false);
     setStatus(`${created.actor.name} joined the party`);
@@ -6689,7 +7661,10 @@ export function App() {
     const system = snapshot.systems.find((item) => item.active) ?? snapshot.systems[0];
     try {
       if (!system) throw new Error("Choose an active rules system before importing a character.");
-      const imported = await apiPost<{ import: { warnings: string[] }; actor: Actor; items: Item[] }>(`/api/v1/campaigns/${request.campaignId}/systems/${system.id}/characters/import`, input, { signal: request.controller.signal });
+      const scope = `system-character:import:${request.campaignId}`;
+      const attempt = beginAppendMutation(scope, input);
+      const imported = await apiPost<{ import: { warnings: string[] }; actor: Actor; items: Item[] }>(`/api/v1/campaigns/${request.campaignId}/systems/${system.id}/characters/import`, input, { signal: request.controller.signal, idempotencyKey: attempt.idempotencyKey });
+      completeAppendMutation(scope, attempt);
       const warnings = imported.import.warnings ?? [];
       const outcome = { actor: imported.actor, warnings, importedItemCount: imported.items.length };
       if (!workspaceBoundRequestIsCurrent(request)) return outcome;
@@ -6712,47 +7687,123 @@ export function App() {
   async function createSystemMonster() {
     const system = snapshot.systems.find((item) => item.active) ?? snapshot.systems[0];
     if (!system) return;
-    const created = await apiPost<{ actor: Actor }>(`/api/v1/campaigns/${campaignId}/systems/${system.id}/monsters`, {
+    const payload = {
       threatId: systemEncounterThreatId(system.id)
-    });
+    };
+    const scope = `system-monster:create:${campaignId}`;
+    const attempt = beginAppendMutation(scope, payload);
+    const created = await apiPost<{ actor: Actor }>(`/api/v1/campaigns/${campaignId}/systems/${system.id}/monsters`, payload, { idempotencyKey: attempt.idempotencyKey });
+    completeAppendMutation(scope, attempt);
     setCreatedMonster(created.actor);
     setStatus(`${created.actor.name} monster created`);
     await refresh();
   }
 
-  async function advanceSelectedActor(optionId?: string, choices: { featId?: string; abilityChoices?: Record<string, number>; multiclassInto?: string } = {}) {
+  async function previewSelectedActorAdvancement(optionId: string | undefined, choices: AdvancementChoicePayload, idempotencyKey: string): Promise<AdvancementPreviewEnvelope> {
+    if (!selectedActor) throw new Error("Select an actor before reviewing advancement.");
+    const actor = selectedActor;
+    const request = beginWorkspaceBoundRequest();
+    try {
+      const preview = await apiPost<AdvancementPreviewEnvelope>(`/api/v1/campaigns/${request.campaignId}/systems/${actor.systemId}/actors/${actor.id}/rules-preview`, {
+        operation: "advancement",
+        prepare: true,
+        optionId: optionId || advancementOptions[0]?.id || systemAdvancementOptionId(actor.systemId),
+        ...(choices.featId ? { featId: choices.featId } : {}),
+        ...(choices.abilityChoices ? { abilityChoices: choices.abilityChoices } : {}),
+        ...(choices.multiclassInto ? { className: choices.multiclassInto } : {}),
+        ...(choices.subclassId ? { subclassId: choices.subclassId } : {}),
+        ...(choices.weaponMasteryChoices ? { weaponMasteryChoices: choices.weaponMasteryChoices } : {}),
+        ...(choices.hitPointMode ? { hitPointMode: choices.hitPointMode } : {})
+      }, { signal: request.controller.signal, idempotencyKey });
+      if (!workspaceBoundRequestIsCurrent(request)) throw new Error("The selected campaign changed while advancement was being reviewed.");
+      setPendingAdvancement(preview.preparation?.pendingAdvancement ?? preview.draft?.pendingAdvancement);
+      return preview;
+    } finally {
+      finishWorkspaceBoundRequest(request);
+    }
+  }
+
+  async function advanceSelectedActor(optionId?: string, choices: AdvancementChoicePayload = {}) {
     if (!selectedActor) return;
     const actor = selectedActor;
     const targetSceneId = selectedScene?.id ?? sceneId;
     const selectedOptionId = optionId || advancementOptions[0]?.id || systemAdvancementOptionId(actor.systemId);
+    const { idempotencyKey, preparedPreviewKey, ...directChoices } = choices;
+    if (actor.systemId === "dnd-5e-srd" && (!preparedPreviewKey || !idempotencyKey)) {
+      throw new Error("Review and prepare the exact D&D advancement before committing it.");
+    }
     await runWorkspaceBoundAction(
       (request) => apiPost<{ advancement: { name: string }; actor?: Actor }>(`/api/v1/campaigns/${request.campaignId}/systems/${actor.systemId}/actors/${actor.id}/advance`, {
-        optionId: selectedOptionId,
-        ...(choices.featId ? { featId: choices.featId } : {}),
-        ...(choices.abilityChoices ? { abilityChoices: choices.abilityChoices } : {}),
-        ...(choices.multiclassInto ? { multiclassInto: choices.multiclassInto } : {})
-      }, { signal: request.controller.signal }),
+        expectedUpdatedAt: actor.updatedAt,
+        ...(preparedPreviewKey ? { preparedPreviewKey } : {
+          optionId: selectedOptionId,
+          ...(directChoices.featId ? { featId: directChoices.featId } : {}),
+          ...(directChoices.abilityChoices ? { abilityChoices: directChoices.abilityChoices } : {}),
+          ...(directChoices.multiclassInto ? { multiclassInto: directChoices.multiclassInto } : {}),
+          ...(directChoices.subclassId ? { subclassId: directChoices.subclassId } : {}),
+          ...(directChoices.weaponMasteryChoices ? { weaponMasteryChoices: directChoices.weaponMasteryChoices } : {}),
+          ...(directChoices.hitPointMode ? { hitPointMode: directChoices.hitPointMode } : {})
+        })
+      }, { signal: request.controller.signal, idempotencyKey }),
       (advanced, request) => {
         if (advanced.actor) applyActorToSnapshot(advanced.actor);
+        if (actor.systemId === "dnd-5e-srd") setPendingAdvancement(undefined);
         setStatus(choices.multiclassInto ? `${actor.name} gained a level of ${choices.multiclassInto}` : `${actor.name} advanced to ${advanced.advancement.name}`);
         void refresh(request.campaignId, targetSceneId, { syncStatus: false });
       }
     );
   }
 
-  async function restSelectedActor(restType: "short" | "long", options: { arcaneRecovery?: Record<string, number> } = {}) {
+  async function restSelectedActor(restType: "short" | "long", options: ActorRestOptions = {}) {
     if (!selectedActor) return;
     const actor = selectedActor;
+    const { idempotencyKey, preparedPreviewKey, ...restOptions } = options;
+    if (actor.systemId === "dnd-5e-srd" && (!preparedPreviewKey || !idempotencyKey)) {
+      throw new Error("Review and prepare the exact D&D rest before committing it.");
+    }
     await runWorkspaceBoundAction(
       (request) => apiPost<{ rest: { summary: string }; actor?: Actor }>(`/api/v1/campaigns/${request.campaignId}/systems/${actor.systemId}/actors/${actor.id}/rest`, {
-        restType,
-        ...options
-      }, { signal: request.controller.signal }),
+        expectedUpdatedAt: actor.updatedAt,
+        ...(preparedPreviewKey ? { preparedPreviewKey } : { restType, ...restOptions })
+      }, { signal: request.controller.signal, idempotencyKey }),
       (rested) => {
         if (rested.actor) applyActorToSnapshot(rested.actor);
         setStatus(rested.rest.summary);
       }
     );
+  }
+
+  async function cancelSelectedActorPendingAdvancement(pending: Dnd5eSrdPendingAdvancement) {
+    if (!selectedActor || selectedActor.id !== pending.actorId) throw new Error("The saved advancement belongs to a different actor.");
+    const actor = selectedActor;
+    const cancelled = await apiDelete<{ cancelled: true; actorId: string; pendingAdvancementId: string }>(
+      `/api/v1/campaigns/${campaignId}/systems/${actor.systemId}/actors/${actor.id}/advancement/pending`,
+      {
+        body: { pendingAdvancementId: pending.id, expectedUpdatedAt: actor.updatedAt },
+        idempotencyKey: `advancement-cancel:${window.crypto.randomUUID()}`
+      }
+    );
+    if (cancelled.pendingAdvancementId === pending.id) setPendingAdvancement(undefined);
+    setStatus(`${actor.name}'s saved advancement cancelled`);
+  }
+
+  async function previewSelectedActorRest(restType: "short" | "long", options: ActorRestOptions, idempotencyKey: string): Promise<RestPreviewEnvelope> {
+    if (!selectedActor) throw new Error("Select an actor before reviewing a rest.");
+    const actor = selectedActor;
+    const request = beginWorkspaceBoundRequest();
+    try {
+      const preview = await apiPost<RestPreviewEnvelope>(`/api/v1/campaigns/${request.campaignId}/systems/${actor.systemId}/actors/${actor.id}/rules-preview`, {
+        operation: "rest",
+        prepare: true,
+        restType,
+        ...(restType === "short" && options.hitDice ? { hitDice: options.hitDice } : {}),
+        ...(options.arcaneRecovery ? { arcaneRecovery: options.arcaneRecovery } : {})
+      }, { signal: request.controller.signal, idempotencyKey });
+      if (!workspaceBoundRequestIsCurrent(request)) throw new Error("The selected campaign changed while the rest was being reviewed.");
+      return preview;
+    } finally {
+      finishWorkspaceBoundRequest(request);
+    }
   }
 
   function updateCampaignSessions(nextSessions: CampaignSessionInfo[]) {
@@ -6761,101 +7812,147 @@ export function App() {
 
   async function completeLiveCampaignSession(session: CampaignSessionInfo) {
     const request = currentWorkspaceRequestIdentity();
-    const updated = await apiPost<CampaignSessionInfo>(`/api/v1/campaign-sessions/${session.id}/complete`, { notes: session.notes });
-    if (!workspaceIdentityIsCurrent(request)) return;
-    setSnapshot((current) => ({
-      ...current,
-      campaignSessions: (current.campaignSessions ?? []).map((item) => item.id === updated.id ? updated : item)
-    }));
-    setStatus(`${updated.title} completed`);
+    const idempotencyKey = `campaign-session:complete:${session.id}:${session.updatedAt}`;
+    try {
+      const updated = await apiPost<CampaignSessionInfo>(`/api/v1/campaign-sessions/${session.id}/complete`, { notes: session.notes, expectedUpdatedAt: session.updatedAt }, { idempotencyKey });
+      if (!workspaceIdentityIsCurrent(request)) return;
+      setSnapshot((current) => ({
+        ...current,
+        campaignSessions: (current.campaignSessions ?? []).map((item) => item.id === updated.id ? updated : item)
+      }));
+      setStatus(`${updated.title} completed`);
+    } catch (error) {
+      if (!workspaceIdentityIsCurrent(request)) return;
+      if (error instanceof ApiError && error.status === 409) {
+        await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });
+        setStatus("Session changed elsewhere. The latest revision is loaded; review it in Session Desk before retrying completion.");
+        return;
+      }
+      setStatus(`Session completion failed: ${errorMessage(error)}`);
+    }
   }
 
   function planSystemEncounter() {
     setEncounterBuilderOpen(true);
   }
 
-  async function spawnEncounterThreatTokens(threats: EncounterBuilderThreatSelection[], signal: AbortSignal) {
+  async function createEncounterThreatTokens(threats: EncounterBuilderThreatSelection[], signal: AbortSignal, placementAttemptId: string): Promise<Token[]> {
     if (!selectedScene) {
       setStatus("Select a scene before placing encounter monsters");
-      return;
+      return [];
     }
     const targetScene = selectedScene;
     const total = threats.reduce((sum, threat) => sum + threat.count, 0);
     const spacing = Math.max(24, targetScene.gridSize || 50);
+    let placedTokens: Token[] = [];
     await runWorkspaceBoundAction(
       async (request) => {
         const cancelFromDialog = () => request.controller.abort();
         if (signal.aborted) cancelFromDialog();
         else signal.addEventListener("abort", cancelFromDialog, { once: true });
-        let placed = 0;
+        const createdTokens: Token[] = [];
         try {
           for (const threat of threats) {
             for (let index = 0; index < threat.count; index += 1) {
-              if (!workspaceBoundRequestIsCurrent(request)) return placed;
-              const offsetIndex = placed - Math.floor(total / 2);
+              if (!workspaceBoundRequestIsCurrent(request)) return createdTokens;
+              const offsetIndex = createdTokens.length - Math.floor(total / 2);
+              const actorName = threat.count > 1 ? `${threat.name} ${index + 1}` : threat.name;
+              const createdMonster = await apiPost<{ actor: Actor }>(`/api/v1/campaigns/${request.campaignId}/systems/${encounterBuilderSystem?.id ?? "dnd-5e-srd"}/monsters`, {
+                threatId: threat.id,
+                name: actorName
+              }, {
+                signal: request.controller.signal,
+                idempotencyKey: `encounter-place:${placementAttemptId}:${threat.id}:${index}:actor`
+              });
+              if (!workspaceBoundRequestIsCurrent(request)) return createdTokens;
+              applyActorToSnapshot(createdMonster.actor);
               const token = await createToken({
-                name: threat.count > 1 ? `${threat.name} ${index + 1}` : threat.name,
+                actorId: createdMonster.actor.id,
+                name: createdMonster.actor.name,
                 disposition: "hostile",
                 layer: "player",
                 x: targetScene.width / 2 + offsetIndex * spacing,
-                y: targetScene.height / 2 + (placed % 2 === 0 ? -spacing / 2 : spacing / 2)
+                y: targetScene.height / 2 + (createdTokens.length % 2 === 0 ? -spacing / 2 : spacing / 2),
+                idempotencyKey: `encounter-place:${placementAttemptId}:${threat.id}:${index}:token`
               }, request);
-              if (!token || !workspaceBoundRequestIsCurrent(request)) return placed;
-              placed += 1;
+              if (!token || !workspaceBoundRequestIsCurrent(request)) return createdTokens;
+              createdTokens.push(token);
             }
           }
-          return placed;
+          return createdTokens;
         } finally {
           signal.removeEventListener("abort", cancelFromDialog);
         }
       },
-      (placed) => setStatus(`Placed ${formatNumber(placed)} encounter monster${placed === 1 ? "" : "s"} on ${targetScene.name}`)
+      (createdTokens) => {
+        placedTokens = createdTokens;
+        setStatus(`Placed ${formatNumber(createdTokens.length)} encounter monster${createdTokens.length === 1 ? "" : "s"} on ${targetScene.name}`);
+      }
     );
+    return placedTokens;
+  }
+
+  async function spawnEncounterThreatTokens(threats: EncounterBuilderThreatSelection[], signal: AbortSignal, attemptId: string) {
+    await createEncounterThreatTokens(threats, signal, attemptId);
+  }
+
+  async function launchEncounterThreatTokens(threats: EncounterBuilderThreatSelection[], partyActorIds: string[], signal: AbortSignal, attemptId: string) {
+    if (activeCombat) throw new Error("End the active combat before launching another encounter.");
+    if (!selectedScene) throw new Error("Select a scene before launching an encounter.");
+    const partyTokens = partyActorIds.map((actorId) => selectedSceneTokens.find((token) => token.actorId === actorId && tokenLayer(token) !== "map"));
+    const missingPartyActorIds = partyActorIds.filter((_actorId, index) => !partyTokens[index]);
+    if (missingPartyActorIds.length > 0) {
+      const missingNames = missingPartyActorIds.map((actorId) => snapshot.actors.find((actor) => actor.id === actorId)?.name ?? actorId);
+      throw new Error(`Place selected party tokens before combat review: ${missingNames.join(", ")}.`);
+    }
+    const placedTokens = await createEncounterThreatTokens(threats, signal, attemptId);
+    if (placedTokens.length === 0) throw new Error("No encounter combatants were placed.");
+    const tokenIds = [...new Set([...partyTokens.flatMap((token) => token ? [token.id] : []), ...placedTokens.map((token) => token.id)])];
+    selectCanvasTokens(tokenIds);
+    setEncounterBuilderOpen(false);
+    setTab("combat");
+    setCombatSetupOpen(true);
+    setStatus(`Prepared ${formatNumber(tokenIds.length)} combatants (${formatNumber(partyTokens.length)} party, ${formatNumber(placedTokens.length)} hostile); review initiative to start.`);
   }
 
   async function disableAdminUser(user: AdminUserInfo) {
     await runWorkspaceAdminAction(
-      (request) => apiPatch<AdminUserInfo>(`/api/v1/admin/users/${user.id}`, {
-        disabled: true,
-        disabledReason: "Disabled from admin console"
-      }, { signal: request.controller.signal }),
+      (request) => adminIdentityMutations.updateUser(user, { disabled: true, disabledReason: "Disabled from admin console" }, request.controller.signal),
       () => `${user.displayName} disabled`
     );
   }
 
   async function enableAdminUser(user: AdminUserInfo) {
     await runWorkspaceAdminAction(
-      (request) => apiPatch<AdminUserInfo>(`/api/v1/admin/users/${user.id}`, { disabled: false }, { signal: request.controller.signal }),
+      (request) => adminIdentityMutations.updateUser(user, { disabled: false }, request.controller.signal),
       () => `${user.displayName} enabled`
     );
   }
 
   async function requireAdminPasswordReset(user: AdminUserInfo) {
     await runWorkspaceAdminAction(
-      (request) => apiPatch<AdminUserInfo>(`/api/v1/admin/users/${user.id}`, { passwordResetRequired: true }, { signal: request.controller.signal }),
+      (request) => adminIdentityMutations.updateUser(user, { passwordResetRequired: true }, request.controller.signal),
       () => `${user.displayName} must reset password`
     );
   }
 
   async function issueAdminPasswordReset(user: AdminUserInfo) {
     await runWorkspaceAdminAction(
-      (request) => apiPost<AdminPasswordResetInfo>(`/api/v1/admin/users/${user.id}/password-reset`, {
-        returnTo: `${window.location.origin}/reset-password`
-      }, { signal: request.controller.signal }),
+      (request) => adminIdentityMutations.issuePasswordReset(user, `${window.location.origin}/reset-password`, request.controller.signal),
       (reset) => `Queued ${reset.email.status} reset email for ${reset.email.to}`
     );
   }
 
   async function revokeAdminUserSessions(user: AdminUserInfo) {
     await runWorkspaceAdminAction(
-      (request) => apiDelete<{ revoked: number }>(`/api/v1/admin/users/${user.id}/sessions`, { signal: request.controller.signal }),
+      (request) => adminIdentityMutations.revokeUserSessions(user, request.controller.signal),
       (result) => `Revoked ${result.revoked} sessions for ${user.displayName}`
     );
   }
 
   async function revokeAdminSession(session: AdminSessionInfo) {
     await runWorkspaceAdminAction(
-      (request) => apiDelete<{ ok: boolean }>(`/api/v1/admin/sessions/${session.id}`, { signal: request.controller.signal }),
+      (request) => adminIdentityMutations.revokeSession(session, request.controller.signal),
       () => `Revoked session for ${session.user.displayName}`
     );
   }
@@ -6863,39 +7960,28 @@ export function App() {
   async function revokeAdminRiskSessions() {
     const staleDays = adminSnapshot?.authOperations.sessions.staleDays ?? 30;
     await runWorkspaceAdminAction(
-      (request) => apiPost<{ matched: number; revoked: number; remainingRiskSessionCount: number }>("/api/v1/admin/sessions/risk/revoke", {
-        staleDays,
-        reasons: ["expired", "stale", "disabled_user", "unknown_user"],
-        dryRun: false
-      }, { signal: request.controller.signal }),
+      (request) => adminIdentityMutations.revokeRiskSessions(staleDays, request.controller.signal),
       (result) => `Revoked ${result.revoked} of ${result.matched} risk sessions; ${result.remainingRiskSessionCount} remain`
     );
   }
 
   async function pruneExpiredPasswordResets() {
     await runWorkspaceAdminAction(
-      (request) => apiPost<{ matched: number; pruned: number; expiredRemaining: number }>("/api/v1/admin/password-resets/prune", {
-        includeExpired: true,
-        includeUsed: false,
-        dryRun: false
-      }, { signal: request.controller.signal }),
+      (request) => adminIdentityMutations.pruneExpiredPasswordResets(request.controller.signal),
       (result) => `Pruned ${result.pruned} of ${result.matched} expired password resets; ${result.expiredRemaining} remain`
     );
   }
 
   async function retryAdminEmail(email: EmailOutboxMessage) {
     await runWorkspaceAdminAction(
-      (request) => apiPost<EmailOutboxMessage>(`/api/v1/admin/email-outbox/${email.id}/retry`, {}, { signal: request.controller.signal }),
+      (request) => adminIdentityMutations.retryEmail(email, request.controller.signal),
       (retried) => `Email to ${retried.to} is ${retried.status}`
     );
   }
 
   async function retryAllAdminEmails() {
     await runWorkspaceAdminAction(
-      (request) => apiPost<AdminEmailOutboxRetryAllResult>("/api/v1/admin/email-outbox/retry-all", {
-        status: "retryable",
-        dryRun: false
-      }, { signal: request.controller.signal }),
+      (request) => adminIdentityMutations.retryAllEmails(request.controller.signal),
       (result) => `Retried ${result.retried} emails; ${result.delivered} delivered, ${result.failed} failed, ${result.skipped} skipped`
     );
   }
@@ -6936,40 +8022,32 @@ export function App() {
 
   async function cleanupStoredAssetBytes() {
     await runWorkspaceAdminAction(
-      (request) => apiPost<{ deleted: number; missingMarked: number; skipped: number; failed: number }>("/api/v1/admin/assets/cleanup", {
-        includeDeleted: true,
-        includeExpired: true,
-        dryRun: false
-      }, { signal: request.controller.signal }),
+      (request) => adminAssetMutations.cleanupStoredAssets(request.controller.signal),
       (result) => `Cleaned ${result.deleted} asset objects, marked ${result.missingMarked} missing, skipped ${result.skipped}, failed ${result.failed}`
     );
   }
 
   async function migrateStoredAssetBytes() {
     await runWorkspaceAdminAction(
-      (request) => apiPost<{ migrated: number; skipped: number; failed: number; targetProvider: string }>("/api/v1/admin/assets/migrate", {
-        includeDeleted: false,
-        dryRun: false
-      }, { signal: request.controller.signal }),
+      (request) => adminAssetMutations.migrateStoredAssets(request.controller.signal),
       (result) => `Migrated ${result.migrated} assets to ${result.targetProvider}, skipped ${result.skipped}, failed ${result.failed}`
     );
   }
 
-  async function purgeAssetCdnCache(assetId: string, assetName: string) {
+  async function purgeAssetCdnCache(assetId: string, assetName: string, assetUpdatedAt: string) {
     await runWorkspaceAdminAction(
-      (request) => apiPost<{ status: string }>(`/api/v1/admin/assets/${assetId}/purge-cache`, {
-        reason: "Purged from admin console"
-      }, { signal: request.controller.signal }),
+      (request) => adminAssetMutations.purgeCdnCache(
+        { assetId, name: assetName, updatedAt: assetUpdatedAt },
+        "Purged from admin console",
+        request.controller.signal
+      ),
       (result) => `${assetName} CDN purge ${result.status}`
     );
   }
 
   async function quarantineAssetIntegrityFailures() {
     await runWorkspaceAdminAction(
-      (request) => apiPost<AdminAssetIntegrityQuarantineResult>("/api/v1/admin/assets/integrity/quarantine", {
-        dryRun: false,
-        reason: "Archived from admin integrity console"
-      }, { signal: request.controller.signal }),
+      (request) => adminAssetMutations.quarantineIntegrityFailures("Archived from admin integrity console", request.controller.signal),
       (result) => `Archived ${result.archived} broken assets, skipped ${result.skipped}, failed ${result.failed}`,
       { refreshWorkspace: true }
     );
@@ -6977,34 +8055,45 @@ export function App() {
 
   async function updatePluginReview(review: AdminPluginReviewInfo, status: PluginReviewStatus) {
     await runWorkspaceAdminAction(
-      (request) => apiPatch<AdminPluginReviewInfo>(`/api/v1/admin/plugins/reviews/${encodeURIComponent(review.review.reviewKey)}`, {
-        status,
-        notes: status === "approved" ? "Approved from admin console" : status === "rejected" ? "Rejected from admin console" : undefined
-      }, { signal: request.controller.signal }),
+      (request) => adminPluginMutations.updateReview(review, status, request.controller.signal),
       () => `${review.plugin.name} ${status}`,
       { refreshWorkspace: true }
     );
   }
 
   async function syncAdminPluginRegistries() {
+    const expectedRegistryRevision = adminSnapshot?.pluginOperations.registryRevision ?? adminSnapshot?.pluginReviews.registryRevision;
+    if (!expectedRegistryRevision) throw new Error("Refresh server administration before synchronizing plugin registries.");
     await runWorkspaceAdminAction(
-      (request) => apiPost<{ registries: unknown[]; plugins: unknown[] }>("/api/v1/admin/plugins/registry/sync", {}, { signal: request.controller.signal }),
+      (request) => adminPluginMutations.syncAdminRegistry(expectedRegistryRevision, request.controller.signal),
       (result) => `Synced ${result.registries.length} registries and imported ${result.plugins.length} plugin packages`,
       { refreshWorkspace: true }
     );
   }
 
   async function createScimGroupRoleMapping(input: AdminScimGroupRoleMappingInput) {
+    const scope = `admin-scim-mapping:create:${input.campaignId}`;
+    const attempt = beginAppendMutation(scope, input);
     await runWorkspaceAdminAction(
-      (request) => apiPost<AdminScimGroupRoleMappingResult>("/api/v1/admin/scim/group-role-mappings", input, { signal: request.controller.signal }),
+      async (request) => {
+        const result = await createAdminScimGroupRoleMapping(input, { signal: request.controller.signal, idempotencyKey: attempt.idempotencyKey });
+        completeAppendMutation(scope, attempt);
+        return result;
+      },
       (result) => `Mapped ${scimMappingLabel(result.mapping)} with ${result.sync.createdMemberships} created, ${result.sync.updatedMemberships} updated`,
       { refreshWorkspace: true }
     );
   }
 
   async function deleteScimGroupRoleMapping(mapping: AdminScimGroupRoleMapping) {
+    const scope = `admin-scim-mapping:delete:${mapping.id}`;
+    const attempt = beginAppendMutation(scope, { expectedUpdatedAt: mapping.updatedAt, preparedTargetSetHash: mapping.targetSetHash });
     await runWorkspaceAdminAction(
-      (request) => apiDelete<{ removedMemberships: number }>(`/api/v1/admin/scim/group-role-mappings/${mapping.id}`, { signal: request.controller.signal }),
+      async (request) => {
+        const result = await deleteAdminScimGroupRoleMapping(mapping, { signal: request.controller.signal, idempotencyKey: attempt.idempotencyKey });
+        completeAppendMutation(scope, attempt);
+        return result;
+      },
       (result) => `Removed ${scimMappingLabel(mapping)} and ${result.removedMemberships} sourced memberships`,
       { refreshWorkspace: true }
     );
@@ -7035,7 +8124,7 @@ export function App() {
     const importEntities = entities && entities.length > 0 ? entities : [{ kind: contentImportKind, name: contentImportName, body: contentImportBody }];
     const normalizedEntities = importEntities.map((entity) => ({ ...entity, name: entity.name.trim() })).filter((entity) => entity.name.length > 0);
     if (normalizedEntities.length === 0) return;
-    const batch = await apiPost<ContentImportBatch>(`/api/v1/campaigns/${campaignId}/content-imports/preview`, {
+    const payload = {
       source: source ?? {
         sourceType: "manual",
         sourceName: "Web manual content import",
@@ -7050,7 +8139,11 @@ export function App() {
         selectedByDefault: true,
         data: contentImportEntityData(entity.kind, entity.body)
       }))
-    });
+    };
+    const scope = `content-import:preview:${campaignId}`;
+    const attempt = beginAppendMutation(scope, payload);
+    const batch = await apiPost<ContentImportBatch>(`/api/v1/campaigns/${campaignId}/content-imports/preview`, payload, { idempotencyKey: attempt.idempotencyKey });
+    completeAppendMutation(scope, attempt);
     setContentImportStatus(`Previewed ${batch.entities.length} ${batch.entities.length === 1 ? "record" : "records"}`);
     setStatus("Content import previewed");
     await refresh(campaignId, sceneId);
@@ -7058,29 +8151,43 @@ export function App() {
 
   async function analyzePdfContentImport(file: File) {
     setContentImportStatus(`Analyzing ${file.name || "PDF"} with Codex PDF import`);
-    const batch = await apiAnalyzePdfContentImport({ campaignId, file });
+    const scope = `content-import:pdf:${campaignId}`;
+    const attempt = beginAppendMutation(scope, { name: file.name, type: file.type, size: file.size, lastModified: file.lastModified });
+    const batch = await apiAnalyzePdfContentImport({ campaignId, file }, { idempotencyKey: attempt.idempotencyKey });
+    completeAppendMutation(scope, attempt);
     setContentImportStatus(`Previewed ${batch.entities.length} PDF ${batch.entities.length === 1 ? "record" : "records"}`);
     setStatus("PDF content import previewed");
     await refresh(campaignId, sceneId);
   }
 
   async function applyContentImport(batch: ContentImportBatch, selectedEntityIds?: string[]) {
+    const latest = snapshotRef.current.contentImports.find((item) => item.id === batch.id) ?? batch;
     const entityIds = selectedEntityIds ?? (batch.selectedEntityIds.length > 0 ? batch.selectedEntityIds : batch.entities.filter((entity) => entity.selectedByDefault).map((entity) => entity.id));
-    const updated = await apiPost<ContentImportBatch>(`/api/v1/content-imports/${batch.id}/apply`, { selectedEntityIds: entityIds });
+    const payload = { selectedEntityIds: entityIds, expectedUpdatedAt: latest.updatedAt };
+    const updated = await apiPost<ContentImportBatch>(`/api/v1/content-imports/${batch.id}/apply`, payload, {
+      idempotencyKey: sharedMutationIdempotencyKey(`content-import:apply:${batch.id}`, latest.updatedAt, payload)
+    });
     setContentImportStatus(`Applied ${updated.appliedRecords.length} ${updated.appliedRecords.length === 1 ? "record" : "records"}`);
     setStatus("Content import applied");
     await refresh(campaignId, sceneId);
   }
 
   async function rollbackContentImport(batch: ContentImportBatch) {
-    await apiPost<ContentImportBatch>(`/api/v1/content-imports/${batch.id}/rollback`, {});
+    const latest = snapshotRef.current.contentImports.find((item) => item.id === batch.id) ?? batch;
+    const payload = { expectedUpdatedAt: latest.updatedAt };
+    await apiPost<ContentImportBatch>(`/api/v1/content-imports/${batch.id}/rollback`, payload, {
+      idempotencyKey: sharedMutationIdempotencyKey(`content-import:rollback:${batch.id}`, latest.updatedAt, payload)
+    });
     setContentImportStatus(`Rolled back ${batch.source.sourceName}`);
     setStatus("Content import rolled back");
     await refresh(campaignId, sceneId);
   }
 
   async function deleteContentImport(batch: ContentImportBatch) {
-    await apiDelete<ContentImportBatch>(`/api/v1/content-imports/${batch.id}`);
+    const latest = snapshotRef.current.contentImports.find((item) => item.id === batch.id) ?? batch;
+    await apiDelete<ContentImportBatch>(`/api/v1/content-imports/${batch.id}?expectedUpdatedAt=${encodeURIComponent(latest.updatedAt)}`, {
+      idempotencyKey: sharedMutationIdempotencyKey(`content-import:delete:${batch.id}`, latest.updatedAt, {})
+    });
     setContentImportStatus(`Deleted ${batch.source.sourceName}`);
     setStatus("Content import deleted");
     await refresh(campaignId, sceneId);
@@ -7352,6 +8459,8 @@ export function App() {
 
   if (!snapshotReady) {
     const apiOffline = status.startsWith("API offline");
+    const campaignLoadFailed = status.startsWith("Campaign load failed");
+    const loadFailed = apiOffline || campaignLoadFailed;
     return (
       <main className="auth-shell">
         <section className="reset-panel auth-panel" aria-labelledby="snapshot-loading-title">
@@ -7359,13 +8468,13 @@ export function App() {
             <RefreshCw size={22} />
           </div>
           <div>
-            <div className="eyebrow">{apiOffline ? "Connection" : "Workspace"}</div>
-            <h1 id="snapshot-loading-title">{apiOffline ? "API connection required" : "Loading campaign"}</h1>
+            <div className="eyebrow">{loadFailed ? "Connection" : "Workspace"}</div>
+            <h1 id="snapshot-loading-title">{apiOffline ? "API connection required" : campaignLoadFailed ? "Campaign load failed" : "Loading campaign"}</h1>
           </div>
-          <div className={`status reset-status ${apiOffline ? "connection-status" : ""}`} role="status" aria-live="polite">{status}</div>
-          {apiOffline && (
+          <div className={`status reset-status ${loadFailed ? "connection-status" : ""}`} role="status" aria-live="polite">{status}</div>
+          {loadFailed && (
             <button className="ghost-button wide" type="button" onClick={() => window.location.reload()}>
-              <RefreshCw size={16} /> Retry connection
+              <RefreshCw size={16} /> Retry campaign load
             </button>
           )}
         </section>
@@ -7374,7 +8483,7 @@ export function App() {
   }
 
   const manageCategories = [
-    { id: "account", label: "Account", description: "Profile, workspace, password, and MFA", icon: <UserCog size={16} />, badge: snapshot.organizations.length > 0 ? formatNumber(snapshot.organizations.length) : undefined },
+    { id: "account", label: "Account", description: "Profile, preferences, security, and character transfers", icon: <UserCog size={16} />, badge: characterTransferPendingCount > 0 ? `${formatNumber(characterTransferPendingCount)} transfer` : snapshot.organizations.length > 0 ? formatNumber(snapshot.organizations.length) : undefined },
     { id: "campaign", label: "Campaign", description: "Create, edit, archive, and permissions", icon: <Shield size={16} />, visible: canManageCampaignSettings, badge: selectedCampaign?.archivedAt ? "archived" : "active" },
     { id: "people", label: "People", description: "Invites and table joining", icon: <UserPlus size={16} />, visible: canManagePeople, badge: formatNumber(snapshot.organizationInvites.filter((invite) => invite.status === "pending").length) },
     { id: "scenes", label: "Scenes", description: "Scene creation, ordering, maps, and activation", icon: <MapPin size={16} />, visible: canManageScenes, badge: formatNumber(accessibleScenes.length) },
@@ -7424,6 +8533,12 @@ export function App() {
       setStatus(`${result.title} is visible in search but is not assigned to an actor, so there is no item sheet to open`);
       return;
     }
+    if (result.type === "encounter") {
+      if (canUsePrepWorkspace) setWorkspaceMode("prep");
+      setEncounterBuilderOpen(true);
+      setStatus(`Opened Encounter Builder for ${result.title}; select the saved encounter to review its composition`);
+      return;
+    }
     const destination = campaignSearchDestination(result.type);
     if (destination.workspace === "prep" && !canUsePrepWorkspace && (result.type === "world" || result.type === "memory")) {
       setStatus(`${result.title} is visible in search; its full workspace requires prep access`);
@@ -7462,10 +8577,6 @@ export function App() {
       }));
       return;
     }
-    if (result.type === "encounter") {
-      setStatus(`Opened Combat for ${result.title}; use Encounter Builder to reopen the saved composition`);
-      return;
-    }
     setStatus(`Opened ${result.title} from campaign search`);
   };
   const buildPaletteCommands = (): PaletteCommand[] => {
@@ -7475,6 +8586,7 @@ export function App() {
     }
     commands.push({ id: "action:ai-agent", label: aiAgentOpen ? "Close AI Agent" : "Open AI Agent", section: "Actions", keywords: "assistant bot help" });
     commands.push({ id: "action:campaign-search", label: "Search this campaign", section: "Actions", keywords: "find anything world scene actor item journal handout encounter canon chat roll" });
+    if (hasPermission("combat.manage")) commands.push({ id: "action:encounter-builder", label: "Open Encounter Builder", section: "Actions", keywords: "prep combat monsters difficulty initiative" });
     commands.push({ id: "action:theme", label: `Switch theme to ${uiThemeLabel(nextUiTheme(uiTheme))}`, section: "Actions", keywords: "appearance midnight ember dark colors look" });
     commands.push({ id: "action:dice3d", label: dice3dEnabled ? "Use text-only dice" : "Enable 3D dice", section: "Actions", keywords: "dice animation roll tray three text only" });
     for (const scene of accessibleScenes) {
@@ -7551,11 +8663,19 @@ export function App() {
       setTab("search");
       return;
     }
-    if (commandId === "action:dice3d") {
-      setDice3dEnabled((enabled) => !enabled);
+    if (commandId === "action:encounter-builder") {
+      if (canUsePrepWorkspace) setWorkspaceMode("prep");
+      setEncounterBuilderOpen(true);
       return;
     }
-    if (commandId === "action:theme") setUiTheme((current) => nextUiTheme(current));
+    if (commandId === "action:dice3d") {
+      persistQuickPreferences({ dice3dEnabled: !dice3dEnabled }, dice3dEnabled ? "Use text-only dice" : "Enable 3D dice");
+      return;
+    }
+    if (commandId === "action:theme") {
+      const nextTheme = nextUiTheme(uiTheme);
+      persistQuickPreferences({ theme: nextTheme }, `Switch theme to ${uiThemeLabel(nextTheme)}`);
+    }
   };
   const campaignSystemName = snapshot.systems.find((system) => system.id === selectedCampaign?.defaultSystemId)?.name ?? selectedCampaign?.defaultSystemId ?? "No system";
   const workspaceEyebrow = workspaceMode === "ai" ? "AI Studio" : workspaceMode === "prep" ? "Prep" : workspaceMode === "manage" ? manageWorkspaceEyebrow : campaignSystemName;
@@ -7573,12 +8693,14 @@ export function App() {
   const desktopRelayState = desktopRelay?.state ?? "stopped";
   const desktopInviteUrl = desktopRelay?.inviteUrl ?? desktopRelay?.publicUrl ?? "";
   const inspectorTabs: InspectorTab[] = workspaceMode === "live"
-    ? ["actors", "handouts", "journal", "search", "chat", "combat"]
+    ? ["actors", "compendium", "handouts", "journal", "search", "chat", "combat"]
     : workspaceMode === "prep"
-      ? ["actors", "sessions", "worlds", "handouts", "journal", "memory", "search", "content", "plugins"]
-      : ["actors", "journal", "content", "plugins"];
+      ? ["actors", "compendium", "sessions", "worlds", "handouts", "journal", "memory", "search", "content", "plugins"]
+      : ["actors", "compendium", "journal", "content", "plugins"];
   const aiPanelElement = (
     <AiPanel
+      campaignId={selectedCampaign?.id}
+      canManagePolicy={hasPermission("campaign.update")}
       prompt={aiPrompt}
       setPrompt={setAiPrompt}
       askAi={askAi}
@@ -7628,7 +8750,14 @@ export function App() {
   );
 
   return (
-    <main className="shell" aria-label="OpenTabletop workspace" data-table-focus={tableFocusMode ? "true" : undefined}>
+    <>
+    <RetryableActionNotice
+      operation={campaignAction.operation}
+      onRetry={campaignAction.retryAction ? () => void campaignAction.retryAction?.() : undefined}
+      onDismiss={campaignAction.clearAction}
+      className="global-action-failure"
+    />
+    <main className="shell" aria-label="OpenTabletop workspace" aria-busy={realtimeUiState === "syncing"} inert={realtimeUiState === "syncing" ? true : undefined} data-table-focus={tableFocusMode ? "true" : undefined}>
       <aside className={`rail rail-${workspaceMode} ${workspaceMode === "manage" ? "rail-manage" : "rail-play"}`}>
         <div className="brand-block">
           <div>
@@ -7638,7 +8767,7 @@ export function App() {
             <button className="icon-button" type="button" title="Command palette (Ctrl+K)" aria-label="Open command palette" onClick={() => setCommandPaletteOpen(true)}>
               <Search size={15} />
             </button>
-            <button className="icon-button" type="button" title={`Theme: ${uiThemeLabel(uiTheme)} - switch to ${uiThemeLabel(nextUiTheme(uiTheme))}`} aria-label="Switch color theme" onClick={() => setUiTheme((current) => nextUiTheme(current))}>
+            <button className="icon-button" type="button" title={`Theme: ${uiThemeLabel(uiTheme)} - switch to ${uiThemeLabel(nextUiTheme(uiTheme))}`} aria-label="Switch color theme" onClick={() => { const nextTheme = nextUiTheme(uiTheme); persistQuickPreferences({ theme: nextTheme }, `Switch theme to ${uiThemeLabel(nextTheme)}`); }}>
               {uiTheme === "midnight" ? <Moon size={15} /> : <Flame size={15} />}
             </button>
           </div>
@@ -7660,7 +8789,7 @@ export function App() {
                 if (blockCampaignSetupNavigation("switching campaigns")) return;
                 if (sceneEditorNavigationBlocked()) return;
                 selectWorkspaceContext(campaign.id, "");
-                if (!blankCanvasDemoOpen) refresh(campaign.id, "").catch(console.error);
+                if (!blankCanvasDemoOpen) void refresh(campaign.id, "").catch((error) => setStatus(`Could not load ${campaign.name}: ${errorMessage(error)}. Select the campaign again to retry.`));
               }}
             >
               <Shield size={16} />
@@ -7845,6 +8974,18 @@ export function App() {
           <div className="manage-category-content">
             {activeManageCategory === "account" && (
               <div className="manage-card-grid">
+        {snapshot.session?.user && <ProfilePreferences user={snapshot.session.user} onSaved={applyAuthenticatedUser} />}
+        <CharacterTransferPanel
+          campaignId={campaignId}
+          currentUserId={currentUserId}
+          actors={snapshot.actors}
+          members={snapshot.members}
+          canTransferCharacters={hasPermission("actor.update") || hasPermission("actor.updateOwned")}
+          canShareCharacters={hasPermission("actor.update")}
+          refreshSignal={characterTransferRevision}
+          onActorUpdated={applyActorToSnapshot}
+          onPendingCount={setCharacterTransferPendingCount}
+        />
         {ssoEnabled && (
           <button className="ghost-button" onClick={() => startSso().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
             <Shield size={16} /> SSO
@@ -8088,10 +9229,69 @@ export function App() {
             )}
           </form>
         )}
+        {selectedCampaign && hasPermission("campaign.update") && (
+          <details className="account-box campaign-duplicate-card">
+            <summary><Copy size={15} /> Duplicate campaign</summary>
+            <form className="content-import-form" onSubmit={(event) => {
+              event.preventDefault();
+              const idempotencyKey = `campaign-duplicate:${selectedCampaign.id}:${globalThis.crypto.randomUUID()}`;
+              void campaignAction.runAction(`Duplicate ${selectedCampaign.name}`, () => duplicateSelectedCampaign(idempotencyKey));
+            }}>
+              <p className="account-summary">Copies playable campaign content, scenes, maps, actors, journals, sessions, encounters, and settings. The copy opens in Prep with you as its owner; invitations and user-specific grants are intentionally reset.</p>
+              <label>
+                <span>New campaign name</span>
+                <input aria-label="Duplicate campaign name" value={campaignDuplicateName} disabled={campaignDuplicateBusy} onChange={(event) => { setCampaignDuplicateName(event.target.value); setCampaignDuplicateError(""); }} />
+              </label>
+              {campaignDuplicateError && <p className="creator-error" role="alert">Duplication failed: {campaignDuplicateError}</p>}
+              <button className="primary-button wide" type="submit" disabled={campaignDuplicateBusy || !campaignDuplicateName.trim()}>
+                {campaignDuplicateBusy ? <RefreshCw className="spin" size={15} /> : <Copy size={15} />} {campaignDuplicateBusy ? "Duplicating..." : "Duplicate and open copy"}
+              </button>
+            </form>
+          </details>
+        )}
+        {selectedCampaign && hasPermission("campaign.update") && (
+          <CampaignRulesProfilePanel
+            campaign={selectedCampaign}
+            onSaved={(updated) => {
+              setSnapshot((current) => ({ ...current, campaigns: current.campaigns.map((campaign) => campaign.id === updated.id ? updated : campaign) }));
+              setStatus("Campaign rules profile saved");
+            }}
+            onRefresh={async () => { await refresh(selectedCampaign.id, realtimeSelectionRef.current.sceneId, { syncStatus: false }); }}
+          />
+        )}
+        {selectedCampaign && hasPermission("campaign.update") && (
+          <Suspense fallback={<DeferredPanelFallback label="campaign webhooks" />}>
+          <LazyCampaignWebhooksPanel
+            key={`campaign-webhooks:${selectedCampaign.id}:${currentUserId}`}
+            campaignId={selectedCampaign.id}
+            campaignUpdatedAt={selectedCampaign.updatedAt}
+            onCampaignUpdatedAt={(updatedAt) => {
+              setSnapshot((current) => ({
+                ...current,
+                campaigns: current.campaigns.map((campaign) =>
+                  campaign.id === selectedCampaign.id ? { ...campaign, updatedAt } : campaign,
+                ),
+              }));
+            }}
+            onStatus={setStatus}
+          />
+          </Suspense>
+        )}
               </div>
             )}
             {activeManageCategory === "people" && (
               <div className="manage-card-grid">
+        <CharacterTransferPanel
+          campaignId={campaignId}
+          currentUserId={currentUserId}
+          actors={snapshot.actors}
+          members={snapshot.members}
+          canTransferCharacters={hasPermission("actor.update") || hasPermission("actor.updateOwned")}
+          canShareCharacters={hasPermission("actor.update")}
+          refreshSignal={characterTransferRevision}
+          onActorUpdated={applyActorToSnapshot}
+          onPendingCount={setCharacterTransferPendingCount}
+        />
         {(hasPermission("campaign.update") || canManageActiveOrganization) && (
           <form
             className="account-box"
@@ -8136,6 +9336,14 @@ export function App() {
               )}
             </div>
           </form>
+        )}
+        {selectedCampaign && (
+          <CampaignOwnershipTransfer
+            campaign={selectedCampaign}
+            members={snapshot.members}
+            currentUserId={currentUserId}
+            onTransfer={transferSelectedCampaignOwnership}
+          />
         )}
         <details className="account-box create-drawer">
           <summary><UserPlus size={15} /> Join with an invite token</summary>
@@ -8287,7 +9495,7 @@ export function App() {
           >
             <div className="section-title">Scene Manager</div>
             <div className="scene-background-preview">
-              {selectedMapAsset ? <img src={assetBlobUrl(selectedMapAsset)} alt="" /> : <FileText size={24} />}
+              {selectedMapAsset ? <img src={assetThumbnailUrl(selectedMapAsset)} alt="" /> : <FileText size={24} />}
               <div>
                 <strong>{selectedMapAsset?.name ?? "No background"}</strong>
                 <span>{selectedScene.width} x {selectedScene.height} / grid {selectedScene.gridSize}</span>
@@ -8512,6 +9720,16 @@ export function App() {
             )}
           </form>
         )}
+        {selectedScene && hasPermission("scene.update") && (
+          <SceneDelegationPanel
+            key={`scene-delegation:${selectedScene.id}:${currentUserId}`}
+            scene={selectedScene}
+            members={snapshot.members}
+            currentUserId={currentUserId}
+            onSceneChange={applySceneToSnapshot}
+            onStatus={setStatus}
+          />
+        )}
         <button className="ghost-button" onClick={() => document.getElementById("map-upload-file")?.click()} disabled={!hasPermission("scene.create") || !hasPermission("scene.update")} title={hasPermission("scene.create") && hasPermission("scene.update") ? "Upload map" : "Requires scene.create and scene.update"}>
           <Upload size={16} /> Map
         </button>
@@ -8718,6 +9936,11 @@ export function App() {
           </div>
         </section>
         {!tableFocusMode && <div className="status" role="status" aria-live="polite" aria-atomic="true">{status}</div>}
+        {!tableFocusMode && lastDndRulesUndo && (
+          <button className="ghost-button small" type="button" onClick={() => void undoLastDndRulesMutation()}>
+            <RotateCcw size={14} /> Undo last D&amp;D rules change
+          </button>
+        )}
       </aside>
 
       {tableFocusMode && <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{status}</div>}
@@ -8727,9 +9950,9 @@ export function App() {
           <div>
             <div className="eyebrow">{workspaceEyebrow}</div>
             <h1>{workspaceHeading}</h1>
-            <div className="session-pulse" data-connection-state={realtimeUiState} role="status" aria-live="polite" aria-atomic="true" aria-label={`Session connection: ${sessionPulseStatus}`}>
+            <div className="session-pulse" data-connection-state={realtimeUiState} role="status" aria-live="polite" aria-atomic="true" aria-label={`Session connection: ${sessionPulseStatus}; ${onlineParticipantLabel}`}>
               <span aria-hidden="true" />
-              {sessionPulseStatus}
+              {sessionPulseStatus} · {formatNumber(snapshot.presences.length)} online
             </div>
             {canManageScenes && selectedScene && workspaceMode !== "manage" && (
               <div className={selectedScene.active ? "scene-visibility-badge live" : "scene-visibility-badge draft"} role="status">
@@ -8759,6 +9982,18 @@ export function App() {
             <input aria-label="Scene search" value={sceneSearch} placeholder="Search scenes" onChange={(event) => setSceneSearch(event.target.value)} />
             <span role="status" aria-label="Scene filter summary">{formatNumber(visibleScenes.length)} of {formatNumber(accessibleScenes.length)} scenes</span>
             <span role="status" aria-label="Scene selection summary">{formatNumber(selectedPrepScenes.length)} selected</span>
+            <div className="button-row prep-primary-actions" aria-label="Primary preparation actions">
+              {hasPermission("combat.manage") && (
+                <button className="ghost-button" type="button" onClick={planSystemEncounter}>
+                  <Swords size={14} /> Encounters
+                </button>
+              )}
+              {selectedScene && hasPermission("scene.update") && (
+                <button className={gridCalibrationOpen ? "ghost-button active" : "ghost-button"} type="button" aria-expanded={gridCalibrationOpen} onClick={() => { setGridCalibrationOpen((open) => !open); setGridCalibrationPoints([]); }}>
+                  <Crosshair size={14} /> Calibrate grid
+                </button>
+              )}
+            </div>
             {hasPermission("scene.update") && (
               <div className="button-row">
                 <input aria-label="Bulk scene folder" value={bulkSceneFolder} placeholder="Move visible to folder" onChange={(event) => setBulkSceneFolder(event.target.value)} />
@@ -8802,7 +10037,7 @@ export function App() {
                       />
                     )}
                     <button className={scene.id === sceneId ? "scene-tab active" : "scene-tab"} onClick={() => selectScene(scene.id)} aria-pressed={scene.id === sceneId}>
-                      <span className="scene-tab-thumb">{backgroundAsset ? <img src={assetBlobUrl(backgroundAsset)} alt="" /> : scene.active ? <Eye size={14} /> : <FileText size={14} />}</span>
+                      <span className="scene-tab-thumb">{backgroundAsset ? <img src={assetThumbnailUrl(backgroundAsset)} alt="" /> : scene.active ? <Eye size={14} /> : <FileText size={14} />}</span>
                       <span>{scene.name}</span>
                       {scene.folder && <small>{scene.folder}</small>}
                     </button>
@@ -8882,9 +10117,9 @@ export function App() {
         {showTableWorkspace ? (
         <div className={`table-grid workspace-${workspaceMode}`}>
           <section className={`table-area ${canvasAssetDragging ? "canvas-asset-dragging" : ""}`}>
-            <Toolbar key={`${workspaceMode}-${tab}`} onSelectTool={selectCanvasTool} onCreateToken={async () => { await createToken(); }} onStartCombat={startCombat} onRevealFog={revealFog} onHideFog={hideFog} onRevealFogPolygon={revealFogPolygon} onToggleFogBrush={toggleFogBrush} onToggleAnnotationTool={toggleAnnotationTool} onDeleteLatestAnnotation={deleteLatestAnnotation} onUndoScene={undoSceneEdit} onUndoFog={undoFog} onShowFogHistory={showFogHistory} onSampleVisionPoint={sampleVisionPoint} onSaveFogPreset={saveFogPreset} onApplyFogPreset={applyFogPreset} onDeleteFogPreset={deleteFogPreset} onAddWall={addWall} onAddTerrainWall={addTerrainWall} onAddLight={addLight} onActionError={(error) => setStatus(error instanceof Error ? error.message : String(error))} canCreateToken={hasPermission("token.create")} canManageCombat={hasPermission("combat.manage")} canRevealFog={hasPermission("token.reveal")} activeFogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} activeAnnotationTool={annotationTool} hasFogPresets={snapshot.fogPresets.length > 0} canUpdateScene={hasPermission("scene.update")} canAnnotate={hasPermission("scene.read")} />
+            <Toolbar key={`${workspaceMode}-${tab}`} onSelectTool={selectCanvasTool} onCreateToken={async () => { await createToken(); }} onStartCombat={openCombatSetup} onRevealFog={revealFog} onHideFog={hideFog} onRevealFogPolygon={revealFogPolygon} onToggleFogBrush={toggleFogBrush} onToggleAnnotationTool={toggleAnnotationTool} onDeleteLatestAnnotation={deleteLatestAnnotation} onUndoScene={undoSceneEdit} onUndoFog={undoFog} onShowFogHistory={showFogHistory} onSampleVisionPoint={sampleVisionPoint} onSaveFogPreset={saveFogPreset} onApplyFogPreset={applyFogPreset} onDeleteFogPreset={deleteFogPreset} onCyclePlayerVisionPreview={cyclePlayerVisionPreview} onAddWall={addWall} onAddTerrainWall={addTerrainWall} onAddDoor={addDoor} onAddWindow={addWindow} onAddLight={addLight} onAddDarkness={addDarkness} onActionError={(error) => setStatus(error instanceof Error ? error.message : String(error))} canCreateToken={hasPermission("token.create")} canManageCombat={hasPermission("combat.manage")} canRevealFog={hasPermission("token.reveal")} canPreviewPlayerVision={hasPermission("scene.update") && snapshot.members.some((member) => member.role === "player" && member.active !== false && member.user.id !== currentUserId)} playerVisionPreviewLabel={playerVisionPreviewMember?.user.displayName} activeFogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} activeAnnotationTool={annotationTool} hasFogPresets={snapshot.fogPresets.length > 0} canUpdateScene={hasPermission("scene.update")} canAnnotate={hasPermission("scene.read")} />
             <div className="map-play-surface">
-              {selectedScene ? <SceneCanvas scene={selectedScene} zoom={battleMapZoom} backgroundAsset={selectedMapAsset} selectedAssetId={selectedBoardAssetId} assets={snapshot.assets} tokens={snapshot.tokens} actors={snapshot.actors} boardCurrentUserId={currentUserId} canSeeAllVitals={hasPermission("combat.manage")} currentTurnTokenIds={currentTurnTokenIds} nextTurnTokenIds={nextTurnTokenIds} vision={snapshot.vision} selectedTokenId={selectedTokenId} selectedTokenIds={selectedTokenIds} activeTokenLayer={activeTokenLayer} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canUpdateAnnotations={hasPermission("scene.update")} canResizeToken={hasPermission("token.update")} canUpdateTokenLayer={hasPermission("token.update")} onSelect={selectCanvasToken} onSelectMany={selectCanvasTokens} onSelectBackgroundAsset={selectBoardBackgroundAsset} onClearSelection={clearTokenSelection} onMoved={async () => undefined} onTokenMovePersist={persistSceneCanvasTokenMove} onTokenResizePersist={persistSceneCanvasTokenResize} onTokenMoveCommit={recordTokenMoveAction} onTokenResizeCommit={recordTokenResizeAction} onTokenLayerCycle={cycleTokenLayer} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} selectedOverlay={selectedOverlay} onSelectOverlay={setSelectedOverlay} onZoomBy={zoomBattleMap} /> : (
+              {selectedScene ? <SceneCanvas scene={selectedScene} zoom={battleMapZoom} backgroundAsset={selectedMapAsset} selectedAssetId={selectedBoardAssetId} assets={snapshot.assets} tokens={snapshot.tokens} actors={snapshot.actors} boardCurrentUserId={currentUserId} canSeeAllVitals={hasPermission("combat.manage")} currentTurnTokenIds={currentTurnTokenIds} nextTurnTokenIds={nextTurnTokenIds} vision={snapshot.vision} visionPreviewLabel={playerVisionPreviewMember?.user.displayName} selectedTokenId={selectedTokenId} selectedTokenIds={selectedTokenIds} activeTokenLayer={activeTokenLayer} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} calibrationPoints={gridCalibrationOpen ? gridCalibrationPoints : undefined} onCalibrationPoint={gridCalibrationOpen ? (point) => setGridCalibrationPoints((current) => appendGridCalibrationPoint(current, point)) : undefined} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canUpdateAnnotations={hasPermission("scene.update")} canResizeToken={hasPermission("token.update")} canUpdateTokenLayer={hasPermission("token.update")} onSelect={selectCanvasToken} onSelectMany={selectCanvasTokens} onSelectBackgroundAsset={selectBoardBackgroundAsset} onClearSelection={clearTokenSelection} onMoved={async () => undefined} onTokenMovePersist={persistSceneCanvasTokenMove} onTokenResizePersist={persistSceneCanvasTokenResize} onTokenMoveCommit={recordTokenMoveAction} onTokenResizeCommit={recordTokenResizeAction} onTokenLayerCycle={cycleTokenLayer} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} onTogglePortal={toggleScenePortal} selectedOverlay={selectedOverlay} onSelectOverlay={setSelectedOverlay} onZoomBy={zoomBattleMap} /> : (
                 <div className="empty-state empty-state-action">
                   <span>Create a scene to open the tabletop.</span>
                   {hasPermission("scene.create") && (
@@ -8895,6 +10130,15 @@ export function App() {
                 </div>
               )}
             </div>
+            {gridCalibrationOpen && selectedScene && (
+              <GridCalibrationPanel
+                scene={selectedScene}
+                points={gridCalibrationPoints}
+                onPointsChange={setGridCalibrationPoints}
+                onApply={applySceneGridCalibration}
+                onClose={() => { setGridCalibrationOpen(false); setGridCalibrationPoints([]); }}
+              />
+            )}
             <div className="map-layer-dock" aria-label="Map controls and layers" data-collapsed={mapDockOpen ? undefined : "true"}>
               <MapZoomControls zoom={battleMapZoom} onZoomOut={() => zoomBattleMap(-battleMapZoomStep)} onZoomIn={() => zoomBattleMap(battleMapZoomStep)} onReset={resetBattleMapZoom} />
               <button
@@ -8917,6 +10161,7 @@ export function App() {
                 {mapDockOpen ? <ChevronUp size={14} aria-hidden="true" /> : <ChevronDown size={14} aria-hidden="true" />}
               </button>
               {mapDockOpen && <MapLayerStack scene={selectedScene} tokens={snapshot.tokens} activeTokenLayer={activeTokenLayer} fogActive={Boolean(snapshot.vision?.sceneId === selectedScene?.id && snapshot.vision?.fogActive)} visibleAnnotationLayers={visibleAnnotationLayers} onSelectTokenLayer={selectTokenLayer} onToggleAnnotationLayer={setAnnotationLayerVisible} />}
+              {mapDockOpen && selectedScene && <TacticalMapAids key={`tactical:${selectedScene.id}`} scene={selectedScene} tokens={snapshot.tokens} canManage={hasPermission("scene.update")} canMoveTokens={hasPermission("token.move")} combat={activeCombat} onSceneChange={applySceneToSnapshot} onTokenChange={(token) => applyTokensToSnapshot([token])} onStatus={setStatus} />}
             </div>
             {hasPermission("token.reveal") && (fogBrushMode || toolReport) && (
               <section className="table-tool-panel movable-panel" aria-label="Fog and vision tools" style={fogToolPanel.style} {...fogToolPanel.panelProps}>
@@ -8986,6 +10231,7 @@ export function App() {
                 <span>Snap templates to grid</span>
               </label>
               </div>
+              {hasUnmodeledMixedDamageType(templateDamageType) && <p className="admin-status" role="alert">Area templates automate one damage type. Add this template, roll the total, then use Reviewed typed damage for each mixed component.</p>}
               <details className="annotation-panel-section">
                 <summary>Layer visibility</summary>
               <div className="asset-pressure-list" role="group" aria-label="Annotation layer visibility">
@@ -9056,6 +10302,7 @@ export function App() {
                   <span className="panel-empty">No area template automation yet</span>
                 )}
                 {latestAreaTemplate?.effectHint && <p className="account-summary">{latestAreaTemplate.effectHint}</p>}
+                {latestAreaTemplateHasMixedDamage && <p className="admin-status" role="alert">This template has an unmodeled mixed-damage rider. Rolling is available, but automatic apply is blocked so components are not flattened; use Reviewed typed damage.</p>}
                 {latestAreaTemplate ? (
                   <div className="button-row">
                     <button className="ghost-button" type="button" onClick={() => setTokenTargets(latestAreaTemplate.affectedTokenIds ?? [], true)}>
@@ -9064,10 +10311,10 @@ export function App() {
                     <button className="ghost-button" type="button" disabled={!latestAreaTemplate.templateDamageFormula} onClick={() => rollTemplateDamage(latestAreaTemplate).catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
                       Roll damage
                     </button>
-                    <button className="ghost-button" type="button" disabled={!latestAreaTemplate.templateDamageFormula || (latestAreaTemplate.affectedTokenIds?.length ?? 0) === 0 || (!hasPermission("actor.update") && !hasPermission("token.update"))} onClick={() => applyTemplateDamage(latestAreaTemplate).catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+                    <button className="ghost-button" type="button" disabled={!latestAreaTemplate.templateDamageFormula || latestAreaTemplateHasMixedDamage || (latestAreaTemplate.affectedTokenIds?.length ?? 0) === 0 || (!hasPermission("actor.update") && !hasPermission("token.update"))} onClick={() => applyTemplateDamage(latestAreaTemplate).catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
                       Apply damage
                     </button>
-                    <button className="ghost-button" type="button" disabled={!latestAreaTemplate.templateDamageFormula || !latestAreaTemplate.templateSaveDc || !latestAreaTemplate.templateSaveAbility || latestAreaTemplate.templateSaveAbility === "none" || (latestAreaTemplate.affectedTokenIds?.length ?? 0) === 0 || (!hasPermission("actor.update") && !hasPermission("token.update"))} onClick={() => resolveTemplateSaves(latestAreaTemplate).catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+                    <button className="ghost-button" type="button" disabled={!latestAreaTemplate.templateDamageFormula || latestAreaTemplateHasMixedDamage || !latestAreaTemplate.templateSaveDc || !latestAreaTemplate.templateSaveAbility || latestAreaTemplate.templateSaveAbility === "none" || (latestAreaTemplate.affectedTokenIds?.length ?? 0) === 0 || (!hasPermission("actor.update") && !hasPermission("token.update"))} onClick={() => resolveTemplateSaves(latestAreaTemplate).catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
                       Resolve saves
                     </button>
                   </div>
@@ -9118,7 +10365,7 @@ export function App() {
                           title={hasPermission("token.create") ? "Drag asset to the scene" : "Requires token.create"}
                           onClick={() => setCanvasAssetId(asset.id)}
                           onDragStart={(event) => {
-                            const imageUrl = assetBlobUrl(asset);
+                            const imageUrl = assetThumbnailUrl(asset);
                             event.currentTarget.closest(".table-area")?.classList.add("canvas-asset-dragging");
                             setCanvasAssetDragging(true);
                             tokenDropHandledRef.current = false;
@@ -9128,10 +10375,10 @@ export function App() {
                           onDragEnd={(event) => {
                             event.currentTarget.closest(".table-area")?.classList.remove("canvas-asset-dragging");
                             setCanvasAssetDragging(false);
-                            createTokenFromAssetDragEnd(asset, event.clientX, event.clientY).catch(console.error);
+                            void campaignAction.runAction(`Place ${asset.name}`, () => createTokenFromAssetDragEnd(asset, event.clientX, event.clientY));
                           }}
                         >
-                          <img src={assetBlobUrl(asset)} alt="" />
+                          <img src={assetThumbnailUrl(asset)} alt="" />
                           <span>{asset.name}</span>
                         </button>
                       ))
@@ -9153,10 +10400,10 @@ export function App() {
                     <span>Count</span>
                     <input aria-label="Canvas asset placement count" type="number" min={1} max={6} value={canvasAssetPlacementCount} onChange={(event) => setCanvasAssetPlacementCount(Math.max(1, Math.min(6, Number(event.target.value) || 1)))} />
                   </label>
-                  <button className="ghost-button" type="button" disabled={!selectedCanvasAsset || !selectedScene || !hasPermission("token.create")} onClick={() => selectedCanvasAsset && placeCanvasAssetTokens(selectedCanvasAsset, canvasAssetPlacementCount).catch(console.error)}>
+                  <button className="ghost-button" type="button" disabled={!selectedCanvasAsset || !selectedScene || !hasPermission("token.create")} onClick={() => selectedCanvasAsset && void campaignAction.runAction(`Place ${selectedCanvasAsset.name}`, () => placeCanvasAssetTokens(selectedCanvasAsset, canvasAssetPlacementCount))}>
                     <MapPin size={16} /> Place selected canvas asset
                   </button>
-                  <button className="ghost-button" type="button" disabled={!selectedCanvasAsset || !selectedScene || !hasPermission("scene.update")} onClick={() => selectedCanvasAsset && setSceneBackgroundFromAsset(selectedCanvasAsset).catch(console.error)}>
+                  <button className="ghost-button" type="button" disabled={!selectedCanvasAsset || !selectedScene || !hasPermission("scene.update")} onClick={() => selectedCanvasAsset && void campaignAction.runAction(`Set ${selectedCanvasAsset.name} as the scene background`, () => setSceneBackgroundFromAsset(selectedCanvasAsset))}>
                     <Eye size={16} /> Set selected canvas background
                   </button>
                 </div>
@@ -9168,29 +10415,133 @@ export function App() {
           <aside className="inspector">
             <div className="tabs inspector-tabs" role="tablist" aria-label="Inspector panels">
               {inspectorTabs.includes("actors") && <TabButton active={tab === "actors"} icon={<Users size={15} />} label="Actors" tabId="inspector-tab-actors" panelId="inspector-panel-actors" onClick={() => setTab("actors")} />}
+              {inspectorTabs.includes("compendium") && <TabButton active={tab === "compendium"} icon={<BookOpen size={15} />} label="Compendium" tabId="inspector-tab-compendium" panelId="inspector-panel-compendium" onClick={() => setTab("compendium")} />}
               {inspectorTabs.includes("sessions") && <TabButton active={tab === "sessions"} icon={<Timer size={15} />} label="Sessions" tabId="inspector-tab-sessions" panelId="inspector-panel-sessions" onClick={() => setTab("sessions")} />}
               {inspectorTabs.includes("worlds") && <TabButton active={tab === "worlds"} icon={<Globe2 size={15} />} label="Worlds" tabId="inspector-tab-worlds" panelId="inspector-panel-worlds" onClick={() => setTab("worlds")} />}
               {inspectorTabs.includes("handouts") && <TabButton active={tab === "handouts"} icon={<BookOpen size={15} />} label="Handouts" tabId="inspector-tab-handouts" panelId="inspector-panel-handouts" onClick={() => setTab("handouts")} />}
               {inspectorTabs.includes("journal") && <TabButton active={tab === "journal"} icon={<ScrollText size={15} />} label="Journal" tabId="inspector-tab-journal" panelId="inspector-panel-journal" onClick={() => setTab("journal")} />}
               {inspectorTabs.includes("memory") && <TabButton active={tab === "memory"} icon={<Brain size={15} />} label="Canon" tabId="inspector-tab-memory" panelId="inspector-panel-memory" onClick={() => setTab("memory")} />}
               {inspectorTabs.includes("search") && <TabButton active={tab === "search"} icon={<Search size={15} />} label="Search" tabId="inspector-tab-search" panelId="inspector-panel-search" onClick={() => setTab("search")} />}
-              {inspectorTabs.includes("chat") && <TabButton active={tab === "chat"} icon={<MessageSquare size={15} />} label="Chat" tabId="inspector-tab-chat" panelId="inspector-panel-chat" onClick={() => setTab("chat")} />}
+              {inspectorTabs.includes("chat") && <TabButton active={tab === "chat"} icon={<MessageSquare size={15} />} label={chatUnreadCount > 0 ? `Chat (${formatNumber(chatUnreadCount)})` : "Chat"} tabId="inspector-tab-chat" panelId="inspector-panel-chat" onClick={() => { setTab("chat"); setChatUnreadCount(0); }} />}
               {inspectorTabs.includes("combat") && <TabButton active={tab === "combat"} icon={<Swords size={15} />} label="Combat" tabId="inspector-tab-combat" panelId="inspector-panel-combat" onClick={() => setTab("combat")} />}
               {inspectorTabs.includes("content") && <TabButton active={tab === "content"} icon={<Upload size={15} />} label="Assets" tabId="inspector-tab-content" panelId="inspector-panel-content" onClick={() => setTab("content")} />}
               {inspectorTabs.includes("plugins") && <TabButton active={tab === "plugins"} icon={<Boxes size={15} />} label="Plugins" tabId="inspector-tab-plugins" panelId="inspector-panel-plugins" onClick={() => setTab("plugins")} />}
             </div>
             <div className="inspector-panel-content" role="tabpanel" id={`inspector-panel-${tab}`} aria-labelledby={`inspector-tab-${tab}`}>
-            {tab === "actors" && <ActorPanel campaignId={campaignId} actor={selectedActor} token={selectedToken} systemLabel={snapshot.systems.find((system) => system.id === selectedActor?.systemId)?.name ?? selectedActor?.systemId} scene={selectedScene} currentUserId={currentUserId} actors={snapshot.actors} tokens={snapshot.tokens} combat={activeCombat} members={snapshot.members} assets={snapshot.assets} items={snapshot.items} compendiumEntries={compendiumEntries} compendiumSearch={compendiumSearch} setCompendiumSearch={setCompendiumSearch} compendiumStatus={compendiumStatus} actionTargetActorId={actorActionTargetId} setActionTargetActorId={setActorActionTargetId} actionApplyEffect={actorActionApplyEffect} setActionApplyEffect={setActorActionApplyEffect} actionConsumeResources={actorActionConsumeResources} setActionConsumeResources={setActorActionConsumeResources} updateActorHp={updateActorHp} adjustActorHp={adjustActorHp} awardActorXp={awardActorXp} xpProgress={xpProgress} advancementReady={Boolean(xpProgress?.readyToLevel && advancementOptions.length > 0 && canUpdateSelectedActor)} onLevelUp={() => setAdvancementModalOpen(true)} onRestActor={restSelectedActor} updateActorData={updateActorData} toggleActorCondition={toggleActorCondition} updateItemData={updateItemData} assignItemToActor={assignItemToActor} updateToken={updateSelectedToken} onUploadTokenImage={uploadSelectedTokenImage} targetToken={setTokenTarget} targetTokens={setTokenTargets} deleteToken={deleteSelectedToken} updateTokenVision={updateSelectedTokenVision} useActorAction={useActorAction} onImportCompendiumEntry={importCompendiumEntry} onPurchaseCompendiumEntry={purchaseCompendiumEntry} canCreateToken={hasPermission("token.create")} canUpdateActor={canUpdateSelectedActor} canRestActor={canUpdateSelectedActor} canUpdateToken={hasPermission("token.update")} canDeleteToken={hasPermission("token.delete")} canUseAction={canUpdateSelectedActor && hasPermission("dice.roll")} />}
+            <Suspense fallback={<DeferredPanelFallback label={`${tab} panel`} />}>
+            {tab === "actors" && <ActorPanel campaignId={campaignId} actor={selectedActor} token={selectedToken} systemLabel={snapshot.systems.find((system) => system.id === selectedActor?.systemId)?.name ?? selectedActor?.systemId} scene={selectedScene} currentUserId={currentUserId} actors={snapshot.actors} tokens={snapshot.tokens} combat={activeCombat} members={snapshot.members} assets={snapshot.assets} items={snapshot.items} compendiumEntries={compendiumEntries} compendiumSearch={compendiumSearch} setCompendiumSearch={setCompendiumSearch} compendiumStatus={compendiumStatus} actionTargetActorId={actorActionTargetId} setActionTargetActorId={setActorActionTargetId} actionApplyEffect={actorActionApplyEffect} setActionApplyEffect={setActorActionApplyEffect} actionConsumeResources={actorActionConsumeResources} setActionConsumeResources={setActorActionConsumeResources} updateActorHp={updateActorHp} adjustActorHp={adjustActorHp} awardActorXp={awardActorXp} xpProgress={xpProgress} advancementReady={Boolean(xpProgress?.readyToLevel && advancementOptions.length > 0 && canUpdateSelectedActor)} onLevelUp={() => setAdvancementModalOpen(true)} onPreviewRestActor={previewSelectedActorRest} onRestActor={restSelectedActor} onTypedDamageApplied={applyTypedDamageResult} updateActorData={updateActorData} toggleActorCondition={toggleActorCondition} updateItemData={updateItemData} changeActorAttunement={changeActorAttunement} assignItemToActor={assignItemToActor} onSpellPreparationApplied={(result) => { const returnedItems = new Map(result.items.map((item) => [item.id, item])); setSnapshot((current) => ({ ...current, actors: current.actors.map((actor) => actor.id === result.actor.id ? result.actor : actor), items: current.items.map((item) => returnedItems.get(item.id) ?? item) })); }} updateToken={updateSelectedToken} onUploadTokenImage={uploadSelectedTokenImage} targetToken={setTokenTarget} targetTokens={setTokenTargets} deleteToken={deleteSelectedToken} updateTokenVision={updateSelectedTokenVision} useActorAction={useActorAction} onImportCompendiumEntry={importCompendiumEntry} onPurchaseCompendiumEntry={purchaseCompendiumEntry} onPlaceActor={placeActorOnSelectedScene} canCreateToken={hasPermission("token.create")} canUpdateActor={canUpdateSelectedActor} canAwardActorXp={hasPermission("actor.update")} canRestActor={canUpdateSelectedActor} canUpdateToken={hasPermission("token.update")} canDeleteToken={hasPermission("token.delete")} canUseAction={canUpdateSelectedActor && hasPermission("dice.roll")} />}
+            {tab === "compendium" && (
+              <>
+                <LazyCompendiumPanel
+                key={`compendium:${campaignId}:${currentUserId}`}
+                campaignId={campaignId}
+                systems={snapshot.systems}
+                actors={snapshot.actors}
+                items={snapshot.items}
+                initialSystemId={selectedActor?.systemId ?? selectedCampaign?.defaultSystemId}
+                canUpdateActor={(actor) => hasPermission("actor.update") || (actor.ownerUserId === currentUserId && hasPermission("actor.updateOwned"))}
+                onMutation={({ actor, item }) => {
+                  setSnapshot((current) => ({
+                    ...current,
+                    actors: current.actors.map((candidate) => candidate.id === actor.id ? actor : candidate),
+                    items: item
+                      ? current.items.some((candidate) => candidate.id === item.id)
+                        ? current.items.map((candidate) => candidate.id === item.id ? item : candidate)
+                        : [...current.items, item]
+                      : current.items
+                  }));
+                }}
+                onStatus={setStatus}
+                />
+                {snapshot.systems.some((system) => system.id === "dnd-5e-srd") && (
+                  <>
+                    <LazyDndCharacterReviewPanel
+                      key={`character-review:${campaignId}:${currentUserId}`}
+                      campaignId={campaignId}
+                      currentUserId={currentUserId}
+                      canManage={hasPermission("campaign.update")}
+                      canSubmit={(actor) => hasPermission("actor.update") || (actor.ownerUserId === currentUserId && hasPermission("actor.updateOwned"))}
+                      onChanged={() => { void refresh(campaignId, sceneId, { syncStatus: false }); }}
+                      onStatus={setStatus}
+                    />
+                    <LazyControlledCreaturesPanel
+                      key={`controlled-creatures:${campaignId}:${currentUserId}`}
+                      campaignId={campaignId}
+                      currentUserId={currentUserId}
+                      actors={snapshot.actors}
+                      items={snapshot.items}
+                      scenes={accessibleScenes}
+                      combats={snapshot.combats}
+                      canPrepare={hasPermission("actor.create") || hasPermission("actor.update") || hasPermission("actor.updateOwned")}
+                      onChanged={() => { void refresh(campaignId, sceneId, { syncStatus: false }); }}
+                      onStatus={setStatus}
+                    />
+                  </>
+                )}
+                {selectedCampaign && hasPermission("campaign.update") && (
+                  <LazyDndCustomContentPanel
+                    key={`dnd-custom-content:${campaignId}:${currentUserId}`}
+                    campaignId={campaignId}
+                    campaignUpdatedAt={selectedCampaign.updatedAt}
+                    onMutation={({ item, deletedItemId, campaignUpdatedAt }) => {
+                      setSnapshot((current) => ({
+                        ...current,
+                        campaigns: campaignUpdatedAt
+                          ? current.campaigns.map((campaign) => campaign.id === campaignId ? { ...campaign, updatedAt: campaignUpdatedAt } : campaign)
+                          : current.campaigns,
+                        items: deletedItemId
+                          ? current.items.filter((candidate) => candidate.id !== deletedItemId)
+                          : item
+                            ? current.items.some((candidate) => candidate.id === item.id)
+                              ? current.items.map((candidate) => candidate.id === item.id ? item : candidate)
+                              : [...current.items, item]
+                            : current.items
+                      }));
+                    }}
+                    onStatus={setStatus}
+                  />
+                )}
+                {hasPermission("campaign.update") && (
+                  <LazyCompatibilityPanel key={`compatibility:${campaignId}:${currentUserId}`} campaignId={campaignId} />
+                )}
+              </>
+            )}
             {tab === "sessions" && <SessionDeskPanel key={`sessions:${campaignId}:${currentUserId}`} campaignId={campaignId} sessions={campaignSessions} scenes={accessibleScenes} encounters={snapshot.encounters} canManage={hasPermission("campaign.update")} canStart={hasPermission("scene.activate")} onSessionsChange={(sessions) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) updateCampaignSessions(sessions); }} onSceneActivated={(nextSceneId) => { if (!workspaceRequestIsCurrent(campaignId, currentUserId)) return; setSceneId(nextSceneId); void refresh(campaignId, nextSceneId, { syncStatus: false }); }} onStatus={(message) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setStatus(message); }} />}
-            {tab === "worlds" && <WorldAtlasPanel key={`worlds:${campaignId}:${currentUserId}`} campaignId={campaignId} worlds={worlds} scenes={accessibleScenes} selectedWorldId={selectedWorldId} canCreate={hasPermission("world.create")} canUpdateWorld={hasPermission("world.update")} canAssignScenes={hasPermission("scene.update")} canDelete={hasPermission("world.delete")} loadState={worldsLoadState} loadError={worldsLoadError} onRetryLoad={() => setLoreReloadVersion((version) => version + 1)} onWorldsChange={(nextWorlds) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setWorlds(nextWorlds); }} onSelectWorld={(worldId) => { setSelectedWorldId(worldId); const nextScene = accessibleScenes.find((scene) => worldFilterMatchesScene(scene, worldId)); setSceneId(nextScene?.id ?? ""); }} onSceneUpdated={applySceneToSnapshot} onStatus={(message) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setStatus(message); }} />}
-            {tab === "handouts" && <HandoutLibraryPanel key={`handouts:${campaignId}:${currentUserId}`} campaignId={campaignId} currentUserId={currentUserId} handouts={handouts} worlds={worlds} members={snapshot.members} actors={partyActors} assets={snapshot.assets} canCreate={hasPermission("handout.create")} canUpdate={hasPermission("handout.update")} canDelete={hasPermission("handout.delete")} loadState={handoutsLoadState} loadError={handoutsLoadError} onRetryLoad={() => setLoreReloadVersion((version) => version + 1)} onHandoutsChange={(update) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setHandouts(update); }} onStatus={(message) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setStatus(message); }} />}
-            {tab === "journal" && <JournalPanel journals={snapshot.journals} members={snapshot.members} actors={partyActors} title={newJournalTitle} setTitle={setNewJournalTitle} body={newJournalBody} setBody={setNewJournalBody} visibility={newJournalVisibility} setVisibility={setNewJournalVisibility} tags={newJournalTags} setTags={setNewJournalTags} onCreate={createJournal} onUpdate={updateJournal} onDelete={deleteJournal} onGenerateRecap={generateSessionRecap} canCreate={hasPermission("journal.create")} canUpdate={hasPermission("journal.update")} canDelete={hasPermission("journal.delete")} />}
+            {tab === "worlds" && <WorldAtlasPanel key={`worlds:${campaignId}:${currentUserId}`} campaignId={campaignId} campaignUpdatedAt={selectedCampaign?.updatedAt ?? ""} worlds={worlds} worldRecords={snapshot.worldRecords} worldRelations={snapshot.worldRelations} scenes={accessibleScenes} selectedWorldId={selectedWorldId} canCreate={hasPermission("world.create")} canUpdateWorld={hasPermission("world.update")} canAssignScenes={hasPermission("scene.update")} canDelete={hasPermission("world.delete")} loadState={worldsLoadState} loadError={worldsLoadError} onRetryLoad={() => setLoreReloadVersion((version) => version + 1)} onWorldsChange={(nextWorlds) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setWorlds(nextWorlds); }} onWorldRecordsChange={(worldRecords) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setSnapshot((current) => ({ ...current, worldRecords })); }} onWorldRelationsChange={(worldRelations) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setSnapshot((current) => ({ ...current, worldRelations })); }} onSelectWorld={(worldId) => { setSelectedWorldId(worldId); const nextScene = accessibleScenes.find((scene) => worldFilterMatchesScene(scene, worldId)); setSceneId(nextScene?.id ?? ""); }} onSceneUpdated={applySceneToSnapshot} onRefreshSharedState={async () => { await refresh(campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false }); if (workspaceRequestIsCurrent(campaignId, currentUserId)) setLoreReloadVersion((version) => version + 1); }} onStatus={(message) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setStatus(message); }} />}
+            {tab === "handouts" && <HandoutLibraryPanel key={`handouts:${campaignId}:${currentUserId}`} campaignId={campaignId} campaignUpdatedAt={selectedCampaign?.updatedAt ?? ""} currentUserId={currentUserId} handouts={handouts} worlds={worlds} members={snapshot.members} actors={partyActors} assets={snapshot.assets} canCreate={hasPermission("handout.create")} canUpdate={hasPermission("handout.update")} canDelete={hasPermission("handout.delete")} loadState={handoutsLoadState} loadError={handoutsLoadError} onRetryLoad={() => setLoreReloadVersion((version) => version + 1)} onHandoutsChange={(update) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setHandouts(update); }} onRefreshSharedState={async () => { await refresh(campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false }); if (workspaceRequestIsCurrent(campaignId, currentUserId)) setLoreReloadVersion((version) => version + 1); }} onStatus={(message) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setStatus(message); }} />}
+            {tab === "journal" && (
+              <JournalPanel
+                journals={snapshot.journals}
+                members={snapshot.members}
+                actors={partyActors}
+                linkTargets={journalLinkTargets}
+                title={newJournalTitle}
+                setTitle={setNewJournalTitle}
+                body={newJournalBody}
+                setBody={setNewJournalBody}
+                visibility={newJournalVisibility}
+                setVisibility={setNewJournalVisibility}
+                tags={newJournalTags}
+                setTags={setNewJournalTags}
+                onCreate={createJournal}
+                onUpdate={updateJournal}
+                onDelete={deleteJournal}
+                onGenerateRecap={generateSessionRecap}
+                onCanonReview={reviewJournalCanon}
+                canCreate={hasPermission("journal.create")}
+                canUpdate={hasPermission("journal.update")}
+                canDelete={hasPermission("journal.delete")}
+                canReadHistory={hasPermission("journal.readSecret")}
+                canCanonReview={hasPermission("campaign.update")}
+              />
+            )}
             {tab === "memory" && <CampaignMemoryPanel key={`memory:${campaignId}:${currentUserId}`} campaignId={campaignId} facts={snapshot.memory as CampaignMemoryFact[]} canCreate={hasPermission("ai.proposeChanges")} canReview={hasPermission("ai.applyChanges")} onFactsChange={(memory) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setSnapshot((current) => ({ ...current, memory })); }} onExtract={extractMemory} onStatus={(message) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setStatus(message); }} />}
             {tab === "search" && <CampaignSearchPanel key={`search:${campaignId}:${currentUserId}`} campaignId={campaignId} worlds={worlds} onOpenResult={openCampaignSearchResult} />}
-            {tab === "chat" && <ChatRail campaignId={campaignId} currentUserId={currentUserId} command={chatBody} setCommand={setChatBody} replyTarget={chatReplyTarget} messages={snapshot.chat} rolls={snapshot.rolls} concealedRollIds={concealedRollIds} members={snapshot.members} diceFormula={diceFormula} setDiceFormula={setDiceFormula} diceVisibility={diceVisibility} setDiceVisibility={setDiceVisibility} savedDiceFormulas={savedDiceFormulas} diceMacros={snapshot.diceMacros} onRollDice={rollDice} onSaveDiceFormula={saveCurrentDiceFormula} onSubmitCommand={submitChatCommand} onEditMessage={editChatMessage} onClearReply={() => setChatReplyToMessageId("")} canRollDice={hasPermission("dice.roll")} dice3dEnabled={dice3dEnabled} onToggleDice3d={() => setDice3dEnabled((enabled) => !enabled)} />}
-            {tab === "combat" && <CombatPanel combat={activeCombat} recentCombats={recentEndedCombats} auditLogs={snapshot.combatAudit} actors={snapshot.actors} tokens={snapshot.tokens} onFocusCombatant={(combatant) => selectSingleToken(combatant.tokenId)} onStart={startCombat} onPlanEncounter={planSystemEncounter} onNext={(combat) => advanceCombatTurn(combat, 1)} onPrevious={(combat) => advanceCombatTurn(combat, -1)} onEnd={endCombat} onAwardPartyXp={awardPartyXp} onAwardPartyGold={awardPartyGold} canAwardXp={hasPermission("actor.update")} onUpdateCombatant={updateCombatant} onConfirmAction={confirmCombatAction} onRejectAction={rejectCombatAction} canManage={hasPermission("combat.manage")} />}
-            {tab === "content" && <ContentImportPanel assets={snapshot.assets} assetStorage={snapshot.assetStorage} selectedScene={selectedScene} assetSearch={assetSearch} setAssetSearch={setAssetSearch} assetFolder={assetFolder} setAssetFolder={setAssetFolder} assetTags={assetTags} setAssetTags={setAssetTags} assetStatus={assetStatus} failedAssetUpload={failedAssetUpload} onRetryFailedAssetUpload={retryAssetUpload} onDismissFailedAssetUpload={dismissFailedAssetUpload} lifecycleReason={assetLifecycleReason} setLifecycleReason={setAssetLifecycleReason} onUploadAsset={uploadAssetToLibrary} onSetSceneBackground={setSceneBackgroundFromAsset} onPlaceAssetToken={createTokenFromAsset} onUpdateAssetMetadata={updateAssetMetadata} onUpdateAssetLifecycle={updateAssetLifecycle} onCreateAssetDeliveryUrl={createAssetDeliveryUrl} imports={snapshot.contentImports} kind={contentImportKind} setKind={setContentImportKind} name={contentImportName} setName={setContentImportName} body={contentImportBody} setBody={setContentImportBody} status={contentImportStatus} onPreview={previewContentImport} onAnalyzePdf={analyzePdfContentImport} onApply={applyContentImport} onRollback={rollbackContentImport} onDelete={deleteContentImport} canManage={hasPermission("campaign.update")} canCreateAsset={hasPermission("scene.create")} canUpdateScene={hasPermission("scene.update")} canCreateToken={hasPermission("token.create")} />}
-            {tab === "plugins" && <SdkPanel plugins={snapshot.plugins} systems={snapshot.systems} characterTemplates={snapshot.characterTemplates} actor={selectedActor} advancementOptions={advancementOptions} advancementGrantsFeat={advancementGrantsFeat} advancementFeats={advancementFeats} multiclassOptions={multiclassOptions} importedActor={importedActor} createdMonster={createdMonster} onSyncPluginRegistries={syncPluginRegistries} onInstallPlugin={installPlugin} onInstallSystem={installSystem} onCreateCharacter={createCharacterFromTemplate} onOpenCharacterCreator={() => void openCharacterCreator()} onImportCharacter={() => setCharacterImportOpen(true)} onCreateMonster={createSystemMonster} onAdvanceActor={advanceSelectedActor} onRestActor={restSelectedActor} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={hasPermission("plugin.install")} canInstallSystem={hasPermission("campaign.update")} canCreateActor={hasPermission("actor.create")} canImportActor={hasPermission("actor.create")} canAdvanceActor={canUpdateSelectedActor} canRestActor={canUpdateSelectedActor} canRollSystem={hasPermission("dice.roll")} />}
+            {tab === "chat" && <ChatRail campaignId={campaignId} currentUserId={currentUserId} command={chatBody} setCommand={setChatBody} replyTarget={chatReplyTarget} messages={snapshot.chat} rolls={snapshot.rolls} concealedRollIds={concealedRollIds} members={snapshot.members} presences={snapshot.presences} scenes={snapshot.scenes} diceFormula={diceFormula} setDiceFormula={setDiceFormula} diceVisibility={diceVisibility} setDiceVisibility={setDiceVisibility} savedDiceFormulas={savedDiceFormulas} diceMacros={snapshot.diceMacros} onRollDice={rollDice} onSaveDiceFormula={saveCurrentDiceFormula} onSubmitCommand={submitChatCommand} onReplyToMessage={(message) => setChatReplyToMessageId(message.id)} onEditMessage={editChatMessage} onDeleteMessage={deleteChatMessage} onModerateMessage={moderateChatMessage} onClearReply={() => setChatReplyToMessageId("")} canModerate={hasPermission("chat.moderate")} canRollDice={hasPermission("dice.roll")} dice3dEnabled={dice3dEnabled} onToggleDice3d={() => persistQuickPreferences({ dice3dEnabled: !dice3dEnabled }, dice3dEnabled ? "Use text-only dice" : "Enable 3D dice")} notificationPreference={resolvedUserPreferences(snapshot.session?.user ?? {}).chatNotifications} connectionState={realtimeUiState} />}
+            {tab === "combat" && <CombatPanel campaignId={campaignId} combat={activeCombat} recentCombats={recentEndedCombats} auditLogs={snapshot.combatAudit} actors={snapshot.actors} tokens={snapshot.tokens} onFocusCombatant={(combatant) => selectSingleToken(combatant.tokenId)} onStart={openCombatSetup} onPlanEncounter={planSystemEncounter} onNext={(combat) => advanceCombatTurn(combat, 1)} onPrevious={(combat) => advanceCombatTurn(combat, -1)} onEnd={endCombat} onAwardPartyXp={awardPartyXp} onAwardPartyGold={awardPartyGold} onRecordLoot={recordCombatLoot} canAwardRewards={hasPermission("combat.manage") && hasPermission("actor.update")} onUpdateCombatant={updateCombatant} onConfirmAction={confirmCombatAction} onRejectAction={rejectCombatAction} onCombatUpdated={(combat) => setSnapshot((current) => ({ ...current, combats: current.combats.map((candidate) => candidate.id === combat.id ? combat : candidate) }))} onRefresh={async () => { await refresh(campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false }); }} onStatus={setStatus} onRulesMutationApplied={setLastDndRulesUndo} canManage={hasPermission("combat.manage")} canManageEffects={hasPermission("combat.manage") && hasPermission("actor.update")} canPreviewEffects={hasPermission("actor.readPrivate")} />}
+            {tab === "content" && <LazyContentImportPanel assets={snapshot.assets} assetStorage={snapshot.assetStorage} selectedScene={selectedScene} assetSearch={assetSearch} setAssetSearch={setAssetSearch} assetFolder={assetFolder} setAssetFolder={setAssetFolder} assetTags={assetTags} setAssetTags={setAssetTags} assetStatus={assetStatus} failedAssetUpload={failedAssetUpload} onRetryFailedAssetUpload={retryAssetUpload} onDismissFailedAssetUpload={dismissFailedAssetUpload} lifecycleReason={assetLifecycleReason} setLifecycleReason={setAssetLifecycleReason} onUploadAsset={uploadAssetToLibrary} onSetSceneBackground={setSceneBackgroundFromAsset} onPlaceAssetToken={createTokenFromAsset} onUpdateAssetMetadata={updateAssetMetadata} onUpdateAssetLifecycle={updateAssetLifecycle} onCreateAssetDeliveryUrl={createAssetDeliveryUrl} imports={snapshot.contentImports} kind={contentImportKind} setKind={setContentImportKind} name={contentImportName} setName={setContentImportName} body={contentImportBody} setBody={setContentImportBody} status={contentImportStatus} onPreview={previewContentImport} onAnalyzePdf={analyzePdfContentImport} onApply={applyContentImport} onRollback={rollbackContentImport} onDelete={deleteContentImport} canManage={hasPermission("campaign.update")} canCreateAsset={hasPermission("scene.create")} canUpdateScene={hasPermission("scene.update")} canCreateToken={hasPermission("token.create")} />}
+            {tab === "plugins" && <LazySdkPanel plugins={snapshot.plugins} systems={snapshot.systems} characterTemplates={snapshot.characterTemplates} actor={selectedActor} advancementOptions={advancementOptions} advancementGrantsFeat={advancementGrantsFeat} advancementFeats={advancementFeats} multiclassOptions={multiclassOptions} advancementClassName={advancementClassName} nextClassLevel={advancementNextClassLevel} requiresSubclass={advancementRequiresSubclass} subclassOptions={advancementSubclassOptions} weaponMastery={advancementWeaponMastery} pendingAdvancement={pendingAdvancement} importedActor={importedActor} createdMonster={createdMonster} onSyncPluginRegistries={syncPluginRegistries} onInstallPlugin={installPlugin} onInstallSystem={installSystem} onCreateCharacter={createCharacterFromTemplate} onOpenCharacterCreator={() => void openCharacterCreator()} onImportCharacter={() => setCharacterImportOpen(true)} onCreateMonster={createSystemMonster} onPreviewActor={previewSelectedActorAdvancement} onAdvanceActor={advanceSelectedActor} onCancelPendingAdvancement={cancelSelectedActorPendingAdvancement} onPreviewRestActor={previewSelectedActorRest} onRestActor={restSelectedActor} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={Boolean(snapshot.session?.serverAdmin) && hasPermission("plugin.install")} canInstallSystem={hasPermission("campaign.update")} canCreateActor={hasPermission("actor.create")} canImportActor={hasPermission("actor.create")} canAdvanceActor={canUpdateSelectedActor} canRestActor={canUpdateSelectedActor} canRollSystem={hasPermission("dice.roll")} />}
+            </Suspense>
             </div>
           </aside>
         </div>
@@ -9266,18 +10617,24 @@ export function App() {
         <EncounterBuilderDialog
           key={`encounter-builder:${selectedCampaign.id}:${currentUserId}:${encounterBuilderSystem.id}`}
           campaignId={selectedCampaign.id}
+          campaignUpdatedAt={selectedCampaign.updatedAt}
           systemId={encounterBuilderSystem.id}
           systemName={encounterBuilderSystem.name}
           partyActors={partyActors}
+          sceneTokens={selectedSceneTokens}
           savedEncounters={snapshot.encounters}
           activeScene={selectedScene}
           canSave={hasPermission("combat.manage")}
-          canSpawn={Boolean(selectedScene && hasPermission("token.create"))}
+          canSpawn={Boolean(selectedScene && hasPermission("token.create") && hasPermission("actor.create"))}
+          canLaunch={Boolean(selectedScene && !activeCombat && hasPermission("token.create") && hasPermission("actor.create") && hasPermission("combat.manage"))}
           onClose={() => setEncounterBuilderOpen(false)}
           onPlan={setEncounterPlan}
           onEncounterSaved={applyEncounterToSnapshot}
           onEncounterDeleted={removeEncounterFromSnapshot}
+          onRefreshSharedState={async () => { await refresh(selectedCampaign.id, realtimeSelectionRef.current.sceneId, { syncStatus: false }); }}
           onSpawnThreats={spawnEncounterThreatTokens}
+          onPlacePartyActor={(actor) => placeActorOnSelectedScene(actor, globalThis.crypto.randomUUID())}
+          onLaunchThreats={launchEncounterThreatTokens}
           onStatus={(message) => {
             if (realtimeSelectionRef.current.campaignId === selectedCampaign.id) setStatus(message);
           }}
@@ -9304,6 +10661,14 @@ export function App() {
               advancementGrantsFeat={advancementGrantsFeat}
               advancementFeats={advancementFeats}
               multiclassOptions={multiclassOptions}
+              advancementClassName={advancementClassName}
+              nextClassLevel={advancementNextClassLevel}
+              requiresSubclass={advancementRequiresSubclass}
+              subclassOptions={advancementSubclassOptions}
+              weaponMastery={advancementWeaponMastery}
+              pendingAdvancement={pendingAdvancement}
+              onPreviewActor={previewSelectedActorAdvancement}
+              onCancelPendingAdvancement={cancelSelectedActorPendingAdvancement}
               onAdvanceActor={async (optionId, choices) => {
                 await advanceSelectedActor(optionId, choices);
                 setAdvancementModalOpen(false);
@@ -9312,6 +10677,18 @@ export function App() {
             />
           </div>
         </div>
+      )}
+      {combatSetupOpen && selectedScene && !activeCombat && (
+        <CombatSetupDialog
+          key={`combat-setup:${campaignId}:${selectedScene.id}:${currentUserId}`}
+          sceneName={selectedScene.name}
+          tokens={selectedSceneTokens.filter((token) => tokenLayer(token) !== "map")}
+          actors={snapshot.actors}
+          initialSelectedTokenIds={selectedTokenIds}
+          surpriseEnabled={selectedCampaign ? campaignSurpriseEnabled(selectedCampaign) : false}
+          onConfirm={startCombat}
+          onClose={() => setCombatSetupOpen(false)}
+        />
       )}
       {characterCreatorOpen && (
         <CharacterCreatorDialog
@@ -9370,309 +10747,16 @@ export function App() {
       )}
       {activeDiceCasts.length > 0 && <DiceCastOverlay casts={activeDiceCasts} />}
     </main>
-  );
-}
-
-function AudioPlaybackLayer(props: { tracks: AudioTrack[]; masterVolume: number; muted: boolean }) {
-  const elementsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
-  const desired = useMemo(() => desiredAudioStates(props.tracks, { masterVolume: props.masterVolume, muted: props.muted }), [props.masterVolume, props.muted, props.tracks]);
-
-  useEffect(() => {
-    const elements = elementsRef.current;
-    const desiredIds = new Set(desired.map((state) => state.trackId));
-    for (const [id, element] of elements) {
-      if (!desiredIds.has(id)) {
-        element.pause();
-        elements.delete(id);
-      }
-    }
-    for (const state of desired) {
-      let element = elements.get(state.trackId);
-      if (!element) {
-        element = new Audio();
-        element.preload = "auto";
-        elements.set(state.trackId, element);
-      }
-      const playbackUrl = authenticatedAudioUrl(state.url);
-      if (element.getAttribute("data-otte-src") !== playbackUrl) {
-        element.setAttribute("data-otte-src", playbackUrl);
-        element.src = playbackUrl;
-      }
-      element.loop = state.loop;
-      element.volume = state.volume;
-      if (state.playing && element.paused) {
-        // Browsers may block autoplay until a user gesture; the GM's click counts as one.
-        void element.play().catch(() => undefined);
-      } else if (!state.playing && !element.paused) {
-        element.pause();
-        element.currentTime = 0;
-      }
-    }
-  }, [desired]);
-
-  useEffect(
-    () => () => {
-      for (const element of elementsRef.current.values()) element.pause();
-      elementsRef.current.clear();
-    },
-    []
-  );
-
-  return null;
-}
-
-function AudioSoundboard(props: {
-  tracks: AudioTrack[];
-  masterVolume: number;
-  muted: boolean;
-  onMasterVolumeChange(volume: number): void;
-  onToggleMuted(): void;
-  onToggleTrack(track: AudioTrack): void;
-  onDeleteTrack(track: AudioTrack): void;
-  onCreateTrack(input: { name: string; url: string; kind: AudioTrack["kind"]; loop: boolean }): Promise<void>;
-  onUploadTrack(file: File, input: { name?: string; kind: AudioTrack["kind"]; loop: boolean }): Promise<void>;
-  onClose(): void;
-}) {
-  const [name, setName] = useState("");
-  const [url, setUrl] = useState("");
-  const [kind, setKind] = useState<AudioTrack["kind"]>("ambient");
-  const [uploading, setUploading] = useState(false);
-  const playingCount = activeAudioCount(props.tracks);
-  const soundboardPanel = useMovablePanel(initialSoundboardPanelPosition, initialSoundboardPanelSize, { minWidth: 260, minHeight: 320 });
-
-  const submit = async () => {
-    if (!name.trim() || !url.trim()) return;
-    await props.onCreateTrack({ name: name.trim(), url: url.trim(), kind, loop: kind !== "sfx" });
-    setName("");
-    setUrl("");
-  };
-
-  const uploadFile = async (file: File, input: HTMLInputElement) => {
-    setUploading(true);
-    try {
-      await props.onUploadTrack(file, { name: name.trim() || audioTrackNameFromFile(file), kind, loop: kind !== "sfx" });
-      setName("");
-      setUrl("");
-    } finally {
-      input.value = "";
-      setUploading(false);
-    }
-  };
-
-  return (
-    <aside className="audio-soundboard movable-panel" aria-label="Soundboard" style={soundboardPanel.style} {...soundboardPanel.panelProps}>
-      <header className="audio-soundboard-header floating-panel-header" title="Drag panel" {...soundboardPanel.dragHandleProps}>
-        <Hand className="floating-panel-drag-icon" size={14} aria-hidden="true" />
-        <div className="section-title">
-          <Music size={16} /> Soundboard
+    {realtimeUiState === "syncing" && (
+      <div className="realtime-sync-guard" role="status" aria-live="assertive" aria-label="Refreshing shared table state">
+        <RefreshCw size={18} aria-hidden="true" />
+        <div>
+          <strong>Syncing the table</strong>
+          <span>Refreshing authoritative campaign state before play resumes.</span>
         </div>
-        <button className="icon-button" type="button" aria-label="Close soundboard" title="Close" onClick={props.onClose}>
-          <X size={16} />
-        </button>
-      </header>
-      <div className="audio-soundboard-master">
-        <button className="icon-button" type="button" aria-label={props.muted ? "Unmute" : "Mute"} title={props.muted ? "Unmute" : "Mute"} onClick={props.onToggleMuted}>
-          {props.muted ? <VolumeX size={16} /> : <Volume2 size={16} />}
-        </button>
-        <input type="range" min={0} max={1} step={0.05} value={props.masterVolume} aria-label="Master volume" onChange={(event) => props.onMasterVolumeChange(Number(event.target.value))} />
-        <span className="audio-soundboard-count">{playingCount} playing</span>
       </div>
-      <ul className="audio-soundboard-list">
-        {props.tracks.length === 0 ? <li className="audio-soundboard-empty">No tracks yet. Add a music or ambience URL below.</li> : null}
-        {props.tracks.map((track) => (
-          <li key={track.id} className={track.playing ? "audio-track playing" : "audio-track"}>
-            <button className="icon-button" type="button" aria-label={track.playing ? `Stop ${track.name}` : `Play ${track.name}`} title={track.playing ? "Stop" : "Play"} onClick={() => props.onToggleTrack(track)}>
-              {track.playing ? <Pause size={15} /> : <Play size={15} />}
-            </button>
-            <span className="audio-track-name" title={track.url}>
-              {track.name}
-            </span>
-            <span className="audio-track-kind">{track.kind}</span>
-            <button className="icon-button" type="button" aria-label={`Delete ${track.name}`} title="Delete" onClick={() => props.onDeleteTrack(track)}>
-              <Trash2 size={15} />
-            </button>
-          </li>
-        ))}
-      </ul>
-      <form
-        className="audio-soundboard-add"
-        onSubmit={(event) => {
-          event.preventDefault();
-          submit().catch(console.error);
-        }}
-      >
-        <input value={name} placeholder="Track name" aria-label="Track name" onChange={(event) => setName(event.target.value)} />
-        <input value={url} placeholder="https://… or /audio/…" aria-label="Track URL" onChange={(event) => setUrl(event.target.value)} />
-        <label className="audio-upload-control">
-          <span>
-            <Upload size={14} /> Upload audio
-          </span>
-          <input
-            type="file"
-            accept="audio/*"
-            aria-label="Upload audio file"
-            disabled={uploading}
-            onChange={(event) => {
-              const input = event.currentTarget;
-              const file = input.files?.[0];
-              if (file) uploadFile(file, input).catch(console.error);
-            }}
-          />
-        </label>
-        <div className="audio-soundboard-add-row">
-          <select value={kind} aria-label="Track kind" onChange={(event) => setKind(event.target.value as AudioTrack["kind"])}>
-            <option value="ambient">Ambience</option>
-            <option value="music">Music</option>
-            <option value="sfx">Effect</option>
-          </select>
-          <button className="primary-button" type="submit" disabled={uploading || !name.trim() || !url.trim()}>
-            <Plus size={15} /> Add
-          </button>
-        </div>
-      </form>
-      <button className="floating-panel-resize-handle" type="button" aria-label="Resize soundboard panel" title="Resize panel" {...soundboardPanel.resizeHandleProps}>
-        <Grip size={13} aria-hidden="true" />
-      </button>
-    </aside>
-  );
-}
-
-function CommandPalette(props: { commands: PaletteCommand[]; onRun(commandId: string): void; onClose(): void }) {
-  const [query, setQuery] = useState("");
-  const [activeIndex, setActiveIndex] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
-  const dialogRef = useModalAccessibility<HTMLDivElement>(props.onClose, { initialFocusRef: inputRef });
-
-  const queryFormula = paletteDiceFormula(query);
-  const matches = filterPaletteCommands(props.commands, query).slice(0, 12);
-  const results: PaletteCommand[] = queryFormula
-    ? [{ id: `roll:${queryFormula}`, label: `Roll ${queryFormula}`, section: "Dice", hint: "press Enter to roll" }, ...matches.filter((command) => command.id !== `roll:${queryFormula}`)]
-    : matches;
-  const active = results.length === 0 ? 0 : Math.min(activeIndex, results.length - 1);
-
-  useEffect(() => {
-    listRef.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: "nearest" });
-  }, [active, query]);
-
-  return (
-    <div
-      className="command-palette-backdrop"
-      role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) props.onClose();
-      }}
-    >
-      <div ref={dialogRef} className="command-palette" role="dialog" aria-modal="true" aria-label="Command palette" tabIndex={-1}>
-        <div className="command-palette-input-row">
-          <Search size={16} aria-hidden="true" />
-          <input
-            ref={inputRef}
-            aria-label="Command palette search"
-            placeholder="Jump to a scene, switch workspace, or roll 2d6+3..."
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
-              setActiveIndex(0);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                event.preventDefault();
-                props.onClose();
-                return;
-              }
-              if (event.key === "ArrowDown") {
-                event.preventDefault();
-                setActiveIndex(movePaletteIndex(active, 1, results.length));
-                return;
-              }
-              if (event.key === "ArrowUp") {
-                event.preventDefault();
-                setActiveIndex(movePaletteIndex(active, -1, results.length));
-                return;
-              }
-              if (event.key === "Enter") {
-                event.preventDefault();
-                const target = results[active];
-                if (target) props.onRun(target.id);
-              }
-            }}
-          />
-          <kbd>Esc</kbd>
-        </div>
-        <div className="command-palette-list" ref={listRef} role="listbox" aria-label="Command results">
-          {results.length === 0 && <div className="command-palette-empty">No matching commands.</div>}
-          {results.map((command, index) => (
-            <button
-              key={command.id}
-              type="button"
-              role="option"
-              aria-selected={index === active}
-              data-active={index === active ? "true" : undefined}
-              className={index === active ? "command-palette-item active" : "command-palette-item"}
-              onMouseEnter={() => setActiveIndex(index)}
-              onClick={() => props.onRun(command.id)}
-            >
-              <span className="command-palette-item-label">{command.label}</span>
-              {command.hint && <small>{command.hint}</small>}
-              <span className="command-palette-item-section">{command.section}</span>
-            </button>
-          ))}
-        </div>
-        <footer className="command-palette-footer">
-          <span>
-            <kbd>Up</kbd>
-            <kbd>Down</kbd> navigate
-          </span>
-          <span>
-            <kbd>Enter</kbd> run
-          </span>
-          <span>
-            <kbd>Ctrl</kbd>
-            <kbd>K</kbd> toggle
-          </span>
-        </footer>
-      </div>
-    </div>
-  );
-}
-
-function DiceCastOverlay(props: { casts: DiceCastPlan[] }) {
-  return (
-    <div className="dice-cast-overlay" aria-hidden="true">
-      {props.casts.map((cast) => (
-        <div className={cast.highlight ? `dice-cast dice-cast-${cast.highlight}` : "dice-cast"} key={cast.rollId}>
-          <div className="dice-cast-dice">
-            {cast.dice.map((die) => {
-              const shape = dieShapeName(die.sides);
-              const points = dieShapePoints(shape);
-              const face = die.value >= die.sides ? "crit" : die.value === 1 ? "fumble" : "plain";
-              const style = {
-                "--cast-delay": `${die.delayMs}ms`,
-                "--cast-spin-x": `${die.spinXTurns}turn`,
-                "--cast-spin-y": `${die.spinYTurns}turn`,
-                "--cast-from-x": `${die.fromXVmin}vmin`,
-                "--cast-from-y": `${die.fromYVmin}vmin`,
-                "--cast-rest": `${360 + die.restTiltDeg}deg`,
-                "--cast-final-opacity": die.kept ? 1 : 0.4
-              } as CSSProperties;
-              return (
-                <span className={`dice-cast-die dice-cast-die-${shape} dice-cast-die-${face}${die.kept ? "" : " dice-cast-die-dropped"}`} key={die.id} style={style}>
-                  <svg viewBox="0 0 48 48" aria-hidden="true">
-                    {points ? <polygon className="dice-cast-face" points={points} /> : <rect className="dice-cast-face" x="5" y="5" width="38" height="38" rx="8" />}
-                  </svg>
-                  <strong>{die.value}</strong>
-                </span>
-              );
-            })}
-          </div>
-          <div className="dice-cast-label" style={{ "--cast-label-delay": `${cast.settleMs}ms` } as CSSProperties}>
-            <span>{cast.label}</span>
-            <strong>{formatNumber(cast.total)}</strong>
-          </div>
-        </div>
-      ))}
-    </div>
+    )}
+    </>
   );
 }
 
@@ -9939,1265 +11023,6 @@ function AiAgentPanel(props: {
         <Grip size={13} aria-hidden="true" />
       </button>
     </aside>
-  );
-}
-
-function parseTokenConditions(value: string): NonNullable<Token["conditions"]> {
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .map((name) => ({ id: slugId(name), name }));
-}
-
-function formatTokenConditions(token?: Token): string {
-  return token?.conditions?.map((condition) => condition.name).join(", ") ?? "";
-}
-
-function parseTokenAuras(value: string): NonNullable<Token["auras"]> {
-  return value
-    .split(";")
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .map((item) => {
-      const [name = "", radius = "0", color] = item.split(":").map((part) => part.trim());
-      return { id: slugId(name), name, radius: Math.max(0, Math.round(Number(radius) || 0)), ...(color ? { color } : {}) };
-    })
-    .filter((aura) => aura.id && aura.name);
-}
-
-function formatTokenAuras(token?: Token): string {
-  return token?.auras?.map((aura) => `${aura.name}:${aura.radius}${aura.color ? `:${aura.color}` : ""}`).join("; ") ?? "";
-}
-
-function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; systemLabel?: string; scene?: Scene; currentUserId: string; actors: Actor[]; tokens: Token[]; combat?: Combat; members: Snapshot["members"]; assets: MapAsset[]; items: Item[]; compendiumEntries: RulesCompendiumEntry[]; compendiumSearch: string; setCompendiumSearch(value: string): void; compendiumStatus: string; actionTargetActorId: string; setActionTargetActorId(value: string): void; actionApplyEffect: boolean; setActionApplyEffect(value: boolean): void; actionConsumeResources: boolean; setActionConsumeResources(value: boolean): void; updateActorHp(actor: Actor, current: number): void; adjustActorHp(actor: Actor, delta: number): void; awardActorXp(actor: Actor, amount: number): void; xpProgress?: XpProgressInfo; advancementReady: boolean; onLevelUp(): void; onRestActor(restType: "short" | "long"): void; updateActorData(actor: Actor, patch: Record<string, unknown>): void; toggleActorCondition(actor: Actor, conditionId: string): void; updateItemData(item: Item, patch: Record<string, unknown>): Promise<void>; assignItemToActor(item: Item, actor: Actor): Promise<void>; updateToken(patch: Partial<Token>): void; onUploadTokenImage(file: File, input?: HTMLInputElement): Promise<void>; targetToken(tokenId: string, targeted: boolean): void; targetTokens(tokenIds: string[], targeted: boolean): void; deleteToken(): void; updateTokenVision(patch: TokenVisionPatch): Promise<boolean>; useActorAction(rollId: string, options?: ActorActionCommitOptions): void; onImportCompendiumEntry(entry: RulesCompendiumEntry): Promise<void>; onPurchaseCompendiumEntry(entry: RulesCompendiumEntry, quantity: number): Promise<void>; canCreateToken: boolean; canUpdateActor: boolean; canRestActor: boolean; canUpdateToken: boolean; canDeleteToken: boolean; canUseAction: boolean }) {
-  const [sheetView, setSheetView] = useState<"stats" | "loadout" | "actions" | "compendium">("stats");
-  const [assignItemId, setAssignItemId] = useState("");
-  const [itemDropActive, setItemDropActive] = useState(false);
-  const [loadoutSearch, setLoadoutSearch] = useState("");
-  const [loadoutFilter, setLoadoutFilter] = useState<ActorLoadoutFilter>("all");
-  const [purchaseQuantities, setPurchaseQuantities] = useState<Record<string, number>>({});
-  const [actionPreview, setActionPreview] = useState<ActorActionResolutionPreview | undefined>();
-  const [actionPreviewStatus, setActionPreviewStatus] = useState("");
-  const [actionPreviewRollId, setActionPreviewRollId] = useState("");
-  const [actionSaveOutcomes, setActionSaveOutcomes] = useState<Record<string, RulesSaveOutcome>>({});
-  const [actionEffectChoice, setActionEffectChoice] = useState("");
-  const [targetAreaX, setTargetAreaX] = useState("0");
-  const [targetAreaY, setTargetAreaY] = useState("0");
-  const [targetAreaWidth, setTargetAreaWidth] = useState("1200");
-  const [targetAreaHeight, setTargetAreaHeight] = useState("800");
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [fullSheetOpen, setFullSheetOpen] = useState(false);
-  const deleteConfirmRef = useRef<HTMLButtonElement | null>(null);
-  const tokenImageInputRef = useRef<HTMLInputElement | null>(null);
-  const sheetPanel = useMovablePanel(initialActorSheetPanelPosition, initialActorSheetPanelSize, { minWidth: 380, minHeight: 360 });
-  const deleteDialogRef = useModalAccessibility<HTMLDivElement>(() => setDeleteDialogOpen(false), { enabled: deleteDialogOpen, initialFocusRef: deleteConfirmRef });
-  const commitTokenVisionInput = (input: HTMLInputElement, patch: TokenVisionPatch | undefined, fallback: number) => {
-    const restore = () => { if (input.isConnected) input.value = String(fallback); };
-    if (!patch) {
-      restore();
-      return;
-    }
-    void props.updateTokenVision(patch).then((saved) => { if (!saved) restore(); }, restore);
-  };
-  useEffect(() => {
-    setFullSheetOpen(false);
-    setDeleteDialogOpen(false);
-  }, [props.token?.id]);
-  useEffect(() => {
-    if (!fullSheetOpen) return;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setFullSheetOpen(false);
-    };
-    document.addEventListener("keydown", closeOnEscape);
-    return () => document.removeEventListener("keydown", closeOnEscape);
-  }, [fullSheetOpen]);
-  useEffect(() => {
-    if (!props.actor || props.actor.systemId !== "dnd-5e-srd" || !props.canUseAction) {
-      setActionPreview(undefined);
-      setActionPreviewStatus("");
-      return;
-    }
-    const actorItems = props.items.filter((item) => item.actorId === props.actor?.id);
-    const actions = actorActionOptions(props.actor, actorItems);
-    const previewAction = actions.find((action) => action.rollId === actionPreviewRollId) ?? actions[0];
-    if (!previewAction) {
-      setActionPreview(undefined);
-      setActionPreviewStatus("");
-      return;
-    }
-    let cancelled = false;
-    setActionPreviewStatus("Previewing");
-    apiPost<{ resolution?: ActorActionResolutionPreview }>(`/api/v1/campaigns/${props.campaignId}/systems/${props.actor.systemId}/actors/${props.actor.id}/roll`, {
-      rollId: previewAction.rollId,
-      targetActorId: props.actionTargetActorId || props.actor.id,
-      applyEffect: props.actionApplyEffect,
-      consumeResources: props.actionConsumeResources,
-      saveOutcomes: Object.keys(actionSaveOutcomes).length > 0 ? actionSaveOutcomes : undefined,
-      effectChoice: actionEffectChoice || undefined,
-      commit: false
-    })
-      .then((result) => {
-        if (cancelled) return;
-        setActionPreview(result.resolution);
-        setActionPreviewStatus(result.resolution ? "Preview ready" : "");
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        setActionPreview(undefined);
-        setActionPreviewStatus(error instanceof Error ? error.message : String(error));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [props.actor?.id, props.actor?.updatedAt, props.campaignId, props.actionApplyEffect, props.actionConsumeResources, props.actionTargetActorId, props.canUseAction, props.items, actionPreviewRollId, actionSaveOutcomes, actionEffectChoice]);
-  useEffect(() => {
-    setActionSaveOutcomes({});
-    setActionEffectChoice("");
-  }, [props.actor?.id, props.actionTargetActorId, actionPreviewRollId]);
-  if (!props.actor) return <div className="panel-empty">No actor selected.</div>;
-  const tokenOwnerIds = props.token?.ownerUserIds ?? [];
-  const playerOwnerIds = tokenPlayerOwnerIds(props.members);
-  const setTokenOwner = (userId: string, checked: boolean) => {
-    const nextOwners = new Set(tokenOwnerIds);
-    if (checked) nextOwners.add(userId);
-    else nextOwners.delete(userId);
-    props.updateToken({ ownerUserIds: [...nextOwners].sort() });
-  };
-  const hp = props.actor.data.hp as { current?: number; max?: number } | undefined;
-  const conditions = actorConditionLabels(props.actor);
-  const combatState = actorCombatStateLabels(props.actor);
-  const actorItems = props.items.filter((item) => item.actorId === props.actor?.id);
-  const unassignedItems = props.items.filter((item) => !item.actorId && item.campaignId === props.actor?.campaignId);
-  const selectedAssignableItem = unassignedItems.find((item) => item.id === assignItemId);
-  const inventory = actorItems.filter((item) => item.type !== "spell" && item.type !== "talent" && item.type !== "clue" && item.type !== "ritual");
-  const spells = actorItems.filter((item) => item.type === "spell");
-  const talents = actorItems.filter((item) => item.type === "talent");
-  const clues = actorItems.filter((item) => item.type === "clue");
-  const rituals = actorItems.filter((item) => item.type === "ritual");
-  const normalizedLoadoutSearch = loadoutSearch.trim().toLocaleLowerCase();
-  const tokenImageAssets = props.assets.filter(isUsableImageAsset);
-  const tokenGridSize = Math.max(1, props.scene?.gridSize ?? 50);
-  const tokenFootprintWidth = props.token ? Math.max(1, Math.round(props.token.width / tokenGridSize)) : 1;
-  const tokenFootprintHeight = props.token ? Math.max(1, Math.round(props.token.height / tokenGridSize)) : 1;
-  const tokenFootprintLabel = tokenFootprintWidth === tokenFootprintHeight ? `${tokenFootprintWidth}x${tokenFootprintHeight}` : `${tokenFootprintWidth}x${tokenFootprintHeight}`;
-
-  function updateTokenSize(width: number, height: number) {
-    const safeWidth = Math.max(1, Math.round(width) || 1);
-    const safeHeight = Math.max(1, Math.round(height) || 1);
-    if (!props.token || !props.scene) {
-      props.updateToken({ width: safeWidth, height: safeHeight });
-      return;
-    }
-    const center = tokenCenter(props.token);
-    props.updateToken({ width: safeWidth, height: safeHeight, ...tokenCoordinatesFromCenter(props.scene, safeWidth, safeHeight, center.x, center.y) });
-  }
-
-  function setTokenFootprint(cells: number) {
-    updateTokenSize(tokenGridSize * cells, tokenGridSize * cells);
-  }
-  const filteredActorItems = actorItems.filter((item) => {
-    const data = recordValue(item.data);
-    const isMagic = item.type === "spell" || item.type === "talent" || item.type === "ritual";
-    const matchesFilter =
-      loadoutFilter === "all" ||
-      (loadoutFilter === "equipped" && data.equipped !== false && !isMagic && item.type !== "clue") ||
-      (loadoutFilter === "consumable" && data.quantity !== undefined) ||
-      (loadoutFilter === "magic" && isMagic);
-    if (!matchesFilter) return false;
-    if (!normalizedLoadoutSearch) return true;
-    return [item.name, item.type, String(data.category ?? ""), String(data.equipmentCategory ?? "")].some((value) => value.toLocaleLowerCase().includes(normalizedLoadoutSearch));
-  });
-  const readyableGear = inventory.filter((item) => recordValue(item.data).equipped === false);
-  const preparableMagic = [...spells, ...talents, ...rituals].filter((item) => recordValue(item.data).prepared === false);
-  const resources = actorResourceLabels(props.actor);
-  const resourceControls = actorResourceControls(props.actor);
-  const actionOptions = actorActionOptions(props.actor, actorItems);
-  const actionLabels = actionOptions.map((option) => option.description);
-  const firstAction = actionOptions[0];
-  const previewAction = actionOptions.find((action) => action.rollId === actionPreviewRollId) ?? firstAction;
-  const previewActionSupportsEffect = actorActionSupportsEffect(previewAction);
-  const requiredPendingSaves = actionPreview?.pendingSaves?.filter((save) => save.requiredForCommit === true) ?? [];
-  const missingRequiredSaveOutcomes = requiredPendingSaves.some((save) => !actionSaveOutcomes[save.actorId]);
-  const actionPreviewRequiresInput = Boolean(missingRequiredSaveOutcomes || (actionPreview?.pendingChoice && !actionEffectChoice) || (props.actionApplyEffect && actionPreview?.manualResolutionRequired));
-  const actionTargetActorId = props.actionTargetActorId || props.actor.id;
-  const selectedActionTarget = props.actors.find((actor) => actor.id === actionTargetActorId) ?? props.actor;
-  const actionSaveOutcomePayload = Object.keys(actionSaveOutcomes).length > 0 ? actionSaveOutcomes : undefined;
-  const actionEffectChoicePayload = actionEffectChoice || undefined;
-  const previewActionCommitOptions: ActorActionCommitOptions = { targetActorId: actionTargetActorId, applyEffect: props.actionApplyEffect, consumeResources: props.actionConsumeResources, saveOutcomes: actionSaveOutcomePayload, effectChoice: actionEffectChoicePayload };
-  const baseActionCommitOptions: ActorActionCommitOptions = { targetActorId: actionTargetActorId, applyEffect: props.actionApplyEffect, consumeResources: props.actionConsumeResources };
-  const commitOptionsForAction = (rollId: string): ActorActionCommitOptions => (rollId === previewAction?.rollId ? previewActionCommitOptions : baseActionCommitOptions);
-  const actionSaveActorName = (actorId: string): string => props.actors.find((actor) => actor.id === actorId)?.name ?? actorId;
-  const updateActionSaveOutcome = (actorId: string, outcome: RulesSaveOutcome) => setActionSaveOutcomes((current) => ({ ...current, [actorId]: outcome }));
-  const sceneTargetTokens = props.token ? props.tokens.filter((token) => token.sceneId === props.token?.sceneId) : props.tokens;
-  const targetedSceneTokens = sceneTargetTokens.filter((token) => token.targetedByUserIds?.includes(props.currentUserId));
-  const hostileSceneTokens = sceneTargetTokens.filter((token) => token.disposition === "hostile");
-  const targetableSceneTokens = sceneTargetTokens.slice(0, 12);
-  const combatants = props.combat?.combatants ?? [];
-  const currentCombatant = props.combat && combatants.length > 0 ? combatants[props.combat.turnIndex] ?? combatants[0] : undefined;
-  const nextCombatant = props.combat && combatants.length > 1 ? combatants[(props.combat.turnIndex + 1) % combatants.length] : undefined;
-  const currentTurnTokenIds = currentCombatant?.tokenId ? [currentCombatant.tokenId] : [];
-  const nextTurnTokenIds = nextCombatant?.tokenId ? [nextCombatant.tokenId] : [];
-  const areaX = Number(targetAreaX);
-  const areaY = Number(targetAreaY);
-  const areaWidth = Number(targetAreaWidth);
-  const areaHeight = Number(targetAreaHeight);
-  const hasTargetArea = [areaX, areaY, areaWidth, areaHeight].every(Number.isFinite) && areaWidth > 0 && areaHeight > 0;
-  const areaTargetTokens = hasTargetArea
-    ? sceneTargetTokens.filter((token) => {
-        const centerX = token.x + token.width / 2;
-        const centerY = token.y + token.height / 2;
-        return centerX >= areaX && centerX <= areaX + areaWidth && centerY >= areaY && centerY <= areaY + areaHeight;
-      })
-    : [];
-  const areaTargetTokenIds = areaTargetTokens.map((token) => token.id);
-  const latestLasso = props.scene?.annotations?.filter((annotation) => annotation.kind === "drawing" && annotation.points.length >= 3).at(-1);
-  const lassoTargetTokens = latestLasso
-    ? sceneTargetTokens.filter((token) => isPointInsidePoints({ x: token.x + token.width / 2, y: token.y + token.height / 2 }, latestLasso.points))
-    : [];
-  const lassoTargetTokenIds = lassoTargetTokens.map((token) => token.id);
-  const tokenActionTargetOptions = props.tokens
-    .filter((token) => token.actorId && (token.id === props.token?.id || token.targetedByUserIds?.includes(props.currentUserId)))
-    .map((token) => ({ token, actor: props.actors.find((actor) => actor.id === token.actorId) }))
-    .filter((option): option is { token: Token; actor: Actor } => Boolean(option.actor))
-    .filter((option, index, options) => options.findIndex((item) => item.actor.id === option.actor.id) === index);
-  const armorClass = actorArmorClass(props.actor, actorItems);
-  const normalizedCompendiumSearch = props.compendiumSearch.trim().toLocaleLowerCase();
-  const filteredCompendiumEntries = props.compendiumEntries
-    .filter((entry) => !normalizedCompendiumSearch || [entry.name, entry.type, entry.summary, entry.id].some((value) => value.toLocaleLowerCase().includes(normalizedCompendiumSearch)))
-    .slice(0, 8);
-  const adversary = isAdversaryActor(props.actor, props.tokens);
-  const sheetTone = props.token?.disposition ?? (adversary ? "hostile" : "friendly");
-  const rollActions = actionOptions.filter((action) => actorActionDiceFormula(action));
-  const featureActions = actionOptions.filter((action) => !actorActionDiceFormula(action));
-  const activeConditionIds = parseActorConditions(formatActorConditions(props.actor));
-  const conditionChipIds = [...new Set([...quickActorConditionIds, ...activeConditionIds])];
-  const toggleCondition = (conditionId: string) => {
-    props.toggleActorCondition(props.actor!, conditionId);
-  };
-  const renderSheetAction = (action: ActorActionOption) => {
-    const formula = actorActionDiceFormula(action);
-    return (
-      <div className="actor-action-row" key={`full-sheet-action-${action.rollId}`}>
-        <div className="actor-action-info">
-          <strong>{action.label}</strong>
-          <span>{action.description}</span>
-        </div>
-        <button className="ghost-button small" type="button" disabled={!props.canUseAction} onClick={() => props.useActorAction(action.rollId, commitOptionsForAction(action.rollId))}>
-          {formula ? <Dices size={14} /> : <WandSparkles size={14} />} {formula ? `Roll ${formula}` : "Use"}
-        </button>
-      </div>
-    );
-  };
-  return (
-    <div className="panel-stack actor-sidebar-summary">
-      <header className={`panel-hero actor-hero actor-tone-${sheetTone}`}>
-        <div>
-          <div className="section-title">{adversary ? "NPC" : "Character"}</div>
-          <h2>{props.actor.name}</h2>
-          <div className="admin-meta">
-            <span title="Rules system">{props.systemLabel ?? props.actor.systemId}</span>
-            <span title={props.token ? "Linked token" : undefined}>{props.token ? props.token.name : "No linked token"}</span>
-          </div>
-        </div>
-        <button className="ghost-button" type="button" onClick={() => setFullSheetOpen(true)}>
-          <FileText size={16} /> Sheet
-        </button>
-      </header>
-      <section className="operator-section actor-at-a-glance" aria-label="Actor at a glance">
-        <HpBar current={hp?.current} max={hp?.max} canEdit={props.canUpdateActor} onAdjust={(delta) => props.adjustActorHp(props.actor!, delta)} />
-        <div className="actor-vitals-row">
-          <span className="actor-vital" title={armorClass?.label ? `Armor class - ${armorClass.label}` : "Armor class"}>
-            <Shield size={13} aria-hidden="true" /> AC {armorClass ? armorClass.value : "?"}
-          </span>
-          {resources.map((resource) => (
-            <span className="actor-vital" key={resource}>{resource}</span>
-          ))}
-          {conditions.map((condition) => (
-            <span className="actor-vital actor-vital-condition" key={condition}>{condition}</span>
-          ))}
-          {combatState.map((state) => (
-            <span className="actor-vital actor-vital-muted" key={state}>{state}</span>
-          ))}
-        </div>
-      </section>
-      {fullSheetOpen && (
-        <aside className={`actor-sheet-popout movable-panel actor-tone-${sheetTone}`} role="dialog" aria-labelledby={`actor-full-sheet-title-${props.actor.id}`} style={sheetPanel.style} {...sheetPanel.panelProps}>
-          <header className="actor-sheet-header floating-panel-header" title="Drag panel" {...sheetPanel.dragHandleProps}>
-            <Hand className="floating-panel-drag-icon" size={14} aria-hidden="true" />
-            <div className="actor-sheet-title">
-              <div className="section-title">{adversary ? "NPC Sheet" : "Character Sheet"}</div>
-              <h2 id={`actor-full-sheet-title-${props.actor.id}`}>{props.actor.name}</h2>
-            </div>
-            <span className="actor-sheet-ac" title={armorClass?.label ? `Armor class - ${armorClass.label}` : "Armor class"}>
-              <Shield size={13} aria-hidden="true" /> {armorClass ? armorClass.value : "?"}
-            </span>
-            <button className="icon-button" type="button" aria-label="Close full character sheet" onClick={() => setFullSheetOpen(false)}>
-              <X size={15} />
-            </button>
-          </header>
-          <div className="actor-sheet-body">
-            <section className="actor-sheet-section" aria-label="Full sheet stats">
-              <HpBar current={hp?.current} max={hp?.max} canEdit={props.canUpdateActor} onAdjust={(delta) => props.adjustActorHp(props.actor!, delta)} />
-              {(conditions.length > 0 || resources.length > 0 || combatState.length > 0) && (
-                <div className="actor-vitals-row">
-                  {resources.map((resource) => (
-                    <span className="actor-vital" key={`sheet-resource-${resource}`}>{resource}</span>
-                  ))}
-                  {conditions.map((condition) => (
-                    <span className="actor-vital actor-vital-condition" key={`sheet-condition-${condition}`}>{condition}</span>
-                  ))}
-                  {combatState.map((state) => (
-                    <span className="actor-vital actor-vital-muted" key={`sheet-state-${state}`}>{state}</span>
-                  ))}
-                </div>
-              )}
-            </section>
-            {actorItems.length > 0 && (
-              <section className="actor-sheet-section" aria-label="Full sheet loadout">
-                <div className="actor-sheet-subheading">
-                  <span>Loadout</span>
-                  <strong>{formatNumber(actorItems.length)}</strong>
-                </div>
-                <div className="placement-list">
-                  {filteredActorItems.slice(0, 16).map((item) => (
-                    <span className="placement-chip" key={`full-sheet-item-${item.id}`}>
-                      <Boxes size={14} />
-                      <span>{itemDisplayLabel(item)}</span>
-                    </span>
-                  ))}
-                </div>
-              </section>
-            )}
-            <section className="actor-sheet-section" aria-label="Full sheet actions">
-              {actionOptions.length === 0 && <div className="empty-state compact">No actions available.</div>}
-              {rollActions.length > 0 && (
-                <>
-                  <div className="actor-sheet-subheading">
-                    <span>Rolls</span>
-                    <strong>{formatNumber(rollActions.length)}</strong>
-                  </div>
-                  {rollActions.slice(0, 10).map(renderSheetAction)}
-                </>
-              )}
-              {featureActions.length > 0 && (
-                <>
-                  <div className="actor-sheet-subheading">
-                    <span>Features</span>
-                    <strong>{formatNumber(featureActions.length)}</strong>
-                  </div>
-                  {featureActions.slice(0, 10).map(renderSheetAction)}
-                </>
-              )}
-            </section>
-            <section className="actor-sheet-section" aria-label="Full sheet targeting">
-              <div className="actor-sheet-subheading">
-                <span>Targeting</span>
-                <strong>{formatNumber(targetedSceneTokens.length)} marked</strong>
-              </div>
-              <div className="metric-row">
-                <span>Action target</span>
-                <strong>{selectedActionTarget.name}</strong>
-              </div>
-              {tokenActionTargetOptions.length > 0 && (
-                <div className="button-row">
-                  {tokenActionTargetOptions.slice(0, 4).map(({ token, actor }) => (
-                    <button className={actionTargetActorId === actor.id ? "ghost-button small active" : "ghost-button small"} key={`full-sheet-target-${actor.id}`} type="button" disabled={!props.canUseAction} onClick={() => props.setActionTargetActorId(actor.id)}>
-                      <MapPin size={14} /> {actor.name}
-                      {token.targetedByUserIds?.includes(props.currentUserId) ? " (marked)" : ""}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </section>
-          </div>
-          <button className="floating-panel-resize-handle" type="button" aria-label="Resize character sheet" title="Resize panel" {...sheetPanel.resizeHandleProps}>
-            <Grip size={13} aria-hidden="true" />
-          </button>
-        </aside>
-      )}
-      {props.canCreateToken && (
-      <section className="operator-section placement-tray" aria-label="Actor placement tray">
-        <div className="operator-heading">
-          <div className="section-title">Place actors</div>
-          <strong>drag to place</strong>
-        </div>
-        <div className="placement-list">
-          {props.actors.slice(0, 8).map((actor) => (
-            <button
-              className="placement-chip"
-              key={actor.id}
-              type="button"
-              draggable={props.canCreateToken}
-              aria-label={`Place ${actor.name} actor on scene`}
-              title={props.canCreateToken ? "Drag actor to the scene" : "Requires token.create"}
-              disabled={!props.canCreateToken}
-              onDragStart={(event) => {
-                writeTokenDropData(event.dataTransfer, { type: "actor", id: actor.id, actorId: actor.id, name: actor.name, disposition: "friendly" });
-                setTokenDropPreview(event.dataTransfer, actor.name);
-              }}
-            >
-              <Users size={14} />
-              <span>{actor.name}</span>
-            </button>
-          ))}
-        </div>
-      </section>
-      )}
-      <div className="tabs" role="tablist" aria-label="Actor sheet views">
-        <button className={sheetView === "stats" ? "tab active" : "tab"} type="button" role="tab" aria-selected={sheetView === "stats"} onClick={() => setSheetView("stats")}>
-          Stats
-        </button>
-        <button className={sheetView === "loadout" ? "tab active" : "tab"} type="button" role="tab" aria-selected={sheetView === "loadout"} onClick={() => setSheetView("loadout")}>
-          Loadout
-        </button>
-        <button className={sheetView === "actions" ? "tab active" : "tab"} type="button" role="tab" aria-selected={sheetView === "actions"} onClick={() => setSheetView("actions")}>
-          Actions
-        </button>
-        <button className={sheetView === "compendium" ? "tab active" : "tab"} type="button" role="tab" aria-selected={sheetView === "compendium"} onClick={() => setSheetView("compendium")}>
-          Compendium
-        </button>
-      </div>
-      {sheetView === "stats" && (
-        <section className="operator-section" aria-label="Actor stats sheet">
-          <div className="metric-row">
-            <span>Armor class</span>
-            <strong>{armorClass ? (armorClass.label ? `${armorClass.value} - ${armorClass.label}` : String(armorClass.value)) : "n/a"}</strong>
-          </div>
-          {resourceControls.map((resource) => (
-            <div className="metric-row" key={`stats-resource-${resource.key}`}>
-              <span>{resource.label}</span>
-              <strong>{formatNumber(resource.current)}</strong>
-            </div>
-          ))}
-          <div className="sheet-row">
-            <label htmlFor="actor-hp-tab">Set HP</label>
-            <input id="actor-hp-tab" aria-label="Actor sheet current HP" key={`sheet:${props.actor.id}:${hp?.current ?? 0}`} type="number" defaultValue={hp?.current ?? 0} disabled={!props.canUpdateActor} onBlur={(event) => props.updateActorHp(props.actor!, Number(event.currentTarget.value))} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} />
-          </div>
-          {props.xpProgress && (
-            <div className="xp-row">
-              <div className="xp-bar" role="meter" aria-label={`Experience ${props.xpProgress.xp}${props.xpProgress.nextLevelXp ? ` of ${props.xpProgress.nextLevelXp}` : ""}`} aria-valuemin={props.xpProgress.previousLevelXp} aria-valuemax={props.xpProgress.nextLevelXp ?? props.xpProgress.xp} aria-valuenow={props.xpProgress.xp}>
-                <div className="xp-bar-fill" style={{ width: `${props.xpProgress.nextLevelXp ? Math.max(0, Math.min(100, Math.round(((props.xpProgress.xp - props.xpProgress.previousLevelXp) / Math.max(1, props.xpProgress.nextLevelXp - props.xpProgress.previousLevelXp)) * 100))) : 100}%` }} />
-                <span className="xp-bar-value">XP {formatNumber(props.xpProgress.xp)}{props.xpProgress.nextLevelXp !== undefined ? ` / ${formatNumber(props.xpProgress.nextLevelXp)}` : ""}</span>
-              </div>
-              {props.advancementReady && (
-                <button className="ghost-button level-up-button" type="button" onClick={() => props.onLevelUp()}>
-                  <ChevronUp size={14} /> Level Up
-                </button>
-              )}
-              {props.canUpdateActor && (
-                <form className="xp-award" onSubmit={(event) => { event.preventDefault(); const input = event.currentTarget.elements.namedItem("xp-award-amount") as HTMLInputElement; const amount = Number(input.value); if (Number.isFinite(amount) && amount !== 0) { props.awardActorXp(props.actor!, amount); input.value = ""; } }}>
-                  <input name="xp-award-amount" aria-label="Award XP amount" type="number" placeholder="XP" />
-                  <button className="ghost-button small" type="submit">Award</button>
-                </form>
-              )}
-            </div>
-          )}
-          <HitDiceRestCard actor={props.actor} canRest={props.canRestActor} onRest={props.onRestActor} />
-          <div className="condition-quick-chips" role="group" aria-label="Toggle common conditions">
-            {conditionChipIds.map((conditionId) => (
-              <button
-                className={activeConditionIds.includes(conditionId) ? "condition-chip active" : "condition-chip"}
-                key={`condition-chip-${conditionId}`}
-                type="button"
-                aria-pressed={activeConditionIds.includes(conditionId)}
-                disabled={!props.canUpdateActor}
-                onClick={() => toggleCondition(conditionId)}
-              >
-                {titleCaseLabel(conditionId)}
-              </button>
-            ))}
-          </div>
-          <div className="sheet-row">
-            <label htmlFor="actor-conditions-tab">Custom conditions</label>
-            <input id="actor-conditions-tab" aria-label="Actor sheet conditions" key={formatActorConditions(props.actor)} defaultValue={formatActorConditions(props.actor)} disabled={!props.canUpdateActor} onBlur={(event) => props.updateActorData(props.actor!, { conditions: parseActorConditions(event.currentTarget.value) })} />
-          </div>
-        </section>
-      )}
-      {sheetView === "loadout" && (
-        <section
-          className={`operator-section ${itemDropActive ? "drop-active" : ""}`}
-          aria-label="Actor loadout sheet"
-          onDragEnter={(event) => {
-            if (!props.canUpdateActor || !hasItemDropData(event.dataTransfer)) return;
-            event.preventDefault();
-            setItemDropActive(true);
-          }}
-          onDragOver={(event) => {
-            if (!props.canUpdateActor || !hasItemDropData(event.dataTransfer)) return;
-            event.preventDefault();
-            event.dataTransfer.dropEffect = "copy";
-          }}
-          onDragLeave={(event) => {
-            if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
-            setItemDropActive(false);
-          }}
-          onDrop={(event) => {
-            setItemDropActive(false);
-            if (!props.canUpdateActor) return;
-            const itemId = readItemDropData(event.dataTransfer);
-            const item = props.items.find((candidate) => candidate.id === itemId);
-            if (!item) return;
-            event.preventDefault();
-            props.assignItemToActor(item, props.actor!).catch(console.error);
-          }}
-        >
-          <div className="operator-heading">
-            <div className="section-title">Loadout</div>
-            <strong>{formatNumber(actorItems.length)} items</strong>
-          </div>
-          {unassignedItems.length > 0 && (
-            <div className="operator-row tool-call-row" aria-label="Assign item to actor">
-              <select aria-label="Unassigned item" value={selectedAssignableItem?.id ?? ""} onChange={(event) => setAssignItemId(event.target.value)}>
-                <option value="">Select loose item</option>
-                {unassignedItems.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
-              <button className="ghost-button" type="button" disabled={!selectedAssignableItem || !props.canUpdateActor} onClick={() => selectedAssignableItem && props.assignItemToActor(selectedAssignableItem, props.actor!).then(() => setAssignItemId("")).catch(console.error)}>
-                <Plus size={14} /> Assign selected item
-              </button>
-            </div>
-          )}
-          {unassignedItems.length > 0 && (
-            <div className="loose-item-tray" aria-label="Loose item drag tray">
-              {unassignedItems.slice(0, 8).map((item) => (
-                <button
-                  className="loose-item-chip"
-                  key={item.id}
-                  type="button"
-                  draggable={props.canUpdateActor}
-                  aria-label={`Drag ${item.name} to actor loadout`}
-                  title={props.canUpdateActor ? "Drag item onto the loadout sheet" : "Requires actor.update"}
-                  disabled={!props.canUpdateActor}
-                  onDragStart={(event) => writeItemDropData(event.dataTransfer, item)}
-                >
-                  <Boxes size={14} />
-                  <span>{item.name}</span>
-                </button>
-              ))}
-            </div>
-          )}
-          <div className="asset-pressure-list" role="region" aria-label="Inventory management">
-            <div className="admin-form-grid">
-              <label>
-                <span>Search</span>
-                <input aria-label="Inventory search" value={loadoutSearch} placeholder="Item, type, category" onChange={(event) => setLoadoutSearch(event.target.value)} />
-              </label>
-              <label>
-                <span>Filter</span>
-                <select aria-label="Inventory filter" value={loadoutFilter} onChange={(event) => setLoadoutFilter(event.target.value as ActorLoadoutFilter)}>
-                  <option value="all">All loadout</option>
-                  <option value="equipped">Equipped gear</option>
-                  <option value="consumable">Consumables</option>
-                  <option value="magic">Spells and talents</option>
-                </select>
-              </label>
-            </div>
-            <div className="admin-meta">
-              <span>{formatNumber(filteredActorItems.length)} shown</span>
-              <span>{formatNumber(inventory.length)} gear</span>
-              <span>{formatNumber(actorItems.filter((item) => recordValue(item.data).quantity !== undefined).length)} consumables</span>
-              <span>{formatNumber(spells.length + talents.length + rituals.length)} magic</span>
-            </div>
-            {actorItems.length > 0 && filteredActorItems.length === 0 && <div className="empty-state compact">No loadout items match the current search and filter.</div>}
-            <div className="button-row">
-              <button className="ghost-button" type="button" disabled={!props.canUpdateActor || readyableGear.length === 0} onClick={() => Promise.all(readyableGear.map((item) => props.updateItemData(item, { equipped: true }))).catch(console.error)}>
-                <Check size={14} /> Ready carried gear
-              </button>
-              <button className="ghost-button" type="button" disabled={!props.canUpdateActor || preparableMagic.length === 0} onClick={() => Promise.all(preparableMagic.map((item) => props.updateItemData(item, { prepared: true }))).catch(console.error)}>
-                <WandSparkles size={14} /> Prepare magic
-              </button>
-            </div>
-          </div>
-          {actorItems.length === 0 ? (
-            <div className="empty-state compact">No inventory, spells, talents, clues, or rituals on this actor.</div>
-          ) : filteredActorItems.length === 0 ? (
-            null
-          ) : (
-            filteredActorItems.map((item) => {
-              const data = recordValue(item.data);
-              const isSpellLike = item.type === "spell" || item.type === "ritual" || item.type === "talent";
-              const isGearLike = !isSpellLike && item.type !== "clue";
-              return (
-                <article className="operator-item admin-item" key={item.id} draggable={props.canUpdateActor} onDragStart={(event) => writeItemDropData(event.dataTransfer, item)}>
-                  <div className="operator-row">
-                    <span>{titleCaseLabel(item.type)}</span>
-                    <strong>{itemDisplayLabel(item)}</strong>
-                  </div>
-                  <div className="admin-meta">
-                    {data.level !== undefined && <span>level {String(data.level)}</span>}
-                    {data.category !== undefined && <span>{String(data.category)}</span>}
-                    {data.quantity !== undefined && <span>quantity {String(data.quantity)}</span>}
-                    <span>{itemPreparedLabel(item)}</span>
-                    <span>{itemEquippedLabel(item)}</span>
-                  </div>
-                  <div className="button-row">
-                    {isSpellLike && (
-                      <label className="inline-check">
-                        <input aria-label={`${item.name} prepared`} type="checkbox" checked={data.prepared !== false} disabled={!props.canUpdateActor} onChange={(event) => props.updateItemData(item, { prepared: event.target.checked })} />
-                        <span>Prepared</span>
-                      </label>
-                    )}
-                    {isGearLike && (
-                      <label className="inline-check">
-                        <input aria-label={`${item.name} equipped`} type="checkbox" checked={data.equipped !== false} disabled={!props.canUpdateActor} onChange={(event) => props.updateItemData(item, { equipped: event.target.checked })} />
-                        <span>Equipped</span>
-                      </label>
-                    )}
-                    {data.quantity !== undefined && (
-                      <label>
-                        <span>Qty</span>
-                        <input aria-label={`${item.name} quantity`} type="number" min={0} defaultValue={numericValue(data.quantity, 1)} disabled={!props.canUpdateActor} onBlur={(event) => props.updateItemData(item, { quantity: Math.max(0, Math.floor(Number(event.currentTarget.value))) })} />
-                      </label>
-                    )}
-                    {data.quantity !== undefined && (
-                      <>
-                        <button className="ghost-button" type="button" disabled={!props.canUpdateActor || numericValue(data.quantity, 1) <= 0} onClick={() => props.updateItemData(item, { quantity: Math.max(0, Math.floor(numericValue(data.quantity, 1) - 1)) })}>
-                          <Eraser size={14} /> Spend one
-                        </button>
-                        <button className="ghost-button" type="button" disabled={!props.canUpdateActor} onClick={() => props.updateItemData(item, { quantity: Math.max(0, Math.floor(numericValue(data.quantity, 1) + 1)) })}>
-                          <Plus size={14} /> Add one
-                        </button>
-                      </>
-                    )}
-                    {props.canUpdateActor && props.actors.some((candidate) => candidate.id !== props.actor?.id) && (
-                      <label>
-                        <span>Give to</span>
-                        <select aria-label={`Give ${item.name} to actor`} defaultValue="" onChange={(event) => { const nextActor = props.actors.find((candidate) => candidate.id === event.currentTarget.value); if (nextActor) { props.assignItemToActor(item, nextActor).catch(console.error); event.currentTarget.value = ""; } }}>
-                          <option value="">Actor</option>
-                          {props.actors.filter((candidate) => candidate.id !== props.actor?.id).map((candidate) => (
-                            <option key={candidate.id} value={candidate.id}>{candidate.name}</option>
-                          ))}
-                        </select>
-                      </label>
-                    )}
-                  </div>
-                </article>
-              );
-            })
-          )}
-        </section>
-      )}
-      {sheetView === "actions" && (
-        <section className="operator-section" aria-label="Actor action sheet">
-          <div className="operator-heading">
-            <div className="section-title">Actions</div>
-            <strong>{formatNumber(actionOptions.length)}</strong>
-          </div>
-          {actionOptions.length === 0 ? (
-            <div className="empty-state compact">No system actions are currently available.</div>
-          ) : (
-            <>
-              <div className="asset-pressure-list" role="region" aria-label="Action resolution preview">
-                <div className="operator-row tool-call-row">
-                  <span>Previewed action</span>
-                  <strong>{previewAction?.label ?? "No action"}</strong>
-                </div>
-                <div className="operator-row tool-call-row">
-                  <span>Target actor</span>
-                  <strong>{selectedActionTarget.name}</strong>
-                </div>
-                <div className="operator-row tool-call-row">
-                  <span>Marked tokens</span>
-                  <strong>{formatNumber(targetedSceneTokens.length)}</strong>
-                </div>
-                <div className="operator-row tool-call-row">
-                  <span>Effect mode</span>
-                  <strong>{props.actionApplyEffect ? "apply damage/healing" : "roll only"}</strong>
-                </div>
-                <div className="operator-row tool-call-row">
-                  <span>Effect support</span>
-                  <strong>{previewAction ? (previewActionSupportsEffect ? "supported" : "roll only") : "no action"}</strong>
-                </div>
-                <div className="operator-row tool-call-row">
-                  <span>Resources</span>
-                  <strong>{props.actionConsumeResources ? "consume resources" : "do not consume"}</strong>
-                </div>
-                {actionPreviewStatus && (
-                  <div className="operator-row tool-call-row">
-                    <span>Resolver</span>
-                    <strong>{actionPreviewStatus}</strong>
-                  </div>
-                )}
-                {actionPreview?.rolls?.[0] && (
-                  <div className="operator-row tool-call-row">
-                    <span>Roll preview</span>
-                    <strong>{actionPreview.rolls[0].d20Mode && actionPreview.rolls[0].d20Mode !== "normal" ? `${actionPreview.rolls[0].formula} (${actionPreview.rolls[0].d20Mode})` : actionPreview.rolls[0].formula}</strong>
-                  </div>
-                )}
-                {actionPreview?.resourceConsumption && actionPreview.resourceConsumption.length > 0 && (
-                  <div className="operator-row tool-call-row">
-                    <span>Spend</span>
-                    <strong>{actionPreview.resourceConsumption.map((resource) => `${resource.label} ${resource.amount} (${resource.remaining} left)`).join(", ")}</strong>
-                  </div>
-                )}
-                {actionPreview?.conditions && actionPreview.conditions.length > 0 && (
-                  <div className="operator-row tool-call-row">
-                    <span>Conditions</span>
-                    <strong>{actionPreview.conditions.map((condition) => condition.conditionName ?? condition.operation).join(", ")}</strong>
-                  </div>
-                )}
-                {actionPreview?.pendingSaves?.map((save) => (
-                  <div className="operator-row tool-call-row" key={`action-save-${save.actorId}-${save.ability}-${save.reason}`}>
-                    <span>{actionSaveActorName(save.actorId)} {titleCaseLabel(save.ability)} save{save.dc ? ` DC ${save.dc}` : ""}</span>
-                    {save.requiredForCommit === true ? (
-                      <div className="button-row" role="group" aria-label={`${actionSaveActorName(save.actorId)} ${save.ability} save outcome`}>
-                        <button className={actionSaveOutcomes[save.actorId] === "success" ? "ghost-button active" : "ghost-button"} type="button" aria-pressed={actionSaveOutcomes[save.actorId] === "success"} onClick={() => updateActionSaveOutcome(save.actorId, "success")}>
-                          <Check size={14} /> Success
-                        </button>
-                        <button className={actionSaveOutcomes[save.actorId] === "failure" ? "ghost-button active" : "ghost-button"} type="button" aria-pressed={actionSaveOutcomes[save.actorId] === "failure"} onClick={() => updateActionSaveOutcome(save.actorId, "failure")}>
-                          <X size={14} /> Failure
-                        </button>
-                      </div>
-                    ) : (
-                      <strong>{save.reason}</strong>
-                    )}
-                  </div>
-                ))}
-                {actionPreview?.pendingReactions && actionPreview.pendingReactions.length > 0 && (
-                  <div className="operator-row tool-call-row">
-                    <span>Reactions</span>
-                    <strong>{actionPreview.pendingReactions.map((reaction) => reaction.reason).join(", ")}</strong>
-                  </div>
-                )}
-                {actionPreview?.attunement && actionPreview.attunement.overLimitBy > 0 && (
-                  <div className="operator-row tool-call-row">
-                    <span>Attunement</span>
-                    <strong>{actionPreview.attunement.attunedItemIds.length}/{actionPreview.attunement.limit}</strong>
-                  </div>
-                )}
-                {previewAction && <p>{previewAction.description}</p>}
-                {previewAction && props.actionApplyEffect && !previewActionSupportsEffect && <p className="admin-status">Effect unsupported: clear Apply action effect to roll this action.</p>}
-                {actionPreview?.blocked && <p className="admin-status">{actionPreview.blocked.reason}</p>}
-                {actionPreview?.pendingChoice && (
-                  <div className="operator-row tool-call-row">
-                    <span>{actionPreview.pendingChoice.reason}</span>
-                    <select aria-label="Action effect choice" value={actionEffectChoice} onChange={(event) => setActionEffectChoice(event.target.value)}>
-                      <option value="">Choose option</option>
-                      {actionPreview.pendingChoice.options.map((option) => (
-                        <option key={`action-choice-${option}`} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-                {actionPreview?.manualResolutionRequired && <p className="admin-status">Manual resolution required: {actionPreview.manualResolutionRequired.reason}</p>}
-                {actionPreviewRequiresInput && <p className="admin-status">Resolve the pending save, choice, or manual step before committing this action.</p>}
-                {actionPreview?.warnings?.map((warning) => <p className="admin-status" key={`action-preview-warning-${warning}`}>{warning}</p>)}
-                <button className="ghost-button" type="button" disabled={!props.canUseAction || !previewAction || Boolean(actionPreview?.blocked) || actionPreviewRequiresInput || (props.actionApplyEffect && !previewActionSupportsEffect)} onClick={() => previewAction && props.useActorAction(previewAction.rollId, previewActionCommitOptions)}>
-                  <WandSparkles size={14} /> Use previewed action
-                </button>
-              </div>
-              {actionOptions.map((action) => {
-                const supportsEffect = actorActionSupportsEffect(action);
-                const unsupportedEffect = props.actionApplyEffect && !supportsEffect;
-                const isPreviewed = action.rollId === previewAction?.rollId;
-                const previewBlocked = isPreviewed ? actionPreview?.blocked : undefined;
-                const previewRequiresInput = isPreviewed ? actionPreviewRequiresInput : false;
-                return (
-                  <article className="operator-item admin-item" key={action.rollId}>
-                    <strong>{action.label}</strong>
-                    <p>{action.description}</p>
-                    <div className="admin-meta">
-                      <span>{supportsEffect ? "effect supported" : "roll only action"}</span>
-                    </div>
-                    {unsupportedEffect && <p className="admin-status">Effect unsupported: clear Apply action effect to roll this action.</p>}
-                    {previewBlocked && <p className="admin-status">{previewBlocked.reason}</p>}
-                    {previewRequiresInput && <p className="admin-status">Resolve pending inputs before committing.</p>}
-                    <div className="button-row">
-                      <button className={isPreviewed ? "ghost-button active" : "ghost-button"} type="button" aria-pressed={isPreviewed} disabled={!props.canUseAction} onClick={() => setActionPreviewRollId(action.rollId)}>
-                        <Eye size={14} /> Preview
-                      </button>
-                      <button className="ghost-button" type="button" disabled={!props.canUseAction || unsupportedEffect || Boolean(previewBlocked) || previewRequiresInput} onClick={() => props.useActorAction(action.rollId, commitOptionsForAction(action.rollId))}>
-                        <WandSparkles size={14} /> Use action
-                      </button>
-                    </div>
-                  </article>
-                );
-              })}
-            </>
-          )}
-        </section>
-      )}
-      <details className="operator-section actor-detail-disclosure actor-token-editor">
-        <summary>Token settings</summary>
-      </details>
-      <div className="operator-section actor-detail-body actor-token-editor-body">
-      <div className="metric-row">
-        <span>Token</span>
-        <strong>{props.token?.name ?? "Unlinked"}</strong>
-      </div>
-      {props.token && (
-        <>
-          <div className="metric-row">
-            <span>Vision</span>
-            <strong>{props.token.visionEnabled ? `${formatNumber(props.token.brightVisionRadius ?? 0)} bright / ${formatNumber(props.token.dimVisionRadius ?? props.token.visionRadius)} dim` : "disabled"}</strong>
-          </div>
-          <div className="metric-row">
-            <span>Token State</span>
-            <strong>{[tokenLayerLabel(tokenLayer(props.token)), ...(props.token.conditions?.map((condition) => condition.name) ?? []), ...(props.token.auras?.map((aura) => `${aura.name} ${aura.radius}`) ?? []), ...(props.token.ownerUserIds?.length ? [`Owners ${props.token.ownerUserIds.length}`] : []), ...(props.token.targetedByUserIds?.length ? [`Targeted ${props.token.targetedByUserIds.length}`] : [])].join(", ") || "Ready"}</strong>
-          </div>
-          <div className="inspector-grid" key={`${props.token.id}-${props.token.x}-${props.token.y}-${props.token.width}-${props.token.height}-${props.token.imageAssetId ?? "marker"}`}>
-            <label>
-              <span>Name</span>
-              <input aria-label="Token inspector name" defaultValue={props.token.name} disabled={!props.canUpdateToken} onBlur={(event) => props.updateToken({ name: event.currentTarget.value.trim() || props.token!.name })} />
-            </label>
-            <label>
-              <span>Actor</span>
-              <select aria-label="Token inspector actor" value={props.token.actorId ?? ""} disabled={!props.canUpdateToken} onChange={(event) => props.updateToken({ actorId: event.target.value || undefined })}>
-                <option value="">Unlinked</option>
-                {props.actors.map((actor) => (
-                  <option key={actor.id} value={actor.id}>
-                    {actor.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="sheet-row">
-              <span>Owners</span>
-              <div className="inline-options" aria-label="Token owners">
-                {props.members.map((member) => (
-                  <label className="inline-check" key={member.userId}>
-                    <input type="checkbox" checked={tokenOwnerIds.includes(member.userId)} disabled={!props.canUpdateToken} onChange={(event) => setTokenOwner(member.userId, event.target.checked)} />
-                    <span>{member.user.displayName || member.user.email || member.role}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-            <div className="sheet-row token-permission-presets" aria-label="Token permission presets">
-              <span>Permission Presets</span>
-              <strong>{tokenPermissionPresetLabel(props.token, playerOwnerIds)}</strong>
-              <div className="button-row">
-                <button className="ghost-button" type="button" disabled={!props.canUpdateToken} onClick={() => props.updateToken({ ownerUserIds: [], locked: true, hidden: false })}>
-                  <LockKeyhole size={14} /> GM locked
-                </button>
-                <button className="ghost-button" type="button" disabled={!props.canUpdateToken || playerOwnerIds.length === 0} onClick={() => props.updateToken({ ownerUserIds: playerOwnerIds, locked: false, hidden: false })}>
-                  <Users size={14} /> Party controlled
-                </button>
-                <button className="ghost-button" type="button" disabled={!props.canUpdateToken} onClick={() => props.updateToken({ ownerUserIds: [], locked: false, hidden: false })}>
-                  <Eye size={14} /> Target only
-                </button>
-                <button className="ghost-button" type="button" disabled={!props.canUpdateToken} onClick={() => props.updateToken({ ownerUserIds: [], locked: true, hidden: true })}>
-                  <Shield size={14} /> Hidden hold
-                </button>
-              </div>
-            </div>
-            <label>
-              <span>Disposition</span>
-              <select aria-label="Token inspector disposition" value={props.token.disposition} disabled={!props.canUpdateToken} onChange={(event) => props.updateToken({ disposition: event.target.value as Token["disposition"] })}>
-                <option value="friendly">Friendly</option>
-                <option value="neutral">Neutral</option>
-                <option value="hostile">Hostile</option>
-              </select>
-            </label>
-            <label>
-              <span>Image</span>
-              <select aria-label="Token image asset" value={props.token.imageAssetId ?? ""} disabled={!props.canUpdateToken} onChange={(event) => props.updateToken({ imageAssetId: event.target.value || undefined })}>
-                <option value="">Default marker</option>
-                {tokenImageAssets.map((asset) => (
-                  <option key={asset.id} value={asset.id}>
-                    {asset.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span>Layer</span>
-              <select aria-label="Token layer" value={tokenLayer(props.token)} disabled={!props.canUpdateToken} onChange={(event) => props.updateToken({ layer: event.target.value as TokenLayer })}>
-                {tokenLayers.map((layer) => (
-                  <option key={layer.id} value={layer.id}>
-                    {layer.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="token-image-actions">
-              <button className="ghost-button" type="button" disabled={!props.canUpdateToken} onClick={() => tokenImageInputRef.current?.click()}>
-                <Upload size={14} /> Upload image
-              </button>
-              <input
-                ref={tokenImageInputRef}
-                aria-label="Upload token image"
-                type="file"
-                accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
-                hidden
-                onChange={(event) => {
-                  const input = event.currentTarget;
-                  const file = input.files?.[0];
-                  if (file) props.onUploadTokenImage(file, input).catch(console.error);
-                }}
-              />
-            </div>
-            <div className="sheet-row token-size-presets" aria-label="Token footprint presets">
-              <span>Footprint</span>
-              <strong>{tokenFootprintLabel} grid</strong>
-              <div className="button-row">
-                {[1, 2, 3, 4].map((cells) => (
-                  <button className="ghost-button" type="button" key={cells} disabled={!props.canUpdateToken || !props.scene} onClick={() => setTokenFootprint(cells)}>
-                    {cells}x{cells}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <label>
-              <span>X</span>
-              <input aria-label="Token x" type="number" defaultValue={props.token.x} disabled={!props.canUpdateToken} onBlur={(event) => props.updateToken({ x: Number(event.currentTarget.value) })} />
-            </label>
-            <label>
-              <span>Y</span>
-              <input aria-label="Token y" type="number" defaultValue={props.token.y} disabled={!props.canUpdateToken} onBlur={(event) => props.updateToken({ y: Number(event.currentTarget.value) })} />
-            </label>
-            <label>
-              <span>Width</span>
-              <input aria-label="Token width" type="number" min={1} defaultValue={props.token.width} disabled={!props.canUpdateToken} onBlur={(event) => updateTokenSize(Number(event.currentTarget.value), props.token!.height)} />
-            </label>
-            <label>
-              <span>Height</span>
-              <input aria-label="Token height" type="number" min={1} defaultValue={props.token.height} disabled={!props.canUpdateToken} onBlur={(event) => updateTokenSize(props.token!.width, Number(event.currentTarget.value))} />
-            </label>
-            <label className="inline-check">
-              <input type="checkbox" checked={props.token.hidden} disabled={!props.canUpdateToken} onChange={(event) => props.updateToken({ hidden: event.target.checked })} />
-              <span>Hidden</span>
-            </label>
-            <label className="inline-check">
-              <input type="checkbox" checked={props.token.locked} disabled={!props.canUpdateToken} onChange={(event) => props.updateToken({ locked: event.target.checked })} />
-              <span>Locked</span>
-            </label>
-            <label className="inline-check">
-              <input type="checkbox" checked={props.token.targetedByUserIds?.includes(props.currentUserId) ?? false} onChange={(event) => props.targetToken(props.token!.id, event.target.checked)} />
-              <span>Targeted</span>
-            </label>
-          </div>
-          <section className="operator-section" aria-label="Canvas target manager">
-            <div className="operator-heading">
-              <div>
-                <div className="section-title">Canvas Targets</div>
-                <p>My targets {formatNumber(targetedSceneTokens.length)} / {formatNumber(sceneTargetTokens.length)}</p>
-                {currentCombatant && <p>Initiative: {currentCombatant.name}{nextCombatant ? ` -> ${nextCombatant.name}` : ""}</p>}
-              </div>
-            </div>
-            <div className="button-row">
-              <button className="ghost-button" type="button" disabled={sceneTargetTokens.length === 0} onClick={() => props.targetTokens(sceneTargetTokens.map((token) => token.id), true)}>
-                <Crosshair size={14} /> Target visible
-              </button>
-              <button className="ghost-button" type="button" disabled={hostileSceneTokens.length === 0} onClick={() => props.targetTokens(hostileSceneTokens.map((token) => token.id), true)}>
-                <Swords size={14} /> Target hostiles
-              </button>
-              <button className="ghost-button" type="button" disabled={targetedSceneTokens.length === 0} onClick={() => props.targetTokens(targetedSceneTokens.map((token) => token.id), false)}>
-                <X size={14} /> Clear my targets
-              </button>
-              <button className="ghost-button" type="button" disabled={currentTurnTokenIds.length === 0} onClick={() => props.targetTokens(currentTurnTokenIds, true)}>
-                <Timer size={14} /> Target current turn
-              </button>
-              <button className="ghost-button" type="button" disabled={nextTurnTokenIds.length === 0} onClick={() => props.targetTokens(nextTurnTokenIds, true)}>
-                <ChevronRight size={14} /> Target next turn
-              </button>
-            </div>
-            <div className="admin-form-grid" role="group" aria-label="Canvas target area">
-              <label>
-                <span>X</span>
-                <input aria-label="Target area x" type="number" value={targetAreaX} onChange={(event) => setTargetAreaX(event.target.value)} />
-              </label>
-              <label>
-                <span>Y</span>
-                <input aria-label="Target area y" type="number" value={targetAreaY} onChange={(event) => setTargetAreaY(event.target.value)} />
-              </label>
-              <label>
-                <span>Width</span>
-                <input aria-label="Target area width" type="number" min={1} value={targetAreaWidth} onChange={(event) => setTargetAreaWidth(event.target.value)} />
-              </label>
-              <label>
-                <span>Height</span>
-                <input aria-label="Target area height" type="number" min={1} value={targetAreaHeight} onChange={(event) => setTargetAreaHeight(event.target.value)} />
-              </label>
-              <div className="admin-meta target-preview" role="status" aria-live="polite" aria-label="Target area preview">
-                <span>{formatNumber(areaTargetTokens.length)} tokens in area</span>
-                {areaTargetTokens.slice(0, 6).map((token) => (
-                  <span key={`area-preview-${token.id}`}>{token.name}</span>
-                ))}
-                {areaTargetTokens.length > 6 && <span>+{formatNumber(areaTargetTokens.length - 6)} more</span>}
-              </div>
-              <button className="ghost-button" type="button" disabled={areaTargetTokenIds.length === 0} onClick={() => props.targetTokens(areaTargetTokenIds, true)}>
-                <Pentagon size={14} /> Target area
-              </button>
-              <button className="ghost-button" type="button" disabled={areaTargetTokenIds.length === 0} onClick={() => props.targetTokens(areaTargetTokenIds, false)}>
-                <Eraser size={14} /> Clear area targets
-              </button>
-            </div>
-            <div className="admin-meta target-preview" role="status" aria-live="polite" aria-label="Latest drawing lasso preview">
-              <span>{latestLasso ? `${formatNumber(lassoTargetTokens.length)} tokens in lasso` : "Draw a lasso on the canvas"}</span>
-              {lassoTargetTokens.slice(0, 6).map((token) => (
-                <span key={`lasso-preview-${token.id}`}>{token.name}</span>
-              ))}
-              {lassoTargetTokens.length > 6 && <span>+{formatNumber(lassoTargetTokens.length - 6)} more</span>}
-            </div>
-            <div className="button-row">
-              <button className="ghost-button" type="button" disabled={lassoTargetTokenIds.length === 0} onClick={() => props.targetTokens(lassoTargetTokenIds, true)}>
-                <PencilLine size={14} /> Target lasso
-              </button>
-              <button className="ghost-button" type="button" disabled={lassoTargetTokenIds.length === 0} onClick={() => props.targetTokens(lassoTargetTokenIds, false)}>
-                <Eraser size={14} /> Clear lasso targets
-              </button>
-            </div>
-            <div className="placement-list">
-              {targetableSceneTokens.map((token) => {
-                const actor = token.actorId ? props.actors.find((item) => item.id === token.actorId) : undefined;
-                const targeted = token.targetedByUserIds?.includes(props.currentUserId) ?? false;
-                return (
-                  <button className={targeted ? "placement-chip active" : "placement-chip"} key={`target-${token.id}`} type="button" onClick={() => props.targetToken(token.id, !targeted)}>
-                    <Crosshair size={14} />
-                    <span>{token.name}{actor && actor.name !== token.name ? ` / ${actor.name}` : ""}</span>
-                    {targeted ? <strong>marked</strong> : null}
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-          <label className="sheet-row">
-            <span>Conditions</span>
-            <input aria-label="Token conditions" defaultValue={formatTokenConditions(props.token)} disabled={!props.canUpdateToken} onBlur={(event) => props.updateToken({ conditions: parseTokenConditions(event.currentTarget.value) })} />
-          </label>
-          <label className="sheet-row">
-            <span>Auras</span>
-            <input aria-label="Token auras" defaultValue={formatTokenAuras(props.token)} disabled={!props.canUpdateToken} onBlur={(event) => props.updateToken({ auras: parseTokenAuras(event.currentTarget.value) })} />
-          </label>
-          <label className="sheet-row">
-            <span>Notes</span>
-            <textarea aria-label="Token notes" defaultValue={props.token.notes ?? ""} disabled={!props.canUpdateToken} onBlur={(event) => props.updateToken({ notes: event.currentTarget.value })} />
-          </label>
-          <div className="sheet-row">
-            <label htmlFor="token-vision-enabled">Token vision</label>
-            <input id="token-vision-enabled" type="checkbox" checked={props.token.visionEnabled} disabled={!props.canUpdateToken} onChange={(event) => { void props.updateTokenVision({ visionEnabled: event.target.checked }); }} />
-          </div>
-          <div className="sheet-row">
-            <label htmlFor="token-dim-vision">Dim vision radius</label>
-            <input key={`dim-vision:${props.token.id}:${props.token.dimVisionRadius ?? props.token.visionRadius}`} id="token-dim-vision" type="number" min={0} defaultValue={props.token.dimVisionRadius ?? props.token.visionRadius} disabled={!props.canUpdateToken || !props.token.visionEnabled} onBlur={(event) => commitTokenVisionInput(event.currentTarget, tokenDimVisionPatch(event.currentTarget.value), props.token!.dimVisionRadius ?? props.token!.visionRadius)} />
-          </div>
-          <div className="sheet-row">
-            <label htmlFor="token-bright-vision">Bright vision radius</label>
-            <input key={`bright-vision:${props.token.id}:${props.token.brightVisionRadius ?? 0}`} id="token-bright-vision" type="number" min={0} defaultValue={props.token.brightVisionRadius ?? 0} disabled={!props.canUpdateToken || !props.token.visionEnabled} onBlur={(event) => commitTokenVisionInput(event.currentTarget, tokenBrightVisionPatch(event.currentTarget.value), props.token!.brightVisionRadius ?? 0)} />
-          </div>
-          <button className="ghost-button wide" onClick={() => setDeleteDialogOpen(true)} disabled={!props.canDeleteToken}>
-            <X size={16} /> Delete Token
-          </button>
-          {deleteDialogOpen && props.token && (
-            <div className="modal-backdrop" role="presentation">
-              <div ref={deleteDialogRef} className="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="token-delete-dialog-title" aria-describedby="token-delete-dialog-description" tabIndex={-1}>
-                <div className="section-title" id="token-delete-dialog-title">Confirm token deletion</div>
-                <p id="token-delete-dialog-description">Delete {props.token.name} from {props.scene?.name ?? "the current scene"}. This removes the token from the scene and keeps the actor sheet.</p>
-                <div className="admin-actions">
-                  <button className="ghost-button danger-button" type="button" ref={deleteConfirmRef} onClick={() => {
-                    setDeleteDialogOpen(false);
-                    props.deleteToken();
-                  }}>
-                    <X size={16} /> Confirm Delete Token
-                  </button>
-                  <button className="ghost-button" type="button" onClick={() => setDeleteDialogOpen(false)}>
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </>
-      )}
-        </div>
-      <details className="operator-section actor-detail-disclosure">
-        <summary>Actor details</summary>
-      </details>
-      <div className="operator-section actor-detail-body">
-      <div className="metric-row">
-        <span>HP</span>
-        <strong>
-          {hp?.current ?? "?"}/{hp?.max ?? "?"}
-        </strong>
-      </div>
-      {armorClass && (
-        <div className="metric-row">
-          <span>AC</span>
-          <strong>{armorClass.label ? `${armorClass.value} (${armorClass.label})` : armorClass.value}</strong>
-        </div>
-      )}
-      {conditions.length > 0 && (
-        <div className="metric-row">
-          <span>Conditions</span>
-          <strong>{conditions.join(", ")}</strong>
-        </div>
-      )}
-      {combatState.length > 0 && (
-        <div className="metric-row">
-          <span>Combat State</span>
-          <strong>{combatState.join(" - ")}</strong>
-        </div>
-      )}
-      {resources.length > 0 && (
-        <div className="metric-row">
-          <span>Resources</span>
-          <strong>{resources.join(", ")}</strong>
-        </div>
-      )}
-      {inventory.length > 0 && (
-        <div className="metric-row">
-          <span>Inventory</span>
-          <strong>{inventory.map((item) => itemDisplayLabel(item)).join(", ")}</strong>
-        </div>
-      )}
-      {spells.length > 0 && (
-        <div className="metric-row">
-          <span>Spells</span>
-          <strong>{spells.map((item) => itemDisplayLabel(item)).join(", ")}</strong>
-        </div>
-      )}
-      {talents.length > 0 && (
-        <div className="metric-row">
-          <span>Talents</span>
-          <strong>{talents.map((item) => itemDisplayLabel(item)).join(", ")}</strong>
-        </div>
-      )}
-      {clues.length > 0 && (
-        <div className="metric-row">
-          <span>Clues</span>
-          <strong>{clues.map((item) => itemDisplayLabel(item)).join(", ")}</strong>
-        </div>
-      )}
-      {rituals.length > 0 && (
-        <div className="metric-row">
-          <span>Rituals</span>
-          <strong>{rituals.map((item) => itemDisplayLabel(item)).join(", ")}</strong>
-        </div>
-      )}
-      {actionLabels.length > 0 && (
-        <div className="metric-row">
-          <span>Actions</span>
-          <strong>{actionLabels.join(", ")}</strong>
-        </div>
-      )}
-      {firstAction && (
-        <>
-          <label className="sheet-row">
-            <span>Action Target</span>
-            <select aria-label="Action target actor" value={actionTargetActorId} disabled={!props.canUseAction} onChange={(event) => props.setActionTargetActorId(event.target.value)}>
-              {props.actors.map((actor) => (
-                <option key={actor.id} value={actor.id}>
-                  {actor.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          {tokenActionTargetOptions.length > 0 && (
-            <div className="sheet-row" aria-label="Token action target shortcuts">
-              <span>Token Targets</span>
-              <div className="button-row">
-                {tokenActionTargetOptions.slice(0, 4).map(({ token, actor }) => (
-                  <button className={actionTargetActorId === actor.id ? "ghost-button active" : "ghost-button"} key={actor.id} type="button" disabled={!props.canUseAction} onClick={() => props.setActionTargetActorId(actor.id)}>
-                    <MapPin size={14} /> Target {actor.name}
-                    {token.targetedByUserIds?.includes(props.currentUserId) ? " (marked)" : ""}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-          <label className="inline-check">
-            <input aria-label="Apply action effect" type="checkbox" checked={props.actionApplyEffect} disabled={!props.canUseAction} onChange={(event) => props.setActionApplyEffect(event.target.checked)} />
-            <span>Apply damage/healing to target</span>
-          </label>
-          <label className="inline-check">
-            <input aria-label="Consume action resources" type="checkbox" checked={props.actionConsumeResources} disabled={!props.canUseAction} onChange={(event) => props.setActionConsumeResources(event.target.checked)} />
-            <span>Consume spell slots, item charges, or class resources</span>
-          </label>
-          <button className="ghost-button wide" onClick={() => previewAction && props.useActorAction(previewAction.rollId, previewActionCommitOptions)} disabled={!props.canUseAction || !previewAction || Boolean(actionPreview?.blocked) || actionPreviewRequiresInput}>
-            <WandSparkles size={16} /> Use {previewAction?.label ?? firstAction.label}
-          </button>
-        </>
-      )}
-      <div className="sheet-row">
-        <label htmlFor="actor-hp">Current HP</label>
-        <input id="actor-hp" key={`detail:${props.actor.id}:${hp?.current ?? 0}`} type="number" defaultValue={hp?.current ?? 0} disabled={!props.canUpdateActor} onBlur={(event) => props.updateActorHp(props.actor!, Number(event.currentTarget.value))} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} />
-      </div>
-      <div className="sheet-row">
-        <label htmlFor="actor-conditions">Actor conditions</label>
-        <input id="actor-conditions" aria-label="Actor conditions" defaultValue={formatActorConditions(props.actor)} disabled={!props.canUpdateActor} onBlur={(event) => props.updateActorData(props.actor!, { conditions: parseActorConditions(event.currentTarget.value) })} />
-      </div>
-      {resourceControls.map((resource) => (
-        <div className="sheet-row" key={resource.key}>
-          <label htmlFor={`actor-resource-${resource.key}`}>{resource.label}</label>
-          <input id={`actor-resource-${resource.key}`} aria-label={`${resource.label} resource current`} type="number" defaultValue={resource.current} disabled={!props.canUpdateActor} onBlur={(event) => props.updateActorData(props.actor!, { resources: actorResourceUpdate(props.actor!, resource.key, Number(event.currentTarget.value)) })} />
-        </div>
-      ))}
-        </div>
-      {sheetView === "compendium" && (
-      <section className="operator-section compendium-browser" aria-label="Actor compendium browser">
-        <div className="operator-heading">
-          <div>
-            <div className="section-title">Compendium</div>
-            <p>{formatNumber(props.compendiumEntries.length)} entries for {props.actor.systemId}</p>
-          </div>
-        </div>
-        <label>
-          <span>Search</span>
-          <input aria-label="Compendium search" value={props.compendiumSearch} placeholder="Spell, item, condition" onChange={(event) => props.setCompendiumSearch(event.target.value)} />
-        </label>
-        <div className="admin-status" role="status" aria-live="polite">{props.compendiumStatus}</div>
-        <div className="compendium-list">
-          {filteredCompendiumEntries.length === 0 ? (
-            <div className="empty-state compact">No compendium entries match this search.</div>
-          ) : (
-            filteredCompendiumEntries.map((entry) => {
-              const purchasable = isPurchasableCompendiumEntry(props.actor!, entry);
-              const purchaseQuantity = purchaseQuantities[entry.id] ?? 1;
-              return (
-                <article className="compendium-entry" key={entry.id}>
-                  <div>
-                    <strong>{entry.name}</strong>
-                    <p>{entry.summary}</p>
-                    <div className="admin-meta">
-                      <span>{titleCaseLabel(entry.type)}</span>
-                      <span>{entry.id}</span>
-                      {entry.data.level !== undefined && <span>level {String(entry.data.level)}</span>}
-                      {entry.data.costGp !== undefined && <span>{formatGp(numericValue(entry.data.costGp, 0))}</span>}
-                      {purchasable && <span>{formatGp(numericValue(entry.data.costGp, 0) * purchaseQuantity)} total</span>}
-                    </div>
-                  </div>
-                  <div className="admin-actions">
-                    {purchasable && (
-                      <label>
-                        <span>Qty</span>
-                        <input
-                          aria-label={`${entry.name} purchase quantity`}
-                          type="number"
-                          min={1}
-                          max={99}
-                          value={purchaseQuantity}
-                          disabled={!props.canUpdateActor}
-                          onChange={(event) => setPurchaseQuantities({ ...purchaseQuantities, [entry.id]: clampNumber(Number(event.target.value), 1, 99) })}
-                        />
-                      </label>
-                    )}
-                    <button className="ghost-button" type="button" disabled={!props.canUpdateActor} onClick={() => props.onImportCompendiumEntry(entry).catch(console.error)}>
-                      <Plus size={14} /> Add
-                    </button>
-                    {purchasable && (
-                      <button className="ghost-button" type="button" disabled={!props.canUpdateActor} onClick={() => props.onPurchaseCompendiumEntry(entry, purchaseQuantity).catch(console.error)}>
-                        <Boxes size={14} /> Purchase
-                      </button>
-                    )}
-                  </div>
-                </article>
-              );
-            })
-          )}
-        </div>
-      </section>
-      )}
-      <details className="operator-section raw-data-details">
-        <summary>Raw actor data</summary>
-        <pre>{JSON.stringify(props.actor.data, null, 2)}</pre>
-      </details>
-    </div>
   );
 }
 

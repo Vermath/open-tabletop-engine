@@ -1,6 +1,6 @@
 # Hosted Deployment Recipes
 
-Status: v1.0 candidate operator guidance. Use this with [Self-Hosting](./self-hosting.md), [Backup and Restore](./backup-restore.md), and [Security Checklist](./security-checklist.md).
+Status: v1.0 candidate operator guidance. Use this with [Self-Hosting](./self-hosting.md), [Backup and Restore](./backup-restore.md), the [Deployment Threat Model](./threat-model.md), and [Security Checklist](./security-checklist.md).
 
 OpenTabletop Engine v1 supports hosted deployments when the platform can provide a durable single-writer SQLite volume, durable asset/plugin storage, stable secrets, TLS, and a way to run background workers. Platforms without durable writable storage are preview-only for v1.
 
@@ -11,7 +11,7 @@ Required for production:
 - Exactly one API writer attached to the SQLite store.
 - Durable storage for `storage/opentabletop.sqlite`, SQLite backups, uploaded assets when not using S3, and local plugin packages.
 - A reverse proxy, ingress, or platform edge that terminates TLS and enforces request body limits.
-- Secret-manager backed environment variables for session/admin auth, OIDC, SCIM, plugin trust keys, asset signing, webhooks, and worker bearer sessions.
+- Secret-manager backed environment variables for session/admin auth, OIDC, SCIM, plugin trust keys, asset signing, webhooks, and dedicated worker principals. APIs receive named worker token hashes; workers receive the corresponding plaintext tokens.
 - At least one worker process for backup, restore-drill, import/export, asset cleanup/migration, and AI jobs.
 - A documented backup schedule plus a restore drill before upgrades.
 
@@ -72,7 +72,7 @@ Operational rules:
 Worker scale example:
 
 ```bash
-OTTE_WORKER_SESSION_TOKEN=$OTTE_SESSION_TOKEN docker compose --profile worker up -d --scale worker=3 worker
+OTTE_WORKER_PROFILE_ENABLED=true OTTE_WORKER_TOKEN_HASHES="$OTTE_WORKER_TOKEN_HASHES" OTTE_WORKER_TOKEN="$OTTE_WORKER_TOKEN" OTTE_WORKER_ID=worker-primary docker compose --profile worker up -d --scale worker=3 worker
 ```
 
 ## Recipe 3: Kubernetes-Style Orchestrator
@@ -110,7 +110,7 @@ Map the platform features to OpenTabletop responsibilities:
 | Persistent volume | SQLite store, backups, local uploads if not using S3, and plugin packages |
 | Background worker | `@open-tabletop/worker` with `OTTE_WORKER_LEASE_POLL=true` |
 | Object storage | `OTTE_ASSET_STORAGE=s3` provider for uploaded assets |
-| Secret manager | OIDC, SCIM, plugin trust, asset signing, webhook, and worker bearer tokens |
+| Secret manager | OIDC, SCIM, plugin trust, asset signing, webhook, and dedicated worker tokens; expose only hashes to the API |
 | Scheduled job | Backup and restore-drill job creation or API calls |
 
 If the platform cannot keep the SQLite volume and backup directory across redeploys, treat it as preview-only.
@@ -155,3 +155,6 @@ Before calling a hosted deployment production-ready:
 - A worker leases and completes at least one maintenance job.
 - Asset upload, signed delivery, archive export, and archive import work.
 - Plugin trust policy, asset signing secret, legacy auth, OIDC/SCIM posture, and audit export are reviewed from the Admin tab.
+- Installation AI policy is explicitly disabled or fully configured with context scopes, local retention, and provider-transmission disclosure.
+- Campaign AI policies are reviewed; a public-only policy cannot transmit GM-private context.
+- Local AI privacy preview/prune is exercised without deleting proposals, approved canon memory, or aggregate audit, and no provider-deletion claim is made.

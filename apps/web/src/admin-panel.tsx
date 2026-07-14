@@ -1,7 +1,7 @@
 import type { Campaign, EmailOutboxMessage, OrganizationMemberRole, OrganizationWorkspace, ScimAssignableRole, UserRole } from "@open-tabletop/core";
 import { Activity, Check, Download, KeyRound, Mail, RefreshCw, RotateCcw, Send, Shield, Timer, Trash2, Upload, UserCog, UserPlus, UserX, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { apiGet, apiPost, type AdminAuthConnectionTestResult, type AdminJob, type AdminJobAlertResult, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminSessionInfo, type AdminSnapshot, type AdminStorageBackupResult, type AdminStorageRestoreDrillResult, type AdminStorageRestoreResult, type AdminUserInfo, type OrganizationMemberInfo, type PluginReviewStatus, type SystemRuntimeInfo } from "./api.js";
+import { apiGet, apiPost, type AdminAssetSnapshotIdentity, type AdminAuthConnectionTestResult, type AdminJob, type AdminJobAlertResult, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminSessionInfo, type AdminSnapshot, type AdminStorageBackupResult, type AdminStorageRestoreDrillResult, type AdminStorageRestoreResult, type AdminUserInfo, type OrganizationMemberInfo, type PluginReviewStatus, type SystemRuntimeInfo } from "./api.js";
 import { campaignPermissionTemplates, identityProviderSetupGuides, type CampaignPermissionTemplateId } from "./admin-data.js";
 import { MetricTile } from "./metric-tile.js";
 import { downloadJson, errorMessage, formatAdminList, formatCost, formatDateTime, formatDuration, formatDurationSeconds, formatNumber, formatPercent, formatStorageBytes, jobStatusClass, readinessStatusClass, recordValue, registryHostLabel, stringValue, titleCaseLabel } from "./sheet-format.js";
@@ -12,7 +12,7 @@ interface AdminWorkspaceRequest {
 }
 
 
-export function AdminPanel(props: { admin?: AdminSnapshot; campaigns: Campaign[]; systems: SystemRuntimeInfo[]; workspaceDefaults?: OrganizationWorkspace; organizationMembers: OrganizationMemberInfo[]; currentUserId: string; workspaceKey: string; status: string; onRefresh(): Promise<void>; onDisableUser(user: AdminUserInfo): Promise<void>; onEnableUser(user: AdminUserInfo): Promise<void>; onRequireReset(user: AdminUserInfo): Promise<void>; onIssueReset(user: AdminUserInfo): Promise<void>; onRevokeUserSessions(user: AdminUserInfo): Promise<void>; onRevokeSession(session: AdminSessionInfo): Promise<void>; onRevokeRiskSessions(): Promise<void>; onPruneExpiredPasswordResets(): Promise<void>; onRetryEmail(email: EmailOutboxMessage): Promise<void>; onRetryAllEmails(): Promise<void>; onRetryAiToolCall(toolCallId: string, toolName: string): Promise<void>; onFailStaleAiThreads(): Promise<void>; onFailStaleAiToolCalls(): Promise<void>; onRejectStaleAiProposals(includeApproved?: boolean): Promise<void>; onCleanupStoredAssetBytes(): Promise<void>; onMigrateStoredAssetBytes(): Promise<void>; onQuarantineAssetIntegrityFailures(): Promise<void>; onPurgeAssetCdnCache(assetId: string, assetName: string): Promise<void>; onUpdatePluginReview(review: AdminPluginReviewInfo, status: PluginReviewStatus): Promise<void>; onSyncPluginRegistries(): Promise<void>; onUpdateWorkspaceDefaults(input: Partial<OrganizationWorkspace>): Promise<void>; onAddOrganizationMember(input: { email: string; role: Exclude<OrganizationMemberRole, "owner"> }): Promise<void>; onUpdateOrganizationMember(member: OrganizationMemberInfo, role: Exclude<OrganizationMemberRole, "owner">): Promise<void>; onRemoveOrganizationMember(member: OrganizationMemberInfo): Promise<void>; onCreateScimMapping(input: AdminScimGroupRoleMappingInput): Promise<void>; onDeleteScimMapping(mapping: AdminScimGroupRoleMapping): Promise<void> }) {
+export function AdminPanel(props: { admin?: AdminSnapshot; campaigns: Campaign[]; systems: SystemRuntimeInfo[]; workspaceDefaults?: OrganizationWorkspace; organizationMembers: OrganizationMemberInfo[]; currentUserId: string; workspaceKey: string; status: string; onRefresh(): Promise<void>; onDisableUser(user: AdminUserInfo): Promise<void>; onEnableUser(user: AdminUserInfo): Promise<void>; onRequireReset(user: AdminUserInfo): Promise<void>; onIssueReset(user: AdminUserInfo): Promise<void>; onRevokeUserSessions(user: AdminUserInfo): Promise<void>; onRevokeSession(session: AdminSessionInfo): Promise<void>; onRevokeRiskSessions(): Promise<void>; onPruneExpiredPasswordResets(): Promise<void>; onRetryEmail(email: EmailOutboxMessage): Promise<void>; onRetryAllEmails(): Promise<void>; onRetryAiToolCall(toolCallId: string, toolName: string): Promise<void>; onFailStaleAiThreads(): Promise<void>; onFailStaleAiToolCalls(): Promise<void>; onRejectStaleAiProposals(includeApproved?: boolean): Promise<void>; onCleanupStoredAssetBytes(): Promise<void>; onMigrateStoredAssetBytes(): Promise<void>; onQuarantineAssetIntegrityFailures(): Promise<void>; onPurgeAssetCdnCache(assetId: string, assetName: string, assetUpdatedAt: string): Promise<void>; onUpdatePluginReview(review: AdminPluginReviewInfo, status: PluginReviewStatus): Promise<void>; onSyncPluginRegistries(): Promise<void>; onUpdateWorkspaceDefaults(input: Partial<OrganizationWorkspace>): Promise<void>; onAddOrganizationMember(input: { email: string; role: Exclude<OrganizationMemberRole, "owner"> }): Promise<void>; onUpdateOrganizationMember(member: OrganizationMemberInfo, role: Exclude<OrganizationMemberRole, "owner">): Promise<void>; onRemoveOrganizationMember(member: OrganizationMemberInfo): Promise<void>; onCreateScimMapping(input: AdminScimGroupRoleMappingInput): Promise<void>; onDeleteScimMapping(mapping: AdminScimGroupRoleMapping): Promise<void> }) {
   const users = props.admin?.users ?? [];
   const sessions = props.admin?.sessions ?? [];
   const emails = props.admin?.emailOutbox.slice().reverse() ?? [];
@@ -106,6 +106,8 @@ export function AdminPanel(props: { admin?: AdminSnapshot; campaigns: Campaign[]
   const [storageBackupStatus, setStorageBackupStatus] = useState("No storage backup run");
   const [storageRestoreDrill, setStorageRestoreDrill] = useState<AdminStorageRestoreDrillResult>();
   const [storageRestoreConfirm, setStorageRestoreConfirm] = useState("");
+  const [assetSnapshotId, setAssetSnapshotId] = useState("");
+  const [assetSnapshotCreatedAt, setAssetSnapshotCreatedAt] = useState("");
   const [jobLedgerStatus, setJobLedgerStatus] = useState("No job action run");
   const [auditActionFilter, setAuditActionFilter] = useState("");
   const [auditTargetTypeFilter, setAuditTargetTypeFilter] = useState("");
@@ -131,6 +133,8 @@ export function AdminPanel(props: { admin?: AdminSnapshot; campaigns: Campaign[]
     setStorageBackupStatus("No storage backup run");
     setStorageRestoreDrill(undefined);
     setStorageRestoreConfirm("");
+    setAssetSnapshotId("");
+    setAssetSnapshotCreatedAt("");
     setJobLedgerStatus("No job action run");
     setAuditActionFilter("");
     setAuditTargetTypeFilter("");
@@ -311,12 +315,27 @@ export function AdminPanel(props: { admin?: AdminSnapshot; campaigns: Campaign[]
   }
 
   async function createStorageBackup() {
+    const activeProvider = assetStorage?.runtime.provider === "local" || assetStorage?.runtime.provider === "s3" ? assetStorage.runtime.provider : undefined;
+    const snapshotInputStarted = Boolean(assetSnapshotId || assetSnapshotCreatedAt);
+    if (snapshotInputStarted && (!activeProvider || !assetSnapshotId.trim() || !assetSnapshotCreatedAt.trim())) {
+      setStorageBackupStatus("Enter both the provider snapshot ID and canonical ISO creation time, or clear both for a database-only backup");
+      return;
+    }
+    const assetSnapshot: AdminAssetSnapshotIdentity | undefined = snapshotInputStarted && activeProvider
+      ? { provider: activeProvider, snapshotId: assetSnapshotId.trim(), createdAt: assetSnapshotCreatedAt.trim() }
+      : undefined;
     setStorageBackupStatus("Creating backup");
     try {
       await runAdminWorkspaceRequest(
-        (request) => apiPost<AdminStorageBackupResult>("/api/v1/admin/storage/backup", { reason: "admin_ui_manual_backup" }, { signal: request.controller.signal }),
+        (request) => apiPost<AdminStorageBackupResult>("/api/v1/admin/storage/backup", {
+          reason: "admin_ui_manual_backup",
+          requireAssetSnapshot: Boolean(assetSnapshot),
+          ...(assetSnapshot ? { assetSnapshot } : {})
+        }, { signal: request.controller.signal, idempotencyKey: crypto.randomUUID() }),
         async (result) => {
-          setStorageBackupStatus(`Backup created: ${result.fileName} (${formatStorageBytes(result.sizeBytes)})`);
+          setStorageBackupStatus(result.recoveryPoint.paired
+            ? `Paired recovery point created: ${result.fileName} (${formatStorageBytes(result.sizeBytes)})`
+            : `Database-only backup created: ${result.fileName}; asset snapshot pairing is still required`);
           await props.onRefresh();
         }
       );
@@ -327,12 +346,22 @@ export function AdminPanel(props: { admin?: AdminSnapshot; campaigns: Campaign[]
 
   async function runStorageRestoreDrill() {
     setStorageBackupStatus("Running restore drill");
+    const latest = storageOperations?.backups?.latest;
+    const expectedAssetSnapshot = latest?.recoveryPoint.manifest?.assetSnapshot;
     try {
       await runAdminWorkspaceRequest(
-        (request) => apiPost<AdminStorageRestoreDrillResult>("/api/v1/admin/storage/restore-drill", {}, { signal: request.controller.signal }),
+        (request) => apiPost<AdminStorageRestoreDrillResult>("/api/v1/admin/storage/restore-drill", {
+          ...(latest ? { backupFileName: latest.fileName } : {}),
+          requireAssetSnapshot: Boolean(expectedAssetSnapshot),
+          ...(expectedAssetSnapshot ? { expectedAssetSnapshot } : {})
+        }, { signal: request.controller.signal }),
         async (result) => {
           setStorageRestoreDrill(result);
-          setStorageBackupStatus(result.status === "passed" ? `Restore drill passed: ${formatNumber(result.recordCount)} records checked` : `Restore drill failed: ${result.error ?? "unknown error"}`);
+          setStorageBackupStatus(result.status === "passed"
+            ? result.actionRequired
+              ? `Database restore drill passed, but recovery point needs action: ${result.actionReasons.join(", ")}`
+              : `Paired restore drill passed: ${formatNumber(result.recordCount)} records checked`
+            : `Restore drill failed: ${result.error ?? "unknown error"}`);
           await props.onRefresh();
         }
       );
@@ -344,13 +373,14 @@ export function AdminPanel(props: { admin?: AdminSnapshot; campaigns: Campaign[]
 
   async function queueStorageJob(type: "storage.backup" | "storage.restoreDrill") {
     setStorageBackupStatus(`Queueing ${type}`);
+    const idempotencyKey = crypto.randomUUID();
     try {
       await runAdminWorkspaceRequest(
         (request) => apiPost<AdminJob>("/api/v1/admin/jobs", {
           type,
           payload: { reason: `admin_ui_${type.replace(".", "_")}` },
           maxAttempts: 3
-        }, { signal: request.controller.signal }),
+        }, { signal: request.controller.signal, idempotencyKey }),
         async (job) => {
           setStorageBackupStatus(`${job.type} queued`);
           setJobLedgerStatus(`${job.type} queued`);
@@ -366,12 +396,19 @@ export function AdminPanel(props: { admin?: AdminSnapshot; campaigns: Campaign[]
     setStorageBackupStatus("Restoring backup");
     try {
       const confirmFileName = storageRestoreConfirm;
+      const expectedStateRevision = storageOperations?.restoreStateRevision;
+      if (!expectedStateRevision) throw new Error("Refresh storage operations before confirming a destructive restore");
+      const latest = storageOperations?.backups?.latest?.fileName === fileName ? storageOperations.backups.latest : undefined;
+      const expectedAssetSnapshot = latest?.recoveryPoint.manifest?.assetSnapshot;
       await runAdminWorkspaceRequest(
         (request) => apiPost<AdminStorageRestoreResult>("/api/v1/admin/storage/restore", {
           backupFileName: fileName,
           confirmFileName,
-          reason: "admin_ui_destructive_restore"
-        }, { signal: request.controller.signal }),
+          expectedStateRevision,
+          reason: "admin_ui_destructive_restore",
+          requireAssetSnapshot: Boolean(expectedAssetSnapshot),
+          ...(expectedAssetSnapshot ? { expectedAssetSnapshot } : {})
+        }, { signal: request.controller.signal, idempotencyKey: crypto.randomUUID() }),
         async (result) => {
           setStorageRestoreDrill(result);
           setStorageRestoreConfirm((current) => current === confirmFileName ? "" : current);
@@ -386,9 +423,10 @@ export function AdminPanel(props: { admin?: AdminSnapshot; campaigns: Campaign[]
 
   async function retryAdminJob(job: AdminJob) {
     setJobLedgerStatus(`Retrying ${job.type}`);
+    const idempotencyKey = crypto.randomUUID();
     try {
       await runAdminWorkspaceRequest(
-        (request) => apiPost<AdminJob>(`/api/v1/admin/jobs/${job.id}/retry`, {}, { signal: request.controller.signal }),
+        (request) => apiPost<AdminJob>(`/api/v1/admin/jobs/${job.id}/retry`, { expectedUpdatedAt: job.updatedAt }, { signal: request.controller.signal, idempotencyKey }),
         async (result) => {
           setJobLedgerStatus(`${result.type} requeued with ${formatNumber(result.maxAttempts - result.attempts)} attempts remaining`);
           await props.onRefresh();
@@ -401,9 +439,10 @@ export function AdminPanel(props: { admin?: AdminSnapshot; campaigns: Campaign[]
 
   async function cancelAdminJob(job: AdminJob) {
     setJobLedgerStatus(`Cancelling ${job.type}`);
+    const idempotencyKey = crypto.randomUUID();
     try {
       await runAdminWorkspaceRequest(
-        (request) => apiPost<AdminJob>(`/api/v1/admin/jobs/${job.id}/cancel`, { reason: "admin_ui_cancel" }, { signal: request.controller.signal }),
+        (request) => apiPost<AdminJob>(`/api/v1/admin/jobs/${job.id}/cancel`, { reason: "admin_ui_cancel", expectedUpdatedAt: job.updatedAt }, { signal: request.controller.signal, idempotencyKey }),
         async (result) => {
           setJobLedgerStatus(`${result.type} ${result.status}`);
           await props.onRefresh();
@@ -416,9 +455,10 @@ export function AdminPanel(props: { admin?: AdminSnapshot; campaigns: Campaign[]
 
   async function deliverJobAlert(dryRun: boolean) {
     setJobLedgerStatus(dryRun ? "Dry-running job alert" : "Delivering job alert");
+    const deliveryId = crypto.randomUUID();
     try {
       await runAdminWorkspaceRequest(
-        (request) => apiPost<AdminJobAlertResult>("/api/v1/admin/jobs/alerts", { dryRun, force: dryRun, reason: dryRun ? "admin_ui_dry_run" : "admin_ui_delivery" }, { signal: request.controller.signal }),
+        (request) => apiPost<AdminJobAlertResult>("/api/v1/admin/jobs/alerts", { deliveryId, dryRun, force: dryRun, reason: dryRun ? "admin_ui_dry_run" : "admin_ui_delivery" }, { signal: request.controller.signal, idempotencyKey: deliveryId }),
         async (result) => {
           const target = result.configured ? `webhook ${result.webhookStatus ?? "configured"}` : "webhook not configured";
           setJobLedgerStatus(`${result.status}: ${formatNumber(result.remediationCount)} remediations - ${target}`);
@@ -1169,6 +1209,7 @@ export function AdminPanel(props: { admin?: AdminSnapshot; campaigns: Campaign[]
                 <span>{storageOperations.actionReasons.length > 0 ? storageOperations.actionReasons.join(", ") : "no action reasons"}</span>
                 <span>{storageOperations.integrity?.ok ? "integrity ok" : storageOperations.integrity ? "integrity failed" : "integrity not checked"}</span>
                 <span>{storageOperations.backups?.latest ? `latest backup ${formatDateTime(storageOperations.backups.latest.createdAt)}` : "no backup"}</span>
+                <span>{storageOperations.backups?.latest?.recoveryPoint?.paired ? "asset snapshot paired" : "database-only or unpaired recovery point"}</span>
                 <span>{storageOperations.scheduledBackups?.enabled ? "scheduled backups enabled" : "scheduled backups off"}</span>
                 <span>{storageOperations.indexes?.missing.length ? `missing indexes ${storageOperations.indexes.missing.join(", ")}` : "required indexes present"}</span>
               </div>
@@ -1186,6 +1227,9 @@ export function AdminPanel(props: { admin?: AdminSnapshot; campaigns: Campaign[]
               <MetricTile label="Integrity" value={storageOperations.integrity?.ok ? "ok" : "check"} />
               <MetricTile label="Indexes Missing" value={formatNumber(storageOperations.indexes?.missing.length)} />
               <MetricTile label="Latest Backup" value={storageOperations.backups?.latest ? formatStorageBytes(storageOperations.backups.latest.sizeBytes) : "missing"} />
+              <MetricTile label="Recovery Pair" value={storageOperations.backups?.latest?.recoveryPoint?.paired ? "paired" : "unpaired"} />
+              <MetricTile label="Recovery Manifest" value={storageOperations.backups?.latest?.recoveryPoint?.manifestStatus ?? "missing"} />
+              <MetricTile label="Asset Inventory" value={formatNumber(storageOperations.backups?.latest?.recoveryPoint?.manifest?.assetInventory.assetCount)} />
               <MetricTile label="Backup Schedule" value={storageOperations.scheduledBackups?.enabled ? "enabled" : "off"} />
               <MetricTile label="Backup Interval" value={storageOperations.scheduledBackups?.intervalSeconds ? formatDurationSeconds(storageOperations.scheduledBackups.intervalSeconds) : "manual"} />
               <MetricTile label="Backup Startup" value={storageOperations.scheduledBackups?.runOnStart ? "yes" : "no"} />
@@ -1221,9 +1265,26 @@ export function AdminPanel(props: { admin?: AdminSnapshot; campaigns: Campaign[]
                 <strong>{storageRestoreDrill.error ?? `${formatNumber(storageRestoreDrill.recordCount)} records - ${storageRestoreDrill.backup?.fileName ?? "latest backup"}`}</strong>
               </div>
             )}
+            {storageOperations.backups?.latest?.recoveryPoint?.manifest?.assetSnapshot && (
+              <div className="operator-row tool-call-row">
+                <span>Paired asset snapshot</span>
+                <strong>{storageOperations.backups.latest.recoveryPoint.manifest.assetSnapshot.provider}:{storageOperations.backups.latest.recoveryPoint.manifest.assetSnapshot.snapshotId} at {formatDateTime(storageOperations.backups.latest.recoveryPoint.manifest.assetSnapshot.createdAt)}</strong>
+              </div>
+            )}
+            <div className="operator-grid" aria-label="Asset snapshot recovery pairing">
+              <label>
+                Asset snapshot ID
+                <input value={assetSnapshotId} maxLength={200} placeholder="Provider snapshot or version ID" onChange={(event) => setAssetSnapshotId(event.target.value)} />
+              </label>
+              <label>
+                Asset snapshot created at
+                <input value={assetSnapshotCreatedAt} maxLength={40} placeholder="2026-07-13T18:30:00.000Z" onChange={(event) => setAssetSnapshotCreatedAt(event.target.value)} />
+              </label>
+              <p className="account-summary">Create the asset snapshot with the active {assetStorage?.runtime.provider ?? "asset"} provider first, then enter its exact non-secret identity. The API records and validates the pair; it never creates provider snapshots.</p>
+            </div>
             {storageOperations.backups?.latest && (
               <div className="danger-zone" aria-label="Destructive storage restore">
-                <p className="account-summary">Restores the live SQLite store from the latest verified backup. Type the backup filename exactly before running it.</p>
+                <p className="account-summary">Restores the live SQLite store from the latest verified backup. Paired recovery points also require the exact recorded asset snapshot identity. Restore that provider snapshot separately, then type the backup filename exactly.</p>
                 <input aria-label="Confirm storage restore backup filename" value={storageRestoreConfirm} placeholder={storageOperations.backups.latest.fileName} onChange={(event) => setStorageRestoreConfirm(event.target.value)} />
                 <button className="ghost-button wide" type="button" onClick={() => restoreStorageBackup(storageOperations.backups!.latest!.fileName).catch(console.error)} disabled={!storageOperations.supported || storageRestoreConfirm !== storageOperations.backups.latest.fileName}>
                   <RotateCcw size={14} /> Restore Backup
@@ -1231,7 +1292,7 @@ export function AdminPanel(props: { admin?: AdminSnapshot; campaigns: Campaign[]
               </div>
             )}
             <div className="admin-actions">
-              <button className="ghost-button" title="Create a timestamped SQLite backup" onClick={() => createStorageBackup().catch(console.error)} disabled={!storageOperations.supported}>
+              <button className="ghost-button" title="Create a timestamped SQLite backup and pair it when an operator-created asset snapshot identity is supplied" onClick={() => createStorageBackup().catch(console.error)} disabled={!storageOperations.supported}>
                 <Download size={14} /> Create Backup
               </button>
               <button className="ghost-button" title="Copy the latest SQLite backup and verify it can be opened" onClick={() => runStorageRestoreDrill().catch(console.error)} disabled={!storageOperations.supported || !storageOperations.backups?.latest}>
@@ -1654,7 +1715,7 @@ export function AdminPanel(props: { admin?: AdminSnapshot; campaigns: Campaign[]
                   </div>
                 )}
                 <div className="admin-actions">
-                  <button className="ghost-button" title="Purge this asset from the configured CDN cache" onClick={() => props.onPurgeAssetCdnCache(asset.assetId, asset.name).catch(console.error)} disabled={!assetStorage?.runtime.delivery.purgeWebhookConfigured}>
+                  <button className="ghost-button" title="Purge this asset from the configured CDN cache" onClick={() => props.onPurgeAssetCdnCache(asset.assetId, asset.name, asset.updatedAt).catch(console.error)} disabled={!assetStorage?.runtime.delivery.purgeWebhookConfigured}>
                     <RefreshCw size={14} /> Purge CDN
                   </button>
                 </div>
@@ -2615,6 +2676,7 @@ export function AdminPanel(props: { admin?: AdminSnapshot; campaigns: Campaign[]
             </div>
             <div className="metric-grid">
               <MetricTile label="Catalog Plugins" value={formatNumber(pluginOperations.totals.catalogPluginCount)} />
+              <MetricTile label="Registry Generation" value={pluginOperations.registryRevision.slice(0, 12)} />
               <MetricTile label="Packages" value={formatNumber(pluginOperations.totals.packageCount)} />
               <MetricTile label="Plugin Review Policy" value={pluginOperations.policy.review} />
               <MetricTile label="Plugin Action" value={pluginOperations.actionRequired ? "yes" : "no"} />
@@ -2999,6 +3061,7 @@ export function AdminPanel(props: { admin?: AdminSnapshot; campaigns: Campaign[]
             </div>
             <div className="metric-grid">
               <MetricTile label="Review Packages" value={formatNumber(pluginReviews.plugins.length)} />
+              <MetricTile label="Review Generation" value={pluginReviews.registryRevision.slice(0, 12)} />
               <MetricTile label="Review Policy" value={pluginReviews.policy.mode} />
               <MetricTile label="Pending Reviews" value={formatNumber(pluginReviews.totals.pending)} />
               <MetricTile label="Approved Reviews" value={formatNumber(pluginReviews.totals.approved)} />
