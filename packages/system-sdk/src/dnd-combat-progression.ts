@@ -13,7 +13,7 @@ import {
   advanceDnd5eSrdEffectLifecycle,
   type Dnd5eSrdEffectLifecycleChange
 } from "./dnd-effect-lifecycle.js";
-import { grantDnd5eSrdHeroicInspiration } from "./dnd-rules-completion.js";
+import { dnd5eSrdMonsterZeroHpKnockout, grantDnd5eSrdHeroicInspiration } from "./dnd-rules-completion.js";
 import type { Dnd5eSrdConcentrationCleanup, RulesResolutionActorUpdate } from "./dnd-resolution-types.js";
 
 type JsonRecord = Record<string, unknown>;
@@ -158,7 +158,8 @@ export function synchronizeDnd5eSrdActorCombatState(
     lifeState = "defeated";
     successes = 0;
     failures = 0;
-    lifecycleConditions = ["unconscious"];
+    // Monsters die at 0 HP by default; the explicit per-instance knockout flag opts into unconsciousness.
+    lifecycleConditions = dnd5eSrdMonsterZeroHpKnockout(actor.data) ? ["unconscious"] : ["dead"];
   } else if (storedState === "dead" || failures >= 3 || combatant?.deathSaveOutcome === "dead") {
     lifeState = "dead";
     failures = 3;

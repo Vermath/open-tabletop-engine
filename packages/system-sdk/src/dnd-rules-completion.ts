@@ -88,7 +88,7 @@ export interface Dnd5eSrdDamageDefenses {
 
 export interface Dnd5eSrdResolvedDamageComponent extends Dnd5eSrdDamageComponent {
   adjustedAmount: number;
-  defense: "normal" | "resistance" | "immunity" | "vulnerability";
+  defense: "normal" | "resistance" | "immunity" | "vulnerability" | "resistance-and-vulnerability";
 }
 
 export interface Dnd5eSrdDamageLifecycle {
@@ -118,9 +118,21 @@ function boundedDeathSaves(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.min(3, Math.floor(value))) : 0;
 }
 
+/**
+ * SRD 5.2.1 default: a monster dies when it drops to 0 HP. A GM can mark an
+ * individual creature to be knocked unconscious instead by setting
+ * `actor.data.zeroHpBehavior` to "knockout" (or "unconscious") before damage
+ * is applied. The choice is per-instance and auditable through the normal
+ * actor mutation path; there is no hidden global preference.
+ */
+export function dnd5eSrdMonsterZeroHpKnockout(data: Record<string, unknown> | undefined): boolean {
+  const value = data?.zeroHpBehavior;
+  return typeof value === "string" && ["knockout", "unconscious", "nonlethal", "non-lethal"].includes(value.trim().toLowerCase());
+}
+
 /** Resolves every typed component independently before applying the combined result to temporary HP and HP. */
 export function resolveDnd5eSrdDamageComponents(input: {
-  actor: Pick<Actor, "type">;
+  actor: Pick<Actor, "type"> & { data?: Record<string, unknown> };
   hitPoints: { current: number; max: number };
   temporaryHitPoints?: number;
   components: readonly Dnd5eSrdDamageComponent[];
@@ -136,9 +148,20 @@ export function resolveDnd5eSrdDamageComponents(input: {
     const damageType = component.damageType.trim().toLowerCase();
     if (!damageType) throw new Error("Every damage component requires a damage type");
     if (immunity.has(damageType)) return { ...component, damageType, adjustedAmount: 0, defense: "immunity" as const };
-    if (resistance.has(damageType)) return { ...component, damageType, adjustedAmount: Math.floor(component.amount / 2), defense: "resistance" as const };
-    if (vulnerability.has(damageType)) return { ...component, damageType, adjustedAmount: component.amount * 2, defense: "vulnerability" as const };
-    return { ...component, damageType, adjustedAmount: component.amount, defense: "normal" as const };
+    // SRD 5.2.1 damage order: Resistance halves first, then Vulnerability doubles the halved result.
+    const resistant = resistance.has(damageType);
+    const vulnerable = vulnerability.has(damageType);
+    let adjustedAmount = component.amount;
+    if (resistant) adjustedAmount = Math.floor(adjustedAmount / 2);
+    if (vulnerable) adjustedAmount = adjustedAmount * 2;
+    const defense = resistant && vulnerable
+      ? ("resistance-and-vulnerability" as const)
+      : resistant
+        ? ("resistance" as const)
+        : vulnerable
+          ? ("vulnerability" as const)
+          : ("normal" as const);
+    return { ...component, damageType, adjustedAmount, defense };
   });
   const totalDamage = components.reduce((sum, component) => sum + component.adjustedAmount, 0);
   const temporaryHitPointsBefore = Math.max(0, Math.floor(input.temporaryHitPoints ?? 0));
@@ -155,7 +178,10 @@ export function resolveDnd5eSrdDamageComponents(input: {
   if (hitPointsAfter > 0) {
     lifecycle = { state: "conscious", conditionIds: [], deathSaveSuccesses: 0, deathSaveFailures: 0, massiveDamage: false };
   } else if (!character) {
-    lifecycle = { state: "defeated", conditionIds: ["unconscious"], deathSaveSuccesses: 0, deathSaveFailures: 0, massiveDamage: false };
+    // Monsters die at 0 HP by default; the explicit per-instance knockout flag opts into unconsciousness.
+    lifecycle = dnd5eSrdMonsterZeroHpKnockout(input.actor.data)
+      ? { state: "defeated", conditionIds: ["unconscious"], deathSaveSuccesses: 0, deathSaveFailures: 0, massiveDamage: false }
+      : { state: "defeated", conditionIds: ["dead"], deathSaveSuccesses: 0, deathSaveFailures: 0, massiveDamage: false };
   } else if (massiveDamage) {
     lifecycle = { state: "dead", conditionIds: ["dead"], deathSaveSuccesses: 0, deathSaveFailures: 3, massiveDamage: true };
   } else if (hitPointsBefore === 0 && hpDamage > 0) {

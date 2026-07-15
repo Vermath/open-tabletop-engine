@@ -392,9 +392,13 @@ describe("dnd 5.5e srd rules", () => {
     });
     expect(dnd5eSrdMulticlassSpellSlots([{ className: "Wizard", level: 20 }]).level9).toEqual({ current: 1, max: 1, recovery: "long" });
     expect(dnd5eSrdMulticlassSpellSlots([{ className: "Fighter", level: 11 }])).toEqual({});
-    // Half-caster levels round DOWN: Paladin 3 + Wizard 1 = floor(3/2) + 1 = 2.
-    expect(dnd5eSrdMulticlassCasterLevel([{ className: "Paladin", level: 3 }, { className: "Wizard", level: 1 }])).toBe(2);
-    expect(dnd5eSrdMulticlassCasterLevel([{ className: "Ranger", level: 5 }])).toBe(2);
+    // SRD 5.2.1 half-caster levels round UP: Paladin 3 + Wizard 1 = ceil(3/2) + 1 = 3.
+    expect(dnd5eSrdMulticlassCasterLevel([{ className: "Paladin", level: 3 }, { className: "Wizard", level: 1 }])).toBe(3);
+    expect(dnd5eSrdMulticlassCasterLevel([{ className: "Ranger", level: 5 }])).toBe(3);
+    // Even half-caster levels are unaffected by the rounding direction.
+    expect(dnd5eSrdMulticlassCasterLevel([{ className: "Paladin", level: 4 }])).toBe(2);
+    expect(dnd5eSrdMulticlassCasterLevel([{ className: "Paladin", level: 1 }])).toBe(1);
+    expect(dnd5eSrdMulticlassCasterLevel([{ className: "Paladin", level: 3 }, { className: "Ranger", level: 5 }])).toBe(5);
   });
 
   it("applies a multiclass level with combined level, proficiency, HP, and shared slots", () => {

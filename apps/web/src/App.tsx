@@ -42,6 +42,7 @@ import { CampaignOwnershipTransfer, type CampaignOwnershipTransferInput } from "
 import { campaignSurpriseEnabled, CampaignRulesProfilePanel } from "./campaign-rules-profile.js";
 import { CharacterTransferPanel } from "./character-transfer-panel.js";
 import { CombatPanel, nextCombatTurnPosition } from "./combat-panel.js";
+import { combatTurnAdvanceRetryIsSafe, staleWriteCurrentCombat } from "./combat-conflict.js";
 import { combatRewardAttemptForIntent, combatRewardIntentFingerprint, type CombatRewardAttempt } from "./combat-reward-idempotency.js";
 import { appendMutationAttemptForIntent, appendMutationFingerprint, type AppendMutationAttempt } from "./append-mutation-idempotency.js";
 import { AdvancementFlow, type AdvancementChoicePayload, type AdvancementFeatInfo, type AdvancementMulticlassOption, type AdvancementPreviewEnvelope, type AdvancementSubclassOption, type AdvancementWeaponMasteryInfo } from "./advancement-flow.js";
@@ -6529,7 +6530,10 @@ export function App() {
   async function updateCombat(combat: Combat, patch: Partial<Combat>) {
     const request = currentWorkspaceRequestIdentity();
     try {
-      const latest = snapshotRef.current.combats.find((candidate) => candidate.id === combat.id) ?? combat;
+      const snapshotCombat = snapshotRef.current.combats.find((candidate) => candidate.id === combat.id);
+      // Prefer whichever revision is newer: a stale-write retry passes a combat
+      // fresher than the snapshot, which only reconciles after the next render.
+      const latest = snapshotCombat && snapshotCombat.updatedAt > combat.updatedAt ? snapshotCombat : combat;
       const payload = { ...patch, expectedUpdatedAt: latest.updatedAt };
       const updated = await apiPatch<Combat>(`/api/v1/combats/${combat.id}`, payload, { idempotencyKey: sharedMutationIdempotencyKey(`combat:update:${combat.id}`, latest.updatedAt, payload) });
       if (!workspaceIdentityIsCurrent(request)) return;
@@ -6546,11 +6550,28 @@ export function App() {
 
   async function advanceCombatTurn(combat: Combat, direction: 1 | -1) {
     if (combat.combatants.length === 0) return;
-    const next = nextCombatTurnPosition(combat, direction);
-    await updateCombat(combat, {
-      turnIndex: next.turnIndex,
-      round: next.round
-    });
+    const snapshotCombat = snapshotRef.current.combats.find((candidate) => candidate.id === combat.id);
+    const attempted = snapshotCombat && snapshotCombat.updatedAt > combat.updatedAt ? snapshotCombat : combat;
+    const next = nextCombatTurnPosition(attempted, direction);
+    try {
+      await updateCombat(attempted, {
+        turnIndex: next.turnIndex,
+        round: next.round
+      });
+    } catch (error) {
+      // A concurrent server write (rules progression, sheet sync, another
+      // client) can bump the combat revision without moving the turn. Rebase
+      // on the authoritative state from the structured conflict and retry the
+      // advance exactly once when the turn position is unchanged; any other
+      // conflict keeps the reconciled state for explicit review.
+      const refreshed = staleWriteCurrentCombat(error, combat.id);
+      if (!refreshed || !combatTurnAdvanceRetryIsSafe(attempted, refreshed)) throw error;
+      const retryNext = nextCombatTurnPosition(refreshed, direction);
+      await updateCombat(refreshed, {
+        turnIndex: retryNext.turnIndex,
+        round: retryNext.round
+      });
+    }
   }
 
   async function updateCombatant(combat: Combat, combatantId: string, patch: Partial<Combat["combatants"][number]>) {

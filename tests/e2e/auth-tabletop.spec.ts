@@ -264,8 +264,11 @@ async function startCombatFromPanel(panel: Locator, options: { currentTurnTokenN
 
 async function advanceCombatFromPanel(page: Page, panel: Locator, controlName: "Next turn" | "Prev") {
   const control = panel.getByRole("button", { name: controlName });
+  // A concurrent server write can answer the first PATCH with a structured 409
+  // stale_write; the client rebases on the returned state and retries once, so
+  // wait for the successful PATCH. An unrecovered conflict times out here.
   const responsePromise = page.waitForResponse((response) =>
-    response.request().method() === "PATCH" && /\/api\/v1\/combats\/[^/]+$/.test(new URL(response.url()).pathname)
+    response.request().method() === "PATCH" && /\/api\/v1\/combats\/[^/]+$/.test(new URL(response.url()).pathname) && response.ok()
   );
   await clickElement(control);
   await expectJsonResponse(await responsePromise);

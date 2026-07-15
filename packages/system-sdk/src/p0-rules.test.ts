@@ -31,6 +31,7 @@ import {
   grantDnd5eSrdHeroicInspiration,
   resolveDnd5eSrdAction,
   resolveDnd5eSrdConcentrationDamage,
+  resolveDnd5eSrdDamageComponents,
   spendDnd5eSrdHeroicInspiration,
   useDnd5eSrdAction
 } from "./index.js";
@@ -399,6 +400,31 @@ describe("D&D SRD P0 rules regressions", () => {
     expect(applyDamage(damageTarget({}), 10, "fire", [defenseItem]).effects).toContainEqual(expect.objectContaining({ amount: 10 }));
     const stowed = { ...defenseItem, data: { ...defenseItem.data, equipped: false } };
     expect(applyDamage(target, 10, "fire", [stowed]).effects).toContainEqual(expect.objectContaining({ amount: 10 }));
+  });
+
+  it("applies Resistance before Vulnerability when both cover the same damage type", () => {
+    // SRD 5.2.1 damage order: halve for Resistance first, then double for Vulnerability.
+    const both = damageTarget({ resistances: ["fire"], vulnerabilities: ["fire"] });
+    expect(applyDamage(both, 23, "fire").effects).toContainEqual(
+      expect.objectContaining({ amount: 22, resistance: ["fire"], vulnerability: ["fire"], before: 20, after: 0 })
+    );
+    expect(applyDamage(both, 10, "fire").effects).toContainEqual(
+      expect.objectContaining({ amount: 10, resistance: ["fire"], vulnerability: ["fire"] })
+    );
+    // Immunity dominates both other defenses.
+    const immune = damageTarget({ resistances: ["fire"], vulnerabilities: ["fire"], immunities: ["fire"] });
+    expect(applyDamage(immune, 23, "fire").effects).toContainEqual(expect.objectContaining({ amount: 0, immunity: ["fire"] }));
+  });
+
+  it("defaults monsters to dead at 0 HP with an explicit per-instance knockout exception", () => {
+    const base = { hitPoints: { current: 8, max: 8 }, components: [{ amount: 9, damageType: "slashing" }] };
+    const dead = resolveDnd5eSrdDamageComponents({ actor: { type: "monster" }, ...base });
+    expect(dead.lifecycle).toMatchObject({ state: "defeated", conditionIds: ["dead"] });
+    const spared = resolveDnd5eSrdDamageComponents({ actor: { type: "monster", data: { zeroHpBehavior: "knockout" } }, ...base });
+    expect(spared.lifecycle).toMatchObject({ state: "defeated", conditionIds: ["unconscious"] });
+    // Characters keep the death-save exception rather than dying outright.
+    const character = resolveDnd5eSrdDamageComponents({ actor: { type: "character" }, ...base });
+    expect(character.lifecycle).toMatchObject({ state: "unconscious", conditionIds: ["unconscious"] });
   });
 
   it("resolves ordinary weapon rolls as typed damage without requiring duplicate quick-roll metadata", () => {

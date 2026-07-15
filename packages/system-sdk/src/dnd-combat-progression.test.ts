@@ -111,9 +111,16 @@ describe("D&D combat rules progression", () => {
     expect(sync.combatantUpdate?.after).toEqual(expect.objectContaining({ defeated: false, conditions: ["prone"] }));
     expect(sync.combatantUpdate?.after).not.toHaveProperty("deathSaveSuccesses");
 
+    // SRD 5.2.1 default: a monster at 0 HP dies rather than falling unconscious.
     const monster = actor("monster", "monster", { hp: { current: 0, max: 30 }, conditions: [] });
     const defeated = advanceDnd5eSrdCombatRules({ actors: [monster], combat: combat([monster]), phase: "start_turn", now });
-    expect(defeated.actorDataPatches[0]?.data).toMatchObject({ lifeState: "defeated", defeated: true, conditions: [{ id: "unconscious" }] });
-    expect(defeated.combatantUpdates[0]?.after).toMatchObject({ defeated: true, conditions: ["unconscious"] });
+    expect(defeated.actorDataPatches[0]?.data).toMatchObject({ lifeState: "defeated", defeated: true, conditions: [{ id: "dead" }] });
+    expect(defeated.combatantUpdates[0]?.after).toMatchObject({ defeated: true, conditions: ["dead"] });
+
+    // The explicit per-instance GM exception knocks the individual out instead.
+    const spared = actor("spared", "monster", { hp: { current: 0, max: 30 }, conditions: [], zeroHpBehavior: "knockout" });
+    const knockedOut = advanceDnd5eSrdCombatRules({ actors: [spared], combat: combat([spared]), phase: "start_turn", now });
+    expect(knockedOut.actorDataPatches[0]?.data).toMatchObject({ lifeState: "defeated", defeated: true, conditions: [{ id: "unconscious" }] });
+    expect(knockedOut.combatantUpdates[0]?.after).toMatchObject({ defeated: true, conditions: ["unconscious"] });
   });
 });

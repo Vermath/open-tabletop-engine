@@ -122,6 +122,98 @@ export function actorSaveFormula(actor: Actor | undefined, ability: string): str
 }
 
 
+export interface ActorSheetQuickRoll {
+  id: string;
+  label: string;
+  formula: string;
+}
+
+export interface ActorCoreStatisticRoll {
+  rollId: string;
+  formula: string;
+}
+
+export interface ActorCoreAbilityRow {
+  key: string;
+  label: string;
+  score?: number;
+  modifier?: number;
+  check?: ActorCoreStatisticRoll;
+  save?: ActorCoreStatisticRoll;
+}
+
+export interface ActorCoreStatistics {
+  abilities: ActorCoreAbilityRow[];
+  initiative?: ActorCoreStatisticRoll;
+  speed?: number;
+  passives: Array<{ id: string; label: string; value: number }>;
+  skills: Array<{ rollId: string; label: string; formula: string }>;
+}
+
+/**
+ * Reads the flat numeric modifier out of a server-computed roll formula such
+ * as "1d20+5", "2d20kh1-1", or "1d20+3+1d4". This is display-only parsing of
+ * an authoritative formula; the client never constructs roll math itself.
+ */
+export function rollFormulaModifier(formula: string): number | undefined {
+  if (!/\dd\d/i.test(formula)) return undefined;
+  const terms = formula.replace(/\s+/g, "").match(/[+-]\d+(?=$|[+-])/g);
+  if (!terms) return 0;
+  return terms.reduce((sum, term) => sum + Number(term), 0);
+}
+
+const passiveSkillIds = [
+  { skillRollId: "skill-perception", id: "passive-perception", label: "Passive Perception" },
+  { skillRollId: "skill-insight", id: "passive-insight", label: "Passive Insight" },
+  { skillRollId: "skill-investigation", id: "passive-investigation", label: "Passive Investigation" }
+];
+
+/**
+ * Derives the session-sheet core statistics view model from an authoritative
+ * `GET .../actors/:actorId/sheet` payload. Every formula and roll id comes
+ * from the server quick-roll list, so proficiency, expertise, condition, and
+ * item effects are already applied.
+ */
+export function actorCoreStatistics(sheet: { quickRolls?: ActorSheetQuickRoll[]; data?: Record<string, unknown> }): ActorCoreStatistics {
+  const quickRolls = Array.isArray(sheet.quickRolls) ? sheet.quickRolls : [];
+  const data = recordValue(sheet.data);
+  const attributes = recordValue(data.attributes);
+  const abilities = quickRolls
+    .filter((roll) => roll.id.startsWith("ability-"))
+    .map((roll) => {
+      const key = roll.id.slice("ability-".length);
+      const save = quickRolls.find((candidate) => candidate.id === `save-${key}`);
+      const score = numericValue(attributes[key], Number.NaN);
+      const modifier = rollFormulaModifier(roll.formula);
+      return {
+        key,
+        label: titleCaseLabel(key),
+        ...(Number.isFinite(score) ? { score } : {}),
+        ...(modifier !== undefined ? { modifier } : {}),
+        check: { rollId: roll.id, formula: roll.formula },
+        ...(save ? { save: { rollId: save.id, formula: save.formula } } : {})
+      };
+    });
+  const initiative = quickRolls.find((roll) => roll.id === "initiative");
+  const speed = numericValue(data.effectiveSpeed ?? data.speed, Number.NaN);
+  const skills = quickRolls
+    .filter((roll) => roll.id.startsWith("skill-"))
+    .map((roll) => ({ rollId: roll.id, label: roll.label.replace(/ Check$/i, ""), formula: roll.formula }));
+  const passives = passiveSkillIds.flatMap((passive) => {
+    const skill = quickRolls.find((roll) => roll.id === passive.skillRollId);
+    const modifier = skill ? rollFormulaModifier(skill.formula) : undefined;
+    return skill && modifier !== undefined ? [{ id: passive.id, label: passive.label, value: 10 + modifier }] : [];
+  });
+  return {
+    abilities,
+    ...(initiative ? { initiative: { rollId: initiative.id, formula: initiative.formula } } : {}),
+    ...(Number.isFinite(speed) ? { speed } : {}),
+    passives,
+    skills
+  };
+}
+
+
 export function tokenPlayerOwnerIds(members: Snapshot["members"]): string[] {
   return members.filter((member) => member.role === "player").map((member) => member.userId).sort();
 }

@@ -2,7 +2,7 @@ import type { Actor, Combat, Item, MapAsset, Scene, Token, TokenLayer } from "@o
 import type { Dnd5eSrdSpellPreparationMutationResult } from "@open-tabletop/core";
 import { Boxes, Check, ChevronRight, ChevronUp, Crosshair, Dices, Eraser, Eye, FileText, Grip, Hand, LockKeyhole, MapPin, PencilLine, Pentagon, Plus, Shield, Swords, Timer, Upload, Users, WandSparkles, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { apiPost, type Snapshot } from "./api.js";
+import { apiGet, apiPost, type Snapshot } from "./api.js";
 import { isAdversaryActor } from "./actor-rails.js";
 import { HpBar } from "./hp-bar.js";
 import { HitDiceRestCard, type ActorRestOptions, type RestPreviewEnvelope } from "./hit-dice-rest-card.js";
@@ -12,7 +12,7 @@ import { TacticalMapAids, coverLevelLabel, sceneCoverOverrideBetween } from "./t
 import { CalculationExplanationPanel } from "./calculation-explanation-panel.js";
 import { LazyDndInventoryCommercePanel } from "./deferred-panels.js";
 import { tokenCenter, tokenCoordinatesFromCenter, tokenLayer, tokenLayerLabel, tokenLayers } from "./scene-canvas.js";
-import { actorActionDiceFormula, actorActionOptions, actorActionSupportsEffect, actorArmorClass, actorCombatStateLabels, actorConditionLabels, actorResourceControls, actorResourceLabels, actorResourceUpdate, actorSaveFormula, formatActorConditions, isPointInsidePoints, isPurchasableCompendiumEntry, itemDisplayLabel, parseActorConditions, quickActorConditionIds, tokenBrightVisionPatch, tokenDimVisionPatch, tokenPermissionPresetLabel, tokenPlayerOwnerIds, type ActorActionOption, type RulesCompendiumEntry, type TokenVisionPatch } from "./actor-sheet-data.js";
+import { actorActionDiceFormula, actorActionOptions, actorActionSupportsEffect, actorArmorClass, actorCombatStateLabels, actorConditionLabels, actorCoreStatistics, actorResourceControls, actorResourceLabels, actorResourceUpdate, actorSaveFormula, formatActorConditions, isPointInsidePoints, isPurchasableCompendiumEntry, itemDisplayLabel, parseActorConditions, quickActorConditionIds, tokenBrightVisionPatch, tokenDimVisionPatch, tokenPermissionPresetLabel, tokenPlayerOwnerIds, type ActorActionOption, type ActorCoreStatistics, type ActorSheetQuickRoll, type RulesCompendiumEntry, type TokenVisionPatch } from "./actor-sheet-data.js";
 import { clampNumber, formatGp, formatNumber, numericValue, slugId, titleCaseLabel } from "./sheet-format.js";
 import { formatTokenSenses, parseTokenSenses } from "./actor-sheet-data.js";
 import { setTokenDropPreview, writeTokenDropData } from "./token-drag.js";
@@ -97,6 +97,99 @@ function formatTokenAuras(token?: Token): string {
   return token?.auras?.map((aura) => `${aura.name}:${aura.radius}${aura.color ? `:${aura.color}` : ""}`).join("; ") ?? "";
 }
 
+function signedModifier(modifier: number): string {
+  return `${modifier >= 0 ? "+" : ""}${modifier}`;
+}
+
+export function CoreStatisticsSection(props: { stats: ActorCoreStatistics; canRoll: boolean; onRoll(rollId: string): void }) {
+  const { stats } = props;
+  if (stats.abilities.length === 0) return null;
+  return (
+    <div className="actor-core-statistics" role="group" aria-label="Core statistics and rolls">
+      <div className="actor-sheet-subheading">
+        <span>Abilities &amp; saves</span>
+        {stats.speed !== undefined && <strong title="Speed">Speed {formatNumber(stats.speed)} ft</strong>}
+      </div>
+      {stats.initiative && (
+        <div className="metric-row">
+          <span>Initiative</span>
+          <button
+            className="ghost-button small"
+            type="button"
+            title={`Roll initiative: ${stats.initiative.formula}`}
+            aria-label={`Roll initiative ${stats.initiative.formula}`}
+            disabled={!props.canRoll}
+            onClick={() => props.onRoll(stats.initiative!.rollId)}
+          >
+            <Dices size={14} /> {stats.initiative.formula}
+          </button>
+        </div>
+      )}
+      {stats.abilities.map((ability) => (
+        <div className="metric-row" key={`core-ability-${ability.key}`}>
+          <span>
+            {ability.label}
+            {ability.score !== undefined ? ` ${formatNumber(ability.score)}` : ""}
+            {ability.modifier !== undefined ? ` (${signedModifier(ability.modifier)})` : ""}
+          </span>
+          <span className="button-row">
+            {ability.check && (
+              <button
+                className="ghost-button small"
+                type="button"
+                title={`Roll ${ability.label} check: ${ability.check.formula}`}
+                aria-label={`Roll ${ability.label} check ${ability.check.formula}`}
+                disabled={!props.canRoll}
+                onClick={() => props.onRoll(ability.check!.rollId)}
+              >
+                Check
+              </button>
+            )}
+            {ability.save && (
+              <button
+                className="ghost-button small"
+                type="button"
+                title={`Roll ${ability.label} saving throw: ${ability.save.formula}`}
+                aria-label={`Roll ${ability.label} saving throw ${ability.save.formula}`}
+                disabled={!props.canRoll}
+                onClick={() => props.onRoll(ability.save!.rollId)}
+              >
+                Save
+              </button>
+            )}
+          </span>
+        </div>
+      ))}
+      {stats.passives.map((passive) => (
+        <div className="metric-row" key={`core-${passive.id}`}>
+          <span>{passive.label}</span>
+          <strong>{formatNumber(passive.value)}</strong>
+        </div>
+      ))}
+      {stats.skills.length > 0 && (
+        <details className="actor-rules-trace-disclosure">
+          <summary>Skill checks ({formatNumber(stats.skills.length)})</summary>
+          {stats.skills.map((skill) => (
+            <div className="metric-row" key={`core-${skill.rollId}`}>
+              <span>{skill.label}</span>
+              <button
+                className="ghost-button small"
+                type="button"
+                title={`Roll ${skill.label} check: ${skill.formula}`}
+                aria-label={`Roll ${skill.label} check ${skill.formula}`}
+                disabled={!props.canRoll}
+                onClick={() => props.onRoll(skill.rollId)}
+              >
+                <Dices size={14} /> {skill.formula}
+              </button>
+            </div>
+          ))}
+        </details>
+      )}
+    </div>
+  );
+}
+
 export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; systemLabel?: string; scene?: Scene; currentUserId: string; actors: Actor[]; tokens: Token[]; combat?: Combat; members: Snapshot["members"]; assets: MapAsset[]; items: Item[]; compendiumEntries: RulesCompendiumEntry[]; compendiumSearch: string; setCompendiumSearch(value: string): void; compendiumStatus: string; actionTargetActorId: string; setActionTargetActorId(value: string): void; actionApplyEffect: boolean; setActionApplyEffect(value: boolean): void; actionConsumeResources: boolean; setActionConsumeResources(value: boolean): void; updateActorHp(actor: Actor, current: number): void; adjustActorHp(actor: Actor, delta: number): void; awardActorXp(actor: Actor, amount: number): Promise<void>; xpProgress?: XpProgressInfo; advancementReady: boolean; onLevelUp(): void; onPreviewRestActor(restType: "short" | "long", options: ActorRestOptions, idempotencyKey: string): Promise<RestPreviewEnvelope>; onRestActor(restType: "short" | "long", options?: ActorRestOptions): void | Promise<void>; onTypedDamageApplied(result: TypedDamageApplyResult): void; updateActorData(actor: Actor, patch: Record<string, unknown>): void; toggleActorCondition(actor: Actor, conditionId: string, options?: { overrideReason?: string }): void; updateItemData(item: Item, patch: Record<string, unknown>): Promise<void>; changeActorAttunement(actor: Actor, item: Item, attuned: boolean, options?: ActorAttunementChangeOptions): Promise<void>; assignItemToActor(item: Item, actor: Actor): Promise<void>; onSpellPreparationApplied(result: Dnd5eSrdSpellPreparationMutationResult): void; updateToken(patch: Partial<Token>): void; onUploadTokenImage(file: File, input?: HTMLInputElement): Promise<void>; targetToken(tokenId: string, targeted: boolean): void; targetTokens(tokenIds: string[], targeted: boolean): void; deleteToken(): void; updateTokenVision(patch: TokenVisionPatch): Promise<boolean>; useActorAction(rollId: string, options?: ActorActionCommitOptions): void; onImportCompendiumEntry(entry: RulesCompendiumEntry): Promise<void>; onPurchaseCompendiumEntry(entry: RulesCompendiumEntry, quantity: number): Promise<void>; onPlaceActor(actor: Actor, placementAttemptId: string): Promise<void>; canCreateToken: boolean; canUpdateActor: boolean; canManageActorRules?: boolean; canAwardActorXp: boolean; canRestActor: boolean; canUpdateToken: boolean; canDeleteToken: boolean; canUseAction: boolean }) {
   const canManageActorRules = props.canManageActorRules ?? Boolean(
     props.members.find((member) => member.userId === props.currentUserId)?.permissions.includes("actor.update")
@@ -107,6 +200,8 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
   const [loadoutFilter, setLoadoutFilter] = useState<ActorLoadoutFilter>("all");
   const [conditionOverrideReason, setConditionOverrideReason] = useState("");
   const [purchaseQuantities, setPurchaseQuantities] = useState<Record<string, number>>({});
+  const [coreStatistics, setCoreStatistics] = useState<{ actorId: string; stats: ActorCoreStatistics } | undefined>();
+  const [coreStatisticsLoading, setCoreStatisticsLoading] = useState(false);
   const [actionPreview, setActionPreview] = useState<ActorActionResolutionPreview | undefined>();
   const [actionPreviewStatus, setActionPreviewStatus] = useState("");
   const [actionPreviewRollId, setActionPreviewRollId] = useState("");
@@ -186,6 +281,34 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
     setActionSaveOutcomes({});
     setActionEffectChoice("");
   }, [props.actor?.id, props.actionTargetActorId, actionPreviewRollId]);
+  const coreStatisticsActorId = props.actor?.id;
+  const coreStatisticsActorRevision = props.actor?.updatedAt;
+  const coreStatisticsSystemId = props.actor?.systemId;
+  useEffect(() => {
+    if (!coreStatisticsActorId || !coreStatisticsSystemId) {
+      setCoreStatistics(undefined);
+      setCoreStatisticsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setCoreStatisticsLoading(true);
+    apiGet<{ quickRolls?: ActorSheetQuickRoll[]; data?: Record<string, unknown> }>(
+      `/api/v1/campaigns/${props.campaignId}/systems/${coreStatisticsSystemId}/actors/${coreStatisticsActorId}/sheet`
+    )
+      .then((sheet) => {
+        if (cancelled) return;
+        setCoreStatistics({ actorId: coreStatisticsActorId, stats: actorCoreStatistics(sheet) });
+        setCoreStatisticsLoading(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setCoreStatistics(undefined);
+        setCoreStatisticsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [props.campaignId, coreStatisticsActorId, coreStatisticsSystemId, coreStatisticsActorRevision]);
   if (!props.actor) return <div className="panel-empty">No actor selected.</div>;
   const tokenOwnerIds = props.token?.ownerUserIds ?? [];
   const playerOwnerIds = tokenPlayerOwnerIds(props.members);
@@ -367,6 +490,13 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
           <div className="actor-sheet-body">
             <section className="actor-sheet-section" aria-label="Full sheet stats">
               <HpBar current={hp?.current} max={hp?.max} canEdit={props.canUpdateActor} onAdjust={(delta) => props.adjustActorHp(props.actor!, delta)} />
+              {coreStatistics?.actorId === props.actor.id && (
+                <CoreStatisticsSection
+                  stats={coreStatistics.stats}
+                  canRoll={props.canUseAction}
+                  onRoll={(rollId) => props.useActorAction(rollId, { consumeResources: false })}
+                />
+              )}
               {(conditions.length > 0 || resources.length > 0 || combatState.length > 0) && (
                 <div className="actor-vitals-row">
                   {resources.map((resource) => (
@@ -496,6 +626,14 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
       </div>
       {sheetView === "stats" && (
         <section className="operator-section" aria-label="Actor stats sheet">
+          {coreStatisticsLoading && !coreStatistics && <div className="empty-state compact">Loading core statistics...</div>}
+          {coreStatistics?.actorId === props.actor.id && (
+            <CoreStatisticsSection
+              stats={coreStatistics.stats}
+              canRoll={props.canUseAction}
+              onRoll={(rollId) => props.useActorAction(rollId, { consumeResources: false })}
+            />
+          )}
           <div className="metric-row">
             <span>Armor class</span>
             <strong>{armorClass ? (armorClass.label ? `${armorClass.value} - ${armorClass.label}` : String(armorClass.value)) : "n/a"}</strong>

@@ -3230,12 +3230,12 @@ export function dnd5eSrdMulticlassCasterLevel(classes: Dnd5eSrdClassLevel[], act
   return classes.reduce((total, entry) => {
     const level = Math.max(0, Math.floor(entry.level));
     if (dnd5eSrdFullCasterClasses.includes(entry.className)) return total + level;
-    // Multiclass spellcasting adds HALF of Paladin/Ranger levels, rounded down.
-    if (dnd5eSrdHalfCasterClasses.includes(entry.className)) return total + Math.floor(level / 2);
+    // SRD 5.2.1 multiclass spellcasting adds HALF of Paladin/Ranger levels, rounded up.
+    if (dnd5eSrdHalfCasterClasses.includes(entry.className)) return total + Math.ceil(level / 2);
     const progression = actor ? dnd5eSrdCustomClassProfile(actor, entry.className)?.spellcastingProgression : undefined;
     if (progression === "full") return total + level;
-    if (progression === "half") return total + Math.floor(level / 2);
-    if (progression === "third") return total + Math.floor(level / 3);
+    if (progression === "half") return total + Math.ceil(level / 2);
+    if (progression === "third") return total + Math.ceil(level / 3);
     return total;
   }, 0);
 }
@@ -11957,9 +11957,9 @@ function dnd5eSrdApplyRollTotalEffectResolution(
   const typedDamage = damageResolution
     ? {
         amount: damageResolution.totalDamage,
-        resistance: damageResolution.components.filter((component) => component.defense === "resistance").map((component) => component.damageType),
+        resistance: damageResolution.components.filter((component) => component.defense === "resistance" || component.defense === "resistance-and-vulnerability").map((component) => component.damageType),
         immunity: damageResolution.components.filter((component) => component.defense === "immunity").map((component) => component.damageType),
-        vulnerability: damageResolution.components.filter((component) => component.defense === "vulnerability").map((component) => component.damageType)
+        vulnerability: damageResolution.components.filter((component) => component.defense === "vulnerability" || component.defense === "resistance-and-vulnerability").map((component) => component.damageType)
       }
     : { amount: Math.max(0, Math.floor(adjustedTotal)), resistance: [] as string[], immunity: [] as string[], vulnerability: [] as string[] };
   const amount = typedDamage.amount;
