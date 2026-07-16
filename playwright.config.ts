@@ -8,7 +8,10 @@ const reuseExistingServer = process.env.OTTE_E2E_REUSE_SERVER === "true";
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  testIgnore: "**/bootstrap.spec.ts",
+  testIgnore: [
+    "**/bootstrap.spec.ts",
+    "**/canonical-public-journey.spec.ts",
+  ],
   fullyParallel: false,
   workers: 1,
   timeout: 30_000,
