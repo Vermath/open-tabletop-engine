@@ -224,6 +224,9 @@ export function validateCampaignArchiveShape(
     const records = data[collection];
     if (records === undefined) continue;
     if (!Array.isArray(records)) return { ok: false, error: `Campaign archive ${collection} must be an array` };
+    if (collection === "campaignArchiveImportOperations" && records.length > 0) {
+      return { ok: false, error: "Campaign archive operational recovery data is not portable" };
+    }
     const seenIds = new Set<string>();
     const rules = archiveRecordRules[collection as keyof EngineState] ?? [];
     for (let index = 0; index < records.length; index += 1) {
@@ -334,6 +337,14 @@ export function campaignArchiveEmbeddedAssetMaxBytes(): number {
   const parsed = Number(configured);
   if (!Number.isFinite(parsed)) return 48 * 1024 * 1024;
   return Math.max(1 * 1024 * 1024, Math.min(192 * 1024 * 1024, Math.floor(parsed)));
+}
+
+export function campaignArchiveAssetMaxFiles(): number {
+  const configured = process.env.OTTE_CAMPAIGN_ARCHIVE_ASSET_MAX_FILES?.trim();
+  if (!configured) return 10_000;
+  const parsed = Number(configured);
+  if (!Number.isFinite(parsed)) return 10_000;
+  return Math.max(1, Math.min(100_000, Math.floor(parsed)));
 }
 
 function validateNestedArchiveRecord(collection: string, record: Record<string, unknown>): string | undefined {

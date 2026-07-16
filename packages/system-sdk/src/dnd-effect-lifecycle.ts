@@ -1,9 +1,10 @@
-import type { Actor, Combat, RulesEffectScheduleTiming } from "@open-tabletop/core";
+import type { Actor, Combat, Item, RulesEffectScheduleTiming } from "@open-tabletop/core";
 import type { Dnd5eSrdConcentrationCleanup, RulesResolutionActorUpdate } from "./dnd-resolution-types.js";
+import { dnd5eSrdHeavyArmorItemIds, isDnd5eSrdRageEffect } from "./dnd-rage-lifecycle.js";
 
 type JsonRecord = Record<string, unknown>;
 
-export type Dnd5eSrdEffectLifecycleReason = "expired" | "incapacitated" | "ended" | "linked-cleanup";
+export type Dnd5eSrdEffectLifecycleReason = "expired" | "incapacitated" | "heavy-armor" | "ended" | "linked-cleanup";
 
 export interface Dnd5eSrdEffectLifecycleChange {
   actorId: string;
@@ -246,21 +247,25 @@ function finalizeLifecycle(
 export function advanceDnd5eSrdEffectLifecycle(
   actors: Actor[],
   combat: Pick<Combat, "round" | "turnIndex" | "combatants">,
-  timing: { phase: RulesEffectScheduleTiming; now?: string }
+  timing: { phase: RulesEffectScheduleTiming; now?: string },
+  items: Item[] = []
 ): Dnd5eSrdEffectLifecycleResult {
   const workingData = new Map<string, JsonRecord>();
   const cleanups: Dnd5eSrdConcentrationCleanup[] = [];
   const changes: Dnd5eSrdEffectLifecycleChange[] = [];
 
   for (const actor of actors) {
+    const rageIncapacitated = actorBreaksConcentration(actor, combat);
+    const rageHeavyArmor = dnd5eSrdHeavyArmorItemIds(actor, items).length > 0;
     const expired = removeEffects(actor.data, (effect) => {
-      return expirationDue(effect, combat, timing.phase, timing.now);
+      return expirationDue(effect, combat, timing.phase, timing.now)
+        || (isDnd5eSrdRageEffect(effect) && (rageIncapacitated || rageHeavyArmor));
     });
     if (expired.removedEffectIds.length > 0 || expired.removedConditionIds.length > 0) {
       workingData.set(actor.id, expired.data);
       changes.push({
         actorId: actor.id,
-        reason: "expired",
+        reason: rageIncapacitated ? "incapacitated" : rageHeavyArmor ? "heavy-armor" : "expired",
         removedEffectIds: expired.removedEffectIds,
         removedConditionIds: expired.removedConditionIds
       });

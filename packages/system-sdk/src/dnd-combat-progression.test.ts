@@ -40,11 +40,11 @@ describe("D&D combat rules progression", () => {
       conditions: [],
       rulesEngine: {
         reactions: { cmb: { rollId: "old-reaction", round: 2 } },
-        actionEconomy: { bonusActions: { cmb: { rollId: "old-bonus", round: 2, turnIndex: 0 } } }
+        actionEconomy: { bonusActions: { cmb: { rollId: "old-bonus", round: 2, turnIndex: 0 } }, standardActions: { cmb: { actorId: "ready", actionsUsed: 1, actionSurgeGrants: 1, round: 2, turnIndex: 0 } } }
       }
     });
     const result = advanceDnd5eSrdCombatRules({ actors: [ready], combat: combat([ready]), phase: "start_turn", now });
-    expect(result.actorDataPatches[0]).toMatchObject({ actorId: "ready", reason: expect.stringContaining("turn-action-economy-refresh"), data: { rulesEngine: { reactions: {}, actionEconomy: { bonusActions: {} } } } });
+    expect(result.actorDataPatches[0]).toMatchObject({ actorId: "ready", reason: expect.stringContaining("turn-action-economy-refresh"), data: { rulesEngine: { reactions: {}, actionEconomy: { bonusActions: {}, standardActions: {} } } } });
   });
 
   it("blocks an unresolved recurring save while still returning complete preview patches", () => {
@@ -122,5 +122,38 @@ describe("D&D combat rules progression", () => {
     const knockedOut = advanceDnd5eSrdCombatRules({ actors: [spared], combat: combat([spared]), phase: "start_turn", now });
     expect(knockedOut.actorDataPatches[0]?.data).toMatchObject({ lifeState: "defeated", defeated: true, conditions: [{ id: "unconscious" }] });
     expect(knockedOut.combatantUpdates[0]?.after).toMatchObject({ defeated: true, conditions: ["unconscious"] });
+  });
+
+  it("does not let a stale combatant Stable marker overwrite a new death-save failure", () => {
+    const damaged = actor("hero", "character", {
+      hp: { current: 0, max: 20 },
+      lifeState: "unconscious",
+      deathSaves: { successes: 0, failures: 1 },
+      conditions: [{ id: "unconscious" }],
+      defeated: false,
+    });
+    const staleStableCombatant = {
+      id: "cmbt_hero",
+      tokenId: "tok_hero",
+      actorId: "hero",
+      name: "Hero",
+      initiative: 10,
+      defeated: false,
+      conditions: ["unconscious", "stable"],
+      deathSaveSuccesses: 0,
+      deathSaveFailures: 0,
+      deathSaveOutcome: "stable" as const,
+    };
+
+    const sync = synchronizeDnd5eSrdActorCombatState(damaged, staleStableCombatant);
+
+    expect(sync.actorDataPatch).toBeUndefined();
+    expect(sync.combatantUpdate?.after).toMatchObject({
+      defeated: false,
+      conditions: ["unconscious"],
+      deathSaveSuccesses: 0,
+      deathSaveFailures: 1,
+    });
+    expect(sync.combatantUpdate?.after).not.toHaveProperty("deathSaveOutcome");
   });
 });

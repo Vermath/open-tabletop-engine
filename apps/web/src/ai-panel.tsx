@@ -3,7 +3,7 @@ import { Activity, Bot, Boxes, Check, Crosshair, FileText, Image as ImageIcon, M
 import type React from "react";
 import { useEffect, useState } from "react";
 import { apiGet, apiPatch, apiPost, assetBlobUrl, type AiUsageSummary, type EncounterPlanInfo, type Snapshot } from "./api.js";
-import { aiToolCallErrorCode } from "./admin-panel.js";
+import { aiToolCallErrorCode } from "./admin-panel-utils.js";
 import { MetricTile } from "./metric-tile.js";
 import { proposalQueueAction, proposalReviewActionLabel } from "./proposal-review.js";
 import { formatCost, formatDateTime, formatDuration, formatNumber, formatTime, recordValue, titleCaseLabel } from "./sheet-format.js";

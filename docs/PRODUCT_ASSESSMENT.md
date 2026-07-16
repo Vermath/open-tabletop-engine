@@ -1,117 +1,127 @@
 # Product Assessment
 
-> Post-remediation assessment, 2026-07-14. The repository and the current uncommitted working tree are the source of truth. Historical pre-remediation findings have been removed from this file; the implementation ledger is in [IMPLEMENTATION_BACKLOG.md](IMPLEMENTATION_BACKLOG.md) and the validation boundary is in [FEATURE_AUDIT.md](FEATURE_AUDIT.md).
+> Current-state assessment, 2026-07-16. It evaluates committed HEAD `e4c6ac9` plus the validated implementation working tree. All code-addressable audit tickets T01-T37 are implemented, and the frozen local aggregate/canonical acceptance gates passed. External/manual evidence X01-X08 is not complete or implied by this assessment.
 
 ## Executive verdict
 
-Open Tabletop Engine is now a coherent, DM-first, API-first D&D 5.5e virtual tabletop rather than a collection of disconnected prototypes. The connected product covers account and campaign administration, reviewed character creation and advancement, a session-oriented character sheet, scene and token play, reviewed encounters and combat, typed rules transactions, chat and campaign knowledge, portable archives, homebrew, operational tooling, plugins, and the existing AI agent.
+Open Tabletop Engine is now a coherent, DM-first, API-first D&D 5.5e VTT implementation rather than a collection of disconnected prototypes. Campaign setup, membership, characters, scenes, gridless/square maps, encounters, combat, dice, chat, journals, archives, recovery, plugins and the campaign-governed AI agent share one permissioned persistent model. The audited correctness and workflow gaps have code solutions in the working tree.
 
-The code can support a complete representative D&D 5.5e session and can persist, restart, export, and restore a campaign in local automated evidence. That is a statement about implemented behavior, not a claim that the product has earned a public release. Real multi-session groups, live identity providers, hosted recovery and rollback, production observations, manual assistive-technology checks, content/legal approval, and independent security review remain external evidence gates.
+The right product verdict is **implementation-complete and locally accepted for the audited backlog, evidence-incomplete for release**. Known P0 code counterexamples from the audit have been addressed and the final canonical/repeated aggregate gates passed. Real-table use, hosted recovery/operations, physical accessibility, provider integration, legal review, independent security review and AI evaluation remain external gates.
 
-The product maturity is therefore **code-complete for the audited non-AI P0-P3 scope and release-evidence gated**. With the consolidated local validation matrix green, it is suitable for internal dogfood; it has not yet earned the repeated-session evidence required for the formal Internal Playable exit. Private alpha and public beta remain operational decisions based on external evidence, not more speculative feature breadth.
+Do not market this as broadly production-ready yet. It is locally accepted and ready for controlled external/manual evidence work.
 
-The AI agent is an accepted first-class product capability with both manual proposal review and governed automatic execution. This remediation did not reduce, redesign, disable, or make that agent optional.
+## Primary user and promise
 
-## Primary user and product promise
+The primary user is a DM running a recurring small-group campaign. Players are first-class participants, but the product is organized around the DM's need to prepare, invite, adjudicate, recover and continue a shared game.
 
-The primary user is a Dungeon Master running a persistent D&D 5.5e campaign for a small group. The secondary user is a player who needs a fast, understandable character and tabletop workflow without losing access to the underlying calculation or the DM's rulings.
+The credible promise is:
 
-The clearest promise is:
+> A persistent D&D 5.5e table where supported outcomes are authoritative and reviewable, manual rulings are labeled, and interrupted campaign state can be resumed safely.
 
-> Run and preserve a D&D 5.5e campaign with transparent automation, explicit DM authority, portable data, and an AI agent that can operate under the campaign's chosen governance mode.
+It is not a promise to automate arbitrary prose, geometry or every commercial rules source.
 
-This is deliberately narrower than “a universal VTT platform.” The shared SDK and API architecture support extension, but product choices are evaluated against the D&D session loop first.
+## Current product value
 
-## Current user value
+- One persistent campaign model joins account, permission, character, scene, token, encounter, combat, chat, journal, asset and archive state.
+- Rules mutations use revisions, idempotency, permission checks and reviewed consequences instead of silent client-only state.
+- First-session setup is ordered and resumable rather than one fragile mega-form.
+- Campaign members, gridless scenes, exact search results, dedicated duplication and streamed archives are connected in the browser.
+- Player-critical lifecycles now include Death Saves, Heroic Inspiration, standard Actions, Action Surge, save Advantage, Weapon Mastery, Rage, Armor Class intent, advancement retry and controlled-creature handoff.
+- Operational code covers safer session transport, coordinated backups, retention and metrics.
+- Typed managed D&D actor/item views strengthen validation without destroying unknown legacy/homebrew data.
+- Recorded dice rolls can be replayed consistently across persisted paths; the product explicitly does not market the stored seed hash as a witnessed pre-roll commitment or proof of host fairness.
+- Heavy web surfaces are demand-loaded, reducing the last focused main production bundle relative to the audit baseline.
 
-The strongest connected value is the transition from preparation into authoritative play:
+## Strongest verified design areas
 
-1. A DM creates a campaign, configures a rules profile, invites players, and prepares scenes, journals, compendium records, actors, and encounters.
-2. A player creates or imports a character through a reviewed D&D choice graph and receives a session-first sheet.
-3. The group launches reviewed participants into combat, rolls and applies typed actions, tracks effects/resources/death state, and records rewards.
-4. Revisions, idempotency, snapshots, SQLite durability, archives, and recovery paths preserve the result for the next session.
+1. **Authoritative mutation model.** Permissions, exact revisions, idempotency and audit/realtime behavior are consistently treated as server responsibilities.
+2. **Rules review model.** Supported automation, reviewed manual outcomes and unsupported behavior are distinct; cancel paths do not spend resources.
+3. **Campaign continuity.** Snapshots, archive validation, identity-bound rollback, resumable imports/placement and recovery operations form a credible local recovery story.
+4. **Integrated session surface.** Characters, tabletop, encounters, combat, dice, chat and journals operate against the same campaign state.
+5. **Extension discipline.** API/client/contracts and typed plugin commands are reusable while plugins remain an explicitly trusted-admin boundary.
 
-Evidence spans `apps/web/src/App.tsx`, the extracted web panels, `apps/api/src/app.ts` and its route modules, `packages/system-sdk/src/index.ts` and focused D&D modules, `packages/core/src/state.ts`, and the integration/browser tests listed in [FEATURE_AUDIT.md](FEATURE_AUDIT.md).
+## Final local validation
 
-## Five strongest areas
+The frozen implementation/test tree passed three consecutive `TURBO_FORCE=true pnpm check` runs. Every run completed lint 25/25, typecheck 25/25, E2E typecheck, tests 25/25 with 303 files, 1,822 passing tests and 1 skipped test, and builds 15/15. The final isolated canonical Playwright journey passed 1/1 in 1.4 minutes against frozen snapshot `20260716T030254960Z`.
 
-1. **Rules-safe transaction model.** Advancement, rests, consequential actions, typed multi-component damage, scheduled effects, and undo use server-prepared results, exact revisions, idempotency, permission checks, and audit rather than trusting a client patch. Evidence: `apps/api/src/app.ts` prepared D&D routes; `packages/system-sdk/src/dnd-validation-preview.ts`; `apps/api/src/p0-core-loop-integration.test.ts`; `apps/api/src/typed-damage-combat-sync.test.ts`.
-2. **Complete small-group campaign loop.** Campaign setup, invitations, reviewed characters, scenes, encounters, combat, rewards, sessions, journals, chat, reconnect, and persistence are joined into actual UI/API flows. Evidence: `tests/e2e/auth-tabletop.spec.ts`, `tests/e2e/browser-evidence.spec.ts`, `apps/web/src/session-desk-panel.tsx`, and `apps/web/src/combat-panel.tsx`.
-3. **DM control without brittle over-automation.** The engine automates typed, inspectable cases and exposes reasoned manual overrides or advisory results for ambiguous geometry, homebrew, cursed-item recovery, condition immunity, and calculation exceptions. Evidence: `apps/api/src/calculation-override-routes.ts`, `apps/web/src/calculation-explanation-panel.tsx`, `apps/api/src/condition-mutation-safety.test.ts`, and `apps/api/src/attunement-api.test.ts`.
-4. **Data ownership and recovery.** Versioned archives, asset checksums, reference validation, conflict modes, atomic rollback, incremental framed asset streaming, snapshot history, SQLite backups, and restart fixtures make campaign portability substantive. Evidence: `apps/api/src/archive-validation.ts`, `apps/api/src/archive-stream.ts`, `apps/api/src/archive-recovery.test.ts`, `apps/api/src/snapshot-history.ts`, and `apps/api/src/sqlite-maintenance.ts`.
-5. **Serious platform boundaries behind the product.** Server authorization, strict non-AI OpenAPI validation, scoped workers, OIDC hardening, plugin capability checks, outbound-only signed webhooks, readiness checks, rate limits, redaction, SBOM, and release scripts support self-hosting without displacing the D&D experience. Evidence: `apps/api/src/openapi-runtime-validation.ts`, `apps/api/src/oidc-http-security.ts`, `apps/api/src/worker-identity.ts`, `apps/api/src/plugin-runtime.ts`, and `apps/api/src/campaign-webhooks.ts`.
+## Most serious remaining gaps
 
-## Five most serious remaining gaps
+These are evidence and operating gaps, not a second hidden list of unimplemented audit tickets:
 
-These are evidence or operating-model gaps, not hidden code feature tickets.
-
-1. **No qualifying real-campaign evidence yet.** Automated journeys cannot establish that several groups can run repeated, messy sessions without support intervention or manual data repair.
-2. **Live identity-provider evidence is absent.** OIDC and SCIM behavior has local protocol, security, concurrency, and rollback coverage, but a real provider tenant, hosted callback, provisioning, deprovisioning, and role-mapping run still requires external credentials.
-3. **Manual accessibility and cross-browser certification is incomplete.** Automated labels, keyboard paths, responsive layouts, and Chromium journeys exist; NVDA, Narrator, VoiceOver, TalkBack, Safari, Firefox, Edge, and representative touch devices require human evidence.
-4. **Hosted operations are not proven.** Local restart, migration, archive, rollback, security, and capacity fixtures exist, but the selected HTTPS topology still needs recorded backup/restore, forward migration, rollback, capacity, observability, alerting, and incident-response evidence.
-5. **Release-owner assurance is external.** Independent security review plus SRD/content attribution, distribution, and legal approval cannot be certified by the implementation itself.
+1. Repeated real-session use still needs observed GM/player correction, conflict and recovery outcomes (X01).
+2. Advertised identity/provisioning support still needs a selected-provider OIDC/SCIM lifecycle (X02).
+3. No current hosted proof demonstrates non-no-op state-plus-asset backup, restore, migration and rollback (X03).
+4. Accessibility/device and hosted capacity/incident claims still require physical and deployed evidence (X04-X05).
+5. Public distribution still requires content/legal, independent security and, if offered, representative AI evaluation (X06-X08).
 
 ## Product coherence
 
-### What the product is
-
-It is a persistent D&D 5.5e campaign VTT with strong rules transactions, campaign knowledge, data portability, self-hosting, APIs, plugins, and an integrated AI agent. It is not merely a battle map, character builder, campaign wiki, or rules-engine demo; each of those capabilities participates in the same campaign and permission model.
-
 ### Strongest workflow
 
-The strongest workflow is preparing a reviewed character and encounter, launching combat, applying inspectable D&D actions/effects/rewards, then resuming the durable campaign. That path now has coverage across system SDK unit tests, API integration tests, web component tests, and browser journeys.
+The strongest workflow is the DM's session loop: create/resume a campaign, manage people, prepare characters/scenes/encounters, run reviewed actions in combat, communicate in dice/chat/journals and persist/recover the resulting state.
 
-### Weakest critical workflow
+### Previously weak workflows now connected
 
-The weakest critical workflow is operational rather than a missing UI: moving a real long-running campaign through deployment upgrades, identity-provider integration, backup/restore, and incident rollback under external load. The code has local fixtures and runbooks, but the evidence must be created in the actual target environment.
+- Campaign people management now exposes role update/removal with owner, self, SCIM and removed-user access guards.
+- Square/gridless selection now matches the scene domain and suppresses irrelevant grid controls.
+- Setup drafts are versioned, safely scoped and resumable across reload/sign-out for the same user/campaign.
+- Browser duplication uses the dedicated API; archives stream with progress; search opens exact actionable records.
+- Advancement failure remains visible and retryable.
+- Summons/transformations hand off to source-locked controlled-creature review without premature spending; current authority is rechecked and same-tab reload restores the scoped draft for a fresh preview.
 
 ### DM-first versus player-first
 
-The product is intentionally DM-first in preparation, governance, visibility, homebrew, overrides, and campaign administration. During play it is balanced: players receive owned-character actions, rolls, spell/inventory/resource flows, movement/targeting, chat, private information, reconnect, and local error feedback without seeing GM-only state.
+The product remains intentionally DM-first, but the implementation now gives players coherent quick rolls, private/public visibility, Inspiration, Death Saves, action economy, structured consequences, rest/recovery and role-specific setup. The remaining question is usability under repeated real-table conditions, which is X01 rather than more speculative code.
 
-### Abstraction level
+### Duplication and abstraction
 
-The narrow rules architecture is appropriate: shared records and transaction envelopes live in reusable packages; D&D semantics live in `@open-tabletop/system-sdk`; the API remains authoritative; and UI panels consume typed contracts. A universal rules DSL, cross-system normalization project, or multi-region rewrite would add risk without improving the defined D&D audience.
+The architecture still has large composition roots, but the response should remain incremental. T13 and T17 extracted only touched seams and kept enforced budgets. A universal rules DSL, service split or full actor-schema rewrite would add risk without closing an evidence gate.
 
-## Competitive capability classification
+## Competitive capability framework
 
-This classification describes user expectations associated with mature D&D VTT categories; it does not claim feature-for-feature parity or reproduce a competitor's product.
-
-| Classification | Current capabilities | Decision |
+| Area | Current assessment | Boundary |
 | --- | --- | --- |
-| Essential table stakes | Accounts, campaigns, invites, roles, scenes, maps, tokens, dice, chat, encounters, initiative, combat, persistence, import/export | Implemented; preserve reliability and usability budgets |
-| Required for playable alpha | Reviewed level-one characters, session sheet, typed damage/rest/effect transactions, monster operation, rewards, reconnect, session planning | Implemented locally; earn with real-session evidence |
-| Important for public beta | Recovery drills, migration compatibility, security posture, accessibility, responsive operation, provenance, support/telemetry | Code and local automation implemented; external gates remain |
-| Differentiating opportunity | Transparent calculations, user-owned archives, campaign knowledge graph, self-hosting/API access, governed AI operation | Continue only where usage evidence supports polish |
-| Specialized or niche | Advanced controlled creatures, custom-content builders, webhooks, deep inventory commerce, calculation overrides | Implemented as bounded campaign-manager tools; do not let them dominate onboarding |
-| Intentionally out of scope | Proprietary content redistribution, voice/video, community network, 3D spectacle, universal system support | Keep out of the near-term product |
-| Premature | Marketplace expansion, multi-region architecture, procedural world generation, speculative hex investment | Reconsider only after measured demand |
+| Campaign administration | Strong implementation | Real multi-user operation still needs X01 |
+| Character/sheet lifecycle | Strong 5.5e core | Non-SRD/proprietary breadth is out of scope without rights |
+| Tactical tabletop | Broad and connected | Geometry-dependent cover/path/Push remains reviewed/manual |
+| Combat/rules transactions | Strong audited core | Arbitrary prose remains manual/unsupported as labeled |
+| Recovery/archives | Strong local controls | Hosted state-plus-asset proof remains X03 |
+| Accessibility/device support | Automated coverage only | Physical matrix remains X04 |
+| API/plugins | Broad typed platform | Plugins are trusted-admin, not hostile sandboxed code |
+| AI assistance | Permissioned manual and governed-auto modes | Quality/privacy/provider evidence remains X07-X08 |
+| Hosted scale/HA | Suitable for declared single-node small-group use | Multi-replica/HA claims are not made |
 
-## Recommended positioning and scope
+## Recommended positioning
 
-Position Open Tabletop Engine as a transparent, campaign-ownable D&D 5.5e VTT for DMs who want automation they can inspect and override, plus an AI agent that can work within campaign-selected governance. Lead with the complete session loop and data ownership. Self-hosting, APIs, plugins, and AI are meaningful differentiators, but they should demonstrate how they reduce preparation or session friction rather than replace the core promise.
+Position the product as a transparent, recoverable, DM-first 5.5e tabletop for small recurring groups. Lead with reviewed outcomes, shared state, campaign continuity and explicit support boundaries. Avoid claims of universal automation, hostile-plugin isolation, high availability or production-readiness until the corresponding evidence exists.
 
-Near-term product work should be evidence-driven:
+## Recommended scope
 
-- Run internal campaigns and collect task success, correction, conflict, reconnect, and recovery outcomes.
-- Perform hosted identity, migration, backup/restore, rollback, HTTPS, and observability drills.
-- Complete manual assistive-technology, cross-browser, and touch-device passes.
-- Fix regressions discovered by those exercises; do not invent new breadth to fill the queue.
-- Publish a precise supported-content, browser, deployment, and compatibility boundary.
+### Include
 
-## Explicit non-goals
+- the connected small-group campaign/session loop;
+- supported SRD-based 5.5e character and combat automation;
+- square and gridless scenes, reviewed manual geometry, assets and archives;
+- API/client/contracts and trusted permission-checked plugins;
+- optional AI with both existing manual and governed automatic execution modes;
+- self-hosted/deployment recipes with clearly assigned operator duties.
 
-- Do not redesign the product as a system-neutral VTT or build a universal rules language.
-- Do not expand to more game systems without a separate product decision.
-- Do not copy, scrape, or bundle proprietary D&D content.
-- Do not add voice/video, social discovery, community feeds, or streaming infrastructure now.
-- Do not build a marketplace or broad third-party plugin ecosystem before the trust/support model is proven.
-- Do not pursue 3D terrain, elaborate VFX, procedural worlds, or theme breadth before real-session evidence.
-- Do not undertake a multi-node or multi-region rewrite without measured capacity or availability demand.
-- Do not build kiosk, hot-seat, or shared-display modes before real table evidence establishes the workflow and privacy requirements.
-- Do not claim or build offline-first synchronization without a separate conflict, security, and data-recovery product decision.
-- Do not change, restrict, disable, or convert the existing AI agent to proposal-only operation as part of this non-AI program.
+### Exclude or defer
 
-## Evidence boundary
+- guessed line of effect, cover, pathfinding or token displacement;
+- arbitrary prose automation presented as authoritative;
+- proprietary content without independent licensing;
+- public hostile-plugin marketplace claims;
+- HA/multi-region promises outside the measured single-node topology;
+- more feature breadth before X01-X08 close.
 
-Verified implementation claims are tied to source, tests, and local runtime evidence in [FEATURE_AUDIT.md](FEATURE_AUDIT.md), [DND_RULES_AUDIT.md](DND_RULES_AUDIT.md), and `docs/verification/`. Strong inferences are labelled as product recommendations. External and human gates are never reported as passed until their artifacts exist.
+## Maturity statement
+
+The repository is **locally accepted for the audited backlog**, not yet ready for an unconditional public release claim. Promotion should occur in order:
+
+1. run repeated real-table sessions and any advertised provider lifecycle;
+2. prove hosted state-plus-asset recovery and the operating envelope;
+3. complete physical accessibility/device evidence;
+4. complete legal, independent security and any applicable AI evidence.
+
+The implemented audit tranche materially improves the product. The remaining uncertainty is now mostly empirical and operational, and it should be resolved with evidence rather than another speculative rewrite.

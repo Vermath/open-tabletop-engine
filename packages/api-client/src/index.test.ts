@@ -75,6 +75,7 @@ const encounterId = "enc_client";
 const webhookId = "webhook_client";
 const webhookDeliveryId = "delivery_client";
 const delegatedUserId = "usr_delegated_client";
+const archiveImportOperationId = "arcimp_client";
 
 describe("OpenTabletopClient", () => {
   it("builds typed realtime websocket helpers", () => {
@@ -143,6 +144,112 @@ describe("OpenTabletopClient", () => {
     );
     expect(requestedUrl?.searchParams.get("sceneId")).toBe(sceneId);
     expect(requestedUrl?.searchParams.get("historyLimit")).toBe("25");
+  });
+
+  it("previews and executes exact operational retention with distinct retry identities", async () => {
+    const requests: Array<{ url: URL; init?: RequestInit }> = [];
+    const client = new OpenTabletopClient("http://api.test", {
+      fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        requests.push({ url: new URL(input.toString()), init });
+        return new Response(JSON.stringify({ targetSetHash: "a".repeat(64), selected: [] }), { status: 200, headers: { "content-type": "application/json" } });
+      }) as typeof fetch,
+    });
+
+    await client.operationalRetentionDiagnostics();
+    await client.previewOperationalRetention({ recordClasses: ["maintenance_jobs"], olderThanDays: 90 }, "retention-preview-client");
+    await client.pruneOperationalRetention({ recordClasses: ["maintenance_jobs"], olderThanDays: 90, targetSetHash: "a".repeat(64), reason: "Measured cleanup after recovery proof." }, "retention-execute-client");
+
+    expect(requests.map((request) => [request.init?.method, request.url.pathname, new Headers(request.init?.headers).get("idempotency-key")])).toEqual([
+      ["GET", "/api/v1/admin/retention/operations", null],
+      ["POST", "/api/v1/admin/retention/prune", "retention-preview-client"],
+      ["POST", "/api/v1/admin/retention/prune", "retention-execute-client"],
+    ]);
+    expect(JSON.parse(String(requests[1]?.init?.body))).toMatchObject({ dryRun: true, olderThanDays: 90 });
+    expect(JSON.parse(String(requests[2]?.init?.body))).toMatchObject({ dryRun: false, targetSetHash: "a".repeat(64) });
+  });
+
+  it("sends exact-revision Heroic Inspiration grant and selected-die reroll requests", async () => {
+    const requests: Array<{ url: URL; init?: RequestInit }> = [];
+    const client = new OpenTabletopClient("http://api.test", {
+      fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        requests.push({ url: new URL(input.toString()), init });
+        return new Response(JSON.stringify({ actor: {}, awardedTo: "actor", originalRoll: {}, reroll: {}, chat: {}, mustUseNewRoll: true }), { status: 200, headers: { "content-type": "application/json" } });
+      }) as typeof fetch,
+    });
+
+    await client.grantDnd5eSrdHeroicInspiration(campaignId, actorId, { expectedActorUpdatedAt: "2026-07-15T00:00:00.000Z" }, { idempotencyKey: "heroic-grant-client" });
+    await client.rerollDnd5eSrdHeroicInspiration(campaignId, actorId, { originalRollId: rollId, selectedTermIndex: 0, selectedResultIndex: 1, expectedActorUpdatedAt: "2026-07-15T00:00:01.000Z" }, { idempotencyKey: "heroic-reroll-client" });
+
+    expect(requests.map((request) => [request.url.pathname, new Headers(request.init?.headers).get("idempotency-key")])).toEqual([
+      ["/api/v1/campaigns/camp_client/systems/dnd-5e-srd/actors/act_client/heroic-inspiration/grant", "heroic-grant-client"],
+      ["/api/v1/campaigns/camp_client/systems/dnd-5e-srd/actors/act_client/heroic-inspiration/reroll", "heroic-reroll-client"],
+    ]);
+    expect(JSON.parse(String(requests[1]?.init?.body))).toMatchObject({ originalRollId: rollId, selectedTermIndex: 0, selectedResultIndex: 1 });
+  });
+
+  it("prepares each Rage lifecycle action through the typed exact-revision contract", async () => {
+    const requests: Array<{ url: URL; init?: RequestInit }> = [];
+    const client = new OpenTabletopClient("http://api.test", {
+      fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        requests.push({ url: new URL(input.toString()), init });
+        return new Response(JSON.stringify({ actor: {} }), { status: 200, headers: { "content-type": "application/json" } });
+      }) as typeof fetch,
+    });
+
+    await Promise.all((["start", "extend", "end"] as const).map((kind) => client.prepareDnd5eSrdRageAction(
+      campaignId,
+      actorId,
+      { kind, expectedUpdatedAt: "2026-07-15T00:00:00.000Z" },
+      { idempotencyKey: `rage-${kind}-client` },
+    )));
+
+    expect(requests.map((request) => ({
+      path: request.url.pathname,
+      key: new Headers(request.init?.headers).get("idempotency-key"),
+      body: JSON.parse(String(request.init?.body)),
+    }))).toEqual([
+      expect.objectContaining({ key: "rage-start-client", body: expect.objectContaining({ rollId: "feature-rage", consumeResources: true, prepare: true, commit: false }) }),
+      expect.objectContaining({ key: "rage-extend-client", body: expect.objectContaining({ rollId: "feature-rage-extend", consumeResources: true, prepare: true, commit: false }) }),
+      expect.objectContaining({ key: "rage-end-client", body: expect.objectContaining({ rollId: "feature-rage-end", consumeResources: true, prepare: true, commit: false }) }),
+    ]);
+    expect(requests.every((request) => request.url.pathname === "/api/v1/campaigns/camp_client/systems/dnd-5e-srd/actors/act_client/roll")).toBe(true);
+  });
+
+  it("posts one exact-revision encounter placement batch with its retry key", async () => {
+    let request: { url: URL; init?: RequestInit } | undefined;
+    const client = new OpenTabletopClient("http://api.test", {
+      fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        request = { url: new URL(input.toString()), init };
+        return new Response(JSON.stringify({ placements: [], scene: {} }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }) as typeof fetch,
+    });
+    const input = {
+      systemId,
+      expectedUpdatedAt: "2026-07-15T12:00:00.000Z",
+      placements: [{
+        threatId: "goblin-boss",
+        name: "Goblin Boss",
+        x: 100,
+        y: 150,
+        width: 50,
+        height: 50,
+        layer: "player" as const,
+        disposition: "hostile" as const,
+      }],
+    };
+
+    await client.placeEncounterMonsters(sceneId, input, "encounter-placement-client");
+
+    expect(request?.url.pathname).toBe(
+      "/api/v1/scenes/scn_client/encounter-monster-placements",
+    );
+    expect(new Headers(request?.init?.headers).get("idempotency-key")).toBe(
+      "encounter-placement-client",
+    );
+    expect(JSON.parse(String(request?.init?.body))).toEqual(input);
   });
 
   it("sends auth headers and request bodies consistently", async () => {
@@ -1254,6 +1361,24 @@ describe("OpenTabletopClient", () => {
     expect(requestCount).toBe(0);
   });
 
+  it("treats typed Weapon Mastery use as a consequential reviewed action", async () => {
+    let captured: { body?: string; headers: Headers } | undefined;
+    const client = new OpenTabletopClient("http://api.test", {
+      fetch: (async (_input: RequestInfo | URL, init?: RequestInit) => {
+        captured = { ...(typeof init?.body === "string" ? { body: init.body } : {}), headers: new Headers(init?.headers) };
+        return new Response(JSON.stringify({ status: "ready" }), { status: 200, headers: { "content-type": "application/json" } });
+      }) as typeof fetch,
+    });
+    await client.rollSystemActor(campaignId, systemId, actorId, {
+      rollId: "item-longsword-attack",
+      targetActorId: "target",
+      prepare: true,
+      weaponMastery: { use: true, secondaryTargetActorId: "secondary", geometryConfirmed: true },
+    }, { idempotencyKey: "mastery-preview-client-1" });
+    expect(captured?.headers.get("Idempotency-Key")).toBe("mastery-preview-client-1");
+    expect(JSON.parse(captured?.body ?? "{}")).toMatchObject({ weaponMastery: { use: true, secondaryTargetActorId: "secondary", geometryConfirmed: true } });
+  });
+
   it("forwards replay keys for attunement, advancement, and rest mutations", async () => {
     const requests: Array<{ url: string; headers: Headers; body?: string }> =
       [];
@@ -1748,6 +1873,16 @@ describe("OpenTabletopClient", () => {
         campaignId,
         { name: "Scene", expectedUpdatedAt: "2026-07-13T00:00:00.000Z" },
         "scene-create-client",
+      ),
+      client.duplicateScenes(
+        campaignId,
+        {
+          operationId: "scene-duplication-client",
+          expectedUpdatedAt: "2026-07-13T00:00:00.000Z",
+          sources: [{ sceneId, expectedUpdatedAt: "2026-07-13T00:00:00.000Z" }],
+          dryRun: true,
+        },
+        "scene-duplication-preview-client",
       ),
       client.scene(sceneId),
       client.sceneDelegations(sceneId),
@@ -2386,6 +2521,15 @@ describe("OpenTabletopClient", () => {
         { name: "Monster" },
         "system-monster-create-client",
       ),
+      client.placeEncounterMonsters(
+        sceneId,
+        {
+          systemId,
+          expectedUpdatedAt: "2026-07-13T00:00:00.000Z",
+          placements: [{ threatId: "guard", x: 100, y: 100, width: 50, height: 50 }],
+        },
+        "encounter-monster-placement-client",
+      ),
       client.importSystemCharacter(
         campaignId,
         systemId,
@@ -2798,6 +2942,15 @@ describe("OpenTabletopClient", () => {
         { idempotencyKey: "rest-commit-client" },
       ),
       client.systemActorSheet(campaignId, systemId, actorId),
+      client.grantDnd5eSrdHeroicInspiration(campaignId, actorId, {
+        expectedActorUpdatedAt: "2026-07-13T00:00:00.000Z",
+      }, { idempotencyKey: "heroic-inspiration-grant-client" }),
+      client.rerollDnd5eSrdHeroicInspiration(campaignId, actorId, {
+        originalRollId: rollId,
+        selectedTermIndex: 0,
+        selectedResultIndex: 0,
+        expectedActorUpdatedAt: "2026-07-13T00:00:00.000Z",
+      }, { idempotencyKey: "heroic-inspiration-reroll-client" }),
       client.rollSystemActor(campaignId, systemId, actorId, {
         actionId: "attack",
       }),
@@ -2833,6 +2986,9 @@ describe("OpenTabletopClient", () => {
       client.exportCampaign(campaignId),
       client.exportCampaignStream(campaignId),
       client.dogfoodReportBundle(campaignId),
+      client.campaignArchiveImportOperations(campaignId),
+      client.previewCampaignArchiveImportRollback(campaignId, archiveImportOperationId),
+      client.rollbackCampaignArchiveImport(campaignId, archiveImportOperationId, "2026-07-13T00:00:00.000Z", "archive-import-rollback-client"),
       client.importCampaign({ format: "ottx" }, "campaign-import-client"),
       client.importCampaignStream(
         new Blob(["framed archive"]),
@@ -2893,6 +3049,7 @@ function normalizeCall(call: string): string {
     .replace(combatId, "{combatId}")
     .replace(combatantId, "{combatantId}")
     .replace(proposalId, "{proposalId}")
+    .replace(archiveImportOperationId, "{operationId}")
     .replace(importId, "{importId}")
     .replace(pluginId, "{pluginId}")
     .replace(pluginKey, "{key}")

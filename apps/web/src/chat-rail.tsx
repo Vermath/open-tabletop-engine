@@ -253,11 +253,11 @@ export function RollMessageCard(props: { campaignId: string; message: ChatMessag
   const className = ["chat-roll-card", highlight ? `chat-roll-card-${highlight}` : "", props.concealed ? "chat-roll-card-pending" : ""].filter(Boolean).join(" ");
   const verify = async () => {
     if (props.concealed) return;
-    setVerificationStatus("Checking");
+    setVerificationStatus("Replaying recorded roll");
     try {
       const result = await verifyDiceRoll(props.campaignId, props.roll.id);
       setVerification(result);
-      setVerificationStatus(result.verified ? `Verified total ${formatNumber(result.expected.total)}` : `Failed: ${diceVerificationReasonLabel(result.reason)}`);
+      setVerificationStatus(result.verified ? `Replay matched total ${formatNumber(result.expected.total)}` : `Replay failed: ${diceVerificationReasonLabel(result.reason)}`);
     } catch (error) {
       setVerification(undefined);
       setVerificationStatus(`Failed: ${errorMessage(error)}`);
@@ -301,13 +301,14 @@ export function RollMessageCard(props: { campaignId: string; message: ChatMessag
           </div>
           <div className="chat-roll-verification">
             <button className="ghost-button small" type="button" onClick={() => void verify()}>
-              <Check size={13} /> Verify fairness
+              <Check size={13} /> Replay recorded roll
             </button>
             {verificationStatus && (
               <span className={verification?.verified ? "verification-status verified" : "verification-status"} role="status">
                 {verificationStatus}
               </span>
             )}
+            <small className="chat-roll-replay-scope">Checks stored roll consistency; no pre-roll host commitment.</small>
           </div>
         </div>
       )}
@@ -319,7 +320,7 @@ export function RollMessageCard(props: { campaignId: string; message: ChatMessag
 export function diceVerificationReasonLabel(reason: DiceRollVerification["reason"]): string {
   switch (reason) {
     case "fairness_unavailable":
-      return "fairness data missing";
+      return "replay metadata missing";
     case "unsupported_algorithm":
       return "unsupported algorithm";
     case "seed_hash_mismatch":

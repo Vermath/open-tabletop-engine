@@ -42,8 +42,6 @@ describe("atomic combat start", () => {
     const store = new MemoryStateStore();
     const { scene, npcToken, unlinkedToken } = addAtomicCombatFixtures(store);
     const app = await buildApp({ store });
-    const originalRandom = Math.random;
-    Math.random = () => 0;
     const before = {
       combats: store.state.combats.length,
       rolls: store.state.rolls.length,
@@ -70,17 +68,20 @@ describe("atomic combat start", () => {
       expect(started.statusCode).toBe(200);
       expect(started.headers["idempotency-replayed"]).toBeUndefined();
       expect(started.json().combat).toEqual(expect.objectContaining({ active: true, round: 1, turnIndex: 0 }));
-      expect(started.json().combat.combatants).toEqual([
+      const initiativeRoll = started.json().rolls[0];
+      expect(started.json().combat.combatants).toEqual(expect.arrayContaining([
         expect.objectContaining({ tokenId: "tok_valen", actorId: "act_valen", initiative: 17 }),
         expect.objectContaining({ tokenId: unlinkedToken.id, initiative: 8 }),
-        expect.objectContaining({ tokenId: npcToken.id, initiative: 4 })
-      ]);
+        expect.objectContaining({ tokenId: npcToken.id, initiative: initiativeRoll.total })
+      ]));
+      const initiatives = started.json().combat.combatants.map((combatant: { initiative: number }) => combatant.initiative);
+      expect(initiatives).toEqual([...initiatives].sort((left, right) => right - left));
       expect(started.json().combat.combatants.some((combatant: { initiative: number }) => combatant.initiative === 0)).toBe(false);
       expect(started.json().rolls).toEqual([
-        expect.objectContaining({ label: "Atomic Scout Initiative", formula: "1d20+3", total: 4 })
+        expect.objectContaining({ label: "Atomic Scout Initiative", formula: "1d20+3", total: initiativeRoll.total })
       ]);
       expect(started.json().chatMessages).toEqual([
-        expect.objectContaining({ type: "roll", body: "Atomic Scout Initiative: 1d20+3 = 4" })
+        expect.objectContaining({ type: "roll", body: `Atomic Scout Initiative: 1d20+3 = ${initiativeRoll.total}` })
       ]);
 
       const retried = await app.inject({
@@ -99,7 +100,6 @@ describe("atomic combat start", () => {
       expect(store.state.auditLogs.filter((log) => log.action === "combat.started" && log.targetId === started.json().combat.id)).toHaveLength(1);
       expect(store.state.auditLogs.some((log) => log.action === "combat.initiativeRolled" && log.targetId === started.json().combat.id)).toBe(false);
     } finally {
-      Math.random = originalRandom;
       await app.close();
     }
   });
@@ -109,8 +109,6 @@ describe("atomic combat start", () => {
     const { scene, npcToken } = addAtomicCombatFixtures(store);
     npcToken.hidden = true;
     const app = await buildApp({ store });
-    const originalRandom = Math.random;
-    Math.random = () => 0;
 
     try {
       const started = await app.inject({
@@ -156,7 +154,6 @@ describe("atomic combat start", () => {
       expect(playerChat.statusCode).toBe(200);
       expect(JSON.stringify(playerChat.json())).not.toContain("Atomic Scout");
     } finally {
-      Math.random = originalRandom;
       await app.close();
     }
   });

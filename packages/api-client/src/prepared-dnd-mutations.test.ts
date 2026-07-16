@@ -139,20 +139,28 @@ describe("prepared D&D mutation client", () => {
       preparedPreviewKey: "action-preview-1",
       expectedUpdatedAt: revision,
     }, { idempotencyKey: "action-commit-1" });
+    const preparedControlledCreature = client.prepareDnd5eSrdAction(campaignId, actorId, {
+      rollId: "summon-spirit",
+      controlledCreature: { sceneId: "scene-1", token: { x: 10, y: 20, width: 50, height: 50, disposition: "friendly" } },
+      prepare: true,
+    }, { idempotencyKey: "controlled-creature-preview-1" });
 
     expectTypeOf(preparedAction).toMatchTypeOf<Promise<SystemActorRollResult>>();
     expectTypeOf(committedAction).toEqualTypeOf<Promise<SystemActorRollResult>>();
-    await Promise.all([preparedAction, committedAction]);
+    expectTypeOf(preparedControlledCreature).toEqualTypeOf<Promise<SystemActorRollResult>>();
+    await Promise.all([preparedAction, committedAction, preparedControlledCreature]);
 
     expect(requests.map(({ init }) => new Headers(init?.headers).get("Idempotency-Key"))).toEqual([
       "advancement-commit-1",
       "rest-commit-1",
       "action-preview-1",
       "action-commit-1",
+      "controlled-creature-preview-1",
     ]);
     expect(JSON.parse(String(requests[0]?.init?.body))).toMatchObject({ preparedPreviewKey: "advancement-preview-1", expectedUpdatedAt: revision });
     expect(JSON.parse(String(requests[1]?.init?.body))).toMatchObject({ preparedPreviewKey: "rest-preview-1", expectedUpdatedAt: revision });
     expect(JSON.parse(String(requests[3]?.init?.body))).toEqual({ preparedPreviewKey: "action-preview-1", expectedUpdatedAt: revision });
+    expect(JSON.parse(String(requests[4]?.init?.body))).toMatchObject({ rollId: "summon-spirit", controlledCreature: { sceneId: "scene-1", token: { disposition: "friendly" } }, prepare: true });
   });
 
   it("rejects unprepared consequential D&D commits but leaves other systems compatible", async () => {

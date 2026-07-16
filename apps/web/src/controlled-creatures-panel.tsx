@@ -1,6 +1,7 @@
 import type {
   Actor,
   Combat,
+  DndControlledCreatureActionHandoff,
   DndControlledCreatureCreateRequest,
   DndControlledCreatureDuration,
   DndControlledCreatureMutationResult,
@@ -10,9 +11,10 @@ import type {
   Item,
   Scene,
 } from "@open-tabletop/core";
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { ApiError, apiGet, apiPost } from "./api.js";
+import { clearControlledCreatureHandoff, loadControlledCreatureHandoff, sameControlledCreatureHandoff, saveControlledCreatureHandoff } from "./controlled-creature-handoff-state.js";
 
 const DND_SYSTEM_ID = "dnd-5e-srd";
 
@@ -30,11 +32,13 @@ interface ControlledCreaturesPanelProps {
   scenes: Scene[];
   combats: Combat[];
   canPrepare: boolean;
+  handoff?: DndControlledCreatureActionHandoff;
+  onHandoffConsumed?(outcome: "confirmed" | "cancelled"): void;
   onChanged(): void;
   onStatus(message: string): void;
 }
 
-interface LifecycleDraft {
+export interface LifecycleDraft {
   kind: DndControlledCreatureCreateRequest["kind"];
   sourceActorId: string;
   sourceItemId: string;
@@ -46,6 +50,7 @@ interface LifecycleDraft {
   rulesVersion: string;
   hpCurrent: number;
   hpMax: number;
+  actorData: Record<string, unknown>;
   tokenX: number;
   tokenY: number;
   tokenSize: number;
@@ -89,18 +94,51 @@ export function controlledCreatureDurationLabel(record: DndControlledCreatureRec
   return "until dismissed";
 }
 
-export function ControlledCreaturesPanel({ campaignId, currentUserId, actors, items, scenes, combats, canPrepare, onChanged, onStatus }: ControlledCreaturesPanelProps) {
+export function ControlledCreaturesPanel({ campaignId, currentUserId, actors, items, scenes, combats, canPrepare, handoff, onHandoffConsumed, onChanged, onStatus }: ControlledCreaturesPanelProps) {
   const headingId = useId();
+  const [initialHandoffState] = useState(() => {
+    const storage = browserSessionStorage();
+    const restored = storage ? loadControlledCreatureHandoff(storage, { campaignId, userId: currentUserId }) : undefined;
+    if (!handoff) return restored;
+    return {
+      handoff,
+      draft: restored && sameControlledCreatureHandoff(restored.handoff, handoff) ? restored.draft : lifecycleDraftFromHandoff(handoff),
+      savedAt: restored?.savedAt ?? Date.now(),
+    };
+  });
   const [entries, setEntries] = useState<ControlledCreatureEntry[]>([]);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [loadError, setLoadError] = useState("");
   const [reloadVersion, setReloadVersion] = useState(0);
-  const [draft, setDraft] = useState<LifecycleDraft>(defaultLifecycleDraft);
+  const [activeHandoff, setActiveHandoff] = useState(initialHandoffState?.handoff);
+  const [draft, setDraft] = useState<LifecycleDraft>(initialHandoffState?.draft ?? defaultLifecycleDraft);
   const [preview, setPreview] = useState<DndControlledCreaturePreview>();
   const [manualReviewConfirmed, setManualReviewConfirmed] = useState(false);
   const [formError, setFormError] = useState("");
   const [pending, setPending] = useState("");
   const [commandNotes, setCommandNotes] = useState<Record<string, string>>({});
+  const latestIncomingHandoff = useRef(handoff);
+  const effectiveHandoff = handoff ?? activeHandoff;
+
+  useEffect(() => {
+    if (!handoff) return;
+    if (latestIncomingHandoff.current && sameControlledCreatureHandoff(latestIncomingHandoff.current, handoff)) return;
+    latestIncomingHandoff.current = handoff;
+    const nextDraft = lifecycleDraftFromHandoff(handoff);
+    setActiveHandoff(handoff);
+    setDraft(nextDraft);
+    setPreview(undefined);
+    setManualReviewConfirmed(false);
+    setFormError("");
+    const storage = browserSessionStorage();
+    if (storage) saveControlledCreatureHandoff(storage, { campaignId, userId: currentUserId }, handoff, nextDraft);
+  }, [campaignId, currentUserId, handoff]);
+
+  useEffect(() => {
+    if (!activeHandoff || (handoff && !sameControlledCreatureHandoff(activeHandoff, handoff))) return;
+    const storage = browserSessionStorage();
+    if (storage) saveControlledCreatureHandoff(storage, { campaignId, userId: currentUserId }, activeHandoff, draft);
+  }, [activeHandoff, campaignId, currentUserId, draft, handoff]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -156,9 +194,10 @@ export function ControlledCreaturesPanel({ campaignId, currentUserId, actors, it
   }
 
   function requestFromDraft(): DndControlledCreatureCreateRequest | undefined {
-    const sourceActor = dndActors.find((actor) => actor.id === draft.sourceActorId);
+    const prefill = effectiveHandoff?.prefill;
+    const sourceActor = dndActors.find((actor) => actor.id === (prefill?.source.actorId ?? draft.sourceActorId));
     const sourceItem = sourceItems.find((item) => item.id === draft.sourceItemId);
-    if (!sourceActor || !sourceItem) {
+    if (!sourceActor || (!prefill && !sourceItem)) {
       setFormError("Choose a D&D source actor and an actor-owned spell or feature.");
       return undefined;
     }
@@ -170,58 +209,60 @@ export function ControlledCreaturesPanel({ campaignId, currentUserId, actors, it
       setFormError("Enter a name, actor type, and explicit current and maximum hit points.");
       return undefined;
     }
-    if (draft.kind === "transformation" && !draft.targetActorId) {
+    const kind = prefill?.kind ?? draft.kind;
+    if (kind === "transformation" && !draft.targetActorId) {
       setFormError("Choose the actor that will transform.");
       return undefined;
     }
-    if (draft.kind !== "transformation" && !draft.sceneId) {
+    if (kind !== "transformation" && !draft.sceneId) {
       setFormError("Choose a scene for the controlled creature token.");
       return undefined;
     }
-
-    const duration = durationFromDraft(draft);
+    const duration = handoffFieldLocked(effectiveHandoff, "duration") ? prefill?.duration : durationFromDraft(draft);
     if (!duration) {
       setFormError(draft.durationMode === "rounds" ? "Choose a combat and a future expiration round." : "Choose a future expiration time.");
       return undefined;
     }
-    const hasCombat = Boolean(draft.combatId);
+    const combatId = handoffFieldLocked(effectiveHandoff, "combatId") ? prefill?.combatId : draft.combatId || undefined;
+    const hasCombat = Boolean(combatId);
     if (hasCombat && draft.initiativeMode === "independent" && !Number.isFinite(draft.initiativeValue)) {
       setFormError("Enter an initiative value before adding the creature to combat.");
       return undefined;
     }
 
+    const concentration = handoffFieldLocked(effectiveHandoff, "concentration")
+      ? prefill?.concentration
+      : draft.concentrationGroupId.trim() && kind !== "persistent_companion" ? { sourceActorId: sourceActor.id, groupId: draft.concentrationGroupId.trim() } : undefined;
+    const initiative = handoffFieldLocked(effectiveHandoff, "initiative") && prefill?.initiative
+      ? prefill.initiative
+      : draft.initiativeMode === "shared" ? { mode: "shared" as const, sourceActorId: sourceActor.id } : { mode: "independent" as const, ...(hasCombat ? { value: draft.initiativeValue } : {}) };
+    const command = handoffFieldLocked(effectiveHandoff, "command") && prefill?.command
+      ? prefill.command
+      : { required: draft.commandRequired, action: draft.commandRequired ? draft.commandAction : "none" as const };
+    const token = kind === "transformation" ? undefined : handoffFieldLocked(effectiveHandoff, "token") && prefill?.token
+      ? prefill.token as DndControlledCreatureCreateRequest["token"]
+      : { ...prefill?.token, x: draft.tokenX, y: draft.tokenY, width: draft.tokenSize, height: draft.tokenSize, disposition: draft.disposition };
     return {
-      kind: draft.kind,
-      ...(draft.kind === "transformation" ? { targetActorId: draft.targetActorId } : { sceneId: draft.sceneId }),
-      ...(draft.combatId ? { combatId: draft.combatId } : {}),
-      source: {
-        kind: sourceKind(sourceItem)!,
-        actorId: sourceActor.id,
-        itemId: sourceItem.id,
-        name: sourceItem.name,
-        systemId: DND_SYSTEM_ID,
-        rulesVersion: draft.rulesVersion.trim(),
-      },
-      controllerUserId: currentUserId,
-      controllerActorId: sourceActor.id,
-      ownerUserId: currentUserId,
+      kind,
+      ...(kind === "transformation" ? { targetActorId: prefill?.targetActorId ?? draft.targetActorId } : { sceneId: prefill?.sceneId ?? draft.sceneId }),
+      ...(combatId ? { combatId } : {}),
+      source: prefill?.source ?? { kind: sourceKind(sourceItem!)!, actorId: sourceActor.id, itemId: sourceItem!.id, name: sourceItem!.name, systemId: DND_SYSTEM_ID, rulesVersion: draft.rulesVersion.trim() },
+      ...(prefill?.originatingAction ? { originatingAction: prefill.originatingAction } : {}),
+      controllerUserId: prefill?.controllerUserId ?? currentUserId,
+      controllerActorId: prefill?.controllerActorId ?? sourceActor.id,
+      ownerUserId: prefill?.ownerUserId ?? currentUserId,
       actor: {
         name: draft.name.trim(),
         type: draft.actorType.trim(),
-        data: { hp: { current: draft.hpCurrent, max: draft.hpMax }, rulesVersion: draft.rulesVersion.trim() },
+        ...(prefill?.actor?.imageAssetId ? { imageAssetId: prefill.actor.imageAssetId } : {}),
+        data: { ...draft.actorData, hp: { current: draft.hpCurrent, max: draft.hpMax }, rulesVersion: draft.rulesVersion.trim() },
       },
-      ...(draft.kind === "transformation" ? {} : {
-        token: { x: draft.tokenX, y: draft.tokenY, width: draft.tokenSize, height: draft.tokenSize, disposition: draft.disposition },
-      }),
+      ...(token ? { token } : {}),
       duration,
-      ...(draft.concentrationGroupId.trim() && draft.kind !== "persistent_companion"
-        ? { concentration: { sourceActorId: sourceActor.id, groupId: draft.concentrationGroupId.trim() } }
-        : {}),
-      initiative: draft.initiativeMode === "shared"
-        ? { mode: "shared", sourceActorId: sourceActor.id }
-        : { mode: "independent", ...(hasCombat ? { value: draft.initiativeValue } : {}) },
-      command: { required: draft.commandRequired, action: draft.commandRequired ? draft.commandAction : "none" },
-      ...(draft.kind === "transformation" ? { transformation: { hpCarryover: draft.hpCarryover, equipmentCarryover: draft.equipmentCarryover } } : {}),
+      ...(concentration ? { concentration } : {}),
+      initiative,
+      command,
+      ...(kind === "transformation" ? { transformation: { hpCarryover: prefill?.transformation?.hpCarryover ?? draft.hpCarryover, equipmentCarryover: prefill?.transformation?.equipmentCarryover ?? draft.equipmentCarryover } } : {}),
       manualReviewConfirmed,
     };
   }
@@ -258,12 +299,29 @@ export function ControlledCreaturesPanel({ campaignId, currentUserId, actors, it
       setDraft(defaultLifecycleDraft());
       setPreview(undefined);
       setManualReviewConfirmed(false);
+      if (effectiveHandoff) consumeHandoff("confirmed");
       refreshAfterMutation();
     } catch (error) {
       handleMutationError(error, "Controlled-creature confirmation failed.");
     } finally {
       setPending("");
     }
+  }
+
+  function cancelHandoff(): void {
+    setDraft(defaultLifecycleDraft());
+    setPreview(undefined);
+    setManualReviewConfirmed(false);
+    setFormError("");
+    consumeHandoff("cancelled");
+    onStatus("Prepared controlled-creature action cancelled; no action or resource was spent.");
+  }
+
+  function consumeHandoff(outcome: "confirmed" | "cancelled"): void {
+    const storage = browserSessionStorage();
+    if (storage) clearControlledCreatureHandoff(storage, { campaignId, userId: currentUserId });
+    setActiveHandoff(undefined);
+    onHandoffConsumed?.(outcome);
   }
 
   async function command(entry: ControlledCreatureEntry): Promise<void> {
@@ -384,13 +442,26 @@ export function ControlledCreaturesPanel({ campaignId, currentUserId, actors, it
         </div>
       )}
 
+      {effectiveHandoff && (
+        <article className="proposal-card controlled-creature-review" aria-live="polite">
+          <strong>Prepared from {effectiveHandoff.action.label}</strong>
+          <p>This action is not spent yet. Review the prefilled lifecycle, fill only the listed human choices, then confirm once or cancel with no state change.</p>
+          <small>Source-locked fields: {effectiveHandoff.sourcedFields.join(", ")}</small>
+          {effectiveHandoff.manualChoices.length > 0
+            ? <ul>{effectiveHandoff.manualChoices.map((choice) => <li key={choice.field}><strong>{choice.field}:</strong> {choice.reason}</li>)}</ul>
+            : <p>No additional rules details need manual entry.</p>}
+          {effectiveHandoff.status === "manual_required" && <p className="inline-error">This legacy action has no complete typed mapping. The listed rules details remain manual and must be reviewed with the DM.</p>}
+        </article>
+      )}
+
       {canPrepare ? <form className="controlled-creature-form" onSubmit={(event) => { event.preventDefault(); void previewLifecycle(); }}>
         <fieldset disabled={Boolean(pending)}>
           <legend>Prepare a reviewed lifecycle</legend>
           <div className="form-grid two-column">
             <Select label="Lifecycle" value={draft.kind} onChange={(value) => updateDraft({ kind: value as LifecycleDraft["kind"], durationMode: value === "persistent_companion" ? "persistent" : "until_dismissed", actorType: value === "transformation" ? "transformed" : value })} options={[{ value: "summon", label: "Summon" }, { value: "transformation", label: "Transformation" }, { value: "persistent_companion", label: "Persistent companion" }]} />
-            <Select label="Source actor" value={draft.sourceActorId} onChange={(value) => updateDraft({ sourceActorId: value, sourceItemId: "" })} options={[{ value: "", label: "Choose actor" }, ...dndActors.map((actor) => ({ value: actor.id, label: actor.name }))]} />
-            <Select label="Source spell or feature" value={draft.sourceItemId} onChange={selectSourceItem} options={[{ value: "", label: "Choose source" }, ...sourceItems.map((item) => ({ value: item.id, label: `${item.name} (${sourceKind(item)})` }))]} />
+            {effectiveHandoff
+              ? <div className="compact-field"><span>Originating action</span><strong>{effectiveHandoff.prefill.source.name}</strong><small>{effectiveHandoff.prefill.source.kind} from {dndActors.find((actor) => actor.id === effectiveHandoff.prefill.source.actorId)?.name ?? effectiveHandoff.prefill.source.actorId}</small></div>
+              : <><Select label="Source actor" value={draft.sourceActorId} onChange={(value) => updateDraft({ sourceActorId: value, sourceItemId: "" })} options={[{ value: "", label: "Choose actor" }, ...dndActors.map((actor) => ({ value: actor.id, label: actor.name }))]} /><Select label="Source spell or feature" value={draft.sourceItemId} onChange={selectSourceItem} options={[{ value: "", label: "Choose source" }, ...sourceItems.map((item) => ({ value: item.id, label: `${item.name} (${sourceKind(item)})` }))]} /></>}
             <TextField label="Rules/content version" value={draft.rulesVersion} onChange={(value) => updateDraft({ rulesVersion: value })} required />
             {draft.kind === "transformation" ? (
               <Select label="Transformation target" value={draft.targetActorId} onChange={(value) => updateDraft({ targetActorId: value })} options={[{ value: "", label: "Choose target" }, ...dndActors.map((actor) => ({ value: actor.id, label: actor.name }))]} />
@@ -436,6 +507,7 @@ export function ControlledCreaturesPanel({ campaignId, currentUserId, actors, it
         <div className="row-actions">
           <button className="ghost-button" type="submit" disabled={Boolean(pending)}>{pending === "preview" ? "Previewing..." : manualReviewConfirmed ? "Preview reviewed choices" : "Preview lifecycle"}</button>
           <button className="primary-button" type="button" disabled={Boolean(pending) || !preview?.ready} onClick={() => void confirmLifecycle()}>{pending === "confirm" ? "Confirming..." : "Confirm reviewed lifecycle"}</button>
+          {effectiveHandoff && <button className="danger-button" type="button" disabled={Boolean(pending)} onClick={cancelHandoff}>Cancel prepared action</button>}
         </div>
       </form> : <p className="empty-state compact">You can review and command linked creatures here. Creating or transforming one requires actor-update permissions.</p>}
     </section>
@@ -445,9 +517,50 @@ export function ControlledCreaturesPanel({ campaignId, currentUserId, actors, it
 function defaultLifecycleDraft(): LifecycleDraft {
   return {
     kind: "summon", sourceActorId: "", sourceItemId: "", targetActorId: "", sceneId: "", combatId: "", name: "", actorType: "summon", rulesVersion: "", hpCurrent: 1, hpMax: 1,
-    tokenX: 0, tokenY: 0, tokenSize: 50, disposition: "friendly", durationMode: "until_dismissed", expiresAtRound: 2, expiresAt: "", concentrationGroupId: "",
+    actorData: {}, tokenX: 0, tokenY: 0, tokenSize: 50, disposition: "friendly", durationMode: "until_dismissed", expiresAtRound: 2, expiresAt: "", concentrationGroupId: "",
     initiativeMode: "independent", initiativeValue: 10, commandRequired: true, commandAction: "bonus_action", hpCarryover: "preserve", equipmentCarryover: "suppress",
   };
+}
+
+export function lifecycleDraftFromHandoff(handoff: DndControlledCreatureActionHandoff): LifecycleDraft {
+  const prefill = handoff.prefill;
+  const data = prefill.actor?.data ?? {};
+  const hp = data.hp && typeof data.hp === "object" && !Array.isArray(data.hp) ? data.hp as Record<string, unknown> : {};
+  const duration = prefill.duration;
+  const token = prefill.token;
+  return {
+    ...defaultLifecycleDraft(),
+    kind: prefill.kind,
+    sourceActorId: prefill.source.actorId,
+    sourceItemId: prefill.source.itemId ?? "",
+    targetActorId: prefill.targetActorId ?? "",
+    sceneId: prefill.sceneId ?? "",
+    combatId: prefill.combatId ?? "",
+    name: prefill.actor?.name ?? "",
+    actorType: prefill.actor?.type ?? (prefill.kind === "transformation" ? "beast" : prefill.kind),
+    rulesVersion: textValue(data.rulesVersion) || prefill.source.rulesVersion,
+    hpCurrent: typeof hp.current === "number" ? hp.current : 1,
+    hpMax: typeof hp.max === "number" ? hp.max : 1,
+    actorData: data,
+    tokenX: typeof token?.x === "number" ? token.x : 0,
+    tokenY: typeof token?.y === "number" ? token.y : 0,
+    tokenSize: typeof token?.width === "number" ? token.width : 50,
+    disposition: token?.disposition ?? "friendly",
+    durationMode: duration?.mode ?? (prefill.kind === "persistent_companion" ? "persistent" : "until_dismissed"),
+    expiresAtRound: duration?.mode === "rounds" ? duration.expiresAtRound : 2,
+    expiresAt: duration?.mode === "until_time" ? duration.expiresAt.slice(0, 16) : "",
+    concentrationGroupId: prefill.concentration?.groupId ?? "",
+    initiativeMode: prefill.initiative?.mode ?? "independent",
+    initiativeValue: prefill.initiative?.mode === "independent" && typeof prefill.initiative.value === "number" ? prefill.initiative.value : 10,
+    commandRequired: prefill.command?.required ?? true,
+    commandAction: prefill.command?.action ?? "bonus_action",
+    hpCarryover: prefill.transformation?.hpCarryover ?? "preserve",
+    equipmentCarryover: prefill.transformation?.equipmentCarryover ?? "suppress",
+  };
+}
+
+export function handoffFieldLocked(handoff: DndControlledCreatureActionHandoff | undefined, field: string): boolean {
+  return Boolean(handoff?.sourcedFields.includes(field));
 }
 
 function durationFromDraft(draft: LifecycleDraft): DndControlledCreatureDuration | undefined {
@@ -478,6 +591,10 @@ function lifecycleIdempotencyKey(action: string): string {
 
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message.trim() ? error.message : fallback;
+}
+
+function browserSessionStorage(): Storage | undefined {
+  try { return typeof window === "undefined" ? undefined : window.sessionStorage; } catch { return undefined; }
 }
 
 function kindLabel(kind: DndControlledCreatureRecord["kind"]): string {

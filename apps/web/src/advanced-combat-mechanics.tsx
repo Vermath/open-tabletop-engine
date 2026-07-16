@@ -4,6 +4,8 @@ import { useMemo, useState, type FormEvent } from "react";
 import { apiDelete, apiPatch, apiPost } from "./api.js";
 import { errorMessage, formatNumber, recordValue, stringValue, titleCaseLabel } from "./sheet-format.js";
 import { isStaleWriteError, sharedMutationIdempotencyKey, staleDraftPreservedMessage } from "./shared-mutation.js";
+import { RulesSupportBoundaryNotice, rulesBoundaryFromSpell } from "./rules-support-boundary.js";
+import { useConsequenceReview, type ConsequenceReviewRequest } from "./consequence-review.js";
 
 interface EffectScheduleEvaluation {
   phase: RulesEffectScheduleTiming;
@@ -99,6 +101,7 @@ function mechanicDue(mechanic: CombatEnvironmentMechanic, combat: Combat): boole
 }
 
 export function AdvancedCombatMechanics(props: AdvancedCombatMechanicsProps) {
+  const consequenceReview = useConsequenceReview();
   const [pending, setPending] = useState("");
   const [error, setError] = useState("");
   const [kind, setKind] = useState<CombatEnvironmentMechanic["kind"]>("lair_action");
@@ -230,8 +233,7 @@ export function AdvancedCombatMechanics(props: AdvancedCombatMechanicsProps) {
         props.onStatus("Scheduled effects still need explicit save outcomes");
         return;
       }
-      const exactReview = JSON.stringify({ events: prepared.events, actorChanges: prepared.actorChanges }, null, 2);
-      if (!window.confirm(`Review exact scheduled-effect results\n\n${exactReview}\n\nCommit these exact results?`)) {
+      if (!await consequenceReview.review(scheduledEffectConsequenceReview(prepared, props.actors))) {
         props.onStatus("Scheduled-effect advancement cancelled after review");
         return;
       }
@@ -267,7 +269,8 @@ export function AdvancedCombatMechanics(props: AdvancedCombatMechanicsProps) {
     });
   }
 
-  return (
+  return (<>
+    {consequenceReview.dialog}
     <section className="advanced-combat-mechanics" aria-label="Advanced D&D combat mechanics">
       <div className="section-title">Advanced D&amp;D Mechanics</div>
       <p className="panel-subtitle">Reviewed prompts and deterministic lifecycle helpers. Damage, movement, and map geometry remain manual unless shown in the preview.</p>
@@ -352,6 +355,7 @@ export function AdvancedCombatMechanics(props: AdvancedCombatMechanicsProps) {
         {spellPreview && (
           <div className="operator-item admin-item" aria-label="Spell helper preview">
             <div className="combatant-header"><strong>{spellPreview.preview.spellName}</strong><span className="status-pill">{titleCaseLabel(spellPreview.preview.automation)}</span></div>
+            <RulesSupportBoundaryNotice boundary={rulesBoundaryFromSpell({ supported: spellPreview.preview.supported, automation: spellPreview.preview.automation, manualSteps: spellPreview.preview.manualSteps, warnings: spellPreview.preview.warnings, source: spellPreview.source.id })} />
             <p>{spellPreview.preview.summary}</p>
             {spellPreview.preview.rolls.map((roll, index) => <p key={`${roll.label}:${index}`}><strong>{roll.label}</strong>: {roll.formula}{roll.save ? ` · ${titleCaseLabel(roll.save.ability)} save` : ""}</p>)}
             {spellPreview.preview.manualSteps.length > 0 && <ul>{spellPreview.preview.manualSteps.map((step) => <li key={step}>{step}</li>)}</ul>}
@@ -361,5 +365,21 @@ export function AdvancedCombatMechanics(props: AdvancedCombatMechanicsProps) {
         )}
       </details>
     </section>
-  );
+  </>);
+}
+
+export function scheduledEffectConsequenceReview(prepared: EffectScheduleEvaluation, actors: Actor[]): ConsequenceReviewRequest {
+  const actorNames = new Map(actors.map((actor) => [actor.id, actor.name]));
+  return {
+    title: "Review scheduled effects",
+    summary: "The server prepared these exact phase outcomes. Commit applies this prepared revision once; cancel preserves current combat and actor state.",
+    source: "D&D 5e SRD scheduled-effect resolver",
+    boundary: { status: "automated", label: "Automated", explanation: "The server evaluated typed effect schedules for the selected combat phase.", sources: ["D&D 5e SRD scheduled-effect resolver"] },
+    sections: [
+      { id: "events", label: "Effect events", items: prepared.events.map((event) => ({ label: event.label, value: `${actorNames.get(event.actorId) ?? event.actorId} - ${titleCaseLabel(event.status)}`, detail: `${titleCaseLabel(event.phase)}; round ${formatNumber(event.round)}${event.saveAbility ? `; ${titleCaseLabel(event.saveAbility)} save${event.saveDc !== undefined ? ` DC ${formatNumber(event.saveDc)}` : ""}` : ""}` })) },
+      { id: "changes", label: "Actor changes", items: prepared.actorChanges.map((change) => ({ label: actorNames.get(change.actorId) ?? change.actorId, value: change.reason })) }
+    ].filter((section) => section.items.length > 0),
+    ...(prepared.unresolvedEventIds.length > 0 ? { blockingIssues: prepared.unresolvedEventIds.map((id) => `Choose the required save outcome for ${id}.`) } : {}),
+    confirmLabel: "Commit exact effect outcomes"
+  };
 }

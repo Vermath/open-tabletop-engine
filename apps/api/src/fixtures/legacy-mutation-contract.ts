@@ -466,7 +466,7 @@ function sharedMutationRevision(
     );
     if (campaign) return { record: campaign, field: "expectedUpdatedAt" };
     const scene = direct(
-      /^\/api\/v1\/scenes\/([^/]+)\/(?:tokens|undo|fog\/undo|fog\/apply-preset)$/,
+      /^\/api\/v1\/scenes\/([^/]+)\/(?:tokens|encounter-monster-placements|undo|fog\/undo|fog\/apply-preset)$/,
       "scenes",
     );
     if (scene) return { record: scene, field: "expectedUpdatedAt" };

@@ -1820,6 +1820,7 @@ export function createStorageBackupScheduler(
   store: StateStore,
   assetProvider: AssetSnapshotProvider,
   coordinator: ExclusiveMutationCoordinator,
+  observeRun?: (run: StorageBackupSchedulerRun) => void,
 ): StorageBackupScheduler {
   const intervalSeconds = sqliteBackupIntervalSeconds();
   const runOnStart = envBoolean("OTTE_SQLITE_BACKUP_RUN_ON_START", false);
@@ -1840,6 +1841,7 @@ export function createStorageBackupScheduler(
         reason,
         error: "sqlite_backup_already_running",
       };
+      observeRun?.({ ...lastRun });
       return;
     }
     running = true;
@@ -1878,6 +1880,7 @@ export function createStorageBackupScheduler(
           sizeBytes: backup.sizeBytes,
           reason: backup.reason,
         };
+        observeRun?.({ ...lastRun });
       });
     } catch (error) {
       await coordinator.runExclusive(() => {
@@ -1900,6 +1903,7 @@ export function createStorageBackupScheduler(
           reason,
           error: errorMessage(error),
         };
+        observeRun?.({ ...lastRun });
       });
     } finally {
       running = false;

@@ -24,9 +24,10 @@ function copyDiceBoxAssets(): Plugin {
 }
 
 // Minified, uncompressed JS across the entry and every eager static import.
-// The current production graph is 1,775,854 bytes after deferring ActorPanel.
-// Keep roughly 24 KB of headroom so eager dependency growth fails loudly.
-export const ENTRY_CHUNK_BUDGET_BYTES = 1_800_000;
+// The current production graph is 1,566,055 bytes after deferring the actor,
+// administration, AI, canon-memory, and image-export surfaces. Keep roughly
+// 34 KB of headroom so eager dependency growth fails loudly.
+export const ENTRY_CHUNK_BUDGET_BYTES = 1_600_000;
 
 export interface BuildChunkBudgetInput {
   fileName: string;

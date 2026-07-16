@@ -585,7 +585,8 @@ export function normalizeArchiveForImport(archive: CampaignArchive, organization
       invites: data.invites ?? [],
       pluginReviews: [],
       systemInstallations: [],
-      contentImports: data.contentImports ?? []
+      contentImports: data.contentImports ?? [],
+      campaignArchiveImportOperations: []
     })
   };
 }
@@ -1210,6 +1211,7 @@ export function mergeArchive(state: EngineState, archive: CampaignArchive): Reco
     pluginStorage: upsertRecords(state.pluginStorage, archive.data.pluginStorage ?? []),
     pluginReviews: 0,
     contentImports: upsertRecords(state.contentImports, archive.data.contentImports ?? []),
+    campaignArchiveImportOperations: 0,
     fogPresets: upsertRecords(state.fogPresets, archive.data.fogPresets ?? []),
     campaignWebhooks: 0,
     campaignWebhookDeliveries: 0,

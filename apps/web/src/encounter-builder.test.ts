@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { Actor } from "@open-tabletop/core";
+import type { Actor, Scene } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
-import { ENCOUNTER_CATALOG_WINDOW_SIZE, encounterCatalogWindow, encounterPartyEligibility } from "./encounter-builder.js";
+import { ENCOUNTER_CATALOG_WINDOW_SIZE, encounterCatalogWindow, encounterMonsterPlacementDrafts, encounterPartyEligibility, encounterSearchAnchorId } from "./encounter-builder.js";
 
 const appSource = readFileSync(resolve(__dirname, "App.tsx"), "utf8");
 const combatPanelSource = readFileSync(resolve(__dirname, "combat-panel.tsx"), "utf8");
@@ -27,6 +27,9 @@ function actor(input: Pick<Actor, "id" | "name"> & Partial<Actor>): Actor {
 }
 
 describe("encounter builder", () => {
+  it("provides a stable exact-record focus target", () => {
+    expect(encounterSearchAnchorId("enc/one")).toBe("campaign-search-encounter-enc%2Fone");
+  });
   it("loads threats and debounces encounter planning through the existing system routes", () => {
     expect(builderSource).toContain("function EncounterBuilderDialog");
     expect(builderSource).toContain("encounter-threats");
@@ -35,12 +38,43 @@ describe("encounter builder", () => {
     expect(builderSource).toContain("partyActorIds");
   });
 
-  it("lets GMs compose, save, and place the encounter without changing API contracts", () => {
+  it("lets GMs compose, save, and place the encounter through one batch contract", () => {
     expect(builderSource).toContain("Save encounter");
     expect(builderSource).toContain("Place monsters on scene");
     expect(builderSource).toContain("createEncounter: true");
     expect(appSource).toContain("applyEncounterToSnapshot");
     expect(appSource).toContain("spawnEncounterThreatTokens");
+    expect(appSource).toContain("encounter-monster-placements");
+  });
+
+  it("builds deterministic actor names and token geometry for the whole batch", () => {
+    const scene: Scene = {
+      id: "scn_demo",
+      campaignId: "camp_demo",
+      name: "Demo",
+      width: 1000,
+      height: 800,
+      gridType: "square",
+      gridSize: 50,
+      active: true,
+      sortOrder: 0,
+      fog: [],
+      walls: [],
+      lights: [],
+      annotations: [],
+      metadata: {},
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+
+    expect(encounterMonsterPlacementDrafts([
+      { id: "goblin", name: "Goblin", count: 2 },
+      { id: "ogre", name: "Ogre", count: 1 },
+    ], scene)).toEqual([
+      { threatId: "goblin", name: "Goblin 1", x: 450, y: 375, width: 50, height: 50, layer: "player", disposition: "hostile" },
+      { threatId: "goblin", name: "Goblin 2", x: 500, y: 425, width: 50, height: 50, layer: "player", disposition: "hostile" },
+      { threatId: "ogre", name: "Ogre", x: 550, y: 375, width: 50, height: 50, layer: "player", disposition: "hostile" },
+    ]);
   });
 
   it("rewires the existing planning surfaces to open the modal", () => {

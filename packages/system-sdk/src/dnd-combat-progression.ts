@@ -2,6 +2,7 @@ import type {
   Actor,
   Combat,
   Combatant,
+  Item,
   RulesEffectScheduleEvent,
   RulesEffectScheduleTiming
 } from "@open-tabletop/core";
@@ -13,7 +14,7 @@ import {
   advanceDnd5eSrdEffectLifecycle,
   type Dnd5eSrdEffectLifecycleChange
 } from "./dnd-effect-lifecycle.js";
-import { dnd5eSrdMonsterZeroHpKnockout, grantDnd5eSrdHeroicInspiration } from "./dnd-rules-completion.js";
+import { dnd5eSrdMonsterZeroHpKnockout, grantDnd5eSrdHeroicInspiration, healDnd5eSrdActorFromZero } from "./dnd-rules-completion.js";
 import type { Dnd5eSrdConcentrationCleanup, RulesResolutionActorUpdate } from "./dnd-resolution-types.js";
 
 type JsonRecord = Record<string, unknown>;
@@ -42,6 +43,7 @@ export interface Dnd5eSrdActorCombatStateSynchronization {
 
 export interface Dnd5eSrdCombatRulesProgressionInput extends Dnd5eSrdEffectScheduleEvaluationInput {
   actors: Actor[];
+  items?: Item[];
   combat: Pick<Combat, "round" | "turnIndex" | "combatants">;
 }
 
@@ -164,9 +166,13 @@ export function synchronizeDnd5eSrdActorCombatState(
     lifeState = "dead";
     failures = 3;
     lifecycleConditions = ["dead"];
-  } else if (storedState === "stable" || successes >= 3 || combatant?.deathSaveOutcome === "stable") {
+  } else if (storedState === "stable" || successes >= 3 || (combatant?.deathSaveOutcome === "stable" && storedState !== "unconscious")) {
     lifeState = "stable";
-    successes = 3;
+    // SRD 5.2.1 resets both counters when a creature becomes Stable. The
+    // terminal roll summary retains the just-resolved 3rd success for audit
+    // and chat, while persisted actor and combatant state stays canonical.
+    successes = 0;
+    failures = 0;
     lifecycleConditions = ["unconscious", "stable"];
   } else {
     lifeState = "unconscious";
@@ -195,6 +201,130 @@ export function synchronizeDnd5eSrdActorCombatState(
       combatantUpdate: { combatantId: combatant.id, actorId: actor.id, before: { ...combatant }, after: afterCombatant, reason }
     } : {})
   };
+}
+
+export type Dnd5eSrdDeathSaveEligibility =
+  | { eligible: true }
+  | { eligible: false; code: "death_save_not_applicable"; reason: string };
+
+export interface Dnd5eSrdDeathSaveSummary {
+  outcome: "success" | "failure" | "critical-success" | "critical-failure";
+  /** Counters immediately after the roll, before a Stable result resets persisted counters. */
+  successes: number;
+  failures: number;
+  /** Terminal lifecycle reached by this roll, when one was reached. */
+  result?: "revived" | "stable" | "dead";
+  hitPointsRestored?: number;
+}
+
+/**
+ * SRD 5.2.1: only a character at 0 Hit Points that is neither dead nor Stable
+ * makes Death Saving Throws. Monsters die at 0 HP by default (see
+ * `dnd5eSrdMonsterZeroHpKnockout`); a spared monster is simply Unconscious and
+ * never rolls Death Saving Throws.
+ */
+export function dnd5eSrdDeathSaveEligibility(actor: Pick<Actor, "type" | "name"> & { data: JsonRecord }): Dnd5eSrdDeathSaveEligibility {
+  const notApplicable = (reason: string): Dnd5eSrdDeathSaveEligibility => ({ eligible: false, code: "death_save_not_applicable", reason });
+  if (actor.type.toLocaleLowerCase() !== "character") {
+    return notApplicable(`${actor.name} does not make Death Saving Throws; monsters die at 0 Hit Points unless individually spared`);
+  }
+  const conditionIds = new Set((Array.isArray(actor.data.conditions) ? actor.data.conditions : []).map(normalizedConditionId).filter((id): id is string => Boolean(id)));
+  const lifeState = typeof actor.data.lifeState === "string" ? actor.data.lifeState.trim().toLocaleLowerCase() : "";
+  if (lifeState === "dead" || conditionIds.has("dead")) {
+    return notApplicable(`${actor.name} is dead; an authorized manual correction is required to change that state`);
+  }
+  const hp = recordValue(actor.data.hp);
+  if (typeof hp.current !== "number" || !Number.isFinite(hp.current)) {
+    return notApplicable(`${actor.name} has no tracked Hit Points, so Death Saving Throws cannot resolve`);
+  }
+  if (hp.current > 0) {
+    return notApplicable(`Only a creature at 0 Hit Points makes Death Saving Throws; ${actor.name} has ${Math.floor(hp.current)} HP`);
+  }
+  if (lifeState === "stable" || conditionIds.has("stable")) {
+    return notApplicable(`${actor.name} is Stable and no longer makes Death Saving Throws`);
+  }
+  return { eligible: true };
+}
+
+/**
+ * Reads the natural die of the first d20 term from authoritative rolled dice
+ * terms (structural match for the dice-engine `RollTerm` shape). Advantage and
+ * Disadvantage keep exactly one die, so a single kept value is the natural
+ * roll; anything else has no single natural d20.
+ */
+export function dnd5eSrdNaturalD20FromRollTerms(terms: ReadonlyArray<unknown>): number | undefined {
+  for (const term of terms) {
+    const record = recordValue(term);
+    if (record.type !== "die" || record.sides !== 20) continue;
+    const kept = Array.isArray(record.kept) ? record.kept.filter((value): value is number => typeof value === "number") : [];
+    if (kept.length === 1) return kept[0];
+    const results = Array.isArray(record.results) ? record.results.filter((value): value is number => typeof value === "number") : [];
+    return results.length === 1 ? results[0] : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * Applies one authoritative Death Saving Throw result as a pure actor-data
+ * transition (SRD 5.2.1): 10+ is a success and the third success makes the
+ * character Stable; below 10 is a failure and the third failure is death; a
+ * natural 1 counts as two failures; a natural 20 restores 1 Hit Point. The
+ * result is normalized through `synchronizeDnd5eSrdActorCombatState`, so
+ * lifecycle conditions, `lifeState`, `defeated`, and counters stay canonical
+ * and healing back above 0 HP resets the saved counters.
+ */
+export function resolveDnd5eSrdDeathSavingThrowRoll(
+  actor: Actor,
+  rolled: { total: number; naturalD20?: number }
+): { data: JsonRecord; deathSave: Dnd5eSrdDeathSaveSummary } {
+  const eligibility = dnd5eSrdDeathSaveEligibility(actor);
+  if (!eligibility.eligible) throw new Error(eligibility.reason);
+  if (!Number.isFinite(rolled.total)) throw new Error("A Death Saving Throw requires a rolled total");
+  const priorSaves = recordValue(actor.data.deathSaves);
+  const prior = { successes: boundedCounter(priorSaves.successes), failures: boundedCounter(priorSaves.failures) };
+  if (rolled.naturalD20 === 20) {
+    const staged: Actor = { ...actor, data: healDnd5eSrdActorFromZero(actor, 1) };
+    const synchronized = synchronizeDnd5eSrdActorCombatState(staged);
+    return {
+      data: synchronized.actorUpdate?.after ?? staged.data,
+      deathSave: { outcome: "critical-success", successes: 0, failures: 0, result: "revived", hitPointsRestored: 1 }
+    };
+  }
+  const outcome: Dnd5eSrdDeathSaveSummary["outcome"] = rolled.naturalD20 === 1 ? "critical-failure" : rolled.total >= 10 ? "success" : "failure";
+  const successes = Math.min(3, prior.successes + (outcome === "success" ? 1 : 0));
+  const failures = Math.min(3, prior.failures + (outcome === "failure" ? 1 : outcome === "critical-failure" ? 2 : 0));
+  const staged: Actor = { ...actor, data: { ...cloneRecord(actor.data), deathSaves: { successes, failures } } };
+  const synchronized = synchronizeDnd5eSrdActorCombatState(staged);
+  const result = failures >= 3 ? ("dead" as const) : successes >= 3 ? ("stable" as const) : undefined;
+  return {
+    data: synchronized.actorUpdate?.after ?? staged.data,
+    deathSave: { outcome, successes, failures, ...(result ? { result } : {}) }
+  };
+}
+
+/**
+ * Action-resolution entry: checks eligibility, then applies the rolled
+ * transition when the authoritative rolled result is available (commit path).
+ * Without a rolled result it only reports eligibility, so a preview or the
+ * pre-roll commit pass never mutates state.
+ */
+export function applyDnd5eSrdDeathSaveRoll(
+  actor: Actor,
+  rolled?: { total: number; naturalD20?: number }
+): { blocked?: { code: string; reason: string }; resolved?: { data: JsonRecord; deathSave: Dnd5eSrdDeathSaveSummary } } {
+  const eligibility = dnd5eSrdDeathSaveEligibility(actor);
+  if (!eligibility.eligible) return { blocked: { code: eligibility.code, reason: eligibility.reason } };
+  if (!rolled) return {};
+  return { resolved: resolveDnd5eSrdDeathSavingThrowRoll(actor, rolled) };
+}
+
+/** Compact chat/status suffix for a resolved Death Saving Throw. */
+export function dnd5eSrdDeathSaveChatSuffix(save: Dnd5eSrdDeathSaveSummary): string {
+  if (save.result === "revived") return "natural 20: regains 1 Hit Point and is conscious";
+  if (save.result === "dead") return `third failure: dead (${save.successes}/3 successes, ${save.failures}/3 failures)`;
+  if (save.result === "stable") return `third success: Stable (${save.successes}/3 successes, ${save.failures}/3 failures)`;
+  const label = save.outcome === "critical-failure" ? "natural 1: two failures" : save.outcome;
+  return `${label} (${save.successes}/3 successes, ${save.failures}/3 failures)`;
 }
 
 function actorsAfterUpdates(actors: Actor[], updates: RulesResolutionActorUpdate[]): Actor[] {
@@ -242,13 +372,13 @@ export function advanceDnd5eSrdCombatRules(
         const rulesEngine = recordValue(data.rulesEngine);
         const reactions = recordValue(rulesEngine.reactions);
         const actionEconomy = recordValue(rulesEngine.actionEconomy);
-        if (Object.keys(reactions).length > 0 || Object.keys(recordValue(actionEconomy.bonusActions)).length > 0) {
+        if (Object.keys(reactions).length > 0 || Object.keys(recordValue(actionEconomy.bonusActions)).length > 0 || Object.keys(recordValue(actionEconomy.standardActions)).length > 0) {
           data = {
             ...data,
             rulesEngine: {
               ...rulesEngine,
               reactions: {},
-              actionEconomy: { ...actionEconomy, bonusActions: {} }
+              actionEconomy: { ...actionEconomy, bonusActions: {}, standardActions: {} }
             }
           };
           reasons.set(actor.id, [...(reasons.get(actor.id) ?? []), "turn-action-economy-refresh"]);
@@ -283,7 +413,7 @@ export function advanceDnd5eSrdCombatRules(
   }
   workingActors = normalizedActors;
 
-  const lifecycle = advanceDnd5eSrdEffectLifecycle(workingActors, input.combat, { phase: input.phase, now: input.now });
+  const lifecycle = advanceDnd5eSrdEffectLifecycle(workingActors, input.combat, { phase: input.phase, now: input.now }, input.items ?? []);
   noteReasons(lifecycle.actorUpdates);
   workingActors = actorsAfterUpdates(workingActors, lifecycle.actorUpdates);
 

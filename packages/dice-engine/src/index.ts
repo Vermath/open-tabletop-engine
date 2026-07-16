@@ -116,9 +116,10 @@ export function rollFormula(formula: string, options: RollOptions = {}): RollRes
 }
 
 /**
- * Composes the final RNG seed for a provably-fair roll. The client-contributed
- * seed is prepended so a host cannot target an outcome without also controlling
- * the client seed.
+ * Composes the final RNG seed for deterministic roll replay. A client seed
+ * contributes to the recorded output, but without an independently witnessed
+ * pre-roll server commitment it does not prevent a host from selecting among
+ * server seeds.
  */
 export function composeFairnessSeed(serverSeed: string, clientSeed?: string): string {
   return clientSeed ? `${clientSeed}:${serverSeed}` : serverSeed;

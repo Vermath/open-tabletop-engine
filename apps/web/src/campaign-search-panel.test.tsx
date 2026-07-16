@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { CampaignSearchPanel, campaignSearchAnchorId, campaignSearchDestination, campaignSearchItemActorId, campaignSearchPath, campaignSearchTypeHasRenderedAnchor, campaignSearchTypeLabel } from "./campaign-search-panel.js";
+import { CampaignSearchPanel, campaignSearchAnchorId, campaignSearchDestination, campaignSearchItemActorId, campaignSearchMatchLabel, campaignSearchPath, campaignSearchSourceLabel, campaignSearchTypeHasRenderedAnchor, campaignSearchTypeLabel } from "./campaign-search-panel.js";
 
 describe("campaign search panel", () => {
   it("builds a bounded, encoded permission-safe search request", () => {
@@ -8,6 +8,7 @@ describe("campaign search panel", () => {
       "/api/v1/campaigns/camp%20one/search?q=ancient+vault&limit=50&types=handout&worldId=world%2Fone"
     );
     expect(campaignSearchPath("camp", { query: "17", type: "roll", worldId: "", limit: 12 })).toContain("types=roll");
+    expect(campaignSearchPath("camp", { query: "goblin", type: "encounter", worldId: "", offset: 50 })).toContain("offset=50");
   });
 
   it("renders a discoverable empty search surface without issuing a server request", () => {
@@ -31,6 +32,7 @@ describe("campaign search panel", () => {
     expect(campaignSearchDestination("actor")).toEqual({ workspace: "prep", tab: "actors" });
     expect(campaignSearchDestination("roll")).toEqual({ workspace: "live", tab: "chat" });
     expect(campaignSearchDestination("encounter")).toEqual({ workspace: "live", tab: "combat" });
+    expect(campaignSearchDestination("compendium")).toEqual({ workspace: "live", tab: "compendium" });
   });
 
   it("provides stable anchors only for panels that render individual search records", () => {
@@ -45,5 +47,13 @@ describe("campaign search panel", () => {
     expect(campaignSearchItemActorId(items, "owned")).toBe("actor-1");
     expect(campaignSearchItemActorId(items, "unassigned")).toBeUndefined();
     expect(campaignSearchItemActorId(items, "missing")).toBeUndefined();
+  });
+
+  it("labels result exactness and provenance", () => {
+    expect(campaignSearchMatchLabel("exact_id")).toBe("Exact ID");
+    expect(campaignSearchMatchLabel("normalized_name")).toBe("Exact name");
+    expect(campaignSearchMatchLabel("fuzzy")).toBe("Close name");
+    expect(campaignSearchSourceLabel("actor_instance")).toBe("Actor-owned instance");
+    expect(campaignSearchSourceLabel("srd")).toBe("Bundled SRD");
   });
 });

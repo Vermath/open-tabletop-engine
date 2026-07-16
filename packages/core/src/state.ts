@@ -49,6 +49,7 @@ export function emptyState(): EngineState {
     pluginStorage: [],
     pluginReviews: [],
     contentImports: [],
+    campaignArchiveImportOperations: [],
     fogPresets: [],
     campaignWebhooks: [],
     campaignWebhookDeliveries: [],
@@ -339,6 +340,9 @@ export function makeArchive(state: EngineState, campaignId: string): CampaignArc
     pluginStorage: state.pluginStorage.filter((item) => item.campaignId === campaignId),
     pluginReviews: [],
     contentImports: state.contentImports.filter((item) => item.campaignId === campaignId && item.status !== "deleted"),
+    // Recovery inverses can contain pre-import rows and private durable object
+    // references. They are installation-local and never portable campaign data.
+    campaignArchiveImportOperations: [],
     fogPresets: state.fogPresets.filter((item) => item.campaignId === campaignId),
     // Outbound webhook targets, signing material, and operational delivery
     // history are installation-local and never enter portable campaign files.

@@ -356,7 +356,8 @@ export function dnd5eCustomMonsterActorData(entry: CompendiumCatalogEntry): Reco
   const data = record(entry.data);
   const hitPoints = finiteNumber(data.hitPoints) ?? 1;
   const armorClass = finiteNumber(data.armorClass) ?? 10;
-  const initiative = finiteNumber(data.initiative) ?? 0;
+  const explicitInitiative = finiteNumber(data.initiative);
+  const initiative = explicitInitiative ?? 0;
   const challengeRating = text(data.challengeRating) ?? "0";
   const xp = finiteNumber(data.xp) ?? 0;
   const actions = actionArray(data.actions).map(({ description, ...action }) => ({ ...action, summary: description }));
@@ -368,7 +369,7 @@ export function dnd5eCustomMonsterActorData(entry: CompendiumCatalogEntry): Reco
     creatureType: text(data.creatureType) ?? "Monster",
     alignment: text(data.alignment) ?? "Unaligned",
     armorClass,
-    initiative,
+    ...(explicitInitiative !== undefined ? { initiative: explicitInitiative } : {}),
     hitPoints,
     hitDice: text(data.hitDice) ?? "1d8",
     speed: formatMonsterSpeed(record(data.speed)),

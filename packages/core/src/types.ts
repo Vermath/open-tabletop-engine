@@ -285,6 +285,70 @@ export interface Scene extends Timestamps {
   sceneEditHistory?: SceneEditSnapshot[];
 }
 
+export interface SceneDuplicationSource {
+  sceneId: ID;
+  expectedUpdatedAt: string;
+  /** Optional single-scene name override. Defaults to `<source name> Copy`. */
+  name?: string;
+}
+
+export interface SceneDuplicationRequest {
+  /** Stable client operation identity used to derive every copied record id. */
+  operationId: ID;
+  expectedUpdatedAt: string;
+  sources: SceneDuplicationSource[];
+  dryRun?: boolean;
+}
+
+export type SceneDuplicationCopyCollection =
+  | "scenes"
+  | "tokens"
+  | "actors"
+  | "items"
+  | "calculationOverrides"
+  | "encounters";
+
+export interface SceneDuplicationCopy {
+  collection: SceneDuplicationCopyCollection;
+  sourceId: ID;
+  targetId: ID;
+  sourceName?: string;
+  targetName?: string;
+}
+
+export interface SceneDuplicationSkippedReference {
+  collection: "encounters" | "combats" | "campaignSessions" | "fogPresets";
+  id: ID;
+  reason: "partial_encounter" | "combat_history" | "session_reference" | "fog_preset_reference";
+}
+
+export interface SceneDuplicationSharedReference {
+  collection: "assets" | "worlds" | "actors";
+  id: ID;
+  referencedBy: ID[];
+}
+
+export interface SceneDuplicationPlan {
+  operationId: ID;
+  campaignId: ID;
+  copies: SceneDuplicationCopy[];
+  skippedReferences: SceneDuplicationSkippedReference[];
+  sharedReferences: SceneDuplicationSharedReference[];
+  counts: Record<SceneDuplicationCopyCollection, number>;
+}
+
+export interface SceneDuplicationResult {
+  dryRun: boolean;
+  plan: SceneDuplicationPlan;
+  scenes: Scene[];
+  tokens: Token[];
+  actors: Actor[];
+  items: Item[];
+  calculationOverrides: CalculationOverride[];
+  encounters: Encounter[];
+  campaign?: Campaign;
+}
+
 /** The editable geometry/layout fields a scene-edit undo restores. */
 export interface SceneEditableState {
   worldId?: ID;
@@ -930,11 +994,20 @@ export interface DndControlledCreatureSource {
   kind: "spell" | "feature";
   /** Actor that cast the spell or used the feature. */
   actorId: ID;
-  /** Actor-owned spell or feature Item. */
-  itemId: ID;
+  /** Actor-owned spell or feature Item, when the action originated from an Item. */
+  itemId?: ID;
   name: string;
   systemId: "dnd-5e-srd";
   rulesVersion: string;
+}
+
+/** Durable link back to the reviewed action whose consequences commit with the lifecycle. */
+export interface DndControlledCreatureOriginatingAction {
+  actorId: ID;
+  rollId: string;
+  label: string;
+  preparedPreviewKey: string;
+  resolutionHash: string;
 }
 
 export type DndControlledCreatureDuration =
@@ -995,6 +1068,7 @@ export interface DndControlledCreatureRecord extends Timestamps {
   kind: DndControlledCreatureKind;
   status: "active" | "dismissed" | "expired" | "concentration_ended" | "reverted";
   source: DndControlledCreatureSource;
+  originatingAction?: DndControlledCreatureOriginatingAction;
   controllerUserId: ID;
   controllerActorId: ID;
   ownerUserId: ID;
@@ -1037,6 +1111,7 @@ export interface DndControlledCreatureCreateRequest {
   combatId?: ID;
   targetActorId?: ID;
   source: DndControlledCreatureSource;
+  originatingAction?: DndControlledCreatureOriginatingAction;
   controllerUserId: ID;
   controllerActorId: ID;
   ownerUserId: ID;
@@ -1052,6 +1127,68 @@ export interface DndControlledCreatureCreateRequest {
   };
   /** A human confirmed every warning returned by the immediately preceding preview. */
   manualReviewConfirmed?: boolean;
+}
+
+export type DndControlledCreatureHandoffManualField =
+  | "actor.name"
+  | "actor.type"
+  | "actor.statBlock"
+  | "actor.hitPoints"
+  | "sceneId"
+  | "token"
+  | "duration"
+  | "concentration"
+  | "initiative"
+  | "command"
+  | "transformation.form"
+  | "transformation.equipmentCarryover";
+
+export interface DndControlledCreatureHandoffManualChoice {
+  field: DndControlledCreatureHandoffManualField;
+  reason: string;
+}
+
+export interface DndControlledCreatureCreatePrefill {
+  kind: DndControlledCreatureKind;
+  source: DndControlledCreatureSource;
+  originatingAction?: DndControlledCreatureOriginatingAction;
+  controllerUserId?: ID;
+  controllerActorId: ID;
+  ownerUserId?: ID;
+  sceneId?: ID;
+  combatId?: ID;
+  targetActorId?: ID;
+  actor?: {
+    name?: string;
+    type?: string;
+    imageAssetId?: ID;
+    data?: Record<string, unknown>;
+  };
+  token?: Partial<DndControlledCreatureTokenTemplate>;
+  duration?: DndControlledCreatureDuration;
+  concentration?: DndControlledCreatureConcentration;
+  initiative?: DndControlledCreatureInitiative;
+  command?: DndControlledCreatureCommandRequirement;
+  transformation?: {
+    hpCarryover?: "preserve" | "replace";
+    equipmentCarryover?: "preserve" | "suppress";
+  };
+}
+
+/** Typed bridge emitted by a spell/feature action before any resource is spent. */
+export interface DndControlledCreatureActionHandoff {
+  version: 1;
+  status: "supported" | "manual_required";
+  action: {
+    actorId: ID;
+    rollId: string;
+    label: string;
+    preparedPreviewKey?: string;
+    resolutionHash?: string;
+  };
+  prefill: DndControlledCreatureCreatePrefill;
+  sourcedFields: string[];
+  manualChoices: DndControlledCreatureHandoffManualChoice[];
 }
 
 export type DndControlledCreatureManualReviewCategory = "stat_block" | "hit_points" | "equipment" | "concentration" | "initiative";
@@ -1435,18 +1572,39 @@ export interface DiceRoll extends Timestamps {
   id: ID;
   campaignId: ID;
   userId: ID;
+  /** Actor whose sheet/action produced the roll. Generic dice rolls omit it. */
+  actorId?: ID;
   formula: string;
   label?: string;
   visibility: "public" | "gm_only" | "whisper";
   terms: DiceRollTerm[];
   total: number;
   fairness?: DiceRollFairness;
+  heroicInspiration?: DiceRollHeroicInspirationLink;
 }
 
+export type DiceRollHeroicInspirationLink =
+  | {
+      kind: "original";
+      actorId: ID;
+      rerollRollId: ID;
+    }
+  | {
+      kind: "reroll";
+      actorId: ID;
+      originalRollId: ID;
+      selectedTermIndex: number;
+      selectedResultIndex: number;
+      originalResult: number;
+      replacementResult: number;
+    };
+
 /**
- * Provably-fair metadata for a server-authoritative roll. `serverSeedHash` is the
- * commitment (publishable before the result is trusted); `serverSeed` is the
- * reveal, letting anyone recompute the roll and confirm it was not altered.
+ * Deterministic replay metadata for a server-authoritative roll. The public
+ * `fairness` field name is retained for compatibility, but the seed hash and
+ * reveal are stored with the result. They prove only that the recorded formula,
+ * seed, and result replay consistently; they are not a witnessed pre-roll
+ * commitment and do not prove that the host selected its seed fairly.
  */
 export interface DiceRollFairness {
   algorithm: "xmur3-mulberry32";
@@ -1515,6 +1673,76 @@ export interface Encounter extends Timestamps {
   partyActorIds?: ID[];
   /** Reopenable threat composition from the system encounter builder. */
   threats?: Array<{ id: ID; count: number }>;
+}
+
+export type CampaignSearchResultType =
+  | "world"
+  | "scene"
+  | "actor"
+  | "item"
+  | "journal"
+  | "handout"
+  | "encounter"
+  | "memory"
+  | "chat"
+  | "roll"
+  | "compendium";
+
+export type CampaignSearchMatchKind = "exact_id" | "exact_name" | "normalized_name" | "prefix" | "title" | "body" | "fuzzy";
+export type CampaignSearchSourceKind = "campaign" | "actor_instance" | "srd" | "bundled" | "homebrew";
+
+/** A stable, typed destination returned by permission-filtered campaign search. */
+export interface CampaignSearchTarget {
+  type: CampaignSearchResultType;
+  id: ID;
+  worldId?: ID;
+  actorId?: ID;
+  systemId?: ID;
+  sourceKind: CampaignSearchSourceKind;
+}
+
+export interface CampaignSearchResult {
+  type: CampaignSearchResultType;
+  id: ID;
+  title: string;
+  snippet: string;
+  updatedAt: string;
+  worldId?: ID;
+  visibility?: Visibility | "whisper";
+  score: number;
+  matchKind: CampaignSearchMatchKind;
+  target: CampaignSearchTarget;
+}
+
+export interface EncounterMonsterPlacementDraft {
+  threatId?: ID;
+  customMonsterItemId?: ID;
+  name?: string;
+  ownerUserId?: ID;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  layer?: TokenLayer;
+  disposition?: Token["disposition"];
+}
+
+export interface EncounterMonsterPlacementBatchInput {
+  systemId: ID;
+  expectedUpdatedAt: string;
+  placements: EncounterMonsterPlacementDraft[];
+}
+
+export interface EncounterMonsterPlacementResult {
+  threat: Record<string, unknown>;
+  actor: Actor;
+  sceneToken: Token;
+  sheet?: Record<string, unknown>;
+}
+
+export interface EncounterMonsterPlacementBatchResult {
+  placements: EncounterMonsterPlacementResult[];
+  scene: Scene;
 }
 
 export type CampaignSessionStatus = "planned" | "live" | "completed";
@@ -1724,6 +1952,8 @@ export interface CombatActionRoll {
   formula: string;
   terms: DiceRollTerm[];
   total: number;
+  /** Present for newly prepared server-authoritative rolls; absent on legacy pending actions. */
+  fairness?: DiceRollFairness;
   targetActorId?: ID;
   visibility: "public" | "gm_only" | "whisper";
 }
@@ -1822,6 +2052,15 @@ export interface CalculationFlags {
   reasons: string[];
 }
 
+/** Shared presentation contract for truthful rules-automation boundaries. */
+export interface RulesSupportBoundary {
+  status: "automated" | "manual" | "unsupported";
+  label: "Automated" | "DM decision" | "Unsupported";
+  explanation: string;
+  nextAction?: string;
+  sources: string[];
+}
+
 export interface CalculationFieldExplanation {
   id: ID;
   group: "abilities" | "defenses" | "vitality" | "checks" | "skills" | "magic" | "actions";
@@ -1853,6 +2092,9 @@ export interface CalculationOverride extends Timestamps {
   id: ID;
   campaignId: ID;
   actorId: ID;
+  /** Explicit compatibility scope. Legacy rows without this scope are historical annotations only. */
+  systemId?: ID;
+  rulesVersion?: string;
   fieldId: ID;
   source: CalculationOverrideSource;
   baseValue: number | string;
@@ -2478,6 +2720,57 @@ export interface CampaignArchiveFile {
   data: string;
 }
 
+export type CampaignArchiveImportOperationStatus = "applied" | "partially_rolled_back" | "rolled_back";
+
+export type CampaignArchiveImportRollbackConflictReason = "record_changed" | "asset_bytes_changed" | "reference_conflict";
+
+export interface CampaignArchiveImportRollbackConflict {
+  collection: string;
+  id: ID;
+  reason: CampaignArchiveImportRollbackConflictReason;
+}
+
+/**
+ * Installation-local inverse for exactly one row changed by a campaign
+ * archive import. Portable archives deliberately exclude this recovery data.
+ */
+export interface CampaignArchiveImportRecordInverseStep {
+  collection: Exclude<keyof EngineState, "campaignArchiveImportOperations">;
+  id: ID;
+  action: "restore" | "delete";
+  before?: unknown;
+  after: unknown;
+  rolledBackAt?: string;
+}
+
+/** Durable object reference used to restore the exact pre-import asset bytes. */
+export interface CampaignArchiveImportAssetInverseStep {
+  assetId: ID;
+  action: "restore" | "delete";
+  targetAsset: MapAsset;
+  expectedChecksum?: string;
+  inverseAsset?: MapAsset;
+  rolledBackAt?: string;
+}
+
+/** Operational recovery ledger entry for one successful archive import. */
+export interface CampaignArchiveImportOperation extends Timestamps {
+  id: ID;
+  campaignIds: ID[];
+  createdByUserId: ID;
+  status: CampaignArchiveImportOperationStatus;
+  mode: "upsert" | "reject_conflicts" | "skip_conflicts";
+  scope: "all" | "assets_only" | "selected_collections";
+  collections: string[];
+  campaignRevisions: Record<ID, string>;
+  recordSteps: CampaignArchiveImportRecordInverseStep[];
+  assetSteps: CampaignArchiveImportAssetInverseStep[];
+  lastRollbackAt?: string;
+  lastRollbackByUserId?: ID;
+  lastRollbackConflicts?: CampaignArchiveImportRollbackConflict[];
+  rolledBackAt?: string;
+}
+
 /**
  * Explicitly supported outbound campaign webhook events. Chat, dice, member,
  * content-import, AI, and agent events are intentionally absent because their
@@ -2648,6 +2941,8 @@ export interface EngineState {
   pluginStorage: PluginStorageEntry[];
   pluginReviews: PluginReview[];
   contentImports: ContentImportBatch[];
+  /** Installation-local recovery data; never included in OTTX archives. */
+  campaignArchiveImportOperations: CampaignArchiveImportOperation[];
   fogPresets: FogPreset[];
   campaignWebhooks: CampaignWebhookSubscription[];
   campaignWebhookDeliveries: CampaignWebhookDelivery[];

@@ -1,6 +1,8 @@
 import type { Actor } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
-import { advancementAbilityAllocationStatus, advancementPreviewPath, advancementPreviewValue, advancementWeaponMasterySelectionStatus, type AdvancementFeatInfo, type AdvancementWeaponMasteryInfo } from "./advancement-flow.js";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { AdvancementFlow, advancementAbilityAllocationStatus, advancementChoiceFieldForPath, advancementPreviewPath, advancementPreviewValue, advancementWeaponMasterySelectionStatus, invalidatedAdvancementChoiceFields, type AdvancementFeatInfo, type AdvancementWeaponMasteryInfo } from "./advancement-flow.js";
 
 const actor = {
   id: "actor-1",
@@ -83,5 +85,34 @@ describe("advancement ability allocation", () => {
     expect(advancementWeaponMasterySelectionStatus(mastery, ["greatsword", "longbow"]).error).toContain("exactly 3");
     expect(advancementWeaponMasterySelectionStatus(mastery, ["greatsword", "longbow", "unknown"]).error).toContain("not an eligible");
     expect(advancementWeaponMasterySelectionStatus(mastery, ["greatsword", "longbow", "longsword"])).toMatchObject({ complete: true, selectedCount: 3 });
+  });
+
+  it("maps server blocker paths to the exact choice field and deduplicates invalidations", () => {
+    expect(advancementChoiceFieldForPath("/weaponMasteryChoices/1")).toBe("weaponMastery");
+    expect(advancementChoiceFieldForPath("/abilityChoices/strength")).toBe("abilityChoices");
+    expect(invalidatedAdvancementChoiceFields([
+      { path: "/featId", code: "invalid", message: "Feat changed" },
+      { path: "/abilityChoices/strength", code: "invalid", message: "Ability changed" },
+      { path: "/featId", code: "invalid", message: "Feat still changed" }
+    ])).toEqual(["feat", "abilityChoices"]);
+  });
+
+  it("shows an actionable load failure instead of silently removing advancement state", () => {
+    const html = renderToStaticMarkup(createElement(AdvancementFlow, {
+      actor,
+      advancementOptions: [],
+      advancementGrantsFeat: false,
+      advancementFeats: [],
+      multiclassOptions: [],
+      subclassOptions: [],
+      onAdvanceActor: () => undefined,
+      canAdvanceActor: true,
+      loadState: "error",
+      loadError: "Network unavailable",
+      onRetryLoad: () => undefined
+    }));
+    expect(html).toContain('aria-label="Advancement load failed"');
+    expect(html).toContain("Network unavailable");
+    expect(html).toContain("Retry advancement load");
   });
 });

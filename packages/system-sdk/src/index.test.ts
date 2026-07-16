@@ -2972,7 +2972,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(levelTwoBarbarianData.features).toEqual(expect.arrayContaining(["Danger Sense", "Reckless Attack"]));
     expect(dnd5eSrdQuickRolls(levelTwoBarbarianActor, [])).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: "save-dexterity", formula: "1d20+1", metadata: { advantage: true, feature: "Danger Sense", exceptConditions: ["Incapacitated"] } }),
+        expect.objectContaining({ id: "save-dexterity", formula: "2d20kh1+1", metadata: expect.objectContaining({ d20Mode: "advantage", advantageSources: ["Danger Sense"], disadvantageSources: [], advantage: true, feature: "Danger Sense", exceptConditions: ["Incapacitated"] }) }),
         expect.objectContaining({ id: "feature-reckless-attack", label: "Reckless Attack", formula: "0", metadata: expect.objectContaining({ drawback: "attack rolls against you have Advantage during that time" }) })
       ])
     );
@@ -9645,7 +9645,7 @@ describe("dnd 5.5e srd rules", () => {
       items: [wand],
       roll: paralysisRoll,
       targets: [{ actor: target }],
-      combat: { id: "cmb_rules", campaignId: "camp_demo", active: true, round: 3, turnIndex: 0, combatants: [], createdAt: "2026-05-01T00:00:00.000Z", updatedAt: "2026-05-01T00:00:00.000Z" },
+      combat: { id: "cmb_rules", campaignId: "camp_demo", active: true, round: 3, turnIndex: 0, combatants: [{ id: "cmbt_rules", tokenId: "tok_rules", actorId: wandActor.id, name: wandActor.name, initiative: 20, defeated: false }], createdAt: "2026-05-01T00:00:00.000Z", updatedAt: "2026-05-01T00:00:00.000Z" },
       options: { applyEffect: true, saveOutcomes: { [target.id]: "failure" } },
       now: "2026-05-02T00:00:02.000Z"
     });

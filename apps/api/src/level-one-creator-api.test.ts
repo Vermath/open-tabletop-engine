@@ -431,6 +431,42 @@ describe("guided level-one character creation API", () => {
         })
       }));
 
+      const manualPrepare = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${goliath.json().actor.id}/roll`,
+        headers: { ...headers, "idempotency-key": "manual-resolution-prepare" },
+        payload: { rollId: "species-goliath-giant-ancestry", applyEffect: true, expectedUpdatedAt: goliath.json().actor.updatedAt, prepare: true, commit: false }
+      });
+      expect(manualPrepare.statusCode, manualPrepare.body).toBe(200);
+      expect(manualPrepare.json().resolution.manualResolutionRequired).toMatchObject({ supportStatus: "manual" });
+      const manualCommit = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${goliath.json().actor.id}/roll`,
+        headers: { ...headers, "idempotency-key": "manual-resolution-commit" },
+        payload: {
+          preparedPreviewKey: manualPrepare.json().preparation.preparedPreviewKey,
+          expectedUpdatedAt: manualPrepare.json().preparation.revisions.actorUpdatedAt[goliath.json().actor.id]
+        }
+      });
+      expect(manualCommit.statusCode, manualCommit.body).toBe(200);
+      expect(manualCommit.json().resolution.manualResolutionRequired).toMatchObject({ supportStatus: "manual" });
+
+      const rogue = await app.inject({
+        method: "POST",
+        url: route,
+        headers,
+        payload: { templateId: "rogue", name: "Unsupported Damage Rogue", ownerUserId: "usr_demo_gm" }
+      });
+      expect(rogue.statusCode).toBe(200);
+      const unsupported = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${rogue.json().actor.id}/roll`,
+        headers: { ...headers, "idempotency-key": "unsupported-resolution-prepare" },
+        payload: { rollId: "feature-sneak-attack-damage", applyEffect: true, targetActorId: goliath.json().actor.id, expectedUpdatedAt: rogue.json().actor.updatedAt, prepare: true, commit: false }
+      });
+      expect(unsupported.statusCode).toBe(409);
+      expect(unsupported.json()).toMatchObject({ error: "pending_resolution", resolution: { manualResolutionRequired: { supportStatus: "unsupported" } } });
+
       const templateDefault = await app.inject({
         method: "POST",
         url: route,

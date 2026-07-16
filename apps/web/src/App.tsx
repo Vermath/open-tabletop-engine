@@ -1,10 +1,9 @@
-import type { Actor, AiMemoryFact, AiThread, AiToolCall, AudioTrack, AuditLog, Campaign, CampaignArchive, ChatMessage, Combat, CombatAction, ContentImportBatch, ContentImportEntityKind, ContentImportSource, DiceRoll, EmailOutboxMessage, Encounter, FogHistoryEntry, FogMode, FogPreset, Item, JournalCanonStatus, JournalEntry, MapAsset, MessageType, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, SceneAnnotation, SceneAnnotationKind, SceneAnnotationLayer, SceneTemplateShape, ScimAssignableRole, Token, TokenLayer, User, UserRole, Visibility, VisionPoint, VisionPointSample, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
-import type { Dnd5eSrdPendingAdvancement, Dnd5eSrdSpellPreparationMutationResult, DndRulesMutationUndoDescriptor, DndRulesMutationUndoResult } from "@open-tabletop/core";
+import type { Actor, AiMemoryFact, AiThread, AiToolCall, AudioTrack, AuditLog, Campaign, ChatMessage, Combat, CombatAction, ContentImportBatch, ContentImportEntityKind, ContentImportSource, DiceRoll, EmailOutboxMessage, Encounter, EncounterMonsterPlacementBatchInput, EncounterMonsterPlacementBatchResult, FogHistoryEntry, FogMode, FogPreset, GridType, Item, JournalCanonStatus, JournalEntry, MapAsset, MessageType, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, SceneAnnotation, SceneAnnotationKind, SceneAnnotationLayer, SceneDuplicationPlan, SceneDuplicationRequest, SceneDuplicationResult, SceneTemplateShape, ScimAssignableRole, Token, TokenLayer, User, UserRole, Visibility, VisionPoint, VisionPointSample, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
+import type { Dnd5eSrdPendingAdvancement, Dnd5eSrdSpellPreparationMutationResult, DndControlledCreatureActionHandoff, DndRulesMutationUndoDescriptor, DndRulesMutationUndoResult } from "@open-tabletop/core";
 import { probabilityRange, rollFormula } from "@open-tabletop/dice-engine";
-import { toPng } from "html-to-image";
 import { Activity, BookOpen, Bot, Boxes, Brain, BrickWall, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Circle, Copy, Crosshair, Dices, Download, Eraser, Eye, FileText, Flame, Globe2, Grip, Hand, Image as ImageIcon, KeyRound, Layers, Lightbulb, LockKeyhole, Mail, Map as MapIcon, MapPin, Maximize2, MessageSquare, Minimize2, Moon, Music, Paintbrush, PencilLine, Pentagon, Play, Plus, RefreshCw, RotateCcw, Ruler, ScrollText, Search, Send, Shield, Swords, Timer, Trash2, Triangle, Upload, UserCog, UserPlus, Users, UserX, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
 import type { CSSProperties, DragEvent as ReactDragEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
-import { Fragment, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { acceptInviteSession, ApiError, apiAnalyzePdfContentImport, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, bootstrapOwnerSession, changePasswordSession, clearSession, confirmPasswordResetSession, confirmTotpMfa, consumeSsoRedirect, createAdminScimGroupRoleMapping, createOrganizationWorkspace, deleteAdminScimGroupRoleMapping, disableTotpMfa, enrollTotpMfa, getSessionToken, getSessionUserId, loadAdminSnapshot, loadBootstrapStatus, loadMfaStatus, loadOidcConfig, loadOrganizationInvites, loadOrganizationMembers, loadSnapshot, loginPasswordSession, loginSession, logoutSession, registerSession, removeOrganizationMember, requestPasswordReset, revokeInvite, setStatelessDemoApiMode, startOidcLogin, storeSession, switchOrganization, transferCampaignOwnership, updateOrganizationMemberRole, updateWorkspaceDefaults, upsertOrganizationMember, verifyDiceRoll, type AdminAssetIntegrityQuarantineResult, type AdminAuthConnectionTestResult, type AdminJob, type AdminJobAlertResult, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminSessionInfo, type AdminSnapshot, type AdminStorageBackupResult, type AdminStorageRestoreDrillResult, type AdminStorageRestoreResult, type AdminUserInfo, type AiUsageSummary, type CampaignAssetStorageInfo, type CampaignSessionInfo, type CharacterTemplateInfo, type DiceRollVerification, type EncounterPlanInfo, type InviteCreateInfo, type MfaInfo, type OrganizationMemberInfo, type PluginReviewStatus, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
 import { actorForSelection, adversaryActorsForSceneBoard, isAdversaryActor } from "./actor-rails.js";
 import { assetThumbnailUrl } from "./api.js";
@@ -30,9 +29,10 @@ import { applyPresenceEnvelope, realtimeSequenceDecision } from "./realtime-sequ
 import { settleWorkspaceLoreLoad } from "./workspace-lore-load.js";
 import { settleWorkspaceBoundAction, type WorkspaceBoundRequest, type WorkspaceRequestIdentity } from "./workspace-bound-action.js";
 import { templateConePoints } from "./scene-annotations.js";
-import { normalizeSceneSizeValue, sceneDimensionsFromCells, sceneGridCellSummary, sceneSizePresets, type SceneSizePreset } from "./scene-size.js";
+import { normalizeSceneSizeValue, sceneDimensionsFromCells, sceneSizePresets, type SceneSizePreset } from "./scene-size.js";
 import { sceneDeleteConfirmationMatches, sceneQuickCreateIndex, sceneTabWrapClass, showTrailingSceneCreate } from "./scene-tabs.js";
 import { appendGridCalibrationPoint, GridCalibrationPanel } from "./grid-calibration.js";
+import { normalizeSceneGridType, SceneGridFields, sceneGridFormSummary, sceneGridSummary } from "./scene-grid-fields.js";
 import { SceneDelegationPanel } from "./scene-delegation-panel.js";
 import { ProfilePreferences, resolvedUserPreferences, updateUserProfile } from "./profile-preferences.js";
 import { HpBar } from "./hp-bar.js";
@@ -41,41 +41,43 @@ import { ChatRail } from "./chat-rail.js";
 import { CampaignOwnershipTransfer, type CampaignOwnershipTransferInput } from "./campaign-ownership-transfer.js";
 import { campaignSurpriseEnabled, CampaignRulesProfilePanel } from "./campaign-rules-profile.js";
 import { CharacterTransferPanel } from "./character-transfer-panel.js";
+import { CampaignMembersPanel } from "./campaign-members-panel.js";
 import { CombatPanel, nextCombatTurnPosition } from "./combat-panel.js";
 import { combatTurnAdvanceRetryIsSafe, staleWriteCurrentCombat } from "./combat-conflict.js";
 import { combatRewardAttemptForIntent, combatRewardIntentFingerprint, type CombatRewardAttempt } from "./combat-reward-idempotency.js";
 import { appendMutationAttemptForIntent, appendMutationFingerprint, type AppendMutationAttempt } from "./append-mutation-idempotency.js";
-import { AdvancementFlow, type AdvancementChoicePayload, type AdvancementFeatInfo, type AdvancementMulticlassOption, type AdvancementPreviewEnvelope, type AdvancementSubclassOption, type AdvancementWeaponMasteryInfo } from "./advancement-flow.js";
-import { AdminPanel, aiToolCallErrorCode, scimMappingLabel } from "./admin-panel.js";
+import { AdvancementFlow, type AdvancementChoicePayload, type AdvancementPreviewEnvelope } from "./advancement-flow.js";
+import { aiToolCallErrorCode, scimMappingLabel } from "./admin-panel-utils.js";
 import { cleanupAdminStoredAssets, migrateAdminStoredAssets, purgeAdminAssetCdnCache, quarantineAdminAssetIntegrityFailures } from "./admin-asset-client.js";
 import { issueAdminPasswordReset as requestAdminPasswordReset, pruneExpiredPasswordResets as requestPruneExpiredPasswordResets, retryAdminEmail as requestRetryAdminEmail, retryAllAdminEmails as requestRetryAllAdminEmails, revokeAdminRiskSessions as requestRevokeAdminRiskSessions, revokeAdminSession as requestRevokeAdminSession, revokeAdminUserSessions as requestRevokeAdminUserSessions, updateAdminUser } from "./admin-identity-client.js";
 import { syncAdminPluginRegistry, syncCampaignPluginRegistry, updateAdminPluginReview } from "./admin-plugin-client.js";
-import { AiPanel } from "./ai-panel.js";
 import { MapLayerStack, MapSelectionStatus, MapZoomControls, SceneCanvas, TabButton, Toolbar, annotationColor, annotationGroupKey, annotationToolLabel, annotationToolShowsSettings, battleMapZoomStep, clampBattleMapZoom, defaultAnnotationLayer, distanceBetween, nextTokenLayer, tokenCenter, tokenCoordinatesFromCenter, tokenFrame, tokenLayer, tokenLayerLabel, tokenLayers, type TokenFrame, type TokenMovePersistenceChange, type TokenSelectionOptions } from "./scene-canvas.js";
 import { campaignPermissionTemplates, type CampaignPermissionTemplateId } from "./admin-data.js";
 import { MetricTile } from "./metric-tile.js";
-import { assetMatchesFolderFilter, contentImportEntityData, normalizeAssetFolderPath, summarizeImport, type ArchiveImportCollection, type ArchiveImportScope, type AssetLifecycleStatus, type CampaignImportResult, type ContentImportDraftEntity, type ContentImportPreviewSource, type FailedAssetUpload } from "./content-import-data.js";
-import { systemAdvancementOptionId, systemEncounterThreatId, systemRollId, type AdvancementOptionInfo } from "./system-actions.js";
+import { assetMatchesFolderFilter, campaignArchiveTargetId, contentImportEntityData, normalizeAssetFolderPath, summarizeImport, type ArchiveImportCollection, type ArchiveImportOperationSummary, type ArchiveImportRollbackPreview, type ArchiveImportRollbackResult, type ArchiveImportScope, type AssetLifecycleStatus, type CampaignImportResult, type ContentImportDraftEntity, type ContentImportPreviewSource, type FailedAssetUpload } from "./content-import-data.js";
+import { ArchiveImportRecovery } from "./archive-import-recovery.js";
+import { downloadCampaignArchiveStream, isArchiveTransferAbort, isCampaignArchiveStreamFile, readCampaignArchiveStreamMetadata, uploadCampaignArchiveStream } from "./archive-stream-client.js";
+import { ArchiveTransferProgress, archiveTransferIsBusy, type ArchiveTransferState } from "./archive-transfer-progress.js";
+import { systemAdvancementOptionId, systemEncounterThreatId, systemRollId } from "./system-actions.js";
 import { CharacterCreatorDialog, type CharacterCreateInput, type CharacterOriginsInfo } from "./character-creator-dialog.js";
 import { CharacterImportDialog, type CharacterImportOutcome } from "./character-import-dialog.js";
 import type { CharacterImportPayload } from "./character-import.js";
-import { EncounterBuilderDialog, type EncounterBuilderThreatSelection } from "./encounter-builder.js";
+import { EncounterBuilderDialog, encounterMonsterPlacementDrafts, type EncounterBuilderThreatSelection } from "./encounter-builder.js";
 import { CombatSetupDialog } from "./combat-setup-dialog.js";
 import type { CombatSetupSubmission } from "./combat-setup.js";
 import { canonicalSceneIdForWorldFilter, selectedSceneForWorldFilter, WorldAtlasPanel, worldFilterMatchesScene, type LoreCollectionLoadState, type WorldAtlasFilter, type WorldAtlasWorld } from "./world-atlas-panel.js";
 import { HandoutLibraryPanel, type HandoutLibraryItem } from "./handout-library-panel.js";
-import { CampaignMemoryPanel, type CampaignMemoryFact } from "./campaign-memory-panel.js";
-import { CampaignSearchPanel, campaignSearchAnchorId, campaignSearchDestination, campaignSearchItemActorId, campaignSearchTypeHasRenderedAnchor, type CampaignSearchResult } from "./campaign-search-panel.js";
+import { CampaignSearchPanel, campaignSearchAnchorId, campaignSearchDestination, campaignSearchTypeHasRenderedAnchor, type CampaignSearchResult } from "./campaign-search-panel.js";
 import { HitDiceRestCard, type ActorRestOptions, type RestPreviewEnvelope } from "./hit-dice-rest-card.js";
 import { TypedDamageCard, type TypedDamageApplyResult } from "./typed-damage-card.js";
 import { ActorLoadoutPanel, filterActorLoadoutItems, type ActorLoadoutFilter } from "./actor-loadout-panel.js";
 import { TacticalMapAids, coverLevelLabel, sceneCoverOverrideBetween } from "./tactical-map-aids.js";
 import { CalculationExplanationPanel } from "./calculation-explanation-panel.js";
-import { LazyActorPanel as ActorPanel, LazyCampaignWebhooksPanel, LazyCompatibilityPanel, LazyCompendiumPanel, LazyContentImportPanel, LazyControlledCreaturesPanel, LazyDndCharacterReviewPanel, LazyDndCustomContentPanel, LazyDndInventoryCommercePanel, LazySdkPanel } from "./deferred-panels.js";
+import { DeferredPanel, LazyActorPanel as ActorPanel, LazyAdminPanel, LazyAiPanel, LazyCampaignMemoryPanel, LazyCampaignWebhooksPanel, LazyCompatibilityPanel, LazyCompendiumPanel, LazyContentImportPanel, LazyControlledCreaturesPanel, LazyDndCharacterReviewPanel, LazyDndCustomContentPanel, LazyDndInventoryCommercePanel, LazySdkPanel } from "./deferred-panels.js";
 import { LiveSessionBanner, SessionDeskPanel } from "./session-desk-panel.js";
 import { useModalAccessibility } from "./modal-accessibility.js";
 import { beginSessionSwitch, sessionSwitchIsCurrent } from "./session-switch-guard.js";
-import { actorActionDiceFormula, actorActionOptions, actorActionSupportsEffect, actorArmorClass, actorCombatStateLabels, actorConditionLabels, actorHitPoints, actorResourceControls, actorResourceLabels, actorResourceUpdate, actorSaveFormula, adjustedTemplateDamage, appendActorCondition, formatActorConditions, isPointInsidePoints, isPurchasableCompendiumEntry, itemDisplayLabel, parseActorConditions, quickActorConditionIds, targetConditionLabels, tokenBrightVisionPatch, tokenDimVisionPatch, tokenPermissionPresetLabel, tokenPlayerOwnerIds, type ActorActionOption, type RulesCompendiumEntry, type TokenVisionPatch } from "./actor-sheet-data.js";
+import { actorActionDiceFormula, actorActionOptions, actorActionSupportsEffect, actorArmorClass, actorCombatStateLabels, actorConditionLabels, actorHitPoints, actorResourceControls, actorResourceLabels, actorResourceUpdate, actorSaveFormula, adjustedTemplateDamage, appendActorCondition, deathSaveStatusText, formatActorConditions, isPointInsidePoints, isPurchasableCompendiumEntry, itemDisplayLabel, parseActorConditions, quickActorConditionIds, targetConditionLabels, tokenBrightVisionPatch, tokenDimVisionPatch, tokenPermissionPresetLabel, tokenPlayerOwnerIds, type ActorActionOption, type RulesCompendiumEntry, type TokenVisionPatch } from "./actor-sheet-data.js";
 import { actorRailSubtitle, clampNumber, contentImportStatusClass, downloadJson, errorMessage, formatAdminList, formatCost, formatCurrency, formatDateTime, formatDuration, formatDurationSeconds, formatFogHistoryEntry, formatGp, formatNumber, formatPercent, formatRollTermDetail, formatRollTermName, formatStorageBytes, formatTime, formatVisionPoint, formatVisionPointSample, jobStatusClass, numericValue, registryHostLabel, prettyOriginId, readinessStatusClass, recordValue, rollTermTotal, safeProbabilityRange, slugId, stringArrayValue, stringValue, titleCaseLabel } from "./sheet-format.js";
 import { formatTokenSenses, parseTokenSenses } from "./actor-sheet-data.js";
 import { hasItemDropData, hasTokenDropData, readItemDropData, readTokenDropData, setTokenDropPreview, writeTokenDropData, type TokenDropPayload } from "./token-drag.js";
@@ -84,10 +86,15 @@ import { isStaleWriteError, sharedMutationIdempotencyKey } from "./shared-mutati
 import { KeyedMutationQueue } from "./keyed-mutation-queue.js";
 import { clampFloatingPanel, useMovablePanel, type FloatingPanelPosition, type FloatingPanelSize } from "./movable-panel.js";
 import { CommandPalette, DiceCastOverlay } from "./tabletop-overlays.js";
-import { preparedActorActionReviewText, type CommittedActorActionResponse, type PreparedActorActionResponse, type PreparedTypedDamageResponse } from "./actor-action-review.js";
-import type { CampaignSetupIdempotencyKeys, CampaignSetupProgress } from "./campaign-setup-state.js";
+import { actorActionConsequenceReview, typedDamageConsequenceReview, type CommittedActorActionResponse, type PreparedActorActionResponse, type PreparedTypedDamageResponse } from "./actor-action-review.js";
+import { campaignSetupDraftStorageKey, clearCampaignSetupDraft, defaultCampaignSetupDraft, loadCampaignSetupDraft, saveCampaignSetupDraft, type CampaignSetupDraftInput, type CampaignSetupDraftScope, type CampaignSetupIdempotencyKeys, type CampaignSetupProgress } from "./campaign-setup-state.js";
+import { CampaignSetupSteps, FirstSessionSetupChecklist, type FirstSessionSetupStep } from "./campaign-setup-steps.js";
 import { isInspectorTabAllowed, keyboardShortcutRows, mapDockOpenStorageKey, quickCreateOpenStorageKey } from "./workspace-ui-constants.js";
 import { absoluteInviteUrl, clearJoinUrl, clearResetUrl, dice3dPreferenceEnvironment, initialInviteToken, initialResetMode, initialResetToken, initialSavedDiceFormulas, initialStoredId, initialStoredPanelFlag, mfaCredential, persistSavedDiceFormulas, persistStoredId, persistStoredPanelFlag } from "./startup-state.js";
+import { activityTracesFromEvents, aiAgentToolProgressText, appendAiAgentActivity, appendReasoningDelta, codexAuthPromptFromError, completedReasoningTraces, isAbortError, isProposalNotFoundError, isSessionAuthError, openCodexAuthPrompt, reasoningTracesFromEvents, sceneIdToOpenAfterProposalApply, upsertAiAgentMessage, type AiAgentMessage, type AiAgentProviderEvent, type AiAgentRealtimeEvent, type CodexAuthStart } from "./ai-agent-event-utils.js";
+import { useConsequenceReview } from "./consequence-review.js";
+import { useAdvancementCatalog } from "./advancement-catalog.js";
+import type { Dnd5eSrdWeaponMasteryUse } from "./weapon-mastery-controls.js";
 
 const apiBase = import.meta.env.VITE_API_URL ?? "";
 const boardHistoryLimit = 50;
@@ -97,10 +104,6 @@ const maxBrowserTimerDelayMs = 2_147_483_647;
 const aiAgentAuthRetryIntervalMs = 3_000;
 const aiAgentAuthRetryTimeoutMs = 10 * 60_000;
 const rollingDiceStatus = "Rolling dice...";
-
-function DeferredPanelFallback({ label = "workspace tool" }: { label?: string }) {
-  return <div className="deferred-panel-fallback" role="status" aria-live="polite"><RefreshCw className="spin" size={16} aria-hidden="true" /> Loading {label}...</div>;
-}
 
 export function hasUnmodeledMixedDamageType(value: string | undefined): boolean {
   return (value ?? "").split(/[\/,]/).map((part) => part.trim()).filter(Boolean).length > 1;
@@ -123,6 +126,7 @@ interface ArchiveImportAttempt {
   mode: ArchiveImportMode;
   scope: ArchiveImportScope;
   collections: ArchiveImportCollection[];
+  transport: "json" | "stream";
 }
 
 
@@ -157,7 +161,7 @@ type InspectorTab = "actors" | "compendium" | "sessions" | "worlds" | "handouts"
 type AiAgentApprovalMode = "manual" | "auto";
 type AiGenerationJobKind = "map" | "token" | "tokenBatch";
 type RulesSaveOutcome = "success" | "failure";
-type ActorActionCommitOptions = { targetActorId?: string; applyEffect?: boolean; consumeResources?: boolean; saveOutcomes?: Record<string, RulesSaveOutcome>; effectChoice?: string };
+type ActorActionCommitOptions = { targetActorId?: string; applyEffect?: boolean; consumeResources?: boolean; saveOutcomes?: Record<string, RulesSaveOutcome>; effectChoice?: string; weaponMastery?: Dnd5eSrdWeaponMasteryUse };
 interface CombatRewardRequestPayload {
   recipientActorIds: string[];
   totalXp?: number;
@@ -175,54 +179,16 @@ interface AiGenerationJob {
   detail?: string;
 }
 
-interface AiAgentMessage {
-  id: string;
-  role: "user" | "assistant" | "system";
-  content: string;
-  createdAt: string;
-  proposalIds?: string[];
-  progress?: string;
-  reasoning?: string[];
-  activity?: string[];
-  streaming?: boolean;
-}
-
-interface AiAgentProviderEvent {
-  type: string;
-  proposalId?: string;
-  delta?: string;
-  content?: string;
-  message?: string;
-  summaryIndex?: number;
-  toolName?: string;
-}
-
 interface AiAgentThreadResponse {
   thread: AiThread;
   assistantMessage: string;
   events: AiAgentProviderEvent[];
 }
 
-interface AiAgentRealtimeEvent {
-  type?: string;
-  campaignId?: string;
-  actorUserId?: string;
-  targetId?: string;
-  payload?: Record<string, unknown>;
-}
-
 interface AiAgentPendingAuthRequest {
   prompt: string;
   requestMessages: AiAgentMessage[];
   selectedAssetId?: string;
-}
-
-interface CodexAuthStart {
-  type: "chatgpt" | "chatgptDeviceCode";
-  loginId?: string;
-  authUrl?: string;
-  verificationUrl?: string;
-  userCode?: string;
 }
 
 interface AiAgentCodexAuthPrompt extends CodexAuthStart {
@@ -329,14 +295,6 @@ const archiveExportCollectionOptions: Array<{ id: ArchiveExportCollection; label
   { id: "pluginStorage", label: "Plugin storage" }
 ];
 
-type XpProgressInfo = {
-  xp: number;
-  level: number;
-  levelForXp: number;
-  nextLevelXp?: number;
-  previousLevelXp: number;
-  readyToLevel: boolean;
-};
 type MeasurementTool = "measure-circle" | "measure-cone";
 type AnnotationTool = SceneAnnotationKind | MeasurementTool | null;
 type ActiveAnnotationTool = NonNullable<AnnotationTool>;
@@ -355,6 +313,7 @@ function isUsableImageAsset(asset: MapAsset): boolean {
 const gridlessMapPromptMarker = "gridless virtual tabletop background";
 
 function sceneGridOverlayVisible(scene: Scene): boolean {
+  if (scene.gridType === "gridless") return false;
   const explicit = scene.metadata?.gridOverlayVisible;
   if (typeof explicit === "boolean") return explicit;
   const generatedPrompt = scene.metadata?.generatedBackgroundPrompt;
@@ -401,6 +360,7 @@ function initialAiAgentPanelPosition(): FloatingPanelPosition {
 
 
 export function App() {
+  const consequenceReview = useConsequenceReview();
   const [snapshot, setSnapshot] = useState<Snapshot>({
     campaigns: [],
     organizations: [],
@@ -620,6 +580,7 @@ export function App() {
   const [adminStatus, setAdminStatus] = useState("Admin idle");
   const [encounterPlan, setEncounterPlan] = useState<EncounterPlanInfo>();
   const [encounterBuilderOpen, setEncounterBuilderOpen] = useState(false);
+  const [campaignSearchFocus, setCampaignSearchFocus] = useState<CampaignSearchResult>();
   const [combatSetupOpen, setCombatSetupOpen] = useState(false);
   const [characterImportOpen, setCharacterImportOpen] = useState(false);
   const [importedActor, setImportedActor] = useState<Actor>();
@@ -633,8 +594,10 @@ export function App() {
   const archiveImportCollectionsRef = useRef<ArchiveImportCollection[]>(["assets"]);
   const [archiveImportReport, setArchiveImportReport] = useState<CampaignImportResult>();
   const [archiveImportReportFileName, setArchiveImportReportFileName] = useState("");
-  const [archiveRollbackSnapshot, setArchiveRollbackSnapshot] = useState<CampaignArchive>();
-  const [archiveRollbackFileName, setArchiveRollbackFileName] = useState("");
+  const [archiveImportOperations, setArchiveImportOperations] = useState<ArchiveImportOperationSummary[]>([]);
+  const [selectedArchiveImportOperationId, setSelectedArchiveImportOperationId] = useState("");
+  const [archiveImportRollbackPreview, setArchiveImportRollbackPreview] = useState<ArchiveImportRollbackPreview>();
+  const [archiveImportRecoveryBusy, setArchiveImportRecoveryBusy] = useState(false);
   const [archiveExportScope, setArchiveExportScope] = useState<ArchiveExportScope>("campaign");
   const [archiveExportWorldId, setArchiveExportWorldId] = useState("");
   const [archiveExportCollections, setArchiveExportCollections] = useState<ArchiveExportCollection[]>(["actors", "items", "journals", "handouts"]);
@@ -643,6 +606,9 @@ export function App() {
   const [archiveExportStatus, setArchiveExportStatus] = useState("No archive exported this session");
   const [isImportingArchive, setIsImportingArchive] = useState(false);
   const [failedArchiveImport, setFailedArchiveImport] = useState<FailedArchiveImport | undefined>();
+  const [archiveTransfer, setArchiveTransfer] = useState<ArchiveTransferState>();
+  const archiveTransferAbortRef = useRef<AbortController | null>(null);
+  const archiveTransferBusy = archiveTransferIsBusy(archiveTransfer);
   const [contentImportKind, setContentImportKind] = useState<ContentImportEntityKind>("journal");
   const [contentImportName, setContentImportName] = useState("");
   const [contentImportBody, setContentImportBody] = useState("");
@@ -657,30 +623,21 @@ export function App() {
   const [canvasAssetFolder, setCanvasAssetFolder] = useState("all");
   const [canvasAssetSearch, setCanvasAssetSearch] = useState("");
   const [canvasAssetPlacementCount, setCanvasAssetPlacementCount] = useState(1);
-  const [newCampaignName, setNewCampaignName] = useState("");
-  const [newCampaignDescription, setNewCampaignDescription] = useState("");
-  const [newCampaignSystemId, setNewCampaignSystemId] = useState("dnd-5e-srd");
-  const [newCampaignVisibility, setNewCampaignVisibility] = useState<Campaign["visibility"]>("private");
-  const [setupSceneName, setSetupSceneName] = useState("Opening Scene");
-  const [setupSceneFolder, setSetupSceneFolder] = useState("session-0");
-  const [setupSceneWidth, setSetupSceneWidth] = useState(1200);
-  const [setupSceneHeight, setSetupSceneHeight] = useState(800);
-  const [setupSceneGridSize, setSetupSceneGridSize] = useState(50);
-  const [setupStarterContent, setSetupStarterContent] = useState(true);
-  const [setupInviteEnabled, setSetupInviteEnabled] = useState(false);
-  const [setupInviteEmail, setSetupInviteEmail] = useState("");
-  const [setupInviteRole, setSetupInviteRole] = useState<UserRole>("player");
-  const [setupPermissionTemplate, setSetupPermissionTemplate] = useState<CampaignPermissionTemplateId>("standard");
-  const [setupOnboardingTitle, setSetupOnboardingTitle] = useState("Welcome to the Table");
-  const [setupOnboardingBody, setSetupOnboardingBody] = useState("Use this handout for table rules, safety notes, and first-session goals.");
+  const [campaignSetupForm, setCampaignSetupForm] = useState<Omit<CampaignSetupDraftInput, "idempotencyKeys" | "progress">>(() => defaultCampaignSetupDraft());
+  const { name: newCampaignName, description: newCampaignDescription, systemId: newCampaignSystemId, visibility: newCampaignVisibility, starterContent: setupStarterContent, sceneName: setupSceneName, sceneFolder: setupSceneFolder, sceneWidth: setupSceneWidth, sceneHeight: setupSceneHeight, sceneGridType: setupSceneGridType, sceneGridSize: setupSceneGridSize } = campaignSetupForm;
+  const { inviteEnabled: setupInviteEnabled, inviteEmail: setupInviteEmail, inviteRole: setupInviteRole, permissionTemplate: setupPermissionTemplate, onboardingTitle: setupOnboardingTitle, onboardingBody: setupOnboardingBody, route: campaignSetupRoute } = campaignSetupForm;
   const [isCreatingCampaignSetup, setIsCreatingCampaignSetup] = useState(false);
   const [campaignSetupRecoveryPending, setCampaignSetupRecoveryPending] = useState(false);
+  const [campaignSetupDraftNotice, setCampaignSetupDraftNotice] = useState("");
+  const [loadedCampaignSetupDraftKey, setLoadedCampaignSetupDraftKey] = useState("");
+  const [campaignSetupDirty, setCampaignSetupDirty] = useState(false);
   const campaignSetupBusyRef = useRef(false);
   const campaignSetupGenerationRef = useRef(0);
   const campaignSetupAbortRef = useRef<AbortController | null>(null);
   const campaignSetupIdempotencyRef = useRef<CampaignSetupIdempotencyKeys | null>(null);
   const combatRewardAttemptRef = useRef<CombatRewardAttempt<CombatRewardRequestPayload> | null>(null);
   const appendMutationAttemptsRef = useRef(new Map<string, AppendMutationAttempt>());
+  const encounterMonsterPlacementAttemptsRef = useRef(new Map<string, { idempotencyKey: string; input: EncounterMonsterPlacementBatchInput }>());
   const campaignSetupProgressRef = useRef<CampaignSetupProgress | null>(null);
   const setupDefaultsAppliedRef = useRef("");
   const [campaignEditName, setCampaignEditName] = useState("");
@@ -695,6 +652,7 @@ export function App() {
   const [newSceneFolder, setNewSceneFolder] = useState("prep");
   const [newSceneWidth, setNewSceneWidth] = useState(1200);
   const [newSceneHeight, setNewSceneHeight] = useState(800);
+  const [newSceneGridType, setNewSceneGridType] = useState<GridType>("square");
   const [newSceneGridSize, setNewSceneGridSize] = useState(50);
   const [newSceneActive, setNewSceneActive] = useState(false);
   const [newSceneBackgroundAssetId, setNewSceneBackgroundAssetId] = useState("");
@@ -702,6 +660,7 @@ export function App() {
   const [sceneEditFolder, setSceneEditFolder] = useState("");
   const [sceneEditWidth, setSceneEditWidth] = useState(1200);
   const [sceneEditHeight, setSceneEditHeight] = useState(800);
+  const [sceneEditGridType, setSceneEditGridType] = useState<GridType>("square");
   const [sceneEditGridSize, setSceneEditGridSize] = useState(50);
   const [sceneEditActive, setSceneEditActive] = useState(false);
   const [sceneEditBackgroundAssetId, setSceneEditBackgroundAssetId] = useState("");
@@ -712,8 +671,10 @@ export function App() {
   const [sceneSearch, setSceneSearch] = useState("");
   const [bulkSceneFolder, setBulkSceneFolder] = useState("");
   const [selectedPrepSceneIds, setSelectedPrepSceneIds] = useState<string[]>([]);
-  const newSceneCellSummary = sceneGridCellSummary(newSceneWidth, newSceneHeight, newSceneGridSize);
-  const sceneEditCellSummary = sceneGridCellSummary(sceneEditWidth, sceneEditHeight, sceneEditGridSize);
+  const [sceneDuplicationReview, setSceneDuplicationReview] = useState<{ request: SceneDuplicationRequest; plan: SceneDuplicationPlan }>();
+  const [sceneDuplicationBusy, setSceneDuplicationBusy] = useState(false);
+  const newSceneCellSummary = sceneGridFormSummary(newSceneGridType, newSceneWidth, newSceneHeight, newSceneGridSize);
+  const sceneEditCellSummary = sceneGridFormSummary(sceneEditGridType, sceneEditWidth, sceneEditHeight, sceneEditGridSize);
   const [sceneDeleteConfirm, setSceneDeleteConfirm] = useState("");
   const [newTokenName, setNewTokenName] = useState("");
   const [newTokenActorId, setNewTokenActorId] = useState("");
@@ -730,20 +691,10 @@ export function App() {
   const [actorActionTargetId, setActorActionTargetId] = useState("");
   const [actorActionApplyEffect, setActorActionApplyEffect] = useState(false);
   const [actorActionConsumeResources, setActorActionConsumeResources] = useState(true);
+  const [controlledCreatureHandoff, setControlledCreatureHandoff] = useState<DndControlledCreatureActionHandoff>();
   const [compendiumEntries, setCompendiumEntries] = useState<RulesCompendiumEntry[]>([]);
   const [compendiumSearch, setCompendiumSearch] = useState("");
   const [compendiumStatus, setCompendiumStatus] = useState("No compendium entry imported this session");
-  const [advancementOptions, setAdvancementOptions] = useState<AdvancementOptionInfo[]>([]);
-  const [advancementGrantsFeat, setAdvancementGrantsFeat] = useState(false);
-  const [advancementFeats, setAdvancementFeats] = useState<AdvancementFeatInfo[]>([]);
-  const [multiclassOptions, setMulticlassOptions] = useState<AdvancementMulticlassOption[]>([]);
-  const [advancementClassName, setAdvancementClassName] = useState("");
-  const [advancementNextClassLevel, setAdvancementNextClassLevel] = useState<number | undefined>();
-  const [advancementRequiresSubclass, setAdvancementRequiresSubclass] = useState(false);
-  const [advancementSubclassOptions, setAdvancementSubclassOptions] = useState<AdvancementSubclassOption[]>([]);
-  const [advancementWeaponMastery, setAdvancementWeaponMastery] = useState<AdvancementWeaponMasteryInfo>();
-  const [pendingAdvancement, setPendingAdvancement] = useState<Dnd5eSrdPendingAdvancement>();
-  const [xpProgress, setXpProgress] = useState<XpProgressInfo | undefined>(undefined);
   const [lastDndRulesUndo, setLastDndRulesUndo] = useState<DndRulesMutationUndoDescriptor>();
   const [advancementModalOpen, setAdvancementModalOpen] = useState(false);
   const [characterCreatorOpen, setCharacterCreatorOpen] = useState(false);
@@ -781,6 +732,8 @@ export function App() {
 
   const selectedCampaign = snapshot.campaigns.find((campaign) => campaign.id === campaignId);
   const activeOrganizationId = snapshot.session?.organization?.id ?? snapshot.session?.session?.activeOrganizationId ?? snapshot.organizations[0]?.id ?? "";
+  const campaignSetupDraftScope = useMemo(() => activeOrganizationId && currentUserId ? { organizationId: activeOrganizationId, userId: currentUserId, campaignId: campaignId || "new" } satisfies CampaignSetupDraftScope : undefined, [activeOrganizationId, campaignId, currentUserId]);
+  const campaignSetupDraftKey = campaignSetupDraftScope ? campaignSetupDraftStorageKey(campaignSetupDraftScope) : "";
   const currentMember = snapshot.members.find((member) => member.user.id === currentUserId);
   const playerVisionPreviewMember = snapshot.members.find((member) => member.user.id === playerVisionPreviewUserId);
   const hasPermission = (permission: PermissionName) => currentMember?.permissions.includes(permission) ?? false;
@@ -827,6 +780,8 @@ export function App() {
   const hasUnsavedSceneDraft = workspaceMode === "manage" && manageCategory === "scenes" && sceneEditDirty;
   const activeSystemId = snapshot.systems.find((system) => system.active)?.id ?? selectedCampaign?.defaultSystemId;
   const selectedActor = actorForSelection(snapshot.actors, selectedActorId, selectedToken?.actorId, activeSystemId);
+  const advancementCatalog = useAdvancementCatalog({ campaignId, actor: selectedActor, disabled: blankCanvasDemoOpen });
+  const { options: advancementOptions, grantsFeat: advancementGrantsFeat, feats: advancementFeats, multiclassOptions, className: advancementClassName, nextClassLevel: advancementNextClassLevel, requiresSubclass: advancementRequiresSubclass, subclassOptions: advancementSubclassOptions, weaponMastery: advancementWeaponMastery, pendingAdvancement, xp: xpProgress, loadState: advancementLoadState, loadError: advancementLoadError, setPendingAdvancement } = advancementCatalog;
   const adversaryActors = adversaryActorsForSceneBoard(snapshot.actors, snapshot.tokens, selectedScene?.id);
   const partyActors = snapshot.actors.filter((actor) => !isAdversaryActor(actor, snapshot.tokens));
   const journalLinkTargets = useMemo<JournalLinkTargetOption[]>(() => [
@@ -846,21 +801,6 @@ export function App() {
   const nextTurnTokenIds = nextTurnCombatant?.tokenId && nextTurnCombatant.id !== currentTurnCombatant?.id ? [nextTurnCombatant.tokenId] : [];
   const recentEndedCombats = snapshot.combats.filter((combat) => !combat.active).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).slice(0, 3);
   const selectedPermissionTemplate = campaignPermissionTemplates.find((template) => template.id === setupPermissionTemplate) ?? campaignPermissionTemplates[0]!;
-  const setupPreviewSceneName = setupStarterContent ? "First Session" : setupSceneName.trim() || "Opening Scene";
-  const setupPreviewFolder = setupStarterContent ? "starter content" : setupSceneFolder.trim() || "no folder";
-  const setupPreviewSceneWidth = setupStarterContent ? 1200 : setupSceneWidth;
-  const setupPreviewSceneHeight = setupStarterContent ? 800 : setupSceneHeight;
-  const setupPreviewGridSize = setupStarterContent ? 50 : setupSceneGridSize;
-  const setupVisibilityLabel =
-    newCampaignVisibility === "invite_only" ? "Invite only" : newCampaignVisibility === "public" ? "Public" : "Private";
-  const setupInviteSummary = setupInviteEnabled
-    ? `${titleCaseLabel(setupInviteRole)} invite${setupInviteEmail.trim() ? ` for ${setupInviteEmail.trim()}` : ""}`
-    : "No starter invite";
-  const setupOnboardingSummary = setupStarterContent
-    ? "Starter content: First Session and welcome notes"
-    : setupOnboardingBody.trim()
-      ? `Public handout: ${setupOnboardingTitle.trim() || "Welcome to the Table"}`
-      : "No onboarding handout";
   const archiveExportRecordCount = archiveExportScope === "world"
     ? snapshot.scenes.filter((scene) => scene.worldId === archiveExportWorldId).length + snapshot.actors.filter((actor) => actor.worldId === archiveExportWorldId).length + snapshot.journals.filter((journal) => journal.worldId === archiveExportWorldId).length + handouts.filter((handout) => handout.worldId === archiveExportWorldId).length
     : snapshot.scenes.length + snapshot.assets.length + snapshot.actors.length + snapshot.journals.length + handouts.length + snapshot.chat.length + snapshot.combats.length;
@@ -937,7 +877,7 @@ export function App() {
   const sceneStateComparison =
     selectedScene && activeScene
       ? [
-          { label: "Dimensions", selected: `${selectedScene.width} x ${selectedScene.height} / grid ${selectedScene.gridSize}`, active: `${activeScene.width} x ${activeScene.height} / grid ${activeScene.gridSize}` },
+          { label: "Dimensions", selected: sceneGridSummary(selectedScene), active: sceneGridSummary(activeScene) },
           { label: "Tokens", selected: formatNumber(snapshot.tokens.filter((token) => token.sceneId === selectedScene.id).length), active: formatNumber(snapshot.tokens.filter((token) => token.sceneId === activeScene.id).length) },
           { label: "Fog", selected: formatNumber(selectedScene.fog.length), active: formatNumber(activeScene.fog.length) },
           { label: "Walls", selected: formatNumber(selectedScene.walls.length), active: formatNumber(activeScene.walls.length) },
@@ -956,9 +896,9 @@ export function App() {
           {
             label: "Dimensions and grid",
             detail:
-              selectedScene.width === activeScene.width && selectedScene.height === activeScene.height && selectedScene.gridSize === activeScene.gridSize
+              selectedScene.width === activeScene.width && selectedScene.height === activeScene.height && selectedScene.gridType === activeScene.gridType && selectedScene.gridSize === activeScene.gridSize
                 ? "Matching dimensions and grid"
-                : `${selectedScene.width}x${selectedScene.height} grid ${selectedScene.gridSize}; active ${activeScene.width}x${activeScene.height} grid ${activeScene.gridSize}`
+                : `${sceneGridSummary(selectedScene)}; active ${sceneGridSummary(activeScene)}`
           },
           {
             label: "Token roster",
@@ -1093,20 +1033,47 @@ export function App() {
   }
 
   function resetCampaignSetupDraft() {
-    setNewCampaignName("");
-    setNewCampaignDescription("");
-    setSetupSceneName("Opening Scene");
-    setSetupSceneFolder("session-0");
-    setSetupSceneWidth(1200);
-    setSetupSceneHeight(800);
-    setSetupSceneGridSize(50);
-    setSetupStarterContent(true);
-    setSetupInviteEnabled(false);
-    setSetupInviteEmail("");
-    setSetupInviteRole("player");
-    setSetupPermissionTemplate("standard");
-    setSetupOnboardingTitle("Welcome to the Table");
-    setSetupOnboardingBody("Use this handout for table rules, safety notes, and first-session goals.");
+    setCampaignSetupForm(defaultCampaignSetupDraft());
+    setCampaignSetupDraftNotice("");
+    setCampaignSetupDirty(false);
+    setupDefaultsAppliedRef.current = "";
+  }
+
+  function currentCampaignSetupDraftScope(): CampaignSetupDraftScope | undefined {
+    return campaignSetupDraftScope;
+  }
+
+  function currentCampaignSetupDraft(progress = campaignSetupProgressRef.current, idempotencyKeys = campaignSetupIdempotencyRef.current): CampaignSetupDraftInput {
+    return {
+      ...campaignSetupForm,
+      ...(idempotencyKeys ? { idempotencyKeys } : {}),
+      ...(progress ? { progress: { campaignId: progress.campaign.id, ...(progress.draftScopeCampaignId ? { sourceCampaignId: progress.draftScopeCampaignId } : {}), ...(progress.scene ? { sceneId: progress.scene.id } : {}), onboardingCreated: progress.onboardingCreated, ...(progress.inviteEmail !== undefined ? { inviteEmail: progress.inviteEmail } : {}), ...(progress.inviteRole ? { inviteRole: progress.inviteRole } : {}), ...(progress.inviteRequestStarted ? { inviteRequestStarted: true } : {}), ...(progress.inviteCreatedWithoutLink ? { inviteCreatedWithoutLink: true } : {}) } } : {})
+    };
+  }
+
+  function persistCampaignSetupDraft(progress = campaignSetupProgressRef.current) {
+    const scope = currentCampaignSetupDraftScope();
+    if (scope) saveCampaignSetupDraft(window.localStorage, scope, currentCampaignSetupDraft(progress));
+  }
+
+  function clearCampaignSetupDraftScopes(progress = campaignSetupProgressRef.current) {
+    const scope = currentCampaignSetupDraftScope();
+    if (!scope) return;
+    for (const scopedCampaignId of new Set([scope.campaignId, progress?.draftScopeCampaignId, progress?.campaign.id].filter((value): value is string => Boolean(value)))) clearCampaignSetupDraft(window.localStorage, { ...scope, campaignId: scopedCampaignId });
+  }
+
+  function updateCampaignSetupDraft(patch: Partial<CampaignSetupDraftInput>) {
+    const { idempotencyKeys: _idempotencyKeys, progress: _progress, ...safePatch } = patch;
+    setCampaignSetupForm((current) => ({ ...current, ...safePatch }));
+    setCampaignSetupDirty(true);
+  }
+
+  function discardCampaignSetupDraft() {
+    clearCampaignSetupDraftScopes();
+    invalidateCampaignSetupProgress();
+    resetCampaignSetupDraft();
+    setCampaignSetupDirty(false);
+    setStatus("Campaign setup draft cleared");
   }
 
   function invalidateCampaignSetupProgress() {
@@ -1130,6 +1097,7 @@ export function App() {
     setIsCreatingCampaignSetup(false);
     if (progress) {
       campaignSetupProgressRef.current = progress;
+      persistCampaignSetupDraft(progress);
       setCampaignSetupRecoveryPending(true);
       setStatus(`${progress.campaign.name} was kept; retry to finish its remaining setup`);
       window.requestAnimationFrame(() => campaignSetupSubmitRef.current?.focus());
@@ -1144,6 +1112,7 @@ export function App() {
   async function keepCampaignSetupAsIs() {
     const progress = campaignSetupProgressRef.current;
     if (!progress) return;
+    clearCampaignSetupDraftScopes(progress);
     const setupInvite = progress.invite;
     const hasSetupInvite = Boolean(setupInvite || progress.inviteCreatedWithoutLink);
     const targetSceneId = progress.scene?.id ?? "";
@@ -1174,6 +1143,14 @@ export function App() {
     setManageCategory("campaign");
     setTableFocusMode(false);
     setCommandPaletteOpen(false);
+  }
+
+  function openFirstSessionSetupStep(step: FirstSessionSetupStep["id"]) {
+    if (step === "invitation") { setManageCategory("people"); setWorkspaceMode("manage"); return; }
+    if (step === "scene") { setManageCategory("scenes"); setWorkspaceMode("manage"); return; }
+    if (step === "encounter") { resetWorkspaceNavigation("prep", "content"); setEncounterBuilderOpen(true); return; }
+    if (step === "character" && hasPermission("actor.create")) setCharacterCreatorOpen(true);
+    resetWorkspaceNavigation(step === "play" ? "live" : "prep", "actors");
   }
 
   function revokeBlankCanvasAssetUrls() {
@@ -1258,6 +1235,7 @@ export function App() {
 
   function closeWorkspaceDialogs() {
     setCharacterCreatorOpen(false);
+    setControlledCreatureHandoff(undefined);
     setCharacterImportOpen(false);
     setAdvancementModalOpen(false);
     setEncounterBuilderOpen(false);
@@ -1850,22 +1828,50 @@ export function App() {
   };
 
   useEffect(() => {
+    if (!snapshotReady || campaignSetupBusyRef.current || !campaignSetupDraftScope || !campaignSetupDraftKey || loadedCampaignSetupDraftKey === campaignSetupDraftKey) return;
+    const restored = loadCampaignSetupDraft(window.localStorage, campaignSetupDraftScope);
+    if (restored.status !== "ready") {
+      resetCampaignSetupDraft();
+      if (restored.status !== "missing") setCampaignSetupDraftNotice(restored.message);
+      setLoadedCampaignSetupDraftKey(campaignSetupDraftKey);
+      return;
+    }
+    const draft = restored.draft;
+    const { idempotencyKeys, progress: storedProgress, ...form } = draft;
+    setCampaignSetupForm(form);
+    campaignSetupIdempotencyRef.current = idempotencyKeys ?? null;
+    const campaign = storedProgress ? snapshot.campaigns.find((candidate) => candidate.id === storedProgress.campaignId) : undefined;
+    if (storedProgress && campaign) {
+      campaignSetupProgressRef.current = { key: idempotencyKeys?.draftKey ?? JSON.stringify(draft), organizationId: campaignSetupDraftScope.organizationId, userId: campaignSetupDraftScope.userId, campaign, draftScopeCampaignId: storedProgress.sourceCampaignId ?? campaignSetupDraftScope.campaignId, scene: snapshot.scenes.find((scene) => scene.id === storedProgress.sceneId), onboardingCreated: storedProgress.onboardingCreated, inviteEmail: storedProgress.inviteEmail, inviteRole: storedProgress.inviteRole, inviteRequestStarted: storedProgress.inviteRequestStarted, inviteCreatedWithoutLink: storedProgress.inviteCreatedWithoutLink };
+      setCampaignSetupRecoveryPending(true);
+      setCampaignSetupDraftNotice(`Resumed ${campaign.name}; retry to finish its remaining setup or keep it as-is.`);
+    } else {
+      campaignSetupProgressRef.current = null;
+      setCampaignSetupRecoveryPending(false);
+      if (storedProgress) {
+        campaignSetupIdempotencyRef.current = null;
+        setCampaignSetupDraftNotice("The campaign recorded by this draft is no longer available. Its safe inputs were recovered; start fresh before creating it again.");
+      } else {
+        setCampaignSetupDraftNotice("Resumed the setup draft saved in this browser.");
+      }
+    }
+    if (snapshot.workspaceDefaults) setupDefaultsAppliedRef.current = `${snapshot.workspaceDefaults.id}:${snapshot.workspaceDefaults.updatedAt}`;
+    setCampaignSetupDirty(false);
+    setLoadedCampaignSetupDraftKey(campaignSetupDraftKey);
+  }, [campaignSetupDraftKey, campaignSetupDraftScope, isCreatingCampaignSetup, loadedCampaignSetupDraftKey, snapshot.campaigns, snapshot.scenes, snapshot.workspaceDefaults, snapshotReady]);
+
+  useEffect(() => {
+    if (!campaignSetupDirty || !campaignSetupDraftScope || loadedCampaignSetupDraftKey !== campaignSetupDraftKey) return;
+    persistCampaignSetupDraft();
+  }, [campaignSetupDirty, campaignSetupDraftKey, campaignSetupDraftScope, campaignSetupForm, loadedCampaignSetupDraftKey]);
+
+  useEffect(() => {
     const defaults = snapshot.workspaceDefaults;
     if (!defaults) return;
     if (campaignSetupBusyRef.current || campaignSetupProgressRef.current) return;
     const defaultsKey = `${defaults.id}:${defaults.updatedAt}`;
     if (setupDefaultsAppliedRef.current === defaultsKey) return;
-    setNewCampaignSystemId(defaults.defaultSystemId);
-    setNewCampaignVisibility(defaults.defaultCampaignVisibility);
-    setSetupSceneName(defaults.defaultSceneName);
-    setSetupSceneFolder(defaults.defaultSceneFolder);
-    setSetupSceneWidth(defaults.defaultSceneWidth);
-    setSetupSceneHeight(defaults.defaultSceneHeight);
-    setSetupSceneGridSize(defaults.defaultSceneGridSize);
-    setSetupInviteRole(defaults.defaultInviteRole);
-    setSetupPermissionTemplate(defaults.defaultPermissionTemplate);
-    setSetupOnboardingTitle(defaults.onboardingTitle);
-    setSetupOnboardingBody(defaults.onboardingBody);
+    setCampaignSetupForm((current) => ({ ...current, systemId: defaults.defaultSystemId, visibility: defaults.defaultCampaignVisibility, sceneName: defaults.defaultSceneName, sceneFolder: defaults.defaultSceneFolder, sceneWidth: defaults.defaultSceneWidth, sceneHeight: defaults.defaultSceneHeight, sceneGridSize: defaults.defaultSceneGridSize, inviteRole: defaults.defaultInviteRole, permissionTemplate: defaults.defaultPermissionTemplate, onboardingTitle: defaults.onboardingTitle, onboardingBody: defaults.onboardingBody }));
     setupDefaultsAppliedRef.current = defaultsKey;
   }, [campaignSetupRecoveryPending, isCreatingCampaignSetup, snapshot.workspaceDefaults]);
 
@@ -1884,6 +1890,25 @@ export function App() {
     if (blankCanvasDemoOpen) return;
     persistStoredId("otte:selectedCampaignId", campaignId);
   }, [blankCanvasDemoOpen, campaignId]);
+
+  useEffect(() => {
+    setSceneDuplicationReview(undefined);
+    setSceneDuplicationBusy(false);
+  }, [campaignId]);
+
+  useEffect(() => {
+    setArchiveImportRollbackPreview(undefined);
+    if (!snapshotReady || blankCanvasDemoOpen || !campaignId || !canManageArchives) {
+      setArchiveImportOperations([]);
+      setSelectedArchiveImportOperationId("");
+      return;
+    }
+    void loadArchiveImportOperations(campaignId).catch(() => {
+      if (realtimeSelectionRef.current.campaignId !== campaignId) return;
+      setArchiveImportOperations([]);
+      setSelectedArchiveImportOperationId("");
+    });
+  }, [blankCanvasDemoOpen, campaignId, canManageArchives, snapshotReady]);
 
   useEffect(() => {
     if (!snapshotReady || blankCanvasDemoOpen || !campaignId) {
@@ -2552,48 +2577,6 @@ export function App() {
   }, [blankCanvasDemoOpen, campaignId, selectedActor?.id, selectedActor?.systemId, tab]);
 
   useEffect(() => {
-    const resetAdvancement = () => {
-      setAdvancementOptions([]);
-      setAdvancementGrantsFeat(false);
-      setAdvancementFeats([]);
-      setMulticlassOptions([]);
-      setAdvancementClassName("");
-      setAdvancementNextClassLevel(undefined);
-      setAdvancementRequiresSubclass(false);
-      setAdvancementSubclassOptions([]);
-      setAdvancementWeaponMastery(undefined);
-      setPendingAdvancement(undefined);
-      setXpProgress(undefined);
-    };
-    if (blankCanvasDemoOpen || !selectedActor) {
-      resetAdvancement();
-      return;
-    }
-    let cancelled = false;
-    apiGet<{ actorId: string; options: AdvancementOptionInfo[]; advancementClassName?: string; nextClassLevel?: number; requiresSubclass?: boolean; subclassOptions?: AdvancementSubclassOption[]; weaponMastery?: AdvancementWeaponMasteryInfo; grantsFeat?: boolean; feats?: AdvancementFeatInfo[]; multiclassOptions?: AdvancementMulticlassOption[]; xp?: XpProgressInfo; pendingAdvancement?: Dnd5eSrdPendingAdvancement }>(`/api/v1/campaigns/${campaignId}/systems/${selectedActor.systemId}/actors/${selectedActor.id}/advancement`)
-      .then((result) => {
-        if (cancelled) return;
-        setAdvancementOptions(result.options);
-        setAdvancementGrantsFeat(result.grantsFeat ?? false);
-        setAdvancementFeats(result.feats ?? []);
-        setMulticlassOptions(result.multiclassOptions ?? []);
-        setAdvancementClassName(result.advancementClassName ?? "");
-        setAdvancementNextClassLevel(result.nextClassLevel);
-        setAdvancementRequiresSubclass(result.requiresSubclass ?? false);
-        setAdvancementSubclassOptions(result.subclassOptions ?? []);
-        setAdvancementWeaponMastery(result.weaponMastery);
-        setPendingAdvancement(result.pendingAdvancement);
-        setXpProgress(result.xp);
-      })
-      .catch(() => {
-        if (!cancelled) resetAdvancement();
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [blankCanvasDemoOpen, campaignId, selectedActor?.id, selectedActor?.systemId, selectedActor?.updatedAt]);
-
-  useEffect(() => {
     if (!selectedCampaign) return;
     setCampaignEditName(selectedCampaign.name);
     setCampaignEditDescription(selectedCampaign.description);
@@ -2606,6 +2589,7 @@ export function App() {
 
   useEffect(() => {
     setNewSceneActive(false);
+    setNewSceneGridType("square");
   }, [selectedCampaign?.id]);
 
   useEffect(() => {
@@ -2615,12 +2599,14 @@ export function App() {
     setSceneEditFolder(selectedScene.folder ?? "");
     setSceneEditWidth(selectedScene.width);
     setSceneEditHeight(selectedScene.height);
+    setSceneEditGridType(normalizeSceneGridType(selectedScene.gridType));
     setSceneEditGridSize(selectedScene.gridSize);
     setSceneEditActive(selectedScene.active);
     setSceneEditBackgroundAssetId(selectedScene.backgroundAssetId ?? "");
     setSceneEditGridOverlayVisible(sceneGridOverlayVisible(selectedScene));
     setSceneDuplicateName(`${selectedScene.name} Copy`);
-  }, [sceneEditDirty, selectedScene?.id, selectedScene?.name, selectedScene?.folder, selectedScene?.width, selectedScene?.height, selectedScene?.gridSize, selectedScene?.active, selectedScene?.backgroundAssetId, selectedScene?.metadata]);
+    if (selectedScene.gridType === "gridless") { setGridCalibrationOpen(false); setGridCalibrationPoints([]); }
+  }, [sceneEditDirty, selectedScene?.id, selectedScene?.name, selectedScene?.folder, selectedScene?.width, selectedScene?.height, selectedScene?.gridType, selectedScene?.gridSize, selectedScene?.active, selectedScene?.backgroundAssetId, selectedScene?.metadata]);
 
   useEffect(() => {
     setSceneEditDirty(false);
@@ -2740,7 +2726,7 @@ export function App() {
     setAnnotationTool(null);
     resetWorkspaceNavigation("prep", "content");
     setCompendiumEntries([]);
-    setAdvancementOptions([]);
+    advancementCatalog.reset();
     setAiAgentOpen(false);
     setAiAgentApprovalModeState("manual");
     setAiAgentMessages([]);
@@ -2848,7 +2834,6 @@ export function App() {
 
   async function submitLogout() {
     invalidateCampaignSetupProgress();
-    resetCampaignSetupDraft();
     cancelInviteAcceptance();
     invalidatePendingSessionSwitch();
     cancelAiAgentForWorkspaceChange();
@@ -3173,6 +3158,7 @@ export function App() {
       sceneFolder: setupSceneFolder.trim(),
       sceneWidth: Math.max(200, setupSceneWidth),
       sceneHeight: Math.max(200, setupSceneHeight),
+      sceneGridType: setupSceneGridType,
       sceneGridSize: Math.max(10, setupSceneGridSize),
       onboardingTitle: setupOnboardingTitle.trim(),
       onboardingBody: setupOnboardingBody.trim()
@@ -3186,6 +3172,7 @@ export function App() {
       invite: `campaign-setup:${window.crypto.randomUUID()}:invite`
     };
     campaignSetupIdempotencyRef.current = setupIdempotencyKeys;
+    persistCampaignSetupDraft();
     try {
       const storedProgress = campaignSetupProgressRef.current;
       let progress = storedProgress?.organizationId === activeOrganizationId && storedProgress.userId === currentUserId ? storedProgress : null;
@@ -3199,8 +3186,9 @@ export function App() {
           starterContent: setupStarterContent
         }, { signal: controller.signal, idempotencyKey: setupIdempotencyKeys.campaign });
         if (!setupRequestIsCurrent()) return;
-        progress = { key: progressKey, organizationId: activeOrganizationId, userId: currentUserId, campaign, onboardingCreated: setupStarterContent };
+        progress = { key: progressKey, organizationId: activeOrganizationId, userId: currentUserId, campaign, draftScopeCampaignId: currentCampaignSetupDraftScope()?.campaignId, onboardingCreated: setupStarterContent };
         campaignSetupProgressRef.current = progress;
+        persistCampaignSetupDraft(progress);
       } else {
         setStatus(`Continuing ${progress.campaign.name} setup`);
       }
@@ -3211,7 +3199,8 @@ export function App() {
           folder: setupSceneFolder.trim() || undefined,
           width: Math.max(200, setupSceneWidth),
           height: Math.max(200, setupSceneHeight),
-          gridSize: Math.max(10, setupSceneGridSize),
+          gridType: setupSceneGridType,
+          ...(setupSceneGridType === "square" ? { gridSize: Math.max(10, setupSceneGridSize) } : {}),
           active: true,
           sortOrder: 1,
           expectedUpdatedAt: campaign.updatedAt
@@ -3220,6 +3209,7 @@ export function App() {
         if (!setupRequestIsCurrent()) return;
         progress.scene = scene;
         progress.campaign = await apiGet<Campaign>(`/api/v1/campaigns/${campaign.id}`, { signal: controller.signal });
+        persistCampaignSetupDraft(progress);
       }
       const onboardingBody = setupOnboardingBody.trim();
       if (!setupStarterContent && !progress.onboardingCreated) {
@@ -3233,12 +3223,14 @@ export function App() {
           if (!setupRequestIsCurrent()) return;
         }
         progress.onboardingCreated = true;
+        persistCampaignSetupDraft(progress);
       }
       if (setupInviteEnabled && !progress.invite) {
         const inviteEmailDraft = setupInviteEmail.trim();
         const inviteRoleDraft = setupInviteRole;
         progress.inviteEmail = inviteEmailDraft;
         progress.inviteRole = inviteRoleDraft;
+        persistCampaignSetupDraft(progress);
         if (progress.inviteRequestStarted) {
           const invites = await loadOrganizationInvites();
           if (!setupRequestIsCurrent()) return;
@@ -3250,19 +3242,24 @@ export function App() {
             && invite.role === inviteRoleDraft
             && invite.createdAt >= campaign.createdAt
           ));
+          persistCampaignSetupDraft(progress);
         }
         if (!progress.inviteCreatedWithoutLink) {
           progress.inviteRequestStarted = true;
+          persistCampaignSetupDraft(progress);
           const invite = await apiPost<InviteCreateInfo>(`/api/v1/campaigns/${campaign.id}/invites`, {
             email: inviteEmailDraft || undefined,
             role: inviteRoleDraft
           }, { signal: controller.signal, idempotencyKey: setupIdempotencyKeys.invite });
           if (!setupRequestIsCurrent()) return;
           progress.invite = invite;
+          persistCampaignSetupDraft(progress);
         }
       }
       const setupInvite = progress.invite;
       const hasSetupInvite = Boolean(setupInvite || progress.inviteCreatedWithoutLink);
+      const targetDraftScope = { organizationId: activeOrganizationId, userId: currentUserId, campaignId: campaign.id } satisfies CampaignSetupDraftScope;
+      saveCampaignSetupDraft(window.localStorage, targetDraftScope, currentCampaignSetupDraft(progress));
       selectWorkspaceContext(campaign.id, progress.scene?.id ?? "", currentUserId, { preserveCampaignSetup: true });
       campaignSetupProgressRef.current = progress;
       if (setupInvite) {
@@ -3285,9 +3282,11 @@ export function App() {
       } else {
         resetWorkspaceNavigation("prep", setupStarterContent ? "sessions" : "content");
       }
+      clearCampaignSetupDraftScopes(progress);
       campaignSetupProgressRef.current = null;
       campaignSetupIdempotencyRef.current = null;
       resetCampaignSetupDraft();
+      setCampaignSetupDirty(false);
       const permissionSummary = setupPermissionTemplate === "standard" ? "" : `; ${selectedPermissionTemplate.label} permissions applied`;
       const createdWith = starterScene ? ` with ${starterScene.name}` : "";
       setStatus(progress.inviteCreatedWithoutLink
@@ -3349,27 +3348,16 @@ export function App() {
       setCampaignDuplicateError("Enter a name for the duplicated campaign.");
       return;
     }
-    const sourceCampaign = selectedCampaign;
+    const sourceCampaign = snapshotRef.current.campaigns.find((campaign) => campaign.id === selectedCampaign.id) ?? selectedCampaign;
     setCampaignDuplicateBusy(true);
     setCampaignDuplicateError("");
-    setStatus(`Preparing ${sourceCampaign.name} for duplication`);
+    setStatus(`Duplicating ${sourceCampaign.name}`);
     try {
-      const archive = await apiGet<CampaignArchive>(`/api/v1/campaigns/${sourceCampaign.id}/export?scope=campaign&version=0.2.0&redaction=portable`);
-      const duplicateArchive = structuredClone(archive);
-      const campaignRecord = duplicateArchive.data.campaigns.find((campaign) => campaign.id === sourceCampaign.id) ?? duplicateArchive.data.campaigns[0];
-      if (!campaignRecord) throw new Error("The campaign export did not contain a campaign record.");
-      campaignRecord.name = duplicateName;
-      campaignRecord.archivedAt = undefined;
-      campaignRecord.archivedByUserId = undefined;
-      duplicateArchive.manifest.name = duplicateName;
-      const result = await apiPost<CampaignImportResult>("/api/v1/import/campaign", {
-        archive: duplicateArchive,
-        mode: "upsert",
-        scope: "all",
-        regenerateIds: true
+      const result = await apiPost<{ campaign: Campaign }>(`/api/v1/campaigns/${sourceCampaign.id}/duplicate`, {
+        name: duplicateName,
+        expectedUpdatedAt: sourceCampaign.updatedAt
       }, { idempotencyKey });
-      const duplicatedCampaignId = result.importedCampaignIds[0];
-      if (!duplicatedCampaignId) throw new Error("The duplicate import completed without returning a campaign ID.");
+      const duplicatedCampaignId = result.campaign.id;
       selectWorkspaceContext(duplicatedCampaignId, "");
       await refresh(duplicatedCampaignId, "", { syncStatus: false });
       setWorkspaceMode("prep");
@@ -3447,7 +3435,8 @@ export function App() {
       folder: newSceneFolder.trim() || undefined,
       width: Math.max(200, normalizeSceneSizeValue(newSceneWidth, 1200)),
       height: Math.max(200, normalizeSceneSizeValue(newSceneHeight, 800)),
-      gridSize,
+      gridType: newSceneGridType,
+      ...(newSceneGridType === "square" ? { gridSize } : {}),
       backgroundAssetId: newSceneBackgroundAssetId || undefined,
       active: (options.active ?? newSceneActive) || snapshot.scenes.length === 0,
       sortOrder,
@@ -3470,6 +3459,7 @@ export function App() {
     const draftFolder = sceneFormValue(form, "sceneEditFolder", sceneEditFolder);
     const draftWidth = Number(sceneFormValue(form, "sceneEditWidth", String(sceneEditWidth)));
     const draftHeight = Number(sceneFormValue(form, "sceneEditHeight", String(sceneEditHeight)));
+    const draftGridType = normalizeSceneGridType(sceneFormValue(form, "sceneEditGridType", sceneEditGridType));
     const draftGridSize = Number(sceneFormValue(form, "sceneEditGridSize", String(sceneEditGridSize)));
     const draftBackgroundAssetId = sceneFormValue(form, "sceneEditBackgroundAssetId", sceneEditBackgroundAssetId);
     const draftActive = sceneFormChecked(form, "sceneEditActive", sceneEditActive);
@@ -3480,7 +3470,8 @@ export function App() {
       folder: draftFolder.trim() || null,
       width: Math.max(200, normalizeSceneSizeValue(draftWidth, targetScene.width)),
       height: Math.max(200, normalizeSceneSizeValue(draftHeight, targetScene.height)),
-      gridSize: Math.max(10, normalizeSceneSizeValue(draftGridSize, targetScene.gridSize)),
+      gridType: draftGridType,
+      ...(draftGridType === "square" ? { gridSize: Math.max(10, normalizeSceneSizeValue(draftGridSize, targetScene.gridSize)) } : {}),
       backgroundAssetId: draftBackgroundAssetId || null,
       active: draftActive,
       metadata: {
@@ -3500,6 +3491,7 @@ export function App() {
     setSceneEditFolder(scene.folder ?? "");
     setSceneEditWidth(scene.width);
     setSceneEditHeight(scene.height);
+    setSceneEditGridType(normalizeSceneGridType(scene.gridType));
     setSceneEditGridSize(scene.gridSize);
     setSceneEditActive(scene.active);
     setSceneEditBackgroundAssetId(scene.backgroundAssetId ?? "");
@@ -3512,6 +3504,7 @@ export function App() {
   async function applySceneGridCalibration(gridSize: number): Promise<void> {
     if (!selectedScene) throw new Error("Select a scene before calibrating its grid.");
     const targetScene = currentSceneForMutation(selectedScene);
+    if (targetScene.gridType === "gridless") throw new Error("Grid calibration is only available for square-grid scenes.");
     const calibratedSize = Math.max(10, Math.min(500, Math.round(gridSize * 100) / 100));
     await runWorkspaceBoundAction(
       (request) => {
@@ -3537,6 +3530,7 @@ export function App() {
     setSceneEditFolder(selectedScene.folder ?? "");
     setSceneEditWidth(selectedScene.width);
     setSceneEditHeight(selectedScene.height);
+    setSceneEditGridType(normalizeSceneGridType(selectedScene.gridType));
     setSceneEditGridSize(selectedScene.gridSize);
     setSceneEditActive(selectedScene.active);
     setSceneEditBackgroundAssetId(selectedScene.backgroundAssetId ?? "");
@@ -3567,6 +3561,7 @@ export function App() {
   }
 
   function togglePrepSceneSelection(sceneIdToToggle: string, checked: boolean) {
+    setSceneDuplicationReview(undefined);
     setSelectedPrepSceneIds((current) => {
       if (checked) return current.includes(sceneIdToToggle) ? current : [...current, sceneIdToToggle];
       return current.filter((id) => id !== sceneIdToToggle);
@@ -3575,11 +3570,13 @@ export function App() {
 
   function selectVisiblePrepScenes() {
     const nextIds = visibleScenes.map((scene) => scene.id);
+    setSceneDuplicationReview(undefined);
     setSelectedPrepSceneIds(nextIds);
     setStatus(`Selected ${nextIds.length} visible scenes`);
   }
 
   function clearPrepSceneSelection() {
+    setSceneDuplicationReview(undefined);
     setSelectedPrepSceneIds([]);
     setStatus("Cleared scene selection");
   }
@@ -3606,27 +3603,6 @@ export function App() {
     await refresh(campaignId, nextSceneId);
   }
 
-  function sceneDuplicatePayload(scene: Scene, name: string, sortOrder: number) {
-    return {
-      name,
-      width: scene.width,
-      height: scene.height,
-      gridType: scene.gridType,
-      gridSize: scene.gridSize,
-      backgroundAssetId: scene.backgroundAssetId,
-      folder: scene.folder,
-      active: false,
-      sortOrder,
-      fog: structuredClone(scene.fog),
-      walls: structuredClone(scene.walls),
-      lights: structuredClone(scene.lights),
-      annotations: structuredClone(scene.annotations ?? []),
-      difficultTerrain: structuredClone(scene.difficultTerrain ?? []),
-      coverOverrides: structuredClone(scene.coverOverrides ?? []),
-      metadata: structuredClone(scene.metadata)
-    };
-  }
-
   async function duplicateSelectedPrepScenes() {
     if (sceneEditDirty) {
       setStatus("Save or discard scene changes before duplicating scenes");
@@ -3636,22 +3612,83 @@ export function App() {
       setStatus("No selected scenes to duplicate");
       return;
     }
-    const createdScenes: Scene[] = [];
-    let sortOrder = orderedScenes.length + 1;
-    let campaignRevision = await apiGet<Campaign>(`/api/v1/campaigns/${campaignId}`);
-    for (const scene of selectedPrepScenes) {
-      const payload = { ...sceneDuplicatePayload(scene, `${scene.name} Copy`, sortOrder), expectedUpdatedAt: campaignRevision.updatedAt };
-      createdScenes.push(await runSharedMutation(() => apiPost<Scene>(`/api/v1/campaigns/${scene.campaignId}/scenes`, payload, { idempotencyKey: sharedMutationIdempotencyKey(`scene:duplicate:${scene.id}`, campaignRevision.updatedAt, payload) }), scene.campaignId, selectedScene?.id));
-      campaignRevision = await apiGet<Campaign>(`/api/v1/campaigns/${scene.campaignId}`);
-      sortOrder += 1;
+    const targetCampaign = snapshotRef.current.campaigns.find((campaign) => campaign.id === campaignId);
+    if (!targetCampaign) throw new Error("Campaign is unavailable. Refresh and try again.");
+    const currentSources = selectedPrepScenes.map((scene) => snapshotRef.current.scenes.find((candidate) => candidate.id === scene.id && candidate.campaignId === campaignId));
+    if (currentSources.some((scene) => !scene)) throw new Error("A selected scene is unavailable. Refresh and try again.");
+    const operationId = `scene-duplication:${window.crypto.randomUUID()}`;
+    const request: SceneDuplicationRequest = {
+      operationId,
+      expectedUpdatedAt: targetCampaign.updatedAt,
+      sources: currentSources.map((scene) => ({ sceneId: scene!.id, expectedUpdatedAt: scene!.updatedAt })),
+    };
+    setSceneDuplicationBusy(true);
+    try {
+      const result = await runSharedMutation(
+        () => apiPost<SceneDuplicationResult>(`/api/v1/campaigns/${campaignId}/scene-duplications`, { ...request, dryRun: true }, { idempotencyKey: `${operationId}:preview` }),
+        campaignId,
+        selectedScene?.id,
+      );
+      setSceneDuplicationReview({ request, plan: result.plan });
+      setStatus(`Reviewed ${result.plan.counts.scenes} scene copies and ${result.plan.skippedReferences.length} skipped references`);
+    } finally {
+      setSceneDuplicationBusy(false);
     }
-    const nextScene = createdScenes.at(-1);
-    setSceneFolderFilter("all");
-    setSceneSearch("");
-    setSelectedPrepSceneIds(createdScenes.map((scene) => scene.id));
-    if (nextScene) setSceneId(nextScene.id);
-    setStatus(`Duplicated ${createdScenes.length} selected scenes`);
-    await refresh(campaignId, nextScene?.id ?? selectedScene?.id ?? sceneId);
+  }
+
+  async function confirmSelectedPrepSceneDuplication() {
+    if (!sceneDuplicationReview || sceneDuplicationBusy) return;
+    const { request } = sceneDuplicationReview;
+    setSceneDuplicationBusy(true);
+    try {
+      const result = await runSharedMutation(
+        () => apiPost<SceneDuplicationResult>(`/api/v1/campaigns/${campaignId}/scene-duplications`, { ...request, dryRun: false }, { idempotencyKey: `${request.operationId}:commit` }),
+        campaignId,
+        selectedScene?.id,
+      );
+      const nextScene = result.scenes.at(-1);
+      setSceneFolderFilter("all");
+      setSceneSearch("");
+      setSelectedPrepSceneIds(result.scenes.map((scene) => scene.id));
+      setSceneDuplicationReview(undefined);
+      if (nextScene) setSceneId(nextScene.id);
+      setStatus(`Duplicated ${result.plan.counts.scenes} scenes, ${result.plan.counts.tokens} tokens, and ${result.plan.counts.actors} actors atomically`);
+      await refresh(campaignId, nextScene?.id ?? selectedScene?.id ?? sceneId);
+    } finally {
+      setSceneDuplicationBusy(false);
+    }
+  }
+
+  function renderSceneDuplicationReview() {
+    if (!sceneDuplicationReview) return null;
+    const sceneCopies = sceneDuplicationReview.plan.copies.filter((copy) => copy.collection === "scenes");
+    return (
+      <section className="asset-pressure-list" aria-label="Scene duplication review">
+        <div className="operator-row tool-call-row">
+          <span>Atomic copy plan</span>
+          <strong>{formatNumber(sceneDuplicationReview.plan.counts.scenes)} scenes / {formatNumber(sceneDuplicationReview.plan.counts.tokens)} tokens / {formatNumber(sceneDuplicationReview.plan.counts.actors)} actors</strong>
+        </div>
+        <ul aria-label="Planned scene copies">
+          {sceneCopies.map((copy) => <li key={copy.targetId}>{copy.sourceName ?? copy.sourceId} to {copy.targetName ?? copy.targetId}</li>)}
+        </ul>
+        {sceneDuplicationReview.plan.skippedReferences.length > 0 && (
+          <>
+            <p className="account-summary">Skipped references are left unchanged:</p>
+            <ul aria-label="Skipped scene duplication references">
+              {sceneDuplicationReview.plan.skippedReferences.map((reference) => <li key={`${reference.collection}:${reference.id}`}>{reference.collection} {reference.id}: {reference.reason.replaceAll("_", " ")}</li>)}
+            </ul>
+          </>
+        )}
+        <div className="button-row">
+          <button className="ghost-button" type="button" disabled={sceneDuplicationBusy} onClick={() => confirmSelectedPrepSceneDuplication().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+            Confirm duplicate selected scenes
+          </button>
+          <button className="ghost-button" type="button" disabled={sceneDuplicationBusy} onClick={() => setSceneDuplicationReview(undefined)}>
+            Cancel duplication
+          </button>
+        </div>
+      </section>
+    );
   }
 
   async function moveSelectedScene(direction: "up" | "down") {
@@ -3678,19 +3715,40 @@ export function App() {
   }
 
   async function duplicateSelectedScene() {
-    if (!selectedScene) return;
+    if (!selectedScene || sceneDuplicationBusy) return;
     if (sceneEditDirty) {
       setStatus("Save or discard scene changes before duplicating this scene");
       return;
     }
     const targetCampaign = snapshotRef.current.campaigns.find((campaign) => campaign.id === selectedScene.campaignId);
     if (!targetCampaign) throw new Error("Campaign is unavailable. Refresh and try again.");
-    const payload = { ...sceneDuplicatePayload(selectedScene, sceneDuplicateName.trim() || `${selectedScene.name} Copy`, orderedScenes.length + 1), expectedUpdatedAt: targetCampaign.updatedAt };
-    const scene = await runSharedMutation(() => apiPost<Scene>(`/api/v1/campaigns/${selectedScene.campaignId}/scenes`, payload, { idempotencyKey: sharedMutationIdempotencyKey(`scene:duplicate:${selectedScene.id}`, targetCampaign.updatedAt, payload) }), campaignId, selectedScene.id);
-    setSceneId(scene.id);
-    setSceneDuplicateName(`${scene.name} Copy`);
-    setStatus(`${scene.name} duplicated`);
-    await refresh(campaignId, scene.id);
+    const sourceScene = snapshotRef.current.scenes.find((scene) => scene.id === selectedScene.id) ?? selectedScene;
+    const operationId = `scene-duplication:${window.crypto.randomUUID()}`;
+    const request: SceneDuplicationRequest = {
+      operationId,
+      expectedUpdatedAt: targetCampaign.updatedAt,
+      sources: [{
+        sceneId: sourceScene.id,
+        expectedUpdatedAt: sourceScene.updatedAt,
+        name: sceneDuplicateName.trim() || `${sourceScene.name} Copy`,
+      }],
+    };
+    setSceneDuplicationBusy(true);
+    try {
+      const result = await runSharedMutation(
+        () => apiPost<SceneDuplicationResult>(`/api/v1/campaigns/${sourceScene.campaignId}/scene-duplications`, request, { idempotencyKey: `${operationId}:commit` }),
+        campaignId,
+        sourceScene.id,
+      );
+      const scene = result.scenes[0];
+      if (!scene) throw new Error("Scene duplication completed without returning the copied scene.");
+      setSceneId(scene.id);
+      setSceneDuplicateName(`${scene.name} Copy`);
+      setStatus(`${scene.name} duplicated with its scene graph`);
+      await refresh(campaignId, scene.id);
+    } finally {
+      setSceneDuplicationBusy(false);
+    }
   }
 
   async function deleteScene(targetScene: Scene) {
@@ -3707,6 +3765,7 @@ export function App() {
       setSceneEditFolder(nextScene.folder ?? "");
       setSceneEditWidth(nextScene.width);
       setSceneEditHeight(nextScene.height);
+      setSceneEditGridType(normalizeSceneGridType(nextScene.gridType));
       setSceneEditGridSize(nextScene.gridSize);
       setSceneEditActive(nextScene.active);
       setSceneEditBackgroundAssetId(nextScene.backgroundAssetId ?? "");
@@ -3920,6 +3979,7 @@ export function App() {
       async (request) => {
         setAiAgentStatus("Capturing board view");
         try {
+          const { toPng } = await import("html-to-image");
           const dataUrl = await toPng(board, {
             cacheBust: true,
             pixelRatio: Math.min(2, window.devicePixelRatio || 1),
@@ -4013,49 +4073,127 @@ export function App() {
     });
   }
 
+  async function loadArchiveImportOperations(targetCampaignId = campaignId) {
+    if (!targetCampaignId || blankCanvasDemoOpen) return;
+    const result = await apiGet<{ items: ArchiveImportOperationSummary[] }>(`/api/v1/campaigns/${targetCampaignId}/archive-import-operations`);
+    if (realtimeSelectionRef.current.campaignId !== targetCampaignId) return;
+    setArchiveImportOperations(result.items);
+    setSelectedArchiveImportOperationId((current) => result.items.some((operation) => operation.id === current) ? current : (result.items[0]?.id ?? ""));
+  }
+
+  async function previewArchiveImportRollback(operationId: string) {
+    if (!campaignId || !operationId) return;
+    setArchiveImportRecoveryBusy(true);
+    try {
+      const preview = await apiGet<ArchiveImportRollbackPreview>(`/api/v1/campaigns/${campaignId}/archive-import-operations/${operationId}/preview`);
+      setArchiveImportRollbackPreview(preview);
+      setStatus(preview.conflicts.length > 0 ? `Rollback review preserves ${preview.conflicts.length} changed records` : "Archive rollback review ready");
+    } finally {
+      setArchiveImportRecoveryBusy(false);
+    }
+  }
+
+  async function rollbackArchiveImport(operationId: string) {
+    const campaign = snapshotRef.current.campaigns.find((candidate) => candidate.id === campaignId);
+    if (!campaign) throw new Error("Campaign is no longer available for rollback");
+    const fallbackCampaignId = snapshotRef.current.campaigns.find((candidate) => candidate.id !== campaign.id)?.id;
+    setArchiveImportRecoveryBusy(true);
+    try {
+      const result = await apiPost<ArchiveImportRollbackResult>(
+        `/api/v1/campaigns/${campaign.id}/archive-import-operations/${operationId}/rollback`,
+        { expectedUpdatedAt: campaign.updatedAt, confirmOperationId: operationId },
+        { idempotencyKey: `archive-import-rollback:${operationId}:${window.crypto.randomUUID()}` }
+      );
+      setArchiveImportRollbackPreview(undefined);
+      setStatus(result.conflicts.length > 0 ? `Rollback preserved ${result.conflicts.length} changed records` : "Archive import rolled back");
+      if (result.campaignUpdatedAt) {
+        await refresh(campaign.id);
+        await loadArchiveImportOperations(campaign.id);
+      } else if (fallbackCampaignId) {
+        await refresh(fallbackCampaignId);
+      }
+    } finally {
+      setArchiveImportRecoveryBusy(false);
+    }
+  }
+
   async function importCampaignArchive(file: File, input?: HTMLInputElement, retryAttempt?: ArchiveImportAttempt) {
     setIsImportingArchive(true);
     setImportStatus(`Importing ${file.name}`);
     setStatus("Importing archive");
-    const attempt = retryAttempt ?? {
+    const attempt: ArchiveImportAttempt = retryAttempt ?? {
       idempotencyKey: `archive-import:${window.crypto.randomUUID()}`,
       mode: archiveImportModeRef.current,
       scope: archiveImportScopeRef.current,
-      collections: [...archiveImportCollectionsRef.current]
+      collections: [...archiveImportCollectionsRef.current],
+      transport: isCampaignArchiveStreamFile(file) ? "stream" : "json"
     };
+    let controller: AbortController | undefined;
+    let serverAccepted = false;
+    if (attempt.transport === "stream") {
+      setArchiveTransfer({ direction: "import", phase: "preparing", fileName: file.name, loadedBytes: 0, totalBytes: file.size });
+    } else {
+      setArchiveTransfer(undefined);
+    }
     try {
-      const archive = JSON.parse(await file.text()) as unknown;
       const currentImportMode = attempt.mode;
       const currentImportScope = attempt.scope;
       const currentImportCollections = attempt.collections;
-      const archiveCampaignId = (archive as Partial<CampaignArchive>)?.data?.campaigns?.[0]?.id;
-      const existingCampaign = archiveCampaignId
-        ? snapshotRef.current.campaigns.find((candidate) => candidate.id === archiveCampaignId)
-        : undefined;
-      if (currentImportMode !== "dry_run" && campaignId) {
-        const rollback = await apiGet<CampaignArchive>(`/api/v1/campaigns/${campaignId}/export?scope=campaign&version=0.2.0&redaction=portable`);
-        setArchiveRollbackSnapshot(rollback);
-        setArchiveRollbackFileName(`rollback-before-${file.name}`);
+      let result: CampaignImportResult;
+      if (attempt.transport === "stream") {
+        const metadata = await readCampaignArchiveStreamMetadata(file);
+        const archiveCampaignId = campaignArchiveTargetId(metadata);
+        const existingCampaign = archiveCampaignId
+          ? snapshotRef.current.campaigns.find((candidate) => candidate.id === archiveCampaignId)
+          : undefined;
+        const params = new URLSearchParams({ mode: currentImportMode, scope: currentImportScope });
+        if (currentImportScope === "selected_collections") params.set("collections", currentImportCollections.join(","));
+        if (existingCampaign) params.set("expectedUpdatedAt", existingCampaign.updatedAt);
+        controller = new AbortController();
+        archiveTransferAbortRef.current = controller;
+        setArchiveTransfer({ direction: "import", phase: "transferring", fileName: file.name, loadedBytes: 0, totalBytes: file.size });
+        result = await uploadCampaignArchiveStream<CampaignImportResult>({
+          url: `${apiBase}/api/v1/import/campaign/stream?${params.toString()}`,
+          file,
+          token: getSessionToken(),
+          idempotencyKey: attempt.idempotencyKey,
+          signal: controller.signal,
+          onProgress: (progress) => setArchiveTransfer({
+            direction: "import",
+            phase: progress.phase,
+            fileName: file.name,
+            loadedBytes: progress.loadedBytes,
+            totalBytes: progress.totalBytes ?? file.size
+          })
+        });
+      } else {
+        const archive = JSON.parse(await file.text()) as unknown;
+        const archiveCampaignId = campaignArchiveTargetId(archive);
+        const existingCampaign = archiveCampaignId
+          ? snapshotRef.current.campaigns.find((candidate) => candidate.id === archiveCampaignId)
+          : undefined;
+        result = await apiPost<CampaignImportResult>(
+          "/api/v1/import/campaign",
+          currentImportMode === "upsert" && currentImportScope === "all" && !existingCampaign
+            ? archive
+            : {
+                archive,
+                mode: currentImportMode,
+                scope: currentImportScope,
+                collections: currentImportScope === "selected_collections" ? currentImportCollections : undefined,
+                ...(existingCampaign ? { expectedUpdatedAt: existingCampaign.updatedAt } : {})
+              },
+          { idempotencyKey: attempt.idempotencyKey }
+        );
       }
-      const result = await apiPost<CampaignImportResult>(
-        "/api/v1/import/campaign",
-        currentImportMode === "upsert" && currentImportScope === "all" && !existingCampaign
-          ? archive
-          : {
-              archive,
-              mode: currentImportMode,
-              scope: currentImportScope,
-              collections: currentImportScope === "selected_collections" ? currentImportCollections : undefined,
-              ...(existingCampaign ? { expectedUpdatedAt: existingCampaign.updatedAt } : {})
-            },
-        { idempotencyKey: attempt.idempotencyKey }
-      );
+      serverAccepted = true;
+      if (attempt.transport === "stream") {
+        setArchiveTransfer({ direction: "import", phase: "complete", fileName: file.name, loadedBytes: file.size, totalBytes: file.size });
+      }
       setArchiveImportReport(result);
       setArchiveImportReportFileName(file.name);
       if (result.dryRun) {
         setFailedArchiveImport(undefined);
-        setArchiveRollbackSnapshot(undefined);
-        setArchiveRollbackFileName("");
         setImportStatus(`${file.name}: dry run ${summarizeImport(result)}; ${result.conflicts.length} conflicts`);
         setStatus(result.conflicts.length > 0 ? `Archive dry run found ${result.conflicts.length} conflicts` : "Archive dry run passed");
         return;
@@ -4066,12 +4204,37 @@ export function App() {
       const skippedConflicts = result.skippedConflicts?.length ?? 0;
       setStatus(skippedConflicts > 0 ? `Imported non-conflicting records; skipped ${skippedConflicts} conflicts` : result.conflicts.length > 0 ? `Imported with ${result.conflicts.length} conflicts` : "Archive imported");
       await refresh(nextCampaignId);
+      await loadArchiveImportOperations(nextCampaignId);
+      if (result.operation) setSelectedArchiveImportOperationId(result.operation.id);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setFailedArchiveImport({ file, message, attempt });
-      setImportStatus(`${file.name}: ${message}`);
-      setStatus("Archive import failed");
+      const cancelled = attempt.transport === "stream" && isArchiveTransferAbort(error);
+      const detail = error instanceof Error ? error.message : String(error);
+      const message = cancelled
+        ? "Import cancelled before the atomic response commit"
+        : serverAccepted
+          ? `Import committed, but the workspace refresh failed: ${detail}`
+          : detail;
+      if (serverAccepted) {
+        setFailedArchiveImport(undefined);
+        setImportStatus(`${file.name}: ${message}`);
+        setStatus("Archive imported; refresh the workspace to load the committed state");
+      } else {
+        setFailedArchiveImport({ file, message, attempt });
+        setImportStatus(`${file.name}: ${message}`);
+        setStatus(cancelled ? "Archive import cancelled" : "Archive import failed");
+      }
+      if (attempt.transport === "stream") {
+        setArchiveTransfer({
+          direction: "import",
+          phase: cancelled ? "cancelled" : serverAccepted ? "complete" : "failed",
+          fileName: file.name,
+          loadedBytes: serverAccepted ? file.size : archiveTransfer?.loadedBytes ?? 0,
+          totalBytes: file.size,
+          ...(!cancelled && !serverAccepted ? { error: detail } : {})
+        });
+      }
     } finally {
+      if (archiveTransferAbortRef.current === controller) archiveTransferAbortRef.current = null;
       setIsImportingArchive(false);
       if (input) input.value = "";
     }
@@ -4085,6 +4248,11 @@ export function App() {
   function dismissArchiveImportFailure() {
     setFailedArchiveImport(undefined);
     setImportStatus("Archive import failure dismissed");
+  }
+
+  function cancelArchiveTransfer() {
+    if (!archiveTransfer || (archiveTransfer.phase !== "transferring" && archiveTransfer.phase !== "validating")) return;
+    archiveTransferAbortRef.current?.abort();
   }
 
   async function updateSelectedTokenVision(patch: TokenVisionPatch) {
@@ -5011,7 +5179,7 @@ export function App() {
       templateSaveDc: kind === "template" && templateSaveDc.trim() ? Number(templateSaveDc) : undefined,
       templateDamageFormula: kind === "template" ? templateDamageFormula.trim() || undefined : undefined,
       templateDamageType: kind === "template" ? templateDamageType.trim() || undefined : undefined,
-      snapToGrid: kind === "ruler" ? false : annotationSnapToGrid,
+      snapToGrid: selectedScene.gridType !== "gridless" && kind !== "ruler" ? annotationSnapToGrid : false,
       expiresInSeconds: kind === "ping" ? pingAnnotationTtlSeconds : undefined
     }, `scene:annotation:create:${kind}`);
     // Pings render locally the instant they are placed; skip the reconcile.
@@ -5938,14 +6106,7 @@ export function App() {
       idempotencyKey: `template-damage-preview:${globalThis.crypto.randomUUID()}`
     });
     if (prepared.status !== "ready" || !prepared.preparation) throw new Error(prepared.blockers[0]?.message ?? "Template damage is not ready to apply.");
-    const exactReview = JSON.stringify({
-      label: reviewLabel,
-      damageType: damageType?.trim() || "untyped",
-      amount,
-      ...(targetAmounts ? { targetAmounts: Object.fromEntries(targetAmounts) } : {}),
-      targets: prepared.batch.targets
-    }, null, 2);
-    if (!window.confirm(`Review exact D&D template damage\n\n${exactReview}\n\nCommit every target atomically?`)) {
+    if (!await consequenceReview.review(typedDamageConsequenceReview({ label: reviewLabel, damageType: damageType?.trim() || "untyped", amount, prepared, ...(targetAmounts ? { targetAmounts } : {}) }))) {
       throw new Error("Template damage cancelled after review.");
     }
     const applied = await apiPost<TypedDamageApplyResult>(`${path}/typed-damage/apply`, {
@@ -7473,25 +7634,31 @@ export function App() {
       }
     );
   }
-
   async function useActorAction(rollId: string, options: ActorActionCommitOptions = {}) {
     if (!selectedActor) return;
     const actor = selectedActor;
     const consumeResources = options.consumeResources ?? true;
-    const consequentialDndAction = actor.systemId === "dnd-5e-srd" && Boolean(consumeResources || options.applyEffect);
+    const initiallyConsequentialDndAction = actor.systemId === "dnd-5e-srd" && Boolean(consumeResources || options.applyEffect || options.weaponMastery?.use);
     const actionRequest = {
       rollId,
       expectedUpdatedAt: actor.updatedAt,
       consumeResources,
       applyEffect: options.applyEffect,
       targetActorId: options.targetActorId,
+      visibility: diceVisibility,
       saveOutcomes: options.saveOutcomes,
-      effectChoice: options.effectChoice
+      effectChoice: options.effectChoice,
+      weaponMastery: options.weaponMastery
     };
     try {
       await runWorkspaceBoundAction(
-        async (request): Promise<CommittedActorActionResponse | { cancelled: true }> => {
+        async (request): Promise<CommittedActorActionResponse | { cancelled: true } | { handoff: DndControlledCreatureActionHandoff }> => {
           const path = `/api/v1/campaigns/${request.campaignId}/systems/${actor.systemId}/actors/${actor.id}/roll`;
+          let consequentialDndAction = initiallyConsequentialDndAction;
+          if (actor.systemId === "dnd-5e-srd" && !consequentialDndAction) {
+            const preview = await apiPost<{ resolution?: { action?: { kind?: "action" | "bonusAction" | "reaction" | "free" } } }>(path, { ...actionRequest, commit: false }, { signal: request.controller.signal });
+            consequentialDndAction = preview.resolution?.action?.kind !== "free";
+          }
           if (!consequentialDndAction) {
             return apiPost<CommittedActorActionResponse>(path, actionRequest, { signal: request.controller.signal });
           }
@@ -7503,7 +7670,8 @@ export function App() {
             signal: request.controller.signal,
             idempotencyKey: `dnd-action-preview:${window.crypto.randomUUID()}`
           });
-          if (!window.confirm(preparedActorActionReviewText(actor.name, prepared))) return { cancelled: true };
+          if (prepared.controlledCreatureHandoff) return { handoff: prepared.controlledCreatureHandoff };
+          if (!await consequenceReview.review(actorActionConsequenceReview(actor.name, prepared, { actorNames: new Map(snapshotRef.current.actors.map((candidate) => [candidate.id, candidate.name])), applyEffect: Boolean(options.applyEffect || options.weaponMastery?.use) }))) return { cancelled: true };
           return apiPost<CommittedActorActionResponse>(path, {
             preparedPreviewKey: prepared.preparation.preparedPreviewKey,
             expectedUpdatedAt: actor.updatedAt
@@ -7513,6 +7681,7 @@ export function App() {
           });
         },
         async (used, request) => {
+          if ("handoff" in used) { setControlledCreatureHandoff(used.handoff); setTab("compendium"); setStatus(`${actor.name} action ready for controlled-creature review; nothing spent yet`); return; }
           if ("cancelled" in used) {
             setStatus(`${actor.name} action cancelled after review`);
             return;
@@ -7520,7 +7689,7 @@ export function App() {
           if (used.combatAction?.status === "pending_gm") {
             if (used.undo) setLastDndRulesUndo(used.undo);
             setStatus(`${actor.name} action pending GM confirmation`);
-            await refresh(request.campaignId, realtimeSelectionRef.current.sceneId);
+            await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });
             return;
           }
           const spent = used.usage?.consumed?.map((item) => `${item.label} ${item.remaining}`).join(", ");
@@ -7531,7 +7700,8 @@ export function App() {
             setSnapshot((current) => ({ ...current, actors: current.actors.map((currentActor) => updates.get(currentActor.id) ?? currentActor) }));
           }
           if (used.undo) setLastDndRulesUndo(used.undo);
-          setStatus(spent ? `${actor.name} used action: ${spent}${applied}` : `${actor.name} action posted${applied}`);
+          const deathSave = used.resolution?.deathSave;
+          setStatus(deathSave ? `${actor.name} Death Saving Throw: ${deathSaveStatusText(deathSave)}` : spent ? `${actor.name} used action: ${spent}${applied}` : `${actor.name} action posted${applied}`);
         }
       );
     } catch (error) {
@@ -7851,59 +8021,67 @@ export function App() {
   }
 
   function planSystemEncounter() {
+    setCampaignSearchFocus(undefined);
     setEncounterBuilderOpen(true);
   }
 
-  async function createEncounterThreatTokens(threats: EncounterBuilderThreatSelection[], signal: AbortSignal, placementAttemptId: string): Promise<Token[]> {
+  async function createEncounterThreatTokens(threats: EncounterBuilderThreatSelection[], signal: AbortSignal, _placementAttemptId: string): Promise<Token[]> {
     if (!selectedScene) {
       setStatus("Select a scene before placing encounter monsters");
       return [];
     }
     const targetScene = selectedScene;
-    const total = threats.reduce((sum, threat) => sum + threat.count, 0);
-    const spacing = Math.max(24, targetScene.gridSize || 50);
+    const systemId = encounterBuilderSystem?.id ?? "dnd-5e-srd";
+    const placements = encounterMonsterPlacementDrafts(threats, targetScene);
+    const scope = `encounter-monster-placement:${targetScene.campaignId}:${targetScene.id}`;
+    const attempt = beginAppendMutation(scope, { sceneId: targetScene.id, systemId, placements });
+    const priorRequestAttempt = encounterMonsterPlacementAttemptsRef.current.get(scope);
+    const requestAttempt = priorRequestAttempt?.idempotencyKey === attempt.idempotencyKey
+      ? priorRequestAttempt
+      : { idempotencyKey: attempt.idempotencyKey, input: { systemId, expectedUpdatedAt: targetScene.updatedAt, placements } };
+    if (requestAttempt !== priorRequestAttempt) encounterMonsterPlacementAttemptsRef.current.set(scope, requestAttempt);
     let placedTokens: Token[] = [];
     await runWorkspaceBoundAction(
       async (request) => {
         const cancelFromDialog = () => request.controller.abort();
         if (signal.aborted) cancelFromDialog();
         else signal.addEventListener("abort", cancelFromDialog, { once: true });
-        const createdTokens: Token[] = [];
         try {
-          for (const threat of threats) {
-            for (let index = 0; index < threat.count; index += 1) {
-              if (!workspaceBoundRequestIsCurrent(request)) return createdTokens;
-              const offsetIndex = createdTokens.length - Math.floor(total / 2);
-              const actorName = threat.count > 1 ? `${threat.name} ${index + 1}` : threat.name;
-              const createdMonster = await apiPost<{ actor: Actor }>(`/api/v1/campaigns/${request.campaignId}/systems/${encounterBuilderSystem?.id ?? "dnd-5e-srd"}/monsters`, {
-                threatId: threat.id,
-                name: actorName
-              }, {
+          try {
+            return await apiPost<EncounterMonsterPlacementBatchResult>(
+              `/api/v1/scenes/${targetScene.id}/encounter-monster-placements`,
+              requestAttempt.input,
+              {
                 signal: request.controller.signal,
-                idempotencyKey: `encounter-place:${placementAttemptId}:${threat.id}:${index}:actor`
-              });
-              if (!workspaceBoundRequestIsCurrent(request)) return createdTokens;
-              applyActorToSnapshot(createdMonster.actor);
-              const token = await createToken({
-                actorId: createdMonster.actor.id,
-                name: createdMonster.actor.name,
-                disposition: "hostile",
-                layer: "player",
-                x: targetScene.width / 2 + offsetIndex * spacing,
-                y: targetScene.height / 2 + (createdTokens.length % 2 === 0 ? -spacing / 2 : spacing / 2),
-                idempotencyKey: `encounter-place:${placementAttemptId}:${threat.id}:${index}:token`
-              }, request);
-              if (!token || !workspaceBoundRequestIsCurrent(request)) return createdTokens;
-              createdTokens.push(token);
+                idempotencyKey: requestAttempt.idempotencyKey,
+              },
+            );
+          } catch (error) {
+            if (isStaleWriteError(error)) {
+              if (encounterMonsterPlacementAttemptsRef.current.get(scope)?.idempotencyKey === attempt.idempotencyKey) {
+                encounterMonsterPlacementAttemptsRef.current.delete(scope);
+              }
+              completeAppendMutation(scope, attempt);
             }
+            throw error;
           }
-          return createdTokens;
         } finally {
           signal.removeEventListener("abort", cancelFromDialog);
         }
       },
-      (createdTokens) => {
+      (result) => {
+        const createdTokens = result.placements.map((placement) => placement.sceneToken);
         placedTokens = createdTokens;
+        applySceneToSnapshot(result.scene);
+        for (const placement of result.placements) applyActorToSnapshot(placement.actor);
+        applyTokensToSnapshot(createdTokens);
+        pushBoardHistoryAction({ kind: "tokens.create", tokens: createdTokens });
+        const lastToken = createdTokens.at(-1);
+        if (lastToken) selectSingleToken(lastToken.id);
+        if (encounterMonsterPlacementAttemptsRef.current.get(scope)?.idempotencyKey === attempt.idempotencyKey) {
+          encounterMonsterPlacementAttemptsRef.current.delete(scope);
+        }
+        completeAppendMutation(scope, attempt);
         setStatus(`Placed ${formatNumber(createdTokens.length)} encounter monster${createdTokens.length === 1 ? "" : "s"} on ${targetScene.name}`);
       }
     );
@@ -8117,8 +8295,15 @@ export function App() {
     );
   }
 
-  async function exportCampaign() {
-    setArchiveExportStatus("Preparing archive export");
+  function archiveExportScopeLabel() {
+    return archiveExportScope === "world"
+      ? worlds.find((world) => world.id === archiveExportWorldId)?.name ?? "world"
+      : archiveExportScope === "selected_collections"
+        ? "selected-records"
+        : "campaign";
+  }
+
+  function archiveExportParams() {
     const params = new URLSearchParams({
       scope: archiveExportScope,
       version: archiveExportVersion,
@@ -8126,10 +8311,53 @@ export function App() {
     });
     if (archiveExportScope === "world") params.set("scopeId", archiveExportWorldId);
     if (archiveExportScope === "selected_collections") params.set("collections", archiveExportCollections.join(","));
+    return params;
+  }
+
+  async function exportCampaignStream() {
+    if (archiveTransferBusy) return;
+    const params = archiveExportParams();
+    const scopeLabel = archiveExportScopeLabel();
+    const safeCampaignName = (selectedCampaign?.name ?? "campaign").replace(/[<>:"/\\|?*]/g, "-").trim() || "campaign";
+    const fileName = `${safeCampaignName}-${scopeLabel}.ottx`;
+    const controller = new AbortController();
+    archiveTransferAbortRef.current = controller;
+    setArchiveExportStatus("Choose where to save the large archive");
+    setArchiveTransfer({ direction: "export", phase: "choosing", fileName, loadedBytes: 0 });
+    try {
+      const result = await downloadCampaignArchiveStream({
+        url: `${apiBase}/api/v1/campaigns/${campaignId}/export/stream?${params.toString()}`,
+        fileName,
+        token: getSessionToken(),
+        signal: controller.signal,
+        onProgress: (progress) => setArchiveTransfer({
+          direction: "export",
+          phase: "transferring",
+          fileName,
+          loadedBytes: progress.loadedBytes,
+          totalBytes: progress.totalBytes
+        })
+      });
+      setArchiveTransfer({ direction: "export", phase: "complete", fileName, loadedBytes: result.bytesWritten, totalBytes: result.bytesWritten });
+      setArchiveExportStatus(`${scopeLabel} archive streamed directly to disk as ${archiveExportVersion}`);
+    } catch (error) {
+      const cancelled = isArchiveTransferAbort(error);
+      const message = error instanceof Error ? error.message : String(error);
+      setArchiveTransfer({ direction: "export", phase: cancelled ? "cancelled" : "failed", fileName, loadedBytes: 0, ...(!cancelled ? { error: message } : {}) });
+      setArchiveExportStatus(cancelled ? "Archive export cancelled" : message);
+    } finally {
+      if (archiveTransferAbortRef.current === controller) archiveTransferAbortRef.current = null;
+    }
+  }
+
+  async function exportCampaignJson() {
+    setArchiveTransfer(undefined);
+    setArchiveExportStatus("Preparing small JSON archive export");
+    const params = archiveExportParams();
     const archive = await apiGet<object>(`/api/v1/campaigns/${campaignId}/export?${params.toString()}`);
-    const scopeLabel = archiveExportScope === "world" ? worlds.find((world) => world.id === archiveExportWorldId)?.name ?? "world" : archiveExportScope === "selected_collections" ? "selected-records" : "campaign";
+    const scopeLabel = archiveExportScopeLabel();
     downloadJson(`${selectedCampaign?.name ?? "campaign"}-${scopeLabel}.ottx.json`, archive);
-    setArchiveExportStatus(`${scopeLabel} archive exported as ${archiveExportVersion}`);
+    setArchiveExportStatus(`${scopeLabel} archive exported as legacy JSON ${archiveExportVersion}`);
   }
 
   async function exportDogfoodReportBundle() {
@@ -8510,7 +8738,7 @@ export function App() {
   ] satisfies Array<{ id: ManageCategoryId; label: string; description: string; icon: React.ReactNode; badge?: string; visible?: boolean }>;
   const visibleManageCategories = manageCategories.filter((category) => category.visible !== false);
   const activeManageCategory = visibleManageCategories.some((category) => category.id === manageCategory) ? manageCategory : (visibleManageCategories[0]?.id ?? "account");
-  const adminPanel = snapshot.session?.serverAdmin ? <AdminPanel admin={adminSnapshot} campaigns={snapshot.campaigns} systems={snapshot.systems} workspaceDefaults={snapshot.workspaceDefaults} organizationMembers={snapshot.organizationMembers} currentUserId={currentUserId} workspaceKey={`${campaignId}:${currentUserId}`} status={adminStatus} onRefresh={refreshAdmin} onDisableUser={disableAdminUser} onEnableUser={enableAdminUser} onRequireReset={requireAdminPasswordReset} onIssueReset={issueAdminPasswordReset} onRevokeUserSessions={revokeAdminUserSessions} onRevokeSession={revokeAdminSession} onRevokeRiskSessions={revokeAdminRiskSessions} onPruneExpiredPasswordResets={pruneExpiredPasswordResets} onRetryEmail={retryAdminEmail} onRetryAllEmails={retryAllAdminEmails} onRetryAiToolCall={retryAdminAiToolCall} onFailStaleAiThreads={failStaleAiThreads} onFailStaleAiToolCalls={failStaleAiToolCalls} onRejectStaleAiProposals={rejectStaleAiProposals} onCleanupStoredAssetBytes={cleanupStoredAssetBytes} onMigrateStoredAssetBytes={migrateStoredAssetBytes} onQuarantineAssetIntegrityFailures={quarantineAssetIntegrityFailures} onPurgeAssetCdnCache={purgeAssetCdnCache} onUpdatePluginReview={updatePluginReview} onSyncPluginRegistries={syncAdminPluginRegistries} onUpdateWorkspaceDefaults={updateOrganizationWorkspaceDefaults} onAddOrganizationMember={addOrganizationMember} onUpdateOrganizationMember={updateOrganizationMember} onRemoveOrganizationMember={deleteOrganizationMember} onCreateScimMapping={createScimGroupRoleMapping} onDeleteScimMapping={deleteScimGroupRoleMapping} /> : null;
+  const adminPanel = snapshot.session?.serverAdmin ? <DeferredPanel label="server administration"><LazyAdminPanel admin={adminSnapshot} campaigns={snapshot.campaigns} systems={snapshot.systems} workspaceDefaults={snapshot.workspaceDefaults} organizationMembers={snapshot.organizationMembers} currentUserId={currentUserId} workspaceKey={`${campaignId}:${currentUserId}`} status={adminStatus} onRefresh={refreshAdmin} onDisableUser={disableAdminUser} onEnableUser={enableAdminUser} onRequireReset={requireAdminPasswordReset} onIssueReset={issueAdminPasswordReset} onRevokeUserSessions={revokeAdminUserSessions} onRevokeSession={revokeAdminSession} onRevokeRiskSessions={revokeAdminRiskSessions} onPruneExpiredPasswordResets={pruneExpiredPasswordResets} onRetryEmail={retryAdminEmail} onRetryAllEmails={retryAllAdminEmails} onRetryAiToolCall={retryAdminAiToolCall} onFailStaleAiThreads={failStaleAiThreads} onFailStaleAiToolCalls={failStaleAiToolCalls} onRejectStaleAiProposals={rejectStaleAiProposals} onCleanupStoredAssetBytes={cleanupStoredAssetBytes} onMigrateStoredAssetBytes={migrateStoredAssetBytes} onQuarantineAssetIntegrityFailures={quarantineAssetIntegrityFailures} onPurgeAssetCdnCache={purgeAssetCdnCache} onUpdatePluginReview={updatePluginReview} onSyncPluginRegistries={syncAdminPluginRegistries} onUpdateWorkspaceDefaults={updateOrganizationWorkspaceDefaults} onAddOrganizationMember={addOrganizationMember} onUpdateOrganizationMember={updateOrganizationMember} onRemoveOrganizationMember={deleteOrganizationMember} onCreateScimMapping={createScimGroupRoleMapping} onDeleteScimMapping={deleteScimGroupRoleMapping} /></DeferredPanel> : null;
   const accountOnlyManageMode = visibleManageCategories.length === 1 && visibleManageCategories[0]?.id === "account";
   const manageWorkspaceEyebrow = accountOnlyManageMode ? "Account" : "Manage";
   const manageWorkspaceHeading = accountOnlyManageMode ? (snapshot.session?.user.displayName ?? "Account settings") : (selectedCampaign?.name ?? "Workspace settings");
@@ -8546,15 +8774,21 @@ export function App() {
   };
   const openCampaignSearchResult = (result: CampaignSearchResult) => {
     if (blockCampaignSetupNavigation("opening a search result") || sceneEditorNavigationBlocked()) return;
-    const itemActorId = result.type === "item" ? campaignSearchItemActorId(snapshot.items, result.id) : undefined;
-    if (result.type === "item" && !itemActorId) {
-      setStatus(`${result.title} is visible in search but is not assigned to an actor, so there is no item sheet to open`);
+    const item = result.type === "item" ? snapshot.items.find((candidate) => candidate.id === result.target.id) : undefined;
+    if (result.type === "item" && !item) {
+      setStatus(`${result.title} is no longer available. Campaign search has refreshed; choose a current result.`);
       return;
     }
+    const itemActorId = item?.actorId ?? result.target.actorId;
     if (result.type === "encounter") {
+      if (!snapshot.encounters.some((encounter) => encounter.id === result.target.id)) {
+        setStatus(`${result.title} is no longer available. Campaign search has refreshed; choose a current encounter.`);
+        return;
+      }
+      setCampaignSearchFocus(result);
       if (canUsePrepWorkspace) setWorkspaceMode("prep");
       setEncounterBuilderOpen(true);
-      setStatus(`Opened Encounter Builder for ${result.title}; select the saved encounter to review its composition`);
+      setStatus(`Opening ${result.title} in Encounter Builder`);
       return;
     }
     const destination = campaignSearchDestination(result.type);
@@ -8564,17 +8798,40 @@ export function App() {
     }
     const workspace = destination.workspace === "prep" && !canUsePrepWorkspace ? "live" : destination.workspace;
     if (!selectWorkspaceMode(workspace)) return;
-
+    setCampaignSearchFocus(result);
     if (result.type === "world") {
+      if (!worlds.some((world) => world.id === result.target.id)) {
+        setCampaignSearchFocus(undefined);
+        setStatus(`${result.title} is no longer available. Refresh campaign search and try again.`);
+        return;
+      }
       setSelectedWorldId(result.id);
       setSceneId(accessibleScenes.find((scene) => scene.worldId === result.id)?.id ?? "");
     } else if (result.type === "scene") {
+      if (!accessibleScenes.some((scene) => scene.id === result.target.id)) {
+        setCampaignSearchFocus(undefined);
+        setStatus(`${result.title} is no longer available to this seat. Campaign search has refreshed.`);
+        return;
+      }
       if (result.worldId) setSelectedWorldId(result.worldId);
       if (!selectScene(result.id)) return;
     } else if (result.type === "actor") {
+      if (!snapshot.actors.some((actor) => actor.id === result.target.id)) {
+        setCampaignSearchFocus(undefined);
+        setStatus(`${result.title} is no longer available to this seat. Campaign search has refreshed.`);
+        return;
+      }
       selectActor(result.id);
     } else if (result.type === "item") {
-      selectActor(itemActorId!);
+      const targetActor = itemActorId ? snapshot.actors.find((actor) => actor.id === itemActorId) : selectedActor ?? snapshot.actors[0];
+      if (!targetActor) {
+        setCampaignSearchFocus(undefined);
+        setStatus(`${result.title} is a loose campaign item, but no visible actor loadout is available for assignment.`);
+        return;
+      }
+      selectActor(targetActor.id);
+    } else if (result.type === "compendium") {
+      setCompendiumSearch(result.title);
     }
 
     setTab(destination.tab);
@@ -8595,7 +8852,7 @@ export function App() {
       }));
       return;
     }
-    setStatus(`Opened ${result.title} from campaign search`);
+    setStatus(result.type === "item" && !itemActorId ? `Opened loose item ${result.title} in the loadout assignment control` : `Opened ${result.title} from campaign search`);
   };
   const buildPaletteCommands = (): PaletteCommand[] => {
     const commands: PaletteCommand[] = [];
@@ -8683,6 +8940,7 @@ export function App() {
     }
     if (commandId === "action:encounter-builder") {
       if (canUsePrepWorkspace) setWorkspaceMode("prep");
+      setCampaignSearchFocus(undefined);
       setEncounterBuilderOpen(true);
       return;
     }
@@ -8706,7 +8964,7 @@ export function App() {
   const canQuickDeleteScenes = workspaceMode === "prep" && hasPermission("scene.delete") && accessibleScenes.length > 1;
   const showQuickCreate = (workspaceMode === "live" || workspaceMode === "prep") && hasPermission("token.create");
   const showTableWorkspace = workspaceMode === "live" || workspaceMode === "prep";
-  const encounterBuilderSystem = snapshot.systems.find((item) => item.active) ?? snapshot.systems[0];
+  const encounterBuilderSystem = snapshot.systems.find((item) => campaignSearchFocus?.type === "encounter" && item.id === campaignSearchFocus.target.systemId) ?? snapshot.systems.find((item) => item.active) ?? snapshot.systems[0];
   const desktopRelay = desktopStatus?.relay;
   const desktopRelayState = desktopRelay?.state ?? "stopped";
   const desktopInviteUrl = desktopRelay?.inviteUrl ?? desktopRelay?.publicUrl ?? "";
@@ -8716,7 +8974,7 @@ export function App() {
       ? ["actors", "compendium", "sessions", "worlds", "handouts", "journal", "memory", "search", "content", "plugins"]
       : ["actors", "compendium", "journal", "content", "plugins"];
   const aiPanelElement = (
-    <AiPanel
+    <DeferredPanel label="AI Studio"><LazyAiPanel
       campaignId={selectedCampaign?.id}
       canManagePolicy={hasPermission("campaign.update")}
       prompt={aiPrompt}
@@ -8764,11 +9022,12 @@ export function App() {
       canGenerateMap={Boolean(selectedScene && !isAiGeneratingMap && hasPermission("ai.proposeChanges") && hasPermission("scene.create") && hasPermission("scene.update"))}
       canGenerateToken={Boolean(selectedToken && !isAiGeneratingTokenArt && hasPermission("ai.proposeChanges") && hasPermission("scene.create") && hasPermission("token.update"))}
       canGenerateTokenBatch={Boolean(selectedScene && !isAiGeneratingTokenArt && selectedSceneTokensNeedingArt.length > 0 && hasPermission("ai.proposeChanges") && hasPermission("scene.create") && hasPermission("token.update"))}
-    />
+    /></DeferredPanel>
   );
 
   return (
     <>
+    {consequenceReview.dialog}
     <RetryableActionNotice
       operation={campaignAction.operation}
       onRetry={campaignAction.retryAction ? () => void campaignAction.retryAction?.() : undefined}
@@ -9084,118 +9343,16 @@ export function App() {
           </form>
           <div className="status">{accountStatus}</div>
         </section>
+        {selectedCampaign && !canManageCampaignSettings && <FirstSessionSetupChecklist actors={snapshot.actors} currentUserId={currentUserId} canManage={false} canCreateCharacter={hasPermission("actor.create")} memberCount={snapshot.members.length} pendingInviteCount={0} scenes={snapshot.scenes} tokenCount={snapshot.tokens.length} encounterCount={snapshot.encounters.length} onOpen={openFirstSessionSetupStep} />}
               </div>
             )}
             {activeManageCategory === "campaign" && (
               <div className="manage-card-grid">
         <details className="account-box create-drawer">
           <summary><Plus size={15} /> New campaign</summary>
-        <form
-          className="create-drawer-form"
-          aria-busy={isCreatingCampaignSetup}
-          onSubmit={(event) => {
-            event.preventDefault();
-            createCampaignFromSetup().catch((error) => setStatus(error instanceof Error ? error.message : String(error)));
-          }}
-        >
-          <fieldset className="campaign-setup-fieldset" disabled={isCreatingCampaignSetup || campaignSetupRecoveryPending}>
-          <legend className="sr-only">Campaign setup</legend>
-          <div className="section-title">Campaign Setup</div>
-          <input aria-label="Campaign name" value={newCampaignName} placeholder="Campaign name" onChange={(event) => setNewCampaignName(event.target.value)} />
-          <textarea aria-label="Campaign description" value={newCampaignDescription} placeholder="Description" onChange={(event) => setNewCampaignDescription(event.target.value)} />
-          <select aria-label="Campaign rules system" value={newCampaignSystemId} onChange={(event) => setNewCampaignSystemId(event.target.value)}>
-            {snapshot.systems.length === 0 ? (
-              <option value="dnd-5e-srd">D&D 5.5e SRD</option>
-            ) : (
-              snapshot.systems.map((system) => (
-                <option key={system.id} value={system.id}>
-                  {system.name}
-                </option>
-              ))
-            )}
-          </select>
-          <select aria-label="Campaign visibility" value={newCampaignVisibility} onChange={(event) => setNewCampaignVisibility(event.target.value as Campaign["visibility"])}>
-            <option value="private">Private</option>
-            <option value="invite_only">Invite only</option>
-            <option value="public">Public</option>
-          </select>
-          <div className="section-title">Initial Scene</div>
-          <label className="inline-check">
-            <input aria-label="Include starter content" type="checkbox" checked={setupStarterContent} onChange={(event) => setSetupStarterContent(event.target.checked)} />
-            <span>Include starter content</span>
-          </label>
-          {setupStarterContent && <p className="account-summary">Starter content supplies the First Session scene and welcome notes. Turn it off to customize these fields.</p>}
-          <input aria-label="Setup initial scene name" disabled={setupStarterContent} value={setupSceneName} placeholder="Opening Scene" onChange={(event) => setSetupSceneName(event.target.value)} />
-          <input aria-label="Setup initial scene folder" disabled={setupStarterContent} value={setupSceneFolder} placeholder="session-0" onChange={(event) => setSetupSceneFolder(event.target.value)} />
-          <div className="button-row">
-            <input aria-label="Setup scene width" type="number" min={200} disabled={setupStarterContent} value={setupSceneWidth} onChange={(event) => setSetupSceneWidth(Number(event.target.value))} />
-            <input aria-label="Setup scene height" type="number" min={200} disabled={setupStarterContent} value={setupSceneHeight} onChange={(event) => setSetupSceneHeight(Number(event.target.value))} />
-          </div>
-          <input aria-label="Setup scene grid size" type="number" min={10} disabled={setupStarterContent} value={setupSceneGridSize} onChange={(event) => setSetupSceneGridSize(Number(event.target.value))} />
-          <div className="section-title">Players and Permissions</div>
-          <label className="inline-check">
-            <input type="checkbox" checked={setupInviteEnabled} onChange={(event) => setSetupInviteEnabled(event.target.checked)} />
-            <span>Create starter invite</span>
-          </label>
-          <input aria-label="Setup invite email" type="email" autoComplete="email" value={setupInviteEmail} placeholder="player@example.com" disabled={!setupInviteEnabled} onChange={(event) => setSetupInviteEmail(event.target.value)} />
-          <select aria-label="Setup default player permission preset" value={setupInviteRole} disabled={!setupInviteEnabled} onChange={(event) => setSetupInviteRole(event.target.value as UserRole)}>
-            <option value="player">Player - owns characters and plays live</option>
-            <option value="observer">Observer - read-only table access</option>
-            <option value="assistant_gm">Assistant GM - prep and moderation</option>
-            <option value="gm">GM - full campaign management</option>
-          </select>
-          <select aria-label="Setup campaign permission template" value={setupPermissionTemplate} onChange={(event) => setSetupPermissionTemplate(event.target.value as CampaignPermissionTemplateId)}>
-            {campaignPermissionTemplates.map((template) => (
-              <option key={template.id} value={template.id}>
-                {template.label}
-              </option>
-            ))}
-          </select>
-          <p className="account-summary">{selectedPermissionTemplate.description}</p>
-          <div className="asset-pressure-list" aria-label="Campaign setup impact">
-            <div className="operator-row tool-call-row">
-              <span>Access</span>
-              <strong>{setupVisibilityLabel} - {setupInviteSummary}</strong>
-            </div>
-            <div className="operator-row tool-call-row">
-              <span>Scene</span>
-              <strong>{setupPreviewSceneName} - {setupPreviewSceneWidth}x{setupPreviewSceneHeight} - grid {setupPreviewGridSize} - {setupPreviewFolder}</strong>
-            </div>
-            <div className="operator-row tool-call-row">
-              <span>Permissions</span>
-              <strong>{selectedPermissionTemplate.label}</strong>
-            </div>
-            <div className="operator-row tool-call-row">
-              <span>Onboarding</span>
-              <strong>{setupOnboardingSummary}</strong>
-            </div>
-          </div>
-          <div className="section-title">Onboarding Handout</div>
-          <input aria-label="Setup onboarding title" disabled={setupStarterContent} value={setupOnboardingTitle} placeholder="Welcome to the Table" onChange={(event) => setSetupOnboardingTitle(event.target.value)} />
-          <textarea aria-label="Setup onboarding copy" disabled={setupStarterContent} value={setupOnboardingBody} placeholder="Table rules, safety notes, first-session goals" onChange={(event) => setSetupOnboardingBody(event.target.value)} />
-          </fieldset>
-          {campaignSetupRecoveryPending && (
-            <p className="account-summary campaign-setup-recovery" role="status">
-              The campaign already exists. Retry to finish the remaining setup without creating a duplicate.
-            </p>
-          )}
-          <div className="button-row campaign-setup-actions">
-            <button ref={campaignSetupSubmitRef} className="ghost-button wide" type="submit" disabled={!newCampaignName.trim() || isCreatingCampaignSetup}>
-              {isCreatingCampaignSetup ? <RefreshCw className="spin" size={16} /> : <Plus size={16} />} {isCreatingCampaignSetup ? "Creating campaign..." : campaignSetupRecoveryPending ? "Retry Campaign Setup" : "Create Campaign Setup"}
-            </button>
-            {isCreatingCampaignSetup && (
-              <button className="ghost-button wide" type="button" onClick={cancelCampaignSetup}>
-                <X size={16} /> Cancel setup
-              </button>
-            )}
-            {campaignSetupRecoveryPending && (
-              <button className="ghost-button wide" type="button" onClick={() => keepCampaignSetupAsIs().catch((error) => setStatus(errorMessage(error)))}>
-                <Check size={16} /> Keep campaign as-is
-              </button>
-            )}
-          </div>
-        </form>
+          <CampaignSetupSteps draft={currentCampaignSetupDraft()} systems={snapshot.systems} busy={isCreatingCampaignSetup} recoveryPending={campaignSetupRecoveryPending} draftNotice={campaignSetupDraftNotice} submitButtonRef={campaignSetupSubmitRef} onChange={updateCampaignSetupDraft} onSubmit={() => createCampaignFromSetup().catch((error) => setStatus(errorMessage(error)))} onCancel={cancelCampaignSetup} onKeep={() => keepCampaignSetupAsIs().catch((error) => setStatus(errorMessage(error)))} onDiscardDraft={discardCampaignSetupDraft} />
         </details>
+        {selectedCampaign && <FirstSessionSetupChecklist actors={snapshot.actors} currentUserId={currentUserId} canManage canCreateCharacter={hasPermission("actor.create")} memberCount={snapshot.members.length} pendingInviteCount={snapshot.organizationInvites.filter((invite) => invite.campaign.id === selectedCampaign.id && invite.status === "pending").length} scenes={snapshot.scenes} tokenCount={snapshot.tokens.length} encounterCount={snapshot.encounters.length} onOpen={openFirstSessionSetupStep} />}
         {selectedCampaign && hasPermission("campaign.update") && (
           <form
             className="account-box"
@@ -9278,7 +9435,7 @@ export function App() {
           />
         )}
         {selectedCampaign && hasPermission("campaign.update") && (
-          <Suspense fallback={<DeferredPanelFallback label="campaign webhooks" />}>
+          <DeferredPanel label="campaign webhooks">
           <LazyCampaignWebhooksPanel
             key={`campaign-webhooks:${selectedCampaign.id}:${currentUserId}`}
             campaignId={selectedCampaign.id}
@@ -9293,7 +9450,7 @@ export function App() {
             }}
             onStatus={setStatus}
           />
-          </Suspense>
+          </DeferredPanel>
         )}
               </div>
             )}
@@ -9310,6 +9467,7 @@ export function App() {
           onActorUpdated={applyActorToSnapshot}
           onPendingCount={setCharacterTransferPendingCount}
         />
+        <CampaignMembersPanel campaignId={campaignId} currentUserId={currentUserId} members={snapshot.members} canManage={hasPermission("campaign.update")} onMemberUpdated={(member) => setSnapshot((current) => ({ ...current, members: current.members.map((candidate) => candidate.id === member.id ? member : candidate) }))} onMemberRemoved={(memberId) => setSnapshot((current) => ({ ...current, members: current.members.filter((candidate) => candidate.id !== memberId) }))} onRefresh={async () => { await refresh(campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false }); }} onStatus={setStatus} />
         {(hasPermission("campaign.update") || canManageActiveOrganization) && (
           <form
             className="account-box"
@@ -9415,26 +9573,27 @@ export function App() {
           <input aria-label="Scene search" value={sceneSearch} placeholder="Search scenes" onChange={(event) => setSceneSearch(event.target.value)} />
           <span role="status" aria-label="Scene filter summary">{formatNumber(visibleScenes.length)} of {formatNumber(accessibleScenes.length)} scenes</span>
           <span role="status" aria-label="Scene selection summary">{formatNumber(selectedPrepScenes.length)} selected</span>
-          {hasPermission("scene.update") && (
+          {(hasPermission("scene.update") || hasPermission("scene.create")) && (
             <div className="button-row">
-              <input aria-label="Bulk scene folder" value={bulkSceneFolder} placeholder="Move visible to folder" onChange={(event) => setBulkSceneFolder(event.target.value)} />
-              <button className="ghost-button" type="button" disabled={sceneEditDirty || visibleScenes.length === 0} onClick={() => moveVisibleScenesToFolder().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+              {hasPermission("scene.update") && <input aria-label="Bulk scene folder" value={bulkSceneFolder} placeholder="Move visible to folder" onChange={(event) => setBulkSceneFolder(event.target.value)} />}
+              {hasPermission("scene.update") && <button className="ghost-button" type="button" disabled={sceneEditDirty || visibleScenes.length === 0} onClick={() => moveVisibleScenesToFolder().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
                 Move visible scenes
-              </button>
+              </button>}
               <button className="ghost-button" type="button" disabled={visibleScenes.length === 0} onClick={selectVisiblePrepScenes}>
                 Select visible scenes
               </button>
               <button className="ghost-button" type="button" disabled={selectedPrepScenes.length === 0} onClick={clearPrepSceneSelection}>
                 Clear selected scenes
               </button>
-              <button className="ghost-button" type="button" disabled={sceneEditDirty || selectedPrepScenes.length === 0} onClick={() => moveSelectedPrepScenesToFolder().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+              {hasPermission("scene.update") && <button className="ghost-button" type="button" disabled={sceneEditDirty || selectedPrepScenes.length === 0} onClick={() => moveSelectedPrepScenesToFolder().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
                 Move selected scenes
-              </button>
-              <button className="ghost-button" type="button" disabled={sceneEditDirty || selectedPrepScenes.length === 0} onClick={() => duplicateSelectedPrepScenes().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+              </button>}
+              {hasPermission("scene.create") && <button className="ghost-button" type="button" disabled={sceneEditDirty || sceneDuplicationBusy || selectedPrepScenes.length === 0} onClick={() => duplicateSelectedPrepScenes().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
                 Duplicate selected scenes
-              </button>
+              </button>}
             </div>
           )}
+          {renderSceneDuplicationReview()}
         </div>
         {hasPermission("scene.create") && (
           <details className="account-box create-drawer">
@@ -9464,10 +9623,7 @@ export function App() {
                 <span>Height</span>
                 <input aria-label="Scene height" type="number" min={200} value={newSceneHeight} onChange={(event) => setNewSceneHeight(Number(event.target.value))} />
               </label>
-              <label>
-                <span>Grid</span>
-                <input aria-label="Scene grid size" type="number" min={10} value={newSceneGridSize} onChange={(event) => setNewSceneGridSize(Number(event.target.value))} />
-              </label>
+              <SceneGridFields mode="create" gridType={newSceneGridType} gridSize={newSceneGridSize} onGridTypeChange={setNewSceneGridType} onGridSizeChange={setNewSceneGridSize} />
               <label className="span-full">
                 <span>Background</span>
                 <select aria-label="Scene background asset" value={newSceneBackgroundAssetId} onChange={(event) => setNewSceneBackgroundAssetId(event.target.value)}>
@@ -9485,13 +9641,13 @@ export function App() {
                 <span>Map size</span>
                 <strong>{newSceneCellSummary}</strong>
               </div>
-              <div className="scene-size-presets">
+              {newSceneGridType === "square" && <div className="scene-size-presets">
                 {sceneSizePresets.map((preset) => (
                   <button className="ghost-button" type="button" key={preset.id} onClick={() => applyNewSceneSizePreset(preset)}>
                     {preset.description} {preset.label}
                   </button>
                 ))}
-              </div>
+              </div>}
             </div>
             <label className="inline-check">
               <input type="checkbox" checked={newSceneActive} onChange={(event) => setNewSceneActive(event.target.checked)} />
@@ -9516,7 +9672,7 @@ export function App() {
               {selectedMapAsset ? <img src={assetThumbnailUrl(selectedMapAsset)} alt="" /> : <FileText size={24} />}
               <div>
                 <strong>{selectedMapAsset?.name ?? "No background"}</strong>
-                <span>{selectedScene.width} x {selectedScene.height} / grid {selectedScene.gridSize}</span>
+                <span>{sceneGridSummary(selectedScene)}</span>
               </div>
             </div>
             <div className="admin-form-grid scene-field-grid">
@@ -9573,20 +9729,7 @@ export function App() {
                   }}
                 />
               </label>
-              <label>
-                <span>Grid</span>
-                <input
-                  aria-label="Edit scene grid size"
-                  name="sceneEditGridSize"
-                  type="number"
-                  min={10}
-                  value={sceneEditGridSize}
-                  onChange={(event) => {
-                    setSceneEditDirty(true);
-                    setSceneEditGridSize(Number(event.target.value));
-                  }}
-                />
-              </label>
+              <SceneGridFields mode="edit" gridType={sceneEditGridType} gridSize={sceneEditGridSize} overlayVisible={sceneEditGridOverlayVisible} onGridTypeChange={(gridType) => { setSceneEditDirty(true); setSceneEditGridType(gridType); }} onGridSizeChange={(gridSize) => { setSceneEditDirty(true); setSceneEditGridSize(gridSize); }} onOverlayVisibleChange={(visible) => { setSceneEditDirty(true); setSceneEditGridOverlayVisible(visible); }} />
               <label className="span-full">
                 <span>Background</span>
                 <select
@@ -9612,13 +9755,13 @@ export function App() {
                 <span>Map size</span>
                 <strong>{sceneEditCellSummary}</strong>
               </div>
-              <div className="scene-size-presets">
+              {sceneEditGridType === "square" && <div className="scene-size-presets">
                 {sceneSizePresets.map((preset) => (
                   <button className="ghost-button" type="button" key={preset.id} onClick={() => applySceneEditSizePreset(preset)}>
                     {preset.description} {preset.label}
                   </button>
                 ))}
-              </div>
+              </div>}
             </div>
             <label className="inline-check">
               <input
@@ -9632,18 +9775,6 @@ export function App() {
                 }}
               />
               <span>{selectedScene.active ? "Active player scene; activate another scene to change" : "Activate for players on save"}</span>
-            </label>
-            <label className="inline-check">
-              <input
-                type="checkbox"
-                name="sceneEditGridOverlayVisible"
-                checked={sceneEditGridOverlayVisible}
-                onChange={(event) => {
-                  setSceneEditDirty(true);
-                  setSceneEditGridOverlayVisible(event.target.checked);
-                }}
-              />
-              <span>Show VTT grid overlay</span>
             </label>
             <section className="asset-pressure-list" aria-label="Scene activation history">
               <div className="operator-row tool-call-row">
@@ -9711,7 +9842,7 @@ export function App() {
             {hasPermission("scene.create") && (
               <div className="mini-form">
                 <input aria-label="Duplicate scene name" value={sceneDuplicateName} onChange={(event) => setSceneDuplicateName(event.target.value)} />
-                <button className="ghost-button wide" type="button" disabled={sceneEditDirty || !sceneDuplicateName.trim()} onClick={() => duplicateSelectedScene().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+                <button className="ghost-button wide" type="button" disabled={sceneEditDirty || sceneDuplicationBusy || !sceneDuplicateName.trim()} onClick={() => duplicateSelectedScene().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
                   <Plus size={16} /> Duplicate Scene
                 </button>
               </div>
@@ -9818,13 +9949,17 @@ export function App() {
             ))}
           </div>
           <p className="account-summary">{archiveExportStatus}</p>
-          <button className="ghost-button wide" type="button" disabled={archiveExportScope === "world" && !archiveExportWorldId} onClick={() => exportCampaign().catch((error) => setArchiveExportStatus(error instanceof Error ? error.message : String(error)))}>
-            <Download size={16} /> Export Archive
+          <button className="ghost-button wide" type="button" disabled={archiveTransferBusy || (archiveExportScope === "world" && !archiveExportWorldId)} onClick={() => exportCampaignStream().catch((error) => setArchiveExportStatus(error instanceof Error ? error.message : String(error)))} title="Stream a large .ottx archive directly to disk">
+            <Download size={16} /> Export Large Archive (.ottx)
+          </button>
+          <button className="ghost-button wide" type="button" disabled={archiveTransferBusy || (archiveExportScope === "world" && !archiveExportWorldId)} onClick={() => exportCampaignJson().catch((error) => setArchiveExportStatus(error instanceof Error ? error.message : String(error)))} title="Materialize a legacy JSON archive for small campaigns and older tooling">
+            <Download size={16} /> Export JSON (small archives)
           </button>
         </section>
         <button className="ghost-button" onClick={() => exportDogfoodReportBundle().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))} title="Download a redacted issue report bundle">
           <Download size={16} /> Report Bundle
         </button>
+        <ArchiveTransferProgress state={archiveTransfer} onCancel={cancelArchiveTransfer} />
         <section className="account-box" aria-label="Archive import wizard">
           <div className="section-title">Archive Import</div>
           <select aria-label="Archive import mode" value={archiveImportMode} onChange={(event) => updateArchiveImportMode(event.target.value as ArchiveImportMode)}>
@@ -9853,7 +9988,7 @@ export function App() {
               ))}
             </div>
           )}
-          <button className="ghost-button wide" type="button" onClick={() => document.getElementById("import-file")?.click()} disabled={isImportingArchive} aria-describedby="import-status" title="Import .ottx JSON archive">
+          <button className="ghost-button wide" type="button" onClick={() => document.getElementById("import-file")?.click()} disabled={isImportingArchive || archiveTransferBusy} aria-describedby="import-status" title="Import a streamed .ottx archive or legacy .ottx.json archive">
             {isImportingArchive ? <RefreshCw size={16} /> : <Upload size={16} />} {archiveImportMode === "dry_run" ? "Validate Archive" : "Import Archive"}
           </button>
           {archiveImportReport && (
@@ -9898,14 +10033,6 @@ export function App() {
                   <strong>{formatNumber(archiveImportReport.skippedConflicts.length)}</strong>
                 </div>
               )}
-              {archiveRollbackSnapshot && (
-                <div className="operator-row tool-call-row">
-                  <span>Rollback snapshot</span>
-                  <button className="ghost-button small" type="button" onClick={() => downloadJson(archiveRollbackFileName || "pre-import-rollback.ottx.json", archiveRollbackSnapshot)}>
-                    <Download size={14} /> Download
-                  </button>
-                </div>
-              )}
               {archiveImportReport.conflicts.slice(0, 4).map((conflict) => (
                 <div className="operator-row tool-call-row" key={`${conflict.collection}:${conflict.id}`}>
                   <span>{conflict.collection}</span>
@@ -9914,11 +10041,23 @@ export function App() {
               ))}
             </div>
           )}
+          <ArchiveImportRecovery
+            operations={archiveImportOperations}
+            selectedOperationId={selectedArchiveImportOperationId}
+            preview={archiveImportRollbackPreview}
+            busy={archiveImportRecoveryBusy}
+            onSelect={(operationId) => {
+              setSelectedArchiveImportOperationId(operationId);
+              setArchiveImportRollbackPreview(undefined);
+            }}
+            onPreview={(operationId) => void previewArchiveImportRollback(operationId).catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}
+            onRollback={(operationId) => void rollbackArchiveImport(operationId).catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}
+          />
         </section>
         <input
           id="import-file"
           type="file"
-          accept="application/json"
+          accept=".ottx,.ottx.json,application/vnd.open-tabletop.ottx-stream,application/json"
           aria-label="Import campaign archive"
           hidden
           onChange={async (event) => {
@@ -9935,7 +10074,7 @@ export function App() {
           <div className="operator-row tool-call-row" aria-label="Archive import recovery">
             <span>{failedArchiveImport.file.name} failed: {failedArchiveImport.message}</span>
             <div className="admin-actions">
-              <button className="ghost-button" type="button" disabled={isImportingArchive} onClick={() => retryArchiveImport().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+              <button className="ghost-button" type="button" disabled={isImportingArchive || archiveTransferBusy} onClick={() => retryArchiveImport().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
                 <RefreshCw size={16} /> Retry import
               </button>
               <button className="ghost-button" type="button" onClick={dismissArchiveImportFailure}>
@@ -10006,32 +10145,33 @@ export function App() {
                   <Swords size={14} /> Encounters
                 </button>
               )}
-              {selectedScene && hasPermission("scene.update") && (
+              {selectedScene && selectedScene.gridType !== "gridless" && hasPermission("scene.update") && (
                 <button className={gridCalibrationOpen ? "ghost-button active" : "ghost-button"} type="button" aria-expanded={gridCalibrationOpen} onClick={() => { setGridCalibrationOpen((open) => !open); setGridCalibrationPoints([]); }}>
                   <Crosshair size={14} /> Calibrate grid
                 </button>
               )}
             </div>
-            {hasPermission("scene.update") && (
+            {(hasPermission("scene.update") || hasPermission("scene.create")) && (
               <div className="button-row">
-                <input aria-label="Bulk scene folder" value={bulkSceneFolder} placeholder="Move visible to folder" onChange={(event) => setBulkSceneFolder(event.target.value)} />
-                <button className="ghost-button" type="button" disabled={visibleScenes.length === 0} onClick={() => moveVisibleScenesToFolder().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+                {hasPermission("scene.update") && <input aria-label="Bulk scene folder" value={bulkSceneFolder} placeholder="Move visible to folder" onChange={(event) => setBulkSceneFolder(event.target.value)} />}
+                {hasPermission("scene.update") && <button className="ghost-button" type="button" disabled={visibleScenes.length === 0} onClick={() => moveVisibleScenesToFolder().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
                   Move visible scenes
-                </button>
+                </button>}
                 <button className="ghost-button" type="button" disabled={visibleScenes.length === 0} onClick={selectVisiblePrepScenes}>
                   Select visible scenes
                 </button>
                 <button className="ghost-button" type="button" disabled={selectedPrepScenes.length === 0} onClick={clearPrepSceneSelection}>
                   Clear selected scenes
                 </button>
-                <button className="ghost-button" type="button" disabled={sceneEditDirty || selectedPrepScenes.length === 0} onClick={() => moveSelectedPrepScenesToFolder().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+                {hasPermission("scene.update") && <button className="ghost-button" type="button" disabled={sceneEditDirty || selectedPrepScenes.length === 0} onClick={() => moveSelectedPrepScenesToFolder().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
                   Move selected scenes
-                </button>
-                <button className="ghost-button" type="button" disabled={sceneEditDirty || selectedPrepScenes.length === 0} onClick={() => duplicateSelectedPrepScenes().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+                </button>}
+                {hasPermission("scene.create") && <button className="ghost-button" type="button" disabled={sceneEditDirty || sceneDuplicationBusy || selectedPrepScenes.length === 0} onClick={() => duplicateSelectedPrepScenes().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
                   Duplicate selected scenes
-                </button>
+                </button>}
               </div>
             )}
+            {renderSceneDuplicationReview()}
           </div>
           {showSceneTabs && <div className="scene-tabs">
             {visibleScenes.map((scene, index) => {
@@ -10137,7 +10277,7 @@ export function App() {
           <section className={`table-area ${canvasAssetDragging ? "canvas-asset-dragging" : ""}`}>
             <Toolbar key={`${workspaceMode}-${tab}`} onSelectTool={selectCanvasTool} onCreateToken={async () => { await createToken(); }} onStartCombat={openCombatSetup} onRevealFog={revealFog} onHideFog={hideFog} onRevealFogPolygon={revealFogPolygon} onToggleFogBrush={toggleFogBrush} onToggleAnnotationTool={toggleAnnotationTool} onDeleteLatestAnnotation={deleteLatestAnnotation} onUndoScene={undoSceneEdit} onUndoFog={undoFog} onShowFogHistory={showFogHistory} onSampleVisionPoint={sampleVisionPoint} onSaveFogPreset={saveFogPreset} onApplyFogPreset={applyFogPreset} onDeleteFogPreset={deleteFogPreset} onCyclePlayerVisionPreview={cyclePlayerVisionPreview} onAddWall={addWall} onAddTerrainWall={addTerrainWall} onAddDoor={addDoor} onAddWindow={addWindow} onAddLight={addLight} onAddDarkness={addDarkness} onActionError={(error) => setStatus(error instanceof Error ? error.message : String(error))} canCreateToken={hasPermission("token.create")} canManageCombat={hasPermission("combat.manage")} canRevealFog={hasPermission("token.reveal")} canPreviewPlayerVision={hasPermission("scene.update") && snapshot.members.some((member) => member.role === "player" && member.active !== false && member.user.id !== currentUserId)} playerVisionPreviewLabel={playerVisionPreviewMember?.user.displayName} activeFogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} activeAnnotationTool={annotationTool} hasFogPresets={snapshot.fogPresets.length > 0} canUpdateScene={hasPermission("scene.update")} canAnnotate={hasPermission("scene.read")} />
             <div className="map-play-surface">
-              {selectedScene ? <SceneCanvas scene={selectedScene} zoom={battleMapZoom} backgroundAsset={selectedMapAsset} selectedAssetId={selectedBoardAssetId} assets={snapshot.assets} tokens={snapshot.tokens} actors={snapshot.actors} boardCurrentUserId={currentUserId} canSeeAllVitals={hasPermission("combat.manage")} currentTurnTokenIds={currentTurnTokenIds} nextTurnTokenIds={nextTurnTokenIds} vision={snapshot.vision} visionPreviewLabel={playerVisionPreviewMember?.user.displayName} selectedTokenId={selectedTokenId} selectedTokenIds={selectedTokenIds} activeTokenLayer={activeTokenLayer} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} calibrationPoints={gridCalibrationOpen ? gridCalibrationPoints : undefined} onCalibrationPoint={gridCalibrationOpen ? (point) => setGridCalibrationPoints((current) => appendGridCalibrationPoint(current, point)) : undefined} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canUpdateAnnotations={hasPermission("scene.update")} canResizeToken={hasPermission("token.update")} canUpdateTokenLayer={hasPermission("token.update")} onSelect={selectCanvasToken} onSelectMany={selectCanvasTokens} onSelectBackgroundAsset={selectBoardBackgroundAsset} onClearSelection={clearTokenSelection} onMoved={async () => undefined} onTokenMovePersist={persistSceneCanvasTokenMove} onTokenResizePersist={persistSceneCanvasTokenResize} onTokenMoveCommit={recordTokenMoveAction} onTokenResizeCommit={recordTokenResizeAction} onTokenLayerCycle={cycleTokenLayer} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} onTogglePortal={toggleScenePortal} selectedOverlay={selectedOverlay} onSelectOverlay={setSelectedOverlay} onZoomBy={zoomBattleMap} /> : (
+              {selectedScene ? <SceneCanvas scene={selectedScene} zoom={battleMapZoom} backgroundAsset={selectedMapAsset} selectedAssetId={selectedBoardAssetId} assets={snapshot.assets} tokens={snapshot.tokens} actors={snapshot.actors} boardCurrentUserId={currentUserId} canSeeAllVitals={hasPermission("combat.manage")} currentTurnTokenIds={currentTurnTokenIds} nextTurnTokenIds={nextTurnTokenIds} vision={snapshot.vision} visionPreviewLabel={playerVisionPreviewMember?.user.displayName} selectedTokenId={selectedTokenId} selectedTokenIds={selectedTokenIds} activeTokenLayer={activeTokenLayer} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} calibrationPoints={gridCalibrationOpen && selectedScene.gridType !== "gridless" ? gridCalibrationPoints : undefined} onCalibrationPoint={gridCalibrationOpen && selectedScene.gridType !== "gridless" ? (point) => setGridCalibrationPoints((current) => appendGridCalibrationPoint(current, point)) : undefined} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canUpdateAnnotations={hasPermission("scene.update")} canResizeToken={hasPermission("token.update")} canUpdateTokenLayer={hasPermission("token.update")} onSelect={selectCanvasToken} onSelectMany={selectCanvasTokens} onSelectBackgroundAsset={selectBoardBackgroundAsset} onClearSelection={clearTokenSelection} onMoved={async () => undefined} onTokenMovePersist={persistSceneCanvasTokenMove} onTokenResizePersist={persistSceneCanvasTokenResize} onTokenMoveCommit={recordTokenMoveAction} onTokenResizeCommit={recordTokenResizeAction} onTokenLayerCycle={cycleTokenLayer} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} onTogglePortal={toggleScenePortal} selectedOverlay={selectedOverlay} onSelectOverlay={setSelectedOverlay} onZoomBy={zoomBattleMap} /> : (
                 <div className="empty-state empty-state-action">
                   <span>Create a scene to open the tabletop.</span>
                   {hasPermission("scene.create") && (
@@ -10148,7 +10288,7 @@ export function App() {
                 </div>
               )}
             </div>
-            {gridCalibrationOpen && selectedScene && (
+            {gridCalibrationOpen && selectedScene && selectedScene.gridType !== "gridless" && (
               <GridCalibrationPanel
                 scene={selectedScene}
                 points={gridCalibrationPoints}
@@ -10244,10 +10384,10 @@ export function App() {
               <input aria-label="Template save DC" type="number" min={1} max={40} value={templateSaveDc} placeholder="DC" onChange={(event) => setTemplateSaveDc(event.target.value)} />
               <input aria-label="Template damage formula" value={templateDamageFormula} placeholder="Damage" onChange={(event) => setTemplateDamageFormula(event.target.value)} />
               <input aria-label="Template damage type" value={templateDamageType} placeholder="Type" onChange={(event) => setTemplateDamageType(event.target.value)} />
-              <label className="inline-check">
+              {selectedScene?.gridType !== "gridless" ? <label className="inline-check">
                 <input type="checkbox" checked={annotationSnapToGrid} onChange={(event) => setAnnotationSnapToGrid(event.target.checked)} />
                 <span>Snap templates to grid</span>
-              </label>
+              </label> : <p className="account-summary">Gridless scene: template snapping and distance automation are off.</p>}
               </div>
               {hasUnmodeledMixedDamageType(templateDamageType) && <p className="admin-status" role="alert">Area templates automate one damage type. Add this template, roll the total, then use Reviewed typed damage for each mixed component.</p>}
               <details className="annotation-panel-section">
@@ -10446,8 +10586,8 @@ export function App() {
               {inspectorTabs.includes("plugins") && <TabButton active={tab === "plugins"} icon={<Boxes size={15} />} label="Plugins" tabId="inspector-tab-plugins" panelId="inspector-panel-plugins" onClick={() => setTab("plugins")} />}
             </div>
             <div className="inspector-panel-content" role="tabpanel" id={`inspector-panel-${tab}`} aria-labelledby={`inspector-tab-${tab}`}>
-            <Suspense fallback={<DeferredPanelFallback label={`${tab} panel`} />}>
-            {tab === "actors" && <ActorPanel campaignId={campaignId} actor={selectedActor} token={selectedToken} systemLabel={snapshot.systems.find((system) => system.id === selectedActor?.systemId)?.name ?? selectedActor?.systemId} scene={selectedScene} currentUserId={currentUserId} actors={snapshot.actors} tokens={snapshot.tokens} combat={activeCombat} members={snapshot.members} assets={snapshot.assets} items={snapshot.items} compendiumEntries={compendiumEntries} compendiumSearch={compendiumSearch} setCompendiumSearch={setCompendiumSearch} compendiumStatus={compendiumStatus} actionTargetActorId={actorActionTargetId} setActionTargetActorId={setActorActionTargetId} actionApplyEffect={actorActionApplyEffect} setActionApplyEffect={setActorActionApplyEffect} actionConsumeResources={actorActionConsumeResources} setActionConsumeResources={setActorActionConsumeResources} updateActorHp={updateActorHp} adjustActorHp={adjustActorHp} awardActorXp={awardActorXp} xpProgress={xpProgress} advancementReady={Boolean(xpProgress?.readyToLevel && advancementOptions.length > 0 && canUpdateSelectedActor)} onLevelUp={() => setAdvancementModalOpen(true)} onPreviewRestActor={previewSelectedActorRest} onRestActor={restSelectedActor} onTypedDamageApplied={applyTypedDamageResult} updateActorData={updateActorData} toggleActorCondition={toggleActorCondition} updateItemData={updateItemData} changeActorAttunement={changeActorAttunement} assignItemToActor={assignItemToActor} onSpellPreparationApplied={(result) => { const returnedItems = new Map(result.items.map((item) => [item.id, item])); setSnapshot((current) => ({ ...current, actors: current.actors.map((actor) => actor.id === result.actor.id ? result.actor : actor), items: current.items.map((item) => returnedItems.get(item.id) ?? item) })); }} updateToken={updateSelectedToken} onUploadTokenImage={uploadSelectedTokenImage} targetToken={setTokenTarget} targetTokens={setTokenTargets} deleteToken={deleteSelectedToken} updateTokenVision={updateSelectedTokenVision} useActorAction={useActorAction} onImportCompendiumEntry={importCompendiumEntry} onPurchaseCompendiumEntry={purchaseCompendiumEntry} onPlaceActor={placeActorOnSelectedScene} canCreateToken={hasPermission("token.create")} canUpdateActor={canUpdateSelectedActor} canAwardActorXp={hasPermission("actor.update")} canRestActor={canUpdateSelectedActor} canUpdateToken={hasPermission("token.update")} canDeleteToken={hasPermission("token.delete")} canUseAction={canUpdateSelectedActor && hasPermission("dice.roll")} />}
+            <DeferredPanel label={`${tab} panel`}>
+            {tab === "actors" && <ActorPanel campaignId={campaignId} actor={selectedActor} token={selectedToken} systemLabel={snapshot.systems.find((system) => system.id === selectedActor?.systemId)?.name ?? selectedActor?.systemId} scene={selectedScene} currentUserId={currentUserId} actors={snapshot.actors} tokens={snapshot.tokens} combat={activeCombat} members={snapshot.members} assets={snapshot.assets} items={snapshot.items} focusItemId={campaignSearchFocus?.type === "item" ? campaignSearchFocus.target.id : undefined} compendiumEntries={compendiumEntries} compendiumSearch={compendiumSearch} setCompendiumSearch={setCompendiumSearch} compendiumStatus={compendiumStatus} actionTargetActorId={actorActionTargetId} setActionTargetActorId={setActorActionTargetId} actionApplyEffect={actorActionApplyEffect} setActionApplyEffect={setActorActionApplyEffect} actionConsumeResources={actorActionConsumeResources} setActionConsumeResources={setActorActionConsumeResources} updateActorHp={updateActorHp} adjustActorHp={adjustActorHp} awardActorXp={awardActorXp} xpProgress={xpProgress} advancementReady={Boolean(canUpdateSelectedActor && ((xpProgress?.readyToLevel && advancementOptions.length > 0) || advancementLoadError))} onLevelUp={() => setAdvancementModalOpen(true)} onPreviewRestActor={previewSelectedActorRest} onRestActor={restSelectedActor} onTypedDamageApplied={applyTypedDamageResult} updateActorData={updateActorData} toggleActorCondition={toggleActorCondition} updateItemData={updateItemData} changeActorAttunement={changeActorAttunement} assignItemToActor={assignItemToActor} onSpellPreparationApplied={(result) => { const returnedItems = new Map(result.items.map((item) => [item.id, item])); setSnapshot((current) => ({ ...current, actors: current.actors.map((actor) => actor.id === result.actor.id ? result.actor : actor), items: current.items.map((item) => returnedItems.get(item.id) ?? item) })); }} updateToken={updateSelectedToken} onUploadTokenImage={uploadSelectedTokenImage} targetToken={setTokenTarget} targetTokens={setTokenTargets} deleteToken={deleteSelectedToken} updateTokenVision={updateSelectedTokenVision} useActorAction={useActorAction} onImportCompendiumEntry={importCompendiumEntry} onPurchaseCompendiumEntry={purchaseCompendiumEntry} onPlaceActor={placeActorOnSelectedScene} canCreateToken={hasPermission("token.create")} canUpdateActor={canUpdateSelectedActor} canAwardActorXp={hasPermission("actor.update")} canRestActor={canUpdateSelectedActor} canUpdateToken={hasPermission("token.update")} canDeleteToken={hasPermission("token.delete")} canUseAction={canUpdateSelectedActor && hasPermission("dice.roll")} />}
             {tab === "compendium" && (
               <>
                 <LazyCompendiumPanel
@@ -10456,7 +10596,9 @@ export function App() {
                 systems={snapshot.systems}
                 actors={snapshot.actors}
                 items={snapshot.items}
-                initialSystemId={selectedActor?.systemId ?? selectedCampaign?.defaultSystemId}
+                initialSystemId={campaignSearchFocus?.type === "compendium" ? campaignSearchFocus.target.systemId : selectedActor?.systemId ?? selectedCampaign?.defaultSystemId}
+                initialSearch={campaignSearchFocus?.type === "compendium" ? campaignSearchFocus.title : undefined}
+                initialEntryId={campaignSearchFocus?.type === "compendium" ? campaignSearchFocus.target.id : undefined}
                 canUpdateActor={(actor) => hasPermission("actor.update") || (actor.ownerUserId === currentUserId && hasPermission("actor.updateOwned"))}
                 onMutation={({ actor, item }) => {
                   setSnapshot((current) => ({
@@ -10490,7 +10632,7 @@ export function App() {
                       items={snapshot.items}
                       scenes={accessibleScenes}
                       combats={snapshot.combats}
-                      canPrepare={hasPermission("actor.create") || hasPermission("actor.update") || hasPermission("actor.updateOwned")}
+                      canPrepare={hasPermission("actor.create") || hasPermission("actor.update") || hasPermission("actor.updateOwned")} handoff={controlledCreatureHandoff} onHandoffConsumed={() => setControlledCreatureHandoff(undefined)}
                       onChanged={() => { void refresh(campaignId, sceneId, { syncStatus: false }); }}
                       onStatus={setStatus}
                     />
@@ -10553,13 +10695,13 @@ export function App() {
                 canCanonReview={hasPermission("campaign.update")}
               />
             )}
-            {tab === "memory" && <CampaignMemoryPanel key={`memory:${campaignId}:${currentUserId}`} campaignId={campaignId} facts={snapshot.memory as CampaignMemoryFact[]} canCreate={hasPermission("ai.proposeChanges")} canReview={hasPermission("ai.applyChanges")} onFactsChange={(memory) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setSnapshot((current) => ({ ...current, memory })); }} onExtract={extractMemory} onStatus={(message) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setStatus(message); }} />}
-            {tab === "search" && <CampaignSearchPanel key={`search:${campaignId}:${currentUserId}`} campaignId={campaignId} worlds={worlds} onOpenResult={openCampaignSearchResult} />}
+            {tab === "memory" && <LazyCampaignMemoryPanel key={`memory:${campaignId}:${currentUserId}`} campaignId={campaignId} facts={snapshot.memory as AiMemoryFact[]} canCreate={hasPermission("ai.proposeChanges")} canReview={hasPermission("ai.applyChanges")} onFactsChange={(memory) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setSnapshot((current) => ({ ...current, memory })); }} onExtract={extractMemory} onStatus={(message) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setStatus(message); }} />}
+            {tab === "search" && <CampaignSearchPanel key={`search:${campaignId}:${currentUserId}`} campaignId={campaignId} worlds={worlds} revision={snapshot.eventSequence} storageKey={`otte:campaign-search:${campaignId}:${currentUserId}`} onOpenResult={openCampaignSearchResult} />}
             {tab === "chat" && <ChatRail campaignId={campaignId} currentUserId={currentUserId} command={chatBody} setCommand={setChatBody} replyTarget={chatReplyTarget} messages={snapshot.chat} rolls={snapshot.rolls} concealedRollIds={concealedRollIds} members={snapshot.members} presences={snapshot.presences} scenes={snapshot.scenes} diceFormula={diceFormula} setDiceFormula={setDiceFormula} diceVisibility={diceVisibility} setDiceVisibility={setDiceVisibility} savedDiceFormulas={savedDiceFormulas} diceMacros={snapshot.diceMacros} onRollDice={rollDice} onSaveDiceFormula={saveCurrentDiceFormula} onSubmitCommand={submitChatCommand} onReplyToMessage={(message) => setChatReplyToMessageId(message.id)} onEditMessage={editChatMessage} onDeleteMessage={deleteChatMessage} onModerateMessage={moderateChatMessage} onClearReply={() => setChatReplyToMessageId("")} canModerate={hasPermission("chat.moderate")} canRollDice={hasPermission("dice.roll")} dice3dEnabled={dice3dEnabled} onToggleDice3d={() => persistQuickPreferences({ dice3dEnabled: !dice3dEnabled }, dice3dEnabled ? "Use text-only dice" : "Enable 3D dice")} notificationPreference={resolvedUserPreferences(snapshot.session?.user ?? {}).chatNotifications} connectionState={realtimeUiState} />}
             {tab === "combat" && <CombatPanel campaignId={campaignId} combat={activeCombat} recentCombats={recentEndedCombats} auditLogs={snapshot.combatAudit} actors={snapshot.actors} tokens={snapshot.tokens} onFocusCombatant={(combatant) => selectSingleToken(combatant.tokenId)} onStart={openCombatSetup} onPlanEncounter={planSystemEncounter} onNext={(combat) => advanceCombatTurn(combat, 1)} onPrevious={(combat) => advanceCombatTurn(combat, -1)} onEnd={endCombat} onAwardPartyXp={awardPartyXp} onAwardPartyGold={awardPartyGold} onRecordLoot={recordCombatLoot} canAwardRewards={hasPermission("combat.manage") && hasPermission("actor.update")} onUpdateCombatant={updateCombatant} onConfirmAction={confirmCombatAction} onRejectAction={rejectCombatAction} onCombatUpdated={(combat) => setSnapshot((current) => ({ ...current, combats: current.combats.map((candidate) => candidate.id === combat.id ? combat : candidate) }))} onRefresh={async () => { await refresh(campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false }); }} onStatus={setStatus} onRulesMutationApplied={setLastDndRulesUndo} canManage={hasPermission("combat.manage")} canManageEffects={hasPermission("combat.manage") && hasPermission("actor.update")} canPreviewEffects={hasPermission("actor.readPrivate")} />}
             {tab === "content" && <LazyContentImportPanel assets={snapshot.assets} assetStorage={snapshot.assetStorage} selectedScene={selectedScene} assetSearch={assetSearch} setAssetSearch={setAssetSearch} assetFolder={assetFolder} setAssetFolder={setAssetFolder} assetTags={assetTags} setAssetTags={setAssetTags} assetStatus={assetStatus} failedAssetUpload={failedAssetUpload} onRetryFailedAssetUpload={retryAssetUpload} onDismissFailedAssetUpload={dismissFailedAssetUpload} lifecycleReason={assetLifecycleReason} setLifecycleReason={setAssetLifecycleReason} onUploadAsset={uploadAssetToLibrary} onSetSceneBackground={setSceneBackgroundFromAsset} onPlaceAssetToken={createTokenFromAsset} onUpdateAssetMetadata={updateAssetMetadata} onUpdateAssetLifecycle={updateAssetLifecycle} onCreateAssetDeliveryUrl={createAssetDeliveryUrl} imports={snapshot.contentImports} kind={contentImportKind} setKind={setContentImportKind} name={contentImportName} setName={setContentImportName} body={contentImportBody} setBody={setContentImportBody} status={contentImportStatus} onPreview={previewContentImport} onAnalyzePdf={analyzePdfContentImport} onApply={applyContentImport} onRollback={rollbackContentImport} onDelete={deleteContentImport} canManage={hasPermission("campaign.update")} canCreateAsset={hasPermission("scene.create")} canUpdateScene={hasPermission("scene.update")} canCreateToken={hasPermission("token.create")} />}
             {tab === "plugins" && <LazySdkPanel plugins={snapshot.plugins} systems={snapshot.systems} characterTemplates={snapshot.characterTemplates} actor={selectedActor} advancementOptions={advancementOptions} advancementGrantsFeat={advancementGrantsFeat} advancementFeats={advancementFeats} multiclassOptions={multiclassOptions} advancementClassName={advancementClassName} nextClassLevel={advancementNextClassLevel} requiresSubclass={advancementRequiresSubclass} subclassOptions={advancementSubclassOptions} weaponMastery={advancementWeaponMastery} pendingAdvancement={pendingAdvancement} importedActor={importedActor} createdMonster={createdMonster} onSyncPluginRegistries={syncPluginRegistries} onInstallPlugin={installPlugin} onInstallSystem={installSystem} onCreateCharacter={createCharacterFromTemplate} onOpenCharacterCreator={() => void openCharacterCreator()} onImportCharacter={() => setCharacterImportOpen(true)} onCreateMonster={createSystemMonster} onPreviewActor={previewSelectedActorAdvancement} onAdvanceActor={advanceSelectedActor} onCancelPendingAdvancement={cancelSelectedActorPendingAdvancement} onPreviewRestActor={previewSelectedActorRest} onRestActor={restSelectedActor} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={Boolean(snapshot.session?.serverAdmin) && hasPermission("plugin.install")} canInstallSystem={hasPermission("campaign.update")} canCreateActor={hasPermission("actor.create")} canImportActor={hasPermission("actor.create")} canAdvanceActor={canUpdateSelectedActor} canRestActor={canUpdateSelectedActor} canRollSystem={hasPermission("dice.roll")} />}
-            </Suspense>
+            </DeferredPanel>
             </div>
           </aside>
         </div>
@@ -10641,6 +10783,7 @@ export function App() {
           partyActors={partyActors}
           sceneTokens={selectedSceneTokens}
           savedEncounters={snapshot.encounters}
+          initialEncounterId={campaignSearchFocus?.type === "encounter" ? campaignSearchFocus.target.id : undefined}
           activeScene={selectedScene}
           canSave={hasPermission("combat.manage")}
           canSpawn={Boolean(selectedScene && hasPermission("token.create") && hasPermission("actor.create"))}
@@ -10685,6 +10828,10 @@ export function App() {
               subclassOptions={advancementSubclassOptions}
               weaponMastery={advancementWeaponMastery}
               pendingAdvancement={pendingAdvancement}
+              loadState={advancementLoadState}
+              loadError={advancementLoadError}
+              onRetryLoad={advancementCatalog.retry}
+              onRefreshActor={async () => { await refresh(campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false }); }}
               onPreviewActor={previewSelectedActorAdvancement}
               onCancelPendingAdvancement={cancelSelectedActorPendingAdvancement}
               onAdvanceActor={async (optionId, choices) => {
@@ -11042,194 +11189,4 @@ function AiAgentPanel(props: {
       </button>
     </aside>
   );
-}
-
-function isSessionAuthError(error: unknown): boolean {
-  const message = errorMessage(error);
-  if (error instanceof ApiError && error.status === 401) return true;
-  return /unauthorized|missing session token|invalid session token|session token expired/i.test(message);
-}
-
-function isProposalNotFoundError(error: unknown): boolean {
-  if (error instanceof ApiError && error.status === 404 && /proposal not found/i.test(error.message)) return true;
-  return /proposal not found/i.test(errorMessage(error));
-}
-
-function isAbortError(error: unknown): boolean {
-  return error instanceof Error && error.name === "AbortError";
-}
-
-function codexAuthPromptFromError(error: unknown): CodexAuthStart | undefined {
-  if (!(error instanceof ApiError)) return undefined;
-  const body = recordValue(error.body);
-  if (body.error !== "codex_auth_required") return undefined;
-  const auth = recordValue(body.codexAuth);
-  const type = auth.type === "chatgptDeviceCode" ? "chatgptDeviceCode" : auth.type === "chatgpt" ? "chatgpt" : undefined;
-  if (!type) return undefined;
-  return {
-    type,
-    loginId: stringValue(auth.loginId),
-    authUrl: stringValue(auth.authUrl),
-    verificationUrl: stringValue(auth.verificationUrl),
-    userCode: stringValue(auth.userCode)
-  };
-}
-
-function reasoningTracesFromEvents(events: AiAgentProviderEvent[]): string[] {
-  const streamed = new Map<number, string>();
-  const completed: string[] = [];
-  for (const event of events) {
-    if (event.type === "reasoning.delta" && typeof event.delta === "string") {
-      const index = typeof event.summaryIndex === "number" && Number.isFinite(event.summaryIndex) ? event.summaryIndex : 0;
-      streamed.set(index, `${streamed.get(index) ?? ""}${event.delta}`);
-    }
-    if (event.type === "reasoning.completed" && typeof event.content === "string" && event.content.trim()) {
-      completed.push(event.content.trim());
-    }
-  }
-  const traces = [...streamed.entries()]
-    .sort(([left], [right]) => left - right)
-    .map(([, trace]) => trace.trim())
-    .filter(Boolean);
-  const completedTraces: string[] = [];
-  for (const trace of completed) {
-    if (!completedTraces.includes(trace)) completedTraces.push(trace);
-  }
-  return (completedTraces.length > 0 ? completedTraces : traces).slice(0, 12);
-}
-
-function appendReasoningDelta(reasoning: string[] | undefined, index: number, delta: string): string[] {
-  const next = [...(reasoning ?? [])];
-  const safeIndex = Math.max(0, Math.floor(index));
-  while (next.length <= safeIndex) next.push("");
-  next[safeIndex] = `${next[safeIndex] ?? ""}${delta}`;
-  return next.slice(0, 12);
-}
-
-function completedReasoningTraces(reasoning: string[] | undefined, content: string): string[] {
-  const summary = content.trim();
-  if (!summary) return reasoning ?? [];
-  return [summary, ...(reasoning ?? []).map((trace) => trace.trim()).filter((trace) => trace && trace !== summary)].slice(0, 12);
-}
-
-function activityTracesFromEvents(events: AiAgentProviderEvent[]): string[] {
-  const entries: string[] = [];
-  for (const event of events) {
-    if (event.type === "activity.reported" && typeof event.message === "string") {
-      const message = event.message.trim();
-      if (message && entries.at(-1) !== message) entries.push(message);
-    }
-    const progress = aiAgentProviderToolProgressText(event);
-    if (progress && entries.at(-1) !== progress) entries.push(progress);
-  }
-  return entries.slice(-24);
-}
-
-function appendAiAgentActivity(activity: string[] | undefined, message: string): string[] {
-  const entry = message.trim();
-  if (!entry) return activity ?? [];
-  const next = [...(activity ?? [])];
-  if (next.at(-1) !== entry) next.push(entry);
-  return next.slice(-24);
-}
-
-function aiAgentToolProgressText(event: AiAgentRealtimeEvent): string | undefined {
-  if (event.type !== "ai.tool.started" && event.type !== "ai.tool.completed") return undefined;
-  const payload = event.payload;
-  const toolName = typeof payload?.toolName === "string" ? payload.toolName.trim() : "";
-  if (!toolName) return undefined;
-  return aiAgentToolProgressTextFor(toolName, event.type === "ai.tool.started" ? "started" : payload?.status === "failed" ? "failed" : "completed");
-}
-
-function aiAgentProviderToolProgressText(event: AiAgentProviderEvent): string | undefined {
-  if (event.type !== "tool.started" && event.type !== "tool.completed") return undefined;
-  const toolName = typeof event.toolName === "string" ? event.toolName.trim() : "";
-  if (!toolName) return undefined;
-  return aiAgentToolProgressTextFor(toolName, event.type === "tool.started" ? "started" : "completed");
-}
-
-function aiAgentToolProgressTextFor(toolName: string, status: "started" | "completed" | "failed"): string {
-  const label = aiAgentToolProgressLabel(toolName);
-  return status === "started" ? `${label}...` : status === "failed" ? `${label} failed; continuing.` : `${label} complete.`;
-}
-
-function aiAgentToolProgressLabel(toolName: string): string {
-  switch (toolName) {
-    case "capture_board_view":
-      return "Checking the board view";
-    case "create_proposal":
-      return "Creating proposal";
-    case "draft_actor_token_roster":
-      return "Creating missing actors and tokens";
-    case "draft_encounter":
-      return "Building encounter";
-    case "draft_scene":
-      return "Creating scene";
-    case "draft_token_update":
-      return "Placing tokens";
-    case "generate_map_asset":
-      return "Generating map art";
-    case "generate_token_asset":
-      return "Generating token art";
-    case "modify_asset_image":
-      return "Editing image asset";
-    case "get_proposal":
-      return "Checking proposal";
-    case "read_board_state":
-      return "Reading board state";
-    case "read_scene":
-      return "Reading scene";
-    case "read_token":
-      return "Reading token";
-    case "read_asset":
-      return "Reading asset";
-    case "draft_actor_update":
-      return "Updating actor";
-    case "use_actor_action":
-      return "Resolving actor action";
-    default:
-      return titleCaseLabel(toolName.replace(/^draft_/, "").replace(/_/g, " "));
-  }
-}
-
-function upsertAiAgentMessage(messages: AiAgentMessage[], next: AiAgentMessage): AiAgentMessage[] {
-  const index = messages.findIndex((message) => message.id === next.id);
-  if (index === -1) return [...messages, next];
-  const previous = messages[index];
-  if (!previous) return [...messages, next];
-  const copy = [...messages];
-  copy[index] = {
-    ...previous,
-    ...next,
-    proposalIds: next.proposalIds ?? previous.proposalIds,
-    reasoning: next.reasoning ?? previous.reasoning,
-    activity: next.activity ?? previous.activity
-  };
-  return copy;
-}
-
-function sceneIdToOpenAfterProposalApply(proposal: Proposal): string | undefined {
-  return updatedSceneIdFromProposal(proposal) ?? createdSceneIdFromProposal(proposal);
-}
-
-function updatedSceneIdFromProposal(proposal: Proposal): string | undefined {
-  for (const change of proposal.changesJson) {
-    if (change.entity === "scene" && change.action === "update" && typeof change.id === "string" && change.id.trim()) return change.id;
-  }
-  return undefined;
-}
-
-function openCodexAuthPrompt(auth: CodexAuthStart): boolean {
-  const url = auth.authUrl ?? auth.verificationUrl;
-  if (!url) return false;
-  return Boolean(window.open(url, "_blank", "noopener,noreferrer"));
-}
-
-function createdSceneIdFromProposal(proposal: Proposal): string | undefined {
-  for (const change of proposal.changesJson) {
-    if (change.entity !== "scene" || change.action !== "create") continue;
-    const data = recordValue(change.data);
-    if (typeof data.id === "string" && data.id.trim()) return data.id;
-  }
-  return undefined;
 }

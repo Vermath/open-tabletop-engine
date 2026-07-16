@@ -202,7 +202,7 @@ export function stabilizeDnd5eSrdActor(actor: Actor): Record<string, unknown> {
   const conditions = (Array.isArray(actor.data.conditions) ? actor.data.conditions : [])
     .filter((condition) => (typeof condition === "string" ? condition : (condition as { id?: unknown }).id) !== "dead");
   if (!conditions.some((condition) => (typeof condition === "string" ? condition : (condition as { id?: unknown }).id) === "unconscious")) conditions.push({ id: "unconscious" });
-  return { ...actor.data, conditions, deathSaves: { successes: 3, failures: 0 }, lifeState: "stable" };
+  return { ...actor.data, conditions, deathSaves: { successes: 0, failures: 0 }, lifeState: "stable" };
 }
 
 export function healDnd5eSrdActorFromZero(actor: Actor, amount: number): Record<string, unknown> {

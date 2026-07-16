@@ -33,6 +33,7 @@ function isUsableImageAsset(asset: MapAsset): boolean {
 }
 
 function sceneGridOverlayVisible(scene: Scene): boolean {
+  if (scene.gridType === "gridless") return false;
   const explicit = scene.metadata?.gridOverlayVisible;
   if (typeof explicit === "boolean") return explicit;
   const generatedPrompt = scene.metadata?.generatedBackgroundPrompt;
@@ -297,7 +298,10 @@ export function boundedTokenCoordinates(scene: Pick<Scene, "width" | "height">, 
 }
 
 
-export function snappedTokenCoordinates(scene: Pick<Scene, "width" | "height" | "gridSize">, token: Pick<Token, "width" | "height">, x: number, y: number): Pick<Token, "x" | "y"> {
+type TokenGridScene = Pick<Scene, "width" | "height" | "gridSize"> & Partial<Pick<Scene, "gridType">>;
+
+export function snappedTokenCoordinates(scene: TokenGridScene, token: Pick<Token, "width" | "height">, x: number, y: number): Pick<Token, "x" | "y"> {
+  if (scene.gridType === "gridless") return boundedTokenCoordinates(scene, token, x, y);
   return boundedTokenCoordinates(
     scene,
     token,
@@ -307,7 +311,7 @@ export function snappedTokenCoordinates(scene: Pick<Scene, "width" | "height" | 
 }
 
 
-export function tokenCoordinatesFromCenter(scene: Pick<Scene, "width" | "height" | "gridSize">, width: number, height: number, centerX: number, centerY: number): Pick<Token, "x" | "y"> {
+export function tokenCoordinatesFromCenter(scene: TokenGridScene, width: number, height: number, centerX: number, centerY: number): Pick<Token, "x" | "y"> {
   return snappedTokenCoordinates(scene, { width, height }, centerX - width / 2, centerY - height / 2);
 }
 
@@ -348,17 +352,18 @@ export function snapSceneAxisToGrid(value: number, sceneSize: number, gridSize: 
 }
 
 
-export function tokenResizeFrameFromPoint(scene: Pick<Scene, "width" | "height" | "gridSize">, origin: TokenFrame, handle: TokenResizeHandle, point: VisionPoint): TokenFrame {
-  const minSize = Math.max(1, Math.round(scene.gridSize) || 1);
+export function tokenResizeFrameFromPoint(scene: TokenGridScene, origin: TokenFrame, handle: TokenResizeHandle, point: VisionPoint): TokenFrame {
+  const minSize = scene.gridType === "gridless" ? 1 : Math.max(1, Math.round(scene.gridSize) || 1);
+  const position = (value: number, sceneSize: number) => scene.gridType === "gridless" ? clampSceneCoordinate(Math.round(value), 0, sceneSize) : snapSceneAxisToGrid(value, sceneSize, scene.gridSize);
   let left = origin.x;
   let top = origin.y;
   let right = origin.x + origin.width;
   let bottom = origin.y + origin.height;
 
-  if (handle.includes("w")) left = snapSceneAxisToGrid(point.x, scene.width, scene.gridSize);
-  if (handle.includes("e")) right = snapSceneAxisToGrid(point.x, scene.width, scene.gridSize);
-  if (handle.includes("n")) top = snapSceneAxisToGrid(point.y, scene.height, scene.gridSize);
-  if (handle.includes("s")) bottom = snapSceneAxisToGrid(point.y, scene.height, scene.gridSize);
+  if (handle.includes("w")) left = position(point.x, scene.width);
+  if (handle.includes("e")) right = position(point.x, scene.width);
+  if (handle.includes("n")) top = position(point.y, scene.height);
+  if (handle.includes("s")) bottom = position(point.y, scene.height);
 
   if (handle.includes("w")) left = Math.min(left, right - minSize);
   if (handle.includes("e")) right = Math.max(right, left + minSize);
@@ -1541,7 +1546,7 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
             style={{ left: `${(centerX / props.scene.width) * 100}%`, top: `${(centerY / props.scene.height) * 100}%` }}
             aria-hidden="true"
           >
-            {formatGridDistance(moveDistance.distancePx, props.scene.gridSize)}
+            {props.scene.gridType === "gridless" ? "Manual distance" : formatGridDistance(moveDistance.distancePx, props.scene.gridSize)}
           </span>
         );
       })}
@@ -1696,6 +1701,7 @@ export function draftTemplateShape(kind: ActiveAnnotationTool, templateShape: Sc
 
 
 export function formatFeet(distancePx: number, scene: Scene): string {
+  if (scene.gridType === "gridless") return "Manual distance";
   const feet = (distancePx / Math.max(scene.gridSize, 1)) * feetPerGridSquare;
   const rounded = Math.round(feet * 10) / 10;
   return `${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(1)} ft`;

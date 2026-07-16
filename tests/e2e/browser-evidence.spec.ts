@@ -390,7 +390,7 @@ test.describe("browser acceptance evidence", () => {
     const managePanel = await openManageCategory(page, "Archives");
     const exportWizard = managePanel.getByRole("region", { name: "Archive export wizard" });
     const downloadPromise = page.waitForEvent("download");
-    await exportWizard.getByRole("button", { name: "Export Archive" }).click();
+    await exportWizard.getByRole("button", { name: "Export JSON (small archives)" }).click();
     const download = await downloadPromise;
     const archiveDirectory = mkdtempSync(join(tmpdir(), "otte-browser-core-loop-"));
     const archivePath = join(archiveDirectory, download.suggestedFilename());

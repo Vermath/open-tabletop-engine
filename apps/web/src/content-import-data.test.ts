@@ -1,5 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { csvItemImportEntities, parseDelimitedRows } from "./content-import-data.js";
+import { campaignArchiveTargetId, csvItemImportEntities, parseDelimitedRows } from "./content-import-data.js";
+
+describe("campaign archive recovery", () => {
+  it("targets the campaign carried by the archive, with a manifest fallback", () => {
+    expect(campaignArchiveTargetId({
+      manifest: { campaignId: "camp_manifest" },
+      data: { campaigns: [{ id: "camp_records" }] }
+    })).toBe("camp_records");
+    expect(campaignArchiveTargetId({
+      manifest: { campaignId: "camp_manifest" },
+      data: { campaigns: [] }
+    })).toBe("camp_manifest");
+    expect(campaignArchiveTargetId({ data: {} })).toBeUndefined();
+  });
+});
 
 describe("CSV content imports", () => {
   it("preserves quoted delimiters, escaped quotes, and multiline cells", () => {

@@ -45,7 +45,12 @@ export function buildDndControlledCreaturePreview(
     combats: state.combats,
     scenes: state.scenes,
   });
-  const previewToken = controlledCreaturePreviewToken(request, analysis.requiredRevisions);
+  const requiredRevisions = mergeDndControlledCreatureRevisions(
+    structuredClone(analysis.requiredRevisions),
+    controlledCreatureConcentrationReplacementRevisions(state, campaignId, request),
+  );
+  const replacedConcentrationActors = controlledCreatureConcentrationReplacementActors(state, campaignId, request);
+  const previewToken = controlledCreaturePreviewToken(request, requiredRevisions);
   const ready = analysis.errors.length === 0 && (analysis.manualReview.length === 0 || request.manualReviewConfirmed === true);
   return {
     campaignId,
@@ -55,9 +60,17 @@ export function buildDndControlledCreaturePreview(
     summary: previewSummary(request, analysis.manualReview.length, analysis.errors.length),
     errors: analysis.errors,
     manualReview: analysis.manualReview,
-    warnings: analysis.warnings,
-    requiredRevisions: analysis.requiredRevisions,
-    affected: analysis.affected,
+    warnings: [
+      ...analysis.warnings,
+      ...(replacedConcentrationActors.length > 0
+        ? [`Confirming replaces concentration and ends ${replacedConcentrationActors.length} linked controlled-creature lifecycle(s).`]
+        : []),
+    ],
+    requiredRevisions,
+    affected: {
+      ...analysis.affected,
+      actorIds: [...new Set([...analysis.affected.actorIds, ...replacedConcentrationActors.map((actor) => actor.id)])],
+    },
   };
 }
 
@@ -74,6 +87,32 @@ export function dndControlledCreatureEntries(state: EngineState, campaignId: str
     .map((actor) => ({ actor, record: readDndControlledCreature(actor) }))
     .filter((entry): entry is { actor: Actor; record: DndControlledCreatureRecord } => Boolean(entry.record))
     .sort((left, right) => left.record.createdAt.localeCompare(right.record.createdAt) || left.record.id.localeCompare(right.record.id));
+}
+
+export function controlledCreatureConcentrationReplacementActors(
+  state: EngineState,
+  campaignId: string,
+  request: DndControlledCreatureCreateRequest,
+): Actor[] {
+  const concentration = request.concentration;
+  if (!concentration) return [];
+  return dndControlledCreatureEntries(state, campaignId)
+    .filter(({ record }) => record.status === "active"
+      && record.concentration?.sourceActorId === concentration.sourceActorId
+      && record.concentration?.groupId !== concentration.groupId)
+    .map(({ actor }) => actor);
+}
+
+export function controlledCreatureConcentrationReplacementRevisions(
+  state: EngineState,
+  campaignId: string,
+  request: DndControlledCreatureCreateRequest,
+): DndControlledCreatureRevisionSet {
+  const revisions = emptyDndControlledCreatureRevisions();
+  for (const actor of controlledCreatureConcentrationReplacementActors(state, campaignId, request)) {
+    mergeDndControlledCreatureRevisions(revisions, controlledCreatureLifecycleRevisions(state, actor));
+  }
+  return revisions;
 }
 
 export function controlledCreatureRevisionMismatch(
@@ -122,6 +161,7 @@ export function confirmDndControlledCreature(
     kind: request.kind,
     status: "active",
     source: structuredClone(request.source),
+    ...(request.originatingAction ? { originatingAction: structuredClone(request.originatingAction) } : {}),
     controllerUserId: request.controllerUserId,
     controllerActorId: request.controllerActorId,
     ownerUserId: request.ownerUserId,
@@ -366,6 +406,7 @@ function applyTransformation(
     kind: "transformation",
     status: "active",
     source: structuredClone(request.source),
+    ...(request.originatingAction ? { originatingAction: structuredClone(request.originatingAction) } : {}),
     controllerUserId: request.controllerUserId,
     controllerActorId: request.controllerActorId,
     ownerUserId: request.ownerUserId,
@@ -388,6 +429,9 @@ function applyTransformation(
     updatedAt: now,
   };
   const nextData = structuredClone(request.actor.data);
+  for (const ledger of ["resources", "spellSlots", "pactSlots", "rulesEngine"] as const) {
+    if (snapshotData[ledger] !== undefined) nextData[ledger] = structuredClone(snapshotData[ledger]);
+  }
   if (request.transformation.hpCarryover === "preserve" && snapshotData.hp !== undefined) nextData.hp = structuredClone(snapshotData.hp);
   actor.name = request.actor.name.trim();
   actor.type = request.actor.type.trim();

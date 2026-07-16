@@ -198,6 +198,7 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
   managePanel = await openManageCategory(page, "Campaign");
   await openCreateDrawer(managePanel, "New campaign");
   await managePanel.getByRole("textbox", { name: "Campaign name", exact: true }).fill("Side Workspace Campaign");
+  await managePanel.getByRole("button", { name: "4. Review" }).click();
   await managePanel.getByRole("button", { name: "Create Campaign Setup", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Side Workspace Campaign", level: 1 })).toBeVisible();
   managePanel = await openManageCategory(page, "Account");
@@ -524,7 +525,10 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
   await expect(workspaceDefaults).toContainText("Workspace defaults saved");
   managePanel = await openManageCategory(page, "Campaign");
   await openCreateDrawer(managePanel, "New campaign");
+  await managePanel.getByRole("button", { name: "2. Scene & map" }).click();
   await expect(managePanel.getByRole("textbox", { name: "Setup initial scene name" })).toHaveValue("Workspace Opening");
+  await managePanel.getByRole("button", { name: "3. Invitation" }).click();
+  await managePanel.getByText("Advanced permission settings", { exact: true }).click();
   await expect(managePanel.getByLabel("Setup campaign permission template")).toHaveValue("player_authoring");
   managePanel = await openManageCategory(page, "Server Admin");
   const organizationMembers = page.getByRole("region", { name: "Organization members" });

@@ -33,6 +33,100 @@ export const DND_5E_SRD_ITEM_SCHEMA_VERSION = "1.0.0";
 export const DND_5E_SRD_RULES_PREVIEW_VERSION = "1.0.0";
 export const DND_5E_SRD_REPAIR_PREVIEW_VERSION = "1.0.0";
 
+export type Dnd5eSrdAbilityName = "strength" | "dexterity" | "constitution" | "intelligence" | "wisdom" | "charisma";
+export type Dnd5eSrdLifeState = "conscious" | "unconscious" | "stable" | "dead" | "defeated";
+
+export interface Dnd5eSrdManagedPool extends Record<string, unknown> {
+  current: number;
+  max: number;
+}
+
+export interface Dnd5eSrdManagedHitDicePool extends Dnd5eSrdManagedPool {
+  className: string;
+  size: string;
+}
+
+export interface Dnd5eSrdManagedClassLevel extends Record<string, unknown> {
+  className?: string;
+  /** Legacy spelling retained losslessly by the compatible parser. */
+  class?: string;
+  level: number;
+}
+
+/**
+ * Typed view of the flat Actor.data roots currently owned by reviewed D&D
+ * rules operations. The index signature deliberately preserves untouched
+ * homebrew and future-system fields.
+ */
+export interface Dnd5eSrdActorManagedData extends Record<string, unknown> {
+  ruleset?: string;
+  class?: string;
+  level?: number;
+  classes?: Dnd5eSrdManagedClassLevel[];
+  attributes?: Partial<Record<Dnd5eSrdAbilityName, number>> & Record<string, unknown>;
+  hp?: Dnd5eSrdManagedPool;
+  hitDice?: Dnd5eSrdManagedPool & { size?: string };
+  hitDicePools?: Dnd5eSrdManagedHitDicePool[];
+  temporaryHitPoints?: number | ({ current: number } & Record<string, unknown>);
+  temporaryHp?: number | ({ current: number } & Record<string, unknown>);
+  tempHp?: number | ({ current: number } & Record<string, unknown>);
+  deathSaves?: { successes: number; failures: number } & Record<string, unknown>;
+  lifeState?: Dnd5eSrdLifeState;
+  defeated?: boolean;
+  conditions?: unknown[];
+  resources?: Record<string, unknown>;
+  spellSlots?: Record<string, unknown>;
+  rulesEngine?: Record<string, unknown>;
+  heroicInspiration?: boolean;
+  weaponMasteries?: unknown[];
+  weaponMasteriesByClass?: Record<string, unknown>;
+  armorClass?: number;
+}
+
+/** Typed view of Item.data roots consumed by current D&D rules resolvers. */
+export interface Dnd5eSrdItemManagedData extends Record<string, unknown> {
+  quantity?: number;
+  equipped?: boolean;
+  prepared?: boolean;
+  alwaysPrepared?: boolean;
+  requiresAttunement?: boolean;
+  attuned?: boolean;
+  charges?: number | Record<string, unknown>;
+  uses?: number | Record<string, unknown>;
+  damageType?: string;
+  secondaryDamageType?: string;
+  armorType?: string;
+  category?: string;
+  equipmentCategory?: string;
+  ability?: string;
+  mastery?: string;
+}
+
+export interface Dnd5eSrdManagedDataSource {
+  entityKind: "actor" | "item";
+  entityId: string;
+  systemId: typeof DND_5E_SRD_SYSTEM_ID;
+  rulesVersion: typeof DND_5E_SRD_VERSION;
+  /** Existing durable records are flat and did not carry a data-schema version. */
+  sourceSchemaVersion: "legacy-unversioned";
+  schemaVersion: string;
+}
+
+export interface Dnd5eSrdManagedDataView<T extends Record<string, unknown>> {
+  source: Dnd5eSrdManagedDataSource;
+  migration: {
+    from: "legacy-unversioned";
+    to: string;
+    lossless: true;
+  };
+  data: T;
+  warnings: Dnd5eSrdValidationIssue[];
+}
+
+export type Dnd5eSrdManagedDataParseResult<T extends Record<string, unknown>> =
+  | { ok: true; value: Dnd5eSrdManagedDataView<T> }
+  | { ok: false; source: Dnd5eSrdManagedDataSource; issues: Dnd5eSrdValidationIssue[] };
+
 export type Dnd5eSrdValidationSeverity = "error" | "warning";
 
 export interface Dnd5eSrdValidationIssue {
@@ -288,8 +382,99 @@ function validatePool(issues: Dnd5eSrdValidationIssue[], value: unknown, path: s
   }
 }
 
+function validateClassLevels(issues: Dnd5eSrdValidationIssue[], value: unknown): void {
+  if (value === undefined) return;
+  if (!Array.isArray(value)) {
+    issues.push(issue("/data/classes", "error", "schema.array", "Class levels must be an array."));
+    return;
+  }
+  const seen = new Set<string>();
+  value.forEach((entry, index) => {
+    const path = `/data/classes/${index}`;
+    if (!isRecord(entry)) {
+      issues.push(issue(path, "error", "schema.object", "Expected a class-level object."));
+      return;
+    }
+    const className = typeof entry.className === "string" ? entry.className : typeof entry.class === "string" ? entry.class : undefined;
+    if (!className?.trim()) issues.push(issue(`${path}/className`, "error", "schema.required", "Class name is required."));
+    else {
+      const key = className.trim().toLowerCase();
+      if (seen.has(key)) issues.push(issue(`${path}/className`, "error", "rules.duplicate_class", "Each class can have only one class-level entry."));
+      seen.add(key);
+    }
+    validateFiniteInteger(issues, entry.level, `${path}/level`, { minimum: 1, maximum: 20, required: true });
+  });
+}
+
+function validateTemporaryHitPoints(issues: Dnd5eSrdValidationIssue[], data: Record<string, unknown>): void {
+  for (const key of ["temporaryHitPoints", "temporaryHp", "tempHp"] as const) {
+    const value = data[key];
+    if (value === undefined) continue;
+    const path = `/data/${key}`;
+    if (isRecord(value)) validateFiniteInteger(issues, value.current, `${path}/current`, { minimum: 0, required: true });
+    else validateFiniteInteger(issues, value, path, { minimum: 0 });
+  }
+}
+
+function validateDeathSaves(issues: Dnd5eSrdValidationIssue[], value: unknown): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    issues.push(issue("/data/deathSaves", "error", "schema.object", "Death Saves must be an object."));
+    return;
+  }
+  validateFiniteInteger(issues, value.successes, "/data/deathSaves/successes", { minimum: 0, maximum: 3, required: true });
+  validateFiniteInteger(issues, value.failures, "/data/deathSaves/failures", { minimum: 0, maximum: 3, required: true });
+}
+
+function validateManagedPoolMap(issues: Dnd5eSrdValidationIssue[], value: unknown, path: string): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    issues.push(issue(path, "error", "schema.object", "Expected a resource-pool object."));
+    return;
+  }
+  for (const [key, rawPool] of Object.entries(value)) {
+    if (!isRecord(rawPool) || (!("current" in rawPool) && !("max" in rawPool))) continue;
+    const poolPath = `${path}/${pointerSegment(key)}`;
+    validateFiniteInteger(issues, rawPool.current, `${poolPath}/current`, { minimum: 0, required: true });
+    validateFiniteInteger(issues, rawPool.max, `${poolPath}/max`, { minimum: 0, required: true });
+    if (typeof rawPool.current === "number" && typeof rawPool.max === "number" && rawPool.current > rawPool.max) {
+      issues.push(issue(`${poolPath}/current`, "error", "rules.pool_above_maximum", "Current value cannot exceed the maximum."));
+    }
+  }
+}
+
+function validateActorManagedSubroots(issues: Dnd5eSrdValidationIssue[], data: Record<string, unknown>): void {
+  validateClassLevels(issues, data.classes);
+  validateTemporaryHitPoints(issues, data);
+  validateDeathSaves(issues, data.deathSaves);
+  validateManagedPoolMap(issues, data.resources, "/data/resources");
+  validateManagedPoolMap(issues, data.spellSlots, "/data/spellSlots");
+  if (data.rulesEngine !== undefined && !isRecord(data.rulesEngine)) issues.push(issue("/data/rulesEngine", "error", "schema.object", "Rules-engine state must be an object."));
+  if (data.weaponMasteries !== undefined && !Array.isArray(data.weaponMasteries)) issues.push(issue("/data/weaponMasteries", "error", "schema.array", "Weapon Masteries must be an array."));
+  if (data.weaponMasteriesByClass !== undefined && !isRecord(data.weaponMasteriesByClass)) issues.push(issue("/data/weaponMasteriesByClass", "error", "schema.object", "Weapon Masteries by class must be an object."));
+  if (data.heroicInspiration !== undefined && typeof data.heroicInspiration !== "boolean") issues.push(issue("/data/heroicInspiration", "error", "schema.boolean", "Heroic Inspiration must be true or false."));
+  if (data.armorClass !== undefined) validateFiniteInteger(issues, data.armorClass, "/data/armorClass", { minimum: 0 });
+  if (data.defeated !== undefined && typeof data.defeated !== "boolean") issues.push(issue("/data/defeated", "error", "schema.boolean", "Defeated must be true or false."));
+  if (data.lifeState !== undefined && (typeof data.lifeState !== "string" || !["conscious", "unconscious", "stable", "dead", "defeated"].includes(data.lifeState.toLowerCase()))) {
+    issues.push(issue("/data/lifeState", "error", "schema.enum", "Life state must be conscious, unconscious, stable, dead, or defeated."));
+  }
+}
+
+function validateOptionalUsePool(issues: Dnd5eSrdValidationIssue[], value: unknown, path: string): void {
+  if (value === undefined) return;
+  if (typeof value === "number") {
+    validateFiniteInteger(issues, value, path, { minimum: 0 });
+    return;
+  }
+  if (!isRecord(value)) {
+    issues.push(issue(path, "error", "schema.object", "Expected a use-pool object."));
+    return;
+  }
+  if ("current" in value || "max" in value) validatePool(issues, value, path, true);
+}
+
 /** Read-only, forward-compatible validation for the D&D actor envelope and known SRD fields. */
-export function validateDnd5eSrdActor(actor: Actor): Dnd5eSrdValidationReport {
+export function validateDnd5eSrdActor(actor: Actor, options: { requireCharacterCore?: boolean } = {}): Dnd5eSrdValidationReport {
   const issues: Dnd5eSrdValidationIssue[] = [];
   if (!actor || typeof actor !== "object") {
     issues.push(issue("", "error", "schema.object", "Expected an actor object."));
@@ -310,35 +495,37 @@ export function validateDnd5eSrdActor(actor: Actor): Dnd5eSrdValidationReport {
   else if (data.ruleset !== DND_5E_SRD_VERSION) issues.push(issue("/data/ruleset", "warning", "rules.version_mismatch", `Stored rules version does not match ${DND_5E_SRD_VERSION}.`));
 
   const isCharacter = typeof actor.type === "string" && actor.type.toLowerCase() === "character";
-  if (isCharacter) validateFiniteInteger(issues, data.level, "/data/level", { minimum: 1, maximum: 20, required: true });
+  const requireCharacterCore = isCharacter && options.requireCharacterCore !== false;
+  if (isCharacter) validateFiniteInteger(issues, data.level, "/data/level", { minimum: 1, maximum: 20, required: requireCharacterCore });
   else validateFiniteNumber(issues, data.level, "/data/level", { minimum: 0 });
-  if (isCharacter) {
-    if (typeof data.class !== "string" || !data.class.trim()) issues.push(issue("/data/class", "error", "schema.required", "A character class is required."));
+  if (isCharacter && (requireCharacterCore || data.class !== undefined)) {
+    if (typeof data.class !== "string" || !data.class.trim()) issues.push(issue("/data/class", "error", requireCharacterCore ? "schema.required" : "schema.string", requireCharacterCore ? "A character class is required." : "Character class must be a non-empty string."));
     else if (!Object.keys(dnd5eSrdMulticlassPrerequisites).some((className) => className.toLowerCase() === data.class!.toString().toLowerCase())) {
       issues.push(issue("/data/class", "warning", "rules.homebrew_class", "This class is not automated by the SRD rules helper; its fields are preserved."));
     }
   }
 
   if (data.attributes === undefined) {
-    if (isCharacter) issues.push(issue("/data/attributes", "error", "schema.required", "Character ability scores are required."));
+    if (requireCharacterCore) issues.push(issue("/data/attributes", "error", "schema.required", "Character ability scores are required."));
   } else if (!isRecord(data.attributes)) {
     issues.push(issue("/data/attributes", "error", "schema.object", "Ability scores must be an object."));
   } else {
     for (const ability of DND_ABILITY_NAMES) {
-      validateFiniteInteger(issues, data.attributes[ability], `/data/attributes/${ability}`, { minimum: 0, maximum: 30, required: isCharacter });
+      validateFiniteInteger(issues, data.attributes[ability], `/data/attributes/${ability}`, { minimum: 0, maximum: 30, required: requireCharacterCore });
     }
   }
 
-  validatePool(issues, data.hp, "/data/hp", isCharacter);
+  validatePool(issues, data.hp, "/data/hp", requireCharacterCore);
   if (isRecord(data.hp) && typeof data.hp.current === "number" && data.hp.current < 0) {
     issues.push(issue("/data/hp/current", "error", "rules.hit_points_negative", "Hit Points cannot be negative."));
   }
-  validatePool(issues, data.hitDice, "/data/hitDice", isCharacter);
+  validatePool(issues, data.hitDice, "/data/hitDice", requireCharacterCore);
   if (isRecord(data.hitDice) && data.hitDice.size !== undefined && (typeof data.hitDice.size !== "string" || !DND_HIT_DICE.has(data.hitDice.size.toLowerCase()))) {
     issues.push(issue("/data/hitDice/size", "error", "rules.hit_die_unsupported", "Expected d6, d8, d10, or d12."));
   }
   if (data.hitDicePools !== undefined) validateHitDicePools(issues, data.hitDicePools);
   if (data.conditions !== undefined && !Array.isArray(data.conditions)) issues.push(issue("/data/conditions", "error", "schema.array", "Conditions must be an array."));
+  validateActorManagedSubroots(issues, data);
   return actorReport(actor.id, issues);
 }
 
@@ -402,9 +589,19 @@ export function validateDnd5eSrdItem(item: Item): Dnd5eSrdValidationReport {
   if (item.data.alwaysPrepared !== undefined && typeof item.data.alwaysPrepared !== "boolean") issues.push(issue("/data/alwaysPrepared", "error", "schema.boolean", "Always prepared must be true or false."));
   if (item.data.alwaysPrepared === true && item.data.prepared === false) issues.push(issue("/data/prepared", "error", "rules.always_prepared", "An always-prepared spell cannot be unprepared."));
   if (item.data.requiresAttunement !== undefined && typeof item.data.requiresAttunement !== "boolean") issues.push(issue("/data/requiresAttunement", "error", "schema.boolean", "Requires attunement must be true or false."));
+  if (item.data.attuned !== undefined && typeof item.data.attuned !== "boolean") issues.push(issue("/data/attuned", "error", "schema.boolean", "Attuned must be true or false."));
+  validateOptionalUsePool(issues, item.data.charges, "/data/charges");
+  validateOptionalUsePool(issues, item.data.uses, "/data/uses");
+  for (const key of ["armorType", "category", "equipmentCategory", "ability", "mastery"] as const) {
+    if (item.data[key] !== undefined && (typeof item.data[key] !== "string" || !item.data[key].trim())) issues.push(issue(`/data/${key}`, "error", "schema.string", `${key} must be a non-empty string.`));
+  }
   for (const key of ["damageType", "secondaryDamageType"] as const) {
     const value = item.data[key];
-    if (value === undefined || typeof value !== "string") continue;
+    if (value === undefined) continue;
+    if (typeof value !== "string" || !value.trim()) {
+      issues.push(issue(`/data/${key}`, "error", "schema.string", `${key} must be a non-empty string.`));
+      continue;
+    }
     for (const damageType of value.toLowerCase().split(/[\/,]/).map((entry) => entry.trim()).filter(Boolean)) {
       if (!DND_DAMAGE_TYPES.has(damageType) && damageType !== "choice" && damageType !== "weapon") {
         issues.push(issue(`/data/${key}`, "warning", "rules.homebrew_damage_type", `Damage type ${damageType} is not an SRD automated type; the value is preserved.`));
@@ -425,6 +622,65 @@ function itemReport(entityId: string, issues: Dnd5eSrdValidationIssue[]): Dnd5eS
     valid: !ordered.some((entry) => entry.severity === "error"),
     issues: ordered
   };
+}
+
+function managedDataSource(entityKind: "actor" | "item", entityId: string): Dnd5eSrdManagedDataSource {
+  return {
+    entityKind,
+    entityId,
+    systemId: DND_5E_SRD_SYSTEM_ID,
+    rulesVersion: DND_5E_SRD_VERSION,
+    sourceSchemaVersion: "legacy-unversioned",
+    schemaVersion: entityKind === "actor" ? DND_5E_SRD_ACTOR_SCHEMA_VERSION : DND_5E_SRD_ITEM_SCHEMA_VERSION
+  };
+}
+
+function managedDataParseResult<T extends Record<string, unknown>>(
+  source: Dnd5eSrdManagedDataSource,
+  data: Record<string, unknown>,
+  report: Dnd5eSrdValidationReport
+): Dnd5eSrdManagedDataParseResult<T> {
+  const errors = report.issues.filter((entry) => entry.severity === "error");
+  if (errors.length > 0) return { ok: false, source, issues: cloneValue(errors) };
+  return {
+    ok: true,
+    value: {
+      source,
+      migration: { from: "legacy-unversioned", to: source.schemaVersion, lossless: true },
+      data: cloneValue(data) as T,
+      warnings: cloneValue(report.issues.filter((entry) => entry.severity === "warning"))
+    }
+  };
+}
+
+/**
+ * Parses only managed roots that are present. Missing legacy roots remain
+ * valid so generic/homebrew actors can keep loading; strict character review
+ * continues to use validateDnd5eSrdActor's default required-core mode.
+ */
+export function parseDnd5eSrdActorManagedData(actor: Actor): Dnd5eSrdManagedDataParseResult<Dnd5eSrdActorManagedData> {
+  const source = managedDataSource("actor", typeof actor?.id === "string" ? actor.id : "");
+  const report = validateDnd5eSrdActor(actor, { requireCharacterCore: false });
+  return managedDataParseResult(source, isRecord(actor?.data) ? actor.data : {}, report);
+}
+
+/** Item counterpart to parseDnd5eSrdActorManagedData. */
+export function parseDnd5eSrdItemManagedData(item: Item): Dnd5eSrdManagedDataParseResult<Dnd5eSrdItemManagedData> {
+  const source = managedDataSource("item", typeof item?.id === "string" ? item.id : "");
+  const report = validateDnd5eSrdItem(item);
+  return managedDataParseResult(source, isRecord(item?.data) ? item.data : {}, report);
+}
+
+/** Returns a fresh flat record for storage/API compatibility. */
+export function dnd5eSrdManagedDataRecord<T extends Record<string, unknown>>(view: Dnd5eSrdManagedDataView<T>): Record<string, unknown> {
+  return cloneValue(view.data);
+}
+
+export function formatDnd5eSrdManagedDataError(result: Dnd5eSrdManagedDataParseResult<Record<string, unknown>>): string | undefined {
+  if (result.ok) return undefined;
+  const first = result.issues[0];
+  if (!first) return `D&D ${result.source.entityKind} data did not match schema ${result.source.schemaVersion}.`;
+  return `D&D ${result.source.entityKind} ${result.source.entityId || "(unknown)"} schema ${result.source.schemaVersion} validation failed at ${first.path || "/"} (${first.code}): ${first.message}`;
 }
 
 function repairCandidate(

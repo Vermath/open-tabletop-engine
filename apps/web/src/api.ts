@@ -513,7 +513,7 @@ export interface DiceRollVerification {
   rollId: string;
   formula: string;
   verified: boolean;
-  reason?: "fairness_unavailable" | "unsupported_algorithm" | "seed_hash_mismatch" | "formula_unparseable" | "result_mismatch";
+  reason?: "fairness_unavailable" | "unsupported_algorithm" | "seed_hash_mismatch" | "formula_unparseable" | "source_roll_unavailable" | "reroll_link_mismatch" | "result_mismatch";
   fairness?: DiceRollFairness;
   expected: { total: number };
   recomputed?: { total: number };
@@ -705,6 +705,31 @@ export interface CampaignMemberInfo extends CampaignMember {
   user: Pick<User, "id" | "displayName" | "email">;
   active: boolean;
   permissions: PermissionName[];
+}
+
+export async function updateCampaignMember(
+  campaignId: string,
+  member: Pick<CampaignMemberInfo, "id" | "updatedAt">,
+  role: Extract<UserRole, "gm" | "assistant_gm" | "player" | "observer">,
+  options: ApiRequestOptions & { idempotencyKey: string }
+): Promise<CampaignMemberInfo> {
+  return apiPatch<CampaignMemberInfo>(
+    `/api/v1/campaigns/${encodeURIComponent(campaignId)}/members/${encodeURIComponent(member.id)}`,
+    { role, expectedUpdatedAt: member.updatedAt },
+    options
+  );
+}
+
+export async function removeCampaignMember(
+  campaignId: string,
+  member: Pick<CampaignMemberInfo, "id" | "updatedAt">,
+  options: ApiRequestOptions & { idempotencyKey: string }
+): Promise<CampaignMemberInfo> {
+  const query = new URLSearchParams({ expectedUpdatedAt: member.updatedAt });
+  return apiDelete<CampaignMemberInfo>(
+    `/api/v1/campaigns/${encodeURIComponent(campaignId)}/members/${encodeURIComponent(member.id)}?${query}`,
+    options
+  );
 }
 
 export interface CampaignOwnershipTransferResult {
@@ -2712,6 +2737,83 @@ export interface AdminStorageOperations {
   remediation?: string;
 }
 
+export interface AdminOperationsLatencyMetrics {
+  count: number;
+  totalMs: number;
+  maxMs: number;
+  buckets: Array<{ le: number | "infinity"; count: number }>;
+}
+
+export interface AdminOperationsOutcomeMetrics {
+  attempts: number;
+  succeeded: number;
+  failed: number;
+  latencyMs: AdminOperationsLatencyMetrics;
+}
+
+export interface AdminOperationsMetrics {
+  version: 1;
+  enabled: boolean;
+  startedAt: string;
+  generatedAt: string;
+  privacy: {
+    boundedDimensions: true;
+    containsCampaignIds: false;
+    containsUserIds: false;
+    containsCredentials: false;
+    containsPrivateContent: false;
+  };
+  http: {
+    requests: number;
+    errorResponses: number;
+    staleWriteConflicts: number;
+    methods: Record<"GET" | "POST" | "PATCH" | "PUT" | "DELETE" | "OTHER", number>;
+    statusClasses: Record<"2xx" | "3xx" | "4xx" | "5xx", number>;
+    latencyMs: AdminOperationsLatencyMetrics;
+  };
+  realtime: {
+    connectionsOpened: number;
+    disconnections: number;
+    revokedConnections: number;
+    sendFailures: number;
+    activeConnections: number;
+    heartbeatGapMs: AdminOperationsLatencyMetrics;
+  };
+  persistence: AdminOperationsOutcomeMetrics;
+  recovery: Record<"backup" | "restore_drill" | "restore", AdminOperationsOutcomeMetrics>;
+}
+
+export type AdminOperationalRetentionRecordClass = "delivered_emails" | "delivered_webhooks" | "maintenance_jobs";
+
+export interface AdminOperationalRetentionDiagnostics {
+  policyVersion: 1;
+  generatedAt: string;
+  preservationDefault: true;
+  supportedRecordClasses: AdminOperationalRetentionRecordClass[];
+  counts: Record<AdminOperationalRetentionRecordClass, number>;
+  totalEligibleTerminalRecords: number;
+  exemptions: string[];
+}
+
+export interface AdminOperationalRetentionPlan {
+  policyVersion: 1;
+  preservationDefault: true;
+  dryRun: boolean;
+  cutoffAt: string;
+  olderThanDays: number;
+  recordClasses: AdminOperationalRetentionRecordClass[];
+  batchSize: number;
+  eligibleCount: number;
+  selectedCount: number;
+  remainingCount: number;
+  targetSetHash: string;
+  selected: Array<{ recordClass: AdminOperationalRetentionRecordClass; id: string; completedAt: string }>;
+  counts: Record<AdminOperationalRetentionRecordClass, number>;
+  exemptions: string[];
+  deletedCount?: number;
+  reason?: string;
+}
+
 export interface AdminAssetSnapshotIdentity {
   provider: "local" | "s3";
   snapshotId: string;
@@ -2904,6 +3006,8 @@ export interface AdminSnapshot {
   jobOperations: AdminJobOperations;
   authOperations: AdminAuthOperations;
   storageOperations: AdminStorageOperations;
+  operationsMetrics: AdminOperationsMetrics;
+  retentionOperations: AdminOperationalRetentionDiagnostics;
   assetStorage: AdminAssetStorageInfo;
   assetIntegrity: AdminAssetIntegrityReport;
   renderingOperations: AdminRenderingOperations;
@@ -2915,7 +3019,7 @@ export interface AdminSnapshot {
 }
 
 export async function loadAdminSnapshot(options: ApiRequestOptions = {}): Promise<AdminSnapshot> {
-  const [users, sessions, emailOutbox, audit, jobs, jobOperations, authOperations, storageOperations, assetStorage, assetIntegrity, renderingOperations, systemOperations, aiOperations, pluginReviews, pluginOperations, scimGroupRoleMappings] = await Promise.all([
+  const [users, sessions, emailOutbox, audit, jobs, jobOperations, authOperations, storageOperations, operationsMetrics, retentionOperations, assetStorage, assetIntegrity, renderingOperations, systemOperations, aiOperations, pluginReviews, pluginOperations, scimGroupRoleMappings] = await Promise.all([
     apiGet<AdminUserInfo[]>("/api/v1/admin/users", options),
     apiGet<AdminSessionInfo[]>("/api/v1/admin/sessions", options),
     apiGet<EmailOutboxMessage[]>("/api/v1/admin/email-outbox", options),
@@ -2924,6 +3028,8 @@ export async function loadAdminSnapshot(options: ApiRequestOptions = {}): Promis
     apiGet<AdminJobOperations>("/api/v1/admin/jobs/operations", options),
     apiGet<AdminAuthOperations>("/api/v1/admin/auth/operations", options),
     apiGet<AdminStorageOperations>("/api/v1/admin/storage/operations", options),
+    apiGet<AdminOperationsMetrics>("/api/v1/admin/operations/metrics", options),
+    apiGet<AdminOperationalRetentionDiagnostics>("/api/v1/admin/retention/operations", options),
     apiGet<AdminAssetStorageInfo>("/api/v1/admin/assets/storage", options),
     apiGet<AdminAssetIntegrityReport>("/api/v1/admin/assets/integrity", options),
     apiGet<AdminRenderingOperations>("/api/v1/admin/rendering/operations", options),
@@ -2933,7 +3039,7 @@ export async function loadAdminSnapshot(options: ApiRequestOptions = {}): Promis
     apiGet<AdminPluginOperations>("/api/v1/admin/plugins/operations", options),
     apiGet<AdminScimGroupRoleMapping[]>("/api/v1/admin/scim/group-role-mappings", options)
   ]);
-  return { users, sessions, emailOutbox, audit, jobs, jobOperations, authOperations, storageOperations, assetStorage, assetIntegrity, renderingOperations, systemOperations, aiOperations, pluginReviews, pluginOperations, scimGroupRoleMappings };
+  return { users, sessions, emailOutbox, audit, jobs, jobOperations, authOperations, storageOperations, operationsMetrics, retentionOperations, assetStorage, assetIntegrity, renderingOperations, systemOperations, aiOperations, pluginReviews, pluginOperations, scimGroupRoleMappings };
 }
 
 type DisplayMapAsset = MapAsset & { deliveryUrl?: string };

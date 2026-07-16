@@ -12,7 +12,7 @@ describe("API Vitest performance isolation", () => {
     expect(config).toContain('include: [performanceTestFile]');
     expect(config).toContain('pool: "forks"');
     expect(config).toContain("singleFork: true");
-    expect(config).toContain("maxWorkers: 6");
+    expect(config).toContain("maxWorkers: 2");
     expect(functionalGroup).toBeGreaterThanOrEqual(0);
     expect(performanceGroup).toBeGreaterThan(functionalGroup);
   });

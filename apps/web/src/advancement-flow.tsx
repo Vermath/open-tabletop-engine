@@ -2,6 +2,7 @@ import type { Actor, Dnd5eSrdPendingAdvancement } from "@open-tabletop/core";
 import { ChevronLeft, Eye, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { errorMessage, formatNumber, numericValue, recordValue, stringValue, titleCaseLabel } from "./sheet-format.js";
+import { isStaleWriteError } from "./shared-mutation.js";
 import { systemAdvancementLabel, type AdvancementOptionInfo } from "./system-actions.js";
 
 export type AdvancementHitPointMode = "fixed" | "roll";
@@ -104,6 +105,10 @@ export type AdvancementFlowProps = {
   onAdvanceActor(optionId?: string, choices?: AdvancementChoicePayload): void | Promise<void>;
   pendingAdvancement?: Dnd5eSrdPendingAdvancement;
   onCancelPendingAdvancement?(pending: Dnd5eSrdPendingAdvancement): void | Promise<void>;
+  loadError?: string;
+  loadState?: "idle" | "loading" | "ready" | "error";
+  onRetryLoad?(): void;
+  onRefreshActor?(): Promise<void>;
   canAdvanceActor: boolean;
   actor?: Actor;
 };
@@ -185,6 +190,24 @@ export function advancementAbilityAllocationStatus(actor: Actor, feat: Advanceme
   };
 }
 
+export type AdvancementChoiceField = "option" | "hitPoints" | "multiclass" | "subclass" | "weaponMastery" | "feat" | "abilityChoices";
+
+export function advancementChoiceFieldForPath(path: string): AdvancementChoiceField | undefined {
+  const normalized = path.toLowerCase();
+  if (normalized.includes("weaponmastery")) return "weaponMastery";
+  if (normalized.includes("abilitychoices") || normalized.includes("attributes")) return "abilityChoices";
+  if (normalized.includes("hitpoint")) return "hitPoints";
+  if (normalized.includes("subclass")) return "subclass";
+  if (normalized.includes("classname") || normalized.includes("multiclass")) return "multiclass";
+  if (normalized.includes("featid") || normalized.includes("feat")) return "feat";
+  if (normalized.includes("optionid") || normalized.includes("option")) return "option";
+  return undefined;
+}
+
+export function invalidatedAdvancementChoiceFields(blockers: AdvancementPreviewEnvelope["blockers"]): AdvancementChoiceField[] {
+  return [...new Set(blockers.flatMap((blocker) => advancementChoiceFieldForPath(blocker.path) ?? []))];
+}
+
 export function AdvancementFlow(props: AdvancementFlowProps) {
   const [advancementOptionId, setAdvancementOptionId] = useState("");
   const [advancementStep, setAdvancementStep] = useState<"choose" | "review">("choose");
@@ -201,11 +224,19 @@ export function AdvancementFlow(props: AdvancementFlowProps) {
   const [previewing, setPreviewing] = useState(false);
   const [advancing, setAdvancing] = useState(false);
   const [cancellingPending, setCancellingPending] = useState(false);
+  const [invalidatedChoiceMessages, setInvalidatedChoiceMessages] = useState<string[]>([]);
   const previewingRef = useRef(false);
   const advancingRef = useRef(false);
   const previewAttemptKeyRef = useRef("");
   const commitAttemptKeyRef = useRef("");
   const requestGenerationRef = useRef(0);
+  const optionRef = useRef<HTMLSelectElement | null>(null);
+  const hitPointsRef = useRef<HTMLInputElement | null>(null);
+  const multiclassRef = useRef<HTMLSelectElement | null>(null);
+  const subclassRef = useRef<HTMLSelectElement | null>(null);
+  const weaponMasteryRef = useRef<HTMLInputElement | null>(null);
+  const featRef = useRef<HTMLSelectElement | null>(null);
+  const abilityChoicesRef = useRef<HTMLInputElement | null>(null);
   const advancementLabel = systemAdvancementLabel(props.actor?.systemId);
   const selectedAdvancementOption = props.advancementOptions.find((option) => option.id === advancementOptionId) ?? props.advancementOptions[0];
   const selectedMulticlassOption = props.multiclassOptions.find((option) => option.className === selectedMulticlass);
@@ -244,6 +275,7 @@ export function AdvancementFlow(props: AdvancementFlowProps) {
               ? allocationStatus?.error ?? "Complete the feat ability allocation."
               : "";
   const advancementReadyToReview = Boolean(props.actor && props.canAdvanceActor && !advancementBlockingMessage);
+  const invalidFields = invalidatedAdvancementChoiceFields(advancementPreview?.blockers ?? []);
 
   useEffect(() => {
     requestGenerationRef.current += 1;
@@ -278,6 +310,7 @@ export function AdvancementFlow(props: AdvancementFlowProps) {
     setAbilityAllocations({});
     setWeaponMasteryChoices([]);
     setAdvancementError("");
+    setInvalidatedChoiceMessages([]);
     setAdvancementPreview(undefined);
     previewAttemptKeyRef.current = "";
     commitAttemptKeyRef.current = "";
@@ -340,6 +373,28 @@ export function AdvancementFlow(props: AdvancementFlowProps) {
     ...(weaponMastery?.requiresSelection ? { weaponMasteryChoices: [...weaponMasteryChoices] } : {}),
     ...(selectedFeat ? { featId: selectedFeat.id, abilityChoices: { ...abilityAllocations } } : {})
   });
+
+  const focusChoiceField = (field: AdvancementChoiceField | undefined) => {
+    const target = field === "option" ? optionRef.current
+      : field === "hitPoints" ? hitPointsRef.current
+        : field === "multiclass" ? multiclassRef.current
+          : field === "subclass" ? subclassRef.current
+            : field === "weaponMastery" ? weaponMasteryRef.current
+              : field === "feat" ? featRef.current
+                : field === "abilityChoices" ? abilityChoicesRef.current
+                  : undefined;
+    window.requestAnimationFrame(() => target?.focus());
+  };
+
+  const clearInvalidatedChoices = (fields: AdvancementChoiceField[]) => {
+    if (fields.includes("option")) setAdvancementOptionId(props.advancementOptions[0]?.id ?? "");
+    if (fields.includes("hitPoints")) setHitPointMode("");
+    if (fields.includes("multiclass")) setSelectedMulticlass("");
+    if (fields.includes("subclass")) setSelectedSubclassId("");
+    if (fields.includes("weaponMastery")) setWeaponMasteryChoices([]);
+    if (fields.includes("feat")) setSelectedFeatId("");
+    if (fields.includes("abilityChoices") || fields.includes("feat")) setAbilityAllocations({});
+  };
 
   const resumePendingAdvancement = async () => {
     const pending = props.pendingAdvancement;
@@ -439,7 +494,11 @@ export function AdvancementFlow(props: AdvancementFlowProps) {
       if (generation !== requestGenerationRef.current) return;
       setAdvancementPreview(preview);
       setAdvancementStep("review");
-      if (preview.status !== "ready") setAdvancementError(preview.blockers[0]?.message ?? preview.serverRolls[0]?.reason ?? "Advancement is not ready to commit.");
+      if (preview.status !== "ready") {
+        const blocker = preview.blockers[0];
+        setAdvancementError(blocker?.message ?? preview.serverRolls[0]?.reason ?? "Advancement is not ready to commit.");
+        focusChoiceField(advancementChoiceFieldForPath(blocker?.path ?? ""));
+      }
     } catch (error) {
       if (generation !== requestGenerationRef.current) return;
       setAdvancementError(errorMessage(error));
@@ -469,9 +528,10 @@ export function AdvancementFlow(props: AdvancementFlowProps) {
       } else {
         setAdvancementError(draft.blockers[0]?.message ?? "This advancement cannot be saved until its invalid choices are corrected.");
       }
+      focusChoiceField(advancementChoiceFieldForPath(draft.blockers[0]?.path ?? ""));
     } catch (error) {
       if (generation !== requestGenerationRef.current) return;
-      setAdvancementError(errorMessage(error));
+      setAdvancementError(`${errorMessage(error)} Your advancement choices are preserved; retry when ready.`);
     } finally {
       if (generation === requestGenerationRef.current) {
         previewingRef.current = false;
@@ -511,7 +571,33 @@ export function AdvancementFlow(props: AdvancementFlowProps) {
       commitAttemptKeyRef.current = "";
     } catch (error) {
       if (generation !== requestGenerationRef.current) return;
-      setAdvancementError(errorMessage(error));
+      if (isStaleWriteError(error) && props.onPreviewActor) {
+        commitAttemptKeyRef.current = "";
+        previewAttemptKeyRef.current = `advancement-preview:${window.crypto.randomUUID()}`;
+        setAdvancementConfirmed(false);
+        try {
+          const refreshed = await props.onPreviewActor(selectedAdvancementOption.id, selectedChoices(), previewAttemptKeyRef.current);
+          if (generation !== requestGenerationRef.current) return;
+          const invalidatedFields = invalidatedAdvancementChoiceFields(refreshed.blockers);
+          setAdvancementPreview(refreshed);
+          if (invalidatedFields.length > 0) {
+            clearInvalidatedChoices(invalidatedFields);
+            setInvalidatedChoiceMessages(refreshed.blockers.map((blocker) => blocker.message));
+            setAdvancementStep("choose");
+            setAdvancementError("The actor changed. Invalid choices were removed; your other choices are preserved. Correct the highlighted field and review again.");
+            focusChoiceField(invalidatedFields[0]);
+          } else {
+            setInvalidatedChoiceMessages([]);
+            setAdvancementStep("review");
+            setAdvancementError("The actor changed. The exact preview was refreshed; review the updated diff before retrying.");
+          }
+          await props.onRefreshActor?.();
+        } catch (refreshError) {
+          setAdvancementError(`The actor changed. Your choices are preserved, but the refreshed review failed: ${errorMessage(refreshError)}`);
+        }
+      } else {
+        setAdvancementError(`${errorMessage(error)} Your advancement choices are preserved; retry when ready.`);
+      }
     } finally {
       if (generation === requestGenerationRef.current) {
         advancingRef.current = false;
@@ -527,6 +613,13 @@ export function AdvancementFlow(props: AdvancementFlowProps) {
           <div className="section-title">Advancement</div>
           <strong>{formatNumber(props.advancementOptions.length)} choices</strong>
         </div>
+        {props.loadError && (
+          <div className="lore-load-state error" role="alert" aria-label="Advancement load failed">
+            <strong>Advancement could not be refreshed</strong>
+            <span>{props.loadError} Existing choices and any saved draft remain available.</span>
+            {props.onRetryLoad && <button className="ghost-button small" type="button" onClick={props.onRetryLoad}>Retry advancement load</button>}
+          </div>
+        )}
         {props.pendingAdvancement && (
           <div className="operator-item admin-item" role="status" aria-label="Saved advancement">
             <strong>{props.pendingAdvancement.status === "ready" ? "Saved advancement ready for review" : "Saved advancement draft"}</strong>
@@ -544,12 +637,12 @@ export function AdvancementFlow(props: AdvancementFlowProps) {
           </div>
         )}
         {props.advancementOptions.length === 0 ? (
-          <div className="empty-state compact">No advancement choices are available for this actor.</div>
+          <div className="empty-state compact" role={props.loadState === "loading" ? "status" : undefined}>{props.loadState === "loading" ? "Loading advancement choices..." : props.loadError ? "Retry the advancement load without losing the current actor context." : "No advancement choices are available for this actor."}</div>
         ) : (
           <>
             <label>
               <span>Choice</span>
-              <select aria-label="Advancement option" value={selectedAdvancementOption?.id ?? ""} disabled={!props.canAdvanceActor} onChange={(event) => setAdvancementOptionId(event.target.value)}>
+              <select ref={optionRef} aria-label="Advancement option" aria-invalid={invalidFields.includes("option")} aria-describedby={invalidFields.includes("option") ? "advancement-error" : undefined} value={selectedAdvancementOption?.id ?? ""} disabled={!props.canAdvanceActor} onChange={(event) => { setAdvancementOptionId(event.target.value); setInvalidatedChoiceMessages([]); }}>
                 {props.advancementOptions.map((option) => (
                   <option key={option.id} value={option.id}>
                     {option.name}
@@ -570,7 +663,7 @@ export function AdvancementFlow(props: AdvancementFlowProps) {
             {advancementMode === "multiclass" && (
               <label>
                 <span>Add a level in</span>
-                <select aria-label="Multiclass into" value={selectedMulticlass} disabled={!props.canAdvanceActor} onChange={(event) => setSelectedMulticlass(event.target.value)}>
+                <select ref={multiclassRef} aria-label="Multiclass into" aria-invalid={invalidFields.includes("multiclass")} aria-describedby={invalidFields.includes("multiclass") ? "advancement-error" : undefined} value={selectedMulticlass} disabled={!props.canAdvanceActor} onChange={(event) => { setSelectedMulticlass(event.target.value); setInvalidatedChoiceMessages([]); }}>
                   <option value="">Select a class</option>
                   {props.multiclassOptions.map((option) => (
                     <option key={option.className} value={option.className} disabled={!option.eligible}>
@@ -588,7 +681,7 @@ export function AdvancementFlow(props: AdvancementFlowProps) {
             {pathRequiresSubclass && (
               <label className="advancement-subclass-choice">
                 <span>Subclass for {activeClassName}</span>
-                <select aria-label="Advancement subclass" value={selectedSubclassId} disabled={!props.canAdvanceActor || activeSubclassOptions.length === 0} onChange={(event) => setSelectedSubclassId(event.target.value)}>
+                <select ref={subclassRef} aria-label="Advancement subclass" aria-invalid={invalidFields.includes("subclass")} aria-describedby={invalidFields.includes("subclass") ? "advancement-error" : undefined} value={selectedSubclassId} disabled={!props.canAdvanceActor || activeSubclassOptions.length === 0} onChange={(event) => { setSelectedSubclassId(event.target.value); setInvalidatedChoiceMessages([]); }}>
                   <option value="">Select a subclass</option>
                   {activeSubclassOptions.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
                 </select>
@@ -606,11 +699,11 @@ export function AdvancementFlow(props: AdvancementFlowProps) {
               <fieldset className="advancement-choice-fieldset">
                 <legend>Hit point increase</legend>
                 <label>
-                  <input type="radio" name="advancement-hit-point-mode" value="fixed" checked={hitPointMode === "fixed"} disabled={!props.canAdvanceActor} onChange={() => setHitPointMode("fixed")} />
+                  <input ref={hitPointsRef} aria-invalid={invalidFields.includes("hitPoints")} aria-describedby={invalidFields.includes("hitPoints") ? "advancement-error" : undefined} type="radio" name="advancement-hit-point-mode" value="fixed" checked={hitPointMode === "fixed"} disabled={!props.canAdvanceActor} onChange={() => { setHitPointMode("fixed"); setInvalidatedChoiceMessages([]); }} />
                   <span><strong>Fixed average</strong><small>Use the class's reliable fixed increase.</small></span>
                 </label>
                 <label>
-                  <input type="radio" name="advancement-hit-point-mode" value="roll" checked={hitPointMode === "roll"} disabled={!props.canAdvanceActor} onChange={() => setHitPointMode("roll")} />
+                  <input type="radio" name="advancement-hit-point-mode" value="roll" checked={hitPointMode === "roll"} disabled={!props.canAdvanceActor} onChange={() => { setHitPointMode("roll"); setInvalidatedChoiceMessages([]); }} />
                   <span><strong>Roll on server</strong><small>Roll the class hit die authoritatively when submitted.</small></span>
                 </label>
               </fieldset>
@@ -619,16 +712,19 @@ export function AdvancementFlow(props: AdvancementFlowProps) {
               <fieldset className="advancement-ability-allocation" aria-label="Weapon Mastery choices">
                 <legend>Choose exactly {formatNumber(weaponMastery.requiredCount)} Weapon Mastery weapon{weaponMastery.requiredCount === 1 ? "" : "s"}</legend>
                 <div className="advancement-ability-grid">
-                  {weaponMastery.options.map((option) => {
+                  {weaponMastery.options.map((option, optionIndex) => {
                     const selected = weaponMasteryChoices.includes(option.id);
                     return (
                       <label key={option.id}>
                         <input
+                          ref={optionIndex === 0 ? weaponMasteryRef : undefined}
                           aria-label={`${option.name} Weapon Mastery`}
+                          aria-invalid={invalidFields.includes("weaponMastery")}
+                          aria-describedby={invalidFields.includes("weaponMastery") ? "advancement-error" : undefined}
                           type="checkbox"
                           checked={selected}
                           disabled={!props.canAdvanceActor || (!selected && weaponMasteryChoices.length >= weaponMastery.requiredCount)}
-                          onChange={(event) => toggleWeaponMastery(option.id, event.target.checked)}
+                          onChange={(event) => { toggleWeaponMastery(option.id, event.target.checked); setInvalidatedChoiceMessages([]); }}
                         />
                         <span>{option.name} <small>{titleCaseLabel(option.mastery)}</small></span>
                       </label>
@@ -645,7 +741,7 @@ export function AdvancementFlow(props: AdvancementFlowProps) {
             {pathGrantsFeat && (
               <label>
                 <span>Feat or Ability Score Improvement</span>
-                <select aria-label="Advancement feat" value={selectedFeatId} disabled={!props.canAdvanceActor || props.advancementFeats.length === 0} onChange={(event) => setSelectedFeatId(event.target.value)}>
+                <select ref={featRef} aria-label="Advancement feat" aria-invalid={invalidFields.includes("feat")} aria-describedby={invalidFields.includes("feat") ? "advancement-error" : undefined} value={selectedFeatId} disabled={!props.canAdvanceActor || props.advancementFeats.length === 0} onChange={(event) => { setSelectedFeatId(event.target.value); setInvalidatedChoiceMessages([]); }}>
                   <option value="">Select a feat or ASI</option>
                   {props.advancementFeats.map((feat) => (
                     <option key={feat.id} value={feat.id}>{feat.name}</option>
@@ -663,13 +759,13 @@ export function AdvancementFlow(props: AdvancementFlowProps) {
               <fieldset className="advancement-ability-allocation">
                 <legend>Allocate exactly {formatNumber(allocationStatus.abilityPoints)} ability point{allocationStatus.abilityPoints === 1 ? "" : "s"}</legend>
                 <div className="advancement-ability-grid">
-                  {allocationStatus.allowedAbilities.map((ability) => {
+                  {allocationStatus.allowedAbilities.map((ability, abilityIndex) => {
                     const currentScore = numericValue(recordValue(props.actor?.data.attributes)[ability], 10);
                     const availableIncrease = Math.max(0, Math.min(allocationStatus.abilityPoints, allocationStatus.maximumScore - currentScore));
                     return (
                       <label key={ability}>
                         <span>{titleCaseLabel(ability)} <small>{formatNumber(currentScore)} / {formatNumber(allocationStatus.maximumScore)}</small></span>
-                        <input aria-label={`${titleCaseLabel(ability)} ability points`} type="number" inputMode="numeric" min={0} max={availableIncrease} step={1} value={abilityAllocations[ability] ?? 0} disabled={!props.canAdvanceActor || availableIncrease === 0} onChange={(event) => setAbilityAllocation(ability, event.target.value)} />
+                        <input ref={abilityIndex === 0 ? abilityChoicesRef : undefined} aria-label={`${titleCaseLabel(ability)} ability points`} aria-invalid={invalidFields.includes("abilityChoices")} aria-describedby={invalidFields.includes("abilityChoices") ? "advancement-error" : undefined} type="number" inputMode="numeric" min={0} max={availableIncrease} step={1} value={abilityAllocations[ability] ?? 0} disabled={!props.canAdvanceActor || availableIncrease === 0} onChange={(event) => { setAbilityAllocation(ability, event.target.value); setInvalidatedChoiceMessages([]); }} />
                       </label>
                     );
                   })}
@@ -680,10 +776,11 @@ export function AdvancementFlow(props: AdvancementFlowProps) {
               </fieldset>
             )}
             {advancementBlockingMessage && <p className="advancement-choice-status" role="status">{advancementBlockingMessage}</p>}
-            {advancementError && <div className="lore-load-state error" role="alert">{advancementError}</div>}
+            {invalidatedChoiceMessages.length > 0 && <div className="lore-load-state error" role="alert" aria-label="Invalidated advancement choices"><strong>Choices changed</strong><ul>{invalidatedChoiceMessages.map((message) => <li key={message}>{message}</li>)}</ul></div>}
+            {advancementError && <div id="advancement-error" className="lore-load-state error" role="alert">{advancementError}</div>}
             <div className="button-row">
               <button className="ghost-button" type="button" disabled={!advancementReadyToReview || previewing} onClick={() => void reviewAdvancement()}>
-                <Eye size={14} /> {previewing ? "Preparing review..." : "Review advancement"}
+                <Eye size={14} /> {previewing ? "Preparing review..." : advancementError ? "Retry advancement review" : "Review advancement"}
               </button>
               {props.actor?.systemId === "dnd-5e-srd" && props.onPreviewActor && advancementBlockingMessage && (
                 <button className="ghost-button" type="button" disabled={!props.canAdvanceActor || !selectedAdvancementOption || previewing} onClick={() => void saveAdvancementDraft()}>

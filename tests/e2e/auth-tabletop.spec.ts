@@ -1824,16 +1824,20 @@ test("GM can create a campaign through the setup wizard", async ({ page }) => {
   await openManageCategory(page, "Campaign");
   await openCreateDrawer(page, "New campaign");
   await expect(page.getByText("Campaign Setup", { exact: true })).toBeVisible();
-  await expect(page.getByRole("checkbox", { name: "Include starter content" })).toBeChecked();
 
   await page.getByRole("textbox", { name: "Campaign name", exact: true }).fill("E2E Setup Campaign");
   await page.getByRole("textbox", { name: "Campaign description", exact: true }).fill("Created through the campaign setup wizard");
   await page.getByRole("combobox", { name: "Campaign visibility", exact: true }).selectOption("invite_only");
+  await page.getByRole("button", { name: "Next: Scene & map" }).click();
+  await expect(page.getByRole("checkbox", { name: "Include starter content" })).toBeChecked();
+  await page.getByRole("button", { name: "Next: Invitation" }).click();
   await page.getByRole("checkbox", { name: "Create starter invite" }).check();
   await page.getByRole("textbox", { name: "Setup invite email" }).fill("setup-player@example.com");
   await page.getByRole("combobox", { name: "Setup default player permission preset" }).selectOption("player");
+  await openDetails(page.locator("details.campaign-setup-advanced").filter({ hasText: "Advanced permission settings" }));
   await page.getByRole("combobox", { name: "Setup campaign permission template" }).selectOption("player_authoring");
   await expect(page.getByText("Players can create actors, journal entries, and tokens for collaborative prep.")).toBeVisible();
+  await page.getByRole("button", { name: "Next: Review" }).click();
   const setupImpact = page.locator('[aria-label="Campaign setup impact"]');
   await expect(setupImpact).toContainText("Invite only - Player invite for setup-player@example.com");
   await expect(setupImpact).toContainText("First Session - 1200x800 - grid 50 - starter content");
@@ -1859,11 +1863,15 @@ test("GM can create a campaign through the setup wizard", async ({ page }) => {
 
   await openManageCategory(page, "Campaign");
   await openCreateDrawer(page, "New campaign");
-  await page.getByRole("checkbox", { name: "Include starter content" }).uncheck();
   await page.getByRole("textbox", { name: "Campaign name", exact: true }).fill("E2E Bare Campaign");
+  await page.getByRole("button", { name: "Next: Scene & map" }).click();
+  await page.getByRole("checkbox", { name: "Include starter content" }).uncheck();
   await page.getByRole("textbox", { name: "Setup initial scene name" }).fill("Bare Opening");
+  await openDetails(page.locator("details.campaign-setup-advanced").filter({ hasText: "Advanced scene and onboarding settings" }));
   await page.getByRole("textbox", { name: "Setup onboarding title" }).fill("Bare Welcome");
   await page.getByRole("textbox", { name: "Setup onboarding copy" }).fill("A handout for the bare setup path.");
+  await page.getByRole("button", { name: "Next: Invitation" }).click();
+  await page.getByRole("button", { name: "Skip for now" }).click();
   await expect(setupImpact).toContainText("Bare Opening - 1200x800 - grid 50 - session-0");
   await expect(setupImpact).toContainText("Public handout: Bare Welcome");
   await page.getByRole("button", { name: "Create Campaign Setup" }).click();
@@ -1922,15 +1930,18 @@ test("campaign setup locks duplicate submits and resumes after a failed follow-u
   await openCreateDrawer(page, "New campaign");
   const campaignName = page.getByRole("textbox", { name: "Campaign name", exact: true });
   await campaignName.fill("E2E Retry Safe Campaign");
+  const setupForm = page.locator("form.campaign-setup-steps");
+  await page.getByRole("button", { name: "Next: Scene & map" }).click();
+  await page.getByRole("button", { name: "Skip for now" }).click();
   await page.getByRole("checkbox", { name: "Create starter invite" }).check();
   await page.getByRole("textbox", { name: "Setup invite email" }).fill("retry-safe@example.com");
-  const setupForm = campaignName.locator("xpath=ancestor::form");
+  await page.getByRole("button", { name: "Next: Review" }).click();
   const submitButton = setupForm.locator('button[type="submit"]');
   await submitButton.click();
   await expect.poll(() => campaignPosts).toBe(1);
   try {
     await expect(submitButton).toBeDisabled();
-    await expect(campaignName).toBeDisabled();
+    await expect(setupForm.locator("fieldset")).toHaveAttribute("disabled", "");
     await submitButton.evaluate((button: HTMLButtonElement) => button.click());
     expect(campaignPosts).toBe(1);
   } finally {
@@ -1939,7 +1950,7 @@ test("campaign setup locks duplicate submits and resumes after a failed follow-u
 
   await expect(page.getByRole("status").filter({ hasText: "simulated invite failure" })).toBeVisible();
   await expect(submitButton).toHaveText(/Retry Campaign Setup/);
-  await expect(campaignName).toBeDisabled();
+  await expect(setupForm.locator("fieldset")).toHaveAttribute("disabled", "");
   expect(campaignPosts).toBe(1);
   expect(inviteAttempts).toBe(1);
 
@@ -1967,7 +1978,7 @@ test("GM can export and safely re-import a campaign archive", async ({ page }) =
   await expect(exportWizard.getByLabel("Archive compatibility notes")).toContainText("v0.3/v1-compatible importer");
 
   const downloadPromise = page.waitForEvent("download");
-  await exportWizard.getByRole("button", { name: "Export Archive" }).click();
+  await exportWizard.getByRole("button", { name: "Export JSON (small archives)" }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toContain("The Ember Vault");
 
@@ -2061,17 +2072,23 @@ test("GM can export and safely re-import a campaign archive", async ({ page }) =
   await openManageCategory(page, "Archives");
   const reopenedImportWizard = page.getByRole("region", { name: "Archive import wizard" });
   await expect(reopenedImportWizard).toBeVisible();
+  const archiveRecovery = reopenedImportWizard.getByRole("region", { name: "Archive import rollback operations" });
+  await expect(archiveRecovery).toBeVisible();
+  const operationPicker = archiveRecovery.getByRole("combobox", { name: "Import operation" });
+  const selectedImportOperationId = await operationPicker.inputValue();
+  expect(selectedImportOperationId).toMatch(/^arcimp_/);
+  await archiveRecovery.getByRole("button", { name: "Review rollback impact" }).click();
+  await expect(archiveRecovery.getByLabel("Archive rollback impact confirmation")).toContainText("delete 1 records");
+  await archiveRecovery.getByRole("textbox", { name: "Type operation id to confirm rollback" }).fill(selectedImportOperationId);
+  await archiveRecovery.getByRole("button", { name: "Roll back this import" }).click();
+  await expect(statusMessage(page, "Archive import rolled back")).toBeVisible();
+  await expect(operationPicker.locator(`option[value="${selectedImportOperationId}"]`)).toContainText("rolled_back");
   await reopenedImportWizard.getByRole("combobox", { name: "Archive import scope" }).selectOption("all");
 
   await reopenedImportWizard.getByRole("combobox", { name: "Archive import mode" }).selectOption("skip_conflicts");
   await page.getByLabel("Import campaign archive").setInputFiles(archivePath);
   await expect(statusMessage(page, /Imported non-conflicting records; skipped \d+ conflicts/)).toBeVisible();
   await expect(reopenedImportWizard.getByLabel("Archive import validation")).toContainText("Skipped");
-  await expect(reopenedImportWizard.getByLabel("Archive import validation")).toContainText("Rollback snapshot");
-  const rollbackDownloadPromise = page.waitForEvent("download");
-  await reopenedImportWizard.getByLabel("Archive import validation").getByRole("button", { name: "Download" }).click();
-  const rollbackDownload = await rollbackDownloadPromise;
-  expect(rollbackDownload.suggestedFilename()).toContain("rollback-before");
 
   await importWizard.getByRole("combobox", { name: "Archive import mode" }).selectOption("upsert");
   await page.getByLabel("Import campaign archive").setInputFiles(archivePath);
@@ -3467,7 +3484,7 @@ test("delayed GM actor and token mutations cannot apply after switching to a pla
   expect(await page.evaluate(() => localStorage.getItem("otte:userId"))).toBe("usr_demo_player");
 });
 
-test("closing Encounter Builder cancels the remaining monster placements", async ({ page }) => {
+test("closing Encounter Builder retries the same atomic monster placement", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
   await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
@@ -3503,38 +3520,32 @@ test("closing Encounter Builder cancels the remaining monster placements", async
     return result.encounter;
   }, { apiBaseUrl });
 
+  const baselineActors = await expectJsonResponse<E2EActor[]>(await page.request.get(apiBaseUrl + "/api/v1/campaigns/camp_demo/actors", { headers: gmApiHeaders }));
+  const baselineTokens = await expectJsonResponse<E2EToken[]>(await page.request.get(apiBaseUrl + "/api/v1/scenes/scn_vault_entry/tokens", { headers: gmApiHeaders }));
   let placementRelease!: () => void;
-  let placementStartedResolve!: () => void;
+  let placementCommittedResolve!: () => void;
   let placementRequestCount = 0;
-  const placementStarted = new Promise<void>((resolve) => { placementStartedResolve = resolve; });
+  const placementKeys: string[] = [];
+  const placementBodies: string[] = [];
+  type PlacementResult = {
+    placements: Array<{ actor: E2EActor & { updatedAt: string }; sceneToken: E2EToken }>;
+    scene: { id: string; updatedAt: string };
+  };
+  let committedResult: PlacementResult | undefined;
+  const placementCommitted = new Promise<void>((resolve) => { placementCommittedResolve = resolve; });
   const placementReleased = new Promise<void>((resolve) => { placementRelease = resolve; });
-  await page.route("**/api/v1/scenes/scn_vault_entry/tokens", async (route) => {
+  await page.route("**/api/v1/scenes/scn_vault_entry/encounter-monster-placements", async (route) => {
     if (route.request().method() !== "POST") return route.continue();
     placementRequestCount += 1;
-    placementStartedResolve();
+    placementKeys.push(route.request().headers()["idempotency-key"] ?? "");
+    placementBodies.push(route.request().postData() ?? "");
+    if (placementRequestCount !== 1) return route.continue();
+    const upstream = await route.fetch();
+    const body = await upstream.text();
+    committedResult = JSON.parse(body) as PlacementResult;
+    placementCommittedResolve();
     await placementReleased;
-    const body = route.request().postDataJSON() as Record<string, unknown>;
-    const timestamp = new Date().toISOString();
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        ...body,
-        id: `tok_cancelled_placement_${placementRequestCount}`,
-        sceneId: "scn_vault_entry",
-        rotation: 0,
-        layer: body.layer ?? "player",
-        hidden: false,
-        locked: false,
-        visionEnabled: false,
-        visionRadius: 0,
-        disposition: body.disposition ?? "hostile",
-        ownerUserIds: [],
-        metadata: {},
-        createdAt: timestamp,
-        updatedAt: timestamp
-      })
-    }).catch(() => undefined);
+    await route.fulfill({ status: upstream.status(), headers: upstream.headers(), body }).catch(() => undefined);
   });
 
   try {
@@ -3547,15 +3558,54 @@ test("closing Encounter Builder cancels the remaining monster placements", async
     const place = dialog.getByRole("button", { name: "Place monsters on scene" });
     await expect(place).toBeEnabled();
     await place.click();
-    await placementStarted;
+    await placementCommitted;
     await dialog.getByRole("button", { name: "Cancel monster placement and close encounter builder" }).click();
     await expect(dialog).toBeHidden();
     placementRelease();
-    await page.waitForTimeout(400);
-    expect(placementRequestCount).toBe(1);
+    await page.waitForTimeout(200);
+
+    await page.getByRole("button", { name: "Plan Encounter" }).click();
+    const reopenedDialog = page.getByRole("dialog", { name: "Encounter builder" });
+    await expect(reopenedDialog).toBeVisible();
+    await reopenedDialog.getByRole("button", { name: new RegExp(encounter.name) }).click();
+    const replayResponsePromise = page.waitForResponse((response) =>
+      response.url().endsWith("/api/v1/scenes/scn_vault_entry/encounter-monster-placements")
+      && response.request().method() === "POST"
+      && response.headers()["idempotency-replayed"] === "true"
+    );
+    await reopenedDialog.getByRole("button", { name: "Place monsters on scene" }).click();
+    const replayResponse = await replayResponsePromise;
+    expect(replayResponse.status()).toBe(200);
+    const replayedResult = await replayResponse.json() as PlacementResult;
+    expect(placementRequestCount).toBe(2);
+    expect(placementKeys[1]).toBe(placementKeys[0]);
+    expect(placementBodies[1]).toBe(placementBodies[0]);
+    expect(replayedResult).toEqual(committedResult);
+    expect(replayedResult.placements).toHaveLength(3);
+
+    const actors = await expectJsonResponse<E2EActor[]>(await page.request.get(apiBaseUrl + "/api/v1/campaigns/camp_demo/actors", { headers: gmApiHeaders }));
+    const tokens = await expectJsonResponse<E2EToken[]>(await page.request.get(apiBaseUrl + "/api/v1/scenes/scn_vault_entry/tokens", { headers: gmApiHeaders }));
+    const placedActorIds = new Set(replayedResult.placements.map((placement) => placement.actor.id));
+    const placedTokenIds = new Set(replayedResult.placements.map((placement) => placement.sceneToken.id));
+    expect(actors).toHaveLength(baselineActors.length + 3);
+    expect(tokens).toHaveLength(baselineTokens.length + 3);
+    expect(actors.filter((actor) => placedActorIds.has(actor.id))).toHaveLength(3);
+    expect(tokens.filter((token) => placedActorIds.has(token.actorId ?? "") && placedTokenIds.has(token.id))).toHaveLength(3);
   } finally {
     placementRelease();
     await page.unrouteAll({ behavior: "ignoreErrors" });
+    for (const [index, placement] of (committedResult?.placements ?? []).entries()) {
+      const deleteTokenResponse = await page.request.delete(
+        expectedUpdatedAtUrl(apiBaseUrl + "/api/v1/tokens/" + placement.sceneToken.id, placement.sceneToken.updatedAt),
+        { headers: gmMutationHeaders("delete-atomic-placement-token-" + index) },
+      );
+      if (deleteTokenResponse.status() !== 404) await expectJsonResponse(deleteTokenResponse);
+      const deleteActorResponse = await page.request.delete(
+        expectedUpdatedAtUrl(apiBaseUrl + "/api/v1/actors/" + placement.actor.id, placement.actor.updatedAt),
+        { headers: gmMutationHeaders("delete-atomic-placement-actor-" + index) },
+      );
+      if (deleteActorResponse.status() !== 404) await expectJsonResponse(deleteActorResponse);
+    }
     const currentEncounterResponse = await page.request.get(`${apiBaseUrl}/api/v1/encounters/${encounter.id}`, {
       headers: gmApiHeaders,
     });
@@ -3815,12 +3865,152 @@ test("GM can bulk duplicate selected prep scenes", async ({ page }) => {
   await expect(page.getByRole("status", { name: "Scene filter summary" })).toContainText("2 of");
   await page.getByRole("button", { name: "Select visible scenes" }).click();
   await expect(page.getByRole("status", { name: "Scene selection summary" })).toContainText("2 selected");
+  const previewRequestPromise = page.waitForRequest((request) => request.method() === "POST" && new URL(request.url()).pathname.endsWith("/scene-duplications"));
   await page.getByRole("button", { name: "Duplicate selected scenes" }).click();
-  await expect(page.getByText("Duplicated 2 selected scenes")).toBeVisible();
+  const previewRequest = await previewRequestPromise;
+  expect(previewRequest.postDataJSON()).toMatchObject({ dryRun: true, sources: [{}, {}] });
+  const review = page.getByRole("region", { name: "Scene duplication review" });
+  await expect(review).toBeVisible();
+  await expect(review.getByRole("list", { name: "Planned scene copies" })).toContainText(`${prefix} A Copy`);
+  await expect(review.getByRole("list", { name: "Planned scene copies" })).toContainText(`${prefix} B Copy`);
+  const commitResponsePromise = page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname.endsWith("/scene-duplications") && response.status() === 201);
+  await review.getByRole("button", { name: "Confirm duplicate selected scenes" }).click();
+  const commitResponse = await commitResponsePromise;
+  expect(commitResponse.request().postDataJSON()).toMatchObject({ dryRun: false, sources: [{}, {}] });
+  await expect(page.getByText(/Duplicated 2 scenes, \d+ tokens, and \d+ actors atomically/)).toBeVisible();
   await expect(page.getByRole("status", { name: "Scene selection summary" })).toContainText("2 selected");
 
+  await page.reload();
+  await openManageCategory(page, "Scenes");
   await page.getByRole("textbox", { name: "Scene search" }).fill(`${prefix} A Copy`);
   await expect(sceneTab(page, `${prefix} A Copy`)).toBeVisible();
   await page.getByRole("textbox", { name: "Scene search" }).fill(`${prefix} B Copy`);
   await expect(sceneTab(page, `${prefix} B Copy`)).toBeVisible();
+});
+
+test("failed prep scene duplication leaves no partial copies", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Demo GM" }).click();
+  await openManageCategory(page, "Scenes");
+
+  const prefix = `Failed Bulk Prep ${Date.now()}`;
+  await openCreateDrawer(page, "New scene");
+  const activeForPlayers = page.getByRole("checkbox", { name: "Activate for players", exact: true });
+  if (await activeForPlayers.isChecked()) await activeForPlayers.uncheck();
+  for (const suffix of ["A", "B"]) {
+    await page.getByRole("textbox", { name: "Scene name", exact: true }).fill(`${prefix} ${suffix}`);
+    await page.getByRole("button", { name: "Add Scene", exact: true }).click();
+    await expect(sceneTab(page, `${prefix} ${suffix}`)).toBeVisible();
+  }
+
+  await page.getByRole("textbox", { name: "Scene search" }).fill(prefix);
+  await page.getByRole("button", { name: "Select visible scenes" }).click();
+  await page.getByRole("button", { name: "Duplicate selected scenes" }).click();
+  const review = page.getByRole("region", { name: "Scene duplication review" });
+  await expect(review).toBeVisible();
+  await page.route("**/scene-duplications", async (route) => {
+    const body = route.request().postDataJSON() as { dryRun?: boolean };
+    if (body.dryRun === false) {
+      await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "forced_failure", message: "Forced atomic duplication failure" }) });
+      return;
+    }
+    await route.continue();
+  });
+  await review.getByRole("button", { name: "Confirm duplicate selected scenes" }).click();
+  await expect(page.getByText("Forced atomic duplication failure")).toBeVisible();
+
+  await page.reload();
+  await openManageCategory(page, "Scenes");
+  await page.getByRole("textbox", { name: "Scene search" }).fill(`${prefix} Copy`);
+  await expect(page.getByRole("status", { name: "Scene filter summary" })).toContainText("0 of");
+  await expect(sceneTab(page, `${prefix} A Copy`)).toHaveCount(0);
+  await expect(sceneTab(page, `${prefix} B Copy`)).toHaveCount(0);
+});
+
+test("character at 0 HP resolves Death Saving Throws from the sheet to a terminal state", async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Demo GM" }).click();
+  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+
+  const suffix = Date.now().toString(36);
+  const hero = await createSystemCharacter(page, { templateId: "cleric", name: `E2E Dying Hero ${suffix}`, ownerUserId: "usr_demo_gm" });
+  await createSceneToken(page, { name: `E2E Dying Token ${suffix}`, actorId: hero.id, x: 640, y: 320, ownerUserIds: [] });
+
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await page.getByRole("button", { name: `Token E2E Dying Token ${suffix}` }).click();
+  await openInspectorPanel(page, "Actors");
+  const actorPanel = selectedActorPanel(page);
+  await expect(actorPanel).toContainText(`E2E Dying Hero ${suffix}`);
+
+  // A healthy character has core rolls but no Death Saving Throw affordance.
+  const statsSheet = actorPanel.getByRole("region", { name: "Actor stats sheet" });
+  await expect(statsSheet.getByRole("button", { name: /Roll Strength check/ })).toBeVisible();
+  await expect(statsSheet.locator(".actor-death-save-row")).toHaveCount(0);
+
+  await openActorDisclosure(actorPanel, "Actor details");
+  const hpUpdate = page.waitForResponse((response) => response.request().method() === "PATCH" && /\/api\/v1\/actors\/[^/]+$/.test(new URL(response.url()).pathname));
+  await page.locator("#actor-hp").fill("0");
+  await page.locator("#actor-hp").blur();
+  await expectJsonResponse(await hpUpdate);
+
+  const deathSaveRow = statsSheet.locator(".actor-death-save-row");
+  await expect(deathSaveRow).toContainText("Death saves 0/3 - 0/3");
+  const rollButton = deathSaveRow.getByRole("button", { name: /Roll Death Saving Throw/ });
+  await expect(rollButton).toBeVisible();
+
+  // Each roll adds at least one counter or revives, so a terminal outcome
+  // (Stable, Dead, or natural-20 revival) always arrives within five rolls.
+  let terminal: "stable" | "dead" | "revived" | undefined;
+  for (let attempt = 0; attempt < 5 && !terminal; attempt += 1) {
+    const commit = page.waitForResponse((response) =>
+      response.request().method() === "POST" &&
+      /\/actors\/[^/]+\/roll$/.test(new URL(response.url()).pathname) &&
+      (response.request().postData() ?? "").includes("death-save") &&
+      response.ok()
+    );
+    await rollButton.click();
+    const committed = await expectJsonResponse<{ resolution?: { deathSave?: { result?: "revived" | "stable" | "dead"; successes: number; failures: number } } }>(await commit);
+    const outcome = committed.resolution?.deathSave;
+    expect(outcome).toBeTruthy();
+    await expect(statusMessage(page, /Death Saving Throw/)).toBeVisible();
+    terminal = outcome?.result;
+    if (!terminal) {
+      await expect(deathSaveRow).toContainText(`Death saves ${outcome!.successes}/3 - ${outcome!.failures}/3`);
+    }
+  }
+  expect(terminal).toBeTruthy();
+
+  const persistedActor = await getActorById(page, hero.id);
+  if (terminal === "revived") {
+    expect(persistedActor.data).toMatchObject({ hp: { current: 1 }, deathSaves: { successes: 0, failures: 0 }, lifeState: "conscious" });
+    await expect.poll(async () => await page.locator("#actor-hp").inputValue()).toBe("1");
+    await expect(statsSheet.locator(".actor-death-save-row")).toHaveCount(0);
+  } else {
+    expect(persistedActor.data).toMatchObject(
+      terminal === "stable"
+        ? { hp: { current: 0 }, deathSaves: { successes: 0, failures: 0 }, lifeState: "stable" }
+        : { hp: { current: 0 }, deathSaves: { failures: 3 }, lifeState: "dead" }
+    );
+    await expect(deathSaveRow).toContainText(terminal === "stable" ? "Stable" : "Dead");
+    await expect(deathSaveRow.getByRole("button", { name: /Roll Death Saving Throw/ })).toHaveCount(0);
+  }
+
+  // The roll and its outcome reach the shared chat history.
+  await openInspectorPanel(page, "Chat");
+  await expect(page.locator(".chat-message", { hasText: "Death Saving Throw" }).last()).toContainText(/success|failure|natural/);
+
+  // Terminal lifecycle and the Stable 0/0 reset survive a fresh browser load.
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await page.getByRole("button", { name: `Token E2E Dying Token ${suffix}` }).click();
+  await openInspectorPanel(page, "Actors");
+  const reloadedStats = selectedActorPanel(page).getByRole("region", { name: "Actor stats sheet" });
+  if (terminal === "revived") {
+    await expect(reloadedStats.locator(".actor-death-save-row")).toHaveCount(0);
+  } else {
+    await expect(reloadedStats.locator(".actor-death-save-row")).toContainText(terminal === "stable" ? "Stable" : "Dead");
+    if (terminal === "stable") await expect(reloadedStats.locator(".actor-death-save-row")).toContainText("Death saves 0/3 - 0/3");
+  }
 });

@@ -26,6 +26,7 @@ Use this operator checklist with the [deployment threat model](./threat-model.md
 - [ ] Rotate by overlapping old and new hashes for the same worker id, rolling every replica, then removing the old hash.
 - [ ] Verify worker credentials are denied on user, plugin-admin, server-admin, and arbitrary campaign-read routes, and that dispatch is rejected after lease expiry or cancellation.
 - [ ] Keep `OTTE_WORKER_ALLOW_LEGACY_SESSION_TOKEN=false`; deprecated session-token compatibility is non-production only and is hard-disabled in production.
+- [ ] Set `OTTE_URL_SESSION_TOKEN_MODE=disabled` after confirming supported HTTP, asset and realtime clients use bearer headers, signed delivery URLs or the `otte.auth.*` WebSocket subprotocol; inspect the redacted `url_session_token` warning count first.
 
 ## Campaign Webhooks
 
@@ -53,6 +54,14 @@ Use this operator checklist with the [deployment threat model](./threat-model.md
 - [ ] Keep asset trust scanning fail-closed in production.
 - [ ] Verify signed or CDN asset delivery does not expose storage credentials.
 - [ ] Run asset storage/integrity checks before and after dogfood.
+
+## Observability
+
+- [ ] Keep `OTTE_OPERATIONS_METRICS=true` unless the host supplies equivalent instrumentation.
+- [ ] Verify `GET /api/v1/admin/operations/metrics` is server-admin-only and contains fixed dimensions only: no campaign ids, user ids, credentials, request paths, private content, or other attacker-controlled labels.
+- [ ] Keep logs and exported metrics redacted; correlate incidents by bounded UTC windows and existing audit ids rather than adding credentials or private tabletop data.
+- [ ] Establish alert thresholds from measured hosted traffic and exercise the [Admin and Observability Checklist](./admin-observability-checklist.md) before release.
+- [ ] Keep operational retention preservation-first. Require the exact dry-run target hash, bounded batch, idempotency key, and recorded reason; never prune canonical campaign state, audit, active idempotency, failed/retryable work, or archive recovery operations.
 
 ## AI
 

@@ -2,8 +2,10 @@ import {
   apiVersion,
   apiVersionHeader,
   campaignArchiveStreamContentType,
+  dnd5eSrdRageActionRollIds,
   routes,
 } from "@open-tabletop/api-contracts";
+import type { Dnd5eSrdRageActionKind } from "@open-tabletop/api-contracts";
 import type {
   Actor,
   ActorCalculationExplanation,
@@ -55,6 +57,8 @@ import type {
   DndControlledCreatureCommandRequest,
   DndControlledCreatureConcentrationEndRequest,
   DndControlledCreatureConfirmRequest,
+  DndControlledCreatureActionHandoff,
+  DndControlledCreatureCreatePrefill,
   DndControlledCreatureCreateRequest,
   DndControlledCreatureEndRequest,
   DndControlledCreatureMutationResult,
@@ -73,6 +77,8 @@ import type {
   DiceRoll,
   DiceRollFairness,
   Encounter,
+  EncounterMonsterPlacementBatchInput,
+  EncounterMonsterPlacementBatchResult,
   EngineEvent,
   FogPreset,
   FogRegion,
@@ -97,6 +103,8 @@ import type {
   Scene,
   SceneAnnotation,
   SceneAnnotationKind,
+  SceneDuplicationRequest,
+  SceneDuplicationResult,
   ScenePathMeasurement,
   SystemCapability,
   SystemManifestData,
@@ -129,6 +137,46 @@ export interface MutationRequestOptions {
 /** Required retry identity for a prepared mutation commit. */
 export interface PreparedMutationRequestOptions extends MutationRequestOptions {
   idempotencyKey: string;
+}
+
+export type OperationalRetentionRecordClass = "delivered_emails" | "delivered_webhooks" | "maintenance_jobs";
+
+export interface OperationalRetentionDiagnostics {
+  policyVersion: 1;
+  generatedAt: string;
+  preservationDefault: true;
+  supportedRecordClasses: OperationalRetentionRecordClass[];
+  counts: Record<OperationalRetentionRecordClass, number>;
+  totalEligibleTerminalRecords: number;
+  exemptions: string[];
+}
+
+export interface OperationalRetentionPlan {
+  policyVersion: 1;
+  preservationDefault: true;
+  dryRun: boolean;
+  cutoffAt: string;
+  olderThanDays: number;
+  recordClasses: OperationalRetentionRecordClass[];
+  batchSize: number;
+  eligibleCount: number;
+  selectedCount: number;
+  remainingCount: number;
+  targetSetHash: string;
+  selected: Array<{ recordClass: OperationalRetentionRecordClass; id: string; completedAt: string }>;
+  counts: Record<OperationalRetentionRecordClass, number>;
+  exemptions: string[];
+  deletedCount?: number;
+  reason?: string;
+}
+
+export interface OperationalRetentionRequest {
+  recordClasses: OperationalRetentionRecordClass[];
+  olderThanDays: number;
+  batchSize?: number;
+  dryRun?: boolean;
+  targetSetHash?: string;
+  reason?: string;
 }
 
 const preparedRoutePart = (value: string): string => encodeURIComponent(value);
@@ -261,7 +309,54 @@ export interface CampaignArchiveImportResult {
   importedCampaignIds: string[];
   counts: Record<string, number>;
   conflicts: Array<{ collection: string; id: string }>;
+  skippedConflicts?: Array<{ collection: string; id: string }>;
   assetFiles: number;
+  dryRun?: boolean;
+  importScope?: "all" | "assets_only" | "selected_collections";
+  importCollections?: string[];
+  importWarnings?: string[];
+  operation?: CampaignArchiveImportOperationSummary;
+}
+
+export interface CampaignArchiveImportRollbackConflict {
+  collection: string;
+  id: string;
+  reason: "record_changed" | "asset_bytes_changed" | "reference_conflict";
+}
+
+export interface CampaignArchiveImportOperationSummary {
+  id: string;
+  campaignIds: string[];
+  status: "applied" | "partially_rolled_back" | "rolled_back";
+  mode: "upsert" | "reject_conflicts" | "skip_conflicts";
+  scope: "all" | "assets_only" | "selected_collections";
+  collections: string[];
+  createdAt: string;
+  updatedAt: string;
+  recordCount: number;
+  assetFileCount: number;
+  remainingRecordCount: number;
+  remainingAssetFileCount: number;
+  lastRollbackAt?: string;
+  lastRollbackConflicts: CampaignArchiveImportRollbackConflict[];
+}
+
+export interface CampaignArchiveImportRollbackPreview extends CampaignArchiveImportOperationSummary {
+  impact: {
+    restoreRecords: number;
+    deleteRecords: number;
+    restoreAssetFiles: number;
+    deleteAssetFiles: number;
+  };
+  conflicts: CampaignArchiveImportRollbackConflict[];
+}
+
+export interface CampaignArchiveImportRollbackResult {
+  operation: CampaignArchiveImportOperationSummary;
+  rolledBackRecords: number;
+  rolledBackAssetFiles: number;
+  conflicts: CampaignArchiveImportRollbackConflict[];
+  campaignUpdatedAt?: string;
 }
 
 export interface DiceRollVerification {
@@ -1742,6 +1837,7 @@ export interface SystemActorRollInput {
   useFreeResource?: boolean;
   effectChoice?: string;
   saveOutcomes?: Record<string, "success" | "failure">;
+  weaponMastery?: Dnd5eSrdWeaponMasteryUseInput;
   reactionUse?: boolean;
   rechargeCheck?: number;
   commit?: boolean;
@@ -1749,12 +1845,34 @@ export interface SystemActorRollInput {
   prepare?: boolean;
   preparedPreviewKey?: string;
   expectedUpdatedAt?: string;
+  controlledCreature?: DndControlledCreatureActionContext;
+}
+
+export interface DndControlledCreatureActionContext {
+  sceneId?: string;
+  token?: DndControlledCreatureCreatePrefill["token"];
+}
+
+export interface Dnd5eSrdWeaponMasteryUseInput {
+  use: boolean;
+  damageDealt?: boolean;
+  nickExtraAttack?: boolean;
+  secondaryTargetActorId?: string;
+  geometryConfirmed?: boolean;
+  pushDistanceFeet?: number;
 }
 
 export type Dnd5eSrdActionCommitInput = Dnd5eSrdPreparedActionCommitRequest;
 
+export type { Dnd5eSrdRageActionKind };
+
+export interface Dnd5eSrdRageActionPreviewInput {
+  kind: Dnd5eSrdRageActionKind;
+  expectedUpdatedAt: string;
+}
+
 export type Dnd5eSrdPreparedActionPreviewInput = SystemActorRollInput &
-  ({ consumeResources: true } | { applyEffect: true }) & {
+  ({ consumeResources: true } | { applyEffect: true } | { weaponMastery: Dnd5eSrdWeaponMasteryUseInput & { use: true } } | { controlledCreature: DndControlledCreatureActionContext }) & {
     prepare: true;
     preparedPreviewKey?: never;
   };
@@ -1788,6 +1906,7 @@ export interface SystemActorRollResult {
   effect?: Record<string, unknown>;
   effects?: Array<Record<string, unknown>>;
   resolution?: Record<string, unknown>;
+  controlledCreatureHandoff?: DndControlledCreatureActionHandoff;
   actor: Actor;
   updatedActors?: Actor[];
   sheet?: Record<string, unknown>;
@@ -1795,6 +1914,33 @@ export interface SystemActorRollResult {
   preparation?: Dnd5eSrdPreparedActionInfo;
   rulesMutationId?: string;
   undo?: DndRulesMutationUndoDescriptor;
+}
+
+export interface Dnd5eSrdHeroicInspirationGrantInput {
+  expectedActorUpdatedAt: string;
+  recipientActorId?: string;
+  expectedRecipientUpdatedAt?: string;
+}
+
+export interface Dnd5eSrdHeroicInspirationGrantResult {
+  awardedTo: "actor" | "recipient";
+  actor: Actor;
+  recipient?: Actor;
+}
+
+export interface Dnd5eSrdHeroicInspirationRerollInput {
+  originalRollId: string;
+  selectedTermIndex: number;
+  selectedResultIndex: number;
+  expectedActorUpdatedAt: string;
+}
+
+export interface Dnd5eSrdHeroicInspirationRerollResult {
+  actor: Actor;
+  originalRoll: DiceRoll;
+  reroll: DiceRoll;
+  chat: ChatMessage;
+  mustUseNewRoll: true;
 }
 
 export interface SystemActorConditionApplyInput {
@@ -2095,6 +2241,18 @@ export class OpenTabletopClient {
 
   async health(): Promise<{ ok: boolean; version: string; service: string }> {
     return this.get(routes.health);
+  }
+
+  async operationalRetentionDiagnostics(): Promise<OperationalRetentionDiagnostics> {
+    return this.get(routes.adminRetentionOperations);
+  }
+
+  async previewOperationalRetention(input: Omit<OperationalRetentionRequest, "dryRun" | "targetSetHash" | "reason">, idempotencyKey: string): Promise<OperationalRetentionPlan> {
+    return this.post(routes.adminRetentionPrune, { ...input, dryRun: true }, { "Idempotency-Key": idempotencyKey });
+  }
+
+  async pruneOperationalRetention(input: OperationalRetentionRequest & { targetSetHash: string; reason: string }, idempotencyKey: string): Promise<OperationalRetentionPlan> {
+    return this.post(routes.adminRetentionPrune, { ...input, dryRun: false }, { "Idempotency-Key": idempotencyKey });
   }
 
   async login(input: {
@@ -2790,6 +2948,16 @@ export class OpenTabletopClient {
     idempotencyKey: string,
   ): Promise<Scene> {
     return this.post(routes.scenes(campaignId), input, {
+      "Idempotency-Key": idempotencyKey,
+    });
+  }
+
+  async duplicateScenes(
+    campaignId: string,
+    input: SceneDuplicationRequest,
+    idempotencyKey: string,
+  ): Promise<SceneDuplicationResult> {
+    return this.post(routes.sceneDuplications(campaignId), input, {
       "Idempotency-Key": idempotencyKey,
     });
   }
@@ -4382,6 +4550,16 @@ export class OpenTabletopClient {
     });
   }
 
+  async placeEncounterMonsters(
+    sceneId: string,
+    input: EncounterMonsterPlacementBatchInput,
+    idempotencyKey: string,
+  ): Promise<EncounterMonsterPlacementBatchResult> {
+    return this.post(routes.encounterMonsterPlacements(sceneId), input, {
+      "Idempotency-Key": idempotencyKey,
+    });
+  }
+
   async importSystemCharacter(
     campaignId: string,
     systemId: string,
@@ -5213,6 +5391,38 @@ export class OpenTabletopClient {
     return this.get(routes.systemActorSheet(campaignId, systemId, actorId));
   }
 
+  async grantDnd5eSrdHeroicInspiration(
+    campaignId: string,
+    actorId: string,
+    input: Dnd5eSrdHeroicInspirationGrantInput,
+    options: PreparedMutationRequestOptions,
+  ): Promise<Dnd5eSrdHeroicInspirationGrantResult> {
+    if (!input.expectedActorUpdatedAt.trim()) throw new Error("Heroic Inspiration grants require the exact actor revision");
+    if (input.recipientActorId && !input.expectedRecipientUpdatedAt?.trim()) throw new Error("Heroic Inspiration transfers require the exact recipient revision");
+    if (!options.idempotencyKey.trim()) throw new Error("Heroic Inspiration grants require an Idempotency-Key");
+    return this.post(
+      routes.systemActorHeroicInspirationGrant(campaignId, "dnd-5e-srd", actorId),
+      input,
+      { "Idempotency-Key": options.idempotencyKey },
+    );
+  }
+
+  async rerollDnd5eSrdHeroicInspiration(
+    campaignId: string,
+    actorId: string,
+    input: Dnd5eSrdHeroicInspirationRerollInput,
+    options: PreparedMutationRequestOptions,
+  ): Promise<Dnd5eSrdHeroicInspirationRerollResult> {
+    if (!input.originalRollId.trim() || !input.expectedActorUpdatedAt.trim()) throw new Error("Heroic Inspiration rerolls require the original roll and exact actor revision");
+    if (!Number.isInteger(input.selectedTermIndex) || input.selectedTermIndex < 0 || !Number.isInteger(input.selectedResultIndex) || input.selectedResultIndex < 0) throw new Error("Heroic Inspiration rerolls require one selected d20 result");
+    if (!options.idempotencyKey.trim()) throw new Error("Heroic Inspiration rerolls require an Idempotency-Key");
+    return this.post(
+      routes.systemActorHeroicInspirationReroll(campaignId, "dnd-5e-srd", actorId),
+      input,
+      { "Idempotency-Key": options.idempotencyKey },
+    );
+  }
+
   async rollSystemActor(
     campaignId: string,
     systemId: string,
@@ -5223,7 +5433,7 @@ export class OpenTabletopClient {
     if (systemId === "dnd-5e-srd") {
       const preparedCommit = Boolean(input.preparedPreviewKey);
       const consequential =
-        input.consumeResources === true || input.applyEffect === true;
+        input.consumeResources === true || input.applyEffect === true || input.weaponMastery?.use === true || input.controlledCreature !== undefined;
       if (input.prepare === true && !options.idempotencyKey?.trim()) {
         throw new Error(
           "Prepared D&D action previews require an Idempotency-Key",
@@ -5279,6 +5489,22 @@ export class OpenTabletopClient {
       input,
       options,
     );
+  }
+
+  /** Prepares a Rage start, extension, or voluntary end with exact revision and retry identity. */
+  async prepareDnd5eSrdRageAction(
+    campaignId: string,
+    actorId: string,
+    input: Dnd5eSrdRageActionPreviewInput,
+    options: PreparedMutationRequestOptions,
+  ): Promise<SystemActorRollResult> {
+    return this.prepareDnd5eSrdAction(campaignId, actorId, {
+      rollId: dnd5eSrdRageActionRollIds[input.kind],
+      expectedUpdatedAt: input.expectedUpdatedAt,
+      consumeResources: true,
+      prepare: true,
+      commit: false,
+    }, options);
   }
 
   async commitDnd5eSrdAction(
@@ -5572,6 +5798,34 @@ export class OpenTabletopClient {
 
   async dogfoodReportBundle(campaignId: string): Promise<unknown> {
     return this.get(routes.dogfoodReportBundle(campaignId));
+  }
+
+  async campaignArchiveImportOperations(
+    campaignId: string,
+    status?: CampaignArchiveImportOperationSummary["status"],
+  ): Promise<{ items: CampaignArchiveImportOperationSummary[] }> {
+    const query = status ? `?${new URLSearchParams({ status }).toString()}` : "";
+    return this.get(`${routes.campaignArchiveImportOperations(campaignId)}${query}`);
+  }
+
+  async previewCampaignArchiveImportRollback(
+    campaignId: string,
+    operationId: string,
+  ): Promise<CampaignArchiveImportRollbackPreview> {
+    return this.get(routes.campaignArchiveImportOperationPreview(campaignId, operationId));
+  }
+
+  async rollbackCampaignArchiveImport(
+    campaignId: string,
+    operationId: string,
+    expectedUpdatedAt: string,
+    idempotencyKey: string,
+  ): Promise<CampaignArchiveImportRollbackResult> {
+    return this.post(
+      routes.campaignArchiveImportOperationRollback(campaignId, operationId),
+      { expectedUpdatedAt, confirmOperationId: operationId },
+      { "Idempotency-Key": idempotencyKey },
+    );
   }
 
   async importCampaign(

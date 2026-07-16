@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import { apiGet, apiPost } from "./api.js";
 import { errorMessage, formatDateTime } from "./sheet-format.js";
 import { isStaleWriteError, sharedMutationIdempotencyKey, staleDraftPreservedMessage } from "./shared-mutation.js";
+import { RulesSupportBoundaryNotice, rulesBoundaryFromCalculation } from "./rules-support-boundary.js";
 
 interface CalculationExplanationPanelProps {
   campaignId: string;
@@ -314,6 +315,7 @@ export function CalculationExplanationPanel({ campaignId, actor, canManageOverri
                           <strong>{field.label}</strong>
                           <span>{field.result}{field.unit ? ` ${field.unit}` : ""}</span>
                         </div>
+                        <RulesSupportBoundaryNotice boundary={rulesBoundaryFromCalculation(field)} />
                         {flagLabels.length > 0 && (
                           <div className="calculation-flags" aria-label={`Review flags for ${field.label}`}>
                             {flagLabels.map((label) => <span key={label}>{label}</span>)}

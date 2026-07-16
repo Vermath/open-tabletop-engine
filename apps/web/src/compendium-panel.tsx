@@ -59,6 +59,10 @@ interface VisibleCompendiumConflict {
 
 export const COMPENDIUM_CATALOG_WINDOW_SIZE = 40;
 
+export function compendiumEntryAnchorId(entryId: string): string {
+  return `campaign-search-compendium-${encodeURIComponent(entryId)}`;
+}
+
 export function compendiumCatalogWindow<T>(entries: readonly T[], requestedPage: number, windowSize = COMPENDIUM_CATALOG_WINDOW_SIZE) {
   const safeWindowSize = Math.max(1, Math.floor(windowSize));
   const pageCount = Math.max(1, Math.ceil(entries.length / safeWindowSize));
@@ -74,6 +78,8 @@ interface CompendiumPanelProps {
   actors: Actor[];
   items: Item[];
   initialSystemId?: string;
+  initialSearch?: string;
+  initialEntryId?: string;
   canUpdateActor(actor: Actor): boolean;
   onMutation(result: { actor: Actor; item?: Item }): void;
   onStatus(message: string): void;
@@ -85,6 +91,8 @@ export function CompendiumPanel({
   actors,
   items,
   initialSystemId,
+  initialSearch,
+  initialEntryId,
   canUpdateActor,
   onMutation,
   onStatus
@@ -98,7 +106,7 @@ export function CompendiumPanel({
     : systems.find((system) => system.active)?.id ?? systems[0]?.id ?? "";
   const [systemId, setSystemId] = useState(preferredSystemId);
   const [actorId, setActorId] = useState("");
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(initialSearch ?? "");
   const [typeFilter, setTypeFilter] = useState("");
   const [catalog, setCatalog] = useState<CompendiumCatalogResponse>();
   const [catalogPage, setCatalogPage] = useState(0);
@@ -112,11 +120,18 @@ export function CompendiumPanel({
   const [lastAttempt, setLastAttempt] = useState<CompendiumMutationAttempt>();
   const [visibleConflict, setVisibleConflict] = useState<VisibleCompendiumConflict>();
   const mutationControllerRef = useRef<AbortController | undefined>(undefined);
+  const focusedEntryRef = useRef("");
 
   useEffect(() => {
     if (systems.some((system) => system.id === systemId)) return;
     setSystemId(preferredSystemId);
   }, [preferredSystemId, systemId, systems]);
+
+  useEffect(() => {
+    if (initialSystemId && systems.some((system) => system.id === initialSystemId)) setSystemId(initialSystemId);
+    if (initialSearch !== undefined) setSearch(initialSearch);
+    focusedEntryRef.current = "";
+  }, [initialEntryId, initialSearch, initialSystemId, systems]);
 
   const systemActors = useMemo(
     () => actors.filter((actor) => actor.systemId === systemId).sort((left, right) => left.name.localeCompare(right.name)),
@@ -255,6 +270,24 @@ export function CompendiumPanel({
   const typeOptions = Object.entries(catalog?.provenanceSummary.types ?? {}).sort(([left], [right]) => left.localeCompare(right));
   const visibleCatalog = compendiumCatalogWindow(catalog?.entries ?? [], catalogPage);
 
+  useEffect(() => {
+    if (!initialEntryId || loadState !== "ready" || !catalog || focusedEntryRef.current === initialEntryId) return;
+    const entryIndex = catalog.entries.findIndex((entry) => entry.id === initialEntryId);
+    if (entryIndex < 0) return;
+    const page = Math.floor(entryIndex / COMPENDIUM_CATALOG_WINDOW_SIZE);
+    if (page !== catalogPage) {
+      setCatalogPage(page);
+      return;
+    }
+    focusedEntryRef.current = initialEntryId;
+    const frame = window.requestAnimationFrame(() => {
+      const target = document.getElementById(compendiumEntryAnchorId(initialEntryId));
+      target?.focus({ preventScroll: true });
+      target?.scrollIntoView({ block: "nearest" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [catalog, catalogPage, initialEntryId, loadState]);
+
   return (
     <section className="operator-section compendium-browser standalone-compendium" aria-labelledby={`${searchId}-heading`}>
       <div className="section-heading">
@@ -362,7 +395,7 @@ export function CompendiumPanel({
               const updateState = compendiumEntryUpdateState(selectedActor, items, entry);
               const pending = pendingEntryId === entry.id;
               return (
-                <article className="compendium-entry" key={entry.id} aria-busy={pending}>
+                <article id={compendiumEntryAnchorId(entry.id)} tabIndex={-1} className="compendium-entry" key={entry.id} aria-busy={pending}>
                   <div className="compendium-entry-heading">
                     <div>
                       <strong>{entry.name}</strong>

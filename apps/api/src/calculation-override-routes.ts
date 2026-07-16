@@ -1,5 +1,14 @@
 import { createId, type Actor, type ActorCalculationExplanation, type CalculationOverride, type PermissionName } from "@open-tabletop/core";
-import { DND_5E_SRD_SYSTEM_ID, dnd5eSrdCalculationExplanation } from "@open-tabletop/system-sdk";
+import { rollFormula } from "@open-tabletop/dice-engine";
+import {
+  DND_5E_SRD_SYSTEM_ID,
+  applyDnd5eSrdCalculationOverridesToExplanation,
+  buildDnd5eSrdCalculationOverrideContext,
+  dnd5eSrdCalculationExplanation,
+  dnd5eSrdCalculationOverrideTarget,
+  dnd5eSrdCalculationOverrideValueIsValid,
+  dnd5eSrdSafeOverrideFormula,
+} from "@open-tabletop/system-sdk";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { StateStore } from "./store.js";
 
@@ -104,37 +113,7 @@ export function applyCalculationOverrides(
   explanation: ActorCalculationExplanation,
   overrides: readonly CalculationOverride[],
 ): ActorCalculationExplanation {
-  const activeByField = new Map<string, CalculationOverride>();
-  for (const override of [...overrides]
-    .filter((candidate) => candidate.actorId === explanation.actorId && !candidate.clearedAt)
-    .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id))) {
-    activeByField.set(override.fieldId, override);
-  }
-  return {
-    ...explanation,
-    fields: explanation.fields.map((field) => {
-      const override = activeByField.get(field.id);
-      if (!override) return field;
-      const reason = `${override.source}: ${override.reason}`;
-      return {
-        ...field,
-        result: override.effectiveValue,
-        terms: [
-          ...field.terms,
-          {
-            label: "Documented calculation override",
-            formula: `${String(override.baseValue)} -> ${String(override.effectiveValue)}`,
-            source: { kind: "override", id: override.id, name: override.reason },
-          },
-        ],
-        flags: {
-          ...field.flags,
-          override: true,
-          reasons: [...new Set([...field.flags.reasons, reason])],
-        },
-      };
-    }),
-  };
+  return applyDnd5eSrdCalculationOverridesToExplanation(explanation, buildDnd5eSrdCalculationOverrideContext(explanation, overrides));
 }
 
 export function registerCalculationOverrideRoutes(app: FastifyInstance, dependencies: CalculationOverrideRouteDependencies): void {
@@ -174,8 +153,19 @@ export function registerCalculationOverrideRoutes(app: FastifyInstance, dependen
       if (effectiveValue === undefined) return badRequest(reply, "Calculation override effectiveValue must be a finite number or a non-empty string up to 500 characters");
       const reason = boundedText(request.body?.reason, 500);
       if (!reason) return badRequest(reply, "Calculation override reason must be 1-500 characters");
-      const field = rawExplanation(store, actor).fields.find((candidate) => candidate.id === fieldId);
+      const explanation = rawExplanation(store, actor);
+      const field = explanation.fields.find((candidate) => candidate.id === fieldId);
       if (!field) return badRequest(reply, "Calculation override fieldId must reference a current calculation explanation field");
+      const target = dnd5eSrdCalculationOverrideTarget(field.id);
+      if (!target) return badRequest(reply, "This calculation field is annotation-only and cannot override authoritative state");
+      if (!dnd5eSrdCalculationOverrideValueIsValid(field.id, effectiveValue)) return badRequest(reply, target.kind === "number" ? "This calculation override requires a finite numeric effectiveValue" : "This calculation override requires a safe numeric dice formula");
+      if (target.kind === "formula") {
+        try {
+          rollFormula(dnd5eSrdSafeOverrideFormula(effectiveValue)!);
+        } catch {
+          return badRequest(reply, "Calculation override formula is not supported by the authoritative dice engine");
+        }
+      }
       const active = store.state.calculationOverrides.find((candidate) => candidate.actorId === actor.id && candidate.fieldId === field.id && !candidate.clearedAt);
       if (active) return conflict(reply, "This calculation field already has an active override; clear it before creating another");
       const userId = dependencies.currentUserId(request.headers)!;
@@ -184,6 +174,8 @@ export function registerCalculationOverrideRoutes(app: FastifyInstance, dependen
         id: createId("calc_override"),
         campaignId: actor.campaignId,
         actorId: actor.id,
+        systemId: actor.systemId,
+        rulesVersion: explanation.rulesVersion,
         fieldId: field.id,
         source: request.body.source,
         baseValue: field.result,

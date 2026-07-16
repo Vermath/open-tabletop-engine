@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { ActorLoadoutPanel, actorLoadoutOperationError, filterActorLoadoutItems } from "./actor-loadout-panel.js";
+import { ActorLoadoutPanel, actorLoadoutItemAnchorId, actorLoadoutOperationError, filterActorLoadoutItems } from "./actor-loadout-panel.js";
 
 const timestamp = "2026-07-13T00:00:00.000Z";
 
@@ -34,6 +34,9 @@ function itemFixture(id: string, name: string, type: string, data: Record<string
 }
 
 describe("ActorLoadoutPanel", () => {
+  it("provides a stable exact-item focus target", () => {
+    expect(actorLoadoutItemAnchorId("item/one")).toBe("campaign-search-item-item%2Fone");
+  });
   it("filters loadout items by inventory state, magic kind, and searchable metadata", () => {
     const sword = itemFixture("sword", "Longsword", "weapon", { equipped: true, category: "martial" });
     const potion = itemFixture("potion", "Potion", "consumable", { equipped: false, quantity: 2 });

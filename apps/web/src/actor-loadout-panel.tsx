@@ -23,6 +23,7 @@ export interface ActorLoadoutPanelProps {
   actor: Actor;
   actors: Actor[];
   items: Item[];
+  requestedItemId?: string;
   search: string;
   filter: ActorLoadoutFilter;
   canUpdateActor: boolean;
@@ -33,6 +34,10 @@ export interface ActorLoadoutPanelProps {
   changeActorAttunement(actor: Actor, item: Item, attuned: boolean, options?: ActorAttunementChangeOptions): Promise<void>;
   assignItemToActor(item: Item, actor: Actor): Promise<void>;
   onSpellPreparationApplied(result: Dnd5eSrdSpellPreparationMutationResult): void;
+}
+
+export function actorLoadoutItemAnchorId(itemId: string): string {
+  return `campaign-search-item-${encodeURIComponent(itemId)}`;
 }
 
 export function filterActorLoadoutItems(items: Item[], search: string, filter: ActorLoadoutFilter): Item[] {
@@ -60,6 +65,7 @@ export function ActorLoadoutPanel({
   actor,
   actors,
   items,
+  requestedItemId,
   search,
   filter,
   canUpdateActor,
@@ -76,6 +82,8 @@ export function ActorLoadoutPanel({
   const [operation, setOperation] = useState<LoadoutOperation>();
   const [curseBreakReasons, setCurseBreakReasons] = useState<Record<string, string>>({});
   const activeActorIdRef = useRef(actor.id);
+  const requestedItemFocusRef = useRef("");
+  const assignItemRef = useRef<HTMLSelectElement | null>(null);
   const mutationPending = operation?.kind === "pending";
 
   useEffect(() => {
@@ -103,6 +111,24 @@ export function ActorLoadoutPanel({
       ? legacyAttunedItemIds
       : (stringArrayValue(recordValue(actor.data.rulesEngine).attunedItemIds) ?? [])
   );
+
+  useEffect(() => {
+    if (!requestedItemId) return;
+    const item = items.find((candidate) => candidate.id === requestedItemId && (!candidate.actorId || candidate.actorId === actor.id));
+    if (!item) return;
+    const focusKey = `${actor.id}:${item.id}`;
+    if (requestedItemFocusRef.current === focusKey) return;
+    requestedItemFocusRef.current = focusKey;
+    onFilterChange("all");
+    onSearchChange(item.actorId ? item.name : "");
+    if (!item.actorId) setAssignItemId(item.id);
+    const frame = window.requestAnimationFrame(() => {
+      const target = item.actorId ? document.getElementById(actorLoadoutItemAnchorId(item.id)) : assignItemRef.current;
+      target?.focus({ preventScroll: true });
+      target?.scrollIntoView({ block: "nearest" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [actor.id, items, onFilterChange, onSearchChange, requestedItemId]);
 
   async function runOperation(label: string, action: () => Promise<void>): Promise<void> {
     const operationActorId = actor.id;
@@ -174,7 +200,7 @@ export function ActorLoadoutPanel({
       )}
       {unassignedItems.length > 0 && (
         <div className="operator-row tool-call-row" aria-label="Assign item to actor">
-          <select aria-label="Unassigned item" value={selectedAssignableItem?.id ?? ""} onChange={(event) => setAssignItemId(event.target.value)}>
+          <select ref={assignItemRef} aria-label="Unassigned item" value={selectedAssignableItem?.id ?? ""} onChange={(event) => setAssignItemId(event.target.value)}>
             <option value="">Select loose item</option>
             {unassignedItems.map((item) => (
               <option key={item.id} value={item.id}>
@@ -282,7 +308,7 @@ export function ActorLoadoutPanel({
           const isCursedAttunement = data.cursed === true || data.cursePersistsAfterRemovingShield === true || data.cannotUnattune === true;
           const curseBreakReason = curseBreakReasons[item.id] ?? "";
           return (
-            <article className="operator-item admin-item" key={item.id} draggable={canUpdateActor && !mutationPending} onDragStart={(event) => writeItemDropData(event.dataTransfer, item)}>
+            <article id={actorLoadoutItemAnchorId(item.id)} tabIndex={-1} className="operator-item admin-item" key={item.id} draggable={canUpdateActor && !mutationPending} onDragStart={(event) => writeItemDropData(event.dataTransfer, item)}>
               <div className="operator-row">
                 <span>{titleCaseLabel(item.type)}</span>
                 <strong>{itemDisplayLabel(item)}</strong>

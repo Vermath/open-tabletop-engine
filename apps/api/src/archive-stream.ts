@@ -50,6 +50,7 @@ export interface CampaignArchiveStreamLimits {
   maxMetadataBytes: number;
   maxAssetBytes: number;
   maxEmbeddedAssetBytes: number;
+  maxAssetFiles: number;
 }
 
 export interface StagedCampaignArchiveFile {
@@ -79,11 +80,19 @@ interface CampaignArchiveStreamAssetHeader {
  */
 export function assertCampaignArchiveStreamExportSize(
   archive: CampaignArchive,
-  limits: Pick<CampaignArchiveStreamLimits, "maxAssetBytes" | "maxEmbeddedAssetBytes">,
+  limits: Pick<CampaignArchiveStreamLimits, "maxAssetBytes" | "maxEmbeddedAssetBytes" | "maxAssetFiles">,
 ): void {
   let embeddedBytes = 0;
+  let embeddedFiles = 0;
   for (const asset of archive.data.assets) {
     if (!archiveAssetIsEmbeddable(asset)) continue;
+    embeddedFiles += 1;
+    if (embeddedFiles > limits.maxAssetFiles) {
+      throw new CampaignArchiveStreamError("Campaign archive contains more embedded asset files than the configured limit", {
+        statusCode: 413,
+        code: "campaign_archive_too_large",
+      });
+    }
     if (!Number.isSafeInteger(asset.sizeBytes) || asset.sizeBytes < 0) {
       throw new CampaignArchiveStreamError(`Campaign archive asset has an invalid size: ${asset.id}`);
     }
@@ -327,6 +336,12 @@ export async function parseCampaignArchiveStream(
       }
       const header = parseAssetHeader(await cursor.readExactly(headerLength));
       if (seenAssetIds.has(header.assetId)) throw new CampaignArchiveStreamError(`Campaign archive stream contains duplicate asset bytes: ${header.assetId}`);
+      if (index >= limits.maxAssetFiles) {
+        throw new CampaignArchiveStreamError("Campaign archive contains more embedded asset files than the configured limit", {
+          statusCode: 413,
+          code: "campaign_archive_too_large",
+        });
+      }
       const asset = assetsById.get(header.assetId);
       if (!asset) throw new CampaignArchiveStreamError(`Campaign archive stream file does not match an asset: ${header.assetId}`);
       if (!archiveAssetIsEmbeddable(asset)) throw new CampaignArchiveStreamError(`Campaign archive stream cannot embed an external asset URL: ${header.assetId}`);
@@ -469,6 +484,9 @@ function parseAssetHeader(value: Buffer): CampaignArchiveStreamAssetHeader {
   const keys = Object.keys(record).sort();
   if (keys.join(",") !== "assetId,mimeType,name,sizeBytes") throw new CampaignArchiveStreamError("Campaign archive stream asset header contains unsupported fields");
   const assetId = boundedText(record.assetId, "assetId", 256);
+  if (assetId.includes("/") || assetId.includes("\\") || assetId.includes("\0")) {
+    throw new CampaignArchiveStreamError("Campaign archive stream assetId must not contain path separators");
+  }
   const name = boundedText(record.name, "name", 512);
   const mimeType = boundedText(record.mimeType, "mimeType", 255);
   const sizeBytes = record.sizeBytes;
@@ -498,7 +516,7 @@ function uint32Frame(value: number): Buffer {
 
 async function removeStagingDirectory(path: string): Promise<void> {
   try {
-    await rm(path, { recursive: true, force: true });
+    await rm(path, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
   } catch {
     // Cleanup is best-effort after validation or transaction completion.
   }

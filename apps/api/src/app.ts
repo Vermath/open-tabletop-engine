@@ -54,6 +54,10 @@ import {
   type CampaignArchive,
   type CampaignArchiveFile,
   type CampaignSession,
+  type CampaignSearchMatchKind,
+  type CampaignSearchResult,
+  type CampaignSearchResultType,
+  type CampaignSearchSourceKind,
   type ChatMessage,
   type Combat,
   type CombatAction,
@@ -68,6 +72,9 @@ import {
   type DiceRollFairness,
   type EmailOutboxMessage,
   type Encounter,
+  type EncounterMonsterPlacementBatchInput,
+  type EncounterMonsterPlacementBatchResult,
+  type EncounterMonsterPlacementResult,
   type EngineEvent,
   type EngineState,
   type FogHistoryEntry,
@@ -105,6 +112,8 @@ import {
   type ProposalChange,
   type RealtimePresenceEnvelope,
   type Scene,
+  type SceneDuplicationRequest,
+  type SceneDuplicationResult,
   type SceneAnnotation,
   type SceneAnnotationKind,
   type SceneAnnotationLayer,
@@ -131,18 +140,19 @@ import {
   type World,
 } from "@open-tabletop/core";
 import { comparePluginVersions, isPluginEventType, pluginCoreCompatibility, pluginEventPermission, type PluginEventEnvelope } from "@open-tabletop/plugin-sdk";
-import { composeFairnessSeed, rollFormula, seededRng } from "@open-tabletop/dice-engine";
+import { rollFormula } from "@open-tabletop/dice-engine";
 import { revertProposal, wallBlocksVision } from "@open-tabletop/core";
 import { CURRENT_CAMPAIGN_ARCHIVE_VERSION, SUPPORTED_CAMPAIGN_ARCHIVE_VERSIONS, orderCampaignCompatibilityIssues, summarizeCampaignCompatibility } from "@open-tabletop/core";
 import type { ActorCalculationExplanation, AiCampaignPolicy, AiCitation, AiContextScope, AiSourceReference, CampaignCompatibilityIssue, CampaignCompatibilityReport, CombatEnvironmentMechanic, CombatEnvironmentMechanicKind, CombatEnvironmentMechanicSchedule, CombatEnvironmentMechanicTiming, CompendiumCatalogEntry, CompendiumConflict, CompendiumConflictChoice, CompendiumProvenance, CompendiumProvenanceSummary, RulesEffectScheduleTiming } from "@open-tabletop/core";
 import type { CampaignRulesProfile, CharacterTransfer, UserPreferences } from "@open-tabletop/core";
 import type { CalculationOverride, WorldRecord, WorldRelation } from "@open-tabletop/core";
-import type { DndControlledCreatureCommandRequest, DndControlledCreatureConcentrationEndRequest, DndControlledCreatureConfirmRequest, DndControlledCreatureCreateRequest, DndControlledCreatureEndRequest, DndControlledCreatureMutationResult, DndControlledCreaturePreview, DndControlledCreatureRecord, DndControlledCreatureRevisionSet } from "@open-tabletop/core";
+import type { DndControlledCreatureActionHandoff, DndControlledCreatureCommandRequest, DndControlledCreatureConcentrationEndRequest, DndControlledCreatureConfirmRequest, DndControlledCreatureCreatePrefill, DndControlledCreatureCreateRequest, DndControlledCreatureEndRequest, DndControlledCreatureMutationResult, DndControlledCreaturePreview, DndControlledCreatureRecord, DndControlledCreatureRevisionSet } from "@open-tabletop/core";
 import type { DndCharacterReviewDecisionRequest, DndCharacterReviewEntry, DndCharacterReviewListResponse, DndCharacterReviewPolicyUpdateRequest, DndCharacterReviewState, DndCharacterReviewSubmitRequest } from "@open-tabletop/core";
 import type { Dnd5eSrdPendingAdvancement, DndRulesMutation } from "@open-tabletop/core";
 import type { Dnd5eInventoryMetadata, Dnd5eInventoryOwnerRef, Dnd5eLootData, Dnd5eMerchantCatalogEntry, Dnd5eMerchantData, Dnd5ePartyStashData } from "@open-tabletop/core";
 import type { Dnd5eSrdSpellPreparationApplyRequest, Dnd5eSrdSpellPreparationMutationResult, Dnd5eSrdSpellPreparationPreviewRequest, Dnd5eSrdSpellPreparationPreviewResponse } from "@open-tabletop/core";
 import {
+  DND_5E_SRD_DEATH_SAVE_ROLL_ID,
   DND_5E_SRD_SYSTEM_ID,
   applyDnd5eSrdAdvancement,
   applyDnd5eSrdCondition,
@@ -155,7 +165,11 @@ import {
   dnd5eSrdCanMulticlassInto,
   dnd5eSrdClassHitDieSize,
   dnd5eSrdConcentrationCleanupActorUpdates,
+  dndControlledCreatureActionHandoff,
+  dndControlledCreatureHandoffRequestErrors,
+  dndControlledCreatureHandoffWithPreparation,
   dnd5eSrdGeneralFeats,
+  grantDnd5eSrdHeroicInspiration,
   dnd5eSrdHitDicePools,
   dnd5eSrdMulticlassPrerequisites,
   dnd5eSrdWeaponMasteryChoiceCount,
@@ -175,6 +189,9 @@ import {
   dnd5eSrdAdvancementOptions,
   dnd5eSrdApplyCharacterOrigins,
   dnd5eSrdCharacterImport,
+  dnd5eSrdDeathSaveChatSuffix,
+  dnd5eSrdNaturalD20FromRollTerms,
+  synchronizeDnd5eSrdActorCombatState,
   dnd5eSrdCharacterOrigins,
   dnd5eSrdCharacterTemplates,
   dnd5eSrdCompendium,
@@ -220,6 +237,7 @@ import {
   stellarFrontiersEncounterThreats,
   stellarFrontiersQuickRolls,
   stellarFrontiersSheet,
+  spendDnd5eSrdHeroicInspiration,
   summarizeActor,
   useDnd5eSrdAction,
   useGenericFantasyAction,
@@ -232,13 +250,14 @@ import {
   type EncounterThreatSelection,
   type RulesActionResolutionResult,
   type RulesSaveOutcome,
+  type Dnd5eSrdWeaponMasteryUse,
   type SystemActionUseResult,
   type SystemActionUseOptions,
   type SystemRestOptions,
   type SystemRestResult,
   type SystemRestType,
 } from "@open-tabletop/system-sdk";
-import { DND_5E_SRD_LEVEL_ONE_CREATION_MODE, dnd5eSrdValidateLevelOneCharacterCreation, previewDnd5eSrdActorRepairs, previewDnd5eSrdItemRepairs, previewDnd5eSrdRules, validateDnd5eSrdActor, validateDnd5eSrdItem, type Dnd5eSrdAdvancementPreviewRequest, type Dnd5eSrdRestPreviewRequest, type Dnd5eSrdTypedDamagePreviewRequest } from "@open-tabletop/system-sdk";
+import { DND_5E_SRD_LEVEL_ONE_CREATION_MODE, dnd5eSrdValidateLevelOneCharacterCreation, parseDnd5eSrdActorManagedData, parseDnd5eSrdItemManagedData, previewDnd5eSrdActorRepairs, previewDnd5eSrdItemRepairs, previewDnd5eSrdRules, validateDnd5eSrdActor, validateDnd5eSrdItem, type Dnd5eSrdAdvancementPreviewRequest, type Dnd5eSrdManagedDataParseResult, type Dnd5eSrdRestPreviewRequest, type Dnd5eSrdTypedDamagePreviewRequest } from "@open-tabletop/system-sdk";
 import { DND_5E_SRD_VERSION } from "@open-tabletop/system-sdk";
 import { dnd5eSrdInitiativeMode } from "@open-tabletop/system-sdk";
 import { previewDnd5eSrdSpellPreparation } from "@open-tabletop/system-sdk";
@@ -258,7 +277,7 @@ import { assetStorageKey, createAssetStorage, createAssetStorageForProvider, typ
 import { buildAssetImageRenditions, type AssetRenditionBuildWarning, type BuiltAssetRendition } from "./asset-renditions.js";
 import { ArchiveAssetRestoreError, restoreArchivedAssetFiles, restoreStagedArchivedAssetFiles, type ArchiveAssetRestoreTransaction } from "./archive-asset-restore.js";
 import { registerDndMonsterVariantRoutes } from "./dnd-monster-variant-routes.js";
-import { campaignArchiveEmbeddedAssetMaxBytes, campaignArchiveImportMaxBytes, validateCampaignArchiveShape } from "./archive-validation.js";
+import { campaignArchiveAssetMaxFiles, campaignArchiveEmbeddedAssetMaxBytes, campaignArchiveImportMaxBytes, validateCampaignArchiveShape } from "./archive-validation.js";
 import { CAMPAIGN_ARCHIVE_STREAM_CONTENT_TYPE, CampaignArchiveStreamError, ParsedCampaignArchiveStream, assertCampaignArchiveStreamExportSize, createCampaignArchiveStream, isParsedCampaignArchiveStream, parseCampaignArchiveStream } from "./archive-stream.js";
 import { extractPdfTextPages, parsePdfContentImportEntities, pdfContentImportPagePrompt, type PdfTextExtractor, type PdfTextPage } from "./pdf-content-import.js";
 import { PluginPackageError, loadPluginRegistry, pluginPackageIdentityChecksum, type LoadedPlugin, type PluginBridgeRequest, type PluginChatCommandResult, type PluginCommandTokenContext, type PluginInventoryWarning, type PluginRuntimeRegistry } from "./plugin-runtime.js";
@@ -271,6 +290,7 @@ import { activeWorkerLeaseError, authenticateWorkerPrincipal, normalizeCampaignI
 import { ADMIN_JOB_TYPES, adminJobMetrics, adminJobOperations, appendJobLog, deliverJobAlert, jobAlertWebhookUrl, jobLeaseRequestHash, leaseNextAdminJob, leasedJobInfo, normalizeAdminJobLeaseSeconds, normalizeAdminJobLimit, normalizeAdminJobMaxAttempts, normalizeJobExpectedUpdatedAt, normalizeJobLeaseRequestId, normalizeJobLeaseRevision, normalizeJobLogEntry, normalizeJobProgress, normalizeJobStatus, normalizeJobType, normalizeJobTypeFilter, normalizeWorkerId, publicJobInfo, transitionAdminJob, type PublicJobInfo } from "./admin-job-operations.js";
 import { adminSessionRiskReport, normalizeSessionRiskStaleDays, pruneExpiredPasswordResetTokens, publicSession, type AdminSessionRiskReason } from "./admin-identity-operations.js";
 import { registerAdminIdentityRoutes } from "./admin-identity-routes.js";
+import { registerAdminRetentionRoutes } from "./admin-retention-routes.js";
 import { registerAdminAssetRoutes } from "./admin-asset-routes.js";
 import { registerScimRoutes, scimIdempotencyIdentityFromHeaders, scimIdempotencyRequestRepresentation, scimReplayResponseHeaders } from "./scim-routes.js";
 import { PluginOperatorMutationError, assertPluginRegistryRevision, assertPluginReviewRevision, pluginInstallAuditSummary, pluginRegistryRevision, withPluginRegistryMutationLock } from "./plugin-system-operator.js";
@@ -278,15 +298,18 @@ import { deliverEmailMessage, publicEmailOutboxMessage } from "./email-outbox.js
 import { normalizeOperatorDeliveryId } from "./operator-mutation.js";
 import { aiRetentionExpiresAt, annotateAiToolOutput, normalizeAiCampaignPolicyInput, resolveAiInstallationPolicy, resolveEffectiveAiPolicy, validateAiContextScopes } from "./ai-safety.js";
 import { measureScenePath, type CoverLevel, type DifficultTerrainRegion, type SceneCoverOverride, type ScenePathMeasurement } from "@open-tabletop/core";
-import { buildDndControlledCreaturePreview, commandDndControlledCreature, confirmDndControlledCreature, controlledCreatureLifecycleRevisions, controlledCreatureRevisionMismatch, dndControlledCreatureEntries, emptyDndControlledCreatureRevisions, endDndControlledCreatureRecord, mergeDndControlledCreatureRevisions, type ControlledCreatureRevisionMismatch } from "./dnd-controlled-creatures.js";
+import { buildDndControlledCreaturePreview, commandDndControlledCreature, confirmDndControlledCreature, controlledCreatureConcentrationReplacementActors, controlledCreatureLifecycleRevisions, controlledCreatureRevisionMismatch, dndControlledCreatureEntries, emptyDndControlledCreatureRevisions, endDndControlledCreatureRecord, mergeDndControlledCreatureRevisions, type ControlledCreatureRevisionMismatch } from "./dnd-controlled-creatures.js";
 import { DND_CHARACTER_REVIEW_DATA_KEY, dndCharacterIsApproved, dndCharacterReviewEntry, dndCharacterReviewFingerprint, dndCharacterReviewPolicy, dndCharacterReviewValidation, readDndCharacterReview } from "./dnd-character-review.js";
+import { migrateDnd5eSrdStoredArmorClassIntent } from "./dnd-armor-class-intent.js";
 import { campaignWebhookEnvelope, campaignWebhookEnvelopeFromDelivery, campaignWebhookEventTypes, campaignWebhookSignedRequest, createCampaignWebhookTransport, isCampaignWebhookEventType, type CampaignWebhookTransport, type CampaignWebhookTransportResult } from "./campaign-webhooks.js";
 import { assertOidcEndpointUrl, oidcJsonRequest, type OidcHttpSecurityOptions } from "./oidc-http-security.js";
 import { applyWorldRecordLifecycleTimestamps, normalizeWorldRecordLifecycle, normalizeWorldRecordMutation, normalizeWorldRelationMutation, type WorldRecordMutationBody, type WorldRelationMutationBody } from "./world-graph-domain.js";
 import { applyCalculationOverrides, registerCalculationOverrideRoutes } from "./calculation-override-routes.js";
+import { applyDnd5eSrdCalculationOverridesToRolls, applyDnd5eSrdCalculationOverridesToSheet, buildDnd5eSrdCalculationOverrideContext, dnd5eSrdActionKind, dnd5eSrdFormulaOverride, dnd5eSrdSafeOverrideFormula, type Dnd5eSrdCalculationOverrideContext } from "@open-tabletop/system-sdk";
 import { assetAuditSummary, assetQuotaExceeded, assetSecurityBlocked, assetStoredBytes, campaignAssetDeliveryInfo, campaignAssetStorageInfo, countBy, createAssetCleanupScheduler, createStorageBackupScheduler, defaultAssetLifecycle, deleteStoredAssetObjects, isAssetDeliverable, isLocalhostRuntimeUrl, isValidAssetSignature, normalizeAssetLifecycleStatus, normalizeAssetSizeBytes, normalizeOptionalIsoDate, safeDecodeURIComponent, safeDownloadFileName, scanUploadedAsset, severityRank, signedAssetCacheControl, signedAssetDelivery, sourceStorageForAsset, topCountEntries } from "./asset-operations.js";
 import type { StorageBackupSchedulerStatus } from "./asset-operations.js";
 import { CampaignArchiveExportSizeError, applyContentImportEntity, archiveForExportScope, archiveForImportScope, archiveImportDependencyWarnings, archiveReferenceProtection, archiveWithRegeneratedIds, archiveWithoutConflicts, campaignArchiveCompatibilityNotes, campaignIdsForArchiveConflicts, checksumForBuffer, countArchiveRecords, existingArchiveCampaignIds, findArchiveConflicts, isArchiveImportMode, isArchiveImportScope, isSupportedArchiveVersion, mergeArchive, normalizeArchiveForImport, normalizeArchiveImportCollections, normalizeArchiveImportError, normalizeCampaignArchiveExportOptions, normalizeContentImportEntity, normalizeContentImportSource, removeAppliedContentImportRecord, rollbackCampaignArchiveImport, secureArchiveIdentityForImport, stateForArchiveMerge, withArchivedAssetFiles } from "./archive-operations.js";
+import { CampaignArchiveImportRecoveryError, createCampaignArchiveImportOperation, deleteCampaignArchiveImportInverseObjects, prepareCampaignArchiveImportAssetSteps, previewCampaignArchiveImportRollback, publicCampaignArchiveImportOperation, rollbackCampaignArchiveImportOperation, withCampaignArchiveImportRecoveryCleanup } from "./campaign-archive-import-recovery.js";
 import { boundCampaignSnapshotHistory } from "./snapshot-history.js";
 import { registerOpenApiRuntimeValidation } from "./openapi-runtime-validation.js";
 import { activeCombatForTypedDamage, dndTypedDamageCombatantChanges } from "./dnd-typed-damage-combat.js";
@@ -295,6 +318,11 @@ import { registerCampaignSessionRoutes } from "./campaign-session-routes.js";
 import { registerCampaignWebhookRoutes } from "./campaign-webhook-routes.js";
 import { CAMPAIGN_WEBHOOK_QUEUE_MAX_PENDING_DELIVERIES, CAMPAIGN_WEBHOOK_SUBSCRIPTION_LIMIT_PER_CAMPAIGN, createCampaignWebhookDelivery, pruneCampaignWebhookCampaignLedger, pruneCampaignWebhookDeliveryLedger, pruneCampaignWebhookLedgers } from "./campaign-webhook-ledger.js";
 import type { DndCombatLootCreateBody, DndInventoryAmmunitionBody, DndInventoryItemPatchBody, DndInventoryTransferBody, DndLootAssignmentBody, DndLootClaimBody, DndMerchantCommerceBody, DndMerchantMutationBody, DndPartyStashCreateBody } from "./dnd-inventory-route-types.js";
+import { sessionCredentialFromRequest, urlSessionTokenDiagnostic, type SessionCredential } from "./session-transport-auth.js";
+import { rollFormulaWithFairness, verifyDiceRollRecord as verifyFairDiceRollRecord } from "./fair-dice.js";
+import { applyHeroicInspirationReroll, heroicInspirationDieChoices } from "./heroic-inspiration.js";
+import { OperationsObservability, operationsMetricsEnabled } from "./operations-observability.js";
+import { commitPreparedSceneDuplication, prepareSceneDuplication, sceneDuplicationPreview, SceneDuplicationError } from "./scene-duplication.js";
 
 export interface BuildAppOptions {
   store?: StateStore;
@@ -303,6 +331,7 @@ export interface BuildAppOptions {
   maxAssetBytes?: number;
   aiProvider?: AiProvider;
   pdfTextExtractor?: PdfTextExtractor;
+  operationsObservability?: OperationsObservability;
   imageAssetGenerator?: ImageAssetGenerator;
   pluginRegistry?: PluginRuntimeRegistry;
   pluginRoot?: string;
@@ -576,17 +605,6 @@ interface JournalCanonReviewBody {
 type HandoutPatchBody = Partial<Pick<Handout, "title" | "body" | "visibility" | "visibleToUserIds" | "visibleToActorIds" | "assetIds" | "tags" | "readByUserIds">> & { worldId?: string | null; expectedUpdatedAt?: string };
 type EncounterPatchBody = Partial<Pick<Encounter, "name" | "summary" | "tokenIds" | "difficulty" | "systemId" | "partyActorIds" | "threats">> & { worldId?: string | null };
 type AiMemoryPatchBody = Partial<Pick<AiMemoryFact, "text" | "type" | "visibility" | "sourceIds" | "source" | "createdBy">> & { worldId?: string | null; subject?: string | null; confidence?: number | null; status?: AiMemoryFactStatus };
-type CampaignSearchResultType = "world" | "scene" | "actor" | "item" | "journal" | "handout" | "encounter" | "memory" | "chat" | "roll";
-interface CampaignSearchResult {
-  type: CampaignSearchResultType;
-  id: string;
-  title: string;
-  snippet: string;
-  updatedAt: string;
-  worldId?: string;
-  visibility?: Visibility | "whisper";
-  score: number;
-}
 interface StructuredSessionRecap {
   playerRecap: string;
   gmRecap: string;
@@ -647,6 +665,7 @@ interface SystemActorRollBody {
   targetActorIds?: string[];
   effectChoice?: string;
   saveOutcomes?: Record<string, RulesSaveOutcome>;
+  weaponMastery?: Dnd5eSrdWeaponMasteryUse;
   reactionUse?: boolean;
   rechargeCheck?: number;
   commit?: boolean;
@@ -654,6 +673,36 @@ interface SystemActorRollBody {
   prepare?: boolean;
   preparedPreviewKey?: string;
   expectedUpdatedAt?: string;
+  controlledCreature?: {
+    sceneId?: string;
+    token?: DndControlledCreatureCreatePrefill["token"];
+  };
+}
+
+interface FairActionRollResult {
+  resolutionRoll: RulesActionResolutionResult["rolls"][number];
+  rolled: ReturnType<typeof rollFormula>;
+  fairness: DiceRollFairness;
+}
+
+interface PreparedControlledCreatureAction {
+  handoff: DndControlledCreatureActionHandoff;
+  request: SystemActorRollBody;
+  preparedAt: string;
+  actorUpdatedAt: Record<string, string>;
+  itemUpdatedAt: Record<string, string>;
+  combatUpdatedAt?: string;
+  rolledResults: FairActionRollResult[];
+  resolutionHash: string;
+}
+
+interface AppliedPreparedControlledCreatureAction {
+  state: EngineState;
+  resolution: RulesActionResolutionResult;
+  sourceActorId: string;
+  updatedActorIds: string[];
+  rolls: DiceRoll[];
+  chatMessages: ChatMessage[];
 }
 interface Dnd5eSpellHelperPreviewBody {
   casterActorId?: unknown;
@@ -758,6 +807,7 @@ const archiveImportAssetRestoreSymbol = Symbol("otte.archiveImportAssetRestore")
 const archiveImportStateSnapshotSymbol = Symbol("otte.archiveImportStateSnapshot");
 const archiveImportAbortControllerSymbol = Symbol("otte.archiveImportAbortController");
 const archiveStreamAuthenticatedUserSymbol = Symbol("otte.archiveStreamAuthenticatedUser");
+const operationsRequestStartedAtSymbol = Symbol("otte.operationsRequestStartedAt");
 const legacyUserHeaderAuditScopes = new AsyncLocalStorage<Set<string>>();
 
 const campaignPermissionTemplates: Record<CampaignPermissionTemplateId, CampaignPermissionTemplate> = { standard: { id: "standard", grants: [] }, player_authoring: { id: "player_authoring", grants: [{ role: "player", permissions: ["actor.create", "journal.create", "token.create"] }] }, ai_assisted: { id: "ai_assisted", grants: [{ role: "player", permissions: ["ai.proposeChanges"] }] }, assistant_ops: { id: "assistant_ops", grants: [{ role: "assistant_gm", permissions: ["chat.moderate", "plugin.install", "plugin.configure"] }] } };
@@ -979,17 +1029,23 @@ class UnsupportedSystemCapabilityError extends Error {
 
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
   const store: StateStore = options.store ?? new FileStateStore();
+  const operationsObservability = options.operationsObservability ?? new OperationsObservability({ enabled: operationsMetricsEnabled() });
   const durableMutations = new DurableMutationCoordinator();
   if (recoverInterruptedCampaignWebhookDeliveries(store) > 0) store.save();
   repairLegacyMemoryExtractionThreads(store);
+  if (migrateDnd5eSrdStoredArmorClassIntent(store.state).changed > 0) store.save();
   const uploadDir = resolve(options.uploadDir ?? process.env.OTTE_UPLOAD_DIR ?? "uploads");
   const assetStorage = options.assetStorage ?? createAssetStorage({ uploadDir });
   const assetCleanupScheduler = createAssetCleanupScheduler(store, assetStorage, uploadDir, durableMutations);
-  const storageBackupScheduler = createStorageBackupScheduler(store, assetStorage.provider, durableMutations);
+  const storageBackupScheduler = createStorageBackupScheduler(store, assetStorage.provider, durableMutations, (run) => {
+    if (run.status === "skipped") return;
+    const durationMs = Math.max(0, Date.parse(run.completedAt) - Date.parse(run.startedAt));
+    operationsObservability.recordRecovery("backup", run.status === "succeeded" ? "succeeded" : "failed", Number.isFinite(durationMs) ? durationMs : 0);
+  });
   const maxAssetBytes = options.maxAssetBytes ?? 25 * 1024 * 1024;
-  const campaignArchiveStreamLimits = { maxMetadataBytes: campaignArchiveImportMaxBytes(), maxAssetBytes, maxEmbeddedAssetBytes: campaignArchiveEmbeddedAssetMaxBytes() };
+  const campaignArchiveStreamLimits = { maxMetadataBytes: campaignArchiveImportMaxBytes(), maxAssetBytes, maxEmbeddedAssetBytes: campaignArchiveEmbeddedAssetMaxBytes(), maxAssetFiles: campaignArchiveAssetMaxFiles() };
   const webhookTransport = options.webhookTransport ?? createCampaignWebhookTransport();
-  const hub = new RealtimeHub();
+  const hub = new RealtimeHub((event) => operationsObservability.recordRealtime(event));
   const presenceForUser = (campaignId: string, userId: string): CampaignPresence | undefined => {
     const clients = hub.clientsMatching({ campaignId, userId });
     const user = store.state.users.find((candidate) => candidate.id === userId && !candidate.disabledAt);
@@ -1035,12 +1091,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   const removeRealtimeClient = (client: RealtimeClient) => {
     if (hub.remove(client)) publishPresenceAfterRemoval(client);
   };
-  const disconnectRealtimeSession = (sessionId: string) => {
-    const removed = hub.disconnectSession(sessionId);
+  const publishRealtimeRemovals = (removed: RealtimeClient[]) => {
     const unique = new Map<string, RealtimeClient>();
     for (const client of removed) if (client.campaignId && client.userId) unique.set(`${client.campaignId}:${client.userId}`, client);
     for (const client of unique.values()) publishPresenceAfterRemoval(client);
   };
+  const disconnectRealtimeSession = (sessionId: string) => publishRealtimeRemovals(hub.disconnectSession(sessionId));
+  const disconnectUnauthorizedRealtimeClients = () => publishRealtimeRemovals(hub.disconnectWhere((client) => !realtimeClientAuthorizationIsCurrent(store, client)));
   let pluginEventQueue = Promise.resolve();
   let pendingPluginEventCount = 0;
   let webhookEventQueue = Promise.resolve();
@@ -1190,7 +1247,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   const pluginRegistry = options.pluginRegistry ?? loadPluginRegistry({ pluginRoot: options.pluginRoot });
   const app = Fastify({ logger: createRequestLoggerOptions(options.requestLogStream) });
   registerOpenApiRuntimeValidation(app);
-  app.addHook("onRequest", (_request, _reply, done) => {
+  app.addHook("onRequest", (request, reply, done) => {
+    Reflect.set(request, operationsRequestStartedAtSymbol, Date.now());
+    const diagnostic = urlSessionTokenDiagnostic(request.url);
+    if (diagnostic) {
+      reply.header("warning", '299 Open-Tabletop-Engine "sessionToken query authentication is deprecated; use a transport header or WebSocket subprotocol"');
+      reply.header("x-otte-auth-compatibility", `url-session-token-${diagnostic.status}`);
+      request.log.warn({ authCompatibility: "url_session_token", status: diagnostic.status, policy: diagnostic.policy.mode, configuredValueValid: diagnostic.policy.configuredValueValid }, "URL session token compatibility used");
+    }
     legacyUserHeaderAuditScopes.run(new Set(), done);
   });
   let readAuditQueue = Promise.resolve();
@@ -1229,12 +1293,27 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         Reflect.set(request, archiveStreamAuthenticatedUserSymbol, userId);
       }
       if (!opaqueHeaderText(request.headers["idempotency-key"])) return badRequest(reply, "Campaign import requires an Idempotency-Key header");
+      const contentEncoding = opaqueHeaderText(request.headers["content-encoding"]);
+      if (contentEncoding && contentEncoding.toLowerCase() !== "identity") {
+        return reply.code(415).send({
+          error: "unsupported_campaign_archive_encoding",
+          message: "Campaign archive streams must use identity content encoding so compressed and uncompressed limits remain enforceable",
+        });
+      }
     }
   });
   app.addHook("onSend", async (request, reply, payload) => {
     reply.header(apiVersionHeader, apiVersion);
     reply.header("X-Request-Id", request.id);
+    disconnectUnauthorizedRealtimeClients();
+    if (reply.statusCode === 409 && responsePayloadErrorCode(payload) === "stale_write") {
+      operationsObservability.recordStaleWriteConflict();
+    }
     return payload;
+  });
+  app.addHook("onResponse", async (request, reply) => {
+    const startedAt = Reflect.get(request, operationsRequestStartedAtSymbol);
+    operationsObservability.recordHttp(request.method, reply.statusCode, typeof startedAt === "number" ? Date.now() - startedAt : 0);
   });
 
   app.setErrorHandler((error, request, reply) => {
@@ -1299,7 +1378,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }
     return payload;
   });
-  registerDurableMutationFlush(app, store, durableMutations);
+  registerDurableMutationFlush(app, store, durableMutations, operationsObservability);
 
   app.get("/api/v1/health", async (_request, reply) => {
     const workerPrincipals = workerIdentityRuntimePosture();
@@ -1605,6 +1684,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   });
 
   registerAdminIdentityRoutes(app, { store, requireServerAdmin: (reply, headers) => requireServerAdmin(store, reply, headers), adminUserInfo: (user) => adminUserInfo(store, user), publicUser, appendAudit: (actorUserId, input) => appendServerAuditLog(store, actorUserId, input), appendReadAudit: appendSerializedReadAudit });
+  registerAdminRetentionRoutes(app, { store, requireServerAdmin: (reply, headers) => requireServerAdmin(store, reply, headers), appendAudit: (actorUserId, input) => appendServerAuditLog(store, actorUserId, input), appendReadAudit: appendSerializedReadAudit });
   app.get("/api/v1/admin/auth/config", async (request, reply) => {
     const adminUserId = requireServerAdmin(store, reply, request.headers);
     if (typeof adminUserId !== "string") return adminUserId;
@@ -1659,6 +1739,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return operations;
   });
 
+  app.get("/api/v1/admin/operations/metrics", async (request, reply) => {
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    const metrics = operationsObservability.snapshot();
+    appendSerializedReadAudit(adminUserId, { action: "admin.operationsMetrics.inspect", targetType: "operations_metrics", after: { enabled: metrics.enabled, requests: metrics.http.requests, errorResponses: metrics.http.errorResponses, staleWriteConflicts: metrics.http.staleWriteConflicts, activeRealtimeConnections: metrics.realtime.activeConnections, persistenceFailures: metrics.persistence.failed, recoveryFailures: Object.values(metrics.recovery).reduce((total, operation) => total + operation.failed, 0) } });
+    return metrics;
+  });
+
   app.post<{ Body: AdminStorageBackupBody }>("/api/v1/admin/storage/backup", async (request, reply) => {
     let adminUserId: string | undefined;
     let workerExecution: WorkerJobExecution | undefined;
@@ -1681,7 +1769,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const assetSnapshot = normalizeAdminAssetSnapshotIdentity(request.body?.assetSnapshot, assetStorage.provider);
     if (!assetSnapshot.ok) return badRequest(reply, assetSnapshot.error);
     if (requireAssetSnapshot.value && !assetSnapshot.value) return badRequest(reply, "assetSnapshot is required when requireAssetSnapshot is true");
-    const backup = storageStore.createBackup({ reason: reason.value, assetProvider: assetStorage.provider, requireAssetSnapshot: requireAssetSnapshot.value, assetSnapshot: assetSnapshot.value });
+    const backupStartedAt = Date.now();
+    let backup: ReturnType<AdminStorageCapableStore["createBackup"]>;
+    try {
+      backup = storageStore.createBackup({ reason: reason.value, assetProvider: assetStorage.provider, requireAssetSnapshot: requireAssetSnapshot.value, assetSnapshot: assetSnapshot.value });
+      operationsObservability.recordRecovery("backup", "succeeded", Date.now() - backupStartedAt);
+    } catch (error) {
+      operationsObservability.recordRecovery("backup", "failed", Date.now() - backupStartedAt);
+      throw error;
+    }
     const audit = { action: "admin.storage.backup", targetType: "storage_backup", targetId: backup.fileName, after: { status: backup.status, fileName: backup.fileName, sizeBytes: backup.sizeBytes, reason: backup.reason, recoveryPoint: backup.recoveryPoint } };
     if (workerExecution) appendWorkerAuditLog(store, workerExecution, audit);
     else appendServerAuditLog(store, adminUserId!, audit);
@@ -1709,7 +1805,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!requireAssetSnapshot.ok) return badRequest(reply, "requireAssetSnapshot must be a boolean");
     const expectedAssetSnapshot = normalizeAdminAssetSnapshotIdentity(request.body?.expectedAssetSnapshot, assetStorage.provider);
     if (!expectedAssetSnapshot.ok) return badRequest(reply, expectedAssetSnapshot.error);
-    const drill = storageStore.runRestoreDrill({ backupFileName: backupFileName.value, requireAssetSnapshot: requireAssetSnapshot.value, expectedAssetSnapshot: expectedAssetSnapshot.value });
+    const drillStartedAt = Date.now();
+    let drill: ReturnType<AdminStorageCapableStore["runRestoreDrill"]>;
+    try {
+      drill = storageStore.runRestoreDrill({ backupFileName: backupFileName.value, requireAssetSnapshot: requireAssetSnapshot.value, expectedAssetSnapshot: expectedAssetSnapshot.value });
+      operationsObservability.recordRecovery("restore_drill", drill.status === "failed" ? "failed" : "succeeded", Date.now() - drillStartedAt);
+    } catch (error) {
+      operationsObservability.recordRecovery("restore_drill", "failed", Date.now() - drillStartedAt);
+      throw error;
+    }
     const audit = { action: "admin.storage.restoreDrill", targetType: "storage_backup", after: { status: drill.status, backup: drill.backup, recoveryPoint: drill.recoveryPoint, actionRequired: drill.actionRequired, actionReasons: drill.actionReasons, error: drill.error } };
     if (workerExecution) appendWorkerAuditLog(store, workerExecution, audit);
     else appendServerAuditLog(store, adminUserId!, audit);
@@ -1737,7 +1841,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!requireAssetSnapshot.ok) return badRequest(reply, "requireAssetSnapshot must be a boolean");
     const expectedAssetSnapshot = normalizeAdminAssetSnapshotIdentity(request.body?.expectedAssetSnapshot, assetStorage.provider);
     if (!expectedAssetSnapshot.ok) return badRequest(reply, expectedAssetSnapshot.error);
-    const restored = storageStore.restoreBackup({ backupFileName, reason: reason.value, expectedStateRevision: expectedStateRevision.value, recoveryAdminUserId: adminUserId, requireAssetSnapshot: requireAssetSnapshot.value, expectedAssetSnapshot: expectedAssetSnapshot.value });
+    const restoreStartedAt = Date.now();
+    let restored: ReturnType<AdminStorageCapableStore["restoreBackup"]>;
+    try {
+      restored = storageStore.restoreBackup({ backupFileName, reason: reason.value, expectedStateRevision: expectedStateRevision.value, recoveryAdminUserId: adminUserId, requireAssetSnapshot: requireAssetSnapshot.value, expectedAssetSnapshot: expectedAssetSnapshot.value });
+      operationsObservability.recordRecovery("restore", restored.status === "failed" ? "failed" : "succeeded", Date.now() - restoreStartedAt);
+    } catch (error) {
+      operationsObservability.recordRecovery("restore", "failed", Date.now() - restoreStartedAt);
+      throw error;
+    }
     appendServerAuditLog(store, adminUserId, { action: "admin.storage.restore", targetType: "storage_backup", targetId: backupFileName, after: { status: restored.status, backup: restored.backup, recoveryPoint: restored.recoveryPoint, actionRequired: restored.actionRequired, actionReasons: restored.actionReasons, restoredAt: restored.restoredAt, reason: restored.reason, error: restored.error } });
     store.save();
     if (restored.status === "failed") return reply.code(409).send(restored);
@@ -2501,7 +2613,16 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         return;
       }
       if (!isRecord(message) || message.type !== "presence.heartbeat") return;
-      client.lastSeenAt = nowIso();
+      if (!realtimeClientAuthorizationIsCurrent(store, client)) {
+        if (client.sessionId) disconnectRealtimeSession(client.sessionId);
+        else removeRealtimeClient(client);
+        return;
+      }
+      const heartbeatAt = nowIso();
+      const previousHeartbeatAt = Date.parse(client.lastSeenAt ?? client.connectedAt ?? heartbeatAt);
+      const receivedHeartbeatAt = Date.parse(heartbeatAt);
+      operationsObservability.recordRealtimeHeartbeat(Number.isFinite(previousHeartbeatAt) && Number.isFinite(receivedHeartbeatAt) ? Math.max(0, receivedHeartbeatAt - previousHeartbeatAt) : 0);
+      client.lastSeenAt = heartbeatAt;
       const sceneId = normalizeNonEmptyString(message.sceneId);
       client.activeSceneId = sceneId && store.state.scenes.some((scene) => scene.id === sceneId && scene.campaignId === campaignId && canReadSceneRecord(store, userId, scene)) ? sceneId : undefined;
       const presence = presenceForUser(campaignId, userId);
@@ -2634,9 +2755,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!member) return notFound(reply, "Campaign member not found");
     if (member.role === "owner") return forbidden(reply, "The campaign owner role cannot be changed");
     if (member.source?.type === "scim_group") return conflict(reply, "SCIM-managed campaign members must be changed through their group mapping");
+    const userId = currentUserId(store, request.headers)!;
+    if (member.userId === userId) return forbidden(reply, "Campaign members cannot change their own role");
     const role = assignableInviteRole(request.body?.role);
     if (!role) return badRequest(reply, "role must be gm, assistant_gm, player, or observer");
-    const userId = currentUserId(store, request.headers)!;
     const before = { role: member.role };
     member.role = role;
     member.updatedAt = nowIso();
@@ -2655,6 +2777,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (member.role === "owner") return forbidden(reply, "The campaign owner cannot be removed");
     if (member.source?.type === "scim_group") return conflict(reply, "SCIM-managed campaign members must be removed through their group mapping");
     const userId = currentUserId(store, request.headers)!;
+    if (member.userId === userId) return forbidden(reply, "Campaign members cannot remove their own access");
     store.state.members.splice(index, 1);
     store.state.permissionGrants = store.state.permissionGrants.filter((grant) => !(grant.campaignId === member.campaignId && grant.subjectType === "user" && grant.subjectId === member.userId));
     for (const token of store.state.tokens) {
@@ -2782,7 +2905,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     broadcast,
   });
 
-  app.get<{ Params: { campaignId: string }; Querystring: { q?: string; types?: string; worldId?: string; limit?: string } }>("/api/v1/campaigns/:campaignId/search", async (request, reply) => {
+  app.get<{ Params: { campaignId: string }; Querystring: { q?: string; types?: string; worldId?: string; limit?: string; offset?: string } }>("/api/v1/campaigns/:campaignId/search", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.read");
     if (allowed !== true) return allowed;
     const userId = currentUserId(store, request.headers)!;
@@ -2794,7 +2917,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (worldId && (!canCampaign(store, userId, request.params.campaignId, "world.read") || !store.state.worlds.some((world) => world.id === worldId && world.campaignId === request.params.campaignId))) return notFound(reply, "World not found");
     const limit = request.query.limit === undefined ? 50 : positiveInteger(request.query.limit);
     if (!limit || limit > 100) return badRequest(reply, "limit must be an integer from 1 to 100");
-    return campaignSearchResults(store, userId, request.params.campaignId, query, types.value, worldId).slice(0, limit);
+    const offset = request.query.offset === undefined ? 0 : Number(request.query.offset);
+    if (!Number.isSafeInteger(offset) || offset < 0 || offset > 10_000) return badRequest(reply, "offset must be an integer from 0 to 10000");
+    return campaignSearchResults(store, userId, request.params.campaignId, query, types.value, worldId).slice(offset, offset + limit);
   });
 
   app.patch<{ Params: { campaignId: string }; Body: CampaignPatchBody }>("/api/v1/campaigns/:campaignId", async (request, reply) => {
@@ -2861,6 +2986,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     try {
       const nextState = stateForArchiveMerge(store.state, portable);
       const counts = mergeArchive(nextState, portable);
+      migrateDnd5eSrdStoredArmorClassIntent(nextState, { initiatedByUserId: userId });
       nextState.auditLogs.push(createTimestamped("audit", { campaignId: copiedCampaign.id, actorUserId: userId, actorType: "user" as const, action: "campaign.duplicate", targetType: "campaign", targetId: copiedCampaign.id, after: { sourceCampaignId: source.id, assetFiles: assetRestore.restoredFiles, recordCount: Object.values(counts).reduce((total, count) => total + count, 0) } }) satisfies AuditLog);
       store.replace(nextState);
       // Idempotency onSend persists the state and replay record atomically.
@@ -3219,6 +3345,83 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     broadcast(createEvent({ campaignId: scene.campaignId, type: "scene.created", targetId: scene.id, payload: scene }));
     if (campaign) broadcast(createEvent({ campaignId: campaign.id, type: "campaign.updated", actorUserId: userId, targetId: campaign.id, payload: campaign }));
     return scene;
+  });
+
+  app.post<{ Params: { campaignId: string }; Body: unknown }>("/api/v1/campaigns/:campaignId/scene-duplications", async (request, reply) => {
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    if (!opaqueHeaderText(request.headers["idempotency-key"])) return badRequest(reply, "Scene duplication requires an Idempotency-Key header");
+    const allowed = requireCampaignPermissionForUser(store, reply, request.headers, userId, request.params.campaignId, "scene.create");
+    if (allowed !== true) return allowed;
+    const campaign = store.state.campaigns.find((candidate) => candidate.id === request.params.campaignId);
+    if (!campaign) return notFound(reply, "Campaign not found");
+    if (!isRecord(request.body)) return badRequest(reply, "Scene duplication payload must be an object");
+    if (!Array.isArray(request.body.sources)) return badRequest(reply, "Scene duplication sources must be an array");
+    if (request.body.dryRun !== undefined && typeof request.body.dryRun !== "boolean") return badRequest(reply, "Scene duplication dryRun must be a boolean");
+    const sources: SceneDuplicationRequest["sources"] = [];
+    for (const value of request.body.sources) {
+      if (!isRecord(value) || typeof value.sceneId !== "string" || typeof value.expectedUpdatedAt !== "string" || (value.name !== undefined && typeof value.name !== "string")) {
+        return badRequest(reply, "Each scene duplication source requires sceneId and expectedUpdatedAt, with an optional name");
+      }
+      const source = store.state.scenes.find((candidate) => candidate.id === value.sceneId && candidate.campaignId === campaign.id);
+      if (!source) return notFound(reply, "Scene not found");
+      const readable = requireScenePermission(store, reply, request.headers, source, "scene.read");
+      if (readable !== true) return readable;
+      const revision = requireExpectedRevision(reply, { resourceType: "scene", resourceId: source.id, currentUpdatedAt: source.updatedAt, expectedUpdatedAt: value.expectedUpdatedAt, current: source, label: "Scene duplication source" });
+      if (revision !== true) return revision;
+      sources.push({ sceneId: source.id, expectedUpdatedAt: value.expectedUpdatedAt, ...(value.name !== undefined ? { name: value.name } : {}) });
+    }
+    const revision = requireExpectedRevision(reply, { resourceType: "campaign", resourceId: campaign.id, currentUpdatedAt: campaign.updatedAt, expectedUpdatedAt: request.body.expectedUpdatedAt, current: campaign, label: "Scene duplication" });
+    if (revision !== true) return revision;
+    if (typeof request.body.operationId !== "string") return badRequest(reply, "Scene duplication operationId is required");
+    let prepared;
+    try {
+      prepared = prepareSceneDuplication(store.state, campaign.id, {
+        operationId: request.body.operationId,
+        expectedUpdatedAt: campaign.updatedAt,
+        sources,
+        dryRun: request.body.dryRun === true,
+      });
+    } catch (error) {
+      if (error instanceof SceneDuplicationError) return reply.code(error.code === "scene_duplication_conflict" ? 409 : 400).send({ error: error.code, message: error.message });
+      throw error;
+    }
+    const requiredPermissions: PermissionName[] = [
+      ...(prepared.tokens.length > 0 ? ["token.read" as const, "token.create" as const] : []),
+      ...(prepared.actors.length > 0 ? ["actor.read" as const, "actor.create" as const] : []),
+      ...(prepared.items.length > 0 || prepared.calculationOverrides.length > 0 ? ["actor.update" as const] : []),
+      ...(prepared.encounters.length > 0 ? ["combat.manage" as const] : []),
+    ];
+    for (const permission of requiredPermissions) {
+      const permitted = requireCampaignPermissionForUser(store, reply, request.headers, userId, campaign.id, permission);
+      if (permitted !== true) return permitted;
+    }
+    const sourceTokenIds = new Set(prepared.plan.copies.filter((copy) => copy.collection === "tokens").map((copy) => copy.sourceId));
+    const sourceTokens = store.state.tokens.filter((token) => sourceTokenIds.has(token.id));
+    if (visibleTokensForUser(store, userId, campaign.id, sourceTokens).length !== sourceTokens.length) {
+      return forbidden(reply, "Missing permission to read every token in the selected scene graph");
+    }
+    const sourceActorIds = new Set(prepared.plan.copies.filter((copy) => copy.collection === "actors").map((copy) => copy.sourceId));
+    const hiddenActor = store.state.actors.find((actor) => sourceActorIds.has(actor.id) && !canReadActorPrivateData(store, userId, campaign.id, actor));
+    if (hiddenActor) return forbidden(reply, `Missing actor.readPrivate permission for ${hiddenActor.name}`);
+    if (request.body.dryRun === true) return sceneDuplicationPreview(prepared);
+
+    let result: SceneDuplicationResult;
+    try {
+      result = commitPreparedSceneDuplication(store, prepared, userId);
+    } catch (error) {
+      if (error instanceof SceneDuplicationError) return reply.code(error.code === "scene_duplication_conflict" ? 409 : 400).send({ error: error.code, message: error.message });
+      throw error;
+    }
+    deferRequestSideEffectUntilDurableSave(request, () => {
+      for (const scene of result.scenes) broadcast(createEvent({ campaignId: campaign.id, type: "scene.created", actorUserId: userId, targetId: scene.id, payload: scene }));
+      for (const token of result.tokens) broadcast(createEvent({ campaignId: campaign.id, type: "token.created", actorUserId: userId, targetId: token.id, payload: token }));
+      for (const actor of result.actors) broadcast(createEvent({ campaignId: campaign.id, type: "actor.created", actorUserId: userId, targetId: actor.id, payload: actor }));
+      for (const item of result.items) broadcast(createEvent({ campaignId: campaign.id, type: "item.created", actorUserId: userId, targetId: item.id, payload: item }));
+      for (const encounter of result.encounters) broadcast(createEvent({ campaignId: campaign.id, type: "encounter.created", actorUserId: userId, targetId: encounter.id, payload: encounter }));
+      if (result.campaign) broadcast(createEvent({ campaignId: campaign.id, type: "campaign.updated", actorUserId: userId, targetId: campaign.id, payload: result.campaign }));
+    });
+    return reply.code(201).send(result);
   });
 
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/fog-presets", async (request, reply) => {
@@ -4402,8 +4605,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }
     const ownerUserId = campaignActorOwnerUserId(store, request.params.campaignId, request.body.ownerUserId);
     if (!ownerUserId.ok) return badRequest(reply, ownerUserId.error);
+    if (request.body.data !== undefined && !isRecord(request.body.data)) return badRequest(reply, "Actor data must be an object");
     const actor = createTimestamped("act", { campaignId: request.params.campaignId, worldId, systemId: request.body.systemId ?? DEFAULT_SYSTEM_ID, ownerUserId: ownerUserId.value, type: request.body.type ?? "character", name: request.body.name ?? "New Actor", imageAssetId: request.body.imageAssetId, data: request.body.data ?? { hp: { current: 10, max: 10 }, attributes: {} }, permissions: request.body.permissions ?? {} }) satisfies Actor;
+    if (actor.systemId === DND_5E_SRD_SYSTEM_ID) {
+      const validationError = dndManagedDataBoundaryError(parseDnd5eSrdActorManagedData(actor));
+      if (validationError) return badRequest(reply, validationError);
+    }
     store.state.actors.push(actor);
+    migrateDnd5eSrdStoredArmorClassIntent(store.state, { actorIds: [actor.id], initiatedByUserId: userId });
     const campaign = advanceCampaignAggregateRevision(store, actor.campaignId);
     store.save();
     broadcast(createEvent({ campaignId: actor.campaignId, type: "actor.created", targetId: actor.id, payload: actor }));
@@ -4492,6 +4701,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }
     if (request.body.data !== undefined && !isRecord(request.body.data)) return badRequest(reply, "Actor data must be an object");
     const changedDataRoots = request.body.data === undefined ? [] : changedRecordRoots(actor.data, request.body.data);
+    const armorClassRoots = changedDataRoots.filter((root) => root === "armorClass" || root === "armorClassIntent" || root === "armorClassReview");
+    const resultingActorType = request.body.type ?? actor.type;
+    if ((actor.systemId === DND_5E_SRD_SYSTEM_ID || request.body.systemId === DND_5E_SRD_SYSTEM_ID) && resultingActorType !== "monster" && armorClassRoots.length > 0) {
+      return reply.code(409).send({ error: "conflict", code: "calculation_override_route_required", message: "Character Armor Class is derived. Create or clear a reasoned armor-class calculation override instead of patching stored Armor Class data.", resourceType: "actor", resourceId: actor.id, managedRoots: armorClassRoots });
+    }
     if (changedDataRoots.includes(DND_CHARACTER_REVIEW_DATA_KEY)) {
       return reply.code(409).send({ error: "conflict", code: "character_review_route_required", message: "D&D character review state can only be changed through the character review routes", resourceType: "actor", resourceId: actor.id, managedRoots: [DND_CHARACTER_REVIEW_DATA_KEY] });
     }
@@ -4508,6 +4722,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       const ownerUserId = campaignActorOwnerUserId(store, actor.campaignId, request.body.ownerUserId);
       if (!ownerUserId.ok) return badRequest(reply, ownerUserId.error);
       patch.ownerUserId = ownerUserId.value;
+    }
+    const candidateActor = { ...actor, ...patch } as Actor;
+    if ((request.body.data !== undefined || request.body.systemId === DND_5E_SRD_SYSTEM_ID) && candidateActor.systemId === DND_5E_SRD_SYSTEM_ID) {
+      const validationError = dndManagedDataBoundaryError(parseDnd5eSrdActorManagedData(candidateActor), Boolean(manualOverrideReason.value));
+      if (validationError) return badRequest(reply, validationError);
     }
     const previousUpdatedAt = actor.updatedAt;
     const updatedAt = nextRevisionTimestamp(actor.updatedAt);
@@ -4776,7 +4995,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (worldId && !store.state.worlds.some((world) => world.id === worldId && world.campaignId === request.params.campaignId)) {
       return badRequest(reply, "Item worldId must reference a world in the same campaign");
     }
-    const item = createTimestamped("itm", { campaignId: request.params.campaignId, worldId, systemId: String(request.body.systemId ?? DEFAULT_SYSTEM_ID), actorId, type: String(request.body.type ?? "gear"), name: String(request.body.name ?? "New Item"), data: (request.body.data as Record<string, unknown>) ?? {} });
+    if (request.body.data !== undefined && !isRecord(request.body.data)) return badRequest(reply, "Item data must be an object");
+    const item = createTimestamped("itm", { campaignId: request.params.campaignId, worldId, systemId: String(request.body.systemId ?? DEFAULT_SYSTEM_ID), actorId, type: String(request.body.type ?? "gear"), name: String(request.body.name ?? "New Item"), data: request.body.data ?? {} }) satisfies Item;
+    if (item.systemId === DND_5E_SRD_SYSTEM_ID) {
+      const validationError = dndManagedDataBoundaryError(parseDnd5eSrdItemManagedData(item));
+      if (validationError) return badRequest(reply, validationError);
+    }
     store.state.items.push(item);
     const campaign = advanceCampaignAggregateRevision(store, item.campaignId);
     store.save();
@@ -4833,6 +5057,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         return reply.code(409).send({ error: "conflict", code: "rules_managed_patch_requires_review", message: `Rules-managed D&D item fields require a reviewed mutation route or a campaign-manager manual override: ${uniqueDndManagedRoots.join(", ")}`, resourceType: "item", resourceId: item.id, managedRoots: uniqueDndManagedRoots });
       }
       if (!canUpdateCampaign) return forbidden(reply, "Only a campaign actor manager can manually override rules-managed D&D item fields");
+    }
+    if ((request.body.data !== undefined || request.body.type !== undefined) && item.systemId === DND_5E_SRD_SYSTEM_ID) {
+      const candidateItem = { ...item, actorId: nextActorId, worldId: nextWorldId, type: nextItemType, data: nextItemData };
+      const validationError = dndManagedDataBoundaryError(parseDnd5eSrdItemManagedData(candidateItem), Boolean(manualOverrideReason.value));
+      if (validationError) return badRequest(reply, validationError);
     }
     if (!canUpdateCampaign && item.systemId === DND_5E_SRD_SYSTEM_ID && isRecord(nextItemData) && (["costGp", "compendiumId", "compendiumEntryId", "merchantId", "merchantCatalogEntryId", "purchasedForGp"] as const).some((key) => !Object.is(nextItemData[key], item.data[key]))) {
       return badRequest(reply, "D&D commerce valuation and provenance fields can only be changed by a campaign manager");
@@ -5614,7 +5843,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     let rolled: ReturnType<typeof rollFormula>;
     let fairness: DiceRollFairness;
     try {
-      const fairRoll = rollWithFairness(request.body.formula, request.body.clientSeed);
+      const fairRoll = rollFormulaWithFairness(request.body.formula, { clientSeed: request.body.clientSeed });
       rolled = fairRoll.rolled;
       fairness = fairRoll.fairness;
     } catch (error) {
@@ -5639,7 +5868,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!roll) return notFound(reply, "Dice roll not found");
     const linkedMessage = store.state.chat.find((message) => message.rollId === roll.id && message.campaignId === roll.campaignId);
     if (!canReadDiceRoll(store, userId, roll, linkedMessage)) return notFound(reply, "Dice roll not found");
-    return verifyDiceRollRecord(roll);
+    const sourceRollId = roll.heroicInspiration?.kind === "reroll" ? roll.heroicInspiration.originalRollId : undefined;
+    const sourceRoll = sourceRollId
+      ? store.state.rolls.find((candidate) => candidate.id === sourceRollId && candidate.campaignId === roll.campaignId)
+      : undefined;
+    const visibleSource = sourceRoll && canReadDiceRoll(store, userId, sourceRoll, store.state.chat.find((message) => message.rollId === sourceRoll.id && message.campaignId === sourceRoll.campaignId)) ? sourceRoll : undefined;
+    return verifyFairDiceRollRecord(roll, visibleSource);
   });
 
   app.get<{ Params: { campaignId: string }; Querystring: ListPaginationQuery }>("/api/v1/campaigns/:campaignId/rolls", async (request, reply) => {
@@ -6261,12 +6495,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         if (!actor || !isNpcInitiativeActor(actor)) {
           return badRequest(reply, `Server initiative is only available for linked NPCs and monsters: ${token.name}`);
         }
-        const quickRoll = initiativeRollForActor(actor, surprised);
-        const rolled = rollFormula(quickRoll.formula);
+        const quickRoll = initiativeRollForActor(actor, surprised, calculationOverrideContextForActor(store, actor, actorItems(store, actor)));
+        const fairRoll = rollFormulaWithFairness(quickRoll.formula);
+        const rolled = fairRoll.rolled;
         initiative = rolled.total;
         const label = `${token.name} ${quickRoll.label}`;
         const initiativeVisibility: DiceRoll["visibility"] = token.hidden ? "gm_only" : "public";
-        const roll = createTimestamped("roll", { campaignId: campaign.id, userId, formula: quickRoll.formula, label, visibility: initiativeVisibility, terms: rolled.terms, total: rolled.total }) satisfies DiceRoll;
+        const roll = createTimestamped("roll", { campaignId: campaign.id, userId, actorId: actor.id, formula: quickRoll.formula, label, visibility: initiativeVisibility, terms: rolled.terms, total: rolled.total, fairness: fairRoll.fairness }) satisfies DiceRoll;
         const message = createTimestamped("msg", { campaignId: campaign.id, userId, type: "roll" as const, body: `${label}: ${quickRoll.formula} = ${rolled.total}`, visibility: initiativeVisibility, recipientUserIds: [], rollId: roll.id }) satisfies ChatMessage;
         rolls.push(roll);
         chatMessages.push(message);
@@ -6661,11 +6896,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     for (const combatant of combat.combatants) {
       const actor = combatant.actorId ? store.state.actors.find((item) => item.id === combatant.actorId && item.campaignId === combat.campaignId) : undefined;
       if (!actor || !isNpcInitiativeActor(actor)) continue;
-      const quickRoll = initiativeRollForActor(actor, surpriseInitiativeEnabled && combatant.surprised === true);
-      const rolled = rollFormula(quickRoll.formula);
+      const quickRoll = initiativeRollForActor(actor, surpriseInitiativeEnabled && combatant.surprised === true, calculationOverrideContextForActor(store, actor, actorItems(store, actor)));
+      const fairRoll = rollFormulaWithFairness(quickRoll.formula);
+      const rolled = fairRoll.rolled;
       combatant.initiative = rolled.total;
       const label = `${combatant.name} ${quickRoll.label}`;
-      const roll = createTimestamped("roll", { campaignId: combat.campaignId, userId, formula: quickRoll.formula, label, visibility: "public" as const, terms: rolled.terms, total: rolled.total }) satisfies DiceRoll;
+      const roll = createTimestamped("roll", { campaignId: combat.campaignId, userId, actorId: actor.id, formula: quickRoll.formula, label, visibility: "public" as const, terms: rolled.terms, total: rolled.total, fairness: fairRoll.fairness }) satisfies DiceRoll;
       const message = createTimestamped("msg", { campaignId: combat.campaignId, userId, type: "roll" as const, body: `${label}: ${quickRoll.formula} = ${rolled.total}`, visibility: "public" as const, recipientUserIds: [], rollId: roll.id }) satisfies ChatMessage;
       rolls.push(roll);
       chatMessages.push(message);
@@ -8299,10 +8535,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const items = createTemplateItems(request.params.campaignId, actor, { ...template, items: templateItems });
     store.state.actors.push(actor);
     store.state.items.push(...items);
+    migrateDnd5eSrdStoredArmorClassIntent(store.state, { actorIds: [actor.id], initiatedByUserId: userId });
     store.save();
     broadcast(createEvent({ campaignId: actor.campaignId, type: "actor.created", targetId: actor.id, payload: actor }));
     const privateDataVisible = canReadActorPrivateData(store, userId, actor.campaignId, actor);
-    return { template, origins, actor: actorPayloadForUser(store, userId, actor), items: items.map((item) => itemPayloadForUser(store, userId, item)), ...(privateDataVisible ? { sheet: systemSheet(actor, items) } : {}) };
+    return { template, origins, actor: actorPayloadForUser(store, userId, actor), items: items.map((item) => itemPayloadForUser(store, userId, item)), ...(privateDataVisible ? { sheet: systemSheetForStore(store, actor, items) } : {}) };
   });
 
   app.post<{ Params: { campaignId: string; systemId: string }; Body: { threatId?: string; customMonsterItemId?: string; name?: string; ownerUserId?: string } }>("/api/v1/campaigns/:campaignId/systems/:systemId/monsters", async (request, reply) => {
@@ -8331,7 +8568,116 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     store.save();
     broadcast(createEvent({ campaignId: actor.campaignId, type: "actor.created", targetId: actor.id, payload: actor }));
     const privateDataVisible = canReadActorPrivateData(store, userId, actor.campaignId, actor);
-    return { threat, actor: actorPayloadForUser(store, userId, actor), ...(privateDataVisible ? { sheet: systemSheet(actor, []) } : {}) };
+    return { threat, actor: actorPayloadForUser(store, userId, actor), ...(privateDataVisible ? { sheet: systemSheetForStore(store, actor, []) } : {}) };
+  });
+
+  app.post<{ Params: { sceneId: string }; Body: EncounterMonsterPlacementBatchInput }>("/api/v1/scenes/:sceneId/encounter-monster-placements", async (request, reply) => {
+    const campaignId = campaignIdForScene(store, request.params.sceneId);
+    if (!campaignId) return notFound(reply, "Scene not found");
+    const actorAllowed = requireCampaignPermission(store, reply, request.headers, campaignId, "actor.create");
+    if (actorAllowed !== true) return actorAllowed;
+    const tokenAllowed = requireCampaignPermission(store, reply, request.headers, campaignId, "token.create");
+    if (tokenAllowed !== true) return tokenAllowed;
+    if (!opaqueHeaderText(request.headers["idempotency-key"])) return badRequest(reply, "Encounter monster placement requires an Idempotency-Key header");
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    const rawBody: Record<string, unknown> = isRecord(request.body) ? request.body : {};
+    const systemId = normalizeNonEmptyString(rawBody.systemId);
+    if (!systemId) return badRequest(reply, "Encounter monster placement requires systemId");
+    const system = findRegisteredSystem(store.state, systemId);
+    if (!system) return notFound(reply, "System not found");
+    if (system.id !== DND_5E_SRD_SYSTEM_ID) return badRequest(reply, "Monster creation is only supported for the D&D SRD runtime");
+    if (!Array.isArray(rawBody.placements) || rawBody.placements.length < 1 || rawBody.placements.length > 100) {
+      return badRequest(reply, "Encounter monster placement requires between 1 and 100 placements");
+    }
+    const scene = store.state.scenes.find((candidate) => candidate.id === request.params.sceneId)!;
+    const defaultOwnerUserIds = !canReadHiddenTokens(store, userId, campaignId) ? [userId] : [];
+    const prepared: Array<{ actor: Actor; token: Token; result: EncounterMonsterPlacementResult }> = [];
+    for (const [index, rawPlacement] of rawBody.placements.entries()) {
+      if (!isRecord(rawPlacement)) return badRequest(reply, `Encounter monster placement ${index + 1} must be an object`);
+      const threatId = normalizeNonEmptyString(rawPlacement.threatId);
+      const customMonsterItemId = normalizeNonEmptyString(rawPlacement.customMonsterItemId);
+      if (rawPlacement.threatId !== undefined && !threatId) return badRequest(reply, `Encounter monster placement ${index + 1} threatId must be a non-empty string`);
+      if (rawPlacement.customMonsterItemId !== undefined && !customMonsterItemId) return badRequest(reply, `Encounter monster placement ${index + 1} customMonsterItemId must be a non-empty string`);
+      if (Boolean(threatId) === Boolean(customMonsterItemId)) return badRequest(reply, `Encounter monster placement ${index + 1} must choose exactly one bundled threat or campaign custom monster`);
+      const customItem = customMonsterItemId
+        ? store.state.items.find((item) => item.id === customMonsterItemId && isDndCustomContentItem(item, campaignId) && item.type === "monster")
+        : undefined;
+      if (customMonsterItemId && !customItem) return notFound(reply, `Encounter monster placement ${index + 1} campaign custom monster not found`);
+      if (customItem && !canCampaign(store, userId, campaignId, "campaign.update")) return forbidden(reply, "Missing permission: campaign.update");
+      const bundledThreat = customItem ? undefined : dnd5eSrdEncounterThreats().find((item) => item.id === threatId);
+      if (!customItem && !bundledThreat) return notFound(reply, `Encounter monster placement ${index + 1} encounter threat not found`);
+      const customEntry = customItem ? dndCustomContentPayload(customItem).entry : undefined;
+      const threat = customEntry
+        ? { id: customEntry.id, systemId: customEntry.provenance.systemId, name: customEntry.name, summary: customEntry.summary, role: "custom", budget: Number(customEntry.data.xp ?? 0), challengeRating: String(customEntry.data.challengeRating ?? "0"), data: cloneRecord(customEntry.data), provenance: cloneCompendiumProvenance(customEntry.provenance) }
+        : bundledThreat!;
+      const data = customEntry ? dnd5eCustomMonsterActorData(customEntry) : dnd5eSrdMonsterActorData(threat.id);
+      if (!data) return notFound(reply, `Encounter monster placement ${index + 1} monster stat block not found`);
+      const ownerUserId = campaignActorOwnerUserId(store, campaignId, rawPlacement.ownerUserId, userId);
+      if (!ownerUserId.ok) return badRequest(reply, `Encounter monster placement ${index + 1}: ${ownerUserId.error}`);
+      if (rawPlacement.name !== undefined && typeof rawPlacement.name !== "string") return badRequest(reply, `Encounter monster placement ${index + 1} name must be a string`);
+      const requestedName = typeof rawPlacement.name === "string" ? rawPlacement.name.trim() : "";
+      if (requestedName.length > 160) return badRequest(reply, `Encounter monster placement ${index + 1} name must be at most 160 characters`);
+      const x = finiteNumberFromUnknown(rawPlacement.x);
+      const y = finiteNumberFromUnknown(rawPlacement.y);
+      const width = finiteNumberFromUnknown(rawPlacement.width);
+      const height = finiteNumberFromUnknown(rawPlacement.height);
+      if (x === undefined || y === undefined) return badRequest(reply, `Encounter monster placement ${index + 1} x and y must be finite numbers`);
+      if (width === undefined || height === undefined || width <= 0 || height <= 0) return badRequest(reply, `Encounter monster placement ${index + 1} width and height must be greater than zero`);
+      const normalizedLayer = normalizeTokenLayerPatch({ layer: rawPlacement.layer as TokenLayer | undefined });
+      if ("error" in normalizedLayer) return badRequest(reply, `Encounter monster placement ${index + 1}: ${normalizedLayer.error}`);
+      const disposition = rawPlacement.disposition;
+      if (disposition !== undefined && disposition !== "friendly" && disposition !== "neutral" && disposition !== "hostile") {
+        return badRequest(reply, `Encounter monster placement ${index + 1} disposition must be friendly, neutral, or hostile`);
+      }
+      const actor = createTimestamped("act", { campaignId, systemId: system.id, ownerUserId: ownerUserId.value, type: "monster", name: requestedName || threat.name, data: cloneRecord(data), permissions: {} }) satisfies Actor;
+      const token = createTimestamped("tok", {
+        sceneId: scene.id,
+        actorId: actor.id,
+        name: actor.name,
+        x,
+        y,
+        width,
+        height,
+        rotation: 0,
+        elevation: 0,
+        layer: normalizedLayer.patch.layer ?? "player",
+        hidden: false,
+        locked: false,
+        visionEnabled: true,
+        visionRadius: 160,
+        disposition: disposition ?? "hostile",
+        ownerUserIds: [...defaultOwnerUserIds],
+        notes: "",
+        conditions: [],
+        auras: [],
+        targetedByUserIds: [],
+        metadata: {},
+      }) satisfies Token;
+      const privateDataVisible = canReadActorPrivateData(store, userId, campaignId, actor);
+      prepared.push({
+        actor,
+        token,
+        result: {
+          threat: threat as unknown as Record<string, unknown>,
+          actor: actorPayloadForUser(store, userId, actor),
+          sceneToken: token,
+          ...(privateDataVisible ? { sheet: systemSheetForStore(store, actor, []) as unknown as Record<string, unknown> } : {}),
+        },
+      });
+    }
+    store.state.actors.push(...prepared.map((placement) => placement.actor));
+    store.state.tokens.push(...prepared.map((placement) => placement.token));
+    scene.updatedAt = nextRevisionTimestamp(scene.updatedAt);
+    store.save();
+    deferRequestSideEffectUntilDurableSave(request, () => {
+      for (const placement of prepared) {
+        broadcast(createEvent({ campaignId, type: "actor.created", targetId: placement.actor.id, payload: placement.actor }));
+        broadcast(createEvent({ campaignId, type: "token.created", targetId: placement.token.id, payload: placement.token }));
+      }
+      broadcast(createEvent({ campaignId, type: "scene.updated", actorUserId: userId, targetId: scene.id, payload: scene }));
+    });
+    return { placements: prepared.map((placement) => placement.result), scene } satisfies EncounterMonsterPlacementBatchResult;
   });
 
   app.post<{ Params: { campaignId: string; systemId: string }; Body: CharacterImportInput & { ownerUserId?: string } }>("/api/v1/campaigns/:campaignId/systems/:systemId/characters/import", async (request, reply) => {
@@ -8349,10 +8695,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const items = createImportedItems(request.params.campaignId, actor, imported);
     store.state.actors.push(actor);
     store.state.items.push(...items);
+    migrateDnd5eSrdStoredArmorClassIntent(store.state, { actorIds: [actor.id], initiatedByUserId: userId });
     store.save();
     broadcast(createEvent({ campaignId: actor.campaignId, type: "actor.created", targetId: actor.id, payload: actor }));
     const privateDataVisible = canReadActorPrivateData(store, userId, actor.campaignId, actor);
-    return { import: privateDataVisible ? imported : { ...imported, data: {}, items: [] }, actor: actorPayloadForUser(store, userId, actor), items: items.map((item) => itemPayloadForUser(store, userId, item)), ...(privateDataVisible ? { sheet: systemSheet(actor, items) } : {}) };
+    return { import: privateDataVisible ? imported : { ...imported, data: {}, items: [] }, actor: actorPayloadForUser(store, userId, actor), items: items.map((item) => itemPayloadForUser(store, userId, item)), ...(privateDataVisible ? { sheet: systemSheetForStore(store, actor, items) } : {}) };
   });
 
   app.get<{ Params: { campaignId: string; systemId: string }; Querystring: { q?: string; type?: string; types?: string } }>("/api/v1/campaigns/:campaignId/systems/:systemId/compendium", async (request, reply) => {
@@ -8506,7 +8853,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!entryConflict && requestedChoice) return badRequest(reply, "conflictChoice is only valid when resolving an existing compendium entry");
     const privateDataVisible = canReadActorPrivateData(store, userId, actor.campaignId, actor);
     if (entryConflict && requestedChoice === "keep_existing") {
-      return { entry, resolution: "kept_existing", actor: actorPayloadForUser(store, userId, actor), ...(existingItem ? { item: itemPayloadForUser(store, userId, existingItem) } : {}), ...(privateDataVisible ? { sheet: systemSheet(actor, actorItems(store, actor)) } : {}) };
+      return { entry, resolution: "kept_existing", actor: actorPayloadForUser(store, userId, actor), ...(existingItem ? { item: itemPayloadForUser(store, userId, existingItem) } : {}), ...(privateDataVisible ? { sheet: systemSheetForStore(store, actor, actorItems(store, actor)) } : {}) };
     }
     const reviewedUpdatedAt = actor.updatedAt;
     const changedAt = nextRevisionTimestamp(actor.updatedAt);
@@ -8517,7 +8864,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       appendServerAuditLog(store, userId, { campaignId: actor.campaignId, action: entryConflict ? "actor.compendiumConditionReplaced" : "actor.compendiumConditionAdded", targetType: "actor", targetId: actor.id, before: { updatedAt: reviewedUpdatedAt }, after: { updatedAt: changedAt, entryId: entry.id, contentVersion: entry.provenance.contentVersion } });
       store.save();
       broadcastActorUpdated(broadcast, actor);
-      return { entry, resolution: entryConflict ? "replaced_existing" : "added", actor: actorPayloadForUser(store, userId, actor), ...(privateDataVisible ? { sheet: systemSheet(actor, actorItems(store, actor)) } : {}) };
+      return { entry, resolution: entryConflict ? "replaced_existing" : "added", actor: actorPayloadForUser(store, userId, actor), ...(privateDataVisible ? { sheet: systemSheetForStore(store, actor, actorItems(store, actor)) } : {}) };
     }
     const item = existingItem ?? (createTimestamped("itm", { campaignId: request.params.campaignId, systemId: request.params.systemId, actorId: actor.id, type: entry.type, name: entry.name, data: compendiumItemData(entry) }) satisfies Item);
     if (existingItem) {
@@ -8533,7 +8880,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     store.save();
     broadcastActorUpdated(broadcast, actor);
     broadcast(createEvent({ campaignId: item.campaignId, type: existingItem ? "item.updated" : "item.created", actorUserId: userId, targetId: item.id, payload: item }));
-    return { entry, resolution: existingItem ? "replaced_existing" : "added", actor: actorPayloadForUser(store, userId, actor), item: itemPayloadForUser(store, userId, item), ...(privateDataVisible ? { sheet: systemSheet(actor, actorItems(store, actor)) } : {}) };
+    return { entry, resolution: existingItem ? "replaced_existing" : "added", actor: actorPayloadForUser(store, userId, actor), item: itemPayloadForUser(store, userId, item), ...(privateDataVisible ? { sheet: systemSheetForStore(store, actor, actorItems(store, actor)) } : {}) };
   });
 
   app.post<{ Params: { campaignId: string; systemId: string; actorId: string }; Body: { entryId?: string; quantity?: number; expectedUpdatedAt?: unknown; conflictChoice?: unknown } }>("/api/v1/campaigns/:campaignId/systems/:systemId/actors/:actorId/purchase", async (request, reply) => {
@@ -8564,7 +8911,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const privateDataVisible = canReadActorPrivateData(store, userId, actor.campaignId, actor);
     if (entryConflict && requestedChoice === "keep_existing" && existingItem) {
       const unitCostGp = typeof entry.data.costGp === "number" && Number.isFinite(entry.data.costGp) ? entry.data.costGp : 0;
-      return { entry, resolution: "kept_existing", purchase: { systemId: actor.systemId, actorId: actor.id, entryId: entry.id, quantity: 0, unitCostGp, totalCostGp: 0, keptExisting: true, ...(privateDataVisible && isRecord(actor.data.currency) ? { currency: cloneRecord(actor.data.currency) } : {}) }, actor: actorPayloadForUser(store, userId, actor), item: itemPayloadForUser(store, userId, existingItem), ...(privateDataVisible ? { sheet: systemSheet(actor, actorItems(store, actor)) } : {}) };
+      return { entry, resolution: "kept_existing", purchase: { systemId: actor.systemId, actorId: actor.id, entryId: entry.id, quantity: 0, unitCostGp, totalCostGp: 0, keptExisting: true, ...(privateDataVisible && isRecord(actor.data.currency) ? { currency: cloneRecord(actor.data.currency) } : {}) }, actor: actorPayloadForUser(store, userId, actor), item: itemPayloadForUser(store, userId, existingItem), ...(privateDataVisible ? { sheet: systemSheetForStore(store, actor, actorItems(store, actor)) } : {}) };
     }
     let purchase: ReturnType<typeof dnd5eSrdEquipmentPurchase>;
     try {
@@ -8594,7 +8941,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     store.save();
     broadcastActorUpdated(broadcast, actor);
     broadcast(createEvent({ campaignId: item.campaignId, type: existingItem ? "item.updated" : "item.created", actorUserId: userId, targetId: item.id, payload: item }));
-    return { entry, resolution: existingItem ? (requestedChoice === "replace_existing" ? "replaced_existing" : "merged_existing") : "purchased", purchase: privateDataVisible ? { ...purchase, itemData: cloneRecord(item.data) } : { systemId: purchase.systemId, actorId: purchase.actorId, entryId: purchase.entryId, quantity: purchase.quantity, unitCostGp: purchase.unitCostGp, totalCostGp: purchase.totalCostGp }, actor: actorPayloadForUser(store, userId, actor), item: itemPayloadForUser(store, userId, item), ...(privateDataVisible ? { sheet: systemSheet(actor, actorItems(store, actor)) } : {}) };
+    return { entry, resolution: existingItem ? (requestedChoice === "replace_existing" ? "replaced_existing" : "merged_existing") : "purchased", purchase: privateDataVisible ? { ...purchase, itemData: cloneRecord(item.data) } : { systemId: purchase.systemId, actorId: purchase.actorId, entryId: purchase.entryId, quantity: purchase.quantity, unitCostGp: purchase.unitCostGp, totalCostGp: purchase.totalCostGp }, actor: actorPayloadForUser(store, userId, actor), item: itemPayloadForUser(store, userId, item), ...(privateDataVisible ? { sheet: systemSheetForStore(store, actor, actorItems(store, actor)) } : {}) };
   });
 
   app.post<{ Params: { campaignId: string; systemId: string; actorId: string }; Body: { conditionId?: string; level?: unknown; expectedUpdatedAt?: unknown; overrideReason?: unknown } }>("/api/v1/campaigns/:campaignId/systems/:systemId/actors/:actorId/conditions", async (request, reply) => {
@@ -8632,7 +8979,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     store.save();
     broadcastActorUpdated(broadcast, actor);
     const privateDataVisible = canReadActorPrivateData(store, userId, actor.campaignId, actor);
-    return { entry, actor: actorPayloadForUser(store, userId, actor), ...(privateDataVisible ? { sheet: systemSheet(actor, actorItems(store, actor)) } : {}) };
+    return { entry, actor: actorPayloadForUser(store, userId, actor), ...(privateDataVisible ? { sheet: systemSheetForStore(store, actor, actorItems(store, actor)) } : {}) };
   });
 
   app.delete<{ Params: { campaignId: string; systemId: string; actorId: string; conditionId: string }; Querystring: { expectedUpdatedAt?: string } }>("/api/v1/campaigns/:campaignId/systems/:systemId/actors/:actorId/conditions/:conditionId", async (request, reply) => {
@@ -8654,7 +9001,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     store.save();
     broadcastActorUpdated(broadcast, actor);
     const privateDataVisible = canReadActorPrivateData(store, userId, actor.campaignId, actor);
-    return { actor: actorPayloadForUser(store, userId, actor), ...(privateDataVisible ? { sheet: systemSheet(actor, actorItems(store, actor)) } : {}) };
+    return { actor: actorPayloadForUser(store, userId, actor), ...(privateDataVisible ? { sheet: systemSheetForStore(store, actor, actorItems(store, actor)) } : {}) };
   });
 
   app.post<{ Params: { campaignId: string; systemId: string; actorId: string }; Body: { itemId?: unknown; attuned?: unknown; expectedUpdatedAt?: unknown; overrideReason?: unknown; breakCurse?: unknown } }>("/api/v1/campaigns/:campaignId/systems/:systemId/actors/:actorId/attunement", async (request, reply) => {
@@ -8697,7 +9044,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     store.save();
     broadcastActorUpdated(broadcast, actor);
     const privateDataVisible = canReadActorPrivateData(store, userId, actor.campaignId, actor);
-    return { actor: actorPayloadForUser(store, userId, actor), item: itemPayloadForUser(store, userId, item), ...(privateDataVisible ? { attunement, prerequisite, sheet: systemSheet(actor, actorItems(store, actor)) } : {}) };
+    return { actor: actorPayloadForUser(store, userId, actor), item: itemPayloadForUser(store, userId, item), ...(privateDataVisible ? { attunement, prerequisite, sheet: systemSheetForStore(store, actor, actorItems(store, actor)) } : {}) };
   });
 
   app.get<{ Params: { campaignId: string; systemId: string; actorId: string } }>("/api/v1/campaigns/:campaignId/systems/:systemId/actors/:actorId/calculation-explanation", async (request, reply): Promise<ActorCalculationExplanation | FastifyReply> => {
@@ -8751,6 +9098,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!parsed) return badRequest(reply, "Controlled-creature request is incomplete");
     const authorized = authorizeControlledCreaturePreparation(store, userId, request.params.campaignId, parsed);
     if (authorized !== true) return forbidden(reply, authorized);
+    if (parsed.originatingAction) {
+      const reviewed = preparedControlledCreatureAction(store, request.headers, userId, request.params.campaignId, parsed);
+      if ("error" in reviewed) return conflict(reply, reviewed.error);
+    }
     return buildDndControlledCreaturePreview(store.state, request.params.campaignId, parsed);
   });
 
@@ -8765,16 +9116,77 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (activeOrganization !== true) return activeOrganization;
     const authorized = authorizeControlledCreaturePreparation(store, userId, request.params.campaignId, parsed.request);
     if (authorized !== true) return forbidden(reply, authorized);
+    const reviewedAction = parsed.request.originatingAction
+      ? preparedControlledCreatureAction(store, request.headers, userId, request.params.campaignId, parsed.request)
+      : undefined;
+    if (reviewedAction && "error" in reviewedAction) return conflict(reply, reviewedAction.error);
+    if (parsed.request.originatingAction && store.state.auditLogs.some((log) => log.campaignId === request.params.campaignId
+      && (log.action === "actor.controlledCreatureCreated" || log.action === "actor.controlledCreatureTransformed")
+      && isRecord(log.after)
+      && log.after.preparedPreviewKey === parsed.request.originatingAction?.preparedPreviewKey)) {
+      return conflict(reply, "This prepared controlled-creature action was already confirmed");
+    }
     const preview = buildDndControlledCreaturePreview(store.state, request.params.campaignId, parsed.request);
     if (!preview.ready) return reply.code(409).send({ error: "manual_review_required", message: preview.summary, preview });
     if (parsed.previewToken !== preview.previewToken) return reply.code(409).send({ error: "stale_preview", message: "Controlled-creature preview changed. Review and confirm again.", preview });
     const mismatch = controlledCreatureRevisionMismatch(store.state, parsed.expectedUpdatedAt, preview.requiredRevisions);
     if (mismatch) return controlledCreatureStaleWrite(reply, mismatch);
+    const replacementActors = controlledCreatureConcentrationReplacementActors(store.state, request.params.campaignId, parsed.request);
+    const replacementEntries = dndControlledCreatureEntries(store.state, request.params.campaignId).filter(({ actor }) => replacementActors.some((candidate) => candidate.id === actor.id));
+    if (replacementEntries.some(({ actor, record }) => record.controllerUserId !== userId && record.ownerUserId !== userId && !canUpdateActorForUser(store, userId, actor))) return forbidden(reply, "Missing permission for a concentration-linked controlled creature");
+    if (reviewedAction && "value" in reviewedAction) {
+      for (const [actorId, expectedUpdatedAt] of Object.entries(reviewedAction.value.actorUpdatedAt)) {
+        const currentActor = store.state.actors.find((candidate) => candidate.id === actorId && candidate.campaignId === request.params.campaignId);
+        if (!currentActor || currentActor.updatedAt !== expectedUpdatedAt) return conflict(reply, "An actor changed after the D&D action was reviewed; review the action again");
+      }
+      for (const [itemId, expectedUpdatedAt] of Object.entries(reviewedAction.value.itemUpdatedAt)) {
+        const currentItem = store.state.items.find((candidate) => candidate.id === itemId && candidate.campaignId === request.params.campaignId);
+        if (!currentItem || currentItem.updatedAt !== expectedUpdatedAt) return conflict(reply, "An item changed after the D&D action was reviewed; review the action again");
+      }
+      const activeCombat = store.state.combats.find((candidate) => candidate.campaignId === request.params.campaignId && candidate.active);
+      if (reviewedAction.value.combatUpdatedAt !== undefined && (!activeCombat || activeCombat.updatedAt !== reviewedAction.value.combatUpdatedAt)) return conflict(reply, "Combat changed after the D&D action was reviewed; review the action again");
+    }
 
-    const result = confirmDndControlledCreature(store.state, request.params.campaignId, parsed);
-    appendServerAuditLog(store, userId, { campaignId: request.params.campaignId, action: result.action === "transformed" ? "actor.controlledCreatureTransformed" : "actor.controlledCreatureCreated", targetType: "actor", targetId: result.records[0]?.linkedActorId, before: { previewToken: parsed.previewToken, expectedUpdatedAt: parsed.expectedUpdatedAt }, after: { action: result.action, recordIds: result.records.map((record) => record.id), actorIds: result.records.map((record) => record.linkedActorId), tokenIds: result.records.flatMap((record) => record.linkedTokenIds) } });
-    store.save();
-    broadcastControlledCreatureMutation(broadcast, userId, result);
+    let nextState = structuredClone(store.state);
+    let appliedAction: AppliedPreparedControlledCreatureAction | undefined;
+    if (reviewedAction && "value" in reviewedAction) {
+      try {
+        appliedAction = applyPreparedControlledCreatureAction(nextState, request.params.campaignId, userId, reviewedAction.value);
+        nextState = appliedAction.state;
+      } catch (error) {
+        return conflict(reply, error instanceof Error ? error.message : "Prepared D&D action could not be committed");
+      }
+      const unauthorizedActorId = appliedAction.updatedActorIds.find((actorId) => {
+        const currentActor = store.state.actors.find((candidate) => candidate.id === actorId && candidate.campaignId === request.params.campaignId);
+        return currentActor && !canUpdateActorForUser(store, userId, currentActor);
+      });
+      if (unauthorizedActorId) return forbidden(reply, "Missing permission: actor.update");
+    }
+    const cleanupResults: DndControlledCreatureMutationResult[] = [];
+    for (const replacement of controlledCreatureConcentrationReplacementActors(nextState, request.params.campaignId, parsed.request)) {
+      cleanupResults.push(endDndControlledCreatureRecord(nextState, replacement, "concentration_ended"));
+    }
+    let primaryResult: DndControlledCreatureMutationResult;
+    try {
+      primaryResult = confirmDndControlledCreature(nextState, request.params.campaignId, parsed);
+    } catch (error) {
+      return conflict(reply, error instanceof Error ? error.message : "Controlled-creature confirmation could not be completed");
+    }
+    if (appliedAction) {
+      const sourceActor = nextState.actors.find((candidate) => candidate.id === appliedAction?.sourceActorId && candidate.campaignId === request.params.campaignId);
+      if (sourceActor && !primaryResult.actors.some((candidate) => candidate.id === sourceActor.id)) primaryResult.actors.push(sourceActor);
+    }
+    const result = mergeControlledCreatureMutationResults(primaryResult, cleanupResults);
+    nextState.auditLogs.push(createTimestamped("audit", { campaignId: request.params.campaignId, actorUserId: userId, actorType: "user" as const, action: result.action === "transformed" ? "actor.controlledCreatureTransformed" : "actor.controlledCreatureCreated", targetType: "actor", targetId: primaryResult.records[0]?.linkedActorId, before: { previewToken: parsed.previewToken, expectedUpdatedAt: parsed.expectedUpdatedAt }, after: { action: result.action, recordIds: result.records.map((record) => record.id), actorIds: result.records.map((record) => record.linkedActorId), tokenIds: result.records.flatMap((record) => record.linkedTokenIds), ...(parsed.request.originatingAction ? { preparedPreviewKey: parsed.request.originatingAction.preparedPreviewKey, originatingAction: parsed.request.originatingAction } : {}) } }));
+    store.replace(nextState);
+    for (const cleanup of cleanupResults) broadcastControlledCreatureMutation(broadcast, userId, cleanup);
+    broadcastControlledCreatureMutation(broadcast, userId, primaryResult);
+    if (appliedAction) {
+      const sourceActor = store.state.actors.find((candidate) => candidate.id === appliedAction?.sourceActorId && candidate.campaignId === request.params.campaignId);
+      if (sourceActor && !primaryResult.actors.some((candidate) => candidate.id === sourceActor.id)) broadcastActorUpdated(broadcast, sourceActor);
+      for (const roll of appliedAction.rolls) broadcast(createEvent({ campaignId: roll.campaignId, type: "dice.roll.created", actorUserId: userId, targetId: roll.id, payload: roll }));
+      for (const message of appliedAction.chatMessages) broadcast(createEvent({ campaignId: message.campaignId, type: "chat.message.created", actorUserId: userId, targetId: message.id, payload: message }));
+    }
     return controlledCreatureMutationPayload(store, userId, result);
   });
 
@@ -8782,6 +9194,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (request.params.systemId !== DND_5E_SRD_SYSTEM_ID) return badRequest(reply, "Controlled-creature lifecycles are D&D 5.5e-specific");
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
+    const lifecycleAccess = requireControlledCreatureLifecycleAccess(store, reply, request.headers, userId, request.params.campaignId);
+    if (lifecycleAccess !== true) return lifecycleAccess;
     if (!opaqueHeaderText(request.headers["idempotency-key"])) return badRequest(reply, "Controlled-creature commands require an Idempotency-Key header");
     if (!controlledCreatureRevisionSet(request.body?.expectedUpdatedAt)) return badRequest(reply, "expectedUpdatedAt must contain every controlled-creature revision collection");
     if (request.body.note !== undefined && (typeof request.body.note !== "string" || request.body.note.length > 500)) return badRequest(reply, "Command note must be 500 characters or fewer");
@@ -8806,6 +9220,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (request.params.systemId !== DND_5E_SRD_SYSTEM_ID) return badRequest(reply, "Controlled-creature lifecycles are D&D 5.5e-specific");
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
+    const lifecycleAccess = requireControlledCreatureLifecycleAccess(store, reply, request.headers, userId, request.params.campaignId);
+    if (lifecycleAccess !== true) return lifecycleAccess;
     if (!opaqueHeaderText(request.headers["idempotency-key"])) return badRequest(reply, "Controlled-creature cleanup requires an Idempotency-Key header");
     if (!controlledCreatureRevisionSet(request.body?.expectedUpdatedAt)) return badRequest(reply, "expectedUpdatedAt must contain every controlled-creature revision collection");
     if (request.body.reason !== "dismissed" && request.body.reason !== "expired") return badRequest(reply, "Cleanup reason must be dismissed or expired");
@@ -8833,6 +9249,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (request.params.systemId !== DND_5E_SRD_SYSTEM_ID) return badRequest(reply, "Controlled-creature lifecycles are D&D 5.5e-specific");
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
+    const lifecycleAccess = requireControlledCreatureLifecycleAccess(store, reply, request.headers, userId, request.params.campaignId);
+    if (lifecycleAccess !== true) return lifecycleAccess;
     if (!opaqueHeaderText(request.headers["idempotency-key"])) return badRequest(reply, "Concentration cleanup requires an Idempotency-Key header");
     if (!controlledCreatureRevisionSet(request.body?.expectedUpdatedAt)) return badRequest(reply, "expectedUpdatedAt must contain every controlled-creature revision collection");
     if (typeof request.body.sourceActorId !== "string" || typeof request.body.groupId !== "string" || !request.body.groupId.trim()) return badRequest(reply, "sourceActorId and groupId are required");
@@ -9636,7 +10054,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     store.save();
     broadcastActorUpdated(broadcast, actor);
     const privateDataVisible = canReadActorPrivateData(store, userId, actor.campaignId, actor);
-    return { advancement: option, ...(advancementRoll ? { advancementRoll } : {}), actor: actorPayloadForUser(store, userId, actor), ...(privateDataVisible ? { sheet: systemSheet(actor, actorItems(store, actor)) } : {}) };
+    return { advancement: option, ...(advancementRoll ? { advancementRoll } : {}), actor: actorPayloadForUser(store, userId, actor), ...(privateDataVisible ? { sheet: systemSheetForStore(store, actor, actorItems(store, actor)) } : {}) };
   });
 
   app.post<{ Params: { campaignId: string; systemId: string; actorId: string }; Body: { restType?: SystemRestType; arcaneRecovery?: Record<string, number>; hitDice?: Array<{ className?: string }>; expectedUpdatedAt?: string; preparedPreviewKey?: string } }>("/api/v1/campaigns/:campaignId/systems/:systemId/actors/:actorId/rest", async (request, reply) => {
@@ -9715,7 +10133,122 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     store.save();
     broadcastActorUpdated(broadcast, actor);
     const privateDataVisible = canReadActorPrivateData(store, userId, actor.campaignId, actor);
-    return { rest: privateDataVisible ? rest : { systemId: rest.systemId, actorId: rest.actorId, restType: rest.restType }, actor: actorPayloadForUser(store, userId, actor), ...(privateDataVisible ? { sheet: systemSheet(actor, actorItems(store, actor)) } : {}) };
+    return { rest: privateDataVisible ? rest : { systemId: rest.systemId, actorId: rest.actorId, restType: rest.restType }, actor: actorPayloadForUser(store, userId, actor), ...(privateDataVisible ? { sheet: systemSheetForStore(store, actor, actorItems(store, actor)) } : {}) };
+  });
+
+  app.post<{
+    Params: { campaignId: string; systemId: string; actorId: string };
+    Body: { expectedActorUpdatedAt?: unknown; recipientActorId?: unknown; expectedRecipientUpdatedAt?: unknown };
+  }>("/api/v1/campaigns/:campaignId/systems/:systemId/actors/:actorId/heroic-inspiration/grant", async (request, reply) => {
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    if (request.params.systemId !== DND_5E_SRD_SYSTEM_ID) return badRequest(reply, "Heroic Inspiration is only available for the D&D 5e SRD system");
+    const allowed = requireCampaignPermissionForUser(store, reply, request.headers, userId, request.params.campaignId, "actor.update");
+    if (allowed !== true) return allowed;
+    if (!opaqueHeaderText(request.headers["idempotency-key"])) return badRequest(reply, "Heroic Inspiration grants require an Idempotency-Key header");
+    const actor = findSystemActor(store, request.params.campaignId, request.params.systemId, request.params.actorId);
+    if (!actor) return notFound(reply, "System actor not found");
+    const actorRevision = requireExpectedRevision(reply, { resourceType: "actor", resourceId: actor.id, currentUpdatedAt: actor.updatedAt, expectedUpdatedAt: request.body?.expectedActorUpdatedAt, current: actorPayloadForUser(store, userId, actor), label: "Actor" });
+    if (actorRevision !== true) return actorRevision;
+
+    const recipientActorId = normalizeNonEmptyString(request.body?.recipientActorId);
+    if (request.body?.recipientActorId !== undefined && !recipientActorId) return badRequest(reply, "recipientActorId must be a non-empty string");
+    if (recipientActorId && actor.data.heroicInspiration !== true) return badRequest(reply, "A transfer recipient is only used when the gaining actor already has Heroic Inspiration");
+    if (!recipientActorId && actor.data.heroicInspiration === true) return conflict(reply, "Actor already has Heroic Inspiration; choose an eligible recipient for this grant");
+    const recipient = recipientActorId
+      ? store.state.actors.find((candidate) => candidate.id === recipientActorId && candidate.campaignId === actor.campaignId && candidate.systemId === DND_5E_SRD_SYSTEM_ID)
+      : undefined;
+    if (recipientActorId && !recipient) return notFound(reply, "Heroic Inspiration recipient not found");
+    if (recipient?.id === actor.id) return badRequest(reply, "Heroic Inspiration recipient must be a different actor");
+    if (recipient) {
+      const recipientRevision = requireExpectedRevision(reply, { resourceType: "actor", resourceId: recipient.id, currentUpdatedAt: recipient.updatedAt, expectedUpdatedAt: request.body?.expectedRecipientUpdatedAt, current: actorPayloadForUser(store, userId, recipient), label: "Recipient actor" });
+      if (recipientRevision !== true) return recipientRevision;
+      if (recipient.data.heroicInspiration === true) return conflict(reply, `${recipient.name} already has Heroic Inspiration`);
+    }
+
+    const grant = grantDnd5eSrdHeroicInspiration(actor, recipient);
+    if (grant.awardedTo === "none") return conflict(reply, "No actor is eligible to receive Heroic Inspiration");
+    const before = { actor: actor.data.heroicInspiration === true, ...(recipient ? { recipient: recipient.data.heroicInspiration === true } : {}) };
+    const changedAt = nextRevisionTimestamp([actor.updatedAt, recipient?.updatedAt ?? ""].sort().at(-1)!);
+    actor.data = grant.actorData;
+    actor.updatedAt = changedAt;
+    if (recipient && grant.recipientData) {
+      recipient.data = grant.recipientData;
+      recipient.updatedAt = changedAt;
+    }
+    const awardedActor = grant.awardedTo === "recipient" ? recipient! : actor;
+    appendServerAuditLog(store, userId, { campaignId: actor.campaignId, action: "system.actor.heroicInspiration.grant", targetType: "actor", targetId: awardedActor.id, before, after: { sourceActorId: actor.id, awardedActorId: awardedActor.id, transferred: grant.awardedTo === "recipient" } });
+    store.save();
+    broadcastActorUpdated(broadcast, actor);
+    if (recipient) broadcastActorUpdated(broadcast, recipient);
+    return { awardedTo: grant.awardedTo, actor: actorPayloadForUser(store, userId, actor), ...(recipient ? { recipient: actorPayloadForUser(store, userId, recipient) } : {}) };
+  });
+
+  app.post<{
+    Params: { campaignId: string; systemId: string; actorId: string };
+    Body: { originalRollId?: unknown; selectedTermIndex?: unknown; selectedResultIndex?: unknown; expectedActorUpdatedAt?: unknown };
+  }>("/api/v1/campaigns/:campaignId/systems/:systemId/actors/:actorId/heroic-inspiration/reroll", async (request, reply) => {
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    if (request.params.systemId !== DND_5E_SRD_SYSTEM_ID) return badRequest(reply, "Heroic Inspiration is only available for the D&D 5e SRD system");
+    const canRoll = requireCampaignPermissionForUser(store, reply, request.headers, userId, request.params.campaignId, "dice.roll");
+    if (canRoll !== true) return canRoll;
+    if (!opaqueHeaderText(request.headers["idempotency-key"])) return badRequest(reply, "Heroic Inspiration rerolls require an Idempotency-Key header");
+    const actor = findSystemActor(store, request.params.campaignId, request.params.systemId, request.params.actorId);
+    if (!actor) return notFound(reply, "System actor not found");
+    if (!canUpdateActorForUser(store, userId, actor)) return forbidden(reply, "Missing permission: actor.update");
+    if (!canReadActorPrivateData(store, userId, actor.campaignId, actor)) return forbidden(reply, "Missing permission: actor.readPrivate");
+    const actorRevision = requireExpectedRevision(reply, { resourceType: "actor", resourceId: actor.id, currentUpdatedAt: actor.updatedAt, expectedUpdatedAt: request.body?.expectedActorUpdatedAt, current: actorPayloadForUser(store, userId, actor), label: "Actor" });
+    if (actorRevision !== true) return actorRevision;
+    if (actor.data.heroicInspiration !== true) return conflict(reply, `${actor.name} has no Heroic Inspiration to spend`);
+
+    const originalRollId = normalizeNonEmptyString(request.body?.originalRollId);
+    if (!originalRollId) return badRequest(reply, "originalRollId must be a non-empty string");
+    const selectedTermIndex = Number(request.body?.selectedTermIndex);
+    const selectedResultIndex = Number(request.body?.selectedResultIndex);
+    if (!Number.isInteger(selectedTermIndex) || selectedTermIndex < 0 || !Number.isInteger(selectedResultIndex) || selectedResultIndex < 0) return badRequest(reply, "A selected d20 term and result index are required");
+    const originalIndex = store.state.rolls.findIndex((candidate) => candidate.id === originalRollId && candidate.campaignId === actor.campaignId);
+    const original = originalIndex >= 0 ? store.state.rolls[originalIndex] : undefined;
+    if (!original || original.actorId !== actor.id) return notFound(reply, "Eligible actor roll not found");
+    const originalMessage = store.state.chat.find((message) => message.campaignId === actor.campaignId && message.rollId === original.id);
+    if (!canReadDiceRoll(store, userId, original, originalMessage)) return notFound(reply, "Eligible actor roll not found");
+    if (original.heroicInspiration) return conflict(reply, "This roll is already part of a Heroic Inspiration reroll");
+    if (store.state.rolls.slice(originalIndex + 1).some((candidate) => candidate.campaignId === actor.campaignId && candidate.actorId === actor.id)) {
+      return conflict(reply, "Heroic Inspiration must be used immediately after the roll, before another action roll");
+    }
+    const selected = heroicInspirationDieChoices(original).find((choice) => choice.termIndex === selectedTermIndex && choice.resultIndex === selectedResultIndex);
+    if (!selected) return badRequest(reply, "Selected die is not an eligible normal, Advantage, or Disadvantage d20 result");
+
+    const fairReplacement = rollFormulaWithFairness("1d20");
+    const replacementResult = fairReplacement.rolled.terms[0]?.results?.[0];
+    if (replacementResult === undefined) return conflict(reply, "Heroic Inspiration replacement roll did not produce a d20 result");
+    const transformed = applyHeroicInspirationReroll(original, { termIndex: selectedTermIndex, resultIndex: selectedResultIndex }, replacementResult);
+    const reroll = createTimestamped("roll", {
+      campaignId: actor.campaignId,
+      userId,
+      actorId: actor.id,
+      formula: original.formula,
+      label: `${original.label ?? actor.name} — Heroic Inspiration reroll`,
+      visibility: original.visibility,
+      terms: transformed.terms,
+      total: transformed.total,
+      fairness: fairReplacement.fairness,
+      heroicInspiration: { kind: "reroll" as const, actorId: actor.id, originalRollId: original.id, selectedTermIndex, selectedResultIndex, originalResult: transformed.originalResult, replacementResult },
+    }) satisfies DiceRoll;
+    original.heroicInspiration = { kind: "original", actorId: actor.id, rerollRollId: reroll.id };
+    original.updatedAt = nextRevisionTimestamp(original.updatedAt);
+    const message = createTimestamped("msg", { campaignId: actor.campaignId, userId, type: "roll" as const, body: `${actor.name} used Heroic Inspiration: ${transformed.originalResult} → ${replacementResult}; new required result ${reroll.formula} = ${reroll.total}`, visibility: reroll.visibility, recipientUserIds: originalMessage?.recipientUserIds ?? [], rollId: reroll.id }) satisfies ChatMessage;
+    const actorBefore = structuredClone(actor.data);
+    actor.data = spendDnd5eSrdHeroicInspiration(actor);
+    actor.updatedAt = nextRevisionTimestamp(actor.updatedAt);
+    store.state.rolls.push(reroll);
+    store.state.chat.push(message);
+    appendServerAuditLog(store, userId, { campaignId: actor.campaignId, action: "system.actor.heroicInspiration.reroll", targetType: "actor", targetId: actor.id, before: { actorData: actorBefore, originalRollId: original.id, originalTotal: original.total }, after: { rerollRollId: reroll.id, rerollTotal: reroll.total, selectedTermIndex, selectedResultIndex, originalResult: transformed.originalResult, replacementResult, requiredResult: true } });
+    store.save();
+    broadcastActorUpdated(broadcast, actor);
+    broadcast(createEvent({ campaignId: reroll.campaignId, type: "dice.roll.created", actorUserId: userId, targetId: reroll.id, payload: reroll }));
+    broadcast(createEvent({ campaignId: message.campaignId, type: "chat.message.created", actorUserId: userId, targetId: message.id, payload: message }));
+    return { actor: actorPayloadForUser(store, userId, actor), originalRoll: original, reroll, chat: message, mustUseNewRoll: true };
   });
 
   app.get<{ Params: { campaignId: string; systemId: string; actorId: string } }>("/api/v1/campaigns/:campaignId/systems/:systemId/actors/:actorId/sheet", async (request, reply) => {
@@ -9726,7 +10259,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const actor = findSystemActor(store, request.params.campaignId, request.params.systemId, request.params.actorId);
     if (!actor) return notFound(reply, "System actor not found");
     if (!canReadActorPrivateData(store, userId, actor.campaignId, actor)) return forbidden(reply, "Missing permission: actor.readPrivate");
-    const sheet = systemSheet(actor, actorItems(store, actor));
+    const sheet = systemSheetForStore(store, actor, actorItems(store, actor));
     return { systemId: request.params.systemId, ...sheet };
   });
 
@@ -9742,7 +10275,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!canReadActorPrivateData(store, userId, actor.campaignId, actor)) return forbidden(reply, "Missing permission: actor.readPrivate");
     const submittedActionBody = request.body ?? {};
     let actionBody: SystemActorRollBody = submittedActionBody;
-    let preparedAction: { preparedPreviewKey: string; request: SystemActorRollBody; preparedAt: string; actorUpdatedAt: Record<string, string>; itemUpdatedAt: Record<string, string>; combatUpdatedAt?: string; rolledResults: Array<{ resolutionRoll: RulesActionResolutionResult["rolls"][number]; rolled: ReturnType<typeof rollFormula> }>; resolutionHash: string } | undefined;
+    let preparedAction: { preparedPreviewKey: string; request: SystemActorRollBody; preparedAt: string; actorUpdatedAt: Record<string, string>; itemUpdatedAt: Record<string, string>; combatUpdatedAt?: string; rolledResults: FairActionRollResult[]; resolutionHash: string } | undefined;
     if (actor.systemId === DND_5E_SRD_SYSTEM_ID && submittedActionBody.preparedPreviewKey !== undefined) {
       const preparedPreviewKey = normalizeNonEmptyString(submittedActionBody.preparedPreviewKey);
       if (!preparedPreviewKey) return badRequest(reply, "preparedPreviewKey must be a non-empty string");
@@ -9758,11 +10291,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         return conflict(reply, "Prepared D&D action is invalid; review the action again");
       }
       if (!isRecord(storedPreview) || storedPreview.status !== "ready" || !isRecord(storedPreview.preparation) || !isRecord(storedPreview.resolution)) return conflict(reply, "Prepared D&D action is not ready to commit");
+      if (storedPreview.controlledCreatureHandoff !== undefined) return conflict(reply, "Prepared controlled-creature actions must be confirmed with the controlled-creature review");
       const preparation = storedPreview.preparation;
       if (preparation.preparedPreviewKey !== preparedPreviewKey || preparation.sourceActorId !== actor.id || typeof preparation.preparedAt !== "string" || !isRecord(preparation.request) || !isRecord(preparation.revisions) || !isStringRecord(preparation.revisions.actorUpdatedAt) || !isStringRecord(preparation.revisions.itemUpdatedAt) || (preparation.revisions.combatUpdatedAt !== undefined && typeof preparation.revisions.combatUpdatedAt !== "string") || !Array.isArray(preparation.rolledResults) || typeof preparation.resolutionHash !== "string") return conflict(reply, "Prepared D&D action is invalid; review the action again");
       const sourceRevision = preparation.revisions.actorUpdatedAt[actor.id];
       if (typeof submittedActionBody.expectedUpdatedAt !== "string" || submittedActionBody.expectedUpdatedAt !== sourceRevision) return conflict(reply, "The commit actor revision does not match the reviewed D&D action");
-      preparedAction = { preparedPreviewKey, request: structuredClone(preparation.request) as SystemActorRollBody, preparedAt: preparation.preparedAt, actorUpdatedAt: structuredClone(preparation.revisions.actorUpdatedAt), itemUpdatedAt: structuredClone(preparation.revisions.itemUpdatedAt), ...(typeof preparation.revisions.combatUpdatedAt === "string" ? { combatUpdatedAt: preparation.revisions.combatUpdatedAt } : {}), rolledResults: structuredClone(preparation.rolledResults) as Array<{ resolutionRoll: RulesActionResolutionResult["rolls"][number]; rolled: ReturnType<typeof rollFormula> }>, resolutionHash: preparation.resolutionHash };
+      if (!preparation.rolledResults.every(isFairActionRollResult)) return conflict(reply, "Prepared D&D action predates verifiable rolls; review the action again");
+      preparedAction = { preparedPreviewKey, request: structuredClone(preparation.request) as SystemActorRollBody, preparedAt: preparation.preparedAt, actorUpdatedAt: structuredClone(preparation.revisions.actorUpdatedAt), itemUpdatedAt: structuredClone(preparation.revisions.itemUpdatedAt), ...(typeof preparation.revisions.combatUpdatedAt === "string" ? { combatUpdatedAt: preparation.revisions.combatUpdatedAt } : {}), rolledResults: structuredClone(preparation.rolledResults), resolutionHash: preparation.resolutionHash };
       actionBody = preparedAction.request;
     }
     if (actionBody.expectedUpdatedAt !== undefined && (typeof actionBody.expectedUpdatedAt !== "string" || !actionBody.expectedUpdatedAt.trim())) {
@@ -9772,7 +10307,16 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       return staleWriteConflict(reply, { resourceType: "actor", resourceId: actor.id, expectedUpdatedAt: actionBody.expectedUpdatedAt, currentUpdatedAt: actor.updatedAt, current: actorPayloadForUser(store, userId, actor) });
     }
     const items = actorItems(store, actor);
-    const quickRolls = systemQuickRolls(actor, items);
+    if (actor.systemId === DND_5E_SRD_SYSTEM_ID) {
+      const actorValidationError = dndManagedDataBoundaryError(parseDnd5eSrdActorManagedData(actor));
+      if (actorValidationError) return badRequest(reply, actorValidationError);
+      for (const item of items.filter((candidate) => candidate.systemId === DND_5E_SRD_SYSTEM_ID)) {
+        const itemValidationError = dndManagedDataBoundaryError(parseDnd5eSrdItemManagedData(item));
+        if (itemValidationError) return badRequest(reply, itemValidationError);
+      }
+    }
+    const calculationContext = calculationOverrideContextForActor(store, actor, items);
+    const quickRolls = systemQuickRolls(actor, items, calculationContext);
     if (actionBody.rollId !== undefined && (typeof actionBody.rollId !== "string" || !actionBody.rollId.trim())) {
       return badRequest(reply, "rollId must be a non-empty string");
     }
@@ -9782,20 +10326,65 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!rollDefinition) return notFound(reply, "No system roll is available for this actor");
     const spellSlotLevel = numberFromRecord(actionBody, "spellSlotLevel", 1, 9);
     const actionOptions = systemActionOptions(spellSlotLevel, actionBody.resourceAmount, actionBody.useFreeResource);
-    const baseResolvedFormula = systemActionFormula(actor, items, rollDefinition.id, actionOptions) ?? rollDefinition.formula;
+    const baseResolvedFormula = systemActionFormula(actor, items, rollDefinition.id, actionOptions, calculationContext) ?? rollDefinition.formula;
     const resolvedRollDefinition = { ...rollDefinition, formula: baseResolvedFormula };
-    const targetActorIdsForResolution = systemRollTargetActorIds(actionBody.targetActorIds, actionBody.targetActorId, actionBody.applyEffect ? actor.id : undefined);
+    const weaponMasteryInput = normalizeSystemRollWeaponMasteryUse(actionBody.weaponMastery);
+    if (weaponMasteryInput.error) return badRequest(reply, weaponMasteryInput.error);
+    const weaponMastery = weaponMasteryInput.value;
+    const masteryEffectRequested = weaponMastery?.use === true;
+    const effectRequested = Boolean(actionBody.applyEffect || masteryEffectRequested);
+    const masteryTargetIds = masteryEffectRequested ? [actionBody.targetActorId, ...(actionBody.targetActorIds ?? []), weaponMastery.secondaryTargetActorId].filter((value): value is string => typeof value === "string" && value.trim().length > 0) : undefined;
+    const targetActorIdsForResolution = masteryTargetIds ? systemRollTargetActorIds(masteryTargetIds) : systemRollTargetActorIds(actionBody.targetActorIds, actionBody.targetActorId, actionBody.applyEffect ? actor.id : undefined);
     const targetActorsForResolution: Actor[] = [];
     for (const targetActorId of targetActorIdsForResolution) {
       const targetActor = store.state.actors.find((item) => item.id === targetActorId && item.campaignId === request.params.campaignId);
       if (!targetActor) return notFound(reply, "Target actor not found");
+      if (actor.systemId === DND_5E_SRD_SYSTEM_ID && targetActor.systemId === DND_5E_SRD_SYSTEM_ID) {
+        const targetValidationError = dndManagedDataBoundaryError(parseDnd5eSrdActorManagedData(targetActor));
+        if (targetValidationError) return badRequest(reply, targetValidationError);
+        for (const item of actorItems(store, targetActor).filter((candidate) => candidate.systemId === DND_5E_SRD_SYSTEM_ID)) {
+          const itemValidationError = dndManagedDataBoundaryError(parseDnd5eSrdItemManagedData(item));
+          if (itemValidationError) return badRequest(reply, itemValidationError);
+        }
+      }
       targetActorsForResolution.push(targetActor);
     }
     if (actionBody.consumeResources && !canUpdateActorForUser(store, userId, actor)) return forbidden(reply, "Missing permission: actor.update");
+    const isDeathSaveRoll = actor.systemId === DND_5E_SRD_SYSTEM_ID && rollDefinition.id === DND_5E_SRD_DEATH_SAVE_ROLL_ID;
     const activeCombat = actor.systemId === DND_5E_SRD_SYSTEM_ID ? store.state.combats.find((combat) => combat.campaignId === request.params.campaignId && combat.active) : undefined;
     if (actor.systemId === DND_5E_SRD_SYSTEM_ID) {
-      const consequential = Boolean(actionBody.consumeResources || actionBody.applyEffect);
+      if (actionBody.controlledCreature !== undefined && !isRecord(actionBody.controlledCreature)) return badRequest(reply, "controlledCreature must be an object");
+      const controlledCreatureContext = actionBody.controlledCreature;
+      if (controlledCreatureContext?.sceneId !== undefined && (typeof controlledCreatureContext.sceneId !== "string" || !controlledCreatureContext.sceneId.trim())) return badRequest(reply, "controlledCreature.sceneId must be a non-empty string");
+      if (controlledCreatureContext?.token !== undefined && !isRecord(controlledCreatureContext.token)) return badRequest(reply, "controlledCreature.token must be an object");
+      const resolutionNow = preparedAction?.preparedAt ?? nowIso();
+      const baseControlledCreatureHandoff = dndControlledCreatureActionHandoff({
+        actor,
+        items,
+        roll: resolvedRollDefinition,
+        now: resolutionNow,
+        ...(activeCombat ? { combat: activeCombat } : {}),
+        ...(controlledCreatureContext?.sceneId ? { sceneId: controlledCreatureContext.sceneId } : {}),
+        ...(controlledCreatureContext?.token ? { token: controlledCreatureContext.token } : {}),
+        controllerUserId: userId,
+        ...(spellSlotLevel ? { spellSlotLevel } : {}),
+      });
+      const actionKind = dnd5eSrdActionKind(resolvedRollDefinition);
+      if (activeCombat && actionKind !== "free" && !canUpdateActorForUser(store, userId, actor)) return forbidden(reply, "Missing permission: actor.update");
+      // A Death Saving Throw resolves in exactly one commit: the roll and its
+      // state transition are inseparable, so a prepare/review step would let a
+      // player preview the die and abandon a bad result.
+      if (isDeathSaveRoll && (actionBody.prepare === true || actionBody.consumeResources || actionBody.applyEffect)) {
+        return badRequest(reply, "A Death Saving Throw resolves in one step; roll it without prepare, resource, or effect options");
+      }
+      const consequential = Boolean(actionBody.consumeResources || effectRequested || baseControlledCreatureHandoff || (activeCombat && actionKind !== "free"));
       const commitRequested = actionBody.commit ?? (actionBody.preview === true ? false : true);
+      // Unlike an ordinary quick roll, a committed Death Saving Throw always
+      // mutates its source actor. Reject before dice are generated so a caller
+      // without actor-update authority cannot probe and abandon outcomes.
+      if (isDeathSaveRoll && commitRequested && !canUpdateActorForUser(store, userId, actor)) {
+        return forbidden(reply, "Missing permission: actor.update");
+      }
       if (actionBody.prepare === true) {
         if (!consequential) return badRequest(reply, "Only a D&D action that changes actor, item, effect, or resource state needs a prepared review");
         if (!opaqueHeaderText(request.headers["idempotency-key"])) return badRequest(reply, "Preparing a consequential D&D action requires an Idempotency-Key header");
@@ -9815,33 +10404,42 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
           return conflict(reply, "Combat changed after the D&D action was reviewed; review the action again");
         }
       }
-      const resolutionOptions = { ...actionOptions, consumeResources: Boolean(actionBody.consumeResources), applyEffect: Boolean(actionBody.applyEffect), commit: actionBody.prepare === true || preparedAction ? true : (actionBody.commit ?? (actionBody.preview === true ? false : true)), effectChoice: actionBody.effectChoice, saveOutcomes: actionBody.saveOutcomes, reactionUse: actionBody.reactionUse, rechargeCheck: actionBody.rechargeCheck };
-      const resolutionNow = preparedAction?.preparedAt ?? nowIso();
+      const resolutionOptions = { ...actionOptions, consumeResources: Boolean(actionBody.consumeResources), applyEffect: Boolean(actionBody.applyEffect), commit: actionBody.prepare === true || preparedAction ? true : (actionBody.commit ?? (actionBody.preview === true ? false : true)), effectChoice: actionBody.effectChoice, saveOutcomes: actionBody.saveOutcomes, reactionUse: actionBody.reactionUse, rechargeCheck: actionBody.rechargeCheck, weaponMastery };
       let resolution = resolveDnd5eSrdAction({ actor, items, roll: resolvedRollDefinition, targets: targetActorsForResolution.map((targetActor) => ({ actor: targetActor, items: actorItems(store, targetActor), saveOutcome: actionBody.saveOutcomes?.[targetActor.id] })), combat: activeCombat, options: resolutionOptions, now: resolutionNow });
       if (resolution.commitMode === "preview") {
-        return { quickRoll: { ...resolvedRollDefinition, formula: resolution.rolls[0]?.formula ?? resolvedRollDefinition.formula }, resolution: rulesResolutionPayloadForUser(store, userId, actor.campaignId, resolution), actor, sheet: systemSheet(actor, actorItems(store, actor)) };
+        return { quickRoll: { ...resolvedRollDefinition, formula: resolution.rolls[0]?.formula ?? resolvedRollDefinition.formula }, resolution: rulesResolutionPayloadForUser(store, userId, actor.campaignId, resolution), ...(baseControlledCreatureHandoff ? { controlledCreatureHandoff: baseControlledCreatureHandoff } : {}), actor, sheet: systemSheetForStore(store, actor, actorItems(store, actor)) };
       }
       if (resolution.blocked) return conflict(reply, resolution.blocked.reason);
-      const pendingMessage = dnd5eSrdCommitInputMessage(resolution, Boolean(actionBody.applyEffect));
-      if (pendingMessage) return pendingResolution(reply, pendingMessage, rulesResolutionPayloadForUser(store, userId, actor.campaignId, resolution), actor, systemSheet(actor, actorItems(store, actor)));
+      const pendingMessage = dnd5eSrdCommitInputMessage(resolution, effectRequested);
+      if (pendingMessage) return pendingResolution(reply, pendingMessage, rulesResolutionPayloadForUser(store, userId, actor.campaignId, resolution), actor, systemSheetForStore(store, actor, actorItems(store, actor)));
 
       if (preparedAction) {
         const reviewedRolls = preparedAction.rolledResults.map(({ resolutionRoll }) => ({ formula: resolutionRoll.formula, targetActorId: resolutionRoll.targetActorId }));
         const currentRolls = resolution.rolls.map((resolutionRoll) => ({ formula: resolutionRoll.formula, targetActorId: resolutionRoll.targetActorId }));
         if (hashStableJson(reviewedRolls) !== hashStableJson(currentRolls)) return conflict(reply, "D&D action rolls changed after review; review the action again");
       }
-      const rolledResults = preparedAction?.rolledResults ?? resolution.rolls.map((resolutionRoll) => ({ resolutionRoll, rolled: rollFormula(resolutionRoll.formula) }));
+      const rolledResults = preparedAction?.rolledResults ?? resolution.rolls.map((resolutionRoll): FairActionRollResult => ({ resolutionRoll, ...rollFormulaWithFairness(resolutionRoll.formula) }));
       const defaultRollTotal = rolledResults[0]?.rolled.total;
       const rollTotalByTarget = new Map<string, number>();
+      const naturalD20ByTarget = new Map<string, number>();
       for (const result of rolledResults) {
-        if (result.resolutionRoll.targetActorId) rollTotalByTarget.set(result.resolutionRoll.targetActorId, result.rolled.total);
+        if (result.resolutionRoll.targetActorId) {
+          rollTotalByTarget.set(result.resolutionRoll.targetActorId, result.rolled.total);
+          const naturalD20 = dnd5eSrdNaturalD20FromRollTerms(result.rolled.terms);
+          if (naturalD20 !== undefined) naturalD20ByTarget.set(result.resolutionRoll.targetActorId, naturalD20);
+        }
       }
-      resolution = resolveDnd5eSrdAction({ actor, items, roll: resolvedRollDefinition, targets: targetActorsForResolution.map((targetActor) => ({ actor: targetActor, items: actorItems(store, targetActor), saveOutcome: actionBody.saveOutcomes?.[targetActor.id], rollTotal: rollTotalByTarget.get(targetActor.id) ?? defaultRollTotal })), combat: activeCombat, options: resolutionOptions, now: resolutionNow });
+      // The source actor's own targetless roll (for example a Death Saving
+      // Throw) resolves against the authoritative rolled total and natural d20.
+      const selfRolled = rolledResults.find(({ resolutionRoll }) => !resolutionRoll.targetActorId);
+      const selfNaturalD20 = selfRolled ? dnd5eSrdNaturalD20FromRollTerms(selfRolled.rolled.terms) : undefined;
+      const selfRollResult = selfRolled ? { total: selfRolled.rolled.total, ...(selfNaturalD20 !== undefined ? { naturalD20: selfNaturalD20 } : {}) } : undefined;
+      resolution = resolveDnd5eSrdAction({ actor, items, roll: resolvedRollDefinition, targets: targetActorsForResolution.map((targetActor) => ({ actor: targetActor, items: actorItems(store, targetActor), saveOutcome: actionBody.saveOutcomes?.[targetActor.id], rollTotal: rollTotalByTarget.get(targetActor.id) ?? defaultRollTotal, ...(naturalD20ByTarget.has(targetActor.id) ? { naturalD20: naturalD20ByTarget.get(targetActor.id)! } : {}) })), combat: activeCombat, options: selfRollResult ? { ...resolutionOptions, selfRollResult } : resolutionOptions, now: resolutionNow });
       if (resolution.blocked) return conflict(reply, resolution.blocked.reason);
-      const finalPendingMessage = dnd5eSrdCommitInputMessage(resolution, Boolean(actionBody.applyEffect));
-      if (finalPendingMessage) return pendingResolution(reply, finalPendingMessage, rulesResolutionPayloadForUser(store, userId, actor.campaignId, resolution), actor, systemSheet(actor, actorItems(store, actor)));
+      const finalPendingMessage = dnd5eSrdCommitInputMessage(resolution, effectRequested);
+      if (finalPendingMessage) return pendingResolution(reply, finalPendingMessage, rulesResolutionPayloadForUser(store, userId, actor.campaignId, resolution), actor, systemSheetForStore(store, actor, actorItems(store, actor)));
       resolution = dnd5eSrdResolutionWithConcentrationCleanups(store, request.params.campaignId, resolution);
-      const resolutionHash = hashStableJson({ actorUpdates: resolution.actorUpdates, itemUpdates: resolution.itemUpdates.map((item) => ({ id: item.id, data: item.data })), effects: resolution.effects, conditions: resolution.conditions, resourceConsumption: resolution.resourceConsumption, usage: resolution.usage, concentrationCleanups: resolution.concentrationCleanups, auditEvents: resolution.auditEvents });
+      const resolutionHash = hashStableJson({ actorUpdates: resolution.actorUpdates, itemUpdates: resolution.itemUpdates.map((item) => ({ id: item.id, data: item.data })), effects: resolution.effects, conditions: resolution.conditions, resourceConsumption: resolution.resourceConsumption, usage: resolution.usage, weaponMastery: resolution.weaponMastery, concentrationCleanups: resolution.concentrationCleanups, auditEvents: resolution.auditEvents });
       if (preparedAction && preparedAction.resolutionHash !== resolutionHash) return conflict(reply, "D&D action consequences changed after review; review the action again");
       if (actionBody.prepare === true) {
         const preparedPreviewKey = opaqueHeaderText(request.headers["idempotency-key"])!;
@@ -9849,15 +10447,18 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         const actorUpdatedAt = Object.fromEntries(store.state.actors.filter((candidate) => candidate.campaignId === actor.campaignId && involvedActorIds.has(candidate.id)).map((candidate) => [candidate.id, candidate.updatedAt]));
         const itemUpdatedAt = Object.fromEntries(store.state.items.filter((candidate) => candidate.campaignId === actor.campaignId && (Boolean(candidate.actorId && involvedActorIds.has(candidate.actorId)) || resolution.itemUpdates.some((updatedItem) => updatedItem.id === candidate.id))).map((candidate) => [candidate.id, candidate.updatedAt]));
         const { prepare: _prepare, preparedPreviewKey: _preparedPreviewKey, ...reviewedRequest } = actionBody;
-        return { status: "ready", quickRoll: { ...resolvedRollDefinition, formula: resolution.rolls[0]?.formula ?? resolvedRollDefinition.formula }, rolls: rolledResults.map(({ resolutionRoll, rolled }) => ({ formula: resolutionRoll.formula, targetActorId: resolutionRoll.targetActorId, total: rolled.total, terms: rolled.terms })), resolution: rulesResolutionPayloadForUser(store, userId, actor.campaignId, resolution), actor: actorPayloadForUser(store, userId, actor), sheet: systemSheet(actor, actorItems(store, actor)), preparation: { preparedPreviewKey, sourceActorId: actor.id, preparedAt: resolutionNow, request: { ...structuredClone(reviewedRequest), commit: true, preview: false, expectedUpdatedAt: actor.updatedAt }, revisions: { actorUpdatedAt, itemUpdatedAt, ...(activeCombat ? { combatUpdatedAt: activeCombat.updatedAt } : {}) }, rolledResults: structuredClone(rolledResults), resolutionHash } };
+        const controlledCreatureHandoff = baseControlledCreatureHandoff
+          ? dndControlledCreatureHandoffWithPreparation(baseControlledCreatureHandoff, { actorId: actor.id, rollId: rollDefinition.id, label: rollDefinition.label, preparedPreviewKey, resolutionHash })
+          : undefined;
+        return { status: "ready", quickRoll: { ...resolvedRollDefinition, formula: resolution.rolls[0]?.formula ?? resolvedRollDefinition.formula }, rolls: rolledResults.map(({ resolutionRoll, rolled }) => ({ formula: resolutionRoll.formula, targetActorId: resolutionRoll.targetActorId, total: rolled.total, terms: rolled.terms })), resolution: rulesResolutionPayloadForUser(store, userId, actor.campaignId, resolution), ...(controlledCreatureHandoff ? { controlledCreatureHandoff } : {}), actor: actorPayloadForUser(store, userId, actor), sheet: systemSheetForStore(store, actor, actorItems(store, actor)), preparation: { preparedPreviewKey, sourceActorId: actor.id, preparedAt: resolutionNow, request: { ...structuredClone(reviewedRequest), commit: true, preview: false, expectedUpdatedAt: actor.updatedAt }, revisions: { actorUpdatedAt, itemUpdatedAt, ...(activeCombat ? { combatUpdatedAt: activeCombat.updatedAt } : {}) }, rolledResults: structuredClone(rolledResults), resolutionHash } };
       }
       const unauthorizedActorUpdate = resolution.actorUpdates
         .map((actorUpdate) => store.state.actors.find((item) => item.id === actorUpdate.actorId && item.campaignId === request.params.campaignId))
         .filter((updateActor): updateActor is Actor => Boolean(updateActor))
         .find((updateActor) => !canUpdateActorForUser(store, userId, updateActor));
-      if (unauthorizedActorUpdate && activeCombat && actionBody.applyEffect) {
+      if (unauthorizedActorUpdate && activeCombat && effectRequested) {
         const combatBefore = structuredClone(activeCombat);
-        const action = createPendingCombatAction({ combat: activeCombat, actor, currentActors: store.state.actors.filter((candidate) => candidate.campaignId === actor.campaignId), currentItems: store.state.items.filter((candidate) => candidate.campaignId === actor.campaignId), userId, rollId: rollDefinition.id, actionLabel: rollDefinition.label, consumeResources: Boolean(actionBody.consumeResources), applyEffect: Boolean(actionBody.applyEffect), targetActorIds: targetActorIdsForResolution, resolution, rolledResults, actorUpdates: resolution.actorUpdates, itemUpdates: resolution.itemUpdates, effects: resolution.effects as unknown as SystemRollEffectResult[], visibility: actionBody.visibility ?? "public", preparedPreviewKey: preparedAction!.preparedPreviewKey });
+        const action = createPendingCombatAction({ combat: activeCombat, actor, currentActors: store.state.actors.filter((candidate) => candidate.campaignId === actor.campaignId), currentItems: store.state.items.filter((candidate) => candidate.campaignId === actor.campaignId), userId, rollId: rollDefinition.id, actionLabel: rollDefinition.label, consumeResources: Boolean(actionBody.consumeResources), applyEffect: effectRequested, targetActorIds: targetActorIdsForResolution, resolution, rolledResults, actorUpdates: resolution.actorUpdates, itemUpdates: resolution.itemUpdates, effects: resolution.effects as unknown as SystemRollEffectResult[], visibility: actionBody.visibility ?? "public", preparedPreviewKey: preparedAction!.preparedPreviewKey });
         activeCombat.actions = [...(activeCombat.actions ?? []), action];
         activeCombat.updatedAt = nextRevisionTimestamp(activeCombat.updatedAt);
         action.expectedCombatUpdatedAt = activeCombat.updatedAt;
@@ -9867,7 +10468,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         appendServerAuditLog(store, userId, { campaignId: activeCombat.campaignId, action: "combat.actionPending", targetType: "combat", targetId: activeCombat.id, after: { actionId: action.id, actorId: action.actorId, rollId: action.rollId, targetActorIds: action.targetActorIds, blockedByPermission: unauthorizedActorUpdate.id, preparedPreviewKey: preparedAction?.preparedPreviewKey, rulesMutationId } });
         store.save();
         broadcast(createEvent({ campaignId: activeCombat.campaignId, type: "combat.turnChanged", targetId: activeCombat.id, payload: activeCombat }));
-        return { combatAction: combatActionPayloadForUser(store, userId, activeCombat.campaignId, action), rulesMutationId, undo: dndRulesMutationUndoDescriptor(store.state.dndRulesMutations.find((candidate) => candidate.id === rulesMutationId)!), resolution: rulesResolutionPayloadForUser(store, userId, actor.campaignId, resolution), actor, sheet: systemSheet(actor, actorItems(store, actor)) };
+        return { combatAction: combatActionPayloadForUser(store, userId, activeCombat.campaignId, action), rulesMutationId, undo: dndRulesMutationUndoDescriptor(store.state.dndRulesMutations.find((candidate) => candidate.id === rulesMutationId)!), resolution: rulesResolutionPayloadForUser(store, userId, actor.campaignId, resolution), actor, sheet: systemSheetForStore(store, actor, actorItems(store, actor)) };
       }
       for (const actorUpdate of resolution.actorUpdates) {
         const updateActor = store.state.actors.find((item) => item.id === actorUpdate.actorId && item.campaignId === request.params.campaignId);
@@ -9890,7 +10491,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       const effects = resolution.effects as unknown as SystemRollEffectResult[];
       const effect = effects[0];
       let combatUpdated = false;
-      if (actionBody.applyEffect && activeCombat) {
+      if (effectRequested && activeCombat) {
         for (const condition of resolution.conditions) {
           combatUpdated = syncDnd5eSrdResolvedConditionToCombat(activeCombat, condition) || combatUpdated;
         }
@@ -9916,8 +10517,25 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         if (activeCombat) {
           combatUpdated = syncCombatDefeatedFromActorIds(activeCombat, store.state.actors, [...actorDataUpdates.keys()]) || combatUpdated;
         }
+        if (resolution.deathSave && activeCombat) {
+          // Death saves need the full canonical lifecycle bridge: counters and
+          // outcome must reach the combatant, and a dying-but-not-dead
+          // character must not stay marked defeated by the coarse 0-HP sync.
+          const updatedSource = store.state.actors.find((item) => item.id === actor.id && item.campaignId === request.params.campaignId);
+          const combatantIndex = updatedSource ? activeCombat.combatants.findIndex((combatant) => combatant.actorId === updatedSource.id) : -1;
+          if (updatedSource && combatantIndex >= 0) {
+            const synchronization = synchronizeDnd5eSrdActorCombatState(updatedSource, activeCombat.combatants[combatantIndex]);
+            if (synchronization.combatantUpdate) {
+              activeCombat.combatants[combatantIndex] = synchronization.combatantUpdate.after;
+              combatUpdated = true;
+            }
+          }
+        }
       }
-      const rolls = rolledResults.map(({ resolutionRoll, rolled }) => createTimestamped("roll", { campaignId: request.params.campaignId, userId, formula: resolutionRoll.formula, label: resolutionRoll.targetActorId && rolledResults.length > 1 ? `${rollDefinition.label} (${targetActorsForResolution.find((targetActor) => targetActor.id === resolutionRoll.targetActorId)?.name ?? resolutionRoll.targetActorId})` : rollDefinition.label, visibility: actionBody.visibility ?? "public", terms: rolled.terms, total: rolled.total }) satisfies DiceRoll);
+      // The outcome rides on the roll label so the chat card and roll history
+      // show the Death Saving Throw consequence, not just a bare d20 result.
+      const deathSaveSuffix = resolution.deathSave ? ` — ${dnd5eSrdDeathSaveChatSuffix(resolution.deathSave)}` : "";
+      const rolls = rolledResults.map(({ resolutionRoll, rolled, fairness }) => createTimestamped("roll", { campaignId: request.params.campaignId, userId, actorId: actor.id, formula: resolutionRoll.formula, label: `${resolutionRoll.targetActorId && rolledResults.length > 1 ? `${rollDefinition.label} (${targetActorsForResolution.find((targetActor) => targetActor.id === resolutionRoll.targetActorId)?.name ?? resolutionRoll.targetActorId})` : rollDefinition.label}${dnd5eSrdRollModeLabelSuffix(resolutionRoll)}${deathSaveSuffix}`, visibility: actionBody.visibility ?? "public", terms: rolled.terms, total: rolled.total, fairness }) satisfies DiceRoll);
       const chatMessages = rolls.map((roll) => createTimestamped("msg", { campaignId: request.params.campaignId, userId, type: "roll" as const, body: `${actor.name} ${roll.label}: ${roll.formula} = ${roll.total}`, visibility: roll.visibility, recipientUserIds: [], rollId: roll.id }) satisfies ChatMessage);
       store.state.rolls.push(...rolls);
       store.state.chat.push(...chatMessages);
@@ -9931,7 +10549,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         const rulesMutation: DndRulesMutation = { id: rulesMutationId, campaignId: actor.campaignId, kind: "action", preparedPreviewKey: preparedAction?.preparedPreviewKey ?? "", committedByUserId: userId, status: "applied", roots: { actors: undoActorRoots, items: undoItemRoots, ...(combatUpdated && activeCombat && undoCombatBefore ? { combat: { combatId: activeCombat.id, before: undoCombatBefore, afterRevision: activeCombat.updatedAt } } : {}) }, createdAt, updatedAt: createdAt };
         store.state.dndRulesMutations = [...store.state.dndRulesMutations, rulesMutation].sort(sortTimestampsDesc).slice(0, 1000);
       }
-      store.state.auditLogs.push(createTimestamped("audit", { campaignId: request.params.campaignId, actorUserId: userId, actorType: "user" as const, action: "system.actor.roll", targetType: "actor", targetId: actor.id, after: { systemId: actor.systemId, actorId: actor.id, rollId: rollDefinition.id, label: rollDefinition.label, actorType: actor.type, consumeResources: Boolean(actionBody.consumeResources), applyEffect: Boolean(actionBody.applyEffect), hasUsage: Boolean(resolution.usage), hasEffect: Boolean(effect), hasResolution: true, commitMode: resolution.commitMode, targetActorIds: targetActorIdsForResolution, ...(preparedAction ? { preparedPreviewKey: preparedAction.preparedPreviewKey } : {}), ...(rulesMutationId ? { rulesMutationId } : {}) } }));
+      const calculationOverrideAudit = resolution.auditEvents.find((event) => event.code === "calculation.override.applied");
+      store.state.auditLogs.push(createTimestamped("audit", { campaignId: request.params.campaignId, actorUserId: userId, actorType: "user" as const, action: "system.actor.roll", targetType: "actor", targetId: actor.id, after: { systemId: actor.systemId, actorId: actor.id, rollId: rollDefinition.id, label: rollDefinition.label, actorType: actor.type, consumeResources: Boolean(actionBody.consumeResources), applyEffect: effectRequested, hasUsage: Boolean(resolution.usage), hasEffect: Boolean(effect), hasResolution: true, commitMode: resolution.commitMode, targetActorIds: targetActorIdsForResolution, ...(resolution.weaponMastery ? { weaponMastery: resolution.weaponMastery } : {}), ...(resolution.deathSave ? { deathSave: resolution.deathSave } : {}), ...(calculationOverrideAudit ? { calculationOverride: calculationOverrideAudit.data } : {}), ...(preparedAction ? { preparedPreviewKey: preparedAction.preparedPreviewKey } : {}), ...(rulesMutationId ? { rulesMutationId } : {}) } }));
       store.save();
       const updatedActors = [...actorsToBroadcast].map((actorId) => store.state.actors.find((item) => item.id === actorId && item.campaignId === request.params.campaignId)).filter((item): item is Actor => Boolean(item));
       for (const updatedActor of updatedActors) broadcastActorUpdated(broadcast, updatedActor);
@@ -9947,7 +10566,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       const responseActor = store.state.actors.find((item) => item.id === actor.id && item.campaignId === request.params.campaignId) ?? actor;
       const responseResolution = rulesResolutionPayloadForUser(store, userId, actor.campaignId, resolution);
       const responseEffects = responseResolution?.effects ?? [];
-      return { roll: rolls[0], rolls, chat: chatMessages[0], chatMessages, quickRoll: { ...rollDefinition, formula: resolution.rolls[0]?.formula ?? resolvedRollDefinition.formula }, usage: resolution.usage, effect: responseEffects[0], effects: responseEffects, resolution: responseResolution, actor: responseActor, updatedActors: updatedActors.map((updatedActor) => actorPayloadForUser(store, userId, updatedActor)), ...(rulesMutationId ? { rulesMutationId, undo: dndRulesMutationUndoDescriptor(store.state.dndRulesMutations.find((candidate) => candidate.id === rulesMutationId)!) } : {}), sheet: systemSheet(responseActor, actorItems(store, responseActor)) };
+      return { roll: rolls[0], rolls, chat: chatMessages[0], chatMessages, quickRoll: { ...rollDefinition, formula: resolution.rolls[0]?.formula ?? resolvedRollDefinition.formula }, usage: resolution.usage, effect: responseEffects[0], effects: responseEffects, resolution: responseResolution, actor: responseActor, updatedActors: updatedActors.map((updatedActor) => actorPayloadForUser(store, userId, updatedActor)), ...(rulesMutationId ? { rulesMutationId, undo: dndRulesMutationUndoDescriptor(store.state.dndRulesMutations.find((candidate) => candidate.id === rulesMutationId)!) } : {}), sheet: systemSheetForStore(store, responseActor, actorItems(store, responseActor)) };
     }
     const resolvedFormula = baseResolvedFormula;
     let usage: SystemActionUseResult | undefined;
@@ -9964,7 +10583,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         itemUpdates = usage.items;
       }
     }
-    const rolled = rollFormula(resolvedFormula);
+    const fairRoll = rollFormulaWithFairness(resolvedFormula);
+    const rolled = fairRoll.rolled;
     let effect: SystemRollEffectResult | undefined;
     const effects: SystemRollEffectResult[] = [];
     let combatUpdated = false;
@@ -10013,7 +10633,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         }
       }
     }
-    const roll = createTimestamped("roll", { campaignId: request.params.campaignId, userId, formula: resolvedFormula, label: rollDefinition.label, visibility: actionBody.visibility ?? "public", terms: rolled.terms, total: rolled.total }) satisfies DiceRoll;
+    const roll = createTimestamped("roll", { campaignId: request.params.campaignId, userId, actorId: actor.id, formula: resolvedFormula, label: rollDefinition.label, visibility: actionBody.visibility ?? "public", terms: rolled.terms, total: rolled.total, fairness: fairRoll.fairness }) satisfies DiceRoll;
     const message = createTimestamped("msg", { campaignId: request.params.campaignId, userId, type: "roll" as const, body: `${actor.name} ${rollDefinition.label}: ${resolvedFormula} = ${roll.total}`, visibility: roll.visibility, recipientUserIds: [], rollId: roll.id }) satisfies ChatMessage;
     store.state.rolls.push(roll);
     store.state.chat.push(message);
@@ -10032,7 +10652,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const responseActor = store.state.actors.find((item) => item.id === actor.id && item.campaignId === request.params.campaignId) ?? actor;
     const updatedActors = [...actorsToBroadcast].map((actorId) => store.state.actors.find((item) => item.id === actorId && item.campaignId === request.params.campaignId)).filter((item): item is Actor => Boolean(item));
     const responseEffects = systemRollEffectsPayloadForUser(store, userId, request.params.campaignId, effects);
-    return { roll, chat: message, quickRoll: { ...rollDefinition, formula: resolvedFormula }, usage, effect: responseEffects[0], effects: responseEffects, actor: responseActor, updatedActors: updatedActors.map((updatedActor) => actorPayloadForUser(store, userId, updatedActor)), sheet: systemSheet(responseActor, actorItems(store, responseActor)) };
+    return { roll, chat: message, quickRoll: { ...rollDefinition, formula: resolvedFormula }, usage, effect: responseEffects[0], effects: responseEffects, actor: responseActor, updatedActors: updatedActors.map((updatedActor) => actorPayloadForUser(store, userId, updatedActor)), sheet: systemSheetForStore(store, responseActor, actorItems(store, responseActor)) };
   });
 
   app.post<{ Body: { campaignId?: unknown; manifest?: unknown } }>("/api/v1/systems/install", async (request, reply) => {
@@ -10160,6 +10780,54 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return makeDogfoodReportBundle(store.state, request.params.campaignId);
   });
 
+  app.get<{ Params: { campaignId: string }; Querystring: { status?: string } }>("/api/v1/campaigns/:campaignId/archive-import-operations", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.update");
+    if (allowed !== true) return allowed;
+    const status = request.query.status;
+    if (status && status !== "applied" && status !== "partially_rolled_back" && status !== "rolled_back") return badRequest(reply, "Unsupported archive import operation status");
+    return {
+      items: store.state.campaignArchiveImportOperations
+        .filter((operation) => operation.campaignIds.includes(request.params.campaignId) && (!status || operation.status === status))
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+        .slice(0, 100)
+        .map(publicCampaignArchiveImportOperation),
+    };
+  });
+
+  app.get<{ Params: { campaignId: string; operationId: string } }>("/api/v1/campaigns/:campaignId/archive-import-operations/:operationId/preview", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.update");
+    if (allowed !== true) return allowed;
+    const operation = store.state.campaignArchiveImportOperations.find((candidate) => candidate.id === request.params.operationId && candidate.campaignIds.includes(request.params.campaignId));
+    if (!operation) return notFound(reply, "Archive import operation not found");
+    return previewCampaignArchiveImportRollback(store.state, assetStorage, operation);
+  });
+
+  app.post<{ Params: { campaignId: string; operationId: string }; Body: { expectedUpdatedAt?: unknown; confirmOperationId?: unknown } }>("/api/v1/campaigns/:campaignId/archive-import-operations/:operationId/rollback", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.update");
+    if (allowed !== true) return allowed;
+    if (!opaqueHeaderText(request.headers["idempotency-key"])) return badRequest(reply, "Archive import rollback requires an Idempotency-Key header");
+    if (request.body?.confirmOperationId !== request.params.operationId) return badRequest(reply, "Archive import rollback confirmation must match the operation id");
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    const campaign = store.state.campaigns.find((candidate) => candidate.id === request.params.campaignId);
+    if (!campaign) return notFound(reply, "Campaign not found");
+    const revision = requireExpectedRevision(reply, {
+      resourceType: "campaign",
+      resourceId: campaign.id,
+      currentUpdatedAt: campaign.updatedAt,
+      expectedUpdatedAt: request.body?.expectedUpdatedAt,
+      current: campaign,
+      label: "Campaign archive import rollback",
+    });
+    if (revision !== true) return revision;
+    try {
+      return await rollbackCampaignArchiveImportOperation({ store, assetStorage, operationId: request.params.operationId, campaignId: campaign.id, userId });
+    } catch (error) {
+      if (error instanceof CampaignArchiveImportRecoveryError) return reply.code(error.statusCode).send({ error: error.code });
+      throw error;
+    }
+  });
+
   app.post<{ Body: CampaignImportPayload }>("/api/v1/import/campaign", { bodyLimit: campaignArchiveImportMaxBytes() }, async (request, reply) => {
     let workerExecution: WorkerJobExecution | undefined;
     let userId: string;
@@ -10228,6 +10896,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const skippedConflicts = mode === "skip_conflicts" ? conflicts : [];
     const archiveToMerge = mode === "skip_conflicts" ? archiveWithoutConflicts(scopedArchive, conflicts) : scopedArchive;
     const archiveToRestore = mode === "dry_run" ? scopedArchive : archiveToMerge;
+    const operationId = createId("arcimp");
+    const stateBeforeImport = store.state;
+    const assetInverseSteps = mode === "dry_run" ? [] : await prepareCampaignArchiveImportAssetSteps(assetStorage, stateBeforeImport, archiveToMerge, operationId);
     let assetRestore: ArchiveAssetRestoreTransaction;
     const archiveRestoreAbort = new AbortController();
     Reflect.set(request, archiveImportAbortControllerSymbol, archiveRestoreAbort);
@@ -10238,10 +10909,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         onTransaction: (transaction) => {
           // Expose the compensation journal before the first object write so
           // onRequestAbort can roll back a restore that is still in flight.
-          Reflect.set(request, archiveImportAssetRestoreSymbol, transaction);
+          Reflect.set(request, archiveImportAssetRestoreSymbol, withCampaignArchiveImportRecoveryCleanup(transaction, assetStorage, assetInverseSteps));
         },
       });
+      assetRestore = withCampaignArchiveImportRecoveryCleanup(assetRestore, assetStorage, assetInverseSteps);
     } catch (error) {
+      await deleteCampaignArchiveImportInverseObjects(assetStorage, assetInverseSteps);
       if (!(error instanceof ArchiveAssetRestoreError)) throw error;
       return badRequest(reply, `Archive asset file restore failed: ${errorMessage(error)}`);
     }
@@ -10250,18 +10923,21 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       return { importedCampaignIds: scopedArchive.data.campaigns.map((item) => item.id), counts: countArchiveRecords(scopedArchive), conflicts, assetFiles: restoredAssetFiles, dryRun: true, importScope: scope, importCollections: selectedCollections.value, importWarnings };
     }
     Reflect.set(request, archiveImportAssetRestoreSymbol, assetRestore);
-    const stateBeforeImport = store.state;
     Reflect.set(request, archiveImportStateSnapshotSymbol, stateBeforeImport);
     try {
       // Build the complete next state off to the side. A merge exception cannot
       // expose a campaign whose collections were only partly applied.
       const nextState = stateForArchiveMerge(stateBeforeImport, archiveToMerge);
       const counts = mergeArchive(nextState, archiveToMerge);
+      migrateDnd5eSrdStoredArmorClassIntent(nextState, { initiatedByUserId: userId });
       for (const campaignId of protectedCampaignIds) {
         const previous = stateBeforeImport.campaigns.find((campaign) => campaign.id === campaignId);
         const imported = nextState.campaigns.find((campaign) => campaign.id === campaignId);
         if (previous && imported) imported.updatedAt = nextRevisionTimestamp(previous.updatedAt);
       }
+      const operationCampaignIds = [...new Set([...protectedCampaignIds, ...archiveToMerge.data.campaigns.map((campaign) => campaign.id)])];
+      const operation = createCampaignArchiveImportOperation({ id: operationId, stateBefore: stateBeforeImport, stateAfter: nextState, archive: archiveToMerge, campaignIds: operationCampaignIds, createdByUserId: userId, mode, scope, collections: selectedCollections.value, assetSteps: assetInverseSteps });
+      nextState.campaignArchiveImportOperations = [...stateBeforeImport.campaignArchiveImportOperations, operation];
       const auditedCampaignIds = new Set([...protectedCampaignIds, ...archiveToMerge.data.campaigns.map((campaign) => campaign.id)]);
       for (const campaignId of auditedCampaignIds) {
         nextState.auditLogs.push(createTimestamped("audit", { campaignId, actorUserId: workerExecution ? undefined : userId, actorType: workerExecution ? ("system" as const) : ("user" as const), action: "campaign.import", targetType: "campaign_archive", targetId: campaignId, after: { ...(workerExecution ? { workerId: workerExecution.workerId, jobId: workerExecution.job.id, jobType: workerExecution.job.type } : {}), mode, scope, regenerateIds, importCollections: selectedCollections.value, recordCount: Object.values(counts).reduce((total, count) => total + count, 0), conflictCount: conflicts.length, skippedConflictCount: skippedConflicts.length, restoredAssetFiles } }) satisfies AuditLog);
@@ -10272,7 +10948,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       // which is too late to safely discard the object rollback snapshots.
       store.replace(nextState);
       store.flush?.();
-      return { importedCampaignIds: archiveToMerge.data.campaigns.map((item) => item.id), counts, conflicts, assetFiles: restoredAssetFiles, skippedConflicts, importScope: scope, importCollections: selectedCollections.value, importWarnings };
+      return { importedCampaignIds: archiveToMerge.data.campaigns.map((item) => item.id), counts, conflicts, assetFiles: restoredAssetFiles, skippedConflicts, importScope: scope, importCollections: selectedCollections.value, importWarnings, operation: publicCampaignArchiveImportOperation(operation) };
     } catch (error) {
       await rollbackCampaignArchiveImport(store, stateBeforeImport, assetRestore, error);
     }
@@ -10356,6 +11032,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       const skippedConflicts = mode === "skip_conflicts" ? conflicts : [];
       const archiveToMerge = mode === "skip_conflicts" ? archiveWithoutConflicts(scopedArchive, conflicts) : scopedArchive;
       const archiveToRestore = mode === "dry_run" ? scopedArchive : archiveToMerge;
+      const operationId = createId("arcimp");
+      const stateBeforeImport = store.state;
+      const assetInverseSteps = mode === "dry_run" ? [] : await prepareCampaignArchiveImportAssetSteps(assetStorage, stateBeforeImport, archiveToMerge, operationId);
       let assetRestore: ArchiveAssetRestoreTransaction;
       const archiveRestoreAbort = new AbortController();
       Reflect.set(request, archiveImportAbortControllerSymbol, archiveRestoreAbort);
@@ -10364,10 +11043,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
           dryRun: mode === "dry_run",
           signal: archiveRestoreAbort.signal,
           onTransaction: (transaction) => {
-            Reflect.set(request, archiveImportAssetRestoreSymbol, transaction);
+            Reflect.set(request, archiveImportAssetRestoreSymbol, withCampaignArchiveImportRecoveryCleanup(transaction, assetStorage, assetInverseSteps));
           },
         });
+        assetRestore = withCampaignArchiveImportRecoveryCleanup(assetRestore, assetStorage, assetInverseSteps);
       } catch (error) {
+        await deleteCampaignArchiveImportInverseObjects(assetStorage, assetInverseSteps);
         if (!(error instanceof ArchiveAssetRestoreError)) throw error;
         return badRequest(reply, `Archive asset file restore failed: ${errorMessage(error)}`);
       }
@@ -10377,23 +11058,26 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       }
 
       Reflect.set(request, archiveImportAssetRestoreSymbol, assetRestore);
-      const stateBeforeImport = store.state;
       Reflect.set(request, archiveImportStateSnapshotSymbol, stateBeforeImport);
       try {
         const nextState = stateForArchiveMerge(stateBeforeImport, archiveToMerge);
         const counts = mergeArchive(nextState, archiveToMerge);
+        migrateDnd5eSrdStoredArmorClassIntent(nextState, { initiatedByUserId: userId });
         for (const campaignId of protectedCampaignIds) {
           const previous = stateBeforeImport.campaigns.find((campaign) => campaign.id === campaignId);
           const imported = nextState.campaigns.find((campaign) => campaign.id === campaignId);
           if (previous && imported) imported.updatedAt = nextRevisionTimestamp(previous.updatedAt);
         }
+        const operationCampaignIds = [...new Set([...protectedCampaignIds, ...archiveToMerge.data.campaigns.map((campaign) => campaign.id)])];
+        const operation = createCampaignArchiveImportOperation({ id: operationId, stateBefore: stateBeforeImport, stateAfter: nextState, archive: archiveToMerge, campaignIds: operationCampaignIds, createdByUserId: userId, mode, scope, collections: selectedCollections.value, assetSteps: assetInverseSteps });
+        nextState.campaignArchiveImportOperations = [...stateBeforeImport.campaignArchiveImportOperations, operation];
         const auditedCampaignIds = new Set([...protectedCampaignIds, ...archiveToMerge.data.campaigns.map((campaign) => campaign.id)]);
         for (const campaignId of auditedCampaignIds) {
           nextState.auditLogs.push(createTimestamped("audit", { campaignId, actorUserId: workerExecution ? undefined : userId, actorType: workerExecution ? ("system" as const) : ("user" as const), action: "campaign.import", targetType: "campaign_archive", targetId: campaignId, after: { ...(workerExecution ? { workerId: workerExecution.workerId, jobId: workerExecution.job.id, jobType: workerExecution.job.type } : {}), transport: "framed_stream", mode, scope, regenerateIds, importCollections: selectedCollections.value, recordCount: Object.values(counts).reduce((total, count) => total + count, 0), conflictCount: conflicts.length, skippedConflictCount: skippedConflicts.length, restoredAssetFiles } }) satisfies AuditLog);
         }
         store.replace(nextState);
         store.flush?.();
-        return { importedCampaignIds: archiveToMerge.data.campaigns.map((item) => item.id), counts, conflicts, assetFiles: restoredAssetFiles, skippedConflicts, importScope: scope, importCollections: selectedCollections.value, importWarnings };
+        return { importedCampaignIds: archiveToMerge.data.campaigns.map((item) => item.id), counts, conflicts, assetFiles: restoredAssetFiles, skippedConflicts, importScope: scope, importCollections: selectedCollections.value, importWarnings, operation: publicCampaignArchiveImportOperation(operation) };
       } catch (error) {
         await rollbackCampaignArchiveImport(store, stateBeforeImport, assetRestore, error);
       }
@@ -13660,7 +14344,7 @@ function readSystemsToolOutput(context: AiToolContext, input: { systemId?: strin
   if (input.actorId && !actor) return toolError("not_found", { entity: "actor", id: input.actorId });
   const actorStore = { state: context.state, save: () => undefined, replace: () => undefined } satisfies StateStore;
   const actorPrivateDataVisible = actor ? canReadActorPrivateData(actorStore, context.userId, context.campaignId, actor) : false;
-  return { defaultSystemId: campaign?.defaultSystemId, systems, actor: actor ? { id: actor.id, name: actor.name, systemId: actor.systemId, privateDataVisible: actorPrivateDataVisible, ...(actorPrivateDataVisible ? { sheet: systemSheet(actor, actorItems(actorStore, actor)), advancementOptions: advancementOptionsForActor(actor) } : {}) } : undefined };
+  return { defaultSystemId: campaign?.defaultSystemId, systems, actor: actor ? { id: actor.id, name: actor.name, systemId: actor.systemId, privateDataVisible: actorPrivateDataVisible, ...(actorPrivateDataVisible ? { sheet: systemSheetForStore(actorStore, actor, actorItems(actorStore, actor)), advancementOptions: advancementOptionsForActor(actor) } : {}) } : undefined };
 }
 
 function readPluginsToolOutput(context: AiToolContext, input: { pluginId?: string; includeStorage: boolean; limit: number }): unknown {
@@ -13919,8 +14603,9 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
       return { asset, provider: generated.provider, model: generated.model, revisedPrompt: generated.revisedPrompt, sourcePrompt: generated.sourcePrompt };
     },
     rollDice: async ({ formula, label, visibility }) => {
-      const rolled = rollFormula(formula);
-      const roll = createTimestamped("roll", { campaignId, userId, formula, label, visibility, terms: rolled.terms, total: rolled.total }) satisfies DiceRoll;
+      const fairRoll = rollFormulaWithFairness(formula);
+      const rolled = fairRoll.rolled;
+      const roll = createTimestamped("roll", { campaignId, userId, formula, label, visibility, terms: rolled.terms, total: rolled.total, fairness: fairRoll.fairness }) satisfies DiceRoll;
       const message = createTimestamped("msg", { campaignId, userId, type: "roll" as const, body: `${label ? `${label}: ` : ""}${formula} = ${roll.total}`, visibility, recipientUserIds: [], rollId: roll.id }) satisfies ChatMessage;
       const proposalId = await createAiProposal({
         title: label ? `Roll: ${label}` : `Roll ${formula}`,
@@ -13972,13 +14657,14 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
       if (!canUpdateActorForUser(store, userId, actor)) return missingPermissionToolOutput("actor.update");
       if (!canReadActorPrivateData(store, userId, campaignId, actor)) return missingPermissionToolOutput("actor.readPrivate");
       const items = actorItems(store, actor);
-      const quickRolls = systemQuickRolls(actor, items);
+      const calculationContext = calculationOverrideContextForActor(store, actor, items);
+      const quickRolls = systemQuickRolls(actor, items, calculationContext);
       const action = resolveSystemActionRoll(quickRolls, actionRollId, actionName);
       if (!action) {
         return toolError("not_found", { entity: "actor_action", id: actionRollId ?? actionName ?? "", availableActions: quickRolls.map((item) => ({ rollId: item.id, label: item.label, formula: item.formula })) });
       }
       const actionOptions = systemActionOptions(spellSlotLevel, resourceAmount, useFreeResource);
-      const resolvedFormula = systemActionFormula(actor, items, action.id, actionOptions) ?? action.formula;
+      const resolvedFormula = systemActionFormula(actor, items, action.id, actionOptions, calculationContext) ?? action.formula;
       if (actor.systemId === DND_5E_SRD_SYSTEM_ID) {
         const targetActorIds = systemRollTargetActorIds(undefined, targetActorId, applyEffect ? actor.id : undefined);
         const targetActors: Actor[] = [];
@@ -13994,7 +14680,7 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
         if (resolution.blocked) return toolError("conflict", { message: resolution.blocked.reason, resolution });
         const pendingMessage = dnd5eSrdCommitInputMessage(resolution, Boolean(applyEffect));
         if (pendingMessage) return toolError("pending_resolution", { message: pendingMessage, resolution });
-        const rolledResults = resolution.rolls.map((resolutionRoll) => ({ resolutionRoll, rolled: rollFormula(resolutionRoll.formula) }));
+        const rolledResults = resolution.rolls.map((resolutionRoll): FairActionRollResult => ({ resolutionRoll, ...rollFormulaWithFairness(resolutionRoll.formula) }));
         const defaultRollTotal = rolledResults[0]?.rolled.total;
         const rollTotalByTarget = new Map<string, number>();
         for (const result of rolledResults) {
@@ -14012,7 +14698,7 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
         }
         const actorDataUpdates = new Map<string, Record<string, unknown>>();
         for (const actorUpdate of resolution.actorUpdates) actorDataUpdates.set(actorUpdate.actorId, actorUpdate.after);
-        const roll = createTimestamped("roll", { campaignId, userId, actorId: actor.id, formula: resolution.rolls[0]?.formula ?? resolvedFormula, label: `${actor.name} ${action.label}`, visibility, terms: rolledResults[0]?.rolled.terms ?? [], total: rolledResults[0]?.rolled.total ?? 0 }) satisfies DiceRoll;
+        const roll = createTimestamped("roll", { campaignId, userId, actorId: actor.id, formula: resolution.rolls[0]?.formula ?? resolvedFormula, label: `${actor.name} ${action.label}`, visibility, terms: rolledResults[0]?.rolled.terms ?? [], total: rolledResults[0]?.rolled.total ?? 0, fairness: rolledResults[0]?.fairness }) satisfies DiceRoll;
         const message = createTimestamped("msg", { campaignId, userId, type: "roll" as const, body: `${actor.name} ${action.label}: ${roll.formula} = ${roll.total}`, visibility, recipientUserIds: [], rollId: roll.id }) satisfies ChatMessage;
         const changes: ProposalChange[] = [...[...actorDataUpdates].map(([updatedActorId, data]) => ({ entity: "actor" as const, action: "update" as const, id: updatedActorId, data: { data } })), ...resolution.itemUpdates.map((item) => ({ entity: "item" as const, action: "update" as const, id: item.id, data: { data: item.data } })), { entity: "roll", action: "create", data: roll }, { entity: "chat", action: "create", data: message }];
         const proposalId = await createAiProposal({ title: `Actor action: ${actor.name} ${action.label}`, summary: `Draft ${actor.name} ${action.label}: ${roll.formula} = ${roll.total}.`, changes });
@@ -14051,7 +14737,8 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
         actorDataUpdates.set(actor.id, usage.data);
         itemUpdates = usage.items;
       }
-      const rolled = rollFormula(resolvedFormula);
+      const fairRoll = rollFormulaWithFairness(resolvedFormula);
+      const rolled = fairRoll.rolled;
       if (applyEffect) {
         const target = store.state.actors.find((item) => item.id === (targetActorId ?? actor.id) && item.campaignId === campaignId);
         if (!target) return toolError("not_found", { entity: "target_actor", id: targetActorId ?? actor.id });
@@ -14063,7 +14750,7 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
         actorDataUpdates.set(target.id, applied.data);
         effect = applied.effect as SystemRollPoolEffectResult;
       }
-      const roll = createTimestamped("roll", { campaignId, userId, actorId: actor.id, formula: resolvedFormula, label: `${actor.name} ${action.label}`, visibility, terms: rolled.terms, total: rolled.total }) satisfies DiceRoll;
+      const roll = createTimestamped("roll", { campaignId, userId, actorId: actor.id, formula: resolvedFormula, label: `${actor.name} ${action.label}`, visibility, terms: rolled.terms, total: rolled.total, fairness: fairRoll.fairness }) satisfies DiceRoll;
       const message = createTimestamped("msg", { campaignId, userId, type: "roll" as const, body: `${actor.name} ${action.label}: ${resolvedFormula} = ${roll.total}`, visibility, recipientUserIds: [], rollId: roll.id }) satisfies ChatMessage;
       const changes: ProposalChange[] = [...[...actorDataUpdates].map(([updatedActorId, data]) => ({ entity: "actor" as const, action: "update" as const, id: updatedActorId, data: { data } })), ...itemUpdates.map((item) => ({ entity: "item" as const, action: "update" as const, id: item.id, data: { data: item.data } })), { entity: "roll", action: "create", data: roll }, { entity: "chat", action: "create", data: message }];
       const proposalId = await createAiProposal({ title: `Actor action: ${actor.name} ${action.label}`, summary: `Draft ${actor.name} ${action.label}: ${resolvedFormula} = ${roll.total}.`, changes });
@@ -14115,7 +14802,8 @@ function enrichAiContextWithSystemActions(context: PermissionFilteredContext, st
       if (!summary.privateDataVisible) return summary;
       const actor = store.state.actors.find((item) => item.id === summary.id && item.campaignId === context.campaignId);
       if (!actor) return summary;
-      return { ...summary, systemId: actor.systemId, actions: systemQuickRolls(actor, actorItems(store, actor)).map((action) => ({ rollId: action.id, label: action.label, formula: action.formula })) };
+      const items = actorItems(store, actor);
+      return { ...summary, systemId: actor.systemId, actions: systemQuickRolls(actor, items, calculationOverrideContextForActor(store, actor, items)).map((action) => ({ rollId: action.id, label: action.label, formula: action.formula })) };
     }),
   };
 }
@@ -14176,6 +14864,7 @@ function actorReadToolSummary(context: AiToolContext, actor: Actor): ActorReadTo
     return { id: actor.id, name: actor.name, type: actor.type, systemId: actor.systemId, privateDataVisible, ownerUserId: actor.ownerUserId, imageAssetId: actor.imageAssetId, pools: {}, conditions: [], itemCount: 0, items: [], actions: [], createdAt: actor.createdAt, updatedAt: actor.updatedAt };
   }
   const items = context.state.items.filter((item) => item.actorId === actor.id && item.campaignId === actor.campaignId);
+  const calculationContext = calculationOverrideContextForActor(store, actor, items);
   return {
     id: actor.id,
     name: actor.name,
@@ -14188,7 +14877,7 @@ function actorReadToolSummary(context: AiToolContext, actor: Actor): ActorReadTo
     conditions: actorReadToolConditions(actor),
     itemCount: items.length,
     items: items.slice(0, 12).map(actorReadToolItemSummary),
-    actions: systemQuickRolls(actor, items)
+    actions: systemQuickRolls(actor, items, calculationContext)
       .slice(0, 20)
       .map((action) => ({ rollId: action.id, label: action.label, formula: action.formula })),
     createdAt: actor.createdAt,
@@ -14239,10 +14928,32 @@ function systemRollTargetActorIds(targetActorIds: string[] | undefined, targetAc
   return [...new Set(targets.map((value) => value.trim()))];
 }
 
+function normalizeSystemRollWeaponMasteryUse(value: unknown): { value?: Dnd5eSrdWeaponMasteryUse; error?: string } {
+  if (value === undefined) return {};
+  if (!isRecord(value)) return { error: "weaponMastery must be an object" };
+  const allowed = new Set(["use", "damageDealt", "nickExtraAttack", "secondaryTargetActorId", "geometryConfirmed", "pushDistanceFeet"]);
+  if (Object.keys(value).some((key) => !allowed.has(key))) return { error: "weaponMastery contains an unsupported field" };
+  if (typeof value.use !== "boolean") return { error: "weaponMastery.use must be a boolean" };
+  for (const key of ["damageDealt", "nickExtraAttack", "geometryConfirmed"] as const) if (value[key] !== undefined && typeof value[key] !== "boolean") return { error: `weaponMastery.${key} must be a boolean` };
+  if (value.secondaryTargetActorId !== undefined && (typeof value.secondaryTargetActorId !== "string" || !value.secondaryTargetActorId.trim())) return { error: "weaponMastery.secondaryTargetActorId must be a non-empty string" };
+  if (value.pushDistanceFeet !== undefined && (typeof value.pushDistanceFeet !== "number" || !Number.isInteger(value.pushDistanceFeet) || value.pushDistanceFeet < 0 || value.pushDistanceFeet > 10)) return { error: "weaponMastery.pushDistanceFeet must be an integer from 0 through 10" };
+  return { value: { use: value.use, ...(typeof value.damageDealt === "boolean" ? { damageDealt: value.damageDealt } : {}), ...(typeof value.nickExtraAttack === "boolean" ? { nickExtraAttack: value.nickExtraAttack } : {}), ...(typeof value.secondaryTargetActorId === "string" ? { secondaryTargetActorId: value.secondaryTargetActorId.trim() } : {}), ...(typeof value.geometryConfirmed === "boolean" ? { geometryConfirmed: value.geometryConfirmed } : {}), ...(typeof value.pushDistanceFeet === "number" ? { pushDistanceFeet: value.pushDistanceFeet } : {}) } };
+}
+
+function dnd5eSrdRollModeLabelSuffix(roll: RulesActionResolutionResult["rolls"][number]): string {
+  const advantageSources = roll.advantageSources ?? [];
+  const disadvantageSources = roll.disadvantageSources ?? [];
+  if (roll.d20Mode === "advantage") return ` [Advantage${advantageSources.length > 0 ? `: ${advantageSources.join(", ")}` : ""}]`;
+  if (roll.d20Mode === "disadvantage") return ` [Disadvantage${disadvantageSources.length > 0 ? `: ${disadvantageSources.join(", ")}` : ""}]`;
+  if (roll.d20Mode === "normal" && advantageSources.length > 0 && disadvantageSources.length > 0) return ` [Normal: Advantage (${advantageSources.join(", ")}) and Disadvantage (${disadvantageSources.join(", ")}) cancel]`;
+  return "";
+}
+
 function dnd5eSrdCommitInputMessage(resolution: RulesActionResolutionResult, applyEffect: boolean): string | undefined {
   if (resolution.pendingSaves.some((save) => save.requiredForCommit)) return "Save outcomes are required before this D&D action can be committed.";
+  if (applyEffect && resolution.weaponMastery?.status === "choice-required") return resolution.weaponMastery.message;
   if (applyEffect && resolution.pendingChoice) return resolution.pendingChoice.reason;
-  if (applyEffect && resolution.manualResolutionRequired) return resolution.manualResolutionRequired.reason;
+  if (applyEffect && resolution.manualResolutionRequired?.supportStatus === "unsupported") return resolution.manualResolutionRequired.reason;
   return undefined;
 }
 
@@ -15560,7 +16271,7 @@ function normalizeSceneAnnotationInput(scene: Scene, userId: string, body: { lab
   const minPoints = kind === "ping" ? 1 : 2;
   if (points.length < minPoints) return { error: `${kind} annotation requires at least ${minPoints} valid point${minPoints === 1 ? "" : "s"}` };
   const maxPoints = kind === "drawing" ? 80 : kind === "template" ? 16 : 2;
-  const snapToGrid = body.snapToGrid === true;
+  const snapToGrid = scene.gridType === "square" && body.snapToGrid === true;
   const normalizedPoints = points.slice(0, maxPoints).map((point) => (snapToGrid ? snapScenePointToGrid(scene, point) : point));
   const radius = kind === "template" ? normalizeAnnotationRadius(body.radius, scene, normalizedPoints) : undefined;
   if (kind === "template" && radius === undefined) return { error: "template annotation requires a non-negative radius" };
@@ -15590,14 +16301,14 @@ function normalizeSceneAnnotationPatch(scene: Scene, annotation: SceneAnnotation
     if (!Number.isFinite(body.sortOrder)) return { error: "Annotation sortOrder must be a finite number" };
     patch.sortOrder = Math.round(body.sortOrder);
   }
-  if (body.snapToGrid !== undefined) patch.snapToGrid = body.snapToGrid === true;
+  if (body.snapToGrid !== undefined) patch.snapToGrid = scene.gridType === "square" && body.snapToGrid === true;
   if (body.points !== undefined) {
     if (!Array.isArray(body.points)) return { error: "Annotation points must be an array" };
     const points = body.points.map((point) => normalizeScenePoint(scene, point)).filter((point): point is VisionPoint => Boolean(point));
     const minPoints = annotation.kind === "ping" ? 1 : 2;
     if (points.length < minPoints) return { error: `${annotation.kind} annotation requires at least ${minPoints} valid point${minPoints === 1 ? "" : "s"}` };
     const maxPoints = annotation.kind === "drawing" ? 80 : annotation.kind === "template" ? 16 : 2;
-    const snapToGrid = patch.snapToGrid ?? annotation.snapToGrid ?? false;
+    const snapToGrid = scene.gridType === "square" && (patch.snapToGrid ?? annotation.snapToGrid ?? false);
     patch.points = points.slice(0, maxPoints).map((point) => (snapToGrid ? snapScenePointToGrid(scene, point) : point));
   }
   if (annotation.kind === "template") {
@@ -16162,7 +16873,7 @@ function actorPatchFromBody(body: ActorPatchBody): ActorPatchBody {
   return patch;
 }
 
-const DND_RAW_ACTOR_MANAGED_DATA_ROOTS = new Set(["rulesEngine", "combatState", "deathSaves", "dnd5eControlledCreature", "hp", "hitPoints", "temporaryHitPoints", "temporaryHp", "tempHp", "conditions", "effects", "activeEffects", "resources", "spellSlots", "hitDice", "hitDicePools", "attunedItemIds", "attunement", "heroicInspiration", "spellcasting", "level", "class", "classes", "attributes", "proficiencyBonus", "features", "combat", "ruleset", "advancement", "advancements", "advancementState", "advancementHistory", "xp", "experience"]);
+const DND_RAW_ACTOR_MANAGED_DATA_ROOTS = new Set(["rulesEngine", "combatState", "deathSaves", "dnd5eControlledCreature", "hp", "hitPoints", "temporaryHitPoints", "temporaryHp", "tempHp", "conditions", "effects", "activeEffects", "resources", "spellSlots", "hitDice", "hitDicePools", "attunedItemIds", "attunement", "heroicInspiration", "spellcasting", "level", "class", "classes", "attributes", "proficiencyBonus", "features", "combat", "ruleset", "advancement", "advancements", "advancementState", "advancementHistory", "xp", "experience", "armorClass", "armorClassIntent", "armorClassReview"]);
 
 const DND_RAW_ITEM_MANAGED_DATA_ROOTS = new Set([DND5E_INVENTORY_METADATA_KEY, DND5E_LOOT_DATA_KEY, DND5E_MERCHANT_DATA_KEY, DND5E_PARTY_STASH_DATA_KEY, "compendiumProvenance", "compendiumId", "compendiumEntryId", "merchantId", "merchantCatalogEntryId", "purchasedForGp", "quantity", "prepared", "attuned", "charges", "uses"]);
 
@@ -16714,6 +17425,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function responsePayloadErrorCode(payload: unknown): string | undefined {
+  let value = payload;
+  if (typeof value === "string" && value.length <= 64 * 1024) {
+    try {
+      value = JSON.parse(value) as unknown;
+    } catch {
+      return undefined;
+    }
+  }
+  return isRecord(value) && typeof value.code === "string" ? value.code : undefined;
+}
+
 function optionalJsonObjectBody(value: unknown): Record<string, unknown> | undefined {
   return value === undefined ? {} : isRecord(value) ? value : undefined;
 }
@@ -16810,6 +17533,7 @@ type SharedMutationRevisionDescriptor = { methods: ReadonlySet<string>; pattern:
 const sharedMutationRevisionDescriptors: readonly SharedMutationRevisionDescriptor[] = [
   { methods: new Set(["POST"]), pattern: /^\/api\/v1\/campaigns\/([^/]+)\/(?:worlds|scenes|actors|items|handouts|encounters|combats(?:\/start)?)$/, collection: "campaigns", resourceType: "campaign" },
   { methods: new Set(["POST"]), pattern: /^\/api\/v1\/scenes\/([^/]+)\/tokens$/, collection: "scenes", resourceType: "scene" },
+  { methods: new Set(["POST"]), pattern: /^\/api\/v1\/scenes\/([^/]+)\/encounter-monster-placements$/, collection: "scenes", resourceType: "scene" },
   { methods: new Set(["PATCH", "DELETE"]), pattern: /^\/api\/v1\/campaigns\/([^/]+)$/, collection: "campaigns", resourceType: "campaign" },
   { methods: new Set(["POST"]), pattern: /^\/api\/v1\/campaigns\/([^/]+)\/(?:archive|restore)$/, collection: "campaigns", resourceType: "campaign" },
   { methods: new Set(["PATCH", "DELETE"]), pattern: /^\/api\/v1\/worlds\/([^/]+)$/, collection: "worlds", resourceType: "world" },
@@ -16910,6 +17634,7 @@ function sharedMutationCallerMayMutate(store: StateStore, userId: string, pathna
   if (world) return campaignPermission(world.campaignId, method === "DELETE" ? "world.delete" : "world.update");
   const scene = store.state.scenes.find((candidate) => candidate.id === record.id);
   if (scene) {
+    if (/\/encounter-monster-placements$/.test(pathname)) return campaignPermission(scene.campaignId, "actor.create") && campaignPermission(scene.campaignId, "token.create");
     if (/\/tokens$/.test(pathname)) return campaignPermission(scene.campaignId, "token.create");
     if (/\/delegations(?:\/|$)/.test(pathname)) return campaignPermission(scene.campaignId, "scene.update");
     if (method === "DELETE" && /^\/api\/v1\/scenes\/[^/]+$/.test(pathname)) return campaignPermission(scene.campaignId, "scene.delete");
@@ -17038,7 +17763,7 @@ function campaignIdForMutationRequest(store: StateStore, request: FastifyRequest
   return undefined;
 }
 
-function registerDurableMutationFlush(app: FastifyInstance, store: StateStore, coordinator: DurableMutationCoordinator): void {
+function registerDurableMutationFlush(app: FastifyInstance, store: StateStore, coordinator: DurableMutationCoordinator, operationsObservability: OperationsObservability): void {
   // Idempotency wraps save/flush before this hook is registered, so compare
   // the concrete store rather than the wrapped method identities.
   const inMemoryOnly = store.constructor === MemoryStateStore;
@@ -17084,7 +17809,16 @@ function registerDurableMutationFlush(app: FastifyInstance, store: StateStore, c
         // advance lockout/audit state, while OIDC callbacks and session activity are
         // mutating GET/redirect flows. Read-only and already-flushed requests make
         // this a cheap no-op.
-        flush?.();
+        if (flush) {
+          const flushStartedAt = Date.now();
+          try {
+            flush();
+            operationsObservability.recordPersistence("succeeded", Date.now() - flushStartedAt);
+          } catch (error) {
+            operationsObservability.recordPersistence("failed", Date.now() - flushStartedAt);
+            throw error;
+          }
+        }
         if (reply.statusCode >= 200 && reply.statusCode < 400) await assetRestore?.commit();
       }
       return payload;
@@ -17455,13 +18189,27 @@ function idempotencyResponseContainsSecret(responseBody: string): boolean {
   return idempotencyValueContainsSecret(value);
 }
 
-function idempotencyValueContainsSecret(value: unknown): boolean {
+function idempotencyValueContainsSecret(value: unknown, path: string[] = []): boolean {
   if (typeof value === "string") {
     return /(?:^|[^A-Za-z0-9])(?:ots|oti|opr|oss|otte_whsec)_[A-Za-z0-9_-]+|otr-[a-f0-9]{8}-[a-f0-9]{8}|otpauth:\/\/|[?&](?:access_?token|refresh_?token|session_?token|token|signature|invite|code)=/i.test(value);
   }
-  if (Array.isArray(value)) return value.some(idempotencyValueContainsSecret);
+  if (Array.isArray(value)) return value.some((nested, index) => idempotencyValueContainsSecret(nested, [...path, String(index)]));
   if (!isRecord(value)) return false;
-  return Object.entries(value).some(([key, nested]) => idempotencySecretResponseKeys.has(key.replace(/[^a-z0-9]/gi, "").toLowerCase()) || idempotencyValueContainsSecret(nested));
+  return Object.entries(value).some(([key, nested]) => {
+    const normalizedKey = key.replace(/[^a-z0-9]/gi, "").toLowerCase();
+    const nonSecretDomainToken = normalizedKey === "token" && controlledCreatureTokenTemplatePath([...path, key], nested);
+    return (idempotencySecretResponseKeys.has(normalizedKey) && !nonSecretDomainToken) || idempotencyValueContainsSecret(nested, [...path, key]);
+  });
+}
+
+function controlledCreatureTokenTemplatePath(path: string[], value: unknown): boolean {
+  const joined = path.join(".");
+  if (joined !== "controlledCreatureHandoff.prefill.token" && joined !== "preparation.request.controlledCreature.token") return false;
+  if (!isRecord(value)) return false;
+  const allowed = new Set(["name", "x", "y", "width", "height", "rotation", "hidden", "disposition", "imageAssetId"]);
+  return Object.keys(value).every((key) => allowed.has(key))
+    && ["x", "y", "width", "height"].every((key) => value[key] === undefined || typeof value[key] === "number")
+    && (value.disposition === undefined || value.disposition === "friendly" || value.disposition === "neutral" || value.disposition === "hostile");
 }
 
 function isIdempotentReplayCandidate(method: string): boolean {
@@ -18877,6 +19625,7 @@ function rulesResolutionPayloadForUser(store: StateStore, userId: string, campai
     auditEvents,
     blocked: value.blocked ? (sourceVisible && hiddenActorIds.size === 0 ? value.blocked : { code: "resolution_blocked", reason: "Resolution blocked" }) : undefined,
     pendingChoice: sourceVisible ? value.pendingChoice : undefined,
+    deathSave: sourceVisible ? value.deathSave : undefined,
     manualResolutionRequired: value.manualResolutionRequired ? (sourceVisible && hiddenActorIds.size === 0 ? value.manualResolutionRequired : { reason: "Manual resolution required", metadata: {} }) : undefined,
   };
 }
@@ -20251,12 +21000,6 @@ function canReadDiceRoll(store: StateStore, userId: string, roll: DiceRoll, link
   return canModerate || canCampaign(store, userId, roll.campaignId, "journal.readSecret") || canCampaign(store, userId, roll.campaignId, "ai.readGmMemory");
 }
 
-function normalizeClientSeed(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trim();
-  return trimmed ? trimmed.slice(0, 200) : undefined;
-}
-
 function normalizeAudioTrackKind(value: unknown): AudioTrackKind {
   return value === "music" || value === "ambient" || value === "sfx" ? value : "ambient";
 }
@@ -20277,42 +21020,6 @@ function normalizeAudioTrackUrl(value: unknown): string | undefined {
   } catch {
     return undefined;
   }
-}
-
-function rollWithFairness(formula: string, clientSeedInput: unknown): { rolled: ReturnType<typeof rollFormula>; fairness: DiceRollFairness } {
-  const serverSeed = randomBytes(32).toString("hex");
-  const serverSeedHash = createHash("sha256").update(serverSeed).digest("hex");
-  const clientSeed = normalizeClientSeed(clientSeedInput);
-  const rolled = rollFormula(formula, { rng: seededRng(composeFairnessSeed(serverSeed, clientSeed)) });
-  const fairness: DiceRollFairness = { algorithm: "xmur3-mulberry32", serverSeed, serverSeedHash, ...(clientSeed ? { clientSeed } : {}) };
-  return { rolled, fairness };
-}
-
-interface DiceRollVerification {
-  rollId: string;
-  formula: string;
-  verified: boolean;
-  reason?: "fairness_unavailable" | "unsupported_algorithm" | "seed_hash_mismatch" | "formula_unparseable" | "result_mismatch";
-  fairness?: DiceRollFairness;
-  expected: { total: number };
-  recomputed?: { total: number };
-}
-
-function verifyDiceRollRecord(roll: DiceRoll): DiceRollVerification {
-  const base = { rollId: roll.id, formula: roll.formula, expected: { total: roll.total } };
-  const fairness = roll.fairness;
-  if (!fairness) return { ...base, verified: false, reason: "fairness_unavailable" };
-  if (fairness.algorithm !== "xmur3-mulberry32") return { ...base, verified: false, reason: "unsupported_algorithm", fairness };
-  const recomputedHash = createHash("sha256").update(fairness.serverSeed).digest("hex");
-  if (recomputedHash !== fairness.serverSeedHash) return { ...base, verified: false, reason: "seed_hash_mismatch", fairness };
-  let recomputed: ReturnType<typeof rollFormula>;
-  try {
-    recomputed = rollFormula(roll.formula, { rng: seededRng(composeFairnessSeed(fairness.serverSeed, fairness.clientSeed)) });
-  } catch {
-    return { ...base, verified: false, reason: "formula_unparseable", fairness };
-  }
-  const matches = recomputed.total === roll.total && stableJson(recomputed.terms) === stableJson(roll.terms);
-  return { ...base, verified: matches, ...(matches ? {} : { reason: "result_mismatch" as const }), fairness, recomputed: { total: recomputed.total } };
 }
 
 interface CampaignSnapshotResult {
@@ -20542,8 +21249,10 @@ function withoutSceneEditHistory(scene: Scene): Scene {
 }
 
 function currentUserId(store: StateStore, headers: Record<string, string | string[] | undefined>): string | undefined {
-  const session = sessionFromRequest(store, undefined, headers);
+  const credential = sessionCredentialFromRequest(undefined, headers);
+  const session = sessionFromCredential(store, credential);
   if (session && isActiveUserId(store, session.userId)) return session.userId;
+  if (credential.status !== "none") return undefined;
   const header = headers["x-user-id"];
   const userId = Array.isArray(header) ? header[0] : header;
   if (!legacyUserHeaderEnabled()) {
@@ -20558,8 +21267,10 @@ function currentUserId(store: StateStore, headers: Record<string, string | strin
 }
 
 function userIdFromRequest(store: StateStore, requestUrl: string | undefined, headers: Record<string, string | string[] | undefined>): string | undefined {
-  const session = sessionFromRequest(store, requestUrl, headers);
+  const credential = sessionCredentialFromRequest(requestUrl, headers);
+  const session = sessionFromCredential(store, credential);
   if (session && isActiveUserId(store, session.userId)) return session.userId;
+  if (credential.status !== "none") return undefined;
   const url = new URL(requestUrl ?? "/api/v1/realtime", "http://localhost");
   const queryUserId = url.searchParams.get("userId");
   const header = headers["x-user-id"];
@@ -20602,9 +21313,12 @@ function appendAuthLoginFailureAudit(store: StateStore, input: { userId?: string
 }
 
 function sessionFromRequest(store: StateStore, requestUrl: string | undefined, headers: Record<string, string | string[] | undefined>): UserSession | undefined {
-  const token = sessionTokenFromRequest(requestUrl, headers);
-  if (!token) return undefined;
-  const tokenHash = hashSessionToken(token);
+  return sessionFromCredential(store, sessionCredentialFromRequest(requestUrl, headers));
+}
+
+function sessionFromCredential(store: StateStore, credential: SessionCredential): UserSession | undefined {
+  if (credential.status !== "valid") return undefined;
+  const tokenHash = hashSessionToken(credential.token);
   const now = Date.now();
   const session = store.state.sessions.find((item) => item.tokenHash === tokenHash && Date.parse(item.expiresAt) > now);
   if (session) {
@@ -20620,36 +21334,14 @@ function sessionFromRequest(store: StateStore, requestUrl: string | undefined, h
 const SESSION_LAST_SEEN_PERSIST_INTERVAL_MS = 60_000;
 
 function sessionTokenFromRequest(requestUrl: string | undefined, headers: Record<string, string | string[] | undefined>): string | undefined {
-  const authorization = headerValue(headers.authorization);
-  if (authorization?.toLowerCase().startsWith("bearer ")) return authorization.slice("bearer ".length).trim();
-  const explicitHeader = headerValue(headers["x-session-token"]);
-  if (explicitHeader) return explicitHeader;
-  const cookie = headerValue(headers.cookie);
-  const cookieToken = cookie
-    ?.split(";")
-    .map((part) => part.trim())
-    .find((part) => part.startsWith("otte_session="))
-    ?.slice("otte_session=".length);
-  if (cookieToken) return decodeURIComponent(cookieToken);
-  const protocolToken = websocketProtocolSessionToken(headers);
-  if (protocolToken) return protocolToken;
-  const url = new URL(requestUrl ?? "/api/v1/realtime", "http://localhost");
-  return url.searchParams.get("sessionToken") ?? undefined;
+  const credential = sessionCredentialFromRequest(requestUrl, headers);
+  return credential.status === "valid" ? credential.token : undefined;
 }
 
 function headersWithRequestSessionToken(requestUrl: string | undefined, headers: Record<string, string | string[] | undefined>): Record<string, string | string[] | undefined> {
   const token = sessionTokenFromRequest(requestUrl, headers);
   if (!token) return headers;
   return { ...headers, "x-session-token": token };
-}
-
-function websocketProtocolSessionToken(headers: Record<string, string | string[] | undefined>): string | undefined {
-  const protocols = headerValue(headers["sec-websocket-protocol"]);
-  return protocols
-    ?.split(",")
-    .map((protocol) => protocol.trim())
-    .find((protocol) => protocol.startsWith("otte.auth."))
-    ?.slice("otte.auth.".length);
 }
 
 function hashPassword(password: string): string {
@@ -20941,7 +21633,7 @@ function activateSceneForCampaignSession(store: StateStore, scene: Scene, userId
   appendSceneActivationHistory(scene, { activatedAt, activatedByUserId: userId, previousActiveSceneId: deactivatedSceneIds[0], deactivatedSceneIds, source: "activate" });
 }
 
-const CAMPAIGN_SEARCH_TYPES = new Set<CampaignSearchResultType>(["world", "scene", "actor", "item", "journal", "handout", "encounter", "memory", "chat", "roll"]);
+const CAMPAIGN_SEARCH_TYPES = new Set<CampaignSearchResultType>(["world", "scene", "actor", "item", "journal", "handout", "encounter", "memory", "chat", "roll", "compendium"]);
 
 function normalizeCampaignSearchTypes(value: string | undefined): { ok: true; value: Set<CampaignSearchResultType> } | { ok: false; error: string } {
   if (!value?.trim()) return { ok: true, value: new Set(CAMPAIGN_SEARCH_TYPES) };
@@ -20959,14 +21651,31 @@ function normalizeCampaignSearchTypes(value: string | undefined): { ok: true; va
 }
 
 function campaignSearchResults(store: StateStore, userId: string, campaignId: string, query: string, types: Set<CampaignSearchResultType>, worldId?: string): CampaignSearchResult[] {
-  const normalizedQuery = query.toLocaleLowerCase();
   const results: CampaignSearchResult[] = [];
-  const add = (input: Omit<CampaignSearchResult, "score" | "snippet"> & { searchable: string; snippetSource?: string }) => {
+  const add = (input: Omit<CampaignSearchResult, "score" | "snippet" | "matchKind" | "target"> & { searchable: string; snippetSource?: string; actorId?: string; systemId?: string; sourceKind?: CampaignSearchSourceKind }) => {
     const title = input.title.trim();
-    const searchable = `${title}\n${input.searchable}`.toLocaleLowerCase();
-    if (!searchable.includes(normalizedQuery)) return;
-    const score = campaignSearchScore(title, input.searchable, normalizedQuery);
-    results.push({ type: input.type, id: input.id, title, snippet: campaignSearchSnippet(input.snippetSource ?? input.searchable, normalizedQuery), updatedAt: input.updatedAt, ...(input.worldId ? { worldId: input.worldId } : {}), ...(input.visibility ? { visibility: input.visibility } : {}), score });
+    const match = campaignSearchMatch(input.id, title, input.searchable, query);
+    if (!match) return;
+    const sourceKind = input.sourceKind ?? "campaign";
+    results.push({
+      type: input.type,
+      id: input.id,
+      title,
+      snippet: campaignSearchSnippet(input.snippetSource ?? input.searchable, query),
+      updatedAt: input.updatedAt,
+      ...(input.worldId ? { worldId: input.worldId } : {}),
+      ...(input.visibility ? { visibility: input.visibility } : {}),
+      score: match.score,
+      matchKind: match.kind,
+      target: {
+        type: input.type,
+        id: input.id,
+        sourceKind,
+        ...(input.worldId ? { worldId: input.worldId } : {}),
+        ...(input.actorId ? { actorId: input.actorId } : {}),
+        ...(input.systemId ? { systemId: input.systemId } : {}),
+      },
+    });
   };
   const inWorld = (recordWorldId: string | undefined) => !worldId || recordWorldId === worldId;
 
@@ -21006,7 +21715,25 @@ function campaignSearchResults(store: StateStore, userId: string, campaignId: st
   if (types.has("item") && canCampaign(store, userId, campaignId, "actor.read")) {
     for (const item of visibleItemsForUser(store, userId, campaignId)) {
       if (!inWorld(item.worldId)) continue;
-      add({ type: "item", id: item.id, title: item.name, searchable: `${item.type} ${JSON.stringify(item.data)}`, snippetSource: item.type, updatedAt: item.updatedAt, worldId: item.worldId });
+      add({ type: "item", id: item.id, title: item.name, searchable: `${item.type} ${JSON.stringify(item.data)}`, snippetSource: item.type, updatedAt: item.updatedAt, worldId: item.worldId, actorId: item.actorId, systemId: item.systemId, sourceKind: item.actorId ? "actor_instance" : "campaign" });
+    }
+  }
+  if (types.has("compendium") && !worldId) {
+    const campaign = store.state.campaigns.find((candidate) => candidate.id === campaignId);
+    if (campaign) {
+      const systemIds = new Set<string>([
+        campaign.defaultSystemId,
+        ...store.state.actors.filter((actor) => actor.campaignId === campaignId).map((actor) => actor.systemId),
+        ...store.state.items.filter((item) => item.campaignId === campaignId).map((item) => item.systemId),
+      ]);
+      for (const systemId of [...systemIds].sort()) {
+        if (!findRegisteredSystem(store.state, systemId) || !hasSystemRuntimeCapability(systemId, "compendium")) continue;
+        const entries = campaignCompendiumEntries(store, campaignId, systemId, canCampaign(store, userId, campaignId, "campaign.update"));
+        for (const entry of entries) {
+          const sourceKind: CampaignSearchSourceKind = entry.provenance.sourceKind === "srd" ? "srd" : entry.provenance.sourceKind === "user" ? "homebrew" : "bundled";
+          add({ type: "compendium", id: entry.id, title: entry.name, searchable: `${entry.type} ${entry.summary} ${entry.provenance.sourceName} ${entry.provenance.contentVersion}`, snippetSource: entry.summary, updatedAt: campaign.updatedAt, systemId, sourceKind });
+        }
+      }
     }
   }
   if (types.has("journal")) {
@@ -21057,26 +21784,60 @@ function campaignSearchResults(store: StateStore, userId: string, campaignId: st
       add({ type: "roll", id: roll.id, title, searchable: `${roll.label ?? ""} ${summary}`, snippetSource: summary, updatedAt: roll.updatedAt, visibility: roll.visibility });
     }
   }
-  return results.sort((left, right) => right.score - left.score || right.updatedAt.localeCompare(left.updatedAt) || left.title.localeCompare(right.title));
+  return results.sort((left, right) => right.score - left.score || left.title.localeCompare(right.title) || left.type.localeCompare(right.type) || left.id.localeCompare(right.id) || (left.target.systemId ?? "").localeCompare(right.target.systemId ?? ""));
 }
 
 function canReadHandoutRecord(store: StateStore, userId: string, handout: Handout): boolean {
   return canReadHandout(store, userId, handout);
 }
 
-function campaignSearchScore(title: string, body: string, normalizedQuery: string): number {
-  const normalizedTitle = title.toLocaleLowerCase();
-  if (normalizedTitle === normalizedQuery) return 1000;
-  if (normalizedTitle.startsWith(normalizedQuery)) return 800;
-  if (normalizedTitle.includes(normalizedQuery)) return 600;
-  const bodyIndex = body.toLocaleLowerCase().indexOf(normalizedQuery);
-  return bodyIndex < 0 ? 0 : Math.max(100, 400 - Math.min(bodyIndex, 300));
+function normalizeCampaignSearchText(value: string): string {
+  return value.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase().replace(/['’`]/g, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim().replace(/\s+/g, " ");
 }
 
-function campaignSearchSnippet(value: string, normalizedQuery: string): string {
+function campaignSearchMatch(id: string, title: string, body: string, query: string): { kind: CampaignSearchMatchKind; score: number } | undefined {
+  const rawQuery = query.trim().toLocaleLowerCase();
+  const normalizedQuery = normalizeCampaignSearchText(query);
+  if (!rawQuery || !normalizedQuery) return undefined;
+  if (id.toLocaleLowerCase() === rawQuery) return { kind: "exact_id", score: 1200 };
+  const rawTitle = title.trim().toLocaleLowerCase();
+  if (rawTitle === rawQuery) return { kind: "exact_name", score: 1100 };
+  const normalizedTitle = normalizeCampaignSearchText(title);
+  if (normalizedTitle === normalizedQuery) return { kind: "normalized_name", score: 1000 };
+  if (normalizedTitle.startsWith(normalizedQuery)) return { kind: "prefix", score: 800 };
+  if (normalizedTitle.includes(normalizedQuery)) return { kind: "title", score: 600 };
+  const normalizedBody = normalizeCampaignSearchText(body);
+  const bodyIndex = normalizedBody.indexOf(normalizedQuery);
+  if (bodyIndex >= 0) return { kind: "body", score: Math.max(100, 400 - Math.min(bodyIndex, 300)) };
+  if (normalizedQuery.length >= 4 && normalizedTitle.length >= 4) {
+    const distance = campaignSearchEditDistance(normalizedTitle, normalizedQuery, 2);
+    if (distance <= 2) return { kind: "fuzzy", score: 500 - distance * 25 };
+  }
+  return undefined;
+}
+
+function campaignSearchEditDistance(left: string, right: string, maximum: number): number {
+  if (Math.abs(left.length - right.length) > maximum) return maximum + 1;
+  let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    const current = [leftIndex];
+    let rowMinimum = current[0]!;
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      const substitution = previous[rightIndex - 1]! + (left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1);
+      const value = Math.min(previous[rightIndex]! + 1, current[rightIndex - 1]! + 1, substitution);
+      current.push(value);
+      rowMinimum = Math.min(rowMinimum, value);
+    }
+    if (rowMinimum > maximum) return maximum + 1;
+    previous = current;
+  }
+  return previous[right.length] ?? maximum + 1;
+}
+
+function campaignSearchSnippet(value: string, query: string): string {
   const compact = value.replace(/\s+/g, " ").trim();
   if (!compact) return "";
-  const index = compact.toLocaleLowerCase().indexOf(normalizedQuery);
+  const index = normalizeCampaignSearchText(compact).indexOf(normalizeCampaignSearchText(query));
   const start = Math.max(0, index < 0 ? 0 : index - 70);
   const end = Math.min(compact.length, start + 220);
   return `${start > 0 ? "..." : ""}${compact.slice(start, end)}${end < compact.length ? "..." : ""}`;
@@ -21410,9 +22171,10 @@ function isNpcInitiativeActor(actor: Actor): boolean {
   return actor.type === "npc" || actor.type === "monster";
 }
 
-function initiativeRollForActor(actor: Actor, surprised = false): { label: string; formula: string } {
+function initiativeRollForActor(actor: Actor, surprised = false, calculationContext?: Dnd5eSrdCalculationOverrideContext): { label: string; formula: string } {
   if (actor.systemId === DND_5E_SRD_SYSTEM_ID) {
-    const roll = dnd5eSrdInitiativeRoll(actor);
+    const baseRoll = dnd5eSrdInitiativeRoll(actor);
+    const roll = calculationContext ? applyDnd5eSrdCalculationOverridesToRolls([baseRoll], calculationContext)[0]! : baseRoll;
     const mode = dnd5eSrdInitiativeMode({ surprised, advantage: roll.formula.startsWith("2d20kh1"), disadvantage: roll.formula.startsWith("2d20kl1") });
     const d20 = mode === "advantage" ? "2d20kh1" : mode === "disadvantage" ? "2d20kl1" : "1d20";
     return { ...roll, formula: roll.formula.replace(/^(?:1d20|2d20k[hl]1)/, d20) };
@@ -21480,7 +22242,19 @@ function combatActionReferencesActor(action: CombatAction, actorId: string): boo
     || nestedValueContainsExactString(action.resolution, actorId);
 }
 
-function createPendingCombatAction(input: { combat: Combat; actor: Actor; currentActors: Actor[]; currentItems: Item[]; userId: string; rollId: string; actionLabel: string; targetActorIds: string[]; applyEffect: boolean; consumeResources: boolean; resolution: RulesActionResolutionResult; rolledResults: Array<{ resolutionRoll: { label?: string; formula: string; targetActorId?: string }; rolled: ReturnType<typeof rollFormula> }>; actorUpdates: RulesActionResolutionResult["actorUpdates"]; itemUpdates: Item[]; effects: SystemRollEffectResult[]; visibility: DiceRoll["visibility"]; preparedPreviewKey: string }): CombatAction {
+function isFairActionRollResult(value: unknown): value is FairActionRollResult {
+  if (!isRecord(value) || !isRecord(value.resolutionRoll) || !isRecord(value.rolled) || !isRecord(value.fairness)) return false;
+  if (typeof value.resolutionRoll.formula !== "string" || !Array.isArray(value.rolled.terms) || typeof value.rolled.total !== "number" || !Number.isFinite(value.rolled.total)) return false;
+  return verifyFairDiceRollRecord({
+    id: "prepared-action-roll",
+    formula: value.resolutionRoll.formula,
+    terms: value.rolled.terms as DiceRoll["terms"],
+    total: value.rolled.total,
+    fairness: value.fairness as unknown as DiceRollFairness,
+  }).verified;
+}
+
+function createPendingCombatAction(input: { combat: Combat; actor: Actor; currentActors: Actor[]; currentItems: Item[]; userId: string; rollId: string; actionLabel: string; targetActorIds: string[]; applyEffect: boolean; consumeResources: boolean; resolution: RulesActionResolutionResult; rolledResults: FairActionRollResult[]; actorUpdates: RulesActionResolutionResult["actorUpdates"]; itemUpdates: Item[]; effects: SystemRollEffectResult[]; visibility: DiceRoll["visibility"]; preparedPreviewKey: string }): CombatAction {
   const itemUpdates = input.itemUpdates.map((item) => {
     const currentItem = input.currentItems.find((candidate) => candidate.id === item.id);
     return { itemId: item.id, before: currentItem && isRecord(currentItem.data) ? cloneRecord(currentItem.data) : {}, after: isRecord(item.data) ? cloneRecord(item.data) : { value: item.data } };
@@ -21511,7 +22285,7 @@ function createPendingCombatAction(input: { combat: Combat; actor: Actor; curren
       }),
     ),
     resolution: input.resolution,
-    rolls: input.rolledResults.map(({ resolutionRoll, rolled }) => ({ label: resolutionRoll.label ?? input.actionLabel, formula: resolutionRoll.formula, terms: rolled.terms, total: rolled.total, targetActorId: resolutionRoll.targetActorId, visibility: input.visibility })),
+    rolls: input.rolledResults.map(({ resolutionRoll, rolled, fairness }) => ({ label: resolutionRoll.label ?? input.actionLabel, formula: resolutionRoll.formula, terms: rolled.terms, total: rolled.total, fairness, targetActorId: resolutionRoll.targetActorId, visibility: input.visibility })),
     actorUpdates: input.actorUpdates.map((update) => ({ actorId: update.actorId, before: cloneRecord(update.before), after: cloneRecord(update.after) })),
     itemUpdates,
     effects: input.effects.map((effect) => combatActionEffectSummary(effect)),
@@ -21577,7 +22351,7 @@ function applyPendingCombatAction(store: StateStore, userId: string, combat: Com
   action.updatedAt = updatedAt;
   combat.updatedAt = updatedAt;
 
-  const rolls = action.rolls.map((roll) => createTimestamped("roll", { campaignId: combat.campaignId, userId: action.requestedByUserId, formula: roll.formula, label: roll.targetActorId && action.rolls.length > 1 ? `${action.actionLabel} (${roll.targetActorId})` : action.actionLabel, visibility: roll.visibility, terms: roll.terms, total: roll.total }) satisfies DiceRoll);
+  const rolls = action.rolls.map((roll) => createTimestamped("roll", { campaignId: combat.campaignId, userId: action.requestedByUserId, actorId: action.actorId, formula: roll.formula, label: roll.targetActorId && action.rolls.length > 1 ? `${action.actionLabel} (${roll.targetActorId})` : action.actionLabel, visibility: roll.visibility, terms: roll.terms, total: roll.total, ...(roll.fairness ? { fairness: roll.fairness } : {}) }) satisfies DiceRoll);
   const chatMessages = rolls.map((roll) => createTimestamped("msg", { campaignId: combat.campaignId, userId: action.requestedByUserId, type: "roll" as const, body: `${action.actorName} ${roll.label}: ${roll.formula} = ${roll.total}`, visibility: roll.visibility, recipientUserIds: [], rollId: roll.id }) satisfies ChatMessage);
   store.state.rolls.push(...rolls);
   store.state.chat.push(...chatMessages);
@@ -23256,16 +24030,32 @@ function createImportedItems(campaignId: string, actor: Actor, imported: Charact
   });
 }
 
-function systemSheet(actor: Actor, items: Item[]) {
-  if (actor.systemId === DND_5E_SRD_SYSTEM_ID) return dnd5eSrdSheet(actor, items);
+function calculationOverrideContextForActor(store: StateStore, actor: Actor, items: Item[]): Dnd5eSrdCalculationOverrideContext | undefined {
+  if (actor.systemId !== DND_5E_SRD_SYSTEM_ID) return undefined;
+  const explanation = dnd5eSrdCalculationExplanation(actor, items);
+  return buildDnd5eSrdCalculationOverrideContext(explanation, store.state.calculationOverrides.filter((entry) => entry.actorId === actor.id && entry.campaignId === actor.campaignId));
+}
+
+function systemSheet(actor: Actor, items: Item[], calculationContext?: Dnd5eSrdCalculationOverrideContext) {
+  if (actor.systemId === DND_5E_SRD_SYSTEM_ID) {
+    const sheet = dnd5eSrdSheet(actor, items);
+    return calculationContext ? applyDnd5eSrdCalculationOverridesToSheet(sheet, calculationContext) : sheet;
+  }
   if (actor.systemId === "generic-fantasy") return genericFantasySheet(actor, items);
   if (actor.systemId === "stellar-frontiers") return stellarFrontiersSheet(actor, items);
   if (actor.systemId === "mystic-noir") return mysticNoirSheet(actor, items);
   throw new UnsupportedSystemCapabilityError(actor.systemId, "actor-sheet");
 }
 
-function systemQuickRolls(actor: Actor, items: Item[] = []) {
-  if (actor.systemId === DND_5E_SRD_SYSTEM_ID) return dnd5eSrdQuickRolls(actor, items);
+function systemSheetForStore(store: StateStore, actor: Actor, items: Item[]) {
+  return systemSheet(actor, items, calculationOverrideContextForActor(store, actor, items));
+}
+
+function systemQuickRolls(actor: Actor, items: Item[] = [], calculationContext?: Dnd5eSrdCalculationOverrideContext) {
+  if (actor.systemId === DND_5E_SRD_SYSTEM_ID) {
+    const rolls = dnd5eSrdQuickRolls(actor, items);
+    return calculationContext ? applyDnd5eSrdCalculationOverridesToRolls(rolls, calculationContext) : rolls;
+  }
   if (actor.systemId === "generic-fantasy") return genericFantasyQuickRolls(actor, items);
   if (actor.systemId === "stellar-frontiers") return stellarFrontiersQuickRolls(actor, items);
   if (actor.systemId === "mystic-noir") return mysticNoirQuickRolls(actor, items);
@@ -23276,8 +24066,11 @@ function systemActionOptions(spellSlotLevel: number | undefined, resourceAmount?
   return { spellSlotLevel, resourceAmount, useFreeResource };
 }
 
-function systemActionFormula(actor: Actor, items: Item[], rollId: string, options: SystemActionUseOptions): string | undefined {
-  if (actor.systemId === DND_5E_SRD_SYSTEM_ID) return dnd5eSrdActionFormula(actor, items, rollId, options);
+function systemActionFormula(actor: Actor, items: Item[], rollId: string, options: SystemActionUseOptions, calculationContext?: Dnd5eSrdCalculationOverrideContext): string | undefined {
+  if (actor.systemId === DND_5E_SRD_SYSTEM_ID) {
+    const override = dnd5eSrdFormulaOverride(calculationContext, rollId);
+    return override ? dnd5eSrdSafeOverrideFormula(override.effectiveValue) : dnd5eSrdActionFormula(actor, items, rollId, options);
+  }
   if (actor.systemId === "generic-fantasy") return genericFantasyActionFormula(actor, items, rollId, options);
   if (actor.systemId === "stellar-frontiers" || actor.systemId === "mystic-noir") return undefined;
   assertSystemRuntimeCapability(actor.systemId, "actions");
@@ -23459,9 +24252,15 @@ function boundedDeathSaveCount(value: unknown): number {
 }
 
 function applyCombatantRulesAutomation(combatant: Combat["combatants"][number], options: { applyConcentrationLifecycle?: boolean } = {}): Combat["combatants"][number] {
-  const deathSaveSuccesses = boundedDeathSaveCount(combatant.deathSaveSuccesses);
-  const deathSaveFailures = boundedDeathSaveCount(combatant.deathSaveFailures);
-  const deathSaveOutcome = deathSaveFailures >= 3 ? "dead" : deathSaveSuccesses >= 3 ? "stable" : undefined;
+  let deathSaveSuccesses = boundedDeathSaveCount(combatant.deathSaveSuccesses);
+  let deathSaveFailures = boundedDeathSaveCount(combatant.deathSaveFailures);
+  const reachedOutcome = deathSaveFailures >= 3 ? "dead" : deathSaveSuccesses >= 3 ? "stable" : undefined;
+  const storedOutcome = combatant.deathSaveOutcome === "dead" || combatant.deathSaveOutcome === "stable" ? combatant.deathSaveOutcome : undefined;
+  const deathSaveOutcome = reachedOutcome ?? (deathSaveSuccesses === 0 && deathSaveFailures === 0 ? storedOutcome : undefined);
+  if (deathSaveOutcome === "stable") {
+    deathSaveSuccesses = 0;
+    deathSaveFailures = 0;
+  }
   let conditions = normalizeCombatantConditionList(combatant.conditions).filter((condition) => condition !== "dead" && condition !== "stable");
   const hadConcentration = conditions.some(isCombatantConcentrationCondition);
   const concentrationBroken = options.applyConcentrationLifecycle !== false && hadConcentration && (deathSaveOutcome !== undefined || combatant.defeated === true || conditions.some(isCombatantConcentrationBreakingCondition));
@@ -23497,6 +24296,16 @@ function syncCombatantToActorSheet(actor: Actor, previousCombatant: Combat["comb
   if (resourceResult.error) return resourceResult.error;
   data.conditions = (combatant.conditions ?? []).map((condition) => ({ id: condition, appliedAt: syncedAt }));
   data.deathSaves = { successes: boundedDeathSaveCount(combatant.deathSaveSuccesses), failures: boundedDeathSaveCount(combatant.deathSaveFailures) };
+  if (combatant.deathSaveOutcome === "stable") {
+    data.lifeState = "stable";
+    data.defeated = false;
+  } else if (combatant.deathSaveOutcome === "dead") {
+    data.lifeState = "dead";
+    data.defeated = true;
+  } else if (actor.type.toLowerCase() === "character" && Number((data.hp as { current?: unknown } | undefined)?.current) === 0) {
+    data.lifeState = "unconscious";
+    data.defeated = false;
+  }
   data.combatState = { combatantId: combatant.id, tokenId: combatant.tokenId, readiness: combatant.readiness ?? "normal", defeated: Boolean(combatant.defeated), deathSaveOutcome: combatant.deathSaveOutcome, resourceKey: combatant.resourceKey, resourceLabel: combatant.resourceLabel, resourceUsed: Boolean(combatant.resourceUsed), resourceSpent: resourceResult.spent, syncedAt };
   actor.data = data;
   actor.updatedAt = syncedAt;
@@ -23907,6 +24716,16 @@ function badRequest(reply: FastifyReply, message: string): FastifyReply {
   return reply.code(400).send({ error: "bad_request", message });
 }
 
+function dndManagedDataBoundaryError<T extends Record<string, unknown>>(
+  result: Dnd5eSrdManagedDataParseResult<T>,
+  allowReviewedRulesOverride = false
+): string | undefined {
+  if (result.ok) return undefined;
+  const blocking = result.issues.find((entry) => !allowReviewedRulesOverride || !entry.code.startsWith("rules."));
+  if (!blocking) return undefined;
+  return `D&D ${result.source.entityKind} ${result.source.entityId || "(unknown)"} schema ${result.source.schemaVersion} validation failed at ${blocking.path || "/"} (${blocking.code}): ${blocking.message}`;
+}
+
 function unauthorized(reply: FastifyReply, message: string): FastifyReply {
   return reply.code(401).send({ error: "unauthorized", message });
 }
@@ -24200,6 +25019,7 @@ function isForwardCombatTurnProgression(before: Combat, after: Combat): boolean 
 function previewDndCombatTurnProgression(store: StateStore, before: Combat, after: Combat, now: string, saveOutcomes?: Record<string, "success" | "failure">): DndCombatTurnProgression {
   const actorIds = new Set([...before.combatants, ...after.combatants].map((combatant) => combatant.actorId).filter((actorId): actorId is string => Boolean(actorId)));
   let actors = structuredClone(store.state.actors.filter((actor) => actor.campaignId === before.campaignId && actor.systemId === DND_5E_SRD_SYSTEM_ID && actorIds.has(actor.id)));
+  const items = structuredClone(store.state.items.filter((item) => item.campaignId === before.campaignId && item.systemId === DND_5E_SRD_SYSTEM_ID && Boolean(item.actorId && actorIds.has(item.actorId))));
   let combat = structuredClone(after);
   const results: Dnd5eSrdCombatRulesProgressionResult[] = [];
   const phases: Array<{ phase: "end_turn" | "end_round" | "start_round" | "start_turn"; round: number; turnIndex: number }> = [
@@ -24214,7 +25034,7 @@ function previewDndCombatTurnProgression(store: StateStore, before: Combat, afte
   ];
 
   for (const timing of phases) {
-    const result = advanceDnd5eSrdCombatRules({ actors, combat: { round: timing.round, turnIndex: timing.turnIndex, combatants: combat.combatants }, phase: timing.phase, now, ...(saveOutcomes ? { saveOutcomes } : {}) });
+    const result = advanceDnd5eSrdCombatRules({ actors, items, combat: { round: timing.round, turnIndex: timing.turnIndex, combatants: combat.combatants }, phase: timing.phase, now, ...(saveOutcomes ? { saveOutcomes } : {}) });
     results.push(result);
     if (!result.canApply) return { canApply: false, combat, actors, results };
 
@@ -24325,6 +25145,139 @@ function isStringRecord(value: unknown): value is Record<string, string> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value) && Object.values(value).every((entry) => typeof entry === "string"));
 }
 
+function applyPreparedControlledCreatureAction(
+  state: EngineState,
+  campaignId: string,
+  userId: string,
+  prepared: PreparedControlledCreatureAction,
+): AppliedPreparedControlledCreatureAction {
+  const workingStore: StateStore = {
+    state,
+    save() {},
+    replace(nextState) { this.state = nextState; },
+  };
+  const actionBody = prepared.request;
+  const actor = workingStore.state.actors.find((candidate) => candidate.id === prepared.handoff.action.actorId && candidate.campaignId === campaignId && candidate.systemId === DND_5E_SRD_SYSTEM_ID);
+  if (!actor) throw new Error("Prepared D&D action source actor no longer exists");
+  const items = actorItems(workingStore, actor);
+  const calculationContext = calculationOverrideContextForActor(workingStore, actor, items);
+  const rollDefinition = systemQuickRolls(actor, items, calculationContext).find((roll) => roll.id === prepared.handoff.action.rollId);
+  if (!rollDefinition) throw new Error("Prepared D&D action is no longer available for this actor");
+  const spellSlotLevel = numberFromRecord(actionBody, "spellSlotLevel", 1, 9);
+  const actionOptions = systemActionOptions(spellSlotLevel, actionBody.resourceAmount, actionBody.useFreeResource);
+  const formula = systemActionFormula(actor, items, rollDefinition.id, actionOptions, calculationContext) ?? rollDefinition.formula;
+  const resolvedRollDefinition = { ...rollDefinition, formula };
+  const masteryInput = normalizeSystemRollWeaponMasteryUse(actionBody.weaponMastery);
+  if (masteryInput.error) throw new Error(masteryInput.error);
+  const masteryEffectRequested = masteryInput.value?.use === true;
+  const effectRequested = Boolean(actionBody.applyEffect || masteryEffectRequested);
+  const masteryTargetIds = masteryEffectRequested
+    ? [actionBody.targetActorId, ...(actionBody.targetActorIds ?? []), masteryInput.value?.secondaryTargetActorId].filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    : undefined;
+  const targetActorIds = masteryTargetIds
+    ? systemRollTargetActorIds(masteryTargetIds)
+    : systemRollTargetActorIds(actionBody.targetActorIds, actionBody.targetActorId, actionBody.applyEffect ? actor.id : undefined);
+  const targets = targetActorIds.map((actorId) => {
+    const target = workingStore.state.actors.find((candidate) => candidate.id === actorId && candidate.campaignId === campaignId);
+    if (!target) throw new Error("Prepared D&D action target actor no longer exists");
+    return target;
+  });
+  const combat = workingStore.state.combats.find((candidate) => candidate.campaignId === campaignId && candidate.active);
+  const resolutionOptions = {
+    ...actionOptions,
+    consumeResources: Boolean(actionBody.consumeResources),
+    applyEffect: Boolean(actionBody.applyEffect),
+    commit: true,
+    effectChoice: actionBody.effectChoice,
+    saveOutcomes: actionBody.saveOutcomes,
+    reactionUse: actionBody.reactionUse,
+    rechargeCheck: actionBody.rechargeCheck,
+    weaponMastery: masteryInput.value,
+  };
+  let resolution = resolveDnd5eSrdAction({
+    actor,
+    items,
+    roll: resolvedRollDefinition,
+    targets: targets.map((target) => ({ actor: target, items: actorItems(workingStore, target), saveOutcome: actionBody.saveOutcomes?.[target.id] })),
+    combat,
+    options: resolutionOptions,
+    now: prepared.preparedAt,
+  });
+  if (resolution.blocked) throw new Error(resolution.blocked.reason);
+  const pending = dnd5eSrdCommitInputMessage(resolution, effectRequested);
+  if (pending) throw new Error(pending);
+  const reviewedRolls = prepared.rolledResults.map(({ resolutionRoll }) => ({ formula: resolutionRoll.formula, targetActorId: resolutionRoll.targetActorId }));
+  const currentRolls = resolution.rolls.map((roll) => ({ formula: roll.formula, targetActorId: roll.targetActorId }));
+  if (hashStableJson(reviewedRolls) !== hashStableJson(currentRolls)) throw new Error("D&D action rolls changed after review; review the action again");
+  const defaultRollTotal = prepared.rolledResults[0]?.rolled.total;
+  const rollTotalByTarget = new Map<string, number>();
+  const naturalD20ByTarget = new Map<string, number>();
+  for (const result of prepared.rolledResults) {
+    if (!result.resolutionRoll.targetActorId) continue;
+    rollTotalByTarget.set(result.resolutionRoll.targetActorId, result.rolled.total);
+    const naturalD20 = dnd5eSrdNaturalD20FromRollTerms(result.rolled.terms);
+    if (naturalD20 !== undefined) naturalD20ByTarget.set(result.resolutionRoll.targetActorId, naturalD20);
+  }
+  const selfRoll = prepared.rolledResults.find(({ resolutionRoll }) => !resolutionRoll.targetActorId);
+  const selfNaturalD20 = selfRoll ? dnd5eSrdNaturalD20FromRollTerms(selfRoll.rolled.terms) : undefined;
+  const selfRollResult = selfRoll ? { total: selfRoll.rolled.total, ...(selfNaturalD20 !== undefined ? { naturalD20: selfNaturalD20 } : {}) } : undefined;
+  resolution = resolveDnd5eSrdAction({
+    actor,
+    items,
+    roll: resolvedRollDefinition,
+    targets: targets.map((target) => ({ actor: target, items: actorItems(workingStore, target), saveOutcome: actionBody.saveOutcomes?.[target.id], rollTotal: rollTotalByTarget.get(target.id) ?? defaultRollTotal, naturalD20: naturalD20ByTarget.get(target.id) })),
+    combat,
+    options: selfRollResult ? { ...resolutionOptions, selfRollResult } : resolutionOptions,
+    now: prepared.preparedAt,
+  });
+  if (resolution.blocked) throw new Error(resolution.blocked.reason);
+  const finalPending = dnd5eSrdCommitInputMessage(resolution, effectRequested);
+  if (finalPending) throw new Error(finalPending);
+  resolution = dnd5eSrdResolutionWithConcentrationCleanups(workingStore, campaignId, resolution);
+  const resolutionHash = hashStableJson({ actorUpdates: resolution.actorUpdates, itemUpdates: resolution.itemUpdates.map((item) => ({ id: item.id, data: item.data })), effects: resolution.effects, conditions: resolution.conditions, resourceConsumption: resolution.resourceConsumption, usage: resolution.usage, weaponMastery: resolution.weaponMastery, concentrationCleanups: resolution.concentrationCleanups, auditEvents: resolution.auditEvents });
+  if (resolutionHash !== prepared.resolutionHash) throw new Error("D&D action consequences changed after review; review the action again");
+
+  const updatedActorIds: string[] = [];
+  for (const update of resolution.actorUpdates) {
+    const storedActor = workingStore.state.actors.find((candidate) => candidate.id === update.actorId && candidate.campaignId === campaignId);
+    if (!storedActor) throw new Error("Prepared D&D action update actor no longer exists");
+    storedActor.data = structuredClone(update.after);
+    storedActor.updatedAt = nextRevisionTimestamp(storedActor.updatedAt);
+    updatedActorIds.push(storedActor.id);
+  }
+  const itemRevision = nowIso();
+  for (const update of resolution.itemUpdates) {
+    const storedItem = workingStore.state.items.find((candidate) => candidate.id === update.id && candidate.campaignId === campaignId);
+    if (!storedItem) throw new Error("Prepared D&D action update item no longer exists");
+    storedItem.data = structuredClone(update.data);
+    storedItem.updatedAt = nextRevisionTimestamp(storedItem.updatedAt || itemRevision);
+  }
+  let combatUpdated = false;
+  if (effectRequested && combat) {
+    for (const condition of resolution.conditions) combatUpdated = syncDnd5eSrdResolvedConditionToCombat(combat, condition) || combatUpdated;
+  }
+  if (combat && resolution.actorUpdates.length > 0) combatUpdated = syncCombatDefeatedFromActorIds(combat, workingStore.state.actors, updatedActorIds) || combatUpdated;
+  if (combatUpdated && combat) combat.updatedAt = nextRevisionTimestamp(combat.updatedAt);
+
+  const deathSaveSuffix = resolution.deathSave ? ` — ${dnd5eSrdDeathSaveChatSuffix(resolution.deathSave)}` : "";
+  const rolls = prepared.rolledResults.map(({ resolutionRoll, rolled, fairness }) => createTimestamped("roll", {
+    campaignId,
+    userId,
+    actorId: actor.id,
+    formula: resolutionRoll.formula,
+    label: `${resolutionRoll.targetActorId && prepared.rolledResults.length > 1 ? `${rollDefinition.label} (${targets.find((target) => target.id === resolutionRoll.targetActorId)?.name ?? resolutionRoll.targetActorId})` : rollDefinition.label}${dnd5eSrdRollModeLabelSuffix(resolutionRoll)}${deathSaveSuffix}`,
+    visibility: actionBody.visibility ?? "public",
+    terms: structuredClone(rolled.terms),
+    total: rolled.total,
+    fairness: structuredClone(fairness),
+  }) satisfies DiceRoll);
+  const chatMessages = rolls.map((roll) => createTimestamped("msg", { campaignId, userId, type: "roll" as const, body: `${actor.name} ${roll.label}: ${roll.formula} = ${roll.total}`, visibility: roll.visibility, recipientUserIds: [], rollId: roll.id }) satisfies ChatMessage);
+  workingStore.state.rolls.push(...rolls);
+  workingStore.state.chat.push(...chatMessages);
+  workingStore.state.auditLogs.push(createTimestamped("audit", { campaignId, actorUserId: userId, actorType: "user" as const, action: "system.actor.roll", targetType: "actor", targetId: actor.id, after: { systemId: actor.systemId, actorId: actor.id, rollId: rollDefinition.id, label: rollDefinition.label, consumeResources: Boolean(actionBody.consumeResources), applyEffect: effectRequested, hasResolution: true, preparedPreviewKey: prepared.handoff.action.preparedPreviewKey, controlledCreatureHandoff: true } }));
+  return { state: workingStore.state, resolution, sourceActorId: actor.id, updatedActorIds: [...new Set(updatedActorIds)], rolls, chatMessages };
+}
+
 function controlledCreatureCreateRequest(value: unknown): DndControlledCreatureCreateRequest | undefined {
   if (!isRecord(value) || !isRecord(value.source) || !isRecord(value.actor) || !isRecord(value.actor.data) || !isRecord(value.duration) || !isRecord(value.initiative) || !isRecord(value.command)) return undefined;
   return value as unknown as DndControlledCreatureCreateRequest;
@@ -24335,6 +25288,75 @@ function controlledCreatureConfirmRequest(value: unknown): DndControlledCreature
   const request = controlledCreatureCreateRequest(value.request);
   if (!request || !controlledCreatureRevisionSet(value.expectedUpdatedAt)) return undefined;
   return { request, previewToken: value.previewToken, expectedUpdatedAt: value.expectedUpdatedAt };
+}
+
+function preparedControlledCreatureAction(
+  store: StateStore,
+  headers: Record<string, string | string[] | undefined>,
+  userId: string,
+  campaignId: string,
+  request: DndControlledCreatureCreateRequest,
+): { value: PreparedControlledCreatureAction } | { error: string } {
+  const origin = request.originatingAction;
+  if (!origin) return { error: "Controlled-creature request is not linked to a prepared action" };
+  const path = `/api/v1/campaigns/${campaignId}/systems/${DND_5E_SRD_SYSTEM_ID}/actors/${origin.actorId}/roll`;
+  const record = store.state.idempotencyRecords.find((candidate) => candidate.key === origin.preparedPreviewKey && candidate.method === "POST" && candidate.userId === userId && candidate.path === path);
+  const authorizationHash = idempotencyAuthorizationHash(store, headers, userId);
+  if (!record || !authorizationHash || record.authorizationHash !== authorizationHash) return { error: "Prepared D&D action is unavailable or expired; review the action again" };
+  let stored: unknown;
+  try {
+    stored = JSON.parse(record.responseBody);
+  } catch {
+    return { error: "Prepared D&D action is invalid; review the action again" };
+  }
+  if (!isRecord(stored) || stored.status !== "ready" || !isControlledCreatureActionHandoff(stored.controlledCreatureHandoff) || !isRecord(stored.preparation)) return { error: "Prepared D&D action does not contain a controlled-creature handoff" };
+  const preparation = stored.preparation;
+  if (preparation.preparedPreviewKey !== origin.preparedPreviewKey
+    || preparation.sourceActorId !== origin.actorId
+    || typeof preparation.preparedAt !== "string"
+    || !isRecord(preparation.request)
+    || !isRecord(preparation.revisions)
+    || !isStringRecord(preparation.revisions.actorUpdatedAt)
+    || !isStringRecord(preparation.revisions.itemUpdatedAt)
+    || (preparation.revisions.combatUpdatedAt !== undefined && typeof preparation.revisions.combatUpdatedAt !== "string")
+    || !Array.isArray(preparation.rolledResults)
+    || !preparation.rolledResults.every(isFairActionRollResult)
+    || typeof preparation.resolutionHash !== "string") return { error: "Prepared D&D action is invalid; review the action again" };
+  const handoff = stored.controlledCreatureHandoff;
+  if (handoff.action.actorId !== origin.actorId
+    || handoff.action.rollId !== origin.rollId
+    || handoff.action.label !== origin.label
+    || handoff.action.preparedPreviewKey !== origin.preparedPreviewKey
+    || handoff.action.resolutionHash !== origin.resolutionHash
+    || preparation.resolutionHash !== origin.resolutionHash) return { error: "Controlled-creature handoff does not match its prepared action" };
+  const requestErrors = dndControlledCreatureHandoffRequestErrors(handoff, request);
+  if (requestErrors.length > 0) return { error: requestErrors.join(" ") };
+  return {
+    value: {
+      handoff,
+      request: structuredClone(preparation.request) as SystemActorRollBody,
+      preparedAt: preparation.preparedAt,
+      actorUpdatedAt: structuredClone(preparation.revisions.actorUpdatedAt),
+      itemUpdatedAt: structuredClone(preparation.revisions.itemUpdatedAt),
+      ...(typeof preparation.revisions.combatUpdatedAt === "string" ? { combatUpdatedAt: preparation.revisions.combatUpdatedAt } : {}),
+      rolledResults: structuredClone(preparation.rolledResults),
+      resolutionHash: preparation.resolutionHash,
+    },
+  };
+}
+
+function isControlledCreatureActionHandoff(value: unknown): value is DndControlledCreatureActionHandoff {
+  return isRecord(value)
+    && value.version === 1
+    && (value.status === "supported" || value.status === "manual_required")
+    && isRecord(value.action)
+    && typeof value.action.actorId === "string"
+    && typeof value.action.rollId === "string"
+    && typeof value.action.label === "string"
+    && isRecord(value.prefill)
+    && Array.isArray(value.sourcedFields)
+    && value.sourcedFields.every((field) => typeof field === "string")
+    && Array.isArray(value.manualChoices);
 }
 
 function controlledCreatureRevisionSet(value: unknown): value is DndControlledCreatureRevisionSet {
@@ -24367,6 +25389,14 @@ function authorizeControlledCreaturePreparation(store: StateStore, userId: strin
   return true;
 }
 
+function requireControlledCreatureLifecycleAccess(store: StateStore, reply: FastifyReply, headers: Record<string, string | string[] | undefined>, userId: string, campaignId: string): true | FastifyReply {
+  const activeOrganization = requireCampaignActiveOrganization(store, reply, headers, userId, campaignId);
+  if (activeOrganization !== true) return activeOrganization;
+  return store.state.members.some((member) => member.campaignId === campaignId && member.userId === userId)
+    ? true
+    : forbidden(reply, "Current campaign membership is required for controlled-creature lifecycle changes");
+}
+
 function controlledCreatureStaleWrite(reply: FastifyReply, mismatch: ControlledCreatureRevisionMismatch): FastifyReply {
   return reply.code(409).send({ error: "conflict", code: "stale_write", message: `${mismatch.collection} record ${mismatch.id} changed after this lifecycle was previewed. Review the latest state and retry.`, resourceType: mismatch.collection, resourceId: mismatch.id, expectedUpdatedAt: mismatch.expectedUpdatedAt, currentUpdatedAt: mismatch.currentUpdatedAt, current: mismatch.current ?? { deleted: true } });
 }
@@ -24375,11 +25405,28 @@ function controlledCreatureMutationPayload(store: StateStore, userId: string, re
   return { ...result, actors: result.actors.map((actor) => actorPayloadForUser(store, userId, actor)) };
 }
 
+function mergeControlledCreatureMutationResults(
+  primary: DndControlledCreatureMutationResult,
+  secondary: DndControlledCreatureMutationResult[],
+): DndControlledCreatureMutationResult {
+  const unique = <T extends { id: string }>(items: T[]): T[] => [...new Map(items.map((item) => [item.id, item])).values()];
+  return {
+    ...primary,
+    records: unique([...secondary.flatMap((result) => result.records), ...primary.records]),
+    actors: unique([...secondary.flatMap((result) => result.actors), ...primary.actors]),
+    tokens: unique([...secondary.flatMap((result) => result.tokens), ...primary.tokens]),
+    combats: unique([...secondary.flatMap((result) => result.combats), ...primary.combats]),
+    removedActorIds: [...new Set([...secondary.flatMap((result) => result.removedActorIds), ...primary.removedActorIds])],
+    removedTokenIds: [...new Set([...secondary.flatMap((result) => result.removedTokenIds), ...primary.removedTokenIds])],
+  };
+}
+
 function broadcastControlledCreatureMutation(broadcast: (event: EngineEvent) => void, userId: string, result: DndControlledCreatureMutationResult): void {
   const campaignId = result.records[0]?.campaignId;
   if (!campaignId) return;
+  const createdActorIds = new Set(result.action === "created" ? result.records.filter((record) => record.kind !== "transformation").map((record) => record.linkedActorId) : []);
   for (const actor of result.actors) {
-    broadcast(createEvent({ campaignId, type: result.action === "created" ? "actor.created" : "actor.updated", actorUserId: userId, targetId: actor.id, payload: actor }));
+    broadcast(createEvent({ campaignId, type: createdActorIds.has(actor.id) ? "actor.created" : "actor.updated", actorUserId: userId, targetId: actor.id, payload: actor }));
   }
   for (const token of result.tokens) {
     broadcast(createEvent({ campaignId, type: "token.created", actorUserId: userId, targetId: token.id, payload: token }));

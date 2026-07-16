@@ -6,6 +6,10 @@ import {
   DND_5E_SRD_REPAIR_PREVIEW_VERSION,
   DND_5E_SRD_RULES_PREVIEW_VERSION,
   DND_5E_SRD_VERSION,
+  dnd5eSrdManagedDataRecord,
+  formatDnd5eSrdManagedDataError,
+  parseDnd5eSrdActorManagedData,
+  parseDnd5eSrdItemManagedData,
   previewDnd5eSrdRules,
   previewDnd5eSrdActorRepairs,
   previewDnd5eSrdItemRepairs,
@@ -86,6 +90,68 @@ describe("versioned D&D validation", () => {
     expect(report).toEqual(expect.objectContaining({ schemaVersion: DND_5E_SRD_ITEM_SCHEMA_VERSION, valid: true }));
     expect(report.issues).toEqual([expect.objectContaining({ path: "/data/damageType", severity: "warning", code: "rules.homebrew_damage_type" })]);
     expect(item.data.homebrewRule).toEqual({ keep: true });
+  });
+});
+
+describe("typed managed D&D subroot views", () => {
+  it("migrates a legacy flat actor into a deterministic current view without dropping homebrew fields", () => {
+    const legacy = deepFreeze({
+      ...actor,
+      data: {
+        ...actor.data,
+        classes: [{ class: "Fighter", level: 1, homebrewProgression: "keep" }],
+        temporaryHitPoints: { current: 3, source: "ancestral ward" },
+        resources: { secondWind: { current: 1, max: 1, recovery: "short" }, homebrewClock: { segments: 6 } },
+        mysterySubsystem: { mode: "keep-me" }
+      }
+    });
+
+    const first = parseDnd5eSrdActorManagedData(legacy);
+    const second = parseDnd5eSrdActorManagedData(legacy);
+    expect(first).toEqual(second);
+    expect(first.ok).toBe(true);
+    if (!first.ok) throw new Error(formatDnd5eSrdManagedDataError(first));
+    expect(first.value).toEqual(expect.objectContaining({
+      source: expect.objectContaining({ sourceSchemaVersion: "legacy-unversioned", schemaVersion: DND_5E_SRD_ACTOR_SCHEMA_VERSION }),
+      migration: { from: "legacy-unversioned", to: DND_5E_SRD_ACTOR_SCHEMA_VERSION, lossless: true }
+    }));
+    expect(first.value.data.classes).toEqual([{ class: "Fighter", level: 1, homebrewProgression: "keep" }]);
+    expect(first.value.data.mysterySubsystem).toEqual({ mode: "keep-me" });
+    expect(dnd5eSrdManagedDataRecord(first.value)).toEqual(legacy.data);
+    expect(dnd5eSrdManagedDataRecord(first.value)).not.toBe(legacy.data);
+  });
+
+  it("returns sourced structural errors while preserving valid custom item values", () => {
+    const malformed = deepFreeze({
+      ...actor,
+      data: { hp: { current: "many", max: 12 }, resources: { rage: { current: 3, max: 2 } }, homebrew: { untouched: true } }
+    });
+    const actorResult = parseDnd5eSrdActorManagedData(malformed as unknown as Actor);
+    expect(actorResult.ok).toBe(false);
+    if (actorResult.ok) throw new Error("Expected malformed managed actor data to fail");
+    expect(actorResult.source).toEqual(expect.objectContaining({ entityKind: "actor", entityId: actor.id, rulesVersion: DND_5E_SRD_VERSION }));
+    expect(actorResult.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: "/data/hp/current", code: "schema.integer" }),
+      expect.objectContaining({ path: "/data/resources/rage/current", code: "rules.pool_above_maximum" })
+    ]));
+    expect(formatDnd5eSrdManagedDataError(actorResult)).toContain("/data/hp/current (schema.integer)");
+
+    const customItem = deepFreeze({
+      id: "itm_homebrew",
+      campaignId: actor.campaignId,
+      actorId: actor.id,
+      systemId: actor.systemId,
+      type: "weapon",
+      name: "Moon Blade",
+      data: { quantity: 1, mastery: "orbit", damageType: "moonlight", homebrewRule: { preserved: true } },
+      createdAt: actor.createdAt,
+      updatedAt: actor.updatedAt
+    } satisfies Item);
+    const itemResult = parseDnd5eSrdItemManagedData(customItem);
+    expect(itemResult.ok).toBe(true);
+    if (!itemResult.ok) throw new Error(formatDnd5eSrdManagedDataError(itemResult));
+    expect(itemResult.value.data.homebrewRule).toEqual({ preserved: true });
+    expect(itemResult.value.warnings).toContainEqual(expect.objectContaining({ code: "rules.homebrew_damage_type" }));
   });
 });
 

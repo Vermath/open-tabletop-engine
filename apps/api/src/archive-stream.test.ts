@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
@@ -74,6 +74,7 @@ describe("bounded campaign archive streams", () => {
       maxMetadataBytes: 2 * 1024 * 1024,
       maxAssetBytes: 5 * 1024 * 1024,
       maxEmbeddedAssetBytes: 5 * 1024 * 1024,
+      maxAssetFiles: 100,
     };
 
     const parsed = await parseCampaignArchiveStream(
@@ -329,7 +330,7 @@ describe("bounded campaign archive streams", () => {
     const uploadDir = mkdtempSync(join(tmpdir(), "otte-stream-corrupt-"));
     const sourceBytes = Buffer.from("framed checksum boundary");
     const sourceAsset = archiveAsset("asset_stream_corrupt", sourceBytes);
-    const limits = { maxMetadataBytes: 1024 * 1024, maxAssetBytes: 1024 * 1024, maxEmbeddedAssetBytes: 1024 * 1024 };
+    const limits = { maxMetadataBytes: 1024 * 1024, maxAssetBytes: 1024 * 1024, maxEmbeddedAssetBytes: 1024 * 1024, maxAssetFiles: 100 };
     const encodedChunks: Buffer[] = [];
     for await (const chunk of createCampaignArchiveStream(archiveWithAsset(sourceAsset), chunkedReadOnlyStorage(sourceAsset, sourceBytes, 7), limits)) {
       encodedChunks.push(Buffer.from(chunk));
@@ -363,6 +364,151 @@ describe("bounded campaign archive streams", () => {
       rmSync(uploadDir, { recursive: true, force: true });
     }
   });
+
+  it("rejects transport compression before parsing so compressed and expanded limits cannot diverge", async () => {
+    const app = await buildApp();
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/v1/import/campaign/stream",
+        headers: {
+          ...streamImportHeaders("stream-compressed-import"),
+          "content-encoding": "gzip",
+        },
+        payload: Buffer.from("compressed bytes must never reach the archive parser"),
+      });
+      expect(response.statusCode).toBe(415);
+      expect(response.json()).toMatchObject({ error: "unsupported_campaign_archive_encoding" });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("enforces file-count limits before staging the next asset body", async () => {
+    const firstBytes = Buffer.from("first bounded asset");
+    const secondBytes = Buffer.from("second bounded asset");
+    const first = archiveAsset("asset_file_limit_first", firstBytes);
+    const second = archiveAsset("asset_file_limit_second", secondBytes);
+    const archive = archiveWithAssets([first, second]);
+    await expect(collectStream(createCampaignArchiveStream(
+      archive,
+      multiAssetStorage(new Map([[first.id, firstBytes], [second.id, secondBytes]])),
+      standardLimits({ maxAssetFiles: 1 }),
+    ))).rejects.toMatchObject({ statusCode: 413, code: "campaign_archive_too_large" });
+    const encoded = await collectStream(createCampaignArchiveStream(
+      archive,
+      multiAssetStorage(new Map([[first.id, firstBytes], [second.id, secondBytes]])),
+      standardLimits({ maxAssetFiles: 2 }),
+    ));
+    const before = archiveStagingDirectories();
+
+    await expect(parseCampaignArchiveStream(Readable.from([encoded]), standardLimits({ maxAssetFiles: 1 })))
+      .rejects.toMatchObject({ statusCode: 413, code: "campaign_archive_too_large" });
+    expect(archiveStagingDirectories()).toEqual(before);
+  });
+
+  it.each([
+    ["truncated frame", (payload: Buffer) => payload.subarray(0, payload.length - 2), "ended before"],
+    ["trailing bytes", (payload: Buffer) => Buffer.concat([payload, Buffer.from([0xff])]), "trailing bytes"],
+  ])("rejects a %s and removes all staged files", async (_label, corrupt, expectedMessage) => {
+    const bytes = Buffer.from("frame cleanup boundary");
+    const asset = archiveAsset("asset_malformed_frame", bytes);
+    const payload = await collectStream(createCampaignArchiveStream(archiveWithAsset(asset), chunkedReadOnlyStorage(asset, bytes, 3), standardLimits()));
+    const before = archiveStagingDirectories();
+
+    await expect(parseCampaignArchiveStream(Readable.from([corrupt(payload)]), standardLimits())).rejects.toThrow(expectedMessage);
+    expect(archiveStagingDirectories()).toEqual(before);
+  });
+
+  it("rejects duplicate asset entries and cleans the first staged copy", async () => {
+    const bytes = Buffer.from("duplicate frame boundary");
+    const asset = archiveAsset("asset_duplicate_frame", bytes);
+    const payload = await collectStream(createCampaignArchiveStream(archiveWithAsset(asset), chunkedReadOnlyStorage(asset, bytes, 2), standardLimits()));
+    const metadataLength = payload.readUInt32BE(10);
+    const firstAssetOffset = 14 + metadataLength;
+    const duplicateFrame = payload.subarray(firstAssetOffset, payload.length - 4);
+    const duplicated = Buffer.concat([payload.subarray(0, payload.length - 4), duplicateFrame, Buffer.alloc(4)]);
+    const before = archiveStagingDirectories();
+
+    await expect(parseCampaignArchiveStream(Readable.from([duplicated]), standardLimits())).rejects.toThrow("duplicate asset bytes");
+    expect(archiveStagingDirectories()).toEqual(before);
+  });
+
+  it("rejects path-like asset identifiers before opening a staged body", async () => {
+    const bytes = Buffer.from("path traversal boundary");
+    const asset = archiveAsset("../escaped-archive-file", bytes);
+    const payload = await collectStream(createCampaignArchiveStream(archiveWithAsset(asset), chunkedReadOnlyStorage(asset, bytes, 4), standardLimits()));
+    const before = archiveStagingDirectories();
+
+    await expect(parseCampaignArchiveStream(Readable.from([payload]), standardLimits())).rejects.toThrow("path separators");
+    expect(archiveStagingDirectories()).toEqual(before);
+  });
+
+  it("cleans partial staging when the incoming stream is cancelled", async () => {
+    const bytes = Buffer.alloc(256 * 1024, 0x7c);
+    const asset = archiveAsset("asset_cancelled_stream", bytes);
+    const payload = await collectStream(createCampaignArchiveStream(archiveWithAsset(asset), chunkedReadOnlyStorage(asset, bytes, 1024), standardLimits()));
+    const before = archiveStagingDirectories();
+    const cancelled = Readable.from((async function* () {
+      yield payload.subarray(0, payload.length - 128);
+      const error = new Error("browser upload cancelled");
+      error.name = "AbortError";
+      throw error;
+    })());
+
+    await expect(parseCampaignArchiveStream(cancelled, standardLimits())).rejects.toThrow("browser upload cancelled");
+    expect(archiveStagingDirectories()).toEqual(before);
+  });
+
+  it("parses one-byte transport chunks without growing the parser-owned buffer", async () => {
+    const bytes = Buffer.from("tiny transport chunks still hash incrementally");
+    const asset = archiveAsset("asset_one_byte_chunks", bytes);
+    const payload = await collectStream(createCampaignArchiveStream(archiveWithAsset(asset), chunkedReadOnlyStorage(asset, bytes, 5), standardLimits()));
+    const metrics = emptyCampaignArchiveStreamMetrics();
+    const parsed = await parseCampaignArchiveStream(Readable.from((async function* () {
+      for (const byte of payload) yield Buffer.from([byte]);
+    })()), standardLimits(), metrics);
+    try {
+      expect(metrics.maxInputChunkBytes).toBe(1);
+      expect(metrics.maxParserBufferedBytes).toBe(1);
+      expect(metrics.assetBytes).toBe(bytes.length);
+    } finally {
+      await parsed.cleanup();
+    }
+  });
+
+  it("rolls back state and staging when streamed object storage fails", async () => {
+    const bytes = Buffer.from("storage failure must not publish partial campaign state");
+    const asset = archiveAsset("asset_stream_storage_failure", bytes);
+    const archive = archiveWithAsset(asset);
+    const sourceSeed = new MemoryStateStore();
+    archive.data.campaigns.push({ ...structuredClone(sourceSeed.state.campaigns.find((campaign) => campaign.id === "camp_demo")!), id: "camp_stream", name: "Storage failure campaign" });
+    archive.data.members.push({ ...structuredClone(sourceSeed.state.members.find((member) => member.campaignId === "camp_demo" && member.userId === "usr_demo_gm")!), id: "mem_stream_storage_failure", campaignId: "camp_stream" });
+    const payload = await collectStream(createCampaignArchiveStream(archive, chunkedReadOnlyStorage(asset, bytes, 9), standardLimits()));
+    const state = emptyState();
+    state.users.push({ id: "usr_demo_gm", displayName: "GM", createdAt: "2026-07-13T00:00:00.000Z", updatedAt: "2026-07-13T00:00:00.000Z" });
+    const store = new MemoryStateStore(state);
+    const app = await buildApp({ store, assetStorage: failingWriteStorage() });
+    const beforeState = structuredClone(store.state);
+    const beforeStaging = archiveStagingDirectories();
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/v1/import/campaign/stream",
+        headers: streamImportHeaders("stream-storage-failure"),
+        payload,
+      });
+      expect(response.statusCode).toBe(500);
+      expect(response.json()).toMatchObject({ error: "internal_server_error" });
+      expect(store.state.campaigns).toEqual(beforeState.campaigns);
+      expect(store.state.members).toEqual(beforeState.members);
+      expect(store.state.assets).toEqual(beforeState.assets);
+      expect(store.state.campaignArchiveImportOperations).toEqual(beforeState.campaignArchiveImportOperations);
+      expect(archiveStagingDirectories()).toEqual(beforeStaging);
+    } finally {
+      await app.close();
+    }
+  });
 });
 
 function archiveAsset(id: string, bytes: Buffer): MapAsset {
@@ -388,15 +534,32 @@ function streamImportHeaders(idempotencyKey: string): Record<string, string> {
 }
 
 async function encodedArchiveStream(archive: CampaignArchive): Promise<Buffer> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of createCampaignArchiveStream(archive, emptyArchiveStorage(), {
+  return collectStream(createCampaignArchiveStream(archive, emptyArchiveStorage(), {
     maxMetadataBytes: 1024 * 1024,
     maxAssetBytes: 1024 * 1024,
     maxEmbeddedAssetBytes: 1024 * 1024,
-  })) {
-    chunks.push(Buffer.from(chunk));
-  }
+    maxAssetFiles: 100,
+  }));
+}
+
+async function collectStream(source: NodeJS.ReadableStream): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of source as AsyncIterable<Buffer | Uint8Array | string>) chunks.push(Buffer.from(chunk));
   return Buffer.concat(chunks);
+}
+
+function standardLimits(overrides: Partial<{ maxMetadataBytes: number; maxAssetBytes: number; maxEmbeddedAssetBytes: number; maxAssetFiles: number }> = {}) {
+  return {
+    maxMetadataBytes: 1024 * 1024,
+    maxAssetBytes: 1024 * 1024,
+    maxEmbeddedAssetBytes: 1024 * 1024,
+    maxAssetFiles: 100,
+    ...overrides,
+  };
+}
+
+function archiveStagingDirectories(): string[] {
+  return readdirSync(tmpdir()).filter((name) => name.startsWith("otte-archive-stream-")).sort();
 }
 
 function emptyArchiveStorage(): AssetStorage {
@@ -422,19 +585,63 @@ function sha256(bytes: Buffer): string {
 }
 
 function archiveWithAsset(asset: MapAsset): CampaignArchive {
+  return archiveWithAssets([asset]);
+}
+
+function archiveWithAssets(assets: MapAsset[]): CampaignArchive {
   const data = emptyState();
-  data.assets.push(asset);
+  data.assets.push(...assets);
   return {
     format: "ottx",
     version: "0.2.0",
     exportedAt: "2026-07-13T00:00:00.000Z",
     manifest: {
-      campaignId: asset.campaignId,
+      campaignId: assets[0]?.campaignId ?? "camp_stream",
       name: "Streaming envelope",
       schemaVersion: "0.2.0",
-      assetCount: 1,
+      assetCount: assets.length,
     },
     data,
+  };
+}
+
+function multiAssetStorage(bytesById: Map<string, Buffer>): AssetStorage {
+  return {
+    provider: "local",
+    async put(): Promise<AssetStorageRef> {
+      throw new Error("read-only test storage");
+    },
+    async read(): Promise<Buffer | undefined> {
+      throw new Error("bounded stream export must not use whole-buffer reads");
+    },
+    async stream(candidate): Promise<NodeJS.ReadableStream | undefined> {
+      const bytes = bytesById.get(candidate.id);
+      return bytes ? Readable.from([bytes]) : undefined;
+    },
+    async delete(): Promise<boolean> {
+      return false;
+    },
+  };
+}
+
+function failingWriteStorage(): AssetStorage {
+  return {
+    provider: "local",
+    async put(): Promise<AssetStorageRef> {
+      throw new Error("simulated streamed object write failure");
+    },
+    async putStream(): Promise<AssetStorageRef> {
+      throw new Error("simulated streamed object write failure");
+    },
+    async read(): Promise<Buffer | undefined> {
+      return undefined;
+    },
+    async stream(): Promise<NodeJS.ReadableStream | undefined> {
+      return undefined;
+    },
+    async delete(): Promise<boolean> {
+      return false;
+    },
   };
 }
 

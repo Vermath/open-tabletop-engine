@@ -332,7 +332,9 @@ describe("campaign archive recovery", () => {
       expect(storage.readSeeded(fixture.existingAsset)).toEqual(fixture.existingBytes);
       expect(storage.readSeeded(fixture.newAsset)).toBeUndefined();
       expect(storage.objectCount).toBe(1);
-      expect(storage.putAttempts).toBe(3);
+      // Persist the inverse object, write both archive objects, then restore
+      // the replaced object when the response-time state flush fails.
+      expect(storage.putAttempts).toBe(4);
     } finally {
       await app.close();
     }

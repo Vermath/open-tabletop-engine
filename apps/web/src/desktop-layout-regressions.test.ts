@@ -6,12 +6,15 @@ const appSource = readFileSync(resolve(__dirname, "App.tsx"), "utf8").replace(/\
 const apiSource = readFileSync(resolve(__dirname, "api.ts"), "utf8").replace(/\r\n/g, "\n");
 const stylesSource = readFileSync(resolve(__dirname, "styles.css"), "utf8").replace(/\r\n/g, "\n");
 const sceneCanvasSource = readFileSync(resolve(__dirname, "scene-canvas.tsx"), "utf8").replace(/\r\n/g, "\n");
+const sceneGridFieldsSource = readFileSync(resolve(__dirname, "scene-grid-fields.tsx"), "utf8").replace(/\r\n/g, "\n");
+const campaignSetupStepsSource = readFileSync(resolve(__dirname, "campaign-setup-steps.tsx"), "utf8").replace(/\r\n/g, "\n");
 const movablePanelSource = readFileSync(resolve(__dirname, "movable-panel.ts"), "utf8").replace(/\r\n/g, "\n");
 const toolbarSource = sceneCanvasSource.slice(sceneCanvasSource.indexOf("function Toolbar("), sceneCanvasSource.indexOf("function TabButton("));
 const actorPanelSource = readFileSync(resolve(__dirname, "actor-panel.tsx"), "utf8").replace(/\r\n/g, "\n");
 const combatPanelSource = readFileSync(resolve(__dirname, "combat-panel.tsx"), "utf8").replace(/\r\n/g, "\n");
 const chatRailSource = readFileSync(resolve(__dirname, "chat-rail.tsx"), "utf8").replace(/\r\n/g, "\n");
 const aiPanelSource = readFileSync(resolve(__dirname, "ai-panel.tsx"), "utf8").replace(/\r\n/g, "\n");
+const aiAgentEventUtilsSource = readFileSync(resolve(__dirname, "ai-agent-event-utils.ts"), "utf8").replace(/\r\n/g, "\n");
 const countOccurrences = (source: string, needle: string) => source.split(needle).length - 1;
 
 describe("desktop layout regressions", () => {
@@ -56,7 +59,7 @@ describe("desktop layout regressions", () => {
     expect(stylesSource).toContain(".rail-manage + .workspace .manage-workspace-stage {\n  display: none;");
     expect(stylesSource).toContain(".manage-scene-filter-panel {\n  position: sticky;");
     expect(stylesSource).toContain("grid-template-columns: minmax(180px, 0.8fr) minmax(220px, 1fr) auto auto;");
-    expect(appSource).toContain('<textarea aria-label="Campaign description"');
+    expect(campaignSetupStepsSource).toContain('<textarea aria-label="Campaign description"');
     expect(appSource).toContain('<textarea aria-label="Edit campaign description"');
     expect(stylesSource).toContain(".account-box textarea {\n  min-height: 82px;");
   });
@@ -267,7 +270,9 @@ describe("desktop layout regressions", () => {
     expect(appSource).toContain('className="admin-form-grid scene-field-grid"');
     expect(appSource).toContain("<span>Width</span>");
     expect(appSource).toContain("<span>Height</span>");
-    expect(appSource).toContain("<span>Grid</span>");
+    expect(appSource).toContain('<SceneGridFields mode="create"');
+    expect(sceneGridFieldsSource).toContain("<span>Grid type</span>");
+    expect(sceneGridFieldsSource).toContain("<span>Grid size</span>");
     expect(stylesSource).toContain(".scene-field-grid {\n  grid-template-columns: repeat(2, minmax(0, 1fr));");
     expect(stylesSource).toContain(".scene-field-grid .span-full {\n  grid-column: 1 / -1;");
     expect(stylesSource).toContain("@media (max-width: 520px) {\n  .scene-field-grid {\n    grid-template-columns: 1fr;");
@@ -453,9 +458,9 @@ describe("desktop layout regressions", () => {
     expect(appSource).toContain('ref={feedRef}');
     expect(appSource).toContain("props.busy && !hasStreamingAssistant");
     expect(appSource).toContain("aiAgentToolProgressText(event)");
-    expect(appSource).toContain("function aiAgentToolProgressLabel(toolName: string): string");
-    expect(appSource).toContain('"Creating missing actors and tokens"');
-    expect(appSource).toContain('"Placing tokens"');
+    expect(aiAgentEventUtilsSource).toContain("function aiAgentToolProgressLabel(toolName: string): string");
+    expect(aiAgentEventUtilsSource).toContain('"Creating missing actors and tokens"');
+    expect(aiAgentEventUtilsSource).toContain('"Placing tokens"');
     expect(appSource).toContain("appendReasoningDelta(base.reasoning, summaryIndex, payload.delta)");
     expect(appSource).toContain("upsertAiAgentMessage(mergedMessages, assistantMessage)");
     expect(appSource).toContain("Reasoning summary");

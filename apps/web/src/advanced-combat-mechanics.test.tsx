@@ -1,7 +1,7 @@
 import { createTimestamped, type Actor, type Combat } from "@open-tabletop/core";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { AdvancedCombatMechanics } from "./advanced-combat-mechanics.js";
+import { AdvancedCombatMechanics, scheduledEffectConsequenceReview } from "./advanced-combat-mechanics.js";
 
 describe("AdvancedCombatMechanics", () => {
   it("renders accessible reviewed controls for environment, effect, and spell workflows", () => {
@@ -91,5 +91,16 @@ describe("AdvancedCombatMechanics", () => {
     expect(html).not.toContain("Add mechanic");
     expect(html).not.toContain("Apply reviewed outcomes");
     expect(html).toContain("No environment prompts authored");
+  });
+
+  it("maps server-produced scheduled effects into labeled review sections", () => {
+    const review = scheduledEffectConsequenceReview({
+      phase: "end_turn", round: 2, turnIndex: 0, canApply: true, unresolvedEventIds: [], combatUpdatedAt: "2026-07-15T00:00:00.000Z",
+      events: [{ id: "evt", effectId: "effect", actorId: "actor", label: "Burning", phase: "end_turn", round: 2, turnIndex: 0, status: "triggered", createdAt: "2026-07-15T00:00:00.000Z", updatedAt: "2026-07-15T00:00:00.000Z" }],
+      actorChanges: [{ actorId: "actor", reason: "Apply 4 fire damage" }]
+    }, [{ id: "actor", campaignId: "camp", systemId: "dnd-5e-srd", type: "character", name: "Ari", data: {}, permissions: {}, createdAt: "2026-07-15T00:00:00.000Z", updatedAt: "2026-07-15T00:00:00.000Z" }]);
+
+    expect(review.sections.map((section) => section.label)).toEqual(["Effect events", "Actor changes"]);
+    expect(review.sections[0]?.items[0]?.value).toContain("Ari");
   });
 });

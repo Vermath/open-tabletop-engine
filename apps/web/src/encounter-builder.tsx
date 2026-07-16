@@ -1,4 +1,4 @@
-import type { Actor, Encounter, Scene, Token } from "@open-tabletop/core";
+import type { Actor, Encounter, EncounterMonsterPlacementDraft, Scene, Token } from "@open-tabletop/core";
 import { FilePlus2, Minus, Plus, Save, Search, Swords, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiDelete, apiGet, apiPatch, apiPost, type EncounterPlanInfo } from "./api.js";
@@ -20,6 +20,31 @@ export interface EncounterBuilderThreatSelection {
   id: string;
   name: string;
   count: number;
+}
+
+export function encounterMonsterPlacementDrafts(
+  threats: EncounterBuilderThreatSelection[],
+  scene: Scene,
+): EncounterMonsterPlacementDraft[] {
+  const total = threats.reduce((sum, threat) => sum + threat.count, 0);
+  const spacing = Math.max(24, scene.gridSize || 50);
+  const placements: EncounterMonsterPlacementDraft[] = [];
+  for (const threat of threats) {
+    for (let index = 0; index < threat.count; index += 1) {
+      const placementIndex = placements.length;
+      placements.push({
+        threatId: threat.id,
+        name: threat.count > 1 ? `${threat.name} ${index + 1}` : threat.name,
+        x: scene.width / 2 + (placementIndex - Math.floor(total / 2)) * spacing,
+        y: scene.height / 2 + (placementIndex % 2 === 0 ? -spacing / 2 : spacing / 2),
+        width: scene.gridSize,
+        height: scene.gridSize,
+        layer: "player",
+        disposition: "hostile",
+      });
+    }
+  }
+  return placements;
 }
 
 export interface EncounterCompositionInput {
@@ -110,6 +135,10 @@ export function savedEncountersForSystem(encounters: Encounter[], systemId: stri
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 }
 
+export function encounterSearchAnchorId(encounterId: string): string {
+  return `campaign-search-encounter-${encodeURIComponent(encounterId)}`;
+}
+
 export function encounterThreatCounts(encounter: Pick<Encounter, "threats">): Record<string, number> {
   return Object.fromEntries((encounter.threats ?? []).map((threat) => [threat.id, threat.count]));
 }
@@ -162,6 +191,7 @@ export function EncounterBuilderDialog(props: {
   partyActors: Actor[];
   sceneTokens: Token[];
   savedEncounters: Encounter[];
+  initialEncounterId?: string;
   activeScene?: Scene;
   canSave: boolean;
   canSpawn: boolean;
@@ -201,6 +231,7 @@ export function EncounterBuilderDialog(props: {
   const spawnAbortRef = useRef<AbortController | null>(null);
   const placeAttemptIdRef = useRef<string | undefined>(undefined);
   const launchAttemptIdRef = useRef<string | undefined>(undefined);
+  const openedInitialEncounterRef = useRef("");
   const closeDialog = () => {
     spawnAbortRef.current?.abort();
     props.onClose();
@@ -277,6 +308,24 @@ export function EncounterBuilderDialog(props: {
     // party, or threat draft. The next explicit save is a reviewed retry.
     setSavedEncounter(latest);
   }, [props.savedEncounters, savedEncounter]);
+
+  useEffect(() => {
+    const encounterId = props.initialEncounterId;
+    if (!encounterId || openedInitialEncounterRef.current === encounterId) return;
+    const encounter = availableSavedEncounters.find((candidate) => candidate.id === encounterId);
+    openedInitialEncounterRef.current = encounterId;
+    if (!encounter) {
+      setError("That search result is no longer available in this system. Refresh campaign search and try again.");
+      return;
+    }
+    reopenEncounter(encounter);
+    const frame = window.requestAnimationFrame(() => {
+      const target = document.getElementById(encounterSearchAnchorId(encounter.id));
+      target?.focus({ preventScroll: true });
+      target?.scrollIntoView({ block: "nearest" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [availableSavedEncounters, props.initialEncounterId]);
 
   useEffect(() => {
     if (!canPlan) {
@@ -505,6 +554,7 @@ export function EncounterBuilderDialog(props: {
               const compositionAvailable = encounter.systemId === props.systemId && encounter.threats !== undefined;
               return (
                 <button
+                  id={encounterSearchAnchorId(encounter.id)}
                   className={savedEncounter?.id === encounter.id ? "encounter-saved-card selected" : "encounter-saved-card"}
                   type="button"
                   key={encounter.id}

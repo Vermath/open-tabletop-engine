@@ -1,6 +1,6 @@
 import type { MapAsset } from "@open-tabletop/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { acceptInviteSession, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, assetThumbnailUrl, loadSnapshot, loginSession, logoutSession, transferCampaignOwnership } from "./api.js";
+import { acceptInviteSession, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, assetThumbnailUrl, loadSnapshot, loginSession, logoutSession, removeCampaignMember, transferCampaignOwnership, updateCampaignMember, type CampaignMemberInfo } from "./api.js";
 
 describe("abortable API requests", () => {
   beforeEach(() => {
@@ -60,6 +60,23 @@ describe("abortable API requests", () => {
       expectedUpdatedAt: "2026-07-13T00:00:00.000Z",
       reason: "New season"
     });
+  });
+
+  it("uses exact campaign-member revisions and idempotency identities", async () => {
+    const fetchMock = vi.fn(async (_path: RequestInfo | URL, _init?: RequestInit) => jsonResponse({ id: "mem/1" }));
+    vi.stubGlobal("fetch", fetchMock);
+    const member = { id: "mem/1", updatedAt: "2026-07-15T00:00:00.000Z" } as CampaignMemberInfo;
+
+    await updateCampaignMember("camp/1", member, "observer", { idempotencyKey: "member-role-1" });
+    await removeCampaignMember("camp/1", member, { idempotencyKey: "member-remove-1" });
+
+    const [updatePath, updateInit] = fetchMock.mock.calls[0] ?? [];
+    expect(updatePath).toBe("/api/v1/campaigns/camp%2F1/members/mem%2F1");
+    expect(new Headers(updateInit?.headers).get("idempotency-key")).toBe("member-role-1");
+    expect(JSON.parse(String(updateInit?.body))).toEqual({ role: "observer", expectedUpdatedAt: member.updatedAt });
+    const [removePath, removeInit] = fetchMock.mock.calls[1] ?? [];
+    expect(removePath).toBe("/api/v1/campaigns/camp%2F1/members/mem%2F1?expectedUpdatedAt=2026-07-15T00%3A00%3A00.000Z");
+    expect(new Headers(removeInit?.headers).get("idempotency-key")).toBe("member-remove-1");
   });
 });
 

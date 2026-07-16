@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import type { AiProvider, AiProviderEvent, AiProviderRequest } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerWebSocketTransport } from "@open-tabletop/codex-app-server-provider";
-import { createTimestamped, emptyState, hasPermission, isPointInsideVisionPolygon, isPointInsideVisionPolygons, permissionsForRole, type Actor, type AssetStorageRef, type AuditLog, type AudioTrack, type CampaignArchive, type ChatMessage, type Combat, type CombatAction, type ContentImportBatch, type DiceMacro, type DiceRoll, type EngineState, type Item, type JournalEntry, type MapAsset, type PasswordResetToken, type PermissionGrant, type PluginReview, type Proposal, type Scene, type Token, type User, type VisionSnapshot, type WorkerJobRecord } from "@open-tabletop/core";
+import { createTimestamped, emptyState, hasPermission, isPointInsideVisionPolygon, isPointInsideVisionPolygons, permissionsForRole, type Actor, type AssetStorageRef, type AuditLog, type AudioTrack, type CampaignArchive, type ChatMessage, type Combat, type CombatAction, type ContentImportBatch, type DiceMacro, type DiceRoll, type DndControlledCreatureCreatePrefill, type DndControlledCreatureCreateRequest, type EngineState, type Item, type JournalEntry, type MapAsset, type PasswordResetToken, type PermissionGrant, type PluginReview, type Proposal, type Scene, type Token, type User, type VisionSnapshot, type WorkerJobRecord } from "@open-tabletop/core";
 import { dnd5eSrdWeaponMasteryChoiceCount, dnd5eSrdWeaponMasteryEligibleWeaponIds } from "@open-tabletop/system-sdk";
 import { describe, expect, it } from "vitest";
 import { assetStorageKey, type AssetStorage } from "./asset-storage.js";
@@ -225,6 +225,47 @@ async function injectPreparedDndAction(
   });
 }
 
+async function injectPreparedDndControlledAction(
+  app: Awaited<ReturnType<typeof buildApp>>,
+  request: PreparedDndTestRequest,
+  review: (prefill: DndControlledCreatureCreatePrefill) => DndControlledCreatureCreateRequest
+) {
+  const { previewKey, commitKey } = preparedDndTestKeys(request, "action");
+  const prepared = await app.inject({
+    method: "POST",
+    url: request.url,
+    headers: { ...request.headers, "idempotency-key": previewKey },
+    payload: { ...(request.payload ?? {}), prepare: true }
+  });
+  const preparedBody = prepared.statusCode === 200 ? prepared.json() : undefined;
+  const prefill = preparedBody?.controlledCreatureHandoff?.prefill as DndControlledCreatureCreatePrefill | undefined;
+  const route = /^\/api\/v1\/campaigns\/([^/]+)\/systems\/([^/]+)\/actors\//.exec(request.url);
+  if (!prefill || !route) return { prepared };
+  const base = `/api/v1/campaigns/${route[1]}/systems/${route[2]}/controlled-creatures`;
+  const lifecycleRequest = review(structuredClone(prefill));
+  const lifecyclePreview = await app.inject({ method: "POST", url: `${base}/preview`, headers: request.headers, payload: lifecycleRequest });
+  if (lifecyclePreview.statusCode !== 200) return { prepared, lifecyclePreview, base };
+  const confirmed = await app.inject({
+    method: "POST",
+    url: base,
+    headers: { ...request.headers, "idempotency-key": commitKey },
+    payload: { request: lifecycleRequest, previewToken: lifecyclePreview.json().previewToken, expectedUpdatedAt: lifecyclePreview.json().requiredRevisions }
+  });
+  return { prepared, lifecyclePreview, confirmed, base };
+}
+
+async function endDndControlledCreature(
+  app: Awaited<ReturnType<typeof buildApp>>,
+  base: string,
+  actorId: string,
+  headers: Record<string, string>,
+  idempotencyKey: string
+) {
+  const listed = await app.inject({ method: "GET", url: base, headers });
+  const entry = listed.json().records.find((candidate: { actor: Actor }) => candidate.actor.id === actorId);
+  return app.inject({ method: "POST", url: `${base}/${actorId}/end`, headers: { ...headers, "idempotency-key": idempotencyKey }, payload: { reason: "dismissed", expectedUpdatedAt: entry.requiredRevisions } });
+}
+
 async function injectCompendiumMutation(
   app: Awaited<ReturnType<typeof buildApp>>,
   store: MemoryStateStore,
@@ -315,6 +356,8 @@ function classifyMcpRouteSurface(method: string, path: string): { tools?: string
   }
   if (path === "/api/v1/campaigns/{campaignId}/presence") return { tools: ["read_campaign"] };
   if (path === "/api/v1/campaigns/{campaignId}/duplicate") return { excluded: "campaign_lifecycle" };
+  if (path.endsWith("/scene-duplications")) return { excluded: "human_confirmed_scene_duplication" };
+  if (path.includes("/archive-import-operations")) return { excluded: "human_confirmed_archive_recovery" };
   if (path.includes("/character-transfers")) return { excluded: "human_character_ownership_lifecycle" };
   if (path.endsWith("/ownership-transfer")) return { excluded: "campaign_member_admin" };
   if (path.includes("/webhooks")) return { excluded: "human_campaign_integration_admin" };
@@ -339,6 +382,7 @@ function classifyMcpRouteSurface(method: string, path: string): { tools?: string
   }
   if (path === "/api/v1/scenes/{sceneId}/edits" || path === "/api/v1/scenes/{sceneId}/undo") return { excluded: "scene_edit_undo" };
   if (path.endsWith("/path-measurement")) return { excluded: "interactive_tactical_adjudication" };
+  if (path.endsWith("/encounter-monster-placements")) return { tools: ["draft_actor_token_roster", "create_proposal"] };
   if (path.includes("/difficult-terrain") || path.includes("/cover-overrides")) return { tools: ["create_proposal", "read_board_state"] };
   if (path.includes("/scenes/{sceneId}/ai-edits/apply-to-target")) return { tools: ["draft_ai_edit_layer_apply", "apply_approved_proposal"] };
   if (path.includes("/scenes/{sceneId}/delegations")) return { excluded: "campaign_member_admin" };
@@ -3413,7 +3457,7 @@ describe("api", () => {
 
     await app.close();
   });
-  it("records provably-fair seeds on rolls and verifies them", async () => {
+  it("records deterministic replay metadata on rolls and verifies it", async () => {
     const store = new MemoryStateStore();
     const app = await buildApp({ store });
 
@@ -5360,12 +5404,14 @@ describe("api", () => {
       }
     });
     expect(stableCombatant.statusCode).toBe(200);
-    expect(stableCombatant.json().combatants[0]).toEqual(expect.objectContaining({ deathSaveOutcome: "stable", defeated: false, conditions: ["prone", "stunned", "concentration lost", "stable"], resourceUsed: true, resourceSpent: true }));
+    expect(stableCombatant.json().combatants[0]).toEqual(expect.objectContaining({ deathSaveOutcome: "stable", deathSaveSuccesses: 0, deathSaveFailures: 0, defeated: false, conditions: ["prone", "stunned", "concentration lost", "stable"], resourceUsed: true, resourceSpent: true }));
     expect(store.state.actors.find((actor) => actor.id === "act_valen")?.data).toEqual(
       expect.objectContaining({
         resources: expect.objectContaining({ focus: 2 }),
         conditions: expect.arrayContaining([{ id: "stable", appliedAt: expect.any(String) }]),
-        deathSaves: { successes: 3, failures: 0 },
+        deathSaves: { successes: 0, failures: 0 },
+        lifeState: "stable",
+        defeated: false,
         combatState: expect.objectContaining({ deathSaveOutcome: "stable", resourceSpent: true })
       })
     );
@@ -6081,14 +6127,13 @@ describe("api", () => {
         name: "Initiative Scout",
         data: {
           attributes: { dexterity: 16 },
+          monster: { statBlock: { initiative: 7 } },
           conditions: []
         },
         permissions: {}
       }) satisfies Actor
     );
     const app = await buildApp({ store });
-    const originalRandom = Math.random;
-    Math.random = () => 0;
 
     try {
       const started = await app.inject({
@@ -6110,25 +6155,31 @@ describe("api", () => {
         headers: authHeaders
       });
       expect(rolled.statusCode).toBe(200);
+      const initiativeRoll = rolled.json().rolls[0] as DiceRoll;
       expect(rolled.json().rolls).toEqual([
         expect.objectContaining({
           campaignId: "camp_demo",
           userId: "usr_demo_gm",
           label: "Initiative Scout Initiative",
-          formula: "1d20+3",
-          total: 4
+          formula: "1d20+7",
+          total: expect.any(Number),
+          fairness: expect.objectContaining({ algorithm: "xmur3-mulberry32", serverSeed: expect.any(String), serverSeedHash: expect.any(String) })
         })
       ]);
-      expect(rolled.json().combat.combatants).toEqual([
+      expect(initiativeRoll.total).toBeGreaterThanOrEqual(8);
+      expect(initiativeRoll.total).toBeLessThanOrEqual(27);
+      expect(rolled.json().combat.combatants).toEqual(expect.arrayContaining([
         expect.objectContaining({ id: "cmbt_pc", initiative: 10 }),
-        expect.objectContaining({ id: "cmbt_npc", initiative: 4 })
-      ]);
+        expect.objectContaining({ id: "cmbt_npc", initiative: initiativeRoll.total })
+      ]));
       expect(rolled.json().chatMessages).toEqual([
-        expect.objectContaining({ type: "roll", body: "Initiative Scout Initiative: 1d20+3 = 4" })
+        expect.objectContaining({ type: "roll", body: `Initiative Scout Initiative: 1d20+7 = ${initiativeRoll.total}` })
       ]);
-      expect(store.state.rolls).toEqual(expect.arrayContaining([expect.objectContaining({ label: "Initiative Scout Initiative", total: 4 })]));
+      expect(store.state.rolls).toEqual(expect.arrayContaining([expect.objectContaining({ label: "Initiative Scout Initiative", total: initiativeRoll.total, fairness: initiativeRoll.fairness })]));
+      const verified = await app.inject({ method: "GET", url: `/api/v1/campaigns/camp_demo/rolls/${initiativeRoll.id}/verify`, headers: authHeaders });
+      expect(verified.statusCode).toBe(200);
+      expect(verified.json()).toMatchObject({ verified: true, expected: { total: initiativeRoll.total } });
     } finally {
-      Math.random = originalRandom;
       await app.close();
     }
   });
@@ -11959,6 +12010,7 @@ describe("api", () => {
       { method: "POST", url: "/api/v1/campaigns/camp_demo/webhooks/whk_auth_matrix/deliveries/whdel_auth_matrix/retry", headers: { "idempotency-key": "auth-matrix-webhook-retry" }, payload: { expectedUpdatedAt: "2026-07-13T00:00:00.000Z" } },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/ownership-transfer", payload: { targetUserId: "usr_demo_player", expectedUpdatedAt: "2026-07-13T00:00:00.000Z" } },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/duplicate", headers: { "idempotency-key": "auth-matrix-campaign-duplicate" }, payload: { name: "Auth Matrix Copy", expectedUpdatedAt: store.state.campaigns.find((campaign) => campaign.id === "camp_demo")!.updatedAt } },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/scene-duplications", headers: { "idempotency-key": "auth-matrix-scene-duplication" }, payload: { operationId: "auth-matrix-scene-duplication", expectedUpdatedAt: "2020-01-01T00:00:00.000Z", sources: [{ sceneId: "scn_vault_entry", expectedUpdatedAt: "2020-01-01T00:00:00.000Z" }], dryRun: true } },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/character-transfers" },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/actors/act_valen/transfers", headers: { "idempotency-key": "auth-matrix-character-transfer-create" }, payload: { toUserId: "usr_demo_player", expectedUpdatedAt: store.state.actors.find((actor) => actor.id === "act_valen")!.updatedAt } },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/character-transfers/charxfer_auth_matrix_accept/accept", headers: { "idempotency-key": "auth-matrix-character-transfer-accept" }, payload: { expectedUpdatedAt: "2026-05-01T00:00:00.000Z" } },
@@ -12034,6 +12086,7 @@ describe("api", () => {
       { method: "POST", url: "/api/v1/scenes/scn_auth_matrix_ai_edits/ai-edits/apply-to-target" },
       { method: "GET", url: "/api/v1/scenes/scn_vault_entry/tokens" },
       { method: "POST", url: "/api/v1/scenes/scn_vault_entry/tokens", payload: { name: "No Auth Token" } },
+      { method: "POST", url: "/api/v1/scenes/scn_vault_entry/encounter-monster-placements", headers: { "idempotency-key": "auth-matrix-encounter-monster-placement" }, payload: { systemId: "dnd-5e-srd", expectedUpdatedAt: "2020-01-01T00:00:00.000Z", placements: [{ threatId: "goblin-boss", x: 500, y: 350, width: 50, height: 50 }] } },
       { method: "POST", url: "/api/v1/tokens/tok_valen/target", payload: { targeted: true } },
       { method: "PATCH", url: "/api/v1/tokens/tok_valen", payload: { hidden: true } },
       { method: "DELETE", url: "/api/v1/tokens/tok_valen" },
@@ -12211,6 +12264,8 @@ describe("api", () => {
       { method: "GET", url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/act_generic_demo/advancement" },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/act_generic_demo/rules-validation" },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/act_valen/calculation-explanation" },
+      { method: "POST", url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${authMatrixDndActor.id}/heroic-inspiration/grant`, headers: { "idempotency-key": "auth-matrix-heroic-inspiration-grant" }, payload: { expectedActorUpdatedAt: "2020-01-01T00:00:00.000Z" } },
+      { method: "POST", url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${authMatrixDndActor.id}/heroic-inspiration/reroll`, headers: { "idempotency-key": "auth-matrix-heroic-inspiration-reroll" }, payload: { originalRollId: authMatrixRoll.id, selectedTermIndex: 0, selectedResultIndex: 0, expectedActorUpdatedAt: "2020-01-01T00:00:00.000Z" } },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/compatibility" },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/controlled-creatures" },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/controlled-creatures/preview", payload: authMatrixControlledRequest },
@@ -12231,6 +12286,9 @@ describe("api", () => {
       { method: "GET", url: "/api/v1/campaigns/camp_demo/export" },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/export/stream" },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/dogfood-report-bundle" },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/archive-import-operations" },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/archive-import-operations/arcimp_auth_matrix/preview" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/archive-import-operations/arcimp_auth_matrix/rollback", headers: { "idempotency-key": "auth-matrix-archive-import-rollback" }, payload: { expectedUpdatedAt: "2020-01-01T00:00:00.000Z", confirmOperationId: "arcimp_auth_matrix" } },
       { method: "POST", url: "/api/v1/import/campaign", payload: { format: "ottx", version: "0.2.0", exportedAt: "2026-05-01T00:00:00.000Z", manifest: { campaignId: "camp_demo", name: "Blocked", schemaVersion: "0.2.0", assetCount: 0 }, data: emptyState() } },
       { method: "POST", url: "/api/v1/import/campaign/stream", headers: { "content-type": "application/vnd.open-tabletop.ottx-stream", "idempotency-key": "auth-matrix-stream-import" }, payload: Buffer.from("unauthenticated") },
       { method: "GET", url: "/api/v1/admin/users" },
@@ -12252,6 +12310,9 @@ describe("api", () => {
       { method: "POST", url: "/api/v1/admin/email-outbox/msg_auth_matrix/retry", headers: { "idempotency-key": "auth-matrix-admin-email-retry" }, payload: { expectedUpdatedAt: "2026-05-01T00:00:00.000Z" } },
       { method: "GET", url: "/api/v1/admin/audit-logs" },
       { method: "GET", url: "/api/v1/admin/storage/operations" },
+      { method: "GET", url: "/api/v1/admin/operations/metrics" },
+      { method: "GET", url: "/api/v1/admin/retention/operations" },
+      { method: "POST", url: "/api/v1/admin/retention/prune", headers: { "idempotency-key": "auth-matrix-admin-retention-prune" }, payload: { recordClasses: ["maintenance_jobs"], olderThanDays: 30, dryRun: true } },
       { method: "POST", url: "/api/v1/admin/storage/backup", payload: { reason: "missing auth" } },
       { method: "POST", url: "/api/v1/admin/storage/restore-drill", payload: { backupFileName: "backup.json" } },
       { method: "POST", url: "/api/v1/admin/storage/restore", headers: { "idempotency-key": "auth-matrix-storage-restore" }, payload: { backupFileName: "backup.json", confirmFileName: "backup.json", expectedStateRevision: "sha256:0000000000000000000000000000000000000000000000000000000000000000" } },
@@ -12442,6 +12503,8 @@ describe("api", () => {
       ["GET /api/v1/ai/memory/{factId}", "AI memory details require AI memory permission"],
       ["GET /api/v1/campaigns/{campaignId}/ai/tool-calls", "AI tool calls require AI proposal permission"],
       ["GET /api/v1/campaigns/{campaignId}/content-imports", "content import roster requires campaign update"],
+      ["GET /api/v1/campaigns/{campaignId}/archive-import-operations", "archive import recovery requires campaign update"],
+      ["GET /api/v1/campaigns/{campaignId}/archive-import-operations/{operationId}/preview", "archive import recovery preview requires campaign update"],
       ["GET /api/v1/campaigns/{campaignId}/dnd/custom-content", "custom content authoring requires campaign update"],
       ["GET /api/v1/campaigns/{campaignId}/dnd/monster-bases", "monster workshop base catalog requires campaign update"],
       ["GET /api/v1/campaigns/{campaignId}/dnd/monster-templates", "monster template authoring requires campaign update"],
@@ -12492,6 +12555,7 @@ describe("api", () => {
     const privilegedReadExpectedStatuses = new Map<string, number>([
       ["GET /api/v1/admin/jobs/{jobId}", 404],
       ["GET /api/v1/campaigns/{campaignId}/webhooks/{webhookId}/deliveries", 404],
+      ["GET /api/v1/campaigns/{campaignId}/archive-import-operations/{operationId}/preview", 404],
       ["GET /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/rules-validation", 400]
     ]);
     for (const route of privilegedReadOutcomeRoutes) {
@@ -12835,6 +12899,8 @@ describe("api", () => {
       ["POST /api/v1/proposals/{proposalId}/revert", 409],
       ["DELETE /api/v1/campaign-sessions/{sessionId}", 409],
       ["POST /api/v1/campaigns/{campaignId}/duplicate", 201],
+      ["POST /api/v1/campaigns/{campaignId}/scene-duplications", 409],
+      ["POST /api/v1/scenes/{sceneId}/encounter-monster-placements", 409],
       ["POST /api/v1/campaigns/{campaignId}/actors/{actorId}/transfers", 201],
       ["POST /api/v1/campaigns/{campaignId}/character-transfers/{transferId}/accept", 404],
       ["POST /api/v1/campaigns/{campaignId}/character-transfers/{transferId}/decline", 404],
@@ -12877,6 +12943,8 @@ describe("api", () => {
       ["POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/spell-preparation/apply", 409],
       ["DELETE /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/advancement/pending", 404],
       ["POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/typed-damage/apply", 409],
+      ["POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/heroic-inspiration/grant", 409],
+      ["POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/heroic-inspiration/reroll", 409],
       ["POST /api/v1/campaigns/{campaignId}/dnd/rules-mutations/{mutationId}/undo", 404],
       ["PATCH /api/v1/combats/{combatId}/environment-mechanics/{mechanicId}", 404],
       ["DELETE /api/v1/combats/{combatId}/environment-mechanics/{mechanicId}", 404],
@@ -12885,6 +12953,7 @@ describe("api", () => {
       ["POST /api/v1/campaigns/{campaignId}/content-imports/pdf/ai", 400],
       ["POST /api/v1/content-imports/{importId}/apply", 400],
       ["POST /api/v1/content-imports/{importId}/rollback", 409],
+      ["POST /api/v1/campaigns/{campaignId}/archive-import-operations/{operationId}/rollback", 409],
       ["POST /api/v1/campaigns/{campaignId}/ai/evaluations", 400],
       ["POST /api/v1/campaigns/{campaignId}/ai/generate-map-asset", 502],
       ["POST /api/v1/campaigns/{campaignId}/ai/generate-token-asset", 502],
@@ -16372,7 +16441,7 @@ describe("api", () => {
       );
       expect(levelFiveBarbarianAdvance.json().sheet.quickRolls).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({ id: "save-dexterity", formula: "1d20+1", metadata: { advantage: true, feature: "Danger Sense", exceptConditions: ["Incapacitated"] } }),
+          expect.objectContaining({ id: "save-dexterity", formula: "2d20kh1+1", metadata: expect.objectContaining({ d20Mode: "advantage", advantageSources: ["Danger Sense"], disadvantageSources: [], advantage: true, feature: "Danger Sense", exceptConditions: ["Incapacitated"] }) }),
           expect.objectContaining({ id: "feature-reckless-attack", formula: "0", metadata: expect.objectContaining({ drawback: "attack rolls against you have Advantage during that time" }) }),
           expect.objectContaining({ id: "feature-berserker-frenzy-damage", formula: "2d6", metadata: expect.objectContaining({ diceEqualToRageDamageBonus: 2, requires: ["Rage active", "Reckless Attack"] }) }),
           expect.objectContaining({ id: "feature-rage-damage-bonus", formula: "2", metadata: expect.objectContaining({ bonusDamage: 2 }) })
@@ -23902,6 +23971,14 @@ describe("api", () => {
       expect(rage.json().usage.consumed).toEqual([{ type: "resource", key: "rage", label: "Rage", amount: 1, remaining: 1 }]);
       expect(store.state.actors.find((actor) => actor.id === barbarian.json().actor.id)?.data.resources).toEqual({ rage: { current: 1, max: 2, recovery: "short" } });
 
+      const endFirstRage = await injectPreparedDndAction(app, {
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${barbarian.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-rage-end", consumeResources: true }
+      });
+      expect(endFirstRage.statusCode).toBe(200);
+
       const rageAgain = await injectPreparedDndAction(app, {
         method: "POST",
         url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${barbarian.json().actor.id}/roll`,
@@ -23910,6 +23987,14 @@ describe("api", () => {
       });
       expect(rageAgain.statusCode).toBe(200);
       expect(rageAgain.json().usage.consumed).toEqual([{ type: "resource", key: "rage", label: "Rage", amount: 1, remaining: 0 }]);
+
+      const endSecondRage = await injectPreparedDndAction(app, {
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${barbarian.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-rage-end", consumeResources: true }
+      });
+      expect(endSecondRage.statusCode).toBe(200);
 
       const depletedRage = await injectPreparedDndAction(app, {
         method: "POST",
@@ -23997,14 +24082,19 @@ describe("api", () => {
       expect(sacredWeapon.json().quickRoll).toEqual(expect.objectContaining({ id: "feature-devotion-sacred-weapon", metadata: expect.objectContaining({ resource: "channelDivinity", attackBonus: 2 }) }));
       expect(sacredWeapon.json().usage.consumed).toEqual([{ type: "resource", key: "channelDivinity", label: "Channel Divinity", amount: 1, remaining: 1 }]);
 
-      const faithfulSteed = await injectPreparedDndAction(app, {
+      const faithfulSteed = await app.inject({
         method: "POST",
         url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFivePaladin.json().actor.id}/roll`,
-        headers: { "x-user-id": "usr_demo_player" },
-        payload: { rollId: "feature-faithful-steed", consumeResources: true }
+        headers: { ...authHeaders, "idempotency-key": "faithful-steed-prepare" },
+        payload: { rollId: "feature-faithful-steed", spellSlotLevel: 2, consumeResources: true, prepare: true, controlledCreature: { sceneId: "scn_vault_entry", token: { x: 100, y: 100, width: 50, height: 50, disposition: "friendly" } } }
       });
       expect(faithfulSteed.statusCode).toBe(200);
-      expect(faithfulSteed.json().usage.consumed).toEqual([{ type: "resource", key: "faithfulSteed", label: "Faithful Steed", amount: 1, remaining: 0 }]);
+      const faithfulSteedRequest = { ...structuredClone(faithfulSteed.json().controlledCreatureHandoff.prefill), manualReviewConfirmed: true };
+      const faithfulSteedPreview = await app.inject({ method: "POST", url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/controlled-creatures/preview", headers: authHeaders, payload: faithfulSteedRequest });
+      expect(faithfulSteedPreview.statusCode).toBe(200);
+      const confirmedFaithfulSteed = await app.inject({ method: "POST", url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/controlled-creatures", headers: { ...authHeaders, "idempotency-key": "faithful-steed-confirm" }, payload: { request: faithfulSteedRequest, previewToken: faithfulSteedPreview.json().previewToken, expectedUpdatedAt: faithfulSteedPreview.json().requiredRevisions } });
+      expect(confirmedFaithfulSteed.statusCode, confirmedFaithfulSteed.body).toBe(200);
+      expect(confirmedFaithfulSteed.json().records).toEqual(expect.arrayContaining([expect.objectContaining({ controllerActorId: levelFivePaladin.json().actor.id, kind: "persistent_companion", status: "active" })]));
       expect(store.state.actors.find((actor) => actor.id === levelFivePaladin.json().actor.id)?.data.resources).toEqual({
         layOnHands: { current: 5, max: 25, recovery: "long" },
         paladinsSmite: { current: 0, max: 1, recovery: "long" },
@@ -24041,35 +24131,55 @@ describe("api", () => {
       expect(holyNimbus.json().quickRoll).toEqual(expect.objectContaining({ id: "feature-devotion-holy-nimbus-damage", metadata: expect.objectContaining({ resource: "holyNimbus", damageType: "Radiant" }) }));
       expect(holyNimbus.json().usage.consumed).toEqual([{ type: "resource", key: "holyNimbus", label: "Holy Nimbus", amount: 1, remaining: 0 }]);
 
-      const wildShape = await injectPreparedDndAction(app, {
+      const wildShape = await injectPreparedDndControlledAction(app, {
         method: "POST",
         url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveDruid.json().actor.id}/roll`,
         headers: { "x-user-id": "usr_demo_player" },
         payload: { rollId: "feature-wild-shape", consumeResources: true }
+      }, (prefill) => ({
+        ...prefill,
+        actor: { ...prefill.actor!, name: "Reviewed Wolf", type: "beast", data: { ...prefill.actor?.data, armorClass: 13, speed: 40 } },
+        transformation: { ...prefill.transformation!, equipmentCarryover: "suppress" },
+        manualReviewConfirmed: true
+      }) as DndControlledCreatureCreateRequest);
+      expect(wildShape.prepared.statusCode).toBe(200);
+      expect(wildShape.lifecyclePreview?.statusCode).toBe(200);
+      expect(wildShape.confirmed?.statusCode).toBe(200);
+      expect(wildShape.prepared.json().quickRoll).toEqual(expect.objectContaining({ id: "feature-wild-shape", formula: "0", metadata: expect.objectContaining({ resource: "wildShape", temporaryHitPoints: 5 }) }));
+      expect(store.state.actors.find((actor) => actor.id === levelFiveDruid.json().actor.id)?.data.resources).toEqual({
+        wildShape: { current: 1, max: 2, recovery: "short" },
+        wildResurgence: { current: 1, max: 1, recovery: "long" }
       });
-      expect(wildShape.statusCode).toBe(200);
-      expect(wildShape.json().roll.formula).toBe("0");
-      expect(wildShape.json().quickRoll).toEqual(expect.objectContaining({ id: "feature-wild-shape", metadata: expect.objectContaining({ resource: "wildShape", temporaryHitPoints: 5 }) }));
-      expect(wildShape.json().usage.consumed).toEqual([{ type: "resource", key: "wildShape", label: "Wild Shape", amount: 1, remaining: 1 }]);
+      if (!wildShape.confirmed || !wildShape.base) throw new Error("Expected confirmed Wild Shape lifecycle");
+      const endedWildShape = await endDndControlledCreature(app, wildShape.base, wildShape.confirmed.json().records[0].linkedActorId, { "x-user-id": "usr_demo_player" }, "wild-shape-end");
+      expect(endedWildShape.statusCode).toBe(200);
 
-      const wildCompanion = await injectPreparedDndAction(app, {
+      const wildCompanion = await injectPreparedDndControlledAction(app, {
         method: "POST",
         url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveDruid.json().actor.id}/roll`,
-        headers: { "x-user-id": "usr_demo_player" },
-        payload: { rollId: "feature-wild-companion", consumeResources: true }
-      });
-      expect(wildCompanion.statusCode).toBe(200);
-      expect(wildCompanion.json().usage).toEqual(expect.objectContaining({ slotLevel: 1 }));
-      expect(wildCompanion.json().usage.consumed).toEqual([{ type: "spellSlot", key: "level1", label: "Level 1 Spell Slot", amount: 1, remaining: 1 }]);
+        headers: authHeaders,
+        payload: { rollId: "feature-wild-companion", spellSlotLevel: 1, consumeResources: true, controlledCreature: { sceneId: "scn_vault_entry", token: { x: 150, y: 100, width: 50, height: 50, disposition: "friendly" } } }
+      }, (prefill) => ({ ...prefill, manualReviewConfirmed: true }) as DndControlledCreatureCreateRequest);
+      expect(wildCompanion.confirmed?.statusCode).toBe(200);
+      expect(store.state.actors.find((actor) => actor.id === levelFiveDruid.json().actor.id)?.data.spellSlots).toEqual(expect.objectContaining({ level1: { current: 1, max: 4, recovery: "long" } }));
+      if (!wildCompanion.confirmed || !wildCompanion.base) throw new Error("Expected confirmed Wild Companion lifecycle");
+      const endedWildCompanion = await endDndControlledCreature(app, wildCompanion.base, wildCompanion.confirmed.json().records[0].linkedActorId, authHeaders, "wild-companion-end-slot");
+      expect(endedWildCompanion.statusCode).toBe(200);
 
-      const wildCompanionWithShape = await injectPreparedDndAction(app, {
+      const wildCompanionWithShape = await injectPreparedDndControlledAction(app, {
         method: "POST",
         url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveDruid.json().actor.id}/roll`,
-        headers: { "x-user-id": "usr_demo_player" },
-        payload: { rollId: "feature-wild-companion", useFreeResource: true, consumeResources: true }
+        headers: authHeaders,
+        payload: { rollId: "feature-wild-companion", spellSlotLevel: 1, useFreeResource: true, consumeResources: true, controlledCreature: { sceneId: "scn_vault_entry", token: { x: 200, y: 100, width: 50, height: 50, disposition: "friendly" } } }
+      }, (prefill) => ({ ...prefill, manualReviewConfirmed: true }) as DndControlledCreatureCreateRequest);
+      expect(wildCompanionWithShape.confirmed?.statusCode).toBe(200);
+      expect(store.state.actors.find((actor) => actor.id === levelFiveDruid.json().actor.id)?.data.resources).toEqual({
+        wildShape: { current: 0, max: 2, recovery: "short" },
+        wildResurgence: { current: 1, max: 1, recovery: "long" }
       });
-      expect(wildCompanionWithShape.statusCode).toBe(200);
-      expect(wildCompanionWithShape.json().usage.consumed).toEqual([{ type: "resource", key: "wildShape", label: "Wild Shape", amount: 1, remaining: 0 }]);
+      if (!wildCompanionWithShape.confirmed || !wildCompanionWithShape.base) throw new Error("Expected confirmed Wild Companion free-use lifecycle");
+      const endedFreeWildCompanion = await endDndControlledCreature(app, wildCompanionWithShape.base, wildCompanionWithShape.confirmed.json().records[0].linkedActorId, authHeaders, "wild-companion-end-shape");
+      expect(endedFreeWildCompanion.statusCode).toBe(200);
 
       const depletedWildShape = await injectPreparedDndAction(app, {
         method: "POST",
@@ -24739,7 +24849,7 @@ describe("api", () => {
       });
       expect(monsterAttack.statusCode).toBe(200);
       expect(monsterAttack.json().quickRoll).toEqual(expect.objectContaining({ id: "monster-scimitar-attack", formula: "2d20kl1+4" }));
-      expect(monsterAttack.json().chat.body).toContain("SRD Goblin Boss Scimitar Attack: 2d20kl1+4");
+      expect(monsterAttack.json().chat.body).toContain("SRD Goblin Boss Scimitar Attack [Disadvantage: Poisoned]: 2d20kl1+4");
 
       const monsterDamage = await injectPreparedDndAction(app, {
         method: "POST",
@@ -25197,6 +25307,10 @@ describe("api", () => {
       });
       expect(committed.statusCode).toBe(200);
       expect(committed.json()).toEqual(expect.objectContaining({ roll: expect.any(Object), chat: expect.any(Object), actor: expect.any(Object), sheet: expect.any(Object) }));
+      expect(committed.json().roll.fairness).toEqual(expect.objectContaining({ algorithm: "xmur3-mulberry32", serverSeed: expect.any(String), serverSeedHash: expect.any(String) }));
+      const committedVerification = await app.inject({ method: "GET", url: `/api/v1/campaigns/camp_demo/rolls/${committed.json().roll.id}/verify`, headers: { "x-user-id": "usr_demo_player" } });
+      expect(committedVerification.statusCode).toBe(200);
+      expect(committedVerification.json()).toMatchObject({ verified: true, expected: { total: committed.json().roll.total } });
       expect(committed.json().usage.consumed).toEqual([{ type: "resource", key: "secondWind", label: "Second Wind", amount: 1, remaining: 1 }]);
       expect(committed.json().resolution).toEqual(expect.objectContaining({ commitMode: "commit", resourceConsumption: [{ type: "resource", key: "secondWind", label: "Second Wind", amount: 1, remaining: 1 }] }));
       expect(store.state.actors.find((actor) => actor.id === actorId)?.data.resources).toEqual({ secondWind: { current: 1, max: 2, recovery: "short" } });
@@ -33348,7 +33462,8 @@ registerCommand("/state", (input) => {
     const toolCalls = store.state.aiToolCalls.filter((call) => call.threadId === threadId);
     expect(toolCalls).toHaveLength(2);
     expect(toolCalls.some((call) => call.status === "started")).toBe(false);
-    expect(toolCalls.find((call) => call.toolName === "roll_dice")).toMatchObject({
+    const rollToolCall = toolCalls.find((call) => call.toolName === "roll_dice");
+    expect(rollToolCall).toMatchObject({
       input: { formula: "1d20+2", label: "Ledger Check" },
       output: expect.objectContaining({ formula: "1d20+2", label: "Ledger Check" }),
       status: "completed",
@@ -33360,6 +33475,19 @@ registerCommand("/state", (input) => {
       status: "failed",
       durationMs: expect.any(Number)
     });
+    const rollOutput = rollToolCall?.output as { proposalId?: string; rollId?: string } | undefined;
+    const rollProposal = store.state.proposals.find((proposal) => proposal.id === rollOutput?.proposalId);
+    const proposedRoll = rollProposal?.changesJson.find((change) => change.entity === "roll")?.data as DiceRoll | undefined;
+    expect(proposedRoll?.fairness).toEqual(expect.objectContaining({ algorithm: "xmur3-mulberry32", serverSeed: expect.any(String), serverSeedHash: expect.any(String) }));
+    if (!rollProposal || !proposedRoll) throw new Error("Expected AI roll proposal with a verifiable roll");
+    const approved = await app.inject({ method: "POST", url: `/api/v1/proposals/${rollProposal.id}/approve`, headers: authHeaders });
+    expect(approved.statusCode).toBe(200);
+    const applied = await app.inject({ method: "POST", url: `/api/v1/proposals/${rollProposal.id}/apply`, headers: authHeaders });
+    expect(applied.statusCode).toBe(200);
+    expect(store.state.rolls.find((roll) => roll.id === proposedRoll.id)?.fairness).toEqual(proposedRoll.fairness);
+    const verified = await app.inject({ method: "GET", url: `/api/v1/campaigns/camp_demo/rolls/${proposedRoll.id}/verify`, headers: authHeaders });
+    expect(verified.statusCode).toBe(200);
+    expect(verified.json()).toMatchObject({ verified: true, expected: { total: proposedRoll.total } });
     await app.close();
   });
 
@@ -35374,8 +35502,32 @@ registerCommand("/state", (input) => {
       url: `/api/v1/assets/${assetId}/blob?sessionToken=${encodeURIComponent(playerToken)}`
     });
     expect(sessionBlob.statusCode).toBe(200);
+    expect(sessionBlob.headers.warning).toContain("sessionToken query authentication is deprecated");
+    expect(sessionBlob.headers["x-otte-auth-compatibility"]).toBe("url-session-token-deprecated");
     expect(sessionBlob.headers["content-type"]).toContain("image/png");
     expect(sessionBlob.body).toBe("fake-image-bytes");
+
+    const previousUrlTokenMode = process.env.OTTE_URL_SESSION_TOKEN_MODE;
+    process.env.OTTE_URL_SESSION_TOKEN_MODE = "disabled";
+    try {
+      const blockedLegacyBlob = await app.inject({
+        method: "GET",
+        url: `/api/v1/assets/${assetId}/blob?sessionToken=${encodeURIComponent(playerToken)}`
+      });
+      expect(blockedLegacyBlob.statusCode).toBe(401);
+      expect(blockedLegacyBlob.headers["x-otte-auth-compatibility"]).toBe("url-session-token-blocked");
+
+      const bearerBlob = await app.inject({
+        method: "GET",
+        url: `/api/v1/assets/${assetId}/blob`,
+        headers: { authorization: `Bearer ${playerToken}` }
+      });
+      expect(bearerBlob.statusCode).toBe(200);
+      expect(bearerBlob.headers["x-otte-auth-compatibility"]).toBeUndefined();
+    } finally {
+      if (previousUrlTokenMode === undefined) delete process.env.OTTE_URL_SESSION_TOKEN_MODE;
+      else process.env.OTTE_URL_SESSION_TOKEN_MODE = previousUrlTokenMode;
+    }
 
     await app.close();
     rmSync(directory, { recursive: true, force: true });

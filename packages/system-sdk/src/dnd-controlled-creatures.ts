@@ -1,7 +1,11 @@
 import type {
   Actor,
   Combat,
+  DndControlledCreatureActionHandoff,
   DndControlledCreatureCreateRequest,
+  DndControlledCreatureCreatePrefill,
+  DndControlledCreatureHandoffManualChoice,
+  DndControlledCreatureOriginatingAction,
   DndControlledCreatureManualReview,
   DndControlledCreatureRecord,
   DndControlledCreatureRevisionSet,
@@ -9,6 +13,7 @@ import type {
   Scene,
   Token,
 } from "@open-tabletop/core";
+import { DND_5E_SRD_VERSION } from "./dnd-static-content.js";
 
 export const DND_CONTROLLED_CREATURE_DATA_KEY = "dnd5eControlledCreature";
 
@@ -34,6 +39,191 @@ export interface DndControlledCreatureAnalysis {
     combatIds: string[];
     sceneIds: string[];
   };
+}
+
+export interface DndControlledCreatureActionHandoffInput {
+  actor: Actor;
+  items: Item[];
+  roll: { id: string; label: string; metadata?: Record<string, unknown> };
+  now?: string;
+  combat?: Combat;
+  sceneId?: string;
+  token?: DndControlledCreatureCreatePrefill["token"];
+  controllerUserId?: string;
+  spellSlotLevel?: number;
+}
+
+/**
+ * Maps only explicit structured action metadata into a lifecycle handoff. It
+ * deliberately does not parse spell names, summaries, or duration prose.
+ */
+export function dndControlledCreatureActionHandoff(
+  input: DndControlledCreatureActionHandoffInput,
+): DndControlledCreatureActionHandoff | undefined {
+  const item = actionItem(input.actor, input.items, input.roll.id);
+  const itemData = recordValue(item?.data);
+  const metadata = recordValue(input.roll.metadata);
+  const descriptor = recordValue(Object.keys(recordValue(metadata.controlledCreature)).length > 0
+    ? metadata.controlledCreature
+    : itemData.controlledCreature);
+  const legacySummonCandidate = itemData.summon !== undefined || metadata.summon !== undefined;
+  if (Object.keys(descriptor).length === 0 && !legacySummonCandidate) return undefined;
+
+  const manualChoices: DndControlledCreatureHandoffManualChoice[] = [];
+  const descriptorKind = stringValue(descriptor.kind);
+  const kind = descriptorKind === "transformation" || descriptorKind === "persistent_companion" || descriptorKind === "summon"
+    ? descriptorKind
+    : "summon";
+  const supported = descriptorKind === kind;
+  if (!supported) {
+    manualChoices.push(
+      choice("duration", "This action has summon metadata but no typed controlled-creature contract; review its duration manually."),
+      choice("initiative", "Review how this creature enters initiative."),
+      choice("command", "Review whether and how the creature is commanded."),
+    );
+  }
+
+  const sourceKind = item?.type.toLowerCase().includes("spell") ? "spell" as const : "feature" as const;
+  const rulesVersion = stringValue(descriptor.rulesVersion)
+    ?? stringValue(itemData.rulesVersion)
+    ?? stringValue(itemData.source)
+    ?? stringValue(input.actor.data.rulesVersion)
+    ?? DND_5E_SRD_VERSION;
+  const source = {
+    kind: sourceKind,
+    actorId: input.actor.id,
+    ...(item ? { itemId: item.id } : {}),
+    name: item?.name ?? input.roll.label,
+    systemId: "dnd-5e-srd" as const,
+    rulesVersion,
+  };
+  const prefill: DndControlledCreatureCreatePrefill = {
+    kind,
+    source,
+    controllerActorId: input.actor.id,
+    ...(input.controllerUserId ? { controllerUserId: input.controllerUserId, ownerUserId: input.controllerUserId } : {}),
+    ...(input.sceneId && kind !== "transformation" ? { sceneId: input.sceneId } : {}),
+    ...(input.combat ? { combatId: input.combat.id } : {}),
+    ...(input.token && kind !== "transformation" ? { token: structuredClone(input.token) } : {}),
+  };
+  const sourcedFields = ["kind", "source", "controllerActorId"];
+  if (prefill.controllerUserId) sourcedFields.push("controllerUserId", "ownerUserId");
+  if (prefill.sceneId) sourcedFields.push("sceneId");
+  if (prefill.combatId) sourcedFields.push("combatId");
+
+  const duration = controlledDuration(recordValue(descriptor.duration), input.now, input.combat);
+  if (duration) {
+    prefill.duration = duration;
+    sourcedFields.push("duration");
+  } else if (supported) {
+    manualChoices.push(choice("duration", "The action does not provide an exact machine-readable duration."));
+  }
+
+  if (descriptor.concentration === true) {
+    prefill.concentration = { sourceActorId: input.actor.id, groupId: input.roll.id };
+    sourcedFields.push("concentration");
+  } else if (descriptor.concentration === false) {
+    sourcedFields.push("concentration");
+  } else if (supported && kind !== "persistent_companion") {
+    manualChoices.push(choice("concentration", "The action does not declare whether this lifecycle uses concentration."));
+  }
+
+  const initiative = controlledInitiative(recordValue(descriptor.initiative), input.actor.id, input.combat);
+  if (initiative) {
+    prefill.initiative = initiative;
+    sourcedFields.push("initiative");
+  } else if (supported) {
+    manualChoices.push(choice("initiative", "The action does not provide a complete initiative relationship."));
+  }
+
+  const command = controlledCommand(recordValue(descriptor.command));
+  if (command) {
+    prefill.command = command;
+    sourcedFields.push("command");
+  } else if (supported) {
+    manualChoices.push(choice("command", "The action does not provide an explicit command cost."));
+  }
+
+  const actorPrefill = controlledActorPrefill(descriptor, input, rulesVersion, item);
+  if (Object.keys(actorPrefill).length > 0) prefill.actor = actorPrefill;
+  if (actorPrefill.name) sourcedFields.push("actor.name");
+  if (actorPrefill.type) sourcedFields.push("actor.type");
+  if (actorPrefill.imageAssetId) sourcedFields.push("actor.imageAssetId");
+  if (descriptor.statBlockComplete === true) {
+    sourcedFields.push("actor.data");
+  } else {
+    if (actorPrefill.data?.hp !== undefined) sourcedFields.push("actor.data.hp");
+    if (actorPrefill.data?.temporaryHitPoints !== undefined) sourcedFields.push("actor.data.temporaryHitPoints");
+    if (actorPrefill.data?.rulesVersion !== undefined) sourcedFields.push("actor.data.rulesVersion");
+    if (actorPrefill.data?.compendiumProvenance !== undefined) sourcedFields.push("actor.data.compendiumProvenance");
+  }
+  if (!actorPrefill.name) manualChoices.push(choice("actor.name", kind === "transformation" ? "Choose the reviewed form." : "Name the reviewed creature."));
+  if (!actorPrefill.type) manualChoices.push(choice("actor.type", "Choose the reviewed creature type."));
+  const hp = recordValue(actorPrefill.data?.hp);
+  if (!Number.isFinite(hp.current) || !Number.isFinite(hp.max)) manualChoices.push(choice("actor.hitPoints", "Enter explicit current and maximum hit points."));
+  if (descriptor.statBlockComplete !== true) manualChoices.push(choice("actor.statBlock", "Review the full stat block; the handoff never invents missing rules data."));
+
+  if (kind === "transformation") {
+    prefill.targetActorId = input.actor.id;
+    sourcedFields.push("targetActorId");
+    const transformation = recordValue(descriptor.transformation);
+    const hpCarryover = stringValue(transformation.hpCarryover);
+    const equipmentCarryover = stringValue(transformation.equipmentCarryover);
+    prefill.transformation = {
+      ...(hpCarryover === "preserve" || hpCarryover === "replace" ? { hpCarryover } : {}),
+      ...(equipmentCarryover === "preserve" || equipmentCarryover === "suppress" ? { equipmentCarryover } : {}),
+    };
+    if (prefill.transformation.hpCarryover) sourcedFields.push("transformation.hpCarryover");
+    if (prefill.transformation.equipmentCarryover) sourcedFields.push("transformation.equipmentCarryover");
+    else manualChoices.push(choice("transformation.equipmentCarryover", "Choose how equipment behaves in the reviewed form."));
+    manualChoices.push(choice("transformation.form", "Choose a legal form and review its statistics."));
+  } else {
+    if (!prefill.sceneId) manualChoices.push(choice("sceneId", "Choose the scene where the creature will appear."));
+    if (completeToken(prefill.token)) sourcedFields.push("token");
+    else manualChoices.push(choice("token", "Choose explicit token position, size, and disposition; placement is never guessed."));
+  }
+
+  return {
+    version: 1,
+    status: supported ? "supported" : "manual_required",
+    action: { actorId: input.actor.id, rollId: input.roll.id, label: input.roll.label },
+    prefill,
+    sourcedFields: [...new Set(sourcedFields)],
+    manualChoices: uniqueChoices(manualChoices),
+  };
+}
+
+export function dndControlledCreatureHandoffWithPreparation(
+  handoff: DndControlledCreatureActionHandoff,
+  preparation: DndControlledCreatureOriginatingAction,
+): DndControlledCreatureActionHandoff {
+  if (preparation.actorId !== handoff.action.actorId || preparation.rollId !== handoff.action.rollId) {
+    throw new Error("Controlled-creature action preparation does not match its handoff.");
+  }
+  return {
+    ...structuredClone(handoff),
+    action: { ...handoff.action, preparedPreviewKey: preparation.preparedPreviewKey, resolutionHash: preparation.resolutionHash },
+    prefill: {
+      ...structuredClone(handoff.prefill),
+      ...(handoff.prefill.concentration ? { concentration: { ...handoff.prefill.concentration, groupId: preparation.preparedPreviewKey } } : {}),
+      originatingAction: structuredClone(preparation),
+    },
+    sourcedFields: [...new Set([...handoff.sourcedFields, "originatingAction"])],
+  };
+}
+
+/** Returns every source-derived field a caller tried to alter after action review. */
+export function dndControlledCreatureHandoffRequestErrors(
+  handoff: DndControlledCreatureActionHandoff,
+  request: DndControlledCreatureCreateRequest,
+): string[] {
+  const errors: string[] = [];
+  for (const field of handoff.sourcedFields) {
+    if (!sameJson(handoffField(handoff.prefill, field), handoffField(request, field))) {
+      errors.push(`Source-derived controlled-creature field changed after action review: ${field}.`);
+    }
+  }
+  return errors;
 }
 
 /**
@@ -86,15 +276,27 @@ export function analyzeDndControlledCreatureRequest(
     warnings.push("The spell or feature source differs from the controller actor; the DM should verify the control relationship.");
   }
 
-  const sourceItem = context.items.find((item) => item.id === request.source?.itemId && item.campaignId === context.campaignId);
-  if (!sourceItem || sourceItem.systemId !== "dnd-5e-srd" || sourceItem.actorId !== request.source?.actorId) {
-    errors.push("Source item must belong to the source actor in this D&D campaign.");
-  } else {
-    itemIds.add(sourceItem.id);
-    const itemType = sourceItem.type.toLowerCase();
-    const expectedType = request.source.kind === "spell" ? "spell" : "feature";
-    if (!itemType.includes(expectedType) && !(request.source.kind === "feature" && itemType.includes("feat"))) {
-      errors.push(`Source item is not typed as a ${expectedType}.`);
+  const sourceItem = request.source?.itemId
+    ? context.items.find((item) => item.id === request.source.itemId && item.campaignId === context.campaignId)
+    : undefined;
+  if (request.source?.itemId) {
+    if (!sourceItem || sourceItem.systemId !== "dnd-5e-srd" || sourceItem.actorId !== request.source?.actorId) {
+      errors.push("Source item must belong to the source actor in this D&D campaign.");
+    } else {
+      itemIds.add(sourceItem.id);
+      const itemType = sourceItem.type.toLowerCase();
+      const expectedType = request.source.kind === "spell" ? "spell" : "feature";
+      if (!itemType.includes(expectedType) && !(request.source.kind === "feature" && itemType.includes("feat"))) {
+        errors.push(`Source item is not typed as a ${expectedType}.`);
+      }
+    }
+  } else if (request.source?.kind !== "feature" || !request.originatingAction) {
+    errors.push("A source item is required unless a reviewed feature action originated this lifecycle.");
+  }
+  if (request.originatingAction) {
+    if (request.originatingAction.actorId !== request.source?.actorId) errors.push("Originating action actor must match the controlled-creature source actor.");
+    if (!request.originatingAction.rollId.trim() || !request.originatingAction.preparedPreviewKey.trim() || !request.originatingAction.resolutionHash.trim()) {
+      errors.push("Originating action review metadata is incomplete.");
     }
   }
   if (request.source?.systemId !== "dnd-5e-srd") errors.push("Controlled creature sources must use dnd-5e-srd.");
@@ -294,6 +496,126 @@ export function findExpiredDndControlledCreatures(
   return [...byRecordId.values()].sort((left, right) =>
     left.record.createdAt.localeCompare(right.record.createdAt)
     || left.record.id.localeCompare(right.record.id));
+}
+
+function actionItem(actor: Actor, items: Item[], rollId: string): Item | undefined {
+  return items.find((item) => {
+    if (item.actorId !== actor.id || item.campaignId !== actor.campaignId || item.systemId !== actor.systemId) return false;
+    const prefix = item.type.toLowerCase().includes("spell") ? "spell" : "item";
+    return rollId.startsWith(`${prefix}-${item.id}-`);
+  });
+}
+
+function controlledDuration(value: Record<string, unknown>, now: string | undefined, combat: Combat | undefined): DndControlledCreatureCreateRequest["duration"] | undefined {
+  const mode = stringValue(value.mode);
+  if (mode === "until_dismissed") return { mode };
+  if (mode === "persistent") return { mode };
+  if (mode === "until_time") {
+    const expiresAt = stringValue(value.expiresAt);
+    return expiresAt && Number.isFinite(Date.parse(expiresAt)) ? { mode, expiresAt: new Date(expiresAt).toISOString() } : undefined;
+  }
+  const amount = Number(value.amount);
+  if (!Number.isFinite(amount) || amount <= 0) return undefined;
+  if (mode === "rounds") {
+    return combat && Number.isInteger(amount) ? { mode, combatId: combat.id, expiresAtRound: combat.round + amount } : undefined;
+  }
+  if (mode !== "minutes" && mode !== "hours") return undefined;
+  const start = Date.parse(now ?? new Date().toISOString());
+  if (!Number.isFinite(start)) return undefined;
+  const milliseconds = amount * (mode === "hours" ? 60 * 60 * 1000 : 60 * 1000);
+  return { mode: "until_time", expiresAt: new Date(start + milliseconds).toISOString() };
+}
+
+function controlledInitiative(value: Record<string, unknown>, actorId: string, combat: Combat | undefined): DndControlledCreatureCreateRequest["initiative"] | undefined {
+  const mode = stringValue(value.mode);
+  if (mode === "shared") return { mode, sourceActorId: actorId };
+  if (mode !== "independent") return undefined;
+  const initiative = Number(value.value);
+  if (!combat) return { mode };
+  return Number.isFinite(initiative) ? { mode, value: initiative } : undefined;
+}
+
+function controlledCommand(value: Record<string, unknown>): DndControlledCreatureCreateRequest["command"] | undefined {
+  if (typeof value.required !== "boolean") return undefined;
+  const action = stringValue(value.action);
+  if (!action || !["action", "bonus_action", "reaction", "free", "none"].includes(action)) return undefined;
+  if (value.required && action === "none") return undefined;
+  const note = stringValue(value.note);
+  return { required: value.required, action: action as DndControlledCreatureCreateRequest["command"]["action"], ...(note ? { note } : {}) };
+}
+
+function controlledActorPrefill(
+  descriptor: Record<string, unknown>,
+  input: DndControlledCreatureActionHandoffInput,
+  rulesVersion: string,
+  item: Item | undefined,
+): NonNullable<DndControlledCreatureCreatePrefill["actor"]> {
+  const configured = recordValue(descriptor.actor);
+  const data = structuredClone(recordValue(configured.data));
+  data.rulesVersion = rulesVersion;
+  if (item) data.compendiumProvenance = { sourceItemId: item.id, rulesVersion };
+  const hp = recordValue(configured.hp);
+  const directCurrent = Number(hp.current);
+  const directMaximum = Number(hp.max);
+  if (Number.isFinite(directCurrent) && Number.isFinite(directMaximum)) {
+    data.hp = { current: directCurrent, max: directMaximum };
+  } else {
+    const base = Number(hp.base);
+    const perSlotAbove = Number(hp.perSlotAbove);
+    const baseSlotLevel = Number(hp.baseSlotLevel);
+    const slotLevel = input.spellSlotLevel;
+    if (Number.isFinite(base) && slotLevel !== undefined) {
+      const maximum = base + (Number.isFinite(perSlotAbove) && Number.isFinite(baseSlotLevel) ? Math.max(0, slotLevel - baseSlotLevel) * perSlotAbove : 0);
+      data.hp = { current: maximum, max: maximum };
+    }
+  }
+  const transformation = recordValue(descriptor.transformation);
+  if (stringValue(descriptor.kind) === "transformation" && stringValue(transformation.hpCarryover) === "preserve") {
+    const sourceHp = recordValue(input.actor.data.hp);
+    if (Number.isFinite(sourceHp.current) && Number.isFinite(sourceHp.max)) data.hp = structuredClone(sourceHp);
+  }
+  const temporaryHitPoints = Number(descriptor.temporaryHitPoints);
+  if (Number.isFinite(temporaryHitPoints) && temporaryHitPoints >= 0) data.temporaryHitPoints = temporaryHitPoints;
+  return {
+    ...(stringValue(configured.name) ? { name: stringValue(configured.name) } : {}),
+    ...(stringValue(configured.type) ? { type: stringValue(configured.type) } : {}),
+    ...(stringValue(configured.imageAssetId) ? { imageAssetId: stringValue(configured.imageAssetId) } : {}),
+    data,
+  };
+}
+
+function completeToken(token: DndControlledCreatureCreatePrefill["token"]): boolean {
+  return Boolean(token
+    && Number.isFinite(token.x)
+    && Number.isFinite(token.y)
+    && Number.isFinite(token.width)
+    && Number.isFinite(token.height)
+    && (token.disposition === "friendly" || token.disposition === "neutral" || token.disposition === "hostile"));
+}
+
+function choice(field: DndControlledCreatureHandoffManualChoice["field"], reason: string): DndControlledCreatureHandoffManualChoice {
+  return { field, reason };
+}
+
+function uniqueChoices(choices: DndControlledCreatureHandoffManualChoice[]): DndControlledCreatureHandoffManualChoice[] {
+  return [...new Map(choices.map((candidate) => [candidate.field, candidate])).values()];
+}
+
+function handoffField(value: DndControlledCreatureCreatePrefill | DndControlledCreatureCreateRequest, field: string): unknown {
+  return field.split(".").reduce<unknown>((current, segment) => isRecord(current) ? current[segment] : undefined, value);
+}
+
+function sameJson(left: unknown, right: unknown): boolean {
+  return stableJson(left) === stableJson(right);
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
 }
 
 function revisionSet(

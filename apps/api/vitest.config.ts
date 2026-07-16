@@ -23,10 +23,10 @@ export const apiPerformanceTestProject = defineProject({
 
 export default defineConfig({
   test: {
-    // Each functional worker transforms the full API graph. Keep Windows CI and
-    // developer runs below the 16-logical-core default that can exhaust worker
-    // startup resources while preserving useful file-level parallelism.
-    maxWorkers: 6,
+    // Each functional worker transforms the full API graph. Six workers can
+    // exhaust Windows worker/RPC startup resources; two is the measured stable
+    // setting for the full API suite while preserving file-level parallelism.
+    maxWorkers: 2,
     projects: [apiFunctionalTestProject, apiPerformanceTestProject]
   }
 });

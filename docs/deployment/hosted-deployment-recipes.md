@@ -68,6 +68,7 @@ Operational rules:
 - Keep `OTTE_RATE_LIMIT_ENABLED=true` in production and add a shared edge limiter.
 - Put SQLite backups on storage that survives container replacement.
 - Use health checks for the API and `/api/v1/admin/jobs/operations` for worker posture.
+- Use `/api/v1/admin/operations/metrics` and the Admin Hosted Operations section for bounded HTTP, stale-conflict, realtime, durable-write, and recovery counters; follow the [Admin and Observability Checklist](./admin-observability-checklist.md) for incident actions.
 
 Worker scale example:
 
@@ -151,6 +152,7 @@ Before calling a hosted deployment production-ready:
 - `GET /api/v1/health` passes through the public endpoint.
 - The first owner bootstrap or login flow works from the hosted web origin.
 - `GET /api/v1/admin/storage/operations` reports supported SQLite posture.
+- `GET /api/v1/admin/operations/metrics` is server-admin-only, contains no identifiers or private content, and changes during representative HTTP, realtime, durable-write, backup, and restore-drill exercises.
 - A SQLite backup succeeds and a restore drill succeeds.
 - A worker leases and completes at least one maintenance job.
 - Asset upload, signed delivery, archive export, and archive import work.
@@ -158,3 +160,4 @@ Before calling a hosted deployment production-ready:
 - Installation AI policy is explicitly disabled or fully configured with context scopes, local retention, and provider-transmission disclosure.
 - Campaign AI policies are reviewed; a public-only policy cannot transmit GM-private context.
 - Local AI privacy preview/prune is exercised without deleting proposals, approved canon memory, or aggregate audit, and no provider-deletion claim is made.
+- Hosted alert thresholds, proxy/capacity posture, and the incident drill are measured and recorded for the selected deployment rather than inferred from local counters.

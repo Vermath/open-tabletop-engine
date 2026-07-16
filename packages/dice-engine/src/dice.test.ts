@@ -225,7 +225,7 @@ describe("dice engine", () => {
     }
   });
 
-  it("replays an identical roll from the same composed fairness seed", () => {
+  it("replays an identical roll from the same composed replay seed", () => {
     const seed = composeFairnessSeed("server-xyz", "client-abc");
     const original = rollFormula("4d6kh3+2", { rng: seededRng(seed) });
     const replay = rollFormula("4d6kh3+2", { rng: seededRng(composeFairnessSeed("server-xyz", "client-abc")) });

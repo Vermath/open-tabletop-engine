@@ -513,7 +513,13 @@ describe("calculation override ledger security and history", () => {
       });
       expect(explanation.statusCode).toBe(200);
       const armorClass = explanation.json().fields.find((field: { id: string }) => field.id === "armor-class");
-      expect(armorClass).toEqual(expect.objectContaining({ result: 15 }));
+      expect(armorClass).toEqual(expect.objectContaining({
+        result: 12,
+        flags: expect.objectContaining({ ambiguous: true, manual: true, override: false }),
+      }));
+      expect(armorClass.flags.reasons).toEqual(expect.arrayContaining([
+        expect.stringContaining("Legacy stored Armor Class 15 differs from the derived value 12"),
+      ]));
 
       const forgedSource = await app.inject({
         method: "POST",
@@ -555,6 +561,8 @@ describe("calculation override ledger security and history", () => {
       expect(created.statusCode).toBe(201);
       expect(created.json()).toEqual(expect.objectContaining({
         actorId: actor.id,
+        systemId: "dnd-5e-srd",
+        rulesVersion: expect.any(String),
         fieldId: "armor-class",
         source: "gm_manual",
         baseValue: armorClass.result,
@@ -562,6 +570,21 @@ describe("calculation override ledger security and history", () => {
         createdByUserId: "usr_demo_gm",
       }));
       expect(created.json().clearedAt).toBeUndefined();
+
+      const overriddenExplanation = await app.inject({
+        method: "GET",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${actor.id}/calculation-explanation`,
+        headers: gmHeaders,
+      });
+      expect(overriddenExplanation.json().fields.find((field: { id: string }) => field.id === "armor-class"))
+        .toEqual(expect.objectContaining({ result: 18, flags: expect.objectContaining({ override: true }) }));
+      const overriddenSheet = await app.inject({
+        method: "GET",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${actor.id}/sheet`,
+        headers: gmHeaders,
+      });
+      expect(overriddenSheet.statusCode).toBe(200);
+      expect(overriddenSheet.json().data.armorClass).toBe(18);
 
       const replay = await app.inject({ method: "POST", url: route, headers, payload: cleanPayload });
       expect(replay.statusCode).toBe(201);
@@ -608,9 +631,100 @@ describe("calculation override ledger security and history", () => {
       expect(clearReplay.headers["idempotency-replayed"]).toBe("true");
       expect(clearReplay.json()).toEqual(cleared.json());
 
+      const restoredSheet = await app.inject({
+        method: "GET",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${actor.id}/sheet`,
+        headers: gmHeaders,
+      });
+      expect(restoredSheet.json().data.armorClass).toBe(12);
+
       const history = await app.inject({ method: "GET", url: route, headers: playerHeaders });
       expect(history.statusCode).toBe(200);
       expect(history.json()).toEqual([expect.objectContaining({ id: created.json().id, clearedAt: expect.any(String) })]);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("uses one formula override for availability, resolution, history, and audit until it is cleared", async () => {
+    const store = new MemoryStateStore();
+    const actor = createTimestamped("act", {
+      id: "act_override_formula",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      ownerUserId: "usr_demo_player",
+      type: "character" as const,
+      name: "Formula Hero",
+      data: {
+        attributes: { strength: 10, dexterity: 14, constitution: 12, intelligence: 10, wisdom: 10, charisma: 10 },
+        armorClass: 15,
+        hp: { current: 12, max: 12 },
+      },
+      permissions: {},
+    }) satisfies Actor;
+    store.state.actors.push(actor);
+    const app = await buildApp({ store });
+    const overrideRoute = `/api/v1/campaigns/camp_demo/actors/${actor.id}/calculation-overrides`;
+    const rollRoute = `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${actor.id}/roll`;
+
+    try {
+      const unsupported = await app.inject({
+        method: "POST",
+        url: overrideRoute,
+        headers: { ...gmHeaders, "idempotency-key": "formula-override-unsupported" },
+        payload: { fieldId: "ability.strength", source: "gm_manual", effectiveValue: 20, reason: "Must remain annotation only", expectedActorUpdatedAt: actor.updatedAt },
+      });
+      expect(unsupported.statusCode).toBe(400);
+
+      const created = await app.inject({
+        method: "POST",
+        url: overrideRoute,
+        headers: { ...gmHeaders, "idempotency-key": "formula-override-create" },
+        payload: { fieldId: "initiative", source: "gm_manual", effectiveValue: "20", reason: "Documented initiative ruling", expectedActorUpdatedAt: actor.updatedAt },
+      });
+      expect(created.statusCode).toBe(201);
+      expect(created.json()).toEqual(expect.objectContaining({ baseValue: expect.any(String), effectiveValue: "20", systemId: "dnd-5e-srd", rulesVersion: expect.any(String) }));
+
+      const sheet = await app.inject({
+        method: "GET",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${actor.id}/sheet`,
+        headers: gmHeaders,
+      });
+      const initiative = sheet.json().quickRolls.find((roll: { id: string }) => roll.id === "initiative");
+      expect(initiative).toEqual(expect.objectContaining({
+        formula: "20",
+        metadata: expect.objectContaining({ calculationOverride: expect.objectContaining({ id: created.json().id, baseFormula: created.json().baseValue, effectiveFormula: "20" }) }),
+      }));
+
+      const rolled = await app.inject({
+        method: "POST",
+        url: rollRoute,
+        headers: gmHeaders,
+        payload: { rollId: "initiative", visibility: "public" },
+      });
+      expect(rolled.statusCode).toBe(200);
+      expect(rolled.json().roll).toEqual(expect.objectContaining({ formula: "20", total: 20 }));
+      expect(rolled.json().resolution.auditEvents).toContainEqual(expect.objectContaining({
+        code: "calculation.override.applied",
+        data: expect.objectContaining({ overrideId: created.json().id, baseFormula: created.json().baseValue, effectiveFormula: "20" }),
+      }));
+      expect([...store.state.auditLogs].reverse().find((entry) => entry.action === "system.actor.roll")?.after)
+        .toEqual(expect.objectContaining({ calculationOverride: expect.objectContaining({ overrideId: created.json().id, effectiveFormula: "20" }) }));
+
+      const cleared = await app.inject({
+        method: "POST",
+        url: `/api/v1/calculation-overrides/${created.json().id}/clear`,
+        headers: { ...gmHeaders, "idempotency-key": "formula-override-clear" },
+        payload: { reason: "Ruling ended", expectedUpdatedAt: created.json().updatedAt, expectedActorUpdatedAt: actor.updatedAt },
+      });
+      expect(cleared.statusCode).toBe(200);
+      const restoredSheet = await app.inject({
+        method: "GET",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${actor.id}/sheet`,
+        headers: gmHeaders,
+      });
+      expect(restoredSheet.json().quickRolls.find((roll: { id: string }) => roll.id === "initiative").formula).toBe(created.json().baseValue);
+      expect(store.state.rolls.find((entry) => entry.id === rolled.json().roll.id)?.formula).toBe("20");
     } finally {
       await app.close();
     }

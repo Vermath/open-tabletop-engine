@@ -277,8 +277,8 @@ describe("non-AI mutation route contract", () => {
   const centralDescriptors = extractCentralGuardDescriptors(appSource);
 
   it("keeps the current mutation inventory explicit and classified", () => {
-    expect(routes).toHaveLength(246);
-    expect(routes.filter((route) => route.sourceName === "app.ts")).toHaveLength(202);
+    expect(routes).toHaveLength(251);
+    expect(routes.filter((route) => route.sourceName === "app.ts")).toHaveLength(207);
     expect(routes.filter((route) => route.sourceName === "calculation-override-routes.ts")).toHaveLength(2);
     expect(routes.filter((route) => route.sourceName === "archive-operations.ts")).toHaveLength(0);
     expect(routes.filter((route) => route.sourceName === "asset-operations.ts")).toHaveLength(0);
