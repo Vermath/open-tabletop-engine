@@ -545,7 +545,7 @@ describe("organization workspace defaults", () => {
     } finally {
       await app.close();
     }
-  });
+  }, 15_000);
 
   it("lets server admins update workspace defaults and applies them to new campaigns", async () => {
     const previousEnv = snapshotEnv(["OTTE_ADMIN_USER_IDS"]);

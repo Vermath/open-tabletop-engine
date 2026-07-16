@@ -27,7 +27,7 @@ describe("deployment smoke", () => {
     expect(packageJson.packageManager).toBe("pnpm@10.28.0");
     expect(packageJson.scripts["deployment:smoke"]).toBe("pnpm --filter @open-tabletop/api exec vitest run src/deployment-smoke.test.ts");
     expect(packageJson.scripts["release:smoke"]).toContain("pnpm v1:worktree:check && pnpm security:audit && pnpm check && pnpm e2e");
-    expect(packageJson.scripts["security:audit"]).toBe("pnpm audit --prod --audit-level high");
+    expect(packageJson.scripts["security:audit"]).toBe("node scripts/audit-production-dependencies.mjs");
     expect(packageJson.scripts["release:smoke"]).toContain("deployment:smoke");
     expect(packageJson.scripts["release:smoke"]).toContain("perf:soak");
     expect(packageJson.scripts["release:smoke"]).toContain("docs:site:check");
