@@ -31,7 +31,7 @@
     "perf:smoke": "pnpm --filter @open-tabletop/api exec vitest run src/performance-smoke.test.ts -t \"performance smoke\"",
     "perf:soak": "pnpm --filter @open-tabletop/api exec vitest run src/performance-smoke.test.ts -t \"performance soak\"",
     "perf:capacity": "pnpm --filter @open-tabletop/api exec tsx src/small-group-capacity-cli.ts",
-    "security:audit": "pnpm audit --prod --audit-level high",
+    "security:audit": "node scripts/audit-production-dependencies.mjs",
     "security:smoke": "pnpm --filter @open-tabletop/api exec vitest run src/security-smoke.test.ts",
     "typecheck": "turbo run typecheck",
     "format": "prettier --write .",
