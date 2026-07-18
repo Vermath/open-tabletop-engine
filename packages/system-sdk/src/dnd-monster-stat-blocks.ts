@@ -22,6 +22,14 @@ export interface Dnd5eSrdMonsterAction {
   summaryMetadata?: boolean;
 }
 
+/** Structured economy metadata; the individual option and targeting remain reviewed by the DM. */
+export interface Dnd5eSrdLegendaryActions {
+  uses: number;
+  inLairUses?: number;
+  options: string[];
+  resolution: "reviewed-manual";
+}
+
 export interface Dnd5eSrdMonsterStatBlock {
   source: typeof DND_5E_SRD_VERSION;
   size: string;
@@ -43,9 +51,46 @@ export interface Dnd5eSrdMonsterStatBlock {
   gear?: string[];
   traits?: Array<{ name: string; summary: string }>;
   actions: Dnd5eSrdMonsterAction[];
+  legendaryActions?: Dnd5eSrdLegendaryActions;
 }
 
-export const DND_5E_SRD_MONSTER_STAT_BLOCKS: Record<string, Dnd5eSrdMonsterStatBlock> = {
+/**
+ * Canonical legendary-action economies keyed by the stat block that owns them.
+ *
+ * These values are intentionally structured source data. Runtime capacity and
+ * option names must not depend on parsing the human-readable action summary.
+ */
+const DND_5E_SRD_LEGENDARY_ACTION_PROFILES = {
+  aboleth: { uses: 3, options: ["Lash", "Psychic Drain"], resolution: "reviewed-manual" },
+  "adult-gold-dragon": { uses: 3, inLairUses: 4, options: ["Banish", "Guiding Light", "Pounce"], resolution: "reviewed-manual" },
+  "ancient-gold-dragon": { uses: 3, inLairUses: 4, options: ["Banish", "Guiding Light", "Pounce"], resolution: "reviewed-manual" },
+  "sphinx-of-lore": { uses: 3, inLairUses: 4, options: ["Arcane Prowl", "Weight of Years"], resolution: "reviewed-manual" },
+  "sphinx-of-valor": { uses: 3, inLairUses: 4, options: ["Arcane Prowl", "Weight of Years"], resolution: "reviewed-manual" },
+  "adult-brass-dragon": { uses: 3, inLairUses: 4, options: ["Blazing Light", "Pounce", "Scorching Sands"], resolution: "reviewed-manual" },
+  "ancient-brass-dragon": { uses: 3, inLairUses: 4, options: ["Blazing Light", "Pounce", "Scorching Sands"], resolution: "reviewed-manual" },
+  "adult-bronze-dragon": { uses: 3, inLairUses: 4, options: ["Guiding Light", "Pounce", "Thunderclap"], resolution: "reviewed-manual" },
+  "ancient-bronze-dragon": { uses: 3, inLairUses: 4, options: ["Guiding Light", "Pounce", "Thunderclap"], resolution: "reviewed-manual" },
+  "adult-copper-dragon": { uses: 3, inLairUses: 4, options: ["Giggling Magic", "Mind Jolt", "Pounce"], resolution: "reviewed-manual" },
+  "ancient-copper-dragon": { uses: 3, inLairUses: 4, options: ["Giggling Magic", "Mind Jolt", "Pounce"], resolution: "reviewed-manual" },
+  "adult-silver-dragon": { uses: 3, inLairUses: 4, options: ["Chill", "Cold Gale", "Pounce"], resolution: "reviewed-manual" },
+  "ancient-silver-dragon": { uses: 3, inLairUses: 4, options: ["Chill", "Cold Gale", "Pounce"], resolution: "reviewed-manual" },
+  solar: { uses: 3, options: ["Blinding Gaze", "Radiant Teleport"], resolution: "reviewed-manual" },
+  kraken: { uses: 3, inLairUses: 4, options: ["Storm Bolt", "Toxic Ink"], resolution: "reviewed-manual" },
+  "mummy-lord": { uses: 3, inLairUses: 4, options: ["Dread Command", "Necrotic Strike"], resolution: "reviewed-manual" },
+  lich: { uses: 3, inLairUses: 4, options: ["Deathly Teleport", "Disrupt Life", "Frightening Gaze"], resolution: "reviewed-manual" },
+  vampire: { uses: 3, inLairUses: 4, options: ["Beguile", "Deathless Strike"], resolution: "reviewed-manual" },
+  "ancient-red-dragon": { uses: 3, inLairUses: 4, options: ["Commanding Presence", "Fiery Rays", "Pounce"], resolution: "reviewed-manual" },
+  "adult-blue-dragon": { uses: 3, inLairUses: 4, options: ["Cloaked Flight", "Sonic Boom", "Tail Swipe"], resolution: "reviewed-manual" },
+  "ancient-blue-dragon": { uses: 3, inLairUses: 4, options: ["Cloaked Flight", "Sonic Boom", "Tail Swipe"], resolution: "reviewed-manual" },
+  "adult-green-dragon": { uses: 3, inLairUses: 4, options: ["Mind Invasion", "Noxious Miasma", "Pounce"], resolution: "reviewed-manual" },
+  "ancient-green-dragon": { uses: 3, inLairUses: 4, options: ["Mind Invasion", "Noxious Miasma", "Pounce"], resolution: "reviewed-manual" },
+  "adult-white-dragon": { uses: 3, inLairUses: 4, options: ["Freezing Burst", "Frightful Presence", "Pounce"], resolution: "reviewed-manual" },
+  "ancient-white-dragon": { uses: 3, inLairUses: 4, options: ["Freezing Burst", "Frightful Presence", "Pounce"], resolution: "reviewed-manual" },
+  "adult-black-dragon": { uses: 3, inLairUses: 4, options: ["Cloud of Insects", "Frightful Presence", "Pounce"], resolution: "reviewed-manual" },
+  "ancient-black-dragon": { uses: 3, inLairUses: 4, options: ["Cloud of Insects", "Frightful Presence", "Pounce"], resolution: "reviewed-manual" }
+} satisfies Record<string, Dnd5eSrdLegendaryActions>;
+
+const DND_5E_SRD_MONSTER_STAT_BLOCK_DATA: Record<string, Dnd5eSrdMonsterStatBlock> = {
   aboleth: {
     source: DND_5E_SRD_VERSION,
     size: "Large",
@@ -8042,3 +8087,47 @@ export const DND_5E_SRD_MONSTER_STAT_BLOCKS: Record<string, Dnd5eSrdMonsterStatB
     ]
   }
 };
+
+function legacyLegendaryActionProfile(actions: Dnd5eSrdMonsterAction[]): Dnd5eSrdLegendaryActions | undefined {
+  const action = actions.find((candidate) => candidate.name.trim().toLowerCase() === "legendary actions");
+  if (!action) return undefined;
+  const candidates = [action.summary, ...(action.effects ?? [])].filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+  const combined = candidates.join(" ");
+  const uses = Number(combined.match(/(?:has|take)\s+(\d+)\s+legendary action uses?/i)?.[1] ?? 3);
+  const inLairMatch = combined.match(/(?:or\s+)?(\d+)\s+in\s+(?:its\s+|the\s+)?lair/i);
+  let options: string[] = [];
+  for (const candidate of candidates) {
+    const match = candidate.match(/(?:options include|legendary actions include|including)\s+(.+?)(?:\.|$)/i);
+    if (!match?.[1]) continue;
+    options = match[1]
+      .replace(/,?\s+(?:and|or)\s+/gi, ",")
+      .split(",")
+      .map((option) => option.trim().replace(/\s+(?:dealing|that deals|and imposing)\b.*$/i, ""))
+      .filter(Boolean);
+    if (options.length > 0) break;
+  }
+  return {
+    uses: Number.isInteger(uses) && uses > 0 ? uses : 3,
+    ...(inLairMatch?.[1] ? { inLairUses: Number(inLairMatch[1]) } : {}),
+    options,
+    resolution: "reviewed-manual"
+  };
+}
+
+/**
+ * Add typed metadata to an older prose-only stat block without replacing any
+ * profile that a caller has already reviewed and structured.
+ */
+export function migrateDnd5eSrdLegacyLegendaryActions(block: Dnd5eSrdMonsterStatBlock): Dnd5eSrdMonsterStatBlock {
+  if (block.legendaryActions) return block;
+  const legendaryActions = legacyLegendaryActionProfile(block.actions);
+  return legendaryActions ? { ...block, legendaryActions } : block;
+}
+
+/** Immutable SRD blocks with canonical typed legendary-action economies. */
+export const DND_5E_SRD_MONSTER_STAT_BLOCKS: Record<string, Dnd5eSrdMonsterStatBlock> = Object.fromEntries(
+  Object.entries(DND_5E_SRD_MONSTER_STAT_BLOCK_DATA).map(([id, block]) => {
+    const legendaryActions = DND_5E_SRD_LEGENDARY_ACTION_PROFILES[id as keyof typeof DND_5E_SRD_LEGENDARY_ACTION_PROFILES];
+    return [id, legendaryActions ? { ...block, legendaryActions } : block];
+  })
+);

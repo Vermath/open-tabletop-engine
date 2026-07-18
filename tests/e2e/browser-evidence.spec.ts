@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { applyReviewedTypedDamageToHp } from "./reviewed-typed-damage.js";
 
 const apiBaseUrl = `http://127.0.0.1:${process.env.OTTE_E2E_API_PORT ?? 4100}`;
 const apiControlBaseUrl = `http://127.0.0.1:${process.env.OTTE_E2E_API_CONTROL_PORT ?? Number(process.env.OTTE_E2E_API_PORT ?? 4100) + 1000}`;
@@ -31,6 +32,50 @@ async function openDetails(details: Locator) {
 
 async function openInspectorPanel(page: Page, panelName: "Actors" | "Combat" | "Journal" | "Plugins" | "Sessions") {
   await page.locator(".inspector-tabs").getByRole("tab", { name: panelName, exact: true }).click();
+}
+
+async function endActiveCombatIfPresent(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "Live Table", exact: true }).click();
+  await openInspectorPanel(page, "Combat");
+  const combatPanel = page.getByRole("tabpanel", { name: "Combat" });
+  const endCombat = combatPanel.getByRole("button", { name: "End combat", exact: true });
+  if (!(await endCombat.isVisible().catch(() => false))) return;
+  await endCombat.click();
+  await combatPanel.getByRole("button", { name: "Confirm end combat", exact: true }).click();
+  await expect(combatPanel.getByRole("heading", { name: "No Active Combat" })).toBeVisible();
+}
+
+async function openEncounterBuilder(page: Page): Promise<Locator> {
+  await page.getByRole("button", { name: "Open command palette" }).click();
+  const palette = page.getByRole("dialog", { name: "Command palette" });
+  await palette.getByRole("textbox", { name: "Command palette search" }).fill("Open Encounter Builder");
+  await palette.getByRole("option", { name: /Open Encounter Builder/ }).click();
+  const dialog = page.getByRole("dialog", { name: "Encounter builder" });
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
+async function clickAndReviewPreparedDndAction(locator: Locator): Promise<void> {
+  const page = locator.page();
+  await locator.click();
+  const review = page.getByRole("dialog", { name: /Review .* action/ });
+  await expect(review).toBeVisible();
+  await expect(review.getByText("Structured consequence review", { exact: true })).toBeVisible();
+  const commit = review.getByRole("button", { name: "Commit exact action", exact: true });
+  await expect(commit).toBeEnabled();
+  const commitResponse = page.waitForResponse((response) => {
+    if (response.request().method() !== "POST" || !/\/actors\/[^/]+\/roll$/.test(new URL(response.url()).pathname)) return false;
+    try {
+      const body = response.request().postDataJSON() as { preparedPreviewKey?: string };
+      return typeof body.preparedPreviewKey === "string";
+    } catch {
+      return false;
+    }
+  });
+  await commit.click();
+  const committed = await commitResponse;
+  expect(committed.ok(), await committed.text()).toBeTruthy();
+  await expect(review).toBeHidden();
 }
 
 async function openManageCategory(page: Page, categoryName: string) {
@@ -138,7 +183,7 @@ async function prepareEncounterParty(dialog: Locator, characterName: string) {
   await expect(clearParty).toBeDisabled();
 
   const characterChoice = party.getByRole("checkbox", { name: characterName, exact: true });
-  await characterChoice.check();
+  if (!(await characterChoice.isChecked())) await characterChoice.check();
   const characterRow = characterChoice.locator("xpath=ancestor::div[contains(@class, 'encounter-party-row')][1]");
   const placeOnScene = characterRow.getByRole("button", { name: "Place on scene" });
   if (await placeOnScene.isVisible()) await placeOnScene.click();
@@ -151,11 +196,7 @@ async function createSavedEncounterThroughBuilder(page: Page, input: { character
   await page.reload();
   await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Party" })).toContainText(input.characterName);
-  await page.getByRole("button", { name: "Live Table", exact: true }).click();
-  await openInspectorPanel(page, "Combat");
-  await page.getByRole("button", { name: "Plan Encounter" }).click();
-  const dialog = page.getByRole("dialog", { name: "Encounter builder" });
-  await expect(dialog).toBeVisible();
+  const dialog = await openEncounterBuilder(page);
   await dialog.getByRole("textbox", { name: "Encounter name" }).fill(input.encounterName);
   await dialog.getByRole("textbox", { name: "Search encounter threats" }).fill("Goblin");
 
@@ -187,12 +228,21 @@ async function createSavedEncounterThroughBuilder(page: Page, input: { character
   await startCombat.click();
   await expect(setup).toBeHidden();
 
-  const combatPanel = page.locator(".inspector .panel-stack");
-  await expect(combatPanel.getByRole("heading", { name: "Round 1" })).toBeVisible();
-  await expect(combatPanel.getByRole("list", { name: "Initiative order" })).toContainText(threatName);
-  await combatPanel.getByRole("button", { name: "End combat", exact: true }).click();
-  await combatPanel.getByRole("button", { name: "Confirm end combat", exact: true }).click();
-  await expect(combatPanel.getByRole("heading", { name: "No Active Combat" })).toBeVisible();
+  await page.getByRole("button", { name: "Live Table", exact: true }).click();
+  await openInspectorPanel(page, "Combat");
+  const combatPanel = page.getByRole("tabpanel", { name: "Combat" });
+  try {
+    await expect(combatPanel.getByRole("heading", { name: "Round 1" })).toBeVisible();
+    await expect(combatPanel.getByRole("list", { name: "Initiative order" })).toContainText(input.characterName);
+    await expect(combatPanel.getByRole("list", { name: "Initiative order" })).toContainText(threatName);
+  } finally {
+    const endCombat = combatPanel.getByRole("button", { name: "End combat", exact: true });
+    if (await endCombat.isVisible().catch(() => false)) {
+      await endCombat.click();
+      await combatPanel.getByRole("button", { name: "Confirm end combat", exact: true }).click();
+      await expect(combatPanel.getByRole("heading", { name: "No Active Combat" })).toBeVisible();
+    }
+  }
 }
 
 async function runLinkedSessionThroughDesk(page: Page, input: { encounterName: string; sessionTitle: string }) {
@@ -205,9 +255,11 @@ async function runLinkedSessionThroughDesk(page: Page, input: { encounterName: s
   await form.getByRole("textbox", { name: "Session title" }).fill(input.sessionTitle);
   await form.getByRole("textbox", { name: "Session agenda" }).fill(`Meet the party, face ${input.encounterName}, and close the first session.`);
   await form.getByRole("textbox", { name: "Session notes" }).fill("Browser evidence: creator, encounter, and session state stayed inside public product controls.");
-  await form.getByRole("checkbox", { name: "Vault Entry" }).check();
+  const sceneChoice = form.getByRole("checkbox", { name: "Vault Entry" });
+  if (!(await sceneChoice.isChecked())) await sceneChoice.check();
   await openDetails(form.locator("details").filter({ hasText: "Linked encounters" }));
-  await form.getByRole("checkbox", { name: input.encounterName }).check();
+  const encounterChoice = form.getByRole("checkbox", { name: input.encounterName });
+  if (!(await encounterChoice.isChecked())) await encounterChoice.check();
   await form.getByRole("button", { name: "Save", exact: true }).click();
   await expect(statusMessage(page, `${input.sessionTitle} planned`)).toBeVisible();
 
@@ -217,14 +269,22 @@ async function runLinkedSessionThroughDesk(page: Page, input: { encounterName: s
   await expect(statusMessage(page, `${input.sessionTitle} is live`)).toBeVisible();
   await expect(desk.getByRole("listitem").filter({ hasText: input.sessionTitle })).toContainText("live");
 
-  await editor.getByRole("button", { name: "Complete session" }).click();
-  await editor.getByRole("button", { name: "Confirm complete session" }).click();
+  await Promise.all([
+    (async () => {
+      const dialog = await page.waitForEvent("dialog", { timeout: 10_000 });
+      expect(dialog.type()).toBe("confirm");
+      expect(dialog.message()).toBe(`Complete ${input.sessionTitle}? This closes the live session and cannot be undone.`);
+      await dialog.accept();
+    })(),
+    editor.getByRole("button", { name: "Complete session" }).click(),
+  ]);
   await expect(statusMessage(page, `${input.sessionTitle} completed`)).toBeVisible();
   await expect(desk.getByRole("listitem").filter({ hasText: input.sessionTitle })).toContainText("completed");
 }
 
 async function runFirstSessionPath(page: Page, path: FirstSessionPath) {
   await loginAsDemoGm(page);
+  await endActiveCombatIfPresent(page);
   await createCharacterThroughWizard(page, { className: path.className, speciesName: path.speciesName, name: path.characterName });
   await createSavedEncounterThroughBuilder(page, { characterName: path.characterName, encounterName: path.encounterName });
   await runLinkedSessionThroughDesk(page, { encounterName: path.encounterName, sessionTitle: path.sessionTitle });
@@ -238,7 +298,7 @@ async function assertPersistedFighterState(page: Page, actorName: string, expect
   await expect(actorPanel.getByRole("heading", { name: actorName, exact: true })).toBeVisible();
   await actorPanel.getByRole("tab", { name: "Stats" }).click();
   await expect(actorPanel.getByRole("region", { name: "Actor at a glance" })).toContainText("Second Wind 2/2");
-  await expect(actorPanel.getByLabel("Actor sheet current HP")).toHaveValue(String(expectedHp));
+  await expect(actorPanel.getByLabel("Actor sheet healing target HP")).toHaveValue(String(expectedHp));
 
   await page.getByRole("button", { name: "Prep", exact: true }).click();
   await openInspectorPanel(page, "Plugins");
@@ -286,6 +346,7 @@ test.describe("browser acceptance evidence", () => {
     const fighterName = `Evidence Orc Fighter r${testInfo.retry}`;
 
     await loginAsDemoGm(page);
+    await endActiveCombatIfPresent(page);
     await createCharacterThroughWizard(page, { className: "Fighter", speciesName: "Orc", name: fighterName });
 
     await page.getByRole("button", { name: "Prep", exact: true }).click();
@@ -331,34 +392,29 @@ test.describe("browser acceptance evidence", () => {
     const actorPanel = selectedActorPanel(page);
     await expect(actorPanel.getByRole("heading", { name: fighterName, exact: true })).toBeVisible();
     await actorPanel.getByRole("tab", { name: "Stats" }).click();
-    const hpInput = actorPanel.getByLabel("Actor sheet current HP");
-    await hpInput.fill("1");
-    await hpInput.blur();
-    await expect(actorPanel.getByLabel("Actor sheet current HP")).toHaveValue("1");
+    const healingTargetHp = actorPanel.getByLabel("Actor sheet healing target HP");
+    await expect(healingTargetHp).toHaveAccessibleDescription("This field heals only. To reduce HP, use Reviewed typed damage below.");
+    await applyReviewedTypedDamageToHp(page, { apiBaseUrl, campaignName: "The Ember Vault", actorName: fighterName, targetHp: 1 });
+    await expect(healingTargetHp).toHaveValue("1");
 
     await actorPanel.getByRole("tab", { name: "Actions" }).click();
     await openActorDisclosure(page, "Actor details");
     await actorPanel.getByRole("combobox", { name: "Action target actor" }).selectOption({ label: fighterName });
-    await actorPanel.getByRole("checkbox", { name: "Apply action effect" }).check();
-    await actorPanel.getByRole("checkbox", { name: "Consume action resources" }).check();
+    const applyActionEffect = actorPanel.getByRole("checkbox", { name: "Apply action effect" });
+    if (!(await applyActionEffect.isChecked())) await applyActionEffect.check();
+    const consumeActionResources = actorPanel.getByRole("checkbox", { name: "Consume action resources" });
+    if (!(await consumeActionResources.isChecked())) await consumeActionResources.check();
     const secondWind = actorPanel.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Second Wind" }).first();
     await expect(secondWind).toContainText("effect supported");
-    const dialogPromise = page.waitForEvent("dialog");
-    const actionClickPromise = secondWind.getByRole("button", { name: "Use action" }).click();
-    const reviewDialog = await dialogPromise;
-    const exactActionReview = reviewDialog.message();
-    expect(exactActionReview).toContain(`Review ${fighterName}'s exact server-prepared action`);
-    // Chromium truncates very large native-confirm messages before the final prompt,
-    // so prove the exact prepared consequence payload is presented and then accepted.
-    expect(exactActionReview).toContain('"commitMode": "commit"');
-    expect(exactActionReview).toContain('"label": "Second Wind"');
-    await reviewDialog.accept();
-    await actionClickPromise;
+    const actionPreview = actorPanel.getByRole("region", { name: "Action resolution preview" });
+    await secondWind.getByRole("button", { name: "Preview" }).click();
+    await expect(actionPreview).toContainText("Preview ready");
+    await clickAndReviewPreparedDndAction(actionPreview.getByRole("button", { name: "Continue to final review for previewed action" }));
     await expect(statusMessage(page, `${fighterName} used action: Second Wind 1; healing applied`)).toBeVisible();
     await expect(actorPanel.getByRole("region", { name: "Actor at a glance" })).toContainText("Second Wind 1/2");
     await actorPanel.getByRole("tab", { name: "Stats" }).click();
-    await expect.poll(async () => Number(await actorPanel.getByLabel("Actor sheet current HP").inputValue())).toBeGreaterThan(1);
-    const expectedHp = Number(await actorPanel.getByLabel("Actor sheet current HP").inputValue());
+    await expect.poll(async () => Number(await healingTargetHp.inputValue())).toBeGreaterThan(1);
+    const expectedHp = Number(await healingTargetHp.inputValue());
 
     const recovery = actorPanel.locator("details.actor-rest-card").first();
     await openDetails(recovery);
@@ -369,7 +425,7 @@ test.describe("browser acceptance evidence", () => {
     await restReview.getByRole("button", { name: "Apply short rest" }).click();
     await expect(restReview).toBeHidden();
     await expect(actorPanel.getByRole("region", { name: "Actor at a glance" })).toContainText("Second Wind 2/2");
-    await expect(actorPanel.getByLabel("Actor sheet current HP")).toHaveValue(String(expectedHp));
+    await expect(healingTargetHp).toHaveValue(String(expectedHp));
 
     const beforeRestartResponse = await page.request.get(`${apiControlBaseUrl}/status`);
     expect(beforeRestartResponse.ok(), await beforeRestartResponse.text()).toBeTruthy();
@@ -400,16 +456,14 @@ test.describe("browser acceptance evidence", () => {
     await page.getByRole("button", { name: "Live Table", exact: true }).click();
     await selectPartyActor(page, fighterName);
     await openInspectorPanel(page, "Actors");
-    const mutatedHp = selectedActorPanel(page).getByLabel("Actor sheet current HP");
-    await mutatedHp.fill("0");
-    await mutatedHp.blur();
-    await expect(selectedActorPanel(page).getByLabel("Actor sheet current HP")).toHaveValue("0");
+    await applyReviewedTypedDamageToHp(page, { apiBaseUrl, campaignName: "The Ember Vault", actorName: fighterName, targetHp: 0 });
+    await expect(selectedActorPanel(page).getByLabel("Actor sheet healing target HP")).toHaveValue("0");
     await page.reload();
     await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
     await page.getByRole("button", { name: "Live Table", exact: true }).click();
     await selectPartyActor(page, fighterName);
     await openInspectorPanel(page, "Actors");
-    await expect(selectedActorPanel(page).getByLabel("Actor sheet current HP")).toHaveValue("0");
+    await expect(selectedActorPanel(page).getByLabel("Actor sheet healing target HP")).toHaveValue("0");
 
     const importPanel = await openManageCategory(page, "Archives");
     const importWizard = importPanel.getByRole("region", { name: "Archive import wizard" });

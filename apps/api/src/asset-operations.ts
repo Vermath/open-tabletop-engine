@@ -15,13 +15,21 @@ import {
   type AssetStorage,
 } from "./asset-storage.js";
 import type { BuiltAssetRendition } from "./asset-renditions.js";
+import { createCampaignWebhookTransport, type CampaignWebhookTransport } from "./campaign-webhooks.js";
 import { operatorTargetSetHash } from "./operator-mutation.js";
+import {
+  createManagedAssetSnapshot,
+  pruneUnreferencedManagedAssetSnapshots,
+  removeManagedAssetSnapshot,
+  sameAssetInventory,
+  verifyManagedAssetSnapshot,
+} from "./paired-storage-backup.js";
 import { type StateStore } from "./store.js";
 import type {
-  AssetSnapshotProvider,
   SqliteBackupOptions,
   SqliteRestoreDrillOptions,
 } from "./sqlite-store.js";
+import { assetMetadataInventoryForAssets } from "./sqlite-store.js";
 
 const DEFAULT_ASSET_QUOTA_BYTES = 1024 * 1024 * 1024;
 
@@ -44,6 +52,7 @@ interface ExclusiveMutationCoordinator {
 
 interface AdminStorageCapableStore extends StateStore {
   storageOperations(): Record<string, unknown>;
+  backupArtifactDirectory(): string;
   createBackup(options?: SqliteBackupOptions): {
     status: string;
     fileName: string;
@@ -90,6 +99,7 @@ function asAdminStorageCapableStore(
   const candidate = store as Partial<AdminStorageCapableStore>;
   if (
     typeof candidate.storageOperations !== "function" ||
+    typeof candidate.backupArtifactDirectory !== "function" ||
     typeof candidate.createBackup !== "function" ||
     typeof candidate.runRestoreDrill !== "function"
   )
@@ -99,6 +109,14 @@ function asAdminStorageCapableStore(
 
 function flushStore(store: StateStore): void {
   store.flush?.();
+}
+
+function storageRestoreStateRevision(store: AdminStorageCapableStore): string {
+  const revision = store.storageOperations().restoreStateRevision;
+  if (typeof revision !== "string" || !/^sha256:[a-f0-9]{64}$/.test(revision)) {
+    throw new Error("SQLite storage restore-state revision is unavailable");
+  }
+  return revision;
 }
 
 function envText(name: string): string | undefined {
@@ -247,6 +265,11 @@ export interface AssetSecurityScanResult {
   security?: AssetSecurityScan;
 }
 
+export interface AssetSecurityScanOptions {
+  /** Test/local adapter seam; production callers use the SSRF-hardened default transport. */
+  externalTransport?: CampaignWebhookTransport;
+}
+
 export interface ExternalAssetScannerResponse {
   status?: string;
   scanner?: string;
@@ -257,10 +280,11 @@ export async function scanUploadedAsset(
   body: Buffer,
   mimeType: string,
   sourceName: string,
+  options: AssetSecurityScanOptions = {},
 ): Promise<AssetSecurityScanResult> {
   const builtin = scanUploadedAssetBuiltIn(body, mimeType, sourceName);
   if (builtin.blocked) return builtin;
-  const external = await scanUploadedAssetExternal(body, mimeType, sourceName);
+  const external = await scanUploadedAssetExternal(body, mimeType, sourceName, options.externalTransport);
   if (!external) return builtin;
   if (external.blocked) return external;
   return {
@@ -346,6 +370,7 @@ export async function scanUploadedAssetExternal(
   body: Buffer,
   mimeType: string,
   sourceName: string,
+  transport?: CampaignWebhookTransport,
 ): Promise<AssetSecurityScanResult | undefined> {
   const url = process.env.OTTE_ASSET_TRUST_WEBHOOK_URL?.trim();
   if (!url) return undefined;
@@ -358,6 +383,7 @@ export async function scanUploadedAssetExternal(
       body,
       mimeType,
       sourceName,
+      transport,
     );
     return externalAssetScanResult(response, scanner);
   } catch (error) {
@@ -392,37 +418,36 @@ export async function postExternalAssetScan(
   body: Buffer,
   mimeType: string,
   sourceName: string,
+  providedTransport?: CampaignWebhookTransport,
 ): Promise<ExternalAssetScannerResponse> {
-  const controller = new AbortController();
-  const timer = setTimeout(
-    () => controller.abort(),
-    assetTrustWebhookTimeoutMs(),
-  );
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+  };
+  const token = process.env.OTTE_ASSET_TRUST_WEBHOOK_TOKEN?.trim();
+  if (token) headers.authorization = `Bearer ${token}`;
+  const payload = JSON.stringify({
+    name: sourceName,
+    mimeType,
+    sizeBytes: body.length,
+    checksum: checksumForBuffer(body),
+    contentBase64: body.toString("base64"),
+  });
+  // Use the same DNS validation, public-address pinning, absolute deadline,
+  // redirect rejection, and bounded response policy as campaign webhooks.
+  const transport = providedTransport ?? createCampaignWebhookTransport({
+    timeoutMs: assetTrustWebhookTimeoutMs(),
+    maxRequestBytes: Buffer.byteLength(payload, "utf8"),
+    maxResponseBytes: 64 * 1024,
+  });
+  const result = await transport.send({ url, headers, body: payload });
+  if (!result.ok) throw new Error(`scanner_${result.errorCode ?? "request_failed"}`);
+  if (!result.responseBody) throw new Error("scanner_empty_response");
   try {
-    const headers: Record<string, string> = {
-      "content-type": "application/json",
-    };
-    const token = process.env.OTTE_ASSET_TRUST_WEBHOOK_TOKEN?.trim();
-    if (token) headers.authorization = `Bearer ${token}`;
-    const response = await fetch(url, {
-      method: "POST",
-      headers,
-      signal: controller.signal,
-      body: JSON.stringify({
-        name: sourceName,
-        mimeType,
-        sizeBytes: body.length,
-        checksum: checksumForBuffer(body),
-        contentBase64: body.toString("base64"),
-      }),
-    });
-    if (!response.ok) throw new Error(`scanner_http_${response.status}`);
-    return (await response.json()) as ExternalAssetScannerResponse;
-  } finally {
-    clearTimeout(timer);
+    return JSON.parse(result.responseBody) as ExternalAssetScannerResponse;
+  } catch {
+    throw new Error("scanner_invalid_json");
   }
 }
-
 export function externalAssetScanResult(
   response: ExternalAssetScannerResponse,
   fallbackScanner: string,
@@ -821,6 +846,11 @@ export interface StorageBackupSchedulerRun {
   fileName?: string;
   sizeBytes?: number;
   reason?: string;
+  paired?: boolean;
+  assetSnapshotId?: string;
+  assetObjectCount?: number;
+  assetSizeBytes?: number;
+  restoreDrillStatus?: "passed" | "failed";
   error?: string;
 }
 
@@ -836,6 +866,7 @@ export interface StorageBackupSchedulerStatus {
 export interface StorageBackupScheduler {
   start(): void;
   stop(): void;
+  runNow(trigger?: StorageBackupSchedulerTrigger): Promise<void>;
   status(): StorageBackupSchedulerStatus;
 }
 
@@ -925,6 +956,7 @@ export async function purgeAssetCdnCache(
   asset: MapAsset,
   adminUserId: string,
   options: AssetCdnPurgeOptions,
+  providedTransport?: CampaignWebhookTransport,
 ): Promise<Record<string, unknown> & { status: AssetCdnPurgeStatus }> {
   const webhookUrl = envText("OTTE_ASSET_CDN_PURGE_WEBHOOK_URL");
   const cdnUrl = assetCdnBlobUrl(asset);
@@ -964,6 +996,7 @@ export async function purgeAssetCdnCache(
       reason,
       cdnUrl,
       options.deliveryId,
+      providedTransport,
     );
     appendServerAuditLog(store, adminUserId, {
       campaignId: asset.campaignId,
@@ -1004,8 +1037,9 @@ export async function postAssetCdnPurgeWebhook(
   reason: string | undefined,
   cdnUrl: string | undefined,
   deliveryId?: string,
+  providedTransport?: CampaignWebhookTransport,
 ): Promise<void> {
-  const headers: Record<string, string> = {
+  let headers: Record<string, string> = {
     "content-type": "application/json",
   };
   const token = envText("OTTE_ASSET_CDN_PURGE_WEBHOOK_TOKEN");
@@ -1014,27 +1048,56 @@ export async function postAssetCdnPurgeWebhook(
     headers["idempotency-key"] = deliveryId;
     headers["x-open-tabletop-delivery-id"] = deliveryId;
   }
-  const response = await fetch(webhookUrl, {
-    method: "POST",
-    headers,
-    signal: AbortSignal.timeout(assetCdnPurgeWebhookTimeoutMs()),
-    body: JSON.stringify({
-      assetId: asset.id,
-      campaignId: asset.campaignId,
-      name: asset.name,
-      mimeType: asset.mimeType,
-      sizeBytes: asset.sizeBytes,
-      checksum: asset.checksum,
-      blobPath: `/api/v1/assets/${asset.id}/blob`,
-      cdnUrl,
-      lifecycleStatus: asset.lifecycle?.status ?? "active",
-      reason,
-      deliveryId,
-      requestedByUserId: adminUserId,
-      requestedAt: nowIso(),
-    }),
+  const payload = JSON.stringify({
+    assetId: asset.id,
+    campaignId: asset.campaignId,
+    name: asset.name,
+    mimeType: asset.mimeType,
+    sizeBytes: asset.sizeBytes,
+    checksum: asset.checksum,
+    blobPath: `/api/v1/assets/${asset.id}/blob`,
+    cdnUrl,
+    lifecycleStatus: asset.lifecycle?.status ?? "active",
+    reason,
+    deliveryId,
+    requestedByUserId: adminUserId,
+    requestedAt: nowIso(),
   });
-  if (!response.ok) throw new Error(`asset_cdn_purge_http_${response.status}`);
+  const transport = providedTransport ?? createCampaignWebhookTransport({
+    timeoutMs: assetCdnPurgeWebhookTimeoutMs(),
+    maxRequestBytes: Buffer.byteLength(payload, "utf8"),
+    maxResponseBytes: 64 * 1024,
+  });
+  let currentUrl = webhookUrl;
+  const maxRedirects = 3;
+  for (let redirectCount = 0; redirectCount <= maxRedirects; redirectCount += 1) {
+    const result = await transport.send({ url: currentUrl, headers, body: payload });
+    if (result.ok) return;
+    if (result.errorCode === "redirect_rejected" && result.redirectLocation) {
+      if (redirectCount >= maxRedirects) throw new Error("asset_cdn_purge_redirect_limit");
+      let redirectUrl: string;
+      try {
+        redirectUrl = new URL(result.redirectLocation, currentUrl).toString();
+      } catch {
+        throw new Error("asset_cdn_purge_invalid_target");
+      }
+      // Every hop is validated before the next pinned request. Never forward a
+      // bearer credential when a redirect crosses an origin boundary.
+      const validation = await transport.validateTarget(redirectUrl);
+      if (!validation.ok) throw new Error(`asset_cdn_purge_${validation.errorCode}`);
+      if (new URL(validation.normalizedUrl).origin !== new URL(currentUrl).origin && headers.authorization) {
+        const { authorization: _authorization, ...safeHeaders } = headers;
+        headers = safeHeaders;
+      }
+      currentUrl = validation.normalizedUrl;
+      continue;
+    }
+    if (result.errorCode === "http_error" && result.responseStatus) {
+      throw new Error(`asset_cdn_purge_http_${result.responseStatus}`);
+    }
+    throw new Error(`asset_cdn_purge_${result.errorCode ?? "request_failed"}`);
+  }
+  throw new Error("asset_cdn_purge_redirect_limit");
 }
 
 export function assetCdnBlobUrl(asset: MapAsset): string | undefined {
@@ -1818,9 +1881,10 @@ export function createAssetCleanupScheduler(
 
 export function createStorageBackupScheduler(
   store: StateStore,
-  assetProvider: AssetSnapshotProvider,
+  assetStorage: AssetStorage,
   coordinator: ExclusiveMutationCoordinator,
   observeRun?: (run: StorageBackupSchedulerRun) => void,
+  uploadDir?: string,
 ): StorageBackupScheduler {
   const intervalSeconds = sqliteBackupIntervalSeconds();
   const runOnStart = envBoolean("OTTE_SQLITE_BACKUP_RUN_ON_START", false);
@@ -1845,17 +1909,53 @@ export function createStorageBackupScheduler(
       return;
     }
     running = true;
+    let unboundSnapshot: { snapshotId: string; backupDirectory: string } | undefined;
     try {
-      await coordinator.runExclusive(() => {
+      const prepared = await coordinator.runExclusive(() => {
         const storageStore = asAdminStorageCapableStore(store);
-        if (!storageStore)
-          throw new Error(
-            "SQLite storage backup is not available for the active store",
-          );
+        if (!storageStore) throw new Error("SQLite storage backup is not available for the active store");
+        return {
+          storageStore,
+          backupDirectory: storageStore.backupArtifactDirectory(),
+          restoreStateRevision: storageRestoreStateRevision(storageStore),
+          assets: structuredClone(store.state.assets),
+        };
+      });
+      const assetSnapshot = await createManagedAssetSnapshot(
+        prepared.assets,
+        assetStorage,
+        prepared.backupDirectory,
+        { uploadDir },
+      );
+      unboundSnapshot = { snapshotId: assetSnapshot.identity.snapshotId, backupDirectory: prepared.backupDirectory };
+      const verifiedSnapshot = verifyManagedAssetSnapshot(prepared.backupDirectory, assetSnapshot.identity);
+      await coordinator.runExclusive(() => {
+        if (storageRestoreStateRevision(prepared.storageStore) !== prepared.restoreStateRevision) {
+          throw new Error("Storage changed while the paired asset snapshot was being created; retry backup");
+        }
+        const currentInventory = assetMetadataInventoryForAssets(store.state.assets, assetStorage.provider);
+        if (!sameAssetInventory(currentInventory, verifiedSnapshot.manifest.assetInventory)) {
+          throw new Error("Managed asset snapshot inventory no longer matches the SQLite asset inventory");
+        }
+        const storageStore = prepared.storageStore;
+        const backupDirectory = prepared.backupDirectory;
         const backup = storageStore.createBackup({
           reason: `${reason}:${trigger}`,
-          assetProvider,
+          assetProvider: assetStorage.provider,
+          assetSnapshot: assetSnapshot.identity,
+          requireAssetSnapshot: true,
         });
+        unboundSnapshot = undefined;
+        const drill = storageStore.runRestoreDrill({
+          backupFileName: backup.fileName,
+          requireAssetSnapshot: true,
+          expectedAssetSnapshot: assetSnapshot.identity,
+          expectedAssetInventory: verifiedSnapshot.manifest.assetInventory,
+        });
+        if (drill.status !== "passed") {
+          throw new Error(typeof drill.error === "string" ? drill.error : "Scheduled paired restore drill failed");
+        }
+        pruneUnreferencedManagedAssetSnapshots(backupDirectory);
         appendServerAuditLog(store, "system_storage_backup", {
           action: "system.storage.backupScheduled",
           targetType: "storage_backup",
@@ -1867,6 +1967,10 @@ export function createStorageBackupScheduler(
             sizeBytes: backup.sizeBytes,
             reason: backup.reason,
             recoveryPoint: backup.recoveryPoint,
+            assetSnapshot: assetSnapshot.identity,
+            assetObjectCount: verifiedSnapshot.storedObjectCount,
+            assetSizeBytes: verifiedSnapshot.sizeBytes,
+            restoreDrillStatus: drill.status,
           },
         });
         store.save();
@@ -1879,10 +1983,16 @@ export function createStorageBackupScheduler(
           fileName: backup.fileName,
           sizeBytes: backup.sizeBytes,
           reason: backup.reason,
+          paired: true,
+          assetSnapshotId: assetSnapshot.identity.snapshotId,
+          assetObjectCount: verifiedSnapshot.storedObjectCount,
+          assetSizeBytes: verifiedSnapshot.sizeBytes,
+          restoreDrillStatus: "passed",
         };
         observeRun?.({ ...lastRun });
       });
     } catch (error) {
+      if (unboundSnapshot) removeManagedAssetSnapshot(unboundSnapshot.backupDirectory, unboundSnapshot.snapshotId);
       await coordinator.runExclusive(() => {
         appendServerAuditLog(store, "system_storage_backup", {
           action: "system.storage.backupScheduled",
@@ -1927,6 +2037,9 @@ export function createStorageBackupScheduler(
       if (!timer) return;
       clearInterval(timer);
       timer = undefined;
+    },
+    runNow(trigger = "interval"): Promise<void> {
+      return run(trigger);
     },
     status(): StorageBackupSchedulerStatus {
       const status: StorageBackupSchedulerStatus = {

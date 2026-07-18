@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800" role="img" aria-labelledby="title desc">
+  <title id="title">Old Bell Road battle map</title>
+  <desc id="desc">A winding autumn road through dense woodland, with trees, rocks, ditches, a broken cart, and a toppled roadside bell.</desc>
+  <defs>
+    <pattern id="grass" width="70" height="70" patternUnits="userSpaceOnUse">
+      <rect width="70" height="70" fill="#66733d"/>
+      <path d="M8 52l7-15m5 18l-2-19m30 5l8-13m-2 20l8-8M35 16l3-11" stroke="#89934d" stroke-width="4" opacity=".55"/>
+    </pattern>
+    <pattern id="road" width="90" height="60" patternUnits="userSpaceOnUse">
+      <rect width="90" height="60" fill="#94724e"/>
+      <circle cx="18" cy="15" r="4" fill="#614934"/><circle cx="60" cy="38" r="5" fill="#b39066"/><circle cx="78" cy="12" r="3" fill="#6b5038"/>
+    </pattern>
+    <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
+      <path d="M50 0H0v50" fill="none" stroke="#1b2416" stroke-width="2" opacity=".32"/>
+    </pattern>
+    <radialGradient id="tree" cx="38%" cy="32%">
+      <stop offset="0" stop-color="#d49a3d"/>
+      <stop offset=".6" stop-color="#9a4f2b"/>
+      <stop offset="1" stop-color="#4c3e25"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="800" fill="url(#grass)"/>
+  <path d="M-80 575C180 330 330 615 560 390S960 360 1280 115" fill="none" stroke="#46532e" stroke-width="330" opacity=".8"/>
+  <path d="M-80 575C180 330 330 615 560 390S960 360 1280 115" fill="none" stroke="url(#road)" stroke-width="250"/>
+  <path d="M-80 575C180 330 330 615 560 390S960 360 1280 115" fill="none" stroke="#be9a6a" stroke-width="12" stroke-dasharray="22 28" opacity=".55"/>
+
+  <g stroke="#3c2e20" stroke-width="8">
+    <g transform="translate(100 115)"><circle r="72" fill="url(#tree)"/><circle cx="-42" cy="22" r="42" fill="#a65c32"/><circle cx="45" cy="28" r="48" fill="#ca8539"/><circle r="18" fill="#50351e"/></g>
+    <g transform="translate(280 105)"><circle r="65" fill="url(#tree)"/><circle cx="-35" cy="25" r="38" fill="#be7232"/><circle cx="38" cy="18" r="44" fill="#7f4529"/><circle r="17" fill="#50351e"/></g>
+    <g transform="translate(1050 560)"><circle r="75" fill="url(#tree)"/><circle cx="-42" cy="25" r="46" fill="#a65c32"/><circle cx="45" cy="30" r="50" fill="#ca8539"/><circle r="18" fill="#50351e"/></g>
+    <g transform="translate(860 675)"><circle r="68" fill="url(#tree)"/><circle cx="-38" cy="25" r="40" fill="#be7232"/><circle cx="42" cy="20" r="45" fill="#7f4529"/><circle r="17" fill="#50351e"/></g>
+    <g transform="translate(475 675)"><circle r="62" fill="url(#tree)"/><circle cx="-34" cy="23" r="38" fill="#a65c32"/><circle cx="40" cy="20" r="42" fill="#d19a3d"/><circle r="16" fill="#50351e"/></g>
+    <g transform="translate(740 95)"><circle r="64" fill="url(#tree)"/><circle cx="-35" cy="22" r="40" fill="#8b4d2b"/><circle cx="38" cy="20" r="44" fill="#ca8539"/><circle r="16" fill="#50351e"/></g>
+  </g>
+
+  <g fill="#74756a" stroke="#3c403a" stroke-width="7">
+    <path d="M175 650l35-62 62 15 18 61-48 35-65-14z"/>
+    <path d="M915 170l28-52 55 5 25 47-39 44-58-8z"/>
+    <path d="M675 610l25-40 42 2 20 38-30 35-46-7z"/>
+  </g>
+
+  <g transform="translate(380 330) rotate(18)" stroke="#3f2a1e" stroke-width="9">
+    <rect x="-85" y="-45" width="170" height="90" rx="8" fill="#7c5132"/>
+    <circle cx="-65" cy="58" r="32" fill="#4b3327"/><circle cx="65" cy="58" r="32" fill="#4b3327"/>
+    <path d="M85-12h100"/><path d="M185-12l45-34"/><path d="M-20-45l-34-60M30-45l40-65"/>
+  </g>
+  <g transform="translate(805 415) rotate(-25)" stroke="#4c3522" stroke-width="9">
+    <rect x="-18" y="-100" width="36" height="200" fill="#795332"/>
+    <path d="M20-68h92"/>
+    <path d="M80-68q45 15 24 68h-48q-18-51 24-68z" fill="#b88732" stroke="#5a401d"/>
+    <circle cx="80" cy="9" r="9" fill="#3d2a19"/>
+  </g>
+  <rect width="1200" height="800" fill="url(#grid)" pointer-events="none"/>
+</svg>

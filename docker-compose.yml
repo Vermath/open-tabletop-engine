@@ -1,15 +1,21 @@
 services:
   minio:
-    image: minio/minio:latest
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z@sha256:a1ea29fa28355559ef137d71fc570e508a214ec84ff8083e39bc5428980b015e
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-opentabletop}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-opentabletop-dev}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Run pnpm compose:env:init to generate MinIO credentials}
     ports:
       - "${INFRA_BIND_ADDRESS:-127.0.0.1}:${MINIO_API_PORT:-9000}:9000"
       - "${INFRA_BIND_ADDRESS:-127.0.0.1}:${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
       - minio-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9000/minio/health/live >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
 
   api:
     build:
@@ -22,10 +28,12 @@ services:
       OTTE_UPLOAD_DIR: /app/uploads
       OTTE_ASSET_STORAGE: ${OTTE_ASSET_STORAGE:-s3}
       OTTE_S3_ENDPOINT: ${OTTE_S3_ENDPOINT:-http://minio:9000}
+      # Explicitly scoped to the local Compose service. Remote HTTP endpoints remain rejected.
+      OTTE_S3_ALLOW_INSECURE_LOCAL_ENDPOINT: ${OTTE_S3_ALLOW_INSECURE_LOCAL_ENDPOINT:-true}
       OTTE_S3_BUCKET: ${OTTE_S3_BUCKET:-opentabletop-assets}
       OTTE_S3_REGION: ${OTTE_S3_REGION:-us-east-1}
       OTTE_S3_ACCESS_KEY_ID: ${OTTE_S3_ACCESS_KEY_ID:-opentabletop}
-      OTTE_S3_SECRET_ACCESS_KEY: ${OTTE_S3_SECRET_ACCESS_KEY:-opentabletop-dev}
+      OTTE_S3_SECRET_ACCESS_KEY: ${OTTE_S3_SECRET_ACCESS_KEY:?Run pnpm compose:env:init to generate S3 credentials}
       OTTE_S3_FORCE_PATH_STYLE: ${OTTE_S3_FORCE_PATH_STYLE:-true}
       OTTE_ASSET_QUOTA_BYTES: ${OTTE_ASSET_QUOTA_BYTES:-}
       OTTE_ASSET_RETENTION_DAYS: ${OTTE_ASSET_RETENTION_DAYS:-}
@@ -59,14 +67,24 @@ services:
       OTTE_EMAIL_WEBHOOK_TOKEN: ${OTTE_EMAIL_WEBHOOK_TOKEN:-}
       OTTE_EMAIL_WEBHOOK_TIMEOUT_MS: ${OTTE_EMAIL_WEBHOOK_TIMEOUT_MS:-5000}
       OTTE_ALLOW_LEGACY_USER_HEADER: ${OTTE_ALLOW_LEGACY_USER_HEADER:-false}
+      OTTE_PUBLIC_REGISTRATION: ${OTTE_PUBLIC_REGISTRATION:-false}
+      OTTE_WEB_ORIGIN: ${OTTE_WEB_ORIGIN:-http://localhost:5173}
+      OTTE_CORS_ALLOWED_ORIGINS: ${OTTE_CORS_ALLOWED_ORIGINS:-http://localhost:5173}
+      OTTE_TRUSTED_PROXY_HOPS: ${OTTE_TRUSTED_PROXY_HOPS:-1}
+      # The default stack is loopback-only HTTP. Hosted TLS deployments must use Secure cookies.
+      OTTE_SESSION_COOKIE_SECURE: ${OTTE_SESSION_COOKIE_SECURE:-false}
+      OTTE_ALLOW_INSECURE_LOCAL_SESSION_COOKIE: ${OTTE_ALLOW_INSECURE_LOCAL_SESSION_COOKIE:-true}
       OTTE_PLUGIN_TRUST_POLICY: ${OTTE_PLUGIN_TRUST_POLICY:-require_trusted}
       OTTE_PLUGIN_REVIEW_POLICY: ${OTTE_PLUGIN_REVIEW_POLICY:-require_approved}
       OTTE_PLUGIN_TRUST_KEYS: ${OTTE_PLUGIN_TRUST_KEYS:-}
       OTTE_PLUGIN_DIR: /app/storage/plugins
       OTTE_BUNDLED_PLUGIN_DIR: /app/plugins
       OTTE_SQLITE_BACKUP_RETENTION_COUNT: ${OTTE_SQLITE_BACKUP_RETENTION_COUNT:-30}
+      OTTE_SQLITE_BACKUP_RUN_ON_START: ${OTTE_SQLITE_BACKUP_RUN_ON_START:-true}
+      OTTE_SQLITE_BACKUP_INTERVAL_SECONDS: ${OTTE_SQLITE_BACKUP_INTERVAL_SECONDS:-86400}
+      OTTE_SQLITE_BACKUP_REASON: ${OTTE_SQLITE_BACKUP_REASON:-compose-daily}
     ports:
-      - "${API_PORT:-4000}:4000"
+      - "${API_BIND_ADDRESS:-127.0.0.1}:${API_PORT:-4000}:4000"
     volumes:
       - api-storage:/app/storage
       - api-uploads:/app/uploads
@@ -77,7 +95,8 @@ services:
       timeout: 3s
       retries: 12
     depends_on:
-      - minio
+      minio:
+        condition: service_healthy
 
   worker:
     profiles:
@@ -108,11 +127,20 @@ services:
       context: .
       dockerfile: infra/docker/web.Dockerfile
       args:
-        VITE_API_URL: ${VITE_API_URL:-http://localhost:4000}
+        VITE_API_URL: ${VITE_API_URL:-}
+    environment:
+      OTTE_ASSET_CDN_BASE_URL: ${OTTE_ASSET_CDN_BASE_URL:-}
     ports:
-      - "${WEB_PORT:-5173}:80"
+      - "${WEB_BIND_ADDRESS:-127.0.0.1}:${WEB_PORT:-5173}:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/api/v1/health >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
     depends_on:
-      - api
+      api:
+        condition: service_healthy
 
 volumes:
   minio-data:

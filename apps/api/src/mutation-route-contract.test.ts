@@ -84,6 +84,7 @@ const EXEMPTIONS: readonly ExemptionRule[] = [
   { pattern: /^\/api\/v1\/campaigns\/:[^/]+\/dnd\/monster-templates\/preview$/, reason: "non-mutating monster-template validation preview" },
   { pattern: /^\/api\/v1\/campaigns\/:[^/]+\/dnd\/monster-variants\/preview$/, reason: "non-mutating immutable-base variant preview" },
   { pattern: /^\/api\/v1\/campaigns\/:[^/]+\/systems\/:[^/]+\/controlled-creatures\/preview$/, reason: "non-mutating controlled-creature preview" },
+  { pattern: /^\/api\/v1\/campaigns\/:[^/]+\/systems\/:[^/]+\/characters\/preview$/, reason: "non-mutating guided character preview" },
   { pattern: /^\/api\/v1\/campaigns\/:[^/]+\/systems\/:[^/]+\/actors\/:[^/]+\/spell-preparation\/preview$/, reason: "non-mutating spell-preparation preview stored only in the idempotency ledger" },
   { pattern: /^\/api\/v1\/scenes\/:[^/]+\/ai-edits\/apply-to-target$/, reason: "explicit AI behavior boundary; leave existing execution behavior unchanged" },
   { pattern: /^\/api\/v1\/campaigns\/:[^/]+\/content-imports\/pdf\/ai$/, reason: "explicit AI behavior boundary" },
@@ -268,7 +269,7 @@ function specializedRouteGuards(route: SourceRoute, source: string): boolean {
 function directGuardEvidence(route: SourceRoute): { idempotency: boolean; revision: boolean } {
   return {
     idempotency: /idempotency-key|Idempotency-Key|requireConsequentialMutation/.test(route.handlerSource),
-    revision: /expectedUpdatedAt|requireExpectedRevision|requiredRevisions|expectedActorUpdatedAt|expectedItemUpdatedAt|expectedCombatUpdatedAt|preparedPreviewKey/.test(route.handlerSource)
+    revision: /expectedUpdatedAt|requireExpectedRevision|requiredRevisions|expectedActorUpdatedAt|expectedItemUpdatedAt|expectedCombatUpdatedAt|preparedPreviewKey|prepareTokenMoveBatchCommand/.test(route.handlerSource)
   };
 }
 
@@ -277,8 +278,8 @@ describe("non-AI mutation route contract", () => {
   const centralDescriptors = extractCentralGuardDescriptors(appSource);
 
   it("keeps the current mutation inventory explicit and classified", () => {
-    expect(routes).toHaveLength(251);
-    expect(routes.filter((route) => route.sourceName === "app.ts")).toHaveLength(207);
+    expect(routes).toHaveLength(257);
+    expect(routes.filter((route) => route.sourceName === "app.ts")).toHaveLength(213);
     expect(routes.filter((route) => route.sourceName === "calculation-override-routes.ts")).toHaveLength(2);
     expect(routes.filter((route) => route.sourceName === "archive-operations.ts")).toHaveLength(0);
     expect(routes.filter((route) => route.sourceName === "asset-operations.ts")).toHaveLength(0);

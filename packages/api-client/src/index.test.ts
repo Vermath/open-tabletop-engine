@@ -10,6 +10,7 @@ import {
   type CampaignSnapshotMember,
   type CampaignUpdateInput,
   type Dnd5eSrdCharacterOriginsInfo,
+  type Dnd5eSrdAdvancementSubclassOptionInfo,
   type DndCustomContentDraft,
   type DndMonsterVariantDraft,
   type Dnd5eSrdRulesPreviewResult,
@@ -19,6 +20,7 @@ import {
   type PluginInstallResult,
   type SceneVisionOptions,
   type SystemActorAdvanceResult,
+  type SystemActorAdvancementInfo,
   type SystemActorRestResult,
   type SystemCharacterCreateInput,
   type SystemCharacterCreateResult,
@@ -78,6 +80,70 @@ const delegatedUserId = "usr_delegated_client";
 const archiveImportOperationId = "arcimp_client";
 
 describe("OpenTabletopClient", () => {
+  it("upgrades a legacy bearer to a confirmed cookie session without crossing user identity", async () => {
+    const requests: Array<{ url: URL; init?: RequestInit }> = [];
+    const client = new OpenTabletopClient("https://api.test", {
+      token: "ots_legacy",
+      fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        requests.push({ url: new URL(input.toString()), init });
+        return new Response(JSON.stringify({
+          ok: true,
+          upgradeConfirmed: true,
+          session: { userId: "usr_expected" },
+        }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }) as typeof fetch,
+    });
+
+    await client.upgradeSessionCookie("usr_expected");
+    await client.confirmSessionCookieUpgrade("usr_expected");
+    await client.session();
+    await client.exportChatNdjson(campaignId);
+    await client.exportCampaignStream(campaignId);
+
+    expect(requests.map((request) => ({
+      path: request.url.pathname,
+      credentials: request.init?.credentials,
+      authorization: new Headers(request.init?.headers).get("authorization"),
+      body: request.init?.body === undefined
+        ? undefined
+        : JSON.parse(String(request.init.body)),
+    }))).toEqual([
+      {
+        path: "/api/v1/auth/session/upgrade-cookie",
+        credentials: "include",
+        authorization: "Bearer ots_legacy",
+        body: { expectedUserId: "usr_expected" },
+      },
+      {
+        path: "/api/v1/auth/session/upgrade-cookie/confirm",
+        credentials: "include",
+        authorization: null,
+        body: { expectedUserId: "usr_expected" },
+      },
+      {
+        path: "/api/v1/auth/session",
+        credentials: "include",
+        authorization: null,
+        body: undefined,
+      },
+      {
+        path: "/api/v1/campaigns/camp_client/chat/export",
+        credentials: "include",
+        authorization: null,
+        body: undefined,
+      },
+      {
+        path: "/api/v1/campaigns/camp_client/export/stream",
+        credentials: "include",
+        authorization: null,
+        body: undefined,
+      },
+    ]);
+  });
+
   it("builds typed realtime websocket helpers", () => {
     const sockets: Array<{ url: string; protocols?: string | string[] }> = [];
     class MockWebSocket {
@@ -227,6 +293,7 @@ describe("OpenTabletopClient", () => {
       }) as typeof fetch,
     });
     const input = {
+      encounterId: "enc_client",
       systemId,
       expectedUpdatedAt: "2026-07-15T12:00:00.000Z",
       placements: [{
@@ -308,6 +375,7 @@ describe("OpenTabletopClient", () => {
     await client.analyzePdfContentImport(campaignId, "raw-pdf-body", {
       sourceName: "module.pdf",
       idempotencyKey: "content-pdf-json-test",
+      expectedUpdatedAt: "2026-07-13T00:00:00.000Z",
     });
 
     expect(
@@ -729,6 +797,19 @@ describe("OpenTabletopClient", () => {
         damageType: "fire",
       }),
     ).toEqualTypeOf<Promise<Dnd5eSrdRulesPreviewResult>>();
+    expectTypeOf(
+      client.systemActorAdvancement(campaignId, systemId, actorId),
+    ).toEqualTypeOf<Promise<SystemActorAdvancementInfo>>();
+    expectTypeOf<SystemActorAdvancementInfo["requiresSubclass"]>().toEqualTypeOf<boolean | undefined>();
+    expectTypeOf<NonNullable<SystemActorAdvancementInfo["subclassOptions"]>[number]>().toEqualTypeOf<Dnd5eSrdAdvancementSubclassOptionInfo>();
+    expectTypeOf<Dnd5eSrdAdvancementSubclassOptionInfo>().toMatchTypeOf<{
+      id: string;
+      name: string;
+      className: string;
+      selectionLevel: number;
+      featureNames: string[];
+      alwaysPreparedSpells?: string[];
+    }>();
     expectTypeOf(
       client.commitDnd5eSrdAdvancement(
         campaignId,
@@ -1451,7 +1532,14 @@ describe("OpenTabletopClient", () => {
       fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = new URL(input.toString());
         calls.push(`${(init?.method ?? "GET").toUpperCase()} ${url.pathname}`);
-        return new Response(JSON.stringify({ ok: true }), {
+        const responseBody = url.pathname === "/api/v1/auth/session/upgrade-cookie/confirm"
+          ? {
+              ok: true,
+              upgradeConfirmed: true,
+              session: { userId: "usr_client" },
+            }
+          : { ok: true };
+        return new Response(JSON.stringify(responseBody), {
           status: 200,
           headers: { "content-type": "application/json" },
         });
@@ -1538,6 +1626,8 @@ describe("OpenTabletopClient", () => {
       }),
       client.logout(),
       client.session(),
+      client.upgradeSessionCookie("usr_client"),
+      client.confirmSessionCookieUpgrade("usr_client"),
       client.profile(),
       client.updateProfile(
         {
@@ -2070,7 +2160,16 @@ describe("OpenTabletopClient", () => {
         "2026-07-13T00:00:00.000Z",
         "light-delete-client",
       ),
-      client.applyAiEditLayerToTarget(sceneId),
+      client.applyAiEditLayerToTarget(
+        sceneId,
+        {
+          expectedUpdatedAt: "2026-07-13T00:00:00.000Z",
+          expectedTargetUpdatedAt: "2026-07-13T00:00:00.000Z",
+          expectedSourceTokenUpdatedAt: {},
+          expectedTargetTokenUpdatedAt: {},
+        },
+        "ai-edit-apply-client",
+      ),
       client.assets(campaignId),
       client.assetStorage(campaignId),
       client.createAsset(campaignId, { name: "Asset" }, "asset-create-client"),
@@ -2095,6 +2194,19 @@ describe("OpenTabletopClient", () => {
         sceneId,
         { name: "Token", expectedUpdatedAt: "2026-07-13T00:00:00.000Z" },
         "token-create-client",
+      ),
+      client.moveTokens(
+        sceneId,
+        {
+          expectedSceneUpdatedAt: "2026-07-13T00:00:00.000Z",
+          changes: [{
+            tokenId,
+            x: 100,
+            y: 150,
+            expectedUpdatedAt: "2026-07-13T00:00:00.000Z",
+          }],
+        },
+        "token-move-batch-client",
       ),
       client.updateToken(
         tokenId,
@@ -2296,6 +2408,18 @@ describe("OpenTabletopClient", () => {
         },
         "combat-mechanic-trigger-client",
       ),
+      client.spendDnd5eSrdLegendaryAction(
+        combatId,
+        actorId,
+        {
+          promptId: "legendary-prompt-client",
+          optionName: "Wing Attack",
+          cost: 2,
+          expectedActorUpdatedAt: "2026-07-13T00:00:00.000Z",
+          expectedCombatUpdatedAt: "2026-07-13T00:00:00.000Z",
+        },
+        "legendary-action-client",
+      ),
       client.previewCombatEffectSchedule(
         combatId,
         { phase: "start_round", prepare: true },
@@ -2387,11 +2511,18 @@ describe("OpenTabletopClient", () => {
         "encounter-delete-client",
       ),
       client.proposals(campaignId),
-      client.createProposal(campaignId, { title: "Proposal" }),
-      client.approveProposal(proposalId),
-      client.applyProposal(proposalId),
-      client.revertProposal(proposalId),
-      client.rejectProposal(proposalId),
+      client.createProposal(
+        campaignId,
+        {
+          title: "Proposal",
+          expectedUpdatedAt: "2026-07-13T00:00:00.000Z",
+        },
+        { idempotencyKey: "proposal-create-client" },
+      ),
+      client.approveProposal(proposalId, "2026-07-13T00:00:00.000Z", "proposal-approve-client"),
+      client.applyProposal(proposalId, "2026-07-13T00:00:00.000Z", "proposal-apply-client"),
+      client.revertProposal(proposalId, "2026-07-13T00:00:00.000Z", "proposal-revert-client"),
+      client.rejectProposal(proposalId, "2026-07-13T00:00:00.000Z", "proposal-reject-client"),
       client.aiPolicy(campaignId),
       client.updateAiPolicy(
         campaignId,
@@ -2415,24 +2546,32 @@ describe("OpenTabletopClient", () => {
         { idempotencyKey: "ai-privacy-prune-client" },
       ),
       client.aiThreads(campaignId),
-      client.createAiThread(campaignId, { prompt: "Plan" }),
+      client.createAiThread(campaignId, { prompt: "Plan", approvalMode: "auto", expectedUpdatedAt: "2026-07-13T00:00:00.000Z" }, { idempotencyKey: "ai-thread-client" }),
       client.aiUsage(campaignId),
       client.aiEvaluations(campaignId),
-      client.createAiEvaluation(campaignId, { name: "Eval" }),
+      client.createAiEvaluation(
+        campaignId,
+        {
+          threadId: "ai-thread-client",
+          expectedThreadUpdatedAt: "2026-07-13T00:00:00.000Z",
+          name: "Eval",
+        },
+        { idempotencyKey: "ai-evaluation-client" },
+      ),
       client.aiMemory(campaignId),
-      client.createAiMemory(campaignId, { text: "Fact" }),
-      client.extractAiMemory(campaignId, { transcript: "Transcript" }),
-      client.approveAiMemory(factId),
+      client.createAiMemory(campaignId, { text: "Fact", expectedUpdatedAt: "2026-07-13T00:00:00.000Z" }, { idempotencyKey: "ai-memory-create-client" }),
+      client.extractAiMemory(campaignId, { sourceText: "Transcript", expectedUpdatedAt: "2026-07-13T00:00:00.000Z" }, { idempotencyKey: "ai-memory-extract-client" }),
+      client.approveAiMemory(factId, "2026-07-13T00:00:00.000Z", "ai-memory-approve-client"),
       client.aiMemoryFact(factId),
-      client.updateAiMemory(factId, { subject: "Updated" }),
-      client.rejectAiMemory(factId),
-      client.deleteAiMemory(factId),
+      client.updateAiMemory(factId, { subject: "Updated", expectedUpdatedAt: "2026-07-13T00:00:00.000Z" }, "ai-memory-update-client"),
+      client.rejectAiMemory(factId, "2026-07-13T00:00:00.000Z", "ai-memory-reject-client"),
+      client.deleteAiMemory(factId, "2026-07-13T00:00:00.000Z", "ai-memory-delete-client"),
       client.aiToolCalls(campaignId),
-      client.retryAiToolCall(campaignId, toolCallId),
-      client.aiSessionRecap(campaignId, { transcript: "Transcript" }),
-      client.aiEncounterDesign(campaignId, { prompt: "Encounter" }),
-      client.aiGenerateMapAsset(campaignId, { prompt: "Map", sceneId }),
-      client.aiGenerateTokenAsset(campaignId, { prompt: "Token", tokenId }),
+      client.retryAiToolCall(campaignId, toolCallId, { expectedUpdatedAt: "2026-07-13T00:00:00.000Z" }, "ai-tool-retry-client"),
+      client.aiSessionRecap(campaignId, { transcript: "Transcript", expectedUpdatedAt: "2026-07-13T00:00:00.000Z" }, { idempotencyKey: "ai-session-recap-client" }),
+      client.aiEncounterDesign(campaignId, { prompt: "Encounter", expectedUpdatedAt: "2026-07-13T00:00:00.000Z" }, { idempotencyKey: "ai-encounter-design-client" }),
+      client.aiGenerateMapAsset(campaignId, { prompt: "Map", sceneId, expectedUpdatedAt: "2026-07-13T00:00:00.000Z" }, { idempotencyKey: "ai-map-asset-client" }),
+      client.aiGenerateTokenAsset(campaignId, { prompt: "Token", tokenId, expectedUpdatedAt: "2026-07-13T00:00:00.000Z" }, { idempotencyKey: "ai-token-asset-client" }),
       client.mcp({
         jsonrpc: "2.0",
         id: "mcp_client",
@@ -2515,6 +2654,10 @@ describe("OpenTabletopClient", () => {
         { name: "Character" },
         "system-character-create-client",
       ),
+      client.previewSystemCharacter(campaignId, systemId, {
+        templateId: "fighter",
+        name: "Preview Character",
+      }),
       client.createSystemMonster(
         campaignId,
         systemId,
@@ -2524,6 +2667,7 @@ describe("OpenTabletopClient", () => {
       client.placeEncounterMonsters(
         sceneId,
         {
+          encounterId,
           systemId,
           expectedUpdatedAt: "2026-07-13T00:00:00.000Z",
           placements: [{ threatId: "guard", x: 100, y: 100, width: 50, height: 50 }],
@@ -2866,6 +3010,18 @@ describe("OpenTabletopClient", () => {
         },
         { idempotencyKey: "typed-damage-apply-client" },
       ),
+      client.adjustDnd5eSrdCombatVitals(
+        campaignId,
+        systemId,
+        actorId,
+        {
+          kind: "healing",
+          amount: 4,
+          expectedActorUpdatedAt: "2026-07-13T00:00:00.000Z",
+          expectedCombatUpdatedAt: "2026-07-13T00:00:00.000Z",
+        },
+        "combat-vitals-client",
+      ),
       client.cancelDnd5eSrdPendingAdvancement(
         campaignId,
         systemId,
@@ -2963,6 +3119,7 @@ describe("OpenTabletopClient", () => {
       client.analyzePdfContentImport(campaignId, new Blob(["pdf"]), {
         sourceName: "module.pdf",
         idempotencyKey: "content-pdf-client",
+        expectedUpdatedAt: "2026-07-13T00:00:00.000Z",
       }),
       client.contentImport(importId),
       client.applyContentImport(

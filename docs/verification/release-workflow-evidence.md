@@ -221,8 +221,8 @@ The release-smoke hosted pass is acceptable only when:
 
 - The workflow run is tied to the release candidate commit checked by `pnpm v1:completion:audit` and `pnpm v1:evidence:check`, or by setting `$env:OTTE_RELEASE_COMMIT = "<full-40-character-hosted-run-commit-sha>"` before both commands if evidence docs are committed afterward.
 - The run completes successfully without rerunning with uncommitted local changes.
-- The `Run release smoke` step executes `pnpm release:smoke`.
-- The hosted release-smoke output includes successful `pnpm v1:issues:test` and `pnpm v1:issues:check` steps, proving the live open-issue P0/P1 audit passed in CI.
+- The tokenless `Run release smoke` step executes `pnpm release:smoke:offline`; release-candidate evidence must come from a trusted `main` push where the following push-only `Audit open release issues` step executes `pnpm v1:issues:check` with read-only issue access.
+- The hosted release-smoke output includes successful release-evidence self-tests and the push-only live open-issue P0/P1 audit. Pull-request runs are preflight evidence only because untrusted PR-controlled scripts are intentionally never given `GH_TOKEN`.
 - Any manually rerun job records the final HTTPS run attempt URL.
 
 The docs-site publication pass is acceptable only when:

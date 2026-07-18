@@ -87,20 +87,20 @@ describe("typed D&D managed-data API boundaries", () => {
         method: "PATCH",
         url: `/api/v1/actors/${actor.id}`,
         headers: { ...gm, "idempotency-key": "managed-subroot-rule-override" },
-        payload: { expectedUpdatedAt: actor.updatedAt, manualOverrideReason: "Temporary table ruling", data: { ...actor.data, hp: { current: 13, max: 12 } } },
+        payload: { expectedUpdatedAt: actor.updatedAt, manualOverrideReason: "Temporary table ruling", data: { ...actor.data, resources: { heroPoints: { current: 2, max: 1, recovery: "long" } } } },
       });
       expect(reviewedRuleOverride.statusCode, reviewedRuleOverride.body).toBe(200);
       actor = reviewedRuleOverride.json() as Actor;
-      expect(actor.data.hp).toEqual({ current: 13, max: 12 });
+      expect(actor.data.resources).toEqual({ heroPoints: { current: 2, max: 1, recovery: "long" } });
 
       const malformedOverride = await app.inject({
         method: "PATCH",
         url: `/api/v1/actors/${actor.id}`,
         headers: { ...gm, "idempotency-key": "managed-subroot-structural-override" },
-        payload: { expectedUpdatedAt: actor.updatedAt, manualOverrideReason: "This cannot make a string into Hit Points", data: { ...actor.data, hp: { current: "many", max: 12 } } },
+        payload: { expectedUpdatedAt: actor.updatedAt, manualOverrideReason: "This cannot make a string into a resource count", data: { ...actor.data, resources: { heroPoints: { current: "many", max: 1, recovery: "long" } } } },
       });
       expect(malformedOverride.statusCode).toBe(400);
-      expect(malformedOverride.json().message).toContain("/data/hp/current (schema.integer)");
+      expect(malformedOverride.json().message).toContain("/data/resources/heroPoints/current (schema.integer)");
     } finally {
       await app.close();
     }

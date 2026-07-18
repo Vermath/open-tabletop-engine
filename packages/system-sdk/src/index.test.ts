@@ -67,9 +67,9 @@ describe("generic fantasy rules", () => {
     expect(sheet.spells.map((item) => item.name)).toEqual(["Healing Word"]);
     expect(sheet.quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "item-itm_longsword-damage", label: "Longsword Damage", formula: "1d8+2" },
-        { id: "item-itm_longsword-versatile-damage", label: "Longsword Versatile Damage", formula: "1d10+2" },
-        { id: "spell-itm_healing_word-healing", label: "Healing Word Healing", formula: "1d4+2" }
+        expect.objectContaining({ id: "item-itm_longsword-damage", label: "Longsword Damage", formula: "1d8+2" }),
+        expect.objectContaining({ id: "item-itm_longsword-versatile-damage", label: "Longsword Versatile Damage", formula: "1d10+2" }),
+        expect.objectContaining({ id: "spell-itm_healing_word-healing", label: "Healing Word Healing", formula: "1d4+2" })
       ])
     );
   });
@@ -280,6 +280,20 @@ describe("generic fantasy rules", () => {
     expect(imported.warnings).toEqual(["Unknown condition skipped: missing-condition", "Unknown compendium entry skipped: missing-item"]);
   });
 });
+
+function dnd5eSrdMonsterCatalogSheetProjection(actor: Actor, items: Item[]) {
+  const sheet = dnd5eSrdSheet(actor, items);
+  return {
+    ...sheet,
+    quickRolls: sheet.quickRolls.map((roll) => {
+      if (roll.metadata?.activation !== "on-hit") return roll;
+      const { activation: _activation, ...metadata } = roll.metadata;
+      return Object.keys(metadata).length > 0
+        ? { ...roll, metadata }
+        : { id: roll.id, label: roll.label, formula: roll.formula };
+    })
+  };
+}
 
 describe("dnd 5.5e srd rules", () => {
   const srdActor: Actor = {
@@ -2764,14 +2778,14 @@ describe("dnd 5.5e srd rules", () => {
         { id: "skill-religion", label: "Religion Check", formula: "1d20+2" },
         { id: "skill-perception", label: "Perception Check", formula: "1d20+3" },
         { id: "tool-calligraphers-supplies", label: "Calligrapher's Supplies Check", formula: "1d20+3" },
-        { id: "spell-itm_healing_word-healing", label: "Healing Word Healing", formula: "1d4+3" },
+        expect.objectContaining({ id: "spell-itm_healing_word-healing", label: "Healing Word Healing", formula: "1d4+3" }),
         expect.objectContaining({ id: "spell-itm_chromatic_orb-attack", label: "Chromatic Orb Attack", formula: "1d20+5", metadata: expect.objectContaining({ attackType: "spell", ability: "wisdom", proficiencyBonus: 2 }) }),
-        { id: "spell-itm_chromatic_orb-damage", label: "Chromatic Orb Damage", formula: "3d8" },
-        { id: "spell-itm_ice_knife-damage", label: "Ice Knife Damage", formula: "1d10" },
-        { id: "spell-itm_ice_knife-secondary-damage", label: "Ice Knife Secondary Damage", formula: "2d6" },
+        expect.objectContaining({ id: "spell-itm_chromatic_orb-damage", label: "Chromatic Orb Damage", formula: "3d8", metadata: expect.objectContaining({ activation: "on-hit" }) }),
+        expect.objectContaining({ id: "spell-itm_ice_knife-damage", label: "Ice Knife Damage", formula: "1d10", metadata: expect.objectContaining({ activation: "on-hit" }) }),
+        expect.objectContaining({ id: "spell-itm_ice_knife-secondary-damage", label: "Ice Knife Secondary Damage", formula: "2d6", metadata: expect.objectContaining({ activation: "follow-up" }) }),
         expect.objectContaining({ id: "item-itm_shortbow-attack", label: "Shortbow Attack", formula: "1d20+3", metadata: expect.objectContaining({ attackType: "weapon", ability: "dexterity", proficient: true, proficiencyBonus: 2 }) }),
-        { id: "item-itm_shortbow-damage", label: "Shortbow Damage", formula: "1d6+1" },
-        { id: "item-itm_light_crossbow-damage", label: "Light Crossbow Damage", formula: "1d8+1" }
+        expect.objectContaining({ id: "item-itm_shortbow-damage", label: "Shortbow Damage", formula: "1d6+1", metadata: expect.objectContaining({ activation: "on-hit" }) }),
+        expect.objectContaining({ id: "item-itm_light_crossbow-damage", label: "Light Crossbow Damage", formula: "1d8+1", metadata: expect.objectContaining({ activation: "on-hit" }) })
       ])
     );
     const clericActor: Actor = { ...srdActor, data: { ...cleric!.data } };
@@ -2851,7 +2865,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdActionFormula(levelSeventeenClericActor, [clericCureWounds], "spell-itm_life_cure_wounds-healing", { spellSlotLevel: 3 })).toBe("8+3+16+5");
     const fighterActor: Actor = { ...srdActor, data: { ...fighter!.data } };
     expect(dnd5eSrdQuickRolls(fighterActor, [])).toEqual(
-      expect.arrayContaining([{ id: "feature-second-wind-healing", label: "Second Wind Healing", formula: "1d10+1" }])
+      expect.arrayContaining([expect.objectContaining({ id: "feature-second-wind-healing", label: "Second Wind Healing", formula: "1d10+1", metadata: expect.objectContaining({ action: "Bonus Action" }) })])
     );
     expect(dnd5eSrdActionFormula({ ...fighterActor, data: { ...fighterActor.data, level: 3 } }, [], "feature-second-wind-healing")).toBe("1d10+3");
     const levelTwoFighterData = applyDnd5eSrdAdvancement(fighterActor, "level-up");
@@ -2864,7 +2878,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdQuickRolls(levelTwoFighterActor, [])).toEqual(
       expect.arrayContaining([
         { id: "feature-action-surge", label: "Action Surge", formula: "0" },
-        { id: "feature-tactical-mind-bonus", label: "Tactical Mind Bonus", formula: "1d10" }
+        expect.objectContaining({ id: "feature-tactical-mind-bonus", label: "Tactical Mind Bonus", formula: "1d10", metadata: expect.objectContaining({ activation: "free" }) })
       ])
     );
     expect(dnd5eSrdActionFormula(levelTwoFighterActor, [], "feature-action-surge")).toBe("0");
@@ -2888,7 +2902,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(levelFiveFighterData.features).toEqual(expect.arrayContaining(["Champion", "Improved Critical", "Remarkable Athlete", "Extra Attack", "Tactical Shift"]));
     expect(levelFiveFighterData.combat).toEqual(expect.objectContaining({ attacksPerAction: 2, tacticalShift: { movementFt: 15, opportunityAttacks: false } }));
     expect(dnd5eSrdQuickRolls(levelFiveFighterActor, []).find((roll) => roll.id === "feature-second-wind-healing")).toEqual(
-      expect.objectContaining({ formula: "1d10+5", metadata: { tacticalShift: { movementFt: 15, opportunityAttacks: false } } })
+      expect.objectContaining({ formula: "1d10+5", metadata: expect.objectContaining({ action: "Bonus Action", tacticalShift: { movementFt: 15, opportunityAttacks: false } }) })
     );
     expect(dnd5eSrdQuickRolls(levelFiveFighterActor, [])).toEqual(
       expect.arrayContaining([
@@ -2910,15 +2924,33 @@ describe("dnd 5.5e srd rules", () => {
           id: "item-itm_fighter_longsword-damage",
           label: "Longsword Damage",
           formula: "1d8+3",
-          metadata: { attacksPerAction: 2, feature: "Extra Attack" }
+          metadata: expect.objectContaining({ activation: "on-hit", attacksPerAction: 2, feature: "Extra Attack" })
         }),
         expect.objectContaining({
           id: "item-itm_greatsword-damage",
           label: "Greatsword Damage",
           formula: "2d6+3",
-          metadata: { attacksPerAction: 2, feature: "Extra Attack" }
+          metadata: expect.objectContaining({ activation: "on-hit", attacksPerAction: 2, feature: "Extra Attack" })
         })
       ])
+    );
+    const respecedFighter: Actor = {
+      ...levelFiveFighterActor,
+      id: "act_respeced_fighter",
+      data: {
+        ...levelFiveFighterData,
+        subclass: "Battle Master",
+        subclasses: { Fighter: "battle-master" }
+      }
+    };
+    const respecedFighterRolls = dnd5eSrdQuickRolls(respecedFighter, [
+      { ...fighterLongsword, actorId: respecedFighter.id }
+    ]);
+    expect(respecedFighterRolls.map((roll) => roll.id)).not.toEqual(
+      expect.arrayContaining(["feature-champion-critical-range", "feature-champion-remarkable-athlete"])
+    );
+    expect(respecedFighterRolls.find((roll) => roll.id === "item-itm_fighter_longsword-attack")?.metadata).not.toEqual(
+      expect.objectContaining({ criticalHitOn: "19-20" })
     );
     let levelFifteenFighterData = levelFiveFighterData;
     for (let level = 6; level <= 15; level += 1) {
@@ -2962,7 +2994,7 @@ describe("dnd 5.5e srd rules", () => {
         { id: "skill-athletics", label: "Athletics Check", formula: "1d20+5" },
         { id: "feature-rage", label: "Rage", formula: "0", metadata: expect.objectContaining({ resource: "rage", damageBonus: 2, damageBonusRollId: "feature-rage-damage-bonus" }) },
         { id: "feature-rage-damage-bonus", label: "Rage Damage Bonus", formula: "2", metadata: expect.objectContaining({ bonusDamage: 2, damageType: "Weapon" }) },
-        { id: "item-itm_barbarian_spear-damage", label: "Spear Damage", formula: "1d6+3" }
+        expect.objectContaining({ id: "item-itm_barbarian_spear-damage", label: "Spear Damage", formula: "1d6+3", metadata: expect.objectContaining({ activation: "on-hit" }) })
       ])
     );
     expect(dnd5eSrdActionFormula(barbarianActor, [], "feature-rage")).toBe("0");
@@ -2991,7 +3023,7 @@ describe("dnd 5.5e srd rules", () => {
           id: "item-itm_barbarian_spear-damage",
           label: "Spear Damage",
           formula: "1d6+3",
-          metadata: { attacksPerAction: 2, feature: "Extra Attack" }
+          metadata: expect.objectContaining({ activation: "on-hit", attacksPerAction: 2, feature: "Extra Attack" })
         })
       ])
     );
@@ -3024,8 +3056,8 @@ describe("dnd 5.5e srd rules", () => {
         { id: "save-dexterity", label: "Dexterity Save", formula: "1d20+4" },
         { id: "skill-performance", label: "Performance Check", formula: "1d20+5" },
         expect.objectContaining({ id: "feature-bardic-inspiration", label: "Bardic Inspiration", formula: "1d6", metadata: expect.objectContaining({ resource: "bardicInspiration", die: "d6", recovery: "long" }) }),
-        { id: "spell-itm_bard_healing_word-healing", label: "Healing Word Healing", formula: "1d4+3" },
-        { id: "item-itm_bard_dagger-damage", label: "Dagger Damage", formula: "1d4+2" }
+        expect.objectContaining({ id: "spell-itm_bard_healing_word-healing", label: "Healing Word Healing", formula: "1d4+3", metadata: expect.objectContaining({ action: "bonus" }) }),
+        expect.objectContaining({ id: "item-itm_bard_dagger-damage", label: "Dagger Damage", formula: "1d4+2", metadata: expect.objectContaining({ activation: "on-hit" }) })
       ])
     );
     expect(dnd5eSrdActionFormula(bardActor, [], "feature-bardic-inspiration")).toBe("1d6");
@@ -3166,7 +3198,7 @@ describe("dnd 5.5e srd rules", () => {
         { id: "save-charisma", label: "Charisma Save", formula: "1d20+4" },
         { id: "skill-athletics", label: "Athletics Check", formula: "1d20+5" },
         expect.objectContaining({ id: "feature-lay-on-hands-healing", label: "Lay On Hands Healing", formula: "5", metadata: expect.objectContaining({ resource: "layOnHands", pool: 5, chooseAmount: true }) }),
-        { id: "item-itm_paladin_longsword-damage", label: "Longsword Damage", formula: "1d8+3" }
+        expect.objectContaining({ id: "item-itm_paladin_longsword-damage", label: "Longsword Damage", formula: "1d8+3", metadata: expect.objectContaining({ activation: "on-hit" }) })
       ])
     );
     expect(dnd5eSrdActionFormula(paladinActor, [], "feature-lay-on-hands-healing")).toBe("5");
@@ -3193,7 +3225,7 @@ describe("dnd 5.5e srd rules", () => {
         expect.objectContaining({ id: "feature-divine-smite-damage", label: "Divine Smite Damage", formula: "2d8", metadata: expect.objectContaining({ freeCastResource: "paladinsSmite", creatureTypeBonus: { types: ["Fiend", "Undead"], formula: "1d8" } }) }),
         expect.objectContaining({ id: "feature-faithful-steed", label: "Faithful Steed", formula: "0", metadata: expect.objectContaining({ resource: "faithfulSteed", spell: "Find Steed" }) }),
         expect.objectContaining({ id: "feature-devotion-sacred-weapon", label: "Sacred Weapon", formula: "0", metadata: expect.objectContaining({ resource: "channelDivinity", attackBonus: 2, light: { bright: 20, dim: 20 } }) }),
-        expect.objectContaining({ id: "item-itm_paladin_longsword-damage", formula: "1d8+3", metadata: { attacksPerAction: 2, feature: "Extra Attack" } })
+        expect.objectContaining({ id: "item-itm_paladin_longsword-damage", formula: "1d8+3", metadata: expect.objectContaining({ activation: "on-hit", attacksPerAction: 2, feature: "Extra Attack" }) })
       ])
     );
     expect(dnd5eSrdActionFormula(levelFivePaladinActor, [], "feature-divine-smite-damage", { spellSlotLevel: 2 })).toBe("3d8");
@@ -3251,7 +3283,7 @@ describe("dnd 5.5e srd rules", () => {
         { id: "save-wisdom", label: "Wisdom Save", formula: "1d20+5" },
         { id: "skill-nature", label: "Nature Check", formula: "1d20+3" },
         { id: "skill-survival", label: "Survival Check", formula: "1d20+5" },
-        { id: "spell-itm_druid_cure_wounds-healing", label: "Cure Wounds Healing", formula: "2d8+3" }
+        expect.objectContaining({ id: "spell-itm_druid_cure_wounds-healing", label: "Cure Wounds Healing", formula: "2d8+3", metadata: expect.objectContaining({ action: "action" }) })
       ])
     );
     let levelFiveDruidData = druidActor.data;
@@ -3309,7 +3341,7 @@ describe("dnd 5.5e srd rules", () => {
         { id: "skill-perception", label: "Perception Check", formula: "1d20+4" },
         { id: "skill-survival", label: "Survival Check", formula: "1d20+4" },
         expect.objectContaining({ id: "feature-hunters-mark-damage", label: "Hunter's Mark Damage", formula: "1d6", metadata: expect.objectContaining({ resource: "favoredEnemy", freeUses: 2, damageType: "Force" }) }),
-        { id: "item-itm_ranger_longbow-damage", label: "Longbow Damage", formula: "1d8+3" }
+        expect.objectContaining({ id: "item-itm_ranger_longbow-damage", label: "Longbow Damage", formula: "1d8+3", metadata: expect.objectContaining({ activation: "on-hit" }) })
       ])
     );
     expect(dnd5eSrdActionFormula(rangerActor, [], "feature-hunters-mark-damage")).toBe("1d6");
@@ -3330,7 +3362,7 @@ describe("dnd 5.5e srd rules", () => {
         expect.objectContaining({ id: "feature-hunter-lore", formula: "0", metadata: expect.objectContaining({ reveals: ["Immunities", "Resistances", "Vulnerabilities"] }) }),
         expect.objectContaining({ id: "feature-hunter-prey", formula: "1d8", metadata: expect.objectContaining({ swapsOnRest: ["short", "long"] }) }),
         expect.objectContaining({ id: "feature-hunters-mark-damage", formula: "1d6", metadata: expect.objectContaining({ freeUses: 3, upcastDuration: { level3: "up to 8 hours", level5: "up to 24 hours" } }) }),
-        expect.objectContaining({ id: "item-itm_ranger_longbow-damage", formula: "1d8+3", metadata: { attacksPerAction: 2, feature: "Extra Attack" } })
+        expect.objectContaining({ id: "item-itm_ranger_longbow-damage", formula: "1d8+3", metadata: expect.objectContaining({ activation: "on-hit", attacksPerAction: 2, feature: "Extra Attack" }) })
       ])
     );
     let levelFifteenRangerData = levelFiveRangerData;
@@ -3399,6 +3431,18 @@ describe("dnd 5.5e srd rules", () => {
     );
     expect(dnd5eSrdActionFormula(levelFiveMonkActor, [monkSpear], "feature-deflect-attacks-damage")).toBe("2d8+3");
     expect(dnd5eSrdActionFormula(levelFiveMonkActor, [monkSpear], "feature-uncanny-metabolism-healing")).toBe("1d8+5");
+    const nonOpenHandMonk: Actor = {
+      ...levelFiveMonkActor,
+      id: "act_non_open_hand_monk",
+      data: {
+        ...levelFiveMonkData,
+        subclass: "Way of Shadow",
+        subclasses: { Monk: "way-of-shadow" }
+      }
+    };
+    const nonOpenHandRollIds = dnd5eSrdQuickRolls(nonOpenHandMonk, []).map((roll) => roll.id);
+    expect(nonOpenHandRollIds).toContain("feature-deflect-attacks-damage");
+    expect(nonOpenHandRollIds).not.toContain("feature-open-hand-technique");
     let levelSeventeenMonkData = levelFiveMonkData;
     for (let level = 6; level <= 17; level += 1) {
       levelSeventeenMonkData = applyDnd5eSrdAdvancement({ ...monkActor, data: levelSeventeenMonkData }, "level-up");
@@ -3419,6 +3463,23 @@ describe("dnd 5.5e srd rules", () => {
     );
     expect(dnd5eSrdActionFormula(levelSeventeenMonkActor, [monkSpear], "feature-open-hand-wholeness-of-body")).toBe("1d12+2");
     expect(dnd5eSrdActionFormula(levelSeventeenMonkActor, [monkSpear], "feature-open-hand-quivering-palm-damage")).toBe("10d12");
+    const respecedMonk: Actor = {
+      ...levelSeventeenMonkActor,
+      id: "act_respeced_monk",
+      data: {
+        ...levelSeventeenMonkData,
+        subclass: "Way of Shadow",
+        subclasses: { Monk: "way-of-shadow" }
+      }
+    };
+    expect(dnd5eSrdQuickRolls(respecedMonk, [monkSpear]).map((roll) => roll.id)).not.toEqual(
+      expect.arrayContaining([
+        "feature-open-hand-technique",
+        "feature-open-hand-wholeness-of-body",
+        "feature-open-hand-fleet-step",
+        "feature-open-hand-quivering-palm-damage"
+      ])
+    );
     const sorcererActor: Actor = { ...srdActor, data: { ...sorcerer!.data } };
     const sorcerousBurst: Item = {
       id: "itm_sorcerous_burst",
@@ -3451,7 +3512,7 @@ describe("dnd 5.5e srd rules", () => {
         { id: "tool-calligraphers-supplies", label: "Calligrapher's Supplies Check", formula: "1d20+4" },
         expect.objectContaining({ id: "feature-innate-sorcery", label: "Innate Sorcery", formula: "0", metadata: expect.objectContaining({ resource: "innateSorcery", spellSaveDc: 14, spellAttackAdvantage: true }) }),
         expect.objectContaining({ id: "spell-itm_sorcerous_burst-damage", label: "Sorcerous Burst Damage", formula: "1d8", metadata: expect.objectContaining({ damageType: "choice", damageTypes: expect.arrayContaining(["fire"]) }) }),
-        { id: "spell-itm_sorcerer_chromatic_orb-damage", label: "Chromatic Orb Damage", formula: "3d8" }
+        expect.objectContaining({ id: "spell-itm_sorcerer_chromatic_orb-damage", label: "Chromatic Orb Damage", formula: "3d8", metadata: expect.objectContaining({ activation: "on-hit" }) })
       ])
     );
     expect(dnd5eSrdActionFormula(sorcererActor, [], "feature-innate-sorcery")).toBe("0");
@@ -3546,7 +3607,7 @@ describe("dnd 5.5e srd rules", () => {
         { id: "skill-stealth", label: "Stealth Check", formula: "1d20+7" },
         { id: "tool-thieves-tools", label: "Thieves' Tools Check", formula: "1d20+5" },
         expect.objectContaining({ id: "feature-sneak-attack-damage", label: "Sneak Attack Damage", formula: "1d6", metadata: expect.objectContaining({ limit: "once per turn" }) }),
-        { id: "item-itm_rogue_dagger-damage", label: "Dagger Damage", formula: "1d4+3" }
+        expect.objectContaining({ id: "item-itm_rogue_dagger-damage", label: "Dagger Damage", formula: "1d4+3", metadata: expect.objectContaining({ activation: "on-hit" }) })
       ])
     );
     expect(dnd5eSrdActionFormula(rogueActor, [], "feature-sneak-attack-damage")).toBe("1d6");
@@ -3717,6 +3778,114 @@ describe("dnd 5.5e srd rules", () => {
     expect(() => dnd5eSrdEquipmentPurchase(srdActor, dnd5eSrdCompendiumEntry("magic-initiate")!, 1)).toThrow("not purchasable");
   });
 
+  it("ignores stale subclass feature and resource state after an explicit conflicting subclass selection", () => {
+    const cases: Array<{
+      className: string;
+      selectedSubclass: string;
+      features: string[];
+      resources?: Record<string, unknown>;
+      expectedSubclassRollIds: string[];
+    }> = [
+      {
+        className: "Cleric",
+        selectedSubclass: "light-domain",
+        features: ["Disciple of Life", "Preserve Life", "Blessed Healer", "Supreme Healing"],
+        expectedSubclassRollIds: ["feature-life-disciple-of-life", "feature-life-preserve-life", "feature-life-blessed-healer", "feature-life-supreme-healing"]
+      },
+      {
+        className: "Bard",
+        selectedSubclass: "college-of-valor",
+        features: ["College of Lore", "Cutting Words", "Magical Discoveries", "Peerless Skill"],
+        expectedSubclassRollIds: ["feature-lore-cutting-words", "feature-lore-magical-discoveries", "feature-lore-peerless-skill"]
+      },
+      {
+        className: "Paladin",
+        selectedSubclass: "oath-of-glory",
+        features: ["Oath of Devotion", "Sacred Weapon", "Aura of Devotion", "Smite of Protection", "Holy Nimbus"],
+        resources: { holyNimbus: { current: 1, max: 1, recovery: "long" } },
+        expectedSubclassRollIds: ["feature-devotion-sacred-weapon", "feature-devotion-aura", "feature-devotion-smite-of-protection", "feature-devotion-holy-nimbus-damage"]
+      },
+      {
+        className: "Ranger",
+        selectedSubclass: "beast-master",
+        features: ["Hunter", "Hunter's Lore", "Hunter's Prey", "Defensive Tactics", "Superior Hunter's Prey", "Superior Hunter's Defense"],
+        expectedSubclassRollIds: ["feature-hunter-lore", "feature-hunter-prey", "feature-hunter-defensive-tactics", "feature-hunter-superior-prey", "feature-hunter-superior-defense"]
+      },
+      {
+        className: "Sorcerer",
+        selectedSubclass: "wild-magic",
+        features: ["Draconic Sorcery", "Draconic Resilience", "Elemental Affinity", "Dragon Wings", "Dragon Companion"],
+        resources: { dragonWings: { current: 1, max: 1, recovery: "long" }, dragonCompanion: { current: 1, max: 1, recovery: "long" } },
+        expectedSubclassRollIds: ["feature-draconic-resilience", "feature-draconic-elemental-affinity", "feature-draconic-wings", "feature-draconic-companion"]
+      },
+      {
+        className: "Wizard",
+        selectedSubclass: "illusionist",
+        features: ["Evoker", "Potent Cantrip", "Sculpt Spells", "Empowered Evocation", "Overchannel"],
+        resources: { overchannel: { current: 1, max: 1, recovery: "long" } },
+        expectedSubclassRollIds: ["feature-evoker-potent-cantrip", "feature-evoker-sculpt-spells", "feature-evoker-empowered-evocation", "feature-evoker-overchannel"]
+      },
+      {
+        className: "Warlock",
+        selectedSubclass: "archfey-patron",
+        features: ["Fiend Patron", "Dark One's Blessing", "Dark One's Own Luck", "Fiendish Resilience", "Hurl Through Hell"],
+        resources: { fiendLuck: { current: 1, max: 1, recovery: "long" }, hurlThroughHell: { current: 1, max: 1, recovery: "long" } },
+        expectedSubclassRollIds: ["feature-fiend-dark-ones-blessing", "feature-fiend-dark-ones-own-luck", "feature-fiendish-resilience", "feature-fiend-hurl-through-hell-damage"]
+      },
+      {
+        className: "Druid",
+        selectedSubclass: "circle-of-the-land",
+        features: ["Circle of the Moon", "Circle Forms", "Improved Circle Forms", "Moonlight Step", "Lunar Form"],
+        resources: { moonlightStep: { current: 1, max: 1, recovery: "long" } },
+        expectedSubclassRollIds: ["feature-moon-circle-forms", "feature-moon-improved-circle-forms", "feature-moon-moonlight-step", "feature-moon-lunar-form-damage"]
+      },
+      {
+        className: "Rogue",
+        selectedSubclass: "assassin",
+        features: ["Fast Hands", "Second-Story Work", "Supreme Sneak", "Use Magic Device", "Thief's Reflexes"],
+        expectedSubclassRollIds: ["feature-thief-fast-hands", "feature-thief-second-story-work", "feature-thief-supreme-sneak", "feature-thief-use-magic-device", "feature-thief-reflexes"]
+      },
+      {
+        className: "Barbarian",
+        selectedSubclass: "path-of-the-world-tree",
+        features: ["Frenzy", "Mindless Rage", "Retaliation", "Intimidating Presence"],
+        expectedSubclassRollIds: ["feature-berserker-frenzy-damage", "feature-berserker-mindless-rage", "feature-berserker-retaliation", "feature-berserker-intimidating-presence"]
+      }
+    ];
+
+    for (const testCase of cases) {
+      const legacyActor: Actor = {
+        ...srdActor,
+        id: `act_legacy_${testCase.className.toLowerCase()}`,
+        data: {
+          ...srdActor.data,
+          class: testCase.className,
+          level: 20,
+          subclass: undefined,
+          subclasses: undefined,
+          features: testCase.features,
+          resources: testCase.resources ?? {}
+        }
+      };
+      const legacyRollIds = dnd5eSrdQuickRolls(legacyActor, []).map((roll) => roll.id);
+      expect(legacyRollIds, `${testCase.className} legacy fallback`).toEqual(expect.arrayContaining(testCase.expectedSubclassRollIds));
+
+      const respecedActor: Actor = {
+        ...legacyActor,
+        id: `act_respeced_${testCase.className.toLowerCase()}`,
+        data: {
+          ...legacyActor.data,
+          subclass: testCase.selectedSubclass,
+          subclasses: { [testCase.className]: testCase.selectedSubclass }
+        }
+      };
+      const respecedRollIds = dnd5eSrdQuickRolls(respecedActor, []).map((roll) => roll.id);
+      for (const staleRollId of testCase.expectedSubclassRollIds) {
+        expect(respecedRollIds, `${testCase.className} explicit respec`).not.toContain(staleRollId);
+      }
+    }
+  });
+
   it("calculates Barbarian Unarmored Defense from Dexterity and Constitution", () => {
     const template = dnd5eSrdCharacterTemplate("barbarian")!;
     const barbarianActor: Actor = { ...srdActor, data: { ...template.data } };
@@ -3772,8 +3941,8 @@ describe("dnd 5.5e srd rules", () => {
         { id: "save-charisma", label: "Charisma Save", formula: "1d20+5" },
         { id: "skill-intimidation", label: "Intimidation Check", formula: "1d20+5" },
         expect.objectContaining({ id: "feature-eldritch-invocations", label: "Eldritch Invocations", formula: "0", metadata: expect.objectContaining({ known: 1, pactOptions: ["Pact of the Blade", "Pact of the Chain", "Pact of the Tome"] }) }),
-        { id: "spell-itm_eldritch_blast-damage", label: "Eldritch Blast Damage", formula: "1d10" },
-        { id: "spell-itm_hex-damage", label: "Hex Damage", formula: "1d6" }
+        expect.objectContaining({ id: "spell-itm_eldritch_blast-damage", label: "Eldritch Blast Damage", formula: "1d10", metadata: expect.objectContaining({ activation: "on-hit" }) }),
+        expect.objectContaining({ id: "spell-itm_hex-damage", label: "Hex Damage", formula: "1d6", metadata: expect.objectContaining({ action: "bonus" }) })
       ])
     );
 
@@ -4147,6 +4316,10 @@ describe("dnd 5.5e srd rules", () => {
   });
 
   it("uses SRD system ids for advancement, rests, actions, imports, and encounter planning", () => {
+    // This catalog keeps roll identity, labels, formulas, and its existing resolution metadata exact.
+    // Dedicated action-economy tests cover the on-hit marker added to attack-bound monster rolls.
+    const dnd5eSrdSheet = dnd5eSrdMonsterCatalogSheetProjection;
+
     expect(dnd5eSrdAdvancementOptions(srdActor)).toContainEqual(expect.objectContaining({ systemId: "dnd-5e-srd", id: "level-up" }));
     const advanced = applyDnd5eSrdAdvancement(srdActor, "level-up");
     expect(advanced).toEqual(expect.objectContaining({ ruleset: "SRD 5.2.1", level: 2 }));
@@ -4818,7 +4991,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(abolethActor.data).toEqual(expect.objectContaining({ hp: { current: 150, max: 150 }, armorClass: 17, challengeRating: "10", xp: 5900 }));
     expect(dnd5eSrdSheet(abolethActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-tentacle-attack", label: "Tentacle Attack", formula: "1d20+9" },
+        expect.objectContaining({ id: "monster-tentacle-attack", label: "Tentacle Attack", formula: "1d20+9" }),
         expect.objectContaining({ id: "monster-tentacle-damage", label: "Tentacle Damage", formula: "2d6+5", metadata: expect.objectContaining({ condition: "Grappled" }) }),
         expect.objectContaining({ id: "monster-consume-memories-damage", label: "Consume Memories Damage", formula: "3d6", metadata: expect.objectContaining({ save: { ability: "intelligence", dc: 16, success: "half" } }) }),
         expect.objectContaining({ id: "monster-dominate-mind-effect", label: "Dominate Mind Effect", formula: "0", metadata: expect.objectContaining({ effectType: "condition", save: { ability: "wisdom", dc: 16 }, condition: "Charmed" }) }),
@@ -4835,24 +5008,24 @@ describe("dnd 5.5e srd rules", () => {
     expect(rugActor.data).toEqual(expect.objectContaining({ hp: { current: 27, max: 27 }, armorClass: 12, challengeRating: "2", xp: 450 }));
     expect(dnd5eSrdSheet(rugActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-smother-attack", label: "Smother Attack", formula: "1d20+5" },
+        expect.objectContaining({ id: "monster-smother-attack", label: "Smother Attack", formula: "1d20+5" }),
         expect.objectContaining({ id: "monster-smother-damage", label: "Smother Damage", formula: "2d6+3", metadata: expect.objectContaining({ condition: "Blinded/Restrained", summary: expect.stringContaining("smothered") }) })
       ])
     );
     expect(dnd5eSrdActionFormula(rugActor, [], "monster-smother-damage")).toBe("2d6+3");
     const allosaurusActor: Actor = { ...srdActor, type: "monster", name: "Allosaurus", data: dnd5eSrdMonsterActorData("allosaurus")! };
     expect(allosaurusActor.data).toEqual(expect.objectContaining({ hp: { current: 51, max: 51 }, armorClass: 13, challengeRating: "2", xp: 450, skillProficiencies: ["perception"] }));
-    expect(dnd5eSrdSheet(allosaurusActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+6" }, { id: "monster-bite-damage", label: "Bite Damage", formula: "2d10+4" }, expect.objectContaining({ id: "monster-claws-damage", label: "Claws Damage", formula: "1d8+4", metadata: expect.objectContaining({ condition: "Prone" }) })]));
+    expect(dnd5eSrdSheet(allosaurusActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+6" }), expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "2d10+4" }), expect.objectContaining({ id: "monster-claws-damage", label: "Claws Damage", formula: "1d8+4", metadata: expect.objectContaining({ condition: "Prone" }) })]));
     const ankylosaurusActor: Actor = { ...srdActor, type: "monster", name: "Ankylosaurus", data: dnd5eSrdMonsterActorData("ankylosaurus")! };
     expect(ankylosaurusActor.data).toEqual(expect.objectContaining({ hp: { current: 68, max: 68 }, armorClass: 15, challengeRating: "3", xp: 700 }));
-    expect(dnd5eSrdSheet(ankylosaurusActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-tail-attack", label: "Tail Attack", formula: "1d20+6" }, expect.objectContaining({ id: "monster-tail-damage", label: "Tail Damage", formula: "1d10+4", metadata: expect.objectContaining({ condition: "Prone" }) })]));
+    expect(dnd5eSrdSheet(ankylosaurusActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-tail-attack", label: "Tail Attack", formula: "1d20+6" }), expect.objectContaining({ id: "monster-tail-damage", label: "Tail Damage", formula: "1d10+4", metadata: expect.objectContaining({ condition: "Prone" }) })]));
     const apeActor: Actor = { ...srdActor, type: "monster", name: "Ape", data: dnd5eSrdMonsterActorData("ape")! };
     expect(apeActor.data).toEqual(expect.objectContaining({ hp: { current: 19, max: 19 }, armorClass: 12, challengeRating: "1/2", xp: 100, skillProficiencies: ["athletics", "perception"] }));
-    expect(dnd5eSrdSheet(apeActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-fist-attack", label: "Fist Attack", formula: "1d20+5" }, { id: "monster-fist-damage", label: "Fist Damage", formula: "1d4+3" }, expect.objectContaining({ id: "monster-rock-damage", label: "Rock Damage", formula: "2d6+3", metadata: expect.objectContaining({ recharge: "6" }) })]));
+    expect(dnd5eSrdSheet(apeActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-fist-attack", label: "Fist Attack", formula: "1d20+5" }), expect.objectContaining({ id: "monster-fist-damage", label: "Fist Damage", formula: "1d4+3" }), expect.objectContaining({ id: "monster-rock-damage", label: "Rock Damage", formula: "2d6+3", metadata: expect.objectContaining({ recharge: "6" }) })]));
     const archelonActor: Actor = { ...srdActor, type: "monster", name: "Archelon", data: dnd5eSrdMonsterActorData("archelon")! };
     expect(archelonActor.data).toEqual(expect.objectContaining({ hp: { current: 90, max: 90 }, armorClass: 17, challengeRating: "4", xp: 1100, skillProficiencies: ["stealth"] }));
     expect((archelonActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Amphibious" })]));
-    expect(dnd5eSrdSheet(archelonActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+6" }, { id: "monster-bite-damage", label: "Bite Damage", formula: "3d6+4" }]));
+    expect(dnd5eSrdSheet(archelonActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+6" }), expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "3d6+4" })]));
     const ankhegActor: Actor = {
       ...srdActor,
       type: "monster",
@@ -4861,7 +5034,7 @@ describe("dnd 5.5e srd rules", () => {
     };
     expect(dnd5eSrdSheet(ankhegActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+5" },
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+5" }),
         expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "2d6+3+1d6", metadata: expect.objectContaining({ condition: "Grappled" }) }),
         expect.objectContaining({ id: "monster-acid-spray-damage", label: "Acid Spray Damage", formula: "4d6", metadata: expect.objectContaining({ save: { ability: "dexterity", dc: 12, success: "half" }, recharge: "6" }) })
       ])
@@ -4874,9 +5047,9 @@ describe("dnd 5.5e srd rules", () => {
     };
     expect(dnd5eSrdSheet(assassinActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-shortsword-attack", label: "Shortsword Attack", formula: "1d20+7" },
+        expect.objectContaining({ id: "monster-shortsword-attack", label: "Shortsword Attack", formula: "1d20+7" }),
         expect.objectContaining({ id: "monster-shortsword-damage", label: "Shortsword Damage", formula: "1d6+4+5d6", metadata: expect.objectContaining({ condition: "Poisoned" }) }),
-        { id: "monster-light-crossbow-attack", label: "Light Crossbow Attack", formula: "1d20+7" },
+        expect.objectContaining({ id: "monster-light-crossbow-attack", label: "Light Crossbow Attack", formula: "1d20+7" }),
         expect.objectContaining({ id: "monster-light-crossbow-damage", label: "Light Crossbow Damage", formula: "1d8+4+6d6" }),
         expect.objectContaining({ id: "monster-cunning-action-effect", label: "Cunning Action Effect", formula: "0", metadata: expect.objectContaining({ effectType: "utility", action: "bonusAction" }) })
       ])
@@ -4890,8 +5063,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(awakenedShrubActor.data).toEqual(expect.objectContaining({ hp: { current: 10, max: 10 }, armorClass: 9, challengeRating: "0", xp: 10 }));
     expect(dnd5eSrdSheet(awakenedShrubActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rake-attack", label: "Rake Attack", formula: "1d20+1" },
-        { id: "monster-rake-damage", label: "Rake Damage", formula: "1" }
+        expect.objectContaining({ id: "monster-rake-attack", label: "Rake Attack", formula: "1d20+1" }),
+        expect.objectContaining({ id: "monster-rake-damage", label: "Rake Damage", formula: "1" })
       ])
     );
     const awakenedTreeActor: Actor = {
@@ -4903,8 +5076,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(awakenedTreeActor.data).toEqual(expect.objectContaining({ hp: { current: 59, max: 59 }, armorClass: 13, challengeRating: "2", xp: 450 }));
     expect(dnd5eSrdSheet(awakenedTreeActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-slam-attack", label: "Slam Attack", formula: "1d20+6" },
-        { id: "monster-slam-damage", label: "Slam Damage", formula: "3d6+4" }
+        expect.objectContaining({ id: "monster-slam-attack", label: "Slam Attack", formula: "1d20+6" }),
+        expect.objectContaining({ id: "monster-slam-damage", label: "Slam Damage", formula: "3d6+4" })
       ])
     );
     const axeBeakActor: Actor = {
@@ -4916,8 +5089,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(axeBeakActor.data).toEqual(expect.objectContaining({ hp: { current: 19, max: 19 }, armorClass: 11, challengeRating: "1/4", xp: 50 }));
     expect(dnd5eSrdSheet(axeBeakActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-beak-attack", label: "Beak Attack", formula: "1d20+4" },
-        { id: "monster-beak-damage", label: "Beak Damage", formula: "1d8+2" }
+        expect.objectContaining({ id: "monster-beak-attack", label: "Beak Attack", formula: "1d20+4" }),
+        expect.objectContaining({ id: "monster-beak-damage", label: "Beak Damage", formula: "1d8+2" })
       ])
     );
     const azerSentinelActor: Actor = {
@@ -4932,8 +5105,8 @@ describe("dnd 5.5e srd rules", () => {
     );
     expect(dnd5eSrdSheet(azerSentinelActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-burning-hammer-attack", label: "Burning Hammer Attack", formula: "1d20+5" },
-        { id: "monster-burning-hammer-damage", label: "Burning Hammer Damage", formula: "1d10+3+1d6" }
+        expect.objectContaining({ id: "monster-burning-hammer-attack", label: "Burning Hammer Attack", formula: "1d20+5" }),
+        expect.objectContaining({ id: "monster-burning-hammer-damage", label: "Burning Hammer Damage", formula: "1d10+3+1d6" })
       ])
     );
     expect(dnd5eSrdActionFormula(azerSentinelActor, [], "monster-burning-hammer-damage")).toBe("1d10+3+1d6");
@@ -4947,7 +5120,7 @@ describe("dnd 5.5e srd rules", () => {
     expect((behirActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Lightning Immunity" })]));
     expect(dnd5eSrdSheet(behirActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+10" },
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+10" }),
         expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "2d12+6+2d10", metadata: expect.objectContaining({ damageType: "piercing/lightning" }) }),
         expect.objectContaining({ id: "monster-constrict-damage", label: "Constrict Damage", formula: "5d8+6", metadata: expect.objectContaining({ condition: "Grappled/Restrained", save: { ability: "strength", dc: 18 } }) }),
         expect.objectContaining({ id: "monster-lightning-breath-damage", label: "Lightning Breath Damage", formula: "12d10", metadata: expect.objectContaining({ recharge: "5-6", save: { ability: "dexterity", dc: 16, success: "half" } }) }),
@@ -4964,8 +5137,8 @@ describe("dnd 5.5e srd rules", () => {
     expect((baboonActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Pack Tactics" })]));
     expect(dnd5eSrdSheet(baboonActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+1" },
-        { id: "monster-bite-damage", label: "Bite Damage", formula: "1d4-1" }
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+1" }),
+        expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1d4-1" })
       ])
     );
     const badgerActor: Actor = {
@@ -4980,8 +5153,8 @@ describe("dnd 5.5e srd rules", () => {
     );
     expect(dnd5eSrdSheet(badgerActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+2" },
-        { id: "monster-bite-damage", label: "Bite Damage", formula: "1" }
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+2" }),
+        expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1" })
       ])
     );
     const berserkerActor: Actor = {
@@ -4994,8 +5167,8 @@ describe("dnd 5.5e srd rules", () => {
     expect((berserkerActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Bloodied Frenzy" })]));
     expect(dnd5eSrdSheet(berserkerActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-greataxe-attack", label: "Greataxe Attack", formula: "1d20+5" },
-        { id: "monster-greataxe-damage", label: "Greataxe Damage", formula: "1d12+3" }
+        expect.objectContaining({ id: "monster-greataxe-attack", label: "Greataxe Attack", formula: "1d20+5" }),
+        expect.objectContaining({ id: "monster-greataxe-damage", label: "Greataxe Damage", formula: "1d12+3" })
       ])
     );
     const batActor: Actor = {
@@ -5008,8 +5181,8 @@ describe("dnd 5.5e srd rules", () => {
     expect((batActor.data.monster as { statBlock: { senses: string[] } }).statBlock.senses).toEqual(expect.arrayContaining(["Blindsight 60 ft."]));
     expect(dnd5eSrdSheet(batActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+4" },
-        { id: "monster-bite-damage", label: "Bite Damage", formula: "1" }
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+4" }),
+        expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1" })
       ])
     );
     const bloodHawkActor: Actor = {
@@ -5024,7 +5197,7 @@ describe("dnd 5.5e srd rules", () => {
     );
     expect(dnd5eSrdSheet(bloodHawkActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-beak-attack", label: "Beak Attack", formula: "1d20+4" },
+        expect.objectContaining({ id: "monster-beak-attack", label: "Beak Attack", formula: "1d20+4" }),
         expect.objectContaining({ id: "monster-beak-damage", label: "Beak Damage", formula: "1d4+2", metadata: expect.objectContaining({ summary: expect.stringContaining("Bloodied") }) })
       ])
     );
@@ -5040,7 +5213,7 @@ describe("dnd 5.5e srd rules", () => {
     );
     expect(dnd5eSrdSheet(blackPuddingActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-dissolving-pseudopod-attack", label: "Dissolving Pseudopod Attack", formula: "1d20+5" },
+        expect.objectContaining({ id: "monster-dissolving-pseudopod-attack", label: "Dissolving Pseudopod Attack", formula: "1d20+5" }),
         expect.objectContaining({ id: "monster-dissolving-pseudopod-damage", label: "Dissolving Pseudopod Damage", formula: "4d6+3", metadata: expect.objectContaining({ damageType: "acid" }) }),
         expect.objectContaining({ id: "monster-split-effect", label: "Split Effect", formula: "0", metadata: expect.objectContaining({ action: "reaction" }) })
       ])
@@ -5054,8 +5227,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(blinkDogActor.data).toEqual(expect.objectContaining({ hp: { current: 22, max: 22 }, armorClass: 13, challengeRating: "1/4", xp: 50, skillProficiencies: ["perception", "stealth"] }));
     expect(dnd5eSrdSheet(blinkDogActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+5" },
-        { id: "monster-bite-damage", label: "Bite Damage", formula: "1d4+3" },
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+5" }),
+        expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1d4+3" }),
         expect.objectContaining({ id: "monster-teleport-effect", label: "Teleport Effect", formula: "0", metadata: expect.objectContaining({ action: "bonusAction", recharge: "4-6" }) })
       ])
     );
@@ -5069,7 +5242,7 @@ describe("dnd 5.5e srd rules", () => {
     expect((boarActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Bloodied Fury" })]));
     expect(dnd5eSrdSheet(boarActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-gore-attack", label: "Gore Attack", formula: "1d20+3" },
+        expect.objectContaining({ id: "monster-gore-attack", label: "Gore Attack", formula: "1d20+3" }),
         expect.objectContaining({ id: "monster-gore-damage", label: "Gore Damage", formula: "1d6+1", metadata: expect.objectContaining({ condition: "Prone", summary: expect.stringContaining("extra 1d6") }) })
       ])
     );
@@ -5083,9 +5256,9 @@ describe("dnd 5.5e srd rules", () => {
     expect((bugbearStalkerActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Abduct" })]));
     expect(dnd5eSrdSheet(bugbearStalkerActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-javelin-attack", label: "Javelin Attack", formula: "1d20+5" },
-        { id: "monster-javelin-damage", label: "Javelin Damage", formula: "3d6+3" },
-        { id: "monster-morningstar-attack", label: "Morningstar Attack", formula: "1d20+5" },
+        expect.objectContaining({ id: "monster-javelin-attack", label: "Javelin Attack", formula: "1d20+5" }),
+        expect.objectContaining({ id: "monster-javelin-damage", label: "Javelin Damage", formula: "3d6+3" }),
+        expect.objectContaining({ id: "monster-morningstar-attack", label: "Morningstar Attack", formula: "1d20+5" }),
         expect.objectContaining({ id: "monster-quick-grapple-effect", label: "Quick Grapple Effect", formula: "0", metadata: expect.objectContaining({ action: "bonusAction", condition: "Grappled", save: { ability: "dexterity", dc: 13 } }) })
       ])
     );
@@ -5099,9 +5272,9 @@ describe("dnd 5.5e srd rules", () => {
     expect((bugbearWarriorActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Abduct" })]));
     expect(dnd5eSrdSheet(bugbearWarriorActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-grab-attack", label: "Grab Attack", formula: "1d20+4" },
+        expect.objectContaining({ id: "monster-grab-attack", label: "Grab Attack", formula: "1d20+4" }),
         expect.objectContaining({ id: "monster-grab-damage", label: "Grab Damage", formula: "2d6+2", metadata: expect.objectContaining({ condition: "Grappled" }) }),
-        { id: "monster-light-hammer-attack", label: "Light Hammer Attack", formula: "1d20+4" },
+        expect.objectContaining({ id: "monster-light-hammer-attack", label: "Light Hammer Attack", formula: "1d20+4" }),
         expect.objectContaining({ id: "monster-light-hammer-damage", label: "Light Hammer Damage", formula: "3d4+2" })
       ])
     );
@@ -5114,8 +5287,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(buletteActor.data).toEqual(expect.objectContaining({ hp: { current: 94, max: 94 }, armorClass: 17, challengeRating: "5", xp: 1800, skillProficiencies: ["perception"] }));
     expect(dnd5eSrdSheet(buletteActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+7" },
-        { id: "monster-bite-damage", label: "Bite Damage", formula: "2d12+4" },
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+7" }),
+        expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "2d12+4" }),
         expect.objectContaining({ id: "monster-deadly-leap-damage", label: "Deadly Leap Damage", formula: "3d12", metadata: expect.objectContaining({ condition: "Prone", save: { ability: "dexterity", dc: 15, success: "half" } }) }),
         expect.objectContaining({ id: "monster-leap-effect", label: "Leap Effect", formula: "0", metadata: expect.objectContaining({ action: "bonusAction" }) })
       ])
@@ -5129,8 +5302,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(camelActor.data).toEqual(expect.objectContaining({ hp: { current: 17, max: 17 }, armorClass: 10, challengeRating: "1/8", xp: 25 }));
     expect(dnd5eSrdSheet(camelActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+4" },
-        { id: "monster-bite-damage", label: "Bite Damage", formula: "1d4+2" }
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+4" }),
+        expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1d4+2" })
       ])
     );
     const catActor: Actor = {
@@ -5143,8 +5316,8 @@ describe("dnd 5.5e srd rules", () => {
     expect((catActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Jumper" })]));
     expect(dnd5eSrdSheet(catActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-scratch-attack", label: "Scratch Attack", formula: "1d20+4" },
-        { id: "monster-scratch-damage", label: "Scratch Damage", formula: "1" }
+        expect.objectContaining({ id: "monster-scratch-attack", label: "Scratch Attack", formula: "1d20+4" }),
+        expect.objectContaining({ id: "monster-scratch-damage", label: "Scratch Damage", formula: "1" })
       ])
     );
     const centaurTrooperActor: Actor = {
@@ -5156,9 +5329,9 @@ describe("dnd 5.5e srd rules", () => {
     expect(centaurTrooperActor.data).toEqual(expect.objectContaining({ hp: { current: 45, max: 45 }, armorClass: 16, challengeRating: "2", xp: 450, skillProficiencies: ["athletics", "perception"] }));
     expect(dnd5eSrdSheet(centaurTrooperActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-pike-attack", label: "Pike Attack", formula: "1d20+6" },
-        { id: "monster-pike-damage", label: "Pike Damage", formula: "1d10+4" },
-        { id: "monster-longbow-attack", label: "Longbow Attack", formula: "1d20+4" },
+        expect.objectContaining({ id: "monster-pike-attack", label: "Pike Attack", formula: "1d20+6" }),
+        expect.objectContaining({ id: "monster-pike-damage", label: "Pike Damage", formula: "1d10+4" }),
+        expect.objectContaining({ id: "monster-longbow-attack", label: "Longbow Attack", formula: "1d20+4" }),
         expect.objectContaining({ id: "monster-trampling-charge-damage", label: "Trampling Charge Damage", formula: "1d6+4", metadata: expect.objectContaining({ action: "bonusAction", recharge: "5-6", condition: "Prone" }) })
       ])
     );
@@ -5171,10 +5344,10 @@ describe("dnd 5.5e srd rules", () => {
     expect(chimeraActor.data).toEqual(expect.objectContaining({ hp: { current: 114, max: 114 }, armorClass: 14, challengeRating: "6", xp: 2300, skillProficiencies: ["perception"] }));
     expect(dnd5eSrdSheet(chimeraActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-ram-attack", label: "Ram Attack", formula: "1d20+7" },
+        expect.objectContaining({ id: "monster-ram-attack", label: "Ram Attack", formula: "1d20+7" }),
         expect.objectContaining({ id: "monster-ram-damage", label: "Ram Damage", formula: "1d12+4", metadata: expect.objectContaining({ condition: "Prone" }) }),
         expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "2d6+4" }),
-        { id: "monster-claw-damage", label: "Claw Damage", formula: "1d6+4" },
+        expect.objectContaining({ id: "monster-claw-damage", label: "Claw Damage", formula: "1d6+4" }),
         expect.objectContaining({ id: "monster-fire-breath-damage", label: "Fire Breath Damage", formula: "7d8", metadata: expect.objectContaining({ recharge: "5-6", save: { ability: "dexterity", dc: 15, success: "half" } }) })
       ])
     );
@@ -5187,7 +5360,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(chuulActor.data).toEqual(expect.objectContaining({ hp: { current: 76, max: 76 }, armorClass: 16, challengeRating: "4", xp: 1100, skillProficiencies: ["perception"] }));
     expect(dnd5eSrdSheet(chuulActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-pincer-attack", label: "Pincer Attack", formula: "1d20+6" },
+        expect.objectContaining({ id: "monster-pincer-attack", label: "Pincer Attack", formula: "1d20+6" }),
         expect.objectContaining({ id: "monster-pincer-damage", label: "Pincer Damage", formula: "1d10+4", metadata: expect.objectContaining({ condition: "Grappled" }) }),
         expect.objectContaining({ id: "monster-paralyzing-tentacles-effect", label: "Paralyzing Tentacles Effect", formula: "0", metadata: expect.objectContaining({ condition: "Poisoned/Paralyzed", save: { ability: "constitution", dc: 13 } }) })
       ])
@@ -5201,7 +5374,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(clayGolemActor.data).toEqual(expect.objectContaining({ hp: { current: 123, max: 123 }, armorClass: 14, challengeRating: "9", xp: 5000, skillProficiencies: [] }));
     expect(dnd5eSrdSheet(clayGolemActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-slam-attack", label: "Slam Attack", formula: "1d20+9" },
+        expect.objectContaining({ id: "monster-slam-attack", label: "Slam Attack", formula: "1d20+9" }),
         expect.objectContaining({ id: "monster-slam-damage", label: "Slam Damage", formula: "1d10+5+1d12" }),
         expect.objectContaining({ id: "monster-hasten-effect", label: "Hasten Effect", formula: "0", metadata: expect.objectContaining({ action: "bonusAction", recharge: "5-6" }) })
       ])
@@ -5215,9 +5388,9 @@ describe("dnd 5.5e srd rules", () => {
     expect(cloakerActor.data).toEqual(expect.objectContaining({ hp: { current: 91, max: 91 }, armorClass: 14, challengeRating: "8", xp: 3900, skillProficiencies: ["stealth"] }));
     expect(dnd5eSrdSheet(cloakerActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-attach-attack", label: "Attach Attack", formula: "1d20+6" },
+        expect.objectContaining({ id: "monster-attach-attack", label: "Attach Attack", formula: "1d20+6" }),
         expect.objectContaining({ id: "monster-attach-damage", label: "Attach Damage", formula: "3d6+3", metadata: expect.objectContaining({ condition: "Blinded" }) }),
-        { id: "monster-tail-damage", label: "Tail Damage", formula: "1d10+3" },
+        expect.objectContaining({ id: "monster-tail-damage", label: "Tail Damage", formula: "1d10+3" }),
         expect.objectContaining({ id: "monster-moan-effect", label: "Moan Effect", formula: "0", metadata: expect.objectContaining({ action: "bonusAction", condition: "Frightened" }) }),
         expect.objectContaining({ id: "monster-phantasms-effect", label: "Phantasms Effect", formula: "0" })
       ])
@@ -5231,9 +5404,9 @@ describe("dnd 5.5e srd rules", () => {
     expect(cloudGiantActor.data).toEqual(expect.objectContaining({ hp: { current: 200, max: 200 }, armorClass: 14, challengeRating: "9", xp: 5000, skillProficiencies: ["insight", "perception"] }));
     expect(dnd5eSrdSheet(cloudGiantActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-thunderous-mace-attack", label: "Thunderous Mace Attack", formula: "1d20+12" },
+        expect.objectContaining({ id: "monster-thunderous-mace-attack", label: "Thunderous Mace Attack", formula: "1d20+12" }),
         expect.objectContaining({ id: "monster-thunderous-mace-damage", label: "Thunderous Mace Damage", formula: "3d8+8+2d6" }),
-        { id: "monster-thundercloud-attack", label: "Thundercloud Attack", formula: "1d20+12" },
+        expect.objectContaining({ id: "monster-thundercloud-attack", label: "Thundercloud Attack", formula: "1d20+12" }),
         expect.objectContaining({ id: "monster-thundercloud-damage", label: "Thundercloud Damage", formula: "3d6+8", metadata: expect.objectContaining({ condition: "Incapacitated" }) }),
         expect.objectContaining({ id: "monster-spellcasting-effect", label: "Spellcasting Effect", formula: "0" }),
         expect.objectContaining({ id: "monster-misty-step-effect", label: "Misty Step Effect", formula: "0", metadata: expect.objectContaining({ action: "bonusAction" }) })
@@ -5248,8 +5421,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(commonerActor.data).toEqual(expect.objectContaining({ hp: { current: 4, max: 4 }, armorClass: 10, challengeRating: "0", xp: 10, skillProficiencies: [] }));
     expect(dnd5eSrdSheet(commonerActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-club-attack", label: "Club Attack", formula: "1d20+2" },
-        { id: "monster-club-damage", label: "Club Damage", formula: "1d4" }
+        expect.objectContaining({ id: "monster-club-attack", label: "Club Attack", formula: "1d20+2" }),
+        expect.objectContaining({ id: "monster-club-damage", label: "Club Damage", formula: "1d4" })
       ])
     );
     const crawlingClawsActor: Actor = {
@@ -5261,7 +5434,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(crawlingClawsActor.data).toEqual(expect.objectContaining({ hp: { current: 49, max: 49 }, armorClass: 12, challengeRating: "3", xp: 700, skillProficiencies: [] }));
     expect(dnd5eSrdSheet(crawlingClawsActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-swarm-of-grasping-hands-attack", label: "Swarm of Grasping Hands Attack", formula: "1d20+4" },
+        expect.objectContaining({ id: "monster-swarm-of-grasping-hands-attack", label: "Swarm of Grasping Hands Attack", formula: "1d20+4" }),
         expect.objectContaining({ id: "monster-swarm-of-grasping-hands-damage", label: "Swarm of Grasping Hands Damage", formula: "4d8+2", metadata: expect.objectContaining({ condition: "Prone" }) })
       ])
     );
@@ -5274,8 +5447,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(cultistActor.data).toEqual(expect.objectContaining({ hp: { current: 9, max: 9 }, armorClass: 12, challengeRating: "1/8", xp: 25, skillProficiencies: ["deception", "religion"] }));
     expect(dnd5eSrdSheet(cultistActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-ritual-sickle-attack", label: "Ritual Sickle Attack", formula: "1d20+3" },
-        { id: "monster-ritual-sickle-damage", label: "Ritual Sickle Damage", formula: "1d4+1+1" }
+        expect.objectContaining({ id: "monster-ritual-sickle-attack", label: "Ritual Sickle Attack", formula: "1d20+3" }),
+        expect.objectContaining({ id: "monster-ritual-sickle-damage", label: "Ritual Sickle Damage", formula: "1d4+1+1" })
       ])
     );
     const cultistFanaticActor: Actor = {
@@ -5287,9 +5460,9 @@ describe("dnd 5.5e srd rules", () => {
     expect(cultistFanaticActor.data).toEqual(expect.objectContaining({ hp: { current: 44, max: 44 }, armorClass: 13, challengeRating: "2", xp: 450, skillProficiencies: ["deception", "persuasion", "religion"] }));
     expect(dnd5eSrdSheet(cultistFanaticActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-pact-blade-attack", label: "Pact Blade Attack", formula: "1d20+4" },
-        { id: "monster-pact-blade-damage", label: "Pact Blade Damage", formula: "1d8+2+2d6" },
-        { id: "monster-spellcasting-attack", label: "Spellcasting Attack", formula: "1d20+4" },
+        expect.objectContaining({ id: "monster-pact-blade-attack", label: "Pact Blade Attack", formula: "1d20+4" }),
+        expect.objectContaining({ id: "monster-pact-blade-damage", label: "Pact Blade Damage", formula: "1d8+2+2d6" }),
+        expect.objectContaining({ id: "monster-spellcasting-attack", label: "Spellcasting Attack", formula: "1d20+4" }),
         expect.objectContaining({ id: "monster-spellcasting-effect", label: "Spellcasting Effect", formula: "0", metadata: expect.objectContaining({ save: { ability: "wisdom", dc: 12 } }) }),
         expect.objectContaining({ id: "monster-spiritual-weapon-effect", label: "Spiritual Weapon Effect", formula: "0", metadata: expect.objectContaining({ action: "bonusAction", recharge: "2/day" }) })
       ])
@@ -5303,8 +5476,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(constrictorSnakeActor.data).toEqual(expect.objectContaining({ hp: { current: 13, max: 13 }, armorClass: 13, challengeRating: "1/4", xp: 50, skillProficiencies: ["perception", "stealth"] }));
     expect(dnd5eSrdSheet(constrictorSnakeActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+4" },
-        { id: "monster-bite-damage", label: "Bite Damage", formula: "1d8+2" },
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+4" }),
+        expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1d8+2" }),
         expect.objectContaining({ id: "monster-constrict-damage", label: "Constrict Damage", formula: "3d4", metadata: expect.objectContaining({ save: { ability: "strength", dc: 12 }, condition: "Grappled" }) })
       ])
     );
@@ -5318,8 +5491,8 @@ describe("dnd 5.5e srd rules", () => {
     expect((crabActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Amphibious" })]));
     expect(dnd5eSrdSheet(crabActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+2" },
-        { id: "monster-claw-damage", label: "Claw Damage", formula: "1" }
+        expect.objectContaining({ id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+2" }),
+        expect.objectContaining({ id: "monster-claw-damage", label: "Claw Damage", formula: "1" })
       ])
     );
     const crocodileActor: Actor = {
@@ -5332,7 +5505,7 @@ describe("dnd 5.5e srd rules", () => {
     expect((crocodileActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Hold Breath" })]));
     expect(dnd5eSrdSheet(crocodileActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+4" },
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+4" }),
         expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1d8+2", metadata: expect.objectContaining({ condition: "Grappled/Restrained", summary: expect.stringContaining("Restrained") }) })
       ])
     );
@@ -5345,7 +5518,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(darkmantleActor.data).toEqual(expect.objectContaining({ hp: { current: 22, max: 22 }, armorClass: 11, challengeRating: "1/2", xp: 100, skillProficiencies: ["stealth"] }));
     expect(dnd5eSrdSheet(darkmantleActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-crush-attack", label: "Crush Attack", formula: "1d20+5" },
+        expect.objectContaining({ id: "monster-crush-attack", label: "Crush Attack", formula: "1d20+5" }),
         expect.objectContaining({ id: "monster-crush-damage", label: "Crush Damage", formula: "1d6+3", metadata: expect.objectContaining({ condition: "Blinded/Suffocating" }) }),
         expect.objectContaining({ id: "monster-darkness-aura-effect", label: "Darkness Aura Effect", formula: "0", metadata: expect.objectContaining({ recharge: "1/day" }) })
       ])
@@ -5360,7 +5533,7 @@ describe("dnd 5.5e srd rules", () => {
     expect((deathDogActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Condition Immunities" })]));
     expect(dnd5eSrdSheet(deathDogActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+4" },
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+4" }),
         expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1d4+2", metadata: expect.objectContaining({ condition: "Poisoned", save: { ability: "constitution", dc: 12 } }) })
       ])
     );
@@ -5373,9 +5546,9 @@ describe("dnd 5.5e srd rules", () => {
     expect(djinniActor.data).toEqual(expect.objectContaining({ hp: { current: 218, max: 218 }, armorClass: 17, challengeRating: "11", xp: 7200, skillProficiencies: [] }));
     expect(dnd5eSrdSheet(djinniActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-storm-blade-attack", label: "Storm Blade Attack", formula: "1d20+9" },
-        { id: "monster-storm-blade-damage", label: "Storm Blade Damage", formula: "2d6+5+2d6" },
-        { id: "monster-storm-bolt-attack", label: "Storm Bolt Attack", formula: "1d20+9" },
+        expect.objectContaining({ id: "monster-storm-blade-attack", label: "Storm Blade Attack", formula: "1d20+9" }),
+        expect.objectContaining({ id: "monster-storm-blade-damage", label: "Storm Blade Damage", formula: "2d6+5+2d6" }),
+        expect.objectContaining({ id: "monster-storm-bolt-attack", label: "Storm Bolt Attack", formula: "1d20+9" }),
         expect.objectContaining({ id: "monster-storm-bolt-damage", label: "Storm Bolt Damage", formula: "3d8", metadata: expect.objectContaining({ condition: "Prone" }) }),
         expect.objectContaining({ id: "monster-create-whirlwind-damage", label: "Create Whirlwind Damage", formula: "6d6", metadata: expect.objectContaining({ save: { ability: "strength", dc: 17 }, condition: "Restrained" }) }),
         expect.objectContaining({ id: "monster-spellcasting-effect", label: "Spellcasting Effect", formula: "0", metadata: expect.objectContaining({ save: { ability: "charisma", dc: 17 } }) })
@@ -5390,7 +5563,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(doppelgangerActor.data).toEqual(expect.objectContaining({ hp: { current: 52, max: 52 }, armorClass: 14, challengeRating: "3", xp: 700, skillProficiencies: ["deception", "insight"] }));
     expect(dnd5eSrdSheet(doppelgangerActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-slam-attack", label: "Slam Attack", formula: "1d20+6" },
+        expect.objectContaining({ id: "monster-slam-attack", label: "Slam Attack", formula: "1d20+6" }),
         expect.objectContaining({ id: "monster-slam-damage", label: "Slam Damage", formula: "2d6+4" }),
         expect.objectContaining({ id: "monster-read-thoughts-effect", label: "Read Thoughts Effect", formula: "0" }),
         expect.objectContaining({ id: "monster-unsettling-visage-effect", label: "Unsettling Visage Effect", formula: "0", metadata: expect.objectContaining({ condition: "Frightened", recharge: "6" }) }),
@@ -5407,9 +5580,9 @@ describe("dnd 5.5e srd rules", () => {
     expect((dragonTurtleActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Amphibious" }), expect.objectContaining({ name: "Fire Resistance" })]));
     expect(dnd5eSrdSheet(dragonTurtleActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+13" },
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+13" }),
         expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "3d10+7+2d6", metadata: expect.objectContaining({ damageType: "piercing/fire" }) }),
-        { id: "monster-tail-attack", label: "Tail Attack", formula: "1d20+13" },
+        expect.objectContaining({ id: "monster-tail-attack", label: "Tail Attack", formula: "1d20+13" }),
         expect.objectContaining({ id: "monster-tail-damage", label: "Tail Damage", formula: "2d10+7", metadata: expect.objectContaining({ condition: "Prone" }) }),
         expect.objectContaining({ id: "monster-steam-breath-damage", label: "Steam Breath Damage", formula: "16d6", metadata: expect.objectContaining({ save: { ability: "constitution", dc: 19, success: "half" }, recharge: "5-6" }) })
       ])
@@ -5424,9 +5597,9 @@ describe("dnd 5.5e srd rules", () => {
     expect((driderActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Spider Climb" }), expect.objectContaining({ name: "Sunlight Sensitivity" }), expect.objectContaining({ name: "Web Walker" })]));
     expect(dnd5eSrdSheet(driderActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-foreleg-attack", label: "Foreleg Attack", formula: "1d20+7" },
+        expect.objectContaining({ id: "monster-foreleg-attack", label: "Foreleg Attack", formula: "1d20+7" }),
         expect.objectContaining({ id: "monster-foreleg-damage", label: "Foreleg Damage", formula: "2d8+4" }),
-        { id: "monster-poison-burst-attack", label: "Poison Burst Attack", formula: "1d20+6" },
+        expect.objectContaining({ id: "monster-poison-burst-attack", label: "Poison Burst Attack", formula: "1d20+6" }),
         expect.objectContaining({ id: "monster-poison-burst-damage", label: "Poison Burst Damage", formula: "3d6+3" }),
         expect.objectContaining({ id: "monster-magic-of-the-spider-queen-effect", label: "Magic of the Spider Queen Effect", formula: "0", metadata: expect.objectContaining({ recharge: "5-6", save: { ability: "wisdom", dc: 14 } }) })
       ])
@@ -5440,9 +5613,9 @@ describe("dnd 5.5e srd rules", () => {
     expect(druidMonsterActor.data).toEqual(expect.objectContaining({ hp: { current: 44, max: 44 }, armorClass: 13, challengeRating: "2", xp: 450, skillProficiencies: ["medicine", "nature", "perception"] }));
     expect(dnd5eSrdSheet(druidMonsterActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-vine-staff-attack", label: "Vine Staff Attack", formula: "1d20+5" },
+        expect.objectContaining({ id: "monster-vine-staff-attack", label: "Vine Staff Attack", formula: "1d20+5" }),
         expect.objectContaining({ id: "monster-vine-staff-damage", label: "Vine Staff Damage", formula: "1d8+3+1d4" }),
-        { id: "monster-verdant-wisp-attack", label: "Verdant Wisp Attack", formula: "1d20+5" },
+        expect.objectContaining({ id: "monster-verdant-wisp-attack", label: "Verdant Wisp Attack", formula: "1d20+5" }),
         expect.objectContaining({ id: "monster-verdant-wisp-damage", label: "Verdant Wisp Damage", formula: "3d6" }),
         expect.objectContaining({ id: "monster-spellcasting-effect", label: "Spellcasting Effect", formula: "0", metadata: expect.objectContaining({ save: { ability: "wisdom", dc: 13 } }) })
       ])
@@ -5457,9 +5630,9 @@ describe("dnd 5.5e srd rules", () => {
     expect((dryadActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Magic Resistance" }), expect.objectContaining({ name: "Speak with Beasts and Plants" })]));
     expect(dnd5eSrdSheet(dryadActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-vine-lash-attack", label: "Vine Lash Attack", formula: "1d20+6" },
+        expect.objectContaining({ id: "monster-vine-lash-attack", label: "Vine Lash Attack", formula: "1d20+6" }),
         expect.objectContaining({ id: "monster-vine-lash-damage", label: "Vine Lash Damage", formula: "1d8+4" }),
-        { id: "monster-thorn-burst-attack", label: "Thorn Burst Attack", formula: "1d20+6" },
+        expect.objectContaining({ id: "monster-thorn-burst-attack", label: "Thorn Burst Attack", formula: "1d20+6" }),
         expect.objectContaining({ id: "monster-thorn-burst-damage", label: "Thorn Burst Damage", formula: "1d6+4" }),
         expect.objectContaining({ id: "monster-spellcasting-effect", label: "Spellcasting Effect", formula: "0", metadata: expect.objectContaining({ save: { ability: "charisma", dc: 14 } }) }),
         expect.objectContaining({ id: "monster-tree-stride-effect", label: "Tree Stride Effect", formula: "0" })
@@ -5475,9 +5648,9 @@ describe("dnd 5.5e srd rules", () => {
     expect((efreetiActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Fire Immunity" }), expect.objectContaining({ name: "Magic Resistance" }), expect.objectContaining({ name: "Wishes" })]));
     expect(dnd5eSrdSheet(efreetiActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-heated-blade-attack", label: "Heated Blade Attack", formula: "1d20+10" },
+        expect.objectContaining({ id: "monster-heated-blade-attack", label: "Heated Blade Attack", formula: "1d20+10" }),
         expect.objectContaining({ id: "monster-heated-blade-damage", label: "Heated Blade Damage", formula: "2d6+6+2d12" }),
-        { id: "monster-hurl-flame-attack", label: "Hurl Flame Attack", formula: "1d20+8" },
+        expect.objectContaining({ id: "monster-hurl-flame-attack", label: "Hurl Flame Attack", formula: "1d20+8" }),
         expect.objectContaining({ id: "monster-hurl-flame-damage", label: "Hurl Flame Damage", formula: "7d6" }),
         expect.objectContaining({ id: "monster-spellcasting-effect", label: "Spellcasting Effect", formula: "0", metadata: expect.objectContaining({ save: { ability: "charisma", dc: 16 } }) })
       ])
@@ -5492,9 +5665,9 @@ describe("dnd 5.5e srd rules", () => {
     expect((ettercapActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Spider Climb" }), expect.objectContaining({ name: "Web Walker" })]));
     expect(dnd5eSrdSheet(ettercapActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+4" },
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+4" }),
         expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1d6+2+1d4", metadata: expect.objectContaining({ condition: "Poisoned" }) }),
-        { id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+4" },
+        expect.objectContaining({ id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+4" }),
         expect.objectContaining({ id: "monster-claw-damage", label: "Claw Damage", formula: "2d4+2" }),
         expect.objectContaining({ id: "monster-web-strand-effect", label: "Web Strand Effect", formula: "0", metadata: expect.objectContaining({ condition: "Restrained", recharge: "5-6", save: { ability: "dexterity", dc: 12 } }) }),
         expect.objectContaining({ id: "monster-reel-effect", label: "Reel Effect", formula: "0", metadata: expect.objectContaining({ action: "bonusAction" }) })
@@ -5510,9 +5683,9 @@ describe("dnd 5.5e srd rules", () => {
     expect((ettinActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Condition Immunities" })]));
     expect(dnd5eSrdSheet(ettinActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-battleaxe-attack", label: "Battleaxe Attack", formula: "1d20+7" },
+        expect.objectContaining({ id: "monster-battleaxe-attack", label: "Battleaxe Attack", formula: "1d20+7" }),
         expect.objectContaining({ id: "monster-battleaxe-damage", label: "Battleaxe Damage", formula: "2d8+5", metadata: expect.objectContaining({ condition: "Prone" }) }),
-        { id: "monster-morningstar-attack", label: "Morningstar Attack", formula: "1d20+7" },
+        expect.objectContaining({ id: "monster-morningstar-attack", label: "Morningstar Attack", formula: "1d20+7" }),
         expect.objectContaining({ id: "monster-morningstar-damage", label: "Morningstar Damage", formula: "2d8+5", metadata: expect.objectContaining({ summary: expect.stringContaining("Disadvantage") }) })
       ])
     );
@@ -5526,7 +5699,7 @@ describe("dnd 5.5e srd rules", () => {
     expect((fleshGolemActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Lightning and Poison Immunity" }), expect.objectContaining({ name: "Aversion to Fire" }), expect.objectContaining({ name: "Berserk" }), expect.objectContaining({ name: "Lightning Absorption" }), expect.objectContaining({ name: "Magic Resistance" })]));
     expect(dnd5eSrdSheet(fleshGolemActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-slam-attack", label: "Slam Attack", formula: "1d20+7" },
+        expect.objectContaining({ id: "monster-slam-attack", label: "Slam Attack", formula: "1d20+7" }),
         expect.objectContaining({ id: "monster-slam-damage", label: "Slam Damage", formula: "2d8+4+1d8", metadata: expect.objectContaining({ damageType: "bludgeoning/lightning" }) })
       ])
     );
@@ -5540,9 +5713,9 @@ describe("dnd 5.5e srd rules", () => {
     expect((frostGiantActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Cold Immunity" })]));
     expect(dnd5eSrdSheet(frostGiantActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-frost-axe-attack", label: "Frost Axe Attack", formula: "1d20+9" },
+        expect.objectContaining({ id: "monster-frost-axe-attack", label: "Frost Axe Attack", formula: "1d20+9" }),
         expect.objectContaining({ id: "monster-frost-axe-damage", label: "Frost Axe Damage", formula: "2d12+6+2d8", metadata: expect.objectContaining({ damageType: "slashing/cold" }) }),
-        { id: "monster-great-bow-attack", label: "Great Bow Attack", formula: "1d20+9" },
+        expect.objectContaining({ id: "monster-great-bow-attack", label: "Great Bow Attack", formula: "1d20+9" }),
         expect.objectContaining({ id: "monster-great-bow-damage", label: "Great Bow Damage", formula: "2d10+6+2d6", metadata: expect.objectContaining({ damageType: "piercing/cold", summary: expect.stringContaining("Speed decreases") }) }),
         expect.objectContaining({ id: "monster-war-cry-effect", label: "War Cry Effect", formula: "0", metadata: expect.objectContaining({ action: "bonusAction", recharge: "5-6" }) })
       ])
@@ -5557,9 +5730,9 @@ describe("dnd 5.5e srd rules", () => {
     expect((fireGiantActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Fire Immunity" })]));
     expect(dnd5eSrdSheet(fireGiantActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-flame-sword-attack", label: "Flame Sword Attack", formula: "1d20+11" },
-        { id: "monster-flame-sword-damage", label: "Flame Sword Damage", formula: "4d6+7+3d6" },
-        { id: "monster-hammer-throw-attack", label: "Hammer Throw Attack", formula: "1d20+11" },
+        expect.objectContaining({ id: "monster-flame-sword-attack", label: "Flame Sword Attack", formula: "1d20+11" }),
+        expect.objectContaining({ id: "monster-flame-sword-damage", label: "Flame Sword Damage", formula: "4d6+7+3d6" }),
+        expect.objectContaining({ id: "monster-hammer-throw-attack", label: "Hammer Throw Attack", formula: "1d20+11" }),
         expect.objectContaining({ id: "monster-hammer-throw-damage", label: "Hammer Throw Damage", formula: "3d10+7+1d8", metadata: expect.objectContaining({ damageType: "bludgeoning/fire" }) })
       ])
     );
@@ -5586,8 +5759,8 @@ describe("dnd 5.5e srd rules", () => {
     expect((violetFungusActor.data.monster as { statBlock: { senses: string[] } }).statBlock.senses).toEqual(expect.arrayContaining(["Blindsight 30 ft."]));
     expect(dnd5eSrdSheet(violetFungusActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rotting-touch-attack", label: "Rotting Touch Attack", formula: "1d20+2" },
-        { id: "monster-rotting-touch-damage", label: "Rotting Touch Damage", formula: "1d8" }
+        expect.objectContaining({ id: "monster-rotting-touch-attack", label: "Rotting Touch Attack", formula: "1d20+2" }),
+        expect.objectContaining({ id: "monster-rotting-touch-damage", label: "Rotting Touch Damage", formula: "1d8" })
       ])
     );
     const gargoyleActor: Actor = {
@@ -5600,8 +5773,8 @@ describe("dnd 5.5e srd rules", () => {
     expect((gargoyleActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Flyby" }), expect.objectContaining({ name: "Poison Immunity" })]));
     expect(dnd5eSrdSheet(gargoyleActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+4" },
-        { id: "monster-claw-damage", label: "Claw Damage", formula: "2d4+2" }
+        expect.objectContaining({ id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+4" }),
+        expect.objectContaining({ id: "monster-claw-damage", label: "Claw Damage", formula: "2d4+2" })
       ])
     );
     const deerActor: Actor = {
@@ -5614,8 +5787,8 @@ describe("dnd 5.5e srd rules", () => {
     expect((deerActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Agile" })]));
     expect(dnd5eSrdSheet(deerActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-ram-attack", label: "Ram Attack", formula: "1d20+2" },
-        { id: "monster-ram-damage", label: "Ram Damage", formula: "1d4" }
+        expect.objectContaining({ id: "monster-ram-attack", label: "Ram Attack", formula: "1d20+2" }),
+        expect.objectContaining({ id: "monster-ram-damage", label: "Ram Damage", formula: "1d4" })
       ])
     );
     const draftHorseActor: Actor = {
@@ -5627,8 +5800,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(draftHorseActor.data).toEqual(expect.objectContaining({ hp: { current: 15, max: 15 }, armorClass: 10, challengeRating: "1/4", xp: 50 }));
     expect(dnd5eSrdSheet(draftHorseActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-hooves-attack", label: "Hooves Attack", formula: "1d20+6" },
-        { id: "monster-hooves-damage", label: "Hooves Damage", formula: "1d4+4" }
+        expect.objectContaining({ id: "monster-hooves-attack", label: "Hooves Attack", formula: "1d20+6" }),
+        expect.objectContaining({ id: "monster-hooves-damage", label: "Hooves Damage", formula: "1d4+4" })
       ])
     );
     const eagleActor: Actor = {
@@ -5640,8 +5813,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(eagleActor.data).toEqual(expect.objectContaining({ hp: { current: 4, max: 4 }, armorClass: 12, challengeRating: "0", xp: 10, skillProficiencies: ["perception"] }));
     expect(dnd5eSrdSheet(eagleActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-talons-attack", label: "Talons Attack", formula: "1d20+4" },
-        { id: "monster-talons-damage", label: "Talons Damage", formula: "1d4+2" }
+        expect.objectContaining({ id: "monster-talons-attack", label: "Talons Attack", formula: "1d20+4" }),
+        expect.objectContaining({ id: "monster-talons-damage", label: "Talons Damage", formula: "1d4+2" })
       ])
     );
     const elephantActor: Actor = {
@@ -5653,7 +5826,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(elephantActor.data).toEqual(expect.objectContaining({ hp: { current: 76, max: 76 }, armorClass: 12, challengeRating: "4", xp: 1100 }));
     expect(dnd5eSrdSheet(elephantActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-gore-attack", label: "Gore Attack", formula: "1d20+8" },
+        expect.objectContaining({ id: "monster-gore-attack", label: "Gore Attack", formula: "1d20+8" }),
         expect.objectContaining({ id: "monster-gore-damage", label: "Gore Damage", formula: "2d8+6", metadata: expect.objectContaining({ condition: "Prone" }) }),
         expect.objectContaining({ id: "monster-trample-damage", label: "Trample Damage", formula: "2d10+6", metadata: expect.objectContaining({ action: "bonusAction", save: { ability: "dexterity", dc: 16, success: "half" } }) })
       ])
@@ -5667,7 +5840,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(elkActor.data).toEqual(expect.objectContaining({ hp: { current: 11, max: 11 }, armorClass: 10, challengeRating: "1/4", xp: 50, skillProficiencies: ["perception"] }));
     expect(dnd5eSrdSheet(elkActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-ram-attack", label: "Ram Attack", formula: "1d20+5" },
+        expect.objectContaining({ id: "monster-ram-attack", label: "Ram Attack", formula: "1d20+5" }),
         expect.objectContaining({ id: "monster-ram-damage", label: "Ram Damage", formula: "1d6+3", metadata: expect.objectContaining({ condition: "Prone", summary: expect.stringContaining("extra 1d6") }) })
       ])
     );
@@ -5681,7 +5854,7 @@ describe("dnd 5.5e srd rules", () => {
     expect((flyingSnakeActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Flyby" })]));
     expect(dnd5eSrdSheet(flyingSnakeActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+4" },
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+4" }),
         expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1+2d4", metadata: expect.objectContaining({ damageType: "piercing/poison" }) })
       ])
     );
@@ -5695,8 +5868,8 @@ describe("dnd 5.5e srd rules", () => {
     expect((frogActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Amphibious" }), expect.objectContaining({ name: "Standing Leap" })]));
     expect(dnd5eSrdSheet(frogActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+3" },
-        { id: "monster-bite-damage", label: "Bite Damage", formula: "1" }
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+3" }),
+        expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1" })
       ])
     );
     const giantBadgerActor: Actor = {
@@ -5709,8 +5882,8 @@ describe("dnd 5.5e srd rules", () => {
     expect((giantBadgerActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Poison Resistance" })]));
     expect(dnd5eSrdSheet(giantBadgerActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+3" },
-        { id: "monster-bite-damage", label: "Bite Damage", formula: "2d4+1" }
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+3" }),
+        expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "2d4+1" })
       ])
     );
     const giantBatActor: Actor = {
@@ -5722,8 +5895,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(giantBatActor.data).toEqual(expect.objectContaining({ hp: { current: 22, max: 22 }, armorClass: 13, challengeRating: "1/4", xp: 50 }));
     expect(dnd5eSrdSheet(giantBatActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+5" },
-        { id: "monster-bite-damage", label: "Bite Damage", formula: "1d6+3" }
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+5" }),
+        expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1d6+3" })
       ])
     );
     const giantBoarActor: Actor = {
@@ -5736,7 +5909,7 @@ describe("dnd 5.5e srd rules", () => {
     expect((giantBoarActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Bloodied Fury" })]));
     expect(dnd5eSrdSheet(giantBoarActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-gore-attack", label: "Gore Attack", formula: "1d20+5" },
+        expect.objectContaining({ id: "monster-gore-attack", label: "Gore Attack", formula: "1d20+5" }),
         expect.objectContaining({ id: "monster-gore-damage", label: "Gore Damage", formula: "2d6+3", metadata: expect.objectContaining({ condition: "Prone", summary: expect.stringContaining("extra 2d6") }) })
       ])
     );
@@ -5749,7 +5922,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(giantCentipedeActor.data).toEqual(expect.objectContaining({ hp: { current: 9, max: 9 }, armorClass: 14, challengeRating: "1/4", xp: 50 }));
     expect(dnd5eSrdSheet(giantCentipedeActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+4" },
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+4" }),
         expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1d4+2", metadata: expect.objectContaining({ condition: "Poisoned" }) })
       ])
     );
@@ -5762,8 +5935,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(giantConstrictorSnakeActor.data).toEqual(expect.objectContaining({ hp: { current: 60, max: 60 }, armorClass: 12, challengeRating: "2", xp: 450, skillProficiencies: ["perception"] }));
     expect(dnd5eSrdSheet(giantConstrictorSnakeActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+6" },
-        { id: "monster-bite-damage", label: "Bite Damage", formula: "2d6+4" },
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+6" }),
+        expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "2d6+4" }),
         expect.objectContaining({ id: "monster-constrict-damage", label: "Constrict Damage", formula: "2d8+4", metadata: expect.objectContaining({ condition: "Grappled", save: { ability: "strength", dc: 14 } }) })
       ])
     );
@@ -5777,7 +5950,7 @@ describe("dnd 5.5e srd rules", () => {
     expect((giantCrabActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Amphibious" })]));
     expect(dnd5eSrdSheet(giantCrabActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+3" },
+        expect.objectContaining({ id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+3" }),
         expect.objectContaining({ id: "monster-claw-damage", label: "Claw Damage", formula: "1d6+1", metadata: expect.objectContaining({ condition: "Grappled" }) })
       ])
     );
@@ -5790,9 +5963,9 @@ describe("dnd 5.5e srd rules", () => {
     expect(giantCrocodileActor.data).toEqual(expect.objectContaining({ hp: { current: 85, max: 85 }, armorClass: 14, challengeRating: "5", xp: 1800, skillProficiencies: ["stealth"] }));
     expect(dnd5eSrdSheet(giantCrocodileActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+8" },
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+8" }),
         expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "3d10+5", metadata: expect.objectContaining({ condition: "Grappled/Restrained" }) }),
-        { id: "monster-tail-attack", label: "Tail Attack", formula: "1d20+8" },
+        expect.objectContaining({ id: "monster-tail-attack", label: "Tail Attack", formula: "1d20+8" }),
         expect.objectContaining({ id: "monster-tail-damage", label: "Tail Damage", formula: "3d8+5", metadata: expect.objectContaining({ condition: "Prone" }) })
       ])
     );
@@ -5806,7 +5979,7 @@ describe("dnd 5.5e srd rules", () => {
     expect((giantElkActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Radiant and Necrotic Resistance" })]));
     expect(dnd5eSrdSheet(giantElkActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-ram-attack", label: "Ram Attack", formula: "1d20+6" },
+        expect.objectContaining({ id: "monster-ram-attack", label: "Ram Attack", formula: "1d20+6" }),
         expect.objectContaining({ id: "monster-ram-damage", label: "Ram Damage", formula: "2d6+4+2d4", metadata: expect.objectContaining({ condition: "Prone", damageType: "bludgeoning/radiant" }) })
       ])
     );
@@ -5820,8 +5993,8 @@ describe("dnd 5.5e srd rules", () => {
     expect((giantFireBeetleActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Fire Resistance" }), expect.objectContaining({ name: "Illumination" })]));
     expect(dnd5eSrdSheet(giantFireBeetleActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+1" },
-        { id: "monster-bite-damage", label: "Bite Damage", formula: "1" }
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+1" }),
+        expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1" })
       ])
     );
     const giantFrogActor: Actor = {
@@ -5834,7 +6007,7 @@ describe("dnd 5.5e srd rules", () => {
     expect((giantFrogActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Amphibious" }), expect.objectContaining({ name: "Standing Leap" })]));
     expect(dnd5eSrdSheet(giantFrogActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+3" },
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+3" }),
         expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1d6+2", metadata: expect.objectContaining({ condition: "Grappled" }) }),
         expect.objectContaining({ id: "monster-swallow-damage", label: "Swallow Damage", formula: "2d4", metadata: expect.objectContaining({ condition: "Blinded/Restrained/Prone", damageType: "acid" }) })
       ])
@@ -5848,7 +6021,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(giantGoatActor.data).toEqual(expect.objectContaining({ hp: { current: 19, max: 19 }, armorClass: 11, challengeRating: "1/2", xp: 100, skillProficiencies: ["perception"] }));
     expect(dnd5eSrdSheet(giantGoatActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-ram-attack", label: "Ram Attack", formula: "1d20+5" },
+        expect.objectContaining({ id: "monster-ram-attack", label: "Ram Attack", formula: "1d20+5" }),
         expect.objectContaining({ id: "monster-ram-damage", label: "Ram Damage", formula: "1d6+3+2d4", metadata: expect.objectContaining({ condition: "Prone" }) })
       ])
     );
@@ -5861,8 +6034,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(giantHyenaActor.data).toEqual(expect.objectContaining({ hp: { current: 45, max: 45 }, armorClass: 12, challengeRating: "1", xp: 200, skillProficiencies: ["perception"] }));
     expect(dnd5eSrdSheet(giantHyenaActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+5" },
-        { id: "monster-bite-damage", label: "Bite Damage", formula: "2d6+3" },
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+5" }),
+        expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "2d6+3" }),
         expect.objectContaining({ id: "monster-rampage-effect", label: "Rampage Effect", formula: "0", metadata: expect.objectContaining({ action: "bonusAction", effectType: "utility" }) })
       ])
     );
@@ -5876,8 +6049,8 @@ describe("dnd 5.5e srd rules", () => {
     expect((giantLizardActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Spider Climb" })]));
     expect(dnd5eSrdSheet(giantLizardActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+4" },
-        { id: "monster-bite-damage", label: "Bite Damage", formula: "1d8+2" }
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+4" }),
+        expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1d8+2" })
       ])
     );
     const giantOctopusActor: Actor = {
@@ -5890,7 +6063,7 @@ describe("dnd 5.5e srd rules", () => {
     expect((giantOctopusActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Water Breathing" })]));
     expect(dnd5eSrdSheet(giantOctopusActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-tentacles-attack", label: "Tentacles Attack", formula: "1d20+5" },
+        expect.objectContaining({ id: "monster-tentacles-attack", label: "Tentacles Attack", formula: "1d20+5" }),
         expect.objectContaining({ id: "monster-tentacles-damage", label: "Tentacles Damage", formula: "2d6+3", metadata: expect.objectContaining({ condition: "Grappled/Restrained" }) }),
         expect.objectContaining({ id: "monster-ink-cloud-effect", label: "Ink Cloud Effect", formula: "0", metadata: expect.objectContaining({ action: "reaction", recharge: "1/day" }) })
       ])
@@ -5905,8 +6078,8 @@ describe("dnd 5.5e srd rules", () => {
     expect((giantOwlActor.data.monster as { statBlock: { creatureType: string; traits: Array<{ name: string }> } }).statBlock).toEqual(expect.objectContaining({ creatureType: "Celestial", traits: expect.arrayContaining([expect.objectContaining({ name: "Flyby" })]) }));
     expect(dnd5eSrdSheet(giantOwlActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-talons-attack", label: "Talons Attack", formula: "1d20+4" },
-        { id: "monster-talons-damage", label: "Talons Damage", formula: "1d10+2" },
+        expect.objectContaining({ id: "monster-talons-attack", label: "Talons Attack", formula: "1d20+4" }),
+        expect.objectContaining({ id: "monster-talons-damage", label: "Talons Damage", formula: "1d10+2" }),
         expect.objectContaining({ id: "monster-spellcasting-effect", label: "Spellcasting Effect", formula: "0", metadata: expect.objectContaining({ action: "action", effectType: "utility" }) })
       ])
     );
@@ -5919,10 +6092,10 @@ describe("dnd 5.5e srd rules", () => {
     expect(giantScorpionActor.data).toEqual(expect.objectContaining({ hp: { current: 52, max: 52 }, armorClass: 15, challengeRating: "3", xp: 700 }));
     expect(dnd5eSrdSheet(giantScorpionActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+5" },
+        expect.objectContaining({ id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+5" }),
         expect.objectContaining({ id: "monster-claw-damage", label: "Claw Damage", formula: "1d6+3", metadata: expect.objectContaining({ condition: "Grappled" }) }),
-        { id: "monster-sting-attack", label: "Sting Attack", formula: "1d20+5" },
-        { id: "monster-sting-damage", label: "Sting Damage", formula: "1d8+3+2d10" }
+        expect.objectContaining({ id: "monster-sting-attack", label: "Sting Attack", formula: "1d20+5" }),
+        expect.objectContaining({ id: "monster-sting-damage", label: "Sting Damage", formula: "1d8+3+2d10" })
       ])
     );
     const giantSeahorseActor: Actor = {
@@ -5935,7 +6108,7 @@ describe("dnd 5.5e srd rules", () => {
     expect((giantSeahorseActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Water Breathing" })]));
     expect(dnd5eSrdSheet(giantSeahorseActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-ram-attack", label: "Ram Attack", formula: "1d20+4" },
+        expect.objectContaining({ id: "monster-ram-attack", label: "Ram Attack", formula: "1d20+4" }),
         expect.objectContaining({ id: "monster-ram-damage", label: "Ram Damage", formula: "2d6+2" }),
         expect.objectContaining({ id: "monster-bubble-dash-effect", label: "Bubble Dash Effect", formula: "0", metadata: expect.objectContaining({ action: "bonusAction", effectType: "utility" }) })
       ])
@@ -5950,7 +6123,7 @@ describe("dnd 5.5e srd rules", () => {
     expect((giantSharkActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Water Breathing" })]));
     expect(dnd5eSrdSheet(giantSharkActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+9" },
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+9" }),
         expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "3d10+6" })
       ])
     );
@@ -5964,7 +6137,7 @@ describe("dnd 5.5e srd rules", () => {
     expect((giantToadActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Amphibious" }), expect.objectContaining({ name: "Standing Leap" })]));
     expect(dnd5eSrdSheet(giantToadActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+4" },
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+4" }),
         expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1d6+2+2d4" }),
         expect.objectContaining({ id: "monster-swallow-damage", label: "Swallow Damage", formula: "3d6", metadata: expect.objectContaining({ action: "action", damageType: "acid", condition: "Blinded/Restrained/Prone" }) })
       ])
@@ -5978,8 +6151,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(giantVenomousSnakeActor.data).toEqual(expect.objectContaining({ hp: { current: 11, max: 11 }, armorClass: 14, challengeRating: "1/4", xp: 50, skillProficiencies: ["perception"] }));
     expect(dnd5eSrdSheet(giantVenomousSnakeActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+6" },
-        { id: "monster-bite-damage", label: "Bite Damage", formula: "1d4+4+1d8" }
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+6" }),
+        expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1d4+4+1d8" })
       ])
     );
     const giantVultureActor: Actor = {
@@ -5992,7 +6165,7 @@ describe("dnd 5.5e srd rules", () => {
     expect((giantVultureActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Necrotic Resistance" }), expect.objectContaining({ name: "Pack Tactics" })]));
     expect(dnd5eSrdSheet(giantVultureActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-gouge-attack", label: "Gouge Attack", formula: "1d20+4" },
+        expect.objectContaining({ id: "monster-gouge-attack", label: "Gouge Attack", formula: "1d20+4" }),
         expect.objectContaining({ id: "monster-gouge-damage", label: "Gouge Damage", formula: "2d6+2" })
       ])
     );
@@ -6006,8 +6179,8 @@ describe("dnd 5.5e srd rules", () => {
     expect((giantWaspActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Flyby" })]));
     expect(dnd5eSrdSheet(giantWaspActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-sting-attack", label: "Sting Attack", formula: "1d20+4" },
-        { id: "monster-sting-damage", label: "Sting Damage", formula: "1d6+2+2d4" }
+        expect.objectContaining({ id: "monster-sting-attack", label: "Sting Attack", formula: "1d20+4" }),
+        expect.objectContaining({ id: "monster-sting-damage", label: "Sting Damage", formula: "1d6+2+2d4" })
       ])
     );
     const giantWeaselActor: Actor = {
@@ -6019,8 +6192,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(giantWeaselActor.data).toEqual(expect.objectContaining({ hp: { current: 9, max: 9 }, armorClass: 13, challengeRating: "1/8", xp: 25, skillProficiencies: ["acrobatics", "perception", "stealth"] }));
     expect(dnd5eSrdSheet(giantWeaselActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+5" },
-        { id: "monster-bite-damage", label: "Bite Damage", formula: "1d4+3" }
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+5" }),
+        expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1d4+3" })
       ])
     );
     const giantWolfSpiderActor: Actor = {
@@ -6033,8 +6206,8 @@ describe("dnd 5.5e srd rules", () => {
     expect((giantWolfSpiderActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Spider Climb" })]));
     expect(dnd5eSrdSheet(giantWolfSpiderActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+5" },
-        { id: "monster-bite-damage", label: "Bite Damage", formula: "1d4+3+2d4" }
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+5" }),
+        expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1d4+3+2d4" })
       ])
     );
     const goatActor: Actor = {
@@ -6046,7 +6219,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(goatActor.data).toEqual(expect.objectContaining({ hp: { current: 4, max: 4 }, armorClass: 10, challengeRating: "0", xp: 10, skillProficiencies: ["perception"] }));
     expect(dnd5eSrdSheet(goatActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-ram-attack", label: "Ram Attack", formula: "1d20+2" },
+        expect.objectContaining({ id: "monster-ram-attack", label: "Ram Attack", formula: "1d20+2" }),
         expect.objectContaining({ id: "monster-ram-damage", label: "Ram Damage", formula: "1", metadata: expect.objectContaining({ summary: expect.stringContaining("1d4") }) })
       ])
     );
@@ -6059,8 +6232,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(hawkActor.data).toEqual(expect.objectContaining({ hp: { current: 1, max: 1 }, armorClass: 13, challengeRating: "0", xp: 10, skillProficiencies: ["perception"] }));
     expect(dnd5eSrdSheet(hawkActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-talons-attack", label: "Talons Attack", formula: "1d20+5" },
-        { id: "monster-talons-damage", label: "Talons Damage", formula: "1" }
+        expect.objectContaining({ id: "monster-talons-attack", label: "Talons Attack", formula: "1d20+5" }),
+        expect.objectContaining({ id: "monster-talons-damage", label: "Talons Damage", formula: "1" })
       ])
     );
     const jackalActor: Actor = {
@@ -6072,8 +6245,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(jackalActor.data).toEqual(expect.objectContaining({ hp: { current: 3, max: 3 }, armorClass: 12, challengeRating: "0", xp: 10, skillProficiencies: ["perception", "stealth"] }));
     expect(dnd5eSrdSheet(jackalActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+1" },
-        { id: "monster-bite-damage", label: "Bite Damage", formula: "1d4-1" }
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+1" }),
+        expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1d4-1" })
       ])
     );
     const killerWhaleActor: Actor = {
@@ -6086,8 +6259,8 @@ describe("dnd 5.5e srd rules", () => {
     expect((killerWhaleActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Hold Breath" })]));
     expect(dnd5eSrdSheet(killerWhaleActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+6" },
-        { id: "monster-bite-damage", label: "Bite Damage", formula: "5d6+4" }
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+6" }),
+        expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "5d6+4" })
       ])
     );
     const lionActor: Actor = {
@@ -6100,8 +6273,8 @@ describe("dnd 5.5e srd rules", () => {
     expect((lionActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Pack Tactics" }), expect.objectContaining({ name: "Running Leap" })]));
     expect(dnd5eSrdSheet(lionActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+5" },
-        { id: "monster-rend-damage", label: "Rend Damage", formula: "1d8+3" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+5" }),
+        expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "1d8+3" }),
         expect.objectContaining({ id: "monster-roar-effect", label: "Roar Effect", formula: "0", metadata: expect.objectContaining({ action: "action", range: "15 ft.", save: { ability: "wisdom", dc: 11 }, condition: "Frightened" }) })
       ])
     );
@@ -6115,8 +6288,8 @@ describe("dnd 5.5e srd rules", () => {
     expect((lizardActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Spider Climb" })]));
     expect(dnd5eSrdSheet(lizardActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+2" },
-        { id: "monster-bite-damage", label: "Bite Damage", formula: "1" }
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+2" }),
+        expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1" })
       ])
     );
     const ghostActor: Actor = {
@@ -6129,8 +6302,8 @@ describe("dnd 5.5e srd rules", () => {
     expect((ghostActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Damage Resistances" }), expect.objectContaining({ name: "Incorporeal Movement" })]));
     expect(dnd5eSrdSheet(ghostActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-withering-touch-attack", label: "Withering Touch Attack", formula: "1d20+5" },
-        { id: "monster-withering-touch-damage", label: "Withering Touch Damage", formula: "3d10+3" },
+        expect.objectContaining({ id: "monster-withering-touch-attack", label: "Withering Touch Attack", formula: "1d20+5" }),
+        expect.objectContaining({ id: "monster-withering-touch-damage", label: "Withering Touch Damage", formula: "3d10+3" }),
         expect.objectContaining({ id: "monster-etherealness-effect", label: "Etherealness Effect", formula: "0" }),
         expect.objectContaining({ id: "monster-horrific-visage-damage", label: "Horrific Visage Damage", formula: "2d6+3", metadata: expect.objectContaining({ condition: "Frightened" }) }),
         expect.objectContaining({ id: "monster-possession-effect", label: "Possession Effect", formula: "0", metadata: expect.objectContaining({ condition: "Incapacitated/Possessed" }) })
@@ -6146,8 +6319,8 @@ describe("dnd 5.5e srd rules", () => {
     expect((gibberingMoutherActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Aberrant Ground" }), expect.objectContaining({ name: "Gibbering" })]));
     expect(dnd5eSrdSheet(gibberingMoutherActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+2" },
-        { id: "monster-bite-damage", label: "Bite Damage", formula: "4d6" },
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+2" }),
+        expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "4d6" }),
         expect.objectContaining({ id: "monster-blinding-spittle-effect", label: "Blinding Spittle Effect", formula: "0", metadata: expect.objectContaining({ action: "action", range: "15-foot cone", save: { ability: "dexterity", dc: 13 }, condition: "Blinded", recharge: "5-6" }) })
       ])
     );
@@ -6161,10 +6334,10 @@ describe("dnd 5.5e srd rules", () => {
     expect((glabrezuActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Legendary Resistance" }), expect.objectContaining({ name: "Magic Resistance" })]));
     expect(dnd5eSrdSheet(glabrezuActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-pincer-attack", label: "Pincer Attack", formula: "1d20+9" },
+        expect.objectContaining({ id: "monster-pincer-attack", label: "Pincer Attack", formula: "1d20+9" }),
         expect.objectContaining({ id: "monster-pincer-damage", label: "Pincer Damage", formula: "2d10+5" }),
-        { id: "monster-fist-attack", label: "Fist Attack", formula: "1d20+9" },
-        { id: "monster-fist-damage", label: "Fist Damage", formula: "2d4+5" },
+        expect.objectContaining({ id: "monster-fist-attack", label: "Fist Attack", formula: "1d20+9" }),
+        expect.objectContaining({ id: "monster-fist-damage", label: "Fist Damage", formula: "2d4+5" }),
         expect.objectContaining({ id: "monster-spellcasting-effect", label: "Spellcasting Effect", formula: "0", metadata: expect.objectContaining({ action: "action", effectType: "utility" }) })
       ])
     );
@@ -6177,8 +6350,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(gladiatorActor.data).toEqual(expect.objectContaining({ hp: { current: 112, max: 112 }, armorClass: 16, challengeRating: "5", xp: 1800, skillProficiencies: ["athletics", "intimidation"] }));
     expect(dnd5eSrdSheet(gladiatorActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-spear-attack", label: "Spear Attack", formula: "1d20+7" },
-        { id: "monster-spear-damage", label: "Spear Damage", formula: "2d6+4" },
+        expect.objectContaining({ id: "monster-spear-attack", label: "Spear Attack", formula: "1d20+7" }),
+        expect.objectContaining({ id: "monster-spear-damage", label: "Spear Damage", formula: "2d6+4" }),
         expect.objectContaining({ id: "monster-shield-bash-damage", label: "Shield Bash Damage", formula: "2d4+4", metadata: expect.objectContaining({ save: { ability: "strength", dc: 15 }, condition: "Prone" }) }),
         expect.objectContaining({ id: "monster-parry-effect", label: "Parry Effect", formula: "0", metadata: expect.objectContaining({ action: "reaction", effectType: "utility" }) })
       ])
@@ -6192,10 +6365,10 @@ describe("dnd 5.5e srd rules", () => {
     expect(gnollWarriorActor.data).toEqual(expect.objectContaining({ hp: { current: 22, max: 22 }, armorClass: 15, challengeRating: "1/2", xp: 100 }));
     expect(dnd5eSrdSheet(gnollWarriorActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-spear-attack", label: "Spear Attack", formula: "1d20+4" },
-        { id: "monster-spear-damage", label: "Spear Damage", formula: "1d8+2" },
-        { id: "monster-longbow-attack", label: "Longbow Attack", formula: "1d20+3" },
-        { id: "monster-longbow-damage", label: "Longbow Damage", formula: "1d8+1" }
+        expect.objectContaining({ id: "monster-spear-attack", label: "Spear Attack", formula: "1d20+4" }),
+        expect.objectContaining({ id: "monster-spear-damage", label: "Spear Damage", formula: "1d8+2" }),
+        expect.objectContaining({ id: "monster-longbow-attack", label: "Longbow Attack", formula: "1d20+3" }),
+        expect.objectContaining({ id: "monster-longbow-damage", label: "Longbow Damage", formula: "1d8+1" })
       ])
     );
     const goldDragonWyrmlingActor: Actor = {
@@ -6208,8 +6381,8 @@ describe("dnd 5.5e srd rules", () => {
     expect((goldDragonWyrmlingActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Amphibious" }), expect.objectContaining({ name: "Fire Immunity" })]));
     expect(dnd5eSrdSheet(goldDragonWyrmlingActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+6" },
-        { id: "monster-bite-damage", label: "Bite Damage", formula: "1d10+4" },
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+6" }),
+        expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1d10+4" }),
         expect.objectContaining({ id: "monster-fire-breath-damage", label: "Fire Breath Damage", formula: "7d6", metadata: expect.objectContaining({ action: "action", damageType: "fire", save: { ability: "dexterity", dc: 13, success: "half" }, recharge: "5-6" }) })
       ])
     );
@@ -6223,8 +6396,8 @@ describe("dnd 5.5e srd rules", () => {
     expect((youngGoldDragonActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Amphibious" }), expect.objectContaining({ name: "Fire Immunity" })]));
     expect(dnd5eSrdSheet(youngGoldDragonActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+11" },
-        { id: "monster-rend-damage", label: "Rend Damage", formula: "2d10+7" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+11" }),
+        expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "2d10+7" }),
         expect.objectContaining({ id: "monster-fire-breath-damage", label: "Fire Breath Damage", formula: "10d6", metadata: expect.objectContaining({ action: "action", damageType: "fire", save: { ability: "dexterity", dc: 17, success: "half" }, recharge: "5-6" }) })
       ])
     );
@@ -6238,7 +6411,7 @@ describe("dnd 5.5e srd rules", () => {
     expect((adultGoldDragonActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Legendary Resistance" }), expect.objectContaining({ name: "Fire Immunity" })]));
     expect(dnd5eSrdSheet(adultGoldDragonActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+14" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+14" }),
         expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "2d8+8+1d8" }),
         expect.objectContaining({ id: "monster-fire-breath-damage", label: "Fire Breath Damage", formula: "12d10", metadata: expect.objectContaining({ damageType: "fire", save: { ability: "dexterity", dc: 21, success: "half" }, recharge: "5-6" }) }),
         expect.objectContaining({ id: "monster-weakening-breath-effect", label: "Weakening Breath Effect", formula: "0", metadata: expect.objectContaining({ action: "action", condition: "Weakened", save: { ability: "strength", dc: 21 } }) }),
@@ -6255,7 +6428,7 @@ describe("dnd 5.5e srd rules", () => {
     expect((ancientGoldDragonActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Legendary Resistance" }), expect.objectContaining({ name: "Fire Immunity" })]));
     expect(dnd5eSrdSheet(ancientGoldDragonActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+17" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+17" }),
         expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "2d8+10+2d8" }),
         expect.objectContaining({ id: "monster-fire-breath-damage", label: "Fire Breath Damage", formula: "13d10", metadata: expect.objectContaining({ damageType: "fire", save: { ability: "dexterity", dc: 24, success: "half" }, recharge: "5-6" }) }),
         expect.objectContaining({ id: "monster-weakening-breath-effect", label: "Weakening Breath Effect", formula: "0", metadata: expect.objectContaining({ action: "action", condition: "Weakened", save: { ability: "strength", dc: 24 } }) }),
@@ -6271,7 +6444,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(gorgonActor.data).toEqual(expect.objectContaining({ hp: { current: 114, max: 114 }, armorClass: 19, challengeRating: "5", xp: 1800, skillProficiencies: ["perception"] }));
     expect(dnd5eSrdSheet(gorgonActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-gore-attack", label: "Gore Attack", formula: "1d20+8" },
+        expect.objectContaining({ id: "monster-gore-attack", label: "Gore Attack", formula: "1d20+8" }),
         expect.objectContaining({ id: "monster-gore-damage", label: "Gore Damage", formula: "2d12+5" }),
         expect.objectContaining({ id: "monster-petrifying-breath-effect", label: "Petrifying Breath Effect", formula: "0", metadata: expect.objectContaining({ condition: "Restrained/Petrified", recharge: "5-6", save: { ability: "constitution", dc: 15 } }) }),
         expect.objectContaining({ id: "monster-trample-damage", label: "Trample Damage", formula: "2d10+5", metadata: expect.objectContaining({ action: "bonusAction", save: { ability: "dexterity", dc: 16, success: "half" } }) })
@@ -6287,7 +6460,7 @@ describe("dnd 5.5e srd rules", () => {
     expect((grayOozeActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Amorphous" }), expect.objectContaining({ name: "Corrosive Form" })]));
     expect(dnd5eSrdSheet(grayOozeActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-pseudopod-attack", label: "Pseudopod Attack", formula: "1d20+3" },
+        expect.objectContaining({ id: "monster-pseudopod-attack", label: "Pseudopod Attack", formula: "1d20+3" }),
         expect.objectContaining({ id: "monster-pseudopod-damage", label: "Pseudopod Damage", formula: "2d8+1" })
       ])
     );
@@ -6301,8 +6474,8 @@ describe("dnd 5.5e srd rules", () => {
     expect((greenHagActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Coven Magic" }), expect.objectContaining({ name: "Mimicry" })]));
     expect(dnd5eSrdSheet(greenHagActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+6" },
-        { id: "monster-claw-damage", label: "Claw Damage", formula: "1d8+4+1d6" },
+        expect.objectContaining({ id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+6" }),
+        expect.objectContaining({ id: "monster-claw-damage", label: "Claw Damage", formula: "1d8+4+1d6" }),
         expect.objectContaining({ id: "monster-spellcasting-effect", label: "Spellcasting Effect", formula: "0", metadata: expect.objectContaining({ effectType: "utility", action: "action" }) })
       ])
     );
@@ -6315,9 +6488,9 @@ describe("dnd 5.5e srd rules", () => {
     expect(grickActor.data).toEqual(expect.objectContaining({ hp: { current: 54, max: 54 }, armorClass: 14, challengeRating: "2", xp: 450, skillProficiencies: ["stealth"] }));
     expect(dnd5eSrdSheet(grickActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-beak-attack", label: "Beak Attack", formula: "1d20+4" },
+        expect.objectContaining({ id: "monster-beak-attack", label: "Beak Attack", formula: "1d20+4" }),
         expect.objectContaining({ id: "monster-beak-damage", label: "Beak Damage", formula: "2d6+2" }),
-        { id: "monster-tentacles-attack", label: "Tentacles Attack", formula: "1d20+4" },
+        expect.objectContaining({ id: "monster-tentacles-attack", label: "Tentacles Attack", formula: "1d20+4" }),
         expect.objectContaining({ id: "monster-tentacles-damage", label: "Tentacles Damage", formula: "1d10+2", metadata: expect.objectContaining({ condition: "Grappled" }) })
       ])
     );
@@ -6330,211 +6503,211 @@ describe("dnd 5.5e srd rules", () => {
     expect(griffonActor.data).toEqual(expect.objectContaining({ hp: { current: 59, max: 59 }, armorClass: 12, challengeRating: "2", xp: 450, skillProficiencies: ["perception"] }));
     expect(dnd5eSrdSheet(griffonActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+6" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+6" }),
         expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "1d8+4", metadata: expect.objectContaining({ condition: "Grappled" }) })
       ])
     );
     const grimlockActor: Actor = { ...srdActor, type: "monster", name: "Grimlock", data: dnd5eSrdMonsterActorData("grimlock")! };
     expect(grimlockActor.data).toEqual(expect.objectContaining({ hp: { current: 11, max: 11 }, armorClass: 11, challengeRating: "1/4", xp: 50, skillProficiencies: ["athletics", "perception", "stealth"] }));
-    expect(dnd5eSrdSheet(grimlockActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-bone-cudgel-attack", label: "Bone Cudgel Attack", formula: "1d20+5" }, { id: "monster-bone-cudgel-damage", label: "Bone Cudgel Damage", formula: "1d6+3+1d4" }]));
+    expect(dnd5eSrdSheet(grimlockActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-bone-cudgel-attack", label: "Bone Cudgel Attack", formula: "1d20+5" }), expect.objectContaining({ id: "monster-bone-cudgel-damage", label: "Bone Cudgel Damage", formula: "1d6+3+1d4" })]));
     const guardianNagaActor: Actor = { ...srdActor, type: "monster", name: "Guardian Naga", data: dnd5eSrdMonsterActorData("guardian-naga")! };
     expect(guardianNagaActor.data).toEqual(expect.objectContaining({ hp: { current: 136, max: 136 }, armorClass: 18, challengeRating: "10", xp: 5900, skillProficiencies: ["arcana", "history", "religion"] }));
-    expect(dnd5eSrdSheet(guardianNagaActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+8" }, expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "2d12+4+4d10" }), expect.objectContaining({ id: "monster-poisonous-spittle-damage", label: "Poisonous Spittle Damage", formula: "7d8", metadata: expect.objectContaining({ save: { ability: "constitution", dc: 16, success: "half" }, condition: "Blinded" }) }), expect.objectContaining({ id: "monster-spellcasting-effect", label: "Spellcasting Effect", formula: "0" })]));
+    expect(dnd5eSrdSheet(guardianNagaActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+8" }), expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "2d12+4+4d10" }), expect.objectContaining({ id: "monster-poisonous-spittle-damage", label: "Poisonous Spittle Damage", formula: "7d8", metadata: expect.objectContaining({ save: { ability: "constitution", dc: 16, success: "half" }, condition: "Blinded" }) }), expect.objectContaining({ id: "monster-spellcasting-effect", label: "Spellcasting Effect", formula: "0" })]));
     const halfDragonActor: Actor = { ...srdActor, type: "monster", name: "Half-Dragon", data: dnd5eSrdMonsterActorData("half-dragon")! };
     expect(halfDragonActor.data).toEqual(expect.objectContaining({ hp: { current: 105, max: 105 }, armorClass: 18, challengeRating: "5", xp: 1800, skillProficiencies: ["athletics", "perception", "stealth"] }));
-    expect(dnd5eSrdSheet(halfDragonActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+7" }, expect.objectContaining({ id: "monster-claw-damage", label: "Claw Damage", formula: "1d4+4+2d6" }), expect.objectContaining({ id: "monster-dragon-s-breath-damage", label: "Dragon's Breath Damage", formula: "8d6", metadata: expect.objectContaining({ save: { ability: "dexterity", dc: 14, success: "half" }, recharge: "5-6" }) }), expect.objectContaining({ id: "monster-leap-effect", label: "Leap Effect", formula: "0" })]));
+    expect(dnd5eSrdSheet(halfDragonActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+7" }), expect.objectContaining({ id: "monster-claw-damage", label: "Claw Damage", formula: "1d4+4+2d6" }), expect.objectContaining({ id: "monster-dragon-s-breath-damage", label: "Dragon's Breath Damage", formula: "8d6", metadata: expect.objectContaining({ save: { ability: "dexterity", dc: 14, success: "half" }, recharge: "5-6" }) }), expect.objectContaining({ id: "monster-leap-effect", label: "Leap Effect", formula: "0" })]));
     const harpyActor: Actor = { ...srdActor, type: "monster", name: "Harpy", data: dnd5eSrdMonsterActorData("harpy")! };
-    expect(dnd5eSrdSheet(harpyActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+3" }, { id: "monster-claw-damage", label: "Claw Damage", formula: "2d4+1" }, expect.objectContaining({ id: "monster-luring-song-effect", label: "Luring Song Effect", formula: "0", metadata: expect.objectContaining({ save: { ability: "wisdom", dc: 11 }, condition: "Charmed/Incapacitated" }) })]));
+    expect(dnd5eSrdSheet(harpyActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+3" }), expect.objectContaining({ id: "monster-claw-damage", label: "Claw Damage", formula: "2d4+1" }), expect.objectContaining({ id: "monster-luring-song-effect", label: "Luring Song Effect", formula: "0", metadata: expect.objectContaining({ save: { ability: "wisdom", dc: 11 }, condition: "Charmed/Incapacitated" }) })]));
     const hellHoundActor: Actor = { ...srdActor, type: "monster", name: "Hell Hound", data: dnd5eSrdMonsterActorData("hell-hound")! };
     expect(hellHoundActor.data).toEqual(expect.objectContaining({ hp: { current: 58, max: 58 }, armorClass: 15, challengeRating: "3", xp: 700, skillProficiencies: ["perception"] }));
-    expect(dnd5eSrdSheet(hellHoundActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+5" }, expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1d8+3+1d6" }), expect.objectContaining({ id: "monster-fire-breath-damage", label: "Fire Breath Damage", formula: "5d6", metadata: expect.objectContaining({ save: { ability: "dexterity", dc: 12, success: "half" }, recharge: "5-6" }) })]));
+    expect(dnd5eSrdSheet(hellHoundActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+5" }), expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1d8+3+1d6" }), expect.objectContaining({ id: "monster-fire-breath-damage", label: "Fire Breath Damage", formula: "5d6", metadata: expect.objectContaining({ save: { ability: "dexterity", dc: 12, success: "half" }, recharge: "5-6" }) })]));
     const hezrouActor: Actor = { ...srdActor, type: "monster", name: "Hezrou", data: dnd5eSrdMonsterActorData("hezrou")! };
     expect(hezrouActor.data).toEqual(expect.objectContaining({ hp: { current: 157, max: 157 }, armorClass: 18, challengeRating: "8", xp: 3900 }));
-    expect(dnd5eSrdSheet(hezrouActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+7" }, expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "1d4+4+2d8" }), expect.objectContaining({ id: "monster-leap-effect", label: "Leap Effect", formula: "0" })]));
+    expect(dnd5eSrdSheet(hezrouActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+7" }), expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "1d4+4+2d8" }), expect.objectContaining({ id: "monster-leap-effect", label: "Leap Effect", formula: "0" })]));
     const hillGiantActor: Actor = { ...srdActor, type: "monster", name: "Hill Giant", data: dnd5eSrdMonsterActorData("hill-giant")! };
     expect(hillGiantActor.data).toEqual(expect.objectContaining({ hp: { current: 105, max: 105 }, armorClass: 13, challengeRating: "5", xp: 1800, skillProficiencies: ["perception"] }));
-    expect(dnd5eSrdSheet(hillGiantActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-tree-club-attack", label: "Tree Club Attack", formula: "1d20+8" }, expect.objectContaining({ id: "monster-tree-club-damage", label: "Tree Club Damage", formula: "3d8+5", metadata: expect.objectContaining({ condition: "Prone" }) }), { id: "monster-trash-lob-attack", label: "Trash Lob Attack", formula: "1d20+8" }, expect.objectContaining({ id: "monster-trash-lob-damage", label: "Trash Lob Damage", formula: "2d10+5", metadata: expect.objectContaining({ condition: "Poisoned" }) })]));
+    expect(dnd5eSrdSheet(hillGiantActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-tree-club-attack", label: "Tree Club Attack", formula: "1d20+8" }), expect.objectContaining({ id: "monster-tree-club-damage", label: "Tree Club Damage", formula: "3d8+5", metadata: expect.objectContaining({ condition: "Prone" }) }), expect.objectContaining({ id: "monster-trash-lob-attack", label: "Trash Lob Attack", formula: "1d20+8" }), expect.objectContaining({ id: "monster-trash-lob-damage", label: "Trash Lob Damage", formula: "2d10+5", metadata: expect.objectContaining({ condition: "Poisoned" }) })]));
     const hippogriffActor: Actor = { ...srdActor, type: "monster", name: "Hippogriff", data: dnd5eSrdMonsterActorData("hippogriff")! };
     expect(hippogriffActor.data).toEqual(expect.objectContaining({ hp: { current: 26, max: 26 }, armorClass: 11, challengeRating: "1", xp: 200, skillProficiencies: ["perception"] }));
-    expect(dnd5eSrdSheet(hippogriffActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+5" }, { id: "monster-rend-damage", label: "Rend Damage", formula: "1d8+3" }]));
+    expect(dnd5eSrdSheet(hippogriffActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+5" }), expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "1d8+3" })]));
     const hippopotamusActor: Actor = { ...srdActor, type: "monster", name: "Hippopotamus", data: dnd5eSrdMonsterActorData("hippopotamus")! };
     expect(hippopotamusActor.data).toEqual(expect.objectContaining({ hp: { current: 82, max: 82 }, armorClass: 14, challengeRating: "4", xp: 1100, skillProficiencies: ["perception"] }));
     expect((hippopotamusActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Hold Breath" })]));
-    expect(dnd5eSrdSheet(hippopotamusActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+7" }, { id: "monster-bite-damage", label: "Bite Damage", formula: "2d10+5" }]));
+    expect(dnd5eSrdSheet(hippopotamusActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+7" }), expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "2d10+5" })]));
     const hobgoblinWarriorActor: Actor = { ...srdActor, type: "monster", name: "Hobgoblin Warrior", data: dnd5eSrdMonsterActorData("hobgoblin-warrior")! };
     expect(hobgoblinWarriorActor.data).toEqual(expect.objectContaining({ hp: { current: 11, max: 11 }, armorClass: 18, challengeRating: "1/2", xp: 100 }));
-    expect(dnd5eSrdSheet(hobgoblinWarriorActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-longsword-attack", label: "Longsword Attack", formula: "1d20+3" }, { id: "monster-longsword-damage", label: "Longsword Damage", formula: "2d10+1" }, { id: "monster-longbow-attack", label: "Longbow Attack", formula: "1d20+3" }, { id: "monster-longbow-damage", label: "Longbow Damage", formula: "1d8+1+3d4" }]));
+    expect(dnd5eSrdSheet(hobgoblinWarriorActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-longsword-attack", label: "Longsword Attack", formula: "1d20+3" }), expect.objectContaining({ id: "monster-longsword-damage", label: "Longsword Damage", formula: "2d10+1" }), expect.objectContaining({ id: "monster-longbow-attack", label: "Longbow Attack", formula: "1d20+3" }), expect.objectContaining({ id: "monster-longbow-damage", label: "Longbow Damage", formula: "1d8+1+3d4" })]));
     const homunculusActor: Actor = { ...srdActor, type: "monster", name: "Homunculus", data: dnd5eSrdMonsterActorData("homunculus")! };
     expect(homunculusActor.data).toEqual(expect.objectContaining({ hp: { current: 4, max: 4 }, armorClass: 13, challengeRating: "0", xp: 10 }));
-    expect(dnd5eSrdSheet(homunculusActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+4" }, expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1", metadata: expect.objectContaining({ save: { ability: "constitution", dc: 12 }, condition: "Poisoned/Unconscious" }) })]));
+    expect(dnd5eSrdSheet(homunculusActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+4" }), expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1", metadata: expect.objectContaining({ save: { ability: "constitution", dc: 12 }, condition: "Poisoned/Unconscious" }) })]));
     const hunterSharkActor: Actor = { ...srdActor, type: "monster", name: "Hunter Shark", data: dnd5eSrdMonsterActorData("hunter-shark")! };
     expect(hunterSharkActor.data).toEqual(expect.objectContaining({ hp: { current: 45, max: 45 }, armorClass: 12, challengeRating: "2", xp: 450, skillProficiencies: ["perception"] }));
-    expect(dnd5eSrdSheet(hunterSharkActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+6" }, expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "3d6+4", metadata: expect.objectContaining({ summary: expect.stringContaining("Advantage") }) })]));
+    expect(dnd5eSrdSheet(hunterSharkActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+6" }), expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "3d6+4", metadata: expect.objectContaining({ summary: expect.stringContaining("Advantage") }) })]));
     const hyenaActor: Actor = { ...srdActor, type: "monster", name: "Hyena", data: dnd5eSrdMonsterActorData("hyena")! };
     expect(hyenaActor.data).toEqual(expect.objectContaining({ hp: { current: 5, max: 5 }, armorClass: 11, challengeRating: "0", xp: 10, skillProficiencies: ["perception"] }));
-    expect(dnd5eSrdSheet(hyenaActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+2" }, { id: "monster-bite-damage", label: "Bite Damage", formula: "1d6" }]));
+    expect(dnd5eSrdSheet(hyenaActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+2" }), expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1d6" })]));
     const iceMephitActor: Actor = { ...srdActor, type: "monster", name: "Ice Mephit", data: dnd5eSrdMonsterActorData("ice-mephit")! };
     expect(iceMephitActor.data).toEqual(expect.objectContaining({ hp: { current: 21, max: 21 }, armorClass: 11, challengeRating: "1/2", xp: 100, skillProficiencies: ["perception", "stealth"] }));
-    expect(dnd5eSrdSheet(iceMephitActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+3" }, { id: "monster-claw-damage", label: "Claw Damage", formula: "1d4+1+1d4" }, expect.objectContaining({ id: "monster-fog-cloud-effect", label: "Fog Cloud Effect", formula: "0", metadata: expect.objectContaining({ action: "action", recharge: "1/day" }) }), expect.objectContaining({ id: "monster-frost-breath-damage", label: "Frost Breath Damage", formula: "3d4", metadata: expect.objectContaining({ save: { ability: "constitution", dc: 10, success: "half" }, recharge: "6" }) })]));
+    expect(dnd5eSrdSheet(iceMephitActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+3" }), expect.objectContaining({ id: "monster-claw-damage", label: "Claw Damage", formula: "1d4+1+1d4" }), expect.objectContaining({ id: "monster-fog-cloud-effect", label: "Fog Cloud Effect", formula: "0", metadata: expect.objectContaining({ action: "action", recharge: "1/day" }) }), expect.objectContaining({ id: "monster-frost-breath-damage", label: "Frost Breath Damage", formula: "3d4", metadata: expect.objectContaining({ save: { ability: "constitution", dc: 10, success: "half" }, recharge: "6" }) })]));
     const magmaMephitActor: Actor = { ...srdActor, type: "monster", name: "Magma Mephit", data: dnd5eSrdMonsterActorData("magma-mephit")! };
     expect(magmaMephitActor.data).toEqual(expect.objectContaining({ hp: { current: 18, max: 18 }, armorClass: 11, challengeRating: "1/2", xp: 100, skillProficiencies: ["stealth"] }));
-    expect(dnd5eSrdSheet(magmaMephitActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+3" }, { id: "monster-claw-damage", label: "Claw Damage", formula: "1d4+1+1d6" }, expect.objectContaining({ id: "monster-fire-breath-damage", label: "Fire Breath Damage", formula: "2d6", metadata: expect.objectContaining({ save: { ability: "dexterity", dc: 11, success: "half" }, recharge: "6" }) })]));
+    expect(dnd5eSrdSheet(magmaMephitActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+3" }), expect.objectContaining({ id: "monster-claw-damage", label: "Claw Damage", formula: "1d4+1+1d6" }), expect.objectContaining({ id: "monster-fire-breath-damage", label: "Fire Breath Damage", formula: "2d6", metadata: expect.objectContaining({ save: { ability: "dexterity", dc: 11, success: "half" }, recharge: "6" }) })]));
     const steamMephitActor: Actor = { ...srdActor, type: "monster", name: "Steam Mephit", data: dnd5eSrdMonsterActorData("steam-mephit")! };
     expect(steamMephitActor.data).toEqual(expect.objectContaining({ hp: { current: 17, max: 17 }, armorClass: 10, challengeRating: "1/4", xp: 50, skillProficiencies: ["stealth"] }));
-    expect(dnd5eSrdSheet(steamMephitActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+2" }, { id: "monster-claw-damage", label: "Claw Damage", formula: "1d4+1d4" }, expect.objectContaining({ id: "monster-steam-breath-damage", label: "Steam Breath Damage", formula: "2d4", metadata: expect.objectContaining({ save: { ability: "constitution", dc: 10, success: "half" }, condition: "Slowed", recharge: "6" }) })]));
+    expect(dnd5eSrdSheet(steamMephitActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+2" }), expect.objectContaining({ id: "monster-claw-damage", label: "Claw Damage", formula: "1d4+1d4" }), expect.objectContaining({ id: "monster-steam-breath-damage", label: "Steam Breath Damage", formula: "2d4", metadata: expect.objectContaining({ save: { ability: "constitution", dc: 10, success: "half" }, condition: "Slowed", recharge: "6" }) })]));
     const merfolkSkirmisherActor: Actor = { ...srdActor, type: "monster", name: "Merfolk Skirmisher", data: dnd5eSrdMonsterActorData("merfolk-skirmisher")! };
     expect(merfolkSkirmisherActor.data).toEqual(expect.objectContaining({ hp: { current: 11, max: 11 }, armorClass: 11, challengeRating: "1/8", xp: 25 }));
-    expect(dnd5eSrdSheet(merfolkSkirmisherActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-ocean-spear-attack", label: "Ocean Spear Attack", formula: "1d20+2" }, expect.objectContaining({ id: "monster-ocean-spear-damage", label: "Ocean Spear Damage", formula: "1d6+1d4", metadata: expect.objectContaining({ condition: "Slowed" }) })]));
+    expect(dnd5eSrdSheet(merfolkSkirmisherActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-ocean-spear-attack", label: "Ocean Spear Attack", formula: "1d20+2" }), expect.objectContaining({ id: "monster-ocean-spear-damage", label: "Ocean Spear Damage", formula: "1d6+1d4", metadata: expect.objectContaining({ condition: "Slowed" }) })]));
     const merrowActor: Actor = { ...srdActor, type: "monster", name: "Merrow", data: dnd5eSrdMonsterActorData("merrow")! };
     expect(merrowActor.data).toEqual(expect.objectContaining({ hp: { current: 45, max: 45 }, armorClass: 13, challengeRating: "2", xp: 450 }));
-    expect(dnd5eSrdSheet(merrowActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+6" }, expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1d4+4", metadata: expect.objectContaining({ condition: "Poisoned" }) }), { id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+6" }, { id: "monster-claw-damage", label: "Claw Damage", formula: "2d4+4" }, { id: "monster-harpoon-attack", label: "Harpoon Attack", formula: "1d20+6" }, expect.objectContaining({ id: "monster-harpoon-damage", label: "Harpoon Damage", formula: "2d6+4", metadata: expect.objectContaining({ summary: expect.stringContaining("pulls") }) })]));
+    expect(dnd5eSrdSheet(merrowActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+6" }), expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1d4+4", metadata: expect.objectContaining({ condition: "Poisoned" }) }), expect.objectContaining({ id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+6" }), expect.objectContaining({ id: "monster-claw-damage", label: "Claw Damage", formula: "2d4+4" }), expect.objectContaining({ id: "monster-harpoon-attack", label: "Harpoon Attack", formula: "1d20+6" }), expect.objectContaining({ id: "monster-harpoon-damage", label: "Harpoon Damage", formula: "2d6+4", metadata: expect.objectContaining({ summary: expect.stringContaining("pulls") }) })]));
     const mimicActor: Actor = { ...srdActor, type: "monster", name: "Mimic", data: dnd5eSrdMonsterActorData("mimic")! };
     expect(mimicActor.data).toEqual(expect.objectContaining({ hp: { current: 58, max: 58 }, armorClass: 12, challengeRating: "2", xp: 450, skillProficiencies: ["stealth"] }));
-    expect(dnd5eSrdSheet(mimicActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+5" }, expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1d8+3+1d8", metadata: expect.objectContaining({ summary: expect.stringContaining("Advantage") }) }), { id: "monster-pseudopod-attack", label: "Pseudopod Attack", formula: "1d20+5" }, expect.objectContaining({ id: "monster-pseudopod-damage", label: "Pseudopod Damage", formula: "1d8+3+1d8", metadata: expect.objectContaining({ condition: "Grappled" }) }), expect.objectContaining({ id: "monster-shape-shift-effect", label: "Shape-Shift Effect", formula: "0", metadata: expect.objectContaining({ action: "bonusAction" }) })]));
+    expect(dnd5eSrdSheet(mimicActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+5" }), expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1d8+3+1d8", metadata: expect.objectContaining({ summary: expect.stringContaining("Advantage") }) }), expect.objectContaining({ id: "monster-pseudopod-attack", label: "Pseudopod Attack", formula: "1d20+5" }), expect.objectContaining({ id: "monster-pseudopod-damage", label: "Pseudopod Damage", formula: "1d8+3+1d8", metadata: expect.objectContaining({ condition: "Grappled" }) }), expect.objectContaining({ id: "monster-shape-shift-effect", label: "Shape-Shift Effect", formula: "0", metadata: expect.objectContaining({ action: "bonusAction" }) })]));
     const nalfeshneeActor: Actor = { ...srdActor, type: "monster", name: "Nalfeshnee", data: dnd5eSrdMonsterActorData("nalfeshnee")! };
     expect(nalfeshneeActor.data).toEqual(expect.objectContaining({ hp: { current: 184, max: 184 }, armorClass: 18, challengeRating: "13", xp: 10000 }));
-    expect(dnd5eSrdSheet(nalfeshneeActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+10" }, { id: "monster-rend-damage", label: "Rend Damage", formula: "2d10+5+2d10" }, expect.objectContaining({ id: "monster-teleport-effect", label: "Teleport Effect", formula: "0" }), expect.objectContaining({ id: "monster-horror-nimbus-damage", label: "Horror Nimbus Damage", formula: "8d6", metadata: expect.objectContaining({ action: "bonusAction", condition: "Frightened", recharge: "5-6" }) }), expect.objectContaining({ id: "monster-pursuit-effect", label: "Pursuit Effect", formula: "0", metadata: expect.objectContaining({ action: "reaction" }) })]));
+    expect(dnd5eSrdSheet(nalfeshneeActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+10" }), expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "2d10+5+2d10" }), expect.objectContaining({ id: "monster-teleport-effect", label: "Teleport Effect", formula: "0" }), expect.objectContaining({ id: "monster-horror-nimbus-damage", label: "Horror Nimbus Damage", formula: "8d6", metadata: expect.objectContaining({ action: "bonusAction", condition: "Frightened", recharge: "5-6" }) }), expect.objectContaining({ id: "monster-pursuit-effect", label: "Pursuit Effect", formula: "0", metadata: expect.objectContaining({ action: "reaction" }) })]));
     const nightHagActor: Actor = { ...srdActor, type: "monster", name: "Night Hag", data: dnd5eSrdMonsterActorData("night-hag")! };
     expect(nightHagActor.data).toEqual(expect.objectContaining({ hp: { current: 112, max: 112 }, armorClass: 17, challengeRating: "5", xp: 1800, skillProficiencies: ["deception", "insight", "perception", "stealth"] }));
-    expect(dnd5eSrdSheet(nightHagActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+7" }, { id: "monster-claw-damage", label: "Claw Damage", formula: "2d8+4" }, expect.objectContaining({ id: "monster-nightmare-haunting-effect", label: "Nightmare Haunting Effect", formula: "0", metadata: expect.objectContaining({ recharge: "1/day" }) }), expect.objectContaining({ id: "monster-spellcasting-effect", label: "Spellcasting Effect", formula: "0" }), expect.objectContaining({ id: "monster-shape-shift-effect", label: "Shape-Shift Effect", formula: "0", metadata: expect.objectContaining({ action: "bonusAction" }) })]));
+    expect(dnd5eSrdSheet(nightHagActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+7" }), expect.objectContaining({ id: "monster-claw-damage", label: "Claw Damage", formula: "2d8+4" }), expect.objectContaining({ id: "monster-nightmare-haunting-effect", label: "Nightmare Haunting Effect", formula: "0", metadata: expect.objectContaining({ recharge: "1/day" }) }), expect.objectContaining({ id: "monster-spellcasting-effect", label: "Spellcasting Effect", formula: "0" }), expect.objectContaining({ id: "monster-shape-shift-effect", label: "Shape-Shift Effect", formula: "0", metadata: expect.objectContaining({ action: "bonusAction" }) })]));
     const nightmareActor: Actor = { ...srdActor, type: "monster", name: "Nightmare", data: dnd5eSrdMonsterActorData("nightmare")! };
     expect(nightmareActor.data).toEqual(expect.objectContaining({ hp: { current: 68, max: 68 }, armorClass: 13, challengeRating: "3", xp: 700 }));
-    expect(dnd5eSrdSheet(nightmareActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-hooves-attack", label: "Hooves Attack", formula: "1d20+6" }, { id: "monster-hooves-damage", label: "Hooves Damage", formula: "2d8+4+3d6" }, expect.objectContaining({ id: "monster-ethereal-stride-effect", label: "Ethereal Stride Effect", formula: "0" })]));
+    expect(dnd5eSrdSheet(nightmareActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-hooves-attack", label: "Hooves Attack", formula: "1d20+6" }), expect.objectContaining({ id: "monster-hooves-damage", label: "Hooves Damage", formula: "2d8+4+3d6" }), expect.objectContaining({ id: "monster-ethereal-stride-effect", label: "Ethereal Stride Effect", formula: "0" })]));
     const nobleActor: Actor = { ...srdActor, type: "monster", name: "Noble", data: dnd5eSrdMonsterActorData("noble")! };
     expect(nobleActor.data).toEqual(expect.objectContaining({ hp: { current: 9, max: 9 }, armorClass: 15, challengeRating: "1/8", xp: 25, skillProficiencies: ["deception", "insight", "persuasion"] }));
-    expect(dnd5eSrdSheet(nobleActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-rapier-attack", label: "Rapier Attack", formula: "1d20+3" }, { id: "monster-rapier-damage", label: "Rapier Damage", formula: "1d8+1" }, expect.objectContaining({ id: "monster-parry-effect", label: "Parry Effect", formula: "0", metadata: expect.objectContaining({ action: "reaction" }) })]));
+    expect(dnd5eSrdSheet(nobleActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-rapier-attack", label: "Rapier Attack", formula: "1d20+3" }), expect.objectContaining({ id: "monster-rapier-damage", label: "Rapier Damage", formula: "1d8+1" }), expect.objectContaining({ id: "monster-parry-effect", label: "Parry Effect", formula: "0", metadata: expect.objectContaining({ action: "reaction" }) })]));
     const ochreJellyActor: Actor = { ...srdActor, type: "monster", name: "Ochre Jelly", data: dnd5eSrdMonsterActorData("ochre-jelly")! };
     expect(ochreJellyActor.data).toEqual(expect.objectContaining({ hp: { current: 52, max: 52 }, armorClass: 8, challengeRating: "2", xp: 450 }));
-    expect(dnd5eSrdSheet(ochreJellyActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-pseudopod-attack", label: "Pseudopod Attack", formula: "1d20+4" }, { id: "monster-pseudopod-damage", label: "Pseudopod Damage", formula: "3d6+2" }, expect.objectContaining({ id: "monster-split-effect", label: "Split Effect", formula: "0", metadata: expect.objectContaining({ action: "reaction" }) })]));
+    expect(dnd5eSrdSheet(ochreJellyActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-pseudopod-attack", label: "Pseudopod Attack", formula: "1d20+4" }), expect.objectContaining({ id: "monster-pseudopod-damage", label: "Pseudopod Damage", formula: "3d6+2" }), expect.objectContaining({ id: "monster-split-effect", label: "Split Effect", formula: "0", metadata: expect.objectContaining({ action: "reaction" }) })]));
     const oniActor: Actor = { ...srdActor, type: "monster", name: "Oni", data: dnd5eSrdMonsterActorData("oni")! };
     expect(oniActor.data).toEqual(expect.objectContaining({ hp: { current: 119, max: 119 }, armorClass: 17, challengeRating: "7", xp: 2900, skillProficiencies: ["arcana", "deception", "perception"] }));
-    expect(dnd5eSrdSheet(oniActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+7" }, { id: "monster-claw-damage", label: "Claw Damage", formula: "1d12+4+2d8" }, expect.objectContaining({ id: "monster-nightmare-ray-damage", label: "Nightmare Ray Damage", formula: "2d6+2", metadata: expect.objectContaining({ condition: "Frightened" }) }), expect.objectContaining({ id: "monster-shape-shift-effect", label: "Shape-Shift Effect", formula: "0" }), expect.objectContaining({ id: "monster-spellcasting-effect", label: "Spellcasting Effect", formula: "0" }), expect.objectContaining({ id: "monster-invisibility-effect", label: "Invisibility Effect", formula: "0", metadata: expect.objectContaining({ action: "bonusAction" }) })]));
+    expect(dnd5eSrdSheet(oniActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+7" }), expect.objectContaining({ id: "monster-claw-damage", label: "Claw Damage", formula: "1d12+4+2d8" }), expect.objectContaining({ id: "monster-nightmare-ray-damage", label: "Nightmare Ray Damage", formula: "2d6+2", metadata: expect.objectContaining({ condition: "Frightened" }) }), expect.objectContaining({ id: "monster-shape-shift-effect", label: "Shape-Shift Effect", formula: "0" }), expect.objectContaining({ id: "monster-spellcasting-effect", label: "Spellcasting Effect", formula: "0" }), expect.objectContaining({ id: "monster-invisibility-effect", label: "Invisibility Effect", formula: "0", metadata: expect.objectContaining({ action: "bonusAction" }) })]));
     const otyughActor: Actor = { ...srdActor, type: "monster", name: "Otyugh", data: dnd5eSrdMonsterActorData("otyugh")! };
     expect(otyughActor.data).toEqual(expect.objectContaining({ hp: { current: 104, max: 104 }, armorClass: 14, challengeRating: "5", xp: 1800 }));
     expect(dnd5eSrdSheet(otyughActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "2d8+3", metadata: expect.objectContaining({ save: { ability: "constitution", dc: 15 }, condition: "Poisoned" }) }), expect.objectContaining({ id: "monster-tentacle-damage", label: "Tentacle Damage", formula: "2d8+3", metadata: expect.objectContaining({ condition: "Grappled" }) }), expect.objectContaining({ id: "monster-tentacle-slam-damage", label: "Tentacle Slam Damage", formula: "3d8+3", metadata: expect.objectContaining({ save: { ability: "constitution", dc: 14, success: "half" }, condition: "Stunned" }) })]));
     const pegasusActor: Actor = { ...srdActor, type: "monster", name: "Pegasus", data: dnd5eSrdMonsterActorData("pegasus")! };
     expect(pegasusActor.data).toEqual(expect.objectContaining({ hp: { current: 59, max: 59 }, armorClass: 12, challengeRating: "2", xp: 450, skillProficiencies: ["perception"] }));
-    expect(dnd5eSrdSheet(pegasusActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-hooves-attack", label: "Hooves Attack", formula: "1d20+6" }, { id: "monster-hooves-damage", label: "Hooves Damage", formula: "1d6+4+2d4" }]));
+    expect(dnd5eSrdSheet(pegasusActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-hooves-attack", label: "Hooves Attack", formula: "1d20+6" }), expect.objectContaining({ id: "monster-hooves-damage", label: "Hooves Damage", formula: "1d6+4+2d4" })]));
     const phaseSpiderActor: Actor = { ...srdActor, type: "monster", name: "Phase Spider", data: dnd5eSrdMonsterActorData("phase-spider")! };
     expect(phaseSpiderActor.data).toEqual(expect.objectContaining({ hp: { current: 45, max: 45 }, armorClass: 14, challengeRating: "3", xp: 700, skillProficiencies: ["stealth"] }));
-    expect(dnd5eSrdSheet(phaseSpiderActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+5" }, expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1d10+3+2d8", metadata: expect.objectContaining({ condition: "Poisoned/Paralyzed" }) }), expect.objectContaining({ id: "monster-ethereal-jaunt-effect", label: "Ethereal Jaunt Effect", formula: "0", metadata: expect.objectContaining({ action: "bonusAction" }) })]));
+    expect(dnd5eSrdSheet(phaseSpiderActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+5" }), expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1d10+3+2d8", metadata: expect.objectContaining({ condition: "Poisoned/Paralyzed" }) }), expect.objectContaining({ id: "monster-ethereal-jaunt-effect", label: "Ethereal Jaunt Effect", formula: "0", metadata: expect.objectContaining({ action: "bonusAction" }) })]));
     const pirateActor: Actor = { ...srdActor, type: "monster", name: "Pirate", data: dnd5eSrdMonsterActorData("pirate")! };
     expect(pirateActor.data).toEqual(expect.objectContaining({ hp: { current: 33, max: 33 }, armorClass: 14, challengeRating: "1", xp: 200 }));
-    expect(dnd5eSrdSheet(pirateActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-dagger-attack", label: "Dagger Attack", formula: "1d20+5" }, { id: "monster-dagger-damage", label: "Dagger Damage", formula: "1d4+3" }, expect.objectContaining({ id: "monster-enthralling-panache-effect", label: "Enthralling Panache Effect", formula: "0", metadata: expect.objectContaining({ save: { ability: "wisdom", dc: 12 }, condition: "Charmed" }) })]));
+    expect(dnd5eSrdSheet(pirateActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-dagger-attack", label: "Dagger Attack", formula: "1d20+5" }), expect.objectContaining({ id: "monster-dagger-damage", label: "Dagger Damage", formula: "1d4+3" }), expect.objectContaining({ id: "monster-enthralling-panache-effect", label: "Enthralling Panache Effect", formula: "0", metadata: expect.objectContaining({ save: { ability: "wisdom", dc: 12 }, condition: "Charmed" }) })]));
     const pirateCaptainActor: Actor = { ...srdActor, type: "monster", name: "Pirate Captain", data: dnd5eSrdMonsterActorData("pirate-captain")! };
     expect(pirateCaptainActor.data).toEqual(expect.objectContaining({ hp: { current: 84, max: 84 }, armorClass: 17, challengeRating: "6", xp: 2300, skillProficiencies: ["acrobatics", "perception"] }));
-    expect(dnd5eSrdSheet(pirateCaptainActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-rapier-attack", label: "Rapier Attack", formula: "1d20+7" }, expect.objectContaining({ id: "monster-rapier-damage", label: "Rapier Damage", formula: "2d8+4", metadata: expect.objectContaining({ summary: expect.stringContaining("Advantage") }) }), { id: "monster-pistol-attack", label: "Pistol Attack", formula: "1d20+7" }, { id: "monster-pistol-damage", label: "Pistol Damage", formula: "2d10+4" }, expect.objectContaining({ id: "monster-captain-s-charm-effect", label: "Captain's Charm Effect", formula: "0", metadata: expect.objectContaining({ action: "bonusAction", condition: "Charmed" }) }), expect.objectContaining({ id: "monster-riposte-effect", label: "Riposte Effect", formula: "0", metadata: expect.objectContaining({ action: "reaction" }) })]));
+    expect(dnd5eSrdSheet(pirateCaptainActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-rapier-attack", label: "Rapier Attack", formula: "1d20+7" }), expect.objectContaining({ id: "monster-rapier-damage", label: "Rapier Damage", formula: "2d8+4", metadata: expect.objectContaining({ summary: expect.stringContaining("Advantage") }) }), expect.objectContaining({ id: "monster-pistol-attack", label: "Pistol Attack", formula: "1d20+7" }), expect.objectContaining({ id: "monster-pistol-damage", label: "Pistol Damage", formula: "2d10+4" }), expect.objectContaining({ id: "monster-captain-s-charm-effect", label: "Captain's Charm Effect", formula: "0", metadata: expect.objectContaining({ action: "bonusAction", condition: "Charmed" }) }), expect.objectContaining({ id: "monster-riposte-effect", label: "Riposte Effect", formula: "0", metadata: expect.objectContaining({ action: "reaction" }) })]));
     const planetarActor: Actor = { ...srdActor, type: "monster", name: "Planetar", data: dnd5eSrdMonsterActorData("planetar")! };
     expect(planetarActor.data).toEqual(expect.objectContaining({ hp: { current: 262, max: 262 }, armorClass: 19, challengeRating: "16", xp: 15000, skillProficiencies: ["perception"] }));
-    expect(dnd5eSrdSheet(planetarActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-radiant-sword-attack", label: "Radiant Sword Attack", formula: "1d20+12" }, { id: "monster-radiant-sword-damage", label: "Radiant Sword Damage", formula: "2d6+7+4d8" }, expect.objectContaining({ id: "monster-holy-burst-damage", label: "Holy Burst Damage", formula: "7d6", metadata: expect.objectContaining({ save: { ability: "dexterity", dc: 20, success: "half" } }) }), expect.objectContaining({ id: "monster-spellcasting-effect", label: "Spellcasting Effect", formula: "0" }), expect.objectContaining({ id: "monster-divine-aid-effect", label: "Divine Aid Effect", formula: "0", metadata: expect.objectContaining({ action: "bonusAction" }) })]));
+    expect(dnd5eSrdSheet(planetarActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-radiant-sword-attack", label: "Radiant Sword Attack", formula: "1d20+12" }), expect.objectContaining({ id: "monster-radiant-sword-damage", label: "Radiant Sword Damage", formula: "2d6+7+4d8" }), expect.objectContaining({ id: "monster-holy-burst-damage", label: "Holy Burst Damage", formula: "7d6", metadata: expect.objectContaining({ save: { ability: "dexterity", dc: 20, success: "half" } }) }), expect.objectContaining({ id: "monster-spellcasting-effect", label: "Spellcasting Effect", formula: "0" }), expect.objectContaining({ id: "monster-divine-aid-effect", label: "Divine Aid Effect", formula: "0", metadata: expect.objectContaining({ action: "bonusAction" }) })]));
     const plesiosaurusActor: Actor = { ...srdActor, type: "monster", name: "Plesiosaurus", data: dnd5eSrdMonsterActorData("plesiosaurus")! };
     expect(plesiosaurusActor.data).toEqual(expect.objectContaining({ hp: { current: 68, max: 68 }, armorClass: 13, challengeRating: "2", xp: 450, skillProficiencies: ["perception", "stealth"] }));
-    expect(dnd5eSrdSheet(plesiosaurusActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+6" }, { id: "monster-bite-damage", label: "Bite Damage", formula: "2d6+4" }]));
+    expect(dnd5eSrdSheet(plesiosaurusActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+6" }), expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "2d6+4" })]));
     const priestActor: Actor = { ...srdActor, type: "monster", name: "Priest", data: dnd5eSrdMonsterActorData("priest")! };
     expect(priestActor.data).toEqual(expect.objectContaining({ hp: { current: 38, max: 38 }, armorClass: 13, challengeRating: "2", xp: 450, skillProficiencies: ["medicine", "perception", "religion"] }));
-    expect(dnd5eSrdSheet(priestActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-mace-attack", label: "Mace Attack", formula: "1d20+5" }, { id: "monster-mace-damage", label: "Mace Damage", formula: "1d6+3+2d4" }, { id: "monster-radiant-flame-attack", label: "Radiant Flame Attack", formula: "1d20+5" }, { id: "monster-radiant-flame-damage", label: "Radiant Flame Damage", formula: "2d10" }, expect.objectContaining({ id: "monster-spellcasting-effect", label: "Spellcasting Effect", formula: "0" }), expect.objectContaining({ id: "monster-divine-aid-effect", label: "Divine Aid Effect", formula: "0", metadata: expect.objectContaining({ action: "bonusAction" }) })]));
+    expect(dnd5eSrdSheet(priestActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-mace-attack", label: "Mace Attack", formula: "1d20+5" }), expect.objectContaining({ id: "monster-mace-damage", label: "Mace Damage", formula: "1d6+3+2d4" }), expect.objectContaining({ id: "monster-radiant-flame-attack", label: "Radiant Flame Attack", formula: "1d20+5" }), expect.objectContaining({ id: "monster-radiant-flame-damage", label: "Radiant Flame Damage", formula: "2d10" }), expect.objectContaining({ id: "monster-spellcasting-effect", label: "Spellcasting Effect", formula: "0" }), expect.objectContaining({ id: "monster-divine-aid-effect", label: "Divine Aid Effect", formula: "0", metadata: expect.objectContaining({ action: "bonusAction" }) })]));
     const pseudodragonActor: Actor = { ...srdActor, type: "monster", name: "Pseudodragon", data: dnd5eSrdMonsterActorData("pseudodragon")! };
     expect(pseudodragonActor.data).toEqual(expect.objectContaining({ hp: { current: 10, max: 10 }, armorClass: 14, challengeRating: "1/4", xp: 50, skillProficiencies: ["perception", "stealth"] }));
-    expect(dnd5eSrdSheet(pseudodragonActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+4" }, { id: "monster-bite-damage", label: "Bite Damage", formula: "1d4+2" }, expect.objectContaining({ id: "monster-sting-damage", label: "Sting Damage", formula: "2d4", metadata: expect.objectContaining({ save: { ability: "constitution", dc: 12 }, condition: "Poisoned/Unconscious" }) })]));
+    expect(dnd5eSrdSheet(pseudodragonActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+4" }), expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1d4+2" }), expect.objectContaining({ id: "monster-sting-damage", label: "Sting Damage", formula: "2d4", metadata: expect.objectContaining({ save: { ability: "constitution", dc: 12 }, condition: "Poisoned/Unconscious" }) })]));
     const ratActor: Actor = { ...srdActor, type: "monster", name: "Rat", data: dnd5eSrdMonsterActorData("rat")! };
     expect(ratActor.data).toEqual(expect.objectContaining({ hp: { current: 1, max: 1 }, armorClass: 10, challengeRating: "0", xp: 10, skillProficiencies: ["perception"] }));
-    expect(dnd5eSrdSheet(ratActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+2" }, { id: "monster-bite-damage", label: "Bite Damage", formula: "1" }]));
+    expect(dnd5eSrdSheet(ratActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+2" }), expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1" })]));
     const ravenActor: Actor = { ...srdActor, type: "monster", name: "Raven", data: dnd5eSrdMonsterActorData("raven")! };
     expect(ravenActor.data).toEqual(expect.objectContaining({ hp: { current: 2, max: 2 }, armorClass: 12, challengeRating: "0", xp: 10, skillProficiencies: ["perception"] }));
-    expect(dnd5eSrdSheet(ravenActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-beak-attack", label: "Beak Attack", formula: "1d20+4" }, { id: "monster-beak-damage", label: "Beak Damage", formula: "1" }]));
+    expect(dnd5eSrdSheet(ravenActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-beak-attack", label: "Beak Attack", formula: "1d20+4" }), expect.objectContaining({ id: "monster-beak-damage", label: "Beak Damage", formula: "1" })]));
     const swarmOfBatsActor: Actor = { ...srdActor, type: "monster", name: "Swarm of Bats", data: dnd5eSrdMonsterActorData("swarm-of-bats")! };
     expect(swarmOfBatsActor.data).toEqual(expect.objectContaining({ hp: { current: 11, max: 11 }, armorClass: 12, challengeRating: "1/4", xp: 50 }));
     expect((swarmOfBatsActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Damage Resistances" }), expect.objectContaining({ name: "Condition Immunities" }), expect.objectContaining({ name: "Swarm" })]));
-    expect(dnd5eSrdSheet(swarmOfBatsActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-bites-attack", label: "Bites Attack", formula: "1d20+4" }, expect.objectContaining({ id: "monster-bites-damage", label: "Bites Damage", formula: "2d4", metadata: expect.objectContaining({ summary: expect.stringContaining("Bloodied") }) })]));
+    expect(dnd5eSrdSheet(swarmOfBatsActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-bites-attack", label: "Bites Attack", formula: "1d20+4" }), expect.objectContaining({ id: "monster-bites-damage", label: "Bites Damage", formula: "2d4", metadata: expect.objectContaining({ summary: expect.stringContaining("Bloodied") }) })]));
     const swarmOfInsectsActor: Actor = { ...srdActor, type: "monster", name: "Swarm of Insects", data: dnd5eSrdMonsterActorData("swarm-of-insects")! };
     expect(swarmOfInsectsActor.data).toEqual(expect.objectContaining({ hp: { current: 19, max: 19 }, armorClass: 11, challengeRating: "1/2", xp: 100 }));
     expect((swarmOfInsectsActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Spider Climb" }), expect.objectContaining({ name: "Swarm" })]));
-    expect(dnd5eSrdSheet(swarmOfInsectsActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-bites-attack", label: "Bites Attack", formula: "1d20+3" }, expect.objectContaining({ id: "monster-bites-damage", label: "Bites Damage", formula: "2d4+1", metadata: expect.objectContaining({ damageType: "poison", summary: expect.stringContaining("Bloodied") }) })]));
+    expect(dnd5eSrdSheet(swarmOfInsectsActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-bites-attack", label: "Bites Attack", formula: "1d20+3" }), expect.objectContaining({ id: "monster-bites-damage", label: "Bites Damage", formula: "2d4+1", metadata: expect.objectContaining({ damageType: "poison", summary: expect.stringContaining("Bloodied") }) })]));
     const swarmOfPiranhasActor: Actor = { ...srdActor, type: "monster", name: "Swarm of Piranhas", data: dnd5eSrdMonsterActorData("swarm-of-piranhas")! };
     expect(swarmOfPiranhasActor.data).toEqual(expect.objectContaining({ hp: { current: 28, max: 28 }, armorClass: 13, challengeRating: "1", xp: 200 }));
     expect((swarmOfPiranhasActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Damage Resistances" }), expect.objectContaining({ name: "Condition Immunities" }), expect.objectContaining({ name: "Swarm" }), expect.objectContaining({ name: "Water Breathing" })]));
-    expect(dnd5eSrdSheet(swarmOfPiranhasActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-bites-attack", label: "Bites Attack", formula: "1d20+5" }, expect.objectContaining({ id: "monster-bites-damage", label: "Bites Damage", formula: "2d4+3", metadata: expect.objectContaining({ summary: expect.stringContaining("Advantage") }) })]));
+    expect(dnd5eSrdSheet(swarmOfPiranhasActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-bites-attack", label: "Bites Attack", formula: "1d20+5" }), expect.objectContaining({ id: "monster-bites-damage", label: "Bites Damage", formula: "2d4+3", metadata: expect.objectContaining({ summary: expect.stringContaining("Advantage") }) })]));
     const swarmOfRatsActor: Actor = { ...srdActor, type: "monster", name: "Swarm of Rats", data: dnd5eSrdMonsterActorData("swarm-of-rats")! };
     expect(swarmOfRatsActor.data).toEqual(expect.objectContaining({ hp: { current: 14, max: 14 }, armorClass: 10, challengeRating: "1/4", xp: 50 }));
-    expect(dnd5eSrdSheet(swarmOfRatsActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-bites-attack", label: "Bites Attack", formula: "1d20+2" }, expect.objectContaining({ id: "monster-bites-damage", label: "Bites Damage", formula: "2d4", metadata: expect.objectContaining({ summary: expect.stringContaining("Bloodied") }) })]));
+    expect(dnd5eSrdSheet(swarmOfRatsActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-bites-attack", label: "Bites Attack", formula: "1d20+2" }), expect.objectContaining({ id: "monster-bites-damage", label: "Bites Damage", formula: "2d4", metadata: expect.objectContaining({ summary: expect.stringContaining("Bloodied") }) })]));
     const swarmOfRavensActor: Actor = { ...srdActor, type: "monster", name: "Swarm of Ravens", data: dnd5eSrdMonsterActorData("swarm-of-ravens")! };
     expect(swarmOfRavensActor.data).toEqual(expect.objectContaining({ hp: { current: 11, max: 11 }, armorClass: 12, challengeRating: "1/4", xp: 50, skillProficiencies: ["perception"] }));
-    expect(dnd5eSrdSheet(swarmOfRavensActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-beaks-attack", label: "Beaks Attack", formula: "1d20+4" }, expect.objectContaining({ id: "monster-beaks-damage", label: "Beaks Damage", formula: "1d6+2", metadata: expect.objectContaining({ summary: expect.stringContaining("Bloodied") }) })]));
+    expect(dnd5eSrdSheet(swarmOfRavensActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-beaks-attack", label: "Beaks Attack", formula: "1d20+4" }), expect.objectContaining({ id: "monster-beaks-damage", label: "Beaks Damage", formula: "1d6+2", metadata: expect.objectContaining({ summary: expect.stringContaining("Bloodied") }) })]));
     const swarmOfVenomousSnakesActor: Actor = { ...srdActor, type: "monster", name: "Swarm of Venomous Snakes", data: dnd5eSrdMonsterActorData("swarm-of-venomous-snakes")! };
     expect(swarmOfVenomousSnakesActor.data).toEqual(expect.objectContaining({ hp: { current: 36, max: 36 }, armorClass: 14, challengeRating: "2", xp: 450 }));
-    expect(dnd5eSrdSheet(swarmOfVenomousSnakesActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-bites-attack", label: "Bites Attack", formula: "1d20+6" }, expect.objectContaining({ id: "monster-bites-damage", label: "Bites Damage", formula: "1d8+4+3d6", metadata: expect.objectContaining({ damageType: "piercing/poison", summary: expect.stringContaining("Bloodied") }) })]));
+    expect(dnd5eSrdSheet(swarmOfVenomousSnakesActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-bites-attack", label: "Bites Attack", formula: "1d20+6" }), expect.objectContaining({ id: "monster-bites-damage", label: "Bites Damage", formula: "1d8+4+3d6", metadata: expect.objectContaining({ damageType: "piercing/poison", summary: expect.stringContaining("Bloodied") }) })]));
     const reefSharkActor: Actor = { ...srdActor, type: "monster", name: "Reef Shark", data: dnd5eSrdMonsterActorData("reef-shark")! };
     expect(reefSharkActor.data).toEqual(expect.objectContaining({ hp: { current: 22, max: 22 }, armorClass: 12, challengeRating: "1/2", xp: 100, skillProficiencies: ["perception"] }));
-    expect(dnd5eSrdSheet(reefSharkActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+4" }, { id: "monster-bite-damage", label: "Bite Damage", formula: "2d4+2" }]));
+    expect(dnd5eSrdSheet(reefSharkActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+4" }), expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "2d4+2" })]));
     const rhinocerosActor: Actor = { ...srdActor, type: "monster", name: "Rhinoceros", data: dnd5eSrdMonsterActorData("rhinoceros")! };
     expect(rhinocerosActor.data).toEqual(expect.objectContaining({ hp: { current: 45, max: 45 }, armorClass: 13, challengeRating: "2", xp: 450 }));
-    expect(dnd5eSrdSheet(rhinocerosActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-gore-attack", label: "Gore Attack", formula: "1d20+7" }, expect.objectContaining({ id: "monster-gore-damage", label: "Gore Damage", formula: "2d8+5", metadata: expect.objectContaining({ condition: "Prone" }) })]));
+    expect(dnd5eSrdSheet(rhinocerosActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-gore-attack", label: "Gore Attack", formula: "1d20+7" }), expect.objectContaining({ id: "monster-gore-damage", label: "Gore Damage", formula: "2d8+5", metadata: expect.objectContaining({ condition: "Prone" }) })]));
     const ridingHorseActor: Actor = { ...srdActor, type: "monster", name: "Riding Horse", data: dnd5eSrdMonsterActorData("riding-horse")! };
     expect(ridingHorseActor.data).toEqual(expect.objectContaining({ hp: { current: 13, max: 13 }, armorClass: 11, challengeRating: "1/4", xp: 50 }));
-    expect(dnd5eSrdSheet(ridingHorseActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-hooves-attack", label: "Hooves Attack", formula: "1d20+5" }, { id: "monster-hooves-damage", label: "Hooves Damage", formula: "1d8+3" }]));
+    expect(dnd5eSrdSheet(ridingHorseActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-hooves-attack", label: "Hooves Attack", formula: "1d20+5" }), expect.objectContaining({ id: "monster-hooves-damage", label: "Hooves Damage", formula: "1d8+3" })]));
     const rocActor: Actor = { ...srdActor, type: "monster", name: "Roc", data: dnd5eSrdMonsterActorData("roc")! };
     expect(rocActor.data).toEqual(expect.objectContaining({ hp: { current: 248, max: 248 }, armorClass: 15, challengeRating: "11", xp: 7200, skillProficiencies: ["perception"] }));
-    expect(dnd5eSrdSheet(rocActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-beak-attack", label: "Beak Attack", formula: "1d20+13" }, { id: "monster-beak-damage", label: "Beak Damage", formula: "3d12+9" }, expect.objectContaining({ id: "monster-talons-damage", label: "Talons Damage", formula: "4d6+9", metadata: expect.objectContaining({ condition: "Grappled/Restrained" }) }), expect.objectContaining({ id: "monster-swoop-effect", label: "Swoop Effect", formula: "0", metadata: expect.objectContaining({ action: "bonusAction", recharge: "5-6" }) })]));
+    expect(dnd5eSrdSheet(rocActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-beak-attack", label: "Beak Attack", formula: "1d20+13" }), expect.objectContaining({ id: "monster-beak-damage", label: "Beak Damage", formula: "3d12+9" }), expect.objectContaining({ id: "monster-talons-damage", label: "Talons Damage", formula: "4d6+9", metadata: expect.objectContaining({ condition: "Grappled/Restrained" }) }), expect.objectContaining({ id: "monster-swoop-effect", label: "Swoop Effect", formula: "0", metadata: expect.objectContaining({ action: "bonusAction", recharge: "5-6" }) })]));
     const roperActor: Actor = { ...srdActor, type: "monster", name: "Roper", data: dnd5eSrdMonsterActorData("roper")! };
     expect(roperActor.data).toEqual(expect.objectContaining({ hp: { current: 93, max: 93 }, armorClass: 20, challengeRating: "5", xp: 1800, skillProficiencies: ["perception", "stealth"] }));
-    expect(dnd5eSrdSheet(roperActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+7" }, { id: "monster-bite-damage", label: "Bite Damage", formula: "3d8+4" }, { id: "monster-tentacle-attack", label: "Tentacle Attack", formula: "1d20+7" }, expect.objectContaining({ id: "monster-tentacle-effect", label: "Tentacle Effect", formula: "0", metadata: expect.objectContaining({ condition: "Grappled/Poisoned" }) }), expect.objectContaining({ id: "monster-reel-effect", label: "Reel Effect", formula: "0" })]));
+    expect(dnd5eSrdSheet(roperActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+7" }), expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "3d8+4" }), expect.objectContaining({ id: "monster-tentacle-attack", label: "Tentacle Attack", formula: "1d20+7" }), expect.objectContaining({ id: "monster-tentacle-effect", label: "Tentacle Effect", formula: "0", metadata: expect.objectContaining({ condition: "Grappled/Poisoned" }) }), expect.objectContaining({ id: "monster-reel-effect", label: "Reel Effect", formula: "0" })]));
     const saberToothedTigerActor: Actor = { ...srdActor, type: "monster", name: "Saber-Toothed Tiger", data: dnd5eSrdMonsterActorData("saber-toothed-tiger")! };
     expect(saberToothedTigerActor.data).toEqual(expect.objectContaining({ hp: { current: 52, max: 52 }, armorClass: 13, challengeRating: "2", xp: 450, skillProficiencies: ["perception", "stealth"] }));
-    expect(dnd5eSrdSheet(saberToothedTigerActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+6" }, { id: "monster-rend-damage", label: "Rend Damage", formula: "2d6+4" }, expect.objectContaining({ id: "monster-nimble-escape-effect", label: "Nimble Escape Effect", formula: "0", metadata: expect.objectContaining({ action: "bonusAction" }) })]));
+    expect(dnd5eSrdSheet(saberToothedTigerActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+6" }), expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "2d6+4" }), expect.objectContaining({ id: "monster-nimble-escape-effect", label: "Nimble Escape Effect", formula: "0", metadata: expect.objectContaining({ action: "bonusAction" }) })]));
     const scorpionActor: Actor = { ...srdActor, type: "monster", name: "Scorpion", data: dnd5eSrdMonsterActorData("scorpion")! };
     expect(scorpionActor.data).toEqual(expect.objectContaining({ hp: { current: 1, max: 1 }, armorClass: 11, challengeRating: "0", xp: 10 }));
-    expect(dnd5eSrdSheet(scorpionActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-sting-attack", label: "Sting Attack", formula: "1d20+2" }, { id: "monster-sting-damage", label: "Sting Damage", formula: "1+1d6" }]));
+    expect(dnd5eSrdSheet(scorpionActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-sting-attack", label: "Sting Attack", formula: "1d20+2" }), expect.objectContaining({ id: "monster-sting-damage", label: "Sting Damage", formula: "1+1d6" })]));
     const seahorseActor: Actor = { ...srdActor, type: "monster", name: "Seahorse", data: dnd5eSrdMonsterActorData("seahorse")! };
     expect(seahorseActor.data).toEqual(expect.objectContaining({ hp: { current: 1, max: 1 }, armorClass: 12, challengeRating: "0", xp: 0, skillProficiencies: ["perception", "stealth"] }));
     expect(dnd5eSrdSheet(seahorseActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-bubble-dash-effect", label: "Bubble Dash Effect", formula: "0" })]));
     const spiderActor: Actor = { ...srdActor, type: "monster", name: "Spider", data: dnd5eSrdMonsterActorData("spider")! };
     expect(spiderActor.data).toEqual(expect.objectContaining({ hp: { current: 1, max: 1 }, armorClass: 12, challengeRating: "0", xp: 10, skillProficiencies: ["stealth"] }));
     expect((spiderActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Spider Climb" }), expect.objectContaining({ name: "Web Walker" })]));
-    expect(dnd5eSrdSheet(spiderActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+4" }, { id: "monster-bite-damage", label: "Bite Damage", formula: "1+1d4" }]));
+    expect(dnd5eSrdSheet(spiderActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+4" }), expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1+1d4" })]));
     const tigerActor: Actor = { ...srdActor, type: "monster", name: "Tiger", data: dnd5eSrdMonsterActorData("tiger")! };
     expect(tigerActor.data).toEqual(expect.objectContaining({ hp: { current: 30, max: 30 }, armorClass: 13, challengeRating: "1", xp: 200, skillProficiencies: ["perception", "stealth"] }));
-    expect(dnd5eSrdSheet(tigerActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+5" }, expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "2d6+3", metadata: expect.objectContaining({ condition: "Prone" }) }), expect.objectContaining({ id: "monster-nimble-escape-effect", label: "Nimble Escape Effect", formula: "0", metadata: expect.objectContaining({ action: "bonusAction" }) })]));
+    expect(dnd5eSrdSheet(tigerActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+5" }), expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "2d6+3", metadata: expect.objectContaining({ condition: "Prone" }) }), expect.objectContaining({ id: "monster-nimble-escape-effect", label: "Nimble Escape Effect", formula: "0", metadata: expect.objectContaining({ action: "bonusAction" }) })]));
     const triceratopsActor: Actor = { ...srdActor, type: "monster", name: "Triceratops", data: dnd5eSrdMonsterActorData("triceratops")! };
     expect(triceratopsActor.data).toEqual(expect.objectContaining({ hp: { current: 114, max: 114 }, armorClass: 14, challengeRating: "5", xp: 1800 }));
-    expect(dnd5eSrdSheet(triceratopsActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-gore-attack", label: "Gore Attack", formula: "1d20+9" }, expect.objectContaining({ id: "monster-gore-damage", label: "Gore Damage", formula: "2d12+6", metadata: expect.objectContaining({ condition: "Prone" }) })]));
+    expect(dnd5eSrdSheet(triceratopsActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-gore-attack", label: "Gore Attack", formula: "1d20+9" }), expect.objectContaining({ id: "monster-gore-damage", label: "Gore Damage", formula: "2d12+6", metadata: expect.objectContaining({ condition: "Prone" }) })]));
     const tyrannosaurusRexActor: Actor = { ...srdActor, type: "monster", name: "Tyrannosaurus Rex", data: dnd5eSrdMonsterActorData("tyrannosaurus-rex")! };
     expect(tyrannosaurusRexActor.data).toEqual(expect.objectContaining({ hp: { current: 136, max: 136 }, armorClass: 13, challengeRating: "8", xp: 3900, skillProficiencies: ["perception"] }));
-    expect(dnd5eSrdSheet(tyrannosaurusRexActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+10" }, expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "4d12+7", metadata: expect.objectContaining({ condition: "Grappled/Restrained" }) }), { id: "monster-tail-attack", label: "Tail Attack", formula: "1d20+10" }, expect.objectContaining({ id: "monster-tail-damage", label: "Tail Damage", formula: "4d8+7", metadata: expect.objectContaining({ condition: "Prone" }) })]));
+    expect(dnd5eSrdSheet(tyrannosaurusRexActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+10" }), expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "4d12+7", metadata: expect.objectContaining({ condition: "Grappled/Restrained" }) }), expect.objectContaining({ id: "monster-tail-attack", label: "Tail Attack", formula: "1d20+10" }), expect.objectContaining({ id: "monster-tail-damage", label: "Tail Damage", formula: "4d8+7", metadata: expect.objectContaining({ condition: "Prone" }) })]));
     const venomousSnakeActor: Actor = { ...srdActor, type: "monster", name: "Venomous Snake", data: dnd5eSrdMonsterActorData("venomous-snake")! };
     expect(venomousSnakeActor.data).toEqual(expect.objectContaining({ hp: { current: 5, max: 5 }, armorClass: 12, challengeRating: "1/8", xp: 25 }));
-    expect(dnd5eSrdSheet(venomousSnakeActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+4" }, { id: "monster-bite-damage", label: "Bite Damage", formula: "1d4+2+1d6" }]));
+    expect(dnd5eSrdSheet(venomousSnakeActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+4" }), expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1d4+2+1d6" })]));
     const vultureActor: Actor = { ...srdActor, type: "monster", name: "Vulture", data: dnd5eSrdMonsterActorData("vulture")! };
     expect(vultureActor.data).toEqual(expect.objectContaining({ hp: { current: 5, max: 5 }, armorClass: 10, challengeRating: "0", xp: 10, skillProficiencies: ["perception"] }));
     expect((vultureActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Pack Tactics" })]));
-    expect(dnd5eSrdSheet(vultureActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-beak-attack", label: "Beak Attack", formula: "1d20+2" }, { id: "monster-beak-damage", label: "Beak Damage", formula: "1d4" }]));
+    expect(dnd5eSrdSheet(vultureActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-beak-attack", label: "Beak Attack", formula: "1d20+2" }), expect.objectContaining({ id: "monster-beak-damage", label: "Beak Damage", formula: "1d4" })]));
     const warhorseActor: Actor = { ...srdActor, type: "monster", name: "Warhorse", data: dnd5eSrdMonsterActorData("warhorse")! };
     expect(warhorseActor.data).toEqual(expect.objectContaining({ hp: { current: 19, max: 19 }, armorClass: 11, challengeRating: "1/2", xp: 100 }));
-    expect(dnd5eSrdSheet(warhorseActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-hooves-attack", label: "Hooves Attack", formula: "1d20+6" }, expect.objectContaining({ id: "monster-hooves-damage", label: "Hooves Damage", formula: "2d4+4", metadata: expect.objectContaining({ condition: "Prone" }) })]));
+    expect(dnd5eSrdSheet(warhorseActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-hooves-attack", label: "Hooves Attack", formula: "1d20+6" }), expect.objectContaining({ id: "monster-hooves-damage", label: "Hooves Damage", formula: "2d4+4", metadata: expect.objectContaining({ condition: "Prone" }) })]));
     const weaselActor: Actor = { ...srdActor, type: "monster", name: "Weasel", data: dnd5eSrdMonsterActorData("weasel")! };
     expect(weaselActor.data).toEqual(expect.objectContaining({ hp: { current: 1, max: 1 }, armorClass: 13, challengeRating: "0", xp: 10, skillProficiencies: ["acrobatics", "perception", "stealth"] }));
-    expect(dnd5eSrdSheet(weaselActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+5" }, { id: "monster-bite-damage", label: "Bite Damage", formula: "1" }]));
+    expect(dnd5eSrdSheet(weaselActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+5" }), expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1" })]));
     const wightActor: Actor = { ...srdActor, type: "monster", name: "Wight", data: dnd5eSrdMonsterActorData("wight")! };
     expect(wightActor.data).toEqual(expect.objectContaining({ hp: { current: 82, max: 82 }, armorClass: 14, challengeRating: "3", xp: 700, skillProficiencies: ["perception", "stealth"] }));
-    expect(dnd5eSrdSheet(wightActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-necrotic-sword-attack", label: "Necrotic Sword Attack", formula: "1d20+4" }, { id: "monster-necrotic-sword-damage", label: "Necrotic Sword Damage", formula: "1d8+2+1d8" }, expect.objectContaining({ id: "monster-life-drain-damage", label: "Life Drain Damage", formula: "1d8+2", metadata: expect.objectContaining({ save: expect.objectContaining({ ability: "constitution", dc: 13 }) }) })]));
+    expect(dnd5eSrdSheet(wightActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-necrotic-sword-attack", label: "Necrotic Sword Attack", formula: "1d20+4" }), expect.objectContaining({ id: "monster-necrotic-sword-damage", label: "Necrotic Sword Damage", formula: "1d8+2+1d8" }), expect.objectContaining({ id: "monster-life-drain-damage", label: "Life Drain Damage", formula: "1d8+2", metadata: expect.objectContaining({ save: expect.objectContaining({ ability: "constitution", dc: 13 }) }) })]));
     const willOWispActor: Actor = { ...srdActor, type: "monster", name: "Will-o'-Wisp", data: dnd5eSrdMonsterActorData("will-o-wisp")! };
     expect(willOWispActor.data).toEqual(expect.objectContaining({ hp: { current: 27, max: 27 }, armorClass: 19, challengeRating: "2", xp: 450 }));
-    expect(dnd5eSrdSheet(willOWispActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-shock-attack", label: "Shock Attack", formula: "1d20+4" }, { id: "monster-shock-damage", label: "Shock Damage", formula: "2d8+2" }, expect.objectContaining({ id: "monster-consume-life-effect", label: "Consume Life Effect", formula: "0" }), expect.objectContaining({ id: "monster-vanish-effect", label: "Vanish Effect", formula: "0" })]));
+    expect(dnd5eSrdSheet(willOWispActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-shock-attack", label: "Shock Attack", formula: "1d20+4" }), expect.objectContaining({ id: "monster-shock-damage", label: "Shock Damage", formula: "2d8+2" }), expect.objectContaining({ id: "monster-consume-life-effect", label: "Consume Life Effect", formula: "0" }), expect.objectContaining({ id: "monster-vanish-effect", label: "Vanish Effect", formula: "0" })]));
     const winterWolfActor: Actor = { ...srdActor, type: "monster", name: "Winter Wolf", data: dnd5eSrdMonsterActorData("winter-wolf")! };
     expect(winterWolfActor.data).toEqual(expect.objectContaining({ hp: { current: 75, max: 75 }, armorClass: 13, challengeRating: "3", xp: 700, skillProficiencies: ["perception", "stealth"] }));
     expect(dnd5eSrdSheet(winterWolfActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "2d6+4", metadata: expect.objectContaining({ condition: "Prone" }) }), expect.objectContaining({ id: "monster-cold-breath-damage", label: "Cold Breath Damage", formula: "4d8", metadata: expect.objectContaining({ recharge: "5-6" }) })]));
     const worgActor: Actor = { ...srdActor, type: "monster", name: "Worg", data: dnd5eSrdMonsterActorData("worg")! };
     expect(worgActor.data).toEqual(expect.objectContaining({ hp: { current: 26, max: 26 }, armorClass: 13, challengeRating: "1/2", xp: 100, skillProficiencies: ["perception"] }));
-    expect(dnd5eSrdSheet(worgActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+5" }, expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1d8+3" })]));
+    expect(dnd5eSrdSheet(worgActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+5" }), expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1d8+3" })]));
     const ogreZombieActor: Actor = { ...srdActor, type: "monster", name: "Ogre Zombie", data: dnd5eSrdMonsterActorData("ogre-zombie")! };
     expect(ogreZombieActor.data).toEqual(expect.objectContaining({ hp: { current: 85, max: 85 }, armorClass: 8, challengeRating: "2", xp: 450 }));
     expect((ogreZombieActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Undead Fortitude" })]));
-    expect(dnd5eSrdSheet(ogreZombieActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-slam-attack", label: "Slam Attack", formula: "1d20+6" }, { id: "monster-slam-damage", label: "Slam Damage", formula: "2d8+4" }]));
+    expect(dnd5eSrdSheet(ogreZombieActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-slam-attack", label: "Slam Attack", formula: "1d20+6" }), expect.objectContaining({ id: "monster-slam-damage", label: "Slam Damage", formula: "2d8+4" })]));
     const scoutActor: Actor = { ...srdActor, type: "monster", name: "Scout", data: dnd5eSrdMonsterActorData("scout")! };
     expect(scoutActor.data).toEqual(expect.objectContaining({ hp: { current: 16, max: 16 }, armorClass: 13, challengeRating: "1/2", xp: 100, skillProficiencies: ["nature", "perception", "stealth", "survival"] }));
-    expect(dnd5eSrdSheet(scoutActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-shortsword-attack", label: "Shortsword Attack", formula: "1d20+4" }, { id: "monster-shortsword-damage", label: "Shortsword Damage", formula: "1d6+2" }, { id: "monster-longbow-attack", label: "Longbow Attack", formula: "1d20+4" }, { id: "monster-longbow-damage", label: "Longbow Damage", formula: "1d8+2" }]));
+    expect(dnd5eSrdSheet(scoutActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-shortsword-attack", label: "Shortsword Attack", formula: "1d20+4" }), expect.objectContaining({ id: "monster-shortsword-damage", label: "Shortsword Damage", formula: "1d6+2" }), expect.objectContaining({ id: "monster-longbow-attack", label: "Longbow Attack", formula: "1d20+4" }), expect.objectContaining({ id: "monster-longbow-damage", label: "Longbow Damage", formula: "1d8+2" })]));
     const seaHagActor: Actor = { ...srdActor, type: "monster", name: "Sea Hag", data: dnd5eSrdMonsterActorData("sea-hag")! };
     expect(seaHagActor.data).toEqual(expect.objectContaining({ hp: { current: 52, max: 52 }, armorClass: 14, challengeRating: "2", xp: 450 }));
-    expect(dnd5eSrdSheet(seaHagActor, []).quickRolls).toEqual(expect.arrayContaining([{ id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+5" }, { id: "monster-claw-damage", label: "Claw Damage", formula: "2d6+3" }, expect.objectContaining({ id: "monster-death-glare-damage", label: "Death Glare Damage", formula: "3d8", metadata: expect.objectContaining({ recharge: "5-6" }) }), expect.objectContaining({ id: "monster-illusory-appearance-effect", label: "Illusory Appearance Effect", formula: "0" })]));
+    expect(dnd5eSrdSheet(seaHagActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+5" }), expect.objectContaining({ id: "monster-claw-damage", label: "Claw Damage", formula: "2d6+3" }), expect.objectContaining({ id: "monster-death-glare-damage", label: "Death Glare Damage", formula: "3d8", metadata: expect.objectContaining({ recharge: "5-6" }) }), expect.objectContaining({ id: "monster-illusory-appearance-effect", label: "Illusory Appearance Effect", formula: "0" })]));
     const goblinBossActor: Actor = {
       ...srdActor,
       type: "monster",
@@ -6544,10 +6717,10 @@ describe("dnd 5.5e srd rules", () => {
     expect(goblinBossActor.data).toEqual(expect.objectContaining({ hp: { current: 21, max: 21 }, armorClass: 17, challengeRating: "1", xp: 200 }));
     expect(dnd5eSrdSheet(goblinBossActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-scimitar-attack", label: "Scimitar Attack", formula: "1d20+4" },
-        { id: "monster-scimitar-damage", label: "Scimitar Damage", formula: "1d6+2" },
-        { id: "monster-shortbow-attack", label: "Shortbow Attack", formula: "1d20+4" },
-        { id: "monster-shortbow-damage", label: "Shortbow Damage", formula: "1d6+2" }
+        expect.objectContaining({ id: "monster-scimitar-attack", label: "Scimitar Attack", formula: "1d20+4" }),
+        expect.objectContaining({ id: "monster-scimitar-damage", label: "Scimitar Damage", formula: "1d6+2" }),
+        expect.objectContaining({ id: "monster-shortbow-attack", label: "Shortbow Attack", formula: "1d20+4" }),
+        expect.objectContaining({ id: "monster-shortbow-damage", label: "Shortbow Damage", formula: "1d6+2" })
       ])
     );
     const poisonedGoblinBossActor: Actor = { ...goblinBossActor, data: { ...goblinBossActor.data, conditions: [{ id: "poisoned" }] } };
@@ -6569,10 +6742,10 @@ describe("dnd 5.5e srd rules", () => {
     expect(banditCaptainActor.data).toEqual(expect.objectContaining({ hp: { current: 52, max: 52 }, armorClass: 15, challengeRating: "2", xp: 450 }));
     expect(dnd5eSrdSheet(banditCaptainActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-scimitar-attack", label: "Scimitar Attack", formula: "1d20+5" },
-        { id: "monster-scimitar-damage", label: "Scimitar Damage", formula: "1d6+3" },
-        { id: "monster-pistol-attack", label: "Pistol Attack", formula: "1d20+5" },
-        { id: "monster-pistol-damage", label: "Pistol Damage", formula: "1d10+3" }
+        expect.objectContaining({ id: "monster-scimitar-attack", label: "Scimitar Attack", formula: "1d20+5" }),
+        expect.objectContaining({ id: "monster-scimitar-damage", label: "Scimitar Damage", formula: "1d6+3" }),
+        expect.objectContaining({ id: "monster-pistol-attack", label: "Pistol Attack", formula: "1d20+5" }),
+        expect.objectContaining({ id: "monster-pistol-damage", label: "Pistol Damage", formula: "1d10+3" })
       ])
     );
     const giantSpiderActor: Actor = {
@@ -6586,8 +6759,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(giantSpiderStatBlock.actions).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Web", save: { ability: "dexterity", dc: 13 }, condition: "Restrained" })]));
     expect(dnd5eSrdSheet(giantSpiderActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+5" },
-        { id: "monster-bite-damage", label: "Bite Damage", formula: "1d8+3+2d6" },
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+5" }),
+        expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1d8+3+2d6" }),
         expect.objectContaining({ id: "monster-web-effect", label: "Web Effect", formula: "0", metadata: expect.objectContaining({ effectType: "condition", action: "action", range: "60 ft.", save: { ability: "dexterity", dc: 13 }, condition: "Restrained", recharge: "5-6" }) })
       ])
     );
@@ -6600,8 +6773,8 @@ describe("dnd 5.5e srd rules", () => {
     };
     expect(dnd5eSrdSheet(giantApeActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-fist-attack", label: "Fist Attack", formula: "1d20+9" },
-        { id: "monster-fist-damage", label: "Fist Damage", formula: "3d10+6" },
+        expect.objectContaining({ id: "monster-fist-attack", label: "Fist Attack", formula: "1d20+9" }),
+        expect.objectContaining({ id: "monster-fist-damage", label: "Fist Damage", formula: "3d10+6" }),
         expect.objectContaining({
           id: "monster-boulder-toss-damage",
           label: "Boulder Toss Damage",
@@ -6630,8 +6803,8 @@ describe("dnd 5.5e srd rules", () => {
     );
     expect(dnd5eSrdSheet(mummyActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rotting-fist-attack", label: "Rotting Fist Attack", formula: "1d20+5" },
-        { id: "monster-rotting-fist-damage", label: "Rotting Fist Damage", formula: "1d10+3+3d6" },
+        expect.objectContaining({ id: "monster-rotting-fist-attack", label: "Rotting Fist Attack", formula: "1d20+5" }),
+        expect.objectContaining({ id: "monster-rotting-fist-damage", label: "Rotting Fist Damage", formula: "1d10+3+3d6" }),
         expect.objectContaining({
           id: "monster-dreadful-glare-effect",
           label: "Dreadful Glare Effect",
@@ -6660,8 +6833,8 @@ describe("dnd 5.5e srd rules", () => {
     );
     expect(dnd5eSrdSheet(gelatinousCubeActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-pseudopod-attack", label: "Pseudopod Attack", formula: "1d20+4" },
-        { id: "monster-pseudopod-damage", label: "Pseudopod Damage", formula: "3d6+2" },
+        expect.objectContaining({ id: "monster-pseudopod-attack", label: "Pseudopod Attack", formula: "1d20+4" }),
+        expect.objectContaining({ id: "monster-pseudopod-damage", label: "Pseudopod Damage", formula: "3d6+2" }),
         expect.objectContaining({
           id: "monster-engulf-damage",
           label: "Engulf Damage",
@@ -6690,9 +6863,9 @@ describe("dnd 5.5e srd rules", () => {
     );
     expect(dnd5eSrdSheet(ghastActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+5" },
-        { id: "monster-bite-damage", label: "Bite Damage", formula: "1d8+3+2d8" },
-        { id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+5" },
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+5" }),
+        expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1d8+3+2d8" }),
+        expect.objectContaining({ id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+5" }),
         expect.objectContaining({
           id: "monster-claw-damage",
           label: "Claw Damage",
@@ -6718,8 +6891,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(sphinxOfWonderActor.data).toEqual(expect.objectContaining({ hp: { current: 24, max: 24 }, armorClass: 13, challengeRating: "1", xp: 200, skillProficiencies: ["arcana", "religion", "stealth"] }));
     expect(dnd5eSrdSheet(sphinxOfWonderActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+5" },
-        { id: "monster-rend-damage", label: "Rend Damage", formula: "1d4+3+2d6" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+5" }),
+        expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "1d4+3+2d6" }),
         expect.objectContaining({ id: "monster-burst-of-ingenuity-effect", label: "Burst of Ingenuity Effect", formula: "0", metadata: expect.objectContaining({ action: "reaction", range: "30 ft.", summary: expect.stringContaining("adds 2") }) })
       ])
     );
@@ -6732,8 +6905,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(sphinxOfLoreActor.data).toEqual(expect.objectContaining({ hp: { current: 170, max: 170 }, armorClass: 17, challengeRating: "11", xp: 7200, skillProficiencies: ["arcana", "history", "perception", "religion"] }));
     expect(dnd5eSrdSheet(sphinxOfLoreActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+8" },
-        { id: "monster-claw-damage", label: "Claw Damage", formula: "3d6+4" },
+        expect.objectContaining({ id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+8" }),
+        expect.objectContaining({ id: "monster-claw-damage", label: "Claw Damage", formula: "3d6+4" }),
         expect.objectContaining({ id: "monster-mind-rending-roar-damage", label: "Mind-Rending Roar Damage", formula: "10d6", metadata: expect.objectContaining({ damageType: "psychic", save: { ability: "wisdom", dc: 16 }, condition: "Incapacitated", recharge: "5-6" }) }),
         expect.objectContaining({ id: "monster-spellcasting-effect", label: "Spellcasting Effect", formula: "0" }),
         expect.objectContaining({ id: "monster-legendary-actions-effect", label: "Legendary Actions Effect", formula: "0" })
@@ -6748,8 +6921,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(sphinxOfValorActor.data).toEqual(expect.objectContaining({ hp: { current: 199, max: 199 }, armorClass: 17, challengeRating: "17", xp: 18000, skillProficiencies: ["arcana", "perception", "religion"] }));
     expect(dnd5eSrdSheet(sphinxOfValorActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+12" },
-        { id: "monster-claw-damage", label: "Claw Damage", formula: "4d6+6" },
+        expect.objectContaining({ id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+12" }),
+        expect.objectContaining({ id: "monster-claw-damage", label: "Claw Damage", formula: "4d6+6" }),
         expect.objectContaining({ id: "monster-roar-damage", label: "Roar Damage", formula: "8d10", metadata: expect.objectContaining({ damageType: "thunder", save: { ability: "constitution", dc: 20, success: "half" }, condition: "Frightened/Paralyzed/Prone", recharge: "3/day" }) }),
         expect.objectContaining({ id: "monster-spellcasting-effect", label: "Spellcasting Effect", formula: "0" }),
         expect.objectContaining({ id: "monster-legendary-actions-effect", label: "Legendary Actions Effect", formula: "0" })
@@ -6767,7 +6940,7 @@ describe("dnd 5.5e srd rules", () => {
     );
     expect(dnd5eSrdSheet(wraithActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-life-drain-attack", label: "Life Drain Attack", formula: "1d20+6" },
+        expect.objectContaining({ id: "monster-life-drain-attack", label: "Life Drain Attack", formula: "1d20+6" }),
         expect.objectContaining({
           id: "monster-life-drain-damage",
           label: "Life Drain Damage",
@@ -6803,8 +6976,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(airElementalActor.data).toEqual(expect.objectContaining({ hp: { current: 90, max: 90 }, armorClass: 15, challengeRating: "5", xp: 1800 }));
     expect(dnd5eSrdSheet(airElementalActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-thunderous-slam-attack", label: "Thunderous Slam Attack", formula: "1d20+8" },
-        { id: "monster-thunderous-slam-damage", label: "Thunderous Slam Damage", formula: "2d8+5" },
+        expect.objectContaining({ id: "monster-thunderous-slam-attack", label: "Thunderous Slam Attack", formula: "1d20+8" }),
+        expect.objectContaining({ id: "monster-thunderous-slam-damage", label: "Thunderous Slam Damage", formula: "2d8+5" }),
         expect.objectContaining({ id: "monster-whirlwind-damage", label: "Whirlwind Damage", formula: "4d10+2", metadata: expect.objectContaining({ action: "action", damageType: "thunder", save: { ability: "strength", dc: 13, success: "half" }, condition: "Prone", recharge: "4-6" }) })
       ])
     );
@@ -6818,8 +6991,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(earthElementalActor.data).toEqual(expect.objectContaining({ hp: { current: 147, max: 147 }, armorClass: 17, challengeRating: "5", xp: 1800 }));
     expect(dnd5eSrdSheet(earthElementalActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-slam-attack", label: "Slam Attack", formula: "1d20+8" },
-        { id: "monster-slam-damage", label: "Slam Damage", formula: "2d8+5" },
+        expect.objectContaining({ id: "monster-slam-attack", label: "Slam Attack", formula: "1d20+8" }),
+        expect.objectContaining({ id: "monster-slam-damage", label: "Slam Damage", formula: "2d8+5" }),
         expect.objectContaining({ id: "monster-rock-launch-attack", label: "Rock Launch Attack", formula: "1d20+8" }),
         expect.objectContaining({ id: "monster-rock-launch-damage", label: "Rock Launch Damage", formula: "1d6+5", metadata: expect.objectContaining({ action: "action", range: "60 ft.", damageType: "bludgeoning", condition: "Prone" }) })
       ])
@@ -6833,7 +7006,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(fireElementalActor.data).toEqual(expect.objectContaining({ hp: { current: 93, max: 93 }, armorClass: 13, challengeRating: "5", xp: 1800 }));
     expect(dnd5eSrdSheet(fireElementalActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-burn-attack", label: "Burn Attack", formula: "1d20+6" },
+        expect.objectContaining({ id: "monster-burn-attack", label: "Burn Attack", formula: "1d20+6" }),
         expect.objectContaining({ id: "monster-burn-damage", label: "Burn Damage", formula: "2d6+3", metadata: expect.objectContaining({ action: "action", range: "reach 5 ft.", damageType: "fire", summary: expect.stringContaining("starts burning") }) })
       ])
     );
@@ -6846,7 +7019,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(waterElementalActor.data).toEqual(expect.objectContaining({ hp: { current: 114, max: 114 }, armorClass: 14, challengeRating: "5", xp: 1800 }));
     expect(dnd5eSrdSheet(waterElementalActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-slam-attack", label: "Slam Attack", formula: "1d20+7" },
+        expect.objectContaining({ id: "monster-slam-attack", label: "Slam Attack", formula: "1d20+7" }),
         expect.objectContaining({ id: "monster-slam-damage", label: "Slam Damage", formula: "2d8+4", metadata: expect.objectContaining({ action: "action", range: "reach 5 ft.", damageType: "bludgeoning", condition: "Prone" }) }),
         expect.objectContaining({ id: "monster-whelm-damage", label: "Whelm Damage", formula: "4d8+4", metadata: expect.objectContaining({ action: "action", range: "elemental's space", damageType: "bludgeoning", save: { ability: "strength", dc: 15, success: "half" }, condition: "Grappled", recharge: "4-6", summary: expect.stringContaining("Restrained") }) })
       ])
@@ -6861,8 +7034,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(basiliskActor.data).toEqual(expect.objectContaining({ hp: { current: 52, max: 52 }, armorClass: 15, challengeRating: "3", xp: 700 }));
     expect(dnd5eSrdSheet(basiliskActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+5" },
-        { id: "monster-bite-damage", label: "Bite Damage", formula: "2d6+3+2d6" },
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+5" }),
+        expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "2d6+3+2d6" }),
         expect.objectContaining({ id: "monster-petrifying-gaze-effect", label: "Petrifying Gaze Effect", formula: "0", metadata: expect.objectContaining({ effectType: "condition", action: "bonusAction", range: "30-foot Cone", save: { ability: "constitution", dc: 12 }, condition: "Restrained", recharge: "4-6", summary: expect.stringContaining("Petrified") }) })
       ])
     );
@@ -6876,7 +7049,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(cockatriceActor.data).toEqual(expect.objectContaining({ hp: { current: 22, max: 22 }, armorClass: 11, challengeRating: "1/2", xp: 100 }));
     expect(dnd5eSrdSheet(cockatriceActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-petrifying-bite-attack", label: "Petrifying Bite Attack", formula: "1d20+3" },
+        expect.objectContaining({ id: "monster-petrifying-bite-attack", label: "Petrifying Bite Attack", formula: "1d20+3" }),
         expect.objectContaining({ id: "monster-petrifying-bite-damage", label: "Petrifying Bite Damage", formula: "1d4+1", metadata: expect.objectContaining({ action: "action", range: "reach 5 ft.", damageType: "piercing", save: { ability: "constitution", dc: 11 }, condition: "Restrained", summary: expect.stringContaining("24 hours") }) })
       ])
     );
@@ -6890,10 +7063,10 @@ describe("dnd 5.5e srd rules", () => {
     expect(manticoreActor.data).toEqual(expect.objectContaining({ hp: { current: 68, max: 68 }, armorClass: 14, challengeRating: "3", xp: 700 }));
     expect(dnd5eSrdSheet(manticoreActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+5" },
-        { id: "monster-rend-damage", label: "Rend Damage", formula: "1d8+3" },
-        { id: "monster-tail-spike-attack", label: "Tail Spike Attack", formula: "1d20+5" },
-        { id: "monster-tail-spike-damage", label: "Tail Spike Damage", formula: "1d8+3" }
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+5" }),
+        expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "1d8+3" }),
+        expect.objectContaining({ id: "monster-tail-spike-attack", label: "Tail Spike Attack", formula: "1d20+5" }),
+        expect.objectContaining({ id: "monster-tail-spike-damage", label: "Tail Spike Damage", formula: "1d8+3" })
       ])
     );
     const minotaurActor: Actor = {
@@ -6905,9 +7078,9 @@ describe("dnd 5.5e srd rules", () => {
     expect(minotaurActor.data).toEqual(expect.objectContaining({ hp: { current: 85, max: 85 }, armorClass: 14, challengeRating: "3", xp: 700 }));
     expect(dnd5eSrdSheet(minotaurActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-abyssal-glaive-attack", label: "Abyssal Glaive Attack", formula: "1d20+6" },
-        { id: "monster-abyssal-glaive-damage", label: "Abyssal Glaive Damage", formula: "1d12+4+3d6" },
-        { id: "monster-gore-attack", label: "Gore Attack", formula: "1d20+6" },
+        expect.objectContaining({ id: "monster-abyssal-glaive-attack", label: "Abyssal Glaive Attack", formula: "1d20+6" }),
+        expect.objectContaining({ id: "monster-abyssal-glaive-damage", label: "Abyssal Glaive Damage", formula: "1d12+4+3d6" }),
+        expect.objectContaining({ id: "monster-gore-attack", label: "Gore Attack", formula: "1d20+6" }),
         expect.objectContaining({ id: "monster-gore-damage", label: "Gore Damage", formula: "4d6+4", metadata: expect.objectContaining({ action: "action", range: "reach 5 ft.", damageType: "piercing", condition: "Prone", recharge: "5-6", summary: expect.stringContaining("extra 3d6") }) })
       ])
     );
@@ -6921,8 +7094,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(rustMonsterActor.data).toEqual(expect.objectContaining({ hp: { current: 33, max: 33 }, armorClass: 14, challengeRating: "1/2", xp: 100 }));
     expect(dnd5eSrdSheet(rustMonsterActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+3" },
-        { id: "monster-bite-damage", label: "Bite Damage", formula: "1d8+1" },
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+3" }),
+        expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1d8+1" }),
         expect.objectContaining({ id: "monster-antennae-effect", label: "Antennae Effect", formula: "0", metadata: expect.objectContaining({ effectType: "utility", action: "action", range: "5 ft.; nonmagical metal armor or weapon", save: { ability: "dexterity", dc: 11 }, effects: expect.arrayContaining([expect.stringContaining("-1 penalty")]) }) }),
         expect.objectContaining({ id: "monster-reflexive-antennae-effect", label: "Reflexive Antennae Effect", formula: "0", metadata: expect.objectContaining({ action: "reaction", save: { ability: "dexterity", dc: 11 } }) })
       ])
@@ -6937,8 +7110,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(sahuaginActor.data).toEqual(expect.objectContaining({ hp: { current: 22, max: 22 }, armorClass: 12, challengeRating: "1/2", xp: 100 }));
     expect(dnd5eSrdSheet(sahuaginActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+3" },
-        { id: "monster-claw-damage", label: "Claw Damage", formula: "1d6+1" },
+        expect.objectContaining({ id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+3" }),
+        expect.objectContaining({ id: "monster-claw-damage", label: "Claw Damage", formula: "1d6+1" }),
         expect.objectContaining({ id: "monster-aquatic-charge-effect", label: "Aquatic Charge Effect", formula: "0", metadata: expect.objectContaining({ effectType: "utility", action: "bonusAction", range: "Swim Speed", effects: expect.arrayContaining([expect.stringContaining("Swims up to its Swim Speed")]) }) })
       ])
     );
@@ -6951,8 +7124,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(salamanderActor.data).toEqual(expect.objectContaining({ hp: { current: 90, max: 90 }, armorClass: 15, challengeRating: "5", xp: 1800 }));
     expect(dnd5eSrdSheet(salamanderActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-flame-spear-attack", label: "Flame Spear Attack", formula: "1d20+7" },
-        { id: "monster-flame-spear-damage", label: "Flame Spear Damage", formula: "2d8+4+2d6" },
+        expect.objectContaining({ id: "monster-flame-spear-attack", label: "Flame Spear Attack", formula: "1d20+7" }),
+        expect.objectContaining({ id: "monster-flame-spear-damage", label: "Flame Spear Damage", formula: "2d8+4+2d6" }),
         expect.objectContaining({ id: "monster-constrict-damage", label: "Constrict Damage", formula: "2d6+4+2d6", metadata: expect.objectContaining({ action: "action", range: "10 ft.; one Large or smaller creature", damageType: "bludgeoning/fire", save: { ability: "strength", dc: 15 }, condition: "Grappled", summary: expect.stringContaining("Restrained") }) })
       ])
     );
@@ -6966,7 +7139,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(satyrActor.data).toEqual(expect.objectContaining({ hp: { current: 31, max: 31 }, armorClass: 13, challengeRating: "1/2", xp: 100 }));
     expect(dnd5eSrdSheet(satyrActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-hooves-attack", label: "Hooves Attack", formula: "1d20+5" },
+        expect.objectContaining({ id: "monster-hooves-attack", label: "Hooves Attack", formula: "1d20+5" }),
         expect.objectContaining({ id: "monster-hooves-damage", label: "Hooves Damage", formula: "1d4+3", metadata: expect.objectContaining({ action: "action", range: "reach 5 ft.", damageType: "bludgeoning", summary: expect.stringContaining("pushes") }) }),
         expect.objectContaining({ id: "monster-mockery-damage", label: "Mockery Damage", formula: "1d6+2", metadata: expect.objectContaining({ action: "action", range: "90 ft.", damageType: "psychic", save: { ability: "wisdom", dc: 12 } }) })
       ])
@@ -6980,7 +7153,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(shadowActor.data).toEqual(expect.objectContaining({ hp: { current: 27, max: 27 }, armorClass: 12, challengeRating: "1/2", xp: 100 }));
     expect(dnd5eSrdSheet(shadowActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-draining-swipe-attack", label: "Draining Swipe Attack", formula: "1d20+4" },
+        expect.objectContaining({ id: "monster-draining-swipe-attack", label: "Draining Swipe Attack", formula: "1d20+4" }),
         expect.objectContaining({ id: "monster-draining-swipe-damage", label: "Draining Swipe Damage", formula: "1d6+2", metadata: expect.objectContaining({ action: "action", range: "reach 5 ft.", damageType: "necrotic", summary: expect.stringContaining("Strength score decreases") }) }),
         expect.objectContaining({ id: "monster-shadow-stealth-effect", label: "Shadow Stealth Effect", formula: "0", metadata: expect.objectContaining({ effectType: "utility", action: "bonusAction", range: "Dim Light or Darkness" }) })
       ])
@@ -6995,7 +7168,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(shamblingMoundActor.data).toEqual(expect.objectContaining({ hp: { current: 110, max: 110 }, armorClass: 15, challengeRating: "5", xp: 1800 }));
     expect(dnd5eSrdSheet(shamblingMoundActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-charged-tendril-attack", label: "Charged Tendril Attack", formula: "1d20+7" },
+        expect.objectContaining({ id: "monster-charged-tendril-attack", label: "Charged Tendril Attack", formula: "1d20+7" }),
         expect.objectContaining({ id: "monster-charged-tendril-damage", label: "Charged Tendril Damage", formula: "1d6+4+2d4", metadata: expect.objectContaining({ action: "action", range: "reach 10 ft.", damageType: "bludgeoning/lightning", summary: expect.stringContaining("pulls") }) }),
         expect.objectContaining({ id: "monster-engulf-damage", label: "Engulf Damage", formula: "3d6", metadata: expect.objectContaining({ action: "action", range: "5 ft.; one Medium or smaller creature", damageType: "lightning", save: { ability: "strength", dc: 15 }, condition: "Grappled", summary: expect.stringContaining("Blinded and Restrained") }) })
       ])
@@ -7010,8 +7183,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(shieldGuardianActor.data).toEqual(expect.objectContaining({ hp: { current: 142, max: 142 }, armorClass: 17, challengeRating: "7", xp: 2900 }));
     expect(dnd5eSrdSheet(shieldGuardianActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-fist-attack", label: "Fist Attack", formula: "1d20+7" },
-        { id: "monster-fist-damage", label: "Fist Damage", formula: "2d6+4+2d6" },
+        expect.objectContaining({ id: "monster-fist-attack", label: "Fist Attack", formula: "1d20+7" }),
+        expect.objectContaining({ id: "monster-fist-damage", label: "Fist Damage", formula: "2d6+4+2d6" }),
         expect.objectContaining({ id: "monster-protection-effect", label: "Protection Effect", formula: "0", metadata: expect.objectContaining({ effectType: "utility", action: "reaction", range: "5 ft.; amulet wearer", effects: expect.arrayContaining([expect.stringContaining("+5 bonus to AC")]) }) })
       ])
     );
@@ -7025,8 +7198,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(brassDragonWyrmlingActor.data).toEqual(expect.objectContaining({ hp: { current: 22, max: 22 }, armorClass: 15, challengeRating: "1", xp: 200, skillProficiencies: ["perception", "stealth"] }));
     expect(dnd5eSrdSheet(brassDragonWyrmlingActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+4" },
-        { id: "monster-rend-damage", label: "Rend Damage", formula: "1d10+2" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+4" }),
+        expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "1d10+2" }),
         expect.objectContaining({ id: "monster-fire-breath-damage", label: "Fire Breath Damage", formula: "4d6", metadata: expect.objectContaining({ damageType: "fire", save: { ability: "dexterity", dc: 11, success: "half" }, recharge: "5-6" }) }),
         expect.objectContaining({ id: "monster-sleep-breath-effect", label: "Sleep Breath Effect", formula: "0", metadata: expect.objectContaining({ condition: "Incapacitated/Unconscious", save: { ability: "constitution", dc: 11 } }) })
       ])
@@ -7040,8 +7213,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(youngBrassDragonActor.data).toEqual(expect.objectContaining({ hp: { current: 110, max: 110 }, armorClass: 17, challengeRating: "6", xp: 2300, skillProficiencies: ["perception", "persuasion", "stealth"] }));
     expect(dnd5eSrdSheet(youngBrassDragonActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+7" },
-        { id: "monster-rend-damage", label: "Rend Damage", formula: "2d10+4" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+7" }),
+        expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "2d10+4" }),
         expect.objectContaining({ id: "monster-fire-breath-damage", label: "Fire Breath Damage", formula: "11d6", metadata: expect.objectContaining({ save: { ability: "dexterity", dc: 14, success: "half" }, recharge: "5-6" }) }),
         expect.objectContaining({ id: "monster-sleep-breath-effect", label: "Sleep Breath Effect", formula: "0", metadata: expect.objectContaining({ condition: "Incapacitated/Unconscious", save: { ability: "constitution", dc: 14 } }) })
       ])
@@ -7055,7 +7228,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(adultBrassDragonActor.data).toEqual(expect.objectContaining({ hp: { current: 172, max: 172 }, armorClass: 18, challengeRating: "13", xp: 10000, skillProficiencies: ["history", "perception", "persuasion", "stealth"] }));
     expect(dnd5eSrdSheet(adultBrassDragonActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+11" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+11" }),
         expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "2d10+6+1d8" }),
         expect.objectContaining({ id: "monster-fire-breath-damage", label: "Fire Breath Damage", formula: "10d8", metadata: expect.objectContaining({ save: { ability: "dexterity", dc: 18, success: "half" }, recharge: "5-6" }) }),
         expect.objectContaining({ id: "monster-sleep-breath-effect", label: "Sleep Breath Effect", formula: "0", metadata: expect.objectContaining({ condition: "Incapacitated/Unconscious", save: { ability: "constitution", dc: 18 } }) }),
@@ -7072,7 +7245,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(ancientBrassDragonActor.data).toEqual(expect.objectContaining({ hp: { current: 332, max: 332 }, armorClass: 20, challengeRating: "20", xp: 25000, skillProficiencies: ["history", "perception", "persuasion", "stealth"] }));
     expect(dnd5eSrdSheet(ancientBrassDragonActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+14" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+14" }),
         expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "2d10+8+2d6" }),
         expect.objectContaining({ id: "monster-fire-breath-damage", label: "Fire Breath Damage", formula: "13d8", metadata: expect.objectContaining({ save: { ability: "dexterity", dc: 21, success: "half" }, recharge: "5-6" }) }),
         expect.objectContaining({ id: "monster-sleep-breath-effect", label: "Sleep Breath Effect", formula: "0", metadata: expect.objectContaining({ condition: "Incapacitated/Unconscious", save: { ability: "constitution", dc: 21 } }) }),
@@ -7089,8 +7262,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(bronzeDragonWyrmlingActor.data).toEqual(expect.objectContaining({ hp: { current: 39, max: 39 }, armorClass: 15, challengeRating: "2", xp: 450, skillProficiencies: ["perception", "stealth"] }));
     expect(dnd5eSrdSheet(bronzeDragonWyrmlingActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+5" },
-        { id: "monster-rend-damage", label: "Rend Damage", formula: "1d10+3" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+5" }),
+        expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "1d10+3" }),
         expect.objectContaining({ id: "monster-lightning-breath-damage", label: "Lightning Breath Damage", formula: "3d10", metadata: expect.objectContaining({ damageType: "lightning", save: { ability: "dexterity", dc: 12, success: "half" }, recharge: "5-6" }) }),
         expect.objectContaining({ id: "monster-repulsion-breath-effect", label: "Repulsion Breath Effect", formula: "0", metadata: expect.objectContaining({ condition: "Prone", save: { ability: "strength", dc: 12 } }) })
       ])
@@ -7104,8 +7277,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(youngBronzeDragonActor.data).toEqual(expect.objectContaining({ hp: { current: 142, max: 142 }, armorClass: 17, challengeRating: "8", xp: 3900, skillProficiencies: ["insight", "perception", "stealth"] }));
     expect(dnd5eSrdSheet(youngBronzeDragonActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+8" },
-        { id: "monster-rend-damage", label: "Rend Damage", formula: "2d10+5" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+8" }),
+        expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "2d10+5" }),
         expect.objectContaining({ id: "monster-lightning-breath-damage", label: "Lightning Breath Damage", formula: "9d10", metadata: expect.objectContaining({ save: { ability: "dexterity", dc: 15, success: "half" }, recharge: "5-6" }) }),
         expect.objectContaining({ id: "monster-repulsion-breath-effect", label: "Repulsion Breath Effect", formula: "0", metadata: expect.objectContaining({ condition: "Prone", save: { ability: "strength", dc: 15 } }) })
       ])
@@ -7119,7 +7292,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(adultBronzeDragonActor.data).toEqual(expect.objectContaining({ hp: { current: 212, max: 212 }, armorClass: 18, challengeRating: "15", xp: 13000, skillProficiencies: ["insight", "perception", "stealth"] }));
     expect(dnd5eSrdSheet(adultBronzeDragonActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+12" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+12" }),
         expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "2d8+7+1d10" }),
         expect.objectContaining({ id: "monster-lightning-breath-damage", label: "Lightning Breath Damage", formula: "10d10", metadata: expect.objectContaining({ save: { ability: "dexterity", dc: 19, success: "half" }, recharge: "5-6" }) }),
         expect.objectContaining({ id: "monster-repulsion-breath-effect", label: "Repulsion Breath Effect", formula: "0", metadata: expect.objectContaining({ condition: "Prone", save: { ability: "strength", dc: 19 } }) }),
@@ -7136,7 +7309,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(ancientBronzeDragonActor.data).toEqual(expect.objectContaining({ hp: { current: 444, max: 444 }, armorClass: 22, challengeRating: "22", xp: 41000, skillProficiencies: ["insight", "perception", "stealth"] }));
     expect(dnd5eSrdSheet(ancientBronzeDragonActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+16" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+16" }),
         expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "2d8+9+2d8" }),
         expect.objectContaining({ id: "monster-lightning-breath-damage", label: "Lightning Breath Damage", formula: "15d10", metadata: expect.objectContaining({ save: { ability: "dexterity", dc: 23, success: "half" }, recharge: "5-6" }) }),
         expect.objectContaining({ id: "monster-repulsion-breath-effect", label: "Repulsion Breath Effect", formula: "0", metadata: expect.objectContaining({ condition: "Prone", save: { ability: "strength", dc: 23 } }) }),
@@ -7153,8 +7326,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(copperDragonWyrmlingActor.data).toEqual(expect.objectContaining({ hp: { current: 22, max: 22 }, armorClass: 16, challengeRating: "1", xp: 200, skillProficiencies: ["perception", "stealth"] }));
     expect(dnd5eSrdSheet(copperDragonWyrmlingActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+4" },
-        { id: "monster-rend-damage", label: "Rend Damage", formula: "1d10+2" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+4" }),
+        expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "1d10+2" }),
         expect.objectContaining({ id: "monster-acid-breath-damage", label: "Acid Breath Damage", formula: "4d8", metadata: expect.objectContaining({ damageType: "acid", save: { ability: "dexterity", dc: 11, success: "half" }, recharge: "5-6" }) }),
         expect.objectContaining({ id: "monster-slowing-breath-effect", label: "Slowing Breath Effect", formula: "0", metadata: expect.objectContaining({ condition: "Slowed", save: { ability: "constitution", dc: 11 } }) })
       ])
@@ -7168,8 +7341,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(youngCopperDragonActor.data).toEqual(expect.objectContaining({ hp: { current: 119, max: 119 }, armorClass: 17, challengeRating: "7", xp: 2900, skillProficiencies: ["deception", "perception", "stealth"] }));
     expect(dnd5eSrdSheet(youngCopperDragonActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+7" },
-        { id: "monster-rend-damage", label: "Rend Damage", formula: "2d10+4" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+7" }),
+        expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "2d10+4" }),
         expect.objectContaining({ id: "monster-acid-breath-damage", label: "Acid Breath Damage", formula: "9d8", metadata: expect.objectContaining({ save: { ability: "dexterity", dc: 14, success: "half" }, recharge: "5-6" }) }),
         expect.objectContaining({ id: "monster-slowing-breath-effect", label: "Slowing Breath Effect", formula: "0", metadata: expect.objectContaining({ condition: "Slowed", save: { ability: "constitution", dc: 14 } }) })
       ])
@@ -7183,7 +7356,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(adultCopperDragonActor.data).toEqual(expect.objectContaining({ hp: { current: 184, max: 184 }, armorClass: 18, challengeRating: "14", xp: 11500, skillProficiencies: ["deception", "perception", "stealth"] }));
     expect(dnd5eSrdSheet(adultCopperDragonActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+11" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+11" }),
         expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "2d10+6+1d8" }),
         expect.objectContaining({ id: "monster-acid-breath-damage", label: "Acid Breath Damage", formula: "12d8", metadata: expect.objectContaining({ save: { ability: "dexterity", dc: 18, success: "half" }, recharge: "5-6" }) }),
         expect.objectContaining({ id: "monster-slowing-breath-effect", label: "Slowing Breath Effect", formula: "0", metadata: expect.objectContaining({ condition: "Slowed", save: { ability: "constitution", dc: 18 } }) }),
@@ -7200,7 +7373,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(ancientCopperDragonActor.data).toEqual(expect.objectContaining({ hp: { current: 367, max: 367 }, armorClass: 21, challengeRating: "21", xp: 33000, skillProficiencies: ["deception", "perception", "stealth"] }));
     expect(dnd5eSrdSheet(ancientCopperDragonActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+15" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+15" }),
         expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "2d10+8+2d8" }),
         expect.objectContaining({ id: "monster-acid-breath-damage", label: "Acid Breath Damage", formula: "14d8", metadata: expect.objectContaining({ save: { ability: "dexterity", dc: 22, success: "half" }, recharge: "5-6" }) }),
         expect.objectContaining({ id: "monster-slowing-breath-effect", label: "Slowing Breath Effect", formula: "0", metadata: expect.objectContaining({ condition: "Slowed", save: { ability: "constitution", dc: 22 } }) }),
@@ -7217,8 +7390,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(silverDragonWyrmlingActor.data).toEqual(expect.objectContaining({ hp: { current: 45, max: 45 }, armorClass: 17, challengeRating: "2", xp: 450, skillProficiencies: ["perception", "stealth"] }));
     expect(dnd5eSrdSheet(silverDragonWyrmlingActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+6" },
-        { id: "monster-rend-damage", label: "Rend Damage", formula: "1d10+4" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+6" }),
+        expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "1d10+4" }),
         expect.objectContaining({ id: "monster-cold-breath-damage", label: "Cold Breath Damage", formula: "4d8", metadata: expect.objectContaining({ damageType: "cold", save: { ability: "constitution", dc: 13, success: "half" }, recharge: "5-6" }) }),
         expect.objectContaining({ id: "monster-paralyzing-breath-effect", label: "Paralyzing Breath Effect", formula: "0", metadata: expect.objectContaining({ condition: "Incapacitated/Paralyzed", save: { ability: "constitution", dc: 13 } }) })
       ])
@@ -7232,8 +7405,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(youngSilverDragonActor.data).toEqual(expect.objectContaining({ hp: { current: 168, max: 168 }, armorClass: 18, challengeRating: "9", xp: 5000, skillProficiencies: ["history", "perception", "stealth"] }));
     expect(dnd5eSrdSheet(youngSilverDragonActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+10" },
-        { id: "monster-rend-damage", label: "Rend Damage", formula: "2d8+6" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+10" }),
+        expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "2d8+6" }),
         expect.objectContaining({ id: "monster-cold-breath-damage", label: "Cold Breath Damage", formula: "11d8", metadata: expect.objectContaining({ save: { ability: "constitution", dc: 17, success: "half" }, recharge: "5-6" }) }),
         expect.objectContaining({ id: "monster-paralyzing-breath-effect", label: "Paralyzing Breath Effect", formula: "0", metadata: expect.objectContaining({ condition: "Incapacitated/Paralyzed", save: { ability: "constitution", dc: 17 } }) })
       ])
@@ -7247,7 +7420,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(adultSilverDragonActor.data).toEqual(expect.objectContaining({ hp: { current: 216, max: 216 }, armorClass: 19, challengeRating: "16", xp: 15000, skillProficiencies: ["history", "perception", "stealth"] }));
     expect(dnd5eSrdSheet(adultSilverDragonActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+13" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+13" }),
         expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "2d8+8+1d8" }),
         expect.objectContaining({ id: "monster-cold-breath-damage", label: "Cold Breath Damage", formula: "12d8", metadata: expect.objectContaining({ save: { ability: "constitution", dc: 20, success: "half" }, recharge: "5-6" }) }),
         expect.objectContaining({ id: "monster-paralyzing-breath-effect", label: "Paralyzing Breath Effect", formula: "0", metadata: expect.objectContaining({ condition: "Incapacitated/Paralyzed", save: { ability: "constitution", dc: 20 } }) }),
@@ -7264,7 +7437,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(ancientSilverDragonActor.data).toEqual(expect.objectContaining({ hp: { current: 468, max: 468 }, armorClass: 22, challengeRating: "23", xp: 50000, skillProficiencies: ["history", "perception", "stealth"] }));
     expect(dnd5eSrdSheet(ancientSilverDragonActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+17" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+17" }),
         expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "2d8+10+2d8" }),
         expect.objectContaining({ id: "monster-cold-breath-damage", label: "Cold Breath Damage", formula: "15d8", metadata: expect.objectContaining({ save: { ability: "constitution", dc: 24, success: "half" }, recharge: "5-6" }) }),
         expect.objectContaining({ id: "monster-paralyzing-breath-effect", label: "Paralyzing Breath Effect", formula: "0", metadata: expect.objectContaining({ condition: "Incapacitated/Paralyzed", save: { ability: "constitution", dc: 24 } }) }),
@@ -7280,7 +7453,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(solarActor.data).toEqual(expect.objectContaining({ hp: { current: 297, max: 297 }, armorClass: 21, challengeRating: "21", xp: 33000, skillProficiencies: ["perception"] }));
     expect(dnd5eSrdSheet(solarActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-flying-sword-attack", label: "Flying Sword Attack", formula: "1d20+15" },
+        expect.objectContaining({ id: "monster-flying-sword-attack", label: "Flying Sword Attack", formula: "1d20+15" }),
         expect.objectContaining({ id: "monster-flying-sword-damage", label: "Flying Sword Damage", formula: "4d6+8+8d8", metadata: expect.objectContaining({ damageType: "slashing/radiant", summary: expect.stringContaining("returns") }) }),
         expect.objectContaining({ id: "monster-slaying-bow-damage", label: "Slaying Bow Damage", formula: "4d8+6+8d8", metadata: expect.objectContaining({ damageType: "piercing/radiant", condition: "Slain", save: { ability: "dexterity", dc: 21 } }) }),
         expect.objectContaining({ id: "monster-divine-aid-effect", label: "Divine Aid Effect", formula: "0", metadata: expect.objectContaining({ action: "bonusAction", summary: expect.stringContaining("Cure Wounds") }) }),
@@ -7296,8 +7469,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(spriteActor.data).toEqual(expect.objectContaining({ hp: { current: 10, max: 10 }, armorClass: 15, challengeRating: "1/4", xp: 50 }));
     expect(dnd5eSrdSheet(spriteActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-needle-sword-attack", label: "Needle Sword Attack", formula: "1d20+6" },
-        { id: "monster-needle-sword-damage", label: "Needle Sword Damage", formula: "1d4+4" },
+        expect.objectContaining({ id: "monster-needle-sword-attack", label: "Needle Sword Attack", formula: "1d20+6" }),
+        expect.objectContaining({ id: "monster-needle-sword-damage", label: "Needle Sword Damage", formula: "1d4+4" }),
         expect.objectContaining({ id: "monster-enchanting-bow-attack", label: "Enchanting Bow Attack", formula: "1d20+6" }),
         expect.objectContaining({ id: "monster-enchanting-bow-damage", label: "Enchanting Bow Damage", formula: "1", metadata: expect.objectContaining({ action: "action", range: "40/160 ft.", condition: "Charmed", summary: expect.stringContaining("Charmed") }) }),
         expect.objectContaining({ id: "monster-heart-sight-effect", label: "Heart Sight Effect", formula: "0", metadata: expect.objectContaining({ effectType: "utility", action: "action", range: "5 ft.; one creature the sprite can see", save: { ability: "charisma", dc: 10 } }) }),
@@ -7314,8 +7487,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(stoneGiantActor.data).toEqual(expect.objectContaining({ hp: { current: 126, max: 126 }, armorClass: 17, challengeRating: "7", xp: 2900 }));
     expect(dnd5eSrdSheet(stoneGiantActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-stone-club-attack", label: "Stone Club Attack", formula: "1d20+9" },
-        { id: "monster-stone-club-damage", label: "Stone Club Damage", formula: "3d10+6" },
+        expect.objectContaining({ id: "monster-stone-club-attack", label: "Stone Club Attack", formula: "1d20+9" }),
+        expect.objectContaining({ id: "monster-stone-club-damage", label: "Stone Club Damage", formula: "3d10+6" }),
         expect.objectContaining({ id: "monster-boulder-damage", label: "Boulder Damage", formula: "2d8+6", metadata: expect.objectContaining({ condition: "Prone", summary: expect.stringContaining("Prone") }) }),
         expect.objectContaining({ id: "monster-deflect-missile-damage", label: "Deflect Missile Damage", formula: "1d10+6", metadata: expect.objectContaining({ action: "reaction", range: "60 ft.; one creature the giant can see", damageType: "force", save: { ability: "dexterity", dc: 17 }, recharge: "5-6" }) })
       ])
@@ -7330,10 +7503,10 @@ describe("dnd 5.5e srd rules", () => {
     expect(stoneGolemActor.data).toEqual(expect.objectContaining({ hp: { current: 220, max: 220 }, armorClass: 18, challengeRating: "10", xp: 5900 }));
     expect(dnd5eSrdSheet(stoneGolemActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-slam-attack", label: "Slam Attack", formula: "1d20+10" },
-        { id: "monster-slam-damage", label: "Slam Damage", formula: "2d8+6+2d8" },
-        { id: "monster-force-bolt-attack", label: "Force Bolt Attack", formula: "1d20+9" },
-        { id: "monster-force-bolt-damage", label: "Force Bolt Damage", formula: "4d10" },
+        expect.objectContaining({ id: "monster-slam-attack", label: "Slam Attack", formula: "1d20+10" }),
+        expect.objectContaining({ id: "monster-slam-damage", label: "Slam Damage", formula: "2d8+6+2d8" }),
+        expect.objectContaining({ id: "monster-force-bolt-attack", label: "Force Bolt Attack", formula: "1d20+9" }),
+        expect.objectContaining({ id: "monster-force-bolt-damage", label: "Force Bolt Damage", formula: "4d10" }),
         expect.objectContaining({ id: "monster-slow-effect", label: "Slow Effect", formula: "0", metadata: expect.objectContaining({ effectType: "utility", action: "bonusAction", range: "spell save DC 17", recharge: "5-6" }) })
       ])
     );
@@ -7347,8 +7520,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(stormGiantActor.data).toEqual(expect.objectContaining({ hp: { current: 230, max: 230 }, armorClass: 16, challengeRating: "13", xp: 10000 }));
     expect(dnd5eSrdSheet(stormGiantActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-storm-sword-attack", label: "Storm Sword Attack", formula: "1d20+14" },
-        { id: "monster-storm-sword-damage", label: "Storm Sword Damage", formula: "4d6+9+3d8" },
+        expect.objectContaining({ id: "monster-storm-sword-attack", label: "Storm Sword Attack", formula: "1d20+14" }),
+        expect.objectContaining({ id: "monster-storm-sword-damage", label: "Storm Sword Damage", formula: "4d6+9+3d8" }),
         expect.objectContaining({ id: "monster-thunderbolt-damage", label: "Thunderbolt Damage", formula: "2d12+9", metadata: expect.objectContaining({ condition: "Blinded/Deafened", summary: expect.stringContaining("Blinded and Deafened") }) }),
         expect.objectContaining({ id: "monster-lightning-storm-damage", label: "Lightning Storm Damage", formula: "10d10", metadata: expect.objectContaining({ save: { ability: "dexterity", dc: 18, success: "half" }, recharge: "5-6" }) })
       ])
@@ -7363,8 +7536,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(succubusActor.data).toEqual(expect.objectContaining({ hp: { current: 71, max: 71 }, armorClass: 15, challengeRating: "4", xp: 1100 }));
     expect(dnd5eSrdSheet(succubusActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-fiendish-touch-attack", label: "Fiendish Touch Attack", formula: "1d20+7" },
-        { id: "monster-fiendish-touch-damage", label: "Fiendish Touch Damage", formula: "2d10+5" },
+        expect.objectContaining({ id: "monster-fiendish-touch-attack", label: "Fiendish Touch Attack", formula: "1d20+7" }),
+        expect.objectContaining({ id: "monster-fiendish-touch-damage", label: "Fiendish Touch Damage", formula: "2d10+5" }),
         expect.objectContaining({ id: "monster-charm-effect", label: "Charm Effect", formula: "0", metadata: expect.objectContaining({ effectType: "utility", action: "action", range: "spell save DC 15" }) }),
         expect.objectContaining({ id: "monster-draining-kiss-damage", label: "Draining Kiss Damage", formula: "3d8", metadata: expect.objectContaining({ save: { ability: "constitution", dc: 15, success: "half" }, summary: expect.stringContaining("Hit Point maximum decreases") }) }),
         expect.objectContaining({ id: "monster-shape-shift-effect", label: "Shape-Shift Effect", formula: "0", metadata: expect.objectContaining({ effectType: "utility", action: "bonusAction" }) })
@@ -7380,9 +7553,9 @@ describe("dnd 5.5e srd rules", () => {
     expect(balorActor.data).toEqual(expect.objectContaining({ hp: { current: 287, max: 287 }, armorClass: 19, challengeRating: "19", xp: 22000 }));
     expect(dnd5eSrdSheet(balorActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-flame-whip-attack", label: "Flame Whip Attack", formula: "1d20+14" },
+        expect.objectContaining({ id: "monster-flame-whip-attack", label: "Flame Whip Attack", formula: "1d20+14" }),
         expect.objectContaining({ id: "monster-flame-whip-damage", label: "Flame Whip Damage", formula: "3d6+8+5d6", metadata: expect.objectContaining({ condition: "Prone", summary: expect.stringContaining("pulled up to 25 feet") }) }),
-        { id: "monster-lightning-blade-attack", label: "Lightning Blade Attack", formula: "1d20+14" },
+        expect.objectContaining({ id: "monster-lightning-blade-attack", label: "Lightning Blade Attack", formula: "1d20+14" }),
         expect.objectContaining({ id: "monster-lightning-blade-damage", label: "Lightning Blade Damage", formula: "3d8+8+4d10", metadata: expect.objectContaining({ summary: expect.stringContaining("can't take Reactions") }) }),
         expect.objectContaining({ id: "monster-teleport-effect", label: "Teleport Effect", formula: "0", metadata: expect.objectContaining({ summary: expect.stringContaining("willing nearby demon") }) })
       ])
@@ -7398,8 +7571,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdSheet(werebearActor, []).quickRolls).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "2d12+4", metadata: expect.objectContaining({ save: { ability: "constitution", dc: 14 }, summary: expect.stringContaining("curses") }) }),
-        { id: "monster-handaxe-attack", label: "Handaxe Attack", formula: "1d20+7" },
-        { id: "monster-rend-damage", label: "Rend Damage", formula: "2d8+4" },
+        expect.objectContaining({ id: "monster-handaxe-attack", label: "Handaxe Attack", formula: "1d20+7" }),
+        expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "2d8+4" }),
         expect.objectContaining({ id: "monster-shape-shift-effect", label: "Shape-Shift Effect", formula: "0", metadata: expect.objectContaining({ effectType: "utility", action: "bonusAction" }) })
       ])
     );
@@ -7414,7 +7587,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdSheet(wereboarActor, []).quickRolls).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: "monster-gore-damage", label: "Gore Damage", formula: "2d8+3", metadata: expect.objectContaining({ save: { ability: "constitution", dc: 12 }, summary: expect.stringContaining("Wereboar") }) }),
-        { id: "monster-javelin-damage", label: "Javelin Damage", formula: "3d6+3" },
+        expect.objectContaining({ id: "monster-javelin-damage", label: "Javelin Damage", formula: "3d6+3" }),
         expect.objectContaining({ id: "monster-tusk-damage", label: "Tusk Damage", formula: "2d6+3", metadata: expect.objectContaining({ condition: "Prone", summary: expect.stringContaining("2d6 Piercing") }) }),
         expect.objectContaining({ id: "monster-shape-shift-effect", label: "Shape-Shift Effect", formula: "0" })
       ])
@@ -7430,8 +7603,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdSheet(wereratActor, []).quickRolls).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "2d4+3", metadata: expect.objectContaining({ save: { ability: "constitution", dc: 11 } }) }),
-        { id: "monster-scratch-damage", label: "Scratch Damage", formula: "1d6+3" },
-        { id: "monster-hand-crossbow-attack", label: "Hand Crossbow Attack", formula: "1d20+5" },
+        expect.objectContaining({ id: "monster-scratch-damage", label: "Scratch Damage", formula: "1d6+3" }),
+        expect.objectContaining({ id: "monster-hand-crossbow-attack", label: "Hand Crossbow Attack", formula: "1d20+5" }),
         expect.objectContaining({ id: "monster-shape-shift-effect", label: "Shape-Shift Effect", formula: "0" })
       ])
     );
@@ -7446,7 +7619,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdSheet(weretigerActor, []).quickRolls).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "2d8+3", metadata: expect.objectContaining({ save: { ability: "constitution", dc: 13 } }) }),
-        { id: "monster-longbow-damage", label: "Longbow Damage", formula: "2d8+2" },
+        expect.objectContaining({ id: "monster-longbow-damage", label: "Longbow Damage", formula: "2d8+2" }),
         expect.objectContaining({ id: "monster-prowl-effect", label: "Prowl Effect", formula: "0", metadata: expect.objectContaining({ effectType: "utility", action: "bonusAction", effects: expect.arrayContaining([expect.stringContaining("Hide action")]) }) }),
         expect.objectContaining({ id: "monster-shape-shift-effect", label: "Shape-Shift Effect", formula: "0" })
       ])
@@ -7465,8 +7638,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdSheet(werewolfActor, []).quickRolls).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "2d8+3", metadata: expect.objectContaining({ save: { ability: "constitution", dc: 12 }, summary: expect.stringContaining("Werewolf") }) }),
-        { id: "monster-scratch-attack", label: "Scratch Attack", formula: "1d20+5" },
-        { id: "monster-longbow-damage", label: "Longbow Damage", formula: "2d8+2" },
+        expect.objectContaining({ id: "monster-scratch-attack", label: "Scratch Attack", formula: "1d20+5" }),
+        expect.objectContaining({ id: "monster-longbow-damage", label: "Longbow Damage", formula: "2d8+2" }),
         expect.objectContaining({ id: "monster-shape-shift-effect", label: "Shape-Shift Effect", formula: "0" })
       ])
     );
@@ -7483,10 +7656,10 @@ describe("dnd 5.5e srd rules", () => {
     );
     expect(dnd5eSrdSheet(xornActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+6" },
-        { id: "monster-bite-damage", label: "Bite Damage", formula: "4d6+3" },
-        { id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+6" },
-        { id: "monster-claw-damage", label: "Claw Damage", formula: "1d10+3" },
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+6" }),
+        expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "4d6+3" }),
+        expect.objectContaining({ id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+6" }),
+        expect.objectContaining({ id: "monster-claw-damage", label: "Claw Damage", formula: "1d10+3" }),
         expect.objectContaining({
           id: "monster-charge-effect",
           label: "Charge Effect",
@@ -7515,8 +7688,8 @@ describe("dnd 5.5e srd rules", () => {
     );
     expect(dnd5eSrdSheet(blueDragonWyrmlingActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+5" },
-        { id: "monster-rend-damage", label: "Rend Damage", formula: "1d10+3+1d6" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+5" }),
+        expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "1d10+3+1d6" }),
         expect.objectContaining({ id: "monster-lightning-breath-damage", label: "Lightning Breath Damage", formula: "6d6", metadata: expect.objectContaining({ damageType: "lightning", save: { ability: "dexterity", dc: 12, success: "half" }, recharge: "5-6" }) })
       ])
     );
@@ -7530,8 +7703,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(youngBlueDragonActor.data).toEqual(expect.objectContaining({ hp: { current: 152, max: 152 }, armorClass: 18, challengeRating: "9", xp: 5000 }));
     expect(dnd5eSrdSheet(youngBlueDragonActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+9" },
-        { id: "monster-rend-damage", label: "Rend Damage", formula: "2d6+5+1d10" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+9" }),
+        expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "2d6+5+1d10" }),
         expect.objectContaining({ id: "monster-lightning-breath-damage", label: "Lightning Breath Damage", formula: "10d10", metadata: expect.objectContaining({ range: "60-foot line", save: { ability: "dexterity", dc: 16, success: "half" }, recharge: "5-6" }) })
       ])
     );
@@ -7548,8 +7721,8 @@ describe("dnd 5.5e srd rules", () => {
     );
     expect(dnd5eSrdSheet(adultBlueDragonActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+12" },
-        { id: "monster-rend-damage", label: "Rend Damage", formula: "2d8+7+1d10" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+12" }),
+        expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "2d8+7+1d10" }),
         expect.objectContaining({ id: "monster-lightning-breath-damage", label: "Lightning Breath Damage", formula: "11d10", metadata: expect.objectContaining({ range: "90-foot line", save: { ability: "dexterity", dc: 19, success: "half" }, recharge: "5-6" }) }),
         expect.objectContaining({ id: "monster-legendary-actions-effect", label: "Legendary Actions Effect", formula: "0", metadata: expect.objectContaining({ summary: expect.stringContaining("Sonic Boom") }) })
       ])
@@ -7564,8 +7737,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(ancientBlueDragonActor.data).toEqual(expect.objectContaining({ hp: { current: 481, max: 481 }, armorClass: 22, challengeRating: "23", xp: 50000 }));
     expect(dnd5eSrdSheet(ancientBlueDragonActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+16" },
-        { id: "monster-rend-damage", label: "Rend Damage", formula: "2d8+9+2d10" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+16" }),
+        expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "2d8+9+2d10" }),
         expect.objectContaining({ id: "monster-lightning-breath-damage", label: "Lightning Breath Damage", formula: "16d10", metadata: expect.objectContaining({ range: "120-foot line", save: { ability: "dexterity", dc: 23, success: "half" }, recharge: "5-6" }) }),
         expect.objectContaining({ id: "monster-legendary-actions-effect", label: "Legendary Actions Effect", formula: "0", metadata: expect.objectContaining({ summary: expect.stringContaining("Cloaked Flight") }) })
       ])
@@ -7583,8 +7756,8 @@ describe("dnd 5.5e srd rules", () => {
     );
     expect(dnd5eSrdSheet(greenDragonWyrmlingActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+4" },
-        { id: "monster-rend-damage", label: "Rend Damage", formula: "1d10+2+1d6" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+4" }),
+        expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "1d10+2+1d6" }),
         expect.objectContaining({ id: "monster-poison-breath-damage", label: "Poison Breath Damage", formula: "6d6", metadata: expect.objectContaining({ damageType: "poison", save: { ability: "constitution", dc: 11, success: "half" }, recharge: "5-6" }) })
       ])
     );
@@ -7598,8 +7771,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(youngGreenDragonActor.data).toEqual(expect.objectContaining({ hp: { current: 136, max: 136 }, armorClass: 18, challengeRating: "8", xp: 3900 }));
     expect(dnd5eSrdSheet(youngGreenDragonActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+7" },
-        { id: "monster-rend-damage", label: "Rend Damage", formula: "2d6+4+2d6" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+7" }),
+        expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "2d6+4+2d6" }),
         expect.objectContaining({ id: "monster-poison-breath-damage", label: "Poison Breath Damage", formula: "12d6", metadata: expect.objectContaining({ range: "30-foot cone", save: { ability: "constitution", dc: 14, success: "half" }, recharge: "5-6" }) })
       ])
     );
@@ -7613,8 +7786,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(adultGreenDragonActor.data).toEqual(expect.objectContaining({ hp: { current: 207, max: 207 }, armorClass: 19, challengeRating: "15", xp: 13000 }));
     expect(dnd5eSrdSheet(adultGreenDragonActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+11" },
-        { id: "monster-rend-damage", label: "Rend Damage", formula: "2d8+6+2d6" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+11" }),
+        expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "2d8+6+2d6" }),
         expect.objectContaining({ id: "monster-poison-breath-damage", label: "Poison Breath Damage", formula: "16d6", metadata: expect.objectContaining({ range: "60-foot cone", save: { ability: "constitution", dc: 18, success: "half" }, recharge: "5-6" }) }),
         expect.objectContaining({ id: "monster-legendary-actions-effect", label: "Legendary Actions Effect", formula: "0", metadata: expect.objectContaining({ summary: expect.stringContaining("Noxious Miasma") }) })
       ])
@@ -7629,8 +7802,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(ancientGreenDragonActor.data).toEqual(expect.objectContaining({ hp: { current: 402, max: 402 }, armorClass: 21, challengeRating: "22", xp: 41000 }));
     expect(dnd5eSrdSheet(ancientGreenDragonActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+15" },
-        { id: "monster-rend-damage", label: "Rend Damage", formula: "2d8+8+3d6" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+15" }),
+        expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "2d8+8+3d6" }),
         expect.objectContaining({ id: "monster-poison-breath-damage", label: "Poison Breath Damage", formula: "22d6", metadata: expect.objectContaining({ range: "90-foot cone", save: { ability: "constitution", dc: 22, success: "half" }, recharge: "5-6" }) }),
         expect.objectContaining({ id: "monster-legendary-actions-effect", label: "Legendary Actions Effect", formula: "0", metadata: expect.objectContaining({ summary: expect.stringContaining("Mind Invasion") }) })
       ])
@@ -7645,8 +7818,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(dretchActor.data).toEqual(expect.objectContaining({ hp: { current: 18, max: 18 }, armorClass: 11, challengeRating: "1/4", xp: 50 }));
     expect(dnd5eSrdSheet(dretchActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+3" },
-        { id: "monster-rend-damage", label: "Rend Damage", formula: "1d6+1" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+3" }),
+        expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "1d6+1" }),
         expect.objectContaining({ id: "monster-fetid-cloud-effect", label: "Fetid Cloud Effect", formula: "0", metadata: expect.objectContaining({ save: { ability: "constitution", dc: 11 }, condition: "Poisoned", summary: expect.stringContaining("Once per day") }) })
       ])
     );
@@ -7660,7 +7833,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(quasitActor.data).toEqual(expect.objectContaining({ hp: { current: 25, max: 25 }, armorClass: 13, challengeRating: "1", xp: 200 }));
     expect(dnd5eSrdSheet(quasitActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+5" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+5" }),
         expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "1d4+3", metadata: expect.objectContaining({ condition: "Poisoned", summary: expect.stringContaining("quasit's next turn") }) }),
         expect.objectContaining({ id: "monster-invisibility-effect", label: "Invisibility Effect", formula: "0", metadata: expect.objectContaining({ summary: expect.stringContaining("Casts Invisibility") }) }),
         expect.objectContaining({ id: "monster-scare-effect", label: "Scare Effect", formula: "0", metadata: expect.objectContaining({ save: { ability: "wisdom", dc: 10 }, condition: "Frightened" }) }),
@@ -7677,8 +7850,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(vrockActor.data).toEqual(expect.objectContaining({ hp: { current: 152, max: 152 }, armorClass: 15, challengeRating: "6", xp: 2300 }));
     expect(dnd5eSrdSheet(vrockActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-shred-attack", label: "Shred Attack", formula: "1d20+6" },
-        { id: "monster-shred-damage", label: "Shred Damage", formula: "2d6+3+3d6" },
+        expect.objectContaining({ id: "monster-shred-attack", label: "Shred Attack", formula: "1d20+6" }),
+        expect.objectContaining({ id: "monster-shred-damage", label: "Shred Damage", formula: "2d6+3+3d6" }),
         expect.objectContaining({ id: "monster-spores-damage", label: "Spores Damage", formula: "1d10", metadata: expect.objectContaining({ save: { ability: "constitution", dc: 15 }, condition: "Poisoned", recharge: "6", summary: expect.stringContaining("Holy Water") }) }),
         expect.objectContaining({ id: "monster-stunning-screech-damage", label: "Stunning Screech Damage", formula: "3d6", metadata: expect.objectContaining({ save: { ability: "constitution", dc: 15 }, condition: "Stunned", summary: expect.stringContaining("Once per day") }) })
       ])
@@ -7693,8 +7866,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(lemureActor.data).toEqual(expect.objectContaining({ hp: { current: 9, max: 9 }, armorClass: 9, challengeRating: "0", xp: 10 }));
     expect(dnd5eSrdSheet(lemureActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-vile-slime-attack", label: "Vile Slime Attack", formula: "1d20+2" },
-        { id: "monster-vile-slime-damage", label: "Vile Slime Damage", formula: "1d4" }
+        expect.objectContaining({ id: "monster-vile-slime-attack", label: "Vile Slime Attack", formula: "1d20+2" }),
+        expect.objectContaining({ id: "monster-vile-slime-damage", label: "Vile Slime Damage", formula: "1d4" })
       ])
     );
     expect(dnd5eSrdActionFormula(lemureActor, [], "monster-vile-slime-damage")).toBe("1d4");
@@ -7707,8 +7880,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(impActor.data).toEqual(expect.objectContaining({ hp: { current: 21, max: 21 }, armorClass: 13, challengeRating: "1", xp: 200 }));
     expect(dnd5eSrdSheet(impActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-sting-attack", label: "Sting Attack", formula: "1d20+5" },
-        { id: "monster-sting-damage", label: "Sting Damage", formula: "1d6+3+2d6" },
+        expect.objectContaining({ id: "monster-sting-attack", label: "Sting Attack", formula: "1d20+5" }),
+        expect.objectContaining({ id: "monster-sting-damage", label: "Sting Damage", formula: "1d6+3+2d6" }),
         expect.objectContaining({ id: "monster-invisibility-effect", label: "Invisibility Effect", formula: "0", metadata: expect.objectContaining({ summary: expect.stringContaining("Casts Invisibility") }) }),
         expect.objectContaining({ id: "monster-shape-shift-effect", label: "Shape-Shift Effect", formula: "0", metadata: expect.objectContaining({ summary: expect.stringContaining("rat") }) })
       ])
@@ -7724,7 +7897,7 @@ describe("dnd 5.5e srd rules", () => {
     expect((incubusActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Damage Resistances" }), expect.objectContaining({ name: "Succubus Form" })]));
     expect(dnd5eSrdSheet(incubusActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-restless-touch-attack", label: "Restless Touch Attack", formula: "1d20+7" },
+        expect.objectContaining({ id: "monster-restless-touch-attack", label: "Restless Touch Attack", formula: "1d20+7" }),
         expect.objectContaining({ id: "monster-restless-touch-damage", label: "Restless Touch Damage", formula: "3d6+5", metadata: expect.objectContaining({ condition: "Cursed" }) }),
         expect.objectContaining({ id: "monster-spellcasting-effect", label: "Spellcasting Effect", formula: "0", metadata: expect.objectContaining({ save: { ability: "charisma", dc: 15 } }) }),
         expect.objectContaining({ id: "monster-nightmare-damage", label: "Nightmare Damage", formula: "4d8", metadata: expect.objectContaining({ action: "bonusAction", condition: "Unconscious", recharge: "6" }) })
@@ -7741,8 +7914,8 @@ describe("dnd 5.5e srd rules", () => {
     expect((invisibleStalkerActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Air Form" }), expect.objectContaining({ name: "Invisibility" })]));
     expect(dnd5eSrdSheet(invisibleStalkerActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-wind-swipe-attack", label: "Wind Swipe Attack", formula: "1d20+7" },
-        { id: "monster-wind-swipe-damage", label: "Wind Swipe Damage", formula: "2d6+4" },
+        expect.objectContaining({ id: "monster-wind-swipe-attack", label: "Wind Swipe Attack", formula: "1d20+7" }),
+        expect.objectContaining({ id: "monster-wind-swipe-damage", label: "Wind Swipe Damage", formula: "2d6+4" }),
         expect.objectContaining({ id: "monster-vortex-damage", label: "Vortex Damage", formula: "1d8+3", metadata: expect.objectContaining({ save: { ability: "constitution", dc: 14 }, condition: "Grappled" }) })
       ])
     );
@@ -7757,10 +7930,10 @@ describe("dnd 5.5e srd rules", () => {
     expect((ironGolemActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Fire Absorption" }), expect.objectContaining({ name: "Magic Resistance" })]));
     expect(dnd5eSrdSheet(ironGolemActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bladed-arm-attack", label: "Bladed Arm Attack", formula: "1d20+12" },
-        { id: "monster-bladed-arm-damage", label: "Bladed Arm Damage", formula: "3d8+7+3d6" },
-        { id: "monster-fiery-bolt-attack", label: "Fiery Bolt Attack", formula: "1d20+10" },
-        { id: "monster-fiery-bolt-damage", label: "Fiery Bolt Damage", formula: "8d8" },
+        expect.objectContaining({ id: "monster-bladed-arm-attack", label: "Bladed Arm Attack", formula: "1d20+12" }),
+        expect.objectContaining({ id: "monster-bladed-arm-damage", label: "Bladed Arm Damage", formula: "3d8+7+3d6" }),
+        expect.objectContaining({ id: "monster-fiery-bolt-attack", label: "Fiery Bolt Attack", formula: "1d20+10" }),
+        expect.objectContaining({ id: "monster-fiery-bolt-damage", label: "Fiery Bolt Damage", formula: "8d8" }),
         expect.objectContaining({ id: "monster-poison-breath-damage", label: "Poison Breath Damage", formula: "10d10", metadata: expect.objectContaining({ save: { ability: "constitution", dc: 18, success: "half" }, recharge: "6" }) })
       ])
     );
@@ -7775,8 +7948,8 @@ describe("dnd 5.5e srd rules", () => {
     expect((koboldWarriorActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Pack Tactics" }), expect.objectContaining({ name: "Sunlight Sensitivity" })]));
     expect(dnd5eSrdSheet(koboldWarriorActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-dagger-attack", label: "Dagger Attack", formula: "1d20+4" },
-        { id: "monster-dagger-damage", label: "Dagger Damage", formula: "1d4+2" }
+        expect.objectContaining({ id: "monster-dagger-attack", label: "Dagger Attack", formula: "1d20+4" }),
+        expect.objectContaining({ id: "monster-dagger-damage", label: "Dagger Damage", formula: "1d4+2" })
       ])
     );
     expect(dnd5eSrdActionFormula(koboldWarriorActor, [], "monster-dagger-damage")).toBe("1d4+2");
@@ -7790,7 +7963,7 @@ describe("dnd 5.5e srd rules", () => {
     expect((krakenActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Amphibious" }), expect.objectContaining({ name: "Legendary Resistance" }), expect.objectContaining({ name: "Siege Monster" })]));
     expect(dnd5eSrdSheet(krakenActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-tentacle-attack", label: "Tentacle Attack", formula: "1d20+17" },
+        expect.objectContaining({ id: "monster-tentacle-attack", label: "Tentacle Attack", formula: "1d20+17" }),
         expect.objectContaining({ id: "monster-tentacle-damage", label: "Tentacle Damage", formula: "4d6+10", metadata: expect.objectContaining({ condition: "Grappled/Restrained" }) }),
         expect.objectContaining({ id: "monster-fling-damage", label: "Fling Damage", formula: "4d8", metadata: expect.objectContaining({ save: { ability: "dexterity", dc: 25, success: "half" }, condition: "Prone" }) }),
         expect.objectContaining({ id: "monster-lightning-strike-damage", label: "Lightning Strike Damage", formula: "6d10", metadata: expect.objectContaining({ save: { ability: "dexterity", dc: 23, success: "half" } }) }),
@@ -7811,8 +7984,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(lamiaActor.data).toEqual(expect.objectContaining({ hp: { current: 97, max: 97 }, armorClass: 13, challengeRating: "4", xp: 1100, skillProficiencies: ["deception", "insight", "stealth"] }));
     expect(dnd5eSrdSheet(lamiaActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+5" },
-        { id: "monster-claw-damage", label: "Claw Damage", formula: "1d8+3+2d6" },
+        expect.objectContaining({ id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+5" }),
+        expect.objectContaining({ id: "monster-claw-damage", label: "Claw Damage", formula: "1d8+3+2d6" }),
         expect.objectContaining({ id: "monster-corrupting-touch-damage", label: "Corrupting Touch Damage", formula: "3d8", metadata: expect.objectContaining({ save: { ability: "wisdom", dc: 13 }, condition: "Charmed/Poisoned" }) }),
         expect.objectContaining({ id: "monster-spellcasting-effect", label: "Spellcasting Effect", formula: "0", metadata: expect.objectContaining({ save: { ability: "charisma", dc: 13 } }) }),
         expect.objectContaining({ id: "monster-leap-effect", label: "Leap Effect", formula: "0", metadata: expect.objectContaining({ action: "bonusAction" }) })
@@ -7828,8 +8001,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(mageActor.data).toEqual(expect.objectContaining({ hp: { current: 81, max: 81 }, armorClass: 15, challengeRating: "6", xp: 2300, skillProficiencies: ["arcana", "history", "perception"] }));
     expect(dnd5eSrdSheet(mageActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-arcane-burst-attack", label: "Arcane Burst Attack", formula: "1d20+6" },
-        { id: "monster-arcane-burst-damage", label: "Arcane Burst Damage", formula: "3d8+3" },
+        expect.objectContaining({ id: "monster-arcane-burst-attack", label: "Arcane Burst Attack", formula: "1d20+6" }),
+        expect.objectContaining({ id: "monster-arcane-burst-damage", label: "Arcane Burst Damage", formula: "3d8+3" }),
         expect.objectContaining({ id: "monster-spellcasting-effect", label: "Spellcasting Effect", formula: "0", metadata: expect.objectContaining({ save: { ability: "intelligence", dc: 14 } }) })
       ])
     );
@@ -7843,7 +8016,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(mammothActor.data).toEqual(expect.objectContaining({ hp: { current: 126, max: 126 }, armorClass: 13, challengeRating: "6", xp: 2300 }));
     expect(dnd5eSrdSheet(mammothActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-gore-attack", label: "Gore Attack", formula: "1d20+10" },
+        expect.objectContaining({ id: "monster-gore-attack", label: "Gore Attack", formula: "1d20+10" }),
         expect.objectContaining({ id: "monster-gore-damage", label: "Gore Damage", formula: "2d10+7", metadata: expect.objectContaining({ condition: "Prone" }) }),
         expect.objectContaining({ id: "monster-trample-damage", label: "Trample Damage", formula: "4d10+7", metadata: expect.objectContaining({ save: { ability: "dexterity", dc: 18, success: "half" }, action: "bonusAction" }) })
       ])
@@ -7858,7 +8031,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(mastiffActor.data).toEqual(expect.objectContaining({ hp: { current: 5, max: 5 }, armorClass: 12, challengeRating: "1/8", xp: 25, skillProficiencies: ["perception"] }));
     expect(dnd5eSrdSheet(mastiffActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+3" },
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+3" }),
         expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1d6+1", metadata: expect.objectContaining({ condition: "Prone" }) })
       ])
     );
@@ -7873,8 +8046,8 @@ describe("dnd 5.5e srd rules", () => {
     expect((muleActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Beast of Burden" })]));
     expect(dnd5eSrdSheet(muleActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-hooves-attack", label: "Hooves Attack", formula: "1d20+4" },
-        { id: "monster-hooves-damage", label: "Hooves Damage", formula: "1d4+2" }
+        expect.objectContaining({ id: "monster-hooves-attack", label: "Hooves Attack", formula: "1d20+4" }),
+        expect.objectContaining({ id: "monster-hooves-damage", label: "Hooves Damage", formula: "1d4+2" })
       ])
     );
     expect(dnd5eSrdActionFormula(muleActor, [], "monster-hooves-damage")).toBe("1d4+2");
@@ -7888,8 +8061,8 @@ describe("dnd 5.5e srd rules", () => {
     expect((octopusActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Compression" }), expect.objectContaining({ name: "Water Breathing" })]));
     expect(dnd5eSrdSheet(octopusActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-tentacles-attack", label: "Tentacles Attack", formula: "1d20+4" },
-        { id: "monster-tentacles-damage", label: "Tentacles Damage", formula: "1" },
+        expect.objectContaining({ id: "monster-tentacles-attack", label: "Tentacles Attack", formula: "1d20+4" }),
+        expect.objectContaining({ id: "monster-tentacles-damage", label: "Tentacles Damage", formula: "1" }),
         expect.objectContaining({ id: "monster-ink-cloud-effect", label: "Ink Cloud Effect", formula: "0", metadata: expect.objectContaining({ action: "reaction" }) })
       ])
     );
@@ -7904,8 +8077,8 @@ describe("dnd 5.5e srd rules", () => {
     expect((owlActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Flyby" })]));
     expect(dnd5eSrdSheet(owlActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-talons-attack", label: "Talons Attack", formula: "1d20+3" },
-        { id: "monster-talons-damage", label: "Talons Damage", formula: "1" }
+        expect.objectContaining({ id: "monster-talons-attack", label: "Talons Attack", formula: "1d20+3" }),
+        expect.objectContaining({ id: "monster-talons-damage", label: "Talons Damage", formula: "1" })
       ])
     );
     expect(dnd5eSrdActionFormula(owlActor, [], "monster-talons-damage")).toBe("1");
@@ -7918,8 +8091,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(pantherActor.data).toEqual(expect.objectContaining({ hp: { current: 13, max: 13 }, armorClass: 13, challengeRating: "1/4", xp: 50, skillProficiencies: ["perception", "stealth"] }));
     expect(dnd5eSrdSheet(pantherActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+5" },
-        { id: "monster-rend-damage", label: "Rend Damage", formula: "1d6+3" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+5" }),
+        expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "1d6+3" }),
         expect.objectContaining({ id: "monster-nimble-escape-effect", label: "Nimble Escape Effect", formula: "0", metadata: expect.objectContaining({ action: "bonusAction" }) })
       ])
     );
@@ -7934,8 +8107,8 @@ describe("dnd 5.5e srd rules", () => {
     expect((piranhaActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Water Breathing" })]));
     expect(dnd5eSrdSheet(piranhaActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+5" },
-        { id: "monster-bite-damage", label: "Bite Damage", formula: "1" }
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+5" }),
+        expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1" })
       ])
     );
     expect(dnd5eSrdActionFormula(piranhaActor, [], "monster-bite-damage")).toBe("1");
@@ -7949,8 +8122,8 @@ describe("dnd 5.5e srd rules", () => {
     expect((polarBearActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Cold Resistance" })]));
     expect(dnd5eSrdSheet(polarBearActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+7" },
-        { id: "monster-rend-damage", label: "Rend Damage", formula: "1d8+5" }
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+7" }),
+        expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "1d8+5" })
       ])
     );
     expect(dnd5eSrdActionFormula(polarBearActor, [], "monster-rend-damage")).toBe("1d8+5");
@@ -7963,8 +8136,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(ponyActor.data).toEqual(expect.objectContaining({ hp: { current: 11, max: 11 }, armorClass: 10, challengeRating: "1/8", xp: 25 }));
     expect(dnd5eSrdSheet(ponyActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-hooves-attack", label: "Hooves Attack", formula: "1d20+4" },
-        { id: "monster-hooves-damage", label: "Hooves Damage", formula: "1d4+2" }
+        expect.objectContaining({ id: "monster-hooves-attack", label: "Hooves Attack", formula: "1d20+4" }),
+        expect.objectContaining({ id: "monster-hooves-damage", label: "Hooves Damage", formula: "1d4+2" })
       ])
     );
     expect(dnd5eSrdActionFormula(ponyActor, [], "monster-hooves-damage")).toBe("1d4+2");
@@ -7978,8 +8151,8 @@ describe("dnd 5.5e srd rules", () => {
     expect((pteranodonActor.data.monster as { statBlock: { traits: Array<{ name: string }> } }).statBlock.traits).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Flyby" })]));
     expect(dnd5eSrdSheet(pteranodonActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+4" },
-        { id: "monster-bite-damage", label: "Bite Damage", formula: "1d8+2" }
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+4" }),
+        expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1d8+2" })
       ])
     );
     expect(dnd5eSrdActionFormula(pteranodonActor, [], "monster-bite-damage")).toBe("1d8+2");
@@ -7992,9 +8165,9 @@ describe("dnd 5.5e srd rules", () => {
     expect(beardedDevilActor.data).toEqual(expect.objectContaining({ hp: { current: 58, max: 58 }, armorClass: 13, challengeRating: "3", xp: 700 }));
     expect(dnd5eSrdSheet(beardedDevilActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-beard-attack", label: "Beard Attack", formula: "1d20+5" },
+        expect.objectContaining({ id: "monster-beard-attack", label: "Beard Attack", formula: "1d20+5" }),
         expect.objectContaining({ id: "monster-beard-damage", label: "Beard Damage", formula: "1d8+3", metadata: expect.objectContaining({ condition: "Poisoned", summary: expect.stringContaining("can't regain Hit Points") }) }),
-        { id: "monster-infernal-glaive-attack", label: "Infernal Glaive Attack", formula: "1d20+5" },
+        expect.objectContaining({ id: "monster-infernal-glaive-attack", label: "Infernal Glaive Attack", formula: "1d20+5" }),
         expect.objectContaining({ id: "monster-infernal-glaive-damage", label: "Infernal Glaive Damage", formula: "1d10+3", metadata: expect.objectContaining({ save: { ability: "constitution", dc: 12 }, summary: expect.stringContaining("infernal wound") }) })
       ])
     );
@@ -8008,12 +8181,12 @@ describe("dnd 5.5e srd rules", () => {
     expect(barbedDevilActor.data).toEqual(expect.objectContaining({ hp: { current: 110, max: 110 }, armorClass: 15, challengeRating: "5", xp: 1800 }));
     expect(dnd5eSrdSheet(barbedDevilActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-claws-attack", label: "Claws Attack", formula: "1d20+6" },
+        expect.objectContaining({ id: "monster-claws-attack", label: "Claws Attack", formula: "1d20+6" }),
         expect.objectContaining({ id: "monster-claws-damage", label: "Claws Damage", formula: "2d6+3", metadata: expect.objectContaining({ condition: "Grappled", summary: expect.stringContaining("Grappled") }) }),
-        { id: "monster-tail-attack", label: "Tail Attack", formula: "1d20+6" },
-        { id: "monster-tail-damage", label: "Tail Damage", formula: "2d10+3" },
-        { id: "monster-hurl-flame-attack", label: "Hurl Flame Attack", formula: "1d20+5" },
-        { id: "monster-hurl-flame-damage", label: "Hurl Flame Damage", formula: "5d6" }
+        expect.objectContaining({ id: "monster-tail-attack", label: "Tail Attack", formula: "1d20+6" }),
+        expect.objectContaining({ id: "monster-tail-damage", label: "Tail Damage", formula: "2d10+3" }),
+        expect.objectContaining({ id: "monster-hurl-flame-attack", label: "Hurl Flame Attack", formula: "1d20+5" }),
+        expect.objectContaining({ id: "monster-hurl-flame-damage", label: "Hurl Flame Damage", formula: "5d6" })
       ])
     );
     expect(dnd5eSrdActionFormula(barbedDevilActor, [], "monster-hurl-flame-damage")).toBe("5d6");
@@ -8026,9 +8199,9 @@ describe("dnd 5.5e srd rules", () => {
     expect(boneDevilActor.data).toEqual(expect.objectContaining({ hp: { current: 161, max: 161 }, armorClass: 16, challengeRating: "9", xp: 5000 }));
     expect(dnd5eSrdSheet(boneDevilActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+8" },
-        { id: "monster-claw-damage", label: "Claw Damage", formula: "2d8+4" },
-        { id: "monster-infernal-sting-attack", label: "Infernal Sting Attack", formula: "1d20+8" },
+        expect.objectContaining({ id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+8" }),
+        expect.objectContaining({ id: "monster-claw-damage", label: "Claw Damage", formula: "2d8+4" }),
+        expect.objectContaining({ id: "monster-infernal-sting-attack", label: "Infernal Sting Attack", formula: "1d20+8" }),
         expect.objectContaining({ id: "monster-infernal-sting-damage", label: "Infernal Sting Damage", formula: "2d10+4+4d8", metadata: expect.objectContaining({ condition: "Poisoned", summary: expect.stringContaining("can't regain Hit Points") }) })
       ])
     );
@@ -8042,7 +8215,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(chainDevilActor.data).toEqual(expect.objectContaining({ hp: { current: 85, max: 85 }, armorClass: 15, challengeRating: "8", xp: 3900 }));
     expect(dnd5eSrdSheet(chainDevilActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-chain-attack", label: "Chain Attack", formula: "1d20+7" },
+        expect.objectContaining({ id: "monster-chain-attack", label: "Chain Attack", formula: "1d20+7" }),
         expect.objectContaining({ id: "monster-chain-damage", label: "Chain Damage", formula: "2d6+4", metadata: expect.objectContaining({ condition: "Grappled/Restrained", summary: expect.stringContaining("escape DC 14") }) }),
         expect.objectContaining({ id: "monster-conjure-infernal-chain-damage", label: "Conjure Infernal Chain Damage", formula: "2d4+4", metadata: expect.objectContaining({ save: { ability: "dexterity", dc: 15 }, condition: "Restrained" }) }),
         expect.objectContaining({ id: "monster-unnerving-gaze-effect", label: "Unnerving Gaze Effect", formula: "0", metadata: expect.objectContaining({ save: { ability: "wisdom", dc: 15 }, condition: "Frightened" }) })
@@ -8058,10 +8231,10 @@ describe("dnd 5.5e srd rules", () => {
     expect(hornedDevilActor.data).toEqual(expect.objectContaining({ hp: { current: 199, max: 199 }, armorClass: 18, challengeRating: "11", xp: 7200 }));
     expect(dnd5eSrdSheet(hornedDevilActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-searing-fork-attack", label: "Searing Fork Attack", formula: "1d20+10" },
-        { id: "monster-searing-fork-damage", label: "Searing Fork Damage", formula: "2d8+6+2d8" },
-        { id: "monster-hurl-flame-attack", label: "Hurl Flame Attack", formula: "1d20+8" },
-        { id: "monster-hurl-flame-damage", label: "Hurl Flame Damage", formula: "5d8+4" },
+        expect.objectContaining({ id: "monster-searing-fork-attack", label: "Searing Fork Attack", formula: "1d20+10" }),
+        expect.objectContaining({ id: "monster-searing-fork-damage", label: "Searing Fork Damage", formula: "2d8+6+2d8" }),
+        expect.objectContaining({ id: "monster-hurl-flame-attack", label: "Hurl Flame Attack", formula: "1d20+8" }),
+        expect.objectContaining({ id: "monster-hurl-flame-damage", label: "Hurl Flame Damage", formula: "5d8+4" }),
         expect.objectContaining({ id: "monster-infernal-tail-damage", label: "Infernal Tail Damage", formula: "1d8+6", metadata: expect.objectContaining({ save: { ability: "dexterity", dc: 17 }, summary: expect.stringContaining("infernal wound") }) })
       ])
     );
@@ -8075,10 +8248,10 @@ describe("dnd 5.5e srd rules", () => {
     expect(iceDevilActor.data).toEqual(expect.objectContaining({ hp: { current: 228, max: 228 }, armorClass: 18, challengeRating: "14", xp: 11500 }));
     expect(dnd5eSrdSheet(iceDevilActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-ice-spear-attack", label: "Ice Spear Attack", formula: "1d20+10" },
+        expect.objectContaining({ id: "monster-ice-spear-attack", label: "Ice Spear Attack", formula: "1d20+10" }),
         expect.objectContaining({ id: "monster-ice-spear-damage", label: "Ice Spear Damage", formula: "2d8+5+3d6", metadata: expect.objectContaining({ summary: expect.stringContaining("can't take a Bonus Action") }) }),
-        { id: "monster-tail-attack", label: "Tail Attack", formula: "1d20+10" },
-        { id: "monster-tail-damage", label: "Tail Damage", formula: "3d6+5+4d8" },
+        expect.objectContaining({ id: "monster-tail-attack", label: "Tail Attack", formula: "1d20+10" }),
+        expect.objectContaining({ id: "monster-tail-damage", label: "Tail Damage", formula: "3d6+5+4d8" }),
         expect.objectContaining({ id: "monster-ice-wall-effect", label: "Ice Wall Effect", formula: "0", metadata: expect.objectContaining({ effects: expect.arrayContaining([expect.stringContaining("Wall of Ice")]) }) })
       ])
     );
@@ -8092,8 +8265,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(erinyesActor.data).toEqual(expect.objectContaining({ hp: { current: 178, max: 178 }, armorClass: 18, challengeRating: "12", xp: 8400 }));
     expect(dnd5eSrdSheet(erinyesActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-withering-sword-attack", label: "Withering Sword Attack", formula: "1d20+8" },
-        { id: "monster-withering-sword-damage", label: "Withering Sword Damage", formula: "2d8+4+2d10" },
+        expect.objectContaining({ id: "monster-withering-sword-attack", label: "Withering Sword Attack", formula: "1d20+8" }),
+        expect.objectContaining({ id: "monster-withering-sword-damage", label: "Withering Sword Damage", formula: "2d8+4+2d10" }),
         expect.objectContaining({ id: "monster-entangling-rope-damage", label: "Entangling Rope Damage", formula: "4d6", metadata: expect.objectContaining({ save: { ability: "strength", dc: 16 }, condition: "Restrained", summary: expect.stringContaining("Requires Magic Rope") }) }),
         expect.objectContaining({ id: "monster-parry-effect", label: "Parry Effect", formula: "0", metadata: expect.objectContaining({ summary: expect.stringContaining("Adds 4 AC") }) })
       ])
@@ -8108,7 +8281,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(couatlActor.data).toEqual(expect.objectContaining({ hp: { current: 60, max: 60 }, armorClass: 19, challengeRating: "4", xp: 1100 }));
     expect(dnd5eSrdSheet(couatlActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+7" },
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+7" }),
         expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1d12+5", metadata: expect.objectContaining({ condition: "Poisoned", summary: expect.stringContaining("couatl's next turn") }) }),
         expect.objectContaining({ id: "monster-constrict-damage", label: "Constrict Damage", formula: "1d6+5", metadata: expect.objectContaining({ save: { ability: "strength", dc: 15 }, condition: "Grappled/Restrained" }) }),
         expect.objectContaining({ id: "monster-spellcasting-effect", label: "Spellcasting Effect", formula: "0", metadata: expect.objectContaining({ summary: expect.stringContaining("spell save DC 15") }) }),
@@ -8125,8 +8298,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(devaActor.data).toEqual(expect.objectContaining({ hp: { current: 229, max: 229 }, armorClass: 17, challengeRating: "10", xp: 5900 }));
     expect(dnd5eSrdSheet(devaActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-holy-mace-attack", label: "Holy Mace Attack", formula: "1d20+8" },
-        { id: "monster-holy-mace-damage", label: "Holy Mace Damage", formula: "1d6+4+4d8" },
+        expect.objectContaining({ id: "monster-holy-mace-attack", label: "Holy Mace Attack", formula: "1d20+8" }),
+        expect.objectContaining({ id: "monster-holy-mace-damage", label: "Holy Mace Damage", formula: "1d6+4+4d8" }),
         expect.objectContaining({ id: "monster-spellcasting-effect", label: "Spellcasting Effect", formula: "0", metadata: expect.objectContaining({ summary: expect.stringContaining("spell save DC 17") }) }),
         expect.objectContaining({ id: "monster-divine-aid-effect", label: "Divine Aid Effect", formula: "0", metadata: expect.objectContaining({ summary: expect.stringContaining("Cure Wounds") }) })
       ])
@@ -8144,8 +8317,8 @@ describe("dnd 5.5e srd rules", () => {
     );
     expect(dnd5eSrdSheet(blackDragonWyrmlingActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+4" },
-        { id: "monster-rend-damage", label: "Rend Damage", formula: "1d6+2+1d4" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+4" }),
+        expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "1d6+2+1d4" }),
         expect.objectContaining({ id: "monster-acid-breath-damage", label: "Acid Breath Damage", formula: "5d8", metadata: expect.objectContaining({ damageType: "acid", save: { ability: "dexterity", dc: 11, success: "half" }, recharge: "5-6" }) })
       ])
     );
@@ -8159,8 +8332,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(youngBlackDragonActor.data).toEqual(expect.objectContaining({ hp: { current: 127, max: 127 }, armorClass: 18, challengeRating: "7", xp: 2900 }));
     expect(dnd5eSrdSheet(youngBlackDragonActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+7" },
-        { id: "monster-rend-damage", label: "Rend Damage", formula: "2d4+4+1d6" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+7" }),
+        expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "2d4+4+1d6" }),
         expect.objectContaining({ id: "monster-acid-breath-damage", label: "Acid Breath Damage", formula: "14d6", metadata: expect.objectContaining({ range: "30-foot line", save: { ability: "dexterity", dc: 14, success: "half" }, recharge: "5-6" }) })
       ])
     );
@@ -8177,8 +8350,8 @@ describe("dnd 5.5e srd rules", () => {
     );
     expect(dnd5eSrdSheet(adultBlackDragonActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+11" },
-        { id: "monster-rend-damage", label: "Rend Damage", formula: "2d6+6+1d8" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+11" }),
+        expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "2d6+6+1d8" }),
         expect.objectContaining({ id: "monster-acid-breath-damage", label: "Acid Breath Damage", formula: "12d8", metadata: expect.objectContaining({ range: "60-foot line", save: { ability: "dexterity", dc: 18, success: "half" }, recharge: "5-6" }) }),
         expect.objectContaining({ id: "monster-legendary-actions-effect", label: "Legendary Actions Effect", formula: "0", metadata: expect.objectContaining({ summary: expect.stringContaining("Cloud of Insects") }) })
       ])
@@ -8193,8 +8366,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(ancientBlackDragonActor.data).toEqual(expect.objectContaining({ hp: { current: 367, max: 367 }, armorClass: 22, challengeRating: "21", xp: 33000 }));
     expect(dnd5eSrdSheet(ancientBlackDragonActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+15" },
-        { id: "monster-rend-damage", label: "Rend Damage", formula: "2d8+8+2d8" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+15" }),
+        expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "2d8+8+2d8" }),
         expect.objectContaining({ id: "monster-acid-breath-damage", label: "Acid Breath Damage", formula: "15d8", metadata: expect.objectContaining({ range: "90-foot line", save: { ability: "dexterity", dc: 22, success: "half" }, recharge: "5-6" }) }),
         expect.objectContaining({ id: "monster-legendary-actions-effect", label: "Legendary Actions Effect", formula: "0", metadata: expect.objectContaining({ summary: expect.stringContaining("Pounce") }) })
       ])
@@ -8212,8 +8385,8 @@ describe("dnd 5.5e srd rules", () => {
     );
     expect(dnd5eSrdSheet(whiteDragonWyrmlingActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+4" },
-        { id: "monster-rend-damage", label: "Rend Damage", formula: "1d8+2+1d4" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+4" }),
+        expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "1d8+2+1d4" }),
         expect.objectContaining({ id: "monster-cold-breath-damage", label: "Cold Breath Damage", formula: "5d8", metadata: expect.objectContaining({ damageType: "cold", save: { ability: "constitution", dc: 12, success: "half" }, recharge: "5-6" }) })
       ])
     );
@@ -8227,8 +8400,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(youngWhiteDragonActor.data).toEqual(expect.objectContaining({ hp: { current: 123, max: 123 }, armorClass: 17, challengeRating: "6", xp: 2300 }));
     expect(dnd5eSrdSheet(youngWhiteDragonActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+7" },
-        { id: "monster-rend-damage", label: "Rend Damage", formula: "2d4+4+1d4" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+7" }),
+        expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "2d4+4+1d4" }),
         expect.objectContaining({ id: "monster-cold-breath-damage", label: "Cold Breath Damage", formula: "9d8", metadata: expect.objectContaining({ save: { ability: "constitution", dc: 15, success: "half" }, recharge: "5-6" }) })
       ])
     );
@@ -8245,8 +8418,8 @@ describe("dnd 5.5e srd rules", () => {
     );
     expect(dnd5eSrdSheet(adultWhiteDragonActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+11" },
-        { id: "monster-rend-damage", label: "Rend Damage", formula: "2d6+6+1d8" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+11" }),
+        expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "2d6+6+1d8" }),
         expect.objectContaining({ id: "monster-cold-breath-damage", label: "Cold Breath Damage", formula: "12d8", metadata: expect.objectContaining({ range: "60-foot cone", save: { ability: "constitution", dc: 19, success: "half" }, recharge: "5-6" }) }),
         expect.objectContaining({ id: "monster-legendary-actions-effect", label: "Legendary Actions Effect", formula: "0", metadata: expect.objectContaining({ summary: expect.stringContaining("Freezing Burst") }) })
       ])
@@ -8261,8 +8434,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(ancientWhiteDragonActor.data).toEqual(expect.objectContaining({ hp: { current: 333, max: 333 }, armorClass: 20, challengeRating: "20", xp: 25000 }));
     expect(dnd5eSrdSheet(ancientWhiteDragonActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+14" },
-        { id: "monster-rend-damage", label: "Rend Damage", formula: "2d8+8+2d6" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+14" }),
+        expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "2d8+8+2d6" }),
         expect.objectContaining({ id: "monster-cold-breath-damage", label: "Cold Breath Damage", formula: "14d8", metadata: expect.objectContaining({ range: "90-foot cone", save: { ability: "constitution", dc: 22, success: "half" }, recharge: "5-6" }) }),
         expect.objectContaining({ id: "monster-legendary-actions-effect", label: "Legendary Actions Effect", formula: "0", metadata: expect.objectContaining({ summary: expect.stringContaining("Pounce") }) })
       ])
@@ -8277,8 +8450,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(youngRedDragonActor.data).toEqual(expect.objectContaining({ hp: { current: 178, max: 178 }, armorClass: 18, challengeRating: "10", xp: 5900 }));
     expect(dnd5eSrdSheet(youngRedDragonActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+10" },
-        { id: "monster-rend-damage", label: "Rend Damage", formula: "2d6+6+1d6" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+10" }),
+        expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "2d6+6+1d6" }),
         expect.objectContaining({
           id: "monster-fire-breath-damage",
           label: "Fire Breath Damage",
@@ -8306,8 +8479,8 @@ describe("dnd 5.5e srd rules", () => {
     );
     expect(dnd5eSrdSheet(adultRedDragonActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+14" },
-        { id: "monster-rend-damage", label: "Rend Damage", formula: "1d10+8+2d4" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+14" }),
+        expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "1d10+8+2d4" }),
         expect.objectContaining({
           id: "monster-fire-breath-damage",
           label: "Fire Breath Damage",
@@ -8335,8 +8508,8 @@ describe("dnd 5.5e srd rules", () => {
     );
     expect(dnd5eSrdSheet(remorhazActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+11" },
-        { id: "monster-bite-damage", label: "Bite Damage", formula: "2d10+7+4d6" },
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+11" }),
+        expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "2d10+7+4d6" }),
         expect.objectContaining({
           id: "monster-swallow-damage",
           label: "Swallow Damage",
@@ -8363,10 +8536,10 @@ describe("dnd 5.5e srd rules", () => {
     );
     expect(dnd5eSrdSheet(purpleWormActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+14" },
-        { id: "monster-bite-damage", label: "Bite Damage", formula: "3d8+9" },
-        { id: "monster-tail-stinger-attack", label: "Tail Stinger Attack", formula: "1d20+14" },
-        { id: "monster-tail-stinger-damage", label: "Tail Stinger Damage", formula: "2d6+9+10d6" },
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+14" }),
+        expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "3d8+9" }),
+        expect.objectContaining({ id: "monster-tail-stinger-attack", label: "Tail Stinger Attack", formula: "1d20+14" }),
+        expect.objectContaining({ id: "monster-tail-stinger-damage", label: "Tail Stinger Damage", formula: "2d6+9+10d6" }),
         expect.objectContaining({
           id: "monster-swallow-damage",
           label: "Swallow Damage",
@@ -8394,10 +8567,10 @@ describe("dnd 5.5e srd rules", () => {
     );
     expect(dnd5eSrdSheet(mummyLordActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rotting-fist-attack", label: "Rotting Fist Attack", formula: "1d20+9" },
-        { id: "monster-rotting-fist-damage", label: "Rotting Fist Damage", formula: "2d10+4+3d6" },
-        { id: "monster-channel-negative-energy-attack", label: "Channel Negative Energy Attack", formula: "1d20+9" },
-        { id: "monster-channel-negative-energy-damage", label: "Channel Negative Energy Damage", formula: "6d6+4" },
+        expect.objectContaining({ id: "monster-rotting-fist-attack", label: "Rotting Fist Attack", formula: "1d20+9" }),
+        expect.objectContaining({ id: "monster-rotting-fist-damage", label: "Rotting Fist Damage", formula: "2d10+4+3d6" }),
+        expect.objectContaining({ id: "monster-channel-negative-energy-attack", label: "Channel Negative Energy Attack", formula: "1d20+9" }),
+        expect.objectContaining({ id: "monster-channel-negative-energy-damage", label: "Channel Negative Energy Damage", formula: "6d6+4" }),
         expect.objectContaining({
           id: "monster-dreadful-glare-damage",
           label: "Dreadful Glare Damage",
@@ -8426,14 +8599,14 @@ describe("dnd 5.5e srd rules", () => {
     );
     expect(dnd5eSrdSheet(lichActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-paralyzing-touch-attack", label: "Paralyzing Touch Attack", formula: "1d20+12" },
+        expect.objectContaining({ id: "monster-paralyzing-touch-attack", label: "Paralyzing Touch Attack", formula: "1d20+12" }),
         expect.objectContaining({
           id: "monster-paralyzing-touch-damage",
           label: "Paralyzing Touch Damage",
           formula: "3d6+5",
           metadata: expect.objectContaining({ action: "action", range: "reach 5 ft.", damageType: "cold", condition: "Paralyzed" })
         }),
-        { id: "monster-deathly-teleport-damage", label: "Deathly Teleport Damage", formula: "2d10" },
+        expect.objectContaining({ id: "monster-deathly-teleport-damage", label: "Deathly Teleport Damage", formula: "2d10", metadata: expect.objectContaining({ action: "action" }) }),
         expect.objectContaining({
           id: "monster-disrupt-life-damage",
           label: "Disrupt Life Damage",
@@ -8497,7 +8670,7 @@ describe("dnd 5.5e srd rules", () => {
     );
     expect(dnd5eSrdSheet(vampireActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-grave-strike-attack", label: "Grave Strike Attack", formula: "1d20+9" },
+        expect.objectContaining({ id: "monster-grave-strike-attack", label: "Grave Strike Attack", formula: "1d20+9" }),
         expect.objectContaining({
           id: "monster-grave-strike-damage",
           label: "Grave Strike Damage",
@@ -8533,12 +8706,12 @@ describe("dnd 5.5e srd rules", () => {
     );
     expect(dnd5eSrdSheet(medusaActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+6" },
-        { id: "monster-claw-damage", label: "Claw Damage", formula: "2d6+3" },
-        { id: "monster-snake-hair-attack", label: "Snake Hair Attack", formula: "1d20+6" },
-        { id: "monster-snake-hair-damage", label: "Snake Hair Damage", formula: "1d4+3+4d6" },
-        { id: "monster-poison-ray-attack", label: "Poison Ray Attack", formula: "1d20+5" },
-        { id: "monster-poison-ray-damage", label: "Poison Ray Damage", formula: "2d8+2" },
+        expect.objectContaining({ id: "monster-claw-attack", label: "Claw Attack", formula: "1d20+6" }),
+        expect.objectContaining({ id: "monster-claw-damage", label: "Claw Damage", formula: "2d6+3" }),
+        expect.objectContaining({ id: "monster-snake-hair-attack", label: "Snake Hair Attack", formula: "1d20+6" }),
+        expect.objectContaining({ id: "monster-snake-hair-damage", label: "Snake Hair Damage", formula: "1d4+3+4d6" }),
+        expect.objectContaining({ id: "monster-poison-ray-attack", label: "Poison Ray Attack", formula: "1d20+5" }),
+        expect.objectContaining({ id: "monster-poison-ray-damage", label: "Poison Ray Damage", formula: "2d8+2" }),
         expect.objectContaining({
           id: "monster-petrifying-gaze-effect",
           label: "Petrifying Gaze Effect",
@@ -8569,8 +8742,8 @@ describe("dnd 5.5e srd rules", () => {
     );
     expect(dnd5eSrdSheet(hydraActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+8" },
-        { id: "monster-bite-damage", label: "Bite Damage", formula: "1d10+5" }
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+8" }),
+        expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1d10+5" })
       ])
     );
     expect(dnd5eSrdActionFormula(hydraActor, [], "monster-bite-damage")).toBe("1d10+5");
@@ -8586,9 +8759,9 @@ describe("dnd 5.5e srd rules", () => {
     );
     expect(dnd5eSrdSheet(wyvernActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+7" },
-        { id: "monster-bite-damage", label: "Bite Damage", formula: "2d8+4" },
-        { id: "monster-sting-attack", label: "Sting Attack", formula: "1d20+7" },
+        expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+7" }),
+        expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "2d8+4" }),
+        expect.objectContaining({ id: "monster-sting-attack", label: "Sting Attack", formula: "1d20+7" }),
         expect.objectContaining({
           id: "monster-sting-damage",
           label: "Sting Damage",
@@ -8611,8 +8784,8 @@ describe("dnd 5.5e srd rules", () => {
     );
     expect(dnd5eSrdSheet(ancientRedDragonActor, []).quickRolls).toEqual(
       expect.arrayContaining([
-        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+17" },
-        { id: "monster-rend-damage", label: "Rend Damage", formula: "2d8+10+3d6" },
+        expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+17" }),
+        expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "2d8+10+3d6" }),
         expect.objectContaining({
           id: "monster-fire-breath-damage",
           label: "Fire Breath Damage",
@@ -9404,18 +9577,7 @@ describe("dnd 5.5e srd rules", () => {
         "feature-action-surge"
       )
     ).toThrow("Insufficient action surge");
-    expect(useDnd5eSrdAction(levelTwoFighterActor, [], "feature-tactical-mind-bonus")).toEqual(
-      expect.objectContaining({
-        systemId: "dnd-5e-srd",
-        consumed: [{ type: "resource", key: "secondWind", label: "Second Wind", amount: 1, remaining: 1 }],
-        data: expect.objectContaining({
-          resources: {
-            secondWind: { current: 1, max: 2, recovery: "short" },
-            actionSurge: { current: 1, max: 1, recovery: "short" }
-          }
-        })
-      })
-    );
+    expect(() => useDnd5eSrdAction(levelTwoFighterActor, [], "feature-tactical-mind-bonus")).toThrow("Tactical Mind requires a server-owned failed ability check");
     expect(applyDnd5eSrdRest({ ...fighterActor, data: { ...fighterActor.data, resources: { secondWind: { current: 0, max: 2, recovery: "short" } } } }, "short")).toEqual(
       expect.objectContaining({
         recovered: expect.objectContaining({ resources: expect.objectContaining({ secondWind: 1 }) }),
@@ -9481,6 +9643,29 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdSheet({ ...srdActor, data: exhausted }, []).conditions).toContainEqual(expect.objectContaining({ id: "exhaustion", level: 2 }));
     const exhaustedAgain = applyDnd5eSrdCondition({ ...srdActor, data: exhausted }, "exhaustion", "2026-05-02T00:03:00.000Z");
     expect(exhaustedAgain.conditions).toEqual([{ id: "exhaustion", appliedAt: "2026-05-02T00:03:00.000Z", level: 3 }]);
+    const exhaustionDeath = applyDnd5eSrdCondition({
+      ...srdActor,
+      data: {
+        ...srdActor.data,
+        hp: { current: 12, max: 12 },
+        conditions: [{ id: "poisoned", appliedAt: "2026-05-01T12:00:00.000Z" }, { id: "unconscious" }, { id: "exhaustion", appliedAt: "2026-05-02T00:03:00.000Z", level: 5 }],
+        deathSaves: { successes: 2, failures: 1 },
+        lifeState: "unconscious",
+        defeated: false,
+      },
+    }, "exhaustion", "2026-05-02T00:04:00.000Z");
+    expect(exhaustionDeath).toMatchObject({
+      hp: { current: 12, max: 12 },
+      conditions: [
+        { id: "poisoned", appliedAt: "2026-05-01T12:00:00.000Z" },
+        { id: "exhaustion", appliedAt: "2026-05-02T00:04:00.000Z", level: 6 },
+        { id: "dead", appliedAt: "2026-05-02T00:04:00.000Z" },
+      ],
+      deathSaves: { successes: 0, failures: 3 },
+      lifeState: "dead",
+      defeated: true,
+    });
+    expect(() => applyDnd5eSrdRest({ ...srdActor, data: exhaustionDeath }, "long")).toThrow(/dead creature/);
 
     const imported = dnd5eSrdCharacterImport({
       name: "Imported SRD Cleric",
@@ -9574,6 +9759,25 @@ describe("dnd 5.5e srd rules", () => {
       })
     );
 
+    const deadTarget: Actor = { ...target, id: "act_rules_dead", name: "Dead Target", data: { ...target.data, hp: { current: 0, max: 12 }, conditions: [{ id: "dead" }], deathSaves: { successes: 0, failures: 3 }, lifeState: "dead", defeated: true } };
+    const ordinaryHealing = resolveDnd5eSrdAction({
+      actor: attacker,
+      roll: { id: "test-healing", label: "Test Healing", formula: "1d8", metadata: { effectType: "healing" } },
+      targets: [{ actor: deadTarget, rollTotal: 6 }],
+      options: { applyEffect: true }
+    });
+    expect(ordinaryHealing.effects).toContainEqual(expect.objectContaining({ targetActorId: deadTarget.id, amount: 0, before: 0, after: 0 }));
+    expect(ordinaryHealing.actorUpdates).not.toContainEqual(expect.objectContaining({ actorId: deadTarget.id }));
+
+    const revival = resolveDnd5eSrdAction({
+      actor: attacker,
+      roll: { id: "test-revival-healing", label: "Test Revival Healing", formula: "0", metadata: { effectType: "healing", revivesDead: true, reviveHitPoints: 1 } },
+      targets: [{ actor: deadTarget, rollTotal: 0 }],
+      options: { applyEffect: true }
+    });
+    expect(revival.effects).toContainEqual(expect.objectContaining({ targetActorId: deadTarget.id, amount: 1, before: 0, after: 1 }));
+    expect(revival.actorUpdates).toContainEqual(expect.objectContaining({ actorId: deadTarget.id, after: expect.objectContaining({ hp: { current: 1, max: 12 }, lifeState: "conscious", defeated: false }) }));
+
     const stunned = resolveDnd5eSrdAction({ actor: { ...attacker, data: { ...attacker.data, conditions: [{ id: "stunned" }] } }, items: [shortbow], roll: shortbowAttack });
     expect(stunned.blocked).toEqual(expect.objectContaining({ code: "action_blocked", reason: expect.stringContaining("Stunned") }));
 
@@ -9645,7 +9849,7 @@ describe("dnd 5.5e srd rules", () => {
       items: [wand],
       roll: paralysisRoll,
       targets: [{ actor: target }],
-      combat: { id: "cmb_rules", campaignId: "camp_demo", active: true, round: 3, turnIndex: 0, combatants: [{ id: "cmbt_rules", tokenId: "tok_rules", actorId: wandActor.id, name: wandActor.name, initiative: 20, defeated: false }], createdAt: "2026-05-01T00:00:00.000Z", updatedAt: "2026-05-01T00:00:00.000Z" },
+      combat: { id: "cmb_rules", campaignId: "camp_demo", active: true, round: 3, turnIndex: 0, combatants: [{ id: "cmbt_rules", tokenId: "tok_rules", actorId: wandActor.id, name: wandActor.name, initiative: 20, defeated: false }, { id: "cmbt_rules_target", tokenId: "tok_rules_target", actorId: target.id, name: target.name, initiative: 10, defeated: false }], createdAt: "2026-05-01T00:00:00.000Z", updatedAt: "2026-05-01T00:00:00.000Z" },
       options: { applyEffect: true, saveOutcomes: { [target.id]: "failure" } },
       now: "2026-05-02T00:00:02.000Z"
     });
@@ -9654,7 +9858,21 @@ describe("dnd 5.5e srd rules", () => {
     expect(paralysis.effects).toContainEqual(expect.objectContaining({ type: "condition", targetActorId: target.id, conditionId: "paralyzed" }));
     expect(paralysis.actorUpdates.find((update) => update.actorId === target.id)?.after.rulesEngine).toEqual(
       expect.objectContaining({
-        activeEffects: expect.arrayContaining([expect.objectContaining({ rollId: "item-itm_rules_wand-effect", conditionIds: ["paralyzed"], durationRounds: 10, repeatSave: "end of each turn" })])
+        activeEffects: expect.arrayContaining([expect.objectContaining({
+          rollId: "item-itm_rules_wand-effect",
+          conditionIds: ["paralyzed"],
+          durationRounds: 10,
+          repeatSave: "end of each turn",
+          managedLifecycle: "end-turn-repeat-save-v1",
+          schedule: {
+            timing: "end_turn",
+            anchorActorId: target.id,
+            nextRound: 3,
+            intervalRounds: 1,
+            expiresAtRound: 13,
+            repeatSave: { ability: "constitution", dc: 15, endsOn: "success" }
+          }
+        })])
       })
     );
     expect(paralysis.actorUpdates.find((update) => update.actorId === target.id)?.after.conditions).toEqual(expect.arrayContaining([expect.objectContaining({ id: "paralyzed" })]));

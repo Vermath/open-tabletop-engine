@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800" role="img" aria-labelledby="title desc">
+  <title id="title">Smuggler Drain battle map</title>
+  <desc id="desc">A damp stone drain with two walkways, dark water channels, plank crossings, grates, ladders, and hidden-cargo alcoves.</desc>
+  <defs>
+    <pattern id="stone" width="100" height="50" patternUnits="userSpaceOnUse">
+      <rect width="100" height="50" fill="#556563"/>
+      <path d="M0 0h100M0 50h100M50 0v25M0 25h50M100 25H50" stroke="#263b3a" stroke-width="3" opacity=".55"/>
+    </pattern>
+    <pattern id="water" width="120" height="40" patternUnits="userSpaceOnUse">
+      <rect width="120" height="40" fill="#163f45"/>
+      <path d="M0 12q30-16 60 0t60 0M0 30q30-16 60 0t60 0" fill="none" stroke="#2b7980" stroke-width="5" opacity=".6"/>
+    </pattern>
+    <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
+      <path d="M50 0H0v50" fill="none" stroke="#d5ece8" stroke-width="2" opacity=".26"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="800" fill="#172522"/>
+  <rect x="55" y="55" width="1090" height="690" rx="35" fill="url(#stone)" stroke="#0e1716" stroke-width="34"/>
+  <path d="M250 55v690M950 55v690" stroke="#273432" stroke-width="16"/>
+  <rect x="350" y="55" width="500" height="690" fill="url(#water)" stroke="#0c282c" stroke-width="14"/>
+  <rect x="70" y="85" width="280" height="630" fill="url(#stone)"/>
+  <rect x="850" y="85" width="280" height="630" fill="url(#stone)"/>
+
+  <g fill="#7d5c36" stroke="#35291c" stroke-width="8">
+    <rect x="330" y="120" width="540" height="62" rx="5"/>
+    <path d="M370 120v62m60-62v62m60-62v62m60-62v62m60-62v62m60-62v62m60-62v62m60-62v62m60-62v62"/>
+    <rect x="330" y="595" width="540" height="62" rx="5"/>
+    <path d="M370 595v62m60-62v62m60-62v62m60-62v62m60-62v62m60-62v62m60-62v62m60-62v62m60-62v62"/>
+  </g>
+
+  <g transform="translate(600 385)" stroke="#122426" stroke-width="10">
+    <circle r="130" fill="#214f52"/>
+    <circle r="88" fill="#0d262b"/>
+    <path d="M-75-55l150 110M75-55L-75 55M-95 0h190M0-95v190" stroke="#526c69" stroke-width="18"/>
+    <circle r="115" fill="none" stroke="#81938d" stroke-width="12"/>
+  </g>
+
+  <g fill="#8c6841" stroke="#30251b" stroke-width="7">
+    <rect x="105" y="165" width="72" height="58"/>
+    <path d="M105 165l72 58m0-58l-72 58"/>
+    <rect x="190" y="195" width="72" height="58"/>
+    <path d="M190 195l72 58m0-58l-72 58"/>
+    <rect x="930" y="500" width="72" height="58"/>
+    <path d="M930 500l72 58m0-58l-72 58"/>
+    <rect x="1010" y="525" width="72" height="58"/>
+    <path d="M1010 525l72 58m0-58l-72 58"/>
+  </g>
+
+  <g stroke="#b9c3b8" stroke-width="10" fill="none">
+    <path d="M90 610h145M90 635h145M105 585v80m35-80v80m35-80v80m35-80v80"/>
+    <path d="M965 135h145M965 160h145M980 110v80m35-80v80m35-80v80m35-80v80"/>
+  </g>
+  <g fill="#6f9f62" opacity=".75">
+    <circle cx="385" cy="290" r="17"/><circle cx="420" cy="320" r="11"/><circle cx="820" cy="450" r="16"/>
+    <circle cx="785" cy="485" r="10"/><circle cx="520" cy="690" r="13"/><circle cx="665" cy="90" r="12"/>
+  </g>
+  <rect width="1200" height="800" fill="url(#grid)" pointer-events="none"/>
+</svg>

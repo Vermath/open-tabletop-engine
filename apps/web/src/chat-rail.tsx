@@ -47,9 +47,20 @@ export function diceFormulaRangeLabel(formula: string): string {
   return range ? `Possible total: ${formatNumber(range.min)} to ${formatNumber(range.max)}` : "Range unavailable: check the notation or use a bounded formula.";
 }
 
+export function chatStreamIsNearBottom(input: Pick<HTMLElement, "clientHeight" | "scrollHeight" | "scrollTop">, threshold = 32): boolean {
+  return input.scrollHeight - input.scrollTop - input.clientHeight <= threshold;
+}
+
 export function ChatRail(props: ChatRailProps) {
+  return <CampaignChatRail key={props.campaignId} {...props} />;
+}
+
+function CampaignChatRail(props: ChatRailProps) {
   const streamRef = useRef<HTMLDivElement>(null);
+  const previousMessageCountRef = useRef(props.messages.length);
   const [diceActionStatus, setDiceActionStatus] = useState("");
+  const [followingLatest, setFollowingLatest] = useState(true);
+  const [unseenMessageCount, setUnseenMessageCount] = useState(0);
   const memberNames = new Map(props.members.map((member) => [member.user.id, member.user.displayName]));
   const messageById = new Map(props.messages.map((message) => [message.id, message]));
   const rollById = new Map(props.rolls.map((roll) => [roll.id, roll]));
@@ -57,8 +68,24 @@ export function ChatRail(props: ChatRailProps) {
   const savedFormulaOptions = [...props.diceMacros.map((macro) => ({ label: macro.name === macro.formula ? macro.formula : `${macro.name} - ${macro.formula}`, formula: macro.formula })), ...props.savedDiceFormulas.map((formula) => ({ label: formula, formula }))].filter((option, index, options) => options.findIndex((item) => item.formula === option.formula) === index);
 
   useEffect(() => {
-    streamRef.current?.scrollTo({ top: streamRef.current.scrollHeight });
-  }, [props.messages.length]);
+    const stream = streamRef.current;
+    const added = Math.max(0, props.messages.length - previousMessageCountRef.current);
+    previousMessageCountRef.current = props.messages.length;
+    if (!stream) return;
+    if (followingLatest) {
+      stream.scrollTo({ top: stream.scrollHeight });
+      setUnseenMessageCount(0);
+    } else if (added > 0) {
+      setUnseenMessageCount((count) => count + added);
+    }
+  }, [followingLatest, props.messages.length]);
+
+  const jumpToLatest = () => {
+    const stream = streamRef.current;
+    if (stream) stream.scrollTo({ top: stream.scrollHeight, behavior: "smooth" });
+    setFollowingLatest(true);
+    setUnseenMessageCount(0);
+  };
 
   const runDiceAction = async (pending: string, action: () => Promise<void>) => {
     setDiceActionStatus(pending);
@@ -142,7 +169,11 @@ export function ChatRail(props: ChatRailProps) {
         </div>
         {diceActionStatus && <p className="chat-action-status chat-dice-status" role="alert">{diceActionStatus}</p>}
       </form>
-      <div className="chat-rail-stream" aria-label="Chat messages" ref={streamRef}>
+      <div className="chat-rail-stream" aria-label="Chat messages" ref={streamRef} onScroll={(event) => {
+        const follows = chatStreamIsNearBottom(event.currentTarget);
+        setFollowingLatest(follows);
+        if (follows) setUnseenMessageCount(0);
+      }}>
         {props.messages.length === 0 ? (
           <div className="empty-state compact">No messages yet.</div>
         ) : (
@@ -151,6 +182,11 @@ export function ChatRail(props: ChatRailProps) {
           ))
         )}
       </div>
+      {unseenMessageCount > 0 && (
+        <button className="ghost-button chat-jump-latest" type="button" onClick={jumpToLatest}>
+          <ChevronDown size={14} /> {formatNumber(unseenMessageCount)} new {unseenMessageCount === 1 ? "message" : "messages"} - jump to latest
+        </button>
+      )}
       <ChatComposer command={props.command} setCommand={props.setCommand} replyTarget={props.replyTarget} onSubmitCommand={props.onSubmitCommand} onClearReply={props.onClearReply} />
     </section>
   );

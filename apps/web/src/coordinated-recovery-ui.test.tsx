@@ -5,52 +5,76 @@ import type { AdminSnapshot } from "./api.js";
 
 const noop = async () => {};
 
-describe("coordinated recovery admin surface", () => {
-  it("shows exact provider-snapshot pairing and preserves an explicit unpaired warning", () => {
-    const html = renderToStaticMarkup(
-      <AdminPanel
-        admin={adminSnapshot()}
-        campaigns={[]}
-        systems={[]}
-        organizationMembers={[]}
-        currentUserId="usr_admin"
-        workspaceKey="recovery-test"
-        status="ready"
-        onRefresh={noop}
-        onDisableUser={noop}
-        onEnableUser={noop}
-        onRequireReset={noop}
-        onIssueReset={noop}
-        onRevokeUserSessions={noop}
-        onRevokeSession={noop}
-        onRevokeRiskSessions={noop}
-        onPruneExpiredPasswordResets={noop}
-        onRetryEmail={noop}
-        onRetryAllEmails={noop}
-        onRetryAiToolCall={noop}
-        onFailStaleAiThreads={noop}
-        onFailStaleAiToolCalls={noop}
-        onRejectStaleAiProposals={noop}
-        onCleanupStoredAssetBytes={noop}
-        onMigrateStoredAssetBytes={noop}
-        onQuarantineAssetIntegrityFailures={noop}
-        onPurgeAssetCdnCache={noop}
-        onUpdatePluginReview={noop}
-        onSyncPluginRegistries={noop}
-        onUpdateWorkspaceDefaults={noop}
-        onAddOrganizationMember={noop}
-        onUpdateOrganizationMember={noop}
-        onRemoveOrganizationMember={noop}
-        onCreateScimMapping={noop}
-        onDeleteScimMapping={noop}
-      />
-    );
+function renderAdmin(admin: AdminSnapshot, workspaceKey: string): string {
+  return renderToStaticMarkup(
+    <AdminPanel
+      admin={admin}
+      campaigns={[]}
+      systems={[]}
+      organizationMembers={[]}
+      currentUserId="usr_admin"
+      workspaceKey={workspaceKey}
+      status="ready"
+      onRefresh={noop}
+      onDisableUser={noop}
+      onEnableUser={noop}
+      onRequireReset={noop}
+      onIssueReset={noop}
+      onRevokeUserSessions={noop}
+      onRevokeSession={noop}
+      onRevokeRiskSessions={noop}
+      onPruneExpiredPasswordResets={noop}
+      onRetryEmail={noop}
+      onRetryAllEmails={noop}
+      onRetryAiToolCall={noop}
+      onFailStaleAiThreads={noop}
+      onFailStaleAiToolCalls={noop}
+      onRejectStaleAiProposals={noop}
+      onCleanupStoredAssetBytes={noop}
+      onMigrateStoredAssetBytes={noop}
+      onQuarantineAssetIntegrityFailures={noop}
+      onPurgeAssetCdnCache={noop}
+      onUpdatePluginReview={noop}
+      onSyncPluginRegistries={noop}
+      onUpdateWorkspaceDefaults={noop}
+      onAddOrganizationMember={noop}
+      onUpdateOrganizationMember={noop}
+      onRemoveOrganizationMember={noop}
+      onCreateScimMapping={noop}
+      onDeleteScimMapping={noop}
+    />
+  );
+}
 
-    expect(html).toContain("Asset snapshot ID");
-    expect(html).toContain("Asset snapshot created at");
-    expect(html).toContain("The API records and validates the pair; it never creates provider snapshots.");
-    expect(html).toContain("database-only or unpaired recovery point");
-    expect(html).toContain("Restore that provider snapshot separately");
+describe("coordinated recovery admin surface", () => {
+  it("shows exact app-managed snapshot pairing and keeps unpaired legacy backups unrestorable", () => {
+    const paired = adminSnapshot();
+    paired.storageOperations!.actionRequired = false;
+    paired.storageOperations!.actionReasons = [];
+    paired.storageOperations!.backups!.latest!.recoveryPoint = {
+      manifestFileName: "opentabletop-paired.sqlite.recovery.json",
+      manifestStatus: "present",
+      paired: true,
+      actionRequired: false,
+      actionReasons: [],
+      manifest: {
+        kind: "open-tabletop-recovery-point",
+        version: 1,
+        createdAt: "2026-07-17T12:00:00.000Z",
+        database: { fileName: "opentabletop-paired.sqlite", sizeBytes: 4096, checksumAlgorithm: "sha256", checksum: "a".repeat(64) },
+        assetInventory: { provider: "local", assetCount: 2, objectCount: 2, sizeBytes: 512, digestAlgorithm: "sha256", digest: "b".repeat(64) },
+        assetSnapshot: { provider: "local", snapshotId: `sha256:${"c".repeat(64)}`, createdAt: "2026-07-17T12:00:00.000Z" },
+      },
+    };
+    const pairedHtml = renderAdmin(paired, "recovery-paired");
+    const unpairedHtml = renderAdmin(adminSnapshot(), "recovery-unpaired");
+
+    expect(pairedHtml).toContain("Paired asset snapshot");
+    expect(pairedHtml).toContain(`local:sha256:${"c".repeat(64)}`);
+    expect(pairedHtml).toContain("exact app-managed asset snapshot as one verified recovery point");
+    expect(unpairedHtml).toContain("database-only or unpaired recovery point");
+    expect(unpairedHtml).toMatch(/<button[^>]*disabled=""[^>]*>[\s\S]*?Restore Backup/);
+    expect(unpairedHtml).not.toContain("Restore that provider snapshot separately");
   });
 
   it("shows bounded hosted metrics and directs failures to the runbook", () => {
@@ -65,44 +89,7 @@ describe("coordinated recovery admin surface", () => {
       totalEligibleTerminalRecords: 15,
       exemptions: ["canonical_campaign_state", "audit_logs", "active_idempotency", "failed_or_retryable_operations", "archive_import_recovery"],
     };
-    const html = renderToStaticMarkup(
-      <AdminPanel
-        admin={snapshot}
-        campaigns={[]}
-        systems={[]}
-        organizationMembers={[]}
-        currentUserId="usr_admin"
-        workspaceKey="operations-test"
-        status="ready"
-        onRefresh={noop}
-        onDisableUser={noop}
-        onEnableUser={noop}
-        onRequireReset={noop}
-        onIssueReset={noop}
-        onRevokeUserSessions={noop}
-        onRevokeSession={noop}
-        onRevokeRiskSessions={noop}
-        onPruneExpiredPasswordResets={noop}
-        onRetryEmail={noop}
-        onRetryAllEmails={noop}
-        onRetryAiToolCall={noop}
-        onFailStaleAiThreads={noop}
-        onFailStaleAiToolCalls={noop}
-        onRejectStaleAiProposals={noop}
-        onCleanupStoredAssetBytes={noop}
-        onMigrateStoredAssetBytes={noop}
-        onQuarantineAssetIntegrityFailures={noop}
-        onPurgeAssetCdnCache={noop}
-        onUpdatePluginReview={noop}
-        onSyncPluginRegistries={noop}
-        onUpdateWorkspaceDefaults={noop}
-        onAddOrganizationMember={noop}
-        onUpdateOrganizationMember={noop}
-        onRemoveOrganizationMember={noop}
-        onCreateScimMapping={noop}
-        onDeleteScimMapping={noop}
-      />
-    );
+    const html = renderAdmin(snapshot, "operations-test");
 
     expect(html).toContain("Hosted Operations");
     expect(html).toContain("privacy-safe dimensions");

@@ -99,6 +99,7 @@ export async function downloadCampaignArchiveStream(options: {
     const response = await (options.fetcher ?? fetch)(options.url, {
       method: "GET",
       headers: options.token ? { authorization: `Bearer ${options.token}` } : undefined,
+      credentials: "include",
       signal: options.signal,
     });
     if (!response.ok) {
@@ -155,6 +156,7 @@ export function uploadCampaignArchiveStream<Result>(options: {
       return;
     }
     const xhr = (options.xhrFactory ?? (() => new XMLHttpRequest()))();
+    xhr.withCredentials = true;
     let settled = false;
     const settle = (callback: () => void) => {
       if (settled) return;

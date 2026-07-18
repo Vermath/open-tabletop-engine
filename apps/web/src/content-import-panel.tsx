@@ -44,6 +44,7 @@ export function ContentImportPanel(props: {
   onRollback(batch: ContentImportBatch): Promise<void>;
   onDelete(batch: ContentImportBatch): Promise<void>;
   canManage: boolean;
+  canProposeAiChanges: boolean;
   canCreateAsset: boolean;
   canUpdateScene: boolean;
   canCreateToken: boolean;
@@ -59,6 +60,10 @@ export function ContentImportPanel(props: {
   const [adapterSourceUrl, setAdapterSourceUrl] = useState("");
   const [adapterConfig, setAdapterConfig] = useState("columns=name,body;delimiter=,;kind=item");
   const [pdfFile, setPdfFile] = useState<File | undefined>();
+  const canAnalyzePdf = props.canManage && props.canProposeAiChanges;
+  const pdfImportDisabledReason = props.canManage
+    ? "Codex PDF analysis requires ai.proposeChanges permission."
+    : "Codex PDF analysis requires campaign.update permission.";
   const action = useRetryableAction(props.selectedScene?.campaignId);
   const assetFolderOptions = useMemo(
     () => [...new Set(props.assets.flatMap((asset) => assetFolderPathOptions(asset.folder)))].sort((left, right) => left.localeCompare(right)),
@@ -179,7 +184,7 @@ export function ContentImportPanel(props: {
             <button className="primary-button" type="button" aria-label="Upload Asset" disabled={!props.canCreateAsset} title={props.canCreateAsset ? "Upload an asset" : "Requires scene.create"} onClick={() => document.getElementById(uploadInputId)?.click()}>
               <Upload size={16} /> Upload
             </button>
-            <button className="ghost-button" type="button" aria-label="Upload Background" disabled={!props.canCreateAsset || !props.canUpdateScene || !props.selectedScene} title={props.selectedScene ? "Upload and set as current scene background" : "Select a scene first"} onClick={() => document.getElementById(backgroundInputId)?.click()}>
+            <button className="ghost-button" type="button" aria-label={props.selectedScene ? `Upload background for ${props.selectedScene.name}` : "Upload Background"} disabled={!props.canCreateAsset || !props.canUpdateScene || !props.selectedScene} title={props.selectedScene ? `Upload and set as ${props.selectedScene.name} background` : "Select a scene first"} onClick={() => document.getElementById(backgroundInputId)?.click()}>
               <ImageIcon size={16} /> Background
             </button>
           </div>
@@ -395,9 +400,12 @@ export function ContentImportPanel(props: {
           }}
         />
         <input
+          key={`${backgroundInputId}:${props.selectedScene?.id ?? "none"}`}
           id={backgroundInputId}
           type="file"
-          aria-label="Upload background file"
+          aria-label={props.selectedScene ? `Upload background file for ${props.selectedScene.name}` : "Upload background file"}
+          data-scene-id={props.selectedScene?.id}
+          disabled={!props.canCreateAsset || !props.canUpdateScene || !props.selectedScene}
           accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
           hidden
           onChange={(event) => {
@@ -603,6 +611,7 @@ export function ContentImportPanel(props: {
               id={pdfInputId}
               type="file"
               accept="application/pdf"
+              disabled={!canAnalyzePdf}
               hidden
               onChange={(event) => {
                 const file = event.currentTarget.files?.[0];
@@ -610,14 +619,14 @@ export function ContentImportPanel(props: {
                 event.currentTarget.value = "";
               }}
             />
-            <button className="ghost-button" type="button" disabled={!props.canManage} title={props.canManage ? "Choose a PDF for Codex analysis" : "Requires campaign.update"} onClick={() => document.getElementById(pdfInputId)?.click()}>
+            <button className="ghost-button" type="button" disabled={!canAnalyzePdf} title={canAnalyzePdf ? "Choose a PDF for Codex analysis" : pdfImportDisabledReason} onClick={() => document.getElementById(pdfInputId)?.click()}>
               <FileText size={16} /> Codex PDF
             </button>
             <button
               className="ghost-button"
               type="button"
-              disabled={!props.canManage || !pdfFile}
-              title={pdfFile ? `Analyze ${pdfFile.name}` : "Choose a PDF first"}
+              disabled={!canAnalyzePdf || !pdfFile}
+              title={!canAnalyzePdf ? pdfImportDisabledReason : pdfFile ? `Analyze ${pdfFile.name}` : "Choose a PDF first"}
               onClick={() => {
                 if (!pdfFile) return;
                 void action.runAction(`Analyze ${pdfFile.name}`, async () => {
@@ -629,6 +638,7 @@ export function ContentImportPanel(props: {
               <Upload size={16} /> Analyze PDF
             </button>
             {pdfFile && <span className="admin-inline-status">{pdfFile.name}</span>}
+            {!canAnalyzePdf && <span className="admin-inline-status">{pdfImportDisabledReason}</span>}
           </div>
         </section>
         <div className="admin-form-grid">

@@ -72,6 +72,13 @@ export interface UserSession extends Timestamps {
   id: ID;
   userId: ID;
   tokenHash: string;
+  /** A short-lived cookie child awaiting confirmation of a legacy-bearer upgrade. */
+  cookieUpgradeParentSessionId?: ID;
+  cookieUpgradeExpiresAt?: string;
+  /** Set only after a cookie child atomically replaces its legacy-bearer family. */
+  cookieUpgradeConfirmedAt?: string;
+  /** Original expiry restored only after a client confirms a deferred cookie activation. */
+  deferredCookieSessionExpiresAt?: string;
   activeOrganizationId?: ID;
   expiresAt: string;
   lastSeenAt: string;
@@ -720,6 +727,35 @@ export interface Token extends Timestamps {
   metadata: Record<string, unknown>;
 }
 
+/** One revision-guarded position update in an atomic scene token move. */
+export interface TokenMoveBatchEntry {
+  tokenId: ID;
+  x: number;
+  y: number;
+  expectedUpdatedAt: string;
+}
+
+/** All entries are validated before any token is moved. */
+export interface TokenMoveBatchRequest {
+  /** Reject the whole move if scene geometry or grid settings changed after preparation. */
+  expectedSceneUpdatedAt: string;
+  changes: TokenMoveBatchEntry[];
+}
+
+export interface TokenMoveBatchResult {
+  tokens: Token[];
+  movedAt: string;
+  /** One revision-guarded inverse command that restores every moved token. */
+  undo: TokenMoveBatchRequest;
+}
+
+/** One ordered realtime payload lets remote clients apply the whole move at once. */
+export interface TokenMoveBatchEventPayload {
+  sceneId: ID;
+  tokens: Token[];
+  movedAt: string;
+}
+
 export interface TokenCondition {
   id: ID;
   name: string;
@@ -772,7 +808,7 @@ export interface CharacterTransfer extends Timestamps {
 }
 
 /** Prepared D&D commit families whose exact state roots can be undone. */
-export type DndRulesMutationKind = "typed_damage" | "action" | "effect_schedule" | "concentration";
+export type DndRulesMutationKind = "typed_damage" | "vitals" | "combatant_sync" | "action" | "effect_schedule" | "concentration";
 
 export type DndRulesMutationStatus = "applied" | "undone";
 
@@ -871,6 +907,47 @@ export interface Dnd5eSrdTypedDamageApplyResult {
   /** Present when applying damage synchronized an active combatant lifecycle. */
   combat?: Combat;
   previews: Array<{ actorId: ID; actorName: string; preview: Record<string, unknown> }>;
+  rulesMutationId: ID;
+  undo: DndRulesMutationUndoDescriptor;
+}
+
+/** A DM-authored combat-panel adjustment whose rules math remains server-owned. */
+export type Dnd5eSrdCombatVitalsKind = "healing" | "temporaryHitPoints";
+
+export interface Dnd5eSrdCombatVitalsRequest {
+  kind: Dnd5eSrdCombatVitalsKind;
+  amount: number;
+  /** Must be explicitly true for an authorized resurrection effect to clear dead state. */
+  revivesDead?: boolean;
+  expectedActorUpdatedAt: string;
+  /** Required exactly when the actor participates in an active combat. */
+  expectedCombatUpdatedAt?: string;
+}
+
+export interface Dnd5eSrdCombatVitalsAdjustmentResult {
+  kind: Dnd5eSrdCombatVitalsKind;
+  pool: "hp" | "temporaryHitPoints" | "temporaryHp" | "tempHp";
+  requestedAmount: number;
+  appliedAmount: number;
+  before: number;
+  after: number;
+  max: number;
+  recoveredFromZero: boolean;
+}
+
+export interface Dnd5eSrdCombatVitalsMutationResult {
+  actor: Actor;
+  /** Present when the actor participated in an active combat at commit time. */
+  combat?: Combat;
+  adjustment: Dnd5eSrdCombatVitalsAdjustmentResult;
+  rulesMutationId: ID;
+  undo: DndRulesMutationUndoDescriptor;
+}
+
+/** Exact paired result for a D&D combatant edit that also changes its linked actor sheet. */
+export interface Dnd5eSrdCombatantSyncMutationResult {
+  combat: Combat;
+  actor: Actor;
   rulesMutationId: ID;
   undo: DndRulesMutationUndoDescriptor;
 }
@@ -1280,6 +1357,10 @@ export interface Dnd5eLevelOneCharacterCreationProvenance {
   templateId: string;
   options: Record<string, unknown>;
 }
+
+export type Dnd5eAbility = "strength" | "dexterity" | "constitution" | "intelligence" | "wisdom" | "charisma";
+export type Dnd5eAbilityScoreMethod = "standard-array";
+export type Dnd5eStandardArrayAssignment = Record<Dnd5eAbility, number>;
 
 export interface DndCharacterReviewValidationIssue {
   entityKind: "actor" | "item";
@@ -1728,6 +1809,8 @@ export interface EncounterMonsterPlacementDraft {
 }
 
 export interface EncounterMonsterPlacementBatchInput {
+  /** Saved encounter whose newly-created scene tokens are being placed. */
+  encounterId: ID;
   systemId: ID;
   expectedUpdatedAt: string;
   placements: EncounterMonsterPlacementDraft[];
@@ -1743,6 +1826,10 @@ export interface EncounterMonsterPlacementResult {
 export interface EncounterMonsterPlacementBatchResult {
   placements: EncounterMonsterPlacementResult[];
   scene: Scene;
+  /** Authoritative encounter revision containing exactly the placed token IDs. */
+  encounter: Encounter;
+  /** Present when placement also linked the encounter to the campaign's one live session. */
+  campaignSession?: CampaignSession;
 }
 
 export type CampaignSessionStatus = "planned" | "live" | "completed";
@@ -1784,6 +1871,48 @@ export interface Combat extends Timestamps {
   environmentMechanicTriggers?: CombatEnvironmentMechanicTrigger[];
   /** Bounded, server-authored history of deterministic scheduled-effect evaluations. */
   effectScheduleEvents?: RulesEffectScheduleEvent[];
+  /** Current DM-reviewed legendary-action opportunities at the latest between-turn boundary. */
+  legendaryActionPrompts?: CombatLegendaryActionPrompt[];
+}
+
+export interface CombatLegendaryActionPrompt extends Timestamps {
+  id: ID;
+  actorId: ID;
+  combatantId: ID;
+  actorName: string;
+  round: number;
+  afterTurnIndex: number;
+  remainingUses: number;
+  maximumUses: number;
+  options: string[];
+  resolution: "reviewed-manual";
+}
+
+export interface Dnd5eSrdLegendaryActionSpendRequest {
+  promptId: ID;
+  optionName: string;
+  cost: number;
+  expectedActorUpdatedAt: string;
+  expectedCombatUpdatedAt: string;
+}
+
+export interface Dnd5eSrdLegendaryActionUse {
+  id: ID;
+  actorId: ID;
+  optionName: string;
+  cost: number;
+  round: number;
+  afterTurnIndex: number;
+  remainingUses: number;
+  maximumUses: number;
+  usedAt: string;
+  usedByUserId: ID;
+}
+
+export interface Dnd5eSrdLegendaryActionSpendResult {
+  actor: Actor;
+  combat: Combat;
+  use: Dnd5eSrdLegendaryActionUse;
 }
 
 export type CombatEnvironmentMechanicKind = "lair_action" | "regional_effect";
@@ -1929,6 +2058,10 @@ export interface CombatAction extends Timestamps {
   consumeResources: boolean;
   /** Prepared preview that authored this consequential action. */
   preparedPreviewKey?: string;
+  /** Exact same-turn predecessor ticket selected for a guarded follow-up. */
+  continuationId?: ID;
+  /** Server-authored critical evidence inherited from the predecessor attack. */
+  criticalOutcomes?: Dnd5eSrdCriticalOutcome[];
   /** Exact mutable roots required when a GM confirms the pending action. */
   expectedActorUpdatedAt?: Record<ID, string>;
   expectedItemUpdatedAt?: Record<ID, string>;
@@ -1945,6 +2078,18 @@ export interface CombatAction extends Timestamps {
   rejectedAt?: string;
   rejectionReason?: string;
   failureReason?: string;
+}
+
+export type Dnd5eSrdAttackOutcome = "miss" | "hit" | "critical-hit" | "unresolved";
+
+/** Inspectable, server-authored evidence that binds an attack to later damage. */
+export interface Dnd5eSrdCriticalOutcome {
+  targetActorId: ID;
+  naturalD20?: number;
+  criticalMinimum: number;
+  outcome: Dnd5eSrdAttackOutcome;
+  criticalNegated: boolean;
+  finalCritical: boolean;
 }
 
 export interface CombatActionRoll {
@@ -2668,6 +2813,12 @@ export interface ContentImportAppliedRecord {
   collection: "actors" | "items" | "journals" | "handouts" | "encounters";
   id: ID;
   entityId: ID;
+  /**
+   * Fingerprint of the exact record created by the import. Legacy applied
+   * records omit this value and cannot be rolled back automatically because
+   * the engine cannot prove that the current content is still import-owned.
+   */
+  fingerprint?: string;
 }
 
 export interface ContentImportBatch extends Timestamps {

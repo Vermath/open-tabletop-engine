@@ -3,6 +3,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { AdvancedCombatMechanics, scheduledEffectConsequenceReview } from "./advanced-combat-mechanics.js";
 
+function expectExplicitLabel(html: string, label: string, control: "input" | "select" | "textarea") {
+  const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const labelMatch = html.match(new RegExp(`<label[^>]*for="([^"]+)"[^>]*><span>${escapedLabel}</span>`));
+  expect(labelMatch, `${label} should be associated with a form control`).not.toBeNull();
+  expect(html).toMatch(new RegExp(`<${control}[^>]*id="${labelMatch?.[1]}"`));
+}
+
 describe("AdvancedCombatMechanics", () => {
   it("renders accessible reviewed controls for environment, effect, and spell workflows", () => {
     const actor = createTimestamped("act", {
@@ -63,6 +70,17 @@ describe("AdvancedCombatMechanics", () => {
     expect(html).toContain("Specialized spell helpers");
     expect(html).toContain('aria-label="Spell helper targets"');
     expect(html).toContain("Damage, movement, and map geometry remain manual");
+    expectExplicitLabel(html, "Kind", "select");
+    expectExplicitLabel(html, "Name", "input");
+    expectExplicitLabel(html, "Description", "textarea");
+    expectExplicitLabel(html, "Visibility", "select");
+    expectExplicitLabel(html, "Timing", "select");
+    expectExplicitLabel(html, "Initiative", "input");
+    expectExplicitLabel(html, "Evaluate phase", "select");
+    expectExplicitLabel(html, "Caster", "select");
+    expectExplicitLabel(html, "Spell", "select");
+    expectExplicitLabel(html, "Slot level", "input");
+    expectExplicitLabel(html, "Targets", "select");
   });
 
   it("hides direct mutation controls when the caller lacks manage permissions", () => {

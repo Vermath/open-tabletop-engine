@@ -1,8 +1,11 @@
-import type { Encounter, Scene } from "@open-tabletop/core";
-import { CalendarDays, CheckCircle2, Clock3, Play, Plus, Save, Trash2, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import type { Encounter, JournalEntry, Scene } from "@open-tabletop/core";
+import { CalendarDays, CheckCircle2, ClipboardList, Clock3, Play, Plus, Save, Trash2, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { ApiError, apiDelete, apiGet, apiPatch, apiPost, type CampaignSessionInfo } from "./api.js";
+import { prepareSessionReportAttempt, type SessionReportAttempt } from "./session-report.js";
 import { errorMessage, formatDateTime, formatNumber } from "./sheet-format.js";
+
+export { sessionReportAllowed } from "./session-report.js";
 
 function toggleId(values: string[], id: string, checked: boolean): string[] {
   return checked ? [...new Set([...values, id])] : values.filter((value) => value !== id);
@@ -14,6 +17,39 @@ function localDateTimeValue(value?: string): string {
   if (Number.isNaN(date.getTime())) return "";
   const offset = date.getTimezoneOffset() * 60_000;
   return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+
+export function sessionScheduledForIso(value: string): string | null {
+  const normalized = value.trim();
+  if (!normalized) return null;
+  const timestamp = Date.parse(normalized);
+  if (!Number.isFinite(timestamp)) throw new Error("Choose a valid date and time for this session.");
+  return new Date(timestamp).toISOString();
+}
+
+export function campaignSessionScheduleMatchesDraft(input: Pick<SessionDraft, "scheduledFor">, session: Pick<CampaignSessionInfo, "scheduledFor">): boolean {
+  const requested = sessionScheduledForIso(input.scheduledFor);
+  if (requested === null) return !session.scheduledFor;
+  return typeof session.scheduledFor === "string" && Date.parse(session.scheduledFor) === Date.parse(requested);
+}
+
+export type CampaignSessionCompletionResult = "completed" | "cancelled" | "in_flight";
+
+export async function completeCampaignSessionOnce(
+  inFlightSessionIds: Set<string>,
+  session: Pick<CampaignSessionInfo, "id" | "title">,
+  complete: () => Promise<void>,
+  confirm: (message: string) => boolean = (message) => window.confirm(message)
+): Promise<CampaignSessionCompletionResult> {
+  if (inFlightSessionIds.has(session.id)) return "in_flight";
+  if (!confirm(`Complete ${session.title}? This closes the live session and cannot be undone.`)) return "cancelled";
+  inFlightSessionIds.add(session.id);
+  try {
+    await complete();
+    return "completed";
+  } finally {
+    inFlightSessionIds.delete(session.id);
+  }
 }
 
 export function campaignSessionSort(sessions: CampaignSessionInfo[]): CampaignSessionInfo[] {
@@ -36,7 +72,7 @@ export function sessionDraftPayload(input: SessionDraft) {
     title: input.title.trim(),
     agenda: input.agenda.trim(),
     notes: input.notes.trim(),
-    scheduledFor: input.scheduledFor ? new Date(input.scheduledFor).toISOString() : null,
+    scheduledFor: sessionScheduledForIso(input.scheduledFor),
     sceneIds: input.sceneIds,
     encounterIds: input.encounterIds
   };
@@ -82,8 +118,8 @@ async function refreshStaleCampaignSession(error: unknown, sessionId: string): P
   }
 }
 
-export function LiveSessionBanner(props: { session: CampaignSessionInfo; sceneName?: string; canComplete: boolean; onOpen(): void; onComplete(): void }) {
-  const [completeArmed, setCompleteArmed] = useState(false);
+export function LiveSessionBanner(props: { session: CampaignSessionInfo; sceneName?: string; canComplete: boolean; onOpen(): void; onComplete(): void | Promise<void> }) {
+  const completionRequestsRef = useRef(new Set<string>());
   return (
     <section className="live-session-banner" aria-label={`Live session ${props.session.title}`}>
       <span className="live-session-pulse" aria-hidden="true" />
@@ -92,7 +128,7 @@ export function LiveSessionBanner(props: { session: CampaignSessionInfo; sceneNa
         <span>{props.sceneName ? `${props.sceneName} is live` : "Table session in progress"}{props.session.startedAt ? ` · started ${formatDateTime(props.session.startedAt)}` : ""}</span>
       </div>
       <button className="ghost-button small" type="button" onClick={props.onOpen}>Open desk</button>
-      {props.canComplete && <button className="primary-button small" type="button" onClick={() => { if (completeArmed) props.onComplete(); else setCompleteArmed(true); }}><CheckCircle2 size={13} /> {completeArmed ? "Confirm complete" : "Complete"}</button>}
+      {props.canComplete && <button className="primary-button small" type="button" onClick={() => { void completeCampaignSessionOnce(completionRequestsRef.current, props.session, async () => { await props.onComplete(); }); }}><CheckCircle2 size={13} /> Complete</button>}
     </section>
   );
 }
@@ -104,14 +140,17 @@ export function SessionDeskPanel(props: {
   encounters: Encounter[];
   canManage: boolean;
   canStart: boolean;
+  canCreateReport?: boolean;
   onSessionsChange(sessions: CampaignSessionInfo[]): void;
   onSceneActivated(sceneId: string): void;
+  onJournalCreated?(journal: JournalEntry): void;
   onStatus(message: string): void;
 }) {
   const [selectedId, setSelectedId] = useState("");
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
   const [retryAction, setRetryAction] = useState<{ label: string; run(): Promise<void> }>();
+  const completionRequestsRef = useRef(new Set<string>());
   const selected = props.sessions.find((session) => session.id === selectedId);
   const sessions = campaignSessionSort(props.sessions);
 
@@ -131,8 +170,14 @@ export function SessionDeskPanel(props: {
       replaceSession(updated);
       setSelectedId(updated.id);
       setCreating(false);
+      if (!campaignSessionScheduleMatchesDraft(input, updated)) {
+        const retryInput = { ...input, id: updated.id };
+        setRetryAction({ label: "Retry schedule save", run: () => saveSession(retryInput, updated.updatedAt, campaignSessionMutationKey("update", updated.id)) });
+        props.onStatus(`${updated.title} saved, but its scheduled time was not confirmed. Review and retry.`);
+        return;
+      }
       setRetryAction(undefined);
-      props.onStatus(`${updated.title} ${input.id ? "updated" : "planned"}`);
+      props.onStatus(`${updated.title} ${input.id ? "updated" : "planned"}${updated.scheduledFor ? ` for ${formatDateTime(updated.scheduledFor)}` : " as unscheduled"}`);
     } catch (error) {
       const latest = input.id ? await refreshStaleCampaignSession(error, input.id) : undefined;
       if (latest) replaceSession(latest);
@@ -150,8 +195,8 @@ export function SessionDeskPanel(props: {
     setBusy(true);
     try {
       const updated = await startCampaignSession(session.id, activateSceneId, expectedUpdatedAt, idempotencyKey);
-      replaceSession(updated);
       if (activateSceneId) props.onSceneActivated(activateSceneId);
+      replaceSession(updated);
       setRetryAction(undefined);
       props.onStatus(`${updated.title} is live`);
     } catch (error) {
@@ -182,6 +227,14 @@ export function SessionDeskPanel(props: {
     }
   }
 
+  async function requestSessionCompletion(session: CampaignSessionInfo, notes: string) {
+    await completeCampaignSessionOnce(
+      completionRequestsRef.current,
+      session,
+      () => completeSession(session, notes)
+    );
+  }
+
   async function deleteSession(session: CampaignSessionInfo, expectedUpdatedAt = session.updatedAt, idempotencyKey = campaignSessionMutationKey("delete", session.id)) {
     if (busy) return;
     setBusy(true);
@@ -196,6 +249,22 @@ export function SessionDeskPanel(props: {
       if (latest) replaceSession(latest);
       setRetryAction({ label: "Retry session deletion", run: () => deleteSession(latest ?? session, latest?.updatedAt ?? expectedUpdatedAt, latest ? campaignSessionMutationKey("delete", session.id) : idempotencyKey) });
       props.onStatus(latest ? "Session changed elsewhere. The latest revision is loaded; review and retry." : `Session deletion failed: ${errorMessage(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reportSession(session: CampaignSessionInfo, attempt: SessionReportAttempt = prepareSessionReportAttempt(props.campaignId, session)) {
+    if (busy || !props.canManage || !props.canCreateReport || !props.onJournalCreated) return;
+    setBusy(true);
+    try {
+      const journal = await attempt.run();
+      props.onJournalCreated(journal);
+      setRetryAction(undefined);
+      props.onStatus(`GM-only session report created for ${session.title}`);
+    } catch (error) {
+      setRetryAction({ label: "Retry session report", run: () => reportSession(session, attempt) });
+      props.onStatus(`Session report failed: ${errorMessage(error)}`);
     } finally {
       setBusy(false);
     }
@@ -224,6 +293,11 @@ export function SessionDeskPanel(props: {
               <span><strong>{session.title}</strong><small>{session.scheduledFor ? formatDateTime(session.scheduledFor) : "Unscheduled"} · {session.status}</small></span>
               {session.status === "live" ? <Play size={14} aria-label="Live" /> : <Clock3 size={14} aria-hidden="true" />}
             </button>
+            {props.canManage && props.canCreateReport && props.onJournalCreated && (
+              <button className="ghost-button small session-report-button" type="button" disabled={busy} aria-label={`Create GM-only session report for ${session.title}`} title="Create a GM-only session report" onClick={() => void reportSession(session)}>
+                <ClipboardList size={14} aria-hidden="true" /> Session report
+              </button>
+            )}
           </div>
         ))}
       </div>
@@ -239,7 +313,7 @@ export function SessionDeskPanel(props: {
           busy={busy}
           onSave={saveSession}
           onStart={(sceneId) => selected && startSession(selected, sceneId)}
-          onComplete={(notes) => selected && completeSession(selected, notes)}
+          onComplete={(notes) => selected && requestSessionCompletion(selected, notes)}
           onDelete={() => selected && deleteSession(selected)}
           onCancel={() => { setCreating(false); if (!selected) setSelectedId(""); }}
         />
@@ -248,7 +322,7 @@ export function SessionDeskPanel(props: {
   );
 }
 
-function SessionEditor(props: { session?: CampaignSessionInfo; nextNumber: number; scenes: Scene[]; encounters: Encounter[]; canManage: boolean; canStart: boolean; busy: boolean; onSave(input: SessionDraft): Promise<void>; onStart(sceneId: string): Promise<void> | false | undefined; onComplete(notes: string): Promise<void> | false | undefined; onDelete(): Promise<void> | false | undefined; onCancel(): void }) {
+export function SessionEditor(props: { session?: CampaignSessionInfo; nextNumber: number; scenes: Scene[]; encounters: Encounter[]; canManage: boolean; canStart: boolean; busy: boolean; onSave(input: SessionDraft): Promise<void>; onStart(sceneId: string): Promise<void> | false | undefined; onComplete(notes: string): Promise<void> | false | undefined; onDelete(): Promise<void> | false | undefined; onCancel(): void }) {
   const [draft, setDraft] = useState<SessionDraft>(() => ({
     id: props.session?.id,
     title: props.session?.title ?? `Session ${props.nextNumber}`,
@@ -260,7 +334,6 @@ function SessionEditor(props: { session?: CampaignSessionInfo; nextNumber: numbe
   }));
   const [activateSceneId, setActivateSceneId] = useState(props.session?.sceneIds[0] ?? "");
   const [deleteArmed, setDeleteArmed] = useState(false);
-  const [completeArmed, setCompleteArmed] = useState(false);
   return (
     <form className="lore-editor session-editor" aria-label={props.session ? `Edit session ${props.session.title}` : "Plan campaign session"} onSubmit={(event) => { event.preventDefault(); void props.onSave(draft); }}>
       <div className="lore-editor-title"><strong>{props.session ? `Session ${props.session.number}` : `Session ${props.nextNumber}`}</strong>{props.session && <span className={`session-status status-${props.session.status}`}>{props.session.status}</span>}</div>
@@ -274,8 +347,8 @@ function SessionEditor(props: { session?: CampaignSessionInfo; nextNumber: numbe
           {props.scenes.length === 0 ? <span className="account-summary">No prep scenes yet.</span> : props.scenes.map((scene) => <label key={scene.id}><input type="checkbox" checked={draft.sceneIds.includes(scene.id)} disabled={!props.canManage} onChange={(event) => setDraft((current) => ({ ...current, sceneIds: toggleId(current.sceneIds, scene.id, event.target.checked) }))} /><span>{scene.name}</span></label>)}
         </div>
       </details>
-      <details className="lore-link-drawer">
-        <summary>Linked encounters <span>{formatNumber(draft.encounterIds.length)}</span></summary>
+      <details className="lore-link-drawer" open={!props.session || (props.session.encounterIds.length === 0 && props.encounters.length > 0)}>
+        <summary>Linked encounters <span>{formatNumber(draft.encounterIds.length)} selected · {formatNumber(props.encounters.length)} available</span></summary>
         <div className="lore-target-grid">
           {props.encounters.length === 0 ? <span className="account-summary">No saved encounters.</span> : props.encounters.map((encounter) => <label key={encounter.id}><input type="checkbox" checked={draft.encounterIds.includes(encounter.id)} disabled={!props.canManage} onChange={(event) => setDraft((current) => ({ ...current, encounterIds: toggleId(current.encounterIds, encounter.id, event.target.checked) }))} /><span>{encounter.name}</span></label>)}
         </div>
@@ -286,7 +359,7 @@ function SessionEditor(props: { session?: CampaignSessionInfo; nextNumber: numbe
           <button className="primary-button" type="button" disabled={props.busy} onClick={() => void props.onStart(activateSceneId)}><Play size={14} /> Start session</button>
         </div>
       )}
-      {props.session?.status === "live" && props.canManage && <button className="primary-button" type="button" disabled={props.busy} onClick={() => { if (completeArmed) void props.onComplete(draft.notes); else setCompleteArmed(true); }}><CheckCircle2 size={14} /> {completeArmed ? "Confirm complete session" : "Complete session"}</button>}
+      {props.session?.status === "live" && props.canManage && <button className="primary-button" type="button" disabled={props.busy} onClick={() => void props.onComplete(draft.notes)}><CheckCircle2 size={14} /> Complete session</button>}
       {props.canManage && <div className="button-row wrap"><button className="ghost-button" type="submit" disabled={props.busy || !draft.title.trim()}><Save size={14} /> Save</button>{!props.session && <button className="ghost-button" type="button" onClick={props.onCancel}><X size={14} /> Cancel</button>}{props.session?.status === "planned" && (deleteArmed ? <button className="danger-button" type="button" disabled={props.busy} onClick={() => void props.onDelete()}><Trash2 size={14} /> Confirm delete</button> : <button className="ghost-button" type="button" onClick={() => setDeleteArmed(true)}><Trash2 size={14} /> Delete</button>)}</div>}
     </form>
   );

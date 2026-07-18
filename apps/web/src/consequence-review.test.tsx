@@ -49,6 +49,34 @@ describe("structured consequence review", () => {
     expect(JSON.stringify(review)).not.toContain('"actorUpdates":{"');
   });
 
+  it("preserves scene and token context for duplicate actor names in final review", () => {
+    const review = actorActionConsequenceReview("Aric", {
+      rolls: [
+        { label: "Cleave", formula: "1d20+5", total: 18, targetActorId: "cultist-a" },
+        { label: "Cleave", formula: "1d20+5", total: 16, targetActorId: "cultist-b" }
+      ],
+      resolution: {
+        commitMode: "preview",
+        effects: [
+          { type: "damage", targetActorId: "cultist-a", amount: 7, damageType: "slashing" },
+          { type: "damage", targetActorId: "cultist-b", amount: 5, damageType: "slashing" }
+        ]
+      }
+    }, { actorNames: new Map([
+      ["cultist-a", "Cultist (Sanctum / token-a)"],
+      ["cultist-b", "Cultist (Sanctum / token-b)"]
+    ]), applyEffect: true });
+
+    expect(review.sections.find((section) => section.id === "targets")?.items.map((item) => item.value)).toEqual([
+      "Cultist (Sanctum / token-a)",
+      "Cultist (Sanctum / token-b)"
+    ]);
+    expect(review.sections.find((section) => section.id === "effects")?.items.map((item) => item.label)).toEqual([
+      "damage - Cultist (Sanctum / token-a)",
+      "damage - Cultist (Sanctum / token-b)"
+    ]);
+  });
+
   it("makes missing choices and unsupported boundaries explicit and non-committable", () => {
     const review = actorActionConsequenceReview("Ari", {
       resolution: {
@@ -65,6 +93,10 @@ describe("structured consequence review", () => {
     expect(html).toContain("Resolve before commit");
     expect(html).toContain("disabled");
     expect(html).toContain('aria-label="Consequence review decision"');
+    expect(html).toContain("<span>Structured consequence review</span>");
+    expect(html).toContain("Final confirmation - step 2 of 2");
+    expect(html).toContain("Nothing has been committed yet.");
+    expect(html).not.toContain("onMouseDown");
   });
 
   it("keeps a disclosed manual follow-up reviewable without blocking exact prepared state", () => {

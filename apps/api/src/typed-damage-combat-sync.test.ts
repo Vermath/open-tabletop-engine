@@ -96,6 +96,10 @@ describe("reviewed typed damage combat synchronization", () => {
       expect(actor.data).toEqual(actorDataBefore);
       expect(combat.combatants).toEqual(combatBefore.combatants);
 
+      // Prepared previews are persisted as JSON. Optional undefined domain
+      // fields must not make the in-memory resolution hash disagree with the
+      // exact preview retrieved from the durable idempotency record.
+      (actor.data as Record<string, unknown>).optionalAutomationState = undefined;
       const preview = await prepareCriticalDamage(app, route, "typed-damage-combat:preview");
       const applied = await app.inject({
         method: "POST",

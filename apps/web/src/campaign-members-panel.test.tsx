@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { CampaignMemberInfo } from "./api.js";
-import { CampaignMemberRemovalReview, CampaignMembersPanel, campaignMemberManagementReason } from "./campaign-members-panel.js";
+import { CampaignMemberRemovalReview, CampaignMembersPanel, campaignMemberManagementReason, filterCampaignMembers } from "./campaign-members-panel.js";
 
 const at = "2026-07-15T00:00:00.000Z";
 
@@ -46,5 +46,44 @@ describe("campaign member management", () => {
     expect(html).toContain("organization role are unchanged");
     expect(html).toContain("Remove campaign member");
     expect(html).toContain("Keep member");
+  });
+
+  it("renders every campaign member above the former eight-record cap", () => {
+    const members = Array.from({ length: 40 }, (_, index) => member({
+      id: `member-${index + 1}`,
+      userId: `user-${index + 1}`,
+      user: {
+        id: `user-${index + 1}`,
+        displayName: `Member ${String(index + 1).padStart(2, "0")}`,
+        email: `member-${String(index + 1).padStart(3, "0")}@example.com`,
+      },
+    }));
+    const html = renderToStaticMarkup(
+      <CampaignMembersPanel campaignId="campaign-1" currentUserId="owner-1" members={members} canManage onMemberUpdated={vi.fn()} onMemberRemoved={vi.fn()} onRefresh={vi.fn()} onStatus={vi.fn()} />
+    );
+
+    expect(html).toContain("40 members");
+    expect(html).toContain("member-040@example.com");
+    expect(html.match(/Campaign role for Member/g)).toHaveLength(40);
+  });
+
+  it("searches the complete member roster and reaches late records", () => {
+    const members = Array.from({ length: 40 }, (_, index) => member({
+      id: `member-${index + 1}`,
+      userId: `user-${index + 1}`,
+      user: {
+        id: `user-${index + 1}`,
+        displayName: `Member ${String(index + 1).padStart(2, "0")}`,
+        email: `member-${String(index + 1).padStart(3, "0")}@example.com`,
+      },
+    }));
+    expect(filterCampaignMembers(members, "member-040@example.com").map((candidate) => candidate.id)).toEqual(["member-40"]);
+    const html = renderToStaticMarkup(
+      <CampaignMembersPanel campaignId="campaign-1" currentUserId="owner-1" members={members} defaultSearch="member-040@example.com" canManage onMemberUpdated={vi.fn()} onMemberRemoved={vi.fn()} onRefresh={vi.fn()} onStatus={vi.fn()} />
+    );
+
+    expect(html).toContain("1 of 40 members");
+    expect(html).toContain("member-040@example.com");
+    expect(html).not.toContain("member-039@example.com");
   });
 });

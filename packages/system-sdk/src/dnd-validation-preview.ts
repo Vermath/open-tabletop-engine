@@ -1,4 +1,6 @@
 import type { Actor, Item } from "@open-tabletop/core";
+import { dnd5eSrdClassSpellGrantData, dnd5eSrdSpellcastingClassProfile, type Dnd5eSrdSpellAcquisitionMode, type Dnd5eSrdSpellcastingAbility, type Dnd5eSrdSpellcastingClassName } from "./dnd-spell-grants.js";
+import { dnd5eSrdSpellReplacementCount, dnd5eSrdSpellReplacementLimit } from "./dnd-spell-preparation.js";
 import {
   DND_5E_SRD_SYSTEM_ID,
   DND_5E_SRD_VERSION,
@@ -11,6 +13,7 @@ import {
   dnd5eSrdAdvancementClassName,
   dnd5eSrdClassAdvancementProfile,
   dnd5eSrdClassHitDieSize,
+  dnd5eSrdCompendium,
   dnd5eSrdFeatEntry,
   dnd5eSrdHitDicePools,
   dnd5eSrdMulticlassPrerequisites,
@@ -227,6 +230,29 @@ export interface Dnd5eSrdAdvancementPreviewRequest {
   weaponMasteryChoices?: string[];
   featId?: string;
   abilityChoices?: Record<string, number>;
+  /** Canonical Wizard spells gained when this advancement raises Wizard level. */
+  wizardSpellbookAdditions?: string[];
+  /** Complete normal prepared-spell list for the class after this advancement. */
+  classPreparedSpellChoices?: string[];
+  /** Server-derived actor-owned spells that do not consume normal preparation capacity. */
+  serverAlwaysPreparedSpellIds?: string[];
+}
+
+export interface Dnd5eSrdSpellAdvancementPlan extends Record<string, unknown> {
+  className: Dnd5eSrdSpellcastingClassName;
+  classLevel: number;
+  spellcastingAbility: Dnd5eSrdSpellcastingAbility;
+  acquisitionMode: Dnd5eSrdSpellAcquisitionMode;
+  maxSpellLevel: number;
+  preparedSpellCapacity: number;
+  preparedSpellIds: string[];
+  wizardSpellbookAdditions: string[];
+  resultingSpellbookSpellIds: string[];
+  materializedSpellIds: string[];
+  spellGrants: Array<{
+    compendiumEntryId: string;
+    itemData: ReturnType<typeof dnd5eSrdClassSpellGrantData>;
+  }>;
 }
 
 export interface Dnd5eSrdRestHitDiePreviewSelection {
@@ -890,6 +916,166 @@ function actorClassLevel(actor: Actor, className: string): number {
     : 0;
 }
 
+function normalizedSpellId(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function actorClassNames(actor: Actor): string[] {
+  if (!Array.isArray(actor.data.classes)) {
+    return typeof actor.data.class === "string" && actor.data.class.trim() ? [actor.data.class.trim()] : [];
+  }
+  return actor.data.classes.flatMap((raw) => {
+    if (!isRecord(raw)) return [];
+    const className = typeof raw.className === "string" ? raw.className : typeof raw.class === "string" ? raw.class : undefined;
+    return className?.trim() ? [className.trim()] : [];
+  });
+}
+
+function actorPreparedSpellIdsForClass(actor: Actor, className: string): string[] {
+  const spellcasting = isRecord(actor.data.spellcasting) ? actor.data.spellcasting : {};
+  const byClass = isRecord(spellcasting.preparedSpellsByClass) ? spellcasting.preparedSpellsByClass : {};
+  const classList = Object.entries(byClass).find(([key]) => key.toLowerCase() === className.toLowerCase())?.[1];
+  if (Array.isArray(classList)) {
+    return classList
+      .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+      .map(normalizedSpellId);
+  }
+
+  const existingClassLevel = actorClassLevel(actor, className);
+  if (existingClassLevel < 1 || !Array.isArray(spellcasting.preparedSpells)) return [];
+  const classNames = [...new Set(actorClassNames(actor).map((value) => value.toLowerCase()))];
+  const declaredClass = typeof spellcasting.className === "string" ? spellcasting.className.toLowerCase() : undefined;
+  if ((classNames.length !== 1 || classNames[0] !== className.toLowerCase()) && declaredClass !== className.toLowerCase()) return [];
+  return spellcasting.preparedSpells
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .map(normalizedSpellId);
+}
+
+function spellAdvancementPlan(
+  request: Dnd5eSrdAdvancementPreviewRequest,
+  className: string,
+  nextClassLevel: number,
+  envelope: Dnd5eSrdRulesPreviewEnvelope
+): Dnd5eSrdSpellAdvancementPlan | undefined {
+  const requested = request.wizardSpellbookAdditions !== undefined || request.classPreparedSpellChoices !== undefined;
+  const profile = dnd5eSrdSpellcastingClassProfile(className, nextClassLevel);
+  if (!profile) {
+    if (!requested) return undefined;
+    if (request.wizardSpellbookAdditions !== undefined) block(envelope, "/wizardSpellbookAdditions", "rules.choice_not_available", `${className} does not gain Wizard spellbook additions.`);
+    if (request.classPreparedSpellChoices !== undefined) block(envelope, "/classPreparedSpellChoices", "rules.choice_not_available", `${className} is not an SRD spellcasting class.`);
+    return undefined;
+  }
+  const { className: canonicalClassName, preparedSpellCapacity, maxSpellLevel } = profile;
+  const preparedSpellIds = (request.classPreparedSpellChoices ?? []).map(normalizedSpellId);
+  const wizardSpellbookAdditions = (request.wizardSpellbookAdditions ?? []).map(normalizedSpellId);
+  if (request.classPreparedSpellChoices === undefined) {
+    block(envelope, "/classPreparedSpellChoices", "rules.choice_required", `${canonicalClassName} level ${nextClassLevel} requires a complete prepared-spell list of ${preparedSpellCapacity} spells.`);
+  } else if (preparedSpellIds.length !== preparedSpellCapacity) {
+    block(envelope, "/classPreparedSpellChoices", "rules.invalid_count", `Choose exactly ${preparedSpellCapacity} normal ${canonicalClassName} prepared spells.`);
+  }
+  if (new Set(preparedSpellIds).size !== preparedSpellIds.length) {
+    block(envelope, "/classPreparedSpellChoices", "rules.duplicate_spell", "Prepared-spell choices cannot repeat a spell.");
+  }
+
+  if (profile.spellbookAdditions > 0) {
+    if (request.wizardSpellbookAdditions === undefined) {
+      block(envelope, "/wizardSpellbookAdditions", "rules.choice_required", `Wizard level ${nextClassLevel} requires exactly ${profile.spellbookAdditions} new spellbook spells.`);
+    } else if (wizardSpellbookAdditions.length !== profile.spellbookAdditions) {
+      block(envelope, "/wizardSpellbookAdditions", "rules.invalid_count", `Choose exactly ${profile.spellbookAdditions} new Wizard spellbook spells.`);
+    }
+    if (new Set(wizardSpellbookAdditions).size !== wizardSpellbookAdditions.length) {
+      block(envelope, "/wizardSpellbookAdditions", "rules.duplicate_spell", "Wizard spellbook additions cannot repeat a spell.");
+    }
+  } else if (request.wizardSpellbookAdditions !== undefined) {
+    block(envelope, "/wizardSpellbookAdditions", "rules.choice_not_available", "Only Wizard advancement gains spellbook additions.");
+  }
+
+  const compendium = new Map(dnd5eSrdCompendium().filter((entry) => entry.type === "spell").map((entry) => [entry.id, entry]));
+  const validateClassSpell = (spellId: string, path: string): void => {
+    const entry = compendium.get(spellId);
+    if (!entry) {
+      block(envelope, path, "rules.unknown_spell", `${spellId || "The selected spell"} is not a canonical D&D 5.5e SRD spell.`);
+      return;
+    }
+    const classes = Array.isArray(entry.data.classes) ? entry.data.classes.filter((value): value is string => typeof value === "string") : [];
+    if (!classes.some((value) => value.toLowerCase() === canonicalClassName.toLowerCase())) {
+      block(envelope, path, "rules.outside_class_list", `${entry.name} is not a ${canonicalClassName} spell.`);
+    }
+    const level = typeof entry.data.level === "number" && Number.isInteger(entry.data.level) ? entry.data.level : -1;
+    if (level < 1 || level > maxSpellLevel) {
+      block(envelope, path, "rules.spell_level_unavailable", `${entry.name} is not an available level 1-${maxSpellLevel} ${canonicalClassName} spell.`);
+    }
+  };
+  preparedSpellIds.forEach((spellId, index) => validateClassSpell(spellId, `/classPreparedSpellChoices/${index}`));
+  wizardSpellbookAdditions.forEach((spellId, index) => validateClassSpell(spellId, `/wizardSpellbookAdditions/${index}`));
+
+  const spellcasting = isRecord(request.actor.data.spellcasting) ? request.actor.data.spellcasting : {};
+  const currentSpellbookSpellIds = Array.isArray(spellcasting.spellbookSpells)
+    ? spellcasting.spellbookSpells.filter((value): value is string => typeof value === "string" && value.trim().length > 0).map(normalizedSpellId)
+    : [];
+  const currentSpellbook = new Set(currentSpellbookSpellIds);
+  for (const [index, spellId] of wizardSpellbookAdditions.entries()) {
+    if (currentSpellbook.has(spellId)) block(envelope, `/wizardSpellbookAdditions/${index}`, "rules.spell_already_known", `${spellId} is already in this Wizard's spellbook.`);
+  }
+  const resultingSpellbookSpellIds = canonicalClassName === "Wizard"
+    ? [...new Set([...currentSpellbookSpellIds, ...wizardSpellbookAdditions])]
+    : [];
+  if (canonicalClassName === "Wizard") {
+    const resultingBook = new Set(resultingSpellbookSpellIds);
+    preparedSpellIds.forEach((spellId, index) => {
+      if (!resultingBook.has(spellId)) block(envelope, `/classPreparedSpellChoices/${index}`, "rules.wizard_spellbook_required", `${spellId} is not in the resulting Wizard spellbook.`);
+    });
+  }
+
+  const storedAlwaysPrepared = Array.isArray(spellcasting.alwaysPreparedSpells)
+    ? spellcasting.alwaysPreparedSpells.filter((value): value is string => typeof value === "string").map(normalizedSpellId)
+    : [];
+  const alwaysPrepared = new Set([...storedAlwaysPrepared, ...(request.serverAlwaysPreparedSpellIds ?? []).map(normalizedSpellId)]);
+  preparedSpellIds.forEach((spellId, index) => {
+    if (alwaysPrepared.has(spellId)) block(envelope, `/classPreparedSpellChoices/${index}`, "rules.always_prepared_excluded", `${spellId} is always prepared and does not consume normal preparation capacity.`);
+  });
+
+  const replacementLimit = dnd5eSrdSpellReplacementLimit(canonicalClassName);
+  if (profile.acquisitionMode === "prepared-class-level" && typeof replacementLimit === "number" && nextClassLevel > 1) {
+    const currentSpellIds = actorPreparedSpellIdsForClass(request.actor, canonicalClassName);
+    const replacementCount = dnd5eSrdSpellReplacementCount(currentSpellIds, preparedSpellIds, preparedSpellCapacity);
+    if (replacementCount > replacementLimit) {
+      block(
+        envelope,
+        "/classPreparedSpellChoices",
+        "rules.spell_replacement_limit",
+        `${canonicalClassName} can replace only one known spell when gaining a class level; this list replaces ${replacementCount}.`
+      );
+    }
+  }
+
+  if (envelope.blockers.length > 0) return undefined;
+  const prepared = new Set(preparedSpellIds);
+  const materializedSpellIds = canonicalClassName === "Wizard" ? resultingSpellbookSpellIds : preparedSpellIds;
+  return {
+    className: canonicalClassName,
+    classLevel: nextClassLevel,
+    spellcastingAbility: profile.spellcastingAbility,
+    acquisitionMode: profile.acquisitionMode,
+    maxSpellLevel,
+    preparedSpellCapacity,
+    preparedSpellIds,
+    wizardSpellbookAdditions,
+    resultingSpellbookSpellIds,
+    materializedSpellIds,
+    spellGrants: materializedSpellIds.map((compendiumEntryId) => ({
+      compendiumEntryId,
+      itemData: dnd5eSrdClassSpellGrantData({
+        compendiumEntryId,
+        className: canonicalClassName,
+        selectedAtLevel: nextClassLevel,
+        prepared: prepared.has(compendiumEntryId),
+        inSpellbook: canonicalClassName === "Wizard"
+      })
+    }))
+  };
+}
+
 function previewAdvancement(request: Dnd5eSrdAdvancementPreviewRequest, envelope: Dnd5eSrdRulesPreviewEnvelope): Dnd5eSrdRulesPreviewEnvelope {
   if (envelope.blockers.length > 0) return finalize(envelope);
   const raw = request as unknown as Record<string, unknown>;
@@ -898,6 +1084,15 @@ function previewAdvancement(request: Dnd5eSrdAdvancementPreviewRequest, envelope
   if (raw.subclassId !== undefined && typeof raw.subclassId !== "string") block(envelope, "/subclassId", "schema.string", "Subclass id must be a string.");
   if (raw.weaponMasteryChoices !== undefined && (!Array.isArray(raw.weaponMasteryChoices) || raw.weaponMasteryChoices.some((value) => typeof value !== "string"))) {
     block(envelope, "/weaponMasteryChoices", "schema.string_array", "Weapon Mastery choices must be a list of weapon identifiers.");
+  }
+  if (raw.wizardSpellbookAdditions !== undefined && (!Array.isArray(raw.wizardSpellbookAdditions) || raw.wizardSpellbookAdditions.some((value) => typeof value !== "string" || !value.trim()))) {
+    block(envelope, "/wizardSpellbookAdditions", "schema.string_array", "Wizard spellbook additions must be a list of non-empty spell identifiers.");
+  }
+  if (raw.classPreparedSpellChoices !== undefined && (!Array.isArray(raw.classPreparedSpellChoices) || raw.classPreparedSpellChoices.some((value) => typeof value !== "string" || !value.trim()))) {
+    block(envelope, "/classPreparedSpellChoices", "schema.string_array", "Prepared-spell choices must be a list of non-empty spell identifiers.");
+  }
+  if (raw.serverAlwaysPreparedSpellIds !== undefined && (!Array.isArray(raw.serverAlwaysPreparedSpellIds) || raw.serverAlwaysPreparedSpellIds.some((value) => typeof value !== "string" || !value.trim()))) {
+    block(envelope, "/serverAlwaysPreparedSpellIds", "schema.string_array", "Server-derived always-prepared spells must be a list of non-empty spell identifiers.");
   }
   if (raw.featId !== undefined && typeof raw.featId !== "string") block(envelope, "/featId", "schema.string", "Feat id must be a string.");
   if (raw.hitPointRoll !== undefined && typeof raw.hitPointRoll !== "number") block(envelope, "/hitPointRoll", "schema.number", "Hit Point roll must be a number.");
@@ -965,6 +1160,7 @@ function previewAdvancement(request: Dnd5eSrdAdvancementPreviewRequest, envelope
   if (request.hitPointMode === "roll" && request.hitPointRoll === undefined) {
     envelope.serverRolls.push({ id: "advancement.hit-points", path: "/hitPointRoll", formula: `1${dnd5eSrdClassHitDieSize(className, request.actor)}`, reason: `Roll ${className} Hit Points on the server.` });
   }
+  const spellPlan = spellAdvancementPlan(request, className, nextClassLevel, envelope);
   if (envelope.blockers.length > 0 || envelope.serverRolls.length > 0) return finalize(envelope);
   try {
     const actor = cloneValue(request.actor);
@@ -982,9 +1178,36 @@ function previewAdvancement(request: Dnd5eSrdAdvancementPreviewRequest, envelope
       request.featId,
       { abilities: cloneValue(request.abilityChoices), advancement: { nextClassLevel, nextCharacterLevel } }
     );
+    if (spellPlan) {
+      const spellcasting = isRecord(proposedData.spellcasting) ? cloneValue(proposedData.spellcasting) : {};
+      const preparedSpellCapacityByClass = isRecord(spellcasting.preparedSpellCapacityByClass) ? cloneValue(spellcasting.preparedSpellCapacityByClass) : {};
+      const preparedSpellsByClass = isRecord(spellcasting.preparedSpellsByClass) ? cloneValue(spellcasting.preparedSpellsByClass) : {};
+      const spellcastingAbilityByClass = isRecord(spellcasting.spellcastingAbilityByClass) ? cloneValue(spellcasting.spellcastingAbilityByClass) : {};
+      preparedSpellCapacityByClass[spellPlan.className] = { classLevel: spellPlan.classLevel, capacity: spellPlan.preparedSpellCapacity };
+      preparedSpellsByClass[spellPlan.className] = [...spellPlan.preparedSpellIds];
+      spellcastingAbilityByClass[spellPlan.className] = spellPlan.spellcastingAbility;
+      const multiclass = new Set(actorClassNames({ ...actor, data: proposedData }).map((value) => value.toLowerCase())).size > 1;
+      proposedData = {
+        ...proposedData,
+        spellcasting: {
+          ...spellcasting,
+          preparedSpellCapacityByClass,
+          preparedSpellsByClass,
+          spellcastingAbilityByClass,
+          ...(!multiclass ? {
+            preparedSpellCapacity: spellPlan.preparedSpellCapacity,
+            preparedSpellCapacityLevel: spellPlan.classLevel,
+            preparedSpells: [...spellPlan.preparedSpellIds],
+            ability: spellPlan.spellcastingAbility,
+            className: spellPlan.className
+          } : {}),
+          ...(spellPlan.className === "Wizard" ? { spellbookSpells: [...spellPlan.resultingSpellbookSpellIds] } : {})
+        }
+      };
+    }
     envelope.proposedData = cloneValue(proposedData);
     envelope.changes = diffData(request.actor.data, proposedData, "advancement");
-    envelope.details = { optionId, className, nextClassLevel, grantsFeat, featGrant, hitPointMode: request.hitPointMode, ...(request.subclassId ? { subclassId: request.subclassId } : {}), ...(request.weaponMasteryChoices ? { weaponMasteryChoices: [...request.weaponMasteryChoices] } : {}), ...(request.featId ? { featId: request.featId } : {}) };
+    envelope.details = { optionId, className, nextClassLevel, grantsFeat, featGrant, hitPointMode: request.hitPointMode, ...(request.subclassId ? { subclassId: request.subclassId } : {}), ...(request.weaponMasteryChoices ? { weaponMasteryChoices: [...request.weaponMasteryChoices] } : {}), ...(request.featId ? { featId: request.featId } : {}), ...(spellPlan ? { spellAdvancement: cloneValue(spellPlan) } : {}) };
   } catch (error) {
     block(envelope, "", "rules.preview_rejected", error instanceof Error ? error.message : "Advancement preview failed.");
   }

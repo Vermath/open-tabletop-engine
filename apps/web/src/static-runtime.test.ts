@@ -3,9 +3,41 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { connect, type Socket } from "node:net";
 import { describe, expect, it } from "vitest";
-import { startWebStaticRuntime } from "./static-runtime.js";
+import { configuredAssetCdnOrigin, createWebContentSecurityPolicy, startWebStaticRuntime } from "./static-runtime.js";
 
 describe("web static runtime", () => {
+  it("adds only the configured CDN origin to production fetch permissions", async () => {
+    const root = mkdtempSync(join(tmpdir(), "otte-web-runtime-cdn-"));
+    const dist = join(root, "dist");
+    mkdirSync(dist, { recursive: true });
+    writeFileSync(join(dist, "index.html"), "<main>CDN map</main>");
+    const web = await startWebStaticRuntime({
+      host: "127.0.0.1",
+      port: 0,
+      root: dist,
+      assetCdnBaseUrl: "https://assets.example.test/otte/maps",
+    });
+
+    try {
+      const response = await fetch(web.url);
+      const policy = response.headers.get("content-security-policy") ?? "";
+      expect(policy).toContain("connect-src 'self' https://assets.example.test");
+      expect(policy).not.toMatch(/connect-src[^;]*\bhttps:\s*(?:;|$)/);
+      expect(policy).not.toContain("https://unconfigured.example.test");
+    } finally {
+      await web.close();
+    }
+  });
+
+  it("normalizes the CDN base to an origin and rejects unsafe connect sources", () => {
+    expect(configuredAssetCdnOrigin("https://assets.example.test:8443/otte?version=1")).toBe("https://assets.example.test:8443");
+    expect(configuredAssetCdnOrigin("http://127.0.0.1:9000/assets")).toBe("http://127.0.0.1:9000");
+    expect(() => configuredAssetCdnOrigin("http://assets.example.test/otte")).toThrow("must use HTTPS");
+    expect(() => configuredAssetCdnOrigin("https://user:secret@assets.example.test/otte")).toThrow("credential-free");
+    expect(() => configuredAssetCdnOrigin("https://*.example.test/otte")).toThrow("non-wildcard");
+    expect(createWebContentSecurityPolicy()).toContain("connect-src 'self';");
+  });
+
   it("serves the built SPA and proxies API calls to the local API", async () => {
     const root = mkdtempSync(join(tmpdir(), "otte-web-runtime-"));
     const dist = join(root, "dist");
@@ -32,9 +64,13 @@ describe("web static runtime", () => {
     });
 
     try {
-      expect(await (await fetch(`${web.url}/`)).text()).toContain(
-        "OpenTabletop Desktop",
-      );
+      const indexResponse = await fetch(`${web.url}/`);
+      expect(await indexResponse.text()).toContain("OpenTabletop Desktop");
+      expect(indexResponse.headers.get("content-security-policy")).toContain("default-src 'self'");
+      expect(indexResponse.headers.get("content-security-policy")).toContain("object-src 'none'");
+      expect(indexResponse.headers.get("content-security-policy")).toContain("connect-src 'self'");
+      expect(indexResponse.headers.get("content-security-policy")).not.toMatch(/connect-src[^;]*(?:https:|wss:|localhost|127\.0\.0\.1)/);
+      expect(indexResponse.headers.get("x-content-type-options")).toBe("nosniff");
       expect(await (await fetch(`${web.url}/api/v1/health`)).json()).toEqual({
         ok: true,
       });

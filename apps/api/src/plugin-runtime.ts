@@ -16,7 +16,11 @@ import { isIP, type LookupFunction } from "node:net";
 import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
 import { Script, createContext, type Context } from "node:vm";
 import { Worker } from "node:worker_threads";
-import type { PermissionName, ProposalChange } from "@open-tabletop/core";
+import type {
+  PermissionName,
+  ProposalChange,
+  TokenMoveBatchRequest,
+} from "@open-tabletop/core";
 import {
   comparePluginVersions,
   validatePluginManifest,
@@ -182,6 +186,12 @@ export type PluginBridgeRequest =
       kind: "chat.post";
       requestId: string;
       input: { body: string; visibility: "public" | "gm_only" };
+    }
+  | {
+      kind: "token.move.batch";
+      requestId: string;
+      sceneId: string;
+      input: TokenMoveBatchRequest;
     };
 
 export interface PluginEventInput {
@@ -800,6 +810,11 @@ class SandboxedPluginRuntime {
             const requestId = "chat_" + (++__otteBridgeSequence);
             __otteBridgeRequests.push({ kind: "chat.post", requestId, input: __otteClone(input) });
             return Promise.resolve(requestId);
+          },
+          moveTokens(sceneId, input) {
+            const requestId = "token_move_" + (++__otteBridgeSequence);
+            __otteBridgeRequests.push({ kind: "token.move.batch", requestId, sceneId: __otteClone(sceneId), input: __otteClone(input) });
+            return Promise.resolve(requestId);
           }
         });
         __otteResult = { handlerResult: __otteRunCommand(__ottePayload.command, __ottePayload.input, __otteContext), bridgeRequests: __otteBridgeRequests };
@@ -988,7 +1003,8 @@ async function main() {
       "campaignId: __otteInput.campaignId," +
       "permissions: Object.freeze([...__otteInput.permissions])," +
       "createProposal(input) { const requestId = 'proposal_' + (++__otteBridgeSequence); __otteBridgeRequests.push({ kind: 'proposal.create', requestId, input: __otteClone(input) }); return Promise.resolve(requestId); }," +
-      "postChatMessage(input) { const requestId = 'chat_' + (++__otteBridgeSequence); __otteBridgeRequests.push({ kind: 'chat.post', requestId, input: __otteClone(input) }); return Promise.resolve(requestId); }" +
+      "postChatMessage(input) { const requestId = 'chat_' + (++__otteBridgeSequence); __otteBridgeRequests.push({ kind: 'chat.post', requestId, input: __otteClone(input) }); return Promise.resolve(requestId); }," +
+      "moveTokens(sceneId, input) { const requestId = 'token_move_' + (++__otteBridgeSequence); __otteBridgeRequests.push({ kind: 'token.move.batch', requestId, sceneId: __otteClone(sceneId), input: __otteClone(input) }); return Promise.resolve(requestId); }" +
     "});" +
     "let __otteHandlerResult;" +
     "if (__otteInvocation.kind === 'command') {" +
@@ -1050,12 +1066,12 @@ function normalizePluginBridgeRequests(value: unknown): PluginBridgeRequest[] {
   if (encoded === undefined || Buffer.byteLength(encoded, "utf8") > 128 * 1024)
     throw new Error("Plugin bridge requests are limited to 128 KiB of JSON");
   const requestIds = new Set<string>();
-  return value.map((request, index) => {
+  const normalized = value.map((request, index): PluginBridgeRequest => {
     if (!isRecord(request))
       throw new Error(`Plugin bridge request ${index + 1} must be an object`);
     const requestId =
       typeof request.requestId === "string" ? request.requestId : "";
-    if (!/^(?:proposal|chat)_\d+$/.test(requestId))
+    if (!/^(?:proposal|chat|token_move)_\d+$/.test(requestId))
       throw new Error(
         `Plugin bridge request ${index + 1} has an invalid requestId`,
       );
@@ -1066,6 +1082,79 @@ function normalizePluginBridgeRequests(value: unknown): PluginBridgeRequest[] {
       throw new Error(
         `Plugin bridge request ${requestId} input must be an object`,
       );
+    if (request.kind === "token.move.batch") {
+      const sceneId =
+        typeof request.sceneId === "string" ? request.sceneId.trim() : "";
+      if (!sceneId || sceneId.length > 160)
+        throw new Error(
+          `Plugin bridge request ${requestId} sceneId must be 1-160 characters`,
+        );
+      const expectedSceneUpdatedAt =
+        typeof request.input.expectedSceneUpdatedAt === "string"
+          ? request.input.expectedSceneUpdatedAt.trim()
+          : "";
+      if (
+        !expectedSceneUpdatedAt ||
+        !Number.isFinite(Date.parse(expectedSceneUpdatedAt))
+      ) {
+        throw new Error(
+          `Plugin bridge request ${requestId} expectedSceneUpdatedAt must be a valid date-time`,
+        );
+      }
+      if (
+        !Array.isArray(request.input.changes) ||
+        request.input.changes.length < 1 ||
+        request.input.changes.length > 100
+      ) {
+        throw new Error(
+          `Plugin bridge request ${requestId} token changes must contain 1-100 entries`,
+        );
+      }
+      const tokenIds = new Set<string>();
+      const changes = request.input.changes.map((change, changeIndex) => {
+        if (!isRecord(change))
+          throw new Error(
+            `Plugin bridge request ${requestId} token change ${changeIndex + 1} must be an object`,
+          );
+        const tokenId =
+          typeof change.tokenId === "string" ? change.tokenId.trim() : "";
+        if (!tokenId)
+          throw new Error(
+            `Plugin bridge request ${requestId} token change ${changeIndex + 1} requires tokenId`,
+          );
+        if (tokenIds.has(tokenId))
+          throw new Error(
+            `Plugin bridge request ${requestId} contains duplicate token ${tokenId}`,
+          );
+        tokenIds.add(tokenId);
+        if (
+          typeof change.x !== "number" ||
+          !Number.isFinite(change.x) ||
+          typeof change.y !== "number" ||
+          !Number.isFinite(change.y)
+        ) {
+          throw new Error(
+            `Plugin bridge request ${requestId} token change ${changeIndex + 1} coordinates must be finite numbers`,
+          );
+        }
+        const expectedUpdatedAt =
+          typeof change.expectedUpdatedAt === "string"
+            ? change.expectedUpdatedAt.trim()
+            : "";
+        if (!expectedUpdatedAt || !Number.isFinite(Date.parse(expectedUpdatedAt))) {
+          throw new Error(
+            `Plugin bridge request ${requestId} token change ${changeIndex + 1} expectedUpdatedAt must be a valid date-time`,
+          );
+        }
+        return { tokenId, x: change.x, y: change.y, expectedUpdatedAt };
+      });
+      return {
+        kind: "token.move.batch",
+        requestId,
+        sceneId,
+        input: { expectedSceneUpdatedAt, changes },
+      };
+    }
     if (request.kind === "chat.post") {
       const body =
         typeof request.input.body === "string" ? request.input.body.trim() : "";
@@ -1140,6 +1229,10 @@ function normalizePluginBridgeRequests(value: unknown): PluginBridgeRequest[] {
       `Plugin bridge request ${requestId} has an unsupported kind`,
     );
   });
+  if (normalized.filter((request) => request.kind === "token.move.batch").length > 1) {
+    throw new Error("Plugin execution is limited to one atomic token-move command");
+  }
+  return normalized;
 }
 
 const PLUGIN_BRIDGE_PROPOSAL_ENTITIES = new Set<PluginProposalChange["entity"]>([
@@ -1894,7 +1987,11 @@ async function fetchText(
   let redirects = 0;
   try {
     while (true) {
-      const addresses = await resolveSafeRegistryAddresses(currentUrl, network);
+      const addresses = await resolveSafeRegistryAddresses(
+        currentUrl,
+        network,
+        controller.signal,
+      );
       const response = network.fetch
         ? await fetchRegistryResponse(
             currentUrl,
@@ -1941,6 +2038,7 @@ async function fetchText(
 async function resolveSafeRegistryAddresses(
   url: URL,
   network: PluginRegistryNetworkOptions,
+  signal: AbortSignal,
 ): Promise<ResolvedRegistryAddress[]> {
   if (url.username || url.password)
     throw new Error("Plugin registry URLs must not include credentials");
@@ -1966,10 +2064,12 @@ async function resolveSafeRegistryAddresses(
     resolvedAddresses = [hostname];
   } else {
     try {
-      resolvedAddresses = await (
-        network.resolveHostname ?? resolveRegistryHostname
-      )(hostname);
+      resolvedAddresses = await awaitPluginRegistryNetworkOperation(
+        (network.resolveHostname ?? resolveRegistryHostname)(hostname),
+        signal,
+      );
     } catch {
+      if (signal.aborted) throw pluginRegistryTimeoutError();
       throw new Error(
         "Plugin registry hostname could not be resolved to a public network address",
       );
@@ -1994,6 +2094,33 @@ async function resolveSafeRegistryAddresses(
       "Plugin registry URLs must target a public network address",
     );
   return validated;
+}
+
+function awaitPluginRegistryNetworkOperation<T>(
+  operation: Promise<T>,
+  signal: AbortSignal,
+): Promise<T> {
+  if (signal.aborted) return Promise.reject(pluginRegistryTimeoutError());
+  return new Promise<T>((resolveOperation, rejectOperation) => {
+    let settled = false;
+    const finish = (callback: () => void): void => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener("abort", onAbort);
+      callback();
+    };
+    const onAbort = (): void =>
+      finish(() => rejectOperation(pluginRegistryTimeoutError()));
+    signal.addEventListener("abort", onAbort, { once: true });
+    operation.then(
+      (value) => finish(() => resolveOperation(value)),
+      (error) => finish(() => rejectOperation(error)),
+    );
+  });
+}
+
+function pluginRegistryTimeoutError(): Error {
+  return new Error("Plugin registry request timed out");
 }
 
 async function resolveRegistryHostname(

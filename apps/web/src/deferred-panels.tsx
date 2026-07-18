@@ -15,6 +15,8 @@ export const deferredPanelImporters = {
   compatibility: () => import("./compatibility-panel.js"),
   contentImport: () => import("./content-import-panel.js"),
   controlledCreatures: () => import("./controlled-creatures-panel.js"),
+  characterCreator: () => import("./character-creator-dialog.js"),
+  advancement: () => import("./advancement-flow.js"),
   dndCharacterReview: () => import("./dnd-character-review-panel.js"),
   dndCustomContent: () => import("./dnd-custom-content-panel.js"),
   dndInventoryCommerce: () => import("./dnd-inventory-commerce-panel.js"),
@@ -33,6 +35,8 @@ export const LazyCompendiumPanel = lazy(async () => ({ default: (await deferredP
 export const LazyCompatibilityPanel = lazy(async () => ({ default: (await deferredPanelImporters.compatibility()).CompatibilityPanel }));
 export const LazyContentImportPanel = lazy(async () => ({ default: (await deferredPanelImporters.contentImport()).ContentImportPanel }));
 export const LazyControlledCreaturesPanel = lazy(async () => ({ default: (await deferredPanelImporters.controlledCreatures()).ControlledCreaturesPanel }));
+export const LazyCharacterCreatorDialog = lazy(async () => ({ default: (await deferredPanelImporters.characterCreator()).CharacterCreatorDialog }));
+export const LazyAdvancementFlow = lazy(async () => ({ default: (await deferredPanelImporters.advancement()).AdvancementFlow }));
 export const LazyDndCharacterReviewPanel = lazy(async () => ({ default: (await deferredPanelImporters.dndCharacterReview()).DndCharacterReviewPanel }));
 export const LazyDndCustomContentPanel = lazy(async () => ({ default: (await deferredPanelImporters.dndCustomContent()).DndCustomContentPanel }));
 export const LazyDndInventoryCommercePanel = lazy(async () => ({ default: (await deferredPanelImporters.dndInventoryCommerce()).DndInventoryCommercePanel }));

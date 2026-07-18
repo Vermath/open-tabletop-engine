@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 const appSource = readFileSync(resolve(__dirname, "App.tsx"), "utf8");
 const actorPanelSource = readFileSync(resolve(__dirname, "actor-panel.tsx"), "utf8");
+const actorPlacementTraySource = readFileSync(resolve(__dirname, "actor-placement-tray.tsx"), "utf8");
 const sceneCanvasSource = readFileSync(resolve(__dirname, "scene-canvas.tsx"), "utf8");
 const stylesSource = readFileSync(resolve(__dirname, "styles.css"), "utf8");
 
@@ -24,6 +25,14 @@ describe("actor panel layout", () => {
     expect(stylesSource).toContain("overflow: auto;");
   });
 
+  it("keeps disclosure glyphs decorative instead of exposing orphan plus text", () => {
+    const disclosureGlyph = stylesSource.match(/\.create-drawer > summary::after \{(?<rules>[\s\S]*?)\n\}/)?.groups?.rules;
+
+    expect(disclosureGlyph).toContain('content: "";');
+    expect(disclosureGlyph).toContain("linear-gradient(currentColor, currentColor)");
+    expect(disclosureGlyph).not.toContain('content: "+";');
+  });
+
   it("lets users stop a running AI agent turn and removes the old AI edit-layer control", () => {
     expect(appSource).toContain("stopAiAgentTurn");
     expect(appSource).toContain("ai-agent-stop-button");
@@ -31,6 +40,28 @@ describe("actor panel layout", () => {
     expect(appSource).not.toContain("Proposal-first");
     expect(stylesSource).toContain("padding: 10px 28px 28px 0;");
     expect(appSource).not.toContain('aria-label="AI edit layer controls"');
+  });
+
+  it("does not silently cap full-sheet, targeting, or actor-placement records", () => {
+    expect(actorPlacementTraySource).toContain('aria-label="Search actors to place"');
+    expect(actorPlacementTraySource).toContain("placeableActors.map");
+    expect(actorPanelSource).toContain("actorItems.map");
+    expect(actorPanelSource).toContain("rollActions.map");
+    expect(actorPanelSource).toContain("featureActions.map");
+    expect(actorPanelSource).toContain("tokenActionTargetOptions.map");
+    expect(actorPanelSource).not.toContain("filteredActorItems.slice(0, 16)");
+    expect(actorPanelSource).not.toContain("props.actors.slice(0, 8)");
+  });
+
+  it("bounds only the area/lasso name preview while applying the complete target set", () => {
+    expect(actorPanelSource).toContain("areaTargetTokens.slice(0, 6).map");
+    expect(actorPanelSource).toContain("lassoTargetTokens.slice(0, 6).map");
+    expect(actorPanelSource).toContain("+{formatNumber(areaTargetTokens.length - 6)} more");
+    expect(actorPanelSource).toContain("+{formatNumber(lassoTargetTokens.length - 6)} more");
+    expect(actorPanelSource).toContain("props.targetTokens(areaTargetTokenIds, true)");
+    expect(actorPanelSource).toContain("props.targetTokens(areaTargetTokenIds, false)");
+    expect(actorPanelSource).toContain("props.targetTokens(lassoTargetTokenIds, true)");
+    expect(actorPanelSource).toContain("props.targetTokens(lassoTargetTokenIds, false)");
   });
 
   it("keeps board tokens readable inside a full grid square", () => {

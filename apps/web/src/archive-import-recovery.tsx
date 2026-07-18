@@ -11,6 +11,20 @@ export interface ArchiveImportRecoveryProps {
   onRollback(operationId: string): void;
 }
 
+export interface DeletedArchiveImportWorkspaceRecoveryOptions<T> {
+  fallbackCampaignId?: string;
+  clearRecoveryState(): void;
+  selectWorkspaceContext(campaignId: string, sceneId: string): void;
+  refreshWorkspace(campaignId: string, sceneId: string): Promise<T>;
+}
+
+export async function recoverDeletedArchiveImportWorkspace<T>({ fallbackCampaignId, clearRecoveryState, selectWorkspaceContext, refreshWorkspace }: DeletedArchiveImportWorkspaceRecoveryOptions<T>): Promise<T> {
+  const targetCampaignId = fallbackCampaignId ?? "";
+  clearRecoveryState();
+  selectWorkspaceContext(targetCampaignId, "");
+  return refreshWorkspace(targetCampaignId, "");
+}
+
 export function archiveImportRollbackConfirmationReady(operationId: string, confirmation: string): boolean {
   return Boolean(operationId) && confirmation.trim() === operationId;
 }

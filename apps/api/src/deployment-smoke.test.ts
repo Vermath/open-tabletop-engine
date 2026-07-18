@@ -12,26 +12,85 @@ function readWorkspaceFile(path: string): string {
 describe("deployment smoke", () => {
   it("pins every third-party workflow action to an immutable commit", () => {
     const workflowDirectory = resolve(rootDir, ".github/workflows");
-    for (const file of readdirSync(workflowDirectory).filter((name) => name.endsWith(".yml"))) {
+    for (const file of readdirSync(workflowDirectory).filter((name) =>
+      name.endsWith(".yml"),
+    )) {
       const workflow = readWorkspaceFile(`.github/workflows/${file}`);
-      const actionReferences = [...workflow.matchAll(/^\s*(?:-\s+)?uses:\s+["']?([^#\s"']+)["']?\s*(?:#.*)?$/gm)].map((match) => match[1]);
-      expect(actionReferences.length, `${file} should use at least one action`).toBeGreaterThan(0);
+      const actionReferences = [
+        ...workflow.matchAll(
+          /^\s*(?:-\s+)?uses:\s+["']?([^#\s"']+)["']?\s*(?:#.*)?$/gm,
+        ),
+      ].map((match) => match[1]);
+      expect(
+        actionReferences.length,
+        `${file} should use at least one action`,
+      ).toBeGreaterThan(0);
       for (const reference of actionReferences) {
-        expect(reference, `${file} must pin ${reference} to a full commit SHA`).toMatch(/^[^@]+@[0-9a-f]{40}$/i);
+        expect(
+          reference,
+          `${file} must pin ${reference} to a full commit SHA`,
+        ).toMatch(/^[^@]+@[0-9a-f]{40}$/i);
       }
     }
   });
 
   it("keeps the release gate wired to Docker Compose and production-like deployment checks", () => {
-    const packageJson = JSON.parse(readWorkspaceFile("package.json")) as { packageManager: string; scripts: Record<string, string> };
+    const packageJson = JSON.parse(readWorkspaceFile("package.json")) as {
+      packageManager: string;
+      scripts: Record<string, string>;
+    };
     expect(packageJson.packageManager).toBe("pnpm@10.28.0");
-    expect(packageJson.scripts["deployment:smoke"]).toBe("pnpm --filter @open-tabletop/api exec vitest run src/deployment-smoke.test.ts");
-    expect(packageJson.scripts["release:smoke"]).toContain("pnpm v1:worktree:check && pnpm security:audit && pnpm check && pnpm e2e");
-    expect(packageJson.scripts["security:audit"]).toBe("node scripts/audit-production-dependencies.mjs");
-    expect(packageJson.scripts["release:smoke"]).toContain("deployment:smoke");
-    expect(packageJson.scripts["release:smoke"]).toContain("perf:soak");
-    expect(packageJson.scripts["release:smoke"]).toContain("docs:site:check");
-    expect(packageJson.scripts["release:smoke"]).toContain("sbom:test");
+    expect(packageJson.scripts["deployment:smoke"]).toBe(
+      "pnpm --filter @open-tabletop/api exec vitest run src/deployment-smoke.test.ts",
+    );
+    expect(packageJson.scripts["release:smoke:offline"]).toContain(
+      "pnpm v1:worktree:check && pnpm security:audit && pnpm gate:check:cold-pair && pnpm gate:diagnostics:test && pnpm gate:evidence:test && pnpm e2e",
+    );
+    expect(packageJson.scripts["security:audit"]).toBe(
+      "node scripts/audit-production-dependencies.mjs",
+    );
+    expect(packageJson.scripts["compose:env:init"]).toBe(
+      "node scripts/init-compose-env.mjs",
+    );
+    expect(packageJson.scripts["compose:env:test"]).toBe(
+      "node scripts/test-init-compose-env.mjs",
+    );
+    expect(packageJson.scripts["sbom:api"]).toContain(
+      "open-tabletop-api.cdx.json",
+    );
+    expect(packageJson.scripts["gate:fast"]).toBe(
+      "pnpm deployment:smoke && pnpm --filter @open-tabletop/api-contracts test",
+    );
+    expect(packageJson.scripts["gate:evidence:record"]).toBe(
+      "node scripts/record-release-evidence.mjs",
+    );
+    expect(packageJson.scripts["gate:evidence:check"]).toBe(
+      "node scripts/check-release-gate-evidence.mjs --require-check-pair",
+    );
+    expect(packageJson.scripts["gate:evidence:test"]).toBe(
+      "node scripts/test-release-gate-evidence.mjs",
+    );
+    expect(packageJson.scripts["gate:diagnostics:test"]).toBe(
+      "node scripts/test-api-gate-diagnostics.mjs",
+    );
+    expect(packageJson.scripts["gate:check:cold-pair"]).toBe(
+      "node scripts/record-release-gate-pair.mjs",
+    );
+    expect(packageJson.scripts["release:smoke"]).toBe(
+      "pnpm release:smoke:offline && pnpm v1:issues:check",
+    );
+    expect(packageJson.scripts["release:smoke:offline"]).toContain(
+      "deployment:smoke",
+    );
+    expect(packageJson.scripts["release:smoke:offline"]).toContain("perf:soak");
+    expect(packageJson.scripts["release:smoke:offline"]).toContain(
+      "docs:site:check",
+    );
+    expect(packageJson.scripts["release:smoke:offline"]).toContain("sbom:test");
+    expect(packageJson.scripts["release:smoke:offline"]).toContain("sbom:api");
+    expect(packageJson.scripts["release:smoke:offline"]).toContain(
+      "compose:env:test",
+    );
     expect(packageJson.scripts["release:smoke"]).toContain("v1:issues:check");
 
     const lockfile = readWorkspaceFile("pnpm-lock.yaml");
@@ -39,112 +98,335 @@ describe("deployment smoke", () => {
     expect(lockfile).toContain("overrides:\n  '@babel/core': 7.29.6");
     expect(lockfile).toContain("tsx>esbuild: 0.28.1");
     const workspace = readWorkspaceFile("pnpm-workspace.yaml");
-    for (const dependency of ["electron", "electron-winstaller", "esbuild", "sharp", "workerd"]) {
+    for (const dependency of [
+      "electron",
+      "electron-winstaller",
+      "esbuild",
+      "sharp",
+      "workerd",
+    ]) {
       expect(workspace).toContain(`  ${dependency}: true`);
     }
 
     const workflow = readWorkspaceFile(".github/workflows/release-smoke.yml");
     expect(workflow).toContain("contents: read");
     expect(workflow).toContain("issues: read");
-    expect(workflow).toContain("pnpm release:smoke");
+    expect(workflow).toContain("pnpm release:smoke:offline");
+    expect(workflow).toContain("if: github.event_name == 'push'");
     expect(workflow).toContain("GH_TOKEN: ${{ github.token }}");
+    expect(workflow).toContain("include-hidden-files: true");
+    expect(workflow).toContain("if-no-files-found: error");
+    expect(workflow).toContain("open-tabletop-api-sbom");
+    expect(workflow).toContain(
+      ".codex-artifacts/sbom/open-tabletop-api.cdx.json",
+    );
 
-    const identityWorkflow = readWorkspaceFile(".github/workflows/identity-smoke.yml");
+    const identityWorkflow = readWorkspaceFile(
+      ".github/workflows/identity-smoke.yml",
+    );
     expect(identityWorkflow).toContain("workflow_dispatch:");
     expect(identityWorkflow).toContain("smoke_target:");
     expect(identityWorkflow).toContain("deployed-api");
     expect(identityWorkflow).toContain("local-sandbox");
-    expect(identityWorkflow).toContain("OTTE_IDENTITY_SMOKE_TARGET: ${{ inputs.smoke_target }}");
-    expect(identityWorkflow).toContain("OTTE_IDENTITY_SMOKE_BASE_URL: ${{ secrets.OTTE_IDENTITY_SMOKE_BASE_URL }}");
-    expect(identityWorkflow).toContain("OTTE_IDENTITY_SMOKE_ADMIN_TOKEN: ${{ secrets.OTTE_IDENTITY_SMOKE_ADMIN_TOKEN }}");
-    expect(identityWorkflow).toContain("OTTE_SCIM_BEARER_TOKEN: ${{ secrets.OTTE_SCIM_BEARER_TOKEN }}");
-    expect(identityWorkflow).toContain("Missing required identity-smoke secrets");
+    expect(identityWorkflow).toContain(
+      "OTTE_IDENTITY_SMOKE_TARGET: ${{ inputs.smoke_target }}",
+    );
+    expect(identityWorkflow).toContain(
+      "OTTE_IDENTITY_SMOKE_BASE_URL: ${{ secrets.OTTE_IDENTITY_SMOKE_BASE_URL }}",
+    );
+    expect(identityWorkflow).toContain(
+      "OTTE_IDENTITY_SMOKE_ADMIN_TOKEN: ${{ secrets.OTTE_IDENTITY_SMOKE_ADMIN_TOKEN }}",
+    );
+    expect(identityWorkflow).toContain(
+      "OTTE_SCIM_BEARER_TOKEN: ${{ secrets.OTTE_SCIM_BEARER_TOKEN }}",
+    );
+    expect(identityWorkflow).toContain(
+      "Missing required identity-smoke secrets",
+    );
     expect(identityWorkflow).toContain("pnpm identity:smoke");
 
-    const completionAuditWorkflow = readWorkspaceFile(".github/workflows/v1-completion-audit.yml");
+    const completionAuditWorkflow = readWorkspaceFile(
+      ".github/workflows/v1-completion-audit.yml",
+    );
     expect(completionAuditWorkflow).toContain("workflow_dispatch:");
     expect(completionAuditWorkflow).toContain("release_commit:");
-    expect(completionAuditWorkflow).toContain("OTTE_RELEASE_COMMIT: ${{ inputs.release_commit }}");
-    expect(completionAuditWorkflow).toContain("ref: ${{ inputs.release_commit }}");
+    expect(completionAuditWorkflow).toContain(
+      "OTTE_RELEASE_COMMIT: ${{ inputs.release_commit }}",
+    );
+    expect(completionAuditWorkflow).toContain(
+      "ref: ${{ inputs.release_commit }}",
+    );
     expect(completionAuditWorkflow).toContain("issues: read");
     expect(completionAuditWorkflow).toContain("GH_TOKEN: ${{ github.token }}");
-    expect(completionAuditWorkflow).toContain("release_commit must be a full 40-character SHA");
+    expect(completionAuditWorkflow).toContain(
+      "release_commit must be a full 40-character SHA",
+    );
     expect(completionAuditWorkflow).toContain("pnpm v1:completion:audit");
 
-    const desktopReleaseWorkflow = readWorkspaceFile(".github/workflows/desktop-release.yml");
+    const desktopReleaseWorkflow = readWorkspaceFile(
+      ".github/workflows/desktop-release.yml",
+    );
     expect(desktopReleaseWorkflow).toContain("pnpm audit --audit-level high");
     expect(desktopReleaseWorkflow).not.toContain("pnpm audit --prod");
-    expect(desktopReleaseWorkflow).toContain("Verify release tag matches desktop package version");
-    expect(desktopReleaseWorkflow).toContain('desktop_version="$(node -p "require(\'./apps/desktop/package.json\').version\")"');
-    expect(desktopReleaseWorkflow).toContain('expected_tag="desktop-v${desktop_version}"');
-    expect(desktopReleaseWorkflow).toContain('for artifact in *.dmg "$sbom" "$provenance"; do');
-    expect(desktopReleaseWorkflow).toContain('if [ -f "$artifact" ]; then');
-    expect(desktopReleaseWorkflow).toContain('if [ "${#checksum_files[@]}" -ne 3 ]; then');
     expect(desktopReleaseWorkflow).toContain(
-      '[System.IO.File]::WriteAllText("$release/SHA256SUMS.txt", ($lines -join "`n") + "`n", [System.Text.UTF8Encoding]::new($false))'
+      "Verify release tag matches desktop package version",
     );
-    expect(desktopReleaseWorkflow).toContain("$checksumBytes -contains [byte]0x0d");
-    expect(desktopReleaseWorkflow).not.toMatch(/(?:Set-Content|Out-File)[^\r\n]*SHA256SUMS\.txt/i);
+    expect(desktopReleaseWorkflow).toContain(
+      'desktop_version="$(node -p "require(\'./apps/desktop/package.json\').version\")"',
+    );
+    expect(desktopReleaseWorkflow).toContain(
+      'expected_tag="desktop-v${desktop_version}"',
+    );
+    expect(desktopReleaseWorkflow).toContain(
+      'for artifact in *.dmg "$sbom" "$provenance"; do',
+    );
+    expect(desktopReleaseWorkflow).toContain('if [ -f "$artifact" ]; then');
+    expect(desktopReleaseWorkflow).toContain(
+      'if [ "${#checksum_files[@]}" -ne 3 ]; then',
+    );
+    expect(desktopReleaseWorkflow).toContain(
+      '[System.IO.File]::WriteAllText("$release/SHA256SUMS.txt", ($lines -join "`n") + "`n", [System.Text.UTF8Encoding]::new($false))',
+    );
+    expect(desktopReleaseWorkflow).toContain(
+      "$checksumBytes -contains [byte]0x0d",
+    );
+    expect(desktopReleaseWorkflow).not.toMatch(
+      /(?:Set-Content|Out-File)[^\r\n]*SHA256SUMS\.txt/i,
+    );
     expect(desktopReleaseWorkflow).not.toContain("shasum -a 256 *");
 
-    const docsSiteWorkflow = readWorkspaceFile(".github/workflows/docs-site.yml");
-    expect(docsSiteWorkflow).toContain("group: docs-site-${{ github.event_name == 'pull_request' && github.ref || 'publish' }}");
+    const docsSiteWorkflow = readWorkspaceFile(
+      ".github/workflows/docs-site.yml",
+    );
+    expect(docsSiteWorkflow).toContain(
+      "group: docs-site-${{ github.event_name == 'pull_request' && github.ref || 'publish' }}",
+    );
 
     const compose = readWorkspaceFile("docker-compose.yml");
+    expect(compose).toMatch(
+      /image: minio\/minio:RELEASE\.[^@\s]+@sha256:[0-9a-f]{64}/,
+    );
+    expect(compose).not.toContain("minio/minio:latest");
     expect(compose).toContain("dockerfile: infra/docker/api.Dockerfile");
     expect(compose).toContain("dockerfile: infra/docker/web.Dockerfile");
     expect(compose).toContain("dockerfile: infra/docker/worker.Dockerfile");
-    expect(compose).toContain("OTTE_SQLITE_PATH: /app/storage/opentabletop.sqlite");
+    expect(compose).toContain(
+      "OTTE_SQLITE_PATH: /app/storage/opentabletop.sqlite",
+    );
     expect(compose).toContain("OTTE_ASSET_STORAGE: ${OTTE_ASSET_STORAGE:-s3}");
-    expect(compose).toContain("OTTE_ALLOW_LEGACY_USER_HEADER: ${OTTE_ALLOW_LEGACY_USER_HEADER:-false}");
-    expect(compose).toContain("OTTE_PLUGIN_TRUST_POLICY: ${OTTE_PLUGIN_TRUST_POLICY:-require_trusted}");
-    expect(compose).toContain("OTTE_PLUGIN_REVIEW_POLICY: ${OTTE_PLUGIN_REVIEW_POLICY:-require_approved}");
+    expect(compose).toContain("MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?");
+    expect(compose).toContain(
+      "OTTE_S3_SECRET_ACCESS_KEY: ${OTTE_S3_SECRET_ACCESS_KEY:?",
+    );
+    expect(compose).not.toContain("opentabletop-dev");
+    expect(compose).toContain(
+      "OTTE_S3_ALLOW_INSECURE_LOCAL_ENDPOINT: ${OTTE_S3_ALLOW_INSECURE_LOCAL_ENDPOINT:-true}",
+    );
+    expect(compose).toContain(
+      "OTTE_ALLOW_LEGACY_USER_HEADER: ${OTTE_ALLOW_LEGACY_USER_HEADER:-false}",
+    );
+    expect(compose).toContain(
+      "OTTE_PUBLIC_REGISTRATION: ${OTTE_PUBLIC_REGISTRATION:-false}",
+    );
+    expect(compose).toContain(
+      "OTTE_TRUSTED_PROXY_HOPS: ${OTTE_TRUSTED_PROXY_HOPS:-1}",
+    );
+    expect(compose).toContain(
+      "OTTE_SESSION_COOKIE_SECURE: ${OTTE_SESSION_COOKIE_SECURE:-false}",
+    );
+    expect(compose).toContain(
+      "OTTE_ALLOW_INSECURE_LOCAL_SESSION_COOKIE: ${OTTE_ALLOW_INSECURE_LOCAL_SESSION_COOKIE:-true}",
+    );
+    expect(compose).toContain(
+      "OTTE_PLUGIN_TRUST_POLICY: ${OTTE_PLUGIN_TRUST_POLICY:-require_trusted}",
+    );
+    expect(compose).toContain(
+      "OTTE_PLUGIN_REVIEW_POLICY: ${OTTE_PLUGIN_REVIEW_POLICY:-require_approved}",
+    );
     expect(compose).toContain("OTTE_PLUGIN_DIR: /app/storage/plugins");
     expect(compose).toContain("OTTE_BUNDLED_PLUGIN_DIR: /app/plugins");
     expect(compose).toContain("api-plugins:/app/storage/plugins");
     expect(compose).not.toContain("api-plugins:/app/plugins");
-    expect(compose).toContain("OTTE_AI_PROVIDER: ${OTTE_AI_PROVIDER:-codex-app-server}");
-    expect(compose).toContain("OTTE_ASSET_URL_SIGNING_SECRET: ${OTTE_ASSET_URL_SIGNING_SECRET:?");
-    expect(compose).toContain("OTTE_SQLITE_BACKUP_RETENTION_COUNT: ${OTTE_SQLITE_BACKUP_RETENTION_COUNT:-30}");
+    expect(compose).toContain(
+      "OTTE_AI_PROVIDER: ${OTTE_AI_PROVIDER:-codex-app-server}",
+    );
+    expect(compose).toContain(
+      "OTTE_ASSET_URL_SIGNING_SECRET: ${OTTE_ASSET_URL_SIGNING_SECRET:?",
+    );
+    expect(compose).toContain(
+      "OTTE_SQLITE_BACKUP_RETENTION_COUNT: ${OTTE_SQLITE_BACKUP_RETENTION_COUNT:-30}",
+    );
+    expect(compose).toContain(
+      "OTTE_SQLITE_BACKUP_RUN_ON_START: ${OTTE_SQLITE_BACKUP_RUN_ON_START:-true}",
+    );
+    expect(compose).toContain(
+      "OTTE_SQLITE_BACKUP_INTERVAL_SECONDS: ${OTTE_SQLITE_BACKUP_INTERVAL_SECONDS:-86400}",
+    );
+    expect(compose).toContain(
+      "OTTE_SQLITE_BACKUP_REASON: ${OTTE_SQLITE_BACKUP_REASON:-compose-daily}",
+    );
+    expect(compose).toContain("VITE_API_URL: ${VITE_API_URL:-}");
+    expect(compose).toContain(
+      "OTTE_ASSET_CDN_BASE_URL: ${OTTE_ASSET_CDN_BASE_URL:-}",
+    );
+    expect(compose).toContain(
+      "curl -fsS http://127.0.0.1:9000/minio/health/live",
+    );
     expect(compose).toContain("wget -qO- http://127.0.0.1:4000/api/v1/health");
+    expect(compose).toContain("wget -qO- http://127.0.0.1/api/v1/health");
     expect(compose).toContain("condition: service_healthy");
-    expect(compose).toContain("OTTE_WORKER_LEASE_POLL: \"true\"");
-    expect(compose).toContain("OTTE_WORKER_PROFILE_ENABLED: ${OTTE_WORKER_PROFILE_ENABLED:-false}");
-    expect(compose).toContain("OTTE_WORKER_TOKEN_HASHES: ${OTTE_WORKER_TOKEN_HASHES:-}");
+    expect(compose).toContain('OTTE_WORKER_LEASE_POLL: "true"');
+    expect(compose).toContain(
+      "OTTE_WORKER_PROFILE_ENABLED: ${OTTE_WORKER_PROFILE_ENABLED:-false}",
+    );
+    expect(compose).toContain(
+      "OTTE_WORKER_TOKEN_HASHES: ${OTTE_WORKER_TOKEN_HASHES:-}",
+    );
     expect(compose).toContain("OTTE_WORKER_TOKEN: ${OTTE_WORKER_TOKEN:-}");
-    expect(compose).not.toContain("OTTE_SESSION_TOKEN: ${OTTE_WORKER_SESSION_TOKEN:-}");
+    expect(compose).not.toContain(
+      "OTTE_SESSION_TOKEN: ${OTTE_WORKER_SESSION_TOKEN:-}",
+    );
     expect(compose).not.toContain("postgres:");
     expect(compose).not.toContain("redis:");
     expect(compose).not.toContain("POSTGRES_");
     expect(compose).not.toContain("REDIS_");
-    expect(compose).toContain('${INFRA_BIND_ADDRESS:-127.0.0.1}:${MINIO_API_PORT:-9000}:9000');
+    expect(compose).toContain(
+      "${INFRA_BIND_ADDRESS:-127.0.0.1}:${MINIO_API_PORT:-9000}:9000",
+    );
+    expect(compose).toContain(
+      "${API_BIND_ADDRESS:-127.0.0.1}:${API_PORT:-4000}:4000",
+    );
+    expect(compose).toContain(
+      "${WEB_BIND_ADDRESS:-127.0.0.1}:${WEB_PORT:-5173}:80",
+    );
     expect(compose).not.toContain("OTTE_USER_ID:");
     expect(compose).toContain("api-storage:");
     expect(compose).toContain("api-uploads:");
     expect(compose).toContain("api-plugins:");
 
-    const apiPackage = JSON.parse(readWorkspaceFile("apps/api/package.json")) as { dependencies: Record<string, string> };
+    const apiDockerfile = readWorkspaceFile("infra/docker/api.Dockerfile");
+    expect(apiDockerfile).toContain(
+      "pnpm turbo run build --filter=@open-tabletop/api...",
+    );
+    expect(apiDockerfile).toContain(
+      "mkdir -p /app/storage/plugins /app/uploads",
+    );
+    expect(apiDockerfile).toContain(
+      "chown -R node:node /app/storage /app/uploads",
+    );
+    const webDockerfile = readWorkspaceFile("infra/docker/web.Dockerfile");
+    expect(webDockerfile).toContain(
+      "pnpm turbo run build --filter=@open-tabletop/web...",
+    );
+    expect(webDockerfile).toContain(
+      "COPY infra/docker/nginx.conf /etc/nginx/templates/default.conf.otte",
+    );
+    expect(webDockerfile).toContain(
+      "COPY --chmod=755 infra/docker/render-web-nginx-config.sh /docker-entrypoint.d/15-render-otte-nginx-config.sh",
+    );
+    expect(readWorkspaceFile("infra/docker/worker.Dockerfile")).toContain(
+      "pnpm turbo run build --filter=@open-tabletop/worker...",
+    );
+
+    const composeEnvInitializer = readWorkspaceFile(
+      "scripts/init-compose-env.mjs",
+    );
+    expect(composeEnvInitializer).toContain(
+      'setEnvironmentValue(contents, "VITE_API_URL", "")',
+    );
+    expect(composeEnvInitializer).toContain("chmodSync(path, 0o600)");
+    expect(composeEnvInitializer).toContain('spawnSync("icacls.exe"');
+    const composeEnvTest = readWorkspaceFile(
+      "scripts/test-init-compose-env.mjs",
+    );
+    expect(composeEnvTest).toContain('assert.equal(replaced.VITE_API_URL, "")');
+    expect(composeEnvTest).toContain("assertRestrictedPermissions(output)");
+    const environmentExample = readWorkspaceFile(".env.example");
+    expect(environmentExample).toContain("MINIO_ROOT_PASSWORD=");
+    expect(environmentExample).not.toContain("opentabletop-dev");
+
+    const nginx = readWorkspaceFile("infra/docker/nginx.conf");
+    expect(nginx).toContain("connect-src 'self'");
+    expect(nginx).toContain(
+      "connect-src 'self'${OTTE_ASSET_CDN_CONNECT_SOURCE}",
+    );
+    expect(nginx).not.toMatch(
+      /connect-src[^;]*(?:https:|wss:|localhost|127\.0\.0\.1)/,
+    );
+    const nginxRenderer = readWorkspaceFile(
+      "infra/docker/render-web-nginx-config.sh",
+    );
+    expect(nginxRenderer).toContain(
+      "configured=${OTTE_ASSET_CDN_BASE_URL:-}",
+    );
+    expect(nginxRenderer).toContain(
+      "OTTE_ASSET_CDN_BASE_URL must use HTTPS outside loopback development",
+    );
+    expect(nginxRenderer).toContain(
+      "envsubst '${OTTE_ASSET_CDN_CONNECT_SOURCE}'",
+    );
+    expect(nginxRenderer).not.toContain("connect-src https:");
+    expect(nginx).toContain("proxy_set_header Host $http_host;");
+    expect(nginx).toContain("proxy_set_header X-Forwarded-Host $http_host;");
+    expect(nginx).not.toContain("proxy_set_header Host $host;");
+    const nginxBodyLimit = nginx.match(/client_max_body_size\s+(\d+)m;/);
+    expect(nginxBodyLimit, "Nginx must explicitly allow API uploads larger than its 1 MiB default").not.toBeNull();
+    const nginxBodyLimitBytes = Number(nginxBodyLimit![1]) * 1024 * 1024;
+    expect(nginxBodyLimitBytes).toBeGreaterThan(1024 * 1024);
+    expect(nginxBodyLimitBytes).toBeGreaterThanOrEqual(25 * 1024 * 1024);
+    const dockerIgnore = readWorkspaceFile(".dockerignore");
+    for (const ignoredArtifact of [
+      ".codex-artifacts",
+      "**/artifacts",
+      "**/storage",
+      "**/uploads",
+      "apps/desktop/release",
+      "artifacts",
+      "output",
+    ]) {
+      expect(dockerIgnore).toContain(ignoredArtifact);
+    }
+
+    const apiPackage = JSON.parse(
+      readWorkspaceFile("apps/api/package.json"),
+    ) as { dependencies: Record<string, string> };
     expect(apiPackage.dependencies["@openai/codex"]).toBeTruthy();
 
-    const systemSdkPackage = JSON.parse(readWorkspaceFile("packages/system-sdk/package.json")) as { license?: string; contentLicense?: string; contentNotice?: string; files?: string[] };
+    const systemSdkPackage = JSON.parse(
+      readWorkspaceFile("packages/system-sdk/package.json"),
+    ) as {
+      license?: string;
+      contentLicense?: string;
+      contentNotice?: string;
+      files?: string[];
+    };
     expect(systemSdkPackage.license).toBe("MIT");
     expect(systemSdkPackage.contentLicense).toBe("CC-BY-4.0");
     expect(systemSdkPackage.contentNotice).toBe("CONTENT_NOTICE.md");
-    expect(systemSdkPackage.files).toEqual(expect.arrayContaining(["dist", "LICENSE", "CONTENT_NOTICE.md"]));
-    const systemSdkContentNotice = readWorkspaceFile("packages/system-sdk/CONTENT_NOTICE.md");
+    expect(systemSdkPackage.files).toEqual(
+      expect.arrayContaining(["dist", "LICENSE", "CONTENT_NOTICE.md"]),
+    );
+    const systemSdkContentNotice = readWorkspaceFile(
+      "packages/system-sdk/CONTENT_NOTICE.md",
+    );
     expect(systemSdkContentNotice).toContain("System Reference Document 5.2.1");
-    expect(systemSdkContentNotice).toContain("Creative Commons Attribution 4.0 International License");
+    expect(systemSdkContentNotice).toContain(
+      "Creative Commons Attribution 4.0 International License",
+    );
     expect(systemSdkContentNotice).toContain("official SRD 5.2.1 PDF");
 
-    const apiDockerfile = readWorkspaceFile("infra/docker/api.Dockerfile");
     expect(apiDockerfile).toContain("USER node");
     expect(apiDockerfile).toContain("/app/storage /app/uploads");
 
-    const workerDockerfile = readWorkspaceFile("infra/docker/worker.Dockerfile");
+    const workerDockerfile = readWorkspaceFile(
+      "infra/docker/worker.Dockerfile",
+    );
     expect(workerDockerfile).toContain("USER node");
 
     const railwayApi = readWorkspaceFile("railway.api.json");
-    expect(railwayApi).toContain("OTTE_SQLITE_PATH=/app/storage/opentabletop.sqlite");
+    expect(railwayApi).toContain(
+      "OTTE_SQLITE_PATH=/app/storage/opentabletop.sqlite",
+    );
     expect(railwayApi).toContain("OTTE_UPLOAD_DIR=/app/storage/uploads");
     expect(railwayApi).toContain("OTTE_PLUGIN_DIR=/app/storage/plugins");
     expect(railwayApi).toContain("OTTE_BUNDLED_PLUGIN_DIR=/app/plugins");
@@ -152,47 +434,111 @@ describe("deployment smoke", () => {
     expect(railwayApi).toContain("OTTE_SQLITE_BACKUP_RUN_ON_START=true");
     expect(railwayApi).toContain("OTTE_SQLITE_BACKUP_INTERVAL_SECONDS=86400");
     expect(railwayApi).toContain("OTTE_SQLITE_BACKUP_REASON=railway-nightly");
-    expect(railwayApi).toContain("\"numReplicas\": 1");
-    expect(railwayApi).toContain("OTTE_CODEX_APP_SERVER_COMMAND=apps/api/node_modules/.bin/codex");
-    expect(railwayApi).toContain("OTTE_CODEX_APP_SERVER_LOGIN_TYPE=chatgptDeviceCode");
+    expect(railwayApi).toContain('"numReplicas": 1');
+    expect(railwayApi).toContain(
+      "OTTE_CODEX_APP_SERVER_COMMAND=apps/api/node_modules/.bin/codex",
+    );
+    expect(railwayApi).toContain(
+      "OTTE_CODEX_APP_SERVER_LOGIN_TYPE=chatgptDeviceCode",
+    );
     const apiServer = readWorkspaceFile("apps/api/src/server.ts");
-    expect(apiServer).toContain("bundledPluginRoot: process.env.OTTE_BUNDLED_PLUGIN_DIR");
+    expect(apiServer).toContain(
+      "bundledPluginRoot: process.env.OTTE_BUNDLED_PLUGIN_DIR",
+    );
 
     const railwayWeb = readWorkspaceFile("railway.web.json");
-    expect(railwayWeb).toContain('"startCommand": "NODE_ENV=production node apps/web/server.mjs"');
+    expect(railwayWeb).toContain(
+      '"startCommand": "NODE_ENV=production node apps/web/server.mjs"',
+    );
     expect(railwayWeb).toContain('"healthcheckPath": "/api/v1/health"');
 
     const selfHosting = readWorkspaceFile("docs/deployment/self-hosting.md");
     expect(selfHosting).toContain("docker compose up --build");
-    expect(selfHosting).toContain("docker compose --profile worker up -d worker");
-    expect(selfHosting).toContain("docker compose --profile worker up -d --scale worker=3 worker");
+    expect(selfHosting).toContain("pnpm compose:env:init");
+    expect(selfHosting).toContain("OTTE_PUBLIC_REGISTRATION=true");
+    expect(selfHosting).toContain("VITE_API_URL` is intentionally empty");
+    expect(selfHosting).toContain(
+      "application-managed, content-addressed copy of every recoverable asset object",
+    );
+    expect(selfHosting).toContain("strict paired restore drill");
+    expect(selfHosting).toContain(
+      "docker compose --profile worker up -d worker",
+    );
+    expect(selfHosting).toContain(
+      "docker compose --profile worker up -d --scale worker=3 worker",
+    );
     expect(selfHosting).toContain("Authorization: Worker");
-    expect(selfHosting).toContain("OTTE_WORKER_TOKEN_HASHES=worker-primary=sha256:<new-hex>,worker-primary=sha256:<old-hex>");
+    expect(selfHosting).toContain(
+      "OTTE_WORKER_TOKEN_HASHES=worker-primary=sha256:<new-hex>,worker-primary=sha256:<old-hex>",
+    );
     expect(selfHosting).toContain("production hard-refuses them");
     expect(selfHosting).toContain("INFRA_BIND_ADDRESS=127.0.0.1");
     expect(selfHosting).toContain("preview-only");
 
-    const hostedRecipes = readWorkspaceFile("docs/deployment/hosted-deployment-recipes.md");
-    expect(hostedRecipes).toContain("Mount the API service volume at `/app/storage`");
+    const backupRestore = readWorkspaceFile(
+      "docs/deployment/backup-restore.md",
+    );
+    expect(backupRestore).toContain(
+      "content-addressed application-managed snapshot",
+    );
+    expect(backupRestore).toContain("passes a strict paired restore drill");
+    expect(backupRestore).not.toContain(
+      "Scheduled backups are intentionally marked unpaired",
+    );
+
+    const hostedRecipes = readWorkspaceFile(
+      "docs/deployment/hosted-deployment-recipes.md",
+    );
+    expect(hostedRecipes).toContain(
+      "Mount the API service volume at `/app/storage`",
+    );
     expect(hostedRecipes).toContain("`OTTE_PLUGIN_DIR=/app/storage/plugins`");
-    expect(hostedRecipes).toContain("[Railway Persistence](./railway-persistence.md)");
+    expect(hostedRecipes).toContain(
+      "[Railway Persistence](./railway-persistence.md)",
+    );
     expect(hostedRecipes).toContain("OTTE_WORKER_PROFILE_ENABLED=true");
 
-    const railwayPersistence = readWorkspaceFile("docs/deployment/railway-persistence.md");
-    expect(railwayPersistence).toContain("Attach one Railway Volume to the API service");
+    const railwayPersistence = readWorkspaceFile(
+      "docs/deployment/railway-persistence.md",
+    );
+    expect(railwayPersistence).toContain(
+      "Attach one Railway Volume to the API service",
+    );
     expect(railwayPersistence).toContain("/app/storage");
-    expect(railwayPersistence).toContain("OTTE_SQLITE_PATH=/app/storage/opentabletop.sqlite");
-    expect(railwayPersistence).toContain("OTTE_PLUGIN_DIR=/app/storage/plugins");
-    expect(railwayPersistence).toContain("OTTE_BUNDLED_PLUGIN_DIR=/app/plugins");
-    expect(railwayPersistence).toContain("never overwrites an existing persisted package directory");
-    expect(railwayPersistence).toContain("OTTE_SQLITE_BACKUP_INTERVAL_SECONDS=86400");
-    expect(railwayPersistence).toContain("GET /api/v1/admin/storage/operations");
-    expect(railwayPersistence).toContain("POST /api/v1/admin/storage/restore-drill");
+    expect(railwayPersistence).toContain(
+      "OTTE_SQLITE_PATH=/app/storage/opentabletop.sqlite",
+    );
+    expect(railwayPersistence).toContain(
+      "OTTE_PLUGIN_DIR=/app/storage/plugins",
+    );
+    expect(railwayPersistence).toContain(
+      "OTTE_BUNDLED_PLUGIN_DIR=/app/plugins",
+    );
+    expect(railwayPersistence).toContain(
+      "never overwrites an existing persisted package directory",
+    );
+    expect(railwayPersistence).toContain(
+      "OTTE_SQLITE_BACKUP_INTERVAL_SECONDS=86400",
+    );
+    expect(railwayPersistence).toContain(
+      "GET /api/v1/admin/storage/operations",
+    );
+    expect(railwayPersistence).toContain(
+      "POST /api/v1/admin/storage/restore-drill",
+    );
     expect(railwayPersistence).toContain("public `/api/v1/health`");
 
-    const securityChecklist = readWorkspaceFile("docs/deployment/security-checklist.md");
-    expect(securityChecklist).toContain("OTTE_PLUGIN_TRUST_POLICY=require_trusted");
+    const securityChecklist = readWorkspaceFile(
+      "docs/deployment/security-checklist.md",
+    );
+    expect(securityChecklist).toContain(
+      "OTTE_PLUGIN_TRUST_POLICY=require_trusted",
+    );
     expect(securityChecklist).toContain("OTTE_ALLOW_LEGACY_USER_HEADER");
     expect(securityChecklist).toContain("asset signing secrets");
+
+    const dependabot = readWorkspaceFile(".github/dependabot.yml");
+    expect(dependabot).toContain("package-ecosystem: npm");
+    expect(dependabot.match(/package-ecosystem: docker/g)).toHaveLength(2);
   });
 });

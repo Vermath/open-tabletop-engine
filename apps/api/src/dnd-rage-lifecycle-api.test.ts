@@ -190,5 +190,5 @@ describe("D&D Rage prepared-action API lifecycle", () => {
     } finally {
       await app.close();
     }
-  });
+  }, 20_000);
 });

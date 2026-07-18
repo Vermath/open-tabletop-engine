@@ -22,6 +22,7 @@ import {
   normalizeEngineState,
   seedState,
   type EngineState,
+  type MapAsset,
 } from "@open-tabletop/core";
 import {
   CoalescedStateWriter,
@@ -239,6 +240,7 @@ export interface SqliteRestoreDrillOptions {
   backupFileName?: string;
   requireAssetSnapshot?: boolean;
   expectedAssetSnapshot?: AssetSnapshotIdentity;
+  expectedAssetInventory?: SqliteAssetMetadataInventory;
 }
 
 export type SqliteRestoreFaultPhase =
@@ -283,6 +285,8 @@ export interface SqliteRestoreBackupOptions extends SqliteRestoreDrillOptions {
   expectedStateRevision?: string;
   /** Authenticated server admin retained as owner of backup-only campaigns. */
   recoveryAdminUserId?: string;
+  /** Automatic paired-restore rollback must reproduce the captured live state byte-for-byte. */
+  reconcileSecurityPlane?: boolean;
 }
 
 export interface SqliteStorageOperations {
@@ -706,6 +710,11 @@ export class SqliteStateStore implements StateStore {
     };
   }
 
+  /** Root for SQLite backups and application-managed paired asset snapshots. */
+  backupArtifactDirectory(): string {
+    return this.backupDir();
+  }
+
   runRestoreDrill(
     options: SqliteRestoreDrillOptions = {},
   ): SqliteRestoreDrillResult {
@@ -832,6 +841,7 @@ export class SqliteStateStore implements StateStore {
       backupFileName: options.backupFileName,
       requireAssetSnapshot: options.requireAssetSnapshot,
       expectedAssetSnapshot: options.expectedAssetSnapshot,
+      expectedAssetInventory: options.expectedAssetInventory,
     });
     if (drill.status === "failed" || !drill.backup) return drill;
 
@@ -902,13 +912,15 @@ export class SqliteStateStore implements StateStore {
       this.state = this.load();
       intent = advanceRestoreIntent(this.filePath, intent, "candidate_loaded");
       this.options.restoreFaultInjector?.("after_candidate_load");
-      reconciliation = reconcileRestoredState(
-        this.state,
-        recoveryFence,
-        options.recoveryAdminUserId,
-      );
-      this.save();
-      this.flush();
+      if (options.reconcileSecurityPlane !== false) {
+        reconciliation = reconcileRestoredState(
+          this.state,
+          recoveryFence,
+          options.recoveryAdminUserId,
+        );
+        this.save();
+        this.flush();
+      }
       intent = advanceRestoreIntent(this.filePath, intent, "reconciled");
       this.options.restoreFaultInjector?.("after_reconciliation");
       const operations = this.storageOperations();
@@ -1480,11 +1492,18 @@ function assertAssetSnapshotOptions(options: SqliteBackupOptions): void {
   }
 }
 
-function assetMetadataInventory(
+export function assetMetadataInventory(
   state: EngineState,
   provider: SqliteAssetMetadataInventory["provider"],
 ): SqliteAssetMetadataInventory {
-  const assets = [...state.assets]
+  return assetMetadataInventoryForAssets(state.assets, provider);
+}
+
+export function assetMetadataInventoryForAssets(
+  sourceAssets: readonly MapAsset[],
+  provider: SqliteAssetMetadataInventory["provider"],
+): SqliteAssetMetadataInventory {
+  const assets = [...sourceAssets]
     .sort(
       (left, right) =>
         left.campaignId.localeCompare(right.campaignId) ||
@@ -1660,6 +1679,15 @@ function validateRecoveryManifestForDrill(
       reason: "asset_snapshot_identity_mismatch",
       error:
         "Expected asset snapshot identity does not exactly match the recovery manifest",
+    };
+  }
+  if (
+    options.expectedAssetInventory &&
+    compareAssetInventories(options.expectedAssetInventory, manifest.assetInventory)
+  ) {
+    return {
+      reason: "asset_snapshot_inventory_mismatch",
+      error: "Paired asset snapshot inventory does not exactly match the SQLite recovery manifest",
     };
   }
   return undefined;

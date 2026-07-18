@@ -564,7 +564,80 @@ export function isPurchasableCompendiumEntry(actor: Actor, entry: RulesCompendiu
 }
 
 
-export type ActorActionOption = { rollId: string; label: string; description: string; resolutionNote?: string };
+export type ActorActionKind = "action" | "bonusAction" | "reaction" | "free";
+
+export type ActorActionOption = {
+  rollId: string;
+  label: string;
+  description: string;
+  resolutionNote?: string;
+  /** Web-local presentation mirror of the authoritative resolver economy. */
+  actionKind?: ActorActionKind;
+};
+
+const dnd5eSrdKnownActionKinds: Readonly<Record<string, ActorActionKind>> = {
+  "feature-second-wind-healing": "bonusAction",
+  "feature-action-surge": "free",
+  "feature-tactical-mind-bonus": "free",
+  "feature-rage": "bonusAction",
+  "feature-rage-damage-bonus": "free",
+  "feature-rage-extend": "bonusAction",
+  "feature-rage-end": "free",
+  "feature-reckless-attack": "free",
+  "feature-berserker-frenzy-damage": "free",
+  "species-human-resourceful": "free",
+  "species-human-skillful": "free",
+  "species-human-versatile": "free"
+};
+
+function dnd5eSrdActionKindFromValue(value: unknown): ActorActionKind | undefined {
+  const normalized = stringValue(value)?.trim().toLowerCase();
+  if (!normalized) return undefined;
+  if (normalized === "free" || normalized === "no-action" || normalized === "no action required" || normalized === "on-hit" || normalized === "follow-up") return "free";
+  if (normalized.includes("reaction")) return "reaction";
+  if (normalized.includes("bonus")) return "bonusAction";
+  if (["action", "magic", "magic action", "hide", "utilize", "study", "search", "action or ritual"].includes(normalized)) return "action";
+  return undefined;
+}
+
+function dnd5eSrdMonsterOptionKind(actor: Actor, option: ActorActionOption): ActorActionKind | undefined {
+  const actions = Array.isArray(recordValue(recordValue(actor.data.monster).statBlock).actions)
+    ? (recordValue(recordValue(actor.data.monster).statBlock).actions as unknown[]).map(recordValue)
+    : [];
+  const source = actions.find((action) => {
+    const name = stringValue(action.name);
+    return Boolean(name && option.rollId.startsWith(`monster-${slugId(name)}-`));
+  });
+  if (!source) return undefined;
+  const declaredKind = dnd5eSrdActionKindFromValue(source.kind);
+  if (option.rollId.endsWith("-attack")) return declaredKind ?? "action";
+  if (Number.isFinite(numericValue(source.attackBonus, Number.NaN))) return "free";
+  return declaredKind ?? (actorActionDiceFormula(option) === "0" ? "free" : "action");
+}
+
+function dnd5eSrdItemOptionKind(items: Item[], option: ActorActionOption): ActorActionKind | undefined {
+  const item = items.find((candidate) => option.rollId.startsWith(`${candidate.type === "spell" ? "spell" : "item"}-${candidate.id}-`));
+  if (!item) return undefined;
+  const data = recordValue(item.data);
+  const declaredKind = dnd5eSrdActionKindFromValue(data.action)
+    ?? dnd5eSrdActionKindFromValue(data.activation)
+    ?? dnd5eSrdActionKindFromValue(data.actionEconomy)
+    ?? (data.reaction === true ? "reaction" : undefined);
+  if (option.rollId.endsWith("-attack")) return declaredKind ?? "action";
+  const attackBound = data.spellAttack === true || dnd5eSrdIsWeaponData(data);
+  if (attackBound && (option.rollId.endsWith("-damage") || option.rollId.endsWith("-effect"))) return "free";
+  return declaredKind ?? (actorActionDiceFormula(option) === "0" ? "free" : "action");
+}
+
+/**
+ * Keeps the action-list tag deliberately independent from the system SDK. The
+ * sheet/API agreement regression compares this mirror with server quick rolls.
+ */
+export function dnd5eSrdActionOptionKind(actor: Actor, items: Item[], option: ActorActionOption): ActorActionKind | undefined {
+  return dnd5eSrdKnownActionKinds[option.rollId]
+    ?? (option.rollId.startsWith("monster-") ? dnd5eSrdMonsterOptionKind(actor, option) : undefined)
+    ?? (/^(?:item|spell)-/.test(option.rollId) ? dnd5eSrdItemOptionKind(items, option) : undefined);
+}
 
 export function unmodeledMixedDamageRiderNote(data: Record<string, unknown>): string | undefined {
   const secondaryFormula = stringValue(data.secondaryDamageFormula);
@@ -581,6 +654,7 @@ export function unmodeledMixedDamageRiderNote(data: Record<string, unknown>): st
 export function actorActionSupportsEffect(action: ActorActionOption | undefined): boolean {
   if (!action) return false;
   if (action.rollId === "feature-stunning-strike") return true;
+  if (action.rollId.endsWith("-attack")) return false;
   const effectText = `${action.rollId} ${action.label} ${action.description}`.toLowerCase();
   return action.rollId.endsWith("-healing") || action.rollId.endsWith("-damage") || /\b(healing|damage|condition|effect)\b/.test(effectText);
 }
@@ -595,7 +669,8 @@ export function actorActionOptions(actor: Actor, items: Item[]): ActorActionOpti
 
 
 export function dnd5eSrdActionOptions(actor: Actor, items: Item[]): ActorActionOption[] {
-  return [...dnd5eSrdClassFeatureActionOptions(actor), ...dnd5eSrdSpeciesTraitActionOptions(actor), ...dnd5eSrdMonsterActionOptions(actor), ...dnd5eSrdItemActionOptions(actor, items)];
+  return [...dnd5eSrdClassFeatureActionOptions(actor), ...dnd5eSrdSpeciesTraitActionOptions(actor), ...dnd5eSrdMonsterActionOptions(actor), ...dnd5eSrdItemActionOptions(actor, items)]
+    .map((option) => ({ ...option, actionKind: dnd5eSrdActionOptionKind(actor, items, option) }));
 }
 
 
@@ -616,7 +691,7 @@ export function dnd5eSrdMonsterActionOptions(actor: Actor): ActorActionOption[] 
       const resolutionNote = unmodeledMixedDamageRiderNote(action);
       options.push({ rollId: `monster-${id}-damage`, label: `${name} Damage`, description: `${name} Damage: ${damageFormula}`, ...(resolutionNote ? { resolutionNote } : {}) });
     }
-    if (stringValue(action.condition) || stringValue(action.summary) || Object.keys(recordValue(action.save)).length > 0) {
+    if (stringValue(action.condition) || (action.summaryMetadata === true && stringValue(action.summary)) || Object.keys(recordValue(action.save)).length > 0) {
       options.push({ rollId: `monster-${id}-effect`, label: `${name} Effect`, description: `${name} Effect: ${dnd5eSrdMonsterActionEffectSummary(action)}` });
     }
     return options;
@@ -636,7 +711,7 @@ export function dnd5eSrdClassFeatureActionOptions(actor: Actor): ActorActionOpti
     const tacticalShift = dnd5eSrdHasTacticalShift(actor) ? `; Tactical Shift ${dnd5eSrdTacticalShiftMovement(actor)} ft without opportunity attacks` : "";
     options.push({
       rollId: "feature-second-wind-healing",
-      label: "Second Wind",
+      label: "Second Wind Healing",
       description: `Second Wind Healing: ${dnd5eSrdSecondWindFormula(actor)}${tacticalShift}`
     });
   }
@@ -644,7 +719,7 @@ export function dnd5eSrdClassFeatureActionOptions(actor: Actor): ActorActionOpti
     options.push({ rollId: "feature-action-surge", label: "Action Surge", description: "Action Surge: spend one use and grant exactly one additional Action this turn" });
   }
   if (dnd5eSrdHasTacticalMind(actor)) {
-    options.push({ rollId: "feature-tactical-mind-bonus", label: "Tactical Mind", description: "Tactical Mind Bonus: 1d10; spends Second Wind" });
+    options.push({ rollId: "feature-tactical-mind-bonus", label: "Tactical Mind Bonus", description: "Tactical Mind Bonus: 1d10; spends Second Wind" });
   }
   if (dnd5eSrdHasChampionCritical(actor)) {
     options.push({ rollId: "feature-champion-critical-range", label: dnd5eSrdChampionCriticalLabel(actor), description: `${dnd5eSrdChampionCriticalLabel(actor)}: weapon and Unarmed Strike attacks score Critical Hits on ${dnd5eSrdChampionCriticalRange(actor)}` });
@@ -665,17 +740,20 @@ export function dnd5eSrdClassFeatureActionOptions(actor: Actor): ActorActionOpti
       options.push(
         { rollId: "feature-rage-extend", label: "Extend Rage", description: "Extend Rage (Bonus Action): continue until the end of your next turn, up to 10 minutes" },
         { rollId: "feature-rage-end", label: "End Rage", description: "End Rage: voluntarily end the active Rage" },
-        { rollId: "feature-rage-damage-bonus", label: "Rage Damage", description: `Rage Damage Bonus: ${rage.damageBonus}; automatic on eligible Strength weapon and Unarmed Strike damage` }
+        { rollId: "feature-rage-damage-bonus", label: "Rage Damage Bonus", description: `Rage Damage Bonus: ${rage.damageBonus}; automatic on eligible Strength weapon and Unarmed Strike damage` }
       );
     } else {
-      options.push({ rollId: "feature-rage", label: "Rage", description: `Rage (Bonus Action): spends one use, ends Concentration, grants Strength Advantage, +${rageDamageBonus} eligible damage, and physical resistance` });
+      options.push(
+        { rollId: "feature-rage", label: "Rage", description: `Rage (Bonus Action): spends one use, ends Concentration, grants Strength Advantage, +${rageDamageBonus} eligible damage, and physical resistance` },
+        { rollId: "feature-rage-damage-bonus", label: "Rage Damage Bonus", description: `Rage Damage Bonus: ${rageDamageBonus}; automatic on eligible Strength weapon and Unarmed Strike damage` }
+      );
     }
   }
   if (dnd5eSrdHasRecklessAttack(actor)) {
     options.push({ rollId: "feature-reckless-attack", label: "Reckless Attack", description: "Reckless Attack: Strength attacks gain advantage; attacks against you gain advantage" });
   }
   if (dnd5eSrdHasBerserkerFrenzy(actor)) {
-    options.push({ rollId: "feature-berserker-frenzy-damage", label: "Frenzy", description: `Berserker Frenzy Damage: ${dnd5eSrdBerserkerFrenzyFormula(actor)} after Reckless Attack while raging` });
+    options.push({ rollId: "feature-berserker-frenzy-damage", label: "Berserker Frenzy Damage", description: `Berserker Frenzy Damage: ${dnd5eSrdBerserkerFrenzyFormula(actor)} after Reckless Attack while raging` });
   }
   if (dnd5eSrdHasBerserkerMindlessRage(actor)) {
     options.push({ rollId: "feature-berserker-mindless-rage", label: "Mindless Rage", description: "Mindless Rage: immune to Charmed and Frightened while raging" });
@@ -1119,33 +1197,57 @@ export function dnd5eSrdHasChampionCritical(actor: Actor): boolean {
 }
 
 
+export function dnd5eSrdHasSelectedSubclassLevel(actor: Actor, className: string, minimumLevel: number, ...selections: string[]): boolean {
+  const classLevel = dnd5eSrdClassLevel(actor, className);
+  if (classLevel < minimumLevel) return false;
+  const subclasses = recordValue(actor.data.subclasses);
+  const stored = Object.entries(subclasses).find(([key]) => key.toLowerCase() === className.toLowerCase())?.[1];
+  const legacy = stringValue(actor.data.class)?.toLowerCase() === className.toLowerCase() ? actor.data.subclass : undefined;
+  const selected = stringValue(stored) ?? stringValue(legacy);
+  return Boolean(selected && selections.some((selection) => selection.toLowerCase() === selected.toLowerCase()));
+}
+
+
+export function dnd5eSrdLegacySubclassStateAllowed(actor: Actor, className: string): boolean {
+  const subclasses = recordValue(actor.data.subclasses);
+  const stored = Object.entries(subclasses).find(([key]) => key.toLowerCase() === className.toLowerCase())?.[1];
+  const legacy = stringValue(actor.data.class)?.toLowerCase() === className.toLowerCase() ? actor.data.subclass : undefined;
+  return (stringValue(stored) ?? stringValue(legacy)) === undefined;
+}
+
+
 export function dnd5eSrdHasChampionImprovedCritical(actor: Actor): boolean {
   const features = Array.isArray(actor.data.features) ? actor.data.features : [];
-  return dnd5eSrdClassLevel(actor, "Fighter") >= 3 || features.includes("Improved Critical");
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Fighter", 3, "champion")) return true;
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Fighter") && features.includes("Improved Critical");
 }
 
 
 export function dnd5eSrdHasChampionRemarkableAthlete(actor: Actor): boolean {
   const features = Array.isArray(actor.data.features) ? actor.data.features : [];
-  return dnd5eSrdClassLevel(actor, "Fighter") >= 3 || features.includes("Remarkable Athlete");
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Fighter", 3, "champion")) return true;
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Fighter") && features.includes("Remarkable Athlete");
 }
 
 
 export function dnd5eSrdHasChampionHeroicWarrior(actor: Actor): boolean {
   const features = Array.isArray(actor.data.features) ? actor.data.features : [];
-  return dnd5eSrdClassLevel(actor, "Fighter") >= 10 || features.includes("Heroic Warrior");
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Fighter", 10, "champion")) return true;
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Fighter") && features.includes("Heroic Warrior");
 }
 
 
 export function dnd5eSrdHasChampionSuperiorCritical(actor: Actor): boolean {
   const features = Array.isArray(actor.data.features) ? actor.data.features : [];
-  return dnd5eSrdClassLevel(actor, "Fighter") >= 15 || features.includes("Superior Critical");
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Fighter", 15, "champion")) return true;
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Fighter") && features.includes("Superior Critical");
 }
 
 
 export function dnd5eSrdHasChampionSurvivor(actor: Actor): boolean {
   const features = Array.isArray(actor.data.features) ? actor.data.features : [];
-  return dnd5eSrdClassLevel(actor, "Fighter") >= 18 || features.includes("Survivor");
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Fighter", 18, "champion")) return true;
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Fighter") && features.includes("Survivor");
 }
 
 
@@ -1319,25 +1421,31 @@ export function dnd5eSrdHasStunningStrike(actor: Actor): boolean {
 
 export function dnd5eSrdHasOpenHandTechnique(actor: Actor): boolean {
   const features = Array.isArray(actor.data.features) ? actor.data.features : [];
-  return dnd5eSrdClassLevel(actor, "Monk") >= 3 || features.includes("Warrior of the Open Hand") || features.includes("Open Hand Technique");
+  return dnd5eSrdHasSelectedSubclassLevel(actor, "Monk", 3, "warrior-of-the-open-hand", "Warrior of the Open Hand")
+    || features.includes("Warrior of the Open Hand")
+    || features.includes("Open Hand Technique");
 }
 
 
 export function dnd5eSrdHasOpenHandWholeness(actor: Actor): boolean {
   const features = Array.isArray(actor.data.features) ? actor.data.features : [];
-  return dnd5eSrdClassLevel(actor, "Monk") >= 6 || features.includes("Wholeness of Body") || "wholenessOfBody" in recordValue(actor.data.resources);
+  return dnd5eSrdHasSelectedSubclassLevel(actor, "Monk", 6, "warrior-of-the-open-hand", "Warrior of the Open Hand")
+    || features.includes("Wholeness of Body")
+    || "wholenessOfBody" in recordValue(actor.data.resources);
 }
 
 
 export function dnd5eSrdHasOpenHandFleetStep(actor: Actor): boolean {
   const features = Array.isArray(actor.data.features) ? actor.data.features : [];
-  return dnd5eSrdClassLevel(actor, "Monk") >= 11 || features.includes("Fleet Step");
+  return dnd5eSrdHasSelectedSubclassLevel(actor, "Monk", 11, "warrior-of-the-open-hand", "Warrior of the Open Hand")
+    || features.includes("Fleet Step");
 }
 
 
 export function dnd5eSrdHasOpenHandQuiveringPalm(actor: Actor): boolean {
   const features = Array.isArray(actor.data.features) ? actor.data.features : [];
-  return dnd5eSrdClassLevel(actor, "Monk") >= 17 || features.includes("Quivering Palm");
+  return dnd5eSrdHasSelectedSubclassLevel(actor, "Monk", 17, "warrior-of-the-open-hand", "Warrior of the Open Hand")
+    || features.includes("Quivering Palm");
 }
 
 
@@ -1385,25 +1493,29 @@ export function dnd5eSrdHasDraconicCompanion(actor: Actor): boolean {
 
 export function dnd5eSrdHasEvokerPotentCantrip(actor: Actor): boolean {
   const features = Array.isArray(actor.data.features) ? actor.data.features : [];
-  return dnd5eSrdClassLevel(actor, "Wizard") >= 3 || features.includes("Evoker") || features.includes("Potent Cantrip");
+  return dnd5eSrdHasSelectedSubclassLevel(actor, "Wizard", 3, "evoker")
+    || (dnd5eSrdLegacySubclassStateAllowed(actor, "Wizard") && (features.includes("Evoker") || features.includes("Potent Cantrip")));
 }
 
 
 export function dnd5eSrdHasEvokerSculptSpells(actor: Actor): boolean {
   const features = Array.isArray(actor.data.features) ? actor.data.features : [];
-  return dnd5eSrdClassLevel(actor, "Wizard") >= 6 || features.includes("Sculpt Spells");
+  return dnd5eSrdHasSelectedSubclassLevel(actor, "Wizard", 6, "evoker")
+    || (dnd5eSrdLegacySubclassStateAllowed(actor, "Wizard") && features.includes("Sculpt Spells"));
 }
 
 
 export function dnd5eSrdHasEvokerEmpoweredEvocation(actor: Actor): boolean {
   const features = Array.isArray(actor.data.features) ? actor.data.features : [];
-  return dnd5eSrdClassLevel(actor, "Wizard") >= 10 || features.includes("Empowered Evocation");
+  return dnd5eSrdHasSelectedSubclassLevel(actor, "Wizard", 10, "evoker")
+    || (dnd5eSrdLegacySubclassStateAllowed(actor, "Wizard") && features.includes("Empowered Evocation"));
 }
 
 
 export function dnd5eSrdHasEvokerOverchannel(actor: Actor): boolean {
   const features = Array.isArray(actor.data.features) ? actor.data.features : [];
-  return dnd5eSrdClassLevel(actor, "Wizard") >= 14 || features.includes("Overchannel") || "overchannel" in recordValue(actor.data.resources);
+  return dnd5eSrdHasSelectedSubclassLevel(actor, "Wizard", 14, "evoker")
+    || (dnd5eSrdLegacySubclassStateAllowed(actor, "Wizard") && (features.includes("Overchannel") || "overchannel" in recordValue(actor.data.resources)));
 }
 
 
@@ -1995,6 +2107,19 @@ export function genericFantasyActionOptions(actor: Actor, items: Item[]): ActorA
         });
       }
     }
+    if (actor.systemId === "dnd-5e-srd" && prefix === "spell" && data.spellAttack === true) {
+      const className = stringValue(actor.data.class) || "Fighter";
+      const spellcastingAbility = stringValue(data.spellcastingAbility) || dnd5eSrdPrimaryAbility(className);
+      const attackFormula = appendActionFormulaBonus(
+        "1d20",
+        genericFantasyAttributeModifier(actor, spellcastingAbility) + dnd5eSrdProficiencyBonus(actor) + numericValue(data.spellAttackBonus, 0)
+      );
+      options.push({
+        rollId: `spell-${item.id}-attack`,
+        label: `${item.name} Attack`,
+        description: `${item.name} Attack: ${attackFormula}; server verifies ability, proficiency, item, and condition modifiers`
+      });
+    }
     if (damage && ability) options.push({ rollId: `${prefix}-${item.id}-damage`, label: `${item.name} Damage`, description: `${item.name} Damage: ${appendActionFormulaBonus(damage, genericFantasyAttributeModifier(actor, ability))}`, ...(mixedDamageResolutionNote ? { resolutionNote: mixedDamageResolutionNote } : {}) });
     const damageFormula = stringValue(data.damageFormula);
     if (damageFormula) options.push({ rollId: `${prefix}-${item.id}-damage`, label: `${item.name} Damage`, description: `${item.name} Damage: ${resolveGenericFantasyActionFormula(damageFormula, actor)}`, ...(mixedDamageResolutionNote ? { resolutionNote: mixedDamageResolutionNote } : {}) });
@@ -2005,9 +2130,16 @@ export function genericFantasyActionOptions(actor: Actor, items: Item[]): ActorA
     const healingFormula = stringValue(data.healingFormula);
     if (healingFormula) options.push({ rollId: `${prefix}-${item.id}-healing`, label: `${item.name} Healing`, description: `${item.name} Healing: ${resolveGenericFantasyActionFormula(healingFormula, actor)}` });
     const effectFormula = stringValue(data.effectFormula);
+    const armorClassEffect = actor.systemId === "dnd-5e-srd" && item.type === "spell" && Number.isFinite(numericValue(data.effectArmorClassBonus, Number.NaN));
     const effectAbility = stringValue(data.saveDcAbility);
     const concentrationOnlyEffect = actor.systemId === "dnd-5e-srd" && item.type === "spell" && data.concentration === true && !damageFormula && !healingFormula;
-    if (effectFormula || concentrationOnlyEffect) options.push({ rollId: `${prefix}-${item.id}-effect`, label: `${item.name} Effect`, description: `${item.name} Effect: ${effectFormula ? (effectAbility ? appendActionFormulaBonus(effectFormula, genericFantasyAttributeModifier(actor, effectAbility)) : effectFormula) : "concentration"}` });
+    if (effectFormula || concentrationOnlyEffect || armorClassEffect) options.push({
+      rollId: `${prefix}-${item.id}-effect`,
+      label: `${item.name} Effect`,
+      description: `${item.name} Effect: ${effectFormula
+        ? (effectAbility ? appendActionFormulaBonus(effectFormula, genericFantasyAttributeModifier(actor, effectAbility)) : effectFormula)
+        : armorClassEffect ? `+${numericValue(data.effectArmorClassBonus, 0)} Armor Class` : "concentration"}`
+    });
     return options;
   });
 }

@@ -1,7 +1,7 @@
 import type { AudioTrack } from "@open-tabletop/core";
 import { Grip, Hand, Music, Pause, Play, Plus, Trash2, Upload, Volume2, VolumeX, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { activeAudioCount, desiredAudioStates } from "./audio-sync.js";
+import { activeAudioCount, desiredAudioStates, shouldReplaceAudioSource } from "./audio-sync.js";
 import { clampFloatingPanel, useMovablePanel } from "./movable-panel.js";
 import { RetryableActionNotice, useRetryableAction } from "./retryable-action.js";
 
@@ -54,7 +54,14 @@ export function AudioPlaybackLayer(props: { tracks: AudioTrack[]; masterVolume: 
         elements.set(state.trackId, element);
       }
       const playbackUrl = authenticatedAudioUrl(state.url);
-      if (element.getAttribute("data-otte-src") !== playbackUrl) {
+      if (shouldReplaceAudioSource({
+        currentSourceUrl: element.getAttribute("data-otte-source-url"),
+        currentPlaybackUrl: element.getAttribute("data-otte-src"),
+        nextSourceUrl: state.sourceUrl,
+        nextPlaybackUrl: playbackUrl,
+        paused: element.paused
+      })) {
+        element.setAttribute("data-otte-source-url", state.sourceUrl);
         element.setAttribute("data-otte-src", playbackUrl);
         element.src = playbackUrl;
       }
@@ -140,7 +147,7 @@ export function AudioSoundboard(props: {
         <button className="icon-button" type="button" aria-label={props.muted ? "Unmute" : "Mute"} title={props.muted ? "Unmute" : "Mute"} onClick={props.onToggleMuted}>
           {props.muted ? <VolumeX size={16} /> : <Volume2 size={16} />}
         </button>
-        <input type="range" min={0} max={1} step={0.05} value={props.masterVolume} aria-label="Master volume" onChange={(event) => props.onMasterVolumeChange(Number(event.target.value))} />
+        <input type="range" min={0} max={1} step={0.05} value={props.masterVolume} aria-label="Master volume" onInput={(event) => props.onMasterVolumeChange(Number(event.currentTarget.value))} />
         <span className="audio-soundboard-count">{playingCount} playing</span>
       </div>
       <ul className="audio-soundboard-list">

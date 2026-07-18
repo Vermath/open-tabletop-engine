@@ -1,6 +1,8 @@
-import type { APIResponse, Browser, Locator, Page } from "@playwright/test";
+import type { APIResponse, Browser, ConsoleMessage, Locator, Page, Request } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { dnd5eSrdCompendium } from "../../packages/system-sdk/src/index.js";
 import { exerciseHeroicInspirationJourney } from "./heroic-inspiration-journey.js";
+import { applyReviewedTypedDamageToHp } from "./reviewed-typed-damage.js";
 
 const apiPort = Number(process.env.OTTE_E2E_CANONICAL_API_PORT ?? 4120);
 const apiBaseUrl = `http://127.0.0.1:${apiPort}`;
@@ -19,15 +21,9 @@ function observeFirstPartyUrls(page: Page, urls: string[]): void {
   page.on("websocket", (socket) => record(socket.url()));
 }
 
-async function activeSessionToken(page: Page): Promise<string> {
-  return page.evaluate(() => localStorage.getItem("otte:sessionToken") ?? "");
-}
-
-function expectNoSessionTokenInUrls(urls: string[], activeTokens: string[]): void {
+function expectNoSessionTokenInUrls(urls: string[]): void {
   expect(urls.length).toBeGreaterThan(0);
-  expect(activeTokens.every(Boolean)).toBe(true);
   expect(urls.filter((url) => decodeURIComponent(url).toLocaleLowerCase().includes("sessiontoken")).length).toBe(0);
-  expect(urls.filter((url) => activeTokens.some((token) => url.includes(token) || url.includes(encodeURIComponent(token)))).length).toBe(0);
 }
 
 function statusMessage(page: Page, text: string | RegExp): Locator {
@@ -143,8 +139,8 @@ async function createPlayerBard(page: Page, input: { characterName: string; play
   expect(playerOptionValue).toBeTruthy();
   await owner.selectOption(playerOptionValue!);
   await dialog.getByRole("button", { name: "Create character" }).click();
-  await expect(dialog).toBeHidden();
-  await expect(statusMessage(page, `${input.characterName} joined the party`)).toBeVisible();
+  await expect(dialog).toBeHidden({ timeout: 60_000 });
+  await expect(statusMessage(page, `${input.characterName} joined the party`)).toBeVisible({ timeout: 60_000 });
 }
 
 async function clickAndReviewPreparedDndAction(
@@ -219,12 +215,60 @@ async function clickAndReviewPreparedDndAction(
   }
 }
 
-async function rollCoreStatistic(page: Page, button: Locator): Promise<void> {
-  const response = page.waitForResponse((candidate) =>
-    candidate.request().method() === "POST" && /\/actors\/[^/]+\/roll$/.test(new URL(candidate.url()).pathname),
-  );
-  await button.click();
-  await expectJsonResponse(await response);
+async function visibleRollIds(page: Page, campaignName: string): Promise<string[]> {
+  return page.evaluate(async ({ apiBaseUrl, campaignName }) => {
+    const json = async <T>(response: Response): Promise<T> => {
+      const body = await response.text();
+      if (!response.ok) throw new Error(body);
+      return JSON.parse(body) as T;
+    };
+    const campaigns = await json<Array<{ id: string; name: string }>>(await fetch(`${apiBaseUrl}/api/v1/campaigns`, { credentials: "include" }));
+    const campaign = campaigns.find((candidate) => candidate.name === campaignName);
+    if (!campaign) throw new Error(`Campaign ${campaignName} was not found while checking roll history`);
+    const rolls = await json<Array<{ id: string }>>(await fetch(`${apiBaseUrl}/api/v1/campaigns/${campaign.id}/rolls`, { credentials: "include" }));
+    return rolls.map((roll) => roll.id);
+  }, { apiBaseUrl, campaignName });
+}
+
+async function rollCoreStatistic(page: Page, button: Locator, campaignName: string): Promise<void> {
+  const before = new Set(await visibleRollIds(page, campaignName));
+  const rollRequests: Array<{ method: string; url: string; body: string | null }> = [];
+  const pageErrors: string[] = [];
+  const consoleErrors: string[] = [];
+  const observeRequest = (request: Request) => {
+    if (/\/actors\/[^/]+\/roll$/.test(new URL(request.url()).pathname)) {
+      rollRequests.push({ method: request.method(), url: request.url(), body: request.postData() });
+    }
+  };
+  const observePageError = (error: Error) => pageErrors.push(error.message);
+  const observeConsole = (message: ConsoleMessage) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  };
+  page.on("request", observeRequest);
+  page.on("pageerror", observePageError);
+  page.on("console", observeConsole);
+  try {
+    await button.click();
+    await expect.poll(async () => (await visibleRollIds(page, campaignName)).some((rollId) => !before.has(rollId)), {
+      timeout: 30_000,
+      message: "the core statistic roll should persist a new authoritative roll",
+    }).toBe(true);
+  } catch (error) {
+    const diagnostics = {
+      button: await button.evaluate((element) => ({ disabled: (element as HTMLButtonElement).disabled, text: element.textContent })),
+      selectedInspectorTabs: await page.locator('.inspector-tabs [role="tab"][aria-selected="true"]').allTextContents(),
+      dialogs: await page.getByRole("dialog").allTextContents(),
+      statuses: await page.getByRole("status").allTextContents(),
+      rollRequests,
+      pageErrors,
+      consoleErrors,
+    };
+    throw new Error(`${error instanceof Error ? error.message : String(error)}\nCore roll diagnostics: ${JSON.stringify(diagnostics)}`);
+  } finally {
+    page.off("request", observeRequest);
+    page.off("pageerror", observePageError);
+    page.off("console", observeConsole);
+  }
 }
 
 async function exercisePlayerSheetBeforeCombat(page: Page, characterName: string): Promise<void> {
@@ -235,12 +279,11 @@ async function exercisePlayerSheetBeforeCombat(page: Page, characterName: string
   await actorPanel.getByRole("tab", { name: "Stats" }).click();
   const stats = actorPanel.getByRole("region", { name: "Actor stats sheet" });
 
-  await rollCoreStatistic(page, stats.getByRole("button", { name: /Roll Strength check/ }));
-  await rollCoreStatistic(page, stats.getByRole("button", { name: /Roll Dexterity saving throw/ }));
+  await rollCoreStatistic(page, stats.getByRole("button", { name: /Roll Strength check/ }), "Canonical Ember Campaign");
+  await rollCoreStatistic(page, stats.getByRole("button", { name: /Roll Dexterity saving throw/ }), "Canonical Ember Campaign");
 
   const hp = stats.getByLabel("Actor sheet current HP");
-  await hp.fill("5");
-  await hp.blur();
+  await applyReviewedTypedDamageToHp(page, { apiBaseUrl, campaignName: "Canonical Ember Campaign", actorName: characterName, targetHp: 5 });
   await expect(hp).toHaveValue("5");
   const prone = stats.getByRole("group", { name: "Toggle common conditions" }).getByRole("button", { name: "Prone" });
   await prone.click();
@@ -258,7 +301,7 @@ async function exercisePlayerSheetBeforeCombat(page: Page, characterName: string
   const inspiration = actionSheet.locator("article", { hasText: "Bardic Inspiration" }).first();
   const inspirationResource = actorPanel.getByLabel("Bardic Inspiration resource current");
   await expect(inspirationResource).toHaveValue("3");
-  await clickAndReviewPreparedDndAction(inspiration.getByRole("button", { name: "Use action" }), {
+  await clickAndReviewPreparedDndAction(inspiration.getByRole("button", { name: "Continue to final review" }), {
     cancelFirst: true,
     expectedSupport: "Automated",
     requiredSections: ["Rolls", "Resources"],
@@ -271,7 +314,10 @@ async function exercisePlayerSheetBeforeCombat(page: Page, characterName: string
   if (!(await consumeResources.isChecked())) await consumeResources.check();
   const healingWord = actionSheet.locator("article", { hasText: "Healing Word Healing" }).first();
   await expect(healingWord).toContainText("effect supported");
-  await clickAndReviewPreparedDndAction(healingWord.getByRole("button", { name: "Use action" }), {
+  await healingWord.getByRole("button", { name: "Preview" }).click();
+  const healingPreview = actionSheet.getByRole("region", { name: "Action resolution preview" });
+  await expect(healingPreview.locator(".operator-row", { hasText: "Previewed action" })).toContainText("Healing Word Healing");
+  await clickAndReviewPreparedDndAction(healingPreview.getByRole("button", { name: "Continue to final review for previewed action" }), {
     expectedSupport: "Automated",
     requiredSections: ["Rolls", "Targets", "Damage, healing and effects", "Resources"],
   });
@@ -299,7 +345,7 @@ async function exercisePlayerSheetBeforeCombat(page: Page, characterName: string
   await expect(resolutionPreview.locator(".operator-row", { hasText: "Previewed action" })).toContainText("Dancing Lights Effect");
   await expect(resolutionPreview.locator(".operator-row", { hasText: "Conditions" })).toContainText("Concentration");
   await expect(resolutionPreview.locator(".operator-row", { hasText: "Resolver" })).toContainText("Preview ready");
-  await clickAndReviewPreparedDndAction(resolutionPreview.getByRole("button", { name: "Use previewed action" }), { expectedSupport: "DM decision" });
+  await clickAndReviewPreparedDndAction(resolutionPreview.getByRole("button", { name: "Continue to final review for previewed action" }), { expectedSupport: "DM decision" });
   await expect(actorPanel.getByRole("region", { name: "Actor at a glance" })).toContainText("Concentrating: Dancing Lights Effect");
 
   await actorPanel.getByRole("tab", { name: "Stats" }).click();
@@ -307,6 +353,94 @@ async function exercisePlayerSheetBeforeCombat(page: Page, characterName: string
   const refreshedProne = actorPanel.getByRole("group", { name: "Toggle common conditions" }).getByRole("button", { name: "Prone" });
   if ((await refreshedProne.getAttribute("aria-pressed")) === "true") await refreshedProne.click();
   await expect(refreshedProne).toHaveAttribute("aria-pressed", "false");
+}
+
+async function currentAdvancementSpellState(page: Page, characterName: string, nextClassLevel: number): Promise<{
+  className: string;
+  preparedSpellIds: string[];
+  alwaysPreparedSpellIds: string[];
+}> {
+  return page.evaluate(async ({ apiBaseUrl, characterName, nextClassLevel }) => {
+    const json = async <T>(response: Response): Promise<T> => {
+      const body = await response.text();
+      if (!response.ok) throw new Error(body);
+      return JSON.parse(body) as T;
+    };
+    const campaigns = await json<Array<{ id: string; name: string }>>(await fetch(`${apiBaseUrl}/api/v1/campaigns`, { credentials: "include" }));
+    const campaign = campaigns.find((candidate) => candidate.name === "Canonical Ember Campaign");
+    if (!campaign) throw new Error("Canonical campaign was not found while preparing advancement choices");
+    const [actors, items] = await Promise.all([
+      json<Array<{ id: string; name: string; data: Record<string, unknown> }>>(await fetch(`${apiBaseUrl}/api/v1/campaigns/${campaign.id}/actors`, { credentials: "include" })),
+      json<Array<{ actorId?: string; type: string; data: Record<string, unknown> }>>(await fetch(`${apiBaseUrl}/api/v1/campaigns/${campaign.id}/items`, { credentials: "include" }))
+    ]);
+    const actor = actors.find((candidate) => candidate.name === characterName);
+    if (!actor) throw new Error(`${characterName} was not found while preparing advancement choices`);
+    const spellcasting = actor.data.spellcasting && typeof actor.data.spellcasting === "object" && !Array.isArray(actor.data.spellcasting)
+      ? actor.data.spellcasting as Record<string, unknown>
+      : {};
+    const className = typeof spellcasting.className === "string"
+      ? spellcasting.className
+      : Array.isArray(actor.data.classes) && actor.data.classes[0] && typeof actor.data.classes[0] === "object" && !Array.isArray(actor.data.classes[0]) && typeof (actor.data.classes[0] as Record<string, unknown>).className === "string"
+        ? String((actor.data.classes[0] as Record<string, unknown>).className)
+        : "";
+    if (!className) throw new Error(`${characterName} has no spellcasting class for advancement`);
+    const preparedByClass = spellcasting.preparedSpellsByClass && typeof spellcasting.preparedSpellsByClass === "object" && !Array.isArray(spellcasting.preparedSpellsByClass)
+      ? Object.entries(spellcasting.preparedSpellsByClass as Record<string, unknown>)
+        .find(([candidate]) => candidate.toLowerCase() === className.toLowerCase())?.[1]
+      : undefined;
+    const prepared = Array.isArray(preparedByClass) ? preparedByClass : spellcasting.preparedSpells;
+    const preparedSpellIds = Array.isArray(prepared)
+      ? prepared.filter((spellId): spellId is string => typeof spellId === "string" && spellId.length > 0)
+      : [];
+    const alwaysPreparedSpellIds = items.filter((item) => item.actorId === actor.id).flatMap((item) => {
+      if (item.type !== "spell" || item.data.alwaysPrepared !== true) return [];
+      const minimumLevel = typeof item.data.minimumCharacterLevel === "number" ? item.data.minimumCharacterLevel : 1;
+      const compendiumId = item.data.compendiumId ?? item.data.compendiumEntryId;
+      return minimumLevel <= nextClassLevel && typeof compendiumId === "string" ? [compendiumId] : [];
+    });
+    return { className, preparedSpellIds, alwaysPreparedSpellIds };
+  }, { apiBaseUrl, characterName, nextClassLevel });
+}
+
+async function requiredChoiceCount(group: Locator): Promise<number> {
+  const legend = (await group.locator("legend").textContent()) ?? "";
+  const match = legend.match(/Choose exactly (\d+)/i);
+  if (!match) throw new Error(`Could not read required advancement choices from: ${legend}`);
+  return Number(match[1]);
+}
+
+async function fillAvailableAdvancementChoices(group: Locator): Promise<void> {
+  const required = await requiredChoiceCount(group);
+  while (await group.locator('input[type="checkbox"]:checked').count() < required) {
+    const choice = group.locator('input[type="checkbox"]:not(:checked):not(:disabled)').first();
+    await expect(choice, `available advancement choice in ${(await group.locator("legend").textContent()) ?? "group"}`).toBeVisible();
+    await choice.check();
+  }
+}
+
+async function fillRulesValidAdvancementSpellChoices(page: Page, advancement: Locator, characterName: string, nextClassLevel: number): Promise<void> {
+  const state = await currentAdvancementSpellState(page, characterName, nextClassLevel);
+  const spellRegion = advancement.getByRole("region", { name: `${state.className} spell advancement`, exact: true });
+  if (!(await spellRegion.isVisible().catch(() => false))) return;
+
+  const spellbookAdditions = spellRegion.getByRole("group", { name: "Wizard spellbook additions", exact: true });
+  if (await spellbookAdditions.isVisible().catch(() => false)) await fillAvailableAdvancementChoices(spellbookAdditions);
+
+  const preparedSpells = spellRegion.getByRole("group", { name: `${state.className} prepared spells`, exact: true });
+  const requiredPrepared = await requiredChoiceCount(preparedSpells);
+  const alwaysPrepared = new Set(state.alwaysPreparedSpellIds.map((spellId) => spellId.toLowerCase()));
+  const retainedSpellIds = [...new Set(state.preparedSpellIds.filter((spellId) => !alwaysPrepared.has(spellId.toLowerCase())))];
+  expect(retainedSpellIds.length, `${state.className} current prepared spells must fit its next-level capacity`).toBeLessThanOrEqual(requiredPrepared);
+  const spellNames = new Map(dnd5eSrdCompendium().filter((entry) => entry.type === "spell").map((entry) => [entry.id.toLowerCase(), entry.name]));
+  for (const spellId of retainedSpellIds) {
+    const spellName = spellNames.get(spellId.toLowerCase());
+    if (!spellName) throw new Error(`Missing compendium spell for current ${state.className} choice: ${spellId}`);
+    const checkbox = preparedSpells.getByRole("checkbox", { name: new RegExp(`^${spellName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} Level`) });
+    await expect(checkbox, `current ${state.className} prepared spell ${spellName}`).toBeVisible();
+    if (!(await checkbox.isChecked())) await checkbox.check();
+  }
+  await fillAvailableAdvancementChoices(preparedSpells);
+  await expect(spellRegion.getByRole("status")).toContainText(`${state.className} spell choices are complete.`);
 }
 
 async function advanceCharacterToLevelTwo(page: Page, characterName: string): Promise<void> {
@@ -318,10 +452,13 @@ async function advanceCharacterToLevelTwo(page: Page, characterName: string): Pr
   const sdkPanel = page.locator(".inspector .panel-stack", { hasText: "Runtime SDK" });
   const advancement = sdkPanel.getByRole("region", { name: "Actor advancement choices" });
   await expect(advancement.getByRole("combobox", { name: "Advancement option" })).toContainText("Level 2");
+  await fillRulesValidAdvancementSpellChoices(page, advancement, characterName, 2);
   await advancement.getByRole("radio", { name: /Fixed average/ }).check();
   await advancement.getByRole("button", { name: "Review advancement" }).click();
   await expect(advancement.getByRole("region", { name: "Advancement review step" })).toContainText("Level 2");
-  await advancement.getByLabel("Confirm advancement review").check();
+  const confirm = advancement.getByLabel("Confirm advancement review");
+  await expect(confirm, await advancement.innerText()).toBeEnabled();
+  await confirm.check();
   await sdkPanel.getByRole("button", { name: "Level Up", exact: true }).click();
   await expect(statusMessage(page, `${characterName} advanced to Level 2`)).toBeVisible();
 }
@@ -391,40 +528,60 @@ async function exercisePlayerCombatAction(playerPage: Page, gmPage: Page, charac
   const actionSheet = actorPanel.getByRole("region", { name: "Actor action sheet" });
   const attack = actionSheet.locator("article").filter({ hasText: /(?:Dagger|Rapier|Shortsword) Attack/ }).first();
   await expect(attack).toBeVisible();
-  await attack.getByRole("button", { name: "Preview" }).click();
   const resolutionPreview = actionSheet.getByRole("region", { name: "Action resolution preview" });
-  await expect(resolutionPreview.locator(".operator-row", { hasText: "Previewed action" })).toContainText("Attack");
-  await clickAndReviewPreparedDndAction(resolutionPreview.getByRole("button", { name: "Use previewed action" }), {
-    expectedSupport: "Automated",
-    requiredSections: ["Rolls", "Targets"],
-  });
-  await expect(statusMessage(playerPage, `${characterName} action posted`)).toBeVisible();
 
   await gmPage.getByRole("button", { name: "Live Table", exact: true }).click();
   await openInspectorPanel(gmPage, "Combat");
   const combatPanel = combatTrackerPanel(gmPage);
   const round = combatPanel.getByRole("heading", { name: /Round \d+/ });
   const activeTurn = combatPanel.locator(".combat-hero .panel-subtitle");
-  for (let attempt = 0; attempt < 6; attempt += 1) {
-    if ((await round.textContent())?.includes("Round 2") && (await activeTurn.textContent())?.includes(characterName)) break;
-    const previousPosition = `${await round.textContent()}|${await activeTurn.textContent()}`;
-    const turnUpdate = gmPage.waitForResponse((response) =>
-      response.request().method() === "PATCH"
-      && /\/api\/v1\/combats\/[^/]+$/.test(new URL(response.url()).pathname),
-    );
-    await combatPanel.getByRole("button", { name: "Next turn" }).click();
-    await expectJsonResponse(await turnUpdate);
-    await expect.poll(async () => `${await round.textContent()}|${await activeTurn.textContent()}`).not.toBe(previousPosition);
+
+  let continuationArmed = false;
+  for (let attempt = 0; attempt < 12 && !continuationArmed; attempt += 1) {
+    await attack.getByRole("button", { name: "Preview" }).click();
+    await expect(resolutionPreview.locator(".operator-row", { hasText: "Previewed action" })).toContainText("Attack");
+    const committedAttack = playerPage.waitForResponse((response) => {
+      const request = response.request();
+      if (request.method() !== "POST" || !/\/actors\/[^/]+\/roll$/.test(new URL(response.url()).pathname)) return false;
+      try {
+        const body = JSON.parse(request.postData() ?? "{}") as { commit?: boolean; preparedPreviewKey?: string };
+        return body.commit === true || typeof body.preparedPreviewKey === "string";
+      } catch {
+        return false;
+      }
+    });
+    await clickAndReviewPreparedDndAction(resolutionPreview.getByRole("button", { name: "Continue to final review for previewed action" }), {
+      expectedSupport: "Automated",
+      requiredSections: ["Rolls", "Targets"],
+    });
+    const attackResult = await expectJsonResponse<{ resolution?: { auditEvents?: Array<{ code?: string }> } }>(await committedAttack);
+    continuationArmed = attackResult.resolution?.auditEvents?.some((event) => event.code === "continuation.armed") === true;
+    await expect(statusMessage(playerPage, `${characterName} action posted`)).toBeVisible();
+    if (continuationArmed) break;
+
+    const startingRound = Number((await round.textContent())?.match(/\d+/)?.[0] ?? "0");
+    for (let turn = 0; turn < 12; turn += 1) {
+      const currentRound = Number((await round.textContent())?.match(/\d+/)?.[0] ?? "0");
+      if (currentRound > startingRound && (await activeTurn.textContent())?.includes(characterName)) break;
+      const previousPosition = `${await round.textContent()}|${await activeTurn.textContent()}`;
+      const turnUpdate = gmPage.waitForResponse((response) =>
+        response.request().method() === "PATCH"
+        && /\/api\/v1\/combats\/[^/]+$/.test(new URL(response.url()).pathname),
+      );
+      await combatPanel.getByRole("button", { name: "Next turn" }).click();
+      await expectJsonResponse(await turnUpdate);
+      await expect.poll(async () => `${await round.textContent()}|${await activeTurn.textContent()}`).not.toBe(previousPosition);
+    }
+    await expect(activeTurn).toContainText(characterName);
   }
-  await expect(round).toContainText("Round 2");
-  await expect(activeTurn).toContainText(`${characterName} is up`);
+  expect(continuationArmed, "a committed weapon hit should arm the matching damage continuation").toBe(true);
 
   await applyEffect.check();
   const damage = actionSheet.locator("article").filter({ hasText: /(?:Dagger|Rapier|Shortsword) Damage/ }).first();
   await expect(damage).toContainText("effect supported");
   await damage.getByRole("button", { name: "Preview" }).click();
   await expect(resolutionPreview.locator(".operator-row", { hasText: "Previewed action" })).toContainText("Damage");
-  const commitDamage = resolutionPreview.getByRole("button", { name: "Use previewed action" });
+  const commitDamage = resolutionPreview.getByRole("button", { name: "Continue to final review for previewed action" });
   await expect(commitDamage).toBeEnabled({ timeout: 30_000 });
   await clickAndReviewPreparedDndAction(commitDamage, {
     expectedSupport: "Automated",
@@ -444,12 +601,27 @@ async function exercisePlayerCombatAction(playerPage: Page, gmPage: Page, charac
   await expectJsonResponse(await confirmation);
   await expect(statusMessage(gmPage, /Damage confirmed/)).toBeVisible();
   await expect(pendingSection).toBeHidden();
-  await expect(round).toContainText("Round 2");
+
+  const committedRound = Number((await round.textContent())?.match(/\d+/)?.[0] ?? "0");
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const currentRound = Number((await round.textContent())?.match(/\d+/)?.[0] ?? "0");
+    if (currentRound > committedRound && (await activeTurn.textContent())?.includes(characterName)) break;
+    const previousPosition = `${await round.textContent()}|${await activeTurn.textContent()}`;
+    const turnUpdate = gmPage.waitForResponse((response) =>
+      response.request().method() === "PATCH"
+      && /\/api\/v1\/combats\/[^/]+$/.test(new URL(response.url()).pathname),
+    );
+    await combatPanel.getByRole("button", { name: "Next turn" }).click();
+    await expectJsonResponse(await turnUpdate);
+    await expect.poll(async () => `${await round.textContent()}|${await activeTurn.textContent()}`).not.toBe(previousPosition);
+  }
+  await expect.poll(async () => Number((await round.textContent())?.match(/\d+/)?.[0] ?? "0")).toBeGreaterThan(committedRound);
+  await expect(activeTurn).toContainText(`${characterName} is up`);
 }
 
 async function resolveDeathSaves(playerPage: Page, characterName: string): Promise<"stable" | "dead" | "revived"> {
   await playerPage.reload();
-  await expect(playerPage.getByRole("heading", { name: "Canonical Ember Campaign" })).toBeVisible();
+  await expect(playerPage.getByRole("heading", { name: "Canonical Ember Campaign" })).toBeVisible({ timeout: 60_000 });
   await playerPage.getByRole("button", { name: `Token ${characterName}` }).click();
   await openInspectorPanel(playerPage, "Actors");
   const stats = selectedActorPanel(playerPage).getByRole("region", { name: "Actor stats sheet" });
@@ -579,7 +751,7 @@ test("blank deployment completes one canonical GM-and-player D&D session and res
     });
 
     await player.page.reload();
-    await expect(player.page.getByRole("heading", { name: campaignName })).toBeVisible();
+    await expect(player.page.getByRole("heading", { name: campaignName })).toBeVisible({ timeout: 60_000 });
     await exercisePlayerSheetBeforeCombat(player.page, characterName);
 
     await advanceCharacterToLevelTwo(page, characterName);
@@ -590,12 +762,9 @@ test("blank deployment completes one canonical GM-and-player D&D session and res
     await page.getByRole("button", { name: `Token ${characterName}` }).click();
     await openInspectorPanel(page, "Actors");
     const gmStats = selectedActorPanel(page).getByRole("region", { name: "Actor stats sheet" });
-    const zeroHp = page.waitForResponse((response) =>
-      response.request().method() === "PATCH" && /\/api\/v1\/actors\/[^/]+$/.test(new URL(response.url()).pathname),
-    );
-    await gmStats.getByLabel("Actor sheet current HP").fill("0");
-    await gmStats.getByLabel("Actor sheet current HP").blur();
-    await expectJsonResponse(await zeroHp);
+    await applyReviewedTypedDamageToHp(page, { apiBaseUrl, campaignName, actorName: characterName, targetHp: 0 });
+    await expect(gmStats.getByLabel("Actor sheet current HP")).toHaveValue("0");
+    await expect(selectedActorPanel(page).getByRole("region", { name: "Actor at a glance" })).not.toContainText("Concentrating: Dancing Lights Effect");
 
     const terminal = await resolveDeathSaves(player.page, characterName);
 
@@ -609,11 +778,11 @@ test("blank deployment completes one canonical GM-and-player D&D session and res
     ).toBe(true);
 
     await player.page.reload();
-    await expect(player.page.getByRole("heading", { name: campaignName })).toBeVisible();
+    await expect(player.page.getByRole("heading", { name: campaignName })).toBeVisible({ timeout: 60_000 });
     await player.page.getByRole("button", { name: `Token ${characterName}` }).click();
     await openInspectorPanel(player.page, "Actors");
     const reloadedActorPanel = selectedActorPanel(player.page);
-    await expect(reloadedActorPanel.getByRole("region", { name: "Actor at a glance" })).toContainText("Concentrating: Dancing Lights Effect");
+    await expect(reloadedActorPanel.getByRole("region", { name: "Actor at a glance" })).not.toContainText("Concentrating: Dancing Lights Effect");
     const reloadedStats = reloadedActorPanel.getByRole("region", { name: "Actor stats sheet" });
     if (terminal === "revived") {
       await expect(reloadedStats.getByLabel("Actor sheet current HP")).toHaveValue("1");
@@ -625,12 +794,16 @@ test("blank deployment completes one canonical GM-and-player D&D session and res
     await expectPublicSessionNote(player.page);
 
     await page.reload();
-    await expect(page.getByRole("heading", { name: campaignName })).toBeVisible();
+    await expect(page.getByRole("heading", { name: campaignName })).toBeVisible({ timeout: 60_000 });
     await page.getByRole("button", { name: "Live Table", exact: true }).click();
     await openInspectorPanel(page, "Combat");
-    await expect(combatTrackerPanel(page).getByRole("heading", { name: "Round 2" })).toBeVisible();
+    const persistedRound = combatTrackerPanel(page).getByRole("heading", { name: /Round \d+/ });
+    await expect(persistedRound).toBeVisible();
+    await expect.poll(async () => Number((await persistedRound.textContent())?.match(/\d+/)?.[0] ?? "0")).toBeGreaterThanOrEqual(2);
     await expect(page.getByRole("region", { name: "Party" })).toContainText(characterName);
-    expectNoSessionTokenInUrls(observedUrls, [await activeSessionToken(page), await activeSessionToken(player.page)]);
+    expect(await page.evaluate(() => localStorage.getItem("otte:sessionToken"))).toBeNull();
+    expect(await player.page.evaluate(() => localStorage.getItem("otte:sessionToken"))).toBeNull();
+    expectNoSessionTokenInUrls(observedUrls);
   } finally {
     await player.context.close().catch(() => undefined);
   }

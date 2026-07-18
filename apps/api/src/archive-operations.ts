@@ -657,7 +657,7 @@ export function applyContentImportEntity(state: EngineState, campaign: Campaign,
       }
     }) satisfies Actor;
     state.actors.push(actor);
-    return { collection: "actors", id: actor.id, entityId: entity.id };
+    return appliedContentImportRecord("actors", entity.id, actor);
   }
 
   if (entity.kind === "item") {
@@ -672,7 +672,7 @@ export function applyContentImportEntity(state: EngineState, campaign: Campaign,
       data: recordFromRecord(entity.data, "data") ?? { ...entity.data, provenance: entity.provenance }
     }) satisfies Item;
     state.items.push(item);
-    return { collection: "items", id: item.id, entityId: entity.id };
+    return appliedContentImportRecord("items", entity.id, item);
   }
 
   if (entity.kind === "journal") {
@@ -687,11 +687,16 @@ export function applyContentImportEntity(state: EngineState, campaign: Campaign,
       visibleToUserIds: stringArrayFromRecord(entity.data, "visibleToUserIds"),
       visibleToActorIds: stringArrayFromRecord(entity.data, "visibleToActorIds"),
       tags: stringArrayFromRecord(entity.data, "tags").length > 0 ? stringArrayFromRecord(entity.data, "tags") : ["content-import"],
+      kind: "entry" as const,
+      links: [],
+      revision: 1,
+      revisions: [],
+      canonStatus: "draft" as const,
       createdBy: userId,
       updatedBy: userId
     }) satisfies JournalEntry;
     state.journals.push(journal);
-    return { collection: "journals", id: journal.id, entityId: entity.id };
+    return appliedContentImportRecord("journals", entity.id, journal);
   }
 
   if (entity.kind === "encounter") {
@@ -705,7 +710,7 @@ export function applyContentImportEntity(state: EngineState, campaign: Campaign,
       difficulty: stringFromRecord(entity.data, "difficulty")
     }) satisfies Encounter;
     state.encounters.push(encounter);
-    return { collection: "encounters", id: encounter.id, entityId: entity.id };
+    return appliedContentImportRecord("encounters", entity.id, encounter);
   }
 
   const handout = createTimestamped("hnd", {
@@ -724,22 +729,252 @@ export function applyContentImportEntity(state: EngineState, campaign: Campaign,
     updatedBy: userId
   });
   state.handouts.push(handout);
-  return { collection: "handouts", id: handout.id, entityId: entity.id };
+  return appliedContentImportRecord("handouts", entity.id, handout);
+}
+
+export interface ContentImportRollbackDependency {
+  collection: keyof EngineState;
+  id: string;
+  field: string;
+}
+
+export interface ContentImportRollbackConflict {
+  collection: ContentImportAppliedRecord["collection"];
+  id: string;
+  entityId: string;
+  reason: "duplicate_record" | "fingerprint_unavailable" | "record_modified" | "dependent_reference";
+  expectedFingerprint?: string;
+  currentFingerprint?: string;
+  dependencies?: ContentImportRollbackDependency[];
+}
+
+function appliedContentImportRecord(
+  collection: ContentImportAppliedRecord["collection"],
+  entityId: string,
+  record: { id: string },
+): ContentImportAppliedRecord {
+  return { collection, id: record.id, entityId, fingerprint: contentImportRecordFingerprint(record) };
+}
+
+/**
+ * Hash the complete imported record, including its revision timestamps. A
+ * semantically reverted edit still advances the revision and therefore remains
+ * user-owned instead of becoming eligible for destructive rollback again.
+ */
+export function contentImportRecordFingerprint(record: unknown): string {
+  return `sha256:${createHash("sha256").update(JSON.stringify(canonicalContentImportValue(record)) ?? "null").digest("hex")}`;
+}
+
+function canonicalContentImportValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((entry) => canonicalContentImportValue(entry));
+  if (!isRecord(value)) return value;
+  return Object.fromEntries(
+    Object.keys(value)
+      .sort()
+      .filter((key) => value[key] !== undefined)
+      .map((key) => [key, canonicalContentImportValue(value[key])]),
+  );
+}
+
+function nestedContentImportValueContainsExactString(value: unknown, expected: string, seen = new Set<object>()): boolean {
+  if (value === expected) return true;
+  if (!value || typeof value !== "object" || seen.has(value)) return false;
+  seen.add(value);
+  return (Array.isArray(value) ? value : Object.values(value as Record<string, unknown>))
+    .some((entry) => nestedContentImportValueContainsExactString(entry, expected, seen));
+}
+
+function appliedContentImportCollection(state: EngineState, collection: ContentImportAppliedRecord["collection"]): Array<{ id: string }> {
+  return collection === "actors"
+    ? state.actors
+    : collection === "items"
+      ? state.items
+      : collection === "journals"
+        ? state.journals
+        : collection === "handouts"
+          ? state.handouts
+          : state.encounters;
+}
+
+/**
+ * Preflight an entire rollback before any record is removed. Dependencies on
+ * another unchanged record in the same rollback are safe because both records
+ * disappear atomically; every other reference blocks the rollback.
+ */
+export function contentImportRollbackConflicts(state: EngineState, campaignId: string, records: ContentImportAppliedRecord[]): ContentImportRollbackConflict[] {
+  const conflicts: ContentImportRollbackConflict[] = [];
+  const removing = new Set(records.map((record) => `${record.collection}:${record.id}`));
+  const removingActorIds = records.filter((record) => record.collection === "actors").map((record) => record.id);
+  const seen = new Set<string>();
+  const dependencies = new Map<string, ContentImportRollbackDependency[]>();
+  const addDependency = (
+    targetCollection: ContentImportAppliedRecord["collection"],
+    targetId: string | undefined,
+    ownerCollection: keyof EngineState,
+    ownerId: string,
+    field: string,
+  ): void => {
+    if (!targetId || !removing.has(`${targetCollection}:${targetId}`) || removing.has(`${String(ownerCollection)}:${ownerId}`)) return;
+    const key = `${targetCollection}:${targetId}`;
+    const current = dependencies.get(key) ?? [];
+    if (!current.some((dependency) => dependency.collection === ownerCollection && dependency.id === ownerId && dependency.field === field)) {
+      current.push({ collection: ownerCollection, id: ownerId, field });
+      dependencies.set(key, current);
+    }
+  };
+
+  for (const record of records) {
+    const key = `${record.collection}:${record.id}`;
+    if (seen.has(key)) {
+      conflicts.push({ collection: record.collection, id: record.id, entityId: record.entityId, reason: "duplicate_record" });
+      continue;
+    }
+    seen.add(key);
+    const current = appliedContentImportCollection(state, record.collection).find((candidate) => candidate.id === record.id);
+    if (!current) continue;
+    if (!record.fingerprint) {
+      conflicts.push({ collection: record.collection, id: record.id, entityId: record.entityId, reason: "fingerprint_unavailable" });
+      continue;
+    }
+    const currentFingerprint = contentImportRecordFingerprint(current);
+    if (currentFingerprint !== record.fingerprint) {
+      conflicts.push({ collection: record.collection, id: record.id, entityId: record.entityId, reason: "record_modified", expectedFingerprint: record.fingerprint, currentFingerprint });
+    }
+  }
+
+  const campaignSceneIds = new Set(state.scenes.filter((scene) => scene.campaignId === campaignId).map((scene) => scene.id));
+  for (const token of state.tokens.filter((token) => campaignSceneIds.has(token.sceneId))) addDependency("actors", token.actorId, "tokens", token.id, "actorId");
+  for (const actor of state.actors.filter((actor) => actor.campaignId === campaignId)) {
+    const controlledCreature = isRecord(actor.data.dnd5eControlledCreature) && actor.data.dnd5eControlledCreature.status === "active" ? actor.data.dnd5eControlledCreature : undefined;
+    if (controlledCreature) {
+      const source = isRecord(controlledCreature.source) ? controlledCreature.source : undefined;
+      const originatingAction = isRecord(controlledCreature.originatingAction) ? controlledCreature.originatingAction : undefined;
+      const concentration = isRecord(controlledCreature.concentration) ? controlledCreature.concentration : undefined;
+      const initiative = isRecord(controlledCreature.initiative) ? controlledCreature.initiative : undefined;
+      addDependency("actors", typeof source?.actorId === "string" ? source.actorId : undefined, "actors", actor.id, "data.dnd5eControlledCreature.source.actorId");
+      addDependency("items", typeof source?.itemId === "string" ? source.itemId : undefined, "actors", actor.id, "data.dnd5eControlledCreature.source.itemId");
+      addDependency("actors", typeof originatingAction?.actorId === "string" ? originatingAction.actorId : undefined, "actors", actor.id, "data.dnd5eControlledCreature.originatingAction.actorId");
+      addDependency("actors", typeof controlledCreature.controllerActorId === "string" ? controlledCreature.controllerActorId : undefined, "actors", actor.id, "data.dnd5eControlledCreature.controllerActorId");
+      addDependency("actors", typeof controlledCreature.linkedActorId === "string" ? controlledCreature.linkedActorId : undefined, "actors", actor.id, "data.dnd5eControlledCreature.linkedActorId");
+      addDependency("actors", typeof concentration?.sourceActorId === "string" ? concentration.sourceActorId : undefined, "actors", actor.id, "data.dnd5eControlledCreature.concentration.sourceActorId");
+      if (initiative?.mode === "shared") addDependency("actors", typeof initiative.sourceActorId === "string" ? initiative.sourceActorId : undefined, "actors", actor.id, "data.dnd5eControlledCreature.initiative.sourceActorId");
+    }
+    const rules = isRecord(actor.data.rulesEngine) ? actor.data.rulesEngine : undefined;
+    const concentration = rules && isRecord(rules.concentration) ? rules.concentration : undefined;
+    addDependency("actors", typeof concentration?.sourceActorId === "string" ? concentration.sourceActorId : undefined, "actors", actor.id, "data.rulesEngine.concentration.sourceActorId");
+    for (const actorId of Array.isArray(concentration?.targetActorIds) ? concentration.targetActorIds : []) {
+      addDependency("actors", typeof actorId === "string" ? actorId : undefined, "actors", actor.id, "data.rulesEngine.concentration.targetActorIds");
+    }
+    for (const effect of Array.isArray(rules?.activeEffects) ? rules.activeEffects : []) {
+      if (!isRecord(effect)) continue;
+      const schedule = isRecord(effect.schedule) ? effect.schedule : undefined;
+      addDependency("actors", typeof effect.sourceActorId === "string" ? effect.sourceActorId : undefined, "actors", actor.id, "data.rulesEngine.activeEffects.sourceActorId");
+      addDependency("actors", typeof effect.targetActorId === "string" ? effect.targetActorId : undefined, "actors", actor.id, "data.rulesEngine.activeEffects.targetActorId");
+      addDependency("actors", typeof schedule?.anchorActorId === "string" ? schedule.anchorActorId : undefined, "actors", actor.id, "data.rulesEngine.activeEffects.schedule.anchorActorId");
+    }
+  }
+  for (const item of state.items.filter((item) => item.campaignId === campaignId)) {
+    addDependency("actors", item.actorId, "items", item.id, "actorId");
+    const loot = isRecord(item.data.dnd5eLoot) ? item.data.dnd5eLoot : undefined;
+    addDependency("actors", typeof loot?.claimedForActorId === "string" ? loot.claimedForActorId : undefined, "items", item.id, "data.dnd5eLoot.claimedForActorId");
+    addDependency("actors", typeof loot?.assignedToActorId === "string" ? loot.assignedToActorId : undefined, "items", item.id, "data.dnd5eLoot.assignedToActorId");
+  }
+  for (const transfer of state.characterTransfers.filter((transfer) => transfer.campaignId === campaignId)) addDependency("actors", transfer.actorId, "characterTransfers", transfer.id, "actorId");
+  for (const override of state.calculationOverrides.filter((override) => override.campaignId === campaignId)) addDependency("actors", override.actorId, "calculationOverrides", override.id, "actorId");
+  for (const advancement of state.pendingAdvancements.filter((advancement) => advancement.campaignId === campaignId)) addDependency("actors", advancement.actorId, "pendingAdvancements", advancement.id, "actorId");
+  for (const mutation of state.dndRulesMutations.filter((mutation) => mutation.campaignId === campaignId)) {
+    for (const root of mutation.roots.actors) addDependency("actors", root.actorId, "dndRulesMutations", mutation.id, "roots.actors.actorId");
+    for (const root of mutation.roots.items) addDependency("items", root.itemId, "dndRulesMutations", mutation.id, "roots.items.itemId");
+  }
+  for (const journal of state.journals.filter((journal) => journal.campaignId === campaignId)) {
+    addDependency("journals", journal.parentId, "journals", journal.id, "parentId");
+    for (const actorId of journal.visibleToActorIds) addDependency("actors", actorId, "journals", journal.id, "visibleToActorIds");
+    for (const link of journal.links ?? []) {
+      if (link.targetType === "actor" || link.targetType === "item" || link.targetType === "journal" || link.targetType === "handout" || link.targetType === "encounter") {
+        const targetCollection = link.targetType === "actor" ? "actors" : link.targetType === "item" ? "items" : link.targetType === "journal" ? "journals" : link.targetType === "handout" ? "handouts" : "encounters";
+        addDependency(targetCollection, link.targetId, "journals", journal.id, "links.targetId");
+      }
+    }
+  }
+  for (const handout of state.handouts.filter((handout) => handout.campaignId === campaignId)) {
+    for (const actorId of handout.visibleToActorIds ?? []) addDependency("actors", actorId, "handouts", handout.id, "visibleToActorIds");
+  }
+  for (const encounter of state.encounters.filter((encounter) => encounter.campaignId === campaignId)) {
+    for (const actorId of encounter.partyActorIds ?? []) addDependency("actors", actorId, "encounters", encounter.id, "partyActorIds");
+  }
+  for (const session of state.campaignSessions.filter((session) => session.campaignId === campaignId)) {
+    addDependency("journals", session.recapJournalId, "campaignSessions", session.id, "recapJournalId");
+    for (const encounterId of session.encounterIds) addDependency("encounters", encounterId, "campaignSessions", session.id, "encounterIds");
+  }
+  for (const roll of state.rolls.filter((roll) => roll.campaignId === campaignId)) {
+    addDependency("actors", roll.actorId, "rolls", roll.id, "actorId");
+    addDependency("actors", roll.heroicInspiration?.actorId, "rolls", roll.id, "heroicInspiration.actorId");
+  }
+  for (const combat of state.combats.filter((combat) => combat.campaignId === campaignId)) {
+    addDependency("encounters", combat.encounterId, "combats", combat.id, "encounterId");
+    for (const combatant of combat.combatants) addDependency("actors", combatant.actorId, "combats", combat.id, "combatants.actorId");
+    for (const prompt of combat.legendaryActionPrompts ?? []) addDependency("actors", prompt.actorId, "combats", combat.id, "legendaryActionPrompts.actorId");
+    for (const event of combat.effectScheduleEvents ?? []) addDependency("actors", event.actorId, "combats", combat.id, "effectScheduleEvents.actorId");
+    for (const reward of combat.rewards ?? []) {
+      for (const actorId of reward.recipientActorIds) addDependency("actors", actorId, "combats", combat.id, "rewards.recipientActorIds");
+      for (const itemId of reward.lootItemIds ?? []) addDependency("items", itemId, "combats", combat.id, "rewards.lootItemIds");
+    }
+    for (const action of combat.actions ?? []) {
+      addDependency("actors", action.actorId, "combats", combat.id, "actions.actorId");
+      for (const actorId of action.targetActorIds) addDependency("actors", actorId, "combats", combat.id, "actions.targetActorIds");
+      for (const roll of action.rolls) addDependency("actors", roll.targetActorId, "combats", combat.id, "actions.rolls.targetActorId");
+      for (const outcome of action.criticalOutcomes ?? []) addDependency("actors", outcome.targetActorId, "combats", combat.id, "actions.criticalOutcomes.targetActorId");
+      for (const update of action.actorUpdates) addDependency("actors", update.actorId, "combats", combat.id, "actions.actorUpdates.actorId");
+      for (const update of action.itemUpdates ?? []) addDependency("items", update.itemId, "combats", combat.id, "actions.itemUpdates.itemId");
+      for (const effect of action.effects ?? []) addDependency("actors", effect.targetActorId, "combats", combat.id, "actions.effects.targetActorId");
+      for (const actorId of removingActorIds) {
+        if (action.expectedActorUpdatedAt && Object.prototype.hasOwnProperty.call(action.expectedActorUpdatedAt, actorId)) addDependency("actors", actorId, "combats", combat.id, "actions.expectedActorUpdatedAt");
+        if (nestedContentImportValueContainsExactString(action.resolution, actorId)) addDependency("actors", actorId, "combats", combat.id, "actions.resolution");
+      }
+    }
+  }
+
+  for (const record of records) {
+    const recordDependencies = dependencies.get(`${record.collection}:${record.id}`);
+    if (recordDependencies?.length) {
+      conflicts.push({ collection: record.collection, id: record.id, entityId: record.entityId, reason: "dependent_reference", dependencies: recordDependencies });
+    }
+  }
+  return conflicts;
+}
+
+export function rollbackAppliedContentImportRecords(
+  state: EngineState,
+  campaignId: string,
+  records: ContentImportAppliedRecord[],
+): { ok: true; removed: ContentImportAppliedRecord[]; missing: ContentImportAppliedRecord[] } | { ok: false; conflicts: ContentImportRollbackConflict[] } {
+  const conflicts = contentImportRollbackConflicts(state, campaignId, records);
+  if (conflicts.length > 0) return { ok: false, conflicts };
+  const existing = new Set(records.filter((record) => appliedContentImportCollection(state, record.collection).some((candidate) => candidate.id === record.id)).map((record) => `${record.collection}:${record.id}`));
+  const idsByCollection = new Map<ContentImportAppliedRecord["collection"], Set<string>>();
+  for (const record of records) {
+    const ids = idsByCollection.get(record.collection) ?? new Set<string>();
+    ids.add(record.id);
+    idsByCollection.set(record.collection, ids);
+  }
+  Object.assign(state, {
+    actors: state.actors.filter((record) => !idsByCollection.get("actors")?.has(record.id)),
+    items: state.items.filter((record) => !idsByCollection.get("items")?.has(record.id)),
+    journals: state.journals.filter((record) => !idsByCollection.get("journals")?.has(record.id)),
+    handouts: state.handouts.filter((record) => !idsByCollection.get("handouts")?.has(record.id)),
+    encounters: state.encounters.filter((record) => !idsByCollection.get("encounters")?.has(record.id)),
+  });
+  return {
+    ok: true,
+    removed: records.filter((record) => existing.has(`${record.collection}:${record.id}`)),
+    missing: records.filter((record) => !existing.has(`${record.collection}:${record.id}`)),
+  };
 }
 
 export function removeAppliedContentImportRecord(state: EngineState, record: ContentImportAppliedRecord): ContentImportAppliedRecord | undefined {
-  const collection =
-    record.collection === "actors"
-      ? state.actors
-      : record.collection === "items"
-        ? state.items
-        : record.collection === "journals"
-          ? state.journals
-          : record.collection === "handouts"
-            ? state.handouts
-            : state.encounters;
+  const collection = appliedContentImportCollection(state, record.collection);
   const index = collection.findIndex((item) => item.id === record.id);
-  if (index === -1) return undefined;
+  if (index === -1 || !record.fingerprint || contentImportRecordFingerprint(collection[index]) !== record.fingerprint) return undefined;
   collection.splice(index, 1);
   return record;
 }

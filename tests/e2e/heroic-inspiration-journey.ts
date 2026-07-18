@@ -46,7 +46,7 @@ export async function exerciseHeroicInspirationJourney(input: {
   gmPage: Page;
   playerPage: Page;
 }): Promise<void> {
-  const firstGrant = await grantHeroicInspiration(input.gmPage, input.campaignName, input.characterName);
+  const firstGrant = await grantHeroicInspiration(input.gmPage, input.apiBaseUrl, input.campaignName, input.characterName);
   const publicPair = await rollAndReroll(input.playerPage, {
     apiBaseUrl: input.apiBaseUrl,
     campaignId: firstGrant.campaignId,
@@ -57,7 +57,7 @@ export async function exerciseHeroicInspirationJourney(input: {
   });
   expect(publicPair.originalRoll.actorId).toBe(firstGrant.id);
 
-  const secondGrant = await grantHeroicInspiration(input.gmPage, input.campaignName, input.characterName);
+  const secondGrant = await grantHeroicInspiration(input.gmPage, input.apiBaseUrl, input.campaignName, input.characterName);
   expect(secondGrant.id).toBe(firstGrant.id);
   const privatePair = await rollAndReroll(input.gmPage, {
     apiBaseUrl: input.apiBaseUrl,
@@ -82,23 +82,29 @@ export async function exerciseHeroicInspirationJourney(input: {
   await selectRollVisibility(input.gmPage, "public");
 }
 
-async function grantHeroicInspiration(page: Page, campaignName: string, characterName: string): Promise<HeroicActor> {
+async function grantHeroicInspiration(page: Page, apiBaseUrl: string, campaignName: string, characterName: string): Promise<HeroicActor> {
   await page.reload();
   await expect(page.getByRole("heading", { name: campaignName })).toBeVisible();
   const stats = await openActorStats(page, characterName);
   const card = stats.getByRole("region", { name: "Heroic Inspiration", exact: true });
   await expect(card).toContainText("None");
-  const response = page.waitForResponse((candidate) =>
-    candidate.request().method() === "POST"
-    && new URL(candidate.url()).pathname.endsWith("/heroic-inspiration/grant"),
-  );
   await card.getByRole("button", { name: "Grant Heroic Inspiration" }).click();
-  const result = await expectJsonResponse<{ awardedTo: "actor" | "recipient"; actor: HeroicActor }>(await response);
-  expect(result.awardedTo).toBe("actor");
-  expect(result.actor.data.heroicInspiration).toBe(true);
-  await expect(card).toContainText("Ready");
-  await expect(card.getByRole("status")).toContainText(`${characterName} has Heroic Inspiration.`);
-  return result.actor;
+  await expect(card).toContainText("Ready", { timeout: 60_000 });
+  await expect(card.getByRole("status")).toContainText(`${characterName} has Heroic Inspiration.`, { timeout: 60_000 });
+  return page.evaluate(async ({ apiBaseUrl, campaignName, characterName }) => {
+    const json = async <T>(response: Response): Promise<T> => {
+      const body = await response.text();
+      if (!response.ok) throw new Error(body);
+      return JSON.parse(body) as T;
+    };
+    const campaigns = await json<Array<{ id: string; name: string }>>(await fetch(`${apiBaseUrl}/api/v1/campaigns`, { credentials: "include" }));
+    const campaign = campaigns.find((candidate) => candidate.name === campaignName);
+    if (!campaign) throw new Error(`Campaign ${campaignName} was not found after Heroic Inspiration grant`);
+    const actors = await json<HeroicActor[]>(await fetch(`${apiBaseUrl}/api/v1/campaigns/${campaign.id}/actors`, { credentials: "include" }));
+    const actor = actors.find((candidate) => (candidate as HeroicActor & { name?: string }).name === characterName);
+    if (!actor || actor.data.heroicInspiration !== true) throw new Error(`${characterName} did not persist Heroic Inspiration`);
+    return actor;
+  }, { apiBaseUrl, campaignName, characterName });
 }
 
 async function rollAndReroll(
@@ -226,10 +232,8 @@ async function expectHistoryVisibility(chat: Locator, pair: HeroicPair, visibili
 
 async function visibleRollHistory(page: Page, apiBaseUrl: string, campaignId: string): Promise<HeroicRoll[]> {
   return page.evaluate(async ({ baseUrl, id }) => {
-    const token = localStorage.getItem("otte:sessionToken");
-    if (!token) throw new Error("Missing active session token");
     const response = await fetch(`${baseUrl}/api/v1/campaigns/${id}/rolls`, {
-      headers: { authorization: `Bearer ${token}` },
+      credentials: "include",
     });
     const body = await response.text();
     if (!response.ok) throw new Error(body);

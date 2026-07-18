@@ -14,6 +14,7 @@ import {
   advanceDnd5eSrdEffectLifecycle,
   type Dnd5eSrdEffectLifecycleChange
 } from "./dnd-effect-lifecycle.js";
+import { advanceDnd5eSrdLegendaryActions } from "./dnd-legendary-actions.js";
 import { dnd5eSrdMonsterZeroHpKnockout, grantDnd5eSrdHeroicInspiration, healDnd5eSrdActorFromZero } from "./dnd-rules-completion.js";
 import type { Dnd5eSrdConcentrationCleanup, RulesResolutionActorUpdate } from "./dnd-resolution-types.js";
 
@@ -41,10 +42,14 @@ export interface Dnd5eSrdActorCombatStateSynchronization {
   combatantUpdate?: Dnd5eSrdCombatantStateUpdate;
 }
 
+export type Dnd5eSrdCombatantActorSynchronization =
+  | { ok: true; actorData: JsonRecord; combatant: Combatant }
+  | { ok: false; error: string };
+
 export interface Dnd5eSrdCombatRulesProgressionInput extends Dnd5eSrdEffectScheduleEvaluationInput {
   actors: Actor[];
   items?: Item[];
-  combat: Pick<Combat, "round" | "turnIndex" | "combatants">;
+  combat: Pick<Combat, "id" | "round" | "turnIndex" | "combatants">;
 }
 
 export interface Dnd5eSrdCombatRulesProgressionResult {
@@ -62,6 +67,8 @@ export interface Dnd5eSrdCombatRulesProgressionResult {
   combatantUpdates: Dnd5eSrdCombatantStateUpdate[];
   concentrationCleanups: Dnd5eSrdConcentrationCleanup[];
   lifecycleChanges: Dnd5eSrdEffectLifecycleChange[];
+  /** Non-executable DM opportunities emitted only after another creature's turn. */
+  legendaryActionPrompts: NonNullable<Combat["legendaryActionPrompts"]>;
 }
 
 function recordValue(value: unknown): JsonRecord {
@@ -85,6 +92,10 @@ function boundedCounter(value: unknown): number {
 function normalizedConditionId(value: unknown): string | undefined {
   const raw = typeof value === "string" ? value : typeof recordValue(value).id === "string" ? String(recordValue(value).id) : undefined;
   return raw?.trim().toLocaleLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+function normalizedCombatantConditionId(value: string): string | undefined {
+  return normalizedConditionId(value.split(":")[0]);
 }
 
 function synchronizeLifecycleConditions(data: JsonRecord, wanted: readonly string[]): JsonRecord {
@@ -200,6 +211,87 @@ export function synchronizeDnd5eSrdActorCombatState(
     ...(combatantChanged && combatant && afterCombatant ? {
       combatantUpdate: { combatantId: combatant.id, actorId: actor.id, before: { ...combatant }, after: afterCombatant, reason }
     } : {})
+  };
+}
+
+/**
+ * Applies a combatant-originated D&D lifecycle edit to its linked actor, then
+ * projects the canonical actor state back to the combatant. Impossible states
+ * (for example Stable at positive HP) are rejected instead of being persisted.
+ */
+export function synchronizeDnd5eSrdCombatantActorState(
+  actorInput: Actor,
+  combatantInput: Combatant,
+  syncedAt: string,
+  previousCombatant?: Combatant
+): Dnd5eSrdCombatantActorSynchronization {
+  const hp = recordValue(actorInput.data.hp);
+  if (typeof hp.current !== "number" || !Number.isFinite(hp.current)) {
+    return { ok: false, error: "Linked D&D actor must track finite Hit Points before combat lifecycle state can be synchronized" };
+  }
+  const currentHp = Math.max(0, Math.floor(hp.current));
+  const character = actorInput.type.trim().toLowerCase() === "character";
+  const successes = boundedCounter(combatantInput.deathSaveSuccesses);
+  const failures = boundedCounter(combatantInput.deathSaveFailures);
+  const lifecycleConditionIds = new Set(["unconscious", "stable", "dead"]);
+  const conditionIds = (combatantInput.conditions ?? []).map(normalizedCombatantConditionId).filter((id): id is string => Boolean(id));
+  const lifecycleIds = new Set(conditionIds.filter((id) => lifecycleConditionIds.has(id)));
+  const outcome = combatantInput.deathSaveOutcome;
+  const actorLifeState = String(actorInput.data.lifeState ?? "").trim().toLowerCase();
+  const actorIsDead = actorLifeState === "dead" || actorLifeState === "defeated" || (Array.isArray(actorInput.data.conditions) && actorInput.data.conditions.some((condition) => normalizedConditionId(condition) === "dead"));
+  const incomingDead = outcome === "dead" || failures >= 3 || lifecycleIds.has("dead") || combatantInput.defeated;
+
+  if (currentHp > 0 && (combatantInput.defeated || successes > 0 || failures > 0 || outcome !== undefined || lifecycleIds.size > 0)) {
+    return { ok: false, error: "A positive-HP actor cannot be Unconscious, Stable, Dead, defeated, or retain Death Saving Throw state" };
+  }
+  if (actorIsDead && !incomingDead) return { ok: false, error: "A dead actor can only be revived through an explicitly authorized revival effect" };
+  if (!character && (successes > 0 || failures > 0 || outcome === "stable" || lifecycleIds.has("stable"))) {
+    return { ok: false, error: "Non-character combatants do not make Death Saving Throws or become Stable" };
+  }
+
+  let lifeState: "conscious" | "unconscious" | "stable" | "dead" | "defeated";
+  if (currentHp > 0) lifeState = "conscious";
+  else if (!character) lifeState = "defeated";
+  else if (incomingDead) lifeState = "dead";
+  else if (outcome === "stable" || successes >= 3 || lifecycleIds.has("stable")) lifeState = "stable";
+  else lifeState = "unconscious";
+
+  const previousConditionIds = new Set((previousCombatant?.conditions ?? [])
+    .map(normalizedCombatantConditionId)
+    .filter((id): id is string => id !== undefined && !lifecycleConditionIds.has(id)));
+  const incomingConditionIds = new Set(conditionIds.filter((id) => !lifecycleConditionIds.has(id)));
+  const stagedData = cloneRecord(actorInput.data);
+  const stagedConditions = (Array.isArray(stagedData.conditions) ? stagedData.conditions : []).filter((condition) => {
+    const id = normalizedConditionId(condition);
+    if (!id) return true;
+    if (lifecycleConditionIds.has(id)) return false;
+    return !previousConditionIds.has(id) || incomingConditionIds.has(id);
+  });
+  const stagedConditionIds = new Set(stagedConditions.map(normalizedConditionId).filter((id): id is string => Boolean(id)));
+  for (const id of incomingConditionIds) {
+    if (stagedConditionIds.has(id)) continue;
+    stagedConditions.push({ id, appliedAt: syncedAt });
+    stagedConditionIds.add(id);
+  }
+  if (lifeState === "unconscious") stagedConditions.push({ id: "unconscious", appliedAt: syncedAt });
+  if (lifeState === "stable") stagedConditions.push({ id: "unconscious", appliedAt: syncedAt }, { id: "stable", appliedAt: syncedAt });
+  if (lifeState === "dead" || lifeState === "defeated") stagedConditions.push({ id: "dead", appliedAt: syncedAt });
+
+  const staged: Actor = {
+    ...actorInput,
+    data: {
+      ...stagedData,
+      conditions: stagedConditions,
+      deathSaves: lifeState === "stable" || currentHp > 0 ? { successes: 0, failures: 0 } : { successes, failures },
+      lifeState,
+      defeated: lifeState === "dead" || lifeState === "defeated"
+    }
+  };
+  const synchronized = synchronizeDnd5eSrdActorCombatState(staged, combatantInput);
+  return {
+    ok: true,
+    actorData: synchronized.actorDataPatch?.data ?? staged.data,
+    combatant: synchronized.combatantUpdate?.after ?? combatantInput
   };
 }
 
@@ -372,13 +464,13 @@ export function advanceDnd5eSrdCombatRules(
         const rulesEngine = recordValue(data.rulesEngine);
         const reactions = recordValue(rulesEngine.reactions);
         const actionEconomy = recordValue(rulesEngine.actionEconomy);
-        if (Object.keys(reactions).length > 0 || Object.keys(recordValue(actionEconomy.bonusActions)).length > 0 || Object.keys(recordValue(actionEconomy.standardActions)).length > 0) {
+        if (Object.keys(reactions).length > 0 || Object.keys(recordValue(actionEconomy.bonusActions)).length > 0 || Object.keys(recordValue(actionEconomy.standardActions)).length > 0 || Object.keys(recordValue(actionEconomy.continuations)).length > 0) {
           data = {
             ...data,
             rulesEngine: {
               ...rulesEngine,
               reactions: {},
-              actionEconomy: { ...actionEconomy, bonusActions: {}, standardActions: {} }
+              actionEconomy: { ...actionEconomy, bonusActions: {}, standardActions: {}, continuations: {} }
             }
           };
           reasons.set(actor.id, [...(reasons.get(actor.id) ?? []), "turn-action-economy-refresh"]);
@@ -417,6 +509,12 @@ export function advanceDnd5eSrdCombatRules(
   noteReasons(lifecycle.actorUpdates);
   workingActors = actorsAfterUpdates(workingActors, lifecycle.actorUpdates);
 
+  const legendaryActions = input.phase === "start_turn" || input.phase === "end_turn"
+    ? advanceDnd5eSrdLegendaryActions(workingActors, input.combat, input.phase, input.now)
+    : { actorUpdates: [], prompts: [] };
+  noteReasons(legendaryActions.actorUpdates);
+  workingActors = actorsAfterUpdates(workingActors, legendaryActions.actorUpdates);
+
   const actorUpdates = mergeActorUpdates(input.actors, workingActors, reasons);
   const actorDataPatches = actorUpdates.map((update) => ({ actorId: update.actorId, data: cloneRecord(update.after), reason: update.reason }));
   const combatantUpdates = new Map(initialCombatantUpdates);
@@ -438,6 +536,7 @@ export function advanceDnd5eSrdCombatRules(
     actorDataPatches,
     combatantUpdates: [...combatantUpdates.values()],
     concentrationCleanups: lifecycle.concentrationCleanups,
-    lifecycleChanges: lifecycle.changes
+    lifecycleChanges: lifecycle.changes,
+    legendaryActionPrompts: legendaryActions.prompts
   };
 }

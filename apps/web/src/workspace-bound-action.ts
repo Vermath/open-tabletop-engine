@@ -4,6 +4,7 @@ export interface WorkspaceRequestIdentity {
 }
 
 export interface WorkspaceBoundRequest extends WorkspaceRequestIdentity {
+  campaignUpdatedAt: string;
   controller: AbortController;
 }
 

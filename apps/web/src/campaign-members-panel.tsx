@@ -7,6 +7,17 @@ export type CampaignAssignableRole = Extract<UserRole, "gm" | "assistant_gm" | "
 
 const assignableRoles: CampaignAssignableRole[] = ["gm", "assistant_gm", "player", "observer"];
 
+export function filterCampaignMembers(members: CampaignMemberInfo[], search: string): CampaignMemberInfo[] {
+  const normalizedSearch = search.trim().toLocaleLowerCase();
+  if (!normalizedSearch) return members;
+  return members.filter((member) => [
+    member.user.displayName,
+    member.user.email ?? "",
+    member.role,
+    member.userId,
+  ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch)));
+}
+
 export function campaignMemberManagementReason(member: CampaignMemberInfo, currentUserId: string, canManage: boolean): string | undefined {
   if (!canManage) return "You can view campaign members, but only an authorized campaign manager can change access.";
   if (member.role === "owner") return "Use campaign ownership transfer to change the protected owner role.";
@@ -34,6 +45,7 @@ export function CampaignMembersPanel(props: {
   campaignId: string;
   currentUserId: string;
   members: CampaignMemberInfo[];
+  defaultSearch?: string;
   canManage: boolean;
   onMemberUpdated(member: CampaignMemberInfo): void;
   onMemberRemoved(memberId: string): void;
@@ -43,8 +55,10 @@ export function CampaignMembersPanel(props: {
   const [busyMemberId, setBusyMemberId] = useState("");
   const [pendingRemovalId, setPendingRemovalId] = useState("");
   const [failure, setFailure] = useState("");
+  const [search, setSearch] = useState(props.defaultSearch ?? "");
   const removeButtons = useRef(new Map<string, HTMLButtonElement>());
   const pendingRemoval = props.members.find((member) => member.id === pendingRemovalId);
+  const visibleMembers = filterCampaignMembers(props.members, search);
 
   const restoreRemoveFocus = (memberId: string) => {
     window.requestAnimationFrame(() => removeButtons.current.get(memberId)?.focus());
@@ -86,8 +100,12 @@ export function CampaignMembersPanel(props: {
           <div className="section-title">Campaign Members</div>
           <p>Roles control campaign, actor, scene, combat, and private-information access.</p>
         </div>
-        <strong>{props.members.length} members</strong>
+        <strong>{visibleMembers.length === props.members.length ? `${props.members.length} members` : `${visibleMembers.length} of ${props.members.length} members`}</strong>
       </div>
+      <label>
+        <span>Search members</span>
+        <input aria-label="Search campaign members" value={search} placeholder="Name, email, role, or user ID" onChange={(event) => setSearch(event.target.value)} />
+      </label>
       {failure && (
         <div className="error-state" role="alert">
           <span>{failure}</span>
@@ -102,7 +120,7 @@ export function CampaignMembersPanel(props: {
           onCancel={() => { setPendingRemovalId(""); restoreRemoveFocus(pendingRemoval.id); }}
         />
       )}
-      {props.members.length === 0 ? <p className="empty-state">No campaign members are available.</p> : props.members.map((member) => {
+      {props.members.length === 0 ? <p className="empty-state">No campaign members are available.</p> : visibleMembers.length === 0 ? <p className="empty-state">No campaign members match this search.</p> : visibleMembers.map((member) => {
         const reason = campaignMemberManagementReason(member, props.currentUserId, props.canManage);
         const busy = busyMemberId === member.id;
         return (

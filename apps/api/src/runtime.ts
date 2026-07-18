@@ -1,5 +1,6 @@
 import { cpSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
+import type { AiProvider } from "@open-tabletop/ai-core";
 import type { FastifyInstance } from "fastify";
 import { buildApp, type BuildAppOptions } from "./app.js";
 import { SqliteStateStore } from "./sqlite-store.js";
@@ -11,6 +12,7 @@ export interface ApiRuntimeOptions {
   uploadDir?: string;
   pluginRoot?: string;
   bundledPluginRoot?: string;
+  aiProvider?: AiProvider;
   env?: NodeJS.ProcessEnv;
 }
 
@@ -123,7 +125,8 @@ export async function startApiRuntime(options: ApiRuntimeOptions = {}): Promise<
   const appOptions: BuildAppOptions = {
     store: new SqliteStateStore(options.sqlitePath ?? process.env.OTTE_SQLITE_PATH),
     uploadDir: options.uploadDir,
-    pluginRoot
+    pluginRoot,
+    ...(options.aiProvider ? { aiProvider: options.aiProvider } : {})
   };
   const app = await buildApp(appOptions);
   await app.listen({ host, port });
@@ -152,7 +155,7 @@ export function validateApiRuntimeEnvironment(options: Pick<ApiRuntimeOptions, "
     const hasSecretKey = Boolean(process.env.OTTE_S3_SECRET_ACCESS_KEY?.trim());
     if (hasAccessKey !== hasSecretKey) missing.push(hasAccessKey ? "OTTE_S3_SECRET_ACCESS_KEY" : "OTTE_S3_ACCESS_KEY_ID");
     const endpoint = process.env.OTTE_S3_ENDPOINT?.trim();
-    if (endpoint && !endpoint.startsWith("https://")) missing.push("OTTE_S3_ENDPOINT(https)");
+    if (endpoint && !endpoint.startsWith("https://") && !insecureLocalS3EndpointAllowed(endpoint)) missing.push("OTTE_S3_ENDPOINT(https)");
   }
   if ((process.env.OTTE_PLUGIN_TRUST_POLICY?.trim().toLowerCase() ?? "require_trusted") !== "require_trusted") {
     missing.push("OTTE_PLUGIN_TRUST_POLICY=require_trusted");
@@ -165,6 +168,20 @@ export function validateApiRuntimeEnvironment(options: Pick<ApiRuntimeOptions, "
   }
 }
 
+export function insecureLocalS3EndpointAllowed(
+  endpoint: string,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  if (env.OTTE_S3_ALLOW_INSECURE_LOCAL_ENDPOINT?.trim().toLowerCase() !== "true") return false;
+  try {
+    const url = new URL(endpoint);
+    if (url.protocol !== "http:" || url.username || url.password || url.pathname !== "/" || url.search || url.hash) return false;
+    const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+    return hostname === "minio" || hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+  } catch {
+    return false;
+  }
+}
 function applyApiRuntimeEnv(options: ApiRuntimeOptions): void {
   const env = options.env;
   if (!env) return;

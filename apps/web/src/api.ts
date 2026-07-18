@@ -1,10 +1,51 @@
 import type { Actor, AiEvaluationRun, AiMemoryFact, AiThread, AiToolCall, AiUsageMetrics, AudioTrack, AuditLog, CalculationOverride, Campaign, CampaignMember, CampaignPresence, ChatMessage, Combat, ContentImportBatch, DiceMacro, DiceRoll, DiceRollFairness, EmailOutboxMessage, Encounter, FogPreset, Item, JobStatus, JobType, JournalEntry, MapAsset, OrganizationMember, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, ScimAssignableRole, ScimGroup, ScimGroupRoleMapping, Token, User, UserRole, UserSession, VisionSnapshot, WorldRecord, WorldRelation } from "@open-tabletop/core";
+import { ApiCompatibilityError, apiBuildFingerprintIssue, apiCompatibilityIssue, type ApiHealthIdentity } from "./api-compatibility.js";
+
+export { ApiCompatibilityError, apiBuildFingerprintIssue, apiCompatibilityIssue } from "./api-compatibility.js";
 
 export const baseUrl = import.meta.env.VITE_API_URL ?? "";
 
-const sessionTokenKey = "otte:sessionToken";
-const sessionTokenUserKey = "otte:sessionTokenUser";
+export async function assertApiCompatibility(
+  fetchHealth: typeof fetch = fetch
+): Promise<void> {
+  const response = await fetchHealth(`${baseUrl}/api/v1/health`, {
+    credentials: "include",
+    cache: "no-store",
+    headers: { accept: "application/json" }
+  });
+  let health: ApiHealthIdentity | undefined;
+  try {
+    health = await response.json() as ApiHealthIdentity;
+  } catch {
+    throw new ApiCompatibilityError("API health did not return a JSON identity.");
+  }
+  if (!response.ok) {
+    const detail = typeof (health as { message?: unknown } | undefined)?.message === "string"
+      ? (health as { message: string }).message
+      : `API health returned HTTP ${response.status}.`;
+    throw new ApiCompatibilityError(detail);
+  }
+  const issue = apiCompatibilityIssue(health);
+  if (issue) throw new ApiCompatibilityError(`${issue} Stop the retained API or point the web dev server at the current API.`);
+  const expectedBuildFingerprint = import.meta.env.DEV ? import.meta.env.VITE_EXPECTED_API_BUILD_FINGERPRINT : undefined;
+  const buildIssue = expectedBuildFingerprint ? apiBuildFingerprintIssue(health, expectedBuildFingerprint) : undefined;
+  if (buildIssue) throw new ApiCompatibilityError(`${buildIssue} Restart the API from this checkout or point the web dev server at the intended current API.`);
+}
+
+const legacySessionTokenKey = "otte:sessionToken";
+const legacySessionTokenUserKey = "otte:sessionTokenUser";
+const sessionTransportKey = "otte:sessionTransport";
+const cookieSessionMarker = "otte-cookie-session";
+let inMemorySessionToken = "";
+let legacySessionMigrated = false;
+let legacySessionUpgradePending = false;
+let legacySessionUpgradePromise: Promise<void> | undefined;
 let statelessDemoApiMode = false;
+let sessionTransportEpoch = 0;
+
+async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  return fetch(input, { ...init, credentials: "include" });
+}
 
 export class ApiError extends Error {
   constructor(
@@ -23,48 +64,89 @@ export function getSessionUserId(): string {
 }
 
 export function getSessionToken(): string {
-  return localStorage.getItem(sessionTokenKey) ?? "";
+  return sessionCredentialToken() ? cookieSessionMarker : "";
+}
+
+export function getSessionTransportEpoch(): number {
+  return sessionTransportEpoch;
 }
 
 export function storeSession(login: SessionLoginInfo): void {
+  migrateLegacySessionToken();
+  inMemorySessionToken = cookieSessionMarker;
+  sessionTransportEpoch += 1;
+  legacySessionUpgradePending = false;
   localStorage.setItem("otte:userId", login.user.id);
-  localStorage.setItem(sessionTokenKey, login.token);
-  localStorage.setItem(sessionTokenUserKey, login.user.id);
+  localStorage.setItem(sessionTransportKey, "cookie");
+  localStorage.removeItem(legacySessionTokenKey);
+  localStorage.removeItem(legacySessionTokenUserKey);
 }
 
 export function clearSession(): void {
-  localStorage.removeItem(sessionTokenKey);
-  localStorage.removeItem(sessionTokenUserKey);
+  inMemorySessionToken = "";
+  sessionTransportEpoch += 1;
+  legacySessionUpgradePending = false;
+  legacySessionUpgradePromise = undefined;
+  localStorage.removeItem(legacySessionTokenKey);
+  localStorage.removeItem(legacySessionTokenUserKey);
+  localStorage.removeItem(sessionTransportKey);
+}
+
+function migrateLegacySessionToken(): void {
+  if (legacySessionMigrated) return;
+  legacySessionMigrated = true;
+  const token = localStorage.getItem(legacySessionTokenKey) ?? "";
+  const tokenUserId = localStorage.getItem(legacySessionTokenUserKey);
+  const userId = getSessionUserId();
+  if (token && tokenUserId === userId) {
+    inMemorySessionToken = token;
+    legacySessionUpgradePending = true;
+    return;
+  }
+  localStorage.removeItem(legacySessionTokenKey);
+  localStorage.removeItem(legacySessionTokenUserKey);
 }
 
 export function setStatelessDemoApiMode(enabled: boolean): void {
   statelessDemoApiMode = enabled;
 }
 
-export function consumeSsoRedirect(): string | undefined {
+export async function consumeSsoRedirect(): Promise<string | undefined> {
   const hash = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : window.location.hash;
   const params = new URLSearchParams(hash);
   const token = params.get("ssoToken");
-  const userId = params.get("ssoUserId");
-  if (!token || !userId) return undefined;
+  if (token !== cookieSessionMarker) return undefined;
+  const response = await apiFetch(`${baseUrl}/api/v1/auth/session`, {
+    headers: { authorization: `Bearer ${cookieSessionMarker}` },
+  });
+  if (!response.ok) throw await apiErrorFromResponse(response);
+  const authenticated = await response.json() as { user?: { id?: string } };
+  const userId = authenticated.user?.id;
+  if (!userId) throw new Error("OIDC session response did not include an authenticated user.");
+  inMemorySessionToken = cookieSessionMarker;
+  sessionTransportEpoch += 1;
+  legacySessionUpgradePending = false;
   localStorage.setItem("otte:userId", userId);
-  localStorage.setItem(sessionTokenKey, token);
-  localStorage.setItem(sessionTokenUserKey, userId);
+  localStorage.setItem(sessionTransportKey, "cookie");
+  localStorage.removeItem(legacySessionTokenKey);
+  localStorage.removeItem(legacySessionTokenUserKey);
+  // Keep the callback marker available for a retry until the cookie has been
+  // verified and the corresponding browser identity is safely committed.
   window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
   return userId;
 }
 
 export async function loginSession(userId = getSessionUserId(), options: { persist?: boolean; signal?: AbortSignal } = {}): Promise<SessionLoginInfo> {
   const demoEmail = demoLoginEmail(userId);
-  const response = await fetch(`${baseUrl}/api/v1/auth/login`, {
+  const response = await apiFetch(`${baseUrl}/api/v1/auth/login`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...(options.persist === false ? { "x-otte-defer-session-cookie": "1" } : {}) },
     body: JSON.stringify(demoEmail ? { email: demoEmail } : { userId }),
     signal: options.signal
   });
   if (!response.ok) throw new Error(await response.text());
   const login = (await response.json()) as SessionLoginInfo;
-  if (options.persist !== false) storeSession(login);
+  if (options.persist !== false) await confirmAndStoreBrowserSession(login);
   return login;
 }
 
@@ -74,33 +156,35 @@ function demoLoginEmail(userId: string): string | undefined {
   return undefined;
 }
 
-export async function loginPasswordSession(input: { email: string; password: string; mfaCode?: string; recoveryCode?: string }): Promise<SessionLoginInfo> {
-  const response = await fetch(`${baseUrl}/api/v1/auth/login`, {
+export async function loginPasswordSession(input: { email: string; password: string; mfaCode?: string; recoveryCode?: string }, options: { persist?: boolean; signal?: AbortSignal } = {}): Promise<SessionLoginInfo> {
+  const response = await apiFetch(`${baseUrl}/api/v1/auth/login`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(input)
+    headers: { "content-type": "application/json", ...(options.persist === false ? { "x-otte-defer-session-cookie": "1" } : {}) },
+    body: JSON.stringify(input),
+    signal: options.signal,
   });
   if (!response.ok) throw await apiErrorFromResponse(response);
   const login = (await response.json()) as SessionLoginInfo;
-  storeSession(login);
+  if (options.persist !== false) await confirmAndStoreBrowserSession(login);
   return login;
 }
 
-export async function registerSession(input: { email: string; displayName: string; password: string }): Promise<SessionLoginInfo> {
-  const response = await fetch(`${baseUrl}/api/v1/auth/register`, {
+export async function registerSession(input: { email: string; displayName: string; password: string }, options: { persist?: boolean; signal?: AbortSignal } = {}): Promise<SessionLoginInfo> {
+  const response = await apiFetch(`${baseUrl}/api/v1/auth/register`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(input)
+    headers: { "content-type": "application/json", ...(options.persist === false ? { "x-otte-defer-session-cookie": "1" } : {}) },
+    body: JSON.stringify(input),
+    signal: options.signal,
   });
   if (!response.ok) throw new Error(await response.text());
   const login = (await response.json()) as SessionLoginInfo;
-  storeSession(login);
+  if (options.persist !== false) await confirmAndStoreBrowserSession(login);
   return login;
 }
 
 export async function logoutSession(): Promise<{ ok: boolean }> {
   try {
-    const response = await fetch(`${baseUrl}/api/v1/auth/logout`, {
+    const response = await apiFetch(`${baseUrl}/api/v1/auth/logout`, {
       method: "POST",
       headers: await sessionHeaders()
     });
@@ -112,20 +196,20 @@ export async function logoutSession(): Promise<{ ok: boolean }> {
 }
 
 export async function changePasswordSession(input: { currentPassword: string; newPassword: string }, options: { persist?: boolean; signal?: AbortSignal } = {}): Promise<SessionLoginInfo> {
-  const response = await fetch(`${baseUrl}/api/v1/auth/password/change`, {
+  const response = await apiFetch(`${baseUrl}/api/v1/auth/password/change`, {
     method: "POST",
-    headers: { "content-type": "application/json", ...(await sessionHeaders()) },
+    headers: { "content-type": "application/json", ...(options.persist === false ? { "x-otte-defer-session-cookie": "1" } : {}), ...(await sessionHeaders()) },
     body: JSON.stringify(input),
     signal: options.signal
   });
   if (!response.ok) throw new Error(await response.text());
   const login = (await response.json()) as SessionLoginInfo;
-  if (options.persist !== false) storeSession(login);
+  if (options.persist !== false) await confirmAndStoreBrowserSession(login);
   return login;
 }
 
 export async function loadMfaStatus(options: ApiRequestOptions = {}): Promise<MfaInfo> {
-  const response = await fetch(`${baseUrl}/api/v1/auth/mfa`, {
+  const response = await apiFetch(`${baseUrl}/api/v1/auth/mfa`, {
     headers: await sessionHeaders(),
     signal: options.signal
   });
@@ -134,7 +218,7 @@ export async function loadMfaStatus(options: ApiRequestOptions = {}): Promise<Mf
 }
 
 export async function enrollTotpMfa(input: { currentPassword: string }, options: ApiRequestOptions = {}): Promise<TotpEnrollInfo> {
-  const response = await fetch(`${baseUrl}/api/v1/auth/mfa/totp/enroll`, {
+  const response = await apiFetch(`${baseUrl}/api/v1/auth/mfa/totp/enroll`, {
     method: "POST",
     headers: { "content-type": "application/json", ...(await sessionHeaders()) },
     body: JSON.stringify(input),
@@ -145,7 +229,7 @@ export async function enrollTotpMfa(input: { currentPassword: string }, options:
 }
 
 export async function confirmTotpMfa(input: { code: string }, options: ApiRequestOptions = {}): Promise<TotpConfirmInfo> {
-  const response = await fetch(`${baseUrl}/api/v1/auth/mfa/totp/confirm`, {
+  const response = await apiFetch(`${baseUrl}/api/v1/auth/mfa/totp/confirm`, {
     method: "POST",
     headers: { "content-type": "application/json", ...(await sessionHeaders()) },
     body: JSON.stringify(input),
@@ -156,7 +240,7 @@ export async function confirmTotpMfa(input: { code: string }, options: ApiReques
 }
 
 export async function disableTotpMfa(input: { currentPassword: string; mfaCode?: string; recoveryCode?: string }, options: ApiRequestOptions = {}): Promise<TotpConfirmInfo> {
-  const response = await fetch(`${baseUrl}/api/v1/auth/mfa/totp`, {
+  const response = await apiFetch(`${baseUrl}/api/v1/auth/mfa/totp`, {
     method: "DELETE",
     headers: { "content-type": "application/json", ...(await sessionHeaders()) },
     body: JSON.stringify(input),
@@ -167,25 +251,27 @@ export async function disableTotpMfa(input: { currentPassword: string; mfaCode?:
 }
 
 export async function loadBootstrapStatus(): Promise<BootstrapStatus> {
-  const response = await fetch(`${baseUrl}/api/v1/auth/bootstrap`);
+  await assertApiCompatibility();
+  const response = await apiFetch(`${baseUrl}/api/v1/auth/bootstrap`);
   if (!response.ok) throw new Error(await response.text());
   return response.json() as Promise<BootstrapStatus>;
 }
 
-export async function bootstrapOwnerSession(input: { email: string; displayName: string; password: string; campaignName: string; campaignDescription?: string; defaultSystemId?: string }): Promise<BootstrapOwnerInfo> {
-  const response = await fetch(`${baseUrl}/api/v1/auth/bootstrap`, {
+export async function bootstrapOwnerSession(input: { email: string; displayName: string; password: string; campaignName: string; campaignDescription?: string; defaultSystemId?: string }, options: { persist?: boolean; signal?: AbortSignal } = {}): Promise<BootstrapOwnerInfo> {
+  const response = await apiFetch(`${baseUrl}/api/v1/auth/bootstrap`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(input)
+    headers: { "content-type": "application/json", ...(options.persist === false ? { "x-otte-defer-session-cookie": "1" } : {}) },
+    body: JSON.stringify(input),
+    signal: options.signal,
   });
   if (!response.ok) throw new Error(await response.text());
   const login = (await response.json()) as BootstrapOwnerInfo;
-  storeSession(login);
+  if (options.persist !== false) await confirmAndStoreBrowserSession(login);
   return login;
 }
 
 export async function requestPasswordReset(email: string): Promise<{ ok: boolean }> {
-  const response = await fetch(`${baseUrl}/api/v1/auth/password-reset/request`, {
+  const response = await apiFetch(`${baseUrl}/api/v1/auth/password-reset/request`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ email })
@@ -194,15 +280,16 @@ export async function requestPasswordReset(email: string): Promise<{ ok: boolean
   return response.json() as Promise<{ ok: boolean }>;
 }
 
-export async function confirmPasswordResetSession(input: { token: string; password: string }): Promise<SessionLoginInfo> {
-  const response = await fetch(`${baseUrl}/api/v1/auth/password-reset/confirm`, {
+export async function confirmPasswordResetSession(input: { token: string; password: string }, options: { persist?: boolean; signal?: AbortSignal } = {}): Promise<SessionLoginInfo> {
+  const response = await apiFetch(`${baseUrl}/api/v1/auth/password-reset/confirm`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(input)
+    headers: { "content-type": "application/json", ...(options.persist === false ? { "x-otte-defer-session-cookie": "1" } : {}) },
+    body: JSON.stringify(input),
+    signal: options.signal,
   });
   if (!response.ok) throw new Error(await response.text());
   const login = (await response.json()) as SessionLoginInfo;
-  storeSession(login);
+  if (options.persist !== false) await confirmAndStoreBrowserSession(login);
   return login;
 }
 
@@ -210,25 +297,50 @@ export async function acceptInviteSession(
   input: { token: string; email: string; displayName?: string; password: string; mfaCode?: string; recoveryCode?: string },
   options: { persist?: boolean; signal?: AbortSignal; idempotencyKey: string }
 ): Promise<InviteAcceptInfo> {
-  const previewResponse = await fetch(`${baseUrl}/api/v1/invites/preview?token=${encodeURIComponent(input.token)}`, {
+  const previewResponse = await apiFetch(`${baseUrl}/api/v1/invites/preview?token=${encodeURIComponent(input.token)}`, {
     signal: options.signal
   });
   if (!previewResponse.ok) throw await apiErrorFromResponse(previewResponse);
   const preview = (await previewResponse.json()) as { expectedUpdatedAt: string };
-  const response = await fetch(`${baseUrl}/api/v1/invites/accept`, {
+  const response = await apiFetch(`${baseUrl}/api/v1/invites/accept`, {
     method: "POST",
-    headers: { "content-type": "application/json", "idempotency-key": options.idempotencyKey },
+    headers: { "content-type": "application/json", "idempotency-key": options.idempotencyKey, ...(options.persist === false ? { "x-otte-defer-session-cookie": "1" } : {}) },
     body: JSON.stringify({ ...input, expectedUpdatedAt: preview.expectedUpdatedAt }),
     signal: options.signal
   });
   if (!response.ok) throw await apiErrorFromResponse(response);
   const accepted = (await response.json()) as InviteAcceptInfo;
-  if (options.persist !== false) storeSession(accepted);
+  if (options.persist !== false) await confirmAndStoreBrowserSession(accepted);
   return accepted;
 }
 
+/** Commits a response selected by stale-result guards before changing browser credentials. */
+export async function activateDeferredSession(login: SessionLoginInfo, options: { persist?: boolean } = {}): Promise<void> {
+  const upgraded = await apiFetch(`${baseUrl}/api/v1/auth/session/upgrade-cookie`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${login.token}` },
+    body: JSON.stringify({ expectedUserId: login.user.id }),
+  });
+  if (!upgraded.ok) throw await apiErrorFromResponse(upgraded);
+  await assertUpgradeUser(upgraded, login.user.id);
+  const confirmed = await apiFetch(`${baseUrl}/api/v1/auth/session/upgrade-cookie/confirm`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${cookieSessionMarker}` },
+    body: JSON.stringify({ expectedUserId: login.user.id }),
+  });
+  if (!confirmed.ok) throw await apiErrorFromResponse(confirmed);
+  await assertUpgradeConfirmation(confirmed, login.user.id);
+  try {
+    await assertAuthenticatedCookieSession(login.user.id);
+  } catch (error) {
+    await discardUnconfirmedCookieSession();
+    throw error;
+  }
+  if (options.persist !== false) storeSession(login);
+}
+
 export async function startOidcLogin(returnTo = window.location.origin + window.location.pathname): Promise<OidcStartInfo> {
-  const response = await fetch(`${baseUrl}/api/v1/auth/oidc/start`, {
+  const response = await apiFetch(`${baseUrl}/api/v1/auth/oidc/start`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ returnTo })
@@ -238,23 +350,132 @@ export async function startOidcLogin(returnTo = window.location.origin + window.
 }
 
 export async function loadOidcConfig(): Promise<OidcConfigInfo> {
-  const response = await fetch(`${baseUrl}/api/v1/auth/oidc/config`);
+  const response = await apiFetch(`${baseUrl}/api/v1/auth/oidc/config`);
   if (!response.ok) throw new Error(await response.text());
   return response.json() as Promise<OidcConfigInfo>;
 }
 
 async function ensureSessionToken(): Promise<string> {
   if (statelessDemoApiMode) throw new Error("Demo mode is local-only and cannot call the authenticated API.");
-  const token = localStorage.getItem(sessionTokenKey);
-  const tokenUserId = localStorage.getItem(sessionTokenUserKey);
+  const token = sessionCredentialToken();
   const userId = getSessionUserId();
-  if (token && tokenUserId === userId) return token;
+  if (token) return token;
   const login = await loginSession(userId);
-  return login.token;
+  return getSessionToken() || login.token;
+}
+
+/** The legacy bearer is private to one upgrade request and never exposed to UI state. */
+function sessionCredentialToken(): string {
+  migrateLegacySessionToken();
+  if (inMemorySessionToken) return inMemorySessionToken;
+  return localStorage.getItem(sessionTransportKey) === "cookie" ? cookieSessionMarker : "";
 }
 
 async function sessionHeaders(): Promise<Record<string, string>> {
-  return { authorization: `Bearer ${await ensureSessionToken()}` };
+  await ensureLegacySessionCookieUpgrade();
+  const token = await ensureSessionToken();
+  return { authorization: `Bearer ${token}` };
+}
+
+async function ensureLegacySessionCookieUpgrade(): Promise<void> {
+  migrateLegacySessionToken();
+  if (!legacySessionUpgradePending) return;
+  if (legacySessionUpgradePromise) return legacySessionUpgradePromise;
+  legacySessionUpgradePromise = (async () => {
+    const expectedUserId = localStorage.getItem(legacySessionTokenUserKey);
+    if (!expectedUserId) throw new Error("Legacy session user is unavailable for cookie upgrade.");
+    // If the prior confirmation response was interrupted, the rotated cookie
+    // is already usable and this confirmation safely finishes revocation.
+    const pendingConfirmation = await apiFetch(`${baseUrl}/api/v1/auth/session/upgrade-cookie/confirm`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${cookieSessionMarker}` },
+      body: JSON.stringify({ expectedUserId }),
+    });
+    if (pendingConfirmation.ok) {
+      await finalizeLegacySessionCookieUpgrade(pendingConfirmation);
+      return;
+    }
+
+    const legacyBearer = inMemorySessionToken;
+    if (!legacyBearer || legacyBearer === cookieSessionMarker) throw new Error("Legacy session credential is unavailable for cookie upgrade.");
+    const upgraded = await apiFetch(`${baseUrl}/api/v1/auth/session/upgrade-cookie`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${legacyBearer}` },
+      body: JSON.stringify({ expectedUserId }),
+    });
+    if (!upgraded.ok) throw await apiErrorFromResponse(upgraded);
+    await assertUpgradeUser(upgraded, expectedUserId);
+    const confirmed = await apiFetch(`${baseUrl}/api/v1/auth/session/upgrade-cookie/confirm`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${cookieSessionMarker}` },
+      body: JSON.stringify({ expectedUserId }),
+    });
+    if (!confirmed.ok) throw await apiErrorFromResponse(confirmed);
+    await finalizeLegacySessionCookieUpgrade(confirmed);
+  })().finally(() => {
+    legacySessionUpgradePromise = undefined;
+  });
+  return legacySessionUpgradePromise;
+}
+
+async function assertUpgradeUser(response: Response, expectedUserId: string): Promise<void> {
+  const payload = await response.json() as { session?: { userId?: string } };
+  if (payload.session?.userId !== expectedUserId) {
+    throw new Error("Legacy session upgrade returned a different user.");
+  }
+}
+
+async function confirmAndStoreBrowserSession(login: SessionLoginInfo): Promise<void> {
+  try {
+    await assertAuthenticatedCookieSession(login.user.id);
+  } catch (error) {
+    await discardUnconfirmedCookieSession();
+    throw error;
+  }
+  storeSession(login);
+}
+
+async function assertAuthenticatedCookieSession(expectedUserId: string): Promise<void> {
+  const response = await apiFetch(`${baseUrl}/api/v1/auth/session`, {
+    headers: { authorization: `Bearer ${cookieSessionMarker}` },
+  });
+  if (!response.ok) throw await apiErrorFromResponse(response);
+  const payload = await response.json() as { user?: { id?: string }; session?: { userId?: string } };
+  const authenticatedUserId = payload.user?.id ?? payload.session?.userId;
+  if (authenticatedUserId !== expectedUserId) throw new Error("Browser session cookie did not match the expected user.");
+}
+
+async function discardUnconfirmedCookieSession(): Promise<void> {
+  try {
+    await apiFetch(`${baseUrl}/api/v1/auth/logout`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${cookieSessionMarker}` },
+    });
+  } catch {
+    // The caller still rejects activation; a later interactive login replaces
+    // any cookie that could not be cleared while the server was unreachable.
+  }
+}
+
+async function finalizeLegacySessionCookieUpgrade(response: Response): Promise<void> {
+  const expectedUserId = localStorage.getItem(legacySessionTokenUserKey);
+  if (!expectedUserId) throw new Error("Legacy session user is unavailable for cookie confirmation.");
+  await assertUpgradeConfirmation(response, expectedUserId);
+  await assertAuthenticatedCookieSession(expectedUserId);
+  legacySessionUpgradePending = false;
+  inMemorySessionToken = cookieSessionMarker;
+  sessionTransportEpoch += 1;
+  localStorage.setItem(sessionTransportKey, "cookie");
+  localStorage.removeItem(legacySessionTokenKey);
+  localStorage.removeItem(legacySessionTokenUserKey);
+}
+
+async function assertUpgradeConfirmation(response: Response, expectedUserId: string): Promise<void> {
+  if (response.headers.get("x-otte-session-transport") !== "cookie") throw new Error("Server did not confirm session cookie activation.");
+  const payload = await response.json() as { upgradeConfirmed?: boolean; session?: { userId?: string } };
+  if (!payload.upgradeConfirmed || payload.session?.userId !== expectedUserId) {
+    throw new Error("Session cookie confirmation did not match the expected user.");
+  }
 }
 
 async function apiErrorFromResponse(response: Response): Promise<ApiError> {
@@ -295,7 +516,7 @@ function mutationHeaders(options: ApiRequestOptions): Record<string, string> {
 }
 
 export async function apiGet<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
-  const response = await fetch(`${baseUrl}${path}`, {
+  const response = await apiFetch(`${baseUrl}${path}`, {
     headers: await sessionHeaders(),
     signal: options.signal
   });
@@ -304,7 +525,7 @@ export async function apiGet<T>(path: string, options: ApiRequestOptions = {}): 
 }
 
 export async function apiPost<T>(path: string, body: unknown, options: ApiRequestOptions = {}): Promise<T> {
-  const response = await fetch(`${baseUrl}${path}`, {
+  const response = await apiFetch(`${baseUrl}${path}`, {
     method: "POST",
     headers: { ...mutationHeaders(options), ...(await sessionHeaders()) },
     body: JSON.stringify(body),
@@ -315,10 +536,10 @@ export async function apiPost<T>(path: string, body: unknown, options: ApiReques
 }
 
 export async function apiAnalyzePdfContentImport(
-  input: { campaignId: string; file: File },
+  input: { campaignId: string; file: File; expectedUpdatedAt: string },
   options: ApiRequestOptions & { idempotencyKey: string }
 ): Promise<ContentImportBatch> {
-  const response = await fetch(`${baseUrl}/api/v1/campaigns/${input.campaignId}/content-imports/pdf/ai`, {
+  const response = await apiFetch(`${baseUrl}/api/v1/campaigns/${input.campaignId}/content-imports/pdf/ai?${new URLSearchParams({ expectedUpdatedAt: input.expectedUpdatedAt })}`, {
     method: "POST",
     headers: {
       "content-type": "application/pdf",
@@ -334,7 +555,7 @@ export async function apiAnalyzePdfContentImport(
 }
 
 export async function apiPatch<T>(path: string, body: unknown, options: ApiRequestOptions = {}): Promise<T> {
-  const response = await fetch(`${baseUrl}${path}`, {
+  const response = await apiFetch(`${baseUrl}${path}`, {
     method: "PATCH",
     headers: { ...mutationHeaders(options), ...(await sessionHeaders()) },
     body: JSON.stringify(body),
@@ -345,7 +566,7 @@ export async function apiPatch<T>(path: string, body: unknown, options: ApiReque
 }
 
 export async function apiDelete<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
-  const response = await fetch(`${baseUrl}${path}`, {
+  const response = await apiFetch(`${baseUrl}${path}`, {
     method: "DELETE",
     headers: {
       ...(options.body !== undefined ? { "content-type": "application/json" } : {}),
@@ -666,6 +887,8 @@ export interface InviteCreateInfo {
   invite: CampaignInviteInfo;
   token: string;
   acceptUrl: string;
+  /** Present when invite creation advances the parent campaign revision. */
+  campaignUpdatedAt?: string;
 }
 
 export interface OrganizationInviteInfo extends CampaignInviteInfo {
@@ -1308,6 +1531,25 @@ export interface AdminDurationSummary {
 
 export interface AdminAuthOperations {
   generatedAt: string;
+  authenticationCapacity: {
+    passwordWork: {
+      active: number;
+      queued: number;
+      maxConcurrent: number;
+      maxQueue: number;
+      completedVerifications: number;
+      completedHashes: number;
+      saturationCount: number;
+      queueTimeoutCount: number;
+      failureCount: number;
+    };
+    loginThrottle: {
+      bucketCount: number;
+      maxBuckets: number;
+      consumedAttempts: number;
+      limitedAttempts: number;
+    };
+  };
   actionRequired: boolean;
   actionReasons: string[];
   remediationQueue: Array<{
@@ -2878,6 +3120,22 @@ export interface AdminStorageRestoreDrillResult {
 export interface AdminStorageRestoreResult extends AdminStorageRestoreDrillResult {
   restoredAt?: string;
   reason?: string;
+  paired?: boolean;
+  assetRestore?: {
+    identity: AdminAssetSnapshotIdentity;
+    assetCount: number;
+    objectCount: number;
+    storedObjectCount: number;
+    sizeBytes: number;
+  };
+  rollbackRecoveryPoint?: {
+    backupFileName: string;
+    assetSnapshot: AdminAssetSnapshotIdentity;
+  };
+  rollback?: {
+    status: "succeeded" | "failed";
+    errors: string[];
+  };
   reconciliation?: {
     policy: "preserve-live-security-plane";
     usersPreserved: number;
@@ -3116,7 +3374,7 @@ export async function apiUploadAsset(input: { campaignId: string; sceneId?: stri
     if (!input.sceneId || !input.expectedSceneUpdatedAt) throw new Error("Background uploads require the current scene revision.");
     params.set("expectedSceneUpdatedAt", input.expectedSceneUpdatedAt);
   }
-  const response = await fetch(`${baseUrl}/api/v1/campaigns/${input.campaignId}/assets/upload?${params.toString()}`, {
+  const response = await apiFetch(`${baseUrl}/api/v1/campaigns/${input.campaignId}/assets/upload?${params.toString()}`, {
     method: "POST",
     headers: {
       "content-type": input.file.type || "application/octet-stream",
@@ -3138,9 +3396,9 @@ export async function verifyDiceRoll(campaignId: string, rollId: string): Promis
 }
 
 export async function loadSnapshot(campaignId?: string, sceneId?: string): Promise<Snapshot> {
-  const snapshotHeaders = { authorization: `Bearer ${await ensureSessionToken()}` };
+  const snapshotHeaders = await sessionHeaders();
   const snapshotGet = async <T,>(path: string): Promise<T> => {
-    const response = await fetch(`${baseUrl}${path}`, {
+    const response = await apiFetch(`${baseUrl}${path}`, {
       headers: snapshotHeaders
     });
     if (!response.ok) throw new Error(await response.text());

@@ -41,12 +41,10 @@ async function createSystemCharacter(
 ): Promise<{ id: string; name: string }> {
   return page.evaluate(
     async ({ apiBaseUrl, input }) => {
-      const bearer = localStorage.getItem("otte:sessionToken");
-      if (!bearer) throw new Error("No browser session token available for controlled-creature setup");
       const response = await fetch(`${apiBaseUrl}/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters`, {
         method: "POST",
+        credentials: "include",
         headers: {
-          authorization: `Bearer ${bearer}`,
           "content-type": "application/json",
           "idempotency-key": `e2e-character:${crypto.randomUUID()}`,
         },
@@ -67,17 +65,15 @@ async function createSystemCharacter(
 async function createActorFeature(page: Page, actorId: string, name: string): Promise<void> {
   await page.evaluate(
     async ({ apiBaseUrl, actorId, name }) => {
-      const bearer = localStorage.getItem("otte:sessionToken");
-      if (!bearer) throw new Error("No browser session token available for controlled-creature source setup");
       const campaignResponse = await fetch(`${apiBaseUrl}/api/v1/campaigns/camp_demo`, {
-        headers: { authorization: `Bearer ${bearer}` },
+        credentials: "include",
       });
       if (!campaignResponse.ok) throw new Error(await campaignResponse.text());
       const campaign = (await campaignResponse.json()) as { updatedAt: string };
       const response = await fetch(`${apiBaseUrl}/api/v1/campaigns/camp_demo/items`, {
         method: "POST",
+        credentials: "include",
         headers: {
-          authorization: `Bearer ${bearer}`,
           "content-type": "application/json",
           "idempotency-key": `e2e-feature:${crypto.randomUUID()}`,
         },
@@ -119,7 +115,8 @@ test("T30 explains an actor total and exposes the campaign compatibility report"
   test.setTimeout(90_000);
   await loginAsDemoGm(page);
 
-  await page.getByRole("button", { name: "Token Valen Ash" }).first().click();
+  const valenToken = page.getByRole("button", { name: "Token Valen Ash" }).first();
+  if ((await valenToken.getAttribute("aria-pressed")) !== "true") await valenToken.click();
   const actorsPanel = await openInspectorPanel(page, "Actors");
   await actorsPanel.getByRole("tab", { name: "Stats", exact: true }).click();
 
@@ -127,8 +124,9 @@ test("T30 explains an actor total and exposes the campaign compatibility report"
     .locator(".metric-row", { hasText: "Armor class" })
     .locator("strong")
     .innerText();
-  const rulesTraceDisclosure = actorsPanel.locator("details.actor-rules-trace-disclosure");
-  await rulesTraceDisclosure.locator("summary").click();
+  const rulesTraceSummary = actorsPanel.getByText("Rules trace & calculation sources", { exact: true });
+  const rulesTraceDisclosure = rulesTraceSummary.locator("..");
+  await rulesTraceSummary.click();
   const explanation = rulesTraceDisclosure.locator("section.calculation-explanation");
   await expect(explanation.getByRole("heading", { name: "How the numbers work" })).toBeVisible();
 

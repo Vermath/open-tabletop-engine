@@ -7,14 +7,14 @@ async function loginDemoGm(page: Page): Promise<void> {
   await page.evaluate(async (baseUrl) => {
     const response = await fetch(`${baseUrl}/api/v1/auth/login`, {
       method: "POST",
+      credentials: "include",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ email: "gm@example.test" }),
     });
     if (!response.ok) throw new Error(await response.text());
-    const login = await response.json() as { token: string; user: { id: string } };
+    const login = await response.json() as { user: { id: string } };
     localStorage.setItem("otte:userId", login.user.id);
-    localStorage.setItem("otte:sessionToken", login.token);
-    localStorage.setItem("otte:sessionTokenUser", login.user.id);
+    localStorage.setItem("otte:sessionTransport", "cookie");
   }, apiBaseUrl);
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
@@ -65,8 +65,7 @@ test("owner changes an invited member role and removal revokes that live session
   await expect(people.locator("article", { hasText: displayName })).toHaveCount(0);
 
   const accessStatus = await playerPage.evaluate(async (baseUrl) => {
-    const token = localStorage.getItem("otte:sessionToken");
-    return (await fetch(`${baseUrl}/api/v1/campaigns/camp_demo/snapshot`, { headers: token ? { authorization: `Bearer ${token}` } : {} })).status;
+    return (await fetch(`${baseUrl}/api/v1/campaigns/camp_demo/snapshot`, { credentials: "include" })).status;
   }, apiBaseUrl);
   expect(accessStatus).toBe(403);
   await playerContext.close();

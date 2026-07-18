@@ -137,7 +137,7 @@ export function TacticalMapAids({ scene, tokens, canManage, canMoveTokens, comba
     }
     const idempotencyKey = newIdempotencyKey();
     const expectedUpdatedAt = sourceToken.updatedAt;
-    setOperationStatus({ kind: "pending", message: `Moving ${sourceToken.name}â€¦` });
+    setOperationStatus({ kind: "pending", message: `Moving ${sourceToken.name}...` });
     try {
       const updated = await apiPatch<Token>(`/api/v1/tokens/${encodeURIComponent(sourceToken.id)}`, {
         x: Math.max(0, destination.x - sourceToken.width / 2),

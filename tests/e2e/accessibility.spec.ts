@@ -13,18 +13,16 @@ async function tabUntilFocused(page: Page, target: Locator, attempts = 140): Pro
 async function createSceneToken(page: Page, input: { name: string; x: number; y: number; ownerUserIds: string[]; actorId?: string }) {
   return page.evaluate(
     async ({ apiBaseUrl, input }) => {
-      const bearer = localStorage.getItem("otte:sessionToken");
-      if (!bearer) throw new Error("No browser session token available for token setup");
       const sceneResponse = await fetch(`${apiBaseUrl}/api/v1/scenes/scn_vault_entry`, {
-        headers: { authorization: `Bearer ${bearer}` }
+        credentials: "include"
       });
       if (!sceneResponse.ok) throw new Error(await sceneResponse.text());
       const scene = await sceneResponse.json() as { updatedAt?: string };
       if (!scene.updatedAt) throw new Error("Scene has no revision for token setup");
       const response = await fetch(`${apiBaseUrl}/api/v1/scenes/scn_vault_entry/tokens`, {
         method: "POST",
+        credentials: "include",
         headers: {
-          authorization: `Bearer ${bearer}`,
           "content-type": "application/json",
           "idempotency-key": `e2e-token-create-${encodeURIComponent(input.name)}-${scene.updatedAt}`
         },
@@ -40,23 +38,25 @@ async function createSceneToken(page: Page, input: { name: string; x: number; y:
 async function deleteTokenById(page: Page, tokenId: string) {
   await page.evaluate(
     async ({ apiBaseUrl, tokenId }) => {
-      const bearer = localStorage.getItem("otte:sessionToken");
-      if (!bearer) throw new Error("No browser session token available for token cleanup");
-      const tokensResponse = await fetch(`${apiBaseUrl}/api/v1/scenes/scn_vault_entry/tokens`, {
-        headers: { authorization: `Bearer ${bearer}` }
-      });
-      if (!tokensResponse.ok) throw new Error(await tokensResponse.text());
-      const tokens = await tokensResponse.json() as Array<{ id: string; updatedAt: string }>;
-      const token = tokens.find((candidate) => candidate.id === tokenId);
-      if (!token) return;
-      const response = await fetch(`${apiBaseUrl}/api/v1/tokens/${tokenId}?expectedUpdatedAt=${encodeURIComponent(token.updatedAt)}`, {
-        method: "DELETE",
-        headers: {
-          authorization: `Bearer ${bearer}`,
-          "idempotency-key": `e2e-token-delete-${tokenId}-${token.updatedAt}`
-        }
-      });
-      if (!response.ok && response.status !== 404) throw new Error(await response.text());
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const tokensResponse = await fetch(`${apiBaseUrl}/api/v1/scenes/scn_vault_entry/tokens`, {
+          credentials: "include"
+        });
+        if (!tokensResponse.ok) throw new Error(await tokensResponse.text());
+        const tokens = await tokensResponse.json() as Array<{ id: string; updatedAt: string }>;
+        const token = tokens.find((candidate) => candidate.id === tokenId);
+        if (!token) return;
+        const response = await fetch(`${apiBaseUrl}/api/v1/tokens/${tokenId}?expectedUpdatedAt=${encodeURIComponent(token.updatedAt)}`, {
+          method: "DELETE",
+          credentials: "include",
+          headers: {
+            "idempotency-key": `e2e-token-delete-${tokenId}-${token.updatedAt}-${attempt}`
+          }
+        });
+        if (!response.ok && response.status !== 404 && response.status !== 409) throw new Error(await response.text());
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      throw new Error(`Token ${tokenId} still exists after cleanup retries`);
     },
     { apiBaseUrl, tokenId }
   );
@@ -145,6 +145,19 @@ test("main tabletop controls expose accessible names and keyboard reachability",
   await expect(toolbar.getByRole("button", { name: "Reveal fog" })).toBeVisible();
   await expect(toolbar.getByRole("button", { name: "Area template" })).toBeVisible();
   await expect(toolbar.getByRole("button", { name: "Delete latest annotation" })).toBeVisible();
+
+  const keyboardBoard = page.getByRole("group", { name: /interactive battle map/ });
+  await expect(keyboardBoard).toHaveAttribute("aria-keyshortcuts", /ArrowUp.*Enter.*Escape/);
+  await toolbar.getByRole("button", { name: "Ruler", exact: true }).click();
+  await keyboardBoard.focus();
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".annotation-layer.keyboard-preview.complete")).toBeVisible();
+  await expect(page.locator(".scene-viewport .sr-only[role='status']")).toContainText(/measurement complete/);
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".annotation-layer.keyboard-preview.complete")).toHaveCount(0);
+  await toolbar.getByRole("button", { name: "Select", exact: true }).click();
 
   const duplicateIds = await page.evaluate(() => {
     const seen = new Set<string>();

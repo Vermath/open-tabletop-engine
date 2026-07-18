@@ -126,4 +126,27 @@ describe("ActorLoadoutPanel", () => {
     expect(source).toContain("Retry");
     expect(source).not.toContain("console.error");
   });
+
+  it("keeps every loose item available in a campaign-scale drag tray", () => {
+    const actor = actorFixture();
+    const looseItems = Array.from({ length: 120 }, (_, index) => itemFixture(`loose-${index + 1}`, `Loose item ${index + 1}`, "equipment", {}, ""));
+    const html = renderToStaticMarkup(
+      <ActorLoadoutPanel
+        actor={actor}
+        actors={[actor]}
+        items={looseItems}
+        search=""
+        filter="all"
+        canUpdateActor
+        onSearchChange={vi.fn()}
+        onFilterChange={vi.fn()}
+        updateItemData={vi.fn(async () => undefined)}
+        changeActorAttunement={vi.fn(async () => undefined)}
+        assignItemToActor={vi.fn(async () => undefined)}
+        onSpellPreparationApplied={vi.fn()}
+      />
+    );
+
+    expect(html).toContain("Loose item 120");
+  });
 });

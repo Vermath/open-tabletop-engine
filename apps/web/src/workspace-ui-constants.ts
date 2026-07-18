@@ -8,6 +8,9 @@ export const keyboardShortcutRows: ReadonlyArray<{ keys: string; label: string }
   { keys: "P", label: "Ping" },
   { keys: "D", label: "Draw" },
   { keys: "A", label: "Area template" },
+  { keys: "Arrow keys", label: "Move a focused token or position the active board tool" },
+  { keys: "Shift+Arrow", label: "Move a focused token by one pixel" },
+  { keys: "Enter / Space", label: "Start or finish a keyboard board gesture" },
   { keys: "Shift+Click", label: "Multi-select tokens" },
   { keys: "Alt+Drag", label: "Pan the map" },
   { keys: "Ctrl+Scroll", label: "Zoom the map" },
@@ -28,4 +31,9 @@ export const workspaceInspectorTabs: Record<TabletopWorkspaceMode, readonly stri
 
 export function isInspectorTabAllowed(mode: TabletopWorkspaceMode, tab: string): boolean {
   return workspaceInspectorTabs[mode].includes(tab);
+}
+
+export function closeWorkspaceDialogState(clearTransientState: () => void, ...setOpen: Array<(open: boolean) => void>): void {
+  clearTransientState();
+  for (const setter of setOpen) setter(false);
 }

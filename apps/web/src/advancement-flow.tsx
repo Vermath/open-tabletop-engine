@@ -1,7 +1,8 @@
 import type { Actor, Dnd5eSrdPendingAdvancement } from "@open-tabletop/core";
 import { ChevronLeft, Eye, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { errorMessage, formatNumber, numericValue, recordValue, stringValue, titleCaseLabel } from "./sheet-format.js";
+import { AdvancementSpellChoices, advancementSpellChoicePayload, advancementSpellPathFor, advancementSpellPathKey, advancementSpellSelectionStatus, type AdvancementSpellPathInfo } from "./advancement-spell-choices.js";
+import { errorMessage, formatNumber, numericValue, recordValue, stringArrayValue, stringValue, titleCaseLabel } from "./sheet-format.js";
 import { isStaleWriteError } from "./shared-mutation.js";
 import { systemAdvancementLabel, type AdvancementOptionInfo } from "./system-actions.js";
 
@@ -59,6 +60,8 @@ export interface AdvancementChoicePayload {
   hitPointMode?: AdvancementHitPointMode;
   subclassId?: string;
   weaponMasteryChoices?: string[];
+  wizardSpellbookAdditions?: string[];
+  classPreparedSpellChoices?: string[];
   /** Durable server-side preview selected by the player. */
   preparedPreviewKey?: string;
   /** Stable retry key for the final commit. */
@@ -89,6 +92,21 @@ export interface AdvancementPreviewEnvelope {
     advancementRoll?: { formula: string; total: number };
   };
   draft?: { pendingAdvancement: Dnd5eSrdPendingAdvancement };
+  details?: {
+    spellAdvancement?: {
+      className: string;
+      classLevel: number;
+      spellcastingAbility: "intelligence" | "wisdom" | "charisma";
+      acquisitionMode: "prepared-class-level" | "prepared-long-rest" | "spellbook";
+      maxSpellLevel: number;
+      preparedSpellCapacity: number;
+      preparedSpellIds: string[];
+      wizardSpellbookAdditions: string[];
+      resultingSpellbookSpellIds: string[];
+      materializedSpellIds: string[];
+    };
+    [key: string]: unknown;
+  };
 }
 
 export type AdvancementFlowProps = {
@@ -101,6 +119,7 @@ export type AdvancementFlowProps = {
   requiresSubclass?: boolean;
   subclassOptions: AdvancementSubclassOption[];
   weaponMastery?: AdvancementWeaponMasteryInfo;
+  spellAdvancementPaths?: AdvancementSpellPathInfo[];
   onPreviewActor?(optionId: string | undefined, choices: AdvancementChoicePayload, idempotencyKey: string): Promise<AdvancementPreviewEnvelope>;
   onAdvanceActor(optionId?: string, choices?: AdvancementChoicePayload): void | Promise<void>;
   pendingAdvancement?: Dnd5eSrdPendingAdvancement;
@@ -114,6 +133,8 @@ export type AdvancementFlowProps = {
 };
 
 const dndAbilityIds = ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"] as const;
+const dndSpellcastingClasses = new Set(["bard", "cleric", "druid", "paladin", "ranger", "sorcerer", "warlock", "wizard"]);
+const emptyAdvancementSpellChoices = { preparedSpellIds: [] as string[], wizardSpellbookAdditions: [] as string[] };
 
 export interface AdvancementAbilityAllocationStatus {
   allowedAbilities: string[];
@@ -190,10 +211,12 @@ export function advancementAbilityAllocationStatus(actor: Actor, feat: Advanceme
   };
 }
 
-export type AdvancementChoiceField = "option" | "hitPoints" | "multiclass" | "subclass" | "weaponMastery" | "feat" | "abilityChoices";
+export type AdvancementChoiceField = "option" | "hitPoints" | "multiclass" | "subclass" | "weaponMastery" | "feat" | "abilityChoices" | "preparedSpells" | "spellbookAdditions";
 
 export function advancementChoiceFieldForPath(path: string): AdvancementChoiceField | undefined {
   const normalized = path.toLowerCase();
+  if (normalized.includes("wizardspellbookadditions")) return "spellbookAdditions";
+  if (normalized.includes("classpreparedspellchoices")) return "preparedSpells";
   if (normalized.includes("weaponmastery")) return "weaponMastery";
   if (normalized.includes("abilitychoices") || normalized.includes("attributes")) return "abilityChoices";
   if (normalized.includes("hitpoint")) return "hitPoints";
@@ -219,6 +242,7 @@ export function AdvancementFlow(props: AdvancementFlowProps) {
   const [hitPointMode, setHitPointMode] = useState<AdvancementHitPointMode | "">("");
   const [abilityAllocations, setAbilityAllocations] = useState<Record<string, number>>({});
   const [weaponMasteryChoices, setWeaponMasteryChoices] = useState<string[]>([]);
+  const [spellChoicesByPath, setSpellChoicesByPath] = useState<Record<string, { preparedSpellIds: string[]; wizardSpellbookAdditions: string[] }>>({});
   const [advancementError, setAdvancementError] = useState("");
   const [advancementPreview, setAdvancementPreview] = useState<AdvancementPreviewEnvelope>();
   const [previewing, setPreviewing] = useState(false);
@@ -237,6 +261,8 @@ export function AdvancementFlow(props: AdvancementFlowProps) {
   const weaponMasteryRef = useRef<HTMLInputElement | null>(null);
   const featRef = useRef<HTMLSelectElement | null>(null);
   const abilityChoicesRef = useRef<HTMLInputElement | null>(null);
+  const preparedSpellsRef = useRef<HTMLInputElement | null>(null);
+  const spellbookAdditionsRef = useRef<HTMLInputElement | null>(null);
   const advancementLabel = systemAdvancementLabel(props.actor?.systemId);
   const selectedAdvancementOption = props.advancementOptions.find((option) => option.id === advancementOptionId) ?? props.advancementOptions[0];
   const selectedMulticlassOption = props.multiclassOptions.find((option) => option.className === selectedMulticlass);
@@ -249,6 +275,14 @@ export function AdvancementFlow(props: AdvancementFlowProps) {
   const derivedRequiresSubclass = Boolean(!existingSubclass && activeNextClassLevel && activeSubclassOptions.some((option) => activeNextClassLevel >= option.selectionLevel));
   const pathRequiresSubclass = advancementMode === "multiclass" ? selectedMulticlassOption?.requiresSubclass ?? derivedRequiresSubclass : props.requiresSubclass ?? derivedRequiresSubclass;
   const selectedSubclass = activeSubclassOptions.find((option) => option.id === selectedSubclassId);
+  const activeSpellPath = advancementSpellPathFor(props.spellAdvancementPaths ?? [], activeClassName, activeNextClassLevel);
+  const activeSpellPathKey = activeSpellPath ? advancementSpellPathKey(activeSpellPath) : "";
+  const activeSpellChoices = spellChoicesByPath[activeSpellPathKey] ?? emptyAdvancementSpellChoices;
+  const actorSpellcasting = recordValue(props.actor?.data.spellcasting);
+  const existingSpellbookIds = stringArrayValue(actorSpellcasting.spellbookSpells) ?? [];
+  const alwaysPreparedSpellIds = [...new Set([...(stringArrayValue(actorSpellcasting.alwaysPreparedSpells) ?? []), ...(selectedSubclass?.alwaysPreparedSpells ?? [])])];
+  const spellSelectionStatus = advancementSpellSelectionStatus(activeSpellPath, activeSpellChoices.preparedSpellIds, activeSpellChoices.wizardSpellbookAdditions, existingSpellbookIds, alwaysPreparedSpellIds);
+  const spellProfileMissing = Boolean(activeClassName && activeNextClassLevel && dndSpellcastingClasses.has(activeClassName.toLowerCase()) && !activeSpellPath);
   const pathGrantsFeat = advancementMode === "multiclass" ? selectedMulticlassOption?.grantsFeat ?? false : props.advancementGrantsFeat;
   const weaponMastery = advancementMode === "multiclass" ? selectedMulticlassOption?.weaponMastery : props.weaponMastery;
   const weaponMasteryStatus = advancementWeaponMasterySelectionStatus(weaponMastery, weaponMasteryChoices);
@@ -267,6 +301,10 @@ export function AdvancementFlow(props: AdvancementFlowProps) {
           ? `No subclass choices are available for ${activeClassName || "this class"}; refresh the advancement catalog.`
         : pathRequiresSubclass && !selectedSubclass
           ? `Select a subclass for ${activeClassName} level ${formatNumber(activeNextClassLevel ?? 3)}.`
+          : spellProfileMissing
+            ? `Spell choices for ${activeClassName} level ${formatNumber(activeNextClassLevel ?? 1)} could not be loaded; refresh the advancement catalog.`
+          : spellSelectionStatus.complete !== true
+            ? spellSelectionStatus.error ?? "Complete the class spell choices."
           : weaponMasteryStatus.complete !== true
             ? weaponMasteryStatus.error ?? "Complete the Weapon Mastery choices."
           : pathGrantsFeat && !selectedFeat
@@ -276,6 +314,7 @@ export function AdvancementFlow(props: AdvancementFlowProps) {
               : "";
   const advancementReadyToReview = Boolean(props.actor && props.canAdvanceActor && !advancementBlockingMessage);
   const invalidFields = invalidatedAdvancementChoiceFields(advancementPreview?.blockers ?? []);
+  const reviewedSpellPlan = advancementPreview?.details?.spellAdvancement;
 
   useEffect(() => {
     requestGenerationRef.current += 1;
@@ -309,6 +348,7 @@ export function AdvancementFlow(props: AdvancementFlowProps) {
     setHitPointMode("");
     setAbilityAllocations({});
     setWeaponMasteryChoices([]);
+    setSpellChoicesByPath({});
     setAdvancementError("");
     setInvalidatedChoiceMessages([]);
     setAdvancementPreview(undefined);
@@ -346,7 +386,7 @@ export function AdvancementFlow(props: AdvancementFlowProps) {
     setAdvancementPreview(undefined);
     previewAttemptKeyRef.current = "";
     commitAttemptKeyRef.current = "";
-  }, [hitPointMode, abilityAllocations, weaponMasteryChoices]);
+  }, [hitPointMode, abilityAllocations, weaponMasteryChoices, activeSpellChoices.preparedSpellIds, activeSpellChoices.wizardSpellbookAdditions]);
 
   const setAbilityAllocation = (ability: string, rawAmount: string) => {
     const amount = Math.max(0, Math.floor(Number(rawAmount) || 0));
@@ -366,12 +406,21 @@ export function AdvancementFlow(props: AdvancementFlowProps) {
     });
   };
 
+  const setActiveSpellChoices = (next: { preparedSpellIds?: string[]; wizardSpellbookAdditions?: string[] }) => {
+    if (!activeSpellPathKey) return;
+    setSpellChoicesByPath((current) => ({
+      ...current,
+      [activeSpellPathKey]: { ...emptyAdvancementSpellChoices, ...current[activeSpellPathKey], ...next }
+    }));
+  };
+
   const selectedChoices = (): AdvancementChoicePayload => ({
     ...(requiresHitPointMode && hitPointMode ? { hitPointMode } : {}),
     ...(advancementMode === "multiclass" ? { multiclassInto: selectedMulticlass } : {}),
     ...(selectedSubclass ? { subclassId: selectedSubclass.id } : {}),
     ...(weaponMastery?.requiresSelection ? { weaponMasteryChoices: [...weaponMasteryChoices] } : {}),
-    ...(selectedFeat ? { featId: selectedFeat.id, abilityChoices: { ...abilityAllocations } } : {})
+    ...(selectedFeat ? { featId: selectedFeat.id, abilityChoices: { ...abilityAllocations } } : {}),
+    ...advancementSpellChoicePayload(activeSpellPath, activeSpellChoices.preparedSpellIds, activeSpellChoices.wizardSpellbookAdditions)
   });
 
   const focusChoiceField = (field: AdvancementChoiceField | undefined) => {
@@ -382,6 +431,8 @@ export function AdvancementFlow(props: AdvancementFlowProps) {
             : field === "weaponMastery" ? weaponMasteryRef.current
               : field === "feat" ? featRef.current
                 : field === "abilityChoices" ? abilityChoicesRef.current
+                  : field === "preparedSpells" ? preparedSpellsRef.current
+                    : field === "spellbookAdditions" ? spellbookAdditionsRef.current
                   : undefined;
     window.requestAnimationFrame(() => target?.focus());
   };
@@ -394,6 +445,8 @@ export function AdvancementFlow(props: AdvancementFlowProps) {
     if (fields.includes("weaponMastery")) setWeaponMasteryChoices([]);
     if (fields.includes("feat")) setSelectedFeatId("");
     if (fields.includes("abilityChoices") || fields.includes("feat")) setAbilityAllocations({});
+    if (fields.includes("preparedSpells")) setActiveSpellChoices({ preparedSpellIds: [] });
+    if (fields.includes("spellbookAdditions")) setActiveSpellChoices({ preparedSpellIds: [], wizardSpellbookAdditions: [] });
   };
 
   const resumePendingAdvancement = async () => {
@@ -408,6 +461,13 @@ export function AdvancementFlow(props: AdvancementFlowProps) {
     const requestedWeaponMasteryChoices = Array.isArray(request.weaponMasteryChoices)
       ? request.weaponMasteryChoices.filter((weaponId): weaponId is string => typeof weaponId === "string" && Boolean(weaponId.trim()))
       : [];
+    const requestedPreparedSpellChoices = stringArrayValue(request.classPreparedSpellChoices) ?? [];
+    const requestedWizardSpellbookAdditions = stringArrayValue(request.wizardSpellbookAdditions) ?? [];
+    const requestedSpellClassName = requestedClassName || props.advancementClassName || "";
+    const requestedSpellClassLevel = requestedClassName
+      ? props.multiclassOptions.find((option) => option.className.toLowerCase() === requestedClassName.toLowerCase())?.nextClassLevel
+      : props.nextClassLevel;
+    const requestedSpellPath = advancementSpellPathFor(props.spellAdvancementPaths ?? [], requestedSpellClassName, requestedSpellClassLevel);
     const requestedAbilityChoices = Object.fromEntries(
       Object.entries(recordValue(request.abilityChoices)).flatMap(([ability, amount]) =>
         typeof amount === "number" && Number.isInteger(amount) && amount > 0 ? [[ability, amount]] : []
@@ -421,6 +481,9 @@ export function AdvancementFlow(props: AdvancementFlowProps) {
     setHitPointMode(requestedHitPointMode);
     setAbilityAllocations(requestedAbilityChoices);
     setWeaponMasteryChoices(requestedWeaponMasteryChoices);
+    if (requestedSpellPath) {
+      setSpellChoicesByPath((current) => ({ ...current, [advancementSpellPathKey(requestedSpellPath)]: { preparedSpellIds: requestedPreparedSpellChoices, wizardSpellbookAdditions: requestedWizardSpellbookAdditions } }));
+    }
     setAdvancementError("");
     setAdvancementConfirmed(false);
     setAdvancementPreview(undefined);
@@ -437,7 +500,8 @@ export function AdvancementFlow(props: AdvancementFlowProps) {
         ...(requestedClassName ? { multiclassInto: requestedClassName } : {}),
         ...(requestedSubclassId ? { subclassId: requestedSubclassId } : {}),
         ...(requestedWeaponMasteryChoices.length > 0 ? { weaponMasteryChoices: requestedWeaponMasteryChoices } : {}),
-        ...(requestedHitPointMode ? { hitPointMode: requestedHitPointMode } : {})
+        ...(requestedHitPointMode ? { hitPointMode: requestedHitPointMode } : {}),
+        ...advancementSpellChoicePayload(requestedSpellPath, requestedPreparedSpellChoices, requestedWizardSpellbookAdditions)
       }, pending.preparedPreviewKey);
       if (generation !== requestGenerationRef.current) return;
       setAdvancementPreview(preview);
@@ -566,6 +630,7 @@ export function AdvancementFlow(props: AdvancementFlowProps) {
       setHitPointMode("");
       setAbilityAllocations({});
       setWeaponMasteryChoices([]);
+      setSpellChoicesByPath({});
       setAdvancementPreview(undefined);
       previewAttemptKeyRef.current = "";
       commitAttemptKeyRef.current = "";
@@ -694,6 +759,27 @@ export function AdvancementFlow(props: AdvancementFlowProps) {
                 {selectedSubclass.featureNames?.length ? <small>Class-aware grants in this review: {selectedSubclass.featureNames.join(", ")}</small> : <small>Class-aware feature and always-prepared spell grants appear in the exact server preview before commit.</small>}
                 {selectedSubclass.alwaysPreparedSpells?.length ? <small>Always prepared: {selectedSubclass.alwaysPreparedSpells.join(", ")}. Other prepared spells remain managed from the sheet after advancement.</small> : <small>Later spell preparation remains available from the character sheet after advancement.</small>}
               </div>
+            )}
+            {activeSpellPath && (
+              <AdvancementSpellChoices
+                key={activeSpellPathKey}
+                path={activeSpellPath}
+                preparedSpellIds={activeSpellChoices.preparedSpellIds}
+                wizardSpellbookAdditions={activeSpellChoices.wizardSpellbookAdditions}
+                existingSpellbookIds={existingSpellbookIds}
+                alwaysPreparedSpellIds={alwaysPreparedSpellIds}
+                canChoose={props.canAdvanceActor}
+                invalidPrepared={invalidFields.includes("preparedSpells")}
+                invalidSpellbook={invalidFields.includes("spellbookAdditions")}
+                firstPreparedRef={preparedSpellsRef}
+                firstSpellbookRef={spellbookAdditionsRef}
+                onPreparedSpellIdsChange={(preparedSpellIds) => { setActiveSpellChoices({ preparedSpellIds }); setInvalidatedChoiceMessages([]); }}
+                onWizardSpellbookAdditionsChange={(wizardSpellbookAdditions) => {
+                  const resultingBook = new Set([...existingSpellbookIds, ...wizardSpellbookAdditions]);
+                  setActiveSpellChoices({ wizardSpellbookAdditions, preparedSpellIds: activeSpellChoices.preparedSpellIds.filter((spellId) => resultingBook.has(spellId)) });
+                  setInvalidatedChoiceMessages([]);
+                }}
+              />
             )}
             {requiresHitPointMode && (
               <fieldset className="advancement-choice-fieldset">
@@ -829,6 +915,20 @@ export function AdvancementFlow(props: AdvancementFlowProps) {
                   <div className="operator-row tool-call-row">
                     <span>Subclass</span>
                     <strong>{selectedSubclass.name}</strong>
+                  </div>
+                )}
+                {activeSpellPath && (
+                  <div className="operator-row tool-call-row">
+                    <span>{activeSpellPath.className} spell choices</span>
+                    <strong>{formatNumber(activeSpellChoices.preparedSpellIds.length)}/{formatNumber(activeSpellPath.preparedSpellCapacity)} prepared{activeSpellPath.spellbookAdditions > 0 ? ` · ${formatNumber(activeSpellChoices.wizardSpellbookAdditions.length)}/${formatNumber(activeSpellPath.spellbookAdditions)} spellbook additions` : ""}</strong>
+                  </div>
+                )}
+                {reviewedSpellPlan && (
+                  <div className="advancement-preview-diff" aria-label="Reviewed spell advancement">
+                    <div className="operator-row tool-call-row"><span>Server spell plan</span><strong>{reviewedSpellPlan.className} level {formatNumber(reviewedSpellPlan.classLevel)} · {titleCaseLabel(reviewedSpellPlan.spellcastingAbility)}</strong></div>
+                    <div className="operator-row tool-call-row"><span>Prepared spells</span><strong>{reviewedSpellPlan.preparedSpellIds.join(", ")}</strong></div>
+                    {reviewedSpellPlan.wizardSpellbookAdditions.length > 0 && <div className="operator-row tool-call-row"><span>Spellbook additions</span><strong>{reviewedSpellPlan.wizardSpellbookAdditions.join(", ")}</strong></div>}
+                    <div className="operator-row tool-call-row"><span>Materialized class spells</span><strong>{formatNumber(reviewedSpellPlan.materializedSpellIds.length)}</strong></div>
                   </div>
                 )}
                 {allocationStatus && allocationStatus.abilityPoints > 0 && (

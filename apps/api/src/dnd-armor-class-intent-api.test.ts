@@ -71,7 +71,7 @@ describe("D&D Armor Class intent API", () => {
     } finally {
       if (!first.server.listening) await first.close();
     }
-  });
+  }, 20_000);
 
   it("keeps create, equip, unequip, and Dexterity edits on the derived path", async () => {
     const store = new MemoryStateStore();

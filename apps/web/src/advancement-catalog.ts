@@ -2,6 +2,7 @@ import type { Actor, Dnd5eSrdPendingAdvancement } from "@open-tabletop/core";
 import { useCallback, useEffect, useState } from "react";
 import { apiGet } from "./api.js";
 import type { AdvancementFeatInfo, AdvancementMulticlassOption, AdvancementSubclassOption, AdvancementWeaponMasteryInfo } from "./advancement-flow.js";
+import type { AdvancementSpellPathInfo } from "./advancement-spell-choices.js";
 import { errorMessage } from "./sheet-format.js";
 import type { AdvancementOptionInfo } from "./system-actions.js";
 
@@ -25,6 +26,7 @@ interface AdvancementCatalogData {
   requiresSubclass: boolean;
   subclassOptions: AdvancementSubclassOption[];
   weaponMastery?: AdvancementWeaponMasteryInfo;
+  spellAdvancementPaths: AdvancementSpellPathInfo[];
   pendingAdvancement?: Dnd5eSrdPendingAdvancement;
   xp?: XpProgressInfo;
 }
@@ -37,6 +39,7 @@ interface AdvancementCatalogResponse {
   requiresSubclass?: boolean;
   subclassOptions?: AdvancementSubclassOption[];
   weaponMastery?: AdvancementWeaponMasteryInfo;
+  spellAdvancement?: { paths: AdvancementSpellPathInfo[] };
   grantsFeat?: boolean;
   feats?: AdvancementFeatInfo[];
   multiclassOptions?: AdvancementMulticlassOption[];
@@ -44,7 +47,7 @@ interface AdvancementCatalogResponse {
   pendingAdvancement?: Dnd5eSrdPendingAdvancement;
 }
 
-const emptyCatalog = (): AdvancementCatalogData => ({ actorId: "", options: [], grantsFeat: false, feats: [], multiclassOptions: [], className: "", requiresSubclass: false, subclassOptions: [] });
+const emptyCatalog = (): AdvancementCatalogData => ({ actorId: "", options: [], grantsFeat: false, feats: [], multiclassOptions: [], className: "", requiresSubclass: false, subclassOptions: [], spellAdvancementPaths: [] });
 
 export function shouldPreserveAdvancementCatalog(loadedActorId: string, requestedActorId: string) {
   return loadedActorId === requestedActorId;
@@ -71,7 +74,7 @@ export function useAdvancementCatalog(input: { campaignId: string; actor?: Actor
     apiGet<AdvancementCatalogResponse>(`/api/v1/campaigns/${input.campaignId}/systems/${actor.systemId}/actors/${actor.id}/advancement`)
       .then((result) => {
         if (cancelled) return;
-        setData({ actorId: result.actorId, options: result.options, grantsFeat: result.grantsFeat ?? false, feats: result.feats ?? [], multiclassOptions: result.multiclassOptions ?? [], className: result.advancementClassName ?? "", nextClassLevel: result.nextClassLevel, requiresSubclass: result.requiresSubclass ?? false, subclassOptions: result.subclassOptions ?? [], weaponMastery: result.weaponMastery, pendingAdvancement: result.pendingAdvancement, xp: result.xp });
+        setData({ actorId: result.actorId, options: result.options, grantsFeat: result.grantsFeat ?? false, feats: result.feats ?? [], multiclassOptions: result.multiclassOptions ?? [], className: result.advancementClassName ?? "", nextClassLevel: result.nextClassLevel, requiresSubclass: result.requiresSubclass ?? false, subclassOptions: result.subclassOptions ?? [], weaponMastery: result.weaponMastery, spellAdvancementPaths: result.spellAdvancement?.paths ?? [], pendingAdvancement: result.pendingAdvancement, xp: result.xp });
         setLoadState("ready");
       })
       .catch((error) => {

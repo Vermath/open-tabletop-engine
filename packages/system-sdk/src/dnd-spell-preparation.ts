@@ -19,6 +19,8 @@ interface SpellcastingClassRule {
   maxSpellLevel: (classLevel: number) => number;
 }
 
+export type Dnd5eSrdSpellReplacementLimit = number | "any";
+
 interface ActorSpellcastingClass {
   className: string;
   level: number;
@@ -64,6 +66,29 @@ const CLASS_RULES: Record<string, SpellcastingClassRule> = {
   warlock: { className: "Warlock", capacities: WARLOCK_CAPACITY, timing: "class-level", replacementsPerChange: 1, maxSpellLevel: pactSpellLevel },
   wizard: { className: "Wizard", capacities: WIZARD_CAPACITY, timing: "long-rest", replacementsPerChange: "any", maxSpellLevel: fullCasterSpellLevel }
 };
+
+/** Shared replacement rule used by both level-up and rest preparation previews. */
+export function dnd5eSrdSpellReplacementLimit(className: string): Dnd5eSrdSpellReplacementLimit | undefined {
+  return CLASS_RULES[className.trim().toLocaleLowerCase()]?.replacementsPerChange;
+}
+
+/**
+ * Counts replacements after allowing additions that merely fill newly opened
+ * capacity. Removing an old spell and adding another is one replacement, not
+ * two independent changes.
+ */
+export function dnd5eSrdSpellReplacementCount(
+  currentSpellIds: readonly string[],
+  selectedSpellIds: readonly string[],
+  selectedCapacity: number
+): number {
+  const current = new Set(currentSpellIds);
+  const selected = new Set(selectedSpellIds);
+  const additions = [...selected].filter((spellId) => !current.has(spellId)).length;
+  const removals = [...current].filter((spellId) => !selected.has(spellId)).length;
+  const freeAdditions = Math.max(0, selectedCapacity - current.size);
+  return Math.max(Math.max(0, additions - freeAdditions), removals);
+}
 
 function recordValue(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -413,11 +438,11 @@ export function previewDnd5eSrdSpellPreparation(
 
     if (actorClass.rule.replacementsPerChange !== "any") {
       const capacity = perClassCapacity.find((candidate) => candidate.actorClass.className === className)!;
-      const currentCount = [...eligibility.values()].filter((entry) => entry.assignedClass?.className === className && entry.item.data.prepared === true).length;
-      const additions = [...eligibility.values()].filter((entry) => entry.assignedClass?.className === className && entry.item.data.prepared !== true && selectedSet.has(entry.item.id)).length;
-      const removals = [...eligibility.values()].filter((entry) => entry.assignedClass?.className === className && entry.item.data.prepared === true && !selectedSet.has(entry.item.id)).length;
-      const freeAdditions = Math.max(0, capacity.limit - currentCount);
-      const replacements = Math.max(Math.max(0, additions - freeAdditions), removals);
+      const currentSpellIds = [...eligibility.values()]
+        .filter((entry) => entry.assignedClass?.className === className && entry.item.data.prepared === true)
+        .map((entry) => entry.item.id);
+      const selectedSpellIds = eligibleSelectedIds.filter((itemId) => eligibility.get(itemId)?.assignedClass?.className === className);
+      const replacements = dnd5eSrdSpellReplacementCount(currentSpellIds, selectedSpellIds, capacity.limit);
       if (replacements > actorClass.rule.replacementsPerChange) {
         addBlocker(blockers, {
           code: "change_limit_exceeded",

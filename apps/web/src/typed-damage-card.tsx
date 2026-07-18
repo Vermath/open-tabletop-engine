@@ -77,6 +77,17 @@ export function resolvedMixedDamageComponents(details: unknown): ResolvedMixedDa
   });
 }
 
+export function typedDamagePreviewValue(value: unknown): string {
+  if (value === undefined) return "not set";
+  if (value === null) return "none";
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "structured value";
+  }
+}
+
 export function TypedDamageCard(props: {
   campaignId: string;
   actor: Actor;
@@ -250,7 +261,7 @@ export function TypedDamageCard(props: {
               <article className="operator-item admin-item" key={target.actorId}>
                 <strong>{target.actorName}</strong>
                 <MixedDamageTargetBreakdown details={target.preview.details} />
-                {target.preview.changes.map((change) => <div className="operator-row tool-call-row" key={`${target.actorId}:${change.path}`}><span>{change.path}</span><strong>{String(change.before ?? "not set")} to {String(change.after ?? "not set")}</strong></div>)}
+                {target.preview.changes.map((change) => <div className="operator-row tool-call-row" key={`${target.actorId}:${change.path}`}><span>{change.path}</span><strong>{typedDamagePreviewValue(change.before)} to {typedDamagePreviewValue(change.after)}</strong></div>)}
                 {target.preview.blockers.map((blocker) => <p className="advancement-choice-status" key={blocker.code}>{blocker.message}</p>)}
               </article>
             ))}

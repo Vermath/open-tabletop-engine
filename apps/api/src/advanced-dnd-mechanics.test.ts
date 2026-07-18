@@ -1,4 +1,4 @@
-import { createTimestamped, type Actor, type Combat } from "@open-tabletop/core";
+import { createTimestamped, type Actor, type Combat, type Item } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
 import { buildApp } from "./fixtures/legacy-build-app.js";
 import { MemoryStateStore } from "./store.js";
@@ -208,6 +208,245 @@ describe("advanced D&D combat mechanics API", () => {
       await app.close();
     }
   });
+
+  it("carries a real Wand repeat save through archive, restart, reviewed resolution, replay, and undo", async () => {
+    const caster = createTimestamped("act", {
+      id: "act_managed_effect_caster",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      ownerUserId: "usr_demo_gm",
+      type: "character" as const,
+      name: "Managed Effect Caster",
+      data: {
+        class: "Fighter",
+        level: 1,
+        hp: { current: 12, max: 12 },
+        attributes: { strength: 16, dexterity: 12, constitution: 14, intelligence: 10, wisdom: 10, charisma: 10 },
+        conditions: [],
+        rulesEngine: {},
+      },
+      permissions: {},
+    }) satisfies Actor;
+    const target = createTimestamped("act", {
+      id: "act_managed_effect_target",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      ownerUserId: "usr_demo_gm",
+      type: "npc" as const,
+      name: "Managed Effect Target",
+      data: {
+        hp: { current: 24, max: 24 },
+        attributes: { strength: 14, dexterity: 10, constitution: 14, intelligence: 8, wisdom: 10, charisma: 8 },
+        conditions: [],
+        rulesEngine: {},
+      },
+      permissions: {},
+    }) satisfies Actor;
+    const wand = createTimestamped("item", {
+      id: "itm_managed_effect_wand",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: caster.id,
+      type: "item" as const,
+      name: "Wand of Paralysis",
+      data: {
+        action: "magic action",
+        condition: "Paralyzed",
+        conditionDuration: "1 minute",
+        save: { ability: "constitution", dc: 15 },
+        repeatSave: "end of each turn",
+      },
+    }) satisfies Item;
+    const combat = createTimestamped("cmb", {
+      id: "cmb_managed_effect",
+      campaignId: "camp_demo",
+      active: true,
+      round: 1,
+      turnIndex: 0,
+      combatants: [
+        { id: "cmbt_managed_effect_caster", tokenId: "tok_managed_effect_caster", actorId: caster.id, name: caster.name, initiative: 20, defeated: false, conditions: [] },
+        { id: "cmbt_managed_effect_target", tokenId: "tok_managed_effect_target", actorId: target.id, name: target.name, initiative: 10, defeated: false, conditions: [] },
+      ],
+    }) satisfies Combat;
+    const firstStore = new MemoryStateStore();
+    firstStore.state.actors.push(caster, target);
+    firstStore.state.items.push(wand);
+    firstStore.state.combats.push(combat);
+    const firstApp = await buildApp({ store: firstStore });
+    let effectId = "";
+
+    try {
+      const actionUrl = `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${caster.id}/roll`;
+      const actionPreview = await firstApp.inject({
+        method: "POST",
+        url: actionUrl,
+        headers: { ...gmHeaders, "idempotency-key": "managed-effect-action-preview" },
+        payload: {
+          rollId: `item-${wand.id}-effect`,
+          applyEffect: true,
+          targetActorId: target.id,
+          saveOutcomes: { [target.id]: "failure" },
+          prepare: true,
+        },
+      });
+      expect(actionPreview.statusCode, actionPreview.body).toBe(200);
+      expect(actionPreview.json().preparation).toMatchObject({
+        preparedPreviewKey: "managed-effect-action-preview",
+        sourceActorId: caster.id,
+      });
+
+      const actionCommit = await firstApp.inject({
+        method: "POST",
+        url: actionUrl,
+        headers: { ...gmHeaders, "idempotency-key": "managed-effect-action-commit" },
+        payload: {
+          preparedPreviewKey: actionPreview.json().preparation.preparedPreviewKey,
+          expectedUpdatedAt: actionPreview.json().preparation.revisions.actorUpdatedAt[caster.id],
+        },
+      });
+      expect(actionCommit.statusCode, actionCommit.body).toBe(200);
+      const storedTarget = firstStore.state.actors.find((actor) => actor.id === target.id)!;
+      const activeEffects = (storedTarget.data.rulesEngine as { activeEffects: Array<Record<string, unknown>> }).activeEffects;
+      expect(activeEffects).toHaveLength(1);
+      effectId = activeEffects[0]!.id as string;
+      expect(activeEffects[0]).toMatchObject({
+        id: effectId,
+        conditionIds: ["paralyzed"],
+        ownedConditionIds: ["paralyzed"],
+        managedLifecycle: "end-turn-repeat-save-v1",
+        schedule: {
+          timing: "end_turn",
+          anchorActorId: target.id,
+          nextRound: 1,
+          intervalRounds: 1,
+          expiresAtRound: 11,
+          repeatSave: { ability: "constitution", dc: 15, endsOn: "success" },
+        },
+      });
+      expect(firstStore.state.combats.find((candidate) => candidate.id === combat.id)?.combatants[1]?.conditions).toEqual(["paralyzed:10"]);
+
+      const archive = await firstApp.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/export", headers: gmHeaders });
+      expect(archive.statusCode, archive.body).toBe(200);
+      expect(archive.json().data.actors.find((actor: { id: string }) => actor.id === target.id)?.data.rulesEngine.activeEffects).toContainEqual(
+        expect.objectContaining({ id: effectId, managedLifecycle: "end-turn-repeat-save-v1", schedule: expect.objectContaining({ timing: "end_turn", anchorActorId: target.id }) }),
+      );
+
+      const storedCombat = firstStore.state.combats.find((candidate) => candidate.id === combat.id)!;
+      storedCombat.turnIndex = 1;
+      storedCombat.updatedAt = new Date(Date.parse(storedCombat.updatedAt) + 1).toISOString();
+    } finally {
+      await firstApp.close();
+    }
+
+    const restartedStore = new MemoryStateStore(structuredClone(firstStore.state));
+    const restartedTarget = restartedStore.state.actors.find((actor) => actor.id === target.id)!;
+    expect((restartedTarget.data.rulesEngine as { activeEffects: Array<Record<string, unknown>> }).activeEffects).toContainEqual(
+      expect.objectContaining({ id: effectId, schedule: expect.objectContaining({ timing: "end_turn", anchorActorId: target.id, nextRound: 1 }) }),
+    );
+    const restartedApp = await buildApp({ store: restartedStore });
+    const previewUrl = `/api/v1/combats/${combat.id}/effects/preview`;
+    const advanceUrl = `/api/v1/combats/${combat.id}/effects/advance`;
+    const reviewedAt = "2026-07-17T12:00:00.000Z";
+
+    try {
+      const forbidden = await restartedApp.inject({
+        method: "POST",
+        url: previewUrl,
+        headers: { ...playerHeaders, "idempotency-key": "managed-effect-forbidden-preview" },
+        payload: { phase: "end_turn", now: reviewedAt, prepare: true },
+      });
+      expect(forbidden.statusCode).toBe(403);
+
+      const unresolved = await restartedApp.inject({
+        method: "POST",
+        url: previewUrl,
+        headers: { ...gmHeaders, "idempotency-key": "managed-effect-unresolved-preview" },
+        payload: { phase: "end_turn", now: reviewedAt, prepare: true },
+      });
+      expect(unresolved.statusCode, unresolved.body).toBe(200);
+      expect(unresolved.json()).toMatchObject({ canApply: false });
+      expect(unresolved.json()).not.toHaveProperty("preparation");
+      expect(unresolved.json().events).toEqual([
+        expect.objectContaining({ effectId, actorId: target.id, status: "save_required", saveAbility: "constitution", saveDc: 15 }),
+      ]);
+      const eventId = unresolved.json().unresolvedEventIds[0] as string;
+
+      const prepared = await restartedApp.inject({
+        method: "POST",
+        url: previewUrl,
+        headers: { ...gmHeaders, "idempotency-key": "managed-effect-reviewed-preview" },
+        payload: { phase: "end_turn", now: reviewedAt, saveOutcomes: { [eventId]: "success" }, prepare: true },
+      });
+      expect(prepared.statusCode, prepared.body).toBe(200);
+      expect(prepared.json().preparation).toMatchObject({
+        preparedPreviewKey: "managed-effect-reviewed-preview",
+        combatId: combat.id,
+        revisions: { combatUpdatedAt: restartedStore.state.combats.find((candidate) => candidate.id === combat.id)!.updatedAt },
+      });
+
+      const staleApply = await restartedApp.inject({
+        method: "POST",
+        url: advanceUrl,
+        headers: { ...gmHeaders, "idempotency-key": "managed-effect-stale-apply" },
+        payload: { preparedPreviewKey: prepared.json().preparation.preparedPreviewKey, expectedUpdatedAt: "1970-01-01T00:00:00.000Z" },
+      });
+      expect(staleApply.statusCode).toBe(409);
+
+      const applyHeaders = { ...gmHeaders, "idempotency-key": "managed-effect-reviewed-apply" };
+      const applyPayload = {
+        preparedPreviewKey: prepared.json().preparation.preparedPreviewKey,
+        expectedUpdatedAt: prepared.json().preparation.revisions.combatUpdatedAt,
+      };
+      const applied = await restartedApp.inject({ method: "POST", url: advanceUrl, headers: applyHeaders, payload: applyPayload });
+      expect(applied.statusCode, applied.body).toBe(200);
+      expect(applied.json()).toMatchObject({
+        evaluation: { canApply: true, events: [expect.objectContaining({ effectId, status: "save_succeeded", outcome: "success" })] },
+        undo: { mutationId: expect.any(String) },
+      });
+      expect(restartedStore.state.dndRulesMutations.find((mutation) => mutation.id === applied.json().rulesMutationId)).toMatchObject({ kind: "effect_schedule", status: "applied" });
+      expect(restartedStore.state.actors.find((actor) => actor.id === target.id)?.data.conditions).toEqual([]);
+      expect((restartedStore.state.actors.find((actor) => actor.id === target.id)?.data.rulesEngine as { activeEffects: unknown[] }).activeEffects).toEqual([]);
+      expect(restartedStore.state.combats.find((candidate) => candidate.id === combat.id)?.combatants[1]?.conditions).toEqual([]);
+
+      const replay = await restartedApp.inject({ method: "POST", url: advanceUrl, headers: applyHeaders, payload: applyPayload });
+      expect(replay.statusCode).toBe(200);
+      expect(replay.headers["idempotency-replayed"]).toBe("true");
+      expect(restartedStore.state.auditLogs.filter((entry) => entry.action === "combat.effectScheduleAdvanced")).toHaveLength(1);
+
+      const turnStore = new MemoryStateStore(structuredClone(restartedStore.state));
+      const turnApp = await buildApp({ store: turnStore });
+      try {
+        const nextTurn = await turnApp.inject({
+          method: "PATCH",
+          url: `/api/v1/combats/${combat.id}`,
+          headers: gmHeaders,
+          payload: { round: 2, turnIndex: 0 },
+        });
+        expect(nextTurn.statusCode, nextTurn.body).toBe(200);
+        expect(nextTurn.json()).toMatchObject({ round: 2, turnIndex: 0 });
+      } finally {
+        await turnApp.close();
+      }
+
+      const { mutationId, ...undoPayload } = applied.json().undo;
+      const undone = await restartedApp.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/dnd/rules-mutations/${mutationId}/undo`,
+        headers: { ...gmHeaders, "idempotency-key": "managed-effect-reviewed-undo" },
+        payload: undoPayload,
+      });
+      expect(undone.statusCode, undone.body).toBe(200);
+      expect(undone.json()).toMatchObject({ undone: true, mutation: { id: mutationId, kind: "effect_schedule", status: "undone" } });
+      const restoredTarget = restartedStore.state.actors.find((actor) => actor.id === target.id)!;
+      expect(restoredTarget.data.conditions).toEqual([expect.objectContaining({ id: "paralyzed" })]);
+      expect((restoredTarget.data.rulesEngine as { activeEffects: Array<Record<string, unknown>> }).activeEffects).toContainEqual(
+        expect.objectContaining({ id: effectId, schedule: expect.objectContaining({ timing: "end_turn", anchorActorId: target.id }) }),
+      );
+      expect(restartedStore.state.combats.find((candidate) => candidate.id === combat.id)?.combatants[1]?.conditions).toEqual(["paralyzed:10"]);
+    } finally {
+      await restartedApp.close();
+    }
+  }, 15_000);
 
   it("returns source-backed specialized spell previews without committing spell state", async () => {
     const store = new MemoryStateStore();

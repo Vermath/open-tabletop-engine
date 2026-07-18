@@ -143,7 +143,7 @@ describe("D&D character review API", () => {
       const relinkCombatant = await app.inject({
         method: "PATCH",
         url: `/api/v1/combats/${baselineCombat.json().id}/combatants/cmbt_review_baseline`,
-        headers: gmHeaders,
+        headers: { ...gmHeaders, "idempotency-key": "review-relink-combatant" },
         payload: { actorId, expectedUpdatedAt: baselineCombat.json().updatedAt },
       });
       expect(relinkCombatant.statusCode).toBe(409);

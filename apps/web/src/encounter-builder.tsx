@@ -201,9 +201,9 @@ export function EncounterBuilderDialog(props: {
   onEncounterSaved(encounter: Encounter): void;
   onEncounterDeleted(encounter: Encounter): void;
   onRefreshSharedState(): Promise<void>;
-  onSpawnThreats(threats: EncounterBuilderThreatSelection[], signal: AbortSignal, attemptId: string): Promise<void>;
+  onSpawnThreats(encounterId: string, threats: EncounterBuilderThreatSelection[], signal: AbortSignal, attemptId: string): Promise<void>;
   onPlacePartyActor(actor: Actor): Promise<void>;
-  onLaunchThreats(threats: EncounterBuilderThreatSelection[], partyActorIds: string[], signal: AbortSignal, attemptId: string): Promise<void>;
+  onLaunchThreats(encounterId: string, threats: EncounterBuilderThreatSelection[], partyActorIds: string[], signal: AbortSignal, attemptId: string): Promise<void>;
   onStatus(message: string): void;
 }) {
   const partyEligibility = encounterPartyEligibility(props.partyActors, props.campaignId, props.systemId);
@@ -483,7 +483,7 @@ export function EncounterBuilderDialog(props: {
   }
 
   async function placeMonsters() {
-    if (!canPlace) return;
+    if (!canPlace || !savedEncounter) return;
     const controller = new AbortController();
     spawnAbortRef.current = controller;
     setSpawning(true);
@@ -491,7 +491,7 @@ export function EncounterBuilderDialog(props: {
     const attemptId = placeAttemptIdRef.current ?? globalThis.crypto.randomUUID();
     placeAttemptIdRef.current = attemptId;
     try {
-      await props.onSpawnThreats(composition.map(({ threat, count }) => ({ id: threat.id, name: threat.name, count })), controller.signal, attemptId);
+      await props.onSpawnThreats(savedEncounter.id, composition.map(({ threat, count }) => ({ id: threat.id, name: threat.name, count })), controller.signal, attemptId);
       placeAttemptIdRef.current = undefined;
     } catch (spawnError) {
       if (!controller.signal.aborted) setError(errorMessage(spawnError));
@@ -504,7 +504,7 @@ export function EncounterBuilderDialog(props: {
   }
 
   async function launchCombat() {
-    if (!canLaunch) return;
+    if (!canLaunch || !savedEncounter) return;
     if (missingPartyActors.length > 0) {
       setError(`Place selected party tokens first: ${missingPartyActors.map((actor) => actor.name).join(", ")}.`);
       return;
@@ -516,7 +516,7 @@ export function EncounterBuilderDialog(props: {
     const attemptId = launchAttemptIdRef.current ?? globalThis.crypto.randomUUID();
     launchAttemptIdRef.current = attemptId;
     try {
-      await props.onLaunchThreats(composition.map(({ threat, count }) => ({ id: threat.id, name: threat.name, count })), selectedPartyIds, controller.signal, attemptId);
+      await props.onLaunchThreats(savedEncounter.id, composition.map(({ threat, count }) => ({ id: threat.id, name: threat.name, count })), selectedPartyIds, controller.signal, attemptId);
       launchAttemptIdRef.current = undefined;
     } catch (launchError) {
       if (!controller.signal.aborted) setError(errorMessage(launchError));
@@ -592,7 +592,7 @@ export function EncounterBuilderDialog(props: {
                         <span>{formatNumber(threat.budget)} XP</span>
                       </div>
                     </div>
-                    <ThreatStepper count={count} disabled={saving || deleting} onDecrease={() => setThreatCount(threat.id, count - 1)} onIncrease={() => setThreatCount(threat.id, count + 1)} />
+                    <ThreatStepper threatName={threat.name} context="catalog" count={count} disabled={saving || deleting} onDecrease={() => setThreatCount(threat.id, count - 1)} onIncrease={() => setThreatCount(threat.id, count + 1)} />
                   </article>
                 );
               })}
@@ -680,7 +680,7 @@ export function EncounterBuilderDialog(props: {
                     <span>{threat.name}</span>
                     <strong>x{formatNumber(count)}</strong>
                     <small>{formatNumber(total)} XP</small>
-                    <ThreatStepper count={count} disabled={saving || deleting} onDecrease={() => setThreatCount(threat.id, count - 1)} onIncrease={() => setThreatCount(threat.id, count + 1)} />
+                    <ThreatStepper threatName={threat.name} context="composition" count={count} disabled={saving || deleting} onDecrease={() => setThreatCount(threat.id, count - 1)} onIncrease={() => setThreatCount(threat.id, count + 1)} />
                   </div>
                 );
               })}
@@ -744,14 +744,15 @@ export function EncounterBuilderDialog(props: {
   );
 }
 
-function ThreatStepper(props: { count: number; disabled?: boolean; onDecrease(): void; onIncrease(): void }) {
+export function ThreatStepper(props: { threatName: string; context: "catalog" | "composition"; count: number; disabled?: boolean; onDecrease(): void; onIncrease(): void }) {
+  const contextLabel = props.context === "catalog" ? "in threat catalog" : "in encounter composition";
   return (
-    <div className="encounter-threat-stepper" aria-label="Threat count controls">
+    <div className="encounter-threat-stepper" aria-label={`${props.threatName} count controls ${contextLabel}`}>
       {props.count > 0 ? (
-        <button className="icon-button" type="button" aria-label="Decrease threat count" disabled={props.disabled} onClick={props.onDecrease}><Minus size={14} /></button>
+        <button className="icon-button" type="button" aria-label={`Decrease ${props.threatName} count ${contextLabel}`} disabled={props.disabled} onClick={props.onDecrease}><Minus size={14} /></button>
       ) : null}
       {props.count > 0 ? <span>{formatNumber(props.count)}</span> : null}
-      <button className="ghost-button small" type="button" disabled={props.disabled} onClick={props.onIncrease}>
+      <button className="ghost-button small" type="button" aria-label={props.count > 0 ? `Increase ${props.threatName} count ${contextLabel}` : `Add ${props.threatName} from threat catalog`} disabled={props.disabled} onClick={props.onIncrease}>
         {props.count > 0 ? <Plus size={14} /> : "Add"}
       </button>
     </div>

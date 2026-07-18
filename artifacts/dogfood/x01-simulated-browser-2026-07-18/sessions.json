@@ -1,0 +1,136 @@
+{
+  "schema": "otte.simulated-browser-sessions/v1",
+  "campaignId": "camp_mrq0uezud0po6htf",
+  "evidenceClass": "simulated_browser_multi_seat",
+  "rolesControlledBy": "Codex",
+  "sessions": [
+    {
+      "number": 1,
+      "id": "cses_mrq1s5dwsc28l5hr",
+      "title": "Smoke at First Bell",
+      "status": "completed",
+      "startedAt": "2026-07-18T07:31:05.483Z",
+      "endedAt": "2026-07-18T07:46:37.951Z",
+      "maps": [
+        "01 Cinder Market",
+        "02 Smuggler Drain"
+      ],
+      "encounter": {
+        "name": "Market Knives",
+        "threats": ["Cultist", "Cultist", "Cultist"],
+        "combatants": 7,
+        "rounds": 2,
+        "endedExplicitly": true
+      },
+      "playerTurns": [
+        {"seat": "Asha", "character": "Aric Emberguard", "roll": "Strength Check", "total": 16},
+        {"seat": "Brom", "character": "Sister Maelin", "roll": "Wisdom Check", "total": 19},
+        {"seat": "Cira", "character": "Ilyra Ashquill", "roll": "Intelligence Check", "total": 11},
+        {"seat": "Dain", "character": "Nox Quickstep", "roll": "Wisdom Check", "total": 11}
+      ],
+      "committedActions": [
+        "Nox moved 10 feet (two grid squares).",
+        "Nox committed Shortsword Attack 21 and 7 piercing damage; Cultist 1 persisted at 2/9 HP.",
+        "The table resolved the drain collapse with a public 4d20 group roll totaling 26."
+      ],
+      "rewards": {
+        "totalXp": 1200,
+        "xpPerCharacter": 300,
+        "totalGp": 40,
+        "gpPerCharacter": 10,
+        "loot": ["Half bronze bell key", "soot-stained route scrap"]
+      },
+      "progression": "All four characters advanced from level 1 to level 2.",
+      "gmReportJournalId": "jnl_mrq1sdd85px3w672"
+    },
+    {
+      "number": 2,
+      "id": "cses_mrq2fzpz3p4odqml",
+      "title": "Bones Beneath the Bell",
+      "status": "completed",
+      "startedAt": "2026-07-18T07:49:25.128Z",
+      "endedAt": "2026-07-18T07:56:27.565Z",
+      "maps": [
+        "03 Old Bell Road",
+        "04 Ashen Ossuary"
+      ],
+      "encounter": {
+        "name": "Roadside Howls",
+        "threats": ["Goblin Warrior", "Goblin Warrior"],
+        "combatants": 6,
+        "rounds": 2,
+        "endedExplicitly": true
+      },
+      "playerTurns": [
+        {"seat": "Asha", "character": "Aric Emberguard", "roll": "Wisdom Check", "total": 10},
+        {"seat": "Brom", "character": "Sister Maelin", "roll": "Charisma Check", "total": 21},
+        {"seat": "Cira", "character": "Ilyra Ashquill", "roll": "Intelligence Check", "total": 22},
+        {"seat": "Dain", "character": "Nox Quickstep", "roll": "Dexterity Check", "total": 4}
+      ],
+      "committedActions": [
+        "Ilyra committed Fire Bolt Attack 24 and 4 fire damage; Goblin Warrior 1 persisted at 6/10 HP.",
+        "The table resolved the ossuary seal with a public 4d20 group roll totaling 43."
+      ],
+      "rewards": {
+        "totalXp": 2400,
+        "xpPerCharacter": 600,
+        "totalGp": 80,
+        "gpPerCharacter": 20,
+        "loot": ["Counter-sigil", "cracked bell clapper"]
+      },
+      "progression": "All four characters advanced from level 2 to level 3 and selected subclasses.",
+      "gmReportJournalId": "jnl_mrq2g9ddlat9z2j2"
+    },
+    {
+      "number": 3,
+      "id": "cses_mrq2t4plzkf4ckds",
+      "title": "The Ember Bell",
+      "status": "completed",
+      "startedAt": "2026-07-18T07:59:42.028Z",
+      "endedAt": "2026-07-18T08:09:51.828Z",
+      "maps": [
+        "05 Furnace Bridge",
+        "06 Bellfoundry Sanctum"
+      ],
+      "encounter": {
+        "name": "The Last Ring",
+        "threats": ["Animated Armor", "Bugbear Warrior", "Cultist", "Cultist"],
+        "combatants": 8,
+        "rounds": 2,
+        "endedExplicitly": true
+      },
+      "playerTurns": [
+        {"seat": "Asha", "character": "Aric Emberguard", "roll": "Strength Check", "total": 7},
+        {"seat": "Brom", "character": "Sister Maelin", "roll": "Wisdom Check", "total": 15},
+        {"seat": "Cira", "character": "Ilyra Ashquill", "roll": "Intelligence Check", "total": 7},
+        {"seat": "Dain", "character": "Nox Quickstep", "roll": "Dexterity Check", "total": 7}
+      ],
+      "committedActions": [
+        "The DM resolved the Furnace Bridge hazard with a GM-only 2d6+2 roll totaling 6.",
+        "Ilyra committed Magic Missile for 10 force damage and spent a spell slot; the Bugbear persisted at 23/33 HP.",
+        "Nox committed Shortsword Attack 8 (miss).",
+        "Aric committed Greatsword Attack 15 with no damage continuation.",
+        "Maelin committed Spiritual Weapon Attack 10, spent a level-2 slot, and dealt no damage.",
+        "The DM adjudicated the surviving opposition's surrender and restoration of the bell."
+      ],
+      "rewards": {
+        "totalXp": 1800,
+        "xpPerCharacter": 450,
+        "totalGp": 200,
+        "gpPerCharacter": 50,
+        "loot": ["Restored First Ring", "Vey Rusk's ember seal"]
+      },
+      "progression": "All four characters finished at level 3 with 1,350 XP each.",
+      "gmReportJournalId": "jnl_mrq2td6zek70l2uo"
+    }
+  ],
+  "aggregate": {
+    "rolls": 33,
+    "natural20s": 1,
+    "highestRoll": {"formula": "4d20", "total": 43, "visibility": "public"},
+    "chatRecords": 50,
+    "publicChatRecords": 38,
+    "combats": 3,
+    "combatRounds": 6
+  }
+}

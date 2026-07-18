@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 const appSource = readFileSync(resolve(__dirname, "App.tsx"), "utf8");
 const setupSource = readFileSync(resolve(__dirname, "campaign-setup-steps.tsx"), "utf8");
+const backgroundCalibrationSource = readFileSync(resolve(__dirname, "scene-background-calibration.ts"), "utf8");
 const journalPanelSource = readFileSync(resolve(__dirname, "journal-panel.tsx"), "utf8");
 const stylesSource = readFileSync(resolve(__dirname, "styles.css"), "utf8");
 
@@ -65,5 +66,19 @@ describe("first-session onboarding", () => {
     expect(appSource).toContain("focusInviteLinkAfterSetupRef.current = true");
     expect(appSource).toContain('workspaceMode !== "manage" || manageCategory !== "people" || !inviteAcceptUrl');
     expect(appSource).toContain("inviteLink.focus()");
+  });
+
+  it("makes map upload a recoverable background-to-calibration workflow", () => {
+    expect(appSource).toContain('throw new Error("Select a scene before uploading a map.")');
+    expect(appSource).toContain('setAsBackground: true');
+    expect(appSource).toContain("selected: realtimeSelectionRef.current.sceneId === scene.id");
+    expect(appSource).toContain("setGridCalibrationOpen(plan.calibrationOpen)");
+    expect(backgroundCalibrationSource).toContain('if (scene.gridType === "gridless")');
+    expect(appSource).toContain("resetSceneMapCalibration(uploaded.scene");
+    expect(backgroundCalibrationSource).toContain('mapCalibrationComplete: scene.gridType === "gridless" && Boolean(scene.backgroundAssetId)');
+    expect(appSource).toContain('mapCalibrationComplete: Boolean(targetScene.backgroundAssetId)');
+    expect(appSource).toContain('Map upload failed: ${errorMessage(error)}');
+    expect(appSource).toContain('finally(() => { input.value = ""; })');
+    expect(appSource).toContain('disabled={!selectedScene || !hasPermission("scene.create") || !hasPermission("scene.update")}');
   });
 });

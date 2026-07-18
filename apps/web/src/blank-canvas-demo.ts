@@ -8,6 +8,12 @@ export const blankCanvasDemoCampaignId = "camp_blank_canvas_demo";
 export const blankCanvasDemoSceneId = "scn_blank_canvas_demo";
 export const blankCanvasDemoSystemId = "generic-fantasy";
 export const blankCanvasDemoNotice = "Demo mode: changes are local to this tab and reset when you leave or refresh.";
+export const seededDemoUnavailableMessage = "Seeded demo data is not available in this database. Try Blank Canvas or sign in with an account.";
+
+export function seededDemoLoginErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return /invalid login credentials/i.test(message) ? seededDemoUnavailableMessage : message;
+}
 
 const blankCanvasDemoPermissions = permissionsForRole("gm");
 

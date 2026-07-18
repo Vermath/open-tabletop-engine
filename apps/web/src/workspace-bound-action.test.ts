@@ -23,6 +23,7 @@ describe("workspace-bound actions", () => {
     const request: WorkspaceBoundRequest = {
       campaignId: "camp_demo",
       userId: "usr_demo_gm",
+      campaignUpdatedAt: "2026-07-17T00:00:00.000Z",
       controller,
     };
     let activeIdentity = { campaignId: "camp_demo", userId: "usr_demo_gm" };

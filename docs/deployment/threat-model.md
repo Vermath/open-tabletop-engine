@@ -49,7 +49,7 @@ Security objectives are least privilege, explicit authorization, confidentiality
 | Denial of service | Edge plus in-process rate limits, payload/time/concurrency bounds, campaign quotas, bounded queues/ledgers, single-group capacity envelope | The in-process limiter is not globally shared; public hosting requires an edge limiter and monitoring |
 | Data corruption, ransomware, or partial restore | Durable acknowledgements, SQLite backups/integrity checks, paired recovery manifests and asset snapshots, archive checksums, strict restore drills, retention | Backups sharing the same trust domain can be destroyed; keep access-controlled off-host snapshots and test restores |
 | Secret or private-data disclosure through logs/exports | Structured redaction, safe audit summaries, archive/report exclusions, one-time secret display, no webhook bodies | Operators must secure logs, support bundles, backups, and downstream processors |
-| Supply-chain compromise | Frozen lockfile, production dependency audit, SBOM generation, reviewed images/packages, plugin trust policy | Monitor advisories and rebuild from a trusted source after updates |
+| Supply-chain compromise | Frozen lockfile, production dependency audit, digest-pinned Dockerfile bases/scanner, dependency plus actual built-image CycloneDX SBOMs, reviewed images/packages, plugin trust policy | Monitor advisories and rebuild from a trusted source after updates |
 
 ## Abuse cases by role
 

@@ -37,6 +37,8 @@ class RecordingWebhookTransport implements CampaignWebhookTransport {
   }
 }
 
+class DurableWebhookTestStore extends MemoryStateStore {}
+
 async function waitFor(predicate: () => boolean, message: string): Promise<void> {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     if (predicate()) return;
@@ -46,6 +48,71 @@ async function waitFor(predicate: () => boolean, message: string): Promise<void>
 }
 
 describe("versioned campaign webhooks", () => {
+  it("does not hold the durable mutation gate while a webhook transport is pending", async () => {
+    const store = new DurableWebhookTestStore();
+    const transport = new RecordingWebhookTransport();
+    let releaseTransport: () => void = () => undefined;
+    transport.sendBarrier = new Promise<void>((resolve) => {
+      releaseTransport = resolve;
+    });
+    const app = await buildApp({ store, webhookTransport: transport });
+    const campaign = store.state.campaigns.find((candidate) => candidate.id === "camp_demo")!;
+    const actor = store.state.actors.find((candidate) => candidate.id === "act_valen")!;
+
+    try {
+      const created = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/webhooks",
+        headers: { ...gmHeaders, "idempotency-key": "webhook-unlocked-create" },
+        payload: { name: "Unlocked delivery", url: targetUrl, eventTypes: ["campaign.updated"], expectedCampaignUpdatedAt: campaign.updatedAt },
+      });
+      expect(created.statusCode).toBe(201);
+      const webhook = (created.json() as { webhook: { id: string; updatedAt: string } }).webhook;
+      const queued = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/webhooks/${webhook.id}/test`,
+        headers: { ...gmHeaders, "idempotency-key": "webhook-unlocked-test" },
+        payload: { expectedUpdatedAt: webhook.updatedAt },
+      });
+      expect(queued.statusCode).toBe(202);
+      const deliveryId = (queued.json() as { id: string }).id;
+      await waitFor(() => transport.sent.length === 1, "slow webhook delivery did not start");
+
+      const actorWrite = app.inject({
+        method: "PATCH",
+        url: `/api/v1/actors/${actor.id}`,
+        headers: { ...gmHeaders, "idempotency-key": "webhook-unlocked-actor-write" },
+        payload: { name: "Valen during webhook delivery", expectedUpdatedAt: actor.updatedAt },
+      });
+      const timedOut = Symbol("timed-out");
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const writeBeforeWebhookRelease = await Promise.race([
+        actorWrite,
+        new Promise<typeof timedOut>((resolve) => {
+          timer = setTimeout(() => resolve(timedOut), 1_000);
+        }),
+      ]);
+      if (timer) clearTimeout(timer);
+      if (writeBeforeWebhookRelease === timedOut) {
+        releaseTransport();
+        await actorWrite;
+        throw new Error("Unrelated actor write remained blocked behind webhook transport I/O");
+      }
+
+      expect(writeBeforeWebhookRelease.statusCode).toBe(200);
+      expect(writeBeforeWebhookRelease.json()).toMatchObject({ id: actor.id, name: "Valen during webhook delivery" });
+      expect(store.state.campaignWebhookDeliveries.find((delivery) => delivery.id === deliveryId)?.status).toBe("queued");
+      expect(store.state.auditLogs.some((log) => log.action === "campaign.webhook.test" && log.targetId === deliveryId)).toBe(true);
+
+      releaseTransport();
+      await waitFor(() => store.state.campaignWebhookDeliveries.find((delivery) => delivery.id === deliveryId)?.status === "delivered", "slow webhook delivery did not finish");
+      expect(transport.sent).toHaveLength(1);
+    } finally {
+      releaseTransport();
+      await app.close();
+    }
+  }, 15_000);
+
   it("manages one-time secrets, safe signed delivery, async retry, audit, archive, and campaign cleanup", async () => {
     const store = new MemoryStateStore();
     const transport = new RecordingWebhookTransport();
@@ -523,7 +590,7 @@ describe("campaign webhook transport safety", () => {
         { url: `http://rebind.example.test:${port}/hook`, body: "{}", headers: { "content-type": "application/json" } },
         1_000,
       );
-      expect(result).toMatchObject({ ok: false, responseStatus: 302, errorCode: "redirect_rejected" });
+      expect(result).toMatchObject({ ok: false, responseStatus: 302, errorCode: "redirect_rejected", redirectLocation: "/private" });
       expect(hostHeader).toBe(`rebind.example.test:${port}`);
       expect(privatePathHits).toBe(0);
     } finally {

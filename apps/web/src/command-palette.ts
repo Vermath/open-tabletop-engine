@@ -6,6 +6,17 @@ export interface PaletteCommand {
   keywords?: string;
 }
 
+export function campaignRecordPaletteCommands(input: {
+  actors: ReadonlyArray<{ id: string; name: string }>;
+  journals: ReadonlyArray<{ id: string; title: string; tags: string[] }>;
+  includeJournals: boolean;
+}): PaletteCommand[] {
+  return [
+    ...input.actors.map((actor) => ({ id: `actor:${actor.id}`, label: `Select actor: ${actor.name}`, section: "Actors", keywords: "character npc token sheet select focus" })),
+    ...(input.includeJournals ? input.journals.map((journal) => ({ id: `journal:${journal.id}`, label: `Open journal: ${journal.title}`, section: "Journal", hint: journal.tags[0], keywords: "note entry log lore" })) : [])
+  ];
+}
+
 /** Accepts "2d6+3", "/roll 2d6", "/r d20" style queries and returns the bare formula. */
 export function paletteDiceFormula(query: string): string | null {
   const trimmed = query.trim().replace(/^\/(?:roll|r)\s+/i, "");

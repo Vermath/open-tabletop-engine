@@ -2,6 +2,7 @@ import type {
   EngineEvent,
   PermissionName,
   ProposalChange,
+  TokenMoveBatchRequest,
 } from "@open-tabletop/core";
 
 export const PLUGIN_EVENT_TYPES = [
@@ -29,6 +30,7 @@ export const PLUGIN_EVENT_TYPES = [
   "token.created",
   "token.updated",
   "token.moved",
+  "token.moved.batch",
   "token.deleted",
   "actor.created",
   "actor.updated",
@@ -164,6 +166,7 @@ export const PLUGIN_PERMISSION_ALLOWLIST: readonly PermissionName[] =
     "world.read",
     "scene.read",
     "token.read",
+    "token.move",
     "actor.read",
     "actor.readPrivate",
     "journal.read",
@@ -337,6 +340,8 @@ export interface PluginContext {
   ): void;
   createProposal(input: PluginProposalRequest): Promise<string>;
   postChatMessage(input: PluginChatMessageRequest): Promise<string>;
+  /** Queue the same revision-guarded atomic token move used by the web client. */
+  moveTokens(sceneId: string, input: TokenMoveBatchRequest): Promise<string>;
 }
 
 export interface PluginProposalRequest {
@@ -376,6 +381,8 @@ export interface PluginBridgeContext {
   readonly permissions: readonly PermissionName[];
   createProposal(input: PluginProposalRequest): Promise<string>;
   postChatMessage(input: PluginChatMessageRequest): Promise<string>;
+  /** Queue the same revision-guarded atomic token move used by the web client. */
+  moveTokens(sceneId: string, input: TokenMoveBatchRequest): Promise<string>;
 }
 
 export interface OpenTabletopPlugin {

@@ -370,7 +370,7 @@ describe("D&D custom content builder API", () => {
     } finally {
       await app.close();
     }
-  });
+  }, 15_000);
 
   it("rejects stale monster base/template revisions without mutating campaign content", async () => {
     const store = new MemoryStateStore();

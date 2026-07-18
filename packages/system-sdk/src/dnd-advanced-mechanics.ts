@@ -26,6 +26,15 @@ export interface Dnd5eSrdEffectScheduleEvaluation {
   canApply: boolean;
 }
 
+export interface Dnd5eSrdManagedEndTurnRepeatSaveInput {
+  targetActorId: string;
+  repeatSave: string | undefined;
+  saveAbility: string | undefined;
+  saveDc?: number;
+  durationRounds?: number;
+  combat?: Pick<Combat, "round" | "turnIndex" | "combatants">;
+}
+
 export interface Dnd5eSrdSpellHelperPreviewInput {
   spell: { id: string; name: string; data: JsonRecord };
   casterActorId: string;
@@ -94,6 +103,36 @@ function stringArray(value: unknown): string[] {
 function conditionId(value: unknown): string | undefined {
   const raw = typeof value === "string" ? value : stringValue(recordValue(value).id);
   return raw?.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+/**
+ * Converts the narrow, explicit SRD "end of each turn" repeat-save shape into
+ * the typed schedule consumed by the reviewed combat-effect lifecycle. This is
+ * intentionally not a prose parser: other timings remain manual until they
+ * receive their own rule-backed adapter.
+ */
+export function dnd5eSrdManagedEndTurnRepeatSaveSchedule(
+  input: Dnd5eSrdManagedEndTurnRepeatSaveInput
+): RulesEffectSchedule | undefined {
+  const timing = input.repeatSave?.trim().toLowerCase().replace(/\s+/g, " ");
+  const ability = input.saveAbility?.trim().toLowerCase();
+  const durationRounds = input.durationRounds === undefined ? undefined : Math.floor(input.durationRounds);
+  if (timing !== "end of each turn" || !ability || !input.combat || !durationRounds || durationRounds < 1) return undefined;
+  const targetTurnIndex = input.combat.combatants.findIndex((combatant) => combatant.actorId === input.targetActorId);
+  if (targetTurnIndex < 0) return undefined;
+  const nextRound = input.combat.round + (targetTurnIndex < input.combat.turnIndex ? 1 : 0);
+  return {
+    timing: "end_turn",
+    anchorActorId: input.targetActorId,
+    nextRound,
+    intervalRounds: 1,
+    expiresAtRound: input.combat.round + durationRounds,
+    repeatSave: {
+      ability,
+      ...(input.saveDc !== undefined && Number.isFinite(input.saveDc) ? { dc: input.saveDc } : {}),
+      endsOn: "success"
+    }
+  };
 }
 
 function scheduleForEffect(effect: JsonRecord): RulesEffectSchedule | undefined {
@@ -226,13 +265,30 @@ export function evaluateDnd5eSrdEffectSchedules(
         updatedAt: now
       };
 
-      if (effectExpired(originalEffect, schedule, combat, input.phase, now)) {
+      const scheduleDue = Boolean(schedule
+        && schedule.timing === input.phase
+        && (schedule.nextRound ?? combat.round) <= combat.round
+        && phaseMatchesActor(schedule, combat)
+        && initiativeCountIsCurrent(schedule, combat));
+      const expiresAtRound = numberValue(originalEffect.expiresAtRound) ?? schedule?.expiresAtRound;
+      const expiresAt = stringValue(originalEffect.expiresAt) ?? schedule?.expiresAt;
+      const expiryMs = expiresAt ? Date.parse(expiresAt) : Number.NaN;
+      const nowMs = Date.parse(now);
+      const absoluteTimeExpired = Number.isFinite(expiryMs) && Number.isFinite(nowMs) && expiryMs <= nowMs;
+      const expired = effectExpired(originalEffect, schedule, combat, input.phase, now);
+      const finalRepeatSaveBeforeRoundExpiry = Boolean(
+        expired
+        && !absoluteTimeExpired
+        && scheduleDue
+        && schedule?.repeatSave
+        && expiresAtRound === combat.round
+      );
+      if (expired && !finalRepeatSaveBeforeRoundExpiry) {
         after = removeEffect(after, effectIdValue);
         events.push({ ...baseEvent, status: "expired" });
         continue;
       }
-      if (!schedule || schedule.timing !== input.phase) continue;
-      if ((schedule.nextRound ?? combat.round) > combat.round || !phaseMatchesActor(schedule, combat) || !initiativeCountIsCurrent(schedule, combat)) continue;
+      if (!schedule || !scheduleDue) continue;
 
       if (schedule.repeatSave) {
         const outcome = input.saveOutcomes?.[id];
@@ -254,7 +310,7 @@ export function evaluateDnd5eSrdEffectSchedules(
           ...(schedule.repeatSave.dc !== undefined ? { saveDc: schedule.repeatSave.dc } : {}),
           outcome
         });
-        if (ends) {
+        if (ends || finalRepeatSaveBeforeRoundExpiry) {
           after = removeEffect(after, effectIdValue);
           continue;
         }

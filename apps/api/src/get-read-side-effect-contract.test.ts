@@ -109,13 +109,14 @@ describe("GET read-side-effect contract", () => {
     const callback = byPath.get(oidcCallbackPath);
     expect(callback).toBeDefined();
     expect(callback!.handlerSource).toContain("completeOidcCallback");
-    expect(callback!.handlerSource).toContain("store.save()");
     expect(callback!.handlerSource).not.toContain("appendSerializedReadAudit");
     const callbackHelperStart = appSource.indexOf("async function completeOidcCallback");
     expect(callbackHelperStart).toBeGreaterThanOrEqual(0);
     const callbackHelperSource = appSource.slice(callbackHelperStart, callbackHelperStart + 5_000);
     expect(callbackHelperSource).toContain("upsertOidcUser");
     expect(callbackHelperSource).toContain("createUserSession");
+    expect(callbackHelperSource).toContain("store.save()");
+    expect(callbackHelperSource).toContain("flushStore(store)");
   });
 
   it("requires every other audited GET to be read-only or use serialized append-only audit", () => {

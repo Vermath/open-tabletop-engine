@@ -18,6 +18,8 @@ export const routes = {
   health: "/api/v1/health",
   bootstrap: "/api/v1/auth/bootstrap",
   session: "/api/v1/auth/session",
+  sessionCookieUpgrade: "/api/v1/auth/session/upgrade-cookie",
+  sessionCookieUpgradeConfirm: "/api/v1/auth/session/upgrade-cookie/confirm",
   profile: "/api/v1/auth/profile",
   register: "/api/v1/auth/register",
   login: "/api/v1/auth/login",
@@ -225,6 +227,8 @@ export const routes = {
   encounterMonsterPlacements: (sceneId: string) =>
     `/api/v1/scenes/${pathPart(sceneId)}/encounter-monster-placements`,
   tokens: (sceneId: string) => `/api/v1/scenes/${pathPart(sceneId)}/tokens`,
+  tokenMoves: (sceneId: string) =>
+    `/api/v1/scenes/${pathPart(sceneId)}/tokens/move`,
   token: (tokenId: string) => `/api/v1/tokens/${pathPart(tokenId)}`,
   tokenTarget: (tokenId: string) =>
     `/api/v1/tokens/${pathPart(tokenId)}/target`,
@@ -293,6 +297,8 @@ export const routes = {
     `/api/v1/combats/${pathPart(combatId)}/effects/preview`,
   combatEffectScheduleAdvance: (combatId: string) =>
     `/api/v1/combats/${pathPart(combatId)}/effects/advance`,
+  combatLegendaryActionSpend: (combatId: string, actorId: string) =>
+    `/api/v1/combats/${pathPart(combatId)}/legendary-actions/${pathPart(actorId)}/spend`,
   dnd5eSpellHelperPreview: (campaignId: string, systemId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/spell-helper/preview`,
   combatActionConfirm: (combatId: string, actionId: string) =>
@@ -361,6 +367,8 @@ export const routes = {
     `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/character-origins`,
   systemCharacters: (campaignId: string, systemId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/characters`,
+  systemCharacterPreview: (campaignId: string, systemId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/characters/preview`,
   systemMonsters: (campaignId: string, systemId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/monsters`,
   systemCharacterImport: (campaignId: string, systemId: string) =>
@@ -480,6 +488,8 @@ export const routes = {
     `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/actors/${pathPart(actorId)}/rules-preview`,
   systemActorTypedDamageApply: (campaignId: string, systemId: string, actorId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/actors/${pathPart(actorId)}/typed-damage/apply`,
+  systemActorCombatVitals: (campaignId: string, systemId: string, actorId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/actors/${pathPart(actorId)}/combat-vitals`,
   systemActorPendingAdvancement: (campaignId: string, systemId: string, actorId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/actors/${pathPart(actorId)}/advancement/pending`,
   dndRulesMutationUndo: (campaignId: string, mutationId: string) =>
@@ -562,8 +572,13 @@ export const apiContractPolicy = {
   },
   auth: {
     scheme: "BearerAuth",
+    browserScheme: "SessionCookie",
     header: "Authorization",
     bearerFormat: "opaque ots_ session token",
+    productionCookieName: "__Host-otte_session",
+    localCookieName: "otte_session",
+    browserCompatibility:
+      "First-party browsers use an HttpOnly SameSite session cookie. Persisted browser bearer sessions migrate through a short-lived pending child, then confirmation revokes the legacy parent and all pending siblings.",
     queryTokenExceptions: [
       "asset blob delivery",
       "realtime websocket connection",
@@ -614,6 +629,23 @@ export const apiContractPolicy = {
     enforcement:
       "The API runtime enforces a fixed-window per-route caller limit when OTTE_RATE_LIMIT_ENABLED=true and enables it by default in production. OTTE_RATE_LIMIT_WINDOW_SECONDS and OTTE_RATE_LIMIT_MAX_REQUESTS tune the window and ceiling.",
   },
+  realtime: {
+    authoritativeSequence:
+      "Persisted campaign and stable AI/agent state events consume one monotonic per-campaign sequence. Clients refetch the permission-filtered campaign snapshot when a sequence gap is detected.",
+    transientUnsequencedEventTypes: [
+      "ai.message.delta",
+      "ai.reasoning.delta",
+      "ai.reasoning.completed",
+      "ai.activity.reported",
+      "agent.boardCaptureRequested",
+    ],
+    transientUnsequencedEvents: [
+      "presence envelopes",
+      "AI message and reasoning stream progress",
+      "AI activity progress",
+      "short-lived board capture requests",
+    ],
+  },
   chat: {
     messageBodyMaxLength: 4096,
   },
@@ -630,6 +662,8 @@ const endpointSpecs = [
   ["POST", routes.register],
   ["POST", routes.login],
   ["POST", routes.logout],
+  ["POST", routes.sessionCookieUpgrade],
+  ["POST", routes.sessionCookieUpgradeConfirm],
   ["POST", routes.passwordResetRequest],
   ["POST", routes.passwordResetConfirm],
   ["POST", routes.passwordChange],
@@ -831,6 +865,7 @@ const endpointSpecs = [
   ["DELETE", "/api/v1/scenes/{sceneId}/annotations/{annotationId}"],
   ["GET", "/api/v1/scenes/{sceneId}/tokens"],
   ["POST", "/api/v1/scenes/{sceneId}/tokens"],
+  ["POST", "/api/v1/scenes/{sceneId}/tokens/move"],
   ["POST", "/api/v1/scenes/{sceneId}/encounter-monster-placements"],
   ["POST", "/api/v1/tokens/{tokenId}/target"],
   ["PATCH", "/api/v1/tokens/{tokenId}"],
@@ -897,6 +932,7 @@ const endpointSpecs = [
   ["POST", "/api/v1/combats/{combatId}/environment-mechanics/{mechanicId}/trigger"],
   ["POST", "/api/v1/combats/{combatId}/effects/preview"],
   ["POST", "/api/v1/combats/{combatId}/effects/advance"],
+  ["POST", "/api/v1/combats/{combatId}/legendary-actions/{actorId}/spend"],
   ["POST", "/api/v1/combats/{combatId}/actions/{actionId}/confirm"],
   ["POST", "/api/v1/combats/{combatId}/actions/{actionId}/reject"],
   ["POST", "/api/v1/combats/{combatId}/initiative/roll-npcs"],
@@ -956,6 +992,7 @@ const endpointSpecs = [
     "/api/v1/campaigns/{campaignId}/systems/{systemId}/character-origins",
   ],
   ["POST", "/api/v1/campaigns/{campaignId}/systems/{systemId}/characters"],
+  ["POST", "/api/v1/campaigns/{campaignId}/systems/{systemId}/characters/preview"],
   ["POST", "/api/v1/campaigns/{campaignId}/systems/{systemId}/monsters"],
   [
     "POST",
@@ -1046,6 +1083,10 @@ const endpointSpecs = [
   [
     "POST",
     "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/typed-damage/apply",
+  ],
+  [
+    "POST",
+    "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/combat-vitals",
   ],
   [
     "POST",
@@ -1627,14 +1668,17 @@ const componentSchemas = {
   HealthStatus: {
     type: "object",
     additionalProperties: false,
-    required: ["ok", "version", "service"],
+    required: ["ok", "version", "service", "apiCompatibility", "buildFingerprint"],
     properties: {
       ok: { type: "boolean" },
       version: stringSchema,
       service: stringSchema,
+      apiCompatibility: stringSchema,
+      buildFingerprint: stringSchema,
       error: stringSchema,
       workerPrincipals: schemaRef("WorkerPrincipalPosture"),
       dependencies: schemaRef("HealthDependencies"),
+      storageBackup: schemaRef("StorageBackupSchedulerStatus"),
       aiPolicy: schemaRef("HealthAiPolicyStatus"),
     },
   },
@@ -1666,6 +1710,38 @@ const componentSchemas = {
       status: stringSchema,
       contextScopes: arrayOf(stringSchema),
       retentionDays: { type: "integer", minimum: 0 },
+    },
+  },
+  StorageBackupSchedulerStatus: {
+    type: "object",
+    additionalProperties: false,
+    required: ["enabled", "running", "runOnStart", "reason"],
+    properties: {
+      enabled: { type: "boolean" },
+      running: { type: "boolean" },
+      runOnStart: { type: "boolean" },
+      reason: stringSchema,
+      intervalSeconds: { type: "number", exclusiveMinimum: 0 },
+      lastRun: {
+        type: "object",
+        additionalProperties: false,
+        required: ["trigger", "status", "startedAt", "completedAt", "reason"],
+        properties: {
+          trigger: { type: "string", enum: ["startup", "interval"] },
+          status: { type: "string", enum: ["succeeded", "failed", "skipped"] },
+          startedAt: { type: "string", format: "date-time" },
+          completedAt: { type: "string", format: "date-time" },
+          fileName: stringSchema,
+          sizeBytes: { type: "integer", minimum: 0 },
+          reason: stringSchema,
+          paired: { type: "boolean" },
+          assetSnapshotId: stringSchema,
+          assetObjectCount: { type: "integer", minimum: 0 },
+          assetSizeBytes: { type: "integer", minimum: 0 },
+          restoreDrillStatus: { type: "string", enum: ["passed", "failed"] },
+          error: stringSchema,
+        },
+      },
     },
   },
   WorkerPrincipalPosture: {
@@ -1862,6 +1938,55 @@ const componentSchemas = {
       activeOrganizationId: idSchema,
       expiresAt: { type: "string", format: "date-time" },
       lastSeenAt: { type: "string", format: "date-time" },
+    },
+  },
+  SessionCookieUpgradeRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["expectedUserId"],
+    properties: {
+      expectedUserId: {
+        ...idSchema,
+        description:
+          "User id associated with the legacy bearer. The server fails closed instead of moving a credential across accounts.",
+      },
+    },
+  },
+  SessionCookieUpgradeResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["ok", "session", "upgradeExpiresAt"],
+    properties: {
+      ok: { type: "boolean", enum: [true] },
+      session: schemaRef("UserSession"),
+      upgradeExpiresAt: {
+        type: "string",
+        format: "date-time",
+        description:
+          "Deadline for confirming the pending cookie child before it expires. The legacy bearer remains active until confirmation succeeds.",
+      },
+    },
+  },
+  SessionCookieUpgradeConfirmRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["expectedUserId"],
+    properties: {
+      expectedUserId: {
+        ...idSchema,
+        description:
+          "Same expected user id sent to the upgrade route. It must match both the pending cookie child and its legacy parent.",
+      },
+    },
+  },
+  SessionCookieUpgradeConfirmResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["ok", "upgradeConfirmed", "session"],
+    properties: {
+      ok: { type: "boolean", enum: [true] },
+      upgradeConfirmed: { type: "boolean", enum: [true] },
+      session: schemaRef("UserSession"),
     },
   },
   MfaTotpEnrollRequest: {
@@ -2143,6 +2268,7 @@ const componentSchemas = {
       invite: schemaRef("CampaignInvite"),
       token: { type: "string", pattern: "^oti_" },
       acceptUrl: stringSchema,
+      campaignUpdatedAt: dateTimeSchema,
     },
   },
   InviteAcceptRequest: {
@@ -2907,6 +3033,57 @@ const componentSchemas = {
       workerPrincipals: schemaRef("WorkerPrincipalPosture"),
     },
   },
+  AuthenticationPasswordWorkCapacity: {
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "active",
+      "queued",
+      "maxConcurrent",
+      "maxQueue",
+      "completedVerifications",
+      "completedHashes",
+      "saturationCount",
+      "queueTimeoutCount",
+      "failureCount",
+    ],
+    properties: {
+      active: { type: "integer", minimum: 0 },
+      queued: { type: "integer", minimum: 0 },
+      maxConcurrent: { type: "integer", minimum: 1 },
+      maxQueue: { type: "integer", minimum: 0 },
+      completedVerifications: { type: "integer", minimum: 0 },
+      completedHashes: { type: "integer", minimum: 0 },
+      saturationCount: { type: "integer", minimum: 0 },
+      queueTimeoutCount: { type: "integer", minimum: 0 },
+      failureCount: { type: "integer", minimum: 0 },
+    },
+  },
+  AuthenticationLoginThrottleCapacity: {
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "bucketCount",
+      "maxBuckets",
+      "consumedAttempts",
+      "limitedAttempts",
+    ],
+    properties: {
+      bucketCount: { type: "integer", minimum: 0 },
+      maxBuckets: { type: "integer", minimum: 1 },
+      consumedAttempts: { type: "integer", minimum: 0 },
+      limitedAttempts: { type: "integer", minimum: 0 },
+    },
+  },
+  AuthenticationCapacity: {
+    type: "object",
+    additionalProperties: false,
+    required: ["passwordWork", "loginThrottle"],
+    properties: {
+      passwordWork: schemaRef("AuthenticationPasswordWorkCapacity"),
+      loginThrottle: schemaRef("AuthenticationLoginThrottleCapacity"),
+    },
+  },
   AdminAuthOperations: {
     type: "object",
     additionalProperties: true,
@@ -2916,6 +3093,7 @@ const componentSchemas = {
       "actionReasons",
       "remediationQueue",
       "runtime",
+      "authenticationCapacity",
       "users",
       "sessions",
       "passwordResets",
@@ -2928,6 +3106,7 @@ const componentSchemas = {
       actionReasons: arrayOf(stringSchema),
       remediationQueue: arrayOf({ type: "object", additionalProperties: true }),
       runtime: schemaRef("AdminAuthRuntimeConfig"),
+      authenticationCapacity: schemaRef("AuthenticationCapacity"),
       legacyUserHeaderUsage: { type: "object", additionalProperties: true },
       loginFailures: { type: "object", additionalProperties: true },
       users: { type: "object", additionalProperties: true },
@@ -3549,6 +3728,7 @@ const componentSchemas = {
       limit: positiveLimitSchema,
       reason: { type: "string", maxLength: 240 },
       includeApproved: { type: "boolean" },
+      expectedTargetSetHash: operatorTargetSetHashSchema,
     },
   },
   AdminAiStaleProposalRejectResult: {
@@ -3563,6 +3743,7 @@ const componentSchemas = {
       "matched",
       "updated",
       "proposals",
+      "targetSetHash",
     ],
     properties: {
       dryRun: { type: "boolean" },
@@ -3574,6 +3755,7 @@ const componentSchemas = {
       matched: { type: "integer", minimum: 0 },
       updated: { type: "integer", minimum: 0 },
       proposals: arrayOf(looseObjectSchema),
+      targetSetHash: operatorTargetSetHashSchema,
     },
   },
   AdminAiStaleThreadFailRequest: {
@@ -3584,6 +3766,7 @@ const componentSchemas = {
       campaignId: idSchema,
       limit: positiveLimitSchema,
       reason: { type: "string", maxLength: 240 },
+      expectedTargetSetHash: operatorTargetSetHashSchema,
     },
   },
   AdminAiStaleThreadFailResult: {
@@ -3597,6 +3780,7 @@ const componentSchemas = {
       "matched",
       "updated",
       "threads",
+      "targetSetHash",
     ],
     properties: {
       dryRun: { type: "boolean" },
@@ -3607,6 +3791,7 @@ const componentSchemas = {
       matched: { type: "integer", minimum: 0 },
       updated: { type: "integer", minimum: 0 },
       threads: arrayOf(looseObjectSchema),
+      targetSetHash: operatorTargetSetHashSchema,
     },
   },
   AdminAiStaleToolCallFailRequest: {
@@ -3618,6 +3803,7 @@ const componentSchemas = {
       threadId: idSchema,
       limit: positiveLimitSchema,
       reason: { type: "string", maxLength: 240 },
+      expectedTargetSetHash: operatorTargetSetHashSchema,
     },
   },
   AdminAiStaleToolCallFailResult: {
@@ -3631,6 +3817,7 @@ const componentSchemas = {
       "matched",
       "updated",
       "toolCalls",
+      "targetSetHash",
     ],
     properties: {
       dryRun: { type: "boolean" },
@@ -3642,6 +3829,7 @@ const componentSchemas = {
       matched: { type: "integer", minimum: 0 },
       updated: { type: "integer", minimum: 0 },
       toolCalls: arrayOf(looseObjectSchema),
+      targetSetHash: operatorTargetSetHashSchema,
     },
   },
   AdminAiToolCallRetryRequest: {
@@ -3653,6 +3841,7 @@ const componentSchemas = {
       threadId: idSchema,
       toolCallId: idSchema,
       limit: positiveLimitSchema,
+      expectedTargetSetHash: operatorTargetSetHashSchema,
     },
   },
   AdminAiToolCallRetryResult: {
@@ -3667,6 +3856,7 @@ const componentSchemas = {
       "completed",
       "failed",
       "toolCalls",
+      "targetSetHash",
     ],
     properties: {
       dryRun: { type: "boolean" },
@@ -3680,6 +3870,7 @@ const componentSchemas = {
       completed: { type: "integer", minimum: 0 },
       failed: { type: "integer", minimum: 0 },
       toolCalls: arrayOf(looseObjectSchema),
+      targetSetHash: operatorTargetSetHashSchema,
     },
   },
   AdminAiEvaluationExport: {
@@ -4526,7 +4717,7 @@ const componentSchemas = {
   StorageRestoreRequest: {
     type: "object",
     additionalProperties: false,
-    required: ["backupFileName", "confirmFileName", "expectedStateRevision"],
+    required: ["backupFileName", "confirmFileName", "expectedStateRevision", "requireAssetSnapshot", "expectedAssetSnapshot"],
     properties: {
       backupFileName: stringSchema,
       confirmFileName: stringSchema,
@@ -4535,7 +4726,7 @@ const componentSchemas = {
         pattern: "^sha256:[a-f0-9]{64}$",
       },
       reason: { type: "string", maxLength: 160 },
-      requireAssetSnapshot: { type: "boolean" },
+      requireAssetSnapshot: { type: "boolean", enum: [true] },
       expectedAssetSnapshot: schemaRef("StorageAssetSnapshotIdentity"),
     },
   },
@@ -4558,6 +4749,37 @@ const componentSchemas = {
       error: stringSchema,
       restoredAt: { type: "string", format: "date-time" },
       reason: { type: "string", maxLength: 160 },
+      paired: { type: "boolean" },
+      assetRestore: {
+        type: "object",
+        additionalProperties: false,
+        required: ["identity", "assetCount", "objectCount", "storedObjectCount", "sizeBytes"],
+        properties: {
+          identity: schemaRef("StorageAssetSnapshotIdentity"),
+          assetCount: { type: "integer", minimum: 0 },
+          objectCount: { type: "integer", minimum: 0 },
+          storedObjectCount: { type: "integer", minimum: 0 },
+          sizeBytes: { type: "integer", minimum: 0 },
+        },
+      },
+      rollbackRecoveryPoint: {
+        type: "object",
+        additionalProperties: false,
+        required: ["backupFileName", "assetSnapshot"],
+        properties: {
+          backupFileName: stringSchema,
+          assetSnapshot: schemaRef("StorageAssetSnapshotIdentity"),
+        },
+      },
+      rollback: {
+        type: "object",
+        additionalProperties: false,
+        required: ["status", "errors"],
+        properties: {
+          status: { type: "string", enum: ["succeeded", "failed"] },
+          errors: arrayOf(stringSchema),
+        },
+      },
     },
   },
   StorageRestoreReconciliation: {
@@ -6344,6 +6566,41 @@ const componentSchemas = {
       metadata: { type: "object", additionalProperties: true },
     },
   },
+  TokenMoveBatchEntry: {
+    type: "object",
+    additionalProperties: false,
+    required: ["tokenId", "x", "y", "expectedUpdatedAt"],
+    properties: {
+      tokenId: idSchema,
+      x: { type: "number" },
+      y: { type: "number" },
+      expectedUpdatedAt: dateTimeSchema,
+    },
+  },
+  TokenMoveBatchRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["expectedSceneUpdatedAt", "changes"],
+    properties: {
+      expectedSceneUpdatedAt: dateTimeSchema,
+      changes: {
+        type: "array",
+        minItems: 1,
+        maxItems: 100,
+        items: schemaRef("TokenMoveBatchEntry"),
+      },
+    },
+  },
+  TokenMoveBatchResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["tokens", "movedAt", "undo"],
+    properties: {
+      tokens: arrayOf(schemaRef("Token")),
+      movedAt: dateTimeSchema,
+      undo: schemaRef("TokenMoveBatchRequest"),
+    },
+  },
   ChatMessage: {
     type: "object",
     additionalProperties: true,
@@ -7454,6 +7711,58 @@ const componentSchemas = {
       },
     },
   },
+  CombatLegendaryActionPrompt: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "actorId", "combatantId", "actorName", "round", "afterTurnIndex", "remainingUses", "maximumUses", "options", "resolution", "createdAt", "updatedAt"],
+    properties: {
+      ...idTimestampProperties,
+      actorId: idSchema,
+      combatantId: idSchema,
+      actorName: stringSchema,
+      round: { type: "integer", minimum: 1 },
+      afterTurnIndex: { type: "integer", minimum: 0 },
+      remainingUses: { type: "integer", minimum: 0 },
+      maximumUses: { type: "integer", minimum: 1 },
+      options: arrayOf(stringSchema),
+      resolution: { type: "string", enum: ["reviewed-manual"] },
+    },
+  },
+  Dnd5eLegendaryActionSpendRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["promptId", "optionName", "cost", "expectedActorUpdatedAt", "expectedCombatUpdatedAt"],
+    properties: {
+      promptId: idSchema,
+      optionName: { type: "string", minLength: 1, maxLength: 120 },
+      cost: { type: "integer", minimum: 1 },
+      expectedActorUpdatedAt: { type: "string", format: "date-time" },
+      expectedCombatUpdatedAt: { type: "string", format: "date-time" },
+    },
+  },
+  Dnd5eLegendaryActionUse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "actorId", "optionName", "cost", "round", "afterTurnIndex", "remainingUses", "maximumUses", "usedAt", "usedByUserId"],
+    properties: {
+      id: idSchema,
+      actorId: idSchema,
+      optionName: stringSchema,
+      cost: { type: "integer", minimum: 1 },
+      round: { type: "integer", minimum: 1 },
+      afterTurnIndex: { type: "integer", minimum: 0 },
+      remainingUses: { type: "integer", minimum: 0 },
+      maximumUses: { type: "integer", minimum: 1 },
+      usedAt: { type: "string", format: "date-time" },
+      usedByUserId: idSchema,
+    },
+  },
+  Dnd5eLegendaryActionSpendResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["actor", "combat", "use"],
+    properties: { actor: schemaRef("Actor"), combat: schemaRef("Combat"), use: schemaRef("Dnd5eLegendaryActionUse") },
+  },
   Combat: {
     type: "object",
     additionalProperties: true,
@@ -7481,6 +7790,7 @@ const componentSchemas = {
       environmentMechanics: arrayOf(schemaRef("CombatEnvironmentMechanic")),
       environmentMechanicTriggers: arrayOf(schemaRef("CombatEnvironmentMechanicTrigger")),
       effectScheduleEvents: arrayOf(schemaRef("RulesEffectScheduleEvent")),
+      legendaryActionPrompts: arrayOf(schemaRef("CombatLegendaryActionPrompt")),
     },
   },
   CombatReward: {
@@ -7543,6 +7853,19 @@ const componentSchemas = {
       resourceSpent: { type: "boolean" },
     },
   },
+  Dnd5eSrdCriticalOutcome: {
+    type: "object",
+    additionalProperties: false,
+    required: ["targetActorId", "criticalMinimum", "outcome", "criticalNegated", "finalCritical"],
+    properties: {
+      targetActorId: idSchema,
+      naturalD20: { type: "integer", minimum: 1, maximum: 20 },
+      criticalMinimum: { type: "integer", minimum: 1, maximum: 20 },
+      outcome: { type: "string", enum: ["miss", "hit", "critical-hit", "unresolved"] },
+      criticalNegated: { type: "boolean" },
+      finalCritical: { type: "boolean" },
+    },
+  },
   CombatAction: {
     type: "object",
     additionalProperties: true,
@@ -7581,6 +7904,8 @@ const componentSchemas = {
       applyEffect: { type: "boolean" },
       consumeResources: { type: "boolean" },
       preparedPreviewKey: stringSchema,
+      continuationId: stringSchema,
+      criticalOutcomes: arrayOf(schemaRef("Dnd5eSrdCriticalOutcome")),
       expectedActorUpdatedAt: schemaRef("DndRulesRevisionMap"),
       expectedItemUpdatedAt: schemaRef("DndRulesRevisionMap"),
       expectedCombatUpdatedAt: { type: "string", format: "date-time" },
@@ -7864,7 +8189,9 @@ const componentSchemas = {
   CombatCreateRequest: {
     type: "object",
     additionalProperties: false,
+    required: ["expectedUpdatedAt"],
     properties: {
+      expectedUpdatedAt: { type: "string", format: "date-time" },
       encounterId: idSchema,
       manualTurnOrder: { type: "boolean" },
       combatants: arrayOf(schemaRef("Combatant")),
@@ -7884,8 +8211,9 @@ const componentSchemas = {
   CombatStartRequest: {
     type: "object",
     additionalProperties: false,
-    required: ["sceneId", "participants"],
+    required: ["sceneId", "participants", "expectedUpdatedAt"],
     properties: {
+      expectedUpdatedAt: { type: "string", format: "date-time" },
       sceneId: idSchema,
       participants: arrayOf(schemaRef("CombatStartParticipantRequest")),
       manualTurnOrder: { type: "boolean" },
@@ -7920,6 +8248,7 @@ const componentSchemas = {
   CombatantPatchRequest: {
     type: "object",
     additionalProperties: false,
+    required: ["expectedUpdatedAt"],
     properties: {
       id: idSchema,
       tokenId: idSchema,
@@ -7940,6 +8269,7 @@ const componentSchemas = {
       resourceSpent: { type: "boolean" },
       syncActorSheet: { type: "boolean" },
       expectedUpdatedAt: { type: "string", format: "date-time" },
+      expectedActorUpdatedAt: { type: "string", format: "date-time" },
     },
   },
   AuditLog: {
@@ -8166,6 +8496,7 @@ const componentSchemas = {
   ProposalCreateRequest: {
     type: "object",
     additionalProperties: false,
+    required: ["expectedUpdatedAt"],
     properties: {
       title: stringSchema,
       summary: stringSchema,
@@ -8418,18 +8749,20 @@ const componentSchemas = {
       limit: { type: "integer", minimum: 1, maximum: 1000 },
       dryRun: { type: "boolean" },
       confirmation: stringSchema,
+      expectedTargetSetHash: operatorTargetSetHashSchema,
     },
   },
   AiPrivacyResult: {
     type: "object",
     additionalProperties: true,
-    required: ["localOperationalHistoryOnly", "providerDeletion", "dryRun", "categories", "preserved"],
+    required: ["localOperationalHistoryOnly", "providerDeletion", "dryRun", "categories", "preserved", "targetSetHash"],
     properties: {
       localOperationalHistoryOnly: { type: "boolean" },
       providerDeletion: { type: "string", enum: ["not_requested_or_verified"] },
       dryRun: { type: "boolean" },
       categories: { type: "object", additionalProperties: { type: "integer", minimum: 0 } },
       preserved: { type: "object", additionalProperties: { type: "integer", minimum: 0 } },
+      targetSetHash: operatorTargetSetHashSchema,
     },
   },
   AiThread: {
@@ -8517,11 +8850,12 @@ const componentSchemas = {
   AiEvaluationInput: {
     type: "object",
     additionalProperties: true,
-    required: ["threadId"],
+    required: ["threadId", "expectedThreadUpdatedAt"],
     properties: {
       threadId: idSchema,
       notes: stringSchema,
       expectedOutcome: stringSchema,
+      expectedThreadUpdatedAt: dateTimeSchema,
     },
   },
   AiEvaluationSnapshot: {
@@ -8545,7 +8879,7 @@ const componentSchemas = {
   AiThreadCreateRequest: {
     type: "object",
     additionalProperties: false,
-    required: ["prompt"],
+    required: ["prompt", "expectedUpdatedAt"],
     properties: {
       prompt: stringSchema,
       surface: { type: "string", enum: ["agent_panel", "ai_studio"] },
@@ -8560,6 +8894,7 @@ const componentSchemas = {
       selectedAssetId: idSchema,
       selectedTokenIds: arrayOf(idSchema),
       messages: arrayOf(schemaRef("AiThreadMessage")),
+      expectedUpdatedAt: dateTimeSchema,
     },
   },
   McpJsonRpcRequest: {
@@ -8630,12 +8965,31 @@ const componentSchemas = {
       replacedTokenCount: { type: "integer", minimum: 0 },
     },
   },
+  AiEditLayerApplyRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["expectedUpdatedAt", "expectedTargetUpdatedAt", "expectedSourceTokenUpdatedAt", "expectedTargetTokenUpdatedAt"],
+    properties: {
+      expectedUpdatedAt: dateTimeSchema,
+      expectedTargetUpdatedAt: dateTimeSchema,
+      expectedSourceTokenUpdatedAt: { type: "object", additionalProperties: dateTimeSchema },
+      expectedTargetTokenUpdatedAt: { type: "object", additionalProperties: dateTimeSchema },
+    },
+  },
   AiToolCallRetryRequest: {
     type: "object",
     additionalProperties: false,
+    required: ["expectedUpdatedAt"],
     properties: {
       dryRun: { type: "boolean" },
+      expectedUpdatedAt: dateTimeSchema,
     },
+  },
+  ProposalRevisionRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["expectedUpdatedAt"],
+    properties: { expectedUpdatedAt: dateTimeSchema },
   },
   AiProviderEvent: {
     type: "object",
@@ -8742,7 +9096,7 @@ const componentSchemas = {
   AiMemoryCreateRequest: {
     type: "object",
     additionalProperties: false,
-    required: ["text"],
+    required: ["text", "expectedUpdatedAt"],
     properties: {
       text: stringSchema,
       worldId: { anyOf: [idSchema, { type: "null" }] },
@@ -8772,12 +9126,15 @@ const componentSchemas = {
       sourceIds: arrayOf(idSchema),
       source: { type: "object", additionalProperties: true },
       createdBy: { type: "string", enum: ["user", "ai", "plugin", "system"] },
+      expectedUpdatedAt: dateTimeSchema,
     },
   },
   AiMemoryPatchRequest: {
     type: "object",
     additionalProperties: false,
+    required: ["expectedUpdatedAt"],
     properties: {
+      expectedUpdatedAt: dateTimeSchema,
       text: stringSchema,
       worldId: { anyOf: [idSchema, { type: "null" }] },
       type: {
@@ -8809,12 +9166,20 @@ const componentSchemas = {
       status: { type: "string", enum: ["candidate", "retconned"] },
     },
   },
+  AiMemoryRevisionRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["expectedUpdatedAt"],
+    properties: { expectedUpdatedAt: dateTimeSchema },
+  },
   AiMemoryExtractRequest: {
     type: "object",
     additionalProperties: false,
+    required: ["expectedUpdatedAt"],
     properties: {
       sourceText: stringSchema,
       visibility: { type: "string", enum: ["public", "gm_only"] },
+      expectedUpdatedAt: dateTimeSchema,
     },
   },
   AiMemoryExtractResponse: {
@@ -8852,8 +9217,12 @@ const componentSchemas = {
   AiSessionRecapRequest: {
     type: "object",
     additionalProperties: false,
+    required: ["expectedUpdatedAt"],
     properties: {
+      sessionId: idSchema,
       transcript: stringSchema,
+      manualNotes: stringSchema,
+      expectedUpdatedAt: dateTimeSchema,
     },
   },
   AiSessionRecapResponse: {
@@ -8868,10 +9237,17 @@ const componentSchemas = {
   AiEncounterDesignRequest: {
     type: "object",
     additionalProperties: false,
-    required: ["prompt"],
+    required: ["prompt", "expectedUpdatedAt"],
     properties: {
       prompt: stringSchema,
       difficulty: stringSchema,
+      sceneName: stringSchema,
+      sceneWidth: { type: "number", exclusiveMinimum: 0 },
+      sceneHeight: { type: "number", exclusiveMinimum: 0 },
+      gridSize: { type: "number", exclusiveMinimum: 0 },
+      worldId: idSchema,
+      partyActorIds: { type: "array", uniqueItems: true, items: idSchema },
+      expectedUpdatedAt: dateTimeSchema,
     },
   },
   AiEncounterDesignResponse: {
@@ -8881,6 +9257,55 @@ const componentSchemas = {
     properties: {
       proposal: schemaRef("Proposal"),
       encounter: schemaRef("Encounter"),
+    },
+  },
+  AiGenerateMapAssetRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["prompt", "expectedUpdatedAt"],
+    properties: {
+      prompt: { type: "string", minLength: 1, maxLength: 10000 },
+      name: stringSchema,
+      sceneId: idSchema,
+      sourceAssetId: idSchema,
+      size: { type: "string", enum: ["auto", "1024x1024", "1536x1024", "1024x1536", "2048x2048", "2048x1152"] },
+      quality: { type: "string", enum: ["auto", "low", "medium", "high"] },
+      outputFormat: { type: "string", enum: ["png", "jpeg", "webp"] },
+      expectedUpdatedAt: dateTimeSchema,
+    },
+  },
+  AiGenerateTokenAssetRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["prompt", "expectedUpdatedAt"],
+    properties: {
+      prompt: { type: "string", minLength: 1, maxLength: 10000 },
+      name: stringSchema,
+      tokenId: idSchema,
+      sourceAssetId: idSchema,
+      reuseKey: stringSchema,
+      reuseExisting: { type: "boolean" },
+      size: { type: "string", enum: ["auto", "1024x1024", "2048x2048"] },
+      quality: { type: "string", enum: ["auto", "low", "medium", "high"] },
+      outputFormat: { type: "string", enum: ["png", "jpeg", "webp"] },
+      expectedUpdatedAt: dateTimeSchema,
+    },
+  },
+  AiGeneratedAssetProposalResponse: {
+    type: "object",
+    additionalProperties: true,
+    required: ["proposalId", "title", "changeCount"],
+    properties: {
+      proposalId: idSchema,
+      title: stringSchema,
+      changeCount: { type: "integer", minimum: 1 },
+      assetId: idSchema,
+      sceneId: idSchema,
+      tokenId: idSchema,
+      sourceAssetId: idSchema,
+      provider: stringSchema,
+      model: stringSchema,
+      revisedPrompt: stringSchema,
     },
   },
   PluginCoreCompatibility: {
@@ -9041,9 +9466,11 @@ const componentSchemas = {
   PluginInstallRequest: {
     type: "object",
     additionalProperties: false,
+    required: ["expectedUpdatedAt"],
     properties: {
       permissions: arrayOf(stringSchema),
       version: stringSchema,
+      expectedUpdatedAt: dateTimeSchema,
     },
   },
   PermissionGrant: {
@@ -9689,11 +10116,25 @@ const componentSchemas = {
     additionalProperties: true,
     properties: {
       creationMode: { type: "string", enum: ["level-one-srd"] },
+      abilityScoreMethod: { type: "string", enum: ["standard-array"] },
       templateId: idSchema,
       name: stringSchema,
       ownerUserId: idSchema,
       backgroundId: idSchema,
       speciesId: idSchema,
+      standardArrayAssignment: {
+        type: "object",
+        additionalProperties: false,
+        required: ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"],
+        properties: {
+          strength: { type: "integer", enum: [15, 14, 13, 12, 10, 8] },
+          dexterity: { type: "integer", enum: [15, 14, 13, 12, 10, 8] },
+          constitution: { type: "integer", enum: [15, 14, 13, 12, 10, 8] },
+          intelligence: { type: "integer", enum: [15, 14, 13, 12, 10, 8] },
+          wisdom: { type: "integer", enum: [15, 14, 13, 12, 10, 8] },
+          charisma: { type: "integer", enum: [15, 14, 13, 12, 10, 8] },
+        },
+      },
       abilityScoreIncreases: {
         type: "object",
         additionalProperties: { type: "integer", minimum: 1, maximum: 2 },
@@ -10042,8 +10483,9 @@ const componentSchemas = {
   EncounterMonsterPlacementBatchRequest: {
     type: "object",
     additionalProperties: false,
-    required: ["systemId", "expectedUpdatedAt", "placements"],
+    required: ["encounterId", "systemId", "expectedUpdatedAt", "placements"],
     properties: {
+      encounterId: idSchema,
       systemId: idSchema,
       expectedUpdatedAt: dateTimeSchema,
       placements: {
@@ -10080,6 +10522,7 @@ const componentSchemas = {
     properties: {
       expectedUpdatedAt: { type: "string", format: "date-time" },
       preparedPreviewKey: stringSchema,
+      continuationId: stringSchema,
       entryId: idSchema,
       conditionId: idSchema,
       optionId: idSchema,
@@ -10105,6 +10548,7 @@ const componentSchemas = {
       },
       weaponMastery: schemaRef("Dnd5eSrdWeaponMasteryUse"),
       reactionUse: { type: "boolean" },
+      sneakAttackEligible: { type: "boolean" },
       rechargeCheck: { type: "number" },
       commit: { type: "boolean" },
       preview: { type: "boolean" },
@@ -10117,6 +10561,44 @@ const componentSchemas = {
           token: { type: "object", additionalProperties: false, properties: { name: stringSchema, x: { type: "number" }, y: { type: "number" }, width: { type: "number", exclusiveMinimum: 0 }, height: { type: "number", exclusiveMinimum: 0 }, rotation: { type: "number" }, hidden: { type: "boolean" }, disposition: { type: "string", enum: ["friendly", "neutral", "hostile"] }, imageAssetId: idSchema } },
         },
       },
+    },
+  },
+  Dnd5eSrdAdvancementSubclassOption: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "name", "className", "selectionLevel", "featureNames"],
+    properties: {
+      id: idSchema,
+      name: stringSchema,
+      className: stringSchema,
+      selectionLevel: { type: "integer", minimum: 1, maximum: 20 },
+      summary: stringSchema,
+      featureNames: arrayOf(stringSchema),
+      alwaysPreparedSpells: arrayOf(idSchema),
+    },
+  },
+  SystemActorAdvancementInfo: {
+    type: "object",
+    additionalProperties: true,
+    required: ["actorId", "options"],
+    properties: {
+      actorId: idSchema,
+      options: arrayOf({ type: "object", additionalProperties: true }),
+      advancementClassName: stringSchema,
+      nextClassLevel: { type: "integer", minimum: 1, maximum: 20 },
+      grantsFeat: { type: "boolean" },
+      requiresSubclass: { type: "boolean" },
+      subclassOptions: arrayOf(schemaRef("Dnd5eSrdAdvancementSubclassOption")),
+      feats: arrayOf({ type: "object", additionalProperties: true }),
+      weaponMastery: { type: "object", additionalProperties: true },
+      multiclassOptions: arrayOf({
+        type: "object",
+        additionalProperties: true,
+        properties: { requiresSubclass: { type: "boolean" } },
+      }),
+      spellAdvancement: { type: "object", additionalProperties: true },
+      pendingAdvancement: schemaRef("Dnd5eSrdPendingAdvancement"),
+      xp: { type: "object", additionalProperties: true },
     },
   },
   SystemActorAdvanceRequest: {
@@ -10207,7 +10689,7 @@ const componentSchemas = {
     properties: {
       ...idTimestampProperties,
       campaignId: idSchema,
-      kind: { type: "string", enum: ["typed_damage", "action", "effect_schedule", "concentration"] },
+      kind: { type: "string", enum: ["typed_damage", "vitals", "combatant_sync", "action", "effect_schedule", "concentration"] },
       preparedPreviewKey: stringSchema,
       committedByUserId: idSchema,
       status: { type: "string", enum: ["applied", "undone"] },
@@ -10297,6 +10779,65 @@ const componentSchemas = {
       undo: schemaRef("DndRulesMutationUndoDescriptor"),
     },
   },
+  SystemCharacterPreviewResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["templateId", "preview"],
+    properties: {
+      templateId: idSchema,
+      preview: { type: "object", additionalProperties: true },
+    },
+  },
+  Dnd5eSrdCombatVitalsRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["kind", "amount", "expectedActorUpdatedAt"],
+    properties: {
+      kind: { type: "string", enum: ["healing", "temporaryHitPoints"] },
+      amount: { type: "integer", minimum: 0, maximum: 1_000_000 },
+      revivesDead: { type: "boolean" },
+      expectedActorUpdatedAt: { type: "string", format: "date-time" },
+      expectedCombatUpdatedAt: { type: "string", format: "date-time" },
+    },
+  },
+  Dnd5eSrdCombatVitalsAdjustmentResult: {
+    type: "object",
+    additionalProperties: false,
+    required: ["kind", "pool", "requestedAmount", "appliedAmount", "before", "after", "max", "recoveredFromZero"],
+    properties: {
+      kind: { type: "string", enum: ["healing", "temporaryHitPoints"] },
+      pool: { type: "string", enum: ["hp", "temporaryHitPoints", "temporaryHp", "tempHp"] },
+      requestedAmount: { type: "integer", minimum: 0 },
+      appliedAmount: { type: "number", minimum: 0 },
+      before: { type: "number", minimum: 0 },
+      after: { type: "number", minimum: 0 },
+      max: { type: "number", minimum: 0 },
+      recoveredFromZero: { type: "boolean" },
+    },
+  },
+  Dnd5eSrdCombatVitalsMutationResult: {
+    type: "object",
+    additionalProperties: false,
+    required: ["actor", "adjustment", "rulesMutationId", "undo"],
+    properties: {
+      actor: schemaRef("Actor"),
+      combat: schemaRef("Combat"),
+      adjustment: schemaRef("Dnd5eSrdCombatVitalsAdjustmentResult"),
+      rulesMutationId: idSchema,
+      undo: schemaRef("DndRulesMutationUndoDescriptor"),
+    },
+  },
+  Dnd5eSrdCombatantSyncMutationResult: {
+    type: "object",
+    additionalProperties: false,
+    required: ["combat", "actor", "rulesMutationId", "undo"],
+    properties: {
+      combat: schemaRef("Combat"),
+      actor: schemaRef("Actor"),
+      rulesMutationId: idSchema,
+      undo: schemaRef("DndRulesMutationUndoDescriptor"),
+    },
+  },
   Dnd5eSrdRulesPreviewRequest: {
     oneOf: [
       {
@@ -10314,6 +10855,18 @@ const componentSchemas = {
             maxItems: 10,
             uniqueItems: true,
             items: { type: "string", minLength: 1, maxLength: 80 },
+          },
+          wizardSpellbookAdditions: {
+            type: "array",
+            maxItems: 6,
+            uniqueItems: true,
+            items: { type: "string", minLength: 1, maxLength: 120 },
+          },
+          classPreparedSpellChoices: {
+            type: "array",
+            maxItems: 25,
+            uniqueItems: true,
+            items: { type: "string", minLength: 1, maxLength: 120 },
           },
           featId: idSchema,
           hitPointMode: { type: "string", enum: ["fixed", "roll"] },
@@ -10778,10 +11331,12 @@ const componentSchemas = {
   EncounterMonsterPlacementBatchResponse: {
     type: "object",
     additionalProperties: false,
-    required: ["placements", "scene"],
+    required: ["placements", "scene", "encounter"],
     properties: {
       placements: arrayOf(schemaRef("EncounterMonsterPlacementResult")),
       scene: schemaRef("Scene"),
+      encounter: schemaRef("Encounter"),
+      campaignSession: schemaRef("CampaignSession"),
     },
   },
   SystemCharacterImportResponse: {
@@ -11656,6 +12211,25 @@ const componentSchemas = {
   },
 } as const;
 
+function sessionCookieResponseHeaders(
+  transport: "cookie-pending-revocation" | "cookie",
+): Record<string, unknown> {
+  return {
+    "Set-Cookie": {
+      description:
+        "HttpOnly session cookie. Hosted production uses the Secure __Host-otte_session name; loopback development may use otte_session.",
+      schema: { type: "string" },
+    },
+    "X-OTTE-Session-Transport": {
+      description: "Non-secret browser session transport state.",
+      schema: { type: "string", enum: [transport] },
+    },
+    "Cache-Control": {
+      schema: { type: "string", enum: ["no-store"] },
+    },
+  };
+}
+
 const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
   "GET /api/v1/openapi.json": {
     responses: {
@@ -11736,6 +12310,68 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
       "200": jsonResponse(
         "Authenticated session and user memberships",
         schemaRef("LoginResponse"),
+      ),
+    },
+  },
+  "POST /api/v1/auth/session/upgrade-cookie": {
+    description:
+      "Creates a short-lived cookie-authenticated child session from an existing legacy browser bearer. The bearer parent remains valid until a child is confirmed.",
+    security: [{ BearerAuth: [] }],
+    requestBody: jsonRequestBody(schemaRef("SessionCookieUpgradeRequest")),
+    responses: {
+      "200": {
+        ...jsonResponse(
+          "Created a pending cookie child without revoking the legacy bearer parent",
+          schemaRef("SessionCookieUpgradeResponse"),
+        ),
+        headers: sessionCookieResponseHeaders("cookie-pending-revocation"),
+      },
+      "400": jsonResponse(
+        "The required expectedUserId is missing or invalid",
+        schemaRef("ErrorResponse"),
+      ),
+      "401": jsonResponse(
+        "The legacy bearer is missing, expired, already a cookie child, or belongs to another user",
+        schemaRef("ErrorResponse"),
+      ),
+      "429": {
+        ...jsonResponse(
+          "Four unexpired cookie children already await confirmation for this bearer parent",
+          schemaRef("ErrorResponse"),
+        ),
+        headers: {
+          "Retry-After": {
+            description: "Seconds until the caller should retry after pending children expire.",
+            schema: { type: "string" },
+          },
+        },
+      },
+    },
+  },
+  "POST /api/v1/auth/session/upgrade-cookie/confirm": {
+    description:
+      "Confirms the pending cookie child, restores its parent session lifetime, and atomically revokes the legacy bearer parent plus every pending sibling.",
+    security: [{ SessionCookie: [] }],
+    requestBody: jsonRequestBody(schemaRef("SessionCookieUpgradeConfirmRequest")),
+    responses: {
+      "200": {
+        ...jsonResponse(
+          "Promoted the cookie child and revoked the legacy bearer session family",
+          schemaRef("SessionCookieUpgradeConfirmResponse"),
+        ),
+        headers: sessionCookieResponseHeaders("cookie"),
+      },
+      "400": jsonResponse(
+        "The required expectedUserId is missing or invalid",
+        schemaRef("ErrorResponse"),
+      ),
+      "401": jsonResponse(
+        "The cookie child is missing, expired, unbound, or belongs to another user",
+        schemaRef("ErrorResponse"),
+      ),
+      "403": jsonResponse(
+        "Cookie-authenticated confirmation lacks valid same-origin evidence",
+        schemaRef("ErrorResponse"),
       ),
     },
   },
@@ -12449,6 +13085,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/admin/ai/proposals/stale/reject": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
     requestBody: jsonRequestBody(
       schemaRef("AdminAiStaleProposalRejectRequest"),
     ),
@@ -12460,6 +13097,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/admin/ai/threads/stale/fail": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
     requestBody: jsonRequestBody(schemaRef("AdminAiStaleThreadFailRequest")),
     responses: {
       "200": jsonResponse(
@@ -12469,6 +13107,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/admin/ai/tool-calls/stale/fail": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
     requestBody: jsonRequestBody(schemaRef("AdminAiStaleToolCallFailRequest")),
     responses: {
       "200": jsonResponse(
@@ -12478,6 +13117,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/admin/ai/tool-calls/retry": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
     requestBody: jsonRequestBody(schemaRef("AdminAiToolCallRetryRequest")),
     responses: {
       "200": jsonResponse(
@@ -12803,7 +13443,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     requestBody: jsonRequestBody(schemaRef("StorageBackupRequest")),
     responses: {
       "200": jsonResponse(
-        "Created SQLite backup summary",
+        "Created paired SQLite and app-managed asset recovery point",
         schemaRef("StorageBackupResult"),
       ),
     },
@@ -12826,11 +13466,15 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     requestBody: jsonRequestBody(schemaRef("StorageRestoreRequest")),
     responses: {
       "200": jsonResponse(
-        "Restored the live SQLite store from a confirmed backup file",
+        "Restored the live SQLite store and app-managed assets from a confirmed paired recovery point",
         schemaRef("StorageRestoreResult"),
       ),
       "409": jsonResponse(
-        "Destructive restore failed against the confirmed SQLite backup",
+        "Paired destructive restore failed before mutation or was automatically rolled back",
+        schemaRef("StorageRestoreResult"),
+      ),
+      "500": jsonResponse(
+        "Paired restore failed and automatic rollback could not be completed",
         schemaRef("StorageRestoreResult"),
       ),
     },
@@ -13491,6 +14135,8 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/scenes/{sceneId}/ai-edits/apply-to-target": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody(schemaRef("AiEditLayerApplyRequest")),
     responses: {
       "200": jsonResponse(
         "Applied AI edit layer to its target scene",
@@ -13779,6 +14425,24 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
       "200": jsonResponse("Created token", schemaRef("Token")),
     },
   },
+  "POST /api/v1/scenes/{sceneId}/tokens/move": {
+    parameters: [{
+      ...idempotencyKeyParameter,
+      required: true,
+      description: "Stable key reused only when retrying the same whole token movement batch.",
+    }],
+    requestBody: jsonRequestBody(schemaRef("TokenMoveBatchRequest")),
+    responses: {
+      "200": jsonResponse(
+        "Atomically moved every token in the batch",
+        schemaRef("TokenMoveBatchResponse"),
+      ),
+      "400": jsonResponse("Invalid token movement batch", schemaRef("ErrorResponse")),
+      "403": jsonResponse("Missing token.move permission or token ownership", schemaRef("ErrorResponse")),
+      "404": jsonResponse("Scene or token not visible to the caller", schemaRef("ErrorResponse")),
+      "409": jsonResponse("The scene or a token changed before the batch committed", schemaRef("StaleWriteConflictResponse")),
+    },
+  },
   "POST /api/v1/scenes/{sceneId}/encounter-monster-placements": {
     parameters: [{
       ...idempotencyKeyParameter,
@@ -13792,8 +14456,8 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
         schemaRef("EncounterMonsterPlacementBatchResponse"),
       ),
       "400": jsonResponse("Invalid encounter monster placement batch", schemaRef("ErrorResponse")),
-      "403": jsonResponse("Missing actor.create or token.create permission", schemaRef("ErrorResponse")),
-      "409": jsonResponse("Scene revision conflict", schemaRef("StaleWriteConflictResponse")),
+      "403": jsonResponse("Missing actor.create, token.create, or combat.manage permission", schemaRef("ErrorResponse")),
+      "409": jsonResponse("Scene revision conflict or inconsistent live-session state", schemaRef("ErrorResponse")),
     },
   },
   "POST /api/v1/tokens/{tokenId}/target": {
@@ -14367,11 +15031,16 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "PATCH /api/v1/combats/{combatId}/combatants/{combatantId}": {
+    parameters: [{
+      name: "Idempotency-Key", in: "header", required: true,
+      schema: { type: "string", minLength: 1, maxLength: 160 },
+      description: "Stable key reused when retrying the same exact-revision combatant mutation",
+    }],
     requestBody: jsonRequestBody(schemaRef("CombatantPatchRequest")),
     responses: {
       "200": jsonResponse(
         "Updated combatant within combat",
-        schemaRef("Combat"),
+        { oneOf: [schemaRef("Combat"), schemaRef("Dnd5eSrdCombatantSyncMutationResult")] },
       ),
       "409": jsonResponse("Combat changed after the combatant mutation was prepared", schemaRef("StaleWriteConflictResponse")),
     },
@@ -14387,22 +15056,29 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/campaigns/{campaignId}/proposals": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
     requestBody: jsonRequestBody(schemaRef("ProposalCreateRequest")),
     responses: {
       "200": jsonResponse("Created proposal", schemaRef("Proposal")),
     },
   },
   "POST /api/v1/proposals/{proposalId}/approve": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody(schemaRef("ProposalRevisionRequest")),
     responses: {
       "200": jsonResponse("Approved proposal", schemaRef("Proposal")),
     },
   },
   "POST /api/v1/proposals/{proposalId}/reject": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody(schemaRef("ProposalRevisionRequest")),
     responses: {
       "200": jsonResponse("Rejected proposal", schemaRef("Proposal")),
     },
   },
   "POST /api/v1/proposals/{proposalId}/apply": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody(schemaRef("ProposalRevisionRequest")),
     responses: {
       "200": jsonResponse("Applied proposal", schemaRef("Proposal")),
     },
@@ -14504,6 +15180,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "PATCH /api/v1/campaigns/{campaignId}/ai/policy": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
     requestBody: jsonRequestBody(schemaRef("AiPolicyUpdateRequest")),
     responses: {
       "200": jsonResponse("Updated effective campaign AI policy", schemaRef("AiEffectivePolicy")),
@@ -14516,6 +15193,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/campaigns/{campaignId}/ai/privacy/prune": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
     requestBody: jsonRequestBody(schemaRef("AiPrivacyRequest")),
     responses: {
       "200": jsonResponse("Dry-run or bounded local AI operational-history pruning result", schemaRef("AiPrivacyResult")),
@@ -14530,6 +15208,11 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/campaigns/{campaignId}/ai/threads": {
+    parameters: [{
+      ...idempotencyKeyParameter,
+      required: true,
+      description: "Stable turn identity. Reusing the same key, caller, campaign, and request replays the completed turn without invoking the provider or applying automatic commands twice.",
+    }],
     requestBody: jsonRequestBody(schemaRef("AiThreadCreateRequest")),
     responses: {
       "200": jsonResponse(
@@ -14559,6 +15242,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/campaigns/{campaignId}/ai/evaluations": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
     requestBody: jsonRequestBody(schemaRef("AiEvaluationInput")),
     responses: {
       "200": jsonResponse(
@@ -14576,12 +15260,14 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/campaigns/{campaignId}/ai/memory": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
     requestBody: jsonRequestBody(schemaRef("AiMemoryCreateRequest")),
     responses: {
       "200": jsonResponse("Created AI memory fact", schemaRef("AiMemoryFact")),
     },
   },
   "POST /api/v1/campaigns/{campaignId}/ai/memory/extract": {
+    parameters: [{ ...idempotencyKeyParameter, required: true, description: "Stable extraction identity used to replay a completed provider-backed mutation without creating duplicate memory." }],
     requestBody: jsonRequestBody(schemaRef("AiMemoryExtractRequest")),
     responses: {
       "200": jsonResponse(
@@ -14599,6 +15285,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/campaigns/{campaignId}/ai/tool-calls/{toolCallId}/retry": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
     requestBody: jsonRequestBody(schemaRef("AiToolCallRetryRequest")),
     responses: {
       "200": jsonResponse(
@@ -14608,16 +15295,23 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/ai/memory/{factId}/approve": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody(schemaRef("AiMemoryRevisionRequest")),
     responses: {
       "200": jsonResponse("Approved AI memory fact", schemaRef("AiMemoryFact")),
     },
   },
   "DELETE /api/v1/ai/memory/{factId}": {
+    parameters: [
+      { ...idempotencyKeyParameter, required: true },
+      { name: "expectedUpdatedAt", in: "query", required: true, schema: dateTimeSchema },
+    ],
     responses: {
       "200": jsonResponse("Deleted AI memory fact", schemaRef("AiMemoryFact")),
     },
   },
   "POST /api/v1/campaigns/{campaignId}/ai/session-recap": {
+    parameters: [{ ...idempotencyKeyParameter, required: true, description: "Stable recap identity used to replay a completed provider-backed mutation without creating duplicate proposals or memory." }],
     requestBody: jsonRequestBody(schemaRef("AiSessionRecapRequest")),
     responses: {
       "200": jsonResponse(
@@ -14627,12 +15321,31 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/campaigns/{campaignId}/ai/encounter-design": {
+    parameters: [{ ...idempotencyKeyParameter, required: true, description: "Stable encounter-design identity used to replay a completed provider-backed mutation without creating duplicate proposals." }],
     requestBody: jsonRequestBody(schemaRef("AiEncounterDesignRequest")),
     responses: {
       "200": jsonResponse(
         "Created encounter design proposal",
         schemaRef("AiEncounterDesignResponse"),
       ),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/ai/generate-map-asset": {
+    parameters: [{ ...idempotencyKeyParameter, required: true, description: "Stable image-generation identity used to replay a completed request without generating or proposing the map twice." }],
+    requestBody: jsonRequestBody(schemaRef("AiGenerateMapAssetRequest")),
+    responses: {
+      "200": jsonResponse("Generated a stored map asset proposal", schemaRef("AiGeneratedAssetProposalResponse")),
+      "400": jsonResponse("Invalid map generation request", schemaRef("ErrorResponse")),
+      "502": jsonResponse("Image generation provider failed", schemaRef("ErrorResponse")),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/ai/generate-token-asset": {
+    parameters: [{ ...idempotencyKeyParameter, required: true, description: "Stable image-generation identity used to replay a completed request without generating or proposing token art twice." }],
+    requestBody: jsonRequestBody(schemaRef("AiGenerateTokenAssetRequest")),
+    responses: {
+      "200": jsonResponse("Generated a stored token asset proposal", schemaRef("AiGeneratedAssetProposalResponse")),
+      "400": jsonResponse("Invalid token generation request", schemaRef("ErrorResponse")),
+      "502": jsonResponse("Image generation provider failed", schemaRef("ErrorResponse")),
     },
   },
   "GET /api/v1/plugins": {
@@ -14678,6 +15391,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/campaigns/{campaignId}/plugins/{pluginId}/install": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
     requestBody: jsonRequestBody(schemaRef("PluginInstallRequest")),
     responses: {
       "200": jsonResponse(
@@ -15296,11 +16010,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
   "GET /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/advancement":
     {
       responses: {
-        "200": jsonResponse("System actor advancement options", {
-          type: "object",
-          additionalProperties: true,
-          properties: { pendingAdvancement: schemaRef("Dnd5eSrdPendingAdvancement") },
-        }),
+        "200": jsonResponse("System actor advancement options", schemaRef("SystemActorAdvancementInfo")),
         "422": unsupportedSystemCapabilityResponse,
       },
     },
@@ -15388,6 +16098,36 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
       "200": jsonResponse("Reviewed typed damage applied atomically", schemaRef("Dnd5eSrdTypedDamageApplyResult")),
       "403": jsonResponse("One or more target actors cannot be updated", schemaRef("ErrorResponse")),
       "409": jsonResponse("Prepared typed damage or one of its exact roots is stale", schemaRef("ErrorResponse")),
+    },
+  },
+  "POST /api/v1/combats/{combatId}/legendary-actions/{actorId}/spend": {
+    description: "Spends a reviewed legendary-action cost from the current between-turn prompt. Option effects and targeting remain manual.",
+    parameters: [{ ...idempotencyKeyParameter, required: true, description: "Stable key reused when retrying the same reviewed legendary-action spend" }],
+    requestBody: jsonRequestBody(schemaRef("Dnd5eLegendaryActionSpendRequest")),
+    responses: {
+      "200": jsonResponse("Updated legendary actor, combat prompt, and audited use", schemaRef("Dnd5eLegendaryActionSpendResponse")),
+      "400": jsonResponse("Invalid reviewed option or cost", schemaRef("ErrorResponse")),
+      "409": jsonResponse("Stale prompt, revision, or exhausted pool", schemaRef("ErrorResponse")),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/characters/preview": {
+    requestBody: jsonRequestBody(schemaRef("SystemCharacterCreateRequest")),
+    responses: {
+      "200": jsonResponse("Previewed authoritative system character data", schemaRef("SystemCharacterPreviewResponse")),
+      "400": jsonResponse("Invalid character preview choices", schemaRef("ErrorResponse")),
+      "422": unsupportedSystemCapabilityResponse,
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/combat-vitals": {
+    description: "Applies an authorized DM healing or temporary-HP adjustment while atomically synchronizing the actor and its active-combat projection against exact revisions.",
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody(schemaRef("Dnd5eSrdCombatVitalsRequest")),
+    responses: {
+      "200": jsonResponse("Combat vitals adjusted and synchronized", schemaRef("Dnd5eSrdCombatVitalsMutationResult")),
+      "400": jsonResponse("Invalid adjustment or missing conditional combat revision", schemaRef("ErrorResponse")),
+      "403": jsonResponse("DM combat or actor-update permission denied", schemaRef("ErrorResponse")),
+      "404": jsonResponse("D&D actor not found", schemaRef("ErrorResponse")),
+      "409": jsonResponse("Actor or active-combat revision is stale", { anyOf: [schemaRef("StaleWriteConflictResponse"), schemaRef("ErrorResponse")] }),
     },
   },
   "POST /api/v1/campaigns/{campaignId}/dnd/rules-mutations/{mutationId}/undo": {
@@ -15679,6 +16419,8 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/ai/memory/{factId}/reject": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody(schemaRef("AiMemoryRevisionRequest")),
     responses: {
       "200": jsonResponse(
         "Rejected AI memory candidate",
@@ -15695,6 +16437,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "PATCH /api/v1/ai/memory/{factId}": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
     requestBody: jsonRequestBody(schemaRef("AiMemoryPatchRequest")),
     responses: {
       "200": jsonResponse(
@@ -15704,6 +16447,8 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },
   "POST /api/v1/proposals/{proposalId}/revert": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody(schemaRef("ProposalRevisionRequest")),
     responses: {
       "200": jsonResponse(
         "Reverted an applied proposal with captured inverse changes",
@@ -15882,6 +16627,10 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     responses: { "200": jsonResponse("Cleared calculation override retained as immutable history", schemaRef("CalculationOverride")) },
   },
   "POST /api/v1/campaigns/{campaignId}/content-imports/pdf/ai": {
+    parameters: [
+      { ...idempotencyKeyParameter, required: true, description: "Stable PDF-analysis identity used to replay a completed provider-backed import preview without creating duplicate batches." },
+      { name: "expectedUpdatedAt", in: "query", required: true, schema: dateTimeSchema, description: "Exact campaign revision used to prepare the provider-backed import." },
+    ],
     requestBody: binaryRequestBody(
       "application/pdf",
       "PDF file to analyze with the configured AI provider",
@@ -16259,6 +17008,9 @@ export const openApiSpec = {
     {
       BearerAuth: [],
     },
+    {
+      SessionCookie: [],
+    },
   ],
   tags: [
     {
@@ -16287,6 +17039,13 @@ export const openApiSpec = {
         type: "http",
         scheme: "bearer",
         bearerFormat: apiContractPolicy.auth.bearerFormat,
+      },
+      SessionCookie: {
+        type: "apiKey",
+        in: "cookie",
+        name: apiContractPolicy.auth.productionCookieName,
+        description:
+          "HttpOnly first-party browser session cookie. Loopback development may use the non-host-prefixed otte_session name; hosted deployments use Secure __Host-otte_session.",
       },
     },
     schemas: {

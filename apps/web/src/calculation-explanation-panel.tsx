@@ -222,6 +222,7 @@ export function CalculationExplanationPanel({ campaignId, actor, canManageOverri
         Server-computed results, ordered terms, and source provenance. Flags call out values that still need a human ruling.
       </p>
 
+      {mutationStatus && <p className={/failed/i.test(mutationStatus) ? "panel-status error" : "panel-status"} role="status">{mutationStatus}</p>}
       {loadState === "loading" && <p className="panel-status" role="status">Loading calculation sources...</p>}
       {loadState === "error" && (
         <div className="inline-error" role="alert">
@@ -298,7 +299,6 @@ export function CalculationExplanationPanel({ campaignId, actor, canManageOverri
               )}
             </form>
           )}
-          {mutationStatus && <p className={/failed/i.test(mutationStatus) ? "panel-status error" : "panel-status"} role="status">{mutationStatus}</p>}
           <div className="calculation-groups">
             {groupedFields.map(({ group, fields }) => (
               <details className="calculation-group" key={group} open={group === "defenses" || group === "checks"}>

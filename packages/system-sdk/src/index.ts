@@ -7,6 +7,7 @@ import {
   dnd5eSrdFeatGrantAtClassLevel,
   dnd5eSrdSubclassFeatures,
   dnd5eSrdSubclassOption,
+  dnd5eSrdCriticalDamageFormula,
   resolveDnd5eSrdDamageComponents,
   type Dnd5eSrdDamageComponent,
   type Dnd5eSrdDamageResolution,
@@ -16,14 +17,21 @@ import { dnd5eSrdWizardRitualSpellAvailable } from "./dnd-spell-preparation.js";
 import { applyDnd5eSrdDeathSaveRoll, dnd5eSrdDeathSaveChatSuffix, type Dnd5eSrdDeathSaveSummary } from "./dnd-combat-progression.js";
 import { dnd5eSrdActorClassLevels, dnd5eSrdCharacterLevel, dnd5eSrdClassLevel, type Dnd5eSrdClassLevel } from "./dnd-class-levels.js";
 import { dnd5eSrdExactMonsterInitiativeBonus, dnd5eSrdExactMonsterSaveBonus, dnd5eSrdExactMonsterSkillBonus } from "./dnd-monster-core-rolls.js";
-import { applyDnd5eSrdStandardActionUse, dnd5eSrdActionKind, grantDnd5eSrdActionSurge, type Dnd5eSrdTurnActionLedger } from "./dnd-action-economy.js";
+import { applyDnd5eSrdStandardActionUse, consumeDnd5eSrdContinuation, dnd5eSrdActionKind, grantDnd5eSrdActionSurge, grantDnd5eSrdContinuations, type Dnd5eSrdTurnActionLedger } from "./dnd-action-economy.js";
+import { dnd5eSrdAttackSourceContinuation, dnd5eSrdContinuationGrantForRoll, dnd5eSrdContinuationTrigger, dnd5eSrdGuardedContinuation, type Dnd5eSrdContinuationRollMetadata, type Dnd5eSrdRollEffectKind } from "./dnd-action-continuations.js";
+import { resolveDnd5eSrdTacticalMind, type Dnd5eSrdTacticalMindCheck, type Dnd5eSrdTacticalMindOutcome } from "./dnd-tactical-mind.js";
 import { dnd5eSrdD20AutomationFromSources, dnd5eSrdFeatureAdvantageRoll, dnd5eSrdFormulaD20Mode, type Dnd5eSrdD20Automation } from "./dnd-roll-mode.js";
 import { DND_5E_SRD_ARMOR_CLASS_INTENT_KEY, DND_5E_SRD_ARMOR_CLASS_REVIEW_KEY, classifyDnd5eSrdStoredArmorClass, dnd5eSrdArmorClassOverrideIntent, dnd5eSrdArmorClassReview, dnd5eSrdArmorClassSheetData } from "./dnd-armor-class-intent.js";
 import { dnd5eSrdActiveRageEffect, dnd5eSrdRageDamageBonus, dnd5eSrdRageDamageBonusForRoll, dnd5eSrdRageFeatureRolls, dnd5eSrdRagePreflight, endDnd5eSrdRage, resolveDnd5eSrdRageLifecycle } from "./dnd-rage-lifecycle.js";
 import { dnd5eSrdActorHasWeaponMastery, dnd5eSrdNickExtraAttackRequested, dnd5eSrdWeaponMasteryChoiceCount, dnd5eSrdWeaponMasteryPreflight, dnd5eSrdWeaponMasteryRollModeSources, dnd5eSrdWeaponMasterySpeedPenalty, resolveDnd5eSrdWeaponMastery, type Dnd5eSrdWeaponMasteryResolution, type Dnd5eSrdWeaponMasteryUse } from "./dnd-weapon-mastery.js";
+import { createDnd5eSrdDerivedStats } from "./dnd-derived-stats.js";
+import { DND_5E_SRD_ABILITIES, DND_5E_SRD_STANDARD_ARRAY, dnd5eSrdValidateStandardArrayAssignment, previewDnd5eSrdStandardArrayAssignment, type Dnd5eSrdAbility } from "./dnd-standard-array.js";
+import { dnd5eSrdSpellcastingClassProfile } from "./dnd-spell-grants.js";
+import { normalizeDnd5eSrdCharacterImportFields } from "./dnd-character-import.js";
+import { dnd5eSrdManagedEndTurnRepeatSaveSchedule } from "./dnd-advanced-mechanics.js";
+import { dnd5eSrdActorIsDead, dnd5eSrdExhaustionDeathData, normalizeConditionRecords, type NormalizedConditionRecord } from "./dnd-condition-lifecycle.js";
 import * as dndRollIds from "./dnd-roll-identifiers.js";
 import * as dndStaticContent from "./dnd-static-content.js";
-
 export * from "./dnd-calculation-explanations.js";
 export * from "./dnd-roll-identifiers.js";
 export { DND_5E_SRD_SYSTEM_ID, DND_5E_SRD_VERSION, dnd5eSrdXpThresholds, dnd5eSrdMulticlassPrerequisites, dnd5eSrdAbilityScoreImprovementLevels } from "./dnd-static-content.js";
@@ -41,17 +49,44 @@ export * from "./dnd-downtime-and-situational.js";
 export * from "./dnd-class-levels.js";
 export * from "./dnd-monster-core-rolls.js";
 export * from "./dnd-action-economy.js";
+export * from "./dnd-action-continuations.js";
+export * from "./dnd-tactical-mind.js";
 export * from "./dnd-calculation-overrides.js";
 export * from "./dnd-armor-class-intent.js";
 export * from "./dnd-roll-mode.js";
 export * from "./dnd-rage-lifecycle.js";
 export * from "./dnd-weapon-mastery.js";
+export * from "./dnd-derived-stats.js";
+export * from "./dnd-standard-array.js";
+export * from "./dnd-combat-vitals.js";
+export * from "./dnd-spell-grants.js";
+export * from "./dnd-legendary-actions.js";
+export * from "./dnd-exploration-math.js";
 export * from "./dnd-resolution-types.js";
-export type { Dnd5eSrdMonsterAction, Dnd5eSrdMonsterStatBlock } from "./dnd-monster-stat-blocks.js";
+export { migrateDnd5eSrdLegacyLegendaryActions } from "./dnd-monster-stat-blocks.js";
+export type { Dnd5eSrdLegendaryActions, Dnd5eSrdMonsterAction, Dnd5eSrdMonsterStatBlock } from "./dnd-monster-stat-blocks.js";
 
 const { DND_5E_SRD_DEATH_SAVE_ROLL_ID, DND_5E_SRD_CONCENTRATION_ROLL_ID, DND_5E_SRD_UNARMED_STRIKE_ROLL_ID, DND_5E_SRD_SECOND_WIND_ROLL_ID, DND_5E_SRD_ACTION_SURGE_ROLL_ID, DND_5E_SRD_TACTICAL_MIND_ROLL_ID, DND_5E_SRD_CHAMPION_CRITICAL_ROLL_ID, DND_5E_SRD_CHAMPION_REMARKABLE_ATHLETE_ROLL_ID, DND_5E_SRD_CHAMPION_HEROIC_WARRIOR_ROLL_ID, DND_5E_SRD_CHAMPION_SURVIVOR_ROLL_ID, DND_5E_SRD_RAGE_ROLL_ID, DND_5E_SRD_RAGE_DAMAGE_ROLL_ID, DND_5E_SRD_RECKLESS_ATTACK_ROLL_ID, DND_5E_SRD_BERSERKER_FRENZY_ROLL_ID, DND_5E_SRD_BERSERKER_MINDLESS_RAGE_ROLL_ID, DND_5E_SRD_BERSERKER_RETALIATION_ROLL_ID, DND_5E_SRD_BERSERKER_INTIMIDATING_PRESENCE_ROLL_ID, DND_5E_SRD_BARDIC_INSPIRATION_ROLL_ID, DND_5E_SRD_FONT_OF_INSPIRATION_ROLL_ID, DND_5E_SRD_LORE_CUTTING_WORDS_ROLL_ID, DND_5E_SRD_LORE_MAGICAL_DISCOVERIES_ROLL_ID, DND_5E_SRD_LORE_PEERLESS_SKILL_ROLL_ID, DND_5E_SRD_LAY_ON_HANDS_ROLL_ID, DND_5E_SRD_DIVINE_SMITE_ROLL_ID, DND_5E_SRD_FAITHFUL_STEED_ROLL_ID, DND_5E_SRD_DEVOTION_SACRED_WEAPON_ROLL_ID, DND_5E_SRD_DEVOTION_AURA_ROLL_ID, DND_5E_SRD_DEVOTION_SMITE_PROTECTION_ROLL_ID, DND_5E_SRD_DEVOTION_HOLY_NIMBUS_ROLL_ID, DND_5E_SRD_HUNTERS_MARK_DAMAGE_ROLL_ID, DND_5E_SRD_HUNTER_LORE_ROLL_ID, DND_5E_SRD_HUNTER_PREY_ROLL_ID, DND_5E_SRD_HUNTER_DEFENSIVE_TACTICS_ROLL_ID, DND_5E_SRD_HUNTER_SUPERIOR_PREY_ROLL_ID, DND_5E_SRD_HUNTER_SUPERIOR_DEFENSE_ROLL_ID, DND_5E_SRD_MARTIAL_ARTS_DAMAGE_ROLL_ID, DND_5E_SRD_FLURRY_OF_BLOWS_ROLL_ID, DND_5E_SRD_PATIENT_DEFENSE_ROLL_ID, DND_5E_SRD_STEP_OF_THE_WIND_ROLL_ID, DND_5E_SRD_UNCANNY_METABOLISM_ROLL_ID, DND_5E_SRD_DEFLECT_ATTACKS_DAMAGE_ROLL_ID, DND_5E_SRD_STUNNING_STRIKE_ROLL_ID, DND_5E_SRD_OPEN_HAND_TECHNIQUE_ROLL_ID, DND_5E_SRD_OPEN_HAND_WHOLENESS_ROLL_ID, DND_5E_SRD_OPEN_HAND_FLEET_STEP_ROLL_ID, DND_5E_SRD_OPEN_HAND_QUIVERING_PALM_ROLL_ID, DND_5E_SRD_INNATE_SORCERY_ROLL_ID, DND_5E_SRD_CONVERT_SPELL_SLOT_ROLL_ID, DND_5E_SRD_CREATE_SPELL_SLOT_ROLL_ID, DND_5E_SRD_METAMAGIC_EMPOWERED_ROLL_ID, DND_5E_SRD_METAMAGIC_QUICKENED_ROLL_ID, DND_5E_SRD_DRACONIC_RESILIENCE_ROLL_ID, DND_5E_SRD_DRACONIC_ELEMENTAL_AFFINITY_ROLL_ID, DND_5E_SRD_DRACONIC_WINGS_ROLL_ID, DND_5E_SRD_DRACONIC_COMPANION_ROLL_ID, DND_5E_SRD_EVOKER_POTENT_CANTRIP_ROLL_ID, DND_5E_SRD_EVOKER_SCULPT_SPELLS_ROLL_ID, DND_5E_SRD_EVOKER_EMPOWERED_EVOCATION_ROLL_ID, DND_5E_SRD_EVOKER_OVERCHANNEL_ROLL_ID, DND_5E_SRD_ELDRITCH_INVOCATIONS_ROLL_ID, DND_5E_SRD_MAGICAL_CUNNING_ROLL_ID, DND_5E_SRD_FIEND_DARK_BLESSING_ROLL_ID, DND_5E_SRD_FIEND_DARK_LUCK_ROLL_ID, DND_5E_SRD_FIEND_RESILIENCE_ROLL_ID, DND_5E_SRD_FIEND_HURL_THROUGH_HELL_ROLL_ID, DND_5E_SRD_WILD_SHAPE_ROLL_ID, DND_5E_SRD_WILD_COMPANION_ROLL_ID, DND_5E_SRD_WILD_RESURGENCE_WILD_SHAPE_ROLL_ID, DND_5E_SRD_WILD_RESURGENCE_SPELL_SLOT_ROLL_ID, DND_5E_SRD_MOON_CIRCLE_FORMS_ROLL_ID, DND_5E_SRD_MOON_IMPROVED_CIRCLE_FORMS_ROLL_ID, DND_5E_SRD_MOON_MOONLIGHT_STEP_ROLL_ID, DND_5E_SRD_MOON_LUNAR_FORM_ROLL_ID, DND_5E_SRD_DIVINE_SPARK_HEALING_ROLL_ID, DND_5E_SRD_DIVINE_SPARK_DAMAGE_ROLL_ID, DND_5E_SRD_TURN_UNDEAD_ROLL_ID, DND_5E_SRD_SEAR_UNDEAD_DAMAGE_ROLL_ID, DND_5E_SRD_LIFE_DISCIPLE_ROLL_ID, DND_5E_SRD_LIFE_PRESERVE_LIFE_ROLL_ID, DND_5E_SRD_LIFE_BLESSED_HEALER_ROLL_ID, DND_5E_SRD_LIFE_SUPREME_HEALING_ROLL_ID, DND_5E_SRD_SNEAK_ATTACK_DAMAGE_ROLL_ID, DND_5E_SRD_CUNNING_STRIKE_ROLL_ID, DND_5E_SRD_THIEF_FAST_HANDS_ROLL_ID, DND_5E_SRD_THIEF_SECOND_STORY_WORK_ROLL_ID, DND_5E_SRD_THIEF_SUPREME_SNEAK_ROLL_ID, DND_5E_SRD_THIEF_USE_MAGIC_DEVICE_ROLL_ID, DND_5E_SRD_THIEF_REFLEXES_ROLL_ID, DND_5E_SRD_DRAGONBORN_BREATH_WEAPON_ROLL_ID, DND_5E_SRD_DRACONIC_FLIGHT_ROLL_ID, DND_5E_SRD_DWARF_STONECUNNING_ROLL_ID, DND_5E_SRD_GOLIATH_GIANT_ANCESTRY_ROLL_ID, DND_5E_SRD_GOLIATH_LARGE_FORM_ROLL_ID, DND_5E_SRD_HUMAN_RESOURCEFUL_ROLL_ID, DND_5E_SRD_HUMAN_SKILLFUL_ROLL_ID, DND_5E_SRD_HUMAN_VERSATILE_ROLL_ID, DND_5E_SRD_ELF_ELVEN_LINEAGE_ROLL_ID, DND_5E_SRD_ELF_FEY_ANCESTRY_ROLL_ID, DND_5E_SRD_ELF_TRANCE_ROLL_ID, DND_5E_SRD_GNOME_GNOMISH_CUNNING_ROLL_ID, DND_5E_SRD_GNOME_LINEAGE_ROLL_ID, DND_5E_SRD_HALFLING_LUCK_ROLL_ID, DND_5E_SRD_HALFLING_BRAVE_ROLL_ID, DND_5E_SRD_HALFLING_NIMBLENESS_ROLL_ID, DND_5E_SRD_HALFLING_NATURALLY_STEALTHY_ROLL_ID, DND_5E_SRD_TIEFLING_FIENDISH_LEGACY_ROLL_ID, DND_5E_SRD_TIEFLING_OTHERWORLDLY_PRESENCE_ROLL_ID, DND_5E_SRD_ORC_ADRENALINE_RUSH_ROLL_ID, DND_5E_SRD_ORC_RELENTLESS_ENDURANCE_ROLL_ID } = dndRollIds;
 const { DND_5E_SRD_RAGE_EXTEND_ROLL_ID, DND_5E_SRD_RAGE_END_ROLL_ID } = dndRollIds;
 const { DND_5E_SRD_SYSTEM_ID, DND_5E_SRD_VERSION, DND_5E_SRD_CANTRIP_D6_SCALING, DND_5E_SRD_CANTRIP_D8_SCALING, DND_5E_SRD_CANTRIP_D10_SCALING, DND_5E_SRD_CANTRIP_D12_SCALING, dnd5eSrdXpThresholds, dnd5eSrdFullCasterClasses, dnd5eSrdHalfCasterClasses, dnd5eSrdMulticlassPrerequisites, dnd5eSrdMulticlassSlotTable, dnd5eSrdAbilityScoreImprovementLevels, DND_5E_SRD_CONDITION_ENTRIES, DND_5E_SRD_LEVEL_ONE_SPELL_CLASS_OVERRIDES, DND_5E_SRD_ENCOUNTER_XP_BUDGETS_BY_LEVEL, DND_5E_SRD_DAMAGE_TYPE_IDS, DND_5E_SRD_ATTUNEMENT_MODIFIER_KEYS } = dndStaticContent;
+
+const {
+  dnd5eSrdEquippedItemNumericBonus,
+  dnd5eSrdCriticalHitsBecomeNormalHits,
+  dnd5eSrdArmorClass,
+  dnd5eSrdSpeed
+} = createDnd5eSrdDerivedStats({
+  classLevel: dnd5eSrdClassLevel,
+  hasDraconicResilience: dnd5eSrdHasDraconicResilience,
+  itemModifiersAreActive: dnd5eSrdItemModifiersAreActive,
+  monkUnarmoredMovementBonus: dnd5eSrdMonkUnarmoredMovementBonus,
+  conditionState: (actor) => {
+    const conditions = normalizeConditionRecords(actor.data.conditions);
+    return { effects: dnd5eSrdConditionEffects(conditions), exhaustionLevel: dnd5eSrdExhaustionLevel(conditions) };
+  },
+  weaponMasterySpeedPenalty: dnd5eSrdWeaponMasterySpeedPenalty
+});
+export { dnd5eSrdCriticalHitsBecomeNormalHits, dnd5eSrdArmorClass, dnd5eSrdSpeed };
 
 export interface JsonSchema {
   $schema?: string;
@@ -64,7 +99,6 @@ export interface JsonSchema {
 
 export interface SystemManifest extends SystemManifestData {}
 export const OPEN_TABLETOP_CORE_VERSION = "0.3.0";
-
 const systemManifestPermissions = new Set<PermissionName>(["actor.read", "actor.updateOwned", "dice.roll", "chat.write"]);
 const systemCapabilities = new Set<SystemCapability>([
   "data-model",
@@ -81,7 +115,6 @@ const systemCapabilities = new Set<SystemCapability>([
   "encounter-builder",
   "monster-builder"
 ]);
-
 export class SystemManifestValidationError extends Error {
   constructor(readonly issues: string[]) {
     super(issues.join("; "));
@@ -107,7 +140,10 @@ export interface QuickRoll {
   id: string;
   label: string;
   formula: string;
-  metadata?: Record<string, unknown>;
+  metadata?: Record<string, unknown> & {
+    effectKind?: Dnd5eSrdRollEffectKind;
+    continuation?: Dnd5eSrdContinuationRollMetadata;
+  };
 }
 
 export interface CharacterTemplateItem {
@@ -126,34 +162,11 @@ export interface CharacterTemplate {
   items: CharacterTemplateItem[];
 }
 
-export interface Dnd5eSrdCharacterBackground {
-  id: string;
-  name: string;
-  abilityScores: string[];
-  feat: string;
-  skillProficiencies: string[];
-  toolProficiencies: string[];
-  startingGp: number;
-  source: typeof DND_5E_SRD_VERSION;
-}
+export interface Dnd5eSrdCharacterBackground { id: string; name: string; abilityScores: string[]; feat: string; skillProficiencies: string[]; toolProficiencies: string[]; startingGp: number; source: typeof DND_5E_SRD_VERSION; }
 
-export interface Dnd5eSrdCharacterSpecies {
-  id: string;
-  name: string;
-  creatureType: "Humanoid";
-  size: string;
-  speed: number;
-  traits: string[];
-  senses?: string[];
-  source: typeof DND_5E_SRD_VERSION;
-}
+export interface Dnd5eSrdCharacterSpecies { id: string; name: string; creatureType: "Humanoid"; size: string; speed: number; traits: string[]; senses?: string[]; source: typeof DND_5E_SRD_VERSION; }
 
-export interface Dnd5eSrdDraconicAncestor {
-  id: string;
-  name: string;
-  damageType: "acid" | "cold" | "fire" | "lightning" | "poison";
-  source: typeof DND_5E_SRD_VERSION;
-}
+export interface Dnd5eSrdDraconicAncestor { id: string; name: string; damageType: "acid" | "cold" | "fire" | "lightning" | "poison"; source: typeof DND_5E_SRD_VERSION; }
 
 export interface Dnd5eSrdGiantAncestryChoice {
   id: string;
@@ -173,42 +186,15 @@ export interface Dnd5eSrdGiantAncestryChoice {
   source: typeof DND_5E_SRD_VERSION;
 }
 
-export interface Dnd5eSrdClassSkillChoice {
-  templateId: string;
-  className: string;
-  count: number;
-  skillIds: string[];
-  source: typeof DND_5E_SRD_VERSION;
-}
+export interface Dnd5eSrdClassSkillChoice { templateId: string; className: string; count: number; skillIds: string[]; source: typeof DND_5E_SRD_VERSION; }
 
-export interface Dnd5eSrdLanguageOption {
-  id: string;
-  label: string;
-  category: "standard" | "rare";
-  source: typeof DND_5E_SRD_VERSION;
-}
+export interface Dnd5eSrdLanguageOption { id: string; label: string; category: "standard" | "rare"; source: typeof DND_5E_SRD_VERSION; }
 
-export interface Dnd5eSrdOriginLanguageChoice {
-  count: number;
-  fixedLanguageIds: string[];
-  languageIds: string[];
-  source: typeof DND_5E_SRD_VERSION;
-}
+export interface Dnd5eSrdOriginLanguageChoice { count: number; fixedLanguageIds: string[]; languageIds: string[]; source: typeof DND_5E_SRD_VERSION; }
 
-export interface Dnd5eSrdClassLanguageChoice {
-  templateId: string;
-  className: string;
-  count: number;
-  fixedLanguageIds: string[];
-  languageIds: string[];
-  source: typeof DND_5E_SRD_VERSION;
-}
+export interface Dnd5eSrdClassLanguageChoice { templateId: string; className: string; count: number; fixedLanguageIds: string[]; languageIds: string[]; source: typeof DND_5E_SRD_VERSION; }
 
-export interface Dnd5eSrdEquipmentGrant {
-  entryId: string;
-  quantity?: number;
-  data?: Record<string, unknown>;
-}
+export interface Dnd5eSrdEquipmentGrant { entryId: string; quantity?: number; data?: Record<string, unknown>; }
 
 export interface Dnd5eSrdEquipmentChoice {
   id: string;
@@ -219,89 +205,21 @@ export interface Dnd5eSrdEquipmentChoice {
   matchSelection?: "class-tool-proficiency" | "background-tool-proficiency";
 }
 
-export interface Dnd5eSrdStartingEquipmentPackage {
-  id: string;
-  label: string;
-  gp: number;
-  grants: Dnd5eSrdEquipmentGrant[];
-  choices: Dnd5eSrdEquipmentChoice[];
-}
+export interface Dnd5eSrdStartingEquipmentPackage { id: string; label: string; gp: number; grants: Dnd5eSrdEquipmentGrant[]; choices: Dnd5eSrdEquipmentChoice[]; }
 
-export interface Dnd5eSrdToolProficiencyChoice {
-  count: number;
-  optionIds: string[];
-}
+export interface Dnd5eSrdToolProficiencyChoice { count: number; optionIds: string[]; }
 
-export interface Dnd5eSrdClassStartingEquipment {
-  templateId: string;
-  className: string;
-  packages: Dnd5eSrdStartingEquipmentPackage[];
-  toolProficiencyChoice: Dnd5eSrdToolProficiencyChoice;
-  fixedToolProficiencyIds: string[];
-  source: typeof DND_5E_SRD_VERSION;
-  sourcePage: number;
-  sourcePdfPage: number;
-}
+export interface Dnd5eSrdClassStartingEquipment { templateId: string; className: string; packages: Dnd5eSrdStartingEquipmentPackage[]; toolProficiencyChoice: Dnd5eSrdToolProficiencyChoice; fixedToolProficiencyIds: string[]; source: typeof DND_5E_SRD_VERSION; sourcePage: number; sourcePdfPage: number; }
 
-export interface Dnd5eSrdBackgroundStartingEquipment {
-  backgroundId: string;
-  backgroundName: string;
-  packages: Dnd5eSrdStartingEquipmentPackage[];
-  toolProficiencyChoice: Dnd5eSrdToolProficiencyChoice;
-  source: typeof DND_5E_SRD_VERSION;
-  sourcePage: number;
-  sourcePdfPage: number;
-}
+export interface Dnd5eSrdBackgroundStartingEquipment { backgroundId: string; backgroundName: string; packages: Dnd5eSrdStartingEquipmentPackage[]; toolProficiencyChoice: Dnd5eSrdToolProficiencyChoice; source: typeof DND_5E_SRD_VERSION; sourcePage: number; sourcePdfPage: number; }
 
-export interface Dnd5eSrdWeaponMasteryOption {
-  id: string;
-  name: string;
-  weaponCategory: "simple" | "martial";
-  weaponKind: "melee" | "ranged";
-  properties: string[];
-  mastery: string;
-  source: typeof DND_5E_SRD_VERSION;
-  sourcePage: 91;
-  sourcePdfPage: 90;
-}
+export interface Dnd5eSrdWeaponMasteryOption { id: string; name: string; weaponCategory: "simple" | "martial"; weaponKind: "melee" | "ranged"; properties: string[]; mastery: string; source: typeof DND_5E_SRD_VERSION; sourcePage: 91; sourcePdfPage: 90; }
 
-export interface Dnd5eSrdClassWeaponMasteryChoice {
-  templateId: string;
-  className: string;
-  count: number;
-  weaponIds: string[];
-  source: typeof DND_5E_SRD_VERSION;
-  sourcePage: number;
-  sourcePdfPage: number;
-}
+export interface Dnd5eSrdClassWeaponMasteryChoice { templateId: string; className: string; count: number; weaponIds: string[]; source: typeof DND_5E_SRD_VERSION; sourcePage: number; sourcePdfPage: number; }
 
-export interface Dnd5eSrdSpellChoiceOption {
-  id: string;
-  name: string;
-  level: 0 | 1;
-  classes: string[];
-  ritual: boolean;
-  source: typeof DND_5E_SRD_VERSION;
-}
+export interface Dnd5eSrdSpellChoiceOption { id: string; name: string; level: 0 | 1; classes: string[]; ritual: boolean; source: typeof DND_5E_SRD_VERSION; }
 
-export interface Dnd5eSrdClassSpellChoice {
-  templateId: string;
-  className: string;
-  spellcastingAbility?: "intelligence" | "wisdom" | "charisma";
-  cantripCount: number;
-  preparedSpellCount: number;
-  spellbookSpellCount: number;
-  cantripIds: string[];
-  levelOneSpellIds: string[];
-  alwaysPreparedSpellIds: string[];
-  slotPool: "none" | "spellcasting" | "pact-magic";
-  slotCount: number;
-  slotRecovery: "none" | "long" | "short";
-  changeTiming: "none" | "long-rest" | "class-level";
-  source: typeof DND_5E_SRD_VERSION;
-  sourcePage: number;
-  sourcePdfPage: number;
-}
+export interface Dnd5eSrdClassSpellChoice { templateId: string; className: string; spellcastingAbility?: "intelligence" | "wisdom" | "charisma"; cantripCount: number; preparedSpellCount: number; spellbookSpellCount: number; cantripIds: string[]; levelOneSpellIds: string[]; alwaysPreparedSpellIds: string[]; slotPool: "none" | "spellcasting" | "pact-magic"; slotCount: number; slotRecovery: "none" | "long" | "short"; changeTiming: "none" | "long-rest" | "class-level"; source: typeof DND_5E_SRD_VERSION; sourcePage: number; sourcePdfPage: number; }
 
 export interface Dnd5eSrdLevelOneClassFeatureChoice {
   templateId: string;
@@ -347,6 +265,7 @@ export interface Dnd5eSrdSkilledProficiencyOption {
 }
 
 export interface Dnd5eSrdCharacterOrigins {
+  standardArray: { abilities: Dnd5eSrdAbility[]; values: number[] };
   backgrounds: Dnd5eSrdCharacterBackground[];
   species: Dnd5eSrdCharacterSpecies[];
   draconicAncestors: Dnd5eSrdDraconicAncestor[];
@@ -380,6 +299,10 @@ export interface Dnd5eSrdCharacterOrigins {
 export interface Dnd5eSrdCharacterOriginOptions {
   backgroundId?: string;
   speciesId?: string;
+  /** Omitted only for legacy/template-default creation. */
+  abilityScoreMethod?: "standard-array";
+  /** Optional complete SRD standard-array assignment, before background increases. */
+  standardArrayAssignment?: unknown;
   abilityScoreIncreases?: unknown;
   classSkillProficiencies?: string[];
   originLanguageChoices?: string[];
@@ -426,11 +349,26 @@ export interface Dnd5eSrdCharacterOriginBuild {
   species: Dnd5eSrdCharacterSpecies;
 }
 
-export const DND_5E_SRD_LEVEL_ONE_CREATION_MODE = "level-one-srd" as const;
+export interface Dnd5eSrdCharacterOriginPreview {
+  ok: boolean;
+  issues: Dnd5eSrdLevelOneCreationIssue[];
+  proposedData?: Record<string, unknown>;
+  proposedItems?: CharacterTemplateItem[];
+  derived?: {
+    abilityScores: Record<Dnd5eSrdAbility, number>;
+    abilityModifiers: Record<Dnd5eSrdAbility, number>;
+    savingThrows: Record<Dnd5eSrdAbility, number>;
+    armorClass: number;
+    hitPoints: { current: number; max: number };
+    speed: number;
+    proficiencyBonus: number;
+  };
+}
 
+export const DND_5E_SRD_LEVEL_ONE_CREATION_MODE = "level-one-srd" as const;
 export interface Dnd5eSrdLevelOneCreationIssue {
   code: string;
-  field: keyof Dnd5eSrdCharacterOriginOptions | "templateId";
+  field: keyof Dnd5eSrdCharacterOriginOptions | "templateId" | `standardArrayAssignment.${string}`;
   message: string;
 }
 
@@ -508,7 +446,6 @@ export interface SystemActionConsumption {
   amount: number;
   remaining: number;
 }
-
 export interface SystemActionUseOptions {
   spellSlotLevel?: number;
   /** Spend the actor's independently tracked Pact Magic slot pool. */
@@ -559,10 +496,14 @@ export interface RulesResolverOptions extends SystemActionUseOptions {
   effectChoice?: string;
   saveOutcomes?: Record<string, RulesSaveOutcome>;
   reactionUse?: boolean;
+  sneakAttackEligible?: boolean;
   rechargeCheck?: number;
   /** Server-rolled outcome of the source actor's own targetless roll (commit path); drives the Death Saving Throw transition. */
   selfRollResult?: { total: number; naturalD20?: number };
+  tacticalMindCheck?: Dnd5eSrdTacticalMindCheck;
   weaponMastery?: Dnd5eSrdWeaponMasteryUse;
+  /** Exact server-issued predecessor ticket for a guarded damage continuation. */
+  continuationId?: string;
 }
 
 export interface RulesResolutionRoll {
@@ -681,6 +622,7 @@ export interface RulesActionResolutionResult {
   concentrationCleanups?: Dnd5eSrdConcentrationCleanup[];
   /** Present when this resolution applied a Death Saving Throw state transition. */
   deathSave?: Dnd5eSrdDeathSaveSummary;
+  tacticalMind?: Dnd5eSrdTacticalMindOutcome;
   weaponMastery?: Dnd5eSrdWeaponMasteryResolution;
 }
 
@@ -742,32 +684,6 @@ export interface Dnd5eSrdEquipmentPurchaseResult {
   currency: Record<string, number>;
   data: Record<string, unknown>;
   itemData: Record<string, unknown>;
-}
-
-export interface Dnd5eSrdArmorClassDetails {
-  value: number;
-  base: number;
-  dexModifier: number;
-  armorName: string;
-  armorItemId?: string;
-  shieldBonus: number;
-  shieldItemIds: string[];
-  armorClassBonus?: number;
-  armorClassBonusItemIds?: string[];
-  stealthDisadvantage: boolean;
-  strengthRequirement?: number;
-  speedPenalty: number;
-}
-
-export interface Dnd5eSrdSpeedDetails {
-  value: number;
-  base: number;
-  armorPenalty: number;
-  conditionPenalty: number;
-  weaponMasteryPenalty?: number;
-  conditionMultiplier: number;
-  conditionSetTo?: number;
-  conditionSources: string[];
 }
 
 export interface EncounterThreat {
@@ -885,12 +801,6 @@ export interface AppliedCondition {
   id: string;
   name: string;
   summary: string;
-  appliedAt?: string;
-  level?: number;
-}
-
-interface NormalizedConditionRecord {
-  id: string;
   appliedAt?: string;
   level?: number;
 }
@@ -1166,57 +1076,58 @@ export function genericFantasyActionRolls(actor: Actor, items: Item[] = []): Qui
     const data = recordValue(item.data);
     const rolls: QuickRoll[] = [];
     const prefix = item.type === "spell" ? "spell" : "item";
+    const continuationFamily = `${prefix}:${item.id}`;
     const damage = stringValue(data.damage);
     const ability = stringValue(data.ability);
     if (damage && ability) {
       const damageBonus = numericValue(data.damageBonus, 0);
-      const metadata = genericFantasyActionMetadata(data, "damage", ability);
+      const metadata = { ...genericFantasyActionMetadata(data, "damage", ability), effectKind: "damage" as const, sourceItemId: item.id, sourceItemType: item.type, continuation: { role: "primary" as const, family: continuationFamily } };
       rolls.push({
         id: `${prefix}-${item.id}-damage`,
         label: `${item.name} Damage`,
         formula: appendFormulaBonus(damage, genericFantasyAttributeModifier(actor, ability) + damageBonus),
-        ...(metadata ? { metadata } : {})
+        metadata
       });
     }
     const damageFormula = stringValue(data.damageFormula);
     if (damageFormula) {
-      const metadata = genericFantasyActionMetadata(data, "damage");
+      const metadata = { ...genericFantasyActionMetadata(data, "damage"), effectKind: "damage" as const, sourceItemId: item.id, sourceItemType: item.type, continuation: { role: "primary" as const, family: continuationFamily } };
       rolls.push({
         id: `${prefix}-${item.id}-damage`,
         label: `${item.name} Damage`,
         formula: genericFantasyDamageFormula(actor, data),
-        ...(metadata ? { metadata } : {})
+        metadata
       });
     }
     const secondaryDamageFormula = stringValue(data.secondaryDamageFormula);
     if (secondaryDamageFormula) {
-      const metadata = genericFantasyActionMetadata(data, "secondary-damage");
+      const metadata = { ...genericFantasyActionMetadata(data, "secondary-damage"), effectKind: "damage" as const, sourceItemId: item.id, sourceItemType: item.type, continuation: { role: "secondary" as const, family: continuationFamily } };
       rolls.push({
         id: `${prefix}-${item.id}-secondary-damage`,
         label: `${item.name} Secondary Damage`,
         formula: genericFantasyDamageFormula(actor, data, undefined, "secondaryDamageFormula", "secondaryUpcastFormula"),
-        ...(metadata ? { metadata } : {})
+        metadata
       });
     }
     const versatileDamage = stringValue(data.versatileDamage);
     if (versatileDamage && ability) {
       const damageBonus = numericValue(data.damageBonus, 0);
-      const metadata = genericFantasyActionMetadata(data, "versatile-damage", ability);
+      const metadata = { ...genericFantasyActionMetadata(data, "versatile-damage", ability), effectKind: "damage" as const, sourceItemId: item.id, sourceItemType: item.type, continuation: { role: "versatile" as const, family: continuationFamily } };
       rolls.push({
         id: `${prefix}-${item.id}-versatile-damage`,
         label: `${item.name} Versatile Damage`,
         formula: appendFormulaBonus(versatileDamage, genericFantasyAttributeModifier(actor, ability) + damageBonus),
-        ...(metadata ? { metadata } : {})
+        metadata
       });
     }
     const healingFormula = stringValue(data.healingFormula);
     if (healingFormula) {
-      const metadata = genericFantasyActionMetadata(data, "healing");
+      const metadata = { ...genericFantasyActionMetadata(data, "healing"), effectKind: "healing" as const, sourceItemId: item.id, sourceItemType: item.type, continuation: { role: "primary" as const, family: continuationFamily } };
       rolls.push({
         id: `${prefix}-${item.id}-healing`,
         label: `${item.name} Healing`,
         formula: genericFantasyHealingFormula(actor, data),
-        ...(metadata ? { metadata } : {})
+        metadata
       });
     }
     const saveDcAbility = stringValue(data.saveDcAbility);
@@ -1260,16 +1171,38 @@ export function dnd5eSrdQuickRolls(actor: Actor, items: Item[] = []): QuickRoll[
   ];
 }
 
+function dnd5eSrdTypedFeatureContinuations(rolls: QuickRoll[], role: "feature" | "species"): QuickRoll[] {
+  return rolls.map((roll) => {
+    const metadata = recordValue(roll.metadata);
+    const activation = stringValue(metadata.activation)?.toLowerCase();
+    if (activation !== "on-hit" && activation !== "follow-up") return roll;
+    const existing = recordValue(metadata.continuation);
+    return {
+      ...roll,
+      metadata: {
+        ...metadata,
+        continuation: {
+          ...existing,
+          role,
+          activation,
+          ...(metadata.oncePerTurn === true ? { oncePerTurn: true } : {}),
+          ...(metadata.requiresSneakAttackEligibility === true ? { requiresSneakAttackEligibility: true } : {})
+        }
+      }
+    };
+  });
+}
+
 export function dnd5eSrdClassFeatureRolls(actor: Actor): QuickRoll[] {
   const rolls: QuickRoll[] = [];
   if (dnd5eSrdHasSecondWind(actor)) {
-    const metadata = dnd5eSrdHasTacticalShift(actor) ? { tacticalShift: { movementFt: dnd5eSrdTacticalShiftMovement(actor), opportunityAttacks: false } } : undefined;
+    const metadata = { action: "Bonus Action", ...(dnd5eSrdHasTacticalShift(actor) ? { tacticalShift: { movementFt: dnd5eSrdTacticalShiftMovement(actor), opportunityAttacks: false } } : {}) };
     rolls.push(
       {
         id: DND_5E_SRD_SECOND_WIND_ROLL_ID,
         label: "Second Wind Healing",
         formula: dnd5eSrdSecondWindFormula(actor),
-        ...(metadata ? { metadata } : {})
+        metadata
       }
     );
   }
@@ -1287,7 +1220,8 @@ export function dnd5eSrdClassFeatureRolls(actor: Actor): QuickRoll[] {
       {
         id: DND_5E_SRD_TACTICAL_MIND_ROLL_ID,
         label: "Tactical Mind Bonus",
-        formula: "1d10"
+        formula: "1d10",
+        metadata: { activation: "free" }
       }
     );
   }
@@ -1383,7 +1317,7 @@ export function dnd5eSrdClassFeatureRolls(actor: Actor): QuickRoll[] {
       id: DND_5E_SRD_FONT_OF_INSPIRATION_ROLL_ID,
       label: "Font of Inspiration",
       formula: "0",
-      metadata: { trigger: "expend a spell slot to regain one Bardic Inspiration use", resource: "bardicInspiration" }
+      metadata: { activation: "free", trigger: "expend a spell slot to regain one Bardic Inspiration use", resource: "bardicInspiration" }
     });
   }
   if (dnd5eSrdHasLoreCuttingWords(actor)) {
@@ -1431,7 +1365,7 @@ export function dnd5eSrdClassFeatureRolls(actor: Actor): QuickRoll[] {
       id: DND_5E_SRD_FAITHFUL_STEED_ROLL_ID,
       label: "Faithful Steed",
       formula: "0",
-      metadata: { resource: "faithfulSteed", spell: "Find Steed", freeCasting: true, recovery: "long", slotLevel: 2, controlledCreature: { kind: "persistent_companion", duration: { mode: "persistent" }, concentration: false, initiative: { mode: "shared" }, command: { required: false, action: "none" }, actor: { name: "Otherworldly Steed", type: "celestial", hp: { base: 5, perSlotAbove: 10, baseSlotLevel: 0 } } } }
+      metadata: { resource: "faithfulSteed", action: "Magic", spell: "Find Steed", freeCasting: true, recovery: "long", slotLevel: 2, controlledCreature: { kind: "persistent_companion", duration: { mode: "persistent" }, concentration: false, initiative: { mode: "shared" }, command: { required: false, action: "none" }, actor: { name: "Otherworldly Steed", type: "celestial", hp: { base: 5, perSlotAbove: 10, baseSlotLevel: 0 } } } }
     });
   }
   if (dnd5eSrdHasDevotionSacredWeapon(actor)) {
@@ -1778,7 +1712,7 @@ export function dnd5eSrdClassFeatureRolls(actor: Actor): QuickRoll[] {
         id: DND_5E_SRD_WILD_RESURGENCE_SPELL_SLOT_ROLL_ID,
         label: "Wild Resurgence: Spell Slot",
         formula: "0",
-        metadata: { resource: "wildResurgence", cost: "Wild Shape", restores: "level1 spell slot", recovery: "long" }
+        metadata: { resource: "wildResurgence", activation: "free", cost: "Wild Shape", restores: "level1 spell slot", recovery: "long" }
       }
     );
   }
@@ -1822,19 +1756,19 @@ export function dnd5eSrdClassFeatureRolls(actor: Actor): QuickRoll[] {
         id: DND_5E_SRD_DIVINE_SPARK_HEALING_ROLL_ID,
         label: "Divine Spark Healing",
         formula: dnd5eSrdDivineSparkFormula(actor),
-        metadata: { resource: "channelDivinity", rangeFt: 30 }
+        metadata: { resource: "channelDivinity", action: "Magic", rangeFt: 30 }
       },
       {
         id: DND_5E_SRD_DIVINE_SPARK_DAMAGE_ROLL_ID,
         label: "Divine Spark Damage",
         formula: dnd5eSrdDivineSparkFormula(actor),
-        metadata: { resource: "channelDivinity", rangeFt: 30, damageTypes: ["Necrotic", "Radiant"], save: { ability: "constitution", dc: saveDc, success: "half" } }
+        metadata: { resource: "channelDivinity", action: "Magic", rangeFt: 30, damageTypes: ["Necrotic", "Radiant"], save: { ability: "constitution", dc: saveDc, success: "half" } }
       },
       {
         id: DND_5E_SRD_TURN_UNDEAD_ROLL_ID,
         label: "Turn Undead",
         formula: "0",
-        metadata: { resource: "channelDivinity", rangeFt: 30, target: "Undead", save: { ability: "wisdom", dc: saveDc }, conditions: ["Frightened", "Incapacitated"], duration: "1 minute", ...(searUndead ? { searUndead } : {}) }
+        metadata: { resource: "channelDivinity", action: "Magic", rangeFt: 30, target: "Undead", save: { ability: "wisdom", dc: saveDc }, conditions: ["Frightened", "Incapacitated"], duration: "1 minute", ...(searUndead ? { searUndead } : {}) }
       }
     );
   }
@@ -1843,7 +1777,7 @@ export function dnd5eSrdClassFeatureRolls(actor: Actor): QuickRoll[] {
       id: DND_5E_SRD_SEAR_UNDEAD_DAMAGE_ROLL_ID,
       label: "Sear Undead Damage",
       formula: dnd5eSrdSearUndeadFormula(actor),
-      metadata: { trigger: "Turn Undead failed save", target: "Undead", damageType: "Radiant" }
+      metadata: { effectKind: "damage", activation: "follow-up", continuation: { role: "feature", activation: "follow-up", ...dnd5eSrdContinuationTrigger("turn-undead") }, trigger: "Turn Undead failed save", target: "Undead", damageType: "Radiant" }
     });
   }
   if (dnd5eSrdHasLifeDisciple(actor)) {
@@ -1934,7 +1868,7 @@ export function dnd5eSrdClassFeatureRolls(actor: Actor): QuickRoll[] {
       metadata: dnd5eSrdThiefReflexesMetadata(actor)
     });
   }
-  return rolls;
+  return dnd5eSrdTypedFeatureContinuations(rolls, "feature");
 }
 
 export function dnd5eSrdSpeciesTraitRolls(actor: Actor): QuickRoll[] {
@@ -2107,7 +2041,7 @@ export function dnd5eSrdSpeciesTraitRolls(actor: Actor): QuickRoll[] {
       metadata: dnd5eSrdRelentlessEnduranceMetadata()
     });
   }
-  return rolls;
+  return dnd5eSrdTypedFeatureContinuations(rolls, "species");
 }
 
 export function dnd5eSrdActionRolls(actor: Actor, items: Item[] = []): QuickRoll[] {
@@ -2129,15 +2063,30 @@ export function dnd5eSrdActionRolls(actor: Actor, items: Item[] = []): QuickRoll
 }
 
 function dnd5eSrdGenericActionRollMetadata(actor: Actor, items: Item[], roll: QuickRoll): Record<string, unknown> {
-  const item = items.find((candidate) => roll.id === `${candidate.type === "spell" ? "spell" : "item"}-${candidate.id}-damage` || roll.id === `${candidate.type === "spell" ? "spell" : "item"}-${candidate.id}-secondary-damage` || roll.id === `${candidate.type === "spell" ? "spell" : "item"}-${candidate.id}-versatile-damage` || roll.id === `${candidate.type === "spell" ? "spell" : "item"}-${candidate.id}-healing`);
+  const rollMetadata = recordValue(roll.metadata);
+  const sourceItemId = stringValue(rollMetadata.sourceItemId);
+  const sourceItemType = stringValue(rollMetadata.sourceItemType);
+  const item = sourceItemId ? items.find((candidate) => candidate.id === sourceItemId && candidate.type === sourceItemType) : undefined;
   if (!item) return {};
   const data = recordValue(item.data);
   const metadata: Record<string, unknown> = {};
-  const isSecondaryDamage = roll.id.endsWith("-secondary-damage");
-  const isDamage = roll.id.endsWith("-damage");
-  const isHealing = roll.id.endsWith("-healing");
+  const continuation = recordValue(rollMetadata.continuation);
+  const continuationRole = stringValue(continuation.role);
+  const effectKind = stringValue(rollMetadata.effectKind);
+  const isSecondaryDamage = continuationRole === "secondary";
+  const isDamage = effectKind === "damage";
+  const isHealing = effectKind === "healing";
+  const pairedAttackDamage = isDamage
+    && ((item.type !== "spell" && dnd5eSrdIsWeaponData(data) && Boolean(stringValue(data.damage))) || (item.type === "spell" && booleanValue(data.spellAttack)));
   let hasResolutionMetadata = false;
   if (isDamage) {
+    if (isSecondaryDamage) {
+      metadata.activation = "follow-up";
+      metadata.continuation = { ...continuation, role: continuationRole || "secondary", activation: "follow-up" };
+    } else if (pairedAttackDamage) {
+      metadata.activation = "on-hit";
+      metadata.continuation = { ...continuation, role: continuationRole || "primary", activation: "on-hit" };
+    }
     const damageType = stringValue(isSecondaryDamage ? data.secondaryDamageType : data.damageType);
     const damageTypes = normalizeStringArray(data.damageTypes);
     const damageTypeOptions = normalizeStringArray(data.damageTypeOptions);
@@ -2168,12 +2117,14 @@ function dnd5eSrdGenericActionRollMetadata(actor: Actor, items: Item[], roll: Qu
     if (data.temporaryHitPointsFormula !== undefined) metadata.temporaryHitPointsFormula = data.temporaryHitPointsFormula;
     hasResolutionMetadata = Boolean(healing || data.temporaryHitPoints !== undefined || data.temporaryHitPointsFormula !== undefined);
   }
-  if ((isDamage || isHealing) && hasResolutionMetadata) {
+  if (isDamage || isHealing) {
     const action = stringValue(data.action);
+    if (action) metadata.action = action;
+  }
+  if ((isDamage || isHealing) && hasResolutionMetadata) {
     const range = stringValue(data.range);
     const area = stringValue(data.area);
     const duration = stringValue(data.duration);
-    if (action) metadata.action = action;
     if (range) metadata.range = range;
     if (area) metadata.area = area;
     if (duration) metadata.duration = duration;
@@ -2181,7 +2132,6 @@ function dnd5eSrdGenericActionRollMetadata(actor: Actor, items: Item[], roll: Qu
   }
   return metadata;
 }
-
 function dnd5eSrdActionAvailableItems(actor: Actor, items: Item[]): Item[] {
   const level = dnd5eSrdCharacterLevel(actor);
   const attunement = dnd5eSrdAttunementStateForData(actor.data);
@@ -2212,8 +2162,11 @@ function dnd5eSrdWeaponAttackRoll(actor: Actor, items: Item[], item: Item, data:
   const proficiencyMultiplier = dnd5eSrdWeaponProficiencyMultiplier(actor, items, data);
   const proficiencyBonus = dnd5eSrdProficiencyBonus(actor) * proficiencyMultiplier;
   const itemBonus = numericValue(data.attackBonus, 0);
+  const sourceTags = ["deals-damage", ...(dnd5eSrdHasMartialArts(actor) && dnd5eSrdIsMonkWeapon(data) ? ["monk-weapon"] : []), ...(ability === "strength" && dnd5eSrdActiveRageEffect(actor) ? ["rage-active"] : [])];
   const metadata: Record<string, unknown> = {
     ...conditionRoll.metadata,
+    effectKind: "attack",
+    continuation: dnd5eSrdAttackSourceContinuation(`item:${item.id}`, sourceTags),
     attackType: "weapon",
     ability,
     proficient: proficiencyMultiplier > 0,
@@ -2256,16 +2209,20 @@ function dnd5eSrdSpellAttackRoll(actor: Actor, items: Item[], item: Item, data: 
   const itemBonus = equippedBonus.total + directBonus;
   const metadata: Record<string, unknown> = {
     ...conditionRoll.metadata,
+    effectKind: "attack",
+    continuation: dnd5eSrdAttackSourceContinuation(`spell:${item.id}`, stringValue(data.damage) || stringValue(data.damageFormula) ? ["deals-damage"] : []),
     attackType: "spell",
     ability,
     proficiencyBonus
   };
   const spellLevel = numericValue(data.level, Number.NaN);
+  const action = stringValue(data.action);
   const range = stringValue(data.range);
   const damageType = stringValue(data.damageType);
   const speciesSpellResource = stringValue(data.speciesSpellResource);
   const freeCastResource = stringValue(data.freeCastResource) ?? speciesSpellResource;
   if (Number.isFinite(spellLevel)) metadata.spellLevel = spellLevel;
+  if (action) metadata.action = action;
   if (range) metadata.range = range;
   if (damageType) metadata.damageType = damageType;
   if (itemBonus !== 0) metadata.itemBonus = itemBonus;
@@ -2338,11 +2295,23 @@ function dnd5eSrdHasEffectRollData(data: Record<string, unknown>): boolean {
 
 function dnd5eSrdEffectRoll(actor: Actor, item: Item, data: Record<string, unknown>): QuickRoll {
   const prefix = item.type === "spell" ? "spell" : "item";
+  const metadata = dnd5eSrdEffectMetadata(actor, data, item.type === "spell");
+  const activation = stringValue(metadata.activation)?.toLowerCase();
   return {
     id: `${prefix}-${item.id}-effect`,
     label: `${item.name} Effect`,
     formula: dnd5eSrdEffectFormula(data),
-    metadata: dnd5eSrdEffectMetadata(actor, data, item.type === "spell")
+    metadata: {
+      ...metadata,
+      effectKind: "effect",
+      sourceItemId: item.id,
+      sourceItemType: item.type,
+      continuation: {
+        role: "effect",
+        family: `${prefix}:${item.id}`,
+        ...(activation === "on-hit" || activation === "follow-up" ? { activation } : {})
+      }
+    }
   };
 }
 
@@ -2586,54 +2555,89 @@ export function dnd5eSrdMonsterActionRolls(actor: Actor): QuickRoll[] {
     const id = slugId(name);
     const rolls: QuickRoll[] = [];
     const attackBonus = numericValue(action.attackBonus, Number.NaN);
+    const attackBound = Number.isFinite(attackBonus);
+    const kind = stringValue(action.kind);
     if (Number.isFinite(attackBonus)) {
+      const sourceTags = stringValue(action.damageFormula) ? ["deals-damage"] : [];
+      const metadata = {
+        ...conditionRoll.metadata,
+        effectKind: "attack" as const,
+        continuation: dnd5eSrdAttackSourceContinuation(`monster:${id}`, sourceTags),
+        attackType: "monster",
+        ...(kind && kind.toLowerCase() !== "action" ? { action: kind } : {})
+      };
       rolls.push({
         id: `monster-${id}-attack`,
         label: `${name} Attack`,
         formula: `${conditionRoll.d20}${formatSignedNumber(attackBonus + conditionRoll.modifier)}`,
-        ...(conditionRoll.metadata ? { metadata: conditionRoll.metadata } : {})
+        ...(Object.keys(metadata).length > 0 ? { metadata } : {})
       });
     }
     const damageFormula = stringValue(action.damageFormula);
     if (damageFormula) {
-      const metadata = dnd5eSrdMonsterActionDamageMetadata(action);
+      const metadata = dnd5eSrdMonsterActionDamageMetadata(action, attackBound);
+      const activation = stringValue(metadata.activation)?.toLowerCase();
       rolls.push({
         id: `monster-${id}-damage`,
         label: `${name} Damage`,
         formula: damageFormula,
-        ...(Object.keys(metadata).length > 0 ? { metadata } : {})
+        metadata: {
+          ...metadata,
+          effectKind: "damage",
+          continuation: {
+            role: "primary",
+            family: `monster:${id}`,
+            ...(activation === "on-hit" || activation === "follow-up" ? { activation } : {})
+          }
+        }
       });
     }
-    const effectData = dnd5eSrdMonsterActionEffectData(action);
+    const effectData = dnd5eSrdMonsterActionEffectData(action, attackBound);
     if (dnd5eSrdHasEffectRollData(effectData)) {
+      const metadata = dnd5eSrdEffectMetadata(actor, effectData, false);
+      const activation = stringValue(metadata.activation)?.toLowerCase();
       rolls.push({
         id: `monster-${id}-effect`,
         label: `${name} Effect`,
         formula: dnd5eSrdEffectFormula(effectData),
-        metadata: dnd5eSrdEffectMetadata(actor, effectData, false)
+        metadata: {
+          ...metadata,
+          effectKind: "effect",
+          continuation: {
+            role: "effect",
+            family: `monster:${id}`,
+            ...(activation === "on-hit" || activation === "follow-up" ? { activation } : {})
+          }
+        }
       });
     }
     return rolls;
   });
 }
 
-function dnd5eSrdMonsterActionEffectData(action: Record<string, unknown>): Record<string, unknown> {
+function dnd5eSrdMonsterActionEffectData(action: Record<string, unknown>, attackBound: boolean): Record<string, unknown> {
   const kind = stringValue(action.kind);
-  return kind ? { ...action, action: kind } : action;
+  return {
+    ...action,
+    ...(kind ? { action: kind } : {}),
+    ...(attackBound ? { activation: "on-hit" } : {})
+  };
 }
 
-function dnd5eSrdMonsterActionDamageMetadata(action: Record<string, unknown>): Record<string, unknown> {
+function dnd5eSrdMonsterActionDamageMetadata(action: Record<string, unknown>, attackBound: boolean): Record<string, unknown> {
   const save = recordValue(action.save);
   const condition = stringValue(action.condition);
   const recharge = stringValue(action.recharge);
   const summary = stringValue(action.summary);
-  const includeSummary = booleanValue(action.summaryMetadata);
-  if (Object.keys(save).length === 0 && !condition && !recharge && !(summary && includeSummary)) return {};
-  const metadata: Record<string, unknown> = {};
   const kind = stringValue(action.kind);
+  const includeSummary = booleanValue(action.summaryMetadata);
+  const hasResolutionMetadata = Object.keys(save).length > 0 || Boolean(condition || recharge || (summary && includeSummary));
+  if (!hasResolutionMetadata) return attackBound ? { activation: "on-hit" } : kind ? { action: kind } : {};
+  const metadata: Record<string, unknown> = {};
   const range = stringValue(action.range);
   const damageType = stringValue(action.damageType);
   if (kind) metadata.action = kind;
+  if (attackBound) metadata.activation = "on-hit";
   if (range) metadata.range = range;
   if (damageType) metadata.damageType = damageType;
   if (Object.keys(save).length > 0) metadata.save = save;
@@ -2642,7 +2646,6 @@ function dnd5eSrdMonsterActionDamageMetadata(action: Record<string, unknown>): R
   if (summary) metadata.summary = summary;
   return metadata;
 }
-
 function dnd5eSrdMonsterStatBlockFromActor(actor: Actor): Record<string, unknown> | undefined {
   const monster = recordValue(actor.data.monster);
   const statBlock = recordValue(monster.statBlock);
@@ -2861,6 +2864,9 @@ export function dnd5eSrdUnarmedStrike(actor: Actor): QuickRoll {
     label: "Unarmed Strike Damage",
     formula: String(Math.max(0, 1 + strengthModifier) + rageDamageBonus),
     metadata: {
+      effectKind: "damage",
+      attackType: "unarmed",
+      continuation: dnd5eSrdAttackSourceContinuation(undefined, ["deals-damage", ...(dnd5eSrdActiveRageEffect(actor) ? ["rage-active"] : [])], true),
       damageType: "bludgeoning",
       ability: "strength",
       ...(rageDamageBonus > 0 ? { rageDamageBonus, rageSource: "Rage" } : {}),
@@ -2872,80 +2878,6 @@ export function dnd5eSrdUnarmedStrike(actor: Actor): QuickRoll {
 
 export function dnd5eSrdCoreCombatRolls(actor: Actor, items: Item[] = []): QuickRoll[] {
   return [dnd5eSrdDeathSavingThrow(actor), dnd5eSrdConcentrationCheck(actor, undefined, items), dnd5eSrdUnarmedStrike(actor)];
-}
-
-const dnd5eSrdSizeCarryMultipliers: Record<string, number> = { tiny: 0.5, small: 1, medium: 1, large: 2, huge: 4, gargantuan: 8 };
-
-export function dnd5eSrdCarryingCapacity(actor: Actor): { carryPounds: number; dragPounds: number; sizeMultiplier: number } {
-  const strengthScore = numericValue(recordValue(actor.data.attributes).strength, 10);
-  const size = (stringValue(actor.data.size) ?? "medium").toLowerCase();
-  const sizeMultiplier = dnd5eSrdSizeCarryMultipliers[size] ?? 1;
-  return {
-    carryPounds: Math.floor(strengthScore * 15 * sizeMultiplier),
-    dragPounds: Math.floor(strengthScore * 30 * sizeMultiplier),
-    sizeMultiplier
-  };
-}
-
-export function dnd5eSrdFallingDamage(fallenFeet: number): QuickRoll {
-  const dice = Math.min(20, Math.max(0, Math.floor(Math.max(0, fallenFeet) / 10)));
-  return {
-    id: "falling-damage",
-    label: "Falling Damage",
-    formula: dice > 0 ? `${dice}d6` : "0",
-    metadata: { damageType: "bludgeoning", landsProne: dice > 0, rule: "1d6 per 10 feet fallen (max 20d6)" }
-  };
-}
-
-export function dnd5eSrdJumpDistances(actor: Actor): { longJumpFt: number; highJumpFt: number; standingLongJumpFt: number; standingHighJumpFt: number } {
-  const strengthScore = numericValue(recordValue(actor.data.attributes).strength, 10);
-  const longJumpFt = Math.max(0, strengthScore);
-  const highJumpFt = Math.max(0, 3 + genericFantasyAttributeModifier(actor, "strength"));
-  return {
-    longJumpFt,
-    highJumpFt,
-    standingLongJumpFt: Math.floor(longJumpFt / 2),
-    standingHighJumpFt: Math.floor(highJumpFt / 2)
-  };
-}
-
-export function dnd5eSrdCoverBonus(cover: "half" | "three-quarters" | "total"): { acBonus: number; dexteritySaveBonus: number; targetable: boolean } {
-  if (cover === "half") return { acBonus: 2, dexteritySaveBonus: 2, targetable: true };
-  if (cover === "three-quarters") return { acBonus: 5, dexteritySaveBonus: 5, targetable: true };
-  return { acBonus: 0, dexteritySaveBonus: 0, targetable: false };
-}
-
-
-export function dnd5eSrdLevelForXp(xp: number): number {
-  const safeXp = Number.isFinite(xp) ? Math.max(0, xp) : 0;
-  let level = 1;
-  for (let index = 0; index < dnd5eSrdXpThresholds.length; index += 1) {
-    if (safeXp >= dnd5eSrdXpThresholds[index]!) level = index + 1;
-  }
-  return level;
-}
-
-export function dnd5eSrdXpForNextLevel(xp: number): number | undefined {
-  const level = dnd5eSrdLevelForXp(xp);
-  return level >= 20 ? undefined : dnd5eSrdXpThresholds[level];
-}
-
-export interface Dnd5eSrdXpProgress {
-  xp: number;
-  level: number;
-  levelForXp: number;
-  nextLevelXp?: number;
-  previousLevelXp: number;
-  readyToLevel: boolean;
-}
-
-export function dnd5eSrdXpProgress(actor: Actor): Dnd5eSrdXpProgress {
-  const xp = Math.max(0, Math.floor(numericValue(actor.data.xp, 0)));
-  const level = Math.max(1, Math.min(20, Math.floor(numericValue(actor.data.level, 1))));
-  const levelForXp = dnd5eSrdLevelForXp(xp);
-  const nextLevelXp = level >= 20 ? undefined : dnd5eSrdXpThresholds[level];
-  const previousLevelXp = dnd5eSrdXpThresholds[level - 1] ?? 0;
-  return { xp, level, levelForXp, nextLevelXp, previousLevelXp, readyToLevel: levelForXp > level };
 }
 
 export interface Dnd5eSrdHitDicePool {
@@ -3159,7 +3091,17 @@ export function dnd5eSrdSubclassOptionsForActor(actor: Actor, className: string)
       if (level < 1 || level > 20 || !featureName) continue;
       grouped.set(level, [...new Set([...(grouped.get(level) ?? []), featureName])]);
     }
-    return [{ id, name, className, selectionLevel, features: [...grouped.entries()].sort(([left], [right]) => left - right).map(([level, names]) => ({ level, names })) }];
+    const summary = stringValue(data.summary);
+    const alwaysPreparedSpells = normalizeStringArray(data.alwaysPreparedSpells);
+    return [{
+      id,
+      name,
+      className,
+      selectionLevel,
+      ...(summary ? { summary } : {}),
+      ...(alwaysPreparedSpells.length > 0 ? { alwaysPreparedSpells } : {}),
+      features: [...grouped.entries()].sort(([left], [right]) => left - right).map(([level, names]) => ({ level, names }))
+    }];
   });
   return [...standard, ...custom].sort((left, right) => left.name.localeCompare(right.name));
 }
@@ -7707,6 +7649,7 @@ const DND_5E_SRD_LEVEL_ONE_CLASS_FEATURE_CHOICES: Dnd5eSrdLevelOneClassFeatureCh
 
 export function dnd5eSrdCharacterOrigins(): Dnd5eSrdCharacterOrigins {
   return {
+    standardArray: { abilities: [...DND_5E_SRD_ABILITIES], values: [...DND_5E_SRD_STANDARD_ARRAY] },
     backgrounds: DND_5E_SRD_BACKGROUNDS.map((background) => ({ ...background, abilityScores: [...background.abilityScores], skillProficiencies: [...background.skillProficiencies], toolProficiencies: [...background.toolProficiencies] })),
     species: DND_5E_SRD_SPECIES.map((species) => ({ ...species, traits: [...species.traits], senses: species.senses ? [...species.senses] : undefined })),
     draconicAncestors: DND_5E_SRD_DRACONIC_ANCESTORS.map((ancestor) => ({ ...ancestor })),
@@ -8225,18 +8168,25 @@ function dnd5eSrdResolveLevelOneRuleSelections(
 
   const spellItem = (entryId: string, data: Record<string, unknown>): CharacterTemplateItem => ({
     entryId,
-    data: { ...data, source: DND_5E_SRD_VERSION }
+    data: { compendiumId: entryId, ...data, source: DND_5E_SRD_VERSION }
   });
-  const classSpellData = (kind: "cantrip" | "prepared" | "spellbook" | "always-prepared"): Record<string, unknown> => ({
-    classSpell: true,
-    spellcastingAbility: spellChoice.spellcastingAbility,
-    prepared: kind !== "spellbook",
-    ...(kind === "cantrip" ? { cantrip: true, known: true, alwaysPrepared: true, preparationMode: "known" } : {}),
-    ...(kind === "prepared" ? { preparationMode: "prepared" } : {}),
-    ...(kind === "spellbook" ? { inSpellbook: true, preparationMode: "spellbook" } : {}),
-    ...(kind === "always-prepared" ? { alwaysPrepared: true, preparationMode: "always-prepared" } : {}),
-    spellSources: [{ kind: "class", className: spellChoice.className, selection: kind, selectedAtLevel: 1 }]
-  });
+  const classSpellData = (kind: "cantrip" | "prepared" | "spellbook" | "always-prepared"): Record<string, unknown> => {
+    const profile = dnd5eSrdSpellcastingClassProfile(spellChoice.className, 1);
+    const acquisitionMode = kind === "spellbook" ? "spellbook" : spellChoice.changeTiming === "long-rest" ? "prepared-long-rest" : "prepared-class-level";
+    return {
+      classSpell: true,
+      spellcastingClass: spellChoice.className,
+      preparedForClass: spellChoice.className,
+      spellcastingAbility: spellChoice.spellcastingAbility,
+      acquisitionMode,
+      prepared: kind !== "spellbook",
+      ...(kind === "cantrip" ? { cantrip: true, known: true, alwaysPrepared: true, preparationMode: "known" } : {}),
+      ...(kind === "prepared" ? { preparationMode: "prepared" } : {}),
+      ...(kind === "spellbook" ? { inSpellbook: true, preparationMode: "spellbook" } : {}),
+      ...(kind === "always-prepared" ? { alwaysPrepared: true, preparationMode: "always-prepared" } : {}),
+      spellSources: [{ kind: "class", className: spellChoice.className, selection: kind, selectedAtLevel: 1, spellcastingAbility: spellChoice.spellcastingAbility, acquisitionMode: profile?.acquisitionMode ?? acquisitionMode }]
+    };
+  };
   const items: CharacterTemplateItem[] = [];
   for (const id of classCantrips) items.push(spellItem(id, classSpellData("cantrip")));
   if (template.id === "wizard") {
@@ -8468,6 +8418,18 @@ export function dnd5eSrdValidateLevelOneCharacterCreation(
     addIssue("templateId", "unsupported_template", "Choose a supported level-one D&D SRD class template");
   }
 
+  if (options.abilityScoreMethod !== undefined && options.abilityScoreMethod !== "standard-array") {
+    addIssue("abilityScoreMethod", "unsupported", "Only the standard-array ability-score method is supported.");
+  }
+  if (options.abilityScoreMethod === "standard-array" && options.standardArrayAssignment === undefined) {
+    addIssue("standardArrayAssignment", "required", "Assign every standard-array score to one ability.");
+  }
+  if (options.standardArrayAssignment !== undefined) {
+    for (const issue of dnd5eSrdValidateStandardArrayAssignment(options.standardArrayAssignment).issues) {
+      addIssue(issue.ability ? `standardArrayAssignment.${issue.ability}` : "standardArrayAssignment", issue.code, issue.message);
+    }
+  }
+
   const backgroundId = stringValue(options.backgroundId);
   const background = backgroundId ? dnd5eSrdBackgroundById(backgroundId) : undefined;
   if (!backgroundId) addIssue("backgroundId", "required", "Choose a background");
@@ -8692,6 +8654,21 @@ export function dnd5eSrdApplyCharacterOrigins(template: CharacterTemplate, optio
   const species = dnd5eSrdSpeciesById(options.speciesId ?? stringValue(template.data.species) ?? "human");
   if (!species) throw new Error("Unknown D&D SRD species");
   const data = cloneJsonRecord(template.data);
+  const templateConstitution = numericValue(recordValue(template.data.attributes).constitution, 10);
+  const templateConstitutionModifier = Math.floor((templateConstitution - 10) / 2);
+  if (options.abilityScoreMethod === "standard-array" && options.standardArrayAssignment === undefined) {
+    throw new Error("Assign every standard-array score to one ability");
+  }
+  if (options.standardArrayAssignment !== undefined) {
+    const standardArray = dnd5eSrdValidateStandardArrayAssignment(options.standardArrayAssignment);
+    if (!standardArray.ok || !standardArray.assignment) throw new Error(standardArray.issues.map((issue) => issue.message).join(" "));
+    data.attributes = { ...standardArray.assignment };
+    data.origin = {
+      ...recordValue(data.origin),
+      abilityScoreMethod: "standard-array",
+      standardArrayAssignment: { ...standardArray.assignment }
+    };
+  }
   const proficiencyBonus = dnd5eSrdProficiencyBonusForLevel(numericValue(data.level, 1), data.proficiencyBonus);
   const features = new Set([...normalizeStringArray(data.features), ...species.traits]);
   const className = stringValue(data.class) || "Fighter";
@@ -8750,6 +8727,7 @@ export function dnd5eSrdApplyCharacterOrigins(template: CharacterTemplate, optio
   const gnomeChoices = dnd5eSrdGnomeOriginChoices(species, options);
   const tieflingChoices = dnd5eSrdTieflingOriginChoices(species, options);
   const origin = {
+    ...recordValue(data.origin),
     source: DND_5E_SRD_VERSION,
     backgroundId: background.id,
     speciesId: species.id,
@@ -8812,6 +8790,19 @@ export function dnd5eSrdApplyCharacterOrigins(template: CharacterTemplate, optio
   else if (species.senses?.length) data.senses = [...species.senses];
   if (species.id === "dwarf") dnd5eSrdApplyDwarvenToughness(data, level);
   dnd5eSrdApplyAbilityScoreIncreases(data, background, options.abilityScoreIncreases);
+  if (options.standardArrayAssignment !== undefined) {
+    const constitution = numericValue(recordValue(data.attributes).constitution, 10);
+    const constitutionModifier = Math.floor((constitution - 10) / 2);
+    const hitPointDelta = (constitutionModifier - templateConstitutionModifier) * Math.max(1, level);
+    if (hitPointDelta !== 0) {
+      const hp = normalizePool(data.hp, 1);
+      data.hp = {
+        ...recordValue(data.hp),
+        current: Math.max(1, hp.current + hitPointDelta),
+        max: Math.max(1, hp.max + hitPointDelta)
+      };
+    }
+  }
   const originResources = normalizeDnd5eSrdResources(data.resources, className, level, data, { raiseMaxToDefault: true });
   const bardicInspiration = originResources.bardicInspiration;
   if (bardicInspiration && numericValue(recordValue(resources.bardicInspiration).current, 0) === numericValue(recordValue(resources.bardicInspiration).max, 0)) {
@@ -8832,6 +8823,75 @@ export function dnd5eSrdApplyCharacterOrigins(template: CharacterTemplate, optio
     ]),
     background: { ...background },
     species: { ...species, traits: [...species.traits], senses: species.senses ? [...species.senses] : undefined }
+  };
+}
+
+/** Full, side-effect-free creator preview produced by the same rules path used at commit. */
+export function previewDnd5eSrdCharacterOrigins(
+  template: CharacterTemplate,
+  options: Dnd5eSrdCharacterOriginOptions
+): Dnd5eSrdCharacterOriginPreview {
+  const validation = dnd5eSrdValidateLevelOneCharacterCreation(template, options);
+  let build: Dnd5eSrdCharacterOriginBuild;
+  try {
+    build = dnd5eSrdApplyCharacterOrigins(template, options);
+  } catch (error) {
+    return {
+      ok: false,
+      issues: validation.issues.length > 0
+        ? validation.issues
+        : [{ field: "abilityScoreIncreases", code: "preview_rejected", message: error instanceof Error ? error.message : "Character preview could not be calculated." }]
+    };
+  }
+  const now = "1970-01-01T00:00:00.000Z";
+  const actor: Actor = {
+    id: "preview-character",
+    campaignId: "preview-campaign",
+    systemId: template.systemId,
+    ownerUserId: "preview-user",
+    type: template.actorType as Actor["type"],
+    name: template.name,
+    data: cloneJsonRecord(build.data),
+    permissions: {},
+    createdAt: now,
+    updatedAt: now
+  };
+  const items: Item[] = build.items.flatMap((templateItem, index) => {
+    const entry = dnd5eSrdCompendiumEntry(templateItem.entryId);
+    if (!entry || entry.type === "condition") return [];
+    return [{
+      id: `preview-item-${index}`,
+      campaignId: actor.campaignId,
+      actorId: actor.id,
+      systemId: actor.systemId,
+      type: entry.type,
+      name: entry.name,
+      data: { ...cloneJsonRecord(entry.data), ...(templateItem.data ? cloneJsonRecord(templateItem.data) : {}), compendiumId: entry.id, quantity: templateItem.quantity ?? 1 },
+      createdAt: now,
+      updatedAt: now
+    }];
+  });
+  const attributes = recordValue(build.data.attributes);
+  const abilityScores = Object.fromEntries(DND_5E_SRD_ABILITIES.map((ability) => [ability, numericValue(attributes[ability], 10)])) as Record<Dnd5eSrdAbility, number>;
+  const abilityModifiers = Object.fromEntries(DND_5E_SRD_ABILITIES.map((ability) => [ability, Math.floor((abilityScores[ability] - 10) / 2)])) as Record<Dnd5eSrdAbility, number>;
+  const proficiencyBonus = dnd5eSrdProficiencyBonus(actor);
+  const savingThrowProficiencies = new Set(dnd5eSrdSaveProficiencies(actor));
+  const savingThrows = Object.fromEntries(DND_5E_SRD_ABILITIES.map((ability) => [ability, abilityModifiers[ability] + (savingThrowProficiencies.has(ability) ? proficiencyBonus : 0)])) as Record<Dnd5eSrdAbility, number>;
+  const hp = recordValue(build.data.hp);
+  return {
+    ok: validation.ok,
+    issues: validation.issues.map((issue) => ({ ...issue })),
+    proposedData: cloneJsonRecord(build.data),
+    proposedItems: build.items.map((item) => ({ ...item, ...(item.data ? { data: cloneJsonRecord(item.data) } : {}) })),
+    derived: {
+      abilityScores,
+      abilityModifiers,
+      savingThrows,
+      armorClass: dnd5eSrdArmorClass(actor, items).value,
+      hitPoints: { current: numericValue(hp.current, 0), max: numericValue(hp.max, 0) },
+      speed: dnd5eSrdSpeed(actor, items).value,
+      proficiencyBonus
+    }
   };
 }
 
@@ -9232,7 +9292,10 @@ export function genericFantasyCharacterImport(input: CharacterImportInput): Char
   const source = importSource(input);
   const level = clampInteger(source.level, 1, 20, 1);
   const className = stringValue(source.class) || "Adventurer";
-  const attributes = normalizeNumberRecord(source.attributes, { strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10 });
+  const attributes = normalizeNumberRecord(
+    { ...recordValue(source.abilities), ...recordValue(source.attributes) },
+    { strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10 }
+  );
   const conModifier = abilityModifier(attributes.constitution ?? 10);
   const defaultMaxHp = Math.max(1, 8 + conModifier + (level - 1) * 5);
   const hp = normalizePool(source.hp, defaultMaxHp);
@@ -9266,10 +9329,22 @@ export function dnd5eSrdCharacterImport(input: CharacterImportInput): CharacterI
   const imported = genericFantasyCharacterImport(input);
   const warnings: string[] = [];
   const conditions = normalizeImportConditions(source.conditions ?? input.conditions, dnd5eSrdCompendiumEntry, warnings);
-  const items = normalizeImportItems(source.items ?? input.items, dnd5eSrdCompendiumEntry, warnings, conditions);
   const level = numericValue(imported.data.level, 1);
   const className = stringValue(source.class) || "Fighter";
+  const importCompatibility = normalizeDnd5eSrdCharacterImportFields({
+    source,
+    className,
+    level,
+    ruleset: DND_5E_SRD_VERSION,
+    compendium: dnd5eSrdCompendium(),
+    warnings
+  });
+  const items = dnd5eSrdMergeLevelOneSpellGrants([
+    ...normalizeImportItems(source.items ?? input.items, dnd5eSrdCompendiumEntry, warnings, conditions),
+    ...importCompatibility.importedItems
+  ]);
   const sourceHitDice = recordValue(source.hitDice);
+  if (importCompatibility.normalizedAbilityAliases.length > 0) warnings.push(`Normalized abilities to attributes: ${importCompatibility.normalizedAbilityAliases.join(", ")}.`);
   const storedArmorClass = typeof source.armorClass === "number" && Number.isFinite(source.armorClass) ? Math.floor(source.armorClass) : undefined;
   const armorClassIntent = dnd5eSrdArmorClassOverrideIntent(source);
   const armorClassReview = dnd5eSrdArmorClassReview(source);
@@ -9295,7 +9370,8 @@ export function dnd5eSrdCharacterImport(input: CharacterImportInput): CharacterI
       toolExpertise: dnd5eSrdToolProficienciesFromExplicit(source.toolExpertise),
       currency: dnd5eSrdCurrency(source.currency),
       resources: normalizeDnd5eSrdResources(source.resources, className, level, imported.data),
-      spellSlots: normalizeDnd5eSrdSpellSlots(source.spellSlots, className, level),
+      spellSlots: normalizeDnd5eSrdSpellSlots(importCompatibility.spellSlots, className, level),
+      ...(importCompatibility.spellcasting ? { spellcasting: importCompatibility.spellcasting } : {}),
       conditions: conditions.map((id) => ({ id })),
       features: dnd5eSrdApplyClassFeatures(normalizeStringArray(source.features), className, level),
       ...(storedArmorClass !== undefined ? { armorClass: storedArmorClass } : {}),
@@ -10048,6 +10124,7 @@ function dnd5eSrdApplyLongRestStateRecovery(actor: Actor, dataInput: Record<stri
 }
 
 export function applyDnd5eSrdRest(actor: Actor, restType: SystemRestType, options: SystemRestOptions = {}): SystemRestResult {
+  if (dnd5eSrdActorIsDead(actor)) throw new Error("A dead creature cannot start or finish a Short or Long Rest");
   const hpBeforeRest = normalizePool(actor.data.hp, 1);
   if (hpBeforeRest.current <= 0) throw new Error("A creature at 0 Hit Points cannot start or finish a Short or Long Rest");
   const rest = applyGenericFantasyRest(actor, restType);
@@ -10130,164 +10207,6 @@ export function dnd5eSrdSheet(actor: Actor, items: Item[] = []): GenericFantasyS
     data: { ...sheet.data, ...armorClassData, effectiveSpeed: speedDetails.value, speedDetails, ...(hitDicePoolSummary ? { hitDicePoolSummary } : {}) },
     quickRolls: dnd5eSrdQuickRolls(actor, items),
     conditions: dnd5eSrdActorConditions(actor)
-  };
-}
-
-function dnd5eSrdEquippedItemNumericBonus(actor: Actor, items: Item[], bonusKey: string, options: { hasEquippedArmorOrShield?: boolean } = {}): { total: number; itemIds: string[] } {
-  const itemBonuses = items
-    .filter((item) => itemBelongsToActor(actor, item))
-    .filter((item) => itemQuantity(recordValue(item.data)) > 0)
-    .flatMap((item) => {
-      const data = recordValue(item.data);
-      if (data.equipped === false) return [];
-      if (!dnd5eSrdItemModifiersAreActive(actor, item)) return [];
-      if (bonusKey === "spellAttackBonus" && booleanValue(data.consumable)) return [];
-      if (bonusKey === "armorClassBonus" && options.hasEquippedArmorOrShield && booleanValue(data.requiresNoArmorOrShield)) return [];
-      const bonus = numericValue(data[bonusKey], Number.NaN);
-      return Number.isFinite(bonus) ? [{ itemId: item.id, bonus }] : [];
-    });
-  return {
-    total: itemBonuses.reduce((sum, item) => sum + item.bonus, 0),
-    itemIds: itemBonuses.map((item) => item.itemId)
-  };
-}
-
-export function dnd5eSrdArmorClass(actor: Actor, items: Item[] = []): Dnd5eSrdArmorClassDetails {
-  const dexModifier = genericFantasyAttributeModifier(actor, "dexterity");
-  const wisdomModifier = genericFantasyAttributeModifier(actor, "wisdom");
-  const constitutionModifier = genericFantasyAttributeModifier(actor, "constitution");
-  const strengthScore = numericValue(recordValue(actor.data.attributes).strength, 10);
-  const actorItems = items.filter((item) => itemBelongsToActor(actor, item)).filter((item) => itemQuantity(recordValue(item.data)) > 0);
-  const hasEquippedArmor = actorItems.some((item) => {
-    const data = recordValue(item.data);
-    return data.equipped !== false && Number.isFinite(numericValue(data.armorBase, Number.NaN));
-  });
-  const hasEquippedShield = actorItems.some((item) => {
-    const data = recordValue(item.data);
-    return data.equipped !== false && Number.isFinite(numericValue(data.armorBonus, Number.NaN));
-  });
-  const armorCandidates: Dnd5eSrdArmorClassDetails[] = [
-    {
-      value: 10 + dexModifier,
-      base: 10,
-      dexModifier,
-      armorName: "Unarmored",
-      shieldBonus: 0,
-      shieldItemIds: [],
-      stealthDisadvantage: false,
-      speedPenalty: 0
-    }
-  ];
-  if (dnd5eSrdClassLevel(actor, "Monk") >= 1 && !hasEquippedArmor && !hasEquippedShield) {
-    armorCandidates.push({
-      value: 10 + dexModifier + wisdomModifier,
-      base: 10,
-      dexModifier,
-      armorName: "Unarmored Defense",
-      shieldBonus: 0,
-      shieldItemIds: [],
-      stealthDisadvantage: false,
-      speedPenalty: 0
-    });
-  }
-  if (dnd5eSrdClassLevel(actor, "Barbarian") >= 1 && !hasEquippedArmor) {
-    armorCandidates.push({
-      value: 10 + dexModifier + constitutionModifier,
-      base: 10,
-      dexModifier,
-      armorName: "Unarmored Defense",
-      shieldBonus: 0,
-      shieldItemIds: [],
-      stealthDisadvantage: false,
-      speedPenalty: 0
-    });
-  }
-  if (dnd5eSrdHasDraconicResilience(actor) && !hasEquippedArmor) {
-    armorCandidates.push({
-      value: 10 + dexModifier + genericFantasyAttributeModifier(actor, "charisma"),
-      base: 10,
-      dexModifier,
-      armorName: "Draconic Resilience",
-      shieldBonus: 0,
-      shieldItemIds: [],
-      stealthDisadvantage: false,
-      speedPenalty: 0
-    });
-  }
-  for (const item of actorItems) {
-    const data = recordValue(item.data);
-    if (data.equipped === false) continue;
-    const armorBase = numericValue(data.armorBase, Number.NaN);
-    if (!Number.isFinite(armorBase)) continue;
-    const dexContribution = data.dexBonus === false ? 0 : Math.min(dexModifier, numericValue(data.dexCap, dexModifier));
-    const strengthRequirement = numericValue(data.strengthRequirement, Number.NaN);
-    const hasStrengthRequirement = Number.isFinite(strengthRequirement);
-    armorCandidates.push({
-      value: armorBase + dexContribution,
-      base: armorBase,
-      dexModifier: dexContribution,
-      armorName: item.name,
-      armorItemId: item.id,
-      shieldBonus: 0,
-      shieldItemIds: [],
-      stealthDisadvantage: booleanValue(data.stealthDisadvantage),
-      strengthRequirement: hasStrengthRequirement ? strengthRequirement : undefined,
-      speedPenalty: hasStrengthRequirement && strengthScore < strengthRequirement ? -10 : 0
-    });
-  }
-  const armor = armorCandidates.sort((left, right) => right.value - left.value)[0]!;
-  const shieldItems = actorItems.filter((item) => {
-    const data = recordValue(item.data);
-    return data.equipped !== false && Number.isFinite(numericValue(data.armorBonus, Number.NaN));
-  });
-  const shieldBonus = shieldItems.reduce((max, item) => Math.max(max, numericValue(recordValue(item.data).armorBonus, 0)), 0);
-  const armorClassItemBonus = dnd5eSrdEquippedItemNumericBonus(actor, actorItems, "armorClassBonus", { hasEquippedArmorOrShield: hasEquippedArmor || hasEquippedShield });
-  return {
-    ...armor,
-    value: armor.value + shieldBonus + armorClassItemBonus.total,
-    shieldBonus,
-    shieldItemIds: shieldBonus > 0 ? shieldItems.filter((item) => numericValue(recordValue(item.data).armorBonus, 0) === shieldBonus).map((item) => item.id) : [],
-    ...(armorClassItemBonus.total > 0 ? { armorClassBonus: armorClassItemBonus.total, armorClassBonusItemIds: armorClassItemBonus.itemIds } : {})
-  };
-}
-
-export function dnd5eSrdSpeed(actor: Actor, items: Item[] = []): Dnd5eSrdSpeedDetails {
-  const base = Math.max(0, numericValue(actor.data.speed, 30));
-  const armorPenalty = dnd5eSrdArmorClass(actor, items).speedPenalty;
-  const conditions = normalizeConditionRecords(actor.data.conditions);
-  const effects = dnd5eSrdConditionEffects(conditions);
-  const exhaustionLevel = dnd5eSrdExhaustionLevel(conditions);
-  const exhaustionPenalty = exhaustionLevel > 0 ? exhaustionLevel * -5 : 0;
-  const weaponMasteryPenalty = dnd5eSrdWeaponMasterySpeedPenalty(actor);
-  let conditionSetTo: number | undefined;
-  let conditionMultiplier = 1;
-  const conditionSources: string[] = [];
-  for (const effect of effects) {
-    const speedSetTo = numericValue(effect.data.speedSetTo, Number.NaN);
-    if (Number.isFinite(speedSetTo)) {
-      conditionSetTo = conditionSetTo === undefined ? speedSetTo : Math.min(conditionSetTo, speedSetTo);
-      conditionSources.push(effect.sourceId);
-    }
-    const multiplier = numericValue(effect.data.speedMultiplier, Number.NaN);
-    if (Number.isFinite(multiplier)) {
-      conditionMultiplier = Math.min(conditionMultiplier, Math.max(0, multiplier));
-      conditionSources.push(effect.sourceId);
-    }
-  }
-  if (exhaustionLevel > 0) conditionSources.push("exhaustion");
-  if (weaponMasteryPenalty) conditionSources.push("weapon-mastery-slow");
-  const penalizedSpeed = Math.max(0, base + armorPenalty + exhaustionPenalty + weaponMasteryPenalty);
-  const multipliedSpeed = Math.floor(penalizedSpeed * conditionMultiplier);
-  const value = Math.max(0, conditionSetTo === undefined ? multipliedSpeed : Math.min(conditionSetTo, multipliedSpeed));
-  return {
-    value,
-    base,
-    armorPenalty,
-    conditionPenalty: exhaustionPenalty,
-    ...(weaponMasteryPenalty ? { weaponMasteryPenalty } : {}),
-    conditionMultiplier,
-    ...(conditionSetTo !== undefined ? { conditionSetTo } : {}),
-    conditionSources: uniqueStrings(conditionSources)
   };
 }
 
@@ -10573,6 +10492,7 @@ export function dnd5eSrdCalculationExplanation(actor: Actor, items: Item[] = [])
   const speed = dnd5eSrdSpeed(actor, actorItems);
   const speedTerms: CalculationTerm[] = [
     { label: "Base speed", signedValue: speed.base, source: actorSource },
+    ...(speed.classBonus ? [{ label: "Class movement", signedValue: speed.classBonus, source: featureSource(speed.classSources.join(" + ")) }] : []),
     ...(speed.armorPenalty ? [{ label: "Armor strength penalty", signedValue: speed.armorPenalty, source: armor.armorItemId ? itemSource(armor.armorItemId) : systemSource }] : []),
     ...(speed.conditionPenalty ? [{ label: "Exhaustion penalty", signedValue: speed.conditionPenalty, source: conditionSource("exhaustion") }] : []),
     ...(speed.weaponMasteryPenalty ? [{ label: "Slow Weapon Mastery", signedValue: speed.weaponMasteryPenalty, source: featureSource("Weapon Mastery: Slow") }] : []),
@@ -10804,11 +10724,10 @@ export function dnd5eSrdActionFormula(actor: Actor, items: Item[] = [], rollId: 
   const rageDamageBonus = dnd5eSrdRageDamageBonusForRoll(actor, actionItems, rollId);
   return formula && rageDamageBonus > 0 ? appendFormulaBonus(formula, rageDamageBonus) : formula;
 }
-
 export function resolveDnd5eSrdAction(input: Dnd5eSrdActionResolutionInput): RulesActionResolutionResult {
   const items = input.items ?? [];
   const targets = input.targets ?? [];
-  const options = input.options ?? {};
+  const options = { ...(input.options ?? {}) };
   const now = input.now ?? new Date().toISOString();
   const commitMode: RulesResolutionCommitMode = options.commit === false ? "preview" : "commit";
   const metadata = cloneJsonRecord(recordValue(input.roll.metadata));
@@ -10827,6 +10746,8 @@ export function resolveDnd5eSrdAction(input: Dnd5eSrdActionResolutionInput): Rul
   let usage: SystemActionUseResult | undefined;
   let actionLedger: Dnd5eSrdTurnActionLedger | undefined;
   let weaponMastery: Dnd5eSrdWeaponMasteryResolution | undefined;
+  let tacticalMind: Dnd5eSrdTacticalMindOutcome | undefined;
+  let authoritativeCriticalHitTargetActorIds: string[] | undefined;
   const calculationOverride = recordValue(metadata.calculationOverride);
   if (stringValue(calculationOverride.id)) auditEvents.push({ code: "calculation.override.applied", actorId: input.actor.id, rollId: input.roll.id, message: `Applied calculation override to ${input.roll.label}`, data: { ...cloneJsonRecord(calculationOverride), overrideId: stringValue(calculationOverride.id) } });
   const requestedItem = actionItemForRoll(input.actor, items, input.roll.id, ["spell", "item"]);
@@ -10857,8 +10778,34 @@ export function resolveDnd5eSrdAction(input: Dnd5eSrdActionResolutionInput): Rul
     : dnd5eSrdResolutionBlock(input.actor, actionKind);
   if (!blocked) blocked = dnd5eSrdRagePreflight({ actor: input.actor, items, ...(requestedItem ? { requestedItem } : {}), roll: { id: input.roll.id, metadata }, consumeResources: Boolean(options.consumeResources) });
   const targetInputs = targets.length > 0 ? targets : [];
-  if (!blocked) blocked = dnd5eSrdWeaponMasteryPreflight({ actor: input.actor, data: actorData, ...(requestedItem ? { item: requestedItem } : {}), roll: { id: input.roll.id, metadata }, targets: targetInputs.map((target) => ({ ...target, armorClass: dnd5eSrdArmorClass(target.actor, target.items ?? []).value, proneImmune: dnd5eSrdConditionImmunities(target.actor, target.items).includes("prone") })), combat: input.combat, options: options.weaponMastery });
-  const rolls = dnd5eSrdResolutionRolls(input.actor, targetInputs, input.roll, options);
+  if (!blocked && dnd5eSrdGuardedContinuation(input.roll, Boolean(input.combat))) {
+    const requestedSlotLevel = requestedItem?.type === "spell"
+      ? dnd5eSrdSpellActionSlotLevel(input.actor, items, input.roll.id, options)
+        ?? spellActionSlotLevel(Math.floor(numericValue(recordValue(requestedItem.data).level, 0)), options.spellSlotLevel)
+      : undefined;
+    const continuation = consumeDnd5eSrdContinuation(actorData, input.actor.id, input.roll.id, targetInputs.map((target) => target.actor.id), input.combat, requestedSlotLevel, options.continuationId);
+    actorData = continuation.data;
+    auditEvents.push(...continuation.auditEvents);
+    if (continuation.blocked) blocked = continuation.blocked;
+    if (!blocked) {
+      authoritativeCriticalHitTargetActorIds = continuation.criticalHitTargetActorIds ?? [];
+      metadata.criticalHitAuthoritative = true;
+      metadata.criticalHitTargetActorIds = [...authoritativeCriticalHitTargetActorIds];
+      if (continuation.continuationId) metadata.continuationId = continuation.continuationId;
+      if (continuation.criticalOutcomes) metadata.criticalOutcomes = continuation.criticalOutcomes.map((outcome) => ({ ...outcome }));
+      // A client-supplied flag cannot forge a critical result for a guarded
+      // continuation; the committed predecessor is the only authority.
+      options.criticalHit = false;
+    }
+    if (!blocked && input.roll.id === DND_5E_SRD_SNEAK_ATTACK_DAMAGE_ROLL_ID && continuation.sourceDamageType) {
+      const requestedDamageType = stringValue(options.effectChoice)?.toLowerCase();
+      if (requestedDamageType && requestedDamageType !== continuation.sourceDamageType) blocked = { code: "continuation_damage_type_mismatch", reason: `Sneak Attack must use the triggering weapon's ${continuation.sourceDamageType} damage type.` };
+      else { metadata.damageType = continuation.sourceDamageType; metadata.damageTypeOptions = [continuation.sourceDamageType]; options.effectChoice = continuation.sourceDamageType; }
+    }
+  }
+  if (!blocked) blocked = dnd5eSrdWeaponMasteryPreflight({ actor: input.actor, data: actorData, ...(requestedItem ? { item: requestedItem } : {}), roll: { id: input.roll.id, metadata }, targets: targetInputs.map((target) => ({ ...target, armorClass: dnd5eSrdArmorClassSheetData(target.actor, dnd5eSrdArmorClass(target.actor, target.items ?? [])).armorClass, proneImmune: dnd5eSrdConditionImmunities(target.actor, target.items).includes("prone") })), combat: input.combat, options: options.weaponMastery });
+  const resolutionRoll = { ...input.roll, metadata };
+  const rolls = dnd5eSrdResolutionRolls(input.actor, targetInputs, resolutionRoll, options);
   const targetActorForResolution = (target: RulesResolutionTargetInput): Actor => ({
     ...target.actor,
     data: target.actor.id === input.actor.id ? actorData : targetDataByActorId.get(target.actor.id) ?? target.actor.data
@@ -10876,14 +10823,12 @@ export function resolveDnd5eSrdAction(input: Dnd5eSrdActionResolutionInput): Rul
       reason
     });
   };
-
   if ((options.reactionUse || actionKind === "reaction") && !blocked) {
     const reactionResult = dnd5eSrdApplyReactionUse(actorData, input.actor.id, input.roll.id, input.combat, now);
     actorData = reactionResult.data;
     auditEvents.push(...reactionResult.auditEvents);
     if (reactionResult.blocked) blocked = reactionResult.blocked;
   }
-
   if (actionKind === "bonusAction" && !blocked) {
     const bonusActionResult = dnd5eSrdApplyBonusActionUse(actorData, input.actor.id, input.roll.id, input.combat, now);
     actorData = bonusActionResult.data;
@@ -10897,7 +10842,14 @@ export function resolveDnd5eSrdAction(input: Dnd5eSrdActionResolutionInput): Rul
     auditEvents.push(...actionResult.auditEvents);
     if (actionResult.blocked) blocked = actionResult.blocked;
   }
-  if (options.consumeResources && !blocked) {
+  const itemContinuation = Boolean(requestedItem) && ["on-hit", "follow-up"].includes(stringValue(metadata.activation)?.toLowerCase() ?? "");
+  if (input.roll.id === DND_5E_SRD_TACTICAL_MIND_ROLL_ID && !blocked) {
+    const result = resolveDnd5eSrdTacticalMind({ actor: { ...input.actor, data: actorData }, rollId: input.roll.id, consumeResources: Boolean(options.consumeResources), check: options.tacticalMindCheck, ...(commitMode === "commit" && options.selfRollResult ? { bonus: options.selfRollResult.total } : {}) });
+    actorData = result.data; auditEvents.push(...result.auditEvents);
+    if (result.blocked) blocked = result.blocked;
+    if (result.outcome) { tacticalMind = result.outcome; usage = { systemId: DND_5E_SRD_SYSTEM_ID, actorId: input.actor.id, rollId: input.roll.id, consumed: result.consumed, data: result.data, items: [] }; }
+  }
+  if (options.consumeResources && !blocked && !itemContinuation && input.roll.id !== DND_5E_SRD_TACTICAL_MIND_ROLL_ID) {
     try {
       usage = useDnd5eSrdAction({ ...input.actor, data: actorData }, items, input.roll.id, options);
       actorData = cloneJsonRecord(usage.data);
@@ -10922,7 +10874,7 @@ export function resolveDnd5eSrdAction(input: Dnd5eSrdActionResolutionInput): Rul
     if (rage.blocked) blocked = rage.blocked;
   }
   if (!blocked) {
-    const masteryTargets = targetInputs.map((target) => { const actor = targetActorForResolution(target); return { ...target, actor, armorClass: dnd5eSrdArmorClass(actor, target.items ?? []).value, proneImmune: dnd5eSrdConditionImmunities(actor, target.items).includes("prone") }; });
+    const masteryTargets = targetInputs.map((target) => { const actor = targetActorForResolution(target); return { ...target, actor, armorClass: dnd5eSrdArmorClassSheetData(actor, dnd5eSrdArmorClass(actor, target.items ?? [])).armorClass, proneImmune: dnd5eSrdConditionImmunities(actor, target.items).includes("prone") }; });
     const mastery = resolveDnd5eSrdWeaponMastery({ actor: { ...input.actor, data: actorData }, data: actorData, ...(requestedItem ? { item: requestedItem } : {}), roll: { id: input.roll.id, label: input.roll.label, metadata }, targets: masteryTargets, combat: input.combat, now, abilityModifier: genericFantasyAttributeModifier(input.actor, stringValue(metadata.ability) ?? "strength"), proficiencyBonus: dnd5eSrdProficiencyBonus(input.actor), options: options.weaponMastery, applyGrazeDamage: (target, amount, damageType) => dnd5eSrdApplyRollTotalEffectResolution(target.actor, target.items ?? [], { id: `${input.roll.id}-graze-damage`, label: `${input.roll.label} Graze Damage`, formula: String(amount), metadata: { effectType: "damage", damageType } }, { damageType }, amount, undefined, { ...options, applyEffect: true }, now) });
     actorData = mastery.data; weaponMastery = mastery.resolution;
     if (mastery.actionLedger) actionLedger = mastery.actionLedger;
@@ -10996,7 +10948,9 @@ export function resolveDnd5eSrdAction(input: Dnd5eSrdActionResolutionInput): Rul
   if (options.applyEffect && !blocked) {
     for (const target of targetInputs) {
       const resolvedTarget = targetActorForResolution(target);
-      const effectResult = dnd5eSrdApplyTargetEffectResolution(resolvedTarget, target.items ?? [], input.actor.id, input.roll, metadata, target.rollTotal, dnd5eSrdTargetSaveOutcome(target.actor.id, target, options), options, input.combat, now);
+      const criticalHit = authoritativeCriticalHitTargetActorIds === undefined ? options.criticalHit === true : authoritativeCriticalHitTargetActorIds.includes(target.actor.id);
+      const targetOptions = { ...options, criticalHit };
+      const effectResult = dnd5eSrdApplyTargetEffectResolution(resolvedTarget, target.items ?? [], input.actor.id, resolutionRoll, metadata, target.rollTotal, dnd5eSrdTargetSaveOutcome(target.actor.id, target, targetOptions), targetOptions, input.combat, now);
       if (!effectResult) continue;
       effects.push(...effectResult.effects);
       conditions.push(...effectResult.conditions);
@@ -11006,6 +10960,35 @@ export function resolveDnd5eSrdAction(input: Dnd5eSrdActionResolutionInput): Rul
       if (JSON.stringify(effectResult.data) !== JSON.stringify(resolvedTarget.data)) {
         setResolvedTargetData(target, effectResult.data, "target-effect");
       }
+    }
+  }
+
+  if (!blocked) {
+    const continuationSlotLevel = requestedItem?.type === "spell"
+      ? dnd5eSrdSpellActionSlotLevel(input.actor, items, input.roll.id, options)
+        ?? spellActionSlotLevel(Math.floor(numericValue(recordValue(requestedItem.data).level, 0)), options.spellSlotLevel)
+      : undefined;
+    const grant = dnd5eSrdContinuationGrantForRoll({
+      roll: resolutionRoll,
+      available: dnd5eSrdQuickRolls(input.actor, items),
+      ...(requestedItem ? { requestedItem } : {}),
+      targets: targetInputs.map((target) => ({
+        actorId: target.actor.id,
+        rollTotal: target.rollTotal,
+        naturalD20: target.naturalD20,
+        armorClass: dnd5eSrdArmorClassSheetData(target.actor, dnd5eSrdArmorClass(target.actor, target.items ?? [])).armorClass,
+        criticalHitsBecomeNormalHits: dnd5eSrdCriticalHitsBecomeNormalHits(target.actor, target.items ?? [])
+      })),
+      ...(continuationSlotLevel !== undefined ? { spellSlotLevel: continuationSlotLevel } : {}),
+      sneakAttackEligible: options.sneakAttackEligible
+    });
+    if (grant) {
+      const continuation = grantDnd5eSrdContinuations(actorData, input.actor.id, grant, input.combat, now);
+      actorData = continuation.data;
+      auditEvents.push(...continuation.auditEvents);
+      if (continuation.continuationId) metadata.continuationId = continuation.continuationId;
+      if (continuation.criticalOutcomes) metadata.criticalOutcomes = continuation.criticalOutcomes.map((outcome) => ({ ...outcome }));
+      metadata.criticalHitTargetActorIds = [...(grant.criticalHitTargetActorIds ?? [])];
     }
   }
 
@@ -11060,6 +11043,7 @@ export function resolveDnd5eSrdAction(input: Dnd5eSrdActionResolutionInput): Rul
     attunement,
     ...(concentrationCleanups.length > 0 ? { concentrationCleanups: [...new Map(concentrationCleanups.map((cleanup) => [`${cleanup.sourceActorId}:${cleanup.rollId}:${cleanup.startedAt ?? "legacy"}:${cleanup.reason}`, cleanup])).values()] } : {}),
     ...(deathSave ? { deathSave } : {}),
+    ...(tacticalMind ? { tacticalMind } : {}),
     ...(weaponMastery ? { weaponMastery } : {})
   };
 }
@@ -11219,17 +11203,29 @@ function dnd5eSrdResolutionBlock(actor: Actor, actionKind: RulesActionResolution
 }
 
 function dnd5eSrdResolutionRolls(actor: Actor, targets: RulesResolutionTargetInput[], roll: QuickRoll, options: RulesResolverOptions): RulesResolutionRoll[] {
-  const rollTargets = dnd5eSrdIsAttackRoll(roll) && targets.length > 0 ? targets : [targets[0]].filter((target): target is RulesResolutionTargetInput => Boolean(target));
+  const metadata = recordValue(roll.metadata);
+  const targetSpecificCriticals = metadata.criticalHitAuthoritative === true && targets.length > 0;
+  const rollTargets = (dnd5eSrdIsAttackRoll(roll) || targetSpecificCriticals) && targets.length > 0
+    ? targets
+    : [targets[0]].filter((target): target is RulesResolutionTargetInput => Boolean(target));
   if (rollTargets.length === 0) return [dnd5eSrdResolutionRollForTarget(actor, undefined, roll, options)];
   return rollTargets.map((target) => dnd5eSrdResolutionRollForTarget(actor, target, roll, options));
 }
 
 function dnd5eSrdResolutionRollForTarget(actor: Actor, target: RulesResolutionTargetInput | undefined, roll: QuickRoll, options: RulesResolverOptions): RulesResolutionRoll {
-  const targetAware = dnd5eSrdTargetAwareRoll(actor, target?.actor, roll);
+  const metadata = recordValue(roll.metadata);
+  const criticalTargets = normalizeStringArray(metadata.criticalHitTargetActorIds);
+  const criticalHit = metadata.criticalHitAuthoritative === true
+    ? Boolean(target && criticalTargets.includes(target.actor.id))
+    : options.criticalHit === true;
+  const effectiveRoll = criticalHit && dnd5eSrdRollEffectType(roll) === "damage"
+    ? { ...roll, formula: dnd5eSrdCriticalDamageFormula(roll.formula), metadata: { ...metadata, criticalHit: true } }
+    : roll;
+  const targetAware = dnd5eSrdTargetAwareRoll(actor, target?.actor, effectiveRoll);
   return {
     rollId: roll.id,
     label: roll.label,
-    baseFormula: stringValue(recordValue(recordValue(roll.metadata).calculationOverride).baseFormula) ?? roll.formula,
+    baseFormula: stringValue(recordValue(metadata.calculationOverride).baseFormula) ?? roll.formula,
     formula: targetAware.formula,
     ...(target ? { targetActorId: target.actor.id } : {}),
     ...(targetAware.d20Mode ? { d20Mode: targetAware.d20Mode } : {}),
@@ -11953,7 +11949,10 @@ function dnd5eSrdApplyRollTotalEffectResolution(
         vulnerability: damageResolution.components.filter((component) => component.defense === "vulnerability" || component.defense === "resistance-and-vulnerability").map((component) => component.damageType)
       }
     : { amount: Math.max(0, Math.floor(adjustedTotal)), resistance: [] as string[], immunity: [] as string[], vulnerability: [] as string[] };
-  const amount = typedDamage.amount;
+  const targetIsDead = ["dead", "defeated"].includes(stringValue(target.data.lifeState)?.trim().toLowerCase() ?? "") || normalizeConditionRecords(target.data.conditions).some((entry) => entry.id === "dead");
+  const revivesDead = type === "healing" && metadata.revivesDead === true;
+  const reviveHitPoints = revivesDead ? Math.max(0, Math.floor(numericValue(metadata.reviveHitPoints, 0))) : 0;
+  const amount = type === "healing" && targetIsDead ? revivesDead ? Math.max(typedDamage.amount, reviveHitPoints) : 0 : typedDamage.amount;
   const temporaryHitPoints = dnd5eSrdTemporaryHitPoints(target.data);
   const absorbedByTemporaryHitPoints = damageResolution?.absorbedByTemporaryHitPoints ?? 0;
   const after = type === "healing" ? Math.min(max, current + amount) : damageResolution?.hitPointsAfter ?? current;
@@ -11999,8 +11998,8 @@ function dnd5eSrdApplyRollTotalEffectResolution(
         reason: damageResolution.lifecycle.massiveDamage ? "Massive damage caused instant death" : `Damage reduced ${target.name} to 0 Hit Points`
       };
     }
-  } else if (type === "healing" && current === 0 && after > 0) {
-    const transient = new Set(["unconscious", "stable"]);
+  } else if (type === "healing" && after > 0 && (current === 0 || (targetIsDead && revivesDead))) {
+    const transient = new Set(["unconscious", "stable", ...(targetIsDead && revivesDead ? ["dead"] : [])]);
     data = {
       ...data,
       conditions: normalizeConditionRecords(data.conditions).filter((entry) => !transient.has(entry.id)),
@@ -12131,6 +12130,14 @@ function dnd5eSrdApplyTargetConditionResolution(
   const durationRounds = dnd5eSrdDurationRounds(duration);
   const repeatSave = dnd5eSrdRepeatSaveTiming(metadata);
   const expiresAtRound = durationRounds && combat ? combat.round + durationRounds : undefined;
+  const managedSchedule = dnd5eSrdManagedEndTurnRepeatSaveSchedule({
+    targetActorId: target.id,
+    repeatSave,
+    saveAbility,
+    ...(saveDc !== undefined ? { saveDc } : {}),
+    ...(durationRounds !== undefined ? { durationRounds } : {}),
+    ...(combat ? { combat } : {})
+  });
   const resolvedChoice = dnd5eSrdResolvedChoice(metadata, options);
   const rules = dnd5eSrdRulesEngineState(target.data);
   const activeEffects = Array.isArray(rules.activeEffects) ? rules.activeEffects.map((effect) => cloneJsonRecord(recordValue(effect))) : [];
@@ -12151,6 +12158,7 @@ function dnd5eSrdApplyTargetConditionResolution(
     ...(durationRounds ? { durationRounds } : {}),
     ...(expiresAtRound ? { expiresAtRound } : {}),
     ...(repeatSave ? { repeatSave } : {}),
+    ...(managedSchedule ? { schedule: managedSchedule, managedLifecycle: "end-turn-repeat-save-v1" } : {}),
     ...(saveAbility ? { saveAbility } : {}),
     ...(saveDc !== undefined ? { saveDc } : {}),
     ...(resolvedChoice ? { effectChoice: resolvedChoice.value, choiceKind: resolvedChoice.kind } : {})
@@ -12489,17 +12497,7 @@ export function useDnd5eSrdAction(actor: Actor, items: Item[] = [], rollId: stri
     };
   }
   if (rollId === DND_5E_SRD_TACTICAL_MIND_ROLL_ID) {
-    const className = stringValue(actor.data.class) || "Fighter";
-    const resources = normalizeDnd5eSrdResources(actor.data.resources, className, numericValue(actor.data.level, 1), actor.data);
-    const result = consumeResourcePool(resources, "secondWind", 1, "Second Wind", "resource");
-    return {
-      systemId: DND_5E_SRD_SYSTEM_ID,
-      actorId: actor.id,
-      rollId,
-      consumed: [result.consumed],
-      data: { ...actor.data, resources: result.pools },
-      items: []
-    };
+    throw new Error("Tactical Mind requires a server-owned failed ability check and must be resolved through resolveDnd5eSrdAction");
   }
   if (rollId === DND_5E_SRD_RAGE_ROLL_ID) {
     const className = stringValue(actor.data.class) || "Barbarian";
@@ -13272,6 +13270,7 @@ export function applyDnd5eSrdCondition(actor: Actor, conditionId: string, applie
     } else {
       conditions.push({ id: conditionId, appliedAt, level: nextLevel });
     }
+    if (nextLevel === 6) return dnd5eSrdExhaustionDeathData(actor.data, conditions, appliedAt);
   } else if (!conditions.some((condition) => condition.id === conditionId)) {
     conditions.push({ id: conditionId, appliedAt });
   }
@@ -14144,25 +14143,6 @@ export function removeMysticNoirCondition(actor: Actor, conditionId: string): Re
   return { ...actor.data, conditions };
 }
 
-function normalizeConditionRecords(value: unknown): NormalizedConditionRecord[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => {
-      if (typeof item === "string") return { id: item };
-      if (item && typeof item === "object" && "id" in item && typeof item.id === "string") {
-        const record = item as Record<string, unknown>;
-        const level = numericValue(record.level, Number.NaN);
-        return {
-          id: item.id,
-          appliedAt: typeof record.appliedAt === "string" ? record.appliedAt : undefined,
-          ...(Number.isFinite(level) ? { level: Math.max(1, Math.floor(level)) } : {})
-        };
-      }
-      return undefined;
-    })
-    .filter((item): item is NormalizedConditionRecord => Boolean(item));
-}
-
 function genericFantasyAttributeModifier(actor: Actor, ability: string): number {
   const attributes = actor.data.attributes as Record<string, number> | undefined;
   return abilityModifier(numericValue(attributes?.[ability], 10));
@@ -14944,39 +14924,47 @@ function dnd5eSrdHasChampionCritical(actor: Actor): boolean {
   return dnd5eSrdHasChampionImprovedCritical(actor) || dnd5eSrdHasChampionSuperiorCritical(actor);
 }
 
-function dnd5eSrdHasSelectedSubclassLevel(actor: Actor, className: string, minimumLevel: number, ...selections: string[]): boolean {
-  const classLevel = dnd5eSrdClassLevel(actor, className);
-  if (classLevel < minimumLevel) return false;
+function dnd5eSrdSelectedSubclass(actor: Actor, className: string): string | undefined {
   const subclasses = recordValue(actor.data.subclasses);
   const stored = Object.entries(subclasses).find(([key]) => key.toLowerCase() === className.toLowerCase())?.[1];
   const legacy = stringValue(actor.data.class)?.toLowerCase() === className.toLowerCase() ? actor.data.subclass : undefined;
-  const selected = stringValue(stored) ?? stringValue(legacy);
+  return stringValue(stored) ?? stringValue(legacy);
+}
+
+function dnd5eSrdHasSelectedSubclassLevel(actor: Actor, className: string, minimumLevel: number, ...selections: string[]): boolean {
+  const classLevel = dnd5eSrdClassLevel(actor, className);
+  if (classLevel < minimumLevel) return false;
+  const selected = dnd5eSrdSelectedSubclass(actor, className);
   return Boolean(selected && selections.some((selection) => selection.toLowerCase() === selected.toLowerCase()));
+}
+
+function dnd5eSrdLegacySubclassStateAllowed(actor: Actor, className: string): boolean {
+  return dnd5eSrdSelectedSubclass(actor, className) === undefined;
 }
 
 function dnd5eSrdHasChampionImprovedCritical(actor: Actor): boolean {
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Fighter", 3, "champion")) return true;
-  return normalizeStringArray(actor.data.features).includes("Improved Critical");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Fighter") && normalizeStringArray(actor.data.features).includes("Improved Critical");
 }
 
 function dnd5eSrdHasChampionRemarkableAthlete(actor: Actor): boolean {
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Fighter", 3, "champion")) return true;
-  return normalizeStringArray(actor.data.features).includes("Remarkable Athlete");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Fighter") && normalizeStringArray(actor.data.features).includes("Remarkable Athlete");
 }
 
 function dnd5eSrdHasChampionHeroicWarrior(actor: Actor): boolean {
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Fighter", 10, "champion")) return true;
-  return normalizeStringArray(actor.data.features).includes("Heroic Warrior");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Fighter") && normalizeStringArray(actor.data.features).includes("Heroic Warrior");
 }
 
 function dnd5eSrdHasChampionSuperiorCritical(actor: Actor): boolean {
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Fighter", 15, "champion")) return true;
-  return normalizeStringArray(actor.data.features).includes("Superior Critical");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Fighter") && normalizeStringArray(actor.data.features).includes("Superior Critical");
 }
 
 function dnd5eSrdHasChampionSurvivor(actor: Actor): boolean {
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Fighter", 18, "champion")) return true;
-  return normalizeStringArray(actor.data.features).includes("Survivor");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Fighter") && normalizeStringArray(actor.data.features).includes("Survivor");
 }
 
 function dnd5eSrdHasChannelDivinity(actor: Actor): boolean {
@@ -14998,22 +14986,22 @@ function dnd5eSrdHasSearUndead(actor: Actor): boolean {
 
 function dnd5eSrdHasLifeDisciple(actor: Actor): boolean {
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Cleric", 3, "life-domain", "Life Domain")) return true;
-  return normalizeStringArray(actor.data.features).includes("Disciple of Life");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Cleric") && normalizeStringArray(actor.data.features).includes("Disciple of Life");
 }
 
 function dnd5eSrdHasLifePreserveLife(actor: Actor): boolean {
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Cleric", 3, "life-domain", "Life Domain")) return true;
-  return normalizeStringArray(actor.data.features).includes("Preserve Life");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Cleric") && normalizeStringArray(actor.data.features).includes("Preserve Life");
 }
 
 function dnd5eSrdHasLifeBlessedHealer(actor: Actor): boolean {
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Cleric", 6, "life-domain", "Life Domain")) return true;
-  return normalizeStringArray(actor.data.features).includes("Blessed Healer");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Cleric") && normalizeStringArray(actor.data.features).includes("Blessed Healer");
 }
 
 function dnd5eSrdHasLifeSupremeHealing(actor: Actor): boolean {
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Cleric", 17, "life-domain", "Life Domain")) return true;
-  return normalizeStringArray(actor.data.features).includes("Supreme Healing");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Cleric") && normalizeStringArray(actor.data.features).includes("Supreme Healing");
 }
 
 function dnd5eSrdHasBardicInspiration(actor: Actor): boolean {
@@ -15034,19 +15022,19 @@ function dnd5eSrdHasFontOfInspiration(actor: Actor): boolean {
 function dnd5eSrdHasLoreCuttingWords(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Bard", 3, "college-of-lore", "College of Lore")) return true;
-  return features.includes("College of Lore") || features.includes("Cutting Words");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Bard") && (features.includes("College of Lore") || features.includes("Cutting Words"));
 }
 
 function dnd5eSrdHasLoreMagicalDiscoveries(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Bard", 6, "college-of-lore", "College of Lore")) return true;
-  return features.includes("Magical Discoveries");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Bard") && features.includes("Magical Discoveries");
 }
 
 function dnd5eSrdHasLorePeerlessSkill(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Bard", 14, "college-of-lore", "College of Lore")) return true;
-  return features.includes("Peerless Skill");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Bard") && features.includes("Peerless Skill");
 }
 
 function dnd5eSrdHasLayOnHands(actor: Actor): boolean {
@@ -15067,25 +15055,25 @@ function dnd5eSrdHasFaithfulSteed(actor: Actor): boolean {
 function dnd5eSrdHasDevotionSacredWeapon(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Paladin", 3, "oath-of-devotion", "Oath of Devotion")) return true;
-  return features.includes("Oath of Devotion") || features.includes("Sacred Weapon");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Paladin") && (features.includes("Oath of Devotion") || features.includes("Sacred Weapon"));
 }
 
 function dnd5eSrdHasDevotionAura(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Paladin", 7, "oath-of-devotion", "Oath of Devotion")) return true;
-  return features.includes("Aura of Devotion");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Paladin") && features.includes("Aura of Devotion");
 }
 
 function dnd5eSrdHasDevotionSmiteProtection(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Paladin", 15, "oath-of-devotion", "Oath of Devotion")) return true;
-  return features.includes("Smite of Protection");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Paladin") && features.includes("Smite of Protection");
 }
 
 function dnd5eSrdHasDevotionHolyNimbus(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Paladin", 20, "oath-of-devotion", "Oath of Devotion")) return true;
-  return features.includes("Holy Nimbus") || "holyNimbus" in recordValue(actor.data.resources);
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Paladin") && (features.includes("Holy Nimbus") || "holyNimbus" in recordValue(actor.data.resources));
 }
 
 function dnd5eSrdHasHuntersMark(actor: Actor): boolean {
@@ -15096,31 +15084,31 @@ function dnd5eSrdHasHuntersMark(actor: Actor): boolean {
 function dnd5eSrdHasHunterLore(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Ranger", 3, "hunter")) return true;
-  return features.includes("Hunter") || features.includes("Hunter's Lore");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Ranger") && (features.includes("Hunter") || features.includes("Hunter's Lore"));
 }
 
 function dnd5eSrdHasHunterPrey(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Ranger", 3, "hunter")) return true;
-  return features.includes("Hunter's Prey");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Ranger") && features.includes("Hunter's Prey");
 }
 
 function dnd5eSrdHasHunterDefensiveTactics(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Ranger", 7, "hunter")) return true;
-  return features.includes("Defensive Tactics");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Ranger") && features.includes("Defensive Tactics");
 }
 
 function dnd5eSrdHasHunterSuperiorPrey(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Ranger", 11, "hunter")) return true;
-  return features.includes("Superior Hunter's Prey");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Ranger") && features.includes("Superior Hunter's Prey");
 }
 
 function dnd5eSrdHasHunterSuperiorDefense(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Ranger", 15, "hunter")) return true;
-  return features.includes("Superior Hunter's Defense");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Ranger") && features.includes("Superior Hunter's Defense");
 }
 
 function dnd5eSrdHasMartialArts(actor: Actor): boolean {
@@ -15134,7 +15122,7 @@ function dnd5eSrdHasMonkFocus(actor: Actor): boolean {
 }
 
 function dnd5eSrdHasDeflectAttacks(actor: Actor): boolean {
-  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Monk", 3, "warrior-of-the-open-hand", "Warrior of the Open Hand")) return true;
+  if (dnd5eSrdClassLevel(actor, "Monk") >= 3) return true;
   return normalizeStringArray(actor.data.features).includes("Deflect Attacks");
 }
 
@@ -15145,26 +15133,26 @@ function dnd5eSrdHasStunningStrike(actor: Actor): boolean {
 
 function dnd5eSrdHasOpenHandTechnique(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
-  if (dnd5eSrdClassLevel(actor, "Monk") >= 3) return true;
-  return features.includes("Warrior of the Open Hand") || features.includes("Open Hand Technique");
+  if (dnd5eSrdHasSelectedSubclassLevel(actor, "Monk", 3, "warrior-of-the-open-hand", "Warrior of the Open Hand")) return true;
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Monk") && (features.includes("Warrior of the Open Hand") || features.includes("Open Hand Technique"));
 }
 
 function dnd5eSrdHasOpenHandWholeness(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Monk", 6, "warrior-of-the-open-hand", "Warrior of the Open Hand")) return true;
-  return features.includes("Wholeness of Body") || "wholenessOfBody" in recordValue(actor.data.resources);
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Monk") && (features.includes("Wholeness of Body") || "wholenessOfBody" in recordValue(actor.data.resources));
 }
 
 function dnd5eSrdHasOpenHandFleetStep(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Monk", 11, "warrior-of-the-open-hand", "Warrior of the Open Hand")) return true;
-  return features.includes("Fleet Step");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Monk") && features.includes("Fleet Step");
 }
 
 function dnd5eSrdHasOpenHandQuiveringPalm(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Monk", 17, "warrior-of-the-open-hand", "Warrior of the Open Hand")) return true;
-  return features.includes("Quivering Palm");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Monk") && features.includes("Quivering Palm");
 }
 
 function dnd5eSrdHasInnateSorcery(actor: Actor): boolean {
@@ -15185,49 +15173,49 @@ function dnd5eSrdHasMetamagic(actor: Actor): boolean {
 function dnd5eSrdHasDraconicResilience(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Sorcerer", 3, "draconic-sorcery", "Draconic Sorcery")) return true;
-  return features.includes("Draconic Sorcery") || features.includes("Draconic Resilience");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Sorcerer") && (features.includes("Draconic Sorcery") || features.includes("Draconic Resilience"));
 }
 
 function dnd5eSrdHasDraconicElementalAffinity(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Sorcerer", 6, "draconic-sorcery", "Draconic Sorcery")) return true;
-  return features.includes("Elemental Affinity");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Sorcerer") && features.includes("Elemental Affinity");
 }
 
 function dnd5eSrdHasDraconicWings(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Sorcerer", 14, "draconic-sorcery", "Draconic Sorcery")) return true;
-  return features.includes("Dragon Wings") || "dragonWings" in recordValue(actor.data.resources);
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Sorcerer") && (features.includes("Dragon Wings") || "dragonWings" in recordValue(actor.data.resources));
 }
 
 function dnd5eSrdHasDraconicCompanion(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Sorcerer", 18, "draconic-sorcery", "Draconic Sorcery")) return true;
-  return features.includes("Dragon Companion") || "dragonCompanion" in recordValue(actor.data.resources);
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Sorcerer") && (features.includes("Dragon Companion") || "dragonCompanion" in recordValue(actor.data.resources));
 }
 
 function dnd5eSrdHasEvokerPotentCantrip(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Wizard", 3, "evoker")) return true;
-  return features.includes("Evoker") || features.includes("Potent Cantrip");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Wizard") && (features.includes("Evoker") || features.includes("Potent Cantrip"));
 }
 
 function dnd5eSrdHasEvokerSculptSpells(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Wizard", 6, "evoker")) return true;
-  return features.includes("Sculpt Spells");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Wizard") && features.includes("Sculpt Spells");
 }
 
 function dnd5eSrdHasEvokerEmpoweredEvocation(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Wizard", 10, "evoker")) return true;
-  return features.includes("Empowered Evocation");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Wizard") && features.includes("Empowered Evocation");
 }
 
 function dnd5eSrdHasEvokerOverchannel(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Wizard", 14, "evoker")) return true;
-  return features.includes("Overchannel") || "overchannel" in recordValue(actor.data.resources);
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Wizard") && (features.includes("Overchannel") || "overchannel" in recordValue(actor.data.resources));
 }
 
 function dnd5eSrdHasSorcerousRestoration(actor: Actor): boolean {
@@ -15248,25 +15236,25 @@ function dnd5eSrdHasMagicalCunning(actor: Actor): boolean {
 function dnd5eSrdHasFiendDarkBlessing(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Warlock", 3, "fiend-patron", "Fiend Patron")) return true;
-  return features.includes("Fiend Patron") || features.includes("Dark One's Blessing");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Warlock") && (features.includes("Fiend Patron") || features.includes("Dark One's Blessing"));
 }
 
 function dnd5eSrdHasFiendDarkLuck(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Warlock", 6, "fiend-patron", "Fiend Patron")) return true;
-  return features.includes("Dark One's Own Luck") || "fiendLuck" in recordValue(actor.data.resources);
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Warlock") && (features.includes("Dark One's Own Luck") || "fiendLuck" in recordValue(actor.data.resources));
 }
 
 function dnd5eSrdHasFiendResilience(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Warlock", 10, "fiend-patron", "Fiend Patron")) return true;
-  return features.includes("Fiendish Resilience");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Warlock") && features.includes("Fiendish Resilience");
 }
 
 function dnd5eSrdHasFiendHurlThroughHell(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Warlock", 14, "fiend-patron", "Fiend Patron")) return true;
-  return features.includes("Hurl Through Hell") || "hurlThroughHell" in recordValue(actor.data.resources);
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Warlock") && (features.includes("Hurl Through Hell") || "hurlThroughHell" in recordValue(actor.data.resources));
 }
 
 function dnd5eSrdHasWildShape(actor: Actor): boolean {
@@ -15287,25 +15275,25 @@ function dnd5eSrdHasWildResurgence(actor: Actor): boolean {
 function dnd5eSrdHasMoonCircleForms(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Druid", 3, "circle-of-the-moon", "Circle of the Moon")) return true;
-  return features.includes("Circle of the Moon") || features.includes("Circle Forms");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Druid") && (features.includes("Circle of the Moon") || features.includes("Circle Forms"));
 }
 
 function dnd5eSrdHasMoonImprovedCircleForms(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Druid", 6, "circle-of-the-moon", "Circle of the Moon")) return true;
-  return features.includes("Improved Circle Forms");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Druid") && features.includes("Improved Circle Forms");
 }
 
 function dnd5eSrdHasMoonlightStep(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Druid", 10, "circle-of-the-moon", "Circle of the Moon")) return true;
-  return features.includes("Moonlight Step") || "moonlightStep" in recordValue(actor.data.resources);
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Druid") && (features.includes("Moonlight Step") || "moonlightStep" in recordValue(actor.data.resources));
 }
 
 function dnd5eSrdHasMoonLunarForm(actor: Actor): boolean {
   const features = normalizeStringArray(actor.data.features);
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Druid", 14, "circle-of-the-moon", "Circle of the Moon")) return true;
-  return features.includes("Lunar Form");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Druid") && features.includes("Lunar Form");
 }
 
 function dnd5eSrdHasSneakAttack(actor: Actor): boolean {
@@ -15320,27 +15308,27 @@ function dnd5eSrdHasCunningStrike(actor: Actor): boolean {
 
 function dnd5eSrdHasThiefFastHands(actor: Actor): boolean {
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Rogue", 3, "thief")) return true;
-  return normalizeStringArray(actor.data.features).includes("Fast Hands");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Rogue") && normalizeStringArray(actor.data.features).includes("Fast Hands");
 }
 
 function dnd5eSrdHasThiefSecondStoryWork(actor: Actor): boolean {
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Rogue", 3, "thief")) return true;
-  return normalizeStringArray(actor.data.features).includes("Second-Story Work");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Rogue") && normalizeStringArray(actor.data.features).includes("Second-Story Work");
 }
 
 function dnd5eSrdHasThiefSupremeSneak(actor: Actor): boolean {
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Rogue", 9, "thief")) return true;
-  return normalizeStringArray(actor.data.features).includes("Supreme Sneak");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Rogue") && normalizeStringArray(actor.data.features).includes("Supreme Sneak");
 }
 
 function dnd5eSrdHasThiefUseMagicDevice(actor: Actor): boolean {
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Rogue", 13, "thief")) return true;
-  return normalizeStringArray(actor.data.features).includes("Use Magic Device");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Rogue") && normalizeStringArray(actor.data.features).includes("Use Magic Device");
 }
 
 function dnd5eSrdHasThiefReflexes(actor: Actor): boolean {
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Rogue", 17, "thief")) return true;
-  return normalizeStringArray(actor.data.features).includes("Thief's Reflexes");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Rogue") && normalizeStringArray(actor.data.features).includes("Thief's Reflexes");
 }
 
 function dnd5eSrdHasRage(actor: Actor): boolean {
@@ -15360,22 +15348,22 @@ function dnd5eSrdHasRecklessAttack(actor: Actor): boolean {
 
 function dnd5eSrdHasBerserkerFrenzy(actor: Actor): boolean {
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Barbarian", 3, "path-of-the-berserker", "Path of the Berserker")) return true;
-  return normalizeStringArray(actor.data.features).includes("Frenzy");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Barbarian") && normalizeStringArray(actor.data.features).includes("Frenzy");
 }
 
 function dnd5eSrdHasBerserkerMindlessRage(actor: Actor): boolean {
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Barbarian", 6, "path-of-the-berserker", "Path of the Berserker")) return true;
-  return normalizeStringArray(actor.data.features).includes("Mindless Rage");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Barbarian") && normalizeStringArray(actor.data.features).includes("Mindless Rage");
 }
 
 function dnd5eSrdHasBerserkerRetaliation(actor: Actor): boolean {
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Barbarian", 10, "path-of-the-berserker", "Path of the Berserker")) return true;
-  return normalizeStringArray(actor.data.features).includes("Retaliation");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Barbarian") && normalizeStringArray(actor.data.features).includes("Retaliation");
 }
 
 function dnd5eSrdHasBerserkerIntimidatingPresence(actor: Actor): boolean {
   if (dnd5eSrdHasSelectedSubclassLevel(actor, "Barbarian", 14, "path-of-the-berserker", "Path of the Berserker")) return true;
-  return normalizeStringArray(actor.data.features).includes("Intimidating Presence");
+  return dnd5eSrdLegacySubclassStateAllowed(actor, "Barbarian") && normalizeStringArray(actor.data.features).includes("Intimidating Presence");
 }
 
 /** Complete cumulative base-class schedule at this class level. */
@@ -15616,7 +15604,7 @@ function dnd5eSrdPreserveLifeFormula(actor: Actor): string {
 
 function dnd5eSrdLifeDiscipleMetadata(): Record<string, unknown> {
   return {
-    healingBonus: "2 + spell slot level",
+    healingBonus: "2 + spell slot level", activation: "follow-up",
     appliesTo: "spells cast with a spell slot that restore Hit Points",
     timing: "same turn as the spell"
   };
@@ -15635,7 +15623,7 @@ function dnd5eSrdPreserveLifeMetadata(actor: Actor): Record<string, unknown> {
 
 function dnd5eSrdLifeBlessedHealerMetadata(): Record<string, unknown> {
   return {
-    selfHealing: "2 + spell slot level",
+    selfHealing: "2 + spell slot level", activation: "follow-up",
     trigger: "after casting a spell with a spell slot that restores Hit Points to another creature"
   };
 }
@@ -15653,7 +15641,9 @@ function dnd5eSrdBerserkerFrenzyFormula(actor: Actor): string {
 
 function dnd5eSrdBerserkerFrenzyMetadata(actor: Actor): Record<string, unknown> {
   return {
-    trigger: "first target you hit on your turn with a Strength-based attack after using Reckless Attack while Rage is active",
+    effectKind: "damage", oncePerTurn: true,
+    trigger: "first target you hit on your turn with a Strength-based attack after using Reckless Attack while Rage is active", activation: "on-hit",
+    continuation: dnd5eSrdContinuationTrigger("strength-rage-hit"),
     damageType: "same as weapon or Unarmed Strike",
     diceEqualToRageDamageBonus: dnd5eSrdRageDamageBonus(actor),
     requires: ["Rage active", "Reckless Attack"],
@@ -15706,7 +15696,7 @@ function dnd5eSrdBardicInspirationDie(actor: Actor): string {
 
 function dnd5eSrdBardicInspirationMetadata(actor: Actor): Record<string, unknown> {
   return {
-    resource: "bardicInspiration",
+    resource: "bardicInspiration", action: "Bonus Action",
     die: dnd5eSrdBardicInspirationDie(actor),
     duration: "1 hour",
     trigger: "after seeing or hearing the D20 Test but before knowing whether it succeeds",
@@ -15741,7 +15731,7 @@ function dnd5eSrdLoreMagicalDiscoveriesMetadata(actor: Actor): Record<string, un
 
 function dnd5eSrdLorePeerlessSkillMetadata(actor: Actor): Record<string, unknown> {
   return {
-    resource: "bardicInspiration",
+    resource: "bardicInspiration", activation: "free",
     die: dnd5eSrdBardicInspirationDie(actor),
     trigger: "after you fail an ability check or attack roll",
     effect: "add the Bardic Inspiration die to the d20",
@@ -15762,7 +15752,7 @@ function dnd5eSrdDefaultLayOnHandsAmount(actor: Actor): number {
 
 function dnd5eSrdLayOnHandsMetadata(actor: Actor): Record<string, unknown> {
   return {
-    resource: "layOnHands",
+    resource: "layOnHands", action: "Bonus Action",
     pool: dnd5eSrdLayOnHandsMax(Math.max(1, dnd5eSrdClassLevel(actor, "Paladin"))),
     defaultAmount: dnd5eSrdDefaultLayOnHandsAmount(actor),
     chooseAmount: true,
@@ -15778,7 +15768,8 @@ function dnd5eSrdDivineSmiteFormula(_actor: Actor, spellSlotLevel?: number): str
 
 function dnd5eSrdDivineSmiteMetadata(actor: Actor): Record<string, unknown> {
   return {
-    trigger: "immediately after hitting with a Melee weapon or Unarmed Strike",
+    effectKind: "damage", continuation: { role: "feature", activation: "on-hit", ...dnd5eSrdContinuationTrigger("melee-weapon-or-unarmed-hit") },
+    trigger: "immediately after hitting with a Melee weapon or Unarmed Strike", action: "Bonus Action",
     damageType: "Radiant",
     spellSlotLevel: 1,
     upcast: "+1d8 per spell slot level above 1",
@@ -15814,7 +15805,7 @@ function dnd5eSrdDevotionAuraMetadata(): Record<string, unknown> {
 
 function dnd5eSrdDevotionSmiteProtectionMetadata(): Record<string, unknown> {
   return {
-    trigger: "whenever you cast Divine Smite",
+    trigger: "whenever you cast Divine Smite", activation: "follow-up",
     aura: "Aura of Protection",
     benefit: "Half Cover",
     affects: "you and allies in the aura",
@@ -15849,7 +15840,8 @@ function dnd5eSrdHuntersMarkFormula(actor: Actor): string {
 function dnd5eSrdHuntersMarkMetadata(actor: Actor): Record<string, unknown> {
   const level = Math.max(1, dnd5eSrdClassLevel(actor, "Ranger"));
   return {
-    resource: "favoredEnemy",
+    effectKind: "damage", continuation: { role: "feature", activation: "on-hit", ...dnd5eSrdContinuationTrigger("any-attack-hit") },
+    resource: "favoredEnemy", action: "Bonus Action",
     spell: "Hunter's Mark",
     damageType: "Force",
     trigger: "hit the marked target with an attack roll",
@@ -15875,7 +15867,7 @@ function dnd5eSrdHunterLoreMetadata(actor: Actor): Record<string, unknown> {
 
 function dnd5eSrdHunterPreyMetadata(): Record<string, unknown> {
   return {
-    choices: [
+    activation: "on-hit", continuation: dnd5eSrdContinuationTrigger("weapon-damage-hit"), choices: [
       { id: "colossus-slayer", damageFormula: "1d8", trigger: "hit a creature with a weapon while it is missing any Hit Points", limit: "once per turn" },
       { id: "horde-breaker", extraAttack: true, trigger: "weapon attack against a different creature within 5 feet of the original target", limit: "once on each of your turns" }
     ],
@@ -15895,7 +15887,7 @@ function dnd5eSrdHunterDefensiveTacticsMetadata(): Record<string, unknown> {
 
 function dnd5eSrdHunterSuperiorPreyMetadata(actor: Actor): Record<string, unknown> {
   return {
-    spell: "Hunter's Mark",
+    spell: "Hunter's Mark", activation: "on-hit", continuation: dnd5eSrdContinuationTrigger("attack-damage-hit"),
     damageFormula: dnd5eSrdHuntersMarkFormula(actor),
     trigger: "once per turn when you deal damage to a Hunter's Mark target",
     secondaryTarget: { rangeFt: 30, requiresSight: true },
@@ -15929,7 +15921,7 @@ function dnd5eSrdMartialArtsDieForLevel(level: number): string {
 
 function dnd5eSrdMartialArtsMetadata(actor: Actor): Record<string, unknown> {
   return {
-    damageType: dnd5eSrdHasEmpoweredStrikes(actor) ? ["Bludgeoning", "Force"] : "Bludgeoning",
+    damageType: dnd5eSrdHasEmpoweredStrikes(actor) ? ["Bludgeoning", "Force"] : "Bludgeoning", action: "Bonus Action",
     martialArtsDie: dnd5eSrdMartialArtsDie(actor),
     bonusUnarmedStrike: true,
     dexterousAttacks: true,
@@ -15978,7 +15970,7 @@ function dnd5eSrdUncannyMetabolismFormula(actor: Actor): string {
 
 function dnd5eSrdUncannyMetabolismMetadata(actor: Actor): Record<string, unknown> {
   return {
-    resource: "uncannyMetabolism",
+    resource: "uncannyMetabolism", activation: "free",
     recovery: "long",
     trigger: "when rolling Initiative",
     restores: "all expended Focus Points",
@@ -16011,7 +16003,8 @@ function dnd5eSrdDeflectAttacksMetadata(actor: Actor): Record<string, unknown> {
 
 function dnd5eSrdStunningStrikeMetadata(actor: Actor): Record<string, unknown> {
   return {
-    resource: "focus",
+    resource: "focus", activation: "on-hit",
+    continuation: dnd5eSrdContinuationTrigger("monk-weapon-or-unarmed-hit"),
     cost: 1,
     trigger: "once per turn when you hit with a Monk weapon or Unarmed Strike",
     save: { ability: "constitution", dc: dnd5eSrdMonkSaveDc(actor) },
@@ -16022,7 +16015,8 @@ function dnd5eSrdStunningStrikeMetadata(actor: Actor): Record<string, unknown> {
 
 function dnd5eSrdOpenHandTechniqueMetadata(actor: Actor): Record<string, unknown> {
   return {
-    trigger: "whenever you hit a creature with an attack granted by Flurry of Blows",
+    trigger: "whenever you hit a creature with an attack granted by Flurry of Blows", activation: "on-hit",
+    continuation: dnd5eSrdContinuationTrigger("flurry-of-blows-hit"),
     flurryOfBlowsRollId: DND_5E_SRD_FLURRY_OF_BLOWS_ROLL_ID,
     options: [
       { name: "Addle", effect: "target can't make Opportunity Attacks until the start of its next turn" },
@@ -16057,7 +16051,7 @@ function dnd5eSrdOpenHandWholenessMetadata(actor: Actor): Record<string, unknown
 
 function dnd5eSrdOpenHandFleetStepMetadata(): Record<string, unknown> {
   return {
-    trigger: "after taking a Bonus Action other than Step of the Wind",
+    trigger: "after taking a Bonus Action other than Step of the Wind", activation: "follow-up",
     followupAction: "Step of the Wind",
     timing: "immediately after that Bonus Action"
   };
@@ -16065,7 +16059,7 @@ function dnd5eSrdOpenHandFleetStepMetadata(): Record<string, unknown> {
 
 function dnd5eSrdOpenHandQuiveringPalmMetadata(actor: Actor): Record<string, unknown> {
   return {
-    resource: "focus",
+    resource: "focus", action: "Action",
     cost: 4,
     trigger: "when you hit a creature with an Unarmed Strike",
     setupDurationDays: Math.max(1, dnd5eSrdClassLevel(actor, "Monk")),
@@ -16118,7 +16112,7 @@ function dnd5eSrdCreateSpellSlotMetadata(actor: Actor): Record<string, unknown> 
 
 function dnd5eSrdMetamagicEmpoweredMetadata(actor: Actor): Record<string, unknown> {
   return {
-    resource: "sorceryPoints",
+    resource: "sorceryPoints", activation: "follow-up",
     cost: 1,
     trigger: "when rolling damage for a spell",
     rerollDamageDiceUpTo: Math.max(1, genericFantasyAttributeModifier(actor, "charisma")),
@@ -16128,7 +16122,7 @@ function dnd5eSrdMetamagicEmpoweredMetadata(actor: Actor): Record<string, unknow
 
 function dnd5eSrdMetamagicQuickenedMetadata(_actor: Actor): Record<string, unknown> {
   return {
-    resource: "sorceryPoints",
+    resource: "sorceryPoints", activation: "free",
     cost: 2,
     trigger: "when casting a spell with an Action casting time",
     castingTime: "Bonus Action",
@@ -16151,7 +16145,7 @@ function dnd5eSrdDraconicResilienceMetadata(actor: Actor): Record<string, unknow
 
 function dnd5eSrdDraconicElementalAffinityMetadata(actor: Actor): Record<string, unknown> {
   return {
-    damageTypeChoices: ["Acid", "Cold", "Fire", "Lightning", "Poison"],
+    damageTypeChoices: ["Acid", "Cold", "Fire", "Lightning", "Poison"], activation: "follow-up",
     grantsResistance: true,
     damageBonus: genericFantasyAttributeModifier(actor, "charisma"),
     trigger: "when you cast a spell that deals the chosen damage type",
@@ -16171,7 +16165,7 @@ function dnd5eSrdDraconicWingsMetadata(_actor: Actor): Record<string, unknown> {
 }
 
 function dnd5eSrdDraconicCompanionMetadata(): Record<string, unknown> {
-  return { resource: "dragonCompanion", spell: "summon-dragon", freeCasting: true, materialComponents: false, canRemoveConcentration: true, modifiedDuration: "1 minute", recovery: "long", controlledCreature: { kind: "summon", duration: { mode: "minutes", amount: 1 }, concentration: false, initiative: { mode: "shared" }, command: { required: false, action: "none" }, actor: { name: "Draconic Spirit", type: "dragon", hp: { base: 50, perSlotAbove: 10, baseSlotLevel: 5 } } } };
+  return { resource: "dragonCompanion", action: "Magic", spell: "summon-dragon", freeCasting: true, materialComponents: false, canRemoveConcentration: true, modifiedDuration: "1 minute", recovery: "long", controlledCreature: { kind: "summon", duration: { mode: "minutes", amount: 1 }, concentration: false, initiative: { mode: "shared" }, command: { required: false, action: "none" }, actor: { name: "Draconic Spirit", type: "dragon", hp: { base: 50, perSlotAbove: 10, baseSlotLevel: 5 } } } };
 }
 
 function dnd5eSrdDraconicSpells(level: number): Array<{ sorcererLevel: number; spells: string[] }> {
@@ -16219,7 +16213,7 @@ function dnd5eSrdFiendDarkBlessingFormula(actor: Actor): string {
 
 function dnd5eSrdFiendDarkBlessingMetadata(actor: Actor): Record<string, unknown> {
   return {
-    healing: "temporaryHitPoints",
+    healing: "temporaryHitPoints", activation: "free",
     temporaryHitPoints: Number(dnd5eSrdFiendDarkBlessingFormula(actor)),
     trigger: "when you or a creature within 10 feet of you reduces an enemy to 0 Hit Points",
     minimumTemporaryHitPoints: 1,
@@ -16229,7 +16223,7 @@ function dnd5eSrdFiendDarkBlessingMetadata(actor: Actor): Record<string, unknown
 
 function dnd5eSrdFiendDarkLuckMetadata(actor: Actor): Record<string, unknown> {
   return {
-    resource: "fiendLuck",
+    resource: "fiendLuck", activation: "free",
     maxUses: dnd5eSrdFiendLuckMax(actor),
     trigger: "after seeing an ability check or saving throw roll, before its effects occur",
     limit: "once per roll",
@@ -16248,7 +16242,9 @@ function dnd5eSrdFiendResilienceMetadata(): Record<string, unknown> {
 
 function dnd5eSrdFiendHurlThroughHellMetadata(actor: Actor): Record<string, unknown> {
   return {
-    resource: "hurlThroughHell",
+    effectKind: "damage", oncePerTurn: true,
+    resource: "hurlThroughHell", activation: "on-hit",
+    continuation: dnd5eSrdContinuationTrigger("any-attack-hit"),
     trigger: "once per turn when you hit a creature with an attack roll",
     save: { ability: "charisma", dc: dnd5eSrdSpellSaveDc(actor) },
     damageType: "Psychic",
@@ -16350,6 +16346,7 @@ function dnd5eSrdGiantAncestryMetadata(actor: Actor): Record<string, unknown> {
       ancestryName: selected.name,
       giantType: selected.giantType,
       activation: selected.activation,
+      ...(selected.activation === "on-hit" ? { continuation: dnd5eSrdContinuationTrigger("attack-damage-hit") } : {}),
       selectedBenefit,
       requiresManualResolution: true
     };
@@ -16618,7 +16615,7 @@ function dnd5eSrdEvokerSculptSpellsMetadata(actor: Actor): Record<string, unknow
 function dnd5eSrdEvokerEmpoweredEvocationMetadata(actor: Actor): Record<string, unknown> {
   const bonus = dnd5eSrdEvokerEmpoweredEvocationBonus(actor);
   return {
-    appliesTo: "one damage roll of a Wizard Evocation spell",
+    appliesTo: "one damage roll of a Wizard Evocation spell", activation: "follow-up",
     damageBonus: bonus,
     ability: "intelligence",
     damageRollLimit: "once per spell"
@@ -16710,7 +16707,8 @@ function dnd5eSrdMoonLunarFormMetadata(): Record<string, unknown> {
   return {
     wildShape: true,
     damageFormula: "2d10",
-    damageType: "Radiant",
+    damageType: "Radiant", activation: "on-hit",
+    continuation: dnd5eSrdContinuationTrigger("wild-shape-form-hit"),
     limit: "once per turn",
     trigger: "hit with a Wild Shape form attack",
     sharedMoonlight: { trigger: "Moonlight Step", willingCreatureWithinFt: 10 }
@@ -16754,8 +16752,10 @@ function dnd5eSrdSneakAttackDice(actor: Actor): number {
 
 function dnd5eSrdSneakAttackMetadata(actor: Actor): Record<string, unknown> {
   const metadata: Record<string, unknown> = {
-    trigger: "one eligible weapon attack hit per turn",
-    damageType: "Weapon",
+    effectKind: "damage", oncePerTurn: true, requiresSneakAttackEligibility: true,
+    trigger: "one eligible weapon attack hit per turn", activation: "on-hit",
+    continuation: dnd5eSrdContinuationTrigger("weapon-hit"),
+    damageTypeOptions: ["Bludgeoning", "Piercing", "Slashing"],
     requirements: ["Finesse or Ranged weapon", "Advantage or qualifying adjacent enemy", "No Disadvantage"],
     limit: "once per turn"
   };
@@ -16766,7 +16766,7 @@ function dnd5eSrdSneakAttackMetadata(actor: Actor): Record<string, unknown> {
 function dnd5eSrdCunningStrikeMetadata(actor: Actor): Record<string, unknown> {
   const dice = dnd5eSrdSneakAttackDice(actor);
   return {
-    trigger: "after dealing Sneak Attack damage",
+    trigger: "after dealing Sneak Attack damage", activation: "follow-up",
     saveDc: dnd5eSrdRogueSaveDc(actor),
     sneakAttackDice: dice,
     options: [
@@ -16811,7 +16811,7 @@ function dnd5eSrdThiefSupremeSneakMetadata(actor: Actor): Record<string, unknown
 
 function dnd5eSrdThiefUseMagicDeviceMetadata(actor: Actor): Record<string, unknown> {
   return {
-    attunementLimit: 4,
+    attunementLimit: 4, activation: "follow-up",
     charges: { die: "1d6", noChargeExpendedOn: 6 },
     scrolls: { spellcastingAbility: "intelligence", reliableSpellLevels: [0, 1], higherLevelCheck: { ability: "arcana", dcFormula: "10 + spell level", spellSaveDc: dnd5eSrdSpellSaveDc(actor, "intelligence") } }
   };
@@ -16933,7 +16933,7 @@ function dnd5eSrdChampionSurvivorFormula(actor: Actor): string {
 
 function dnd5eSrdChampionSurvivorMetadata(actor: Actor): Record<string, unknown> {
   return {
-    deathSavingThrows: { advantage: true, d20RollsCountingAs20: "18-20" },
+    deathSavingThrows: { advantage: true, d20RollsCountingAs20: "18-20" }, activation: "free",
     heroicRally: {
       trigger: "start of turn while Bloodied and at least 1 HP",
       formula: dnd5eSrdChampionSurvivorFormula(actor)

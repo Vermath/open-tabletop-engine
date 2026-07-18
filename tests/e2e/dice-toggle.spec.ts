@@ -12,14 +12,14 @@ async function loginDemoGm(page: Page) {
   await page.evaluate(async (apiBaseUrl) => {
     const response = await fetch(`${apiBaseUrl}/api/v1/auth/login`, {
       method: "POST",
+      credentials: "include",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ email: "gm@example.test" })
     });
     if (!response.ok) throw new Error(await response.text());
-    const login = (await response.json()) as { token: string; user: { id: string } };
+    const login = (await response.json()) as { user: { id: string } };
     localStorage.setItem("otte:userId", login.user.id);
-    localStorage.setItem("otte:sessionToken", login.token);
-    localStorage.setItem("otte:sessionTokenUser", login.user.id);
+    localStorage.setItem("otte:sessionTransport", "cookie");
   }, apiBaseUrl);
   await page.goto("/");
 }

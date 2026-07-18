@@ -26,6 +26,8 @@ import type { AssetStorageRef, MapAsset } from "@open-tabletop/core";
 
 export interface AssetStorage {
   readonly provider: AssetStorageRef["provider"];
+  /** Prepare provider-owned resources required before readiness can succeed. */
+  initialize?(): Promise<void>;
   put(
     asset: MapAsset,
     body: Buffer,
@@ -302,13 +304,31 @@ export class S3AssetStorage implements AssetStorage {
 
   async healthCheck(): Promise<{ ok: boolean; reason?: string }> {
     try {
-      await this.client.send(
-        new HeadBucketCommand({ Bucket: this.options.bucket }),
-      );
+      await this.assertBucketReady();
       return { ok: true };
-    } catch {
+    } catch (error) {
+      if (isS3NotFound(error)) {
+        this.ready = undefined;
+        try {
+          await this.assertBucketReady();
+          return { ok: true };
+        } catch {
+          // Return the same non-secret readiness reason for failed repair attempts.
+        }
+      }
       return { ok: false, reason: "s3_asset_storage_unavailable" };
     }
+  }
+
+  async initialize(): Promise<void> {
+    await this.ensureBucket();
+  }
+
+  private async assertBucketReady(): Promise<void> {
+    await this.initialize();
+    await this.client.send(
+      new HeadBucketCommand({ Bucket: this.options.bucket }),
+    );
   }
 
   private async ensureBucket(): Promise<void> {

@@ -7,14 +7,14 @@ async function loginDemoGm(page: Page): Promise<void> {
   await page.evaluate(async (baseUrl) => {
     const response = await fetch(`${baseUrl}/api/v1/auth/login`, {
       method: "POST",
+      credentials: "include",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ email: "gm@example.test" }),
     });
     if (!response.ok) throw new Error(await response.text());
-    const login = await response.json() as { token: string; user: { id: string } };
+    const login = await response.json() as { user: { id: string } };
     localStorage.setItem("otte:userId", login.user.id);
-    localStorage.setItem("otte:sessionToken", login.token);
-    localStorage.setItem("otte:sessionTokenUser", login.user.id);
+    localStorage.setItem("otte:sessionTransport", "cookie");
   }, apiBaseUrl);
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
@@ -78,14 +78,16 @@ test("GM creates, reloads, and plays on gridless and square scenes", async ({ pa
   await expect(token).toBeVisible();
   const box = await token.boundingBox();
   expect(box).toBeTruthy();
-  const movedResponse = page.waitForResponse((response) => response.request().method() === "PATCH" && response.url().endsWith(`/api/v1/tokens/${tokenRecord.id}`));
+  const movedResponse = page.waitForResponse((response) => response.request().method() === "POST" && /\/api\/v1\/scenes\/[^/]+\/tokens\/move$/.test(response.url()));
   await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
   await page.mouse.down();
   await page.mouse.move(box!.x + box!.width / 2 + 37, box!.y + box!.height / 2 + 23, { steps: 5 });
   await page.mouse.up();
-  const moved = await (await movedResponse).json() as { x: number; y: number };
-  expect(moved.x).not.toBe(tokenRecord.x);
-  expect(moved.x % 50 === 0 && moved.y % 50 === 0).toBe(false);
+  const movedBatch = await (await movedResponse).json() as { tokens: Array<{ id: string; x: number; y: number }> };
+  const moved = movedBatch.tokens.find((candidate) => candidate.id === tokenRecord.id);
+  expect(moved).toBeTruthy();
+  expect(moved!.x).not.toBe(tokenRecord.x);
+  expect(moved!.x % 50 === 0 && moved!.y % 50 === 0).toBe(false);
 
   panel = await openScenes(page);
   form = await newSceneForm(panel);

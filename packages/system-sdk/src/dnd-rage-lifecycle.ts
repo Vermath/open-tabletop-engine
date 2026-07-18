@@ -1,5 +1,6 @@
 import type { Actor, Combat, Item, RulesEffectSchedule } from "@open-tabletop/core";
 import { dnd5eSrdClassLevel } from "./dnd-class-levels.js";
+import { dnd5eSrdContinuationTrigger } from "./dnd-action-continuations.js";
 import type { Dnd5eSrdConcentrationCleanup } from "./dnd-resolution-types.js";
 import {
   DND_5E_SRD_CONCENTRATION_ROLL_ID,
@@ -152,7 +153,18 @@ export function dnd5eSrdRageFeatureRolls(actor: Actor): Array<{ id: string; labe
   const damageBonus = dnd5eSrdRageDamageBonus(actor);
   const rolls = [
     { id: DND_5E_SRD_RAGE_ROLL_ID, label: "Rage", formula: "0", metadata: dnd5eSrdRageFeatureMetadata(actor) },
-    { id: DND_5E_SRD_RAGE_DAMAGE_ROLL_ID, label: "Rage Damage Bonus", formula: String(damageBonus), metadata: { trigger: "Strength-based weapon or Unarmed Strike damage while raging", damageType: "Weapon", bonusDamage: damageBonus } },
+    {
+      id: DND_5E_SRD_RAGE_DAMAGE_ROLL_ID,
+      label: "Rage Damage Bonus",
+      formula: String(damageBonus),
+      metadata: {
+        activation: "on-hit",
+        continuation: dnd5eSrdContinuationTrigger("strength-rage-hit"),
+        trigger: "Strength-based weapon or Unarmed Strike damage while raging",
+        damageType: "Weapon",
+        bonusDamage: damageBonus
+      }
+    },
   ];
   if (!dnd5eSrdActiveRageEffect(actor)) return rolls;
   return [...rolls,

@@ -1,7 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { dnd5eSrdRageActionRollIds, openApiSpec, routes } from "./index.js";
+import { apiContractPolicy, dnd5eSrdRageActionRollIds, openApiSpec, routes } from "./index.js";
 
 describe("api contracts", () => {
+  it("publishes one campaign cursor for persisted and stable AI state while naming every transient exception", () => {
+    expect(apiContractPolicy.realtime.authoritativeSequence).toContain("one monotonic per-campaign sequence");
+    expect(apiContractPolicy.realtime.transientUnsequencedEventTypes).toEqual([
+      "ai.message.delta",
+      "ai.reasoning.delta",
+      "ai.reasoning.completed",
+      "ai.activity.reported",
+      "agent.boardCaptureRequested",
+    ]);
+    expect(apiContractPolicy.realtime.transientUnsequencedEventTypes).not.toContain("ai.message.completed");
+    expect(apiContractPolicy.realtime.transientUnsequencedEventTypes).not.toContain("ai.tool.completed");
+    expect(apiContractPolicy.realtime.transientUnsequencedEventTypes).not.toContain("ai.memory.created");
+  });
+
   it("publishes stable reviewed-action identifiers for the complete Rage lifecycle", () => {
     expect(dnd5eSrdRageActionRollIds).toEqual({
       start: "feature-rage",
@@ -151,8 +165,9 @@ describe("api contracts", () => {
     );
     expect(openApiSpec.components.schemas.EncounterMonsterPlacementBatchRequest).toMatchObject({
       additionalProperties: false,
-      required: ["systemId", "expectedUpdatedAt", "placements"],
+      required: ["encounterId", "systemId", "expectedUpdatedAt", "placements"],
       properties: {
+        encounterId: expect.objectContaining({ type: "string" }),
         placements: {
           type: "array",
           minItems: 1,
@@ -439,6 +454,49 @@ describe("api contracts", () => {
     expect(openApiSpec.components.schemas.TokenPatchRequest.properties).not.toHaveProperty("updatedAt");
   });
 
+  it("publishes atomic scene token movement with per-token revisions", () => {
+    expect(routes.tokenMoves("scene/one")).toBe("/api/v1/scenes/scene%2Fone/tokens/move");
+    expect(openApiSpec.components.schemas.TokenMoveBatchRequest).toMatchObject({
+      additionalProperties: false,
+      required: ["expectedSceneUpdatedAt", "changes"],
+      properties: {
+        expectedSceneUpdatedAt: { type: "string", format: "date-time" },
+        changes: {
+          type: "array",
+          minItems: 1,
+          maxItems: 100,
+          items: { $ref: "#/components/schemas/TokenMoveBatchEntry" },
+        },
+      },
+    });
+    expect(openApiSpec.components.schemas.TokenMoveBatchEntry).toMatchObject({
+      additionalProperties: false,
+      required: ["tokenId", "x", "y", "expectedUpdatedAt"],
+    });
+    const operation = openApiSpec.paths["/api/v1/scenes/{sceneId}/tokens/move"]?.post;
+    expect(operation?.parameters).toContainEqual(
+      expect.objectContaining({ name: "Idempotency-Key", in: "header", required: true }),
+    );
+    expect(operation?.requestBody).toMatchObject({
+      content: { "application/json": { schema: { $ref: "#/components/schemas/TokenMoveBatchRequest" } } },
+    });
+    expect(operation?.responses["200"]).toMatchObject({
+      content: { "application/json": { schema: { $ref: "#/components/schemas/TokenMoveBatchResponse" } } },
+    });
+    expect(openApiSpec.components.schemas.TokenMoveBatchResponse).toMatchObject({
+      additionalProperties: false,
+      required: ["tokens", "movedAt", "undo"],
+      properties: { undo: { $ref: "#/components/schemas/TokenMoveBatchRequest" } },
+    });
+    expect(openApiSpec.components.schemas.EncounterMonsterPlacementBatchResponse).toMatchObject({
+      required: ["placements", "scene", "encounter"],
+      properties: {
+        encounter: { $ref: "#/components/schemas/Encounter" },
+        campaignSession: { $ref: "#/components/schemas/CampaignSession" },
+      },
+    });
+  });
+
   it("documents typed portals, senses, darkness, and cross-user vision preview", () => {
     expect(openApiSpec.components.schemas.Wall.properties).toEqual(expect.objectContaining({
       kind: expect.objectContaining({ enum: ["wall", "terrain", "door", "window"] }),
@@ -595,6 +653,7 @@ describe("api contracts", () => {
     const characterTemplates = openApiSpec.paths["/api/v1/campaigns/{campaignId}/systems/{systemId}/character-templates"]?.get;
     const createCharacter = openApiSpec.paths["/api/v1/campaigns/{campaignId}/systems/{systemId}/characters"]?.post;
     const rulesPreview = openApiSpec.paths["/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/rules-preview"]?.post;
+    const advancementCatalog = openApiSpec.paths["/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/advancement"]?.get;
     const advancement = openApiSpec.paths["/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/advance"]?.post;
     const rest = openApiSpec.paths["/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/rest"]?.post;
 
@@ -610,7 +669,24 @@ describe("api contracts", () => {
     expect(rulesPreview?.responses["200"]).toMatchObject({
       content: { "application/json": { schema: { $ref: "#/components/schemas/Dnd5eSrdRulesPreviewResponse" } } },
     });
+    expect(advancementCatalog?.responses["200"]).toMatchObject({
+      content: { "application/json": { schema: { $ref: "#/components/schemas/SystemActorAdvancementInfo" } } },
+    });
+    expect(openApiSpec.components.schemas.SystemActorAdvancementInfo.properties).toMatchObject({
+      requiresSubclass: { type: "boolean" },
+      subclassOptions: { type: "array", items: { $ref: "#/components/schemas/Dnd5eSrdAdvancementSubclassOption" } },
+    });
+    expect(openApiSpec.components.schemas.Dnd5eSrdAdvancementSubclassOption).toMatchObject({
+      required: expect.arrayContaining(["id", "name", "className", "selectionLevel", "featureNames"]),
+      properties: { alwaysPreparedSpells: { type: "array" } },
+    });
     expect(openApiSpec.components.schemas.Dnd5eSrdRulesPreviewRequest.oneOf).toHaveLength(3);
+    expect(openApiSpec.components.schemas.Dnd5eSrdRulesPreviewRequest.oneOf[0]).toMatchObject({
+      properties: {
+        wizardSpellbookAdditions: { type: "array", maxItems: 6, uniqueItems: true },
+        classPreparedSpellChoices: { type: "array", maxItems: 25, uniqueItems: true },
+      },
+    });
     expect(openApiSpec.components.schemas.Dnd5eSrdRulesPreviewRequest.oneOf[2]).toMatchObject({
       properties: { criticalHit: { type: "boolean" } },
     });
@@ -622,6 +698,38 @@ describe("api contracts", () => {
       expectedCombatUpdatedAt: { type: "string", format: "date-time" },
     });
     expect(openApiSpec.components.schemas.Dnd5eSrdTypedDamageApplyResult.properties.combat).toEqual({ $ref: "#/components/schemas/Combat" });
+    expect(routes.systemActorCombatVitals("campaign/one", "dnd-5e-srd", "actor/two")).toBe(
+      "/api/v1/campaigns/campaign%2Fone/systems/dnd-5e-srd/actors/actor%2Ftwo/combat-vitals",
+    );
+    expect(openApiSpec.components.schemas.Dnd5eSrdCombatVitalsRequest).toMatchObject({
+      additionalProperties: false,
+      required: ["kind", "amount", "expectedActorUpdatedAt"],
+      properties: {
+        kind: { type: "string", enum: ["healing", "temporaryHitPoints"] },
+        revivesDead: { type: "boolean" },
+        expectedCombatUpdatedAt: { type: "string", format: "date-time" },
+      },
+    });
+    expect(openApiSpec.components.schemas.Dnd5eSrdCombatVitalsMutationResult).toMatchObject({
+      required: ["actor", "adjustment", "rulesMutationId", "undo"],
+      properties: {
+        combat: { $ref: "#/components/schemas/Combat" },
+        undo: { $ref: "#/components/schemas/DndRulesMutationUndoDescriptor" },
+      },
+    });
+    const combatVitals = openApiSpec.paths["/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/combat-vitals"]?.post;
+    expect(combatVitals?.parameters).toContainEqual(expect.objectContaining({ name: "Idempotency-Key", in: "header", required: true }));
+    expect(combatVitals?.requestBody).toMatchObject({
+      content: { "application/json": { schema: { $ref: "#/components/schemas/Dnd5eSrdCombatVitalsRequest" } } },
+    });
+    expect(combatVitals?.responses["200"]).toMatchObject({
+      content: { "application/json": { schema: { $ref: "#/components/schemas/Dnd5eSrdCombatVitalsMutationResult" } } },
+    });
+    expect(openApiSpec.components.schemas.DndRulesMutation.properties.kind.enum).toContain("vitals");
+    expect(openApiSpec.components.schemas.DndRulesMutation.properties.kind.enum).toContain("combatant_sync");
+    const combatantPatch = openApiSpec.paths["/api/v1/combats/{combatId}/combatants/{combatantId}"]?.patch;
+    expect(combatantPatch?.parameters).toContainEqual(expect.objectContaining({ name: "Idempotency-Key", required: true }));
+    expect(openApiSpec.components.schemas.CombatantPatchRequest).toMatchObject({ required: ["expectedUpdatedAt"], properties: { expectedActorUpdatedAt: { type: "string", format: "date-time" } } });
     expect(openApiSpec.components.schemas.Dnd5eSrdRulesPreviewResponse.required).toEqual(expect.arrayContaining([
       "previewVersion",
       "rulesVersion",
@@ -707,6 +815,145 @@ describe("api contracts", () => {
   it("does not duplicate the version prefix when OpenAPI clients combine servers and paths", () => {
     expect(openApiSpec.servers[0].url).toBe("/");
     expect(Object.keys(openApiSpec.paths)).toContain("/api/v1/campaigns");
+  });
+
+  it("publishes the two-phase legacy bearer to session-cookie upgrade contract", () => {
+    expect(routes.sessionCookieUpgrade).toBe("/api/v1/auth/session/upgrade-cookie");
+    expect(routes.sessionCookieUpgradeConfirm).toBe("/api/v1/auth/session/upgrade-cookie/confirm");
+    expect(openApiSpec.components.securitySchemes.SessionCookie).toMatchObject({
+      type: "apiKey",
+      in: "cookie",
+      name: "__Host-otte_session",
+    });
+    expect(openApiSpec.security).toEqual([
+      { BearerAuth: [] },
+      { SessionCookie: [] },
+    ]);
+
+    expect(openApiSpec.components.schemas.SessionCookieUpgradeRequest).toMatchObject({
+      additionalProperties: false,
+      required: ["expectedUserId"],
+      properties: {
+        expectedUserId: { type: "string", minLength: 1 },
+      },
+    });
+    expect(openApiSpec.components.schemas.SessionCookieUpgradeResponse).toMatchObject({
+      additionalProperties: false,
+      required: ["ok", "session", "upgradeExpiresAt"],
+      properties: {
+        ok: { type: "boolean", enum: [true] },
+        session: { $ref: "#/components/schemas/UserSession" },
+        upgradeExpiresAt: { type: "string", format: "date-time" },
+      },
+    });
+    expect(openApiSpec.components.schemas.SessionCookieUpgradeConfirmRequest).toMatchObject({
+      additionalProperties: false,
+      required: ["expectedUserId"],
+      properties: {
+        expectedUserId: { type: "string", minLength: 1 },
+      },
+    });
+    expect(openApiSpec.components.schemas.SessionCookieUpgradeConfirmResponse).toMatchObject({
+      additionalProperties: false,
+      required: ["ok", "upgradeConfirmed", "session"],
+      properties: {
+        ok: { type: "boolean", enum: [true] },
+        upgradeConfirmed: { type: "boolean", enum: [true] },
+        session: { $ref: "#/components/schemas/UserSession" },
+      },
+    });
+
+    const upgrade = openApiSpec.paths[routes.sessionCookieUpgrade]?.post;
+    expect(upgrade?.security).toEqual([{ BearerAuth: [] }]);
+    expect(upgrade?.requestBody).toMatchObject({
+      content: {
+        "application/json": {
+          schema: { $ref: "#/components/schemas/SessionCookieUpgradeRequest" },
+        },
+      },
+    });
+    expect(upgrade?.responses["200"]).toMatchObject({
+      headers: {
+        "X-OTTE-Session-Transport": {
+          schema: { enum: ["cookie-pending-revocation"] },
+        },
+        "Cache-Control": { schema: { enum: ["no-store"] } },
+      },
+      content: {
+        "application/json": {
+          schema: { $ref: "#/components/schemas/SessionCookieUpgradeResponse" },
+        },
+      },
+    });
+    expect(upgrade?.responses["400"]?.description).toContain("expectedUserId");
+    expect(upgrade?.responses["401"]?.description).toContain("legacy bearer");
+    expect(upgrade?.responses["429"]).toMatchObject({
+      headers: { "Retry-After": { schema: { type: "string" } } },
+    });
+
+    const confirm = openApiSpec.paths[routes.sessionCookieUpgradeConfirm]?.post;
+    expect(confirm?.security).toEqual([{ SessionCookie: [] }]);
+    expect(confirm?.requestBody).toMatchObject({
+      content: {
+        "application/json": {
+          schema: { $ref: "#/components/schemas/SessionCookieUpgradeConfirmRequest" },
+        },
+      },
+    });
+    expect(confirm?.responses["200"]).toMatchObject({
+      headers: {
+        "X-OTTE-Session-Transport": { schema: { enum: ["cookie"] } },
+        "Cache-Control": { schema: { enum: ["no-store"] } },
+      },
+      content: {
+        "application/json": {
+          schema: { $ref: "#/components/schemas/SessionCookieUpgradeConfirmResponse" },
+        },
+      },
+    });
+    expect(confirm?.responses["400"]?.description).toContain("expectedUserId");
+    expect(confirm?.responses["401"]?.description).toContain("cookie child");
+    expect(confirm?.responses["403"]?.description).toContain("same-origin");
+  });
+
+  it("publishes bounded non-sensitive authentication capacity telemetry", () => {
+    expect(openApiSpec.components.schemas.AuthenticationPasswordWorkCapacity).toMatchObject({
+      additionalProperties: false,
+      required: [
+        "active",
+        "queued",
+        "maxConcurrent",
+        "maxQueue",
+        "completedVerifications",
+        "completedHashes",
+        "saturationCount",
+        "queueTimeoutCount",
+        "failureCount",
+      ],
+    });
+    expect(openApiSpec.components.schemas.AuthenticationLoginThrottleCapacity).toMatchObject({
+      additionalProperties: false,
+      required: [
+        "bucketCount",
+        "maxBuckets",
+        "consumedAttempts",
+        "limitedAttempts",
+      ],
+    });
+    expect(openApiSpec.components.schemas.AuthenticationCapacity).toMatchObject({
+      additionalProperties: false,
+      required: ["passwordWork", "loginThrottle"],
+      properties: {
+        passwordWork: { $ref: "#/components/schemas/AuthenticationPasswordWorkCapacity" },
+        loginThrottle: { $ref: "#/components/schemas/AuthenticationLoginThrottleCapacity" },
+      },
+    });
+    expect(openApiSpec.components.schemas.AdminAuthOperations).toMatchObject({
+      required: expect.arrayContaining(["authenticationCapacity"]),
+      properties: {
+        authenticationCapacity: { $ref: "#/components/schemas/AuthenticationCapacity" },
+      },
+    });
   });
 
   it("overrides bearer authentication for public and optionally authenticated operations", () => {
@@ -1071,6 +1318,7 @@ describe("api contracts", () => {
       ["get", "/api/v1/campaigns/{campaignId}/systems/{systemId}/character-templates"],
       ["get", "/api/v1/campaigns/{campaignId}/systems/{systemId}/character-origins"],
       ["post", "/api/v1/campaigns/{campaignId}/systems/{systemId}/characters"],
+      ["post", "/api/v1/campaigns/{campaignId}/systems/{systemId}/characters/preview"],
       ["post", "/api/v1/campaigns/{campaignId}/systems/{systemId}/characters/import"],
       ["get", "/api/v1/campaigns/{campaignId}/systems/{systemId}/encounter-threats"],
       ["post", "/api/v1/campaigns/{campaignId}/systems/{systemId}/encounter-plan"],

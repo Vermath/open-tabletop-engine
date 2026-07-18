@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800" role="img" aria-labelledby="title desc">
+  <title id="title">Bellfoundry Sanctum battle map</title>
+  <desc id="desc">A vaulted bellfoundry sanctum with blue-black tiles, pews, side forges, circular ritual dais, pillars, and a great central bell.</desc>
+  <defs>
+    <pattern id="tile" width="100" height="100" patternUnits="userSpaceOnUse">
+      <rect width="100" height="100" fill="#28354a"/>
+      <path d="M0 0h100v100H0zM50 0v100M0 50h100" fill="none" stroke="#172237" stroke-width="5"/>
+      <path d="M8 8l34 34m16 0L92 8M8 92l34-34m16 0l34 34" stroke="#405172" stroke-width="3" opacity=".45"/>
+    </pattern>
+    <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
+      <path d="M50 0H0v50" fill="none" stroke="#e8e4ff" stroke-width="2" opacity=".3"/>
+    </pattern>
+    <radialGradient id="dais">
+      <stop offset="0" stop-color="#7565a0"/>
+      <stop offset=".7" stop-color="#443b68"/>
+      <stop offset="1" stop-color="#221d3c"/>
+    </radialGradient>
+    <radialGradient id="forge">
+      <stop offset="0" stop-color="#fff1a6"/>
+      <stop offset=".4" stop-color="#e66f2d"/>
+      <stop offset="1" stop-color="#4b202c"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="800" fill="#101729"/>
+  <path d="M70 760V180Q70 45 205 45h790q135 0 135 135v580z" fill="url(#tile)" stroke="#0a0f1d" stroke-width="35"/>
+
+  <g fill="#5d463e" stroke="#241d22" stroke-width="9">
+    <rect x="165" y="250" width="245" height="48" rx="8"/>
+    <rect x="165" y="335" width="245" height="48" rx="8"/>
+    <rect x="165" y="420" width="245" height="48" rx="8"/>
+    <rect x="165" y="505" width="245" height="48" rx="8"/>
+    <rect x="790" y="250" width="245" height="48" rx="8"/>
+    <rect x="790" y="335" width="245" height="48" rx="8"/>
+    <rect x="790" y="420" width="245" height="48" rx="8"/>
+    <rect x="790" y="505" width="245" height="48" rx="8"/>
+  </g>
+
+  <g fill="#3a4154" stroke="#151b2a" stroke-width="10">
+    <circle cx="140" cy="140" r="45"/><circle cx="1060" cy="140" r="45"/>
+    <circle cx="140" cy="650" r="45"/><circle cx="1060" cy="650" r="45"/>
+    <circle cx="455" cy="170" r="38"/><circle cx="745" cy="170" r="38"/>
+    <circle cx="455" cy="630" r="38"/><circle cx="745" cy="630" r="38"/>
+  </g>
+
+  <g transform="translate(600 400)">
+    <circle r="185" fill="#17182a" stroke="#0b0c16" stroke-width="16"/>
+    <circle r="152" fill="url(#dais)" stroke="#8e79bd" stroke-width="10"/>
+    <circle r="112" fill="none" stroke="#c0a7ef" stroke-width="7" stroke-dasharray="24 18"/>
+    <path d="M0-125l24 73 77-24-47 62 64 44-81 2-5 81-28-76-77 27 45-66-66-41 82-4z" fill="none" stroke="#9b88cc" stroke-width="9" opacity=".8"/>
+    <g stroke="#3c2e25" stroke-width="10">
+      <path d="M-78-92q78-55 156 0l-18 45h-120z" fill="#b3843e"/>
+      <path d="M-60-47h120l38 98q18 46-30 63H-68q-48-17-30-63z" fill="#c1974a"/>
+      <path d="M-77 30h154"/>
+      <circle cy="82" r="15" fill="#493528"/>
+    </g>
+  </g>
+
+  <g fill="url(#forge)" stroke="#291929" stroke-width="10">
+    <rect x="85" y="335" width="70" height="130" rx="18"/>
+    <rect x="1045" y="335" width="70" height="130" rx="18"/>
+  </g>
+  <g fill="#7f6a44" stroke="#322b26" stroke-width="8">
+    <rect x="270" y="105" width="100" height="76" rx="12"/>
+    <path d="M290 140h60M320 115v52"/>
+    <rect x="830" y="105" width="100" height="76" rx="12"/>
+    <path d="M850 140h60M880 115v52"/>
+  </g>
+  <path d="M560 760v-115h80v115" fill="#111728" stroke="#090d18" stroke-width="14"/>
+  <rect width="1200" height="800" fill="url(#grid)" pointer-events="none"/>
+</svg>

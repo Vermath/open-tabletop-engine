@@ -226,7 +226,7 @@ export function ActorLoadoutPanel({
       )}
       {unassignedItems.length > 0 && (
         <div className="loose-item-tray" aria-label="Loose item drag tray">
-          {unassignedItems.slice(0, 8).map((item) => (
+          {unassignedItems.map((item) => (
             <button
               className="loose-item-chip"
               key={item.id}

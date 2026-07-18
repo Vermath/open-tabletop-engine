@@ -3,9 +3,9 @@ import { describe, expect, it, vi } from "vitest";
 import { CampaignMemoryPanel } from "./campaign-memory-panel.js";
 import { HandoutLibraryPanel } from "./handout-library-panel.js";
 import { HitDiceRestCard } from "./hit-dice-rest-card.js";
-import { SessionDeskPanel } from "./session-desk-panel.js";
+import { SessionDeskPanel, SessionEditor } from "./session-desk-panel.js";
 import { WorldAtlasPanel } from "./world-atlas-panel.js";
-import type { Actor } from "@open-tabletop/core";
+import type { Actor, Encounter } from "@open-tabletop/core";
 import type { CampaignSessionInfo } from "./api.js";
 
 const noop = vi.fn();
@@ -71,7 +71,7 @@ describe("feature-surface states and permissions", () => {
 
   it("renders empty canon and session views without GM-only controls", () => {
     const memory = renderToStaticMarkup(
-      <CampaignMemoryPanel campaignId="camp-1" facts={[]} canCreate={false} canReview={false} onFactsChange={noop} onExtract={noop} onStatus={noop} />
+      <CampaignMemoryPanel campaignId="camp-1" campaignUpdatedAt="2026-07-17T00:00:00.000Z" facts={[]} canCreate={false} canReview={false} onFactsChange={noop} onExtract={noop} onStatus={noop} />
     );
     const sessions = renderToStaticMarkup(
       <SessionDeskPanel campaignId="camp-1" sessions={[]} scenes={[]} encounters={[]} canManage={false} canStart={false} onSessionsChange={noop} onSceneActivated={noop} onStatus={noop} />
@@ -133,6 +133,58 @@ describe("feature-surface states and permissions", () => {
     expect(sessions).toMatch(/role="listitem"><button[^>]*class="session-desk-row/);
     expect(handout).not.toMatch(/<button[^>]*role="listitem"/);
     expect(sessions).not.toMatch(/<button[^>]*role="listitem"/);
+  });
+
+  it("opens the encounter-link drawer when a saved encounter is available but unlinked", () => {
+    const session = {
+      id: "session-1",
+      campaignId: "camp-1",
+      status: "planned",
+      title: "Vault",
+      number: 1,
+      agenda: "",
+      notes: "",
+      sceneIds: [],
+      encounterIds: [],
+      createdBy: "usr-1",
+      updatedBy: "usr-1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    } satisfies CampaignSessionInfo;
+    const encounter = {
+      id: "encounter-1",
+      campaignId: "camp-1",
+      systemId: "dnd-5e-srd",
+      name: "Vault Wardens",
+      summary: "Two animated guardians",
+      tokenIds: [],
+      partyActorIds: [],
+      threats: [{ id: "animated-armor", count: 2 }],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    } satisfies Encounter;
+
+    const html = renderToStaticMarkup(
+      <SessionEditor
+        session={session}
+        nextNumber={2}
+        scenes={[]}
+        encounters={[encounter]}
+        canManage
+        canStart
+        busy={false}
+        onSave={async () => undefined}
+        onStart={noop}
+        onComplete={noop}
+        onDelete={noop}
+        onCancel={noop}
+      />
+    );
+
+    expect(html).toContain("Linked encounters");
+    expect(html).toContain("0 selected · 1 available");
+    expect(html).toContain("Vault Wardens");
+    expect(html).toMatch(/<details class="lore-link-drawer" open=""><summary>Linked encounters/);
   });
 
   it("renders read-only world fields for readers and a lone hit-die pool", () => {

@@ -1,4 +1,4 @@
-import type { Actor, Campaign, Scene, UserRole } from "@open-tabletop/core";
+import type { Actor, Campaign, Scene, Token, UserRole } from "@open-tabletop/core";
 import type { Ref } from "react";
 import { campaignPermissionTemplates, type CampaignPermissionTemplateId } from "./admin-data.js";
 import { campaignSetupSteps, moveCampaignSetupRoute, type CampaignSetupDraftInput, type CampaignSetupStepId } from "./campaign-setup-state.js";
@@ -159,8 +159,8 @@ export interface FirstSessionSetupInput {
   canCreateCharacter: boolean;
   memberCount: number;
   pendingInviteCount: number;
-  scenes: Array<Pick<Scene, "id" | "backgroundAssetId">>;
-  tokenCount: number;
+  scenes: Array<Pick<Scene, "id" | "backgroundAssetId" | "gridType" | "metadata">>;
+  tokens: Array<Pick<Token, "sceneId"> & Partial<Pick<Token, "layer">>>;
   encounterCount: number;
 }
 
@@ -173,19 +173,35 @@ export interface FirstSessionSetupStep {
 
 export function deriveFirstSessionSetupSteps(input: FirstSessionSetupInput): FirstSessionSetupStep[] {
   const characterReady = input.actors.some((actor) => actor.type === "character" && (input.canManage || actor.ownerUserId === input.currentUserId));
+  const readyScene = input.scenes.find((scene) => sceneMapIsReady(scene) && input.tokens.some((token) => token.sceneId === scene.id && token.layer !== "map"));
   if (!input.canManage) return [
     { id: "character", label: "Your character", detail: characterReady ? "Your character is ready." : input.canCreateCharacter ? "Create or claim the character you will play." : "Ask the GM to assign your character.", complete: characterReady },
-    { id: "play", label: "Join the table", detail: input.scenes.length > 0 ? "The table has a scene ready." : "The GM is still preparing the first scene.", complete: input.scenes.length > 0 }
+    { id: "play", label: "Join the table", detail: readyScene ? "The table has a playable scene ready." : "The GM is still preparing a map and token on the first scene.", complete: characterReady && Boolean(readyScene) }
   ];
-  const sceneParts = [input.scenes.length > 0, input.scenes.some((scene) => Boolean(scene.backgroundAssetId)), input.tokenCount > 0];
-  const missingSceneParts = ["scene", "map", "token"].filter((_, index) => !sceneParts[index]);
+  const sceneParts = [
+    input.scenes.length > 0,
+    input.scenes.some((scene) => Boolean(scene.backgroundAssetId)),
+    input.scenes.some((scene) => sceneMapIsReady(scene)),
+    input.scenes.some((scene) => input.tokens.some((token) => token.sceneId === scene.id && token.layer !== "map"))
+  ];
+  const missingSceneParts = ["scene", "map", "map calibration", "token"].filter((_, index) => !sceneParts[index]);
+  const sceneDetail = readyScene
+    ? "The first tabletop scene is ready."
+    : missingSceneParts.length === 0
+      ? "Put a map and token together on the same scene."
+      : `Still optional: add ${missingSceneParts.join(", ")}.`;
   return [
     { id: "character", label: "Create a character", detail: characterReady ? "At least one player character is ready." : "Create or import the first player character.", complete: characterReady },
     { id: "invitation", label: "Invite players", detail: input.memberCount > 1 ? "A player has joined the campaign." : input.pendingInviteCount > 0 ? "An invitation is waiting to be accepted." : "Create an invitation when the player is ready.", complete: input.memberCount > 1 || input.pendingInviteCount > 0 },
-    { id: "scene", label: "Prepare scene, map & tokens", detail: missingSceneParts.length === 0 ? "The first tabletop scene is ready." : `Still optional: add ${missingSceneParts.join(", ")}.`, complete: missingSceneParts.length === 0 },
+    { id: "scene", label: "Prepare scene, map & tokens", detail: sceneDetail, complete: Boolean(readyScene) },
     { id: "encounter", label: "Prepare an encounter", detail: input.encounterCount > 0 ? "An encounter is ready to run." : "Build an encounter now or improvise one during play.", complete: input.encounterCount > 0 },
-    { id: "play", label: "Start play", detail: "Open the live table whenever the group is ready.", complete: false }
+    { id: "play", label: "Start play", detail: readyScene && characterReady ? "The table is ready to open." : "Finish a character and a playable scene first.", complete: characterReady && Boolean(readyScene) }
   ];
+}
+
+export function sceneMapIsReady(scene: Pick<Scene, "backgroundAssetId" | "gridType" | "metadata">): boolean {
+  if (!scene.backgroundAssetId) return false;
+  return scene.gridType === "gridless" || scene.metadata.mapCalibrationComplete === true;
 }
 
 export function FirstSessionSetupChecklist(props: FirstSessionSetupInput & { onOpen(step: FirstSessionSetupStep["id"]): void }) {

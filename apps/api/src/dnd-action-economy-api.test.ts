@@ -20,7 +20,7 @@ function fixtures(store: MemoryStateStore) {
       attributes: { strength: 18, dexterity: 12, constitution: 14, intelligence: 10, wisdom: 10, charisma: 10 },
       hp: { current: 44, max: 44 },
       armorClass: 18,
-      resources: { actionSurge: { current: 1, max: 1, recovery: "short" } },
+      resources: { secondWind: { current: 2, max: 2, recovery: "short" }, actionSurge: { current: 1, max: 1, recovery: "short" } },
     },
   }) satisfies Actor;
   const weapon = createTimestamped("itm", {
@@ -81,6 +81,202 @@ async function commit(
 }
 
 describe("server-owned D&D standard Action ledger", () => {
+  it("allows Second Wind and Tactical Mind resource spends before the same-turn Attack", async () => {
+    const store = new MemoryStateStore();
+    const { actor, attackRollId } = fixtures(store);
+    const app = await buildApp({ store });
+    const route = `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${actor.id}/roll`;
+
+    try {
+      const secondWindPrepared = await prepare(app, route, "action-ledger-second-wind", { rollId: "feature-second-wind-healing", consumeResources: true });
+      expect(secondWindPrepared.statusCode).toBe(200);
+      expect(secondWindPrepared.json().resolution).toMatchObject({
+        action: { kind: "bonusAction", metadata: { action: "Bonus Action" } },
+        resourceConsumption: [{ key: "secondWind", amount: 1, remaining: 1 }],
+        auditEvents: expect.arrayContaining([expect.objectContaining({ code: "bonus_action.used" })]),
+      });
+      const secondWindCommitted = await commit(app, route, "action-ledger-second-wind", secondWindPrepared.json() as PreparedActionBody);
+      expect(secondWindCommitted.statusCode).toBe(200);
+      expect(secondWindCommitted.json().usage.consumed).toContainEqual(expect.objectContaining({ key: "secondWind", amount: 1, remaining: 1 }));
+
+      const failedCheck = await app.inject({ method: "POST", url: route, headers: gm, payload: { rollId: "ability-strength" } });
+      expect(failedCheck.statusCode).toBe(200);
+      const failedRoll = failedCheck.json().roll as { id: string; total: number };
+      const tacticalMindPrepared = await prepare(app, route, "action-ledger-tactical-mind", { rollId: "feature-tactical-mind-bonus", consumeResources: true, tacticalMindCheck: { failedCheckRollId: failedRoll.id, dc: failedRoll.total + 1 } });
+      expect(tacticalMindPrepared.statusCode).toBe(200);
+      expect(tacticalMindPrepared.json().resolution).toMatchObject({
+        action: { kind: "free", metadata: { activation: "free" } },
+        resourceConsumption: [{ key: "secondWind", amount: 1, remaining: 0 }],
+        tacticalMind: { failedCheckRollId: failedRoll.id, success: true, resourceSpent: true },
+      });
+      expect(tacticalMindPrepared.json().resolution.auditEvents).not.toContainEqual(expect.objectContaining({ code: "action.used" }));
+      expect(tacticalMindPrepared.json().resolution.auditEvents).not.toContainEqual(expect.objectContaining({ code: "bonus_action.used" }));
+      const tacticalMindCommitted = await commit(app, route, "action-ledger-tactical-mind", tacticalMindPrepared.json() as PreparedActionBody);
+      expect(tacticalMindCommitted.statusCode).toBe(200);
+      expect(tacticalMindCommitted.json().usage.consumed).toContainEqual(expect.objectContaining({ key: "secondWind", amount: 1, remaining: 0 }));
+
+      const attackPrepared = await prepare(app, route, "action-ledger-after-features", { rollId: attackRollId });
+      expect(attackPrepared.statusCode).toBe(200);
+      expect(attackPrepared.json().resolution.action).toMatchObject({ kind: "action", ledger: { actionsUsed: 1, actionSurgeGrants: 0 } });
+      const attackCommitted = await commit(app, route, "action-ledger-after-features", attackPrepared.json() as PreparedActionBody);
+      expect(attackCommitted.statusCode).toBe(200);
+      expect(attackCommitted.json().resolution.action.ledger).toMatchObject({ actionsUsed: 1, actionSurgeGrants: 0 });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("refunds a failed Tactical Mind attempt, records it once, and spends only on a later success", async () => {
+    const store = new MemoryStateStore();
+    const { actor } = fixtures(store);
+    const app = await buildApp({ store });
+    const route = `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${actor.id}/roll`;
+
+    try {
+      const withoutResource = await app.inject({ method: "POST", url: route, headers: gm, payload: { rollId: "feature-tactical-mind-bonus" } });
+      expect(withoutResource.statusCode).toBe(400);
+      expect(withoutResource.json().message).toContain("reviewed Second Wind resource use");
+      const withoutContext = await prepare(app, route, "tactical-mind-no-context", { rollId: "feature-tactical-mind-bonus", consumeResources: true });
+      expect(withoutContext.statusCode).toBe(400);
+      expect(withoutContext.json().message).toContain("failed ability check");
+      const savingThrow = await app.inject({ method: "POST", url: route, headers: gm, payload: { rollId: "save-strength" } });
+      expect(savingThrow.statusCode).toBe(200);
+      const savingThrowRoll = savingThrow.json().roll as { id: string; total: number };
+      const nonCheckContext = await prepare(app, route, "tactical-mind-saving-throw", { rollId: "feature-tactical-mind-bonus", consumeResources: true, tacticalMindCheck: { failedCheckRollId: savingThrowRoll.id, dc: savingThrowRoll.total + 1 } });
+      expect(nonCheckContext.statusCode).toBe(400);
+      expect(nonCheckContext.json().message).toContain("ability, skill, or tool check");
+
+      const earlierCheck = await app.inject({ method: "POST", url: route, headers: gm, payload: { rollId: "ability-dexterity" } });
+      const failedCheck = await app.inject({ method: "POST", url: route, headers: gm, payload: { rollId: "skill-athletics" } });
+      expect(earlierCheck.statusCode).toBe(200);
+      expect(failedCheck.statusCode).toBe(200);
+      const earlierRoll = earlierCheck.json().roll as { id: string; total: number };
+      const failedRoll = failedCheck.json().roll as { id: string; total: number };
+      const staleContext = await prepare(app, route, "tactical-mind-stale-check", { rollId: "feature-tactical-mind-bonus", consumeResources: true, tacticalMindCheck: { failedCheckRollId: earlierRoll.id, dc: earlierRoll.total + 1 } });
+      expect(staleContext.statusCode).toBe(409);
+      expect(staleContext.json().message).toContain("most recent ability check");
+
+      const failedPrepared = await prepare(app, route, "tactical-mind-refund", { rollId: "feature-tactical-mind-bonus", consumeResources: true, tacticalMindCheck: { failedCheckRollId: failedRoll.id, dc: failedRoll.total + 11 } });
+      expect(failedPrepared.statusCode).toBe(200);
+      expect(failedPrepared.json().resolution).toMatchObject({
+        resourceConsumption: [],
+        tacticalMind: { failedCheckRollId: failedRoll.id, success: false, resourceSpent: false },
+        auditEvents: expect.arrayContaining([expect.objectContaining({ code: "tactical-mind.failed-refund" })]),
+      });
+      const failedCommitted = await commit(app, route, "tactical-mind-refund", failedPrepared.json() as PreparedActionBody);
+      expect(failedCommitted.statusCode).toBe(200);
+      expect(failedCommitted.json().usage.consumed).toEqual([]);
+      expect(((store.state.actors.find((candidate) => candidate.id === actor.id)!.data.resources as Record<string, { current: number }>).secondWind?.current)).toBe(2);
+      expect((store.state.actors.find((candidate) => candidate.id === actor.id)!.data.rulesEngine as { tacticalMindAttempts: Record<string, unknown> }).tacticalMindAttempts).toHaveProperty(failedRoll.id);
+      const retry = await prepare(app, route, "tactical-mind-refund-retry", { rollId: "feature-tactical-mind-bonus", consumeResources: true, tacticalMindCheck: { failedCheckRollId: failedRoll.id, dc: failedRoll.total + 11 } });
+      expect(retry.statusCode).toBe(409);
+      expect(retry.json().message).toContain("already attempted");
+
+      const nextCheck = await app.inject({ method: "POST", url: route, headers: gm, payload: { rollId: "ability-wisdom" } });
+      expect(nextCheck.statusCode).toBe(200);
+      const nextRoll = nextCheck.json().roll as { id: string; total: number };
+      const successPrepared = await prepare(app, route, "tactical-mind-success", { rollId: "feature-tactical-mind-bonus", consumeResources: true, tacticalMindCheck: { failedCheckRollId: nextRoll.id, dc: nextRoll.total + 1 } });
+      expect(successPrepared.statusCode).toBe(200);
+      expect(successPrepared.json().resolution).toMatchObject({ resourceConsumption: [{ key: "secondWind", remaining: 1 }], tacticalMind: { success: true, resourceSpent: true } });
+      const successCommitted = await commit(app, route, "tactical-mind-success", successPrepared.json() as PreparedActionBody);
+      expect(successCommitted.statusCode).toBe(200);
+      expect(successCommitted.json().usage.consumed).toEqual([expect.objectContaining({ key: "secondWind", remaining: 1 })]);
+      const replayedCommit = await commit(app, route, "tactical-mind-success", successPrepared.json() as PreparedActionBody);
+      expect(replayedCommit.statusCode).toBe(200);
+      expect(((store.state.actors.find((candidate) => candidate.id === actor.id)!.data.resources as Record<string, { current: number }>).secondWind?.current)).toBe(1);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("spends one slot for a bonus-action spell attack and no second slot for its on-hit damage", async () => {
+    const store = new MemoryStateStore();
+    const { actor, attackRollId } = fixtures(store);
+    Object.assign(actor.data, {
+      ...actor.data,
+      class: "Cleric",
+      attributes: { strength: 18, dexterity: 12, constitution: 14, intelligence: 10, wisdom: 16, charisma: 10 },
+      spellSlots: { level2: { current: 2, max: 2, recovery: "long" } },
+    });
+    const spell = createTimestamped("itm", {
+      id: "itm_action_ledger_spiritual_weapon",
+      campaignId: actor.campaignId,
+      systemId: actor.systemId,
+      actorId: actor.id,
+      type: "spell" as const,
+      name: "Spiritual Weapon",
+      data: { level: 2, action: "bonus", damageFormula: "1d8+@spellcasting", damageType: "force", spellAttack: true, spellcastingAbility: "wisdom", prepared: true },
+    }) satisfies Item;
+    store.state.items.push(spell);
+    const app = await buildApp({ store });
+    const route = `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${actor.id}/roll`;
+
+    try {
+      const spellAttackId = `spell-${spell.id}-attack`;
+      const spellDamageId = `spell-${spell.id}-damage`;
+      const directDamage = await prepare(app, route, "spell-economy-direct-damage", { rollId: spellDamageId, consumeResources: true });
+      expect(directDamage.statusCode).toBe(409);
+      expect(directDamage.json().message).toContain("matching predecessor");
+      const attackPrepared = await prepare(app, route, "spell-economy-attack", { rollId: spellAttackId, consumeResources: true });
+      expect(attackPrepared.statusCode).toBe(200);
+      expect(attackPrepared.json().resolution).toMatchObject({
+        action: { kind: "bonusAction" },
+        resourceConsumption: [{ type: "spellSlot", key: "level2", remaining: 1 }],
+      });
+      expect((await commit(app, route, "spell-economy-attack", attackPrepared.json() as PreparedActionBody)).statusCode).toBe(200);
+
+      const damagePrepared = await prepare(app, route, "spell-economy-damage", { rollId: spellDamageId, consumeResources: true });
+      expect(damagePrepared.statusCode).toBe(200);
+      expect(damagePrepared.json().resolution).toMatchObject({ action: { kind: "free", metadata: { activation: "on-hit" } }, resourceConsumption: [], auditEvents: expect.arrayContaining([expect.objectContaining({ code: "continuation.consumed" })]) });
+      expect((await commit(app, route, "spell-economy-damage", damagePrepared.json() as PreparedActionBody)).statusCode).toBe(200);
+      expect(((store.state.actors.find((candidate) => candidate.id === actor.id)!.data.spellSlots as Record<string, { current: number }>).level2?.current)).toBe(1);
+      const damageReplay = await prepare(app, route, "spell-economy-damage-replay", { rollId: spellDamageId, consumeResources: true });
+      expect(damageReplay.statusCode).toBe(409);
+      expect(damageReplay.json().message).toContain("unused matching predecessor");
+
+      const ordinaryAttack = await prepare(app, route, "spell-economy-ordinary-attack", { rollId: attackRollId });
+      expect(ordinaryAttack.statusCode).toBe(200);
+      expect(ordinaryAttack.json().resolution.action).toMatchObject({ kind: "action", ledger: { actionsUsed: 1 } });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("binds Chromatic Orb damage to one reviewed attack and the attack's spell-slot level", async () => {
+    const store = new MemoryStateStore();
+    const { actor } = fixtures(store);
+    Object.assign(actor.data, { ...actor.data, class: "Wizard", attributes: { strength: 10, dexterity: 12, constitution: 14, intelligence: 16, wisdom: 10, charisma: 10 }, spellSlots: { level1: { current: 2, max: 2, recovery: "long" }, level2: { current: 2, max: 2, recovery: "long" } } });
+    const spell = createTimestamped("itm", { id: "itm_action_ledger_chromatic_orb", campaignId: actor.campaignId, systemId: actor.systemId, actorId: actor.id, type: "spell" as const, name: "Chromatic Orb", data: { level: 1, action: "action", damageFormula: "3d8", upcastFormula: "1d8", damageType: "acid", spellAttack: true, spellcastingAbility: "intelligence", prepared: true } }) satisfies Item;
+    store.state.items.push(spell);
+    const app = await buildApp({ store });
+    const route = `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${actor.id}/roll`;
+    const attackId = `spell-${spell.id}-attack`;
+    const damageId = `spell-${spell.id}-damage`;
+
+    try {
+      const attackPrepared = await prepare(app, route, "chromatic-continuation-attack", { rollId: attackId, spellSlotLevel: 2, consumeResources: true });
+      expect(attackPrepared.statusCode).toBe(200);
+      expect(attackPrepared.json().resolution.resourceConsumption).toEqual([expect.objectContaining({ type: "spellSlot", key: "level2", remaining: 1 })]);
+      expect((await commit(app, route, "chromatic-continuation-attack", attackPrepared.json() as PreparedActionBody)).statusCode).toBe(200);
+
+      const wrongSlot = await prepare(app, route, "chromatic-continuation-wrong-slot", { rollId: damageId, spellSlotLevel: 1, consumeResources: true });
+      expect(wrongSlot.statusCode).toBe(409);
+      expect(wrongSlot.json().message).toContain("matching predecessor");
+
+      const damagePrepared = await prepare(app, route, "chromatic-continuation-damage", { rollId: damageId, spellSlotLevel: 2, consumeResources: true });
+      expect(damagePrepared.statusCode).toBe(200);
+      expect(damagePrepared.json().resolution).toMatchObject({ action: { kind: "free", metadata: { activation: "on-hit" } }, resourceConsumption: [] });
+      expect((await commit(app, route, "chromatic-continuation-damage", damagePrepared.json() as PreparedActionBody)).statusCode).toBe(200);
+      expect(((store.state.actors.find((candidate) => candidate.id === actor.id)!.data.spellSlots as Record<string, { current: number }>).level2?.current)).toBe(1);
+
+      const replay = await prepare(app, route, "chromatic-continuation-replay", { rollId: damageId, spellSlotLevel: 2, consumeResources: true });
+      expect(replay.statusCode).toBe(409);
+      expect(replay.json().message).toContain("unused matching predecessor");
+    } finally {
+      await app.close();
+    }
+  });
+
   it("serializes Action use, Action Surge, replay, exhaustion, and turn reset through prepare/commit", async () => {
     const store = new MemoryStateStore();
     const { actor, combat, attackRollId } = fixtures(store);

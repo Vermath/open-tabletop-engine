@@ -39,7 +39,7 @@ export function registerOpenApiRuntimeValidation(app: FastifyInstance): void {
   installLocationAwareValidatorCompiler(app);
   app.addHook("onRoute", (routeOptions) => {
     const openApiPath = fastifyPathToOpenApiPath(routeOptions.url);
-    if (isAiOwnedPath(openApiPath)) return;
+    if (isRuntimeValidationException(openApiPath)) return;
     const operation = operationForRoute(openApiPath, routeOptions.method);
     if (!operation) return;
     const runtimeSchema = runtimeSchemaForOperation(operation);
@@ -49,7 +49,7 @@ export function registerOpenApiRuntimeValidation(app: FastifyInstance): void {
   app.addHook("onSend", async (request, reply, payload) => {
     if (Reflect.get(request, responseValidationFailureSymbol)) return payload;
     const openApiPath = fastifyPathToOpenApiPath(request.routeOptions.url ?? request.url.split("?")[0] ?? request.url);
-    if (isAiOwnedPath(openApiPath)) return payload;
+    if (isRuntimeValidationException(openApiPath)) return payload;
     const operation = operationForRoute(openApiPath, request.method);
     const responseSchema = jsonResponseSchema(operation, reply.statusCode, reply.getHeader("content-type"));
     if (!responseSchema || reply.statusCode === 204 || reply.statusCode === 304 || payload === null) return payload;
@@ -90,7 +90,7 @@ function installLocationAwareValidatorCompiler(app: FastifyInstance): void {
   });
   const defaultCompiler = validatorPool(externalSchemas, { customOptions: {} });
   app.setValidatorCompiler((route) => {
-    if (isAiOwnedPath(fastifyPathToOpenApiPath(route.url))) return defaultCompiler(route);
+    if (isRuntimeValidationException(fastifyPathToOpenApiPath(route.url))) return defaultCompiler(route);
     if (route.httpPart !== "body") return parameterCompiler(route);
     const validate = strictBodyCompiler(route);
     const operation = operationForRoute(fastifyPathToOpenApiPath(route.url), route.method);
@@ -111,6 +111,8 @@ function installLocationAwareValidatorCompiler(app: FastifyInstance): void {
 
 export function openApiRuntimeValidationCoverage(): {
   totalOperations: number;
+  deliberateExceptionOperations: number;
+  /** @deprecated compatibility alias for the former broad AI exemption count. */
   aiOwnedOperations: number;
   operationsWithExecutableRequestContract: number;
   operationsWithoutRequestInput: number;
@@ -118,7 +120,7 @@ export function openApiRuntimeValidationCoverage(): {
   documentedJsonResponseContracts: number;
 } {
   let totalOperations = 0;
-  let aiOwnedOperations = 0;
+  let deliberateExceptionOperations = 0;
   let operationsWithExecutableRequestContract = 0;
   let operationsWithoutRequestInput = 0;
   let operationsWithExecutableJsonResponseContract = 0;
@@ -127,8 +129,8 @@ export function openApiRuntimeValidationCoverage(): {
     for (const operation of Object.values(pathItem)) {
       if (!operation) continue;
       totalOperations += 1;
-      if (isAiOwnedPath(path)) {
-        aiOwnedOperations += 1;
+      if (isRuntimeValidationException(path)) {
+        deliberateExceptionOperations += 1;
         continue;
       }
       const schema = runtimeSchemaForOperation(operation);
@@ -141,7 +143,8 @@ export function openApiRuntimeValidationCoverage(): {
   }
   return {
     totalOperations,
-    aiOwnedOperations,
+    deliberateExceptionOperations,
+    aiOwnedOperations: deliberateExceptionOperations,
     operationsWithExecutableRequestContract,
     operationsWithoutRequestInput,
     operationsWithExecutableJsonResponseContract,
@@ -262,8 +265,11 @@ function fastifyPathToOpenApiPath(path: string): string {
   return path.replace(/:([A-Za-z0-9_]+)/g, "{$1}");
 }
 
-function isAiOwnedPath(path: string): boolean {
-  return path.includes("/ai/") || path.startsWith("/api/v1/ai") || path.startsWith("/api/v1/agent") || path.startsWith("/api/v1/mcp") || path.startsWith("/api/v1/board/captures");
+function isRuntimeValidationException(path: string): boolean {
+  // MCP is an evolving JSON-RPC transport whose method-specific params/result
+  // unions are validated by the MCP dispatcher. Stable AI and agent REST
+  // resources use the same executable OpenAPI boundary as every other v1 API.
+  return path === "/api/v1/mcp";
 }
 
 function isRecord(value: unknown): value is JsonSchema {

@@ -1,13 +1,14 @@
-import type { Actor, AuditLog, Combat, CombatAction, DndRulesMutationUndoDescriptor, Token } from "@open-tabletop/core";
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Clock, ScrollText, Swords, X } from "lucide-react";
+import type { Actor, AuditLog, Combat, CombatAction, CombatLegendaryActionPrompt, Dnd5eSrdCombatVitalsKind, DndRulesMutationUndoDescriptor, Token } from "@open-tabletop/core";
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Clock, HeartPulse, Plus, ScrollText, ShieldPlus, Swords, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { actorCombatResource } from "./actor-sheet-data.js";
 import { AdvancedCombatMechanics } from "./advanced-combat-mechanics.js";
 import { errorMessage, formatDateTime, formatNumber, numericValue, titleCaseLabel } from "./sheet-format.js";
 import { RetryableActionNotice, useRetryableAction } from "./retryable-action.js";
+import { TypedDamageCard, type TypedDamageApplyResult } from "./typed-damage-card.js";
 
 
-export function CombatPanel(props: { campaignId: string; combat?: Combat; recentCombats: Combat[]; auditLogs: AuditLog[]; actors: Actor[]; tokens: Token[]; onFocusCombatant(combatant: Combat["combatants"][number]): void; onStart(): Promise<void>; onPlanEncounter(): void; onNext(combat: Combat): Promise<void>; onPrevious(combat: Combat): Promise<void>; onEnd(combat: Combat): Promise<void>; onAwardPartyXp(total: number): Promise<void>; onAwardPartyGold(totalGp: number): Promise<void>; onRecordLoot(loot: string, note?: string): Promise<void>; canAwardRewards: boolean; onUpdateCombatant(combat: Combat, combatantId: string, patch: Partial<Combat["combatants"][number]>): Promise<void>; onConfirmAction(combat: Combat, action: CombatAction): Promise<void>; onRejectAction(combat: Combat, action: CombatAction): Promise<void>; onCombatUpdated(combat: Combat): void; onRefresh(): Promise<void>; onStatus(message: string): void; onRulesMutationApplied?(undo: DndRulesMutationUndoDescriptor): void; canManage: boolean; canManageEffects: boolean; canPreviewEffects: boolean }) {
+export function CombatPanel(props: { campaignId: string; combat?: Combat; recentCombats: Combat[]; auditLogs: AuditLog[]; actors: Actor[]; tokens: Token[]; onFocusCombatant(combatant: Combat["combatants"][number]): void; onStart(): Promise<void>; onPlanEncounter(): void; onNext(combat: Combat): Promise<void>; onPrevious(combat: Combat): Promise<void>; onEnd(combat: Combat): Promise<void>; onAwardPartyXp(total: number): Promise<void>; onAwardPartyGold(totalGp: number): Promise<void>; onRecordLoot(loot: string, note?: string): Promise<void>; canAwardRewards: boolean; onUpdateCombatant(combat: Combat, combatantId: string, patch: Partial<Combat["combatants"][number]>): Promise<void>; onConfirmAction(combat: Combat, action: CombatAction): Promise<void>; onRejectAction(combat: Combat, action: CombatAction): Promise<void>; onCombatUpdated(combat: Combat): void; onRefresh(): Promise<void>; onStatus(message: string): void; onRulesMutationApplied?(undo: DndRulesMutationUndoDescriptor): void; onTypedDamageApplied(result: TypedDamageApplyResult): void; onAdjustVitals(actor: Actor, kind: Dnd5eSrdCombatVitalsKind, amount: number, combat: Combat): Promise<void>; onAddCombatant(combat: Combat, token: Token, initiative: number): Promise<void>; onRemoveCombatant(combat: Combat, combatantId: string): Promise<void>; onSpendLegendaryAction(combat: Combat, prompt: CombatLegendaryActionPrompt, optionName: string, cost: number): Promise<void>; canManage: boolean; canManageEffects: boolean; canPreviewEffects: boolean; canAdjustVitals: boolean; vitalsDisabledReason: string; canManageRoster: boolean; rosterDisabledReason: string; canManageLegendaryActions: boolean; legendaryActionsDisabledReason: string }) {
   const [expandedCombatantId, setExpandedCombatantId] = useState("");
   const [endConfirmationId, setEndConfirmationId] = useState("");
   const [pendingControls, setPendingControls] = useState<Set<string>>(() => new Set());
@@ -22,6 +23,8 @@ export function CombatPanel(props: { campaignId: string; combat?: Combat; recent
   const startPending = pendingControls.has("combat:start");
   const actorById = new Map(props.actors.map((actor) => [actor.id, actor]));
   const tokenById = new Map(props.tokens.map((token) => [token.id, token]));
+  const combatantTokenIds = new Set(combatants.map((combatant) => combatant.tokenId));
+  const rosterCandidates = props.tokens.filter((token) => token.layer !== "map" && !combatantTokenIds.has(token.id));
   const combatantActor = (combatant: Combat["combatants"][number]): Actor | undefined => {
     if (combatant.actorId) return actorById.get(combatant.actorId);
     const linkedActorId = combatant.tokenId ? tokenById.get(combatant.tokenId)?.actorId : undefined;
@@ -109,6 +112,28 @@ export function CombatPanel(props: { campaignId: string; combat?: Combat; recent
               })}
             </section>
           )}
+          {(props.combat.legendaryActionPrompts?.length ?? 0) > 0 && (
+            <section className="admin-list legendary-action-prompts" aria-label="Legendary action opportunities">
+              <div className="section-title">Between-turn legendary actions</div>
+              {props.combat.legendaryActionPrompts!.map((prompt) => (
+                <LegendaryActionPromptCard
+                  key={prompt.id}
+                  combat={props.combat!}
+                  prompt={prompt}
+                  canSpend={props.canManageLegendaryActions}
+                  disabledReason={props.legendaryActionsDisabledReason}
+                  onSpend={props.onSpendLegendaryAction}
+                />
+              ))}
+            </section>
+          )}
+          <CombatRosterControls
+            combat={props.combat}
+            tokens={rosterCandidates}
+            canManage={props.canManageRoster}
+            disabledReason={props.rosterDisabledReason}
+            onAdd={props.onAddCombatant}
+          />
           <div className="combatant-list" role="list" aria-label="Initiative order">
             {combatants.map((combatant, index) => {
               const isTurn = index === props.combat?.turnIndex;
@@ -201,6 +226,29 @@ export function CombatPanel(props: { campaignId: string; combat?: Combat; recent
                           <span key={`${combatant.id}-${label}`}>{label}</span>
                         ))}
                       </p>
+                      {actor?.systemId === "dnd-5e-srd" && (
+                        <section className="combatant-vitals-tools" aria-label={`${combatant.name} hit point tools`}>
+                          <CombatVitalsControls
+                            actor={actor}
+                            combat={props.combat!}
+                            canAdjust={props.canAdjustVitals}
+                            disabledReason={props.vitalsDisabledReason}
+                            onAdjust={props.onAdjustVitals}
+                          />
+                          <div title={props.canAdjustVitals ? undefined : props.vitalsDisabledReason}>
+                            <TypedDamageCard campaignId={props.campaignId} actor={actor} actors={props.actors} canApply={props.canAdjustVitals} onApplied={props.onTypedDamageApplied} />
+                          </div>
+                        </section>
+                      )}
+                      <button
+                        className="ghost-button small combatant-remove"
+                        type="button"
+                        disabled={!props.canManageRoster || pendingControls.has(`combatant:${combatant.id}:remove`)}
+                        title={props.canManageRoster ? `Remove ${combatant.name} from combat` : props.rosterDisabledReason}
+                        onClick={() => runPendingControl(`combatant:${combatant.id}:remove`, `Remove ${combatant.name} from combat`, () => props.onRemoveCombatant(props.combat!, combatant.id))}
+                      >
+                        <Trash2 size={14} /> Remove from combat
+                      </button>
                     </div>
                   )}
                 </div>
@@ -332,6 +380,183 @@ export function CombatPanel(props: { campaignId: string; combat?: Combat; recent
       )}
     </div>
   );
+}
+
+export function LegendaryActionPromptCard(props: {
+  combat: Combat;
+  prompt: CombatLegendaryActionPrompt;
+  canSpend: boolean;
+  disabledReason: string;
+  onSpend(combat: Combat, prompt: CombatLegendaryActionPrompt, optionName: string, cost: number): Promise<void>;
+}) {
+  const [optionName, setOptionName] = useState(props.prompt.options[0] ?? "");
+  const [cost, setCost] = useState("1");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+  const selectedOption = props.prompt.options.includes(optionName) ? optionName : props.prompt.options[0] ?? "";
+
+  const spend = async () => {
+    const parsedCost = Number(cost);
+    if (!props.canSpend || pending) return;
+    if (!selectedOption) {
+      setError("Choose a legendary action option.");
+      return;
+    }
+    if (!Number.isInteger(parsedCost) || parsedCost < 1 || parsedCost > props.prompt.remainingUses) {
+      setError(`Cost must be a whole number from 1 to ${formatNumber(props.prompt.remainingUses)}.`);
+      return;
+    }
+    setPending(true);
+    setError("");
+    try {
+      await props.onSpend(props.combat, props.prompt, selectedOption, parsedCost);
+      setCost("1");
+    } catch (caught) {
+      // Keep the option and cost so the GM can resolve a stale revision and retry.
+      setError(errorMessage(caught));
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <article className="operator-item admin-item legendary-action-prompt" aria-label={`${props.prompt.actorName} legendary action prompt`}>
+      <div className="combatant-header">
+        <strong>{props.prompt.actorName}</strong>
+        <span className="status-pill">Legendary action available ({formatNumber(props.prompt.remainingUses)}/{formatNumber(props.prompt.maximumUses)})</span>
+      </div>
+      <form className="rest-choice-grid" onSubmit={(event) => { event.preventDefault(); void spend(); }}>
+        <label>
+          <span>Reviewed option</span>
+          <select aria-label={`${props.prompt.actorName} legendary action option`} value={selectedOption} disabled={!props.canSpend || pending || props.prompt.options.length === 0} onChange={(event) => { setOptionName(event.target.value); setError(""); }}>
+            {props.prompt.options.length === 0
+              ? <option value="">No structured options</option>
+              : props.prompt.options.map((option) => <option key={option} value={option}>{option}</option>)}
+          </select>
+        </label>
+        <label>
+          <span>Uses spent</span>
+          <input aria-label={`${props.prompt.actorName} legendary action cost`} type="number" inputMode="numeric" min={1} max={props.prompt.remainingUses} step={1} value={cost} disabled={!props.canSpend || pending} onChange={(event) => { setCost(event.target.value); setError(""); }} />
+        </label>
+        <button className="ghost-button" type="submit" disabled={!props.canSpend || pending || !selectedOption} title={props.canSpend ? "Record this reviewed legendary-action use" : props.disabledReason}>
+          <Swords size={14} /> {pending ? "Recording…" : "Record use"}
+        </button>
+      </form>
+      <small>Reviewed/manual: choose targets and resolve the option at the table. This records only the bounded use pool.</small>
+      {!props.canSpend && <p className="account-summary">{props.disabledReason}</p>}
+      {error && <p className="creator-error" role="alert">Legendary action failed: {error}</p>}
+    </article>
+  );
+}
+
+export function CombatVitalsControls(props: {
+  actor: Actor;
+  combat: Combat;
+  canAdjust: boolean;
+  disabledReason: string;
+  onAdjust(actor: Actor, kind: Dnd5eSrdCombatVitalsKind, amount: number, combat: Combat): Promise<void>;
+}) {
+  const [healing, setHealing] = useState("1");
+  const [temporaryHitPoints, setTemporaryHitPoints] = useState("1");
+  const [pending, setPending] = useState<Dnd5eSrdCombatVitalsKind | "">("");
+  const [error, setError] = useState("");
+
+  const submit = async (kind: Dnd5eSrdCombatVitalsKind, value: string) => {
+    if (!props.canAdjust || pending) return;
+    const amount = Number(value);
+    if (!Number.isInteger(amount) || amount < 1) {
+      setError("Enter a positive whole-number amount.");
+      return;
+    }
+    setPending(kind);
+    setError("");
+    try {
+      await props.onAdjust(props.actor, kind, amount, props.combat);
+      if (kind === "healing") setHealing("1");
+      else setTemporaryHitPoints("1");
+    } catch (caught) {
+      // Preserve both drafts so correcting a conflict or retrying never loses input.
+      setError(errorMessage(caught));
+    } finally {
+      setPending("");
+    }
+  };
+
+  return (
+    <div className="combat-vitals-controls" aria-label={`${props.actor.name} healing and temporary hit points`}>
+      <form onSubmit={(event) => { event.preventDefault(); void submit("healing", healing); }}>
+        <label><span>Healing</span><input aria-label={`${props.actor.name} healing amount`} type="number" min={1} step={1} value={healing} disabled={!props.canAdjust || Boolean(pending)} onChange={(event) => setHealing(event.target.value)} /></label>
+        <button className="ghost-button small" type="submit" disabled={!props.canAdjust || Boolean(pending)} title={props.canAdjust ? "Apply server-authoritative healing" : props.disabledReason}><HeartPulse size={14} /> {pending === "healing" ? "Healing…" : "Heal"}</button>
+      </form>
+      <form onSubmit={(event) => { event.preventDefault(); void submit("temporaryHitPoints", temporaryHitPoints); }}>
+        <label><span>Temporary HP</span><input aria-label={`${props.actor.name} temporary hit points`} type="number" min={1} step={1} value={temporaryHitPoints} disabled={!props.canAdjust || Boolean(pending)} onChange={(event) => setTemporaryHitPoints(event.target.value)} /></label>
+        <button className="ghost-button small" type="submit" disabled={!props.canAdjust || Boolean(pending)} title={props.canAdjust ? "Set temporary HP using the higher-value rule" : props.disabledReason}><ShieldPlus size={14} /> {pending === "temporaryHitPoints" ? "Applying…" : "Set temp HP"}</button>
+      </form>
+      {error && <p className="creator-error" role="alert">Vitals update failed: {error}</p>}
+    </div>
+  );
+}
+
+export function CombatRosterControls(props: {
+  combat: Combat;
+  tokens: Token[];
+  canManage: boolean;
+  disabledReason: string;
+  onAdd(combat: Combat, token: Token, initiative: number): Promise<void>;
+}) {
+  const [selectedTokenId, setSelectedTokenId] = useState("");
+  const [initiative, setInitiative] = useState("0");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+  const selectedToken = props.tokens.find((token) => token.id === selectedTokenId) ?? props.tokens[0];
+
+  const add = async () => {
+    const parsedInitiative = Number(initiative);
+    if (!props.canManage || !selectedToken || pending) return;
+    if (!Number.isFinite(parsedInitiative)) {
+      setError("Initiative must be a number.");
+      return;
+    }
+    setPending(true);
+    setError("");
+    try {
+      await props.onAdd(props.combat, selectedToken, parsedInitiative);
+      setSelectedTokenId("");
+      setInitiative("0");
+    } catch (caught) {
+      // Keep the selected token and initiative available for explicit retry.
+      setError(errorMessage(caught));
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <details className="create-drawer combat-roster-controls" aria-label="Combat roster controls">
+      <summary><Plus size={14} /> Add combatant <strong>{formatNumber(props.tokens.length)} available</strong></summary>
+      <form className="rest-choice-grid" onSubmit={(event) => { event.preventDefault(); void add(); }}>
+        <label><span>Scene token</span><select aria-label="Token to add to combat" value={selectedToken?.id ?? ""} disabled={!props.canManage || pending || props.tokens.length === 0} onChange={(event) => setSelectedTokenId(event.target.value)}>{props.tokens.length === 0 ? <option value="">No eligible scene tokens</option> : props.tokens.map((token) => <option key={token.id} value={token.id}>{token.name}</option>)}</select></label>
+        <label><span>Initiative</span><input aria-label="New combatant initiative" type="number" value={initiative} disabled={!props.canManage || pending || !selectedToken} onChange={(event) => setInitiative(event.target.value)} /></label>
+        <button className="ghost-button" type="submit" disabled={!props.canManage || pending || !selectedToken} title={props.canManage ? "Add this token without changing the active turn" : props.disabledReason}><Plus size={14} /> {pending ? "Adding…" : "Add to combat"}</button>
+      </form>
+      {!props.canManage && <p className="account-summary">{props.disabledReason}</p>}
+      {error && <p className="creator-error" role="alert">Roster update failed: {error}</p>}
+    </details>
+  );
+}
+
+export function combatRosterPatch(combat: Combat, combatants: Combat["combatants"]): Pick<Combat, "combatants" | "turnIndex"> {
+  const activeId = combat.combatants[combat.turnIndex]?.id;
+  const ordered = combat.manualTurnOrder
+    ? combatants
+    : combatants.map((combatant, index) => ({ combatant, index }))
+      .sort((left, right) => right.combatant.initiative - left.combatant.initiative || left.index - right.index)
+      .map(({ combatant }) => combatant);
+  const preservedIndex = activeId ? ordered.findIndex((combatant) => combatant.id === activeId) : -1;
+  return {
+    combatants,
+    turnIndex: preservedIndex >= 0 ? preservedIndex : Math.max(0, Math.min(combat.turnIndex, ordered.length - 1))
+  };
 }
 
 

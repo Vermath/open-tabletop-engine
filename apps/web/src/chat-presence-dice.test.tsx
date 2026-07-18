@@ -1,12 +1,28 @@
 import { renderToStaticMarkup } from "react-dom/server";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ChatRail, diceFormulaRangeLabel } from "./chat-rail.js";
+import { ChatRail, chatStreamIsNearBottom, diceFormulaRangeLabel } from "./chat-rail.js";
 import type { Snapshot } from "./api.js";
+
+const chatRailSource = readFileSync(resolve(__dirname, "chat-rail.tsx"), "utf8").replace(/\r\n/g, "\n");
 
 describe("chat presence and dice transparency", () => {
   it("uses the shared dice engine range and explains unsupported or unbounded notation", () => {
     expect(diceFormulaRangeLabel("2d20kh1+5")).toBe("Possible total: 6 to 25");
     expect(diceFormulaRangeLabel("1d6!")).toContain("Range unavailable");
+  });
+
+  it("follows new chat only while the reader is already near the latest message", () => {
+    expect(chatStreamIsNearBottom({ clientHeight: 400, scrollHeight: 1000, scrollTop: 590 })).toBe(true);
+    expect(chatStreamIsNearBottom({ clientHeight: 400, scrollHeight: 1000, scrollTop: 300 })).toBe(false);
+  });
+
+  it("resets follow and unread bookkeeping when the campaign identity changes", () => {
+    expect(chatRailSource).toContain("return <CampaignChatRail key={props.campaignId} {...props} />;");
+    expect(chatRailSource).toContain("function CampaignChatRail(props: ChatRailProps)");
+    expect(chatRailSource).toContain("const [followingLatest, setFollowingLatest] = useState(true);");
+    expect(chatRailSource).toContain("const [unseenMessageCount, setUnseenMessageCount] = useState(0);");
   });
 
   it("renders actual connected participants instead of membership as presence", () => {

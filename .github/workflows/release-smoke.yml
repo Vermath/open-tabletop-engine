@@ -12,9 +12,9 @@ permissions:
 
 jobs:
   release-smoke:
-    name: pnpm release:smoke
+    name: pnpm release:smoke:offline
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 120
 
     steps:
       - name: Checkout
@@ -38,6 +38,29 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Run release smoke
+        run: pnpm release:smoke:offline
+
+      - name: Audit open release issues
+        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: pnpm release:smoke
+        run: pnpm v1:issues:check
+
+      - name: Upload release gate evidence
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: open-tabletop-release-gate-evidence
+          path: artifacts/release-evidence/*.json
+          if-no-files-found: error
+
+      - name: Upload API service SBOM
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: open-tabletop-api-sbom
+          path: |
+            .codex-artifacts/sbom/open-tabletop-api.cdx.json
+            .codex-artifacts/sbom/open-tabletop-api-image.cdx.json
+          include-hidden-files: true
+          if-no-files-found: error

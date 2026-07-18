@@ -1,0 +1,764 @@
+{
+  "schema": "otte.full-feature-browser-simulation/v1",
+  "recordedAt": "2026-07-18",
+  "completedAt": "2026-07-18",
+  "campaign": {
+    "name": "The Obsidian Relay: Full-Feature Trial",
+    "id": null,
+    "idNote": "The campaign identifier is intentionally not included in the shareable evidence packet."
+  },
+  "operator": "Codex",
+  "evidenceClass": "simulated_browser_multi_seat",
+  "independentHumanAcceptance": false,
+  "roles": [
+    "server_admin",
+    "owner",
+    "gm",
+    "assistant_gm",
+    "player",
+    "observer"
+  ],
+  "characters": [
+    {
+      "name": "Kestrel Forge",
+      "class": "Fighter",
+      "level": 3,
+      "subclass": "Champion",
+      "creationPath": "guided_creator"
+    },
+    {
+      "name": "Luma Vey",
+      "class": "Cleric",
+      "level": 3,
+      "subclass": "Life Domain",
+      "creationPath": "guided_creator"
+    },
+    {
+      "name": "Orin Glass",
+      "class": "Wizard",
+      "level": 3,
+      "subclass": "Evoker",
+      "creationPath": "json_import"
+    },
+    {
+      "name": "Pip Thistledown",
+      "class": "Rogue",
+      "level": 3,
+      "subclass": "Thief",
+      "creationPath": "guided_creator"
+    }
+  ],
+  "continuity": {
+    "scenes": 6,
+    "sessionsPlanned": 3,
+    "sessionsCompleted": 3,
+    "advancement": "The same four character records advanced from level 1 through level 3 between sessions.",
+    "finalScene": "06 Bellfoundry Sanctum",
+    "finalEncounter": "Obsidian Bell Horror"
+  },
+  "plan": "../../docs/verification/full-feature-browser-simulation-2026-07-18.md",
+  "results": "../../docs/verification/full-feature-browser-simulation-results-2026-07-18.md",
+  "status": "simulation_complete_release_pending",
+  "browserFinalized": true,
+  "screenshots": [
+    {
+      "sequence": 1,
+      "file": "01-server-admin-readiness.png",
+      "phase": "operations",
+      "description": "Server administration readiness and truthful local provider status.",
+      "findingIds": []
+    },
+    {
+      "sequence": 2,
+      "file": "02-operator-backup-drill.png",
+      "phase": "operations",
+      "description": "Non-destructive operator backup and paired restore-drill evidence.",
+      "findingIds": []
+    },
+    {
+      "sequence": 3,
+      "file": "03-before-seeded-demo-login-failure.png",
+      "phase": "account",
+      "description": "Before evidence for an unavailable Seeded Demo login path.",
+      "findingIds": [
+        "FF-001"
+      ]
+    },
+    {
+      "sequence": 4,
+      "file": "04-fresh-account-no-campaign.png",
+      "phase": "account",
+      "description": "Successful fresh registration and empty first-run workspace after remediation.",
+      "findingIds": [
+        "FF-001",
+        "FF-002"
+      ]
+    },
+    {
+      "sequence": 5,
+      "file": "05-campaign-wizard-draft.png",
+      "phase": "campaign_setup",
+      "description": "Resumable campaign-wizard draft with first-scene configuration.",
+      "findingIds": []
+    },
+    {
+      "sequence": 6,
+      "file": "06-campaign-wizard-review.png",
+      "phase": "campaign_setup",
+      "description": "Campaign creation review before commit.",
+      "findingIds": []
+    },
+    {
+      "sequence": 7,
+      "file": "07-campaign-created-relay-dock.png",
+      "phase": "campaign_setup",
+      "description": "Created campaign on the Relay Dock scene.",
+      "findingIds": [
+        "FF-003"
+      ]
+    },
+    {
+      "sequence": 8,
+      "file": "08-campaign-rules-profile.png",
+      "phase": "campaign_setup",
+      "description": "Persisted D&D 5.5e campaign rules profile.",
+      "findingIds": []
+    },
+    {
+      "sequence": 9,
+      "file": "09-kestrel-creator-review.png",
+      "phase": "characters",
+      "description": "Guided Fighter creator review before character creation.",
+      "findingIds": []
+    },
+    {
+      "sequence": 10,
+      "file": "10-four-character-roster.png",
+      "phase": "characters",
+      "description": "The intended four-character roster after removing the legacy duplicate through the actor lifecycle UI.",
+      "findingIds": [
+        "FF-009"
+      ]
+    },
+    {
+      "sequence": 11,
+      "file": "11-six-scene-campaign.png",
+      "phase": "scenes",
+      "description": "Six persistent square-grid and gridless campaign scenes.",
+      "findingIds": [
+        "FF-003"
+      ]
+    },
+    {
+      "sequence": 12,
+      "file": "12-three-session-plan.png",
+      "phase": "sessions",
+      "description": "Three-session campaign plan with linked scenes and encounters.",
+      "findingIds": []
+    },
+    {
+      "sequence": 13,
+      "file": "13-session-one-chat-and-rolls.png",
+      "phase": "session_1",
+      "description": "Session 1 chat modes and live dice activity.",
+      "findingIds": []
+    },
+    {
+      "sequence": 14,
+      "file": "14-session-one-active-combat.png",
+      "phase": "session_1",
+      "description": "Session 1 active combat with party and adversaries.",
+      "findingIds": []
+    },
+    {
+      "sequence": 15,
+      "file": "15-before-typed-damage-object-rendering.png",
+      "phase": "session_1",
+      "description": "Before evidence for structured typed-damage data rendering as an object string.",
+      "findingIds": [
+        "FF-004"
+      ]
+    },
+    {
+      "sequence": 16,
+      "file": "16-pip-player-action.png",
+      "phase": "session_1",
+      "description": "Player-owned Rogue action submitted through the live action flow.",
+      "findingIds": []
+    },
+    {
+      "sequence": 17,
+      "file": "17-before-imported-character-data-loss.png",
+      "phase": "session_1",
+      "description": "Before evidence for Wizard JSON import data loss.",
+      "findingIds": [
+        "FF-005"
+      ]
+    },
+    {
+      "sequence": 19,
+      "file": "19-session-two-advanced-combat.png",
+      "phase": "session_2",
+      "description": "Session 2 advanced-combat and tactical-map state.",
+      "findingIds": []
+    },
+    {
+      "sequence": 20,
+      "file": "20-kestrel-level-three-review.png",
+      "phase": "session_2",
+      "description": "Persistent level-3 Fighter advancement review.",
+      "findingIds": []
+    },
+    {
+      "sequence": 21,
+      "file": "21-after-repaired-wizard-import.png",
+      "phase": "session_2",
+      "description": "Repaired Wizard import preserving HP, AC, spells, and spellbook data.",
+      "findingIds": [
+        "FF-005"
+      ]
+    },
+    {
+      "sequence": 22,
+      "file": "22-orin-level-three-review.png",
+      "phase": "session_2",
+      "description": "Imported Wizard continuity through level-3 Evoker advancement.",
+      "findingIds": [
+        "FF-005"
+      ]
+    },
+    {
+      "sequence": 23,
+      "file": "23-session-three-furnace-bridge.png",
+      "phase": "session_3",
+      "description": "Session 3 opened on the gridless Furnace Bridge map.",
+      "findingIds": []
+    },
+    {
+      "sequence": 24,
+      "file": "24-session-three-combat-setup.png",
+      "phase": "session_3",
+      "description": "Saved Bellfoundry Warden encounter reused for an eight-participant combat.",
+      "findingIds": [
+        "FF-010"
+      ]
+    },
+    {
+      "sequence": 25,
+      "file": "25-after-spell-helper-labels-and-state.png",
+      "phase": "session_3",
+      "description": "Repaired source-specific spell-helper labels with disclosure state retained.",
+      "findingIds": [
+        "FF-006",
+        "FF-007"
+      ]
+    },
+    {
+      "sequence": 26,
+      "file": "26-session-three-lair-action-and-spell-helper.png",
+      "phase": "session_3",
+      "description": "Four-dart multi-target Magic Missile helper and public Obsidian Bell Resonance lair action.",
+      "findingIds": [
+        "FF-006",
+        "FF-007"
+      ]
+    },
+    {
+      "sequence": 27,
+      "file": "27-sanctum-boss-combat-setup.png",
+      "phase": "session_3",
+      "description": "Final seven-participant Chimera and Flying Sword boss combat setup on Bellfoundry Sanctum.",
+      "findingIds": []
+    },
+    {
+      "sequence": 28,
+      "file": "28-session-three-boss-defeated.png",
+      "phase": "session_3",
+      "description": "Final boss state after reviewed damage, defeat, undo, restoration, and reapplied damage.",
+      "findingIds": [
+        "FF-004"
+      ]
+    },
+    {
+      "sequence": 29,
+      "file": "29-session-three-completed.png",
+      "phase": "session_3",
+      "description": "Session 3 completed after final combat rewards and loot were recorded.",
+      "findingIds": []
+    },
+    {
+      "sequence": 30,
+      "file": "30-soundboard-live-controls.png",
+      "phase": "cross_cutting",
+      "description": "Live URL-track soundboard controls, playback state, mute, and volume surface.",
+      "findingIds": [
+        "FF-012",
+        "FF-021"
+      ]
+    },
+    {
+      "sequence": 31,
+      "file": "31-campaign-search-results.png",
+      "phase": "cross_cutting",
+      "description": "Campaign-wide Obsidian search after stale-scope and race-safe pagination remediation.",
+      "findingIds": [
+        "FF-019"
+      ]
+    },
+    {
+      "sequence": 32,
+      "file": "32-ai-studio-readiness-guard.png",
+      "phase": "cross_cutting",
+      "description": "Truthful AI Studio policy and unavailable-provider readiness guard.",
+      "findingIds": [
+        "FF-014",
+        "FF-018"
+      ]
+    },
+    {
+      "sequence": 33,
+      "file": "33-archive-scoped-export-estimate.png",
+      "phase": "cross_cutting",
+      "description": "Permission-checked archive scope with conservative selected-collection record estimate.",
+      "findingIds": [
+        "FF-015",
+        "FF-016",
+        "FF-017"
+      ]
+    },
+    {
+      "sequence": 34,
+      "file": "34-content-import-applied.png",
+      "phase": "cross_cutting",
+      "description": "Markdown content-import preview and applied-record evidence.",
+      "findingIds": [
+        "FF-013"
+      ]
+    },
+    {
+      "sequence": 35,
+      "file": "35-content-import-rolled-back.png",
+      "phase": "cross_cutting",
+      "description": "Exact content-import operation rolled back after atomic preflight.",
+      "findingIds": [
+        "FF-013"
+      ]
+    },
+    {
+      "sequence": 36,
+      "file": "36-webhook-delivery-ledger.png",
+      "phase": "cross_cutting",
+      "description": "Webhook validation, failed-delivery ledger, and revision-correct deletion path.",
+      "findingIds": [
+        "FF-011"
+      ]
+    },
+    {
+      "sequence": 37,
+      "file": "37-after-ai-studio-readiness-gating.png",
+      "phase": "cross_cutting",
+      "description": "AI Studio provider-backed controls disabled under incomplete local readiness.",
+      "findingIds": [
+        "FF-008",
+        "FF-014",
+        "FF-018"
+      ]
+    },
+    {
+      "sequence": 38,
+      "file": "38-three-completed-sessions.png",
+      "phase": "continuity",
+      "description": "All three linked sessions completed with the persistent four-character campaign intact.",
+      "findingIds": [
+        "FF-008"
+      ]
+    },
+    {
+      "sequence": 39,
+      "file": "39-after-ai-agent-readiness-gating.png",
+      "phase": "cross_cutting",
+      "description": "Floating AI Agent showing truthful unsafe-policy status with provider-backed prompt and reference controls disabled.",
+      "findingIds": [
+        "FF-020"
+      ]
+    },
+    {
+      "sequence": 40,
+      "file": "40-after-soundboard-volume-persistence.png",
+      "phase": "cross_cutting",
+      "description": "Soundboard master volume remaining at 0.4 after a realtime audio-track rerender.",
+      "findingIds": [
+        "FF-021"
+      ]
+    },
+    {
+      "sequence": 41,
+      "file": "41-final-hard-reload-continuity.png",
+      "phase": "continuity",
+      "description": "Final hard-reload continuity with the Bellfoundry Sanctum, persistent party, defeated encounter actors, and live connection restored.",
+      "findingIds": []
+    }
+  ],
+  "excludedCaptures": [
+    {
+      "file": "debug-damage-editor.png",
+      "reason": "Temporary debugging capture; not release evidence."
+    }
+  ],
+  "findings": [
+    {
+      "id": "FF-001",
+      "status": "fixed",
+      "summary": "The Seeded Demo entry suggested a login path unavailable in a public-registration stack.",
+      "repair": "Added explicit seeded-demo availability and disabled-state guidance with regression coverage.",
+      "browserEvidence": [
+        "03-before-seeded-demo-login-failure.png",
+        "04-fresh-account-no-campaign.png"
+      ]
+    },
+    {
+      "id": "FF-002",
+      "status": "fixed",
+      "summary": "The Compose quickstart did not expose the documented registration setting.",
+      "repair": "Wired registration configuration through Compose and the example environment, updated self-hosting guidance, and extended deployment-smoke coverage.",
+      "browserEvidence": [
+        "04-fresh-account-no-campaign.png"
+      ]
+    },
+    {
+      "id": "FF-003",
+      "status": "fixed",
+      "summary": "A decorative board element was exposed as an orphan interactive accessibility target.",
+      "repair": "Corrected board semantics and styling and added actor-panel layout regression coverage.",
+      "browserEvidence": [
+        "07-campaign-created-relay-dock.png",
+        "11-six-scene-campaign.png"
+      ]
+    },
+    {
+      "id": "FF-004",
+      "status": "fixed",
+      "summary": "Exact typed-damage review rendered structured diff data as [object Object].",
+      "repair": "Added deliberate structured-diff rendering and typed-damage card regressions.",
+      "browserEvidence": [
+        "15-before-typed-damage-object-rendering.png",
+        "28-session-three-boss-defeated.png"
+      ]
+    },
+    {
+      "id": "FF-005",
+      "status": "fixed",
+      "summary": "Character JSON import silently dropped Wizard HP, AC, spells, and spellbook data.",
+      "repair": "Normalized supported import shapes in the system SDK, preserved compatible data, and added SDK and API import regressions.",
+      "browserEvidence": [
+        "17-before-imported-character-data-loss.png",
+        "21-after-repaired-wizard-import.png",
+        "22-orin-level-three-review.png"
+      ]
+    },
+    {
+      "id": "FF-006",
+      "status": "fixed",
+      "summary": "Advanced-combat spell and helper controls had ambiguous accessible names.",
+      "repair": "Added source-specific labels and component regressions.",
+      "browserEvidence": [
+        "25-after-spell-helper-labels-and-state.png",
+        "26-session-three-lair-action-and-spell-helper.png"
+      ]
+    },
+    {
+      "id": "FF-007",
+      "status": "fixed",
+      "summary": "Advanced-combat disclosures collapsed after each state refresh.",
+      "repair": "Preserved disclosure state across refreshes and added component regression coverage.",
+      "browserEvidence": [
+        "25-after-spell-helper-labels-and-state.png",
+        "26-session-three-lair-action-and-spell-helper.png"
+      ]
+    },
+    {
+      "id": "FF-008",
+      "status": "fixed",
+      "summary": "Vite could stay connected to an API built from stale source and freeze verification behind a fingerprint mismatch.",
+      "repair": "Made API fingerprint inputs restart Vite automatically while preserving truthful fail-closed mismatch errors.",
+      "browserEvidence": [
+        "37-after-ai-studio-readiness-gating.png",
+        "38-three-completed-sessions.png"
+      ]
+    },
+    {
+      "id": "FF-009",
+      "status": "fixed",
+      "summary": "The web app lacked a safe actor-delete lifecycle path and stranded a duplicate imported actor.",
+      "repair": "Added revisioned, permission-checked actor lifecycle client and UI flows with regressions.",
+      "browserEvidence": [
+        "10-four-character-roster.png"
+      ]
+    },
+    {
+      "id": "FF-010",
+      "status": "fixed",
+      "summary": "Saved encounters were hard to discover from the Session desk and schedule linkage could be missed.",
+      "repair": "Opened saved encounters by default, exposed counts, and added session and encounter round-trip regressions.",
+      "browserEvidence": [
+        "24-session-three-combat-setup.png"
+      ]
+    },
+    {
+      "id": "FF-011",
+      "status": "fixed",
+      "summary": "Webhook delete sent expectedUpdatedAt in the wrong transport location.",
+      "repair": "Aligned the web client with the DELETE query contract and added panel regression coverage.",
+      "browserEvidence": [
+        "36-webhook-delivery-ledger.png"
+      ]
+    },
+    {
+      "id": "FF-012",
+      "status": "fixed",
+      "summary": "Audio playback could 404 private assets and restart whenever a newly minted signed URL changed.",
+      "repair": "Applied readable-asset authorization and stable asset identity in audio synchronization with API and web regressions.",
+      "browserEvidence": [
+        "30-soundboard-live-controls.png"
+      ]
+    },
+    {
+      "id": "FF-013",
+      "status": "fixed",
+      "summary": "Content-import rollback could partially act after source modification or reference conflicts.",
+      "repair": "Added source fingerprints and atomic full-batch preflight rejection for modified or referenced records.",
+      "browserEvidence": [
+        "34-content-import-applied.png",
+        "35-content-import-rolled-back.png"
+      ]
+    },
+    {
+      "id": "FF-014",
+      "status": "fixed",
+      "summary": "PDF AI import was enabled with campaign update authority even when ai.proposeChanges was absent.",
+      "repair": "Required both permissions and exposed a truthful disabled explanation.",
+      "browserEvidence": [
+        "32-ai-studio-readiness-guard.png",
+        "37-after-ai-studio-readiness-gating.png"
+      ]
+    },
+    {
+      "id": "FF-015",
+      "status": "fixed",
+      "summary": "Rolling back an archive that created the only campaign could leave stale selected-campaign state.",
+      "repair": "Archive recovery now clears the stale selection or chooses a valid fallback campaign.",
+      "browserEvidence": [
+        "33-archive-scoped-export-estimate.png"
+      ]
+    },
+    {
+      "id": "FF-016",
+      "status": "fixed",
+      "summary": "Archive UI could infer authority from organization role instead of exact campaign.update permission.",
+      "repair": "Bound archive mutation controls to exact campaign permission and added authority regressions.",
+      "browserEvidence": [
+        "33-archive-scoped-export-estimate.png"
+      ]
+    },
+    {
+      "id": "FF-017",
+      "status": "fixed",
+      "summary": "Archive export estimates used full-campaign totals for selected collections.",
+      "repair": "Added a conservative scope-aware At least N records estimate with regressions.",
+      "browserEvidence": [
+        "33-archive-scoped-export-estimate.png"
+      ]
+    },
+    {
+      "id": "FF-018",
+      "status": "fixed",
+      "summary": "AI Studio was absent from workspace navigation and could imply provider readiness when unavailable.",
+      "repair": "Added permission-gated navigation, non-secret provider readiness, truthful unavailable states, and disabled provider-backed controls.",
+      "browserEvidence": [
+        "32-ai-studio-readiness-guard.png",
+        "37-after-ai-studio-readiness-gating.png"
+      ]
+    },
+    {
+      "id": "FF-019",
+      "status": "fixed",
+      "summary": "Campaign search retained stale world scope and lacked race-safe pagination.",
+      "repair": "Sanitized invalid scope and added request-safe load-more behavior with search regressions.",
+      "browserEvidence": [
+        "31-campaign-search-results.png"
+      ]
+    },
+    {
+      "id": "FF-020",
+      "status": "fixed",
+      "summary": "The floating AI Agent falsely reported Agent ready and left provider-backed composer controls enabled while the effective campaign AI policy was unsafe or unreviewed.",
+      "repair": "Shared AI Studio readiness with the floating Agent. Unavailable, loading, or unsafe policy now presents a truthful status and reason; disables prompt, send, and reference submission; preserves configured and local-demo execution; and leaves existing proposal review governed by its existing permissions.",
+      "regressionEvidence": [
+        "apps/web/src/ai-readiness.ts",
+        "apps/web/src/ai-panel.test.ts"
+      ],
+      "browserEvidence": [
+        "39-after-ai-agent-readiness-gating.png"
+      ]
+    },
+    {
+      "id": "FF-021",
+      "status": "fixed",
+      "summary": "Master volume visually accepted 0.4, then the next realtime audio-track rerender restored the controlled 0.8 prop because Browser range interaction emitted input while the slider listened only for change.",
+      "repair": "Bound the slider to onInput and read event.currentTarget.value. Master volume remains client-local while shared track and playback mutations continue through the revision-guarded AudioTrack API.",
+      "regressionEvidence": [
+        "apps/web/src/audio-workspace.tsx",
+        "apps/web/src/audio-sync.test.ts"
+      ],
+      "browserEvidence": [
+        "30-soundboard-live-controls.png",
+        "40-after-soundboard-volume-persistence.png"
+      ]
+    },
+    {
+      "id": "FF-022",
+      "status": "fixed",
+      "summary": "Clean Windows release worktrees exposed CRLF-sensitive multiline source assertions that the ordinary dirty-worktree gate masked.",
+      "repair": "Added repository-wide LF checkout policy with explicit CRLF exceptions for .bat and .cmd, and normalized the remaining modal source fixtures before multiline assertions.",
+      "regressionEvidence": [
+        ".gitattributes",
+        "apps/web/src/modal-accessibility.test.ts"
+      ],
+      "browserEvidence": []
+    },
+    {
+      "id": "FF-023",
+      "status": "fixed",
+      "summary": "The floating AI Agent prompt missed keyboard focus when the panel opened during readiness loading.",
+      "repair": "Added a guarded one-shot focus handoff when readiness first enables the composer without stealing focus during later busy transitions.",
+      "regressionEvidence": [
+        "apps/web/src/App.tsx",
+        "apps/web/src/ai-panel.test.ts",
+        "tests/e2e/accessibility.spec.ts"
+      ],
+      "browserEvidence": []
+    },
+    {
+      "id": "FF-024",
+      "status": "fixed",
+      "summary": "The final action dialog lost its stable Structured consequence review marker.",
+      "repair": "Restored the structured-review marker while preserving the final-confirmation step label and hardened the E2E response listener around the actual commit.",
+      "regressionEvidence": [
+        "apps/web/src/consequence-review.tsx",
+        "apps/web/src/consequence-review.test.tsx",
+        "tests/e2e/auth-tabletop.spec.ts"
+      ],
+      "browserEvidence": []
+    },
+    {
+      "id": "FF-025",
+      "status": "fixed",
+      "summary": "A successful plugin install immediately lost its specific success message to a generic refresh status.",
+      "repair": "Reconciled plugin state with refresh status synchronization disabled so the committed install result remains visible.",
+      "regressionEvidence": [
+        "apps/web/src/App.tsx",
+        "apps/web/src/workspace-async-guards.test.ts",
+        "tests/e2e/auth-tabletop.spec.ts"
+      ],
+      "browserEvidence": []
+    },
+    {
+      "id": "FF-026",
+      "status": "fixed",
+      "summary": "A successful content-import rollback could lose its final success status to the following workspace refresh.",
+      "repair": "Reconciled before publishing success with refresh status synchronization disabled; E2E now proves conflict blocking, resolution, retry, and exact rollback.",
+      "regressionEvidence": [
+        "apps/web/src/App.tsx",
+        "tests/e2e/auth-tabletop.spec.ts"
+      ],
+      "browserEvidence": []
+    },
+    {
+      "id": "FF-027",
+      "status": "fixed",
+      "summary": "The atomic scene-duplication E2E could falsely time out before reaching the feature when the first Demo GM login request hit a transient connection failure.",
+      "repair": "Added a bounded retry around only the demo-workspace readiness precondition while preserving the forced commit failure and zero-partial-copy assertions unchanged.",
+      "regressionEvidence": [
+        "tests/e2e/auth-tabletop.spec.ts"
+      ],
+      "browserEvidence": []
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "automation",
+      "status": "not_claimed",
+      "detail": "One automation operator controlled the GM and all four player seats sequentially; independent-human and simultaneous-client acceptance are not claimed."
+    },
+    {
+      "kind": "native_file_picker",
+      "status": "not_supported_by_browser_harness",
+      "detail": "The in-app Browser automation API exposed no native file-selection primitive, so native map and uploaded-audio selections are not claimed. Existing assets and URL-track state were exercised."
+    },
+    {
+      "kind": "external_services",
+      "status": "not_configured",
+      "detail": "OIDC, SCIM, email delivery, third-party webhooks, remote registries, CDN or scanner services, and provider-backed AI, PDF, and image generation were not configured. Truthful local unavailable and validation states were tested."
+    },
+    {
+      "kind": "human_device",
+      "status": "not_claimed",
+      "detail": "Audible speaker output, physical keyboard or touch behavior, screen-reader output, and subjective usability require a human-device pass."
+    },
+    {
+      "kind": "ownership_transfer",
+      "status": "automated_contract_only",
+      "detail": "Ownership transfer was not committed on the retained release campaign because it would change the release owner's authority."
+    },
+    {
+      "kind": "archive_native_download",
+      "status": "not_claimed",
+      "detail": "Archive scope, estimate, validation, recovery, and rollback were covered; OS save-dialog completion was not claimed."
+    }
+  ],
+  "verification": {
+    "focused": {
+      "status": "passed",
+      "detail": "Focused regressions for FF-001 through FF-027 passed during remediation; the FF-021 audio-sync gate passed 9 of 9 tests, the FF-022 modal accessibility gate passed 3 of 3 tests, and the FF-027 scene-duplication journey passed five fresh-server repetitions plus a simulated first-login connection abort."
+    },
+    "webTypecheck": {
+      "status": "passed"
+    },
+    "webTests": {
+      "status": "passed",
+      "detail": "761 web tests passed after FF-021."
+    },
+    "pnpmCheck": {
+      "status": "passed",
+      "detail": "Final workspace check passed after FF-021 with 2,263 tests passed, 1 skipped, and 0 failed; API contributed 826 passed and 1 skipped."
+    },
+    "browserRerun": {
+      "status": "passed",
+      "detail": "Rebuilt API and Browser reruns covered campaign reconnect, character import, actor lifecycle, typed damage, encounter discovery, advanced combat, soundboard playback and volume persistence, search, AI Studio and floating Agent readiness, archives, content rollback, webhooks, three-session completion, and final hard-reload continuity. Browser tabs were finalized with none retained."
+    },
+    "playwrightE2e": {
+      "status": "passed",
+      "detail": "Combined release-qualification run passed 62 browser journeys and the clean-bootstrap journey."
+    },
+    "releaseCommitSha": {
+      "status": "pending",
+      "value": "PENDING_FINAL_COMMIT"
+    },
+    "releaseSmokeOffline": {
+      "status": "pending",
+      "value": "PENDING_EXACT_COMMIT_SMOKE"
+    },
+    "pushMain": {
+      "status": "pending",
+      "value": "PENDING_FAST_FORWARD_PUSH"
+    },
+    "remoteReleaseSmoke": {
+      "status": "pending",
+      "value": "PENDING_EXACT_SHA_GITHUB_CHECK"
+    },
+    "docsSite": {
+      "status": "pending",
+      "value": "PENDING_EXACT_SHA_GITHUB_CHECK"
+    }
+  }
+}

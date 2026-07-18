@@ -1,6 +1,19 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { CampaignSearchPanel, campaignSearchAnchorId, campaignSearchDestination, campaignSearchItemActorId, campaignSearchMatchLabel, campaignSearchPath, campaignSearchSourceLabel, campaignSearchTypeHasRenderedAnchor, campaignSearchTypeLabel } from "./campaign-search-panel.js";
+import { CampaignSearchPanel, appendCampaignSearchPage, campaignSearchAnchorId, campaignSearchDestination, campaignSearchItemActorId, campaignSearchMatchLabel, campaignSearchPageSize, campaignSearchPath, campaignSearchSourceLabel, campaignSearchTypeHasRenderedAnchor, campaignSearchTypeLabel, campaignSearchWorldScope, type CampaignSearchResult } from "./campaign-search-panel.js";
+
+function searchResult(id: string): CampaignSearchResult {
+  return {
+    type: "journal",
+    id,
+    title: `Result ${id}`,
+    snippet: "Search result",
+    updatedAt: "2026-07-18T00:00:00.000Z",
+    score: 1,
+    matchKind: "title",
+    target: { type: "journal", id, sourceKind: "campaign" }
+  };
+}
 
 describe("campaign search panel", () => {
   it("builds a bounded, encoded permission-safe search request", () => {
@@ -9,6 +22,26 @@ describe("campaign search panel", () => {
     );
     expect(campaignSearchPath("camp", { query: "17", type: "roll", worldId: "", limit: 12 })).toContain("types=roll");
     expect(campaignSearchPath("camp", { query: "goblin", type: "encounter", worldId: "", offset: 50 })).toContain("offset=50");
+  });
+
+  it("clears a deleted or revoked stored world scope", () => {
+    const worlds = [{ id: "world-visible" }];
+    expect(campaignSearchWorldScope("world-visible", worlds)).toBe("world-visible");
+    expect(campaignSearchWorldScope("world-revoked", worlds)).toBe("");
+    expect(campaignSearchWorldScope("world-deleted", [])).toBe("");
+  });
+
+  it("appends explicit 50-row pages and stops after a short page", () => {
+    const first = Array.from({ length: campaignSearchPageSize }, (_, index) => searchResult(`result-${index}`));
+    const firstPage = appendCampaignSearchPage([], first);
+    expect(firstPage).toMatchObject({ hasMore: true });
+    expect(firstPage.results).toHaveLength(50);
+
+    const second = [searchResult("result-49"), searchResult("result-50")];
+    const secondPage = appendCampaignSearchPage(firstPage.results, second);
+    expect(secondPage.hasMore).toBe(false);
+    expect(secondPage.results).toHaveLength(51);
+    expect(campaignSearchPath("camp", { query: "vault", type: "all", worldId: "", offset: 50 })).toContain("offset=50");
   });
 
   it("renders a discoverable empty search surface without issuing a server request", () => {

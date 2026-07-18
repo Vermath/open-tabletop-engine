@@ -1,4 +1,5 @@
 import {
+  CreateBucketCommand,
   DeleteObjectCommand,
   GetObjectCommand,
   HeadBucketCommand,
@@ -16,6 +17,38 @@ import {
 } from "./asset-storage.js";
 
 describe("S3AssetStorage", () => {
+  it("creates a missing bucket during readiness and repairs later deletion", async () => {
+    const storage = new S3AssetStorage({
+      bucket: "fresh-compose-assets",
+      region: "us-east-1",
+      forcePathStyle: true,
+    });
+    const commands: unknown[] = [];
+    let bucketExists = false;
+    const send = vi.fn(async (command: unknown) => {
+      commands.push(command);
+      if (command instanceof HeadBucketCommand && !bucketExists) {
+        throw Object.assign(new Error("missing bucket"), { name: "NoSuchBucket" });
+      }
+      if (command instanceof CreateBucketCommand) bucketExists = true;
+      return {};
+    });
+    Reflect.set(storage, "client", { send });
+
+    await expect(storage.healthCheck()).resolves.toEqual({ ok: true });
+    bucketExists = false;
+    await expect(storage.healthCheck()).resolves.toEqual({ ok: true });
+
+    expect(commands).toHaveLength(7);
+    expect(commands[0]).toBeInstanceOf(HeadBucketCommand);
+    expect(commands[1]).toBeInstanceOf(CreateBucketCommand);
+    expect(commands[2]).toBeInstanceOf(HeadBucketCommand);
+    expect(commands[3]).toBeInstanceOf(HeadBucketCommand);
+    expect(commands[4]).toBeInstanceOf(HeadBucketCommand);
+    expect(commands[5]).toBeInstanceOf(CreateBucketCommand);
+    expect(commands[6]).toBeInstanceOf(HeadBucketCommand);
+  });
+
   it("retries bucket readiness after a transient failure", async () => {
     const storage = new S3AssetStorage({
       bucket: "configured-assets",

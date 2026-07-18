@@ -80,8 +80,8 @@ describe("AI campaign policy and privacy routes", () => {
       const response = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/ai/threads",
-        headers: { "x-user-id": "usr_demo_gm" },
-        payload: { prompt: "Draft a room", contextScopes: ["public"] }
+        headers: { "x-user-id": "usr_demo_gm", "idempotency-key": "ai-disabled-safety" },
+        payload: { prompt: "Draft a room", contextScopes: ["public"], expectedUpdatedAt: store.state.campaigns.find((campaign) => campaign.id === "camp_demo")!.updatedAt }
       });
       expect(response.statusCode).toBe(403);
       expect(response.json()).toMatchObject({ error: "ai_disabled" });
@@ -128,7 +128,7 @@ describe("AI campaign policy and privacy routes", () => {
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/ai/privacy/prune",
         headers: { "x-user-id": "usr_demo_gm", "idempotency-key": "clear-history-1" },
-        payload: { mode: "all", before: "2026-07-13T00:00:00.000Z", dryRun: false, confirmation: "CLEAR_AI_OPERATIONAL_HISTORY" }
+        payload: { mode: "all", before: "2026-07-13T00:00:00.000Z", dryRun: false, confirmation: "CLEAR_AI_OPERATIONAL_HISTORY", expectedTargetSetHash: preview.json().targetSetHash }
       });
       expect(pruned.statusCode).toBe(200);
       expect(store.state.aiThreads).toHaveLength(0);
@@ -183,8 +183,8 @@ describe("AI prompt-injection and citation route safety", () => {
       const response = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/ai/threads",
-        headers: { "x-user-id": "usr_demo_player" },
-        payload: { prompt: "Summarize the visible journal", contextScopes: ["public"] }
+        headers: { "x-user-id": "usr_demo_player", "idempotency-key": "ai-player-visible-safety" },
+        payload: { prompt: "Summarize the visible journal", contextScopes: ["public"], expectedUpdatedAt: store.state.campaigns.find((campaign) => campaign.id === "camp_demo")!.updatedAt }
       });
       expect(response.statusCode).toBe(200);
       expect(providerRequest?.context.contentBlocks).toEqual(expect.arrayContaining([

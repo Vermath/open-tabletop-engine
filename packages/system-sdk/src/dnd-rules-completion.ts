@@ -7,6 +7,8 @@ export interface Dnd5eSrdSubclassOption {
   className: string;
   name: string;
   selectionLevel: number;
+  summary?: string;
+  alwaysPreparedSpells?: readonly string[];
   features: ReadonlyArray<{ level: number; names: readonly string[] }>;
 }
 
@@ -306,12 +308,20 @@ export function dnd5eSrdCriticalDamageFormula(formula: string): string {
   const normalized = formula.trim();
   if (!normalized) throw new Error("Critical damage requires a damage formula");
   let diceFound = false;
-  const doubled = normalized.replace(/(\d*)d(\d+)/gi, (_match, rawCount: string, faces: string) => {
+  let totalDice = 0;
+  const doubled = normalized.replace(/(^|[^A-Za-z0-9_])(\d*)d(\d+)(?=(?:kh|kl|dh|dl)\d*|r\d+|!|$|[^A-Za-z0-9_])/gi, (_match, prefix: string, rawCount: string, faces: string) => {
     diceFound = true;
     const count = rawCount ? Number(rawCount) : 1;
-    return `${count * 2}d${faces}`;
+    const sides = Number(faces);
+    const criticalCount = count * 2;
+    if (!Number.isInteger(count) || count < 1 || criticalCount > 1_000) throw new Error("Critical damage dice count must be between 1 and 1000 per term");
+    if (!Number.isInteger(sides) || sides < 2) throw new Error("Critical damage die sides must be at least 2");
+    totalDice += criticalCount;
+    if (totalDice > 10_000) throw new Error("Critical damage formula cannot exceed 10000 dice");
+    return `${prefix}${criticalCount}d${faces}`;
   });
   if (!diceFound) return normalized;
+  if (doubled.length > 4_096) throw new Error("Critical damage formula cannot exceed 4096 characters");
   return doubled;
 }
 

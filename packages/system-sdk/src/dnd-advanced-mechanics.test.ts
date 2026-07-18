@@ -2,6 +2,7 @@ import type { Actor, Combat, CombatEnvironmentMechanic } from "@open-tabletop/co
 import { describe, expect, it } from "vitest";
 import {
   combatEnvironmentMechanicDue,
+  dnd5eSrdManagedEndTurnRepeatSaveSchedule,
   evaluateDnd5eSrdEffectSchedules,
   previewDnd5eSrdSpellHelper
 } from "./dnd-advanced-mechanics.js";
@@ -41,6 +42,38 @@ const combat: Combat = {
 };
 
 describe("D&D advanced effect scheduling", () => {
+  it("authors only the explicit bounded end-turn repeat-save lifecycle", () => {
+    expect(dnd5eSrdManagedEndTurnRepeatSaveSchedule({
+      targetActorId: "act_target",
+      repeatSave: "end of each turn",
+      saveAbility: "Constitution",
+      saveDc: 15,
+      durationRounds: 10,
+      combat
+    })).toEqual({
+      timing: "end_turn",
+      anchorActorId: "act_target",
+      nextRound: 3,
+      intervalRounds: 1,
+      expiresAtRound: 13,
+      repeatSave: { ability: "constitution", dc: 15, endsOn: "success" }
+    });
+    expect(dnd5eSrdManagedEndTurnRepeatSaveSchedule({
+      targetActorId: "act_target",
+      repeatSave: "whenever the target takes damage",
+      saveAbility: "wisdom",
+      durationRounds: 10,
+      combat
+    })).toBeUndefined();
+    expect(dnd5eSrdManagedEndTurnRepeatSaveSchedule({
+      targetActorId: "not-in-combat",
+      repeatSave: "end of each turn",
+      saveAbility: "constitution",
+      durationRounds: 10,
+      combat
+    })).toBeUndefined();
+  });
+
   it("requires an explicit recurring-save outcome and removes owned conditions on success", () => {
     const actor = actorWithEffect({
       id: "effect_poison",
@@ -90,6 +123,48 @@ describe("D&D advanced effect scheduling", () => {
     const expired = evaluateDnd5eSrdEffectSchedules([expiredActor], combat, { phase: "time", now: timestamp });
     expect(expired.events).toEqual([expect.objectContaining({ status: "expired" })]);
     expect(expired.actorUpdates[0]?.after).toMatchObject({ conditions: [], rulesEngine: { activeEffects: [] } });
+  });
+
+  it("offers the final end-turn save before a one-round effect expires when the target already acted", () => {
+    const appliedAfterTargetTurn: Combat = {
+      ...combat,
+      turnIndex: 1,
+      combatants: [
+        { id: "cmbt_target", tokenId: "tok_target", actorId: "act_target", name: "Target", initiative: 22, defeated: false },
+        { id: "cmbt_slow", tokenId: "tok_slow", actorId: "act_slow", name: "Slow", initiative: 10, defeated: false },
+      ],
+    };
+    const schedule = dnd5eSrdManagedEndTurnRepeatSaveSchedule({
+      targetActorId: "act_target",
+      repeatSave: "end of each turn",
+      saveAbility: "wisdom",
+      saveDc: 14,
+      durationRounds: 1,
+      combat: appliedAfterTargetTurn,
+    });
+    expect(schedule).toMatchObject({ nextRound: 4, expiresAtRound: 4 });
+    const affected = actorWithEffect({ id: "effect_fear", label: "Brief fear", ownedConditionIds: ["poisoned"], schedule });
+    const nextTargetTurn = { ...appliedAfterTargetTurn, round: 4, turnIndex: 0 };
+
+    const preview = evaluateDnd5eSrdEffectSchedules([affected], nextTargetTurn, { phase: "end_turn", now: timestamp });
+    expect(preview.events).toEqual([expect.objectContaining({ status: "save_required", saveAbility: "wisdom", saveDc: 14 })]);
+    expect(preview.unresolvedEventIds).toEqual([preview.events[0]!.id]);
+
+    const failed = evaluateDnd5eSrdEffectSchedules([affected], nextTargetTurn, {
+      phase: "end_turn",
+      now: timestamp,
+      saveOutcomes: { [preview.events[0]!.id]: "failure" },
+    });
+    expect(failed.events).toEqual([expect.objectContaining({ status: "save_failed", outcome: "failure" })]);
+    expect(failed.actorUpdates[0]?.after).toMatchObject({ conditions: [], rulesEngine: { activeEffects: [] } });
+
+    const succeeded = evaluateDnd5eSrdEffectSchedules([affected], nextTargetTurn, {
+      phase: "end_turn",
+      now: timestamp,
+      saveOutcomes: { [preview.events[0]!.id]: "success" },
+    });
+    expect(succeeded.events).toEqual([expect.objectContaining({ status: "save_succeeded", outcome: "success" })]);
+    expect(succeeded.actorUpdates[0]?.after).toMatchObject({ conditions: [], rulesEngine: { activeEffects: [] } });
   });
 });
 

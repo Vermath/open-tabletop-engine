@@ -9,6 +9,7 @@ const actorActionSource = source("actor-action-review.ts");
 const campaignSetupSource = source("campaign-setup-state.ts");
 const workspaceConstantsSource = source("workspace-ui-constants.ts");
 const startupStateSource = source("startup-state.ts");
+const sessionRecapSource = source("session-recap.ts");
 
 describe("App shell architecture budget", () => {
   it("keeps the application shell below the decomposition budget", () => {
@@ -21,14 +22,16 @@ describe("App shell architecture budget", () => {
     expect(appSource).toContain('from "./campaign-setup-state.js"');
     expect(appSource).toContain('from "./workspace-ui-constants.js"');
     expect(appSource).toContain('from "./startup-state.js"');
+    expect(appSource).toContain('from "./session-recap.js"');
     expect(appSource).not.toContain("function AudioPlaybackLayer(");
     expect(appSource).not.toContain("function AudioSoundboard(");
     expect(appSource).not.toContain("interface PreparedActorActionResponse");
     expect(appSource).not.toContain("interface CampaignSetupProgress");
+    expect(appSource).not.toContain("function generateSessionRecapBody(");
   });
 
   it("keeps the extracted modules focused and independent of AI behavior", () => {
-    for (const extractedSource of [audioSource, actorActionSource, campaignSetupSource, workspaceConstantsSource, startupStateSource]) {
+    for (const extractedSource of [audioSource, actorActionSource, campaignSetupSource, workspaceConstantsSource, startupStateSource, sessionRecapSource]) {
       expect(extractedSource).not.toMatch(/AiAgent|ai-agent|\/ai\//);
     }
   });

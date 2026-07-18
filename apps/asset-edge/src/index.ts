@@ -16,7 +16,7 @@ interface EdgeFetchInit extends RequestInit {
 }
 
 const ASSET_BLOB_PATH = /^\/api\/v1\/assets\/([^/]+)\/blob$/;
-const FORWARDED_HEADERS = ["accept", "accept-language", "if-modified-since", "if-none-match", "range"];
+const FORWARDED_HEADERS = ["accept", "accept-language", "if-modified-since", "if-none-match", "origin", "range"];
 
 export default {
   async fetch(request: Request, env: AssetEdgeEnv): Promise<Response> {

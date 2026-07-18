@@ -40,7 +40,7 @@ describe("feature-surface API mutations", () => {
   beforeEach(() => {
     requests = [];
     vi.stubGlobal("localStorage", {
-      getItem: vi.fn((key: string) => key === "otte:sessionToken" ? "ots_test/token" : key === "otte:sessionTokenUser" || key === "otte:userId" ? "usr_demo_gm" : null),
+      getItem: vi.fn((key: string) => key === "otte:sessionTransport" ? "cookie" : key === "otte:userId" ? "usr_demo_gm" : null),
       setItem: vi.fn(),
       removeItem: vi.fn(),
       clear: vi.fn(),
@@ -186,12 +186,13 @@ describe("feature-surface API mutations", () => {
       confidence: "1.5",
       source: " Session 4 "
     };
-    await createCampaignMemory("camp-1", draft);
-    await updateCampaignMemory("memory-1", draft);
-    await transitionCampaignMemory("memory-1", "approve");
-    await transitionCampaignMemory("memory-2", "reject");
-    await retconCampaignMemory("memory-3");
-    await deleteCampaignMemory("memory-1");
+    const expectedUpdatedAt = "2026-07-13T00:00:00.000Z";
+    await createCampaignMemory("camp-1", expectedUpdatedAt, draft);
+    await updateCampaignMemory("memory-1", expectedUpdatedAt, draft);
+    await transitionCampaignMemory("memory-1", expectedUpdatedAt, "approve");
+    await transitionCampaignMemory("memory-2", expectedUpdatedAt, "reject");
+    await retconCampaignMemory("memory-3", expectedUpdatedAt);
+    await deleteCampaignMemory("memory-1", expectedUpdatedAt);
 
     expect(requestSummary(requests)).toEqual([
       ["POST", "/api/v1/campaigns/camp-1/ai/memory"],
@@ -199,12 +200,13 @@ describe("feature-surface API mutations", () => {
       ["POST", "/api/v1/ai/memory/memory-1/approve"],
       ["POST", "/api/v1/ai/memory/memory-2/reject"],
       ["PATCH", "/api/v1/ai/memory/memory-3"],
-      ["DELETE", "/api/v1/ai/memory/memory-1"]
+      ["DELETE", "/api/v1/ai/memory/memory-1?expectedUpdatedAt=2026-07-13T00%3A00%3A00.000Z"]
     ]);
-    expect(requestBody(requests[0]!)).toMatchObject({ text: "The bridge is trapped.", subject: "Old Bridge", confidence: 1, source: { type: "manual", label: "Session 4" } });
+    expect(requestBody(requests[0]!)).toMatchObject({ text: "The bridge is trapped.", subject: "Old Bridge", confidence: 1, expectedUpdatedAt, source: { type: "manual", label: "Session 4" } });
     expect(requestBody(requests[1]!)).not.toHaveProperty("sourceIds");
     expect(requestBody(requests[1]!)).not.toHaveProperty("source");
-    expect(requestBody(requests[4]!)).toEqual({ status: "retconned" });
+    expect(requestBody(requests[4]!)).toEqual({ status: "retconned", expectedUpdatedAt });
+    for (const request of requests.slice(1)) expect(new Headers(request.init.headers).get("idempotency-key")).toBeTruthy();
   });
 
   it("wires session planning, start, completion, and deletion to the campaign-session lifecycle", async () => {

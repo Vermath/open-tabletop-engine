@@ -1,4 +1,6 @@
 import type { Actor } from "@open-tabletop/core";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -90,6 +92,8 @@ describe("advancement ability allocation", () => {
   it("maps server blocker paths to the exact choice field and deduplicates invalidations", () => {
     expect(advancementChoiceFieldForPath("/weaponMasteryChoices/1")).toBe("weaponMastery");
     expect(advancementChoiceFieldForPath("/abilityChoices/strength")).toBe("abilityChoices");
+    expect(advancementChoiceFieldForPath("/classPreparedSpellChoices/1")).toBe("preparedSpells");
+    expect(advancementChoiceFieldForPath("/wizardSpellbookAdditions/0")).toBe("spellbookAdditions");
     expect(invalidatedAdvancementChoiceFields([
       { path: "/featId", code: "invalid", message: "Feat changed" },
       { path: "/abilityChoices/strength", code: "invalid", message: "Ability changed" },
@@ -114,5 +118,47 @@ describe("advancement ability allocation", () => {
     expect(html).toContain('aria-label="Advancement load failed"');
     expect(html).toContain("Network unavailable");
     expect(html).toContain("Retry advancement load");
+  });
+
+  it("renders the active class spell profile inside the complete advancement flow", () => {
+    const spellActor = { ...actor, data: { ...actor.data, class: "Bard", level: 1 } } as Actor;
+    const html = renderToStaticMarkup(createElement(AdvancementFlow, {
+      actor: spellActor,
+      advancementOptions: [{ id: "level-up", systemId: "dnd-5e-srd", name: "Level Up", summary: "Gain a level", nextValue: 2 }],
+      advancementGrantsFeat: false,
+      advancementFeats: [],
+      multiclassOptions: [],
+      advancementClassName: "Bard",
+      nextClassLevel: 2,
+      subclassOptions: [],
+      spellAdvancementPaths: [{
+        className: "Bard",
+        nextClassLevel: 2,
+        spellcastingAbility: "charisma",
+        acquisitionMode: "prepared-class-level",
+        maxSpellLevel: 1,
+        preparedSpellCapacity: 5,
+        spellbookAdditions: 0,
+        eligibleSpells: Array.from({ length: 5 }, (_, index) => ({ id: `bard-${index}`, name: `Bard Spell ${index}`, level: 1, ritual: false, classes: ["Bard"], source: "SRD" }))
+      }],
+      onAdvanceActor: () => undefined,
+      canAdvanceActor: true
+    }));
+    expect(html).toContain('aria-label="Bard spell advancement"');
+    expect(html).toContain("Choose exactly 5 normal prepared spells");
+    expect(html).toContain("Choose how to determine the hit point increase.");
+  });
+
+  it("wires exact spell selections through catalog, prepared preview, and commit recovery", () => {
+    const appSource = readFileSync(resolve(__dirname, "App.tsx"), "utf8");
+    const catalogSource = readFileSync(resolve(__dirname, "advancement-catalog.ts"), "utf8");
+    const flowSource = readFileSync(resolve(__dirname, "advancement-flow.tsx"), "utf8");
+    expect(catalogSource).toContain("result.spellAdvancement?.paths ?? []");
+    expect(flowSource).toContain("...advancementSpellChoicePayload(activeSpellPath");
+    expect(flowSource).toContain("request.classPreparedSpellChoices");
+    expect(flowSource).toContain("request.wizardSpellbookAdditions");
+    expect(appSource).toContain("choices.classPreparedSpellChoices");
+    expect(appSource).toContain("choices.wizardSpellbookAdditions");
+    expect(appSource).toContain("preparedPreviewKey");
   });
 });

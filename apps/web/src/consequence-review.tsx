@@ -31,15 +31,16 @@ export function ConsequenceReviewDialog(props: { request: ConsequenceReviewReque
   const dialogRef = useModalAccessibility<HTMLDivElement>(props.onCancel, { initialFocusRef: headingRef });
   const issues = props.request.blockingIssues ?? [];
   return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) props.onCancel(); }}>
+    <div className="modal-backdrop" role="presentation">
       <div ref={dialogRef} className="modal-dialog consequence-review-dialog" role="dialog" aria-modal="true" aria-labelledby="consequence-review-title" aria-describedby="consequence-review-summary" tabIndex={-1}>
         <header className="operator-heading">
           <div>
-            <span className="section-title">Structured consequence review</span>
+            <span className="section-title"><span>Structured consequence review</span> · Final confirmation - step 2 of 2</span>
             <h2 id="consequence-review-title" ref={headingRef} tabIndex={-1}>{props.request.title}</h2>
           </div>
         </header>
         <p id="consequence-review-summary">{props.request.summary}</p>
+        <p className="account-summary" role="status"><strong>Nothing has been committed yet.</strong> Confirm below to apply this exact prepared action; use Cancel or Escape to leave state unchanged.</p>
         <p className="account-summary"><strong>Rule source:</strong> {props.request.source}</p>
         {props.request.boundary && <RulesSupportBoundaryNotice boundary={props.request.boundary} />}
         {issues.length > 0 && (

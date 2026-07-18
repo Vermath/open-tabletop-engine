@@ -7,6 +7,10 @@ Use this operator checklist with the [deployment threat model](./threat-model.md
 - [ ] Keep `OTTE_ALLOW_LEGACY_USER_HEADER=false` outside tests unless legacy `x-user-id` auth is explicitly needed for local compatibility.
 - [ ] Configure `OTTE_ADMIN_USER_IDS`.
 - [ ] Use OIDC or local password users with MFA for shared dogfood servers.
+- [ ] Serve the browser and `/api` from one HTTPS origin where possible; set `OTTE_WEB_ORIGIN` and `OTTE_CORS_ALLOWED_ORIGINS` exactly, keep `OTTE_SESSION_COOKIE_SECURE=true`, and remove the loopback-only insecure-cookie exception.
+- [ ] Set `OTTE_TRUSTED_PROXY_HOPS` to the exact right-most trusted proxy count. Do not trust forwarded client or host headers on direct API exposure.
+- [ ] Keep account/network login throttles and bounded asynchronous password verification enabled; use a shared edge limiter as well when more than one API process or public traffic is in scope.
+- [ ] Verify the CSP is present at the public web origin, browser storage contains no `ots_` session secret, cross-origin cookie mutations fail, logout clears the cookie, and revoked sessions no longer authorize API or realtime access.
 - [ ] Configure OIDC providers to return the literal JSON boolean `email_verified: true` only for addresses whose ownership they verified; missing, false, or string-valued claims are never used to link an existing local account.
 - [ ] Store secrets in the host secret manager, not in repository files.
 
@@ -52,8 +56,15 @@ Use this operator checklist with the [deployment threat model](./threat-model.md
 - [ ] Configure asset quota and retention.
 - [ ] Store asset signing secrets such as `OTTE_ASSET_URL_SIGNING_SECRET` in the host secret manager.
 - [ ] Keep asset trust scanning fail-closed in production.
+- [ ] Keep external scanner destinations on HTTPS and public-address DNS only; redirects, credentials, query strings, fragments, loopback, private, link-local, and metadata-network targets must remain blocked by the shared outbound transport policy.
 - [ ] Verify signed or CDN asset delivery does not expose storage credentials.
 - [ ] Run asset storage/integrity checks before and after dogfood.
+
+## Supply Chain
+
+- [ ] Review weekly npm, Docker, and GitHub Actions update pull requests; keep lockfiles frozen and workflow actions pinned to immutable commits.
+- [ ] Keep Compose images pinned to a reviewed release and multi-platform digest; never restore a floating `latest` image.
+- [ ] Run the production advisory gate and archive both CycloneDX artifacts for every release candidate: the lockfile-derived API dependency SBOM and the Syft scan of the actual built API runtime image. Verify external Dockerfile bases and the scanner image remain digest pinned.
 
 ## Observability
 

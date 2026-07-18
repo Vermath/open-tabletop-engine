@@ -56,4 +56,12 @@ describe("character creator", () => {
     expect(appSource).toContain("Open character creator");
     expect(appSource).toContain("onOpenCharacterCreator");
   });
+
+  it("gives the close confirmation exclusive modal ownership", () => {
+    expect(creatorSource).toContain('aria-modal={closePromptOpen ? undefined : "true"}');
+    expect(creatorSource).toContain('aria-hidden={closePromptOpen ? "true" : undefined}');
+    expect(creatorSource).toContain("inert={closePromptOpen ? true : undefined}");
+    expect(creatorSource).toContain('<CharacterDraftClosePrompt');
+    expect(creatorSource).toContain('className="modal-dialog confirm-dialog"\n        role="dialog"\n        aria-modal="true"');
+  });
 });

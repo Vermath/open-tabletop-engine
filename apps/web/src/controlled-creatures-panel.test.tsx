@@ -14,6 +14,7 @@ import {
   mergeControlledCreatureRevisions,
 } from "./controlled-creatures-panel.js";
 import { clearControlledCreatureHandoff, controlledCreatureHandoffLifetimeMs, controlledCreatureHandoffStorageKey, loadControlledCreatureHandoff, saveControlledCreatureHandoff } from "./controlled-creature-handoff-state.js";
+import { closeWorkspaceDialogState } from "./workspace-ui-constants.js";
 
 const baseRecord = {
   version: 1,
@@ -91,7 +92,13 @@ describe("ControlledCreaturesPanel", () => {
     expect(appSource).toContain("if (prepared.controlledCreatureHandoff) return { handoff: prepared.controlledCreatureHandoff };");
     expect(appSource).toContain("handoff={controlledCreatureHandoff}");
     expect(appSource).toContain("onHandoffConsumed={() => setControlledCreatureHandoff(undefined)}");
-    expect(appSource).toContain("function closeWorkspaceDialogs() {\n    setCharacterCreatorOpen(false);\n    setControlledCreatureHandoff(undefined);");
+    const clearHandoff = vi.fn();
+    const closeCharacterCreator = vi.fn();
+    const closeAnotherDialog = vi.fn();
+    closeWorkspaceDialogState(clearHandoff, closeCharacterCreator, closeAnotherDialog);
+    expect(clearHandoff).toHaveBeenCalledOnce();
+    expect(closeCharacterCreator).toHaveBeenCalledWith(false);
+    expect(closeAnotherDialog).toHaveBeenCalledWith(false);
     expect(appSource.indexOf("if (prepared.controlledCreatureHandoff)")).toBeLessThan(appSource.indexOf("consequenceReview.review(actorActionConsequenceReview"));
     expect(source).toContain('consumeHandoff("confirmed")');
     expect(source).toContain('consumeHandoff("cancelled")');

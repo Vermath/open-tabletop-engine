@@ -16,13 +16,21 @@ export default defineConfig({
   testMatch: "**/canonical-public-journey.spec.ts",
   fullyParallel: false,
   workers: 1,
-  timeout: 480_000,
+  // This is a deliberately exhaustive, single-test public journey. On a cold
+  // Windows/Vite run it compiles every workspace surface before exercising the
+  // restart path, so keep the budget above the observed eight-minute cold run.
+  timeout: 900_000,
   expect: {
     timeout: 10_000,
   },
   reporter: process.env.CI ? "github" : "list",
   use: {
     baseURL: webBaseUrl,
+    extraHTTPHeaders: { Origin: webBaseUrl },
+    // A missing or disabled control must fail at the interaction that caused
+    // it, rather than consuming the entire exhaustive-journey budget.
+    actionTimeout: 30_000,
+    navigationTimeout: 60_000,
     trace: "on-first-retry",
   },
   webServer: [
@@ -34,6 +42,8 @@ export default defineConfig({
       env: {
         ...process.env,
         OTTE_E2E_API_PORT: String(apiPort),
+        OTTE_CORS_ALLOWED_ORIGINS: webBaseUrl,
+        OTTE_WEB_ORIGIN: webBaseUrl,
         OTTE_DEMO_SEED: "false",
       },
     },

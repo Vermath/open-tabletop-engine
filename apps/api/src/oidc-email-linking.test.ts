@@ -233,9 +233,12 @@ async function createOidcHarness(initialClaims: OidcTestClaims) {
       if (started.statusCode !== 200) throw new Error(`OIDC start failed with ${started.statusCode}: ${started.body}`);
       const state = new URL(started.json().authorizationUrl as string).searchParams.get("state");
       if (!state) throw new Error("OIDC start response did not include state");
+      const transactionCookie = String(started.headers["set-cookie"]).match(/(?:__Host-)?otte_oidc_transaction=[^;,]+/)?.[0];
+      if (!transactionCookie) throw new Error("OIDC start response did not include the transaction cookie");
       return app.inject({
         method: "GET",
-        url: `/api/v1/auth/oidc/callback?code=test-code&state=${encodeURIComponent(state)}`
+        url: `/api/v1/auth/oidc/callback?code=test-code&state=${encodeURIComponent(state)}`,
+        headers: { cookie: transactionCookie }
       });
     },
     async close() {

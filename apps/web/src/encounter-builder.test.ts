@@ -1,8 +1,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Actor, Scene } from "@open-tabletop/core";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { ENCOUNTER_CATALOG_WINDOW_SIZE, encounterCatalogWindow, encounterMonsterPlacementDrafts, encounterPartyEligibility, encounterSearchAnchorId } from "./encounter-builder.js";
+import { ENCOUNTER_CATALOG_WINDOW_SIZE, ThreatStepper, encounterCatalogWindow, encounterMonsterPlacementDrafts, encounterPartyEligibility, encounterSearchAnchorId } from "./encounter-builder.js";
 
 const appSource = readFileSync(resolve(__dirname, "App.tsx"), "utf8");
 const combatPanelSource = readFileSync(resolve(__dirname, "combat-panel.tsx"), "utf8");
@@ -27,6 +29,14 @@ function actor(input: Pick<Actor, "id" | "name"> & Partial<Actor>): Actor {
 }
 
 describe("encounter builder", () => {
+  it("keeps the threat increment control named before and after the first add", () => {
+    const callbacks = { onDecrease() {}, onIncrease() {} };
+    expect(renderToStaticMarkup(createElement(ThreatStepper, { threatName: "Goblin", context: "catalog", count: 0, ...callbacks }))).toContain('aria-label="Add Goblin from threat catalog"');
+    expect(renderToStaticMarkup(createElement(ThreatStepper, { threatName: "Goblin", context: "catalog", count: 1, ...callbacks }))).toContain('aria-label="Increase Goblin count in threat catalog"');
+    expect(renderToStaticMarkup(createElement(ThreatStepper, { threatName: "Goblin", context: "composition", count: 1, ...callbacks }))).toContain('aria-label="Increase Goblin count in encounter composition"');
+    expect(renderToStaticMarkup(createElement(ThreatStepper, { threatName: "Ogre", context: "catalog", count: 1, ...callbacks }))).toContain('aria-label="Increase Ogre count in threat catalog"');
+  });
+
   it("provides a stable exact-record focus target", () => {
     expect(encounterSearchAnchorId("enc/one")).toBe("campaign-search-encounter-enc%2Fone");
   });

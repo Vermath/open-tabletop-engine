@@ -8,8 +8,8 @@ const appSource = readFileSync(resolve(__dirname, "App.tsx"), "utf8").replace(/\
 const actorPanelSource = readFileSync(resolve(__dirname, "actor-panel.tsx"), "utf8").replace(/\r\n/g, "\n");
 const tabletopOverlaysSource = readFileSync(resolve(__dirname, "tabletop-overlays.tsx"), "utf8").replace(/\r\n/g, "\n");
 const appModalSources = `${appSource}\n${actorPanelSource}\n${tabletopOverlaysSource}`;
-const creatorSource = readFileSync(resolve(__dirname, "character-creator-dialog.tsx"), "utf8");
-const encounterSource = readFileSync(resolve(__dirname, "encounter-builder.tsx"), "utf8");
+const creatorSource = readFileSync(resolve(__dirname, "character-creator-dialog.tsx"), "utf8").replace(/\r\n/g, "\n");
+const encounterSource = readFileSync(resolve(__dirname, "encounter-builder.tsx"), "utf8").replace(/\r\n/g, "\n");
 
 describe("modal accessibility", () => {
   it("filters hidden and programmatically unfocusable descendants", () => {
@@ -34,12 +34,14 @@ describe("modal accessibility", () => {
   });
 
   it("wires every aria-modal dialog through the shared behavior", () => {
-    expect(appModalSources.match(/useModalAccessibility<HTMLDivElement>/g)).toHaveLength(4);
-    expect(appModalSources.match(/aria-modal="true"/g)).toHaveLength(4);
-    expect(appModalSources.match(/tabIndex=\{-1\}/g)?.length).toBeGreaterThanOrEqual(4);
+    expect(appModalSources.match(/useModalAccessibility<HTMLDivElement>/g)).toHaveLength(5);
+    expect(appModalSources.match(/aria-modal="true"/g)).toHaveLength(5);
+    expect(appModalSources.match(/tabIndex=\{-1\}/g)?.length).toBeGreaterThanOrEqual(5);
     expect(actorPanelSource).toContain("setDeleteDialogOpen(false);\n  }, [props.token?.id]);");
     expect(actorPanelSource).toContain("initialFocusRef: deleteConfirmRef");
     expect(actorPanelSource).toContain('type="button" ref={deleteConfirmRef} onClick={() => {');
+    expect(actorPanelSource).toContain("initialFocusRef: actorDeleteConfirmRef");
+    expect(actorPanelSource).toContain("void props.deleteActor(props.actor!);");
     expect(creatorSource).toContain("useModalAccessibility<HTMLDivElement>(props.onClose)");
     expect(encounterSource).toContain("useModalAccessibility<HTMLDivElement>(closeDialog)");
     expect(encounterSource).toContain("spawnAbortRef.current?.abort();\n    props.onClose();");

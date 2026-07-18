@@ -1,0 +1,211 @@
+{
+  "schema": "otte.dogfood-papercuts/v1",
+  "campaignId": "camp_mrq0uezud0po6htf",
+  "evidenceClass": "simulated_browser_multi_seat",
+  "summary": {"product": 17, "environment": 2, "simulationLimit": 4},
+  "items": [
+    {
+      "id": "PC-001",
+      "category": "product",
+      "severity": "high",
+      "area": "action binding",
+      "observation": "Action target and Apply effect state persisted across actors, scenes, and encounters. Old off-scene actors remained selectable, and duplicate Cultist 1/Cultist 2 labels made stale and current targets indistinguishable.",
+      "impact": "Credible wrong-target mutation risk.",
+      "workaround": "Re-open the acting character, clear effect state, and identify the target from current-scene context before previewing."
+    },
+    {
+      "id": "PC-002",
+      "category": "product",
+      "severity": "medium",
+      "area": "campaign invites",
+      "observation": "Consecutive invite creation produced revision conflicts.",
+      "impact": "A GM cannot reliably create several invitations in one uninterrupted pass.",
+      "workaround": "Reload between invitations."
+    },
+    {
+      "id": "PC-003",
+      "category": "product",
+      "severity": "medium",
+      "area": "authentication",
+      "observation": "One accepted player invitation later produced Unknown user session/401 behavior.",
+      "impact": "The affected seat could not enter the campaign with the original invitation.",
+      "workaround": "Issue and accept a fresh invitation."
+    },
+    {
+      "id": "PC-004",
+      "category": "product",
+      "severity": "medium",
+      "area": "encounter accessibility",
+      "observation": "The encounter quantity control lost its accessible name after the first Add operation; reproduced in Sessions 2 and 3.",
+      "impact": "Accessible automation and assistive technology cannot identify the increment control by role and name.",
+      "workaround": "Count the remaining buttons and select the expected positional control."
+    },
+    {
+      "id": "PC-005",
+      "category": "product",
+      "severity": "medium",
+      "area": "damage and HP",
+      "observation": "Generic damage was rejected in favor of reviewed typed damage, while direct HP editing and actor-summary HP showed conflicting feedback.",
+      "impact": "The rules guard may be intentional, but it is unclear whether the requested change committed.",
+      "workaround": "Use action preview, exact consequence review, and exact commit for typed damage, then verify the target sheet."
+    },
+    {
+      "id": "PC-006",
+      "category": "product",
+      "severity": "medium",
+      "area": "action confirmation",
+      "observation": "An action preview opened a second consequence-confirmation modal; navigating elsewhere cancelled the reviewed action without a strong pending-action warning.",
+      "impact": "A reviewed attack or spell can appear complete while no mutation is committed.",
+      "workaround": "Remain in the flow through both confirmation steps and verify roll/damage persistence."
+    },
+    {
+      "id": "PC-007",
+      "category": "product",
+      "severity": "medium",
+      "area": "scheduling",
+      "observation": "A planned session saved as Unscheduled and the scheduling field was blank afterward.",
+      "impact": "Planned session timing is not trustworthy from the visible confirmation state.",
+      "workaround": "Treat the session as unscheduled and rely on title/number until timing is re-entered and verified."
+    },
+    {
+      "id": "PC-008",
+      "category": "product",
+      "severity": "medium",
+      "area": "session recap",
+      "observation": "Generate session recap after Session 3 aggregated all three campaign combats rather than isolating Session 3.",
+      "impact": "The session-specific label obscures campaign-wide recap scope.",
+      "workaround": "Treat generated recap metrics as campaign totals."
+    },
+    {
+      "id": "PC-009",
+      "category": "product",
+      "severity": "medium",
+      "area": "session relationships",
+      "observation": "All three completed session records have empty encounterIds arrays even though three encounters and combats persisted.",
+      "impact": "A session cannot be reconstructed through its encounter relationship alone.",
+      "workaround": "Correlate session, scene, encounter, combat, and journal records by timestamps and narrative."
+    },
+    {
+      "id": "PC-010",
+      "category": "product",
+      "severity": "low",
+      "area": "encounter relationships",
+      "observation": "All encounter tokenIds arrays remained empty even though monster scene tokens and combatants persisted.",
+      "impact": "Encounter definitions do not retain direct token linkage from live play.",
+      "workaround": "Use combatant actor/token references and scene contents for reconstruction."
+    },
+    {
+      "id": "PC-011",
+      "category": "product",
+      "severity": "low",
+      "area": "session reports",
+      "observation": "GM session reports retained their creation-time status instead of following the session to completed.",
+      "impact": "Each report required a manual status correction after play.",
+      "workaround": "Edit the structured report after completing the session."
+    },
+    {
+      "id": "PC-012",
+      "category": "product",
+      "severity": "low",
+      "area": "async controls",
+      "observation": "Session completion sometimes required a second click after roll/chat rerenders.",
+      "impact": "The first click can look accepted without completing the session.",
+      "workaround": "Wait for the rerender and confirm the completed status."
+    },
+    {
+      "id": "PC-013",
+      "category": "product",
+      "severity": "low",
+      "area": "member roster",
+      "observation": "The People count showed 1 despite four accepted player members.",
+      "impact": "The visible count does not communicate the accepted campaign roster.",
+      "workaround": "Open the detailed member list."
+    },
+    {
+      "id": "PC-014",
+      "category": "product",
+      "severity": "low",
+      "area": "scene management",
+      "observation": "Selecting a scene while Manage was open could close or redirect the workflow.",
+      "impact": "Multi-map preparation required a non-obvious Prep, select, then Manage sequence.",
+      "workaround": "Return to Prep before selecting the next scene, then reopen Manage."
+    },
+    {
+      "id": "PC-015",
+      "category": "product",
+      "severity": "low",
+      "area": "realtime status",
+      "observation": "The active-session banner briefly showed the prior scene before realtime state converged.",
+      "impact": "The GM can momentarily see stale scene context.",
+      "workaround": "Wait for the live snapshot to settle and verify the active map."
+    },
+    {
+      "id": "PC-016",
+      "category": "product",
+      "severity": "low",
+      "area": "multi-map token placement",
+      "observation": "Every new scene required manual party-token placement; Aric was consequently absent from Furnace Bridge while the other three PCs were present.",
+      "impact": "Repetitive setup creates omissions during multi-map sessions.",
+      "workaround": "Use a per-scene four-PC placement checklist; all four were restored on the final map."
+    },
+    {
+      "id": "PC-017",
+      "category": "product",
+      "severity": "low",
+      "area": "character creation accessibility",
+      "observation": "Character creation was lengthy, and duplicate spell labels required group-scoped selection rather than unique accessible names.",
+      "impact": "Four-character setup is slow and ambiguous for automation or assistive technology.",
+      "workaround": "Scope spell selection to the correct group and validate the final prepared list."
+    },
+    {
+      "id": "PC-018",
+      "category": "environment",
+      "severity": "medium",
+      "area": "local stack",
+      "observation": "The web app initially connected to a retained Docker API on the expected port rather than the current-source API.",
+      "impact": "Browser results could have exercised stale server code.",
+      "workaround": "Rebuild the current API and verify its health before play."
+    },
+    {
+      "id": "PC-019",
+      "category": "environment",
+      "severity": "low",
+      "area": "Browser harness",
+      "observation": "A file-picker timeout after selecting the wrong scene reset the automation kernel.",
+      "impact": "Automation state was interrupted, though campaign state was not lost.",
+      "workaround": "Reacquire the tab and continue from persisted product state."
+    },
+    {
+      "id": "EL-001",
+      "category": "simulation_limit",
+      "severity": "high",
+      "area": "human evidence",
+      "observation": "One operator controlled the DM and all four player accounts.",
+      "impact": "No independent human usability, social-play, or coordination evidence was produced."
+    },
+    {
+      "id": "EL-002",
+      "category": "simulation_limit",
+      "severity": "high",
+      "area": "concurrency",
+      "observation": "Seat switching was sequential rather than genuinely concurrent.",
+      "impact": "Realtime write conflicts and simultaneous presence behavior were not meaningfully exercised."
+    },
+    {
+      "id": "EL-003",
+      "category": "simulation_limit",
+      "severity": "medium",
+      "area": "recovery",
+      "observation": "Reload persistence was verified, but real reconnect, restore, staff repair, and failure-driven abandonment variants were not exercised.",
+      "impact": "The run does not close recovery or retention evidence requirements."
+    },
+    {
+      "id": "EL-004",
+      "category": "simulation_limit",
+      "severity": "medium",
+      "area": "client diversity",
+      "observation": "The run used one desktop Browser and one network context.",
+      "impact": "No mixed-device, mobile, degraded-network, or accessibility-user evidence was produced."
+    }
+  ]
+}

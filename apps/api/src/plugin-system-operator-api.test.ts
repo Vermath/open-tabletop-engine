@@ -16,6 +16,8 @@ import { MemoryStateStore } from "./store.js";
 
 const playerHeaders = { "x-user-id": "usr_demo_player" };
 
+class DurableTestStateStore extends MemoryStateStore {}
+
 function operatorHeaders(store: MemoryStateStore) {
   const sourceUser = store.state.users.find(
     (user) => user.id === "usr_demo_gm",
@@ -472,6 +474,95 @@ describe("plugin and system operator mutation API", () => {
       else process.env.OTTE_PLUGIN_REGISTRY_URLS = previousRegistryUrls;
       if (previousTimeout === undefined)
         delete process.env.OTTE_PLUGIN_REGISTRY_TIMEOUT_MS;
+      else process.env.OTTE_PLUGIN_REGISTRY_TIMEOUT_MS = previousTimeout;
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("does not hold the durable mutation gate while registry DNS or download work is pending", async () => {
+    const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-sync-gate-"));
+    let releaseCatalog: (() => void) | undefined;
+    let markCatalogStarted!: () => void;
+    const catalogStarted = new Promise<void>((resolve) => {
+      markCatalogStarted = resolve;
+    });
+    const server = createServer((request, response) => {
+      if (request.url !== "/catalog.json") {
+        response.writeHead(404).end();
+        return;
+      }
+      releaseCatalog = () => {
+        if (response.writableEnded) return;
+        response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ plugins: [] }));
+      };
+      markCatalogStarted();
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const registryUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}/catalog.json`;
+    const previousRegistryUrls = process.env.OTTE_PLUGIN_REGISTRY_URLS;
+    const previousTimeout = process.env.OTTE_PLUGIN_REGISTRY_TIMEOUT_MS;
+    process.env.OTTE_PLUGIN_REGISTRY_URLS = registryUrl;
+    process.env.OTTE_PLUGIN_REGISTRY_TIMEOUT_MS = "3000";
+    const store = new DurableTestStateStore();
+    const headers = operatorHeaders(store);
+    promoteOperator(store);
+    const pluginRegistry = loadPluginRegistry({
+      pluginRoot,
+      trustPolicy: { policy: "allow_unsigned" },
+      network: { allowPrivateNetwork: true },
+    });
+    const app = await buildApp({ store, pluginRegistry });
+    try {
+      const snapshot = await app.inject({
+        method: "GET",
+        url: "/api/v1/admin/plugins/reviews",
+        headers,
+      });
+      const syncPromise = app.inject({
+        method: "POST",
+        url: "/api/v1/admin/plugins/registry/sync",
+        headers: { ...headers, "idempotency-key": "sync-gate-pending" },
+        payload: {
+          registryUrl,
+          expectedRegistryRevision: snapshot.json().registryRevision,
+        },
+      });
+      await catalogStarted;
+
+      const actor = store.state.actors.find((candidate) => candidate.id === "act_valen")!;
+      const writePromise = app.inject({
+        method: "PATCH",
+        url: `/api/v1/actors/${actor.id}`,
+        headers: {
+          "x-user-id": "usr_demo_gm",
+          "idempotency-key": "actor-write-during-registry-sync",
+        },
+        payload: { name: "Valen During Registry Sync", expectedUpdatedAt: actor.updatedAt },
+      });
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      const writeOutcome = await Promise.race([
+        writePromise.then((response) => ({ kind: "response" as const, response })),
+        new Promise<{ kind: "timeout" }>((resolve) => {
+          timeout = setTimeout(() => resolve({ kind: "timeout" }), 750);
+        }),
+      ]);
+      if (timeout) clearTimeout(timeout);
+      const releasePendingCatalog = releaseCatalog;
+      if (!releasePendingCatalog) throw new Error("Registry catalog request did not reach the test server");
+      releasePendingCatalog();
+      const sync = await syncPromise;
+
+      expect(writeOutcome.kind).toBe("response");
+      if (writeOutcome.kind === "response") expect(writeOutcome.response.statusCode, writeOutcome.response.body).toBe(200);
+      expect(sync.statusCode).toBe(200);
+      expect(store.state.actors.find((candidate) => candidate.id === actor.id)?.name).toBe("Valen During Registry Sync");
+    } finally {
+      releaseCatalog?.();
+      await app.close();
+      await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+      if (previousRegistryUrls === undefined) delete process.env.OTTE_PLUGIN_REGISTRY_URLS;
+      else process.env.OTTE_PLUGIN_REGISTRY_URLS = previousRegistryUrls;
+      if (previousTimeout === undefined) delete process.env.OTTE_PLUGIN_REGISTRY_TIMEOUT_MS;
       else process.env.OTTE_PLUGIN_REGISTRY_TIMEOUT_MS = previousTimeout;
       rmSync(pluginRoot, { recursive: true, force: true });
     }

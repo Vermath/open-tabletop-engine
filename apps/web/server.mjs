@@ -18,6 +18,7 @@ const runtime = await startWebStaticRuntime({
   port,
   root,
   apiBaseUrl,
+  assetCdnBaseUrl: process.env.OTTE_ASSET_CDN_BASE_URL,
   closeTimeoutMs: boundedNumber(
     process.env.OTTE_WEB_SHUTDOWN_TIMEOUT_MS,
     1_000,

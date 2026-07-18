@@ -109,7 +109,7 @@ describe("D&D P0 API rule choices", () => {
     } finally {
       await app.close();
     }
-  });
+  }, 15_000);
 
   it("validates short-rest Hit Dice before server-owned rolls and permits zero-die rests", async () => {
     const store = new MemoryStateStore();

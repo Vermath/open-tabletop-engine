@@ -23,7 +23,8 @@ describe("asset edge worker", () => {
     const request = new Request(`https://assets.example.test/otte/api/v1/assets/asset_demo/blob?expiresAt=${encodeURIComponent(expiresAt)}&signature=${signature}&disposition=attachment`, {
       headers: {
         authorization: "Bearer should-not-forward",
-        cookie: "sid=should-not-forward"
+        cookie: "sid=should-not-forward",
+        origin: "https://tabletop.example.test"
       }
     });
     const response = await handleAssetEdgeRequest(
@@ -35,6 +36,7 @@ describe("asset edge worker", () => {
           status: 200,
           headers: {
             "content-type": "image/png",
+            "access-control-allow-origin": "https://tabletop.example.test",
             "set-cookie": "bad=true"
           }
         });
@@ -46,11 +48,13 @@ describe("asset edge worker", () => {
     expect(await response.text()).toBe("asset");
     expect(response.headers.get("cache-control")).toBe("public, max-age=120");
     expect(response.headers.get("set-cookie")).toBeNull();
+    expect(response.headers.get("access-control-allow-origin")).toBe("https://tabletop.example.test");
     expect(response.headers.get("x-otte-asset-edge")).toBe("validated");
     expect(originRequests).toHaveLength(1);
     expect(originRequests[0]!.request.url).toBe(`https://api.example.test/api/v1/assets/asset_demo/blob?expiresAt=${encodeURIComponent(expiresAt)}&signature=${signature}&disposition=attachment`);
     expect(originRequests[0]!.request.headers.get("authorization")).toBeNull();
     expect(originRequests[0]!.request.headers.get("cookie")).toBeNull();
+    expect(originRequests[0]!.request.headers.get("origin")).toBe("https://tabletop.example.test");
     expect(originRequests[0]!.request.headers.get("range")).toBeNull();
     expect(originRequests[0]!.request.headers.get("x-otte-asset-edge")).toBe("cloudflare");
     expect((originRequests[0]!.init as { cf?: { cacheEverything?: boolean; cacheTtl?: number } }).cf).toMatchObject({

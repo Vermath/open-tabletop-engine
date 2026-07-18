@@ -70,7 +70,7 @@ describe("desktop layout regressions", () => {
     expect(appSource).not.toContain("const selectWorkspaceMode = (mode: WorkspaceMode) => {\n    setWorkspaceMode(mode);\n    setAiAgentOpen(false);");
     expect(appSource).not.toContain('if (workspaceMode === "manage" && aiAgentOpen) setAiAgentOpen(false);');
     expect(stylesSource).toContain(".rail-manage .ai-agent-toggle {\n  display: inline-flex;");
-    expect(appSource).not.toContain('label: "AI Studio"');
+    expect(appSource).toContain('...(canUseAiStudioWorkspace ? [{ id: "ai" as const, label: "AI Studio"');
     expect(appSource).not.toContain("AI Studio is deprecated.");
     expect(appSource).toContain("const agentPanel = useMovablePanel(initialAiAgentPanelPosition, initialAiAgentPanelSize, { minWidth: 340, minHeight: 420 });");
     expect(appSource).toContain('<aside className="ai-agent-popout movable-panel" aria-label="AI Agent" style={agentPanel.style} {...agentPanel.panelProps}>');
@@ -178,7 +178,7 @@ describe("desktop layout regressions", () => {
     expect(appSource).toContain('const activeManageCategory = visibleManageCategories.some((category) => category.id === manageCategory) ? manageCategory : (visibleManageCategories[0]?.id ?? "account");');
     expect(appSource).toContain('canDraftEncounter={hasPermission("ai.proposeChanges") && hasPermission("combat.manage") && hasPermission("scene.create")}');
     expect(appSource).toContain('canRecapSession={hasPermission("ai.proposeChanges") && hasPermission("journal.create")}');
-    expect(aiPanelSource).toContain('disabled={!props.canRecapSession}');
+    expect(aiPanelSource).toContain('disabled={!providerActionAvailable(props.canRecapSession)}');
   });
 
   it("keeps prep header controls readable instead of turning filters into a tiny scrollbox", () => {
@@ -511,8 +511,9 @@ describe("desktop layout regressions", () => {
     expect(appSource).toContain("if (!workspaceIdentityIsCurrent(request)) return;");
     expect(appSource).toContain('setChatBody((current) => current === submittedBody ? "" : current);');
     expect(appSource).toContain('setChatReplyToMessageId((current) => current === submittedReplyToMessageId ? "" : current);');
-    expect(appSource).toContain('setNewJournalTitle((current) => current === submittedTitle ? "" : current);');
-    expect(appSource).toContain('setNewJournalBody((current) => current === submittedBody ? "" : current);');
+    expect(appSource).toContain('key={`journal:${campaignId}:${currentUserId}`}');
+    expect(appSource).not.toContain("newJournalTitle");
+    expect(appSource).not.toContain("newJournalBody");
     expect(appSource).toContain('setNewSceneName((current) => current === submittedName ? "" : current);');
     expect(appSource).toContain('setFogPresetName((current) => current === submittedName ? "" : current);');
     const importBody = appSource.slice(appSource.indexOf("async function importSystemCharacter"), appSource.indexOf("async function createSystemMonster"));
@@ -528,7 +529,8 @@ describe("desktop layout regressions", () => {
     expect(actorPanelSource).toContain('key={`sheet:${props.actor.id}:${hp?.current ?? 0}`}');
     expect(actorPanelSource).toContain('key={`detail:${props.actor.id}:${hp?.current ?? 0}`}');
     expect(countOccurrences(actorPanelSource, "defaultValue={hp?.current ?? 0}")).toBe(2);
-    expect(countOccurrences(actorPanelSource, "onBlur={(event) => props.updateActorHp(props.actor!, Number(event.currentTarget.value))}")).toBe(2);
+    expect(countOccurrences(actorPanelSource, "onBlur={(event) => commitHitPointInput(event.currentTarget)}")).toBe(2);
+    expect(actorPanelSource).toContain("input.value = String(decision.value);");
     expect(actorPanelSource).not.toContain("onChange={(event) => props.updateActorHp(props.actor!, Number(event.target.value))}");
   });
 

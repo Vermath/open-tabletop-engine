@@ -11,6 +11,8 @@ import {
   type WorkerJob,
 } from "./index";
 
+const workerCampaignRevision = "2026-07-17T00:00:00.000Z";
+
 describe("worker job runner", () => {
   it("exports campaigns with a scoped worker principal and job binding", async () => {
     const calls: Array<{ url: string | URL | Request; init?: RequestInit }> =
@@ -92,12 +94,20 @@ describe("worker job runner", () => {
       {
         id: "job_memory",
         type: "ai.memory.extract",
-        payload: { campaignId: "camp-a", sourceText: "A fact" },
+        payload: {
+          campaignId: "camp-a",
+          sourceText: "A fact",
+          expectedUpdatedAt: workerCampaignRevision,
+        },
       },
       {
         id: "job_recap",
         type: "ai.session.recap",
-        payload: { campaignId: "camp-a", transcript: "A recap" },
+        payload: {
+          campaignId: "camp-a",
+          transcript: "A recap",
+          expectedUpdatedAt: workerCampaignRevision,
+        },
       },
       {
         id: "job_report",
@@ -204,6 +214,7 @@ describe("worker job runner", () => {
         payload: {
           campaignId: "camp_demo",
           sourceText: "The sapphire lens opens the vault.",
+          expectedUpdatedAt: workerCampaignRevision,
         },
       },
       {
@@ -230,6 +241,7 @@ describe("worker job runner", () => {
     );
     expect(JSON.parse(calls[0]!.init!.body as string)).toEqual({
       sourceText: "The sapphire lens opens the vault.",
+      expectedUpdatedAt: workerCampaignRevision,
     });
     expect(result.output).toEqual({
       memory: { text: "The sapphire lens opens the vault." },
@@ -248,6 +260,7 @@ describe("worker job runner", () => {
           payload: {
             campaignId: "camp_demo",
             sourceText: "The sapphire lens opens the vault.",
+            expectedUpdatedAt: workerCampaignRevision,
           },
         },
         {
@@ -420,7 +433,10 @@ describe("worker job runner", () => {
         {
           id: "job_recap",
           type: "ai.session.recap",
-          payload: { campaignId: "camp_demo" },
+          payload: {
+            campaignId: "camp_demo",
+            expectedUpdatedAt: workerCampaignRevision,
+          },
         },
         {
           apiBaseUrl: "http://api.test",
@@ -443,7 +459,10 @@ describe("worker job runner", () => {
         {
           id: "job_recap",
           type: "ai.session.recap",
-          payload: { campaignId: "camp_demo" },
+          payload: {
+            campaignId: "camp_demo",
+            expectedUpdatedAt: workerCampaignRevision,
+          },
         },
         {
           apiBaseUrl: "http://api.test",
@@ -471,7 +490,10 @@ describe("worker job runner", () => {
         {
           id: "job_recap",
           type: "ai.session.recap",
-          payload: { campaignId: "camp_demo" },
+          payload: {
+            campaignId: "camp_demo",
+            expectedUpdatedAt: workerCampaignRevision,
+          },
         },
         {
           apiBaseUrl: "http://api.test",
@@ -497,7 +519,10 @@ describe("worker job runner", () => {
         {
           id: "job_recap",
           type: "ai.session.recap",
-          payload: { campaignId: "camp_demo" },
+          payload: {
+            campaignId: "camp_demo",
+            expectedUpdatedAt: workerCampaignRevision,
+          },
         },
         {
           apiBaseUrl: "http://api.test",

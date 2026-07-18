@@ -16,11 +16,8 @@ async function expectAndDeleteTokensByName(page: Page, name: string) {
 async function deleteTokensByName(page: Page, name: string, options: { requireFound?: boolean } = {}) {
   const deletedCount = await page.evaluate(
     async ({ apiBaseUrl, name }) => {
-      const bearer = localStorage.getItem("otte:sessionToken");
-      if (!bearer) throw new Error("No browser session token available for token cleanup");
-      const headers = { authorization: `Bearer ${bearer}` };
       const getJson = async (path: string) => {
-        const response = await fetch(`${apiBaseUrl}${path}`, { headers });
+        const response = await fetch(`${apiBaseUrl}${path}`, { credentials: "include" });
         if (!response.ok) throw new Error(await response.text());
         return response.json();
       };
@@ -36,7 +33,8 @@ async function deleteTokensByName(page: Page, name: string, options: { requireFo
         if (typeof token.updatedAt !== "string" || !token.updatedAt) throw new Error(`Token ${token.id} has no revision for cleanup`);
         const response = await fetch(`${apiBaseUrl}/api/v1/tokens/${token.id}?expectedUpdatedAt=${encodeURIComponent(token.updatedAt)}`, {
           method: "DELETE",
-          headers: { ...headers, "idempotency-key": `e2e-token-delete-${token.id}-${token.updatedAt}` }
+          credentials: "include",
+          headers: { "idempotency-key": `e2e-token-delete-${token.id}-${token.updatedAt}` }
         });
         if (!response.ok) throw new Error(await response.text());
       }
@@ -51,11 +49,8 @@ async function deleteTokensByName(page: Page, name: string, options: { requireFo
 async function expectSceneTokenByName(page: Page, name: string) {
   return page.evaluate(
     async ({ apiBaseUrl, name }) => {
-      const bearer = localStorage.getItem("otte:sessionToken");
-      if (!bearer) throw new Error("No browser session token available for token lookup");
-      const headers = { authorization: `Bearer ${bearer}` };
       const getJson = async (path: string) => {
-        const response = await fetch(`${apiBaseUrl}${path}`, { headers });
+        const response = await fetch(`${apiBaseUrl}${path}`, { credentials: "include" });
         if (!response.ok) throw new Error(await response.text());
         return response.json();
       };
@@ -129,14 +124,28 @@ for (const viewport of viewportCases) {
       const workspaceBox = await page.getByRole("main", { name: "OpenTabletop workspace" }).boundingBox();
       expect(workspaceBox).not.toBeNull();
       await expect(page.locator(".topbar")).toContainText("The Ember Vault");
-      const tableAreaBox = await page.locator(".table-area").boundingBox();
       const addToken = page.getByRole("button", { name: "Add token" });
       await expect(addToken).toBeVisible();
       const addTokenBox = await addToken.boundingBox();
       const minimumToolTarget = viewport.isMobile ? 40 : 44;
       expect(addTokenBox?.height ?? 0).toBeGreaterThanOrEqual(minimumToolTarget);
       expect(addTokenBox?.width ?? 0).toBeGreaterThanOrEqual(minimumToolTarget);
-      expect(addTokenBox?.y ?? 0).toBeGreaterThan((tableAreaBox?.y ?? 0) + (tableAreaBox?.height ?? 0) * 0.45);
+      expect(
+        await addToken.evaluate((element) => {
+          const box = element.getBoundingClientRect();
+          const tableArea = element.closest<HTMLElement>(".table-area")?.getBoundingClientRect();
+          const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+          return Boolean(
+            tableArea
+            && box.left >= Math.max(0, tableArea.left)
+            && box.right <= Math.min(window.innerWidth, tableArea.right)
+            && box.top >= Math.max(0, tableArea.top)
+            && box.bottom <= Math.min(window.innerHeight, tableArea.bottom)
+            && hit
+            && (hit === element || element.contains(hit))
+          );
+        })
+      ).toBe(true);
       if (viewport.isMobile) {
         await page.locator('summary[aria-label="Advanced tools"]').click();
         const secondaryTool = page.getByLabel("Advanced table tools").getByRole("button", { name: "Measure circle" });
@@ -192,7 +201,17 @@ for (const viewport of viewportCases) {
       await openTokenQuickCreate(page);
       await expect(page.getByRole("combobox", { name: "Token actor" })).toBeVisible();
 
-      if (!viewport.isMobile) {
+      if (viewport.isMobile) {
+        await page.locator(".toolbar").getByRole("button", { name: "Select", exact: true }).click();
+        const tokenButton = page.getByRole("button", { name: `Token ${tokenName}` });
+        await tokenButton.focus();
+        await expect(tokenButton).toBeFocused();
+        await page.keyboard.press("ArrowRight");
+        await expect.poll(async () => {
+          const movedToken = await expectSceneTokenByName(page, tokenName);
+          return Math.abs(movedToken.x - createdToken.x) + Math.abs(movedToken.y - createdToken.y);
+        }).toBeGreaterThan(0);
+      } else {
         await dragTokenOnBoard(page, tokenName);
         await expect.poll(async () => {
           const movedToken = await expectSceneTokenByName(page, tokenName);
@@ -204,7 +223,7 @@ for (const viewport of viewportCases) {
       await page.getByRole("button", { name: "Manage", exact: true }).click();
       await expect(page.getByLabel("Session user")).toBeVisible();
       await page.getByLabel("Session user").selectOption("usr_demo_player");
-      await expect(page.getByLabel("Session user")).toHaveValue("usr_demo_player");
+      await expect(page.getByLabel("Session user")).toHaveValue("usr_demo_player", { timeout: 15_000 });
       await page.getByRole("region", { name: "Manage workspace panel" }).getByRole("button", { name: "Close", exact: true }).click();
       await expect(page.locator(".topbar")).toContainText("The Ember Vault");
       await page.reload();
@@ -213,6 +232,25 @@ for (const viewport of viewportCases) {
     });
   });
 }
+
+test.describe("phone keyboard board movement", () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+
+  test("moves a focused seeded token without a pointer", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("button", { name: "Demo GM" }).click();
+    await page.locator(".toolbar").getByRole("button", { name: "Select", exact: true }).click();
+
+    const token = page.locator(".scene-board > .token.active-layer").first();
+    await expect(token).toBeVisible();
+    const before = await token.evaluate((element) => (element as HTMLElement).style.left);
+    await token.focus();
+    await expect(token).toBeFocused();
+    await token.press("ArrowRight");
+    await expect.poll(() => token.evaluate((element) => (element as HTMLElement).style.left)).not.toBe(before);
+    await expect(page.locator(".scene-viewport .sr-only[role='status']")).toContainText(/moved/);
+  });
+});
 
 test.describe("short phone viewport", () => {
   test.use({

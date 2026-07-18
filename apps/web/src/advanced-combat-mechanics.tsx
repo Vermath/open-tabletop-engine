@@ -101,6 +101,7 @@ function mechanicDue(mechanic: CombatEnvironmentMechanic, combat: Combat): boole
 }
 
 export function AdvancedCombatMechanics(props: AdvancedCombatMechanicsProps) {
+  const fieldIdPrefix = `advanced-combat-mechanics-${props.combat.id}`;
   const consequenceReview = useConsequenceReview();
   const [pending, setPending] = useState("");
   const [error, setError] = useState("");
@@ -119,6 +120,9 @@ export function AdvancedCombatMechanics(props: AdvancedCombatMechanicsProps) {
   const [targetActorIds, setTargetActorIds] = useState<string[]>([]);
   const [roundsHeld, setRoundsHeld] = useState(0);
   const [spellPreview, setSpellPreview] = useState<SpellHelperResult>();
+  const [mechanicsDrawerOpen, setMechanicsDrawerOpen] = useState((props.combat.environmentMechanics?.length ?? 0) > 0);
+  const [effectsDrawerOpen, setEffectsDrawerOpen] = useState(false);
+  const [spellDrawerOpen, setSpellDrawerOpen] = useState(false);
 
   const dndActors = useMemo(() => props.actors.filter((actor) => actor.systemId === "dnd-5e-srd"), [props.actors]);
   const effectRows = useMemo(() => scheduledEffectRows(dndActors), [dndActors]);
@@ -277,7 +281,7 @@ export function AdvancedCombatMechanics(props: AdvancedCombatMechanicsProps) {
       <div className="sr-only" aria-live="polite">{pending ? "Working" : error || "Ready"}</div>
       {error && <p className="field-error" role="alert">{error}</p>}
 
-      <details className="create-drawer" open={mechanics.length > 0}>
+      <details className="create-drawer" open={mechanicsDrawerOpen} onToggle={(event) => setMechanicsDrawerOpen(event.currentTarget.open)}>
         <summary><Sparkles size={15} /> Lair &amp; regional mechanics <strong>{formatNumber(mechanics.length)}</strong></summary>
         {mechanics.length === 0 ? <p className="empty-state compact">No environment prompts authored for this combat.</p> : (
           <div className="admin-list">
@@ -308,24 +312,24 @@ export function AdvancedCombatMechanics(props: AdvancedCombatMechanicsProps) {
         )}
         {props.canManage && (
           <form className="advanced-mechanics-form" onSubmit={(event) => void createMechanic(event)}>
-            <label><span>Kind</span><select value={kind} onChange={(event) => setKind(event.target.value as typeof kind)}><option value="lair_action">Lair action</option><option value="regional_effect">Regional effect</option></select></label>
-            <label><span>Name</span><input required maxLength={120} value={name} onChange={(event) => setName(event.target.value)} /></label>
-            <label className="wide"><span>Description</span><textarea required maxLength={2000} value={description} onChange={(event) => setDescription(event.target.value)} /></label>
-            <label><span>Visibility</span><select value={visibility} onChange={(event) => setVisibility(event.target.value as typeof visibility)}><option value="gm_only">GM only</option><option value="public">Public</option></select></label>
-            <label><span>Timing</span><select value={mechanicTiming} onChange={(event) => setMechanicTiming(event.target.value as typeof mechanicTiming)}><option value="initiative_count">Initiative count</option><option value="round_start">Round start</option><option value="round_end">Round end</option><option value="manual">Manual</option></select></label>
-            {mechanicTiming === "initiative_count" && <label><span>Initiative</span><input type="number" min={-1000} max={1000} value={initiativeCount} onChange={(event) => setInitiativeCount(Number(event.target.value))} /></label>}
+            <label htmlFor={`${fieldIdPrefix}-mechanic-kind`}><span>Kind</span><select id={`${fieldIdPrefix}-mechanic-kind`} value={kind} onChange={(event) => setKind(event.target.value as typeof kind)}><option value="lair_action">Lair action</option><option value="regional_effect">Regional effect</option></select></label>
+            <label htmlFor={`${fieldIdPrefix}-mechanic-name`}><span>Name</span><input id={`${fieldIdPrefix}-mechanic-name`} required maxLength={120} value={name} onChange={(event) => setName(event.target.value)} /></label>
+            <label className="wide" htmlFor={`${fieldIdPrefix}-mechanic-description`}><span>Description</span><textarea id={`${fieldIdPrefix}-mechanic-description`} required maxLength={2000} value={description} onChange={(event) => setDescription(event.target.value)} /></label>
+            <label htmlFor={`${fieldIdPrefix}-mechanic-visibility`}><span>Visibility</span><select id={`${fieldIdPrefix}-mechanic-visibility`} value={visibility} onChange={(event) => setVisibility(event.target.value as typeof visibility)}><option value="gm_only">GM only</option><option value="public">Public</option></select></label>
+            <label htmlFor={`${fieldIdPrefix}-mechanic-timing`}><span>Timing</span><select id={`${fieldIdPrefix}-mechanic-timing`} value={mechanicTiming} onChange={(event) => setMechanicTiming(event.target.value as typeof mechanicTiming)}><option value="initiative_count">Initiative count</option><option value="round_start">Round start</option><option value="round_end">Round end</option><option value="manual">Manual</option></select></label>
+            {mechanicTiming === "initiative_count" && <label htmlFor={`${fieldIdPrefix}-mechanic-initiative`}><span>Initiative</span><input id={`${fieldIdPrefix}-mechanic-initiative`} type="number" min={-1000} max={1000} value={initiativeCount} onChange={(event) => setInitiativeCount(Number(event.target.value))} /></label>}
             <button className="primary-button" type="submit" disabled={Boolean(pending) || !name.trim() || !description.trim()}>Add mechanic</button>
           </form>
         )}
       </details>
 
-      <details className="create-drawer">
+      <details className="create-drawer" open={effectsDrawerOpen} onToggle={(event) => setEffectsDrawerOpen(event.currentTarget.open)}>
         <summary><Clock3 size={15} /> Scheduled effects <strong>{formatNumber(effectRows.length)}</strong></summary>
         {effectRows.length === 0 ? <p className="empty-state compact">No typed effect schedules are active on D&amp;D combatants.</p> : (
           <ul className="plain-list">{effectRows.map((effect) => <li key={`${effect.actorId}:${effect.id}`}><strong>{effect.label}</strong> on {effect.actorName} · {titleCaseLabel(effect.timing)}</li>)}</ul>
         )}
         <div className="admin-actions">
-          <label><span>Evaluate phase</span><select value={phase} onChange={(event) => { setPhase(event.target.value as RulesEffectScheduleTiming); setEffectPreview(undefined); }} disabled={!props.canPreviewEffects}>{effectPhases.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+          <label htmlFor={`${fieldIdPrefix}-effect-phase`}><span>Evaluate phase</span><select id={`${fieldIdPrefix}-effect-phase`} value={phase} onChange={(event) => { setPhase(event.target.value as RulesEffectScheduleTiming); setEffectPreview(undefined); }} disabled={!props.canPreviewEffects}>{effectPhases.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
           <button type="button" className="ghost-button" disabled={Boolean(pending) || !props.canPreviewEffects} onClick={() => void previewEffects()}>Preview</button>
           {props.canManageEffects && <button type="button" className="primary-button" disabled={Boolean(pending) || !effectPreview || effectPreview.unresolvedEventIds.some((id) => !saveOutcomes[id])} onClick={() => void advanceEffects()}>Apply reviewed outcomes</button>}
         </div>
@@ -342,14 +346,14 @@ export function AdvancedCombatMechanics(props: AdvancedCombatMechanicsProps) {
         )}
       </details>
 
-      <details className="create-drawer">
+      <details className="create-drawer" open={spellDrawerOpen} onToggle={(event) => setSpellDrawerOpen(event.currentTarget.open)}>
         <summary><WandSparkles size={15} /> Specialized spell helpers</summary>
         <form className="advanced-mechanics-form" onSubmit={(event) => void previewSpell(event)}>
-          <label><span>Caster</span><select required value={casterActorId || dndActors[0]?.id || ""} onChange={(event) => setCasterActorId(event.target.value)}>{dndActors.map((actor) => <option value={actor.id} key={actor.id}>{actor.name}</option>)}</select></label>
-          <label><span>Spell</span><select value={spellId} onChange={(event) => { const next = event.target.value as typeof spellId; setSpellId(next); setSlotLevel(specializedSpells.find((spell) => spell.id === next)?.minimumSlot ?? 1); }}>{specializedSpells.map((spell) => <option value={spell.id} key={spell.id}>{spell.name}</option>)}</select></label>
-          <label><span>Slot level</span><input type="number" min={specializedSpells.find((spell) => spell.id === spellId)?.minimumSlot ?? 1} max={9} value={slotLevel} onChange={(event) => setSlotLevel(Number(event.target.value))} /></label>
-          {spellId === "delayed-blast-fireball" && <label><span>Rounds held</span><input type="number" min={0} max={10} value={roundsHeld} onChange={(event) => setRoundsHeld(Number(event.target.value))} /></label>}
-          <label className="wide"><span>Targets</span><select multiple aria-label="Spell helper targets" value={targetActorIds} onChange={(event) => setTargetActorIds(Array.from(event.target.selectedOptions, (option) => option.value))}>{dndActors.filter((actor) => actor.id !== (casterActorId || dndActors[0]?.id)).map((actor) => <option value={actor.id} key={actor.id}>{actor.name}</option>)}</select></label>
+          <label htmlFor={`${fieldIdPrefix}-spell-caster`}><span>Caster</span><select id={`${fieldIdPrefix}-spell-caster`} required value={casterActorId || dndActors[0]?.id || ""} onChange={(event) => setCasterActorId(event.target.value)}>{dndActors.map((actor) => <option value={actor.id} key={actor.id}>{actor.name}</option>)}</select></label>
+          <label htmlFor={`${fieldIdPrefix}-spell-id`}><span>Spell</span><select id={`${fieldIdPrefix}-spell-id`} value={spellId} onChange={(event) => { const next = event.target.value as typeof spellId; setSpellId(next); setSlotLevel(specializedSpells.find((spell) => spell.id === next)?.minimumSlot ?? 1); }}>{specializedSpells.map((spell) => <option value={spell.id} key={spell.id}>{spell.name}</option>)}</select></label>
+          <label htmlFor={`${fieldIdPrefix}-spell-slot-level`}><span>Slot level</span><input id={`${fieldIdPrefix}-spell-slot-level`} type="number" min={specializedSpells.find((spell) => spell.id === spellId)?.minimumSlot ?? 1} max={9} value={slotLevel} onChange={(event) => setSlotLevel(Number(event.target.value))} /></label>
+          {spellId === "delayed-blast-fireball" && <label htmlFor={`${fieldIdPrefix}-spell-rounds-held`}><span>Rounds held</span><input id={`${fieldIdPrefix}-spell-rounds-held`} type="number" min={0} max={10} value={roundsHeld} onChange={(event) => setRoundsHeld(Number(event.target.value))} /></label>}
+          <label className="wide" htmlFor={`${fieldIdPrefix}-spell-targets`}><span>Targets</span><select id={`${fieldIdPrefix}-spell-targets`} multiple aria-label="Spell helper targets" value={targetActorIds} onChange={(event) => setTargetActorIds(Array.from(event.target.selectedOptions, (option) => option.value))}>{dndActors.filter((actor) => actor.id !== (casterActorId || dndActors[0]?.id)).map((actor) => <option value={actor.id} key={actor.id}>{actor.name}</option>)}</select></label>
           <button className="primary-button" type="submit" disabled={Boolean(pending) || dndActors.length === 0}>Preview spell helper</button>
         </form>
         {spellPreview && (

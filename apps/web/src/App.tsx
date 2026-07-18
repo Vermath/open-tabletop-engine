@@ -1,21 +1,26 @@
-import type { Actor, AiMemoryFact, AiThread, AiToolCall, AudioTrack, AuditLog, Campaign, ChatMessage, Combat, CombatAction, ContentImportBatch, ContentImportEntityKind, ContentImportSource, DiceRoll, EmailOutboxMessage, Encounter, EncounterMonsterPlacementBatchInput, EncounterMonsterPlacementBatchResult, FogHistoryEntry, FogMode, FogPreset, GridType, Item, JournalCanonStatus, JournalEntry, MapAsset, MessageType, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, SceneAnnotation, SceneAnnotationKind, SceneAnnotationLayer, SceneDuplicationPlan, SceneDuplicationRequest, SceneDuplicationResult, SceneTemplateShape, ScimAssignableRole, Token, TokenLayer, User, UserRole, Visibility, VisionPoint, VisionPointSample, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
-import type { Dnd5eSrdPendingAdvancement, Dnd5eSrdSpellPreparationMutationResult, DndControlledCreatureActionHandoff, DndRulesMutationUndoDescriptor, DndRulesMutationUndoResult } from "@open-tabletop/core";
+import type { Actor, AiMemoryFact, AiThread, AiToolCall, AudioTrack, AuditLog, Campaign, ChatMessage, Combat, CombatAction, CombatLegendaryActionPrompt, ContentImportBatch, ContentImportEntityKind, ContentImportSource, DiceRoll, EmailOutboxMessage, Encounter, EncounterMonsterPlacementBatchInput, EncounterMonsterPlacementBatchResult, FogHistoryEntry, FogMode, FogPreset, GridType, Item, JournalCanonStatus, JournalEntry, MapAsset, MessageType, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, SceneAnnotation, SceneAnnotationKind, SceneAnnotationLayer, SceneDuplicationPlan, SceneDuplicationRequest, SceneDuplicationResult, SceneTemplateShape, ScimAssignableRole, Token, TokenLayer, User, UserRole, Visibility, VisionPoint, VisionPointSample, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
+import type { Dnd5eSrdCombatantSyncMutationResult, Dnd5eSrdCombatVitalsKind, Dnd5eSrdCombatVitalsMutationResult, Dnd5eSrdPendingAdvancement, Dnd5eSrdSpellPreparationMutationResult, DndControlledCreatureActionHandoff, DndRulesMutationUndoDescriptor, DndRulesMutationUndoResult } from "@open-tabletop/core";
+import type { TokenMoveBatchRequest, TokenMoveBatchResult } from "@open-tabletop/core";
 import { probabilityRange, rollFormula } from "@open-tabletop/dice-engine";
 import { Activity, BookOpen, Bot, Boxes, Brain, BrickWall, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Circle, Copy, Crosshair, Dices, Download, Eraser, Eye, FileText, Flame, Globe2, Grip, Hand, Image as ImageIcon, KeyRound, Layers, Lightbulb, LockKeyhole, Mail, Map as MapIcon, MapPin, Maximize2, MessageSquare, Minimize2, Moon, Music, Paintbrush, PencilLine, Pentagon, Play, Plus, RefreshCw, RotateCcw, Ruler, ScrollText, Search, Send, Shield, Swords, Timer, Trash2, Triangle, Upload, UserCog, UserPlus, Users, UserX, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
 import type { CSSProperties, DragEvent as ReactDragEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { acceptInviteSession, ApiError, apiAnalyzePdfContentImport, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, bootstrapOwnerSession, changePasswordSession, clearSession, confirmPasswordResetSession, confirmTotpMfa, consumeSsoRedirect, createAdminScimGroupRoleMapping, createOrganizationWorkspace, deleteAdminScimGroupRoleMapping, disableTotpMfa, enrollTotpMfa, getSessionToken, getSessionUserId, loadAdminSnapshot, loadBootstrapStatus, loadMfaStatus, loadOidcConfig, loadOrganizationInvites, loadOrganizationMembers, loadSnapshot, loginPasswordSession, loginSession, logoutSession, registerSession, removeOrganizationMember, requestPasswordReset, revokeInvite, setStatelessDemoApiMode, startOidcLogin, storeSession, switchOrganization, transferCampaignOwnership, updateOrganizationMemberRole, updateWorkspaceDefaults, upsertOrganizationMember, verifyDiceRoll, type AdminAssetIntegrityQuarantineResult, type AdminAuthConnectionTestResult, type AdminJob, type AdminJobAlertResult, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminSessionInfo, type AdminSnapshot, type AdminStorageBackupResult, type AdminStorageRestoreDrillResult, type AdminStorageRestoreResult, type AdminUserInfo, type AiUsageSummary, type CampaignAssetStorageInfo, type CampaignSessionInfo, type CharacterTemplateInfo, type DiceRollVerification, type EncounterPlanInfo, type InviteCreateInfo, type MfaInfo, type OrganizationMemberInfo, type PluginReviewStatus, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
+import { activateDeferredSession } from "./api.js";
+import { acceptInviteSession, ApiError, apiAnalyzePdfContentImport, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, bootstrapOwnerSession, changePasswordSession, clearSession, confirmPasswordResetSession, confirmTotpMfa, consumeSsoRedirect, createAdminScimGroupRoleMapping, createOrganizationWorkspace, deleteAdminScimGroupRoleMapping, disableTotpMfa, enrollTotpMfa, getSessionToken, getSessionTransportEpoch, getSessionUserId, loadAdminSnapshot, loadBootstrapStatus, loadMfaStatus, loadOidcConfig, loadOrganizationInvites, loadOrganizationMembers, loadSnapshot, loginPasswordSession, loginSession, logoutSession, registerSession, removeOrganizationMember, requestPasswordReset, revokeInvite, setStatelessDemoApiMode, startOidcLogin, storeSession, switchOrganization, transferCampaignOwnership, updateOrganizationMemberRole, updateWorkspaceDefaults, upsertOrganizationMember, verifyDiceRoll, type AdminAssetIntegrityQuarantineResult, type AdminAuthConnectionTestResult, type AdminJob, type AdminJobAlertResult, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminSessionInfo, type AdminSnapshot, type AdminStorageBackupResult, type AdminStorageRestoreDrillResult, type AdminStorageRestoreResult, type AdminUserInfo, type AiUsageSummary, type CampaignAssetStorageInfo, type CampaignSessionInfo, type CharacterTemplateInfo, type DiceRollVerification, type EncounterPlanInfo, type InviteCreateInfo, type MfaInfo, type OrganizationMemberInfo, type PluginReviewStatus, type PluginRuntimeInfo, type SessionLoginInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
+import { SessionCredentialCommitQueue } from "./session-credential-commit.js";
 import { actorForSelection, adversaryActorsForSceneBoard, isAdversaryActor } from "./actor-rails.js";
 import { assetThumbnailUrl } from "./api.js";
-import { activeSceneAnnotations, nextAnnotationExpiryMs } from "./annotation-expiry.js";
+import { activeSceneAnnotations } from "./annotation-expiry.js";
+import { applyActiveSceneIdentity, applyAuthoritativeScene } from "./active-scene-state.js";
 import { applyLocalBoardHistoryAction, createTokenCopies, type BoardHistoryAction, type BoardHistoryDirection, type BoardTokenFrameChange, type BoardTokenPositionChange } from "./board-history.js";
-import { blankCanvasDemoCampaignId, blankCanvasDemoNotice, blankCanvasDemoSceneId, blankCanvasDemoUserId, createBlankCanvasDemoAsset, createBlankCanvasDemoSnapshot } from "./blank-canvas-demo.js";
+import { blankCanvasDemoCampaignId, blankCanvasDemoNotice, blankCanvasDemoSceneId, blankCanvasDemoUserId, createBlankCanvasDemoAsset, createBlankCanvasDemoSnapshot, seededDemoLoginErrorMessage, seededDemoUnavailableMessage } from "./blank-canvas-demo.js";
 import { scenePointFromClient } from "./board-geometry.js";
 import { boardKeyboardAction } from "./board-keyboard.js";
+import { boundedBoardCapturePixelRatio } from "./board-capture.js";
 import { computeTokenMovements, formatGridDistance } from "./board-animation.js";
 import { AudioPlaybackLayer, AudioSoundboard, audioTrackNameFromFile } from "./audio-workspace.js";
 import { parseChatCommand } from "./chat-command.js";
-import { filterPaletteCommands, movePaletteIndex, paletteDiceFormula, type PaletteCommand } from "./command-palette.js";
+import { campaignRecordPaletteCommands, filterPaletteCommands, movePaletteIndex, paletteDiceFormula, type PaletteCommand } from "./command-palette.js";
 import type { DesktopStatus } from "./desktop-api.js";
 import { addDieToFormula, diceTraySides, rollHighlight, rollTermHighlight } from "./dice-insights.js";
 import { dice3dStorageKey, diceCastPlan, dieShapeName, dieShapePoints, initialDice3dEnabled, newDiceCastRolls, type DiceCastPlan } from "./dice-3d.js";
@@ -24,14 +29,17 @@ import { initialUiTheme, nextUiTheme, uiThemeLabel, uiThemeStorageKey, type UiTh
 import { applyProposalChangesToSnapshot, proposalChangesExternalLore, proposalReviewActionLabel, proposalReviewSteps, setProposalHidden, visibleAiAgentProposals } from "./proposal-review.js";
 import { realtimeConnectionIdentity, realtimeReconnectDelayMs, realtimeUiLabel, startRealtimeConnection, type RealtimeUiState } from "./realtime-connection.js";
 import { boardCaptureRequestDecision, createRealtimeHandlers, workspaceSelectionMatches, type BoardCaptureRequestDecision, type RealtimeApplyResult, type RealtimeReconcileScope } from "./realtime-refresh.js";
-import { removeRealtimeRecord, upsertBoundedRealtimeRecord, upsertRealtimeRecord } from "./realtime-snapshot-delta.js";
+import { removeRealtimeRecord, upsertBoundedRealtimeRecord, upsertNewestPrependedRealtimeRecord, upsertNewestRealtimeRecord, upsertRealtimeRecord } from "./realtime-snapshot-delta.js";
 import { applyPresenceEnvelope, realtimeSequenceDecision } from "./realtime-sequence.js";
 import { settleWorkspaceLoreLoad } from "./workspace-lore-load.js";
 import { settleWorkspaceBoundAction, type WorkspaceBoundRequest, type WorkspaceRequestIdentity } from "./workspace-bound-action.js";
 import { templateConePoints } from "./scene-annotations.js";
 import { normalizeSceneSizeValue, sceneDimensionsFromCells, sceneSizePresets, type SceneSizePreset } from "./scene-size.js";
-import { sceneDeleteConfirmationMatches, sceneQuickCreateIndex, sceneTabWrapClass, showTrailingSceneCreate } from "./scene-tabs.js";
+import { sceneDeleteConfirmationMatches, sceneQuickCreateIndex, sceneSelectionDestination, sceneTabWrapClass, showTrailingSceneCreate } from "./scene-tabs.js";
+import { SceneManagerTabs } from "./scene-manager-tabs.js";
+import { placeMissingPartyTokens, ScenePartyPlacementControl } from "./scene-party-placement.js";
 import { appendGridCalibrationPoint, GridCalibrationPanel } from "./grid-calibration.js";
+import { resetSceneMapCalibration, sceneBackgroundChangePayload, sceneBackgroundChangePlan, sceneMapConfigurationChanged, sceneMapConfigurationMetadata, sceneWithBackgroundChange } from "./scene-background-calibration.js";
 import { normalizeSceneGridType, SceneGridFields, sceneGridFormSummary, sceneGridSummary } from "./scene-grid-fields.js";
 import { SceneDelegationPanel } from "./scene-delegation-panel.js";
 import { ProfilePreferences, resolvedUserPreferences, updateUserProfile } from "./profile-preferences.js";
@@ -42,24 +50,29 @@ import { CampaignOwnershipTransfer, type CampaignOwnershipTransferInput } from "
 import { campaignSurpriseEnabled, CampaignRulesProfilePanel } from "./campaign-rules-profile.js";
 import { CharacterTransferPanel } from "./character-transfer-panel.js";
 import { CampaignMembersPanel } from "./campaign-members-panel.js";
-import { CombatPanel, nextCombatTurnPosition } from "./combat-panel.js";
+import { campaignPeopleCount, reconcileInviteCreation } from "./campaign-people-state.js";
+import { OrganizationInviteRoster } from "./organization-invite-roster.js";
+import { combatRosterPatch, CombatPanel, nextCombatTurnPosition } from "./combat-panel.js";
+import { recordLegendaryActionSpend } from "./legendary-action-client.js";
 import { combatTurnAdvanceRetryIsSafe, staleWriteCurrentCombat } from "./combat-conflict.js";
 import { combatRewardAttemptForIntent, combatRewardIntentFingerprint, type CombatRewardAttempt } from "./combat-reward-idempotency.js";
 import { appendMutationAttemptForIntent, appendMutationFingerprint, type AppendMutationAttempt } from "./append-mutation-idempotency.js";
-import { AdvancementFlow, type AdvancementChoicePayload, type AdvancementPreviewEnvelope } from "./advancement-flow.js";
+import type { AdvancementChoicePayload, AdvancementPreviewEnvelope } from "./advancement-flow.js";
 import { aiToolCallErrorCode, scimMappingLabel } from "./admin-panel-utils.js";
 import { cleanupAdminStoredAssets, migrateAdminStoredAssets, purgeAdminAssetCdnCache, quarantineAdminAssetIntegrityFailures } from "./admin-asset-client.js";
+import { failStaleAdminAiThreads, failStaleAdminAiToolCalls, rejectStaleAdminAiProposals, retryAdminAiToolCall as requestRetryAdminAiToolCall } from "./admin-ai-client.js";
 import { issueAdminPasswordReset as requestAdminPasswordReset, pruneExpiredPasswordResets as requestPruneExpiredPasswordResets, retryAdminEmail as requestRetryAdminEmail, retryAllAdminEmails as requestRetryAllAdminEmails, revokeAdminRiskSessions as requestRevokeAdminRiskSessions, revokeAdminSession as requestRevokeAdminSession, revokeAdminUserSessions as requestRevokeAdminUserSessions, updateAdminUser } from "./admin-identity-client.js";
 import { syncAdminPluginRegistry, syncCampaignPluginRegistry, updateAdminPluginReview } from "./admin-plugin-client.js";
-import { MapLayerStack, MapSelectionStatus, MapZoomControls, SceneCanvas, TabButton, Toolbar, annotationColor, annotationGroupKey, annotationToolLabel, annotationToolShowsSettings, battleMapZoomStep, clampBattleMapZoom, defaultAnnotationLayer, distanceBetween, nextTokenLayer, tokenCenter, tokenCoordinatesFromCenter, tokenFrame, tokenLayer, tokenLayerLabel, tokenLayers, type TokenFrame, type TokenMovePersistenceChange, type TokenSelectionOptions } from "./scene-canvas.js";
+import { MapLayerStack, MapSelectionStatus, MapZoomControls, SceneCanvas, TabButton, Toolbar, annotationColor, annotationGroupKey, annotationToolLabel, annotationToolShowsSettings, battleMapZoomStep, clampBattleMapZoom, defaultAnnotationLayer, distanceBetween, isUsableImageAsset, nextTokenLayer, sceneGridOverlayVisible, tokenCenter, tokenCoordinatesFromCenter, tokenFrame, tokenLayer, tokenLayerLabel, tokenLayers, useAnnotationExpiryClock, type TokenFrame, type TokenMovePersistenceChange, type TokenSelectionOptions } from "./scene-canvas.js";
 import { campaignPermissionTemplates, type CampaignPermissionTemplateId } from "./admin-data.js";
 import { MetricTile } from "./metric-tile.js";
 import { assetMatchesFolderFilter, campaignArchiveTargetId, contentImportEntityData, normalizeAssetFolderPath, summarizeImport, type ArchiveImportCollection, type ArchiveImportOperationSummary, type ArchiveImportRollbackPreview, type ArchiveImportRollbackResult, type ArchiveImportScope, type AssetLifecycleStatus, type CampaignImportResult, type ContentImportDraftEntity, type ContentImportPreviewSource, type FailedAssetUpload } from "./content-import-data.js";
-import { ArchiveImportRecovery } from "./archive-import-recovery.js";
+import { ArchiveImportRecovery, recoverDeletedArchiveImportWorkspace } from "./archive-import-recovery.js";
 import { downloadCampaignArchiveStream, isArchiveTransferAbort, isCampaignArchiveStreamFile, readCampaignArchiveStreamMetadata, uploadCampaignArchiveStream } from "./archive-stream-client.js";
 import { ArchiveTransferProgress, archiveTransferIsBusy, type ArchiveTransferState } from "./archive-transfer-progress.js";
+import { archiveExportCollectionOptions, archiveExportMinimumRecordCount, type ArchiveExportCollection, type ArchiveExportScope } from "./archive-export-estimate.js";
 import { systemAdvancementOptionId, systemEncounterThreatId, systemRollId } from "./system-actions.js";
-import { CharacterCreatorDialog, type CharacterCreateInput, type CharacterOriginsInfo } from "./character-creator-dialog.js";
+import type { CharacterCreateInput, CharacterCreatorRulesPreview, CharacterOriginsInfo } from "./character-creator-dialog.js";
 import { CharacterImportDialog, type CharacterImportOutcome } from "./character-import-dialog.js";
 import type { CharacterImportPayload } from "./character-import.js";
 import { EncounterBuilderDialog, encounterMonsterPlacementDrafts, type EncounterBuilderThreatSelection } from "./encounter-builder.js";
@@ -73,8 +86,9 @@ import { TypedDamageCard, type TypedDamageApplyResult } from "./typed-damage-car
 import { ActorLoadoutPanel, filterActorLoadoutItems, type ActorLoadoutFilter } from "./actor-loadout-panel.js";
 import { TacticalMapAids, coverLevelLabel, sceneCoverOverrideBetween } from "./tactical-map-aids.js";
 import { CalculationExplanationPanel } from "./calculation-explanation-panel.js";
-import { DeferredPanel, LazyActorPanel as ActorPanel, LazyAdminPanel, LazyAiPanel, LazyCampaignMemoryPanel, LazyCampaignWebhooksPanel, LazyCompatibilityPanel, LazyCompendiumPanel, LazyContentImportPanel, LazyControlledCreaturesPanel, LazyDndCharacterReviewPanel, LazyDndCustomContentPanel, LazyDndInventoryCommercePanel, LazySdkPanel } from "./deferred-panels.js";
-import { LiveSessionBanner, SessionDeskPanel } from "./session-desk-panel.js";
+import { DeferredPanel, LazyActorPanel as ActorPanel, LazyAdminPanel, LazyAdvancementFlow, LazyAiPanel, LazyCampaignMemoryPanel, LazyCampaignWebhooksPanel, LazyCharacterCreatorDialog, LazyCompatibilityPanel, LazyCompendiumPanel, LazyContentImportPanel, LazyControlledCreaturesPanel, LazyDndCharacterReviewPanel, LazyDndCustomContentPanel, LazyDndInventoryCommercePanel, LazySdkPanel } from "./deferred-panels.js";
+import { LiveSessionBanner, SessionDeskPanel, sessionReportAllowed } from "./session-desk-panel.js";
+import { sessionRecapJournalPayload } from "./session-recap.js";
 import { useModalAccessibility } from "./modal-accessibility.js";
 import { beginSessionSwitch, sessionSwitchIsCurrent } from "./session-switch-guard.js";
 import { actorActionDiceFormula, actorActionOptions, actorActionSupportsEffect, actorArmorClass, actorCombatStateLabels, actorConditionLabels, actorHitPoints, actorResourceControls, actorResourceLabels, actorResourceUpdate, actorSaveFormula, adjustedTemplateDamage, appendActorCondition, deathSaveStatusText, formatActorConditions, isPointInsidePoints, isPurchasableCompendiumEntry, itemDisplayLabel, parseActorConditions, quickActorConditionIds, targetConditionLabels, tokenBrightVisionPatch, tokenDimVisionPatch, tokenPermissionPresetLabel, tokenPlayerOwnerIds, type ActorActionOption, type RulesCompendiumEntry, type TokenVisionPatch } from "./actor-sheet-data.js";
@@ -89,9 +103,10 @@ import { CommandPalette, DiceCastOverlay } from "./tabletop-overlays.js";
 import { actorActionConsequenceReview, typedDamageConsequenceReview, type CommittedActorActionResponse, type PreparedActorActionResponse, type PreparedTypedDamageResponse } from "./actor-action-review.js";
 import { campaignSetupDraftStorageKey, clearCampaignSetupDraft, defaultCampaignSetupDraft, loadCampaignSetupDraft, saveCampaignSetupDraft, type CampaignSetupDraftInput, type CampaignSetupDraftScope, type CampaignSetupIdempotencyKeys, type CampaignSetupProgress } from "./campaign-setup-state.js";
 import { CampaignSetupSteps, FirstSessionSetupChecklist, type FirstSessionSetupStep } from "./campaign-setup-steps.js";
-import { isInspectorTabAllowed, keyboardShortcutRows, mapDockOpenStorageKey, quickCreateOpenStorageKey } from "./workspace-ui-constants.js";
+import { closeWorkspaceDialogState, isInspectorTabAllowed, keyboardShortcutRows, mapDockOpenStorageKey, quickCreateOpenStorageKey } from "./workspace-ui-constants.js";
 import { absoluteInviteUrl, clearJoinUrl, clearResetUrl, dice3dPreferenceEnvironment, initialInviteToken, initialResetMode, initialResetToken, initialSavedDiceFormulas, initialStoredId, initialStoredPanelFlag, mfaCredential, persistSavedDiceFormulas, persistStoredId, persistStoredPanelFlag } from "./startup-state.js";
 import { activityTracesFromEvents, aiAgentToolProgressText, appendAiAgentActivity, appendReasoningDelta, codexAuthPromptFromError, completedReasoningTraces, isAbortError, isProposalNotFoundError, isSessionAuthError, openCodexAuthPrompt, reasoningTracesFromEvents, sceneIdToOpenAfterProposalApply, upsertAiAgentMessage, type AiAgentMessage, type AiAgentProviderEvent, type AiAgentRealtimeEvent, type CodexAuthStart } from "./ai-agent-event-utils.js";
+import { aiAgentReadinessPresentation, useAiStudioReadiness, type AiStudioReadiness } from "./ai-readiness.js";
 import { useConsequenceReview } from "./consequence-review.js";
 import { useAdvancementCatalog } from "./advancement-catalog.js";
 import type { Dnd5eSrdWeaponMasteryUse } from "./weapon-mastery-controls.js";
@@ -99,12 +114,9 @@ import type { Dnd5eSrdWeaponMasteryUse } from "./weapon-mastery-controls.js";
 const apiBase = import.meta.env.VITE_API_URL ?? "";
 const boardHistoryLimit = 50;
 const pingAnnotationTtlSeconds = 5;
-const annotationExpiryTimerSlackMs = 25;
-const maxBrowserTimerDelayMs = 2_147_483_647;
 const aiAgentAuthRetryIntervalMs = 3_000;
 const aiAgentAuthRetryTimeoutMs = 10 * 60_000;
 const rollingDiceStatus = "Rolling dice...";
-
 export function hasUnmodeledMixedDamageType(value: string | undefined): boolean {
   return (value ?? "").split(/[\/,]/).map((part) => part.trim()).filter(Boolean).length > 1;
 }
@@ -128,8 +140,6 @@ interface ArchiveImportAttempt {
   collections: ArchiveImportCollection[];
   transport: "json" | "stream";
 }
-
-
 interface SceneViewportSize {
   width: number;
   height: number;
@@ -137,21 +147,6 @@ interface SceneViewportSize {
 
 type ChatExportFormat = "json" | "ndjson";
 type ChatModerationResolution = "open" | "follow_up" | "reviewed";
-type ArchiveExportScope = "campaign" | "world" | "selected_collections";
-type ArchiveExportCollection =
-  | ArchiveImportCollection
-  | "worlds"
-  | "audioTracks"
-  | "campaignSessions"
-  | "compendia"
-  | "proposals"
-  | "aiThreads"
-  | "aiEvaluations"
-  | "aiMemory"
-  | "aiToolCalls"
-  | "auditLogs"
-  | "permissionGrants"
-  | "pluginStorage";
 type ArchiveExportVersion = "0.2.0";
 type ArchiveRedactionMode = "portable";
 type ArchiveImportMode = "upsert" | "reject_conflicts" | "skip_conflicts" | "dry_run";
@@ -161,7 +156,7 @@ type InspectorTab = "actors" | "compendium" | "sessions" | "worlds" | "handouts"
 type AiAgentApprovalMode = "manual" | "auto";
 type AiGenerationJobKind = "map" | "token" | "tokenBatch";
 type RulesSaveOutcome = "success" | "failure";
-type ActorActionCommitOptions = { targetActorId?: string; applyEffect?: boolean; consumeResources?: boolean; saveOutcomes?: Record<string, RulesSaveOutcome>; effectChoice?: string; weaponMastery?: Dnd5eSrdWeaponMasteryUse };
+type ActorActionCommitOptions = { targetActorId?: string; applyEffect?: boolean; consumeResources?: boolean; saveOutcomes?: Record<string, RulesSaveOutcome>; effectChoice?: string; weaponMastery?: Dnd5eSrdWeaponMasteryUse; continuationId?: string; reviewActorNames?: Record<string, string> };
 interface CombatRewardRequestPayload {
   recipientActorIds: string[];
   totalXp?: number;
@@ -279,22 +274,6 @@ const archiveImportCollectionOptions: Array<{ id: ArchiveImportCollection; label
   { id: "fogPresets", label: "Fog presets" }
 ];
 
-const archiveExportCollectionOptions: Array<{ id: ArchiveExportCollection; label: string }> = [
-  { id: "worlds", label: "Worlds" },
-  ...archiveImportCollectionOptions,
-  { id: "audioTracks", label: "Audio" },
-  { id: "campaignSessions", label: "Sessions" },
-  { id: "compendia", label: "Compendia" },
-  { id: "proposals", label: "Proposals" },
-  { id: "aiThreads", label: "AI threads" },
-  { id: "aiEvaluations", label: "AI evaluations" },
-  { id: "aiMemory", label: "AI memory" },
-  { id: "aiToolCalls", label: "AI tool calls" },
-  { id: "auditLogs", label: "Audit logs" },
-  { id: "permissionGrants", label: "Permission grants" },
-  { id: "pluginStorage", label: "Plugin storage" }
-];
-
 type MeasurementTool = "measure-circle" | "measure-cone";
 type AnnotationTool = SceneAnnotationKind | MeasurementTool | null;
 type ActiveAnnotationTool = NonNullable<AnnotationTool>;
@@ -304,38 +283,6 @@ function compareScenesForDisplay(left: Scene, right: Scene): number {
 
 function assetTagsFromInput(value: string): string[] {
   return [...new Set(value.split(",").map((tag) => tag.trim()).filter(Boolean))].slice(0, 12);
-}
-
-function isUsableImageAsset(asset: MapAsset): boolean {
-  return asset.mimeType.startsWith("image/") && asset.lifecycle?.status !== "deleted";
-}
-
-const gridlessMapPromptMarker = "gridless virtual tabletop background";
-
-function sceneGridOverlayVisible(scene: Scene): boolean {
-  if (scene.gridType === "gridless") return false;
-  const explicit = scene.metadata?.gridOverlayVisible;
-  if (typeof explicit === "boolean") return explicit;
-  const generatedPrompt = scene.metadata?.generatedBackgroundPrompt;
-  if (typeof generatedPrompt === "string" && generatedPrompt.trim()) {
-    return generatedPrompt.toLowerCase().includes(gridlessMapPromptMarker);
-  }
-  return true;
-}
-
-function useAnnotationExpiryClock(annotations: readonly Pick<SceneAnnotation, "expiresAt">[] | undefined): number {
-  const [nowMs, setNowMs] = useState(() => Date.now());
-
-  useEffect(() => {
-    const nextExpiry = nextAnnotationExpiryMs(annotations, nowMs);
-    if (nextExpiry === undefined) return;
-
-    const delayMs = Math.max(0, Math.min(nextExpiry - Date.now() + annotationExpiryTimerSlackMs, maxBrowserTimerDelayMs));
-    const timeoutId = window.setTimeout(() => setNowMs(Date.now()), delayMs);
-    return () => window.clearTimeout(timeoutId);
-  }, [annotations, nowMs]);
-
-  return nowMs;
 }
 
 function initialAiAgentPanelSize(): FloatingPanelSize {
@@ -398,6 +345,11 @@ export function App() {
   });
   const [currentUserId, setCurrentUserId] = useState(getSessionUserId());
   const [sessionToken, setSessionToken] = useState(getSessionToken());
+  const [sessionTransportEpoch, setSessionTransportEpoch] = useState(getSessionTransportEpoch());
+  function syncSessionTransportState() {
+    setSessionToken(getSessionToken());
+    setSessionTransportEpoch(getSessionTransportEpoch());
+  }
   const [snapshotReady, setSnapshotReady] = useState(false);
   const [campaignId, setCampaignId] = useState(() => initialStoredId("otte:selectedCampaignId", "camp_demo"));
   const [sceneId, setSceneId] = useState(() => initialStoredId("otte:selectedSceneId", "scn_vault_entry"));
@@ -680,17 +632,10 @@ export function App() {
   const [newTokenActorId, setNewTokenActorId] = useState("");
   const [newTokenDisposition, setNewTokenDisposition] = useState<Token["disposition"]>("neutral");
   const [newTokenFootprintCells, setNewTokenFootprintCells] = useState(1);
-  const [newJournalTitle, setNewJournalTitle] = useState("");
-  const [newJournalBody, setNewJournalBody] = useState("");
-  const [newJournalVisibility, setNewJournalVisibility] = useState<Visibility>("gm_only");
-  const [newJournalTags, setNewJournalTags] = useState("prep");
   const [chatReplyToMessageId, setChatReplyToMessageId] = useState("");
   const [chatSearch, setChatSearch] = useState("");
   const [chatTypeFilter, setChatTypeFilter] = useState<MessageType | "all">("all");
   const [chatVisibilityFilter, setChatVisibilityFilter] = useState<ChatMessage["visibility"] | "all">("all");
-  const [actorActionTargetId, setActorActionTargetId] = useState("");
-  const [actorActionApplyEffect, setActorActionApplyEffect] = useState(false);
-  const [actorActionConsumeResources, setActorActionConsumeResources] = useState(true);
   const [controlledCreatureHandoff, setControlledCreatureHandoff] = useState<DndControlledCreatureActionHandoff>();
   const [compendiumEntries, setCompendiumEntries] = useState<RulesCompendiumEntry[]>([]);
   const [compendiumSearch, setCompendiumSearch] = useState("");
@@ -728,7 +673,7 @@ export function App() {
   const snapshotRef = useRef(snapshot);
   snapshotRef.current = snapshot;
   realtimeSelectionRef.current = { campaignId, sceneId, userId: currentUserId };
-  const realtimeConnectionKey = realtimeConnectionIdentity({ blankCanvasDemoOpen, campaignId, sessionToken });
+  const realtimeConnectionKey = realtimeConnectionIdentity({ blankCanvasDemoOpen, campaignId, sessionToken, userId: currentUserId, sessionEpoch: sessionTransportEpoch });
 
   const selectedCampaign = snapshot.campaigns.find((campaign) => campaign.id === campaignId);
   const activeOrganizationId = snapshot.session?.organization?.id ?? snapshot.session?.session?.activeOrganizationId ?? snapshot.organizations[0]?.id ?? "";
@@ -781,7 +726,7 @@ export function App() {
   const activeSystemId = snapshot.systems.find((system) => system.active)?.id ?? selectedCampaign?.defaultSystemId;
   const selectedActor = actorForSelection(snapshot.actors, selectedActorId, selectedToken?.actorId, activeSystemId);
   const advancementCatalog = useAdvancementCatalog({ campaignId, actor: selectedActor, disabled: blankCanvasDemoOpen });
-  const { options: advancementOptions, grantsFeat: advancementGrantsFeat, feats: advancementFeats, multiclassOptions, className: advancementClassName, nextClassLevel: advancementNextClassLevel, requiresSubclass: advancementRequiresSubclass, subclassOptions: advancementSubclassOptions, weaponMastery: advancementWeaponMastery, pendingAdvancement, xp: xpProgress, loadState: advancementLoadState, loadError: advancementLoadError, setPendingAdvancement } = advancementCatalog;
+  const { options: advancementOptions, grantsFeat: advancementGrantsFeat, feats: advancementFeats, multiclassOptions, className: advancementClassName, nextClassLevel: advancementNextClassLevel, requiresSubclass: advancementRequiresSubclass, subclassOptions: advancementSubclassOptions, weaponMastery: advancementWeaponMastery, spellAdvancementPaths, pendingAdvancement, xp: xpProgress, loadState: advancementLoadState, loadError: advancementLoadError, setPendingAdvancement } = advancementCatalog;
   const adversaryActors = adversaryActorsForSceneBoard(snapshot.actors, snapshot.tokens, selectedScene?.id);
   const partyActors = snapshot.actors.filter((actor) => !isAdversaryActor(actor, snapshot.tokens));
   const journalLinkTargets = useMemo<JournalLinkTargetOption[]>(() => [
@@ -801,15 +746,14 @@ export function App() {
   const nextTurnTokenIds = nextTurnCombatant?.tokenId && nextTurnCombatant.id !== currentTurnCombatant?.id ? [nextTurnCombatant.tokenId] : [];
   const recentEndedCombats = snapshot.combats.filter((combat) => !combat.active).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).slice(0, 3);
   const selectedPermissionTemplate = campaignPermissionTemplates.find((template) => template.id === setupPermissionTemplate) ?? campaignPermissionTemplates[0]!;
-  const archiveExportRecordCount = archiveExportScope === "world"
-    ? snapshot.scenes.filter((scene) => scene.worldId === archiveExportWorldId).length + snapshot.actors.filter((actor) => actor.worldId === archiveExportWorldId).length + snapshot.journals.filter((journal) => journal.worldId === archiveExportWorldId).length + handouts.filter((handout) => handout.worldId === archiveExportWorldId).length
-    : snapshot.scenes.length + snapshot.assets.length + snapshot.actors.length + snapshot.journals.length + handouts.length + snapshot.chat.length + snapshot.combats.length;
+  const archiveExportRecordCount = archiveExportMinimumRecordCount({ campaignId, scope: archiveExportScope, worldId: archiveExportWorldId, collections: archiveExportCollections, snapshot, worlds, handouts });
   const archiveCompatibilityNotes = [
     archiveExportScope === "campaign"
       ? "Exports the selected campaign and all related portable tabletop records."
       : archiveExportScope === "world"
         ? "Exports one world with dependency-closed scenes, actors, content, assets, sessions, and audit records."
-        : "Exports the campaign identity shell plus only the selected record collections; dependency warnings are embedded in the archive.",
+        : "Exports the campaign identity shell plus the selected record collections and referenced dependency records; dependency warnings are embedded in the archive.",
+    "The displayed count is a conservative minimum because the server can include dependencies and history unavailable in the browser snapshot.",
     "Archive 0.2.0 is accepted by the current v0.3/v1-compatible importer.",
     "Portable redaction strips account secrets, sessions, MFA, SCIM sources, plugin reviews, idempotency records, jobs, and organization records while preserving playable content."
   ];
@@ -945,7 +889,7 @@ export function App() {
   const canManageCampaignSettings = hasPermission("campaign.update") || hasPermission("campaign.delete") || canManageActiveOrganization;
   const canManagePeople = hasPermission("campaign.update") || canManageActiveOrganization;
   const canManageScenes = hasPermission("scene.create") || hasPermission("scene.update") || hasPermission("scene.delete") || hasPermission("scene.activate");
-  const canManageArchives = hasPermission("campaign.update") || canManageActiveOrganization;
+  const canManageArchives = hasPermission("campaign.update");
   const canUsePrepWorkspace = canManageScenes || hasPermission("world.create") || hasPermission("world.update") || hasPermission("handout.create") || hasPermission("handout.update") || hasPermission("journal.create") || hasPermission("journal.update") || hasPermission("plugin.install") || hasPermission("plugin.configure") || hasPermission("actor.create");
   const canUseAiStudioWorkspace = hasPermission("ai.proposeChanges") || hasPermission("ai.applyChanges") || hasPermission("ai.readGmMemory") || hasPermission("combat.manage");
 
@@ -1018,6 +962,7 @@ export function App() {
   const refreshSeqRef = useRef(0);
   const sessionSwitchSeqRef = useRef(0);
   const sessionSwitchAbortRef = useRef<AbortController | undefined>(undefined);
+  const sessionCredentialCommitQueueRef = useRef(new SessionCredentialCommitQueue());
 
   function blockUnsavedSceneDraft(action: string): boolean {
     if (!hasUnsavedSceneDraft) return false;
@@ -1171,6 +1116,32 @@ export function App() {
     sessionSwitchSeqRef.current += 1;
     sessionSwitchAbortRef.current?.abort();
     sessionSwitchAbortRef.current = undefined;
+    sessionCredentialCommitQueueRef.current.invalidate();
+  }
+
+  async function discardStaleCredentialActivation() {
+    try {
+      await logoutSession();
+    } catch {
+      clearSession();
+    }
+    syncSessionTransportState();
+  }
+
+  async function commitDeferredCredential(login: SessionLoginInfo, ticket: number, eligible: () => boolean, commit: () => void): Promise<boolean> {
+    const result = await sessionCredentialCommitQueueRef.current.run(ticket, async (credentialIsCurrent) => {
+      if (!credentialIsCurrent() || !eligible()) return false;
+      await activateDeferredSession(login, { persist: false });
+      if (!credentialIsCurrent() || !eligible()) {
+        await discardStaleCredentialActivation();
+        return false;
+      }
+      storeSession(login);
+      syncSessionTransportState();
+      commit();
+      return true;
+    });
+    return result === true;
   }
 
   function clearAccountSecurityState() {
@@ -1233,17 +1204,7 @@ export function App() {
     setAssetStatus("No asset action this session");
   }
 
-  function closeWorkspaceDialogs() {
-    setCharacterCreatorOpen(false);
-    setControlledCreatureHandoff(undefined);
-    setCharacterImportOpen(false);
-    setAdvancementModalOpen(false);
-    setEncounterBuilderOpen(false);
-    setCombatSetupOpen(false);
-    setCommandPaletteOpen(false);
-    setShortcutOverlayOpen(false);
-    setAudioSoundboardOpen(false);
-  }
+  function closeWorkspaceDialogs() { closeWorkspaceDialogState(() => setControlledCreatureHandoff(undefined), setCharacterCreatorOpen, setCharacterImportOpen, setAdvancementModalOpen, setEncounterBuilderOpen, setCombatSetupOpen, setCommandPaletteOpen, setShortcutOverlayOpen, setAudioSoundboardOpen); }
 
   function clearLoreWorkspaceState() {
     loreRealtimeRefreshPendingRef.current = false;
@@ -1310,6 +1271,7 @@ export function App() {
     return {
       campaignId: realtimeSelectionRef.current.campaignId,
       userId: realtimeSelectionRef.current.userId,
+      campaignUpdatedAt: snapshotRef.current.campaigns.find((candidate) => candidate.id === realtimeSelectionRef.current.campaignId)?.updatedAt ?? "",
       controller
     };
   }
@@ -1397,7 +1359,7 @@ export function App() {
     realtimeSequenceRef.current = next.eventSequence;
     snapshotRef.current = next;
     setSnapshot(next);
-    setSessionToken(getSessionToken());
+    syncSessionTransportState();
     const campaign = next.campaigns.find((item) => item.id === nextCampaignId) ?? next.campaigns[0];
     const scene = next.scenes.find((item) => item.id === nextSceneId) ?? next.scenes.find((item) => item.active) ?? next.scenes[0];
     const resolvedCampaignId = next.campaigns.some((item) => item.id === realtimeSelectionRef.current.campaignId) ? realtimeSelectionRef.current.campaignId : campaign?.id ?? "";
@@ -1443,9 +1405,7 @@ export function App() {
     invalidateInFlightRefreshes();
     setSnapshot((current) => ({
       ...current,
-      scenes: current.scenes.some((item) => item.id === scene.id)
-        ? current.scenes.map((item) => (item.id === scene.id ? scene : item))
-        : [...current.scenes, scene]
+      scenes: applyAuthoritativeScene(current.scenes, scene)
     }));
   }
 
@@ -1487,12 +1447,7 @@ export function App() {
   function applyCombatToSnapshot(combat: Combat) {
     if (combat.campaignId !== realtimeSelectionRef.current.campaignId) return;
     invalidateInFlightRefreshes();
-    setSnapshot((current) => ({
-      ...current,
-      combats: current.combats.some((item) => item.id === combat.id)
-        ? current.combats.map((item) => (item.id === combat.id ? combat : item))
-        : [...current.combats, combat]
-    }));
+    setSnapshot((current) => ({ ...current, combats: upsertNewestRealtimeRecord(current.combats, combat) }));
   }
 
   function removeEncounterFromSnapshot(encounter: Encounter) {
@@ -1509,9 +1464,7 @@ export function App() {
     invalidateInFlightRefreshes();
     setSnapshot((current) => ({
       ...current,
-      items: current.items.some((candidate) => candidate.id === item.id)
-        ? current.items.map((candidate) => (candidate.id === item.id ? item : candidate))
-        : [...current.items, item]
+      items: upsertNewestRealtimeRecord(current.items, item)
     }));
   }
 
@@ -1761,6 +1714,7 @@ export function App() {
       applyTokensToSnapshot([payload as unknown as Token]);
       return "vision";
     }
+    if (event.type === "token.moved.batch") { const batch = recordValue(payload), tokenIds = new Set<string>(); if (batch.redacted === true || typeof batch.sceneId !== "string" || typeof batch.movedAt !== "string" || !Array.isArray(batch.tokens) || batch.tokens.length === 0 || !batch.tokens.every((candidate) => { const token = recordValue(candidate); if (typeof token.id !== "string" || token.sceneId !== batch.sceneId || tokenIds.has(token.id)) return false; tokenIds.add(token.id); return true; })) return "snapshot"; applyTokensToSnapshot(batch.tokens as unknown as Token[]); return "vision"; }
     if (event.type === "token.deleted") {
       const tokenId = typeof payload?.id === "string" ? (payload.id as string) : event.targetId;
       if (!tokenId) return "snapshot";
@@ -1770,9 +1724,9 @@ export function App() {
       // full reconciliation for this uncommon destructive operation.
       return "snapshot";
     }
-    if (event.type === "scene.updated" && payload && typeof payload.id === "string" && payload.campaignId === campaignId) {
+    if ((event.type === "scene.activated" || event.type === "scene.updated") && payload && typeof payload.id === "string" && payload.campaignId === campaignId) {
       applySceneToSnapshot(payload as unknown as Scene);
-      return "vision";
+      return event.type === "scene.activated" ? "snapshot" : "vision";
     }
     if (event.type === "chat.message.created" || event.type === "chat.message.updated") {
       if (!payload || typeof payload.id !== "string" || payload.campaignId !== campaignId) return "snapshot";
@@ -1792,7 +1746,7 @@ export function App() {
     }
     if (event.type === "item.created" || event.type === "item.updated") {
       if (!payload || typeof payload.id !== "string" || payload.campaignId !== campaignId) return "snapshot";
-      setSnapshot((current) => ({ ...current, items: upsertRealtimeRecord(current.items, payload as unknown as Item) }));
+      applyItemToSnapshot(payload as unknown as Item);
       return "applied";
     }
     if (event.type === "item.deleted") {
@@ -1988,7 +1942,7 @@ export function App() {
     if (blankCanvasDemoOpen || resetMode) return;
     let cancelled = false;
     loadBootstrapStatus()
-      .then((bootstrap) => {
+      .then(async (bootstrap) => {
         if (cancelled) return;
         setBootstrapRequired(bootstrap.required);
         setPublicRegistration(bootstrap.publicRegistration);
@@ -2000,10 +1954,11 @@ export function App() {
         loadOidcConfig()
           .then((config) => setSsoEnabled(config.enabled))
           .catch(() => setSsoEnabled(false));
-        const ssoUserId = consumeSsoRedirect();
+        const ssoUserId = await consumeSsoRedirect();
+        if (cancelled) return;
         if (ssoUserId) {
           selectWorkspaceContext(campaignId, sceneId, ssoUserId);
-          setSessionToken(getSessionToken());
+          syncSessionTransportState();
         }
         if (!ssoUserId && !getSessionToken()) {
           setAuthRequired(true);
@@ -2635,6 +2590,7 @@ export function App() {
     sessionSwitchAbortRef.current = undefined;
     const requestId = beginSessionSwitch(sessionSwitchSeqRef, realtimeSelectionRef.current.userId, userId);
     if (requestId === undefined) return;
+    const credentialTicket = sessionCredentialCommitQueueRef.current.begin();
     const controller = new AbortController();
     sessionSwitchAbortRef.current = controller;
     const requestedSelection = { ...realtimeSelectionRef.current };
@@ -2651,12 +2607,13 @@ export function App() {
     });
     if (!login || !requestIsCurrent()) return;
     if (login.user.id !== userId) throw new Error("Session login returned a different user.");
-    storeSession(login);
-    selectWorkspaceContext(requestedSelection.campaignId, requestedSelection.sceneId, login.user.id);
-    setAuthRequired(false);
-    setSessionToken(login.token);
-    setSnapshotReady(false);
-    setStatus("Switching session");
+    const committed = await commitDeferredCredential(login, credentialTicket, requestIsCurrent, () => {
+      selectWorkspaceContext(requestedSelection.campaignId, requestedSelection.sceneId, login.user.id);
+      setAuthRequired(false);
+      setSnapshotReady(false);
+      setStatus("Switching session");
+    });
+    if (!committed) return;
     await refresh(requestedSelection.campaignId, requestedSelection.sceneId);
     if (sessionSwitchAbortRef.current === controller) sessionSwitchAbortRef.current = undefined;
   }
@@ -2705,6 +2662,7 @@ export function App() {
 
   function startBlankCanvasDemo() {
     cancelInviteAcceptance();
+    sessionCredentialCommitQueueRef.current.invalidate();
     revokeBlankCanvasAssetUrls();
     const snapshot = createBlankCanvasDemoSnapshot();
     blankCanvasDemoIdRef.current = 0;
@@ -2742,6 +2700,7 @@ export function App() {
   }
 
   function exitBlankCanvasDemo() {
+    sessionCredentialCommitQueueRef.current.invalidate();
     revokeBlankCanvasAssetUrls();
     setStatelessDemoApiMode(false);
     setBlankCanvasDemoOpen(false);
@@ -2750,7 +2709,7 @@ export function App() {
     const restoredUserId = getSessionUserId();
     const restoredCampaignId = initialStoredId("otte:selectedCampaignId", "camp_demo");
     const restoredSceneId = initialStoredId("otte:selectedSceneId", "scn_vault_entry");
-    setSessionToken(getSessionToken());
+    syncSessionTransportState();
     selectWorkspaceContext(restoredCampaignId, restoredSceneId, restoredUserId);
     setSelectedTokenIdState("tok_valen");
     setSelectedTokenIds(["tok_valen"]);
@@ -2765,18 +2724,21 @@ export function App() {
 
   async function startDemoGmSession() {
     cancelInviteAcceptance();
-    setStatelessDemoApiMode(false);
-    setBlankCanvasDemoOpen(false);
-    resetWorkspaceNavigation();
-    const login = await loginSession("usr_demo_gm");
-    selectWorkspaceContext("camp_demo", "scn_vault_entry", login.user.id);
-    setSessionToken(login.token);
-    setAuthRequired(false);
-    setAuthStatus("Seeded demo signed in");
-    setSnapshotReady(false);
-    setSelectedTokenIdState("tok_valen");
-    setSelectedTokenIds(["tok_valen"]);
-    setStatus("Seeded demo signed in");
+    const credentialTicket = sessionCredentialCommitQueueRef.current.begin();
+    const login = await loginSession("usr_demo_gm", { persist: false });
+    const committed = await commitDeferredCredential(login, credentialTicket, () => true, () => {
+      setStatelessDemoApiMode(false);
+      setBlankCanvasDemoOpen(false);
+      resetWorkspaceNavigation();
+      selectWorkspaceContext("camp_demo", "scn_vault_entry", login.user.id);
+      setAuthRequired(false);
+      setAuthStatus("Seeded demo signed in");
+      setSnapshotReady(false);
+      setSelectedTokenIdState("tok_valen");
+      setSelectedTokenIds(["tok_valen"]);
+      setStatus("Seeded demo signed in");
+    });
+    if (!committed) return;
     try {
       await refresh("camp_demo");
     } catch (error) {
@@ -2787,20 +2749,23 @@ export function App() {
 
   async function submitLogin() {
     cancelInviteAcceptance();
+    const credentialTicket = sessionCredentialCommitQueueRef.current.begin();
     const login = await loginPasswordSession({
       email: loginEmail.trim(),
       password: loginPassword,
       ...mfaCredential(loginMfaCode)
+    }, { persist: false });
+    const committed = await commitDeferredCredential(login, credentialTicket, () => true, () => {
+      resetWorkspaceNavigation();
+      selectWorkspaceContext(campaignId, sceneId, login.user.id);
+      setAuthRequired(false);
+      setLoginPassword("");
+      setLoginMfaCode("");
+      setAuthStatus("Signed in");
+      setSnapshotReady(false);
+      setStatus("Signed in");
     });
-    resetWorkspaceNavigation();
-    selectWorkspaceContext(campaignId, sceneId, login.user.id);
-    setSessionToken(login.token);
-    setAuthRequired(false);
-    setLoginPassword("");
-    setLoginMfaCode("");
-    setAuthStatus("Signed in");
-    setSnapshotReady(false);
-    setStatus("Signed in");
+    if (!committed) return;
     try {
       await refresh();
     } catch (error) {
@@ -2811,19 +2776,22 @@ export function App() {
 
   async function submitRegister() {
     cancelInviteAcceptance();
+    const credentialTicket = sessionCredentialCommitQueueRef.current.begin();
     const login = await registerSession({
       email: registerEmail.trim(),
       displayName: registerName.trim(),
       password: registerPassword
+    }, { persist: false });
+    const committed = await commitDeferredCredential(login, credentialTicket, () => true, () => {
+      resetWorkspaceNavigation();
+      selectWorkspaceContext(campaignId, sceneId, login.user.id);
+      setAuthRequired(false);
+      setRegisterPassword("");
+      setAuthStatus("Account created");
+      setSnapshotReady(false);
+      setStatus("Account created");
     });
-    resetWorkspaceNavigation();
-    selectWorkspaceContext(campaignId, sceneId, login.user.id);
-    setSessionToken(login.token);
-    setAuthRequired(false);
-    setRegisterPassword("");
-    setAuthStatus("Account created");
-    setSnapshotReady(false);
-    setStatus("Account created");
+    if (!committed) return;
     try {
       await refresh();
     } catch (error) {
@@ -2839,26 +2807,31 @@ export function App() {
     cancelAiAgentForWorkspaceChange();
     cancelWorkspaceBoundRequestsForChange();
     clearAccountSecurityState();
-    let remoteLogoutFailed = false;
-    try {
-      await logoutSession();
-    } catch {
-      remoteLogoutFailed = true;
-    }
-    setSessionToken("");
-    setAuthRequired(true);
-    setSnapshotReady(false);
-    setInviteToken("");
-    setInviteAcceptUrl("");
-    resetWorkspaceNavigation();
-    setSnapshot((current) => ({ ...current, session: undefined }));
-    setAdminSnapshot(undefined);
-    setStatus(remoteLogoutFailed ? "Signed out locally; the server could not be reached" : "Signed out");
-    setAuthStatus(remoteLogoutFailed ? "Signed out locally" : "Signed out");
+    const credentialTicket = sessionCredentialCommitQueueRef.current.begin();
+    await sessionCredentialCommitQueueRef.current.run(credentialTicket, async (credentialIsCurrent) => {
+      let remoteLogoutFailed = false;
+      try {
+        await logoutSession();
+      } catch {
+        remoteLogoutFailed = true;
+      }
+      if (!credentialIsCurrent()) return;
+      setSessionToken("");
+      setAuthRequired(true);
+      setSnapshotReady(false);
+      setInviteToken("");
+      setInviteAcceptUrl("");
+      resetWorkspaceNavigation();
+      setSnapshot((current) => ({ ...current, session: undefined }));
+      setAdminSnapshot(undefined);
+      setStatus(remoteLogoutFailed ? "Signed out locally; the server could not be reached" : "Signed out");
+      setAuthStatus(remoteLogoutFailed ? "Signed out locally" : "Signed out");
+    });
   }
 
   async function submitPasswordChange() {
     cancelInviteAcceptance();
+    const credentialTicket = sessionCredentialCommitQueueRef.current.begin();
     await runWorkspaceBoundAction(
       (request) => changePasswordSession({
         currentPassword: passwordCurrent,
@@ -2866,11 +2839,12 @@ export function App() {
       }, { persist: false, signal: request.controller.signal }),
       async (login, request) => {
         if (login.user.id !== request.userId) throw new Error("Password change returned a different user");
-        storeSession(login);
-        setSessionToken(login.token);
-        setPasswordCurrent("");
-        setPasswordNext("");
-        setAccountStatus("Password changed");
+        const committed = await commitDeferredCredential(login, credentialTicket, () => workspaceBoundRequestIsCurrent(request), () => {
+          setPasswordCurrent("");
+          setPasswordNext("");
+          setAccountStatus("Password changed");
+        });
+        if (!committed) return;
         await refresh(request.campaignId, sceneId);
       }
     );
@@ -2934,41 +2908,47 @@ export function App() {
       setResetStatus("Passwords do not match");
       return;
     }
+    const credentialTicket = sessionCredentialCommitQueueRef.current.begin();
     const login = await confirmPasswordResetSession({
       token: resetToken.trim(),
       password: resetPassword
+    }, { persist: false });
+    const committed = await commitDeferredCredential(login, credentialTicket, () => true, () => {
+      resetWorkspaceNavigation();
+      selectWorkspaceContext(campaignId, sceneId, login.user.id);
+      setResetToken("");
+      setResetPassword("");
+      setResetPasswordConfirm("");
+      setResetMode(false);
+      setAuthRequired(false);
+      clearResetUrl();
+      setSnapshotReady(false);
+      setStatus("Password reset complete");
     });
-    resetWorkspaceNavigation();
-    selectWorkspaceContext(campaignId, sceneId, login.user.id);
-    setSessionToken(login.token);
-    setResetToken("");
-    setResetPassword("");
-    setResetPasswordConfirm("");
-    setResetMode(false);
-    setAuthRequired(false);
-    clearResetUrl();
-    setSnapshotReady(false);
-    setStatus("Password reset complete");
+    if (!committed) return;
     await refresh();
   }
 
   async function submitBootstrapOwner() {
+    const credentialTicket = sessionCredentialCommitQueueRef.current.begin();
     const login = await bootstrapOwnerSession({
       email: bootstrapEmail.trim(),
       displayName: bootstrapName.trim(),
       password: bootstrapPassword,
       campaignName: bootstrapCampaignName.trim(),
       defaultSystemId: newCampaignSystemId
+    }, { persist: false });
+    const committed = await commitDeferredCredential(login, credentialTicket, () => true, () => {
+      resetWorkspaceNavigation("prep", "content");
+      selectWorkspaceContext(login.campaign.id, login.scene.id, login.user.id);
+      setBootstrapPassword("");
+      setBootstrapRequired(false);
+      setAuthRequired(false);
+      setSnapshotReady(false);
+      setBootstrapStatus("Owner account ready");
+      setStatus("Owner setup complete");
     });
-    resetWorkspaceNavigation("prep", "content");
-    selectWorkspaceContext(login.campaign.id, login.scene.id, login.user.id);
-    setSessionToken(login.token);
-    setBootstrapPassword("");
-    setBootstrapRequired(false);
-    setAuthRequired(false);
-    setSnapshotReady(false);
-    setBootstrapStatus("Owner account ready");
-    setStatus("Owner setup complete");
+    if (!committed) return;
     await refresh(login.campaign.id, login.scene.id);
   }
 
@@ -2987,8 +2967,10 @@ export function App() {
     completeAppendMutation(scope, attempt);
     setInviteToken(result.token);
     setInviteAcceptUrl(absoluteInviteUrl(result.acceptUrl));
-    const invites = await loadOrganizationInvites().catch(() => snapshot.organizationInvites);
-    setSnapshot((current) => ({ ...current, organizationInvites: invites }));
+    const invites = await loadOrganizationInvites().catch(() => snapshotRef.current.organizationInvites);
+    const nextSnapshot = reconcileInviteCreation(snapshotRef.current, campaignId, result, invites);
+    snapshotRef.current = nextSnapshot;
+    setSnapshot(nextSnapshot);
     setStatus("Invite link ready to copy");
   }
 
@@ -3079,6 +3061,7 @@ export function App() {
     if (inviteAcceptBusyRef.current) return;
     cancelInviteAcceptance();
     const requestSequence = inviteAcceptSequenceRef.current;
+    const credentialTicket = sessionCredentialCommitQueueRef.current.begin();
     const controller = new AbortController();
     inviteAcceptAbortRef.current = controller;
     inviteAcceptBusyRef.current = true;
@@ -3109,21 +3092,22 @@ export function App() {
         throw error;
       }
       if (requestSequence !== inviteAcceptSequenceRef.current) return;
-      storeSession(result);
-      resetWorkspaceNavigation();
-      selectWorkspaceContext(result.campaign.id, "", result.user.id);
-      setSessionToken(result.token);
-      setAuthRequired(false);
-      setJoinToken("");
-      setJoinFormOpen(false);
-      setJoinEmail("");
-      setJoinName("");
-      setJoinPassword("");
-      setJoinMfaCode("");
-      setJoinMfaRequired(false);
-      clearJoinUrl();
-      setSnapshotReady(false);
-      setStatus("Invite accepted");
+      const committed = await commitDeferredCredential(result, credentialTicket, () => !controller.signal.aborted && requestSequence === inviteAcceptSequenceRef.current, () => {
+        resetWorkspaceNavigation();
+        selectWorkspaceContext(result.campaign.id, "", result.user.id);
+        setAuthRequired(false);
+        setJoinToken("");
+        setJoinFormOpen(false);
+        setJoinEmail("");
+        setJoinName("");
+        setJoinPassword("");
+        setJoinMfaCode("");
+        setJoinMfaRequired(false);
+        clearJoinUrl();
+        setSnapshotReady(false);
+        setStatus("Invite accepted");
+      });
+      if (!committed) return;
       await refresh(result.campaign.id);
     } finally {
       if (inviteAcceptAbortRef.current === controller) inviteAcceptAbortRef.current = null;
@@ -3464,20 +3448,20 @@ export function App() {
     const draftBackgroundAssetId = sceneFormValue(form, "sceneEditBackgroundAssetId", sceneEditBackgroundAssetId);
     const draftActive = sceneFormChecked(form, "sceneEditActive", sceneEditActive);
     const draftGridOverlayVisible = sceneFormChecked(form, "sceneEditGridOverlayVisible", sceneEditGridOverlayVisible);
+    const normalizedDraftGridSize = Math.max(10, normalizeSceneSizeValue(draftGridSize, targetScene.gridSize));
+    const mapConfiguration = { backgroundAssetId: draftBackgroundAssetId || null, gridType: draftGridType, gridSize: normalizedDraftGridSize, width: Math.max(200, normalizeSceneSizeValue(draftWidth, targetScene.width)), height: Math.max(200, normalizeSceneSizeValue(draftHeight, targetScene.height)) };
+    const mapConfigurationChanged = sceneMapConfigurationChanged(targetScene, mapConfiguration);
 
     const payload = {
       name: draftName.trim() || targetScene.name,
       folder: draftFolder.trim() || null,
-      width: Math.max(200, normalizeSceneSizeValue(draftWidth, targetScene.width)),
-      height: Math.max(200, normalizeSceneSizeValue(draftHeight, targetScene.height)),
+      width: mapConfiguration.width,
+      height: mapConfiguration.height,
       gridType: draftGridType,
-      ...(draftGridType === "square" ? { gridSize: Math.max(10, normalizeSceneSizeValue(draftGridSize, targetScene.gridSize)) } : {}),
+      ...(draftGridType === "square" ? { gridSize: normalizedDraftGridSize } : {}),
       backgroundAssetId: draftBackgroundAssetId || null,
       active: draftActive,
-      metadata: {
-        ...targetScene.metadata,
-        gridOverlayVisible: draftGridOverlayVisible
-      },
+      metadata: sceneMapConfigurationMetadata(targetScene, mapConfiguration, draftGridOverlayVisible),
       expectedUpdatedAt: targetScene.updatedAt
     };
     const scene = await runSharedMutation(() => apiPatch<Scene>(`/api/v1/scenes/${targetScene.id}`, payload, { idempotencyKey: sharedMutationIdempotencyKey(`scene:update:${targetScene.id}`, targetScene.updatedAt, payload) }), targetCampaignId, targetScene.id);
@@ -3497,7 +3481,7 @@ export function App() {
     setSceneEditBackgroundAssetId(scene.backgroundAssetId ?? "");
     setSceneEditGridOverlayVisible(sceneGridOverlayVisible(scene));
     setSceneDuplicateName(`${scene.name} Copy`);
-    setStatus(`${scene.name} updated`);
+    if (mapConfigurationChanged) finishSceneBackgroundChange(scene, snapshotRef.current.assets.find((asset) => asset.id === scene.backgroundAssetId)?.name ?? "Scene map", { navigateToPrep: false }); else setStatus(`${scene.name} updated`);
     await refresh(targetCampaignId, scene.id, { syncStatus: false });
   }
 
@@ -3511,7 +3495,12 @@ export function App() {
         const payload = {
         gridType: "square",
         gridSize: calibratedSize,
-        metadata: { ...targetScene.metadata, gridOverlayVisible: true },
+        metadata: {
+          ...targetScene.metadata,
+          gridOverlayVisible: true,
+          mapCalibrationComplete: Boolean(targetScene.backgroundAssetId),
+          mapCalibrationCompletedAt: new Date().toISOString()
+        },
         expectedUpdatedAt: targetScene.updatedAt
         };
         return apiPatch<Scene>(`/api/v1/scenes/${targetScene.id}`, payload, { signal: request.controller.signal, idempotencyKey: sharedMutationIdempotencyKey(`scene:grid-calibration:${targetScene.id}`, targetScene.updatedAt, payload) });
@@ -3709,6 +3698,8 @@ export function App() {
     if (!selectedScene) return;
     const payload = { active: true, expectedUpdatedAt: selectedScene.updatedAt };
     const scene = await runSharedMutation(() => apiPatch<Scene>(`/api/v1/scenes/${selectedScene.id}`, payload, { idempotencyKey: sharedMutationIdempotencyKey(`scene:activate:${selectedScene.id}`, selectedScene.updatedAt, payload) }), campaignId, selectedScene.id);
+    applySceneToSnapshot(scene);
+    setSceneId(scene.id);
     setSceneEditActive(true);
     setStatus(`${scene.name} activated`);
     await refresh(campaignId, scene.id);
@@ -3798,16 +3789,15 @@ export function App() {
     setWorkspaceMode("manage");
     setStatus(`Review ${targetScene.name} before deleting it`);
   }
-
-  async function createToken(options: Partial<TokenDropPayload> & { x?: number; y?: number; idempotencyKey?: string } = {}, existingRequest?: WorkspaceBoundRequest): Promise<Token | undefined> {
-    if (!selectedScene) return;
-    const targetScene = snapshotRef.current.scenes.find((scene) => scene.id === selectedScene.id) ?? selectedScene;
+  async function createToken(options: Partial<TokenDropPayload> & { x?: number; y?: number; width?: number; height?: number; idempotencyKey?: string; targetSceneRevision?: Scene; onSceneRevision?(scene: Scene): void } = {}, existingRequest?: WorkspaceBoundRequest): Promise<Token | undefined> {
+    if (!selectedScene && !options.targetSceneRevision) return;
+    const targetScene = options.targetSceneRevision ?? snapshotRef.current.scenes.find((scene) => scene.id === selectedScene?.id) ?? selectedScene!;
     const actorId = (options.actorId ?? newTokenActorId) || undefined;
     const actor = actorId ? snapshot.actors.find((item) => item.id === actorId) : undefined;
     const imageAssetId = options.imageAssetId;
     const footprintCells = Math.max(1, newTokenFootprintCells || 1);
-    const width = targetScene.gridSize * footprintCells;
-    const height = targetScene.gridSize * footprintCells;
+    const width = options.width ?? targetScene.gridSize * footprintCells;
+    const height = options.height ?? targetScene.gridSize * footprintCells;
     const centerX = options.x ?? targetScene.width / 2;
     const centerY = options.y ?? targetScene.height / 2;
     const position = tokenCoordinatesFromCenter(targetScene, width, height, centerX, centerY);
@@ -3878,13 +3868,13 @@ export function App() {
     if (existingRequest) {
       if (!workspaceBoundRequestIsCurrent(existingRequest)) return;
       const createdResult = await create(existingRequest);
-      applySceneToSnapshot(createdResult.scene);
+      options.onSceneRevision?.(createdResult.scene); applySceneToSnapshot(createdResult.scene);
       applyCreatedToken(createdResult.token, existingRequest);
       return workspaceBoundRequestIsCurrent(existingRequest) ? createdResult.token : undefined;
     }
     let created: Token | undefined;
     await runWorkspaceBoundAction(create, (result, request) => {
-      applySceneToSnapshot(result.scene);
+      options.onSceneRevision?.(result.scene); applySceneToSnapshot(result.scene);
       applyCreatedToken(result.token, request);
       created = result.token;
     });
@@ -3903,7 +3893,6 @@ export function App() {
       y: point.y
     });
   }
-
   async function placeActorOnSelectedScene(actor: Actor, placementAttemptId: string): Promise<void> {
     if (!selectedScene) throw new Error("Select a scene before placing an actor.");
     const existingToken = snapshot.tokens.find((token) => token.sceneId === selectedScene.id && token.actorId === actor.id && tokenLayer(token) !== "map");
@@ -3980,9 +3969,10 @@ export function App() {
         setAiAgentStatus("Capturing board view");
         try {
           const { toPng } = await import("html-to-image");
+          const pixelRatio = boundedBoardCapturePixelRatio(board.offsetWidth, board.offsetHeight, window.devicePixelRatio || 1);
           const dataUrl = await toPng(board, {
-            cacheBust: true,
-            pixelRatio: Math.min(2, window.devicePixelRatio || 1),
+            cacheBust: false,
+            pixelRatio,
             backgroundColor: "#060a0f"
           });
           if (!workspaceBoundRequestIsCurrent(request)) return "stale" as const;
@@ -4109,8 +4099,8 @@ export function App() {
       if (result.campaignUpdatedAt) {
         await refresh(campaign.id);
         await loadArchiveImportOperations(campaign.id);
-      } else if (fallbackCampaignId) {
-        await refresh(fallbackCampaignId);
+      } else {
+        await recoverDeletedArchiveImportWorkspace({ fallbackCampaignId, clearRecoveryState: () => { setArchiveImportOperations([]); setSelectedArchiveImportOperationId(""); }, selectWorkspaceContext, refreshWorkspace: (targetCampaignId, targetSceneId) => refresh(targetCampaignId, targetSceneId, { syncStatus: false }) });
       }
     } finally {
       setArchiveImportRecoveryBusy(false);
@@ -4200,9 +4190,10 @@ export function App() {
       }
       const nextCampaignId = result.importedCampaignIds[0] ?? campaignId;
       setFailedArchiveImport(undefined);
-      setImportStatus(`${file.name}: ${summarizeImport(result)}`);
       const skippedConflicts = result.skippedConflicts?.length ?? 0;
-      setStatus(skippedConflicts > 0 ? `Imported non-conflicting records; skipped ${skippedConflicts} conflicts` : result.conflicts.length > 0 ? `Imported with ${result.conflicts.length} conflicts` : "Archive imported");
+      const importOutcome = skippedConflicts > 0 ? `Imported non-conflicting records; skipped ${skippedConflicts} conflicts` : result.conflicts.length > 0 ? `Imported with ${result.conflicts.length} conflicts` : "Archive imported";
+      setImportStatus(`${file.name}: ${summarizeImport(result)}; ${importOutcome}`);
+      setStatus(importOutcome);
       await refresh(nextCampaignId);
       await loadArchiveImportOperations(nextCampaignId);
       if (result.operation) setSelectedArchiveImportOperationId(result.operation.id);
@@ -4407,13 +4398,29 @@ export function App() {
       return;
     }
 
-    await runWorkspaceBoundAction(
-      (request) => Promise.all(changes.map(({ token, position }) => {
+    if (changes.length === 0) return;
+    const sceneId = changes[0]!.token.sceneId;
+    const scene = snapshotRef.current.scenes.find((candidate) => candidate.id === sceneId);
+    if (!scene) throw new Error("Scene is unavailable for token movement");
+    const payload: TokenMoveBatchRequest = {
+      expectedSceneUpdatedAt: scene.updatedAt,
+      changes: changes.map(({ token, position }) => {
         const latest = snapshotRef.current.tokens.find((candidate) => candidate.id === token.id) ?? token;
-        const payload = { ...position, expectedUpdatedAt: latest.updatedAt };
-        return apiPatch<Token>(`/api/v1/tokens/${token.id}`, payload, { signal: request.controller.signal, idempotencyKey: sharedMutationIdempotencyKey(`token:move:${token.id}`, latest.updatedAt, payload) });
-      })),
-      (updated) => applyTokensToSnapshot(updated)
+        return { tokenId: latest.id, ...position, expectedUpdatedAt: latest.updatedAt };
+      }).sort((left, right) => left.tokenId.localeCompare(right.tokenId))
+    };
+    const aggregateRevision = `${payload.expectedSceneUpdatedAt}|${payload.changes.map((change) => `${change.tokenId}:${change.expectedUpdatedAt}`).join("|")}`;
+
+    await runWorkspaceBoundAction(
+      (request) => apiPost<TokenMoveBatchResult>(
+        `/api/v1/scenes/${sceneId}/tokens/move`,
+        payload,
+        {
+          signal: request.controller.signal,
+          idempotencyKey: sharedMutationIdempotencyKey(`token:move-batch:${sceneId}`, aggregateRevision, payload)
+        }
+      ),
+      (result) => applyTokensToSnapshot(result.tokens)
     );
   }
 
@@ -4698,24 +4705,38 @@ export function App() {
     }
   }
 
+  function finishSceneBackgroundChange(scene: Scene, assetName: string, options: { navigateToPrep?: boolean } = {}) {
+    applySceneToSnapshot(scene);
+    setGridCalibrationPoints([]);
+    const plan = sceneBackgroundChangePlan(scene, assetName, { selected: realtimeSelectionRef.current.sceneId === scene.id, navigateToPrep: options.navigateToPrep });
+    if (plan.calibrationOpen !== undefined) setGridCalibrationOpen(plan.calibrationOpen);
+    if (plan.navigateToPrep) { setFogBrushMode(null); setAnnotationTool(null); setAnnotationPanelOpen(false); setWorkspaceMode("prep"); }
+    setStatus(plan.status);
+  }
+
   async function uploadMap(file: File) {
-    if (!selectedScene) return;
+    if (!selectedScene) throw new Error("Select a scene before uploading a map.");
     const targetSceneId = selectedScene.id;
     const latestScene = currentSceneForMutation(selectedScene);
+    const targetSceneName = latestScene.name;
     const uploadScope = `asset-map:${targetSceneId}`;
     const uploadAttempt = beginAppendMutation(uploadScope, { campaignId, sceneId: targetSceneId, sceneUpdatedAt: latestScene.updatedAt, name: file.name, size: file.size, type: file.type, lastModified: file.lastModified });
+    setStatus(`Uploading ${file.name} to ${targetSceneName}...`);
     await runWorkspaceBoundAction(
-      (request) => apiUploadAsset({
-        campaignId: request.campaignId,
-        sceneId: targetSceneId,
-        expectedSceneUpdatedAt: latestScene.updatedAt,
-        file,
-        setAsBackground: true
-      }, { signal: request.controller.signal, idempotencyKey: uploadAttempt.idempotencyKey }),
-      async (_result, request) => {
+      async (request) => {
+        const uploaded = await apiUploadAsset({
+          campaignId: request.campaignId,
+          sceneId: targetSceneId,
+          expectedSceneUpdatedAt: latestScene.updatedAt,
+          file,
+          setAsBackground: true
+        }, { signal: request.controller.signal, idempotencyKey: uploadAttempt.idempotencyKey });
+        return uploaded.scene ? { ...uploaded, scene: await resetSceneMapCalibration(uploaded.scene, request.controller.signal) } : uploaded;
+      },
+      async (result, request) => {
         completeAppendMutation(uploadScope, uploadAttempt);
-        setStatus("Map uploaded");
-        await refresh(request.campaignId, targetSceneId);
+        if (result.scene) finishSceneBackgroundChange(result.scene, file.name);
+        await refresh(request.campaignId, targetSceneId, { syncStatus: false });
       }
     );
   }
@@ -4811,17 +4832,19 @@ export function App() {
         tags: assetTagsFromInput(tags),
         timestamp
       });
+      const demoScene = setAsBackground ? snapshotRef.current.scenes.find((scene) => scene.id === targetSceneId) : undefined;
+      const updatedDemoScene = demoScene ? sceneWithBackgroundChange(demoScene, asset.id, timestamp) : undefined;
       setSnapshot((current) => ({
         ...current,
         assets: [...current.assets, asset],
-        scenes: setAsBackground
-          ? current.scenes.map((scene) => scene.id === targetSceneId ? { ...scene, backgroundAssetId: asset.id, updatedAt: timestamp } : scene)
+        scenes: updatedDemoScene
+          ? current.scenes.map((scene) => scene.id === targetSceneId ? updatedDemoScene : scene)
           : current.scenes
       }));
       setCanvasAssetId(asset.id);
       setFailedAssetUpload(undefined);
       setAssetStatus(`${asset.name} added locally${setAsBackground ? " and set as scene background" : ""}`);
-      setStatus(setAsBackground ? "Demo map ready" : "Demo asset added");
+      if (updatedDemoScene) finishSceneBackgroundChange(updatedDemoScene, asset.name); else setStatus("Demo asset added");
       return;
     }
     const backgroundScene = setAsBackground ? snapshotRef.current.scenes.find((candidate) => candidate.id === targetSceneId) : undefined;
@@ -4830,20 +4853,15 @@ export function App() {
     try {
       if (setAsBackground && !backgroundScene) throw new Error("Reload the selected scene before setting its background.");
       await runWorkspaceBoundAction(
-        (request) => apiUploadAsset({
-          campaignId: request.campaignId,
-          sceneId: setAsBackground ? targetSceneId : undefined,
-          expectedSceneUpdatedAt: backgroundScene?.updatedAt,
-          file,
-          setAsBackground,
-          folder: folder.trim() || undefined,
-          tags: assetTagsFromInput(tags)
-        }, { signal: request.controller.signal, idempotencyKey: uploadAttempt.idempotencyKey }),
+        async (request) => {
+          const uploaded = await apiUploadAsset({ campaignId: request.campaignId, sceneId: setAsBackground ? targetSceneId : undefined, expectedSceneUpdatedAt: backgroundScene?.updatedAt, file, setAsBackground, folder: folder.trim() || undefined, tags: assetTagsFromInput(tags) }, { signal: request.controller.signal, idempotencyKey: uploadAttempt.idempotencyKey });
+          return uploaded.scene ? { ...uploaded, scene: await resetSceneMapCalibration(uploaded.scene, request.controller.signal) } : uploaded;
+        },
         async (result, request) => {
           completeAppendMutation(uploadScope, uploadAttempt);
           setFailedAssetUpload(undefined);
           setAssetStatus(`${result.asset.name} uploaded${result.scene ? " and set as scene background" : ""}`);
-          setStatus("Asset uploaded");
+          if (result.scene) finishSceneBackgroundChange(result.scene, result.asset.name); else setStatus("Asset uploaded");
           await refresh(request.campaignId, result.scene?.id ?? targetSceneId);
         }
       );
@@ -4896,25 +4914,27 @@ export function App() {
   async function setSceneBackgroundFromAsset(asset: MapAsset) {
     if (!selectedScene) return;
     const targetScene = selectedScene;
+    if (targetScene.backgroundAssetId === asset.id) { setAssetStatus(`${asset.name} is already the ${targetScene.name} background`); return; }
     if (blankCanvasDemoOpen) {
       const timestamp = new Date().toISOString();
+      const updatedScene = sceneWithBackgroundChange(targetScene, asset.id, timestamp);
       setSnapshot((current) => ({
         ...current,
-        scenes: current.scenes.map((scene) => scene.id === targetScene.id ? { ...scene, backgroundAssetId: asset.id, updatedAt: timestamp } : scene)
+        scenes: current.scenes.map((scene) => scene.id === targetScene.id ? updatedScene : scene)
       }));
       setAssetStatus(`${asset.name} set as ${targetScene.name} background locally`);
-      setStatus("Demo map ready");
+      finishSceneBackgroundChange(updatedScene, asset.name);
       return;
     }
     await runWorkspaceBoundAction(
       (request) => {
         const latest = currentSceneForMutation(targetScene);
-        const payload = { backgroundAssetId: asset.id, expectedUpdatedAt: latest.updatedAt };
+        const payload = sceneBackgroundChangePayload(latest, asset.id);
         return apiPatch<Scene>(`/api/v1/scenes/${targetScene.id}`, payload, { signal: request.controller.signal, idempotencyKey: sharedMutationIdempotencyKey(`scene:background:${targetScene.id}`, latest.updatedAt, payload) });
       },
-      async (_updated, request) => {
+      async (updated, request) => {
         setAssetStatus(`${asset.name} set as ${targetScene.name} background`);
-        setStatus("Scene background updated");
+        finishSceneBackgroundChange(updated, asset.name);
         await refresh(request.campaignId, targetScene.id);
       }
     );
@@ -5040,6 +5060,7 @@ export function App() {
   }
 
   function toggleFogBrush(mode: FogMode) {
+    setGridCalibrationOpen(false); setGridCalibrationPoints([]);
     setAnnotationTool(null);
     setAnnotationPanelOpen(false);
     setFogBrushMode((current) => {
@@ -5155,6 +5176,7 @@ export function App() {
   }
 
   function toggleAnnotationTool(kind: ActiveAnnotationTool) {
+    setGridCalibrationOpen(false); setGridCalibrationPoints([]);
     setFogBrushMode(null);
     setToolReport("");
     setToolReportTitle("Fog and vision");
@@ -5505,13 +5527,17 @@ export function App() {
 
   function applyActorToSnapshot(actor: Actor) {
     if (actor.campaignId !== realtimeSelectionRef.current.campaignId) return;
+    const queuedActor = actorSheetAuthoritativeRef.current.get(actor.id);
+    const snapshotActor = snapshotRef.current.actors.find((candidate) => candidate.id === actor.id);
+    const knownActor = queuedActor && snapshotActor
+      ? (queuedActor.updatedAt >= snapshotActor.updatedAt ? queuedActor : snapshotActor)
+      : queuedActor ?? snapshotActor;
+    if (knownActor && knownActor.updatedAt > actor.updatedAt) return;
     actorSheetAuthoritativeRef.current.set(actor.id, actor);
     invalidateInFlightRefreshes();
     setSnapshot((current) => ({
       ...current,
-      actors: current.actors.some((item) => item.id === actor.id)
-        ? current.actors.map((item) => (item.id === actor.id ? actor : item))
-        : [...current.actors, actor]
+      actors: upsertNewestRealtimeRecord(current.actors, actor)
     }));
   }
 
@@ -5561,10 +5587,15 @@ export function App() {
     try {
       if (!workspaceBoundRequestIsCurrent(request)) return;
       const latest = latestAuthoritativeActor(actor);
+      if (latest.systemId === "dnd-5e-srd") {
+        const current = actorHitPoints(latest)?.current ?? 0;
+        if (hp.current < current) throw new Error("D&D damage is rules-managed. Open Stats, then use Reviewed typed damage to review damage type, defenses, temporary HP, death saves, and combat state before applying it.");
+        if (hp.current > current) await commitDndCombatVitals(latest, "healing", hp.current - current, undefined, request.controller.signal);
+        return;
+      }
       const payload = {
         data: { ...latest.data, hp },
-        expectedUpdatedAt: latest.updatedAt,
-        ...(latest.systemId === "dnd-5e-srd" ? { manualOverrideReason: "Manual character-sheet HP correction" } : {})
+        expectedUpdatedAt: latest.updatedAt
       };
       const updated = await apiPatch<Actor>(`/api/v1/actors/${actor.id}`, payload, { signal: request.controller.signal, idempotencyKey: sharedMutationIdempotencyKey(`actor:hp:${actor.id}`, latest.updatedAt, payload) });
       if (workspaceBoundRequestIsCurrent(request)) applyActorToSnapshot(updated);
@@ -5583,12 +5614,13 @@ export function App() {
   // before React re-renders), apply optimistically for instant feedback, and
   // debounce a single PATCH instead of one blocking full refresh per click.
   function adjustActorHp(actor: Actor, delta: number) {
+    if (actor.systemId === "dnd-5e-srd" && delta < 0) { setStatus("D&D damage is rules-managed. Open Stats, then use Reviewed typed damage."); return; }
     const pending = hpAdjustRef.current.get(actor.id);
     const base = pending ?? actorHitPoints(actor) ?? { current: 0, max: 0 };
     const max = base.max > 0 ? base.max : Number.MAX_SAFE_INTEGER;
     const nextCurrent = Math.max(0, Math.min(max, base.current + delta));
     const next = { current: nextCurrent, max: base.max };
-    applyActorHpToSnapshot(actor.id, next);
+    if (actor.systemId !== "dnd-5e-srd") applyActorHpToSnapshot(actor.id, next);
     if (pending) {
       window.clearTimeout(pending.timer);
       cancelWorkspaceBoundRequest(pending.request);
@@ -5613,7 +5645,7 @@ export function App() {
     const hp = actorHitPoints(actor);
     const safeCurrent = Math.max(0, Math.floor(current));
     const next = { current: safeCurrent, max: hp?.max ?? safeCurrent };
-    applyActorHpToSnapshot(actor.id, next);
+    if (actor.systemId !== "dnd-5e-srd") applyActorHpToSnapshot(actor.id, next);
     const queuedRequest = beginWorkspaceBoundRequest();
     try {
       await actorSheetMutationQueueRef.current.enqueue(actor.id, async () => {
@@ -6474,7 +6506,8 @@ export function App() {
 
   async function exportChatHistory(format: ChatExportFormat) {
     const response = await fetch(`${apiBase}/api/v1/campaigns/${campaignId}/chat/export?format=${format}`, {
-      headers: { authorization: `Bearer ${getSessionToken()}` }
+      headers: { authorization: `Bearer ${getSessionToken()}` },
+      credentials: "include"
     });
     if (!response.ok) throw new Error(await response.text());
     const body = await response.text();
@@ -6492,19 +6525,12 @@ export function App() {
   function applyJournalToSnapshot(journal: JournalEntry) {
     if (journal.campaignId !== realtimeSelectionRef.current.campaignId) return;
     invalidateInFlightRefreshes();
-    setSnapshot((current) => ({
-      ...current,
-      journals: current.journals.some((candidate) => candidate.id === journal.id)
-        ? current.journals.map((candidate) => (candidate.id === journal.id ? journal : candidate))
-        : [journal, ...current.journals]
-    }));
+    setSnapshot((current) => ({ ...current, journals: upsertNewestPrependedRealtimeRecord(current.journals, journal) }));
   }
 
   async function createJournal(options: JournalCreateOptions) {
     const request = currentWorkspaceRequestIdentity();
-    const submittedTitle = newJournalTitle;
-    const submittedBody = newJournalBody;
-    const title = submittedTitle.trim();
+    const title = options.title.trim();
     const actorOwnerUserIds = options.visibleToActorIds
       .map((actorId) => snapshotRef.current.actors.find((actor) => actor.id === actorId)?.ownerUserId)
       .filter((userId): userId is string => Boolean(userId));
@@ -6513,17 +6539,15 @@ export function App() {
       kind: options.kind,
       parentId: options.parentId,
       title: title || "New Journal Entry",
-      body: submittedBody.trim(),
-      visibility: newJournalVisibility,
+      body: options.body.trim(),
+      visibility: options.visibility,
       visibleToUserIds,
       visibleToActorIds: options.visibleToActorIds,
-      tags: newJournalTags.split(",").map((tag) => tag.trim()).filter(Boolean),
+      tags: options.tags.split(",").map((tag) => tag.trim()).filter(Boolean),
       links: options.links,
     }, { idempotencyKey: options.idempotencyKey });
     if (!workspaceIdentityIsCurrent(request)) return;
     applyJournalToSnapshot(journal);
-    setNewJournalTitle((current) => current === submittedTitle ? "" : current);
-    setNewJournalBody((current) => current === submittedBody ? "" : current);
     setStatus("Journal entry created");
   }
 
@@ -6556,75 +6580,9 @@ export function App() {
     setStatus(`${reviewed.title} canon review: ${(reviewed.canonStatus ?? "draft").replace("_", " ")}`);
   }
 
-  function recapWindowStart(): Date {
-    const latestRecap = snapshot.journals
-      .filter((journal) => journal.tags.includes("recap"))
-      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
-    return latestRecap ? new Date(latestRecap.createdAt) : new Date(Date.now() - 12 * 60 * 60 * 1000);
-  }
-
-  function recapChatSnippet(body: string): string {
-    const compact = body.replace(/\s+/g, " ").trim();
-    return compact.length > 80 ? `${compact.slice(0, 77)}...` : compact;
-  }
-
-  function d20Nat20Count(rolls: DiceRoll[]): number {
-    return rolls.filter((roll) => roll.formula.toLocaleLowerCase().includes("d20") && roll.terms.some((term) => term.sides === 20 && (term.results ?? []).includes(20))).length;
-  }
-
-  function generateSessionRecapBody(windowStart: Date): string {
-    const since = windowStart.toISOString();
-    const sections: string[] = [];
-    const rolls = snapshot.rolls.filter((roll) => roll.createdAt >= since);
-    if (rolls.length > 0) {
-      const highest = rolls.reduce((best, roll) => (roll.total > best.total ? roll : best), rolls[0]!);
-      const highestLabel = highest.label ? `${highest.label} ${highest.formula} = ${formatNumber(highest.total)}` : `${highest.formula} = ${formatNumber(highest.total)}`;
-      sections.push(["## Rolls", `- ${formatNumber(rolls.length)} rolls`, `- Highest: ${highestLabel}`, `- Natural 20s: ${formatNumber(d20Nat20Count(rolls))}`].join("\n"));
-    }
-
-    const combats = snapshot.combats.filter((combat) => combat.updatedAt >= since);
-    if (combats.length > 0) {
-      const combatLines = combats.map((combat) => {
-        const names = combat.combatants.map((combatant) => combatant.name).join(", ") || "No combatants";
-        const defeated = combat.combatants.filter((combatant) => combatant.defeated).map((combatant) => combatant.name).join(", ") || "None";
-        const combatAudit = snapshot.combatAudit.filter((entry) => entry.createdAt >= since && (entry.targetId === combat.id || entry.action.includes("combat")));
-        const pending = combatAudit.filter((entry) => entry.action.includes("pending")).length;
-        const confirmed = combatAudit.filter((entry) => entry.action.includes("confirm")).length;
-        return `- ${combat.active ? "Active" : "Ended"} combat: ${formatNumber(combat.round)} rounds; combatants ${names}; defeated ${defeated}; actions ${formatNumber(pending)} pending / ${formatNumber(confirmed)} confirmed`;
-      });
-      sections.push(["## Combat", ...combatLines].join("\n"));
-    }
-
-    const partyActors = snapshot.actors.filter((actor) => !isAdversaryActor(actor, snapshot.tokens));
-    if (partyActors.length > 0) {
-      const partyLines = partyActors.map((actor) => {
-        const hp = recordValue(actor.data.hp);
-        const hpLabel = hp.current !== undefined || hp.max !== undefined ? `${formatNumber(numericValue(hp.current, 0))}/${formatNumber(numericValue(hp.max, 0))}` : "unknown";
-        const xpLabel = actor.data.xp !== undefined ? `, XP ${formatNumber(numericValue(actor.data.xp, 0))}` : "";
-        return `- ${actor.name} - Level ${formatNumber(numericValue(actor.data.level, 1))}, HP ${hpLabel}${xpLabel}`;
-      });
-      sections.push(["## Party status", ...partyLines].join("\n"));
-    }
-
-    const chatHighlights = snapshot.chat
-      .filter((message) => message.createdAt >= since && message.visibility === "public" && !message.body.trim().startsWith("/"))
-      .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
-    if (chatHighlights.length > 0) {
-      sections.push(["## Chat highlights", `- ${formatNumber(chatHighlights.length)} public messages`, ...chatHighlights.slice(-3).map((message) => `- ${recapChatSnippet(message.body)}`)].join("\n"));
-    }
-
-    return sections.length > 0 ? sections.join("\n\n") : `No table activity recorded since ${formatDateTime(since)}.`;
-  }
-
-  async function generateSessionRecap(idempotencyKey: string) {
+  async function generateSessionRecap(visibility: Visibility, idempotencyKey: string, sessionId?: string) {
     const request = currentWorkspaceRequestIdentity();
-    const windowStart = recapWindowStart();
-    const journal = await apiPost<JournalEntry>(`/api/v1/campaigns/${request.campaignId}/journal`, {
-      title: `Session Recap - ${formatDateTime(new Date().toISOString())}`,
-      body: generateSessionRecapBody(windowStart),
-      visibility: newJournalVisibility,
-      tags: ["recap"]
-    }, { idempotencyKey });
+    const journal = await apiPost<JournalEntry>(`/api/v1/campaigns/${request.campaignId}/journal`, sessionRecapJournalPayload(snapshot, visibility, new Date(), sessionId), { idempotencyKey });
     if (!workspaceIdentityIsCurrent(request)) return;
     applyJournalToSnapshot(journal);
     setStatus("Session recap added to the journal");
@@ -6708,7 +6666,6 @@ export function App() {
       throw error;
     }
   }
-
   async function advanceCombatTurn(combat: Combat, direction: 1 | -1) {
     if (combat.combatants.length === 0) return;
     const snapshotCombat = snapshotRef.current.combats.find((candidate) => candidate.id === combat.id);
@@ -6745,20 +6702,64 @@ export function App() {
     );
     try {
       const latest = snapshotRef.current.combats.find((candidate) => candidate.id === combat.id) ?? combat;
-      const payload = { ...patch, syncActorSheet, expectedUpdatedAt: latest.updatedAt };
-      const updated = await apiPatch<Combat>(`/api/v1/combats/${combat.id}/combatants/${combatantId}`, payload, { idempotencyKey: sharedMutationIdempotencyKey(`combat:combatant:${combat.id}:${combatantId}`, latest.updatedAt, payload) });
+      const actor = combatant?.actorId ? snapshotRef.current.actors.find((candidate) => candidate.id === combatant.actorId) : undefined;
+      const payload = { ...patch, syncActorSheet, expectedUpdatedAt: latest.updatedAt, ...(syncActorSheet && actor ? { expectedActorUpdatedAt: actor.updatedAt } : {}) };
+      const updated = await apiPatch<Combat | Dnd5eSrdCombatantSyncMutationResult>(`/api/v1/combats/${combat.id}/combatants/${combatantId}`, payload, { idempotencyKey: sharedMutationIdempotencyKey(`combat:combatant:${combat.id}:${combatantId}`, latest.updatedAt, payload) });
       if (!workspaceIdentityIsCurrent(request)) return;
-      applyCombatToSnapshot(updated);
+      const updatedCombat = "combat" in updated ? updated.combat : updated;
+      applyCombatToSnapshot(updatedCombat);
+      if ("combat" in updated) { applyActorToSnapshot(updated.actor); setLastDndRulesUndo(updated.undo); }
       setStatus("Combatant updated");
-      await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });
-      if (!workspaceIdentityIsCurrent(request)) return;
-      selectCombatantToken(updated.combatants.find((candidate) => candidate.id === combatantId));
+      selectCombatantToken(updatedCombat.combatants.find((candidate) => candidate.id === combatantId));
     } catch (error) {
       if (workspaceIdentityIsCurrent(request) && !reconcileStaleWriteConflict(error)) setStatus(errorMessage(error));
       throw error;
     }
   }
 
+  async function deleteActor(actor: Actor) { const request = currentWorkspaceRequestIdentity(); await import("./actor-lifecycle-client.js").then(({ deleteCampaignActor }) => deleteCampaignActor({ actor, actors: snapshotRef.current.actors, sceneId: realtimeSelectionRef.current.sceneId, runMutation: runSharedMutation, isCurrent: () => workspaceIdentityIsCurrent(request), onDeleted: (nextActorId) => { actorSheetAuthoritativeRef.current.delete(actor.id); setSelectedActorId(nextActorId); setSelectedTokenIdState(""); setSelectedTokenIds([]); setSelectedBoardAssetId(""); setStatus(`${actor.name} deleted; linked records cleaned up`); }, onError: (error) => setStatus(errorMessage(error)), refresh: () => refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false }) })); }
+  async function commitDndCombatVitals(actor: Actor, kind: Dnd5eSrdCombatVitalsKind, amount: number, combat?: Combat, signal?: AbortSignal): Promise<Dnd5eSrdCombatVitalsMutationResult> {
+    const latestActor = snapshotRef.current.actors.find((candidate) => candidate.id === actor.id) ?? actor;
+    const latestCombat = snapshotRef.current.combats.find((candidate) => candidate.active && candidate.combatants.some((entry) => entry.actorId === actor.id)) ?? combat;
+    const payload = { kind, amount, expectedActorUpdatedAt: latestActor.updatedAt, ...(latestCombat ? { expectedCombatUpdatedAt: latestCombat.updatedAt } : {}) };
+    const result = await apiPost<Dnd5eSrdCombatVitalsMutationResult>(`/api/v1/campaigns/${latestActor.campaignId}/systems/${latestActor.systemId}/actors/${latestActor.id}/combat-vitals`, payload, { idempotencyKey: `combat-vitals:${window.crypto.randomUUID()}`, signal });
+    applyActorToSnapshot(result.actor);
+    if (result.combat) applyCombatToSnapshot(result.combat);
+    setLastDndRulesUndo(result.undo);
+    return result;
+  }
+  async function adjustCombatVitals(actor: Actor, kind: Dnd5eSrdCombatVitalsKind, amount: number, combat: Combat): Promise<void> {
+    const request = currentWorkspaceRequestIdentity();
+    try {
+      const result = await commitDndCombatVitals(actor, kind, amount, combat);
+      if (!workspaceIdentityIsCurrent(request)) return;
+      setStatus(kind === "healing" ? `${actor.name} healed ${formatNumber(result.adjustment.appliedAmount)} HP` : `${actor.name} temporary HP set to ${formatNumber(result.adjustment.after)}`);
+    } catch (error) {
+      if (workspaceIdentityIsCurrent(request) && !reconcileStaleWriteConflict(error)) setStatus(`Combat vitals failed: ${errorMessage(error)}`);
+      throw error;
+    }
+  }
+  async function addCombatantToActiveCombat(combat: Combat, token: Token, initiative: number): Promise<void> {
+    const latest = snapshotRef.current.combats.find((candidate) => candidate.id === combat.id) ?? combat;
+    if (latest.combatants.some((combatant) => combatant.tokenId === token.id)) return;
+    const actor = token.actorId ? snapshotRef.current.actors.find((candidate) => candidate.id === token.actorId) : undefined;
+    const combatant: Combat["combatants"][number] = { id: `cmbt_${window.crypto.randomUUID()}`, tokenId: token.id, ...(actor ? { actorId: actor.id } : {}), name: token.name, initiative, defeated: false, readiness: "normal", conditions: [] };
+    await updateCombat(latest, combatRosterPatch(latest, [...latest.combatants, combatant]));
+  }
+  async function removeCombatantFromActiveCombat(combat: Combat, combatantId: string): Promise<void> {
+    const latest = snapshotRef.current.combats.find((candidate) => candidate.id === combat.id) ?? combat;
+    if (!latest.combatants.some((combatant) => combatant.id === combatantId)) return;
+    await updateCombat(latest, combatRosterPatch(latest, latest.combatants.filter((combatant) => combatant.id !== combatantId)));
+  }
+  async function spendLegendaryAction(combat: Combat, prompt: CombatLegendaryActionPrompt, optionName: string, cost: number): Promise<void> {
+    const request = currentWorkspaceRequestIdentity();
+    await recordLegendaryActionSpend({
+      snapshot: snapshotRef.current, combat, prompt, optionName, cost,
+      isCurrent: () => workspaceIdentityIsCurrent(request),
+      onApplied: (result, status) => { applyActorToSnapshot(result.actor); applyCombatToSnapshot(result.combat); setStatus(status); },
+      onError: (error) => { if (!reconcileStaleWriteConflict(error)) setStatus(`Legendary action failed: ${errorMessage(error)}`); }
+    });
+  }
   async function endCombat(combat: Combat) {
     const request = currentWorkspaceRequestIdentity();
     const latest = snapshotRef.current.combats.find((candidate) => candidate.id === combat.id) ?? combat;
@@ -6767,7 +6768,6 @@ export function App() {
     setStatus("Combat ended");
     await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });
   }
-
   async function confirmCombatAction(combat: Combat, action: CombatAction) {
     const request = currentWorkspaceRequestIdentity();
     if (!action.preparedPreviewKey || !action.expectedCombatUpdatedAt || !action.expectedActorUpdatedAt || !action.expectedItemUpdatedAt) {
@@ -6790,7 +6790,6 @@ export function App() {
     setStatus(`${action.actionLabel} confirmed`);
     await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });
   }
-
   async function rejectCombatAction(combat: Combat, action: CombatAction) {
     const request = currentWorkspaceRequestIdentity();
     const latest = snapshotRef.current.combats.find((candidate) => candidate.id === combat.id) ?? combat;
@@ -6827,12 +6826,13 @@ export function App() {
     const scene = selectedScene;
     await runWorkspaceBoundAiRequest("Encounter proposal", (request) => apiPost(`/api/v1/campaigns/${request.campaignId}/ai/encounter-design`, {
       prompt,
+      expectedUpdatedAt: request.campaignUpdatedAt,
       difficulty: "standard",
       sceneName: "AI Draft Encounter Scene",
       sceneWidth: scene?.width,
       sceneHeight: scene?.height,
       gridSize: scene?.gridSize
-    }, { signal: request.controller.signal }), () => "Encounter and scene proposal drafted");
+    }, { signal: request.controller.signal, idempotencyKey: `ai-encounter-design:${globalThis.crypto.randomUUID()}` }), () => "Encounter and scene proposal drafted");
   }
 
   function clearAiAgentAuthRetry() {
@@ -7026,15 +7026,18 @@ export function App() {
     aiAgentAbortRef.current = abortController;
     const requestSelectedAssetId = selectedAssetId ?? selectedAiAgentReferenceAsset?.id ?? aiAgentSelectedAssetId;
     try {
+      const requestCampaignUpdatedAt = snapshotRef.current.campaigns.find((candidate) => candidate.id === requestCampaignId)?.updatedAt;
+      if (!requestCampaignUpdatedAt) throw new Error("Reload the campaign before starting an AI turn.");
       const result = await apiPost<AiAgentThreadResponse>(`/api/v1/campaigns/${requestCampaignId}/ai/threads`, {
         prompt,
+        expectedUpdatedAt: requestCampaignUpdatedAt,
         surface: "agent_panel",
         approvalMode: aiAgentApprovalMode,
         selectedSceneId: selectedScene?.id,
         selectedAssetId: requestSelectedAssetId,
         selectedTokenIds,
         messages: aiAgentProviderMessages(requestMessages)
-      }, { signal: abortController.signal });
+      }, { signal: abortController.signal, idempotencyKey: `ai-thread:${globalThis.crypto.randomUUID()}` });
       if (!workspaceRequestIsCurrent(requestCampaignId, requestUserId)) return;
       const proposalIds = result.events.filter((event) => event.type === "proposal.created").map((event) => event.proposalId).filter((proposalId): proposalId is string => Boolean(proposalId));
       const appliedProposalIds = result.events.filter((event) => event.type === "proposal.applied").map((event) => event.proposalId).filter((proposalId): proposalId is string => Boolean(proposalId));
@@ -7170,12 +7173,13 @@ export function App() {
       setStatus(`Generating map art for ${scene.name}...`);
       await apiPost(`/api/v1/campaigns/${request.campaignId}/ai/generate-map-asset`, {
         prompt,
+        expectedUpdatedAt: request.campaignUpdatedAt,
         name: `${scene.name} Generated Map`,
         sceneId: scene.id,
         size: "1536x1024",
         quality: "low",
         outputFormat: "png"
-      }, { signal: request.controller.signal });
+      }, { signal: request.controller.signal, idempotencyKey: `ai-map-asset:${globalThis.crypto.randomUUID()}` });
       if (!workspaceBoundRequestIsCurrent(request)) return;
       setStatus("Map image proposal drafted");
       await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });
@@ -7191,12 +7195,13 @@ export function App() {
       setStatus(`Generating token art for ${token.name}...`);
       await apiPost(`/api/v1/campaigns/${request.campaignId}/ai/generate-token-asset`, {
         prompt,
+        expectedUpdatedAt: request.campaignUpdatedAt,
         name: `${token.name} Generated Token`,
         tokenId: token.id,
         size: "1024x1024",
         quality: "low",
         outputFormat: "png"
-      }, { signal: request.controller.signal });
+      }, { signal: request.controller.signal, idempotencyKey: `ai-token-asset:${globalThis.crypto.randomUUID()}` });
       if (!workspaceBoundRequestIsCurrent(request)) return;
       setStatus("Token art proposal drafted");
       await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });
@@ -7226,12 +7231,13 @@ export function App() {
         ].filter(Boolean).join("\n");
         await apiPost(`/api/v1/campaigns/${request.campaignId}/ai/generate-token-asset`, {
           prompt: tokenPrompt,
+          expectedUpdatedAt: request.campaignUpdatedAt,
           name: `${token.name} Generated Token`,
           tokenId: token.id,
           size: "1024x1024",
           quality: "low",
           outputFormat: "png"
-        }, { signal: request.controller.signal });
+        }, { signal: request.controller.signal, idempotencyKey: `ai-token-asset:${token.id}:${globalThis.crypto.randomUUID()}` });
       }));
       if (!workspaceBoundRequestIsCurrent(request)) return;
       setStatus(`Token art proposals drafted for ${tokens.length} ${tokens.length === 1 ? "token" : "tokens"}`);
@@ -7243,22 +7249,24 @@ export function App() {
     const prompt = (thread.prompt ?? thread.title).trim();
     if (!prompt) return;
     setAiPrompt(prompt);
-    await runWorkspaceBoundAiRequest("AI thread replay", (request) => apiPost(`/api/v1/campaigns/${request.campaignId}/ai/threads`, { prompt }, { signal: request.controller.signal }), () => "AI thread replayed");
+    await runWorkspaceBoundAiRequest("AI thread replay", (request) => apiPost(`/api/v1/campaigns/${request.campaignId}/ai/threads`, { prompt, expectedUpdatedAt: request.campaignUpdatedAt }, { signal: request.controller.signal, idempotencyKey: `ai-thread-replay:${globalThis.crypto.randomUUID()}` }), () => "AI thread replayed");
   }
 
   async function retryAiToolCall(toolCall: AiToolCall) {
-    await runWorkspaceBoundAiRequest("AI tool retry", (request) => apiPost<{ matched: number; retried: number; skipped: number; completed: number; failed: number }>(`/api/v1/campaigns/${request.campaignId}/ai/tool-calls/${toolCall.id}/retry`, {}, { signal: request.controller.signal }), (result) => `Retried ${result.retried} ${toolCall.toolName} call; ${result.completed} completed, ${result.failed} failed, ${result.skipped} skipped`);
+    const payload = { expectedUpdatedAt: toolCall.updatedAt };
+    await runWorkspaceBoundAiRequest("AI tool retry", (request) => apiPost<{ matched: number; retried: number; skipped: number; completed: number; failed: number }>(`/api/v1/campaigns/${request.campaignId}/ai/tool-calls/${toolCall.id}/retry`, payload, { signal: request.controller.signal, idempotencyKey: sharedMutationIdempotencyKey(`ai-tool-call:retry:${toolCall.id}`, toolCall.updatedAt, payload) }), (result) => `Retried ${result.retried} ${toolCall.toolName} call; ${result.completed} completed, ${result.failed} failed, ${result.skipped} skipped`);
   }
 
   async function recapSession() {
-    await runWorkspaceBoundAiRequest("Session recap", (request) => apiPost(`/api/v1/campaigns/${request.campaignId}/ai/session-recap`, {}, { signal: request.controller.signal }), () => "Session recap queued for approval");
+    await runWorkspaceBoundAiRequest("Session recap", (request) => apiPost(`/api/v1/campaigns/${request.campaignId}/ai/session-recap`, { expectedUpdatedAt: request.campaignUpdatedAt }, { signal: request.controller.signal, idempotencyKey: `ai-session-recap:${globalThis.crypto.randomUUID()}` }), () => "Session recap queued for approval");
   }
 
   async function extractMemory() {
     const sourceText = aiPrompt.trim() || undefined;
     await runWorkspaceBoundAiRequest("Memory extraction", (request) => apiPost(`/api/v1/campaigns/${request.campaignId}/ai/memory/extract`, {
-      sourceText
-    }, { signal: request.controller.signal }), () => "Memory extraction queued");
+      sourceText,
+      expectedUpdatedAt: request.campaignUpdatedAt
+    }, { signal: request.controller.signal, idempotencyKey: `ai-memory-extract:${globalThis.crypto.randomUUID()}` }), () => "Memory extraction queued");
   }
 
   async function approveAndApply(proposal: Proposal) {
@@ -7271,11 +7279,19 @@ export function App() {
     const sceneIdToOpen = sceneIdToOpenAfterProposalApply(proposal);
     const steps = proposalReviewSteps(proposal);
     if (!steps.includes("apply")) throw new Error(`Proposal is ${proposal.status} and cannot be applied.`);
+    let expectedUpdatedAt = proposal.updatedAt;
     if (steps.includes("approve")) {
-      await apiPost(`/api/v1/proposals/${proposal.id}/approve`, {});
+      const approvePayload = { expectedUpdatedAt };
+      const approved = await apiPost<Proposal>(`/api/v1/proposals/${proposal.id}/approve`, approvePayload, {
+        idempotencyKey: sharedMutationIdempotencyKey(`proposal:approve:${proposal.id}`, expectedUpdatedAt, approvePayload)
+      });
+      expectedUpdatedAt = approved.updatedAt;
       if (!workspaceRequestIsCurrent(request.campaignId, request.userId)) return undefined;
     }
-    const applied = await apiPost<Proposal>(`/api/v1/proposals/${proposal.id}/apply`, {});
+    const applyPayload = { expectedUpdatedAt };
+    const applied = await apiPost<Proposal>(`/api/v1/proposals/${proposal.id}/apply`, applyPayload, {
+      idempotencyKey: sharedMutationIdempotencyKey(`proposal:apply:${proposal.id}`, expectedUpdatedAt, applyPayload)
+    });
     if (!workspaceRequestIsCurrent(request.campaignId, request.userId)) return undefined;
     setSnapshot((current) => applyProposalChangesToSnapshot(current, applied));
     if (proposalChangesExternalLore(applied)) setLoreReloadVersion((version) => version + 1);
@@ -7471,7 +7487,10 @@ export function App() {
       setStatus("Demo proposal rejected locally");
       return;
     }
-    await apiPost(`/api/v1/proposals/${proposal.id}/reject`, {});
+    const rejectPayload = { expectedUpdatedAt: proposal.updatedAt };
+    await apiPost(`/api/v1/proposals/${proposal.id}/reject`, rejectPayload, {
+      idempotencyKey: sharedMutationIdempotencyKey(`proposal:reject:${proposal.id}`, proposal.updatedAt, rejectPayload)
+    });
     setStatus("Proposal rejected");
     await refresh();
   }
@@ -7490,7 +7509,10 @@ export function App() {
     if (!workspaceRequestIsCurrent(request.campaignId, request.userId)) return;
     let reverted: Proposal;
     try {
-      reverted = await apiPost<Proposal>(`/api/v1/proposals/${proposal.id}/revert`, {});
+      const revertPayload = { expectedUpdatedAt: proposal.updatedAt };
+      reverted = await apiPost<Proposal>(`/api/v1/proposals/${proposal.id}/revert`, revertPayload, {
+        idempotencyKey: sharedMutationIdempotencyKey(`proposal:revert:${proposal.id}`, proposal.updatedAt, revertPayload)
+      });
     } catch (revertError) {
       await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false }).catch(() => undefined);
       if (workspaceRequestIsCurrent(request.campaignId, request.userId)) setStatus(`Revert blocked: ${errorMessage(revertError)}`);
@@ -7508,13 +7530,14 @@ export function App() {
   }
 
   async function approveMemory(fact: AiMemoryFact) {
-    await apiPost(`/api/v1/ai/memory/${fact.id}/approve`, {});
+    const payload = { expectedUpdatedAt: fact.updatedAt };
+    await apiPost(`/api/v1/ai/memory/${fact.id}/approve`, payload, { idempotencyKey: sharedMutationIdempotencyKey(`ai-memory:approve:${fact.id}`, fact.updatedAt, payload) });
     setStatus("Memory approved");
     await refresh();
   }
 
   async function deleteMemory(fact: AiMemoryFact) {
-    await apiDelete(`/api/v1/ai/memory/${fact.id}`);
+    await apiDelete(`/api/v1/ai/memory/${fact.id}?expectedUpdatedAt=${encodeURIComponent(fact.updatedAt)}`, { idempotencyKey: sharedMutationIdempotencyKey(`ai-memory:delete:${fact.id}`, fact.updatedAt, {}) });
     setStatus("Memory deleted");
     await refresh();
   }
@@ -7540,7 +7563,7 @@ export function App() {
         const successStatus = `${plugin.name} ${action}`;
         setStatus(successStatus);
         try {
-          await refresh(request.campaignId, realtimeSelectionRef.current.sceneId);
+          await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });
         } catch (refreshError) {
           if (workspaceBoundRequestIsCurrent(request)) {
             setStatus(`${successStatus}; background refresh failed: ${errorMessage(refreshError)}. Reload to reconcile plugin state.`);
@@ -7648,7 +7671,8 @@ export function App() {
       visibility: diceVisibility,
       saveOutcomes: options.saveOutcomes,
       effectChoice: options.effectChoice,
-      weaponMastery: options.weaponMastery
+      weaponMastery: options.weaponMastery,
+      continuationId: options.continuationId
     };
     try {
       await runWorkspaceBoundAction(
@@ -7671,7 +7695,8 @@ export function App() {
             idempotencyKey: `dnd-action-preview:${window.crypto.randomUUID()}`
           });
           if (prepared.controlledCreatureHandoff) return { handoff: prepared.controlledCreatureHandoff };
-          if (!await consequenceReview.review(actorActionConsequenceReview(actor.name, prepared, { actorNames: new Map(snapshotRef.current.actors.map((candidate) => [candidate.id, candidate.name])), applyEffect: Boolean(options.applyEffect || options.weaponMastery?.use) }))) return { cancelled: true };
+          setStatus(`${actor.name}: final exact-action review open; nothing committed yet`);
+          if (!await consequenceReview.review(actorActionConsequenceReview(actor.name, prepared, { actorNames: new Map(snapshotRef.current.actors.map((candidate) => [candidate.id, options.reviewActorNames?.[candidate.id] ?? candidate.name])), applyEffect: Boolean(options.applyEffect || options.weaponMastery?.use) }))) return { cancelled: true };
           return apiPost<CommittedActorActionResponse>(path, {
             preparedPreviewKey: prepared.preparation.preparedPreviewKey,
             expectedUpdatedAt: actor.updatedAt
@@ -7734,12 +7759,8 @@ export function App() {
   }
 
   function applyTypedDamageResult(result: TypedDamageApplyResult) {
-    const actors = new Map(result.actors.map((actor) => [actor.id, actor]));
-    setSnapshot((current) => ({
-      ...current,
-      actors: current.actors.map((actor) => actors.get(actor.id) ?? actor),
-      combats: result.combat ? current.combats.map((combat) => combat.id === result.combat!.id ? result.combat! : combat) : current.combats
-    }));
+    for (const actor of result.actors) applyActorToSnapshot(actor);
+    if (result.combat) applyCombatToSnapshot(result.combat);
     setLastDndRulesUndo(result.undo);
     setStatus(`Typed damage applied atomically to ${formatNumber(result.actors.length)} actor${result.actors.length === 1 ? "" : "s"}`);
   }
@@ -7838,10 +7859,28 @@ export function App() {
     const created = await apiPost<{ actor: Actor }>(`/api/v1/campaigns/${request.campaignId}/systems/${template.systemId}/characters`, payload, { idempotencyKey: attempt.idempotencyKey });
     completeAppendMutation(scope, attempt);
     if (!workspaceIdentityIsCurrent(request)) return;
+    const successStatus = `${created.actor.name} joined the party`;
+    try {
+      await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });
+      if (!workspaceIdentityIsCurrent(request)) return;
+      setStatus(successStatus);
+    } catch (refreshError) {
+      if (!workspaceIdentityIsCurrent(request)) return;
+      applyActorToSnapshot(created.actor);
+      setStatus(`${successStatus}; background refresh failed: ${errorMessage(refreshError)}. Reload to reconcile the workspace.`);
+    }
     setCharacterCreatorOpen(false);
-    setStatus(`${created.actor.name} joined the party`);
     setTab("actors");
-    await refresh(request.campaignId, realtimeSelectionRef.current.sceneId);
+  }
+
+  async function previewCharacterFromCreator(template: CharacterTemplateInfo, input: CharacterCreateInput): Promise<CharacterCreatorRulesPreview> {
+    const request = currentWorkspaceRequestIdentity();
+    const result = await apiPost<{ templateId: string; preview: CharacterCreatorRulesPreview }>(
+      `/api/v1/campaigns/${request.campaignId}/systems/${template.systemId}/characters/preview`,
+      { templateId: template.id, ...input }
+    );
+    if (!workspaceIdentityIsCurrent(request)) throw new Error("Campaign changed while the character preview was loading.");
+    return result.preview;
   }
 
   async function importSystemCharacter(input: CharacterImportPayload & { ownerUserId: string }): Promise<CharacterImportOutcome> {
@@ -7901,6 +7940,8 @@ export function App() {
         ...(choices.multiclassInto ? { className: choices.multiclassInto } : {}),
         ...(choices.subclassId ? { subclassId: choices.subclassId } : {}),
         ...(choices.weaponMasteryChoices ? { weaponMasteryChoices: choices.weaponMasteryChoices } : {}),
+        ...(choices.wizardSpellbookAdditions ? { wizardSpellbookAdditions: choices.wizardSpellbookAdditions } : {}),
+        ...(choices.classPreparedSpellChoices ? { classPreparedSpellChoices: choices.classPreparedSpellChoices } : {}),
         ...(choices.hitPointMode ? { hitPointMode: choices.hitPointMode } : {})
       }, { signal: request.controller.signal, idempotencyKey });
       if (!workspaceBoundRequestIsCurrent(request)) throw new Error("The selected campaign changed while advancement was being reviewed.");
@@ -8025,7 +8066,7 @@ export function App() {
     setEncounterBuilderOpen(true);
   }
 
-  async function createEncounterThreatTokens(threats: EncounterBuilderThreatSelection[], signal: AbortSignal, _placementAttemptId: string): Promise<Token[]> {
+  async function createEncounterThreatTokens(encounterId: string, threats: EncounterBuilderThreatSelection[], signal: AbortSignal, _placementAttemptId: string): Promise<Token[]> {
     if (!selectedScene) {
       setStatus("Select a scene before placing encounter monsters");
       return [];
@@ -8033,12 +8074,12 @@ export function App() {
     const targetScene = selectedScene;
     const systemId = encounterBuilderSystem?.id ?? "dnd-5e-srd";
     const placements = encounterMonsterPlacementDrafts(threats, targetScene);
-    const scope = `encounter-monster-placement:${targetScene.campaignId}:${targetScene.id}`;
-    const attempt = beginAppendMutation(scope, { sceneId: targetScene.id, systemId, placements });
+    const scope = `encounter-monster-placement:${targetScene.campaignId}:${targetScene.id}:${encounterId}`;
+    const attempt = beginAppendMutation(scope, { sceneId: targetScene.id, encounterId, systemId, placements });
     const priorRequestAttempt = encounterMonsterPlacementAttemptsRef.current.get(scope);
     const requestAttempt = priorRequestAttempt?.idempotencyKey === attempt.idempotencyKey
       ? priorRequestAttempt
-      : { idempotencyKey: attempt.idempotencyKey, input: { systemId, expectedUpdatedAt: targetScene.updatedAt, placements } };
+      : { idempotencyKey: attempt.idempotencyKey, input: { encounterId, systemId, expectedUpdatedAt: targetScene.updatedAt, placements } };
     if (requestAttempt !== priorRequestAttempt) encounterMonsterPlacementAttemptsRef.current.set(scope, requestAttempt);
     let placedTokens: Token[] = [];
     await runWorkspaceBoundAction(
@@ -8073,6 +8114,14 @@ export function App() {
         const createdTokens = result.placements.map((placement) => placement.sceneToken);
         placedTokens = createdTokens;
         applySceneToSnapshot(result.scene);
+        applyEncounterToSnapshot(result.encounter);
+        const linkedSession = result.campaignSession;
+        if (linkedSession) {
+          setSnapshot((current) => ({
+            ...current,
+            campaignSessions: (current.campaignSessions ?? []).map((session) => session.id === linkedSession.id ? linkedSession : session)
+          }));
+        }
         for (const placement of result.placements) applyActorToSnapshot(placement.actor);
         applyTokensToSnapshot(createdTokens);
         pushBoardHistoryAction({ kind: "tokens.create", tokens: createdTokens });
@@ -8088,11 +8137,11 @@ export function App() {
     return placedTokens;
   }
 
-  async function spawnEncounterThreatTokens(threats: EncounterBuilderThreatSelection[], signal: AbortSignal, attemptId: string) {
-    await createEncounterThreatTokens(threats, signal, attemptId);
+  async function spawnEncounterThreatTokens(encounterId: string, threats: EncounterBuilderThreatSelection[], signal: AbortSignal, attemptId: string) {
+    await createEncounterThreatTokens(encounterId, threats, signal, attemptId);
   }
 
-  async function launchEncounterThreatTokens(threats: EncounterBuilderThreatSelection[], partyActorIds: string[], signal: AbortSignal, attemptId: string) {
+  async function launchEncounterThreatTokens(encounterId: string, threats: EncounterBuilderThreatSelection[], partyActorIds: string[], signal: AbortSignal, attemptId: string) {
     if (activeCombat) throw new Error("End the active combat before launching another encounter.");
     if (!selectedScene) throw new Error("Select a scene before launching an encounter.");
     const partyTokens = partyActorIds.map((actorId) => selectedSceneTokens.find((token) => token.actorId === actorId && tokenLayer(token) !== "map"));
@@ -8101,7 +8150,7 @@ export function App() {
       const missingNames = missingPartyActorIds.map((actorId) => snapshot.actors.find((actor) => actor.id === actorId)?.name ?? actorId);
       throw new Error(`Place selected party tokens before combat review: ${missingNames.join(", ")}.`);
     }
-    const placedTokens = await createEncounterThreatTokens(threats, signal, attemptId);
+    const placedTokens = await createEncounterThreatTokens(encounterId, threats, signal, attemptId);
     if (placedTokens.length === 0) throw new Error("No encounter combatants were placed.");
     const tokenIds = [...new Set([...partyTokens.flatMap((token) => token ? [token.id] : []), ...placedTokens.map((token) => token.id)])];
     selectCanvasTokens(tokenIds);
@@ -8183,37 +8232,19 @@ export function App() {
   }
 
   async function retryAdminAiToolCall(toolCallId: string, toolName: string) {
-    await runWorkspaceAdminAction(
-      (request) => apiPost<{ matched: number; retried: number; skipped: number; completed: number; failed: number }>("/api/v1/admin/ai/tool-calls/retry", {
-        toolCallId,
-        dryRun: false
-      }, { signal: request.controller.signal }),
-      (result) => `Retried ${result.retried} ${toolName} call; ${result.completed} completed, ${result.failed} failed, ${result.skipped} skipped`
-    );
+    await runWorkspaceAdminAction((request) => requestRetryAdminAiToolCall(toolCallId, request.controller.signal), (result) => `Retried ${result.retried} ${toolName} call; ${result.completed} completed, ${result.failed} failed, ${result.skipped} skipped`);
   }
 
   async function failStaleAiThreads() {
-    await runWorkspaceAdminAction(
-      (request) => apiPost<{ matched: number; updated: number }>("/api/v1/admin/ai/threads/stale/fail", { dryRun: false }, { signal: request.controller.signal }),
-      (result) => `Marked ${result.updated} of ${result.matched} stale AI threads failed`
-    );
+    await runWorkspaceAdminAction((request) => failStaleAdminAiThreads(request.controller.signal), (result) => `Marked ${result.updated} of ${result.matched} stale AI threads failed`);
   }
 
   async function failStaleAiToolCalls() {
-    await runWorkspaceAdminAction(
-      (request) => apiPost<{ matched: number; updated: number }>("/api/v1/admin/ai/tool-calls/stale/fail", { dryRun: false }, { signal: request.controller.signal }),
-      (result) => `Marked ${result.updated} of ${result.matched} stale AI tool calls failed`
-    );
+    await runWorkspaceAdminAction((request) => failStaleAdminAiToolCalls(request.controller.signal), (result) => `Marked ${result.updated} of ${result.matched} stale AI tool calls failed`);
   }
 
   async function rejectStaleAiProposals(includeApproved = false) {
-    await runWorkspaceAdminAction(
-      (request) => apiPost<{ matched: number; updated: number }>("/api/v1/admin/ai/proposals/stale/reject", {
-        dryRun: false,
-        includeApproved
-      }, { signal: request.controller.signal }),
-      (result) => `Rejected ${result.updated} of ${result.matched} stale ${includeApproved ? "approved" : "pending"} AI proposals`
-    );
+    await runWorkspaceAdminAction((request) => rejectStaleAdminAiProposals(includeApproved, request.controller.signal), (result) => `Rejected ${result.updated} of ${result.matched} stale ${includeApproved ? "approved" : "pending"} AI proposals`);
   }
 
   async function cleanupStoredAssetBytes() {
@@ -8399,7 +8430,9 @@ export function App() {
     setContentImportStatus(`Analyzing ${file.name || "PDF"} with Codex PDF import`);
     const scope = `content-import:pdf:${campaignId}`;
     const attempt = beginAppendMutation(scope, { name: file.name, type: file.type, size: file.size, lastModified: file.lastModified });
-    const batch = await apiAnalyzePdfContentImport({ campaignId, file }, { idempotencyKey: attempt.idempotencyKey });
+    const expectedUpdatedAt = snapshotRef.current.campaigns.find((candidate) => candidate.id === campaignId)?.updatedAt;
+    if (!expectedUpdatedAt) throw new Error("Reload the campaign before analyzing a PDF.");
+    const batch = await apiAnalyzePdfContentImport({ campaignId, file, expectedUpdatedAt }, { idempotencyKey: attempt.idempotencyKey });
     completeAppendMutation(scope, attempt);
     setContentImportStatus(`Previewed ${batch.entities.length} PDF ${batch.entities.length === 1 ? "record" : "records"}`);
     setStatus("PDF content import previewed");
@@ -8424,9 +8457,9 @@ export function App() {
     await apiPost<ContentImportBatch>(`/api/v1/content-imports/${batch.id}/rollback`, payload, {
       idempotencyKey: sharedMutationIdempotencyKey(`content-import:rollback:${batch.id}`, latest.updatedAt, payload)
     });
+    await refresh(campaignId, sceneId, { syncStatus: false });
     setContentImportStatus(`Rolled back ${batch.source.sourceName}`);
     setStatus("Content import rolled back");
-    await refresh(campaignId, sceneId);
   }
 
   async function deleteContentImport(batch: ContentImportBatch) {
@@ -8671,7 +8704,7 @@ export function App() {
           <div className="auth-actions">
             <div className="auth-actions-heading">Explore without setup</div>
             {import.meta.env.DEV && (
-              <button className="ghost-button wide" type="button" aria-label={["Demo", "GM"].join(" ")} onClick={() => startDemoGmSession().catch((error) => setAuthStatus(error instanceof Error ? error.message : String(error)))}>
+              <button className="ghost-button wide" type="button" aria-label={["Demo", "GM"].join(" ")} hidden={authStatus === seededDemoUnavailableMessage} onClick={() => startDemoGmSession().catch((error) => setAuthStatus(seededDemoLoginErrorMessage(error)))}>
                 <Users size={16} /> Seeded Demo
               </button>
             )}
@@ -8731,7 +8764,7 @@ export function App() {
   const manageCategories = [
     { id: "account", label: "Account", description: "Profile, preferences, security, and character transfers", icon: <UserCog size={16} />, badge: characterTransferPendingCount > 0 ? `${formatNumber(characterTransferPendingCount)} transfer` : snapshot.organizations.length > 0 ? formatNumber(snapshot.organizations.length) : undefined },
     { id: "campaign", label: "Campaign", description: "Create, edit, archive, and permissions", icon: <Shield size={16} />, visible: canManageCampaignSettings, badge: selectedCampaign?.archivedAt ? "archived" : "active" },
-    { id: "people", label: "People", description: "Invites and table joining", icon: <UserPlus size={16} />, visible: canManagePeople, badge: formatNumber(snapshot.organizationInvites.filter((invite) => invite.status === "pending").length) },
+    { id: "people", label: "People", description: "Members, invites, and table joining", icon: <UserPlus size={16} />, visible: canManagePeople, badge: formatNumber(campaignPeopleCount(snapshot.members)) },
     { id: "scenes", label: "Scenes", description: "Scene creation, ordering, maps, and activation", icon: <MapPin size={16} />, visible: canManageScenes, badge: formatNumber(accessibleScenes.length) },
     { id: "archives", label: "Archives", description: "Portable exports, imports, and recovery", icon: <Download size={16} />, visible: canManageArchives, badge: archiveImportReport ? "ready" : undefined },
     { id: "serverAdmin", label: "Server Admin", description: "Operational admin tools", icon: <UserCog size={16} />, visible: Boolean(snapshot.session?.serverAdmin), badge: adminSnapshot ? "synced" : undefined }
@@ -8745,6 +8778,7 @@ export function App() {
   const workspaceModeOptions = [
     { id: "live", label: "Live Table", icon: <Eye size={15} /> },
     ...(canUsePrepWorkspace ? [{ id: "prep" as const, label: "Prep", icon: <MapPin size={15} /> }] : []),
+    ...(canUseAiStudioWorkspace ? [{ id: "ai" as const, label: "AI Studio", icon: <Bot size={15} /> }] : []),
     { id: "manage", label: accountOnlyManageMode ? "Account" : "Manage", icon: accountOnlyManageMode ? <UserCog size={15} /> : <Boxes size={15} /> }
   ] satisfies Array<{ id: WorkspaceMode; label: string; icon: React.ReactNode }>;
   const sceneEditorNavigationBlocked = () => {
@@ -8867,19 +8901,12 @@ export function App() {
     for (const scene of accessibleScenes) {
       commands.push({ id: `scene:${scene.id}`, label: `Open scene: ${scene.name}`, section: "Scenes", hint: scene.folder || undefined, keywords: "map board jump" });
     }
-    for (const actor of snapshot.actors.slice(0, 24)) {
-      commands.push({ id: `actor:${actor.id}`, label: `Select actor: ${actor.name}`, section: "Actors", keywords: "character npc token sheet select focus" });
-    }
-    if (canUsePrepWorkspace) {
-      for (const journal of snapshot.journals.slice(0, 16)) {
-        commands.push({ id: `journal:${journal.id}`, label: `Open journal: ${journal.title}`, section: "Journal", hint: journal.tags[0], keywords: "note entry log lore" });
-      }
-    }
+    commands.push(...campaignRecordPaletteCommands({ actors: snapshot.actors, journals: snapshot.journals, includeJournals: canUsePrepWorkspace }));
     for (const campaign of snapshot.campaigns) {
       if (campaign.id !== campaignId) commands.push({ id: `campaign:${campaign.id}`, label: `Switch campaign: ${campaign.name}`, section: "Campaigns", keywords: "game world table" });
     }
     if (hasPermission("dice.roll")) {
-      const formulas = [...new Set([...snapshot.diceMacros.map((macro) => macro.formula), ...savedDiceFormulas])].slice(0, 8);
+      const formulas = [...new Set([...snapshot.diceMacros.map((macro) => macro.formula), ...savedDiceFormulas])];
       for (const formula of formulas) {
         commands.push({ id: `roll:${formula}`, label: `Roll ${formula}`, section: "Dice", keywords: "dice roll" });
       }
@@ -8895,7 +8922,10 @@ export function App() {
       return;
     }
     if (commandId.startsWith("scene:")) {
-      if (selectScene(commandId.slice("scene:".length)) && workspaceMode === "manage") selectWorkspaceMode("live");
+      const destination = sceneSelectionDestination(workspaceMode, canManageScenes);
+      if (!selectScene(commandId.slice("scene:".length))) return;
+      if (destination.manageCategory) setManageCategory(destination.manageCategory);
+      if (destination.workspaceMode !== workspaceMode) selectWorkspaceMode(destination.workspaceMode);
       return;
     }
     if (commandId.startsWith("campaign:")) {
@@ -8956,7 +8986,7 @@ export function App() {
   const campaignSystemName = snapshot.systems.find((system) => system.id === selectedCampaign?.defaultSystemId)?.name ?? selectedCampaign?.defaultSystemId ?? "No system";
   const workspaceEyebrow = workspaceMode === "ai" ? "AI Studio" : workspaceMode === "prep" ? "Prep" : workspaceMode === "manage" ? manageWorkspaceEyebrow : campaignSystemName;
   const workspaceHeading = workspaceMode === "manage" ? manageWorkspaceHeading : (selectedCampaign?.name ?? "Create a campaign");
-  const showSceneTabs = workspaceMode !== "manage" || activeManageCategory === "scenes";
+  const showSceneTabs = workspaceMode !== "manage";
   const showScenePrepControls = workspaceMode === "prep";
   const showSceneSelectionControls = workspaceMode === "prep" || (workspaceMode === "manage" && activeManageCategory === "scenes");
   const canSelectPrepScenes = showSceneSelectionControls && hasPermission("scene.update");
@@ -9343,7 +9373,7 @@ export function App() {
           </form>
           <div className="status">{accountStatus}</div>
         </section>
-        {selectedCampaign && !canManageCampaignSettings && <FirstSessionSetupChecklist actors={snapshot.actors} currentUserId={currentUserId} canManage={false} canCreateCharacter={hasPermission("actor.create")} memberCount={snapshot.members.length} pendingInviteCount={0} scenes={snapshot.scenes} tokenCount={snapshot.tokens.length} encounterCount={snapshot.encounters.length} onOpen={openFirstSessionSetupStep} />}
+        {selectedCampaign && !canManageCampaignSettings && <FirstSessionSetupChecklist actors={snapshot.actors} currentUserId={currentUserId} canManage={false} canCreateCharacter={hasPermission("actor.create")} memberCount={snapshot.members.length} pendingInviteCount={0} scenes={snapshot.scenes} tokens={snapshot.tokens} encounterCount={snapshot.encounters.length} onOpen={openFirstSessionSetupStep} />}
               </div>
             )}
             {activeManageCategory === "campaign" && (
@@ -9352,7 +9382,7 @@ export function App() {
           <summary><Plus size={15} /> New campaign</summary>
           <CampaignSetupSteps draft={currentCampaignSetupDraft()} systems={snapshot.systems} busy={isCreatingCampaignSetup} recoveryPending={campaignSetupRecoveryPending} draftNotice={campaignSetupDraftNotice} submitButtonRef={campaignSetupSubmitRef} onChange={updateCampaignSetupDraft} onSubmit={() => createCampaignFromSetup().catch((error) => setStatus(errorMessage(error)))} onCancel={cancelCampaignSetup} onKeep={() => keepCampaignSetupAsIs().catch((error) => setStatus(errorMessage(error)))} onDiscardDraft={discardCampaignSetupDraft} />
         </details>
-        {selectedCampaign && <FirstSessionSetupChecklist actors={snapshot.actors} currentUserId={currentUserId} canManage canCreateCharacter={hasPermission("actor.create")} memberCount={snapshot.members.length} pendingInviteCount={snapshot.organizationInvites.filter((invite) => invite.campaign.id === selectedCampaign.id && invite.status === "pending").length} scenes={snapshot.scenes} tokenCount={snapshot.tokens.length} encounterCount={snapshot.encounters.length} onOpen={openFirstSessionSetupStep} />}
+        {selectedCampaign && <FirstSessionSetupChecklist actors={snapshot.actors} currentUserId={currentUserId} canManage canCreateCharacter={hasPermission("actor.create")} memberCount={snapshot.members.length} pendingInviteCount={snapshot.organizationInvites.filter((invite) => invite.campaign.id === selectedCampaign.id && invite.status === "pending").length} scenes={snapshot.scenes} tokens={snapshot.tokens} encounterCount={snapshot.encounters.length} onOpen={openFirstSessionSetupStep} />}
         {selectedCampaign && hasPermission("campaign.update") && (
           <form
             className="account-box"
@@ -9496,21 +9526,7 @@ export function App() {
               </div>
             )}
             {inviteToken && <input aria-label="Invite token" readOnly value={inviteToken} onFocus={(event) => event.currentTarget.select()} />}
-            <div className="asset-pressure-list" aria-label="Organization invite roster">
-              {snapshot.organizationInvites.length === 0 ? (
-                <p className="account-summary">No organization invites.</p>
-              ) : (
-                snapshot.organizationInvites.slice(0, 8).map((invite) => (
-                  <div className="operator-row tool-call-row" key={invite.id}>
-                    <span>{invite.email ?? "Open invite"} - {invite.role} - {invite.campaign.name}</span>
-                    <strong>{invite.status}</strong>
-                    <button className="icon-button" type="button" title="Revoke invite" aria-label="Revoke invite" disabled={invite.status !== "pending"} onClick={() => revokeOrganizationInvite(invite.id).catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
-                      <X size={14} />
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
+            <OrganizationInviteRoster invites={snapshot.organizationInvites} onRevoke={(invite) => { void revokeOrganizationInvite(invite.id).catch((error) => setStatus(error instanceof Error ? error.message : String(error))); }} />
           </form>
         )}
         {selectedCampaign && (
@@ -9573,6 +9589,7 @@ export function App() {
           <input aria-label="Scene search" value={sceneSearch} placeholder="Search scenes" onChange={(event) => setSceneSearch(event.target.value)} />
           <span role="status" aria-label="Scene filter summary">{formatNumber(visibleScenes.length)} of {formatNumber(accessibleScenes.length)} scenes</span>
           <span role="status" aria-label="Scene selection summary">{formatNumber(selectedPrepScenes.length)} selected</span>
+          {workspaceMode === "manage" && <SceneManagerTabs assets={snapshot.assets} canSelectScenes={canSelectPrepScenes} scenes={visibleScenes} selectedSceneId={sceneId} selectedSceneIds={selectedPrepSceneIds} onSelectScene={selectScene} onToggleSceneSelection={togglePrepSceneSelection} />}
           {(hasPermission("scene.update") || hasPermission("scene.create")) && (
             <div className="button-row">
               {hasPermission("scene.update") && <input aria-label="Bulk scene folder" value={bulkSceneFolder} placeholder="Move visible to folder" onChange={(event) => setBulkSceneFolder(event.target.value)} />}
@@ -9662,6 +9679,7 @@ export function App() {
         {selectedScene && hasPermission("scene.update") && (
           <form
             className="account-box"
+            aria-label={`Edit scene ${selectedScene.name}`}
             onSubmit={(event) => {
               event.preventDefault();
               saveSceneSettings(event.currentTarget).catch((error) => setStatus(error instanceof Error ? error.message : String(error)));
@@ -9879,20 +9897,25 @@ export function App() {
             onStatus={setStatus}
           />
         )}
-        <button className="ghost-button" onClick={() => document.getElementById("map-upload-file")?.click()} disabled={!hasPermission("scene.create") || !hasPermission("scene.update")} title={hasPermission("scene.create") && hasPermission("scene.update") ? "Upload map" : "Requires scene.create and scene.update"}>
-          <Upload size={16} /> Map
+        <button className="ghost-button" type="button" aria-label={selectedScene ? `Upload map to ${selectedScene.name} and calibrate` : "Upload map and calibrate"} onClick={() => document.getElementById("map-upload-file")?.click()} disabled={!selectedScene || !hasPermission("scene.create") || !hasPermission("scene.update")} title={!selectedScene ? "Select a scene before uploading a map" : hasPermission("scene.create") && hasPermission("scene.update") ? `Upload a map to ${selectedScene.name}, set it as the background, and calibrate its grid` : "Requires scene.create and scene.update"}>
+          <Upload size={16} /> {selectedScene ? `Upload map to ${selectedScene.name} & calibrate` : "Upload map & calibrate"}
         </button>
         <input
+          key={`map-upload-file:${selectedScene?.id ?? "none"}`}
           id="map-upload-file"
           type="file"
+          aria-label={selectedScene ? `Choose map file for ${selectedScene.name}` : "Choose map file for selected scene"}
+          data-scene-id={selectedScene?.id}
+          disabled={!selectedScene || !hasPermission("scene.create") || !hasPermission("scene.update")}
           accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
           hidden
-          onChange={async (event) => {
+          onChange={(event) => {
             const input = event.currentTarget;
             const file = input.files?.[0];
             if (!file) return;
-            await uploadMap(file);
-            input.value = "";
+            void uploadMap(file)
+              .catch((error) => setStatus(`Map upload failed: ${errorMessage(error)}`))
+              .finally(() => { input.value = ""; });
           }}
         />
               </div>
@@ -9939,7 +9962,7 @@ export function App() {
           <div className="asset-pressure-list" aria-label="Archive compatibility notes">
             <div className="operator-row tool-call-row">
               <span>Scope</span>
-              <strong>{formatNumber(archiveExportRecordCount)} records</strong>
+              <strong>{archiveExportRecordCount === undefined ? "Select a world to estimate" : `At least ${formatNumber(archiveExportRecordCount)} records`}</strong>
             </div>
             {archiveCompatibilityNotes.map((note) => (
               <div className="operator-row tool-call-row" key={note}>
@@ -10145,8 +10168,9 @@ export function App() {
                   <Swords size={14} /> Encounters
                 </button>
               )}
+              <ScenePartyPlacementControl scene={selectedScene} partyActors={partyActors} tokens={snapshot.tokens} canCreateToken={hasPermission("token.create")} busy={campaignAction.operation?.kind === "pending"} onPlaceMissingParty={(placementAttemptId) => { if (!selectedScene) return; const current = snapshotRef.current; const targetScene = current.scenes.find((scene) => scene.id === selectedScene.id) ?? selectedScene; void campaignAction.runAction(`Place missing party on ${targetScene.name}`, () => runWorkspaceBoundAction((request) => placeMissingPartyTokens({ scene: targetScene, partyActors: current.actors.filter((actor) => !isAdversaryActor(actor, current.tokens)), tokens: current.tokens, placementAttemptId, createToken: (options) => createToken(options, request) }), ({ placed, sceneName }) => setStatus(placed === 0 ? `Every party actor already has a token on ${sceneName}` : `Placed ${placed} missing party ${placed === 1 ? "token" : "tokens"} on ${sceneName}`))); }} />
               {selectedScene && selectedScene.gridType !== "gridless" && hasPermission("scene.update") && (
-                <button className={gridCalibrationOpen ? "ghost-button active" : "ghost-button"} type="button" aria-expanded={gridCalibrationOpen} onClick={() => { setGridCalibrationOpen((open) => !open); setGridCalibrationPoints([]); }}>
+                <button className={gridCalibrationOpen ? "ghost-button active" : "ghost-button"} type="button" aria-expanded={gridCalibrationOpen} onClick={() => { const next = !gridCalibrationOpen; setGridCalibrationOpen(next); setGridCalibrationPoints([]); if (next) { setFogBrushMode(null); setAnnotationTool(null); setAnnotationPanelOpen(false); } }}>
                   <Crosshair size={14} /> Calibrate grid
                 </button>
               )}
@@ -10268,7 +10292,7 @@ export function App() {
             sceneName={activeScene?.name}
             canComplete={hasPermission("campaign.update")}
             onOpen={() => { setWorkspaceMode("prep"); setTab("sessions"); }}
-            onComplete={() => { void completeLiveCampaignSession(liveCampaignSession).catch((error) => setStatus(`Session completion failed: ${errorMessage(error)}`)); }}
+            onComplete={() => completeLiveCampaignSession(liveCampaignSession).catch((error) => setStatus(`Session completion failed: ${errorMessage(error)}`))}
           />
         )}
 
@@ -10277,7 +10301,7 @@ export function App() {
           <section className={`table-area ${canvasAssetDragging ? "canvas-asset-dragging" : ""}`}>
             <Toolbar key={`${workspaceMode}-${tab}`} onSelectTool={selectCanvasTool} onCreateToken={async () => { await createToken(); }} onStartCombat={openCombatSetup} onRevealFog={revealFog} onHideFog={hideFog} onRevealFogPolygon={revealFogPolygon} onToggleFogBrush={toggleFogBrush} onToggleAnnotationTool={toggleAnnotationTool} onDeleteLatestAnnotation={deleteLatestAnnotation} onUndoScene={undoSceneEdit} onUndoFog={undoFog} onShowFogHistory={showFogHistory} onSampleVisionPoint={sampleVisionPoint} onSaveFogPreset={saveFogPreset} onApplyFogPreset={applyFogPreset} onDeleteFogPreset={deleteFogPreset} onCyclePlayerVisionPreview={cyclePlayerVisionPreview} onAddWall={addWall} onAddTerrainWall={addTerrainWall} onAddDoor={addDoor} onAddWindow={addWindow} onAddLight={addLight} onAddDarkness={addDarkness} onActionError={(error) => setStatus(error instanceof Error ? error.message : String(error))} canCreateToken={hasPermission("token.create")} canManageCombat={hasPermission("combat.manage")} canRevealFog={hasPermission("token.reveal")} canPreviewPlayerVision={hasPermission("scene.update") && snapshot.members.some((member) => member.role === "player" && member.active !== false && member.user.id !== currentUserId)} playerVisionPreviewLabel={playerVisionPreviewMember?.user.displayName} activeFogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} activeAnnotationTool={annotationTool} hasFogPresets={snapshot.fogPresets.length > 0} canUpdateScene={hasPermission("scene.update")} canAnnotate={hasPermission("scene.read")} />
             <div className="map-play-surface">
-              {selectedScene ? <SceneCanvas scene={selectedScene} zoom={battleMapZoom} backgroundAsset={selectedMapAsset} selectedAssetId={selectedBoardAssetId} assets={snapshot.assets} tokens={snapshot.tokens} actors={snapshot.actors} boardCurrentUserId={currentUserId} canSeeAllVitals={hasPermission("combat.manage")} currentTurnTokenIds={currentTurnTokenIds} nextTurnTokenIds={nextTurnTokenIds} vision={snapshot.vision} visionPreviewLabel={playerVisionPreviewMember?.user.displayName} selectedTokenId={selectedTokenId} selectedTokenIds={selectedTokenIds} activeTokenLayer={activeTokenLayer} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} calibrationPoints={gridCalibrationOpen && selectedScene.gridType !== "gridless" ? gridCalibrationPoints : undefined} onCalibrationPoint={gridCalibrationOpen && selectedScene.gridType !== "gridless" ? (point) => setGridCalibrationPoints((current) => appendGridCalibrationPoint(current, point)) : undefined} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canUpdateAnnotations={hasPermission("scene.update")} canResizeToken={hasPermission("token.update")} canUpdateTokenLayer={hasPermission("token.update")} onSelect={selectCanvasToken} onSelectMany={selectCanvasTokens} onSelectBackgroundAsset={selectBoardBackgroundAsset} onClearSelection={clearTokenSelection} onMoved={async () => undefined} onTokenMovePersist={persistSceneCanvasTokenMove} onTokenResizePersist={persistSceneCanvasTokenResize} onTokenMoveCommit={recordTokenMoveAction} onTokenResizeCommit={recordTokenResizeAction} onTokenLayerCycle={cycleTokenLayer} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} onTogglePortal={toggleScenePortal} selectedOverlay={selectedOverlay} onSelectOverlay={setSelectedOverlay} onZoomBy={zoomBattleMap} /> : (
+              {selectedScene ? <SceneCanvas scene={selectedScene} zoom={battleMapZoom} backgroundAsset={selectedMapAsset} selectedAssetId={selectedBoardAssetId} assets={snapshot.assets} tokens={snapshot.tokens} actors={snapshot.actors} boardCurrentUserId={currentUserId} canSeeAllVitals={hasPermission("combat.manage")} currentTurnTokenIds={currentTurnTokenIds} nextTurnTokenIds={nextTurnTokenIds} vision={snapshot.vision} visionPreviewLabel={playerVisionPreviewMember?.user.displayName} selectedTokenId={selectedTokenId} selectedTokenIds={selectedTokenIds} activeTokenLayer={activeTokenLayer} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} calibrationPoints={gridCalibrationOpen && selectedScene.gridType !== "gridless" ? gridCalibrationPoints : undefined} onCalibrationPoint={gridCalibrationOpen && selectedScene.gridType !== "gridless" ? (point) => setGridCalibrationPoints((current) => appendGridCalibrationPoint(current, point)) : undefined} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canMoveToken={hasPermission("token.move")} canUpdateAnnotations={hasPermission("scene.update")} canResizeToken={hasPermission("token.update")} canUpdateTokenLayer={hasPermission("token.update")} onSelect={selectCanvasToken} onSelectMany={selectCanvasTokens} onSelectBackgroundAsset={selectBoardBackgroundAsset} onClearSelection={clearTokenSelection} onMoved={async () => undefined} onTokenMovePersist={persistSceneCanvasTokenMove} onTokenResizePersist={persistSceneCanvasTokenResize} onTokenMoveCommit={recordTokenMoveAction} onTokenResizeCommit={recordTokenResizeAction} onTokenLayerCycle={cycleTokenLayer} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} onTogglePortal={toggleScenePortal} selectedOverlay={selectedOverlay} onSelectOverlay={setSelectedOverlay} onZoomBy={zoomBattleMap} /> : (
                 <div className="empty-state empty-state-action">
                   <span>Create a scene to open the tabletop.</span>
                   {hasPermission("scene.create") && (
@@ -10587,7 +10611,7 @@ export function App() {
             </div>
             <div className="inspector-panel-content" role="tabpanel" id={`inspector-panel-${tab}`} aria-labelledby={`inspector-tab-${tab}`}>
             <DeferredPanel label={`${tab} panel`}>
-            {tab === "actors" && <ActorPanel campaignId={campaignId} actor={selectedActor} token={selectedToken} systemLabel={snapshot.systems.find((system) => system.id === selectedActor?.systemId)?.name ?? selectedActor?.systemId} scene={selectedScene} currentUserId={currentUserId} actors={snapshot.actors} tokens={snapshot.tokens} combat={activeCombat} members={snapshot.members} assets={snapshot.assets} items={snapshot.items} focusItemId={campaignSearchFocus?.type === "item" ? campaignSearchFocus.target.id : undefined} compendiumEntries={compendiumEntries} compendiumSearch={compendiumSearch} setCompendiumSearch={setCompendiumSearch} compendiumStatus={compendiumStatus} actionTargetActorId={actorActionTargetId} setActionTargetActorId={setActorActionTargetId} actionApplyEffect={actorActionApplyEffect} setActionApplyEffect={setActorActionApplyEffect} actionConsumeResources={actorActionConsumeResources} setActionConsumeResources={setActorActionConsumeResources} updateActorHp={updateActorHp} adjustActorHp={adjustActorHp} awardActorXp={awardActorXp} xpProgress={xpProgress} advancementReady={Boolean(canUpdateSelectedActor && ((xpProgress?.readyToLevel && advancementOptions.length > 0) || advancementLoadError))} onLevelUp={() => setAdvancementModalOpen(true)} onPreviewRestActor={previewSelectedActorRest} onRestActor={restSelectedActor} onTypedDamageApplied={applyTypedDamageResult} updateActorData={updateActorData} toggleActorCondition={toggleActorCondition} updateItemData={updateItemData} changeActorAttunement={changeActorAttunement} assignItemToActor={assignItemToActor} onSpellPreparationApplied={(result) => { const returnedItems = new Map(result.items.map((item) => [item.id, item])); setSnapshot((current) => ({ ...current, actors: current.actors.map((actor) => actor.id === result.actor.id ? result.actor : actor), items: current.items.map((item) => returnedItems.get(item.id) ?? item) })); }} updateToken={updateSelectedToken} onUploadTokenImage={uploadSelectedTokenImage} targetToken={setTokenTarget} targetTokens={setTokenTargets} deleteToken={deleteSelectedToken} updateTokenVision={updateSelectedTokenVision} useActorAction={useActorAction} onImportCompendiumEntry={importCompendiumEntry} onPurchaseCompendiumEntry={purchaseCompendiumEntry} onPlaceActor={placeActorOnSelectedScene} canCreateToken={hasPermission("token.create")} canUpdateActor={canUpdateSelectedActor} canAwardActorXp={hasPermission("actor.update")} canRestActor={canUpdateSelectedActor} canUpdateToken={hasPermission("token.update")} canDeleteToken={hasPermission("token.delete")} canUseAction={canUpdateSelectedActor && hasPermission("dice.roll")} />}
+            {tab === "actors" && <ActorPanel key={`actor-panel:${campaignId}:${selectedActor?.id ?? "none"}:${selectedScene?.id ?? "none"}:${activeCombat?.id ?? "none"}`} campaignId={campaignId} actor={selectedActor} token={selectedToken} systemLabel={snapshot.systems.find((system) => system.id === selectedActor?.systemId)?.name ?? selectedActor?.systemId} scene={selectedScene} currentUserId={currentUserId} actors={snapshot.actors} tokens={snapshot.tokens} combat={activeCombat} members={snapshot.members} assets={snapshot.assets} items={snapshot.items} focusItemId={campaignSearchFocus?.type === "item" ? campaignSearchFocus.target.id : undefined} compendiumEntries={compendiumEntries} compendiumSearch={compendiumSearch} setCompendiumSearch={setCompendiumSearch} compendiumStatus={compendiumStatus} updateActorHp={updateActorHp} adjustActorHp={adjustActorHp} awardActorXp={awardActorXp} xpProgress={xpProgress} advancementReady={Boolean(canUpdateSelectedActor && ((xpProgress?.readyToLevel && advancementOptions.length > 0) || advancementLoadError))} onLevelUp={() => setAdvancementModalOpen(true)} onPreviewRestActor={previewSelectedActorRest} onRestActor={restSelectedActor} onTypedDamageApplied={applyTypedDamageResult} updateActorData={updateActorData} toggleActorCondition={toggleActorCondition} updateItemData={updateItemData} changeActorAttunement={changeActorAttunement} assignItemToActor={assignItemToActor} onSpellPreparationApplied={(result) => { const returnedItems = new Map(result.items.map((item) => [item.id, item])); setSnapshot((current) => ({ ...current, actors: current.actors.map((actor) => actor.id === result.actor.id ? result.actor : actor), items: current.items.map((item) => returnedItems.get(item.id) ?? item) })); }} updateToken={updateSelectedToken} onUploadTokenImage={uploadSelectedTokenImage} targetToken={setTokenTarget} targetTokens={setTokenTargets} deleteToken={deleteSelectedToken} deleteActor={deleteActor} updateTokenVision={updateSelectedTokenVision} useActorAction={useActorAction} onImportCompendiumEntry={importCompendiumEntry} onPurchaseCompendiumEntry={purchaseCompendiumEntry} onPlaceActor={placeActorOnSelectedScene} canCreateToken={hasPermission("token.create")} canUpdateActor={canUpdateSelectedActor} canAwardActorXp={hasPermission("actor.update")} canRestActor={canUpdateSelectedActor} canUpdateToken={hasPermission("token.update")} canDeleteToken={hasPermission("token.delete")} canDeleteActor={!blankCanvasDemoOpen && hasPermission("actor.delete")} canUseAction={canUpdateSelectedActor && hasPermission("dice.roll")} />}
             {tab === "compendium" && (
               <>
                 <LazyCompendiumPanel
@@ -10666,23 +10690,19 @@ export function App() {
                 )}
               </>
             )}
-            {tab === "sessions" && <SessionDeskPanel key={`sessions:${campaignId}:${currentUserId}`} campaignId={campaignId} sessions={campaignSessions} scenes={accessibleScenes} encounters={snapshot.encounters} canManage={hasPermission("campaign.update")} canStart={hasPermission("scene.activate")} onSessionsChange={(sessions) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) updateCampaignSessions(sessions); }} onSceneActivated={(nextSceneId) => { if (!workspaceRequestIsCurrent(campaignId, currentUserId)) return; setSceneId(nextSceneId); void refresh(campaignId, nextSceneId, { syncStatus: false }); }} onStatus={(message) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setStatus(message); }} />}
+            {tab === "sessions" && <SessionDeskPanel key={`sessions:${campaignId}:${currentUserId}`} campaignId={campaignId} sessions={campaignSessions} scenes={accessibleScenes} encounters={snapshot.encounters} canManage={hasPermission("campaign.update")} canStart={hasPermission("scene.activate")} canCreateReport={sessionReportAllowed(hasPermission)} onSessionsChange={(sessions) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) updateCampaignSessions(sessions); }} onSceneActivated={(nextSceneId) => { if (!workspaceRequestIsCurrent(campaignId, currentUserId)) return; realtimeSelectionRef.current = { ...realtimeSelectionRef.current, sceneId: nextSceneId }; invalidateInFlightRefreshes(); setSnapshot((current) => ({ ...current, scenes: applyActiveSceneIdentity(current.scenes, campaignId, nextSceneId) })); setSceneId(nextSceneId); void refresh(campaignId, nextSceneId, { syncStatus: false }); }} onJournalCreated={applyJournalToSnapshot} onStatus={(message) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setStatus(message); }} />}
             {tab === "worlds" && <WorldAtlasPanel key={`worlds:${campaignId}:${currentUserId}`} campaignId={campaignId} campaignUpdatedAt={selectedCampaign?.updatedAt ?? ""} worlds={worlds} worldRecords={snapshot.worldRecords} worldRelations={snapshot.worldRelations} scenes={accessibleScenes} selectedWorldId={selectedWorldId} canCreate={hasPermission("world.create")} canUpdateWorld={hasPermission("world.update")} canAssignScenes={hasPermission("scene.update")} canDelete={hasPermission("world.delete")} loadState={worldsLoadState} loadError={worldsLoadError} onRetryLoad={() => setLoreReloadVersion((version) => version + 1)} onWorldsChange={(nextWorlds) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setWorlds(nextWorlds); }} onWorldRecordsChange={(worldRecords) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setSnapshot((current) => ({ ...current, worldRecords })); }} onWorldRelationsChange={(worldRelations) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setSnapshot((current) => ({ ...current, worldRelations })); }} onSelectWorld={(worldId) => { setSelectedWorldId(worldId); const nextScene = accessibleScenes.find((scene) => worldFilterMatchesScene(scene, worldId)); setSceneId(nextScene?.id ?? ""); }} onSceneUpdated={applySceneToSnapshot} onRefreshSharedState={async () => { await refresh(campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false }); if (workspaceRequestIsCurrent(campaignId, currentUserId)) setLoreReloadVersion((version) => version + 1); }} onStatus={(message) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setStatus(message); }} />}
             {tab === "handouts" && <HandoutLibraryPanel key={`handouts:${campaignId}:${currentUserId}`} campaignId={campaignId} campaignUpdatedAt={selectedCampaign?.updatedAt ?? ""} currentUserId={currentUserId} handouts={handouts} worlds={worlds} members={snapshot.members} actors={partyActors} assets={snapshot.assets} canCreate={hasPermission("handout.create")} canUpdate={hasPermission("handout.update")} canDelete={hasPermission("handout.delete")} loadState={handoutsLoadState} loadError={handoutsLoadError} onRetryLoad={() => setLoreReloadVersion((version) => version + 1)} onHandoutsChange={(update) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setHandouts(update); }} onRefreshSharedState={async () => { await refresh(campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false }); if (workspaceRequestIsCurrent(campaignId, currentUserId)) setLoreReloadVersion((version) => version + 1); }} onStatus={(message) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setStatus(message); }} />}
             {tab === "journal" && (
               <JournalPanel
+                key={`journal:${campaignId}:${currentUserId}`}
+                campaignId={campaignId}
+                currentUserId={currentUserId}
                 journals={snapshot.journals}
                 members={snapshot.members}
                 actors={partyActors}
+                sessions={campaignSessions}
                 linkTargets={journalLinkTargets}
-                title={newJournalTitle}
-                setTitle={setNewJournalTitle}
-                body={newJournalBody}
-                setBody={setNewJournalBody}
-                visibility={newJournalVisibility}
-                setVisibility={setNewJournalVisibility}
-                tags={newJournalTags}
-                setTags={setNewJournalTags}
                 onCreate={createJournal}
                 onUpdate={updateJournal}
                 onDelete={deleteJournal}
@@ -10695,12 +10715,12 @@ export function App() {
                 canCanonReview={hasPermission("campaign.update")}
               />
             )}
-            {tab === "memory" && <LazyCampaignMemoryPanel key={`memory:${campaignId}:${currentUserId}`} campaignId={campaignId} facts={snapshot.memory as AiMemoryFact[]} canCreate={hasPermission("ai.proposeChanges")} canReview={hasPermission("ai.applyChanges")} onFactsChange={(memory) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setSnapshot((current) => ({ ...current, memory })); }} onExtract={extractMemory} onStatus={(message) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setStatus(message); }} />}
+            {tab === "memory" && <LazyCampaignMemoryPanel key={`memory:${campaignId}:${currentUserId}`} campaignId={campaignId} campaignUpdatedAt={selectedCampaign?.updatedAt ?? ""} facts={snapshot.memory as AiMemoryFact[]} canCreate={hasPermission("ai.proposeChanges")} canReview={hasPermission("ai.applyChanges")} onFactsChange={(memory) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setSnapshot((current) => ({ ...current, memory })); }} onExtract={extractMemory} onStatus={(message) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setStatus(message); }} />}
             {tab === "search" && <CampaignSearchPanel key={`search:${campaignId}:${currentUserId}`} campaignId={campaignId} worlds={worlds} revision={snapshot.eventSequence} storageKey={`otte:campaign-search:${campaignId}:${currentUserId}`} onOpenResult={openCampaignSearchResult} />}
             {tab === "chat" && <ChatRail campaignId={campaignId} currentUserId={currentUserId} command={chatBody} setCommand={setChatBody} replyTarget={chatReplyTarget} messages={snapshot.chat} rolls={snapshot.rolls} concealedRollIds={concealedRollIds} members={snapshot.members} presences={snapshot.presences} scenes={snapshot.scenes} diceFormula={diceFormula} setDiceFormula={setDiceFormula} diceVisibility={diceVisibility} setDiceVisibility={setDiceVisibility} savedDiceFormulas={savedDiceFormulas} diceMacros={snapshot.diceMacros} onRollDice={rollDice} onSaveDiceFormula={saveCurrentDiceFormula} onSubmitCommand={submitChatCommand} onReplyToMessage={(message) => setChatReplyToMessageId(message.id)} onEditMessage={editChatMessage} onDeleteMessage={deleteChatMessage} onModerateMessage={moderateChatMessage} onClearReply={() => setChatReplyToMessageId("")} canModerate={hasPermission("chat.moderate")} canRollDice={hasPermission("dice.roll")} dice3dEnabled={dice3dEnabled} onToggleDice3d={() => persistQuickPreferences({ dice3dEnabled: !dice3dEnabled }, dice3dEnabled ? "Use text-only dice" : "Enable 3D dice")} notificationPreference={resolvedUserPreferences(snapshot.session?.user ?? {}).chatNotifications} connectionState={realtimeUiState} />}
-            {tab === "combat" && <CombatPanel campaignId={campaignId} combat={activeCombat} recentCombats={recentEndedCombats} auditLogs={snapshot.combatAudit} actors={snapshot.actors} tokens={snapshot.tokens} onFocusCombatant={(combatant) => selectSingleToken(combatant.tokenId)} onStart={openCombatSetup} onPlanEncounter={planSystemEncounter} onNext={(combat) => advanceCombatTurn(combat, 1)} onPrevious={(combat) => advanceCombatTurn(combat, -1)} onEnd={endCombat} onAwardPartyXp={awardPartyXp} onAwardPartyGold={awardPartyGold} onRecordLoot={recordCombatLoot} canAwardRewards={hasPermission("combat.manage") && hasPermission("actor.update")} onUpdateCombatant={updateCombatant} onConfirmAction={confirmCombatAction} onRejectAction={rejectCombatAction} onCombatUpdated={(combat) => setSnapshot((current) => ({ ...current, combats: current.combats.map((candidate) => candidate.id === combat.id ? combat : candidate) }))} onRefresh={async () => { await refresh(campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false }); }} onStatus={setStatus} onRulesMutationApplied={setLastDndRulesUndo} canManage={hasPermission("combat.manage")} canManageEffects={hasPermission("combat.manage") && hasPermission("actor.update")} canPreviewEffects={hasPermission("actor.readPrivate")} />}
-            {tab === "content" && <LazyContentImportPanel assets={snapshot.assets} assetStorage={snapshot.assetStorage} selectedScene={selectedScene} assetSearch={assetSearch} setAssetSearch={setAssetSearch} assetFolder={assetFolder} setAssetFolder={setAssetFolder} assetTags={assetTags} setAssetTags={setAssetTags} assetStatus={assetStatus} failedAssetUpload={failedAssetUpload} onRetryFailedAssetUpload={retryAssetUpload} onDismissFailedAssetUpload={dismissFailedAssetUpload} lifecycleReason={assetLifecycleReason} setLifecycleReason={setAssetLifecycleReason} onUploadAsset={uploadAssetToLibrary} onSetSceneBackground={setSceneBackgroundFromAsset} onPlaceAssetToken={createTokenFromAsset} onUpdateAssetMetadata={updateAssetMetadata} onUpdateAssetLifecycle={updateAssetLifecycle} onCreateAssetDeliveryUrl={createAssetDeliveryUrl} imports={snapshot.contentImports} kind={contentImportKind} setKind={setContentImportKind} name={contentImportName} setName={setContentImportName} body={contentImportBody} setBody={setContentImportBody} status={contentImportStatus} onPreview={previewContentImport} onAnalyzePdf={analyzePdfContentImport} onApply={applyContentImport} onRollback={rollbackContentImport} onDelete={deleteContentImport} canManage={hasPermission("campaign.update")} canCreateAsset={hasPermission("scene.create")} canUpdateScene={hasPermission("scene.update")} canCreateToken={hasPermission("token.create")} />}
-            {tab === "plugins" && <LazySdkPanel plugins={snapshot.plugins} systems={snapshot.systems} characterTemplates={snapshot.characterTemplates} actor={selectedActor} advancementOptions={advancementOptions} advancementGrantsFeat={advancementGrantsFeat} advancementFeats={advancementFeats} multiclassOptions={multiclassOptions} advancementClassName={advancementClassName} nextClassLevel={advancementNextClassLevel} requiresSubclass={advancementRequiresSubclass} subclassOptions={advancementSubclassOptions} weaponMastery={advancementWeaponMastery} pendingAdvancement={pendingAdvancement} importedActor={importedActor} createdMonster={createdMonster} onSyncPluginRegistries={syncPluginRegistries} onInstallPlugin={installPlugin} onInstallSystem={installSystem} onCreateCharacter={createCharacterFromTemplate} onOpenCharacterCreator={() => void openCharacterCreator()} onImportCharacter={() => setCharacterImportOpen(true)} onCreateMonster={createSystemMonster} onPreviewActor={previewSelectedActorAdvancement} onAdvanceActor={advanceSelectedActor} onCancelPendingAdvancement={cancelSelectedActorPendingAdvancement} onPreviewRestActor={previewSelectedActorRest} onRestActor={restSelectedActor} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={Boolean(snapshot.session?.serverAdmin) && hasPermission("plugin.install")} canInstallSystem={hasPermission("campaign.update")} canCreateActor={hasPermission("actor.create")} canImportActor={hasPermission("actor.create")} canAdvanceActor={canUpdateSelectedActor} canRestActor={canUpdateSelectedActor} canRollSystem={hasPermission("dice.roll")} />}
+            {tab === "combat" && <CombatPanel campaignId={campaignId} combat={activeCombat} recentCombats={recentEndedCombats} auditLogs={snapshot.combatAudit} actors={snapshot.actors} tokens={selectedSceneTokens} onFocusCombatant={(combatant) => selectSingleToken(combatant.tokenId)} onStart={openCombatSetup} onPlanEncounter={planSystemEncounter} onNext={(combat) => advanceCombatTurn(combat, 1)} onPrevious={(combat) => advanceCombatTurn(combat, -1)} onEnd={endCombat} onAwardPartyXp={awardPartyXp} onAwardPartyGold={awardPartyGold} onRecordLoot={recordCombatLoot} canAwardRewards={hasPermission("combat.manage") && hasPermission("actor.update")} onUpdateCombatant={updateCombatant} onConfirmAction={confirmCombatAction} onRejectAction={rejectCombatAction} onCombatUpdated={(combat) => setSnapshot((current) => ({ ...current, combats: current.combats.map((candidate) => candidate.id === combat.id ? combat : candidate) }))} onRefresh={async () => { await refresh(campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false }); }} onStatus={setStatus} onRulesMutationApplied={setLastDndRulesUndo} onTypedDamageApplied={applyTypedDamageResult} onAdjustVitals={adjustCombatVitals} onAddCombatant={addCombatantToActiveCombat} onRemoveCombatant={removeCombatantFromActiveCombat} onSpendLegendaryAction={spendLegendaryAction} canManage={hasPermission("combat.manage")} canManageEffects={hasPermission("combat.manage") && hasPermission("actor.update")} canPreviewEffects={hasPermission("actor.readPrivate")} canAdjustVitals={hasPermission("combat.manage") && hasPermission("actor.update")} vitalsDisabledReason={hasPermission("combat.manage") ? "Requires actor.update permission" : "Requires combat.manage permission"} canManageRoster={hasPermission("combat.manage")} rosterDisabledReason="Requires combat.manage permission" canManageLegendaryActions={hasPermission("combat.manage") && hasPermission("actor.update")} legendaryActionsDisabledReason={hasPermission("combat.manage") ? "Requires actor.update permission" : "Requires combat.manage permission"} />}
+            {tab === "content" && <LazyContentImportPanel assets={snapshot.assets} assetStorage={snapshot.assetStorage} selectedScene={selectedScene} assetSearch={assetSearch} setAssetSearch={setAssetSearch} assetFolder={assetFolder} setAssetFolder={setAssetFolder} assetTags={assetTags} setAssetTags={setAssetTags} assetStatus={assetStatus} failedAssetUpload={failedAssetUpload} onRetryFailedAssetUpload={retryAssetUpload} onDismissFailedAssetUpload={dismissFailedAssetUpload} lifecycleReason={assetLifecycleReason} setLifecycleReason={setAssetLifecycleReason} onUploadAsset={uploadAssetToLibrary} onSetSceneBackground={setSceneBackgroundFromAsset} onPlaceAssetToken={createTokenFromAsset} onUpdateAssetMetadata={updateAssetMetadata} onUpdateAssetLifecycle={updateAssetLifecycle} onCreateAssetDeliveryUrl={createAssetDeliveryUrl} imports={snapshot.contentImports} kind={contentImportKind} setKind={setContentImportKind} name={contentImportName} setName={setContentImportName} body={contentImportBody} setBody={setContentImportBody} status={contentImportStatus} onPreview={previewContentImport} onAnalyzePdf={analyzePdfContentImport} onApply={applyContentImport} onRollback={rollbackContentImport} onDelete={deleteContentImport} canManage={hasPermission("campaign.update")} canProposeAiChanges={hasPermission("ai.proposeChanges")} canCreateAsset={hasPermission("scene.create")} canUpdateScene={hasPermission("scene.update")} canCreateToken={hasPermission("token.create")} />}
+            {tab === "plugins" && <LazySdkPanel plugins={snapshot.plugins} systems={snapshot.systems} characterTemplates={snapshot.characterTemplates} actor={selectedActor} advancementOptions={advancementOptions} advancementGrantsFeat={advancementGrantsFeat} advancementFeats={advancementFeats} multiclassOptions={multiclassOptions} advancementClassName={advancementClassName} nextClassLevel={advancementNextClassLevel} requiresSubclass={advancementRequiresSubclass} subclassOptions={advancementSubclassOptions} weaponMastery={advancementWeaponMastery} spellAdvancementPaths={spellAdvancementPaths} pendingAdvancement={pendingAdvancement} importedActor={importedActor} createdMonster={createdMonster} onSyncPluginRegistries={syncPluginRegistries} onInstallPlugin={installPlugin} onInstallSystem={installSystem} onCreateCharacter={createCharacterFromTemplate} onOpenCharacterCreator={() => void openCharacterCreator()} onImportCharacter={() => setCharacterImportOpen(true)} onCreateMonster={createSystemMonster} onPreviewActor={previewSelectedActorAdvancement} onAdvanceActor={advanceSelectedActor} onCancelPendingAdvancement={cancelSelectedActorPendingAdvancement} onPreviewRestActor={previewSelectedActorRest} onRestActor={restSelectedActor} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={Boolean(snapshot.session?.serverAdmin) && hasPermission("plugin.install")} canInstallSystem={hasPermission("campaign.update")} canCreateActor={hasPermission("actor.create")} canImportActor={hasPermission("actor.create")} canAdvanceActor={canUpdateSelectedActor} canRestActor={canUpdateSelectedActor} canRollSystem={hasPermission("dice.roll")} />}
             </DeferredPanel>
             </div>
           </aside>
@@ -10732,6 +10752,8 @@ export function App() {
       </section>
       {aiAgentOpen && (
         <AiAgentPanel
+          campaignId={campaignId}
+          localDemo={blankCanvasDemoOpen}
           promptRef={aiAgentPromptRef}
           messages={aiAgentMessages}
           prompt={aiAgentPrompt}
@@ -10816,7 +10838,8 @@ export function App() {
                 <X size={16} />
               </button>
             </div>
-            <AdvancementFlow
+            <DeferredPanel label="advancement choices">
+            <LazyAdvancementFlow
               actor={selectedActor}
               advancementOptions={advancementOptions}
               advancementGrantsFeat={advancementGrantsFeat}
@@ -10827,6 +10850,7 @@ export function App() {
               requiresSubclass={advancementRequiresSubclass}
               subclassOptions={advancementSubclassOptions}
               weaponMastery={advancementWeaponMastery}
+              spellAdvancementPaths={spellAdvancementPaths}
               pendingAdvancement={pendingAdvancement}
               loadState={advancementLoadState}
               loadError={advancementLoadError}
@@ -10840,6 +10864,7 @@ export function App() {
               }}
               canAdvanceActor={canUpdateSelectedActor}
             />
+            </DeferredPanel>
           </div>
         </div>
       )}
@@ -10856,14 +10881,19 @@ export function App() {
         />
       )}
       {characterCreatorOpen && (
-        <CharacterCreatorDialog
+        <DeferredPanel label="character creator">
+        <LazyCharacterCreatorDialog
+          key={`character-creator:${campaignId}:${currentUserId}`}
+          campaignId={campaignId}
           templates={snapshot.characterTemplates}
           origins={characterOrigins}
           members={snapshot.members}
           currentUserId={currentUserId}
           onClose={() => setCharacterCreatorOpen(false)}
           onCreate={createCharacterFromCreator}
+          onPreview={previewCharacterFromCreator}
         />
+        </DeferredPanel>
       )}
       {characterImportOpen && encounterBuilderSystem && (
         <CharacterImportDialog
@@ -10926,6 +10956,8 @@ export function App() {
 }
 
 function AiAgentPanel(props: {
+  campaignId?: string;
+  localDemo: boolean;
   promptRef: { current: HTMLTextAreaElement | null };
   messages: AiAgentMessage[];
   prompt: string;
@@ -10951,12 +10983,27 @@ function AiAgentPanel(props: {
   onReject(proposal: Proposal): void;
 }) {
   const agentProposals = visibleAiAgentProposals(props.proposals, props.messages, props.hiddenProposalIds);
+  const providerReadiness = useAiStudioReadiness(props.localDemo ? undefined : props.campaignId);
+  const readiness: AiStudioReadiness = props.localDemo
+    ? { providerBackedActionsAvailable: true, label: "Local demo agent", detail: "This demo drafts proposals locally without calling an AI provider.", statusClass: "completed" }
+    : providerReadiness;
+  const readinessPresentation = aiAgentReadinessPresentation(readiness, props.busy, agentProposals.length, props.status);
   const codexAuthUrl = props.codexAuth?.authUrl ?? props.codexAuth?.verificationUrl;
   const agentPanel = useMovablePanel(initialAiAgentPanelPosition, initialAiAgentPanelSize, { minWidth: 340, minHeight: 420 });
   const feedRef = useRef<HTMLElement | null>(null);
+  const initialPromptFocusCompleteRef = useRef(false);
   const [referenceDragActive, setReferenceDragActive] = useState(false);
   const hasStreamingAssistant = props.messages.some((message) => message.role === "assistant" && message.streaming);
-  const agentStatusLabel = props.busy ? "Working" : agentProposals.length > 0 ? `${formatNumber(agentProposals.length)} ${agentProposals.length === 1 ? "proposal" : "proposals"}` : "Ready";
+  useEffect(() => {
+    if (readinessPresentation.composerDisabled || initialPromptFocusCompleteRef.current) return;
+    const focusFrame = window.requestAnimationFrame(() => {
+      const prompt = props.promptRef.current;
+      if (!prompt || prompt.disabled) return;
+      prompt.focus();
+      initialPromptFocusCompleteRef.current = true;
+    });
+    return () => window.cancelAnimationFrame(focusFrame);
+  }, [props.promptRef, readinessPresentation.composerDisabled]);
   useEffect(() => {
     const feed = feedRef.current;
     if (!feed) return;
@@ -10967,14 +11014,14 @@ function AiAgentPanel(props: {
   const handleReferenceDragEnter = (event: ReactDragEvent<HTMLFormElement>) => {
     if (!dragHasFiles(event)) return;
     event.preventDefault();
-    if (props.busy) return;
+    if (readinessPresentation.composerDisabled) return;
     setReferenceDragActive(true);
   };
   const handleReferenceDragOver = (event: ReactDragEvent<HTMLFormElement>) => {
     if (!dragHasFiles(event)) return;
     event.preventDefault();
-    event.dataTransfer.dropEffect = props.busy ? "none" : "copy";
-    if (props.busy) return;
+    event.dataTransfer.dropEffect = readinessPresentation.composerDisabled ? "none" : "copy";
+    if (readinessPresentation.composerDisabled) return;
     setReferenceDragActive(true);
   };
   const handleReferenceDragLeave = (event: ReactDragEvent<HTMLFormElement>) => {
@@ -10986,14 +11033,14 @@ function AiAgentPanel(props: {
     if (!dragHasFiles(event)) return;
     event.preventDefault();
     setReferenceDragActive(false);
-    if (props.busy) return;
+    if (readinessPresentation.composerDisabled) return;
     const file = draggedImageFile(event);
     if (file) void props.onUploadReference(file);
   };
   const handleAiAgentPromptKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
-      if (!props.busy && props.prompt.trim()) props.onSend();
+      if (!readinessPresentation.composerDisabled && props.prompt.trim()) props.onSend();
     }
   };
   return (
@@ -11002,9 +11049,9 @@ function AiAgentPanel(props: {
         <Hand className="floating-panel-drag-icon" size={14} aria-hidden="true" />
         <div className="ai-agent-title-block">
           <span className="section-title">AI Agent</span>
-          <strong>{props.status}</strong>
+          <strong>{readinessPresentation.headerStatus}</strong>
         </div>
-        <span className="ai-agent-status-pill">{agentStatusLabel}</span>
+        <span className="ai-agent-status-pill">{readinessPresentation.pillLabel}</span>
         <button className="icon-button" type="button" aria-label="Close AI Agent" title="Close" onClick={props.onClose}>
           <X size={17} />
         </button>
@@ -11026,6 +11073,12 @@ function AiAgentPanel(props: {
           <button className="ghost-button ai-agent-new-chat-button" type="button" onClick={props.onNewChat} disabled={props.busy} aria-label="Start new AI Agent chat" title="Start new chat">
             <Plus size={14} /> New chat
           </button>
+          {!readiness.providerBackedActionsAvailable && (
+            <div className={`ai-trust-note ai-agent-readiness ai-availability-${readiness.statusClass}`} role="status" aria-label="AI Agent availability">
+              <Shield size={15} />
+              <span><strong>{readiness.label}.</strong> {readiness.detail}</span>
+            </div>
+          )}
         </div>
         <section className="ai-agent-feed" aria-label="AI Agent messages" ref={feedRef}>
           {props.messages.length === 0 ? (
@@ -11142,7 +11195,7 @@ function AiAgentPanel(props: {
         onDrop={handleReferenceDrop}
         onSubmit={(event) => {
           event.preventDefault();
-          props.onSend();
+          if (!readinessPresentation.composerDisabled) props.onSend();
         }}
       >
         {props.referenceAsset && (
@@ -11157,7 +11210,7 @@ function AiAgentPanel(props: {
           </div>
         )}
         {props.referenceUploadStatus && <span className="ai-agent-composer-status">{props.referenceUploadStatus}</span>}
-        <textarea ref={props.promptRef} aria-label="AI Agent prompt" value={props.prompt} placeholder="Ask the agent..." onChange={(event) => props.onPromptChange(event.target.value)} onKeyDown={handleAiAgentPromptKeyDown} disabled={props.busy} />
+        <textarea ref={props.promptRef} aria-label="AI Agent prompt" value={props.prompt} placeholder={readiness.providerBackedActionsAvailable ? "Ask the agent..." : readiness.label} onChange={(event) => props.onPromptChange(event.target.value)} onKeyDown={handleAiAgentPromptKeyDown} disabled={readinessPresentation.composerDisabled} />
         <div className="ai-agent-composer-actions">
           <label className="icon-button ai-agent-attach-button" title="Attach image reference">
             <input
@@ -11165,7 +11218,7 @@ function AiAgentPanel(props: {
               type="file"
               accept="image/*"
               aria-label="Attach image reference"
-              disabled={props.busy}
+              disabled={readinessPresentation.composerDisabled}
               onChange={(event) => {
                 const file = event.currentTarget.files?.[0];
                 if (file) void props.onUploadReference(file, event.currentTarget);
@@ -11178,7 +11231,7 @@ function AiAgentPanel(props: {
               <X size={16} /> Stop
             </button>
           ) : (
-            <button className="primary-button" type="submit" disabled={!props.prompt.trim()}>
+            <button className="primary-button" type="submit" disabled={readinessPresentation.composerDisabled || !props.prompt.trim()}>
               <Send size={16} /> Send
             </button>
           )}

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { closeWorkspaceDialogState } from "./workspace-ui-constants.js";
 
 const appSource = readFileSync(resolve(__dirname, "App.tsx"), "utf8").replace(/\r\n/g, "\n");
 const apiSource = readFileSync(resolve(__dirname, "api.ts"), "utf8").replace(/\r\n/g, "\n");
@@ -24,7 +25,11 @@ describe("workspace-bound async operations", () => {
     expect(appSource).toContain("setAdminSnapshot(undefined);");
     expect(appSource).toContain("setFailedAssetUpload(undefined);");
     expect(appSource).toContain('setAssetStatus("No asset action this session");');
-    expect(appSource).toContain("setAudioSoundboardOpen(false);");
+    const clearTransientState = vi.fn();
+    const closeAudioSoundboard = vi.fn();
+    closeWorkspaceDialogState(clearTransientState, closeAudioSoundboard);
+    expect(clearTransientState).toHaveBeenCalledOnce();
+    expect(closeAudioSoundboard).toHaveBeenCalledWith(false);
   });
 
   it("guards admin, asset, audio, and plugin completion paths", () => {
@@ -43,8 +48,17 @@ describe("workspace-bound async operations", () => {
     expect(appSource).toContain("idempotencyKey: attempt.idempotencyKey");
   });
 
+  it("binds the map file picker to the named selected scene", () => {
+    expect(appSource).toContain("`Upload map to ${selectedScene.name} and calibrate`");
+    expect(appSource).toContain("`Choose map file for ${selectedScene.name}`");
+    expect(appSource).toContain("data-scene-id={selectedScene?.id}");
+    expect(appSource).toContain('key={`map-upload-file:${selectedScene?.id ?? "none"}`}');
+  });
+
   it("reports committed plugin, character-import, and proposal actions separately from reconciliation failures", () => {
     expect(appSource).toContain("Reload to reconcile plugin state.");
+    const installPluginSource = appSource.slice(appSource.indexOf("async function installPlugin"), appSource.indexOf("async function syncPluginRegistries"));
+    expect(installPluginSource).toContain("await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });");
     expect(appSource).toContain("applyActorToSnapshot(imported.actor);");
     expect(appSource).toContain("Proposal changes reverted; background refresh failed:");
     expect(appSource).toContain('key={`encounter-builder:${selectedCampaign.id}:${currentUserId}:${encounterBuilderSystem.id}`}');
@@ -140,7 +154,11 @@ describe("workspace-bound async operations", () => {
     expect(appSource).toContain("const login = await loginSession(userId, { persist: false, signal: controller.signal }).catch");
     expect(appSource).toContain("if (!requestIsCurrent()) return undefined;");
     expect(appSource).toContain("if (!login || !requestIsCurrent()) return;");
-    expect(appSource.indexOf("if (!login || !requestIsCurrent()) return;")).toBeLessThan(appSource.indexOf("storeSession(login);"));
+    const switchBody = appSource.slice(appSource.indexOf("async function switchSession"), appSource.indexOf("async function switchActiveOrganization"));
+    expect(switchBody).toContain("commitDeferredCredential(login, credentialTicket, requestIsCurrent");
+    const demoBody = appSource.slice(appSource.indexOf("async function startDemoGmSession"), appSource.indexOf("async function submitLogin"));
+    expect(demoBody).toContain('loginSession("usr_demo_gm", { persist: false })');
+    expect(demoBody.indexOf("commitDeferredCredential(login")).toBeLessThan(demoBody.indexOf("setBlankCanvasDemoOpen(false)"));
   });
 
   it("invalidates pending credential work on logout and identity changes", () => {
@@ -163,6 +181,12 @@ describe("workspace-bound async operations", () => {
       const body = appSource.slice(appSource.indexOf(start), appSource.indexOf(end));
       expect(body).toContain("cancelInviteAcceptance();");
     }
+  });
+
+  it("commits an accepted invite session before loading the invited campaign", () => {
+    const body = appSource.slice(appSource.indexOf("async function acceptInvite()"), appSource.indexOf("async function createCampaignFromSetup"));
+    expect(body.indexOf("await commitDeferredCredential(result")).toBeGreaterThanOrEqual(0);
+    expect(body.indexOf("await commitDeferredCredential(result")).toBeLessThan(body.indexOf("await refresh(result.campaign.id)"));
   });
 
   it("clears account secrets and scopes MFA completions to the active session", () => {

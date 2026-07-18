@@ -35,6 +35,7 @@ describe("concentration spell action", () => {
       rollId: "spell-itm_dancing_lights-effect",
       label: "Dancing Lights Effect",
       description: "Dancing Lights Effect: concentration",
+      actionKind: "action",
     });
 
     expect(actorActionOptions(actor, [{ ...dancingLights, data: { ...dancingLights.data, prepared: false } }])).not.toContainEqual(

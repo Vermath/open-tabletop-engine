@@ -3,6 +3,7 @@ import { Activity, Bot, Boxes, Check, Crosshair, FileText, Image as ImageIcon, M
 import type React from "react";
 import { useEffect, useState } from "react";
 import { apiGet, apiPatch, apiPost, assetBlobUrl, type AiUsageSummary, type EncounterPlanInfo, type Snapshot } from "./api.js";
+import { aiStudioProviderActionAvailable, aiStudioReadiness, useAiStudioReadiness, type AiStudioReadiness, type AiStudioReadinessPolicy } from "./ai-readiness.js";
 import { aiToolCallErrorCode } from "./admin-panel-utils.js";
 import { MetricTile } from "./metric-tile.js";
 import { proposalQueueAction, proposalReviewActionLabel } from "./proposal-review.js";
@@ -17,7 +18,12 @@ interface AiGenerationJob {
   detail?: string;
 }
 
+export { aiStudioProviderActionAvailable, aiStudioReadiness } from "./ai-readiness.js";
+export type { AiStudioReadiness, AiStudioReadinessPolicy } from "./ai-readiness.js";
+
 export function AiPanel(props: { campaignId?: string; canManagePolicy: boolean; prompt: string; setPrompt(value: string): void; askAi(): void; mapPrompt: string; setMapPrompt(value: string): void; generateMapAsset(): void; tokenPrompt: string; setTokenPrompt(value: string): void; generateTokenAsset(): void; generateSceneTokenAssets(): void; generationJobs: AiGenerationJob[]; selectedSceneName?: string; selectedTokenId?: string; selectedTokenName?: string; tokenOptions: Token[]; selectToken(tokenId: string): void; tokenArtMissingCount: number; tokenArtPendingCount: number; replayAiThread(thread: AiThread): void; retryAiToolCall(toolCall: AiToolCall): void; recapSession(): void; extractMemory(): void; activeSystemName?: string; encounterPlan?: EncounterPlanInfo; planEncounter(): void; proposals: Proposal[]; records: ProposalRecordCollections; memory: AiMemoryFact[]; aiThreads: AiThread[]; aiUsage?: AiUsageSummary; aiToolCalls: AiToolCall[]; approveAndApply(proposal: Proposal): void; rejectProposal(proposal: Proposal): void; revertProposal(proposal: Proposal): Promise<void>; approveMemory(fact: AiMemoryFact): void; deleteMemory(fact: AiMemoryFact): void; canDraftEncounter: boolean; canPropose: boolean; canRecapSession: boolean; canApply: boolean; canRevert: boolean; canPlanEncounter: boolean; canGenerateMap: boolean; canGenerateToken: boolean; canGenerateTokenBatch: boolean }) {
+  const readiness = useAiStudioReadiness(props.campaignId);
+  const providerActionAvailable = (capabilityAvailable: boolean) => aiStudioProviderActionAvailable(capabilityAvailable, readiness);
   const [activeView, setActiveView] = useState<AiPanelView>("create");
   const [activeIntent, setActiveIntent] = useState<AiIntentId>("encounter");
   const [proposalStatusFilter, setProposalStatusFilter] = useState<Proposal["status"] | "all">("all");
@@ -55,12 +61,12 @@ export function AiPanel(props: { campaignId?: string; canManagePolicy: boolean; 
   const isGeneratingSelectedToken = props.generationJobs.some((job) => job.kind === "token");
   const isGeneratingTokenBatch = props.generationJobs.some((job) => job.kind === "tokenBatch");
   const intentOptions = [
-    { id: "encounter", label: "Encounter + Scene", detail: "Draft a reviewable encounter and table setup.", icon: <Swords size={16} />, disabled: !props.canDraftEncounter },
-    { id: "map", label: "Generate Map", detail: "Create raster battlemap art for the selected scene.", icon: <MapIcon size={16} />, disabled: !props.canGenerateMap },
-    { id: "tokenBatch", label: "Missing Token Art", detail: "Generate art for every scene token missing imagery.", icon: <Boxes size={16} />, disabled: !props.canGenerateTokenBatch },
-    { id: "selectedToken", label: "Selected Token Art", detail: "Generate art for the currently selected token.", icon: <ImageIcon size={16} />, disabled: !props.canGenerateToken },
-    { id: "recap", label: "Session Recap", detail: "Draft a recap proposal from current session context.", icon: <ScrollText size={16} />, disabled: !props.canRecapSession },
-    { id: "memory", label: "Extract Memory", detail: "Queue campaign memory facts for review.", icon: <FileText size={16} />, disabled: !props.canPropose }
+    { id: "encounter", label: "Encounter + Scene", detail: "Draft a reviewable encounter and table setup.", icon: <Swords size={16} />, disabled: !providerActionAvailable(props.canDraftEncounter) },
+    { id: "map", label: "Generate Map", detail: "Create raster battlemap art for the selected scene.", icon: <MapIcon size={16} />, disabled: !providerActionAvailable(props.canGenerateMap) },
+    { id: "tokenBatch", label: "Missing Token Art", detail: "Generate art for every scene token missing imagery.", icon: <Boxes size={16} />, disabled: !providerActionAvailable(props.canGenerateTokenBatch) },
+    { id: "selectedToken", label: "Selected Token Art", detail: "Generate art for the currently selected token.", icon: <ImageIcon size={16} />, disabled: !providerActionAvailable(props.canGenerateToken) },
+    { id: "recap", label: "Session Recap", detail: "Draft a recap proposal from current session context.", icon: <ScrollText size={16} />, disabled: !providerActionAvailable(props.canRecapSession) },
+    { id: "memory", label: "Extract Memory", detail: "Queue campaign memory facts for review.", icon: <FileText size={16} />, disabled: !providerActionAvailable(props.canPropose) }
   ] satisfies Array<{ id: AiIntentId; label: string; detail: string; icon: React.ReactNode; disabled: boolean }>;
   const activeIntentOption = intentOptions.find((intent) => intent.id === activeIntent) ?? intentOptions[0]!;
   const activeIntentClass = activeIntent === "tokenBatch" ? "token-batch" : activeIntent === "selectedToken" ? "selected-token" : activeIntent;
@@ -77,6 +83,11 @@ export function AiPanel(props: { campaignId?: string; canManagePolicy: boolean; 
           <span><strong>{formatNumber(failedToolCount)}</strong> failed</span>
         </div>
       </header>
+
+      <div className={`ai-trust-note ai-availability-${readiness.statusClass}`} role="status" aria-label="AI availability">
+        <Shield size={15} />
+        <span><strong>{readiness.label}.</strong> {readiness.detail}</span>
+      </div>
 
       <nav className="ai-view-tabs" aria-label="AI workspace views">
         <button className={`tab ${activeView === "create" ? "active" : ""}`} type="button" onClick={() => setActiveView("create")}>
@@ -159,13 +170,13 @@ export function AiPanel(props: { campaignId?: string; canManagePolicy: boolean; 
               <textarea aria-label="AI prompt" value={props.prompt} onChange={(event) => props.setPrompt(event.target.value)} />
             </label>
             <div className="button-row ai-action-row">
-              <button className="primary-button" type="button" onClick={props.askAi} disabled={!props.canDraftEncounter}>
+              <button className="primary-button" type="button" onClick={props.askAi} disabled={!providerActionAvailable(props.canDraftEncounter)}>
                 <Bot size={16} /> Draft Encounter
               </button>
-              <button className="ghost-button" type="button" onClick={props.recapSession} disabled={!props.canRecapSession}>
+              <button className="ghost-button" type="button" onClick={props.recapSession} disabled={!providerActionAvailable(props.canRecapSession)}>
                 <ScrollText size={16} /> Recap Session
               </button>
-              <button className="ghost-button" type="button" onClick={props.extractMemory} disabled={!props.canPropose}>
+              <button className="ghost-button" type="button" onClick={props.extractMemory} disabled={!providerActionAvailable(props.canPropose)}>
                 <FileText size={16} /> Extract Memory
               </button>
             </div>
@@ -240,7 +251,7 @@ export function AiPanel(props: { campaignId?: string; canManagePolicy: boolean; 
                   Prompt
                   <textarea aria-label="AI map generation prompt" value={props.mapPrompt} onChange={(event) => props.setMapPrompt(event.target.value)} />
                 </label>
-                <button className="ghost-button wide" type="button" onClick={props.generateMapAsset} disabled={!props.canGenerateMap}>
+                <button className="ghost-button wide" type="button" onClick={props.generateMapAsset} disabled={!providerActionAvailable(props.canGenerateMap)}>
                   <MapIcon size={16} /> {isGeneratingMap ? "Generating Map" : "Generate Map"}
                 </button>
               </section>
@@ -270,10 +281,10 @@ export function AiPanel(props: { campaignId?: string; canManagePolicy: boolean; 
                   <strong>{props.selectedTokenName ?? "No token"}</strong>
                 </div>
                 <div className="button-row ai-action-row">
-                  <button className="ghost-button" type="button" onClick={props.generateTokenAsset} disabled={!props.canGenerateToken}>
+                  <button className="ghost-button" type="button" onClick={props.generateTokenAsset} disabled={!providerActionAvailable(props.canGenerateToken)}>
                     <ImageIcon size={16} /> {isGeneratingSelectedToken ? "Generating Token Art" : "Generate Token Art"}
                   </button>
-                  <button className="ghost-button" type="button" onClick={props.generateSceneTokenAssets} disabled={!props.canGenerateTokenBatch}>
+                  <button className="ghost-button" type="button" onClick={props.generateSceneTokenAssets} disabled={!providerActionAvailable(props.canGenerateTokenBatch)}>
                     <Boxes size={16} /> {isGeneratingTokenBatch ? "Generating Missing Art" : "Generate Missing Art"}
                   </button>
                 </div>
@@ -415,7 +426,7 @@ export function AiPanel(props: { campaignId?: string; canManagePolicy: boolean; 
                   <div className="operator-row tool-call-row" key={`failed-thread-${thread.id}`}>
                     <span>{thread.title}</span>
                     <strong>{thread.providerError ?? "provider failed"}</strong>
-                    <button className="ghost-button" type="button" onClick={() => props.replayAiThread(thread)} disabled={!props.canPropose}>
+                    <button className="ghost-button" type="button" onClick={() => props.replayAiThread(thread)} disabled={!providerActionAvailable(props.canPropose)}>
                       <RotateCcw size={14} /> Replay
                     </button>
                   </div>
@@ -823,6 +834,7 @@ interface EffectiveAiPolicyView {
     status: "enabled" | "disabled" | "unsafe_configuration";
     providerTransmissionDisclosure: string;
   };
+  provider?: AiStudioReadinessPolicy["provider"];
 }
 
 interface AiPrivacyView {
@@ -929,7 +941,7 @@ function AiPolicyPanel(props: { campaignId: string; canManage: boolean }) {
       <div className="operator-heading">
         <div>
           <div className="section-title">Safety & Privacy</div>
-          <p className="account-summary">{policy ? `${policy.status} · local retention ${policy.retentionDays} days` : "Loading policy"}</p>
+          <p className="account-summary">{policy ? `${policy.provider?.status === "configured" ? policy.status : "provider unavailable"} · local retention ${policy.retentionDays} days` : "Loading policy"}</p>
         </div>
         <Shield size={15} />
       </div>
@@ -941,12 +953,13 @@ function AiPolicyPanel(props: { campaignId: string; canManage: boolean }) {
       )}
       {policy && draft && (
         <>
-          {policy.status !== "enabled" && (
-            <div className="ai-trust-note" role="status">
+          {(policy.status !== "enabled" || policy.provider?.status !== "configured") && (
+            <div className="ai-trust-note ai-availability-failed" role="status">
               <Shield size={15} />
-              <span>{policy.status === "unsafe_configuration" ? policy.readinessIssues.join(" ") : "AI calls are disabled by installation or campaign policy."}</span>
+              <span>{policy.provider?.status !== "configured" ? policy.provider?.message ?? "No live AI provider configuration was reported by the server." : policy.status === "unsafe_configuration" ? policy.readinessIssues.join(" ") : "AI calls are disabled by installation or campaign policy."}</span>
             </div>
           )}
+          <p className="account-summary">{policy.provider?.message ?? "AI provider configuration could not be confirmed."}</p>
           <p>{policy.installation.providerTransmissionDisclosure}</p>
           <p className="account-summary">This controls OpenTabletop's local operational history only. Provider-side retention or deletion is separate and is not claimed here.</p>
           <div className="admin-form-grid">

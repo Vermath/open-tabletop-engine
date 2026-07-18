@@ -140,7 +140,7 @@ describe("raw D&D actor and item patch hardening", () => {
       });
       expect(blockedHp.statusCode).toBe(409);
       expect(blockedHp.json()).toMatchObject({
-        code: "rules_managed_patch_requires_review",
+        code: "combat_vitals_route_required",
         resourceType: "actor",
         resourceId: actorId,
         managedRoots: ["hp"],
@@ -159,7 +159,8 @@ describe("raw D&D actor and item patch hardening", () => {
           data: { ...actor.data, hp: { ...hp, current: nextHpCurrent } },
         },
       });
-      expect(playerOverride.statusCode).toBe(403);
+      expect(playerOverride.statusCode).toBe(409);
+      expect(playerOverride.json()).toMatchObject({ code: "combat_vitals_route_required", managedRoots: ["hp"] });
       expect(actor).toEqual(originalActor);
       expect(store.state.auditLogs).toHaveLength(playerOverrideAuditCount);
 
@@ -176,6 +177,7 @@ describe("raw D&D actor and item patch hardening", () => {
       expect(descriptiveActorUpdate.json().data.notes).toBe("Keeps watch while the party rests.");
       expect(actor.data.notes).toBe("Keeps watch while the party rests.");
 
+      const gmOverrideAuditCount = store.state.auditLogs.length;
       const gmOverride = await app.inject({
         method: "PATCH",
         url: actorUrl,
@@ -186,16 +188,9 @@ describe("raw D&D actor and item patch hardening", () => {
           data: { ...actor.data, hp: { ...(actor.data.hp as Record<string, unknown>), current: nextHpCurrent } },
         },
       });
-      expect(gmOverride.statusCode).toBe(200);
-      expect(gmOverride.json().data.hp.current).toBe(nextHpCurrent);
-      expect(store.state.auditLogs).toContainEqual(expect.objectContaining({
-        action: "actor.dndManualOverride",
-        targetId: actorId,
-        after: expect.objectContaining({
-          managedRoots: ["hp"],
-          reason: "Correcting table state after an offline damage ruling.",
-        }),
-      }));
+      expect(gmOverride.statusCode).toBe(409);
+      expect(gmOverride.json()).toMatchObject({ code: "combat_vitals_route_required", managedRoots: ["hp"] });
+      expect(store.state.auditLogs).toHaveLength(gmOverrideAuditCount);
 
       const createdItem = await app.inject({
         method: "POST",

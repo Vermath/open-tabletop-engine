@@ -1,10 +1,10 @@
 import type { Actor, Combat, Item, MapAsset, Scene, Token, TokenLayer } from "@open-tabletop/core";
 import type { Dnd5eSrdSpellPreparationMutationResult } from "@open-tabletop/core";
 import { Boxes, Check, ChevronRight, ChevronUp, Crosshair, Dices, Eraser, Eye, FileText, Grip, Hand, LockKeyhole, MapPin, PencilLine, Pentagon, Plus, Shield, Swords, Timer, Upload, Users, WandSparkles, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import { apiGet, apiPost, type Snapshot } from "./api.js";
 import { isAdversaryActor } from "./actor-rails.js";
-import { HpBar } from "./hp-bar.js";
+import { HpBar, resolveHitPointEdit } from "./hp-bar.js";
 import { HitDiceRestCard, type ActorRestOptions, type RestPreviewEnvelope } from "./hit-dice-rest-card.js";
 import { TypedDamageCard, type TypedDamageApplyResult } from "./typed-damage-card.js";
 import { ActorLoadoutPanel, filterActorLoadoutItems, type ActorAttunementChangeOptions, type ActorLoadoutFilter } from "./actor-loadout-panel.js";
@@ -15,7 +15,6 @@ import { tokenCenter, tokenCoordinatesFromCenter, tokenLayer, tokenLayerLabel, t
 import { actorActionDiceFormula, actorActionOptions, actorActionSupportsEffect, actorArmorClass, actorCombatStateLabels, actorConcentrationLabel, actorConditionLabels, actorCoreStatistics, actorRageStatus, actorResourceControls, actorResourceLabels, actorResourceUpdate, actorSaveFormula, formatActorConditions, isPointInsidePoints, isPurchasableCompendiumEntry, itemDisplayLabel, parseActorConditions, quickActorConditionIds, tokenBrightVisionPatch, tokenDimVisionPatch, tokenPermissionPresetLabel, tokenPlayerOwnerIds, type ActorActionOption, type ActorCoreStatistics, type ActorSheetQuickRoll, type RulesCompendiumEntry, type TokenVisionPatch } from "./actor-sheet-data.js";
 import { clampNumber, formatGp, formatNumber, numericValue, slugId, titleCaseLabel } from "./sheet-format.js";
 import { formatTokenSenses, parseTokenSenses } from "./actor-sheet-data.js";
-import { setTokenDropPreview, writeTokenDropData } from "./token-drag.js";
 import { RetryableActionNotice, useRetryableAction } from "./retryable-action.js";
 import { clampFloatingPanel, useMovablePanel } from "./movable-panel.js";
 import { useModalAccessibility } from "./modal-accessibility.js";
@@ -23,15 +22,19 @@ import { HeroicInspirationCard } from "./heroic-inspiration-card.js";
 import { RulesSupportBoundaryNotice, rulesBoundaryFromAction } from "./rules-support-boundary.js";
 import { WeaponMasteryControls, emptyWeaponMasteryDraft, weaponMasterySelectionForAction, weaponMasteryUseForSelection, type Dnd5eSrdWeaponMasteryUse } from "./weapon-mastery-controls.js";
 import { actorActionPreviewRequiresInput } from "./actor-action-review.js";
+import { actionPreviewContinuationMetadata, actionPreviewContinuationSelection, actionPreviewContinuationTickets, actorActionDraftForScope, actorActionDraftScopeKey, actorActionTargetLabel, actionPreviewForFingerprint, actionPreviewIsReady, actionPreviewStatusMessage, createActionPreviewFingerprint, initialActorActionDraft, initialActionPreviewState, reduceActionPreviewState, scopedActorActionTargetIds, type ActionPreviewContinuationTicket } from "./action-preview-state.js";
+import { ActionPreviewCommitButton } from "./action-preview-binding.js";
+import { ActorPlacementTray } from "./actor-placement-tray.js";
 
 type RulesSaveOutcome = "success" | "failure";
-type ActorActionCommitOptions = { targetActorId?: string; applyEffect?: boolean; consumeResources?: boolean; saveOutcomes?: Record<string, RulesSaveOutcome>; effectChoice?: string; weaponMastery?: Dnd5eSrdWeaponMasteryUse };
+type ActorActionCommitOptions = { targetActorId?: string; applyEffect?: boolean; consumeResources?: boolean; saveOutcomes?: Record<string, RulesSaveOutcome>; effectChoice?: string; weaponMastery?: Dnd5eSrdWeaponMasteryUse; continuationId?: string; reviewActorNames?: Record<string, string> };
 
 interface ActorActionResolutionPreview {
   commitMode: "commit" | "preview";
   action?: {
     label: string;
     kind: "action" | "bonusAction" | "reaction" | "free";
+    metadata?: Record<string, unknown>;
     ledger?: { actionsUsed: number; actionSurgeGrants: number };
   };
   blocked?: { reason: string; code: string; supportStatus?: "automated" | "manual" | "unsupported" };
@@ -250,35 +253,198 @@ export function CoreStatisticsSection(props: { stats: ActorCoreStatistics; canRo
   );
 }
 
-export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; systemLabel?: string; scene?: Scene; currentUserId: string; actors: Actor[]; tokens: Token[]; combat?: Combat; members: Snapshot["members"]; assets: MapAsset[]; items: Item[]; focusItemId?: string; compendiumEntries: RulesCompendiumEntry[]; compendiumSearch: string; setCompendiumSearch(value: string): void; compendiumStatus: string; actionTargetActorId: string; setActionTargetActorId(value: string): void; actionApplyEffect: boolean; setActionApplyEffect(value: boolean): void; actionConsumeResources: boolean; setActionConsumeResources(value: boolean): void; updateActorHp(actor: Actor, current: number): void; adjustActorHp(actor: Actor, delta: number): void; awardActorXp(actor: Actor, amount: number): Promise<void>; xpProgress?: XpProgressInfo; advancementReady: boolean; onLevelUp(): void; onPreviewRestActor(restType: "short" | "long", options: ActorRestOptions, idempotencyKey: string): Promise<RestPreviewEnvelope>; onRestActor(restType: "short" | "long", options?: ActorRestOptions): void | Promise<void>; onTypedDamageApplied(result: TypedDamageApplyResult): void; updateActorData(actor: Actor, patch: Record<string, unknown>): void; toggleActorCondition(actor: Actor, conditionId: string, options?: { overrideReason?: string }): void; updateItemData(item: Item, patch: Record<string, unknown>): Promise<void>; changeActorAttunement(actor: Actor, item: Item, attuned: boolean, options?: ActorAttunementChangeOptions): Promise<void>; assignItemToActor(item: Item, actor: Actor): Promise<void>; onSpellPreparationApplied(result: Dnd5eSrdSpellPreparationMutationResult): void; updateToken(patch: Partial<Token>): void; onUploadTokenImage(file: File, input?: HTMLInputElement): Promise<void>; targetToken(tokenId: string, targeted: boolean): void; targetTokens(tokenIds: string[], targeted: boolean): void; deleteToken(): void; updateTokenVision(patch: TokenVisionPatch): Promise<boolean>; useActorAction(rollId: string, options?: ActorActionCommitOptions): void; onImportCompendiumEntry(entry: RulesCompendiumEntry): Promise<void>; onPurchaseCompendiumEntry(entry: RulesCompendiumEntry, quantity: number): Promise<void>; onPlaceActor(actor: Actor, placementAttemptId: string): Promise<void>; canCreateToken: boolean; canUpdateActor: boolean; canManageActorRules?: boolean; canAwardActorXp: boolean; canRestActor: boolean; canUpdateToken: boolean; canDeleteToken: boolean; canUseAction: boolean }) {
+export function ActionContinuationTicketPicker(props: {
+  tickets: ActionPreviewContinuationTicket[];
+  selectedContinuationId?: string;
+  disabled: boolean;
+  actorName(actorId: string): string;
+  onSelect(continuationId: string): void;
+}) {
+  if (props.tickets.length === 0) return null;
+  const ticketLabel = (ticket: ActionPreviewContinuationTicket, index: number): string => {
+    const lineage = ticket.criticalOutcomes.map((outcome) => `${props.actorName(outcome.targetActorId)} ${outcome.finalCritical ? "critical hit" : outcome.criticalNegated ? "critical negated" : outcome.outcome} (d20 ${outcome.naturalD20 ?? "?"}, threshold ${outcome.criticalMinimum})`).join(", ");
+    return `Committed attack ${index + 1}${lineage ? ` - ${lineage}` : ticket.sourceRollId ? ` - ${ticket.sourceRollId}` : ""}`;
+  };
+  return (
+    <label className="sheet-row">
+      <span>Committed attack</span>
+      <select aria-label="Attack continuation ticket" value={props.selectedContinuationId ?? ""} disabled={props.disabled} onChange={(event) => props.onSelect(event.target.value)}>
+        {!props.selectedContinuationId && <option value="">Choose the exact committed attack</option>}
+        {props.tickets.map((ticket, index) => (
+          <option key={ticket.continuationId} value={ticket.continuationId} title={ticket.continuationId}>
+            {ticketLabel(ticket, index)}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+export function actorActionPreviewRevisions(
+  actors: ReadonlyArray<Actor>,
+  items: ReadonlyArray<Item>,
+  actorIds: ReadonlyArray<string | undefined>
+): { actorRevisions: Array<{ id: string; updatedAt: string }>; itemRevisions: Array<{ id: string; updatedAt: string }> } {
+  const relevantActorIds = new Set(actorIds.filter((value): value is string => Boolean(value)));
+  return {
+    actorRevisions: actors
+      .filter((actor) => relevantActorIds.has(actor.id))
+      .map((actor) => ({ id: actor.id, updatedAt: actor.updatedAt }))
+      .sort((left, right) => left.id.localeCompare(right.id)),
+    itemRevisions: items
+      .filter((item) => item.actorId && relevantActorIds.has(item.actorId))
+      .map((item) => ({ id: item.id, updatedAt: item.updatedAt }))
+      .sort((left, right) => left.id.localeCompare(right.id))
+  };
+}
+
+export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; systemLabel?: string; scene?: Scene; currentUserId: string; actors: Actor[]; tokens: Token[]; combat?: Combat; members: Snapshot["members"]; assets: MapAsset[]; items: Item[]; focusItemId?: string; initialPlacementSearch?: string; compendiumEntries: RulesCompendiumEntry[]; compendiumSearch: string; setCompendiumSearch(value: string): void; compendiumStatus: string; updateActorHp(actor: Actor, current: number): void; adjustActorHp(actor: Actor, delta: number): void; awardActorXp(actor: Actor, amount: number): Promise<void>; xpProgress?: XpProgressInfo; advancementReady: boolean; onLevelUp(): void; onPreviewRestActor(restType: "short" | "long", options: ActorRestOptions, idempotencyKey: string): Promise<RestPreviewEnvelope>; onRestActor(restType: "short" | "long", options?: ActorRestOptions): void | Promise<void>; onTypedDamageApplied(result: TypedDamageApplyResult): void; updateActorData(actor: Actor, patch: Record<string, unknown>): void; toggleActorCondition(actor: Actor, conditionId: string, options?: { overrideReason?: string }): void; updateItemData(item: Item, patch: Record<string, unknown>): Promise<void>; changeActorAttunement(actor: Actor, item: Item, attuned: boolean, options?: ActorAttunementChangeOptions): Promise<void>; assignItemToActor(item: Item, actor: Actor): Promise<void>; onSpellPreparationApplied(result: Dnd5eSrdSpellPreparationMutationResult): void; updateToken(patch: Partial<Token>): void; onUploadTokenImage(file: File, input?: HTMLInputElement): Promise<void>; targetToken(tokenId: string, targeted: boolean): void; targetTokens(tokenIds: string[], targeted: boolean): void; deleteToken(): void; deleteActor(actor: Actor): Promise<void>; updateTokenVision(patch: TokenVisionPatch): Promise<boolean>; useActorAction(rollId: string, options?: ActorActionCommitOptions): void; onImportCompendiumEntry(entry: RulesCompendiumEntry): Promise<void>; onPurchaseCompendiumEntry(entry: RulesCompendiumEntry, quantity: number): Promise<void>; onPlaceActor(actor: Actor, placementAttemptId: string): Promise<void>; canCreateToken: boolean; canUpdateActor: boolean; canManageActorRules?: boolean; canAwardActorXp: boolean; canRestActor: boolean; canUpdateToken: boolean; canDeleteToken: boolean; canDeleteActor: boolean; canUseAction: boolean }) {
   const canManageActorRules = props.canManageActorRules ?? Boolean(
     props.members.find((member) => member.userId === props.currentUserId)?.permissions.includes("actor.update")
   );
   const tokenAction = useRetryableAction(`${props.campaignId}:${props.actor?.id ?? "none"}:${props.token?.id ?? "none"}`);
   const [sheetView, setSheetView] = useState<"stats" | "loadout" | "actions" | "compendium">("stats");
   const [loadoutSearch, setLoadoutSearch] = useState("");
+  const [placementSearch, setPlacementSearch] = useState(props.initialPlacementSearch ?? "");
   const [loadoutFilter, setLoadoutFilter] = useState<ActorLoadoutFilter>("all");
   const [conditionOverrideReason, setConditionOverrideReason] = useState("");
   const [purchaseQuantities, setPurchaseQuantities] = useState<Record<string, number>>({});
   const [coreStatistics, setCoreStatistics] = useState<{ actorId: string; stats: ActorCoreStatistics } | undefined>();
   const [coreStatisticsLoading, setCoreStatisticsLoading] = useState(false);
-  const [actionPreview, setActionPreview] = useState<ActorActionResolutionPreview | undefined>();
-  const [actionPreviewStatus, setActionPreviewStatus] = useState("");
+  const actionDraftScopeKey = actorActionDraftScopeKey({ campaignId: props.campaignId, actorId: props.actor?.id ?? "", sceneId: props.scene?.id, combatId: props.combat?.id });
+  const [storedActionDraft, setStoredActionDraft] = useState(() => initialActorActionDraft(actionDraftScopeKey, props.actor?.id ?? ""));
+  const actionDraft = actorActionDraftForScope(storedActionDraft, actionDraftScopeKey, props.actor?.id ?? "");
+  const actionApplyEffect = actionDraft.applyEffect;
+  const actionConsumeResources = actionDraft.consumeResources;
+  const scopedActionTargetIds = scopedActorActionTargetIds({
+    actorIds: props.actors.map((actor) => actor.id),
+    tokens: props.tokens,
+    sourceActorId: props.actor?.id ?? "",
+    sceneId: props.scene?.id,
+    combatActorIds: props.combat?.combatants.map((combatant) => combatant.actorId).filter((actorId): actorId is string => Boolean(actorId))
+  });
+  const scopedActionTargetIdSet = new Set(scopedActionTargetIds);
+  const actionTargetActors = props.actors.filter((actor) => scopedActionTargetIdSet.has(actor.id));
+  const actionTargetSceneId = props.scene?.id ?? props.token?.sceneId;
+  const actionTargetSceneTokens = actionTargetSceneId ? props.tokens.filter((token) => token.sceneId === actionTargetSceneId) : [];
+  const actionTargetNameOverrides = Object.fromEntries(actionTargetActors.map((actor) => {
+    const token = actionTargetSceneTokens.find((candidate) => candidate.actorId === actor.id);
+    const tokenContext = token && token.name !== actor.name
+      ? token.name
+      : [props.scene?.name, token?.id].filter(Boolean).join(" / ");
+    return [actor.id, actorActionTargetLabel(actor, actionTargetActors, tokenContext)];
+  }));
+  const actionTargetDisplayLabel = (actor: Actor): string => actionTargetNameOverrides[actor.id] ?? actor.name;
+  const actionTargetActorId = actionTargetActors.some((actor) => actor.id === actionDraft.targetActorId)
+    ? actionDraft.targetActorId
+    : props.actor?.id ?? "";
   const [actionPreviewRollId, setActionPreviewRollId] = useState("");
   const [actionSaveOutcomes, setActionSaveOutcomes] = useState<Record<string, RulesSaveOutcome>>({});
   const [actionEffectChoice, setActionEffectChoice] = useState("");
+  const [preferredActionContinuationId, setPreferredActionContinuationId] = useState("");
   const [weaponMasteryDraft, setWeaponMasteryDraft] = useState(emptyWeaponMasteryDraft);
+  const [actionPreviewState, dispatchActionPreview] = useReducer(
+    reduceActionPreviewState<ActorActionResolutionPreview>,
+    initialActionPreviewState<ActorActionResolutionPreview>()
+  );
   const [targetAreaX, setTargetAreaX] = useState("0");
   const [targetAreaY, setTargetAreaY] = useState("0");
   const [targetAreaWidth, setTargetAreaWidth] = useState("1200");
   const [targetAreaHeight, setTargetAreaHeight] = useState("800");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [actorDeleteDialogOpen, setActorDeleteDialogOpen] = useState(false);
   const [fullSheetOpen, setFullSheetOpen] = useState(false);
   const [rulesTraceOpen, setRulesTraceOpen] = useState(false);
   const deleteConfirmRef = useRef<HTMLButtonElement | null>(null);
+  const actorDeleteConfirmRef = useRef<HTMLButtonElement | null>(null);
   const tokenImageInputRef = useRef<HTMLInputElement | null>(null);
+  const actionPreviewRequestRef = useRef(0);
   const sheetPanel = useMovablePanel(initialActorSheetPanelPosition, initialActorSheetPanelSize, { minWidth: 380, minHeight: 360 });
   const deleteDialogRef = useModalAccessibility<HTMLDivElement>(() => setDeleteDialogOpen(false), { enabled: deleteDialogOpen, initialFocusRef: deleteConfirmRef });
+  const actorDeleteDialogRef = useModalAccessibility<HTMLDivElement>(() => setActorDeleteDialogOpen(false), { enabled: actorDeleteDialogOpen, initialFocusRef: actorDeleteConfirmRef });
+  const previewActorItems = props.actor ? props.items.filter((item) => item.actorId === props.actor?.id) : [];
+  const previewActionOptions = props.actor ? actorActionOptions(props.actor, previewActorItems) : [];
+  const selectedPreviewAction = previewActionOptions.find((action) => action.rollId === actionPreviewRollId) ?? previewActionOptions[0];
+  const selectedPreviewTargetId = actionTargetActorId;
+  const selectedPreviewTarget = actionTargetActors.find((actor) => actor.id === selectedPreviewTargetId);
+  const selectedPreviewWeaponMasteryUse = props.actor && selectedPreviewAction
+    ? weaponMasteryUseForSelection(weaponMasterySelectionForAction(props.actor, previewActorItems, selectedPreviewAction.rollId), weaponMasteryDraft)
+    : undefined;
+  const secondaryPreviewTargetId = selectedPreviewWeaponMasteryUse?.secondaryTargetActorId;
+  const { actorRevisions: previewActorRevisions, itemRevisions: previewItemRevisions } = actorActionPreviewRevisions(
+    props.actors,
+    props.items,
+    [props.actor?.id, selectedPreviewTargetId, secondaryPreviewTargetId]
+  );
+  const availableActionContinuations = props.actor && selectedPreviewAction
+    ? actionPreviewContinuationTickets(props.actor.data, props.actor.id, props.combat, selectedPreviewAction.rollId, [selectedPreviewTargetId])
+    : [];
+  const selectedActionContinuation = actionPreviewContinuationSelection(availableActionContinuations, preferredActionContinuationId);
+  const selectedActionContinuationId = selectedActionContinuation?.continuationId;
+  const actionContinuationSelectionRequired = availableActionContinuations.length > 1 && !selectedActionContinuation;
+  const actionPreviewFingerprint = props.actor && selectedPreviewAction && !actionContinuationSelectionRequired
+    ? createActionPreviewFingerprint({
+        campaignId: props.campaignId,
+        actorId: props.actor.id,
+        actorUpdatedAt: props.actor.updatedAt,
+        systemId: props.actor.systemId,
+        rollId: selectedPreviewAction.rollId,
+        targetActorId: selectedPreviewTargetId,
+        targetActorUpdatedAt: selectedPreviewTarget?.updatedAt,
+        applyEffect: actionApplyEffect,
+        consumeResources: actionConsumeResources,
+        saveOutcomes: Object.keys(actionSaveOutcomes).length > 0 ? actionSaveOutcomes : undefined,
+        effectChoice: actionEffectChoice || undefined,
+        continuationId: selectedActionContinuationId,
+        weaponMastery: selectedPreviewWeaponMasteryUse,
+        actorRevisions: previewActorRevisions,
+        itemRevisions: previewItemRevisions,
+        combat: props.combat ? {
+          id: props.combat.id,
+          updatedAt: props.combat.updatedAt,
+          round: props.combat.round,
+          turnIndex: props.combat.turnIndex,
+          activeCombatantId: props.combat.combatants[props.combat.turnIndex]?.id
+        } : undefined
+      })
+    : undefined;
+  const invalidateActionPreview = (): void => {
+    actionPreviewRequestRef.current += 1;
+    dispatchActionPreview({ type: "invalidate" });
+  };
+  const selectActionPreview = (rollId: string): void => {
+    invalidateActionPreview();
+    setActionPreviewRollId(rollId);
+  };
+  const selectActionTarget = (actorId: string): void => {
+    if (actorId === actionTargetActorId || !actionTargetActors.some((actor) => actor.id === actorId)) return;
+    invalidateActionPreview();
+    setStoredActionDraft({ ...actionDraft, targetActorId: actorId });
+  };
+  const selectActionApplyEffect = (applyEffect: boolean): void => {
+    if (applyEffect === actionApplyEffect) return;
+    invalidateActionPreview();
+    setStoredActionDraft({ ...actionDraft, applyEffect });
+  };
+  const selectActionConsumeResources = (consumeResources: boolean): void => {
+    if (consumeResources === actionConsumeResources) return;
+    invalidateActionPreview();
+    setStoredActionDraft({ ...actionDraft, consumeResources });
+  };
+  const selectActionEffectChoice = (effectChoice: string): void => {
+    if (effectChoice === actionEffectChoice) return;
+    invalidateActionPreview();
+    setActionEffectChoice(effectChoice);
+  };
+  const selectActionContinuation = (continuationId: string): void => {
+    if (continuationId === selectedActionContinuationId) return;
+    invalidateActionPreview();
+    setPreferredActionContinuationId(continuationId);
+  };
+  const selectWeaponMasteryDraft = (draft: ReturnType<typeof emptyWeaponMasteryDraft>): void => {
+    invalidateActionPreview();
+    setWeaponMasteryDraft(draft);
+  };
   const commitTokenVisionInput = (input: HTMLInputElement, patch: TokenVisionPatch | undefined, fallback: number) => {
     const restore = () => { if (input.isConnected) input.value = String(fallback); };
     if (!patch) {
@@ -288,9 +454,22 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
     void props.updateTokenVision(patch).then((saved) => { if (!saved) restore(); }, restore);
   };
   useEffect(() => {
+    setStoredActionDraft((current) => actorActionDraftForScope(current, actionDraftScopeKey, props.actor?.id ?? ""));
+    setActionPreviewRollId("");
+    setActionSaveOutcomes({});
+    setActionEffectChoice("");
+    setPreferredActionContinuationId("");
+    setWeaponMasteryDraft(emptyWeaponMasteryDraft());
+    actionPreviewRequestRef.current += 1;
+    dispatchActionPreview({ type: "reset" });
+  }, [actionDraftScopeKey]);
+  useEffect(() => {
     setFullSheetOpen(false);
     setDeleteDialogOpen(false);
   }, [props.token?.id]);
+  useEffect(() => {
+    setActorDeleteDialogOpen(false);
+  }, [props.actor?.id]);
   useEffect(() => {
     const focusedItem = props.items.find((item) => item.id === props.focusItemId);
     if (focusedItem && props.actor && (!focusedItem.actorId || focusedItem.actorId === props.actor.id)) setSheetView("loadout");
@@ -304,54 +483,63 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
     return () => document.removeEventListener("keydown", closeOnEscape);
   }, [fullSheetOpen]);
   useEffect(() => {
-    if (!props.actor || props.actor.systemId !== "dnd-5e-srd" || !props.canUseAction) {
-      setActionPreview(undefined);
-      setActionPreviewStatus("");
+    if (!props.actor || props.actor.systemId !== "dnd-5e-srd" || !props.canUseAction || !selectedPreviewAction || !actionPreviewFingerprint) {
+      actionPreviewRequestRef.current += 1;
+      dispatchActionPreview({ type: "reset" });
       return;
     }
-    const actorItems = props.items.filter((item) => item.actorId === props.actor?.id);
-    const actions = actorActionOptions(props.actor, actorItems);
-    const previewAction = actions.find((action) => action.rollId === actionPreviewRollId) ?? actions[0];
-    if (!previewAction) {
-      setActionPreview(undefined);
-      setActionPreviewStatus("");
-      return;
-    }
-    let cancelled = false;
-    setActionPreviewStatus("Previewing");
+    const controller = new AbortController();
+    const requestId = ++actionPreviewRequestRef.current;
+    dispatchActionPreview({ type: "request", requestId, fingerprint: actionPreviewFingerprint });
     apiPost<{ resolution?: ActorActionResolutionPreview }>(`/api/v1/campaigns/${props.campaignId}/systems/${props.actor.systemId}/actors/${props.actor.id}/roll`, {
-      rollId: previewAction.rollId,
-      targetActorId: props.actionTargetActorId || props.actor.id,
-      applyEffect: props.actionApplyEffect,
-      consumeResources: props.actionConsumeResources,
+      rollId: selectedPreviewAction.rollId,
+      expectedUpdatedAt: props.actor.updatedAt,
+      targetActorId: selectedPreviewTargetId,
+      applyEffect: actionApplyEffect,
+      consumeResources: actionConsumeResources,
       saveOutcomes: Object.keys(actionSaveOutcomes).length > 0 ? actionSaveOutcomes : undefined,
       effectChoice: actionEffectChoice || undefined,
-      weaponMastery: weaponMasteryUseForSelection(weaponMasterySelectionForAction(props.actor, actorItems, previewAction.rollId), weaponMasteryDraft),
+      continuationId: selectedActionContinuationId,
+      weaponMastery: weaponMasteryUseForSelection(weaponMasterySelectionForAction(props.actor, previewActorItems, selectedPreviewAction.rollId), weaponMasteryDraft),
       commit: false
-    })
+    }, { signal: controller.signal })
       .then((result) => {
-        if (cancelled) return;
-        setActionPreview(result.resolution);
-        setActionPreviewStatus(result.resolution ? "Preview ready" : "");
+        if (!result.resolution) {
+          dispatchActionPreview({ type: "reject", requestId, fingerprint: actionPreviewFingerprint, message: "Preview unavailable; retry the current action." });
+          return;
+        }
+        if (selectedActionContinuationId && actionPreviewContinuationMetadata(result.resolution).continuationId !== selectedActionContinuationId) {
+          dispatchActionPreview({ type: "reject", requestId, fingerprint: actionPreviewFingerprint, message: "Preview did not bind to the selected committed attack; choose the ticket again." });
+          return;
+        }
+        dispatchActionPreview({ type: "resolve", requestId, fingerprint: actionPreviewFingerprint, preview: result.resolution });
       })
       .catch((error) => {
-        if (cancelled) return;
-        setActionPreview(undefined);
-        setActionPreviewStatus(error instanceof Error ? error.message : String(error));
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        const message = error instanceof Error ? error.message : String(error);
+        const stale = /changed|conflict|revision|stale/i.test(message);
+        dispatchActionPreview({
+          type: "reject",
+          requestId,
+          fingerprint: actionPreviewFingerprint,
+          message: stale ? `Preview stale: ${message}. Retry after the current state is refreshed.` : message
+        });
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [props.actor?.id, props.actor?.updatedAt, props.campaignId, props.actionApplyEffect, props.actionConsumeResources, props.actionTargetActorId, props.canUseAction, props.items, actionPreviewRollId, actionSaveOutcomes, actionEffectChoice, weaponMasteryDraft]);
+    return () => controller.abort();
+  }, [actionPreviewFingerprint, actionPreviewState.refreshToken, props.canUseAction]);
   useEffect(() => {
     setActionSaveOutcomes({});
     setActionEffectChoice("");
     setWeaponMasteryDraft(emptyWeaponMasteryDraft());
-  }, [props.actor?.id, props.actionTargetActorId, actionPreviewRollId]);
+  }, [props.actor?.id, actionTargetActorId, actionPreviewRollId]);
   const coreStatisticsActorId = props.actor?.id;
   const coreStatisticsActorRevision = props.actor?.updatedAt;
   const coreStatisticsSystemId = props.actor?.systemId;
   const coreStatisticsActorType = props.actor?.type;
+  const coreStatisticsItemRevision = previewActorItems
+    .map((item) => `${item.id}:${item.updatedAt}`)
+    .sort()
+    .join("|");
   useEffect(() => {
     if (!coreStatisticsActorId || !coreStatisticsSystemId) {
       setCoreStatistics(undefined);
@@ -376,7 +564,7 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
     return () => {
       cancelled = true;
     };
-  }, [props.campaignId, coreStatisticsActorId, coreStatisticsSystemId, coreStatisticsActorRevision, coreStatisticsActorType]);
+  }, [props.campaignId, coreStatisticsActorId, coreStatisticsSystemId, coreStatisticsActorRevision, coreStatisticsActorType, coreStatisticsItemRevision]);
   if (!props.actor) return <div className="panel-empty">No actor selected.</div>;
   const tokenOwnerIds = props.token?.ownerUserIds ?? [];
   const playerOwnerIds = tokenPlayerOwnerIds(props.members);
@@ -387,11 +575,31 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
     props.updateToken({ ownerUserIds: [...nextOwners].sort() });
   };
   const hp = props.actor.data.hp as { current?: number; max?: number } | undefined;
+  const damageRequiresReview = props.actor.systemId === "dnd-5e-srd";
+  const typedDamageSectionId = `actor-typed-damage-${props.actor.id}`;
+  const openReviewedDamage = () => {
+    setFullSheetOpen(false);
+    setSheetView("stats");
+    window.setTimeout(() => document.getElementById(typedDamageSectionId)?.focus(), 0);
+  };
+  const commitHitPointInput = (input: HTMLInputElement) => {
+    const authoritativeCurrent = hp?.current ?? 0;
+    const authoritativeMax = hp?.max ?? Number.MAX_SAFE_INTEGER;
+    const decision = resolveHitPointEdit(authoritativeCurrent, authoritativeMax, Number(input.value), damageRequiresReview);
+    input.value = String(decision.value);
+    if (decision.kind === "review-damage") {
+      openReviewedDamage();
+      return;
+    }
+    if (decision.kind === "commit") {
+      props.updateActorHp(props.actor!, decision.value);
+    }
+  };
   const conditions = actorConditionLabels(props.actor);
   const concentration = actorConcentrationLabel(props.actor);
   const rage = actorRageStatus(props.actor);
   const combatState = actorCombatStateLabels(props.actor);
-  const actorItems = props.items.filter((item) => item.actorId === props.actor?.id);
+  const actorItems = previewActorItems;
   const inventory = actorItems.filter((item) => item.type !== "spell" && item.type !== "talent" && item.type !== "clue" && item.type !== "ritual");
   const spells = actorItems.filter((item) => item.type === "spell");
   const talents = actorItems.filter((item) => item.type === "talent");
@@ -420,34 +628,47 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
   const filteredActorItems = filterActorLoadoutItems(actorItems, loadoutSearch, loadoutFilter);
   const resources = actorResourceLabels(props.actor);
   const resourceControls = actorResourceControls(props.actor);
-  const actionOptions = actorActionOptions(props.actor, actorItems);
+  const actionOptions = previewActionOptions;
   const actionLabels = actionOptions.map((option) => option.description);
   const firstAction = actionOptions[0];
-  const previewAction = actionOptions.find((action) => action.rollId === actionPreviewRollId) ?? firstAction;
+  const previewAction = selectedPreviewAction;
   const previewWeaponMasterySelection = previewAction ? weaponMasterySelectionForAction(props.actor, actorItems, previewAction.rollId) : undefined;
-  const previewWeaponMasteryUse = weaponMasteryUseForSelection(previewWeaponMasterySelection, weaponMasteryDraft);
+  const previewWeaponMasteryUse = selectedPreviewWeaponMasteryUse;
+  const actionPreview = actionPreviewForFingerprint(actionPreviewState, actionPreviewFingerprint);
+  const actionPreviewStatus = actionPreviewStatusMessage(actionPreviewState, actionPreviewFingerprint);
   const previewActionSupportsEffect = actorActionSupportsEffect(previewAction);
   const requiredPendingSaves = actionPreview?.pendingSaves?.filter((save) => save.requiredForCommit === true) ?? [];
   const missingRequiredSaveOutcomes = requiredPendingSaves.some((save) => !actionSaveOutcomes[save.actorId]);
   const actionPreviewRequiresInput = actorActionPreviewRequiresInput(actionPreview, {
-    applyEffect: props.actionApplyEffect,
+    applyEffect: actionApplyEffect,
     missingRequiredSaveOutcomes,
     effectChoice: actionEffectChoice,
   });
-  const previewRulesBoundary = rulesBoundaryFromAction(actionPreview, previewActionSupportsEffect, props.actionApplyEffect);
-  const actionTargetActorId = props.actionTargetActorId || props.actor.id;
-  const selectedActionTarget = props.actors.find((actor) => actor.id === actionTargetActorId) ?? props.actor;
+  const actionPreviewReady = actionPreviewIsReady(actionPreviewState, actionPreviewFingerprint);
+  const previewContinuation = actionPreviewContinuationMetadata(actionPreview);
+  const previewRulesBoundary = rulesBoundaryFromAction(actionPreview, previewActionSupportsEffect, actionApplyEffect);
+  const selectedActionTarget = actionTargetActors.find((actor) => actor.id === actionTargetActorId) ?? props.actor;
   const actionSaveOutcomePayload = Object.keys(actionSaveOutcomes).length > 0 ? actionSaveOutcomes : undefined;
   const actionEffectChoicePayload = actionEffectChoice || undefined;
-  const previewActionCommitOptions: ActorActionCommitOptions = { targetActorId: actionTargetActorId, applyEffect: props.actionApplyEffect, consumeResources: props.actionConsumeResources, saveOutcomes: actionSaveOutcomePayload, effectChoice: actionEffectChoicePayload, weaponMastery: previewWeaponMasteryUse };
-  const baseActionCommitOptions: ActorActionCommitOptions = { targetActorId: actionTargetActorId, applyEffect: props.actionApplyEffect, consumeResources: props.actionConsumeResources };
-  const commitOptionsForAction = (rollId: string): ActorActionCommitOptions => (rollId === previewAction?.rollId ? previewActionCommitOptions : baseActionCommitOptions);
+  const previewActionCommitOptions: ActorActionCommitOptions = { targetActorId: actionTargetActorId, applyEffect: actionApplyEffect, consumeResources: actionConsumeResources, saveOutcomes: actionSaveOutcomePayload, effectChoice: actionEffectChoicePayload, weaponMastery: previewWeaponMasteryUse, continuationId: previewContinuation.continuationId, reviewActorNames: actionTargetNameOverrides };
+  const commitCurrentActionPreview = (): void => {
+    if (!actionPreviewReady || !actionPreview || !previewAction) return;
+    if (previewContinuation.continuationId) setPreferredActionContinuationId(previewContinuation.continuationId);
+    props.useActorAction(previewAction.rollId, previewActionCommitOptions);
+  };
   const actionSaveActorName = (actorId: string): string => props.actors.find((actor) => actor.id === actorId)?.name ?? actorId;
-  const updateActionSaveOutcome = (actorId: string, outcome: RulesSaveOutcome) => setActionSaveOutcomes((current) => ({ ...current, [actorId]: outcome }));
-  const sceneTargetTokens = props.token ? props.tokens.filter((token) => token.sceneId === props.token?.sceneId) : props.tokens;
+  const updateActionSaveOutcome = (actorId: string, outcome: RulesSaveOutcome): void => {
+    invalidateActionPreview();
+    setActionSaveOutcomes((current) => ({ ...current, [actorId]: outcome }));
+  };
+  const sceneTargetTokens = props.scene
+    ? props.tokens.filter((token) => token.sceneId === props.scene?.id)
+    : props.token
+      ? props.tokens.filter((token) => token.sceneId === props.token?.sceneId)
+      : [];
   const targetedSceneTokens = sceneTargetTokens.filter((token) => token.targetedByUserIds?.includes(props.currentUserId));
   const hostileSceneTokens = sceneTargetTokens.filter((token) => token.disposition === "hostile");
-  const targetableSceneTokens = sceneTargetTokens.slice(0, 12);
+  const targetableSceneTokens = sceneTargetTokens;
   const combatants = props.combat?.combatants ?? [];
   const currentCombatant = props.combat && combatants.length > 0 ? combatants[props.combat.turnIndex] ?? combatants[0] : undefined;
   const nextCombatant = props.combat && combatants.length > 1 ? combatants[(props.combat.turnIndex + 1) % combatants.length] : undefined;
@@ -471,7 +692,7 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
     ? sceneTargetTokens.filter((token) => isPointInsidePoints({ x: token.x + token.width / 2, y: token.y + token.height / 2 }, latestLasso.points))
     : [];
   const lassoTargetTokenIds = lassoTargetTokens.map((token) => token.id);
-  const tokenActionTargetOptions = props.tokens
+  const tokenActionTargetOptions = sceneTargetTokens
     .filter((token) => token.actorId && (token.id === props.token?.id || token.targetedByUserIds?.includes(props.currentUserId)))
     .map((token) => ({ token, actor: props.actors.find((actor) => actor.id === token.actorId) }))
     .filter((option): option is { token: Token; actor: Actor } => Boolean(option.actor))
@@ -483,8 +704,7 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
   const armorClass = (coreStatistics?.actorId === props.actor.id ? coreStatistics.stats.armorClass : undefined) ?? actorArmorClass(props.actor, actorItems);
   const normalizedCompendiumSearch = props.compendiumSearch.trim().toLocaleLowerCase();
   const filteredCompendiumEntries = props.compendiumEntries
-    .filter((entry) => !normalizedCompendiumSearch || [entry.name, entry.type, entry.summary, entry.id].some((value) => value.toLocaleLowerCase().includes(normalizedCompendiumSearch)))
-    .slice(0, 8);
+    .filter((entry) => !normalizedCompendiumSearch || [entry.name, entry.type, entry.summary, entry.id].some((value) => value.toLocaleLowerCase().includes(normalizedCompendiumSearch)));
   const adversary = isAdversaryActor(props.actor, props.tokens);
   const sheetTone = props.token?.disposition ?? (adversary ? "hostile" : "friendly");
   const rollActions = actionOptions.filter((action) => actorActionDiceFormula(action));
@@ -506,8 +726,8 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
           <span>{action.description}</span>
           {action.resolutionNote && <span className="admin-status">{action.resolutionNote}</span>}
         </div>
-        <button className="ghost-button small" type="button" disabled={!props.canUseAction} onClick={() => props.useActorAction(action.rollId, commitOptionsForAction(action.rollId))}>
-          {formula ? <Dices size={14} /> : <WandSparkles size={14} />} {formula ? `Roll ${formula}` : "Use"}
+        <button className="ghost-button small" type="button" disabled={!props.canUseAction} onClick={() => { selectActionPreview(action.rollId); setFullSheetOpen(false); setSheetView("actions"); }}>
+          {formula ? <Dices size={14} /> : <WandSparkles size={14} />} {formula ? `Review ${formula}` : "Review"}
         </button>
       </div>
     );
@@ -533,7 +753,7 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
         onDismiss={tokenAction.clearAction}
       />
       <section className="operator-section actor-at-a-glance" aria-label="Actor at a glance">
-        <HpBar current={hp?.current} max={hp?.max} canEdit={props.canUpdateActor} onAdjust={(delta) => props.adjustActorHp(props.actor!, delta)} />
+        <HpBar current={hp?.current} max={hp?.max} canEdit={props.canUpdateActor} damageRequiresReview={damageRequiresReview} onAdjust={(delta) => props.adjustActorHp(props.actor!, delta)} onReviewDamage={openReviewedDamage} />
         <div className="actor-vitals-row">
           <span className="actor-vital" title={armorClass?.label ? `Armor class - ${armorClass.label}` : "Armor class"}>
             <Shield size={13} aria-hidden="true" /> AC {armorClass ? armorClass.value : "?"}
@@ -568,7 +788,7 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
           </header>
           <div className="actor-sheet-body">
             <section className="actor-sheet-section" aria-label="Full sheet stats">
-              <HpBar current={hp?.current} max={hp?.max} canEdit={props.canUpdateActor} onAdjust={(delta) => props.adjustActorHp(props.actor!, delta)} />
+              <HpBar current={hp?.current} max={hp?.max} canEdit={props.canUpdateActor} damageRequiresReview={damageRequiresReview} onAdjust={(delta) => props.adjustActorHp(props.actor!, delta)} onReviewDamage={openReviewedDamage} />
               {coreStatistics?.actorId === props.actor.id && (
                 <CoreStatisticsSection
                   stats={coreStatistics.stats}
@@ -599,7 +819,7 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
                   <strong>{formatNumber(actorItems.length)}</strong>
                 </div>
                 <div className="placement-list">
-                  {filteredActorItems.slice(0, 16).map((item) => (
+                  {actorItems.map((item) => (
                     <span className="placement-chip" key={`full-sheet-item-${item.id}`}>
                       <Boxes size={14} />
                       <span>{itemDisplayLabel(item)}</span>
@@ -616,7 +836,7 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
                     <span>Rolls</span>
                     <strong>{formatNumber(rollActions.length)}</strong>
                   </div>
-                  {rollActions.slice(0, 10).map(renderSheetAction)}
+                  {rollActions.map(renderSheetAction)}
                 </>
               )}
               {featureActions.length > 0 && (
@@ -625,7 +845,7 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
                     <span>Features</span>
                     <strong>{formatNumber(featureActions.length)}</strong>
                   </div>
-                  {featureActions.slice(0, 10).map(renderSheetAction)}
+                  {featureActions.map(renderSheetAction)}
                 </>
               )}
             </section>
@@ -636,7 +856,7 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
               </div>
               <div className="metric-row">
                 <span>Action target</span>
-                <strong>{selectedActionTarget.name}</strong>
+                <strong>{actionTargetDisplayLabel(selectedActionTarget)}</strong>
               </div>
               <div className="metric-row">
                 <span>Cover ruling</span>
@@ -644,9 +864,9 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
               </div>
               {tokenActionTargetOptions.length > 0 && (
                 <div className="button-row">
-                  {tokenActionTargetOptions.slice(0, 4).map(({ token, actor }) => (
-                    <button className={actionTargetActorId === actor.id ? "ghost-button small active" : "ghost-button small"} key={`full-sheet-target-${actor.id}`} type="button" disabled={!props.canUseAction} onClick={() => props.setActionTargetActorId(actor.id)}>
-                      <MapPin size={14} /> {actor.name}
+                  {tokenActionTargetOptions.map(({ token, actor }) => (
+                    <button className={actionTargetActorId === actor.id ? "ghost-button small active" : "ghost-button small"} key={`full-sheet-target-${actor.id}`} type="button" disabled={!props.canUseAction} onClick={() => selectActionTarget(actor.id)}>
+                      <MapPin size={14} /> {actionTargetDisplayLabel(actor)}
                       {token.targetedByUserIds?.includes(props.currentUserId) ? " (marked)" : ""}
                     </button>
                   ))}
@@ -660,36 +880,16 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
         </aside>
       )}
       {props.canCreateToken && (
-      <section className="operator-section placement-tray" aria-label="Actor placement tray">
-        <div className="operator-heading">
-          <div className="section-title">Place actors</div>
-          <strong>click or drag</strong>
-        </div>
-        <div className="placement-list">
-          {props.actors.slice(0, 8).map((actor) => (
-            <button
-              className="placement-chip"
-              key={actor.id}
-              type="button"
-              draggable={props.canCreateToken}
-              aria-label={`Place ${actor.name} actor on scene`}
-              title={props.canCreateToken ? "Click to place in the party staging area, or drag to an exact board position" : "Requires token.create"}
-              disabled={!props.canCreateToken}
-              onClick={() => {
-                const placementAttemptId = globalThis.crypto.randomUUID();
-                void tokenAction.runAction(`Place ${actor.name} on scene`, () => props.onPlaceActor(actor, placementAttemptId));
-              }}
-              onDragStart={(event) => {
-                writeTokenDropData(event.dataTransfer, { type: "actor", id: actor.id, actorId: actor.id, name: actor.name, disposition: "friendly" });
-                setTokenDropPreview(event.dataTransfer, actor.name);
-              }}
-            >
-              <Users size={14} />
-              <span>{actor.name}</span>
-            </button>
-          ))}
-        </div>
-      </section>
+      <ActorPlacementTray
+        actors={props.actors}
+        search={placementSearch}
+        canCreateToken={props.canCreateToken}
+        onSearchChange={setPlacementSearch}
+        onPlaceActor={(actor) => {
+          const placementAttemptId = globalThis.crypto.randomUUID();
+          void tokenAction.runAction(`Place ${actor.name} on scene`, () => props.onPlaceActor(actor, placementAttemptId));
+        }}
+      />
       )}
       <div className="tabs" role="tablist" aria-label="Actor sheet views">
         <button className={sheetView === "stats" ? "tab active" : "tab"} type="button" role="tab" aria-selected={sheetView === "stats"} onClick={() => setSheetView("stats")}>
@@ -729,9 +929,10 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
             </div>
           ))}
           <div className="sheet-row">
-            <label htmlFor="actor-hp-tab">Set HP</label>
-            <input id="actor-hp-tab" aria-label="Actor sheet current HP" key={`sheet:${props.actor.id}:${hp?.current ?? 0}`} type="number" defaultValue={hp?.current ?? 0} disabled={!props.canUpdateActor} onBlur={(event) => props.updateActorHp(props.actor!, Number(event.currentTarget.value))} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} />
+            <label htmlFor="actor-hp-tab">{damageRequiresReview ? "Heal to HP" : "Set HP"}</label>
+            <input id="actor-hp-tab" aria-label={damageRequiresReview ? "Actor sheet healing target HP" : "Actor sheet current HP"} aria-describedby={damageRequiresReview ? "actor-hp-tab-guidance" : undefined} key={`sheet:${props.actor.id}:${hp?.current ?? 0}`} type="number" min={damageRequiresReview ? hp?.current ?? 0 : 0} max={hp?.max} defaultValue={hp?.current ?? 0} disabled={!props.canUpdateActor} onBlur={(event) => commitHitPointInput(event.currentTarget)} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} />
           </div>
+          {damageRequiresReview && <p id="actor-hp-tab-guidance" className="admin-status">This field heals only. To reduce HP, use Reviewed typed damage below.</p>}
           {props.xpProgress && (
             <div className="xp-row">
               <div className="xp-bar" role="meter" aria-label={`Experience ${props.xpProgress.xp}${props.xpProgress.nextLevelXp ? ` of ${props.xpProgress.nextLevelXp}` : ""}`} aria-valuemin={props.xpProgress.previousLevelXp} aria-valuemax={props.xpProgress.nextLevelXp ?? props.xpProgress.xp} aria-valuenow={props.xpProgress.xp}>
@@ -752,7 +953,7 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
             </div>
           )}
           <HitDiceRestCard actor={props.actor} canRest={props.canRestActor} onPreviewRest={props.onPreviewRestActor} onRest={props.onRestActor} />
-          {props.actor.systemId === "dnd-5e-srd" && <TypedDamageCard campaignId={props.campaignId} actor={props.actor} actors={props.actors} canApply={props.canUpdateActor} onApplied={props.onTypedDamageApplied} />}
+          {props.actor.systemId === "dnd-5e-srd" && <section id={typedDamageSectionId} tabIndex={-1} aria-label="Reviewed typed damage"><TypedDamageCard campaignId={props.campaignId} actor={props.actor} actors={props.actors} canApply={props.canUpdateActor} onApplied={props.onTypedDamageApplied} /></section>}
           <div className="condition-quick-chips" role="group" aria-label="Toggle common conditions">
             {conditionChipIds.map((conditionId) => (
               <button
@@ -837,7 +1038,7 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
                 </div>
                 <div className="operator-row tool-call-row">
                   <span>Target actor</span>
-                  <strong>{selectedActionTarget.name}</strong>
+                  <strong>{actionTargetDisplayLabel(selectedActionTarget)}</strong>
                 </div>
                 <div className="operator-row tool-call-row">
                   <span>Cover ruling</span>
@@ -849,7 +1050,7 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
                 </div>
                 <div className="operator-row tool-call-row">
                   <span>Effect mode</span>
-                  <strong>{props.actionApplyEffect ? "apply damage/healing" : "roll only"}</strong>
+                  <strong>{actionApplyEffect ? "apply damage/healing" : "roll only"}</strong>
                 </div>
                 <div className="operator-row tool-call-row">
                   <span>Effect support</span>
@@ -857,12 +1058,23 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
                 </div>
                 <div className="operator-row tool-call-row">
                   <span>Resources</span>
-                  <strong>{props.actionConsumeResources ? "consume resources" : "do not consume"}</strong>
+                  <strong>{actionConsumeResources ? "consume resources" : "do not consume"}</strong>
                 </div>
+                <ActionContinuationTicketPicker
+                  tickets={availableActionContinuations}
+                  selectedContinuationId={selectedActionContinuationId}
+                  disabled={!props.canUseAction}
+                  actorName={actionSaveActorName}
+                  onSelect={selectActionContinuation}
+                />
+                {actionContinuationSelectionRequired && <p className="admin-status">Choose the exact committed attack before previewing this follow-up.</p>}
                 {actionPreviewStatus && (
                   <div className="operator-row tool-call-row">
                     <span>Resolver</span>
                     <strong>{actionPreviewStatus}</strong>
+                    {actionPreviewState.phase === "error" && actionPreviewState.fingerprint === actionPreviewFingerprint && (
+                      <button className="ghost-button small" type="button" onClick={invalidateActionPreview}>Retry preview</button>
+                    )}
                   </div>
                 )}
                 {actionPreview?.rolls?.[0] && (
@@ -877,14 +1089,26 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
                     <strong>{Math.max(0, 1 + actionPreview.action.ledger.actionSurgeGrants - actionPreview.action.ledger.actionsUsed)} remaining this turn</strong>
                   </div>
                 )}
+                {previewContinuation.continuationId && (
+                  <div className="operator-row tool-call-row">
+                    <span>Attack continuation</span>
+                    <strong title={previewContinuation.continuationId}>Bound to exact server ticket</strong>
+                  </div>
+                )}
+                {previewContinuation.criticalOutcomes.length > 0 && (
+                  <div className="operator-row tool-call-row">
+                    <span>Critical outcome</span>
+                    <strong>{previewContinuation.criticalOutcomes.map((outcome) => `${actionSaveActorName(outcome.targetActorId)}: ${outcome.finalCritical ? "critical hit" : outcome.criticalNegated ? "critical negated" : outcome.outcome} (d20 ${outcome.naturalD20 ?? "?"}, threshold ${outcome.criticalMinimum})`).join(", ")}</strong>
+                  </div>
+                )}
                 <WeaponMasteryControls
                   selection={previewWeaponMasterySelection}
                   draft={weaponMasteryDraft}
-                  actors={props.actors}
+                  actors={actionTargetActors}
                   sourceActorId={props.actor.id}
                   primaryTargetActorId={actionTargetActorId}
                   disabled={!props.canUseAction}
-                  onChange={setWeaponMasteryDraft}
+                  onChange={selectWeaponMasteryDraft}
                 />
                 {actionPreview?.weaponMastery && (
                   <div className="operator-row tool-call-row" role="status" aria-label="Weapon Mastery resolution">
@@ -938,12 +1162,12 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
                   </div>
                 )}
                 {previewAction && <p>{previewAction.description}</p>}
-                {previewAction && props.actionApplyEffect && !previewActionSupportsEffect && <p className="admin-status">Effect unsupported: clear Apply action effect to roll this action.</p>}
+                {previewAction && actionApplyEffect && !previewActionSupportsEffect && <p className="admin-status">Effect unsupported: clear Apply action effect to roll this action.</p>}
                 {actionPreview?.blocked && <p className="admin-status">{actionPreview.blocked.reason}</p>}
                 {actionPreview?.pendingChoice && (
                   <div className="operator-row tool-call-row">
                     <span>{actionPreview.pendingChoice.reason}</span>
-                    <select aria-label="Action effect choice" value={actionEffectChoice} onChange={(event) => setActionEffectChoice(event.target.value)}>
+                    <select aria-label="Action effect choice" value={actionEffectChoice} onChange={(event) => selectActionEffectChoice(event.target.value)}>
                       <option value="">Choose option</option>
                       {actionPreview.pendingChoice.options.map((option) => (
                         <option key={`action-choice-${option}`} value={option}>
@@ -956,13 +1180,16 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
                 {actionPreview?.manualResolutionRequired && <p className="admin-status">Manual resolution required: {actionPreview.manualResolutionRequired.reason}</p>}
                 {actionPreviewRequiresInput && <p className="admin-status">Resolve the pending save, required choice, unsupported effect, or Weapon Mastery selection before committing this action.</p>}
                 {actionPreview?.warnings?.map((warning) => <p className="admin-status" key={`action-preview-warning-${warning}`}>{warning}</p>)}
-                <button className="ghost-button" type="button" disabled={!props.canUseAction || !previewAction || Boolean(actionPreview?.blocked) || actionPreviewRequiresInput || (props.actionApplyEffect && !previewActionSupportsEffect)} onClick={() => previewAction && props.useActorAction(previewAction.rollId, previewActionCommitOptions)}>
-                  <WandSparkles size={14} /> Use previewed action
-                </button>
+                <div className="operator-row tool-call-row" role="status" aria-label="Action review progress">
+                  <span>Review progress</span>
+                  <strong>{actionPreviewReady ? "Step 1 of 2 ready - nothing committed" : "Step 1 of 2 - preparing preview"}</strong>
+                </div>
+                {actionPreviewReady && <p className="account-summary">Continue to final review opens the exact server-prepared consequences. Only the final confirmation commits the action or sends it to the GM.</p>}
+                <ActionPreviewCommitButton state={actionPreviewState} fingerprint={actionPreviewFingerprint} canCommit={props.canUseAction && Boolean(previewAction) && !actionPreview?.blocked && !actionPreviewRequiresInput && !(actionApplyEffect && !previewActionSupportsEffect)} onCommit={commitCurrentActionPreview} />
               </div>
               {actionOptions.map((action) => {
                 const supportsEffect = actorActionSupportsEffect(action);
-                const unsupportedEffect = props.actionApplyEffect && !supportsEffect;
+                const unsupportedEffect = actionApplyEffect && !supportsEffect;
                 const isPreviewed = action.rollId === previewAction?.rollId;
                 const previewBlocked = isPreviewed ? actionPreview?.blocked : undefined;
                 const previewRequiresInput = isPreviewed ? actionPreviewRequiresInput : false;
@@ -978,11 +1205,11 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
                     {previewBlocked && <p className="admin-status">{previewBlocked.reason}</p>}
                     {previewRequiresInput && <p className="admin-status">Resolve pending inputs before committing.</p>}
                     <div className="button-row">
-                      <button className={isPreviewed ? "ghost-button active" : "ghost-button"} type="button" aria-pressed={isPreviewed} disabled={!props.canUseAction} onClick={() => setActionPreviewRollId(action.rollId)}>
+                      <button className={isPreviewed ? "ghost-button active" : "ghost-button"} type="button" aria-pressed={isPreviewed} disabled={!props.canUseAction} onClick={() => selectActionPreview(action.rollId)}>
                         <Eye size={14} /> Preview
                       </button>
-                      <button className="ghost-button" type="button" disabled={!props.canUseAction || unsupportedEffect || Boolean(previewBlocked) || previewRequiresInput} onClick={() => props.useActorAction(action.rollId, commitOptionsForAction(action.rollId))}>
-                        <WandSparkles size={14} /> Use action
+                      <button className="ghost-button" type="button" aria-label="Continue to final review" aria-haspopup="dialog" disabled={!props.canUseAction || !isPreviewed || !actionPreviewReady || unsupportedEffect || Boolean(previewBlocked) || previewRequiresInput} onClick={commitCurrentActionPreview}>
+                        <WandSparkles size={14} /> Continue to final review
                       </button>
                     </div>
                   </article>
@@ -1394,10 +1621,10 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
         <>
           <label className="sheet-row">
             <span>Action Target</span>
-            <select aria-label="Action target actor" value={actionTargetActorId} disabled={!props.canUseAction} onChange={(event) => props.setActionTargetActorId(event.target.value)}>
-              {props.actors.map((actor) => (
+            <select aria-label="Action target actor" value={actionTargetActorId} disabled={!props.canUseAction} onChange={(event) => selectActionTarget(event.target.value)}>
+              {actionTargetActors.map((actor) => (
                 <option key={actor.id} value={actor.id}>
-                  {actor.name}
+                  {actionTargetDisplayLabel(actor)}
                 </option>
               ))}
             </select>
@@ -1410,9 +1637,9 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
             <div className="sheet-row" aria-label="Token action target shortcuts">
               <span>Token Targets</span>
               <div className="button-row">
-                {tokenActionTargetOptions.slice(0, 4).map(({ token, actor }) => (
-                  <button className={actionTargetActorId === actor.id ? "ghost-button active" : "ghost-button"} key={actor.id} type="button" disabled={!props.canUseAction} onClick={() => props.setActionTargetActorId(actor.id)}>
-                    <MapPin size={14} /> Target {actor.name}
+                {tokenActionTargetOptions.map(({ token, actor }) => (
+                  <button className={actionTargetActorId === actor.id ? "ghost-button active" : "ghost-button"} key={actor.id} type="button" disabled={!props.canUseAction} onClick={() => selectActionTarget(actor.id)}>
+                    <MapPin size={14} /> Target {actionTargetDisplayLabel(actor)}
                     {token.targetedByUserIds?.includes(props.currentUserId) ? " (marked)" : ""}
                   </button>
                 ))}
@@ -1420,22 +1647,23 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
             </div>
           )}
           <label className="inline-check">
-            <input aria-label="Apply action effect" type="checkbox" checked={props.actionApplyEffect} disabled={!props.canUseAction} onChange={(event) => props.setActionApplyEffect(event.target.checked)} />
+            <input aria-label="Apply action effect" type="checkbox" checked={actionApplyEffect} disabled={!props.canUseAction} onChange={(event) => selectActionApplyEffect(event.target.checked)} />
             <span>Apply damage/healing to target</span>
           </label>
           <label className="inline-check">
-            <input aria-label="Consume action resources" type="checkbox" checked={props.actionConsumeResources} disabled={!props.canUseAction} onChange={(event) => props.setActionConsumeResources(event.target.checked)} />
+            <input aria-label="Consume action resources" type="checkbox" checked={actionConsumeResources} disabled={!props.canUseAction} onChange={(event) => selectActionConsumeResources(event.target.checked)} />
             <span>Consume spell slots, item charges, or class resources</span>
           </label>
-          <button className="ghost-button wide" onClick={() => previewAction && props.useActorAction(previewAction.rollId, previewActionCommitOptions)} disabled={!props.canUseAction || !previewAction || Boolean(actionPreview?.blocked) || actionPreviewRequiresInput}>
-            <WandSparkles size={16} /> Use {previewAction?.label ?? firstAction.label}
+          <button className="ghost-button wide" aria-label={`Continue to final review for ${previewAction?.label ?? firstAction.label}`} aria-haspopup="dialog" onClick={commitCurrentActionPreview} disabled={!props.canUseAction || !actionPreviewReady || !previewAction || Boolean(actionPreview?.blocked) || actionPreviewRequiresInput}>
+            <WandSparkles size={16} /> Continue to final review
           </button>
         </>
       )}
       <div className="sheet-row">
-        <label htmlFor="actor-hp">Current HP</label>
-        <input id="actor-hp" key={`detail:${props.actor.id}:${hp?.current ?? 0}`} type="number" defaultValue={hp?.current ?? 0} disabled={!props.canUpdateActor} onBlur={(event) => props.updateActorHp(props.actor!, Number(event.currentTarget.value))} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} />
+        <label htmlFor="actor-hp">{damageRequiresReview ? "Heal to HP" : "Current HP"}</label>
+        <input id="actor-hp" aria-describedby={damageRequiresReview ? "actor-hp-guidance" : undefined} key={`detail:${props.actor.id}:${hp?.current ?? 0}`} type="number" min={damageRequiresReview ? hp?.current ?? 0 : 0} max={hp?.max} defaultValue={hp?.current ?? 0} disabled={!props.canUpdateActor} onBlur={(event) => commitHitPointInput(event.currentTarget)} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} />
       </div>
+      {damageRequiresReview && <p id="actor-hp-guidance" className="admin-status">This field heals only. To reduce HP, use Reviewed typed damage in Stats.</p>}
       <div className="sheet-row">
         <label htmlFor="actor-conditions">Actor conditions</label>
         <input id="actor-conditions" aria-label="Actor conditions" defaultValue={formatActorConditions(props.actor)} disabled={!props.canUpdateActor} onBlur={(event) => props.updateActorData(props.actor!, { conditions: parseActorConditions(event.currentTarget.value) })} />
@@ -1517,6 +1745,38 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
         <summary>Raw actor data</summary>
         <pre>{JSON.stringify(props.actor.data, null, 2)}</pre>
       </details>
+      {props.canDeleteActor && (
+        <section className="operator-section" aria-label="Actor lifecycle">
+          <div className="operator-heading">
+            <div>
+              <div className="section-title">Actor lifecycle</div>
+              <p>Remove this actor from the campaign roster.</p>
+            </div>
+          </div>
+          <button className="ghost-button danger-button wide" type="button" aria-haspopup="dialog" onClick={() => setActorDeleteDialogOpen(true)}>
+            <X size={16} /> Delete actor
+          </button>
+          {actorDeleteDialogOpen && (
+            <div className="modal-backdrop" role="presentation">
+              <div ref={actorDeleteDialogRef} className="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="actor-delete-dialog-title" aria-describedby="actor-delete-dialog-description" tabIndex={-1}>
+                <div className="section-title" id="actor-delete-dialog-title">Permanently delete {props.actor.name}?</div>
+                <p id="actor-delete-dialog-description">The actor sheet will be deleted. Linked tokens and items remain but become unlinked; campaign, encounter, combat, journal, and handout references are cleaned up. This cannot be undone.</p>
+                <div className="admin-actions">
+                  <button className="ghost-button danger-button" type="button" ref={actorDeleteConfirmRef} onClick={() => {
+                    setActorDeleteDialogOpen(false);
+                    void props.deleteActor(props.actor!);
+                  }}>
+                    <X size={16} /> Confirm delete actor
+                  </button>
+                  <button className="ghost-button" type="button" onClick={() => setActorDeleteDialogOpen(false)}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
 }

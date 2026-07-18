@@ -41,7 +41,9 @@ test("campaign setup survives reload and sign-out without crossing users", async
 
   await panel.locator(".manage-category-button", { hasText: "Account" }).click();
   await panel.getByRole("button", { name: "Logout", exact: true }).click();
-  await page.getByRole("button", { name: "Demo Player" }).click();
+  await page.getByRole("button", { name: "Demo GM" }).click();
+  await page.getByRole("combobox", { name: "Session user" }).selectOption("usr_demo_player");
+  await expect(page.getByRole("combobox", { name: "Session user" })).toHaveValue("usr_demo_player");
   await page.getByRole("button", { name: "Account", exact: true }).click();
   panel = page.getByRole("region", { name: "Manage workspace panel" });
   await expect(panel.getByRole("heading", { name: /Next: Your character|Next: Join the table/ })).toBeVisible();

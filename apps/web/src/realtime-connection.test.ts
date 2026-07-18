@@ -219,18 +219,24 @@ describe("realtime connection", () => {
       blankCanvasDemoOpen: false,
       campaignId: "camp_demo",
       sessionToken: "ots_test",
+      userId: "usr_demo_gm",
+      sessionEpoch: 1,
       sceneId: "scn_vault"
     });
     const secondScene = realtimeConnectionIdentity({
       blankCanvasDemoOpen: false,
       campaignId: "camp_demo",
       sessionToken: "ots_test",
+      userId: "usr_demo_gm",
+      sessionEpoch: 1,
       sceneId: "scn_cavern"
     });
 
     expect(secondScene).toBe(firstScene);
-    expect(realtimeConnectionIdentity({ blankCanvasDemoOpen: false, campaignId: "camp_other", sessionToken: "ots_test", sceneId: "scn_cavern" })).not.toBe(firstScene);
-    expect(realtimeConnectionIdentity({ blankCanvasDemoOpen: true, campaignId: "camp_demo", sessionToken: "ots_test", sceneId: "scn_vault" })).toBeNull();
+    expect(realtimeConnectionIdentity({ blankCanvasDemoOpen: false, campaignId: "camp_other", sessionToken: "ots_test", userId: "usr_demo_gm", sessionEpoch: 1, sceneId: "scn_cavern" })).not.toBe(firstScene);
+    expect(realtimeConnectionIdentity({ blankCanvasDemoOpen: false, campaignId: "camp_demo", sessionToken: "ots_test", userId: "usr_other", sessionEpoch: 1 })).not.toBe(firstScene);
+    expect(realtimeConnectionIdentity({ blankCanvasDemoOpen: false, campaignId: "camp_demo", sessionToken: "ots_test", userId: "usr_demo_gm", sessionEpoch: 2 })).not.toBe(firstScene);
+    expect(realtimeConnectionIdentity({ blankCanvasDemoOpen: true, campaignId: "camp_demo", sessionToken: "ots_test", userId: "usr_demo_gm", sessionEpoch: 1, sceneId: "scn_vault" })).toBeNull();
   });
 
   it("never presents a reconnecting socket as connected", () => {

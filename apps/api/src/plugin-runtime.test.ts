@@ -370,6 +370,115 @@ registerCommand("/probe", async (input, context) => {
     }
   });
 
+  it("collects one typed revision-guarded atomic token move from an async command handler", async () => {
+    const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-runtime-"));
+    try {
+      writePluginPackage(
+        pluginRoot,
+        "token-move-bridge-plugin",
+        `
+registerCommand("/move", async (_input, context) => {
+  const receipt = await context.moveTokens("scn_vault_entry", {
+    expectedSceneUpdatedAt: "2026-07-17T00:00:00.000Z",
+    changes: [
+      { tokenId: "tok_valen", x: 425, y: 450, expectedUpdatedAt: "2026-07-17T00:00:01.000Z" },
+      { tokenId: "tok_companion", x: 475, y: 450, expectedUpdatedAt: "2026-07-17T00:00:02.000Z" }
+    ]
+  });
+  return { body: receipt, visibility: "public" };
+});
+`,
+        { command: "/move", permissions: ["chat.write", "token.move"] },
+      );
+      const registry = loadPluginRegistry({ pluginRoot });
+
+      await expect(
+        registry.executeChatCommandAsync("token-move-bridge-plugin", {
+          ...sandboxInput(),
+          pluginId: "token-move-bridge-plugin",
+          command: "/move",
+          permissions: ["chat.write", "token.move"],
+        }),
+      ).resolves.toEqual({
+        body: "token_move_1",
+        visibility: "public",
+        bridgeRequests: [{
+          kind: "token.move.batch",
+          requestId: "token_move_1",
+          sceneId: "scn_vault_entry",
+          input: {
+            expectedSceneUpdatedAt: "2026-07-17T00:00:00.000Z",
+            changes: [
+              { tokenId: "tok_valen", x: 425, y: 450, expectedUpdatedAt: "2026-07-17T00:00:01.000Z" },
+              { tokenId: "tok_companion", x: 475, y: 450, expectedUpdatedAt: "2026-07-17T00:00:02.000Z" },
+            ],
+          },
+        }],
+      });
+    } finally {
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects malformed or repeated atomic token move bridge commands", async () => {
+    const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-runtime-"));
+    try {
+      writePluginPackage(
+        pluginRoot,
+        "invalid-token-move-bridge-plugin",
+        `
+registerCommand("/move", async (_input, context) => {
+  await context.moveTokens("scn_vault_entry", {
+    expectedSceneUpdatedAt: "not-a-revision",
+    changes: [{ tokenId: "tok_valen", x: 1, y: 2, expectedUpdatedAt: "2026-07-17T00:00:00.000Z" }]
+  });
+  return { body: "queued", visibility: "public" };
+});
+`,
+        { command: "/move", permissions: ["chat.write", "token.move"] },
+      );
+      writePluginPackage(
+        pluginRoot,
+        "repeated-token-move-bridge-plugin",
+        `
+registerCommand("/move", async (_input, context) => {
+  const command = {
+    expectedSceneUpdatedAt: "2026-07-17T00:00:00.000Z",
+    changes: [{ tokenId: "tok_valen", x: 1, y: 2, expectedUpdatedAt: "2026-07-17T00:00:00.000Z" }]
+  };
+  await context.moveTokens("scn_vault_entry", command);
+  await context.moveTokens("scn_vault_entry", command);
+  return { body: "queued", visibility: "public" };
+});
+`,
+        { command: "/move", permissions: ["chat.write", "token.move"] },
+      );
+      const registry = loadPluginRegistry({ pluginRoot });
+      const input = {
+        ...sandboxInput(),
+        command: "/move",
+        permissions: ["chat.write", "token.move"] as const,
+      };
+
+      await expect(
+        registry.executeChatCommandAsync("invalid-token-move-bridge-plugin", {
+          ...input,
+          pluginId: "invalid-token-move-bridge-plugin",
+          permissions: [...input.permissions],
+        }),
+      ).rejects.toThrow("expectedSceneUpdatedAt must be a valid date-time");
+      await expect(
+        registry.executeChatCommandAsync("repeated-token-move-bridge-plugin", {
+          ...input,
+          pluginId: "repeated-token-move-bridge-plugin",
+          permissions: [...input.permissions],
+        }),
+      ).rejects.toThrow("limited to one atomic token-move command");
+    } finally {
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
   it("rejects raw actor and item rules patches from the plugin proposal bridge", async () => {
     const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-runtime-"));
     try {
@@ -1159,6 +1268,36 @@ onEvent("token.moved", async (event, context) => {
       ]);
       expect(packagePivotFetch).toHaveBeenCalledTimes(1);
     } finally {
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("bounds hostname resolution by the registry request deadline", async () => {
+    const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-runtime-"));
+    const previousTimeout = process.env.OTTE_PLUGIN_REGISTRY_TIMEOUT_MS;
+    process.env.OTTE_PLUGIN_REGISTRY_TIMEOUT_MS = "20";
+    try {
+      const fetchImpl = vi.fn(
+        async () => new Response(JSON.stringify({ plugins: [] })),
+      );
+      const registry = loadPluginRegistry({
+        pluginRoot,
+        network: {
+          fetch: fetchImpl as typeof fetch,
+          resolveHostname: () => new Promise<readonly string[]>(() => undefined),
+        },
+      });
+
+      await expect(
+        registry.syncRemoteRegistry(
+          "https://unresolvable.example.com/catalog.json",
+        ),
+      ).rejects.toThrow("Plugin registry request timed out");
+      expect(fetchImpl).not.toHaveBeenCalled();
+    } finally {
+      if (previousTimeout === undefined)
+        delete process.env.OTTE_PLUGIN_REGISTRY_TIMEOUT_MS;
+      else process.env.OTTE_PLUGIN_REGISTRY_TIMEOUT_MS = previousTimeout;
       rmSync(pluginRoot, { recursive: true, force: true });
     }
   });

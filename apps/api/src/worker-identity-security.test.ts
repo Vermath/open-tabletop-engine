@@ -1,8 +1,12 @@
 import { createHash } from "node:crypto";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AiProvider } from "@open-tabletop/ai-core";
 import { makeArchive } from "@open-tabletop/core";
 import { buildApp } from "./app.js";
+import { restoreStateRevision } from "./sqlite-store.js";
 import { MemoryStateStore } from "./store.js";
 import {
   activeWorkerLeaseError,
@@ -104,6 +108,21 @@ function testStorageBackupSummary(fileName: string) {
 }
 
 class WorkerSecurityTestStore extends MemoryStateStore {
+  private backupDirectory?: string;
+
+  backupArtifactDirectory() {
+    this.backupDirectory ??= mkdtempSync(
+      join(tmpdir(), "otte-worker-security-backup-"),
+    );
+    return this.backupDirectory;
+  }
+
+  cleanupBackupDirectory() {
+    if (!this.backupDirectory) return;
+    rmSync(this.backupDirectory, { recursive: true, force: true });
+    this.backupDirectory = undefined;
+  }
+
   readiness() {
     return { ok: true };
   }
@@ -114,6 +133,7 @@ class WorkerSecurityTestStore extends MemoryStateStore {
       supported: true,
       actionRequired: false,
       actionReasons: [] as string[],
+      restoreStateRevision: restoreStateRevision(this.state),
     };
   }
 
@@ -312,12 +332,20 @@ describe("scoped worker identity", () => {
       job({
         id: "memory",
         type: "ai.memory.extract",
-        payload: { campaignId: "camp_demo", sourceText: "Fact" },
+        payload: {
+          campaignId: "camp_demo",
+          sourceText: "Fact",
+          expectedUpdatedAt: importRevision,
+        },
       }),
       job({
         id: "recap",
         type: "ai.session.recap",
-        payload: { campaignId: "camp_demo", transcript: "Transcript" },
+        payload: {
+          campaignId: "camp_demo",
+          transcript: "Transcript",
+          expectedUpdatedAt: importRevision,
+        },
       }),
       job({
         id: "report",
@@ -368,12 +396,12 @@ describe("scoped worker identity", () => {
       {
         method: "POST",
         path: "/api/v1/campaigns/camp_demo/ai/memory/extract",
-        body: { sourceText: "Fact" },
+        body: { sourceText: "Fact", expectedUpdatedAt: importRevision },
       },
       {
         method: "POST",
         path: "/api/v1/campaigns/camp_demo/ai/session-recap",
-        body: { transcript: "Transcript" },
+        body: { transcript: "Transcript", expectedUpdatedAt: importRevision },
       },
       {
         method: "GET",
@@ -458,7 +486,11 @@ describe("scoped worker identity", () => {
       job({
         id: "dispatch-memory",
         type: "ai.memory.extract",
-        payload: { campaignId: "camp_demo", sourceText: "The vault opened." },
+        payload: {
+          campaignId: "camp_demo",
+          sourceText: "The vault opened.",
+          expectedUpdatedAt: importRevision,
+        },
       }),
       job({
         id: "dispatch-recap",
@@ -466,6 +498,7 @@ describe("scoped worker identity", () => {
         payload: {
           campaignId: "camp_demo",
           transcript: "The party secured the vault.",
+          expectedUpdatedAt: importRevision,
         },
       }),
       job({
@@ -477,7 +510,13 @@ describe("scoped worker identity", () => {
     store.state.jobs.push(...jobs);
     const app = await buildApp({ store, aiProvider: workerTestAiProvider });
     try {
-      for (const workerJob of jobs) {
+      // Import deliberately runs last because it advances the campaign revision;
+      // the independently queued AI jobs were fenced against the pre-import state.
+      const dispatchOrder = [
+        ...jobs.filter((workerJob) => workerJob.type !== "campaign.import"),
+        ...jobs.filter((workerJob) => workerJob.type === "campaign.import"),
+      ];
+      for (const workerJob of dispatchOrder) {
         const expected = expectedWorkerDispatch(workerJob)!;
         const response =
           expected.body === undefined
@@ -515,6 +554,7 @@ describe("scoped worker identity", () => {
       ).toBe(true);
     } finally {
       await app.close();
+      store.cleanupBackupDirectory();
     }
   });
 

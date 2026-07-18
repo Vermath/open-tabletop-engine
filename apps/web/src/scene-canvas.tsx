@@ -2,14 +2,14 @@ import type { Actor, FogMode, MapAsset, Scene, SceneAnnotation, SceneAnnotationK
 import { assetBlobUrl } from "./api.js";
 import { BrickWall, ChevronLeft, ChevronRight, Circle, Crosshair, Eraser, Eye, Flame, Grip, Image as ImageIcon, Layers, Lightbulb, LockKeyhole, Map as MapIcon, MapPin, Paintbrush, PencilLine, Pentagon, Plus, Ruler, Swords, Trash2, Triangle, X, ZoomIn, ZoomOut, RefreshCw, Hand, RotateCcw, Boxes, ScrollText, Download, Upload, UserX } from "lucide-react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { BoardTokenFrameChange, BoardTokenPositionChange } from "./board-history.js";
 import { computeTokenMovements, formatGridDistance } from "./board-animation.js";
 import { scenePointFromClient } from "./board-geometry.js";
 import { activeSceneAnnotations, nextAnnotationExpiryMs } from "./annotation-expiry.js";
 import { actorConditionLabels, actorHitPoints } from "./actor-sheet-data.js";
 import { templateConePoints } from "./scene-annotations.js";
-import { formatNumber, titleCaseLabel } from "./sheet-format.js";
+import { errorMessage, formatNumber, titleCaseLabel } from "./sheet-format.js";
 import { hasTokenDropData, readTokenDropData, type TokenDropPayload } from "./token-drag.js";
 import { RetryableActionNotice, useRetryableAction } from "./retryable-action.js";
 
@@ -28,11 +28,11 @@ type MeasurementTool = "measure-circle" | "measure-cone";
 type AnnotationTool = SceneAnnotationKind | MeasurementTool | null;
 type ActiveAnnotationTool = NonNullable<AnnotationTool>;
 
-function isUsableImageAsset(asset: MapAsset): boolean {
+export function isUsableImageAsset(asset: MapAsset): boolean {
   return asset.mimeType.startsWith("image/") && asset.lifecycle?.status !== "deleted";
 }
 
-function sceneGridOverlayVisible(scene: Scene): boolean {
+export function sceneGridOverlayVisible(scene: Scene): boolean {
   if (scene.gridType === "gridless") return false;
   const explicit = scene.metadata?.gridOverlayVisible;
   if (typeof explicit === "boolean") return explicit;
@@ -43,7 +43,7 @@ function sceneGridOverlayVisible(scene: Scene): boolean {
   return true;
 }
 
-function useAnnotationExpiryClock(annotations: readonly Pick<SceneAnnotation, "expiresAt">[] | undefined): number {
+export function useAnnotationExpiryClock(annotations: readonly Pick<SceneAnnotation, "expiresAt">[] | undefined): number {
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
@@ -152,6 +152,73 @@ export type TokenFrameOverrides = Record<string, TokenFrame>;
 export type TokenMovePersistenceChange = { token: Token; position: Pick<Token, "x" | "y"> };
 
 export type ToolAction = () => void | Promise<void>;
+
+export type KeyboardFogGestureKind = `fog-${FogMode}`;
+
+export interface KeyboardBoardGesture {
+  kind: ActiveAnnotationTool | KeyboardFogGestureKind;
+  points: VisionPoint[];
+  complete?: boolean;
+}
+
+export function boardArrowDelta(key: string, scene: Pick<Scene, "gridSize" | "gridType">, fine: boolean): VisionPoint | undefined {
+  const step = fine ? 1 : scene.gridType === "gridless" ? 10 : Math.max(1, scene.gridSize);
+  if (key === "ArrowUp") return { x: 0, y: -step };
+  if (key === "ArrowDown") return { x: 0, y: step };
+  if (key === "ArrowLeft") return { x: -step, y: 0 };
+  if (key === "ArrowRight") return { x: step, y: 0 };
+  return undefined;
+}
+
+export function movedKeyboardCursor(scene: Pick<Scene, "width" | "height">, cursor: VisionPoint, delta: VisionPoint): VisionPoint {
+  return {
+    x: Math.round(clampSceneCoordinate(cursor.x + delta.x, 0, scene.width)),
+    y: Math.round(clampSceneCoordinate(cursor.y + delta.y, 0, scene.height))
+  };
+}
+
+export function keyboardTokenPositions(
+  scene: Pick<Scene, "width" | "height">,
+  tokens: ReadonlyArray<Pick<Token, "id" | "x" | "y" | "width" | "height">>,
+  delta: VisionPoint
+): Record<string, Pick<Token, "x" | "y">> {
+  if (tokens.length === 0) return {};
+  const minX = Math.min(...tokens.map((token) => token.x));
+  const minY = Math.min(...tokens.map((token) => token.y));
+  const maxRight = Math.max(...tokens.map((token) => token.x + token.width));
+  const maxBottom = Math.max(...tokens.map((token) => token.y + token.height));
+  const boundedDeltaX = clampSceneCoordinate(delta.x, -minX, scene.width - maxRight);
+  const boundedDeltaY = clampSceneCoordinate(delta.y, -minY, scene.height - maxBottom);
+  return Object.fromEntries(
+    tokens.map((token) => [token.id, { x: Math.round(token.x + boundedDeltaX), y: Math.round(token.y + boundedDeltaY) }])
+  );
+}
+
+export function isKeyboardFogGestureKind(kind: KeyboardBoardGesture["kind"]): kind is KeyboardFogGestureKind {
+  return kind === "fog-reveal" || kind === "fog-hide";
+}
+
+export function movedKeyboardGesture(gesture: KeyboardBoardGesture, point: VisionPoint): KeyboardBoardGesture {
+  if (gesture.complete) return gesture;
+  const first = gesture.points[0] ?? point;
+  const freehand = gesture.kind === "drawing" || isKeyboardFogGestureKind(gesture.kind);
+  return { ...gesture, points: freehand ? [...gesture.points, point] : [first, point] };
+}
+
+export async function runAnnouncedSceneCanvasMutation(
+  action: () => Promise<void>,
+  announce: (message: string) => void,
+  messages: { pending: string; success: string; failure: string }
+): Promise<void> {
+  announce(messages.pending);
+  try {
+    await action();
+    announce(messages.success);
+  } catch (error) {
+    announce(`${messages.failure}: ${errorMessage(error)}. Use Retry to try again.`);
+    throw error;
+  }
+}
 
 
 export const tokenLayers: Array<{ id: TokenLayer; label: string; compactLabel: string; description: string }> = [
@@ -399,8 +466,9 @@ export const tokenResizeHandles: Array<{ id: TokenResizeHandle; label: string }>
 export const tokenCornerResizeHandles = tokenResizeHandles.filter((handle) => handle.id.length === 2);
 
 
-export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapAsset; selectedAssetId?: string; assets: MapAsset[]; tokens: Token[]; actors: Actor[]; boardCurrentUserId: string; canSeeAllVitals: boolean; currentTurnTokenIds: string[]; nextTurnTokenIds: string[]; vision?: VisionSnapshot; visionPreviewLabel?: string; selectedTokenId: string; selectedTokenIds: string[]; activeTokenLayer: TokenLayer; fogBrushMode: FogMode | null; annotationTool: AnnotationTool; calibrationPoints?: VisionPoint[]; onCalibrationPoint?(point: VisionPoint): void; templateShape: SceneTemplateShape; visibleAnnotationLayers: Record<SceneAnnotationLayer, boolean>; canDropToken: boolean; canUpdateAnnotations: boolean; canResizeToken: boolean; canUpdateTokenLayer: boolean; onSelect(id: string, options?: TokenSelectionOptions): void; onSelectMany(ids: string[], options?: TokenSelectionOptions): void; onSelectBackgroundAsset(assetId: string): void; onClearSelection(): void; onMoved(): Promise<void>; onTokenMovePersist(changes: TokenMovePersistenceChange[]): Promise<void>; onTokenResizePersist(token: Token, frame: TokenFrame): Promise<void>; onTokenMoveCommit(changes: BoardTokenPositionChange[]): void; onTokenResizeCommit(changes: BoardTokenFrameChange[]): void; onTokenLayerCycle(token: Token): Promise<void>; onTokenDrop(payload: TokenDropPayload, point: VisionPoint): Promise<void>; onFogStroke(mode: FogMode, points: VisionPoint[]): Promise<void>; onAnnotationCreate(kind: SceneAnnotationKind, points: VisionPoint[], radius?: number): Promise<void>; onAnnotationMove(annotation: SceneAnnotation, points: VisionPoint[]): Promise<void>; onTogglePortal(wall: Scene["walls"][number]): Promise<void>; selectedOverlay: { type: "annotation" | "wall" | "light"; id: string } | null; onSelectOverlay(next: { type: "annotation" | "wall" | "light"; id: string } | null): void; onZoomBy(delta: number): void }) {
+export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapAsset; selectedAssetId?: string; assets: MapAsset[]; tokens: Token[]; actors: Actor[]; boardCurrentUserId: string; canSeeAllVitals: boolean; currentTurnTokenIds: string[]; nextTurnTokenIds: string[]; vision?: VisionSnapshot; visionPreviewLabel?: string; selectedTokenId: string; selectedTokenIds: string[]; activeTokenLayer: TokenLayer; fogBrushMode: FogMode | null; annotationTool: AnnotationTool; calibrationPoints?: VisionPoint[]; onCalibrationPoint?(point: VisionPoint): void; templateShape: SceneTemplateShape; visibleAnnotationLayers: Record<SceneAnnotationLayer, boolean>; canDropToken: boolean; canMoveToken: boolean; canUpdateAnnotations: boolean; canResizeToken: boolean; canUpdateTokenLayer: boolean; onSelect(id: string, options?: TokenSelectionOptions): void; onSelectMany(ids: string[], options?: TokenSelectionOptions): void; onSelectBackgroundAsset(assetId: string): void; onClearSelection(): void; onMoved(): Promise<void>; onTokenMovePersist(changes: TokenMovePersistenceChange[]): Promise<void>; onTokenResizePersist(token: Token, frame: TokenFrame): Promise<void>; onTokenMoveCommit(changes: BoardTokenPositionChange[]): void; onTokenResizeCommit(changes: BoardTokenFrameChange[]): void; onTokenLayerCycle(token: Token): Promise<void>; onTokenDrop(payload: TokenDropPayload, point: VisionPoint): Promise<void>; onFogStroke(mode: FogMode, points: VisionPoint[]): Promise<void>; onAnnotationCreate(kind: SceneAnnotationKind, points: VisionPoint[], radius?: number): Promise<void>; onAnnotationMove(annotation: SceneAnnotation, points: VisionPoint[]): Promise<void>; onTogglePortal(wall: Scene["walls"][number]): Promise<void>; selectedOverlay: { type: "annotation" | "wall" | "light"; id: string } | null; onSelectOverlay(next: { type: "annotation" | "wall" | "light"; id: string } | null): void; onZoomBy(delta: number): void }) {
   const mutationAction = useRetryableAction(props.scene.id);
+  const calibrationActive = Boolean(props.onCalibrationPoint);
   const [tokenDrag, setTokenDrag] = useState<TokenDragDraft | null>(null);
   const [tokenResize, setTokenResize] = useState<TokenResizeDraft | null>(null);
   const [tokenFrameOverrides, setTokenFrameOverrides] = useState<TokenFrameOverrides>({});
@@ -437,6 +505,12 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
   const orderedActiveLayerTokens = useMemo(() => orderedTokens.filter((token) => activeLayerTokenIds.has(token.id)), [orderedTokens, activeLayerTokenIds]);
   const selectedTokenIdSet = useMemo(() => new Set(props.selectedTokenIds), [props.selectedTokenIds]);
   const selectedViewportToken = useMemo(() => tokens.find((token) => token.id === props.selectedTokenId), [tokens, props.selectedTokenId]);
+  const [keyboardCursor, setKeyboardCursor] = useState<VisionPoint>(() => ({ x: Math.round(props.scene.width / 2), y: Math.round(props.scene.height / 2) }));
+  const [keyboardGesture, setKeyboardGesture] = useState<KeyboardBoardGesture | null>(null);
+  const [keyboardCursorVisible, setKeyboardCursorVisible] = useState(false);
+  const [keyboardStatus, setKeyboardStatus] = useState("Board ready");
+  const keyboardMovePendingRef = useRef(false);
+  const keyboardInstructionsId = useId();
   const tokenImageAssets = useMemo(() => new Map(props.assets.filter(isUsableImageAsset).map((asset) => [asset.id, asset])), [props.assets]);
   const actorById = useMemo(() => new Map(props.actors.map((actor) => [actor.id, actor])), [props.actors]);
   const currentTurnTokenIdSet = useMemo(() => new Set(props.currentTurnTokenIds), [props.currentTurnTokenIds]);
@@ -502,6 +576,31 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
     "--map-zoom": String(props.zoom)
   } as CSSProperties;
   const showGridOverlay = sceneGridOverlayVisible(props.scene);
+
+  useEffect(() => {
+    setKeyboardCursor({ x: Math.round(props.scene.width / 2), y: Math.round(props.scene.height / 2) });
+    setKeyboardGesture(null);
+    setKeyboardCursorVisible(false);
+    setKeyboardStatus("Board ready");
+    setLocalPings([]);
+    keyboardMovePendingRef.current = false;
+  }, [props.scene.id, props.scene.height, props.scene.width]);
+
+  useEffect(() => {
+    setKeyboardGesture(null);
+    if (!calibrationActive) return;
+    fogStrokeRef.current = null;
+    annotationDraftRef.current = null;
+    annotationMoveDraftRef.current = null;
+    setFogStroke(null);
+    setAnnotationDraft(null);
+    setAnnotationMoveDraft(null);
+  }, [calibrationActive, props.annotationTool, props.fogBrushMode]);
+
+  useEffect(() => {
+    if (!selectedViewportToken || keyboardGesture) return;
+    setKeyboardCursor(tokenCenter(selectedViewportToken));
+  }, [keyboardGesture, selectedViewportToken]);
 
   useEffect(() => {
     const previous = previousSceneTokensRef.current;
@@ -594,7 +693,7 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
   }
 
   function startMapPan(event: ReactPointerEvent<HTMLDivElement>) {
-    if (props.fogBrushMode || props.annotationTool || (event.button !== 0 && event.button !== 1)) return;
+    if (calibrationActive || props.fogBrushMode || props.annotationTool || (event.button !== 0 && event.button !== 1)) return;
     const viewport = viewportRef.current;
     if (!viewport) return;
     mapPanRef.current = {
@@ -643,7 +742,7 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
   }
 
   function startSelectionBox(event: ReactPointerEvent<HTMLDivElement>, point: VisionPoint) {
-    if (event.button !== 0) return;
+    if (calibrationActive || event.button !== 0) return;
     const next = {
       pointerId: event.pointerId,
       start: point,
@@ -730,6 +829,8 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
 
   function startTokenDrag(token: Token, event: ReactPointerEvent<HTMLButtonElement>) {
     if (event.button !== 0) return;
+    if (calibrationActive) return;
+    if (!props.canMoveToken) return;
     if (!activeLayerTokenIds.has(token.id)) return;
     const point = boardPoint(event.clientX, event.clientY);
     if (!point) return;
@@ -842,7 +943,7 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
   }
 
   function startTokenResize(token: Token, handle: TokenResizeHandle, event: ReactPointerEvent<HTMLElement>) {
-    if (!props.canResizeToken || !activeLayerTokenIds.has(token.id) || props.fogBrushMode || props.annotationTool) return;
+    if (calibrationActive || !props.canResizeToken || !activeLayerTokenIds.has(token.id) || props.fogBrushMode || props.annotationTool) return;
     const origin = renderedTokenFrame(token);
     const next = { tokenId: token.id, pointerId: event.pointerId, handle, origin, frame: origin };
     tokenResizeRef.current = next;
@@ -1014,6 +1115,184 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
     });
   }
 
+  function showLocalPing(point: VisionPoint): void {
+    localPingSeqRef.current += 1;
+    const localPing = { id: localPingSeqRef.current, x: point.x, y: point.y };
+    setLocalPings((current) => [...current.slice(-7), localPing]);
+    window.setTimeout(() => setLocalPings((current) => current.filter((ping) => ping.id !== localPing.id)), pingAnnotationTtlSeconds * 1000);
+  }
+
+  function takeOverBoardWithPointer(): void {
+    setKeyboardCursorVisible(false);
+    if (!keyboardGesture) return;
+    setKeyboardGesture(null);
+    setKeyboardStatus("Keyboard board operation cancelled by pointer input");
+  }
+
+  function activeKeyboardGestureKind(): KeyboardBoardGesture["kind"] | null {
+    if (calibrationActive) return null;
+    if (props.annotationTool) return props.annotationTool;
+    if (props.fogBrushMode) return `fog-${props.fogBrushMode}`;
+    return null;
+  }
+
+  function moveTokenFromKeyboard(token: Token, event: ReactKeyboardEvent<HTMLButtonElement>) {
+    if (calibrationActive || props.fogBrushMode || props.annotationTool || event.ctrlKey || event.metaKey || event.altKey) return;
+    const delta = boardArrowDelta(event.key, props.scene, event.shiftKey);
+    if (!delta) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!props.canMoveToken) {
+      setKeyboardStatus("Token movement requires token.move permission");
+      return;
+    }
+    if (!activeLayerTokenIds.has(token.id)) {
+      setKeyboardStatus(`Switch to the ${tokenLayerLabel(tokenLayer(token))} layer before moving ${token.name}`);
+      return;
+    }
+    setKeyboardCursorVisible(true);
+    if (keyboardMovePendingRef.current || mutationAction.operation?.kind === "pending") {
+      setKeyboardStatus("Finish the current board update before moving again");
+      return;
+    }
+
+    const groupTokenIds =
+      selectedTokenIdSet.has(token.id) && props.selectedTokenIds.length > 1
+        ? props.selectedTokenIds.filter((id) => activeLayerTokenIds.has(id))
+        : [token.id];
+    const movedTokenFrames = tokens
+      .filter((item) => groupTokenIds.includes(item.id))
+      .map((item) => ({ ...item, ...renderedTokenFrame(item) }));
+    const positions = keyboardTokenPositions(props.scene, movedTokenFrames, delta);
+    const movedTokens = movedTokenFrames
+      .map((item) => ({ token: tokens.find((tokenItem) => tokenItem.id === item.id)!, position: positions[item.id]! }))
+      .filter(({ token: movedToken, position }) => position && (movedToken.x !== position.x || movedToken.y !== position.y));
+    if (movedTokens.length === 0) {
+      setKeyboardStatus("Selected token is at the map edge");
+      return;
+    }
+
+    props.onSelect(token.id, { preserveExisting: selectedTokenIdSet.has(token.id) });
+    setTokenFrameOverrides((overrides) => ({
+      ...overrides,
+      ...Object.fromEntries(movedTokens.map(({ token: movedToken, position }) => [movedToken.id, { ...tokenFrame(movedToken), ...position }]))
+    }));
+    const anchorPosition = positions[token.id];
+    if (anchorPosition) setKeyboardCursor({ x: anchorPosition.x + token.width / 2, y: anchorPosition.y + token.height / 2 });
+    keyboardMovePendingRef.current = true;
+    const label = movedTokens.length === 1 ? `Move ${movedTokens[0]!.token.name} with keyboard` : `Move ${movedTokens.length} selected tokens with keyboard`;
+    setKeyboardStatus(label);
+    void mutationAction.runAction(label, async () => {
+      try {
+        await props.onTokenMovePersist(movedTokens);
+        props.onTokenMoveCommit(
+          movedTokens.map(({ token: movedToken, position }) => ({
+            tokenId: movedToken.id,
+            before: { x: movedToken.x, y: movedToken.y },
+            after: position
+          }))
+        );
+        await props.onMoved();
+        setKeyboardStatus(`${movedTokens.length === 1 ? movedTokens[0]!.token.name : `${movedTokens.length} tokens`} moved`);
+      } catch (error) {
+        setTokenFrameOverrides((overrides) => {
+          const next = { ...overrides };
+          for (const { token: movedToken } of movedTokens) delete next[movedToken.id];
+          return next;
+        });
+        setKeyboardStatus(`${label} failed: ${errorMessage(error)}. Use Retry to try again.`);
+        throw error;
+      } finally {
+        keyboardMovePendingRef.current = false;
+      }
+    });
+  }
+
+  function handleBoardKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    const gestureKind = activeKeyboardGestureKind();
+    if (event.key === "Escape" && (keyboardGesture || keyboardCursorVisible)) {
+      event.preventDefault();
+      event.stopPropagation();
+      setKeyboardGesture(null);
+      setKeyboardCursorVisible(false);
+      setKeyboardStatus("Keyboard board operation cancelled");
+      return;
+    }
+
+    const delta = boardArrowDelta(event.key, props.scene, event.shiftKey);
+    if (delta && (gestureKind || props.onCalibrationPoint)) {
+      event.preventDefault();
+      event.stopPropagation();
+      const nextCursor = movedKeyboardCursor(props.scene, keyboardCursor, delta);
+      setKeyboardCursor(nextCursor);
+      setKeyboardCursorVisible(true);
+      setKeyboardGesture((current) => current ? movedKeyboardGesture(current, nextCursor) : current);
+      setKeyboardStatus(`Board cursor ${nextCursor.x}, ${nextCursor.y}`);
+      return;
+    }
+
+    if ((event.key !== "Enter" && event.key !== " ") || (!gestureKind && !props.onCalibrationPoint)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setKeyboardCursorVisible(true);
+
+    if (props.onCalibrationPoint && !gestureKind) {
+      props.onCalibrationPoint(keyboardCursor);
+      setKeyboardStatus(`Calibration point placed at ${keyboardCursor.x}, ${keyboardCursor.y}`);
+      return;
+    }
+    if (!gestureKind) return;
+    if (gestureKind === "ping") {
+      showLocalPing(keyboardCursor);
+      void mutationAction.runAction("Place keyboard ping", () => runAnnouncedSceneCanvasMutation(
+        () => props.onAnnotationCreate("ping", [keyboardCursor]),
+        setKeyboardStatus,
+        { pending: "Placing ping...", success: `Ping placed at ${keyboardCursor.x}, ${keyboardCursor.y}`, failure: "Place keyboard ping failed" }
+      ));
+      return;
+    }
+
+    const current = keyboardGesture?.kind === gestureKind ? keyboardGesture : null;
+    if (!current || current.complete) {
+      setKeyboardGesture({ kind: gestureKind, points: [keyboardCursor] });
+      setKeyboardStatus(`${isKeyboardFogGestureKind(gestureKind) ? "Fog stroke" : annotationToolLabel(gestureKind)} started; use arrow keys, then Enter to finish`);
+      return;
+    }
+    if (current.points.length < 2) {
+      setKeyboardStatus("Move the board cursor with an arrow key before finishing");
+      return;
+    }
+
+    if (isKeyboardFogGestureKind(current.kind)) {
+      const mode = current.kind === "fog-reveal" ? "reveal" : "hide";
+      setKeyboardGesture(null);
+      const label = `${mode === "reveal" ? "Reveal" : "Hide"} fog with keyboard`;
+      void mutationAction.runAction(label, () => runAnnouncedSceneCanvasMutation(
+        () => props.onFogStroke(mode, current.points),
+        setKeyboardStatus,
+        { pending: `${label}...`, success: `${mode === "reveal" ? "Reveal" : "Hide"} fog stroke finished`, failure: `${label} failed` }
+      ));
+      return;
+    }
+    if (isTransientMeasurementTool(current.kind)) {
+      const measurement = draftAnnotation({ pointerId: -1, kind: current.kind, points: current.points }, props.templateShape);
+      setKeyboardGesture({ ...current, complete: true });
+      setKeyboardStatus(`${annotationLabel(measurement, props.scene)} measurement complete; Enter starts another, Escape closes it`);
+      return;
+    }
+
+    const kind = current.kind;
+    const radius = kind === "template" ? Math.round(distanceBetween(current.points[0]!, current.points[1]!)) : undefined;
+    setKeyboardGesture(null);
+    const label = `Create ${titleCaseLabel(kind)} with keyboard`;
+    void mutationAction.runAction(label, () => runAnnouncedSceneCanvasMutation(
+      () => props.onAnnotationCreate(kind, current.points, radius),
+      setKeyboardStatus,
+      { pending: `${label}...`, success: `${annotationToolLabel(kind)} finished`, failure: `${label} failed` }
+    ));
+  }
+
   return (
     <div
       ref={viewportRef}
@@ -1032,19 +1311,30 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
         onDismiss={mutationAction.clearAction}
         className="scene-action-failure"
       />
+      <p id={keyboardInstructionsId} className="sr-only">
+        Focus a movable token and use arrow keys to move it by one grid square, or hold Shift for one-pixel movement. For measurement, drawing, fog, and calibration tools, focus the board, use arrow keys to position the cursor, Enter or Space to start and finish, and Escape to cancel.
+      </p>
+      <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">{keyboardStatus}</span>
       <div
         ref={boardRef}
         data-agent-board-root="true"
         data-scene-id={props.scene.id}
-        className={`scene-board ${props.fogBrushMode || props.annotationTool ? "brush-mode" : ""} ${props.onCalibrationPoint ? "grid-calibration-mode" : ""} ${tokenDrag && !tokenDrag.settling ? "token-drag-active" : ""} ${tokenResize ? "token-resize-active" : ""} ${selectionBox ? "token-selecting" : ""} ${dropActive ? "drop-active" : ""} ${mapPanning ? "map-panning" : ""}`}
+        className={`scene-board ${!calibrationActive && (props.fogBrushMode || props.annotationTool) ? "brush-mode" : ""} ${calibrationActive ? "grid-calibration-mode" : ""} ${tokenDrag && !tokenDrag.settling ? "token-drag-active" : ""} ${tokenResize ? "token-resize-active" : ""} ${selectionBox ? "token-selecting" : ""} ${dropActive ? "drop-active" : ""} ${mapPanning ? "map-panning" : ""}`}
         style={boardStyle}
+        role="group"
+        aria-label={`${props.scene.name} interactive battle map`}
+        aria-describedby={keyboardInstructionsId}
+        aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Enter Space Escape"
+        tabIndex={0}
+        onKeyDown={handleBoardKeyDown}
+        onPointerDownCapture={takeOverBoardWithPointer}
       onDragEnter={(event) => {
-        if (!props.canDropToken || props.fogBrushMode || props.annotationTool || !hasTokenDropData(event.dataTransfer)) return;
+        if (calibrationActive || !props.canDropToken || props.fogBrushMode || props.annotationTool || !hasTokenDropData(event.dataTransfer)) return;
         event.preventDefault();
         setDropActive(true);
       }}
       onDragOver={(event) => {
-        if (!props.canDropToken || props.fogBrushMode || props.annotationTool || !hasTokenDropData(event.dataTransfer)) return;
+        if (calibrationActive || !props.canDropToken || props.fogBrushMode || props.annotationTool || !hasTokenDropData(event.dataTransfer)) return;
         event.preventDefault();
         event.dataTransfer.dropEffect = "copy";
         if (!dropActive) setDropActive(true);
@@ -1055,7 +1345,7 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
       }}
       onDrop={(event) => {
         setDropActive(false);
-        if (!props.canDropToken || props.fogBrushMode || props.annotationTool) return;
+        if (calibrationActive || !props.canDropToken || props.fogBrushMode || props.annotationTool) return;
         const payload = readTokenDropData(event.dataTransfer);
         const point = boardPoint(event.clientX, event.clientY);
         if (!payload || !point) return;
@@ -1065,9 +1355,11 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
       onPointerDown={(event) => {
         const point = boardPoint(event.clientX, event.clientY);
         if (!point) return;
-        if (props.onCalibrationPoint && event.button === 0) {
-          event.preventDefault();
-          props.onCalibrationPoint(point);
+        if (calibrationActive) {
+          if (event.button === 0) {
+            event.preventDefault();
+            props.onCalibrationPoint?.(point);
+          }
           return;
         }
         if (!props.fogBrushMode && !props.annotationTool && (event.altKey || event.button === 1)) {
@@ -1079,10 +1371,7 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
           tokenDragRef.current = null;
           setTokenDrag(null);
           if (props.annotationTool === "ping") {
-            localPingSeqRef.current += 1;
-            const localPing = { id: localPingSeqRef.current, x: point.x, y: point.y };
-            setLocalPings((current) => [...current.slice(-7), localPing]);
-            window.setTimeout(() => setLocalPings((current) => current.filter((ping) => ping.id !== localPing.id)), pingAnnotationTtlSeconds * 1000);
+            showLocalPing(point);
             void mutationAction.runAction("Place ping", () => props.onAnnotationCreate("ping", [point]));
             return;
           }
@@ -1181,7 +1470,7 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
           }}
         />
       )}
-      {props.backgroundAsset && props.activeTokenLayer === "map" && !props.fogBrushMode && !props.annotationTool && (
+      {props.backgroundAsset && props.activeTokenLayer === "map" && !calibrationActive && !props.fogBrushMode && !props.annotationTool && (
         <button
           className={`scene-map-hitbox ${props.selectedAssetId === props.backgroundAsset.id ? "selected" : ""}`}
           type="button"
@@ -1272,7 +1561,7 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
           ))}
         </svg>
       )}
-      {props.canUpdateAnnotations && !props.fogBrushMode && !props.annotationTool && renderedAnnotations.length > 0 && (
+      {props.canUpdateAnnotations && !calibrationActive && !props.fogBrushMode && !props.annotationTool && renderedAnnotations.length > 0 && (
         <div className="annotation-handles" aria-label="Annotation drag handles">
           {renderedAnnotations.flatMap((annotation) =>
             annotationEditHandles(annotation).map((handle) => (
@@ -1312,7 +1601,7 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
           )}
         </div>
       )}
-      {props.canUpdateAnnotations && !props.fogBrushMode && !props.annotationTool && (props.scene.walls.length > 0 || props.scene.lights.length > 0) && (
+      {props.canUpdateAnnotations && !calibrationActive && !props.fogBrushMode && !props.annotationTool && (props.scene.walls.length > 0 || props.scene.lights.length > 0) && (
         <div className="annotation-handles structure-handles" aria-label="Wall and light handles">
           {props.scene.walls.map((wall) => (
             <button
@@ -1386,10 +1675,32 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
           <polyline className={fogStroke.mode} points={fogStroke.points.map((point) => `${point.x},${point.y}`).join(" ")} />
         </svg>
       )}
+      {keyboardGesture && isKeyboardFogGestureKind(keyboardGesture.kind) && (
+        <svg className="fog-brush-preview keyboard-preview" viewBox={`0 0 ${props.scene.width} ${props.scene.height}`} aria-hidden="true">
+          <polyline className={keyboardGesture.kind === "fog-reveal" ? "reveal" : "hide"} points={keyboardGesture.points.map((point) => `${point.x},${point.y}`).join(" ")} />
+        </svg>
+      )}
       {annotationDraft && (
         <svg className="annotation-layer draft" viewBox={`0 0 ${props.scene.width} ${props.scene.height}`} aria-hidden="true">
           <SceneAnnotationShape annotation={draftAnnotation(annotationDraft, props.templateShape)} scene={props.scene} />
         </svg>
+      )}
+      {keyboardGesture && !isKeyboardFogGestureKind(keyboardGesture.kind) && (
+        <svg className={`annotation-layer draft keyboard-preview ${keyboardGesture.complete ? "complete" : ""}`} viewBox={`0 0 ${props.scene.width} ${props.scene.height}`} aria-hidden="true">
+          <SceneAnnotationShape annotation={draftAnnotation({ pointerId: -1, kind: keyboardGesture.kind, points: keyboardGesture.points }, props.templateShape)} scene={props.scene} />
+        </svg>
+      )}
+      {keyboardCursorVisible && (
+        <>
+          <span
+            className="keyboard-board-cursor"
+            style={{ left: `${(keyboardCursor.x / props.scene.width) * 100}%`, top: `${(keyboardCursor.y / props.scene.height) * 100}%` }}
+            aria-hidden="true"
+          />
+          <span className="keyboard-board-hint" aria-hidden="true">
+            {activeKeyboardGestureKind() || props.onCalibrationPoint ? "Arrows position - Enter starts/finishes - Esc cancels" : "Arrows move token - Shift moves 1 px"}
+          </span>
+        </>
       )}
       {selectionBox && (() => {
         const rect = selectionBoxRect(selectionBox);
@@ -1421,7 +1732,7 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
         const selected = selectedTokenIdSet.has(token.id);
         const layer = tokenLayer(token);
         const activeLayerToken = activeLayerTokenIds.has(token.id);
-        const canResize = props.canResizeToken && selected && activeLayerToken && !props.fogBrushMode && !props.annotationTool;
+        const canResize = props.canResizeToken && selected && activeLayerToken && !calibrationActive && !props.fogBrushMode && !props.annotationTool;
         const linkedActor = token.actorId ? actorById.get(token.actorId) : undefined;
         const tokenHp = linkedActor?.data.hp as { current?: number; max?: number } | undefined;
         const tokenHpRatio = tokenHp && typeof tokenHp.current === "number" && typeof tokenHp.max === "number" && tokenHp.max > 0 ? Math.max(0, Math.min(1, tokenHp.current / tokenHp.max)) : undefined;
@@ -1438,13 +1749,17 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
               left: `${(visualX / props.scene.width) * 100}%`,
               top: `${(visualY / props.scene.height) * 100}%`,
               width: `${(visualWidth / props.scene.width) * 100}%`,
-              height: `${(visualHeight / props.scene.height) * 100}%`
+              height: `${(visualHeight / props.scene.height) * 100}%`,
+              pointerEvents: calibrationActive ? "none" : undefined
             }}
             aria-label={`${tokenLayerLabel(layer)} token ${token.name}${(token.elevation ?? 0) !== 0 ? ` at ${formatNumber(Math.abs(token.elevation ?? 0))} feet ${(token.elevation ?? 0) > 0 ? "above" : "below"} ground` : ""}`}
             aria-pressed={selected}
-            title={props.canUpdateTokenLayer ? "Right-click to move to next layer" : undefined}
+            aria-describedby={keyboardInstructionsId}
+            aria-keyshortcuts={props.canMoveToken ? "ArrowUp ArrowDown ArrowLeft ArrowRight" : undefined}
+            tabIndex={calibrationActive ? -1 : undefined}
+            title={!props.canMoveToken ? "Token movement requires token.move" : props.canUpdateTokenLayer ? "Arrow keys move; Shift moves 1 px; right-click moves to next layer" : "Arrow keys move; Shift moves 1 px"}
             onContextMenu={(event) => {
-              if (!props.canUpdateTokenLayer || props.fogBrushMode || props.annotationTool) return;
+              if (calibrationActive || !props.canUpdateTokenLayer || props.fogBrushMode || props.annotationTool) return;
               event.preventDefault();
               event.stopPropagation();
               tokenDragRef.current = null;
@@ -1455,6 +1770,7 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
               void mutationAction.runAction(`Move ${token.name} to the next layer`, () => props.onTokenLayerCycle(token));
             }}
             onClick={(event) => {
+              if (calibrationActive) return;
               if (!activeLayerToken) return;
               if (pointerSelectedTokenRef.current === token.id) {
                 pointerSelectedTokenRef.current = null;
@@ -1462,9 +1778,11 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
               }
               props.onSelect(token.id, { additive: event.shiftKey || event.ctrlKey || event.metaKey, preserveExisting: selected && props.selectedTokenIds.length > 1 });
             }}
+            onKeyDown={(event) => moveTokenFromKeyboard(token, event)}
             onPointerDown={(event) => {
+              setKeyboardCursorVisible(false);
               if (!activeLayerToken) return;
-              if (props.fogBrushMode || props.annotationTool) return;
+              if (calibrationActive || props.fogBrushMode || props.annotationTool) return;
               startTokenDrag(token, event);
             }}
             onPointerMove={(event) => {

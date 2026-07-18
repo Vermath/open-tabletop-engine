@@ -1,7 +1,7 @@
 import { createTimestamped, type Actor, type Combat } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
 
-import { advanceDnd5eSrdCombatRules, synchronizeDnd5eSrdActorCombatState } from "./dnd-combat-progression.js";
+import { advanceDnd5eSrdCombatRules, synchronizeDnd5eSrdActorCombatState, synchronizeDnd5eSrdCombatantActorState } from "./dnd-combat-progression.js";
 
 const now = "2026-07-13T12:00:00.000Z";
 
@@ -11,8 +11,9 @@ function actor(id: string, type: string, data: Record<string, unknown>): Actor {
   });
 }
 
-function combat(actors: Actor[], round = 3): Pick<Combat, "round" | "turnIndex" | "combatants"> {
+function combat(actors: Actor[], round = 3): Pick<Combat, "id" | "round" | "turnIndex" | "combatants"> {
   return {
+    id: "cmb_progression",
     round,
     turnIndex: 0,
     combatants: actors.map((entry, index) => ({
@@ -155,5 +156,62 @@ describe("D&D combat rules progression", () => {
       deathSaveFailures: 1,
     });
     expect(sync.combatantUpdate?.after).not.toHaveProperty("deathSaveOutcome");
+  });
+
+  it("rejects combatant lifecycle states that contradict positive Hit Points", () => {
+    const living = actor("living", "character", { hp: { current: 18, max: 20 }, conditions: [], lifeState: "conscious", deathSaves: { successes: 0, failures: 0 } });
+    const impossible = synchronizeDnd5eSrdCombatantActorState(living, {
+      id: "cmbt_living", tokenId: "tok_living", actorId: living.id, name: living.name,
+      initiative: 10, defeated: false, conditions: ["stable"], deathSaveOutcome: "stable"
+    }, now);
+    expect(impossible).toEqual({ ok: false, error: expect.stringContaining("positive-HP actor") });
+  });
+
+  it("does not let a combatant edit revive an actor that is already dead", () => {
+    const dead = actor("dead", "character", { hp: { current: 0, max: 20 }, conditions: [{ id: "dead" }], lifeState: "dead", deathSaves: { successes: 0, failures: 3 }, defeated: true });
+    const impossible = synchronizeDnd5eSrdCombatantActorState(dead, {
+      id: "cmbt_dead", tokenId: "tok_dead", actorId: dead.id, name: dead.name,
+      initiative: 10, defeated: false, conditions: ["unconscious"], deathSaveSuccesses: 0, deathSaveFailures: 0
+    }, now);
+    expect(impossible).toEqual({ ok: false, error: expect.stringContaining("explicitly authorized revival") });
+  });
+
+  it("canonically pairs a legal zero-HP combatant transition with its actor", () => {
+    const fallen = actor("fallen", "character", { hp: { current: 0, max: 20 }, conditions: [{ id: "unconscious" }], lifeState: "unconscious", deathSaves: { successes: 0, failures: 1 }, defeated: false });
+    const stable = synchronizeDnd5eSrdCombatantActorState(fallen, {
+      id: "cmbt_fallen", tokenId: "tok_fallen", actorId: fallen.id, name: fallen.name,
+      initiative: 10, defeated: false, conditions: ["prone", "stable"], deathSaveOutcome: "stable",
+      deathSaveSuccesses: 0, deathSaveFailures: 0
+    }, now);
+    expect(stable).toMatchObject({
+      ok: true,
+      actorData: { hp: { current: 0, max: 20 }, lifeState: "stable", defeated: false, deathSaves: { successes: 0, failures: 0 } },
+      combatant: { defeated: false, conditions: expect.arrayContaining(["prone", "unconscious", "stable"]), deathSaveOutcome: "stable" }
+    });
+  });
+
+  it("preserves actor-only condition records while reconciling qualified combat conditions by base id", () => {
+    const frightened = { id: "frightened", appliedAt: "2026-07-12T12:00:00.000Z", sourceEffectId: "effect_fear", metadata: { saveDc: 15 } };
+    const exhaustion = { id: "exhaustion", appliedAt: "2026-07-11T12:00:00.000Z", level: 2, source: "forced-march" };
+    const conscious = actor("conditioned", "character", {
+      hp: { current: 18, max: 20 },
+      conditions: [frightened, { id: "prone", appliedAt: "2026-07-12T12:30:00.000Z" }, exhaustion],
+      lifeState: "conscious",
+      deathSaves: { successes: 0, failures: 0 },
+      defeated: false,
+    });
+    const previousCombatant = {
+      id: "cmbt_conditioned", tokenId: "tok_conditioned", actorId: conscious.id, name: conscious.name,
+      initiative: 10, defeated: false, conditions: ["frightened:2", "prone"],
+    };
+    const incomingCombatant = { ...previousCombatant, conditions: ["frightened:1"] };
+
+    const synchronization = synchronizeDnd5eSrdCombatantActorState(conscious, incomingCombatant, now, previousCombatant);
+
+    expect(synchronization.ok).toBe(true);
+    if (!synchronization.ok) return;
+    expect(synchronization.actorData.conditions).toEqual([frightened, exhaustion]);
+    expect(synchronization.actorData.conditions).not.toContainEqual(expect.objectContaining({ id: "frightened-1" }));
+    expect(synchronization.combatant.conditions).toEqual(["frightened:1"]);
   });
 });

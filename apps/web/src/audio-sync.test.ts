@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { AudioTrack } from "@open-tabletop/core";
-import { activeAudioCount, desiredAudioStates } from "./audio-sync.js";
+import { readFileSync } from "node:fs";
+import { activeAudioCount, desiredAudioStates, shouldReplaceAudioSource } from "./audio-sync.js";
+
+const audioWorkspaceSource = readFileSync(new URL("./audio-workspace.tsx", import.meta.url), "utf8");
 
 function track(overrides: Partial<AudioTrack> & { id: string }): AudioTrack {
   return {
@@ -21,7 +24,14 @@ function track(overrides: Partial<AudioTrack> & { id: string }): AudioTrack {
 describe("audio sync", () => {
   it("derives playback state and scales volume by the master volume", () => {
     const states = desiredAudioStates([track({ id: "a", playing: true, volume: 0.5 })], { masterVolume: 0.5 });
-    expect(states).toEqual([{ trackId: "a", url: "https://example.test/a.mp3", playing: true, loop: true, volume: 0.25 }]);
+    expect(states).toEqual([{ trackId: "a", sourceUrl: "https://example.test/a.mp3", url: "https://example.test/a.mp3", playing: true, loop: true, volume: 0.25 }]);
+  });
+
+  it("commits range input before a realtime track rerender can restore stale props", () => {
+    const masterVolumeInput = audioWorkspaceSource.split("\n").find((line) => line.includes('aria-label="Master volume"'));
+
+    expect(masterVolumeInput).toContain("onInput={(event) => props.onMasterVolumeChange(Number(event.currentTarget.value))}");
+    expect(masterVolumeInput).not.toContain("onChange=");
   });
 
   it("uses signed delivery URLs for managed audio playback", () => {
@@ -56,5 +66,32 @@ describe("audio sync", () => {
   it("clamps out-of-range volumes", () => {
     const [high] = desiredAudioStates([track({ id: "a", volume: 5 })], { masterVolume: 3 });
     expect(high?.volume).toBe(1);
+  });
+
+  it("does not replace a playing managed source when only its signed delivery URL is reminted", () => {
+    expect(shouldReplaceAudioSource({
+      currentSourceUrl: "/api/v1/assets/asset_audio/blob",
+      currentPlaybackUrl: "https://assets.example.test/blob?expiresAt=one&signature=one",
+      nextSourceUrl: "/api/v1/assets/asset_audio/blob",
+      nextPlaybackUrl: "https://assets.example.test/blob?expiresAt=two&signature=two",
+      paused: false
+    })).toBe(false);
+  });
+
+  it("adopts a reminted URL before playback and always replaces a genuinely changed source", () => {
+    expect(shouldReplaceAudioSource({
+      currentSourceUrl: "/api/v1/assets/asset_audio/blob",
+      currentPlaybackUrl: "https://assets.example.test/blob?signature=old",
+      nextSourceUrl: "/api/v1/assets/asset_audio/blob",
+      nextPlaybackUrl: "https://assets.example.test/blob?signature=fresh",
+      paused: true
+    })).toBe(true);
+    expect(shouldReplaceAudioSource({
+      currentSourceUrl: "/api/v1/assets/asset_audio/blob",
+      currentPlaybackUrl: "https://assets.example.test/blob?signature=old",
+      nextSourceUrl: "/api/v1/assets/replacement/blob",
+      nextPlaybackUrl: "https://assets.example.test/replacement?signature=fresh",
+      paused: false
+    })).toBe(true);
   });
 });

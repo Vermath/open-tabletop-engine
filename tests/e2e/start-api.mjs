@@ -1,20 +1,23 @@
 import { spawn } from "node:child_process";
-import { rmSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
-import { resolve } from "node:path";
+import { resolve, sep } from "node:path";
 
 const apiPort = process.env.OTTE_E2E_API_PORT ?? "4100";
+if (!/^\d{2,5}$/.test(apiPort)) throw new Error("OTTE_E2E_API_PORT must be a numeric TCP port");
 const controlPort = Number(process.env.OTTE_E2E_API_CONTROL_PORT ?? Number(apiPort) + 1000);
-const dbPath = resolve(process.cwd(), "storage", `e2e-${apiPort}.sqlite`);
-
-for (const suffix of ["", "-shm", "-wal"]) {
-  rmSync(`${dbPath}${suffix}`, { force: true, maxRetries: 5, retryDelay: 100 });
-}
+const storageRoot = resolve(process.cwd(), "storage");
+const runStorageRoot = resolve(storageRoot, `e2e-${apiPort}`);
+if (!runStorageRoot.startsWith(`${storageRoot}${sep}`)) throw new Error("E2E storage path escaped the workspace storage root");
+rmSync(runStorageRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+mkdirSync(runStorageRoot, { recursive: true });
+const dbPath = resolve(runStorageRoot, "state.sqlite");
+const aiGatePath = resolve(runStorageRoot, "ai-provider.release");
 
 const require = createRequire(import.meta.url);
 const tsxCliPath = require.resolve("tsx/cli");
-const apiEntryPath = resolve(process.cwd(), "apps", "api", "src", "server.ts");
+const apiEntryPath = resolve(process.cwd(), "tests", "e2e", "api-entry.ts");
 let child;
 let generation = 0;
 let intentionalStop = false;
@@ -39,6 +42,8 @@ function spawnApi() {
       OTTE_DEMO_SEED: process.env.OTTE_DEMO_SEED ?? "true",
       OTTE_ADMIN_USER_IDS: process.env.OTTE_ADMIN_USER_IDS ?? "usr_demo_gm",
       OTTE_AI_PROVIDER: process.env.OTTE_AI_PROVIDER ?? "codex-loopback",
+      OTTE_E2E_AI_GATE_PATH: aiGatePath,
+      OTTE_E2E_AI_MAX_WAIT_MS: process.env.OTTE_E2E_AI_MAX_WAIT_MS ?? "15000",
     },
   });
   child = nextChild;
@@ -90,6 +95,18 @@ const controlServer = createServer((request, response) => {
         response.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
       },
     );
+    return;
+  }
+  if (request.method === "POST" && request.url === "/ai/reset") {
+    rmSync(aiGatePath, { force: true, maxRetries: 5, retryDelay: 100 });
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({ reset: true }));
+    return;
+  }
+  if (request.method === "POST" && request.url === "/ai/release") {
+    writeFileSync(aiGatePath, `${generation}\n`, "utf8");
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({ released: true, generation }));
     return;
   }
   response.writeHead(404, { "content-type": "application/json" });
