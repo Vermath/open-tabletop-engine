@@ -692,6 +692,17 @@
         "apps/web/src/vite-config.test.ts"
       ],
       "browserEvidence": []
+    },
+    {
+      "id": "FF-029",
+      "status": "fixed",
+      "summary": "The public simulation results embedded a developer-local filesystem path, causing the documentation publication guard to reject the site build.",
+      "repair": "Reworded the finding with a platform-neutral path description while preserving the cross-platform diagnosis and evidence.",
+      "regressionEvidence": [
+        "docs/verification/full-feature-browser-simulation-results-2026-07-18.md",
+        "scripts/build-docs-site.mjs"
+      ],
+      "browserEvidence": []
     }
   ],
   "boundaries": [
@@ -729,7 +740,7 @@
   "verification": {
     "focused": {
       "status": "passed",
-      "detail": "Focused regressions for FF-001 through FF-028 passed during remediation; the FF-021 audio-sync gate passed 9 of 9 tests, the FF-022 modal accessibility gate passed 3 of 3 tests, the FF-027 scene-duplication journey passed five fresh-server repetitions plus a simulated first-login connection abort, and the FF-028 Vite watcher suite passed 11 of 11 with platform-native fixture paths."
+      "detail": "Focused regressions for FF-001 through FF-029 passed during remediation; the FF-021 audio-sync gate passed 9 of 9 tests, the FF-022 modal accessibility gate passed 3 of 3 tests, the FF-027 scene-duplication journey passed five fresh-server repetitions plus a simulated first-login connection abort, the FF-028 Vite watcher suite passed 11 of 11 with platform-native fixture paths, and the FF-029 documentation publication guard passed after path-neutral wording."
     },
     "webTypecheck": {
       "status": "passed"

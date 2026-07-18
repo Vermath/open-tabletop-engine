@@ -98,7 +98,8 @@ Rows below map back to the plan in `full-feature-browser-simulation-2026-07-18.m
 | FF-025 | A successful plugin install immediately replaced its specific success message with a generic refresh **Synced** status. | Reconciled plugin state without publishing a generic refresh status, preserving the committed install result; covered by async-guard regression assertions and the SDK E2E journey. | Release-qualification SDK workflow. |
 | FF-026 | A successful content-import rollback could have its final success status overwritten by the following workspace refresh. | Reconciled first with status synchronization disabled, then published the rollback result; the E2E journey now also proves modified imported content is blocked, resolves the conflict, retries, and rolls back exactly. | Release-qualification content-import conflict and retry journey. |
 | FF-027 | The atomic scene-duplication E2E could spend its full timeout waiting for post-login UI after a transient first-click **Failed to fetch**, without ever exercising duplication. | Added a bounded retry around only the Demo GM workspace-readiness precondition; the forced commit failure and zero-partial-copy assertions remain unchanged. | Fresh-server focused journey passed 5/5, and a temporary first-login connection abort reproduced the exact failure mode and recovered successfully. |
-| FF-028 | The Vite API-fingerprint watcher regressions embedded `D:/repo` paths, so Node's POSIX path resolver treated their Linux CI fixtures differently and the hosted release gate failed before exercising later stages. | Built the watcher root and event paths with `node:path`, preserving the same source/ignored-path and one-restart assertions on both Windows and POSIX hosts. | Focused Vite config suite passed 11/11 on Windows; hosted Ubuntu rerun is a release closeout gate below. |
+| FF-028 | The Vite API-fingerprint watcher regressions embedded Windows drive-qualified fixture paths, so Node's POSIX path resolver treated their Linux CI fixtures differently and the hosted release gate failed before exercising later stages. | Built the watcher root and event paths with `node:path`, preserving the same source/ignored-path and one-restart assertions on both Windows and POSIX hosts. | Focused Vite config suite passed 11/11 on Windows; hosted Ubuntu rerun is a release closeout gate below. |
+| FF-029 | The public simulation results themselves exposed a developer-local filesystem path, so the documentation publication guard rejected the site build. | Reworded the finding with a platform-neutral description while retaining the full cross-platform diagnosis and evidence. | `pnpm docs:site:check` passed after remediation. |
 
 ## Screenshot evidence index
 
@@ -143,7 +144,7 @@ All captures are in `artifacts/full-feature-browser-2026-07-18/`. This index con
 
 | Gate | Result |
 |---|---|
-| Focused regressions for FF-001 through FF-028 | Passed during remediation |
+| Focused regressions for FF-001 through FF-029 | Passed during remediation |
 | Web typecheck and full web suite | Passed: 150 files and 761 tests after FF-021 |
 | Full `pnpm check` | Passed: lint, monorepo typecheck, E2E typecheck, 2,263 tests passed with 1 skipped, and all builds |
 | Rebuilt API plus Browser rerun | Passed for campaign reconnect, character import, actor lifecycle, typed damage, encounter discovery, advanced combat, rewards, session closeout, search, soundboard state, archive scope, content rollback, webhooks, and AI readiness |
