@@ -135,21 +135,44 @@ export function expectedCheckTasks(repoRoot) {
 
 export function parseVitestTaskSummaries(output) {
   const summaries = new Map();
+  let groupedPackageName;
   for (const rawLine of stripAnsi(output).split(/\r?\n/)) {
-    const line = rawLine.match(/^(@?[^:\s]+):test:\s*(.*)$/);
-    if (!line) continue;
-    const packageName = line[1];
-    const content = line[2].trim();
+    const trimmedLine = rawLine.trim();
+    if (/^::endgroup::$/.test(trimmedLine)) {
+      groupedPackageName = undefined;
+      continue;
+    }
+    if (trimmedLine.startsWith("::group::")) {
+      groupedPackageName = trimmedLine.match(
+        /^::group::(@?[^:\s]+):test$/,
+      )?.[1];
+      continue;
+    }
+
+    const prefixedLine = rawLine.match(/^(@?[^:\s]+):test:\s*(.*)$/);
+    const packageName = prefixedLine?.[1] ?? groupedPackageName;
+    if (!packageName) continue;
+    const content = (prefixedLine?.[2] ?? trimmedLine).trim();
     const summary = summaries.get(packageName) ?? {};
+    let recognizedSummary = false;
     if (/^No test files found/i.test(content)) {
       summary.testFiles = emptyCounts();
       summary.tests = emptyCounts();
+      recognizedSummary = true;
     }
     const testFiles = parseCountSummary(content, "Test Files");
-    if (testFiles) summary.testFiles = testFiles;
+    if (testFiles) {
+      summary.testFiles = testFiles;
+      recognizedSummary = true;
+    }
     const tests = parseCountSummary(content, "Tests");
-    if (tests) summary.tests = tests;
-    summaries.set(packageName, summary);
+    if (tests) {
+      summary.tests = tests;
+      recognizedSummary = true;
+    }
+    if (prefixedLine || recognizedSummary) {
+      summaries.set(packageName, summary);
+    }
   }
   return summaries;
 }

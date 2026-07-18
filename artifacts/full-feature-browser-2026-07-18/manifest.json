@@ -703,6 +703,29 @@
         "scripts/build-docs-site.mjs"
       ],
       "browserEvidence": []
+    },
+    {
+      "id": "FF-030",
+      "status": "fixed",
+      "summary": "Turbo 2.10.4 switched GitHub Actions test output to grouped log blocks, so the release evidence parser omitted per-package test counts and rejected the hosted gate after both cold checks passed.",
+      "repair": "Added stateful parsing for Turbo test group boundaries while retaining support for prefixed test summary lines, with regression coverage for grouped, prefixed, and mixed output.",
+      "regressionEvidence": [
+        "scripts/release-gate-evidence.mjs",
+        "scripts/test-release-gate-evidence.mjs"
+      ],
+      "browserEvidence": []
+    },
+    {
+      "id": "FF-031",
+      "status": "fixed",
+      "summary": "A release-evidence output destination directly inside an existing Windows drive root could fail with EPERM because the recorder unconditionally called recursive directory creation for that root.",
+      "repair": "Added an existence guard before parent-directory creation, with functional regression coverage that simulates the Windows-root failure and covers missing-directory creation.",
+      "regressionEvidence": [
+        "scripts/record-release-evidence.mjs",
+        "scripts/release-evidence-output.mjs",
+        "scripts/test-release-gate-evidence.mjs"
+      ],
+      "browserEvidence": []
     }
   ],
   "boundaries": [
@@ -740,7 +763,7 @@
   "verification": {
     "focused": {
       "status": "passed",
-      "detail": "Focused regressions for FF-001 through FF-029 passed during remediation; the FF-021 audio-sync gate passed 9 of 9 tests, the FF-022 modal accessibility gate passed 3 of 3 tests, the FF-027 scene-duplication journey passed five fresh-server repetitions plus a simulated first-login connection abort, the FF-028 Vite watcher suite passed 11 of 11 with platform-native fixture paths, and the FF-029 documentation publication guard passed after path-neutral wording."
+      "detail": "Focused regressions for FF-001 through FF-031 passed during remediation; the FF-021 audio-sync gate passed 9 of 9 tests, the FF-022 modal accessibility gate passed 3 of 3 tests, the FF-027 scene-duplication journey passed five fresh-server repetitions plus a simulated first-login connection abort, the FF-028 Vite watcher suite passed 11 of 11 with platform-native fixture paths, the FF-029 documentation publication guard passed after path-neutral wording, the FF-030 release-evidence parser covered grouped, prefixed, and mixed Turbo test output, and the FF-031 output-directory guard covered existing-root and missing-directory paths."
     },
     "webTypecheck": {
       "status": "passed"

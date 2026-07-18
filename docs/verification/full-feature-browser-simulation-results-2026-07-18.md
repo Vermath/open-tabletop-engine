@@ -4,7 +4,7 @@
 
 The local product supported a persistent four-character D&D 5.5e campaign from fresh account and campaign creation through three linked play sessions, six scenes, multiple encounters, chat, dice, tactical tools, combat, rewards, and advancement from level 1 to level 3. Codex drove the GM and all four player seats sequentially through the in-app Browser against the live Vite/API stack.
 
-Twenty-two repository-controlled defects were found and repaired. The affected Browser paths were rerun after rebuilding the API, and focused regressions were added for every fix. This document deliberately separates direct Browser evidence, automated contract evidence, unavailable external services, native Browser-plugin limitations, and human-only evidence.
+Thirty-one repository-controlled defects were found and repaired. The affected Browser paths were rerun after rebuilding the API, and focused regressions were added for every fix. This document deliberately separates direct Browser evidence, automated contract evidence, unavailable external services, native Browser-plugin limitations, and human-only evidence.
 
 Campaign: **The Obsidian Relay: Full-Feature Trial**
 
@@ -100,6 +100,8 @@ Rows below map back to the plan in `full-feature-browser-simulation-2026-07-18.m
 | FF-027 | The atomic scene-duplication E2E could spend its full timeout waiting for post-login UI after a transient first-click **Failed to fetch**, without ever exercising duplication. | Added a bounded retry around only the Demo GM workspace-readiness precondition; the forced commit failure and zero-partial-copy assertions remain unchanged. | Fresh-server focused journey passed 5/5, and a temporary first-login connection abort reproduced the exact failure mode and recovered successfully. |
 | FF-028 | The Vite API-fingerprint watcher regressions embedded Windows drive-qualified fixture paths, so Node's POSIX path resolver treated their Linux CI fixtures differently and the hosted release gate failed before exercising later stages. | Built the watcher root and event paths with `node:path`, preserving the same source/ignored-path and one-restart assertions on both Windows and POSIX hosts. | Focused Vite config suite passed 11/11 on Windows; hosted Ubuntu rerun is a release closeout gate below. |
 | FF-029 | The public simulation results themselves exposed a developer-local filesystem path, so the documentation publication guard rejected the site build. | Reworded the finding with a platform-neutral description while retaining the full cross-platform diagnosis and evidence. | `pnpm docs:site:check` passed after remediation. |
+| FF-030 | Turbo 2.10.4 switched GitHub Actions test output to grouped log blocks, so the release evidence parser omitted per-package test counts and rejected the hosted gate after both cold checks passed. | Added stateful parsing for Turbo test group boundaries while retaining prefixed-summary support; regression coverage exercises grouped, prefixed, unrelated-group, and mixed output in `test-release-gate-evidence.mjs`. | Hosted release-qualification evidence; no additional Browser capture was required. |
+| FF-031 | A release-evidence `--output` destination directly inside an existing Windows drive root could fail with `EPERM` because the recorder unconditionally called recursive directory creation for that root. | Added an existence guard before parent-directory creation and a focused functional regression that simulates the Windows-root failure while also covering missing-directory creation. | Release-qualification evidence recording; no additional Browser capture was required. |
 
 ## Screenshot evidence index
 
@@ -144,7 +146,7 @@ All captures are in `artifacts/full-feature-browser-2026-07-18/`. This index con
 
 | Gate | Result |
 |---|---|
-| Focused regressions for FF-001 through FF-029 | Passed during remediation |
+| Focused regressions for FF-001 through FF-031 | Passed during remediation |
 | Web typecheck and full web suite | Passed: 150 files and 761 tests after FF-021 |
 | Full `pnpm check` | Passed: lint, monorepo typecheck, E2E typecheck, 2,263 tests passed with 1 skipped, and all builds |
 | Rebuilt API plus Browser rerun | Passed for campaign reconnect, character import, actor lifecycle, typed damage, encounter discovery, advanced combat, rewards, session closeout, search, soundboard state, archive scope, content rollback, webhooks, and AI readiness |
