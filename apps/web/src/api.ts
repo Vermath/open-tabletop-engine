@@ -42,6 +42,7 @@ let legacySessionUpgradePending = false;
 let legacySessionUpgradePromise: Promise<void> | undefined;
 let statelessDemoApiMode = false;
 let sessionTransportEpoch = 0;
+const seededDemoLoginRetryDelayMs = 200;
 
 async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
   return fetch(input, { ...init, credentials: "include" });
@@ -138,16 +139,49 @@ export async function consumeSsoRedirect(): Promise<string | undefined> {
 
 export async function loginSession(userId = getSessionUserId(), options: { persist?: boolean; signal?: AbortSignal } = {}): Promise<SessionLoginInfo> {
   const demoEmail = demoLoginEmail(userId);
-  const response = await apiFetch(`${baseUrl}/api/v1/auth/login`, {
+  const requestLogin = () => apiFetch(`${baseUrl}/api/v1/auth/login`, {
     method: "POST",
     headers: { "content-type": "application/json", ...(options.persist === false ? { "x-otte-defer-session-cookie": "1" } : {}) },
     body: JSON.stringify(demoEmail ? { email: demoEmail } : { userId }),
     signal: options.signal
   });
+  let response: Response;
+  try {
+    response = await requestLogin();
+  } catch (error) {
+    // Seeded demo buttons use deferred credentials, so a response lost to a
+    // transient connection failure cannot commit a cookie behind the stale
+    // credential ticket guard. Retry that transport failure exactly once.
+    // Password login, HTTP/auth responses, persisted sessions, and aborted
+    // workspace switches deliberately remain single-attempt operations.
+    if (!demoEmail || options.persist !== false || !isTransientFetchFailure(error) || options.signal?.aborted) throw error;
+    await waitForSeededDemoLoginRetry(options.signal);
+    response = await requestLogin();
+  }
   if (!response.ok) throw new Error(await response.text());
   const login = (await response.json()) as SessionLoginInfo;
   if (options.persist !== false) await confirmAndStoreBrowserSession(login);
   return login;
+}
+
+function isTransientFetchFailure(error: unknown): boolean {
+  return error instanceof TypeError;
+}
+
+function waitForSeededDemoLoginRetry(signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.reject(signal.reason ?? new DOMException("Seeded demo sign-in cancelled", "AbortError"));
+  return new Promise((resolve, reject) => {
+    const timer = globalThis.setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, seededDemoLoginRetryDelayMs);
+    const onAbort = () => {
+      globalThis.clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      reject(signal?.reason ?? new DOMException("Seeded demo sign-in cancelled", "AbortError"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 function demoLoginEmail(userId: string): string | undefined {

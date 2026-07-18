@@ -124,6 +124,69 @@ describe("loginSession", () => {
     expect(localStorage.setItem).not.toHaveBeenCalled();
   });
 
+  it("retries one transient deferred seeded-demo transport failure without weakening auth or abort handling", async () => {
+    const login = {
+      token: "token-gm",
+      user: { id: "usr_demo_gm", displayName: "Demo GM" },
+      session: { id: "session-gm", userId: "usr_demo_gm" },
+      memberships: []
+    };
+    const recoveredFetch = vi.fn()
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+      .mockResolvedValueOnce(jsonResponse(login));
+    vi.stubGlobal("fetch", recoveredFetch);
+    const recoveryController = new AbortController();
+
+    await expect(loginSession("usr_demo_gm", { persist: false, signal: recoveryController.signal })).resolves.toMatchObject({ user: { id: "usr_demo_gm" } });
+
+    expect(recoveredFetch).toHaveBeenCalledTimes(2);
+    for (const [, init] of recoveredFetch.mock.calls) {
+      expect(new Headers(init?.headers).get("x-otte-defer-session-cookie")).toBe("1");
+      expect(JSON.parse(String(init?.body))).toEqual({ email: "gm@example.test" });
+      expect(init?.signal).toBe(recoveryController.signal);
+    }
+    expect(localStorage.setItem).not.toHaveBeenCalled();
+
+    const rejectedResponse = new Response("Invalid login credentials", { status: 401 });
+    const authFailureFetch = vi.fn(async () => rejectedResponse);
+    vi.stubGlobal("fetch", authFailureFetch);
+    await expect(loginSession("usr_demo_gm", { persist: false })).rejects.toThrow("Invalid login credentials");
+    expect(authFailureFetch).toHaveBeenCalledTimes(1);
+
+    const passwordFetch = vi.fn(async () => { throw new TypeError("Failed to fetch"); });
+    vi.stubGlobal("fetch", passwordFetch);
+    await expect(loginPasswordSession({ email: "owner@example.test", password: "correct-password" }, { persist: false })).rejects.toThrow("Failed to fetch");
+    expect(passwordFetch).toHaveBeenCalledTimes(1);
+
+    const nonDemoFetch = vi.fn(async () => { throw new TypeError("Failed to fetch"); });
+    vi.stubGlobal("fetch", nonDemoFetch);
+    await expect(loginSession("usr_owner", { persist: false })).rejects.toThrow("Failed to fetch");
+    expect(nonDemoFetch).toHaveBeenCalledTimes(1);
+
+    const persistedDemoFetch = vi.fn(async () => { throw new TypeError("Failed to fetch"); });
+    vi.stubGlobal("fetch", persistedDemoFetch);
+    await expect(loginSession("usr_demo_gm")).rejects.toThrow("Failed to fetch");
+    expect(persistedDemoFetch).toHaveBeenCalledTimes(1);
+
+    const controller = new AbortController();
+    const abortedFetch = vi.fn(async () => {
+      controller.abort();
+      throw controller.signal.reason;
+    });
+    vi.stubGlobal("fetch", abortedFetch);
+    await expect(loginSession("usr_demo_gm", { persist: false, signal: controller.signal })).rejects.toMatchObject({ name: "AbortError" });
+    expect(abortedFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("bounds deferred seeded-demo transport recovery to one retry", async () => {
+    const fetchMock = vi.fn(async () => { throw new TypeError("Failed to fetch"); });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(loginSession("usr_demo_player", { persist: false })).rejects.toThrow("Failed to fetch");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("confirms an accepted browser cookie before storing transport state", async () => {
     const login = {
       token: "token-owner",

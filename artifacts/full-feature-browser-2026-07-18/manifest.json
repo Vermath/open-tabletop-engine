@@ -677,7 +677,7 @@
       "id": "FF-027",
       "status": "fixed",
       "summary": "The atomic scene-duplication E2E could falsely time out before reaching the feature when the first Demo GM login request hit a transient connection failure.",
-      "repair": "Added a bounded retry around only the demo-workspace readiness precondition while preserving the forced commit failure and zero-partial-copy assertions unchanged.",
+      "repair": "Isolated the feature assertions from the login precondition, then removed the one-off test retry after FF-032 moved bounded recovery into the seeded-demo product path; forced commit failure and zero-partial-copy assertions remain unchanged.",
       "regressionEvidence": [
         "tests/e2e/auth-tabletop.spec.ts"
       ],
@@ -726,6 +726,18 @@
         "scripts/test-release-gate-evidence.mjs"
       ],
       "browserEvidence": []
+    },
+    {
+      "id": "FF-032",
+      "status": "fixed",
+      "summary": "A transient first Demo GM login connection failure left the product on Sign In with Failed to fetch, blocking unrelated actual-play journeys before their feature began.",
+      "repair": "Added one 200 ms abort-aware retry only for transport-rejected seeded-demo login requests using deferred credentials; HTTP and auth responses, persisted sessions, non-demo and password logins, second failures, aborted switches, and stale credential tickets remain non-retryable or non-committing.",
+      "regressionEvidence": [
+        "apps/web/src/api.ts",
+        "apps/web/src/api.test.ts",
+        "tests/e2e/auth-tabletop.spec.ts"
+      ],
+      "browserEvidence": []
     }
   ],
   "boundaries": [
@@ -763,14 +775,14 @@
   "verification": {
     "focused": {
       "status": "passed",
-      "detail": "Focused regressions for FF-001 through FF-031 passed during remediation; the FF-021 audio-sync gate passed 9 of 9 tests, the FF-022 modal accessibility gate passed 3 of 3 tests, the FF-027 scene-duplication journey passed five fresh-server repetitions plus a simulated first-login connection abort, the FF-028 Vite watcher suite passed 11 of 11 with platform-native fixture paths, the FF-029 documentation publication guard passed after path-neutral wording, the FF-030 release-evidence parser covered grouped, prefixed, and mixed Turbo test output, and the FF-031 output-directory guard covered existing-root and missing-directory paths."
+      "detail": "Focused regressions for FF-001 through FF-032 passed during remediation; the FF-021 audio-sync gate passed 9 of 9 tests, the FF-022 modal accessibility gate passed 3 of 3 tests, FF-027 retained its atomic failure assertions without a one-off login retry, the FF-028 Vite watcher suite passed 11 of 11 with platform-native fixture paths, the FF-029 documentation publication guard passed after path-neutral wording, the FF-030 release-evidence parser covered grouped, prefixed, and mixed Turbo test output, the FF-031 output-directory guard covered existing-root and missing-directory paths, and FF-032 covered bounded seeded-demo transport recovery plus no-retry auth, password, second-failure, abort, and stale-commit boundaries."
     },
     "webTypecheck": {
       "status": "passed"
     },
     "webTests": {
       "status": "passed",
-      "detail": "761 web tests passed after FF-021."
+      "detail": "763 web tests passed after FF-032."
     },
     "pnpmCheck": {
       "status": "passed",

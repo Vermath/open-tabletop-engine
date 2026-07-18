@@ -2398,9 +2398,23 @@ test("GM can export and safely re-import a campaign archive", async ({ page }) =
 
 test("GM can run the browser combat tracker lifecycle", async ({ page }) => {
   test.setTimeout(90_000);
+  let demoLoginAttempts = 0;
+  await page.route("**/api/v1/auth/login", async (route) => {
+    const body = route.request().postDataJSON() as { email?: string };
+    if (body.email === "gm@example.test") {
+      demoLoginAttempts += 1;
+      if (demoLoginAttempts === 1) {
+        await route.abort("connectionfailed");
+        return;
+      }
+    }
+    await route.continue();
+  });
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
   await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  expect(demoLoginAttempts).toBe(2);
+  await page.unroute("**/api/v1/auth/login");
 
   await page.getByRole("button", { name: "Prep", exact: true }).click();
   await openInspectorPanel(page, "SDK");
@@ -4363,11 +4377,8 @@ test("GM can bulk duplicate selected prep scenes", async ({ page }) => {
 test("failed prep scene duplication leaves no partial copies", async ({ page }) => {
   await page.goto("/");
   const manageButton = page.getByRole("button", { name: "Manage", exact: true });
-  await expect(async () => {
-    if (await manageButton.isVisible()) return;
-    await page.getByRole("button", { name: "Demo GM" }).click();
-    await expect(manageButton).toBeVisible({ timeout: 5_000 });
-  }).toPass({ timeout: 15_000, intervals: [250, 500, 1_000] });
+  await page.getByRole("button", { name: "Demo GM" }).click();
+  await expect(manageButton).toBeVisible();
   await openManageCategory(page, "Scenes");
 
   const prefix = `Failed Bulk Prep ${Date.now()}`;
