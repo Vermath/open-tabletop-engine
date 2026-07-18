@@ -125,15 +125,15 @@ describe("web bundle boundaries", () => {
 
 describe("local API proxy identity", () => {
   it("restarts for compatibility-fingerprint inputs but ignores generated API data", () => {
-    const root = "D:/repo";
-    expect(apiSourceFingerprintInputChanged("change", "D:/repo/apps/api/src/app.ts", root)).toBe(true);
-    expect(apiSourceFingerprintInputChanged("add", "D:/repo/packages/core/src/new-domain.ts", root)).toBe(true);
-    expect(apiSourceFingerprintInputChanged("unlink", "D:/repo/plugins/example/index.ts", root)).toBe(true);
-    expect(apiSourceFingerprintInputChanged("change", "D:/repo/pnpm-lock.yaml", root)).toBe(true);
-    expect(apiSourceFingerprintInputChanged("change", "D:/repo/apps/web/src/App.tsx", root)).toBe(false);
-    expect(apiSourceFingerprintInputChanged("change", "D:/repo/apps/api/artifacts/report.json", root)).toBe(false);
-    expect(apiSourceFingerprintInputChanged("change", "D:/repo/packages/core/dist/index.js", root)).toBe(false);
-    expect(apiSourceFingerprintInputChanged("ready", "D:/repo/apps/api/src/app.ts", root)).toBe(false);
+    const root = join(tmpdir(), "otte-api-source-fixture");
+    expect(apiSourceFingerprintInputChanged("change", join(root, "apps/api/src/app.ts"), root)).toBe(true);
+    expect(apiSourceFingerprintInputChanged("add", join(root, "packages/core/src/new-domain.ts"), root)).toBe(true);
+    expect(apiSourceFingerprintInputChanged("unlink", join(root, "plugins/example/index.ts"), root)).toBe(true);
+    expect(apiSourceFingerprintInputChanged("change", join(root, "pnpm-lock.yaml"), root)).toBe(true);
+    expect(apiSourceFingerprintInputChanged("change", join(root, "apps/web/src/App.tsx"), root)).toBe(false);
+    expect(apiSourceFingerprintInputChanged("change", join(root, "apps/api/artifacts/report.json"), root)).toBe(false);
+    expect(apiSourceFingerprintInputChanged("change", join(root, "packages/core/dist/index.js"), root)).toBe(false);
+    expect(apiSourceFingerprintInputChanged("ready", join(root, "apps/api/src/app.ts"), root)).toBe(false);
   });
 
   it("restarts once when a watched API source input changes", async () => {
@@ -150,7 +150,8 @@ describe("local API proxy identity", () => {
       })
     };
     const restart = vi.fn(async () => undefined);
-    const plugin = restartDevServerOnApiSourceChange("D:/repo");
+    const root = join(tmpdir(), "otte-api-watcher-fixture");
+    const plugin = restartDevServerOnApiSourceChange(root);
     const configureServer = plugin.configureServer as unknown as (server: unknown) => void;
     configureServer({
       watcher,
@@ -160,10 +161,10 @@ describe("local API proxy identity", () => {
 
     const handle = listeners.get("all");
     expect(handle).toBeDefined();
-    handle?.("change", "D:/repo/apps/web/src/App.tsx");
+    handle?.("change", join(root, "apps/web/src/App.tsx"));
     expect(restart).not.toHaveBeenCalled();
-    handle?.("change", "D:/repo/apps/api/src/app.ts");
-    handle?.("change", "D:/repo/apps/api/src/routes.ts");
+    handle?.("change", join(root, "apps/api/src/app.ts"));
+    handle?.("change", join(root, "apps/api/src/routes.ts"));
     await Promise.resolve();
 
     expect(restart).toHaveBeenCalledTimes(1);
