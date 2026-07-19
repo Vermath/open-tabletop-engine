@@ -4,7 +4,7 @@
 
 The local product supported a persistent four-character D&D 5.5e campaign from fresh account and campaign creation through three linked play sessions, six scenes, multiple encounters, chat, dice, tactical tools, combat, rewards, and advancement from level 1 to level 3. Codex drove the GM and all four player seats sequentially through the in-app Browser against the live Vite/API stack.
 
-Thirty-three repository-controlled defects were found and repaired. The affected Browser paths were rerun after rebuilding the API, and focused regressions were added for every fix. This document deliberately separates direct Browser evidence, automated contract evidence, unavailable external services, native Browser-plugin limitations, and human-only evidence.
+Thirty-four repository-controlled defects were found and repaired. The affected Browser paths were rerun after rebuilding the API, and focused regressions were added for every fix. This document deliberately separates direct Browser evidence, automated contract evidence, unavailable external services, native Browser-plugin limitations, and human-only evidence.
 
 Campaign: **The Obsidian Relay: Full-Feature Trial**
 
@@ -104,6 +104,7 @@ Rows below map back to the plan in `full-feature-browser-simulation-2026-07-18.m
 | FF-031 | A release-evidence `--output` destination directly inside an existing Windows drive root could fail with `EPERM` because the recorder unconditionally called recursive directory creation for that root. | Added an existence guard before parent-directory creation and a focused functional regression that simulates the Windows-root failure while also covering missing-directory creation. | Release-qualification evidence recording; no additional Browser capture was required. |
 | FF-032 | A transient connection failure on the first **Demo GM** login request left the product on **Sign In** with **Failed to fetch**, so unrelated actual-play journeys could fail before reaching their feature. | Added one 200 ms, abort-aware retry only for a transport-rejected seeded-demo request using deferred credentials. HTTP/auth failures, persisted login, non-demo and password login, a second transport failure, aborted switches, and stale credential tickets remain non-retryable or non-committing. Unit coverage locks those boundaries, and the combat-tracker E2E now aborts the first demo login before running its unchanged full lifecycle. | Release-qualification combat-tracker journey; no additional Browser tab was opened after finalization. |
 | FF-033 | FF-032 increased the production entry's initial static graph to 1,600,274 bytes, 274 bytes over the enforced 1,600,000-byte budget, so an otherwise-green web build could not complete. A follow-up output audit also showed that the early bundle hook did not include final Vite mutations. | Left the FF-032 login implementation unchanged. The chunk policy no longer forces the small eager dice engine into the lazy 3D physics vendor, so that 552,712-byte vendor is truly deferred; enforcement now runs against the finalized emitted bundle. The unchanged 1,600,000-byte budget measures an exact 1,048,365-byte initial graph with 551,635 bytes of headroom. Existing unit and E2E regressions continue to lock the one-retry, deferred-demo-only, auth/password/persisted/non-demo/second-failure/abort/stale-commit boundaries. | Final production output and static-graph gate passed; all 3 focused 3D-dice Playwright journeys passed; no additional Browser tab was opened after finalization. |
+| FF-034 | Under full-suite CPU and I/O contention, the gridless-scene and reviewed typed-damage integration tests could exceed Vitest's generic 5-second default even though immediate focused reruns completed in 1.970 and 2.446 seconds. | Assigned each multi-request API integration test the existing 15-second per-test allowance used by comparable API journeys. The change is test-local: no global timeout or production behavior changed. | Both focused files passed five sequential reruns and a contention run; API typecheck and the focused Vitest suite passed. No additional Browser capture was required. |
 
 ## Screenshot evidence index
 
@@ -148,7 +149,7 @@ All captures are in `artifacts/full-feature-browser-2026-07-18/`. This index con
 
 | Gate | Result |
 |---|---|
-| Focused regressions for FF-001 through FF-033 | Passed during remediation |
+| Focused regressions for FF-001 through FF-034 | Passed during remediation |
 | Web typecheck and full web suite | Passed: 150 files and 763 tests after FF-033 |
 | Full `pnpm check` | Passed before FF-032: lint, monorepo typecheck, E2E typecheck, 2,263 tests passed with 1 skipped, and all builds; the exact-commit rerun remains part of release closeout |
 | Rebuilt API plus Browser rerun | Passed for campaign reconnect, character import, actor lifecycle, typed damage, encounter discovery, advanced combat, rewards, session closeout, search, soundboard state, archive scope, content rollback, webhooks, and AI readiness |

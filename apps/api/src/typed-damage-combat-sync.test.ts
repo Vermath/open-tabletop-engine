@@ -161,7 +161,7 @@ describe("reviewed typed damage combat synchronization", () => {
     } finally {
       await app.close();
     }
-  });
+  }, 15_000);
 });
 
 async function prepareCriticalDamage(app: Awaited<ReturnType<typeof buildApp>>, route: string, key: string) {
