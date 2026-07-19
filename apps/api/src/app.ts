@@ -864,7 +864,7 @@ const loginThrottleDecisionSymbol = Symbol("otte.loginThrottleDecision");
 const operationsRequestStartedAtSymbol = Symbol("otte.operationsRequestStartedAt");
 const legacyUserHeaderAuditScopes = new AsyncLocalStorage<Set<string>>();
 
-const campaignPermissionTemplates: Record<CampaignPermissionTemplateId, CampaignPermissionTemplate> = { standard: { id: "standard", grants: [] }, player_authoring: { id: "player_authoring", grants: [{ role: "player", permissions: ["actor.create", "journal.create", "token.create"] }] }, ai_assisted: { id: "ai_assisted", grants: [{ role: "player", permissions: ["ai.proposeChanges"] }] }, assistant_ops: { id: "assistant_ops", grants: [{ role: "assistant_gm", permissions: ["chat.moderate", "plugin.install", "plugin.configure"] }] } };
+const campaignPermissionTemplates: Record<CampaignPermissionTemplateId, CampaignPermissionTemplate> = { standard: { id: "standard", grants: [] }, player_authoring: { id: "player_authoring", grants: [{ role: "player", permissions: ["actor.create", "journal.create", "token.create"] }] }, ai_assisted: { id: "ai_assisted", grants: [{ role: "player", permissions: ["ai.use", "ai.proposeChanges"] }] }, assistant_ops: { id: "assistant_ops", grants: [{ role: "assistant_gm", permissions: ["chat.moderate", "plugin.install", "plugin.configure"] }] } };
 
 interface IdempotencyContext {
   key: string;
@@ -15588,7 +15588,7 @@ function createAiThreadTools(): AiToolDefinition[] {
               round: visibleCombat.round,
               turnIndex: visibleCombat.turnIndex,
               combatantCount: visibleCombat.combatants.length,
-              currentCombatantId: visibleCombat.combatants[visibleCombat.turnIndex]?.id,
+              currentCombatantId: visibleCombat.turnPresentation?.currentCombatantId,
               combatants: visibleCombat.combatants.slice(0, 12).map((combatant) => ({ id: combatant.id, tokenId: combatant.tokenId, actorId: combatant.actorId, name: combatant.name, initiative: combatant.initiative, defeated: combatant.defeated, readiness: combatant.readiness ?? "normal", ...(combatant.conditions ? { conditions: combatant.conditions } : {}), ...(combatant.deathSaveSuccesses !== undefined ? { deathSaveSuccesses: combatant.deathSaveSuccesses } : {}), ...(combatant.deathSaveFailures !== undefined ? { deathSaveFailures: combatant.deathSaveFailures } : {}), ...(combatant.resourceLabel !== undefined ? { resourceLabel: combatant.resourceLabel } : {}), ...(combatant.resourceUsed !== undefined ? { resourceUsed: combatant.resourceUsed } : {}) })),
               createdAt: visibleCombat.createdAt,
               updatedAt: visibleCombat.updatedAt,
@@ -16661,6 +16661,7 @@ function readBoardStateToolOutput(context: AiToolContext, scene: Scene, selected
   const visibleTokenIds = new Set(visibleTokens.map((token) => token.id));
   const mapAsset = scene.backgroundAssetId ? context.state.assets.find((asset) => asset.id === scene.backgroundAssetId && asset.campaignId === context.campaignId) : undefined;
   const activeCombat = context.state.combats.find((combat) => combat.campaignId === context.campaignId && combat.active);
+  const visibleActiveCombat = activeCombat ? combatPayloadForUser(store, context.userId, activeCombat) : undefined;
   const annotationLayerCounts = { measurement: 0, effects: 0, drawings: 0, notes: 0 } satisfies Record<SceneAnnotationLayer, number>;
   for (const annotation of scene.annotations ?? []) {
     annotationLayerCounts[annotation.layer ?? boardAnnotationDefaultLayer(annotation.kind)] += 1;
@@ -16680,14 +16681,14 @@ function readBoardStateToolOutput(context: AiToolContext, scene: Scene, selected
     walls: { count: scene.walls.length, terrainCount: scene.walls.filter((wall) => wall.kind === "terrain").length, sample: scene.walls.slice(0, 12).map((wall) => ({ id: wall.id, kind: wall.kind ?? "wall", x1: wall.x1, y1: wall.y1, x2: wall.x2, y2: wall.y2, blocksVision: wall.blocksVision, blocksMovement: wall.blocksMovement ?? wall.kind !== "terrain" })) },
     lights: { count: scene.lights.length, sample: scene.lights.slice(0, 12).map((light) => ({ id: light.id, x: light.x, y: light.y, radius: light.radius, brightRadius: light.brightRadius, dimRadius: light.dimRadius, color: light.color, intensity: light.intensity })) },
     annotations: { count: scene.annotations?.length ?? 0, layerCounts: annotationLayerCounts, sample: (scene.annotations ?? []).slice(0, 12).map((annotation) => ({ id: annotation.id, kind: annotation.kind, layer: annotation.layer ?? boardAnnotationDefaultLayer(annotation.kind), pointCount: annotation.points.length, color: annotation.color, label: annotation.label })) },
-    activeCombat: activeCombat
+    activeCombat: visibleActiveCombat
       ? {
-          id: activeCombat.id,
-          round: activeCombat.round,
-          turnIndex: activeCombat.turnIndex,
-          combatantCount: activeCombat.combatants.length,
-          currentCombatantId: activeCombat.combatants[activeCombat.turnIndex]?.id,
-          combatants: activeCombat.combatants
+          id: visibleActiveCombat.id,
+          round: visibleActiveCombat.round,
+          turnIndex: visibleActiveCombat.turnIndex,
+          combatantCount: visibleActiveCombat.combatants.length,
+          currentCombatantId: visibleActiveCombat.turnPresentation?.currentCombatantId,
+          combatants: visibleActiveCombat.combatants
             .filter((combatant) => !combatant.tokenId || visibleTokenIds.has(combatant.tokenId))
             .slice(0, 20)
             .map((combatant) => ({ id: combatant.id, tokenId: combatant.tokenId, actorId: combatant.actorId, name: combatant.name, initiative: combatant.initiative, defeated: combatant.defeated })),
@@ -21730,9 +21731,25 @@ function combatFromRealtimeEvent(store: StateStore, event: EngineEvent): Combat 
   return combatId ? store.state.combats.find((combat) => combat.id === combatId && combat.campaignId === event.campaignId) : undefined;
 }
 
+function nextCombatantInTurnOrder(combat: Combat): Combat["combatants"][number] | undefined {
+  if (combat.combatants.length < 2 || combat.combatants.every((combatant) => combatant.defeated)) return undefined;
+  for (let step = 1; step <= combat.combatants.length; step += 1) {
+    const combatant = combat.combatants[(combat.turnIndex + step) % combat.combatants.length];
+    if (combatant && !combatant.defeated) return combatant.id === combat.combatants[combat.turnIndex]?.id ? undefined : combatant;
+  }
+  return undefined;
+}
+
 function combatPayloadForUser(store: StateStore, userId: string, combat: Combat): Combat {
   const canManage = canCampaign(store, userId, combat.campaignId, "combat.manage");
-  const activeCombatantId = combat.combatants[combat.turnIndex]?.id;
+  const activeCombatant = combat.combatants[combat.turnIndex];
+  const activeCombatantId = activeCombatant?.id;
+  const nextCombatant = nextCombatantInTurnOrder(combat);
+  const canPresent = (combatant: Combat["combatants"][number] | undefined) => combatant && (canManage || combatant.hidden !== true);
+  const turnPresentation: NonNullable<Combat["turnPresentation"]> = {
+    ...(canPresent(activeCombatant) ? { currentCombatantId: activeCombatant!.id } : {}),
+    ...(canPresent(nextCombatant) ? { nextCombatantId: nextCombatant!.id } : {}),
+  };
   const visibleCombatants = combat.combatants.filter((combatant) => canManage || combatant.hidden !== true);
   const visibleTurnIndex = activeCombatantId
     ? Math.max(
@@ -21740,7 +21757,7 @@ function combatPayloadForUser(store: StateStore, userId: string, combat: Combat)
         visibleCombatants.findIndex((combatant) => combatant.id === activeCombatantId),
       )
     : Math.min(combat.turnIndex, Math.max(0, visibleCombatants.length - 1));
-  return { ...combat, turnIndex: visibleTurnIndex, combatants: visibleCombatants.map((combatant) => combatantPayloadForUser(store, userId, combat.campaignId, combatant)), ...(combat.actions ? { actions: combat.actions.map((action) => combatActionPayloadForUser(store, userId, combat.campaignId, action)) } : {}), ...(combat.environmentMechanics ? { environmentMechanics: combat.environmentMechanics.filter((mechanic) => canManage || mechanic.visibility === "public") } : {}), ...(combat.environmentMechanicTriggers ? { environmentMechanicTriggers: combat.environmentMechanicTriggers.filter((trigger) => canManage || trigger.visibility === "public") } : {}), ...(combat.effectScheduleEvents ? { effectScheduleEvents: combat.effectScheduleEvents.filter((event) => canManage || canReadActorPrivateDataById(store, userId, combat.campaignId, event.actorId)) } : {}), ...(combat.legendaryActionPrompts ? { legendaryActionPrompts: canManage ? combat.legendaryActionPrompts.map((prompt) => ({ ...prompt, options: [...prompt.options] })) : [] } : {}) };
+  return { ...combat, turnIndex: visibleTurnIndex, turnPresentation, combatants: visibleCombatants.map((combatant) => combatantPayloadForUser(store, userId, combat.campaignId, combatant)), ...(combat.actions ? { actions: combat.actions.map((action) => combatActionPayloadForUser(store, userId, combat.campaignId, action)) } : {}), ...(combat.environmentMechanics ? { environmentMechanics: combat.environmentMechanics.filter((mechanic) => canManage || mechanic.visibility === "public") } : {}), ...(combat.environmentMechanicTriggers ? { environmentMechanicTriggers: combat.environmentMechanicTriggers.filter((trigger) => canManage || trigger.visibility === "public") } : {}), ...(combat.effectScheduleEvents ? { effectScheduleEvents: combat.effectScheduleEvents.filter((event) => canManage || canReadActorPrivateDataById(store, userId, combat.campaignId, event.actorId)) } : {}), ...(combat.legendaryActionPrompts ? { legendaryActionPrompts: canManage ? combat.legendaryActionPrompts.map((prompt) => ({ ...prompt, options: [...prompt.options] })) : [] } : {}) };
 }
 
 function combatantPayloadForUser(store: StateStore, userId: string, campaignId: string, combatant: Combat["combatants"][number]): Combat["combatants"][number] {
@@ -21868,7 +21885,7 @@ function campaignPermissionTemplate(value: unknown): CampaignPermissionTemplate 
 
 function campaignPermissionTemplateGrants(campaignId: string, templateId: CampaignPermissionTemplateId): PermissionGrant[] {
   const template = campaignPermissionTemplates[templateId];
-  return template.grants.map((grant) => createTimestamped("grant", { subjectType: "role" as const, subjectId: grant.role, campaignId, permissions: grant.permissions, metadata: { source: "campaign_permission_template", templateId } }));
+  return template.grants.map((grant) => createTimestamped("grant", { subjectType: "role" as const, subjectId: grant.role, campaignId, permissions: grant.permissions, metadata: { source: "campaign_permission_template", templateId, ...(templateId === "ai_assisted" ? { aiUseTemplateVersion: 1 } : {}) } }));
 }
 
 function memberSessionInfo(store: StateStore, member: CampaignMember): CampaignMember & { user: Pick<User, "id" | "displayName" | "email">; active: boolean; permissions: PermissionName[] } {

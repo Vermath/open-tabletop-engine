@@ -129,6 +129,12 @@ describe("atomic combat start", () => {
       expect(started.json().rolls).toContainEqual(expect.objectContaining({ label: "Atomic Scout Initiative", visibility: "gm_only" }));
       expect(started.json().chatMessages).toContainEqual(expect.objectContaining({ body: expect.stringContaining("Atomic Scout"), visibility: "gm_only" }));
 
+      const combat = store.state.combats.find((candidate) => candidate.id === started.json().combat.id)!;
+      const hiddenCombatant = combat.combatants.find((combatant) => combatant.tokenId === npcToken.id)!;
+      const visibleCombatant = combat.combatants.find((combatant) => combatant.tokenId === "tok_valen")!;
+      combat.combatants = [hiddenCombatant, visibleCombatant];
+      combat.turnIndex = 0;
+
       const playerCombats = await app.inject({
         method: "GET",
         url: "/api/v1/campaigns/camp_demo/combats",
@@ -136,7 +142,18 @@ describe("atomic combat start", () => {
       });
       expect(playerCombats.statusCode).toBe(200);
       expect(JSON.stringify(playerCombats.json())).not.toContain("Atomic Scout");
+      expect(JSON.stringify(playerCombats.json())).not.toContain(hiddenCombatant.id);
       expect(playerCombats.json()[0].combatants).toEqual([expect.objectContaining({ tokenId: "tok_valen" })]);
+      expect(playerCombats.json()[0].turnPresentation).toEqual({ nextCombatantId: visibleCombatant.id });
+
+      const gmCombats = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/combats", headers: authHeaders });
+      expect(gmCombats.statusCode).toBe(200);
+      expect(gmCombats.json()[0].turnPresentation).toEqual({ currentCombatantId: hiddenCombatant.id, nextCombatantId: visibleCombatant.id });
+
+      combat.combatants = [visibleCombatant, hiddenCombatant];
+      const playerBeforeHiddenNext = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/combats", headers: { "x-user-id": "usr_demo_player" } });
+      expect(playerBeforeHiddenNext.statusCode).toBe(200);
+      expect(playerBeforeHiddenNext.json()[0].turnPresentation).toEqual({ currentCombatantId: visibleCombatant.id });
 
       const playerRolls = await app.inject({
         method: "GET",

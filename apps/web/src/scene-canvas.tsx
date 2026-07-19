@@ -1741,10 +1741,12 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
         const tokenConditionEntries = [...(token.conditions ?? []).map((condition) => condition.name), ...(linkedActor ? actorConditionLabels(linkedActor) : [])];
         const isCurrentTurn = currentTurnTokenIdSet.has(token.id);
         const isNextTurn = !isCurrentTurn && nextTurnTokenIdSet.has(token.id);
+        const turnStateLabel = isCurrentTurn ? "current turn" : isNextTurn ? "up next" : undefined;
         return (
           <button
             key={token.id}
             className={`token layer-${layer} ${activeLayerToken ? "active-layer" : "inactive-layer"} ${token.disposition} ${tokenImageAsset ? "has-image" : ""} ${selected ? "selected" : ""} ${props.selectedTokenId === token.id ? "primary-selected" : ""} ${token.targetedByUserIds?.length ? "targeted" : ""} ${token.auras?.length ? "has-aura" : ""} ${dragPosition ? "dragging" : ""} ${isCurrentTurn ? "turn-current" : ""} ${isNextTurn ? "turn-next" : ""} ${tokenHpRatio !== undefined && tokenHpRatio <= 0 ? "down" : tokenHpRatio !== undefined && tokenHpRatio <= 0.5 ? "bloodied" : ""}`}
+            data-turn-state={isCurrentTurn ? "current" : isNextTurn ? "next" : undefined}
             style={{
               left: `${(visualX / props.scene.width) * 100}%`,
               top: `${(visualY / props.scene.height) * 100}%`,
@@ -1752,7 +1754,7 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
               height: `${(visualHeight / props.scene.height) * 100}%`,
               pointerEvents: calibrationActive ? "none" : undefined
             }}
-            aria-label={`${tokenLayerLabel(layer)} token ${token.name}${(token.elevation ?? 0) !== 0 ? ` at ${formatNumber(Math.abs(token.elevation ?? 0))} feet ${(token.elevation ?? 0) > 0 ? "above" : "below"} ground` : ""}`}
+            aria-label={`${tokenLayerLabel(layer)} token ${token.name}${(token.elevation ?? 0) !== 0 ? ` at ${formatNumber(Math.abs(token.elevation ?? 0))} feet ${(token.elevation ?? 0) > 0 ? "above" : "below"} ground` : ""}${turnStateLabel ? `, ${turnStateLabel}` : ""}`}
             aria-pressed={selected}
             aria-describedby={keyboardInstructionsId}
             aria-keyshortcuts={props.canMoveToken ? "ArrowUp ArrowDown ArrowLeft ArrowRight" : undefined}

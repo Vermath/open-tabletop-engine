@@ -8,6 +8,8 @@ const advancementFlowPath = resolve(__dirname, "advancement-flow.tsx");
 const advancementFlowSource = existsSync(advancementFlowPath) ? readFileSync(advancementFlowPath, "utf8") : "";
 const journalPanelSource = readFileSync(resolve(__dirname, "journal-panel.tsx"), "utf8");
 const stylesSource = readFileSync(resolve(__dirname, "styles.css"), "utf8");
+const sceneCanvasSource = readFileSync(resolve(__dirname, "scene-canvas.tsx"), "utf8");
+const actorPanelSource = readFileSync(resolve(__dirname, "actor-panel.tsx"), "utf8");
 
 describe("player seat polish", () => {
   it("shares the advancement flow between SDK panel and the actor sheet modal", () => {
@@ -49,5 +51,26 @@ describe("player seat polish", () => {
     expect(appSource).toContain("if (!canAssignItemFromSheet(item)) return;");
     expect(journalPanelSource).toContain("{props.canCreate &&");
     expect(appSource).toContain('canCreate={hasPermission("journal.create")}');
+  });
+
+  it("keeps the Agent opt-in while preserving the rest of the player live workspace", () => {
+    expect(appSource).toContain('const canUseAiAgent = hasPermission("ai.use");');
+    expect(appSource).toContain('if (canUseAiAgent) commands.push({ id: "action:ai-agent"');
+    expect(appSource).toContain('{canUseAiAgent && (');
+    expect(appSource).toContain('{canUseAiAgent && aiAgentOpen && (');
+    expect(appSource).toContain('? ["actors", "compendium", "handouts", "journal", "search", "chat", "combat"]');
+  });
+
+  it("marks the current and next token with shape-aware, non-color-only turn cues", () => {
+    expect(sceneCanvasSource).toContain('data-turn-state={isCurrentTurn ? "current" : isNextTurn ? "next" : undefined}');
+    expect(sceneCanvasSource).toContain('const turnStateLabel = isCurrentTurn ? "current turn" : isNextTurn ? "up next" : undefined;');
+    expect(sceneCanvasSource).toContain('isNextTurn = !isCurrentTurn && nextTurnTokenIdSet.has(token.id)');
+    expect(stylesSource).toContain('border-radius: inherit;');
+    expect(stylesSource).toContain('border: 2px solid var(--turn-current);');
+    expect(stylesSource).toContain('border: 2px dashed var(--turn-next);');
+    expect(actorPanelSource).toContain('combatTurnCombatant(props.combat, "current")');
+    expect(actorPanelSource).toContain('combatTurnCombatant(props.combat, "next")');
+    expect(appSource).toContain('combatTurnCombatant(activeCombat, "current")');
+    expect(appSource).toContain('combatTurnCombatant(activeCombat, "next")');
   });
 });

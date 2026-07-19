@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { approveProposal, applyProposal, buildSmoothFogBrushPolygon, computeFogRevealPolygon, computeLightVisionPolygon, computeLightVisionPolygons, computeTokenVisionPolygon, computeTokenVisionPolygons, hasPermission, isPointInsideVisionPolygon, rejectProposal, seedState, tokenCenter } from "./index.js";
+import { approveProposal, applyProposal, buildSmoothFogBrushPolygon, computeFogRevealPolygon, computeLightVisionPolygon, computeLightVisionPolygons, computeTokenVisionPolygon, computeTokenVisionPolygons, hasPermission, isPointInsideVisionPolygon, permissionsForRole, rejectProposal, seedState, tokenCenter } from "./index.js";
 
 describe("core permissions", () => {
   it("gives owners full campaign authority and keeps observers read-only", () => {
@@ -45,6 +45,32 @@ describe("core permissions", () => {
 
     expect(hasPermission({ ...baseInput, permission: "journal.create" })).toBe(true);
     expect(hasPermission({ ...baseInput, permission: "journal.delete" })).toBe(false);
+  });
+
+  it("keeps Agent access opt-in for players without removing public campaign memory", () => {
+    const state = seedState();
+    const baseInput = {
+      userId: "usr_demo_player",
+      campaignId: "camp_demo",
+      members: state.members,
+      grants: state.permissionGrants
+    };
+
+    expect(permissionsForRole("player")).not.toContain("ai.use");
+    expect(permissionsForRole("player")).toContain("ai.readPublicMemory");
+    expect(permissionsForRole("assistant_gm")).toContain("ai.use");
+    expect(hasPermission({ ...baseInput, permission: "ai.use" })).toBe(false);
+
+    state.permissionGrants.push({
+      id: "grant_player_ai_opt_in",
+      subjectType: "role",
+      subjectId: "player",
+      campaignId: "camp_demo",
+      permissions: ["ai.use"],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    });
+    expect(hasPermission({ ...baseInput, permission: "ai.use" })).toBe(true);
   });
 
   it("does not honor permission grants at expiration or with malformed expiration timestamps", () => {

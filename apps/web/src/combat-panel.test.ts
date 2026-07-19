@@ -4,7 +4,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Actor, Combat, CombatLegendaryActionPrompt } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
-import { boundedCombatCounter, combatRosterPatch, CombatVitalsControls, LegendaryActionPromptCard, parseCombatantConditions } from "./combat-panel.js";
+import { boundedCombatCounter, combatRosterPatch, combatTurnCombatant, CombatVitalsControls, LegendaryActionPromptCard, nextCombatTurnPosition, parseCombatantConditions } from "./combat-panel.js";
 
 const source = readFileSync(resolve(__dirname, "combat-panel.tsx"), "utf8").replace(/\r\n/g, "\n");
 const appSource = readFileSync(resolve(__dirname, "App.tsx"), "utf8").replace(/\r\n/g, "\n");
@@ -53,6 +53,28 @@ describe("combatant draft editing", () => {
       combatants: [combat.combatants[1]],
       turnIndex: 0
     });
+  });
+
+  it("wraps initiative and skips defeated combatants for the next-turn cue", () => {
+    const combat = testCombat();
+    expect(nextCombatTurnPosition(combat, 1)).toEqual({ turnIndex: 1, round: 1 });
+    expect(nextCombatTurnPosition({ ...combat, turnIndex: 1 }, 1)).toEqual({ turnIndex: 0, round: 2 });
+    expect(nextCombatTurnPosition({ ...combat, combatants: [{ ...combat.combatants[0]!, defeated: false }, { ...combat.combatants[1]!, defeated: true }] }, 1)).toEqual({ turnIndex: 0, round: 2 });
+    expect(nextCombatTurnPosition({ ...combat, combatants: combat.combatants.map((combatant) => ({ ...combatant, defeated: true })) }, 1)).toEqual({ turnIndex: 0, round: 1 });
+  });
+
+  it("uses privacy-safe turn presentation and falls back for legacy combat payloads", () => {
+    const legacy = testCombat();
+    expect(combatTurnCombatant(legacy, "current")?.id).toBe("a");
+    expect(combatTurnCombatant(legacy, "next")?.id).toBe("b");
+
+    const hiddenCurrent = { ...legacy, turnPresentation: { nextCombatantId: "b" } };
+    expect(combatTurnCombatant(hiddenCurrent, "current")).toBeUndefined();
+    expect(combatTurnCombatant(hiddenCurrent, "next")?.id).toBe("b");
+
+    const hiddenNext = { ...legacy, turnPresentation: { currentCombatantId: "a" } };
+    expect(combatTurnCombatant(hiddenNext, "current")?.id).toBe("a");
+    expect(combatTurnCombatant(hiddenNext, "next")).toBeUndefined();
   });
 
   it("renders keyboard-reachable disabled vitals controls with a permission reason", () => {

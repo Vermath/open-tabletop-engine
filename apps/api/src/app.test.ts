@@ -3616,6 +3616,28 @@ describe("api", () => {
     expect(members.statusCode).toBe(200);
     expect(members.json().find((member: { userId: string }) => member.userId === "usr_demo_player").permissions).toEqual(expect.arrayContaining(["actor.create", "journal.create", "token.create"]));
 
+    const aiAssisted = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns",
+      headers: authHeaders,
+      payload: {
+        name: "AI-assisted Setup",
+        permissionTemplate: "ai_assisted"
+      }
+    });
+    expect(aiAssisted.statusCode).toBe(200);
+    expect(store.state.permissionGrants).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          campaignId: aiAssisted.json().id,
+          subjectType: "role",
+          subjectId: "player",
+          permissions: expect.arrayContaining(["ai.use", "ai.proposeChanges"]),
+          metadata: expect.objectContaining({ source: "campaign_permission_template", templateId: "ai_assisted", aiUseTemplateVersion: 1 })
+        })
+      ])
+    );
+
     const invalid = await app.inject({
       method: "POST",
       url: "/api/v1/campaigns",
@@ -29125,6 +29147,14 @@ registerCommand("/state", (input) => {
       createdAt: now,
       updatedAt: now
     });
+    store.state.permissionGrants.push(
+      createTimestamped("grant", {
+        subjectType: "user" as const,
+        subjectId: "usr_player",
+        campaignId: "camp_demo",
+        permissions: ["ai.use"]
+      })
+    );
     store.state.journals.push({
       id: "jnl_public",
       campaignId: "camp_demo",
@@ -30416,6 +30446,14 @@ registerCommand("/state", (input) => {
         score: 0,
         summary: "private evaluation failure detail",
         checks: [],
+      }),
+    );
+    store.state.permissionGrants.push(
+      createTimestamped("grant", {
+        subjectType: "user" as const,
+        subjectId: "usr_demo_player",
+        campaignId: "camp_demo",
+        permissions: ["ai.use"],
       }),
     );
     const app = await buildApp({ store });
@@ -33869,6 +33907,14 @@ registerCommand("/state", (input) => {
 
     const playerProvider = new ToolCallingProvider();
     const playerStore = new MemoryStateStore();
+    playerStore.state.permissionGrants.push(
+      createTimestamped("grant", {
+        subjectType: "user" as const,
+        subjectId: "usr_demo_player",
+        campaignId: "camp_demo",
+        permissions: ["ai.use"]
+      })
+    );
     const playerApp = await buildApp({ store: playerStore, aiProvider: playerProvider });
     const playerThread = await playerApp.inject({
       method: "POST",
@@ -34257,7 +34303,7 @@ registerCommand("/state", (input) => {
         subjectType: "user" as const,
         subjectId: "usr_demo_player",
         campaignId: "camp_demo",
-        permissions: ["actor.update", "combat.manage", "ai.proposeChanges"]
+        permissions: ["ai.use", "actor.update", "combat.manage", "ai.proposeChanges"]
       }) satisfies PermissionGrant
     );
     store.state.combats.push(
@@ -34923,6 +34969,14 @@ registerCommand("/state", (input) => {
 
     const playerProvider = new ExpandedToolProvider();
     const playerStore = new MemoryStateStore();
+    playerStore.state.permissionGrants.push(
+      createTimestamped("grant", {
+        subjectType: "user" as const,
+        subjectId: "usr_demo_player",
+        campaignId: "camp_demo",
+        permissions: ["ai.use"]
+      })
+    );
     expect(playerStore.state.chat).toEqual([]);
     playerStore.state.chat.push(
       createTimestamped("msg", {
@@ -35214,6 +35268,14 @@ registerCommand("/state", (input) => {
         role: "observer" as const
       })
     );
+    store.state.permissionGrants.push(
+      createTimestamped("grant", {
+        subjectType: "user" as const,
+        subjectId: "usr_demo_player",
+        campaignId: "camp_demo",
+        permissions: ["ai.use"]
+      })
+    );
     const app = await buildApp({ store, aiProvider: provider });
 
     try {
@@ -35272,7 +35334,7 @@ registerCommand("/state", (input) => {
 
       expect(playerTools.map((tool) => tool.name)).toEqual(["list_proposals", "get_proposal", "read_account", "read_workspace", "read_campaign", "read_world", "read_handout", "search_campaign", "read_ai_activity", "read_dice_macro", "read_systems", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "read_compendium"]);
       for (const tool of playerTools) {
-        expect(tool.requiredPermissions.every((permission) => permissionsForRole("player").includes(permission))).toBe(true);
+        expect(tool.requiredPermissions.every((permission) => permission === "ai.use" || permissionsForRole("player").includes(permission))).toBe(true);
         expect(permissionSafeTools.has(tool.name)).toBe(true);
       }
       expect(playerThread.json().thread.advertisedTools.every((tool: { permissionSafe?: boolean }) => tool.permissionSafe === true)).toBe(true);
@@ -35323,7 +35385,7 @@ registerCommand("/state", (input) => {
         subjectType: "user" as const,
         subjectId: "usr_demo_player",
         campaignId: "camp_demo",
-        permissions: ["ai.proposeChanges"]
+        permissions: ["ai.use", "ai.proposeChanges"]
       })
     );
     const app = await buildApp({ store, aiProvider: new RestrictedEditProvider() });
@@ -35628,6 +35690,14 @@ registerCommand("/state", (input) => {
         ],
         diffJson: {},
         approvalRequired: true
+      })
+    );
+    store.state.permissionGrants.push(
+      createTimestamped("grant", {
+        subjectType: "user" as const,
+        subjectId: "usr_demo_player",
+        campaignId: "camp_demo",
+        permissions: ["ai.use"]
       })
     );
     const app = await buildApp({ store, aiProvider: new ProposalProbeProvider() });

@@ -52,7 +52,7 @@ import { CharacterTransferPanel } from "./character-transfer-panel.js";
 import { CampaignMembersPanel } from "./campaign-members-panel.js";
 import { campaignPeopleCount, reconcileInviteCreation } from "./campaign-people-state.js";
 import { OrganizationInviteRoster } from "./organization-invite-roster.js";
-import { combatRosterPatch, CombatPanel, nextCombatTurnPosition } from "./combat-panel.js";
+import { combatRosterPatch, combatTurnCombatant, CombatPanel, nextCombatTurnPosition } from "./combat-panel.js";
 import { recordLegendaryActionSpend } from "./legendary-action-client.js";
 import { combatTurnAdvanceRetryIsSafe, staleWriteCurrentCombat } from "./combat-conflict.js";
 import { combatRewardAttemptForIntent, combatRewardIntentFingerprint, type CombatRewardAttempt } from "./combat-reward-idempotency.js";
@@ -740,8 +740,8 @@ export function App() {
   const activeCombat = snapshot.combats.find((combat) => combat.active);
   const campaignSessions = snapshot.campaignSessions ?? [];
   const liveCampaignSession = campaignSessions.find((session) => session.status === "live");
-  const currentTurnCombatant = activeCombat && activeCombat.combatants.length > 0 ? activeCombat.combatants[activeCombat.turnIndex] ?? activeCombat.combatants[0] : undefined;
-  const nextTurnCombatant = activeCombat && activeCombat.combatants.length > 1 ? activeCombat.combatants[nextCombatTurnPosition(activeCombat, 1).turnIndex] : undefined;
+  const currentTurnCombatant = combatTurnCombatant(activeCombat, "current");
+  const nextTurnCombatant = combatTurnCombatant(activeCombat, "next");
   const currentTurnTokenIds = currentTurnCombatant?.tokenId ? [currentTurnCombatant.tokenId] : [];
   const nextTurnTokenIds = nextTurnCombatant?.tokenId && nextTurnCombatant.id !== currentTurnCombatant?.id ? [nextTurnCombatant.tokenId] : [];
   const recentEndedCombats = snapshot.combats.filter((combat) => !combat.active).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).slice(0, 3);
@@ -892,6 +892,7 @@ export function App() {
   const canManageArchives = hasPermission("campaign.update");
   const canUsePrepWorkspace = canManageScenes || hasPermission("world.create") || hasPermission("world.update") || hasPermission("handout.create") || hasPermission("handout.update") || hasPermission("journal.create") || hasPermission("journal.update") || hasPermission("plugin.install") || hasPermission("plugin.configure") || hasPermission("actor.create");
   const canUseAiStudioWorkspace = hasPermission("ai.proposeChanges") || hasPermission("ai.applyChanges") || hasPermission("ai.readGmMemory") || hasPermission("combat.manage");
+  const canUseAiAgent = hasPermission("ai.use");
 
   useEffect(() => {
     const activeLayerTokenIds = new Set(selectedSceneActiveLayerTokenKey ? selectedSceneActiveLayerTokenKey.split("|") : []);
@@ -1103,9 +1104,7 @@ export function App() {
     blankCanvasAssetUrlsRef.current.clear();
   }
 
-  function openAiAgent() {
-    setAiAgentOpen(true);
-  }
+  function openAiAgent() { if (canUseAiAgent) setAiAgentOpen(true); }
 
   function closeAiAgent() {
     setAiAgentOpen(false);
@@ -2175,6 +2174,8 @@ export function App() {
     if (workspaceMode === "prep" && !canUsePrepWorkspace) setWorkspaceMode("live");
     if (workspaceMode === "ai" && !canUseAiStudioWorkspace) setWorkspaceMode("live");
   }, [canUseAiStudioWorkspace, canUsePrepWorkspace, workspaceMode]);
+
+  useEffect(() => { if (!canUseAiAgent && aiAgentOpen) setAiAgentOpen(false); }, [aiAgentOpen, canUseAiAgent]);
 
   useEffect(() => {
     if (!aiAgentOpen) return;
@@ -8893,7 +8894,7 @@ export function App() {
     for (const mode of workspaceModeOptions) {
       commands.push({ id: `workspace:${mode.id}`, label: `Go to ${mode.label}`, section: "Workspace", keywords: "workspace mode switch view" });
     }
-    commands.push({ id: "action:ai-agent", label: aiAgentOpen ? "Close AI Agent" : "Open AI Agent", section: "Actions", keywords: "assistant bot help" });
+    if (canUseAiAgent) commands.push({ id: "action:ai-agent", label: aiAgentOpen ? "Close AI Agent" : "Open AI Agent", section: "Actions", keywords: "assistant bot help" });
     commands.push({ id: "action:campaign-search", label: "Search this campaign", section: "Actions", keywords: "find anything world scene actor item journal handout encounter canon chat roll" });
     if (hasPermission("combat.manage")) commands.push({ id: "action:encounter-builder", label: "Open Encounter Builder", section: "Actions", keywords: "prep combat monsters difficulty initiative" });
     commands.push({ id: "action:theme", label: `Switch theme to ${uiThemeLabel(nextUiTheme(uiTheme))}`, section: "Actions", keywords: "appearance midnight ember dark colors look" });
@@ -8960,6 +8961,7 @@ export function App() {
       return;
     }
     if (commandId === "action:ai-agent") {
+      if (!canUseAiAgent) return;
       setAiAgentOpen((open) => !open);
       return;
     }
@@ -9164,13 +9166,15 @@ export function App() {
             {desktopRelay?.lastError && <p className="desktop-host-error">{desktopRelay.lastError}</p>}
           </section>
         )}
-        <button ref={aiAgentToggleRef} className={aiAgentOpen ? "ai-agent-toggle active" : "ai-agent-toggle"} type="button" onClick={() => aiAgentOpen ? closeAiAgent() : openAiAgent()} aria-label="AI Agent" title="AI Agent" aria-expanded={aiAgentOpen}>
-          <Bot size={16} />
-          <span className="ai-agent-toggle-label ai-agent-toggle-label-full">AI Agent</span>
-          <span className="ai-agent-toggle-label ai-agent-toggle-label-compact" aria-hidden="true">
-            AI
-          </span>
-        </button>
+        {canUseAiAgent && (
+          <button ref={aiAgentToggleRef} className={aiAgentOpen ? "ai-agent-toggle active" : "ai-agent-toggle"} type="button" onClick={() => aiAgentOpen ? closeAiAgent() : openAiAgent()} aria-label="AI Agent" title="AI Agent" aria-expanded={aiAgentOpen}>
+            <Bot size={16} />
+            <span className="ai-agent-toggle-label ai-agent-toggle-label-full">AI Agent</span>
+            <span className="ai-agent-toggle-label ai-agent-toggle-label-compact" aria-hidden="true">
+              AI
+            </span>
+          </button>
+        )}
         {!blankCanvasDemoOpen && hasPermission("scene.update") && (
           <button className={audioSoundboardOpen ? "ai-agent-toggle active" : "ai-agent-toggle"} type="button" onClick={() => setAudioSoundboardOpen((open) => !open)} aria-label="Soundboard" title="Soundboard" aria-expanded={audioSoundboardOpen}>
             <Music size={16} />
@@ -10750,7 +10754,7 @@ export function App() {
         )}
 
       </section>
-      {aiAgentOpen && (
+      {canUseAiAgent && aiAgentOpen && (
         <AiAgentPanel
           campaignId={campaignId}
           localDemo={blankCanvasDemoOpen}

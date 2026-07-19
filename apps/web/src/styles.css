@@ -10144,6 +10144,10 @@ body {
   --glass: rgba(14, 12, 26, 0.9);
   --glass-border: rgba(164, 152, 224, 0.15);
   --ring: rgba(220, 190, 133, 0.65);
+  --turn-current: var(--accent-strong);
+  --turn-current-glow: rgba(220, 190, 133, 0.4);
+  --turn-next: #f27db4;
+  --turn-next-glow: rgba(242, 125, 180, 0.38);
   --crit: #dcbe85;
   --fumble: #c8837a;
   --shadow-1: 0 2px 6px rgba(2, 2, 8, 0.4), 0 10px 28px rgba(2, 2, 8, 0.32);
@@ -12570,8 +12574,17 @@ a:focus-visible {
 
 .token:hover .token-nameplate,
 .token.primary-selected .token-nameplate,
-.token.turn-current .token-nameplate {
+.token.turn-current .token-nameplate,
+.token.turn-next .token-nameplate {
   opacity: 1;
+}
+
+.token.turn-current .token-nameplate {
+  border-color: var(--accent-border);
+}
+
+.token.turn-next .token-nameplate {
+  border-color: var(--turn-next);
 }
 
 .token-hp {
@@ -12616,13 +12629,14 @@ a:focus-visible {
 }
 
 .token-turn-ring.current {
-  border: 2px solid var(--accent-strong);
-  box-shadow: 0 0 14px 2px rgba(220, 190, 133, 0.4);
+  border: 2px solid var(--turn-current);
+  box-shadow: 0 0 14px 2px var(--turn-current-glow);
   animation: turn-ring-pulse 2s ease-in-out infinite;
 }
 
 .token-turn-ring.next {
-  border: 1px dashed rgba(148, 160, 173, 0.6);
+  border: 2px dashed var(--turn-next);
+  box-shadow: 0 0 12px 1px var(--turn-next-glow);
 }
 
 @keyframes turn-ring-pulse {

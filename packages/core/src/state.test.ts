@@ -15,6 +15,30 @@ describe("development seed", () => {
 });
 
 describe("campaign archives", () => {
+  it("preserves Agent access for legacy AI-assisted player grants", () => {
+    const state = seedState();
+    state.permissionGrants.push({
+      id: "grant_legacy_ai_assisted",
+      subjectType: "role",
+      subjectId: "player",
+      campaignId: "camp_demo",
+      permissions: ["ai.proposeChanges"],
+      metadata: { source: "campaign_permission_template", templateId: "ai_assisted" },
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    });
+
+    const normalized = normalizeEngineState(state);
+    expect(normalized.permissionGrants.find((grant) => grant.id === "grant_legacy_ai_assisted")?.permissions).toEqual([
+      "ai.proposeChanges",
+      "ai.use"
+    ]);
+    const migratedGrant = normalized.permissionGrants.find((grant) => grant.id === "grant_legacy_ai_assisted")!;
+    expect(migratedGrant.metadata).toEqual(expect.objectContaining({ aiUseTemplateVersion: 1 }));
+    migratedGrant.permissions = migratedGrant.permissions.filter((permission) => permission !== "ai.use");
+    expect(normalizeEngineState(normalized).permissionGrants.find((grant) => grant.id === migratedGrant.id)?.permissions).toEqual(["ai.proposeChanges"]);
+  });
+
   it("uses one campaign scene collection to archive scenes and tokens", () => {
     const state = seedState();
     const campaign = state.campaigns.find((item) => item.id === "camp_demo")!;

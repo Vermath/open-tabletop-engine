@@ -1860,6 +1860,11 @@ export interface Combat extends Timestamps {
   active: boolean;
   round: number;
   turnIndex: number;
+  /** Caller-visible turn identities. Missing ids represent hidden combatants without leaking or mislabeling them. */
+  turnPresentation?: {
+    currentCombatantId?: ID;
+    nextCombatantId?: ID;
+  };
   manualTurnOrder?: boolean;
   combatants: Combatant[];
   actions?: CombatAction[];

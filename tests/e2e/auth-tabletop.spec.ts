@@ -3735,8 +3735,18 @@ test("SDK marketplace is hidden from players in the browser", async ({ page }) =
   await expect(page.getByRole("button", { name: "Prep", exact: true })).toHaveCount(0);
   await expect(page.getByRole("tab", { name: "Plugins", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "AI Studio", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "AI Agent", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Account", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add token" })).toHaveCount(0);
+  for (const tabName of ["Actors", "Compendium", "Handouts", "Journal", "Search", "Chat", "Combat"]) {
+    await expect(page.getByRole("tab", { name: tabName, exact: true })).toBeVisible();
+  }
+
+  await page.getByRole("button", { name: "Open command palette" }).click();
+  const commandPalette = page.getByRole("dialog", { name: "Command palette" });
+  await commandPalette.getByRole("textbox", { name: "Command palette search" }).fill("AI Agent");
+  await expect(commandPalette.getByText("Open AI Agent", { exact: true })).toHaveCount(0);
+  await commandPalette.getByRole("textbox", { name: "Command palette search" }).press("Escape");
 
   const journalTab = page.getByRole("tab", { name: "Journal", exact: true });
   await expect(journalTab).toHaveAttribute("aria-controls", "inspector-panel-journal");

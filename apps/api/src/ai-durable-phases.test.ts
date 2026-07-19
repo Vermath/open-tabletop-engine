@@ -394,13 +394,19 @@ describe("AI durable phases", () => {
   it("retains gm-only output visibility when GM-memory permission is revoked during the provider call", async () => {
     const store = new DurableAiTestStore();
     const provider = new DelayedAiProvider();
+    const aiUseGrant = createTimestamped("grant", {
+      campaignId: "camp_demo",
+      subjectType: "user" as const,
+      subjectId: "usr_demo_player",
+      permissions: ["ai.use" as const],
+    });
     const grant = createTimestamped("grant", {
       campaignId: "camp_demo",
       subjectType: "user" as const,
       subjectId: "usr_demo_player",
       permissions: ["ai.readGmMemory" as const],
     });
-    store.state.permissionGrants.push(grant);
+    store.state.permissionGrants.push(aiUseGrant, grant);
     const app = await buildApp({ store, aiProvider: provider });
 
     try {

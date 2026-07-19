@@ -25,6 +25,7 @@ import { actorActionPreviewRequiresInput } from "./actor-action-review.js";
 import { actionPreviewContinuationMetadata, actionPreviewContinuationSelection, actionPreviewContinuationTickets, actorActionDraftForScope, actorActionDraftScopeKey, actorActionTargetLabel, actionPreviewForFingerprint, actionPreviewIsReady, actionPreviewStatusMessage, createActionPreviewFingerprint, initialActorActionDraft, initialActionPreviewState, reduceActionPreviewState, scopedActorActionTargetIds, type ActionPreviewContinuationTicket } from "./action-preview-state.js";
 import { ActionPreviewCommitButton } from "./action-preview-binding.js";
 import { ActorPlacementTray } from "./actor-placement-tray.js";
+import { combatTurnCombatant } from "./combat-panel.js";
 
 type RulesSaveOutcome = "success" | "failure";
 type ActorActionCommitOptions = { targetActorId?: string; applyEffect?: boolean; consumeResources?: boolean; saveOutcomes?: Record<string, RulesSaveOutcome>; effectChoice?: string; weaponMastery?: Dnd5eSrdWeaponMasteryUse; continuationId?: string; reviewActorNames?: Record<string, string> };
@@ -670,8 +671,8 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
   const hostileSceneTokens = sceneTargetTokens.filter((token) => token.disposition === "hostile");
   const targetableSceneTokens = sceneTargetTokens;
   const combatants = props.combat?.combatants ?? [];
-  const currentCombatant = props.combat && combatants.length > 0 ? combatants[props.combat.turnIndex] ?? combatants[0] : undefined;
-  const nextCombatant = props.combat && combatants.length > 1 ? combatants[(props.combat.turnIndex + 1) % combatants.length] : undefined;
+  const currentCombatant = combatTurnCombatant(props.combat, "current");
+  const nextCombatant = combatTurnCombatant(props.combat, "next");
   const currentTurnTokenIds = currentCombatant?.tokenId ? [currentCombatant.tokenId] : [];
   const nextTurnTokenIds = nextCombatant?.tokenId ? [nextCombatant.tokenId] : [];
   const areaX = Number(targetAreaX);

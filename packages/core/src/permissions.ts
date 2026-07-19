@@ -142,7 +142,6 @@ const rolePermissions: Record<UserRole, PermissionName[]> = {
     "chat.read",
     "chat.write",
     "dice.roll",
-    "ai.use",
     "ai.readPublicMemory"
   ],
   observer: ["campaign.read", "world.read", "scene.read", "token.read", "actor.read", "journal.read", "handout.read", "chat.read"],

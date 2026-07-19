@@ -178,6 +178,14 @@ describe("AI prompt-injection and citation route safety", () => {
         };
       }
     };
+    store.state.permissionGrants.push(
+      createTimestamped("grant", {
+        campaignId: "camp_demo",
+        subjectType: "user" as const,
+        subjectId: "usr_demo_player",
+        permissions: ["ai.use"]
+      })
+    );
     const app = await buildApp({ store, aiProvider: provider });
     try {
       const response = await app.inject({
