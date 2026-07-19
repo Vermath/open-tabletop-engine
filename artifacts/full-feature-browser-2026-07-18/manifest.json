@@ -757,10 +757,21 @@
       "id": "FF-034",
       "status": "fixed",
       "summary": "Under full-suite contention, the gridless-scene and reviewed typed-damage API integration tests could exceed Vitest's generic 5-second default even though immediate focused reruns completed well below that limit.",
-      "repair": "Applied the repository's established 15-second allowance to only those two multi-request integration tests; no global timeout or production logic changed.",
+      "repair": "Applied the repository's established 15-second allowance to those two multi-request integration tests. Those explicit guards remain; FF-035 subsequently corrected the same contention budget at the API functional-project boundary.",
       "regressionEvidence": [
         "apps/api/src/gridless-scene-api.test.ts",
         "apps/api/src/typed-damage-combat-sync.test.ts"
+      ],
+      "browserEvidence": []
+    },
+    {
+      "id": "FF-035",
+      "status": "fixed",
+      "summary": "Successive clean exact-commit cold suites exhausted Vitest's generic 5-second default in three unrelated full-app API journeys: gridless scenes, reviewed typed damage, and actual request logging. The functional suite contains 588 buildApp invocations across 95 test files, so one-at-a-time exemptions did not match the category's contention profile.",
+      "repair": "Set a 15-second timeout only on the api-functional Vitest project and locked that boundary with a config-contract regression. Retries remain disabled; the isolated performance project keeps its default timeout and explicit performance budgets; the intentional timeout diagnostic remains excluded at 3 seconds; fixture cleanup remains 2.5 seconds; production behavior is unchanged.",
+      "regressionEvidence": [
+        "apps/api/vitest.config.ts",
+        "apps/api/src/vitest-performance-isolation.test.ts"
       ],
       "browserEvidence": []
     }
@@ -800,7 +811,7 @@
   "verification": {
     "focused": {
       "status": "passed",
-      "detail": "Focused regressions for FF-001 through FF-034 passed during remediation; the FF-021 audio-sync gate passed 9 of 9 tests, the FF-022 modal accessibility gate passed 3 of 3 tests, FF-027 retained its atomic failure assertions without a one-off login retry, the FF-028 Vite watcher suite passed 11 of 11 with platform-native fixture paths, the FF-029 documentation publication guard passed after path-neutral wording, the FF-030 release-evidence parser covered grouped, prefixed, and mixed Turbo test output, the FF-031 output-directory guard covered existing-root and missing-directory paths, FF-032 covered bounded seeded-demo transport recovery plus no-retry auth, password, second-failure, abort, and stale-commit boundaries, FF-033 left those boundaries unchanged while moving final enforcement to the emitted bundle, reducing its exact initial static graph to 1,048,365 bytes under the unchanged 1,600,000-byte ceiling, and passing all 3 focused 3D-dice Playwright journeys, and FF-034 passed five sequential reruns plus a contention run with test-local timeouts only."
+      "detail": "Focused regressions for FF-001 through FF-035 passed during remediation; the FF-021 audio-sync gate passed 9 of 9 tests, the FF-022 modal accessibility gate passed 3 of 3 tests, FF-027 retained its atomic failure assertions without a one-off login retry, the FF-028 Vite watcher suite passed 11 of 11 with platform-native fixture paths, the FF-029 documentation publication guard passed after path-neutral wording, the FF-030 release-evidence parser covered grouped, prefixed, and mixed Turbo test output, the FF-031 output-directory guard covered existing-root and missing-directory paths, FF-032 covered bounded seeded-demo transport recovery plus no-retry auth, password, second-failure, abort, and stale-commit boundaries, FF-033 left those boundaries unchanged while moving final enforcement to the emitted bundle, reducing its exact initial static graph to 1,048,365 bytes under the unchanged 1,600,000-byte ceiling, and passing all 3 focused 3D-dice Playwright journeys, FF-034 passed five sequential reruns plus a contention run with test-local guards, and FF-035 passed five sequential six-file affected-cohort runs while preserving the isolated performance and diagnostic timeout boundaries."
     },
     "webTypecheck": {
       "status": "passed"

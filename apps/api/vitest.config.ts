@@ -12,6 +12,7 @@ export const apiFunctionalTestProject = defineProject({
     pool: "forks",
     setupFiles: ["src/vitest.setup.ts"],
     retry: 0,
+    testTimeout: 15_000,
     sequence: {
       groupOrder: 0,
       hooks: "stack",
