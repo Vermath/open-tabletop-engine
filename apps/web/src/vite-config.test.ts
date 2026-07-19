@@ -120,6 +120,7 @@ describe("web bundle boundaries", () => {
     expect(webManualChunk("D:/repo/node_modules/react-dom/client.js")).toBe("react-vendor");
     expect(webManualChunk("D:/repo/node_modules/html-to-image/es/index.js")).toBe("image-export");
     expect(webManualChunk("D:/repo/node_modules/@3d-dice/dice-box-threejs/dist/index.js")).toBe("dice-runtime");
+    expect(webManualChunk("D:/repo/packages/dice-engine/src/index.ts")).toBeUndefined();
   });
 });
 

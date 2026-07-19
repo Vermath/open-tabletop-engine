@@ -167,9 +167,9 @@ function copyDiceBoxAssets(): Plugin {
 }
 
 // Minified, uncompressed JS across the entry and every eager static import.
-// The current production graph is 1,566,055 bytes after deferring the actor,
-// administration, AI, canon-memory, and image-export surfaces. Keep roughly
-// 34 KB of headroom so eager dependency growth fails loudly.
+// The final emitted production graph is 1,048,365 bytes after keeping the 3D
+// physics vendor behind its existing dynamic import. Keep the ceiling fixed so
+// eager dependency growth fails loudly.
 export const ENTRY_CHUNK_BUDGET_BYTES = 1_600_000;
 
 export interface BuildChunkBudgetInput {
@@ -200,7 +200,7 @@ export function entryChunkBudgetFailures(chunks: BuildChunkBudgetInput[], budget
 function enforceEntryChunkBudget(): Plugin {
   return {
     name: "enforce-entry-chunk-budget",
-    generateBundle(_options, bundle) {
+    writeBundle(_options, bundle) {
       const failures = entryChunkBudgetFailures(Object.values(bundle) as BuildChunkBudgetInput[]);
       if (failures.length > 0) throw new Error(`Initial web bundle budget exceeded: ${failures.join(", ")}`);
     }
@@ -211,7 +211,7 @@ export function webManualChunk(id: string): string | undefined {
   const normalized = id.replaceAll("\\", "/");
   if (normalized.includes("/node_modules/react/") || normalized.includes("/node_modules/react-dom/")) return "react-vendor";
   if (normalized.includes("/node_modules/lucide-react/")) return "icon-vendor";
-  if (normalized.includes("/node_modules/@3d-dice/") || normalized.includes("/packages/dice-engine/")) return "dice-runtime";
+  if (normalized.includes("/node_modules/@3d-dice/")) return "dice-runtime";
   if (normalized.includes("/node_modules/html-to-image/")) return "image-export";
   return undefined;
 }
