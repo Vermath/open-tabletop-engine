@@ -23,16 +23,16 @@
     "@open-tabletop/core": "workspace:*",
     "@open-tabletop/dice-engine": "workspace:*",
     "html-to-image": "^1.11.13",
-    "lucide-react": "^0.468.0",
+    "lucide-react": "^1.25.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
-    "@vitejs/plugin-react": "^4.3.4",
-    "typescript": "^5.7.2",
-    "vite": "^6.4.3",
-    "vitest": "^3.2.6"
+    "@vitejs/plugin-react": "^6.0.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.1.5",
+    "vitest": "^4.1.10"
   }
 }
