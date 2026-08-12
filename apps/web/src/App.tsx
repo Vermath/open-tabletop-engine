@@ -6366,11 +6366,20 @@ export function App() {
   function resolveChatRecipient(query?: string): string | undefined {
     const normalized = query?.trim().toLocaleLowerCase();
     if (!normalized) return undefined;
-    const match = chatRecipientOptions.find((member) => {
-      const names = [member.user.id, member.user.displayName, member.user.email ?? ""].map((value) => value.toLocaleLowerCase());
-      return names.some((value) => value === normalized || value.includes(normalized));
+
+    const exactMatches = chatRecipientOptions.filter((member) => {
+      const names = [member.user.id, member.user.displayName, member.user.email ?? ""];
+      return names.some((value) => value.toLocaleLowerCase() === normalized);
     });
-    return match?.user.id;
+    if (exactMatches.length === 1) return exactMatches[0]?.user.id;
+    if (exactMatches.length > 1) return undefined;
+
+    const partialMatches = chatRecipientOptions.filter((member) => {
+      const names = [member.user.id, member.user.displayName, member.user.email ?? ""];
+      return names.some((value) => value.toLocaleLowerCase().includes(normalized));
+    });
+    if (partialMatches.length !== 1) return undefined;
+    return partialMatches[0]?.user.id;
   }
 
   async function submitChatCommand() {
