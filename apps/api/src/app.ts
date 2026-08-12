@@ -211,6 +211,8 @@ interface CampaignPermissionTemplate {
 }
 
 const MAX_FOG_HISTORY_ENTRIES = 100;
+const MAX_SCENE_VISION_WALLS = 1000;
+const MAX_SCENE_VISION_LIGHTS = 64;
 const DEFAULT_SYSTEM_ID = DND_5E_SRD_SYSTEM_ID;
 const CORE_COMPATIBILITY_VERSION = "0.3.0";
 const AI_STALE_RUNNING_THREAD_MS = 15 * 60 * 1000;
@@ -2729,6 +2731,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.post<{ Params: { campaignId: string }; Body: Partial<Scene> }>("/api/v1/campaigns/:campaignId/scenes", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "scene.create");
     if (allowed !== true) return allowed;
+    const walls = request.body.walls ?? [];
+    const lights = request.body.lights ?? [];
+    if (walls.length > MAX_SCENE_VISION_WALLS) return badRequest(reply, `Scene walls are limited to ${MAX_SCENE_VISION_WALLS}`);
+    if (lights.length > MAX_SCENE_VISION_LIGHTS) return badRequest(reply, `Scene lights are limited to ${MAX_SCENE_VISION_LIGHTS}`);
     const userId = currentUserId(store, request.headers);
     const activatedAt = nowIso();
     const deactivatedSceneIds: string[] = [];
@@ -2754,8 +2760,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       sortOrder: request.body.sortOrder ?? store.state.scenes.filter((item) => item.campaignId === request.params.campaignId).length + 1,
       fog: request.body.fog ?? [],
       fogHistory: [],
-      walls: request.body.walls ?? [],
-      lights: request.body.lights ?? [],
+      walls,
+      lights,
       annotations: request.body.annotations ?? [],
       metadata: request.body.metadata ?? {}
     }) satisfies Scene;
@@ -3184,6 +3190,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const userId = currentUserId(store, request.headers)!;
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
+    const visionBudgetError = sceneVisionBudgetError(scene);
+    if (visionBudgetError) return badRequest(reply, visionBudgetError);
     return visionSnapshotForUser(store, userId, campaignId, scene);
   });
 
@@ -3698,6 +3706,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const allowed = requireCampaignPermissionForUser(store, reply, request.headers, userId, campaignId, "scene.update");
     if (allowed !== true) return allowed;
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
+    if (scene.walls.length >= MAX_SCENE_VISION_WALLS) return badRequest(reply, `Scene walls are limited to ${MAX_SCENE_VISION_WALLS}`);
     const kind: WallKind = request.body.kind === "terrain" ? "terrain" : "wall";
     const wall = {
       id: createId("wall"),
@@ -3839,6 +3848,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const allowed = requireCampaignPermissionForUser(store, reply, request.headers, userId, campaignId, "scene.update");
     if (allowed !== true) return allowed;
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
+    if (scene.lights.length >= MAX_SCENE_VISION_LIGHTS) return badRequest(reply, `Scene lights are limited to ${MAX_SCENE_VISION_LIGHTS}`);
     const light = {
       id: createId("light"),
       x: request.body.x,
@@ -12971,6 +12981,12 @@ function isTokenOwnedByUser(store: StateStore, userId: string, token: Token): bo
 
 function campaignMemberUserIds(store: StateStore, campaignId: string): Set<string> {
   return new Set(store.state.members.filter((member) => member.campaignId === campaignId).map((member) => member.userId));
+}
+
+function sceneVisionBudgetError(scene: Pick<Scene, "walls" | "lights">): string | undefined {
+  if (scene.walls.length > MAX_SCENE_VISION_WALLS) return `Scene walls are limited to ${MAX_SCENE_VISION_WALLS}`;
+  if (scene.lights.length > MAX_SCENE_VISION_LIGHTS) return `Scene lights are limited to ${MAX_SCENE_VISION_LIGHTS}`;
+  return undefined;
 }
 
 function visionSnapshotForUser(store: StateStore, userId: string, campaignId: string, scene: Scene): VisionSnapshot {
