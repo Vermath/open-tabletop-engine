@@ -21269,6 +21269,14 @@ registerCommand("/state", (input) => {
       });
       expect(secondCommand.statusCode).toBe(200);
       expect(secondCommand.json().chat.body).toBe("State count 2");
+      const playerCommand = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/stateful-plugin/chat-command",
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { command: "/state", args: "gamma" }
+      });
+      expect(playerCommand.statusCode).toBe(403);
+      expect(playerCommand.json().message).toContain("plugin.configure");
 
       const storageList = await app.inject({
         method: "GET",

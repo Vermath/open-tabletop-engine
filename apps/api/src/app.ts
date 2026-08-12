@@ -6022,7 +6022,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       return forbidden(reply, `Plugin ${plugin.id} lacks chat.write in this campaign`);
     }
     const canReadTokens = pluginCan(store, request.params.campaignId, plugin.id, "token.read");
-    const canConfigurePlugin = pluginCan(store, request.params.campaignId, plugin.id, "plugin.configure");
+    const pluginCanConfigure = pluginCan(store, request.params.campaignId, plugin.id, "plugin.configure");
+    const userCanConfigurePlugin = canCampaign(store, userId, request.params.campaignId, "plugin.configure");
+    const canConfigurePlugin = pluginCanConfigure && userCanConfigurePlugin;
     const sceneIds = campaignSceneIds(store, request.params.campaignId);
     const tokens: PluginCommandTokenContext[] = canReadTokens ? store.state.tokens.filter((token) => sceneIds.includes(token.sceneId)).map((token) => ({ id: token.id, name: token.name, sceneId: token.sceneId })) : [];
     let commandResult: PluginChatCommandResult;
@@ -6054,7 +6056,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         message: "Plugin command failed"
       });
     }
-    if (commandResult.storage && !canConfigurePlugin) return forbidden(reply, `Plugin ${plugin.id} lacks plugin.configure in this campaign`);
+    if (commandResult.storage && !pluginCanConfigure) return forbidden(reply, `Plugin ${plugin.id} lacks plugin.configure in this campaign`);
+    if (commandResult.storage && !userCanConfigurePlugin) return forbidden(reply, "Missing permission: plugin.configure");
     let storageMutation: { set: Array<{ key: string; size: number }>; deleted: string[] };
     try {
       storageMutation = commandResult.storage ? applyPluginStorageMutation(store, request.params.campaignId, plugin.id, commandResult.storage, "plugin", plugin.id) : { set: [], deleted: [] };
