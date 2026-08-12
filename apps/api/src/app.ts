@@ -2895,13 +2895,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const sourceName = displayNameFromHeader(request.headers["x-asset-name"]) ?? "Uploaded Map";
     const folder = normalizeAssetFolder(headerText(request.headers["x-asset-folder"]));
     const tags = normalizeAssetTags(headerText(request.headers["x-asset-tags"]));
-    const scan = await scanUploadedAsset(body, mimeType, sourceName);
-    if (scan.blocked) return assetSecurityBlocked(reply, scan);
     const quotaExceeded = assetQuotaExceeded(store, request.params.campaignId, body.length);
     if (quotaExceeded) return reply.code(413).send(quotaExceeded);
-    const checksum = checksumForBuffer(body);
     const scene = shouldSetBackground ? store.state.scenes.find((item) => item.id === request.query.sceneId && item.campaignId === request.params.campaignId) : undefined;
     if (shouldSetBackground && !scene) return notFound(reply, "Scene not found");
+    const scan = await scanUploadedAsset(body, mimeType, sourceName);
+    if (scan.blocked) return assetSecurityBlocked(reply, scan);
+    const checksum = checksumForBuffer(body);
     const asset: MapAsset = createTimestamped("asset", {
       campaignId: request.params.campaignId,
       name: sourceName,
