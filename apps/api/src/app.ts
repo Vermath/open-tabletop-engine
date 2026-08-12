@@ -2723,7 +2723,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/scenes", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "scene.read");
     if (allowed !== true) return allowed;
-    return store.state.scenes.filter((item) => item.campaignId === request.params.campaignId).sort(compareScenesForDisplay);
+    const includeFogHistory = canCampaign(store, userIdFromHeaders(store, request.headers), request.params.campaignId, "token.reveal");
+    return store.state.scenes
+      .filter((item) => item.campaignId === request.params.campaignId)
+      .sort(compareScenesForDisplay)
+      .map((scene) => publicScene(scene, includeFogHistory));
   });
 
   app.post<{ Params: { campaignId: string }; Body: Partial<Scene> }>("/api/v1/campaigns/:campaignId/scenes", async (request, reply) => {
@@ -3174,7 +3178,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "scene.read");
     if (allowed !== true) return allowed;
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
-    return scene;
+    const includeFogHistory = canCampaign(store, userIdFromHeaders(store, request.headers), campaignId, "token.reveal");
+    return publicScene(scene, includeFogHistory);
   });
 
   app.get<{ Params: { sceneId: string } }>("/api/v1/scenes/:sceneId/vision", async (request, reply): Promise<VisionSnapshot | FastifyReply> => {
@@ -14292,6 +14297,14 @@ function filterRealtimeEvent(store: StateStore, event: EngineEvent, userId: stri
     if (!message?.id || !message.userId || !message.type || typeof message.body !== "string" || !message.visibility || !Array.isArray(message.recipientUserIds)) return undefined;
     return canReadChatMessage(store, userId, message as ChatMessage) ? event : undefined;
   }
+  if (event.type === "scene.updated" || event.type === "scene.created" || event.type === "scene.activated") {
+    const scene = event.payload as Partial<Scene> | undefined;
+    if (!scene?.id) return event;
+    const campaignId = campaignIdForScene(store, scene.id) ?? event.campaignId;
+    if (!canCampaign(store, userId, campaignId, "scene.read")) return undefined;
+    const includeFogHistory = canCampaign(store, userId, campaignId, "token.reveal");
+    return includeFogHistory ? event : { ...event, payload: publicScene(scene as Scene, false) };
+  }
   if (!event.type.startsWith("token.")) return event;
   const token = event.payload as Partial<Token> | undefined;
   if (!token?.sceneId) return event;
@@ -14304,6 +14317,12 @@ function filterRealtimeEvent(store: StateStore, event: EngineEvent, userId: stri
     targetId: token.sceneId,
     payload: { id: token.sceneId, redacted: true }
   };
+}
+
+function publicScene(scene: Scene, includeFogHistory: boolean): Scene {
+  if (includeFogHistory || !scene.fogHistory) return scene;
+  const { fogHistory: _fogHistory, ...rest } = scene;
+  return rest;
 }
 
 function campaignPermissionTemplate(value: unknown): CampaignPermissionTemplate | undefined {
