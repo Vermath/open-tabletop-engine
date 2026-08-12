@@ -10900,6 +10900,8 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
       const proposal = store.state.proposals.find((item) => item.id === proposalId && item.campaignId === campaignId);
       if (!proposal) return toolError("not_found", { entity: "proposal", id: proposalId });
       if (proposal.status !== "pending") return toolError("proposal_not_pending", { proposalId, status: proposal.status });
+      const ownsProposal = proposal.createdByUserId === userId;
+      if (!ownsProposal && !permissions.includes("ai.applyChanges")) return missingPermissionToolOutput("ai.applyChanges");
       const nextChanges = changes ? normalizeProposalChanges(changes, campaignId, userId) : proposal.changesJson;
       const preparedChanges = prepareProposalChanges(store, campaignId, userId, nextChanges);
       if ("error" in preparedChanges) return toolError(preparedChanges.error, { message: preparedChanges.message });

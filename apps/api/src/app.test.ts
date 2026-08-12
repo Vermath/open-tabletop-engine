@@ -113,7 +113,7 @@ describe("organization workspace defaults", () => {
       const denied = await app.inject({
         method: "PATCH",
         url: "/api/v1/organization/workspace-defaults",
-        headers: { "x-user-id": "usr_demo_player" },
+        headers: { "x-user-id": "usr_demo_assistant" },
         payload: { defaultCampaignVisibility: "public" }
       });
       expect(denied.statusCode).toBe(403);
@@ -21764,6 +21764,69 @@ registerCommand("/state", (input) => {
     expect(blocked.json().result.isError).toBe(true);
     expect(blockedOutput).toMatchObject({ error: "blocked_critical_action", entity: "campaign" });
     await app.close();
+  });
+
+  it("prevents revising another user's proposal without ai.applyChanges", async () => {
+    const store = new MemoryStateStore();
+    store.state.permissionGrants.push(
+      createTimestamped("grant", {
+        subjectType: "user" as const,
+        subjectId: "usr_demo_player",
+        campaignId: "camp_demo",
+        permissions: ["ai.proposeChanges"]
+      })
+    );
+    const app = await buildApp({ store });
+    try {
+      const created = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/proposals",
+        headers: authHeaders,
+        payload: {
+          createdByType: "ai",
+          title: "GM proposal",
+          summary: "Original summary",
+          changesJson: []
+        }
+      });
+      expect(created.statusCode).toBe(200);
+      const proposalId = created.json().id as string;
+
+      const revisedByAssistant = await app.inject({
+        method: "POST",
+        url: "/api/v1/mcp",
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: {
+          jsonrpc: "2.0",
+          id: 5,
+          method: "tools/call",
+          params: {
+            campaignId: "camp_demo",
+            name: "revise_proposal",
+            arguments: {
+              proposalId,
+              title: "Tampered title",
+              summary: "Tampered summary",
+              changes: []
+            }
+          }
+        }
+      });
+      expect(revisedByAssistant.statusCode).toBe(200);
+      expect(revisedByAssistant.json().result.isError).toBe(true);
+      const errorOutput = JSON.parse(revisedByAssistant.json().result.content[0].text);
+      expect(errorOutput).toMatchObject({ error: "missing_permission", permission: "ai.applyChanges" });
+
+      const unchanged = store.state.proposals.find((proposal) => proposal.id === proposalId);
+      expect(unchanged).toMatchObject({
+        title: "GM proposal",
+        summary: "Original summary",
+        createdByUserId: "usr_demo_gm",
+        changesJson: []
+      });
+    } finally {
+      await app.close();
+    }
   });
 
   it("can select the codex loopback ai provider from configuration", async () => {
