@@ -15,6 +15,7 @@ const worktreeCheck = join(repoRoot, "scripts", "check-release-worktree-clean.mj
 runFailsWhenEvidenceIsMissing();
 runPassesWhenEvidenceIsComplete();
 runPassesWhenIdentityEvidenceMentionsNoSkippedChecks();
+runFailsWhenIdentityEvidenceMentionsSkippedSmoke();
 runFailsWhenIdentityEvidenceOmitsReadinessResults();
 runFailsWhenIdentityEvidenceUsesWrongCommand();
 runFailsWhenIdentityReadinessUsesTemplateChoices();
@@ -111,6 +112,20 @@ function runPassesWhenIdentityEvidenceMentionsNoSkippedChecks() {
   try {
     const result = runChecker(root);
     assert(result.status === 0, "identity pass evidence should allow notes that no checks were skipped");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runFailsWhenIdentityEvidenceMentionsSkippedSmoke() {
+  const files = completeEvidence(commit);
+  files.identity = files.identity.replace("- Blockers: none", "- Notes: pnpm identity:smoke was skipped due to missing provider credentials.\n- Blockers: none");
+  const root = fixtureRoot(files);
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 1, "identity pass evidence should reject skipped smoke notes");
+    assert(result.stdout.includes("Record Exit code: 0 from a non-skipped `pnpm identity:smoke` run against a real provider sandbox."), "identity skipped-smoke failure should name non-skipped smoke requirement");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

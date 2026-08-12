@@ -63,6 +63,7 @@ function checkIdentityProviderSmoke() {
       meaningfulField(field(section.body, "Provider")) &&
       meaningfulField(field(section.body, "Provider sandbox or tenant label")) &&
       meaningfulChoiceField(field(section.body, "Smoke target")) &&
+      !skippedSmokeEvidence(section) &&
       passField(field(section.body, "OIDC discovery/test result")) &&
       passField(field(section.body, "SCIM ServiceProviderConfig result"))
   );
@@ -344,6 +345,14 @@ function reservedHost(hostname) {
 function passField(value) {
   const normalized = value.trim();
   return !templateChoice(normalized.toLowerCase()) && !normalized.includes("/") && /^pass(?:\b|:|-|$)/i.test(normalized);
+}
+
+function skippedSmokeEvidence(section) {
+  const text = `${section.title}\n${section.body}`;
+  if (/\b(?:was|were|is|are)\s+skipped\b/i.test(text)) return true;
+  if (/\bskip(?:ped|)\b[\s\S]{0,40}\bbecause\b/i.test(text)) return true;
+  if (/\bnot run\b/i.test(text)) return true;
+  return false;
 }
 
 function meaningfulField(value) {
