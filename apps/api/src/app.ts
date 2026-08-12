@@ -12430,7 +12430,7 @@ function tokenIntersectsTemplate(scene: Scene, annotation: SceneAnnotation, toke
   }
   if (shape === "cone") {
     if (!end) return false;
-    return pointInCone(tokenCenter, start, end, radius + tokenRadius, 90);
+    return tokenIntersectsConeTemplate(tokenCenter, tokenRadius, start, end, radius);
   }
   return distanceBetweenPoints(start, tokenCenter) <= radius + tokenRadius;
 }
@@ -12446,6 +12446,29 @@ function pointDistanceToSegment(point: VisionPoint, start: VisionPoint, end: Vis
   if (lengthSquared === 0) return distanceBetweenPoints(point, start);
   const t = Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared));
   return distanceBetweenPoints(point, { x: start.x + t * dx, y: start.y + t * dy });
+}
+
+function tokenIntersectsConeTemplate(tokenCenter: VisionPoint, tokenRadius: number, origin: VisionPoint, edge: VisionPoint, radius: number): boolean {
+  const directionX = edge.x - origin.x;
+  const directionY = edge.y - origin.y;
+  const directionLength = Math.hypot(directionX, directionY);
+  if (directionLength === 0) return false;
+  const unitX = directionX / directionLength;
+  const unitY = directionY / directionLength;
+  const halfWidth = radius;
+  const left = { x: edge.x - unitY * halfWidth, y: edge.y + unitX * halfWidth };
+  const right = { x: edge.x + unitY * halfWidth, y: edge.y - unitX * halfWidth };
+  return pointInTriangle(tokenCenter, origin, left, right) || pointDistanceToSegment(tokenCenter, origin, left) <= tokenRadius || pointDistanceToSegment(tokenCenter, left, right) <= tokenRadius || pointDistanceToSegment(tokenCenter, right, origin) <= tokenRadius;
+}
+
+function pointInTriangle(point: VisionPoint, a: VisionPoint, b: VisionPoint, c: VisionPoint): boolean {
+  const area = (p1: VisionPoint, p2: VisionPoint, p3: VisionPoint) => (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
+  const d1 = area(point, a, b);
+  const d2 = area(point, b, c);
+  const d3 = area(point, c, a);
+  const hasNeg = d1 < 0 || d2 < 0 || d3 < 0;
+  const hasPos = d1 > 0 || d2 > 0 || d3 > 0;
+  return !(hasNeg && hasPos);
 }
 
 function pointInCone(point: VisionPoint, origin: VisionPoint, directionPoint: VisionPoint, radius: number, angleDegrees: number): boolean {
