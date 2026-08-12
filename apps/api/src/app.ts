@@ -4675,7 +4675,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/combats", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.read");
     if (allowed !== true) return allowed;
-    return store.state.combats.filter((item) => item.campaignId === request.params.campaignId);
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    return store.state.combats.filter((item) => item.campaignId === request.params.campaignId).map((combat) => combatForUser(store, userId, combat));
   });
 
   app.get<{ Params: { combatId: string } }>("/api/v1/combats/:combatId/audit", async (request, reply) => {
@@ -14292,6 +14294,11 @@ function filterRealtimeEvent(store: StateStore, event: EngineEvent, userId: stri
     if (!message?.id || !message.userId || !message.type || typeof message.body !== "string" || !message.visibility || !Array.isArray(message.recipientUserIds)) return undefined;
     return canReadChatMessage(store, userId, message as ChatMessage) ? event : undefined;
   }
+  if (event.type === "combat.turnChanged" || event.type === "combat.roundAdvanced" || event.type === "combat.ended" || event.type === "combat.started") {
+    const combat = event.payload as Partial<Combat> | undefined;
+    if (!combat?.id || combat.campaignId !== event.campaignId) return event;
+    return { ...event, payload: combatForUser(store, userId, combat as Combat) };
+  }
   if (!event.type.startsWith("token.")) return event;
   const token = event.payload as Partial<Token> | undefined;
   if (!token?.sceneId) return event;
@@ -14303,6 +14310,47 @@ function filterRealtimeEvent(store: StateStore, event: EngineEvent, userId: stri
     type: "scene.updated",
     targetId: token.sceneId,
     payload: { id: token.sceneId, redacted: true }
+  };
+}
+
+function canReadCombatAction(store: StateStore, userId: string, action: CombatAction): boolean {
+  if (canCampaign(store, userId, action.campaignId, "chat.moderate")) return true;
+  return action.rolls.every((roll) => roll.visibility === "public" || (roll.visibility === "whisper" && action.requestedByUserId === userId));
+}
+
+function combatForUser(store: StateStore, userId: string, combat: Combat): Combat {
+  if (!Array.isArray(combat.actions) || combat.actions.length === 0) return combat;
+  return {
+    ...combat,
+    actions: combat.actions.map((action) => {
+      if (canReadCombatAction(store, userId, action)) return action;
+      return {
+        id: action.id,
+        createdAt: action.createdAt,
+        updatedAt: action.updatedAt,
+        campaignId: action.campaignId,
+        combatId: action.combatId,
+        actorId: action.actorId,
+        actorName: action.actorName,
+        requestedByUserId: action.requestedByUserId,
+        confirmedByUserId: action.confirmedByUserId,
+        confirmedAt: action.confirmedAt,
+        status: action.status,
+        rollId: action.rollId,
+        actionLabel: action.actionLabel,
+        targetActorIds: action.targetActorIds,
+        applyEffect: action.applyEffect,
+        consumeResources: action.consumeResources,
+        rolls: action.rolls.map((roll) => ({
+          label: roll.label,
+          formula: "[redacted]",
+          terms: [],
+          total: 0,
+          targetActorId: roll.targetActorId,
+          visibility: roll.visibility
+        }))
+      } satisfies CombatAction;
+    })
   };
 }
 

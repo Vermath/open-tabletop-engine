@@ -19373,6 +19373,24 @@ describe("api", () => {
       expect(store.state.rolls).toHaveLength(rollCountBeforePendingDamage);
       expect(store.state.actors.find((actor) => actor.id === gmOwnedTargetActorId)?.data.hp).toEqual({ current: 2, max: 12 });
       expect(store.state.combats.find((item) => item.id === combat.json().id)?.actions).toContainEqual(expect.objectContaining({ id: pendingDamage.json().combatAction.id, status: "pending_gm" }));
+      const observerCombats = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/combats",
+        headers: { "x-user-id": "usr_demo_observer" }
+      });
+      expect(observerCombats.statusCode).toBe(200);
+      const observerAction = observerCombats.json()[0].actions.find((action: { id: string }) => action.id === pendingDamage.json().combatAction.id);
+      expect(observerAction).toEqual(
+        expect.objectContaining({
+          id: pendingDamage.json().combatAction.id,
+          status: "pending_gm",
+          resultSummary: undefined,
+          resolution: undefined,
+          actorUpdates: [],
+          itemUpdates: undefined
+        })
+      );
+      expect(observerAction.rolls[0]).toEqual(expect.objectContaining({ formula: "[redacted]", total: 0, terms: [] }));
 
       const blockedPlayerConfirm = await app.inject({
         method: "POST",
