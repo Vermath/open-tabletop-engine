@@ -23285,6 +23285,9 @@ registerCommand("/state", (input) => {
           expect.objectContaining({ provider: "codex-ops-test", status: "running" })
         ])
       );
+      expect(operations.json().recentThreads).toEqual(
+        expect.not.arrayContaining([expect.objectContaining({ title: expect.any(String) }), expect.objectContaining({ providerError: expect.any(String) })])
+      );
       expect(operations.json().recentToolCalls).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -23309,6 +23312,9 @@ registerCommand("/state", (input) => {
             status: "started"
           })
         ])
+      );
+      expect(operations.json().recentToolCalls).toEqual(
+        expect.not.arrayContaining([expect.objectContaining({ input: expect.anything() }), expect.objectContaining({ output: expect.anything() })])
       );
       expect(JSON.stringify(operations.json())).not.toContain("OPENAI_API_KEY");
       expect(store.state.auditLogs.map((log) => log.action)).toContain("admin.aiOperations.inspect");
