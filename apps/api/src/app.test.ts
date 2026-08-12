@@ -21682,7 +21682,7 @@ registerCommand("/state", (input) => {
     await app.close();
   });
 
-  it("defaults agent threads to Codex app-server instead of local echo", async () => {
+  it("defaults agent threads to local echo when provider is unset", async () => {
     const previousEnv = snapshotEnv(["OTTE_AI_PROVIDER", "OTTE_CODEX_APP_SERVER_URL", "OTTE_CODEX_APP_SERVER_AUTOSTART", "OTTE_AI_PROVIDER_TIMEOUT_MS", "OTTE_AI_PROVIDER_RETRY_ATTEMPTS"]);
     delete process.env.OTTE_AI_PROVIDER;
     process.env.OTTE_CODEX_APP_SERVER_URL = "ws://127.0.0.1:1";
@@ -21703,17 +21703,15 @@ registerCommand("/state", (input) => {
       });
       const bodyText = response.body;
 
-      expect(response.statusCode).toBe(502);
+      expect(response.statusCode).toBe(200);
       expect(response.json()).toMatchObject({
-        error: "ai_provider_failed",
         thread: {
-          provider: "codex-app-server",
-          status: "failed"
+          provider: "local-echo",
+          status: "completed"
         }
       });
-      expect(bodyText).toContain("Codex app-server");
-      expect(bodyText).not.toContain("Draft response");
-      expect(bodyText).not.toContain("local-echo");
+      expect(bodyText).toContain("Draft response");
+      expect(bodyText).toContain("local-echo");
     } finally {
       await app.close();
       restoreEnv(previousEnv);

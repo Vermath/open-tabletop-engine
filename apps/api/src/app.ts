@@ -2,7 +2,7 @@ import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from
 import { basename, extname, resolve } from "node:path";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
-import { buildPermissionFilteredContext, type AiBoardCaptureResult, type AiProvider, type AiProviderEvent, type AiProviderRequest, type AiReasoningEffort, type AiToolContext, type AiToolDefinition, type AiToolJsonSchema, type PermissionFilteredContext } from "@open-tabletop/ai-core";
+import { EchoAiProvider, buildPermissionFilteredContext, type AiBoardCaptureResult, type AiProvider, type AiProviderEvent, type AiProviderRequest, type AiReasoningEffort, type AiToolContext, type AiToolDefinition, type AiToolJsonSchema, type PermissionFilteredContext } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, CodexAppServerWebSocketTransport, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
 import { applyProposal, approveProposal, buildSmoothFogBrushPolygon, computeFogRevealPolygon, computeLightVisionPolygons, computeTokenVisionPolygons, createEvent, createId, createTimestamped, emptyState, hasPermission, isPointInsideVisionPolygon, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, proposalHistoryEntry, rejectProposal, tokenCenter as centerOfToken, type Actor, type AiEvaluationCheck, type AiEvaluationRun, type AiMemoryFact, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type CombatAction, type ContentImportAppliedRecord, type ContentImportBatch, type ContentImportEntity, type ContentImportEntityKind, type ContentImportSource, type DiceMacro, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogHistoryEntry, type FogMode, type FogPreset, type FogPresetRegion, type FogRegion, type FogShape, type Item, type JobLogEntry, type JobProgress, type JobStatus, type JobType, type JournalEntry, type LightSource, type MapAsset, type OAuthLoginState, type OrganizationMember, type OrganizationMemberRole, type OrganizationWorkspace, type PasswordResetToken, type PermissionGrant, type PermissionName, type PluginReview, type PluginReviewStatus, type PluginStorageEntry, type Proposal, type ProposalChange, type Scene, type SceneAnnotation, type SceneAnnotationKind, type SceneAnnotationLayer, type SceneTemplateShape, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type TokenLayer, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPointSample, type VisionPointSamplePolygon, type VisionPolygon, type VisionSnapshot, type Wall, type WallKind, type WorkerJobRecord } from "@open-tabletop/core";
@@ -7179,6 +7179,7 @@ const ALL_PERMISSIONS: PermissionName[] = ["campaign.read", "campaign.update", "
 
 function createConfiguredAiProvider(): AiProvider {
   const configuredProvider = configuredAiProviderName();
+  if (configuredProvider === "local-echo") return new EchoAiProvider();
   if (configuredProvider === "codex-loopback") {
     return new CodexAppServerProvider({
       transport: new LoopbackCodexTransport(),
@@ -7246,7 +7247,7 @@ function trimmedEnvValue(value: string | undefined): string | undefined {
 }
 
 function configuredAiProviderName(): string {
-  return normalizedEnvValue(process.env.OTTE_AI_PROVIDER) ?? "codex-app-server";
+  return normalizedEnvValue(process.env.OTTE_AI_PROVIDER) ?? "local-echo";
 }
 
 function isCodexAppServerProviderConfigured(): boolean {
