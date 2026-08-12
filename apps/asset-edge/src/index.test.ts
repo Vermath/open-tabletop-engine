@@ -80,6 +80,24 @@ describe("asset edge worker", () => {
     expect(originRequests[0]!.init).toBeUndefined();
   });
 
+  it("rejects unsigned query parameters without calling origin", async () => {
+    let called = false;
+    const signature = apiSignature("asset_demo");
+    const response = await handleAssetEdgeRequest(
+      new Request(`https://assets.example.test/api/v1/assets/asset_demo/blob?expiresAt=${encodeURIComponent(expiresAt)}&signature=${signature}&bust=1`),
+      { ...env, ASSET_EDGE_ROUTE_PREFIX: "" },
+      async () => {
+        called = true;
+        return new Response("unreachable");
+      },
+      nowMs
+    );
+
+    expect(response.status).toBe(400);
+    expect(called).toBe(false);
+    await expect(response.json()).resolves.toMatchObject({ error: "invalid_asset_query" });
+  });
+
   it("rejects tampered signatures without calling origin", async () => {
     let called = false;
     const response = await handleAssetEdgeRequest(

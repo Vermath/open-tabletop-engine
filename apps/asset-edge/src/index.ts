@@ -18,6 +18,8 @@ interface EdgeFetchInit extends RequestInit {
 const ASSET_BLOB_PATH = /^\/api\/v1\/assets\/([^/]+)\/blob$/;
 const FORWARDED_HEADERS = ["accept", "accept-language", "if-modified-since", "if-none-match", "range"];
 
+const SIGNED_ASSET_QUERY_PARAMS = new Set(["disposition", "expiresAt", "signature"]);
+
 export default {
   async fetch(request: Request, env: AssetEdgeEnv): Promise<Response> {
     return handleAssetEdgeRequest(request, env);
@@ -40,6 +42,10 @@ export async function handleAssetEdgeRequest(request: Request, env: AssetEdgeEnv
   const disposition = url.searchParams.get("disposition") ?? "inline";
   if (disposition !== "inline" && disposition !== "attachment") {
     return edgeError(400, "invalid_asset_disposition", "Asset disposition must be inline or attachment");
+  }
+
+  if (hasUnexpectedQueryParams(url.searchParams)) {
+    return edgeError(400, "invalid_asset_query", "Signed asset URL contains unsupported query parameters");
   }
 
   const expiresAt = url.searchParams.get("expiresAt");
@@ -154,6 +160,13 @@ function remainingTtlSeconds(expiresAt: string, nowMs: number, maxTtlSeconds: nu
 function edgeMaxTtlSeconds(value: string | undefined): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? Math.min(Math.floor(parsed), 24 * 60 * 60) : 3600;
+}
+
+function hasUnexpectedQueryParams(searchParams: URLSearchParams): boolean {
+  for (const name of searchParams.keys()) {
+    if (!SIGNED_ASSET_QUERY_PARAMS.has(name)) return true;
+  }
+  return false;
 }
 
 function edgeCacheKey(url: URL, path: string): string {
