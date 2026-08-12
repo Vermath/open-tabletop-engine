@@ -948,27 +948,10 @@ async function ensureCodexAppServerAuthenticated(rpc: CodexAccountRpc, loginType
   } catch (error) {
     if (isCodexMethodNotFoundError(error)) return;
     if (!isCodexAuthError(error)) throw error;
-    throw new CodexAppServerAuthRequiredError(await requestCodexManagedLogin(rpc, loginType));
+    throw new CodexAppServerAuthRequiredError({ type: loginType });
   }
   if (!codexAccountNeedsLogin(account)) return;
-  throw new CodexAppServerAuthRequiredError(await requestCodexManagedLogin(rpc, loginType));
-}
-
-async function requestCodexManagedLogin(rpc: CodexAccountRpc, loginType: CodexAppServerLoginType): Promise<CodexAppServerLoginStart> {
-  const login = await rpc.request("account/login/start", { type: loginType });
-  return codexLoginStartFromResponse(login);
-}
-
-function codexLoginStartFromResponse(response: unknown): CodexAppServerLoginStart {
-  const record = isRecord(response) ? response : {};
-  const source = isRecord(record.login) ? record.login : record;
-  return {
-    type: source.type === "chatgptDeviceCode" ? "chatgptDeviceCode" : "chatgpt",
-    loginId: stringFromRecord(source, "loginId"),
-    authUrl: stringFromRecord(source, "authUrl"),
-    verificationUrl: stringFromRecord(source, "verificationUrl"),
-    userCode: stringFromRecord(source, "userCode")
-  };
+  throw new CodexAppServerAuthRequiredError({ type: loginType });
 }
 
 function codexAccountNeedsLogin(account: unknown): boolean {
