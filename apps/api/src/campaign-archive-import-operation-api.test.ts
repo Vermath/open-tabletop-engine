@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeArchive, type Actor, type CampaignArchive, type MapAsset } from "@open-tabletop/core";
+import { createCampaignArchiveImportOperation } from "./campaign-archive-import-recovery.js";
 import { describe, expect, it } from "vitest";
 import { buildApp } from "./app.js";
 import { LocalAssetStorage } from "./asset-storage.js";
@@ -29,6 +30,63 @@ async function importArchive(app: Awaited<ReturnType<typeof buildApp>>, store: M
 }
 
 describe("campaign archive import operation API", () => {
+  it("requires update permission for every campaign affected by a rollback operation", async () => {
+    const store = new MemoryStateStore();
+    const timestamp = "2026-07-15T12:00:00.000Z";
+    const shadowCampaign = {
+      ...store.state.campaigns.find((campaign) => campaign.id === "camp_demo")!,
+      id: "camp_shadow",
+      name: "Shadow campaign",
+      ownerUserId: "usr_demo_player",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    store.state.campaigns.push(shadowCampaign);
+    store.state.members.push({ id: "mem_shadow_attacker", campaignId: "camp_shadow", userId: "usr_demo_player", role: "gm", createdAt: timestamp, updatedAt: timestamp });
+
+    const before = structuredClone(store.state);
+    const actor = before.actors.find((candidate) => candidate.id === "act_valen")!;
+    const after = structuredClone(before);
+    after.actors = after.actors.map((candidate) => candidate.id === actor.id ? { ...candidate, name: "Changed through shared import", updatedAt: "2026-07-15T12:01:00.000Z" } : candidate);
+    const archive = makeArchive(after, "camp_demo");
+    const operation = createCampaignArchiveImportOperation({
+      id: "arcimp_cross_campaign_authz",
+      stateBefore: before,
+      stateAfter: after,
+      archive,
+      campaignIds: ["camp_demo", "camp_shadow"],
+      createdByUserId: "usr_demo_gm",
+      mode: "upsert",
+      scope: "all",
+      collections: ["actors"],
+      assetSteps: [],
+    });
+    after.campaignArchiveImportOperations.push(operation);
+    store.replace(after);
+
+    const app = await buildApp({ store });
+    try {
+      const attackerHeaders = { "x-user-id": "usr_demo_player" };
+      const listed = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_shadow/archive-import-operations", headers: attackerHeaders });
+      expect(listed.statusCode).toBe(200);
+      expect(listed.json().items).toEqual([]);
+
+      const preview = await app.inject({ method: "GET", url: `/api/v1/campaigns/camp_shadow/archive-import-operations/${operation.id}/preview`, headers: attackerHeaders });
+      expect(preview.statusCode).toBe(403);
+
+      const rollback = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_shadow/archive-import-operations/${operation.id}/rollback`,
+        headers: { ...attackerHeaders, "idempotency-key": "cross-campaign-rollback-denied" },
+        payload: { expectedUpdatedAt: shadowCampaign.updatedAt, confirmOperationId: operation.id },
+      });
+      expect(rollback.statusCode).toBe(403);
+      expect(store.state.actors.find((candidate) => candidate.id === actor.id)?.name).toBe("Changed through shared import");
+    } finally {
+      await app.close();
+    }
+  });
+
   it("lists and previews only within the permitted campaign, then independently rolls A back after B", async () => {
     const store = new MemoryStateStore();
     const app = await buildApp({ store });

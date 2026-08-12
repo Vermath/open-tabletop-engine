@@ -12501,13 +12501,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   });
 
   app.get<{ Params: { campaignId: string }; Querystring: { status?: string } }>("/api/v1/campaigns/:campaignId/archive-import-operations", async (request, reply) => {
-    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.update");
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    const allowed = requireCampaignPermissionForUser(store, reply, request.headers, userId, request.params.campaignId, "campaign.update");
     if (allowed !== true) return allowed;
     const status = request.query.status;
     if (status && status !== "applied" && status !== "partially_rolled_back" && status !== "rolled_back") return badRequest(reply, "Unsupported archive import operation status");
     return {
       items: store.state.campaignArchiveImportOperations
-        .filter((operation) => operation.campaignIds.includes(request.params.campaignId) && (!status || operation.status === status))
+        .filter((operation) => operation.campaignIds.includes(request.params.campaignId) && campaignArchiveImportOperationUpdateAllowedForUser(store, request.headers, userId, operation.campaignIds) && (!status || operation.status === status))
         .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
         .slice(0, 100)
         .map(publicCampaignArchiveImportOperation),
@@ -12515,20 +12517,28 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   });
 
   app.get<{ Params: { campaignId: string; operationId: string } }>("/api/v1/campaigns/:campaignId/archive-import-operations/:operationId/preview", async (request, reply) => {
-    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.update");
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    const allowed = requireCampaignPermissionForUser(store, reply, request.headers, userId, request.params.campaignId, "campaign.update");
     if (allowed !== true) return allowed;
     const operation = store.state.campaignArchiveImportOperations.find((candidate) => candidate.id === request.params.operationId && candidate.campaignIds.includes(request.params.campaignId));
     if (!operation) return notFound(reply, "Archive import operation not found");
+    const operationAllowed = requireCampaignArchiveImportOperationUpdatePermission(store, reply, request.headers, userId, operation.campaignIds);
+    if (operationAllowed !== true) return operationAllowed;
     return previewCampaignArchiveImportRollback(store.state, assetStorage, operation);
   });
 
   app.post<{ Params: { campaignId: string; operationId: string }; Body: { expectedUpdatedAt?: unknown; confirmOperationId?: unknown } }>("/api/v1/campaigns/:campaignId/archive-import-operations/:operationId/rollback", async (request, reply) => {
-    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.update");
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    const allowed = requireCampaignPermissionForUser(store, reply, request.headers, userId, request.params.campaignId, "campaign.update");
     if (allowed !== true) return allowed;
     if (!opaqueHeaderText(request.headers["idempotency-key"])) return badRequest(reply, "Archive import rollback requires an Idempotency-Key header");
     if (request.body?.confirmOperationId !== request.params.operationId) return badRequest(reply, "Archive import rollback confirmation must match the operation id");
-    const userId = requireUser(store, reply, request.headers);
-    if (typeof userId !== "string") return userId;
+    const operation = store.state.campaignArchiveImportOperations.find((candidate) => candidate.id === request.params.operationId && candidate.campaignIds.includes(request.params.campaignId));
+    if (!operation) return notFound(reply, "Archive import operation not found");
+    const operationAllowed = requireCampaignArchiveImportOperationUpdatePermission(store, reply, request.headers, userId, operation.campaignIds);
+    if (operationAllowed !== true) return operationAllowed;
     const campaign = store.state.campaigns.find((candidate) => candidate.id === request.params.campaignId);
     if (!campaign) return notFound(reply, "Campaign not found");
     const revision = requireExpectedRevision(reply, {
@@ -23944,6 +23954,18 @@ function campaignActiveOrganizationAllowed(store: StateStore, headers: Record<st
   if (!campaign?.organizationId) return true;
   const workspace = organizationWorkspaceRecordForRequest(store, userId, headers);
   return workspace.id === campaign.organizationId;
+}
+
+function campaignArchiveImportOperationUpdateAllowedForUser(store: StateStore, headers: Record<string, string | string[] | undefined>, userId: string, campaignIds: string[]): boolean {
+  return campaignIds.every((campaignId) => campaignActiveOrganizationAllowed(store, headers, userId, campaignId) && canCampaign(store, userId, campaignId, "campaign.update"));
+}
+
+function requireCampaignArchiveImportOperationUpdatePermission(store: StateStore, reply: FastifyReply, headers: Record<string, string | string[] | undefined>, userId: string, campaignIds: string[]): true | FastifyReply {
+  for (const campaignId of campaignIds) {
+    const allowed = requireCampaignPermissionForUser(store, reply, headers, userId, campaignId, "campaign.update");
+    if (allowed !== true) return allowed;
+  }
+  return true;
 }
 
 function canCampaign(store: StateStore, userId: string, campaignId: string, permission: PermissionName): boolean {
