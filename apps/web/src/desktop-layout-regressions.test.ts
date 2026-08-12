@@ -67,7 +67,7 @@ describe("desktop layout regressions", () => {
     expect(appSource).toContain('approvalMode={aiAgentApprovalMode}');
     expect(appSource).toContain('onApprovalModeChange={setAiAgentApprovalMode}');
     expect(appSource).toContain('aria-label="AI Agent approval mode"');
-    expect(appSource).toContain('autoApplyAiAgentProposals(proposalIds, refreshedSnapshot)');
+    expect(appSource).toContain('autoApplyAiAgentProposals(proposalIds, proposalIdsBeforeTurn, refreshedSnapshot)');
     expect(appSource).toContain('if (event.key === "Enter" && (event.ctrlKey || event.metaKey))');
     expect(appSource).toContain('onKeyDown={handleAiAgentPromptKeyDown}');
     expect(appSource).toContain('aiAgentPendingAuthRequestRef.current = { prompt, requestMessages };');
