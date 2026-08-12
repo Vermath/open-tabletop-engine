@@ -1716,6 +1716,7 @@ export function dnd5eSrdSpeciesTraitRolls(actor: Actor): QuickRoll[] {
 export function dnd5eSrdActionRolls(actor: Actor, items: Item[] = []): QuickRoll[] {
   const actionItems = dnd5eSrdActionAvailableItems(actor, items);
   const attacksPerAction = dnd5eSrdAttacksPerAction(actor);
+  const weaponDamageRollIds = dnd5eSrdWeaponDamageRollIds(actor, actionItems);
   const attackRolls = dnd5eSrdAttackRolls(actor, actionItems, attacksPerAction);
   const effectRolls = dnd5eSrdEffectRolls(actor, actionItems);
   const damageAndEffectRolls = genericFantasyActionRolls(actor, actionItems).map((roll) => {
@@ -1723,7 +1724,7 @@ export function dnd5eSrdActionRolls(actor: Actor, items: Item[] = []): QuickRoll
     const rollWithMetadata = Object.keys(metadata).length > 0 ? { ...roll, metadata: { ...roll.metadata, ...metadata } } : roll;
     const martialArtsFormula = dnd5eSrdMonkWeaponDamageFormulaForRoll(actor, actionItems, roll.id);
     const nextRoll = martialArtsFormula ? { ...rollWithMetadata, formula: martialArtsFormula, metadata: { ...rollWithMetadata.metadata, martialArts: { die: dnd5eSrdMartialArtsDie(actor), dexterousAttacks: true } } } : rollWithMetadata;
-    if (attacksPerAction <= 1 || !dnd5eSrdIsWeaponDamageRoll(actor, actionItems, roll.id)) return nextRoll;
+    if (attacksPerAction <= 1 || !weaponDamageRollIds.has(roll.id)) return nextRoll;
     return { ...nextRoll, metadata: { ...nextRoll.metadata, attacksPerAction, feature: "Extra Attack" } };
   });
   return [...attackRolls, ...effectRolls, ...damageAndEffectRolls];
@@ -20808,11 +20809,19 @@ function dnd5eSrdChampionSurvivorMetadata(actor: Actor): Record<string, unknown>
 }
 
 function dnd5eSrdIsWeaponDamageRoll(actor: Actor, items: Item[], rollId: string): boolean {
-  return items.filter((item) => itemBelongsToActor(actor, item)).some((item) => {
+  return dnd5eSrdWeaponDamageRollIds(actor, items).has(rollId);
+}
+
+function dnd5eSrdWeaponDamageRollIds(actor: Actor, items: Item[]): Set<string> {
+  const rollIds = new Set<string>();
+  for (const item of items) {
+    if (!itemBelongsToActor(actor, item)) continue;
     const data = recordValue(item.data);
-    if (!dnd5eSrdIsWeaponData(data)) return false;
-    return rollId === `item-${item.id}-damage` || rollId === `item-${item.id}-versatile-damage`;
-  });
+    if (!dnd5eSrdIsWeaponData(data)) continue;
+    rollIds.add(`item-${item.id}-damage`);
+    rollIds.add(`item-${item.id}-versatile-damage`);
+  }
+  return rollIds;
 }
 
 function dnd5eSrdIsWeaponData(data: Record<string, unknown>): boolean {
