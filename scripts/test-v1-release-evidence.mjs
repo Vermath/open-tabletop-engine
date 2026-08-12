@@ -236,11 +236,25 @@ function runPassesWithOwnerApprovedManualOverrides() {
   const files = completeEvidence(commit);
   files.assistive = `# Assistive Technology Pass Plan
 
+## Assistive Technology Owner-Approved Descope: Reduced mobile matrix
+
+- Date: 2026-01-01
+- App build or commit: ${commit}
 - Owner-approved descope: Release owner accepted a temporary reduced matrix for the release candidate.
+- Required environments replaced or removed: iOS/iPadOS VoiceOver
+- Reason: Device lab outage prevented release-window validation.
+- Notes:
 `;
   files.externalGm = `# External GM Validation Evidence
 
+## External GM Owner-Approved Substitution: Internal trusted GM run
+
+- Date: 2026-01-01
+- App build or commit: ${commit}
 - Owner-approved substitution: Release owner accepted an internal GM substitute for the release candidate.
+- Substitution used: Staff GM validation in production-like hosted preview.
+- Reason: External GM was unavailable during release freeze window.
+- Notes:
 `;
   const root = fixtureRoot(files);
 
@@ -256,15 +270,25 @@ function runFailsWithTemplateOwnerOverrides() {
   const files = completeEvidence(commit);
   files.assistive = `# Assistive Technology Pass Plan
 
-\`\`\`md
+## Assistive Technology Owner-Approved Descope: <scope label>
+
+- Date:
+- App build or commit:
 - Owner-approved descope: Release owner accepted a temporary reduced matrix for the release candidate.
-\`\`\`
+- Required environments replaced or removed:
+- Reason:
+- Notes:
 `;
   files.externalGm = `# External GM Validation Evidence
 
-\`\`\`md
+## External GM Owner-Approved Substitution: <substitution label>
+
+- Date:
+- App build or commit:
 - Owner-approved substitution: Release owner accepted an internal GM substitute for the release candidate.
-\`\`\`
+- Substitution used:
+- Reason:
+- Notes:
 `;
   const root = fixtureRoot(files);
 
