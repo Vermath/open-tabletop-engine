@@ -4631,6 +4631,21 @@ describe("api", () => {
         role: "observer",
         source: { type: "scim_group", groupId, mappingId }
       });
+      const scimUserLogin = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { email: "scim.role.member@example.test" }
+      });
+      expect(scimUserLogin.statusCode).toBe(200);
+      expect(scimUserLogin.json().memberships.find((member: { campaignId: string }) => member.campaignId === "camp_demo")).not.toHaveProperty("source");
+
+      const memberList = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/members",
+        headers: adminHeaders
+      });
+      expect(memberList.statusCode).toBe(200);
+      expect(memberList.json().find((member: { userId: string }) => member.userId === userId)).not.toHaveProperty("source");
 
       const archive = await app.inject({
         method: "GET",

@@ -710,7 +710,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       token,
       session: publicSession(session),
       user: publicUser(user),
-      memberships: store.state.members.filter((member) => member.userId === user.id),
+      memberships: store.state.members.filter((member) => member.userId === user.id).map(publicCampaignMember),
       serverAdmin: isServerAdminUser(store, user.id)
     };
   });
@@ -761,7 +761,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         token: login.token,
         session: publicSession(login.session),
         user: publicUser(login.user),
-        memberships: store.state.members.filter((member) => member.userId === login.user.id),
+        memberships: store.state.members.filter((member) => member.userId === login.user.id).map(publicCampaignMember),
         serverAdmin: isServerAdminUser(store, login.user.id)
       };
     } catch (error) {
@@ -786,7 +786,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       token,
       session: publicSession(nextSession),
       user: publicUser(user),
-      memberships: store.state.members.filter((member) => member.userId === user.id),
+      memberships: store.state.members.filter((member) => member.userId === user.id).map(publicCampaignMember),
       serverAdmin: isServerAdminUser(store, user.id)
     };
   });
@@ -2186,7 +2186,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         token: login.token,
         session: publicSession(login.session),
         user: publicUser(login.user),
-        memberships: store.state.members.filter((member) => member.userId === login.user.id),
+        memberships: store.state.members.filter((member) => member.userId === login.user.id).map(publicCampaignMember),
         serverAdmin: isServerAdminUser(store, login.user.id),
         identity: publicIdentity(login.identity)
       };
@@ -2212,7 +2212,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return {
       user: publicUser(user),
       session: session ? publicSession(session) : undefined,
-      memberships: store.state.members.filter((member) => member.userId === userId),
+      memberships: store.state.members.filter((member) => member.userId === userId).map(publicCampaignMember),
       serverAdmin: isServerAdminUser(store, userId),
       serverAdmins: serverAdminRuntimePosture(store),
       organization: organizationWorkspaceForRequest(store, userId, request.headers),
@@ -14327,10 +14327,15 @@ function campaignPermissionTemplateGrants(campaignId: string, templateId: Campai
   );
 }
 
+function publicCampaignMember(member: CampaignMember): Omit<CampaignMember, "source"> {
+  const { source: _source, ...publicMember } = member;
+  return publicMember;
+}
+
 function memberSessionInfo(
   store: StateStore,
   member: CampaignMember
-): CampaignMember & {
+): Omit<CampaignMember, "source"> & {
   user: Pick<User, "id" | "displayName" | "email">;
   permissions: PermissionName[];
 } {
@@ -14344,7 +14349,7 @@ function memberSessionInfo(
     })
     .flatMap((grant) => grant.permissions);
   return {
-    ...member,
+    ...publicCampaignMember(member),
     user: {
       id: member.userId,
       displayName: user?.displayName ?? member.userId,
