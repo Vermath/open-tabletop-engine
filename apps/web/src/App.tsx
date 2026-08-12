@@ -5863,21 +5863,24 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
           }}
         />
       )}
-      {props.scene.lights.map((light) => (
-        <div
-          className="light-source"
-          key={light.id}
-          style={{
-            left: `${(light.x / props.scene.width) * 100}%`,
-            top: `${(light.y / props.scene.height) * 100}%`,
-            width: `${(light.radius / props.scene.width) * 200}%`,
-            background: `radial-gradient(circle, ${light.color} 0%, ${light.color} 22%, transparent 72%)`,
-            opacity: light.intensity ?? 0.18,
-            pointerEvents: "none"
-          }}
-          aria-hidden="true"
-        />
-      ))}
+      {props.scene.lights.map((light) => {
+        const color = sanitizeLightColor(light.color);
+        return (
+          <div
+            className="light-source"
+            key={light.id}
+            style={{
+              left: `${(light.x / props.scene.width) * 100}%`,
+              top: `${(light.y / props.scene.height) * 100}%`,
+              width: `${(light.radius / props.scene.width) * 200}%`,
+              background: `radial-gradient(circle, ${color} 0%, ${color} 22%, transparent 72%)`,
+              opacity: light.intensity ?? 0.18,
+              pointerEvents: "none"
+            }}
+            aria-hidden="true"
+          />
+        );
+      })}
       {lightPolygons.length > 0 && (
         <svg className="lighting-layer" viewBox={`0 0 ${props.scene.width} ${props.scene.height}`} aria-hidden="true">
           {lightPolygons.map((polygon) => (
@@ -6247,6 +6250,16 @@ function appendStrokePoint(points: VisionPoint[], point: VisionPoint, gridSize: 
   const previous = points.at(-1);
   if (previous && Math.hypot(previous.x - point.x, previous.y - point.y) < Math.max(6, gridSize / 8)) return points;
   return [...points, point];
+}
+
+
+function sanitizeLightColor(value: string | undefined): string {
+  if (!value) return "#facc15";
+  const trimmed = value.trim();
+  if (!trimmed) return "#facc15";
+  if (/[;{}]/.test(trimmed)) return "#facc15";
+  if (typeof CSS !== "undefined" && typeof CSS.supports === "function" && CSS.supports("color", trimmed)) return trimmed;
+  return "#facc15";
 }
 
 function polygonPoints(polygon: VisionPolygon): string {
