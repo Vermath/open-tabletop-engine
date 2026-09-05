@@ -86,7 +86,7 @@ describe("keyboard-complete scene canvas", () => {
     expect(canvasSource).toContain("if (calibrationActive) return null;");
     expect(canvasSource).toContain('pointerEvents: calibrationActive ? "none" : undefined');
     expect(appSource).toContain("setGridCalibrationOpen(false); setGridCalibrationPoints([]);");
-    expect(appSource).toContain("if (next) { setFogBrushMode(null); setAnnotationTool(null);");
+    expect(appSource).toContain("if (next) { showScene(); setFogBrushMode(null); setAnnotationTool(null);");
     expect(stylesSource).toContain(".keyboard-board-cursor");
     expect(stylesSource).toContain(".scene-board:focus-visible");
   });

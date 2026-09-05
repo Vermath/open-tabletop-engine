@@ -8,6 +8,8 @@ import { apiContractPolicy, apiVersion, apiVersionHeader, openApiSpec } from "@o
 import { CodexAppServerProvider, CodexAppServerWebSocketTransport, LoopbackCodexTransport, stopLocalCodexAppServers } from "@open-tabletop/codex-app-server-provider";
 import {
   aiMemoryFactStatus,
+  annotationTranslationDelta,
+  translatedAnnotationPoints,
   applyProposal,
   approveProposal,
   buildSmoothFogBrushPolygon,
@@ -3148,10 +3150,20 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     state.organizationMembers ??= [];
     const member = state.organizationMembers.find((item) => item.id === request.params.memberId && item.organizationId === workspace.id);
     if (!member) return notFound(reply, "Organization member not found");
-    if (member.role === "owner") return badRequest(reply, "Organization owner cannot be removed");
+    if (member.role === "owner" || workspace.ownerUserId === member.userId) return badRequest(reply, "Organization owner cannot be removed");
     if (!opaqueHeaderText(request.headers["idempotency-key"])) return badRequest(reply, "Organization member removal requires an Idempotency-Key header");
     const revision = requireExpectedRevision(reply, { resourceType: "organization_member", resourceId: member.id, currentUpdatedAt: member.updatedAt, expectedUpdatedAt: request.query.expectedUpdatedAt, current: member, label: "Organization member" });
     if (revision !== true) return revision;
+    const ownedCampaignMembershipIds = new Set(store.state.members.filter((campaignMember) => campaignMember.userId === member.userId && campaignMember.role === "owner").map((campaignMember) => campaignMember.campaignId));
+    const ownedCampaigns = store.state.campaigns.filter((campaign) => campaign.organizationId === workspace.id && (campaign.ownerUserId === member.userId || ownedCampaignMembershipIds.has(campaign.id)));
+    if (ownedCampaigns.length > 0) {
+      return reply.code(409).send({
+        error: "conflict",
+        code: "campaign_ownership_transfer_required",
+        message: "Transfer this member's campaign ownership before removing them from the organization. Ask the member to transfer any campaigns you cannot access.",
+        campaigns: ownedCampaigns.filter((campaign) => canCampaign(store, userId, campaign.id, "campaign.read")).map((campaign) => ({ id: campaign.id, name: campaign.name }))
+      });
+    }
     state.organizationMembers = state.organizationMembers.filter((item) => item.id !== member.id);
     const organizationCampaignIds = new Set(store.state.campaigns.filter((campaign) => campaign.organizationId === workspace.id).map((campaign) => campaign.id));
     const beforeCampaignMembershipCount = store.state.members.length;
@@ -3357,14 +3369,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const index = store.state.members.findIndex((item) => item.id === request.params.memberId && item.campaignId === request.params.campaignId);
     const member = store.state.members[index];
     if (!member) return notFound(reply, "Campaign member not found");
-    if (member.role === "owner") return forbidden(reply, "The campaign owner cannot be removed");
+    if (member.role === "owner" || store.state.campaigns.some((campaign) => campaign.id === member.campaignId && campaign.ownerUserId === member.userId)) return forbidden(reply, "The campaign owner cannot be removed");
     if (member.source?.type === "scim_group") return conflict(reply, "SCIM-managed campaign members must be removed through their group mapping");
     const userId = currentUserId(store, request.headers)!;
     if (member.userId === userId) return forbidden(reply, "Campaign members cannot remove their own access");
     store.state.members.splice(index, 1);
     store.state.permissionGrants = store.state.permissionGrants.filter((grant) => !(grant.campaignId === member.campaignId && grant.subjectType === "user" && grant.subjectId === member.userId));
+    const campaignSceneIds = new Set(store.state.scenes.filter((scene) => scene.campaignId === member.campaignId).map((scene) => scene.id));
     for (const token of store.state.tokens) {
-      if (!token.ownerUserIds?.includes(member.userId)) continue;
+      if (!campaignSceneIds.has(token.sceneId) || !token.ownerUserIds?.includes(member.userId)) continue;
       token.ownerUserIds = token.ownerUserIds.filter((id) => id !== member.userId);
       token.updatedAt = nowIso();
     }
@@ -7343,18 +7356,22 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       (mutablePatch.combatants ?? combat.combatants).map((combatant) => applyCombatantRulesAutomation(combatant, { applyConcentrationLifecycle: false })),
       manualTurnOrder,
     );
-    const requestedTurnIndex = mutablePatch.turnIndex ?? (combatantsChanged ? 0 : combat.turnIndex);
+    const activeCombatantId = combat.combatants[combat.turnIndex]?.id;
+    const preservedTurnIndex = activeCombatantId ? nextCombatants.findIndex((combatant) => combatant.id === activeCombatantId) : -1;
+    const rosterTurnIndex = preservedTurnIndex >= 0 ? preservedTurnIndex : Math.min(combat.turnIndex, Math.max(0, nextCombatants.length - 1));
+    const requestedTurnIndex = mutablePatch.turnIndex ?? (combatantsChanged ? rosterTurnIndex : combat.turnIndex);
     const nextTurnIndex = Math.max(0, Math.min(requestedTurnIndex, Math.max(0, nextCombatants.length - 1)));
+    if (combat.active && (mutablePatch.active ?? combat.active) && combatantsChanged && (requestedRound !== combat.round || nextTurnIndex !== rosterTurnIndex)) {
+      return badRequest(reply, "Update combatants and change the turn in separate requests so combat rules resolve against one turn order");
+    }
     const changedAt = nextRevisionTimestamp(combat.updatedAt);
     let nextCombat: Combat = { ...combat, ...mutablePatch, manualTurnOrder, combatants: nextCombatants, turnIndex: nextTurnIndex, round: requestedRound, updatedAt: changedAt };
-    const forwardTurnProgression = isForwardCombatTurnProgression(combat, nextCombat);
+    // Reindexing a roster (or removing its active member) does not end a turn.
+    const forwardTurnProgression = !combatantsChanged && isForwardCombatTurnProgression(combat, nextCombat);
     const saveOutcomes = normalizeCombatSaveOutcomes(request.body.saveOutcomes);
     if (!saveOutcomes.ok) return badRequest(reply, saveOutcomes.message);
     if (request.body.saveOutcomes !== undefined && !forwardTurnProgression) {
       return badRequest(reply, "saveOutcomes may only be supplied while advancing the combat turn or round");
-    }
-    if (forwardTurnProgression && combatantsChanged) {
-      return badRequest(reply, "Update combatants and advance the turn in separate requests so combat rules resolve against one turn order");
     }
     let rulesProgression: DndCombatTurnProgression | undefined;
     let updatedActors: Actor[] = [];
@@ -7673,8 +7690,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }
     if (rolls.length === 0) return badRequest(reply, "No NPC combatants with linked actors were found");
     if (!combat.manualTurnOrder) {
+      const activeCombatantId = combat.combatants[combat.turnIndex]?.id;
       combat.combatants = orderedCombatants(combat.combatants, false);
-      combat.turnIndex = 0;
+      combat.turnIndex = Math.max(0, combat.combatants.findIndex((combatant) => combatant.id === activeCombatantId));
     }
     combat.updatedAt = nowIso();
     store.state.rolls.push(...rolls);
@@ -7752,8 +7770,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }
     combat.combatants[combatantIndex] = { ...synchronizedCombatant };
     if (!combat.manualTurnOrder) {
+      const activeCombatantId = combatBefore.combatants[combatBefore.turnIndex]?.id;
       combat.combatants = orderedCombatants(combat.combatants, false);
-      combat.turnIndex = Math.max(0, Math.min(combat.turnIndex, Math.max(0, combat.combatants.length - 1)));
+      const preservedTurnIndex = combat.combatants.findIndex((combatant) => combatant.id === activeCombatantId);
+      combat.turnIndex = preservedTurnIndex >= 0 ? preservedTurnIndex : Math.max(0, Math.min(combat.turnIndex, Math.max(0, combat.combatants.length - 1)));
     }
     combat.updatedAt = updatedAt;
     let rulesMutation: DndRulesMutation | undefined;
@@ -18192,7 +18212,12 @@ function normalizeSceneAnnotationPatch(scene: Scene, annotation: SceneAnnotation
     if (points.length < minPoints) return { error: `${annotation.kind} annotation requires at least ${minPoints} valid point${minPoints === 1 ? "" : "s"}` };
     const maxPoints = annotation.kind === "drawing" ? 80 : annotation.kind === "template" ? 16 : 2;
     const snapToGrid = scene.gridType === "square" && (patch.snapToGrid ?? annotation.snapToGrid ?? false);
-    patch.points = points.slice(0, maxPoints).map((point) => (snapToGrid ? snapScenePointToGrid(scene, point) : point));
+    // Recognize rigid movement before normalization clamps or re-snaps each
+    // vertex. Snapping the shared delta preserves authored lengths and angles.
+    const translation = annotationTranslationDelta(annotation.points, body.points);
+    patch.points = translation
+      ? translatedAnnotationPoints(scene, annotation.points, translation, snapToGrid)
+      : points.slice(0, maxPoints).map((point) => (snapToGrid ? snapScenePointToGrid(scene, point) : point));
   }
   if (annotation.kind === "template") {
     if (body.radius !== undefined) {
@@ -27616,7 +27641,8 @@ function validateCombatantSurpriseInputs(campaign: Pick<Campaign, "rulesProfile"
 
 function isForwardCombatTurnProgression(before: Combat, after: Combat): boolean {
   if (!before.active || !after.active) return false;
-  return after.round > before.round || (after.round === before.round && after.turnIndex > before.turnIndex);
+  return after.round > before.round || (after.round === before.round && after.turnIndex > before.turnIndex
+    && after.combatants[after.turnIndex]?.id !== before.combatants[before.turnIndex]?.id);
 }
 
 function previewDndCombatTurnProgression(store: StateStore, before: Combat, after: Combat, now: string, saveOutcomes?: Record<string, "success" | "failure">): DndCombatTurnProgression {

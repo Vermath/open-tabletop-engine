@@ -6437,7 +6437,8 @@ describe("api", () => {
         }
       });
       expect(patched.statusCode).toBe(200);
-      expect(patched.json()).toEqual(expect.objectContaining({ manualTurnOrder: false, turnIndex: 0 }));
+      expect(patched.json()).toEqual(expect.objectContaining({ manualTurnOrder: false, turnIndex: 1 }));
+      expect(patched.json().combatants[patched.json().turnIndex].id).toBe("cmbt_manual_low");
       expect(patched.json().combatants.map((combatant: { id: string }) => combatant.id)).toEqual(["cmbt_manual_high", "cmbt_manual_low"]);
     } finally {
       await app.close();

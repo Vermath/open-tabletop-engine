@@ -335,7 +335,7 @@ function currentActorId(combat: Pick<Combat, "turnIndex" | "combatants">): strin
 function turnLedger(data: JsonRecord, actorId: string, combat: Pick<Combat, "id" | "round" | "turnIndex">): MasteryTurnLedger {
   const stored = record(record(record(data.rulesEngine).weaponMastery).turnUses)[combat.id];
   const value = record(stored);
-  const sameTurn = integer(value.round, -1) === combat.round && integer(value.turnIndex, -1) === combat.turnIndex && text(value.actorId) === actorId;
+  const sameTurn = integer(value.round, -1) === combat.round && text(value.actorId) === actorId;
   if (!sameTurn) return { round: combat.round, turnIndex: combat.turnIndex, actorId, uses: [] };
   const uses = Array.isArray(value.uses) ? value.uses.flatMap((raw) => {
     const entry = record(raw);
@@ -361,7 +361,7 @@ function withTurnUse(data: JsonRecord, actorId: string, combat: Pick<Combat, "id
 function standardActionLedger(data: JsonRecord, actorId: string, combat: Pick<Combat, "id" | "round" | "turnIndex">): JsonRecord | undefined {
   const stored = record(record(record(data.rulesEngine).actionEconomy).standardActions)[combat.id];
   const value = record(stored);
-  return integer(value.round, -1) === combat.round && integer(value.turnIndex, -1) === combat.turnIndex && text(value.actorId) === actorId ? value : undefined;
+  return integer(value.round, -1) === combat.round && text(value.actorId) === actorId ? value : undefined;
 }
 
 function nextTurnRound(combat: Pick<Combat, "round" | "turnIndex" | "combatants">, actorId: string): number {

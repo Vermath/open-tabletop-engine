@@ -17,7 +17,8 @@ async function loginDemoGm(page: Page): Promise<void> {
     localStorage.setItem("otte:sessionTransport", "cookie");
   }, apiBaseUrl);
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 }
 
 async function openScenes(page: Page): Promise<Locator> {
@@ -30,7 +31,7 @@ async function openScenes(page: Page): Promise<Locator> {
 
 async function newSceneForm(panel: Locator): Promise<Locator> {
   const details = panel.locator("details.create-drawer", { hasText: "New scene" });
-  await details.evaluate((element) => { (element as HTMLDetailsElement).open = true; });
+  if (!(await details.evaluate((element) => (element as HTMLDetailsElement).open))) await details.locator(":scope > summary").click();
   return details.locator("form");
 }
 
@@ -64,6 +65,8 @@ test("GM creates, reloads, and plays on gridless and square scenes", async ({ pa
   await page.getByRole("button", { name: "Prep", exact: true }).click();
   await expect(page.getByRole("button", { name: "Calibrate grid" })).toHaveCount(0);
 
+  const showScene = page.getByRole("button", { name: "Show scene", exact: true });
+  if (await showScene.isVisible()) await showScene.click();
   const quickCreate = page.locator("form.quick-create-form");
   if (!(await quickCreate.getByRole("textbox", { name: "Token name" }).isVisible())) {
     await page.getByRole("button", { name: "Token", exact: true }).click();

@@ -194,6 +194,8 @@ async function closeManage(page: Page) {
 }
 
 async function openInspectorPanel(page: Page, panelName: string) {
+  const reopen = page.getByRole("button", { name: "Show inspector", exact: true });
+  if (await reopen.isVisible()) await reopen.click();
   const panelId = panelName === "SDK" ? "plugins" : panelName === "Content" ? "content" : panelName.toLowerCase();
   const tab = page.locator(`#inspector-tab-${panelId}`);
   await expect(tab).toBeVisible();
@@ -226,24 +228,18 @@ function combatTrackerPanel(page: Page) {
 
 async function openActorDisclosure(root: Locator, summaryText: string) {
   const details = root.locator("details.actor-detail-disclosure").filter({ hasText: summaryText }).first();
-  await expect(details.locator("summary")).toBeVisible();
+  await expect(details.locator(":scope > summary")).toBeVisible();
   const isOpen = await details.evaluate((element) => (element as HTMLDetailsElement).open);
   if (!isOpen) {
-    await details.evaluate((element) => {
-      (element as HTMLDetailsElement).open = true;
-      element.scrollIntoView({ block: "nearest" });
-    });
+    await details.locator(":scope > summary").click();
   }
 }
 
 async function openDetails(details: Locator) {
-  await expect(details.locator("summary")).toBeVisible();
+  await expect(details.locator(":scope > summary")).toBeVisible();
   const isOpen = await details.evaluate((element) => (element as HTMLDetailsElement).open);
   if (!isOpen) {
-    await details.evaluate((element) => {
-      (element as HTMLDetailsElement).open = true;
-      element.scrollIntoView({ block: "nearest" });
-    });
+    await details.locator(":scope > summary").click();
   }
 }
 
@@ -916,7 +912,8 @@ test("GM can switch selected-token permission presets", async ({ page }) => {
   test.setTimeout(120_000);
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 
   // The accessibility deletion journey runs immediately before this test in
   // the shared demo database. Make this journey independent of a delayed
@@ -1037,7 +1034,8 @@ test("GM can switch selected-token permission presets", async ({ page }) => {
 test("token inspector surfaces a rejected edit", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   await openInspectorPanel(page, "Actors");
   const actorPanel = selectedActorPanel(page);
   await openActorDisclosure(actorPanel, "Token settings");
@@ -1066,7 +1064,8 @@ test("token inspector surfaces a rejected edit", async ({ page }) => {
 test("GM can box-select and drag multiple scene tokens", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 
   const suffix = Date.now().toString(36);
   let firstToken: E2EToken | undefined;
@@ -1119,7 +1118,8 @@ test("legacy raw session migrates across reload, logout clears access, and serve
   }, { token: legacyLogin.token, userId: legacyLogin.user.id });
 
   await page.reload();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   await expect.poll(() => page.evaluate(() => ({
     legacyToken: localStorage.getItem("otte:sessionToken"),
     legacyTokenUser: localStorage.getItem("otte:sessionTokenUser"),
@@ -1127,7 +1127,8 @@ test("legacy raw session migrates across reload, logout clears access, and serve
   }))).toEqual({ legacyToken: null, legacyTokenUser: null, transport: "cookie" });
 
   await page.reload();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   expect(await page.evaluate(() => localStorage.getItem("otte:sessionToken"))).toBeNull();
   expect(await page.evaluate(async (baseUrl) => (await fetch(`${baseUrl}/api/v1/auth/session`, { credentials: "include" })).status, apiBaseUrl)).toBe(200);
 
@@ -1142,7 +1143,8 @@ test("legacy raw session migrates across reload, logout clears access, and serve
   expect(await page.evaluate(() => localStorage.getItem("otte:sessionTransport"))).toBeNull();
 
   await page.getByRole("button", { name: "Demo GM" }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   const currentSessionId = await page.evaluate(async (baseUrl) => {
     const response = await fetch(`${baseUrl}/api/v1/auth/session`, { credentials: "include" });
     if (!response.ok) throw new Error(await response.text());
@@ -1171,7 +1173,9 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(page.getByRole("heading", { name: "Sign In" })).toBeVisible();
   await page.getByRole("button", { name: "Demo GM" }).click();
 
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   await openManageCategory(page, "Campaign");
   await expect(page.getByText("Campaign Settings")).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Edit campaign name" })).toHaveValue("The Ember Vault");
@@ -1276,6 +1280,7 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   });
   await healingWordEntry.getByRole("button", { name: "Add" }).click();
   await expect(statusMessage(page, /Healing Word (imported|at content version .* already present)/)).toBeVisible();
+  await openActorDisclosure(selectedActorPanel(page), "Actor details");
   await expect(page.locator(".metric-row", { hasText: "Spells" })).toContainText("Healing Word");
   await page.getByRole("tab", { name: "Loadout" }).click();
   const healingWordLoadout = page.getByRole("region", { name: "Actor loadout sheet" }).locator("article", { hasText: "Healing Word" }).first();
@@ -1440,7 +1445,8 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
     if (!response.ok) throw new Error(await response.text());
   }, { apiBaseUrl });
   await page.reload();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   await expect(page.locator(".scene-annotation.drawing").first()).toBeVisible();
   await page.getByRole("button", { name: "Select", exact: true }).click();
   await expect(statusMessage(page, "Select tool active")).toBeVisible();
@@ -1762,7 +1768,8 @@ test("GM can organize prep across the World Atlas, Handout Library, and Session 
 
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 
   try {
     const scenes = await expectJsonResponse<Array<{ id: string; name: string; worldId?: string }>>(
@@ -1776,7 +1783,7 @@ test("GM can organize prep across the World Atlas, Handout Library, and Session 
     await page.getByRole("button", { name: "Prep", exact: true }).click();
     await openInspectorPanel(page, "Worlds");
     const worldAtlas = page.getByRole("region", { name: "World Atlas" });
-    await expect(worldAtlas.getByRole("heading", { name: "Places & prep scenes" })).toBeVisible();
+    await expect(worldAtlas.getByRole("heading", { name: "Your worlds & scenes" })).toBeVisible();
     const addWorld = worldAtlas.locator("details.lore-create-drawer").filter({
       has: page.getByRole("textbox", { name: "New world name" })
     });
@@ -1798,7 +1805,7 @@ test("GM can organize prep across the World Atlas, Handout Library, and Session 
 
     await openInspectorPanel(page, "Handouts");
     const handoutLibrary = page.getByRole("region", { name: "Handout Library" });
-    await expect(handoutLibrary.getByRole("heading", { name: "Shareable table documents" })).toBeVisible();
+    await expect(handoutLibrary.getByRole("heading", { name: "Clues, lore & player handouts" })).toBeVisible();
     await handoutLibrary.getByRole("button", { name: "Create handout" }).click();
     const handoutForm = handoutLibrary.getByRole("form", { name: "Create handout" });
     await handoutForm.getByRole("textbox", { name: "Handout title" }).fill(handoutTitle);
@@ -1821,7 +1828,7 @@ test("GM can organize prep across the World Atlas, Handout Library, and Session 
 
     await openInspectorPanel(page, "Sessions");
     const sessionDesk = page.getByRole("region", { name: "Session Desk" });
-    await expect(sessionDesk.getByRole("heading", { name: "Plan, run, remember" })).toBeVisible();
+    await expect(sessionDesk.getByRole("heading", { name: "Your campaign sessions" })).toBeVisible();
     await sessionDesk.getByRole("button", { name: "Plan session" }).click();
     const sessionForm = sessionDesk.getByRole("form", { name: "Plan campaign session" });
     await sessionForm.getByRole("textbox", { name: "Session title" }).fill(sessionTitle);
@@ -1839,7 +1846,8 @@ test("GM can organize prep across the World Atlas, Handout Library, and Session 
     await expect(savedSession.getByRole("combobox", { name: "Scene to activate when session starts" })).toContainText("Vault Entry");
 
     await page.reload();
-    await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+    await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
     await page.getByRole("button", { name: "Prep", exact: true }).click();
 
     await openInspectorPanel(page, "Worlds");
@@ -1920,7 +1928,8 @@ test("World and handout panels reconcile realtime changes made by another client
   const realtimeConnected = page.waitForEvent("websocket");
   await page.getByRole("button", { name: "Demo GM" }).click();
   await realtimeConnected;
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 
   try {
     await page.getByRole("button", { name: "Prep", exact: true }).click();
@@ -2007,7 +2016,8 @@ test("failed AI proposal actions remain available for retry", async ({ page }) =
   try {
     await page.goto("/");
     await page.getByRole("button", { name: "Demo GM" }).click();
-    await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+    await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
     const aiAgent = await openAiAgent(page);
     const proposal = aiAgent.locator(".ai-agent-proposal-row", { hasText: draft.title });
     await expect(proposal).toHaveCount(1);
@@ -2044,7 +2054,8 @@ test("failed AI proposal actions remain available for retry", async ({ page }) =
 test("AI auto-apply consent is scoped to the current user and campaign", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   const aiAgent = await openAiAgent(page);
   const approvalMode = aiAgent.getByRole("combobox", { name: "AI Agent approval mode" });
   await expect(approvalMode).toHaveValue("manual");
@@ -2068,13 +2079,17 @@ test("AI auto-apply consent is scoped to the current user and campaign", async (
 
   try {
     await page.reload();
+    await openDetails(page.locator("details.campaign-switcher"));
     await page.getByRole("navigation", { name: "Campaigns" }).getByRole("button", { name: campaignName }).click();
-    await expect(page.getByRole("heading", { name: campaignName })).toBeVisible();
+    await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText(campaignName);
     const scopedAgent = await openAiAgent(page);
     await expect(scopedAgent.getByRole("combobox", { name: "AI Agent approval mode" })).toHaveValue("manual");
 
+    await openDetails(page.locator("details.campaign-switcher"));
     await page.getByRole("navigation", { name: "Campaigns" }).getByRole("button", { name: "The Ember Vault" }).click();
-    await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+    await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
     await expect(scopedAgent.getByRole("combobox", { name: "AI Agent approval mode" })).toHaveValue("auto");
   } finally {
     const currentCampaign = await expectJsonResponse<{ updatedAt: string }>(
@@ -2145,7 +2160,9 @@ test("GM can create a campaign through the setup wizard", async ({ page }) => {
 
   await page.getByRole("button", { name: "Create Campaign Setup" }).click();
 
-  await expect(page.locator("h1").filter({ hasText: "E2E Setup Campaign" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("E2E Setup Campaign");
   await expect(page.getByRole("status").filter({ hasText: "E2E Setup Campaign created with First Session; invite link ready to copy; Player authoring permissions applied" })).toBeVisible();
   await expect(page.locator('input[aria-label="Invite token"][readonly]')).toHaveValue(/^oti_/);
   await expect(page.getByRole("textbox", { name: "Invite link" })).toHaveValue(/\/join\?invite=oti_/);
@@ -2175,7 +2192,9 @@ test("GM can create a campaign through the setup wizard", async ({ page }) => {
   await expect(setupImpact).toContainText("Public handout: Bare Welcome");
   await page.getByRole("button", { name: "Create Campaign Setup" }).click();
 
-  await expect(page.locator("h1").filter({ hasText: "E2E Bare Campaign" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("E2E Bare Campaign");
   await expect(page.getByRole("status").filter({ hasText: "E2E Bare Campaign created with Bare Opening; opened session prep" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Prep", exact: true })).toBeFocused();
   await expect(sceneTab(page, "Bare Opening")).toBeVisible();
@@ -2266,7 +2285,8 @@ test("GM can export and safely re-import a campaign archive", async ({ page }) =
   test.setTimeout(60_000);
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   await openManageCategory(page, "Archives");
 
   const exportWizard = page.getByRole("region", { name: "Archive export wizard" });
@@ -2412,7 +2432,8 @@ test("GM can run the browser combat tracker lifecycle", async ({ page }) => {
   });
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   expect(demoLoginAttempts).toBe(2);
   await page.unroute("**/api/v1/auth/login");
 
@@ -2482,6 +2503,8 @@ test("GM can run the browser combat tracker lifecycle", async ({ page }) => {
   await expect(valenCombatant.getByLabel("Valen Ash combat state")).toContainText("prone expires in 2 rounds");
   await openInspectorPanel(page, "Actors");
   const actorPanel = selectedActorPanel(page);
+  await openActorDisclosure(actorPanel, "Actor details");
+  await openDetails(actorPanel.locator("details.actor-condition-editor"));
   await expect(actorPanel.locator(".metric-row", { hasText: "Conditions" })).toContainText(/Prone, Stunned, Concentration Lost, Unconscious, Stable/i);
   await expect(actorPanel.locator(".metric-row", { hasText: "Combat State" })).toContainText("Death saves 0/3 successes, 0/3 failures");
   await expect(actorPanel.locator(".metric-row", { hasText: "Combat State" })).toContainText("Stable");
@@ -2562,9 +2585,11 @@ test("GM can run the browser combat tracker lifecycle", async ({ page }) => {
 test("actor sheet surfaces a rejected edit", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   await openInspectorPanel(page, "Actors");
   const actorPanel = selectedActorPanel(page);
+  await openDetails(actorPanel.locator("details.actor-condition-editor"));
   await expect(actorPanel.getByLabel("Actor sheet conditions")).toBeVisible();
 
   let rejected = false;
@@ -2595,7 +2620,8 @@ test("player combat action requires GM confirmation and completes the browser fl
 
   await gmPage.goto("/");
   await gmPage.getByRole("button", { name: "Demo GM" }).click();
-  await expect(gmPage.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(gmPage.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(gmPage.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 
   const fighter = await createSystemCharacter(gmPage, { templateId: "fighter", name: `E2E Confirm Fighter ${suffix}`, ownerUserId: "usr_demo_player", advanceToLevel: 5 });
   const target = await createRulesTargetActor(gmPage, { name: `E2E Confirm Target ${suffix}`, hp: { current: 2, max: 100 }, ownerUserId: "usr_demo_gm", actorType: "character", armorClass: 1, conditions: [{ id: "restrained" }] });
@@ -2604,7 +2630,8 @@ test("player combat action requires GM confirmation and completes the browser fl
 
   try {
   await gmPage.reload();
-  await expect(gmPage.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(gmPage.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(gmPage.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   await gmPage.getByRole("button", { name: "Live Table", exact: true }).click();
   await openInspectorPanel(gmPage, "Combat");
   const combatPanel = combatTrackerPanel(gmPage);
@@ -2613,11 +2640,13 @@ test("player combat action requires GM confirmation and completes the browser fl
   await expect(combatPanel.getByText(targetToken.name).first()).toBeVisible();
 
   await loginDemoSession(playerPage, "usr_demo_player");
-  await expect(playerPage.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
-  if ((await playerPage.locator("p", { hasText: "Demo Player" }).count()) === 0) {
-    await playerPage.locator('select[aria-label="Session user"]').selectOption("usr_demo_player");
+  await expect(playerPage.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(playerPage.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
+  const sessionUser = playerPage.getByRole("combobox", { name: "Session user", exact: true });
+  if ((await sessionUser.inputValue()) !== "usr_demo_player") {
+    await sessionUser.selectOption("usr_demo_player");
   }
-  await expect(playerPage.locator("p", { hasText: "Demo Player" })).toBeVisible();
+  await expect(sessionUser).toHaveValue("usr_demo_player");
   const playerTokenButton = playerPage.getByRole("button", { name: `Token ${fighterToken.name}` });
   await expect(playerTokenButton).toBeVisible({ timeout: 10_000 });
   await playerTokenButton.click();
@@ -2731,7 +2760,8 @@ test("player combat action requires GM confirmation and completes the browser fl
 test("GM can draft and apply an AI proposal from the browser", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 
   const comparisonSeed = await expectJsonResponse<{ proposal: { id: string; title: string } }>(
     await page.request.post(`${apiBaseUrl}/api/v1/campaigns/camp_demo/ai/encounter-design`, {
@@ -2828,7 +2858,8 @@ test("GM can draft and apply an AI proposal from the browser", async ({ page }) 
   });
   expect(aiRecoveryImport.ok(), await aiRecoveryImport.text()).toBeTruthy();
   await page.reload();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 
   let aiAgent = await openAiAgent(page);
   await expect(aiAgent.getByLabel("AI Agent prompt")).toBeVisible();
@@ -2899,7 +2930,8 @@ test("GM can draft and apply an AI proposal from the browser", async ({ page }) 
     expect.objectContaining({ entity: "scene", action: "create" })
   ]));
   await page.reload();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   aiAgent = await openAiAgent(page);
   const encounterProposal = aiAgent.locator(".ai-agent-proposal-row", { hasText: encounterDraft.proposal.title }).first();
   await expect(encounterProposal).toContainText("pending");
@@ -2958,7 +2990,8 @@ test("GM can draft and apply an AI proposal from the browser", async ({ page }) 
     expect.objectContaining({ id: expect.stringMatching(/^jnl_/), title: expect.any(String), visibility: "gm_only", body: expect.stringContaining("ember vault clue") })
   );
   await page.reload();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   aiAgent = await openAiAgent(page);
   const recapProposal = aiAgent.locator(".ai-agent-proposal-row", { hasText: recapDraft.proposal.title }).first();
   await expect(recapProposal).toContainText("pending");
@@ -3003,7 +3036,8 @@ test("GM can draft and apply an AI proposal from the browser", async ({ page }) 
   );
   expect(rejectedDraft.proposal.status).toBe("pending");
   await page.reload();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   aiAgent = await openAiAgent(page);
   const rejectedProposal = aiAgent.locator(".ai-agent-proposal-row", { hasText: rejectedDraft.proposal.title }).first();
   await expect(rejectedProposal).toContainText("pending");
@@ -3017,7 +3051,8 @@ test("GM can draft and apply an AI proposal from the browser", async ({ page }) 
   await aiAgent.getByRole("button", { name: "Close AI Agent" }).click();
   await expect(aiAgent).toBeHidden();
   await page.reload();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   await page.getByRole("button", { name: "Prep", exact: true }).click();
   await openInspectorPanel(page, "Journal");
   const recapJournal = page.getByRole("article", { name: `Journal entry ${gmRecapChange!.data.title!}` });
@@ -3030,7 +3065,8 @@ test("GM can run SDK plugin and system workflows from the browser", async ({ pag
   test.setTimeout(300_000);
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 
   await page.getByRole("button", { name: "Prep", exact: true }).click();
   await openInspectorPanel(page, "SDK");
@@ -3298,7 +3334,8 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
   test.setTimeout(600_000);
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 
   const suffix = Date.now().toString(36);
   const target = await createRulesTargetActor(page, { name: `E2E Rules Target ${suffix}`, hp: { current: 500, max: 500 } });
@@ -3329,7 +3366,8 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
   await createSceneToken(page, { name: `E2E Rules Target Token ${suffix}`, actorId: target.id, x: 650, y: 330, ownerUserIds: [] });
 
   await page.reload();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   await page.getByRole("button", { name: `Token E2E Paladin Token ${suffix}` }).click();
   await openInspectorPanel(page, "Actors");
   await expect(selectedActorPanel(page)).toContainText(`E2E Paladin ${suffix}`);
@@ -3699,7 +3737,8 @@ test("SDK marketplace blocks trust-policy failures in the browser", async ({ pag
 
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 
   await page.getByRole("button", { name: "Prep", exact: true }).click();
   await openInspectorPanel(page, "SDK");
@@ -3728,7 +3767,8 @@ test("SDK marketplace blocks trust-policy failures in the browser", async ({ pag
 test("SDK marketplace is hidden from players in the browser", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   await page.getByLabel("Session user").selectOption("usr_demo_player");
   await expect(page.getByLabel("Session user")).toHaveValue("usr_demo_player");
 
@@ -3739,7 +3779,7 @@ test("SDK marketplace is hidden from players in the browser", async ({ page }) =
   await expect(page.getByRole("button", { name: "Account", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add token" })).toHaveCount(0);
   for (const tabName of ["Actors", "Compendium", "Handouts", "Journal", "Search", "Chat", "Combat"]) {
-    await expect(page.getByRole("tab", { name: tabName, exact: true })).toBeVisible();
+    await expect(page.getByRole("tablist", { name: "Inspector panels" }).getByRole("tab", { name: tabName, exact: true })).toBeVisible();
   }
 
   await page.getByRole("button", { name: "Open command palette" }).click();
@@ -3790,7 +3830,8 @@ test("closing a delayed invite cannot replace a newer login", async ({ page }) =
 
   await page.getByRole("button", { name: "Use sign in instead" }).click();
   await page.getByRole("button", { name: "Demo GM" }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   releaseInvite();
   await page.waitForTimeout(200);
 
@@ -3894,7 +3935,8 @@ test("delayed GM actor and token mutations cannot apply after switching to a pla
   test.setTimeout(60_000);
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 
   const baseline = await page.evaluate(async ({ apiBaseUrl }) => {
     const tokenResponse = await fetch(`${apiBaseUrl}/api/v1/scenes/scn_vault_entry/tokens`, { credentials: "include" });
@@ -3945,14 +3987,16 @@ test("delayed GM actor and token mutations cannot apply after switching to a pla
   await actorStarted;
   await page.getByLabel("Session user").selectOption("usr_demo_player");
   await expect(page.getByLabel("Session user")).toHaveValue("usr_demo_player");
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   actorRelease();
   await page.waitForTimeout(200);
   await expect(page.getByText("GM stale actor response")).toHaveCount(0);
 
   await page.getByLabel("Session user").selectOption("usr_demo_gm");
   await expect(page.getByLabel("Session user")).toHaveValue("usr_demo_gm");
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   await selectBaselineActor();
 
   let tokenRelease!: () => void;
@@ -3978,7 +4022,8 @@ test("delayed GM actor and token mutations cannot apply after switching to a pla
   await tokenStarted;
   await page.getByLabel("Session user").selectOption("usr_demo_player");
   await expect(page.getByLabel("Session user")).toHaveValue("usr_demo_player");
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   tokenRelease();
   await page.waitForTimeout(200);
 
@@ -3990,7 +4035,8 @@ test("delayed GM actor and token mutations cannot apply after switching to a pla
 test("closing Encounter Builder retries the same atomic monster placement", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 
   const encounter = await page.evaluate(async ({ apiBaseUrl }) => {
     const headers = { "content-type": "application/json" };
@@ -4124,7 +4170,8 @@ test("player can accept an invite from a private browser session", async ({ brow
   test.setTimeout(120_000);
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   await openManageCategory(page, "People");
 
   await page.getByRole("textbox", { name: "Invite email", exact: true }).fill("e2e.invited@example.test");
@@ -4174,7 +4221,9 @@ test("player can accept an invite from a private browser session", async ({ brow
     await privatePage.getByLabel("Join password").fill("correct horse");
     await privatePage.getByRole("button", { name: "Accept Invite" }).click();
 
-    await expect(privatePage.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+    await expect(privatePage.getByLabel("Current campaign", { exact: true })).toBeVisible();
+
+    await expect(privatePage.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
     await expect(privatePage.getByText("Campaign Settings")).not.toBeVisible();
     await expect(sceneTab(privatePage, "Vault Entry")).toBeVisible();
     await expect(sceneTab(privatePage, "GM Prep Hidden Scene")).toHaveCount(0);
@@ -4216,7 +4265,8 @@ test("player can accept an invite from a private browser session", async ({ brow
     createdTokenIds.push(ownedToken.id, unownedToken.id);
 
     await privatePage.reload();
-    await expect(privatePage.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+    await expect(privatePage.getByLabel("Current campaign", { exact: true })).toBeVisible();
+    await expect(privatePage.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
     await expect(sceneTab(privatePage, "Vault Entry")).toBeVisible();
     await expect(privatePage.getByRole("button", { name: `Token ${ownedToken.name}` })).toBeVisible();
     await expect(privatePage.getByRole("button", { name: `Token ${unownedToken.name}` })).toBeVisible();
@@ -4429,14 +4479,16 @@ test("character at 0 HP resolves Death Saving Throws from the sheet to a termina
   test.setTimeout(120_000);
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 
   const suffix = Date.now().toString(36);
   const hero = await createSystemCharacter(page, { templateId: "cleric", name: `E2E Dying Hero ${suffix}`, ownerUserId: "usr_demo_gm" });
   await createSceneToken(page, { name: `E2E Dying Token ${suffix}`, actorId: hero.id, x: 640, y: 320, ownerUserIds: [] });
 
   await page.reload();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   await page.getByRole("button", { name: `Token E2E Dying Token ${suffix}` }).click();
   await openInspectorPanel(page, "Actors");
   const actorPanel = selectedActorPanel(page);
@@ -4502,7 +4554,8 @@ test("character at 0 HP resolves Death Saving Throws from the sheet to a termina
 
   // Terminal lifecycle and the Stable 0/0 reset survive a fresh browser load.
   await page.reload();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   await page.getByRole("button", { name: `Token E2E Dying Token ${suffix}` }).click();
   await openInspectorPanel(page, "Actors");
   const reloadedStats = selectedActorPanel(page).getByRole("region", { name: "Actor stats sheet" });

@@ -189,7 +189,7 @@ export function deriveFirstSessionSetupSteps(input: FirstSessionSetupInput): Fir
     ? "The first tabletop scene is ready."
     : missingSceneParts.length === 0
       ? "Put a map and token together on the same scene."
-      : `Still optional: add ${missingSceneParts.join(", ")}.`;
+      : `To complete this step, add ${missingSceneParts.join(", ")}.`;
   return [
     { id: "character", label: "Create a character", detail: characterReady ? "At least one player character is ready." : "Create or import the first player character.", complete: characterReady },
     { id: "invitation", label: "Invite players", detail: input.memberCount > 1 ? "A player has joined the campaign." : input.pendingInviteCount > 0 ? "An invitation is waiting to be accepted." : "Create an invitation when the player is ready.", complete: input.memberCount > 1 || input.pendingInviteCount > 0 },
@@ -206,12 +206,19 @@ export function sceneMapIsReady(scene: Pick<Scene, "backgroundAssetId" | "gridTy
 
 export function FirstSessionSetupChecklist(props: FirstSessionSetupInput & { onOpen(step: FirstSessionSetupStep["id"]): void }) {
   const steps = deriveFirstSessionSetupSteps(props);
-  const next = steps.find((step) => !step.complete) ?? steps[steps.length - 1]!;
+  const next = steps.find((step) => !step.complete);
   return (
     <section className="account-box first-session-setup" aria-labelledby="first-session-setup-heading">
       <div className="section-title">First-session steps</div>
-      <h2 id="first-session-setup-heading">Next: {next.label}</h2>
-      <ol>{steps.map((step) => <li key={step.id} className={step.complete ? "complete" : undefined}><button type="button" onClick={() => props.onOpen(step.id)}><span aria-hidden="true">{step.complete ? "Done" : "Next"}</span><span><strong>{step.label}</strong><small>{step.detail}</small></span></button></li>)}</ol>
+      <h2 id="first-session-setup-heading">{next ? `Next: ${next.label}` : "Ready to play"}</h2>
+      <ol>{steps.map((step, index) => (
+        <li key={step.id} className={step.complete ? "complete" : step.id === next?.id ? "next" : "pending"}>
+          <button type="button" onClick={() => props.onOpen(step.id)}>
+            <span className="setup-step-state" aria-hidden="true">{step.complete ? "Done" : step.id === next?.id ? "Next" : `${index + 1}`}</span>
+            <span><strong>{step.label}</strong><small>{step.detail}</small></span>
+          </button>
+        </li>
+      ))}</ol>
     </section>
   );
 }

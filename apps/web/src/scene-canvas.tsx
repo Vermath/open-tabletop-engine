@@ -1,3 +1,4 @@
+import { annotationTranslationDelta, translatedAnnotationPoints } from "@open-tabletop/core";
 import type { Actor, FogMode, MapAsset, Scene, SceneAnnotation, SceneAnnotationKind, SceneAnnotationLayer, SceneTemplateShape, Token, TokenLayer, VisionPoint, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
 import { assetBlobUrl } from "./api.js";
 import { BrickWall, ChevronLeft, ChevronRight, Circle, Crosshair, Eraser, Eye, Flame, Grip, Image as ImageIcon, Layers, Lightbulb, LockKeyhole, Map as MapIcon, MapPin, Paintbrush, PencilLine, Pentagon, Plus, Ruler, Swords, Trash2, Triangle, X, ZoomIn, ZoomOut, RefreshCw, Hand, RotateCcw, Boxes, ScrollText, Download, Upload, UserX } from "lucide-react";
@@ -80,6 +81,7 @@ export interface AnnotationMoveDraft {
   pointIndex?: number;
   start: VisionPoint;
   originalPoints: VisionPoint[];
+  snapToGrid?: boolean;
   points: VisionPoint[];
   current: VisionPoint;
 }
@@ -192,6 +194,17 @@ export function keyboardTokenPositions(
   return Object.fromEntries(
     tokens.map((token) => [token.id, { x: Math.round(token.x + boundedDeltaX), y: Math.round(token.y + boundedDeltaY) }])
   );
+}
+
+export function editedAnnotationPoints(scene: Pick<Scene, "width" | "height"> & Partial<Pick<Scene, "gridSize" | "gridType">>, draft: AnnotationMoveDraft, point: VisionPoint): VisionPoint[] {
+  if (draft.mode === "point" && draft.pointIndex !== undefined) {
+    return draft.originalPoints.map((annotationPoint, index) =>
+      index === draft.pointIndex
+        ? { x: clampSceneCoordinate(point.x, 0, scene.width), y: clampSceneCoordinate(point.y, 0, scene.height) }
+        : annotationPoint
+    );
+  }
+  return translatedAnnotationPoints(scene, draft.originalPoints, { x: point.x - draft.start.x, y: point.y - draft.start.y }, draft.snapToGrid);
 }
 
 export function isKeyboardFogGestureKind(kind: KeyboardBoardGesture["kind"]): kind is KeyboardFogGestureKind {
@@ -378,6 +391,23 @@ export function snappedTokenCoordinates(scene: TokenGridScene, token: Pick<Token
 }
 
 
+export function finishedTokenDragChanges(scene: TokenGridScene, tokens: Token[], draft: TokenDragDraft): TokenMovePersistenceChange[] {
+  // Selecting an off-grid token must not snap it or add a move to history.
+  if (draft.x === draft.startX && draft.y === draft.startY) return [];
+  const token = tokens.find((item) => item.id === draft.tokenId);
+  if (!token) return [];
+  const snapped = snappedTokenCoordinates(scene, token, draft.x, draft.y);
+  const group = tokens.filter((item) => draft.origins[item.id]);
+  const positions = keyboardTokenPositions(
+    scene,
+    group.map((item) => ({ id: item.id, ...draft.origins[item.id]! })),
+    { x: snapped.x - draft.startX, y: snapped.y - draft.startY }
+  );
+  return group
+    .map((item) => ({ token: item, position: positions[item.id]! }))
+    .filter(({ token: item, position }) => item.x !== position.x || item.y !== position.y);
+}
+
 export function tokenCoordinatesFromCenter(scene: TokenGridScene, width: number, height: number, centerX: number, centerY: number): Pick<Token, "x" | "y"> {
   return snappedTokenCoordinates(scene, { width, height }, centerX - width / 2, centerY - height / 2);
 }
@@ -546,7 +576,7 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
       visibleAnnotations.map((annotation) => {
         const points = annotationMoveDraft?.annotationId === annotation.id ? annotationMoveDraft.points : annotationOverrides[annotation.id];
         if (!points) return annotation;
-        const radius = annotation.kind === "template" && points.length >= 2 ? Math.round(distanceBetween(points[0]!, points[1]!)) : annotation.radius;
+        const radius = annotation.kind === "template" && points.length >= 2 && !annotationTranslationDelta(annotation.points, points) ? Math.round(distanceBetween(points[0]!, points[1]!)) : annotation.radius;
         return { ...annotation, points, radius };
       }),
     [visibleAnnotations, annotationMoveDraft, annotationOverrides]
@@ -797,10 +827,6 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
     return boundedTokenCoordinates(props.scene, token, x, y);
   }
 
-  function snappedTokenPosition(token: Token, x: number, y: number): Pick<TokenDragDraft, "x" | "y"> {
-    return snappedTokenCoordinates(props.scene, token, x, y);
-  }
-
   function renderedTokenFrame(token: Token): TokenFrame {
     return tokenFrameOverrides[token.id] ?? tokenFrame(token);
   }
@@ -894,23 +920,7 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
   function finishTokenDrag(pointerId: number) {
     const current = tokenDragRef.current;
     if (!current || current.pointerId !== pointerId) return;
-    const token = tokens.find((item) => item.id === current.tokenId);
-    if (!token) {
-      tokenDragRef.current = null;
-      setTokenDrag(null);
-      return;
-    }
-    const snapped = snappedTokenPosition(token, current.x, current.y);
-    const deltaX = snapped.x - current.startX;
-    const deltaY = snapped.y - current.startY;
-    const movedTokens = Object.entries(current.origins)
-      .flatMap(([tokenId, origin]) => {
-        const movedToken = tokens.find((item) => item.id === tokenId);
-        if (!movedToken) return [];
-        const next = snappedTokenCoordinates(props.scene, movedToken, origin.x + deltaX, origin.y + deltaY);
-        return [{ token: movedToken, position: next }];
-      })
-      .filter(({ token: movedToken, position }) => movedToken.x !== position.x || movedToken.y !== position.y);
+    const movedTokens = finishedTokenDragChanges(props.scene, tokens, current);
     tokenDragRef.current = null;
     setTokenDrag(null);
     if (movedTokens.length === 0) {
@@ -1049,26 +1059,10 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
     void mutationAction.runAction(`Create ${titleCaseLabel(kind)}`, () => props.onAnnotationCreate(kind, points, radius));
   }
 
-  function editedAnnotationPoints(draft: AnnotationMoveDraft, point: VisionPoint): VisionPoint[] {
-    if (draft.mode === "point" && draft.pointIndex !== undefined) {
-      return draft.originalPoints.map((annotationPoint, index) =>
-        index === draft.pointIndex
-          ? { x: Math.max(0, Math.min(props.scene.width, point.x)), y: Math.max(0, Math.min(props.scene.height, point.y)) }
-          : annotationPoint
-      );
-    }
-    const deltaX = point.x - draft.start.x;
-    const deltaY = point.y - draft.start.y;
-    return draft.originalPoints.map((annotationPoint) => ({
-      x: Math.max(0, Math.min(props.scene.width, Math.round(annotationPoint.x + deltaX))),
-      y: Math.max(0, Math.min(props.scene.height, Math.round(annotationPoint.y + deltaY)))
-    }));
-  }
-
   function startAnnotationMove(annotation: SceneAnnotation, clientX: number, clientY: number, pointerId: number, mode: AnnotationMoveDraft["mode"], pointIndex?: number) {
     const point = boardPoint(clientX, clientY);
     if (!point) return;
-    const next = { annotationId: annotation.id, pointerId, mode, pointIndex, start: point, current: point, originalPoints: annotation.points, points: annotation.points };
+    const next = { annotationId: annotation.id, pointerId, mode, pointIndex, start: point, current: point, originalPoints: annotation.points, points: annotation.points, snapToGrid: annotation.snapToGrid };
     annotationMoveDraftRef.current = next;
     setAnnotationMoveDraft(next);
   }
@@ -1078,7 +1072,7 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
     if (!current || current.pointerId !== pointerId) return;
     const point = boardPoint(clientX, clientY);
     if (!point) return;
-    const next = { ...current, current: point, points: editedAnnotationPoints(current, point) };
+    const next = { ...current, current: point, points: editedAnnotationPoints(props.scene, current, point) };
     annotationMoveDraftRef.current = next;
     setAnnotationMoveDraft(next);
   }
@@ -1104,13 +1098,15 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
     void mutationAction.runAction(`Move ${titleCaseLabel(annotation.kind)}`, async () => {
       try {
         await props.onAnnotationMove(annotation, current.points);
-      } catch (error) {
+      } finally {
+        // The callback applies the authoritative scene before resolving. Drop
+        // this preview even if normalization changed it, but keep newer drags.
         setAnnotationOverrides((overrides) => {
+          if (overrides[annotation.id] !== current.points) return overrides;
           const next = { ...overrides };
           delete next[annotation.id];
           return next;
         });
-        throw error;
       }
     });
   }
@@ -2187,59 +2183,68 @@ export function Toolbar(props: { onSelectTool: ToolAction; onCreateToken: ToolAc
   }, [advancedOpen]);
 
   return (
-    <div className="toolbar">
-      <button className={`tool ${props.activeFogBrushMode || props.activeAnnotationTool ? "" : "active"}`} title="Select (V)" aria-label="Select" onClick={() => runToolAction(props.onSelectTool)}>
-        <Hand size={17} />
-      </button>
-      {props.canCreateToken && (
-        <button className="tool" title="Token" aria-label="Add token" onClick={() => runToolAction(props.onCreateToken)}>
-          <Plus size={17} />
+    <div className="toolbar" role="group" aria-label="Map tools">
+      <div className="toolbar-group" role="group" aria-label="Select and place">
+        <span className="tool-group-label" aria-hidden="true">Table</span>
+        <button className={`tool ${props.activeFogBrushMode || props.activeAnnotationTool ? "" : "active"}`} title="Select (V)" data-tooltip="Select · V" aria-label="Select" aria-pressed={!props.activeFogBrushMode && !props.activeAnnotationTool} onClick={() => runToolAction(props.onSelectTool)}>
+          <Hand size={17} />
         </button>
-      )}
-      <span className="tool-divider" aria-hidden="true" />
-      <button className={`tool ${props.activeAnnotationTool === "ruler" ? "active" : ""}`} title="Ruler - measure distance (R)" aria-label="Ruler" onClick={() => props.onToggleAnnotationTool("ruler")} disabled={!props.canAnnotate}>
-        <Ruler size={17} />
-      </button>
-      <button className={`tool tool-mobile-secondary ${props.activeAnnotationTool === "measure-circle" ? "active" : ""}`} title="Measure circle (C)" aria-label="Measure circle" onClick={() => props.onToggleAnnotationTool("measure-circle")} disabled={!props.canAnnotate}>
-        <Circle size={17} />
-      </button>
-      <button className={`tool tool-mobile-secondary ${props.activeAnnotationTool === "measure-cone" ? "active" : ""}`} title="Measure cone (O)" aria-label="Measure cone" onClick={() => props.onToggleAnnotationTool("measure-cone")} disabled={!props.canAnnotate}>
-        <Triangle size={17} />
-      </button>
-      <button className={`tool ${props.activeAnnotationTool === "ping" ? "active" : ""}`} title="Ping - point everyone here (P)" aria-label="Ping" onClick={() => props.onToggleAnnotationTool("ping")} disabled={!props.canAnnotate}>
-        <MapPin size={17} />
-      </button>
-      {(props.canRevealFog || props.canUpdateScene) && <span className="tool-divider" aria-hidden="true" />}
-      {props.canRevealFog && (
-        <button className="tool" title="Reveal fog" aria-label="Reveal fog" onClick={() => runToolAction(props.onRevealFog)}>
-          <Eye size={17} />
+        {props.canCreateToken && (
+          <button className="tool" title="Add token" data-tooltip="Add token" aria-label="Add token" onClick={() => runToolAction(props.onCreateToken)}>
+            <Plus size={17} />
+          </button>
+        )}
+      </div>
+      <div className="toolbar-group" role="group" aria-label="Measure and point">
+        <span className="tool-group-label" aria-hidden="true">Measure</span>
+        <button className={`tool ${props.activeAnnotationTool === "ruler" ? "active" : ""}`} title="Ruler - measure distance (R)" data-tooltip="Ruler · R" aria-label="Ruler" aria-pressed={props.activeAnnotationTool === "ruler"} onClick={() => props.onToggleAnnotationTool("ruler")} disabled={!props.canAnnotate}>
+          <Ruler size={17} />
         </button>
-      )}
-      {props.canUpdateScene && (
-        <button className={`tool tool-mobile-secondary ${props.activeAnnotationTool === "drawing" ? "active" : ""}`} title="Drawing (D)" aria-label="Drawing" onClick={() => props.onToggleAnnotationTool("drawing")}>
-          <PencilLine size={17} />
-        </button>
-      )}
-      {props.canUpdateScene && (
-        <button className={`tool tool-mobile-secondary ${props.activeAnnotationTool === "template" ? "active" : ""}`} title="Area template (A)" aria-label="Area template" onClick={() => props.onToggleAnnotationTool("template")}>
+        <button className={`tool tool-mobile-secondary ${props.activeAnnotationTool === "measure-circle" ? "active" : ""}`} title="Measure circle (C)" data-tooltip="Circle · C" aria-label="Measure circle" aria-pressed={props.activeAnnotationTool === "measure-circle"} onClick={() => props.onToggleAnnotationTool("measure-circle")} disabled={!props.canAnnotate}>
           <Circle size={17} />
         </button>
+        <button className={`tool tool-mobile-secondary ${props.activeAnnotationTool === "measure-cone" ? "active" : ""}`} title="Measure cone (O)" data-tooltip="Cone · O" aria-label="Measure cone" aria-pressed={props.activeAnnotationTool === "measure-cone"} onClick={() => props.onToggleAnnotationTool("measure-cone")} disabled={!props.canAnnotate}>
+          <Triangle size={17} />
+        </button>
+        <button className={`tool ${props.activeAnnotationTool === "ping" ? "active" : ""}`} title="Ping - point everyone here (P)" data-tooltip="Ping · P" aria-label="Ping" aria-pressed={props.activeAnnotationTool === "ping"} onClick={() => props.onToggleAnnotationTool("ping")} disabled={!props.canAnnotate}>
+          <MapPin size={17} />
+        </button>
+      </div>
+      {(props.canRevealFog || props.canUpdateScene) && (
+        <div className="toolbar-group" role="group" aria-label="Create and reveal">
+          <span className="tool-group-label" aria-hidden="true">Create</span>
+          {props.canRevealFog && (
+            <button className="tool" title="Reveal fog" data-tooltip="Reveal fog" aria-label="Reveal fog" onClick={() => runToolAction(props.onRevealFog)}>
+              <Eye size={17} />
+            </button>
+          )}
+          {props.canUpdateScene && (
+            <>
+              <button className={`tool tool-mobile-secondary ${props.activeAnnotationTool === "drawing" ? "active" : ""}`} title="Drawing (D)" data-tooltip="Draw · D" aria-label="Drawing" aria-pressed={props.activeAnnotationTool === "drawing"} onClick={() => props.onToggleAnnotationTool("drawing")}>
+                <PencilLine size={17} />
+              </button>
+              <button className={`tool tool-mobile-secondary ${props.activeAnnotationTool === "template" ? "active" : ""}`} title="Area template (A)" data-tooltip="Template · A" aria-label="Area template" aria-pressed={props.activeAnnotationTool === "template"} onClick={() => props.onToggleAnnotationTool("template")}>
+                <Circle size={17} />
+              </button>
+            </>
+          )}
+        </div>
       )}
       {props.canUpdateScene && (
-        <button className="tool tool-mobile-secondary" title="Delete latest annotation" aria-label="Delete latest annotation" onClick={() => runToolAction(props.onDeleteLatestAnnotation)}>
-          <X size={17} />
-        </button>
+        <div className="toolbar-group toolbar-group-history" role="group" aria-label="Edit history">
+          <span className="tool-group-label" aria-hidden="true">History</span>
+          <button className="tool tool-mobile-secondary" title="Delete latest annotation" data-tooltip="Delete annotation" aria-label="Delete latest annotation" onClick={() => runToolAction(props.onDeleteLatestAnnotation)}>
+            <X size={17} />
+          </button>
+          <button className="tool tool-mobile-secondary" title="Undo scene edit" data-tooltip="Undo scene edit" aria-label="Undo scene edit" onClick={() => runToolAction(props.onUndoScene)}>
+            <RotateCcw size={17} />
+          </button>
+        </div>
       )}
-      {props.canUpdateScene && (
-        <button className="tool tool-mobile-secondary" title="Undo scene edit" aria-label="Undo scene edit" onClick={() => runToolAction(props.onUndoScene)}>
-          <RotateCcw size={17} />
-        </button>
-      )}
-      {(props.canManageCombat || props.canRevealFog || props.canUpdateScene) && <span className="tool-divider" aria-hidden="true" />}
       {(props.canManageCombat || props.canRevealFog || props.canUpdateScene) && (
         <details ref={advancedToolsRef} className="tool-more" open={advancedOpen} onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}>
           <summary className="tool" title="Advanced tools" aria-label="Advanced tools">
-            <Boxes size={17} />
+            <Boxes size={17} /><span className="tool-more-label">More</span>
           </summary>
           <div className="tool-more-panel" aria-label="Advanced table tools">
             <div className="tool-more-mobile-only">

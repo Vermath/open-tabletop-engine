@@ -4,7 +4,8 @@ import { expect, test } from "@playwright/test";
 async function loginAsDemoGm(page: Page) {
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 }
 
 async function openServerAdmin(page: Page) {
@@ -34,7 +35,8 @@ test("a deferred workspace reports loading, survives one chunk failure, and relo
 
   await page.unroute(chunkPattern, failOnce);
   await failure.getByRole("button", { name: "Reload workspace" }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 
   await openServerAdmin(page);
   await expect(page.locator(".admin-panel")).toBeVisible();

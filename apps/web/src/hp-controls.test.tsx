@@ -20,7 +20,8 @@ describe("authoritative Hit Point controls", () => {
       onReviewDamage: () => undefined,
     }));
 
-    expect(html).toContain("D&amp;D damage uses Reviewed typed damage");
+    expect(html).toContain('title="Review damage with resistances, temporary HP, and death saves included"');
+    expect(html).not.toContain('role="note"');
     expect(html).toContain('aria-label="Open reviewed typed damage"');
     expect(html).toContain("Review damage");
     expect(html).not.toContain('aria-label="Take 5 damage"');
