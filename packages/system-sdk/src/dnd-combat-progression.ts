@@ -464,13 +464,16 @@ export function advanceDnd5eSrdCombatRules(
         const rulesEngine = recordValue(data.rulesEngine);
         const reactions = recordValue(rulesEngine.reactions);
         const actionEconomy = recordValue(rulesEngine.actionEconomy);
-        if (Object.keys(reactions).length > 0 || Object.keys(recordValue(actionEconomy.bonusActions)).length > 0 || Object.keys(recordValue(actionEconomy.standardActions)).length > 0 || Object.keys(recordValue(actionEconomy.continuations)).length > 0) {
+        const weaponMastery = recordValue(rulesEngine.weaponMastery);
+        const hasMasteryUses = Object.keys(recordValue(weaponMastery.turnUses)).length > 0;
+        if (hasMasteryUses || Object.keys(reactions).length > 0 || Object.keys(recordValue(actionEconomy.bonusActions)).length > 0 || Object.keys(recordValue(actionEconomy.standardActions)).length > 0 || Object.keys(recordValue(actionEconomy.continuations)).length > 0) {
           data = {
             ...data,
             rulesEngine: {
               ...rulesEngine,
               reactions: {},
-              actionEconomy: { ...actionEconomy, bonusActions: {}, standardActions: {}, continuations: {} }
+              actionEconomy: { ...actionEconomy, bonusActions: {}, standardActions: {}, continuations: {} },
+              ...(hasMasteryUses ? { weaponMastery: { ...weaponMastery, turnUses: {} } } : {})
             }
           };
           reasons.set(actor.id, [...(reasons.get(actor.id) ?? []), "turn-action-economy-refresh"]);

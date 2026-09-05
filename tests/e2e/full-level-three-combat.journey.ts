@@ -1002,6 +1002,15 @@ function hitPoints(actor: ActorRecord | undefined): { current: number; max: numb
   return { current: Number(hp?.current ?? 0), max: Number(hp?.max ?? 0) };
 }
 
+function canTakeCombatAction(actor: ActorRecord): boolean {
+  const conditions = Array.isArray(actor.data.conditions)
+    ? actor.data.conditions.map((condition) => String(typeof condition === "string" ? condition : condition?.id ?? "").toLowerCase())
+    : [];
+  return hitPoints(actor).current > 0
+    && !["dead", "stable", "unconscious"].includes(String(actor.data.lifeState))
+    && !conditions.some((condition) => ["incapacitated", "paralyzed", "petrified", "stunned", "unconscious"].includes(condition));
+}
+
 function actorToken(state: SnapshotRecord, actorId: string): JsonObject & { id: string; x: number; y: number } {
   const token = state.tokens.find((candidate) => candidate.actorId === actorId && Number.isFinite(Number(candidate.x)) && Number.isFinite(Number(candidate.y)));
   if (!token) throw new Error(`Actor ${actorId} has no positioned scene token`);
@@ -1060,8 +1069,12 @@ async function advanceCombatApi(page: Page, combat: CombatRecord): Promise<Comba
   })).body;
 }
 
-async function runCombatToDefeat(page: Page, partyActorIds: Set<string>, hostileActorIds: Set<string>): Promise<{ turns: JsonObject[]; finalCombat: CombatRecord; finalSnapshot: SnapshotRecord }> {
+async function runCombatToDefeat(page: Page, partyActorIds: Set<string>, hostileActorIds: Set<string>, evidenceTurns: JsonObject[]): Promise<{ turns: JsonObject[]; finalCombat: CombatRecord; finalSnapshot: SnapshotRecord }> {
   const turnLog: JsonObject[] = [];
+  const recordTurn = (turn: JsonObject): void => {
+    turnLog.push(turn);
+    evidenceTurns.push(turn);
+  };
   const sheetCache = new Map<string, ActorSheet>();
   let state = await snapshot(page);
   let combat = state.combats.find((candidate) => candidate.active)!;
@@ -1079,11 +1092,29 @@ async function runCombatToDefeat(page: Page, partyActorIds: Set<string>, hostile
       state = await snapshot(page);
       continue;
     }
-    const source = state.actors.find((actor) => actor.id === current.actorId);
+    let source = state.actors.find((actor) => actor.id === current.actorId);
     if (!source) throw new Error(`Combatant ${current.name} has no linked actor`);
     const sourceIsParty = partyActorIds.has(source.id);
+    if (sourceIsParty && hitPoints(source).current === 0 && source.data.lifeState === "unconscious") {
+      const deathSave = await apiJson<JsonObject>(page, "POST", `/api/v1/campaigns/${campaignId}/systems/${systemId}/actors/${source.id}/roll`, {
+        rollId: "death-save",
+        consumeResources: false,
+        expectedUpdatedAt: source.updatedAt,
+      });
+      expect(deathSave.body.resolution?.deathSave).toBeTruthy();
+      state = await snapshot(page);
+      combat = state.combats.find((candidate) => candidate.active)!;
+      source = state.actors.find((actor) => actor.id === current.actorId)!;
+      recordTurn({ step, round: combat.round, turnIndex: combat.turnIndex, sourceActorId: source.id, source: source.name, side: "party", resolutionMode: "death-saving-throw", deathSave: deathSave.body.resolution.deathSave, hpAfter: hitPoints(source).current });
+    }
+    if (!canTakeCombatAction(source)) {
+      recordTurn({ step, round: combat.round, turnIndex: combat.turnIndex, sourceActorId: source.id, source: source.name, side: sourceIsParty ? "party" : "hostile", resolutionMode: "incapacitated-no-action", hp: hitPoints(source).current, lifeState: source.data.lifeState, conditions: source.data.conditions });
+      combat = await advanceCombatApi(page, combat);
+      state = await snapshot(page);
+      continue;
+    }
     if (sourceIsParty && source.data.class !== "Rogue" && !turnLog.some((turn) => turn.triggeredFeatureRollId === "feature-sneak-attack-damage")) {
-      turnLog.push({ step, round: combat.round, turnIndex: combat.turnIndex, sourceActorId: source.id, source: source.name, side: "party", resolutionMode: "take-no-action-for-sneak-attack-coverage" });
+      recordTurn({ step, round: combat.round, turnIndex: combat.turnIndex, sourceActorId: source.id, source: source.name, side: "party", resolutionMode: "take-no-action-for-sneak-attack-coverage" });
       combat = await advanceCombatApi(page, combat);
       state = await snapshot(page);
       continue;
@@ -1099,7 +1130,9 @@ async function runCombatToDefeat(page: Page, partyActorIds: Set<string>, hostile
     const distanceFt = gridDistanceFt(sourceToken, targetToken);
     expect(distanceFt, `${source.name} must use an attack that can reach ${target.name}`).toBeLessThanOrEqual(maximumRangeFt);
     const adjacentQualifyingAlly = source.data.class === "Rogue" && livingParty.some((candidate) =>
-      candidate.actorId && candidate.actorId !== source.id && gridDistanceFt(actorToken(state, candidate.actorId), targetToken) <= 5
+      candidate.actorId && candidate.actorId !== source.id
+        && canTakeCombatAction(state.actors.find((actor) => actor.id === candidate.actorId)!)
+        && gridDistanceFt(actorToken(state, candidate.actorId), targetToken) <= 5
     );
     let sheet = sheetCache.get(source.id);
     if (!sheet) {
@@ -1130,8 +1163,7 @@ async function runCombatToDefeat(page: Page, partyActorIds: Set<string>, hostile
       combat = state.combats.find((candidate) => candidate.active)!;
       attackTotal = committedRollTotal(attack.committed);
       const naturalD20 = committedNaturalD20(attack.committed);
-      if (source.data.class === "Rogue") {
-        expect(adjacentQualifyingAlly, "Sneak Attack coverage requires a non-incapacitated ally adjacent to the target").toBe(true);
+      if (source.data.class === "Rogue" && adjacentQualifyingAlly) {
         expect(String(attack.committed.resolution?.rolls?.[0]?.d20Mode ?? "normal")).not.toBe("disadvantage");
       }
       hit = naturalD20 !== 1 && (naturalD20 === 20 || attackTotal >= targetArmorClass);
@@ -1141,7 +1173,7 @@ async function runCombatToDefeat(page: Page, partyActorIds: Set<string>, hostile
         expect(damage.committed.resolution?.action?.kind).toBe("free");
         state = await snapshot(page);
         combat = state.combats.find((candidate) => candidate.active)!;
-        const sneakAttack = source.data.class === "Rogue" ? sheet.quickRolls.find((roll) => roll.id === "feature-sneak-attack-damage") : undefined;
+        const sneakAttack = source.data.class === "Rogue" && adjacentQualifyingAlly ? sheet.quickRolls.find((roll) => roll.id === "feature-sneak-attack-damage") : undefined;
         if (sneakAttack) {
           const sourceAfterDamage = state.actors.find((actor) => actor.id === source.id)!;
           const triggeringItem = state.items.find((item) => pair.damage.id === `item-${item.id}-damage` || pair.damage.id === `spell-${item.id}-damage`);
@@ -1176,7 +1208,7 @@ async function runCombatToDefeat(page: Page, partyActorIds: Set<string>, hostile
     }
     const targetAfter = hitPoints(state.actors.find((actor) => actor.id === target.id));
     const syncedCombatant = combat.combatants.find((combatant) => combatant.actorId === target.id);
-    turnLog.push({
+    recordTurn({
       step: step + 1,
       round: combat.round,
       turnIndex: combat.turnIndex,
@@ -1451,8 +1483,8 @@ test("generated map, four legal level-3 sheets, encounter placement, R-04, and c
     if (!combatAfterOpeningAction) throw new Error("Combat disappeared after the opening fighter action");
     await advanceCombatApi(page, combatAfterOpeningAction);
 
-    const resolved = await runCombatToDefeat(page, partyActorIds, hostileActorIds);
-    evidence.combatTurns = [openingTurn, ...resolved.turns];
+    evidence.combatTurns = [openingTurn];
+    const resolved = await runCombatToDefeat(page, partyActorIds, hostileActorIds, evidence.combatTurns);
     evidence.finalCombat = resolved.finalCombat;
     const allHostilesDefeated = resolved.finalCombat.combatants.filter((combatant) => combatant.actorId && hostileActorIds.has(combatant.actorId)).every((combatant) => combatant.defeated);
     expect(allHostilesDefeated).toBe(true);

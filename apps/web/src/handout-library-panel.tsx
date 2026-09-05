@@ -114,6 +114,8 @@ function visibilityLabel(visibility: Visibility): string {
 export function storedHandoutDraft(value: unknown): HandoutDraft | undefined {
   if (!value || typeof value !== "object") return undefined;
   const draft = value as Partial<HandoutDraft>;
+  if (draft.id !== undefined && typeof draft.id !== "string") return undefined;
+  if (draft.expectedUpdatedAt !== undefined && typeof draft.expectedUpdatedAt !== "string") return undefined;
   if (typeof draft.worldId !== "string" || typeof draft.title !== "string" || typeof draft.body !== "string" || typeof draft.tags !== "string") return undefined;
   if (!["public", "gm_only", "specific_players", "specific_characters"].includes(String(draft.visibility))) return undefined;
   if (!Array.isArray(draft.visibleToUserIds) || !draft.visibleToUserIds.every((id) => typeof id === "string")) return undefined;
@@ -335,6 +337,21 @@ export async function clearHandoutDraftAfterConfirmedSave<T>(
   return saved;
 }
 
+export function handoutDraftFromItem(item?: HandoutLibraryItem): HandoutDraft {
+  return {
+    id: item?.id,
+    expectedUpdatedAt: item?.updatedAt,
+    worldId: item?.worldId ?? "",
+    title: item?.title ?? "",
+    body: item?.body ?? "",
+    visibility: item?.visibility ?? "public",
+    visibleToUserIds: item?.visibleToUserIds ?? [],
+    visibleToActorIds: item?.visibleToActorIds ?? [],
+    assetIds: item?.assetIds ?? [],
+    tags: item?.tags.join(", ") ?? ""
+  };
+}
+
 export function HandoutEditor(props: {
   campaignId: string;
   currentUserId: string;
@@ -349,30 +366,18 @@ export function HandoutEditor(props: {
   onCancel(): void;
 }) {
   const draftStorageKey = localDraftKey("handout", props.campaignId, props.currentUserId, props.item?.id ?? "new");
-  const initialDraft: HandoutDraft = {
-    id: props.item?.id,
-    expectedUpdatedAt: props.item?.updatedAt,
-    worldId: props.item?.worldId ?? "",
-    title: props.item?.title ?? "",
-    body: props.item?.body ?? "",
-    visibility: props.item?.visibility ?? "public",
-    visibleToUserIds: props.item?.visibleToUserIds ?? [],
-    visibleToActorIds: props.item?.visibleToActorIds ?? [],
-    assetIds: props.item?.assetIds ?? [],
-    tags: props.item?.tags.join(", ") ?? ""
-  };
-  const recoveredDraft = storedHandoutDraft(readLocalDraft<unknown>(draftStorageKey));
+  const initialDraft = handoutDraftFromItem(props.item);
+  const [recoveredDraft] = useState(() => props.canManage ? storedHandoutDraft(readLocalDraft<unknown>(draftStorageKey)) : undefined);
   const [draft, setDraft] = useState<HandoutDraft>(() => recoveredDraft
-    ? { ...recoveredDraft, id: props.item?.id, expectedUpdatedAt: props.item?.updatedAt }
+    ? { ...recoveredDraft, id: props.item?.id }
     : initialDraft);
   const [draftTouched, setDraftTouched] = useState(Boolean(recoveredDraft));
   const [draftPersistence, setDraftPersistence] = useState<DraftPersistenceStatus>(recoveredDraft ? "saved" : "idle");
+  const stale = Boolean(props.item && props.item.updatedAt !== draft.expectedUpdatedAt);
   useEffect(() => {
-    if (!props.item || props.item.id !== draft.id || props.item.updatedAt === draft.expectedUpdatedAt) return;
-    // Advance only the concurrency token. User-authored fields stay intact so
-    // a stale-write refresh never destroys the draft they were reviewing.
-    setDraft((current) => ({ ...current, expectedUpdatedAt: props.item?.updatedAt }));
-  }, [draft.expectedUpdatedAt, draft.id, props.item?.id, props.item?.updatedAt]);
+    if (draftTouched || !props.item || props.item.updatedAt === draft.expectedUpdatedAt) return;
+    setDraft(handoutDraftFromItem(props.item));
+  }, [draftTouched, draft.expectedUpdatedAt, props.item]);
   useEffect(() => {
     if (draftTouched && props.canManage) setDraftPersistence(draftPersistenceStatus(writeLocalDraft(draftStorageKey, draft)));
   }, [draft, draftStorageKey, draftTouched, props.canManage]);
@@ -386,13 +391,20 @@ export function HandoutEditor(props: {
     setDraft(update);
   };
   const saveDraft = async () => {
-    if (props.busy) return;
+    if (props.busy || stale || !props.canManage) return;
     const saved = await clearHandoutDraftAfterConfirmedSave(
       draft,
       props.onSave,
       () => removeLocalDraft(draftStorageKey)
     );
     if (!saved) return;
+    setDraftTouched(false);
+    setDraftPersistence("idle");
+  };
+  const reloadDraft = () => {
+    if (props.busy) return;
+    removeLocalDraft(draftStorageKey);
+    setDraft(handoutDraftFromItem(props.item));
     setDraftTouched(false);
     setDraftPersistence("idle");
   };
@@ -409,6 +421,23 @@ export function HandoutEditor(props: {
         {props.item && <span><Eye size={13} /> Read by {formatNumber(readCount)}</span>}
       </div>
       {props.canManage && <DraftPersistenceNotice subject="Handout" status={draftPersistence} />}
+      {stale && draftTouched && props.item && (
+        <div className="lore-load-state error editor-conflict" role="alert">
+          <span>This handout changed elsewhere. Your draft is preserved; review the latest saved content before saving.</span>
+          <details>
+            <summary>Review latest saved handout</summary>
+            <p><strong>{props.item.title}</strong></p>
+            <MarkdownDocument source={props.item.body} label="Latest saved handout body" />
+            <p>World: {props.worlds.find((world) => world.id === props.item?.worldId)?.name ?? "Unfiled"}</p>
+            <p>Audience: {visibilityLabel(props.item.visibility)}</p>
+            {props.item.visibility === "specific_players" && <p>Players: {props.members.filter((member) => props.item?.visibleToUserIds.includes(member.user.id)).map((member) => member.user.displayName).join(", ") || "None"}</p>}
+            {props.item.visibility === "specific_characters" && <p>Characters: {props.actors.filter((actor) => props.item?.visibleToActorIds.includes(actor.id)).map((actor) => actor.name).join(", ") || "None"}</p>}
+            <p>Tags: {props.item.tags.join(", ") || "None"}</p>
+            <p>Assets: {props.assets.filter((asset) => props.item?.assetIds.includes(asset.id)).map((asset) => asset.name).join(", ") || "None"}</p>
+          </details>
+          <button className="ghost-button small" type="button" disabled={props.busy} onClick={reloadDraft}>Discard draft and load latest</button>
+        </div>
+      )}
       <label>
         <span>Title</span>
         <input aria-label="Handout title" value={draft.title} readOnly={!props.canManage} disabled={props.busy} required onChange={(event) => updateDraft((current) => ({ ...current, title: event.target.value }))} />
@@ -491,7 +520,7 @@ export function HandoutEditor(props: {
 
       {props.canManage && (
         <div className="button-row wrap">
-          <button className="primary-button" type="submit" disabled={props.busy || !draft.title.trim() || !canSaveTargets || !canSaveCharacters}><Save size={14} /> {props.item ? "Save handout" : "Share handout"}</button>
+          <button className="primary-button" type="submit" disabled={props.busy || stale || !draft.title.trim() || !canSaveTargets || !canSaveCharacters}><Save size={14} /> {props.item ? "Save handout" : "Share handout"}</button>
           <button className="ghost-button" type="button" disabled={props.busy} onClick={props.onCancel}><Check size={14} /> Close and keep draft</button>
           {draftTouched && <button className="ghost-button" type="button" disabled={props.busy} onClick={discardDraft}><Trash2 size={14} /> Discard draft</button>}
         </div>

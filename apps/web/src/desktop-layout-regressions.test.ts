@@ -248,8 +248,7 @@ describe("desktop layout regressions", () => {
     expect(sceneCanvasSource).toContain('className="tool-more-mobile-only"');
     expect(stylesSource).toContain(".toolbar:has(.tool-more) > .tool-mobile-secondary {\n    display: none;");
     expect(stylesSource).toContain(".tool-more-mobile-only {\n    display: contents;");
-    expect(stylesSource).toContain(".workspace-live .inspector-tabs {\n    display: grid;\n    grid-template-columns: repeat(6, minmax(0, 1fr));");
-    expect(stylesSource).toContain(".workspace-live .inspector-tabs .tab {\n    min-width: 0;\n    min-height: 42px;");
+    // Label fit and touch target sizes are verified in responsive-navigation.spec.ts.
   });
 
   it("keeps tablet prep/content panels from clipping controls and status labels", () => {

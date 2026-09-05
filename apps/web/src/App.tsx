@@ -1,3 +1,4 @@
+import { annotationTranslationDelta } from "@open-tabletop/core";
 import type { Actor, AiMemoryFact, AiThread, AiToolCall, AudioTrack, AuditLog, Campaign, ChatMessage, Combat, CombatAction, CombatLegendaryActionPrompt, ContentImportBatch, ContentImportEntityKind, ContentImportSource, DiceRoll, EmailOutboxMessage, Encounter, EncounterMonsterPlacementBatchInput, EncounterMonsterPlacementBatchResult, FogHistoryEntry, FogMode, FogPreset, GridType, Item, JournalCanonStatus, JournalEntry, MapAsset, MessageType, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, SceneAnnotation, SceneAnnotationKind, SceneAnnotationLayer, SceneDuplicationPlan, SceneDuplicationRequest, SceneDuplicationResult, SceneTemplateShape, ScimAssignableRole, Token, TokenLayer, User, UserRole, Visibility, VisionPoint, VisionPointSample, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
 import type { Dnd5eSrdCombatantSyncMutationResult, Dnd5eSrdCombatVitalsKind, Dnd5eSrdCombatVitalsMutationResult, Dnd5eSrdPendingAdvancement, Dnd5eSrdSpellPreparationMutationResult, DndControlledCreatureActionHandoff, DndRulesMutationUndoDescriptor, DndRulesMutationUndoResult } from "@open-tabletop/core";
 import type { TokenMoveBatchRequest, TokenMoveBatchResult } from "@open-tabletop/core";
@@ -4606,7 +4607,7 @@ export function App() {
       return;
     }
     const pasteSources = boardClipboardTokens.map((token) => ({ ...token, sceneId: selectedScene.id }));
-    const pastedTokens = createTokenCopies(pasteSources, { offset: Math.max(16, Math.round(selectedScene.gridSize / 2)) });
+    const pastedTokens = createTokenCopies(pasteSources, { scene: selectedScene, offset: Math.max(16, Math.round(selectedScene.gridSize / 2)) });
     setSnapshot((current) => ({ ...current, tokens: [...current.tokens, ...pastedTokens] }));
     selectCanvasTokens(pastedTokens.map((token) => token.id));
     pushBoardHistoryAction({ kind: "tokens.create", tokens: pastedTokens });
@@ -5308,7 +5309,7 @@ export function App() {
   async function moveSceneAnnotation(annotation: SceneAnnotation, points: VisionPoint[]) {
     if (!selectedScene || points.length === 0) return;
     const patch: { points: VisionPoint[]; radius?: number } = { points };
-    if (annotation.kind === "template" && points.length >= 2) {
+    if (annotation.kind === "template" && points.length >= 2 && !annotationTranslationDelta(annotation.points, points)) {
       patch.radius = Math.round(distanceBetween(points[0]!, points[1]!));
     }
     applySceneToSnapshot(await patchSceneChildMutation(selectedScene, `/api/v1/scenes/${selectedScene.id}/annotations/${annotation.id}`, patch, `scene:annotation:move:${annotation.id}`));

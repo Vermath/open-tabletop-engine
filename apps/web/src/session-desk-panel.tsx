@@ -59,12 +59,26 @@ export function campaignSessionSort(sessions: CampaignSessionInfo[]): CampaignSe
 
 export interface SessionDraft {
   id?: string;
+  expectedUpdatedAt?: string;
   title: string;
   agenda: string;
   notes: string;
   scheduledFor: string;
   sceneIds: string[];
   encounterIds: string[];
+}
+
+export function sessionDraftFromSession(session?: CampaignSessionInfo, nextNumber = 1): SessionDraft {
+  return {
+    id: session?.id,
+    expectedUpdatedAt: session?.updatedAt,
+    title: session?.title ?? `Session ${nextNumber}`,
+    agenda: session?.agenda ?? "",
+    notes: session?.notes ?? "",
+    scheduledFor: localDateTimeValue(session?.scheduledFor),
+    sceneIds: session?.sceneIds ?? [],
+    encounterIds: session?.encounterIds ?? []
+  };
 }
 
 export function sessionDraftPayload(input: SessionDraft) {
@@ -82,7 +96,8 @@ export function campaignSessionMutationKey(operation: string, sessionId = "new")
   return `campaign-session:${operation}:${sessionId}:${globalThis.crypto.randomUUID()}`;
 }
 
-export function persistCampaignSession(campaignId: string, input: SessionDraft, expectedUpdatedAt?: string, idempotencyKey = campaignSessionMutationKey(input.id ? "update" : "create", input.id)): Promise<CampaignSessionInfo> {
+export function persistCampaignSession(campaignId: string, input: SessionDraft, expectedUpdatedAt = input.expectedUpdatedAt, idempotencyKey = campaignSessionMutationKey(input.id ? "update" : "create", input.id)): Promise<CampaignSessionInfo> {
+  if (input.id && !expectedUpdatedAt) return Promise.reject(new Error("The session revision is unavailable. Reload the latest session before saving."));
   const payload = sessionDraftPayload(input);
   return input.id
     ? apiPatch<CampaignSessionInfo>(`/api/v1/campaign-sessions/${input.id}`, { ...payload, expectedUpdatedAt }, { idempotencyKey })
@@ -153,38 +168,45 @@ export function SessionDeskPanel(props: {
   const completionRequestsRef = useRef(new Set<string>());
   const selected = props.sessions.find((session) => session.id === selectedId);
   const sessions = campaignSessionSort(props.sessions);
+  const sessionsRef = useRef(props.sessions);
+  sessionsRef.current = props.sessions;
 
   useEffect(() => {
     if (selectedId && !props.sessions.some((session) => session.id === selectedId)) setSelectedId("");
   }, [props.sessions, selectedId]);
 
-  function replaceSession(updated: CampaignSessionInfo) {
-    props.onSessionsChange(props.sessions.some((session) => session.id === updated.id) ? props.sessions.map((session) => session.id === updated.id ? updated : session) : [...props.sessions, updated]);
+  function replaceSession(updated: CampaignSessionInfo, created = false): CampaignSessionInfo {
+    const current = sessionsRef.current;
+    const existing = current.find((session) => session.id === updated.id);
+    const newest = existing && existing.updatedAt > updated.updatedAt ? existing : updated;
+    const next = existing ? current.map((session) => session.id === updated.id ? newest : session) : created ? [...current, newest] : current;
+    sessionsRef.current = next;
+    props.onSessionsChange(next);
+    return newest;
   }
 
-  async function saveSession(input: SessionDraft, expectedUpdatedAt = selected?.updatedAt, idempotencyKey = campaignSessionMutationKey(input.id ? "update" : "create", input.id)) {
+  async function saveSession(input: SessionDraft, expectedUpdatedAt = input.expectedUpdatedAt, idempotencyKey = campaignSessionMutationKey(input.id ? "update" : "create", input.id)) {
     if (!input.title.trim() || busy) return;
     setBusy(true);
     try {
       const updated = await persistCampaignSession(props.campaignId, input, expectedUpdatedAt, idempotencyKey);
-      replaceSession(updated);
+      const newest = replaceSession(updated, !input.id);
       setSelectedId(updated.id);
       setCreating(false);
       if (!campaignSessionScheduleMatchesDraft(input, updated)) {
-        const retryInput = { ...input, id: updated.id };
-        setRetryAction({ label: "Retry schedule save", run: () => saveSession(retryInput, updated.updatedAt, campaignSessionMutationKey("update", updated.id)) });
-        props.onStatus(`${updated.title} saved, but its scheduled time was not confirmed. Review and retry.`);
+        setRetryAction(undefined);
+        props.onStatus(`${updated.title} saved, but its requested schedule (${input.scheduledFor ? formatDateTime(sessionScheduledForIso(input.scheduledFor)!) : "unscheduled"}) was not confirmed. Review the latest saved session before editing again.`);
         return;
       }
       setRetryAction(undefined);
       props.onStatus(`${updated.title} ${input.id ? "updated" : "planned"}${updated.scheduledFor ? ` for ${formatDateTime(updated.scheduledFor)}` : " as unscheduled"}`);
+      return newest;
     } catch (error) {
       const latest = input.id ? await refreshStaleCampaignSession(error, input.id) : undefined;
       if (latest) replaceSession(latest);
-      const retryExpected = latest?.updatedAt ?? expectedUpdatedAt;
-      const retryKey = latest ? campaignSessionMutationKey("update", input.id) : idempotencyKey;
-      setRetryAction({ label: "Retry session save", run: () => saveSession(input, retryExpected, retryKey) });
-      props.onStatus(latest ? "Session changed elsewhere. The latest revision is loaded; review and retry." : `Session save failed: ${errorMessage(error)}`);
+      const conflict = error instanceof ApiError && error.status === 409;
+      setRetryAction(conflict ? undefined : { label: "Retry session save", run: async () => { await saveSession(input, expectedUpdatedAt, idempotencyKey); } });
+      props.onStatus(conflict ? "Session changed elsewhere. Your draft is preserved. Review the latest saved session before editing again." : `Session save failed: ${errorMessage(error)}`);
     } finally {
       setBusy(false);
     }
@@ -202,7 +224,7 @@ export function SessionDeskPanel(props: {
     } catch (error) {
       const latest = await refreshStaleCampaignSession(error, session.id);
       if (latest) replaceSession(latest);
-      setRetryAction({ label: "Retry session start", run: () => startSession(latest ?? session, activateSceneId, latest?.updatedAt ?? expectedUpdatedAt, latest ? campaignSessionMutationKey("start", session.id) : idempotencyKey) });
+      setRetryAction(error instanceof ApiError && error.status === 409 ? undefined : { label: "Retry session start", run: () => startSession(session, activateSceneId, expectedUpdatedAt, idempotencyKey) });
       props.onStatus(latest ? "Session changed elsewhere. The latest revision is loaded; review and retry." : `Session start failed: ${errorMessage(error)}`);
     } finally {
       setBusy(false);
@@ -220,7 +242,7 @@ export function SessionDeskPanel(props: {
     } catch (error) {
       const latest = await refreshStaleCampaignSession(error, session.id);
       if (latest) replaceSession(latest);
-      setRetryAction({ label: "Retry session completion", run: () => completeSession(latest ?? session, notes, latest?.updatedAt ?? expectedUpdatedAt, latest ? campaignSessionMutationKey("complete", session.id) : idempotencyKey) });
+      setRetryAction(error instanceof ApiError && error.status === 409 ? undefined : { label: "Retry session completion", run: () => completeSession(session, notes, expectedUpdatedAt, idempotencyKey) });
       props.onStatus(latest ? "Session changed elsewhere. The latest revision is loaded; review and retry." : `Session completion failed: ${errorMessage(error)}`);
     } finally {
       setBusy(false);
@@ -240,14 +262,16 @@ export function SessionDeskPanel(props: {
     setBusy(true);
     try {
       await deleteCampaignSession(session.id, expectedUpdatedAt, idempotencyKey);
-      props.onSessionsChange(props.sessions.filter((item) => item.id !== session.id));
+      const remaining = sessionsRef.current.filter((item) => item.id !== session.id);
+      sessionsRef.current = remaining;
+      props.onSessionsChange(remaining);
       setSelectedId("");
       setRetryAction(undefined);
       props.onStatus(`${session.title} deleted`);
     } catch (error) {
       const latest = await refreshStaleCampaignSession(error, session.id);
       if (latest) replaceSession(latest);
-      setRetryAction({ label: "Retry session deletion", run: () => deleteSession(latest ?? session, latest?.updatedAt ?? expectedUpdatedAt, latest ? campaignSessionMutationKey("delete", session.id) : idempotencyKey) });
+      setRetryAction(error instanceof ApiError && error.status === 409 ? undefined : { label: "Retry session deletion", run: () => deleteSession(session, expectedUpdatedAt, idempotencyKey) });
       props.onStatus(latest ? "Session changed elsewhere. The latest revision is loaded; review and retry." : `Session deletion failed: ${errorMessage(error)}`);
     } finally {
       setBusy(false);
@@ -322,45 +346,93 @@ export function SessionDeskPanel(props: {
   );
 }
 
-export function SessionEditor(props: { session?: CampaignSessionInfo; nextNumber: number; scenes: Scene[]; encounters: Encounter[]; canManage: boolean; canStart: boolean; busy: boolean; onSave(input: SessionDraft): Promise<void>; onStart(sceneId: string): Promise<void> | false | undefined; onComplete(notes: string): Promise<void> | false | undefined; onDelete(): Promise<void> | false | undefined; onCancel(): void }) {
-  const [draft, setDraft] = useState<SessionDraft>(() => ({
-    id: props.session?.id,
-    title: props.session?.title ?? `Session ${props.nextNumber}`,
-    agenda: props.session?.agenda ?? "",
-    notes: props.session?.notes ?? "",
-    scheduledFor: localDateTimeValue(props.session?.scheduledFor),
-    sceneIds: props.session?.sceneIds ?? [],
-    encounterIds: props.session?.encounterIds ?? []
-  }));
+export function SessionEditor(props: { session?: CampaignSessionInfo; nextNumber: number; scenes: Scene[]; encounters: Encounter[]; canManage: boolean; canStart: boolean; busy: boolean; onSave(input: SessionDraft): Promise<CampaignSessionInfo | void>; onStart(sceneId: string): Promise<void> | false | undefined; onComplete(notes: string): Promise<void> | false | undefined; onDelete(): Promise<void> | false | undefined; onCancel(): void }) {
+  const [draft, setDraft] = useState<SessionDraft>(() => sessionDraftFromSession(props.session, props.nextNumber));
+  const [baseline, setBaseline] = useState(draft);
   const [activateSceneId, setActivateSceneId] = useState(props.session?.sceneIds[0] ?? "");
   const [deleteArmed, setDeleteArmed] = useState(false);
+  const dirty = JSON.stringify(draft) !== JSON.stringify(baseline);
+  const stale = Boolean(props.session && props.session.updatedAt !== draft.expectedUpdatedAt);
+  const persistedScenes = props.scenes.filter((scene) => props.session?.sceneIds.includes(scene.id));
+  const validActivateSceneId = persistedScenes.some((scene) => scene.id === activateSceneId) ? activateSceneId : "";
+
+  useEffect(() => {
+    if (!props.session || props.session.updatedAt === baseline.expectedUpdatedAt) return;
+    const latest = sessionDraftFromSession(props.session, props.nextNumber);
+    if (dirty) {
+      // A retry from the desk can confirm this exact draft without going through
+      // saveDraft. Only acknowledge it when every submitted field matches.
+      try {
+        if (JSON.stringify(sessionDraftPayload(draft)) !== JSON.stringify(sessionDraftPayload(latest))) return;
+      } catch {
+        return;
+      }
+    }
+    setDraft(latest);
+    setBaseline(latest);
+  }, [dirty, draft, props.session, props.nextNumber, baseline.expectedUpdatedAt]);
+  useEffect(() => {
+    if (activateSceneId !== validActivateSceneId) setActivateSceneId(validActivateSceneId);
+  }, [activateSceneId, validActivateSceneId]);
+
+  async function saveDraft() {
+    if (props.busy || stale || !props.canManage) return;
+    const saved = await props.onSave(draft);
+    if (!saved) return;
+    const latest = sessionDraftFromSession(saved, props.nextNumber);
+    setDraft(latest);
+    setBaseline(latest);
+  }
+
+  function reloadDraft() {
+    if (props.busy) return;
+    const latest = sessionDraftFromSession(props.session, props.nextNumber);
+    setDraft(latest);
+    setBaseline(latest);
+  }
   return (
-    <form className="lore-editor session-editor" aria-label={props.session ? `Edit session ${props.session.title}` : "Plan campaign session"} onSubmit={(event) => { event.preventDefault(); void props.onSave(draft); }}>
+    <form className="lore-editor session-editor" aria-label={props.session ? `Edit session ${props.session.title}` : "Plan campaign session"} onSubmit={(event) => { event.preventDefault(); void saveDraft(); }}>
       <div className="lore-editor-title"><strong>{props.session ? `Session ${props.session.number}` : `Session ${props.nextNumber}`}</strong>{props.session && <span className={`session-status status-${props.session.status}`}>{props.session.status}</span>}</div>
-      <label><span>Title</span><input aria-label="Session title" value={draft.title} required disabled={!props.canManage} onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} /></label>
-      <label><span>Scheduled for</span><input aria-label="Session scheduled time" type="datetime-local" value={draft.scheduledFor} disabled={!props.canManage} onChange={(event) => setDraft((current) => ({ ...current, scheduledFor: event.target.value }))} /></label>
-      <label><span>Agenda</span><textarea aria-label="Session agenda" value={draft.agenda} rows={4} disabled={!props.canManage} placeholder="Opening beat, scenes, encounters, close" onChange={(event) => setDraft((current) => ({ ...current, agenda: event.target.value }))} /></label>
-      <label><span>Notes</span><textarea aria-label="Session notes" value={draft.notes} rows={4} disabled={!props.canManage} placeholder="Live notes and follow-ups" onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} /></label>
+      {stale && dirty && props.session && (
+        <div className="lore-load-state error editor-conflict" role="alert">
+          <span>This session changed elsewhere. Your draft is preserved; review the latest saved content before saving.</span>
+          <details>
+            <summary>Review latest saved session</summary>
+            <p><strong>{props.session.title}</strong></p>
+            <p>Scheduled: {props.session.scheduledFor ? formatDateTime(props.session.scheduledFor) : "Unscheduled"}</p>
+            <p>Agenda: {props.session.agenda || "None"}</p>
+            <p>Notes: {props.session.notes || "None"}</p>
+            <p>Scenes: {persistedScenes.map((scene) => scene.name).join(", ") || "None"}</p>
+            <p>Encounters: {props.encounters.filter((encounter) => props.session?.encounterIds.includes(encounter.id)).map((encounter) => encounter.name).join(", ") || "None"}</p>
+          </details>
+          <button className="ghost-button small" type="button" disabled={props.busy} onClick={reloadDraft}>Discard draft and load latest</button>
+        </div>
+      )}
+      <label><span>Title</span><input aria-label="Session title" value={draft.title} required disabled={!props.canManage || props.busy} onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} /></label>
+      <label><span>Scheduled for</span><input aria-label="Session scheduled time" type="datetime-local" value={draft.scheduledFor} disabled={!props.canManage || props.busy} onChange={(event) => setDraft((current) => ({ ...current, scheduledFor: event.target.value }))} /></label>
+      <label><span>Agenda</span><textarea aria-label="Session agenda" value={draft.agenda} rows={4} disabled={!props.canManage || props.busy} placeholder="Opening beat, scenes, encounters, close" onChange={(event) => setDraft((current) => ({ ...current, agenda: event.target.value }))} /></label>
+      <label><span>Notes</span><textarea aria-label="Session notes" value={draft.notes} rows={4} disabled={!props.canManage || props.busy} placeholder="Live notes and follow-ups" onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} /></label>
       <details className="lore-link-drawer" open={!props.session}>
         <summary>Linked scenes <span>{formatNumber(draft.sceneIds.length)}</span></summary>
         <div className="lore-target-grid">
-          {props.scenes.length === 0 ? <span className="account-summary">No prep scenes yet.</span> : props.scenes.map((scene) => <label key={scene.id}><input type="checkbox" checked={draft.sceneIds.includes(scene.id)} disabled={!props.canManage} onChange={(event) => setDraft((current) => ({ ...current, sceneIds: toggleId(current.sceneIds, scene.id, event.target.checked) }))} /><span>{scene.name}</span></label>)}
+          {props.scenes.length === 0 ? <span className="account-summary">No prep scenes yet.</span> : props.scenes.map((scene) => <label key={scene.id}><input type="checkbox" checked={draft.sceneIds.includes(scene.id)} disabled={!props.canManage || props.busy} onChange={(event) => setDraft((current) => ({ ...current, sceneIds: toggleId(current.sceneIds, scene.id, event.target.checked) }))} /><span>{scene.name}</span></label>)}
         </div>
       </details>
       <details className="lore-link-drawer" open={!props.session || (props.session.encounterIds.length === 0 && props.encounters.length > 0)}>
         <summary>Linked encounters <span>{formatNumber(draft.encounterIds.length)} selected · {formatNumber(props.encounters.length)} available</span></summary>
         <div className="lore-target-grid">
-          {props.encounters.length === 0 ? <span className="account-summary">No saved encounters.</span> : props.encounters.map((encounter) => <label key={encounter.id}><input type="checkbox" checked={draft.encounterIds.includes(encounter.id)} disabled={!props.canManage} onChange={(event) => setDraft((current) => ({ ...current, encounterIds: toggleId(current.encounterIds, encounter.id, event.target.checked) }))} /><span>{encounter.name}</span></label>)}
+          {props.encounters.length === 0 ? <span className="account-summary">No saved encounters.</span> : props.encounters.map((encounter) => <label key={encounter.id}><input type="checkbox" checked={draft.encounterIds.includes(encounter.id)} disabled={!props.canManage || props.busy} onChange={(event) => setDraft((current) => ({ ...current, encounterIds: toggleId(current.encounterIds, encounter.id, event.target.checked) }))} /><span>{encounter.name}</span></label>)}
         </div>
       </details>
       {props.session?.status === "planned" && props.canStart && (
         <div className="session-start-row">
-          <label><span>Activate on start</span><select aria-label="Scene to activate when session starts" value={activateSceneId} onChange={(event) => setActivateSceneId(event.target.value)}><option value="">Keep current scene</option>{draft.sceneIds.map((id) => { const scene = props.scenes.find((item) => item.id === id); return scene ? <option key={scene.id} value={scene.id}>{scene.name}</option> : null; })}</select></label>
-          <button className="primary-button" type="button" disabled={props.busy} onClick={() => void props.onStart(activateSceneId)}><Play size={14} /> Start session</button>
+          <label><span>Activate on start</span><select aria-label="Scene to activate when session starts" value={validActivateSceneId} disabled={props.busy || dirty || stale} onChange={(event) => setActivateSceneId(event.target.value)}><option value="">Keep current scene</option>{persistedScenes.map((scene) => <option key={scene.id} value={scene.id}>{scene.name}</option>)}</select></label>
+          <button className="primary-button" type="button" disabled={props.busy || dirty || stale} onClick={() => { if (!dirty && !stale && !props.busy) void props.onStart(validActivateSceneId); }}><Play size={14} /> Start session</button>
         </div>
       )}
-      {props.session?.status === "live" && props.canManage && <button className="primary-button" type="button" disabled={props.busy} onClick={() => void props.onComplete(draft.notes)}><CheckCircle2 size={14} /> Complete session</button>}
-      {props.canManage && <div className="button-row wrap"><button className="ghost-button" type="submit" disabled={props.busy || !draft.title.trim()}><Save size={14} /> Save</button>{!props.session && <button className="ghost-button" type="button" onClick={props.onCancel}><X size={14} /> Cancel</button>}{props.session?.status === "planned" && (deleteArmed ? <button className="danger-button" type="button" disabled={props.busy} onClick={() => void props.onDelete()}><Trash2 size={14} /> Confirm delete</button> : <button className="ghost-button" type="button" onClick={() => setDeleteArmed(true)}><Trash2 size={14} /> Delete</button>)}</div>}
+      {dirty && props.session?.status !== "completed" && <p className="account-summary">Save your changes before starting or completing this session.</p>}
+      {props.session?.status === "live" && props.canManage && <button className="primary-button" type="button" disabled={props.busy || dirty || stale} onClick={() => { if (!dirty && !stale && !props.busy) void props.onComplete(draft.notes); }}><CheckCircle2 size={14} /> Complete session</button>}
+      {props.canManage && <div className="button-row wrap"><button className="ghost-button" type="submit" disabled={props.busy || stale || !draft.title.trim()}><Save size={14} /> Save</button>{!props.session && <button className="ghost-button" type="button" onClick={props.onCancel}><X size={14} /> Cancel</button>}{props.session?.status === "planned" && (deleteArmed ? <button className="danger-button" type="button" disabled={props.busy} onClick={() => void props.onDelete()}><Trash2 size={14} /> Confirm delete</button> : <button className="ghost-button" type="button" onClick={() => setDeleteArmed(true)}><Trash2 size={14} /> Delete</button>)}</div>}
     </form>
   );
 }

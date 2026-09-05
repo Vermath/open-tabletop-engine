@@ -341,6 +341,7 @@ a[href]:focus-visible,
 
 .auth-shell {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   place-items: center;
   min-height: 100svh;
   padding: 24px;
@@ -350,6 +351,9 @@ a[href]:focus-visible,
 
 .reset-panel {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  overflow-wrap: anywhere;
   gap: 16px;
   width: min(100%, 420px);
   padding: 22px;
@@ -14097,6 +14101,18 @@ a:focus-visible {
   color: rgba(255, 222, 222, 0.94);
 }
 
+.lore-load-state.editor-conflict {
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.editor-conflict pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .lore-search-field {
   position: relative;
   display: flex;
@@ -15608,17 +15624,19 @@ a:focus-visible {
   }
 
   .workspace-live .inspector-tabs {
-    display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    display: flex;
+    flex-wrap: wrap;
     gap: 4px;
     padding: 7px;
     overflow: visible;
   }
 
   .workspace-live .inspector-tabs .tab {
-    min-width: 0;
-    padding-inline: 5px;
-    font-size: 11px;
+    flex: 1 0 auto;
+    min-width: max-content;
+    justify-content: center;
+    padding-inline: 8px;
+    font-size: 12px;
   }
 
   .workspace-prep .inspector {
@@ -15677,19 +15695,21 @@ a:focus-visible {
   }
 
   .workspace-live .inspector-tabs {
-    display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    display: flex;
+    flex-wrap: wrap;
     gap: 3px;
     padding: 5px;
     overflow: visible;
   }
 
   .workspace-live .inspector-tabs .tab {
-    min-width: 0;
-    min-height: 42px;
-    gap: 3px;
-    padding-inline: 2px;
-    font-size: 10px;
+    flex: 1 0 auto;
+    min-width: max-content;
+    min-height: 44px;
+    justify-content: center;
+    gap: 4px;
+    padding-inline: 7px;
+    font-size: 12px;
   }
 
   .toolbar {
@@ -15729,6 +15749,9 @@ a:focus-visible {
   .rail-play .workspace-mode-switcher .ghost-button,
   .rail-play .ai-agent-toggle {
     min-height: 44px;
+    flex-direction: column;
+    gap: 3px;
+    line-height: 1.1;
   }
 
   .tool-more-panel .ghost-button {

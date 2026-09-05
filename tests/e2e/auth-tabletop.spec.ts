@@ -3739,7 +3739,7 @@ test("SDK marketplace is hidden from players in the browser", async ({ page }) =
   await expect(page.getByRole("button", { name: "Account", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add token" })).toHaveCount(0);
   for (const tabName of ["Actors", "Compendium", "Handouts", "Journal", "Search", "Chat", "Combat"]) {
-    await expect(page.getByRole("tab", { name: tabName, exact: true })).toBeVisible();
+    await expect(page.getByRole("tablist", { name: "Inspector panels" }).getByRole("tab", { name: tabName, exact: true })).toBeVisible();
   }
 
   await page.getByRole("button", { name: "Open command palette" }).click();

@@ -1,6 +1,6 @@
 import type { Scene, WorldRecord, WorldRelation } from "@open-tabletop/core";
 import { Globe2, MapPin, Plus, Save, Search, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiDelete, apiPatch, apiPost } from "./api.js";
 import { errorMessage, formatNumber } from "./sheet-format.js";
 import { isStaleWriteError, sharedMutationIdempotencyKey, staleDraftPreservedMessage } from "./shared-mutation.js";
@@ -13,6 +13,10 @@ export interface WorldAtlasWorld {
   description: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export function worldDraftFromWorld(world?: WorldAtlasWorld) {
+  return { id: world?.id, expectedUpdatedAt: world?.updatedAt, name: world?.name ?? "", description: world?.description ?? "" };
 }
 
 export type WorldAtlasFilter = "all" | "unfiled" | string;
@@ -98,19 +102,43 @@ export function WorldAtlasPanel(props: {
   const [query, setQuery] = useState("");
   const [newName, setNewName] = useState("");
   const [newDescription, setNewDescription] = useState("");
-  const [editName, setEditName] = useState("");
-  const [editDescription, setEditDescription] = useState("");
+  const selectedWorld = props.worlds.find((world) => world.id === props.selectedWorldId);
+  const [worldDraft, setWorldDraft] = useState(() => worldDraftFromWorld(selectedWorld));
+  const [worldBaseline, setWorldBaseline] = useState(worldDraft);
+  const worldDirty = JSON.stringify(worldDraft) !== JSON.stringify(worldBaseline);
+  const worldStale = Boolean(selectedWorld && (selectedWorld.id !== worldDraft.id || selectedWorld.updatedAt !== worldDraft.expectedUpdatedAt));
   const [busy, setBusy] = useState(false);
   const [deleteArmed, setDeleteArmed] = useState(false);
-  const selectedWorld = props.worlds.find((world) => world.id === props.selectedWorldId);
   const filteredWorlds = useMemo(() => filterWorldAtlas(props.worlds, query), [props.worlds, query]);
   const visibleScenes = props.scenes.filter((scene) => worldFilterMatchesScene(scene, props.selectedWorldId));
+  const worldsRef = useRef(props.worlds);
+  worldsRef.current = props.worlds;
+
+  function replaceWorld(updated: WorldAtlasWorld, created = false): WorldAtlasWorld {
+    const current = worldsRef.current;
+    const existing = current.find((world) => world.id === updated.id);
+    const newest = existing && existing.updatedAt > updated.updatedAt ? existing : updated;
+    const next = (existing ? current.map((world) => world.id === updated.id ? newest : world) : created ? [...current, newest] : [...current])
+      .sort((left, right) => left.name.localeCompare(right.name));
+    worldsRef.current = next;
+    props.onWorldsChange(next);
+    return newest;
+  }
 
   useEffect(() => {
-    setEditName(selectedWorld?.name ?? "");
-    setEditDescription(selectedWorld?.description ?? "");
+    if (selectedWorld?.id === worldDraft.id && (worldDirty || selectedWorld?.updatedAt === worldBaseline.expectedUpdatedAt)) return;
+    const latest = worldDraftFromWorld(selectedWorld);
+    setWorldDraft(latest);
+    setWorldBaseline(latest);
     setDeleteArmed(false);
-  }, [selectedWorld?.id]);
+  }, [selectedWorld, worldDraft.id, worldDirty, worldBaseline.expectedUpdatedAt]);
+
+  function reloadWorldDraft() {
+    if (busy) return;
+    const latest = worldDraftFromWorld(selectedWorld);
+    setWorldDraft(latest);
+    setWorldBaseline(latest);
+  }
 
   async function handleMutationError(prefix: string, error: unknown) {
     if (isStaleWriteError(error)) {
@@ -131,7 +159,7 @@ export function WorldAtlasPanel(props: {
         description: newDescription.trim(),
         expectedUpdatedAt: props.campaignUpdatedAt
       });
-      props.onWorldsChange([...props.worlds, world].sort((left, right) => left.name.localeCompare(right.name)));
+      replaceWorld(world, true);
       props.onSelectWorld(world.id);
       setNewName("");
       setNewDescription("");
@@ -145,15 +173,18 @@ export function WorldAtlasPanel(props: {
   }
 
   async function saveWorld() {
-    if (!selectedWorld || !editName.trim() || busy) return;
+    if (!selectedWorld || !worldDraft.name.trim() || busy || worldStale || !worldDraft.expectedUpdatedAt || !props.canUpdateWorld) return;
     setBusy(true);
     try {
       const world = await updateWorldAtlasWorld(selectedWorld.id, {
-        name: editName.trim(),
-        description: editDescription.trim(),
-        expectedUpdatedAt: selectedWorld.updatedAt
+        name: worldDraft.name.trim(),
+        description: worldDraft.description.trim(),
+        expectedUpdatedAt: worldDraft.expectedUpdatedAt
       });
-      props.onWorldsChange(props.worlds.map((item) => (item.id === world.id ? world : item)).sort((left, right) => left.name.localeCompare(right.name)));
+      const newest = replaceWorld(world);
+      const savedDraft = worldDraftFromWorld(newest);
+      setWorldDraft(savedDraft);
+      setWorldBaseline(savedDraft);
       props.onStatus(`${world.name} updated`);
     } catch (error) {
       await handleMutationError("World update failed", error);
@@ -167,7 +198,9 @@ export function WorldAtlasPanel(props: {
     setBusy(true);
     try {
       await deleteWorldAtlasWorld(selectedWorld.id, selectedWorld.updatedAt);
-      props.onWorldsChange(props.worlds.filter((item) => item.id !== selectedWorld.id));
+      const remaining = worldsRef.current.filter((item) => item.id !== selectedWorld.id);
+      worldsRef.current = remaining;
+      props.onWorldsChange(remaining);
       props.onSelectWorld("all");
       props.onStatus(`${selectedWorld.name} removed; its scenes are now unfiled`);
       await props.onRefreshSharedState();
@@ -234,16 +267,23 @@ export function WorldAtlasPanel(props: {
 
       {selectedWorld && (
         <form className="lore-editor" aria-label={`Edit world ${selectedWorld.name}`} onSubmit={(event) => { event.preventDefault(); void saveWorld(); }}>
+          {worldStale && worldDirty && (
+            <div className="lore-load-state error editor-conflict" role="alert">
+              <span>This world changed elsewhere. Your draft is preserved; review the latest saved content before saving.</span>
+              <details><summary>Review latest saved world</summary><p><strong>{selectedWorld.name}</strong></p><p>{selectedWorld.description || "No description"}</p></details>
+              <button className="ghost-button small" type="button" disabled={busy} onClick={reloadWorldDraft}>Discard draft and load latest</button>
+            </div>
+          )}
           <label>
             <span>World name</span>
-            <input aria-label="World name" value={editName} readOnly={!props.canUpdateWorld} required onChange={(event) => setEditName(event.target.value)} />
+            <input aria-label="World name" value={worldDraft.name} readOnly={!props.canUpdateWorld} disabled={busy} required onChange={(event) => setWorldDraft((current) => ({ ...current, name: event.target.value }))} />
           </label>
           <label>
             <span>Description</span>
-            <textarea aria-label="World description" value={editDescription} readOnly={!props.canUpdateWorld} rows={3} placeholder="Tone, region, era, or campaign thread" onChange={(event) => setEditDescription(event.target.value)} />
+            <textarea aria-label="World description" value={worldDraft.description} readOnly={!props.canUpdateWorld} disabled={busy} rows={3} placeholder="Tone, region, era, or campaign thread" onChange={(event) => setWorldDraft((current) => ({ ...current, description: event.target.value }))} />
           </label>
           <div className="button-row wrap">
-            <button className="ghost-button" type="submit" disabled={!props.canUpdateWorld || busy || !editName.trim()}><Save size={14} /> Save world</button>
+            <button className="ghost-button" type="submit" disabled={!props.canUpdateWorld || busy || worldStale || !worldDraft.name.trim()}><Save size={14} /> Save world</button>
             {props.canDelete && (deleteArmed ? (
               <button className="danger-button" type="button" disabled={busy} onClick={() => void deleteWorld()}><Trash2 size={14} /> Confirm delete</button>
             ) : (

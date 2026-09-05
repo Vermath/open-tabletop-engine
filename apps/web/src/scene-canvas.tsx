@@ -1,3 +1,4 @@
+import { annotationTranslationDelta, translatedAnnotationPoints } from "@open-tabletop/core";
 import type { Actor, FogMode, MapAsset, Scene, SceneAnnotation, SceneAnnotationKind, SceneAnnotationLayer, SceneTemplateShape, Token, TokenLayer, VisionPoint, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
 import { assetBlobUrl } from "./api.js";
 import { BrickWall, ChevronLeft, ChevronRight, Circle, Crosshair, Eraser, Eye, Flame, Grip, Image as ImageIcon, Layers, Lightbulb, LockKeyhole, Map as MapIcon, MapPin, Paintbrush, PencilLine, Pentagon, Plus, Ruler, Swords, Trash2, Triangle, X, ZoomIn, ZoomOut, RefreshCw, Hand, RotateCcw, Boxes, ScrollText, Download, Upload, UserX } from "lucide-react";
@@ -80,6 +81,7 @@ export interface AnnotationMoveDraft {
   pointIndex?: number;
   start: VisionPoint;
   originalPoints: VisionPoint[];
+  snapToGrid?: boolean;
   points: VisionPoint[];
   current: VisionPoint;
 }
@@ -192,6 +194,17 @@ export function keyboardTokenPositions(
   return Object.fromEntries(
     tokens.map((token) => [token.id, { x: Math.round(token.x + boundedDeltaX), y: Math.round(token.y + boundedDeltaY) }])
   );
+}
+
+export function editedAnnotationPoints(scene: Pick<Scene, "width" | "height"> & Partial<Pick<Scene, "gridSize" | "gridType">>, draft: AnnotationMoveDraft, point: VisionPoint): VisionPoint[] {
+  if (draft.mode === "point" && draft.pointIndex !== undefined) {
+    return draft.originalPoints.map((annotationPoint, index) =>
+      index === draft.pointIndex
+        ? { x: clampSceneCoordinate(point.x, 0, scene.width), y: clampSceneCoordinate(point.y, 0, scene.height) }
+        : annotationPoint
+    );
+  }
+  return translatedAnnotationPoints(scene, draft.originalPoints, { x: point.x - draft.start.x, y: point.y - draft.start.y }, draft.snapToGrid);
 }
 
 export function isKeyboardFogGestureKind(kind: KeyboardBoardGesture["kind"]): kind is KeyboardFogGestureKind {
@@ -378,6 +391,23 @@ export function snappedTokenCoordinates(scene: TokenGridScene, token: Pick<Token
 }
 
 
+export function finishedTokenDragChanges(scene: TokenGridScene, tokens: Token[], draft: TokenDragDraft): TokenMovePersistenceChange[] {
+  // Selecting an off-grid token must not snap it or add a move to history.
+  if (draft.x === draft.startX && draft.y === draft.startY) return [];
+  const token = tokens.find((item) => item.id === draft.tokenId);
+  if (!token) return [];
+  const snapped = snappedTokenCoordinates(scene, token, draft.x, draft.y);
+  const group = tokens.filter((item) => draft.origins[item.id]);
+  const positions = keyboardTokenPositions(
+    scene,
+    group.map((item) => ({ id: item.id, ...draft.origins[item.id]! })),
+    { x: snapped.x - draft.startX, y: snapped.y - draft.startY }
+  );
+  return group
+    .map((item) => ({ token: item, position: positions[item.id]! }))
+    .filter(({ token: item, position }) => item.x !== position.x || item.y !== position.y);
+}
+
 export function tokenCoordinatesFromCenter(scene: TokenGridScene, width: number, height: number, centerX: number, centerY: number): Pick<Token, "x" | "y"> {
   return snappedTokenCoordinates(scene, { width, height }, centerX - width / 2, centerY - height / 2);
 }
@@ -546,7 +576,7 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
       visibleAnnotations.map((annotation) => {
         const points = annotationMoveDraft?.annotationId === annotation.id ? annotationMoveDraft.points : annotationOverrides[annotation.id];
         if (!points) return annotation;
-        const radius = annotation.kind === "template" && points.length >= 2 ? Math.round(distanceBetween(points[0]!, points[1]!)) : annotation.radius;
+        const radius = annotation.kind === "template" && points.length >= 2 && !annotationTranslationDelta(annotation.points, points) ? Math.round(distanceBetween(points[0]!, points[1]!)) : annotation.radius;
         return { ...annotation, points, radius };
       }),
     [visibleAnnotations, annotationMoveDraft, annotationOverrides]
@@ -797,10 +827,6 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
     return boundedTokenCoordinates(props.scene, token, x, y);
   }
 
-  function snappedTokenPosition(token: Token, x: number, y: number): Pick<TokenDragDraft, "x" | "y"> {
-    return snappedTokenCoordinates(props.scene, token, x, y);
-  }
-
   function renderedTokenFrame(token: Token): TokenFrame {
     return tokenFrameOverrides[token.id] ?? tokenFrame(token);
   }
@@ -894,23 +920,7 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
   function finishTokenDrag(pointerId: number) {
     const current = tokenDragRef.current;
     if (!current || current.pointerId !== pointerId) return;
-    const token = tokens.find((item) => item.id === current.tokenId);
-    if (!token) {
-      tokenDragRef.current = null;
-      setTokenDrag(null);
-      return;
-    }
-    const snapped = snappedTokenPosition(token, current.x, current.y);
-    const deltaX = snapped.x - current.startX;
-    const deltaY = snapped.y - current.startY;
-    const movedTokens = Object.entries(current.origins)
-      .flatMap(([tokenId, origin]) => {
-        const movedToken = tokens.find((item) => item.id === tokenId);
-        if (!movedToken) return [];
-        const next = snappedTokenCoordinates(props.scene, movedToken, origin.x + deltaX, origin.y + deltaY);
-        return [{ token: movedToken, position: next }];
-      })
-      .filter(({ token: movedToken, position }) => movedToken.x !== position.x || movedToken.y !== position.y);
+    const movedTokens = finishedTokenDragChanges(props.scene, tokens, current);
     tokenDragRef.current = null;
     setTokenDrag(null);
     if (movedTokens.length === 0) {
@@ -1049,26 +1059,10 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
     void mutationAction.runAction(`Create ${titleCaseLabel(kind)}`, () => props.onAnnotationCreate(kind, points, radius));
   }
 
-  function editedAnnotationPoints(draft: AnnotationMoveDraft, point: VisionPoint): VisionPoint[] {
-    if (draft.mode === "point" && draft.pointIndex !== undefined) {
-      return draft.originalPoints.map((annotationPoint, index) =>
-        index === draft.pointIndex
-          ? { x: Math.max(0, Math.min(props.scene.width, point.x)), y: Math.max(0, Math.min(props.scene.height, point.y)) }
-          : annotationPoint
-      );
-    }
-    const deltaX = point.x - draft.start.x;
-    const deltaY = point.y - draft.start.y;
-    return draft.originalPoints.map((annotationPoint) => ({
-      x: Math.max(0, Math.min(props.scene.width, Math.round(annotationPoint.x + deltaX))),
-      y: Math.max(0, Math.min(props.scene.height, Math.round(annotationPoint.y + deltaY)))
-    }));
-  }
-
   function startAnnotationMove(annotation: SceneAnnotation, clientX: number, clientY: number, pointerId: number, mode: AnnotationMoveDraft["mode"], pointIndex?: number) {
     const point = boardPoint(clientX, clientY);
     if (!point) return;
-    const next = { annotationId: annotation.id, pointerId, mode, pointIndex, start: point, current: point, originalPoints: annotation.points, points: annotation.points };
+    const next = { annotationId: annotation.id, pointerId, mode, pointIndex, start: point, current: point, originalPoints: annotation.points, points: annotation.points, snapToGrid: annotation.snapToGrid };
     annotationMoveDraftRef.current = next;
     setAnnotationMoveDraft(next);
   }
@@ -1078,7 +1072,7 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
     if (!current || current.pointerId !== pointerId) return;
     const point = boardPoint(clientX, clientY);
     if (!point) return;
-    const next = { ...current, current: point, points: editedAnnotationPoints(current, point) };
+    const next = { ...current, current: point, points: editedAnnotationPoints(props.scene, current, point) };
     annotationMoveDraftRef.current = next;
     setAnnotationMoveDraft(next);
   }
@@ -1104,13 +1098,15 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
     void mutationAction.runAction(`Move ${titleCaseLabel(annotation.kind)}`, async () => {
       try {
         await props.onAnnotationMove(annotation, current.points);
-      } catch (error) {
+      } finally {
+        // The callback applies the authoritative scene before resolving. Drop
+        // this preview even if normalization changed it, but keep newer drags.
         setAnnotationOverrides((overrides) => {
+          if (overrides[annotation.id] !== current.points) return overrides;
           const next = { ...overrides };
           delete next[annotation.id];
           return next;
         });
-        throw error;
       }
     });
   }

@@ -11411,7 +11411,7 @@ function dnd5eSrdApplyBonusActionUse(
   const actionEconomy = recordValue(rules.actionEconomy);
   const bonusActions = recordValue(actionEconomy.bonusActions);
   const used = recordValue(bonusActions[combat.id]);
-  if (numericValue(used.round, Number.NaN) === combat.round && numericValue(used.turnIndex, Number.NaN) === combat.turnIndex && stringValue(used.rollId)) {
+  if (numericValue(used.round, Number.NaN) === combat.round && stringValue(used.rollId)) {
     return {
       data,
       blocked: { code: "bonus_action_already_used", reason: "Bonus Action already used on this turn." },

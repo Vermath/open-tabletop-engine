@@ -170,7 +170,7 @@ async function clickAndReviewPreparedDndAction(
     const dialog = page.getByRole("dialog", { name: /Review .* action/ });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText("Structured consequence review", { exact: true })).toBeVisible();
-    await expect(dialog.locator(".account-summary")).toContainText("Rule source: D&D 5e SRD server resolver");
+    await expect(dialog.locator(".account-summary", { hasText: "Rule source: D&D 5e SRD server resolver" })).toHaveText("Rule source: D&D 5e SRD server resolver");
     if (options.expectedSupport) {
       await expect(dialog.getByRole("note", { name: `Rules support: ${options.expectedSupport}`, exact: true })).toBeVisible();
     }
@@ -282,7 +282,7 @@ async function exercisePlayerSheetBeforeCombat(page: Page, characterName: string
   await rollCoreStatistic(page, stats.getByRole("button", { name: /Roll Strength check/ }), "Canonical Ember Campaign");
   await rollCoreStatistic(page, stats.getByRole("button", { name: /Roll Dexterity saving throw/ }), "Canonical Ember Campaign");
 
-  const hp = stats.getByLabel("Actor sheet current HP");
+  const hp = stats.getByLabel("Actor sheet healing target HP");
   await applyReviewedTypedDamageToHp(page, { apiBaseUrl, campaignName: "Canonical Ember Campaign", actorName: characterName, targetHp: 5 });
   await expect(hp).toHaveValue("5");
   const prone = stats.getByRole("group", { name: "Toggle common conditions" }).getByRole("button", { name: "Prone" });
@@ -763,7 +763,7 @@ test("blank deployment completes one canonical GM-and-player D&D session and res
     await openInspectorPanel(page, "Actors");
     const gmStats = selectedActorPanel(page).getByRole("region", { name: "Actor stats sheet" });
     await applyReviewedTypedDamageToHp(page, { apiBaseUrl, campaignName, actorName: characterName, targetHp: 0 });
-    await expect(gmStats.getByLabel("Actor sheet current HP")).toHaveValue("0");
+    await expect(gmStats.getByLabel("Actor sheet healing target HP")).toHaveValue("0");
     await expect(selectedActorPanel(page).getByRole("region", { name: "Actor at a glance" })).not.toContainText("Concentrating: Dancing Lights Effect");
 
     const terminal = await resolveDeathSaves(player.page, characterName);
@@ -785,7 +785,7 @@ test("blank deployment completes one canonical GM-and-player D&D session and res
     await expect(reloadedActorPanel.getByRole("region", { name: "Actor at a glance" })).not.toContainText("Concentrating: Dancing Lights Effect");
     const reloadedStats = reloadedActorPanel.getByRole("region", { name: "Actor stats sheet" });
     if (terminal === "revived") {
-      await expect(reloadedStats.getByLabel("Actor sheet current HP")).toHaveValue("1");
+      await expect(reloadedStats.getByLabel("Actor sheet healing target HP")).toHaveValue("1");
       await expect(reloadedStats.locator(".actor-death-save-row")).toHaveCount(0);
     } else {
       await expect(reloadedStats.locator(".actor-death-save-row")).toContainText(terminal === "stable" ? "Stable" : "Dead");

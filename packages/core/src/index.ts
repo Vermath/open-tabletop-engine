@@ -1,3 +1,4 @@
+export * from "./annotation-geometry.js";
 export * from "./events.js";
 export * from "./compatibility.js";
 export * from "./ids.js";
