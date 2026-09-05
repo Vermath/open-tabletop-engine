@@ -24,7 +24,8 @@ async function json<T = SavedRecord>(pending: Promise<Pick<APIResponse, "ok" | "
 async function loginDemoGm(page: Page) {
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault", exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 }
 
 async function deleteRecord(page: Page, path: string) {
@@ -126,8 +127,10 @@ test("replacing a session's linked scene clears its old start selection and star
       headers: mutationHeaders(), data: { title: "Swap the linked scene", sceneIds: [scenes[0]!.id] },
     }));
     await page.reload();
+    await page.locator("details.campaign-switcher > summary").click();
     await page.getByRole("navigation", { name: "Campaigns" }).getByRole("button", { name: campaignName, exact: true }).click();
-    await expect(page.getByRole("heading", { name: campaignName, exact: true })).toBeVisible();
+    await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText(campaignName);
     await page.getByRole("button", { name: "Prep", exact: true }).click();
     await page.getByRole("tab", { name: "Sessions", exact: true }).click();
     await page.getByRole("region", { name: "Session Desk" }).getByRole("listitem").filter({ hasText: "Swap the linked scene" }).getByRole("button").first().click();

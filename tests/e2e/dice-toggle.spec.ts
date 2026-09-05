@@ -4,6 +4,8 @@ import { expect, test } from "@playwright/test";
 const apiBaseUrl = `http://127.0.0.1:${process.env.OTTE_E2E_API_PORT ?? 4100}`;
 
 async function openInspectorPanel(page: Page, panelName: string) {
+  const showInspector = page.getByRole("button", { name: "Show inspector", exact: true });
+  if (await showInspector.isVisible()) await showInspector.click();
   await page.locator(".inspector-tabs").getByRole("tab", { name: panelName, exact: true }).click();
 }
 
@@ -46,7 +48,8 @@ test("demo GM can turn 3D dice off for text-only rolling", async ({ page }) => {
     localStorage.setItem("otte:dice3d", "on");
   });
   await loginDemoGm(page);
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 
   await openInspectorPanel(page, "Chat");
   const textOnlyToggle = await ensure3dDiceEnabled(page);
@@ -70,7 +73,8 @@ test("3D dice preloads the physics stage when enabled", async ({ page }) => {
     localStorage.setItem("otte:dice3d", "on");
   });
   await loginDemoGm(page);
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 
   await openInspectorPanel(page, "Chat");
   await expect(await ensure3dDiceEnabled(page)).toHaveAttribute("aria-pressed", "true");
@@ -82,7 +86,8 @@ test("3D dice hides the roll result until the cast settles", async ({ page }) =>
     localStorage.setItem("otte:dice3d", "on");
   });
   await loginDemoGm(page);
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 
   await openInspectorPanel(page, "Chat");
   await expect(await ensure3dDiceEnabled(page)).toHaveAttribute("aria-pressed", "true");

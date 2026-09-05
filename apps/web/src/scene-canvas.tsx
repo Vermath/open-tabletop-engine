@@ -2183,59 +2183,68 @@ export function Toolbar(props: { onSelectTool: ToolAction; onCreateToken: ToolAc
   }, [advancedOpen]);
 
   return (
-    <div className="toolbar">
-      <button className={`tool ${props.activeFogBrushMode || props.activeAnnotationTool ? "" : "active"}`} title="Select (V)" aria-label="Select" onClick={() => runToolAction(props.onSelectTool)}>
-        <Hand size={17} />
-      </button>
-      {props.canCreateToken && (
-        <button className="tool" title="Token" aria-label="Add token" onClick={() => runToolAction(props.onCreateToken)}>
-          <Plus size={17} />
+    <div className="toolbar" role="group" aria-label="Map tools">
+      <div className="toolbar-group" role="group" aria-label="Select and place">
+        <span className="tool-group-label" aria-hidden="true">Table</span>
+        <button className={`tool ${props.activeFogBrushMode || props.activeAnnotationTool ? "" : "active"}`} title="Select (V)" data-tooltip="Select · V" aria-label="Select" aria-pressed={!props.activeFogBrushMode && !props.activeAnnotationTool} onClick={() => runToolAction(props.onSelectTool)}>
+          <Hand size={17} />
         </button>
-      )}
-      <span className="tool-divider" aria-hidden="true" />
-      <button className={`tool ${props.activeAnnotationTool === "ruler" ? "active" : ""}`} title="Ruler - measure distance (R)" aria-label="Ruler" onClick={() => props.onToggleAnnotationTool("ruler")} disabled={!props.canAnnotate}>
-        <Ruler size={17} />
-      </button>
-      <button className={`tool tool-mobile-secondary ${props.activeAnnotationTool === "measure-circle" ? "active" : ""}`} title="Measure circle (C)" aria-label="Measure circle" onClick={() => props.onToggleAnnotationTool("measure-circle")} disabled={!props.canAnnotate}>
-        <Circle size={17} />
-      </button>
-      <button className={`tool tool-mobile-secondary ${props.activeAnnotationTool === "measure-cone" ? "active" : ""}`} title="Measure cone (O)" aria-label="Measure cone" onClick={() => props.onToggleAnnotationTool("measure-cone")} disabled={!props.canAnnotate}>
-        <Triangle size={17} />
-      </button>
-      <button className={`tool ${props.activeAnnotationTool === "ping" ? "active" : ""}`} title="Ping - point everyone here (P)" aria-label="Ping" onClick={() => props.onToggleAnnotationTool("ping")} disabled={!props.canAnnotate}>
-        <MapPin size={17} />
-      </button>
-      {(props.canRevealFog || props.canUpdateScene) && <span className="tool-divider" aria-hidden="true" />}
-      {props.canRevealFog && (
-        <button className="tool" title="Reveal fog" aria-label="Reveal fog" onClick={() => runToolAction(props.onRevealFog)}>
-          <Eye size={17} />
+        {props.canCreateToken && (
+          <button className="tool" title="Add token" data-tooltip="Add token" aria-label="Add token" onClick={() => runToolAction(props.onCreateToken)}>
+            <Plus size={17} />
+          </button>
+        )}
+      </div>
+      <div className="toolbar-group" role="group" aria-label="Measure and point">
+        <span className="tool-group-label" aria-hidden="true">Measure</span>
+        <button className={`tool ${props.activeAnnotationTool === "ruler" ? "active" : ""}`} title="Ruler - measure distance (R)" data-tooltip="Ruler · R" aria-label="Ruler" aria-pressed={props.activeAnnotationTool === "ruler"} onClick={() => props.onToggleAnnotationTool("ruler")} disabled={!props.canAnnotate}>
+          <Ruler size={17} />
         </button>
-      )}
-      {props.canUpdateScene && (
-        <button className={`tool tool-mobile-secondary ${props.activeAnnotationTool === "drawing" ? "active" : ""}`} title="Drawing (D)" aria-label="Drawing" onClick={() => props.onToggleAnnotationTool("drawing")}>
-          <PencilLine size={17} />
-        </button>
-      )}
-      {props.canUpdateScene && (
-        <button className={`tool tool-mobile-secondary ${props.activeAnnotationTool === "template" ? "active" : ""}`} title="Area template (A)" aria-label="Area template" onClick={() => props.onToggleAnnotationTool("template")}>
+        <button className={`tool tool-mobile-secondary ${props.activeAnnotationTool === "measure-circle" ? "active" : ""}`} title="Measure circle (C)" data-tooltip="Circle · C" aria-label="Measure circle" aria-pressed={props.activeAnnotationTool === "measure-circle"} onClick={() => props.onToggleAnnotationTool("measure-circle")} disabled={!props.canAnnotate}>
           <Circle size={17} />
         </button>
+        <button className={`tool tool-mobile-secondary ${props.activeAnnotationTool === "measure-cone" ? "active" : ""}`} title="Measure cone (O)" data-tooltip="Cone · O" aria-label="Measure cone" aria-pressed={props.activeAnnotationTool === "measure-cone"} onClick={() => props.onToggleAnnotationTool("measure-cone")} disabled={!props.canAnnotate}>
+          <Triangle size={17} />
+        </button>
+        <button className={`tool ${props.activeAnnotationTool === "ping" ? "active" : ""}`} title="Ping - point everyone here (P)" data-tooltip="Ping · P" aria-label="Ping" aria-pressed={props.activeAnnotationTool === "ping"} onClick={() => props.onToggleAnnotationTool("ping")} disabled={!props.canAnnotate}>
+          <MapPin size={17} />
+        </button>
+      </div>
+      {(props.canRevealFog || props.canUpdateScene) && (
+        <div className="toolbar-group" role="group" aria-label="Create and reveal">
+          <span className="tool-group-label" aria-hidden="true">Create</span>
+          {props.canRevealFog && (
+            <button className="tool" title="Reveal fog" data-tooltip="Reveal fog" aria-label="Reveal fog" onClick={() => runToolAction(props.onRevealFog)}>
+              <Eye size={17} />
+            </button>
+          )}
+          {props.canUpdateScene && (
+            <>
+              <button className={`tool tool-mobile-secondary ${props.activeAnnotationTool === "drawing" ? "active" : ""}`} title="Drawing (D)" data-tooltip="Draw · D" aria-label="Drawing" aria-pressed={props.activeAnnotationTool === "drawing"} onClick={() => props.onToggleAnnotationTool("drawing")}>
+                <PencilLine size={17} />
+              </button>
+              <button className={`tool tool-mobile-secondary ${props.activeAnnotationTool === "template" ? "active" : ""}`} title="Area template (A)" data-tooltip="Template · A" aria-label="Area template" aria-pressed={props.activeAnnotationTool === "template"} onClick={() => props.onToggleAnnotationTool("template")}>
+                <Circle size={17} />
+              </button>
+            </>
+          )}
+        </div>
       )}
       {props.canUpdateScene && (
-        <button className="tool tool-mobile-secondary" title="Delete latest annotation" aria-label="Delete latest annotation" onClick={() => runToolAction(props.onDeleteLatestAnnotation)}>
-          <X size={17} />
-        </button>
+        <div className="toolbar-group toolbar-group-history" role="group" aria-label="Edit history">
+          <span className="tool-group-label" aria-hidden="true">History</span>
+          <button className="tool tool-mobile-secondary" title="Delete latest annotation" data-tooltip="Delete annotation" aria-label="Delete latest annotation" onClick={() => runToolAction(props.onDeleteLatestAnnotation)}>
+            <X size={17} />
+          </button>
+          <button className="tool tool-mobile-secondary" title="Undo scene edit" data-tooltip="Undo scene edit" aria-label="Undo scene edit" onClick={() => runToolAction(props.onUndoScene)}>
+            <RotateCcw size={17} />
+          </button>
+        </div>
       )}
-      {props.canUpdateScene && (
-        <button className="tool tool-mobile-secondary" title="Undo scene edit" aria-label="Undo scene edit" onClick={() => runToolAction(props.onUndoScene)}>
-          <RotateCcw size={17} />
-        </button>
-      )}
-      {(props.canManageCombat || props.canRevealFog || props.canUpdateScene) && <span className="tool-divider" aria-hidden="true" />}
       {(props.canManageCombat || props.canRevealFog || props.canUpdateScene) && (
         <details ref={advancedToolsRef} className="tool-more" open={advancedOpen} onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}>
           <summary className="tool" title="Advanced tools" aria-label="Advanced tools">
-            <Boxes size={17} />
+            <Boxes size={17} /><span className="tool-more-label">More</span>
           </summary>
           <div className="tool-more-panel" aria-label="Advanced table tools">
             <div className="tool-more-mobile-only">

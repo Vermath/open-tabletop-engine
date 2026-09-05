@@ -3,13 +3,21 @@ import { expect, test } from "@playwright/test";
 
 const apiBaseUrl = `http://127.0.0.1:${process.env.OTTE_E2E_API_PORT ?? 4100}`;
 
+async function expectDemoCampaign(page: Page): Promise<void> {
+  const currentCampaign = page.getByLabel("Current campaign", { exact: true });
+  await expect(currentCampaign).toBeVisible();
+  await expect(currentCampaign).toHaveText("The Ember Vault");
+}
+
 async function loginAsDemoGm(page: Page): Promise<void> {
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expectDemoCampaign(page);
 }
 
 async function openInspectorPanel(page: Page, panelName: "Actors" | "Compendium"): Promise<Locator> {
+  const showInspector = page.getByRole("button", { name: "Show inspector", exact: true });
+  if (await showInspector.isVisible()) await showInspector.click();
   if (panelName === "Compendium") {
     const prep = page.getByRole("button", { name: "Prep", exact: true });
     await prep.click();
@@ -120,13 +128,13 @@ test("T30 explains an actor total and exposes the campaign compatibility report"
   const actorsPanel = await openInspectorPanel(page, "Actors");
   await actorsPanel.getByRole("tab", { name: "Stats", exact: true }).click();
 
-  const displayedArmorClass = await actorsPanel
-    .locator(".metric-row", { hasText: "Armor class" })
-    .locator("strong")
-    .innerText();
-  const rulesTraceSummary = actorsPanel.getByText("Rules trace & calculation sources", { exact: true });
-  const rulesTraceDisclosure = rulesTraceSummary.locator("..");
-  await rulesTraceSummary.click();
+  const armorClassSummary = actorsPanel.getByRole("region", { name: "Actor at a glance", exact: true }).getByTitle(/^Armor class(?: -|$)/);
+  await expect(armorClassSummary).toBeVisible();
+  await expect(armorClassSummary).toHaveText(/^\s*AC\s+\d+\s*$/);
+  const displayedArmorClass = (await armorClassSummary.innerText()).trim().replace(/^AC\s+/, "");
+  const rulesTraceDisclosure = actorsPanel.locator("details.actor-rules-trace-disclosure").filter({ has: page.getByText("Rules trace & calculation sources", { exact: true }) });
+  await rulesTraceDisclosure.locator(":scope > summary").click();
+  await expect(rulesTraceDisclosure).toHaveAttribute("open", "");
   const explanation = rulesTraceDisclosure.locator("section.calculation-explanation");
   await expect(explanation.getByRole("heading", { name: "How the numbers work" })).toBeVisible();
 
@@ -236,7 +244,7 @@ test("T33 completes summon, command, dismiss, transform, and revert journeys", a
   await createSystemCharacter(page, { templateId: "rogue", name: targetName });
   await createActorFeature(page, sourceActor.id, `E2E Ember Command ${suffix}`);
   await page.reload();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expectDemoCampaign(page);
 
   const compendiumTab = await openInspectorPanel(page, "Compendium");
   const controlled = compendiumTab.locator("section.controlled-creatures-panel");

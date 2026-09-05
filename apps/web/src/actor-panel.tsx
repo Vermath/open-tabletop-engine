@@ -309,6 +309,7 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
   const [placementSearch, setPlacementSearch] = useState(props.initialPlacementSearch ?? "");
   const [loadoutFilter, setLoadoutFilter] = useState<ActorLoadoutFilter>("all");
   const [conditionOverrideReason, setConditionOverrideReason] = useState("");
+  const [damageReviewOpen, setDamageReviewOpen] = useState(false);
   const [purchaseQuantities, setPurchaseQuantities] = useState<Record<string, number>>({});
   const [coreStatistics, setCoreStatistics] = useState<{ actorId: string; stats: ActorCoreStatistics } | undefined>();
   const [coreStatisticsLoading, setCoreStatisticsLoading] = useState(false);
@@ -579,6 +580,7 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
   const damageRequiresReview = props.actor.systemId === "dnd-5e-srd";
   const typedDamageSectionId = `actor-typed-damage-${props.actor.id}`;
   const openReviewedDamage = () => {
+    setDamageReviewOpen(true);
     setFullSheetOpen(false);
     setSheetView("stats");
     window.setTimeout(() => document.getElementById(typedDamageSectionId)?.focus(), 0);
@@ -735,16 +737,17 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
   };
   return (
     <div className="panel-stack actor-sidebar-summary">
-      <header className={`panel-hero actor-hero actor-tone-${sheetTone}`}>
-        <div>
+      <header className={`panel-hero actor-hero actor-identity actor-tone-${sheetTone}`}>
+        <div className="actor-identity-copy">
           <div className="section-title">{adversary ? "NPC" : "Character"}</div>
           <h2>{props.actor.name}</h2>
           <div className="admin-meta">
             <span title="Rules system">{props.systemLabel ?? props.actor.systemId}</span>
-            <span title={props.token ? "Linked token" : undefined}>{props.token ? props.token.name : "No linked token"}</span>
+            {props.token && props.token.name !== props.actor.name && <span title="Linked token">{props.token.name}</span>}
+            {!props.token && <span>No linked token</span>}
           </div>
         </div>
-        <button className="ghost-button" type="button" onClick={() => setFullSheetOpen(true)}>
+        <button className="ghost-button actor-sheet-open" type="button" onClick={() => setFullSheetOpen(true)}>
           <FileText size={16} /> Sheet
         </button>
       </header>
@@ -919,16 +922,6 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
           {props.actor.systemId === "dnd-5e-srd" && (
             <HeroicInspirationCard campaignId={props.campaignId} actor={props.actor} actors={props.actors} canManage={canManageActorRules} canReroll={props.canUseAction} />
           )}
-          <div className="metric-row">
-            <span>Armor class</span>
-            <strong>{armorClass ? (armorClass.label ? `${armorClass.value} - ${armorClass.label}` : String(armorClass.value)) : "n/a"}</strong>
-          </div>
-          {resourceControls.map((resource) => (
-            <div className="metric-row" key={`stats-resource-${resource.key}`}>
-              <span>{resource.label}</span>
-              <strong>{formatNumber(resource.current)}</strong>
-            </div>
-          ))}
           <div className="sheet-row">
             <label htmlFor="actor-hp-tab">{damageRequiresReview ? "Heal to HP" : "Set HP"}</label>
             <input id="actor-hp-tab" aria-label={damageRequiresReview ? "Actor sheet healing target HP" : "Actor sheet current HP"} aria-describedby={damageRequiresReview ? "actor-hp-tab-guidance" : undefined} key={`sheet:${props.actor.id}:${hp?.current ?? 0}`} type="number" min={damageRequiresReview ? hp?.current ?? 0 : 0} max={hp?.max} defaultValue={hp?.current ?? 0} disabled={!props.canUpdateActor} onBlur={(event) => commitHitPointInput(event.currentTarget)} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} />
@@ -953,8 +946,16 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
               )}
             </div>
           )}
-          <HitDiceRestCard actor={props.actor} canRest={props.canRestActor} onPreviewRest={props.onPreviewRestActor} onRest={props.onRestActor} />
-          {props.actor.systemId === "dnd-5e-srd" && <section id={typedDamageSectionId} tabIndex={-1} aria-label="Reviewed typed damage"><TypedDamageCard campaignId={props.campaignId} actor={props.actor} actors={props.actors} canApply={props.canUpdateActor} onApplied={props.onTypedDamageApplied} /></section>}
+          <details className="actor-maintenance-disclosure actor-rest-disclosure">
+            <summary>Rest &amp; recovery</summary>
+            <HitDiceRestCard actor={props.actor} canRest={props.canRestActor} onPreviewRest={props.onPreviewRestActor} onRest={props.onRestActor} />
+          </details>
+          {props.actor.systemId === "dnd-5e-srd" && (
+            <details className="actor-maintenance-disclosure actor-damage-disclosure" open={damageReviewOpen} onToggle={(event) => setDamageReviewOpen(event.currentTarget.open)}>
+              <summary>Damage &amp; defenses</summary>
+              <section id={typedDamageSectionId} tabIndex={-1} aria-label="Reviewed typed damage"><TypedDamageCard campaignId={props.campaignId} actor={props.actor} actors={props.actors} canApply={props.canUpdateActor} onApplied={props.onTypedDamageApplied} /></section>
+            </details>
+          )}
           <div className="condition-quick-chips" role="group" aria-label="Toggle common conditions">
             {conditionChipIds.map((conditionId) => (
               <button
@@ -969,6 +970,9 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
               </button>
             ))}
           </div>
+          <details className="actor-maintenance-disclosure actor-condition-editor">
+            <summary>Custom conditions &amp; rulings{conditionOverrideReason.trim() && <span className="actor-override-active">Override active</span>}</summary>
+            <div className="actor-maintenance-body">
           {props.actor.systemId === "dnd-5e-srd" && canManageActorRules && (
             <label>
               <span>Optional condition-immunity override</span>
@@ -986,6 +990,8 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
             <label htmlFor="actor-conditions-tab">Custom conditions</label>
             <input id="actor-conditions-tab" aria-label="Actor sheet conditions" key={formatActorConditions(props.actor)} defaultValue={formatActorConditions(props.actor)} disabled={!props.canUpdateActor} onBlur={(event) => props.updateActorData(props.actor!, { conditions: parseActorConditions(event.currentTarget.value) })} />
           </div>
+            </div>
+          </details>
           <details className="actor-rules-trace-disclosure" onToggle={(event) => setRulesTraceOpen(event.currentTarget.open)}>
             <summary>Rules trace &amp; calculation sources</summary>
             {rulesTraceOpen && <CalculationExplanationPanel campaignId={props.campaignId} actor={props.actor} canManageOverrides={props.canUpdateActor} />}
@@ -1222,8 +1228,7 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
       )}
       <details className="operator-section actor-detail-disclosure actor-token-editor">
         <summary>Token settings</summary>
-      </details>
-      <div className="operator-section actor-detail-body actor-token-editor-body">
+      <div className="actor-detail-body actor-token-editor-body">
       <div className="metric-row">
         <span>Token</span>
         <strong>{props.token?.name ?? "Unlinked"}</strong>
@@ -1548,10 +1553,10 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
         </>
       )}
         </div>
-      <details className="operator-section actor-detail-disclosure">
-        <summary>Actor details</summary>
       </details>
-      <div className="operator-section actor-detail-body">
+      <details className="operator-section actor-detail-disclosure actor-advanced-details">
+        <summary>Actor details</summary>
+      <div className="actor-detail-body">
       <div className="metric-row">
         <span>HP</span>
         <strong>
@@ -1676,6 +1681,43 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
         </div>
       ))}
         </div>
+      <details className="operator-section raw-data-details">
+        <summary>Raw actor data</summary>
+        <pre>{JSON.stringify(props.actor.data, null, 2)}</pre>
+      </details>
+      {props.canDeleteActor && (
+        <section className="operator-section" aria-label="Actor lifecycle">
+          <div className="operator-heading">
+            <div>
+              <div className="section-title">Actor lifecycle</div>
+              <p>Remove this actor from the campaign roster.</p>
+            </div>
+          </div>
+          <button className="ghost-button danger-button wide" type="button" aria-haspopup="dialog" onClick={() => setActorDeleteDialogOpen(true)}>
+            <X size={16} /> Delete actor
+          </button>
+          {actorDeleteDialogOpen && (
+            <div className="modal-backdrop" role="presentation">
+              <div ref={actorDeleteDialogRef} className="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="actor-delete-dialog-title" aria-describedby="actor-delete-dialog-description" tabIndex={-1}>
+                <div className="section-title" id="actor-delete-dialog-title">Permanently delete {props.actor.name}?</div>
+                <p id="actor-delete-dialog-description">The actor sheet will be deleted. Linked tokens and items remain but become unlinked; campaign, encounter, combat, journal, and handout references are cleaned up. This cannot be undone.</p>
+                <div className="admin-actions">
+                  <button className="ghost-button danger-button" type="button" ref={actorDeleteConfirmRef} onClick={() => {
+                    setActorDeleteDialogOpen(false);
+                    void props.deleteActor(props.actor!);
+                  }}>
+                    <X size={16} /> Confirm delete actor
+                  </button>
+                  <button className="ghost-button" type="button" onClick={() => setActorDeleteDialogOpen(false)}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+      </details>
       {sheetView === "compendium" && (
       <section className="operator-section compendium-browser" aria-label="Actor compendium browser">
         <div className="operator-heading">
@@ -1741,42 +1783,6 @@ export function ActorPanel(props: { campaignId: string; actor?: Actor; token?: T
           )}
         </div>
       </section>
-      )}
-      <details className="operator-section raw-data-details">
-        <summary>Raw actor data</summary>
-        <pre>{JSON.stringify(props.actor.data, null, 2)}</pre>
-      </details>
-      {props.canDeleteActor && (
-        <section className="operator-section" aria-label="Actor lifecycle">
-          <div className="operator-heading">
-            <div>
-              <div className="section-title">Actor lifecycle</div>
-              <p>Remove this actor from the campaign roster.</p>
-            </div>
-          </div>
-          <button className="ghost-button danger-button wide" type="button" aria-haspopup="dialog" onClick={() => setActorDeleteDialogOpen(true)}>
-            <X size={16} /> Delete actor
-          </button>
-          {actorDeleteDialogOpen && (
-            <div className="modal-backdrop" role="presentation">
-              <div ref={actorDeleteDialogRef} className="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="actor-delete-dialog-title" aria-describedby="actor-delete-dialog-description" tabIndex={-1}>
-                <div className="section-title" id="actor-delete-dialog-title">Permanently delete {props.actor.name}?</div>
-                <p id="actor-delete-dialog-description">The actor sheet will be deleted. Linked tokens and items remain but become unlinked; campaign, encounter, combat, journal, and handout references are cleaned up. This cannot be undone.</p>
-                <div className="admin-actions">
-                  <button className="ghost-button danger-button" type="button" ref={actorDeleteConfirmRef} onClick={() => {
-                    setActorDeleteDialogOpen(false);
-                    void props.deleteActor(props.actor!);
-                  }}>
-                    <X size={16} /> Confirm delete actor
-                  </button>
-                  <button className="ghost-button" type="button" onClick={() => setActorDeleteDialogOpen(false)}>
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </section>
       )}
     </div>
   );

@@ -1,6 +1,6 @@
 import type { Actor, MapAsset, Visibility } from "@open-tabletop/core";
 import { BookOpen, Check, Eye, FileText, Link2, Plus, Save, Search, Trash2, Users } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiDelete, apiPatch, apiPost, assetBlobUrl, assetThumbnailUrl, type Snapshot } from "./api.js";
 import { campaignSearchAnchorId } from "./campaign-search-panel.js";
 import { DraftPersistenceNotice, draftPersistenceStatus, type DraftPersistenceStatus } from "./draft-persistence-notice.js";
@@ -150,6 +150,7 @@ export function HandoutLibraryPanel(props: {
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
   const [deleteArmed, setDeleteArmed] = useState(false);
+  const editorRef = useRef<HTMLDivElement>(null);
   const selected = props.handouts.find((item) => item.id === selectedId);
   const filtered = useMemo(() => filterHandoutLibrary(props.handouts, { query, worldId: worldFilter, read: readFilter, userId: props.currentUserId }), [props.handouts, props.currentUserId, query, readFilter, worldFilter]);
 
@@ -157,6 +158,14 @@ export function HandoutLibraryPanel(props: {
     if (!selectedId || props.handouts.some((item) => item.id === selectedId)) return;
     setSelectedId("");
   }, [props.handouts, selectedId]);
+
+  useEffect(() => {
+    if (!creating && !selectedId) return;
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.scrollIntoView({ block: "nearest" });
+    editor.querySelector<HTMLInputElement>('input[aria-label="Handout title"]')?.focus();
+  }, [creating, selectedId]);
 
   async function handleMutationError(prefix: string, error: unknown) {
     if (isStaleWriteError(error)) {
@@ -217,12 +226,15 @@ export function HandoutLibraryPanel(props: {
 
   return (
     <section className="panel-stack lore-panel handout-library-panel" aria-label="Handout Library">
-      <div className="lore-panel-heading">
-        <div>
-          <div className="section-title">Handout Library</div>
-          <h2>Shareable table documents</h2>
+      <div className="lore-page-intro">
+        <div className="lore-panel-heading">
+          <div>
+            <div className="section-title">Handout Library</div>
+            <h2>Clues, lore &amp; player handouts</h2>
+          </div>
+          {props.canCreate && <button className="primary-button" type="button" aria-label="Create handout" title="Create handout" onClick={() => { setCreating(true); setSelectedId(""); }}><Plus size={15} aria-hidden="true" /> Create handout</button>}
         </div>
-        <BookOpen size={20} aria-hidden="true" />
+        <p className="account-summary">Keep campaign documents together and choose who can read each one.</p>
       </div>
 
       {props.loadState === "loading" && <div className="lore-load-state" role="status">Loading handouts…</div>}
@@ -233,81 +245,97 @@ export function HandoutLibraryPanel(props: {
         </div>
       )}
 
-      <div className="lore-filter-grid">
-        <label className="lore-search-field span-full">
-          <Search size={14} aria-hidden="true" />
-          <span className="sr-only">Search handouts</span>
-          <input aria-label="Search handouts" value={query} placeholder="Search title, text, or tags" onChange={(event) => setQuery(event.target.value)} />
-        </label>
-        <label>
-          <span>World</span>
-          <select aria-label="Filter handouts by world" value={worldFilter} onChange={(event) => setWorldFilter(event.target.value)}>
-            <option value="">All worlds</option>
-            <option value="unfiled">Unfiled</option>
-            {props.worlds.map((world) => <option key={world.id} value={world.id}>{world.name}</option>)}
-          </select>
-        </label>
-        <label>
-          <span>Reading</span>
-          <select aria-label="Filter handouts by read state" value={readFilter} onChange={(event) => setReadFilter(event.target.value as HandoutReadFilter)}>
-            <option value="all">All</option>
-            <option value="unread">Unread</option>
-            <option value="read">Read</option>
-          </select>
-        </label>
-      </div>
+      <div className="handout-workspace">
+        <div className="handout-navigation">
+          <div className="lore-filter-grid">
+            <label className="lore-search-field span-full">
+              <Search size={14} aria-hidden="true" />
+              <span className="sr-only">Search handouts</span>
+              <input aria-label="Search handouts" value={query} placeholder="Search title, text, or tags" onChange={(event) => setQuery(event.target.value)} />
+            </label>
+            <label>
+              <span>World</span>
+              <select aria-label="Filter handouts by world" value={worldFilter} onChange={(event) => setWorldFilter(event.target.value)}>
+                <option value="">All worlds</option>
+                <option value="unfiled">Unfiled</option>
+                {props.worlds.map((world) => <option key={world.id} value={world.id}>{world.name}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>Reading</span>
+              <select aria-label="Filter handouts by read state" value={readFilter} onChange={(event) => setReadFilter(event.target.value as HandoutReadFilter)}>
+                <option value="all">All</option>
+                <option value="unread">Unread</option>
+                <option value="read">Read</option>
+              </select>
+            </label>
+          </div>
 
-      <div className="lore-list-heading">
-        <span>Library</span>
-        <div>
-          <strong>{formatNumber(filtered.length)}</strong>
-          {props.canCreate && <button className="icon-button" type="button" aria-label="Create handout" title="Create handout" onClick={() => { setCreating(true); setSelectedId(""); }}><Plus size={14} /></button>}
+          <div className="lore-list-heading">
+            <span>Library</span>
+            <strong>{formatNumber(filtered.length)}</strong>
+          </div>
+          <div className="handout-list" role="list" aria-label="Handouts">
+            {filtered.length === 0 ? (
+              <div className="empty-state compact lore-empty-state">
+                <BookOpen size={26} aria-hidden="true" />
+                <strong>{props.handouts.length === 0 ? "Your handout library starts here" : "No handouts match these filters"}</strong>
+                <p>{props.handouts.length === 0 ? props.canCreate ? "Create a handout for a clue, a letter, or campaign lore. Set its audience before sharing." : "Handouts shared with you will appear here." : "Try another search or clear the filters to see the rest of the library."}</p>
+                {props.handouts.length > 0 && <button className="ghost-button small" type="button" onClick={() => { setQuery(""); setWorldFilter(""); setReadFilter("all"); }}>Clear filters</button>}
+              </div>
+            ) : filtered.map((item) => {
+              const unread = !item.readByUserIds.includes(props.currentUserId);
+              return (
+                <div role="listitem" key={item.id}>
+                  <button id={campaignSearchAnchorId("handout", item.id)} className={selectedId === item.id ? "handout-list-item active" : "handout-list-item"} type="button" aria-current={selectedId === item.id ? "true" : undefined} onClick={() => void openHandout(item)}>
+                    <span className={unread ? "handout-read-dot unread" : "handout-read-dot"} aria-label={unread ? "Unread" : "Read"} />
+                    <span>
+                      <strong>{item.title}</strong>
+                      <small>{visibilityLabel(item.visibility)} · {item.tags.slice(0, 2).join(" · ") || "untagged"}</small>
+                    </span>
+                    <FileText size={15} aria-hidden="true" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
         </div>
-      </div>
-      <div className="handout-list" role="list" aria-label="Handouts">
-        {filtered.length === 0 ? <div className="empty-state compact">No handouts match this view.</div> : filtered.map((item) => {
-          const unread = !item.readByUserIds.includes(props.currentUserId);
-          return (
-            <div role="listitem" key={item.id}>
-              <button id={campaignSearchAnchorId("handout", item.id)} className={selectedId === item.id ? "handout-list-item active" : "handout-list-item"} type="button" aria-current={selectedId === item.id ? "true" : undefined} onClick={() => void openHandout(item)}>
-                <span className={unread ? "handout-read-dot unread" : "handout-read-dot"} aria-label={unread ? "Unread" : "Read"} />
-                <span>
-                  <strong>{item.title}</strong>
-                  <small>{visibilityLabel(item.visibility)} · {item.tags.slice(0, 2).join(" · ") || "untagged"}</small>
-                </span>
-                <FileText size={15} aria-hidden="true" />
-              </button>
-            </div>
-          );
-        })}
-      </div>
+        {(selected || creating) && (
+          <div className="handout-content" ref={editorRef}>
+            <HandoutEditor
+              key={selected?.id ?? "new"}
+              campaignId={props.campaignId}
+              currentUserId={props.currentUserId}
+              item={selected}
+              worlds={props.worlds}
+              members={props.members}
+              actors={props.actors}
+              assets={props.assets}
+              canManage={selected ? props.canUpdate : props.canCreate}
+              busy={busy}
+              onSave={saveHandout}
+              onCancel={() => { setCreating(false); setSelectedId(""); setDeleteArmed(false); }}
+            />
 
-      {(selected || creating) && (
-        <HandoutEditor
-          key={selected?.id ?? "new"}
-          campaignId={props.campaignId}
-          currentUserId={props.currentUserId}
-          item={selected}
-          worlds={props.worlds}
-          members={props.members}
-          actors={props.actors}
-          assets={props.assets}
-          canManage={selected ? props.canUpdate : props.canCreate}
-          busy={busy}
-          onSave={saveHandout}
-          onCancel={() => { setCreating(false); setSelectedId(""); setDeleteArmed(false); }}
-        />
-      )}
-
-      {selected && props.canDelete && (
-        <div className="handout-danger-row">
-          {deleteArmed ? (
-            <button className="danger-button" type="button" disabled={busy} onClick={() => void deleteHandout()}><Trash2 size={14} /> Confirm delete</button>
-          ) : (
-            <button className="ghost-button" type="button" disabled={busy} onClick={() => setDeleteArmed(true)}><Trash2 size={14} /> Delete handout</button>
-          )}
-        </div>
-      )}
+            {selected && props.canDelete && (
+              <div className="handout-danger-row">
+                {deleteArmed ? (
+                  <button className="danger-button" type="button" disabled={busy} onClick={() => void deleteHandout()}><Trash2 size={14} /> Confirm delete</button>
+                ) : (
+                  <button className="ghost-button" type="button" disabled={busy} onClick={() => setDeleteArmed(true)}><Trash2 size={14} /> Delete handout</button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+        {!selected && !creating && filtered.length > 0 && (
+          <div className="handout-content empty-state compact lore-empty-state">
+            <BookOpen size={26} aria-hidden="true" />
+            <strong>Choose a handout to read it</strong>
+            <p>Open a document from the library to see its text and linked images.</p>
+          </div>
+        )}
+      </div>
     </section>
   );
 }

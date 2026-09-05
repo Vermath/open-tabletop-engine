@@ -17,7 +17,8 @@ async function loginDemoGm(page: Page): Promise<void> {
     localStorage.setItem("otte:sessionTransport", "cookie");
   }, apiBaseUrl);
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 }
 
 async function openPeople(page: Page): Promise<Locator> {
@@ -46,7 +47,8 @@ test("owner changes an invited member role and removal revokes that live session
   await playerPage.getByRole("textbox", { name: "Display name" }).fill(displayName);
   await playerPage.getByLabel("Join password").fill("correct horse");
   await playerPage.getByRole("button", { name: "Accept Invite" }).click();
-  await expect(playerPage.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(playerPage.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(playerPage.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 
   await page.reload();
   people = await openPeople(page);

@@ -63,6 +63,8 @@ async function deleteTokenById(page: Page, tokenId: string) {
 }
 
 async function openInspectorPanel(page: Page, panelName: string) {
+  const reopen = page.getByRole("button", { name: "Show inspector", exact: true });
+  if (await reopen.isVisible()) await reopen.click();
   const visiblePanelName = panelName === "SDK" ? "Plugins" : panelName === "Content" ? "Assets" : panelName;
   await page.locator(".inspector-tabs").getByRole("tab", { name: visiblePanelName, exact: true }).click();
 }
@@ -73,13 +75,10 @@ function selectedActorPanel(page: Page) {
 
 async function openActorDisclosure(root: Locator, summaryText: string) {
   const details = root.locator("details.actor-detail-disclosure").filter({ hasText: summaryText }).first();
-  await expect(details.locator("summary")).toBeVisible();
+  await expect(details.locator(":scope > summary")).toBeVisible();
   const isOpen = await details.evaluate((element) => (element as HTMLDetailsElement).open);
   if (!isOpen) {
-    await details.evaluate((element) => {
-      (element as HTMLDetailsElement).open = true;
-      element.scrollIntoView({ block: "nearest" });
-    });
+    await details.locator(":scope > summary").click();
   }
 }
 
@@ -95,7 +94,9 @@ test("main tabletop controls expose accessible names and keyboard reachability",
   await expect(page.getByRole("heading", { name: "Sign In" })).toBeVisible();
   await page.getByRole("button", { name: "Demo GM" }).click();
 
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   await expect(page.getByRole("main", { name: "OpenTabletop workspace" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Campaigns" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Live Table", exact: true })).toHaveAttribute("aria-pressed", "true");
@@ -285,7 +286,9 @@ test("advanced panels expose labelled controls and keyboard focus states", async
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
 
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 
   await openInspectorPanel(page, "Chat");
   const chatCommandLine = page.getByRole("textbox", { name: "Chat message" });
@@ -331,7 +334,9 @@ test("multi-panel keyboard journey remains operable without pointer input", asyn
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
 
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 
   const actorsNav = page.getByRole("tab", { name: "Actors", exact: true });
   const handoutsNav = page.getByRole("tab", { name: "Handouts", exact: true });
@@ -381,7 +386,8 @@ test("multi-panel keyboard journey remains operable without pointer input", asyn
 test("desktop map focus mode moves and restores keyboard focus", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 
   const journalTab = page.getByRole("tab", { name: "Journal", exact: true });
   await journalTab.focus();
@@ -400,7 +406,9 @@ test("actor sheet targeting controls expose screen-reader structure", async ({ p
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
 
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   await expect(page.getByRole("tablist", { name: "Actor sheet views" })).toBeVisible();
 
   await page.getByRole("button", { name: "Sheet" }).click();
@@ -439,7 +447,9 @@ test("destructive token dialog supports screen-reader and keyboard flow", async 
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
 
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   const token = await createSceneToken(page, { name: "E2E Delete Target", actorId: "act_valen", x: 420, y: 360, ownerUserIds: ["usr_demo_player"] });
   try {
     await page.reload();

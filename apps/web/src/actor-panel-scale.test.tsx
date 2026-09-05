@@ -91,6 +91,23 @@ describe("ActorPanel campaign-scale actor placement", () => {
     expect(html.match(/aria-label="Place Sentinel/g)).toHaveLength(48);
   });
 
+  it("keeps advanced actor maintenance behind native disclosures", () => {
+    const panelProps = props();
+    const html = renderToStaticMarkup(<ActorPanel {...panelProps} canDeleteActor />);
+    const actorDetailsStart = html.indexOf('<details class="operator-section actor-detail-disclosure actor-advanced-details"');
+    const actorDetails = html.slice(actorDetailsStart);
+
+    expect(actorDetailsStart).toBeGreaterThan(0);
+    expect(actorDetails.match(/^<details[^>]*>/)?.[0]).not.toContain("open=");
+    expect(actorDetails).toContain('<summary>Actor details</summary><div class="actor-detail-body">');
+    expect(actorDetails).toContain('aria-label="Actor conditions"');
+    expect(actorDetails).toContain('<summary>Raw actor data</summary>');
+    expect(actorDetails).toContain('Delete actor');
+    expect(html.slice(0, actorDetailsStart)).not.toContain('Delete actor');
+    expect(html).toContain('<summary>Token settings</summary><div class="actor-detail-body actor-token-editor-body">');
+    expect(html).toContain('<summary>Custom conditions &amp; rulings</summary>');
+  });
+
   it("searches the complete roster through the real panel without losing late records", () => {
     const html = renderToStaticMarkup(<ActorPanel {...props("sentinel 48")} />);
 

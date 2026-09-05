@@ -312,6 +312,12 @@ function statusMessage(page: Page, text: string | RegExp): Locator {
   return page.getByRole("status").filter({ hasText: text }).first();
 }
 
+async function expectCampaignReady(page: Page): Promise<void> {
+  const campaign = page.getByLabel("Current campaign", { exact: true });
+  await expect(campaign).toBeVisible();
+  await expect(campaign).toHaveText("The Ember Vault");
+}
+
 async function apiJson<T>(
   page: Page,
   method: "GET" | "POST" | "PATCH" | "DELETE",
@@ -379,17 +385,16 @@ async function actorSheet(page: Page, actorId: string): Promise<ActorSheet> {
 async function loginAsDemoGm(page: Page): Promise<void> {
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault", exact: true })).toBeVisible();
+  await expectCampaignReady(page);
 }
 
 async function openDetails(details: Locator): Promise<void> {
-  await expect(details.locator("summary")).toBeVisible();
+  const summary = details.locator(":scope > summary");
+  await expect(summary).toBeVisible();
   if (!(await details.evaluate((element) => (element as HTMLDetailsElement).open))) {
-    await details.evaluate((element) => {
-      (element as HTMLDetailsElement).open = true;
-      element.scrollIntoView({ block: "nearest" });
-    });
+    await summary.click();
   }
+  await expect(details).toHaveJSProperty("open", true);
 }
 
 async function openManageCategory(page: Page, categoryName: string): Promise<Locator> {
@@ -649,7 +654,7 @@ async function finishLevelThreeSpellPreparation(page: Page, actor: ActorRecord):
 async function verifyCharacterSheets(page: Page, actors: ActorRecord[]): Promise<JsonObject[]> {
   const evidence: JsonObject[] = [];
   await page.reload();
-  await expect(page.getByRole("heading", { name: "The Ember Vault", exact: true })).toBeVisible();
+  await expectCampaignReady(page);
   await page.getByRole("button", { name: "Live Table", exact: true }).click();
 
   for (const definition of characters) {
@@ -1505,7 +1510,7 @@ test("generated map, four legal level-3 sheets, encounter placement, R-04, and c
     };
 
     await page.reload();
-    await expect(page.getByRole("heading", { name: "The Ember Vault", exact: true })).toBeVisible();
+    await expectCampaignReady(page);
     await page.getByRole("button", { name: "Live Table", exact: true }).click();
     await openInspectorPanel(page, "Combat");
     const finalPanel = page.locator(".inspector .panel-stack").filter({ has: page.locator(".combat-hero") });

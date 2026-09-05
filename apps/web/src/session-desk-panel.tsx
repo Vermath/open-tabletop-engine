@@ -166,6 +166,7 @@ export function SessionDeskPanel(props: {
   const [busy, setBusy] = useState(false);
   const [retryAction, setRetryAction] = useState<{ label: string; run(): Promise<void> }>();
   const completionRequestsRef = useRef(new Set<string>());
+  const editorRef = useRef<HTMLDivElement>(null);
   const selected = props.sessions.find((session) => session.id === selectedId);
   const sessions = campaignSessionSort(props.sessions);
   const sessionsRef = useRef(props.sessions);
@@ -174,6 +175,16 @@ export function SessionDeskPanel(props: {
   useEffect(() => {
     if (selectedId && !props.sessions.some((session) => session.id === selectedId)) setSelectedId("");
   }, [props.sessions, selectedId]);
+
+  useEffect(() => {
+    if (!creating && !selectedId) return;
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.scrollIntoView({ block: "nearest" });
+    const title = editor.querySelector<HTMLInputElement>('input[aria-label="Session title"]');
+    if (title && !title.disabled) title.focus();
+    else editor.focus();
+  }, [creating, selectedId]);
 
   function replaceSession(updated: CampaignSessionInfo, created = false): CampaignSessionInfo {
     const current = sessionsRef.current;
@@ -296,52 +307,73 @@ export function SessionDeskPanel(props: {
 
   return (
     <section className="panel-stack lore-panel session-desk-panel" aria-label="Session Desk">
-      <div className="lore-panel-heading">
-        <div>
-          <div className="section-title">Session Desk</div>
-          <h2>Plan, run, remember</h2>
-        </div>
-        <CalendarDays size={20} aria-hidden="true" />
-      </div>
-      <p className="account-summary">Link the scenes and encounters you expect to use, then start the session when the table gathers.</p>
-      {retryAction && <div className="lore-load-state error" role="alert"><span>The last session action was not confirmed.</span><button className="ghost-button small" type="button" disabled={busy} onClick={() => void retryAction.run()}>{retryAction.label}</button></div>}
-      <div className="lore-list-heading">
-        <span>Campaign sessions</span>
-        <div><strong>{formatNumber(sessions.length)}</strong>{props.canManage && <button className="icon-button" type="button" aria-label="Plan session" title="Plan session" onClick={() => { setCreating(true); setSelectedId(""); }}><Plus size={14} /></button>}</div>
-      </div>
-      <div className="session-desk-list" role="list" aria-label="Campaign sessions">
-        {sessions.length === 0 ? <div className="empty-state compact">No sessions planned yet.</div> : sessions.map((session) => (
-          <div role="listitem" key={session.id}>
-            <button className={selectedId === session.id ? `session-desk-row status-${session.status} active` : `session-desk-row status-${session.status}`} type="button" onClick={() => { setSelectedId(session.id); setCreating(false); }}>
-              <span className="session-number">{session.number}</span>
-              <span><strong>{session.title}</strong><small>{session.scheduledFor ? formatDateTime(session.scheduledFor) : "Unscheduled"} · {session.status}</small></span>
-              {session.status === "live" ? <Play size={14} aria-label="Live" /> : <Clock3 size={14} aria-hidden="true" />}
-            </button>
-            {props.canManage && props.canCreateReport && props.onJournalCreated && (
-              <button className="ghost-button small session-report-button" type="button" disabled={busy} aria-label={`Create GM-only session report for ${session.title}`} title="Create a GM-only session report" onClick={() => void reportSession(session)}>
-                <ClipboardList size={14} aria-hidden="true" /> Session report
-              </button>
-            )}
+      <div className="lore-page-intro">
+        <div className="lore-panel-heading">
+          <div>
+            <div className="section-title">Session Desk</div>
+            <h2>Your campaign sessions</h2>
           </div>
-        ))}
+          {props.canManage && <button className="primary-button" type="button" aria-label="Plan session" title="Plan session" onClick={() => { setCreating(true); setSelectedId(""); }}><Plus size={15} aria-hidden="true" /> Plan session</button>}
+        </div>
+        <p className="account-summary">Prepare an agenda, link scenes and encounters, and keep your session notes together.</p>
       </div>
-      {(creating || selected) && (
-        <SessionEditor
-          key={selected?.id ?? "new-session"}
-          session={selected}
-          nextNumber={Math.max(0, ...props.sessions.map((session) => session.number)) + 1}
-          scenes={props.scenes}
-          encounters={props.encounters}
-          canManage={props.canManage}
-          canStart={props.canStart}
-          busy={busy}
-          onSave={saveSession}
-          onStart={(sceneId) => selected && startSession(selected, sceneId)}
-          onComplete={(notes) => selected && requestSessionCompletion(selected, notes)}
-          onDelete={() => selected && deleteSession(selected)}
-          onCancel={() => { setCreating(false); if (!selected) setSelectedId(""); }}
-        />
-      )}
+      {retryAction && <div className="lore-load-state error" role="alert"><span>The last session action was not confirmed.</span><button className="ghost-button small" type="button" disabled={busy} onClick={() => void retryAction.run()}>{retryAction.label}</button></div>}
+      <div className="session-workspace">
+        <div className="session-navigation">
+          <div className="lore-list-heading">
+            <span>Campaign sessions</span>
+            <strong>{formatNumber(sessions.length)}</strong>
+          </div>
+          <div className="session-desk-list" role="list" aria-label="Campaign sessions">
+            {sessions.length === 0 ? (
+              <div className="empty-state compact lore-empty-state">
+                <CalendarDays size={26} aria-hidden="true" />
+                <strong>{props.canManage ? "Plan your first session" : "No sessions planned yet"}</strong>
+                <p>{props.canManage ? "Choose Plan session to add an agenda and the scenes you want to run. You can set a date later." : "Sessions will appear here when your game master plans the next gathering."}</p>
+              </div>
+            ) : sessions.map((session) => (
+              <div role="listitem" key={session.id}>
+                <button className={selectedId === session.id ? `session-desk-row status-${session.status} active` : `session-desk-row status-${session.status}`} type="button" onClick={() => { setSelectedId(session.id); setCreating(false); }}>
+                  <span className="session-number">{session.number}</span>
+                  <span><strong>{session.title}</strong><small>{session.scheduledFor ? formatDateTime(session.scheduledFor) : "Unscheduled"} · {session.status}</small></span>
+                  {session.status === "live" ? <Play size={14} aria-label="Live" /> : <Clock3 size={14} aria-hidden="true" />}
+                </button>
+                {props.canManage && props.canCreateReport && props.onJournalCreated && (
+                  <button className="ghost-button small session-report-button" type="button" disabled={busy} aria-label={`Create GM-only session report for ${session.title}`} title="Create a GM-only session report" onClick={() => void reportSession(session)}>
+                    <ClipboardList size={14} aria-hidden="true" /> Session report
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+        {(creating || selected) && (
+          <div className="session-content" ref={editorRef} tabIndex={-1}>
+            <SessionEditor
+              key={selected?.id ?? "new-session"}
+              session={selected}
+              nextNumber={Math.max(0, ...props.sessions.map((session) => session.number)) + 1}
+              scenes={props.scenes}
+              encounters={props.encounters}
+              canManage={props.canManage}
+              canStart={props.canStart}
+              busy={busy}
+              onSave={saveSession}
+              onStart={(sceneId) => selected && startSession(selected, sceneId)}
+              onComplete={(notes) => selected && requestSessionCompletion(selected, notes)}
+              onDelete={() => selected && deleteSession(selected)}
+              onCancel={() => { setCreating(false); if (!selected) setSelectedId(""); }}
+            />
+          </div>
+        )}
+        {!creating && !selected && sessions.length > 0 && (
+          <div className="session-content empty-state compact lore-empty-state">
+            <CalendarDays size={26} aria-hidden="true" />
+            <strong>Choose a session to open its plan</strong>
+            <p>Review the agenda, linked scenes, and notes in one place.</p>
+          </div>
+        )}
+      </div>
     </section>
   );
 }
