@@ -24,10 +24,10 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1040.0",
-    "@fastify/ajv-compiler": "4.0.5",
-    "@fastify/cors": "^10.0.2",
-    "@fastify/websocket": "^11.0.1",
+    "@aws-sdk/client-s3": "^3.1136.0",
+    "@fastify/ajv-compiler": "4.0.6",
+    "@fastify/cors": "^11.3.0",
+    "@fastify/websocket": "^11.3.1",
     "@open-tabletop/ai-core": "workspace:*",
     "@open-tabletop/api-contracts": "workspace:*",
     "@open-tabletop/codex-app-server-provider": "workspace:*",
@@ -35,14 +35,14 @@
     "@open-tabletop/dice-engine": "workspace:*",
     "@open-tabletop/plugin-sdk": "workspace:*",
     "@open-tabletop/system-sdk": "workspace:*",
-    "@openai/codex": "^0.133.0",
-    "fastify": "^5.1.0",
-    "pdfjs-dist": "^6.1.200",
-    "sharp": "0.34.5"
+    "@openai/codex": "^0.155.1",
+    "fastify": "^5.12.5",
+    "pdfjs-dist": "^6.3.289",
+    "sharp": "0.35.4"
   },
   "devDependencies": {
-    "tsx": "^4.19.2",
-    "typescript": "^5.7.2",
-    "vitest": "^3.2.6"
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.1"
   }
 }
