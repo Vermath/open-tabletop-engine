@@ -10576,7 +10576,7 @@ export function App() {
                 ) : (
                   sceneAnnotationHistory.slice(0, 3).map((entry) => (
                     <div className="operator-row tool-call-row" key={entry.id}>
-                      <span>{titleCaseLabel(entry.action)} {annotationToolLabel(entry.kind)}{entry.visibility === "gm" ? " · GM only" : ""}</span>
+                      <span>{titleCaseLabel(entry.action)} {annotationToolLabel(entry.kind)}{entry.visibility === "gm" ? " Â· GM only" : ""}</span>
                       <strong>{entry.groupLabel ?? entry.groupId ?? titleCaseLabel(entry.layer ?? defaultAnnotationLayer(entry.kind))}</strong>
                     </div>
                   ))
