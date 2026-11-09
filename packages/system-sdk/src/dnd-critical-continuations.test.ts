@@ -1,4 +1,4 @@
-import type { Combat, Item } from "@open-tabletop/core";
+import type { Combat, Item } from "@open-tabletop/api-contracts";
 import { describe, expect, it } from "vitest";
 import {
   consumeDnd5eSrdContinuation,

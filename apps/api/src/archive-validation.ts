@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { emptyState, type Actor, type CampaignArchive, type EngineState, type Item } from "@open-tabletop/core";
 import { DND_5E_SRD_SYSTEM_ID, validateDnd5eSrdActor, validateDnd5eSrdItem } from "@open-tabletop/system-sdk";
+import { assertDeclarativeArchiveSystemRequirements, DeclarativeArchiveDependencyError } from "./declarative-system-archive.js";
 
 type ArchiveValidationResult =
   | { ok: true; value: CampaignArchive }
@@ -218,6 +219,12 @@ export function validateCampaignArchiveShape(
     return { ok: false, error: "Campaign archive manifest assetFileCount must be a non-negative integer" };
   }
 
+  try { assertDeclarativeArchiveSystemRequirements(manifest.systemRequirements); }
+  catch (error) {
+    if (!(error instanceof DeclarativeArchiveDependencyError)) throw error;
+    return { ok: false, error: error.message };
+  }
+
   const defaults = emptyState() as unknown as Record<string, unknown>;
   for (const [collection, defaultValue] of Object.entries(defaults)) {
     if (!Array.isArray(defaultValue)) continue;
@@ -387,6 +394,19 @@ function validateNestedArchiveRecord(collection: string, record: Record<string, 
     }
   }
   if (collection === "scenes") {
+    const gridStates = [record, ...(Array.isArray(record.sceneEditHistory) ? record.sceneEditHistory.flatMap((entry) => isRecord(entry) && isRecord(entry.state) ? [entry.state] : []) : [])];
+    for (const gridState of gridStates) {
+      for (const field of ["annotations", "annotationHistory"]) {
+        const entries = gridState[field];
+        if (entries === undefined) continue;
+        if (!Array.isArray(entries) || entries.some((entry) => !isRecord(entry) || (entry.visibility !== undefined && entry.visibility !== "public" && entry.visibility !== "gm"))) return `${field} visibility must be public or gm`;
+      }
+      if (gridState.visibilityMode !== undefined && gridState.visibilityMode !== "fog" && gridState.visibilityMode !== "dynamic") return "visibilityMode must be fog or dynamic";
+      if (gridState.gridOrigin !== undefined) {
+        const origin = gridState.gridOrigin;
+        if (!isRecord(origin) || Object.keys(origin).some((key) => key !== "x" && key !== "y") || !finiteNumber(origin.x) || Math.abs(origin.x as number) > 100_000 || !finiteNumber(origin.y) || Math.abs(origin.y as number) > 100_000) return "gridOrigin must contain finite x and y coordinates from -100000 to 100000";
+      }
+    }
     for (const [field, rules] of [
       ["walls", [id("id"), number("x1"), number("y1"), number("x2"), number("y2"), bool("blocksVision")]],
       ["lights", [id("id"), number("x"), number("y"), nonNegative("radius"), text("color")]]

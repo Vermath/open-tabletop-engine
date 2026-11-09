@@ -2,6 +2,9 @@ import type { Actor, ContentImportBatch, DiceRoll, FogHistoryEntry, VisionPoint,
 import { probabilityRange } from "@open-tabletop/dice-engine";
 import type { AdminJob } from "./api.js";
 
+const numberFormatter = new Intl.NumberFormat();
+const dateTimeFormatter = new Intl.DateTimeFormat([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+
 
 export function slugId(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80);
@@ -167,7 +170,7 @@ export function errorMessage(error: unknown): string {
 
 
 export function formatNumber(value?: number): string {
-  return typeof value === "number" && Number.isFinite(value) ? value.toLocaleString() : "0";
+  return typeof value === "number" && Number.isFinite(value) ? numberFormatter.format(value) : "0";
 }
 
 
@@ -242,7 +245,7 @@ export function formatDateTime(value?: string): string {
   if (!value) return "";
   const time = new Date(value);
   if (Number.isNaN(time.getTime())) return value;
-  return time.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return dateTimeFormatter.format(time);
 }
 
 

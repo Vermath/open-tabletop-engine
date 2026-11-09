@@ -36,9 +36,9 @@
     "@open-tabletop/plugin-sdk": "workspace:*",
     "@open-tabletop/system-sdk": "workspace:*",
     "@openai/codex": "^0.133.0",
-    "fastify": "^5.1.0",
-    "pdfjs-dist": "^6.1.200",
-    "sharp": "0.34.5"
+    "fastify": "5.12.1",
+    "pdfjs-dist": "6.2.108",
+    "sharp": "0.35.4"
   },
   "devDependencies": {
     "tsx": "^4.19.2",

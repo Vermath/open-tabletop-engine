@@ -412,6 +412,9 @@ test.describe("final strict browser acceptance", () => {
       buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600"><rect width="800" height="600" fill="#1f2937"/><path d="M0 0H800V600H0Z" stroke="#f59e0b"/></svg>'),
     });
 
+    const mapPlacementReview = page.getByRole("dialog", { name: `Place ${mapName}`, exact: true });
+    await expect(mapPlacementReview).toContainText("Vault Entry already has a map or prepared content.");
+    await mapPlacementReview.getByRole("button", { name: "Keep canvas and replace map", exact: true }).click();
     await expect(statusMessage(page, `${mapName} is set as the background. Click two grid intersections to calibrate.`)).toBeVisible();
     const calibration = page.locator(".grid-calibration-panel");
     await expect(calibration.getByRole("heading", { name: "Match the map grid" })).toBeVisible();

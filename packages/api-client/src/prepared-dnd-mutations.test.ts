@@ -2,7 +2,7 @@ import type {
   Dnd5eSrdPendingAdvancementCancelResult,
   Dnd5eSrdTypedDamageApplyResult,
   DndRulesMutationUndoResult,
-} from "@open-tabletop/core";
+} from "@open-tabletop/api-contracts";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   OpenTabletopClient,

@@ -1,4 +1,4 @@
-import type { Actor, Combat, Item, RulesEffectSchedule } from "@open-tabletop/core";
+import type { Actor, Combat, Item, RulesEffectSchedule } from "@open-tabletop/api-contracts";
 import { dnd5eSrdClassLevel } from "./dnd-class-levels.js";
 import { dnd5eSrdContinuationTrigger } from "./dnd-action-continuations.js";
 import type { Dnd5eSrdConcentrationCleanup } from "./dnd-resolution-types.js";

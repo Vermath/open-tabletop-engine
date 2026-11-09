@@ -1,4 +1,4 @@
-import type { Actor, CalculationOverride, Item } from "@open-tabletop/core";
+import type { Actor, CalculationOverride, Item } from "@open-tabletop/api-contracts";
 import { describe, expect, it } from "vitest";
 import {
   applyDnd5eSrdCalculationOverridesToExplanation,

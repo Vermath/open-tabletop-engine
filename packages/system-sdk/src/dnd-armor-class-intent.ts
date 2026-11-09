@@ -1,4 +1,4 @@
-import type { Actor, CalculationOverrideSource } from "@open-tabletop/core";
+import type { Actor, CalculationOverrideSource } from "@open-tabletop/api-contracts";
 
 export const DND_5E_SRD_ARMOR_CLASS_INTENT_KEY = "armorClassIntent" as const;
 export const DND_5E_SRD_ARMOR_CLASS_REVIEW_KEY = "armorClassReview" as const;

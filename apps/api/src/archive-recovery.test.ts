@@ -424,19 +424,16 @@ class OneShotFlushFailureStore extends MemoryStateStore {
   private flushAttempts = 0;
 
   failOnFlush(attempt: number): void {
-    this.failingFlushAttempt = attempt;
+    this.failingFlushAttempt = this.flushAttempts + attempt;
   }
 
   override flush(): void {
     this.flushAttempts += 1;
-    if (this.flushAttempts !== this.failingFlushAttempt) return;
-    this.failingFlushAttempt = undefined;
-    throw new Error("injected state flush failure");
-  }
-
-  override replace(state: EngineState, options: { flush?: boolean } = {}): void {
-    super.replace(state, options);
-    if (options.flush !== false) this.flush();
+    if (this.flushAttempts === this.failingFlushAttempt) {
+      this.failingFlushAttempt = undefined;
+      throw new Error("injected state flush failure");
+    }
+    super.flush();
   }
 }
 
@@ -453,6 +450,9 @@ function archiveAtomicityFixture(store: MemoryStateStore, stagedAssetSizeBytes?:
   const existingAsset = archiveAsset("asset_atomic_existing", existingBytes, "Existing archive object");
   existingAsset.storage = { provider: "local", key: assetStorageKey(existingAsset) };
   store.state.assets.push(existingAsset);
+  // This object belongs to the accepted pre-import checkpoint.
+  store.save();
+  store.flush();
   const replacementAsset = archiveAsset(existingAsset.id, replacementBytes, "Replacement archive object");
   const newAsset = archiveAsset("asset_atomic_new", newBytes, "New archive object");
   const importedActorId = "act_atomic_import_guard";

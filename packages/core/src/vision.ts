@@ -191,6 +191,35 @@ export function isPointInsideVisionPolygons(point: VisionPoint, polygons: Vision
   return polygons.some((polygon) => isPointInsideVisionPolygon(point, polygon));
 }
 
+/** Applies the same visibility rules to server disclosure and player map sampling. */
+export function isPointVisibleInSceneVision(point: VisionPoint, options: {
+  visibilityMode?: Scene["visibilityMode"];
+  fogActive: boolean;
+  polygons: readonly VisionPolygon[];
+}): boolean {
+  const containing = options.polygons.filter((polygon) => isPointInsideVisionPolygon(point, polygon));
+  if (containing.some((polygon) => polygon.source === "fog" && polygon.mode === "hide")) return false;
+  const ownedVision = containing.filter((polygon) => polygon.source === "token");
+  const darkness = containing.filter((polygon) => polygon.lightingEffect === "darkness");
+  if (!visionSensesBypassDarkness(ownedVision, darkness)) return false;
+  if (options.visibilityMode === "dynamic") {
+    if (ownedVision.length === 0) return false;
+    return ownedVision.some((polygon) => visionSenseBypassesAmbientDarkness(polygon.senseType)) ||
+      containing.some((polygon) => polygon.source === "light" && polygon.lightingEffect !== "darkness");
+  }
+  return !options.fogActive || containing.some((polygon) => polygon.source !== "light" && polygon.mode !== "hide");
+}
+
+export function visionSenseBypassesAmbientDarkness(senseType: VisionPolygon["senseType"]): boolean {
+  return senseType === "darkvision" || senseType === "blindsight" || senseType === "tremorsense" || senseType === "truesight";
+}
+
+export function visionSensesBypassDarkness(visionPolygons: ReadonlyArray<Pick<VisionPolygon, "senseType">>, darknessPolygons: ReadonlyArray<Pick<VisionPolygon, "magical">>): boolean {
+  if (darknessPolygons.length === 0) return true;
+  const bypassesMagical = visionPolygons.some((polygon) => polygon.senseType === "blindsight" || polygon.senseType === "tremorsense" || polygon.senseType === "truesight");
+  return bypassesMagical || (!darknessPolygons.some((polygon) => polygon.magical) && visionPolygons.some((polygon) => polygon.senseType === "darkvision"));
+}
+
 export function buildSmoothFogBrushPolygon(scene: Pick<Scene, "width" | "height">, rawPoints: VisionPoint[], options: SmoothFogBrushOptions = {}): { points: VisionPoint[]; radius: number } | undefined {
   const radius = normalizePositiveNumber(options.radius, DEFAULT_BRUSH_RADIUS, Math.max(scene.width, scene.height));
   const maxPolygonPoints = Math.max(12, Math.min(DEFAULT_BRUSH_MAX_POINTS, Math.floor(options.maxPolygonPoints ?? DEFAULT_BRUSH_MAX_POINTS)));

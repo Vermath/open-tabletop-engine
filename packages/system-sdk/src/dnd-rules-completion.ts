@@ -1,4 +1,4 @@
-import type { Actor } from "@open-tabletop/core";
+import type { Actor } from "@open-tabletop/api-contracts";
 
 export type Dnd5eSrdFeatGrant = "general" | "epic-boon";
 

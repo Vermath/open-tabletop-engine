@@ -4,7 +4,7 @@ import type {
   Dnd5eSrdSpellPreparationPlan,
   Dnd5eSrdSpellPreparationTiming,
   Item
-} from "@open-tabletop/core";
+} from "@open-tabletop/api-contracts";
 
 interface SpellPreparationInput {
   selectedSpellIds: string[];

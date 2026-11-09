@@ -1,4 +1,4 @@
-import type { Actor, Combat, Item } from "@open-tabletop/core";
+import type { Actor, Combat, Item } from "@open-tabletop/api-contracts";
 import { describe, expect, it } from "vitest";
 import { applyDnd5eSrdStandardActionUse } from "./dnd-action-economy.js";
 import { advanceDnd5eSrdCombatRules } from "./dnd-combat-progression.js";

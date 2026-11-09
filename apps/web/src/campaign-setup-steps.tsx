@@ -39,6 +39,7 @@ export function CampaignSetupSteps(props: CampaignSetupStepsProps) {
     ...(draft.route.step === "invitation" ? { inviteEnabled: false } : {}),
     route: moveCampaignSetupRoute(draft.route, "skip")
   });
+  const systemName = props.systems.find((system) => system.id === draft.systemId)?.name ?? (draft.systemId === "dnd-5e-srd" ? "D&D 5.5e SRD" : draft.systemId);
   const sceneName = draft.starterContent ? "First Session" : draft.sceneName.trim() || "Opening Scene";
   const sceneFolder = draft.starterContent ? "starter content" : draft.sceneFolder.trim() || "no folder";
   const visibility = draft.visibility === "invite_only" ? "Invite only" : draft.visibility === "public" ? "Public" : "Private";
@@ -131,6 +132,8 @@ export function CampaignSetupSteps(props: CampaignSetupStepsProps) {
             <h3 id="campaign-setup-review-heading">Review and create</h3>
             <p className="account-summary">Character creation, map placement, tokens, and encounters are guided next and remain optional until play needs them.</p>
             <div className="asset-pressure-list" aria-label="Campaign setup impact">
+              <div className="operator-row tool-call-row"><span>Campaign</span><strong>{draft.name.trim()}</strong></div>
+              <div className="operator-row tool-call-row"><span>Rules system</span><strong>{systemName}</strong></div>
               <div className="operator-row tool-call-row"><span>Access</span><strong>{visibility} - {invite}</strong></div>
               <div className="operator-row tool-call-row"><span>Scene</span><strong>{sceneName} - {draft.sceneWidth}x{draft.sceneHeight} - {draft.sceneGridType === "gridless" ? "gridless" : `grid ${draft.sceneGridSize}`} - {sceneFolder}</strong></div>
               <div className="operator-row tool-call-row"><span>Permissions</span><strong>{permissionTemplate.label}</strong></div>

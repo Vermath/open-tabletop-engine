@@ -1254,8 +1254,11 @@ describe("api contracts", () => {
 
     expect(plugin.properties.eventSubscriptions).toBeDefined();
     expect(commandResponse.required).toEqual(
-      expect.arrayContaining(["proposal", "proposals", "approvalRequired"]),
+      expect.arrayContaining(["proposals", "approvalRequired"]),
     );
+    expect(commandResponse.required).not.toEqual(expect.arrayContaining(["proposal"]));
+    expect(commandResponse.required).not.toEqual(expect.arrayContaining(["chat"]));
+    expect(commandResponse.required).not.toEqual(expect.arrayContaining(["storageMutation"]));
     expect(commandResponse.properties.proposal).toEqual({
       $ref: "#/components/schemas/Proposal",
     });

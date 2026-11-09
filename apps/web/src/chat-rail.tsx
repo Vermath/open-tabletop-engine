@@ -57,7 +57,7 @@ export function ChatRail(props: ChatRailProps) {
 
 function CampaignChatRail(props: ChatRailProps) {
   const streamRef = useRef<HTMLDivElement>(null);
-  const previousMessageCountRef = useRef(props.messages.length);
+  const previousMessagesRef = useRef(props.messages);
   const [diceActionStatus, setDiceActionStatus] = useState("");
   const [followingLatest, setFollowingLatest] = useState(true);
   const [unseenMessageCount, setUnseenMessageCount] = useState(0);
@@ -69,8 +69,15 @@ function CampaignChatRail(props: ChatRailProps) {
 
   useEffect(() => {
     const stream = streamRef.current;
-    const added = Math.max(0, props.messages.length - previousMessageCountRef.current);
-    previousMessageCountRef.current = props.messages.length;
+    const previousMessages = previousMessagesRef.current;
+    const previousTail = previousMessages.at(-1);
+    const previousIds = new Set(previousMessages.map((message) => message.id));
+    const previousTailIndex = previousTail ? props.messages.findIndex((message) => message.id === previousTail.id) : -1;
+    const added = props.messages.filter((message, index) => !previousIds.has(message.id)
+      && (!previousTail || (previousTailIndex >= 0 ? index > previousTailIndex : message.createdAt > previousTail.createdAt))).length;
+    const currentTail = props.messages.at(-1);
+    // Older history and tail deletion must not move the known latest point back.
+    if (!previousTail || (currentTail && currentTail.createdAt >= previousTail.createdAt)) previousMessagesRef.current = props.messages;
     if (!stream) return;
     if (followingLatest) {
       stream.scrollTo({ top: stream.scrollHeight });
@@ -78,7 +85,7 @@ function CampaignChatRail(props: ChatRailProps) {
     } else if (added > 0) {
       setUnseenMessageCount((count) => count + added);
     }
-  }, [followingLatest, props.messages.length]);
+  }, [followingLatest, props.messages]);
 
   const jumpToLatest = () => {
     const stream = streamRef.current;

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { connect, type Socket } from "node:net";
@@ -86,6 +86,44 @@ describe("web static runtime", () => {
     } finally {
       await web.close();
       await api.close();
+    }
+  });
+
+  it("reuses proxy sockets without accumulating close listeners", async () => {
+    const { createServer } = await import("node:http");
+    const root = mkdtempSync(join(tmpdir(), "otte-web-runtime-keepalive-"));
+    writeFileSync(join(root, "index.html"), "<main>Keep alive</main>");
+    let connections = 0;
+    let requests = 0;
+    const api = createServer((_request, response) => {
+      requests += 1;
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ ok: true }));
+    });
+    api.on("connection", () => { connections += 1; });
+    await new Promise<void>((resolve) => api.listen(0, "127.0.0.1", resolve));
+    const address = api.address();
+    if (!address || typeof address === "string") throw new Error("Keep-alive fixture did not bind");
+    const web = await startWebStaticRuntime({ host: "127.0.0.1", port: 0, root, apiBaseUrl: `http://127.0.0.1:${address.port}` });
+    const warnings: Error[] = [];
+    const captureWarning = (warning: Error) => {
+      if (warning.name === "MaxListenersExceededWarning" && warning.message.includes("close")) warnings.push(warning);
+    };
+    process.on("warning", captureWarning);
+    try {
+      for (let index = 0; index < 24; index += 1) {
+        expect(await (await fetch(`${web.url}/api/v1/health`)).json()).toEqual({ ok: true });
+      }
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(requests).toBe(24);
+      expect(connections).toBe(1);
+      expect(warnings).toEqual([]);
+    } finally {
+      process.off("warning", captureWarning);
+      await web.close();
+      await new Promise<void>((resolve, reject) => api.close((error) => error ? reject(error) : resolve()));
+      unlinkSync(join(root, "index.html"));
+      rmdirSync(root);
     }
   });
 

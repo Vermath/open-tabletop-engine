@@ -440,6 +440,7 @@ function classifyMcpRouteSurface(method: string, path: string): { tools?: string
   if (path.endsWith("/ownership-transfer")) return { excluded: "campaign_member_admin" };
   if (path.includes("/webhooks")) return { excluded: "human_campaign_integration_admin" };
   if (path === "/api/v1/campaigns/{campaignId}/snapshot") return { excluded: "client_state_aggregation" };
+  if (method === "GET" && path === "/api/v1/scenes/{sceneId}/player-preview") return { excluded: "gm_player_view_client_aggregation" };
   if (path.includes("/members")) return method === "GET" && path.endsWith("/members") ? { tools: ["read_campaign"] } : { excluded: "campaign_member_admin" };
   if (path.includes("/campaign-sessions/") || path.endsWith("/sessions")) return method === "GET" ? { tools: ["read_campaign_session"] } : { excluded: "campaign_session_preparation" };
   if (path.endsWith("/search")) return { tools: ["search_campaign"] };
@@ -12412,6 +12413,7 @@ describe("api", () => {
       { method: "GET", url: "/api/v1/scenes/scn_vault_entry/delegations" },
       { method: "PATCH", url: "/api/v1/scenes/scn_vault_entry/delegations/usr_demo_player", headers: { "idempotency-key": "auth-matrix-scene-delegation" }, payload: { permissions: ["scene.read"] } },
       { method: "GET", url: "/api/v1/scenes/scn_vault_entry/vision" },
+      { method: "GET", url: "/api/v1/scenes/scn_vault_entry/player-preview?userId=usr_demo_player" },
       { method: "GET", url: "/api/v1/scenes/scn_vault_entry/vision/sample?x=100&y=100" },
       { method: "POST", url: "/api/v1/scenes/scn_vault_entry/path-measurement", payload: { points: [{ x: 0, y: 0 }, { x: 100, y: 100 }] } },
       { method: "POST", url: "/api/v1/scenes/scn_vault_entry/difficult-terrain", payload: { label: "No Auth Terrain", points: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }] } },
@@ -12868,6 +12870,7 @@ describe("api", () => {
       ["GET /api/v1/campaign-sessions/{sessionId}", "campaign session preparation requires campaign update"],
       ["GET /api/v1/campaigns/{campaignId}/fog-presets", "fog presets require token reveal"],
       ["GET /api/v1/campaigns/{campaignId}/actors/{actorId}/calculation-overrides", "calculation overrides require private actor access"],
+      ["GET /api/v1/scenes/{sceneId}/player-preview", "player preview requires game master access"],
       ["GET /api/v1/scenes/{sceneId}/rendering/diagnostics", "rendering diagnostics require scene update"],
       ["GET /api/v1/scenes/{sceneId}/delegations", "scene delegation roster requires scene update"],
       ["GET /api/v1/scenes/{sceneId}/edits", "scene edit history requires scene update"],

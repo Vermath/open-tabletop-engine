@@ -1158,6 +1158,16 @@ export function archiveWithRegeneratedIds(archive: CampaignArchive, options: { u
   }
 
   const remappedData = remapArchiveReferences(data, idMap) as EngineState;
+  // Package identities live outside the campaign-record ID namespace. Restore
+  // only known domain fields; retain historical remapping inside arbitrary data.
+  for (const [index, campaign] of data.campaigns.entries()) {
+    const remapped = remappedData.campaigns[index]!;
+    remapped.defaultSystemId = campaign.defaultSystemId;
+    if (campaign.systemBindings !== undefined) remapped.systemBindings = campaign.systemBindings;
+  }
+  for (const collection of ["actors", "items", "compendia", "pendingAdvancements"] as const) {
+    for (const [index, record] of (data[collection] ?? []).entries()) remappedData[collection][index]!.systemId = record.systemId;
+  }
   const copiedCampaignIds = new Set(remappedData.campaigns.map((campaign) => campaign.id));
   for (const campaign of remappedData.campaigns) {
     campaign.organizationId = options.organizationId;

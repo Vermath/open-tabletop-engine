@@ -1,3 +1,4 @@
+import { sceneGridSize } from "./scene-grid.js";
 import type { Scene, VisionPoint } from "./types.js";
 
 /** A common delta identifies translation without confusing it with vertex edits. */
@@ -19,7 +20,7 @@ export function translatedAnnotationPoints(
   snapToGrid = false
 ): VisionPoint[] {
   if (points.length === 0) return [];
-  const step = snapToGrid && scene.gridType === "square" ? Math.max(1, Math.round(scene.gridSize || 1)) : 1;
+  const step = snapToGrid && scene.gridType === "square" ? sceneGridSize(scene) : undefined;
   const minX = Math.min(...points.map((point) => point.x));
   const minY = Math.min(...points.map((point) => point.y));
   const maxX = Math.max(...points.map((point) => point.x));
@@ -28,7 +29,7 @@ export function translatedAnnotationPoints(
     // An edge may lie between grid lines. Preserve an already capped delta so
     // submitting the canvas result to the API cannot snap it a second time.
     if (Math.abs(value - min) < 1e-9 || Math.abs(value - max) < 1e-9) return value;
-    return Math.max(min, Math.min(max, Math.round(value / step) * step));
+    return Math.max(min, Math.min(max, step === undefined ? value : Math.round(value / step) * step));
   };
   const deltaX = boundedDelta(delta.x, -minX, scene.width - maxX);
   const deltaY = boundedDelta(delta.y, -minY, scene.height - maxY);

@@ -1,4 +1,4 @@
-import type { Actor, Combat, Item, RulesEffectScheduleTiming } from "@open-tabletop/core";
+import type { Actor, Combat, Item, RulesEffectScheduleTiming } from "@open-tabletop/api-contracts";
 import type { Dnd5eSrdConcentrationCleanup, RulesResolutionActorUpdate } from "./dnd-resolution-types.js";
 import { dnd5eSrdHeavyArmorItemIds, isDnd5eSrdRageEffect } from "./dnd-rage-lifecycle.js";
 

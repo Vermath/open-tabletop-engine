@@ -73,9 +73,9 @@ describe("keyboard-complete scene canvas", () => {
   });
 
   it("wires named keyboard help, token movement, gesture completion, and visible focus into the actual canvas", () => {
-    expect(canvasSource).toContain('aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Enter Space Escape"');
-    expect(canvasSource).toContain("onKeyDown={handleBoardKeyDown}");
-    expect(canvasSource).toContain("onKeyDown={(event) => moveTokenFromKeyboard(token, event)}");
+    expect(canvasSource).toContain('aria-keyshortcuts={props.readOnly ? undefined : "ArrowUp ArrowDown ArrowLeft ArrowRight Enter Space Escape"}');
+    expect(canvasSource).toContain("onKeyDown={props.readOnly ? undefined : handleBoardKeyDown}");
+    expect(canvasSource).toContain("onKeyDown={props.readOnly ? undefined : (event) => moveTokenFromKeyboard(token, event)}");
     expect(canvasSource).toContain("if (!props.canMoveToken) return;");
     expect(appSource).toContain('canMoveToken={hasPermission("token.move")}');
     expect(canvasSource).toContain("Enter or Space to start and finish");

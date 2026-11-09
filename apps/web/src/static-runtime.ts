@@ -173,6 +173,7 @@ function closeStaticServer(
 }
 
 function trackStaticRuntimeSocket(sockets: Set<Socket>, socket: Socket): void {
+  if (sockets.has(socket)) return;
   sockets.add(socket);
   socket.once("close", () => sockets.delete(socket));
 }

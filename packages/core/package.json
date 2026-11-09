@@ -10,10 +10,42 @@
     "build": "tsc -p tsconfig.json",
     "lint": "tsc -p tsconfig.json --noEmit",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "prepack": "pnpm run build"
+  },
+  "dependencies": {
+    "@open-tabletop/api-contracts": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.7.2",
     "vitest": "^3.2.6"
-  }
+  },
+  "files": [
+    "dist/index.js",
+    "dist/index.d.ts",
+    "dist/annotation-geometry.js",
+    "dist/annotation-geometry.d.ts",
+    "dist/events.js",
+    "dist/events.d.ts",
+    "dist/compatibility.js",
+    "dist/compatibility.d.ts",
+    "dist/ids.js",
+    "dist/ids.d.ts",
+    "dist/permissions.js",
+    "dist/permissions.d.ts",
+    "dist/proposals.js",
+    "dist/proposals.d.ts",
+    "dist/scene-grid.js",
+    "dist/scene-grid.d.ts",
+    "dist/state.js",
+    "dist/state.d.ts",
+    "dist/tactical.js",
+    "dist/tactical.d.ts",
+    "dist/types.js",
+    "dist/types.d.ts",
+    "dist/vision.js",
+    "dist/vision.d.ts",
+    "LICENSE",
+    "README.md"
+  ]
 }

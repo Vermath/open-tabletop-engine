@@ -1,4 +1,4 @@
-import type { Actor, ActorCalculationExplanation, CalculationSource, CalculationTerm, Combat, CompendiumCatalogEntry, CompendiumProvenance, Item, PermissionName, SystemCapability, SystemManifestData } from "@open-tabletop/core";
+import type { Actor, ActorCalculationExplanation, CalculationSource, CalculationTerm, Combat, CompendiumCatalogEntry, CompendiumProvenance, Item, PermissionName, SystemCapability, SystemManifestData } from "@open-tabletop/api-contracts";
 import type { Dnd5eSrdConcentrationCleanup, RulesResolutionActorUpdate } from "./dnd-resolution-types.js";
 import { DND_5E_SRD_MONSTER_STAT_BLOCKS, type Dnd5eSrdMonsterAction, type Dnd5eSrdMonsterStatBlock } from "./dnd-monster-stat-blocks.js";
 import { buildDnd5eSrdCalculationExplanation, type Dnd5eSrdCalculationFlagInput, type Dnd5eSrdRollCalculationInput, type Dnd5eSrdScalarCalculationInput } from "./dnd-calculation-explanations.js";
@@ -32,6 +32,8 @@ import { dnd5eSrdManagedEndTurnRepeatSaveSchedule } from "./dnd-advanced-mechani
 import { dnd5eSrdActorIsDead, dnd5eSrdExhaustionDeathData, normalizeConditionRecords, type NormalizedConditionRecord } from "./dnd-condition-lifecycle.js";
 import * as dndRollIds from "./dnd-roll-identifiers.js";
 import * as dndStaticContent from "./dnd-static-content.js";
+import { validateDeclarativeSystemManifest } from "./declarative-system.js";
+export * from "./declarative-system.js";
 export * from "./dnd-calculation-explanations.js";
 export * from "./dnd-roll-identifiers.js";
 export { DND_5E_SRD_SYSTEM_ID, DND_5E_SRD_VERSION, dnd5eSrdXpThresholds, dnd5eSrdMulticlassPrerequisites, dnd5eSrdAbilityScoreImprovementLevels } from "./dnd-static-content.js";
@@ -863,7 +865,12 @@ export function validateSystemManifest(manifest: SystemManifest, options: { core
   if (!manifest || typeof manifest !== "object") {
     throw new SystemManifestValidationError(["System manifest must be an object"]);
   }
-  const manifestKeys = new Set(["id", "name", "version", "compatibleCore", "entrypoints", "schemas", "permissions", "capabilities"]);
+  const declarative = Object.prototype.hasOwnProperty.call(manifest, "definition");
+  if (declarative) {
+    const errors = validateDeclarativeSystemManifest(manifest);
+    if (errors.length) throw new SystemManifestValidationError(errors.map((issue) => `${JSON.stringify(issue.path)}: ${issue.message}`));
+  }
+  const manifestKeys = new Set(["id", "name", "version", "compatibleCore", "entrypoints", "schemas", "permissions", "capabilities", "definition"]);
   const unknownManifestKeys = Object.keys(manifest).filter((key) => !manifestKeys.has(key));
   if (unknownManifestKeys.length) issues.push(`System manifest contains unknown fields: ${unknownManifestKeys.join(", ")}`);
   if (typeof manifest.id !== "string" || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(manifest.id) || manifest.id.length > 64) issues.push("System manifest id must be a lowercase kebab-case identifier of 64 characters or fewer");
@@ -880,12 +887,14 @@ export function validateSystemManifest(manifest: SystemManifest, options: { core
       if (path !== undefined && !safeSystemManifestPath(path)) issues.push(`System ${kind} entrypoint must be a safe relative package path`);
     }
   }
-  if (!manifest.schemas || typeof manifest.schemas !== "object" || Array.isArray(manifest.schemas) || typeof manifest.schemas.actor !== "string" || !manifest.schemas.actor.trim() || typeof manifest.schemas.item !== "string" || !manifest.schemas.item.trim()) {
-    issues.push("System manifest requires actor and item schemas");
-  } else {
-    const unknownSchemaKeys = Object.keys(manifest.schemas).filter((key) => key !== "actor" && key !== "item");
-    if (unknownSchemaKeys.length) issues.push(`System manifest schemas contain unknown fields: ${unknownSchemaKeys.join(", ")}`);
-    if (!safeSystemManifestPath(manifest.schemas.actor) || !safeSystemManifestPath(manifest.schemas.item)) issues.push("System actor and item schemas must use safe relative package paths");
+  if (!declarative) {
+    if (!manifest.schemas || typeof manifest.schemas !== "object" || Array.isArray(manifest.schemas) || typeof manifest.schemas.actor !== "string" || !manifest.schemas.actor.trim() || typeof manifest.schemas.item !== "string" || !manifest.schemas.item.trim()) {
+      issues.push("System manifest requires actor and item schemas");
+    } else {
+      const unknownSchemaKeys = Object.keys(manifest.schemas).filter((key) => key !== "actor" && key !== "item");
+      if (unknownSchemaKeys.length) issues.push(`System manifest schemas contain unknown fields: ${unknownSchemaKeys.join(", ")}`);
+      if (!safeSystemManifestPath(manifest.schemas.actor) || !safeSystemManifestPath(manifest.schemas.item)) issues.push("System actor and item schemas must use safe relative package paths");
+    }
   }
   if (!Array.isArray(manifest.permissions) || manifest.permissions.some((permission) => typeof permission !== "string" || !permission)) {
     issues.push("System manifest permissions must be an array of permission names");
@@ -7425,8 +7434,9 @@ const DND_5E_SRD_WEAPON_IDS = [
 ];
 
 function dnd5eSrdWeaponMasteryOptions(): Dnd5eSrdWeaponMasteryOption[] {
+  const compendium = dnd5eSrdCompendium();
   return DND_5E_SRD_WEAPON_IDS.flatMap((id) => {
-    const entry = dnd5eSrdCompendiumEntry(id);
+    const entry = compendium.find((candidate) => candidate.id === id);
     const weaponCategory = stringValue(entry?.data.weaponCategory);
     const weaponKind = stringValue(entry?.data.weaponKind);
     const mastery = stringValue(entry?.data.mastery);
@@ -7446,6 +7456,7 @@ function dnd5eSrdWeaponMasteryOptions(): Dnd5eSrdWeaponMasteryOption[] {
 }
 
 function dnd5eSrdClassWeaponIds(templateId: string): string[] {
+  if (!["barbarian", "fighter", "paladin", "ranger", "rogue"].includes(templateId)) return [];
   const options = dnd5eSrdWeaponMasteryOptions();
   if (templateId === "barbarian") return options.filter((weapon) => weapon.weaponKind === "melee").map((weapon) => weapon.id);
   if (["fighter", "paladin", "ranger"].includes(templateId)) return options.map((weapon) => weapon.id);

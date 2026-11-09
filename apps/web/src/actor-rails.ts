@@ -1,8 +1,8 @@
 import type { Actor, Token } from "@open-tabletop/core";
 
-export function actorForSelection(actors: Actor[], selectedActorId: string, selectedTokenActorId: string | undefined, activeSystemId: string | undefined): Actor | undefined {
-  return actors.find((actor) => actor.id === selectedTokenActorId)
-    ?? actors.find((actor) => actor.id === selectedActorId)
+export function actorForSelection(actors: Actor[], selectedActorId: string, selectedToken: Pick<Token, "actorId"> | undefined, activeSystemId: string | undefined): Actor | undefined {
+  if (selectedToken) return selectedToken.actorId ? actors.find((actor) => actor.id === selectedToken.actorId) : undefined;
+  return actors.find((actor) => actor.id === selectedActorId)
     ?? actors.find((actor) => actor.systemId === activeSystemId)
     ?? actors[0];
 }

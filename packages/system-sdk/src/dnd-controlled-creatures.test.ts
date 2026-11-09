@@ -1,14 +1,15 @@
-import { createTimestamped, type Actor, type Combat, type DndControlledCreatureCreateRequest, type DndControlledCreatureOriginatingAction, type Item, type Scene } from "@open-tabletop/core";
+import type { Actor, Combat, DndControlledCreatureCreateRequest, DndControlledCreatureOriginatingAction, Item, Scene } from "@open-tabletop/api-contracts";
+import { timestampedFixture } from "./test-fixtures.js";
 import { describe, expect, it } from "vitest";
 import { analyzeDndControlledCreatureRequest, dndControlledCreatureActionHandoff, dndControlledCreatureHandoffRequestErrors, dndControlledCreatureHandoffWithPreparation, dndControlledCreatureIsExpired, findExpiredDndControlledCreatures } from "./dnd-controlled-creatures.js";
 
 const now = "2026-07-13T12:00:00.000Z";
 
 function fixture() {
-  const source = createTimestamped("act", { id: "act_caster", campaignId: "camp", systemId: "dnd-5e-srd", ownerUserId: "user", type: "character", name: "Caster", data: { rulesEngine: { concentration: { rollId: "spell:summon" } } }, permissions: {} }) satisfies Actor;
-  const feature = createTimestamped("itm", { id: "itm_spell", campaignId: "camp", systemId: "dnd-5e-srd", actorId: source.id, type: "spell", name: "Open summon", data: {} }) satisfies Item;
-  const scene = createTimestamped("scn", { id: "scn", campaignId: "camp", name: "Scene", active: true, sortOrder: 0, gridType: "square", gridSize: 50, grid: { type: "square", size: 50, distance: 5, unit: "ft" }, width: 1000, height: 1000, fog: [], walls: [], lights: [], annotations: [], metadata: {}, environmentMechanics: [] }) satisfies Scene;
-  const combat = createTimestamped("cmb", { id: "cmb", campaignId: "camp", active: true, round: 2, turnIndex: 0, combatants: [{ id: "cmbt", tokenId: "tok_source", actorId: source.id, name: source.name, initiative: 17, defeated: false }] }) satisfies Combat;
+  const source = timestampedFixture({ id: "act_caster", campaignId: "camp", systemId: "dnd-5e-srd", ownerUserId: "user", type: "character", name: "Caster", data: { rulesEngine: { concentration: { rollId: "spell:summon" } } }, permissions: {} }) satisfies Actor;
+  const feature = timestampedFixture({ id: "itm_spell", campaignId: "camp", systemId: "dnd-5e-srd", actorId: source.id, type: "spell", name: "Open summon", data: {} }) satisfies Item;
+  const scene = timestampedFixture({ id: "scn", campaignId: "camp", name: "Scene", active: true, sortOrder: 0, gridType: "square", gridSize: 50, grid: { type: "square", size: 50, distance: 5, unit: "ft" }, width: 1000, height: 1000, fog: [], walls: [], lights: [], annotations: [], metadata: {}, environmentMechanics: [] }) satisfies Scene;
+  const combat = timestampedFixture({ id: "cmb", campaignId: "camp", active: true, round: 2, turnIndex: 0, combatants: [{ id: "cmbt", tokenId: "tok_source", actorId: source.id, name: source.name, initiative: 17, defeated: false }] }) satisfies Combat;
   const request: DndControlledCreatureCreateRequest = {
     kind: "summon",
     sceneId: scene.id,
@@ -30,7 +31,7 @@ function fixture() {
 describe("D&D controlled-creature analysis", () => {
   it("maps explicit spell and feature metadata without parsing names or prose", () => {
     const { source, scene, combat } = fixture();
-    const spell = createTimestamped("itm", {
+    const spell = timestampedFixture({
       id: "itm_dragon",
       campaignId: source.campaignId,
       systemId: source.systemId,
@@ -101,7 +102,7 @@ describe("D&D controlled-creature analysis", () => {
 
   it("keeps unsupported summon detail visible and binds prepared source fields", () => {
     const { source, scene } = fixture();
-    const legacy = createTimestamped("itm", { id: "itm_legacy_summon", campaignId: "camp", systemId: "dnd-5e-srd", actorId: source.id, type: "spell", name: "Legacy", data: { summon: "manual stat block", source: "SRD 5.2.1" } }) satisfies Item;
+    const legacy = timestampedFixture({ id: "itm_legacy_summon", campaignId: "camp", systemId: "dnd-5e-srd", actorId: source.id, type: "spell", name: "Legacy", data: { summon: "manual stat block", source: "SRD 5.2.1" } }) satisfies Item;
     const handoff = dndControlledCreatureActionHandoff({ actor: source, items: [legacy], roll: { id: `spell-${legacy.id}-effect`, label: "Legacy Effect" }, now, sceneId: scene.id });
     expect(handoff).toMatchObject({ status: "manual_required", prefill: { kind: "summon", sceneId: scene.id } });
     expect(handoff?.manualChoices.map(({ field }) => field)).toEqual(expect.arrayContaining(["duration", "initiative", "command", "token"]));
@@ -137,7 +138,7 @@ describe("D&D controlled-creature analysis", () => {
 
   it("binds complete source stat blocks while leaving incomplete stat choices reviewable", () => {
     const { source, scene } = fixture();
-    const complete = createTimestamped("itm", {
+    const complete = timestampedFixture({
       id: "itm_complete_summon",
       campaignId: source.campaignId,
       systemId: source.systemId,
@@ -211,7 +212,7 @@ describe("D&D controlled-creature analysis", () => {
       source: request.source, controllerUserId: "user", controllerActorId: source.id, ownerUserId: "user", linkedActorId: "controlled", linkedTokenIds: ["tok_controlled"],
       duration: request.duration, concentration: request.concentration, initiative: request.initiative, command: request.command, createdAt: now, updatedAt: now,
     };
-    const controlled = createTimestamped("act", {
+    const controlled = timestampedFixture({
       id: "controlled", campaignId: "camp", systemId: "dnd-5e-srd", ownerUserId: "user", type: "summon", name: "Spirit",
       data: { dnd5eControlledCreature: record }, permissions: {},
     }) satisfies Actor;

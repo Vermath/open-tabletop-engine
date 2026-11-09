@@ -1,5 +1,5 @@
 import { openApiSpec } from "@open-tabletop/api-contracts";
-import type { CampaignPresence } from "@open-tabletop/core";
+import type { CampaignPresence } from "@open-tabletop/api-contracts";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   OpenTabletopClient,
@@ -1994,6 +1994,7 @@ describe("OpenTabletopClient", () => {
         "scene-delete-client",
       ),
       client.sceneVision(sceneId, { previewUserId: "usr_client_player" }),
+      client.scenePlayerPreview(sceneId, "usr_client_player"),
       client.sampleSceneVision(sceneId, { x: 1, y: 2 }),
       client.measureScenePath(sceneId, [
         { x: 0, y: 0 },
@@ -2646,6 +2647,11 @@ describe("OpenTabletopClient", () => {
         "2026-07-13T00:00:00.000Z",
         "system-install-client",
       ),
+      client.bindCampaignSystem(campaignId, systemId, {
+        expectedUpdatedAt: "2026-07-13T00:00:00.000Z",
+        system: { systemId, version: "1.0.0", checksum: "a".repeat(64) },
+        expectedBinding: null,
+      }, { idempotencyKey: "system-binding-client" }),
       client.systemCharacterTemplates(campaignId, systemId),
       client.systemCharacterOrigins(campaignId, systemId),
       client.createSystemCharacter(

@@ -5,7 +5,7 @@ import type {
   Item,
   RulesEffectScheduleEvent,
   RulesEffectScheduleTiming
-} from "@open-tabletop/core";
+} from "@open-tabletop/api-contracts";
 import {
   evaluateDnd5eSrdEffectSchedules,
   type Dnd5eSrdEffectScheduleEvaluationInput

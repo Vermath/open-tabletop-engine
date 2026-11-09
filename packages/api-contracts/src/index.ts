@@ -184,6 +184,7 @@ export const routes = {
     `/api/v1/scenes/${pathPart(sceneId)}/delegations`,
   sceneDelegation: (sceneId: string, userId: string) =>
     `/api/v1/scenes/${pathPart(sceneId)}/delegations/${pathPart(userId)}`,
+  scenePlayerPreview: (sceneId: string) => `/api/v1/scenes/${pathPart(sceneId)}/player-preview`,
   sceneVision: (sceneId: string) =>
     `/api/v1/scenes/${pathPart(sceneId)}/vision`,
   sceneVisionSample: (sceneId: string) =>
@@ -361,6 +362,8 @@ export const routes = {
     `/api/v1/campaigns/${pathPart(campaignId)}/compatibility`,
   campaignSystem: (campaignId: string, systemId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}`,
+  campaignSystemBinding: (campaignId: string, systemId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/binding`,
   systemCharacterTemplates: (campaignId: string, systemId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/character-templates`,
   systemCharacterOrigins: (campaignId: string, systemId: string) =>
@@ -837,6 +840,7 @@ const endpointSpecs = [
   ["PATCH", "/api/v1/scenes/{sceneId}"],
   ["DELETE", "/api/v1/scenes/{sceneId}"],
   ["POST", "/api/v1/scenes/{sceneId}/ai-edits/apply-to-target"],
+  ["GET", "/api/v1/scenes/{sceneId}/player-preview"],
   ["GET", "/api/v1/scenes/{sceneId}/vision"],
   ["GET", "/api/v1/scenes/{sceneId}/vision/sample"],
   ["POST", "/api/v1/scenes/{sceneId}/path-measurement"],
@@ -983,6 +987,7 @@ const endpointSpecs = [
   ["GET", "/api/v1/campaigns/{campaignId}/systems"],
   ["GET", "/api/v1/campaigns/{campaignId}/compatibility"],
   ["POST", "/api/v1/campaigns/{campaignId}/systems/{systemId}/install"],
+  ["POST", "/api/v1/campaigns/{campaignId}/systems/{systemId}/binding"],
   [
     "GET",
     "/api/v1/campaigns/{campaignId}/systems/{systemId}/character-templates",
@@ -5026,6 +5031,7 @@ const componentSchemas = {
       eventSequence: { type: "integer", minimum: 0 },
       aiPolicy: schemaRef("AiCampaignPolicy"),
       rulesProfile: schemaRef("CampaignRulesProfile"),
+      systemBindings: arrayOf(schemaRef("SystemManifestIdentity")),
       archivedAt: { type: "string", format: "date-time" },
       archivedByUserId: idSchema,
       restoredAt: { type: "string", format: "date-time" },
@@ -5111,6 +5117,39 @@ const componentSchemas = {
         type: "object",
         additionalProperties: schemaRef("SnapshotHistoryCollectionMeta"),
       },
+    },
+  },
+  PlayerPreviewResponse: {
+    type: "object", additionalProperties: false, required: ["readOnly", "player", "snapshot"],
+    properties: {
+      readOnly: { type: "boolean", enum: [true] },
+      player: { type: "object", additionalProperties: false, required: ["id", "displayName"], properties: { id: idSchema, displayName: stringSchema } },
+      snapshot: schemaRef("PlayerPreviewSnapshot"),
+    },
+  },
+  PlayerPreviewSnapshot: {
+    type: "object",
+    additionalProperties: false,
+    required: ["campaign", "generatedAt", "selectedSceneId", "scenes", "tokens", "actors", "assets", "chat", "combats", "handouts"],
+    properties: {
+      campaign: { type: "object", additionalProperties: false, required: ["id", "name"], properties: { id: idSchema, name: stringSchema } },
+      generatedAt: { type: "string", format: "date-time" },
+      selectedSceneId: idSchema,
+      scenes: arrayOf(schemaRef("Scene")),
+      tokens: arrayOf(schemaRef("Token")),
+      actors: arrayOf(schemaRef("Actor")),
+      assets: arrayOf(schemaRef("MapAsset")),
+      vision: schemaRef("VisionSnapshot"),
+      chat: arrayOf(schemaRef("ChatMessage")),
+      combats: arrayOf({
+        type: "object", additionalProperties: false, required: ["id", "active", "combatants", "turnPresentation"],
+        properties: {
+          id: idSchema, active: { type: "boolean" },
+          combatants: arrayOf({ type: "object", additionalProperties: false, required: ["id"], properties: { id: idSchema, tokenId: idSchema } }),
+          turnPresentation: { type: "object", additionalProperties: false, properties: { currentCombatantId: idSchema, nextCombatantId: idSchema } },
+        },
+      }),
+      handouts: arrayOf(schemaRef("Handout")),
     },
   },
   CampaignSnapshot: {
@@ -5793,6 +5832,14 @@ const componentSchemas = {
       height: { type: "number", minimum: 1 },
       gridType: { type: "string", enum: ["square", "gridless"] },
       gridSize: { type: "number", minimum: 1 },
+      gridOrigin: {
+        type: "object", additionalProperties: false, required: ["x", "y"],
+        properties: {
+          x: { type: "number", minimum: -100000, maximum: 100000 },
+          y: { type: "number", minimum: -100000, maximum: 100000 },
+        },
+      },
+      visibilityMode: { type: "string", enum: ["fog", "dynamic"] },
       backgroundAssetId: idSchema,
       folder: stringSchema,
       active: { type: "boolean" },
@@ -5833,10 +5880,18 @@ const componentSchemas = {
     properties: {
       worldId: idSchema,
       name: stringSchema,
-      width: { type: "number", minimum: 1 },
-      height: { type: "number", minimum: 1 },
+      width: { type: "number", minimum: 1, maximum: 100000 },
+      height: { type: "number", minimum: 1, maximum: 100000 },
       gridType: { type: "string", enum: ["square", "gridless"] },
-      gridSize: { type: "number", minimum: 1 },
+      gridSize: { type: "number", minimum: 1, maximum: 10000 },
+      gridOrigin: {
+        type: "object", additionalProperties: false, required: ["x", "y"],
+        properties: {
+          x: { type: "number", minimum: -100000, maximum: 100000 },
+          y: { type: "number", minimum: -100000, maximum: 100000 },
+        },
+      },
+      visibilityMode: { type: "string", enum: ["fog", "dynamic"] },
       backgroundAssetId: idSchema,
       folder: stringSchema,
       active: { type: "boolean" },
@@ -5950,10 +6005,18 @@ const componentSchemas = {
     properties: {
       worldId: { anyOf: [idSchema, { type: "null" }] },
       name: stringSchema,
-      width: { type: "number", minimum: 1 },
-      height: { type: "number", minimum: 1 },
+      width: { type: "number", minimum: 1, maximum: 100000 },
+      height: { type: "number", minimum: 1, maximum: 100000 },
       gridType: { type: "string", enum: ["square", "gridless"] },
-      gridSize: { type: "number", minimum: 1 },
+      gridSize: { type: "number", minimum: 1, maximum: 10000 },
+      gridOrigin: {
+        type: "object", additionalProperties: false, required: ["x", "y"],
+        properties: {
+          x: { type: "number", minimum: -100000, maximum: 100000 },
+          y: { type: "number", minimum: -100000, maximum: 100000 },
+        },
+      },
+      visibilityMode: { type: "string", enum: ["fog", "dynamic"] },
       backgroundAssetId: { anyOf: [idSchema, { type: "null" }] },
       folder: { anyOf: [stringSchema, { type: "null" }] },
       active: { type: "boolean" },
@@ -6324,6 +6387,7 @@ const componentSchemas = {
       kind: { type: "string", enum: ["ping", "ruler", "template", "drawing"] },
       createdByUserId: idSchema,
       label: stringSchema,
+      visibility: { type: "string", enum: ["public", "gm"] },
       layer: {
         type: "string",
         enum: ["measurement", "effects", "drawings", "notes"],
@@ -6365,6 +6429,7 @@ const componentSchemas = {
       annotationId: idSchema,
       action: { type: "string", enum: ["create", "update", "delete"] },
       kind: { type: "string", enum: ["ping", "ruler", "template", "drawing"] },
+      visibility: { type: "string", enum: ["public", "gm"] },
       layer: {
         type: "string",
         enum: ["measurement", "effects", "drawings", "notes"],
@@ -6388,6 +6453,7 @@ const componentSchemas = {
       kind: { type: "string", enum: ["ping", "ruler", "template", "drawing"] },
       label: stringSchema,
       color: stringSchema,
+      visibility: { type: "string", enum: ["public", "gm"] },
       layer: {
         type: "string",
         enum: ["measurement", "effects", "drawings", "notes"],
@@ -6412,6 +6478,7 @@ const componentSchemas = {
     properties: {
       label: stringSchema,
       color: stringSchema,
+      visibility: { type: "string", enum: ["public", "gm"] },
       layer: {
         type: "string",
         enum: ["measurement", "effects", "drawings", "notes"],
@@ -9559,10 +9626,7 @@ const componentSchemas = {
     required: [
       "pluginId",
       "command",
-      "proposal",
       "proposals",
-      "chat",
-      "storageMutation",
       "approvalRequired",
     ],
     properties: {
@@ -9607,6 +9671,253 @@ const componentSchemas = {
       plugins: arrayOf(schemaRef("AdminPluginRegistrySyncPlugin")),
     },
   },
+  DeclarativeSystemPath: {
+    type: "array", minItems: 1, maxItems: 4,
+    description: "One to four safe own-property segments beneath actor.data. Prototype-related names are rejected by the runtime.",
+    items: { type: "string", minLength: 1, maxLength: 128 },
+  },
+  DeclarativeScalarSchema: {
+    anyOf: [
+      {
+        type: "object", additionalProperties: false, required: ["type", "minimum", "maximum"],
+        properties: {
+          type: { type: "string", enum: ["integer", "number"] },
+          minimum: { type: "number" }, maximum: { type: "number" },
+          enum: { type: "array", minItems: 1, maxItems: 16, uniqueItems: true, items: { type: "number" } },
+        },
+      },
+      {
+        type: "object", additionalProperties: false, required: ["type", "maxLength"],
+        properties: {
+          type: { type: "string", enum: ["string"] },
+          maxLength: { type: "integer", minimum: 0, maximum: 1000 },
+          enum: { type: "array", minItems: 1, maxItems: 16, uniqueItems: true, items: { type: "string", maxLength: 1000 } },
+        },
+      },
+      {
+        type: "object", additionalProperties: false, required: ["type"],
+        properties: {
+          type: { type: "string", enum: ["boolean"] },
+          enum: { type: "array", minItems: 1, maxItems: 16, uniqueItems: true, items: { type: "boolean" } },
+        },
+      },
+    ],
+  },
+  DeclarativeSystemObjectSchema: {
+    type: "object", additionalProperties: false,
+    description: "Bounded inline JSON schema. Runtime validation enforces at most four object levels and 64 declared properties across actor and item schemas, finite numeric bounds, safe property names, and defaults conforming to the schemas. The complete executable manifest is limited to 64 KiB.",
+    required: ["type", "properties", "required", "additionalProperties"],
+    properties: {
+      type: { type: "string", enum: ["object"] },
+      properties: {
+        type: "object", maxProperties: 64,
+        additionalProperties: { anyOf: [schemaRef("DeclarativeSystemObjectSchemaLevel2"), schemaRef("DeclarativeScalarSchema")] },
+      },
+      required: { type: "array", maxItems: 64, uniqueItems: true, items: { type: "string", minLength: 1, maxLength: 128 } },
+      additionalProperties: { type: "boolean", enum: [false] },
+    },
+  },
+  DeclarativeSystemObjectSchemaLevel2: {
+    type: "object", additionalProperties: false,
+    required: ["type", "properties", "required", "additionalProperties"],
+    properties: {
+      type: { type: "string", enum: ["object"] },
+      properties: { type: "object", maxProperties: 64, additionalProperties: { anyOf: [schemaRef("DeclarativeSystemObjectSchemaLevel3"), schemaRef("DeclarativeScalarSchema")] } },
+      required: { type: "array", maxItems: 64, uniqueItems: true, items: { type: "string", minLength: 1, maxLength: 128 } },
+      additionalProperties: { type: "boolean", enum: [false] },
+    },
+  },
+  DeclarativeSystemObjectSchemaLevel3: {
+    type: "object", additionalProperties: false,
+    required: ["type", "properties", "required", "additionalProperties"],
+    properties: {
+      type: { type: "string", enum: ["object"] },
+      properties: { type: "object", maxProperties: 64, additionalProperties: { anyOf: [schemaRef("DeclarativeSystemObjectSchemaLevel4"), schemaRef("DeclarativeScalarSchema")] } },
+      required: { type: "array", maxItems: 64, uniqueItems: true, items: { type: "string", minLength: 1, maxLength: 128 } },
+      additionalProperties: { type: "boolean", enum: [false] },
+    },
+  },
+  DeclarativeSystemObjectSchemaLevel4: {
+    type: "object", additionalProperties: false,
+    required: ["type", "properties", "required", "additionalProperties"],
+    properties: {
+      type: { type: "string", enum: ["object"] },
+      properties: { type: "object", maxProperties: 64, additionalProperties: schemaRef("DeclarativeScalarSchema") },
+      required: { type: "array", maxItems: 64, uniqueItems: true, items: { type: "string", minLength: 1, maxLength: 128 } },
+      additionalProperties: { type: "boolean", enum: [false] },
+    },
+  },
+  SystemManifestSchemas: {
+    anyOf: [
+      { type: "object", additionalProperties: false, required: ["actor", "item"], properties: { actor: stringSchema, item: stringSchema } },
+      { type: "object", additionalProperties: false, required: ["actor", "item"], properties: { actor: schemaRef("DeclarativeSystemObjectSchema"), item: schemaRef("DeclarativeSystemObjectSchema") } },
+    ],
+  },
+  DeclarativeSystemDefinition: {
+    type: "object", additionalProperties: false,
+    required: ["kind", "actorTypes", "itemTypes", "actorDefaults", "itemDefaults", "sheet", "quickRolls"],
+    properties: {
+      kind: { type: "string", enum: ["declarative-v1"] },
+      actorTypes: { type: "array", minItems: 1, maxItems: 32, uniqueItems: true, items: { type: "string", maxLength: 64, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" } },
+      itemTypes: { type: "array", minItems: 1, maxItems: 32, uniqueItems: true, items: { type: "string", maxLength: 64, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" } },
+      actorDefaults: { type: "object", maxProperties: 64, additionalProperties: true },
+      itemDefaults: { type: "object", maxProperties: 64, additionalProperties: true },
+      sheet: {
+        type: "object", additionalProperties: false, required: ["fields"],
+        properties: { fields: { type: "array", maxItems: 32, items: {
+          type: "object", additionalProperties: false, required: ["path", "label", "editable"],
+          properties: { path: schemaRef("DeclarativeSystemPath"), label: { type: "string", minLength: 1, maxLength: 128 }, editable: { type: "boolean" } },
+        } } },
+      },
+      quickRolls: { type: "array", maxItems: 32, items: {
+        type: "object", additionalProperties: false, required: ["id", "label", "dice"],
+        properties: {
+          id: { type: "string", maxLength: 64, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+          label: { type: "string", minLength: 1, maxLength: 128 },
+          dice: {
+            type: "object", additionalProperties: false, required: ["count", "sides", "bonus", "addFields"],
+            properties: {
+              count: { type: "integer", minimum: 1, maximum: 20 },
+              sides: { type: "integer", enum: [4, 6, 8, 10, 12, 20, 100] },
+              bonus: { type: "integer", minimum: -9007199254740991, maximum: 9007199254740991 },
+              addFields: { type: "array", maxItems: 4, items: schemaRef("DeclarativeSystemPath") },
+            },
+          },
+          cost: {
+            type: "object", additionalProperties: false, required: ["path", "amount"],
+            properties: { path: schemaRef("DeclarativeSystemPath"), amount: { type: "integer", minimum: 1, maximum: 9007199254740991 } },
+          },
+        },
+      } },
+    },
+  },
+  DeclarativeResourceCost: {
+    type: "object", additionalProperties: false, required: ["path", "amount", "before", "after"],
+    properties: { path: schemaRef("DeclarativeSystemPath"), amount: { type: "integer", minimum: 1, maximum: 9007199254740991 }, before: { type: "integer", minimum: 0, maximum: 9007199254740991 }, after: { type: "integer", minimum: -9007199254740991, maximum: 9007199254740991, description: "Projected remaining resource; may be negative on an unavailable sheet roll. Successful actions require a schema-valid nonnegative balance." } },
+  },
+  DeclarativeValidationIssue: {
+    type: "object", additionalProperties: false, required: ["path", "code", "message"],
+    properties: { path: { type: "array", maxItems: 20, items: { type: "string", maxLength: 128 } }, code: stringSchema, message: stringSchema },
+  },
+  DeclarativeRuntimeErrorResponse: {
+    type: "object", additionalProperties: false, required: ["error", "message", "issues"],
+    properties: {
+      error: { type: "string", enum: ["invalid_definition", "invalid_binding", "invalid_actor", "unknown_roll", "roll_unavailable"] },
+      message: stringSchema,
+      issues: { type: "array", maxItems: 32, items: schemaRef("DeclarativeValidationIssue") },
+    },
+  },
+  DeclarativeSystemStateErrorResponse: {
+    type: "object", additionalProperties: false, required: ["error", "message", "issues"],
+    properties: {
+      error: { type: "string", enum: ["invalid_system_state"] },
+      message: stringSchema,
+      issues: { type: "array", maxItems: 32, items: {
+        type: "object", additionalProperties: false, required: ["path", "code", "message", "collection", "recordId"],
+        properties: {
+          path: { type: "array", maxItems: 20, items: { type: "string", maxLength: 128 } },
+          code: { type: "string", maxLength: 128 }, message: { type: "string", maxLength: 512 },
+          collection: { type: "string", enum: ["campaigns", "actors", "items", "systemInstallations"] },
+          recordId: { type: "string", maxLength: 200 }, systemId: { type: "string", maxLength: 200 },
+        },
+      } },
+    },
+  },
+  DeclarativeArchiveDependencyErrorResponse: {
+    type: "object", additionalProperties: false, required: ["error", "message", "issues"],
+    properties: {
+      error: { type: "string", enum: ["archive_system_dependency"] },
+      message: stringSchema,
+      issues: { type: "array", items: {
+        type: "object", additionalProperties: false, required: ["path", "code", "message"],
+        properties: {
+          path: arrayOf(stringSchema), code: stringSchema, message: stringSchema,
+          campaignId: idSchema, systemId: idSchema, version: stringSchema, checksum: stringSchema,
+        },
+      } },
+    },
+  },
+  DeclarativeQuickRoll: {
+    type: "object", additionalProperties: false, required: ["id", "label", "available", "issues"],
+    properties: {
+      id: idSchema, label: stringSchema, formula: stringSchema, available: { type: "boolean" },
+      cost: schemaRef("DeclarativeResourceCost"),
+      issues: { type: "array", maxItems: 32, items: schemaRef("DeclarativeValidationIssue") },
+    },
+  },
+  DeclarativeActorSheet: {
+    type: "object", additionalProperties: false, required: ["kind", "actorId", "actorUpdatedAt", "system", "fields", "quickRolls"],
+    properties: {
+      kind: { type: "string", enum: ["declarative-v1"] }, actorId: idSchema, actorUpdatedAt: dateTimeSchema,
+      system: schemaRef("SystemManifestIdentity"),
+      fields: { type: "array", maxItems: 32, items: {
+        type: "object", additionalProperties: false, required: ["path", "label", "editable", "required", "present", "schema"],
+        properties: {
+          path: schemaRef("DeclarativeSystemPath"), label: stringSchema, editable: { type: "boolean" }, required: { type: "boolean" }, present: { type: "boolean" },
+          value: { anyOf: [{ type: "string" }, { type: "number" }, { type: "boolean" }] }, schema: schemaRef("DeclarativeScalarSchema"),
+        },
+      } },
+      quickRolls: { type: "array", maxItems: 32, items: schemaRef("DeclarativeQuickRoll") },
+    },
+  },
+  SystemActorSheet: {
+    anyOf: [
+      { type: "object", additionalProperties: true, properties: { kind: { not: { enum: ["declarative-v1"] } } } },
+      schemaRef("DeclarativeActorSheet"),
+    ],
+  },
+  DeclarativeActionRequest: {
+    type: "object", additionalProperties: false, required: ["rollId", "expectedActorUpdatedAt", "expectedSystem"],
+    properties: { rollId: idSchema, expectedActorUpdatedAt: dateTimeSchema, expectedSystem: schemaRef("SystemManifestIdentity") },
+  },
+  DeclarativeActionResult: {
+    type: "object", additionalProperties: false, required: ["roll", "chat", "actor", "sheet", "quickRoll"],
+    properties: {
+      roll: schemaRef("DiceRoll"), chat: schemaRef("ChatMessage"), actor: schemaRef("Actor"),
+      sheet: schemaRef("DeclarativeActorSheet"), quickRoll: schemaRef("DeclarativeQuickRoll"), cost: schemaRef("DeclarativeResourceCost"),
+    },
+  },
+  SystemActorRollRequest: {
+    anyOf: [
+      { allOf: [schemaRef("SystemActorActionRequest"), { type: "object", not: { required: ["expectedSystem"] } }] },
+      schemaRef("DeclarativeActionRequest"),
+    ],
+  },
+  SystemActorRollResponse: {
+    anyOf: [
+      { allOf: [schemaRef("SystemRollResponse"), { type: "object", properties: { sheet: { type: "object", not: { required: ["kind"], properties: { kind: { enum: ["declarative-v1"] } } } } } }] },
+      schemaRef("DeclarativeActionResult"),
+    ],
+  },
+  SystemManifestIdentity: {
+    type: "object",
+    additionalProperties: false,
+    required: ["systemId", "version", "checksum"],
+    properties: {
+      systemId: idSchema,
+      version: stringSchema,
+      checksum: { type: "string", pattern: "^[a-f0-9]{64}$" },
+    },
+  },
+  CampaignSystemBindingRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["expectedUpdatedAt", "system", "expectedBinding"],
+    properties: {
+      expectedUpdatedAt: dateTimeSchema,
+      system: schemaRef("SystemManifestIdentity"),
+      expectedBinding: { anyOf: [schemaRef("SystemManifestIdentity"), { type: "null" }] },
+    },
+  },
+  CampaignSystemBindingResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["campaign", "binding"],
+    properties: {
+      campaign: schemaRef("Campaign"),
+      binding: schemaRef("SystemManifestIdentity"),
+    },
+  },
   SystemRuntimeInfo: {
     type: "object",
     additionalProperties: false,
@@ -9621,14 +9932,12 @@ const componentSchemas = {
         additionalProperties: false,
         properties: { client: stringSchema, server: stringSchema },
       },
-      schemas: {
-        type: "object",
-        additionalProperties: false,
-        required: ["actor", "item"],
-        properties: { actor: stringSchema, item: stringSchema },
-      },
+      schemas: schemaRef("SystemManifestSchemas"),
+      definition: schemaRef("DeclarativeSystemDefinition"),
       permissions: arrayOf(stringSchema),
       capabilities: arrayOf(stringSchema),
+      installedVersions: arrayOf(schemaRef("SystemManifestIdentity")),
+      binding: schemaRef("SystemManifestIdentity"),
       active: { type: "boolean" },
       source: { type: "string", enum: ["bundled", "api"] },
       dataDriven: { type: "boolean" },
@@ -10075,12 +10384,8 @@ const componentSchemas = {
             additionalProperties: false,
             properties: { client: stringSchema, server: stringSchema },
           },
-          schemas: {
-            type: "object",
-            additionalProperties: false,
-            required: ["actor", "item"],
-            properties: { actor: stringSchema, item: stringSchema },
-          },
+          schemas: schemaRef("SystemManifestSchemas"),
+          definition: schemaRef("DeclarativeSystemDefinition"),
           permissions: arrayOf(stringSchema),
           capabilities: arrayOf(stringSchema),
         },
@@ -14172,7 +14477,16 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
       ),
     },
   },
-  "GET /api/v1/scenes/{sceneId}/vision": {
+  "GET /api/v1/scenes/{sceneId}/player-preview": {
+    description: "Read-only table projection for one active player in the scene's campaign. Requires scene.update on this scene plus campaign.update and actor.readPrivate, and never changes the caller's identity. Uses the player's authoritative scene, token, actor, and handout visibility. Private player conversations are excluded unless the requesting user is a sender or recipient. No preview data is a mutation authorization.",
+    parameters: [{ name: "userId", in: "query", required: true, schema: idSchema, description: "Active player member whose table to preview." }],
+    responses: {
+      "200": jsonResponse("Permission-filtered read-only player table preview", schemaRef("PlayerPreviewResponse")),
+      "400": jsonResponse("No player selected", schemaRef("ErrorResponse")),
+      "403": jsonResponse("Player preview permissions required", schemaRef("ErrorResponse")),
+      "404": jsonResponse("Scene or eligible player unavailable", schemaRef("ErrorResponse")),
+    },
+  },  "GET /api/v1/scenes/{sceneId}/vision": {
     parameters: [
       {
         name: "previewUserId",
@@ -14723,6 +15037,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
   "POST /api/v1/campaigns/{campaignId}/actors": {
     requestBody: jsonRequestBody(schemaRef("ActorCreateRequest")),
     responses: {
+      "422": jsonResponse("Declarative system definition or persisted data is invalid", { anyOf: [schemaRef("DeclarativeRuntimeErrorResponse"), schemaRef("DeclarativeSystemStateErrorResponse")] }),
       "200": jsonResponse("Created actor", schemaRef("Actor")),
     },
   },
@@ -14737,6 +15052,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
   "PATCH /api/v1/actors/{actorId}": {
     requestBody: jsonRequestBody(schemaRef("ActorPatchRequest")),
     responses: {
+      "422": jsonResponse("Declarative system definition or persisted data is invalid", { anyOf: [schemaRef("DeclarativeRuntimeErrorResponse"), schemaRef("DeclarativeSystemStateErrorResponse")] }),
       "200": jsonResponse("Updated actor", schemaRef("Actor")),
       "409": jsonResponse("Actor revision conflict or rules-managed raw patch rejection", {
         anyOf: [schemaRef("StaleWriteConflictResponse"), schemaRef("RulesManagedPatchConflictResponse"), schemaRef("ErrorResponse")],
@@ -14766,6 +15082,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
   "POST /api/v1/campaigns/{campaignId}/items": {
     requestBody: jsonRequestBody(schemaRef("ItemCreateRequest")),
     responses: {
+      "422": jsonResponse("Declarative system definition or persisted data is invalid", { anyOf: [schemaRef("DeclarativeRuntimeErrorResponse"), schemaRef("DeclarativeSystemStateErrorResponse")] }),
       "200": jsonResponse("Created item", schemaRef("Item")),
     },
   },
@@ -14780,6 +15097,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
   "PATCH /api/v1/items/{itemId}": {
     requestBody: jsonRequestBody(schemaRef("ItemPatchRequest")),
     responses: {
+      "422": jsonResponse("Declarative system definition or persisted data is invalid", { anyOf: [schemaRef("DeclarativeRuntimeErrorResponse"), schemaRef("DeclarativeSystemStateErrorResponse")] }),
       "200": jsonResponse("Updated item", schemaRef("Item")),
       "409": jsonResponse("Item revision conflict or rules-managed raw patch rejection", {
         anyOf: [schemaRef("StaleWriteConflictResponse"), schemaRef("RulesManagedPatchConflictResponse"), schemaRef("ErrorResponse")],
@@ -15461,7 +15779,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
       "400": jsonResponse("Invalid system manifest", schemaRef("ErrorResponse")),
       "403": jsonResponse("Campaign or server-admin permission denied", schemaRef("ErrorResponse")),
       "409": jsonResponse("System id, name, or entrypoint conflict", schemaRef("ErrorResponse")),
-      "422": jsonResponse("Requested runtime capabilities are unsupported", schemaRef("ErrorResponse")),
+      "422": jsonResponse("Unsupported runtime capabilities or invalid declarative state", { anyOf: [schemaRef("ErrorResponse"), schemaRef("DeclarativeRuntimeErrorResponse"), schemaRef("DeclarativeSystemStateErrorResponse")] }),
     },
   },
   "GET /api/v1/campaigns/{campaignId}/systems": {
@@ -15487,8 +15805,22 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
         "Activated rules system for campaign",
         schemaRef("SystemInstallResponse"),
       ),
+      "422": jsonResponse("Declarative system definition or persisted data is invalid", { anyOf: [schemaRef("DeclarativeRuntimeErrorResponse"), schemaRef("DeclarativeSystemStateErrorResponse")] }),
       "403": jsonResponse("Campaign permission denied", schemaRef("ErrorResponse")),
       "404": jsonResponse("System or campaign not found", schemaRef("ErrorResponse")),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/binding": {
+    description: "Pins or upgrades a campaign system to an immutable installed manifest after validating existing campaign data. Requires a GM with campaign.update, the exact campaign revision, and the previous binding (null for the first binding).",
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody(schemaRef("CampaignSystemBindingRequest")),
+    responses: {
+      "200": jsonResponse("Bound campaign to the exact installed system manifest", schemaRef("CampaignSystemBindingResponse")),
+      "422": jsonResponse("Declarative system definition or persisted data is invalid", { anyOf: [schemaRef("DeclarativeRuntimeErrorResponse"), schemaRef("DeclarativeSystemStateErrorResponse")] }),
+      "400": jsonResponse("Invalid system identity or binding request", schemaRef("ErrorResponse")),
+      "403": jsonResponse("GM campaign.update permission required", schemaRef("ErrorResponse")),
+      "404": jsonResponse("System manifest or campaign not found", schemaRef("ErrorResponse")),
+      "409": jsonResponse("Campaign revision, previous binding, or existing campaign data conflicts", { anyOf: [schemaRef("StaleWriteConflictResponse"), schemaRef("ErrorResponse")] }),
     },
   },
   "GET /api/v1/campaigns/{campaignId}/systems/{systemId}/character-templates": {
@@ -16199,11 +16531,8 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
   "GET /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/sheet":
     {
       responses: {
-        "200": jsonResponse("System actor sheet", {
-          type: "object",
-          additionalProperties: true,
-        }),
-        "422": unsupportedSystemCapabilityResponse,
+        "200": jsonResponse("System actor sheet", schemaRef("SystemActorSheet")),
+        "422": jsonResponse("Unsupported capability or declarative system validation failure", { anyOf: [schemaRef("UnsupportedSystemCapabilityResponse"), schemaRef("DeclarativeRuntimeErrorResponse"), schemaRef("DeclarativeSystemStateErrorResponse")] }),
       },
     },
   "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/heroic-inspiration/grant": {
@@ -16247,22 +16576,22 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
   },
   "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/roll":
     {
-      description: "Previews or executes a system roll. D&D actions that consume resources or apply effects must first be stored with prepare=true, then committed by preparedPreviewKey, exact revisions, and a separate Idempotency-Key.",
+      description: "Previews or executes a system roll. Declarative systems accept exactly rollId, expectedActorUpdatedAt, and expectedSystem and require an Idempotency-Key; the trusted runtime derives the dice and resource cost. D&D actions that consume resources or apply effects must first be stored with prepare=true, then committed by preparedPreviewKey, exact revisions, and a separate Idempotency-Key.",
       parameters: [{
         ...idempotencyKeyParameter,
         required: false,
-        description: "Required for D&D prepared consequence previews and commits.",
+        description: "Required for declarative system rolls and D&D prepared consequence previews and commits.",
       }],
-      requestBody: jsonRequestBody(schemaRef("SystemActorActionRequest")),
+      requestBody: jsonRequestBody(schemaRef("SystemActorRollRequest")),
       responses: {
         "200": jsonResponse(
           "Executed system actor roll",
-          schemaRef("SystemRollResponse"),
+          schemaRef("SystemActorRollResponse"),
         ),
         "409": jsonResponse("Actor changed or the requested action has a domain conflict", {
           anyOf: [schemaRef("StaleWriteConflictResponse"), schemaRef("ErrorResponse")],
         }),
-        "422": unsupportedSystemCapabilityResponse,
+        "422": jsonResponse("Unsupported capability or declarative system validation failure", { anyOf: [schemaRef("UnsupportedSystemCapabilityResponse"), schemaRef("DeclarativeRuntimeErrorResponse"), schemaRef("DeclarativeSystemStateErrorResponse")] }),
       },
     },
   "GET /api/v1/campaigns/{campaignId}/export": {
@@ -16374,6 +16703,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     parameters: [{ ...idempotencyKeyParameter, required: true }],
     requestBody: jsonRequestBody(schemaRef("CampaignImportRequest")),
     responses: {
+      "422": jsonResponse("Archive system dependency or persisted data is invalid", { anyOf: [schemaRef("DeclarativeArchiveDependencyErrorResponse"), schemaRef("DeclarativeSystemStateErrorResponse"), schemaRef("DeclarativeRuntimeErrorResponse")] }),
       "200": jsonResponse(
         "Campaign import result",
         schemaRef("CampaignImportResponse"),
@@ -16395,6 +16725,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
       "Framed OTTX campaign archive stream returned by the streaming export route.",
     ),
     responses: {
+      "422": jsonResponse("Archive system dependency or persisted data is invalid", { anyOf: [schemaRef("DeclarativeArchiveDependencyErrorResponse"), schemaRef("DeclarativeSystemStateErrorResponse"), schemaRef("DeclarativeRuntimeErrorResponse")] }),
       "200": jsonResponse("Campaign stream import result", schemaRef("CampaignImportResponse")),
       "400": jsonResponse("Invalid framing, archive metadata, checksum, references, or import options", schemaRef("ErrorResponse")),
       "409": jsonResponse("Archive import conflict or stale existing-campaign revision", schemaRef("ErrorResponse")),
@@ -17059,3 +17390,6 @@ export const openApiSpec = {
   "x-otte-pagination-policy": apiContractPolicy.pagination,
   "x-otte-rate-limit-policy": apiContractPolicy.rateLimits,
 } as const;
+
+export type * from "./domain-types.js";
+export type * from "./event-types.js";

@@ -1,0 +1,23 @@
+.player-preview-backdrop { z-index: 180; padding: 24px; }
+.player-preview-dialog { display: flex; flex-direction: column; width: min(1440px, 96vw); height: min(960px, 94dvh); min-height: 0; overflow: hidden; background: var(--bg-panel, #161b26); border: 1px solid var(--border, #344154); border-radius: 18px; box-shadow: 0 24px 100px #000b; color: var(--text, #f1f5f9); }
+.player-preview-header, .player-preview-controls, .player-preview-scene-heading, .player-preview-footer { display: flex; align-items: center; gap: 12px; padding: 14px 20px; }
+.player-preview-header { justify-content: space-between; border-bottom: 1px solid #ffffff18; }
+.player-preview-header h2 { display: flex; gap: 9px; align-items: center; margin: 0; font-size: 20px; }
+.player-preview-header p, .player-preview-footer { margin: 5px 0 0; color: #aab9cc; font-size: 12px; }
+.player-preview-controls { flex-wrap: wrap; background: #0d142099; border-bottom: 1px solid #ffffff12; }
+.player-preview-controls label, .player-preview-controls nav { display: flex; align-items: center; gap: 8px; }
+.player-preview-controls select { min-width: 160px; }
+.player-preview-controls > .icon-button { margin-left: auto; }
+.player-preview-table { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.player-preview-scene-heading { padding-block: 8px; }
+.player-preview-scene-heading > span { margin-right: auto; color: #aab9cc; font-size: 12px; }
+.player-preview-map { flex: 1; min-height: 0; overflow: auto; padding: 12px; background: #090d16; }
+.player-preview-map .scene-canvas { margin: auto; }
+.player-preview-map .token { cursor: default; }
+.player-preview-content { flex: 1; min-height: 0; overflow: auto; padding: 20px; }
+.player-preview-content article { background: #ffffff05; border: 1px solid #ffffff12; border-radius: 10px; padding: 12px 16px; margin-bottom: 12px; }
+.player-preview-content article p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.player-preview-content article img { max-width: 100%; max-height: 300px; object-fit: contain; }
+.player-preview-notice { flex: 1; display: grid; align-content: center; justify-content: center; text-align: center; padding: 24px; overflow-wrap: anywhere; }
+.player-preview-footer { justify-content: space-between; flex-wrap: wrap; border-top: 1px solid #ffffff12; margin: 0; padding-block: 10px; }
+@media (max-width: 640px) { .player-preview-backdrop { padding: 6px; } .player-preview-dialog { width: 100%; height: 98dvh; border-radius: 12px; } .player-preview-header, .player-preview-controls { padding: 12px; } .player-preview-header { align-items: start; } .player-preview-header p { max-width: 28ch; } .player-preview-header > button { font-size: 12px; max-width: 112px; } .player-preview-controls nav { order: 3; width: 100%; } .player-preview-footer { font-size: 11px; padding: 10px 12px; } }

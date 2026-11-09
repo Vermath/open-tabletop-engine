@@ -1,10 +1,3 @@
-import type {
-  EngineEvent,
-  PermissionName,
-  ProposalChange,
-  TokenMoveBatchRequest,
-} from "@open-tabletop/core";
-
 export const PLUGIN_EVENT_TYPES = [
   // asset.* and dice.macro.* are deliberately not exposed to plugins. Asset
   // visibility is record-specific, while GM-only macro visibility requires
@@ -79,7 +72,7 @@ export const PLUGIN_EVENT_TYPES = [
   "ai.memory.approved",
   "ai.memory.rejected",
   "ai.memory.deleted",
-] as const satisfies readonly EngineEvent["type"][];
+] as const;
 
 export type PluginEventType = (typeof PLUGIN_EVENT_TYPES)[number];
 const PLUGIN_EVENT_TYPE_SET = new Set<string>(PLUGIN_EVENT_TYPES);
@@ -105,7 +98,7 @@ export interface PluginEventSubscription {
 }
 
 const PLUGIN_EVENT_PERMISSION_BY_PREFIX: ReadonlyArray<
-  readonly [string, PermissionName]
+  readonly [string, PluginPermissionName]
 > = [
   ["campaign.", "campaign.read"],
   ["world.", "world.read"],
@@ -125,7 +118,7 @@ const PLUGIN_EVENT_PERMISSION_BY_PREFIX: ReadonlyArray<
   ["ai.", "ai.proposeChanges"],
 ];
 
-export function pluginEventPermission(type: PluginEventType): PermissionName {
+export function pluginEventPermission(type: PluginEventType): PluginPermissionName {
   const match = PLUGIN_EVENT_PERMISSION_BY_PREFIX.find(([prefix]) =>
     type.startsWith(prefix),
   );
@@ -152,7 +145,7 @@ export interface PluginManifest {
     apiVersion?: string;
     sandbox?: "vm";
   };
-  permissions: PermissionName[];
+  permissions: PluginPermissionName[];
   ui?: {
     panels?: Array<{ id: string; title: string; icon?: string }>;
   };
@@ -160,7 +153,7 @@ export interface PluginManifest {
   eventSubscriptions?: PluginEventSubscription[];
 }
 
-export const PLUGIN_PERMISSION_ALLOWLIST: readonly PermissionName[] =
+export const PLUGIN_PERMISSION_ALLOWLIST =
   Object.freeze([
     "campaign.read",
     "world.read",
@@ -180,7 +173,10 @@ export const PLUGIN_PERMISSION_ALLOWLIST: readonly PermissionName[] =
     "ai.readPublicMemory",
     "ai.readGmMemory",
     "ai.proposeChanges",
-  ]);
+  ] as const);
+
+/** Permission names accepted by the plugin manifest and host grant boundary. */
+export type PluginPermissionName = (typeof PLUGIN_PERMISSION_ALLOWLIST)[number];
 
 export const OPEN_TABLETOP_CORE_VERSION = "0.3.0";
 
@@ -330,7 +326,7 @@ function parsePluginRangeVersion(value: string):
 export interface PluginContext {
   pluginId: string;
   campaignId: string;
-  permissions: PermissionName[];
+  permissions: PluginPermissionName[];
   onEvent(
     type: PluginEventType,
     handler: (
@@ -341,7 +337,7 @@ export interface PluginContext {
   createProposal(input: PluginProposalRequest): Promise<string>;
   postChatMessage(input: PluginChatMessageRequest): Promise<string>;
   /** Queue the same revision-guarded atomic token move used by the web client. */
-  moveTokens(sceneId: string, input: TokenMoveBatchRequest): Promise<string>;
+  moveTokens(sceneId: string, input: PluginTokenMoveBatchRequest): Promise<string>;
 }
 
 export interface PluginProposalRequest {
@@ -357,12 +353,26 @@ export interface PluginProposalRequest {
  * presentation-only exception exposed by the bridge is an explicit rename.
  */
 export type PluginProposalChange =
-  | (Omit<ProposalChange, "entity"> & {
-      entity: Exclude<
-        ProposalChange["entity"],
-        "actor" | "item" | "campaignSession" | "aiMemory"
-      >;
-    })
+  | {
+      entity:
+        | "campaign"
+        | "world"
+        | "scene"
+        | "token"
+        | "journal"
+        | "handout"
+        | "chat"
+        | "roll"
+        | "diceMacro"
+        | "encounter"
+        | "combat"
+        | "asset"
+        | "fogPreset"
+        | "pluginStorage";
+      action: "create" | "update" | "delete";
+      id?: string;
+      data: Record<string, unknown>;
+    }
   | {
       entity: "actor" | "item";
       action: "update";
@@ -370,19 +380,85 @@ export type PluginProposalChange =
       data: { name: string };
     };
 
+/** One token destination with the revision observed when preparing the move. */
+export interface PluginTokenMoveBatchEntry {
+  tokenId: string;
+  x: number;
+  y: number;
+  expectedUpdatedAt: string;
+}
+
+/** Revision-guarded token destinations validated together by the host. */
+export interface PluginTokenMoveBatchRequest {
+  expectedSceneUpdatedAt: string;
+  changes: PluginTokenMoveBatchEntry[];
+}
+
 export interface PluginChatMessageRequest {
   body: string;
   visibility?: "public" | "gm_only";
 }
 
+/** Token summary supplied to a VM chat-command handler. */
+export interface PluginCommandTokenContext {
+  id: string;
+  name: string;
+  sceneId: string;
+}
+
+/** Campaign/plugin-scoped storage supplied when plugin.configure is granted. */
+export interface PluginCommandStorageEntry {
+  key: string;
+  value: unknown;
+  updatedAt: string;
+}
+
+/** First argument supplied by the VM's registerCommand runtime. */
+export interface PluginChatCommandInput {
+  campaignId: string;
+  pluginId: string;
+  userId: string;
+  command: string;
+  args: string;
+  permissions: PluginPermissionName[];
+  tokens: PluginCommandTokenContext[];
+  storage?: {
+    entries: PluginCommandStorageEntry[];
+  };
+}
+
+export interface PluginChatCommandStorageMutation {
+  set?: Record<string, unknown>;
+  delete?: string[];
+}
+
+/**
+ * Author-returned output, before runtime validation and normalization.
+ * Omitted visibility defaults to public; bridge request envelopes are internal.
+ */
+export interface PluginChatCommandOutput extends PluginChatMessageRequest {
+  storage?: PluginChatCommandStorageMutation;
+}
+
+export type PluginChatCommandHandler = (
+  input: PluginChatCommandInput,
+  context: PluginBridgeContext,
+) => PluginChatCommandOutput | Promise<PluginChatCommandOutput>;
+
+/** Type of the VM-injected global; the SDK does not implement registration. */
+export type PluginRegisterCommand = (
+  command: string,
+  handler: PluginChatCommandHandler,
+) => void;
+
 export interface PluginBridgeContext {
   readonly pluginId: string;
   readonly campaignId: string;
-  readonly permissions: readonly PermissionName[];
+  readonly permissions: readonly PluginPermissionName[];
   createProposal(input: PluginProposalRequest): Promise<string>;
   postChatMessage(input: PluginChatMessageRequest): Promise<string>;
   /** Queue the same revision-guarded atomic token move used by the web client. */
-  moveTokens(sceneId: string, input: TokenMoveBatchRequest): Promise<string>;
+  moveTokens(sceneId: string, input: PluginTokenMoveBatchRequest): Promise<string>;
 }
 
 export interface OpenTabletopPlugin {
@@ -465,7 +541,7 @@ export function validatePluginManifest(manifest: unknown): string[] {
     const unknownPermissions = manifest.permissions.filter(
       (permission) =>
         typeof permission !== "string" ||
-        !PLUGIN_PERMISSION_ALLOWLIST.includes(permission as PermissionName),
+        !PLUGIN_PERMISSION_ALLOWLIST.includes(permission as PluginPermissionName),
     );
     if (unknownPermissions.length)
       errors.push(
@@ -533,7 +609,7 @@ function validatePluginEventSubscriptions(
   const permissions = new Set(
     Array.isArray(permissionsValue)
       ? permissionsValue.filter(
-          (item): item is PermissionName => typeof item === "string",
+          (item): item is string => typeof item === "string",
         )
       : [],
   );

@@ -1,5 +1,5 @@
-import type { Combat, Dnd5eSrdAttackOutcome, Dnd5eSrdCriticalOutcome } from "@open-tabletop/core";
-export type { Dnd5eSrdAttackOutcome, Dnd5eSrdCriticalOutcome } from "@open-tabletop/core";
+import type { Combat, Dnd5eSrdAttackOutcome, Dnd5eSrdCriticalOutcome } from "@open-tabletop/api-contracts";
+export type { Dnd5eSrdAttackOutcome, Dnd5eSrdCriticalOutcome } from "@open-tabletop/api-contracts";
 
 type JsonRecord = Record<string, unknown>;
 

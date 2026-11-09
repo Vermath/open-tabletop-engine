@@ -1,4 +1,4 @@
-import type { Actor, Combat, Item } from "@open-tabletop/core";
+import type { Actor, Combat, Item } from "@open-tabletop/api-contracts";
 import type { Dnd5eSrdConcentrationCleanup } from "./dnd-resolution-types.js";
 
 type JsonRecord = Record<string, unknown>;

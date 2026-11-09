@@ -1,4 +1,5 @@
-import { createTimestamped, type Actor, type Combat } from "@open-tabletop/core";
+import type { Actor, Combat } from "@open-tabletop/api-contracts";
+import { timestampedFixture } from "./test-fixtures.js";
 import { describe, expect, it } from "vitest";
 
 import { advanceDnd5eSrdCombatRules, synchronizeDnd5eSrdActorCombatState, synchronizeDnd5eSrdCombatantActorState } from "./dnd-combat-progression.js";
@@ -6,7 +7,7 @@ import { advanceDnd5eSrdCombatRules, synchronizeDnd5eSrdActorCombatState, synchr
 const now = "2026-07-13T12:00:00.000Z";
 
 function actor(id: string, type: string, data: Record<string, unknown>): Actor {
-  return createTimestamped("act", {
+  return timestampedFixture({
     id, campaignId: "camp", systemId: "dnd-5e-srd", ownerUserId: "user", type, name: id, data, permissions: {},
   });
 }

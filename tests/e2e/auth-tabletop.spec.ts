@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { APIResponse, Locator, Page, Response } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import type { ChatMessage, DiceRoll } from "../../packages/core/src/index.js";
 import {
   DND_5E_SRD_PREPARED_SPELL_CAPACITY,
   dnd5eSrdCompendium,
@@ -1080,8 +1081,15 @@ test("GM can box-select and drag multiple scene tokens", async ({ page }) => {
     if (await expandLayerPanel.isVisible().catch(() => false)) await expandLayerPanel.click();
     await expect(page.getByLabel("Map layer stack")).toContainText("Player");
 
-    const start = await scenePointToClient(page, { x: 880, y: 580 });
-    const end = await scenePointToClient(page, { x: 1080, y: 710 });
+    // Opening the layer panel resizes the board through ResizeObserver. Wait
+    // for that geometry to settle, then derive both endpoints from one frame.
+    const board = await page.locator(".scene-board").elementHandle();
+    expect(board).not.toBeNull();
+    await board!.waitForElementState("stable");
+    const boardBox = await board!.boundingBox();
+    expect(boardBox).not.toBeNull();
+    const start = { x: boardBox!.x + (880 / 1200) * boardBox!.width, y: boardBox!.y + (580 / 800) * boardBox!.height };
+    const end = { x: boardBox!.x + (1080 / 1200) * boardBox!.width, y: boardBox!.y + (710 / 800) * boardBox!.height };
     await page.mouse.move(start.x, start.y);
     await page.mouse.down();
     await page.mouse.move(end.x, end.y, { steps: 8 });
@@ -4237,10 +4245,31 @@ test("player can accept an invite from a private browser session", async ({ brow
     await openInspectorPanel(page, "Chat");
     await expect(page.locator('[aria-label="Chat messages"]')).toContainText("Realtime player whisper");
 
-    await submitChatCommand(privatePage, "/roll 1d20+1");
-    await expect(privatePage.getByRole("status").filter({ hasText: /^Rolled \d+$/ })).toBeVisible();
-    await submitChatCommand(privatePage, "/gmroll 1d20+2");
-    await expect(privatePage.getByRole("status").filter({ hasText: /^Rolled \d+$/ })).toBeVisible();
+    // Realtime connection updates can replace the transient "Rolled" status.
+    // Match each acknowledged roll ID to its durable chat result instead.
+    for (const expected of [
+      { command: "/roll 1d20+1", formula: "1d20+1", visibility: "public", viewer: privatePage },
+      { command: "/gmroll 1d20+2", formula: "1d20+2", visibility: "gm_only", viewer: page },
+    ]) {
+      const responsePromise = privatePage.waitForResponse((response) =>
+        response.request().method() === "POST"
+        && new URL(response.url()).pathname === "/api/v1/dice/roll"
+        && response.request().postDataJSON().formula === expected.formula,
+      );
+      await submitChatCommand(privatePage, expected.command);
+      const roll = await expectJsonResponse<DiceRoll>(await responsePromise);
+      expect(roll).toMatchObject({ formula: expected.formula, visibility: expected.visibility });
+      const messages = await expectJsonResponse<ChatMessage[]>(await page.request.get(
+        `${apiBaseUrl}/api/v1/chat/messages?campaignId=camp_demo`, { headers: gmApiHeaders },
+      ));
+      const message = messages.find((candidate) => candidate.rollId === roll.id);
+      expect(message).toBeDefined();
+      await openInspectorPanel(expected.viewer, "Chat");
+      const visibleMessage = expected.viewer.locator(`[id="campaign-search-chat-${encodeURIComponent(message!.id)}"]`);
+      await expect(visibleMessage.getByRole("button", {
+        name: `Table roll: rolled ${roll.formula} for ${roll.total}. Toggle breakdown.`, exact: true,
+      })).toBeVisible();
+    }
     const playerRolls = await privatePage.evaluate(async ({ apiBaseUrl }) => {
       const response = await fetch(`${apiBaseUrl}/api/v1/campaigns/camp_demo/rolls`, {
         credentials: "include"

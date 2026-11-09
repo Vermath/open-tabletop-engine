@@ -1,3 +1,4 @@
+import { clampScenePoint, sceneGridSize, sceneGridOrigin, snapScenePointToGrid, snapTokenCenterToGrid } from "@open-tabletop/core";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { basename, extname, resolve } from "node:path";
@@ -23,6 +24,7 @@ import {
   hasPermission,
   isPointInsideVisionPolygon,
   isPointInsideVisionPolygons,
+  isPointVisibleInSceneVision,
   makeArchive,
   normalizeAiMemoryFact,
   normalizeEngineState,
@@ -291,10 +293,16 @@ import { campaignArchiveAssetMaxFiles, campaignArchiveEmbeddedAssetMaxBytes, cam
 import { CAMPAIGN_ARCHIVE_STREAM_CONTENT_TYPE, CampaignArchiveStreamError, ParsedCampaignArchiveStream, assertCampaignArchiveStreamExportSize, createCampaignArchiveStream, isParsedCampaignArchiveStream, parseCampaignArchiveStream } from "./archive-stream.js";
 import { extractPdfTextPages, parsePdfContentImportEntities, pdfContentImportPagePrompt, type PdfTextExtractor, type PdfTextPage } from "./pdf-content-import.js";
 import { PluginPackageError, loadPluginRegistry, pluginPackageIdentityChecksum, type LoadedPlugin, type PluginBridgeRequest, type PluginChatCommandResult, type PluginCommandTokenContext, type PluginInventoryWarning, type PluginRuntimeRegistry } from "./plugin-runtime.js";
-import { findRegisteredSystem, isBundledSystem, registeredSystems, systemInstallationByManifestId, systemRuntimeCapabilities } from "./registries.js";
+import { findRegisteredSystem, isBundledSystem, registeredSystems, systemRuntimeCapabilities } from "./registries.js";
+import { declarativeSystemCapabilities } from "@open-tabletop/system-sdk";
+import type { CampaignArchiveSystemRequirement, SystemManifestIdentity } from "@open-tabletop/core";
+import { assertDeclarativeArchiveDependencies, declarativeArchiveSystemRequirement, DeclarativeArchiveDependencyError } from "./declarative-system-archive.js";
+import { declarativeSystemManifestChecksum, DeclarativeRuntimeError } from "./declarative-system-runtime.js";
+import { assertDeclarativeSystemRecord, assertDeclarativeSystemStateCandidate, DeclarativeSystemStateError, resolvePinnedDeclarativeSystem } from "./declarative-system-state.js";
+import { advanceDeclarativeBindingRevisions, advanceImportedDeclarativeBindingRevisions, declarativeRuntimeForActor, initialDeclarativeBinding, installedDeclarativeIdentity, isDeclarativeSystem, sameSystemIdentity } from "./declarative-system-host.js";
 import { RealtimeHub, type RealtimeClient } from "./realtime.js";
 import { createRequestLoggerOptions, type RequestLogStream } from "./request-logging.js";
-import { FileStateStore, MemoryStateStore, type StateStore } from "./store.js";
+import { FileStateStore, type StateStore } from "./store.js";
 import { linkEncounterToLiveSession, resolveSingleLiveCampaignSession } from "./encounter-session-link.js";
 import type { AssetSnapshotIdentity, AssetSnapshotProvider, SqliteBackupOptions, SqliteRestoreDrillOptions } from "./sqlite-store.js";
 import { assetMetadataInventoryForAssets } from "./sqlite-store.js";
@@ -323,6 +331,7 @@ import type { StorageBackupSchedulerStatus } from "./asset-operations.js";
 import { CampaignArchiveExportSizeError, applyContentImportEntity, archiveForExportScope, archiveForImportScope, archiveImportDependencyWarnings, archiveReferenceProtection, archiveWithRegeneratedIds, archiveWithoutConflicts, campaignArchiveCompatibilityNotes, campaignIdsForArchiveConflicts, checksumForBuffer, countArchiveRecords, existingArchiveCampaignIds, findArchiveConflicts, isArchiveImportMode, isArchiveImportScope, isSupportedArchiveVersion, mergeArchive, normalizeArchiveForImport, normalizeArchiveImportCollections, normalizeArchiveImportError, normalizeCampaignArchiveExportOptions, normalizeContentImportEntity, normalizeContentImportSource, removeAppliedContentImportRecord, rollbackAppliedContentImportRecords, rollbackCampaignArchiveImport, secureArchiveIdentityForImport, stateForArchiveMerge, withArchivedAssetFiles } from "./archive-operations.js";
 import { CampaignArchiveImportRecoveryError, createCampaignArchiveImportOperation, deleteCampaignArchiveImportInverseObjects, prepareCampaignArchiveImportAssetSteps, previewCampaignArchiveImportRollback, publicCampaignArchiveImportOperation, rollbackCampaignArchiveImportOperation, withCampaignArchiveImportRecoveryCleanup } from "./campaign-archive-import-recovery.js";
 import { boundCampaignSnapshotHistory } from "./snapshot-history.js";
+import { registerPlayerPreviewRoutes } from "./player-preview-routes.js";
 import { registerOpenApiRuntimeValidation } from "./openapi-runtime-validation.js";
 import { activeCombatForTypedDamage, dndTypedDamageCombatantChanges } from "./dnd-typed-damage-combat.js";
 import { registerSceneDelegationRoutes } from "./scene-delegation-routes.js";
@@ -641,7 +650,7 @@ interface CampaignOwnershipTransferBody {
   expectedUpdatedAt?: unknown;
   reason?: unknown;
 }
-type ScenePatchBody = Partial<Pick<Scene, "name" | "width" | "height" | "gridType" | "gridSize" | "active" | "sortOrder" | "fog" | "walls" | "lights" | "annotations" | "metadata">> & { worldId?: string | null; backgroundAssetId?: string | null; folder?: string | null; expectedUpdatedAt?: string };
+type ScenePatchBody = Partial<Pick<Scene, "name" | "width" | "height" | "gridType" | "gridSize" | "gridOrigin" | "visibilityMode" | "active" | "sortOrder" | "fog" | "walls" | "lights" | "annotations" | "metadata">> & { worldId?: string | null; backgroundAssetId?: string | null; folder?: string | null; expectedUpdatedAt?: string };
 type TokenPatchBody = Partial<Pick<Token, "actorId" | "name" | "x" | "y" | "width" | "height" | "rotation" | "elevation" | "layer" | "hidden" | "locked" | "visionEnabled" | "visionRadius" | "senses" | "disposition" | "imageAssetId" | "ownerUserIds" | "notes" | "conditions" | "auras" | "targetedByUserIds" | "metadata">> & { brightVisionRadius?: number | null; dimVisionRadius?: number | null; expectedUpdatedAt?: unknown };
 type ActorPatchBody = Partial<Pick<Actor, "systemId" | "ownerUserId" | "type" | "name" | "imageAssetId" | "data" | "permissions">> & { worldId?: string | null; expectedUpdatedAt?: unknown; manualOverrideReason?: unknown };
 type ItemPatchBody = Omit<Partial<Item>, "actorId" | "worldId"> & { actorId?: string | null; worldId?: string | null; expectedUpdatedAt?: unknown; manualOverrideReason?: unknown };
@@ -854,9 +863,13 @@ const idempotencyContextSymbol = Symbol("otte.idempotencyContext");
 const idempotencyReplaySymbol = Symbol("otte.idempotencyReplay");
 const idempotencySaveScopeSymbol = Symbol("otte.idempotencySaveScope");
 const idempotencyFlightSymbol = Symbol("otte.idempotencyFlight");
+const idempotencyPreparedRecordSymbol = Symbol("otte.idempotencyPreparedRecord");
 const durableMutationScopeSymbol = Symbol("otte.durableMutationScope");
 const durableMutationReleaseSymbol = Symbol("otte.durableMutationRelease");
 const durableMutationAbortedSymbol = Symbol("otte.durableMutationAborted");
+const durableMutationCommittedSymbol = Symbol("otte.durableMutationCommitted");
+const durableMutationFinalizedSymbol = Symbol("otte.durableMutationFinalized");
+const mutationEventScopeSymbol = Symbol("otte.mutationEventScope");
 const phasedMutationResponseReleaseSymbol = Symbol("otte.phasedMutationResponseRelease");
 const archiveImportAssetRestoreSymbol = Symbol("otte.archiveImportAssetRestore");
 const archiveImportStateSnapshotSymbol = Symbol("otte.archiveImportStateSnapshot");
@@ -883,9 +896,30 @@ interface IdempotencyIdentity {
 }
 
 interface IdempotencySaveScope {
+  request: FastifyRequest;
   deferSaves: boolean;
   saveRequested: boolean;
-  afterDurableSave: Array<() => void>;
+}
+
+type PreparedCampaignWebhookDispatch = { webhookEvent: CampaignWebhookEnvelopeV1; subscriptions: CampaignWebhookSubscription[]; deliveries: CampaignWebhookDelivery[]; automatic: boolean };
+type BufferedEngineEvent = { event: EngineEvent; excludedPluginIds?: ReadonlySet<string> };
+
+interface MutationEventScope {
+  request?: FastifyRequest;
+  active: boolean;
+  events: BufferedEngineEvent[];
+  manual: PreparedCampaignWebhookDispatch[];
+  fork(): MutationEventScope;
+  prepare(): void;
+  publish(): void;
+  discard(): void;
+}
+
+const mutationEventScopes = new AsyncLocalStorage<MutationEventScope>();
+
+interface IdempotencyFinalizer {
+  prepareSave(request: FastifyRequest): void;
+  settle(request: FastifyRequest, committed: boolean): void;
 }
 
 interface DurableMutationScope {
@@ -1182,9 +1216,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   let pendingPluginEventCount = 0;
   let webhookEventQueue = Promise.resolve();
   let pendingWebhookDeliveryCount = 0;
-  type PreparedCampaignWebhookDispatch = { webhookEvent: CampaignWebhookEnvelopeV1; subscriptions: CampaignWebhookSubscription[]; deliveries: CampaignWebhookDelivery[]; automatic: boolean };
   type CampaignWebhookDeliveryRevision = Pick<CampaignWebhookDelivery, "id" | "campaignId" | "webhookId" | "updatedAt">;
-  const webhookDispatchScopes = new AsyncLocalStorage<{ events: EngineEvent[]; manual: PreparedCampaignWebhookDispatch[] }>();
   const broadcastToClients = (event: EngineEvent) => {
     const visibilityCache = createTokenVisibilityCache();
     hub.broadcast(event, (candidate, client) => {
@@ -1211,7 +1243,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   };
   const scheduleWebhookDispatch = (prepared: PreparedCampaignWebhookDispatch) => {
     const deliveryRevisions: CampaignWebhookDeliveryRevision[] = prepared.deliveries.map(({ id, campaignId, webhookId, updatedAt }) => ({ id, campaignId, webhookId, updatedAt }));
-    webhookEventQueue = webhookEventQueue
+    mutationEventScopes.exit(() => {
+      webhookEventQueue = webhookEventQueue
       .then(async () => {
         for (let index = 0; index < deliveryRevisions.length; index += 1) {
           const subscriptionRevision = prepared.subscriptions[index]!;
@@ -1260,19 +1293,66 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       .finally(() => {
         pendingWebhookDeliveryCount = Math.max(0, pendingWebhookDeliveryCount - prepared.deliveries.length);
       });
+    });
   };
-  const commitWebhookEvents = (events: readonly EngineEvent[], manual: PreparedCampaignWebhookDispatch[] = []) => {
-    const prepared = [...events.map(prepareWebhookDispatch).filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate)), ...manual];
-    if (prepared.length === 0) return;
-    // The queued ledger is durable before any external request can start.
-    try {
-      store.save();
-      flushStore(store);
-    } catch (error) {
-      pendingWebhookDeliveryCount = Math.max(0, pendingWebhookDeliveryCount - prepared.reduce((sum, dispatch) => sum + dispatch.deliveries.length, 0));
-      throw error;
-    }
-    for (const dispatch of prepared) scheduleWebhookDispatch(dispatch);
+  const createMutationEventScope = (request?: FastifyRequest, parent?: MutationEventScope): MutationEventScope => {
+    let prepared = false;
+    let settled = false;
+    let inheritedEvents: BufferedEngineEvent[] = [];
+    let committedEvents: BufferedEngineEvent[] = [];
+    const dispatches: PreparedCampaignWebhookDispatch[] = [];
+    const scope: MutationEventScope = {
+      request,
+      active: true,
+      events: [],
+      manual: [],
+      fork: () => createMutationEventScope(request, scope),
+      prepare: () => {
+        if (prepared || settled) return;
+        prepared = true;
+        scope.active = false;
+        // Preserve earlier checkpoint events until this phase actually commits.
+        // Removing exact identities cannot erase a concurrent producer's events.
+        inheritedEvents = parent?.events.slice() ?? [];
+        const events = [...inheritedEvents, ...scope.events];
+        committedEvents = events.map(({ event, excludedPluginIds }) => ({ event: sequenceAuthoritativeEvent(event), excludedPluginIds }));
+        dispatches.push(...scope.manual.splice(0));
+        for (const { event } of committedEvents) {
+          const dispatch = prepareWebhookDispatch(event);
+          if (dispatch) dispatches.push(dispatch);
+        }
+        if (dispatches.length > 0 || committedEvents.some(({ event }, index) => event !== events[index]!.event)) store.save();
+      },
+      publish: () => {
+        if (settled) return;
+        settled = true;
+        scope.active = false;
+        if (parent && inheritedEvents.length > 0) {
+          const committed = new Set(inheritedEvents);
+          parent.events = parent.events.filter((event) => !committed.has(event));
+        }
+        scope.events.length = 0;
+        // Transport failures cannot roll back a committed mutation or make its
+        // idempotency key execute twice.
+        for (const dispatch of dispatches) scheduleWebhookDispatch(dispatch);
+        for (const { event, excludedPluginIds } of committedEvents) {
+          try {
+            dispatchRealtimeAndPluginEvent(event, excludedPluginIds);
+          } catch (error) {
+            app.log.error(error, "Post-persistence event publication failed");
+          }
+        }
+      },
+      discard: () => {
+        if (settled) return;
+        settled = true;
+        scope.active = false;
+        pendingWebhookDeliveryCount = Math.max(0, pendingWebhookDeliveryCount - [...dispatches, ...scope.manual].reduce((sum, dispatch) => sum + dispatch.deliveries.length, 0));
+        scope.events.length = 0;
+        scope.manual.length = 0;
+      },
+    };
+    return scope;
   };
   type EngineEventDispatchOptions = {
     background?: boolean;
@@ -1289,23 +1369,40 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       return;
     }
     pendingPluginEventCount += 1;
-    pluginEventQueue = pluginEventQueue
+    mutationEventScopes.exit(() => {
+      pluginEventQueue = pluginEventQueue
       .then(() =>
         durableMutations.runExclusive(async () => {
-          await dispatchInstalledPluginEvent(
-            store,
-            pluginRegistry,
-            pluginEvent,
-            pluginSourceEvent,
-            (generatedEvent, originatingPluginId) => {
-              broadcast(generatedEvent, {
-                background: true,
-                excludedPluginIds: new Set([...excludedPluginIds, originatingPluginId]),
-              });
-            },
-            excludedPluginIds,
-          );
-          flushStore(store);
+          const scope = createMutationEventScope();
+          const fallbackSnapshot = store.restoreDurableState ? undefined : structuredClone(store.state);
+          await mutationEventScopes.run(scope, async () => {
+            try {
+              await dispatchInstalledPluginEvent(
+                store,
+                pluginRegistry,
+                pluginEvent,
+                pluginSourceEvent,
+                (generatedEvent, originatingPluginId) => {
+                  broadcast(generatedEvent, {
+                    background: true,
+                    excludedPluginIds: new Set([...excludedPluginIds, originatingPluginId]),
+                  });
+                },
+                excludedPluginIds,
+              );
+              scope.prepare();
+              flushStore(store);
+            } catch (error) {
+              scope.discard();
+              if (store.restoreDurableState) store.restoreDurableState();
+              else if (fallbackSnapshot) {
+                store.state = fallbackSnapshot;
+                store.save();
+              }
+              throw error;
+            }
+            scope.publish();
+          });
         }),
       )
       .catch((error) =>
@@ -1318,6 +1415,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       .finally(() => {
         pendingPluginEventCount -= 1;
       });
+    });
   };
   const sequenceAuthoritativeEvent = (event: EngineEvent): EngineEvent => {
     // Presence and transient provider progress are recoverable transport state,
@@ -1332,15 +1430,23 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return { ...event, sequence };
   };
   const broadcast = (event: EngineEvent, options: EngineEventDispatchOptions = {}): void => {
-    const dispatchScope = options.background ? undefined : webhookDispatchScopes.getStore();
+    const currentScope = mutationEventScopes.getStore();
+    const dispatchScope = currentScope?.active && (!options.background || !currentScope.request) ? currentScope : undefined;
+    const bufferedEvent = { event: structuredClone(event), excludedPluginIds: options.excludedPluginIds };
     if (dispatchScope) {
-      dispatchScope.events.push(structuredClone(event));
+      dispatchScope.events.push(bufferedEvent);
       return;
     }
-    const committedEvent = sequenceAuthoritativeEvent(event);
-    if (committedEvent !== event) store.save();
-    commitWebhookEvents([committedEvent]);
-    dispatchRealtimeAndPluginEvent(committedEvent, options.excludedPluginIds);
+    const scope = createMutationEventScope();
+    scope.events.push(bufferedEvent);
+    try {
+      scope.prepare();
+      flushStore(store);
+    } catch (error) {
+      scope.discard();
+      throw error;
+    }
+    scope.publish();
   };
   const broadcastAiThreadState = (thread: AiThread, type: "ai.thread.started" | "ai.thread.updated") => {
     const visibility = aiThreadVisibility(thread);
@@ -1354,9 +1460,20 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }
     pendingWebhookDeliveryCount += 1;
     const prepared = { webhookEvent: structuredClone(envelope), subscriptions: [structuredClone(webhook)], deliveries: [delivery], automatic: false };
-    const dispatchScope = webhookDispatchScopes.getStore();
-    if (dispatchScope) dispatchScope.manual.push(prepared);
-    else commitWebhookEvents([], [prepared]);
+    const dispatchScope = mutationEventScopes.getStore();
+    if (dispatchScope?.active) dispatchScope.manual.push(prepared);
+    else {
+      const scope = createMutationEventScope();
+      scope.manual.push(prepared);
+      try {
+        scope.prepare();
+        flushStore(store);
+      } catch (error) {
+        scope.discard();
+        throw error;
+      }
+      scope.publish();
+    }
   };
   const aiProvider = options.aiProvider ?? createConfiguredAiProvider();
   const pdfTextExtractor = options.pdfTextExtractor ?? extractPdfTextPages;
@@ -1447,12 +1564,25 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }
     return payload;
   });
+  app.addHook("preSerialization", async (request, _reply, payload) => {
+    const userId = currentUserIdWithoutSessionTouch(store, request.headers);
+    if (!userId) return payload;
+    // Child scene mutations and revision conflicts can return a whole scene.
+    // Apply the same projection as reads before those responses are cached.
+    return projectSceneResponseForUser(store, userId, payload);
+  });
   app.addHook("onResponse", async (request, reply) => {
     const startedAt = Reflect.get(request, operationsRequestStartedAtSymbol);
     operationsObservability.recordHttp(request.method, reply.statusCode, typeof startedAt === "number" ? Date.now() - startedAt : 0);
   });
 
   app.setErrorHandler((error, request, reply) => {
+    if (error instanceof DeclarativeArchiveDependencyError) return reply.code(422).send({ error: error.code, message: error.message, issues: error.issues });
+    if (error instanceof DeclarativeSystemStateError) return reply.code(422).send({ error: "invalid_system_state", message: error.message, issues: error.issues });
+    if (error instanceof DeclarativeRuntimeError) {
+      const status = error.code === "stale_actor" || error.code === "stale_system" ? 409 : error.code === "invalid_request" ? 400 : 422;
+      return reply.code(status).send({ error: error.code, message: error.message, issues: error.issues });
+    }
     if (error instanceof PluginOperatorMutationError) return reply.code(error.statusCode).send(error.response());
     if (error instanceof UnsupportedSystemCapabilityError) {
       return reply.code(422).send({ error: "unsupported_system_capability", systemId: error.systemId, capability: error.capability, message: error.message });
@@ -1519,28 +1649,16 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   });
   registerRateLimit(app, store, { ...rateLimitConfigFromEnv(), ...options.rateLimit });
   registerStorageRecoveryMaintenanceGate(app, storageRecoveryMaintenance);
-  registerPhasedMutationResponseGate(app, durableMutations);
-  registerIdempotencyReplay(app, store);
+  registerPhasedMutationResponseGate(app, store, durableMutations);
+  const idempotencyFinalizer = registerIdempotencyReplay(app, store);
   registerSharedMutationConcurrencyGuard(app, store);
   registerArchivedCampaignMutationGuard(app, store);
-  app.addHook("onRequest", async () => {
-    webhookDispatchScopes.enterWith({ events: [], manual: [] });
+  app.addHook("onRequest", (request, _reply, done) => {
+    const scope = createMutationEventScope(request);
+    Reflect.set(request, mutationEventScopeSymbol, scope);
+    mutationEventScopes.run(scope, done);
   });
-  app.addHook("onSend", async (_request, reply, payload) => {
-    const scope = webhookDispatchScopes.getStore();
-    const events = scope?.events.splice(0) ?? [];
-    const manual = scope?.manual.splice(0) ?? [];
-    if (reply.statusCode >= 200 && reply.statusCode < 300) {
-      const committedEvents = events.map(sequenceAuthoritativeEvent);
-      if (committedEvents.some((event, index) => event !== events[index])) store.save();
-      commitWebhookEvents(committedEvents, manual);
-      for (const event of committedEvents) dispatchRealtimeAndPluginEvent(event);
-    } else {
-      pendingWebhookDeliveryCount = Math.max(0, pendingWebhookDeliveryCount - manual.reduce((sum, dispatch) => sum + dispatch.deliveries.length, 0));
-    }
-    return payload;
-  });
-  registerDurableMutationFlush(app, store, durableMutations, operationsObservability);
+  registerDurableMutationFlush(app, store, durableMutations, operationsObservability, idempotencyFinalizer);
 
   app.get("/api/v1/health", async (_request, reply) => {
     const apiCompatibility = WEB_API_COMPATIBILITY_VERSION;
@@ -3242,6 +3360,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const permissionTemplate = campaignPermissionTemplate(body.permissionTemplate ?? workspace.defaultPermissionTemplate);
     if (!permissionTemplate) return badRequest(reply, "Campaign permission template must be standard, player_authoring, ai_assisted, or assistant_ops");
     const campaign = createTimestamped("camp", { organizationId: workspace.id, ownerUserId: userId, name: body.name ?? "Untitled Campaign", description: body.description ?? "", defaultSystemId: normalizeNonEmptyString(body.defaultSystemId) ?? workspace.defaultSystemId, visibility: campaignVisibility(body.visibility, workspace.defaultCampaignVisibility) ?? workspace.defaultCampaignVisibility }) satisfies Campaign;
+    const selectedSystem = findRegisteredSystem(store.state, campaign.defaultSystemId);
+    if (!selectedSystem) return badRequest(reply, "Campaign defaultSystemId must reference an installed system");
+    const systemBindings = initialDeclarativeBinding(store.state, selectedSystem.id, selectedSystem.version);
+    if (systemBindings) Object.assign(campaign, { systemBindings });
     const member = createTimestamped("mem", { campaignId: campaign.id, userId, role: "owner" as const });
     const starterEvents: EngineEvent[] = [];
     if (body.starterContent === true) {
@@ -3611,6 +3733,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       if (error instanceof CampaignArchiveExportSizeError) return reply.code(413).send({ error: "campaign_archive_too_large", message: error.message });
       throw error;
     }
+    archive.manifest.systemRequirements = systemRequirementsForCampaign(store, source.id);
     const regenerated = archiveWithRegeneratedIds(archive, { userId, organizationId: workspace.id });
     const portable = secureArchiveIdentityForImport(store.state, regenerated, { userId, organizationId: workspace.id });
     const copiedCampaign = portable.data.campaigns[0];
@@ -3619,6 +3742,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     portable.manifest.name = copiedCampaign.name;
     const references = archiveReferenceProtection(store.state, portable, { requireResolvedReferences: true, hasSystemRuntimeCapability, normalizedEncounterThreatSelections });
     if (!references.ok) return badRequest(reply, references.error);
+    preflightArchiveSystemDependencies(store.state, portable);
     const abortController = new AbortController();
     Reflect.set(request, archiveImportAbortControllerSymbol, abortController);
     let assetRestore: ArchiveAssetRestoreTransaction;
@@ -3961,12 +4085,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const activeOrganization = requireCampaignActiveOrganization(store, reply, request.headers, userId, request.params.campaignId);
     if (activeOrganization !== true) return activeOrganization;
     if (!canCampaign(store, userId, request.params.campaignId, "campaign.read")) return forbidden(reply, "Missing permission: campaign.read");
-    return readableScenesForUser(store, userId, request.params.campaignId).sort(compareScenesForDisplay).map(withoutSceneEditHistory);
+    return readableScenesForUser(store, userId, request.params.campaignId).sort(compareScenesForDisplay).map((scene) => scenePayloadForUser(store, userId, scene));
   });
 
   app.post<{ Params: { campaignId: string }; Body: Partial<Scene> }>("/api/v1/campaigns/:campaignId/scenes", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "scene.create");
     if (allowed !== true) return allowed;
+    const gridFields = normalizeSceneGridFields(request.body);
+    if (!gridFields.ok) return badRequest(reply, gridFields.error);
     const userId = currentUserId(store, request.headers);
     const worldId = typeof request.body.worldId === "string" ? request.body.worldId : undefined;
     if (worldId && !store.state.worlds.some((world) => world.id === worldId && world.campaignId === request.params.campaignId)) {
@@ -3985,7 +4111,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         }
       }
     }
-    const scene = createTimestamped("scn", { campaignId: request.params.campaignId, worldId, name: request.body.name ?? "New Scene", width: request.body.width ?? 1200, height: request.body.height ?? 800, gridType: request.body.gridType ?? "square", gridSize: request.body.gridSize ?? 50, backgroundAssetId: request.body.backgroundAssetId, folder: normalizeAssetFolder(request.body.folder), active: shouldActivate, sortOrder: request.body.sortOrder ?? store.state.scenes.filter((item) => item.campaignId === request.params.campaignId).length + 1, fog: request.body.fog ?? [], fogHistory: [], walls: request.body.walls ?? [], lights: request.body.lights ?? [], annotations: request.body.annotations ?? [], difficultTerrain: request.body.difficultTerrain ?? [], coverOverrides: request.body.coverOverrides ?? [], metadata: request.body.metadata ?? {} }) satisfies Scene;
+    const scene = createTimestamped("scn", { campaignId: request.params.campaignId, worldId, name: request.body.name ?? "New Scene", width: request.body.width ?? 1200, height: request.body.height ?? 800, gridType: request.body.gridType ?? "square", gridSize: request.body.gridSize ?? 50, gridOrigin: gridFields.value.gridOrigin, visibilityMode: gridFields.value.visibilityMode, backgroundAssetId: request.body.backgroundAssetId, folder: normalizeAssetFolder(request.body.folder), active: shouldActivate, sortOrder: request.body.sortOrder ?? store.state.scenes.filter((item) => item.campaignId === request.params.campaignId).length + 1, fog: request.body.fog ?? [], fogHistory: [], walls: request.body.walls ?? [], lights: request.body.lights ?? [], annotations: request.body.annotations ?? [], difficultTerrain: request.body.difficultTerrain ?? [], coverOverrides: request.body.coverOverrides ?? [], metadata: request.body.metadata ?? {} }) satisfies Scene;
     if (scene.active) {
       appendSceneActivationHistory(scene, { activatedAt, activatedByUserId: userId, previousActiveSceneId: deactivatedSceneIds[0], deactivatedSceneIds, source: "create" });
     }
@@ -4063,7 +4189,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       if (error instanceof SceneDuplicationError) return reply.code(error.code === "scene_duplication_conflict" ? 409 : 400).send({ error: error.code, message: error.message });
       throw error;
     }
-    deferRequestSideEffectUntilDurableSave(request, () => {
+    stageRequestEventsUntilDurableSave(request, () => {
       for (const scene of result.scenes) broadcast(createEvent({ campaignId: campaign.id, type: "scene.created", actorUserId: userId, targetId: scene.id, payload: scene }));
       for (const token of result.tokens) broadcast(createEvent({ campaignId: campaign.id, type: "token.created", actorUserId: userId, targetId: token.id, payload: token }));
       for (const actor of result.actors) broadcast(createEvent({ campaignId: campaign.id, type: "actor.created", actorUserId: userId, targetId: actor.id, payload: actor }));
@@ -4348,7 +4474,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const activeOrganization = requireCampaignActiveOrganization(store, reply, request.headers, userId, campaignId);
     if (activeOrganization !== true) return activeOrganization;
     if (!canReadSceneRecord(store, userId, scene)) return notFound(reply, "Scene not found");
-    return withoutSceneEditHistory(scene);
+    return scenePayloadForUser(store, userId, scene);
   });
 
   registerSceneDelegationRoutes(app, {
@@ -4365,6 +4491,65 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     broadcast,
   });
 
+  registerPlayerPreviewRoutes(app, {
+    store,
+    requirePreviewAccess: (reply, headers, scene) => {
+      const allowed = requireScenePermission(store, reply, headers, scene, "scene.update");
+      if (allowed !== true) return allowed;
+      for (const permission of ["campaign.update", "actor.readPrivate"] as const) {
+        const permitted = requireCampaignPermission(store, reply, headers, scene.campaignId, permission);
+        if (permitted !== true) return permitted;
+      }
+      return true;
+    },
+    requesterUserId: (headers) => currentUserId(store, headers)!,
+    canReadScene: (userId, scene) => canReadSceneRecord(store, userId, scene),
+    canReadCampaign: (userId, campaignId) => canCampaign(store, userId, campaignId, "campaign.read"),
+    isActiveUserId: (userId) => isActiveUserId(store, userId),
+    snapshot: (userId, campaign, sceneId, requesterUserId) => {
+      const snapshot = boundCampaignSnapshotHistory(buildCampaignSnapshot(store, userId, campaign, { sceneId, assetStorage, pluginRegistry }));
+      const requester = buildCampaignSnapshot(store, requesterUserId, campaign, { sceneId, assetStorage, pluginRegistry });
+      // Preview access never expands the caller's own read scope. Explicitly
+      // select UI fields so private profile, AI, and unrelated campaign data
+      // cannot leak when the full campaign snapshot grows new properties.
+      const withinCallerScope = <T extends { id: string }>(values: T[], readable: { id: string }[]): T[] => {
+        const ids = new Set(readable.map((value) => value.id));
+        return values.filter((value) => ids.has(value.id));
+      };
+      const scenes = withinCallerScope(snapshot.scenes.filter((scene) => scene.id === sceneId), requester.scenes);
+      const tokens = withinCallerScope(snapshot.tokens.filter((token) => token.sceneId === sceneId), requester.tokens);
+      const tokenIds = new Set(tokens.map((token) => token.id));
+      const actorIds = new Set(tokens.flatMap((token) => token.actorId ? [token.actorId] : []));
+      const handouts = withinCallerScope(snapshot.handouts, requester.handouts);
+      const assetIds = new Set([...scenes.flatMap((scene) => scene.backgroundAssetId ? [scene.backgroundAssetId] : []), ...tokens.flatMap((token) => token.imageAssetId ? [token.imageAssetId] : []), ...handouts.flatMap((handout) => handout.assetIds)]);
+      return {
+        campaign: { id: campaign.id, name: campaign.name },
+        generatedAt: snapshot.generatedAt,
+        selectedSceneId: sceneId,
+        scenes,
+        tokens,
+        actors: withinCallerScope(snapshot.actors.filter((actor) => actorIds.has(actor.id)), requester.actors),
+        assets: withinCallerScope(snapshot.assets.filter((asset) => assetIds.has(asset.id)), requester.assets),
+        vision: snapshot.vision ? { ...snapshot.vision, polygons: snapshot.vision.polygons.filter((polygon) => polygon.source !== "token" || tokenIds.has(polygon.sourceId)) } : undefined,
+        chat: withinCallerScope(snapshot.chat.filter((message) => message.visibility === "public" || message.userId === requesterUserId || message.recipientUserIds.includes(requesterUserId)), requester.chat),
+        combats: withinCallerScope(snapshot.combats.filter((combat) => combat.active), requester.combats).map((combat) => {
+          const readable = requester.combats.find((candidate) => candidate.id === combat.id)!;
+          const combatants = withinCallerScope(combat.combatants, readable.combatants).map(({ id, tokenId }) => ({ id, ...(tokenId ? { tokenId } : {}) }));
+          const ids = new Set(combatants.map((combatant) => combatant.id));
+          const current = combat.turnPresentation?.currentCombatantId;
+          const next = combat.turnPresentation?.nextCombatantId;
+          return {
+            id: combat.id, active: combat.active, combatants,
+            turnPresentation: {
+              ...(current && ids.has(current) && readable.turnPresentation?.currentCombatantId === current ? { currentCombatantId: current } : {}),
+              ...(next && ids.has(next) && readable.turnPresentation?.nextCombatantId === next ? { nextCombatantId: next } : {}),
+            },
+          };
+        }),
+        handouts,
+      };
+    },
+  });
   app.get<{ Params: { sceneId: string }; Querystring: { previewUserId?: string } }>("/api/v1/scenes/:sceneId/vision", async (request, reply): Promise<VisionSnapshot | FastifyReply> => {
     const campaignId = campaignIdForScene(store, request.params.sceneId);
     if (!campaignId) return notFound(reply, "Scene not found");
@@ -4555,6 +4740,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const normalizedBody = normalizeScenePatch(request.body);
     if (!normalizedBody.ok) return badRequest(reply, normalizedBody.error);
     const body = normalizedBody.value;
+    if (body.annotations !== undefined && !canCampaign(store, userId!, campaignId, "token.reveal")) {
+      if (body.annotations.some((annotation) => !sceneAnnotationIsPublic(annotation)) || scene.annotations.some((annotation) => !sceneAnnotationIsPublic(annotation))) return forbidden(reply, "Replacing GM annotations requires token.reveal permission");
+    }
     if (Object.prototype.hasOwnProperty.call(body, "backgroundAssetId")) {
       const revision = requireExpectedRevision(reply, { resourceType: "scene", resourceId: scene.id, currentUpdatedAt: scene.updatedAt, expectedUpdatedAt: body.expectedUpdatedAt, current: withoutSceneEditHistory(scene), label: "Scene" });
       if (revision !== true) return revision;
@@ -4618,6 +4806,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
     const allowed = requireScenePermission(store, reply, request.headers, scene, "scene.update");
     if (allowed !== true) return allowed;
+    if (!canCampaign(store, userId, campaignId, "token.reveal")) {
+      const previous = scene.sceneEditHistory?.at(-1)?.state.annotations ?? [];
+      const privateState = (annotations: SceneAnnotation[]) => annotations.filter((annotation) => !sceneAnnotationIsPublic(annotation));
+      if (JSON.stringify(privateState(scene.annotations)) !== JSON.stringify(privateState(previous))) return forbidden(reply, "Undoing GM annotation changes requires token.reveal permission");
+    }
     const undone = undoSceneEdit(scene);
     if (!undone) return badRequest(reply, "No scene edits available to undo");
     appendServerAuditLog(store, userId, { campaignId, action: "scene.edit.undo", targetType: "scene", targetId: scene.id, before: { snapshotId: undone.id, kind: undone.kind, at: undone.at } });
@@ -4698,7 +4891,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return { aiEditSceneId: aiEditScene.id, targetSceneId: targetScene.id, backgroundAssetId: targetScene.backgroundAssetId, copiedTokenCount: copiedTokens.length, replacedTokenCount };
   });
 
-  app.post<{ Params: { sceneId: string }; Body: { kind?: SceneAnnotationKind; label?: string; color?: string; layer?: string; groupId?: string; groupLabel?: string; sortOrder?: number; snapToGrid?: boolean; points?: VisionPoint[]; radius?: number; expiresInSeconds?: number } }>("/api/v1/scenes/:sceneId/annotations", async (request, reply) => {
+  app.post<{ Params: { sceneId: string }; Body: { kind?: SceneAnnotationKind; label?: string; visibility?: "public" | "gm"; color?: string; layer?: string; groupId?: string; groupLabel?: string; sortOrder?: number; snapToGrid?: boolean; points?: VisionPoint[]; radius?: number; expiresInSeconds?: number } }>("/api/v1/scenes/:sceneId/annotations", async (request, reply) => {
     const campaignId = campaignIdForScene(store, request.params.sceneId);
     if (!campaignId) return notFound(reply, "Scene not found");
     const userId = requireUser(store, reply, request.headers);
@@ -4710,6 +4903,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const requiredPermission: PermissionName = kind === "ping" || kind === "ruler" ? "scene.read" : "scene.update";
     const allowed = requiredPermission === "scene.update" ? requireScenePermission(store, reply, request.headers, scene, "scene.update") : requireCampaignPermissionForUser(store, reply, request.headers, userId, campaignId, requiredPermission);
     if (allowed !== true) return allowed;
+    if (body.visibility === "gm" && !canCampaign(store, userId, campaignId, "token.reveal")) return forbidden(reply, "GM annotations require token.reveal permission");
     const normalized = normalizeSceneAnnotationInput(scene, userId, body, kind);
     if ("error" in normalized) return badRequest(reply, normalized.error);
     if (normalized.annotation.kind === "template") {
@@ -4727,10 +4921,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     appendServerAuditLog(store, userId, { campaignId, action: `scene.annotation.${kind}`, targetType: "sceneAnnotation", targetId: normalized.annotation.id, after: sceneAnnotationAuditSummary(normalized.annotation) });
     store.save();
     broadcast(createEvent({ campaignId: scene.campaignId, type: "scene.updated", actorUserId: userId, targetId: scene.id, payload: scene }));
-    return scene;
+    return scenePayloadForUser(store, userId, scene);
   });
 
-  app.patch<{ Params: { sceneId: string; annotationId: string }; Body: { label?: string; color?: string; layer?: string; groupId?: string; groupLabel?: string; sortOrder?: number; templateSaveAbility?: string; templateSaveDc?: number; templateDamageFormula?: string; templateDamageType?: string; snapToGrid?: boolean; points?: VisionPoint[]; radius?: number; expiresInSeconds?: number } }>("/api/v1/scenes/:sceneId/annotations/:annotationId", async (request, reply) => {
+  app.patch<{ Params: { sceneId: string; annotationId: string }; Body: { label?: string; visibility?: "public" | "gm"; color?: string; layer?: string; groupId?: string; groupLabel?: string; sortOrder?: number; templateSaveAbility?: string; templateSaveDc?: number; templateDamageFormula?: string; templateDamageType?: string; snapToGrid?: boolean; points?: VisionPoint[]; radius?: number; expiresInSeconds?: number } }>("/api/v1/scenes/:sceneId/annotations/:annotationId", async (request, reply) => {
     const campaignId = campaignIdForScene(store, request.params.sceneId);
     if (!campaignId) return notFound(reply, "Scene not found");
     const userId = requireUser(store, reply, request.headers);
@@ -4740,7 +4934,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const annotations = ensureSceneAnnotations(scene);
     const annotation = annotations.find((item) => item.id === request.params.annotationId);
-    if (!annotation) return notFound(reply, "Annotation not found");
+    if (!annotation || (annotation.visibility === "gm" && !canCampaign(store, userId, campaignId, "token.reveal"))) return notFound(reply, "Annotation not found");
+    if (request.body?.visibility === "gm" && !canCampaign(store, userId, campaignId, "token.reveal")) return forbidden(reply, "GM annotations require token.reveal permission");
     const normalized = normalizeSceneAnnotationPatch(scene, annotation, request.body ?? {});
     if ("error" in normalized) return badRequest(reply, normalized.error);
     const before = { ...annotation, points: annotation.points.map((point) => ({ ...point })) };
@@ -4757,7 +4952,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     appendServerAuditLog(store, userId, { campaignId, action: "scene.annotation.update", targetType: "sceneAnnotation", targetId: annotation.id, before: sceneAnnotationAuditSummary(before), after: sceneAnnotationAuditSummary(annotation) });
     store.save();
     broadcast(createEvent({ campaignId: scene.campaignId, type: "scene.updated", actorUserId: userId, targetId: scene.id, payload: scene }));
-    return scene;
+    return scenePayloadForUser(store, userId, scene);
   });
 
   app.delete<{ Params: { sceneId: string; annotationId: string } }>("/api/v1/scenes/:sceneId/annotations/:annotationId", async (request, reply) => {
@@ -4770,7 +4965,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const annotations = ensureSceneAnnotations(scene);
     const index = annotations.findIndex((annotation) => annotation.id === request.params.annotationId);
-    if (index < 0) return notFound(reply, "Annotation not found");
+    if (index < 0 || (annotations[index]!.visibility === "gm" && !canCampaign(store, userId, campaignId, "token.reveal"))) return notFound(reply, "Annotation not found");
     captureSceneEditSnapshot(scene, userId, "scene.annotation.delete");
     const deleted = annotations.splice(index, 1)[0]!;
     appendSceneAnnotationHistory(scene, userId, "delete", deleted);
@@ -4778,7 +4973,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     appendServerAuditLog(store, userId, { campaignId, action: "scene.annotation.delete", targetType: "sceneAnnotation", targetId: deleted.id, before: sceneAnnotationAuditSummary(deleted) });
     store.save();
     broadcast(createEvent({ campaignId: scene.campaignId, type: "scene.updated", actorUserId: userId, targetId: scene.id, payload: scene }));
-    return scene;
+    return scenePayloadForUser(store, userId, scene);
   });
 
   app.post<{ Params: { sceneId: string }; Body: { x?: number; y?: number; radius?: number; brushRadius?: number; hidden?: boolean; shape?: FogShape | "brush"; mode?: FogMode; points?: VisionPoint[] } }>("/api/v1/scenes/:sceneId/fog", async (request, reply) => {
@@ -5331,7 +5526,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const ownerUserId = campaignActorOwnerUserId(store, request.params.campaignId, request.body.ownerUserId);
     if (!ownerUserId.ok) return badRequest(reply, ownerUserId.error);
     if (request.body.data !== undefined && !isRecord(request.body.data)) return badRequest(reply, "Actor data must be an object");
-    const actor = createTimestamped("act", { campaignId: request.params.campaignId, worldId, systemId: request.body.systemId ?? DEFAULT_SYSTEM_ID, ownerUserId: ownerUserId.value, type: request.body.type ?? "character", name: request.body.name ?? "New Actor", imageAssetId: request.body.imageAssetId, data: request.body.data ?? { hp: { current: 10, max: 10 }, attributes: {} }, permissions: request.body.permissions ?? {} }) satisfies Actor;
+    const systemId = request.body.systemId ?? store.state.campaigns.find((campaign) => campaign.id === request.params.campaignId)?.defaultSystemId ?? DEFAULT_SYSTEM_ID;
+    if (!findRegisteredSystem(store.state, systemId)) return badRequest(reply, "Actor systemId must reference an installed system");
+    const definition = isDeclarativeSystem(store.state, systemId) ? resolvePinnedDeclarativeSystem(store.state, request.params.campaignId, systemId).manifest.definition : undefined;
+    const actor = createTimestamped("act", { campaignId: request.params.campaignId, worldId, systemId, ownerUserId: ownerUserId.value, type: request.body.type ?? definition?.actorTypes[0] ?? "character", name: request.body.name ?? "New Actor", imageAssetId: request.body.imageAssetId, data: request.body.data ?? structuredClone(definition?.actorDefaults ?? { hp: { current: 10, max: 10 }, attributes: {} }), permissions: request.body.permissions ?? {} }) satisfies Actor;
+    assertDeclarativeSystemRecord(store.state, "actors", actor);
     if (actor.systemId === DND_5E_SRD_SYSTEM_ID) {
       const validationError = dndManagedDataBoundaryError(parseDnd5eSrdActorManagedData(actor));
       if (validationError) return badRequest(reply, validationError);
@@ -5461,7 +5660,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       if (!ownerUserId.ok) return badRequest(reply, ownerUserId.error);
       patch.ownerUserId = ownerUserId.value;
     }
-    const candidateActor = { ...actor, ...patch } as Actor;
+    const candidateActor = { ...structuredClone(actor), ...patch } as Actor;
+    if (patch.systemId !== undefined && !findRegisteredSystem(store.state, candidateActor.systemId)) return badRequest(reply, "Actor systemId must reference an installed system");
+    assertDeclarativeSystemRecord(store.state, "actors", candidateActor);
     if ((request.body.data !== undefined || request.body.systemId === DND_5E_SRD_SYSTEM_ID) && candidateActor.systemId === DND_5E_SRD_SYSTEM_ID) {
       const validationError = dndManagedDataBoundaryError(parseDnd5eSrdActorManagedData(candidateActor), Boolean(manualOverrideReason.value));
       if (validationError) return badRequest(reply, validationError);
@@ -5574,7 +5775,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     appendServerAuditLog(store, userId, { campaignId: actor.campaignId, action: "actor.concentrationEnded", targetType: "actor", targetId: actor.id, before: { actorUpdatedAt, combatUpdatedAt }, after: { reason, updatedActorCount: lifecycle.actorUpdates.length, removedEffectCount: lifecycle.changes.reduce((total, change) => total + change.removedEffectIds.length, 0), removedConditionCount: lifecycle.changes.reduce((total, change) => total + change.removedConditionIds.length, 0), preparedPreviewKey, rulesMutationId: mutation.id } });
     appendServerAuditLog(store, userId, { campaignId: actor.campaignId, action: "dnd.rulesMutationCommitted", targetType: "actor", targetId: actor.id, after: { rulesMutationId: mutation.id, preparedPreviewKey, kind: mutation.kind } });
     store.save();
-    deferRequestSideEffectUntilDurableSave(request, () => {
+    stageRequestEventsUntilDurableSave(request, () => {
       for (const updatedActor of updatedActors) broadcastActorUpdated(broadcast, updatedActor);
       for (const combat of updatedCombats) {
         broadcast(createEvent({ campaignId: combat.campaignId, type: "combat.turnChanged", actorUserId: userId, targetId: combat.id, payload: combat }));
@@ -5734,7 +5935,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       return badRequest(reply, "Item worldId must reference a world in the same campaign");
     }
     if (request.body.data !== undefined && !isRecord(request.body.data)) return badRequest(reply, "Item data must be an object");
-    const item = createTimestamped("itm", { campaignId: request.params.campaignId, worldId, systemId: String(request.body.systemId ?? DEFAULT_SYSTEM_ID), actorId, type: String(request.body.type ?? "gear"), name: String(request.body.name ?? "New Item"), data: request.body.data ?? {} }) satisfies Item;
+    const systemId = String(request.body.systemId ?? (actorId ? store.state.actors.find((actor) => actor.id === actorId)?.systemId : undefined) ?? store.state.campaigns.find((campaign) => campaign.id === request.params.campaignId)?.defaultSystemId ?? DEFAULT_SYSTEM_ID);
+    if (!findRegisteredSystem(store.state, systemId)) return badRequest(reply, "Item systemId must reference an installed system");
+    const definition = isDeclarativeSystem(store.state, systemId) ? resolvePinnedDeclarativeSystem(store.state, request.params.campaignId, systemId).manifest.definition : undefined;
+    const item = createTimestamped("itm", { campaignId: request.params.campaignId, worldId, systemId, actorId, type: String(request.body.type ?? definition?.itemTypes[0] ?? "gear"), name: String(request.body.name ?? "New Item"), data: request.body.data ?? structuredClone(definition?.itemDefaults ?? {}) }) satisfies Item;
+    assertDeclarativeSystemRecord(store.state, "items", item);
     if (item.systemId === DND_5E_SRD_SYSTEM_ID) {
       const validationError = dndManagedDataBoundaryError(parseDnd5eSrdItemManagedData(item));
       if (validationError) return badRequest(reply, validationError);
@@ -5810,6 +6015,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (item.systemId === DND_5E_SRD_SYSTEM_ID && nextItemType === "spell" && isRecord(nextItemData) && (item.data.classSpell === true || nextItemData.classSpell === true) && nextItemData.prepared !== item.data.prepared) {
       return badRequest(reply, "Rules-managed D&D class spell preparation requires a reviewed preview and apply");
     }
+    assertDeclarativeSystemRecord(store.state, "items", { ...structuredClone(item), actorId: nextActorId, worldId: nextWorldId, type: nextItemType, data: request.body.data ?? structuredClone(item.data) });
     if (request.body.name !== undefined) item.name = request.body.name;
     if (request.body.type !== undefined) item.type = request.body.type;
     if (request.body.actorId !== undefined) item.actorId = nextActorId;
@@ -7134,7 +7340,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     store.state.dndRulesMutations = [...store.state.dndRulesMutations, mutation].sort(sortTimestampsDesc).slice(0, 1000);
     appendServerAuditLog(store, userId, { campaignId: combat.campaignId, action: "dnd.rulesMutationCommitted", targetType: "combat", targetId: combat.id, after: { rulesMutationId: mutation.id, preparedPreviewKey: mutation.preparedPreviewKey, actionId: action.id, ...(action.continuationId ? { continuationId: action.continuationId } : {}), ...(action.criticalOutcomes?.length ? { criticalOutcomes: action.criticalOutcomes } : {}) } });
     store.save();
-    deferRequestSideEffectUntilDurableSave(request, () => {
+    stageRequestEventsUntilDurableSave(request, () => {
       for (const updatedActor of applied.updatedActors) broadcastActorUpdated(broadcast, updatedActor);
       broadcast(createEvent({ campaignId: combat.campaignId, type: "combat.turnChanged", targetId: combat.id, payload: combat }));
       for (const roll of applied.rolls) {
@@ -7797,7 +8003,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }
     appendServerAuditLog(store, userId, { campaignId: combat.campaignId, action: "combat.combatantUpdated", targetType: "combatant", targetId: current.id, before, after: { ...combatAuditSummary(combat), ...(rulesMutation ? { rulesMutationId: rulesMutation.id } : {}) } });
     store.save();
-    deferRequestSideEffectUntilDurableSave(request, () => {
+    stageRequestEventsUntilDurableSave(request, () => {
       if (actorToSync) broadcastActorUpdated(broadcast, actorToSync);
       broadcast(createEvent({ campaignId: combat.campaignId, type: "combat.turnChanged", actorUserId: userId, targetId: combat.id, payload: combat }));
     });
@@ -7921,6 +8127,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       const nextProposal = nextState.proposals.find((item) => item.id === proposal.id);
       if (!nextProposal) throw new Error("Applied proposal record was not prepared");
       linkAppliedRecapToSessionState(nextState, nextProposal, userId);
+      assertDeclarativeSystemStateCandidate(store.state, nextState);
       store.replace(nextState);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Proposal could not be applied";
@@ -7952,7 +8159,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       const revertStateProposal = revertState.proposals.find((item) => item.id === proposal.id);
       if (!revertStateProposal) throw new Error("Proposal could not be prepared for revert");
       unlinkRecapFromSessionState(revertState, revertStateProposal, userId);
-      store.replace(revertProposal(revertState, revertStateProposal, userId));
+      const nextState = revertProposal(revertState, revertStateProposal, userId);
+      assertDeclarativeSystemStateCandidate(store.state, nextState);
+      store.replace(nextState);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Proposal could not be reverted";
       appendServerAuditLog(store, userId, { campaignId: proposal.campaignId, action: "proposal.revert.failed", targetType: "proposal", targetId: proposal.id, after: { status: proposal.status, message } });
@@ -9638,13 +9847,23 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!pluginCan(store, request.params.campaignId, plugin.id, "chat.write")) {
       return forbidden(reply, `Plugin ${plugin.id} lacks chat.write in this campaign`);
     }
-    const canReadTokens = pluginCan(store, request.params.campaignId, plugin.id, "token.read");
+    const canReadTokens = pluginCan(store, request.params.campaignId, plugin.id, "token.read")
+      && canCampaign(store, userId, request.params.campaignId, "token.read");
     const canConfigurePlugin = pluginCan(store, request.params.campaignId, plugin.id, "plugin.configure");
-    const sceneIds = campaignSceneIds(store, request.params.campaignId);
-    const tokens: PluginCommandTokenContext[] = canReadTokens ? store.state.tokens.filter((token) => sceneIds.includes(token.sceneId)).map((token) => ({ id: token.id, name: token.name, sceneId: token.sceneId })) : [];
+    const canReadPluginStorage = canConfigurePlugin && canCampaign(store, userId, request.params.campaignId, "plugin.configure");
+    const pluginPermissions = pluginGrant?.permissions ?? [];
+    const scenes = canReadTokens
+      ? readableScenesForUser(store, userId, request.params.campaignId).filter((scene) => scene.active || pluginCanAccessPreparedScenes(pluginPermissions))
+      : [];
+    const tokens: PluginCommandTokenContext[] = scenes.flatMap((scene) => {
+      const sceneTokens = store.state.tokens.filter((token) => token.sceneId === scene.id);
+      return visibleTokensForUser(store, userId, request.params.campaignId, sceneTokens)
+        .filter((token) => (!token.hidden && tokenLayer(token) !== "gm") || pluginCanReadHiddenTokens(pluginPermissions))
+        .map((token) => ({ id: token.id, name: token.name, sceneId: token.sceneId }));
+    });
     let commandResult: PluginChatCommandResult;
     try {
-      commandResult = await pluginRegistry.executeChatCommandAsync(plugin.id, { campaignId: request.params.campaignId, pluginId: plugin.id, userId, command, args, permissions: pluginGrant?.permissions ?? [], tokens, storage: { entries: canConfigurePlugin ? pluginStorageSnapshot(store, request.params.campaignId, plugin.id) : [] } }, plugin.version);
+      commandResult = await pluginRegistry.executeChatCommandAsync(plugin.id, { campaignId: request.params.campaignId, pluginId: plugin.id, userId, command, args, permissions: pluginGrant?.permissions ?? [], tokens, storage: { entries: canReadPluginStorage ? pluginStorageSnapshot(store, request.params.campaignId, plugin.id) : [] } }, plugin.version);
     } catch (error) {
       appendPluginCommandFailureAudit(store, { campaignId: request.params.campaignId, userId, plugin, command, reason: "runtime_error", message: errorMessage(error) });
       store.save();
@@ -9677,7 +9896,19 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     for (const createdProposal of proposals) {
       broadcast(createEvent({ campaignId: createdProposal.campaignId, type: "proposal.created", actorUserId: userId, targetId: createdProposal.id, payload: createdProposal }));
     }
-    return { pluginId: plugin.id, command, proposal, proposals, bridgeReceipts: bridgeProposals.receipts, chat: message, storageMutation: storageProposal.summary, approvalRequired: true };
+    const callerPermissions = permissionsForUser(store, userId, request.params.campaignId);
+    const visibleProposals = proposals.filter((candidate) => proposalVisibleToUser(store.state, userId, request.params.campaignId, callerPermissions, candidate));
+    const hiddenProposalIds = new Set(proposals.filter((candidate) => !visibleProposals.includes(candidate)).map((candidate) => candidate.id));
+    return {
+      pluginId: plugin.id,
+      command,
+      proposal: visibleProposals.includes(proposal) ? proposal : undefined,
+      proposals: visibleProposals,
+      bridgeReceipts: Object.fromEntries(Object.entries(bridgeProposals.receipts).filter(([, receipt]) => !hiddenProposalIds.has(receipt))),
+      chat: canReadChatMessage(store, userId, message) ? message : undefined,
+      storageMutation: canReadPluginStorage ? storageProposal.summary : undefined,
+      approvalRequired: true,
+    };
   });
 
   function appendPluginCommandFailureAudit(store: StateStore, input: { campaignId: string; userId: string; plugin: LoadedPlugin; command: string; reason: string; message: string }) {
@@ -9756,7 +9987,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const campaign = store.state.campaigns.find((item) => item.id === request.params.campaignId);
     if (!campaign) return notFound(reply, "Campaign not found");
-    return registeredSystems(store.state).map((system) => systemRuntimeInfo(store, system, campaign.defaultSystemId === system.id));
+    return registeredSystems(store.state).map((system) => {
+      const binding = campaign.systemBindings?.find((entry) => entry.systemId === system.id);
+      const selected = binding ? resolvePinnedDeclarativeSystem(store.state, campaign.id, system.id).manifest : system;
+      return systemRuntimeInfo(store, selected, campaign.defaultSystemId === system.id, binding);
+    });
   });
 
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/compatibility", async (request, reply): Promise<CampaignCompatibilityReport | FastifyReply> => {
@@ -9776,13 +10011,56 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!campaign) return notFound(reply, "Campaign not found");
     const system = findRegisteredSystem(store.state, request.params.systemId);
     if (!system) return notFound(reply, "System not found");
+    const revision = requireExpectedRevision(reply, { resourceType: "campaign", resourceId: campaign.id, currentUpdatedAt: campaign.updatedAt, expectedUpdatedAt: request.body?.expectedUpdatedAt, current: campaign, label: "Campaign" });
+    if (revision !== true) return revision;
+    if (isDeclarativeSystem(store.state, system.id)) resolvePinnedDeclarativeSystem(store.state, campaign.id, system.id);
     const previousSystemId = campaign.defaultSystemId;
     campaign.defaultSystemId = system.id;
-    campaign.updatedAt = nowIso();
+    campaign.updatedAt = nextRevisionTimestamp(campaign.updatedAt);
     store.state.auditLogs.push(createTimestamped("audit", { campaignId: campaign.id, actorUserId: userId, actorType: "user" as const, action: "system.activate", targetType: "system", targetId: system.id, before: { defaultSystemId: previousSystemId }, after: { defaultSystemId: system.id } }));
     store.save();
     broadcast(createEvent({ campaignId: campaign.id, type: "campaign.updated", actorUserId: userId, targetId: campaign.id, payload: campaign }));
-    return { system: systemRuntimeInfo(store, system, true), campaign };
+    const binding = campaign.systemBindings?.find((entry) => entry.systemId === system.id);
+    const selected = binding ? resolvePinnedDeclarativeSystem(store.state, campaign.id, system.id).manifest : system;
+    return { system: systemRuntimeInfo(store, selected, true, binding), campaign };
+  });
+
+  app.post<{ Params: { campaignId: string; systemId: string }; Body: { expectedUpdatedAt?: unknown; system?: unknown; expectedBinding?: unknown } }>("/api/v1/campaigns/:campaignId/systems/:systemId/binding", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.update");
+    if (allowed !== true) return allowed;
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    if (!opaqueHeaderText(request.headers["idempotency-key"])) return badRequest(reply, "System binding requires an Idempotency-Key header");
+    const campaign = store.state.campaigns.find((entry) => entry.id === request.params.campaignId);
+    if (!campaign) return notFound(reply, "Campaign not found");
+    const body = request.body;
+    if (!isRecord(body) || Object.keys(body).some((key) => !["expectedUpdatedAt", "system", "expectedBinding"].includes(key))) return badRequest(reply, "System binding requires the displayed campaign revision and exact system identities");
+    const revision = requireExpectedRevision(reply, { resourceType: "campaign", resourceId: campaign.id, currentUpdatedAt: campaign.updatedAt, expectedUpdatedAt: body.expectedUpdatedAt, current: campaign, label: "Campaign" });
+    if (revision !== true) return revision;
+    const identityShape = (value: unknown): value is SystemManifestIdentity => isRecord(value) && Object.keys(value).length === 3 && typeof value.systemId === "string" && typeof value.version === "string" && typeof value.checksum === "string" && /^[a-f0-9]{64}$/.test(value.checksum);
+    if (!identityShape(body.system) || (body.expectedBinding !== null && !identityShape(body.expectedBinding))) return badRequest(reply, "System identities require systemId, version and checksum; an unbound campaign uses expectedBinding: null");
+    if (body.system.systemId !== request.params.systemId) return badRequest(reply, "System identity must match the route");
+    const previous = campaign.systemBindings?.find((entry) => entry.systemId === request.params.systemId);
+    if (!sameSystemIdentity(previous, body.expectedBinding)) return conflict(reply, "The campaign system binding changed; reload before selecting a version");
+    const requestedSystem = body.system;
+    const installation = store.state.systemInstallations.find((entry) => entry.manifest.id === requestedSystem.systemId && entry.manifest.version === requestedSystem.version);
+    if (!installation || installation.manifest.definition?.kind !== "declarative-v1") return notFound(reply, "Exact executable system version is not installed");
+    const identity = installedDeclarativeIdentity(installation);
+    if (!sameSystemIdentity(identity, body.system)) return conflict(reply, "The requested system checksum does not match the installed definition");
+    if (sameSystemIdentity(previous, identity)) return { campaign, binding: identity };
+    const candidate = structuredClone(store.state);
+    const changedCampaign = candidate.campaigns.find((entry) => entry.id === campaign.id)!;
+    changedCampaign.systemBindings = [...(changedCampaign.systemBindings ?? []).filter((entry) => entry.systemId !== identity.systemId), identity];
+    advanceDeclarativeBindingRevisions(candidate, changedCampaign, identity.systemId, nextRevisionTimestamp);
+    assertDeclarativeSystemStateCandidate(store.state, candidate);
+    store.replace(candidate, { flush: false });
+    const updatedCampaign = store.state.campaigns.find((entry) => entry.id === campaign.id)!;
+    appendServerAuditLog(store, userId, { campaignId: campaign.id, action: "system.binding.update", targetType: "system", targetId: identity.systemId, before: { binding: previous ?? null }, after: { binding: identity } });
+    store.save();
+    broadcast(createEvent({ campaignId: campaign.id, type: "campaign.updated", actorUserId: userId, targetId: campaign.id, payload: updatedCampaign }));
+    for (const actor of store.state.actors) if (actor.campaignId === campaign.id && actor.systemId === identity.systemId) broadcastActorUpdated(broadcast, actor);
+    for (const item of store.state.items) if (item.campaignId === campaign.id && item.systemId === identity.systemId) broadcast(createEvent({ campaignId: campaign.id, type: "item.updated", actorUserId: userId, targetId: item.id, payload: item }));
+    return { campaign: updatedCampaign, binding: identity };
   });
 
   app.get<{ Params: { campaignId: string; systemId: string } }>("/api/v1/campaigns/:campaignId/systems/:systemId/character-templates", async (request, reply) => {
@@ -10102,7 +10380,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     appendServerAuditLog(store, userId, { campaignId, action: "encounter.tokens.link", targetType: "encounter", targetId: encounter.id, before: { tokenIds: encounterTokenIdsBefore }, after: { addedTokenIds: placedTokenIds, tokenIds: encounter.tokenIds } });
     if (linkedSession) appendServerAuditLog(store, userId, { campaignId, action: "campaign.session.encounterLink", targetType: "campaign_session", targetId: linkedSession.id, after: { encounterId: encounter.id, encounterIds: linkedSession.encounterIds } });
     store.save();
-    deferRequestSideEffectUntilDurableSave(request, () => {
+    stageRequestEventsUntilDurableSave(request, () => {
       for (const placement of prepared) {
         broadcast(createEvent({ campaignId, type: "actor.created", targetId: placement.actor.id, payload: placement.actor }));
         broadcast(createEvent({ campaignId, type: "token.created", targetId: placement.token.id, payload: placement.token }));
@@ -11131,7 +11409,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       after: { actor: { id: actor.id, updatedAt: actor.updatedAt, data: actor.data }, adjustment, rulesMutationId: rulesMutation.id, ...(activeCombat ? { combat: { id: activeCombat.id, updatedAt: activeCombat.updatedAt, combatant: combatantAfter, changed: combatChanged } } : {}) },
     });
     store.save();
-    deferRequestSideEffectUntilDurableSave(request, () => {
+    stageRequestEventsUntilDurableSave(request, () => {
       broadcastActorUpdated(broadcast, actor);
       if (activeCombat && combatChanged) broadcast(createEvent({ campaignId: activeCombat.campaignId, type: "combat.turnChanged", actorUserId: userId, targetId: activeCombat.id, payload: activeCombat }));
     });
@@ -11249,7 +11527,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       after: { actorIds: targets.map((target) => target.id), hp: Object.fromEntries(targets.map((target) => [target.id, target.data.hp])), preparedPreviewKey, rulesMutationId: mutationId, details: recomputedTargets.map(({ actor: target, preview }) => ({ actorId: target.id, details: preview.details })), ...(activeCombat && combatBefore ? { combat: { combatId: activeCombat.id, updatedAt: activeCombat.updatedAt, combatants: combatantChanges.map((change) => activeCombat.combatants.find((combatant) => combatant.id === change.combatantId)) } } : {}) },
     });
     store.save();
-    deferRequestSideEffectUntilDurableSave(request, () => {
+    stageRequestEventsUntilDurableSave(request, () => {
       for (const target of targets) broadcastActorUpdated(broadcast, target);
       if (activeCombat && combatBefore) broadcast(createEvent({ campaignId: activeCombat.campaignId, type: "combat.turnChanged", actorUserId: userId, targetId: activeCombat.id, payload: activeCombat }));
     });
@@ -11336,7 +11614,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     mutation.updatedAt = undoneAt;
     appendServerAuditLog(store, userId, { campaignId: mutation.campaignId, action: "dnd.rulesMutationUndone", targetType: "dndRulesMutation", targetId: mutation.id, before: { kind: mutation.kind, status: "applied", preparedPreviewKey: mutation.preparedPreviewKey }, after: { kind: mutation.kind, status: "undone", actorIds: actors.map((actor) => actor.id), itemIds: items.map((item) => item.id), combatId: combat?.id } });
     store.save();
-    deferRequestSideEffectUntilDurableSave(request, () => {
+    stageRequestEventsUntilDurableSave(request, () => {
       for (const actor of actors) broadcastActorUpdated(broadcast, actor);
       if (combat) broadcast(createEvent({ campaignId: combat.campaignId, type: "combat.turnChanged", actorUserId: userId, targetId: combat.id, payload: combat }));
     });
@@ -11976,7 +12254,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!actor) return notFound(reply, "System actor not found");
     if (!canReadActorPrivateData(store, userId, actor.campaignId, actor)) return forbidden(reply, "Missing permission: actor.readPrivate");
     const sheet = systemSheetForStore(store, actor, actorItems(store, actor));
-    return { systemId: request.params.systemId, ...sheet };
+    return "kind" in sheet && sheet.kind === "declarative-v1" ? sheet : { systemId: request.params.systemId, ...sheet };
   });
 
   app.post<{ Params: { campaignId: string; systemId: string; actorId: string }; Body: SystemActorRollBody }>("/api/v1/campaigns/:campaignId/systems/:systemId/actors/:actorId/roll", async (request, reply) => {
@@ -11989,6 +12267,29 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const actor = findSystemActor(store, request.params.campaignId, request.params.systemId, request.params.actorId);
     if (!actor) return notFound(reply, "System actor not found");
     if (!canReadActorPrivateData(store, userId, actor.campaignId, actor)) return forbidden(reply, "Missing permission: actor.readPrivate");
+    if (isDeclarativeSystem(store.state, actor.systemId)) {
+      if (!opaqueHeaderText(request.headers["idempotency-key"])) return badRequest(reply, "Declarative actions require an Idempotency-Key header");
+      const canChat = requireCampaignPermission(store, reply, request.headers, actor.campaignId, "chat.write");
+      if (canChat !== true) return canChat;
+      const runtime = declarativeRuntimeForActor(store.state, actor);
+      const plan = runtime.prepareAction(structuredClone(actor), request.body);
+      if (plan.actorChanged && !canUpdateActorForUser(store, userId, actor)) return forbidden(reply, "Missing permission: actor.update");
+      const fairRoll = rollFormulaWithFairness(plan.roll.formula);
+      const roll = createTimestamped("roll", { campaignId: actor.campaignId, userId, actorId: actor.id, formula: plan.roll.formula, label: plan.roll.label, visibility: "public" as const, terms: fairRoll.rolled.terms, total: fairRoll.rolled.total, fairness: fairRoll.fairness }) satisfies DiceRoll;
+      const message = createTimestamped("msg", { campaignId: actor.campaignId, userId, type: "roll" as const, body: `${actor.name} ${plan.roll.label}: ${plan.roll.formula} = ${roll.total}`, visibility: "public" as const, recipientUserIds: [], rollId: roll.id }) satisfies ChatMessage;
+      if (plan.actorChanged) {
+        actor.data = plan.actorData;
+        actor.updatedAt = nextRevisionTimestamp(actor.updatedAt);
+      }
+      store.state.rolls.push(roll);
+      store.state.chat.push(message);
+      appendServerAuditLog(store, userId, { campaignId: actor.campaignId, action: "system.actor.roll", targetType: "actor", targetId: actor.id, after: { systemId: actor.systemId, actorId: actor.id, actorType: actor.type, system: plan.system, rollId: plan.roll.id, formula: plan.roll.formula, cost: plan.cost } });
+      store.save();
+      if (plan.actorChanged) broadcastActorUpdated(broadcast, actor);
+      broadcast(createEvent({ campaignId: actor.campaignId, type: "dice.roll.created", actorUserId: userId, targetId: roll.id, payload: roll }));
+      broadcast(createEvent({ campaignId: actor.campaignId, type: "chat.message.created", actorUserId: userId, targetId: message.id, payload: message }));
+      return { roll, chat: message, actor: actorPayloadForUser(store, userId, actor), sheet: runtime.sheet(structuredClone(actor)), quickRoll: { ...plan.roll, available: true, issues: [], ...(plan.cost ? { cost: plan.cost } : {}) }, ...(plan.cost ? { cost: plan.cost } : {}) };
+    }
     const submittedActionBody = request.body ?? {};
     let actionBody: SystemActorRollBody = submittedActionBody;
     let preparedAction: { preparedPreviewKey: string; request: SystemActorRollBody; preparedAt: string; actorUpdatedAt: Record<string, string>; itemUpdatedAt: Record<string, string>; combatUpdatedAt?: string; rolledResults: FairActionRollResult[]; resolutionHash: string } | undefined;
@@ -12415,19 +12716,23 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       }
       throw error;
     }
-    const unsupportedCapabilities = manifest.capabilities.filter((capability) => capability !== "data-model");
+    const executable = manifest.definition?.kind === "declarative-v1";
+    const supportedCapabilities = executable ? declarativeSystemCapabilities(manifest) : ["data-model"];
+    const unsupportedCapabilities = manifest.capabilities.filter((capability) => !supportedCapabilities.includes(capability));
     if (unsupportedCapabilities.length) {
       return reply.code(422).send({ error: "unsupported_system_capabilities", systemId: manifest.id, capabilities: unsupportedCapabilities, message: "This server can register external systems as data models, but it cannot execute untrusted system runtime capabilities" });
     }
     const systems = registeredSystems(store.state);
     const idConflict = systems.find((system) => system.id === manifest.id);
-    if (idConflict) return conflict(reply, `System id is already installed: ${manifest.id}@${idConflict.version}`);
-    const nameConflict = systems.find((system) => system.name.toLocaleLowerCase() === manifest.name.toLocaleLowerCase());
+    const installedVersion = store.state.systemInstallations.find((entry) => entry.manifest.id === manifest.id && entry.manifest.version === manifest.version);
+    if (installedVersion || (idConflict && (!executable || idConflict.definition?.kind !== "declarative-v1" || isBundledSystem(manifest.id)))) return conflict(reply, `System id and version are already installed or reserved: ${manifest.id}@${installedVersion?.manifest.version ?? idConflict?.version}`);
+    const nameConflict = systems.find((system) => system.id !== manifest.id && system.name.toLocaleLowerCase() === manifest.name.toLocaleLowerCase());
     if (nameConflict) return conflict(reply, `System name conflicts with installed system ${nameConflict.id}`);
     const requestedPaths = new Set([manifest.entrypoints.client, manifest.entrypoints.server].filter((value): value is string => Boolean(value)));
     const pathConflict = systems.find((system) => [system.entrypoints.client, system.entrypoints.server].some((path) => path && requestedPaths.has(path)));
     if (pathConflict) return conflict(reply, `System entrypoint conflicts with installed system ${pathConflict.id}`);
-    const installation = createTimestamped("sysinst", { manifest, installedByUserId: adminUserId, authorizedByCampaignId: campaignId, source: "api" as const }) satisfies SystemInstallation;
+    const checksum = executable ? declarativeSystemManifestChecksum(manifest) : undefined;
+    const installation = createTimestamped("sysinst", { manifest, ...(checksum ? { checksum } : {}), installedByUserId: adminUserId, authorizedByCampaignId: campaignId, source: "api" as const }) satisfies SystemInstallation;
     store.state.systemInstallations.push(installation);
     store.state.auditLogs.push(createTimestamped("audit", { campaignId, actorUserId: adminUserId, actorType: "user" as const, action: "system.install", targetType: "system", targetId: manifest.id, after: { installationId: installation.id, manifest } }));
     store.save();
@@ -12638,6 +12943,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const archiveToRestore = mode === "dry_run" ? scopedArchive : archiveToMerge;
     const operationId = createId("arcimp");
     const stateBeforeImport = store.state;
+    preflightArchiveSystemDependencies(stateBeforeImport, archiveToRestore);
     const assetInverseSteps = mode === "dry_run" ? [] : await prepareCampaignArchiveImportAssetSteps(assetStorage, stateBeforeImport, archiveToMerge, operationId);
     let assetRestore: ArchiveAssetRestoreTransaction;
     const archiveRestoreAbort = new AbortController();
@@ -12669,6 +12975,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       // expose a campaign whose collections were only partly applied.
       const nextState = stateForArchiveMerge(stateBeforeImport, archiveToMerge);
       const counts = mergeArchive(nextState, archiveToMerge);
+      advanceImportedDeclarativeBindingRevisions(stateBeforeImport, nextState, nextRevisionTimestamp);
       migrateDnd5eSrdStoredArmorClassIntent(nextState, { initiatedByUserId: userId });
       for (const campaignId of protectedCampaignIds) {
         const previous = stateBeforeImport.campaigns.find((campaign) => campaign.id === campaignId);
@@ -12772,6 +13079,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       const archiveToRestore = mode === "dry_run" ? scopedArchive : archiveToMerge;
       const operationId = createId("arcimp");
       const stateBeforeImport = store.state;
+      preflightArchiveSystemDependencies(stateBeforeImport, archiveToRestore);
       const assetInverseSteps = mode === "dry_run" ? [] : await prepareCampaignArchiveImportAssetSteps(assetStorage, stateBeforeImport, archiveToMerge, operationId);
       let assetRestore: ArchiveAssetRestoreTransaction;
       const archiveRestoreAbort = new AbortController();
@@ -12800,6 +13108,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       try {
         const nextState = stateForArchiveMerge(stateBeforeImport, archiveToMerge);
         const counts = mergeArchive(nextState, archiveToMerge);
+      advanceImportedDeclarativeBindingRevisions(stateBeforeImport, nextState, nextRevisionTimestamp);
         migrateDnd5eSrdStoredArmorClassIntent(nextState, { initiatedByUserId: userId });
         for (const campaignId of protectedCampaignIds) {
           const previous = stateBeforeImport.campaigns.find((campaign) => campaign.id === campaignId);
@@ -14620,7 +14929,7 @@ function findAiEditSceneForTarget(state: EngineState, campaignId: string, target
 }
 
 function gridSizeForScene(scene: Pick<Scene, "gridSize">): number {
-  return Math.max(1, Math.round(scene.gridSize) || 1);
+  return sceneGridSize(scene);
 }
 
 function agentTokenDimensionFromRecord(input: Record<string, unknown>, key: "width" | "height", scene: Pick<Scene, "width" | "height" | "gridSize">): number {
@@ -14628,32 +14937,24 @@ function agentTokenDimensionFromRecord(input: Record<string, unknown>, key: "wid
   const max = key === "width" ? scene.width : scene.height;
   const value = input[key];
   if (typeof value !== "number" || !Number.isFinite(value)) return Math.min(max, gridSize);
-  if (value > 0 && value <= 8) return Math.min(max, Math.max(gridSize, Math.round(value * gridSize)));
+  if (value > 0 && value <= 8) return Math.min(max, Math.max(gridSize, value * gridSize));
   if (value > 0 && value < gridSize / 2) return Math.min(max, gridSize);
   return Math.min(max, Math.max(1, Math.round(value)));
 }
 
-function snapTokenCenterAxisToGrid(center: number, size: number, sceneSize: number, gridSize: number): number {
-  const safeSize = Math.max(1, Math.round(size) || 1);
-  const safeGridSize = Math.max(1, Math.round(gridSize) || 1);
-  const firstCenter = safeSize / 2;
-  const lastCenter = Math.max(firstCenter, sceneSize - safeSize / 2);
-  const snappedCenter = Math.round((center - safeGridSize / 2) / safeGridSize) * safeGridSize + safeGridSize / 2;
-  return clampNumber(snappedCenter, firstCenter, lastCenter) ?? firstCenter;
+function tokenCoordinatesFromGridCenter(scene: Pick<Scene, "width" | "height" | "gridSize" | "gridType" | "gridOrigin">, width: number, height: number, centerX: number, centerY: number): Pick<Token, "x" | "y"> {
+  const center = snapTokenCenterToGrid(scene, { x: centerX, y: centerY }, { width, height });
+  return { x: center.x - width / 2, y: center.y - height / 2 };
 }
 
-function tokenCoordinatesFromGridCenter(scene: Pick<Scene, "width" | "height" | "gridSize">, width: number, height: number, centerX: number, centerY: number): Pick<Token, "x" | "y"> {
-  const gridSize = gridSizeForScene(scene);
-  return { x: Math.round(snapTokenCenterAxisToGrid(centerX, width, scene.width, gridSize) - width / 2), y: Math.round(snapTokenCenterAxisToGrid(centerY, height, scene.height, gridSize) - height / 2) };
-}
-
-function rosterFallbackTokenCenter(scene: Pick<Scene, "width" | "height" | "gridSize">, index: number, adversary: boolean): VisionPoint {
+function rosterFallbackTokenCenter(scene: Pick<Scene, "width" | "height" | "gridSize" | "gridType" | "gridOrigin">, index: number, adversary: boolean): VisionPoint {
   const gridSize = gridSizeForScene(scene);
   const columnCount = Math.max(1, Math.floor(scene.width / gridSize));
   const rowCount = Math.max(1, Math.floor(scene.height / gridSize));
   const column = Math.min(columnCount - 1, Math.max(0, index + 1));
   const row = Math.min(rowCount - 1, adversary ? 3 : 1);
-  return { x: column * gridSize + gridSize / 2, y: row * gridSize + gridSize / 2 };
+  const origin = sceneGridOrigin(scene);
+  return { x: origin.x + column * gridSize + gridSize / 2, y: origin.y + row * gridSize + gridSize / 2 };
 }
 
 function normalizeRosterActorLookup(value: string): string {
@@ -16419,6 +16720,7 @@ function createAiToolContext(
         const nextProposal = nextState.proposals.find((item) => item.id === proposal.id);
         if (!nextProposal) return toolError("proposal_apply_incomplete", { proposalId });
         linkAppliedRecapToSessionState(nextState, nextProposal, userId);
+        assertDeclarativeSystemStateCandidate(store.state, nextState);
         store.replace(nextState);
         refreshAiToolContextState(context, store.state);
         const applied = store.state.proposals.find((item) => item.id === proposalId);
@@ -16517,6 +16819,23 @@ function createAiToolContext(
       if (!actor) return toolError("not_found", { entity: "actor", id: actorId });
       if (!canUpdateActorForUser(store, userId, actor)) return missingPermissionToolOutput("actor.update");
       if (!canReadActorPrivateData(store, userId, campaignId, actor)) return missingPermissionToolOutput("actor.readPrivate");
+      if (isDeclarativeSystem(store.state, actor.systemId)) {
+        if (targetActorId || applyEffect || saveOutcomes || spellSlotLevel !== undefined || resourceAmount !== undefined || useFreeResource) return toolError("invalid_tool_input", { message: "This system uses its declared roll and mandatory cost; target effects and resource overrides are unsupported." });
+        const runtime = declarativeRuntimeForActor(store.state, actor);
+        const snapshot = structuredClone(actor);
+        const quickRolls = runtime.quickRolls(snapshot);
+        const action = actionRollId ? quickRolls.find((entry) => entry.id === actionRollId) : quickRolls.find((entry) => actionName && (normalizeActionLookup(entry.label) === normalizeActionLookup(actionName) || normalizeActionLookup(entry.id) === normalizeActionLookup(actionName)));
+        if (!action) return toolError("not_found", { entity: "actor_action", id: actionRollId ?? actionName ?? "", availableActions: quickRolls });
+        if (!action.available) return toolError("conflict", { message: "The declared action is currently unavailable.", issues: action.issues });
+        const { campaignId: _bindingCampaignId, ...expectedSystem } = runtime.binding;
+        const plan = runtime.prepareAction(snapshot, { rollId: action.id, expectedActorUpdatedAt: snapshot.updatedAt, expectedSystem });
+        const fairRoll = rollFormulaWithFairness(plan.roll.formula);
+        const roll = createTimestamped("roll", { campaignId, userId, actorId: actor.id, formula: plan.roll.formula, label: `${actor.name} ${plan.roll.label}`, visibility, terms: fairRoll.rolled.terms, total: fairRoll.rolled.total, fairness: fairRoll.fairness }) satisfies DiceRoll;
+        const message = createTimestamped("msg", { campaignId, userId, type: "roll" as const, body: `${actor.name} ${plan.roll.label}: ${roll.formula} = ${roll.total}`, visibility, recipientUserIds: [], rollId: roll.id }) satisfies ChatMessage;
+        const changes: ProposalChange[] = [...(plan.actorChanged ? [{ entity: "actor" as const, action: "update" as const, id: actor.id, data: { data: plan.actorData } }] : []), { entity: "roll", action: "create", data: roll }, { entity: "chat", action: "create", data: message }];
+        const proposalId = await createAiProposal({ title: `Actor action: ${actor.name} ${plan.roll.label}`, summary: `${actor.name} ${plan.roll.label}: ${roll.formula} = ${roll.total}.`, changes });
+        return { proposalId, changeCount: changes.length, actorId: actor.id, systemId: actor.systemId, system: plan.system, actionRollId: action.id, rollId: roll.id, formula: roll.formula, label: plan.roll.label, total: roll.total, visibility, ...(plan.cost ? { cost: plan.cost } : {}) };
+      }
       const items = actorItems(store, actor);
       const calculationContext = calculationOverrideContextForActor(store, actor, items);
       const quickRolls = systemQuickRolls(actor, items, calculationContext);
@@ -16669,13 +16988,14 @@ function enrichAiContextWithSystemActions(context: PermissionFilteredContext, st
       const actor = store.state.actors.find((item) => item.id === summary.id && item.campaignId === context.campaignId);
       if (!actor) return summary;
       const items = actorItems(store, actor);
-      return { ...summary, systemId: actor.systemId, actions: systemQuickRolls(actor, items, calculationOverrideContextForActor(store, actor, items)).map((action) => ({ rollId: action.id, label: action.label, formula: action.formula })) };
+      return { ...summary, systemId: actor.systemId, actions: systemQuickRollsForStore(store, actor, items).map((action) => ({ rollId: action.id, label: action.label, formula: action.formula })) };
     }),
   };
 }
 
 function readBoardStateToolOutput(context: AiToolContext, scene: Scene, selectedTokenIds: string[]): BoardStateToolOutput {
   const store = { state: context.state, save: () => undefined, replace: () => undefined } satisfies StateStore;
+  scene = scenePayloadForUser(store, context.userId, scene);
   const sceneTokens = context.state.tokens.filter((token) => token.sceneId === scene.id);
   const visibleTokens = visibleTokensForUser(store, context.userId, context.campaignId, sceneTokens);
   const visibleTokenIds = new Set(visibleTokens.map((token) => token.id));
@@ -16744,7 +17064,7 @@ function actorReadToolSummary(context: AiToolContext, actor: Actor): ActorReadTo
     conditions: actorReadToolConditions(actor),
     itemCount: items.length,
     items: items.slice(0, 12).map(actorReadToolItemSummary),
-    actions: systemQuickRolls(actor, items, calculationContext)
+    actions: systemQuickRollsForStore(store, actor, items, calculationContext)
       .slice(0, 20)
       .map((action) => ({ rollId: action.id, label: action.label, formula: action.formula })),
     createdAt: actor.createdAt,
@@ -17307,9 +17627,9 @@ function normalizeProposalTokenCreateData(data: Record<string, unknown>, state: 
 }
 
 function normalizeProposalTokenDimension(value: unknown, sceneAxisSize: number, gridSize: number): number {
-  const safeGridSize = Math.max(1, Math.round(gridSize) || 1);
+  const safeGridSize = sceneGridSize({ gridSize });
   if (typeof value !== "number" || !Number.isFinite(value)) return Math.min(sceneAxisSize, safeGridSize);
-  if (value > 0 && value <= 8) return Math.min(sceneAxisSize, Math.max(safeGridSize, Math.round(value * safeGridSize)));
+  if (value > 0 && value <= 8) return Math.min(sceneAxisSize, Math.max(safeGridSize, value * safeGridSize));
   if (value > 0 && value < safeGridSize / 2) return Math.min(sceneAxisSize, safeGridSize);
   return Math.min(sceneAxisSize, Math.max(1, Math.round(value)));
 }
@@ -17631,37 +17951,43 @@ function proposalIdsFromAiEvents(events: AiProviderEvent[]): string[] {
 function autoApplyAiThreadProposal(store: StateStore, runtime: AiToolRuntime, campaignId: string, userId: string, proposalId: string): AutoAppliedProposalToolOutput | undefined {
   const proposal = store.state.proposals.find((item) => item.id === proposalId && item.campaignId === campaignId);
   if (!proposal || proposal.status === "applied" || proposal.status === "rejected") return undefined;
+  let persistenceStarted = false;
   try {
     const preparedChanges = prepareProposalChanges(store, proposal.campaignId, proposal.createdByUserId ?? userId, proposal.changesJson, { currentProposalId: proposal.id });
     if ("error" in preparedChanges) throw new Error(preparedChanges.message);
     const missingPermission = missingProposalChangePermission(preparedChanges.changes, permissionsForUser(store, userId, proposal.campaignId));
     if (missingPermission) throw new Error(`Missing permission: ${missingPermission}`);
-    proposal.changesJson = preparedChanges.changes;
-    const boardStateChanged = proposalTouchesBoardState(proposal);
-    const refs = proposalAppliedEntityRefs(proposal);
-    if (proposal.status === "pending") {
-      Object.assign(proposal, approveProposal(proposal, userId));
-      runtime.broadcast?.(createEvent({ campaignId: proposal.campaignId, type: "proposal.approved", actorUserId: userId, targetId: proposal.id, payload: proposal }));
-    }
-    if (proposal.status !== "approved") return undefined;
     const beforeState = store.state;
-    const appliedChanges = structuredClone(proposal.changesJson);
+    const appliedChanges = structuredClone(preparedChanges.changes);
     const applyState = structuredClone(store.state);
     const applyStateProposal = applyState.proposals.find((item) => item.id === proposal.id);
     if (!applyStateProposal) throw new Error("Proposal could not be prepared for apply");
+    applyStateProposal.changesJson = structuredClone(preparedChanges.changes);
+    const boardStateChanged = proposalTouchesBoardState(applyStateProposal);
+    const refs = proposalAppliedEntityRefs(applyStateProposal);
+    let approved: Proposal | undefined;
+    if (applyStateProposal.status === "pending") {
+      Object.assign(applyStateProposal, approveProposal(applyStateProposal, userId));
+      approved = structuredClone(applyStateProposal);
+    }
+    if (applyStateProposal.status !== "approved") return undefined;
     const nextState = applyProposal(applyState, applyStateProposal, userId);
     const nextProposal = nextState.proposals.find((item) => item.id === proposal.id);
     if (!nextProposal) throw new Error("Applied proposal record was not prepared");
     linkAppliedRecapToSessionState(nextState, nextProposal, userId);
+    assertDeclarativeSystemStateCandidate(store.state, nextState);
+    persistenceStarted = true;
     store.replace(nextState);
     const applied = store.state.proposals.find((item) => item.id === proposal.id);
     if (!applied) throw new Error("Applied proposal record was not persisted");
+    if (approved) runtime.broadcast?.(createEvent({ campaignId: proposal.campaignId, type: "proposal.approved", actorUserId: userId, targetId: proposal.id, payload: approved }));
     appendServerAuditLog(store, userId, { campaignId: proposal.campaignId, action: "proposal.apply", targetType: "proposal", targetId: proposal.id, before: { status: "approved", changeCount: appliedChanges.length }, after: { status: applied.status, entities: [...new Set(appliedChanges.map((change) => change.entity))], reversible: Boolean(applied.inverseChangesJson), appliedBy: "ai_auto" } });
     broadcastProposalEntityChanges(store, beforeState, proposal.campaignId, appliedChanges, userId, (event) => runtime.broadcast?.(event));
     store.save();
     runtime.broadcast?.(createEvent({ campaignId: proposal.campaignId, type: "proposal.applied", actorUserId: userId, targetId: proposal.id, payload: applied }));
     return { proposalId: proposal.id, boardStateChanged, proposal: proposalToolSummary(applied), ...refs };
   } catch (error) {
+    if (persistenceStarted) throw error;
     const message = error instanceof Error ? error.message : "Proposal could not be auto-applied";
     store.state.auditLogs.push(createTimestamped("audit", { campaignId: proposal.campaignId, actorUserId: userId, actorType: "user" as const, action: "ai.proposal.apply.failed", targetType: "proposal", targetId: proposal.id, after: { proposalId: proposal.id, status: proposal.status, createdByType: proposal.createdByType, sourceId: proposal.sourceId, changeCount: proposal.changesJson.length, entities: [...new Set(proposal.changesJson.map((change) => change.entity))], reason: "auto_apply_failed", message } }));
     return undefined;
@@ -18100,7 +18426,7 @@ function ensureSceneAnnotationHistory(scene: Scene) {
 
 function appendSceneAnnotationHistory(scene: Scene, actorUserId: string, action: "create" | "update" | "delete", annotation: SceneAnnotation) {
   const history = ensureSceneAnnotationHistory(scene);
-  history.push(createTimestamped("annoh", { sceneId: scene.id, annotationId: annotation.id, action, kind: annotation.kind, layer: annotation.layer, groupId: annotation.groupId, groupLabel: annotation.groupLabel, templateShape: annotation.templateShape, templateSaveAbility: annotation.templateSaveAbility, templateSaveDc: annotation.templateSaveDc, templateDamageFormula: annotation.templateDamageFormula, templateDamageType: annotation.templateDamageType, affectedTokenIds: annotation.affectedTokenIds, rulesSystemId: annotation.rulesSystemId, actorUserId }));
+  history.push(createTimestamped("annoh", { sceneId: scene.id, annotationId: annotation.id, visibility: annotation.visibility ?? "public", action, kind: annotation.kind, layer: annotation.layer, groupId: annotation.groupId, groupLabel: annotation.groupLabel, templateShape: annotation.templateShape, templateSaveAbility: annotation.templateSaveAbility, templateSaveDc: annotation.templateSaveDc, templateDamageFormula: annotation.templateDamageFormula, templateDamageType: annotation.templateDamageType, affectedTokenIds: annotation.affectedTokenIds, rulesSystemId: annotation.rulesSystemId, actorUserId }));
   if (history.length > 100) history.splice(0, history.length - 100);
 }
 
@@ -18169,7 +18495,8 @@ function normalizeTemplateDamageType(value: unknown): string | undefined {
   return normalized || undefined;
 }
 
-function normalizeSceneAnnotationInput(scene: Scene, userId: string, body: { label?: string; color?: string; layer?: string; groupId?: string; groupLabel?: string; sortOrder?: number; templateShape?: string; templateSaveAbility?: string; templateSaveDc?: number; templateDamageFormula?: string; templateDamageType?: string; snapToGrid?: boolean; points?: VisionPoint[]; radius?: number; expiresInSeconds?: number }, kind: SceneAnnotationKind): { annotation: SceneAnnotation } | { error: string } {
+function normalizeSceneAnnotationInput(scene: Scene, userId: string, body: { label?: string; visibility?: "public" | "gm"; color?: string; layer?: string; groupId?: string; groupLabel?: string; sortOrder?: number; templateShape?: string; templateSaveAbility?: string; templateSaveDc?: number; templateDamageFormula?: string; templateDamageType?: string; snapToGrid?: boolean; points?: VisionPoint[]; radius?: number; expiresInSeconds?: number }, kind: SceneAnnotationKind): { annotation: SceneAnnotation } | { error: string } {
+  if (body.visibility !== undefined && body.visibility !== "public" && body.visibility !== "gm") return { error: "Annotation visibility must be public or gm" };
   const points = Array.isArray(body.points) ? body.points.map((point) => normalizeScenePoint(scene, point)).filter((point): point is VisionPoint => Boolean(point)) : [];
   const minPoints = kind === "ping" ? 1 : 2;
   if (points.length < minPoints) return { error: `${kind} annotation requires at least ${minPoints} valid point${minPoints === 1 ? "" : "s"}` };
@@ -18186,12 +18513,14 @@ function normalizeSceneAnnotationInput(scene: Scene, userId: string, body: { lab
   const templateSaveDc = kind === "template" ? normalizeTemplateSaveDc(body.templateSaveDc) : undefined;
   const templateDamageFormula = kind === "template" ? normalizeTemplateDamageFormula(body.templateDamageFormula) : undefined;
   const templateDamageType = kind === "template" ? normalizeTemplateDamageType(body.templateDamageType) : undefined;
-  const annotation = createTimestamped("anno", { sceneId: scene.id, kind, createdByUserId: userId, label: body.label?.trim().slice(0, 80) || undefined, layer, groupId, groupLabel, sortOrder: typeof body.sortOrder === "number" && Number.isFinite(body.sortOrder) ? Math.round(body.sortOrder) : undefined, templateShape, templateSaveAbility, templateSaveDc, templateDamageFormula, templateDamageType, snapToGrid, color: normalizeAnnotationColor(body.color), points: normalizedPoints, radius, expiresAt: normalizeAnnotationExpiry(body.expiresInSeconds) }) satisfies SceneAnnotation;
+  const annotation = createTimestamped("anno", { sceneId: scene.id, kind, createdByUserId: userId, visibility: body.visibility ?? "public", label: body.label?.trim().slice(0, 80) || undefined, layer, groupId, groupLabel, sortOrder: typeof body.sortOrder === "number" && Number.isFinite(body.sortOrder) ? Math.round(body.sortOrder) : undefined, templateShape, templateSaveAbility, templateSaveDc, templateDamageFormula, templateDamageType, snapToGrid, color: normalizeAnnotationColor(body.color), points: normalizedPoints, radius, expiresAt: normalizeAnnotationExpiry(body.expiresInSeconds) }) satisfies SceneAnnotation;
   return { annotation };
 }
 
-function normalizeSceneAnnotationPatch(scene: Scene, annotation: SceneAnnotation, body: { label?: string; color?: string; layer?: string; groupId?: string; groupLabel?: string; sortOrder?: number; templateSaveAbility?: string; templateSaveDc?: number; templateDamageFormula?: string; templateDamageType?: string; snapToGrid?: boolean; points?: VisionPoint[]; radius?: number; expiresInSeconds?: number }): { patch: Partial<SceneAnnotation> } | { error: string } {
+function normalizeSceneAnnotationPatch(scene: Scene, annotation: SceneAnnotation, body: { label?: string; visibility?: "public" | "gm"; color?: string; layer?: string; groupId?: string; groupLabel?: string; sortOrder?: number; templateSaveAbility?: string; templateSaveDc?: number; templateDamageFormula?: string; templateDamageType?: string; snapToGrid?: boolean; points?: VisionPoint[]; radius?: number; expiresInSeconds?: number }): { patch: Partial<SceneAnnotation> } | { error: string } {
+  if (body.visibility !== undefined && body.visibility !== "public" && body.visibility !== "gm") return { error: "Annotation visibility must be public or gm" };
   const patch: Partial<SceneAnnotation> = {};
+  if (body.visibility !== undefined) patch.visibility = body.visibility;
   if (body.label !== undefined) patch.label = body.label.trim().slice(0, 80) || undefined;
   if (body.color !== undefined) patch.color = normalizeAnnotationColor(body.color);
   if (body.layer !== undefined) patch.layer = normalizeSceneAnnotationLayer(body.layer, annotation.kind);
@@ -18238,12 +18567,7 @@ function normalizeSceneAnnotationPatch(scene: Scene, annotation: SceneAnnotation
 
 function normalizeScenePoint(scene: Scene, point: VisionPoint | undefined): VisionPoint | undefined {
   if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return undefined;
-  return { x: Math.max(0, Math.min(scene.width, Math.round(point.x))), y: Math.max(0, Math.min(scene.height, Math.round(point.y))) };
-}
-
-function snapScenePointToGrid(scene: Scene, point: VisionPoint): VisionPoint {
-  const gridSize = Math.max(1, Math.round(scene.gridSize || 1));
-  return { x: Math.max(0, Math.min(scene.width, Math.round(point.x / gridSize) * gridSize)), y: Math.max(0, Math.min(scene.height, Math.round(point.y / gridSize) * gridSize)) };
+  return clampScenePoint(scene, point);
 }
 
 function templateAffectedTokenIds(store: StateStore, scene: Scene, annotation: SceneAnnotation): string[] {
@@ -18342,7 +18666,7 @@ function normalizeAnnotationColor(color: unknown): string {
 }
 
 function sceneAnnotationAuditSummary(annotation: SceneAnnotation): Record<string, unknown> {
-  return { sceneId: annotation.sceneId, kind: annotation.kind, pointCount: annotation.points.length, radius: annotation.radius, label: annotation.label, layer: annotation.layer, groupId: annotation.groupId, groupLabel: annotation.groupLabel, templateShape: annotation.templateShape, templateSaveAbility: annotation.templateSaveAbility, templateSaveDc: annotation.templateSaveDc, templateDamageFormula: annotation.templateDamageFormula, templateDamageType: annotation.templateDamageType, snapToGrid: annotation.snapToGrid, color: annotation.color, affectedTokenIds: annotation.affectedTokenIds, rulesSystemId: annotation.rulesSystemId, effectHint: annotation.effectHint, expiresAt: annotation.expiresAt };
+  return { sceneId: annotation.sceneId, visibility: annotation.visibility ?? "public", kind: annotation.kind, pointCount: annotation.points.length, radius: annotation.radius, label: annotation.label, layer: annotation.layer, groupId: annotation.groupId, groupLabel: annotation.groupLabel, templateShape: annotation.templateShape, templateSaveAbility: annotation.templateSaveAbility, templateSaveDc: annotation.templateSaveDc, templateDamageFormula: annotation.templateDamageFormula, templateDamageType: annotation.templateDamageType, snapToGrid: annotation.snapToGrid, color: annotation.color, affectedTokenIds: annotation.affectedTokenIds, rulesSystemId: annotation.rulesSystemId, effectHint: annotation.effectHint, expiresAt: annotation.expiresAt };
 }
 
 function normalizeFogRegion(body: { x?: number; y?: number; radius?: number; brushRadius?: number; hidden?: boolean; shape?: FogShape | "brush"; mode?: FogMode; points?: VisionPoint[] }, scene: Scene): Omit<FogRegion, "id"> | undefined {
@@ -18615,7 +18939,34 @@ function normalizeDiceMacroPatch(rawBody: unknown): { ok: true; value: Partial<P
   return { ok: true, value: patch };
 }
 
-const SCENE_PATCH_FIELDS = new Set<keyof ScenePatchBody>(["worldId", "name", "width", "height", "gridType", "gridSize", "backgroundAssetId", "folder", "active", "sortOrder", "fog", "walls", "lights", "annotations", "metadata", "expectedUpdatedAt"]);
+const SCENE_PATCH_FIELDS = new Set<keyof ScenePatchBody>(["worldId", "name", "width", "height", "gridType", "gridSize", "gridOrigin", "visibilityMode", "backgroundAssetId", "folder", "active", "sortOrder", "fog", "walls", "lights", "annotations", "metadata", "expectedUpdatedAt"]);
+
+type SceneGridFields = Partial<Pick<Scene, "width" | "height" | "gridSize" | "gridOrigin" | "gridType" | "visibilityMode">>;
+
+function normalizeSceneGridFields(rawBody: unknown): { ok: true; value: SceneGridFields } | { ok: false; error: string } {
+  if (!isRecord(rawBody)) return { ok: false, error: "Scene body must be a JSON object" };
+  const patch: SceneGridFields = {};
+  for (const [field, maximum] of [["width", 100_000], ["height", 100_000], ["gridSize", 10_000]] as const) {
+    if (!(field in rawBody)) continue;
+    const value = rawBody[field];
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 1 || value > maximum) return { ok: false, error: `Scene ${field} must be a finite number from 1 to ${maximum}` };
+    patch[field] = value;
+  }
+  if ("gridOrigin" in rawBody) {
+    const origin = rawBody.gridOrigin;
+    if (!isRecord(origin) || Object.keys(origin).some((key) => key !== "x" && key !== "y") || typeof origin.x !== "number" || !Number.isFinite(origin.x) || Math.abs(origin.x) > 100_000 || typeof origin.y !== "number" || !Number.isFinite(origin.y) || Math.abs(origin.y) > 100_000) return { ok: false, error: "Scene gridOrigin must contain finite x and y coordinates from -100000 to 100000" };
+    patch.gridOrigin = { x: origin.x, y: origin.y };
+  }
+  if ("gridType" in rawBody) {
+    if (rawBody.gridType !== "square" && rawBody.gridType !== "gridless") return { ok: false, error: "Scene gridType must be square or gridless" };
+    patch.gridType = rawBody.gridType;
+  }
+  if ("visibilityMode" in rawBody) {
+    if (rawBody.visibilityMode !== "fog" && rawBody.visibilityMode !== "dynamic") return { ok: false, error: "Scene visibilityMode must be fog or dynamic" };
+    patch.visibilityMode = rawBody.visibilityMode;
+  }
+  return { ok: true, value: patch };
+}
 
 function normalizeScenePatch(rawBody: unknown): { ok: true; value: ScenePatchBody } | { ok: false; error: string } {
   if (!isRecord(rawBody)) return { ok: false, error: "Scene body must be a JSON object" };
@@ -18631,20 +18982,9 @@ function normalizeScenePatch(rawBody: unknown): { ok: true; value: ScenePatchBod
     if (!name) return { ok: false, error: "Scene name must be 1-200 characters" };
     patch.name = name;
   }
-  for (const [field, maximum] of [
-    ["width", 100_000],
-    ["height", 100_000],
-    ["gridSize", 10_000],
-  ] as const) {
-    if (!(field in rawBody)) continue;
-    const value = rawBody[field];
-    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0 || value > maximum) return { ok: false, error: `Scene ${field} must be a positive number no greater than ${maximum}` };
-    patch[field] = value;
-  }
-  if ("gridType" in rawBody) {
-    if (rawBody.gridType !== "square" && rawBody.gridType !== "gridless") return { ok: false, error: "Scene gridType must be square or gridless" };
-    patch.gridType = rawBody.gridType;
-  }
+  const gridFields = normalizeSceneGridFields(rawBody);
+  if (!gridFields.ok) return gridFields;
+  Object.assign(patch, gridFields.value);
   if ("backgroundAssetId" in rawBody) {
     if (rawBody.backgroundAssetId !== null && (typeof rawBody.backgroundAssetId !== "string" || !rawBody.backgroundAssetId.trim())) {
       return { ok: false, error: "Scene backgroundAssetId must be null or a non-empty string" };
@@ -19816,14 +20156,15 @@ function registerStorageRecoveryMaintenanceGate(app: FastifyInstance, gate: Stor
  * finalizes idempotency records, authoritative event sequences, and the
  * response flush.
  */
-function registerPhasedMutationResponseGate(app: FastifyInstance, coordinator: DurableMutationCoordinator): void {
+function registerPhasedMutationResponseGate(app: FastifyInstance, store: StateStore, coordinator: DurableMutationCoordinator): void {
   app.addHook("onSend", async (request, _reply, payload) => {
-    if (!requestUsesPhasedMutation(request) || Reflect.has(request, phasedMutationResponseReleaseSymbol)) return payload;
+    if (!requestUsesPhasedMutation(request) || Reflect.has(request, phasedMutationResponseReleaseSymbol) || Reflect.get(request, durableMutationFinalizedSymbol)) return payload;
     Reflect.set(request, phasedMutationResponseReleaseSymbol, await coordinator.acquire());
+    Reflect.set(request, durableMutationScopeSymbol, {
+      ...(store.restoreDurableState ? {} : { fallbackSnapshot: structuredClone(store.state) }),
+      rolledBack: false,
+    } satisfies DurableMutationScope);
     return payload;
-  });
-  app.addHook("onError", async (request) => {
-    releasePhasedMutationResponse(request);
   });
   app.addHook("onResponse", (request, _reply, done) => {
     releasePhasedMutationResponse(request);
@@ -19831,11 +20172,9 @@ function registerPhasedMutationResponseGate(app: FastifyInstance, coordinator: D
   });
 }
 
-function registerDurableMutationFlush(app: FastifyInstance, store: StateStore, coordinator: DurableMutationCoordinator, operationsObservability: OperationsObservability): void {
-  // Idempotency wraps save/flush before this hook is registered, so compare
-  // the concrete store rather than the wrapped method identities.
-  const inMemoryOnly = store.constructor === MemoryStateStore;
-  const flush = inMemoryOnly ? undefined : store.flush?.bind(store);
+function registerDurableMutationFlush(app: FastifyInstance, store: StateStore, coordinator: DurableMutationCoordinator, operationsObservability: OperationsObservability, idempotencyFinalizer: IdempotencyFinalizer): void {
+  // Memory stores share the accepted-state validation/rollback boundary too.
+  const flush = store.flush?.bind(store);
   if (flush) {
     app.addHook("onRequest", async (request) => {
       if (!durableMutationSnapshotRequired(store, request)) return;
@@ -19863,64 +20202,87 @@ function registerDurableMutationFlush(app: FastifyInstance, store: StateStore, c
     });
   }
   app.addHook("onSend", async (request, reply, payload) => {
+    if (Reflect.get(request, durableMutationFinalizedSymbol)) return payload;
     const assetRestore = Reflect.get(request, archiveImportAssetRestoreSymbol) as ArchiveAssetRestoreTransaction | undefined;
+    const events = Reflect.get(request, mutationEventScopeSymbol) as MutationEventScope | undefined;
     try {
       const aborted = Reflect.get(request, durableMutationAbortedSymbol) === true;
-      if (aborted) {
+      if (aborted || (assetRestore && (reply.statusCode < 200 || reply.statusCode >= 400))) {
+        events?.discard();
         if (assetRestore) await rollbackRequestArchiveImport(request, store, assetRestore);
         else rollbackDurableMutation(request, store);
-      } else if (assetRestore && (reply.statusCode < 200 || reply.statusCode >= 400)) {
-        await rollbackRequestArchiveImport(request, store, assetRestore);
-      } else {
-        // StateStore.save() deliberately coalesces repeated writes within a request,
-        // but responses of any status may finalize state: failed authentication can
-        // advance lockout/audit state, while OIDC callbacks and session activity are
-        // mutating GET/redirect flows. Read-only and already-flushed requests make
-        // this a cheap no-op.
-        if (flush) {
-          const flushStartedAt = Date.now();
-          try {
-            flush();
-            operationsObservability.recordPersistence("succeeded", Date.now() - flushStartedAt);
-          } catch (error) {
-            operationsObservability.recordPersistence("failed", Date.now() - flushStartedAt);
-            throw error;
-          }
-        }
-        if (reply.statusCode >= 200 && reply.statusCode < 400) await assetRestore?.commit();
+        idempotencyFinalizer.settle(request, false);
+        return payload;
       }
+      const successfulResponse = reply.statusCode >= 200 && reply.statusCode < 300;
+      if (successfulResponse) events?.prepare();
+      else events?.discard();
+      // The replay record, authoritative sequences, queued webhook ledger, and
+      // domain mutation share one validated persistence boundary.
+      idempotencyFinalizer.prepareSave(request);
+      // Error responses can still persist authentication lockouts and audits;
+      // redirects/GET callbacks also own legitimate session state changes.
+      if (flush) {
+        const flushStartedAt = Date.now();
+        try {
+          flush();
+          operationsObservability.recordPersistence("succeeded", Date.now() - flushStartedAt);
+        } catch (error) {
+          operationsObservability.recordPersistence("failed", Date.now() - flushStartedAt);
+          throw error;
+        }
+      }
+      if (reply.statusCode >= 200 && reply.statusCode < 400) await assetRestore?.commit();
+      Reflect.set(request, durableMutationCommittedSymbol, true);
+      if (successfulResponse) events?.publish();
+      idempotencyFinalizer.settle(request, true);
       return payload;
     } catch (error) {
-      if (!assetRestore) {
-        rollbackDurableMutation(request, store);
-        throw error;
-      }
+      events?.discard();
       try {
-        await rollbackRequestArchiveImport(request, store, assetRestore);
-      } catch (rollbackError) {
-        const original = normalizeArchiveImportError(error);
-        const failure = new Error(`Campaign archive response finalization failed and object rollback was incomplete: ${original.message}; ${normalizeArchiveImportError(rollbackError).message}`);
-        failure.cause = original;
-        throw failure;
+        if (!assetRestore) rollbackDurableMutation(request, store);
+        else {
+          try {
+            await rollbackRequestArchiveImport(request, store, assetRestore);
+          } catch (rollbackError) {
+            const original = normalizeArchiveImportError(error);
+            const failure = new Error(`Campaign archive response finalization failed and object rollback was incomplete: ${original.message}; ${normalizeArchiveImportError(rollbackError).message}`);
+            failure.cause = original;
+            throw failure;
+          }
+        }
+      } finally {
+        idempotencyFinalizer.settle(request, false);
       }
       throw error;
     } finally {
+      // Fastify can run onSend again to serialize an error response. Once this
+      // request releases its gate, it must never flush or restore shared state.
+      Reflect.set(request, durableMutationFinalizedSymbol, true);
       releaseDurableMutation(request);
+      releasePhasedMutationResponse(request);
     }
   });
   app.addHook("onError", async (request) => {
+    if (Reflect.get(request, durableMutationFinalizedSymbol)) return;
+    const events = Reflect.get(request, mutationEventScopeSymbol) as MutationEventScope | undefined;
     const assetRestore = Reflect.get(request, archiveImportAssetRestoreSymbol) as ArchiveAssetRestoreTransaction | undefined;
-    if (!assetRestore) {
-      rollbackDurableMutation(request, store);
-      releaseDurableMutation(request);
-      return;
-    }
     try {
-      await rollbackRequestArchiveImport(request, store, assetRestore);
-    } catch (error) {
-      request.log.error(error, "Campaign archive object rollback failed during request error handling");
+      if (Reflect.get(request, durableMutationCommittedSymbol)) return;
+      events?.discard();
+      if (!assetRestore) rollbackDurableMutation(request, store);
+      else {
+        try {
+          await rollbackRequestArchiveImport(request, store, assetRestore);
+        } catch (error) {
+          request.log.error(error, "Campaign archive object rollback failed during request error handling");
+        }
+      }
     } finally {
+      Reflect.set(request, durableMutationFinalizedSymbol, true);
+      idempotencyFinalizer.settle(request, Reflect.get(request, durableMutationCommittedSymbol) === true);
       releaseDurableMutation(request);
+      releasePhasedMutationResponse(request);
     }
   });
   app.addHook("onResponse", (request, _reply, done) => {
@@ -19947,21 +20309,20 @@ function releaseDurableMutation(request: FastifyRequest): void {
 
 async function rollbackRequestArchiveImport(request: FastifyRequest, store: StateStore, assetRestore: ArchiveAssetRestoreTransaction): Promise<void> {
   const rollbackFailures: Error[] = [];
-  const durableScope = Reflect.get(request, durableMutationScopeSymbol) as DurableMutationScope | undefined;
-  if (durableScope) {
-    rollbackDurableMutation(request, store);
-  } else {
-    const snapshot = Reflect.get(request, archiveImportStateSnapshotSymbol) as EngineState | undefined;
-    if (snapshot) {
-      try {
-        store.replace(snapshot);
-        store.flush?.();
-      } catch (error) {
-        store.state = snapshot;
-        rollbackFailures.push(normalizeArchiveImportError(error));
-      }
+  const snapshot = Reflect.get(request, archiveImportStateSnapshotSymbol) as EngineState | undefined;
+  // Asset finalization can fail after state flush. The latest durable state is
+  // then the imported candidate, so compensate from the archive's own snapshot.
+  if (snapshot) {
+    try {
+      store.replace(snapshot);
+      store.flush?.();
+    } catch (error) {
+      store.state = snapshot;
+      rollbackFailures.push(normalizeArchiveImportError(error));
     }
-  }
+    const scope = Reflect.get(request, durableMutationScopeSymbol) as DurableMutationScope | undefined;
+    if (scope) scope.rolledBack = true;
+  } else rollbackDurableMutation(request, store);
   try {
     await assetRestore.rollback();
   } catch (error) {
@@ -20050,25 +20411,34 @@ async function runPhasedAiMutation<T>(
 ): Promise<T> {
   return coordinator.runExclusive(async () => {
     const fallbackSnapshot = store.restoreDurableState ? undefined : structuredClone(store.state);
-    try {
-      const result = await operation();
-      persistPhasedMutationState(request, store);
-      return result;
-    } catch (error) {
-      const saveScope = Reflect.get(request, idempotencySaveScopeSymbol) as IdempotencySaveScope | undefined;
-      if (saveScope) saveScope.saveRequested = false;
-      if (store.restoreDurableState) {
-        store.restoreDurableState();
-      } else if (fallbackSnapshot) {
-        store.state = fallbackSnapshot;
-        try {
-          persistPhasedMutationState(request, store);
-        } catch {
-          // Preserve the phase failure; the in-memory state is already rolled back.
+    const parentEvents = mutationEventScopes.getStore() ?? Reflect.get(request, mutationEventScopeSymbol) as MutationEventScope | undefined;
+    const events = parentEvents?.fork();
+    const commitPhase = async () => {
+      let result: T;
+      try {
+        result = await operation();
+        events?.prepare();
+        persistPhasedMutationState(request, store);
+      } catch (error) {
+        events?.discard();
+        const saveScope = Reflect.get(request, idempotencySaveScopeSymbol) as IdempotencySaveScope | undefined;
+        if (saveScope) saveScope.saveRequested = false;
+        if (store.restoreDurableState) {
+          store.restoreDurableState();
+        } else if (fallbackSnapshot) {
+          store.state = fallbackSnapshot;
+          try {
+            persistPhasedMutationState(request, store);
+          } catch {
+            // Preserve the phase failure; in-memory state is already rolled back.
+          }
         }
+        throw error;
       }
-      throw error;
-    }
+      events?.publish();
+      return result;
+    };
+    return events ? mutationEventScopes.run(events, commitPhase) : commitPhase();
   });
 }
 
@@ -20108,6 +20478,7 @@ async function runPhasedPluginRegistryMutation<T>(
 }
 
 function rollbackDurableMutation(request: FastifyRequest, store: StateStore): void {
+  if (Reflect.get(request, durableMutationCommittedSymbol)) return;
   const scope = Reflect.get(request, durableMutationScopeSymbol) as DurableMutationScope | undefined;
   if (!scope || scope.rolledBack) return;
   scope.rolledBack = true;
@@ -20127,38 +20498,18 @@ function rollbackDurableMutation(request: FastifyRequest, store: StateStore): vo
   }
 }
 
-function deferRequestSideEffectUntilDurableSave(request: FastifyRequest, sideEffect: () => void): void {
-  const saveScope = Reflect.get(request, idempotencySaveScopeSymbol) as IdempotencySaveScope | undefined;
-  if (!saveScope) {
-    sideEffect();
-    return;
-  }
-  saveScope.afterDurableSave.push(sideEffect);
+function stageRequestEventsUntilDurableSave(request: FastifyRequest, stageEvents: () => void): void {
+  const scope = mutationEventScopes.getStore() ?? Reflect.get(request, mutationEventScopeSymbol) as MutationEventScope | undefined;
+  if (!scope?.active) throw new Error("Request event staging requires an active mutation event scope");
+  // Callers stage broadcasts only; sequence allocation and external publication
+  // remain owned by the durable finalizer.
+  mutationEventScopes.run(scope, stageEvents);
 }
 
-function releaseDeferredRequestSideEffects(request: FastifyRequest): void {
-  const saveScope = Reflect.get(request, idempotencySaveScopeSymbol) as IdempotencySaveScope | undefined;
-  if (!saveScope || saveScope.afterDurableSave.length === 0) return;
-  const sideEffects = saveScope.afterDurableSave.splice(0);
-  for (const sideEffect of sideEffects) {
-    try {
-      sideEffect();
-    } catch (error) {
-      request.log.error(error, "Post-persistence request side effect failed");
-    }
-  }
-}
-
-function discardDeferredRequestSideEffects(request: FastifyRequest): void {
-  const saveScope = Reflect.get(request, idempotencySaveScopeSymbol) as IdempotencySaveScope | undefined;
-  if (saveScope) saveScope.afterDurableSave.length = 0;
-}
-
-function registerIdempotencyReplay(app: FastifyInstance, store: StateStore): void {
+function registerIdempotencyReplay(app: FastifyInstance, store: StateStore): IdempotencyFinalizer {
   const saveScopes = new AsyncLocalStorage<IdempotencySaveScope>();
   const inFlight = new Map<string, IdempotencyFlight>();
   const persistState = store.save.bind(store);
-  const persistFlush = store.flush?.bind(store);
   const persistReplace = store.replace.bind(store);
   const retainedRecords = store.state.idempotencyRecords.filter((record) => idempotencyRecordIsSafe(record));
   if (retainedRecords.length !== store.state.idempotencyRecords.length) {
@@ -20167,7 +20518,7 @@ function registerIdempotencyReplay(app: FastifyInstance, store: StateStore): voi
   }
   store.save = () => {
     const saveScope = saveScopes.getStore();
-    if (!saveScope?.deferSaves) {
+    if (!saveScope?.deferSaves || mutationEventScopes.getStore()?.request !== saveScope.request) {
       persistState();
       return;
     }
@@ -20175,7 +20526,7 @@ function registerIdempotencyReplay(app: FastifyInstance, store: StateStore): voi
   };
   store.replace = (state) => {
     const saveScope = saveScopes.getStore();
-    if (!saveScope?.deferSaves) {
+    if (!saveScope?.deferSaves || mutationEventScopes.getStore()?.request !== saveScope.request) {
       persistReplace(state);
       return;
     }
@@ -20194,7 +20545,6 @@ function registerIdempotencyReplay(app: FastifyInstance, store: StateStore): voi
     saveScope.saveRequested = false;
     if (shouldSave) {
       persistState();
-      persistFlush?.();
     }
   };
 
@@ -20264,7 +20614,7 @@ function registerIdempotencyReplay(app: FastifyInstance, store: StateStore): voi
       Reflect.set(request, idempotencyFlightSymbol, flight);
       break;
     }
-    const saveScope: IdempotencySaveScope = { deferSaves: true, saveRequested: false, afterDurableSave: [] };
+    const saveScope: IdempotencySaveScope = { request, deferSaves: true, saveRequested: false };
     Reflect.set(request, idempotencySaveScopeSymbol, saveScope);
     saveScopes.enterWith(saveScope);
     Reflect.set(request, idempotencyContextSymbol, context);
@@ -20273,69 +20623,19 @@ function registerIdempotencyReplay(app: FastifyInstance, store: StateStore): voi
   app.addHook("onSend", async (request, reply, payload) => {
     if (Reflect.get(request, idempotencyReplaySymbol)) return payload;
     const context = Reflect.get(request, idempotencyContextSymbol) as IdempotencyContext | undefined;
-    if (!context) return payload;
-    if (reply.statusCode < 200 || reply.statusCode >= 300) {
-      try {
-        flushSaveScope(request, false);
-      } finally {
-        discardDeferredRequestSideEffects(request);
-        releaseFlight(request);
-      }
-      return payload;
-    }
+    if (!context || reply.statusCode < 200 || reply.statusCode >= 300) return payload;
     const responseBody = typeof payload === "string" ? payload : Buffer.isBuffer(payload) ? payload.toString("utf8") : JSON.stringify(payload ?? null);
-    if (Buffer.byteLength(responseBody, "utf8") > IDEMPOTENCY_MAX_RESPONSE_BYTES) {
-      try {
-        flushSaveScope(request, false);
-        releaseDeferredRequestSideEffects(request);
-      } finally {
-        releaseFlight(request);
-      }
-      return payload;
-    }
-    if (idempotencyResponseContainsSecret(responseBody)) {
-      try {
-        flushSaveScope(request, false);
-        releaseDeferredRequestSideEffects(request);
-      } finally {
-        releaseFlight(request);
-      }
-      return payload;
-    }
+    if (Buffer.byteLength(responseBody, "utf8") > IDEMPOTENCY_MAX_RESPONSE_BYTES || idempotencyResponseContainsSecret(responseBody)) return payload;
     const authorizationHash = idempotencyAuthorizationHash(store, request.headers, context.userId);
-    if (!authorizationHash) {
-      try {
-        flushSaveScope(request, false);
-        releaseDeferredRequestSideEffects(request);
-      } finally {
-        releaseFlight(request);
-      }
-      return payload;
-    }
+    if (!authorizationHash) return payload;
     const now = nowIso();
     const record: IdempotencyRecord = { ...context, authorizationHash, statusCode: reply.statusCode, contentType: reply.getHeader("content-type")?.toString(), responseBody, createdAt: now, updatedAt: now };
     store.state.idempotencyRecords = [...store.state.idempotencyRecords.filter((record) => !(record.key === context.key && record.method === context.method && record.userId === context.userId)), record].sort(sortTimestampsDesc).slice(0, IDEMPOTENCY_MAX_RECORDS);
-    try {
-      flushSaveScope(request, true);
-      releaseFlight(request, record);
-      releaseDeferredRequestSideEffects(request);
-    } catch (error) {
-      discardDeferredRequestSideEffects(request);
-      store.state.idempotencyRecords = store.state.idempotencyRecords.filter((candidate) => candidate !== record);
-      rollbackDurableMutation(request, store);
-      releaseFlight(request);
-      throw error;
-    }
+    Reflect.set(request, idempotencyPreparedRecordSymbol, record);
+    const saveScope = Reflect.get(request, idempotencySaveScopeSymbol) as IdempotencySaveScope | undefined;
+    if (saveScope) saveScope.saveRequested = true;
+    else store.save();
     return payload;
-  });
-
-  app.addHook("onError", async (request) => {
-    try {
-      flushSaveScope(request, false);
-    } finally {
-      discardDeferredRequestSideEffects(request);
-      releaseFlight(request);
-    }
   });
 
   app.addHook("onClose", async () => {
@@ -20346,6 +20646,20 @@ function registerIdempotencyReplay(app: FastifyInstance, store: StateStore): voi
     }
     inFlight.clear();
   });
+  return {
+    prepareSave: (request) => flushSaveScope(request, false),
+    settle: (request, committed) => {
+      const record = Reflect.get(request, idempotencyPreparedRecordSymbol) as IdempotencyRecord | undefined;
+      Reflect.deleteProperty(request, idempotencyPreparedRecordSymbol);
+      if (!committed && record) store.state.idempotencyRecords = store.state.idempotencyRecords.filter((candidate) => candidate !== record);
+      const saveScope = Reflect.get(request, idempotencySaveScopeSymbol) as IdempotencySaveScope | undefined;
+      if (saveScope) {
+        saveScope.deferSaves = false;
+        saveScope.saveRequested = false;
+      }
+      releaseFlight(request, committed ? record : undefined);
+    },
+  };
 }
 
 function idempotencyRecordIsSafe(record: EngineState["idempotencyRecords"][number]): boolean {
@@ -20542,13 +20856,11 @@ function isTokenVisibleToUser(store: StateStore, userId: string, campaignId: str
   const scene = store.state.scenes.find((item) => item.id === token.sceneId);
   if (!scene) return false;
   const visibility = sceneVisibilityForCache(scene, cache);
-  const center = centerOfToken(token);
-  if (isPointInsideVisionPolygons(center, visibility.hidePolygons)) return false;
-  const containingOwnedVision = ownedVisionPolygonsForUser(store, userId, scene, sceneTokens, cache).filter((polygon) => isPointInsideVisionPolygon(center, polygon));
-  const containingDarkness = visibility.darknessPolygons.filter((polygon) => isPointInsideVisionPolygon(center, polygon));
-  if (!visionSensesBypassDarkness(containingOwnedVision, containingDarkness)) return false;
-  if (visibility.activeFog.length === 0 || isPointInsideVisionPolygons(center, visibility.revealPolygons)) return true;
-  return containingOwnedVision.length > 0;
+  return isPointVisibleInSceneVision(centerOfToken(token), {
+    visibilityMode: scene.visibilityMode,
+    fogActive: visibility.activeFog.length > 0,
+    polygons: [...visibility.fogPolygons, ...ownedVisionPolygonsForUser(store, userId, scene, sceneTokens, cache), ...visibility.lightPolygons]
+  });
 }
 
 function isTokenOwnedByUser(store: StateStore, userId: string, token: Token): boolean {
@@ -20562,7 +20874,7 @@ function campaignMemberUserIds(store: StateStore, campaignId: string): Set<strin
 function visionSnapshotForUser(store: StateStore, userId: string, campaignId: string, scene: Scene, cache?: TokenVisibilityCache): VisionSnapshot {
   const activeFog = scene.fog.filter((region) => !region.hidden);
   const lightPolygons = sceneVisibilityForCache(scene, cache).lightPolygons;
-  if (canReadHiddenTokens(store, userId, campaignId) || activeFog.length === 0) {
+  if (canReadHiddenTokens(store, userId, campaignId) || (scene.visibilityMode !== "dynamic" && activeFog.length === 0)) {
     return { sceneId: scene.id, userId, fogActive: false, polygons: lightPolygons };
   }
   const visibility = sceneVisibilityForCache(scene, cache);
@@ -20584,7 +20896,7 @@ function ownedVisionPolygonsForUser(store: StateStore, userId: string, scene: Sc
 
 function computeOwnedVisionPolygonsForUser(store: StateStore, userId: string, scene: Scene, sceneTokens?: Token[]): VisionPolygon[] {
   const tokens = sceneTokens ?? store.state.tokens.filter((item) => item.sceneId === scene.id);
-  return tokens.filter((item) => tokenLayer(item) === "player" && item.visionEnabled && tokenVisionOuterRadius(item) > 0 && isTokenOwnedByUser(store, userId, item)).flatMap((token) => computeTokenVisionPolygons(scene, token));
+  return tokens.filter((item) => item.sceneId === scene.id && !item.hidden && tokenLayer(item) === "player" && item.visionEnabled && tokenVisionOuterRadius(item) > 0 && isTokenOwnedByUser(store, userId, item)).flatMap((token) => computeTokenVisionPolygons(scene, token));
 }
 
 function providedTokenVisionCache(visibility: CachedSceneVisibility, sceneTokens: Token[]): Map<string, VisionPolygon[]> {
@@ -20628,20 +20940,12 @@ function visionPointSampleForUser(store: StateStore, userId: string, campaignId:
   const illuminatedBy = containingPolygons.filter((polygon) => polygon.source === "light" && polygon.lightingEffect !== "darkness");
   const revealedBy = containingPolygons.filter((polygon) => polygon.source !== "light" && polygon.mode !== "hide");
   const darkness = containingPolygons.filter((polygon) => polygon.lightingEffect === "darkness");
-  const visible = hiddenBy.length === 0 && (!snapshot.fogActive || revealedBy.length > 0) && visionSensesBypassDarkness(revealedBy, darkness);
+  const visible = canReadHiddenTokens(store, userId, campaignId) || isPointVisibleInSceneVision(point, { visibilityMode: scene.visibilityMode, fogActive: snapshot.fogActive, polygons: snapshot.polygons });
   return { sceneId: scene.id, userId, point, fogActive: snapshot.fogActive, visible, revealedBy, hiddenBy, illuminatedBy, blockedBy: visible ? [] : visionBlockersForPoint(store, userId, scene, point) };
 }
 
 function visionPointSamplePolygon(polygon: VisionPolygon): VisionPointSamplePolygon {
   return { polygonId: polygon.id, source: polygon.source, sourceId: polygon.sourceId, mode: polygon.mode, radius: polygon.radius, lightLevel: polygon.lightLevel, color: polygon.color, opacity: polygon.opacity, senseType: polygon.senseType, lightingEffect: polygon.lightingEffect, magical: polygon.magical };
-}
-
-function visionSensesBypassDarkness(visionPolygons: Array<Pick<VisionPolygon, "senseType">>, darknessPolygons: Array<Pick<VisionPolygon, "magical">>): boolean {
-  if (darknessPolygons.length === 0) return true;
-  const senseTypes = new Set(visionPolygons.map((polygon) => polygon.senseType).filter((senseType): senseType is NonNullable<VisionPolygon["senseType"]> => Boolean(senseType)));
-  const bypassesMagicalDarkness = senseTypes.has("blindsight") || senseTypes.has("tremorsense") || senseTypes.has("truesight");
-  if (darknessPolygons.some((polygon) => polygon.magical)) return bypassesMagicalDarkness;
-  return bypassesMagicalDarkness || senseTypes.has("darkvision");
 }
 
 function visionBlockersForPoint(store: StateStore, userId: string, scene: Scene, point: VisionPoint): VisionPointSample["blockedBy"] {
@@ -21582,6 +21886,7 @@ function filterRealtimeEvent(store: StateStore, event: EngineEvent, userId: stri
     const readableScene = storedScene ?? (scene?.campaignId === event.campaignId && typeof scene.active === "boolean" ? (scene as Scene) : undefined);
     if (readableScene && !canReadSceneRecord(store, userId, readableScene)) return undefined;
     if (!readableScene && !canAccessPreparedScenes(store, userId, event.campaignId)) return undefined;
+    if (scene && Array.isArray(scene.annotations)) return redactedRealtimeEvent(event, scenePayloadForUser(store, userId, scene as Scene));
     if (scene && "sceneEditHistory" in scene) return { ...event, payload: withoutSceneEditHistory(scene as Scene) };
     return event;
   }
@@ -21704,7 +22009,7 @@ function isProposalPayload(payload: Record<string, unknown> | undefined, campaig
 
 function canReceiveProposalRealtimeEvent(store: StateStore, userId: string, proposal: Proposal): boolean {
   const permissions = permissionsForUser(store, userId, proposal.campaignId);
-  return proposal.createdByUserId === userId || proposalVisibleToUser(store.state, userId, proposal.campaignId, permissions, proposal);
+  return (proposal.createdByType !== "plugin" && proposal.createdByUserId === userId) || proposalVisibleToUser(store.state, userId, proposal.campaignId, permissions, proposal);
 }
 
 function canReceiveProposalRealtimeFeed(store: StateStore, userId: string, campaignId: string): boolean {
@@ -23540,7 +23845,11 @@ function buildCampaignSnapshot(store: StateStore, userId: string, campaign: Camp
     }
   }
 
-  const systems = registeredSystems(store.state).map((system) => systemRuntimeInfo(store, system, campaign.defaultSystemId === system.id));
+  const systems = registeredSystems(store.state).map((system) => {
+    const binding = campaign.systemBindings?.find((entry) => entry.systemId === system.id);
+    const selected = binding ? resolvePinnedDeclarativeSystem(store.state, campaign.id, system.id).manifest : system;
+    return systemRuntimeInfo(store, selected, campaign.defaultSystemId === system.id, binding);
+  });
   const activeSystemId = systems.find((system) => system.active)?.id ?? systems[0]?.id;
   const activeCombat = store.state.combats.find((combat) => combat.campaignId === campaignId && combat.active);
   const aiThreads = canAiOperations ? visibleAiOperationalThreads(store, userId, campaignId) : [];
@@ -23576,7 +23885,7 @@ function buildCampaignSnapshot(store: StateStore, userId: string, campaign: Camp
     worlds: canWorld ? store.state.worlds.filter((world) => world.campaignId === campaignId) : [],
     worldRecords: readableWorldRecords,
     worldRelations: readableWorldRelations,
-    scenes: scenes.map(withoutSceneEditHistory),
+    scenes: scenes.map((scene) => scenePayloadForUser(store, userId, scene)),
     ...(selectedScene ? { selectedSceneId: selectedScene.id } : {}),
     ...(activeScene ? { activeSceneId: activeScene.id } : {}),
     ...(vision ? { vision } : {}),
@@ -23617,7 +23926,7 @@ function buildCampaignSnapshot(store: StateStore, userId: string, campaign: Camp
 }
 
 const SCENE_EDIT_HISTORY_LIMIT = 50;
-const SCENE_EDITABLE_PATCH_FIELDS: Array<keyof Scene> = ["worldId", "name", "width", "height", "gridType", "gridSize", "backgroundAssetId", "folder", "fog", "walls", "lights", "annotations", "difficultTerrain", "coverOverrides", "metadata"];
+const SCENE_EDITABLE_PATCH_FIELDS: Array<keyof Scene> = ["worldId", "name", "width", "height", "gridType", "gridSize", "gridOrigin", "visibilityMode", "backgroundAssetId", "folder", "fog", "walls", "lights", "annotations", "difficultTerrain", "coverOverrides", "metadata"];
 
 function assignSceneBackgroundAsset(scene: Scene, backgroundAssetId: string): boolean {
   if (scene.backgroundAssetId === backgroundAssetId) return false;
@@ -23635,7 +23944,7 @@ function resetSceneMapCalibration(scene: Scene): void {
 }
 
 function cloneSceneEditableState(scene: Scene): SceneEditableState {
-  return structuredClone({ worldId: scene.worldId, name: scene.name, width: scene.width, height: scene.height, gridType: scene.gridType, gridSize: scene.gridSize, backgroundAssetId: scene.backgroundAssetId, folder: scene.folder, fog: scene.fog, walls: scene.walls, lights: scene.lights, annotations: scene.annotations, difficultTerrain: scene.difficultTerrain ?? [], coverOverrides: scene.coverOverrides ?? [], metadata: scene.metadata });
+  return structuredClone({ worldId: scene.worldId, name: scene.name, width: scene.width, height: scene.height, gridType: scene.gridType, gridSize: scene.gridSize, gridOrigin: scene.gridOrigin, visibilityMode: scene.visibilityMode, backgroundAssetId: scene.backgroundAssetId, folder: scene.folder, fog: scene.fog, walls: scene.walls, lights: scene.lights, annotations: scene.annotations, difficultTerrain: scene.difficultTerrain ?? [], coverOverrides: scene.coverOverrides ?? [], metadata: scene.metadata });
 }
 
 /** Snapshots the scene's editable state before a mutation so a GM can undo the last N scene edits. */
@@ -23656,6 +23965,8 @@ function undoSceneEdit(scene: Scene): SceneEditSnapshot | undefined {
   scene.height = restored.height;
   scene.gridType = restored.gridType;
   scene.gridSize = restored.gridSize;
+  scene.gridOrigin = restored.gridOrigin;
+  scene.visibilityMode = restored.visibilityMode;
   scene.backgroundAssetId = restored.backgroundAssetId;
   scene.folder = restored.folder;
   scene.fog = restored.fog;
@@ -23665,7 +23976,7 @@ function undoSceneEdit(scene: Scene): SceneEditSnapshot | undefined {
   scene.difficultTerrain = restored.difficultTerrain ?? [];
   scene.coverOverrides = restored.coverOverrides ?? [];
   scene.metadata = restored.metadata;
-  scene.updatedAt = nowIso();
+  scene.updatedAt = nextRevisionTimestamp(scene.updatedAt);
   return last;
 }
 
@@ -23678,6 +23989,39 @@ function withoutSceneEditHistory(scene: Scene): Scene {
   if (!scene.sceneEditHistory) return scene;
   const { sceneEditHistory: _history, ...rest } = scene;
   return rest;
+}
+
+function sceneAnnotationIsPublic(annotation: Pick<SceneAnnotation, "visibility">): boolean {
+  return annotation.visibility === undefined || annotation.visibility === "public";
+}
+
+function scenePayloadForUser(store: StateStore, userId: string, scene: Scene): Scene {
+  const result = withoutSceneEditHistory(scene);
+  if (canCampaign(store, userId, scene.campaignId, "token.reveal")) return result;
+  const privateIds = new Set((scene.annotations ?? []).filter((annotation) => !sceneAnnotationIsPublic(annotation)).map((annotation) => annotation.id));
+  const publicAnnotations = (scene.annotations ?? []).filter(sceneAnnotationIsPublic);
+  const visibleTokenIds = publicAnnotations.some((annotation) => annotation.affectedTokenIds?.length)
+    ? new Set(visibleTokensForUser(store, userId, scene.campaignId, store.state.tokens.filter((token) => token.sceneId === scene.id)).map((token) => token.id))
+    : new Set<string>();
+  return {
+    ...result,
+    annotations: publicAnnotations.map((annotation) => annotation.affectedTokenIds ? { ...annotation, affectedTokenIds: annotation.affectedTokenIds.filter((id) => visibleTokenIds.has(id)) } : annotation),
+    ...(scene.annotationHistory ? { annotationHistory: scene.annotationHistory.filter((entry) => sceneAnnotationIsPublic(entry) && !privateIds.has(entry.annotationId)).map((entry) => entry.affectedTokenIds ? { ...entry, affectedTokenIds: entry.affectedTokenIds.filter((id) => visibleTokenIds.has(id)) } : entry) } : {}),
+  };
+}
+
+function projectSceneResponseForUser(store: StateStore, userId: string, payload: unknown): unknown {
+  if (Array.isArray(payload)) return payload.map((entry) => projectSceneResponseForUser(store, userId, entry));
+  if (!isRecord(payload)) return payload;
+  if (typeof payload.id === "string" && typeof payload.campaignId === "string" && Array.isArray(payload.annotations)) return scenePayloadForUser(store, userId, payload as unknown as Scene);
+  // These are the typed scene wrappers used by mutations, snapshots and errors.
+  let result = payload;
+  for (const key of ["scene", "current", "scenes"]) {
+    if (payload[key] === undefined) continue;
+    const projected = projectSceneResponseForUser(store, userId, payload[key]);
+    if (projected !== payload[key]) result = { ...result, [key]: projected };
+  }
+  return result;
 }
 
 function currentUserId(store: StateStore, headers: Record<string, string | string[] | undefined>): string | undefined {
@@ -25905,7 +26249,8 @@ function systemOperationsSummary(store: StateStore, system: SystemManifest) {
   const issues = systemOperationsIssues(system, templates.length, compendium.length, threats.length);
   const readiness = systemProductionReadiness(system.id, activeCampaigns.length, actors.length, items.length);
   const capabilityEvidence = systemCapabilityEvidence(system.id, compendium, threats);
-  const coverage = { characterTemplateCount: templates.length, compendiumEntryCount: compendium.length, compendiumTypeCounts: countBy([...compendium] as Array<{ type: string }>, (entry) => entry.type), conditionEntryCount: compendium.filter((entry) => entry.type === "condition").length, encounterThreatCount: threats.length, supportsOrigins: capabilityEvidence.origins.count > 0, supportsMonsterCreation: capabilityEvidence.monsterCreation.count > 0, supportsEquipmentPurchase: capabilityEvidence.equipmentPurchase.count > 0, supportsCharacterImport: true, supportsAdvancement: true, supportsRest: true, supportsEncounterPlanning: threats.length > 0, supportsCompendium: compendium.length > 0, capabilityEvidence };
+  const runtimeCapabilities = system.definition?.kind === "declarative-v1" ? declarativeSystemCapabilities(structuredClone(system)) : systemRuntimeCapabilities(system.id);
+  const coverage = { characterTemplateCount: templates.length, compendiumEntryCount: compendium.length, compendiumTypeCounts: countBy([...compendium] as Array<{ type: string }>, (entry) => entry.type), conditionEntryCount: compendium.filter((entry) => entry.type === "condition").length, encounterThreatCount: threats.length, supportsOrigins: capabilityEvidence.origins.count > 0, supportsMonsterCreation: capabilityEvidence.monsterCreation.count > 0, supportsEquipmentPurchase: capabilityEvidence.equipmentPurchase.count > 0, supportsCharacterImport: runtimeCapabilities.includes("character-import"), supportsAdvancement: runtimeCapabilities.includes("advancement"), supportsRest: runtimeCapabilities.includes("rest"), supportsEncounterPlanning: threats.length > 0, supportsCompendium: compendium.length > 0, capabilityEvidence };
   const productionCapability = systemProductionCapabilitySummary(coverage);
   const productionGaps = systemProductionGaps(readiness, coverage, issues);
   return { id: system.id, name: system.name, version: system.version, compatibleCore: system.compatibleCore, readiness, usage: { activeCampaignCount: activeCampaigns.length, actorCount: actors.length, itemCount: items.length, actorTypeCounts: countBy(actors, (actor) => actor.type), campaignIds: activeCampaigns.map((campaign) => campaign.id) }, manifest: { hasClientEntrypoint: Boolean(system.entrypoints.client), hasServerEntrypoint: Boolean(system.entrypoints.server), hasActorSchema: Boolean(system.schemas.actor), hasItemSchema: Boolean(system.schemas.item), permissionCount: system.permissions.length, permissions: [...system.permissions] }, coverage, productionCapability, issues, productionGaps };
@@ -26032,7 +26377,7 @@ function systemOperationsRemediationQueue(gapCounts: ReturnType<typeof systemPro
 }
 
 function systemOperationsIssues(system: SystemManifest, templateCount: number, compendiumCount: number, threatCount: number): string[] {
-  return [system.entrypoints.client ? undefined : "missing_client_entrypoint", system.entrypoints.server ? undefined : "missing_server_entrypoint", system.schemas.actor ? undefined : "missing_actor_schema", system.schemas.item ? undefined : "missing_item_schema", templateCount > 0 ? undefined : "missing_character_templates", compendiumCount > 0 ? undefined : "missing_compendium_entries", threatCount > 0 ? undefined : "missing_encounter_threats"].filter((issue): issue is string => Boolean(issue));
+  return [system.definition?.kind === "declarative-v1" || system.entrypoints.client ? undefined : "missing_client_entrypoint", system.definition?.kind === "declarative-v1" || system.entrypoints.server ? undefined : "missing_server_entrypoint", system.schemas.actor ? undefined : "missing_actor_schema", system.schemas.item ? undefined : "missing_item_schema", templateCount > 0 ? undefined : "missing_character_templates", compendiumCount > 0 ? undefined : "missing_compendium_entries", threatCount > 0 ? undefined : "missing_encounter_threats"].filter((issue): issue is string => Boolean(issue));
 }
 
 async function syncPluginRegistriesForRequest(pluginRegistry: PluginRuntimeRegistry, registryUrl: string | undefined, reply: FastifyReply) {
@@ -26224,7 +26569,7 @@ function pluginCampaignInfo(store: StateStore, pluginRegistry: PluginRuntimeRegi
 function reviewedPluginPermissions(plugin: LoadedPlugin, requestedPermissions?: PermissionName[]): PermissionName[] | undefined {
   if (!requestedPermissions) return [...plugin.permissions];
   const uniquePermissions = [...new Set(requestedPermissions)];
-  if (uniquePermissions.some((permission) => !plugin.permissions.includes(permission))) return undefined;
+  if (uniquePermissions.some((permission) => !(plugin.permissions as readonly PermissionName[]).includes(permission))) return undefined;
   return uniquePermissions;
 }
 
@@ -26287,10 +26632,11 @@ function assertSystemRuntimeCapability(systemId: string, capability: SystemCapab
   if (!hasSystemRuntimeCapability(systemId, capability)) throw new UnsupportedSystemCapabilityError(systemId, capability);
 }
 
-function systemRuntimeInfo(store: { state: Pick<EngineState, "systemInstallations"> }, system: SystemManifest, active = false) {
-  const installation = systemInstallationByManifestId(store.state, system.id);
-  const runtimeCapabilities = systemRuntimeCapabilities(system.id);
-  return { ...system, active, source: isBundledSystem(system.id) ? ("bundled" as const) : ("api" as const), dataDriven: !isBundledSystem(system.id), runtimeCapabilities, unsupportedCapabilities: system.capabilities.filter((capability) => !runtimeCapabilities.includes(capability)), installedAt: installation?.createdAt };
+function systemRuntimeInfo(store: { state: Pick<EngineState, "systemInstallations"> }, system: SystemManifest, active = false, binding?: SystemManifestIdentity) {
+  const installation = store.state.systemInstallations.find((entry) => entry.manifest.id === system.id && entry.manifest.version === system.version);
+  const runtimeCapabilities = system.definition?.kind === "declarative-v1" ? declarativeSystemCapabilities(structuredClone(system)) : systemRuntimeCapabilities(system.id);
+  const installedVersions = store.state.systemInstallations.filter((entry) => entry.manifest.id === system.id && entry.manifest.definition?.kind === "declarative-v1").map(installedDeclarativeIdentity);
+  return { ...system, active, source: isBundledSystem(system.id) ? ("bundled" as const) : ("api" as const), dataDriven: !isBundledSystem(system.id), runtimeCapabilities, unsupportedCapabilities: system.capabilities.filter((capability) => !runtimeCapabilities.includes(capability)), installedAt: installation?.createdAt, ...(installedVersions.length ? { installedVersions } : {}), ...(binding ? { binding } : {}) };
 }
 
 function buildCampaignCompatibilityReport(store: StateStore, campaign: Campaign): CampaignCompatibilityReport {
@@ -26299,7 +26645,7 @@ function buildCampaignCompatibilityReport(store: StateStore, campaign: Campaign)
   const actorById = new Map(actors.map((actor) => [actor.id, actor]));
   const manifests = registeredSystems(store.state);
   const manifestById = new Map(manifests.map((manifest) => [manifest.id, manifest]));
-  const referencedSystemIds = new Set<string>([campaign.defaultSystemId, ...actors.map((actor) => actor.systemId), ...items.map((item) => item.systemId)].filter(Boolean));
+  const referencedSystemIds = new Set<string>([campaign.defaultSystemId, ...(campaign.systemBindings ?? []).map((binding) => binding.systemId), ...actors.map((actor) => actor.systemId), ...items.map((item) => item.systemId)].filter(Boolean));
   const issues: CampaignCompatibilityIssue[] = [];
   const pushIssue = (issue: Omit<CampaignCompatibilityIssue, "id">) => {
     const digest = createHash("sha256")
@@ -26320,7 +26666,8 @@ function buildCampaignCompatibilityReport(store: StateStore, campaign: Campaign)
   const systems = [...referencedSystemIds]
     .sort((left, right) => left.localeCompare(right))
     .map((systemId) => {
-      const manifest = manifestById.get(systemId);
+      const binding = campaign.systemBindings?.find((entry) => entry.systemId === systemId);
+      const manifest = binding ? store.state.systemInstallations.find((entry) => entry.manifest.id === binding.systemId && entry.manifest.version === binding.version && entry.checksum === binding.checksum)?.manifest : manifestById.get(systemId);
       const compatibility = manifest ? systemCoreCompatibility(manifest.compatibleCore, OPEN_TABLETOP_CORE_VERSION) : { valid: false, satisfied: false };
       const systemActors = actors.filter((actor) => actor.systemId === systemId);
       const systemItems = items.filter((item) => item.systemId === systemId);
@@ -26329,7 +26676,7 @@ function buildCampaignCompatibilityReport(store: StateStore, campaign: Campaign)
       } else if (!compatibility.valid || !compatibility.satisfied) {
         pushIssue({ group: "system", severity: "blocking", code: compatibility.valid ? "system.core_incompatible" : "system.core_range_invalid", title: "Rules system is incompatible with this core", detail: `${manifest.name} ${manifest.version} requires core ${manifest.compatibleCore}; this server is ${OPEN_TABLETOP_CORE_VERSION}.`, action: "Install a compatible system version. This report will not migrate or discard system data.", entityType: "system", entityId: systemId });
       }
-      return { systemId, ...(manifest ? { name: manifest.name, installedVersion: manifest.version, compatibleCore: manifest.compatibleCore } : {}), coreCompatible: compatibility.valid && compatibility.satisfied, bundled: isBundledSystem(systemId), default: campaign.defaultSystemId === systemId, actorCount: systemActors.length, itemCount: systemItems.length, actorRulesVersions: countValues(systemActors.map((actor) => stringValue(actor.data.ruleset) ?? "unversioned")), itemContentVersions: countValues(systemItems.map((item) => stringValue(objectValue(item.data.compendiumProvenance).contentVersion) ?? "unversioned")) };
+      return { systemId, ...(manifest ? { name: manifest.name, installedVersion: manifest.version, compatibleCore: manifest.compatibleCore } : {}), coreCompatible: compatibility.valid && compatibility.satisfied, bundled: isBundledSystem(systemId), default: campaign.defaultSystemId === systemId, actorCount: systemActors.length, itemCount: systemItems.length, actorRulesVersions: countValues(systemActors.map((actor) => binding?.version ?? stringValue(actor.data.ruleset) ?? "unversioned")), itemContentVersions: countValues(systemItems.map((item) => stringValue(objectValue(item.data.compendiumProvenance).contentVersion) ?? "unversioned")) };
     });
 
   for (const item of items) {
@@ -26436,16 +26783,27 @@ function buildCampaignCompatibilityReport(store: StateStore, campaign: Campaign)
   };
 }
 
-function systemRequirementsForCampaign(store: StateStore, campaignId: string) {
+function preflightArchiveSystemDependencies(state: EngineState, archive: CampaignArchive): void {
+  const candidate = stateForArchiveMerge(state, archive);
+  mergeArchive(candidate, archive);
+  assertDeclarativeArchiveDependencies(state, candidate, archive);
+}
+
+function systemRequirementsForCampaign(store: StateStore, campaignId: string): CampaignArchiveSystemRequirement[] {
   const campaign = store.state.campaigns.find((item) => item.id === campaignId);
   const ids = new Set<string>();
   if (campaign?.defaultSystemId) ids.add(campaign.defaultSystemId);
+  for (const binding of campaign?.systemBindings ?? []) ids.add(binding.systemId);
   for (const actor of store.state.actors) if (actor.campaignId === campaignId) ids.add(actor.systemId);
   for (const item of store.state.items) if (item.campaignId === campaignId) ids.add(item.systemId);
-  return registeredSystems(store.state)
-    .filter((system) => ids.has(system.id))
-    .map(({ id, name, version, compatibleCore, capabilities }) => ({ id, name, version, compatibleCore, capabilities }))
-    .sort((left, right) => left.id.localeCompare(right.id));
+  const registered = registeredSystems(store.state);
+  return [...ids].sort().flatMap((systemId): CampaignArchiveSystemRequirement[] => {
+    if (isDeclarativeSystem(store.state, systemId)) return [declarativeArchiveSystemRequirement(store.state, campaignId, systemId)];
+    const system = registered.find((entry) => entry.id === systemId);
+    if (!system) return [];
+    const { id, name, version, compatibleCore, capabilities } = system;
+    return [{ id, name, version, compatibleCore, capabilities }];
+  });
 }
 
 function compendiumEntriesForSystem(systemId: string) {
@@ -26662,6 +27020,7 @@ function systemSheet(actor: Actor, items: Item[], calculationContext?: Dnd5eSrdC
 }
 
 function systemSheetForStore(store: StateStore, actor: Actor, items: Item[]) {
+  if (isDeclarativeSystem(store.state, actor.systemId)) return declarativeRuntimeForActor(store.state, actor).sheet(structuredClone(actor));
   return systemSheet(actor, items, calculationOverrideContextForActor(store, actor, items));
 }
 
@@ -26674,6 +27033,11 @@ function systemQuickRolls(actor: Actor, items: Item[] = [], calculationContext?:
   if (actor.systemId === "stellar-frontiers") return stellarFrontiersQuickRolls(actor, items);
   if (actor.systemId === "mystic-noir") return mysticNoirQuickRolls(actor, items);
   throw new UnsupportedSystemCapabilityError(actor.systemId, "quick-rolls");
+}
+
+function systemQuickRollsForStore(store: StateStore, actor: Actor, items: Item[], calculationContext = calculationOverrideContextForActor(store, actor, items)): Array<{ id: string; label: string; formula: string }> {
+  if (isDeclarativeSystem(store.state, actor.systemId)) return declarativeRuntimeForActor(store.state, actor).quickRolls(structuredClone(actor)).flatMap((roll) => roll.available && roll.formula !== undefined ? [{ id: roll.id, label: roll.label, formula: roll.formula }] : []);
+  return systemQuickRolls(actor, items, calculationContext);
 }
 
 function systemActionOptions(spellSlotLevel: number | undefined, resourceAmount?: number, useFreeResource?: boolean): SystemActionUseOptions {
@@ -26769,8 +27133,10 @@ function dnd5eSrdAdvancementWeaponMasteryInfo(actor: Actor, className: string, n
   const priorCount = dnd5eSrdWeaponMasteryChoiceCount(className, nextClassLevel - 1);
   const selectedWeaponIds = dnd5eSrdStoredWeaponMasteryIds(actor, className);
   const requiresSelection = requiredCount > 0 && (requiredCount !== priorCount || new Set(selectedWeaponIds).size !== requiredCount);
-  const options = dnd5eSrdWeaponMasteryEligibleWeaponIds(className).flatMap((id) => {
-    const entry = dnd5eSrdCompendiumEntry(id);
+  const eligibleWeaponIds = dnd5eSrdWeaponMasteryEligibleWeaponIds(className);
+  const compendium = eligibleWeaponIds.length > 0 ? dnd5eSrdCompendium() : [];
+  const options = eligibleWeaponIds.flatMap((id) => {
+    const entry = compendium.find((candidate) => candidate.id === id);
     if (!entry) return [];
     return [{ id, name: entry.name, mastery: stringValue(entry.data.mastery) ?? "mastery" }];
   });

@@ -246,7 +246,7 @@ describe("realtime connection", () => {
     expect(realtimeUiLabel("connected")).toBe("Connected");
     expect(realtimeUiLabel("reconnecting")).toBe("Reconnecting");
     expect(realtimeUiLabel("syncing")).toBe("Syncing");
-    expect(appSource).toContain('onUnavailable: () => {\n        setRealtimeUiState("reconnecting");');
+    expect(appSource).toMatch(/onUnavailable: \(\) => \{\s*if \(cancelled\) return;\s*setRealtimeUiState\("reconnecting"\);/);
     expect(appSource).toContain('setRealtimeUiState("syncing")');
     expect(appSource).toContain("await realtimeHandlers.onOpen(true)");
     expect(appSource).toContain('inert={realtimeUiState === "syncing" ? true : undefined}');
