@@ -38,6 +38,16 @@ describe("dynamic scene visibility", () => {
     expect(visible(400)).toBe(true);
   });
 
+  it("lets a shadowless light pass walls without granting sight through them", () => {
+    const { scene, visible } = fixture();
+    scene.walls = [{ id: "wall", x1: 300, y1: 0, x2: 300, y2: 400, kind: "wall", blocksVision: true }];
+    scene.lights = [{ id: "lamp", x: 400, y: 200, radius: 500, color: "#ffffff" }];
+    expect(visible(200)).toBe(false); // By default the wall shadows the near side.
+    scene.lights = [{ id: "lamp", x: 400, y: 200, radius: 500, color: "#ffffff", shadows: false }];
+    expect(visible(200)).toBe(true); // The light now reaches the token's side of the wall.
+    expect(visible(400)).toBe(false); // The token still cannot see past the wall.
+  });
+
   it("keeps each sense within range and preserves magical darkness exceptions", () => {
     const { scene, token, visible } = fixture();
     token.senses = [{ type: "darkvision", range: 150 }];

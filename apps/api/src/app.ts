@@ -16834,7 +16834,7 @@ function createAiToolContext(
         const message = createTimestamped("msg", { campaignId, userId, type: "roll" as const, body: `${actor.name} ${plan.roll.label}: ${roll.formula} = ${roll.total}`, visibility, recipientUserIds: [], rollId: roll.id }) satisfies ChatMessage;
         const changes: ProposalChange[] = [...(plan.actorChanged ? [{ entity: "actor" as const, action: "update" as const, id: actor.id, data: { data: plan.actorData } }] : []), { entity: "roll", action: "create", data: roll }, { entity: "chat", action: "create", data: message }];
         const proposalId = await createAiProposal({ title: `Actor action: ${actor.name} ${plan.roll.label}`, summary: `${actor.name} ${plan.roll.label}: ${roll.formula} = ${roll.total}.`, changes });
-        return { proposalId, changeCount: changes.length, actorId: actor.id, systemId: actor.systemId, system: plan.system, actionRollId: action.id, rollId: roll.id, formula: roll.formula, label: plan.roll.label, total: roll.total, visibility, ...(plan.cost ? { cost: plan.cost } : {}) };
+        return { proposalId, changeCount: changes.length, actorId: actor.id, systemId: actor.systemId, system: plan.system, actionRollId: action.id, rollId: roll.id, formula: roll.formula, label: plan.roll.label, total: roll.total, visibility, consumed: [], updatedItems: [], ...(plan.cost ? { cost: plan.cost } : {}) };
       }
       const items = actorItems(store, actor);
       const calculationContext = calculationOverrideContextForActor(store, actor, items);

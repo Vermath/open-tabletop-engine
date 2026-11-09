@@ -3441,7 +3441,7 @@ export function App() {
     setUniversalVttImportOpen(false);
     setSceneFolderFilter("all");
     setSceneSearch("");
-    setWorldAtlasFilter("all");
+    setSelectedWorldId("all");
     realtimeSelectionRef.current = { ...realtimeSelectionRef.current, sceneId: result.scene.id };
     setSceneId(result.scene.id);
     setWorkspaceMode("prep");

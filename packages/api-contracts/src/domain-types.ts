@@ -478,6 +478,8 @@ export interface LightSource {
   kind?: LightSourceKind;
   /** Distinguishes effects such as magical darkness from mundane darkness. */
   magical?: boolean;
+  /** When false, walls do not block this light. Defaults to true. */
+  shadows?: boolean;
 }
 
 export interface DifficultTerrainRegion extends Timestamps {

@@ -1348,9 +1348,33 @@ describe("api contracts", () => {
       },
     };
 
+    // Sheet and roll also run declarative systems, so they document the
+    // declarative validation failures alongside the unsupported-capability one.
+    const declarativeOperations = new Set([
+      "get /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/sheet",
+      "post /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/roll",
+    ]);
+    const expectedDeclarativeResponse = {
+      description:
+        "Unsupported capability or declarative system validation failure",
+      content: {
+        "application/json": {
+          schema: {
+            anyOf: [
+              { $ref: "#/components/schemas/UnsupportedSystemCapabilityResponse" },
+              { $ref: "#/components/schemas/DeclarativeRuntimeErrorResponse" },
+              { $ref: "#/components/schemas/DeclarativeSystemStateErrorResponse" },
+            ],
+          },
+        },
+      },
+    };
+
     for (const [method, path] of expectedOperations) {
       expect(openApiSpec.paths[path]?.[method]?.responses["422"]).toEqual(
-        expectedResponse,
+        declarativeOperations.has(`${method} ${path}`)
+          ? expectedDeclarativeResponse
+          : expectedResponse,
       );
     }
 
@@ -1359,11 +1383,15 @@ describe("api contracts", () => {
       for (const method of ["get", "post", "put", "patch", "delete"] as const) {
         const response = pathItem[method]?.responses["422"];
         const content = response?.content?.["application/json"] as
-          | { schema?: { $ref?: string } }
+          | { schema?: { $ref?: string; anyOf?: Array<{ $ref?: string }> } }
           | undefined;
+        const unsupportedCapabilityRef =
+          "#/components/schemas/UnsupportedSystemCapabilityResponse";
         if (
-          content?.schema?.$ref ===
-          "#/components/schemas/UnsupportedSystemCapabilityResponse"
+          content?.schema?.$ref === unsupportedCapabilityRef ||
+          content?.schema?.anyOf?.some(
+            (entry) => entry.$ref === unsupportedCapabilityRef,
+          )
         ) {
           documentedOperations.push(`${method} ${path}`);
         }
