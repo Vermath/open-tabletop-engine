@@ -11,7 +11,7 @@ allowBuilds:
 overrides:
   "@babel/core": 7.29.6
   "tsx>esbuild": 0.28.1
-  fast-uri: 3.1.6
+  fast-uri: 3.1.9
   "fastify>find-my-way": 9.7.0
   fast-xml-builder: 1.1.7
   ws: 8.21.0
