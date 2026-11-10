@@ -127,7 +127,11 @@ test.describe("phone initiative strip", () => {
         await startCombat(page);
         await page.setViewportSize({ width, height: width === 320 ? 568 : 844 });
         const showScene = page.getByRole("button", { name: "Show scene", exact: true });
-        if (await showScene.isVisible()) await showScene.click();
+        if (width === 320) {
+          // The short-phone layout shows one pane; wait for its resize effect.
+          await expect(showScene).toBeVisible();
+          await showScene.click();
+        }
         const strip = page.locator(".initiative-strip");
         const dock = page.locator('.table-area > .map-layer-dock[data-collapsed="true"]');
         await expect(strip).toBeVisible();
