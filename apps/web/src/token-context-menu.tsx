@@ -39,7 +39,7 @@ export function clampMenuPosition(position: { x: number; y: number }, menu: { wi
   };
 }
 
-export function TokenContextMenu(props: { tokenName: string; position: { x: number; y: number }; actions: TokenContextMenuAction[]; onClose(): void }) {
+export function TokenContextMenu(props: { tokenName: string; position: { x: number; y: number }; actions: TokenContextMenuAction[]; onClose(restoreFocus?: boolean): void }) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState(props.position);
 
@@ -70,9 +70,10 @@ export function TokenContextMenu(props: { tokenName: string; position: { x: numb
 
   function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
     if (event.key === "Escape" || event.key === "Tab") {
-      event.preventDefault();
+      if (event.key === "Escape") event.preventDefault();
       event.stopPropagation();
-      props.onClose();
+      // Tab continues native navigation from the opener; Escape stays on the token.
+      props.onClose(true);
       return;
     }
     const items = [...(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [])];
@@ -108,7 +109,7 @@ export function TokenContextMenu(props: { tokenName: string; position: { x: numb
           role="menuitem"
           className="token-context-menu-item"
           onClick={() => {
-            props.onClose();
+            props.onClose(true);
             action.run();
           }}
         >
