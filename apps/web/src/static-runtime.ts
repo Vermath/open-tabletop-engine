@@ -91,6 +91,7 @@ const contentTypes = new Map([
   [".svg", "image/svg+xml"],
   [".wasm", "application/wasm"],
   [".webp", "image/webp"],
+  [".woff2", "font/woff2"],
 ]);
 
 export async function startWebStaticRuntime(

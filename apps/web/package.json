@@ -20,6 +20,8 @@
   },
   "dependencies": {
     "@3d-dice/dice-box-threejs": "^0.0.12",
+    "@fontsource-variable/alegreya": "^5.3.0",
+    "@fontsource-variable/figtree": "^5.3.0",
     "@open-tabletop/api-contracts": "workspace:*",
     "@open-tabletop/core": "workspace:*",
     "@open-tabletop/dice-engine": "workspace:*",

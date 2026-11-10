@@ -49,6 +49,10 @@ describe("web static runtime", () => {
     );
     writeFileSync(join(dist, "assets", "index-ABCDEFGH.js"), "export {};");
     writeFileSync(
+      join(dist, "assets", "figtree-latin-wght-normal-ABCDEFGH.woff2"),
+      "test-font",
+    );
+    writeFileSync(
       join(dist, "assets", "dice-box", "sounds", "roll.mp3"),
       "test-audio",
     );
@@ -83,6 +87,10 @@ describe("web static runtime", () => {
       );
       expect(diceSupportAsset.headers.get("cache-control")).toBe("no-cache");
       expect(diceSupportAsset.headers.get("content-type")).toBe("audio/mpeg");
+      const bundledFont = await fetch(
+        `${web.url}/assets/figtree-latin-wght-normal-ABCDEFGH.woff2`,
+      );
+      expect(bundledFont.headers.get("content-type")).toBe("font/woff2");
     } finally {
       await web.close();
       await api.close();
