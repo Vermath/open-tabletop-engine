@@ -174,7 +174,7 @@ test("actor details stay compact until the player opens the relevant controls", 
   const actorId = snapshot.tokens.find((token) => token.id === "tok_valen")!.actorId;
   const actor = snapshot.actors.find((candidate) => candidate.id === actorId)!;
   expect(actor).toBeDefined();
-  await page.getByRole("region", { name: "Party", exact: true }).getByRole("button").filter({ has: page.getByText(actor.name, { exact: true }) }).first().click();
+  await page.getByRole("region", { name: "Party", exact: true }).getByRole("button").filter({ has: page.getByText(actor.name, { exact: true }).and(page.locator("strong")) }).click();
   const inspector = page.locator("#workspace-inspector");
   const actorHeading = inspector.getByRole("heading", { name: actor.name, exact: true });
   await expect(actorHeading).toBeVisible();
