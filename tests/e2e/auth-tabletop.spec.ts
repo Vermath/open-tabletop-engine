@@ -29,7 +29,11 @@ async function mockInvitePreview(page: Page) {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ expectedUpdatedAt: "2026-07-14T12:00:00.000Z" })
+      body: JSON.stringify({
+        campaign: { id: "camp_demo", name: "The Ember Vault" },
+        invite: { role: "player", status: "pending" },
+        expectedUpdatedAt: "2026-07-14T12:00:00.000Z"
+      })
     });
   });
 }
@@ -1339,6 +1343,7 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await page.getByRole("combobox", { name: "Token actor" }).selectOption("act_valen");
   await page.getByRole("button", { name: "Add token" }).click();
   await expect(statusMessage(page, "Valen Ash created")).toBeVisible();
+  await openActorDisclosure(selectedActorPanel(page), "Token settings");
   await expect(page.getByRole("textbox", { name: "Token inspector name" })).toHaveValue("Valen Ash");
   await deleteNewestTokenByName(page, "Valen Ash");
   const box = await sceneBoard.boundingBox();
@@ -1653,6 +1658,7 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(uploadedAsset).toBeVisible();
   await page.getByRole("combobox", { name: "Asset folder filter" }).selectOption("all");
   await uploadedAsset.getByRole("button", { name: "Background", exact: true }).click();
+  await page.getByRole("dialog", { name: "Place e2e-map.svg", exact: true }).getByRole("button", { name: "Keep canvas and replace map" }).click();
   await expect(statusMessage(page, "e2e-map.svg set as Vault Entry background")).toBeVisible();
   await expect(page.locator(".scene-tab-thumb img").first()).toBeVisible();
   await openManageCategory(page, "Scenes");
@@ -1661,6 +1667,7 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(page.locator(".scene-background-preview")).toContainText("No background");
   await page.getByRole("combobox", { name: "Edit scene background asset" }).selectOption({ label: "e2e-map.svg" });
   await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByRole("dialog", { name: "Place e2e-map.svg", exact: true }).getByRole("button", { name: "Keep canvas and replace map" }).click();
   await expect(page.locator(".scene-background-preview")).toContainText("e2e-map.svg");
   await closeManage(page);
   await page.getByRole("button", { name: "Prep", exact: true }).click();
@@ -3181,7 +3188,8 @@ test("GM can run SDK plugin and system workflows from the browser", async ({ pag
 
   await expect(sdkPanel.getByText("System Registry")).toBeVisible();
   const dndSystemCard = sdkPanel.locator("article", { hasText: "D&D 5.5e SRD" });
-  await expect(dndSystemCard).toContainText("Manifest validation");
+  await expect(dndSystemCard).toContainText("Bundled rules manifest");
+  await expect(dndSystemCard).toContainText("Migration: no campaign migration required");
   await expect(dndSystemCard).toContainText("Core: >=0.1.0");
   await expect(dndSystemCard).toContainText("Entrypoints: client/server");
   await expect(dndSystemCard).toContainText("Schemas: actor/item");
@@ -4222,7 +4230,7 @@ test("player can accept an invite from a private browser session", async ({ brow
   const createdTokenIds: string[] = [];
   try {
     await privatePage.goto(`${origin}/join?invite=${encodeURIComponent(inviteToken)}`);
-    await expect(privatePage.locator(".section-title", { hasText: "Accept Invite" })).toBeVisible();
+    await expect(privatePage.getByRole("heading", { name: "Accept Invite", exact: true })).toBeVisible();
     await expect(privatePage.getByRole("textbox", { name: "Public invite token" })).toHaveValue(inviteToken);
     await privatePage.getByRole("textbox", { name: "Join email" }).fill("e2e.invited@example.test");
     await privatePage.getByRole("textbox", { name: "Display name" }).fill("E2E Invited Player");
