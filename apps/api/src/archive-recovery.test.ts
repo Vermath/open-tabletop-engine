@@ -308,6 +308,8 @@ describe("campaign archive recovery", () => {
     const storage = new FaultInjectingAssetStorage();
     const fixture = archiveAtomicityFixture(store);
     storage.seed(fixture.existingAsset, fixture.existingBytes);
+    store.save();
+    store.flush();
     const app = await buildApp({ store, assetStorage: storage });
     const beforeState = structuredClone(store.state);
     // The handler's state commit succeeds. Fail the later response-time flush

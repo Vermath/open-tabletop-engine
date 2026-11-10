@@ -235,6 +235,7 @@ describe("D&D linked effect lifecycle API", () => {
       }
 
       override save(): void {
+        super.save();
         this.pending = true;
       }
 
@@ -244,6 +245,7 @@ describe("D&D linked effect lifecycle API", () => {
           this.failNextFlush = false;
           throw new Error("injected concentration persistence failure");
         }
+        super.flush();
         this.persisted = structuredClone(this.state);
         this.pending = false;
       }
@@ -274,6 +276,8 @@ describe("D&D linked effect lifecycle API", () => {
       createdByUserId: "usr_demo_gm",
       updatedByUserId: "usr_demo_gm"
     }));
+    store.save();
+    store.flush();
     const transport = new RecordingTransport();
     const app = await buildApp({ store, webhookTransport: transport });
     const route = `/api/v1/actors/${source.id}/concentration/end`;
