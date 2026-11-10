@@ -45,6 +45,7 @@ async function startCombat(page: Page) {
   for (let index = 0; index < await initiatives.count(); index += 1) await initiatives.nth(index).fill(String(20 - index));
   await dialog.getByRole("button", { name: /^Start combat \(\d+\)$/ }).click();
   await expect(dialog).toBeHidden();
+  await expect(page.getByRole("status").filter({ hasText: /Combat started with \d+ confirmed combatants/ }).first()).toBeVisible();
 }
 
 test("the initiative strip keeps turn order on the map while the inspector shows something else", async ({ page }) => {

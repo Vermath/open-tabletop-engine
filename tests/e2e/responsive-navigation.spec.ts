@@ -166,9 +166,17 @@ test("actor details stay compact until the player opens the relevant controls", 
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM", exact: true }).click();
-  await page.getByRole("region", { name: "Party", exact: true }).getByRole("button").filter({ has: page.getByText("Valen Ash", { exact: true }) }).click();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  const apiBase = `http://127.0.0.1:${process.env.OTTE_E2E_API_PORT ?? 4100}`;
+  const response = await page.request.get(`${apiBase}/api/v1/campaigns/camp_demo/snapshot`);
+  expect(response.ok()).toBe(true);
+  const snapshot = await response.json() as { tokens: Array<{ id: string; actorId?: string }>; actors: Array<{ id: string; name: string }> };
+  const actorId = snapshot.tokens.find((token) => token.id === "tok_valen")!.actorId;
+  const actor = snapshot.actors.find((candidate) => candidate.id === actorId)!;
+  expect(actor).toBeDefined();
+  await page.getByRole("region", { name: "Party", exact: true }).getByRole("button").filter({ has: page.getByText(actor.name, { exact: true }) }).first().click();
   const inspector = page.locator("#workspace-inspector");
-  const actorHeading = inspector.getByRole("heading", { name: "Valen Ash", exact: true });
+  const actorHeading = inspector.getByRole("heading", { name: actor.name, exact: true });
   await expect(actorHeading).toBeVisible();
   const headingBounds = (await actorHeading.boundingBox())!;
   expect(headingBounds.width, "actor names have enough width to read horizontally").toBeGreaterThan(100);
@@ -217,8 +225,8 @@ test("actor details stay compact until the player opens the relevant controls", 
   await expect(placement.getByRole("textbox", { name: "Search actors to place", exact: true })).toBeHidden();
   await placement.locator(":scope > summary").click();
   await expect(placement.getByRole("textbox", { name: "Search actors to place", exact: true })).toBeVisible();
-  await placement.getByRole("textbox", { name: "Search actors to place", exact: true }).fill("Valen");
-  await expect(placement.getByRole("button", { name: "Place Valen Ash actor on scene", exact: true })).toBeVisible();
+  await placement.getByRole("textbox", { name: "Search actors to place", exact: true }).fill(actor.name);
+  await expect(placement.getByRole("button", { name: `Place ${actor.name} actor on scene`, exact: true })).toBeVisible();
 });
 
 test.describe("short phone scene view", () => {
