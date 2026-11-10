@@ -1,0 +1,142 @@
+/* Turn order pinned to the top of the map. Clears the tool palette on the left. */
+.initiative-strip {
+  position: absolute;
+  z-index: 6;
+  top: 14px;
+  left: 116px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  max-width: calc(100% - 132px);
+  margin-inline: auto;
+  padding: 6px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-m);
+  background: var(--glass);
+  box-shadow: var(--shadow-1);
+}
+
+.initiative-strip-round {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.initiative-strip-round:hover,
+.initiative-strip-round:focus-visible {
+  color: var(--paper);
+  background: var(--accent-soft);
+}
+
+.initiative-strip-order {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  overflow-x: auto;
+  list-style: none;
+  scrollbar-width: thin;
+}
+
+.initiative-strip-entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  max-width: 168px;
+  padding: 0 10px 0 4px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.initiative-strip-entry:hover,
+.initiative-strip-entry:focus-visible {
+  border-color: var(--line-strong);
+  color: var(--paper);
+}
+
+.initiative-strip-avatar {
+  display: inline-grid;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  background: var(--surface-2);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.initiative-strip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.initiative-strip-entry.current {
+  border-color: var(--turn-current);
+  background: var(--accent-soft);
+  color: var(--paper);
+  font-weight: 600;
+  box-shadow: 0 0 0 2px var(--turn-current-glow);
+}
+
+.initiative-strip-entry.current .initiative-strip-avatar {
+  border-color: var(--turn-current);
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.initiative-strip-entry.next {
+  border-color: var(--turn-next);
+  color: var(--paper);
+}
+
+.initiative-strip-entry.defeated {
+  opacity: 0.55;
+}
+
+.initiative-strip-entry.defeated .initiative-strip-name {
+  text-decoration: line-through;
+}
+
+.initiative-strip-next {
+  flex: 0 0 auto;
+  min-height: 32px;
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .initiative-strip {
+    left: 12px;
+    right: 12px;
+    max-width: calc(100% - 24px);
+  }
+
+  /* On narrow screens only the active and upcoming combatants keep their names. */
+  .initiative-strip-entry:not(.current):not(.next) .initiative-strip-name {
+    display: none;
+  }
+
+  .initiative-strip-entry:not(.current):not(.next) {
+    padding-right: 4px;
+  }
+}

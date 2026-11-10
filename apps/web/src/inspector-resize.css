@@ -1,0 +1,50 @@
+/* The handle is positioned against the layout grid, on the inspector's inner edge. */
+.table-grid {
+  position: relative;
+}
+
+.inspector-resize-handle {
+  display: none;
+}
+
+@media (min-width: 1041px) {
+  .table-grid[data-inspector-open="true"]:not([data-content-workspace="true"]) > .inspector-resize-handle {
+    position: absolute;
+    z-index: 7;
+    top: 0;
+    bottom: 0;
+    display: block;
+    width: 8px;
+    cursor: col-resize;
+    touch-action: none;
+  }
+
+  .inspector-resize-handle::after {
+    content: "";
+    position: absolute;
+    inset: 0 3px;
+    background: transparent;
+    transition: background 120ms ease-out;
+  }
+
+  .inspector-resize-handle:hover::after,
+  .inspector-resize-handle:focus-visible::after,
+  .inspector-resize-handle:active::after {
+    background: var(--accent);
+  }
+
+  .inspector-resize-handle:focus-visible {
+    outline: none;
+  }
+
+  /* A user-chosen width replaces the built-in responsive widths on desktop only. */
+  .table-grid[data-inspector-resized="true"][data-inspector-open="true"]:not([data-content-workspace="true"]) {
+    grid-template-columns: minmax(0, 1fr) clamp(320px, var(--inspector-width), min(720px, 55%));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inspector-resize-handle::after {
+    transition: none;
+  }
+}
