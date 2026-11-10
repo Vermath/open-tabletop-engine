@@ -71,6 +71,10 @@ export function useStatusToasts(options: { status: string; setStatus(text: strin
     setToasts((current) => current.filter((toast) => toast.action?.id !== actionId));
   }, []);
 
+  const dismissActionableToasts = useCallback(() => {
+    setToasts((current) => current.filter((toast) => !toast.action));
+  }, []);
+
   const pushToast = useCallback((text: string, tone: ToastTone, durationMs: number = tone === "error" ? errorToastMs : infoToastMs, action?: ToastAction) => {
     toastIdRef.current += 1;
     const id = toastIdRef.current;
@@ -104,5 +108,5 @@ export function useStatusToasts(options: { status: string; setStatus(text: strin
     if (tone) pushToast(text, tone);
   }, [pushToast, ready, status, suppressedStatus]);
 
-  return { toasts, pushToast, dismissToast, dismissToastAction, setQuietStatus, reportError };
+  return { toasts, pushToast, dismissToast, dismissToastAction, dismissActionableToasts, setQuietStatus, reportError };
 }

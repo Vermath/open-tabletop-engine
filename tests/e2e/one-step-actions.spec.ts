@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import type { DndRulesMutationUndoDescriptor } from "../../packages/core/src/index.js";
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 
@@ -115,3 +117,56 @@ test("undoing from the rail dismisses the matching action toast", async ({ page 
   await expect(toast).toHaveCount(0);
   expect(undoRequests).toBe(1);
 });
+
+for (const transition of ["campaign", "user"] as const) {
+  test(`action undo is dismissed when switching ${transition}`, async ({ page, request }) => {
+    const apiBase = `http://127.0.0.1:${process.env.OTTE_E2E_API_PORT ?? 4100}`;
+    const targetName = `Undo workspace ${randomUUID().slice(0, 8)}`;
+    if (transition === "campaign") {
+      const created = await request.post(`${apiBase}/api/v1/campaigns`, { headers: { "x-user-id": "usr_demo_gm", "idempotency-key": randomUUID() }, data: { name: targetName, defaultSystemId: "dnd-5e-srd" } });
+      expect(created.ok()).toBe(true);
+    }
+    const sheet = await openValenActions(page);
+    const resources = page.locator(".inspector .metric-row", { hasText: "Resources" });
+    expect(await secondWindUses(resources)).toBeGreaterThan(0);
+    await targetValen(page);
+    await page.getByRole("checkbox", { name: "Apply action effect" }).check();
+    await page.getByRole("checkbox", { name: "Consume action resources" }).check();
+    const secondWind = sheet.locator("article", { hasText: "Second Wind" }).first();
+    await secondWind.getByRole("button", { name: "Preview" }).click();
+    const committed = page.waitForResponse((response) => {
+      const http = response.request();
+      return http.method() === "POST" && /\/actors\/act_valen\/roll$/.test(new URL(response.url()).pathname) && typeof http.postDataJSON()?.preparedPreviewKey === "string";
+    });
+    let undo: DndRulesMutationUndoDescriptor | undefined;
+    try {
+      await secondWind.getByRole("button", { name: /^Use .* now$/ }).click();
+      const response = await committed;
+      expect(response.ok()).toBe(true);
+      undo = (await response.json() as { undo: DndRulesMutationUndoDescriptor }).undo;
+      expect(undo).toBeDefined();
+      const toast = page.locator(".toast").filter({ has: page.getByRole("button", { name: "Undo", exact: true }) });
+      await expect(toast).toBeVisible();
+      let undoRequests = 0;
+      page.on("request", (http) => { if (/\/rules-mutations\/[^/]+\/undo$/.test(new URL(http.url()).pathname)) undoRequests += 1; });
+      if (transition === "campaign") {
+        await page.getByLabel("Switch campaign: The Ember Vault", { exact: true }).click();
+        await page.getByRole("navigation", { name: "Campaigns" }).getByRole("button", { name: targetName, exact: true }).click();
+        await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText(targetName);
+      } else {
+        await page.getByRole("combobox", { name: "Session user", exact: true }).selectOption("usr_demo_player");
+        await expect(page.getByRole("combobox", { name: "Session user", exact: true })).toHaveValue("usr_demo_player");
+      }
+      await expect(toast).toHaveCount(0);
+      expect(undoRequests).toBe(0);
+    } finally {
+      if (undo) {
+        const restored = await request.post(`${apiBase}/api/v1/campaigns/camp_demo/dnd/rules-mutations/${undo.mutationId}/undo`, {
+          headers: { "x-user-id": "usr_demo_gm", "idempotency-key": `cleanup:${undo.mutationId}` },
+          data: { expectedActorUpdatedAt: undo.expectedActorUpdatedAt, expectedItemUpdatedAt: undo.expectedItemUpdatedAt, ...(undo.expectedCombatUpdatedAt ? { expectedCombatUpdatedAt: undo.expectedCombatUpdatedAt } : {}) }
+        });
+        expect(restored.ok()).toBe(true);
+      }
+    }
+  });
+}

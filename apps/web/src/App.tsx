@@ -1203,7 +1203,7 @@ export function App() {
     const current = realtimeSelectionRef.current;
     const identityChanged = current.campaignId !== nextCampaignId || current.userId !== nextUserId;
     if (identityChanged) {
-      setLastDndRulesUndo(undefined);
+      setLastDndRulesUndo(undefined); dismissActionableToasts();
       setPendingAdvancement(undefined);
       playerPreview.close();
       cancelInviteAcceptance();
@@ -1438,7 +1438,7 @@ export function App() {
     resetCampaignSetupDraft();
     invalidatePendingSessionSwitch();
     cancelWorkspaceBoundRequestsForChange();
-    clearAccountSecurityState();
+    clearAccountSecurityState(); dismissActionableToasts(); setLastDndRulesUndo(undefined);
     clearSession();
     setSessionToken("");
     setAuthMode("login");
@@ -2347,7 +2347,7 @@ export function App() {
   });
 
   const inspectorWidth = useInspectorWidth();
-  const { toasts, pushToast, dismissToast, dismissToastAction, setQuietStatus, reportError } = useStatusToasts({ status, setStatus, ready: snapshotReady, suppressedStatus: blankCanvasDemoNotice });
+  const { toasts, pushToast, dismissToast, dismissToastAction, dismissActionableToasts, setQuietStatus, reportError } = useStatusToasts({ status, setStatus, ready: snapshotReady, suppressedStatus: blankCanvasDemoNotice });
 
   useEffect(() => {
     try {
@@ -2769,7 +2769,7 @@ export function App() {
     invalidatePendingSessionSwitch();
     cancelAiAgentForWorkspaceChange();
     cancelWorkspaceBoundRequestsForChange();
-    clearAccountSecurityState();
+    clearAccountSecurityState(); dismissActionableToasts(); setLastDndRulesUndo(undefined);
     const credentialTicket = sessionCredentialCommitQueueRef.current.begin();
     await sessionCredentialCommitQueueRef.current.run(credentialTicket, async (credentialIsCurrent) => {
       let remoteLogoutFailed = false;
@@ -7752,14 +7752,14 @@ export function App() {
   }
 
   async function undoLastDndRulesMutation(undo = lastDndRulesUndo) {
-    if (!undo) return;
+    if (!undo || !workspaceRequestIsCurrent(campaignId, currentUserId)) return;
     try {
       const result = await apiPost<DndRulesMutationUndoResult>(`/api/v1/campaigns/${campaignId}/dnd/rules-mutations/${undo.mutationId}/undo`, {
         expectedActorUpdatedAt: undo.expectedActorUpdatedAt,
         expectedItemUpdatedAt: undo.expectedItemUpdatedAt,
         ...(undo.expectedCombatUpdatedAt ? { expectedCombatUpdatedAt: undo.expectedCombatUpdatedAt } : {})
       }, { idempotencyKey: `dnd-rules-undo:${undo.mutationId}` });
-      dismissToastAction(undo.mutationId);
+      if (!workspaceRequestIsCurrent(campaignId, currentUserId)) return; dismissToastAction(undo.mutationId);
       const actors = new Map(result.actors.map((actor) => [actor.id, actor]));
       const items = new Map(result.items.map((item) => [item.id, item]));
       setSnapshot((current) => ({
@@ -7771,7 +7771,7 @@ export function App() {
       setLastDndRulesUndo((current) => current?.mutationId === undo.mutationId ? undefined : current);
       setStatus("Last D&D rules change undone");
     } catch (error) {
-      if (!reconcileStaleWriteConflict(error)) setStatus(`Undo blocked: ${errorMessage(error)}`);
+      if (workspaceRequestIsCurrent(campaignId, currentUserId) && !reconcileStaleWriteConflict(error)) setStatus(`Undo blocked: ${errorMessage(error)}`);
     }
   }
 
