@@ -236,7 +236,10 @@ test("competitive player preview matches a separate authenticated player's table
     const actualPresentation = await tokenPresentation(actualBoard);
     expect(actualPresentation.find((token) => token.name === "Preview Hero")?.hpWidth).toBe("54%");
     expect(actualPresentation.find((token) => token.name === "Preview Sentinel")?.hpWidth).toBeNull();
-    const actualMessages = await playerPage.getByLabel("Chat messages").locator(".chat-body").allTextContents();
+    const actualMessages = actual.chat.map((message) => message.body);
+    // Roll cards and emotes render their bodies outside .chat-body. Count the
+    // whole message stream before comparing the preview's plain-text projection.
+    await expect(playerPage.getByLabel("Chat messages").locator(".chat-message")).toHaveCount(actualMessages.length);
     await playerPage.screenshot({ path: resolve(artifactDir, "authenticated-player-table.png"), fullPage: true });
 
     await page.getByLabel("Advanced tools", { exact: true }).click();
