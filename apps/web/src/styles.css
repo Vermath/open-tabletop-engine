@@ -1202,26 +1202,26 @@ a[href]:focus-visible,
   stroke-linecap: round;
 }
 
-.wall-layer.terrain line {
+.wall-layer line.terrain {
   stroke: #38bdf8;
   stroke-width: 7;
   stroke-dasharray: 18 12;
   opacity: 0.88;
 }
 
-.wall-layer.door line {
+.wall-layer line.door {
   stroke: #f59e0b;
   stroke-width: 9;
   stroke-dasharray: 28 8;
 }
 
-.wall-layer.window line {
+.wall-layer line.window {
   stroke: #67e8f9;
   stroke-width: 7;
   stroke-dasharray: 12 8;
 }
 
-.wall-layer.open line {
+.wall-layer line.open {
   opacity: 0.38;
   stroke-dasharray: 8 16;
 }

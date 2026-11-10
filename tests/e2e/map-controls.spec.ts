@@ -178,6 +178,13 @@ test("right-click opens a token menu that replaces the hidden layer shortcut", a
   expect(await sameToken.getAttribute("aria-label")).toBe(originalLabel);
 });
 
+test("every wall on a scene shares one drawing layer", async ({ page }) => {
+  await openDemoTable(page);
+  const layers = page.locator(".scene-board svg.wall-layer");
+  await expect(layers).toHaveCount(1);
+  expect(await layers.locator("line").count()).toBeGreaterThan(0);
+});
+
 test("toolbar zoom-out preserves the view centre near both scroll limits", async ({ page }) => {
   const board = await openDemoTable(page);
   const box = await boardBox(board);

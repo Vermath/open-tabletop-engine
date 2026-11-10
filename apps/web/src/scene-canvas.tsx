@@ -1765,11 +1765,14 @@ export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: num
           ))}
         </svg>
       )}
-      {props.scene.walls.map((wall) => (
-        <svg className={`wall-layer ${wall.kind ?? "wall"} ${wall.open ? "open" : "closed"}`} key={wall.id} viewBox={`0 0 ${props.scene.width} ${props.scene.height}`}>
-          <line x1={wall.x1} y1={wall.y1} x2={wall.x2} y2={wall.y2} />
+      {props.scene.walls.length > 0 && (
+        // One layer for every wall: a map imported with hundreds of walls must not add hundreds of full-size layers.
+        <svg className="wall-layer" viewBox={`0 0 ${props.scene.width} ${props.scene.height}`} aria-hidden="true">
+          {props.scene.walls.map((wall) => (
+            <line className={`${wall.kind ?? "wall"} ${wall.open ? "open" : "closed"}`} key={wall.id} x1={wall.x1} y1={wall.y1} x2={wall.x2} y2={wall.y2} />
+          ))}
         </svg>
-      ))}
+      )}
       {(renderedAnnotations.length > 0 || localPings.length > 0) && (
         <svg className="annotation-layer" viewBox={`0 0 ${props.scene.width} ${props.scene.height}`} aria-label="Scene annotations">
           {renderedAnnotations.map((annotation) => (
