@@ -93,3 +93,25 @@ test("the review is still one click away and cancelling it commits nothing", asy
   await expect(statusLine(page, "Valen Ash action cancelled after review")).toBeVisible();
   expect(await secondWindUses(resources)).toBe(usesBefore);
 });
+
+test("undoing from the rail dismisses the matching action toast", async ({ page }) => {
+  const sheet = await openValenActions(page);
+  const resources = page.locator(".inspector .metric-row", { hasText: "Resources" });
+  const usesBefore = await secondWindUses(resources);
+  expect(usesBefore).toBeGreaterThan(0);
+  await targetValen(page);
+  await page.getByRole("checkbox", { name: "Apply action effect" }).check();
+  await page.getByRole("checkbox", { name: "Consume action resources" }).check();
+  const secondWind = sheet.locator("article", { hasText: "Second Wind" }).first();
+  await secondWind.getByRole("button", { name: "Preview" }).click();
+  await secondWind.getByRole("button", { name: /^Use .* now$/ }).click();
+  const toast = page.locator(".toast").filter({ has: page.getByRole("button", { name: "Undo", exact: true }) });
+  await expect(toast).toBeVisible();
+  let undoRequests = 0;
+  page.on("request", (request) => { if (/\/rules-mutations\/[^/]+\/undo$/.test(new URL(request.url()).pathname)) undoRequests += 1; });
+  await page.getByRole("button", { name: "Undo last D&D rules change", exact: true }).click();
+  await expect(statusLine(page, "Last D&D rules change undone")).toBeVisible();
+  await expect.poll(() => secondWindUses(resources)).toBe(usesBefore);
+  await expect(toast).toHaveCount(0);
+  expect(undoRequests).toBe(1);
+});

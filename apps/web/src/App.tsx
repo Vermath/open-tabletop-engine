@@ -2347,7 +2347,7 @@ export function App() {
   });
 
   const inspectorWidth = useInspectorWidth();
-  const { toasts, pushToast, dismissToast, setQuietStatus, reportError } = useStatusToasts({ status, setStatus, ready: snapshotReady, suppressedStatus: blankCanvasDemoNotice });
+  const { toasts, pushToast, dismissToast, dismissToastAction, setQuietStatus, reportError } = useStatusToasts({ status, setStatus, ready: snapshotReady, suppressedStatus: blankCanvasDemoNotice });
 
   useEffect(() => {
     try {
@@ -7742,7 +7742,7 @@ export function App() {
           const committedStatus = committedActionStatus(actor.name, used, deathSaveStatusText);
           if (committedWithoutReview && undo) {
             setQuietStatus(committedStatus);
-            pushToast(committedStatus, "info", 12000, { label: "Undo", run: () => void undoLastDndRulesMutation(undo) });
+            pushToast(committedStatus, "info", 12000, { id: undo.mutationId, label: "Undo", run: () => void undoLastDndRulesMutation(undo) });
           } else setStatus(committedStatus);
         }
       );
@@ -7759,6 +7759,7 @@ export function App() {
         expectedItemUpdatedAt: undo.expectedItemUpdatedAt,
         ...(undo.expectedCombatUpdatedAt ? { expectedCombatUpdatedAt: undo.expectedCombatUpdatedAt } : {})
       }, { idempotencyKey: `dnd-rules-undo:${undo.mutationId}` });
+      dismissToastAction(undo.mutationId);
       const actors = new Map(result.actors.map((actor) => [actor.id, actor]));
       const items = new Map(result.items.map((item) => [item.id, item]));
       setSnapshot((current) => ({
