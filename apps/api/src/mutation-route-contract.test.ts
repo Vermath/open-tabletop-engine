@@ -46,6 +46,7 @@ const dndMonsterVariantRoutesSource = readFileSync(new URL("./dnd-monster-varian
 const adminIdentityRoutesSource = readFileSync(new URL("./admin-identity-routes.ts", import.meta.url), "utf8");
 const scimRoutesSource = readFileSync(new URL("./scim-routes.ts", import.meta.url), "utf8");
 const adminAssetRoutesSource = readFileSync(new URL("./admin-asset-routes.ts", import.meta.url), "utf8");
+const universalVttImportSource = readFileSync(new URL("./universal-vtt-import.ts", import.meta.url), "utf8");
 const routeSources = [
   { name: "app.ts", source: appSource },
   { name: "calculation-override-routes.ts", source: calculationOverrideRoutesSource },
@@ -58,6 +59,7 @@ const routeSources = [
   { name: "admin-identity-routes.ts", source: adminIdentityRoutesSource },
   { name: "scim-routes.ts", source: scimRoutesSource },
   { name: "admin-asset-routes.ts", source: adminAssetRoutesSource },
+  { name: "universal-vtt-import.ts", source: universalVttImportSource },
 ] as const;
 const aggregateSource = routeSources.map(({ source }) => source).join("\n");
 
@@ -278,8 +280,8 @@ describe("non-AI mutation route contract", () => {
   const centralDescriptors = extractCentralGuardDescriptors(appSource);
 
   it("keeps the current mutation inventory explicit and classified", () => {
-    expect(routes).toHaveLength(257);
-    expect(routes.filter((route) => route.sourceName === "app.ts")).toHaveLength(213);
+    expect(routes).toHaveLength(259);
+    expect(routes.filter((route) => route.sourceName === "app.ts")).toHaveLength(214);
     expect(routes.filter((route) => route.sourceName === "calculation-override-routes.ts")).toHaveLength(2);
     expect(routes.filter((route) => route.sourceName === "archive-operations.ts")).toHaveLength(0);
     expect(routes.filter((route) => route.sourceName === "asset-operations.ts")).toHaveLength(0);
@@ -290,6 +292,7 @@ describe("non-AI mutation route contract", () => {
     expect(routes.filter((route) => route.sourceName === "admin-identity-routes.ts")).toHaveLength(9);
     expect(routes.filter((route) => route.sourceName === "scim-routes.ts")).toHaveLength(10);
     expect(routes.filter((route) => route.sourceName === "admin-asset-routes.ts")).toHaveLength(4);
+    expect(routes.filter((route) => route.sourceName === "universal-vtt-import.ts")).toHaveLength(1);
     expect(centralDescriptors.length).toBeGreaterThan(0);
     const duplicates = routes
       .map((route) => `${route.method} ${route.path}`)

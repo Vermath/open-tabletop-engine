@@ -119,6 +119,23 @@ test("right-click opens a token menu that replaces the hidden layer shortcut", a
   await expect(menu.getByRole("menuitem").nth(1)).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(menu).toHaveCount(0);
+  await expect(token).toBeFocused();
+
+  await page.keyboard.press("Shift+F10");
+  await expect(menu).toBeVisible();
+  await page.keyboard.press("Tab");
+  await expect(menu).toHaveCount(0);
+  expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false);
+  await page.keyboard.press("Shift+Tab");
+  await expect(token).toBeFocused();
+
+  await page.keyboard.press("Shift+F10");
+  await expect(menu).toBeVisible();
+  await page.keyboard.press("Shift+Tab");
+  await expect(menu).toHaveCount(0);
+  expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false);
+  await page.keyboard.press("Tab");
+  await expect(token).toBeFocused();
 
   // Keyboard users reach the same menu through the context-menu key.
   await token.dispatchEvent("contextmenu", { button: 0, bubbles: true, cancelable: true });
@@ -139,4 +156,61 @@ test("right-click opens a token menu that replaces the hidden layer shortcut", a
     await expect.poll(() => sameToken.getAttribute("aria-label")).not.toBe(current);
   }
   expect(await sameToken.getAttribute("aria-label")).toBe(originalLabel);
+});
+
+test("toolbar zoom-out preserves the view centre near both scroll limits", async ({ page }) => {
+  const board = await openDemoTable(page);
+  const box = await boardBox(board);
+  await board.click({ position: { x: box.width * 0.85, y: box.height * 0.85 } });
+  await expect(board.locator(".token.selected")).toHaveCount(0);
+  for (let step = 0; step < 12; step += 1) await page.getByRole("button", { name: "Zoom battle map in", exact: true }).click();
+  expect(await zoomPercent(page)).toBe(400);
+  const viewport = page.locator(".scene-viewport");
+  await viewport.evaluate((element) => {
+    element.scrollLeft = element.scrollWidth - element.clientWidth - 40;
+    element.scrollTop = element.scrollHeight - element.clientHeight - 40;
+  });
+  // Let the real scroll event record the position before the toolbar changes layout.
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  const before = await viewport.evaluate((element) => {
+    const board = element.querySelector<HTMLElement>(".scene-board")!;
+    return { u: (element.scrollLeft + element.clientWidth / 2 - board.offsetLeft) / board.offsetWidth, v: (element.scrollTop + element.clientHeight / 2 - board.offsetTop) / board.offsetHeight };
+  });
+  await page.getByRole("button", { name: "Zoom battle map out", exact: true }).click();
+  expect(await zoomPercent(page)).toBe(375);
+  await expect.poll(() => viewport.evaluate((element, centre) => {
+    const board = element.querySelector<HTMLElement>(".scene-board")!;
+    const expectedX = Math.max(0, Math.min(element.scrollWidth - element.clientWidth, board.offsetLeft + centre.u * board.offsetWidth - element.clientWidth / 2));
+    const expectedY = Math.max(0, Math.min(element.scrollHeight - element.clientHeight, board.offsetTop + centre.v * board.offsetHeight - element.clientHeight / 2));
+    return Math.max(Math.abs(element.scrollLeft - expectedX), Math.abs(element.scrollTop - expectedY));
+  }, before)).toBeLessThanOrEqual(2);
+});
+
+test.describe("touch map gestures", () => {
+  test.use({ hasTouch: true });
+
+  test("a pinch starting on empty board zooms the map without native page gestures", async ({ page }) => {
+    const board = await openDemoTable(page);
+    const box = await boardBox(board);
+    const centre = { x: box.x + box.width * 0.65, y: box.y + box.height * 0.7 };
+    const session = await page.context().newCDPSession(page);
+    await page.evaluate(() => {
+      document.querySelector(".scene-viewport")!.addEventListener("pointercancel", () => document.documentElement.dataset.mapPointerCancelled = "true", { capture: true });
+    });
+    const pageBefore = await page.evaluate(() => ({ x: window.scrollX, y: window.scrollY, scale: window.visualViewport!.scale }));
+    const fingers = (distance: number) => [
+      { id: 1, x: centre.x - distance / 2, y: centre.y },
+      { id: 2, x: centre.x + distance / 2, y: centre.y }
+    ];
+    try {
+      await session.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: fingers(60) });
+      for (const distance of [72, 90, 115, 145]) await session.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: fingers(distance) });
+      await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await expect.poll(() => zoomPercent(page)).toBeGreaterThan(200);
+      expect(await page.evaluate(() => document.documentElement.dataset.mapPointerCancelled)).toBeUndefined();
+      expect(await page.evaluate(() => ({ x: window.scrollX, y: window.scrollY, scale: window.visualViewport!.scale }))).toEqual(pageBefore);
+    } finally {
+      await session.detach();
+    }
+  });
 });
