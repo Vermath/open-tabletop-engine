@@ -1,4 +1,6 @@
 import { parseUniversalVtt, UNIVERSAL_VTT_LIMITS, type UniversalVttPlan } from "@open-tabletop/core";
+import { applyAuthoritativeScene } from "./active-scene-state.js";
+import type { Snapshot, UniversalVttImportResult } from "./api.js";
 
 export interface UniversalVttReview {
   sourceFileName: string;
@@ -70,4 +72,20 @@ export async function reviewUniversalVttFile(
     throw new Error("The embedded map image dimensions do not match the map resolution. Export the map again before importing.");
   }
   return { sourceFileName: file.name, document, plan, previewUrl };
+}
+
+/**
+ * Folds a completed import into the loaded snapshot without overwriting any
+ * campaign, scene or asset revision that is already newer than the result.
+ */
+export function mergeUniversalVttImportResult(current: Pick<Snapshot, "campaigns" | "scenes" | "assets">, result: UniversalVttImportResult): Pick<Snapshot, "campaigns" | "scenes" | "assets"> {
+  return {
+    campaigns: current.campaigns.map((campaign) => campaign.id === result.scene.campaignId && campaign.updatedAt < result.campaignUpdatedAt
+      ? { ...campaign, updatedAt: result.campaignUpdatedAt } : campaign),
+    scenes: current.scenes.some((scene) => scene.id === result.scene.id && scene.updatedAt > result.scene.updatedAt)
+      ? current.scenes : applyAuthoritativeScene(current.scenes, result.scene),
+    assets: current.assets.some((asset) => asset.id === result.asset.id)
+      ? current.assets.map((asset) => asset.id === result.asset.id && asset.updatedAt <= result.asset.updatedAt ? result.asset : asset)
+      : [...current.assets, result.asset]
+  };
 }

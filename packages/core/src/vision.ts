@@ -96,6 +96,11 @@ function computeTypedSensePolygons(
     }));
 }
 
+/** A light with `shadows: false` is not blocked by walls. */
+function lightOcclusionScene<T extends Pick<Scene, "width" | "height" | "walls">>(scene: T, light: Pick<LightSource, "shadows">): Pick<Scene, "width" | "height" | "walls"> {
+  return light.shadows === false ? { width: scene.width, height: scene.height, walls: [] } : scene;
+}
+
 export function computeLightVisionPolygon(scene: Pick<Scene, "width" | "height" | "walls">, light: LightSource): VisionPolygon {
   const dimRadius = normalizedLightRadius(light.dimRadius) ?? normalizedLightRadius(light.radius) ?? 0;
   const brightRadius = normalizedLightRadius(light.brightRadius);
@@ -109,7 +114,7 @@ export function computeLightVisionPolygon(scene: Pick<Scene, "width" | "height" 
     opacity: Math.max(0.05, Math.min(0.7, light.intensity ?? 0.28)),
     lightingEffect: light.kind ?? "light",
     magical: Boolean(light.magical),
-    points: computeVisibilityPolygon(scene, { x: light.x, y: light.y }, light.radius)
+    points: computeVisibilityPolygon(lightOcclusionScene(scene, light), { x: light.x, y: light.y }, light.radius)
   };
 }
 
@@ -130,7 +135,7 @@ export function computeLightVisionPolygons(scene: Pick<Scene, "width" | "height"
       opacity: Math.max(0.03, Math.min(0.45, (light.intensity ?? 0.28) * 0.55)),
       lightingEffect: light.kind ?? "light",
       magical: Boolean(light.magical),
-      points: computeVisibilityPolygon(scene, { x: light.x, y: light.y }, dimRadius)
+      points: computeVisibilityPolygon(lightOcclusionScene(scene, light), { x: light.x, y: light.y }, dimRadius)
     },
     {
       id: `light_${light.id}_bright`,
@@ -142,7 +147,7 @@ export function computeLightVisionPolygons(scene: Pick<Scene, "width" | "height"
       opacity: Math.max(0.08, Math.min(0.7, light.intensity ?? 0.28)),
       lightingEffect: light.kind ?? "light",
       magical: Boolean(light.magical),
-      points: computeVisibilityPolygon(scene, { x: light.x, y: light.y }, brightRadius)
+      points: computeVisibilityPolygon(lightOcclusionScene(scene, light), { x: light.x, y: light.y }, brightRadius)
     }
   ];
 }

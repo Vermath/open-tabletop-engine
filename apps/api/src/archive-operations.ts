@@ -1481,6 +1481,10 @@ export function stateForArchiveMerge(state: EngineState, archive: CampaignArchiv
   for (const collection of copiedCollections) {
     Reflect.set(next, collection, [...(state[collection] as unknown[])]);
   }
+  // Partial imports also advance their existing campaign's revision. Keep those
+  // records detached so a later flush failure can restore the original snapshot.
+  const affectedCampaignIds = new Set(existingArchiveCampaignIds(state, archive));
+  next.campaigns = next.campaigns.map((campaign) => affectedCampaignIds.has(campaign.id) ? { ...campaign } : campaign);
   return next;
 }
 

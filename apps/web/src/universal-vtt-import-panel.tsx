@@ -1,4 +1,4 @@
-import { AlertTriangle, Check, FileJson, LoaderCircle, MapPlus, Upload, X } from "lucide-react";
+import { AlertTriangle, Check, FileJson, LoaderCircle, MapPinPlus, Upload, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ApiError, apiImportUniversalVtt, getSessionTransportEpoch, type UniversalVttImportInput, type UniversalVttImportResult } from "./api.js";
 import { useModalAccessibility } from "./modal-accessibility.js";
@@ -83,7 +83,6 @@ export function UniversalVttImportPanel(props: UniversalVttImportPanelProps) {
 
   async function chooseFile(file: File) {
     if (!props.canImport || busy || operationRef.current) return;
-    operationRef.current?.controller.abort();
     const operation = { controller: new AbortController(), contextKey };
     operationRef.current = operation;
     attemptRef.current = undefined;
@@ -251,7 +250,7 @@ export function UniversalVttImportPanel(props: UniversalVttImportPanelProps) {
         <footer className="universal-vtt-footer">
           {busy ? <button className="ghost-button" type="button" onClick={cancelRequest}>Cancel request</button> : <button className="ghost-button" type="button" onClick={closeDialog}>Cancel</button>}
           {props.canImport && <button className="primary-button" type="button" disabled={busy || !currentReview || !sceneName.trim()} onClick={() => void importScene()}>
-            <MapPlus size={17} aria-hidden="true" /> {phase === "importing" ? "Importing…" : retry ? "Retry import" : "Import as new scene"}
+            <MapPinPlus size={17} aria-hidden="true" /> {phase === "importing" ? "Importing…" : retry ? "Retry import" : "Import as new scene"}
           </button>}
         </footer>
       </div>

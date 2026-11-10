@@ -118,6 +118,9 @@ import { aiAgentReadinessPresentation, useAiStudioReadiness, type AiStudioReadin
 import { useConsequenceReview } from "./consequence-review.js";
 import { isAdvancementCatalogVisible, useAdvancementCatalog } from "./advancement-catalog.js";
 import type { Dnd5eSrdWeaponMasteryUse } from "./weapon-mastery-controls.js";
+import { useStatusToasts } from "./status-toasts.js";
+import { mergeUniversalVttImportResult } from "./universal-vtt-import.js";
+import { assetTagsFromInput, compareScenesForDisplay, type ActiveAnnotationTool, type ActorActionCommitOptions, type AnnotationTool, type ArchiveExportVersion, type ArchiveImportAttempt, type ArchiveImportMode, type ArchiveRedactionMode, type ChatExportFormat, type ChatModerationResolution, type CombatRewardRequestPayload, type FailedArchiveImport, type ManageCategoryId, type WorkspaceMode } from "./workspace-types.js";
 
 const apiBase = import.meta.env.VITE_API_URL ?? "";
 const boardHistoryLimit = 50;
@@ -135,45 +138,8 @@ function apiOfflineStatus(detail?: unknown): string {
   return `API offline at ${apiBase || "http://127.0.0.1:4000"}${suffix}. Start it with pnpm --filter @open-tabletop/api dev.`;
 }
 
-interface FailedArchiveImport {
-  file: File;
-  message: string;
-  attempt: ArchiveImportAttempt;
-}
-
-interface ArchiveImportAttempt {
-  idempotencyKey: string;
-  mode: ArchiveImportMode;
-  scope: ArchiveImportScope;
-  collections: ArchiveImportCollection[];
-  transport: "json" | "stream";
-}
-interface SceneViewportSize {
-  width: number;
-  height: number;
-}
-
-type ChatExportFormat = "json" | "ndjson";
-type ChatModerationResolution = "open" | "follow_up" | "reviewed";
-type ArchiveExportVersion = "0.2.0";
-type ArchiveRedactionMode = "portable";
-type ArchiveImportMode = "upsert" | "reject_conflicts" | "skip_conflicts" | "dry_run";
-type ManageCategoryId = "account" | "campaign" | "people" | "scenes" | "archives" | "serverAdmin";
-type WorkspaceMode = "live" | "prep" | "ai" | "manage";
 type AiAgentApprovalMode = "manual" | "auto";
 type AiGenerationJobKind = "map" | "token" | "tokenBatch";
-type RulesSaveOutcome = "success" | "failure";
-type ActorActionCommitOptions = { targetActorId?: string; applyEffect?: boolean; consumeResources?: boolean; saveOutcomes?: Record<string, RulesSaveOutcome>; effectChoice?: string; weaponMastery?: Dnd5eSrdWeaponMasteryUse; continuationId?: string; reviewActorNames?: Record<string, string> };
-interface CombatRewardRequestPayload {
-  recipientActorIds: string[];
-  totalXp?: number;
-  totalGp?: number;
-  loot?: string[];
-  note?: string;
-  expectedUpdatedAt: string;
-  expectedActorUpdatedAt: Record<string, string>;
-}
-
 interface AiGenerationJob {
   id: string;
   kind: AiGenerationJobKind;
@@ -280,17 +246,6 @@ const archiveImportCollectionOptions: Array<{ id: ArchiveImportCollection; label
   { id: "contentImports", label: "Import batches" },
   { id: "fogPresets", label: "Fog presets" }
 ];
-
-type MeasurementTool = "measure-circle" | "measure-cone";
-type AnnotationTool = SceneAnnotationKind | MeasurementTool | null;
-type ActiveAnnotationTool = NonNullable<AnnotationTool>;
-function compareScenesForDisplay(left: Scene, right: Scene): number {
-  return left.sortOrder - right.sortOrder || left.createdAt.localeCompare(right.createdAt) || left.name.localeCompare(right.name);
-}
-
-function assetTagsFromInput(value: string): string[] {
-  return [...new Set(value.split(",").map((tag) => tag.trim()).filter(Boolean))].slice(0, 12);
-}
 
 function initialAiAgentPanelSize(): FloatingPanelSize {
   return {
@@ -439,9 +394,6 @@ export function App() {
   const [quickCreateOpen, setQuickCreateOpen] = useState(() => initialStoredPanelFlag(quickCreateOpenStorageKey, false));
   const [shortcutOverlayOpen, setShortcutOverlayOpen] = useState(false);
   const [selectedOverlay, setSelectedOverlay] = useState<{ type: "annotation" | "wall" | "light"; id: string } | null>(null);
-  const [toasts, setToasts] = useState<Array<{ id: number; text: string; tone: "info" | "error" }>>([]);
-  const toastIdRef = useRef(0);
-  const lastToastStatusRef = useRef("");
   const toggleMapDock = () => {
     setMapDockOpen((open) => {
       const next = !open;
@@ -2392,19 +2344,7 @@ export function App() {
     return () => window.removeEventListener("keydown", handleToolHotkeys);
   });
 
-  useEffect(() => {
-    if (!snapshotReady) return;
-    const text = status.trim();
-    if (!text || text === lastToastStatusRef.current) return;
-    lastToastStatusRef.current = text;
-    if (text === blankCanvasDemoNotice) return;
-    if (/^(ready|loading|synced|connected|rolled)\b/i.test(text) || /realtime|reconnect|api offline/i.test(text)) return;
-    const tone: "info" | "error" = /fail|error|denied|required|unable|invalid|missing|cannot|expired|unauthorized/i.test(text) ? "error" : "info";
-    toastIdRef.current += 1;
-    const id = toastIdRef.current;
-    setToasts((current) => [...current.slice(-2), { id, text, tone }]);
-    window.setTimeout(() => setToasts((current) => current.filter((toast) => toast.id !== id)), tone === "error" ? 8000 : 4000);
-  }, [snapshotReady, status]);
+  const { toasts, pushToast, dismissToast } = useStatusToasts(status, snapshotReady, blankCanvasDemoNotice);
 
   useEffect(() => {
     try {
@@ -2513,11 +2453,7 @@ export function App() {
     setChatUnreadCount((count) => count + alertable.length);
     const latest = alertable[alertable.length - 1]!;
     const author = snapshot.members.find((member) => member.user.id === latest.userId)?.user.displayName ?? "A campaign member";
-    toastIdRef.current += 1;
-    const id = toastIdRef.current;
-    const text = `${author}: ${latest.body.slice(0, 96)}`;
-    setToasts((current) => [...current.slice(-2), { id, text, tone: "info" }]);
-    window.setTimeout(() => setToasts((current) => current.filter((toast) => toast.id !== id)), 6000);
+    pushToast(`${author}: ${latest.body.slice(0, 96)}`, "info", 6000);
   }, [chatPanelVisible, currentUserId, snapshot.chat, snapshot.members, snapshot.session?.user, snapshotReady]);
 
   useEffect(() => {
@@ -3428,20 +3364,11 @@ export function App() {
   function finishUniversalVttImport(result: UniversalVttImportResult) {
     if (result.scene.campaignId !== realtimeSelectionRef.current.campaignId || result.asset.campaignId !== result.scene.campaignId) return;
     invalidateInFlightRefreshes();
-    setSnapshot((current) => ({
-      ...current,
-      campaigns: current.campaigns.map((campaign) => campaign.id === result.scene.campaignId && campaign.updatedAt < result.campaignUpdatedAt
-        ? { ...campaign, updatedAt: result.campaignUpdatedAt } : campaign),
-      scenes: current.scenes.some((scene) => scene.id === result.scene.id && scene.updatedAt > result.scene.updatedAt)
-        ? current.scenes : applyAuthoritativeScene(current.scenes, result.scene),
-      assets: current.assets.some((asset) => asset.id === result.asset.id)
-        ? current.assets.map((asset) => asset.id === result.asset.id && asset.updatedAt <= result.asset.updatedAt ? result.asset : asset)
-        : [...current.assets, result.asset]
-    }));
+    setSnapshot((current) => ({ ...current, ...mergeUniversalVttImportResult(current, result) }));
     setUniversalVttImportOpen(false);
     setSceneFolderFilter("all");
     setSceneSearch("");
-    setWorldAtlasFilter("all");
+    setSelectedWorldId("all");
     realtimeSelectionRef.current = { ...realtimeSelectionRef.current, sceneId: result.scene.id };
     setSceneId(result.scene.id);
     setWorkspaceMode("prep");
@@ -10576,7 +10503,7 @@ export function App() {
                 ) : (
                   sceneAnnotationHistory.slice(0, 3).map((entry) => (
                     <div className="operator-row tool-call-row" key={entry.id}>
-                      <span>{titleCaseLabel(entry.action)} {annotationToolLabel(entry.kind)}{entry.visibility === "gm" ? " · GM only" : ""}</span>
+                      <span>{titleCaseLabel(entry.action)} {annotationToolLabel(entry.kind)}{entry.visibility === "gm" ? " Â· GM only" : ""}</span>
                       <strong>{entry.groupLabel ?? entry.groupId ?? titleCaseLabel(entry.layer ?? defaultAnnotationLayer(entry.kind))}</strong>
                     </div>
                   ))
@@ -11018,7 +10945,7 @@ export function App() {
         </DeferredPanel>
       )}
       {shortcutOverlayOpen && <KeyboardShortcutDialog onClose={() => setShortcutOverlayOpen(false)} />}
-      {toasts.length > 0 && <ToastStack toasts={toasts} onDismiss={(id) => setToasts((current) => current.filter((item) => item.id !== id))} />}
+      {toasts.length > 0 && <ToastStack toasts={toasts} onDismiss={dismissToast} />}
       {activeDiceCasts.length > 0 && <DiceCastOverlay casts={activeDiceCasts} />}
     </main>
     {realtimeUiState === "syncing" && <RealtimeSyncGuard />}

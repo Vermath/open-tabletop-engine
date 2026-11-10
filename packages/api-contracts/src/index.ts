@@ -6351,6 +6351,7 @@ const componentSchemas = {
       intensity: { type: "number", minimum: 0 },
       kind: { type: "string", enum: ["light", "darkness"] },
       magical: { type: "boolean" },
+      shadows: { type: "boolean" },
     },
   },
   LightSourceInput: {

@@ -163,6 +163,9 @@ importers:
       '@3d-dice/dice-box-threejs':
         specifier: ^0.0.12
         version: 0.0.12
+      '@open-tabletop/api-contracts':
+        specifier: workspace:*
+        version: link:../../packages/api-contracts
       '@open-tabletop/core':
         specifier: workspace:*
         version: link:../../packages/core

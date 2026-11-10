@@ -18,6 +18,8 @@ function zeroHpFixture(store: MemoryStateStore): { actor: Actor; combat: Combat 
     createdAt: next(actor.updatedAt), updatedAt: next(next(actor.updatedAt))
   };
   store.state.combats.push(combat);
+  store.save();
+  store.flush();
   return { actor, combat };
 }
 
