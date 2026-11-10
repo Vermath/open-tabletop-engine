@@ -165,6 +165,9 @@ for (const shape of shapes) {
     };
     const save = () => writeFileSync(resolve(artifactDir, `${shape.name}-metrics.json`), JSON.stringify(evidence, null, 2));
     async function capture(phase: string) {
+      // Notifications are transient and are not view controls: let them expire so that only
+      // persistent chrome (dock, palette, inspector) can count as covering a map landmark.
+      await expect(page.locator(".toast")).toHaveCount(0, { timeout: 15_000 });
       await board.evaluate(async () => { await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame); });
       const geometry = await mapGeometry(board, shape);
       const screenshot = `${shape.name}-${phase}.png`;
