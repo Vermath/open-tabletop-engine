@@ -901,7 +901,7 @@ export function App() {
             const annotation = selectedCurrentAnnotations.find((item) => item.id === selectedOverlay.id);
             return annotation ? deleteSceneAnnotation(annotation) : Promise.resolve();
           })();
-        overlayTask.then(() => setSelectedOverlay(null)).catch((error) => setStatus(errorMessage(error)));
+        overlayTask.then(() => setSelectedOverlay(null)).catch((error) => reportError(error));
         return;
       }
       const action = boardKeyboardAction(event, {
@@ -920,7 +920,7 @@ export function App() {
         action === "redo" ? redoBoardAction() :
         action === "copy" ? copySelectedBoardTokens() :
         pasteBoardClipboardTokens();
-      task.catch((error) => setStatus(error instanceof Error ? error.message : String(error)));
+      task.catch((error) => reportError(error));
     };
     window.addEventListener("keydown", handleBoardKeyboard);
     return () => window.removeEventListener("keydown", handleBoardKeyboard);
@@ -1957,12 +1957,12 @@ export function App() {
         const nextStatus = await window.otteDesktop?.getDesktopStatus();
         if (!cancelled && nextStatus) setDesktopStatus(nextStatus);
       } catch (error) {
-        if (!cancelled) setStatus(errorMessage(error));
+        if (!cancelled) reportError(error);
       }
     };
-    refreshDesktopStatus().catch((error) => setStatus(errorMessage(error)));
+    refreshDesktopStatus().catch((error) => reportError(error));
     const timer = window.setInterval(() => {
-      refreshDesktopStatus().catch((error) => setStatus(errorMessage(error)));
+      refreshDesktopStatus().catch((error) => reportError(error));
     }, 3000);
     return () => {
       cancelled = true;
@@ -2297,7 +2297,7 @@ export function App() {
           return;
         }
         if ((workspaceMode === "live" || workspaceMode === "prep") && (annotationTool || fogBrushMode)) {
-          void Promise.resolve(selectCanvasTool()).catch((error) => setStatus(errorMessage(error)));
+          void Promise.resolve(selectCanvasTool()).catch((error) => reportError(error));
         }
         return;
       }
@@ -2310,7 +2310,7 @@ export function App() {
       const runTool = (action: () => void | Promise<void>) => {
         event.preventDefault();
         if (workspaceMode === "prep" || shortPhone) showScene();
-        void Promise.resolve(action()).catch((error) => setStatus(errorMessage(error)));
+        void Promise.resolve(action()).catch((error) => reportError(error));
       };
       switch (event.key.toLowerCase()) {
         case "f":
@@ -2344,7 +2344,7 @@ export function App() {
     return () => window.removeEventListener("keydown", handleToolHotkeys);
   });
 
-  const { toasts, pushToast, dismissToast } = useStatusToasts(status, snapshotReady, blankCanvasDemoNotice);
+  const { toasts, pushToast, dismissToast, setQuietStatus, reportError } = useStatusToasts({ status, setStatus, ready: snapshotReady, suppressedStatus: blankCanvasDemoNotice });
 
   useEffect(() => {
     try {
@@ -2950,7 +2950,7 @@ export function App() {
     } catch (error) {
       if (error instanceof ApiError && (error.status === 403 || error.status === 409) && workspaceRequestIsCurrent(reviewedCampaign.id, currentUserId)) {
         await refresh(reviewedCampaign.id, realtimeSelectionRef.current.sceneId, { syncStatus: false }).catch(() => undefined);
-        if (workspaceRequestIsCurrent(reviewedCampaign.id, currentUserId)) setStatus(errorMessage(error));
+        if (workspaceRequestIsCurrent(reviewedCampaign.id, currentUserId)) reportError(error);
       }
       throw error;
     }
@@ -3694,7 +3694,7 @@ export function App() {
           </>
         )}
         <div className="button-row">
-          <button className="ghost-button" type="button" disabled={sceneDuplicationBusy} onClick={() => confirmSelectedPrepSceneDuplication().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+          <button className="ghost-button" type="button" disabled={sceneDuplicationBusy} onClick={() => confirmSelectedPrepSceneDuplication().catch((error) => reportError(error))}>
             Confirm duplicate selected scenes
           </button>
           <button className="ghost-button" type="button" disabled={sceneDuplicationBusy} onClick={() => setSceneDuplicationReview(undefined)}>
@@ -4334,7 +4334,7 @@ export function App() {
           },
           (updated) => {
             applyTokensToSnapshot([updated]);
-            setStatus(statusLabel);
+            setQuietStatus(statusLabel);
           }
         );
       });
@@ -4564,12 +4564,12 @@ export function App() {
 
   function recordTokenMoveAction(changes: BoardTokenPositionChange[]) {
     pushBoardHistoryAction({ kind: "tokens.move", changes });
-    setStatus(`${formatNumber(changes.length)} token${changes.length === 1 ? "" : "s"} moved`);
+    setQuietStatus(`${formatNumber(changes.length)} token${changes.length === 1 ? "" : "s"} moved`);
   }
 
   function recordTokenResizeAction(changes: BoardTokenFrameChange[]) {
     pushBoardHistoryAction({ kind: "tokens.resize", changes });
-    setStatus(`${formatNumber(changes.length)} token${changes.length === 1 ? "" : "s"} resized`);
+    setQuietStatus(`${formatNumber(changes.length)} token${changes.length === 1 ? "" : "s"} resized`);
   }
 
   function boardHistoryStatus(action: BoardHistoryAction, direction: BoardHistoryDirection): string {
@@ -4634,7 +4634,7 @@ export function App() {
     setSnapshot((current) => ({ ...current, tokens: [...current.tokens, ...pastedTokens] }));
     selectCanvasTokens(pastedTokens.map((token) => token.id));
     pushBoardHistoryAction({ kind: "tokens.create", tokens: pastedTokens });
-    setStatus(`${formatNumber(pastedTokens.length)} token${pastedTokens.length === 1 ? "" : "s"} pasted`);
+    setQuietStatus(`${formatNumber(pastedTokens.length)} token${pastedTokens.length === 1 ? "" : "s"} pasted`);
     if (!blankCanvasDemoOpen) enqueueBoardSync((request) => createTokensOnServer(pastedTokens, request));
   }
 
@@ -5046,7 +5046,7 @@ export function App() {
       hidden: false
     }, "scene:fog:reveal");
     applySceneToSnapshot(scene);
-    setStatus("Fog updated");
+    setQuietStatus("Fog updated");
     await refresh();
   }
 
@@ -5061,7 +5061,7 @@ export function App() {
       hidden: false
     }, "scene:fog:hide");
     applySceneToSnapshot(scene);
-    setStatus("Fog hidden");
+    setQuietStatus("Fog hidden");
     await refresh();
   }
 
@@ -5080,7 +5080,7 @@ export function App() {
       ]
     }, "scene:fog:polygon");
     applySceneToSnapshot(scene);
-    setStatus("Fog polygon revealed");
+    setQuietStatus("Fog polygon revealed");
     await refresh();
   }
 
@@ -5090,7 +5090,7 @@ export function App() {
     setAnnotationPanelOpen(false);
     setFogBrushMode((current) => {
       const next = current === mode ? null : mode;
-      setStatus(next ? `${next === "hide" ? "Hide" : "Reveal"} smooth fog brush active` : "Fog brush inactive");
+      setQuietStatus(next ? `${next === "hide" ? "Hide" : "Reveal"} smooth fog brush active` : "Fog brush inactive");
       return next;
     });
   }
@@ -5099,7 +5099,7 @@ export function App() {
     setFogBrushMode(null);
     setAnnotationTool(null);
     setAnnotationPanelOpen(false);
-    setStatus("Select tool active");
+    setQuietStatus("Select tool active");
   }
 
   function selectTokenLayer(layer: TokenLayer) {
@@ -5107,7 +5107,7 @@ export function App() {
     setFogBrushMode(null);
     setAnnotationTool(null);
     setAnnotationPanelOpen(false);
-    setStatus(`${tokenLayerLabel(layer)} active`);
+    setQuietStatus(`${tokenLayerLabel(layer)} active`);
   }
 
   function zoomBattleMap(delta: number) {
@@ -5195,12 +5195,12 @@ export function App() {
     setSelectedBoardAssetId(assetId);
     setCanvasAssetId(assetId);
     const asset = snapshot.assets.find((item) => item.id === assetId);
-    setStatus(`${asset?.name ?? "Map"} selected`);
+    setQuietStatus(`${asset?.name ?? "Map"} selected`);
   }
 
   function setAnnotationLayerVisible(layer: SceneAnnotationLayer, visible: boolean) {
     setVisibleAnnotationLayers((current) => ({ ...current, [layer]: visible }));
-    setStatus(`${titleCaseLabel(layer)} annotations ${visible ? "shown" : "hidden"}`);
+    setQuietStatus(`${titleCaseLabel(layer)} annotations ${visible ? "shown" : "hidden"}`);
   }
 
   function toggleAnnotationTool(kind: ActiveAnnotationTool) {
@@ -5211,7 +5211,7 @@ export function App() {
     const next = annotationTool === kind ? null : kind;
     setAnnotationTool(next);
     setAnnotationPanelOpen(Boolean(next && annotationToolShowsSettings(next)));
-    setStatus(next ? `${annotationToolLabel(next)} tool active` : "Annotation tool inactive");
+    setQuietStatus(next ? `${annotationToolLabel(next)} tool active` : "Annotation tool inactive");
   }
 
   async function createSceneAnnotation(kind: SceneAnnotationKind, points: VisionPoint[], radius?: number) {
@@ -5235,11 +5235,11 @@ export function App() {
     }, `scene:annotation:create:${kind}`);
     // Pings render locally the instant they are placed; skip the reconcile.
     if (kind === "ping") {
-      setStatus("Ping sent");
+      setQuietStatus("Ping sent");
       return;
     }
     applySceneToSnapshot(scene);
-    setStatus(`${annotationToolLabel(kind)} added`);
+    setQuietStatus(`${annotationToolLabel(kind)} added`);
   }
 
   async function deleteLatestAnnotation() {
@@ -5251,7 +5251,7 @@ export function App() {
       return;
     }
     applySceneToSnapshot(await deleteSceneChildMutation(selectedScene, `/api/v1/scenes/${selectedScene.id}/annotations/${annotation.id}`, `scene:annotation:delete:${annotation.id}`));
-    setStatus(`${annotationToolLabel(annotation.kind)} deleted`);
+    setQuietStatus(`${annotationToolLabel(annotation.kind)} deleted`);
   }
 
   async function deleteAnnotationGroup(group: string) {
@@ -5314,13 +5314,13 @@ export function App() {
   async function deleteSceneAnnotation(annotation: SceneAnnotation) {
     if (!selectedScene) return;
     applySceneToSnapshot(await deleteSceneChildMutation(selectedScene, `/api/v1/scenes/${selectedScene.id}/annotations/${annotation.id}`, `scene:annotation:delete:${annotation.id}`));
-    setStatus(`${annotationToolLabel(annotation.kind)} deleted`);
+    setQuietStatus(`${annotationToolLabel(annotation.kind)} deleted`);
   }
 
   async function deleteSceneWall(wallId: string) {
     if (!selectedScene) return;
     applySceneToSnapshot(await deleteSceneChildMutation(selectedScene, `/api/v1/scenes/${selectedScene.id}/walls/${wallId}`, `scene:wall:delete:${wallId}`));
-    setStatus("Wall deleted");
+    setQuietStatus("Wall deleted");
     void refresh(campaignId, selectedScene?.id ?? sceneId, { syncStatus: false });
   }
 
@@ -5328,14 +5328,14 @@ export function App() {
     if (!selectedScene || (wall.kind !== "door" && wall.kind !== "window")) return;
     const open = !wall.open;
     applySceneToSnapshot(await patchSceneChildMutation(selectedScene, `/api/v1/scenes/${selectedScene.id}/walls/${wall.id}`, { open }, `scene:wall:toggle:${wall.id}`));
-    setStatus(`${wall.kind === "door" ? "Door" : "Window"} ${open ? "opened" : "closed"}`);
+    setQuietStatus(`${wall.kind === "door" ? "Door" : "Window"} ${open ? "opened" : "closed"}`);
     void refresh(campaignId, selectedScene.id, { syncStatus: false });
   }
 
   async function deleteSceneLight(lightId: string) {
     if (!selectedScene) return;
     applySceneToSnapshot(await deleteSceneChildMutation(selectedScene, `/api/v1/scenes/${selectedScene.id}/lights/${lightId}`, `scene:light:delete:${lightId}`));
-    setStatus("Light deleted");
+    setQuietStatus("Light deleted");
     void refresh(campaignId, selectedScene?.id ?? sceneId, { syncStatus: false });
   }
 
@@ -5346,7 +5346,7 @@ export function App() {
       patch.radius = Math.round(distanceBetween(points[0]!, points[1]!));
     }
     applySceneToSnapshot(await patchSceneChildMutation(selectedScene, `/api/v1/scenes/${selectedScene.id}/annotations/${annotation.id}`, patch, `scene:annotation:move:${annotation.id}`));
-    setStatus(`Moved ${annotationToolLabel(annotation.kind)} annotation`);
+    setQuietStatus(`Moved ${annotationToolLabel(annotation.kind)} annotation`);
   }
 
   async function paintFogStroke(mode: FogMode, points: VisionPoint[]) {
@@ -5357,7 +5357,7 @@ export function App() {
       brushRadius: Math.max(28, Math.min(110, selectedScene.gridSize * 1.35)),
       points
     }, `scene:fog:brush:${mode}`));
-    setStatus(`${mode === "hide" ? "Hide" : "Reveal"} fog brush applied`);
+    setQuietStatus(`${mode === "hide" ? "Hide" : "Reveal"} fog brush applied`);
     void refresh(campaignId, selectedScene?.id ?? sceneId, { syncStatus: false });
   }
 
@@ -5379,7 +5379,7 @@ export function App() {
     setToolReport("");
     setToolReportTitle("Fog and vision");
     setFogBrushMode(null);
-    setStatus("Fog tools closed");
+    setQuietStatus("Fog tools closed");
   }
 
   async function showFogHistory() {
@@ -5466,7 +5466,7 @@ export function App() {
       y2: Math.round(selectedScene.height * 0.28),
       blocksVision: true
     }, "scene:wall:add"));
-    setStatus("Wall added");
+    setQuietStatus("Wall added");
     void refresh(campaignId, selectedScene?.id ?? sceneId, { syncStatus: false });
   }
 
@@ -5481,7 +5481,7 @@ export function App() {
       blocksMovement: false,
       kind: "terrain"
     }, "scene:wall:add-terrain"));
-    setStatus("Terrain wall added");
+    setQuietStatus("Terrain wall added");
     void refresh(campaignId, selectedScene?.id ?? sceneId, { syncStatus: false });
   }
 
@@ -5539,7 +5539,7 @@ export function App() {
       kind: "darkness",
       magical: true
     }, "scene:light:add-darkness"));
-    setStatus("Magical darkness added");
+    setQuietStatus("Magical darkness added");
     void refresh(campaignId, selectedScene.id, { syncStatus: false });
   }
 
@@ -5619,7 +5619,7 @@ export function App() {
       if (workspaceBoundRequestIsCurrent(request)) applyActorToSnapshot(updated);
     } catch (error) {
       if (workspaceBoundRequestIsCurrent(request)) {
-        if (!reconcileStaleWriteConflict(error)) setStatus(errorMessage(error));
+        if (!reconcileStaleWriteConflict(error)) reportError(error);
         void refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });
       }
     } finally {
@@ -5699,7 +5699,7 @@ export function App() {
         );
       });
     } catch (error) {
-      if (workspaceBoundRequestIsCurrent(queuedRequest)) setStatus(errorMessage(error));
+      if (workspaceBoundRequestIsCurrent(queuedRequest)) reportError(error);
     } finally {
       finishWorkspaceBoundRequest(queuedRequest);
     }
@@ -5778,7 +5778,7 @@ export function App() {
       if (error instanceof ApiError && error.status >= 400 && error.status < 500 && combatRewardAttemptRef.current?.idempotencyKey === attempt.idempotencyKey) {
         combatRewardAttemptRef.current = null;
       }
-      if (!reconcileStaleWriteConflict(error)) setStatus(errorMessage(error));
+      if (!reconcileStaleWriteConflict(error)) reportError(error);
       throw error;
     }
   }
@@ -5826,7 +5826,7 @@ export function App() {
       return updated;
     });
     const settled = run.catch((error) => {
-      if (workspaceBoundRequestIsCurrent(request) && !reconcileStaleWriteConflict(error)) setStatus(errorMessage(error));
+      if (workspaceBoundRequestIsCurrent(request) && !reconcileStaleWriteConflict(error)) reportError(error);
       return undefined;
     }).finally(() => {
       finishWorkspaceBoundRequest(request);
@@ -5921,7 +5921,7 @@ export function App() {
     const item = snapshot.items.find((candidate) => candidate.id === itemId);
     if (!item || !canAssignItemFromSheet(item)) return;
     event.preventDefault();
-    void assignItemToActor(item, actor).catch((error) => setStatus(errorMessage(error)));
+    void assignItemToActor(item, actor).catch((error) => reportError(error));
   }
 
   async function createAudioTrack(input: { name: string; url: string; kind: AudioTrack["kind"]; loop: boolean }) {
@@ -5937,7 +5937,7 @@ export function App() {
         }
       );
     } catch (error) {
-      setStatus(errorMessage(error));
+      reportError(error);
     }
   }
 
@@ -5991,7 +5991,7 @@ export function App() {
         }
       );
     } catch (error) {
-      setStatus(errorMessage(error));
+      reportError(error);
     }
   }
 
@@ -6008,7 +6008,7 @@ export function App() {
         }
       );
     } catch (error) {
-      setStatus(errorMessage(error));
+      reportError(error);
     }
   }
 
@@ -6680,7 +6680,7 @@ export function App() {
       if (!workspaceIdentityIsCurrent(request)) return;
       selectCombatantToken(updated.combatants[updated.turnIndex] ?? updated.combatants[0]);
     } catch (error) {
-      if (workspaceIdentityIsCurrent(request) && !reconcileStaleWriteConflict(error)) setStatus(errorMessage(error));
+      if (workspaceIdentityIsCurrent(request) && !reconcileStaleWriteConflict(error)) reportError(error);
       throw error;
     }
   }
@@ -6730,12 +6730,12 @@ export function App() {
       setStatus("Combatant updated");
       selectCombatantToken(updatedCombat.combatants.find((candidate) => candidate.id === combatantId));
     } catch (error) {
-      if (workspaceIdentityIsCurrent(request) && !reconcileStaleWriteConflict(error)) setStatus(errorMessage(error));
+      if (workspaceIdentityIsCurrent(request) && !reconcileStaleWriteConflict(error)) reportError(error);
       throw error;
     }
   }
 
-  async function deleteActor(actor: Actor) { const request = currentWorkspaceRequestIdentity(); await import("./actor-lifecycle-client.js").then(({ deleteCampaignActor }) => deleteCampaignActor({ actor, actors: snapshotRef.current.actors, sceneId: realtimeSelectionRef.current.sceneId, runMutation: runSharedMutation, isCurrent: () => workspaceIdentityIsCurrent(request), onDeleted: (nextActorId) => { actorSheetAuthoritativeRef.current.delete(actor.id); setSelectedActorId(nextActorId); setSelectedTokenIdState(""); setSelectedTokenIds([]); setSelectedBoardAssetId(""); setStatus(`${actor.name} deleted; linked records cleaned up`); }, onError: (error) => setStatus(errorMessage(error)), refresh: () => refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false }) })); }
+  async function deleteActor(actor: Actor) { const request = currentWorkspaceRequestIdentity(); await import("./actor-lifecycle-client.js").then(({ deleteCampaignActor }) => deleteCampaignActor({ actor, actors: snapshotRef.current.actors, sceneId: realtimeSelectionRef.current.sceneId, runMutation: runSharedMutation, isCurrent: () => workspaceIdentityIsCurrent(request), onDeleted: (nextActorId) => { actorSheetAuthoritativeRef.current.delete(actor.id); setSelectedActorId(nextActorId); setSelectedTokenIdState(""); setSelectedTokenIds([]); setSelectedBoardAssetId(""); setStatus(`${actor.name} deleted; linked records cleaned up`); }, onError: (error) => reportError(error), refresh: () => refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false }) })); }
   async function commitDndCombatVitals(actor: Actor, kind: Dnd5eSrdCombatVitalsKind, amount: number, combat?: Combat, signal?: AbortSignal): Promise<Dnd5eSrdCombatVitalsMutationResult> {
     const latestActor = snapshotRef.current.actors.find((candidate) => candidate.id === actor.id) ?? actor;
     const latestCombat = snapshotRef.current.combats.find((candidate) => candidate.active && candidate.combatants.some((entry) => entry.actorId === actor.id)) ?? combat;
@@ -6801,7 +6801,7 @@ export function App() {
       if (!workspaceIdentityIsCurrent(request)) return;
       if (result.undo) setLastDndRulesUndo(result.undo);
     } catch (error) {
-      if (workspaceIdentityIsCurrent(request) && !reconcileStaleWriteConflict(error)) setStatus(errorMessage(error));
+      if (workspaceIdentityIsCurrent(request) && !reconcileStaleWriteConflict(error)) reportError(error);
       throw error;
     }
     if (!workspaceIdentityIsCurrent(request)) return;
@@ -6817,7 +6817,7 @@ export function App() {
         idempotencyKey: sharedMutationIdempotencyKey(`combat-action:reject:${combat.id}:${action.id}`, latest.updatedAt, payload)
       });
     } catch (error) {
-      if (workspaceIdentityIsCurrent(request) && !reconcileStaleWriteConflict(error)) setStatus(errorMessage(error));
+      if (workspaceIdentityIsCurrent(request) && !reconcileStaleWriteConflict(error)) reportError(error);
       throw error;
     }
     if (!workspaceIdentityIsCurrent(request)) return;
@@ -7748,7 +7748,7 @@ export function App() {
         }
       );
     } catch (error) {
-      if (!reconcileStaleWriteConflict(error)) setStatus(error instanceof Error ? error.message : String(error));
+      if (!reconcileStaleWriteConflict(error)) reportError(error);
     }
   }
 
@@ -8960,13 +8960,13 @@ export function App() {
       if (sceneEditorNavigationBlocked()) return;
       const nextCampaignId = commandId.slice("campaign:".length);
       selectWorkspaceContext(nextCampaignId, "");
-      if (!blankCanvasDemoOpen) refresh(nextCampaignId, "").catch((error) => setStatus(errorMessage(error)));
+      if (!blankCanvasDemoOpen) refresh(nextCampaignId, "").catch((error) => reportError(error));
       return;
     }
     if (commandId.startsWith("roll:")) {
       const formula = commandId.slice("roll:".length);
       setDiceFormula(formula);
-      rollDice(formula).catch((error) => setStatus(errorMessage(error)));
+      rollDice(formula).catch((error) => reportError(error));
       return;
     }
     if (commandId.startsWith("actor:")) {
@@ -9133,7 +9133,7 @@ export function App() {
         />
         {import.meta.env.DEV && snapshot.members.some((member) => member.user.id.startsWith("usr_demo_")) && <label className="session-switcher">
           <span>Session</span>
-          <select aria-label="Session user" value={currentUserId} disabled={blankCanvasDemoOpen} onChange={(event) => switchSession(event.target.value).catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+          <select aria-label="Session user" value={currentUserId} disabled={blankCanvasDemoOpen} onChange={(event) => switchSession(event.target.value).catch((error) => reportError(error))}>
             {snapshot.members.length === 0 ? (
               <option value={currentUserId}>{currentUserId}</option>
             ) : (
@@ -9162,26 +9162,26 @@ export function App() {
             <p className="desktop-host-url">{desktopInviteUrl || desktopStatus?.webUrl || "Local server starting"}</p>
             <div className="button-row desktop-host-actions">
               {desktopRelayState === "connected" || desktopRelayState === "starting" ? (
-                <button className="ghost-button small" type="button" disabled={desktopShareBusy} onClick={() => stopDesktopInternetShare().catch((error) => setStatus(errorMessage(error)))}>
+                <button className="ghost-button small" type="button" disabled={desktopShareBusy} onClick={() => stopDesktopInternetShare().catch((error) => reportError(error))}>
                   <X size={14} /> Stop
                 </button>
               ) : (
-                <button className="primary-button small" type="button" disabled={desktopShareBusy} onClick={() => startDesktopInternetShare().catch((error) => setStatus(errorMessage(error)))}>
+                <button className="primary-button small" type="button" disabled={desktopShareBusy} onClick={() => startDesktopInternetShare().catch((error) => reportError(error))}>
                   <Users size={14} /> Share
                 </button>
               )}
-              <button className="ghost-button small" type="button" disabled={!desktopInviteUrl} onClick={() => copyDesktopInviteLink().catch((error) => setStatus(errorMessage(error)))}>
+              <button className="ghost-button small" type="button" disabled={!desktopInviteUrl} onClick={() => copyDesktopInviteLink().catch((error) => reportError(error))}>
                 <UserPlus size={14} /> Copy
               </button>
             </div>
             <div className="button-row desktop-host-actions">
-              <button className="icon-button" type="button" title="Open data folder" aria-label="Open data folder" onClick={() => openDesktopDataFolder().catch((error) => setStatus(errorMessage(error)))}>
+              <button className="icon-button" type="button" title="Open data folder" aria-label="Open data folder" onClick={() => openDesktopDataFolder().catch((error) => reportError(error))}>
                 <Boxes size={14} />
               </button>
-              <button className="icon-button" type="button" title="Export logs" aria-label="Export logs" onClick={() => exportDesktopLogs().catch((error) => setStatus(errorMessage(error)))}>
+              <button className="icon-button" type="button" title="Export logs" aria-label="Export logs" onClick={() => exportDesktopLogs().catch((error) => reportError(error))}>
                 <Download size={14} />
               </button>
-              <button className="icon-button" type="button" title="Refresh desktop status" aria-label="Refresh desktop status" onClick={() => window.otteDesktop?.getDesktopStatus().then(setDesktopStatus).catch((error) => setStatus(errorMessage(error)))}>
+              <button className="icon-button" type="button" title="Refresh desktop status" aria-label="Refresh desktop status" onClick={() => window.otteDesktop?.getDesktopStatus().then(setDesktopStatus).catch((error) => reportError(error))}>
                 <RefreshCw size={14} />
               </button>
             </div>
@@ -9322,7 +9322,7 @@ export function App() {
           onPendingCount={setCharacterTransferPendingCount}
         />
         {ssoEnabled && (
-          <button className="ghost-button" onClick={() => startSso().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+          <button className="ghost-button" onClick={() => startSso().catch((error) => reportError(error))}>
             <Shield size={16} /> SSO
           </button>
         )}
@@ -9408,7 +9408,7 @@ export function App() {
               <div className="manage-card-grid manage-campaign-grid">
         <details className="account-box create-drawer campaign-create" open={!selectedCampaign || undefined}>
           <summary><Plus size={15} /> New campaign</summary>
-          <CampaignSetupSteps draft={currentCampaignSetupDraft()} systems={snapshot.systems} busy={isCreatingCampaignSetup} recoveryPending={campaignSetupRecoveryPending} draftNotice={campaignSetupDraftNotice} submitButtonRef={campaignSetupSubmitRef} onChange={updateCampaignSetupDraft} onSubmit={() => createCampaignFromSetup().catch((error) => setStatus(errorMessage(error)))} onCancel={cancelCampaignSetup} onKeep={() => keepCampaignSetupAsIs().catch((error) => setStatus(errorMessage(error)))} onDiscardDraft={discardCampaignSetupDraft} />
+          <CampaignSetupSteps draft={currentCampaignSetupDraft()} systems={snapshot.systems} busy={isCreatingCampaignSetup} recoveryPending={campaignSetupRecoveryPending} draftNotice={campaignSetupDraftNotice} submitButtonRef={campaignSetupSubmitRef} onChange={updateCampaignSetupDraft} onSubmit={() => createCampaignFromSetup().catch((error) => reportError(error))} onCancel={cancelCampaignSetup} onKeep={() => keepCampaignSetupAsIs().catch((error) => reportError(error))} onDiscardDraft={discardCampaignSetupDraft} />
         </details>
         {selectedCampaign && <FirstSessionSetupChecklist actors={snapshot.actors} currentUserId={currentUserId} canManage canCreateCharacter={hasPermission("actor.create")} memberCount={snapshot.members.length} pendingInviteCount={snapshot.organizationInvites.filter((invite) => invite.campaign.id === selectedCampaign.id && invite.status === "pending").length} scenes={snapshot.scenes} tokens={snapshot.tokens} encounterCount={snapshot.encounters.length} onOpen={openFirstSessionSetupStep} />}
         {selectedCampaign && hasPermission("campaign.update") && (
@@ -9416,7 +9416,7 @@ export function App() {
             className="account-box campaign-settings"
             onSubmit={(event) => {
               event.preventDefault();
-              saveCampaignSettings().catch((error) => setStatus(error instanceof Error ? error.message : String(error)));
+              saveCampaignSettings().catch((error) => reportError(error));
             }}
           >
             <div className="section-title">Campaign Settings</div>
@@ -9444,7 +9444,7 @@ export function App() {
             <p className="account-summary">
               Campaign status: {selectedCampaign.archivedAt ? `Archived ${formatDateTime(selectedCampaign.archivedAt)}` : "Active"}
             </p>
-            <button className="ghost-button wide" type="button" onClick={() => (selectedCampaign.archivedAt ? restoreSelectedCampaign() : archiveSelectedCampaign()).catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+            <button className="ghost-button wide" type="button" onClick={() => (selectedCampaign.archivedAt ? restoreSelectedCampaign() : archiveSelectedCampaign()).catch((error) => reportError(error))}>
               <Boxes size={16} /> {selectedCampaign.archivedAt ? "Restore Campaign" : "Archive Campaign"}
             </button>
             {hasPermission("campaign.delete") && (
@@ -9455,7 +9455,7 @@ export function App() {
                   </p>
                 )}
                 <input aria-label="Confirm campaign delete" value={campaignDeleteConfirm} placeholder={`Type ${selectedCampaign.name} to delete`} onChange={(event) => setCampaignDeleteConfirm(event.target.value)} />
-                <button className="ghost-button wide danger-button" type="button" disabled={campaignDeleteConfirm !== selectedCampaign.name} onClick={() => deleteSelectedCampaign().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+                <button className="ghost-button wide danger-button" type="button" disabled={campaignDeleteConfirm !== selectedCampaign.name} onClick={() => deleteSelectedCampaign().catch((error) => reportError(error))}>
                   <UserX size={16} /> Delete Campaign
                 </button>
               </div>
@@ -9531,7 +9531,7 @@ export function App() {
             className="account-box"
             onSubmit={(event) => {
               event.preventDefault();
-              createInvite().catch((error) => setStatus(error instanceof Error ? error.message : String(error)));
+              createInvite().catch((error) => reportError(error));
             }}
           >
           <div className="section-title">Invites</div>
@@ -9548,13 +9548,13 @@ export function App() {
             {inviteAcceptUrl && (
               <div className="invite-link-row">
                 <input ref={inviteLinkRef} aria-label="Invite link" readOnly value={inviteAcceptUrl} onFocus={(event) => event.currentTarget.select()} />
-                <button className="primary-button" type="button" onClick={() => copyInviteLink().catch((error) => setStatus(errorMessage(error)))}>
+                <button className="primary-button" type="button" onClick={() => copyInviteLink().catch((error) => reportError(error))}>
                   <Copy size={16} /> Copy link
                 </button>
               </div>
             )}
             {inviteToken && <input aria-label="Invite token" readOnly value={inviteToken} onFocus={(event) => event.currentTarget.select()} />}
-            <OrganizationInviteRoster invites={snapshot.organizationInvites} onRevoke={(invite) => { void revokeOrganizationInvite(invite.id).catch((error) => setStatus(error instanceof Error ? error.message : String(error))); }} />
+            <OrganizationInviteRoster invites={snapshot.organizationInvites} onRevoke={(invite) => { void revokeOrganizationInvite(invite.id).catch((error) => reportError(error)); }} />
           </form>
         )}
         {selectedCampaign && (
@@ -9572,7 +9572,7 @@ export function App() {
           aria-busy={isAcceptingInvite}
           onSubmit={(event) => {
             event.preventDefault();
-            acceptInvite().catch((error) => setStatus(error instanceof Error ? error.message : String(error)));
+            acceptInvite().catch((error) => reportError(error));
           }}
         >
           <div className="section-title">Join</div>
@@ -9622,7 +9622,7 @@ export function App() {
           {(hasPermission("scene.update") || hasPermission("scene.create")) && (
             <div className="button-row">
               {hasPermission("scene.update") && <input aria-label="Bulk scene folder" value={bulkSceneFolder} placeholder="Move visible to folder" onChange={(event) => setBulkSceneFolder(event.target.value)} />}
-              {hasPermission("scene.update") && <button className="ghost-button" type="button" disabled={sceneEditDirty || visibleScenes.length === 0} onClick={() => moveVisibleScenesToFolder().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+              {hasPermission("scene.update") && <button className="ghost-button" type="button" disabled={sceneEditDirty || visibleScenes.length === 0} onClick={() => moveVisibleScenesToFolder().catch((error) => reportError(error))}>
                 Move visible scenes
               </button>}
               <button className="ghost-button" type="button" disabled={visibleScenes.length === 0} onClick={selectVisiblePrepScenes}>
@@ -9631,10 +9631,10 @@ export function App() {
               <button className="ghost-button" type="button" disabled={selectedPrepScenes.length === 0} onClick={clearPrepSceneSelection}>
                 Clear selected scenes
               </button>
-              {hasPermission("scene.update") && <button className="ghost-button" type="button" disabled={sceneEditDirty || selectedPrepScenes.length === 0} onClick={() => moveSelectedPrepScenesToFolder().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+              {hasPermission("scene.update") && <button className="ghost-button" type="button" disabled={sceneEditDirty || selectedPrepScenes.length === 0} onClick={() => moveSelectedPrepScenesToFolder().catch((error) => reportError(error))}>
                 Move selected scenes
               </button>}
-              {hasPermission("scene.create") && <button className="ghost-button" type="button" disabled={sceneEditDirty || sceneDuplicationBusy || selectedPrepScenes.length === 0} onClick={() => duplicateSelectedPrepScenes().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+              {hasPermission("scene.create") && <button className="ghost-button" type="button" disabled={sceneEditDirty || sceneDuplicationBusy || selectedPrepScenes.length === 0} onClick={() => duplicateSelectedPrepScenes().catch((error) => reportError(error))}>
                 Duplicate selected scenes
               </button>}
             </div>
@@ -9648,7 +9648,7 @@ export function App() {
             className="create-drawer-form"
             onSubmit={(event) => {
               event.preventDefault();
-              createScene().catch((error) => setStatus(error instanceof Error ? error.message : String(error)));
+              createScene().catch((error) => reportError(error));
             }}
           >
             <div className="section-title">Scene Setup</div>
@@ -9718,7 +9718,7 @@ export function App() {
             aria-label={`Edit scene ${selectedScene.name}`}
             onSubmit={(event) => {
               event.preventDefault();
-              saveSceneSettings(event.currentTarget).catch((error) => setStatus(error instanceof Error ? error.message : String(error)));
+              saveSceneSettings(event.currentTarget).catch((error) => reportError(error));
             }}
           >
             <div className="section-title">Scene Manager</div>
@@ -9882,22 +9882,22 @@ export function App() {
               <button className="ghost-button" type="button" disabled={!sceneEditDirty} onClick={discardSceneEdits}>
                 <RotateCcw size={16} /> Discard
               </button>
-              <button className="ghost-button" type="button" disabled={selectedScene.active || sceneEditDirty} onClick={() => activateSelectedScene().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+              <button className="ghost-button" type="button" disabled={selectedScene.active || sceneEditDirty} onClick={() => activateSelectedScene().catch((error) => reportError(error))}>
                 <Eye size={16} /> Activate
               </button>
             </div>
             <div className="button-row">
-              <button className="ghost-button" type="button" disabled={sceneEditDirty || selectedSceneIndex <= 0} onClick={() => moveSelectedScene("up").catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+              <button className="ghost-button" type="button" disabled={sceneEditDirty || selectedSceneIndex <= 0} onClick={() => moveSelectedScene("up").catch((error) => reportError(error))}>
                 <ChevronLeft size={16} /> Move Up
               </button>
-              <button className="ghost-button" type="button" disabled={sceneEditDirty || selectedSceneIndex < 0 || selectedSceneIndex >= orderedScenes.length - 1} onClick={() => moveSelectedScene("down").catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+              <button className="ghost-button" type="button" disabled={sceneEditDirty || selectedSceneIndex < 0 || selectedSceneIndex >= orderedScenes.length - 1} onClick={() => moveSelectedScene("down").catch((error) => reportError(error))}>
                 <ChevronRight size={16} /> Move Down
               </button>
             </div>
             {hasPermission("scene.create") && (
               <div className="mini-form">
                 <input aria-label="Duplicate scene name" value={sceneDuplicateName} onChange={(event) => setSceneDuplicateName(event.target.value)} />
-                <button className="ghost-button wide" type="button" disabled={sceneEditDirty || sceneDuplicationBusy || !sceneDuplicateName.trim()} onClick={() => duplicateSelectedScene().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+                <button className="ghost-button wide" type="button" disabled={sceneEditDirty || sceneDuplicationBusy || !sceneDuplicateName.trim()} onClick={() => duplicateSelectedScene().catch((error) => reportError(error))}>
                   <Plus size={16} /> Duplicate Scene
                 </button>
               </div>
@@ -9917,7 +9917,7 @@ export function App() {
                     setSceneDeleteConfirm(event.target.value);
                   }}
                 />
-                <button className="ghost-button wide danger-button" type="button" disabled={sceneEditDirty || !sceneDeleteConfirmed} onClick={() => sceneDeleteTarget && deleteScene(sceneDeleteTarget).catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+                <button className="ghost-button wide danger-button" type="button" disabled={sceneEditDirty || !sceneDeleteConfirmed} onClick={() => sceneDeleteTarget && deleteScene(sceneDeleteTarget).catch((error) => reportError(error))}>
                   <UserX size={16} /> Delete Scene
                 </button>
               </div>
@@ -10016,7 +10016,7 @@ export function App() {
             <Download size={16} /> Export JSON (small archives)
           </button>
         </section>
-        <button className="ghost-button" onClick={() => exportDogfoodReportBundle().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))} title="Download a redacted issue report bundle">
+        <button className="ghost-button" onClick={() => exportDogfoodReportBundle().catch((error) => reportError(error))} title="Download a redacted issue report bundle">
           <Download size={16} /> Report Bundle
         </button>
         <ArchiveTransferProgress state={archiveTransfer} onCancel={cancelArchiveTransfer} />
@@ -10110,8 +10110,8 @@ export function App() {
               setSelectedArchiveImportOperationId(operationId);
               setArchiveImportRollbackPreview(undefined);
             }}
-            onPreview={(operationId) => void previewArchiveImportRollback(operationId).catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}
-            onRollback={(operationId) => void rollbackArchiveImport(operationId).catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}
+            onPreview={(operationId) => void previewArchiveImportRollback(operationId).catch((error) => reportError(error))}
+            onRollback={(operationId) => void rollbackArchiveImport(operationId).catch((error) => reportError(error))}
           />
         </section>
         <input
@@ -10134,7 +10134,7 @@ export function App() {
           <div className="operator-row tool-call-row" aria-label="Archive import recovery">
             <span>{failedArchiveImport.file.name} failed: {failedArchiveImport.message}</span>
             <div className="admin-actions">
-              <button className="ghost-button" type="button" disabled={isImportingArchive || archiveTransferBusy} onClick={() => retryArchiveImport().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+              <button className="ghost-button" type="button" disabled={isImportingArchive || archiveTransferBusy} onClick={() => retryArchiveImport().catch((error) => reportError(error))}>
                 <RefreshCw size={16} /> Retry import
               </button>
               <button className="ghost-button" type="button" onClick={dismissArchiveImportFailure}>
@@ -10229,7 +10229,7 @@ export function App() {
                 {(hasPermission("scene.update") || hasPermission("scene.create")) && (
                   <div className="button-row">
                     {hasPermission("scene.update") && <input aria-label="Bulk scene folder" value={bulkSceneFolder} placeholder="Move visible to folder" onChange={(event) => setBulkSceneFolder(event.target.value)} />}
-                    {hasPermission("scene.update") && <button className="ghost-button" type="button" disabled={visibleScenes.length === 0} onClick={() => moveVisibleScenesToFolder().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+                    {hasPermission("scene.update") && <button className="ghost-button" type="button" disabled={visibleScenes.length === 0} onClick={() => moveVisibleScenesToFolder().catch((error) => reportError(error))}>
                       Move visible scenes
                     </button>}
                     <button className="ghost-button" type="button" disabled={visibleScenes.length === 0} onClick={selectVisiblePrepScenes}>
@@ -10238,10 +10238,10 @@ export function App() {
                     <button className="ghost-button" type="button" disabled={selectedPrepScenes.length === 0} onClick={clearPrepSceneSelection}>
                       Clear selected scenes
                     </button>
-                    {hasPermission("scene.update") && <button className="ghost-button" type="button" disabled={sceneEditDirty || selectedPrepScenes.length === 0} onClick={() => moveSelectedPrepScenesToFolder().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+                    {hasPermission("scene.update") && <button className="ghost-button" type="button" disabled={sceneEditDirty || selectedPrepScenes.length === 0} onClick={() => moveSelectedPrepScenesToFolder().catch((error) => reportError(error))}>
                       Move selected scenes
                     </button>}
-                    {hasPermission("scene.create") && <button className="ghost-button" type="button" disabled={sceneEditDirty || sceneDuplicationBusy || selectedPrepScenes.length === 0} onClick={() => duplicateSelectedPrepScenes().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+                    {hasPermission("scene.create") && <button className="ghost-button" type="button" disabled={sceneEditDirty || sceneDuplicationBusy || selectedPrepScenes.length === 0} onClick={() => duplicateSelectedPrepScenes().catch((error) => reportError(error))}>
                       Duplicate selected scenes
                     </button>}
                   </div>
@@ -10262,7 +10262,7 @@ export function App() {
             onSelectScene={selectScene}
             onToggleSceneSelection={togglePrepSceneSelection}
             onDeleteScene={openSceneDeleteReview}
-            onCreateScene={(scene) => { void createScene({ insertBeforeScene: scene, active: false }).catch((error) => setStatus(error instanceof Error ? error.message : String(error))); }}
+            onCreateScene={(scene) => { void createScene({ insertBeforeScene: scene, active: false }).catch((error) => reportError(error)); }}
           />}
           {showQuickCreate && !quickCreateOpen && (
             <button className="ghost-button quick-create-toggle" type="button" aria-expanded={false} onClick={toggleQuickCreate}>
@@ -10274,7 +10274,7 @@ export function App() {
             hidden={!showQuickCreate || !quickCreateOpen}
             onSubmit={(event) => {
               event.preventDefault();
-              createToken().catch((error) => setStatus(error instanceof Error ? error.message : String(error)));
+              createToken().catch((error) => reportError(error));
             }}
           >
             <input aria-label="Token name" value={newTokenName} placeholder="Token name" onChange={(event) => setNewTokenName(event.target.value)} />
@@ -10321,7 +10321,7 @@ export function App() {
         {showTableWorkspace ? (
         <div className={`table-grid workspace-${workspaceMode}`} data-short-phone={shortPhone ? "true" : undefined} data-content-workspace={contentWorkspace ? "true" : undefined} data-scene-preview={contentWorkspace && prepScenePreview ? "true" : undefined} data-inspector-open={inspectorVisible ? "true" : "false"}>
           <section id="scene-workspace" className={`table-area scene-workspace ${canvasAssetDragging ? "canvas-asset-dragging" : ""}`} hidden={sceneWorkspaceHidden}>
-            <Toolbar key={`${workspaceMode}-${tab}`} onSelectTool={selectCanvasTool} onCreateToken={async () => { await createToken(); }} onStartCombat={openCombatSetup} onRevealFog={revealFog} onHideFog={hideFog} onRevealFogPolygon={revealFogPolygon} onToggleFogBrush={toggleFogBrush} onToggleAnnotationTool={toggleAnnotationTool} onDeleteLatestAnnotation={deleteLatestAnnotation} onUndoScene={undoSceneEdit} onUndoFog={undoFog} onShowFogHistory={showFogHistory} onSampleVisionPoint={sampleVisionPoint} onSaveFogPreset={saveFogPreset} onApplyFogPreset={applyFogPreset} onDeleteFogPreset={deleteFogPreset} onCyclePlayerVisionPreview={playerPreview.show} onAddWall={addWall} onAddTerrainWall={addTerrainWall} onAddDoor={addDoor} onAddWindow={addWindow} onAddLight={addLight} onAddDarkness={addDarkness} onActionError={(error) => setStatus(error instanceof Error ? error.message : String(error))} canCreateToken={hasPermission("token.create")} canManageCombat={hasPermission("combat.manage")} canRevealFog={hasPermission("token.reveal")} canPreviewPlayerVision={Boolean(selectedScene && canPreviewPlayer && playerPreview.players.length > 0)} playerVisionPreviewLabel={playerPreview.open ? playerPreview.playerName : undefined} activeFogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} activeAnnotationTool={annotationTool} hasFogPresets={snapshot.fogPresets.length > 0} canUpdateScene={hasPermission("scene.update")} canAnnotate={hasPermission("scene.read")} />
+            <Toolbar key={`${workspaceMode}-${tab}`} onSelectTool={selectCanvasTool} onCreateToken={async () => { await createToken(); }} onStartCombat={openCombatSetup} onRevealFog={revealFog} onHideFog={hideFog} onRevealFogPolygon={revealFogPolygon} onToggleFogBrush={toggleFogBrush} onToggleAnnotationTool={toggleAnnotationTool} onDeleteLatestAnnotation={deleteLatestAnnotation} onUndoScene={undoSceneEdit} onUndoFog={undoFog} onShowFogHistory={showFogHistory} onSampleVisionPoint={sampleVisionPoint} onSaveFogPreset={saveFogPreset} onApplyFogPreset={applyFogPreset} onDeleteFogPreset={deleteFogPreset} onCyclePlayerVisionPreview={playerPreview.show} onAddWall={addWall} onAddTerrainWall={addTerrainWall} onAddDoor={addDoor} onAddWindow={addWindow} onAddLight={addLight} onAddDarkness={addDarkness} onActionError={(error) => reportError(error)} canCreateToken={hasPermission("token.create")} canManageCombat={hasPermission("combat.manage")} canRevealFog={hasPermission("token.reveal")} canPreviewPlayerVision={Boolean(selectedScene && canPreviewPlayer && playerPreview.players.length > 0)} playerVisionPreviewLabel={playerPreview.open ? playerPreview.playerName : undefined} activeFogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} activeAnnotationTool={annotationTool} hasFogPresets={snapshot.fogPresets.length > 0} canUpdateScene={hasPermission("scene.update")} canAnnotate={hasPermission("scene.read")} />
             <div className="map-play-surface">
               {selectedScene ? <SceneCanvas scene={selectedScene} zoom={battleMapZoom} backgroundAsset={selectedMapAsset} selectedAssetId={selectedBoardAssetId} assets={snapshot.assets} tokens={snapshot.tokens} actors={snapshot.actors} boardCurrentUserId={currentUserId} canSeeAllVitals={hasPermission("combat.manage")} currentTurnTokenIds={currentTurnTokenIds} nextTurnTokenIds={nextTurnTokenIds} vision={snapshot.vision} selectedTokenId={selectedTokenId} selectedTokenIds={selectedTokenIds} activeTokenLayer={activeTokenLayer} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} calibrationPoints={gridCalibrationOpen && selectedScene.gridType !== "gridless" ? gridCalibrationPoints : undefined} onCalibrationPoint={gridCalibrationOpen && selectedScene.gridType !== "gridless" ? (point) => setGridCalibrationPoints((current) => appendGridCalibrationPoint(current, point)) : undefined} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canMoveToken={hasPermission("token.move")} canUpdateAnnotations={hasPermission("scene.update")} canResizeToken={hasPermission("token.update")} canUpdateTokenLayer={hasPermission("token.update")} onSelect={selectCanvasToken} onSelectMany={selectCanvasTokens} onSelectBackgroundAsset={selectBoardBackgroundAsset} onClearSelection={clearTokenSelection} onMoved={async () => undefined} onTokenMovePersist={persistSceneCanvasTokenMove} onTokenResizePersist={persistSceneCanvasTokenResize} onTokenMoveCommit={recordTokenMoveAction} onTokenResizeCommit={recordTokenResizeAction} onTokenLayerCycle={cycleTokenLayer} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} onTogglePortal={toggleScenePortal} selectedOverlay={selectedOverlay} onSelectOverlay={setSelectedOverlay} onZoomBy={zoomBattleMap} onTokenTarget={setTokenTarget} /> : (
                 <div className="empty-state empty-state-action">
@@ -10333,7 +10333,7 @@ export function App() {
                   </> : <>
                     <span>Create a scene to open the tabletop.</span>
                     {hasPermission("scene.create") && (
-                      <button className="ghost-button small" type="button" aria-label="Create scene from empty board" onClick={() => createScene().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+                      <button className="ghost-button small" type="button" aria-label="Create scene from empty board" onClick={() => createScene().catch((error) => reportError(error))}>
                         <Plus size={14} /> Create scene
                       </button>
                     )}
@@ -10445,7 +10445,7 @@ export function App() {
               </div>
               {hasPermission("token.reveal") && selectedOverlay?.type === "annotation" && selectedCurrentAnnotations.filter((annotation) => annotation.id === selectedOverlay.id).map((annotation) => (
                 <label key={annotation.id}>Selected {annotationToolLabel(annotation.kind)} visible to
-                  <select aria-label="Selected annotation visibility" value={annotation.visibility ?? "public"} onChange={(event) => setSceneAnnotationVisibility(annotation, event.target.value as "public" | "gm").catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+                  <select aria-label="Selected annotation visibility" value={annotation.visibility ?? "public"} onChange={(event) => setSceneAnnotationVisibility(annotation, event.target.value as "public" | "gm").catch((error) => reportError(error))}>
                     <option value="public">Everyone at the table</option>
                     <option value="gm">GM only</option>
                   </select>
@@ -10482,13 +10482,13 @@ export function App() {
                   <div className="operator-row tool-call-row" key={group}>
                     <span>{group}</span>
                     <strong>{formatNumber(count)}</strong>
-                    <button className="ghost-button" type="button" aria-label={`Nudge annotation group ${group}`} disabled={!hasPermission("scene.update")} onClick={() => nudgeAnnotationGroup(group).catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+                    <button className="ghost-button" type="button" aria-label={`Nudge annotation group ${group}`} disabled={!hasPermission("scene.update")} onClick={() => nudgeAnnotationGroup(group).catch((error) => reportError(error))}>
                       Nudge group
                     </button>
-                    <button className="ghost-button" type="button" aria-label={`Recolor annotation group ${group}`} disabled={!hasPermission("scene.update")} onClick={() => recolorAnnotationGroup(group).catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+                    <button className="ghost-button" type="button" aria-label={`Recolor annotation group ${group}`} disabled={!hasPermission("scene.update")} onClick={() => recolorAnnotationGroup(group).catch((error) => reportError(error))}>
                       Recolor group
                     </button>
-                    <button className="ghost-button" type="button" aria-label={`Delete annotation group ${group}`} disabled={!hasPermission("scene.update")} onClick={() => deleteAnnotationGroup(group).catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+                    <button className="ghost-button" type="button" aria-label={`Delete annotation group ${group}`} disabled={!hasPermission("scene.update")} onClick={() => deleteAnnotationGroup(group).catch((error) => reportError(error))}>
                       Delete group
                     </button>
                   </div>
@@ -10528,13 +10528,13 @@ export function App() {
                     <button className="ghost-button" type="button" onClick={() => setTokenTargets(latestAreaTemplate.affectedTokenIds ?? [], true)}>
                       Target affected
                     </button>
-                    <button className="ghost-button" type="button" disabled={!latestAreaTemplate.templateDamageFormula} onClick={() => rollTemplateDamage(latestAreaTemplate).catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+                    <button className="ghost-button" type="button" disabled={!latestAreaTemplate.templateDamageFormula} onClick={() => rollTemplateDamage(latestAreaTemplate).catch((error) => reportError(error))}>
                       Roll damage
                     </button>
-                    <button className="ghost-button" type="button" disabled={!latestAreaTemplate.templateDamageFormula || latestAreaTemplateHasMixedDamage || (latestAreaTemplate.affectedTokenIds?.length ?? 0) === 0 || (!hasPermission("actor.update") && !hasPermission("token.update"))} onClick={() => applyTemplateDamage(latestAreaTemplate).catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+                    <button className="ghost-button" type="button" disabled={!latestAreaTemplate.templateDamageFormula || latestAreaTemplateHasMixedDamage || (latestAreaTemplate.affectedTokenIds?.length ?? 0) === 0 || (!hasPermission("actor.update") && !hasPermission("token.update"))} onClick={() => applyTemplateDamage(latestAreaTemplate).catch((error) => reportError(error))}>
                       Apply damage
                     </button>
-                    <button className="ghost-button" type="button" disabled={!latestAreaTemplate.templateDamageFormula || latestAreaTemplateHasMixedDamage || !latestAreaTemplate.templateSaveDc || !latestAreaTemplate.templateSaveAbility || latestAreaTemplate.templateSaveAbility === "none" || (latestAreaTemplate.affectedTokenIds?.length ?? 0) === 0 || (!hasPermission("actor.update") && !hasPermission("token.update"))} onClick={() => resolveTemplateSaves(latestAreaTemplate).catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+                    <button className="ghost-button" type="button" disabled={!latestAreaTemplate.templateDamageFormula || latestAreaTemplateHasMixedDamage || !latestAreaTemplate.templateSaveDc || !latestAreaTemplate.templateSaveAbility || latestAreaTemplate.templateSaveAbility === "none" || (latestAreaTemplate.affectedTokenIds?.length ?? 0) === 0 || (!hasPermission("actor.update") && !hasPermission("token.update"))} onClick={() => resolveTemplateSaves(latestAreaTemplate).catch((error) => reportError(error))}>
                       Resolve saves
                     </button>
                   </div>
