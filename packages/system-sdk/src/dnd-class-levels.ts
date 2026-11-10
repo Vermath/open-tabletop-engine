@@ -1,4 +1,4 @@
-import type { Actor } from "@open-tabletop/core";
+import type { Actor } from "@open-tabletop/api-contracts";
 
 export interface Dnd5eSrdClassLevel {
   className: string;

@@ -67,7 +67,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @open-tabletop/desktop dist -- --win nsis --publish never
+      - run: pnpm --filter @open-tabletop/desktop dist --win nsis --publish never
         env:
           CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
@@ -162,7 +162,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @open-tabletop/desktop dist -- --mac dmg --${{ matrix.arch }} --publish never
+      - run: pnpm --filter @open-tabletop/desktop dist --mac dmg --${{ matrix.arch }} --publish never
         env:
           CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}

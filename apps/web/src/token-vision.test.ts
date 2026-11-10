@@ -50,12 +50,12 @@ describe("token vision editing", () => {
   });
 
   it("wires portal controls, typed darkness masks, and player-vision preview affordances", () => {
-    expect(appSource).toContain("onCyclePlayerVisionPreview={cyclePlayerVisionPreview}");
+    expect(appSource).toContain("onCyclePlayerVisionPreview={playerPreview.show}");
     expect(appSource).toContain("onTogglePortal={toggleScenePortal}");
     expect(appSource).toContain('kind: "darkness"');
     expect(sceneCanvasSource).toContain('onDoubleClick={(event) => {');
     expect(sceneCanvasSource).toContain('className="darkness-layer"');
     expect(sceneCanvasSource).toContain("Player vision: {props.visionPreviewLabel}");
-    expect(sceneCanvasSource).toContain("Preview player vision");
+    expect(appSource).toContain("playerPreview.open && <PlayerPreviewPanel preview={playerPreview}");
   });
 });

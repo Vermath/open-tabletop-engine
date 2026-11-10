@@ -63,6 +63,19 @@ describe("combatant draft editing", () => {
     expect(nextCombatTurnPosition({ ...combat, combatants: combat.combatants.map((combatant) => ({ ...combatant, defeated: true })) }, 1)).toEqual({ turnIndex: 0, round: 1 });
   });
 
+  it("stops previous navigation at the first reachable turn and rewinds later rounds correctly", () => {
+    const combat = testCombat();
+    expect(nextCombatTurnPosition(combat, -1)).toEqual({ turnIndex: 0, round: 1 });
+    expect(nextCombatTurnPosition({ ...combat, turnIndex: 1 }, -1)).toEqual({ turnIndex: 0, round: 1 });
+    expect(nextCombatTurnPosition({ ...combat, round: 2 }, -1)).toEqual({ turnIndex: 1, round: 1 });
+    const leadingDefeated = { ...combat, turnIndex: 1, combatants: [{ ...combat.combatants[0]!, defeated: true }, combat.combatants[1]!] };
+    expect(nextCombatTurnPosition(leadingDefeated, -1)).toEqual({ turnIndex: 1, round: 1 });
+    expect(nextCombatTurnPosition({ ...leadingDefeated, round: 2 }, -1)).toEqual({ turnIndex: 1, round: 1 });
+    expect(nextCombatTurnPosition({ ...combat, combatants: [combat.combatants[0]!] }, -1)).toEqual({ turnIndex: 0, round: 1 });
+    expect(nextCombatTurnPosition({ ...combat, combatants: combat.combatants.map((combatant) => ({ ...combatant, defeated: true })) }, -1)).toEqual({ turnIndex: 0, round: 1 });
+    expect(source).toContain("disabled={!canGoPrevious || turnPending}");
+  });
+
   it("uses privacy-safe turn presentation and falls back for legacy combat payloads", () => {
     const legacy = testCombat();
     expect(combatTurnCombatant(legacy, "current")?.id).toBe("a");

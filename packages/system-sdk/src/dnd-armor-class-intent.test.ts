@@ -1,4 +1,4 @@
-import type { Actor, CalculationOverride, Item } from "@open-tabletop/core";
+import type { Actor, CalculationOverride, Item } from "@open-tabletop/api-contracts";
 import { describe, expect, it } from "vitest";
 import {
   DND_5E_SRD_ARMOR_CLASS_INTENT_KEY,

@@ -1,10 +1,11 @@
-import { Search } from "lucide-react";
+import { RefreshCw, Search, X } from "lucide-react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { filterPaletteCommands, movePaletteIndex, paletteDiceFormula, type PaletteCommand } from "./command-palette.js";
 import { dieShapeName, dieShapePoints, type DiceCastPlan } from "./dice-3d.js";
 import { useModalAccessibility } from "./modal-accessibility.js";
 import { formatNumber } from "./sheet-format.js";
+import { keyboardShortcutRows } from "./workspace-ui-constants.js";
 
 export function CommandPalette(props: { commands: PaletteCommand[]; onRun(commandId: string): void; onClose(): void }) {
   const [query, setQuery] = useState("");
@@ -141,6 +142,59 @@ export function DiceCastOverlay(props: { casts: DiceCastPlan[] }) {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+export function KeyboardShortcutDialog({ onClose }: { onClose(): void }) {
+  const dialogRef = useModalAccessibility<HTMLDivElement>(onClose);
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
+      if (event.target === event.currentTarget) onClose();
+    }}>
+      <div ref={dialogRef} className="modal-dialog shortcut-overlay" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" tabIndex={-1}>
+        <div className="operator-heading">
+          <div className="section-title">Keyboard Shortcuts</div>
+          <button className="icon-button" type="button" aria-label="Close keyboard shortcuts" onClick={onClose}>
+            <X size={15} />
+          </button>
+        </div>
+        <div className="shortcut-grid">
+          {keyboardShortcutRows.map((row) => (
+            <div className="shortcut-row" key={row.keys}>
+              <kbd>{row.keys}</kbd>
+              <span>{row.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function ToastStack(props: { toasts: ReadonlyArray<{ id: number; text: string; tone: "info" | "error" }>; onDismiss(id: number): void }) {
+  return (
+    <div className="toast-stack">
+      {props.toasts.map((toast) => (
+        <div className={`toast toast-${toast.tone}`} key={toast.id}>
+          <span>{toast.text}</span>
+          <button className="icon-button" type="button" aria-label="Dismiss notification" onClick={() => props.onDismiss(toast.id)}>
+            <X size={13} />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function RealtimeSyncGuard() {
+  return (
+    <div className="realtime-sync-guard" role="status" aria-live="assertive" aria-label="Refreshing shared table state">
+      <RefreshCw size={18} aria-hidden="true" />
+      <div>
+        <strong>Syncing the table</strong>
+        <span>Refreshing authoritative campaign state before play resumes.</span>
+      </div>
     </div>
   );
 }

@@ -1,0 +1,149 @@
+{
+  "id": "lantern-road",
+  "name": "Lantern Road",
+  "version": "1.0.0",
+  "compatibleCore": ">=0.3.0 <0.4.0",
+  "entrypoints": {},
+  "schemas": {
+    "actor": {
+      "type": "object",
+      "properties": {
+        "wits": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4
+        },
+        "grit": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4
+        },
+        "stamina": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 6
+        }
+      },
+      "required": [
+        "wits",
+        "grit",
+        "stamina"
+      ],
+      "additionalProperties": false
+    },
+    "item": {
+      "type": "object",
+      "properties": {
+        "quality": {
+          "type": "string",
+          "maxLength": 16,
+          "enum": [
+            "basic",
+            "refined"
+          ]
+        },
+        "weight": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 20
+        }
+      },
+      "required": [
+        "quality",
+        "weight"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "permissions": [
+    "actor.read",
+    "actor.updateOwned",
+    "dice.roll",
+    "chat.write"
+  ],
+  "capabilities": [
+    "data-model",
+    "actor-sheet",
+    "quick-rolls",
+    "actions"
+  ],
+  "definition": {
+    "kind": "declarative-v1",
+    "actorTypes": [
+      "surveyor"
+    ],
+    "itemTypes": [
+      "kit"
+    ],
+    "actorDefaults": {
+      "wits": 2,
+      "grit": 1,
+      "stamina": 6
+    },
+    "itemDefaults": {
+      "quality": "basic",
+      "weight": 1
+    },
+    "sheet": {
+      "fields": [
+        {
+          "path": [
+            "wits"
+          ],
+          "label": "Wits",
+          "editable": true
+        },
+        {
+          "path": [
+            "grit"
+          ],
+          "label": "Grit",
+          "editable": true
+        },
+        {
+          "path": [
+            "stamina"
+          ],
+          "label": "Stamina",
+          "editable": true
+        }
+      ]
+    },
+    "quickRolls": [
+      {
+        "id": "survey",
+        "label": "Survey the route",
+        "dice": {
+          "count": 2,
+          "sides": 6,
+          "bonus": 0,
+          "addFields": [
+            [
+              "wits"
+            ]
+          ]
+        }
+      },
+      {
+        "id": "press-on",
+        "label": "Press on",
+        "dice": {
+          "count": 2,
+          "sides": 6,
+          "bonus": 0,
+          "addFields": [
+            [
+              "grit"
+            ]
+          ]
+        },
+        "cost": {
+          "path": [
+            "stamina"
+          ],
+          "amount": 1
+        }
+      }
+    ]
+  }
+}

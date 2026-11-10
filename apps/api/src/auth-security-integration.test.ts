@@ -7,6 +7,10 @@ import { MemoryStateStore } from "./store.js";
 
 const managedEnvironment = [
   "NODE_ENV",
+  "OTTE_WEB_ORIGIN",
+  "OTTE_CORS_ALLOWED_ORIGINS",
+  "OTTE_SESSION_COOKIE_SECURE",
+  "OTTE_ALLOW_INSECURE_LOCAL_SESSION_COOKIE",
   "OTTE_TRUSTED_PROXY_HOPS",
   "OTTE_LOGIN_RATE_LIMIT_WINDOW_SECONDS",
   "OTTE_LOGIN_RATE_LIMIT_ACCOUNT_MAX",
@@ -122,6 +126,74 @@ describe("integrated browser authentication security", () => {
       expect(logout.statusCode).toBe(200);
       expect(String(logout.headers["set-cookie"])).toContain("Max-Age=0");
       expect((await app.inject({ method: "GET", url: "/api/v1/auth/session", headers: { cookie: upgradedCookie! } })).statusCode).toBe(401);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("confirms production desktop cookie upgrades only from the configured loopback web origin", async () => {
+    process.env.NODE_ENV = "production";
+    process.env.OTTE_TRUSTED_PROXY_HOPS = "0";
+    const webOrigin = "http://127.0.0.1:47131";
+    const apiHost = "127.0.0.1:47132";
+    process.env.OTTE_WEB_ORIGIN = webOrigin;
+    delete process.env.OTTE_CORS_ALLOWED_ORIGINS;
+    delete process.env.OTTE_SESSION_COOKIE_SECURE;
+    delete process.env.OTTE_ALLOW_INSECURE_LOCAL_SESSION_COOKIE;
+    const store = new MemoryStateStore(emptyState());
+    const app = await buildApp({ store, rateLimit: { enabled: false } });
+    try {
+      const bootstrap = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/bootstrap",
+        headers: { host: apiHost, origin: webOrigin },
+        payload: { email: "owner@example.test", displayName: "Owner", password: "correct-password", campaignName: "Desktop Table" },
+      });
+      expect(bootstrap.statusCode).toBe(200);
+      const { token, user } = bootstrap.json();
+      const upgraded = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/session/upgrade-cookie",
+        headers: { authorization: `Bearer ${token}`, host: apiHost, origin: webOrigin },
+        payload: { expectedUserId: user.id },
+      });
+      expect(upgraded.statusCode).toBe(200);
+      expect(upgraded.headers["x-otte-session-transport"]).toBe("cookie-pending-revocation");
+      const cookie = String(upgraded.headers["set-cookie"]).match(/__Host-otte_session=[^;,]+/)?.[0];
+      expect(cookie).toBeTruthy();
+
+      const rejected = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/session/upgrade-cookie/confirm",
+        headers: { cookie: cookie!, host: apiHost, origin: "http://127.0.0.1:47133" },
+        payload: { expectedUserId: user.id },
+      });
+      expect(rejected.statusCode).toBe(403);
+      expect(rejected.json()).toMatchObject({ error: "cookie_origin_rejected", reason: "cross_origin" });
+      expect(store.state.sessions).toHaveLength(2);
+
+      const confirmed = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/session/upgrade-cookie/confirm",
+        headers: { cookie: cookie!, host: apiHost, origin: webOrigin },
+        payload: { expectedUserId: user.id },
+      });
+      expect(confirmed.statusCode).toBe(200);
+      expect(confirmed.json()).toMatchObject({ ok: true, upgradeConfirmed: true, session: { userId: user.id } });
+      expect(confirmed.headers["x-otte-session-transport"]).toBe("cookie");
+      expect(store.state.sessions).toEqual([
+        expect.objectContaining({ id: confirmed.json().session.id, cookieUpgradeConfirmedAt: expect.any(String) }),
+      ]);
+      for (const response of [upgraded, confirmed]) {
+        const setCookie = String(response.headers["set-cookie"]);
+        expect(setCookie).toContain("__Host-otte_session=ots_");
+        expect(setCookie).toContain("Secure");
+        expect(setCookie).toContain("HttpOnly");
+        expect(setCookie).toContain("Path=/");
+        expect(setCookie).toContain("SameSite=Lax");
+        expect(setCookie).not.toContain("Domain=");
+      }
+      expect((await app.inject({ method: "GET", url: "/api/v1/auth/session", headers: { authorization: `Bearer ${token}`, host: apiHost } })).statusCode).toBe(401);
     } finally {
       await app.close();
     }

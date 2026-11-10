@@ -37,7 +37,9 @@ describe("feature-surface states and permissions", () => {
       />
     );
     expect(html).toContain("Loading worlds");
-    expect(html).toContain("No scenes in this view");
+    expect(html).toContain("No campaign scenes yet");
+    expect(html).toContain("Scenes added to this campaign will appear here.");
+    expect(html).not.toContain("Show all scenes");
     expect(html).not.toContain("Add a world");
   });
 
@@ -65,7 +67,9 @@ describe("feature-surface states and permissions", () => {
     );
     expect(html).toContain("Handouts could not be loaded: offline");
     expect(html).toContain("Retry");
-    expect(html).toContain("No handouts match this view");
+    expect(html).toContain("Your handout library starts here");
+    expect(html).toContain("Handouts shared with you will appear here.");
+    expect(html).not.toContain("Clear filters");
     expect(html).not.toContain("aria-label=\"Create handout\"");
   });
 

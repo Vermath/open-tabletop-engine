@@ -73,7 +73,7 @@ export function registeredSystems(state: Pick<EngineState, "systemInstallations"
   const ids = new Set(manifests.map((manifest) => manifest.id));
   for (const installation of state.systemInstallations) {
     try {
-      validateSystemManifest(installation.manifest);
+      validateSystemManifest(structuredClone(installation.manifest));
     } catch {
       continue;
     }

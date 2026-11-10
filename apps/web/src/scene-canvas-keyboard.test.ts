@@ -73,9 +73,9 @@ describe("keyboard-complete scene canvas", () => {
   });
 
   it("wires named keyboard help, token movement, gesture completion, and visible focus into the actual canvas", () => {
-    expect(canvasSource).toContain('aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Enter Space Escape"');
-    expect(canvasSource).toContain("onKeyDown={handleBoardKeyDown}");
-    expect(canvasSource).toContain("onKeyDown={(event) => moveTokenFromKeyboard(token, event)}");
+    expect(canvasSource).toContain('aria-keyshortcuts={props.readOnly ? undefined : "ArrowUp ArrowDown ArrowLeft ArrowRight Enter Space Escape"}');
+    expect(canvasSource).toContain("onKeyDown={props.readOnly ? undefined : handleBoardKeyDown}");
+    expect(canvasSource).toContain("onKeyDown={props.readOnly ? undefined : (event) => moveTokenFromKeyboard(token, event)}");
     expect(canvasSource).toContain("if (!props.canMoveToken) return;");
     expect(appSource).toContain('canMoveToken={hasPermission("token.move")}');
     expect(canvasSource).toContain("Enter or Space to start and finish");
@@ -86,7 +86,7 @@ describe("keyboard-complete scene canvas", () => {
     expect(canvasSource).toContain("if (calibrationActive) return null;");
     expect(canvasSource).toContain('pointerEvents: calibrationActive ? "none" : undefined');
     expect(appSource).toContain("setGridCalibrationOpen(false); setGridCalibrationPoints([]);");
-    expect(appSource).toContain("if (next) { setFogBrushMode(null); setAnnotationTool(null);");
+    expect(appSource).toContain("if (next) { showScene(); setFogBrushMode(null); setAnnotationTool(null);");
     expect(stylesSource).toContain(".keyboard-board-cursor");
     expect(stylesSource).toContain(".scene-board:focus-visible");
   });

@@ -10,8 +10,19 @@
     "build": "tsc -p tsconfig.json",
     "lint": "tsc -p tsconfig.json --noEmit",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "prepack": "pnpm run build"
   },
+  "files": [
+    "dist/index.js",
+    "dist/index.d.ts",
+    "dist/domain-types.js",
+    "dist/domain-types.d.ts",
+    "dist/event-types.js",
+    "dist/event-types.d.ts",
+    "LICENSE",
+    "TYPE_CONTRACT_NOTICE.md"
+  ],
   "devDependencies": {
     "typescript": "^5.7.2",
     "vitest": "^3.2.6"

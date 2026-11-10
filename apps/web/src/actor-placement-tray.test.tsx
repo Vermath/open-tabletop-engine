@@ -31,6 +31,21 @@ describe("actor placement tray", () => {
     expect(html.match(/aria-label="Place Sentinel/g)).toHaveLength(48);
   });
 
+  it("keeps placement collapsed until it is needed and opens a requested search", () => {
+    const collapsed = renderToStaticMarkup(
+      <ActorPlacementTray actors={actors} search="" canCreateToken onSearchChange={vi.fn()} onPlaceActor={vi.fn()} />
+    );
+    const searched = renderToStaticMarkup(
+      <ActorPlacementTray actors={actors} search="Sentinel 48" canCreateToken onSearchChange={vi.fn()} onPlaceActor={vi.fn()} />
+    );
+
+    expect(collapsed).toMatch(/<details[^>]*aria-label="Actor placement tray"[^>]*>/);
+    expect(collapsed.match(/<details[^>]*>/)?.[0]).not.toContain("open=");
+    expect(collapsed).toMatch(/<summary>[\s\S]*Place actors[\s\S]*<\/summary>/);
+    expect(searched.match(/<details[^>]*>/)?.[0]).toContain('open=""');
+    expect(searched).toContain('aria-label="Place Sentinel 48 actor on scene"');
+  });
+
   it("filters the complete roster without truncating later matches", () => {
     expect(filterActorPlacementActors(actors, "sentinel 48").map((actor) => actor.id)).toEqual(["actor-48"]);
     const html = renderToStaticMarkup(

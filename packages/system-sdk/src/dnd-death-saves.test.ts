@@ -1,4 +1,5 @@
-import { createTimestamped, type Actor } from "@open-tabletop/core";
+import type { Actor } from "@open-tabletop/api-contracts";
+import { timestampedFixture } from "./test-fixtures.js";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -11,7 +12,7 @@ import { healDnd5eSrdActorFromZero } from "./dnd-rules-completion.js";
 import { resolveDnd5eSrdAction, dnd5eSrdDeathSavingThrow } from "./index.js";
 
 function actor(data: Record<string, unknown>, type = "character"): Actor {
-  return createTimestamped("act", {
+  return timestampedFixture({
     id: "act_dying", campaignId: "camp", systemId: "dnd-5e-srd", ownerUserId: "user", type, name: "Dying Hero", data, permissions: {},
   });
 }

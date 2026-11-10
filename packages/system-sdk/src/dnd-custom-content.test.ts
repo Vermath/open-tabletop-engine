@@ -1,4 +1,5 @@
-import { createTimestamped, type Actor } from "@open-tabletop/core";
+import type { Actor } from "@open-tabletop/api-contracts";
+import { timestampedFixture } from "./test-fixtures.js";
 import { describe, expect, it } from "vitest";
 
 import { applyDnd5eSrdAdvancement, dnd5eSrdAdvancementFeatGrant, dnd5eSrdClassAdvancementProfile, dnd5eSrdSubclassOptionsForActor } from "./index.js";
@@ -210,7 +211,7 @@ describe("D&D custom content builders", () => {
     expect(classResult.ok).toBe(true);
     expect(subclassResult.ok).toBe(true);
     if (!classResult.ok || !subclassResult.ok) return;
-    const actor = createTimestamped("act", {
+    const actor = timestampedFixture({
       id: "act_mystic", campaignId: "camp", systemId: "dnd-5e-srd", ownerUserId: "user", type: "character", name: "Mira",
       data: dataWithDndCustomAdvancementContent({
         class: "Mystic", classes: [{ className: "Mystic", level: 2 }], level: 2,

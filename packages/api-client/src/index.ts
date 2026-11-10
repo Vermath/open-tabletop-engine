@@ -40,6 +40,10 @@ import type {
   ContentImportBatch,
   ContentImportLicense,
   CoverLevel,
+  DeclarativeActionRequest,
+  DeclarativeActorSheet,
+  DeclarativeQuickRoll,
+  DeclarativeResourceCost,
   Dnd5eInventoryOverview,
   Dnd5eInventoryOwnerRef,
   Dnd5eLootData,
@@ -116,6 +120,7 @@ import type {
   ScenePathMeasurement,
   SystemCapability,
   SystemManifestData,
+  SystemManifestIdentity,
   Token,
   TokenMoveBatchRequest,
   TokenMoveBatchResult,
@@ -129,9 +134,10 @@ import type {
   World,
   WorldRecord,
   WorldRelation,
-} from "@open-tabletop/core";
+} from "@open-tabletop/api-contracts";
 
 export { campaignArchiveStreamContentType };
+export type { DeclarativeActionRequest, DeclarativeActorSheet, DeclarativeQuickRoll, DeclarativeResourceCost, SystemManifestIdentity };
 
 export interface OpenTabletopClientOptions {
   token?: string;
@@ -399,6 +405,21 @@ export interface SceneEditHistory {
   entries: SceneEditHistoryEntry[];
 }
 
+export interface PlayerPreviewSnapshot extends Pick<CampaignSnapshot, "scenes" | "tokens" | "actors" | "assets" | "vision" | "chat"> {
+  campaign: Pick<Campaign, "id" | "name">;
+  selectedSceneId: string;
+  generatedAt: string;
+  handouts: Handout[];
+  combats: Array<Pick<Combat, "id" | "active" | "turnPresentation"> & {
+    combatants: Array<Pick<Combat["combatants"][number], "id" | "tokenId">>;
+  }>;
+}
+
+export interface PlayerPreviewResponse {
+  readOnly: true;
+  player: Pick<User, "id" | "displayName">;
+  snapshot: PlayerPreviewSnapshot;
+}
 export interface SceneVisionOptions {
   /** Campaign member to preview. The server requires scene.update for cross-user previews. */
   previewUserId?: string;
@@ -960,6 +981,30 @@ export interface SystemRuntimeInfo extends SystemManifestData {
   runtimeCapabilities: SystemCapability[];
   unsupportedCapabilities: SystemCapability[];
   installedAt?: string;
+  installedVersions?: SystemManifestIdentity[];
+  binding?: SystemManifestIdentity;
+}
+
+export interface CampaignSystemBindingInput {
+  expectedUpdatedAt: string;
+  system: SystemManifestIdentity;
+  expectedBinding: SystemManifestIdentity | null;
+}
+
+export interface CampaignSystemBindingResult {
+  campaign: Campaign;
+  binding: SystemManifestIdentity;
+}
+
+export type SystemActorSheet = (Record<string, unknown> & { kind?: undefined }) | DeclarativeActorSheet;
+
+export interface DeclarativeActionResult {
+  roll: DiceRoll;
+  chat: ChatMessage;
+  actor: Actor;
+  sheet: DeclarativeActorSheet;
+  quickRoll: DeclarativeQuickRoll;
+  cost?: DeclarativeResourceCost;
 }
 
 export interface SystemActivationResult {
@@ -3191,6 +3236,10 @@ export class OpenTabletopClient {
     );
   }
 
+  /** Read-only player table projection; the server enforces the caller's GM authority. */
+  async scenePlayerPreview(sceneId: string, userId: string): Promise<PlayerPreviewResponse> {
+    return this.get(`${routes.scenePlayerPreview(sceneId)}?userId=${encodeURIComponent(userId)}`);
+  }
   async sampleSceneVision(
     sceneId: string,
     point: { x: number; y: number },
@@ -3314,6 +3363,7 @@ export class OpenTabletopClient {
       kind: SceneAnnotationKind;
       points: VisionPoint[];
       label?: string;
+      visibility?: "public" | "gm";
       color?: string;
       radius?: number;
       expiresInSeconds?: number;
@@ -3333,6 +3383,7 @@ export class OpenTabletopClient {
       Pick<
         SceneAnnotation,
         | "label"
+        | "visibility"
         | "color"
         | "layer"
         | "groupId"
@@ -4791,6 +4842,20 @@ export class OpenTabletopClient {
     );
   }
 
+  async bindCampaignSystem(
+    campaignId: string,
+    systemId: string,
+    input: CampaignSystemBindingInput,
+    options: PreparedMutationRequestOptions,
+  ): Promise<CampaignSystemBindingResult> {
+    if (!input.expectedUpdatedAt.trim()) throw new Error("System binding requires the exact campaign revision");
+    if (input.system.systemId !== systemId) throw new Error("System binding identity must match the route system");
+    if (!options.idempotencyKey.trim()) throw new Error("System binding requires an Idempotency-Key");
+    return this.post(routes.campaignSystemBinding(campaignId, systemId), input, {
+      "Idempotency-Key": options.idempotencyKey,
+    });
+  }
+
   async registerSystem(
     campaignId: string,
     manifest: SystemManifestData,
@@ -5702,7 +5767,7 @@ export class OpenTabletopClient {
     campaignId: string,
     systemId: string,
     actorId: string,
-  ): Promise<unknown> {
+  ): Promise<SystemActorSheet> {
     return this.get(routes.systemActorSheet(campaignId, systemId, actorId));
   }
 
@@ -5738,13 +5803,46 @@ export class OpenTabletopClient {
     );
   }
 
+  async rollDeclarativeSystemActor(
+    campaignId: string,
+    systemId: string,
+    actorId: string,
+    input: DeclarativeActionRequest,
+    options: PreparedMutationRequestOptions,
+  ): Promise<DeclarativeActionResult> {
+    if (!input.rollId.trim() || !input.expectedActorUpdatedAt.trim()) throw new Error("Declarative rolls require a rollId and the exact actor revision");
+    if (input.expectedSystem.systemId !== systemId) throw new Error("Declarative roll identity must match the route system");
+    if (!options.idempotencyKey.trim()) throw new Error("Declarative rolls require an Idempotency-Key");
+    return this.post(routes.systemActorRoll(campaignId, systemId, actorId), input, {
+      "Idempotency-Key": options.idempotencyKey,
+    });
+  }
+
+  async rollSystemActor(
+    campaignId: string,
+    systemId: string,
+    actorId: string,
+    input: DeclarativeActionRequest,
+    options: PreparedMutationRequestOptions,
+  ): Promise<DeclarativeActionResult>;
   async rollSystemActor(
     campaignId: string,
     systemId: string,
     actorId: string,
     input: SystemActorRollInput,
+    options?: MutationRequestOptions,
+  ): Promise<SystemActorRollResult>;
+  async rollSystemActor(
+    campaignId: string,
+    systemId: string,
+    actorId: string,
+    input: SystemActorRollInput | DeclarativeActionRequest,
     options: MutationRequestOptions = {},
-  ): Promise<SystemActorRollResult> {
+  ): Promise<SystemActorRollResult | DeclarativeActionResult> {
+    if ("expectedSystem" in input) {
+      if (!options.idempotencyKey?.trim()) throw new Error("Declarative rolls require an Idempotency-Key");
+      return this.rollDeclarativeSystemActor(campaignId, systemId, actorId, input as DeclarativeActionRequest, { idempotencyKey: options.idempotencyKey });
+    }
     if (systemId === "dnd-5e-srd") {
       const preparedCommit = Boolean(input.preparedPreviewKey);
       const consequential =

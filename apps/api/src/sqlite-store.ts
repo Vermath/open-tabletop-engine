@@ -31,6 +31,14 @@ import {
   type StoreSeedOptions,
 } from "./store.js";
 
+import {
+  assertDeclarativeSystemState,
+  assertDeclarativeSystemStateCommit,
+  DeclarativeSystemStateError,
+  type DeclarativeStateCollection,
+  type DeclarativeStateRecordChange,
+} from "./declarative-system-state.js";
+
 interface SqliteDatabase {
   exec(sql: string): void;
   prepare(sql: string): SqliteStatement;
@@ -120,6 +128,7 @@ interface StoredEngineRecordRow {
 }
 
 interface DesiredEngineRecord {
+  key: string;
   collection: StateCollection;
   id: string;
   campaignId: string | null;
@@ -423,9 +432,14 @@ export class SqliteStateStore implements StateStore {
     mkdirSync(dirname(filePath), { recursive: true });
     recoverInterruptedRestore(filePath);
     this.db = new DatabaseSync(filePath);
-    this.migrate();
+    try {
+      this.migrate();
+      this.state = this.load();
+    } catch (error) {
+      this.db.close();
+      throw error;
+    }
     this.writer = new CoalescedStateWriter(() => this.flushNow());
-    this.state = this.load();
     if (this.isEmpty() && demoSeedEnabled(this.options)) {
       this.state = seedState();
       this.save();
@@ -460,16 +474,41 @@ export class SqliteStateStore implements StateStore {
   }
 
   private flushNow(): void {
-    const desiredRecords = this.recordsForState();
+    let desiredRecords: DesiredEngineRecord[];
+    try {
+      desiredRecords = this.recordsForState();
+    } catch (error) {
+      if (error instanceof DeclarativeSystemStateError) this.restoreDurableState();
+      throw error;
+    }
     const desiredByKey = new Map<string, DesiredEngineRecord>();
+    const declarativeChanges: DeclarativeStateRecordChange[] = [];
     for (const record of desiredRecords) {
-      const key = engineRecordKey(record.collection, record.id);
+      const key = record.key;
       if (desiredByKey.has(key)) {
         throw new Error(
           `Duplicate engine record key: ${record.collection}/${record.id}`,
         );
       }
       desiredByKey.set(key, record);
+      const existing = this.persistedRecords.get(key);
+      if (isDeclarativeStateCollection(record.collection) && (existing?.data !== record.data || record.tracker.dirty)) {
+        declarativeChanges.push({ collection: record.collection, id: record.id, ...(existing ? { beforeJson: existing.data } : {}), afterJson: record.data });
+      }
+    }
+    const deletedRecords: PersistedEngineRecord[] = [];
+    for (const [key, record] of this.persistedRecords) {
+      if (desiredByKey.has(key)) continue;
+      deletedRecords.push(record);
+      if (isDeclarativeStateCollection(record.collection)) declarativeChanges.push({ collection: record.collection, id: record.id, beforeJson: record.data });
+    }
+    try {
+      // Existing persistence bytes identify changes. Validation detaches only
+      // selected rows, retaining raw fields that JSON serialization could omit.
+      assertDeclarativeSystemStateCommit(this.state, declarativeChanges);
+    } catch (error) {
+      if (error instanceof DeclarativeSystemStateError) this.restoreDurableState();
+      throw error;
     }
 
     this.db.exec("BEGIN IMMEDIATE");
@@ -487,16 +526,10 @@ export class SqliteStateStore implements StateStore {
         where collection = ? and id = ?
       `);
 
-      for (const [key, record] of this.persistedRecords) {
-        if (!desiredByKey.has(key)) {
-          deleteRecord.run(record.collection, record.id);
-        }
-      }
+      for (const record of deletedRecords) deleteRecord.run(record.collection, record.id);
 
       for (const record of desiredRecords) {
-        const existing = this.persistedRecords.get(
-          engineRecordKey(record.collection, record.id),
-        );
+        const existing = this.persistedRecords.get(record.key);
         if (!existing) {
           insert.run(
             record.collection,
@@ -529,7 +562,7 @@ export class SqliteStateStore implements StateStore {
       this.db.exec("COMMIT");
       this.persistedRecords = new Map(
         desiredRecords.map((record) => [
-          engineRecordKey(record.collection, record.id),
+          record.key,
           {
             collection: record.collection,
             id: record.id,
@@ -1081,6 +1114,7 @@ export class SqliteStateStore implements StateStore {
       (state[row.collection] as unknown[]).push(JSON.parse(row.data));
     }
     const normalizedState = normalizeEngineState(state);
+    assertDeclarativeSystemState(normalizedState);
     this.persistedRecords = new Map(
       rows.map((row) => [
         engineRecordKey(row.collection, row.id),
@@ -1132,19 +1166,22 @@ export class SqliteStateStore implements StateStore {
           throw new Error(`State record is not an object: ${collection}`);
         }
         const id = stateRecordId(collection, record);
-        const persisted = this.persistedRecords.get(
-          engineRecordKey(collection, id),
-        );
+        const key = engineRecordKey(collection, id);
+        const persisted = this.persistedRecords.get(key);
         const tracker = this.trackerForRecord(
           record,
           persisted?.source !== record,
         );
         this.reconcileTrackedValue(record, tracker, true);
-        const data =
-          !persisted || persisted.source !== record || tracker.dirty
-            ? JSON.stringify(record)
-            : persisted.data;
+        let data: string;
+        try {
+          data = !persisted || persisted.source !== record || tracker.dirty ? JSON.stringify(record) : persisted.data;
+        } catch (error) {
+          if (isDeclarativeStateCollection(collection)) throw new DeclarativeSystemStateError([{ collection, recordId: id, path: [], code: "record_json", message: "Candidate record must contain serializable JSON values." }]);
+          throw error;
+        }
         records.push({
+          key,
           collection,
           id,
           campaignId: this.campaignIdForRecord(collection, record),
@@ -1236,13 +1273,8 @@ export class SqliteStateStore implements StateStore {
     const keys = Object.keys(value);
     const keySet = new Set(keys);
     if (detectChanges && wasListening) {
-      for (const [key, accessor] of metadata.accessors) {
-        const descriptor = Object.getOwnPropertyDescriptor(value, key);
-        if (
-          !keySet.has(key) ||
-          descriptor?.get !== accessor.get ||
-          descriptor?.set !== accessor.set
-        ) {
+      for (const key of metadata.accessors.keys()) {
+        if (!keySet.has(key)) {
           markTrackedListenersDirty(metadata);
           metadata.accessors.delete(key);
         }
@@ -1259,6 +1291,9 @@ export class SqliteStateStore implements StateStore {
         descriptor.set === trackedAccessor.set,
       );
       if (!stillTracked) {
+        // This descriptor read also detects redefinitions; avoid reading every
+        // unchanged property again in the removed-key reconciliation above.
+        if (trackedAccessor) metadata.accessors.delete(key);
         if (detectChanges && wasListening && existingMetadata) {
           markTrackedListenersDirty(metadata);
         }
@@ -2491,4 +2526,8 @@ function stateRecordId(
     return JSON.stringify([record.userId ?? null, record.method, record.key]);
   }
   throw new Error(`State record is missing an id: ${collection}`);
+}
+
+function isDeclarativeStateCollection(collection: string): collection is DeclarativeStateCollection {
+  return collection === "campaigns" || collection === "actors" || collection === "items" || collection === "systemInstallations";
 }

@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 
 import { realtimeConnectionIdentity, realtimeUiLabel, startRealtimeConnection } from "./realtime-connection.js";
 
+const navigationSource = readFileSync(resolve(__dirname, "workspace-navigation.tsx"), "utf8").replace(/\r\n/g, "\n");
 const appSource = readFileSync(resolve(__dirname, "App.tsx"), "utf8").replace(/\r\n/g, "\n");
 
 interface RealtimeSocketLike {
@@ -245,11 +246,11 @@ describe("realtime connection", () => {
     expect(realtimeUiLabel("connected")).toBe("Connected");
     expect(realtimeUiLabel("reconnecting")).toBe("Reconnecting");
     expect(realtimeUiLabel("syncing")).toBe("Syncing");
-    expect(appSource).toContain('onUnavailable: () => {\n        setRealtimeUiState("reconnecting");');
+    expect(appSource).toMatch(/onUnavailable: \(\) => \{\s*if \(cancelled\) return;\s*setRealtimeUiState\("reconnecting"\);/);
     expect(appSource).toContain('setRealtimeUiState("syncing")');
     expect(appSource).toContain("await realtimeHandlers.onOpen(true)");
     expect(appSource).toContain('inert={realtimeUiState === "syncing" ? true : undefined}');
-    expect(appSource).toContain('data-connection-state={realtimeUiState} role="status" aria-live="polite"');
+    expect(navigationSource).toContain('data-connection-state={realtimeUiState} role="status" aria-live="polite"');
     expect(appSource).not.toContain('status.toLowerCase().includes("realtime")');
   });
 });

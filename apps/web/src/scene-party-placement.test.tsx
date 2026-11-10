@@ -89,6 +89,61 @@ describe("selected-scene party placement", () => {
     }
   });
 
+  it.each([
+    { x: 8.25, y: 12.5 },
+    { x: -29.25, y: 125 },
+  ])("fills only complete fractional cells for grid origin %j without moving existing tokens", (gridOrigin) => {
+    const fractionalScene = { ...scene, width: 121, height: 125, gridSize: 37.5, gridOrigin };
+    const aric = actor("act-aric");
+    const missingParty = Array.from({ length: 8 }, (_, index) => actor(`act-missing-${index}`));
+    const existingAric = token({ id: "tok-aric", actorId: aric.id, x: 45.75, y: 50, width: 37.5, height: 37.5 });
+    const occupiedEnemy = token({ id: "tok-enemy", actorId: "act-enemy", x: 8.25, y: 12.5, width: 37.5, height: 37.5 });
+    const existingTokens = [existingAric, occupiedEnemy];
+    const originalTokens = structuredClone(existingTokens);
+
+    const plan = planMissingPartyTokenPlacements(fractionalScene, [aric, ...missingParty], existingTokens);
+
+    expect(plan.missingActorIds).toEqual(missingParty.map((member) => member.id));
+    expect(plan.blockedActorIds).toEqual([missingParty[7]!.id]);
+    expect(plan.placements).toHaveLength(7);
+    expect(existingTokens).toEqual(originalTokens);
+    const rectangles = plan.placements.map((placement) => ({
+      x: placement.centerX - placement.width / 2,
+      y: placement.centerY - placement.height / 2,
+      width: placement.width,
+      height: placement.height,
+    }));
+    expect(rectangles.map(({ x, y }) => `${x},${y}`).sort()).toEqual([
+      "45.75,12.5", "83.25,12.5", "8.25,50", "83.25,50", "8.25,87.5", "45.75,87.5", "83.25,87.5",
+    ].sort());
+    for (const [index, rectangle] of rectangles.entries()) {
+      expect(rectangle.width).toBe(37.5);
+      expect(rectangle.height).toBe(37.5);
+      expect(rectangle.x).toBeGreaterThanOrEqual(0);
+      expect(rectangle.y).toBeGreaterThanOrEqual(0);
+      expect(rectangle.x + rectangle.width).toBeLessThanOrEqual(fractionalScene.width);
+      expect(rectangle.y + rectangle.height).toBeLessThanOrEqual(fractionalScene.height);
+      for (const occupied of existingTokens) expect(overlaps(rectangle, occupied)).toBe(false);
+      for (const other of rectangles.slice(index + 1)) expect(overlaps(rectangle, other)).toBe(false);
+    }
+  });
+
+  it("ignores grid origin when staging fractional tokens in a gridless scene", () => {
+    const gridlessScene: Scene = { ...scene, width: 75, height: 75, gridSize: 37.5, gridType: "gridless", gridOrigin: { x: 8.25, y: 12.5 } };
+    const party = Array.from({ length: 4 }, (_, index) => actor(`act-${index}`));
+
+    const plan = planMissingPartyTokenPlacements(gridlessScene, party, []);
+
+    expect(plan.blockedActorIds).toEqual([]);
+    expect(plan.placements).toHaveLength(4);
+    expect(plan.placements.map(({ centerX, centerY }) => `${centerX},${centerY}`).sort()).toEqual([
+      "18.75,18.75", "56.25,18.75", "18.75,56.25", "56.25,56.25",
+    ].sort());
+    for (const placement of plan.placements) {
+      expect(placement.width).toBe(37.5);
+      expect(placement.height).toBe(37.5);
+    }
+  });
   it("ignores decorative map-layer assets but reports actors that cannot fit without overlap", () => {
     const smallScene = { ...scene, width: 100, height: 50 };
     const decorativeMap = token({ id: "tok-map", actorId: undefined, x: 0, y: 0, width: 100, height: 50, layer: "map" });

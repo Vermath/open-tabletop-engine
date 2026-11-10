@@ -37,12 +37,9 @@ async function expectJsonResponse<T>(response: Pick<APIResponse, "ok" | "text">)
 }
 
 async function openDetails(details: Locator): Promise<void> {
-  await expect(details.locator("summary")).toBeVisible();
+  await expect(details.locator(":scope > summary")).toBeVisible();
   if (!(await details.evaluate((element) => (element as HTMLDetailsElement).open))) {
-    await details.evaluate((element) => {
-      (element as HTMLDetailsElement).open = true;
-      element.scrollIntoView({ block: "nearest" });
-    });
+    await details.locator(":scope > summary").click();
   }
 }
 
@@ -63,6 +60,8 @@ async function closeManage(page: Page): Promise<void> {
 }
 
 async function openInspectorPanel(page: Page, panelName: string): Promise<void> {
+  const reopen = page.getByRole("button", { name: "Show inspector", exact: true });
+  if (await reopen.isVisible()) await reopen.click();
   await page.locator(".inspector-tabs").getByRole("tab", { name: panelName, exact: true }).click();
 }
 
@@ -170,7 +169,7 @@ async function clickAndReviewPreparedDndAction(
     const dialog = page.getByRole("dialog", { name: /Review .* action/ });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText("Structured consequence review", { exact: true })).toBeVisible();
-    await expect(dialog.locator(".account-summary")).toContainText("Rule source: D&D 5e SRD server resolver");
+    await expect(dialog.locator(".account-summary", { hasText: "Rule source: D&D 5e SRD server resolver" })).toHaveText("Rule source: D&D 5e SRD server resolver");
     if (options.expectedSupport) {
       await expect(dialog.getByRole("note", { name: `Rules support: ${options.expectedSupport}`, exact: true })).toBeVisible();
     }
@@ -282,7 +281,7 @@ async function exercisePlayerSheetBeforeCombat(page: Page, characterName: string
   await rollCoreStatistic(page, stats.getByRole("button", { name: /Roll Strength check/ }), "Canonical Ember Campaign");
   await rollCoreStatistic(page, stats.getByRole("button", { name: /Roll Dexterity saving throw/ }), "Canonical Ember Campaign");
 
-  const hp = stats.getByLabel("Actor sheet current HP");
+  const hp = stats.getByLabel("Actor sheet healing target HP");
   await applyReviewedTypedDamageToHp(page, { apiBaseUrl, campaignName: "Canonical Ember Campaign", actorName: characterName, targetHp: 5 });
   await expect(hp).toHaveValue("5");
   const prone = stats.getByRole("group", { name: "Toggle common conditions" }).getByRole("button", { name: "Prone" });
@@ -324,6 +323,7 @@ async function exercisePlayerSheetBeforeCombat(page: Page, characterName: string
   await expect(statusMessage(page, new RegExp(`${characterName} used action: Level 1 Spell Slot \\d+; healing applied`))).toBeVisible();
 
   await actorPanel.getByRole("tab", { name: "Stats" }).click();
+  await openDetails(actorPanel.locator("details.actor-rest-disclosure"));
   const recovery = actorPanel.locator("details.actor-rest-card").first();
   await openDetails(recovery);
   await recovery.getByRole("button", { name: "Review long rest" }).click();
@@ -445,7 +445,8 @@ async function fillRulesValidAdvancementSpellChoices(page: Page, advancement: Lo
 
 async function advanceCharacterToLevelTwo(page: Page, characterName: string): Promise<void> {
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Canonical Ember Campaign" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("Canonical Ember Campaign");
   await selectPartyActor(page, characterName);
   await page.getByRole("button", { name: "Prep", exact: true }).click();
   await openInspectorPanel(page, "Plugins");
@@ -514,7 +515,8 @@ async function assignPlayerTokenControl(page: Page, characterName: string): Prom
 
 async function exercisePlayerCombatAction(playerPage: Page, gmPage: Page, characterName: string): Promise<void> {
   await playerPage.reload();
-  await expect(playerPage.getByRole("heading", { name: "Canonical Ember Campaign" })).toBeVisible();
+  await expect(playerPage.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(playerPage.getByLabel("Current campaign", { exact: true })).toHaveText("Canonical Ember Campaign");
   await playerPage.getByRole("button", { name: `Token ${characterName}` }).click();
   await openInspectorPanel(playerPage, "Actors");
   const actorPanel = selectedActorPanel(playerPage);
@@ -621,7 +623,8 @@ async function exercisePlayerCombatAction(playerPage: Page, gmPage: Page, charac
 
 async function resolveDeathSaves(playerPage: Page, characterName: string): Promise<"stable" | "dead" | "revived"> {
   await playerPage.reload();
-  await expect(playerPage.getByRole("heading", { name: "Canonical Ember Campaign" })).toBeVisible({ timeout: 60_000 });
+  await expect(playerPage.getByLabel("Current campaign", { exact: true })).toBeVisible({ timeout: 60_000 });
+  await expect(playerPage.getByLabel("Current campaign", { exact: true })).toHaveText("Canonical Ember Campaign", { timeout: 60_000 });
   await playerPage.getByRole("button", { name: `Token ${characterName}` }).click();
   await openInspectorPanel(playerPage, "Actors");
   const stats = selectedActorPanel(playerPage).getByRole("region", { name: "Actor stats sheet" });
@@ -683,7 +686,9 @@ async function createCampaignThroughSetupWizard(page: Page, campaignName: string
   await expect(impact).toContainText("Public handout: First-Light Table Note");
   await setup.getByRole("button", { name: "Create Campaign Setup", exact: true }).click();
 
-  await expect(page.getByRole("heading", { name: campaignName, exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText(campaignName);
   await expect(statusMessage(page, new RegExp(`${campaignName} created with First Scene; invite link ready to copy`))).toBeVisible();
   const tokenInput = page.locator('input[aria-label="Invite token"][readonly]');
   await expect(tokenInput).toHaveValue(/^oti_/);
@@ -709,7 +714,8 @@ async function createIndependentPlayer(browser: Browser, inviteToken: string, ob
   await page.getByRole("textbox", { name: "Display name" }).fill("Canonical Player");
   await page.getByLabel("Join password").fill("correct horse");
   await page.getByRole("button", { name: "Accept Invite" }).click();
-  await expect(page.getByRole("heading", { name: "Canonical Ember Campaign" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("Canonical Ember Campaign");
   return { context, page };
 }
 
@@ -727,10 +733,12 @@ test("blank deployment completes one canonical GM-and-player D&D session and res
   await page.getByLabel("Owner password").fill("correct horse");
   await page.getByRole("textbox", { name: "Initial campaign name" }).fill("Bootstrap Staging Campaign");
   await page.getByRole("button", { name: "Create" }).click();
-  await expect(page.getByRole("heading", { name: "Bootstrap Staging Campaign" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("Bootstrap Staging Campaign");
 
   const inviteToken = await createCampaignThroughSetupWizard(page, campaignName);
-  await expect(page.getByRole("heading", { name: campaignName })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText(campaignName);
   await expect(page.locator(".scene-tabs")).toContainText("First Scene");
   await expectPublicSessionNote(page);
 
@@ -751,7 +759,8 @@ test("blank deployment completes one canonical GM-and-player D&D session and res
     });
 
     await player.page.reload();
-    await expect(player.page.getByRole("heading", { name: campaignName })).toBeVisible({ timeout: 60_000 });
+    await expect(player.page.getByLabel("Current campaign", { exact: true })).toBeVisible({ timeout: 60_000 });
+    await expect(player.page.getByLabel("Current campaign", { exact: true })).toHaveText(campaignName, { timeout: 60_000 });
     await exercisePlayerSheetBeforeCombat(player.page, characterName);
 
     await advanceCharacterToLevelTwo(page, characterName);
@@ -763,7 +772,7 @@ test("blank deployment completes one canonical GM-and-player D&D session and res
     await openInspectorPanel(page, "Actors");
     const gmStats = selectedActorPanel(page).getByRole("region", { name: "Actor stats sheet" });
     await applyReviewedTypedDamageToHp(page, { apiBaseUrl, campaignName, actorName: characterName, targetHp: 0 });
-    await expect(gmStats.getByLabel("Actor sheet current HP")).toHaveValue("0");
+    await expect(gmStats.getByLabel("Actor sheet healing target HP")).toHaveValue("0");
     await expect(selectedActorPanel(page).getByRole("region", { name: "Actor at a glance" })).not.toContainText("Concentrating: Dancing Lights Effect");
 
     const terminal = await resolveDeathSaves(player.page, characterName);
@@ -778,14 +787,15 @@ test("blank deployment completes one canonical GM-and-player D&D session and res
     ).toBe(true);
 
     await player.page.reload();
-    await expect(player.page.getByRole("heading", { name: campaignName })).toBeVisible({ timeout: 60_000 });
+    await expect(player.page.getByLabel("Current campaign", { exact: true })).toBeVisible({ timeout: 60_000 });
+    await expect(player.page.getByLabel("Current campaign", { exact: true })).toHaveText(campaignName, { timeout: 60_000 });
     await player.page.getByRole("button", { name: `Token ${characterName}` }).click();
     await openInspectorPanel(player.page, "Actors");
     const reloadedActorPanel = selectedActorPanel(player.page);
     await expect(reloadedActorPanel.getByRole("region", { name: "Actor at a glance" })).not.toContainText("Concentrating: Dancing Lights Effect");
     const reloadedStats = reloadedActorPanel.getByRole("region", { name: "Actor stats sheet" });
     if (terminal === "revived") {
-      await expect(reloadedStats.getByLabel("Actor sheet current HP")).toHaveValue("1");
+      await expect(reloadedStats.getByLabel("Actor sheet healing target HP")).toHaveValue("1");
       await expect(reloadedStats.locator(".actor-death-save-row")).toHaveCount(0);
     } else {
       await expect(reloadedStats.locator(".actor-death-save-row")).toContainText(terminal === "stable" ? "Stable" : "Dead");
@@ -794,7 +804,8 @@ test("blank deployment completes one canonical GM-and-player D&D session and res
     await expectPublicSessionNote(player.page);
 
     await page.reload();
-    await expect(page.getByRole("heading", { name: campaignName })).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText(campaignName, { timeout: 60_000 });
     await page.getByRole("button", { name: "Live Table", exact: true }).click();
     await openInspectorPanel(page, "Combat");
     const persistedRound = combatTrackerPanel(page).getByRole("heading", { name: /Round \d+/ });

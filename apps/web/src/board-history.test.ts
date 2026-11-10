@@ -63,4 +63,36 @@ describe("board history", () => {
     expect(copy).toMatchObject({ id: "tok_copy", sceneId: "scn_1", name: "Source Copy", x: 65, y: 75 });
     expect(copy?.createdAt).toBe("2026-01-02T00:00:00.000Z");
   });
+
+  it("keeps copies at the scene edge inside the destination", () => {
+    const source = token({ id: "edge", sceneId: "scene", name: "Edge", x: 950, y: 750 });
+    const [copy] = createTokenCopies([source], { scene: { width: 1000, height: 800 } });
+    expect(copy).toMatchObject({ x: 950, y: 750, width: 50, height: 50 });
+    expect(source).toMatchObject({ x: 950, y: 750 });
+  });
+
+  it("translates a copied formation into a smaller destination without changing spacing", () => {
+    const sources = [
+      token({ id: "a", sceneId: "small", name: "A", x: 800, y: 700 }),
+      token({ id: "b", sceneId: "small", name: "B", x: 900, y: 750 })
+    ];
+    const copies = createTokenCopies(sources, { scene: { width: 300, height: 200 } });
+    expect(copies.map(({ x, y }) => ({ x, y }))).toEqual([{ x: 150, y: 100 }, { x: 250, y: 150 }]);
+    expect(copies.every((copy) => copy.sceneId === "small")).toBe(true);
+  });
+
+  it("keeps oversized formations reachable without silently resizing their tokens", () => {
+    const sources = [
+      token({ id: "a", sceneId: "scene", name: "A", x: 0, y: 0 }),
+      token({ id: "b", sceneId: "scene", name: "B", x: 400, y: 0 }),
+      token({ id: "large", sceneId: "scene", name: "Large", x: 600, y: 400, width: 400, height: 300 })
+    ];
+    const copies = createTokenCopies(sources, { scene: { width: 300, height: 200 } });
+    expect(copies.map(({ x, y, width, height }) => ({ x, y, width, height }))).toEqual([
+      { x: 0, y: 0, width: 50, height: 50 },
+      { x: 250, y: 0, width: 50, height: 50 },
+      { x: 0, y: 0, width: 400, height: 300 }
+    ]);
+  });
+
 });

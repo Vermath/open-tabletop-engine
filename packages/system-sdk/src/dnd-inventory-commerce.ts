@@ -9,7 +9,7 @@ import type {
   Dnd5eMerchantData,
   Dnd5ePartyStashData,
   Item,
-} from "@open-tabletop/core";
+} from "@open-tabletop/api-contracts";
 
 export const DND5E_INVENTORY_MAX_CONTAINER_DEPTH = 5;
 export const DND5E_PARTY_STASH_ITEM_TYPE = "dnd5e-party-stash";

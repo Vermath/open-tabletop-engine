@@ -60,7 +60,8 @@ test("campaign setup survives reload and sign-out without crossing users", async
   await expect(panel.getByRole("heading", { name: "Review and create" })).toBeVisible();
   await panel.getByRole("button", { name: "Create Campaign Setup" }).click();
 
-  await expect(page.getByRole("heading", { name: "T12 Resumable Campaign", level: 1 })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("T12 Resumable Campaign");
   await expect(page.getByRole("status").filter({ hasText: "T12 Resumable Campaign created with Twelve Bells Opening; opened session prep" })).toBeVisible();
   panel = await openManageCategory(page, "Campaign");
   await expect(panel.getByRole("heading", { name: /Next:/ }).first()).toBeVisible();

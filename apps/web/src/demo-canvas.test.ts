@@ -100,8 +100,9 @@ describe("blank canvas demo", () => {
     expect(appSource).toContain("setStatelessDemoApiMode(true)");
     expect(appSource).toContain('resetWorkspaceNavigation("prep", "content")');
     expect(appSource).toContain("createBlankCanvasDemoAsset({");
-    expect(appSource).toContain('if (updatedDemoScene) finishSceneBackgroundChange(updatedDemoScene, asset.name); else setStatus("Demo asset added")');
-    expect(appSource).toContain("if (text === blankCanvasDemoNotice) return;");
+    expect(appSource).toContain('if (setAsBackground) await setSceneBackgroundFromAsset(asset); else setStatus("Demo asset added")');
+    expect(appSource).toContain("useStatusToasts(status, snapshotReady, blankCanvasDemoNotice)");
+    expect(readFileSync(resolve(__dirname, "status-toasts.ts"), "utf8")).toContain("if (text === suppressedStatus) return;");
     expect(appSource).not.toContain("!blankCanvasDemoOpen && aiAgentOpen");
     expect(appSource).not.toContain("{!blankCanvasDemoOpen && (");
     expect(appSource).not.toContain("<DemoCanvas");

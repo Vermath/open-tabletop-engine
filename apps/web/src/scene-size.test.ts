@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sceneDimensionsFromCells, sceneGridCellSummary, sceneSizePresets } from "./scene-size.js";
+import { sceneDimensionsFromCells, sceneGridCellSummary, sceneSizePresets, normalizeSceneGridSize } from "./scene-size.js";
 
 describe("scene size helpers", () => {
   it("turns scene size presets into pixel dimensions using the active grid size", () => {
@@ -10,6 +10,12 @@ describe("scene size helpers", () => {
   it("summarizes existing scene dimensions as grid cells", () => {
     expect(sceneGridCellSummary(2400, 1600, 50)).toBe("48 x 32 squares");
     expect(sceneGridCellSummary(1800, 1800, 40)).toBe("45 x 45 squares");
+  });
+
+  it("preserves calibrated fractional grid sizes when computing or saving scene dimensions", () => {
+    expect(normalizeSceneGridSize(37.5, 50)).toBe(37.5);
+    expect(sceneDimensionsFromCells({ columns: 24, rows: 16 }, 37.5)).toEqual({ width: 900, height: 600 });
+    expect(sceneGridCellSummary(900, 600, 37.5)).toBe("24 x 16 squares");
   });
 
   it("offers larger-than-default presets", () => {
