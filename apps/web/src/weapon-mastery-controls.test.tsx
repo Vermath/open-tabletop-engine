@@ -54,7 +54,8 @@ describe("Weapon Mastery combat controls", () => {
 
     expect(actorPanelSource).toContain("weaponMastery: weaponMasteryUseForSelection");
     expect(actorPanelSource).toContain("weaponMastery: previewWeaponMasteryUse");
-    expect(appSource).toContain("weaponMastery: options.weaponMastery");
+    expect(appSource).toContain("actorActionRequest(rollId, actor.updatedAt, { ...options, consumeResources }, diceVisibility)");
+    expect(readFileSync(new URL("./actor-action-review.ts", import.meta.url), "utf8")).toContain("weaponMastery: options.weaponMastery");
     expect(appSource).toContain("options.applyEffect || options.weaponMastery?.use");
   });
 });

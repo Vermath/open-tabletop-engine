@@ -79,6 +79,55 @@ export function actorActionPreviewRequiresInput(
   );
 }
 
+/** The request body shared by an action's preview, preparation and direct commit. */
+export function actorActionRequest(
+  rollId: string,
+  expectedUpdatedAt: string,
+  options: { consumeResources: boolean; applyEffect?: boolean; targetActorId?: string; saveOutcomes?: Record<string, string>; effectChoice?: string; weaponMastery?: unknown; continuationId?: string },
+  visibility: string
+) {
+  return {
+    rollId,
+    expectedUpdatedAt,
+    consumeResources: options.consumeResources,
+    applyEffect: options.applyEffect,
+    targetActorId: options.targetActorId,
+    visibility,
+    saveOutcomes: options.saveOutcomes,
+    effectChoice: options.effectChoice,
+    weaponMastery: options.weaponMastery,
+    continuationId: options.continuationId
+  };
+}
+
+/**
+ * True when the server resolved a prepared action completely: nothing is blocked, nothing waits on a person,
+ * and there is no warning to read first. A routine action may be committed without the review dialog, because
+ * the commit can be undone. Everything else keeps the review. Death saves are never routine.
+ */
+export function preparedActionIsRoutine(prepared: Pick<PreparedActorActionResponse, "resolution">, review: Pick<ConsequenceReviewRequest, "boundary" | "blockingIssues">): boolean {
+  const resolution = prepared.resolution;
+  return review.boundary?.status === "automated"
+    && !(review.blockingIssues && review.blockingIssues.length > 0)
+    && !resolution.blocked
+    && !resolution.manualResolutionRequired
+    && !resolution.pendingChoice
+    && !(resolution.pendingSaves && resolution.pendingSaves.length > 0)
+    && !(resolution.pendingReactions && resolution.pendingReactions.length > 0)
+    && !(resolution.warnings && resolution.warnings.length > 0)
+    && !(resolution.attunement && resolution.attunement.overLimitBy > 0)
+    && !resolution.deathSave;
+}
+
+/** The status line for a committed action. */
+export function committedActionStatus(actorName: string, used: CommittedActorActionResponse, describeDeathSave: (deathSave: NonNullable<ActorActionResolutionPreview["deathSave"]>) => string): string {
+  const deathSave = used.resolution?.deathSave;
+  if (deathSave) return `${actorName} Death Saving Throw: ${describeDeathSave(deathSave)}`;
+  const spent = used.usage?.consumed?.map((item) => `${item.label} ${item.remaining}`).join(", ");
+  const applied = used.effect ? `; ${used.effect.type} applied` : "";
+  return spent ? `${actorName} used action: ${spent}${applied}` : `${actorName} action posted${applied}`;
+}
+
 export interface PreparedTypedDamageResponse {
   status: "ready" | "blocked";
   blockers: Array<{ message: string }>;

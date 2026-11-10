@@ -172,12 +172,17 @@ export function KeyboardShortcutDialog({ onClose }: { onClose(): void }) {
   );
 }
 
-export function ToastStack(props: { toasts: ReadonlyArray<{ id: number; text: string; tone: "info" | "error" }>; onDismiss(id: number): void }) {
+export function ToastStack(props: { toasts: ReadonlyArray<{ id: number; text: string; tone: "info" | "error"; action?: { label: string; run(): void } }>; onDismiss(id: number): void }) {
   return (
     <div className="toast-stack">
       {props.toasts.map((toast) => (
         <div className={`toast toast-${toast.tone}`} key={toast.id}>
           <span>{toast.text}</span>
+          {toast.action && (
+            <button className="ghost-button small toast-action" type="button" onClick={() => { toast.action!.run(); props.onDismiss(toast.id); }}>
+              {toast.action.label}
+            </button>
+          )}
           <button className="icon-button" type="button" aria-label="Dismiss notification" onClick={() => props.onDismiss(toast.id)}>
             <X size={13} />
           </button>

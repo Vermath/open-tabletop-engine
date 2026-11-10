@@ -29,7 +29,7 @@ export type ArchiveImportMode = "upsert" | "reject_conflicts" | "skip_conflicts"
 export type ManageCategoryId = "account" | "campaign" | "people" | "scenes" | "archives" | "serverAdmin";
 export type WorkspaceMode = "live" | "prep" | "ai" | "manage";
 export type RulesSaveOutcome = "success" | "failure";
-export type ActorActionCommitOptions = { targetActorId?: string; applyEffect?: boolean; consumeResources?: boolean; saveOutcomes?: Record<string, RulesSaveOutcome>; effectChoice?: string; weaponMastery?: Dnd5eSrdWeaponMasteryUse; continuationId?: string; reviewActorNames?: Record<string, string> };
+export type ActorActionCommitOptions = { targetActorId?: string; applyEffect?: boolean; consumeResources?: boolean; saveOutcomes?: Record<string, RulesSaveOutcome>; effectChoice?: string; weaponMastery?: Dnd5eSrdWeaponMasteryUse; continuationId?: string; reviewActorNames?: Record<string, string>; /** Commit a routine result without the review dialog; it can be undone. */ oneStep?: boolean };
 export interface CombatRewardRequestPayload {
   recipientActorIds: string[];
   totalXp?: number;
