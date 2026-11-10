@@ -11,6 +11,26 @@ async function openDemoTable(page: Page): Promise<Locator> {
   return board;
 }
 
+/**
+ * The token drawn on top at its own centre. Earlier tests in a run can leave tokens stacked on the seeded one,
+ * and a real click only reaches whichever is on top.
+ */
+async function topmostToken(page: Page): Promise<Locator> {
+  const board = page.locator(".scene-board");
+  await expect(board.locator("button.token").first()).toBeVisible();
+  const tokenId = await board.evaluate((element) => {
+    const tokens = Array.from(element.querySelectorAll<HTMLElement>("button.token"));
+    const top = tokens.find((token) => {
+      const rect = token.getBoundingClientRect();
+      const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      return hit !== null && token.contains(hit);
+    });
+    return top?.dataset.tokenId ?? null;
+  });
+  expect(tokenId).not.toBeNull();
+  return page.locator(`.scene-board [data-token-id="${tokenId}"]`);
+}
+
 async function zoomPercent(page: Page): Promise<number> {
   return Number.parseInt((await page.locator(".map-zoom-value").innerText()).replace("%", ""), 10);
 }
@@ -102,12 +122,13 @@ test("right-drag pans the map without opening the token menu", async ({ page }) 
 
 test("right-click opens a token menu that replaces the hidden layer shortcut", async ({ page }) => {
   await openDemoTable(page);
-  const token = page.locator(".scene-board button.token").first();
+  const token = await topmostToken(page);
   await expect(token).toBeVisible();
   const originalLabel = await token.getAttribute("aria-label");
   expect(originalLabel).toBeTruthy();
 
-  await token.click({ button: "right" });
+  // A token whose turn it is pulses, so skip the wait for a still target; a person can right-click it regardless.
+  await token.click({ button: "right", force: true });
   const menu = page.getByRole("menu");
   await expect(menu).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Show in inspector" })).toBeFocused();
@@ -155,6 +176,13 @@ test("right-click opens a token menu that replaces the hidden layer shortcut", a
     await expect.poll(() => sameToken.getAttribute("aria-label")).not.toBe(current);
   }
   expect(await sameToken.getAttribute("aria-label")).toBe(originalLabel);
+});
+
+test("every wall on a scene shares one drawing layer", async ({ page }) => {
+  await openDemoTable(page);
+  const layers = page.locator(".scene-board svg.wall-layer");
+  await expect(layers).toHaveCount(1);
+  expect(await layers.locator("line").count()).toBeGreaterThan(0);
 });
 
 test("toolbar zoom-out preserves the view centre near both scroll limits", async ({ page }) => {
@@ -217,6 +245,13 @@ test.describe("touch map gestures", () => {
 for (const scenario of ["another inspector tab", "map focus", "short phone"]) {
   test(`Show in inspector opens the actor from ${scenario}`, async ({ page }) => {
     await openDemoTable(page);
+    const apiBase = `http://127.0.0.1:${process.env.OTTE_E2E_API_PORT ?? 4100}`;
+    const response = await page.request.get(`${apiBase}/api/v1/campaigns/camp_demo/snapshot`);
+    expect(response.ok()).toBe(true);
+    const snapshot = await response.json() as { tokens: Array<{ id: string; actorId?: string }>; actors: Array<{ id: string; name: string }> };
+    const actorId = snapshot.tokens.find((token) => token.id === "tok_valen")!.actorId;
+    const actor = snapshot.actors.find((candidate) => candidate.id === actorId)!;
+    expect(actor).toBeDefined();
     await page.locator("#inspector-tab-chat").click();
     if (scenario === "map focus") await page.getByRole("button", { name: "Enter map focus mode", exact: true }).click();
     if (scenario === "short phone") {
@@ -228,7 +263,7 @@ for (const scenario of ["another inspector tab", "map focus", "short phone"]) {
     await page.keyboard.press("Shift+F10");
     await page.getByRole("menuitem", { name: "Show in inspector", exact: true }).click();
     await expect(page.locator("#inspector-tab-actors")).toHaveAttribute("aria-selected", "true");
-    await expect(page.locator(".inspector").getByRole("heading", { name: "Valen Ash", exact: true })).toBeVisible();
+    await expect(page.locator(".inspector").getByRole("heading", { name: actor.name, exact: true })).toBeVisible();
     await expect(page.locator(".shell")).not.toHaveAttribute("data-table-focus", "true");
   });
 }
