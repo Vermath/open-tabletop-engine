@@ -13,7 +13,7 @@ const gmHeaders = { "x-user-id": "usr_demo_gm" };
 const playerHeaders = { "x-user-id": "usr_demo_player" };
 
 class OneShotFlushFailureStore extends MemoryStateStore {
-  private failNextFlush = true;
+  failNextFlush = false;
   private pending = false;
   persisted: EngineState;
 
@@ -23,6 +23,7 @@ class OneShotFlushFailureStore extends MemoryStateStore {
   }
 
   override save(): void {
+    super.save();
     this.pending = true;
   }
 
@@ -32,6 +33,7 @@ class OneShotFlushFailureStore extends MemoryStateStore {
       this.failNextFlush = false;
       throw new Error("simulated atomic token move persistence failure");
     }
+    super.flush();
     this.persisted = structuredClone(this.state);
     this.pending = false;
   }
@@ -353,7 +355,9 @@ registerCommand("/move", async (input, context) => {
     const store = new OneShotFlushFailureStore();
     const first = store.state.tokens.find((token) => token.id === "tok_valen")!;
     const second = addToken(store, { id: "tok_atomic_durable", ownerUserIds: ["usr_demo_player"], x: 360, y: 350 });
-    store.persisted = structuredClone(store.state);
+    store.save();
+    store.flush();
+    store.failNextFlush = true;
     const before = [first, second].map((token) => ({ id: token.id, x: token.x, y: token.y, updatedAt: token.updatedAt }));
     const payload = batch(store, [move(first, 700, 500), move(second, 750, 500)]);
     const app = await buildApp({ store });

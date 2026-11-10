@@ -2035,8 +2035,8 @@ describe("api", () => {
       expect(jsonRequestSchema(spec.paths["/api/v1/campaigns/{campaignId}/plugins/{pluginId}/storage/{key}"]?.put)).toMatchObject({ $ref: "#/components/schemas/PluginStorageSetRequest" });
       expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/plugins/{pluginId}/storage/{key}"]?.put)).toMatchObject({ $ref: "#/components/schemas/PluginStorageEntry" });
       expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/systems/{systemId}/install"]?.post)).toMatchObject({ $ref: "#/components/schemas/SystemInstallResponse" });
-      expect(jsonRequestSchema(spec.paths["/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/roll"]?.post)).toMatchObject({ $ref: "#/components/schemas/SystemActorActionRequest" });
-      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/roll"]?.post)).toMatchObject({ $ref: "#/components/schemas/SystemRollResponse" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/roll"]?.post)).toMatchObject({ $ref: "#/components/schemas/SystemActorRollRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/roll"]?.post)).toMatchObject({ $ref: "#/components/schemas/SystemActorRollResponse" });
       expect(jsonRequestSchema(spec.paths["/api/v1/campaigns/{campaignId}/content-imports/preview"]?.post)).toMatchObject({ $ref: "#/components/schemas/ContentImportPreviewRequest" });
       expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/content-imports/preview"]?.post)).toMatchObject({ $ref: "#/components/schemas/ContentImportBatch" });
       expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/export"]?.get)).toMatchObject({ $ref: "#/components/schemas/CampaignArchive" });
@@ -11311,6 +11311,8 @@ describe("api", () => {
     valen.visionRadius = 240;
     valen.brightVisionRadius = 80;
     valen.dimVisionRadius = 240;
+    store.save();
+    store.flush();
     const app = await buildApp({ store });
     try {
       const adminLogin = await app.inject({
@@ -11371,7 +11373,7 @@ describe("api", () => {
       expect(invalidVisionToggle.statusCode).toBe(400);
       expect(valen.visionEnabled).toBe(true);
 
-      scene.fog = [{ id: "fog_center", x: 500, y: 380, radius: 320, hidden: false }];
+      store.state.scenes.find((item) => item.id === scene.id)!.fog = [{ id: "fog_center", x: 500, y: 380, radius: 320, hidden: false }];
       const vision = await app.inject({
         method: "GET",
         url: "/api/v1/scenes/scn_vault_entry/vision",
@@ -12314,6 +12316,7 @@ describe("api", () => {
       headers?: Record<string, string>;
       payload?: string | Buffer | object;
     }> = [
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/binding", headers: { "idempotency-key": "auth-matrix-binding" }, payload: { expectedUpdatedAt: "2026-05-01T00:00:00.000Z", system: { systemId: "dnd-5e-srd", version: "1.0.0", checksum: "a".repeat(64) }, expectedBinding: null } },
       { method: "GET", url: "/api/v1/auth/session" },
       { method: "POST", url: "/api/v1/auth/session/upgrade-cookie", payload: { expectedUserId: "usr_observer" } },
       { method: "POST", url: "/api/v1/auth/session/upgrade-cookie/confirm", payload: { expectedUserId: "usr_observer" } },
@@ -13270,6 +13273,7 @@ describe("api", () => {
       return priority(left) - priority(right);
     });
     const privilegedCampaignMutationExpectedStatuses = new Map<string, number>([
+      ["POST /api/v1/campaigns/{campaignId}/systems/{systemId}/binding", 404], // The D&D fixture is not a declarative installation.
       ["DELETE /api/v1/auth/sessions/{sessionId}", 404],
       ["POST /api/v1/organization/invites", 201],
       ["POST /api/v1/campaigns/{campaignId}/world-records", 201],
@@ -13539,6 +13543,7 @@ describe("api", () => {
               }
             : route;
         const currentRevisionRoute = withCurrentMutationRevision(requestRoute);
+        if (key === "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/binding") currentRevisionRoute.payload = { ...(currentRevisionRoute.payload as object), expectedUpdatedAt: store.state.campaigns.find((campaign) => campaign.id === "camp_demo")!.updatedAt };
         const response = await app.inject({
           ...currentRevisionRoute,
           headers: { ...currentRevisionRoute.headers, "x-user-id": "usr_demo_gm" }
@@ -13613,6 +13618,8 @@ describe("api", () => {
       logs: []
     }) satisfies WorkerJobRecord;
     store.state.jobs.push(queuedJob, runningJob);
+    store.save();
+    store.flush();
     const app = await buildApp({ store });
     const scene = store.state.scenes.find((item) => item.id === "scn_vault_entry")!;
     const targetToken = store.state.tokens.find((item) => item.id === "tok_valen")!;
@@ -36733,7 +36740,7 @@ registerCommand("/state", (input) => {
       });
       expect(afterDelete.statusCode).toBe(410);
 
-      storedAsset.lifecycle = { status: "active", updatedAt: "2026-05-06T00:00:00.000Z" };
+      store.state.assets.find((item) => item.id === storedAsset.id)!.lifecycle = { status: "active", updatedAt: "2026-05-06T00:00:00.000Z" };
       const productionLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
@@ -36769,7 +36776,7 @@ registerCommand("/state", (input) => {
           lifecycleStatus: "active"
         }
       });
-      storedAsset.lifecycle = { status: "deleted", updatedAt: "2026-05-06T00:00:00.000Z", updatedByUserId: "usr_demo_gm", reason: "manual cleanup" };
+      store.state.assets.find((item) => item.id === storedAsset.id)!.lifecycle = { status: "deleted", updatedAt: "2026-05-06T00:00:00.000Z", updatedByUserId: "usr_demo_gm", reason: "manual cleanup" };
 
       const postDeleteStorage = await app.inject({
         method: "GET",
@@ -36991,8 +36998,8 @@ registerCommand("/state", (input) => {
           }
         }
       });
-      storedAsset.storage = { provider: "s3", bucket: "legacy-assets", key: assetStorageKey(storedAsset) };
-      storedAsset.lifecycle = { status: "active", updatedAt: "2026-05-06T00:00:00.000Z" };
+      store.state.assets.find((item) => item.id === storedAsset.id)!.storage = { provider: "s3", bucket: "legacy-assets", key: assetStorageKey(storedAsset) };
+      store.state.assets.find((item) => item.id === storedAsset.id)!.lifecycle = { status: "active", updatedAt: "2026-05-06T00:00:00.000Z" };
       const driftStorage = await app.inject({
         method: "GET",
         url: "/api/v1/admin/assets/storage",
@@ -37059,8 +37066,8 @@ registerCommand("/state", (input) => {
           })
         }
       });
-      storedAsset.storage = undefined;
-      storedAsset.security = undefined;
+      store.state.assets.find((item) => item.id === storedAsset.id)!.storage = undefined;
+      store.state.assets.find((item) => item.id === storedAsset.id)!.security = undefined;
       const brokenDeliveryStorage = await app.inject({
         method: "GET",
         url: "/api/v1/admin/assets/storage",
@@ -37133,8 +37140,8 @@ registerCommand("/state", (input) => {
           })
         }
       });
-      storedAsset.storage = { provider: "local", key: assetStorageKey(storedAsset) };
-      storedAsset.security = {
+      store.state.assets.find((item) => item.id === storedAsset.id)!.storage = { provider: "local", key: assetStorageKey(storedAsset) };
+      store.state.assets.find((item) => item.id === storedAsset.id)!.security = {
         status: "clean",
         scanner: "external-asset-scanner",
         scannedAt: "2026-05-06T00:00:00.000Z",

@@ -26,7 +26,10 @@ class OneShotSaveFailureStore extends MemoryStateStore {
   failNextSave = false;
 
   override save(): void {
-    if (!this.failNextSave) return;
+    if (!this.failNextSave) {
+      super.save();
+      return;
+    }
     this.failNextSave = false;
     throw new Error("simulated deferred scene duplication save failure");
   }
@@ -46,6 +49,8 @@ function addSceneGraph(store: MemoryStateStore | FileStateStore, suffix: string)
   store.state.tokens.push(token);
   store.state.items.push(item);
   store.state.encounters.push(encounter);
+  store.save();
+  store.flush();
   return { scene, actor, token, item, encounter, asset };
 }
 

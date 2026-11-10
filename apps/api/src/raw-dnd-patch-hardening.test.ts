@@ -50,18 +50,18 @@ describe("raw D&D actor and item patch hardening", () => {
       expect(created.statusCode).toBe(200);
       const actorId = created.json().actor.id as string;
       const actorUrl = `/api/v1/actors/${actorId}`;
-      const actor = store.state.actors.find((candidate) => candidate.id === actorId)!;
-      const originalActor = structuredClone(actor);
+      const currentActor = () => store.state.actors.find((candidate) => candidate.id === actorId)!;
+      const originalActor = structuredClone(currentActor());
 
       const missingActorRevisionAuditCount = store.state.auditLogs.length;
       const missingActorRevision = await app.inject({
         method: "PATCH",
         url: actorUrl,
         headers: mutationHeaders(playerHeaders, "raw-actor-missing-revision"),
-        payload: { data: { ...actor.data, notes: "Must not save without a revision." } },
+        payload: { data: { ...currentActor().data, notes: "Must not save without a revision." } },
       });
       expect(missingActorRevision.statusCode).toBe(400);
-      expect(actor).toEqual(originalActor);
+      expect(currentActor()).toEqual(originalActor);
       expect(store.state.auditLogs).toHaveLength(missingActorRevisionAuditCount);
 
       const invalidActorRevisionAuditCount = store.state.auditLogs.length;
@@ -69,10 +69,10 @@ describe("raw D&D actor and item patch hardening", () => {
         method: "PATCH",
         url: actorUrl,
         headers: mutationHeaders(playerHeaders, "raw-actor-invalid-revision"),
-        payload: { expectedUpdatedAt: "not-a-date", data: { ...actor.data, notes: "Must not save with an invalid revision." } },
+        payload: { expectedUpdatedAt: "not-a-date", data: { ...currentActor().data, notes: "Must not save with an invalid revision." } },
       });
       expect(invalidActorRevision.statusCode).toBe(400);
-      expect(actor).toEqual(originalActor);
+      expect(currentActor()).toEqual(originalActor);
       expect(store.state.auditLogs).toHaveLength(invalidActorRevisionAuditCount);
 
       const staleActorRevisionAuditCount = store.state.auditLogs.length;
@@ -82,12 +82,12 @@ describe("raw D&D actor and item patch hardening", () => {
         headers: mutationHeaders(playerHeaders, "raw-actor-stale-revision"),
         payload: {
           expectedUpdatedAt: "2000-01-01T00:00:00.000Z",
-          data: { ...actor.data, notes: "Must not save with a stale revision." },
+          data: { ...currentActor().data, notes: "Must not save with a stale revision." },
         },
       });
       expect(staleActorRevision.statusCode).toBe(409);
       expect(staleActorRevision.json()).toMatchObject({ code: "stale_write", resourceType: "actor", resourceId: actorId });
-      expect(actor).toEqual(originalActor);
+      expect(currentActor()).toEqual(originalActor);
       expect(store.state.auditLogs).toHaveLength(staleActorRevisionAuditCount);
 
       const reviewQueue = await app.inject({ method: "GET", url: reviewRoute, headers: playerHeaders });
@@ -101,9 +101,9 @@ describe("raw D&D actor and item patch hardening", () => {
         url: actorUrl,
         headers: mutationHeaders(playerHeaders, "raw-actor-forged-review"),
         payload: {
-          expectedUpdatedAt: actor.updatedAt,
+          expectedUpdatedAt: currentActor().updatedAt,
           data: {
-            ...actor.data,
+            ...currentActor().data,
             dnd5eCharacterReview: {
               version: 1,
               id: "review_forged",
@@ -122,11 +122,11 @@ describe("raw D&D actor and item patch hardening", () => {
         resourceId: actorId,
         managedRoots: ["dnd5eCharacterReview"],
       });
-      expect(actor).toEqual(originalActor);
-      expect(actor.data.dnd5eCharacterReview).toBeUndefined();
+      expect(currentActor()).toEqual(originalActor);
+      expect(currentActor().data.dnd5eCharacterReview).toBeUndefined();
       expect(store.state.auditLogs).toHaveLength(forgedReviewAuditCount);
 
-      const hp = actor.data.hp as Record<string, unknown>;
+      const hp = currentActor().data.hp as Record<string, unknown>;
       const nextHpCurrent = Math.max(0, Number(hp.current) - 1);
       const blockedHpAuditCount = store.state.auditLogs.length;
       const blockedHp = await app.inject({
@@ -134,8 +134,8 @@ describe("raw D&D actor and item patch hardening", () => {
         url: actorUrl,
         headers: mutationHeaders(playerHeaders, "raw-actor-blocked-hp"),
         payload: {
-          expectedUpdatedAt: actor.updatedAt,
-          data: { ...actor.data, hp: { ...hp, current: nextHpCurrent } },
+          expectedUpdatedAt: currentActor().updatedAt,
+          data: { ...currentActor().data, hp: { ...hp, current: nextHpCurrent } },
         },
       });
       expect(blockedHp.statusCode).toBe(409);
@@ -145,7 +145,7 @@ describe("raw D&D actor and item patch hardening", () => {
         resourceId: actorId,
         managedRoots: ["hp"],
       });
-      expect(actor).toEqual(originalActor);
+      expect(currentActor()).toEqual(originalActor);
       expect(store.state.auditLogs).toHaveLength(blockedHpAuditCount);
 
       const playerOverrideAuditCount = store.state.auditLogs.length;
@@ -154,14 +154,14 @@ describe("raw D&D actor and item patch hardening", () => {
         url: actorUrl,
         headers: mutationHeaders(playerHeaders, "raw-actor-player-override"),
         payload: {
-          expectedUpdatedAt: actor.updatedAt,
+          expectedUpdatedAt: currentActor().updatedAt,
           manualOverrideReason: "A player must not be able to self-authorize this change.",
-          data: { ...actor.data, hp: { ...hp, current: nextHpCurrent } },
+          data: { ...currentActor().data, hp: { ...hp, current: nextHpCurrent } },
         },
       });
       expect(playerOverride.statusCode).toBe(409);
       expect(playerOverride.json()).toMatchObject({ code: "combat_vitals_route_required", managedRoots: ["hp"] });
-      expect(actor).toEqual(originalActor);
+      expect(currentActor()).toEqual(originalActor);
       expect(store.state.auditLogs).toHaveLength(playerOverrideAuditCount);
 
       const descriptiveActorUpdate = await app.inject({
@@ -169,13 +169,13 @@ describe("raw D&D actor and item patch hardening", () => {
         url: actorUrl,
         headers: mutationHeaders(playerHeaders, "raw-actor-descriptive-update"),
         payload: {
-          expectedUpdatedAt: actor.updatedAt,
-          data: { ...actor.data, notes: "Keeps watch while the party rests." },
+          expectedUpdatedAt: currentActor().updatedAt,
+          data: { ...currentActor().data, notes: "Keeps watch while the party rests." },
         },
       });
       expect(descriptiveActorUpdate.statusCode).toBe(200);
       expect(descriptiveActorUpdate.json().data.notes).toBe("Keeps watch while the party rests.");
-      expect(actor.data.notes).toBe("Keeps watch while the party rests.");
+      expect(currentActor().data.notes).toBe("Keeps watch while the party rests.");
 
       const gmOverrideAuditCount = store.state.auditLogs.length;
       const gmOverride = await app.inject({
@@ -183,9 +183,9 @@ describe("raw D&D actor and item patch hardening", () => {
         url: actorUrl,
         headers: mutationHeaders(gmHeaders, "raw-actor-gm-override"),
         payload: {
-          expectedUpdatedAt: actor.updatedAt,
+          expectedUpdatedAt: currentActor().updatedAt,
           manualOverrideReason: "Correcting table state after an offline damage ruling.",
-          data: { ...actor.data, hp: { ...(actor.data.hp as Record<string, unknown>), current: nextHpCurrent } },
+          data: { ...currentActor().data, hp: { ...(currentActor().data.hp as Record<string, unknown>), current: nextHpCurrent } },
         },
       });
       expect(gmOverride.statusCode).toBe(409);
@@ -208,18 +208,18 @@ describe("raw D&D actor and item patch hardening", () => {
       expect(createdItem.statusCode).toBe(200);
       const itemId = createdItem.json().id as string;
       const itemUrl = `/api/v1/items/${itemId}`;
-      const item = store.state.items.find((candidate) => candidate.id === itemId)!;
-      const originalItem = structuredClone(item);
+      const currentItem = () => store.state.items.find((candidate) => candidate.id === itemId)!;
+      const originalItem = structuredClone(currentItem());
 
       const missingItemRevisionAuditCount = store.state.auditLogs.length;
       const missingItemRevision = await app.inject({
         method: "PATCH",
         url: itemUrl,
         headers: mutationHeaders(playerHeaders, "raw-item-missing-revision"),
-        payload: { data: { ...item.data, notes: "Must not save without a revision." } },
+        payload: { data: { ...currentItem().data, notes: "Must not save without a revision." } },
       });
       expect(missingItemRevision.statusCode).toBe(400);
-      expect(item).toEqual(originalItem);
+      expect(currentItem()).toEqual(originalItem);
       expect(store.state.auditLogs).toHaveLength(missingItemRevisionAuditCount);
 
       const invalidItemRevisionAuditCount = store.state.auditLogs.length;
@@ -229,11 +229,11 @@ describe("raw D&D actor and item patch hardening", () => {
         headers: mutationHeaders(playerHeaders, "raw-item-invalid-revision"),
         payload: {
           expectedUpdatedAt: "not-a-date",
-          data: { ...item.data, notes: "Must not save with an invalid revision." },
+          data: { ...currentItem().data, notes: "Must not save with an invalid revision." },
         },
       });
       expect(invalidItemRevision.statusCode).toBe(400);
-      expect(item).toEqual(originalItem);
+      expect(currentItem()).toEqual(originalItem);
       expect(store.state.auditLogs).toHaveLength(invalidItemRevisionAuditCount);
 
       const staleItemRevisionAuditCount = store.state.auditLogs.length;
@@ -243,12 +243,12 @@ describe("raw D&D actor and item patch hardening", () => {
         headers: mutationHeaders(playerHeaders, "raw-item-stale-revision"),
         payload: {
           expectedUpdatedAt: "2000-01-01T00:00:00.000Z",
-          data: { ...item.data, notes: "Must not save with a stale revision." },
+          data: { ...currentItem().data, notes: "Must not save with a stale revision." },
         },
       });
       expect(staleItemRevision.statusCode).toBe(409);
       expect(staleItemRevision.json()).toMatchObject({ code: "stale_write", resourceType: "item", resourceId: itemId });
-      expect(item).toEqual(originalItem);
+      expect(currentItem()).toEqual(originalItem);
       expect(store.state.auditLogs).toHaveLength(staleItemRevisionAuditCount);
 
       for (const protectedPatch of [{ quantity: 1 }, { prepared: false }]) {
@@ -258,8 +258,8 @@ describe("raw D&D actor and item patch hardening", () => {
           url: itemUrl,
           headers: mutationHeaders(playerHeaders, `raw-item-protected-${Object.keys(protectedPatch)[0]}`),
           payload: {
-            expectedUpdatedAt: item.updatedAt,
-            data: { ...item.data, ...protectedPatch },
+            expectedUpdatedAt: currentItem().updatedAt,
+            data: { ...currentItem().data, ...protectedPatch },
           },
         });
         expect(blockedItem.statusCode).toBe(409);
@@ -269,7 +269,7 @@ describe("raw D&D actor and item patch hardening", () => {
           resourceId: itemId,
           managedRoots: Object.keys(protectedPatch),
         });
-        expect(item).toEqual(originalItem);
+        expect(currentItem()).toEqual(originalItem);
         expect(store.state.auditLogs).toHaveLength(protectedItemAuditCount);
       }
 
@@ -279,13 +279,13 @@ describe("raw D&D actor and item patch hardening", () => {
         url: itemUrl,
         headers: mutationHeaders(playerHeaders, "raw-item-player-override"),
         payload: {
-          expectedUpdatedAt: item.updatedAt,
+          expectedUpdatedAt: currentItem().updatedAt,
           manualOverrideReason: "A player must not be able to self-authorize this change.",
-          data: { ...item.data, quantity: 1 },
+          data: { ...currentItem().data, quantity: 1 },
         },
       });
       expect(itemPlayerOverride.statusCode).toBe(403);
-      expect(item).toEqual(originalItem);
+      expect(currentItem()).toEqual(originalItem);
       expect(store.state.auditLogs).toHaveLength(itemPlayerOverrideAuditCount);
 
       const descriptiveItemUpdate = await app.inject({
@@ -293,22 +293,22 @@ describe("raw D&D actor and item patch hardening", () => {
         url: itemUrl,
         headers: mutationHeaders(playerHeaders, "raw-item-descriptive-update"),
         payload: {
-          expectedUpdatedAt: item.updatedAt,
-          data: { ...item.data, notes: "Player-authored descriptive item note." },
+          expectedUpdatedAt: currentItem().updatedAt,
+          data: { ...currentItem().data, notes: "Player-authored descriptive item note." },
         },
       });
       expect(descriptiveItemUpdate.statusCode).toBe(200);
       expect(descriptiveItemUpdate.json().data.notes).toBe("Player-authored descriptive item note.");
-      expect(item.data).toMatchObject({ quantity: 2, prepared: true, notes: "Player-authored descriptive item note." });
+      expect(currentItem().data).toMatchObject({ quantity: 2, prepared: true, notes: "Player-authored descriptive item note." });
 
       const gmItemOverride = await app.inject({
         method: "PATCH",
         url: itemUrl,
         headers: mutationHeaders(gmHeaders, "raw-item-gm-override"),
         payload: {
-          expectedUpdatedAt: item.updatedAt,
+          expectedUpdatedAt: currentItem().updatedAt,
           manualOverrideReason: "Reconciling an item consumed while the table was offline.",
-          data: { ...item.data, quantity: 1 },
+          data: { ...currentItem().data, quantity: 1 },
         },
       });
       expect(gmItemOverride.statusCode).toBe(200);
