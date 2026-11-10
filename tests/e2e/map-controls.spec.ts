@@ -178,6 +178,13 @@ test("right-click opens a token menu that replaces the hidden layer shortcut", a
   expect(await sameToken.getAttribute("aria-label")).toBe(originalLabel);
 });
 
+test("every wall on a scene shares one drawing layer", async ({ page }) => {
+  await openDemoTable(page);
+  const layers = page.locator(".scene-board svg.wall-layer");
+  await expect(layers).toHaveCount(1);
+  expect(await layers.locator("line").count()).toBeGreaterThan(0);
+});
+
 test("toolbar zoom-out preserves the view centre near both scroll limits", async ({ page }) => {
   const board = await openDemoTable(page);
   const box = await boardBox(board);
@@ -238,6 +245,13 @@ test.describe("touch map gestures", () => {
 for (const scenario of ["another inspector tab", "map focus", "short phone"]) {
   test(`Show in inspector opens the actor from ${scenario}`, async ({ page }) => {
     await openDemoTable(page);
+    const apiBase = `http://127.0.0.1:${process.env.OTTE_E2E_API_PORT ?? 4100}`;
+    const response = await page.request.get(`${apiBase}/api/v1/campaigns/camp_demo/snapshot`);
+    expect(response.ok()).toBe(true);
+    const snapshot = await response.json() as { tokens: Array<{ id: string; actorId?: string }>; actors: Array<{ id: string; name: string }> };
+    const actorId = snapshot.tokens.find((token) => token.id === "tok_valen")!.actorId;
+    const actor = snapshot.actors.find((candidate) => candidate.id === actorId)!;
+    expect(actor).toBeDefined();
     await page.locator("#inspector-tab-chat").click();
     if (scenario === "map focus") await page.getByRole("button", { name: "Enter map focus mode", exact: true }).click();
     if (scenario === "short phone") {
@@ -249,7 +263,7 @@ for (const scenario of ["another inspector tab", "map focus", "short phone"]) {
     await page.keyboard.press("Shift+F10");
     await page.getByRole("menuitem", { name: "Show in inspector", exact: true }).click();
     await expect(page.locator("#inspector-tab-actors")).toHaveAttribute("aria-selected", "true");
-    await expect(page.locator(".inspector").getByRole("heading", { name: "Valen Ash", exact: true })).toBeVisible();
+    await expect(page.locator(".inspector").getByRole("heading", { name: actor.name, exact: true })).toBeVisible();
     await expect(page.locator(".shell")).not.toHaveAttribute("data-table-focus", "true");
   });
 }
