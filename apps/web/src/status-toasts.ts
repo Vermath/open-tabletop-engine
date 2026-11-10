@@ -2,10 +2,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 export type ToastTone = "info" | "error";
 
+export interface ToastAction {
+  id?: string;
+  label: string;
+  run(): void;
+}
+
 export interface Toast {
   id: number;
   text: string;
   tone: ToastTone;
+  /** One follow-up the toast offers, such as undoing what it reports. */
+  action?: ToastAction;
 }
 
 const maxVisibleToasts = 3;
@@ -59,10 +67,18 @@ export function useStatusToasts(options: { status: string; setStatus(text: strin
     setToasts((current) => current.filter((toast) => toast.id !== id));
   }, []);
 
-  const pushToast = useCallback((text: string, tone: ToastTone, durationMs: number = tone === "error" ? errorToastMs : infoToastMs) => {
+  const dismissToastAction = useCallback((actionId: string) => {
+    setToasts((current) => current.filter((toast) => toast.action?.id !== actionId));
+  }, []);
+
+  const dismissActionableToasts = useCallback(() => {
+    setToasts((current) => current.filter((toast) => !toast.action));
+  }, []);
+
+  const pushToast = useCallback((text: string, tone: ToastTone, durationMs: number = tone === "error" ? errorToastMs : infoToastMs, action?: ToastAction) => {
     toastIdRef.current += 1;
     const id = toastIdRef.current;
-    setToasts((current) => withToast(current, { id, text, tone }));
+    setToasts((current) => withToast(current, { id, text, tone, ...(action ? { action } : {}) }));
     window.setTimeout(() => dismissToast(id), durationMs);
   }, [dismissToast]);
 
@@ -92,5 +108,5 @@ export function useStatusToasts(options: { status: string; setStatus(text: strin
     if (tone) pushToast(text, tone);
   }, [pushToast, ready, status, suppressedStatus]);
 
-  return { toasts, pushToast, dismissToast, setQuietStatus, reportError };
+  return { toasts, pushToast, dismissToast, dismissToastAction, dismissActionableToasts, setQuietStatus, reportError };
 }

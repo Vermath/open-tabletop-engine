@@ -1,6 +1,6 @@
 import type { Actor, Combat, DeclarativeActorSheet as DeclarativeSheet, Item, MapAsset, Scene, Token, TokenLayer } from "@open-tabletop/core";
 import type { Dnd5eSrdSpellPreparationMutationResult } from "@open-tabletop/core";
-import { Boxes, Check, ChevronRight, ChevronUp, Crosshair, Dices, Eraser, Eye, FileText, Grip, Hand, LockKeyhole, MapPin, PencilLine, Pentagon, Plus, Shield, Swords, Timer, Upload, Users, WandSparkles, X } from "lucide-react";
+import { Boxes, Check, ChevronRight, ChevronUp, Crosshair, Dices, Eraser, Eye, FileText, Grip, Hand, LockKeyhole, MapPin, PencilLine, Pentagon, Plus, Shield, Swords, Timer, Upload, Users, WandSparkles, X, Zap } from "lucide-react";
 import { useEffect, useReducer, useRef, useState } from "react";
 import { apiGet, apiPost, type Snapshot } from "./api.js";
 import { isAdversaryActor } from "./actor-rails.js";
@@ -23,16 +23,16 @@ import { RulesSupportBoundaryNotice, rulesBoundaryFromAction } from "./rules-sup
 import { WeaponMasteryControls, emptyWeaponMasteryDraft, weaponMasterySelectionForAction, weaponMasteryUseForSelection, type Dnd5eSrdWeaponMasteryUse } from "./weapon-mastery-controls.js";
 import { actorActionPreviewRequiresInput } from "./actor-action-review.js";
 import { actionPreviewContinuationMetadata, actionPreviewContinuationSelection, actionPreviewContinuationTickets, actorActionDraftForScope, actorActionDraftScopeKey, actorActionTargetLabel, actionPreviewForFingerprint, actionPreviewIsReady, actionPreviewStatusMessage, createActionPreviewFingerprint, initialActorActionDraft, initialActionPreviewState, reduceActionPreviewState, scopedActorActionTargetIds, type ActionPreviewContinuationTicket } from "./action-preview-state.js";
-import { ActionPreviewCommitButton } from "./action-preview-binding.js";
+import { ActionPreviewCommitButton, ActionPreviewUseButton } from "./action-preview-binding.js";
 import { ActorPlacementTray } from "./actor-placement-tray.js";
 import { combatTurnCombatant } from "./combat-panel.js";
 import { DeclarativeActorSheet } from "./declarative-actor-sheet.js";
+import type { ActorActionCommitOptions } from "./workspace-types.js";
 
 type ActorSheetResponse = DeclarativeSheet | { kind?: undefined; quickRolls?: ActorSheetQuickRoll[]; data?: Record<string, unknown> };
 const bundledActorSheetSystems = new Set(["dnd-5e-srd", "generic-fantasy", "stellar-frontiers", "mystic-noir"]);
 
 type RulesSaveOutcome = "success" | "failure";
-type ActorActionCommitOptions = { targetActorId?: string; applyEffect?: boolean; consumeResources?: boolean; saveOutcomes?: Record<string, RulesSaveOutcome>; effectChoice?: string; weaponMastery?: Dnd5eSrdWeaponMasteryUse; continuationId?: string; reviewActorNames?: Record<string, string> };
 
 interface ActorActionResolutionPreview {
   commitMode: "commit" | "preview";
@@ -1065,6 +1065,12 @@ export function ActorPanel(inputProps: { campaignId: string; actor?: Actor; toke
     if (previewContinuation.continuationId) setPreferredActionContinuationId(previewContinuation.continuationId);
     props.useActorAction(previewAction.rollId, previewActionCommitOptions);
   };
+  /** Commits at once when the server resolves the action completely; anything needing a ruling still opens the review. */
+  const useCurrentActionPreviewNow = (): void => {
+    if (!actionPreviewReady || !actionPreview || !previewAction) return;
+    if (previewContinuation.continuationId) setPreferredActionContinuationId(previewContinuation.continuationId);
+    props.useActorAction(previewAction.rollId, { ...previewActionCommitOptions, oneStep: true });
+  };
   const actionSaveActorName = (actorId: string): string => props.actors.find((actor) => actor.id === actorId)?.name ?? actorId;
   const updateActionSaveOutcome = (actorId: string, outcome: RulesSaveOutcome): void => {
     invalidateActionPreview();
@@ -1566,9 +1572,10 @@ export function ActorPanel(inputProps: { campaignId: string; actor?: Actor; toke
                 {actionPreview?.warnings?.map((warning) => <p className="admin-status" key={`action-preview-warning-${warning}`}>{warning}</p>)}
                 <div className="operator-row tool-call-row" role="status" aria-label="Action review progress">
                   <span>Review progress</span>
-                  <strong>{actionPreviewReady ? "Step 1 of 2 ready - nothing committed" : "Step 1 of 2 - preparing preview"}</strong>
+                  <strong>{actionPreviewReady ? "Preview ready - nothing committed" : "Preparing preview"}</strong>
                 </div>
-                {actionPreviewReady && <p className="account-summary">Continue to final review opens the exact server-prepared consequences. Only the final confirmation commits the action or sends it to the GM.</p>}
+                {actionPreviewReady && <p className="account-summary">Use action commits a fully resolved result at once, or sends it to the GM, and offers Undo. Continue to final review opens the exact server-prepared consequences first. Anything that needs a ruling always opens the review.</p>}
+                <ActionPreviewUseButton state={actionPreviewState} fingerprint={actionPreviewFingerprint} canCommit={props.canUseAction && Boolean(previewAction) && !actionPreview?.blocked && !actionPreviewRequiresInput && !(actionApplyEffect && !previewActionSupportsEffect)} onUse={useCurrentActionPreviewNow} />
                 <ActionPreviewCommitButton state={actionPreviewState} fingerprint={actionPreviewFingerprint} canCommit={props.canUseAction && Boolean(previewAction) && !actionPreview?.blocked && !actionPreviewRequiresInput && !(actionApplyEffect && !previewActionSupportsEffect)} onCommit={commitCurrentActionPreview} />
               </div>
               {actionOptions.map((action) => {
@@ -1591,6 +1598,9 @@ export function ActorPanel(inputProps: { campaignId: string; actor?: Actor; toke
                     <div className="button-row">
                       <button className={isPreviewed ? "ghost-button active" : "ghost-button"} type="button" aria-pressed={isPreviewed} disabled={!props.canUseAction} onClick={() => selectActionPreview(action.rollId)}>
                         <Eye size={14} /> Preview
+                      </button>
+                      <button className="primary-button" type="button" aria-label={`Use ${action.label} now`} title="Commit at once when fully resolved; you can undo it" disabled={!props.canUseAction || !isPreviewed || !actionPreviewReady || unsupportedEffect || Boolean(previewBlocked) || previewRequiresInput} onClick={useCurrentActionPreviewNow}>
+                        <Zap size={14} /> Use
                       </button>
                       <button className="ghost-button" type="button" aria-label="Continue to final review" aria-haspopup="dialog" disabled={!props.canUseAction || !isPreviewed || !actionPreviewReady || unsupportedEffect || Boolean(previewBlocked) || previewRequiresInput} onClick={commitCurrentActionPreview}>
                         <WandSparkles size={14} /> Continue to final review
@@ -1711,6 +1721,9 @@ export function ActorPanel(inputProps: { campaignId: string; actor?: Actor; toke
             <input aria-label="Consume action resources" type="checkbox" checked={actionConsumeResources} disabled={!props.canUseAction} onChange={(event) => selectActionConsumeResources(event.target.checked)} />
             <span>Consume spell slots, item charges, or class resources</span>
           </label>
+          <button className="primary-button wide" aria-label={`Use ${previewAction?.label ?? firstAction.label} now`} title="Commit at once when fully resolved; you can undo it" onClick={useCurrentActionPreviewNow} disabled={!props.canUseAction || !actionPreviewReady || !previewAction || Boolean(actionPreview?.blocked) || actionPreviewRequiresInput}>
+            <Zap size={16} /> Use action
+          </button>
           <button className="ghost-button wide" aria-label={`Continue to final review for ${previewAction?.label ?? firstAction.label}`} aria-haspopup="dialog" onClick={commitCurrentActionPreview} disabled={!props.canUseAction || !actionPreviewReady || !previewAction || Boolean(actionPreview?.blocked) || actionPreviewRequiresInput}>
             <WandSparkles size={16} /> Continue to final review
           </button>

@@ -36,6 +36,14 @@ describe("withToast", () => {
   });
 });
 
+describe("toast actions", () => {
+  it("keeps the follow-up action with its toast", () => {
+    const run = () => undefined;
+    const stack = withToast([], { id: 1, text: "Valen Ash action posted; damage applied", tone: "info", action: { label: "Undo", run } });
+    expect(stack[0]?.action).toEqual({ label: "Undo", run });
+  });
+});
+
 describe("describeError", () => {
   it("uses the message of an Error and the string form of anything else", () => {
     expect(describeError(new Error("Scene not found"))).toBe("Scene not found");

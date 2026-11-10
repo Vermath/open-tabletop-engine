@@ -107,7 +107,7 @@ import { isStaleWriteError, sharedMutationIdempotencyKey } from "./shared-mutati
 import { KeyedMutationQueue } from "./keyed-mutation-queue.js";
 import { clampFloatingPanel, useMovablePanel, type FloatingPanelPosition, type FloatingPanelSize } from "./movable-panel.js";
 import { CommandPalette, DiceCastOverlay, KeyboardShortcutDialog, RealtimeSyncGuard, ToastStack } from "./tabletop-overlays.js";
-import { actorActionConsequenceReview, typedDamageConsequenceReview, type CommittedActorActionResponse, type PreparedActorActionResponse, type PreparedTypedDamageResponse } from "./actor-action-review.js";
+import { actorActionConsequenceReview, actorActionRequest, committedActionStatus, preparedActionIsRoutine, typedDamageConsequenceReview, type CommittedActorActionResponse, type PreparedActorActionResponse, type PreparedTypedDamageResponse } from "./actor-action-review.js";
 import { campaignSetupDraftStorageKey, clearCampaignSetupDraft, defaultCampaignSetupDraft, loadCampaignSetupDraft, saveCampaignSetupDraft, type CampaignSetupDraftInput, type CampaignSetupDraftScope, type CampaignSetupIdempotencyKeys, type CampaignSetupProgress } from "./campaign-setup-state.js";
 import { CampaignSetupSteps, FirstSessionSetupChecklist, type FirstSessionSetupStep } from "./campaign-setup-steps.js";
 import { InvitePreview } from "./invite-preview.js";
@@ -1203,7 +1203,7 @@ export function App() {
     const current = realtimeSelectionRef.current;
     const identityChanged = current.campaignId !== nextCampaignId || current.userId !== nextUserId;
     if (identityChanged) {
-      setLastDndRulesUndo(undefined);
+      setLastDndRulesUndo(undefined); dismissActionableToasts();
       setPendingAdvancement(undefined);
       playerPreview.close();
       cancelInviteAcceptance();
@@ -1438,7 +1438,7 @@ export function App() {
     resetCampaignSetupDraft();
     invalidatePendingSessionSwitch();
     cancelWorkspaceBoundRequestsForChange();
-    clearAccountSecurityState();
+    clearAccountSecurityState(); dismissActionableToasts(); setLastDndRulesUndo(undefined);
     clearSession();
     setSessionToken("");
     setAuthMode("login");
@@ -2347,7 +2347,7 @@ export function App() {
   });
 
   const inspectorWidth = useInspectorWidth();
-  const { toasts, pushToast, dismissToast, setQuietStatus, reportError } = useStatusToasts({ status, setStatus, ready: snapshotReady, suppressedStatus: blankCanvasDemoNotice });
+  const { toasts, pushToast, dismissToast, dismissToastAction, dismissActionableToasts, setQuietStatus, reportError } = useStatusToasts({ status, setStatus, ready: snapshotReady, suppressedStatus: blankCanvasDemoNotice });
 
   useEffect(() => {
     try {
@@ -2769,7 +2769,7 @@ export function App() {
     invalidatePendingSessionSwitch();
     cancelAiAgentForWorkspaceChange();
     cancelWorkspaceBoundRequestsForChange();
-    clearAccountSecurityState();
+    clearAccountSecurityState(); dismissActionableToasts(); setLastDndRulesUndo(undefined);
     const credentialTicket = sessionCredentialCommitQueueRef.current.begin();
     await sessionCredentialCommitQueueRef.current.run(credentialTicket, async (credentialIsCurrent) => {
       let remoteLogoutFailed = false;
@@ -7683,18 +7683,8 @@ export function App() {
     const actor = selectedActor;
     const consumeResources = options.consumeResources ?? true;
     const initiallyConsequentialDndAction = actor.systemId === "dnd-5e-srd" && Boolean(consumeResources || options.applyEffect || options.weaponMastery?.use);
-    const actionRequest = {
-      rollId,
-      expectedUpdatedAt: actor.updatedAt,
-      consumeResources,
-      applyEffect: options.applyEffect,
-      targetActorId: options.targetActorId,
-      visibility: diceVisibility,
-      saveOutcomes: options.saveOutcomes,
-      effectChoice: options.effectChoice,
-      weaponMastery: options.weaponMastery,
-      continuationId: options.continuationId
-    };
+    const actionRequest = actorActionRequest(rollId, actor.updatedAt, { ...options, consumeResources }, diceVisibility);
+    let committedWithoutReview = false;
     try {
       await runWorkspaceBoundAction(
         async (request): Promise<CommittedActorActionResponse | { cancelled: true } | { handoff: DndControlledCreatureActionHandoff }> => {
@@ -7716,8 +7706,12 @@ export function App() {
             idempotencyKey: `dnd-action-preview:${window.crypto.randomUUID()}`
           });
           if (prepared.controlledCreatureHandoff) return { handoff: prepared.controlledCreatureHandoff };
-          setStatus(`${actor.name}: final exact-action review open; nothing committed yet`);
-          if (!await consequenceReview.review(actorActionConsequenceReview(actor.name, prepared, { actorNames: new Map(snapshotRef.current.actors.map((candidate) => [candidate.id, options.reviewActorNames?.[candidate.id] ?? candidate.name])), applyEffect: Boolean(options.applyEffect || options.weaponMastery?.use) }))) return { cancelled: true };
+          const review = actorActionConsequenceReview(actor.name, prepared, { actorNames: new Map(snapshotRef.current.actors.map((candidate) => [candidate.id, options.reviewActorNames?.[candidate.id] ?? candidate.name])), applyEffect: Boolean(options.applyEffect || options.weaponMastery?.use) });
+          committedWithoutReview = Boolean(options.oneStep) && preparedActionIsRoutine(prepared, review);
+          if (!committedWithoutReview) {
+            setStatus(`${actor.name}: final exact-action review open; nothing committed yet`);
+            if (!await consequenceReview.review(review)) return { cancelled: true };
+          }
           return apiPost<CommittedActorActionResponse>(path, {
             preparedPreviewKey: prepared.preparation.preparedPreviewKey,
             expectedUpdatedAt: actor.updatedAt
@@ -7738,16 +7732,18 @@ export function App() {
             await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });
             return;
           }
-          const spent = used.usage?.consumed?.map((item) => `${item.label} ${item.remaining}`).join(", ");
-          const applied = used.effect ? `; ${used.effect.type} applied` : "";
           const updatedActors = used.updatedActors && used.updatedActors.length > 0 ? used.updatedActors : used.actor ? [used.actor] : [];
           if (updatedActors.length > 0) {
             const updates = new Map(updatedActors.map((updatedActor) => [updatedActor.id, updatedActor]));
             setSnapshot((current) => ({ ...current, actors: current.actors.map((currentActor) => updates.get(currentActor.id) ?? currentActor) }));
           }
-          if (used.undo) setLastDndRulesUndo(used.undo);
-          const deathSave = used.resolution?.deathSave;
-          setStatus(deathSave ? `${actor.name} Death Saving Throw: ${deathSaveStatusText(deathSave)}` : spent ? `${actor.name} used action: ${spent}${applied}` : `${actor.name} action posted${applied}`);
+          const undo = used.undo;
+          if (undo) setLastDndRulesUndo(undo);
+          const committedStatus = committedActionStatus(actor.name, used, deathSaveStatusText);
+          if (committedWithoutReview && undo) {
+            setQuietStatus(committedStatus);
+            pushToast(committedStatus, "info", 12000, { id: undo.mutationId, label: "Undo", run: () => void undoLastDndRulesMutation(undo) });
+          } else setStatus(committedStatus);
         }
       );
     } catch (error) {
@@ -7755,15 +7751,15 @@ export function App() {
     }
   }
 
-  async function undoLastDndRulesMutation() {
-    const undo = lastDndRulesUndo;
-    if (!undo) return;
+  async function undoLastDndRulesMutation(undo = lastDndRulesUndo) {
+    if (!undo || !workspaceRequestIsCurrent(campaignId, currentUserId)) return;
     try {
       const result = await apiPost<DndRulesMutationUndoResult>(`/api/v1/campaigns/${campaignId}/dnd/rules-mutations/${undo.mutationId}/undo`, {
         expectedActorUpdatedAt: undo.expectedActorUpdatedAt,
         expectedItemUpdatedAt: undo.expectedItemUpdatedAt,
         ...(undo.expectedCombatUpdatedAt ? { expectedCombatUpdatedAt: undo.expectedCombatUpdatedAt } : {})
       }, { idempotencyKey: `dnd-rules-undo:${undo.mutationId}` });
+      if (!workspaceRequestIsCurrent(campaignId, currentUserId)) return; dismissToastAction(undo.mutationId);
       const actors = new Map(result.actors.map((actor) => [actor.id, actor]));
       const items = new Map(result.items.map((item) => [item.id, item]));
       setSnapshot((current) => ({
@@ -7772,10 +7768,10 @@ export function App() {
         items: current.items.map((item) => items.get(item.id) ?? item),
         combats: result.combat ? current.combats.map((combat) => combat.id === result.combat!.id ? result.combat! : combat) : current.combats
       }));
-      setLastDndRulesUndo(undefined);
-      setStatus("Last reviewed D&D rules change undone");
+      setLastDndRulesUndo((current) => current?.mutationId === undo.mutationId ? undefined : current);
+      setStatus("Last D&D rules change undone");
     } catch (error) {
-      if (!reconcileStaleWriteConflict(error)) setStatus(`Undo blocked: ${errorMessage(error)}`);
+      if (workspaceRequestIsCurrent(campaignId, currentUserId) && !reconcileStaleWriteConflict(error)) setStatus(`Undo blocked: ${errorMessage(error)}`);
     }
   }
 

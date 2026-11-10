@@ -12904,8 +12904,15 @@ a:focus-visible {
   pointer-events: none;
 }
 
-.toast-stack .toast .icon-button {
+.toast-stack .toast .icon-button,
+.toast-stack .toast .toast-action {
   pointer-events: auto;
+}
+
+.toast-stack .toast .toast-action {
+  flex: 0 0 auto;
+  min-height: 28px;
+  color: var(--accent-strong);
 }
 
 .toast {
