@@ -24027,16 +24027,41 @@ function scenePayloadForUser(store: StateStore, userId: string, scene: Scene): S
   };
 }
 
-function projectSceneResponseForUser(store: StateStore, userId: string, payload: unknown): unknown {
-  if (Array.isArray(payload)) return payload.map((entry) => projectSceneResponseForUser(store, userId, entry));
+function projectSceneResponseForUser(store: StateStore, userId: string, payload: unknown, campaignId?: string): unknown {
+  if (Array.isArray(payload)) return payload.map((entry) => projectSceneResponseForUser(store, userId, entry, campaignId));
   if (!isRecord(payload)) return payload;
+  const payloadCampaignId = typeof payload.campaignId === "string" ? payload.campaignId : campaignId;
+  if (payload.entity === "scene" && isRecord(payload.data)) {
+    const data = payload.data;
+    const sceneId = typeof payload.id === "string" ? payload.id : typeof data.id === "string" ? data.id : undefined;
+    const existing = store.state.scenes.find((scene) => scene.id === sceneId);
+    const sceneCampaignId = campaignId ?? existing?.campaignId ?? (typeof data.campaignId === "string" ? data.campaignId : undefined);
+    const projectedData = { ...data };
+    // Proposal changes contain partial scenes without identity fields. Supply
+    // their authoritative context for projection, while keeping the wire patch partial.
+    const annotationRecords = (value: unknown) => Array.isArray(value) ? value.filter(isRecord).map((annotation) => ({
+      ...annotation,
+      ...(annotation.affectedTokenIds !== undefined ? { affectedTokenIds: Array.isArray(annotation.affectedTokenIds) ? annotation.affectedTokenIds.filter((id) => typeof id === "string") : [] } : {}),
+    })) : [];
+    const projected = sceneCampaignId ? scenePayloadForUser(store, userId, {
+      ...data, id: sceneId ?? "", campaignId: sceneCampaignId,
+      annotations: annotationRecords(data.annotations),
+      ...(data.annotationHistory !== undefined ? { annotationHistory: annotationRecords(data.annotationHistory) } : {}),
+    } as unknown as Scene) : undefined;
+    for (const key of ["annotations", "annotationHistory", "sceneEditHistory"] as const) {
+      if (data[key] === undefined) continue;
+      if (projected && key in projected) projectedData[key] = projected[key];
+      else delete projectedData[key];
+    }
+    return { ...payload, data: projectedData };
+  }
   if (typeof payload.id === "string" && typeof payload.campaignId === "string" && Array.isArray(payload.annotations)) return scenePayloadForUser(store, userId, payload as unknown as Scene);
   // Include proposal wrappers and rollback guards: their expected scenes are
   // authoritative internally, but must use the same caller projection on the wire.
   let result = payload;
-  for (const key of ["scene", "current", "scenes", "proposal", "proposals", "revertGuardsJson", "expected"]) {
+  for (const key of ["scene", "current", "scenes", "proposal", "proposals", "changesJson", "inverseChangesJson", "revertGuardsJson", "expected"]) {
     if (payload[key] === undefined) continue;
-    const projected = projectSceneResponseForUser(store, userId, payload[key]);
+    const projected = projectSceneResponseForUser(store, userId, payload[key], payloadCampaignId);
     if (projected !== payload[key]) result = { ...result, [key]: projected };
   }
   return result;
