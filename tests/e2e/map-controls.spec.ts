@@ -107,7 +107,8 @@ test("right-click opens a token menu that replaces the hidden layer shortcut", a
   const originalLabel = await token.getAttribute("aria-label");
   expect(originalLabel).toBeTruthy();
 
-  await token.click({ button: "right" });
+  // A token whose turn it is pulses, so skip the wait for a still target; a person can right-click it regardless.
+  await token.click({ button: "right", force: true });
   const menu = page.getByRole("menu");
   await expect(menu).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Show in inspector" })).toBeFocused();
