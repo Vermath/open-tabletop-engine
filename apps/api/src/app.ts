@@ -335,6 +335,7 @@ import { registerPlayerPreviewRoutes } from "./player-preview-routes.js";
 import { registerOpenApiRuntimeValidation } from "./openapi-runtime-validation.js";
 import { activeCombatForTypedDamage, dndTypedDamageCombatantChanges } from "./dnd-typed-damage-combat.js";
 import { registerSceneDelegationRoutes } from "./scene-delegation-routes.js";
+import { registerUniversalVttImportRoute } from "./universal-vtt-import.js";
 import { registerCampaignSessionRoutes } from "./campaign-session-routes.js";
 import { registerCampaignWebhookRoutes } from "./campaign-webhook-routes.js";
 import { CAMPAIGN_WEBHOOK_QUEUE_MAX_PENDING_DELIVERIES, CAMPAIGN_WEBHOOK_SUBSCRIPTION_LIMIT_PER_CAMPAIGN, createCampaignWebhookDelivery, pruneCampaignWebhookCampaignLedger, pruneCampaignWebhookDeliveryLedger, pruneCampaignWebhookLedgers } from "./campaign-webhook-ledger.js";
@@ -4475,6 +4476,22 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (activeOrganization !== true) return activeOrganization;
     if (!canReadSceneRecord(store, userId, scene)) return notFound(reply, "Scene not found");
     return scenePayloadForUser(store, userId, scene);
+  });
+
+  registerUniversalVttImportRoute(app, {
+    store,
+    assetStorage,
+    maxAssetBytes,
+    scannerTransport: webhookTransport,
+    requireSceneCreate: (reply, headers, campaignId) => requireCampaignPermission(store, reply, headers, campaignId, "scene.create"),
+    currentUserId: (headers) => currentUserId(store, headers)!,
+    requireExpectedRevision,
+    nextRevisionTimestamp,
+    attachAssetTransaction: (request, transaction, snapshot) => {
+      Reflect.set(request, archiveImportAssetRestoreSymbol, transaction);
+      Reflect.set(request, archiveImportStateSnapshotSymbol, snapshot);
+    },
+    broadcast,
   });
 
   registerSceneDelegationRoutes(app, {
@@ -21835,7 +21852,7 @@ function filterRealtimeEvent(store: StateStore, event: EngineEvent, userId: stri
   }
   if (event.type.startsWith("proposal.") || event.type.startsWith("ai.proposal.")) {
     const proposal = proposalFromRealtimeEvent(store, event);
-    if (proposal) return canReceiveProposalRealtimeEvent(store, userId, proposal) ? event : undefined;
+    if (proposal) return canReceiveProposalRealtimeEvent(store, userId, proposal) ? redactedRealtimeEvent(event, projectSceneResponseForUser(store, userId, event.payload)) : undefined;
     return canReceiveProposalRealtimeFeed(store, userId, event.campaignId) ? event : undefined;
   }
   if (event.type.startsWith("character.transfer.")) {
@@ -24014,9 +24031,10 @@ function projectSceneResponseForUser(store: StateStore, userId: string, payload:
   if (Array.isArray(payload)) return payload.map((entry) => projectSceneResponseForUser(store, userId, entry));
   if (!isRecord(payload)) return payload;
   if (typeof payload.id === "string" && typeof payload.campaignId === "string" && Array.isArray(payload.annotations)) return scenePayloadForUser(store, userId, payload as unknown as Scene);
-  // These are the typed scene wrappers used by mutations, snapshots and errors.
+  // Include proposal wrappers and rollback guards: their expected scenes are
+  // authoritative internally, but must use the same caller projection on the wire.
   let result = payload;
-  for (const key of ["scene", "current", "scenes"]) {
+  for (const key of ["scene", "current", "scenes", "proposal", "proposals", "revertGuardsJson", "expected"]) {
     if (payload[key] === undefined) continue;
     const projected = projectSceneResponseForUser(store, userId, payload[key]);
     if (projected !== payload[key]) result = { ...result, [key]: projected };
