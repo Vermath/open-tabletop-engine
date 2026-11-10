@@ -43,6 +43,8 @@
     "dist/tactical.d.ts",
     "dist/types.js",
     "dist/types.d.ts",
+    "dist/universal-vtt.js",
+    "dist/universal-vtt.d.ts",
     "dist/vision.js",
     "dist/vision.d.ts",
     "LICENSE",

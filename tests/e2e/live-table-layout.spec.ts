@@ -22,6 +22,8 @@ function combatPanel(page: Page) {
 }
 
 async function endCombatIfActive(page: Page) {
+  const showInspector = page.getByRole("button", { name: "Show inspector", exact: true });
+  if (await showInspector.isVisible()) await showInspector.click();
   await openInspectorTab(page, "combat");
   const panel = combatPanel(page);
   const end = panel.getByRole("button", { name: "End combat", exact: true });
@@ -31,6 +33,20 @@ async function endCombatIfActive(page: Page) {
   await expect(panel.getByRole("button", { name: "Review combatants" })).toBeVisible();
 }
 
+async function startCombat(page: Page) {
+  await combatPanel(page).getByRole("button", { name: "Review combatants" }).click();
+  const dialog = page.getByRole("dialog", { name: /^Review / });
+  await expect(dialog).toBeVisible();
+  const selectAll = dialog.getByRole("button", { name: "Select all" });
+  if (await selectAll.isEnabled()) await selectAll.click();
+  const serverRoll = dialog.getByRole("checkbox", { name: /Server-roll initiative/ });
+  if (await serverRoll.isChecked()) await serverRoll.uncheck();
+  const initiatives = dialog.locator('input[type="number"]:enabled');
+  for (let index = 0; index < await initiatives.count(); index += 1) await initiatives.nth(index).fill(String(20 - index));
+  await dialog.getByRole("button", { name: /^Start combat \(\d+\)$/ }).click();
+  await expect(dialog).toBeHidden();
+}
+
 test("the initiative strip keeps turn order on the map while the inspector shows something else", async ({ page }) => {
   await openDemoTable(page);
   const strip = page.locator(".initiative-strip");
@@ -38,18 +54,7 @@ test("the initiative strip keeps turn order on the map while the inspector shows
   await expect(strip).toHaveCount(0);
 
   try {
-    const panel = combatPanel(page);
-    await panel.getByRole("button", { name: "Review combatants" }).click();
-    const dialog = page.getByRole("dialog", { name: /^Review / });
-    await expect(dialog).toBeVisible();
-    const selectAll = dialog.getByRole("button", { name: "Select all" });
-    if (await selectAll.isEnabled()) await selectAll.click();
-    const serverRoll = dialog.getByRole("checkbox", { name: /Server-roll initiative/ });
-    if (await serverRoll.isChecked()) await serverRoll.uncheck();
-    const initiatives = dialog.locator('input[type="number"]:enabled');
-    for (let index = 0; index < await initiatives.count(); index += 1) await initiatives.nth(index).fill(String(20 - index));
-    await dialog.getByRole("button", { name: /^Start combat \(\d+\)$/ }).click();
-    await expect(dialog).toBeHidden();
+    await startCombat(page);
 
     // Leave the Combat tab: the order is still on the map.
     await openInspectorTab(page, "actors");
@@ -110,4 +115,38 @@ test("the inspector can be resized, remembers its width and resets", async ({ pa
   await page.keyboard.press("Enter");
   await expect.poll(async () => Math.round((await inspector.boundingBox())!.width)).toBe(Math.round(initial));
   expect(await page.evaluate(() => window.localStorage.getItem("otte:inspectorWidth"))).toBeNull();
+});
+
+test.describe("phone initiative strip", () => {
+  test.use({ hasTouch: true });
+  for (const width of [320, 390, 640]) {
+    test(`turn controls stay below the collapsed map dock at ${width}px`, async ({ page }) => {
+      await openDemoTable(page);
+      await endCombatIfActive(page);
+      try {
+        await startCombat(page);
+        await page.setViewportSize({ width, height: width === 320 ? 568 : 844 });
+        const showScene = page.getByRole("button", { name: "Show scene", exact: true });
+        if (await showScene.isVisible()) await showScene.click();
+        const strip = page.locator(".initiative-strip");
+        const dock = page.locator('.table-area > .map-layer-dock[data-collapsed="true"]');
+        await expect(strip).toBeVisible();
+        await expect(dock).toBeVisible();
+        const stripBox = (await strip.boundingBox())!;
+        const dockBox = (await dock.boundingBox())!;
+        expect(stripBox.y).toBeGreaterThanOrEqual(dockBox.y + dockBox.height);
+        const next = strip.getByRole("button", { name: "Next turn", exact: true });
+        await expect(next).toBeInViewport();
+        const turn = async () => ({ name: await strip.locator('[aria-current="step"]').getAttribute("aria-label"), round: await strip.locator(".initiative-strip-round").innerText() });
+        const before = await turn();
+        const advanced = page.waitForResponse((response) => response.request().method() === "PATCH" && /\/api\/v1\/combats\/[^/]+$/.test(new URL(response.url()).pathname) && response.ok());
+        await next.tap();
+        await advanced;
+        await expect.poll(turn).not.toEqual(before);
+      } finally {
+        await page.setViewportSize({ width: 1280, height: 720 });
+        await endCombatIfActive(page);
+      }
+    });
+  }
 });

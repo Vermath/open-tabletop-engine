@@ -502,7 +502,7 @@ export const tokenResizeHandles: Array<{ id: TokenResizeHandle; label: string }>
 export const tokenCornerResizeHandles = tokenResizeHandles.filter((handle) => handle.id.length === 2);
 
 
-export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: number; backgroundAsset?: MapAsset; selectedAssetId?: string; assets: MapAsset[]; tokens: Token[]; actors: Actor[]; boardCurrentUserId: string; canSeeAllVitals: boolean; currentTurnTokenIds: string[]; nextTurnTokenIds: string[]; vision?: VisionSnapshot; visionPreviewLabel?: string; selectedTokenId: string; selectedTokenIds: string[]; activeTokenLayer: TokenLayer; fogBrushMode: FogMode | null; annotationTool: AnnotationTool; calibrationPoints?: VisionPoint[]; onCalibrationPoint?(point: VisionPoint): void; templateShape: SceneTemplateShape; visibleAnnotationLayers: Record<SceneAnnotationLayer, boolean>; canDropToken: boolean; canMoveToken: boolean; canUpdateAnnotations: boolean; canResizeToken: boolean; canUpdateTokenLayer: boolean; onSelect(id: string, options?: TokenSelectionOptions): void; onSelectMany(ids: string[], options?: TokenSelectionOptions): void; onSelectBackgroundAsset(assetId: string): void; onClearSelection(): void; onMoved(): Promise<void>; onTokenMovePersist(changes: TokenMovePersistenceChange[]): Promise<void>; onTokenResizePersist(token: Token, frame: TokenFrame): Promise<void>; onTokenMoveCommit(changes: BoardTokenPositionChange[]): void; onTokenResizeCommit(changes: BoardTokenFrameChange[]): void; onTokenLayerCycle(token: Token): Promise<void>; onTokenDrop(payload: TokenDropPayload, point: VisionPoint): Promise<void>; onFogStroke(mode: FogMode, points: VisionPoint[]): Promise<void>; onAnnotationCreate(kind: SceneAnnotationKind, points: VisionPoint[], radius?: number): Promise<void>; onAnnotationMove(annotation: SceneAnnotation, points: VisionPoint[]): Promise<void>; onTogglePortal(wall: Scene["walls"][number]): Promise<void>; selectedOverlay: { type: "annotation" | "wall" | "light"; id: string } | null; onSelectOverlay(next: { type: "annotation" | "wall" | "light"; id: string } | null): void; onZoomBy(delta: number): void; onTokenTarget?(tokenId: string, targeted: boolean): void | Promise<void> }) {
+export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: number; backgroundAsset?: MapAsset; selectedAssetId?: string; assets: MapAsset[]; tokens: Token[]; actors: Actor[]; boardCurrentUserId: string; canSeeAllVitals: boolean; currentTurnTokenIds: string[]; nextTurnTokenIds: string[]; vision?: VisionSnapshot; visionPreviewLabel?: string; selectedTokenId: string; selectedTokenIds: string[]; activeTokenLayer: TokenLayer; fogBrushMode: FogMode | null; annotationTool: AnnotationTool; calibrationPoints?: VisionPoint[]; onCalibrationPoint?(point: VisionPoint): void; templateShape: SceneTemplateShape; visibleAnnotationLayers: Record<SceneAnnotationLayer, boolean>; canDropToken: boolean; canMoveToken: boolean; canUpdateAnnotations: boolean; canResizeToken: boolean; canUpdateTokenLayer: boolean; onSelect(id: string, options?: TokenSelectionOptions): void; onInspectToken(id: string): void; onSelectMany(ids: string[], options?: TokenSelectionOptions): void; onSelectBackgroundAsset(assetId: string): void; onClearSelection(): void; onMoved(): Promise<void>; onTokenMovePersist(changes: TokenMovePersistenceChange[]): Promise<void>; onTokenResizePersist(token: Token, frame: TokenFrame): Promise<void>; onTokenMoveCommit(changes: BoardTokenPositionChange[]): void; onTokenResizeCommit(changes: BoardTokenFrameChange[]): void; onTokenLayerCycle(token: Token): Promise<void>; onTokenDrop(payload: TokenDropPayload, point: VisionPoint): Promise<void>; onFogStroke(mode: FogMode, points: VisionPoint[]): Promise<void>; onAnnotationCreate(kind: SceneAnnotationKind, points: VisionPoint[], radius?: number): Promise<void>; onAnnotationMove(annotation: SceneAnnotation, points: VisionPoint[]): Promise<void>; onTogglePortal(wall: Scene["walls"][number]): Promise<void>; selectedOverlay: { type: "annotation" | "wall" | "light"; id: string } | null; onSelectOverlay(next: { type: "annotation" | "wall" | "light"; id: string } | null): void; onZoomBy(delta: number): void; onTokenTarget?(tokenId: string, targeted: boolean): void | Promise<void> }) {
   const mutationAction = useRetryableAction(props.scene.id);
   const calibrationActive = Boolean(props.onCalibrationPoint);
   const [tokenDrag, setTokenDrag] = useState<TokenDragDraft | null>(null);
@@ -691,7 +691,11 @@ export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: num
 
   // --- Map zoom, pan and token menu gestures ---------------------------------
   const [tokenMenu, setTokenMenu] = useState<{ tokenId: string; x: number; y: number } | null>(null);
-  const closeTokenMenu = useCallback(() => setTokenMenu(null), []);
+  const tokenMenuOpenerRef = useRef<HTMLElement | null>(null);
+  const closeTokenMenu = useCallback((restoreFocus = false) => {
+    setTokenMenu(null);
+    if (restoreFocus && tokenMenuOpenerRef.current?.isConnected) tokenMenuOpenerRef.current.focus({ preventScroll: true });
+  }, []);
   /** Zoom last requested from the parent, quantised the same way the parent stores it. */
   const zoomRequestRef = useRef(props.zoom);
   /** Unquantised zoom, so many small trackpad or pinch deltas add up instead of rounding away. */
@@ -699,7 +703,7 @@ export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: num
   const zoomAnchorRef = useRef<ZoomAnchor | null>(null);
   const zoomAnchorReleaseTimerRef = useRef<number | undefined>(undefined);
   const skipTokenRecentreRef = useRef(false);
-  const previousBoardLayoutRef = useRef<{ zoom: number; left: number; top: number; width: number; height: number } | null>(null);
+  const previousBoardLayoutRef = useRef<{ sceneId: string; zoom: number; left: number; top: number; width: number; height: number; scroll: ViewportPoint; viewport: SceneViewportSize } | null>(null);
   const onZoomByRef = useRef(props.onZoomBy);
   onZoomByRef.current = props.onZoomBy;
   const touchPointsRef = useRef(new Map<number, ViewportPoint>());
@@ -750,14 +754,15 @@ export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: num
     const layout = { left: board.offsetLeft, top: board.offsetTop, width: board.offsetWidth, height: board.offsetHeight };
     if (zoomAnchorRef.current) {
       applyZoomAnchor();
-    } else if (previous && previous.zoom !== props.zoom && !selectedViewportToken) {
+    } else if (previous && previous.sceneId === props.scene.id && previous.zoom !== props.zoom && !selectedViewportToken) {
       // Toolbar zoom has no pointer to anchor to: keep the centre of the view where it was.
-      const scroll = scrollKeepingViewCentre(previous, layout, { x: viewport.scrollLeft, y: viewport.scrollTop }, { width: viewport.clientWidth, height: viewport.clientHeight });
+      // Reading the live offsets here is too late: layout already clamped them when the board shrank.
+      const scroll = scrollKeepingViewCentre(previous, layout, previous.scroll, previous.viewport);
       viewport.scrollLeft = scroll.x;
       viewport.scrollTop = scroll.y;
     }
-    previousBoardLayoutRef.current = { zoom: props.zoom, ...layout };
-  }, [boardDimensions.height, boardDimensions.width, props.zoom]);
+    previousBoardLayoutRef.current = { sceneId: props.scene.id, zoom: props.zoom, ...layout, scroll: { x: viewport.scrollLeft, y: viewport.scrollTop }, viewport: { width: viewport.clientWidth, height: viewport.clientHeight } };
+  }, [boardDimensions.height, boardDimensions.width, props.zoom, props.scene.id]);
 
   useEffect(() => {
     // React registers wheel listeners as passive, which cannot stop the page from scrolling or zooming.
@@ -783,6 +788,7 @@ export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: num
     setTokenDrag(null);
     tokenResizeRef.current = null;
     setTokenResize(null);
+    tokenMenuOpenerRef.current = boardRef.current?.querySelector<HTMLElement>(`[data-token-id="${CSS.escape(tokenId)}"]`) ?? null;
     setTokenMenu({ tokenId, x: position.x, y: position.y });
   }
 
@@ -1519,6 +1525,9 @@ export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: num
       className={`scene-viewport ${mapPanning ? "panning" : ""}`}
       role="region"
       aria-label={`${props.scene.name} battle map viewport`}
+      onScroll={(event) => {
+        if (previousBoardLayoutRef.current) previousBoardLayoutRef.current.scroll = { x: event.currentTarget.scrollLeft, y: event.currentTarget.scrollTop };
+      }}
       onPointerDownCapture={handleViewportPointerDownCapture}
       onPointerMoveCapture={handleViewportPointerMoveCapture}
       onPointerUpCapture={(event) => handleViewportPointerEndCapture(event, false)}
@@ -2110,7 +2119,7 @@ export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: num
             nextLayerLabel: tokenLayerLabel(nextTokenLayer(tokenLayer(tokenMenuToken))),
             canTarget: Boolean(props.onTokenTarget),
             canChangeLayer: props.canUpdateTokenLayer,
-            onShowInInspector: () => props.onSelect(tokenMenuToken.id),
+            onShowInInspector: () => props.onInspectToken(tokenMenuToken.id),
             onToggleTarget: () => void mutationAction.runAction(`Update target mark on ${tokenMenuToken.name}`, async () => { await props.onTokenTarget?.(tokenMenuToken.id, !(tokenMenuToken.targetedByUserIds?.includes(props.boardCurrentUserId) ?? false)); }),
             onMoveToNextLayer: () => void mutationAction.runAction(`Move ${tokenMenuToken.name} to the next layer`, () => props.onTokenLayerCycle(tokenMenuToken))
           })}
