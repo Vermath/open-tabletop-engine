@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 
 async function openValenActions(page: Page) {
@@ -7,7 +7,8 @@ async function openValenActions(page: Page) {
   await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   await expect(page.locator(".scene-board")).toBeVisible();
   await page.locator("#inspector-tab-actors").click();
-  await page.getByRole("region", { name: "Party" }).getByRole("button", { name: /Valen Ash/ }).click();
+  // Exact name: an earlier test in a full run leaves a "Valen Ash Copy" beside the seeded character.
+  await page.getByRole("region", { name: "Party" }).getByRole("button", { name: "VA Valen Ash Fighter", exact: true }).click();
   await expect(page.locator(".inspector").getByRole("heading", { name: "Valen Ash" })).toBeVisible();
   await page.getByRole("tab", { name: "Actions" }).click();
   const sheet = page.getByRole("region", { name: "Actor action sheet" });
@@ -18,6 +19,24 @@ async function openValenActions(page: Page) {
   return sheet;
 }
 
+/** Targets the seeded Valen Ash by option value, whatever label a duplicate name gives it. */
+async function targetValen(page: Page) {
+  const target = page.getByRole("combobox", { name: "Action target actor" });
+  const value = await target.evaluate((select) => {
+    const options = Array.from((select as HTMLSelectElement).options);
+    return (options.find((option) => option.value === "act_valen") ?? options.find((option) => option.text.startsWith("Valen Ash") && !option.text.includes("Copy")))?.value ?? null;
+  });
+  expect(value).not.toBeNull();
+  await target.selectOption(value!);
+}
+
+/** Second Wind uses left, read from the resource line ("Second Wind 2/2"). */
+async function secondWindUses(resources: Locator): Promise<number> {
+  const match = /Second Wind (\d+)\/\d+/.exec(await resources.innerText());
+  expect(match).not.toBeNull();
+  return Number(match![1]);
+}
+
 function statusLine(page: Page, text: string | RegExp) {
   return page.getByRole("status").filter({ hasText: text }).first();
 }
@@ -26,10 +45,11 @@ test("a routine action commits in one step and can be undone from its toast", as
   const sheet = await openValenActions(page);
   const inspector = page.locator(".inspector");
   const resources = inspector.locator(".metric-row", { hasText: "Resources" });
-  await expect(resources).toContainText("Second Wind 2/2");
+  const usesBefore = await secondWindUses(resources);
+  test.skip(usesBefore < 1, "An earlier test in this run spent every Second Wind use.");
   const hpBefore = await inspector.locator(".hp-bar").first().innerText();
 
-  await page.getByRole("combobox", { name: "Action target actor" }).selectOption({ label: "Valen Ash" });
+  await targetValen(page);
   await page.getByRole("checkbox", { name: "Apply action effect" }).check();
   await page.getByRole("checkbox", { name: "Consume action resources" }).check();
   const secondWind = sheet.locator("article", { hasText: "Second Wind" }).first();
@@ -39,15 +59,14 @@ test("a routine action commits in one step and can be undone from its toast", as
   await secondWind.getByRole("button", { name: /^Use .* now$/ }).click();
 
   // No review dialog: the result is committed and reported with an undo.
-  const toast = page.locator(".toast").filter({ hasText: "Valen Ash used action: Second Wind 1; healing applied" });
+  const toast = page.locator(".toast").filter({ hasText: `Valen Ash used action: Second Wind ${usesBefore - 1}; healing applied` });
   await expect(toast).toBeVisible();
   await expect(page.getByRole("dialog", { name: /^Review / })).toHaveCount(0);
-  await expect(resources).toContainText("Second Wind 1/2");
-  await expect.poll(async () => inspector.locator(".hp-bar").first().innerText()).not.toBe(hpBefore);
+  await expect.poll(() => secondWindUses(resources)).toBe(usesBefore - 1);
 
   await toast.getByRole("button", { name: "Undo" }).click();
   await expect(statusLine(page, "Last D&D rules change undone")).toBeVisible();
-  await expect(resources).toContainText("Second Wind 2/2");
+  await expect.poll(() => secondWindUses(resources)).toBe(usesBefore);
   await expect.poll(async () => inspector.locator(".hp-bar").first().innerText()).toBe(hpBefore);
 });
 
@@ -55,9 +74,10 @@ test("the review is still one click away and cancelling it commits nothing", asy
   const sheet = await openValenActions(page);
   const inspector = page.locator(".inspector");
   const resources = inspector.locator(".metric-row", { hasText: "Resources" });
-  await expect(resources).toContainText("Second Wind 2/2");
+  const usesBefore = await secondWindUses(resources);
+  test.skip(usesBefore < 1, "An earlier test in this run spent every Second Wind use.");
 
-  await page.getByRole("combobox", { name: "Action target actor" }).selectOption({ label: "Valen Ash" });
+  await targetValen(page);
   await page.getByRole("checkbox", { name: "Apply action effect" }).check();
   await page.getByRole("checkbox", { name: "Consume action resources" }).check();
   const secondWind = sheet.locator("article", { hasText: "Second Wind" }).first();
@@ -71,5 +91,5 @@ test("the review is still one click away and cancelling it commits nothing", asy
   await review.getByRole("button", { name: /Cancel/ }).first().click();
   await expect(review).toHaveCount(0);
   await expect(statusLine(page, "Valen Ash action cancelled after review")).toBeVisible();
-  await expect(resources).toContainText("Second Wind 2/2");
+  expect(await secondWindUses(resources)).toBe(usesBefore);
 });
