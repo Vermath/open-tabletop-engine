@@ -129,12 +129,12 @@ describe("campaign compendium provenance and conflict safety", () => {
 
   it("requires replay and revision guards and replaces imports in place after explicit conflict choices", async () => {
     const store = new MemoryStateStore();
-    const actor = store.state.actors.find((candidate) => candidate.id === "act_generic_demo")!;
+    const currentActor = () => store.state.actors.find((candidate) => candidate.id === "act_generic_demo")!;
     const app = await buildApp({ store });
-    const route = `/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/${actor.id}/compendium`;
+    const route = `/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/${currentActor().id}/compendium`;
 
     try {
-      const observedRevision = actor.updatedAt;
+      const observedRevision = currentActor().updatedAt;
       const missingKey = await app.inject({
         method: "POST",
         url: route,
@@ -149,13 +149,13 @@ describe("campaign compendium provenance and conflict safety", () => {
       expect(added.statusCode).toBe(200);
       expect(added.json()).toMatchObject({ resolution: "added", entry: { id: "longsword" } });
       const importedItemId = added.json().item.id as string;
-      expect(store.state.items.filter((item) => item.actorId === actor.id && item.data.compendiumId === "longsword")).toHaveLength(1);
+      expect(store.state.items.filter((item) => item.actorId === currentActor().id && item.data.compendiumId === "longsword")).toHaveLength(1);
       expect(store.state.items.find((item) => item.id === importedItemId)?.data.compendiumProvenance).toMatchObject({ contentVersion: "0.1.0" });
 
       const replayed = await app.inject({ method: "POST", url: route, headers: addedHeaders, payload: addedPayload });
       expect(replayed.statusCode).toBe(200);
       expect(replayed.headers["idempotency-replayed"]).toBe("true");
-      expect(store.state.items.filter((item) => item.actorId === actor.id && item.data.compendiumId === "longsword")).toHaveLength(1);
+      expect(store.state.items.filter((item) => item.actorId === currentActor().id && item.data.compendiumId === "longsword")).toHaveLength(1);
 
       const stale = await app.inject({
         method: "POST",
@@ -164,9 +164,9 @@ describe("campaign compendium provenance and conflict safety", () => {
         payload: addedPayload
       });
       expect(stale.statusCode).toBe(409);
-      expect(stale.json()).toMatchObject({ code: "stale_write", resourceId: actor.id });
+      expect(stale.json()).toMatchObject({ code: "stale_write", resourceId: currentActor().id });
 
-      const exactConflictPayload = { entryId: "longsword", expectedUpdatedAt: actor.updatedAt };
+      const exactConflictPayload = { entryId: "longsword", expectedUpdatedAt: currentActor().updatedAt };
       const exactConflict = await app.inject({
         method: "POST",
         url: route,
@@ -195,7 +195,7 @@ describe("campaign compendium provenance and conflict safety", () => {
       });
       expect(replaced.statusCode).toBe(200);
       expect(replaced.json()).toMatchObject({ resolution: "replaced_existing", item: { id: importedItemId } });
-      expect(store.state.items.filter((item) => item.actorId === actor.id && item.data.compendiumId === "longsword")).toHaveLength(1);
+      expect(store.state.items.filter((item) => item.actorId === currentActor().id && item.data.compendiumId === "longsword")).toHaveLength(1);
 
       const importedItem = store.state.items.find((item) => item.id === importedItemId)!;
       importedItem.data.compendiumProvenance = {
@@ -206,7 +206,7 @@ describe("campaign compendium provenance and conflict safety", () => {
         method: "POST",
         url: route,
         headers: { ...playerHeaders, "idempotency-key": "compendium-add-version-conflict" },
-        payload: { entryId: "longsword", expectedUpdatedAt: actor.updatedAt }
+        payload: { entryId: "longsword", expectedUpdatedAt: currentActor().updatedAt }
       });
       expect(versionConflict.statusCode).toBe(409);
       expect(versionConflict.json()).toMatchObject({

@@ -15,6 +15,8 @@ function fixture() {
   store.state.tokens = [owned, ...[
     { id: "lit", x: 175, y: 175 }, { id: "blocked", x: 375, y: 175 }, { id: "unlit", x: 175, y: 325 }
   ].map((entry): Token => ({ ...owned, ...entry, name: entry.id, ownerUserIds: [], visionEnabled: false }))];
+  store.save();
+  store.flush();
   return { store, scene, owned };
 }
 
