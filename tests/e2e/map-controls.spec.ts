@@ -11,6 +11,26 @@ async function openDemoTable(page: Page): Promise<Locator> {
   return board;
 }
 
+/**
+ * The token drawn on top at its own centre. Earlier tests in a run can leave tokens stacked on the seeded one,
+ * and a real click only reaches whichever is on top.
+ */
+async function topmostToken(page: Page): Promise<Locator> {
+  const board = page.locator(".scene-board");
+  await expect(board.locator("button.token").first()).toBeVisible();
+  const tokenId = await board.evaluate((element) => {
+    const tokens = Array.from(element.querySelectorAll<HTMLElement>("button.token"));
+    const top = tokens.find((token) => {
+      const rect = token.getBoundingClientRect();
+      const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      return hit !== null && token.contains(hit);
+    });
+    return top?.dataset.tokenId ?? null;
+  });
+  expect(tokenId).not.toBeNull();
+  return page.locator(`.scene-board [data-token-id="${tokenId}"]`);
+}
+
 async function zoomPercent(page: Page): Promise<number> {
   return Number.parseInt((await page.locator(".map-zoom-value").innerText()).replace("%", ""), 10);
 }
@@ -102,7 +122,7 @@ test("right-drag pans the map without opening the token menu", async ({ page }) 
 
 test("right-click opens a token menu that replaces the hidden layer shortcut", async ({ page }) => {
   await openDemoTable(page);
-  const token = page.locator(".scene-board button.token").first();
+  const token = await topmostToken(page);
   await expect(token).toBeVisible();
   const originalLabel = await token.getAttribute("aria-label");
   expect(originalLabel).toBeTruthy();
