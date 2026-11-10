@@ -213,3 +213,22 @@ test.describe("touch map gestures", () => {
     }
   });
 });
+
+for (const scenario of ["another inspector tab", "map focus", "short phone"]) {
+  test(`Show in inspector opens the actor from ${scenario}`, async ({ page }) => {
+    await openDemoTable(page);
+    await page.locator("#inspector-tab-chat").click();
+    if (scenario === "map focus") await page.getByRole("button", { name: "Enter map focus mode", exact: true }).click();
+    if (scenario === "short phone") {
+      await page.setViewportSize({ width: 320, height: 568 });
+      await page.getByRole("button", { name: "Show scene", exact: true }).click();
+    }
+    const token = page.locator('.scene-board [data-token-id="tok_valen"]');
+    await token.focus();
+    await page.keyboard.press("Shift+F10");
+    await page.getByRole("menuitem", { name: "Show in inspector", exact: true }).click();
+    await expect(page.locator("#inspector-tab-actors")).toHaveAttribute("aria-selected", "true");
+    await expect(page.locator(".inspector").getByRole("heading", { name: "Valen Ash", exact: true })).toBeVisible();
+    await expect(page.locator(".shell")).not.toHaveAttribute("data-table-focus", "true");
+  });
+}
