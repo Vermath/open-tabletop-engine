@@ -3,7 +3,8 @@ import type { Actor, FogMode, MapAsset, Scene, SceneAnnotation, SceneAnnotationK
 import { assetBlobUrl } from "./api.js";
 import { BrickWall, ChevronLeft, ChevronRight, Circle, Crosshair, Eraser, Eye, Flame, Grip, Image as ImageIcon, Layers, Lightbulb, LockKeyhole, Map as MapIcon, MapPin, Paintbrush, PencilLine, Pentagon, Plus, Ruler, Swords, Trash2, Triangle, X, ZoomIn, ZoomOut, RefreshCw, Hand, RotateCcw, Boxes, ScrollText, Download, Upload, UserX } from "lucide-react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { BoardTokenFrameChange, BoardTokenPositionChange } from "./board-history.js";
 import { computeTokenMovements, formatGridDistance } from "./board-animation.js";
 import { scenePointFromClient } from "./board-geometry.js";
@@ -14,6 +15,8 @@ import { errorMessage, formatNumber, titleCaseLabel } from "./sheet-format.js";
 import { hasTokenDropData, readTokenDropData, type TokenDropPayload } from "./token-drag.js";
 import { RetryableActionNotice, useRetryableAction } from "./retryable-action.js";
 import { DynamicVisibilityMask } from "./scene-visibility-mask.js";
+import { anchorScrollDelta, exceedsPanThreshold, scrollKeepingViewCentre, pinchZoom, pointerDistance, pointerMidpoint, wheelEventZoomsMap, wheelZoomFactor, zoomAnchorAt, type ViewportPoint, type ZoomAnchor } from "./map-viewport-gestures.js";
+import { TokenContextMenu, tokenContextMenuActions } from "./token-context-menu.js";
 
 const pingAnnotationTtlSeconds = 5;
 const annotationExpiryTimerSlackMs = 25;
@@ -248,9 +251,11 @@ export const largeTokenVisualScale = 0.96;
 
 export const battleMapZoomMin = 0.5;
 
-export const battleMapZoomMax = 2;
+export const battleMapZoomMax = 6;
 
 export const battleMapZoomStep = 0.25;
+
+const zoomAnchorHoldMs = 200;
 
 
 export function clampSceneCoordinate(value: number, min: number, max: number): number {
@@ -497,7 +502,7 @@ export const tokenResizeHandles: Array<{ id: TokenResizeHandle; label: string }>
 export const tokenCornerResizeHandles = tokenResizeHandles.filter((handle) => handle.id.length === 2);
 
 
-export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: number; backgroundAsset?: MapAsset; selectedAssetId?: string; assets: MapAsset[]; tokens: Token[]; actors: Actor[]; boardCurrentUserId: string; canSeeAllVitals: boolean; currentTurnTokenIds: string[]; nextTurnTokenIds: string[]; vision?: VisionSnapshot; visionPreviewLabel?: string; selectedTokenId: string; selectedTokenIds: string[]; activeTokenLayer: TokenLayer; fogBrushMode: FogMode | null; annotationTool: AnnotationTool; calibrationPoints?: VisionPoint[]; onCalibrationPoint?(point: VisionPoint): void; templateShape: SceneTemplateShape; visibleAnnotationLayers: Record<SceneAnnotationLayer, boolean>; canDropToken: boolean; canMoveToken: boolean; canUpdateAnnotations: boolean; canResizeToken: boolean; canUpdateTokenLayer: boolean; onSelect(id: string, options?: TokenSelectionOptions): void; onSelectMany(ids: string[], options?: TokenSelectionOptions): void; onSelectBackgroundAsset(assetId: string): void; onClearSelection(): void; onMoved(): Promise<void>; onTokenMovePersist(changes: TokenMovePersistenceChange[]): Promise<void>; onTokenResizePersist(token: Token, frame: TokenFrame): Promise<void>; onTokenMoveCommit(changes: BoardTokenPositionChange[]): void; onTokenResizeCommit(changes: BoardTokenFrameChange[]): void; onTokenLayerCycle(token: Token): Promise<void>; onTokenDrop(payload: TokenDropPayload, point: VisionPoint): Promise<void>; onFogStroke(mode: FogMode, points: VisionPoint[]): Promise<void>; onAnnotationCreate(kind: SceneAnnotationKind, points: VisionPoint[], radius?: number): Promise<void>; onAnnotationMove(annotation: SceneAnnotation, points: VisionPoint[]): Promise<void>; onTogglePortal(wall: Scene["walls"][number]): Promise<void>; selectedOverlay: { type: "annotation" | "wall" | "light"; id: string } | null; onSelectOverlay(next: { type: "annotation" | "wall" | "light"; id: string } | null): void; onZoomBy(delta: number): void }) {
+export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: number; backgroundAsset?: MapAsset; selectedAssetId?: string; assets: MapAsset[]; tokens: Token[]; actors: Actor[]; boardCurrentUserId: string; canSeeAllVitals: boolean; currentTurnTokenIds: string[]; nextTurnTokenIds: string[]; vision?: VisionSnapshot; visionPreviewLabel?: string; selectedTokenId: string; selectedTokenIds: string[]; activeTokenLayer: TokenLayer; fogBrushMode: FogMode | null; annotationTool: AnnotationTool; calibrationPoints?: VisionPoint[]; onCalibrationPoint?(point: VisionPoint): void; templateShape: SceneTemplateShape; visibleAnnotationLayers: Record<SceneAnnotationLayer, boolean>; canDropToken: boolean; canMoveToken: boolean; canUpdateAnnotations: boolean; canResizeToken: boolean; canUpdateTokenLayer: boolean; onSelect(id: string, options?: TokenSelectionOptions): void; onSelectMany(ids: string[], options?: TokenSelectionOptions): void; onSelectBackgroundAsset(assetId: string): void; onClearSelection(): void; onMoved(): Promise<void>; onTokenMovePersist(changes: TokenMovePersistenceChange[]): Promise<void>; onTokenResizePersist(token: Token, frame: TokenFrame): Promise<void>; onTokenMoveCommit(changes: BoardTokenPositionChange[]): void; onTokenResizeCommit(changes: BoardTokenFrameChange[]): void; onTokenLayerCycle(token: Token): Promise<void>; onTokenDrop(payload: TokenDropPayload, point: VisionPoint): Promise<void>; onFogStroke(mode: FogMode, points: VisionPoint[]): Promise<void>; onAnnotationCreate(kind: SceneAnnotationKind, points: VisionPoint[], radius?: number): Promise<void>; onAnnotationMove(annotation: SceneAnnotation, points: VisionPoint[]): Promise<void>; onTogglePortal(wall: Scene["walls"][number]): Promise<void>; selectedOverlay: { type: "annotation" | "wall" | "light"; id: string } | null; onSelectOverlay(next: { type: "annotation" | "wall" | "light"; id: string } | null): void; onZoomBy(delta: number): void; onTokenTarget?(tokenId: string, targeted: boolean): void | Promise<void> }) {
   const mutationAction = useRetryableAction(props.scene.id);
   const calibrationActive = Boolean(props.onCalibrationPoint);
   const [tokenDrag, setTokenDrag] = useState<TokenDragDraft | null>(null);
@@ -684,9 +689,220 @@ export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: num
     });
   }, [tokens]);
 
+  // --- Map zoom, pan and token menu gestures ---------------------------------
+  const [tokenMenu, setTokenMenu] = useState<{ tokenId: string; x: number; y: number } | null>(null);
+  const closeTokenMenu = useCallback(() => setTokenMenu(null), []);
+  /** Zoom last requested from the parent, quantised the same way the parent stores it. */
+  const zoomRequestRef = useRef(props.zoom);
+  /** Unquantised zoom, so many small trackpad or pinch deltas add up instead of rounding away. */
+  const zoomPreciseRef = useRef(props.zoom);
+  const zoomAnchorRef = useRef<ZoomAnchor | null>(null);
+  const zoomAnchorReleaseTimerRef = useRef<number | undefined>(undefined);
+  const skipTokenRecentreRef = useRef(false);
+  const previousBoardLayoutRef = useRef<{ zoom: number; left: number; top: number; width: number; height: number } | null>(null);
+  const onZoomByRef = useRef(props.onZoomBy);
+  onZoomByRef.current = props.onZoomBy;
+  const touchPointsRef = useRef(new Map<number, ViewportPoint>());
+  const pinchRef = useRef<{ pointerIds: [number, number]; startDistance: number; startZoom: number; u: number; v: number } | null>(null);
+  const secondaryPanRef = useRef<{ pointerId: number; start: ViewportPoint; startScrollLeft: number; startScrollTop: number; moved: boolean; tokenId?: string } | null>(null);
+
+  function applyZoomAnchor() {
+    const anchor = zoomAnchorRef.current;
+    const viewport = viewportRef.current;
+    const board = boardRef.current;
+    if (!anchor || !viewport || !board) return;
+    const delta = anchorScrollDelta(board.getBoundingClientRect(), anchor);
+    viewport.scrollLeft += delta.x;
+    viewport.scrollTop += delta.y;
+  }
+
+  /** Zooms to `nextZoom` while keeping the anchored board point under its screen position. Uses refs only, so it is safe to call from long-lived listeners. */
+  function requestZoom(nextZoom: number, anchor: ZoomAnchor) {
+    zoomPreciseRef.current = Math.max(battleMapZoomMin, Math.min(battleMapZoomMax, nextZoom));
+    const target = clampBattleMapZoom(zoomPreciseRef.current);
+    zoomAnchorRef.current = anchor;
+    // Zooming can add or remove scrollbars, which resizes the board again a frame
+    // later. Hold the anchor briefly so that follow-up layout keeps the point too.
+    window.clearTimeout(zoomAnchorReleaseTimerRef.current);
+    zoomAnchorReleaseTimerRef.current = window.setTimeout(() => {
+      if (!pinchRef.current) zoomAnchorRef.current = null;
+    }, zoomAnchorHoldMs);
+    if (target === zoomRequestRef.current) {
+      applyZoomAnchor();
+      return;
+    }
+    const delta = target - zoomRequestRef.current;
+    zoomRequestRef.current = target;
+    skipTokenRecentreRef.current = true;
+    onZoomByRef.current(delta);
+  }
+
+  useLayoutEffect(() => {
+    zoomRequestRef.current = props.zoom;
+    if (clampBattleMapZoom(zoomPreciseRef.current) !== props.zoom) zoomPreciseRef.current = props.zoom;
+  }, [props.zoom]);
+
+  useLayoutEffect(() => {
+    const viewport = viewportRef.current;
+    const board = boardRef.current;
+    if (!viewport || !board) return;
+    const previous = previousBoardLayoutRef.current;
+    const layout = { left: board.offsetLeft, top: board.offsetTop, width: board.offsetWidth, height: board.offsetHeight };
+    if (zoomAnchorRef.current) {
+      applyZoomAnchor();
+    } else if (previous && previous.zoom !== props.zoom && !selectedViewportToken) {
+      // Toolbar zoom has no pointer to anchor to: keep the centre of the view where it was.
+      const scroll = scrollKeepingViewCentre(previous, layout, { x: viewport.scrollLeft, y: viewport.scrollTop }, { width: viewport.clientWidth, height: viewport.clientHeight });
+      viewport.scrollLeft = scroll.x;
+      viewport.scrollTop = scroll.y;
+    }
+    previousBoardLayoutRef.current = { zoom: props.zoom, ...layout };
+  }, [boardDimensions.height, boardDimensions.width, props.zoom]);
+
+  useEffect(() => {
+    // React registers wheel listeners as passive, which cannot stop the page from scrolling or zooming.
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const handleWheel = (event: WheelEvent) => {
+      const board = boardRef.current;
+      if (!board || !wheelEventZoomsMap(event)) return;
+      event.preventDefault();
+      requestZoom(zoomPreciseRef.current * wheelZoomFactor(event.deltaY, event.deltaMode), zoomAnchorAt(board.getBoundingClientRect(), event.clientX, event.clientY));
+    };
+    viewport.addEventListener("wheel", handleWheel, { passive: false });
+    return () => viewport.removeEventListener("wheel", handleWheel);
+  }, []);
+
+  useEffect(() => {
+    setTokenMenu(null);
+  }, [props.scene.id, props.zoom, props.readOnly]);
+
+  function openTokenMenu(tokenId: string, position: ViewportPoint) {
+    if (props.readOnly || calibrationActive) return;
+    tokenDragRef.current = null;
+    setTokenDrag(null);
+    tokenResizeRef.current = null;
+    setTokenResize(null);
+    setTokenMenu({ tokenId, x: position.x, y: position.y });
+  }
+
+  function cancelSinglePointerGestures(pointerId: number) {
+    cancelSelectionBox(pointerId);
+    cancelMapPan(pointerId);
+    cancelTokenDrag(pointerId);
+    cancelTokenResize(pointerId);
+    if (annotationDraftRef.current?.pointerId === pointerId) {
+      annotationDraftRef.current = null;
+      setAnnotationDraft(null);
+    }
+    if (fogStrokeRef.current?.pointerId === pointerId) {
+      fogStrokeRef.current = null;
+      setFogStroke(null);
+    }
+    if (annotationMoveDraftRef.current?.pointerId === pointerId) {
+      annotationMoveDraftRef.current = null;
+      setAnnotationMoveDraft(null);
+    }
+  }
+
+  // The viewport sees every pointer event first (capture phase), so a second
+  // finger or the right mouse button can take over from token and board gestures.
+  function handleViewportPointerDownCapture(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.pointerType === "touch") {
+      const touches = touchPointsRef.current;
+      touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (touches.size > 2) {
+        event.stopPropagation();
+        return;
+      }
+      if (touches.size < 2) return;
+      const board = boardRef.current;
+      const [[firstId, first], [secondId, second]] = [...touches.entries()] as [[number, ViewportPoint], [number, ViewportPoint]];
+      const startDistance = pointerDistance(first, second);
+      if (!board || startDistance <= 0) return;
+      cancelSinglePointerGestures(firstId);
+      cancelSinglePointerGestures(secondId);
+      const midpoint = pointerMidpoint(first, second);
+      const anchor = zoomAnchorAt(board.getBoundingClientRect(), midpoint.x, midpoint.y);
+      pinchRef.current = { pointerIds: [firstId, secondId], startDistance, startZoom: zoomPreciseRef.current, u: anchor.u, v: anchor.v };
+      event.stopPropagation();
+      return;
+    }
+    if (event.button !== 2) return;
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const tokenElement = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-token-id]") : null;
+    secondaryPanRef.current = {
+      pointerId: event.pointerId,
+      start: { x: event.clientX, y: event.clientY },
+      startScrollLeft: viewport.scrollLeft,
+      startScrollTop: viewport.scrollTop,
+      moved: false,
+      tokenId: tokenElement?.dataset.tokenId
+    };
+    viewport.setPointerCapture(event.pointerId);
+    event.stopPropagation();
+  }
+
+  function handleViewportPointerMoveCapture(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.pointerType === "touch") {
+      const touches = touchPointsRef.current;
+      if (!touches.has(event.pointerId)) return;
+      touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      const pinch = pinchRef.current;
+      if (!pinch || !pinch.pointerIds.includes(event.pointerId)) return;
+      const first = touches.get(pinch.pointerIds[0]);
+      const second = touches.get(pinch.pointerIds[1]);
+      if (first && second) {
+        // Anchoring the starting board point to the moving midpoint pans and zooms in one gesture.
+        const midpoint = pointerMidpoint(first, second);
+        requestZoom(pinchZoom(pinch.startZoom, pinch.startDistance, pointerDistance(first, second)), { u: pinch.u, v: pinch.v, clientX: midpoint.x, clientY: midpoint.y });
+      }
+      event.stopPropagation();
+      return;
+    }
+    const pan = secondaryPanRef.current;
+    if (!pan || pan.pointerId !== event.pointerId) return;
+    const current = { x: event.clientX, y: event.clientY };
+    if (!pan.moved && exceedsPanThreshold(pan.start, current)) {
+      pan.moved = true;
+      setMapPanning(true);
+    }
+    const viewport = viewportRef.current;
+    if (pan.moved && viewport) {
+      viewport.scrollLeft = pan.startScrollLeft - (current.x - pan.start.x);
+      viewport.scrollTop = pan.startScrollTop - (current.y - pan.start.y);
+    }
+    event.stopPropagation();
+  }
+
+  function handleViewportPointerEndCapture(event: ReactPointerEvent<HTMLDivElement>, cancelled: boolean) {
+    if (event.pointerType === "touch") {
+      touchPointsRef.current.delete(event.pointerId);
+      if (pinchRef.current?.pointerIds.includes(event.pointerId)) {
+        pinchRef.current = null;
+        zoomAnchorRef.current = null;
+        event.stopPropagation();
+      }
+      return;
+    }
+    const pan = secondaryPanRef.current;
+    if (!pan || pan.pointerId !== event.pointerId) return;
+    secondaryPanRef.current = null;
+    if (pan.moved) setMapPanning(false);
+    // A right-click that did not turn into a drag opens the token menu on release.
+    else if (!cancelled && pan.tokenId) openTokenMenu(pan.tokenId, { x: event.clientX, y: event.clientY });
+    event.stopPropagation();
+  }
+
+  const tokenMenuToken = tokenMenu ? tokens.find((token) => token.id === tokenMenu.tokenId) : undefined;
+
   useEffect(() => {
     const token = selectedViewportToken;
-    if (!token || tokenDragRef.current || tokenResizeRef.current) return;
+    // A wheel or pinch zoom keeps the point under the pointer fixed; do not pull the view back to the selection.
+    const zoomedAtPointer = skipTokenRecentreRef.current;
+    skipTokenRecentreRef.current = false;
+    if (zoomedAtPointer || !token || tokenDragRef.current || tokenResizeRef.current) return;
     const frame = window.requestAnimationFrame(() => {
       if (tokenDragRef.current || tokenResizeRef.current) return;
       const viewport = viewportRef.current;
@@ -1303,11 +1519,11 @@ export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: num
       className={`scene-viewport ${mapPanning ? "panning" : ""}`}
       role="region"
       aria-label={`${props.scene.name} battle map viewport`}
-      onWheel={(event) => {
-        if (!event.ctrlKey && !event.metaKey) return;
-        event.preventDefault();
-        props.onZoomBy(event.deltaY > 0 ? -battleMapZoomStep : battleMapZoomStep);
-      }}
+      onPointerDownCapture={handleViewportPointerDownCapture}
+      onPointerMoveCapture={handleViewportPointerMoveCapture}
+      onPointerUpCapture={(event) => handleViewportPointerEndCapture(event, false)}
+      onPointerCancelCapture={(event) => handleViewportPointerEndCapture(event, true)}
+      onContextMenu={(event) => event.preventDefault()}
     >
       <RetryableActionNotice
         operation={mutationAction.operation}
@@ -1316,7 +1532,7 @@ export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: num
         className="scene-action-failure"
       />
       <p id={keyboardInstructionsId} className="sr-only">
-        {props.readOnly ? "Read-only player map. Use the zoom controls or pan the map to explore." : "Focus a movable token and use arrow keys to move it by one grid square, or hold Shift for one-pixel movement. For measurement, drawing, fog, and calibration tools, focus the board, use arrow keys to position the cursor, Enter or Space to start and finish, and Escape to cancel."}
+        {props.readOnly ? "Read-only player map. Scroll to zoom and drag to pan." : "Scroll to zoom the map and right-drag to pan it. Focus a movable token and use arrow keys to move it by one grid square, or hold Shift for one-pixel movement; press Shift+F10 for token actions. For measurement, drawing, fog, and calibration tools, focus the board, use arrow keys to position the cursor, Enter or Space to start and finish, and Escape to cancel."}
       </p>
       <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">{keyboardStatus}</span>
       <div
@@ -1386,7 +1602,8 @@ export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: num
           return;
         }
         if (!props.fogBrushMode) {
-          startSelectionBox(event, point);
+          if (event.pointerType === "touch") startMapPan(event);
+          else startSelectionBox(event, point);
           return;
         }
         event.currentTarget.setPointerCapture(event.pointerId);
@@ -1754,6 +1971,8 @@ export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: num
             key={token.id}
             className={`token layer-${layer} ${activeLayerToken ? "active-layer" : "inactive-layer"} ${token.disposition} ${tokenImageAsset ? "has-image" : ""} ${selected ? "selected" : ""} ${props.selectedTokenId === token.id ? "primary-selected" : ""} ${token.targetedByUserIds?.length ? "targeted" : ""} ${token.auras?.length ? "has-aura" : ""} ${dragPosition ? "dragging" : ""} ${isCurrentTurn ? "turn-current" : ""} ${isNextTurn ? "turn-next" : ""} ${tokenHpRatio !== undefined && tokenHpRatio <= 0 ? "down" : tokenHpRatio !== undefined && tokenHpRatio <= 0.5 ? "bloodied" : ""}`}
             data-turn-state={isCurrentTurn ? "current" : isNextTurn ? "next" : undefined}
+            data-token-id={token.id}
+            aria-haspopup={props.readOnly ? undefined : "menu"}
             style={{
               left: `${(visualX / props.scene.width) * 100}%`,
               top: `${(visualY / props.scene.height) * 100}%`,
@@ -1767,17 +1986,15 @@ export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: num
             aria-keyshortcuts={props.canMoveToken ? "ArrowUp ArrowDown ArrowLeft ArrowRight" : undefined}
             tabIndex={calibrationActive || props.readOnly ? -1 : undefined}
             aria-disabled={props.readOnly || undefined}
-            title={props.readOnly ? token.name : !props.canMoveToken ? "Token movement requires token.move" : props.canUpdateTokenLayer ? "Arrow keys move; Shift moves 1 px; right-click moves to next layer" : "Arrow keys move; Shift moves 1 px"}
+            title={props.readOnly ? token.name : !props.canMoveToken ? "Token movement requires token.move" : "Arrow keys move; Shift moves 1 px; right-click for token actions"}
             onContextMenu={(event) => {
-              if (calibrationActive || !props.canUpdateTokenLayer || props.fogBrushMode || props.annotationTool) return;
               event.preventDefault();
               event.stopPropagation();
-              tokenDragRef.current = null;
-              setTokenDrag(null);
-              tokenResizeRef.current = null;
-              setTokenResize(null);
-              pointerSelectedTokenRef.current = token.id;
-              void mutationAction.runAction(`Move ${token.name} to the next layer`, () => props.onTokenLayerCycle(token));
+              // A mouse right-click opens the menu on release, so a right-drag can pan instead.
+              // Keyboard (Shift+F10, Menu key) and touch long-press open it here.
+              if (event.nativeEvent.button === 2) return;
+              const rect = event.currentTarget.getBoundingClientRect();
+              openTokenMenu(token.id, { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
             }}
             onClick={(event) => {
               if (calibrationActive || props.readOnly) return;
@@ -1879,6 +2096,24 @@ export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: num
         );
       })}
       </div>
+      {tokenMenu && tokenMenuToken && createPortal(
+        <TokenContextMenu
+          tokenName={tokenMenuToken.name}
+          position={tokenMenu}
+          onClose={closeTokenMenu}
+          actions={tokenContextMenuActions({
+            tokenName: tokenMenuToken.name,
+            targeted: tokenMenuToken.targetedByUserIds?.includes(props.boardCurrentUserId) ?? false,
+            nextLayerLabel: tokenLayerLabel(nextTokenLayer(tokenLayer(tokenMenuToken))),
+            canTarget: Boolean(props.onTokenTarget),
+            canChangeLayer: props.canUpdateTokenLayer,
+            onShowInInspector: () => props.onSelect(tokenMenuToken.id),
+            onToggleTarget: () => void mutationAction.runAction(`Update target mark on ${tokenMenuToken.name}`, async () => { await props.onTokenTarget?.(tokenMenuToken.id, !(tokenMenuToken.targetedByUserIds?.includes(props.boardCurrentUserId) ?? false)); }),
+            onMoveToNextLayer: () => void mutationAction.runAction(`Move ${tokenMenuToken.name} to the next layer`, () => props.onTokenLayerCycle(tokenMenuToken))
+          })}
+        />,
+        document.body
+      )}
     </div>
   );
 }

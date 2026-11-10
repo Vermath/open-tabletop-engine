@@ -221,7 +221,8 @@ describe("desktop layout regressions", () => {
     expect(sceneCanvasSource).toContain("export function nextTokenLayer(layer: TokenLayer): TokenLayer");
     expect(sceneCanvasSource).toContain("if (event.button !== 0) return;");
     expect(sceneCanvasSource).toContain("onContextMenu={(event) => {");
-    expect(sceneCanvasSource).toContain("mutationAction.runAction(`Move ${token.name} to the next layer`");
+    expect(sceneCanvasSource).toContain("onMoveToNextLayer: () => void mutationAction.runAction(`Move ${tokenMenuToken.name} to the next layer`, () => props.onTokenLayerCycle(tokenMenuToken))");
+    expect(sceneCanvasSource).toContain("canChangeLayer: props.canUpdateTokenLayer");
     expect(stylesSource).toContain(".token.inactive-layer {\n  opacity: 0.58;\n  cursor: context-menu;\n  pointer-events: auto;");
   });
 

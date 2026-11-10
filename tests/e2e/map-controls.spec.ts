@@ -1,0 +1,141 @@
+import type { Locator, Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+
+async function openDemoTable(page: Page): Promise<Locator> {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Demo GM" }).click();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
+  const board = page.locator(".scene-board");
+  await expect(board).toBeVisible();
+  await (await board.elementHandle())!.waitForElementState("stable");
+  return board;
+}
+
+async function zoomPercent(page: Page): Promise<number> {
+  return Number.parseInt((await page.locator(".map-zoom-value").innerText()).replace("%", ""), 10);
+}
+
+async function boardBox(board: Locator) {
+  const box = await board.boundingBox();
+  expect(box).not.toBeNull();
+  return box!;
+}
+
+async function viewportScroll(page: Page) {
+  return page.locator(".scene-viewport").evaluate((element) => ({ left: element.scrollLeft, top: element.scrollTop }));
+}
+
+/** Scrolls the wheel over a board point until the map is at least `target` percent. */
+async function wheelZoomTo(page: Page, target: number) {
+  for (let step = 0; step < 40 && (await zoomPercent(page)) < target; step += 1) {
+    await page.mouse.wheel(0, -120);
+    await page.waitForTimeout(30);
+  }
+  expect(await zoomPercent(page)).toBeGreaterThanOrEqual(target);
+}
+
+test("plain wheel zooms the map around the pointer", async ({ page }) => {
+  const board = await openDemoTable(page);
+  expect(await zoomPercent(page)).toBe(100);
+  const fitted = await boardBox(board);
+  const pointer = { x: fitted.x + 0.42 * fitted.width, y: fitted.y + 0.46 * fitted.height };
+  await page.mouse.move(pointer.x, pointer.y);
+
+  // While the whole map fits it stays centred, so anchoring starts once it overflows the view.
+  await wheelZoomTo(page, 200);
+  await (await board.elementHandle())!.waitForElementState("stable");
+  const before = await boardBox(board);
+  expect(before.width).toBeGreaterThan(fitted.width * 1.9);
+  const fraction = { u: (pointer.x - before.x) / before.width, v: (pointer.y - before.y) / before.height };
+
+  // Past the old 200% ceiling: the board point under the pointer stays under it.
+  await wheelZoomTo(page, 400);
+  await (await board.elementHandle())!.waitForElementState("stable");
+  const after = await boardBox(board);
+  expect(after.width).toBeGreaterThan(before.width * 1.9);
+  expect(Math.abs(after.x + fraction.u * after.width - pointer.x)).toBeLessThanOrEqual(3);
+  expect(Math.abs(after.y + fraction.v * after.height - pointer.y)).toBeLessThanOrEqual(3);
+
+  for (let step = 0; step < 40 && (await zoomPercent(page)) > 100; step += 1) {
+    await page.mouse.wheel(0, 120);
+    await page.waitForTimeout(30);
+  }
+  expect(await zoomPercent(page)).toBeLessThanOrEqual(100);
+});
+
+test("Shift+wheel scrolls instead of zooming", async ({ page }) => {
+  const board = await openDemoTable(page);
+  const box = await boardBox(board);
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.keyboard.down("Shift");
+  await page.mouse.wheel(0, -360);
+  await page.keyboard.up("Shift");
+  await page.waitForTimeout(100);
+  expect(await zoomPercent(page)).toBe(100);
+});
+
+test("right-drag pans the map without opening the token menu", async ({ page }) => {
+  const board = await openDemoTable(page);
+  const box = await boardBox(board);
+  const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  await page.mouse.move(centre.x, centre.y);
+  await wheelZoomTo(page, 250);
+  await (await board.elementHandle())!.waitForElementState("stable");
+
+  const before = await viewportScroll(page);
+  await page.mouse.down({ button: "right" });
+  await page.mouse.move(centre.x - 140, centre.y - 90, { steps: 6 });
+  await page.mouse.up({ button: "right" });
+  const after = await viewportScroll(page);
+  expect(after.left - before.left).toBeGreaterThanOrEqual(130);
+  expect(after.top - before.top).toBeGreaterThanOrEqual(80);
+  await expect(page.getByRole("menu")).toHaveCount(0);
+
+  // Left-drag on empty board still draws a selection box rather than panning.
+  const scrollBeforeSelect = await viewportScroll(page);
+  await page.mouse.move(centre.x, centre.y);
+  await page.mouse.down();
+  await page.mouse.move(centre.x + 60, centre.y + 40, { steps: 4 });
+  await page.mouse.up();
+  expect(await viewportScroll(page)).toEqual(scrollBeforeSelect);
+});
+
+test("right-click opens a token menu that replaces the hidden layer shortcut", async ({ page }) => {
+  await openDemoTable(page);
+  const token = page.locator(".scene-board button.token").first();
+  await expect(token).toBeVisible();
+  const originalLabel = await token.getAttribute("aria-label");
+  expect(originalLabel).toBeTruthy();
+
+  await token.click({ button: "right" });
+  const menu = page.getByRole("menu");
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Show in inspector" })).toBeFocused();
+  // Right-click alone no longer changes the token.
+  expect(await token.getAttribute("aria-label")).toBe(originalLabel);
+
+  await page.keyboard.press("ArrowDown");
+  await expect(menu.getByRole("menuitem").nth(1)).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+
+  // Keyboard users reach the same menu through the context-menu key.
+  await token.dispatchEvent("contextmenu", { button: 0, bubbles: true, cancelable: true });
+  await expect(menu).toBeVisible();
+  const layerAction = menu.getByRole("menuitem", { name: /^Move to / });
+  await expect(layerAction).toBeVisible();
+  const tokenId = await token.getAttribute("data-token-id");
+  await layerAction.click();
+  await expect(menu).toHaveCount(0);
+  const sameToken = page.locator(`.scene-board [data-token-id="${tokenId}"]`);
+  await expect.poll(() => sameToken.getAttribute("aria-label")).not.toBe(originalLabel);
+
+  // Put the token back on its original layer so later tests see the seeded scene.
+  for (let attempt = 0; attempt < 4 && (await sameToken.getAttribute("aria-label")) !== originalLabel; attempt += 1) {
+    const current = await sameToken.getAttribute("aria-label");
+    await sameToken.dispatchEvent("contextmenu", { button: 0, bubbles: true, cancelable: true });
+    await menu.getByRole("menuitem", { name: /^Move to / }).click();
+    await expect.poll(() => sameToken.getAttribute("aria-label")).not.toBe(current);
+  }
+  expect(await sameToken.getAttribute("aria-label")).toBe(originalLabel);
+});
