@@ -12888,7 +12888,8 @@ a:focus-visible {
 
 .toast-stack {
   position: fixed;
-  bottom: 18px;
+  /* Sits above the map dock (zoom, focus, layers) instead of on top of it. */
+  bottom: 78px;
   left: 50%;
   z-index: 95;
   display: grid;
