@@ -755,6 +755,7 @@ a[href]:focus-visible,
 
 .scene-viewport {
   position: relative;
+  touch-action: none;
   z-index: 1;
   box-sizing: border-box;
   display: grid;

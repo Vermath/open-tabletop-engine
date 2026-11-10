@@ -140,3 +140,18 @@
     padding-right: 4px;
   }
 }
+
+@media (max-width: 640px) {
+  /* Let the dock's actual height (including wrapped controls) reserve space above combat. */
+  .table-area:has(.initiative-strip):has(> .map-layer-dock[data-collapsed="true"]) {
+    grid-template-areas: "layers" "map";
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .table-area:has(.initiative-strip) > .map-layer-dock[data-collapsed="true"] {
+    position: static;
+    align-self: start;
+    justify-self: end;
+    max-width: 100%;
+  }
+}
