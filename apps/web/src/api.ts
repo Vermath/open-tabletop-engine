@@ -405,10 +405,8 @@ export async function loadOidcConfig(): Promise<OidcConfigInfo> {
 async function ensureSessionToken(): Promise<string> {
   if (statelessDemoApiMode) throw new Error("Demo mode is local-only and cannot call the authenticated API.");
   const token = sessionCredentialToken();
-  const userId = getSessionUserId();
-  if (token) return token;
-  const login = await loginSession(userId);
-  return getSessionToken() || login.token;
+  if (!token) throw new ApiError("Sign in required", 401, { error: "unauthorized", message: "Sign in required" }, "Sign in required");
+  return token;
 }
 
 /** The legacy bearer is private to one upgrade request and never exposed to UI state. */
