@@ -35,6 +35,7 @@ function harness(tokens = [token("hero")], selectedTokenIds: string[] = []) {
   const tokenDragRef = { current: null as TokenDragDraft | null };
   const tokenResizeRef = { current: null as TokenResizeDraft | null };
   const pointerSelectedTokenRef = { current: null as string | null };
+  const skipTokenRecentreRef = { current: false };
   const frames: Array<() => void> = [];
   const pending: Promise<unknown>[] = [];
   const onSelect = vi.fn(() => { rect.left = -185; }); // Opening the inspector shifts the board 285 screen pixels.
@@ -48,7 +49,7 @@ function harness(tokens = [token("hero")], selectedTokenIds: string[] = []) {
       onTokenMoveCommit: vi.fn(), onTokenResizeCommit: vi.fn(), onMoved: vi.fn(async () => undefined),
     },
     calibrationActive: false, activeLayerTokenIds: new Set(tokens.map((item) => item.id)), selectedTokenIdSet: new Set(selectedTokenIds),
-    tokenDragRef, tokenResizeRef, pointerSelectedTokenRef, tokenFrameOverrides: {} as TokenFrameOverrides,
+    tokenDragRef, tokenResizeRef, pointerSelectedTokenRef, skipTokenRecentreRef, tokenFrameOverrides: {} as TokenFrameOverrides,
     setTokenDrag: vi.fn(), setTokenResize: vi.fn(),
     setTokenFrameOverrides(update: (current: TokenFrameOverrides) => TokenFrameOverrides): void { scope.tokenFrameOverrides = update(scope.tokenFrameOverrides); },
     boardRef: { current: { getBoundingClientRect: () => ({ ...rect }), clientWidth: rect.width, clientHeight: rect.height } },
@@ -78,7 +79,7 @@ function harness(tokens = [token("hero")], selectedTokenIds: string[] = []) {
       currentTarget: { setPointerCapture: vi.fn() }, preventDefault: vi.fn(), stopPropagation: vi.fn(),
     };
   }
-  return { ...handlers, scope, pointer, tokens, tokenDragRef, tokenResizeRef, pointerSelectedTokenRef, frames, onSelect, onTokenMovePersist, onTokenResizePersist, scrollTo, flush: () => Promise.all(pending) };
+  return { ...handlers, scope, pointer, tokens, tokenDragRef, tokenResizeRef, pointerSelectedTokenRef, skipTokenRecentreRef, frames, onSelect, onTokenMovePersist, onTokenResizePersist, scrollTo, flush: () => Promise.all(pending) };
 }
 
 describe("pointer selection and viewport layout", () => {
@@ -188,5 +189,15 @@ describe("pointer selection and viewport layout", () => {
     board.scheduleRecenter();
     board.frames[1]!();
     expect(board.scrollTo).toHaveBeenCalledExactlyOnceWith({ left: 280, top: 172.5, behavior: "auto" });
+  });
+
+  it("does not pull the view back to the selected token after a pointer-anchored zoom", () => {
+    const board = harness();
+    board.skipTokenRecentreRef.current = true;
+    board.scheduleRecenter();
+    expect(board.frames).toHaveLength(0);
+    expect(board.skipTokenRecentreRef.current).toBe(false);
+    board.scheduleRecenter(); // The skip applies to one zoom only.
+    expect(board.frames).toHaveLength(1);
   });
 });
