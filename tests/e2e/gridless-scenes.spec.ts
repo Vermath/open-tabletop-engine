@@ -48,7 +48,7 @@ test("GM creates, reloads, and plays on gridless and square scenes", async ({ pa
   await form.getByRole("combobox", { name: "Scene grid type" }).selectOption("gridless");
   await expect(form.getByRole("spinbutton", { name: "Scene grid size" })).toHaveCount(0);
   await expect(form.locator(".scene-size-presets")).toHaveCount(0);
-  await expect(form.getByRole("note")).toContainText("Distance, reach, and area placement require a manual ruling");
+  await expect(form.getByRole("note").filter({ hasText: "Distance, reach, and area placement" })).toContainText("Distance, reach, and area placement require a manual ruling");
   await form.locator('input[type="checkbox"]').check();
   const gridlessCreate = page.waitForResponse((response) => response.request().method() === "POST" && /\/campaigns\/camp_demo\/scenes$/.test(response.url()));
   await form.getByRole("button", { name: "Add Scene" }).click();
@@ -60,7 +60,7 @@ test("GM creates, reloads, and plays on gridless and square scenes", async ({ pa
   panel = await openScenes(page);
   await expect(panel.getByRole("combobox", { name: "Edit scene grid type" })).toHaveValue("gridless");
   await expect(panel.getByRole("spinbutton", { name: "Edit scene grid size" })).toHaveCount(0);
-  await expect(panel.getByRole("note")).toContainText("free token placement");
+  await expect(panel.getByRole("note").filter({ hasText: "free token placement" })).toContainText("free token placement");
   await closeManage(panel);
   await page.getByRole("button", { name: "Prep", exact: true }).click();
   await expect(page.getByRole("button", { name: "Calibrate grid" })).toHaveCount(0);

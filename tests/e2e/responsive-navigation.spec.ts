@@ -67,7 +67,9 @@ test("long connection errors wrap on a phone and can be retried", async ({ page 
     contentType: "application/json",
     body: JSON.stringify({ message: `API source fingerprint mismatch: sha256:${"a".repeat(64)}. Restart the API from this checkout.` }),
   }));
+  const incompatibleHealth = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/v1/health" && response.status() === 502);
   await page.goto("/");
+  await incompatibleHealth;
   await expect(page.getByRole("heading", { name: "API connection required" })).toBeVisible();
   const retry = page.getByRole("button", { name: "Retry campaign load" });
   await retry.scrollIntoViewIfNeeded();
