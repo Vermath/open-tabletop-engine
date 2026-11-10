@@ -31,7 +31,7 @@ test("moving a token updates the status line without raising a toast", async ({ 
 test("an informative toast sits clear of the map dock", async ({ page }) => {
   await openDemoTable(page);
   const token = page.locator(".scene-board button.token").first();
-  await token.click();
+  await token.click({ force: true }); // A token whose turn it is pulses and never reports as still.
   await expect(token).toHaveAttribute("aria-pressed", "true");
   await page.keyboard.press("ControlOrMeta+c");
   const toast = page.locator(".toast").filter({ hasText: "1 token copied" });
@@ -46,7 +46,7 @@ test("a failed action raises an error toast whatever the message says", async ({
   await openDemoTable(page);
   const token = page.locator(".scene-board button.token").first();
   const tokenId = await token.getAttribute("data-token-id");
-  await token.click();
+  await token.click({ force: true }); // A token whose turn it is pulses and never reports as still.
   await expect(token).toHaveAttribute("aria-pressed", "true");
 
   // The message has no "error" or "failed" in it, so only the typed path can mark it as an error.
