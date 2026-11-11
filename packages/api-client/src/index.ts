@@ -415,6 +415,11 @@ export interface PlayerPreviewSnapshot extends Pick<CampaignSnapshot, "scenes" |
   }>;
 }
 
+/** The campaign's voice and video room on the operator-configured provider; `enabled: false` when none is configured. */
+export type CampaignCallResponse =
+  | { enabled: false }
+  | { enabled: true; provider: string; origin: string; url: string };
+
 export interface PlayerPreviewResponse {
   readOnly: true;
   player: Pick<User, "id" | "displayName">;
@@ -3417,6 +3422,10 @@ export class OpenTabletopClient {
       undefined,
       { "Idempotency-Key": idempotencyKey },
     );
+  }
+
+  async campaignCall(campaignId: string): Promise<CampaignCallResponse> {
+    return this.get(routes.campaignCall(campaignId));
   }
 
   async fogPresets(campaignId: string): Promise<FogPreset[]> {

@@ -163,6 +163,7 @@ export const routes = {
     `/api/v1/campaigns/${pathPart(campaignId)}/scenes`,
   sceneDuplications: (campaignId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/scene-duplications`,
+  campaignCall: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/call`,
   fogPresets: (campaignId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/fog-presets`,
   fogPreset: (campaignId: string, presetId: string) =>
@@ -823,6 +824,7 @@ const endpointSpecs = [
   ["GET", "/api/v1/campaigns/{campaignId}/scenes"],
   ["POST", "/api/v1/campaigns/{campaignId}/scenes"],
   ["POST", "/api/v1/campaigns/{campaignId}/scene-duplications"],
+  ["GET", "/api/v1/campaigns/{campaignId}/call"],
   ["GET", "/api/v1/campaigns/{campaignId}/fog-presets"],
   ["POST", "/api/v1/campaigns/{campaignId}/fog-presets"],
   ["DELETE", "/api/v1/campaigns/{campaignId}/fog-presets/{presetId}"],
@@ -5117,6 +5119,18 @@ const componentSchemas = {
         type: "object",
         additionalProperties: schemaRef("SnapshotHistoryCollectionMeta"),
       },
+    },
+  },
+  CampaignCallResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["enabled"],
+    description: "The campaign's voice and video room on the operator-configured provider. When `enabled` is false the other fields are absent.",
+    properties: {
+      enabled: { type: "boolean" },
+      provider: { type: "string", description: "Display name of the provider." },
+      origin: { type: "string", description: "Origin of `url`; the only third-party origin the web client may frame." },
+      url: { type: "string", format: "uri", description: "Room URL to embed. Contains an opaque room name and no OpenTabletop identifiers or credentials." },
     },
   },
   PlayerPreviewResponse: {
@@ -14448,6 +14462,14 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
         "Applied AI edit layer to its target scene",
         schemaRef("AiEditLayerApplyResult"),
       ),
+    },
+  },
+  "GET /api/v1/campaigns/{campaignId}/call": {
+    description: "Voice and video room for this campaign on the provider the operator configured with OTTE_CALL_EMBED_URL. Requires campaign.read. Returns `enabled: false` when the operator has not configured a provider or the configuration is invalid. OpenTabletop carries no media and shares no session credentials with the provider.",
+    responses: {
+      "200": jsonResponse("Campaign call room, or enabled: false", schemaRef("CampaignCallResponse")),
+      "403": jsonResponse("campaign.read required", schemaRef("ErrorResponse")),
+      "404": jsonResponse("Campaign not found", schemaRef("ErrorResponse")),
     },
   },
   "GET /api/v1/campaigns/{campaignId}/fog-presets": {

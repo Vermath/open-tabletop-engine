@@ -11,6 +11,7 @@ Use this operator checklist with the [deployment threat model](./threat-model.md
 - [ ] Set `OTTE_TRUSTED_PROXY_HOPS` to the exact right-most trusted proxy count. Do not trust forwarded client or host headers on direct API exposure.
 - [ ] Keep account/network login throttles and bounded asynchronous password verification enabled; use a shared edge limiter as well when more than one API process or public traffic is in scope.
 - [ ] Verify the CSP is present at the public web origin, browser storage contains no `ots_` session secret, cross-origin cookie mutations fail, logout clears the cookie, and revoked sessions no longer authorize API or realtime access.
+- [ ] If `OTTE_CALL_EMBED_URL` is set, verify the CSP `frame-src` and the `Permissions-Policy` camera, microphone and display-capture entries name only your call provider's origin, that `OTTE_CALL_ROOM_SECRET` is a random value of at least 32 characters held with your other secrets, and that the provider enforces its own room access. If it is not set, verify there is no `frame-src` directive and `Permissions-Policy` is `camera=(), geolocation=(), microphone=()`.
 - [ ] Configure OIDC providers to return the literal JSON boolean `email_verified: true` only for addresses whose ownership they verified; missing, false, or string-valued claims are never used to link an existing local account.
 - [ ] Store secrets in the host secret manager, not in repository files.
 

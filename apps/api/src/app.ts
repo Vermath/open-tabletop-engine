@@ -332,6 +332,7 @@ import { CampaignArchiveExportSizeError, applyContentImportEntity, archiveForExp
 import { CampaignArchiveImportRecoveryError, createCampaignArchiveImportOperation, deleteCampaignArchiveImportInverseObjects, prepareCampaignArchiveImportAssetSteps, previewCampaignArchiveImportRollback, publicCampaignArchiveImportOperation, rollbackCampaignArchiveImportOperation, withCampaignArchiveImportRecoveryCleanup } from "./campaign-archive-import-recovery.js";
 import { boundCampaignSnapshotHistory } from "./snapshot-history.js";
 import { registerPlayerPreviewRoutes } from "./player-preview-routes.js";
+import { registerCallEmbedRoutes } from "./call-embed.js";
 import { registerOpenApiRuntimeValidation } from "./openapi-runtime-validation.js";
 import { activeCombatForTypedDamage, dndTypedDamageCombatantChanges } from "./dnd-typed-damage-combat.js";
 import { registerSceneDelegationRoutes } from "./scene-delegation-routes.js";
@@ -4506,6 +4507,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       appendServerAuditLog(store, userId, input);
     },
     broadcast,
+  });
+
+  registerCallEmbedRoutes(app, {
+    requireCampaignRead: (reply, headers, campaignId) => requireCampaignPermission(store, reply, headers, campaignId, "campaign.read"),
+    campaignExists: (campaignId) => store.state.campaigns.some((campaign) => campaign.id === campaignId),
   });
 
   registerPlayerPreviewRoutes(app, {
