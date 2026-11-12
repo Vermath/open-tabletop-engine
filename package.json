@@ -41,6 +41,7 @@
     "migration:smoke": "pnpm --filter @open-tabletop/api exec vitest run src/migration-smoke.test.ts -t \"migration smoke\"",
     "storage:maintenance": "pnpm --filter @open-tabletop/api storage:maintenance --",
     "deployment:smoke": "pnpm --filter @open-tabletop/api exec vitest run src/deployment-smoke.test.ts",
+    "perf:board": "playwright test -c playwright.board-perf.config.ts",
     "perf:smoke": "pnpm --filter @open-tabletop/api exec vitest run src/performance-smoke.test.ts -t \"performance smoke\"",
     "perf:soak": "pnpm --filter @open-tabletop/api exec vitest run src/performance-smoke.test.ts -t \"performance soak\"",
     "perf:capacity": "pnpm --filter @open-tabletop/api exec tsx src/small-group-capacity-cli.ts",

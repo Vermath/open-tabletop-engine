@@ -17,6 +17,7 @@ import { RetryableActionNotice, useRetryableAction } from "./retryable-action.js
 import { DynamicVisibilityMask } from "./scene-visibility-mask.js";
 import { anchorScrollDelta, exceedsPanThreshold, scrollKeepingViewCentre, pinchZoom, pointerDistance, pointerMidpoint, wheelEventZoomsMap, wheelZoomFactor, zoomAnchorAt, type ViewportPoint, type ZoomAnchor } from "./map-viewport-gestures.js";
 import { TokenContextMenu, tokenContextMenuActions } from "./token-context-menu.js";
+import { preferredMapRenderer, useBoardCanvasLayers } from "./board-canvas-layers.js";
 
 const pingAnnotationTtlSeconds = 5;
 const annotationExpiryTimerSlackMs = 25;
@@ -612,6 +613,18 @@ export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: num
     "--map-zoom": String(props.zoom)
   } as CSSProperties;
   const showGridOverlay = sceneGridOverlayVisible(props.scene);
+  const [mapRenderer] = useState(preferredMapRenderer);
+  const mapImageRef = useRef<HTMLImageElement>(null);
+  const canvasLayers = useBoardCanvasLayers({
+    enabled: mapRenderer === "canvas",
+    viewportRef,
+    boardRef,
+    imageRef: mapImageRef,
+    imageKey: props.backgroundAsset ? `${props.backgroundAsset.id}:${props.backgroundAsset.updatedAt}` : undefined,
+    scene: props.scene,
+    boardWidth: boardDimensions.width,
+    boardHeight: boardDimensions.height
+  });
 
   useEffect(() => {
     setKeyboardCursor({ x: Math.round(props.scene.width / 2), y: Math.round(props.scene.height / 2) });
@@ -1548,6 +1561,7 @@ export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: num
         ref={boardRef}
         data-agent-board-root={props.readOnly ? undefined : "true"}
         data-scene-id={props.scene.id}
+        data-map-renderer={mapRenderer}
         className={`scene-board ${!calibrationActive && (props.fogBrushMode || props.annotationTool) ? "brush-mode" : ""} ${calibrationActive ? "grid-calibration-mode" : ""} ${tokenDrag && !tokenDrag.settling ? "token-drag-active" : ""} ${tokenResize ? "token-resize-active" : ""} ${selectionBox ? "token-selecting" : ""} ${dropActive ? "drop-active" : ""} ${mapPanning ? "map-panning" : ""}`}
         style={boardStyle}
         role="group"
@@ -1686,7 +1700,8 @@ export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: num
       }}
     >
       {props.visionPreviewLabel && <div className="player-vision-preview-badge" role="status">Player vision: {props.visionPreviewLabel}</div>}
-      {props.backgroundAsset && <img className="scene-map" src={assetBlobUrl(props.backgroundAsset)} alt="" draggable={false} />}
+      {props.backgroundAsset && <img ref={mapImageRef} className="scene-map" src={assetBlobUrl(props.backgroundAsset)} alt="" draggable={false} />}
+      {canvasLayers.mapCanvas}
       {props.calibrationPoints && props.calibrationPoints.length > 0 && (
         <svg className="grid-calibration-overlay" viewBox={`0 0 ${props.scene.width} ${props.scene.height}`} preserveAspectRatio="none" aria-hidden="true">
           {props.calibrationPoints.length === 2 && <line x1={props.calibrationPoints[0]!.x} y1={props.calibrationPoints[0]!.y} x2={props.calibrationPoints[1]!.x} y2={props.calibrationPoints[1]!.y} />}

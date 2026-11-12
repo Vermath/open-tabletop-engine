@@ -120,6 +120,7 @@ import { isAdvancementCatalogVisible, useAdvancementCatalog } from "./advancemen
 import type { Dnd5eSrdWeaponMasteryUse } from "./weapon-mastery-controls.js";
 import { InitiativeStrip } from "./initiative-strip.js";
 import { InspectorResizeHandle, useInspectorWidth } from "./inspector-resize.js";
+import { withDomBoardForCapture } from "./board-canvas-layers.js";
 import { useStatusToasts } from "./status-toasts.js";
 import { mergeUniversalVttImportResult } from "./universal-vtt-import.js";
 import { assetTagsFromInput, compareScenesForDisplay, type ActiveAnnotationTool, type ActorActionCommitOptions, type AnnotationTool, type ArchiveExportVersion, type ArchiveImportAttempt, type ArchiveImportMode, type ArchiveRedactionMode, type ChatExportFormat, type ChatModerationResolution, type CombatRewardRequestPayload, type FailedArchiveImport, type ManageCategoryId, type WorkspaceMode } from "./workspace-types.js";
@@ -3998,11 +3999,7 @@ export function App() {
         try {
           const { toPng } = await import("html-to-image");
           const pixelRatio = boundedBoardCapturePixelRatio(board.offsetWidth, board.offsetHeight, window.devicePixelRatio || 1);
-          const dataUrl = await toPng(board, {
-            cacheBust: false,
-            pixelRatio,
-            backgroundColor: "#060a0f"
-          });
+          const dataUrl = await withDomBoardForCapture(board, (filter) => toPng(board, { cacheBust: false, pixelRatio, backgroundColor: "#060a0f", filter }));
           if (!workspaceBoundRequestIsCurrent(request)) return "stale" as const;
           await apiPost(`/api/v1/agent/board-captures/${requestId}`, {
             dataUrl,
