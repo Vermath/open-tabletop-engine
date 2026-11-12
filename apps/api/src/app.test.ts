@@ -433,6 +433,7 @@ function classifyMcpRouteSurface(method: string, path: string): { tools?: string
     return method === "GET" ? { tools: ["read_campaign"] } : { excluded: "campaign_lifecycle" };
   }
   if (path === "/api/v1/campaigns/{campaignId}/presence") return { tools: ["read_campaign"] };
+  if (path === "/api/v1/campaigns/{campaignId}/call") return { excluded: "human_voice_video_handoff" };
   if (path === "/api/v1/campaigns/{campaignId}/duplicate") return { excluded: "campaign_lifecycle" };
   if (path.endsWith("/scene-duplications")) return { excluded: "human_confirmed_scene_duplication" };
   if (path.includes("/archive-import-operations")) return { excluded: "human_confirmed_archive_recovery" };
@@ -12347,6 +12348,7 @@ describe("api", () => {
       { method: "GET", url: "/api/v1/campaigns/camp_demo/snapshot" },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/members" },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/presence" },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/call" },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/world-records" },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/world-records", headers: { "idempotency-key": "auth-matrix-world-record-create" }, payload: { kind: "npc", name: "Blocked record", expectedCampaignUpdatedAt: store.state.campaigns.find((campaign) => campaign.id === "camp_demo")!.updatedAt } },
       { method: "PATCH", url: "/api/v1/world-records/wrec_auth_matrix_one", headers: { "idempotency-key": "auth-matrix-world-record-update" }, payload: { summary: "Blocked", expectedUpdatedAt: authMatrixWorldRecordOne.updatedAt } },

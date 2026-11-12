@@ -2,6 +2,8 @@
 
 OpenTabletop Engine does not proxy voice or video traffic in v1. Keep realtime tabletop state, dice, chat, assets, AI, plugins, and archives in OpenTabletop, and hand audio/video to a dedicated RTC provider.
 
+There are two ways to do that: share a room link (below), or let the web client embed your provider in a call panel ([Embedded Call Panel](#embedded-call-panel)). Both keep media and provider credentials outside OpenTabletop.
+
 ## Supported Handoff Pattern
 
 Use an external room provider such as Discord, Zoom, Google Meet, Jitsi, LiveKit, or a hosted WebRTC/SFU service. Share the room URL through one of the existing campaign-safe surfaces:
@@ -32,7 +34,55 @@ Do not route media through the OpenTabletop API process. For self-hosted deploym
 - Put TURN/STUN/SFU ports, DNS, and certificates under the RTC provider or separate media infrastructure.
 - Monitor RTC health in the provider tooling, not the OpenTabletop job ledger.
 
-If embedding a provider UI is added later, implement it as a web-client integration with explicit allowlisted origins, clear user consent, and no access to OpenTabletop session tokens from the embedded frame.
+## Embedded Call Panel
+
+The web client can show a **Join call** control and open your provider's room in a movable panel beside the table. It is off by default: with nothing configured there is no control, no extra request, and no change to the security headers.
+
+It works with any provider whose room page may be shown in a frame and that needs no token from OpenTabletop, for example a self-hosted Jitsi Meet or LiveKit Meet deployment. Providers that forbid framing (Discord, Zoom, Google Meet) only work as shared links.
+
+### Configure
+
+| Variable | Set on | Purpose |
+| --- | --- | --- |
+| `OTTE_CALL_EMBED_URL` | API and web server | Room URL. `{room}` is replaced with an opaque per-campaign room name. Without `{room}`, every campaign shares the one room. |
+| `OTTE_CALL_ROOM_SECRET` | API | Required when the URL uses `{room}`. At least 32 characters; generate one with `openssl rand -base64 48`. |
+| `OTTE_CALL_PROVIDER_NAME` | API | Name shown to users. Defaults to the provider's host name. |
+
+```bash
+OTTE_CALL_EMBED_URL=https://meet.example.com/otte-{room}
+OTTE_CALL_ROOM_SECRET=<48 random bytes, base64>
+OTTE_CALL_PROVIDER_NAME=Jitsi
+```
+
+The URL must be HTTPS (plain HTTP is accepted only for loopback development), must not contain credentials or a wildcard, and may use `{room}` in the path, query or fragment but not in the host. `{room}` is the only placeholder. With Docker Compose, set the variables in `.env`; they are passed to both services. The web server refuses to start with an invalid URL. The API treats an invalid or incomplete configuration as off and logs `Call embed is off: <reason>`.
+
+### What users see
+
+A campaign member gets a **Join call** button among the rail utilities. The first time, a notice names the provider and its host and says that voice and video go directly to it; the provider loads only after they choose **Join call**. That choice is remembered per provider in the browser, so later joins take one click. The panel can be dragged, resized, minimised (double-click its header), opened in a new tab, and closed, which leaves the call. Changing workspace mode does not end the call; reloading the page or switching campaign does.
+
+### What is shared with the provider
+
+- The room URL. The room name is an HMAC of the campaign id under `OTTE_CALL_ROOM_SECRET`: the same for every member of a campaign, different between campaigns, and not derivable from the campaign id without the secret.
+- Nothing else from OpenTabletop: no session token, user id, display name, campaign id or referrer. Users type their own name in the provider.
+- Whatever the user's browser sends to the provider directly once they join (IP address, the media itself).
+
+### Security boundary
+
+- `GET /api/v1/campaigns/{campaignId}/call` returns the room only to someone with `campaign.read` on that campaign.
+- The web server adds the provider's origin, and only that origin, to `frame-src` in the content security policy, and delegates `camera`, `microphone` and `display-capture` to it in `Permissions-Policy`. The provider is never allowed as a script or connection source.
+- The client embeds a room only if it is on the origin the server named, and frames it with `sandbox` (no top-level navigation), `referrerpolicy="no-referrer"`, and camera, microphone, screen-capture, fullscreen and autoplay permissions only.
+- Anyone who knows a room URL can join that room as far as OpenTabletop is concerned. Use the provider's own lobby, passcode or authentication for access control, as described under [Identity Boundary](#identity-boundary).
+- Rotating `OTTE_CALL_ROOM_SECRET` moves every campaign to a new room.
+
+### If you run your own reverse proxy
+
+The bundled web server and the Docker web image set the headers for you. If you serve the web bundle another way, add the provider's origin to `frame-src` and to `Permissions-Policy` yourself. `sh infra/docker/render-web-nginx-config.sh --print` shows the exact values for the current environment.
+
+### Limits
+
+- Not verified against a specific provider release; check that your provider's room page loads in a frame and that its join flow works inside the panel's sandbox.
+- No moderation, recording, presence or mute state is read from or sent to the provider.
+- The desktop host application does not set these headers yet.
 
 ## Provider Notes
 
@@ -68,7 +118,8 @@ Before a production session:
 
 ## Explicit Non-Goals for v1
 
-- Built-in WebRTC mesh or SFU hosting.
+- Built-in WebRTC mesh or SFU hosting. The embedded call panel shows your provider; it is not a media stack.
+- Minting provider tokens or signing users in to the provider.
 - Recording storage or transcript ingestion from RTC providers.
 - Provider-side moderation, kick/ban, or waiting-room controls inside OpenTabletop.
 - Automatic calendar sync.

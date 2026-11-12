@@ -717,6 +717,9 @@ Asset delivery environment variables:
 | `OTTE_ASSET_QUOTA_BYTES` | no | Per-campaign quota for active and archived asset bytes. |
 | `OTTE_ASSET_RETENTION_DAYS` | no | Optional default expiry assigned to newly created assets. |
 | `OTTE_ASSET_CDN_BASE_URL` | no | Base URL used when generating signed asset delivery URLs, usually the CDN origin. |
+| `OTTE_CALL_EMBED_URL` | no | Voice and video room URL the web client may embed, for example `https://meet.example.com/otte-{room}`. Unset means the call panel is off and `GET /api/v1/campaigns/{campaignId}/call` returns `{ "enabled": false }`. See [Audio and Video Integrations](../deployment/audio-video-integrations.md). |
+| `OTTE_CALL_ROOM_SECRET` | with `{room}` | Secret (32+ characters) used to derive the opaque per-campaign room name. |
+| `OTTE_CALL_PROVIDER_NAME` | no | Provider name shown in the call panel. Defaults to the room URL's host. |
 | `OTTE_ASSET_CDN_PURGE_WEBHOOK_URL` | no | Optional webhook called by server admins to purge one asset from CDN or edge cache. |
 | `OTTE_ASSET_CDN_PURGE_WEBHOOK_TOKEN` | no | Optional bearer token sent to the CDN purge webhook. |
 | `OTTE_ASSET_CDN_PURGE_TIMEOUT_MS` | no | CDN purge webhook timeout in milliseconds. Defaults to 5000 and caps at 30000. |

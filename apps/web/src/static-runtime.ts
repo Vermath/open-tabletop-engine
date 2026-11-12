@@ -17,6 +17,8 @@ export interface WebStaticRuntimeOptions {
   root: string;
   apiBaseUrl?: string;
   assetCdnBaseUrl?: string;
+  /** OTTE_CALL_EMBED_URL: the voice and video room the operator allows the client to frame. */
+  callEmbedUrl?: string;
   closeTimeoutMs?: number;
 }
 
@@ -46,8 +48,41 @@ export function configuredAssetCdnOrigin(value: string | undefined): string | un
   return url.origin;
 }
 
-export function createWebContentSecurityPolicy(assetCdnBaseUrl?: string): string {
+/**
+ * Origin of the operator's voice and video provider, from OTTE_CALL_EMBED_URL.
+ * It is the only third-party origin the client may frame, so it must be one
+ * fixed origin: the `{room}` placeholder is allowed after the host only.
+ */
+export function configuredCallEmbedOrigin(value: string | undefined): string | undefined {
+  const configured = value?.trim();
+  if (!configured) return undefined;
+  if (/[{}]/.test(configured.replaceAll("{room}", ""))) {
+    throw new Error("OTTE_CALL_EMBED_URL supports only the {room} placeholder");
+  }
+  let url: URL;
+  let other: URL;
+  try {
+    url = new URL(configured.replaceAll("{room}", "a"));
+    other = new URL(configured.replaceAll("{room}", "b"));
+  } catch {
+    throw new Error("OTTE_CALL_EMBED_URL must be an absolute HTTPS URL");
+  }
+  const loopbackHttp = url.protocol === "http:" && (url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]");
+  if (url.protocol !== "https:" && !loopbackHttp) {
+    throw new Error("OTTE_CALL_EMBED_URL must use HTTPS outside loopback development");
+  }
+  if (url.username || url.password || url.hostname.includes("*")) {
+    throw new Error("OTTE_CALL_EMBED_URL must be a credential-free, non-wildcard URL");
+  }
+  if (url.origin !== other.origin) {
+    throw new Error("OTTE_CALL_EMBED_URL may use {room} in the path, query or fragment, not in the host");
+  }
+  return url.origin;
+}
+
+export function createWebContentSecurityPolicy(assetCdnBaseUrl?: string, callEmbedUrl?: string): string {
   const assetCdnOrigin = configuredAssetCdnOrigin(assetCdnBaseUrl);
+  const callEmbedOrigin = configuredCallEmbedOrigin(callEmbedUrl);
   return [
     "default-src 'self'",
     "base-uri 'self'",
@@ -61,18 +96,33 @@ export function createWebContentSecurityPolicy(assetCdnBaseUrl?: string): string
     "font-src 'self' data:",
     `connect-src 'self'${assetCdnOrigin ? ` ${assetCdnOrigin}` : ""}`,
     "worker-src 'self' blob:",
+    // Without a configured call provider there is no frame-src, so frames fall back to default-src 'self'.
+    ...(callEmbedOrigin ? [`frame-src 'self' ${callEmbedOrigin}`] : []),
   ].join("; ");
 }
 
 export const webContentSecurityPolicy = createWebContentSecurityPolicy();
 
-export function createWebSecurityHeaders(assetCdnBaseUrl?: string): Record<string, string> {
+/**
+ * Camera, microphone and screen capture are denied to every origin unless the
+ * operator configured a call provider; then they are delegated to that origin
+ * alone. The page itself is listed because a frame can only be granted what
+ * its embedding page is allowed.
+ */
+export function createWebPermissionsPolicy(callEmbedUrl?: string): string {
+  const callEmbedOrigin = configuredCallEmbedOrigin(callEmbedUrl);
+  if (!callEmbedOrigin) return "camera=(), geolocation=(), microphone=()";
+  const delegated = `(self "${callEmbedOrigin}")`;
+  return `camera=${delegated}, geolocation=(), microphone=${delegated}, display-capture=${delegated}`;
+}
+
+export function createWebSecurityHeaders(assetCdnBaseUrl?: string, callEmbedUrl?: string): Record<string, string> {
   return {
-  "content-security-policy": createWebContentSecurityPolicy(assetCdnBaseUrl),
+  "content-security-policy": createWebContentSecurityPolicy(assetCdnBaseUrl, callEmbedUrl),
   "referrer-policy": "no-referrer",
   "x-content-type-options": "nosniff",
   "x-frame-options": "DENY",
-  "permissions-policy": "camera=(), geolocation=(), microphone=()",
+  "permissions-policy": createWebPermissionsPolicy(callEmbedUrl),
   };
 }
 
@@ -102,7 +152,7 @@ export async function startWebStaticRuntime(
   const host = options.host ?? "0.0.0.0";
   const port = options.port ?? 4173;
   const sockets = new Set<Socket>();
-  const securityHeaders = createWebSecurityHeaders(options.assetCdnBaseUrl);
+  const securityHeaders = createWebSecurityHeaders(options.assetCdnBaseUrl, options.callEmbedUrl);
   const server = createServer((request, response) => {
     void handleStaticRequest(server, options, request, response, sockets, securityHeaders).catch(
       (error) => {

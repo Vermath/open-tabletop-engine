@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { connect, type Socket } from "node:net";
 import { describe, expect, it } from "vitest";
-import { configuredAssetCdnOrigin, createWebContentSecurityPolicy, startWebStaticRuntime } from "./static-runtime.js";
+import { configuredAssetCdnOrigin, configuredCallEmbedOrigin, createWebContentSecurityPolicy, createWebPermissionsPolicy, createWebSecurityHeaders, startWebStaticRuntime } from "./static-runtime.js";
 
 describe("web static runtime", () => {
   it("adds only the configured CDN origin to production fetch permissions", async () => {
@@ -36,6 +36,52 @@ describe("web static runtime", () => {
     expect(() => configuredAssetCdnOrigin("https://user:secret@assets.example.test/otte")).toThrow("credential-free");
     expect(() => configuredAssetCdnOrigin("https://*.example.test/otte")).toThrow("non-wildcard");
     expect(createWebContentSecurityPolicy()).toContain("connect-src 'self';");
+  });
+
+  it("allows no third-party frame and no camera or microphone unless a call provider is configured", () => {
+    for (const unset of [undefined, "", "   "]) {
+      expect(createWebContentSecurityPolicy(undefined, unset)).not.toContain("frame-src");
+      expect(createWebContentSecurityPolicy(undefined, unset)).toBe(createWebContentSecurityPolicy());
+      expect(createWebPermissionsPolicy(unset)).toBe("camera=(), geolocation=(), microphone=()");
+    }
+    expect(createWebSecurityHeaders()).toMatchObject({ "permissions-policy": "camera=(), geolocation=(), microphone=()", "x-frame-options": "DENY" });
+  });
+
+  it("frames and delegates devices to the configured call provider's origin only", async () => {
+    const root = mkdtempSync(join(tmpdir(), "otte-web-runtime-call-"));
+    const dist = join(root, "dist");
+    mkdirSync(dist, { recursive: true });
+    writeFileSync(join(dist, "index.html"), "<main>Call</main>");
+    const web = await startWebStaticRuntime({ host: "127.0.0.1", port: 0, root: dist, callEmbedUrl: "https://meet.example.test:8443/otte-{room}#config.prejoinPageEnabled=true" });
+    try {
+      const response = await fetch(web.url);
+      const policy = response.headers.get("content-security-policy") ?? "";
+      expect(policy).toMatch(/(?:^|; )frame-src 'self' https:\/\/meet\.example\.test:8443(?:;|$)/);
+      expect(policy).toContain("default-src 'self'");
+      expect(policy).toContain("frame-ancestors 'none'");
+      // The provider is framed, never scripted or fetched from the page.
+      expect(policy).toContain("script-src 'self';");
+      expect(policy).toContain("connect-src 'self';");
+      expect(policy.match(/meet\.example\.test/g)).toHaveLength(1);
+      expect(response.headers.get("permissions-policy")).toBe('camera=(self "https://meet.example.test:8443"), geolocation=(), microphone=(self "https://meet.example.test:8443"), display-capture=(self "https://meet.example.test:8443")');
+      expect(response.headers.get("x-frame-options")).toBe("DENY");
+    } finally {
+      await web.close();
+    }
+  });
+
+  it("normalizes the call room URL to one fixed origin and rejects anything unsafe", () => {
+    expect(configuredCallEmbedOrigin("https://meet.example.test/otte-{room}?lang=en")).toBe("https://meet.example.test");
+    expect(configuredCallEmbedOrigin("https://meet.example.test/our-table")).toBe("https://meet.example.test");
+    expect(configuredCallEmbedOrigin("http://127.0.0.1:8443/{room}")).toBe("http://127.0.0.1:8443");
+    expect(() => configuredCallEmbedOrigin("http://meet.example.test/{room}")).toThrow("must use HTTPS");
+    expect(() => configuredCallEmbedOrigin("javascript:alert(1)//{room}")).toThrow("must use HTTPS");
+    expect(() => configuredCallEmbedOrigin("/call/{room}")).toThrow("absolute HTTPS URL");
+    expect(() => configuredCallEmbedOrigin("https://user:secret@meet.example.test/{room}")).toThrow("credential-free");
+    expect(() => configuredCallEmbedOrigin("https://*.example.test/{room}")).toThrow("non-wildcard");
+    expect(() => configuredCallEmbedOrigin("https://{room}.example.test/")).toThrow("not in the host");
+    expect(() => configuredCallEmbedOrigin("https://meet.example.test/{campaignId}")).toThrow("only the {room} placeholder");
+    expect(() => createWebSecurityHeaders(undefined, "http://meet.example.test/{room}")).toThrow("must use HTTPS");
   });
 
   it("serves the built SPA and proxies API calls to the local API", async () => {

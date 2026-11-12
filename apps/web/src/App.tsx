@@ -121,6 +121,7 @@ import type { Dnd5eSrdWeaponMasteryUse } from "./weapon-mastery-controls.js";
 import { InitiativeStrip } from "./initiative-strip.js";
 import { InspectorResizeHandle, useInspectorWidth } from "./inspector-resize.js";
 import { withDomBoardForCapture } from "./board-canvas-layers.js";
+import { CampaignCallControl } from "./call-panel.js";
 import { useStatusToasts } from "./status-toasts.js";
 import { mergeUniversalVttImportResult } from "./universal-vtt-import.js";
 import { assetTagsFromInput, compareScenesForDisplay, type ActiveAnnotationTool, type ActorActionCommitOptions, type AnnotationTool, type ArchiveExportVersion, type ArchiveImportAttempt, type ArchiveImportMode, type ArchiveRedactionMode, type ChatExportFormat, type ChatModerationResolution, type CombatRewardRequestPayload, type FailedArchiveImport, type ManageCategoryId, type WorkspaceMode } from "./workspace-types.js";
@@ -9202,6 +9203,7 @@ export function App() {
           </span>
           </button>
         )}
+        <CampaignCallControl campaignId={campaignId} />
         {showTableWorkspace && <>
         <section className="party-rail" aria-label="Party">
           <div className="operator-heading">

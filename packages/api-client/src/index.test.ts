@@ -2067,6 +2067,7 @@ describe("OpenTabletopClient", () => {
         "2026-07-13T00:00:00.000Z",
         "annotation-delete-client",
       ),
+      client.campaignCall(campaignId),
       client.fogPresets(campaignId),
       client.createFogPreset(
         campaignId,
