@@ -508,14 +508,16 @@ here must also satisfy:
 - *Size*: M. Do this before WP-4.3.
 
 #### WP-4.3 Walls and doors from a map image
-- *Goal*: the GM uploads a map image and gets proposed walls, doors and lights to
-  accept, edit or discard.
+- *Goal*: the GM uploads a map image and gets walls, doors and lights. Manual mode
+  presents a proposal to accept, edit or discard. Automatic mode applies the result.
 - *Steps*: produce the same plan structure the Universal VTT importer uses, so review
-  and apply are shared; show proposals as an overlay on the map; allow per-segment
-  delete before apply.
+  and apply are shared. In manual mode, show the proposal as an overlay and allow
+  per-segment deletion before the GM applies it.
 - *Done when*: an evaluation set of at least ten maps with hand-made reference walls
-  reports precision and recall; nothing is written until the GM applies; apply is one
-  undoable command.
+  reports precision and recall. In manual mode, scene changes wait for explicit GM
+  application. Automatic mode applies without a separate confirmation. Both modes use
+  the same permission-checked, audited apply path and apply the result as one undoable
+  command.
 - *Depends on*: WP-3.1, WP-4.2.
 - *Size*: L.
 
