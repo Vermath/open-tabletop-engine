@@ -112,7 +112,7 @@ interface BoardCanvasLayerOptions {
 }
 
 /**
- * Draws the map image and the light glows on one canvas that covers the
+ * Draws the map image and, when it fills the board, the light glows on one canvas that covers the
  * visible part of the board plus a margin. Everything a user can interact
  * with, and everything whose visibility depends on who is looking, stays in
  * the DOM.
@@ -150,10 +150,15 @@ export function useBoardCanvasLayers(options: BoardCanvasLayerOptions): { mapCan
     if (!context) return;
 
     const image = imageRef.current;
+    let drawsLights = false;
     if (image && image.complete && image.naturalWidth > 0) {
+      const imageRect = containedImageRect(image.naturalWidth, image.naturalHeight, boardBounds.width, boardBounds.height);
+      // Allow for layout rounding and the board border. When the board background is exposed,
+      // the original glows blend with it in CSS instead of blending with transparent canvas pixels.
+      drawsLights = boardBounds.width - imageRect.width < 2 && boardBounds.height - imageRect.height < 2;
       const rects = imageDrawRects(
         { width: image.naturalWidth, height: image.naturalHeight },
-        containedImageRect(image.naturalWidth, image.naturalHeight, boardBounds.width, boardBounds.height),
+        imageRect,
         drawn
       );
       if (rects) {
@@ -169,7 +174,8 @@ export function useBoardCanvasLayers(options: BoardCanvasLayerOptions): { mapCan
       }
     }
 
-    for (const light of scene.lights) {
+    canvas.toggleAttribute("data-draws-lights", drawsLights);
+    for (const light of drawsLights ? scene.lights : []) {
       const shape = lightGlow(light, scene, boardBounds.width, boardBounds.height, drawn);
       if (!lightGlowIsDrawn(shape, drawn)) continue;
       const color = canvasColorChannels(context, light.color);

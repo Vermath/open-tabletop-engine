@@ -1,8 +1,7 @@
 /*
- * Canvas map renderer. One canvas draws the map image and the light glows for
- * the visible part of the board. The DOM elements it replaces stay in the
- * document: tests and the AI board capture read them, and the capture shows
- * them again for its snapshot.
+ * Canvas map renderer. One canvas draws the map image and, when the map
+ * fills the board, the light glows for the visible part of the board.
+ * The AI board capture shows the original elements for its snapshot.
  */
 .board-map-canvas {
   position: absolute;
@@ -16,7 +15,7 @@
   clip-path: inset(100%);
 }
 
-.scene-board[data-map-renderer="canvas"]:not([data-board-capture="true"]) > .light-source {
+.scene-board[data-map-renderer="canvas"]:not([data-board-capture="true"]) > .board-map-canvas[data-draws-lights] ~ .light-source {
   display: none;
 }
 

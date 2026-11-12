@@ -5,7 +5,7 @@ Status: adopted
 
 ## Decision
 
-The battle map draws its background image and its light glows on a canvas. Everything a person can interact with, and everything whose visibility depends on who is looking, stays as DOM and SVG elements: tokens (still `<button>` elements), the grid, walls, fog, vision, annotations and measurement.
+The battle map draws its background image on a canvas, along with light glows when the image fills the board. Everything a person can interact with, and everything whose visibility depends on who is looking, stays as DOM and SVG elements: tokens (still `<button>` elements), the grid, walls, fog, vision, annotations and measurement.
 
 The canvas uses the browser's 2D canvas API. No rendering library is added.
 
@@ -24,7 +24,7 @@ The 2D canvas API was chosen over PixiJS or another WebGL library because it nee
 - A change that does not affect the map or the lights, such as a token moving, does not redraw the canvas.
 - The map image keeps its own opacity and colour filter in the stylesheet; the canvas reads them from the element, so there is one place to change the look.
 - Maps up to 4096 x 4096 are kept decoded in memory for drawing.
-- The original `<img class="scene-map">` and `.light-source` elements stay in the document, hidden. The AI board capture snapshots the DOM, so for the duration of a capture they are shown again and the canvas is left out; the capture is the same whichever renderer is active.
+- The original `<img class="scene-map">` and `.light-source` elements stay in the document. The image is hidden when the canvas is active. The glows stay visible on mapless and letterboxed boards so the browser blends them with the board background. The AI board capture shows both sets of elements and leaves out the canvas.
 
 ## Measurements
 
@@ -45,7 +45,7 @@ These figures come from a machine without a GPU. On a machine with one, both ren
 
 ## Known differences from the DOM renderer
 
-- Light glows are drawn under the grid overlay's tint instead of over it. With the grid overlay on, the centre of a bright light is slightly dimmer (up to 11 levels in 255 in the comparison test).
+- When the canvas draws the glows, they sit under the grid overlay's tint. With the grid overlay on, the centre of a bright light is slightly dimmer (up to 11 levels in 255 in the comparison test).
 - The glow falloff is computed from the same gradient and blur the stylesheet uses, but it is drawn as a gradient, not a blurred element, so it is not pixel-identical.
 - A browser spec compares screenshots of both renderers on the same scene and fails if they differ by more than 1.6 levels on average.
 

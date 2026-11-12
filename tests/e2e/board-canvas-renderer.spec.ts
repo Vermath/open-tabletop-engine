@@ -32,24 +32,28 @@ async function login(page: Page) {
   await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 }
 
-/** A scene of its own with a map image, a light, a darkness source and one token, so other specs' scenes are untouched. */
-async function createMapScene(page: Page): Promise<{ scene: Scene; token: Token }> {
-  const campaign = await api<Campaign>(page, "GET", `/api/v1/campaigns/${campaignId}`);
-  const created = await api<Scene>(page, "POST", `/api/v1/campaigns/${campaignId}/scenes`, {
-    name: `Canvas renderer ${Date.now().toString(36)}`, width: 1020, height: 760, gridType: "square", gridSize: 50, expectedUpdatedAt: campaign.updatedAt,
-  });
+async function uploadMap(page: Page, scene: Scene) {
   const upload = await page.request.post(
-    `${apiBaseUrl}/api/v1/campaigns/${campaignId}/assets/upload?sceneId=${created.id}&setAsBackground=true&expectedSceneUpdatedAt=${encodeURIComponent(created.updatedAt)}`,
+    `${apiBaseUrl}/api/v1/campaigns/${campaignId}/assets/upload?sceneId=${scene.id}&setAsBackground=true&expectedSceneUpdatedAt=${encodeURIComponent(scene.updatedAt)}`,
     { headers: { ...gmHeaders, "idempotency-key": `board-canvas-map:${crypto.randomUUID()}`, "content-type": "image/png", "x-asset-name": encodeURIComponent("canvas-renderer-map.png") }, data: readFileSync(mapFixture) },
   );
   expect(upload.ok(), await upload.text()).toBe(true);
+}
+
+/** A scene of its own with a light, a darkness source and one token. */
+async function createMapScene(page: Page, { height = 760, withMap = true } = {}): Promise<{ scene: Scene; token: Token }> {
+  const campaign = await api<Campaign>(page, "GET", `/api/v1/campaigns/${campaignId}`);
+  const created = await api<Scene>(page, "POST", `/api/v1/campaigns/${campaignId}/scenes`, {
+    name: `Canvas renderer ${Date.now().toString(36)}`, width: 1020, height, gridType: "square", gridSize: 50, expectedUpdatedAt: campaign.updatedAt,
+  });
+  if (withMap) await uploadMap(page, created);
   const revision = async () => (await api<Scene>(page, "GET", `/api/v1/scenes/${created.id}`)).updatedAt;
   await api(page, "POST", `/api/v1/scenes/${created.id}/lights`, { x: 300, y: 300, radius: 220, color: "#7ad1ff", intensity: 0.5, expectedUpdatedAt: await revision() });
   await api(page, "POST", `/api/v1/scenes/${created.id}/lights`, { x: 760, y: 420, radius: 180, color: "#101018", intensity: 0.7, kind: "darkness", expectedUpdatedAt: await revision() });
   const token = await api<Token>(page, "POST", `/api/v1/scenes/${created.id}/tokens`, { name: "Canvas scout", x: 500, y: 350, ownerUserIds: ["usr_demo_gm"], expectedUpdatedAt: await revision() });
   const scene = await api<Scene>(page, "GET", `/api/v1/scenes/${created.id}`);
-  expect(scene.backgroundAssetId).toBeTruthy();
-  expect(scene).toMatchObject({ width: 1020, height: 760 });
+  expect(Boolean(scene.backgroundAssetId)).toBe(withMap);
+  expect(scene).toMatchObject({ width: 1020, height });
   expect(scene.lights).toHaveLength(2);
   return { scene, token };
 }
@@ -65,7 +69,9 @@ async function openScene(page: Page, scene: Scene): Promise<Locator> {
   if (await showScene.isVisible()) await showScene.click();
   const board = page.getByRole("group", { name: `${scene.name} interactive battle map`, exact: true });
   await expect(board).toBeVisible();
-  await expect.poll(() => board.locator(".scene-map").evaluate((image) => (image as HTMLImageElement).naturalWidth)).toBe(1020);
+  if (scene.backgroundAssetId) {
+    await expect.poll(() => board.locator(".scene-map").evaluate((image) => (image as HTMLImageElement).naturalWidth)).toBe(1020);
+  }
   return board;
 }
 
@@ -183,6 +189,33 @@ test("the canvas renderer draws the same board as the DOM renderer and keeps the
   // rounds differently. Measured at about 1 level in 255; a misplaced or mis-scaled map measures 4 or more.
   expect(await meanPixelDifference(page, canvasShot, domShot), "canvas and DOM renderers should draw the same board").toBeLessThan(1.6);
   await page.evaluate(() => window.localStorage.removeItem("otte:boardRenderer"));
+});
+
+test("lights blend against the board background on mapless and letterboxed boards", async ({ page }) => {
+  test.setTimeout(120_000);
+  await login(page);
+  const { scene } = await createMapScene(page, { height: 1000, withMap: false });
+  const expectBlendedGlows = async (board: Locator) => {
+    await expect(board).toHaveAttribute("data-map-renderer", "canvas");
+    await expect.poll(async () => (await canvasState(board))!.draws).toBeGreaterThan(0);
+    const light = board.locator(".light-source.light");
+    const darkness = board.locator(".light-source.darkness");
+    await expect(light).toBeVisible();
+    await expect(light).toHaveCSS("mix-blend-mode", "screen");
+    await expect(darkness).toBeVisible();
+    await expect(darkness).toHaveCSS("mix-blend-mode", "multiply");
+  };
+
+  const mapless = await openScene(page, scene);
+  await expect(mapless.locator(".scene-map")).toHaveCount(0);
+  await expectBlendedGlows(mapless);
+
+  await uploadMap(page, scene);
+  const updated = await api<Scene>(page, "GET", `/api/v1/scenes/${scene.id}`);
+  expect(updated).toMatchObject({ width: 1020, height: 1000 });
+  const letterboxed = await openScene(page, updated);
+  await expect(letterboxed.locator(".scene-map")).toHaveCSS("clip-path", "inset(100%)");
+  await expectBlendedGlows(letterboxed);
 });
 
 test("the canvas stays the size of the view while zooming and panning, and token moves do not redraw it", async ({ page }) => {

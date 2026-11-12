@@ -126,7 +126,7 @@ describe("what stays in the DOM", () => {
 
   it("hides the replaced elements only under the canvas renderer and never during a capture", () => {
     expect(styles).toContain('.scene-board[data-map-renderer="canvas"]:not([data-board-capture="true"]) > .scene-map');
-    expect(styles).toContain('.scene-board[data-map-renderer="canvas"]:not([data-board-capture="true"]) > .light-source');
+    expect(styles).toContain('.scene-board[data-map-renderer="canvas"]:not([data-board-capture="true"]) > .board-map-canvas[data-draws-lights] ~ .light-source');
     expect(styles).toContain('.scene-board[data-board-capture="true"] > .board-map-canvas');
   });
 
