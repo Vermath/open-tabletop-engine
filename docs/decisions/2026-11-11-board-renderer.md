@@ -28,7 +28,7 @@ The 2D canvas API was chosen over PixiJS or another WebGL library because it nee
 
 ## Measurements
 
-`pnpm perf:board` builds a large scene (4096 x 3072 map, 300 walls, 12 lights, 50 tokens; 857 elements on the board) against a production build and records frame intervals for four interactions. `OTTE_PERF_RENDERER=dom` measures the DOM renderer for comparison, and `OTTE_PERF_TRACE=1` adds a main-thread breakdown.
+`pnpm perf:board` builds a large scene (4096 x 3072 map, 300 walls, 12 lights, 50 tokens; 857 elements on the board) against a production build and records frame intervals for four interactions. `OTTE_PERF_RENDERER=dom` measures the DOM renderer for comparison, and `OTTE_PERF_TRACE=1` adds a main-thread breakdown. All the options are in `docs/engineering/board-performance.md`.
 
 Measured on 2026-11-11 in headless Chrome at 1440 x 900 with software rasterisation (no GPU), two runs of the DOM renderer and four of the canvas renderer. "Slow frames" are frames longer than 33 ms.
 

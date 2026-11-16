@@ -120,7 +120,8 @@ describe("what stays in the DOM", () => {
   it("keeps the map image, the light elements and the token buttons as elements", () => {
     expect(sceneCanvas).toContain('<img ref={mapImageRef} className="scene-map"');
     expect(sceneCanvas).toContain("className={`light-source ${light.kind ?? \"light\"}`}");
-    expect(sceneCanvas).toMatch(/<button[^>]*\n?[^>]*className=\{`token /);
+    expect(sceneCanvas).toContain("<BoardToken");
+    expect(source("board-token.tsx")).toMatch(/<button\n\s+className=\{`token /);
     expect(sceneCanvas).toContain("data-map-renderer={mapRenderer}");
   });
 
