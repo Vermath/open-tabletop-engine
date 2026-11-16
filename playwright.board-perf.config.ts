@@ -14,6 +14,8 @@ const apiBaseUrl = `http://127.0.0.1:${apiPort}`;
 const webBaseUrl = `http://127.0.0.1:${webPort}`;
 const [apiServer] = Array.isArray(base.webServer) ? base.webServer : [base.webServer];
 const channel = process.env.OTTE_PERF_BROWSER_CHANNEL;
+// OTTE_PERF_SOURCEMAP=1 emits source maps so a CPU profile's minified frames can be mapped back to source.
+const buildFlags = process.env.OTTE_PERF_SOURCEMAP === "1" ? " --sourcemap" : "";
 
 export default defineConfig({
   ...base,
@@ -24,7 +26,7 @@ export default defineConfig({
   webServer: [
     apiServer!,
     {
-      command: `pnpm --filter @open-tabletop/web exec vite build --outDir .perf-dist --emptyOutDir && pnpm --filter @open-tabletop/web exec vite preview --outDir .perf-dist --host 127.0.0.1 --port ${webPort} --strictPort`,
+      command: `pnpm --filter @open-tabletop/web exec vite build --outDir .perf-dist --emptyOutDir${buildFlags} && pnpm --filter @open-tabletop/web exec vite preview --outDir .perf-dist --host 127.0.0.1 --port ${webPort} --strictPort`,
       url: webBaseUrl,
       timeout: 180_000,
       reuseExistingServer: false,

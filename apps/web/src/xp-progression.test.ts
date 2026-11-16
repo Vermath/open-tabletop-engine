@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 const appSource = readFileSync(resolve(__dirname, "App.tsx"), "utf8");
 const actorPanelSource = readFileSync(resolve(__dirname, "actor-panel.tsx"), "utf8");
-const sceneCanvasSource = readFileSync(resolve(__dirname, "scene-canvas.tsx"), "utf8");
+const boardTokenSource = readFileSync(resolve(__dirname, "board-token.tsx"), "utf8");
 const stylesSource = readFileSync(resolve(__dirname, "styles.css"), "utf8");
 const advancementCatalogSource = readFileSync(resolve(__dirname, "advancement-catalog.ts"), "utf8");
 
@@ -30,7 +30,7 @@ describe("xp progression", () => {
   });
 
   it("marks bloodied and down token states", () => {
-    expect(sceneCanvasSource).toContain("bloodied");
+    expect(boardTokenSource).toContain('hpRatio !== undefined && hpRatio <= 0 ? "down" : hpRatio !== undefined && hpRatio <= 0.5 ? "bloodied" : ""');
     expect(stylesSource).toContain(".token.down::after");
     expect(stylesSource).toContain(".token.bloodied");
   });

@@ -6,6 +6,7 @@ const appSource = readFileSync(resolve(__dirname, "App.tsx"), "utf8");
 const actorPanelSource = readFileSync(resolve(__dirname, "actor-panel.tsx"), "utf8");
 const actorPlacementTraySource = readFileSync(resolve(__dirname, "actor-placement-tray.tsx"), "utf8");
 const sceneCanvasSource = readFileSync(resolve(__dirname, "scene-canvas.tsx"), "utf8");
+const boardTokenSource = readFileSync(resolve(__dirname, "board-token.tsx"), "utf8");
 const stylesSource = readFileSync(resolve(__dirname, "styles.css"), "utf8");
 
 describe("actor panel layout", () => {
@@ -74,8 +75,10 @@ describe("actor panel layout", () => {
     expect(sceneCanvasSource).toContain("tokenResizeHandles");
     expect(sceneCanvasSource).toContain("onTokenResizeCommit");
     expect(sceneCanvasSource).toContain("scene-map-hitbox");
-    expect(sceneCanvasSource).toContain("token-resize-corner");
-    expect(sceneCanvasSource).toContain("token-selection-frame");
+    expect(boardTokenSource).toContain("token-resize-corner");
+    expect(boardTokenSource).toContain("token-selection-frame");
+    expect(sceneCanvasSource).toContain("resizeHandles={canResize ? tokenCornerResizeHandles : undefined}");
+    expect(sceneCanvasSource).toContain("if (token) startTokenResize(token, handleId as TokenResizeHandle, event);");
     expect(stylesSource).toContain(".token-resize-handle");
     expect(stylesSource).toContain("pointer-events: none");
     expect(stylesSource).toContain(".scene-map-hitbox.selected");

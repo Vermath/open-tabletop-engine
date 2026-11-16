@@ -18,8 +18,14 @@ import { DynamicVisibilityMask } from "./scene-visibility-mask.js";
 import { anchorScrollDelta, exceedsPanThreshold, scrollKeepingViewCentre, pinchZoom, pointerDistance, pointerMidpoint, wheelEventZoomsMap, wheelZoomFactor, zoomAnchorAt, type ViewportPoint, type ZoomAnchor } from "./map-viewport-gestures.js";
 import { TokenContextMenu, tokenContextMenuActions } from "./token-context-menu.js";
 import { preferredMapRenderer, useBoardCanvasLayers } from "./board-canvas-layers.js";
+import { BoardDarknessLayer, BoardDifficultTerrainLayer, BoardLightingLayer, BoardStructureHandles, BoardVisionMaskLayer, BoardWallLayer, type BoardStructureHandlers } from "./board-layers.js";
+import { useStableHandlers, useStructurallyStable } from "./board-render-stability.js";
+import { BoardToken, type BoardTokenHandlers } from "./board-token.js";
+
+export { lightPolygonClassName, polygonPoints, visionPolygonClassName } from "./board-layers.js";
 
 const pingAnnotationTtlSeconds = 5;
+const noDifficultTerrain: NonNullable<Scene["difficultTerrain"]> = [];
 const annotationExpiryTimerSlackMs = 25;
 const maxBrowserTimerDelayMs = 2_147_483_647;
 const annotationLayers: SceneAnnotationLayer[] = ["measurement", "effects", "drawings", "notes"];
@@ -539,6 +545,7 @@ export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: num
         .map(({ token }) => token),
     [tokens]
   );
+  const boardTokenById = useMemo(() => new Map(tokens.map((token) => [token.id, token])), [tokens]);
   const orderedActiveLayerTokens = useMemo(() => orderedTokens.filter((token) => activeLayerTokenIds.has(token.id)), [orderedTokens, activeLayerTokenIds]);
   const selectedTokenIdSet = useMemo(() => new Set(props.selectedTokenIds), [props.selectedTokenIds]);
   const selectedViewportToken = useMemo(() => tokens.find((token) => token.id === props.selectedTokenId), [tokens, props.selectedTokenId]);
@@ -592,7 +599,11 @@ export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: num
     () => displayAnnotations.filter((annotation) => !(annotation.kind === "ping" && annotation.points[0] && localPings.some((ping) => Math.hypot(ping.x - annotation.points[0]!.x, ping.y - annotation.points[0]!.y) < 12))),
     [displayAnnotations, localPings]
   );
-  const vision = props.vision?.sceneId === props.scene.id ? props.vision : undefined;
+  // A reconciled snapshot arrives as new objects even when nothing changed; keep the old references then, so the memoised layers below skip.
+  const vision = useStructurallyStable(props.vision?.sceneId === props.scene.id ? props.vision : undefined);
+  const sceneWalls = useStructurallyStable(props.scene.walls);
+  const sceneLights = useStructurallyStable(props.scene.lights);
+  const difficultTerrain = useStructurallyStable(props.scene.difficultTerrain ?? noDifficultTerrain);
   const lightPolygons = useMemo(() => vision?.polygons.filter((polygon) => polygon.source === "light" && polygon.lightingEffect !== "darkness" && polygon.points.length > 2) ?? [], [vision]);
   const darknessPolygons = useMemo(() => vision?.polygons.filter((polygon) => polygon.lightingEffect === "darkness" && polygon.points.length > 2) ?? [], [vision]);
   const nonmagicalDarknessPolygons = useMemo(() => darknessPolygons.filter((polygon) => !polygon.magical), [darknessPolygons]);
@@ -1532,6 +1543,79 @@ export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: num
     ));
   }
 
+  // Stable handler objects for the memoised tokens and structure handles. Each method runs against the latest committed render.
+  const tokenHandlers = useStableHandlers<BoardTokenHandlers>({
+    contextMenu(tokenId, event) {
+      event.preventDefault();
+      event.stopPropagation();
+      // A mouse right-click opens the menu on release, so a right-drag can pan instead.
+      // Keyboard (Shift+F10, Menu key) and touch long-press open it here.
+      if (event.nativeEvent.button === 2) return;
+      const rect = event.currentTarget.getBoundingClientRect();
+      openTokenMenu(tokenId, { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+    },
+    click(tokenId, event) {
+      if (calibrationActive || props.readOnly) return;
+      if (!activeLayerTokenIds.has(tokenId)) return;
+      if (pointerSelectedTokenRef.current === tokenId) {
+        pointerSelectedTokenRef.current = null;
+        return;
+      }
+      props.onSelect(tokenId, { additive: event.shiftKey || event.ctrlKey || event.metaKey, preserveExisting: selectedTokenIdSet.has(tokenId) && props.selectedTokenIds.length > 1 });
+    },
+    keyDown(tokenId, event) {
+      const token = boardTokenById.get(tokenId);
+      if (token) moveTokenFromKeyboard(token, event);
+    },
+    pointerDown(tokenId, event) {
+      setKeyboardCursorVisible(false);
+      if (!activeLayerTokenIds.has(tokenId)) return;
+      if (props.readOnly || calibrationActive || props.fogBrushMode || props.annotationTool) return;
+      const token = boardTokenById.get(tokenId);
+      if (token) startTokenDrag(token, event);
+    },
+    pointerMove(tokenId, event) {
+      if (tokenDragRef.current?.tokenId !== tokenId || tokenDragRef.current.pointerId !== event.pointerId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      moveTokenDrag(event.clientX, event.clientY, event.pointerId);
+    },
+    pointerUp(tokenId, event) {
+      if (tokenDragRef.current?.tokenId !== tokenId || tokenDragRef.current.pointerId !== event.pointerId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      finishTokenDrag(event.pointerId);
+    },
+    pointerCancel(tokenId, event) {
+      if (tokenDragRef.current?.tokenId !== tokenId || tokenDragRef.current.pointerId !== event.pointerId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      cancelTokenDrag(event.pointerId);
+    },
+    lostPointerCapture(tokenId, event) {
+      if (tokenDragRef.current?.tokenId === tokenId && tokenDragRef.current.pointerId === event.pointerId) cancelTokenDrag(event.pointerId);
+    },
+    resizePointerDown(tokenId, handleId, event) {
+      event.stopPropagation();
+      const token = boardTokenById.get(tokenId);
+      if (token) startTokenResize(token, handleId as TokenResizeHandle, event);
+    }
+  });
+  const structureHandlers = useStableHandlers<BoardStructureHandlers>({
+    selectWall(wallId) {
+      props.onClearSelection();
+      props.onSelectOverlay({ type: "wall", id: wallId });
+    },
+    togglePortal(wallId) {
+      const wall = props.scene.walls.find((entry) => entry.id === wallId);
+      if (wall) void props.onTogglePortal(wall);
+    },
+    selectLight(lightId) {
+      props.onClearSelection();
+      props.onSelectOverlay({ type: "light", id: lightId });
+    }
+  });
+
   return (
     <div
       ref={viewportRef}
@@ -1746,48 +1830,20 @@ export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: num
           aria-hidden="true"
         />
       ))}
-      {lightPolygons.length > 0 && (
-        <svg className="lighting-layer" viewBox={`0 0 ${props.scene.width} ${props.scene.height}`} aria-hidden="true">
-          {lightPolygons.map((polygon) => (
-            <polygon key={polygon.id} className={lightPolygonClassName(polygon)} points={polygonPoints(polygon)} style={{ fill: polygon.color ?? "#facc15", opacity: polygon.opacity ?? 0.22 }} />
-          ))}
-        </svg>
-      )}
-      {darknessPolygons.length > 0 && (
-        <svg className="darkness-layer" viewBox={`0 0 ${props.scene.width} ${props.scene.height}`} aria-hidden="true">
-          <defs>
-            <mask id={mundaneDarknessMaskId} maskUnits="userSpaceOnUse">
-              <rect width={props.scene.width} height={props.scene.height} fill="black" />
-              {nonmagicalDarknessPolygons.map((polygon) => <polygon key={`${polygon.id}-mundane-darkness`} points={polygonPoints(polygon)} fill="white" />)}
-              {nonmagicalDarknessBypassPolygons.map((polygon) => <polygon key={`${polygon.id}-mundane-bypass`} points={polygonPoints(polygon)} fill="black" />)}
-            </mask>
-            <mask id={magicalDarknessMaskId} maskUnits="userSpaceOnUse">
-              <rect width={props.scene.width} height={props.scene.height} fill="black" />
-              {magicalDarknessPolygons.map((polygon) => <polygon key={`${polygon.id}-magical-darkness`} points={polygonPoints(polygon)} fill="white" />)}
-              {magicalDarknessBypassPolygons.map((polygon) => <polygon key={`${polygon.id}-magical-bypass`} points={polygonPoints(polygon)} fill="black" />)}
-            </mask>
-          </defs>
-          {nonmagicalDarknessPolygons.length > 0 && <rect className="darkness-fill mundane" width={props.scene.width} height={props.scene.height} mask={`url(#${mundaneDarknessMaskId})`} />}
-          {magicalDarknessPolygons.length > 0 && <rect className="darkness-fill magical" width={props.scene.width} height={props.scene.height} mask={`url(#${magicalDarknessMaskId})`} />}
-        </svg>
-      )}
-      {(props.scene.difficultTerrain?.length ?? 0) > 0 && (
-        <svg className="difficult-terrain-layer" viewBox={`0 0 ${props.scene.width} ${props.scene.height}`} aria-label="Authored difficult terrain">
-          {(props.scene.difficultTerrain ?? []).map((region) => (
-            <polygon key={region.id} points={region.points.map((point) => `${point.x},${point.y}`).join(" ")} style={{ fill: region.color ?? "#d97706" }}>
-              <title>{region.label}</title>
-            </polygon>
-          ))}
-        </svg>
-      )}
-      {props.scene.walls.length > 0 && (
-        // One layer for every wall: a map imported with hundreds of walls must not add hundreds of full-size layers.
-        <svg className="wall-layer" viewBox={`0 0 ${props.scene.width} ${props.scene.height}`} aria-hidden="true">
-          {props.scene.walls.map((wall) => (
-            <line className={`${wall.kind ?? "wall"} ${wall.open ? "open" : "closed"}`} key={wall.id} x1={wall.x1} y1={wall.y1} x2={wall.x2} y2={wall.y2} />
-          ))}
-        </svg>
-      )}
+      <BoardLightingLayer width={props.scene.width} height={props.scene.height} polygons={lightPolygons} />
+      <BoardDarknessLayer
+        width={props.scene.width}
+        height={props.scene.height}
+        present={darknessPolygons.length > 0}
+        mundane={nonmagicalDarknessPolygons}
+        magical={magicalDarknessPolygons}
+        mundaneBypass={nonmagicalDarknessBypassPolygons}
+        magicalBypass={magicalDarknessBypassPolygons}
+        mundaneMaskId={mundaneDarknessMaskId}
+        magicalMaskId={magicalDarknessMaskId}
+      />
+      <BoardDifficultTerrainLayer width={props.scene.width} height={props.scene.height} regions={difficultTerrain} />
+      <BoardWallLayer width={props.scene.width} height={props.scene.height} walls={sceneWalls} />
       {(renderedAnnotations.length > 0 || localPings.length > 0) && (
         <svg className="annotation-layer" viewBox={`0 0 ${props.scene.width} ${props.scene.height}`} aria-label="Scene annotations">
           {renderedAnnotations.map((annotation) => (
@@ -1851,75 +1907,20 @@ export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: num
           )}
         </div>
       )}
-      {props.canUpdateAnnotations && !calibrationActive && !props.fogBrushMode && !props.annotationTool && (props.scene.walls.length > 0 || props.scene.lights.length > 0) && (
-        <div className="annotation-handles structure-handles" aria-label="Wall and light handles">
-          {props.scene.walls.map((wall) => (
-            <button
-              key={`wall-${wall.id}`}
-              className={`structure-handle ${wall.kind === "terrain" ? "terrain-handle" : wall.kind === "door" ? "door-handle" : wall.kind === "window" ? "window-handle" : "wall-handle"} ${wall.open ? "open" : "closed"} ${props.selectedOverlay?.type === "wall" && props.selectedOverlay.id === wall.id ? "selected" : ""}`}
-              type="button"
-              style={{ left: `${((wall.x1 + wall.x2) / 2 / props.scene.width) * 100}%`, top: `${((wall.y1 + wall.y2) / 2 / props.scene.height) * 100}%` }}
-              aria-label={`Select ${wall.kind === "terrain" ? "terrain wall" : wall.kind ?? "wall"}`}
-              title={`${wall.kind === "terrain" ? "Terrain wall" : titleCaseWallKind(wall.kind)}${wall.kind === "door" || wall.kind === "window" ? ` (${wall.open ? "open" : "closed"}) - double-click to ${wall.open ? "close" : "open"}` : ""} - click to select, Delete to remove`}
-              onPointerDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-              }}
-              onClick={(event) => {
-                event.stopPropagation();
-                props.onClearSelection();
-                props.onSelectOverlay({ type: "wall", id: wall.id });
-              }}
-              onDoubleClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                if (wall.kind === "door" || wall.kind === "window") void props.onTogglePortal(wall);
-              }}
-            />
-          ))}
-          {props.scene.lights.map((light) => (
-            <button
-              key={`light-${light.id}`}
-              className={`structure-handle light-handle ${props.selectedOverlay?.type === "light" && props.selectedOverlay.id === light.id ? "selected" : ""}`}
-              type="button"
-              style={{ left: `${(light.x / props.scene.width) * 100}%`, top: `${(light.y / props.scene.height) * 100}%` }}
-              aria-label="Select light"
-              title="Light - click to select, Delete to remove"
-              onPointerDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-              }}
-              onClick={(event) => {
-                event.stopPropagation();
-                props.onClearSelection();
-                props.onSelectOverlay({ type: "light", id: light.id });
-              }}
-            />
-          ))}
-        </div>
+      {props.canUpdateAnnotations && !calibrationActive && !props.fogBrushMode && !props.annotationTool && (sceneWalls.length > 0 || sceneLights.length > 0) && (
+        <BoardStructureHandles
+          width={props.scene.width}
+          height={props.scene.height}
+          walls={sceneWalls}
+          lights={sceneLights}
+          selectedWallId={props.selectedOverlay?.type === "wall" ? props.selectedOverlay.id : undefined}
+          selectedLightId={props.selectedOverlay?.type === "light" ? props.selectedOverlay.id : undefined}
+          handlers={structureHandlers}
+        />
       )}
       {vision?.fogActive && props.scene.visibilityMode === "dynamic" && <DynamicVisibilityMask scene={props.scene} vision={vision} />}
       {vision?.fogActive && props.scene.visibilityMode !== "dynamic" && (
-        <svg className="vision-mask-layer" viewBox={`0 0 ${props.scene.width} ${props.scene.height}`} aria-hidden="true">
-          <defs>
-            <mask id={maskId}>
-              <rect width={props.scene.width} height={props.scene.height} fill="white" />
-              {revealedPolygons.map((polygon) => (
-                <polygon key={polygon.id} points={polygonPoints(polygon)} fill="black" />
-              ))}
-              {hiddenPolygons.map((polygon) => (
-                <polygon key={polygon.id} points={polygonPoints(polygon)} fill="white" />
-              ))}
-            </mask>
-          </defs>
-          <rect className="vision-dim" width={props.scene.width} height={props.scene.height} mask={`url(#${maskId})`} />
-          {revealedPolygons.map((polygon) => (
-            <polygon key={`${polygon.id}-outline`} className={visionPolygonClassName(polygon)} points={polygonPoints(polygon)} />
-          ))}
-          {hiddenPolygons.map((polygon) => (
-            <polygon key={`${polygon.id}-outline`} className="vision-outline hide" points={polygonPoints(polygon)} />
-          ))}
-        </svg>
+        <BoardVisionMaskLayer width={props.scene.width} height={props.scene.height} maskId={maskId} revealed={revealedPolygons} hidden={hiddenPolygons} />
       )}
       {fogStroke && (
         <svg className="fog-brush-preview" viewBox={`0 0 ${props.scene.width} ${props.scene.height}`} aria-hidden="true">
@@ -1988,121 +1989,41 @@ export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: num
         const tokenHp = linkedActor?.data.hp as { current?: number; max?: number } | undefined;
         const tokenHpRatio = tokenHp && typeof tokenHp.current === "number" && typeof tokenHp.max === "number" && tokenHp.max > 0 ? Math.max(0, Math.min(1, tokenHp.current / tokenHp.max)) : undefined;
         const showTokenVitals = tokenHpRatio !== undefined && (props.canSeeAllVitals || token.ownerUserIds?.includes(props.boardCurrentUserId));
-        const tokenHpTone = tokenHpRatio === undefined ? "" : tokenHpRatio <= 0.25 ? "danger" : tokenHpRatio <= 0.5 ? "warning" : "healthy";
         const tokenConditionEntries = [...(token.conditions ?? []).map((condition) => condition.name), ...(linkedActor ? actorConditionLabels(linkedActor) : [])];
         const isCurrentTurn = currentTurnTokenIdSet.has(token.id);
         const isNextTurn = !isCurrentTurn && nextTurnTokenIdSet.has(token.id);
-        const turnStateLabel = isCurrentTurn ? "current turn" : isNextTurn ? "up next" : undefined;
         return (
-          <button
+          <BoardToken
             key={token.id}
-            className={`token layer-${layer} ${activeLayerToken ? "active-layer" : "inactive-layer"} ${token.disposition} ${tokenImageAsset ? "has-image" : ""} ${selected ? "selected" : ""} ${props.selectedTokenId === token.id ? "primary-selected" : ""} ${token.targetedByUserIds?.length ? "targeted" : ""} ${token.auras?.length ? "has-aura" : ""} ${dragPosition ? "dragging" : ""} ${isCurrentTurn ? "turn-current" : ""} ${isNextTurn ? "turn-next" : ""} ${tokenHpRatio !== undefined && tokenHpRatio <= 0 ? "down" : tokenHpRatio !== undefined && tokenHpRatio <= 0.5 ? "bloodied" : ""}`}
-            data-turn-state={isCurrentTurn ? "current" : isNextTurn ? "next" : undefined}
-            data-token-id={token.id}
-            aria-haspopup={props.readOnly ? undefined : "menu"}
-            style={{
-              left: `${(visualX / props.scene.width) * 100}%`,
-              top: `${(visualY / props.scene.height) * 100}%`,
-              width: `${(visualWidth / props.scene.width) * 100}%`,
-              height: `${(visualHeight / props.scene.height) * 100}%`,
-              pointerEvents: calibrationActive ? "none" : undefined
-            }}
-            aria-label={`${tokenLayerLabel(layer)} token ${token.name}${(token.elevation ?? 0) !== 0 ? ` at ${formatNumber(Math.abs(token.elevation ?? 0))} feet ${(token.elevation ?? 0) > 0 ? "above" : "below"} ground` : ""}${turnStateLabel ? `, ${turnStateLabel}` : ""}`}
-            aria-pressed={selected}
-            aria-describedby={keyboardInstructionsId}
-            aria-keyshortcuts={props.canMoveToken ? "ArrowUp ArrowDown ArrowLeft ArrowRight" : undefined}
-            tabIndex={calibrationActive || props.readOnly ? -1 : undefined}
-            aria-disabled={props.readOnly || undefined}
-            title={props.readOnly ? token.name : !props.canMoveToken ? "Token movement requires token.move" : "Arrow keys move; Shift moves 1 px; right-click for token actions"}
-            onContextMenu={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              // A mouse right-click opens the menu on release, so a right-drag can pan instead.
-              // Keyboard (Shift+F10, Menu key) and touch long-press open it here.
-              if (event.nativeEvent.button === 2) return;
-              const rect = event.currentTarget.getBoundingClientRect();
-              openTokenMenu(token.id, { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
-            }}
-            onClick={(event) => {
-              if (calibrationActive || props.readOnly) return;
-              if (!activeLayerToken) return;
-              if (pointerSelectedTokenRef.current === token.id) {
-                pointerSelectedTokenRef.current = null;
-                return;
-              }
-              props.onSelect(token.id, { additive: event.shiftKey || event.ctrlKey || event.metaKey, preserveExisting: selected && props.selectedTokenIds.length > 1 });
-            }}
-            onKeyDown={props.readOnly ? undefined : (event) => moveTokenFromKeyboard(token, event)}
-            onPointerDown={(event) => {
-              setKeyboardCursorVisible(false);
-              if (!activeLayerToken) return;
-              if (props.readOnly || calibrationActive || props.fogBrushMode || props.annotationTool) return;
-              startTokenDrag(token, event);
-            }}
-            onPointerMove={(event) => {
-              if (tokenDragRef.current?.tokenId !== token.id || tokenDragRef.current.pointerId !== event.pointerId) return;
-              event.preventDefault();
-              event.stopPropagation();
-              moveTokenDrag(event.clientX, event.clientY, event.pointerId);
-            }}
-            onPointerUp={(event) => {
-              if (tokenDragRef.current?.tokenId !== token.id || tokenDragRef.current.pointerId !== event.pointerId) return;
-              event.preventDefault();
-              event.stopPropagation();
-              finishTokenDrag(event.pointerId);
-            }}
-            onPointerCancel={(event) => {
-              if (tokenDragRef.current?.tokenId !== token.id || tokenDragRef.current.pointerId !== event.pointerId) return;
-              event.preventDefault();
-              event.stopPropagation();
-              cancelTokenDrag(event.pointerId);
-            }}
-            onLostPointerCapture={(event) => {
-              if (tokenDragRef.current?.tokenId === token.id && tokenDragRef.current.pointerId === event.pointerId) cancelTokenDrag(event.pointerId);
-            }}
-          >
-            <span className="token-visual" style={{ transform: `rotate(${token.rotation}deg)` }} aria-hidden="true">
-              {tokenImageAsset && <img className="token-image" src={assetBlobUrl(tokenImageAsset)} alt="" draggable={false} />}
-              <span className="token-label">{token.name.slice(0, 2).toUpperCase()}</span>
-            </span>
-            <span className="token-nameplate" aria-hidden="true">{token.name}</span>
-            {(token.elevation ?? 0) !== 0 && (
-              <small className="token-elevation" aria-hidden="true" title={`${formatNumber(Math.abs(token.elevation ?? 0))} feet ${(token.elevation ?? 0) > 0 ? "above" : "below"} ground`}>
-                {(token.elevation ?? 0) > 0 ? "+" : "-"}{formatNumber(Math.abs(token.elevation ?? 0))} ft
-              </small>
-            )}
-            {showTokenVitals && (
-              <span className={`token-hp ${tokenHpTone}`} aria-hidden="true">
-                <span style={{ width: `${Math.round((tokenHpRatio ?? 0) * 100)}%` }} />
-              </span>
-            )}
-            {(isCurrentTurn || isNextTurn) && <span className={`token-turn-ring ${isCurrentTurn ? "current" : "next"}`} aria-hidden="true" />}
-            {tokenConditionEntries.length > 0 ? (
-              <span className="token-conditions" aria-hidden="true" title={tokenConditionEntries.join(", ")}>
-                {tokenConditionEntries.slice(0, 3).map((condition, index) => (
-                  <small className="token-condition-chip" key={`${token.id}-condition-${index}`}>{condition}</small>
-                ))}
-                {tokenConditionEntries.length > 3 && <small className="token-condition-chip overflow">+{tokenConditionEntries.length - 3}</small>}
-              </span>
-            ) : null}
-            {token.auras?.length ? <small className="token-aura-count">{token.auras.length}</small> : null}
-            {canResize && (
-              <>
-                <span className="token-selection-frame" aria-hidden="true" />
-                {tokenCornerResizeHandles.map((handle) => (
-                  <span
-                    className={`token-resize-corner handle-${handle.id}`}
-                    key={`${token.id}-${handle.id}`}
-                    title={handle.label}
-                    onPointerDown={(event) => {
-                      event.stopPropagation();
-                      startTokenResize(token, handle.id, event);
-                    }}
-                  />
-                ))}
-              </>
-            )}
-          </button>
+            id={token.id}
+            name={token.name}
+            layer={layer}
+            layerLabel={tokenLayerLabel(layer)}
+            activeLayer={activeLayerToken}
+            disposition={token.disposition}
+            imageUrl={tokenImageAsset ? assetBlobUrl(tokenImageAsset) : undefined}
+            selected={selected}
+            primarySelected={props.selectedTokenId === token.id}
+            targeted={Boolean(token.targetedByUserIds?.length)}
+            auraCount={token.auras?.length ?? 0}
+            dragging={Boolean(dragPosition)}
+            turnState={isCurrentTurn ? "current" : isNextTurn ? "next" : undefined}
+            left={(visualX / props.scene.width) * 100}
+            top={(visualY / props.scene.height) * 100}
+            width={(visualWidth / props.scene.width) * 100}
+            height={(visualHeight / props.scene.height) * 100}
+            rotation={token.rotation}
+            elevation={token.elevation ?? 0}
+            hpRatio={tokenHpRatio}
+            showVitals={Boolean(showTokenVitals)}
+            conditions={JSON.stringify(tokenConditionEntries)}
+            readOnly={Boolean(props.readOnly)}
+            canMove={props.canMoveToken}
+            calibrationActive={calibrationActive}
+            describedBy={keyboardInstructionsId}
+            resizeHandles={canResize ? tokenCornerResizeHandles : undefined}
+            handlers={tokenHandlers}
+          />
         );
       })}
       {orderedTokens.map((token) => {
@@ -2368,26 +2289,7 @@ export function appendStrokePoint(points: VisionPoint[], point: VisionPoint, gri
 }
 
 
-export function polygonPoints(polygon: VisionPolygon): string {
-  return polygon.points.map((point) => `${point.x},${point.y}`).join(" ");
-}
 
-
-function titleCaseWallKind(kind: Scene["walls"][number]["kind"]): string {
-  if (kind === "terrain") return "Terrain wall";
-  if (kind === "door") return "Door";
-  if (kind === "window") return "Window";
-  return "Wall";
-}
-
-export function visionPolygonClassName(polygon: VisionPolygon): string {
-  return ["vision-outline", polygon.source, polygon.lightLevel].filter(Boolean).join(" ");
-}
-
-
-export function lightPolygonClassName(polygon: VisionPolygon): string {
-  return ["light-polygon", polygon.lightLevel].filter(Boolean).join(" ");
-}
 
 
 export function tokenCenter(token: Token): { x: number; y: number } {

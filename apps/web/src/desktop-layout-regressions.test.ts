@@ -10,6 +10,7 @@ const navigationSource = readFileSync(resolve(__dirname, "workspace-navigation.t
 const apiSource = readFileSync(resolve(__dirname, "api.ts"), "utf8").replace(/\r\n/g, "\n");
 const stylesSource = readFileSync(resolve(__dirname, "styles.css"), "utf8").replace(/\r\n/g, "\n");
 const sceneCanvasSource = readFileSync(resolve(__dirname, "scene-canvas.tsx"), "utf8").replace(/\r\n/g, "\n");
+const boardTokenSource = readFileSync(resolve(__dirname, "board-token.tsx"), "utf8").replace(/\r\n/g, "\n");
 const sceneGridFieldsSource = readFileSync(resolve(__dirname, "scene-grid-fields.tsx"), "utf8").replace(/\r\n/g, "\n");
 const campaignSetupStepsSource = readFileSync(resolve(__dirname, "campaign-setup-steps.tsx"), "utf8").replace(/\r\n/g, "\n");
 const movablePanelSource = readFileSync(resolve(__dirname, "movable-panel.ts"), "utf8").replace(/\r\n/g, "\n");
@@ -220,7 +221,10 @@ describe("desktop layout regressions", () => {
     expect(stylesSource).toContain(".rail-prep + .workspace .scene-tab-wrap.selectable.deletable {\n    grid-template-columns: minmax(0, auto) 30px;");
     expect(sceneCanvasSource).toContain("export function nextTokenLayer(layer: TokenLayer): TokenLayer");
     expect(sceneCanvasSource).toContain("if (event.button !== 0) return;");
-    expect(sceneCanvasSource).toContain("onContextMenu={(event) => {");
+    // The token is a memoised component; its context menu handler lives on the board and is reached by token id.
+    expect(boardTokenSource).toContain("onContextMenu={(event) => handlers.contextMenu(id, event)}");
+    expect(sceneCanvasSource).toContain("contextMenu(tokenId, event) {");
+    expect(sceneCanvasSource).toContain("openTokenMenu(tokenId, { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });");
     expect(sceneCanvasSource).toContain("onMoveToNextLayer: () => void mutationAction.runAction(`Move ${tokenMenuToken.name} to the next layer`, () => props.onTokenLayerCycle(tokenMenuToken))");
     expect(sceneCanvasSource).toContain("canChangeLayer: props.canUpdateTokenLayer");
     expect(stylesSource).toContain(".token.inactive-layer {\n  opacity: 0.58;\n  cursor: context-menu;\n  pointer-events: auto;");

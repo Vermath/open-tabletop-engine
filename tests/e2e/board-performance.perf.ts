@@ -31,8 +31,23 @@ interface TraceEvent { name: string; ph: string; pid: number; tid: number; dur?:
  * the time of the largest renderer main-thread events by name. Events nest, so
  * the figures overlap; they show where the time goes, not a total.
  */
-async function traceMainThread(page: Page, action: () => Promise<void>): Promise<Record<string, number> | undefined> {
-  if (process.env.OTTE_PERF_TRACE !== "1") { await action(); return undefined; }
+/** With OTTE_PERF_CPU_PROFILE_DIR, records a JavaScript CPU profile per scenario (pair it with OTTE_PERF_SOURCEMAP=1 to map frames back to source). */
+async function cpuProfiled(page: Page, action: () => Promise<void>, label: string): Promise<void> {
+  const directory = process.env.OTTE_PERF_CPU_PROFILE_DIR;
+  if (!directory) return action();
+  const session = await page.context().newCDPSession(page);
+  await session.send("Profiler.enable");
+  await session.send("Profiler.setSamplingInterval", { interval: 200 });
+  await session.send("Profiler.start");
+  await action();
+  const { profile } = await session.send("Profiler.stop");
+  await session.detach();
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(`${directory}/${label}.cpuprofile`, JSON.stringify(profile));
+}
+
+async function traceMainThread(page: Page, action: () => Promise<void>, label: string): Promise<Record<string, number> | undefined> {
+  if (process.env.OTTE_PERF_TRACE !== "1") { await cpuProfiled(page, action, label); return undefined; }
   const session = await page.context().newCDPSession(page);
   const events: TraceEvent[] = [];
   session.on("Tracing.dataCollected", (payload) => { events.push(...(payload.value as unknown as TraceEvent[])); });
@@ -42,6 +57,11 @@ async function traceMainThread(page: Page, action: () => Promise<void>): Promise
   await session.send("Tracing.end");
   await complete;
   await session.detach();
+  // OTTE_PERF_TRACE_DIR keeps the raw trace per scenario; open it in the browser's Performance panel.
+  if (process.env.OTTE_PERF_TRACE_DIR) {
+    mkdirSync(process.env.OTTE_PERF_TRACE_DIR, { recursive: true });
+    writeFileSync(`${process.env.OTTE_PERF_TRACE_DIR}/${label}.trace.json`, JSON.stringify({ traceEvents: events }));
+  }
   const mainThreads = new Set(events.filter((event) => event.ph === "M" && event.name === "thread_name" && event.args?.name === "CrRendererMain").map((event) => `${event.pid}:${event.tid}`));
   const totals = new Map<string, number>();
   for (const event of events) {
@@ -111,7 +131,7 @@ async function buildFixture(page: Page) {
   }, { apiBaseUrl, sceneId, fixture });
 }
 
-async function measure(page: Page, action: () => Promise<void>): Promise<FrameStats> {
+async function measure(page: Page, action: () => Promise<void>, label: string): Promise<FrameStats> {
   const drawsBefore = await canvasDrawStats(page);
   await page.evaluate(() => {
     const state = { frames: [] as number[], longTasks: [] as number[], running: true, last: performance.now(), observer: undefined as PerformanceObserver | undefined };
@@ -121,7 +141,7 @@ async function measure(page: Page, action: () => Promise<void>): Promise<FrameSt
     state.observer.observe({ entryTypes: ["longtask"] });
     (window as unknown as { __boardPerf: typeof state }).__boardPerf = state;
   });
-  const mainThreadMs = await traceMainThread(page, action);
+  const mainThreadMs = await traceMainThread(page, action, label);
   await page.waitForTimeout(150);
   const drawsAfter = await canvasDrawStats(page);
   const frames = await page.evaluate(() => {
@@ -160,6 +180,8 @@ test("board frame times on a large scene", async ({ page }) => {
   const board = page.locator(".scene-board");
   await expect(board).toBeVisible();
   await expect.poll(() => page.locator(".scene-board button.token").count()).toBeGreaterThanOrEqual(fixture.tokens);
+  // OTTE_PERF_CSS injects a stylesheet for what-if experiments, for example ".token { transition: none !important }".
+  if (process.env.OTTE_PERF_CSS) await page.addStyleTag({ content: process.env.OTTE_PERF_CSS });
   await page.waitForTimeout(1500);
 
   const viewport = (await page.locator(".scene-viewport").boundingBox())!;
@@ -170,14 +192,14 @@ test("board frame times on a large scene", async ({ page }) => {
   await page.mouse.move(centre.x, centre.y);
   results.wheelZoom = await measure(page, async () => {
     for (let step = 0; step < 14; step += 1) { await page.mouse.wheel(0, -120); await page.waitForTimeout(40); }
-  });
+  }, "wheelZoom");
 
   results.pan = await measure(page, async () => {
     await page.mouse.move(centre.x, centre.y);
     await page.mouse.down({ button: "right" });
     for (let step = 1; step <= 60; step += 1) { await page.mouse.move(centre.x - step * 5, centre.y - step * 3); await page.waitForTimeout(16); }
     await page.mouse.up({ button: "right" });
-  });
+  }, "pan");
 
   // Bring a fixture token to the middle of the view and drag it.
   const dragged = page.getByRole("button", { name: /token Perf 25$/ });
@@ -195,13 +217,13 @@ test("board frame times on a large scene", async ({ page }) => {
     await page.mouse.down();
     for (let step = 1; step <= 60; step += 1) { await page.mouse.move(grip!.x + step * 4, grip!.y + step * 2); await page.waitForTimeout(16); }
     await page.mouse.up();
-  });
+  }, "tokenDrag");
 
   const movable = page.locator(".scene-board button.token").first();
   await movable.focus();
   results.keyboardMove = await measure(page, async () => {
     for (let step = 0; step < 10; step += 1) { await page.keyboard.press(step % 2 === 0 ? "ArrowRight" : "ArrowLeft"); await page.waitForTimeout(250); }
-  });
+  }, "keyboardMove");
 
   const domNodes = await board.evaluate((element) => element.querySelectorAll("*").length);
   const report = {
