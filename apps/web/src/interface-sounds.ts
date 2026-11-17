@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 export const defaultInterfaceSounds = { enabled: true, volume: 0.24 };
 export type InterfaceCue = "dice" | "turn" | "ping";
+export type InterfaceSoundSave = { isCurrent(): boolean; onSaved(): void };
 
 export function interfaceTurnKey(combat?: Pick<Combat, "id" | "round">, combatant?: Pick<Combatant, "id">) {
   return combat && combatant ? JSON.stringify([combat.id, combat.round, combatant.id]) : undefined;
@@ -55,31 +56,45 @@ export function useInterfaceSounds(input: {
   combatant?: Combatant;
   tokens: readonly Token[];
   actors: readonly Actor[];
-  onSettingsChange(settings: NonNullable<UserPreferences["interfaceSounds"]>): void;
+  onSettingsChange(settings: NonNullable<UserPreferences["interfaceSounds"]>, save: InterfaceSoundSave): void;
 }) {
   const savedSettings = input.preferences ?? defaultInterfaceSounds;
   const [override, setOverride] = useState<{ userId: string; enabled: boolean }>();
+  const overrideRef = useRef(override);
   const settings = override?.userId === input.userId ? { ...savedSettings, enabled: override.enabled } : savedSettings;
   const latest = useRef({ ...input, settings });
-  useLayoutEffect(() => { latest.current = { ...input, settings }; });
+  useLayoutEffect(() => {
+    latest.current = { ...input, settings };
+    if (overrideRef.current?.userId !== input.userId) overrideRef.current = undefined;
+  });
   useEffect(() => {
-    if (override && (override.userId !== input.userId || override.enabled === savedSettings.enabled)) setOverride(undefined);
-  }, [input.userId, override, savedSettings.enabled]);
+    setOverride((current) => current?.userId === input.userId ? current : undefined);
+  }, [input.userId]);
   const player = useRef<ReturnType<typeof createInterfaceSoundPlayer> | undefined>(undefined);
   function applySavedSettings(userId: string, preferences: UserPreferences["interfaceSounds"]) {
     if (latest.current.userId !== userId) return;
     const next = preferences ?? defaultInterfaceSounds;
     latest.current.settings = next;
+    overrideRef.current = undefined;
     setOverride((current) => current?.userId === userId ? undefined : current);
     if (!next.enabled) player.current?.close();
   }
   function toggle() {
-    const enabled = !settings.enabled;
-    const next = { ...settings, enabled };
+    const enabled = !latest.current.settings.enabled;
+    const next = { ...latest.current.settings, enabled };
+    const override = { userId: input.userId, enabled };
     latest.current.settings = next;
-    setOverride({ userId: input.userId, enabled });
+    overrideRef.current = override;
+    setOverride(override);
     if (!enabled) player.current?.close();
-    input.onSettingsChange(next);
+    input.onSettingsChange(next, {
+      isCurrent: () => overrideRef.current === override,
+      onSaved: () => {
+        if (overrideRef.current !== override) return;
+        overrideRef.current = undefined;
+        setOverride((current) => current === override ? undefined : current);
+      },
+    });
   }
   const play = useRef((cue: InterfaceCue) => {
     const { settings, muted, masterVolume } = latest.current;
