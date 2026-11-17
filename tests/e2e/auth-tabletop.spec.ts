@@ -352,13 +352,32 @@ async function clickAndConfirmPreparedDndAction(locator: Locator): Promise<Respo
 }
 
 async function runCombatantControlUpdate(page: Page, control: Locator, action: () => Promise<unknown>) {
-  const responsePromise = page.waitForResponse((response) =>
-    response.request().method() === "PATCH" && /\/api\/v1\/combats\/[^/]+\/combatants\/[^/]+$/.test(new URL(response.url()).pathname)
-  );
-  await action();
-  await expect(control).toBeDisabled();
-  await expectJsonResponse(await responsePromise);
-  await expect(control).toBeEnabled();
+  const updatePath = /\/api\/v1\/combats\/[^/]+\/combatants\/[^/]+$/;
+  let finishUpdate!: () => void;
+  const pendingUpdate = new Promise<void>((resolve) => { finishUpdate = resolve; });
+  await page.route(updatePath, async (route) => {
+    if (route.request().method() === "PATCH") await pendingUpdate;
+    await route.continue();
+  });
+  try {
+    const [response] = await Promise.all([
+      page.waitForResponse((response) =>
+        response.request().method() === "PATCH" && updatePath.test(new URL(response.url()).pathname)
+      ),
+      (async () => {
+        try {
+          await action();
+          await expect(control).toBeDisabled();
+        } finally {
+          finishUpdate();
+        }
+      })()
+    ]);
+    await expectJsonResponse(response);
+    await expect(control).toBeEnabled();
+  } finally {
+    await page.unroute(updatePath);
+  }
 }
 
 async function commitCombatantDraft(page: Page, input: Locator, value: string) {
