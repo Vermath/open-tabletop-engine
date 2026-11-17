@@ -136,6 +136,12 @@ test("moving one token re-renders that token, not the board", async ({ page }) =
 
   // The move itself still works and still shows.
   await expect.poll(() => piece.evaluate((element) => parseFloat((element as HTMLElement).style.left))).toBeGreaterThan((moved.x / scene.width) * 100);
+  const tokenX = async () => (await api<Token[]>(page, "GET", `/api/v1/scenes/${scene.id}/tokens`)).find(({ id }) => id === moved.id)?.x;
+  const movedX = await tokenX();
+  await page.keyboard.press("Control+z");
+  await expect.poll(tokenX).toBe(moved.x);
+  await page.keyboard.press("Control+Shift+z");
+  await expect.poll(tokenX).toBe(movedX);
 });
 
 test("zooming re-renders no token and no static layer", async ({ page }) => {
@@ -190,7 +196,10 @@ test("an incoming chat message leaves the scene component alone", async ({ page 
   await api(page, "POST", "/api/v1/chat/messages", { campaignId, body, type: "plain", visibility: "public" });
   await expect(page.getByRole("region", { name: "Chat", exact: true }).getByText(body, { exact: true })).toBeVisible();
 
-  expect(await renderCounts(page)).toEqual(before);
+  const { app: appBefore, ...boardBefore } = before;
+  const { app: appAfter, ...boardAfter } = await renderCounts(page);
+  expect(appAfter).toBeGreaterThan(appBefore);
+  expect(boardAfter).toEqual(boardBefore);
 });
 
 test("a player sees the moved token and its updated vision on a second client", async ({ browser, page }) => {
