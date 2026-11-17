@@ -1855,7 +1855,14 @@ export function ActorPanel(inputProps: { campaignId: string; actor?: Actor; toke
   );
 }
 
-const MemoizedActorPanel = memoWithEventProps(ActorPanel);
+const MemoizedActorPanel = memoWithEventProps(ActorPanel, [
+  "setCompendiumSearch", "updateActorHp", "adjustActorHp", "awardActorXp", "onLevelUp",
+  "onPreviewRestActor", "onRestActor", "onTypedDamageApplied", "updateActorData", "onActorUpdated",
+  "toggleActorCondition", "updateItemData", "changeActorAttunement", "assignItemToActor",
+  "onSpellPreparationApplied", "updateToken", "onUploadTokenImage", "targetToken", "targetTokens",
+  "deleteToken", "deleteActor", "updateTokenVision", "useActorAction", "onImportCompendiumEntry",
+  "onPurchaseCompendiumEntry", "onPlaceActor",
+]);
 
 export function LiveActorPanel(props: ComponentProps<typeof ActorPanel>) {
   const xpProgress = useStructurallyStable(props.xpProgress);

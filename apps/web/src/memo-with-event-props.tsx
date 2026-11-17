@@ -1,9 +1,12 @@
 import { memo, useLayoutEffect, useRef, type ComponentType } from "react";
 
 type EventHandler = (...args: never[]) => unknown;
+type EventPropKeys<Props> = {
+  [Key in keyof Props]-?: NonNullable<Props[Key]> extends EventHandler ? Key : never;
+}[keyof Props];
 
-/** Use for panels whose function props are event handlers called after render. */
-export function memoWithEventProps<Props extends object>(Component: ComponentType<Props>) {
+/** Only list callbacks invoked in response to events. Render functions keep their normal identity. */
+export function memoWithEventProps<Props extends object>(Component: ComponentType<Props>, eventProps: readonly EventPropKeys<Props>[]) {
   const Memoized = memo(Component);
 
   return function PanelWithStableEvents(props: Props) {
@@ -12,7 +15,7 @@ export function memoWithEventProps<Props extends object>(Component: ComponentTyp
     useLayoutEffect(() => { committed.current = props; }, [props]);
 
     const stableProps = { ...props };
-    for (const key of Object.keys(props) as (keyof Props)[]) {
+    for (const key of eventProps) {
       if (typeof props[key] !== "function") continue;
       let handler = handlers.current.get(key);
       if (!handler) {

@@ -4,8 +4,13 @@ import { memoWithEventProps } from "./memo-with-event-props.js";
 import { MapLayerStack, SceneCanvas } from "./scene-canvas.js";
 import { useReconciledVision, type VisionReconciliation } from "./vision-reconciliation.js";
 
-const MemoizedSceneCanvas = memoWithEventProps(SceneCanvas);
-const MemoizedMapLayerStack = memoWithEventProps(MapLayerStack);
+const MemoizedSceneCanvas = memoWithEventProps(SceneCanvas, [
+  "onCalibrationPoint", "onSelect", "onInspectToken", "onSelectMany", "onSelectBackgroundAsset",
+  "onClearSelection", "onMoved", "onTokenMovePersist", "onTokenResizePersist", "onTokenMoveCommit",
+  "onTokenResizeCommit", "onTokenLayerCycle", "onTokenDrop", "onFogStroke", "onAnnotationCreate",
+  "onAnnotationMove", "onTogglePortal", "onSelectOverlay", "onZoomBy", "onTokenTarget",
+]);
+const MemoizedMapLayerStack = memoWithEventProps(MapLayerStack, ["onSelectTokenLayer", "onToggleAnnotationLayer"]);
 
 interface LiveVisionProps {
   visionStore: VisionReconciliation;

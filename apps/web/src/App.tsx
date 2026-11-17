@@ -1,4 +1,5 @@
 import { annotationTranslationDelta } from "@open-tabletop/core";
+import { boardRenderCounts } from "./board-render-counts.js";
 import type { Actor, AiMemoryFact, AiThread, AiToolCall, AudioTrack, AuditLog, Campaign, ChatMessage, Combat, CombatAction, CombatLegendaryActionPrompt, ContentImportBatch, ContentImportEntityKind, ContentImportSource, DiceRoll, EmailOutboxMessage, Encounter, EncounterMonsterPlacementBatchInput, EncounterMonsterPlacementBatchResult, FogHistoryEntry, FogMode, FogPreset, GridType, Item, JournalCanonStatus, JournalEntry, MapAsset, MessageType, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, SceneAnnotation, SceneAnnotationKind, SceneAnnotationLayer, SceneDuplicationPlan, SceneDuplicationRequest, SceneDuplicationResult, SceneTemplateShape, ScimAssignableRole, Token, TokenLayer, User, UserRole, Visibility, VisionPoint, VisionPointSample, VisionPolygon } from "@open-tabletop/core";
 import type { Dnd5eSrdCombatantSyncMutationResult, Dnd5eSrdCombatVitalsKind, Dnd5eSrdCombatVitalsMutationResult, Dnd5eSrdPendingAdvancement, Dnd5eSrdSpellPreparationMutationResult, DndControlledCreatureActionHandoff, DndRulesMutationUndoDescriptor, DndRulesMutationUndoResult } from "@open-tabletop/core";
 import type { TokenMoveBatchRequest, TokenMoveBatchResult } from "@open-tabletop/core";
@@ -276,6 +277,7 @@ function initialAiAgentPanelPosition(): FloatingPanelPosition {
 
 
 export function App() {
+  boardRenderCounts.app += 1;
   const consequenceReview = useConsequenceReview();
   const sceneMapPreparation = useSceneMapPreparation();
   const [snapshot, setSnapshot] = useState<Snapshot>({

@@ -56,7 +56,10 @@ export function ChatRail(props: ChatRailProps) {
   return <CampaignChatRail key={props.campaignId} {...props} />;
 }
 
-export const MemoizedChatRail = memoWithEventProps(ChatRail);
+export const MemoizedChatRail = memoWithEventProps(ChatRail, [
+  "setCommand", "setDiceFormula", "setDiceVisibility", "onRollDice", "onSaveDiceFormula", "onSubmitCommand",
+  "onClearReply", "onReplyToMessage", "onEditMessage", "onDeleteMessage", "onModerateMessage", "onToggleDice3d",
+]);
 
 function CampaignChatRail(props: ChatRailProps) {
   const streamRef = useRef<HTMLDivElement>(null);
