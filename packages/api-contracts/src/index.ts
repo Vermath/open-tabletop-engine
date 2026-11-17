@@ -6372,6 +6372,7 @@ const componentSchemas = {
       intensity: { type: "number", minimum: 0 },
       kind: { type: "string", enum: ["light", "darkness"] },
       magical: { type: "boolean" },
+      animation: { type: "string", enum: ["none", "flicker", "pulse"] },
       shadows: { type: "boolean" },
     },
   },
@@ -6388,6 +6389,7 @@ const componentSchemas = {
       intensity: { type: "number", minimum: 0 },
       kind: { type: "string", enum: ["light", "darkness"] },
       magical: { type: "boolean" },
+      animation: { type: "string", enum: ["none", "flicker", "pulse"] },
     },
   },
   SceneAnnotation: {

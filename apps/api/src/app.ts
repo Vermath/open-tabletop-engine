@@ -5232,7 +5232,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return scene;
   });
 
-  app.post<{ Params: { sceneId: string }; Body: { x: number; y: number; radius?: number; brightRadius?: number; dimRadius?: number; color?: string; intensity?: number; kind?: LightSource["kind"]; magical?: boolean } }>("/api/v1/scenes/:sceneId/lights", async (request, reply) => {
+  app.post<{ Params: { sceneId: string }; Body: { x: number; y: number; radius?: number; brightRadius?: number; dimRadius?: number; color?: string; intensity?: number; kind?: LightSource["kind"]; magical?: boolean; animation?: LightSource["animation"] } }>("/api/v1/scenes/:sceneId/lights", async (request, reply) => {
     const campaignId = campaignIdForScene(store, request.params.sceneId);
     if (!campaignId) return notFound(reply, "Scene not found");
     const userId = requireUser(store, reply, request.headers);
@@ -5240,7 +5240,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
     const allowed = requireScenePermission(store, reply, request.headers, scene, "scene.update");
     if (allowed !== true) return allowed;
-    const light = { id: createId("light"), x: request.body.x, y: request.body.y, radius: request.body.radius ?? 180, brightRadius: request.body.brightRadius, dimRadius: request.body.dimRadius, color: request.body.color ?? (request.body.kind === "darkness" ? "#111827" : "#facc15"), intensity: clampLightIntensity(request.body.intensity ?? (request.body.kind === "darkness" ? 0.82 : 0.28)), kind: request.body.kind ?? "light", magical: Boolean(request.body.magical) };
+    const light = { id: createId("light"), x: request.body.x, y: request.body.y, radius: request.body.radius ?? 180, brightRadius: request.body.brightRadius, dimRadius: request.body.dimRadius, color: request.body.color ?? (request.body.kind === "darkness" ? "#111827" : "#facc15"), intensity: clampLightIntensity(request.body.intensity ?? (request.body.kind === "darkness" ? 0.82 : 0.28)), kind: request.body.kind ?? "light", magical: Boolean(request.body.magical), animation: request.body.animation };
     const normalized = normalizeLightSourcePatch(light);
     if ("error" in normalized) return badRequest(reply, normalized.error);
     Object.assign(light, normalized.patch);
@@ -5253,7 +5253,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return scene;
   });
 
-  app.patch<{ Params: { sceneId: string; lightId: string }; Body: Partial<Pick<LightSource, "x" | "y" | "radius" | "brightRadius" | "dimRadius" | "color" | "intensity" | "kind" | "magical">> }>("/api/v1/scenes/:sceneId/lights/:lightId", async (request, reply) => {
+  app.patch<{ Params: { sceneId: string; lightId: string }; Body: Partial<Pick<LightSource, "x" | "y" | "radius" | "brightRadius" | "dimRadius" | "color" | "intensity" | "kind" | "magical" | "animation">> }>("/api/v1/scenes/:sceneId/lights/:lightId", async (request, reply) => {
     const campaignId = campaignIdForScene(store, request.params.sceneId);
     if (!campaignId) return notFound(reply, "Scene not found");
     const userId = requireUser(store, reply, request.headers);
@@ -18824,7 +18824,7 @@ function normalizeWallPatch(body: Partial<Pick<Wall, "x1" | "y1" | "x2" | "y2" |
   return { patch };
 }
 
-function normalizeLightSourcePatch(body: Partial<Pick<LightSource, "x" | "y" | "radius" | "brightRadius" | "dimRadius" | "color" | "intensity" | "kind" | "magical">>, current?: LightSource): { patch: Partial<LightSource> } | { error: string } {
+function normalizeLightSourcePatch(body: Partial<Pick<LightSource, "x" | "y" | "radius" | "brightRadius" | "dimRadius" | "color" | "intensity" | "kind" | "magical" | "animation">>, current?: LightSource): { patch: Partial<LightSource> } | { error: string } {
   const patch: Partial<LightSource> = {};
   if (body.x !== undefined) {
     if (!Number.isFinite(body.x)) return { error: "Light x must be a finite number" };
@@ -18864,6 +18864,10 @@ function normalizeLightSourcePatch(body: Partial<Pick<LightSource, "x" | "y" | "
   if (body.magical !== undefined) {
     if (typeof body.magical !== "boolean") return { error: "Light magical must be a boolean" };
     patch.magical = body.magical;
+  }
+  if (body.animation !== undefined) {
+    if (body.animation !== "none" && body.animation !== "flicker" && body.animation !== "pulse") return { error: "Light animation must be none, flicker, or pulse" };
+    patch.animation = body.animation;
   }
   if (Object.keys(patch).length === 0) return { error: "Light update must include at least one field" };
   return { patch };

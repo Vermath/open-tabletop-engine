@@ -136,6 +136,7 @@ export interface BoardStructureHandlers {
   selectWall(wallId: string): void;
   togglePortal(wallId: string, toggleLock?: boolean): void;
   selectLight(lightId: string): void;
+  setLightAnimation(lightId: string, animation: NonNullable<Light["animation"]>): void;
   [name: string]: (...args: never[]) => unknown;
 }
 
@@ -147,11 +148,13 @@ export const BoardStructureHandles = memo(function BoardStructureHandles(props: 
   lights: readonly Light[];
   selectedWallId: string | undefined;
   selectedLightId: string | undefined;
+  canAnimateLight?: boolean;
   handlers: BoardStructureHandlers;
 }) {
   boardRenderCounts.structureHandles += 1;
   const door = props.walls.find((wall) => wall.kind === "door" && wall.id === props.selectedWallId);
   const lockLabel = door?.locked ? "Unlock door" : "Lock door";
+  const light = props.canAnimateLight ? props.lights.find(({ id, kind }) => id === props.selectedLightId && kind !== "darkness") : undefined;
   return (
     <div className="annotation-handles structure-handles" aria-label="Wall and light handles">
       {props.walls.map((wall) => (
@@ -202,6 +205,17 @@ export const BoardStructureHandles = memo(function BoardStructureHandles(props: 
           }}
         />
       ))}
+      {light && <label className="scene-light-animation"
+        style={{ left: `${light.x / props.width * 100}%`, top: `${light.y / props.height * 100}%` }}
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}>
+        Light animation
+        <select value={light.animation ?? "none"} onChange={(event) => props.handlers.setLightAnimation(light.id, event.target.value as NonNullable<Light["animation"]>)}>
+          <option value="none">Steady</option>
+          <option value="flicker">Flicker</option>
+          <option value="pulse">Pulse</option>
+        </select>
+      </label>}
     </div>
   );
 });
