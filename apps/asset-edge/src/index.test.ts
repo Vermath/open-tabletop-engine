@@ -105,6 +105,28 @@ describe("asset edge worker", () => {
     expect(cacheKey).not.toContain("signature=");
   });
 
+  it.each([
+    ["an unsigned cache-busting parameter", "&bust=1", "invalid_asset_query"],
+    ["a repeated signed parameter", "&expiresAt=2099-01-01T00%3A00%3A00.000Z", "invalid_asset_query"],
+    ["an unknown rendition variant", "&variant=original", "invalid_asset_variant"]
+  ])("rejects %s without calling origin", async (_label, extra, error) => {
+    let called = false;
+    const signature = apiSignature("asset_demo");
+    const response = await handleAssetEdgeRequest(
+      new Request(`https://assets.example.test/api/v1/assets/asset_demo/blob?expiresAt=${encodeURIComponent(expiresAt)}&signature=${signature}${extra}`),
+      { ...env, ASSET_EDGE_ROUTE_PREFIX: "" },
+      async () => {
+        called = true;
+        return new Response("unreachable");
+      },
+      nowMs
+    );
+
+    expect(response.status).toBe(400);
+    expect(called).toBe(false);
+    await expect(response.json()).resolves.toMatchObject({ error });
+  });
+
   it("rejects tampered signatures without calling origin", async () => {
     let called = false;
     const response = await handleAssetEdgeRequest(
