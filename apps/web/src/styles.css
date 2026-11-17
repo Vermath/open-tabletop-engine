@@ -1,16 +1,6 @@
 :root {
   color-scheme: dark;
   font-family: var(--font-sans, "Aptos", "Segoe UI", system-ui, sans-serif);
-  --ink: #171512;
-  --panel: #242018;
-  --panel-2: #302a20;
-  --line: #5a4d38;
-  --paper: #efe4cd;
-  --muted: #b7a98d;
-  --brass: #d6a854;
-  --teal: #8fc8b3;
-  --red: #be6658;
-  --green: #91b971;
 }
 
 * {
@@ -4608,19 +4598,6 @@ input {
 }
 
 /* V1 play-surface redesign: keep prep/admin power available, but make play mode map-first. */
-:root {
-  --ink: #070b10;
-  --panel: #0f151d;
-  --panel-2: #151c26;
-  --line: #263241;
-  --paper: #f2eadf;
-  --muted: #94a0ad;
-  --brass: #c8953d;
-  --teal: #50d0b2;
-  --red: #d66c62;
-  --green: #55c67a;
-}
-
 body {
   background:
     radial-gradient(circle at 55% -20%, rgba(57, 101, 137, 0.26), transparent 34%),
@@ -6349,19 +6326,6 @@ body {
 }
 
 /* V1 play-surface redesign: keep prep/admin power available, but make play mode map-first. */
-:root {
-  --ink: #070b10;
-  --panel: #0f151d;
-  --panel-2: #151c26;
-  --line: #263241;
-  --paper: #f2eadf;
-  --muted: #94a0ad;
-  --brass: #c8953d;
-  --teal: #50d0b2;
-  --red: #d66c62;
-  --green: #55c67a;
-}
-
 body {
   background:
     radial-gradient(circle at 55% -20%, rgba(57, 101, 137, 0.26), transparent 34%),
@@ -10111,82 +10075,6 @@ body {
    scene. Ember retains the warmer candlelit variant of the same system.
    ========================================================================= */
 
-:root {
-  --ink: #151716;
-  --panel: #202320;
-  --panel-2: #292d29;
-  --line: #3a403a;
-  --line-strong: #596156;
-  --paper: #f0ece2;
-  --muted: #a9afa5;
-  --brass: #d1a06f;
-  --teal: #86c2ad;
-  --red: #df9485;
-  --green: #96bb8d;
-  --surface-0: #111412;
-  --surface-1: #191d1a;
-  --surface-2: #222722;
-  --surface-3: #30382e;
-  --accent: #c99b6d;
-  --accent-strong: #e2bb8e;
-  --accent-ink: #24190e;
-  --accent-soft: rgba(201, 155, 109, 0.12);
-  --accent-border: rgba(201, 155, 109, 0.48);
-  --arcane: #b8c4a6;
-  --arcane-soft: rgba(184, 196, 166, 0.09);
-  --glass: rgba(27, 32, 27, 0.96);
-  --glass-border: rgba(195, 204, 184, 0.2);
-  --ring: #e2bb8e;
-  --turn-current: var(--accent-strong);
-  --turn-current-glow: rgba(226, 187, 142, 0.4);
-  --turn-next: #8bbec3;
-  --turn-next-glow: rgba(139, 190, 195, 0.38);
-  --crit: #e2bb8e;
-  --fumble: #df9485;
-  --shadow-1: 0 3px 12px rgba(0, 0, 0, 0.22);
-  --shadow-2: 0 12px 48px rgba(0, 0, 0, 0.4);
-  --radius-s: 6px;
-  --radius-m: 8px;
-  --radius-l: 12px;
-  /* Bundled faces (imported in main.tsx) lead; the system faces after them are fallbacks while they load. */
-  --font-display: "Alegreya Variable", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
-  --font-mono: "Cascadia Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
-  --font-sans: "Figtree Variable", "Segoe UI", system-ui, sans-serif;
-  --halo-a: rgba(145, 174, 137, 0.045);
-  --halo-b: rgba(201, 155, 109, 0.035);
-}
-[data-theme="ember"] {
-  --ink: #15120c;
-  --panel: #221e15;
-  --panel-2: #2d2719;
-  --line: #51452f;
-  --paper: #efe4cd;
-  --muted: #b7a98d;
-  --brass: #d6a854;
-  --teal: #8fc8b3;
-  --red: #be6658;
-  --green: #91b971;
-  --surface-0: #14110b;
-  --surface-1: #1b1710;
-  --surface-2: #242017;
-  --surface-3: #2e2719;
-  --accent: #d6a854;
-  --accent-strong: #e8c376;
-  --accent-ink: #21180d;
-  --accent-soft: rgba(214, 168, 84, 0.12);
-  --accent-border: rgba(214, 168, 84, 0.45);
-  --arcane: #c89c5a;
-  --arcane-soft: rgba(200, 156, 90, 0.14);
-  --glass: rgba(24, 20, 13, 0.86);
-  --glass-border: rgba(214, 168, 84, 0.16);
-  --ring: rgba(232, 195, 118, 0.7);
-  --crit: #e8c376;
-  --fumble: #c97a6a;
-  --shadow-1: 0 2px 6px rgba(8, 5, 1, 0.42), 0 10px 28px rgba(8, 5, 1, 0.34);
-  --shadow-2: 0 8px 22px rgba(8, 5, 1, 0.5), 0 28px 80px rgba(8, 5, 1, 0.55);
-  --halo-a: rgba(214, 168, 84, 0.1);
-  --halo-b: rgba(190, 102, 88, 0.06);
-}
 
 /* --- Foundation -------------------------------------------------------- */
 

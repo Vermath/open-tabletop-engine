@@ -1,5 +1,6 @@
 import { annotationTranslationDelta } from "@open-tabletop/core";
 import { boardRenderCounts } from "./board-render-counts.js";
+import { applySceneVision } from "./player-scene-visibility.js";
 import type { Actor, AiMemoryFact, AiThread, AiToolCall, AudioTrack, AuditLog, Campaign, ChatMessage, Combat, CombatAction, CombatLegendaryActionPrompt, ContentImportBatch, ContentImportEntityKind, ContentImportSource, DiceRoll, EmailOutboxMessage, Encounter, EncounterMonsterPlacementBatchInput, EncounterMonsterPlacementBatchResult, FogHistoryEntry, FogMode, FogPreset, GridType, Item, JournalCanonStatus, JournalEntry, MapAsset, MessageType, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, SceneAnnotation, SceneAnnotationKind, SceneAnnotationLayer, SceneDuplicationPlan, SceneDuplicationRequest, SceneDuplicationResult, SceneTemplateShape, ScimAssignableRole, Token, TokenLayer, User, UserRole, Visibility, VisionPoint, VisionPointSample, VisionPolygon } from "@open-tabletop/core";
 import type { Dnd5eSrdCombatantSyncMutationResult, Dnd5eSrdCombatVitalsKind, Dnd5eSrdCombatVitalsMutationResult, Dnd5eSrdPendingAdvancement, Dnd5eSrdSpellPreparationMutationResult, DndControlledCreatureActionHandoff, DndRulesMutationUndoDescriptor, DndRulesMutationUndoResult } from "@open-tabletop/core";
 import type { TokenMoveBatchRequest, TokenMoveBatchResult } from "@open-tabletop/core";
@@ -1582,10 +1583,12 @@ export function App() {
     const visionSceneId = scopes.includes("vision") && snapshotRef.current.scenes.some((scene) => scene.id === selection.sceneId) ? selection.sceneId : undefined;
     const visionBase = snapshotRef.current.vision;
     const visionRequest = visionSceneId ? ++visionRequestRef.current : undefined;
-    const [vision, lore] = await loadRealtimeWorkspaceChanges(selection.campaignId, visionSceneId, scopes.includes("lore"));
+    const filterTokens = hasPermission("token.read") && !(hasPermission("token.update") || hasPermission("scene.update"));
+    const [vision, lore] = await loadRealtimeWorkspaceChanges(selection.campaignId, visionSceneId, scopes.includes("lore"), filterTokens);
     if (!workspaceRequestIsCurrent(selection.campaignId, selection.userId) || realtimeSelectionRef.current.sceneId !== selection.sceneId) return undefined;
     if (vision && visionRequest === visionRequestRef.current && visionBase === snapshotRef.current.vision && vision.sceneId === selection.sceneId && vision.userId === selection.userId) {
-      if (visionBase?.sceneId === vision.sceneId && visionBase.userId === vision.userId) visionStore.publish(visionBase, vision);
+      if (vision.visibleTokens) setSnapshot((current) => applySceneVision(current, vision));
+      else if (visionBase?.sceneId === vision.sceneId && visionBase.userId === vision.userId) visionStore.publish(visionBase, vision);
       else startTransition(() => setSnapshot((current) => sameSnapshotValue(current.vision, vision) ? current : { ...current, vision }));
     }
     if (lore) {
@@ -1688,7 +1691,8 @@ export function App() {
     }
     if ((event.type === "scene.activated" || event.type === "scene.updated") && payload && typeof payload.id === "string" && payload.campaignId === campaignId) {
       applySceneToSnapshot(payload as unknown as Scene);
-      return event.type === "scene.activated" ? "snapshot" : "vision";
+      if (event.type === "scene.activated") return "snapshot";
+      return payload.id === realtimeSelectionRef.current.sceneId ? "vision" : "applied";
     }
     if (event.type === "chat.message.created" || event.type === "chat.message.updated") {
       if (!payload || typeof payload.id !== "string" || payload.campaignId !== campaignId) return "snapshot";
