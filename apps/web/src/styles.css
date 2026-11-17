@@ -1443,7 +1443,7 @@ a[href]:focus-visible,
   background: color-mix(in srgb, var(--surface-0) 86%, transparent);
   color: var(--color-white);
   pointer-events: none;
-  animation: token-move-distance-fade 1300ms ease forwards;
+  animation: token-move-distance-fade var(--duration-token-feedback) ease forwards;
 }
 
 @keyframes token-move-distance-fade {
@@ -1939,7 +1939,7 @@ a[href]:focus-visible,
 .ai-generation-strip svg {
   flex: 0 0 auto;
   color: var(--brass);
-  animation: ai-generation-spin 1s linear infinite;
+  animation: ai-generation-spin var(--duration-status-spin) linear infinite;
 }
 
 @keyframes ai-generation-spin {
@@ -9019,7 +9019,7 @@ body {
 
 .ai-agent-working-bot {
   color: var(--accent);
-  animation: ai-agent-bot-pulse 1.4s ease-in-out infinite;
+  animation: ai-agent-bot-pulse var(--duration-status-pulse) ease-in-out infinite;
 }
 
 .ai-agent-working span {
@@ -9039,7 +9039,7 @@ body {
   height: 6px;
   border-radius: 50%;
   background: var(--accent);
-  animation: ai-agent-dot-pulse 1s ease-in-out infinite;
+  animation: ai-agent-dot-pulse var(--duration-status-spin) ease-in-out infinite;
 }
 
 .ai-agent-working-dots i:nth-child(2) {
@@ -10307,7 +10307,7 @@ a:focus-visible {
 }
 
 .session-pulse span {
-  animation: arcane-pulse 2.4s ease-out infinite;
+  animation: arcane-pulse var(--duration-arcane-pulse) ease-out infinite;
 }
 
 /* --- Buttons and controls ------------------------------------------------ */
@@ -10663,7 +10663,7 @@ a:focus-visible {
 
 .chat-roll-card-crit {
   border-color: var(--accent-border);
-  animation: arcane-roll-pop var(--motion-normal) ease-out, arcane-crit-glow 2.2s ease-in-out var(--motion-normal) 3;
+  animation: arcane-roll-pop var(--motion-normal) ease-out, arcane-crit-glow var(--duration-critical-glow) ease-in-out var(--motion-normal) 3;
 }
 
 .chat-roll-card-fumble {
@@ -10932,7 +10932,7 @@ a:focus-visible {
   width: 54px;
   height: 54px;
   transform-style: preserve-3d;
-  animation: arcane-die-tumble var(--cast-ms, 1150ms) cubic-bezier(0.16, 0.84, 0.3, 1) var(--cast-delay, 0ms) both;
+  animation: arcane-die-tumble var(--cast-ms, var(--duration-dice-throw)) cubic-bezier(0.16, 0.84, 0.3, 1) var(--cast-delay, 0ms) both;
   will-change: transform, opacity;
 }
 
@@ -10957,7 +10957,7 @@ a:focus-visible {
   font-family: var(--font-display);
   font-size: var(--type-title);
   line-height: 1;
-  animation: arcane-die-reveal var(--motion-normal) ease-out calc(var(--cast-delay, 0ms) + var(--cast-ms, 1150ms) * 0.84) both;
+  animation: arcane-die-reveal var(--motion-normal) ease-out calc(var(--cast-delay, 0ms) + var(--cast-ms, var(--duration-dice-throw)) * 0.84) both;
 }
 
 .dice-cast-die-d4 strong {
@@ -10996,7 +10996,7 @@ a:focus-visible {
   background: var(--glass);
   color: var(--muted);
   font-size: var(--type-small);
-  animation: arcane-die-reveal var(--motion-normal) ease-out var(--cast-label-delay, 1000ms) both;
+  animation: arcane-die-reveal var(--motion-normal) ease-out var(--cast-label-delay, var(--duration-dice-reveal)) both;
 }
 
 .dice-cast-label span {
@@ -12512,7 +12512,7 @@ a:focus-visible {
 .token-turn-ring.current {
   border: 2px solid var(--turn-current);
   box-shadow: 0 0 14px 2px var(--turn-current-glow);
-  animation: turn-ring-pulse 2s ease-in-out infinite;
+  animation: turn-ring-pulse var(--duration-turn-pulse) ease-in-out infinite;
 }
 
 .token-turn-ring.next {
@@ -13091,7 +13091,7 @@ a:focus-visible {
 }
 
 .scene-annotation.ping {
-  animation: ping-pulse 0.9s ease-out infinite;
+  animation: ping-pulse var(--duration-map-ping) ease-out infinite;
   transform-box: fill-box;
   transform-origin: center;
 }
@@ -13485,7 +13485,7 @@ a:focus-visible {
 .level-up-button {
   border-color: color-mix(in srgb, var(--accent-strong) 70%, transparent);
   color: var(--paper);
-  animation: level-up-pulse 1.6s ease-in-out infinite;
+  animation: level-up-pulse var(--duration-level-up-pulse) ease-in-out infinite;
 }
 
 @keyframes level-up-pulse {
@@ -15207,7 +15207,7 @@ a:focus-visible {
 .realtime-sync-guard > svg {
   flex: none;
   color: var(--accent-strong);
-  animation: ai-generation-spin 1s linear infinite;
+  animation: ai-generation-spin var(--duration-status-spin) linear infinite;
 }
 
 .realtime-sync-guard > div {

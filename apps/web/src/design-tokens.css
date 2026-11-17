@@ -122,4 +122,15 @@
   --ease-exit: ease-in;
   --color-black: #000;
   --color-white: #fff;
+  /* Gameplay feedback retains its own cadence. */
+  --duration-token-feedback: 1300ms;
+  --duration-status-spin: 1s;
+  --duration-status-pulse: 1.4s;
+  --duration-arcane-pulse: 2.4s;
+  --duration-critical-glow: 2.2s;
+  --duration-dice-throw: 1150ms;
+  --duration-dice-reveal: 1000ms;
+  --duration-turn-pulse: 2s;
+  --duration-map-ping: 0.9s;
+  --duration-level-up-pulse: 1.6s;
 }

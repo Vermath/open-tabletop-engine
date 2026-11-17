@@ -1,0 +1,47 @@
+@keyframes interface-enter {
+  from { opacity: 0; translate: 0 4px; }
+  to { opacity: 1; translate: 0 0; }
+}
+
+:root:not([data-reduced-motion="true"]) :is(
+  .movable-panel, .token-context-menu, .toast-stack > *, .modal-dialog,
+  .command-palette, .inspector-panel-content, [role="menu"]
+) {
+  animation: interface-enter var(--motion-fast) var(--ease-enter);
+}
+
+:root:not([data-reduced-motion="true"]) :is(dialog, [popover]) {
+  opacity: 0;
+  transition:
+    opacity var(--motion-fast) var(--ease-exit),
+    display var(--motion-fast) allow-discrete,
+    overlay var(--motion-fast) allow-discrete;
+}
+
+:root:not([data-reduced-motion="true"]) :is(dialog[open], [popover]:popover-open) {
+  opacity: 1;
+}
+
+@starting-style {
+  :root:not([data-reduced-motion="true"]) :is(dialog[open], [popover]:popover-open) {
+    opacity: 0;
+  }
+}
+
+:root[data-reduced-motion="true"] :is(
+  .movable-panel, .token-context-menu, .toast-stack > *, .modal-dialog,
+  .command-palette, .inspector-panel-content, [role="menu"], dialog, [popover]
+) {
+  animation: none;
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root :is(
+    .movable-panel, .token-context-menu, .toast-stack > *, .modal-dialog,
+    .command-palette, .inspector-panel-content, [role="menu"], dialog, [popover]
+  ) {
+    animation: none;
+    transition: none;
+  }
+}
