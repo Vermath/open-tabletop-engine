@@ -16736,6 +16736,8 @@ function createAiToolContext(
         if (!proposal) return toolError("not_found", { entity: "proposal", id: proposalId });
         if (!proposalVisibleToUser(store.state, userId, campaignId, context.permissions, proposal)) return toolError("not_found", { entity: "proposal", id: proposalId });
         if (proposal.status !== "pending") return toolError("proposal_not_pending", { proposalId, status: proposal.status });
+        // Revising someone else's pending proposal rewrites what they asked for; that needs apply authority.
+        if (proposal.createdByUserId !== userId && !context.permissions.includes("ai.applyChanges")) return missingPermissionToolOutput("ai.applyChanges");
         const nextChanges = changes ? normalizeProposalChanges(changes, campaignId, userId, store.state) : proposal.changesJson;
         const preparedChanges = prepareProposalChanges(store, campaignId, userId, nextChanges, { currentProposalId: proposal.id });
         if ("error" in preparedChanges) return toolError(preparedChanges.error, { message: preparedChanges.message });
