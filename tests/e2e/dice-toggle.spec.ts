@@ -330,3 +330,58 @@ test("a saved profile replaces an unsaved rail sound override", async ({ page })
     expect((await restored).ok()).toBe(true);
   }
 });
+
+test("overlapping sound toggles keep the last choice and save it on the latest revision", async ({ page }) => {
+  await loginSeededDemo(page);
+  const mute = page.getByRole("button", { name: "Mute interface sounds", exact: true });
+  const unmute = page.getByRole("button", { name: "Unmute interface sounds", exact: true });
+  await expect(mute.or(unmute)).toBeVisible();
+  const originallyEnabled = await mute.isVisible();
+  if (originallyEnabled) {
+    const update = page.waitForResponse(isProfilePreferenceUpdate);
+    await mute.click();
+    expect((await update).ok()).toBe(true);
+  }
+  await expect(unmute).toBeVisible();
+
+  let releaseUnmute!: () => void;
+  let releaseMute!: () => void;
+  const pendingUnmute = new Promise<void>((resolve) => { releaseUnmute = resolve; });
+  const pendingMute = new Promise<void>((resolve) => { releaseMute = resolve; });
+  const patches: { enabled: boolean; revision: string }[] = [];
+  await page.route("**/api/v1/auth/profile", async (route) => {
+    if (route.request().method() !== "PATCH") return route.continue();
+    const body = route.request().postDataJSON() as { expectedUpdatedAt: string; preferences: { interfaceSounds: { enabled: boolean } } };
+    const enabled = body.preferences.interfaceSounds.enabled;
+    patches.push({ enabled, revision: body.expectedUpdatedAt });
+    await (enabled ? pendingUnmute : pendingMute);
+    await route.continue();
+  });
+  try {
+    const first = page.waitForResponse(isProfilePreferenceUpdate);
+    await unmute.click();
+    await expect.poll(() => patches.map(({ enabled }) => enabled)).toEqual([true]);
+    await mute.click();
+    await expect(unmute).toBeVisible();
+    releaseUnmute();
+    expect((await first).ok()).toBe(true);
+    await expect.poll(() => patches.map(({ enabled }) => enabled)).toEqual([true, false]);
+    expect(patches[1]!.revision).not.toBe(patches[0]!.revision);
+    await expect(unmute).toBeVisible();
+    const second = page.waitForResponse(isProfilePreferenceUpdate);
+    releaseMute();
+    expect((await second).ok()).toBe(true);
+  } finally {
+    releaseUnmute();
+    releaseMute();
+    await page.unroute("**/api/v1/auth/profile");
+  }
+
+  await page.reload();
+  await expect(unmute).toBeVisible();
+  if (originallyEnabled) {
+    const restore = page.waitForResponse(isProfilePreferenceUpdate);
+    await unmute.click();
+    expect((await restore).ok()).toBe(true);
+  }
+});
