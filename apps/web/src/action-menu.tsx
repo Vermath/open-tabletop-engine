@@ -27,7 +27,7 @@ export function ActionMenu({ label, trigger, className = "ghost-button small", d
           const menu = panel.current;
           if (!anchor || !menu) return;
           if (menu.matches(":popover-open")) { close(); return; }
-          menu.showPopover({ source: event.currentTarget });
+          (menu.showPopover as (options: { source: HTMLButtonElement }) => void)({ source: event.currentTarget });
           const rect = menu.getBoundingClientRect();
           menu.style.left = Math.max(8, Math.min(anchor.right - rect.width, window.innerWidth - rect.width - 8)) + "px";
           menu.style.top = (anchor.bottom + rect.height + 8 <= window.innerHeight ? anchor.bottom + 4 : Math.max(8, anchor.top - rect.height - 4)) + "px";
