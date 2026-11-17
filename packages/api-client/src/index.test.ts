@@ -30,6 +30,7 @@ import {
 
 const campaignId = "camp_client";
 const sceneId = "scn_client";
+const placementId = "placement_client";
 const assetId = "asset_client";
 const tokenId = "tok_client";
 const actorId = "act_client";
@@ -279,6 +280,30 @@ describe("OpenTabletopClient", () => {
       expect.objectContaining({ key: "rage-end-client", body: expect.objectContaining({ rollId: "feature-rage-end", consumeResources: true, prepare: true, commit: false }) }),
     ]);
     expect(requests.every((request) => request.url.pathname === "/api/v1/campaigns/camp_client/systems/dnd-5e-srd/actors/act_client/roll")).toBe(true);
+  });
+
+  it("posts compendium placement and history with encoded ids, exact revisions and retry keys", async () => {
+    const requests: Array<{ method?: string; path: string; body: unknown; key: string | null }> = [];
+    const client = new OpenTabletopClient("http://api.test", {
+      fetch: async (input, init) => {
+        requests.push({
+          method: init?.method,
+          path: new URL(input.toString()).pathname,
+          body: JSON.parse(String(init?.body)),
+          key: new Headers(init?.headers).get("idempotency-key"),
+        });
+        return Response.json({ ok: true });
+      },
+    });
+    const placement = { entryId: "srd-monster:guard", x: 50, y: 100, expectedUpdatedAt: "2026-07-13T00:00:00.000Z" };
+    const history = { direction: "redo" as const, expectedUpdatedAt: "2026-07-13T00:00:01.000Z" };
+    await client.placeCompendiumMonster("scene/one", placement, "place-guard");
+    await client.changeCompendiumPlacement("scene/one", "receipt?one", history, "restore-guard");
+    const path = "/api/v1/scenes/scene%2Fone/compendium-monster-placements";
+    expect(requests).toEqual([
+      { method: "POST", path, body: placement, key: "place-guard" },
+      { method: "POST", path: path + "/receipt%3Fone/history", body: history, key: "restore-guard" },
+    ]);
   });
 
   it("posts one exact-revision encounter placement batch with its retry key", async () => {
@@ -2671,6 +2696,15 @@ describe("OpenTabletopClient", () => {
         { name: "Monster" },
         "system-monster-create-client",
       ),
+      client.placeCompendiumMonster(
+        sceneId,
+        { entryId: "srd-monster:guard", x: 100, y: 50, expectedUpdatedAt: "2026-07-13T00:00:00.000Z" },
+        "place-compendium-client",
+      ),
+      client.changeCompendiumPlacement(
+        sceneId, placementId, { direction: "undo", expectedUpdatedAt: "2026-07-13T00:00:01.000Z" },
+        "undo-compendium-client",
+      ),
       client.placeEncounterMonsters(
         sceneId,
         {
@@ -3194,6 +3228,7 @@ function normalizeCall(call: string): string {
   return call
     .replace(campaignId, "{campaignId}")
     .replace(sceneId, "{sceneId}")
+    .replace(placementId, "{placementId}")
     .replace(assetId, "{assetId}")
     .replace(tokenId, "{tokenId}")
     .replace(factId, "{factId}")
