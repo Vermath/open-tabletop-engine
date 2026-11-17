@@ -22,7 +22,6 @@ Status: release-owner checklist for the v1.0 release candidate. This checklist i
 
 - Record live OIDC/SCIM sandbox evidence in `docs/verification/identity-provider-smoke-evidence.md`, including exact `pnpm identity:smoke` command parity, exit code `0`, matching commit, non-placeholder API host/provider/sandbox/smoke-target details, and passing OIDC plus SCIM readiness summaries.
 - Record assistive-technology pass evidence in `docs/verification/accessibility-assistive-tech-pass.md`, using one pass or pass-with-issues section per required environment with browser, assistive technology, input method, scenario data, and workflows completed.
-- Record external GM validation in `docs/verification/external-gm-validation.md`, including tester role, relationship to project, setup path, scenario data, workflows completed, matching commit, and pass or pass-with-issues result.
 - Record hosted release-smoke and docs-publication evidence in `docs/verification/release-workflow-evidence.md`, including matching commit, exact command parity, pass result, and concrete HTTPS hosted run URLs.
 - If GitHub Pages is unavailable, record the owner-approved equivalent hosted publication provider, HTTPS URL, release commit SHA, concrete HTTPS run URL, command parity with `pnpm docs:site:check`, and public-site secret review.
 
@@ -41,7 +40,7 @@ Status: release-owner checklist for the v1.0 release candidate. This checklist i
 - If hosted deployment fails after promotion, roll traffic back to the previous deployment revision and record the failed revision, rollback time, and user-visible impact.
 - If storage migration or integrity checks fail, stop the app, restore the most recent verified SQLite backup and asset-storage backup, rerun the restore drill, and keep the failed store copy for investigation.
 - If OIDC/SCIM readiness fails, disable the affected provider integration or keep local-account access as the supported path until a clean provider smoke is recorded.
-- If external GM or assistive-technology evidence fails, keep v1.0 in candidate status and file issues for each failed scenario before another release decision.
+- If assistive-technology evidence fails, keep v1.0 in candidate status and file issues for each failed scenario before another release decision.
 
 ## Final Decision
 

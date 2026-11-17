@@ -1,5 +1,7 @@
 # v1 Gap Closure Completion Audit
 
+The external GM requirement recorded in this May audit was retired on 2026-11-17. See the [current release checklist](../release/v1-release-checklist.md) for active gates.
+
 > Historical evidence notice (2026-07-13): this May snapshot is tied to the named historical commits and is not release evidence for the current working tree. The current authoritative implementation, remaining-gate, and validation status lives in `docs/FEATURE_AUDIT.md`, `docs/PRODUCT_ASSESSMENT.md`, `docs/PRODUCT_ROADMAP.md`, `docs/IMPLEMENTATION_BACKLOG.md`, and `docs/verification/implementation-2026-07-13.md`. The current external queue also includes hosted HTTPS/recovery/migration/capacity/observability evidence plus release-owner legal/content and independent security review.
 
 Date: 2026-05-14

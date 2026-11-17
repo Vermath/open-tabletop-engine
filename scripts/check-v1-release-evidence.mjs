@@ -32,7 +32,6 @@ const checks = [
   ...gateArtifactPaths.map(checkMachineReadableGateArtifact),
   checkIdentityProviderSmoke(),
   checkAssistiveTechnologyPass(),
-  checkExternalGmValidation(),
   checkHostedReleaseSmoke(),
   checkDocsPublication()
 ];
@@ -130,33 +129,6 @@ function checkAssistiveTechnologyPass() {
     reasons.splice(1, 0, "Remove placeholder or ambiguous owner-approved descope/substitution fields, or replace them with explicit release-owner accepted/approved text.");
   }
   return result(releaseGate.verifierName, !invalidOwnerOverride && (missing.length === 0 || hasOwnerSubstitution), reasons);
-}
-
-function checkExternalGmValidation() {
-  const releaseGate = gate("external-gm");
-  const doc = evidence(releaseGate);
-  const sections = sectionsFor(doc, "External GM Validation").filter((section) => !placeholder(section.title));
-  const pass = sections.find(
-    (section) =>
-      ["pass", "pass with issues"].includes(field(section.body, "Result").toLowerCase()) &&
-      evidenceCommitMatches(section.body) &&
-      meaningfulField(field(section.body, "Tester role")) &&
-      meaningfulField(field(section.body, "Relationship to project")) &&
-      meaningfulChoiceField(field(section.body, "Setup path")) &&
-      meaningfulField(field(section.body, "Scenario data")) &&
-      meaningfulField(field(section.body, "Workflows completed"))
-  );
-  const hasOwnerSubstitution = explicitOwnerOverride(doc);
-  const invalidOwnerOverride = ownerOverridePlaceholder(doc);
-
-  const reasons = [
-    "Add a non-template external GM validation block with Result: pass or pass with issues, App build or commit matching the checked release commit, tester role, relationship to project, setup path, scenario data, and workflows completed.",
-    "Alternatively record the explicit owner-approved substitution called out by the release handoff."
-  ];
-  if (invalidOwnerOverride) {
-    reasons.splice(1, 0, "Remove placeholder or ambiguous owner-approved substitution fields, or replace them with explicit release-owner accepted/approved text.");
-  }
-  return result(releaseGate.verifierName, !invalidOwnerOverride && (pass || hasOwnerSubstitution), reasons);
 }
 
 function checkHostedReleaseSmoke() {

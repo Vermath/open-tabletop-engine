@@ -16,17 +16,16 @@ OpenTabletop has moved from a broad but uneven internal playtest build to a **co
 4. **Campaign continuity:** realtime gap recovery, journal/handout drafts, archives, paired asset manifests, API restart/resume, and operator-facing recovery diagnostics.
 5. **Extensible but governed platform:** typed API/client/plugin boundaries and AI automatic execution are preserved while permissions, sequencing, schemas, egress controls, and durable phases constrain them.
 
-### Five remaining gaps
+### Remaining qualification gaps
 
-1. X01: no repeated real group has yet supplied abandonment, correction, conflict, and recovery evidence.
-2. X03: paired backup/restore code has not yet passed an independent hosted, non-no-op clean-environment drill.
-3. X04: automated accessibility checks are not a physical screen-reader/browser/touch-device matrix.
-4. X05: the intended hosted topology still needs HTTPS, proxy, capacity, realtime, alerting, and incident exercises.
-5. X06-X08: content/legal approval, independent security review, and representative AI/provider quality evidence remain external gates.
+1. X03: paired backup/restore code has not yet passed an independent hosted, non-no-op clean-environment drill.
+2. X04: automated accessibility checks are not a physical screen-reader/browser/touch-device matrix.
+3. X05: the intended hosted topology still needs HTTPS, proxy, capacity, realtime, alerting, and incident exercises.
+4. X06-X08: content/legal approval, independent security review, and representative AI/provider quality evidence remain external gates.
 
 ### Recommended focus
 
-RQ01 local qualification is complete on the exact working tree. Freeze feature expansion, run RQ02 independent quickstart, begin X01 sessions, close defects they reveal, and then execute X03-X08 in release order. Do not build voice/video, a hostile-code marketplace, a universal rules DSL, hex parity, microservices, or more AI surface before that evidence exists.
+RQ01 local qualification is complete on the exact working tree. Freeze feature expansion, run RQ02 independent quickstart, close defects found during qualification, and execute X03-X08 in release order. Do not build voice/video, a hostile-code marketplace, a universal rules DSL, hex parity, microservices, or more AI surface before that evidence exists.
 
 ## 2026-07-16 product assessment addendum (authoritative)
 

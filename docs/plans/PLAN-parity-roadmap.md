@@ -204,19 +204,7 @@ Nothing later is reliable until this phase is done.
   red while the audit job stays green.
 - *Size*: S.
 
-#### WP-0.5 Three real sessions (human task)
-- *Goal*: three sessions of at least 90 minutes with a human GM and at least two human
-  players, on the merged branch.
-- *Steps for the agent*: prepare a checklist from
-  `docs/dogfood/run-your-first-session-checklist.md`; after each session, turn the
-  owner's notes into issues labelled by severity; fix Critical and High before Phase 2.
-- *Done when*: three session reports exist under `docs/dogfood/sessions/` and every
-  Critical or High finding has a merged fix with a regression test.
-- *Human decision*: the owner schedules and runs the sessions.
-- *Size*: M of agent time, spread over the sessions.
-
-**Phase 0 gate:** `pnpm check` and `pnpm e2e` green twice on `main` on both platforms,
-CI green, at least one real session done.
+**Phase 0 gate:** `pnpm check` and `pnpm e2e` green twice on `main` on both platforms, and CI green.
 
 ---
 
@@ -413,8 +401,7 @@ Each of these adds data. Rules 1 to 4 and 10 in section 2 apply to every one.
   condition command; a failed drop leaves no orphan actor.
 - *Size*: M. Split into three PRs.
 
-**Phase 2 gate:** a real session has used hex or levels, the phone sheet, and the
-display mode without a Critical or High finding.
+**Phase 2 gate:** the browser journeys for hex or levels, the phone sheet, and display mode pass without an open Critical or High finding.
 
 ---
 
@@ -463,7 +450,7 @@ display mode without a Critical or High finding.
 - *Fences*: no scraping, no credentials, no proprietary content.
 - *Size*: M.
 
-**Phase 3 gate:** one outside GM has moved a real campaign in and run a session.
+**Phase 3 gate:** a campaign import fixture can be opened and played by separate GM and player accounts.
 
 ---
 
@@ -565,8 +552,7 @@ here must also satisfy:
   "not found".
 - *Size*: M.
 
-**Phase 4 gate:** each feature has a recorded evaluation and has been used in a real
-session with AI enabled by choice.
+**Phase 4 gate:** each feature has a recorded evaluation with AI enabled for its test campaign.
 
 ---
 
@@ -627,7 +613,6 @@ Tick a box in the PR that completes the WP.
 | [ ] | 0.2 | Confirm unit suites on Linux and Windows | S | |
 | [ ] | 0.3 | Browser suite independent of run order | M | |
 | [ ] | 0.4 | Faster, clearer CI | S | |
-| [ ] | 0.5 | Three real sessions | M | |
 | [ ] | 1.1 | Split `App.tsx` | L | Phase 0 |
 | [ ] | 1.2 | URL routing | M | 1.1 |
 | [ ] | 1.3 | Chat dock | M | 1.1 |

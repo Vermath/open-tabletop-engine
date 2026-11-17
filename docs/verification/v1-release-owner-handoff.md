@@ -1,10 +1,10 @@
 # v1 Release Owner Handoff
 
-> Historical evidence notice (2026-07-13): this handoff describes the May candidate and verifier target below. It is not evidence for the current dirty working tree and its three-item blocker list is superseded by the July audit set. Use `docs/FEATURE_AUDIT.md`, `docs/PRODUCT_ASSESSMENT.md`, `docs/PRODUCT_ROADMAP.md`, `docs/IMPLEMENTATION_BACKLOG.md`, and `docs/verification/implementation-2026-07-13.md` for the current implementation and full external/manual release queue.
+> Historical evidence notice (2026-07-13): this handoff describes the May candidate and verifier target below. It is not evidence for the current dirty working tree and its historical blocker list is superseded by the July audit set. Use `docs/FEATURE_AUDIT.md`, `docs/PRODUCT_ASSESSMENT.md`, `docs/PRODUCT_ROADMAP.md`, `docs/IMPLEMENTATION_BACKLOG.md`, and `docs/verification/implementation-2026-07-13.md` for the current implementation and full external/manual release queue.
 
 Status: final external-evidence checklist for the v1.0 release candidate. This is not completion evidence by itself.
 
-The local implementation, browser coverage, release-smoke wiring, docs renderer, hosted release-smoke evidence, and public docs publication evidence are covered by `docs/verification/v1-gap-closure-completion-audit.md`. The remaining v1 blockers require OIDC/SCIM release-owner credentials, manual assistive-technology testing, and external GM validation.
+The local implementation, browser coverage, release-smoke wiring, docs renderer, hosted release-smoke evidence, and public docs publication evidence are covered by `docs/verification/v1-gap-closure-completion-audit.md`. The remaining v1 blockers require OIDC/SCIM release-owner credentials and manual assistive-technology testing.
 
 Use `docs/release/v1-release-checklist.md` as the release-owner preflight, publication, evidence, and rollback checklist.
 
@@ -14,9 +14,8 @@ Child evidence trackers:
 
 - Live OIDC/SCIM provider smoke: https://github.com/Vermath/open-tabletop-engine/issues/3
 - Assistive-technology matrix: https://github.com/Vermath/open-tabletop-engine/issues/4
-- External GM validation: https://github.com/Vermath/open-tabletop-engine/issues/5
 
-Current verifier target for the hosted release-smoke and public-docs evidence is `def4f408a6c48cb297c9f08d04aee375d13fd382`. Keep that value in the three owner-supplied evidence files unless release-smoke and public-docs publication are refreshed for a newer release target.
+Current verifier target for the hosted release-smoke and public-docs evidence is `def4f408a6c48cb297c9f08d04aee375d13fd382`. Keep that value in the two owner-supplied evidence files unless release-smoke and public-docs publication are refreshed for a newer release target.
 
 ## Release-Owner Evidence Packet
 
@@ -26,7 +25,6 @@ Copy the matching template from each file below, fill it with real evidence, the
 | --- | --- | --- | --- |
 | Live OIDC/SCIM provider smoke | `docs/verification/identity-provider-smoke-evidence.md` | https://github.com/Vermath/open-tabletop-engine/issues/3 | Non-skipped `pnpm identity:smoke` pass against a real provider sandbox, exit code `0`, exact command parity, matching verifier target, non-placeholder API host/provider/sandbox/smoke-target details, passing OIDC discovery/test, and passing SCIM ServiceProviderConfig |
 | Assistive-technology matrix | `docs/verification/accessibility-assistive-tech-pass.md` | https://github.com/Vermath/open-tabletop-engine/issues/4 | One pass or pass-with-issues block for Windows NVDA, Windows Narrator, macOS VoiceOver, iOS/iPadOS VoiceOver, and Android TalkBack with browser, assistive technology, input method, scenario data, and workflows completed, or an explicit release-owner-approved descope |
-| External GM validation | `docs/verification/external-gm-validation.md` | https://github.com/Vermath/open-tabletop-engine/issues/5 | Unaffiliated or owner-approved GM validation with matching verifier target, tester role, relationship to project, setup path, scenario data, workflows completed, result, and issue-reporting feedback, or an explicit release-owner-approved substitution |
 
 Run `pnpm v1:issues:check` before final acceptance to verify the live open-issue list still has no P0/P1 labels.
 
@@ -57,7 +55,6 @@ pnpm v1:evidence:templates
 | --- | --- | --- | --- |
 | Live OIDC/SCIM provider readiness | Provide a real Okta, Microsoft Entra ID, Google Workspace, or equivalent sandbox plus redacted smoke output | `docs/verification/identity-provider-smoke-evidence.md` and issue #3 | `pnpm identity:smoke` exits `0` without skipping, and the evidence block records exact command parity, matching commit, non-placeholder API host, provider, sandbox label, smoke target, passing OIDC discovery/test result, and passing SCIM ServiceProviderConfig result |
 | Assistive-technology acceptance | Run or delegate Windows NVDA, Windows Narrator, macOS VoiceOver, iOS/iPadOS VoiceOver, and Android TalkBack passes | `docs/verification/accessibility-assistive-tech-pass.md` and issue #4 | Every required environment has its own pass or pass-with-issues evidence section tied to the verifier target commit with browser, assistive technology, input method, scenario data, and workflows completed, or an explicit owner-approved substitution/descope is recorded |
-| External GM validation | Have an unaffiliated or owner-approved GM run the v1 release-candidate flow | `docs/verification/external-gm-validation.md` and issue #5 | Matching commit, tester role, relationship to project, setup path, scenario data, workflows completed, pass/pass-with-issues outcome, and issue-reporting feedback are recorded |
 | Hosted release-smoke refresh | Covered by PR Release Smoke run `25928669881` for verifier target `def4f408a6c48cb297c9f08d04aee375d13fd382` | `docs/verification/release-workflow-evidence.md` | Recorded and passing; rerun only if the release verifier target changes |
 | Public docs publication | Covered by equivalent hosted Vercel publication for verifier target `def4f408a6c48cb297c9f08d04aee375d13fd382` | `docs/verification/release-workflow-evidence.md` | Recorded and passing with HTTPS published URL `https://docs-site-seven-theta.vercel.app`; republish only if the release verifier target changes |
 
@@ -100,7 +97,7 @@ Use `docs/verification/accessibility-assistive-tech-pass.md` as the scenario scr
 Record each environment as its own `## Assistive Technology Pass: ...` block. A combined summary that mentions multiple environments does not satisfy `pnpm v1:evidence:check`.
 
 If a device or assistive technology is unavailable, record the omission and owner-approved substitute before final acceptance.
-Override values must explicitly say the release owner accepted or approved the substitution/descope. Placeholder or ambiguous values such as `none`, `n/a`, `tbd`, `pending`, `<approval summary>`, `<explicit owner approval summary>`, `Temporary reduced matrix`, or `Internal GM substitute` do not satisfy `pnpm v1:evidence:check`.
+Override values must explicitly say the release owner accepted or approved the substitution/descope. Placeholder or ambiguous values such as `none`, `n/a`, `tbd`, `pending`, `<approval summary>`, `<explicit owner approval summary>`, or `Temporary reduced matrix` do not satisfy `pnpm v1:evidence:check`.
 
 ## Docs Publication
 
@@ -118,10 +115,6 @@ If the release verifier target changes, republish from `dist/docs-site` after `p
 - Release commit SHA.
 - Exact command parity with `pnpm docs:site:check`.
 - Confirmation that the public site exposes no secrets, local paths, provider tokens, or private evidence attachments.
-
-## External GM Validation
-
-The PRD's v1 release-candidate milestone calls for external GM validation in addition to dogfood. Use `docs/verification/external-gm-validation.md` to run and record the pass.
 
 ## Hosted Release-Smoke Refresh
 
@@ -156,7 +149,7 @@ Hosted owner-triggered final audit:
 2. Run `.github/workflows/v1-completion-audit.yml` with `workflow_dispatch`.
 3. Enter the full hosted release-smoke commit SHA in `release_commit`.
 4. The workflow validates the SHA shape, sets `OTTE_RELEASE_COMMIT`, runs `pnpm v1:completion:audit`, and uses `GH_TOKEN` with `issues: read` so the live P0/P1 issue audit is included.
-5. A passing hosted completion-audit run is acceptable only after the three owner-supplied evidence gates above have already been recorded.
+5. A passing hosted completion-audit run is acceptable only after the two owner-supplied evidence gates above have already been recorded.
 
 A skipped `pnpm identity:smoke` run is still only a local readiness signal; final identity-provider evidence must be the non-skipped pass recorded in `docs/verification/identity-provider-smoke-evidence.md`.
 

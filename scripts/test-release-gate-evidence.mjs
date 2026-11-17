@@ -23,6 +23,7 @@ import {
 } from "./release-evidence-diagnostics.mjs";
 import { ensureReleaseEvidenceOutputDirectory } from "./release-evidence-output.mjs";
 import "./test-release-evidence-process.mjs";
+import "./test-v1-release-evidence.mjs";
 
 const repoRoot = process.cwd();
 match(currentWorkspaceState(repoRoot).fingerprint, /^[0-9a-f]{64}$/);

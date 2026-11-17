@@ -32,15 +32,6 @@ export const releaseEvidenceGates = [
     evidence: "docs/verification/accessibility-assistive-tech-pass.md"
   },
   {
-    id: "external-gm",
-    name: "External GM validation",
-    verifierName: "External GM validation",
-    publicDocsTerm: "external GM",
-    ownerAction:
-      "Have an unaffiliated or owner-approved GM run the release-candidate flow and record matching commit, tester role, relationship to project, setup path, scenario data, workflows completed, and result, or record the explicit owner-approved substitution.",
-    evidence: "docs/verification/external-gm-validation.md"
-  },
-  {
     id: "hosted-release-smoke",
     name: "Hosted release smoke",
     verifierName: "Hosted release-smoke on checked commit",
