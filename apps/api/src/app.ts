@@ -4298,9 +4298,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const sourceName = displayNameFromHeader(request.headers["x-asset-name"]) ?? "Uploaded Map";
     const folder = normalizeAssetFolder(headerText(request.headers["x-asset-folder"]));
     const tags = normalizeAssetTags(headerText(request.headers["x-asset-tags"]));
+    const checksum = checksumForBuffer(body);
+    // Reject uploads that cannot fit before any external scanner sees the bytes;
+    // the full check below still counts renditions once they are built.
+    const duplicateCandidate = reusableUploadedAsset(store, request.params.campaignId, checksum, body.length, mimeType);
+    const quotaPrecheck = duplicateCandidate ? undefined : assetQuotaExceeded(store, request.params.campaignId, body.length);
+    if (quotaPrecheck) return reply.code(413).send(quotaPrecheck);
     const scan = await scanUploadedAsset(body, mimeType, sourceName, { externalTransport: options.assetScannerTransport });
     if (scan.blocked) return assetSecurityBlocked(reply, scan);
-    const checksum = checksumForBuffer(body);
     const duplicate = reusableUploadedAsset(store, request.params.campaignId, checksum, body.length, mimeType);
     if (duplicate) {
       let mapCalibrationReset = false;

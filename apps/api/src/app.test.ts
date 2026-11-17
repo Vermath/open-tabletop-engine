@@ -36566,6 +36566,42 @@ registerCommand("/state", (input) => {
     }
   });
 
+  it("rejects over-quota uploads before calling an external asset trust scanner", async () => {
+    const previousEnv = snapshotEnv(["OTTE_ASSET_TRUST_WEBHOOK_URL", "OTTE_ASSET_TRUST_WEBHOOK_TOKEN", "OTTE_ASSET_TRUST_TIMEOUT_MS", "OTTE_ASSET_TRUST_FAIL_CLOSED", "OTTE_ASSET_TRUST_SCANNER_NAME", "OTTE_ASSET_QUOTA_BYTES"]);
+    const directory = mkdtempSync(join(tmpdir(), "otte-asset-trust-quota-"));
+    const store = new MemoryStateStore();
+    let scannerCalls = 0;
+    const scanner = createServer((_request, response) => {
+      scannerCalls += 1;
+      response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ status: "clean", findings: [] }));
+    });
+    await new Promise<void>((resolve) => scanner.listen(0, "127.0.0.1", resolve));
+    const address = scanner.address() as AddressInfo;
+    process.env.OTTE_ASSET_TRUST_WEBHOOK_URL = `http://127.0.0.1:${address.port}/scan`;
+    process.env.OTTE_ASSET_TRUST_TIMEOUT_MS = "1000";
+    process.env.OTTE_ASSET_TRUST_FAIL_CLOSED = "true";
+    process.env.OTTE_ASSET_TRUST_SCANNER_NAME = "external-asset-scanner";
+    process.env.OTTE_ASSET_QUOTA_BYTES = "8";
+    const app = await buildApp({ store, uploadDir: directory, assetScannerTransport: localAssetOutboundTestTransport() });
+    try {
+      const overQuota = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/assets/upload",
+        headers: { ...authHeaders, "content-type": "image/png", "x-asset-name": encodeURIComponent("Too Big.png") },
+        payload: Buffer.from("bytes-over-the-quota")
+      });
+      expect(overQuota.statusCode).toBe(413);
+      expect(overQuota.json()).toMatchObject({ error: "asset_quota_exceeded", quotaBytes: 8 });
+      expect(scannerCalls).toBe(0);
+      expect(store.state.assets).toHaveLength(0);
+    } finally {
+      await app.close();
+      await new Promise<void>((resolve, reject) => scanner.close((error) => (error ? reject(error) : resolve())));
+      restoreEnv(previousEnv);
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it("issues signed CDN asset URLs, enforces quotas, and tracks lifecycle storage stats", async () => {
     const previousEnv = snapshotEnv([
       "NODE_ENV",
