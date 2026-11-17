@@ -359,7 +359,7 @@ describe("desktop layout regressions", () => {
     expect(stylesSource).toContain(".rail-play .ai-agent-toggle {\n    flex: 0 0 44px;\n    width: 44px;\n    min-width: 44px;\n    padding: 0;\n    gap: 0;\n  }");
     expect(stylesSource).toContain(".chat-composer-dock {\n    gap: 5px;\n    padding: 8px;");
     expect(stylesSource).toContain(".workspace-prep .inspector-tabs,\n  .workspace-prep .inspector > .tabs {\n    grid-template-columns: repeat(4, minmax(0, 1fr));\n    gap: 5px;");
-    expect(stylesSource).toContain(".workspace-prep .inspector-tabs .tab,\n  .workspace-prep .inspector > .tabs .tab {\n    min-height: 38px;\n    gap: 3px;\n    padding: 0 3px;\n    font-size: 11px;");
+    expect(stylesSource).toContain(".workspace-prep .inspector-tabs .tab,\n  .workspace-prep .inspector > .tabs .tab {\n    min-height: 38px;\n    gap: 3px;\n    padding: 0 3px;\n    font-size: var(--type-small);");
     expect(stylesSource).toContain(".chat-dice-box .icon-button {\n    width: 40px;\n    min-width: 40px;\n    height: 36px;");
     expect(stylesSource).toContain("min-height: calc(64px + env(safe-area-inset-bottom, 0px));");
     expect(stylesSource).toContain(".toast-stack {\n    bottom: calc(72px + env(safe-area-inset-bottom, 0px));");

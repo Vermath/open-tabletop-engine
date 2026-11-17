@@ -17,6 +17,7 @@
   --color-danger: #df9485;
   --red: var(--color-danger);
   --color-success: #96bb8d;
+  --color-health-healthy: #4e7048;
   --green: var(--color-success);
   --color-surface-0: #111412;
   --surface-0: var(--color-surface-0);
@@ -36,7 +37,7 @@
   --arcane-soft: rgba(184, 196, 166, 0.09);
   --glass: rgba(27, 32, 27, 0.96);
   --glass-border: rgba(195, 204, 184, 0.2);
-  --ring: #e2bb8e;
+  --ring: var(--accent-strong);
   --turn-current: var(--accent-strong);
   --turn-current-glow: rgba(226, 187, 142, 0.4);
   --turn-next: #8bbec3;
