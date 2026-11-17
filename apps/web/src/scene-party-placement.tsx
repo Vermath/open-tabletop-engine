@@ -1,5 +1,7 @@
 import { sceneGridOrigin, sceneGridSize, type Actor, type Scene, type Token } from "@open-tabletop/core";
 import { Users } from "lucide-react";
+import { useMemo } from "react";
+import { useStructurallyStable } from "./board-render-stability.js";
 
 export interface PartyTokenPlacement {
   actorId: string;
@@ -49,13 +51,14 @@ interface TokenRectangle {
  */
 export function planMissingPartyTokenPlacements(
   scene: Pick<Scene, "id" | "width" | "height" | "gridSize" | "gridType" | "gridOrigin">,
-  partyActors: readonly Actor[],
+  partyActors: readonly Pick<Actor, "id" | "name">[],
   tokens: readonly Token[]
 ): PartyTokenPlacementPlan {
   const sceneTokens = tokens.filter((token) => token.sceneId === scene.id && token.layer !== "map");
   const representedActorIds = new Set(sceneTokens.flatMap((token) => token.actorId ? [token.actorId] : []));
   const uniquePartyActors = uniqueActors(partyActors);
   const missingActors = uniquePartyActors.filter((actor) => !representedActorIds.has(actor.id));
+  if (missingActors.length === 0) return { placements: [], missingActorIds: [], blockedActorIds: [] };
   const tokenSize = sceneGridSize(scene);
   const candidates = stagingCandidates(scene, tokenSize);
   const occupied: TokenRectangle[] = sceneTokens.map(tokenRectangle);
@@ -147,11 +150,11 @@ export function ScenePartyPlacementControl({
   busy?: boolean;
   onPlaceMissingParty(placementAttemptId: string): void;
 }) {
-  const plan = scene
-    ? planMissingPartyTokenPlacements(scene, partyActors, tokens)
-    : { placements: [], missingActorIds: [], blockedActorIds: [] };
-  const missingCount = plan.missingActorIds.length;
-  const lacksSpace = plan.blockedActorIds.length > 0;
+  const placementActors = useStructurallyStable(partyActors.map(({ id, name }) => ({ id, name })));
+  const plan = useMemo(() => scene ? planMissingPartyTokenPlacements(scene, placementActors, tokens) : undefined, [scene, placementActors, tokens]);
+  const missingCount = plan?.missingActorIds.length ?? 0;
+  const blockedCount = plan?.blockedActorIds.length ?? 0;
+  const lacksSpace = blockedCount > 0;
   const disabled = busy || !scene || !canCreateToken || missingCount === 0 || lacksSpace;
   const label = busy
     ? "Placing party..."
@@ -163,7 +166,7 @@ export function ScenePartyPlacementControl({
     : !canCreateToken
       ? "Requires token.create"
       : lacksSpace
-        ? `No overlap-free staging space for ${plan.blockedActorIds.length} party ${plan.blockedActorIds.length === 1 ? "token" : "tokens"}`
+        ? `No overlap-free staging space for ${blockedCount} party ${blockedCount === 1 ? "token" : "tokens"}`
         : missingCount === 0
           ? `Every party actor already has a token on ${scene.name}`
           : `Place ${missingCount} missing party ${missingCount === 1 ? "token" : "tokens"} on ${scene.name} without moving existing tokens`;
@@ -183,7 +186,7 @@ export function ScenePartyPlacementControl({
   );
 }
 
-function uniqueActors(actors: readonly Actor[]): Actor[] {
+function uniqueActors<T extends Pick<Actor, "id">>(actors: readonly T[]): T[] {
   const seen = new Set<string>();
   return actors.filter((actor) => {
     if (seen.has(actor.id)) return false;

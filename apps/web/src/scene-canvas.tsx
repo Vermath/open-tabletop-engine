@@ -5,6 +5,7 @@ import { BrickWall, ChevronLeft, ChevronRight, Circle, Crosshair, Eraser, Eye, F
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { boardRenderCounts } from "./board-render-counts.js";
 import type { BoardTokenFrameChange, BoardTokenPositionChange } from "./board-history.js";
 import { computeTokenMovements, formatGridDistance } from "./board-animation.js";
 import { scenePointFromClient } from "./board-geometry.js";
@@ -510,6 +511,21 @@ export const tokenCornerResizeHandles = tokenResizeHandles.filter((handle) => ha
 
 
 export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: number; backgroundAsset?: MapAsset; selectedAssetId?: string; assets: MapAsset[]; tokens: Token[]; actors: Actor[]; boardCurrentUserId: string; canSeeAllVitals: boolean; currentTurnTokenIds: string[]; nextTurnTokenIds: string[]; vision?: VisionSnapshot; visionPreviewLabel?: string; selectedTokenId: string; selectedTokenIds: string[]; activeTokenLayer: TokenLayer; fogBrushMode: FogMode | null; annotationTool: AnnotationTool; calibrationPoints?: VisionPoint[]; onCalibrationPoint?(point: VisionPoint): void; templateShape: SceneTemplateShape; visibleAnnotationLayers: Record<SceneAnnotationLayer, boolean>; canDropToken: boolean; canMoveToken: boolean; canUpdateAnnotations: boolean; canResizeToken: boolean; canUpdateTokenLayer: boolean; onSelect(id: string, options?: TokenSelectionOptions): void; onInspectToken(id: string): void; onSelectMany(ids: string[], options?: TokenSelectionOptions): void; onSelectBackgroundAsset(assetId: string): void; onClearSelection(): void; onMoved(): Promise<void>; onTokenMovePersist(changes: TokenMovePersistenceChange[]): Promise<void>; onTokenResizePersist(token: Token, frame: TokenFrame): Promise<void>; onTokenMoveCommit(changes: BoardTokenPositionChange[]): void; onTokenResizeCommit(changes: BoardTokenFrameChange[]): void; onTokenLayerCycle(token: Token): Promise<void>; onTokenDrop(payload: TokenDropPayload, point: VisionPoint): Promise<void>; onFogStroke(mode: FogMode, points: VisionPoint[]): Promise<void>; onAnnotationCreate(kind: SceneAnnotationKind, points: VisionPoint[], radius?: number): Promise<void>; onAnnotationMove(annotation: SceneAnnotation, points: VisionPoint[]): Promise<void>; onTogglePortal(wall: Scene["walls"][number]): Promise<void>; selectedOverlay: { type: "annotation" | "wall" | "light"; id: string } | null; onSelectOverlay(next: { type: "annotation" | "wall" | "light"; id: string } | null): void; onZoomBy(delta: number): void; onTokenTarget?(tokenId: string, targeted: boolean): void | Promise<void> }) {
+  boardRenderCounts.scene += 1;
+  const [showTokenNames, setShowTokenNames] = useState(false);
+  useEffect(() => {
+    const show = (event: KeyboardEvent) => { if (event.key === "Alt") setShowTokenNames(true); };
+    const hide = (event: KeyboardEvent) => { if (event.key === "Alt") setShowTokenNames(false); };
+    const clear = () => setShowTokenNames(false);
+    window.addEventListener("keydown", show);
+    window.addEventListener("keyup", hide);
+    window.addEventListener("blur", clear);
+    return () => {
+      window.removeEventListener("keydown", show);
+      window.removeEventListener("keyup", hide);
+      window.removeEventListener("blur", clear);
+    };
+  }, []);
   const mutationAction = useRetryableAction(props.scene.id);
   const calibrationActive = Boolean(props.onCalibrationPoint);
   const [tokenDrag, setTokenDrag] = useState<TokenDragDraft | null>(null);
@@ -1646,6 +1662,7 @@ export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: num
         data-agent-board-root={props.readOnly ? undefined : "true"}
         data-scene-id={props.scene.id}
         data-map-renderer={mapRenderer}
+        data-show-token-names={showTokenNames || undefined}
         className={`scene-board ${!calibrationActive && (props.fogBrushMode || props.annotationTool) ? "brush-mode" : ""} ${calibrationActive ? "grid-calibration-mode" : ""} ${tokenDrag && !tokenDrag.settling ? "token-drag-active" : ""} ${tokenResize ? "token-resize-active" : ""} ${selectionBox ? "token-selecting" : ""} ${dropActive ? "drop-active" : ""} ${mapPanning ? "map-panning" : ""}`}
         style={boardStyle}
         role="group"
