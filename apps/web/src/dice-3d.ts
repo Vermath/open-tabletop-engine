@@ -115,15 +115,16 @@ export function diceCastPlan(roll: DiceCastRollLike, random: () => number = Math
     }
   }
   const settleMs = dieSettleBaseMs + (dice.at(-1)?.delayMs ?? 0);
+  const highlight = rollHighlight(roll.terms);
   return {
     rollId: roll.id,
     label: roll.label?.trim() || roll.formula,
     formula: roll.formula,
     total: roll.total,
-    highlight: rollHighlight(roll.terms),
+    highlight,
     dice,
     settleMs,
-    ttlMs: settleMs + castLingerMs
+    ttlMs: settleMs + castLingerMs + (highlight ? 400 : 0)
   };
 }
 

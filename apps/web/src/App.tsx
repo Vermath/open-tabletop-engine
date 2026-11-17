@@ -1,11 +1,14 @@
+import { EmptyState, WorkspaceLoading, canCommitSceneSwitch, preloadWorkspaceScene, retrySceneSwitch } from "./workspace-states.js";
 import { annotationTranslationDelta } from "@open-tabletop/core";
-import type { Actor, AiMemoryFact, AiThread, AiToolCall, AudioTrack, AuditLog, Campaign, ChatMessage, Combat, CombatAction, CombatLegendaryActionPrompt, ContentImportBatch, ContentImportEntityKind, ContentImportSource, DiceRoll, EmailOutboxMessage, Encounter, EncounterMonsterPlacementBatchInput, EncounterMonsterPlacementBatchResult, FogHistoryEntry, FogMode, FogPreset, GridType, Item, JournalCanonStatus, JournalEntry, MapAsset, MessageType, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, SceneAnnotation, SceneAnnotationKind, SceneAnnotationLayer, SceneDuplicationPlan, SceneDuplicationRequest, SceneDuplicationResult, SceneTemplateShape, ScimAssignableRole, Token, TokenLayer, User, UserRole, Visibility, VisionPoint, VisionPointSample, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
+import { boardRenderCounts } from "./board-render-counts.js";
+import { applySceneVision } from "./player-scene-visibility.js";
+import type { Actor, AiMemoryFact, AiThread, AiToolCall, AudioTrack, AuditLog, Campaign, ChatMessage, Combat, CombatAction, CombatLegendaryActionPrompt, ContentImportBatch, ContentImportEntityKind, ContentImportSource, DiceRoll, EmailOutboxMessage, Encounter, EncounterMonsterPlacementBatchInput, EncounterMonsterPlacementBatchResult, FogHistoryEntry, FogMode, FogPreset, GridType, Item, JournalCanonStatus, JournalEntry, MapAsset, MessageType, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, SceneAnnotation, SceneAnnotationKind, SceneAnnotationLayer, SceneDuplicationPlan, SceneDuplicationRequest, SceneDuplicationResult, SceneTemplateShape, ScimAssignableRole, Token, TokenLayer, User, UserRole, Visibility, VisionPoint, VisionPointSample, VisionPolygon } from "@open-tabletop/core";
 import type { Dnd5eSrdCombatantSyncMutationResult, Dnd5eSrdCombatVitalsKind, Dnd5eSrdCombatVitalsMutationResult, Dnd5eSrdPendingAdvancement, Dnd5eSrdSpellPreparationMutationResult, DndControlledCreatureActionHandoff, DndRulesMutationUndoDescriptor, DndRulesMutationUndoResult } from "@open-tabletop/core";
 import type { TokenMoveBatchRequest, TokenMoveBatchResult } from "@open-tabletop/core";
 import { probabilityRange, rollFormula } from "@open-tabletop/dice-engine";
 import { Activity, BookOpen, Bot, Boxes, Brain, BrickWall, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Circle, Copy, Crosshair, Dices, Download, Eraser, Eye, FileText, Flame, Globe2, Grip, Hand, Image as ImageIcon, KeyRound, Layers, Lightbulb, LockKeyhole, Mail, Map as MapIcon, MapPin, Maximize2, MessageSquare, Minimize2, Moon, Music, Paintbrush, PencilLine, Pentagon, Play, Plus, RefreshCw, RotateCcw, Ruler, ScrollText, Search, Send, Shield, Swords, Timer, Trash2, Triangle, Upload, UserCog, UserPlus, Users, UserX, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
 import type { CSSProperties, DragEvent as ReactDragEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { activateDeferredSession } from "./api.js";
 import type { UniversalVttImportResult } from "./api.js";
 import { LazyUniversalVttImportPanel } from "./deferred-panels.js";
@@ -27,12 +30,14 @@ import { campaignRecordPaletteCommands, filterPaletteCommands, movePaletteIndex,
 import type { DesktopStatus } from "./desktop-api.js";
 import { addDieToFormula, diceTraySides, rollHighlight, rollTermHighlight } from "./dice-insights.js";
 import { dice3dStorageKey, diceCastPlan, dieShapeName, dieShapePoints, initialDice3dEnabled, newDiceCastRolls, type DiceCastPlan } from "./dice-3d.js";
-import { castPhysicsDiceWhenReady, clearPhysicsDice, diceBoxContainerId, diceBoxStatus, physicsDiceLabelDelayMs, primePhysicsDiceStage } from "./dice-box-stage.js";
+import { castPhysicsDiceWhenReady, clearPhysicsDice, physicsDiceLabelDelayMs, physicsDiceLingerMs, primePhysicsDiceStage } from "./dice-box-stage.js";
 import { initialUiTheme, nextUiTheme, uiThemeLabel, uiThemeStorageKey, type UiTheme } from "./ui-theme.js";
 import { applyProposalChangesToSnapshot, proposalChangesExternalLore, proposalReviewActionLabel, proposalReviewSteps, setProposalHidden, visibleAiAgentProposals } from "./proposal-review.js";
 import { realtimeConnectionIdentity, realtimeReconnectDelayMs, realtimeUiLabel, startRealtimeConnection, type RealtimeUiState } from "./realtime-connection.js";
 import { boardCaptureRequestDecision, createRealtimeHandlers, workspaceSelectionMatches, type BoardCaptureRequestDecision, type RealtimeApplyResult, type RealtimeReconcileScope } from "./realtime-refresh.js";
-import { removeRealtimeRecord, upsertBoundedRealtimeRecord, upsertNewestPrependedRealtimeRecord, upsertNewestRealtimeRecord, upsertRealtimeRecord } from "./realtime-snapshot-delta.js";
+import { createVisionReconciliation } from "./vision-reconciliation.js";
+import { loadRealtimeWorkspaceChanges } from "./realtime-workspace-load.js";
+import { changesRealtimeRecord, removeRealtimeRecord, sameSnapshotValue, upsertBoundedRealtimeRecord, upsertNewestPrependedRealtimeRecord, upsertNewestRealtimeRecord, upsertNewestRealtimeRecords, upsertRealtimeRecord } from "./realtime-snapshot-delta.js";
 import { applyPresenceEnvelope, realtimeSequenceDecision } from "./realtime-sequence.js";
 import { settleWorkspaceLoreLoad } from "./workspace-lore-load.js";
 import { settleWorkspaceBoundAction, type WorkspaceBoundRequest, type WorkspaceRequestIdentity } from "./workspace-bound-action.js";
@@ -50,7 +55,7 @@ import { SceneDelegationPanel } from "./scene-delegation-panel.js";
 import { ProfilePreferences, resolvedUserPreferences, updateUserProfile } from "./profile-preferences.js";
 import { HpBar } from "./hp-bar.js";
 import { deleteJournalEntry, JournalPanel, updateJournalEntry, type JournalCreateOptions, type JournalDraft, type JournalLinkTargetOption } from "./journal-panel.js";
-import { ChatRail } from "./chat-rail.js";
+import { MemoizedChatRail as ChatRail } from "./chat-rail.js";
 import { CampaignOwnershipTransfer, type CampaignOwnershipTransferInput } from "./campaign-ownership-transfer.js";
 import { campaignSurpriseEnabled, CampaignRulesProfilePanel } from "./campaign-rules-profile.js";
 import { CharacterTransferPanel } from "./character-transfer-panel.js";
@@ -68,7 +73,8 @@ import { cleanupAdminStoredAssets, migrateAdminStoredAssets, purgeAdminAssetCdnC
 import { failStaleAdminAiThreads, failStaleAdminAiToolCalls, rejectStaleAdminAiProposals, retryAdminAiToolCall as requestRetryAdminAiToolCall } from "./admin-ai-client.js";
 import { issueAdminPasswordReset as requestAdminPasswordReset, pruneExpiredPasswordResets as requestPruneExpiredPasswordResets, retryAdminEmail as requestRetryAdminEmail, retryAllAdminEmails as requestRetryAllAdminEmails, revokeAdminRiskSessions as requestRevokeAdminRiskSessions, revokeAdminSession as requestRevokeAdminSession, revokeAdminUserSessions as requestRevokeAdminUserSessions, updateAdminUser } from "./admin-identity-client.js";
 import { syncAdminPluginRegistry, syncCampaignPluginRegistry, updateAdminPluginReview } from "./admin-plugin-client.js";
-import { MapLayerStack, MapSelectionStatus, MapZoomControls, SceneCanvas, Toolbar, annotationColor, annotationGroupKey, annotationToolLabel, annotationToolShowsSettings, battleMapZoomStep, clampBattleMapZoom, defaultAnnotationLayer, distanceBetween, isUsableImageAsset, nextTokenLayer, sceneGridOverlayVisible, tokenCenter, tokenCoordinatesFromCenter, tokenFrame, tokenLayer, tokenLayerLabel, tokenLayers, useAnnotationExpiryClock, type TokenFrame, type TokenMovePersistenceChange, type TokenSelectionOptions } from "./scene-canvas.js";
+import { LiveMapLayerStack, LiveSceneCanvas } from "./live-scene-canvas.js";
+import { MapSelectionStatus, MapZoomControls, Toolbar, annotationColor, annotationGroupKey, annotationToolLabel, annotationToolShowsSettings, battleMapZoomStep, clampBattleMapZoom, defaultAnnotationLayer, distanceBetween, isUsableImageAsset, nextTokenLayer, sceneGridOverlayVisible, tokenCenter, tokenCoordinatesFromCenter, tokenFrame, tokenLayer, tokenLayerLabel, tokenLayers, useAnnotationExpiryClock, type TokenFrame, type TokenMovePersistenceChange, type TokenSelectionOptions } from "./scene-canvas.js";
 import { campaignPermissionTemplates, type CampaignPermissionTemplateId } from "./admin-data.js";
 import { MetricTile } from "./metric-tile.js";
 import { assetMatchesFolderFilter, campaignArchiveTargetId, contentImportEntityData, normalizeAssetFolderPath, summarizeImport, type ArchiveImportCollection, type ArchiveImportOperationSummary, type ArchiveImportRollbackPreview, type ArchiveImportRollbackResult, type ArchiveImportScope, type AssetLifecycleStatus, type CampaignImportResult, type ContentImportDraftEntity, type ContentImportPreviewSource, type FailedAssetUpload } from "./content-import-data.js";
@@ -105,8 +111,11 @@ import { hasItemDropData, hasTokenDropData, readItemDropData, readTokenDropData,
 import { RetryableActionNotice, useRetryableAction } from "./retryable-action.js";
 import { isStaleWriteError, sharedMutationIdempotencyKey } from "./shared-mutation.js";
 import { KeyedMutationQueue } from "./keyed-mutation-queue.js";
+import { InspectorPanelContent, InterfaceSurface } from "./interface-surfaces.js";
 import { clampFloatingPanel, useMovablePanel, type FloatingPanelPosition, type FloatingPanelSize } from "./movable-panel.js";
-import { CommandPalette, DiceCastOverlay, KeyboardShortcutDialog, RealtimeSyncGuard, ToastStack } from "./tabletop-overlays.js";
+import { useInterfaceSounds } from "./interface-sounds.js";
+import { DiceTableStage } from "./dice-table-stage.js";
+import { CommandPalette, KeyboardShortcutDialog, RealtimeSyncGuard, ToastStack } from "./tabletop-overlays.js";
 import { actorActionConsequenceReview, actorActionRequest, committedActionStatus, preparedActionIsRoutine, typedDamageConsequenceReview, type CommittedActorActionResponse, type PreparedActorActionResponse, type PreparedTypedDamageResponse } from "./actor-action-review.js";
 import { campaignSetupDraftStorageKey, clearCampaignSetupDraft, defaultCampaignSetupDraft, loadCampaignSetupDraft, saveCampaignSetupDraft, type CampaignSetupDraftInput, type CampaignSetupDraftScope, type CampaignSetupIdempotencyKeys, type CampaignSetupProgress } from "./campaign-setup-state.js";
 import { CampaignSetupSteps, FirstSessionSetupChecklist, type FirstSessionSetupStep } from "./campaign-setup-steps.js";
@@ -271,8 +280,8 @@ function initialAiAgentPanelPosition(): FloatingPanelPosition {
   };
 }
 
-
 export function App() {
+  boardRenderCounts.app += 1;
   const consequenceReview = useConsequenceReview();
   const sceneMapPreparation = useSceneMapPreparation();
   const [snapshot, setSnapshot] = useState<Snapshot>({
@@ -319,6 +328,8 @@ export function App() {
   }
   const [snapshotReady, setSnapshotReady] = useState(false);
   const [campaignId, setCampaignId] = useState(() => initialStoredId("otte:selectedCampaignId", "camp_demo"));
+  const [sceneSwitchTarget, setSceneSwitchTarget] = useState("");
+  const sceneSwitchRef = useRef<{ sceneId: string; worldId?: string }>(undefined);
   const [sceneId, setSceneId] = useState(() => initialStoredId("otte:selectedSceneId", "scn_vault_entry"));
   const [selectedTokenId, setSelectedTokenIdState] = useState("tok_valen");
   const [selectedTokenIds, setSelectedTokenIds] = useState<string[]>(["tok_valen"]);
@@ -377,7 +388,7 @@ export function App() {
   const [activeDiceCasts, setActiveDiceCasts] = useState<DiceCastPlan[]>([]);
   const [concealedRollIds, setConcealedRollIds] = useState<Set<string>>(() => new Set());
   const seenCastRollIdsRef = useRef<Set<string> | null>(null);
-  const diceBoxFallbackNoticeRef = useRef(false);
+  const diceCastEpochRef = useRef(0);
   const dice3dEnabledRef = useRef(dice3dEnabled);
   const diceRevealTimersRef = useRef<Map<string, number>>(new Map());
   const diceRevealStatusesRef = useRef<Map<string, string>>(new Map());
@@ -634,6 +645,8 @@ export function App() {
   const realtimeBoardCaptureHandlerRef = useRef<(data: unknown) => boolean>(() => false);
   const realtimeApplyRef = useRef<(data: unknown) => RealtimeApplyResult>(() => "ignored");
   const realtimeSequenceRef = useRef(snapshot.eventSequence);
+  const [visionStore] = useState(createVisionReconciliation);
+  const visionRequestRef = useRef(0);
   const hpAdjustRef = useRef<Map<string, { current: number; max: number; timer: number; actor: Actor; request: WorkspaceBoundRequest }>>(new Map());
   const actorConditionQueueRef = useRef<Map<string, Promise<Actor | undefined>>>(new Map());
   const actorSheetMutationQueueRef = useRef(new KeyedMutationQueue());
@@ -641,7 +654,7 @@ export function App() {
   const tokenMutationQueueRef = useRef(new KeyedMutationQueue());
   const tokenAuthoritativeRef = useRef<Map<string, Token>>(new Map());
   const snapshotRef = useRef(snapshot);
-  snapshotRef.current = snapshot;
+  useLayoutEffect(() => { snapshotRef.current = snapshot; }, [snapshot]);
   realtimeSelectionRef.current = { campaignId, sceneId, userId: currentUserId };
   const realtimeConnectionKey = realtimeConnectionIdentity({ blankCanvasDemoOpen, campaignId, sessionToken, userId: currentUserId, sessionEpoch: sessionTransportEpoch });
 
@@ -665,7 +678,7 @@ export function App() {
     .filter((scene) => sceneFolderFilter === "all" || scene.folder === sceneFolderFilter)
     .filter((scene) => !normalizedSceneSearch || [scene.name, scene.folder ?? "", scene.id].some((value) => value.toLocaleLowerCase().includes(normalizedSceneSearch)));
   const selectedPrepScenes = visibleScenes.filter((scene) => selectedPrepSceneIds.includes(scene.id));
-  const selectedScene = workspaceMode === "prep"
+  const selectedScene = workspaceMode === "prep" && !sceneSwitchTarget
     ? selectedSceneForWorldFilter(accessibleScenes, sceneId, selectedWorldId)
     : accessibleScenes.find((scene) => scene.id === sceneId) ?? accessibleScenes.find((scene) => scene.active);
   const canPreviewPlayer = hasPermission("campaign.update") && hasPermission("actor.readPrivate") && (hasPermission("scene.update") || selectedScene?.permissions?.[currentUserId]?.includes("scene.update") === true);
@@ -692,6 +705,8 @@ export function App() {
   const sessionPulseStatus = realtimeUiLabel(realtimeUiState);
   const onlineParticipantLabel = `${formatNumber(snapshot.presences.length)} online${snapshot.presences.length > 0 ? `: ${snapshot.presences.map((presence) => presence.displayName).join(", ")}` : ""}`;
   const hasUnsavedSceneDraft = workspaceMode === "manage" && manageCategory === "scenes" && sceneEditDirty;
+  const sceneDraftDirtyRef = useRef(hasUnsavedSceneDraft);
+  useLayoutEffect(() => { sceneDraftDirtyRef.current = hasUnsavedSceneDraft; }, [hasUnsavedSceneDraft]);
   const activeSystemId = snapshot.systems.find((system) => system.active)?.id ?? selectedCampaign?.defaultSystemId;
   const selectedActor = actorForSelection(snapshot.actors, selectedActorId, selectedToken, activeSystemId);
   const advancementCatalog = useAdvancementCatalog({ campaignId, actor: selectedActor, disabled: blankCanvasDemoOpen || !isAdvancementCatalogVisible({ advancementModalOpen, workspaceMode, inspectorVisible, tab }) });
@@ -711,8 +726,9 @@ export function App() {
   const liveCampaignSession = campaignSessions.find((session) => session.status === "live");
   const currentTurnCombatant = combatTurnCombatant(activeCombat, "current");
   const nextTurnCombatant = combatTurnCombatant(activeCombat, "next");
-  const currentTurnTokenIds = currentTurnCombatant?.tokenId ? [currentTurnCombatant.tokenId] : [];
-  const nextTurnTokenIds = nextTurnCombatant?.tokenId && nextTurnCombatant.id !== currentTurnCombatant?.id ? [nextTurnCombatant.tokenId] : [];
+  const { settings: interfaceSounds, toggle: toggleInterfaceSounds, play: playInterfaceCue } = useInterfaceSounds({ preferences: snapshot.session?.user.preferences?.interfaceSounds, muted: audioMuted, masterVolume: audioMasterVolume, scene: selectedScene, userId: currentUserId, combat: activeCombat, combatant: currentTurnCombatant, tokens: snapshot.tokens, actors: snapshot.actors, onSettingsChange: (settings) => persistQuickPreferences({ interfaceSounds: settings }, "Set interface sounds") });
+  const currentTurnTokenIds = useMemo(() => currentTurnCombatant?.tokenId ? [currentTurnCombatant.tokenId] : [], [currentTurnCombatant?.tokenId]);
+  const nextTurnTokenIds = useMemo(() => nextTurnCombatant?.tokenId && nextTurnCombatant.id !== currentTurnCombatant?.id ? [nextTurnCombatant.tokenId] : [], [nextTurnCombatant?.tokenId, nextTurnCombatant?.id, currentTurnCombatant?.id]);
   const recentEndedCombats = snapshot.combats.filter((combat) => !combat.active).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).slice(0, 3);
   const selectedPermissionTemplate = campaignPermissionTemplates.find((template) => template.id === setupPermissionTemplate) ?? campaignPermissionTemplates[0]!;
   const archiveExportRecordCount = archiveExportMinimumRecordCount({ campaignId, scope: archiveExportScope, worldId: archiveExportWorldId, collections: archiveExportCollections, snapshot, worlds, handouts });
@@ -1173,6 +1189,7 @@ export function App() {
     actorSheetAuthoritativeRef.current.clear();
     tokenMutationQueueRef.current.clear();
     tokenAuthoritativeRef.current.clear();
+    sceneSwitchRef.current = undefined; setSceneSwitchTarget("");
     boardSyncQueueRef.current = Promise.resolve();
     setBoardUndoStack([]);
     setBoardRedoStack([]);
@@ -1303,7 +1320,7 @@ export function App() {
     }
   }
 
-  async function refresh(nextCampaignId = campaignId, nextSceneId = sceneId, options: { syncStatus?: boolean } = {}) {
+  async function refresh(nextCampaignId = campaignId, nextSceneId = sceneId, options: { syncStatus?: boolean; selectSceneOnLoad?: () => boolean; sceneWorldId?: string } = {}) {
     if (blankCanvasDemoOpen) {
       setSnapshotReady(true);
       if (options.syncStatus !== false) setStatus(blankCanvasDemoNotice);
@@ -1318,11 +1335,13 @@ export function App() {
     let next: Snapshot;
     try {
       next = await loadSnapshot(nextCampaignId, nextSceneId);
+      if (options.selectSceneOnLoad) await preloadWorkspaceScene(next, nextSceneId);
     } catch (error) {
       if (seq !== refreshSeqRef.current || !workspaceRequestIsCurrent(nextCampaignId, requestUserId)) return snapshotRef.current;
       throw error;
     }
-    if (seq !== refreshSeqRef.current || !workspaceRequestIsCurrent(nextCampaignId, requestUserId)) return next;
+    if (seq !== refreshSeqRef.current || !workspaceRequestIsCurrent(nextCampaignId, requestUserId) || options.selectSceneOnLoad?.() === false) return next;
+    visionRequestRef.current += 1;
     realtimeSequenceRef.current = next.eventSequence;
     snapshotRef.current = next;
     setSnapshot(next);
@@ -1330,7 +1349,8 @@ export function App() {
     const campaign = next.campaigns.find((item) => item.id === nextCampaignId) ?? next.campaigns[0];
     const scene = next.scenes.find((item) => item.id === nextSceneId) ?? next.scenes.find((item) => item.active) ?? next.scenes[0];
     const resolvedCampaignId = next.campaigns.some((item) => item.id === realtimeSelectionRef.current.campaignId) ? realtimeSelectionRef.current.campaignId : campaign?.id ?? "";
-    const resolvedSceneId = next.scenes.some((item) => item.id === realtimeSelectionRef.current.sceneId) ? realtimeSelectionRef.current.sceneId : scene?.id ?? "";
+    const requestedSceneId = options.selectSceneOnLoad ? nextSceneId : realtimeSelectionRef.current.sceneId;
+    const resolvedSceneId = next.scenes.some((item) => item.id === requestedSceneId) ? requestedSceneId : scene?.id ?? "";
     if (resolvedCampaignId !== realtimeSelectionRef.current.campaignId) {
       cancelAiAgentForWorkspaceChange();
       cancelWorkspaceBoundRequestsForChange();
@@ -1340,6 +1360,7 @@ export function App() {
     realtimeSelectionRef.current = { campaignId: resolvedCampaignId, sceneId: resolvedSceneId, userId: requestUserId };
     setCampaignId(resolvedCampaignId);
     setSceneId(resolvedSceneId);
+    if (options.sceneWorldId) setSelectedWorldId(options.sceneWorldId);
     // Selection belongs to the user, not the snapshot: keep it as long as the
     // tokens still exist, auto-select only on the very first load.
     const firstLoadToken = !snapshotReady && scene ? next.tokens.find((item) => item.sceneId === scene.id) : undefined;
@@ -1389,18 +1410,14 @@ export function App() {
 
   function applyTokensToSnapshot(nextTokens: Token[]) {
     const activeSceneIds = new Set(snapshotRef.current.scenes.filter((scene) => scene.campaignId === realtimeSelectionRef.current.campaignId).map((scene) => scene.id));
-    const scopedTokens = nextTokens.filter((token) => activeSceneIds.has(token.sceneId));
-    if (scopedTokens.length === 0) return;
-    for (const token of scopedTokens) tokenAuthoritativeRef.current.set(token.id, token);
+    const changed = nextTokens.filter((token) => activeSceneIds.has(token.sceneId) && changesRealtimeRecord(latestAuthoritativeToken(token.id), token));
+    if (changed.length === 0) return;
+    for (const token of changed) tokenAuthoritativeRef.current.set(token.id, token);
     invalidateInFlightRefreshes();
-    const byId = new Map(scopedTokens.map((token) => [token.id, token]));
-    setSnapshot((current) => ({
-      ...current,
-      tokens: [
-        ...current.tokens.map((token) => byId.get(token.id) ?? token),
-        ...scopedTokens.filter((token) => !current.tokens.some((item) => item.id === token.id))
-      ]
-    }));
+    setSnapshot((current) => {
+      const tokens = upsertNewestRealtimeRecords(current.tokens, changed);
+      return tokens === current.tokens ? current : { ...current, tokens };
+    });
   }
 
   function latestAuthoritativeToken(tokenId: string, fallback?: Token): Token | undefined {
@@ -1575,23 +1592,17 @@ export function App() {
   realtimeReconcileRef.current = async (scopes) => {
     if (scopes.includes("snapshot")) return realtimeRefreshRef.current();
     const selection = { ...realtimeSelectionRef.current };
-    const selectedScene = snapshotRef.current.scenes.find((scene) => scene.id === selection.sceneId);
-    const visionPath = selectedScene
-      ? `/api/v1/scenes/${selectedScene.id}/vision`
-      : undefined;
-    const [vision, lore] = await Promise.all([
-      scopes.includes("vision") && visionPath ? apiGet<VisionSnapshot>(visionPath) : Promise.resolve(undefined),
-      scopes.includes("lore")
-        ? Promise.all([
-            apiGet<WorldAtlasWorld[]>(`/api/v1/campaigns/${selection.campaignId}/worlds`),
-            apiGet<HandoutLibraryItem[]>(`/api/v1/campaigns/${selection.campaignId}/handouts`),
-            apiGet<Snapshot["worldRecords"]>(`/api/v1/campaigns/${selection.campaignId}/world-records`),
-            apiGet<Snapshot["worldRelations"]>(`/api/v1/campaigns/${selection.campaignId}/world-relations`)
-          ])
-        : Promise.resolve(undefined)
-    ]);
+    const visionSceneId = scopes.includes("vision") && snapshotRef.current.scenes.some((scene) => scene.id === selection.sceneId) ? selection.sceneId : undefined;
+    const visionBase = snapshotRef.current.vision;
+    const visionRequest = visionSceneId ? ++visionRequestRef.current : undefined;
+    const filterTokens = hasPermission("token.read") && !(hasPermission("token.update") || hasPermission("scene.update"));
+    const [vision, lore] = await loadRealtimeWorkspaceChanges(selection.campaignId, visionSceneId, scopes.includes("lore"), filterTokens);
     if (!workspaceRequestIsCurrent(selection.campaignId, selection.userId) || realtimeSelectionRef.current.sceneId !== selection.sceneId) return undefined;
-    if (vision) setSnapshot((current) => ({ ...current, vision }));
+    if (vision && visionRequest === visionRequestRef.current && visionBase === snapshotRef.current.vision && vision.sceneId === selection.sceneId && vision.userId === selection.userId) {
+      if (vision.visibleTokens) setSnapshot((current) => applySceneVision(current, vision));
+      else if (visionBase?.sceneId === vision.sceneId && visionBase.userId === vision.userId) visionStore.publish(visionBase, vision);
+      else startTransition(() => setSnapshot((current) => sameSnapshotValue(current.vision, vision) ? current : { ...current, vision }));
+    }
     if (lore) {
       const [nextWorlds, nextHandouts, worldRecords, worldRelations] = lore;
       loreRealtimeRefreshPendingRef.current = false;
@@ -1692,7 +1703,8 @@ export function App() {
     }
     if ((event.type === "scene.activated" || event.type === "scene.updated") && payload && typeof payload.id === "string" && payload.campaignId === campaignId) {
       applySceneToSnapshot(payload as unknown as Scene);
-      return event.type === "scene.activated" || !(hasPermission("token.update") || hasPermission("scene.update")) ? "snapshot" : "vision";
+      if (event.type === "scene.activated") return "snapshot";
+      return payload.id === realtimeSelectionRef.current.sceneId ? "vision" : "applied";
     }
     if (event.type === "chat.message.created" || event.type === "chat.message.updated") {
       if (!payload || typeof payload.id !== "string" || payload.campaignId !== campaignId) return "snapshot";
@@ -2118,7 +2130,7 @@ export function App() {
   }, [tab, workspaceMode]);
 
   useEffect(() => {
-    if (workspaceMode !== "prep" || canonicalPrepSceneId === sceneId) return;
+    if (workspaceMode !== "prep" || canonicalPrepSceneId === sceneId || sceneSwitchRef.current) return;
     // During a campaign switch the previous snapshot can render once under the
     // new campaign id. Wait for its scene collection instead of persisting an
     // id from the old campaign as the new canonical selection.
@@ -2131,7 +2143,7 @@ export function App() {
         setStatus(`Scene selection changed; refresh failed: ${errorMessage(syncError)}`);
       }
     });
-  }, [campaignId, canonicalPrepSceneId, currentUserId, sceneId, workspaceMode]);
+  }, [campaignId, canonicalPrepSceneId, currentUserId, sceneId, sceneSwitchTarget, workspaceMode]);
 
   useEffect(() => {
     if (workspaceMode !== "live" && workspaceMode !== "prep") setTableFocusMode(false);
@@ -2361,30 +2373,24 @@ export function App() {
 
   useEffect(() => {
     if (!dice3dEnabled || !snapshotReady) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (dice3dPreferenceEnvironment().saveData || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const preloadTimer = window.setTimeout(() => {
       void primePhysicsDiceStage();
     }, 100);
     return () => window.clearTimeout(preloadTimer);
   }, [dice3dEnabled, snapshotReady]);
 
-  useEffect(() => {
-    if (dice3dEnabled) return;
-    clearPhysicsDice();
+  useLayoutEffect(() => {
     setActiveDiceCasts([]);
-    for (const timerId of diceRevealTimersRef.current.values()) window.clearTimeout(timerId);
-    diceRevealTimersRef.current.clear();
-    diceRevealStatusesRef.current.clear();
     setConcealedRollIds(new Set());
-  }, [dice3dEnabled]);
-
-  useEffect(() => {
     return () => {
+      diceCastEpochRef.current += 1;
+      clearPhysicsDice();
       for (const timerId of diceRevealTimersRef.current.values()) window.clearTimeout(timerId);
       diceRevealTimersRef.current.clear();
       diceRevealStatusesRef.current.clear();
     };
-  }, []);
+  }, [campaignId, currentUserId, dice3dEnabled]);
 
   useLayoutEffect(() => {
     if (!snapshotReady) return;
@@ -2395,13 +2401,16 @@ export function App() {
     const seen = seenCastRollIdsRef.current;
     const fresh = newDiceCastRolls(snapshot.rolls, seen, Date.now());
     for (const roll of snapshot.rolls) seen.add(roll.id);
-    if (!dice3dEnabled || fresh.length === 0) return;
-    const casts = fresh.slice(-2).map((roll) => diceCastPlan(roll)).filter((cast) => cast.dice.length > 0);
-    if (casts.length === 0) return;
+    if (fresh.length === 0) return;
+    const casts = dice3dEnabled ? fresh.slice(-2).map((roll) => diceCastPlan(roll)).filter((cast) => cast.dice.length > 0) : [];
+    if (casts.length === 0) return playInterfaceCue("dice");
     const reduceMotion = resolvedUserPreferences(snapshot.session?.user ?? {}).reducedMotion || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const castEpoch = diceCastEpochRef.current;
+    const castIsCurrent = () => castEpoch === diceCastEpochRef.current && dice3dEnabledRef.current && workspaceRequestIsCurrent(campaignId, currentUserId);
     for (const cast of casts) {
-      if (reduceMotion) {
-        setActiveDiceCasts((current) => [...current.slice(-2), cast].slice(-3));
+      if (reduceMotion || dice3dPreferenceEnvironment().saveData) {
+        playInterfaceCue("dice");
+        setActiveDiceCasts((current) => [...current.slice(-1), { ...cast, dice: [], settleMs: 0 }].slice(-2));
         window.setTimeout(() => {
           setActiveDiceCasts((current) => current.filter((item) => item.rollId !== cast.rollId));
         }, cast.ttlMs);
@@ -2409,22 +2418,19 @@ export function App() {
       }
 
       markDiceCastResultPending(cast.rollId);
-      void castPhysicsDiceWhenReady(cast).then((physicsReady) => {
-        if (!dice3dEnabledRef.current) return;
-        const staged = physicsReady ? { ...cast, dice: [], settleMs: physicsDiceLabelDelayMs, ttlMs: physicsDiceLabelDelayMs + 2000 } : cast;
-        if (!physicsReady && diceBoxStatus() === "unavailable" && !diceBoxFallbackNoticeRef.current) {
-          diceBoxFallbackNoticeRef.current = true;
-          setStatus("3D dice engine unavailable in this browser - using the layered dice cast instead (details in the browser console)");
-        }
-        setActiveDiceCasts((current) => [...current.slice(-2), staged].slice(-3));
+      const lingerMs = physicsDiceLingerMs + (cast.highlight ? 400 : 0);
+      void castPhysicsDiceWhenReady(cast, lingerMs, undefined, castIsCurrent).then((physicsReady) => {
+        if (!castIsCurrent()) return;
+        const staged = physicsReady ? { ...cast, dice: [], settleMs: physicsDiceLabelDelayMs, ttlMs: physicsDiceLabelDelayMs + lingerMs } : cast;
+        setActiveDiceCasts((current) => [...current.slice(-1), staged].slice(-2));
         scheduleDiceCastResultReveal(staged);
         window.setTimeout(() => {
           setActiveDiceCasts((current) => current.filter((item) => item.rollId !== staged.rollId));
         }, staged.ttlMs);
       }).catch((error) => {
-        if (!dice3dEnabledRef.current) return;
+        if (!castIsCurrent()) return;
         console.warn("3D dice roll startup failed; using the layered dice cast instead.", error);
-        setActiveDiceCasts((current) => [...current.slice(-2), cast].slice(-3));
+        setActiveDiceCasts((current) => [...current.slice(-1), cast].slice(-2));
         scheduleDiceCastResultReveal(cast);
         window.setTimeout(() => {
           setActiveDiceCasts((current) => current.filter((item) => item.rollId !== cast.rollId));
@@ -4425,13 +4431,15 @@ export function App() {
     }
 
     if (changes.length === 0) return;
+    if (changes.some(({ token }) => !latestAuthoritativeToken(token.id, token)?.updatedAt)) await boardSyncQueueRef.current;
+    if (!workspaceRequestIsCurrent(campaignId, currentUserId)) return;
     const sceneId = changes[0]!.token.sceneId;
     const scene = snapshotRef.current.scenes.find((candidate) => candidate.id === sceneId);
     if (!scene) throw new Error("Scene is unavailable for token movement");
     const payload: TokenMoveBatchRequest = {
       expectedSceneUpdatedAt: scene.updatedAt,
       changes: changes.map(({ token, position }) => {
-        const latest = snapshotRef.current.tokens.find((candidate) => candidate.id === token.id) ?? token;
+        const latest = latestAuthoritativeToken(token.id, token)!;
         return { tokenId: latest.id, ...position, expectedUpdatedAt: latest.updatedAt };
       }).sort((left, right) => left.tokenId.localeCompare(right.tokenId))
     };
@@ -4461,8 +4469,9 @@ export function App() {
     }
 
     await runWorkspaceBoundAction(
-      (request) => {
-        const latest = snapshotRef.current.tokens.find((candidate) => candidate.id === token.id) ?? token;
+      async (request) => {
+        if (!latestAuthoritativeToken(token.id, token)?.updatedAt) await boardSyncQueueRef.current;
+        const latest = latestAuthoritativeToken(token.id, token)!;
         const payload = { ...frame, expectedUpdatedAt: latest.updatedAt };
         return apiPatch<Token>(`/api/v1/tokens/${token.id}`, payload, { signal: request.controller.signal, idempotencyKey: sharedMutationIdempotencyKey(`token:resize:${token.id}`, latest.updatedAt, payload) });
       },
@@ -4476,8 +4485,12 @@ export function App() {
       if (!workspaceBoundRequestIsCurrent(request)) return;
       const scene = sceneRevisions.get(token.sceneId) ?? await apiGet<Scene>(`/api/v1/scenes/${token.sceneId}`, { signal: request.controller.signal });
       const payload = { ...tokenRestorePayload(token), expectedUpdatedAt: scene.updatedAt };
-      await apiPost<Token>(`/api/v1/scenes/${token.sceneId}/tokens`, payload, { signal: request.controller.signal, idempotencyKey: sharedMutationIdempotencyKey(`token:restore:${token.id}`, scene.updatedAt, payload) });
-      sceneRevisions.set(token.sceneId, await apiGet<Scene>(`/api/v1/scenes/${token.sceneId}`, { signal: request.controller.signal }));
+      const created = await apiPost<Token>(`/api/v1/scenes/${token.sceneId}/tokens`, payload, { signal: request.controller.signal, idempotencyKey: sharedMutationIdempotencyKey(`token:restore:${token.id}`, scene.updatedAt, payload) });
+      if (!workspaceBoundRequestIsCurrent(request)) return;
+      applyTokensToSnapshot([created]);
+      const updatedScene = await apiGet<Scene>(`/api/v1/scenes/${token.sceneId}`, { signal: request.controller.signal });
+      sceneRevisions.set(token.sceneId, updatedScene);
+      if (workspaceBoundRequestIsCurrent(request) && updatedScene.updatedAt > (snapshotRef.current.scenes.find((item) => item.id === updatedScene.id)?.updatedAt ?? "")) applySceneToSnapshot(updatedScene);
     }
   }
 
@@ -4631,7 +4644,7 @@ export function App() {
       return;
     }
     const pasteSources = boardClipboardTokens.map((token) => ({ ...token, sceneId: selectedScene.id }));
-    const pastedTokens = createTokenCopies(pasteSources, { scene: selectedScene, offset: Math.max(16, Math.round(selectedScene.gridSize / 2)) });
+    const pastedTokens = createTokenCopies(pasteSources, { scene: selectedScene, offset: Math.max(16, Math.round(selectedScene.gridSize / 2)), pendingServerRevision: !blankCanvasDemoOpen });
     setSnapshot((current) => ({ ...current, tokens: [...current.tokens, ...pastedTokens] }));
     selectCanvasTokens(pastedTokens.map((token) => token.id));
     pushBoardHistoryAction({ kind: "tokens.create", tokens: pastedTokens });
@@ -5554,13 +5567,13 @@ export function App() {
     const knownActor = queuedActor && snapshotActor
       ? (queuedActor.updatedAt >= snapshotActor.updatedAt ? queuedActor : snapshotActor)
       : queuedActor ?? snapshotActor;
-    if (knownActor && knownActor.updatedAt > actor.updatedAt) return;
+    if (!changesRealtimeRecord(knownActor, actor)) return;
     actorSheetAuthoritativeRef.current.set(actor.id, actor);
     invalidateInFlightRefreshes();
-    setSnapshot((current) => ({
-      ...current,
-      actors: upsertNewestRealtimeRecord(current.actors, actor)
-    }));
+    setSnapshot((current) => {
+      const actors = upsertNewestRealtimeRecord(current.actors, actor);
+      return actors === current.actors ? current : { ...current, actors };
+    });
   }
 
   function latestAuthoritativeActor(actor: Actor): Actor {
@@ -6052,7 +6065,7 @@ export function App() {
   }
 
   function shouldDelayDiceResult(roll: DiceRoll): boolean {
-    if (!dice3dEnabled) return false;
+    if (!dice3dEnabled || dice3dPreferenceEnvironment().saveData) return false;
     if (resolvedUserPreferences(snapshot.session?.user ?? {}).reducedMotion || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return false;
     // A GM-only roll made by a player is returned to the caller once, but the
     // permission-filtered snapshot intentionally omits it. The 3D scheduler is
@@ -6076,7 +6089,7 @@ export function App() {
       return;
     }
     diceRevealStatusesRef.current.set(roll.id, revealedStatus);
-    setStatus(rollingDiceStatus);
+    setQuietStatus(rollingDiceStatus);
   }
 
   function markDiceCastResultPending(rollId: string) {
@@ -6092,6 +6105,7 @@ export function App() {
     const existingTimer = diceRevealTimersRef.current.get(cast.rollId);
     if (existingTimer !== undefined) window.clearTimeout(existingTimer);
     const timerId = window.setTimeout(() => {
+      playInterfaceCue("dice");
       diceRevealTimersRef.current.delete(cast.rollId);
       const revealedStatus = diceRevealStatusesRef.current.get(cast.rollId);
       diceRevealStatusesRef.current.delete(cast.rollId);
@@ -8759,30 +8773,7 @@ export function App() {
     );
   }
 
-  if (!snapshotReady) {
-    const apiOffline = status.startsWith("API offline");
-    const campaignLoadFailed = status.startsWith("Campaign load failed");
-    const loadFailed = apiOffline || campaignLoadFailed;
-    return (
-      <main className="auth-shell">
-        <section className="reset-panel auth-panel" aria-labelledby="snapshot-loading-title">
-          <div className="reset-mark">
-            <RefreshCw size={22} />
-          </div>
-          <div>
-            <div className="eyebrow">{loadFailed ? "Connection" : "Workspace"}</div>
-            <h1 id="snapshot-loading-title">{apiOffline ? "API connection required" : campaignLoadFailed ? "Campaign load failed" : "Loading campaign"}</h1>
-          </div>
-          <div className={`status reset-status ${loadFailed ? "connection-status" : ""}`} role="status" aria-live="polite">{status}</div>
-          {loadFailed && (
-            <button className="ghost-button wide" type="button" onClick={() => window.location.reload()}>
-              <RefreshCw size={16} /> Retry campaign load
-            </button>
-          )}
-        </section>
-      </main>
-    );
-  }
+  if (!snapshotReady) return <WorkspaceLoading status={status} />;
 
   const manageCategories = [
     { id: "account", label: "Account", description: "Profile, preferences, security, and character transfers", icon: <UserCog size={16} />, badge: characterTransferPendingCount > 0 ? `${formatNumber(characterTransferPendingCount)} transfer` : snapshot.organizations.length > 0 ? formatNumber(snapshot.organizations.length) : undefined },
@@ -8820,17 +8811,29 @@ export function App() {
     setManageCategory(category);
     return true;
   };
-  const selectScene = (nextSceneId: string) => {
+  const selectScene = (nextSceneId: string, worldId?: string) => {
     if (blockCampaignSetupNavigation("leaving campaign setup")) return false;
-    if (nextSceneId === sceneId) {
-      if (workspaceMode === "prep" || shortPhone) showScene();
-      return true;
-    }
-    if (sceneEditorNavigationBlocked()) {
+    const pending = sceneSwitchRef.current;
+    if (pending?.sceneId === nextSceneId && pending.worldId === worldId) return true;
+    if (nextSceneId !== sceneId && sceneEditorNavigationBlocked()) {
       setStatus("Save or discard scene changes before switching scenes");
       return false;
     }
-    setSceneId(nextSceneId);
+    if (blankCanvasDemoOpen || nextSceneId === sceneId) {
+      sceneSwitchRef.current = undefined;
+      setSceneSwitchTarget("");
+      setSceneId(nextSceneId);
+      if (worldId) setSelectedWorldId(worldId);
+    } else {
+      const intent = { sceneId: nextSceneId, worldId };
+      sceneSwitchRef.current = intent;
+      setSceneSwitchTarget(nextSceneId);
+      const isCurrent = () => sceneSwitchRef.current === intent && workspaceRequestIsCurrent(campaignId, currentUserId);
+      const canSelect = () => canCommitSceneSwitch(isCurrent() && realtimeSelectionRef.current.sceneId === sceneId, sceneDraftDirtyRef.current);
+      void retrySceneSwitch(canSelect, () => refresh(campaignId, nextSceneId, { syncStatus: false, selectSceneOnLoad: canSelect, sceneWorldId: worldId }))
+        .catch((error) => { if (isCurrent()) reportError(error); })
+        .finally(() => { if (isCurrent()) { sceneSwitchRef.current = undefined; setSceneSwitchTarget(""); } });
+    }
     if (workspaceMode === "prep" || shortPhone) showScene();
     return true;
   };
@@ -8875,8 +8878,7 @@ export function App() {
         setStatus(`${result.title} is no longer available to this seat. Campaign search has refreshed.`);
         return;
       }
-      if (result.worldId) setSelectedWorldId(result.worldId);
-      if (!selectScene(result.id)) return;
+      if (!selectScene(result.id, result.worldId)) return;
     } else if (result.type === "actor") {
       if (!snapshot.actors.some((actor) => actor.id === result.target.id)) {
         setCampaignSearchFocus(undefined);
@@ -9105,6 +9107,7 @@ export function App() {
             <div className="brand">OpenTabletop</div>
           </div>
           <div className="rail-quick-actions">
+            {snapshot.session?.user && <button className="icon-button" type="button" aria-label={interfaceSounds.enabled ? "Mute interface sounds" : "Unmute interface sounds"} aria-pressed={interfaceSounds.enabled} onClick={toggleInterfaceSounds}><Music size={15} aria-hidden="true" /></button>}
             <button className="icon-button" type="button" title="Command palette (Ctrl+K)" aria-label="Open command palette" onClick={() => setCommandPaletteOpen(true)}>
               <Search size={15} />
             </button>
@@ -9206,7 +9209,7 @@ export function App() {
           </span>
           </button>
         )}
-        <CampaignCallControl campaignId={campaignId} />
+        <CampaignCallControl key={`${campaignId}:${currentUserId}:${sessionTransportEpoch}`} campaignId={campaignId} />
         {showTableWorkspace && <>
         <section className="party-rail" aria-label="Party">
           <div className="operator-heading">
@@ -9274,7 +9277,7 @@ export function App() {
                 </span>
               </button>
             ))}
-            {adversaryActors.length === 0 && <p className="account-summary">No adversaries yet.</p>}
+            {adversaryActors.length === 0 && <EmptyState icon={<Swords size={17} />} text="No adversaries yet." action={hasPermission("actor.create") ? { label: "Add from compendium", run: () => selectInspectorTab("compendium") } : undefined} />}
           </div>
         </section>
         </>}
@@ -10322,10 +10325,11 @@ export function App() {
         {showTableWorkspace ? (
         <div className={`table-grid workspace-${workspaceMode}`} data-short-phone={shortPhone ? "true" : undefined} data-content-workspace={contentWorkspace ? "true" : undefined} data-scene-preview={contentWorkspace && prepScenePreview ? "true" : undefined} data-inspector-open={inspectorVisible ? "true" : "false"} {...inspectorWidth.layoutProps}>
           <section id="scene-workspace" className={`table-area scene-workspace ${canvasAssetDragging ? "canvas-asset-dragging" : ""}`} hidden={sceneWorkspaceHidden}>
+            {sceneSwitchTarget && <progress aria-label="Loading selected scene" className="scene-switch-progress" />}
             <Toolbar key={`${workspaceMode}-${tab}`} onSelectTool={selectCanvasTool} onCreateToken={async () => { await createToken(); }} onStartCombat={openCombatSetup} onRevealFog={revealFog} onHideFog={hideFog} onRevealFogPolygon={revealFogPolygon} onToggleFogBrush={toggleFogBrush} onToggleAnnotationTool={toggleAnnotationTool} onDeleteLatestAnnotation={deleteLatestAnnotation} onUndoScene={undoSceneEdit} onUndoFog={undoFog} onShowFogHistory={showFogHistory} onSampleVisionPoint={sampleVisionPoint} onSaveFogPreset={saveFogPreset} onApplyFogPreset={applyFogPreset} onDeleteFogPreset={deleteFogPreset} onCyclePlayerVisionPreview={playerPreview.show} onAddWall={addWall} onAddTerrainWall={addTerrainWall} onAddDoor={addDoor} onAddWindow={addWindow} onAddLight={addLight} onAddDarkness={addDarkness} onActionError={(error) => reportError(error)} canCreateToken={hasPermission("token.create")} canManageCombat={hasPermission("combat.manage")} canRevealFog={hasPermission("token.reveal")} canPreviewPlayerVision={Boolean(selectedScene && canPreviewPlayer && playerPreview.players.length > 0)} playerVisionPreviewLabel={playerPreview.open ? playerPreview.playerName : undefined} activeFogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} activeAnnotationTool={annotationTool} hasFogPresets={snapshot.fogPresets.length > 0} canUpdateScene={hasPermission("scene.update")} canAnnotate={hasPermission("scene.read")} />
             <div className="map-play-surface">
               {activeCombat && selectedScene && <InitiativeStrip combat={activeCombat} currentCombatantId={currentTurnCombatant?.id} nextCombatantId={nextTurnCombatant?.id} canAdvance={hasPermission("combat.manage")} onFocusCombatant={(combatant) => selectSingleToken(combatant.tokenId)} onNextTurn={(combat) => advanceCombatTurn(combat, 1)} onOpenTracker={() => selectInspectorTab("combat")} onError={reportError} />}
-              {selectedScene ? <SceneCanvas scene={selectedScene} zoom={battleMapZoom} backgroundAsset={selectedMapAsset} selectedAssetId={selectedBoardAssetId} assets={snapshot.assets} tokens={snapshot.tokens} actors={snapshot.actors} boardCurrentUserId={currentUserId} canSeeAllVitals={hasPermission("combat.manage")} currentTurnTokenIds={currentTurnTokenIds} nextTurnTokenIds={nextTurnTokenIds} vision={snapshot.vision} selectedTokenId={selectedTokenId} selectedTokenIds={selectedTokenIds} activeTokenLayer={activeTokenLayer} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} calibrationPoints={gridCalibrationOpen && selectedScene.gridType !== "gridless" ? gridCalibrationPoints : undefined} onCalibrationPoint={gridCalibrationOpen && selectedScene.gridType !== "gridless" ? (point) => setGridCalibrationPoints((current) => appendGridCalibrationPoint(current, point)) : undefined} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canMoveToken={hasPermission("token.move")} canUpdateAnnotations={hasPermission("scene.update")} canResizeToken={hasPermission("token.update")} canUpdateTokenLayer={hasPermission("token.update")} onSelect={selectCanvasToken} onInspectToken={(tokenId) => { selectCanvasToken(tokenId); selectInspectorTab("actors"); }} onSelectMany={selectCanvasTokens} onSelectBackgroundAsset={selectBoardBackgroundAsset} onClearSelection={clearTokenSelection} onMoved={async () => undefined} onTokenMovePersist={persistSceneCanvasTokenMove} onTokenResizePersist={persistSceneCanvasTokenResize} onTokenMoveCommit={recordTokenMoveAction} onTokenResizeCommit={recordTokenResizeAction} onTokenLayerCycle={cycleTokenLayer} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} onTogglePortal={toggleScenePortal} selectedOverlay={selectedOverlay} onSelectOverlay={setSelectedOverlay} onZoomBy={zoomBattleMap} onTokenTarget={setTokenTarget} /> : (
+              {selectedScene ? <LiveSceneCanvas visionStore={visionStore} scene={selectedScene} zoom={battleMapZoom} backgroundAsset={selectedMapAsset} selectedAssetId={selectedBoardAssetId} assets={snapshot.assets} tokens={snapshot.tokens} actors={snapshot.actors} boardCurrentUserId={currentUserId} canSeeAllVitals={hasPermission("combat.manage")} currentTurnTokenIds={currentTurnTokenIds} nextTurnTokenIds={nextTurnTokenIds} vision={snapshot.vision} selectedTokenId={selectedTokenId} selectedTokenIds={selectedTokenIds} activeTokenLayer={activeTokenLayer} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} calibrationPoints={gridCalibrationOpen && selectedScene.gridType !== "gridless" ? gridCalibrationPoints : undefined} onCalibrationPoint={gridCalibrationOpen && selectedScene.gridType !== "gridless" ? (point) => setGridCalibrationPoints((current) => appendGridCalibrationPoint(current, point)) : undefined} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canMoveToken={hasPermission("token.move")} canUpdateAnnotations={hasPermission("scene.update")} canResizeToken={hasPermission("token.update")} canUpdateTokenLayer={hasPermission("token.update")} onSelect={selectCanvasToken} onInspectToken={(tokenId) => { selectCanvasToken(tokenId); selectInspectorTab("actors"); }} onSelectMany={selectCanvasTokens} onSelectBackgroundAsset={selectBoardBackgroundAsset} onClearSelection={clearTokenSelection} onMoved={async () => undefined} onTokenMovePersist={persistSceneCanvasTokenMove} onTokenResizePersist={persistSceneCanvasTokenResize} onTokenMoveCommit={recordTokenMoveAction} onTokenResizeCommit={recordTokenResizeAction} onTokenLayerCycle={cycleTokenLayer} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} onTogglePortal={toggleScenePortal} selectedOverlay={selectedOverlay} onSelectOverlay={setSelectedOverlay} onZoomBy={zoomBattleMap} onTokenTarget={setTokenTarget} /> : (
                 <div className="empty-state empty-state-action">
                   {!selectedCampaign ? <>
                     <h2>Start your first table</h2>
@@ -10373,11 +10377,11 @@ export function App() {
                 <span>Layers</span>
                 {mapDockOpen ? <ChevronUp size={14} aria-hidden="true" /> : <ChevronDown size={14} aria-hidden="true" />}
               </button>
-              {mapDockOpen && <MapLayerStack scene={selectedScene} tokens={snapshot.tokens} activeTokenLayer={activeTokenLayer} fogActive={Boolean(snapshot.vision?.sceneId === selectedScene?.id && snapshot.vision?.fogActive)} visibleAnnotationLayers={visibleAnnotationLayers} onSelectTokenLayer={selectTokenLayer} onToggleAnnotationLayer={setAnnotationLayerVisible} />}
+              {mapDockOpen && <LiveMapLayerStack visionStore={visionStore} vision={snapshot.vision} userId={currentUserId} scene={selectedScene} tokens={snapshot.tokens} activeTokenLayer={activeTokenLayer} visibleAnnotationLayers={visibleAnnotationLayers} onSelectTokenLayer={selectTokenLayer} onToggleAnnotationLayer={setAnnotationLayerVisible} />}
               {mapDockOpen && selectedScene && <TacticalMapAids key={`tactical:${selectedScene.id}`} scene={selectedScene} tokens={snapshot.tokens} canManage={hasPermission("scene.update")} canMoveTokens={hasPermission("token.move")} combat={activeCombat} onSceneChange={applySceneToSnapshot} onTokenChange={(token) => applyTokensToSnapshot([token])} onStatus={setStatus} />}
             </div>
-            {hasPermission("token.reveal") && (fogBrushMode || toolReport) && (
-              <section className="table-tool-panel movable-panel" aria-label="Fog and vision tools" style={fogToolPanel.style} {...fogToolPanel.panelProps}>
+            {hasPermission("token.reveal") && <InterfaceSurface key={`fog:${campaignId}:${currentUserId}:${sceneId}`} open={Boolean(fogBrushMode || toolReport)} render={(closing) => (
+              <section className="table-tool-panel movable-panel" data-interface-exit={closing || undefined} inert={closing} aria-label="Fog and vision tools" style={fogToolPanel.style} {...fogToolPanel.panelProps}>
                 <header className="floating-panel-header table-tool-panel-header" title="Drag panel" {...fogToolPanel.dragHandleProps}>
                   <Hand className="floating-panel-drag-icon" size={14} aria-hidden="true" />
                   <div>
@@ -10400,14 +10404,14 @@ export function App() {
                   <Grip size={13} aria-hidden="true" />
                 </button>
               </section>
-            )}
-            {annotationPanelOpen && !fogBrushMode && annotationTool && annotationToolShowsSettings(annotationTool) && (
-            <section className="table-tool-panel annotation-panel movable-panel" aria-label="Annotation layers and history" style={annotationToolPanel.style} {...annotationToolPanel.panelProps}>
+            )} />}
+            <InterfaceSurface key={`annotations:${campaignId}:${currentUserId}:${sceneId}`} open={Boolean(annotationPanelOpen && !fogBrushMode && annotationTool && annotationToolShowsSettings(annotationTool))} render={(closing) => (
+            <section className="table-tool-panel annotation-panel movable-panel" data-interface-exit={closing || undefined} inert={closing} aria-label="Annotation layers and history" style={annotationToolPanel.style} {...annotationToolPanel.panelProps}>
               <header className="annotation-panel-header floating-panel-header" title="Drag panel" {...annotationToolPanel.dragHandleProps}>
                 <Hand className="floating-panel-drag-icon" size={14} aria-hidden="true" />
                 <div>
                   <strong>Annotations</strong>
-                  <span>{annotationToolLabel(annotationTool)} settings</span>
+                  <span>{annotationTool ? annotationToolLabel(annotationTool) + " settings" : ""}</span>
                 </div>
                 <button className="icon-button" type="button" aria-label="Close annotation settings" onClick={() => setAnnotationPanelOpen(false)}>
                   <X size={15} />
@@ -10547,7 +10551,7 @@ export function App() {
                 <Grip size={13} aria-hidden="true" />
               </button>
             </section>
-            )}
+            )} />
             {workspaceMode === "prep" && !fogBrushMode && tab === "content" && (
             <section className="table-tool-panel canvas-asset-dock" aria-label="Canvas asset picker">
               <details>
@@ -10637,7 +10641,7 @@ export function App() {
           {inspectorVisible && <InspectorResizeHandle inspectorId="workspace-inspector" onResize={inspectorWidth.setWidth} />}
           <aside id="workspace-inspector" className="inspector" aria-label="Inspector" hidden={!inspectorVisible}>
             <WorkspaceInspectorTabs inspectorTabs={inspectorTabs} tab={tab} chatUnreadCount={chatUnreadCount} onSelectTab={selectInspectorTab} />
-            <div className="inspector-panel-content" role="tabpanel" id={`inspector-panel-${tab}`} aria-labelledby={`inspector-tab-${tab}`}>
+            <InspectorPanelContent key={`${campaignId}:${currentUserId}:${sessionTransportEpoch}`} tab={tab}>
             <DeferredPanel label={`${tab} panel`}>
             {tab === "actors" && <ActorPanel key={`actor-panel:${campaignId}:${selectedActor?.id ?? "none"}:${selectedScene?.id ?? "none"}:${activeCombat?.id ?? "none"}`} campaignId={campaignId} actor={selectedActor} token={selectedToken} systemLabel={snapshot.systems.find((system) => system.id === selectedActor?.systemId)?.name ?? selectedActor?.systemId} scene={selectedScene} currentUserId={currentUserId} actors={snapshot.actors} tokens={snapshot.tokens} combat={activeCombat} members={snapshot.members} assets={snapshot.assets} items={snapshot.items} focusItemId={campaignSearchFocus?.type === "item" ? campaignSearchFocus.target.id : undefined} compendiumEntries={compendiumEntries} compendiumSearch={compendiumSearch} setCompendiumSearch={setCompendiumSearch} compendiumStatus={compendiumStatus} updateActorHp={updateActorHp} adjustActorHp={adjustActorHp} awardActorXp={awardActorXp} xpProgress={xpProgress} advancementReady={Boolean(canUpdateSelectedActor && ((xpProgress?.readyToLevel && advancementOptions.length > 0) || advancementLoadError))} onLevelUp={() => setAdvancementModalOpen(true)} onPreviewRestActor={previewSelectedActorRest} onRestActor={restSelectedActor} onTypedDamageApplied={applyTypedDamageResult} updateActorData={updateActorData} onActorUpdated={applyActorToSnapshot} toggleActorCondition={toggleActorCondition} updateItemData={updateItemData} changeActorAttunement={changeActorAttunement} assignItemToActor={assignItemToActor} onSpellPreparationApplied={(result) => { const returnedItems = new Map(result.items.map((item) => [item.id, item])); setSnapshot((current) => ({ ...current, actors: current.actors.map((actor) => actor.id === result.actor.id ? result.actor : actor), items: current.items.map((item) => returnedItems.get(item.id) ?? item) })); }} updateToken={updateSelectedToken} onUploadTokenImage={uploadSelectedTokenImage} targetToken={setTokenTarget} targetTokens={setTokenTargets} deleteToken={deleteSelectedToken} deleteActor={deleteActor} updateTokenVision={updateSelectedTokenVision} useActorAction={useActorAction} onImportCompendiumEntry={importCompendiumEntry} onPurchaseCompendiumEntry={purchaseCompendiumEntry} onPlaceActor={placeActorOnSelectedScene} canCreateToken={hasPermission("token.create")} canUpdateActor={canUpdateSelectedActor} canAwardActorXp={hasPermission("actor.update")} canRestActor={canUpdateSelectedActor} canUpdateToken={hasPermission("token.update")} canDeleteToken={hasPermission("token.delete")} canDeleteActor={!blankCanvasDemoOpen && hasPermission("actor.delete")} canUseAction={canUpdateSelectedActor && hasPermission("dice.roll")} />}
             {tab === "compendium" && (
@@ -10745,12 +10749,12 @@ export function App() {
             )}
             {tab === "memory" && <LazyCampaignMemoryPanel key={`memory:${campaignId}:${currentUserId}`} campaignId={campaignId} campaignUpdatedAt={selectedCampaign?.updatedAt ?? ""} facts={snapshot.memory as AiMemoryFact[]} canCreate={hasPermission("ai.proposeChanges")} canReview={hasPermission("ai.applyChanges")} onFactsChange={(memory) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setSnapshot((current) => ({ ...current, memory })); }} onExtract={extractMemory} onStatus={(message) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setStatus(message); }} />}
             {tab === "search" && <CampaignSearchPanel key={`search:${campaignId}:${currentUserId}`} campaignId={campaignId} worlds={worlds} revision={snapshot.eventSequence} storageKey={`otte:campaign-search:${campaignId}:${currentUserId}`} onOpenResult={openCampaignSearchResult} />}
-            {tab === "chat" && <ChatRail campaignId={campaignId} currentUserId={currentUserId} command={chatBody} setCommand={setChatBody} replyTarget={chatReplyTarget} messages={snapshot.chat} rolls={snapshot.rolls} concealedRollIds={concealedRollIds} members={snapshot.members} presences={snapshot.presences} scenes={snapshot.scenes} diceFormula={diceFormula} setDiceFormula={setDiceFormula} diceVisibility={diceVisibility} setDiceVisibility={setDiceVisibility} savedDiceFormulas={savedDiceFormulas} diceMacros={snapshot.diceMacros} onRollDice={rollDice} onSaveDiceFormula={saveCurrentDiceFormula} onSubmitCommand={submitChatCommand} onReplyToMessage={(message) => setChatReplyToMessageId(message.id)} onEditMessage={editChatMessage} onDeleteMessage={deleteChatMessage} onModerateMessage={moderateChatMessage} onClearReply={() => setChatReplyToMessageId("")} canModerate={hasPermission("chat.moderate")} canRollDice={hasPermission("dice.roll")} dice3dEnabled={dice3dEnabled} onToggleDice3d={() => persistQuickPreferences({ dice3dEnabled: !dice3dEnabled }, dice3dEnabled ? "Use text-only dice" : "Enable 3D dice")} notificationPreference={resolvedUserPreferences(snapshot.session?.user ?? {}).chatNotifications} connectionState={realtimeUiState} />}
+            {tab === "chat" && <ChatRail campaignId={campaignId} currentUserId={currentUserId} command={chatBody} setCommand={setChatBody} replyTarget={chatReplyTarget} messages={snapshot.chat} rolls={snapshot.rolls} concealedRollIds={concealedRollIds} members={snapshot.members} presences={snapshot.presences} scenes={snapshot.scenes} diceFormula={diceFormula} setDiceFormula={setDiceFormula} diceVisibility={diceVisibility} setDiceVisibility={setDiceVisibility} savedDiceFormulas={savedDiceFormulas} diceMacros={snapshot.diceMacros} onRollDice={rollDice} onSaveDiceFormula={saveCurrentDiceFormula} onSubmitCommand={submitChatCommand} onReplyToMessage={(message) => setChatReplyToMessageId(message.id)} onEditMessage={editChatMessage} onDeleteMessage={deleteChatMessage} onModerateMessage={moderateChatMessage} onClearReply={() => setChatReplyToMessageId("")} canWrite={hasPermission("chat.write")} canModerate={hasPermission("chat.moderate")} canRollDice={hasPermission("dice.roll")} dice3dEnabled={dice3dEnabled} onToggleDice3d={() => persistQuickPreferences({ dice3dEnabled: !dice3dEnabled }, dice3dEnabled ? "Use text-only dice" : "Enable 3D dice")} notificationPreference={resolvedUserPreferences(snapshot.session?.user ?? {}).chatNotifications} connectionState={realtimeUiState} />}
             {tab === "combat" && <CombatPanel campaignId={campaignId} combat={activeCombat} recentCombats={recentEndedCombats} auditLogs={snapshot.combatAudit} actors={snapshot.actors} tokens={selectedSceneTokens} onFocusCombatant={(combatant) => selectSingleToken(combatant.tokenId)} onStart={openCombatSetup} onPlanEncounter={planSystemEncounter} onNext={(combat) => advanceCombatTurn(combat, 1)} onPrevious={(combat) => advanceCombatTurn(combat, -1)} onEnd={endCombat} onAwardPartyXp={awardPartyXp} onAwardPartyGold={awardPartyGold} onRecordLoot={recordCombatLoot} canAwardRewards={hasPermission("combat.manage") && hasPermission("actor.update")} onUpdateCombatant={updateCombatant} onConfirmAction={confirmCombatAction} onRejectAction={rejectCombatAction} onCombatUpdated={(combat) => setSnapshot((current) => ({ ...current, combats: current.combats.map((candidate) => candidate.id === combat.id ? combat : candidate) }))} onRefresh={async () => { await refresh(campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false }); }} onStatus={setStatus} onRulesMutationApplied={setLastDndRulesUndo} onTypedDamageApplied={applyTypedDamageResult} onAdjustVitals={adjustCombatVitals} onAddCombatant={addCombatantToActiveCombat} onRemoveCombatant={removeCombatantFromActiveCombat} onSpendLegendaryAction={spendLegendaryAction} canManage={hasPermission("combat.manage")} canManageEffects={hasPermission("combat.manage") && hasPermission("actor.update")} canPreviewEffects={hasPermission("actor.readPrivate")} canAdjustVitals={hasPermission("combat.manage") && hasPermission("actor.update")} vitalsDisabledReason={hasPermission("combat.manage") ? "Requires actor.update permission" : "Requires combat.manage permission"} canManageRoster={hasPermission("combat.manage")} rosterDisabledReason="Requires combat.manage permission" canManageLegendaryActions={hasPermission("combat.manage") && hasPermission("actor.update")} legendaryActionsDisabledReason={hasPermission("combat.manage") ? "Requires actor.update permission" : "Requires combat.manage permission"} />}
             {tab === "content" && <LazyContentImportPanel assets={snapshot.assets} assetStorage={snapshot.assetStorage} selectedScene={selectedScene} assetSearch={assetSearch} setAssetSearch={setAssetSearch} assetFolder={assetFolder} setAssetFolder={setAssetFolder} assetTags={assetTags} setAssetTags={setAssetTags} assetStatus={assetStatus} failedAssetUpload={failedAssetUpload} onRetryFailedAssetUpload={retryAssetUpload} onDismissFailedAssetUpload={dismissFailedAssetUpload} lifecycleReason={assetLifecycleReason} setLifecycleReason={setAssetLifecycleReason} onUploadAsset={uploadAssetToLibrary} onSetSceneBackground={setSceneBackgroundFromAsset} onPlaceAssetToken={createTokenFromAsset} onUpdateAssetMetadata={updateAssetMetadata} onUpdateAssetLifecycle={updateAssetLifecycle} onCreateAssetDeliveryUrl={createAssetDeliveryUrl} imports={snapshot.contentImports} kind={contentImportKind} setKind={setContentImportKind} name={contentImportName} setName={setContentImportName} body={contentImportBody} setBody={setContentImportBody} status={contentImportStatus} onPreview={previewContentImport} onAnalyzePdf={analyzePdfContentImport} onApply={applyContentImport} onRollback={rollbackContentImport} onDelete={deleteContentImport} canManage={hasPermission("campaign.update")} canProposeAiChanges={hasPermission("ai.proposeChanges")} canCreateAsset={hasPermission("scene.create")} canUpdateScene={hasPermission("scene.update")} canCreateToken={hasPermission("token.create")} />}
             {tab === "plugins" && <LazySdkPanel systemManagement={selectedCampaign ? { campaign: selectedCampaign, currentUserId, canRegisterSystem: Boolean(snapshot.session?.serverAdmin) && hasPermission("campaign.update"), onChanged: async (actor) => { if (actor) applyActorToSnapshot(actor); await refresh(campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false }); }, onOpenActorSheet: (actor) => selectActor(actor.id) } : undefined} plugins={snapshot.plugins} systems={snapshot.systems} characterTemplates={snapshot.characterTemplates} actor={selectedActor} advancementOptions={advancementOptions} advancementGrantsFeat={advancementGrantsFeat} advancementFeats={advancementFeats} multiclassOptions={multiclassOptions} advancementClassName={advancementClassName} nextClassLevel={advancementNextClassLevel} requiresSubclass={advancementRequiresSubclass} subclassOptions={advancementSubclassOptions} weaponMastery={advancementWeaponMastery} spellAdvancementPaths={spellAdvancementPaths} pendingAdvancement={pendingAdvancement} importedActor={importedActor} createdMonster={createdMonster} onSyncPluginRegistries={syncPluginRegistries} onInstallPlugin={installPlugin} onInstallSystem={installSystem} onCreateCharacter={createCharacterFromTemplate} onOpenCharacterCreator={() => void openCharacterCreator()} onImportCharacter={() => setCharacterImportOpen(true)} onCreateMonster={createSystemMonster} onPreviewActor={previewSelectedActorAdvancement} onAdvanceActor={advanceSelectedActor} onCancelPendingAdvancement={cancelSelectedActorPendingAdvancement} onPreviewRestActor={previewSelectedActorRest} onRestActor={restSelectedActor} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={Boolean(snapshot.session?.serverAdmin) && hasPermission("plugin.install")} canInstallSystem={hasPermission("campaign.update")} canCreateActor={hasPermission("actor.create")} canImportActor={hasPermission("actor.create")} canAdvanceActor={canUpdateSelectedActor} canRestActor={canUpdateSelectedActor} canRollSystem={hasPermission("dice.roll")} />}
             </DeferredPanel>
-            </div>
+            </InspectorPanelContent>
           </aside>
         </div>
         ) : workspaceMode === "ai" ? (
@@ -10807,10 +10811,10 @@ export function App() {
           onReject={rejectAiAgentProposal}
         />
       )}
-      <div id={diceBoxContainerId} className="dice-box-stage" aria-hidden="true" />
+      <DiceTableStage boardId={showTableWorkspace && !sceneWorkspaceHidden ? selectedScene?.id : undefined} casts={activeDiceCasts.filter((cast) => snapshot.rolls.some((roll) => roll.id === cast.rollId))} />
       {!blankCanvasDemoOpen && <AudioPlaybackLayer tracks={snapshot.audioTracks} masterVolume={audioMasterVolume} muted={audioMuted} />}
-      {!blankCanvasDemoOpen && audioSoundboardOpen && hasPermission("scene.update") && (
-        <AudioSoundboard
+      {!blankCanvasDemoOpen && hasPermission("scene.update") && <InterfaceSurface key={`audio:${campaignId}:${currentUserId}`} open={audioSoundboardOpen} render={(closing) => (
+        <AudioSoundboard closing={closing}
           tracks={snapshot.audioTracks}
           masterVolume={audioMasterVolume}
           muted={audioMuted}
@@ -10822,7 +10826,7 @@ export function App() {
           onUploadTrack={uploadAudioTrack}
           onClose={() => setAudioSoundboardOpen(false)}
         />
-      )}
+      )} />}
       {encounterBuilderOpen && selectedCampaign && encounterBuilderSystem && (
         <EncounterBuilderDialog
           key={`encounter-builder:${selectedCampaign.id}:${currentUserId}:${encounterBuilderSystem.id}`}
@@ -10851,7 +10855,7 @@ export function App() {
           }}
         />
       )}
-      {commandPaletteOpen && <CommandPalette commands={paletteCommands} onRun={runPaletteCommand} onClose={() => setCommandPaletteOpen(false)} />}
+      <CommandPalette open={commandPaletteOpen} commands={paletteCommands} onRun={runPaletteCommand} onClose={() => setCommandPaletteOpen(false)} />
       {advancementModalOpen && selectedActor && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
           if (event.target === event.currentTarget) setAdvancementModalOpen(false);
@@ -10947,9 +10951,8 @@ export function App() {
           />
         </DeferredPanel>
       )}
-      {shortcutOverlayOpen && <KeyboardShortcutDialog onClose={() => setShortcutOverlayOpen(false)} />}
-      {toasts.length > 0 && <ToastStack toasts={toasts} onDismiss={dismissToast} />}
-      {activeDiceCasts.length > 0 && <DiceCastOverlay casts={activeDiceCasts} />}
+      <KeyboardShortcutDialog open={shortcutOverlayOpen} onClose={() => setShortcutOverlayOpen(false)} />
+      <ToastStack key={`${campaignId}:${currentUserId}`} toasts={toasts} onDismiss={dismissToast} />
     </main>
     {realtimeUiState === "syncing" && <RealtimeSyncGuard />}
     </>

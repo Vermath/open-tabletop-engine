@@ -1,7 +1,6 @@
 import { spawn } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
-import { createRequire } from "node:module";
 import { resolve, sep } from "node:path";
 
 const apiPort = process.env.OTTE_E2E_API_PORT ?? "4100";
@@ -15,8 +14,6 @@ mkdirSync(runStorageRoot, { recursive: true });
 const dbPath = resolve(runStorageRoot, "state.sqlite");
 const aiGatePath = resolve(runStorageRoot, "ai-provider.release");
 
-const require = createRequire(import.meta.url);
-const tsxCliPath = require.resolve("tsx/cli");
 const apiEntryPath = resolve(process.cwd(), "tests", "e2e", "api-entry.ts");
 let child;
 let generation = 0;
@@ -27,10 +24,9 @@ let restartInFlight;
 function spawnApi() {
   intentionalStop = false;
   generation += 1;
-  // Run the API in the directly owned Node process. On Windows, killing a
-  // package-manager wrapper leaves its API grandchild alive and makes a real
-  // restart fail with EADDRINUSE.
-  const nextChild = spawn(process.execPath, [tsxCliPath, apiEntryPath], {
+  // Load TypeScript in the API process so restart signals reach the API
+  // directly and the old listener exits before we reuse its port.
+  const nextChild = spawn(process.execPath, ["--import", "tsx", apiEntryPath], {
     stdio: "inherit",
     shell: false,
     env: {

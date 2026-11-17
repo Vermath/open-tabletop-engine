@@ -4573,7 +4573,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       };
     },
   });
-  app.get<{ Params: { sceneId: string }; Querystring: { previewUserId?: string } }>("/api/v1/scenes/:sceneId/vision", async (request, reply): Promise<VisionSnapshot | FastifyReply> => {
+  app.get<{ Params: { sceneId: string }; Querystring: { previewUserId?: string; includeTokens?: boolean } }>("/api/v1/scenes/:sceneId/vision", async (request, reply): Promise<VisionSnapshot | FastifyReply> => {
     const campaignId = campaignIdForScene(store, request.params.sceneId);
     if (!campaignId) return notFound(reply, "Scene not found");
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
@@ -4583,6 +4583,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (activeOrganization !== true) return activeOrganization;
     if (!canReadSceneRecord(store, userId, scene)) return notFound(reply, "Scene not found");
     const previewUserId = request.query.previewUserId?.trim();
+    let viewerId = userId;
     if (previewUserId && previewUserId !== userId) {
       const previewAllowed = requireCampaignPermissionForUser(store, reply, request.headers, userId, campaignId, "scene.update");
       if (previewAllowed !== true) return previewAllowed;
@@ -4590,9 +4591,17 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         return badRequest(reply, "Player vision preview user must be a campaign member");
       }
       if (!canReadSceneRecord(store, previewUserId, scene)) return forbidden(reply, "Preview user cannot read this scene");
-      return visionSnapshotForUser(store, previewUserId, campaignId, scene);
+      viewerId = previewUserId;
     }
-    return visionSnapshotForUser(store, userId, campaignId, scene);
+    if (!request.query.includeTokens) return visionSnapshotForUser(store, viewerId, campaignId, scene);
+    if (!canCampaign(store, userId, campaignId, "token.read") || !canCampaign(store, viewerId, campaignId, "token.read")) return forbidden(reply, "Token read permission required");
+    const cache = createTokenVisibilityCache();
+    const sceneTokens = store.state.tokens.filter((token) => token.sceneId === scene.id);
+    return {
+      ...visionSnapshotForUser(store, viewerId, campaignId, scene, cache),
+      sceneUpdatedAt: scene.updatedAt,
+      visibleTokens: visibleTokensForUser(store, viewerId, campaignId, sceneTokens, cache),
+    };
   });
 
   app.get<{ Params: { sceneId: string }; Querystring: { x?: string; y?: string } }>("/api/v1/scenes/:sceneId/vision/sample", async (request, reply): Promise<VisionPointSample | FastifyReply> => {
@@ -18900,7 +18909,7 @@ function defaultUserPreferences(): UserPreferences {
 
 function normalizeUserPreferences(value: unknown, current?: UserPreferences): { ok: true; value: UserPreferences } | { ok: false; error: string } {
   if (!isRecord(value)) return { ok: false, error: "Profile preferences must be an object" };
-  const unexpected = Object.keys(value).find((key) => !["theme", "dice3dEnabled", "reducedMotion", "chatNotifications"].includes(key));
+  const unexpected = Object.keys(value).find((key) => !["theme", "dice3dEnabled", "reducedMotion", "chatNotifications", "interfaceSounds"].includes(key));
   if (unexpected) return { ok: false, error: `Profile preference is not supported: ${unexpected}` };
   const preferences = { ...defaultUserPreferences(), ...current };
   if ("theme" in value) {
@@ -18914,6 +18923,15 @@ function normalizeUserPreferences(value: unknown, current?: UserPreferences): { 
   if ("reducedMotion" in value) {
     if (typeof value.reducedMotion !== "boolean") return { ok: false, error: "Profile reducedMotion must be boolean" };
     preferences.reducedMotion = value.reducedMotion;
+  }
+  if ("interfaceSounds" in value) {
+    const settings = value.interfaceSounds;
+    if (!isRecord(settings) || Object.keys(settings).some((key) => key !== "enabled" && key !== "volume") ||
+      typeof settings.enabled !== "boolean" || typeof settings.volume !== "number" ||
+      !Number.isFinite(settings.volume) || settings.volume < 0 || settings.volume > 1) {
+      return { ok: false, error: "Profile interface sounds need an enabled flag and volume from 0 to 1" };
+    }
+    preferences.interfaceSounds = { enabled: settings.enabled, volume: settings.volume };
   }
   if ("chatNotifications" in value) {
     if (value.chatNotifications !== "all" && value.chatNotifications !== "mentions" && value.chatNotifications !== "none") {
