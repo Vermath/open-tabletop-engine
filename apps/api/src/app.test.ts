@@ -32935,7 +32935,6 @@ registerCommand("/state", (input) => {
             campaignName: "The Ember Vault",
             provider: "codex-ops-test",
             toolName: "roll_dice",
-            input: { formula: "1d20+2", label: "Ops Check" },
             status: "completed"
           }),
           expect.objectContaining({
@@ -32948,6 +32947,15 @@ registerCommand("/state", (input) => {
         ])
       );
       expect(JSON.stringify(operations.json())).not.toContain("OPENAI_API_KEY");
+      // Server admins see operational telemetry, not campaign prompts, replies or tool payloads.
+      for (const thread of operations.json().recentThreads) {
+        for (const field of ["prompt", "assistantMessage", "sources", "citations", "citationWarnings", "contextScopes", "advertisedTools"]) expect(thread).not.toHaveProperty(field);
+      }
+      for (const toolCall of operations.json().recentToolCalls) {
+        expect(toolCall).not.toHaveProperty("input");
+        if (toolCall.output !== undefined) expect(Object.keys(toolCall.output)).toEqual(["error"]);
+      }
+      expect(JSON.stringify(operations.json().recentToolCalls)).not.toContain("Ops Check");
       expect(store.state.auditLogs.map((log) => log.action)).toContain("admin.aiOperations.inspect");
       expect(store.state.auditLogs.at(-1)).toMatchObject({
         action: "admin.aiOperations.inspect",

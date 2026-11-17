@@ -1549,9 +1549,11 @@ export interface AdminAiOperations {
   };
   recentEvaluations: AiEvaluationRun[];
   campaigns: Array<AiUsageRollup & { campaignId: string; campaignName: string }>;
-  recentThreads: AiThread[];
+  recentThreads: Array<Pick<AiThread, "id" | "campaignId" | "userId" | "provider" | "title" | "status" | "startedAt" | "completedAt" | "failedAt" | "durationMs" | "retryAttempts" | "eventCount" | "toolCallCount" | "providerError" | "usage" | "createdAt" | "updatedAt"> & { campaignName?: string }>;
   recentToolCalls: Array<
-    AiToolCall & {
+    Omit<AiToolCall, "input" | "output"> & {
+      /** Only the tool's error code, never its full output. */
+      output?: { error: string };
       campaignId?: string;
       campaignName?: string;
       provider?: string;

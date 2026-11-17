@@ -14039,7 +14039,7 @@ function adminAiOperations(store: StateStore, aiProvider: AiProvider) {
     risk,
     campaigns,
     recentEvaluations: store.state.aiEvaluations.slice().sort(sortTimestampsDesc).slice(0, 20),
-    recentThreads: store.state.aiThreads.slice().sort(sortTimestampsDesc).slice(0, 20),
+    recentThreads: store.state.aiThreads.slice().sort(sortTimestampsDesc).slice(0, 20).map((thread) => adminAiThreadInfo(thread, store.state.campaigns)),
     recentToolCalls: store.state.aiToolCalls
       .slice()
       .sort(sortTimestampsDesc)
@@ -14796,10 +14796,17 @@ function adminAiEvaluationInfo(evaluation: AiEvaluationRun, threadById: Map<stri
   return { ...evaluation, campaignName: campaign?.name, threadTitle: thread?.title, threadStatus: thread?.status, failedChecks: evaluation.checks.filter((check) => check.status === "failed") };
 }
 
+// Server-admin AI telemetry is operational: it never carries prompts, model
+// replies, sources or tool inputs/outputs from campaigns the admin may not belong to.
+function adminAiThreadInfo(thread: AiThread, campaigns: Campaign[]) {
+  return { id: thread.id, campaignId: thread.campaignId, campaignName: campaigns.find((item) => item.id === thread.campaignId)?.name, userId: thread.userId, provider: thread.provider, title: thread.title, status: thread.status, startedAt: thread.startedAt, completedAt: thread.completedAt, failedAt: thread.failedAt, durationMs: thread.durationMs, retryAttempts: thread.retryAttempts, eventCount: thread.eventCount, toolCallCount: thread.toolCallCount, providerError: sanitizeAiProviderError(thread.providerError), usage: thread.usage, createdAt: thread.createdAt, updatedAt: thread.updatedAt };
+}
+
 function adminAiToolCallInfo(call: AiToolCall, threadById: Map<string, AiThread>, campaigns: Campaign[]) {
   const thread = threadById.get(call.threadId);
   const campaign = thread ? campaigns.find((item) => item.id === thread.campaignId) : undefined;
-  return { ...call, campaignId: thread?.campaignId, campaignName: campaign?.name, provider: thread?.provider, threadTitle: thread?.title, threadStatus: thread?.status };
+  const errorCode = aiToolErrorCode(call.output);
+  return { id: call.id, threadId: call.threadId, toolName: call.toolName, status: call.status, durationMs: call.durationMs, retry: call.retry, output: errorCode ? { error: errorCode } : undefined, createdAt: call.createdAt, updatedAt: call.updatedAt, campaignId: thread?.campaignId, campaignName: campaign?.name, provider: thread?.provider, threadTitle: thread?.title, threadStatus: thread?.status };
 }
 
 function aiProviderRuntimeConfig(aiProvider: AiProvider) {
