@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import type { boardRenderCounts } from "../../apps/web/src/board-render-counts.js";
 import type { Campaign, Scene, Token } from "../../packages/core/src/types.js";
 
 /**
@@ -14,7 +15,7 @@ const gmHeaders = { authorization: "Bearer otte-cookie-session", origin: webBase
 const tokenCount = 24;
 const wallCount = 30;
 
-type RenderCounts = Record<"scene" | "token" | "lighting" | "darkness" | "difficultTerrain" | "walls" | "structureHandles" | "visionMask", number>;
+type RenderCounts = typeof boardRenderCounts;
 
 async function api<T>(page: Page, method: "GET" | "POST" | "PATCH", path: string, data?: unknown): Promise<T> {
   const response = await page.request.fetch(`${apiBaseUrl}${path}`, {
