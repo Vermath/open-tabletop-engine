@@ -201,6 +201,14 @@ describe("deployment smoke", () => {
     expect(docsSiteWorkflow).toContain(
       "group: docs-site-${{ github.event_name == 'pull_request' && github.ref || 'publish' }}",
     );
+    // Pages may only be configured, uploaded and deployed from main, even on manual dispatch.
+    const docsDeployGuards = docsSiteWorkflow.match(/^\s+if: .*$/gm) ?? [];
+    expect(docsDeployGuards.length).toBeGreaterThanOrEqual(2);
+    for (const guard of docsDeployGuards) {
+      expect(guard).toContain(
+        "github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')",
+      );
+    }
 
     const compose = readWorkspaceFile("docker-compose.yml");
     expect(compose).toMatch(
