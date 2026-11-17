@@ -31,9 +31,28 @@ export OTTE_WORKER_TOKEN OTTE_WORKER_TOKEN_HASHES
 "${compose[@]}" up -d --wait --wait-timeout 180 api web
 api_address=$("${compose[@]}" port api 4000)
 web_address=$("${compose[@]}" port web 80)
-curl --fail --silent --show-error "http://$api_address/api/v1/health" >/dev/null
-curl --fail --silent --show-error "http://$web_address/api/v1/health" >/dev/null
-curl --fail --silent --show-error "http://$web_address/" | grep -i '<!doctype html' >/dev/null
+node --input-type=module - "$api_address" "$web_address" <<'JS'
+import assert from "node:assert/strict";
+
+const [api, web] = process.argv.slice(2).map((address) => new URL("http://" + address));
+async function get(base, path) {
+  const response = await fetch(new URL(path, base));
+  assert.equal(response.status, 200, path);
+  return response;
+}
+const direct = await (await get(api, "/api/v1/health")).json();
+const proxied = await (await get(web, "/api/v1/health")).json();
+assert.equal(direct.ok, true);
+assert.equal(proxied.service, "open-tabletop-api");
+assert.match(direct.buildFingerprint, /^sha256:[a-f0-9]{64}$/);
+assert.equal(proxied.buildFingerprint, direct.buildFingerprint);
+const html = await (await get(web, "/")).text();
+const entry = html.match(/<script\b[^>]*\bsrc="([^"]+)"/i);
+assert.ok(entry, "Packaged frontend must serve a script entry point");
+const script = await get(web, entry[1]);
+assert.match(script.headers.get("content-type") ?? "", /javascript/);
+console.log("Packaged frontend, API and proxy passed");
+JS
 "${compose[@]}" run --rm --no-deps -T -e OTTE_WORKER_LEASE_POLL=false -e OTTE_WORKER_LEASE_ONCE=true worker |
   node --input-type=module -e '
     import { readFileSync } from "node:fs";
