@@ -6,6 +6,17 @@
 .scene-board .wall-layer line.door.open { opacity: .25; }
 .door-glyph { color: var(--accent-strong); }
 .door-glyph.open { color: var(--green); }
+.door-glyph.locked { color: var(--red); }
+.scene-board .structure-handle.door-lock-toggle {
+  width: max-content;
+  height: auto;
+  min-height: 28px;
+  padding-inline: 8px;
+  transform: translate(-50%, 13px);
+  color: var(--paper);
+  background: var(--surface-0);
+  font-size: 12px;
+}
 .door-glyph rect { fill: var(--surface-0); stroke: currentColor; vector-effect: non-scaling-stroke; }
 .door-glyph path { fill: none; stroke: currentColor; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
 .scene-board .structure-handle.door-handle { background: transparent; border-color: transparent; box-shadow: none; }

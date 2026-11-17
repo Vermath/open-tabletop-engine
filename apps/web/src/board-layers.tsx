@@ -46,9 +46,11 @@ function FeatherInside({ id }: { id: string }) {
 function DoorGlyph({ wall }: { wall: Wall }) {
   const x = (wall.x1 + wall.x2) / 2;
   const y = (wall.y1 + wall.y2) / 2;
-  return <g className={wall.open ? "door-glyph open" : "door-glyph closed"} transform={"translate(" + x + " " + y + ")"}>
+  const state = wall.locked ? "locked" : wall.open ? "open" : "closed";
+  const icon = { locked: "M-5 0h10v7h-10z M-3 0v-3a3 3 0 0 1 6 0v3 M0 3v1", open: "M-6 7V-7H5V7 M-6-7L1-4V9L-6 7", closed: "M-5 7V-7H5V7Z M2 0h1" }[state];
+  return <g className={"door-glyph " + state} transform={"translate(" + x + " " + y + ")"}>
     <rect x="-11" y="-11" width="22" height="22" rx="4" />
-    <path d={wall.open ? "M-6 7V-7H5V7 M-6-7L1-4V9L-6 7" : "M-5 7V-7H5V7Z M2 0h1"} />
+    <path d={icon} />
   </g>;
 }
 
@@ -132,7 +134,7 @@ export const BoardWallLayer = memo(function BoardWallLayer(props: { width: numbe
 
 export interface BoardStructureHandlers {
   selectWall(wallId: string): void;
-  togglePortal(wallId: string): void;
+  togglePortal(wallId: string, toggleLock?: boolean): void;
   selectLight(lightId: string): void;
   [name: string]: (...args: never[]) => unknown;
 }
@@ -148,6 +150,8 @@ export const BoardStructureHandles = memo(function BoardStructureHandles(props: 
   handlers: BoardStructureHandlers;
 }) {
   boardRenderCounts.structureHandles += 1;
+  const door = props.walls.find((wall) => wall.kind === "door" && wall.id === props.selectedWallId);
+  const lockLabel = door?.locked ? "Unlock door" : "Lock door";
   return (
     <div className="annotation-handles structure-handles" aria-label="Wall and light handles">
       {props.walls.map((wall) => (
@@ -157,7 +161,7 @@ export const BoardStructureHandles = memo(function BoardStructureHandles(props: 
           type="button"
           style={{ left: `${((wall.x1 + wall.x2) / 2 / props.width) * 100}%`, top: `${((wall.y1 + wall.y2) / 2 / props.height) * 100}%` }}
           aria-label={`Select ${wall.kind === "terrain" ? "terrain wall" : wall.kind ?? "wall"}`}
-          title={`${wall.kind === "terrain" ? "Terrain wall" : titleCaseWallKind(wall.kind)}${wall.kind === "door" || wall.kind === "window" ? ` (${wall.open ? "open" : "closed"}) - double-click to ${wall.open ? "close" : "open"}` : ""} - click to select, Delete to remove`}
+          title={`${titleCaseWallKind(wall.kind)}${wall.locked ? " (locked)" : wall.kind === "door" || wall.kind === "window" ? ` (${wall.open ? "open" : "closed"}) - double-click to ${wall.open ? "close" : "open"}` : ""} - click to select, Delete to remove`}
           onPointerDown={(event) => {
             event.preventDefault();
             event.stopPropagation();
@@ -169,10 +173,17 @@ export const BoardStructureHandles = memo(function BoardStructureHandles(props: 
           onDoubleClick={(event) => {
             event.preventDefault();
             event.stopPropagation();
-            if (wall.kind === "door" || wall.kind === "window") props.handlers.togglePortal(wall.id);
+            if (wall.kind === "door" && !wall.locked || wall.kind === "window") props.handlers.togglePortal(wall.id);
           }}
         />
       ))}
+      {door && <button
+        className="structure-handle door-lock-toggle"
+        style={{ left: `${((door.x1 + door.x2) / 2 / props.width) * 100}%`, top: `${((door.y1 + door.y2) / 2 / props.height) * 100}%` }}
+        type="button"
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => { event.stopPropagation(); props.handlers.togglePortal(door.id, true); }}
+      >{lockLabel}</button>}
       {props.lights.map((light) => (
         <button
           key={`light-${light.id}`}

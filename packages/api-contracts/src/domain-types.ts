@@ -455,6 +455,8 @@ export interface Wall {
   kind?: WallKind;
   /** Open doors and windows do not block vision or movement. */
   open?: boolean;
+  /** A locked door stays closed until a scene editor unlocks it. */
+  locked?: boolean;
 }
 
 export interface CampaignRulesProfile {

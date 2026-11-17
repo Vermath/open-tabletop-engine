@@ -317,3 +317,22 @@ test("fading manual fog never renders tokens outside the player's visible area",
     }
   }
 });
+
+test("a selected door can be locked and unlocked on the board", async ({ page }) => {
+  await login(page);
+  const { scene } = await createMapScene(page);
+  const path = `/api/v1/scenes/${scene.id}`;
+  await api(page, "POST", path + "/walls", { kind: "door", open: true, x1: 290, y1: 220, x2: 400, y2: 220, expectedUpdatedAt: scene.updatedAt });
+  const board = await openScene(page, scene);
+  const handle = board.getByRole("button", { name: "Select door", exact: true });
+  await expect(board.locator(".door-glyph.open")).toHaveCount(1);
+  await handle.click();
+  await board.getByRole("button", { name: "Lock door", exact: true }).click();
+  await expect(board.locator(".door-glyph.locked")).toHaveCount(1);
+  await handle.dblclick();
+  await expect(board.locator(".door-glyph.locked")).toHaveCount(1);
+  await board.getByRole("button", { name: "Unlock door", exact: true }).click();
+  await expect(board.locator(".door-glyph.closed")).toHaveCount(1);
+  await handle.dblclick();
+  await expect(board.locator(".door-glyph.open")).toHaveCount(1);
+});
