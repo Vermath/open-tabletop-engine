@@ -149,6 +149,7 @@ test("the canvas renderer draws the same board as the DOM renderer and keeps the
   await expect(board.locator(".light-source")).toHaveCount(2);
   await expect(board.locator(".light-source.darkness")).toHaveCount(1);
   await expect(board.locator(".light-source").first()).toBeHidden();
+
   await expect(board.locator("button.token")).toHaveCount(1);
   expect(await board.locator("canvas.board-map-canvas").evaluate((canvas) => getComputedStyle(canvas).pointerEvents)).toBe("none");
 
@@ -169,6 +170,7 @@ test("the canvas renderer draws the same board as the DOM renderer and keeps the
   // Both screenshots follow the same steps: reopen the scene, select the token, wait for vision.
   board = await openScene(page, scene);
   const canvasShot = await settledScreenshot(page, board);
+  await expect(board.locator(".lighting-layer .light-polygon").first()).toHaveCSS("filter", /url\(.+\).*saturate\(/);
 
   // Same scene, same view, original DOM renderer.
   await page.evaluate(() => window.localStorage.setItem("otte:boardRenderer", "dom"));

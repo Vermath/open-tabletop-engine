@@ -1,5 +1,5 @@
 import type { Scene, VisionPolygon } from "@open-tabletop/core";
-import { memo, useId, useLayoutEffect, useRef, useState } from "react";
+import { memo, useId, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import "./board-light-finish.css";
 import { boardRenderCounts } from "./board-render-counts.js";
 
@@ -59,7 +59,7 @@ export const BoardLightingLayer = memo(function BoardLightingLayer(props: { widt
   boardRenderCounts.lighting += 1;
   if (props.polygons.length === 0) return null;
   return (
-    <svg className="lighting-layer" viewBox={`0 0 ${props.width} ${props.height}`} aria-hidden="true">
+    <svg className="lighting-layer" viewBox={`0 0 ${props.width} ${props.height}`} aria-hidden="true" style={{ "--light-feather": "url(#" + feather + ")" } as CSSProperties}>
       <defs><FeatherInside id={feather} /></defs>
       {props.polygons.map((polygon) => (
         <polygon key={polygon.id} className={lightPolygonClassName(polygon)} points={polygonPoints(polygon)} filter={"url(#" + feather + ")"} style={{ fill: polygon.color ?? "#facc15", opacity: polygon.opacity ?? 0.22 }} />
