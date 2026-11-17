@@ -118,6 +118,7 @@
   --motion-fast: 120ms;
   --motion-normal: 200ms;
   --motion-slow: 300ms;
+  --motion-reduced: 0.001ms;
   --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-exit: ease-in;
   --color-black: #000;

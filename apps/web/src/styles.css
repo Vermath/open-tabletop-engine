@@ -4328,8 +4328,8 @@ input {
   *::before,
   *::after {
     scroll-behavior: auto !important;
-    transition-duration: var(--motion-fast) !important;
-    animation-duration: var(--motion-fast) !important;
+    transition-duration: var(--motion-reduced) !important;
+    animation-duration: var(--motion-reduced) !important;
     animation-iteration-count: 1 !important;
   }
 
@@ -6128,8 +6128,8 @@ body {
   *::before,
   *::after {
     scroll-behavior: auto !important;
-    transition-duration: var(--motion-fast) !important;
-    animation-duration: var(--motion-fast) !important;
+    transition-duration: var(--motion-reduced) !important;
+    animation-duration: var(--motion-reduced) !important;
     animation-iteration-count: 1 !important;
   }
 
@@ -13576,6 +13576,7 @@ a:focus-visible {
   grid-template-columns: minmax(280px, 1.1fr) minmax(260px, 0.95fr) minmax(240px, 0.8fr);
   gap: 14px;
   min-height: 0;
+  overflow-y: auto;
 }
 
 .encounter-saved-library {
@@ -17328,6 +17329,15 @@ textarea:focus-visible, summary:focus-visible, a:focus-visible,
   .rail > .campaign-switcher[open] > .campaign-list { position: absolute; z-index: 40; bottom: calc(100% + 8px); left: 0; right: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; max-height: min(420px, calc(100svh - 160px)); overflow-y: auto; padding: 7px; border: 1px solid var(--line-strong); border-radius: var(--radius-m); background: var(--surface-1); box-shadow: var(--shadow-2); }
   .rail > .campaign-switcher .campaign-list .nav-item { width: 100%; min-height: 44px; justify-content: flex-start; padding: 8px 10px; font-size: var(--type-body); }
   .rail > .campaign-switcher .campaign-list .nav-item span { white-space: normal; overflow-wrap: anywhere; text-align: left; }
+}
+
+@media (max-width: 360px) {
+  .rail .workspace-mode-switcher .ghost-button {
+    gap: 0;
+    padding: 0;
+    line-height: 1;
+    white-space: normal;
+  }
 }
 
 /* A short phone has room for one useful pane at a time. Both stay mounted;
