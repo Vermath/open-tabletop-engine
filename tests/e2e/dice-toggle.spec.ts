@@ -290,3 +290,43 @@ test("mute works before profile persistence and text-only dice still play a cue"
   expect(await page.evaluate(() => Reflect.get(window, "interfaceAudioNotes"))).toBe(3);
   await expect(page.locator(".dice-cast-label").filter({ hasText: "1d6+83" })).toHaveCount(0);
 });
+
+test("a saved profile replaces an unsaved rail sound override", async ({ page }) => {
+  await loginSeededDemo(page);
+  const mute = page.getByRole("button", { name: "Mute interface sounds", exact: true });
+  const unmute = page.getByRole("button", { name: "Unmute interface sounds", exact: true });
+  await expect(mute.or(unmute)).toBeVisible();
+  const originallyEnabled = await mute.isVisible();
+  if (originallyEnabled) {
+    const update = page.waitForResponse(isProfilePreferenceUpdate);
+    await mute.click();
+    expect((await update).ok()).toBe(true);
+  }
+  await expect(unmute).toBeVisible();
+  await page.route("**/api/v1/auth/profile", async (route) => {
+    if (route.request().method() !== "PATCH") return route.continue();
+    await route.fulfill({ status: 503, json: { error: "Preference storage unavailable" } });
+  });
+  try {
+    const failed = page.waitForResponse(isProfilePreferenceUpdate);
+    await unmute.click();
+    expect((await failed).status()).toBe(503);
+    await expect(mute).toBeVisible();
+  } finally {
+    await page.unroute("**/api/v1/auth/profile");
+  }
+  await page.getByRole("button", { name: "Manage", exact: true }).click();
+  const manage = page.getByRole("region", { name: "Manage workspace panel" });
+  await manage.locator(".manage-category-button", { hasText: "Account" }).click();
+  await expect(manage.getByRole("checkbox", { name: "Play interface sounds" })).not.toBeChecked();
+  const saved = page.waitForResponse(isProfilePreferenceUpdate);
+  await manage.getByRole("button", { name: "Save profile & preferences" }).click();
+  expect((await saved).ok()).toBe(true);
+  await manage.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(unmute).toBeVisible();
+  if (originallyEnabled) {
+    const restored = page.waitForResponse(isProfilePreferenceUpdate);
+    await unmute.click();
+    expect((await restored).ok()).toBe(true);
+  }
+});
