@@ -488,7 +488,7 @@ describe("desktop layout regressions", () => {
     expect(appSource).toContain("abortController?.abort();");
     expect(appSource).toContain("function selectWorkspaceContext(nextCampaignId: string, nextSceneId = \"\", nextUserId = currentUserId, options: { preserveCampaignSetup?: boolean } = {})");
     expect(appSource).toContain("if (!workspaceRequestIsCurrent(nextCampaignId, requestUserId)) return snapshotRef.current;");
-    expect(appSource).toContain("if (seq !== refreshSeqRef.current || !workspaceRequestIsCurrent(nextCampaignId, requestUserId)) return next;");
+    expect(appSource).toContain("if (seq !== refreshSeqRef.current || !workspaceRequestIsCurrent(nextCampaignId, requestUserId) || options.selectSceneOnLoad?.() === false) return next;");
     expect(appSource).toContain("if (!workspaceRequestIsCurrent(requestCampaignId, requestUserId)) return;");
     expect(appSource).toContain("if (scene.campaignId !== realtimeSelectionRef.current.campaignId) return;");
     expect(appSource).toContain('selectWorkspaceContext(campaign.id, "");');
