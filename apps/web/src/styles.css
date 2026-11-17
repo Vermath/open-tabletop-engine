@@ -5240,9 +5240,7 @@ body {
   max-height: none;
   border-color: color-mix(in srgb, var(--muted) 18%, transparent);
   border-radius: var(--radius-s);
-  background:
-    radial-gradient(circle at 48% 45%, color-mix(in srgb, var(--line-strong) 26%, transparent), transparent 30%),
-    linear-gradient(135deg, var(--surface-2), var(--ink) 48%, var(--ink));
+  background: var(--board-background);
   box-shadow: 0 20px 74px color-mix(in srgb, var(--color-black) 50%, transparent);
 }
 
@@ -6841,9 +6839,7 @@ body {
   max-height: none;
   border-color: color-mix(in srgb, var(--muted) 18%, transparent);
   border-radius: var(--radius-s);
-  background:
-    radial-gradient(circle at 48% 45%, color-mix(in srgb, var(--line-strong) 26%, transparent), transparent 30%),
-    linear-gradient(135deg, var(--surface-2), var(--ink) 48%, var(--ink));
+  background: var(--board-background);
   box-shadow: 0 20px 74px color-mix(in srgb, var(--color-black) 50%, transparent);
 }
 
@@ -17016,7 +17012,7 @@ textarea:focus-visible, summary:focus-visible, a:focus-visible,
 .workspace .topbar .workspace-heading { grid-area: title; min-width: 0; }
 .workspace .topbar h1 { margin: 2px 0 0; font-size: var(--type-display); line-height: 1.12; font-weight: 600; letter-spacing: -0.005em; }
 .workspace-heading .eyebrow { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--muted); }
-.workspace-heading .session-pulse { margin-top: 4px; font-size: var(--type-small); }
+.workspace-heading .session-pulse { margin-top: 4px; font-size: var(--type-label); }
 .scene-visibility-badge { margin-left: 6px; border: 0; background: transparent; font-size: 11px; }
 .workspace-view-actions { grid-area: actions; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 7px; }
 .workspace-view-actions .ghost-button { min-height: 34px; padding-inline: 10px; white-space: nowrap; }
@@ -17262,6 +17258,7 @@ textarea:focus-visible, summary:focus-visible, a:focus-visible,
 
 @media (max-width: 640px) {
   .workspace .topbar, .rail-play + .workspace .topbar, .rail-prep + .workspace .topbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "title actions" "scenes create" "filters filters"; gap: 6px; align-items: center; }
+  .workspace .topbar h1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .workspace .topbar > .workspace-view-actions { width: auto; max-width: 126px; }
   .workspace .topbar > .workspace-view-actions .ghost-button { white-space: normal; padding: 5px 8px; line-height: 1.2; }
   .workspace .topbar:has(.workspace-view-actions > :nth-child(2)) { grid-template-areas: "title title" "actions actions" "scenes create" "filters filters"; }
@@ -17335,8 +17332,10 @@ textarea:focus-visible, summary:focus-visible, a:focus-visible,
     gap: 0;
     padding: 0;
     line-height: 1;
-    white-space: normal;
+    font-size: var(--type-label);
+    white-space: nowrap;
   }
+  .rail > .ai-agent-toggle { font-size: var(--type-label); white-space: nowrap; }
 }
 
 /* A short phone has room for one useful pane at a time. Both stay mounted;
