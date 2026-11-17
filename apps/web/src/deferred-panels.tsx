@@ -29,7 +29,7 @@ export const nonAiPanelImporters = deferredPanelImporters;
 
 export const LazyAdminPanel = lazy(async () => ({ default: (await deferredPanelImporters.admin()).AdminPanel }));
 export const LazyAiPanel = lazy(async () => ({ default: (await deferredPanelImporters.ai()).AiPanel }));
-export const LazyActorPanel = lazy(async () => ({ default: (await deferredPanelImporters.actor()).ActorPanel }));
+export const LazyActorPanel = lazy(async () => ({ default: (await deferredPanelImporters.actor()).LiveActorPanel }));
 export const LazyCampaignMemoryPanel = lazy(async () => ({ default: (await deferredPanelImporters.campaignMemory()).CampaignMemoryPanel }));
 export const LazyCampaignWebhooksPanel = lazy(async () => ({ default: (await deferredPanelImporters.campaignWebhooks()).CampaignWebhooksPanel }));
 export const LazyCompendiumPanel = lazy(async () => ({ default: (await deferredPanelImporters.compendium()).CompendiumPanel }));
