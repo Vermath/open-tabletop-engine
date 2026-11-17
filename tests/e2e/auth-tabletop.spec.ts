@@ -2535,7 +2535,9 @@ test("GM can run the browser combat tracker lifecycle", async ({ page }) => {
   await expect(valenCombatant).toContainText("prone:2, stunned, concentration lost, unconscious, stable");
   await expect(valenCombatant.getByLabel("Valen Ash combat state")).toContainText("prone expires in 2 rounds");
   await openInspectorPanel(page, "Actors");
+  await page.getByRole("region", { name: "Party" }).getByRole("button", { name: "VA Valen Ash Fighter", exact: true }).click();
   const actorPanel = selectedActorPanel(page);
+  await expect(actorPanel.getByRole("heading", { name: "Valen Ash", exact: true })).toBeVisible();
   await openActorDisclosure(actorPanel, "Actor details");
   await openDetails(actorPanel.locator("details.actor-condition-editor"));
   await expect(actorPanel.locator(".metric-row", { hasText: "Conditions" })).toContainText(/Prone, Stunned, Concentration Lost, Unconscious, Stable/i);

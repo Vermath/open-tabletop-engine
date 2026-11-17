@@ -76,6 +76,8 @@ pnpm --filter @open-tabletop/api dev
 pnpm --filter @open-tabletop/web dev
 ```
 
+Choose **Explore demo** on a fresh local development server to open **Vault Entry** with a calibrated battle map, five illustrated tokens, and **The Vault Watch** encounter. Set `OTTE_DEMO_SEED=true` to opt in on a production server or `OTTE_DEMO_SEED=false` to start without demo data. The illustrated demo has a dedicated browser test with its own store.
+
 Build or test the desktop and relay packages:
 
 ```bash

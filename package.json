@@ -11,7 +11,7 @@
     "dev": "turbo run dev --parallel",
     "lint": "turbo run lint",
     "test": "turbo run test",
-    "e2e": "playwright test && playwright test -c playwright.bootstrap.config.ts",
+    "e2e": "playwright test && playwright test -c playwright.bootstrap.config.ts && playwright test -c playwright.demo.config.ts",
     "e2e:typecheck": "tsc -p tsconfig.e2e.json",
     "compose:env:init": "node scripts/init-compose-env.mjs",
     "compose:env:test": "node scripts/test-init-compose-env.mjs",

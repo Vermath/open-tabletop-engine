@@ -21,6 +21,7 @@ COPY --from=deps /app/apps/api/node_modules ./apps/api/node_modules
 COPY --from=build /app/packages ./packages
 COPY --chown=node:node --from=build /app/plugins ./plugins
 COPY --from=build /app/apps/api/dist ./apps/api/dist
+COPY --from=build /app/apps/api/demo-art ./apps/api/demo-art
 COPY --from=build /app/api-build-fingerprint ./api-build-fingerprint
 COPY apps/api/package.json ./apps/api/package.json
 RUN mkdir -p /app/storage/plugins /app/uploads && chown -R node:node /app/storage /app/uploads

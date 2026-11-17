@@ -302,7 +302,8 @@ import { assertDeclarativeSystemRecord, assertDeclarativeSystemStateCandidate, D
 import { advanceDeclarativeBindingRevisions, advanceImportedDeclarativeBindingRevisions, declarativeRuntimeForActor, initialDeclarativeBinding, installedDeclarativeIdentity, isDeclarativeSystem, sameSystemIdentity } from "./declarative-system-host.js";
 import { RealtimeHub, type RealtimeClient } from "./realtime.js";
 import { createRequestLoggerOptions, type RequestLogStream } from "./request-logging.js";
-import { FileStateStore, type StateStore } from "./store.js";
+import { FileStateStore, demoSeedEnabled, type StateStore } from "./store.js";
+import { seedDemoPresentation } from "./demo-presentation.js";
 import { linkEncounterToLiveSession, resolveSingleLiveCampaignSession } from "./encounter-session-link.js";
 import type { AssetSnapshotIdentity, AssetSnapshotProvider, SqliteBackupOptions, SqliteRestoreDrillOptions } from "./sqlite-store.js";
 import { assetMetadataInventoryForAssets } from "./sqlite-store.js";
@@ -369,6 +370,7 @@ import {
 
 export interface BuildAppOptions {
   store?: StateStore;
+  seedDemoPresentation?: boolean;
   uploadDir?: string;
   assetStorage?: AssetStorage;
   maxAssetBytes?: number;
@@ -4313,25 +4315,18 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       if (scene) broadcast(createEvent({ campaignId: scene.campaignId, type: "scene.updated", targetId: scene.id, payload: scene }));
       return { asset: duplicate, scene, deduplicated: true as const, renditionWarnings: [] };
     }
-    const renditionBuild = await buildAssetImageRenditions({ mimeType, name: sourceName }, body);
-    const plannedRenditionBytes = renditionBuild.renditions.reduce((total, rendition) => total + rendition.sizeBytes, 0);
-    const quotaExceeded = assetQuotaExceeded(store, request.params.campaignId, body.length + plannedRenditionBytes);
-    if (quotaExceeded) return reply.code(413).send(quotaExceeded);
-    const asset: MapAsset = createTimestamped("asset", { campaignId: request.params.campaignId, name: sourceName, url: "", mimeType, sizeBytes: body.length, checksum, folder, tags, lifecycle: defaultAssetLifecycle(), security: scan.security, image: renditionBuild.image });
-    asset.storage = await assetStorage.put(asset, body);
-    const storedRenditions = await storeAssetRenditions(assetStorage, asset, renditionBuild.renditions);
-    if (storedRenditions.renditions.length > 0) asset.renditions = storedRenditions.renditions;
-    asset.url = `/api/v1/assets/${asset.id}/blob`;
-    store.state.assets.push(asset);
+    const persisted = await persistUploadedMapAsset(store, assetStorage, { campaignId: request.params.campaignId, body, mimeType, sourceName, checksum, folder, tags, security: scan.security });
+    if (persisted.quotaExceeded) return reply.code(413).send(persisted.quotaExceeded);
+    const { asset, renditionWarnings } = persisted;
 
     const mapCalibrationReset = scene ? assignSceneBackgroundAsset(scene, asset.id) : false;
     if (scene) scene.updatedAt = nextRevisionTimestamp(scene.updatedAt);
 
-    appendServerAuditLog(store, userId, { campaignId: asset.campaignId, action: "asset.upload", targetType: "asset", targetId: asset.id, after: { ...assetAuditSummary(asset), sceneId: scene?.id, setAsBackground: Boolean(scene), mapCalibrationReset, renditionWarnings: [...renditionBuild.warnings, ...storedRenditions.warnings] } });
+    appendServerAuditLog(store, userId, { campaignId: asset.campaignId, action: "asset.upload", targetType: "asset", targetId: asset.id, after: { ...assetAuditSummary(asset), sceneId: scene?.id, setAsBackground: Boolean(scene), mapCalibrationReset, renditionWarnings } });
     store.save();
     broadcast(createEvent({ campaignId: asset.campaignId, type: "asset.created", actorUserId: userId, targetId: asset.id, payload: asset }));
     if (scene) broadcast(createEvent({ campaignId: scene.campaignId, type: "scene.updated", targetId: scene.id, payload: scene }));
-    return { asset, scene, deduplicated: false as const, renditionWarnings: [...renditionBuild.warnings, ...storedRenditions.warnings] };
+    return { asset, scene, deduplicated: false as const, renditionWarnings };
   });
 
   app.patch<{ Params: { assetId: string }; Body: { name?: string; folder?: string | null; tags?: string[] | string; expectedUpdatedAt?: string } }>("/api/v1/assets/:assetId", async (request, reply) => {
@@ -13191,6 +13186,27 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const now = Date.now();
     for (const [id, capture] of storedBoardCaptures.entries()) {
       if (Date.parse(capture.expiresAt) <= now) storedBoardCaptures.delete(id);
+    }
+  }
+
+  if (options.seedDemoPresentation && demoSeedEnabled()) {
+    try {
+      await seedDemoPresentation(store, async (campaignId, sourceName, body) => {
+        const mimeType = "image/webp";
+        if (body.length === 0 || body.length > maxAssetBytes) throw new Error(`Bundled asset is outside the upload size limit: ${sourceName}`);
+        const scan = await scanUploadedAsset(body, mimeType, sourceName, { externalTransport: options.assetScannerTransport });
+        if (scan.blocked) throw new Error(`Bundled asset was blocked by the upload scanner: ${sourceName}`);
+        const checksum = checksumForBuffer(body);
+        const duplicate = reusableUploadedAsset(store, campaignId, checksum, body.length, mimeType);
+        if (duplicate) return duplicate;
+        const persisted = await persistUploadedMapAsset(store, assetStorage, { campaignId, body, mimeType, sourceName, checksum, folder: "demo/ember-vault", tags: ["demo"], security: scan.security });
+        if (persisted.quotaExceeded) throw new Error(persisted.quotaExceeded.message);
+        store.save();
+        return persisted.asset;
+      });
+      flushStore(store);
+    } catch (error) {
+      app.log.warn({ err: error }, "Unable to install the Ember Vault demo presentation");
     }
   }
 
@@ -27458,6 +27474,30 @@ function normalizeAssetMimeType(value: string | string[] | undefined): string {
   const contentType = Array.isArray(value) ? value[0] : value;
   const mimeType = contentType?.split(";")[0]?.trim().toLowerCase();
   return mimeType && mimeType.length > 0 ? mimeType : "application/octet-stream";
+}
+
+async function persistUploadedMapAsset(store: StateStore, storage: AssetStorage, input: {
+  campaignId: string;
+  body: Buffer;
+  mimeType: string;
+  sourceName: string;
+  checksum: string;
+  folder?: string;
+  tags: string[];
+  security?: AssetSecurityScan;
+}) {
+  const { campaignId, body, mimeType, sourceName, checksum, folder, tags, security } = input;
+  const renditionBuild = await buildAssetImageRenditions({ mimeType, name: sourceName }, body);
+  const plannedRenditionBytes = renditionBuild.renditions.reduce((total, rendition) => total + rendition.sizeBytes, 0);
+  const quotaExceeded = assetQuotaExceeded(store, campaignId, body.length + plannedRenditionBytes);
+  if (quotaExceeded) return { quotaExceeded };
+  const asset: MapAsset = createTimestamped("asset", { campaignId, name: sourceName, url: "", mimeType, sizeBytes: body.length, checksum, folder, tags, lifecycle: defaultAssetLifecycle(), security, image: renditionBuild.image });
+  asset.storage = await storage.put(asset, body);
+  const storedRenditions = await storeAssetRenditions(storage, asset, renditionBuild.renditions);
+  if (storedRenditions.renditions.length > 0) asset.renditions = storedRenditions.renditions;
+  asset.url = `/api/v1/assets/${asset.id}/blob`;
+  store.state.assets.push(asset);
+  return { asset, renditionWarnings: [...renditionBuild.warnings, ...storedRenditions.warnings] };
 }
 
 function reusableUploadedAsset(store: StateStore, campaignId: string, checksum: string, sizeBytes: number, mimeType: string): MapAsset | undefined {
