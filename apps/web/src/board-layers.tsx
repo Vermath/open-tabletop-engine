@@ -173,7 +173,7 @@ export const BoardStructureHandles = memo(function BoardStructureHandles(props: 
           onDoubleClick={(event) => {
             event.preventDefault();
             event.stopPropagation();
-            if (wall.kind === "door" && !wall.locked || wall.kind === "window") props.handlers.togglePortal(wall.id);
+            if ((wall.kind === "door" && !wall.locked) || wall.kind === "window") props.handlers.togglePortal(wall.id);
           }}
         />
       ))}
