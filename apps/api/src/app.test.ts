@@ -29492,6 +29492,39 @@ registerCommand("/state", (input) => {
     await app.close();
   });
 
+  it("only lets server admins start the AI provider's own sign-in", async () => {
+    const seen: Array<boolean | undefined> = [];
+    class RecordingProvider implements AiProvider {
+      id = "codex-app-server";
+      label = "Codex App Server";
+
+      async *stream(input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
+        seen.push(input.providerLoginAllowed);
+        yield { type: "message.completed", content: "ok" };
+      }
+    }
+
+    const previousEnv = snapshotEnv(["OTTE_ADMIN_USER_IDS"]);
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store, aiProvider: new RecordingProvider() });
+    const ask = (key: string) => app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/ai/threads",
+      headers: { ...authHeaders, "idempotency-key": key },
+      payload: { prompt: "Summarize the scene.", surface: "agent_panel", expectedUpdatedAt: store.state.campaigns.find((campaign) => campaign.id === "camp_demo")!.updatedAt }
+    });
+    try {
+      process.env.OTTE_ADMIN_USER_IDS = "";
+      expect((await ask("provider-login-gm")).statusCode).toBe(200);
+      process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";
+      expect((await ask("provider-login-admin")).statusCode).toBe(200);
+      expect(seen).toEqual([false, true]);
+    } finally {
+      await app.close();
+      restoreEnv(previousEnv);
+    }
+  });
+
   it("returns Codex app-server OAuth login details when the agent needs ChatGPT auth", async () => {
     class AuthRequiredProvider implements AiProvider {
       id = "codex-app-server";
