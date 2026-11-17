@@ -16944,7 +16944,7 @@ button, input, select, textarea, summary {
 .shell :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]), select, textarea),
 .auth-shell :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea) {
   color: var(--paper);
-  background: var(--surface-0);
+  background-color: var(--surface-0);
   border: 1px solid var(--line);
   border-radius: var(--radius-s);
   font-size: var(--type-body);
