@@ -321,12 +321,12 @@ a[href]:focus-visible,
 
 .danger-zone {
   padding-top: 8px;
-  border-top: 1px solid color-mix(in srgb, var(--accent) 42%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--red) 42%, transparent);
 }
 
 .danger-button {
-  border-color: color-mix(in srgb, var(--accent) 72%, transparent);
-  color: var(--accent-strong);
+  border-color: color-mix(in srgb, var(--red) 72%, transparent);
+  color: color-mix(in srgb, var(--red) 70%, var(--paper));
 }
 
 .auth-shell {
@@ -638,9 +638,9 @@ a[href]:focus-visible,
 }
 
 .scene-tab-delete:hover {
-  color: var(--accent-strong);
-  border-color: color-mix(in srgb, var(--accent) 72%, transparent);
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: color-mix(in srgb, var(--red) 70%, var(--paper));
+  border-color: color-mix(in srgb, var(--red) 72%, transparent);
+  background: color-mix(in srgb, var(--red) 16%, transparent);
 }
 
 .scene-background-preview {
@@ -3826,7 +3826,7 @@ a[href]:focus-visible,
 }
 
 .status-pill.failed {
-  border-color: color-mix(in srgb, var(--accent) 72%, transparent);
+  border-color: color-mix(in srgb, var(--red) 72%, transparent);
   color: var(--red);
 }
 
@@ -11465,7 +11465,7 @@ a:focus-visible {
 }
 
 .desktop-host-error {
-  color: var(--accent-strong);
+  color: color-mix(in srgb, var(--red) 70%, var(--paper));
 }
 
 .desktop-host-actions {
@@ -16080,9 +16080,9 @@ a:focus-visible {
   display: grid;
   gap: 7px;
   padding: 10px;
-  border: 1px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  border: 1px solid color-mix(in srgb, var(--red) 70%, transparent);
   border-radius: var(--radius-m);
-  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  background: color-mix(in srgb, var(--red) 9%, transparent);
   color: var(--paper);
   font-size: var(--type-small);
 }
@@ -16352,8 +16352,8 @@ a:focus-visible {
 }
 
 .panel-status.error {
-  border-color: color-mix(in srgb, var(--accent) 62%, transparent);
-  color: var(--accent-strong);
+  border-color: color-mix(in srgb, var(--red) 62%, transparent);
+  color: color-mix(in srgb, var(--red) 70%, var(--paper));
 }
 
 @media (max-width: 640px) {
@@ -16448,7 +16448,7 @@ a:focus-visible {
 
 .compatibility-status-blocking {
   border-left-color: var(--red);
-  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  background: color-mix(in srgb, var(--red) 9%, transparent);
 }
 
 .compatibility-read-only {
@@ -16502,7 +16502,7 @@ a:focus-visible {
 }
 
 .compatibility-system-blocking {
-  border-color: color-mix(in srgb, var(--accent) 70%, transparent);
+  border-color: color-mix(in srgb, var(--red) 70%, transparent);
 }
 
 .compatibility-system > div {
