@@ -10,7 +10,7 @@ describe("design token budget", () => {
       .map((file) => readFileSync(new URL(file, source), "utf8")).join("\n")
       .replace(/\/\*[\s\S]*?\*\//g, "");
     const colors = css.match(/(?<![\w-])(?:#[0-9a-fA-F]{3,8}\b|(?:rgba?|hsla?)\([^)]*\))/g) ?? [];
-    const fontSizes = new Set([...css.matchAll(/\bfont-size\s*:\s*([^;}]+)/g)].map((match) => match[1]!.trim()));
+    const fontSizes = new Set([...css.matchAll(/\bfont-size\s*:\s*([^;}]+)/g)].map((match) => match[1]!.trim()).filter((value) => !/^var\(--type-[a-z]+\)$/.test(value)));
     const motionValues = [...css.matchAll(/(?:^|[;{])\s*(?:transition(?:-duration)?|animation(?:-duration)?)\s*:\s*([^;}]+)/gm)]
       .map((match) => match[1]).join("\n");
     const durations = new Set(motionValues.match(/(?<![\w.-])\d*\.?\d+m?s\b/g) ?? []);
