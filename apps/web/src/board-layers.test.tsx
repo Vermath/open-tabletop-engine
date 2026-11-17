@@ -11,7 +11,7 @@ const polygon = (id: string, extra: Partial<VisionPolygon> = {}): VisionPolygon 
   ({ id, source: "light", points: [{ x: 0, y: 0 }, { x: 10.5, y: 0 }, { x: 10.5, y: 20 }], ...extra }) as VisionPolygon;
 const wall = (id: string, extra: Partial<Scene["walls"][number]> = {}) => ({ id, x1: 100, y1: 200, x2: 300, y2: 200, ...extra }) as Scene["walls"][number];
 const light = (id: string) => ({ id, x: 250, y: 100, radius: 200, color: "#ffd27a" }) as Scene["lights"][number];
-const handlers: BoardStructureHandlers = { selectWall: () => undefined, togglePortal: () => undefined, selectLight: () => undefined };
+const handlers: BoardStructureHandlers = { selectWall: () => undefined, togglePortal: () => undefined, selectLight: () => undefined, setLightAnimation: () => undefined };
 const memoType = Symbol.for("react.memo");
 
 describe("polygon helpers", () => {

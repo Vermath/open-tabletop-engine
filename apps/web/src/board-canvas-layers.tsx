@@ -295,59 +295,87 @@ function useAnimatedBoardLights(options: BoardCanvasLayerOptions, lightsKey: str
     const visibleCanvas = canvas;
     const view = viewport;
     const map = board;
+    const scene = latest.current.scene;
+    const lights = scene.lights.filter((light) => light.kind !== "darkness" && (light.animation === "flicker" || light.animation === "pulse"));
     let frame = 0;
-    let paint: ((time: number) => void) | undefined;
-    const tick = (time: number) => { paint?.(time); if (paint) frame = window.requestAnimationFrame(tick); };
-    function restart() {
-      window.cancelAnimationFrame(frame);
-      paint = undefined;
-      visibleCanvas.hidden = true;
-      if (document.hidden || reduced.matches || document.documentElement.dataset.reducedMotion === "true") return;
-      const bounds = measureBoard(map);
-      const visible = visibleBoardRect(view.getBoundingClientRect(), bounds);
-      if (!visible || bounds.width <= 0 || bounds.height <= 0) return;
-      const scene = latest.current.scene;
-      const lights = scene.lights.flatMap((light, phase) => {
-        if (light.kind === "darkness" || (light.animation !== "flicker" && light.animation !== "pulse")) return [];
-        const shape = lightGlow(light, scene, bounds.width, bounds.height, visible);
-        return lightGlowIsDrawn(shape, visible) ? [{ light, shape, phase }] : [];
+    let geometry: { board: ReturnType<typeof measureBoard>; viewport: DOMRect; scrollLeft: number; scrollTop: number } | undefined;
+    let needsWindow = true;
+    let drawn: BoardRect | undefined;
+    let context: CanvasRenderingContext2D | null = null;
+    let glows: { light: LightSource; shape: ReturnType<typeof lightGlow>; phase: number; color: ReturnType<typeof canvasColorChannels> }[] = [];
+    let activeGlows = glows;
+    const paused = () => document.hidden || reduced.matches || document.documentElement.dataset.reducedMotion === "true";
+    const schedule = () => { if (!frame && !paused()) frame = window.requestAnimationFrame(tick); };
+
+    function updateWindow() {
+      geometry ??= { board: measureBoard(map), viewport: view.getBoundingClientRect(), scrollLeft: view.scrollLeft, scrollTop: view.scrollTop };
+      const bounds = geometry.board;
+      const visible = visibleBoardRect(geometry.viewport, {
+        ...bounds,
+        left: bounds.left + geometry.scrollLeft - view.scrollLeft,
+        top: bounds.top + geometry.scrollTop - view.scrollTop,
       });
-      if (lights.length === 0) return;
-      const ratio = Math.min(boardCanvasPixelRatio(visible.width, visible.height, window.devicePixelRatio || 1), 1);
-      const context = prepareCanvas(visibleCanvas, visible, ratio, { x: 0, y: 0 });
-      if (!context) return;
-      const glows = lights.map(({ light, shape, phase }) => ({ light, shape, phase, color: canvasColorChannels(context, light.color) }));
-      visibleCanvas.hidden = false;
-      paint = (time) => {
-        context.clearRect(0, 0, visible.width, visible.height);
-        for (const { light, shape, phase, color } of glows) {
-          const amount = animatedLightAmount(light.animation, time, phase);
-          const radius = shape.outerRadius * (0.82 + 0.17 * amount);
-          const gradient = context.createRadialGradient(shape.x, shape.y, 0, shape.x, shape.y, radius);
-          gradient.addColorStop(0, "rgba(" + color.red + "," + color.green + "," + color.blue + "," + (shape.opacity * color.alpha * amount * 0.55) + ")");
-          gradient.addColorStop(1, "transparent");
-          context.fillStyle = gradient;
-          context.fillRect(shape.x - radius, shape.y - radius, radius * 2, radius * 2);
-        }
-      };
-      frame = window.requestAnimationFrame(tick);
+      if (!visible) { activeGlows = []; return; }
+      if (!drawn || !boardCanvasWindowCovers(drawn, visible, bounds.width, bounds.height)) {
+        const next = boardCanvasWindow(visible, bounds.width, bounds.height);
+        const ratio = Math.min(boardCanvasPixelRatio(next.width, next.height, window.devicePixelRatio || 1), 1);
+        const nextContext = prepareCanvas(visibleCanvas, next, ratio, { x: 0, y: 0 });
+        drawn = next;
+        context = nextContext;
+        glows = nextContext ? lights.map((light, phase) => ({
+          light, phase, shape: lightGlow(light, scene, bounds.width, bounds.height, next),
+          color: canvasColorChannels(nextContext, light.color),
+        })) : [];
+      }
+      const left = visible.left - drawn.left;
+      const top = visible.top - drawn.top;
+      activeGlows = glows.filter(({ shape }) => lightGlowIsDrawn({ ...shape, x: shape.x - left, y: shape.y - top }, visible));
     }
-    const resize = new ResizeObserver(restart);
+
+    function tick(time: number) {
+      frame = 0;
+      if (paused()) return;
+      if (needsWindow) updateWindow();
+      needsWindow = false;
+      visibleCanvas.hidden = activeGlows.length === 0;
+      if (!drawn || !context || activeGlows.length === 0) return;
+      context.clearRect(0, 0, drawn.width, drawn.height);
+      for (const { light, shape, phase, color } of activeGlows) {
+        const amount = animatedLightAmount(light.animation, time, phase);
+        const radius = shape.outerRadius * (0.82 + 0.17 * amount);
+        const gradient = context.createRadialGradient(shape.x, shape.y, 0, shape.x, shape.y, radius);
+        gradient.addColorStop(0, "rgba(" + color.red + "," + color.green + "," + color.blue + "," + (shape.opacity * color.alpha * amount * 0.55) + ")");
+        gradient.addColorStop(1, "transparent");
+        context.fillStyle = gradient;
+        context.fillRect(shape.x - radius, shape.y - radius, radius * 2, radius * 2);
+      }
+      schedule();
+    }
+
+    const onScroll = () => { needsWindow = true; schedule(); };
+    const onResize = () => { geometry = undefined; drawn = undefined; onScroll(); };
+    const onPreferenceChange = () => {
+      if (!paused()) { onResize(); return; }
+      window.cancelAnimationFrame(frame);
+      frame = 0;
+      visibleCanvas.hidden = true;
+    };
+    const resize = new ResizeObserver(onResize);
     resize.observe(viewport);
     resize.observe(board);
-    const preferences = new MutationObserver(restart);
+    const preferences = new MutationObserver(onPreferenceChange);
     preferences.observe(document.documentElement, { attributes: true, attributeFilter: ["data-reduced-motion"] });
-    viewport.addEventListener("scroll", restart, { passive: true });
-    document.addEventListener("visibilitychange", restart);
-    reduced.addEventListener("change", restart);
-    restart();
+    viewport.addEventListener("scroll", onScroll, { passive: true });
+    document.addEventListener("visibilitychange", onPreferenceChange);
+    reduced.addEventListener("change", onPreferenceChange);
+    schedule();
     return () => {
       window.cancelAnimationFrame(frame);
       resize.disconnect();
       preferences.disconnect();
-      viewport.removeEventListener("scroll", restart);
-      document.removeEventListener("visibilitychange", restart);
-      reduced.removeEventListener("change", restart);
+      viewport.removeEventListener("scroll", onScroll);
+      document.removeEventListener("visibilitychange", onPreferenceChange);
+      reduced.removeEventListener("change", onPreferenceChange);
     };
   }, [enabled, lightsKey, options.scene.width, options.scene.height]);
   return enabled ? <canvas ref={canvasRef} className="board-light-animation" aria-hidden="true" hidden /> : null;

@@ -338,3 +338,39 @@ test("a selected door can be locked and unlocked on the board", async ({ page })
   await handle.dblclick();
   await expect(board.locator(".door-glyph.open")).toHaveCount(1);
 });
+
+test("animated lights reuse their canvas during small pans and are edited on the board", async ({ page }) => {
+  await login(page);
+  const { scene } = await createMapScene(page);
+  const board = await openScene(page, scene);
+  await board.getByRole("button", { name: "Select light", exact: true }).first().click();
+  const picker = board.getByRole("combobox", { name: "Light animation", exact: true });
+  await expect(picker).toHaveValue("none");
+  await picker.selectOption("pulse");
+  await expect(picker).toHaveValue("pulse");
+  const canvas = board.locator("canvas.board-light-animation");
+  await expect(canvas).toBeVisible();
+  const zoom = page.getByRole("button", { name: "Zoom battle map in", exact: true });
+  for (let index = 0; index < 5; index += 1) await zoom.click();
+  const pan = await canvas.evaluate(async (canvas) => {
+    const viewport = canvas.closest<HTMLElement>(".scene-viewport")!;
+    const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    viewport.scrollLeft = Math.min(60, Math.floor((viewport.scrollWidth - viewport.clientWidth) / 2));
+    await nextFrame();
+    await nextFrame();
+    const before = viewport.scrollLeft;
+    let canvasChanges = 0;
+    const observer = new MutationObserver((entries) => { canvasChanges += entries.length; });
+    observer.observe(canvas, { attributes: true, attributeFilter: ["width", "height", "style"] });
+    for (let step = 0; step < 8; step += 1) {
+      viewport.scrollLeft += 2;
+      await nextFrame();
+    }
+    observer.disconnect();
+    return { distance: viewport.scrollLeft - before, canvasChanges };
+  });
+  expect(pan.distance).toBeGreaterThan(0);
+  expect(pan.canvasChanges).toBe(0);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(canvas).toBeHidden();
+});
