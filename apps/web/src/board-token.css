@@ -16,6 +16,7 @@
 .scene-board .token-selection-frame { border: 0; }
 .scene-board .token:not(.has-image) .token-visual {
   border-radius: inherit;
+  color: #fff;
   background: linear-gradient(145deg, hsl(var(--token-hue) 37% 34%), hsl(var(--token-hue) 38% 13%));
 }
 .scene-board .token:is(.selected, :focus-visible) .token-nameplate,
