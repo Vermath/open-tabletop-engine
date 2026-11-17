@@ -66,4 +66,6 @@ Three fresh runs of the standard fixture used headless Chromium at 1440 × 900 o
 | Frames over 33.4 ms | 0, 0, 0 | 0, 0, 1 |
 | Long-task time | 0, 0, 0 ms | 0, 0, 0 ms |
 
-The standard script selects a different token on its first key press. In three extra moves per run with the token already selected, all nine had exactly two App commits. Those commits applied the token revision and recorded the undo entry. One final fixture run overlapped workspace lint and typechecking. The keyboard frame target was already within reach on the baseline machine, and the measured gain was fewer renders.
+The original harness selected a different token on its first key press. With the token already selected, nine extra moves took two App commits each to apply the token revision and record its undo entry.
+
+Undo and redo history now lives in refs read by the keyboard handler. The movement response records history alongside the saved position. The updated harness starts with a selected token and checks the successful API response for every move. On the same Windows machine and fixture, a production Chromium run measured one App render for each of ten moves, zero intervals over 33.4 ms, and zero long-task time.
