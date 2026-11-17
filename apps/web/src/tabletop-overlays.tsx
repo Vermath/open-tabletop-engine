@@ -111,7 +111,7 @@ export function DiceCastOverlay(props: { casts: DiceCastPlan[] }) {
   return (
     <div className="dice-cast-overlay" aria-hidden="true">
       {props.casts.map((cast) => (
-        <div className={cast.highlight ? `dice-cast dice-cast-${cast.highlight}` : "dice-cast"} key={cast.rollId}>
+        <div className={cast.settleMs === 0 ? "dice-cast dice-cast-static" : cast.highlight ? `dice-cast dice-cast-${cast.highlight}` : "dice-cast"} key={cast.rollId}>
           <div className="dice-cast-dice">
             {cast.dice.map((die) => {
               const shape = dieShapeName(die.sides);
@@ -137,7 +137,7 @@ export function DiceCastOverlay(props: { casts: DiceCastPlan[] }) {
             })}
           </div>
           <div className="dice-cast-label" style={{ "--cast-label-delay": `${cast.settleMs}ms` } as CSSProperties}>
-            <span>{cast.label}</span>
+            <span>{cast.formula}</span>
             <strong>{formatNumber(cast.total)}</strong>
           </div>
         </div>

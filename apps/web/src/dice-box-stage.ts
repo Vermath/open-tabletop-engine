@@ -122,10 +122,10 @@ async function waitForReadyDiceBox(maxWaitMs: number): Promise<DiceBoxLike | nul
 }
 
 /** Waits briefly for a warming dice box so cold-start rolls do not immediately downgrade. */
-export async function castPhysicsDiceWhenReady(plan: DiceCastPlan, lingerMs = physicsDiceLingerMs, maxWaitMs = physicsDiceReadyWaitMs): Promise<boolean> {
+export async function castPhysicsDiceWhenReady(plan: DiceCastPlan, lingerMs = physicsDiceLingerMs, maxWaitMs = physicsDiceReadyWaitMs, isCurrent = () => true): Promise<boolean> {
   const notation = diceBoxNotation(plan);
   if (!notation) return false;
   const box = await waitForReadyDiceBox(maxWaitMs);
-  if (!box) return false;
+  if (!box || !isCurrent()) return false;
   return runPhysicsDiceRoll(box, notation, lingerMs);
 }
