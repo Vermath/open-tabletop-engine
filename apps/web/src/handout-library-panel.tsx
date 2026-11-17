@@ -278,7 +278,7 @@ export function HandoutLibraryPanel(props: {
           </div>
           <div className="handout-list" role="list" aria-label="Handouts">
             {filtered.length === 0 ? (
-              <EmptyState icon={<BookOpen size={17} />} text={props.handouts.length === 0 ? "Handouts shared with you will appear here." : "No handouts match these filters."}
+              <EmptyState icon={<BookOpen size={17} />} text={props.handouts.length > 0 ? "No handouts match these filters." : props.canCreate ? "Create a handout for a clue, a letter, or campaign lore." : "Handouts shared with you will appear here."}
                 action={props.handouts.length > 0 ? { label: "Clear filters", run: () => { setQuery(""); setWorldFilter(""); setReadFilter("all"); } } : props.canCreate ? { label: "Create first handout", run: () => { setCreating(true); setSelectedId(""); } } : undefined} />
             ) : filtered.map((item) => {
               const unread = !item.readByUserIds.includes(props.currentUserId);

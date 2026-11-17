@@ -67,7 +67,7 @@ describe("feature-surface states and permissions", () => {
     );
     expect(html).toContain("Handouts could not be loaded: offline");
     expect(html).toContain("Retry");
-    expect(html).toContain("Your handout library starts here");
+    expect(html).toContain('class="table-empty-state"');
     expect(html).toContain("Handouts shared with you will appear here.");
     expect(html).not.toContain("Clear filters");
     expect(html).not.toContain("aria-label=\"Create handout\"");

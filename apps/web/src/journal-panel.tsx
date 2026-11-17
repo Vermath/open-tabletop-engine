@@ -363,7 +363,7 @@ export function JournalPanel(props: JournalPanelProps) {
         </details>
       )}
       <section className="journal-list" aria-label="Journal hierarchy">
-        {props.journals.length === 0 ? <EmptyState icon={<ScrollText size={17} />} text="No journal records yet." action={props.canCreate ? { label: "Write the first record", run: () => setCreateDrawerOpen(true) } : undefined} /> : journalHierarchyRows(props.journals).map(({ journal, depth }) => (
+        {props.journals.length === 0 ? <EmptyState icon={<ScrollText size={17} />} text="The session Recap is ready after play." action={props.canCreate ? { label: "Write the first record", run: () => setCreateDrawerOpen(true) } : undefined} /> : journalHierarchyRows(props.journals).map(({ journal, depth }) => (
           <JournalEntryCard
             key={journal.id}
             campaignId={props.campaignId}
