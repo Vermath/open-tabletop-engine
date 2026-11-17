@@ -7021,7 +7021,7 @@ export function App() {
       setSnapshot((current) => ({ ...current, proposals: [...current.proposals, proposal] }));
       setAiAgentMessages((messages) => [...messages, assistantMessage]);
       setAiAgentStatus("Agent drafted 1 local proposal");
-      if (aiAgentApprovalMode === "auto") await autoApplyAiAgentProposals([proposal.id], sourceSnapshot, { campaignId: requestCampaignId, userId: requestUserId });
+      if (aiAgentApprovalMode === "auto") await autoApplyAiAgentProposals([proposal.id], sourceSnapshot, { campaignId: requestCampaignId, userId: requestUserId, sourceId: proposal.sourceId! });
     } finally {
       if (workspaceRequestIsCurrent(requestCampaignId, requestUserId)) {
         aiAgentBusyRef.current = false;
@@ -7106,7 +7106,7 @@ export function App() {
       const appliedProposalIdSet = new Set(appliedProposalIds);
       const pendingProposalIds = proposalIds.filter((proposalId) => !appliedProposalIdSet.has(proposalId));
       if (aiAgentApprovalMode === "auto" && pendingProposalIds.length > 0) {
-        await autoApplyAiAgentProposals(pendingProposalIds, refreshedSnapshot, { campaignId: requestCampaignId, userId: requestUserId });
+        await autoApplyAiAgentProposals(pendingProposalIds, refreshedSnapshot, { campaignId: requestCampaignId, userId: requestUserId, sourceId: result.thread.id });
       }
     } catch (error) {
       if (!workspaceRequestIsCurrent(requestCampaignId, requestUserId)) return;
@@ -7377,7 +7377,7 @@ export function App() {
     return openedSceneId ? { applied, openedSceneId } : { applied };
   }
 
-  async function autoApplyAiAgentProposals(proposalIds: string[], sourceSnapshot: Snapshot, request: { campaignId: string; userId: string }) {
+  async function autoApplyAiAgentProposals(proposalIds: string[], sourceSnapshot: Snapshot, request: { campaignId: string; userId: string; sourceId: string }) {
     if (!workspaceRequestIsCurrent(request.campaignId, request.userId)) return;
     if (!hasPermission("ai.applyChanges")) {
       const message = "Auto approve needs AI apply permission; proposals are waiting for review.";
@@ -7389,7 +7389,8 @@ export function App() {
     const proposalsToApply = proposalIds
       .map((proposalId) => sourceSnapshot.proposals.find((proposal) => proposal.id === proposalId))
       .filter((proposal): proposal is Proposal => Boolean(proposal))
-      .filter((proposal) => proposal.status === "pending" || proposal.status === "approved");
+      // Only proposals this AI turn created; ids echoed in provider output must not approve anything else.
+      .filter((proposal) => (proposal.status === "pending" || proposal.status === "approved") && proposal.createdByType === "ai" && proposal.sourceId === request.sourceId);
     if (proposalsToApply.length === 0) return;
 
     setAiAgentStatus(`Auto-approving ${proposalsToApply.length} proposal${proposalsToApply.length === 1 ? "" : "s"}`);

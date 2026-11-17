@@ -126,7 +126,8 @@ describe("desktop layout regressions", () => {
     expect(appSource).toContain('aria-label="AI Agent approval mode"');
     expect(appSource).toContain("approvalMode: aiAgentApprovalMode,");
     expect(appSource).toContain('event.type === "proposal.applied"');
-    expect(appSource).toContain("autoApplyAiAgentProposals(pendingProposalIds, refreshedSnapshot, { campaignId: requestCampaignId, userId: requestUserId })");
+    expect(appSource).toContain("autoApplyAiAgentProposals(pendingProposalIds, refreshedSnapshot, { campaignId: requestCampaignId, userId: requestUserId, sourceId: result.thread.id })");
+    expect(appSource).toContain('proposal.createdByType === "ai" && proposal.sourceId === request.sourceId');
     expect(appSource).toContain('if (event.key === "Enter" && (event.ctrlKey || event.metaKey))');
     expect(appSource).toContain('onKeyDown={handleAiAgentPromptKeyDown}');
     expect(appSource).toContain('aiAgentPendingAuthRequestRef.current = { prompt, requestMessages, selectedAssetId: requestSelectedAssetId };');
