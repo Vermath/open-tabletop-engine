@@ -1,3 +1,4 @@
+import { selectInspectorPanel } from "./inspector-navigation.js";
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 
@@ -90,7 +91,7 @@ async function openManageCategory(page: Page, categoryName: string): Promise<Loc
 }
 
 async function openInspectorPanel(page: Page, panelName: "Actors" | "Plugins"): Promise<Locator> {
-  await page.locator(".inspector-tabs").getByRole("tab", { name: panelName, exact: true }).click();
+  await selectInspectorPanel(page, panelName);
   const panel = page.getByRole("tabpanel", { name: panelName });
   await expect(panel).toBeVisible();
   return panel;

@@ -35,6 +35,7 @@ export interface UserPreferences {
   theme: "midnight" | "ember";
   dice3dEnabled: boolean;
   reducedMotion: boolean;
+  interfaceSounds?: { enabled: boolean; volume: number };
   chatNotifications: "all" | "mentions" | "none";
 }
 
@@ -600,6 +601,8 @@ export interface VisionSnapshot {
   userId: ID;
   fogActive: boolean;
   polygons: VisionPolygon[];
+  sceneUpdatedAt?: Timestamps["updatedAt"];
+  visibleTokens?: Token[];
 }
 
 export interface VisionPointSample {

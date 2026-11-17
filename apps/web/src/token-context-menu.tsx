@@ -39,18 +39,19 @@ export function clampMenuPosition(position: { x: number; y: number }, menu: { wi
   };
 }
 
-export function TokenContextMenu(props: { tokenName: string; position: { x: number; y: number }; actions: TokenContextMenuAction[]; onClose(restoreFocus?: boolean): void }) {
+export function TokenContextMenu(props: { tokenName: string; position: { x: number; y: number }; actions: TokenContextMenuAction[]; closing?: boolean; onClose(restoreFocus?: boolean): void }) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState(props.position);
 
   useLayoutEffect(() => {
     const menu = menuRef.current;
-    if (!menu) return;
+    if (!menu || props.closing) return;
     setPosition(clampMenuPosition(props.position, { width: menu.offsetWidth, height: menu.offsetHeight }, { width: window.innerWidth, height: window.innerHeight }));
     menu.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
-  }, [props.position.x, props.position.y]);
+  }, [props.position.x, props.position.y, props.closing]);
 
   useEffect(() => {
+    if (props.closing) return;
     const closeOnOutsidePointer = (event: PointerEvent) => {
       if (!menuRef.current?.contains(event.target as Node)) props.onClose();
     };
@@ -66,7 +67,7 @@ export function TokenContextMenu(props: { tokenName: string; position: { x: numb
       window.removeEventListener("resize", close);
       window.removeEventListener("blur", close);
     };
-  }, [props.onClose]);
+  }, [props.onClose, props.closing]);
 
   function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
     if (event.key === "Escape" || event.key === "Tab") {
@@ -94,7 +95,8 @@ export function TokenContextMenu(props: { tokenName: string; position: { x: numb
   return (
     <div
       ref={menuRef}
-      className="token-context-menu"
+      className={props.closing ? "token-context-menu interface-exiting" : "token-context-menu"}
+      inert={props.closing}
       role="menu"
       aria-label={`${props.tokenName} actions`}
       style={{ left: position.x, top: position.y }}

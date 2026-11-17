@@ -261,10 +261,22 @@ test("board frame times on a large scene", async ({ page }) => {
     await page.mouse.up();
   }, "tokenDrag");
 
-  const movable = page.locator(".scene-board button.token").first();
+  const movable = dragged;
+  await movable.evaluate((element) => element.scrollIntoView({ block: "center", inline: "center" }));
+  if ((await movable.getAttribute("aria-pressed")) !== "true") await movable.click();
+  await expect(movable).toHaveAttribute("aria-pressed", "true");
   await movable.focus();
+  await page.waitForTimeout(300);
+  const appRenderCount = () => page.evaluate(() => Number(Reflect.get(window, "__otteBoardRenderCounts")?.app));
+  expect(await appRenderCount()).toBeGreaterThan(0);
+  const keyboardAppRenders: number[] = [];
   results.keyboardMove = await measure(page, async () => {
-    for (let step = 0; step < 10; step += 1) { await page.keyboard.press(step % 2 === 0 ? "ArrowRight" : "ArrowLeft"); await page.waitForTimeout(250); }
+    for (let step = 0; step < 10; step += 1) {
+      const before = await appRenderCount();
+      await page.keyboard.press(step % 2 === 0 ? "ArrowRight" : "ArrowLeft");
+      await page.waitForTimeout(250);
+      keyboardAppRenders.push(await appRenderCount() - before);
+    }
   }, "keyboardMove");
 
   const domNodes = await board.evaluate((element) => element.querySelectorAll("*").length);
@@ -275,6 +287,7 @@ test("board frame times on a large scene", async ({ page }) => {
     renderer: await board.getAttribute("data-map-renderer"),
     fixture: built,
     boardDomNodes: domNodes,
+    keyboardAppRenders,
     frameIntervalMs: results,
   };
   mkdirSync(dirname(outputPath), { recursive: true });

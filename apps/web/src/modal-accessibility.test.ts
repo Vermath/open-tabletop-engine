@@ -35,7 +35,9 @@ describe("modal accessibility", () => {
 
   it("wires every aria-modal dialog through the shared behavior", () => {
     expect(appModalSources.match(/useModalAccessibility<HTMLDivElement>/g)).toHaveLength(5);
-    expect(appModalSources.match(/aria-modal="true"/g)).toHaveLength(5);
+    expect(appModalSources.match(/aria-modal="true"/g)).toHaveLength(3);
+    expect(tabletopOverlaysSource).toContain('aria-modal={props.closing ? undefined : true} aria-label="Command palette"');
+    expect(tabletopOverlaysSource).toContain('aria-modal={closing ? undefined : true} aria-label="Keyboard shortcuts"');
     expect(appModalSources.match(/tabIndex=\{-1\}/g)?.length).toBeGreaterThanOrEqual(5);
     expect(actorPanelSource).toContain("setDeleteDialogOpen(false);\n  }, [props.token?.id]);");
     expect(actorPanelSource).toContain("initialFocusRef: deleteConfirmRef");

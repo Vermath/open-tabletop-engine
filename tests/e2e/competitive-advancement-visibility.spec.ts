@@ -1,3 +1,4 @@
+import { selectInspectorPanel } from "./inspector-navigation.js";
 import { expect, test, type Page } from "@playwright/test";
 import type { Actor, Campaign, Scene, Token } from "../../packages/core/src/types.js";
 
@@ -61,7 +62,7 @@ test("competitive advancement loads for visible actor Stats, not Chat token inte
   const showInspector = page.getByRole("button", { name: "Show inspector", exact: true });
   if (await showInspector.isVisible()) await showInspector.click();
   const inspectorTabs = page.getByRole("tablist", { name: "Inspector panels", exact: true });
-  await inspectorTabs.getByRole("tab", { name: "Chat", exact: true }).click();
+  await selectInspectorPanel(page, "Chat");
   const chatTab = inspectorTabs.getByRole("tab", { name: "Chat", exact: true });
   await expect(chatTab).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("region", { name: "Chat", exact: true })).toBeVisible();
@@ -93,7 +94,7 @@ test("competitive advancement loads for visible actor Stats, not Chat token inte
 
   phase = "visible";
   const advancementResponse = page.waitForResponse((response) => response.request().method() === "GET" && new URL(response.url()).pathname === advancementPath);
-  await inspectorTabs.getByRole("tab", { name: "Actors", exact: true }).click();
+  await selectInspectorPanel(page, "Actors");
   const advancementHttp = await advancementResponse;
   expect(advancementHttp.ok()).toBe(true);
   const advancement = await advancementHttp.json() as AdvancementResponse;

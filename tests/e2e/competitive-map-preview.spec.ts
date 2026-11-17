@@ -1,3 +1,4 @@
+import { selectInspectorPanel } from "./inspector-navigation.js";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Locator, type Page } from "@playwright/test";
@@ -64,7 +65,7 @@ async function tableSnapshot(page: Page, sceneId: string): Promise<TableSnapshot
 async function tokenPresentation(board: Locator) {
   return board.locator(".token").evaluateAll((elements) => elements.map((element) => ({
     name: element.querySelector(".token-nameplate")?.textContent,
-    hpWidth: (element.querySelector(".token-hp > span") as HTMLElement | null)?.style.width ?? null,
+    hpFill: (element.querySelector(".token-hp > span") as HTMLElement | null)?.style.getPropertyValue("--token-hp-fill") ?? null,
   })).sort((left, right) => (left.name ?? "").localeCompare(right.name ?? "")));
 }
 
@@ -225,7 +226,7 @@ test("competitive player preview matches a separate authenticated player's table
     const actualBoard = await openScene(playerPage, scene);
     await expect(actualBoard.getByRole("button", { name: "Player Objects & Tokens token Preview Hero", exact: true })).toBeVisible();
     await expect(actualBoard.getByRole("button", { name: /BROWSER_PRIVATE_TOKEN/ })).toHaveCount(0);
-    await playerPage.locator(".inspector-tabs").getByRole("tab", { name: "Chat", exact: true }).click();
+    await selectInspectorPanel(playerPage, "Chat");
     const playerChat = playerPage.getByRole("textbox", { name: "Chat message", exact: true });
     await playerChat.fill("Browser message from authenticated player");
     await playerChat.press("Enter");
@@ -234,8 +235,8 @@ test("competitive player preview matches a separate authenticated player's table
     expect(actual.actors.find((actor) => actor.id === hero.id)?.data.hp).toEqual({ current: 7, max: 13 });
     expect(actual.actors.find((actor) => actor.id === npc.id)?.data).toEqual({});
     const actualPresentation = await tokenPresentation(actualBoard);
-    expect(actualPresentation.find((token) => token.name === "Preview Hero")?.hpWidth).toBe("54%");
-    expect(actualPresentation.find((token) => token.name === "Preview Sentinel")?.hpWidth).toBeNull();
+    expect(actualPresentation.find((token) => token.name === "Preview Hero")?.hpFill).toBe("54%");
+    expect(actualPresentation.find((token) => token.name === "Preview Sentinel")?.hpFill).toBeNull();
     const actualMessages = actual.chat.map((message) => message.body);
     // Roll cards and emotes render their bodies outside .chat-body. Count the
     // whole message stream before comparing the preview's plain-text projection.
@@ -271,7 +272,7 @@ test("competitive player preview matches a separate authenticated player's table
     await expect(dialog).not.toContainText("BROWSER_PRIVATE_CHAT");
     await page.screenshot({ path: resolve(artifactDir, "gm-player-preview-chat.png"), fullPage: true });
 
-    await playerPage.locator(".inspector-tabs").getByRole("tab", { name: "Handouts", exact: true }).click();
+    await selectInspectorPanel(playerPage, "Handouts");
     const library = playerPage.getByRole("region", { name: "Handout Library" });
     await expect(library).toBeVisible();
     await library.getByRole("button").filter({ hasText: "Browser public clue" }).click();
@@ -388,6 +389,13 @@ test("competitive unlinked token keeps its editor separate from actor selection 
   const actorIds = new Set([intentionalActor.id, linkedActor.id]);
   const actorsBefore = (await tableSnapshot(page, scene.id)).actors.filter((actor) => actorIds.has(actor.id));
   const board = await openScene(page, scene, true);
+  const initials = board.getByRole("button", { name: "Player Objects & Tokens token Unlinked marker", exact: true }).locator(".token-label");
+  await expect(initials).toHaveText("UN");
+  expect(await initials.evaluate((label) => {
+    const letters = document.createRange();
+    letters.selectNodeContents(label);
+    return letters.getBoundingClientRect().width <= label.clientWidth + 1;
+  })).toBe(true);
   const inspector = page.getByRole("complementary", { name: "Inspector", exact: true });
   const chooseIntentionalActor = () => page.getByRole("region", { name: "Party", exact: true }).getByRole("button", { name: /Intentional actor selection/ }).click();
   await chooseIntentionalActor();
