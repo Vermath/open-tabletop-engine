@@ -48,12 +48,23 @@ export type WorkerJob = (
   | {
       id: string;
       type: "ai.memory.extract";
-      payload: { campaignId: string; sourceText?: string };
+      payload: {
+        campaignId: string;
+        sourceText?: string;
+        visibility?: "public" | "gm_only";
+        expectedUpdatedAt: string;
+      };
     }
   | {
       id: string;
       type: "ai.session.recap";
-      payload: { campaignId: string; transcript?: string };
+      payload: {
+        campaignId: string;
+        sessionId?: string;
+        transcript?: string;
+        manualNotes?: string;
+        expectedUpdatedAt: string;
+      };
     }
   | { id: string; type: "report.bundle"; payload: { campaignId: string } }
 ) & {
@@ -499,6 +510,8 @@ async function dispatchJob(
         `/api/v1/campaigns/${encodeURIComponent(job.payload.campaignId)}/ai/memory/extract`,
         {
           sourceText: job.payload.sourceText,
+          visibility: job.payload.visibility,
+          expectedUpdatedAt: job.payload.expectedUpdatedAt,
         },
       );
     case "ai.session.recap":
@@ -508,7 +521,10 @@ async function dispatchJob(
         "POST",
         `/api/v1/campaigns/${encodeURIComponent(job.payload.campaignId)}/ai/session-recap`,
         {
+          sessionId: job.payload.sessionId,
           transcript: job.payload.transcript,
+          manualNotes: job.payload.manualNotes,
+          expectedUpdatedAt: job.payload.expectedUpdatedAt,
         },
       );
     case "report.bundle":
@@ -1046,6 +1062,14 @@ function parseWorkerJob(value: unknown): WorkerJob {
         payload: {
           campaignId: requiredString(value.payload, "campaignId"),
           sourceText: optionalString(value.payload, "sourceText"),
+          visibility: optionalEnum(value.payload, "visibility", [
+            "public",
+            "gm_only",
+          ]),
+          expectedUpdatedAt: requiredDateTime(
+            value.payload,
+            "expectedUpdatedAt",
+          ),
         },
       };
     case "ai.session.recap":
@@ -1054,7 +1078,13 @@ function parseWorkerJob(value: unknown): WorkerJob {
         type: value.type,
         payload: {
           campaignId: requiredString(value.payload, "campaignId"),
+          sessionId: optionalString(value.payload, "sessionId"),
           transcript: optionalString(value.payload, "transcript"),
+          manualNotes: optionalString(value.payload, "manualNotes"),
+          expectedUpdatedAt: requiredDateTime(
+            value.payload,
+            "expectedUpdatedAt",
+          ),
         },
       };
     case "report.bundle":
@@ -1126,6 +1156,21 @@ function optionalString(
   if (typeof value !== "string")
     throw new Error(`Worker job payload field ${key} must be a string`);
   return value;
+}
+
+function optionalEnum<const Value extends string>(
+  record: Record<string, unknown>,
+  key: string,
+  allowed: readonly Value[],
+): Value | undefined {
+  const value = record[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || !allowed.includes(value as Value)) {
+    throw new Error(
+      `Worker job payload field ${key} must be one of ${allowed.join(", ")}`,
+    );
+  }
+  return value as Value;
 }
 
 function optionalStringArray(

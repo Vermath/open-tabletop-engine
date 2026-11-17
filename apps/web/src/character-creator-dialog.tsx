@@ -1,11 +1,14 @@
 import { Check, ChevronLeft, ChevronRight, UserPlus, X } from "lucide-react";
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
+import type { Dnd5eAbility, Dnd5eAbilityScoreMethod, Dnd5eStandardArrayAssignment } from "@open-tabletop/core";
 import type { CharacterTemplateInfo, Snapshot } from "./api.js";
+import { inspectLocalDraft, localDraftKey, removeLocalDraft, writeLocalDraft } from "./local-draft-storage.js";
 import { useModalAccessibility } from "./modal-accessibility.js";
 import { errorMessage, prettyOriginId } from "./sheet-format.js";
 
 
 export type CharacterOriginsInfo = {
+  standardArray?: { abilities: Dnd5eAbility[]; values: number[] };
   backgrounds: Array<{ id: string; name: string; abilityScores: string[]; feat: string; skillProficiencies: string[]; toolProficiencies: string[]; startingGp: number }>;
   species: Array<{ id: string; name: string; size: string; speed: number; traits: string[]; senses?: string[] }>;
   draconicAncestors: Array<{ id: string; name: string; damageType: "acid" | "cold" | "fire" | "lightning" | "poison" }>;
@@ -81,6 +84,8 @@ export type CharacterOriginsInfo = {
 
 export type CharacterCreateInput = {
   creationMode?: "level-one-srd";
+  abilityScoreMethod?: Dnd5eAbilityScoreMethod;
+  standardArrayAssignment?: Dnd5eStandardArrayAssignment;
   name: string;
   ownerUserId: string;
   backgroundId?: string;
@@ -129,6 +134,189 @@ export type CharacterCreatorValidationIssue = {
   message: string;
 };
 
+export interface CharacterCreatorRulesPreview {
+  ok: boolean;
+  issues: Array<{ field: string; code: string; message: string }>;
+  derived?: {
+    abilityScores: Record<string, number>;
+    abilityModifiers: Record<string, number>;
+    savingThrows: Record<string, number>;
+    armorClass: number;
+    hitPoints: { current: number; max: number };
+    speed: number;
+    proficiencyBonus: number;
+  };
+}
+
+export interface CharacterCreatorSpellOption {
+  id: string;
+  name: string;
+}
+
+export function updateCharacterCreatorSpellChoices(
+  current: readonly string[],
+  spellId: string,
+  checked: boolean,
+  capacity: number
+): string[] {
+  if (!checked) return current.filter((id) => id !== spellId);
+  return [...current.filter((id) => id !== spellId), spellId].slice(0, capacity);
+}
+
+export function CharacterCreatorSpellOptions(props: {
+  groupLabel: string;
+  spells: readonly CharacterCreatorSpellOption[];
+  selectedSpellIds: readonly string[];
+  capacity: number;
+  onSelectionChange(spellId: string, checked: boolean): void;
+}) {
+  return (
+    <div className="creator-skill-options" role="group" aria-label={`${props.groupLabel} choices`}>
+      {props.spells.map((spell) => {
+        const checked = props.selectedSpellIds.includes(spell.id);
+        return (
+          <label key={spell.id}>
+            <input
+              aria-label={`${props.groupLabel}: ${spell.name}`}
+              type="checkbox"
+              checked={checked}
+              disabled={!checked && props.selectedSpellIds.length >= props.capacity}
+              onChange={(event) => props.onSelectionChange(spell.id, event.currentTarget.checked)}
+            />
+            <span>{spell.name}</span>
+          </label>
+        );
+      })}
+    </div>
+  );
+}
+
+export interface StoredCharacterCreatorDraft {
+  templateId: string;
+  stepIndex: number;
+  input: CharacterCreateInput;
+}
+
+const characterCreatorStringFields = [
+  "name",
+  "ownerUserId",
+  "backgroundId",
+  "speciesId",
+  "draconicAncestry",
+  "giantAncestry",
+  "skillProficiency",
+  "originFeat",
+  "elfLineage",
+  "elfCantrip",
+  "gnomeLineage",
+  "tieflingLegacy",
+  "speciesSpellcastingAbility",
+  "classEquipmentPackageId",
+  "backgroundEquipmentPackageId",
+  "backgroundToolProficiencyChoice",
+  "backgroundMagicInitiateSpell",
+  "backgroundMagicInitiateAbility",
+  "originFeatMagicInitiateSpell",
+  "originFeatMagicInitiateAbility",
+  "fightingStyle",
+  "divineOrder",
+  "primalOrder",
+  "eldritchInvocation"
+] as const satisfies ReadonlyArray<keyof CharacterCreateInput>;
+
+export const dnd5eCreatorAbilities: readonly Dnd5eAbility[] = ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"];
+export const dnd5eCreatorStandardArray: readonly number[] = [15, 14, 13, 12, 10, 8];
+
+export function validCreatorStandardArrayAssignment(value: unknown): value is Dnd5eStandardArrayAssignment {
+  if (!isRecord(value) || Object.keys(value).length !== dnd5eCreatorAbilities.length) return false;
+  if (!dnd5eCreatorAbilities.every((ability) => typeof value[ability] === "number" && Number.isInteger(value[ability]))) return false;
+  const scores = dnd5eCreatorAbilities.map((ability) => value[ability] as number).sort((left, right) => right - left);
+  return scores.every((score, index) => score === dnd5eCreatorStandardArray[index]);
+}
+
+export function swapCreatorStandardArrayScore(
+  assignment: Dnd5eStandardArrayAssignment,
+  ability: Dnd5eAbility,
+  score: number,
+  abilities: readonly Dnd5eAbility[] = dnd5eCreatorAbilities
+): Dnd5eStandardArrayAssignment {
+  if (assignment[ability] === score) return assignment;
+  const swapAbility = abilities.find((candidate) => assignment[candidate] === score);
+  if (!swapAbility) return assignment;
+  return { ...assignment, [ability]: score, [swapAbility]: assignment[ability] };
+}
+
+export function previewCreatorAbilityScores(
+  assignment: Dnd5eStandardArrayAssignment,
+  increases: Record<string, number>
+): Record<Dnd5eAbility, { base: number; increase: number; score: number; modifier: number }> {
+  return Object.fromEntries(dnd5eCreatorAbilities.map((ability) => {
+    const base = assignment[ability];
+    const increase = increases[ability] ?? 0;
+    const score = base + increase;
+    return [ability, { base, increase, score, modifier: Math.floor((score - 10) / 2) }];
+  })) as Record<Dnd5eAbility, { base: number; increase: number; score: number; modifier: number }>;
+}
+
+const characterCreatorStringArrayFields = [
+  "classSkillProficiencies",
+  "originLanguageChoices",
+  "classLanguageChoices",
+  "classToolProficiencyChoices",
+  "weaponMasteryChoices",
+  "classCantripChoices",
+  "classPreparedSpellChoices",
+  "wizardSpellbookChoices",
+  "backgroundMagicInitiateCantrips",
+  "originFeatMagicInitiateCantrips",
+  "skilledProficiencyChoices",
+  "rogueExpertiseChoices",
+  "pactTomeCantripChoices",
+  "pactTomeRitualChoices"
+] as const satisfies ReadonlyArray<keyof CharacterCreateInput>;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isStringRecord(value: unknown): boolean {
+  return isRecord(value) && Object.values(value).every((entry) => typeof entry === "string");
+}
+
+function isNumberRecord(value: unknown): boolean {
+  return isRecord(value) && Object.values(value).every((entry) => typeof entry === "number" && Number.isFinite(entry));
+}
+
+export function storedCharacterCreatorDraft(value: unknown): StoredCharacterCreatorDraft | undefined {
+  if (!isRecord(value)) return undefined;
+  const draft = value as Partial<StoredCharacterCreatorDraft>;
+  if (typeof draft.templateId !== "string" || draft.templateId.length === 0 || !Number.isInteger(draft.stepIndex) || (draft.stepIndex ?? -1) < 0 || (draft.stepIndex ?? 4) > 3 || !isRecord(draft.input)) return undefined;
+  if (draft.input.creationMode !== undefined && draft.input.creationMode !== "level-one-srd") return undefined;
+  if (draft.input.abilityScoreMethod !== undefined && draft.input.abilityScoreMethod !== "standard-array") return undefined;
+  if (draft.input.standardArrayAssignment !== undefined && !validCreatorStandardArrayAssignment(draft.input.standardArrayAssignment)) return undefined;
+  if ((draft.input.abilityScoreMethod === "standard-array") !== (draft.input.standardArrayAssignment !== undefined)) return undefined;
+  for (const field of characterCreatorStringFields) {
+    const fieldValue = draft.input[field];
+    if (fieldValue !== undefined && typeof fieldValue !== "string") return undefined;
+  }
+  if (typeof draft.input.name !== "string" || typeof draft.input.ownerUserId !== "string") return undefined;
+  for (const field of characterCreatorStringArrayFields) {
+    const fieldValue = draft.input[field];
+    if (fieldValue !== undefined && (!Array.isArray(fieldValue) || !fieldValue.every((entry) => typeof entry === "string"))) return undefined;
+  }
+  if (draft.input.abilityScoreIncreases !== undefined && !isNumberRecord(draft.input.abilityScoreIncreases)) return undefined;
+  if (draft.input.classEquipmentChoices !== undefined && !isStringRecord(draft.input.classEquipmentChoices)) return undefined;
+  if (draft.input.backgroundEquipmentChoices !== undefined && !isStringRecord(draft.input.backgroundEquipmentChoices)) return undefined;
+  return draft as StoredCharacterCreatorDraft;
+}
+
+export function recoverableCharacterCreatorDraft(
+  draft: StoredCharacterCreatorDraft | undefined,
+  templates: CharacterTemplateInfo[]
+): StoredCharacterCreatorDraft | undefined {
+  return draft && templates.some((template) => template.id === draft.templateId) ? draft : undefined;
+}
+
 export function validateCharacterCreatorInput(input: {
   template?: CharacterTemplateInfo;
   origins?: CharacterOriginsInfo;
@@ -142,6 +330,9 @@ export function validateCharacterCreatorInput(input: {
   if (!input.origins) {
     if (input.template?.systemId === "dnd-5e-srd") add("Finish", "D&D origin choices could not be loaded. Close the creator and try again.");
     return issues;
+  }
+  if (input.value.abilityScoreMethod !== "standard-array" || !validCreatorStandardArrayAssignment(input.value.standardArrayAssignment)) {
+    add("Background", "Assign each standard-array score exactly once across all six abilities.");
   }
 
   const background = input.origins.backgrounds.find((item) => item.id === input.value.backgroundId);
@@ -350,62 +541,199 @@ export function validateCharacterCreatorInput(input: {
 }
 
 
-export function CharacterCreatorDialog(props: {
+interface CharacterCreatorDialogProps {
+  campaignId: string;
   templates: CharacterTemplateInfo[];
   origins?: CharacterOriginsInfo;
   members: Snapshot["members"];
   currentUserId: string;
   onClose(): void;
   onCreate(template: CharacterTemplateInfo, input: CharacterCreateInput): Promise<void>;
+  onPreview?(template: CharacterTemplateInfo, input: CharacterCreateInput): Promise<CharacterCreatorRulesPreview>;
+}
+
+type CharacterCreatorStoredDraftState =
+  | { status: "missing" }
+  | { status: "ready"; draft: StoredCharacterCreatorDraft }
+  | { status: "invalid" | "unsupported" | "corrupt" };
+
+export function CharacterCreatorDialog(props: CharacterCreatorDialogProps) {
+  const draftStorageKey = localDraftKey("character-creator", props.campaignId, props.currentUserId);
+  const [storedDraftState] = useState<CharacterCreatorStoredDraftState>(() => {
+    const stored = inspectLocalDraft<unknown>(draftStorageKey);
+    if (stored.status === "missing") return { status: "missing" };
+    if (stored.status !== "ready") return { status: stored.status };
+    const draft = storedCharacterCreatorDraft(stored.value);
+    return draft ? { status: "ready", draft } : { status: "invalid" };
+  });
+  const storedDraft = storedDraftState.status === "ready" ? storedDraftState.draft : undefined;
+  const hasStoredDraft = storedDraftState.status !== "missing";
+  const recoverableDraft = recoverableCharacterCreatorDraft(storedDraft, props.templates);
+  const [recoveryDecision, setRecoveryDecision] = useState<"pending" | "resume" | "fresh">(hasStoredDraft ? "pending" : "fresh");
+  const recoveryDialogRef = useModalAccessibility<HTMLDivElement>(props.onClose);
+
+  if (recoveryDecision === "pending" && hasStoredDraft) {
+    return (
+      <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) props.onClose(); }}>
+        <div
+          ref={recoveryDialogRef}
+          className="modal-dialog character-creator"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="character-draft-recovery-title"
+          aria-describedby="character-draft-recovery-description"
+          tabIndex={-1}
+        >
+          <header className="creator-header">
+            <div>
+              <h2 id="character-draft-recovery-title">Recover character draft?</h2>
+              <p id="character-draft-recovery-description">
+                {recoverableDraft ? "A saved character is waiting in this browser. Resume it or discard it and start over."
+                  : storedDraftState.status === "invalid" ? "This saved character did not pass safety validation. It remains stored unchanged until you explicitly discard it."
+                    : storedDraftState.status === "unsupported" ? "This character draft was saved by an unsupported app version. It remains stored unchanged until you open it with a compatible version or explicitly discard it."
+                      : storedDraftState.status === "corrupt" ? "This character draft cannot be parsed. Its original browser value remains stored unchanged until you explicitly discard it."
+                        : "This draft uses a class template that is no longer available. It remains stored unchanged until you explicitly discard it."}
+              </p>
+            </div>
+            <button className="icon-button" type="button" aria-label="Close and keep saved character draft" onClick={props.onClose}><X size={16} /></button>
+          </header>
+          <div className="creator-body">
+            {recoverableDraft && (
+              <p className="creator-note">
+                {props.templates.find((template) => template.id === recoverableDraft.templateId)?.name ?? recoverableDraft.templateId}
+                {recoverableDraft.input.name.trim() ? ` · ${recoverableDraft.input.name.trim()}` : ""}
+              </p>
+            )}
+          </div>
+          <footer className="creator-footer">
+            <button
+              className="ghost-button"
+              type="button"
+              onClick={() => {
+                removeLocalDraft(draftStorageKey);
+                setRecoveryDecision("fresh");
+              }}
+            >
+              Discard draft
+            </button>
+            {recoverableDraft && (
+              <button className="ghost-button wide" type="button" onClick={() => setRecoveryDecision("resume")}>
+                Resume saved draft
+              </button>
+            )}
+          </footer>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <CharacterCreatorForm
+      key={`${recoveryDecision}:${recoverableDraft?.templateId ?? "fresh"}`}
+      {...props}
+      draftStorageKey={draftStorageKey}
+      initialDraft={recoveryDecision === "resume" ? recoverableDraft : undefined}
+    />
+  );
+}
+
+function CharacterDraftClosePrompt(props: {
+  onContinue(): void;
+  onKeep(): void;
+  onDiscard(): void;
+}) {
+  const promptRef = useModalAccessibility<HTMLDivElement>(props.onContinue);
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) props.onContinue(); }}>
+      <div
+        ref={promptRef}
+        className="modal-dialog confirm-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="character-draft-close-title"
+        aria-describedby="character-draft-close-description"
+        tabIndex={-1}
+      >
+        <h2 id="character-draft-close-title">Keep this character draft?</h2>
+        <p id="character-draft-close-description">Choose what happens before the creator closes.</p>
+        <div className="inline-actions">
+          <button className="ghost-button" type="button" onClick={props.onContinue}>Continue editing</button>
+          <button className="ghost-button" type="button" onClick={props.onDiscard}>Discard and close</button>
+          <button className="ghost-button wide" type="button" onClick={props.onKeep}>Keep draft and close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CharacterCreatorForm(props: CharacterCreatorDialogProps & {
+  draftStorageKey: string;
+  initialDraft?: StoredCharacterCreatorDraft;
 }) {
   const steps = props.origins ? ["Class", "Origin", "Background", "Finish"] : ["Class", "Finish"];
-  const [stepIndex, setStepIndex] = useState(0);
-  const [templateId, setTemplateId] = useState(props.templates[0]?.id ?? "");
-  const [name, setName] = useState("");
-  const [ownerUserId, setOwnerUserId] = useState(props.currentUserId);
-  const [speciesId, setSpeciesId] = useState("human");
-  const [backgroundId, setBackgroundId] = useState("soldier");
-  const [spreadMode, setSpreadMode] = useState<"2-1" | "1-1-1">("2-1");
-  const [plusTwoChoice, setPlusTwoChoice] = useState("");
-  const [plusOneChoice, setPlusOneChoice] = useState("");
-  const [classSkillProficiencies, setClassSkillProficiencies] = useState<string[]>([]);
-  const [originLanguageChoices, setOriginLanguageChoices] = useState<string[]>([]);
-  const [classLanguageChoices, setClassLanguageChoices] = useState<string[]>([]);
-  const [draconicAncestry, setDraconicAncestry] = useState("black");
-  const [giantAncestry, setGiantAncestry] = useState("cloud");
-  const [skillProficiency, setSkillProficiency] = useState("");
-  const [originFeat, setOriginFeat] = useState("Skilled");
-  const [elfLineage, setElfLineage] = useState("high-elf");
-  const [elfCantrip, setElfCantrip] = useState("prestidigitation");
-  const [gnomeLineage, setGnomeLineage] = useState("forest-gnome");
-  const [tieflingLegacy, setTieflingLegacy] = useState("infernal");
-  const [spellAbility, setSpellAbility] = useState("intelligence");
-  const [classEquipmentPackageChoice, setClassEquipmentPackageChoice] = useState("");
-  const [backgroundEquipmentPackageChoice, setBackgroundEquipmentPackageChoice] = useState("");
-  const [classEquipmentChoiceValues, setClassEquipmentChoiceValues] = useState<Record<string, string>>({});
-  const [backgroundEquipmentChoiceValues, setBackgroundEquipmentChoiceValues] = useState<Record<string, string>>({});
-  const [classToolProficiencyChoices, setClassToolProficiencyChoices] = useState<string[]>([]);
-  const [backgroundToolProficiencyChoice, setBackgroundToolProficiencyChoice] = useState("");
-  const [weaponMasteryChoices, setWeaponMasteryChoices] = useState<string[]>([]);
-  const [classCantripChoices, setClassCantripChoices] = useState<string[]>([]);
-  const [classPreparedSpellChoices, setClassPreparedSpellChoices] = useState<string[]>([]);
-  const [wizardSpellbookChoices, setWizardSpellbookChoices] = useState<string[]>([]);
-  const [backgroundMagicInitiateCantrips, setBackgroundMagicInitiateCantrips] = useState<string[]>([]);
-  const [backgroundMagicInitiateSpell, setBackgroundMagicInitiateSpell] = useState("");
-  const [backgroundMagicInitiateAbility, setBackgroundMagicInitiateAbility] = useState("intelligence");
-  const [originFeatMagicInitiateCantrips, setOriginFeatMagicInitiateCantrips] = useState<string[]>([]);
-  const [originFeatMagicInitiateSpell, setOriginFeatMagicInitiateSpell] = useState("");
-  const [originFeatMagicInitiateAbility, setOriginFeatMagicInitiateAbility] = useState("intelligence");
-  const [skilledProficiencyChoices, setSkilledProficiencyChoices] = useState<string[]>([]);
-  const [fightingStyle, setFightingStyle] = useState("defense");
-  const [divineOrder, setDivineOrder] = useState("protector");
-  const [primalOrder, setPrimalOrder] = useState("warden");
-  const [rogueExpertiseChoices, setRogueExpertiseChoices] = useState<string[]>([]);
-  const [eldritchInvocation, setEldritchInvocation] = useState("eldritch-mind");
-  const [pactTomeCantripChoices, setPactTomeCantripChoices] = useState<string[]>([]);
-  const [pactTomeRitualChoices, setPactTomeRitualChoices] = useState<string[]>([]);
+  const draftStorageKey = props.draftStorageKey;
+  const storedDraft = props.initialDraft;
+  const initialInput = storedDraft?.input;
+  const initialAbilityIncreases = Object.entries(initialInput?.abilityScoreIncreases ?? {});
+  const standardArrayAbilities = props.origins?.standardArray?.abilities?.length === 6 ? props.origins.standardArray.abilities : [...dnd5eCreatorAbilities];
+  const standardArrayValues = props.origins?.standardArray?.values?.length === 6 ? props.origins.standardArray.values : [...dnd5eCreatorStandardArray];
+  const initialStandardArrayAssignment = validCreatorStandardArrayAssignment(initialInput?.standardArrayAssignment)
+    ? initialInput.standardArrayAssignment
+    : Object.fromEntries(standardArrayAbilities.map((ability, index) => [ability, standardArrayValues[index]!])) as Dnd5eStandardArrayAssignment;
+  const initialTemplateId = storedDraft && props.templates.some((template) => template.id === storedDraft.templateId) ? storedDraft.templateId : props.templates[0]?.id ?? "";
+  const [stepIndex, setStepIndex] = useState(Math.max(0, Math.min(steps.length - 1, storedDraft?.stepIndex ?? 0)));
+  const [templateId, setTemplateId] = useState(initialTemplateId);
+  const [name, setName] = useState(initialInput?.name ?? "");
+  const [ownerUserId, setOwnerUserId] = useState(initialInput?.ownerUserId ?? props.currentUserId);
+  const [speciesId, setSpeciesId] = useState(initialInput?.speciesId ?? "human");
+  const [backgroundId, setBackgroundId] = useState(initialInput?.backgroundId ?? "soldier");
+  const [spreadMode, setSpreadMode] = useState<"2-1" | "1-1-1">(initialAbilityIncreases.length === 3 ? "1-1-1" : "2-1");
+  const [plusTwoChoice, setPlusTwoChoice] = useState(initialAbilityIncreases.find(([, value]) => value === 2)?.[0] ?? "");
+  const [plusOneChoice, setPlusOneChoice] = useState(initialAbilityIncreases.find(([, value]) => value === 1)?.[0] ?? "");
+  const [standardArrayAssignment, setStandardArrayAssignment] = useState<Dnd5eStandardArrayAssignment>(initialStandardArrayAssignment);
+  const [classSkillProficiencies, setClassSkillProficiencies] = useState<string[]>(initialInput?.classSkillProficiencies ?? []);
+  const [originLanguageChoices, setOriginLanguageChoices] = useState<string[]>(initialInput?.originLanguageChoices ?? []);
+  const [classLanguageChoices, setClassLanguageChoices] = useState<string[]>(initialInput?.classLanguageChoices ?? []);
+  const [draconicAncestry, setDraconicAncestry] = useState(initialInput?.draconicAncestry ?? "black");
+  const [giantAncestry, setGiantAncestry] = useState(initialInput?.giantAncestry ?? "cloud");
+  const [skillProficiency, setSkillProficiency] = useState(initialInput?.skillProficiency ?? "");
+  const [originFeat, setOriginFeat] = useState(initialInput?.originFeat ?? "Skilled");
+  const [elfLineage, setElfLineage] = useState(initialInput?.elfLineage ?? "high-elf");
+  const [elfCantrip, setElfCantrip] = useState(initialInput?.elfCantrip ?? "prestidigitation");
+  const [gnomeLineage, setGnomeLineage] = useState(initialInput?.gnomeLineage ?? "forest-gnome");
+  const [tieflingLegacy, setTieflingLegacy] = useState(initialInput?.tieflingLegacy ?? "infernal");
+  const [spellAbility, setSpellAbility] = useState(initialInput?.speciesSpellcastingAbility ?? "intelligence");
+  const [classEquipmentPackageChoice, setClassEquipmentPackageChoice] = useState(initialInput?.classEquipmentPackageId ?? "");
+  const [backgroundEquipmentPackageChoice, setBackgroundEquipmentPackageChoice] = useState(initialInput?.backgroundEquipmentPackageId ?? "");
+  const [classEquipmentChoiceValues, setClassEquipmentChoiceValues] = useState<Record<string, string>>(initialInput?.classEquipmentChoices ?? {});
+  const [backgroundEquipmentChoiceValues, setBackgroundEquipmentChoiceValues] = useState<Record<string, string>>(initialInput?.backgroundEquipmentChoices ?? {});
+  const [classToolProficiencyChoices, setClassToolProficiencyChoices] = useState<string[]>(initialInput?.classToolProficiencyChoices ?? []);
+  const [backgroundToolProficiencyChoice, setBackgroundToolProficiencyChoice] = useState(initialInput?.backgroundToolProficiencyChoice ?? "");
+  const [weaponMasteryChoices, setWeaponMasteryChoices] = useState<string[]>(initialInput?.weaponMasteryChoices ?? []);
+  const [classCantripChoices, setClassCantripChoices] = useState<string[]>(initialInput?.classCantripChoices ?? []);
+  const [classPreparedSpellChoices, setClassPreparedSpellChoices] = useState<string[]>(initialInput?.classPreparedSpellChoices ?? []);
+  const [wizardSpellbookChoices, setWizardSpellbookChoices] = useState<string[]>(initialInput?.wizardSpellbookChoices ?? []);
+  const [backgroundMagicInitiateCantrips, setBackgroundMagicInitiateCantrips] = useState<string[]>(initialInput?.backgroundMagicInitiateCantrips ?? []);
+  const [backgroundMagicInitiateSpell, setBackgroundMagicInitiateSpell] = useState(initialInput?.backgroundMagicInitiateSpell ?? "");
+  const [backgroundMagicInitiateAbility, setBackgroundMagicInitiateAbility] = useState(initialInput?.backgroundMagicInitiateAbility ?? "intelligence");
+  const [originFeatMagicInitiateCantrips, setOriginFeatMagicInitiateCantrips] = useState<string[]>(initialInput?.originFeatMagicInitiateCantrips ?? []);
+  const [originFeatMagicInitiateSpell, setOriginFeatMagicInitiateSpell] = useState(initialInput?.originFeatMagicInitiateSpell ?? "");
+  const [originFeatMagicInitiateAbility, setOriginFeatMagicInitiateAbility] = useState(initialInput?.originFeatMagicInitiateAbility ?? "intelligence");
+  const [skilledProficiencyChoices, setSkilledProficiencyChoices] = useState<string[]>(initialInput?.skilledProficiencyChoices ?? []);
+  const [fightingStyle, setFightingStyle] = useState(initialInput?.fightingStyle ?? "defense");
+  const [divineOrder, setDivineOrder] = useState(initialInput?.divineOrder ?? "protector");
+  const [primalOrder, setPrimalOrder] = useState(initialInput?.primalOrder ?? "warden");
+  const [rogueExpertiseChoices, setRogueExpertiseChoices] = useState<string[]>(initialInput?.rogueExpertiseChoices ?? []);
+  const [eldritchInvocation, setEldritchInvocation] = useState(initialInput?.eldritchInvocation ?? "eldritch-mind");
+  const [pactTomeCantripChoices, setPactTomeCantripChoices] = useState<string[]>(initialInput?.pactTomeCantripChoices ?? []);
+  const [pactTomeRitualChoices, setPactTomeRitualChoices] = useState<string[]>(initialInput?.pactTomeRitualChoices ?? []);
+  const [draftTouched, setDraftTouched] = useState(Boolean(storedDraft));
+  const [draftSaveStatus, setDraftSaveStatus] = useState<"idle" | "saved" | "failed">(storedDraft ? "saved" : "idle");
+  const [closePromptOpen, setClosePromptOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
+  const [rulesPreview, setRulesPreview] = useState<CharacterCreatorRulesPreview | undefined>(undefined);
+  const [rulesPreviewState, setRulesPreviewState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const originLanguageHelpId = useId();
   const classLanguageHelpId = useId();
   const draconicAncestryHelpId = useId();
@@ -416,7 +744,16 @@ export function CharacterCreatorDialog(props: {
   const masteryHelpId = useId();
   const classSpellHelpId = useId();
   const magicInitiateHelpId = useId();
-  const dialogRef = useModalAccessibility<HTMLDivElement>(props.onClose);
+
+  function requestClose(): void {
+    if (draftTouched) {
+      setClosePromptOpen(true);
+      return;
+    }
+    props.onClose();
+  }
+
+  const dialogRef = useModalAccessibility<HTMLDivElement>(requestClose);
 
   const template = props.templates.find((item) => item.id === templateId);
   const origins = props.origins;
@@ -449,6 +786,10 @@ export function CharacterCreatorDialog(props: {
   const plusTwo = spreadAbilities.includes(plusTwoChoice) ? plusTwoChoice : spreadAbilities[0] ?? "";
   const plusOneFallback = spreadAbilities.find((ability) => ability !== plusTwo) ?? "";
   const plusOne = spreadAbilities.includes(plusOneChoice) && plusOneChoice !== plusTwo ? plusOneChoice : plusOneFallback;
+  const abilityScoreIncreases: Record<string, number> = spreadMode === "2-1"
+    ? { [plusTwo]: 2, [plusOne]: 1 }
+    : Object.fromEntries(spreadAbilities.map((ability) => [ability, 1]));
+  const finalAbilityPreview = previewCreatorAbilityScores(standardArrayAssignment, abilityScoreIncreases);
   const humanSkillOptions = origins?.skills.filter((skill) => !background?.skillProficiencies.includes(skill.id) && !classSkillProficiencies.includes(skill.id)) ?? [];
   const classSkillOptions = origins?.skills.filter((skill) =>
     classSkillChoice?.skillIds.includes(skill.id)
@@ -506,11 +847,11 @@ export function CharacterCreatorDialog(props: {
     const input: CharacterCreateInput = { name, ownerUserId };
     if (!origins) return input;
     input.creationMode = "level-one-srd";
+    input.abilityScoreMethod = "standard-array";
+    input.standardArrayAssignment = { ...standardArrayAssignment };
     input.backgroundId = backgroundId;
     input.speciesId = speciesId;
-    input.abilityScoreIncreases = spreadMode === "2-1"
-      ? { [plusTwo]: 2, [plusOne]: 1 }
-      : Object.fromEntries(spreadAbilities.map((ability) => [ability, 1]));
+    input.abilityScoreIncreases = abilityScoreIncreases;
     input.classSkillProficiencies = [...classSkillProficiencies];
     input.originLanguageChoices = [...originLanguageChoices];
     input.classLanguageChoices = [...classLanguageChoices];
@@ -603,7 +944,64 @@ export function CharacterCreatorDialog(props: {
     });
   }
 
+  const stepName = steps[stepIndex] ?? "Class";
   const validationIssues = validateCharacterCreatorInput({ template, origins, value: creationInput() });
+  const draftSnapshot: StoredCharacterCreatorDraft = {
+    templateId,
+    stepIndex,
+    input: creationInput()
+  };
+  const draftFingerprint = JSON.stringify(draftSnapshot);
+  const rulesPreviewFingerprint = JSON.stringify({ templateId, input: creationInput() });
+
+  useEffect(() => {
+    if (!draftTouched) return;
+    const saved = writeLocalDraft(draftStorageKey, JSON.parse(draftFingerprint) as StoredCharacterCreatorDraft);
+    setDraftSaveStatus(saved ? "saved" : "failed");
+  }, [draftFingerprint, draftStorageKey, draftTouched]);
+
+  useEffect(() => {
+    if (!props.onPreview || !template || stepName !== "Finish" || validationIssues.length > 0) {
+      setRulesPreview(undefined);
+      setRulesPreviewState("idle");
+      return;
+    }
+    let current = true;
+    setRulesPreviewState("loading");
+    const timer = window.setTimeout(() => {
+      void props.onPreview!(template, creationInput())
+        .then((preview) => {
+          if (!current) return;
+          setRulesPreview(preview);
+          setRulesPreviewState(preview.ok ? "ready" : "error");
+        })
+        .catch(() => {
+          if (!current) return;
+          setRulesPreview(undefined);
+          setRulesPreviewState("error");
+        });
+    }, 180);
+    return () => {
+      current = false;
+      window.clearTimeout(timer);
+    };
+  }, [props.onPreview, rulesPreviewFingerprint, stepName, template?.id, validationIssues.length]);
+
+  function discardDraft(): void {
+    removeLocalDraft(draftStorageKey);
+    props.onClose();
+  }
+
+  function keepDraftAndClose(): void {
+    const saved = writeLocalDraft(draftStorageKey, draftSnapshot);
+    setDraftSaveStatus(saved ? "saved" : "failed");
+    if (!saved) {
+      setClosePromptOpen(false);
+      setError("This browser could not save the character draft. The creator stayed open so your work is not lost.");
+      return;
+    }
+    props.onClose();
+  }
 
   async function submit() {
     if (!template || creating || validationIssues.length > 0) return;
@@ -611,25 +1009,49 @@ export function CharacterCreatorDialog(props: {
     setError("");
     try {
       await props.onCreate(template, creationInput());
+      removeLocalDraft(draftStorageKey);
     } catch (submitError) {
+      const saved = writeLocalDraft(draftStorageKey, draftSnapshot);
+      setDraftSaveStatus(saved ? "saved" : "failed");
       setError(errorMessage(submitError));
       setCreating(false);
     }
   }
 
-  const stepName = steps[stepIndex] ?? "Class";
+  function assignStandardArrayScore(ability: Dnd5eAbility, score: number): void {
+    setStandardArrayAssignment((current) => swapCreatorStandardArrayScore(current, ability, score, standardArrayAbilities));
+  }
+
   const visibleValidationIssues = stepName === "Finish" ? validationIssues : validationIssues.filter((issue) => issue.step === stepName);
   const nextDisabled = validationIssues.some((issue) => issue.step === stepName);
 
   return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) props.onClose(); }}>
-      <div ref={dialogRef} className="modal-dialog character-creator" role="dialog" aria-modal="true" aria-label="Character creator" tabIndex={-1}>
+    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) requestClose(); }}>
+      <div
+        ref={dialogRef}
+        className="modal-dialog character-creator"
+        role="dialog"
+        aria-modal={closePromptOpen ? undefined : "true"}
+        aria-hidden={closePromptOpen ? "true" : undefined}
+        inert={closePromptOpen ? true : undefined}
+        aria-label="Character creator"
+        tabIndex={-1}
+        onInputCapture={() => setDraftTouched(true)}
+        onClickCapture={(event) => {
+          if (event.target instanceof Element && event.target.closest(".creator-card")) setDraftTouched(true);
+        }}
+      >
         <header className="creator-header">
           <div>
             <h2>Create a character</h2>
             <p>{buildSummary || template?.name || "Choose a class to begin"}</p>
+            {draftTouched && draftSaveStatus === "saved" && <small role="status">Draft saved in this browser.</small>}
+            {draftTouched && draftSaveStatus === "failed" && <small role="alert">Draft could not be saved in this browser.</small>}
           </div>
-          <button className="icon-button" type="button" aria-label="Close character creator" onClick={props.onClose}><X size={16} /></button>
+          <div className="inline-actions">
+            {draftTouched && <button className="ghost-button" type="button" onClick={discardDraft}>Discard draft</button>}
+            <button className="icon-button" type="button" aria-label="Close character creator" onClick={requestClose}><X size={16} /></button>
+          </div>
         </header>
         <nav className="creator-steps" aria-label="Creator steps">
           {steps.map((step, index) => (
@@ -723,14 +1145,15 @@ export function CharacterCreatorDialog(props: {
                   <fieldset className="creator-skill-choices" aria-describedby={magicInitiateHelpId}>
                     <legend>{humanMagicInitiate.name}</legend>
                     <p id={magicInitiateHelpId} className="creator-note">Choose two cantrips, one level 1 spell, and its casting ability. The level 1 spell gets one free cast per Long Rest.</p>
-                    <div className="creator-skill-options">
-                      {magicInitiateOptions(humanMagicInitiate, 0).map((spell) => {
-                        const checked = originFeatMagicInitiateCantrips.includes(spell.id);
-                        return <label key={spell.id}><input type="checkbox" checked={checked} disabled={!checked && originFeatMagicInitiateCantrips.length >= 2} onChange={(event) => setOriginFeatMagicInitiateCantrips((current) => event.target.checked ? [...current.filter((id) => id !== spell.id), spell.id].slice(0, 2) : current.filter((id) => id !== spell.id))} /><span>{spell.name}</span></label>;
-                      })}
-                    </div>
-                    <label><span>Level 1 spell</span><select value={originFeatMagicInitiateSpell} onChange={(event) => setOriginFeatMagicInitiateSpell(event.target.value)}><option value="">Choose a spell</option>{magicInitiateOptions(humanMagicInitiate, 1).map((spell) => <option key={spell.id} value={spell.id}>{spell.name}</option>)}</select></label>
-                    <label><span>Spellcasting ability</span><select value={originFeatMagicInitiateAbility} onChange={(event) => setOriginFeatMagicInitiateAbility(event.target.value)}>{origins.spellcastingAbilities.map((ability) => <option key={ability} value={ability}>{prettyOriginId(ability)}</option>)}</select></label>
+                    <CharacterCreatorSpellOptions
+                      groupLabel="Human Magic Initiate cantrip"
+                      spells={magicInitiateOptions(humanMagicInitiate, 0)}
+                      selectedSpellIds={originFeatMagicInitiateCantrips}
+                      capacity={2}
+                      onSelectionChange={(spellId, checked) => setOriginFeatMagicInitiateCantrips((current) => updateCharacterCreatorSpellChoices(current, spellId, checked, 2))}
+                    />
+                    <label><span>Level 1 spell</span><select aria-label="Human Magic Initiate level 1 spell" value={originFeatMagicInitiateSpell} onChange={(event) => setOriginFeatMagicInitiateSpell(event.target.value)}><option value="">Choose a spell</option>{magicInitiateOptions(humanMagicInitiate, 1).map((spell) => <option key={spell.id} value={spell.id}>{spell.name}</option>)}</select></label>
+                    <label><span>Spellcasting ability</span><select aria-label="Human Magic Initiate spellcasting ability" value={originFeatMagicInitiateAbility} onChange={(event) => setOriginFeatMagicInitiateAbility(event.target.value)}>{origins.spellcastingAbilities.map((ability) => <option key={ability} value={ability}>{prettyOriginId(ability)}</option>)}</select></label>
                   </fieldset>
                 )}
                 {speciesId === "elf" && (
@@ -870,11 +1293,15 @@ export function CharacterCreatorDialog(props: {
                   <fieldset className="creator-skill-choices">
                     <legend>{backgroundMagicInitiate.name} from {background?.name}</legend>
                     <p className="creator-note">Choose two cantrips, one level 1 spell, and its casting ability. The level 1 spell gets one free cast per Long Rest.</p>
-                    <div className="creator-skill-options">
-                      {magicInitiateOptions(backgroundMagicInitiate, 0).map((spell) => { const checked = backgroundMagicInitiateCantrips.includes(spell.id); return <label key={spell.id}><input type="checkbox" checked={checked} disabled={!checked && backgroundMagicInitiateCantrips.length >= 2} onChange={(event) => setBackgroundMagicInitiateCantrips((current) => event.target.checked ? [...current.filter((id) => id !== spell.id), spell.id].slice(0, 2) : current.filter((id) => id !== spell.id))} /><span>{spell.name}</span></label>; })}
-                    </div>
-                    <label><span>Level 1 spell</span><select value={backgroundMagicInitiateSpell} onChange={(event) => setBackgroundMagicInitiateSpell(event.target.value)}><option value="">Choose a spell</option>{magicInitiateOptions(backgroundMagicInitiate, 1).map((spell) => <option key={spell.id} value={spell.id}>{spell.name}</option>)}</select></label>
-                    <label><span>Spellcasting ability</span><select value={backgroundMagicInitiateAbility} onChange={(event) => setBackgroundMagicInitiateAbility(event.target.value)}>{origins.spellcastingAbilities.map((ability) => <option key={ability} value={ability}>{prettyOriginId(ability)}</option>)}</select></label>
+                    <CharacterCreatorSpellOptions
+                      groupLabel={`${background?.name ?? "Background"} Magic Initiate cantrip`}
+                      spells={magicInitiateOptions(backgroundMagicInitiate, 0)}
+                      selectedSpellIds={backgroundMagicInitiateCantrips}
+                      capacity={2}
+                      onSelectionChange={(spellId, checked) => setBackgroundMagicInitiateCantrips((current) => updateCharacterCreatorSpellChoices(current, spellId, checked, 2))}
+                    />
+                    <label><span>Level 1 spell</span><select aria-label={`${background?.name ?? "Background"} Magic Initiate level 1 spell`} value={backgroundMagicInitiateSpell} onChange={(event) => setBackgroundMagicInitiateSpell(event.target.value)}><option value="">Choose a spell</option>{magicInitiateOptions(backgroundMagicInitiate, 1).map((spell) => <option key={spell.id} value={spell.id}>{spell.name}</option>)}</select></label>
+                    <label><span>Spellcasting ability</span><select aria-label={`${background?.name ?? "Background"} Magic Initiate spellcasting ability`} value={backgroundMagicInitiateAbility} onChange={(event) => setBackgroundMagicInitiateAbility(event.target.value)}>{origins.spellcastingAbilities.map((ability) => <option key={ability} value={ability}>{prettyOriginId(ability)}</option>)}</select></label>
                   </fieldset>
                 )}
                 {templateId === "fighter" && (
@@ -891,22 +1318,22 @@ export function CharacterCreatorDialog(props: {
                 )}
                 {eldritchInvocation === "pact-of-the-tome" && templateId === "warlock" && (
                   <>
-                    <fieldset className="creator-skill-choices"><legend>Pact Tome cantrips ({pactTomeCantripChoices.length}/3)</legend><div className="creator-skill-options">{pactTomeCantripOptions.map((spell) => { const checked = pactTomeCantripChoices.includes(spell.id); return <label key={spell.id}><input type="checkbox" checked={checked} disabled={!checked && pactTomeCantripChoices.length >= 3} onChange={(event) => setPactTomeCantripChoices((current) => event.target.checked ? [...current.filter((id) => id !== spell.id), spell.id].slice(0, 3) : current.filter((id) => id !== spell.id))} /><span>{spell.name}</span></label>; })}</div></fieldset>
-                    <fieldset className="creator-skill-choices"><legend>Pact Tome rituals ({pactTomeRitualChoices.length}/2)</legend><div className="creator-skill-options">{pactTomeRitualOptions.map((spell) => { const checked = pactTomeRitualChoices.includes(spell.id); return <label key={spell.id}><input type="checkbox" checked={checked} disabled={!checked && pactTomeRitualChoices.length >= 2} onChange={(event) => setPactTomeRitualChoices((current) => event.target.checked ? [...current.filter((id) => id !== spell.id), spell.id].slice(0, 2) : current.filter((id) => id !== spell.id))} /><span>{spell.name}</span></label>; })}</div></fieldset>
+                    <fieldset className="creator-skill-choices"><legend>Pact Tome cantrips ({pactTomeCantripChoices.length}/3)</legend><CharacterCreatorSpellOptions groupLabel="Pact Tome cantrip" spells={pactTomeCantripOptions} selectedSpellIds={pactTomeCantripChoices} capacity={3} onSelectionChange={(spellId, checked) => setPactTomeCantripChoices((current) => updateCharacterCreatorSpellChoices(current, spellId, checked, 3))} /></fieldset>
+                    <fieldset className="creator-skill-choices"><legend>Pact Tome rituals ({pactTomeRitualChoices.length}/2)</legend><CharacterCreatorSpellOptions groupLabel="Pact Tome ritual" spells={pactTomeRitualOptions} selectedSpellIds={pactTomeRitualChoices} capacity={2} onSelectionChange={(spellId, checked) => setPactTomeRitualChoices((current) => updateCharacterCreatorSpellChoices(current, spellId, checked, 2))} /></fieldset>
                   </>
                 )}
                 {classSpellChoice && expectedClassCantripCount > 0 && (
                   <fieldset className="creator-skill-choices" aria-describedby={classSpellHelpId}>
                     <legend>{classSpellChoice.className} cantrips ({classCantripChoices.length}/{expectedClassCantripCount})</legend>
                     <p id={classSpellHelpId} className="creator-note">Choose from the published SRD class list.</p>
-                    <div className="creator-skill-options">{classCantripOptions.map((spell) => { const checked = classCantripChoices.includes(spell.id); return <label key={spell.id}><input type="checkbox" checked={checked} disabled={!checked && classCantripChoices.length >= expectedClassCantripCount} onChange={(event) => setClassCantripChoices((current) => event.target.checked ? [...current.filter((id) => id !== spell.id), spell.id].slice(0, expectedClassCantripCount) : current.filter((id) => id !== spell.id))} /><span>{spell.name}</span></label>; })}</div>
+                    <CharacterCreatorSpellOptions groupLabel={`${classSpellChoice.className} cantrip`} spells={classCantripOptions} selectedSpellIds={classCantripChoices} capacity={expectedClassCantripCount} onSelectionChange={(spellId, checked) => setClassCantripChoices((current) => updateCharacterCreatorSpellChoices(current, spellId, checked, expectedClassCantripCount))} />
                   </fieldset>
                 )}
                 {classSpellChoice && classSpellChoice.spellbookSpellCount > 0 && (
-                  <fieldset className="creator-skill-choices"><legend>Wizard spellbook ({wizardSpellbookChoices.length}/{classSpellChoice.spellbookSpellCount})</legend><p className="creator-note">These six spells are in the spellbook; preparation is selected separately below.</p><div className="creator-skill-options">{classLevelOneSpellOptions.map((spell) => { const checked = wizardSpellbookChoices.includes(spell.id); return <label key={spell.id}><input type="checkbox" checked={checked} disabled={!checked && wizardSpellbookChoices.length >= classSpellChoice.spellbookSpellCount} onChange={(event) => { setWizardSpellbookChoices((current) => event.target.checked ? [...current.filter((id) => id !== spell.id), spell.id].slice(0, classSpellChoice.spellbookSpellCount) : current.filter((id) => id !== spell.id)); if (!event.target.checked) setClassPreparedSpellChoices((current) => current.filter((id) => id !== spell.id)); }} /><span>{spell.name}</span></label>; })}</div></fieldset>
+                  <fieldset className="creator-skill-choices"><legend>Wizard spellbook ({wizardSpellbookChoices.length}/{classSpellChoice.spellbookSpellCount})</legend><p className="creator-note">These six spells are in the spellbook; preparation is selected separately below.</p><CharacterCreatorSpellOptions groupLabel="Wizard spellbook" spells={classLevelOneSpellOptions} selectedSpellIds={wizardSpellbookChoices} capacity={classSpellChoice.spellbookSpellCount} onSelectionChange={(spellId, checked) => { setWizardSpellbookChoices((current) => updateCharacterCreatorSpellChoices(current, spellId, checked, classSpellChoice.spellbookSpellCount)); if (!checked) setClassPreparedSpellChoices((current) => current.filter((id) => id !== spellId)); }} /></fieldset>
                 )}
                 {classSpellChoice && classSpellChoice.preparedSpellCount > 0 && (
-                  <fieldset className="creator-skill-choices"><legend>{classSpellChoice.className} prepared spells ({classPreparedSpellChoices.length}/{classSpellChoice.preparedSpellCount})</legend>{classSpellChoice.alwaysPreparedSpellIds.length > 0 && <p className="creator-note">Always prepared automatically: {classSpellChoice.alwaysPreparedSpellIds.map(prettyOriginId).join(", ")}.</p>}<div className="creator-skill-options">{classLevelOneSpellOptions.filter((spell) => templateId !== "wizard" || wizardSpellbookChoices.includes(spell.id)).map((spell) => { const checked = classPreparedSpellChoices.includes(spell.id); return <label key={spell.id}><input type="checkbox" checked={checked} disabled={!checked && classPreparedSpellChoices.length >= classSpellChoice.preparedSpellCount} onChange={(event) => setClassPreparedSpellChoices((current) => event.target.checked ? [...current.filter((id) => id !== spell.id), spell.id].slice(0, classSpellChoice.preparedSpellCount) : current.filter((id) => id !== spell.id))} /><span>{spell.name}</span></label>; })}</div></fieldset>
+                  <fieldset className="creator-skill-choices"><legend>{classSpellChoice.className} prepared spells ({classPreparedSpellChoices.length}/{classSpellChoice.preparedSpellCount})</legend>{classSpellChoice.alwaysPreparedSpellIds.length > 0 && <p className="creator-note">Always prepared automatically: {classSpellChoice.alwaysPreparedSpellIds.map(prettyOriginId).join(", ")}.</p>}<CharacterCreatorSpellOptions groupLabel={`${classSpellChoice.className} prepared spell`} spells={classLevelOneSpellOptions.filter((spell) => templateId !== "wizard" || wizardSpellbookChoices.includes(spell.id))} selectedSpellIds={classPreparedSpellChoices} capacity={classSpellChoice.preparedSpellCount} onSelectionChange={(spellId, checked) => setClassPreparedSpellChoices((current) => updateCharacterCreatorSpellChoices(current, spellId, checked, classSpellChoice.preparedSpellCount))} /></fieldset>
                 )}
                 {classStartingEquipment && (
                   <fieldset className="creator-skill-choices" aria-describedby={classEquipmentHelpId}>
@@ -1013,6 +1440,24 @@ export function CharacterCreatorDialog(props: {
                     </div>
                   </fieldset>
                 )}
+                <fieldset className="creator-skill-choices standard-array-assignment">
+                  <legend>Standard array ability scores</legend>
+                  <p className="creator-note">Assign each score once. Choosing a used score swaps the two abilities.</p>
+                  <div className="creator-skill-options">
+                    {standardArrayAbilities.map((ability) => (
+                      <label key={ability}>
+                        <span>{prettyOriginId(ability)}</span>
+                        <select
+                          aria-label={`${prettyOriginId(ability)} standard array score`}
+                          value={standardArrayAssignment[ability]}
+                          onChange={(event) => assignStandardArrayScore(ability, Number(event.target.value))}
+                        >
+                          {standardArrayValues.map((score) => <option key={score} value={score}>{score}</option>)}
+                        </select>
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
                 <div className="segmented-control" role="group" aria-label="Ability score spread">
                   <button className={spreadMode === "2-1" ? "active" : ""} type="button" onClick={() => setSpreadMode("2-1")}>+2 / +1</button>
                   <button className={spreadMode === "1-1-1" ? "active" : ""} type="button" onClick={() => setSpreadMode("1-1-1")}>+1 / +1 / +1</button>
@@ -1055,6 +1500,35 @@ export function CharacterCreatorDialog(props: {
                   {buildSummary}. {speciesId === "dragonborn" && selectedDraconicAncestor ? `${selectedDraconicAncestor.name} (${prettyOriginId(selectedDraconicAncestor.damageType)}) · ` : ""}{speciesId === "goliath" && selectedGiantAncestry ? `${selectedGiantAncestry.name} · ` : ""}{spreadMode === "2-1" ? `${prettyOriginId(plusTwo)} +2, ${prettyOriginId(plusOne)} +1` : `${spreadAbilities.map(prettyOriginId).join(" +1, ")} +1`} · Languages: Common, {originLanguageLabels.join(", ")}{classFeatureLanguageLabels.length > 0 ? `, ${classFeatureLanguageLabels.join(", ")}` : ""} · Class skills: {classSkillLabels.join(", ")} · {background.feat} · {selectedStartingGp} gp.
                 </p>
               )}
+              {origins && (
+                <section className="creator-note standard-array-preview" aria-label="Final ability score preview">
+                  <strong>Final ability scores after background boosts</strong>
+                  <dl>
+                    {standardArrayAbilities.map((ability) => {
+                      const { score, modifier } = finalAbilityPreview[ability];
+                      return (
+                        <div key={ability}>
+                          <dt>{prettyOriginId(ability)}</dt>
+                          <dd>{score} ({modifier >= 0 ? "+" : ""}{modifier})</dd>
+                        </div>
+                      );
+                    })}
+                  </dl>
+                </section>
+              )}
+              {props.onPreview && rulesPreviewState === "loading" && <p className="creator-note" role="status">Calculating the authoritative character sheet…</p>}
+              {props.onPreview && rulesPreviewState === "error" && <p className="creator-error" role="alert">The authoritative sheet preview is unavailable. Review the choices or try again.</p>}
+              {rulesPreviewState === "ready" && rulesPreview?.derived && (
+                <section className="creator-note standard-array-preview authoritative-character-preview" aria-label="Authoritative character sheet preview">
+                  <strong>Authoritative derived sheet</strong>
+                  <dl>
+                    <div><dt>Armor Class</dt><dd>{rulesPreview.derived.armorClass}</dd></div>
+                    <div><dt>Hit Points</dt><dd>{rulesPreview.derived.hitPoints.current}/{rulesPreview.derived.hitPoints.max}</dd></div>
+                    <div><dt>Speed</dt><dd>{rulesPreview.derived.speed} ft.</dd></div>
+                    <div><dt>Proficiency</dt><dd>+{rulesPreview.derived.proficiencyBonus}</dd></div>
+                  </dl>
+                </section>
+              )}
               {origins && background && (classChoiceSummary.length > 0 || spellChoiceSummary.length > 0 || (speciesId === "human" && originFeat)) && (
                 <div className="creator-note">
                   {speciesId === "human" && originFeat && <p>Human origin feat: {originFeat}{originFeat === "Skilled" && skilledProficiencyChoices.length > 0 ? ` (${skilledProficiencyChoices.map(prettyOriginId).join(", ")})` : ""}.</p>}
@@ -1087,6 +1561,13 @@ export function CharacterCreatorDialog(props: {
           )}
         </footer>
       </div>
+      {closePromptOpen && (
+        <CharacterDraftClosePrompt
+          onContinue={() => setClosePromptOpen(false)}
+          onKeep={keepDraftAndClose}
+          onDiscard={discardDraft}
+        />
+      )}
     </div>
   );
 }

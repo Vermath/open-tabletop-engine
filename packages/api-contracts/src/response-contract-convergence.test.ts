@@ -194,9 +194,13 @@ describe("non-AI runtime response contract convergence", () => {
     const schemas = openApiSpec.components.schemas;
 
     expect(schemas.HealthStatus.properties).toMatchObject({
+      apiCompatibility: expect.objectContaining({ type: "string" }),
+      buildFingerprint: expect.objectContaining({ type: "string" }),
       dependencies: { $ref: "#/components/schemas/HealthDependencies" },
       aiPolicy: { $ref: "#/components/schemas/HealthAiPolicyStatus" },
     });
+    expect(schemas.HealthStatus.required).toContain("apiCompatibility");
+    expect(schemas.HealthStatus.required).toContain("buildFingerprint");
     expect(schemas.HealthDependencies).toMatchObject({
       additionalProperties: false,
       required: ["state", "assets", "assetSigning"],

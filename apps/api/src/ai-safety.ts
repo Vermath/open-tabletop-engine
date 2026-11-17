@@ -4,6 +4,7 @@ import type {
   AiSourceReference,
   Campaign
 } from "@open-tabletop/core";
+import type { AiProvider } from "@open-tabletop/ai-core";
 
 export const DEFAULT_AI_PROVIDER_DISCLOSURE =
   "Permission-filtered campaign data in the selected scopes is transmitted to the configured AI provider. Local retention controls do not delete provider-held data.";
@@ -27,6 +28,33 @@ export interface EffectiveAiPolicy {
   retentionDays: number;
   legacyDefault: boolean;
   readinessIssues: string[];
+}
+
+export interface AiProviderConfiguration {
+  id: string;
+  label: string;
+  configured: boolean;
+  status: "configured" | "unavailable";
+  message: string;
+}
+
+export function aiProviderConfiguration(provider: Pick<AiProvider, "id" | "label">): AiProviderConfiguration {
+  if (provider.id === "unavailable-ai-provider") {
+    return {
+      id: provider.id,
+      label: provider.label,
+      configured: false,
+      status: "unavailable",
+      message: "No live AI provider is available. Ask the server operator to configure and authenticate Codex app-server."
+    };
+  }
+  return {
+    id: provider.id,
+    label: provider.label,
+    configured: true,
+    status: "configured",
+    message: `${provider.label} is configured. Connectivity and authentication are checked when AI work starts.`
+  };
 }
 
 export function resolveAiInstallationPolicy(

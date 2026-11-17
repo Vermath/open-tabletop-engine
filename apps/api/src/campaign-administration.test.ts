@@ -54,7 +54,7 @@ describe("campaign ownership administration", () => {
         previousOwner: expect.objectContaining({ userId: "usr_demo_gm", role: "gm" }),
         newOwner: expect.objectContaining({ userId: "usr_demo_player", role: "owner" })
       }));
-      expect(campaign.updatedAt).not.toBe(reviewedUpdatedAt);
+      expect(store.state.campaigns.find((candidate) => candidate.id === campaign.id)!.updatedAt).not.toBe(reviewedUpdatedAt);
       expect(store.state.members.filter((member) => member.campaignId === campaign.id && member.role === "owner")).toEqual([
         expect.objectContaining({ userId: "usr_demo_player" })
       ]);

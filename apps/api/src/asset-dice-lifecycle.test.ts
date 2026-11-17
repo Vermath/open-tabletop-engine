@@ -309,8 +309,9 @@ describe("asset and dice-macro lifecycle consistency", () => {
       const created = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/proposals",
-        headers: gmHeaders,
+        headers: { ...gmHeaders, "idempotency-key": "proposal-lifecycle-create" },
         payload: {
+          expectedUpdatedAt: store.state.campaigns.find((campaign) => campaign.id === "camp_demo")!.updatedAt,
           title: "Create a prep asset and shared macro",
           summary: "Exercises proposal lifecycle events.",
           changesJson: [
@@ -344,13 +345,15 @@ describe("asset and dice-macro lifecycle consistency", () => {
       const approved = await app.inject({
         method: "POST",
         url: `/api/v1/proposals/${proposalId}/approve`,
-        headers: gmHeaders,
+        headers: { ...gmHeaders, "idempotency-key": "proposal-lifecycle-approve" },
+        payload: { expectedUpdatedAt: created.json().updatedAt },
       });
       expect(approved.statusCode).toBe(200);
       const applied = await app.inject({
         method: "POST",
         url: `/api/v1/proposals/${proposalId}/apply`,
-        headers: gmHeaders,
+        headers: { ...gmHeaders, "idempotency-key": "proposal-lifecycle-apply" },
+        payload: { expectedUpdatedAt: approved.json().updatedAt },
       });
       expect(applied.statusCode).toBe(200);
 

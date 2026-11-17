@@ -1,348 +1,432 @@
 # Implementation Backlog
 
-> Post-remediation ledger, 2026-07-14. This is the complete non-AI P0-P3 execution record, not only the original first ten tickets. Every code-addressable ticket below is implemented in the current uncommitted working tree. Remaining entries are explicitly external/manual evidence tasks.
+## 2026-07-17 remediation closure ledger (authoritative)
 
-## Scope decision
+This ledger supersedes conflicting open statuses below. The earlier specifications remain the acceptance history. “Closed in working tree” means implemented with focused regression coverage in the current uncommitted tree; it does not mean committed, deployed, or externally accepted.
 
-- **Included:** every code-addressable non-AI P0-P3 finding in the feature, D&D rules, product, UX, security, data-integrity, realtime, portability, performance, API, plugin and architecture audits.
-- **Not now:** dedicated kiosk/shared-display/hot-seat presentation and offline-first operation/reconciliation are explicit product decisions outside this completed P0-P3 ticket set. They are not external/manual evidence items.
-- **Excluded by product decision:** changes to the existing AI agent, its providers, its capability, or its manual/governed-auto modes.
-- **Deferred by roadmap:** the **Not now** list in [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md).
-- **Publication:** no commit, push, deployment, release, destructive migration, or user-data operation is part of this ledger.
+| Ticket | Current disposition |
+|---|---|
+| N01 | Closed in working tree - critical outcome is preserved through typed damage, commit, replay, and undo. |
+| N02 | Closed in working tree - actor/combatant recovery and death-save state synchronize bidirectionally. |
+| N03 | Closed in working tree - action preview/continuation state is deterministically bound and race-covered. |
+| N04 | Closed in working tree - batch token movement preflights permissions and commits atomically. |
+| N05 | Closed in working tree - API gate resources, timeouts, diagnostics, and evidence are bounded and isolated. |
+| N06 | Closed in working tree - provider streaming occurs between short durable phases without proposal-only conversion. |
+| N07 | Code closed in working tree - Compose security/configuration and paired state-plus-asset backups are wired; independent hosted proof remains X03. |
+| N08 | Closed in working tree - combat vitals, damage/heal/temp HP, defeat/recovery, and roster controls are direct and permission checked. |
+| N09 | Closed in working tree - versioned drafts are scoped, resumable, discardable, and cleared only after successful reconciliation. |
+| N10 | Closed in working tree - standard-array inputs, boosts, preview, persistence, and provenance are authoritative. |
+| N11 | Closed in working tree - spell acquisition, grant source, and casting ability cover SRD classes/multiclass fixtures. |
+| N12 | Closed in working tree - effective speed derives from class prerequisites and live owned-item revisions. |
+| N13 | Closed in working tree - explicit selected subclass gates features even when imports contain stale names. |
+| N14 | Closed in working tree - upload, background, calibration, and readiness refer to one scene and one flow. |
+| N15 | Closed in working tree - prior silent caps expose search, paging, or show-all behavior. |
+| N16 | Closed in working tree - handouts render safely and journal drafts recover explicitly. |
+| N17 | Closed in working tree - hardened cookie transport, CSP, revocation, and bounded compatibility replace long-lived local storage. |
+| N18 | Closed in working tree - proxy/account-aware throttling and bounded async password verification are covered. |
+| N19 | Closed in working tree - selected AI/agent routes have contract, revision/idempotency, ordering, and gap-recovery parity. |
+| N20 | Closed in working tree - a deliberately bounded managed-effect lifecycle is authoritative; universal effect automation remains out of scope. |
 
-## Recommended execution order and actual completion
+T38-T42 and T44-T48 are closed in the working tree; T43 is closed as an SRD content decision (do not add non-SRD Aasimar content on a parity assumption). X01-X08 are the only remaining audit gates and are external/manual evidence, not hidden implementation tickets. Any code defect discovered while collecting that evidence reopens as a new ticket with an authoritative path and regression.
 
-1. Establish counterexample tests and versioned D&D validation.
-2. Make consequential rules/shared mutations prepared, permissioned, revisioned, idempotent and auditable.
-3. Correct progression, rest, damage, condition, attunement, spell, effect and combat semantics.
-4. Complete the player/GM session loop and responsive/error-safe UI.
-5. Close persistence, realtime, archive and recovery integrity.
-6. Harden auth, workers, plugins, runtime API contracts, deployment and logging.
-7. Complete campaign knowledge, custom content, inventory, controlled creatures, webhooks and asset tooling.
-8. Bound performance and decompose only along proven domain seams.
-9. Run the full local release matrix, then collect external evidence.
+### Release qualification queue
 
-Steps 1-9 are complete locally. The external evidence queue below is now the only remaining stage work and is not an unfinished code ticket.
+RQ01 final local qualification is **complete locally as of 2026-07-17**: `pnpm check`, aggregate/default 62/62 plus bootstrap 1/1, canonical 1/1, full Level 3 combat 1/1, documentation validation, and diff hygiene are green on the exact working tree. RQ02 independent quickstart is next. RQ03-RQ10 remain the ordered X01/X03/X05/X04/X06-X08 evidence and findings-closure work defined in `PRODUCT_ROADMAP.md`; they are not silently replaced by more feature implementation.
 
-## Epic E1 — Versioned, explainable D&D transactions
+## 2026-07-16 implementation backlog addendum (authoritative)
 
-| Field | Definition |
+This addendum replaces the "small hygiene tranche only" conclusion below. Historical ticket records remain valid as history. Current ticket status is evaluated against committed HEAD `9de6a3c` plus the uncommitted tree; "implemented in working tree" is not "released" or "accepted."
+
+### Historical-ticket status corrections
+
+| Ticket | Current status |
+|---|---|
+| T38 - Second Wind action kind | Implemented in the working tree; focused tests pass; release acceptance waits on a committed tranche and stable aggregate gate. |
+| T39 - activation metadata / Tactical Mind | Implemented in the working tree; focused tests pass; release acceptance waits on the aggregate gate. |
+| T40 - machine-readable release evidence | Implemented/extended in the working tree; evidence gate passes with 61 records; not released. |
+| T41 - local gate drift | Implemented/extended in the working tree; fast gate passes; not sufficient to close the full-suite instability. |
+| T43 - Aasimar decision | Close as not a defect. Aasimar is not in official SRD 5.2.1; do not add non-SRD content on a parity assumption. |
+| T48 - default E2E semantics | Implementation exists in the working tree, but acceptance is not met: the canonical public journey failed once and passed on immediate rerun. |
+
+### Epic map
+
+| Epic | Outcome | Priority |
+|---|---|---|
+| E1 - Authoritative combat integrity | One correct, transactional answer for attack, damage, HP, defeat, recovery, and movement | P0 |
+| E2 - Deterministic release and operations | Repeatable gates, non-blocking mutations, verified install/backup path | P0/P1 |
+| E3 - Session-speed DM/player loop | Routine combat and setup work stays in the primary surfaces without hidden or lost state | P1 |
+| E4 - Character and SRD depth | Legal creation/advancement with authoritative grant source and derived statistics | P1 |
+| E5 - Recurring-campaign trust | Reconnect, drafts, handouts/chat, restore, browser security, and accessibility | P1/P2 |
+
+### Epic specifications
+
+#### E1 - Authoritative combat integrity
+
+- **Problem / user value:** visible combat state can disagree across attack, damage, actor, combatant, and grouped token operations. Players and DMs need one inspectable, undoable truth.
+- **Scope / non-goals:** N01-N04: critical propagation, recovery projection, deterministic continuation state, and atomic batch movement. Do not add terrain pathfinding, opportunity-attack automation, or a universal effect engine.
+- **Dependencies / relevant code:** begins without external dependencies; coordinates `packages/system-sdk/src/dnd-action-continuations.ts`, rules completion and life-state helpers, `packages/core` commands, `apps/api/src/app.ts`, `apps/web/src/App.tsx` and scene canvas, combat/E2E fixtures.
+- **Technical / rules / data / API approach:** pure typed resolver or projection followed by validation, revision/idempotency, one transaction/event, and undo. Add only the critical and batch/projection fields needed by D&D attack, HP, defeat, and movement semantics.
+- **UI / security / migration implications:** surface authoritative preview IDs and denial reasons; server preflights every target/token permission; use additive contract/archive compatibility and preserve existing single-action clients during migration.
+- **Test strategy / acceptance / done:** exhaustive rules matrices, transaction rollback, replay/undo, delayed realtime, two-client E2E, and 10/10 canonical clean runs. Done when no partial or contradictory state is possible on the covered paths and release evidence is recorded.
+- **Effort / confidence:** L / High.
+
+#### E2 - Deterministic release and operations
+
+- **Problem / user value:** flaky gates, a global AI mutation lock, and contradictory self-host/backup configuration prevent maintainers and operators from trusting a release.
+- **Scope / non-goals:** N05-N07: bounded aggregate tests, short AI durable phases, one verified Compose and paired backup/restore path. Do not build HA, microservices, a new provider framework, or public cloud orchestration.
+- **Dependencies / relevant code:** N05 enables acceptance for all other work; relevant surfaces are API Vitest lifecycle, `apps/api/src/app.ts`, AI providers, durable coordinator, `docker-compose.yml`, runtime/storage validation, asset operations, gate scripts, and operator docs.
+- **Technical / rules / data / API approach:** isolate test resources; persist only short pending/final AI phases around external waits; add a versioned paired backup manifest and health evidence; preserve all authoritative D&D command validation.
+- **UI / security / migration implications:** no broad UI beyond honest health/diagnostics; keep AI permissions and automatic execution; do not weaken remote storage TLS/SSRF policy; rehearse upgrade/rollback and restore from a previous supported archive.
+- **Test strategy / acceptance / done:** two cold aggregate passes, delayed-provider concurrency/cancellation, clean Compose boot, scheduled paired backup, clean restore, and independent install. Done when all paths are bounded, documented, and reproducible.
+- **Effort / confidence:** L / Medium.
+
+#### E3 - Session-speed DM/player loop
+
+- **Problem / user value:** ordinary users leave the main workflow, lose drafts, or cannot find records during setup and combat.
+- **Scope / non-goals:** combat HP/roster controls, resumable creator drafts, correct onboarding/map setup, paging/show-all, clear empty/loading/error/success states. Do not redesign the visual system or add broad social/cosmetic features.
+- **Dependencies / relevant code:** depends on E1 life-state correctness; primarily `combat-panel.tsx`, `character-creator-dialog.tsx`, campaign setup steps, map/background/grid components, sheet/list panels, and existing typed APIs.
+- **Technical / rules / data / API approach:** compose existing server commands; version client drafts first; add paging/query contracts only where caps hide real data; derive setup readiness from one scene. D&D calculations stay server/shared-rule authoritative.
+- **UI / security / migration implications:** keyboard and small-screen task completion are acceptance criteria; permissions and disabled reasons remain explicit; draft keys are account/campaign scoped and cleared on commit; contract changes are additive.
+- **Test strategy / acceptance / done:** component state/permission tests, E2E close/reload/recover, full-combat panel use, campaign-scale list fixtures, and moderated first-session manual test. Done when no required task loses or silently hides state.
+- **Effort / confidence:** L / High.
+
+#### E4 - Character and SRD depth
+
+- **Problem / user value:** creation and advancement can produce incomplete or incorrectly attributed character mechanics, especially for spellcasters and class/subclass movement features.
+- **Scope / non-goals:** standard-array assignment, class-complete spell acquisition/grant source/casting ability, effective speed, and selected-subclass gating. Defer point buy/rolled methods, every persistent spell, and non-SRD content.
+- **Dependencies / relevant code:** creator drafts from E3; shared types in `packages/core`, validation/preview and feature generation in `packages/system-sdk`, API creation/advancement routes, web creator/advancement/sheet surfaces, archive fixtures.
+- **Technical / rules / data / API approach:** typed method/grant-source metadata; pure derived statistics; per-class validation fixtures; explicit homebrew grants rather than name inference. Persist inputs/provenance and derive display values.
+- **UI / security / migration implications:** field-level legal-choice errors plus DM-visible manual override boundaries; players may edit only authorized actors; additive migration preserves unknown/homebrew roots and existing presets.
+- **Test strategy / acceptance / done:** exhaustive ability permutations, every SRD casting class plus multiclass fixtures, speed prerequisite matrix, negative subclass tests, API/archive round trip, creator/advancement E2E, and manual sheet calculation review.
+- **Effort / confidence:** XL / Medium.
+
+#### E5 - Recurring-campaign and public trust
+
+- **Problem / user value:** campaign-scale information, reconnect, restore, browser security, and accessibility are not yet dependable enough for external users.
+- **Scope / non-goals:** journal/handout drafts and presentation, search/paging/chat decisions, realtime parity, cookie/CSP/rate defenses, scanner policy, supply-chain pinning, keyboard/responsive core tasks, hosted recovery evidence. Do not add voice/video, a marketplace, or social-network features.
+- **Dependencies / relevant code:** follows stable E1/E2 contracts; journals/handouts/chat, realtime sequencing, session transport/static hosting, authentication throttles, scanner/webhook URL policy, dependency configuration, board input model, migrations and public docs.
+- **Technical / rules / data / API approach:** extend existing sequence/session/permission primitives; use explicit content visibility/provenance; migrate tokens with revocation/compatibility; reuse one outbound-target validator; version all persisted changes.
+- **UI / security / migration implications:** untrusted-user threat model and WCAG task completion are gates; preserve campaign ownership/export; publish compatibility, privacy, AI-provider, and manual-rules boundaries.
+- **Test strategy / acceptance / done:** reconnect/gap tests, security integration and independent review, keyboard/device audit, migration/rollback, restore/load evidence, and recurring external sessions. Done only when no unaccepted Critical/High public risk remains.
+- **Effort / confidence:** XL / Medium.
+
+
+## First ten implementation tickets, in order
+
+### N01 - Propagate critical attack outcomes into damage (E1, P0)
+
+- **Objective:** make attack and damage one rules-consistent continuation, including expanded critical ranges.
+- **User outcome:** when the table sees a critical hit, the committed damage and audit trail are unambiguously critical.
+- **Likely files:** `packages/system-sdk/src/dnd-action-continuations.ts`, `packages/system-sdk/src/dnd-rules-completion.ts`, `packages/system-sdk/src/index.ts`, shared continuation types in `packages/core`, focused API/System SDK tests.
+- **Architecture constraints:** keep the hit resolver pure; add typed metadata rather than parsing labels/formulas; calculate threshold server-side; preserve revision, idempotency, transaction, undo, and provenance behavior.
+- **D&D 5.5e rule interaction:** critical damage dice, natural d20 result, Champion expanded range, Sneak Attack and other extra dice, and effects that negate criticals.
+- **Acceptance criteria:** continuation records natural result, applied threshold, and final critical verdict; damage doubles only rollable dice; modifiers are not doubled; negation is honored; replay/undo cannot change the verdict.
+- **Tests:** **Unit:** formula transformation and weapon/spell/Sneak Attack/Champion/negation matrix. **Integration:** API commit, replay, and undo. **E2E:** displayed and stored critical damage agree. **Manual:** inspect the audit log and dice breakdown.
+- **Must not change:** normal hit probability, non-critical formulas, AI automatic execution model, or direct permission semantics.
+- **Dependencies:** none.
+- **Effort / confidence:** M / High.
+
+### N02 - Synchronize actor and combatant recovery bidirectionally (E1, P0)
+
+- **Objective:** make active-combat life state a projection of the authoritative actor transition in the same durable mutation.
+- **User outcome:** healing above 0 HP immediately returns the creature to a coherent combat state.
+- **Likely files:** `apps/api/src/app.ts`, life-state helpers in `packages/system-sdk/src/index.ts`, combat API tests, reconnect/undo fixtures.
+- **Architecture constraints:** no second best-effort request; update actor and matching combatant transactionally; use IDs, not names; keep server authority.
+- **D&D 5.5e rule interaction:** healing from 0, defeated state, death-save reset, stabilization, damage back to 0.
+- **Acceptance criteria:** healing clears actor and combatant defeat/death-save state; damage to 0 sets both; unaffected combatants do not change; undo and replay restore the exact prior pair.
+- **Tests:** **Unit:** actor/combatant life-state transition matrix. **Integration:** API transaction, undo, replay, and reconnect snapshot. **E2E:** defeated -> healed -> acts on turn. **Manual:** multi-combatant recovery smoke.
+- **Must not change:** existing permission checks, negative-HP policy, concentration handling, or archive schema unless an additive migration is required.
+- **Dependencies:** none.
+- **Effort / confidence:** S / High.
+
+### N03 - Remove the attack-damage continuation race (E1/E2, P0)
+
+- **Objective:** make "Use previewed action" deterministically enabled when the current authoritative preview is usable.
+- **User outcome:** a player never stalls after a successful hit with a visible damage preview.
+- **Likely files:** `apps/web/src/App.tsx`, action/preview state helpers, API response/realtime reconciliation, `tests/e2e/canonical-public-journey.spec.ts`, full-combat journey fixtures.
+- **Architecture constraints:** fix the product race, not the test with sleeps; use a stable action/preview identity and explicit state transition; tolerate duplicate/reordered realtime delivery.
+- **D&D 5.5e rule interaction:** preserves the attack -> damage sequence and any critical metadata from N01.
+- **Acceptance criteria:** the button state derives from one current preview identity; stale revisions are explained and refreshable; ten consecutive clean canonical runs pass; artificial delayed/reordered events do not strand the UI.
+- **Tests:** **Unit:** reducer/state-machine transitions. **Integration:** API/realtime delay, reorder, and stale-revision cases. **E2E:** canonical 10-run clean loop. **Manual:** slow-network browser check.
+- **Must not change:** server outcome authority, revision guards, or bypass preview validation.
+- **Dependencies:** coordinate with N01; can begin in parallel.
+- **Effort / confidence:** M / Medium.
+
+### N04 - Add an atomic permission-checked batch token move (E1, P0)
+
+- **Objective:** replace independent multi-token requests with one typed all-or-nothing command.
+- **User outcome:** a group drag either moves every authorized token or moves none and identifies the rejection.
+- **Likely files:** `apps/web/src/scene-canvas.tsx`, `apps/web/src/App.tsx`, API contracts, `packages/core` command types, `apps/api/src/app.ts`, persistence transaction tests.
+- **Architecture constraints:** plugins and web use the same typed domain command; preflight every token permission and scene/revision invariant; one transaction and one ordered audit event; no direct storage mutation.
+- **D&D 5.5e rule interaction:** movement remains table-position state; do not silently add opportunity attack, terrain, or pathfinding enforcement.
+- **Acceptance criteria:** mixed authority rejects before any write; conflicts reject or rebase explicitly; one undo restores all positions; realtime clients receive a coherent batch.
+- **Tests:** **Unit:** permission and batch-validation matrix. **Integration:** atomic rollback, conflict, idempotency, and undo. **E2E:** two-client coherent batch. **Manual:** mixed-owned/unowned selection.
+- **Must not change:** single-token drag behavior, GM override policy, grid snapping, or tactical-aid optionality.
+- **Dependencies:** none.
+- **Effort / confidence:** M / High.
+
+### N05 - Make the aggregate API/release suite bounded and deterministic (E2, P0)
+
+- **Objective:** turn the full gate into reliable evidence instead of a long-running probabilistic signal.
+- **User outcome:** release candidates do not ship with hidden state or timing regressions.
+- **Likely files:** `apps/api/src/app.test.ts`, API Vitest setup/configuration, shared test server/fixture lifecycle, workspace gate scripts, CI artifact collection.
+- **Architecture constraints:** preserve test coverage; isolate shared ports, clocks, databases, and worker state; use explicit readiness and bounded teardown; do not mask failures with blanket timeout increases or retries.
+- **D&D 5.5e rule interaction:** retain all action-economy, advancement, combat, and archive matrices in the aggregate evidence.
+- **Acceptance criteria:** `pnpm check` completes within a documented bound twice from cold state; no worker RPC errors; timed-out tests retain logs and active-resource diagnostics; sharding, if used, preserves isolation.
+- **Tests:** **Unit:** fixture lifecycle and diagnostic parser. **Integration:** high-contention suites in randomized order and complete gate twice. **E2E:** existing canonical/full-combat release gates, with no sleep/retry substitution. **Manual:** inspect the artifact from an intentionally broken fixture.
+- **Must not change:** production runtime behavior or delete slow but valuable coverage solely to meet the bound.
+- **Dependencies:** none; required before claiming any dirty-tree ticket released.
+- **Effort / confidence:** M / Medium.
+
+### N06 - Keep streamed AI work outside the global mutation critical section (E2, P0 when AI is enabled)
+
+- **Objective:** prevent provider latency from blocking unrelated campaign writes while preserving automatic execution.
+- **User outcome:** a slow AI turn cannot freeze token moves, combat actions, saves, or admin mutations.
+- **Likely files:** `apps/api/src/app.ts`, AI provider/stream orchestration, durable mutation coordinator tests, AI thread persistence helpers.
+- **Architecture constraints:** split the flow into short durable phases: authorize/create pending state, release lock, perform provider stream, reacquire for validated commits; preserve automatic typed commands, citations, permissions, cancellation, and idempotency.
+- **D&D 5.5e rule interaction:** AI-generated actions remain subject to the same authoritative rule previews and commands as human actions.
+- **Acceptance criteria:** an intentionally delayed provider does not delay an unrelated mutation beyond the normal persistence bound; cancellation leaves a terminal thread state; duplicate completion cannot double-apply commands.
+- **Tests:** **Unit:** pending/final phase, cancellation, and idempotency transitions. **Integration:** delayed/failing provider concurrency and retry. **E2E:** two clients stream AI while combat mutates. **Manual:** provider stream plus combat smoke.
+- **Must not change:** automatic execution into proposal-only, permission requirements, prompt-injection labeling, or provider timeout policy except where separately justified.
+- **Dependencies:** none.
+- **Effort / confidence:** M / Medium.
+
+### N07 - Repair and prove the Docker quickstart and backup wiring (E2, P0; M3 exit gate)
+
+- **Objective:** make the documented production Compose profile boot, report healthy, schedule paired backups, and restore.
+- **User outcome:** an operator following the README reaches a usable, recoverable table without reverse-engineering environment variables.
+- **Likely files:** `docker-compose.yml`, `.env.example`, `apps/api/src/runtime.ts`, `apps/api/src/asset-operations.ts`, Dockerfiles, operator/backup docs, deployment smoke.
+- **Architecture constraints:** production TLS/storage policy and local MinIO profile must agree explicitly; never weaken remote-endpoint SSRF/TLS validation globally; secrets remain external and documented.
+- **D&D 5.5e rule interaction:** none, but campaign assets and state must restore as one usable game.
+- **Acceptance criteria:** clean documented boot succeeds; signing secret is required/generated coherently; scheduler variables reach runtime and health status; backup pairs DB/assets; clean restore passes checksums and representative campaign smoke.
+- **Tests:** **Unit:** invalid configuration and manifest validation. **Integration:** scheduled paired backup and checksum restore. **E2E:** clean Compose deployment plus isolated-volume restore drill. **Manual:** independent install, upgrade, and restore from the published runbook.
+- **Must not change:** production remote S3 security posture, archive bounds, or checked-in real secrets.
+- **Dependencies:** N05 for reliable release evidence.
+- **Effort / confidence:** M / High.
+
+### N08 - Put routine HP and roster control in the combat panel (E3, P1)
+
+- **Objective:** make the live combat surface sufficient for ordinary turn administration.
+- **User outcome:** an authorized DM can apply damage/healing/temp HP and add/remove combatants without leaving initiative context.
+- **Likely files:** `apps/web/src/combat-panel.tsx`, `apps/web/src/App.tsx`, existing actor/combat commands and API contracts, accessibility tests.
+- **Architecture constraints:** compose existing typed commands; do not duplicate HP math in the browser; optimistic UI must reconcile to authoritative responses; all controls expose permission/disabled reasons.
+- **D&D 5.5e rule interaction:** typed damage, resistance/immunity/vulnerability, temp HP, 0-HP transitions, concentration, and N02 recovery.
+- **Acceptance criteria:** selected combatant supports previewed damage, healing, temp HP, and roster operations; turn/round context remains visible; unauthorized players cannot invoke DM operations; errors preserve state.
+- **Tests:** **Unit:** component permissions and disabled reasons. **Integration:** existing actor/combat command APIs. **E2E:** full combat including 0 -> healed and roster changes. **Manual:** keyboard and small-screen smoke.
+- **Must not change:** actor sheet capabilities, server authority, or concealment permissions.
+- **Dependencies:** N02; N01 for critical display consistency.
+- **Effort / confidence:** M / High.
+
+### N09 - Add resumable, explicitly discardable character-creator drafts (E3, P1)
+
+- **Objective:** eliminate accidental loss during a multi-step character build.
+- **User outcome:** closing, reloading, or signing back in offers the last valid draft and never silently destroys it.
+- **Likely files:** `apps/web/src/character-creator-dialog.tsx`, a small versioned draft adapter, modal close/escape handling, creator component tests.
+- **Architecture constraints:** reuse the existing request shape; store only scoped draft data with schema version and campaign/user key; clear on successful commit; avoid a new backend draft service unless multi-device evidence demands it.
+- **D&D 5.5e rule interaction:** preserve class/species/background/origin/ability choices and validation previews exactly.
+- **Acceptance criteria:** backdrop, close, Escape, reload, and recover flows are explicit; invalid stale drafts migrate or offer safe discard; successful creation clears the draft; switching campaign/account cannot leak a draft.
+- **Tests:** **Unit:** reducer, draft adapter, schema version, and scoping. **Integration:** component close/recover/commit-clear behavior. **E2E:** reload midway and resume. **Manual:** invalid-version and shared-browser checks.
+- **Must not change:** authoritative server validation or auto-submit a draft.
+- **Dependencies:** none; coordinate schema with N10.
+- **Effort / confidence:** S / High.
+
+### N10 - Ship authoritative standard-array assignment (E4, P1)
+
+- **Objective:** complete one legal, auditable base ability-score method end to end.
+- **User outcome:** a player can assign the standard array, apply allowed background boosts, preview derived statistics, and create the intended character.
+- **Likely files:** shared creation request/types in `packages/core`, validation/preview in `packages/system-sdk`, `apps/api/src/app.ts`, `apps/web/src/character-creator-dialog.tsx`, archive/provenance fixtures.
+- **Architecture constraints:** model a method discriminator and explicit six-score assignment; validate permutation and boost constraints server-side; keep UI preview derived from shared rules; additive schema/migration only.
+- **D&D 5.5e rule interaction:** base ability assignment, background increases, ability maximums, and derived modifiers/saves/AC/HP.
+- **Acceptance criteria:** every legal permutation is accepted; duplicates/out-of-set values and invalid boosts are rejected with field errors; preview and committed actor agree; provenance records method and inputs.
+- **Tests:** **Unit:** exhaustive permutation/property and boundary validation. **Integration:** API create/preview/archive round trip. **E2E:** creator completion. **Manual:** calculation and accessibility review.
+- **Must not change:** existing presets without migration, homebrew import behavior, or add point buy/rolled stats in this PR.
+- **Dependencies:** N09 draft schema coordination.
+- **Effort / confidence:** M / High.
+
+## Next queue after the first ten
+
+| Order | Ticket | Priority / effort |
+|---:|---|---|
+| 11 | Class-complete spell acquisition and spellcasting-ability attribution | P1 / L |
+| 12 | Effective speed derivation for Monk/Barbarian and prerequisites | P1 / S |
+| 13 | Selected-subclass gating for Open Hand and similar features | P1 / XS |
+| 14 | Correct onboarding readiness and unify upload -> background -> grid setup | P1 / M |
+| 15 | Replace silent sheet/invite/placement caps with show-all, search, or paging | P1 / S-M |
+| 16 | Rendered handouts and journal draft recovery | P2 / M |
+| 17 | Cookie session migration, CSP, token revocation, and compatibility plan | P2 / L |
+| 18 | Proxy/account-aware login throttling with async password verification controls | P2 / M |
+| 19 | Realtime sequence, revision, and OpenAPI validation parity for AI/agent surfaces | P1 / M |
+| 20 | Small managed-effect lifecycle selected from recurring-play evidence | P2 / L |
+
+### Definition of done for new tickets
+
+A ticket is complete only when its authoritative path, connected user surface, explicit permissions, persistence/recovery behavior, compatibility impact, focused tests, and required release evidence are present. "Implemented in a dirty tree," "passes in isolation," and "the browser test passed once" are intermediate states, not done.
+
+
+> **Historical backlog below is retained for ticket traceability only.** Its open/closed statuses and recommended order are superseded by the authoritative epic specifications and N01-N20 sequence above.
+
+> Re-issued 2026-07-15 at committed HEAD `b5e30f1`, clean tree. T01–T37 are committed and independently re-verified (spot-traced in code; representative paths exercised live — see `FEATURE_AUDIT.md`). This revision adds the **T38–T45 correctness/hygiene tranche** discovered by the re-audit. External/manual items X01–X08 are unchanged and listed at the end.
+
+## Status meanings
+
+| Status | Meaning |
 | --- | --- |
-| Problem | Direct or loosely validated actor/item mutations could store legal-looking but wrong D&D state |
-| User value | Players and DMs can trust a successful result and inspect how it was calculated |
-| Scope | Versioned validation/repair, prepared advancement/rest/action/damage/effect transactions, exact revisions, idempotency, audit and undo |
-| Non-goals | Parsing arbitrary rules prose; universal rules DSL; proprietary content |
-| Dependencies | `packages/core`, `packages/system-sdk`, API mutation coordinator, contracts/client |
-| Relevant code | `dnd-validation-preview.ts`, `dnd-rules-completion.ts`, prepared routes in `apps/api/src/app.ts`, `packages/core/src/dnd-rules-mutation-state.test.ts` |
-| Technical approach | Pure preview produces sourced result/hash; server stores preparation; confirmation rechecks permission/revisions/hash and commits atomically |
-| Rules implications | Typed automation or explicit non-mutating manual result; no guessed exception |
-| Data model | Version/issue metadata, prepared/pending records, captured undo roots and exact timestamps |
-| API/UI | Preview/confirm/cancel/undo contracts and review cards |
-| Security | Server authority, campaign/actor permission and bounded reasoned override |
-| Migration | Lossless legacy validation and repair preview; unknown fields retained |
-| Tests | Pure counterexamples, API transaction/replay/stale/permission tests, client/UI review, browser journey |
-| Acceptance / DoD | Wrong counterexamples fail or compute correctly; stale/replayed/unauthorized confirmations do not mutate; audit and persistence verified |
-| Effort / confidence / status | XL / High / Complete |
+| Committed | Landed at or before `b5e30f1`; regression coverage present |
+| Open | Specified below, not started |
+| External/manual | Cannot be closed by repository changes alone |
 
-## Epic E2 — Correct character creation, progression, recovery and loadout
+## Shared constraints (apply to every ticket)
 
-| Field | Definition |
-| --- | --- |
-| Problem | Creator/progression/rest/inventory paths previously omitted choices or applied generic class behavior |
-| User value | A player can build, play, rest and level a legal supported character without spreadsheet repair |
-| Scope | Full declared level-one choice graph, review policy, class schedules, multiclass pools, HP/temp/death, spells, loadout, attunement and transfers |
-| Non-goals | Every proprietary class/subclass/spell/item; unrestricted raw patching |
-| Dependencies | E1; D&D static content; compendium provenance |
-| Relevant code | `level-one-creator.test.ts`, `feat-eligibility.test.ts`, `dnd-spell-preparation.ts`, `actor-loadout-panel.tsx`, `dnd-character-review.ts` |
-| Approach | Data-backed choices plus class-specific pure resolvers; durable pending reviews; dedicated mutations for managed roots |
-| Rules/data | Class/resource/feat/subclass/spell/hit-die schedules and custom profile seam |
-| API/UI | Creator/review/advancement/rest/preparation/attunement/transfer flows |
-| Security | Owner versus campaign actor manager; reviewed-character gates for tokens/combat |
-| Migration | Pending choices and review fingerprints archive/restart safely |
-| Tests | Class/species/background matrix, progression/rest/attunement/API/UI/browser fixtures |
-| Acceptance / DoD | Representative supported characters create, review, restart, rest and advance with exact expected state |
-| Effort / confidence / status | XL / High / Complete |
+- Preserve exact revisions, idempotency, authorization, audit history, permission-filtered realtime.
+- Prefer typed commands and `packages/core` domain types over raw storage mutation.
+- Preserve legacy/homebrew data outside managed typed D&D subroots.
+- Keep geometry/prose rulings explicit; never guess.
+- Preserve both AI modes (manual review + governed auto) behind existing policy.
+- Add the smallest regression that fails for the fixed counterexample.
+- Route additions must satisfy both app.test.ts route-coverage gates (auth matrix + MCP surface classification).
 
-## Epic E3 — Trustworthy encounter, combat and effect operation
+## Closed ledger (T01–T37)
 
-| Field | Definition |
-| --- | --- |
-| Problem | Synthetic initiative, participant omission, incomplete actions/effects and actor/combat drift made combat unsafe |
-| User value | A GM and players can run a complete encounter without fighting the interface or repairing state |
-| Scope | Readiness, initiative/order/ties/hidden state, actions/resources, typed damage, effects, recharge/reactions, death, rewards/history, tactical advisory tools |
-| Non-goals | Geometry inference, collision/pathfinding, automatic adjudication of every spell/trigger |
-| Dependencies | E1/E2; scenes/tokens; realtime; reward/inventory records |
-| Relevant code | `combat-setup.ts`, `combat-panel.tsx`, `dnd-typed-damage-combat.ts`, `dnd-effect-lifecycle.ts`, `dnd-combat-progression.ts` |
-| Approach | Reviewed participant plan and server initiative; atomic actor/combatant updates; scheduled sourced effects |
-| Rules/data | Actions/bonus/reaction, damage defenses, concentration, zero HP, recharge, legendary/lair/regional state |
-| API/UI | Responsive controls, local errors, review/undo, reward and history surfaces |
-| Security | Manager/owner/player-action boundaries and private participant redaction |
-| Migration | Combat/reward/effect metadata in validated archives |
-| Tests | Pure rules, API sync/concurrency, web controls, full browser combat |
-| Acceptance / DoD | Full representative combat completes; no participant disappears; no wrong target/state applies; rewards persist |
-| Effort / confidence / status | XL / High / Complete |
+All committed. See `DND_RULES_AUDIT.md` for the per-ticket resolution table and `FEATURE_AUDIT.md` for verification status per area. Not repeated here to keep this file actionable.
 
-## Epic E4 — Durable shared state, realtime convergence and campaign portability
+## Open tranche T38–T45
 
-| Field | Definition |
-| --- | --- |
-| Problem | Silent stale writes, broad rollback, reconnect gaps and buffered/invalid archives endangered persistent campaigns |
-| User value | A campaign survives concurrency, refresh, restart, export/import and recoverable failures |
-| Scope | Mandatory mutation preconditions, serialized persistence, dirty tracking, sequence/delta/snapshot history, strict/atomic archives, framed streaming, backup/migration/recovery |
-| Non-goals | Multi-region consensus or an unmeasured database rewrite |
-| Dependencies | Shared mutation coordinator, SQLite/object providers, API contracts |
-| Relevant code | `sqlite-store.ts`, `realtime.ts`, `realtime-snapshot-delta.ts`, `archive-validation.ts`, `archive-stream.ts`, `archive-asset-restore.ts` |
-| Approach | Exact revision + retry identity; commit-safe dirty baseline; permission-filtered reconciliation; validate/stage before publish; compensating object rollback |
-| Rules/data | Archive validation includes D&D invariants and reference closure |
-| API/UI | Structured 409/current state, connection recovery status, legacy and stream archive clients |
-| Security | Archive identity/secret redaction, campaign permission, caps/checksums |
-| Migration | Golden/current fixtures, retention and coordinated state/asset restore |
-| Tests | Two-client conflicts, flush failures, restart, gaps/deltas, malicious/large archive and rollback tests |
-| Acceptance / DoD | No silent overwrite or lost covered acknowledgement; bounded archive round trip is non-no-op and atomic |
-| Effort / confidence / status | XL / High / Complete |
+### T38 — Second Wind must be a Bonus Action (P0, XS, High confidence)
 
-## Epic E5 — Complete campaign preparation and knowledge UX
+- **Objective:** the Second Wind quick roll stops consuming the turn's standard Action.
+- **User-facing outcome:** a Fighter can use Second Wind and still attack on the same turn; the review dialog and audit trail say "Bonus Action".
+- **D&D rules involved:** Second Wind (SRD 5.2.1 Fighter): Bonus Action, 1d10 + Fighter level, limited uses, short-rest recovery.
+- **Likely files:** `packages/system-sdk/src/index.ts` (~1268, `dnd5eSrdClassFeatureRolls` — add `action: "Bonus Action"` to the roll metadata, merging with the existing optional `tacticalShift` metadata); `packages/system-sdk/src/dnd-action-economy.test.ts` (classifier regression); `apps/api/src/dnd-action-economy-api.test.ts` (end-to-end counterexample: use Second Wind then attack in the same turn — attack must not be blocked).
+- **Root cause note:** `dnd5eSrdActionKind` (`dnd-action-economy.ts:9`) defaults metadata-less rolls with a non-"0" formula to `"action"`. Fix the data, keep the conservative default, and add the audit sweep from T39.
+- **Constraints:** do not change the classifier's default behavior in this ticket; do not touch the ledger shape (persisted in actor `rulesEngine.actionEconomy`).
+- **Acceptance criteria:** classifier returns `bonusAction` for the Second Wind roll; live resolution ledger no longer increments `actionsUsed`; existing Action Surge tests unchanged.
+- **Tests:** unit (classifier), API integration (same-turn Second Wind → attack), no E2E needed.
+- **Manual verification:** demo campaign — start combat, use Second Wind, confirm Longsword attack still commits.
+- **Must not change:** spell action classification; Rage metadata; ledger persistence shape.
+- **Dependencies:** none. Do first.
 
-| Field | Definition |
-| --- | --- |
-| Problem | Campaign administration, knowledge, map preparation and session actions had disconnected or inaccessible edges |
-| User value | A DM can prepare and resume a session from one coherent workspace; players can reach primary actions |
-| Scope | Profiles/rules, duplication/ownership/character transfer, sessions, journals/world graph/canon, maps/grid/tokens/vision, responsive panels, placement and errors |
-| Non-goals | Social network, voice/video, 3D spectacle or theme breadth |
-| Dependencies | Campaign permissions, assets, realtime, contracts |
-| Relevant code | `session-desk-panel.tsx`, `world-graph-panel.tsx`, `campaign-ownership-transfer.tsx`, `scene-canvas.tsx`, `actor-panel.tsx` |
-| Approach | Focused panels with typed callbacks, shared mutation/retry/session guards and accessible semantic controls |
-| Rules/data | Campaign rules profile and advisory tactical rulings remain explicit |
-| API/UI | Full connected UI for administration, session planning, knowledge, scene/token and actor actions |
-| Security | UI capabilities derive from server-aligned predicates; server still authoritative |
-| Migration | Records participate in versioned archives and snapshot history |
-| Tests | Component/contract/responsive/accessibility and browser end-to-end flows |
-| Acceptance / DoD | No known primary-action dead end at supported automated widths; failures are visible and retry-safe |
-| Effort / confidence / status | XL / High / Complete |
+### T39 — Audit activation metadata for all feature rolls; fix Tactical Mind (P1, S, High)
 
-## Epic E6 — Security, API, plugin and deployment contract hardening
+- **Objective:** every quick roll produced by `dnd5eSrdClassFeatureRolls`, `dnd5eSrdSpeciesTraitRolls`, and `dnd5eSrdMonsterActionRolls` carries explicit activation metadata (or is intentionally `free`), enforced by a test that fails when a new metadata-less roll appears.
+- **User-facing outcome:** no feature silently costs the wrong economy slot; Tactical Mind stops consuming the Action.
+- **Rules involved:** Tactical Mind augments an ability check by expending a Second Wind use (not an Action); general 5.5e action/bonus-action/reaction taxonomy.
+- **Likely files:** `packages/system-sdk/src/index.ts` (feature/species/monster roll builders), `dnd-action-economy.ts` (optionally add an `activationRequired` helper), new sweep test in `packages/system-sdk/src/dnd-action-economy.test.ts` iterating representative actors (each class at levels 1/3/5, one monster) and asserting every generated roll classifies deliberately.
+- **Acceptance criteria:** sweep test enumerates zero unclassified rolls; Tactical Mind classifies `free` with its resource spend still reviewed.
+- **Tests:** the sweep itself + Tactical Mind counterexample.
+- **Must not change:** existing correct classifications (Rage bonus action, spell `action` data).
+- **Dependencies:** T38 (same seam; ship as one PR).
 
-| Field | Definition |
-| --- | --- |
-| Problem | Identity discovery, worker privilege, plugin defaults, readiness and API schema drift could bypass intended boundaries |
-| User value | Hosted/self-hosted operators and integrations receive predictable, least-privilege behavior |
-| Scope | OIDC/SCIM/SSRF, scoped worker, signed plugin posture, runtime non-AI OpenAPI request/response validation, readiness, rate limits, redaction, threat/deployment docs |
-| Non-goals | Hostile-code marketplace, enterprise identity expansion, AI behavior changes |
-| Dependencies | API route inventory/contracts, deployment config, plugin runtime |
-| Relevant code | `oidc-http-security.ts`, `worker-identity.ts`, `plugin-runtime.ts`, `openapi-runtime-validation.ts`, deployment smoke tests |
-| Approach | Fail closed, explicit allowlists/capabilities, location-aware validation, safe diagnostics and exhaustive auth matrices |
-| Rules/data | Consequential D&D endpoints share the same contract/precondition enforcement |
-| API/UI | Typed client, admin diagnostics, visible configuration failures |
-| Security | Central purpose of epic; includes token/URL/log redaction and unsigned-plugin denial in production |
-| Migration | No public version break; legacy test helpers inject exact current revisions without weakening production schemas |
-| Tests | Route inventory/auth/runtime schema, adversarial OIDC/worker/plugin, readiness/security/deployment smoke |
-| Acceptance / DoD | Invalid non-AI bodies/responses fail contract; observer/worker/plugin cannot exceed authority; missing production config is not healthy |
-| Effort / confidence / status | XL / High / Complete |
+### T40 — Persist machine-readable release-gate evidence (P1, S, Medium)
 
-## Epic E7 — Campaign content, economy, controlled creatures and integrations
+- **Objective:** `pnpm check` and the canonical journey can emit a small JSON evidence artifact (commit SHA, command, per-package task results, test counts, duration, timestamp) into `artifacts/release-evidence/`, and `scripts/check-v1-release-evidence.mjs` recognizes it.
+- **Why:** the prior audit cited frozen-run identifiers that are not reproducible from the repo; this audit had to re-derive everything. Fresh evidence should be cheap to persist and verify.
+- **User-facing outcome (team):** audit/release docs cite artifact files instead of prose numbers.
+- **Likely files:** new `scripts/record-release-evidence.mjs` (wraps `pnpm check` / playwright, parses turbo + vitest summaries), `scripts/check-v1-release-evidence.mjs` (accept the new artifact class), `.gitignore` decision (commit evidence for tagged candidates only).
+- **Acceptance criteria:** one command produces an artifact that the evidence checker validates against current HEAD; stale-commit artifacts are rejected (existing behavior preserved).
+- **Tests:** script unit test with fixture summaries (repo already tests scripts, e.g. `sbom:test` pattern).
+- **Must not change:** the gates themselves.
+- **Dependencies:** none; unblocks stage exits.
 
-| Field | Definition |
-| --- | --- |
-| Problem | Homebrew, campaign content, complex creatures, economy and external notifications lacked complete governed workflows |
-| User value | DMs can adapt the product to actual campaigns without unsafe raw state edits |
-| Scope | Compendium provenance/conflicts, custom builders, containers/commerce/loot, controlled creatures/transforms, advanced mechanics, webhooks, asset renditions/dedupe |
-| Non-goals | Unauthorized content, inbound webhook mutation, marketplace expansion |
-| Dependencies | E1/E4/E6, asset provider, campaign permissions |
-| Relevant code | `dnd-custom-content.ts`, `dnd-inventory-commerce.ts`, `dnd-controlled-creatures.ts`, `campaign-webhooks.ts`, `asset-renditions.ts` |
-| Approach | Campaign-scoped versioned records and typed preview/confirm flows; metadata-only signed outbound events |
-| Rules/data | Preserve source/license/version/usage and source-linked lifecycle |
-| API/UI | Dedicated builder, inventory/commerce, controlled-creature, webhook and thumbnail panels/contracts |
-| Security | Manager permissions, revisions/idempotency/audit; SSRF/DNS pinning; one-time webhook secret |
-| Migration | Archive-safe metadata with secret redaction and reference validation |
-| Tests | Unit/API/contracts/client/UI plus archive/security lifecycle tests |
-| Acceptance / DoD | Each workflow persists, respects permissions/conflicts, round-trips safely and does not bypass core transactions |
-| Effort / confidence / status | XL / High / Complete |
+### T41 — Close the local gate-drift window (P1, XS, Medium)
 
-## Epic E8 — Performance, maintainability and release evidence automation
+- **Objective:** make it hard to commit a root-script/config change that breaks the pinned deployment-smoke guard without noticing locally.
+- **Why (evidence):** commit `63d5950` changed `security:audit` and broke the pin for ~16 minutes until `b5e30f1`; CI would have caught it post-push, but the local loop didn't.
+- **Approach (smallest):** add `deployment-smoke` to a fast pre-push script (`pnpm gate:fast`: deployment-smoke + contracts tests, <30s) and document it in `CONTRIBUTING.md`; optionally a git `pre-push` hook sample. Do **not** slow the default commit path.
+- **Acceptance criteria:** `pnpm gate:fast` exists, runs <60s, and fails on a reproduced `63d5950`-style mismatch.
+- **Dependencies:** none.
 
-| Field | Definition |
-| --- | --- |
-| Problem | Monoliths, large bundles, full-state writes and incomplete evidence could make every change/release risky |
-| User value | Faster, safer iterations and a supportable small-group operating floor |
-| Scope | Domain/static-data/panel extraction, architecture/bundle budgets, deferred panels, capacity/soak, docs/SBOM/evidence/release scripts |
-| Non-goals | Rewrite, microservice decomposition, multi-region architecture or arbitrary line-count churn |
-| Dependencies | Stable seams from E1-E7 |
-| Relevant code | `app-architecture-budget.test.ts`, `module-boundaries.test.ts`, extracted API/web/SDK modules, root scripts |
-| Approach | Extract coherent ownership with dependency injection; guard budgets; measure deterministic workloads |
-| Rules/data | Static D&D identifiers/tables are dependency-free; mutable resolution remains in pure domain functions |
-| API/UI | No behavior/API change; code splitting/deferred loading where appropriate |
-| Security | Extraction must preserve checks and runtime validation |
-| Migration | None beyond compatible module boundaries |
-| Tests | Full package typecheck/tests/build plus architecture, bundle, performance, soak/capacity and docs/evidence gates |
-| Acceptance / DoD | Behavior unchanged, budgets pass, local small-group envelope passes, release claims stay evidence-bounded |
-| Effort / confidence / status | L / High / Complete |
+### T42 — Legendary-action economy on the combat tracker (P2, M, Medium)
 
-## Completed implementation-ready ticket ledger
+- **Objective:** legendary creatures get a per-round-resetting legendary-action use pool with a between-turns prompt; option choice and targeting stay manual.
+- **User-facing outcome:** running an SRD legendary creature (e.g., sphinx-class blocks) no longer requires hand-tracking uses; the tracker offers "Legendary action available (2/3)" after each other creature's turn.
+- **Rules involved:** legendary actions: N uses/round, spent at the end of other creatures' turns, reset at the start of the creature's turn (per stat block).
+- **Likely files:** `packages/system-sdk/src/dnd-advanced-mechanics.ts` (reuse the `CombatEnvironmentMechanic` scheduling shape), `dnd-monster-stat-blocks.ts` (structured `legendaryActions: { uses, options[] }` on the 14 affected blocks, keeping prose), combat progression synchronizer, `apps/web` combat panel drawer, API tests.
+- **Non-goals:** auto-resolving options; lair-action changes (already scheduled); legendary resistance automation (separate decision; keep manual with a counter if trivial).
+- **Acceptance criteria:** uses decrement on spend, reset on the creature's turn start, never exceed the block's count; prompt appears only between turns; all reviewed/manual.
+- **Tests:** SDK unit (reset/spend/bounds), API integration (combat with a legendary block), web panel test.
+- **Dependencies:** none, but schedule after X01 begins — real-table priority may differ.
 
-Shared constraints for every ticket: use existing `packages/core` domain types; keep the API authoritative; preserve permissive SDK-code licensing and content attribution; add no broad dependency without need; do not change public behavior accidentally; do not modify the AI agent; preserve user work; add focused unit/integration/UI tests and use public UI for browser evidence where applicable.
+### T43 — Species coverage decision: Aasimar (P2, S–M, Medium)
 
-| ID / priority | Precise objective and user-facing outcome | Likely files/subsystems | Acceptance criteria | Required tests and manual check | Dependencies | Effort / confidence / state |
-| --- | --- | --- | --- | --- | --- | --- |
-| T01 / P0 | Encode every verified unsafe rules counterexample; wrong state cannot silently regress | system SDK/core tests | Each old failure is red before fix and green after; no mutation on unsupported input | Unit counterexamples; inspect sourced error | None | M / High / Complete |
-| T02 / P0 | Add versioned D&D validation and lossless repair preview | SDK/core/API | Type/range/domain issues identify path/source; unknown fields preserved | Unit + API archive/import; manually inspect repair diff | T01 | L / High / Complete |
-| T03 / P0 | Prepared transaction framework and raw-patch guard | core/API/contracts/client | Exact preparation/revisions/hash/idempotency required; replay/stale/unauthorized safe | Unit, API concurrency/replay, client/UI review | T02 | XL / High / Complete |
-| T04 / P0 | Correct class advancement, ASI/feat/subclass/CON HP schedules | SDK/API/web | Fighter/Rogue exceptional schedules and explicit choices correct; durable pending state | Class matrix unit/API/UI; creator/level browser | T03 | XL / High / Complete |
-| T05 / P0 | Correct Short/Long Rest and HP/temp/death recovery | SDK/API/web | Selected Hit Dice, actual deltas, max-before-heal, temp/death/exhaustion/resources correct | Unit edge cases, API stale/replay, UI confirmation, browser rest | T03 | L / High / Complete |
-| T06 / P0 | Typed mixed/multi-target damage and active-combat sync | SDK/API/contracts/web | Per-component defenses/temp HP/critical/zero HP; atomic targets; exact combat revision | Unit matrix, API sync/undo/concurrency, damage card | T03 | XL / High / Complete |
-| T07 / P0 | Condition immunity and reasoned override | SDK/API/web | Actor/monster/effect/active-item immunity blocks; only actor manager with reason overrides/audits | Unit + API owner/GM matrix + UI | T03 | M / High / Complete |
-| T08 / P0 | Equipment/attunement gates and cursed removal | SDK/API/web | Benefits require eligible active state; curse blocks normal removal; manager recovery reason/audit | Unit/API/UI loadout | T03 | M / High / Complete |
-| T09 / P0 | Source-linked effect/concentration/schedule lifecycle | SDK/API/web | Replacement, expiry, damage check, cleanup and undo stay consistent | Unit lifecycle + API scheduled commit + UI | T03,T06 | L / High / Complete |
-| T10 / P0 | Reviewed encounter start and honest initiative/order | API/web | Selected participants cannot disappear; server/manual initiative, ties/hidden/order reviewed | API combat start + UI setup + browser combat | T03 | L / High / Complete |
-| T11 / P0 | Mandatory revisions/idempotency on all consequential non-AI writes/deletes/rewards | API/contracts/client/web | [Locked 246-route inventory](verification/non-ai-mutation-route-contract-2026-07-13.md) has exact precondition/retry identity; 37 operator mutations declare K/R/P/X; stale write is 409 | Static/runtime/OpenAPI route contract, two-client tests, manual conflict UX | T03 | XL / High / Complete |
-| T12 / P0 | Serialized durable writes and commit-safe SQLite dirty tracking | store/API | Nested/array/shape changes persist; flush failure rolls back/retries without full per-flush SELECT/stringify | Store failure/restart/perf tests | T11 | XL / High / Complete |
-| T13 / P0 | Permission-filtered realtime sequence/delta/snapshot recovery | API/web/core | Gap/duplicate/reconnect converges without private leakage | Realtime unit/integration + two-context browser | T11,T12 | L / High / Complete |
-| T14 / P0 | Strict archive validation and atomic state/asset restore | API/store/assets | Required/type/domain/reference/checksum failures precede mutation; rollback leaves prior state/objects | Malicious/N-1/recovery/API + manual non-no-op restore | T02,T12 | XL / High / Complete |
-| T15 / P0 | Bounded framed campaign archive streaming | API/contracts/client | Raw asset frames respect backpressure/caps/checksums; stage before mutation; legacy compatible | Parser/route/buffer envelope/rollback; large local round trip | T14 | L / High / Complete |
-| T16 / P1 | Complete declared level-one creator and review | SDK/API/web | All required choices, validation, review and combat/token gates connected | Choice fixtures, API review, three public-UI creators | T02,T03 | XL / High / Complete |
-| T17 / P1 | Session-first actor sheet and typed action/loadout flows | web/API/client | Primary stats/actions/spells/resources/effects/rest/advance visible and errors local | Component/action contract/browser player journey | T04-T09 | XL / High / Complete |
-| T18 / P1 | Spell preparation, known/always/spellbook/Pact/ritual resources | SDK/API/web | Dedicated state mutation and class-aware availability/recovery | Unit, API, client, UI | T03,T16 | L / High / Complete |
-| T19 / P1 | Complete monster resources and combat progression | SDK/API/web | Recharge/reactions/legendary/lair/regional/death/effects operate from stat record | Unit/API/operator UI/browser combat | T09,T10 | L / High / Complete |
-| T20 / P1 | Rewards, milestone, XP/GP/loot/history | API/web/core | Permission-aligned exact revisions/idempotency; durable reward archive | API stale/replay/archive + UI combat completion | T11,T19 | M / High / Complete |
-| T21 / P1 | Responsive combat/tabletop and accessible actor placement | web/styles/e2e | Primary controls never collapse; non-drag placement; named/keyboard paths at supported widths | Component CSS/DOM, phone/tablet/keyboard browser; manual touch queued | T10,T17 | L / High / Complete |
-| T22 / P1 | Grid calibration, transforms, vision and tactical advisory tools | web/API/core | Square/gridless, rotation/elevation, doors/windows/light/senses/templates persist; cover/terrain explicit | Unit/UI/API/browser tabletop; manual visual check | T11 | XL / High / Complete |
-| T23 / P1 | Profiles, rules, duplication, ownership and character transfers | API/client/web | Exact revision/idempotency, proper parties/reasons/history, connected UI | API lifecycle/client/UI/manual second-account | T11 | L / High / Complete |
-| T24 / P2 | Journals, world graph, backlinks, history and canon | core/API/web | Permissioned linked knowledge persists/searches/archives with exact revisions | Unit/API/UI/archive/browser session | T11,T14 | XL / High / Complete |
-| T25 / P2 | Compendium provenance/version/conflict/import reporting | SDK/core/API/web | Source/license/usage preserved; duplicate keep/merge/replace explicit | Unit/API/UI/archive | T02,T14 | L / High / Complete |
-| T26 / P2 | OIDC/SCIM/SSRF, worker identity, readiness and redaction hardening | API/deployment/docs | Unsafe endpoints/linking/privilege fail; required config unhealthy; secrets absent from logs | Adversarial tests, security/deployment smoke; live IdP queued | T11 | XL / High / Complete |
-| T27 / P2 | Signed plugin default and typed command boundary | plugin runtime/SDK/API | Unsigned denied in production; grant+caller permission+revision/audit; no direct storage write | Runtime/auth/threat-model tests; manual trusted plugin smoke | T11,T26 | L / High / Complete |
-| T28 / P2 | Strict non-AI OpenAPI request/response enforcement | API/contracts/client | JSON bodies do not coerce; query/path are location-aware; declared statuses validate responses | Route inventory/runtime/schema/client full suite | T11 | XL / High / Complete |
-| T29 / P2 | Backups, migrations, recovery CLI/runbooks and local envelope | store/API/scripts/docs | Golden/current fixture, retention, coordinated recovery and deterministic small-group pass | migration/security/deployment/perf/soak/capacity; hosted drill queued | T12-T15 | XL / High / Complete |
-| T30 / P2 | Calculation explanations and compatibility reporting | SDK/API/web | Total exposes sources/overrides; system/content/version mismatches visible | Unit/API/client/UI | T02 | L / High / Complete |
-| T31 / P3 | Custom D&D content builders | SDK/API/web | Campaign-scoped typed monster/spell/item/feat/species/background/subclass/condition create/edit | Unit/API/contracts/client/UI/archive | T02,T25 | XL / High / Complete |
-| T32 / P3 | Inventory, containers, commerce, stash and loot | SDK/API/web | Cycle/depth/weight/ammo/currency/stock/claims/permissions/revisions correct | Unit/API/UI/archive | T03,T20 | XL / High / Complete |
-| T33 / P3 | Controlled creatures, summons and transformations | SDK/API/web | Preview/confirm/command/end, ownership/concentration/scene/combat state consistent | Unit/API/UI | T03,T09,T19 | XL / High / Complete |
-| T34 / P3 | Advanced effects and spell-helper mechanics | SDK/API/web | Regional/lair/timed/specialized previews are explicit and confirmed | Unit/API/UI | T09,T19 | L / Medium / Complete |
-| T35 / P3 | Secure outbound campaign webhooks | API/contracts/client/web/docs | Metadata allowlist, HMAC, SSRF pinning, deadline/queue/retry/audit/redaction; no inbound mutation | Unit/API/client/UI/archive/security | T11,T26 | XL / High / Complete |
-| T36 / P3 | Asset renditions, thumbnails and deduplication | API/web/assets | Hash reuse, WebP/thumbnail variants, quota/lifecycle/signed URL correct | Unit/API/UI/storage lifecycle | T14,T26 | L / High / Complete |
-| T37 / P2 | Architecture decomposition and budgets | API/web/SDK/tests | Static data dependency-free; coherent routes/pure coordinators extracted; tighter budgets pass | Module-boundary/architecture/typecheck/full suites; diff review | T01-T36 | L / High / Complete |
-| T38 / P2 | Complete release/docs/evidence automation and rewrite six audits | root scripts/docs | One current authoritative audit; local commands record exact truth; external gates explicit | docs tests/check, SBOM/evidence/issues tests, diff check | T01-T37 | L / High / Complete |
+- **Objective:** check the SRD 5.2.1 species index once; if Aasimar is included, add the species record (traits, resistances, spell-like features) at parity with the other nine; if not, document the boundary in `docs/system-sdk/overview.md`.
+- **Evidence:** zero "Aasimar" occurrences in `packages/system-sdk/src`; nine species implemented.
+- **Acceptance criteria:** either a playable Aasimar with creator/advancement/tests, or an explicit documented boundary. No partial state.
+- **Dependencies:** none.
 
-## Per-ticket execution contracts
+### T44 — Demo campaign hygiene (P3→P2 before any external demo, XS, High)
 
-Every ticket inherits constraint **C0**: use existing `packages/core` domain types; keep the API authoritative; preserve permission, revision, idempotency and audit semantics where consequential; preserve user data, public compatibility, SDK licensing and content attribution; add no broad dependency without demonstrated need; and do not modify the AI agent's behavior, configuration, providers, tools, manual proposal mode, or governed automatic execution mode. The “Constraints” column names additional ticket-specific limits. “N/A” in the verification matrix is an explicit decision that the layer adds no useful evidence for that ticket, not an omitted requirement.
+- **Objective:** demo seed content contains no QA debris ("Visual QA", "hello from command line" chat messages, stray "Steamboat Willie Steamboat Showdown" token naming) and presents a clean first-session tableau.
+- **Likely files:** demo seed module in `apps/api` (search `camp_demo` seed), token names, seeded chat.
+- **Acceptance criteria:** fresh demo boot shows curated chat (≤5 messages), consistently named tokens, and a short GM journal entry; E2E smoke against demo still passes.
+- **Dependencies:** none.
 
-### Scope, rules, and change guardrails
+### T45 — Investigate canvas capture cost (P3, S, Low)
 
-| ID | Constraints | D&D/rules implications | Must not change | Dependencies |
-| --- | --- | --- | --- | --- |
-| T01 | C0; deterministic pure counterexamples; unsupported input is non-mutating | Direct: defines safety invariants for advancement, rest, HP, damage, conditions, items and effects | Intentional manual/advisory rulings or already-correct typed results | None |
-| T02 | C0; versioned validation; lossless preview before repair | Direct: invalid managed D&D roots must be located without erasing forward-compatible data | Unknown fields, provenance, valid legacy data or source records | T01 |
-| T03 | C0; exact prepared inputs, revisions, hash and retry identity; server commits | Direct: consequential rules results become reviewable, stale-safe transactions | Public compatibility, server dice/rules authority or read-only routes | T02 |
-| T04 | C0; class-profile schedules and explicit durable choices only | Direct: class level, ASI/feat/subclass and Constitution HP legality | Existing legal characters, multiclass state or class-specific exceptional schedules | T03 |
-| T05 | C0; server-rolled selected Hit Dice; exact recovery deltas | Direct: HP/max/temp/death/exhaustion/resource recovery | Player Hit Die choice, HP caps or separate Pact/normal resource semantics | T03 |
-| T06 | C0; per-component/per-target preview; atomic actor+combat commit | Direct: defenses, rounding, temporary HP, critical and zero-HP state | Typed breakdown, target order, or actor/combatant consistency | T03 |
-| T07 | C0; aggregate all modeled immunity sources; only reasoned manager recovery | Direct: immune conditions cannot silently apply | Normal owner permissions, source attribution or audit reason | T03 |
-| T08 | C0; eligible active equipment state and exact actor/item revisions | Direct: benefits/actions/curse recovery follow equip and attunement state | Item provenance, normal curse block or inactive-item behavior | T03 |
-| T09 | C0; source-linked instances and scheduled lifecycle; atomic cleanup | Direct: concentration, replacement, expiry and undo stay coherent | Effect source/target history or explicit manual exceptions | T03, T06 |
-| T10 | C0; explicit participant readiness and reviewed initiative/order | Direct: combat begins with the intended legal participants and state | Hidden-participant privacy, manual initiative, tie review or surprise ruling | T03 |
-| T11 | C0; applies to every consequential **non-AI** mutation; keys remain opaque | Direct: stale or duplicate rules writes cannot silently win | AI routes/agent behavior, safe reads, or public retry compatibility | T03 |
-| T12 | C0; acknowledge only after durable commit; bounded dirty detection | Indirect but critical: correct rules state must survive failure/restart | Store schema/API, retryability, or the prohibition on per-flush full-state work | T11 |
-| T13 | C0; monotonic sequence and permission-filtered recovery | Direct: every client converges on the same authorized rules/combat state | Private data filtering, event order or authoritative snapshot semantics | T11, T12 |
-| T14 | C0; validate schema/domain/references/checksums before any publish; atomic rollback | Direct: restored actor/item/combat records remain calculable and consistent | Pre-import live state, asset bytes, N-1 compatibility or ownership regeneration | T02, T12 |
-| T15 | C0; framed raw bytes, backpressure, caps, incremental hashes and staging | Indirect: large campaign rules data/assets remain portable without exhausting the writer | Legacy capped JSON compatibility or bounded-memory guarantee | T14 |
-| T16 | C0; declared lawful content scope; no silent choice defaults | Direct: level-one state and review gates are rules-legal and complete | Optional-by-default campaign review policy, homebrew seam or proprietary-content boundary | T02, T03 |
-| T17 | C0; session-first hierarchy; typed callbacks; local actionable errors | Direct: player-visible actions must invoke server-owned rules transactions | Server authority, calculation sources or existing desktop/keyboard paths | T04-T09 |
-| T18 | C0; class-aware dedicated spell-state mutations | Direct: known/prepared/always/spellbook, slots, Pact Magic and rituals remain distinct | Separate resource pools, source metadata or unsupported-prose boundary | T03, T16 |
-| T19 | C0; monster actions/resources derive from supplied stat records | Direct: recharge, reactions, legendary/lair/regional and death progression | Hidden participant handling, authored stat data or DM control | T09, T10 |
-| T20 | C0; award/claim transactions are permissioned, revisioned and idempotent | Direct: XP, milestone, GP and loot state cannot duplicate or disappear | Prior rewards, claim ownership, award history or archive portability | T11, T19 |
-| T21 | C0; semantic controls and non-drag alternatives at supported widths | No rules-math change; determines whether users can reach core rules/combat actions | Desktop behavior, keyboard access, server permissions or tactical semantics | T10, T17 |
-| T22 | C0; persist typed transforms/vision; advisory geometry remains explicit | Direct only where typed; cover, terrain and opportunity-attack rulings remain manual | No guessed collision/cover/pathfinding, no implicit hex support, no privacy leak | T11 |
-| T23 | C0; current-owner authority and exact parties/reasons/history | Indirect: campaign profile and character custody determine which rules state may be used | Role meanings, transfer history, character data or AI governance | T11 |
-| T24 | C0; permissioned sanitized knowledge graph with archive-safe links | No direct rules math; preserves campaign facts that inform manual rulings | Private notes, visibility, backlinks, sanitization or canon history | T11, T14 |
-| T25 | C0; campaign-scoped provenance/version/license and explicit conflict policy | Direct content trust: calculations must identify the content record/version used | Source/license metadata, user content or unauthorized-content boundary | T02, T14 |
-| T26 | C0; identity/network controls fail closed and redact secrets | No rules-math change; compromised identity could invoke authorized rules mutations | Password auth, safe local development, identity linking protections or AI/provider behavior | T11 |
-| T27 | C0; signed production default; capability intersection; typed application commands only | Direct if extended: plugin rules actions must traverse normal permissions/transactions | No direct storage writes, trusted-admin product boundary or SDK reuse | T11, T26 |
-| T28 | C0; strict JSON bodies, location-aware params/query and declared non-AI responses | Direct wire safety: invalid rule mutations cannot look accepted | `/api/v1` compatibility, query/path coercion rules or AI route behavior | T11 |
-| T29 | C0; versioned fixtures, coordinated state/assets and measured single-writer envelope | Direct preservation: rules state must survive upgrade, backup and recovery | Current topology, user archives, retention policy or published evidence boundary | T12-T15 |
-| T30 | C0; every total exposes ordered sources and compatibility mismatches | Direct: users can distinguish base data, effects, equipment and overrides | Calculated totals, override provenance or mismatch visibility | T02 |
-| T31 | C0; campaign-scoped typed builders with validation/provenance | Direct for user content: custom records enter the same rules/data boundary | No universal rules DSL, no proprietary catalog, no raw managed-root patch | T02, T25 |
-| T32 | C0; atomic conservation, cycle/depth/weight and permission checks | Direct: carried/equipped/ammunition/currency/loot state affects available actions | Quantity/currency conservation, container ownership or claim audit | T03, T20 |
-| T33 | C0; source-linked preview/confirm/reversible lifecycle | Direct: controlled creature/form state, ownership, concentration and combat links stay coherent | Original actor state, ownership, source record or explicit end path | T03, T09, T19 |
-| T34 | C0; typed helper only when data is sufficient; confirmation before mutation | Direct for supported advanced effects; exceptional prose remains manual | No guessed natural-language resolution or silent effect application | T09, T19 |
-| T35 | C0; outbound metadata only, HMAC, pinned SSRF checks and bounded delivery | No direct rules mutation; event metadata may describe completed actions | No inbound mutation, no secret in archives/logs, no AI behavior change | T11, T26 |
-| T36 | C0; content-hash reuse, quotas and permissioned variant lifecycle | No rules-math change; assets must retain links to scenes/tokens/records | Original bytes, reference integrity, authorization or signed-delivery boundary | T14, T26 |
-| T37 | C0; extract only coherent seams with explicit dependencies and enforced budgets | Indirect: rules changes must remain traceable across static data, pure resolver, transaction and UI | Runtime behavior, public API, side-effect order or architecture churn for line count alone | T01-T36 |
-| T38 | C0; one current evidence-bounded audit set; exact results supplied by validation owner | No new rules behavior; documents must accurately state automated/manual boundaries | Validation markers/totals before final run, historical evidence, or AI manual/governed-auto wording | T01-T37 |
+- **Objective:** determine why external CDP screenshot capture of the board page timed out (30s) in this audit's in-app browser while DOM/JS stayed responsive, and whether the AI board-capture path (`/agent/board-captures`) is exposed to the same cost on large scenes.
+- **Note:** Playwright's own runs screenshot fine; this may be purely an environment artifact — timebox to a day.
+- **Acceptance criteria:** a written finding (repro or exoneration) + follow-up ticket only if the board-capture path is affected.
+- **Dependencies:** none.
 
-### Verification contract by layer
+### T48 — Repair the default E2E suite to current product semantics (P1, M, High)
 
-| ID | Unit verification | Integration verification | E2E verification | Manual verification |
-| --- | --- | --- | --- | --- |
-| T01 | Pure rules counterexample for every prior unsafe result and unsupported-input no-op | N/A - pure invariant ticket; transaction wiring starts at T03 | N/A - no UI behavior added | Inspect one blocked result for source/path clarity |
-| T02 | Version/type/range/domain issue paths and lossless repair transforms | API import/archive accepts valid and rejects invalid records without mutation | N/A - browser import UX is covered with T16/T25 | Compare before/after repair preview, including unknown fields |
-| T03 | Preparation hash, revision set, raw-patch guard and idempotent state reducer | API authorization, stale conflict, replay, persistence, audit and undo where supported | Public-UI preview/confirm plus two-client stale-write path | Inspect prepared diff, audit record and conflict recovery |
-| T04 | Class schedule/ASI/feat/subclass/Constitution HP matrix | API durable pending advancement, exact revision, cancel and commit | Legal creator/level-up journey for representative exceptional schedules | Review displayed choices and post-commit HP/features |
-| T05 | Short/Long Rest edge cases, actual deltas and resource recovery | API stale/replay/persistence and unauthorized rest cases | Player rest preview/confirm/reload journey | Verify recovery summary against starting sheet state |
-| T06 | Mixed defenses, rounding, critical, temporary HP, zero HP and multi-target matrix | Atomic API actor/combat sync, stale target, rollback and undo | Player/GM damage-card preview and application journey | Inspect per-component explanation and synchronized tracker |
-| T07 | Immunity aggregation and manager-override eligibility | API owner/GM/manager permission, reason and audit matrix | Condition apply/block/reasoned recovery UI path | Confirm blocked source and override audit text |
-| T08 | Equipment eligibility, capacity, prerequisites, charges and curse cases | API actor/item revisions, authorization, persistence and audit | Loadout/attunement/blocked curse UI path | Verify inactive benefit removal and manager recovery record |
-| T09 | Concentration replacement, duration, scheduled expiry and cleanup/undo | API scheduled commit, damage check, stale/replay and persistence | Cast/concentrate/replace/end journey | Inspect effect timeline and source links before/after undo |
-| T10 | Readiness, participant retention, tie/order and hidden-state helpers | API combat-start authorization, explicit initiative and participant set | Reviewed encounter-to-combat browser journey | Review manual initiative, ties, surprise and hidden participants |
-| T11 | Exhaustive route inventory/precondition classifier plus explicit operator K/R/P/X and opaque-key boundary tests | Every consequential non-AI route: auth, exact revision or prepared target, replay, stable external delivery, stale 409/current state and response schema | Two-client conflict/retry on representative campaign, rules, and operator actions | Inspect conflict copy and ensure retry does not duplicate work |
-| T12 | Nested/array/shape dirty detection and bounded comparison tests | SQLite commit failure, rollback, retry, restart and maintenance/capacity tests | Restart persistence journey after acknowledged mutations | N/A - deterministic failure injection supplies stronger evidence |
-| T13 | Sequence/gap/delta reducer and privacy-filter unit tests | WebSocket lifecycle, duplicate/gap recovery, snapshot authorization and bounded history | Independent GM/player contexts through disconnect/reconnect | Inspect connection state and verify no private record appears |
-| T14 | Schema/domain/reference/checksum and dependency-closure validators | Malicious/N-1/partial-failure import with state/object rollback | Export, mutate, non-no-op restore and reload journey | Inspect restored state/assets and pre-import state after forced failure |
-| T15 | Frame parser, caps, incremental SHA-256 and buffer-envelope tests | Stream export/import through API client and asset provider, including rollback/cancellation | N/A - no browser-only behavior is required for the protocol | Record near-limit round trip and maximum observed buffer size |
-| T16 | Choice-graph fixtures and review-fingerprint policy tests | Creator/import/review API, token/combat gates and archive persistence | Three representative legal public-UI creators plus review flow | Inspect one imported repair/review and one rejected choice |
-| T17 | Actor-panel action/loadout/resource/error component tests | Client/API action contracts, permissions and local error mapping | Assigned-player sheet journey across roll, cast, damage, rest and advance | Check information hierarchy and primary-action discoverability |
-| T18 | Class spell-state, slot/Pact recovery, ritual and availability matrix | Dedicated API/client mutation, stale/replay and persistence | Prepare/cast/spend/rest ritual-capable character journey | Compare displayed availability with class/source state |
-| T19 | Recharge/use/reaction/legendary/lair/regional/death progression | API combat resource/effect/turn synchronization and permissions | Monster-operator combat journey | Inspect stat-record actions and hidden participant behavior |
-| T20 | Award calculation, allocation and claim state transitions | API stale/replay/authorization/archive/history tests | Combat completion, award and player claim journey | Review assignment/claim history and duplicate-submit behavior |
-| T21 | Semantic DOM, focus order, non-drag controls and responsive component tests | Actor/combat/tabletop composition at supported widths and permission states | Phone/tablet/keyboard browser journeys | Physical touch plus NVDA/Narrator/VoiceOver/TalkBack matrix |
-| T22 | Grid transforms, calibration, measurement, light/vision/sense helpers | API persistence, exact revision and GM/player visibility tests | Tabletop calibration, movement, door/light/template and reload journey | Visual comparison for alignment/vision and explicit cover/terrain ruling |
-| T23 | Profile/transfer/ownership domain transition tests | API/client lifecycle, parties, reasons, stale/replay and archive history | Independent second-account invitation/transfer/accept journey | Verify ownership/destructive confirmations and history wording |
-| T24 | Graph link/backlink/search/canon/history reducers | Permissioned API CRUD/search/archive and snapshot/realtime filtering | Session planning, linked knowledge, canon and reload journey | Review long-form editing, empty search and private-note visibility |
-| T25 | Provenance/version/license, duplicate and conflict-policy unit tests | API import keep/merge/replace, archive preservation and reporting | Compendium import/conflict-resolution UI journey | Inspect source/license/usage and obtain separate legal approval |
-| T26 | OIDC URL/DNS/IP/linking, worker scope, readiness and redaction tests | Auth/SCIM/admin/readiness/security/deployment smoke with adversarial inputs | Local login/account/admin failure-state journeys; live SSO is external | Live IdP provision/link/deprovision plus external log/security review |
-| T27 | Signature/trust/capability intersection and command translation tests | Plugin runtime authorization, revision, persistence, audit and failure isolation | Trusted signed-plugin install/command UI journey | Review manifest/grants and confirm no direct storage mutation |
-| T28 | Schema compiler, body strictness, location coercion and status-selection tests | Full route inventory, runtime request/response validation, contracts and client suites | N/A - wire enforcement is proven at the API boundary | Review generated/runtime OpenAPI diff for unintended public changes |
-| T29 | Fixture/retention/backup-plan helper and capacity-threshold tests | Migration, security, deployment, performance, soak and capacity scripts | Local CLI backup, forward migration, restore, rollback and restart journey | Hosted state+asset recovery/rollback drill with timestamped evidence |
-| T30 | Calculation source ordering, override and compatibility resolver tests | API/client calculation and mismatch-report contracts | Calculation explanation/compatibility panel journey | Compare displayed terms against a representative actor/item/effect state |
-| T31 | Custom record schemas, validation and pure resolver fixtures | API/contracts/client permissions, archive and compendium integration | Create/edit/use representative custom-content builder journey | Inspect provenance and one deliberately unsupported custom mechanic |
-| T32 | Cycle/depth, weight, ammunition, currency, stock and conservation tests | API permission/revision/replay/archive and atomic transfer/claim tests | Inventory, merchant, party stash and loot-claim journey | Reconcile quantities/currency and review contested claim behavior |
-| T33 | Summon/companion/transform preview, command and end-state tests | API ownership, concentration, scene/combat sync and persistence | Summon/command/end plus transform/revert journey | Inspect original-state restoration and exceptional-form boundary |
-| T34 | Advanced mechanic preview, timing/resource and unsupported-case tests | API confirmation, exact revision, scheduled application and audit | Representative lair/regional/timed-effect combat journey | Adjudicate one prose-only exception and confirm no silent mutation |
-| T35 | HMAC, SSRF/DNS pinning, deadline, queue/retry and redaction tests | API/contracts/client/UI/archive delivery lifecycle and authorization | Campaign webhook create/rotate/test/disable UI journey | Hosted receiver interoperability, signature and observability check |
-| T36 | Hash reuse, rendition dimensions/type, quota and lifecycle tests | API/storage upload, variant delivery, reference and deletion tests | Upload/select/reuse/delete asset journey | Visually inspect variants and test a near-limit asset |
-| T37 | Static-import boundaries, architecture/bundle budgets and pure-module tests | Full package typecheck, tests and builds across extracted seams | Representative browser smoke for unchanged core journeys | Review diff for ownership, side-effect order and non-mechanical line churn |
-| T38 | Docs/evidence/SBOM/issues script unit or fixture tests | Docs site tests/check, SBOM/evidence/issues gates and link validation | Repository browser suite recorded in the consolidated matrix | Audit external queue ownership and keep claims evidence-bounded |
+- **Objective:** `pnpm e2e` (default + bootstrap configs) passes at HEAD.
+- **Why (evidence, this audit):** a fresh `pnpm e2e` run at `b5e30f1` failed multiple `auth-tabletop.spec.ts` tests (final count in `FEATURE_AUDIT.md`). Three sampled failure classes: (a) **stale pinned copy** — the scene-state-comparison test pins pre-f64c6f2 text ("Selected-only none; active-only…") while the shipped "Prep drift review" comparison renders correctly; (b) **old-semantics expectation** — the combat-tracker test expects "Death saves 3/3 – 1/3" to persist, but T04's intended semantics reset counters on stabilization; (c) **indeterminate early failure in a f64c6f2-added test** — the death-save-from-sheet journey failed at 4.5s on an undefined helper value with a barely-hydrated page snapshot (the same flow passed in this audit's manual live walk, so timing sensitivity is the leading theory — verify, don't assume). The suite was not maintained through the T01–T37 tranche because `pnpm check` doesn't run Playwright, CI failed earlier at the `security:audit` step for the last several pushes, and only the canonical spec was run in isolation.
+- **Residual product questions to answer during repair:**
+  1. After stabilization the observed combatant row showed failures `1/3` with successes reset to `0/3`; SDK semantics reset both counters. Determine whether the combat-sync path (`app.ts:24255`) diverges from the SDK resolver for manually-patched combatant counters; fix or document.
+  2. The f64c6f2-added test "character at 0 HP resolves Death Saving Throws from the sheet to a terminal state" fails **deterministically** on a quiet machine at `auth-tabletop.spec.ts:3976` — the awaited roll response has `resolution.deathSave === undefined` despite `response.ok()`. Leading diagnosis (verified against gating code `dnd-combat-progression.ts:226`, which is sound): the response-waiter predicate `postData().includes("death-save")` also matches the sheet's `commitMode:"preview"` POST that fires when the death-save row first renders, and previews legitimately omit `deathSave` (`applyDnd5eSrdDeathSaveRoll` returns `{}` without a rolled result). The same flow passes in the canonical spec and in a manual live walk. Fix the predicate to require the commit (e.g., match on response body `commitMode":"commit"` or exclude previews) — and if the diagnosis is wrong, treat it as a real T04 regression and escalate.
+- **Scope:** update pinned copy/semantics in the failing tests to current intended behavior; do not weaken assertions (pin the new copy exactly); file separate tickets for any failure that turns out to be a real regression.
+- **Acceptance criteria:** `pnpm e2e` exits 0 on a quiet machine twice consecutively; every changed expectation references the commit that changed the behavior (f64c6f2 or later); the death-save residual question has a documented answer with a regression test if it was a bug.
+- **Dependencies:** none — **do this before or with T38**; the CI release gate cannot go green without it.
 
-These contracts intentionally add no AI implementation work. The existing agent remains available in both manual proposal review and governed automatic execution modes.
+### T46 — Sheet/API agreement regression for web-local rules heuristics (P2, S, High)
 
-## Shared pull-request quality bar
+- **Objective:** a regression test asserts that the presentation heuristics `apps/web/src/actor-sheet-data.ts` re-implements locally (458 `dnd5eSrd*` occurrences — e.g. its own `dnd5eSrdHasSecondWind`, class-feature/monster action options) stay consistent with authoritative server sheet payloads for representative actors.
+- **Why:** the web deliberately does not depend on `packages/system-sdk`, so SDK rule changes (like T38's activation metadata) can silently diverge from the web mirror. Server stays authoritative for outcomes, but stale mirrors mislabel buttons and previews.
+- **Approach:** extend the existing sheet/API agreement test pattern (`actor-core-statistics.test.tsx` fetch-shape fixtures) with fixtures generated from SDK output for a fighter/barbarian/wizard/monster; assert option ids/labels/economy tags match.
+- **Acceptance criteria:** test fails when SDK adds/changes a feature roll the web mirror doesn't reflect (validated by temporarily reverting the T38 metadata).
+- **Dependencies:** after T38/T39 (uses their fixtures).
 
-Although this working tree is not being committed by this task, each ticket is shaped to fit a focused review unit:
+### T47 — X01 session-evidence kit (P1, S, Medium)
 
-- no unauthorized API break or migration;
-- permission, validation, revision, idempotency, audit and rollback analyzed explicitly;
-- unit test for pure behavior and counterexample;
-- API integration test for authorization, stale/retry and persistence where applicable;
-- contracts/client test for wire changes;
-- UI component test for states and errors;
-- browser test only for a material public workflow;
-- manual verification step named when automation cannot establish usability or infrastructure behavior;
-- documentation and archive/compatibility impact included;
-- no AI behavior/configuration change in this non-AI program.
+- **Objective:** real-table sessions produce structured evidence with near-zero DM overhead: a GM-only "Session report" quick action that appends a tagged journal entry (session id, what broke, what was corrected, recovery used), plus a one-page observation checklist in `docs/dogfood/`.
+- **Why:** X01 is the milestone; unstructured impressions won't close it.
+- **Likely files:** small web action + journal tag; `docs/dogfood/x01-session-checklist.md`.
+- **Acceptance criteria:** one click during play captures a report entry visible only to the GM; checklist covers corrections, conflicts, recovery, privacy, manual-ruling outcomes (mirrors X01's definition).
+- **Dependencies:** none; ship before the first X01 session.
 
-## External/manual evidence queue
+## Historical execution order (superseded 2026-07-16)
 
-These are not unfinished implementation tickets. They require credentials, hosted infrastructure, legal/security reviewers, devices, or actual groups.
+1. **T48** (repair the default E2E suite — unblocks the CI release gate) and **T38 + T39** (the action-kind seam, P0 correctness). These can ship as two parallel PRs.
+2. **T40** (evidence artifacts), then **T41** (fast gate) — hygiene while X01 planning starts.
+3. **T47** (session-evidence kit) and **T44** (demo cleanup) before the first real session.
+4. Begin **X01 sessions** (the real milestone).
+5. **T46** (sheet/API agreement) right after T38 fixtures exist.
+6. **T42 / T43** as X01 feedback and licensing checks dictate.
+7. **T45** timeboxed whenever convenient.
 
-| ID | Evidence task | Owner/input required | Acceptance artifact | Blocks |
-| --- | --- | --- | --- | --- |
-| X01 | Run repeated internal and invited GM/player sessions | At least two representative internal groups, invited external groups, and session observer | Session logs, abandonment/correction/conflict outcomes, regression links, no database repair | Internal Playable (internal evidence); Private Alpha (invited evidence) |
-| X02 | Live OIDC and SCIM sandbox | Provider tenant/credentials and operator | Login/link/provision/deprovision/role evidence with no privileged auto-link | Private Alpha if offered |
-| X03 | Hosted backup/restore, forward migration and rollback | Chosen hosting/storage topology | Timestamped non-no-op campaign+asset restore and rollback report | Private Alpha/Public Beta |
-| X04 | Manual accessibility/browser/device matrix | NVDA, Narrator, VoiceOver, TalkBack; Edge/Firefox/Safari; physical touch devices | Completed checklist with zero blocking issue or tracked remediation | Private Alpha/Public Beta |
-| X05 | Hosted HTTPS/capacity/observability | Deployed environment, log/metric/trace access | Readiness/asset/websocket smoke, operating envelope and alert/incident evidence | Private Alpha/Public Beta |
-| X06 | Content provenance/legal release review | Release owner or counsel | Approved SRD attribution/content inventory and distribution boundary | Public Beta |
-| X07 | Independent security review | Qualified external reviewer | Findings report with Critical/High closure or accepted documented risk | Public Beta |
+## External/manual evidence queue (unchanged)
+
+| ID | Required evidence | Release gate |
+| --- | --- | --- |
+| X01 | Repeated internal and invited GM/player sessions, including abandonment, correction, conflict, staff-repair outcomes | Internal Playable / Private Alpha |
+| X02 | Live OIDC/SCIM provider lifecycle, if advertised | Private Alpha |
+| X03 | Timestamped, non-no-op hosted state-plus-asset backup, restore, forward migration, rollback | Private Alpha / Public Beta |
+| X04 | NVDA, Narrator, VoiceOver, TalkBack, Edge, Firefox, Safari, physical touch-device matrix | Private Alpha / Public Beta |
+| X05 | Hosted HTTPS, capacity, proxy, realtime, observability, alert, incident drills | Private Alpha / Public Beta |
+| X06 | Approved content inventory, attribution, distribution boundary | Public Beta |
+| X07 | Independent security review incl. plugin boundary and adversarial AI | Public Beta |
+| X08 | Representative AI quality/provider-handling evaluation, if AI is offered | Public Beta |
+
+## Pull-request quality bar (unchanged)
+
+- Permission-checked, exact-revision, idempotent mutations where replay is possible.
+- Server behavior authoritative; UI checks are usability.
+- Smallest failing regression per fix; compatibility labeled with deprecation windows.
+- No hosted/device/legal/security/AI-quality claims from local tests.
+- No broadening of manual geometry/prose boundaries into guessed automation.
 
 ## Definition of complete
 
-The code backlog is complete only when the consolidated validation marker in [FEATURE_AUDIT.md](FEATURE_AUDIT.md) contains the final green command record and no code-addressable P0-P3 regression remains. A stage is complete only when its external queue items are also evidenced. Neither condition authorizes publication or deployment by itself.
+A **code ticket** is complete when its authoritative path, connected surface (where required), permissions, persistence/recovery behavior, and focused regression coverage are present — and, from T40 onward, when the fresh-gate evidence artifact for its landing run is persisted.
+
+A **release stage** is complete only when every applicable X-item is recorded in addition to fresh local validation.

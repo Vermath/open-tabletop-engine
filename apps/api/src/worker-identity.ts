@@ -248,22 +248,46 @@ export function expectedWorkerDispatch(
     }
     case "ai.memory.extract": {
       const campaignId = requiredString(payload.campaignId);
-      if (!campaignId || !optionalValueMatches(payload.sourceText, "string"))
+      const expectedUpdatedAt = requiredDateTime(payload.expectedUpdatedAt);
+      if (
+        !campaignId ||
+        !expectedUpdatedAt ||
+        !optionalValueMatches(payload.sourceText, "string") ||
+        (payload.visibility !== undefined &&
+          payload.visibility !== "public" &&
+          payload.visibility !== "gm_only")
+      )
         return undefined;
       return {
         method: "POST",
         path: `/api/v1/campaigns/${encodeURIComponent(campaignId)}/ai/memory/extract`,
-        body: compactRecord({ sourceText: payload.sourceText }),
+        body: compactRecord({
+          sourceText: payload.sourceText,
+          visibility: payload.visibility,
+          expectedUpdatedAt,
+        }),
       };
     }
     case "ai.session.recap": {
       const campaignId = requiredString(payload.campaignId);
-      if (!campaignId || !optionalValueMatches(payload.transcript, "string"))
+      const expectedUpdatedAt = requiredDateTime(payload.expectedUpdatedAt);
+      if (
+        !campaignId ||
+        !expectedUpdatedAt ||
+        !optionalValueMatches(payload.sessionId, "string") ||
+        !optionalValueMatches(payload.transcript, "string") ||
+        !optionalValueMatches(payload.manualNotes, "string")
+      )
         return undefined;
       return {
         method: "POST",
         path: `/api/v1/campaigns/${encodeURIComponent(campaignId)}/ai/session-recap`,
-        body: compactRecord({ transcript: payload.transcript }),
+        body: compactRecord({
+          sessionId: payload.sessionId,
+          transcript: payload.transcript,
+          manualNotes: payload.manualNotes,
+          expectedUpdatedAt,
+        }),
       };
     }
     case "report.bundle": {

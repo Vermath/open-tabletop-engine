@@ -2,7 +2,7 @@ import type { Actor } from "@open-tabletop/core";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-import { TypedDamageCard, normalizedMixedDamageComponents, resolvedMixedDamageComponents } from "./typed-damage-card.js";
+import { TypedDamageCard, normalizedMixedDamageComponents, resolvedMixedDamageComponents, typedDamagePreviewValue } from "./typed-damage-card.js";
 
 const actor = {
   id: "actor-1",
@@ -46,5 +46,12 @@ describe("TypedDamageCard", () => {
       { amount: 4, damageType: "fire", adjustedAmount: 8, defense: "vulnerability" }
     ]);
     expect(resolvedMixedDamageComponents({ components: [{ amount: "5", damageType: "fire", adjustedAmount: 5, defense: "normal" }] })).toEqual([]);
+  });
+
+  it("renders exact structured and scalar preview values without object coercion", () => {
+    expect(typedDamagePreviewValue(undefined)).toBe("not set");
+    expect(typedDamagePreviewValue(null)).toBe("none");
+    expect(typedDamagePreviewValue({ successes: 0, failures: 0 })).toBe('{"successes":0,"failures":0}');
+    expect(typedDamagePreviewValue("conscious")).toBe("conscious");
   });
 });

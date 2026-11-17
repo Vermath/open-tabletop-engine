@@ -41,14 +41,15 @@ describe("feature integration safety", () => {
     const app = await buildApp({ store });
 
     try {
-      const applied = await app.inject({ method: "POST", url: `/api/v1/proposals/${proposal.id}/apply`, headers: gmHeaders });
+      const applied = await app.inject({ method: "POST", url: `/api/v1/proposals/${proposal.id}/apply`, headers: { ...gmHeaders, "idempotency-key": "feature-safety-apply" }, payload: { expectedUpdatedAt: proposal.updatedAt } });
       expect(applied.statusCode).toBe(200);
       expect(store.state.scenes.find((item) => item.id === scene.id)?.name).toBe("Applied scene name");
 
       const blocked = await app.inject({
         method: "POST",
         url: `/api/v1/proposals/${proposal.id}/revert`,
-        headers: { "x-user-id": "usr_demo_player" },
+        headers: { "x-user-id": "usr_demo_player", "idempotency-key": "feature-safety-blocked-revert" },
+        payload: { expectedUpdatedAt: applied.json().updatedAt },
       });
 
       expect(blocked.statusCode).toBe(403);
@@ -94,7 +95,7 @@ describe("feature integration safety", () => {
     const currentSession = () => store.state.campaignSessions.find((item) => item.id === session.id)!;
 
     try {
-      const rejected = await app.inject({ method: "POST", url: `/api/v1/proposals/${rejectedProposal.id}/reject`, headers: gmHeaders });
+      const rejected = await app.inject({ method: "POST", url: `/api/v1/proposals/${rejectedProposal.id}/reject`, headers: { ...gmHeaders, "idempotency-key": "feature-safety-reject" }, payload: { expectedUpdatedAt: rejectedProposal.updatedAt } });
       expect(rejected.statusCode).toBe(200);
       expect(currentSession().recapProposalId).toBeUndefined();
       expect(currentSession().recapJournalId).toBeUndefined();
@@ -124,12 +125,12 @@ describe("feature integration safety", () => {
       }) satisfies Proposal;
       store.state.proposals.push(appliedProposal);
 
-      const applied = await app.inject({ method: "POST", url: `/api/v1/proposals/${appliedProposal.id}/apply`, headers: gmHeaders });
+      const applied = await app.inject({ method: "POST", url: `/api/v1/proposals/${appliedProposal.id}/apply`, headers: { ...gmHeaders, "idempotency-key": "feature-safety-recap-apply" }, payload: { expectedUpdatedAt: appliedProposal.updatedAt } });
       expect(applied.statusCode).toBe(200);
       expect(currentSession().recapProposalId).toBe(appliedProposal.id);
       expect(currentSession().recapJournalId).toBe(recapJournal.id);
 
-      const reverted = await app.inject({ method: "POST", url: `/api/v1/proposals/${appliedProposal.id}/revert`, headers: gmHeaders });
+      const reverted = await app.inject({ method: "POST", url: `/api/v1/proposals/${appliedProposal.id}/revert`, headers: { ...gmHeaders, "idempotency-key": "feature-safety-recap-revert" }, payload: { expectedUpdatedAt: applied.json().updatedAt } });
       expect(reverted.statusCode, reverted.body).toBe(200);
       expect(store.state.journals.some((journal) => journal.id === recapJournal.id)).toBe(false);
       expect(currentSession().recapProposalId).toBeUndefined();

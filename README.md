@@ -109,12 +109,12 @@ The `desktop-release` GitHub Actions workflow builds:
 - macOS `.dmg` packages for `x64` and `arm64`.
 - SHA256 checksum files.
 
-Signing and notarization are optional for the current desktop pipeline. Set repository variable `REQUIRE_DESKTOP_SIGNING=true` only when CI should fail unsigned builds. Signing secrets can be supplied later through electron-builder-compatible Apple, Authenticode, or Azure Trusted Signing variables.
+Manual workflow runs can build unsigned artifacts; tagged releases require valid signatures and macOS notarization. Set repository variable `REQUIRE_DESKTOP_SIGNING=true` to require signing on manual runs as well. Signing secrets can be supplied later through electron-builder-compatible Apple, Authenticode, or Azure Trusted Signing variables.
 
-Run a local unpackaged installer build with:
+Run a local unpacked app build (without an installer) with:
 
 ```bash
-pnpm --filter @open-tabletop/desktop dist -- --dir
+pnpm --filter @open-tabletop/desktop dist --dir --publish never
 ```
 
 Tagged releases using `desktop-v*` upload artifacts to GitHub Releases.
@@ -136,7 +136,7 @@ To run it from a clean checkout:
 3. Start the API with `pnpm --filter @open-tabletop/api dev`.
 4. Start the web client with `pnpm --filter @open-tabletop/web dev`.
 5. Open `http://localhost:5173`.
-6. Use the sidebar `Import` button and choose `docs/demo/ember-vault-public-alpha.ottx.json`.
+6. Open **Manage → Archives**. Under **Archive Import**, select **Apply archive** and **All records**, then choose **Import Archive** and select `docs/demo/ember-vault-public-alpha.ottx.json`.
 7. Select `The Ember Vault: Public Alpha One-Shot` from the campaign list.
 8. Use the session switcher to try the GM and player views. The imported demo users are `Demo GM` and `Demo Player`.
 
@@ -196,7 +196,7 @@ D&D Beyond import is not implemented as a scraper or auth-bypass flow. Do not sc
 
 ## Licensing
 
-The platform core is AGPL-3.0-only. SDK source code such as `packages/api-client`, `packages/plugin-sdk`, and `packages/system-sdk` is MIT-licensed so third-party plugin and system authors can reuse it without inheriting the platform license. Structured SRD-derived records distributed with `packages/system-sdk` remain CC BY 4.0 content and carry a package-local `CONTENT_NOTICE.md`; the published [System SDK code and content notice](docs/legal/system-sdk-content-notice.md) records the same distribution boundary and attribution. Documentation under `docs/` is CC BY 4.0.
+The platform core is AGPL-3.0-only. SDK source code such as `packages/api-client`, `packages/plugin-sdk`, and `packages/system-sdk` is MIT-licensed so third-party plugin and system authors can reuse it without inheriting the platform license. The MIT-licensed `packages/api-contracts` package owns the shared public data contracts used by the API client and system SDK, so those packages do not depend on the platform core; [the type contract notice](packages/api-contracts/TYPE_CONTRACT_NOTICE.md) records the extracted declaration scope and provenance. Structured SRD-derived records distributed with `packages/system-sdk` remain CC BY 4.0 content and carry a package-local `CONTENT_NOTICE.md`; the published [System SDK code and content notice](docs/legal/system-sdk-content-notice.md) records the same distribution boundary and attribution. Documentation under `docs/` is CC BY 4.0.
 
 Example plugins and systems should keep clear license metadata and must not bundle proprietary tabletop content.
 

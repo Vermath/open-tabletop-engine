@@ -1,4 +1,5 @@
-import { createTimestamped, type Actor, type CompendiumProvenance } from "@open-tabletop/core";
+import type { Actor, CompendiumProvenance } from "@open-tabletop/api-contracts";
+import { timestampedFixture } from "./test-fixtures.js";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -181,7 +182,7 @@ describe("D&D monster variants and templates", () => {
     if (!result.ok) return;
     const data = dnd5eCustomMonsterActorData(result.entry)!;
     expect(data).toMatchObject({ level: 0.125, challengeRating: "1/8", xp: 25 });
-    const actor = createTimestamped("act", {
+    const actor = timestampedFixture({
       id: "act_custom_guard",
       campaignId: "camp",
       systemId: "dnd-5e-srd",

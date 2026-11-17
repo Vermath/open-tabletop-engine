@@ -16,6 +16,7 @@ import {
 } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
 import { buildApp } from "./fixtures/legacy-build-app.js";
+import { LocalAssetStorage } from "./asset-storage.js";
 import { SqliteStateStore } from "./sqlite-store.js";
 
 const adminHeaders = { "x-user-id": "usr_demo_gm" };
@@ -153,7 +154,11 @@ describe("migration smoke", () => {
       legacyStore.close();
 
       const upgradedStore = new SqliteStateStore(databasePath, { seedDemo: false });
-      const app = await buildApp({ store: upgradedStore });
+      const uploadDir = join(directory, "uploads");
+      const assetStorage = new LocalAssetStorage(uploadDir);
+      const legacyAsset = upgradedStore.state.assets.find((asset) => asset.id === "ast_v03_tactical_map")!;
+      await assetStorage.put(legacyAsset, Buffer.alloc(legacyAsset.sizeBytes));
+      const app = await buildApp({ store: upgradedStore, assetStorage, uploadDir });
       try {
         expect(upgradedStore.state.campaigns.map((campaign) => campaign.id)).toContain("camp_demo");
         expect(upgradedStore.state.scenes.map((scene) => scene.id)).toContain("scn_vault_entry");

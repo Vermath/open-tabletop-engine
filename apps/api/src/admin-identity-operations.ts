@@ -397,8 +397,11 @@ export function revokeUserSessions(store: StateStore, userId: string, targetSetH
 export function revokeSingleSession(store: StateStore, session: UserSession, expectedUpdatedAt: unknown) {
   assertExpectedOperatorRevision(session, expectedUpdatedAt, "session");
   const before = publicSession(session);
-  store.state.sessions = store.state.sessions.filter((candidate) => candidate.id !== session.id);
-  return { ok: true as const, session: before };
+  const rootSessionId = session.cookieUpgradeParentSessionId ?? session.id;
+  const family = store.state.sessions.filter((candidate) => candidate.id === rootSessionId || candidate.cookieUpgradeParentSessionId === rootSessionId);
+  const familyIds = new Set(family.map((candidate) => candidate.id));
+  store.state.sessions = store.state.sessions.filter((candidate) => !familyIds.has(candidate.id));
+  return { ok: true as const, session: before, sessions: family.map(publicSession) };
 }
 
 export function pruneExpiredPasswordResetTokens(store: StateStore, nowMs = Date.now()): void {

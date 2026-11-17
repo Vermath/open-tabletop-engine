@@ -89,6 +89,8 @@ export const campaignWebhookPaths = {
     `/api/v1/campaigns/${encodeURIComponent(campaignId)}/webhooks`,
   webhook: (campaignId: string, webhookId: string) =>
     `/api/v1/campaigns/${encodeURIComponent(campaignId)}/webhooks/${encodeURIComponent(webhookId)}`,
+  remove: (campaignId: string, webhookId: string, expectedUpdatedAt: string) =>
+    `${campaignWebhookPaths.webhook(campaignId, webhookId)}?expectedUpdatedAt=${encodeURIComponent(expectedUpdatedAt)}`,
   disable: (campaignId: string, webhookId: string) =>
     `${campaignWebhookPaths.webhook(campaignId, webhookId)}/disable`,
   rotateSecret: (campaignId: string, webhookId: string) =>
@@ -408,9 +410,8 @@ export function CampaignWebhooksPanel({
     clearLocalError(webhook.id);
     try {
       await apiDelete<{ webhook: CampaignWebhookInfo; deleted: true }>(
-        campaignWebhookPaths.webhook(campaignId, webhook.id),
+        campaignWebhookPaths.remove(campaignId, webhook.id, webhook.updatedAt),
         {
-          body: payload,
           idempotencyKey: mutationKey(scope, JSON.stringify(payload)),
         },
       );

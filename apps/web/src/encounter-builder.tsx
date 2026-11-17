@@ -1,4 +1,5 @@
-import type { Actor, Encounter, Scene, Token } from "@open-tabletop/core";
+import { EmptyState } from "./workspace-states.js";
+import type { Actor, Encounter, EncounterMonsterPlacementDraft, Scene, Token } from "@open-tabletop/core";
 import { FilePlus2, Minus, Plus, Save, Search, Swords, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiDelete, apiGet, apiPatch, apiPost, type EncounterPlanInfo } from "./api.js";
@@ -20,6 +21,31 @@ export interface EncounterBuilderThreatSelection {
   id: string;
   name: string;
   count: number;
+}
+
+export function encounterMonsterPlacementDrafts(
+  threats: EncounterBuilderThreatSelection[],
+  scene: Scene,
+): EncounterMonsterPlacementDraft[] {
+  const total = threats.reduce((sum, threat) => sum + threat.count, 0);
+  const spacing = Math.max(24, scene.gridSize || 50);
+  const placements: EncounterMonsterPlacementDraft[] = [];
+  for (const threat of threats) {
+    for (let index = 0; index < threat.count; index += 1) {
+      const placementIndex = placements.length;
+      placements.push({
+        threatId: threat.id,
+        name: threat.count > 1 ? `${threat.name} ${index + 1}` : threat.name,
+        x: scene.width / 2 + (placementIndex - Math.floor(total / 2)) * spacing,
+        y: scene.height / 2 + (placementIndex % 2 === 0 ? -spacing / 2 : spacing / 2),
+        width: scene.gridSize,
+        height: scene.gridSize,
+        layer: "player",
+        disposition: "hostile",
+      });
+    }
+  }
+  return placements;
 }
 
 export interface EncounterCompositionInput {
@@ -110,6 +136,10 @@ export function savedEncountersForSystem(encounters: Encounter[], systemId: stri
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 }
 
+export function encounterSearchAnchorId(encounterId: string): string {
+  return `campaign-search-encounter-${encodeURIComponent(encounterId)}`;
+}
+
 export function encounterThreatCounts(encounter: Pick<Encounter, "threats">): Record<string, number> {
   return Object.fromEntries((encounter.threats ?? []).map((threat) => [threat.id, threat.count]));
 }
@@ -162,6 +192,7 @@ export function EncounterBuilderDialog(props: {
   partyActors: Actor[];
   sceneTokens: Token[];
   savedEncounters: Encounter[];
+  initialEncounterId?: string;
   activeScene?: Scene;
   canSave: boolean;
   canSpawn: boolean;
@@ -171,9 +202,9 @@ export function EncounterBuilderDialog(props: {
   onEncounterSaved(encounter: Encounter): void;
   onEncounterDeleted(encounter: Encounter): void;
   onRefreshSharedState(): Promise<void>;
-  onSpawnThreats(threats: EncounterBuilderThreatSelection[], signal: AbortSignal, attemptId: string): Promise<void>;
+  onSpawnThreats(encounterId: string, threats: EncounterBuilderThreatSelection[], signal: AbortSignal, attemptId: string): Promise<void>;
   onPlacePartyActor(actor: Actor): Promise<void>;
-  onLaunchThreats(threats: EncounterBuilderThreatSelection[], partyActorIds: string[], signal: AbortSignal, attemptId: string): Promise<void>;
+  onLaunchThreats(encounterId: string, threats: EncounterBuilderThreatSelection[], partyActorIds: string[], signal: AbortSignal, attemptId: string): Promise<void>;
   onStatus(message: string): void;
 }) {
   const partyEligibility = encounterPartyEligibility(props.partyActors, props.campaignId, props.systemId);
@@ -201,6 +232,7 @@ export function EncounterBuilderDialog(props: {
   const spawnAbortRef = useRef<AbortController | null>(null);
   const placeAttemptIdRef = useRef<string | undefined>(undefined);
   const launchAttemptIdRef = useRef<string | undefined>(undefined);
+  const openedInitialEncounterRef = useRef("");
   const closeDialog = () => {
     spawnAbortRef.current?.abort();
     props.onClose();
@@ -277,6 +309,24 @@ export function EncounterBuilderDialog(props: {
     // party, or threat draft. The next explicit save is a reviewed retry.
     setSavedEncounter(latest);
   }, [props.savedEncounters, savedEncounter]);
+
+  useEffect(() => {
+    const encounterId = props.initialEncounterId;
+    if (!encounterId || openedInitialEncounterRef.current === encounterId) return;
+    const encounter = availableSavedEncounters.find((candidate) => candidate.id === encounterId);
+    openedInitialEncounterRef.current = encounterId;
+    if (!encounter) {
+      setError("That search result is no longer available in this system. Refresh campaign search and try again.");
+      return;
+    }
+    reopenEncounter(encounter);
+    const frame = window.requestAnimationFrame(() => {
+      const target = document.getElementById(encounterSearchAnchorId(encounter.id));
+      target?.focus({ preventScroll: true });
+      target?.scrollIntoView({ block: "nearest" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [availableSavedEncounters, props.initialEncounterId]);
 
   useEffect(() => {
     if (!canPlan) {
@@ -434,7 +484,7 @@ export function EncounterBuilderDialog(props: {
   }
 
   async function placeMonsters() {
-    if (!canPlace) return;
+    if (!canPlace || !savedEncounter) return;
     const controller = new AbortController();
     spawnAbortRef.current = controller;
     setSpawning(true);
@@ -442,7 +492,7 @@ export function EncounterBuilderDialog(props: {
     const attemptId = placeAttemptIdRef.current ?? globalThis.crypto.randomUUID();
     placeAttemptIdRef.current = attemptId;
     try {
-      await props.onSpawnThreats(composition.map(({ threat, count }) => ({ id: threat.id, name: threat.name, count })), controller.signal, attemptId);
+      await props.onSpawnThreats(savedEncounter.id, composition.map(({ threat, count }) => ({ id: threat.id, name: threat.name, count })), controller.signal, attemptId);
       placeAttemptIdRef.current = undefined;
     } catch (spawnError) {
       if (!controller.signal.aborted) setError(errorMessage(spawnError));
@@ -455,7 +505,7 @@ export function EncounterBuilderDialog(props: {
   }
 
   async function launchCombat() {
-    if (!canLaunch) return;
+    if (!canLaunch || !savedEncounter) return;
     if (missingPartyActors.length > 0) {
       setError(`Place selected party tokens first: ${missingPartyActors.map((actor) => actor.name).join(", ")}.`);
       return;
@@ -467,7 +517,7 @@ export function EncounterBuilderDialog(props: {
     const attemptId = launchAttemptIdRef.current ?? globalThis.crypto.randomUUID();
     launchAttemptIdRef.current = attemptId;
     try {
-      await props.onLaunchThreats(composition.map(({ threat, count }) => ({ id: threat.id, name: threat.name, count })), selectedPartyIds, controller.signal, attemptId);
+      await props.onLaunchThreats(savedEncounter.id, composition.map(({ threat, count }) => ({ id: threat.id, name: threat.name, count })), selectedPartyIds, controller.signal, attemptId);
       launchAttemptIdRef.current = undefined;
     } catch (launchError) {
       if (!controller.signal.aborted) setError(errorMessage(launchError));
@@ -501,10 +551,11 @@ export function EncounterBuilderDialog(props: {
             </button>
           </div>
           <div className="encounter-saved-list">
-            {availableSavedEncounters.length === 0 ? <div className="empty-state compact">No saved encounters yet.</div> : availableSavedEncounters.map((encounter) => {
+            {availableSavedEncounters.length === 0 ? <EmptyState icon={<Swords size={17} />} text="No saved encounters yet." action={props.canSave ? { label: "Start an encounter", disabled: saving || deleting, run: beginNewEncounter } : undefined} /> : availableSavedEncounters.map((encounter) => {
               const compositionAvailable = encounter.systemId === props.systemId && encounter.threats !== undefined;
               return (
                 <button
+                  id={encounterSearchAnchorId(encounter.id)}
                   className={savedEncounter?.id === encounter.id ? "encounter-saved-card selected" : "encounter-saved-card"}
                   type="button"
                   key={encounter.id}
@@ -542,7 +593,7 @@ export function EncounterBuilderDialog(props: {
                         <span>{formatNumber(threat.budget)} XP</span>
                       </div>
                     </div>
-                    <ThreatStepper count={count} disabled={saving || deleting} onDecrease={() => setThreatCount(threat.id, count - 1)} onIncrease={() => setThreatCount(threat.id, count + 1)} />
+                    <ThreatStepper threatName={threat.name} context="catalog" count={count} disabled={saving || deleting} onDecrease={() => setThreatCount(threat.id, count - 1)} onIncrease={() => setThreatCount(threat.id, count + 1)} />
                   </article>
                 );
               })}
@@ -630,7 +681,7 @@ export function EncounterBuilderDialog(props: {
                     <span>{threat.name}</span>
                     <strong>x{formatNumber(count)}</strong>
                     <small>{formatNumber(total)} XP</small>
-                    <ThreatStepper count={count} disabled={saving || deleting} onDecrease={() => setThreatCount(threat.id, count - 1)} onIncrease={() => setThreatCount(threat.id, count + 1)} />
+                    <ThreatStepper threatName={threat.name} context="composition" count={count} disabled={saving || deleting} onDecrease={() => setThreatCount(threat.id, count - 1)} onIncrease={() => setThreatCount(threat.id, count + 1)} />
                   </div>
                 );
               })}
@@ -694,14 +745,15 @@ export function EncounterBuilderDialog(props: {
   );
 }
 
-function ThreatStepper(props: { count: number; disabled?: boolean; onDecrease(): void; onIncrease(): void }) {
+export function ThreatStepper(props: { threatName: string; context: "catalog" | "composition"; count: number; disabled?: boolean; onDecrease(): void; onIncrease(): void }) {
+  const contextLabel = props.context === "catalog" ? "in threat catalog" : "in encounter composition";
   return (
-    <div className="encounter-threat-stepper" aria-label="Threat count controls">
+    <div className="encounter-threat-stepper" aria-label={`${props.threatName} count controls ${contextLabel}`}>
       {props.count > 0 ? (
-        <button className="icon-button" type="button" aria-label="Decrease threat count" disabled={props.disabled} onClick={props.onDecrease}><Minus size={14} /></button>
+        <button className="icon-button" type="button" aria-label={`Decrease ${props.threatName} count ${contextLabel}`} disabled={props.disabled} onClick={props.onDecrease}><Minus size={14} /></button>
       ) : null}
       {props.count > 0 ? <span>{formatNumber(props.count)}</span> : null}
-      <button className="ghost-button small" type="button" disabled={props.disabled} onClick={props.onIncrease}>
+      <button className="ghost-button small" type="button" aria-label={props.count > 0 ? `Increase ${props.threatName} count ${contextLabel}` : `Add ${props.threatName} from threat catalog`} disabled={props.disabled} onClick={props.onIncrease}>
         {props.count > 0 ? <Plus size={14} /> : "Add"}
       </button>
     </div>

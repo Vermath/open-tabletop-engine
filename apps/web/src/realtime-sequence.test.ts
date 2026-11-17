@@ -27,7 +27,19 @@ describe("realtimeSequenceDecision", () => {
 
   it("keeps unsequenced channels compatible without assigning a fake cursor", () => {
     expect(realtimeSequenceDecision({ type: "ai.message.delta", payload: {} }, 7)).toMatchObject({ kind: "legacy" });
+    expect(realtimeSequenceDecision({ type: "ai.reasoning.delta", payload: {} }, 7)).toMatchObject({ kind: "legacy" });
+    expect(realtimeSequenceDecision({ type: "agent.boardCaptureRequested", payload: {} }, 7)).toMatchObject({ kind: "legacy" });
     expect(realtimeSequenceDecision("not-json", 7)).toEqual({ kind: "legacy", event: "not-json" });
+  });
+
+  it("uses the campaign cursor for stable AI state and detects a missed AI completion", () => {
+    expect(realtimeSequenceDecision({ type: "ai.thread.started", sequence: 8, payload: {} }, 7)).toMatchObject({ kind: "contiguous", sequence: 8 });
+    expect(realtimeSequenceDecision({ type: "ai.message.completed", sequence: 10, payload: {} }, 7)).toEqual({
+      kind: "gap",
+      event: { type: "ai.message.completed", sequence: 10, payload: {} },
+      expectedSequence: 8,
+      sequence: 10,
+    });
   });
 
   it("routes presence outside the persisted event sequence", () => {

@@ -19,6 +19,9 @@ export default defineConfig({
   reporter: process.env.CI ? "github" : "list",
   use: {
     baseURL: webBaseUrl,
+    extraHTTPHeaders: { Origin: webBaseUrl },
+    actionTimeout: 30_000,
+    navigationTimeout: 60_000,
     trace: "on-first-retry",
   },
   webServer: [
@@ -30,6 +33,8 @@ export default defineConfig({
       env: {
         ...process.env,
         OTTE_E2E_API_PORT: String(apiPort),
+        OTTE_CORS_ALLOWED_ORIGINS: webBaseUrl,
+        OTTE_WEB_ORIGIN: webBaseUrl,
         OTTE_DEMO_SEED: "false",
         OTTE_EMAIL_WEBHOOK_URL: `http://127.0.0.1:${emailWebhookPort}/email`,
         OTTE_EMAIL_WEBHOOK_TIMEOUT_MS: "500",

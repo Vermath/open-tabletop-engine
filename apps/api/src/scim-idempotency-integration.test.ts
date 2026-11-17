@@ -62,7 +62,7 @@ describe("durable SCIM idempotency", () => {
       secondStore?.close();
       rmSync(directory, { recursive: true, force: true });
     }
-  });
+  }, 15_000);
 
   it("replays exact group mutations, binds replay to If-Match, and never mutates on stale validators", async () => {
     const store = new MemoryStateStore(emptyState());

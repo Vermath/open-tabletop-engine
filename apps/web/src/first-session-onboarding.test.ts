@@ -3,13 +3,15 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const appSource = readFileSync(resolve(__dirname, "App.tsx"), "utf8");
+const setupSource = readFileSync(resolve(__dirname, "campaign-setup-steps.tsx"), "utf8");
+const backgroundCalibrationSource = readFileSync(resolve(__dirname, "scene-background-calibration.ts"), "utf8");
 const journalPanelSource = readFileSync(resolve(__dirname, "journal-panel.tsx"), "utf8");
 const stylesSource = readFileSync(resolve(__dirname, "styles.css"), "utf8");
 
 describe("first-session onboarding", () => {
   it("opts the setup wizard into API starter content by default", () => {
     expect(appSource).toContain("setupStarterContent");
-    expect(appSource).toContain('aria-label="Include starter content"');
+    expect(setupSource).toContain('aria-label="Include starter content"');
     expect(appSource).toContain("starterContent: setupStarterContent");
     expect(appSource).toContain('scene.name === "First Session"');
   });
@@ -17,8 +19,8 @@ describe("first-session onboarding", () => {
   it("keeps setup wizard scene and handout controls on the bare campaign path", () => {
     expect(appSource).toContain("if (!setupStarterContent && !progress.scene)");
     expect(appSource).toContain("if (!setupStarterContent && !progress.onboardingCreated)");
-    expect(appSource).toContain("Setup initial scene name");
-    expect(appSource).toContain("Setup onboarding title");
+    expect(setupSource).toContain("Setup initial scene name");
+    expect(setupSource).toContain("Setup onboarding title");
   });
 
   it("makes empty states actionable without new flows", () => {
@@ -36,7 +38,7 @@ describe("first-session onboarding", () => {
     expect(appSource).toContain("campaignSetupProgressRef.current");
     expect(appSource).toContain("organizationId: activeOrganizationId");
     expect(appSource).toContain("userId: currentUserId");
-    expect(appSource).toContain('className="campaign-setup-fieldset" disabled={isCreatingCampaignSetup || campaignSetupRecoveryPending}');
+    expect(setupSource).toContain('className="campaign-setup-fieldset" disabled={props.busy || props.recoveryPending}');
     expect(appSource).toContain("campaignSetupGenerationRef.current");
     expect(appSource).toContain("campaignSetupAbortRef.current");
     expect(appSource).toContain("campaignSetupIdempotencyRef.current");
@@ -48,10 +50,10 @@ describe("first-session onboarding", () => {
     expect(appSource).toContain("campaignSetupProgressRef.current = progress;");
     expect(appSource).toContain('resetWorkspaceNavigation("prep", setupStarterContent ? "sessions" : "content")');
     expect(appSource).toContain('setManageCategory("people")');
-    expect(appSource).toContain("Creating campaign...");
-    expect(appSource).toContain("Retry Campaign Setup");
-    expect(appSource).toContain("Cancel setup");
-    expect(appSource).toContain("Keep campaign as-is");
+    expect(setupSource).toContain("Creating campaign...");
+    expect(setupSource).toContain("Retry Campaign Setup");
+    expect(setupSource).toContain("Cancel setup");
+    expect(setupSource).toContain("Keep campaign as-is");
   });
 
   it("surfaces a shareable invite link instead of only a raw token", () => {
@@ -64,5 +66,19 @@ describe("first-session onboarding", () => {
     expect(appSource).toContain("focusInviteLinkAfterSetupRef.current = true");
     expect(appSource).toContain('workspaceMode !== "manage" || manageCategory !== "people" || !inviteAcceptUrl');
     expect(appSource).toContain("inviteLink.focus()");
+  });
+
+  it("makes map upload a recoverable background-to-calibration workflow", () => {
+    expect(appSource).toContain('throw new Error("Select a scene before uploading a map.")');
+    expect(appSource).toContain("uploadPreparedSceneMap({ scene: latestScene");
+    expect(appSource).toContain("selected: options.selected ?? realtimeSelectionRef.current.sceneId === scene.id");
+    expect(appSource).toContain("setGridCalibrationOpen(plan.calibrationOpen)");
+    expect(backgroundCalibrationSource).toContain('if (scene.gridType === "gridless")');
+    expect(appSource).toContain("finishSceneBackgroundChange(result.scene");
+    expect(backgroundCalibrationSource).toContain('mapCalibrationComplete: scene.gridType === "gridless" && Boolean(scene.backgroundAssetId)');
+    expect(appSource).toContain('mapCalibrationComplete: Boolean(targetScene.backgroundAssetId)');
+    expect(appSource).toContain('Map upload failed: ${errorMessage(error)}');
+    expect(appSource).toContain('finally(() => { input.value = ""; })');
+    expect(appSource).toContain('disabled={!selectedScene || !hasPermission("scene.create") || !hasPermission("scene.update")}');
   });
 });

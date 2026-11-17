@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { emptyState, type Actor, type CampaignArchive, type EngineState, type Item } from "@open-tabletop/core";
 import { DND_5E_SRD_SYSTEM_ID, validateDnd5eSrdActor, validateDnd5eSrdItem } from "@open-tabletop/system-sdk";
+import { assertDeclarativeArchiveSystemRequirements, DeclarativeArchiveDependencyError } from "./declarative-system-archive.js";
 
 type ArchiveValidationResult =
   | { ok: true; value: CampaignArchive }
@@ -218,12 +219,21 @@ export function validateCampaignArchiveShape(
     return { ok: false, error: "Campaign archive manifest assetFileCount must be a non-negative integer" };
   }
 
+  try { assertDeclarativeArchiveSystemRequirements(manifest.systemRequirements); }
+  catch (error) {
+    if (!(error instanceof DeclarativeArchiveDependencyError)) throw error;
+    return { ok: false, error: error.message };
+  }
+
   const defaults = emptyState() as unknown as Record<string, unknown>;
   for (const [collection, defaultValue] of Object.entries(defaults)) {
     if (!Array.isArray(defaultValue)) continue;
     const records = data[collection];
     if (records === undefined) continue;
     if (!Array.isArray(records)) return { ok: false, error: `Campaign archive ${collection} must be an array` };
+    if (collection === "campaignArchiveImportOperations" && records.length > 0) {
+      return { ok: false, error: "Campaign archive operational recovery data is not portable" };
+    }
     const seenIds = new Set<string>();
     const rules = archiveRecordRules[collection as keyof EngineState] ?? [];
     for (let index = 0; index < records.length; index += 1) {
@@ -336,6 +346,14 @@ export function campaignArchiveEmbeddedAssetMaxBytes(): number {
   return Math.max(1 * 1024 * 1024, Math.min(192 * 1024 * 1024, Math.floor(parsed)));
 }
 
+export function campaignArchiveAssetMaxFiles(): number {
+  const configured = process.env.OTTE_CAMPAIGN_ARCHIVE_ASSET_MAX_FILES?.trim();
+  if (!configured) return 10_000;
+  const parsed = Number(configured);
+  if (!Number.isFinite(parsed)) return 10_000;
+  return Math.max(1, Math.min(100_000, Math.floor(parsed)));
+}
+
 function validateNestedArchiveRecord(collection: string, record: Record<string, unknown>): string | undefined {
   if (collection === "journals") {
     if (record.kind !== undefined && !oneOf("folder", "entry")(record.kind)) return "kind must be folder or entry";
@@ -376,6 +394,19 @@ function validateNestedArchiveRecord(collection: string, record: Record<string, 
     }
   }
   if (collection === "scenes") {
+    const gridStates = [record, ...(Array.isArray(record.sceneEditHistory) ? record.sceneEditHistory.flatMap((entry) => isRecord(entry) && isRecord(entry.state) ? [entry.state] : []) : [])];
+    for (const gridState of gridStates) {
+      for (const field of ["annotations", "annotationHistory"]) {
+        const entries = gridState[field];
+        if (entries === undefined) continue;
+        if (!Array.isArray(entries) || entries.some((entry) => !isRecord(entry) || (entry.visibility !== undefined && entry.visibility !== "public" && entry.visibility !== "gm"))) return `${field} visibility must be public or gm`;
+      }
+      if (gridState.visibilityMode !== undefined && gridState.visibilityMode !== "fog" && gridState.visibilityMode !== "dynamic") return "visibilityMode must be fog or dynamic";
+      if (gridState.gridOrigin !== undefined) {
+        const origin = gridState.gridOrigin;
+        if (!isRecord(origin) || Object.keys(origin).some((key) => key !== "x" && key !== "y") || !finiteNumber(origin.x) || Math.abs(origin.x as number) > 100_000 || !finiteNumber(origin.y) || Math.abs(origin.y as number) > 100_000) return "gridOrigin must contain finite x and y coordinates from -100000 to 100000";
+      }
+    }
     for (const [field, rules] of [
       ["walls", [id("id"), number("x1"), number("y1"), number("x2"), number("y2"), bool("blocksVision")]],
       ["lights", [id("id"), number("x"), number("y"), nonNegative("radius"), text("color")]]

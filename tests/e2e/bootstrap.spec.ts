@@ -74,6 +74,12 @@ async function openManageCategory(page: Page, categoryName: string) {
   return panel;
 }
 
+async function expectCurrentCampaign(page: Page, name: string) {
+  const currentCampaign = page.getByLabel("Current campaign", { exact: true });
+  await expect(currentCampaign).toBeVisible();
+  await expect(currentCampaign).toHaveText(name);
+}
+
 async function openCreateDrawer(root: Locator, label: string) {
   const details = root.locator("details.create-drawer").filter({ hasText: label }).first();
   await expect(details.locator("summary")).toBeVisible();
@@ -86,7 +92,7 @@ async function openCreateDrawer(root: Locator, label: string) {
   }
 }
 
-test("clean deployment routes to owner bootstrap and opens the starter campaign", async ({ page }) => {
+test("clean deployment routes to owner bootstrap and opens the starter campaign", async ({ page, request }) => {
   test.setTimeout(150_000);
   await startEmailWebhook();
   await page.goto("/");
@@ -98,7 +104,7 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
   await page.getByRole("textbox", { name: "Initial campaign name" }).fill("Bootstrap E2E Campaign");
   await page.getByRole("button", { name: "Create" }).click();
 
-  await expect(page.getByRole("heading", { name: "Bootstrap E2E Campaign", level: 1 })).toBeVisible();
+  await expectCurrentCampaign(page, "Bootstrap E2E Campaign");
   let managePanel = await openManageCategory(page, "Campaign");
   await expect(managePanel.getByText("Campaign Settings")).toBeVisible();
   await expect(managePanel.locator(".manage-category-button", { hasText: "Server Admin" })).toBeVisible();
@@ -118,7 +124,7 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
   await page.getByRole("textbox", { name: "Login email" }).fill("owner.e2e@example.test");
   await page.getByLabel("Login password").fill("correct horse");
   await page.locator("form").filter({ has: page.getByLabel("Login password") }).getByRole("button", { name: "Login" }).click();
-  await expect(page.getByRole("heading", { name: "Bootstrap E2E Campaign", level: 1 })).toBeVisible();
+  await expectCurrentCampaign(page, "Bootstrap E2E Campaign");
 
   managePanel = await openManageCategory(page, "Account");
   await managePanel.getByLabel("Current password").fill("correct horse");
@@ -142,7 +148,7 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
   await expect(page.getByText(/mfa_required|MFA code required/)).toBeVisible();
   await page.getByLabel("Login MFA code").fill(totpCode(mfaSecret));
   await page.locator("form").filter({ has: page.getByLabel("Login password") }).getByRole("button", { name: "Login" }).click();
-  await expect(page.getByRole("heading", { name: "Bootstrap E2E Campaign", level: 1 })).toBeVisible();
+  await expectCurrentCampaign(page, "Bootstrap E2E Campaign");
   managePanel = await openManageCategory(page, "Account");
   await managePanel.getByLabel("MFA password").fill("updated horse");
   await managePanel.getByLabel("MFA code").fill(totpCode(mfaSecret));
@@ -151,12 +157,10 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
 
   const resetToken = await page.evaluate(
     async ({ apiBaseUrl }) => {
-      const bearer = localStorage.getItem("otte:sessionToken");
-      if (!bearer) throw new Error("No browser session token available for reset setup");
       const userId = localStorage.getItem("otte:userId");
       if (!userId) throw new Error("No browser user id available for reset setup");
       const usersResponse = await fetch(`${apiBaseUrl}/api/v1/admin/users`, {
-        headers: { authorization: `Bearer ${bearer}` }
+        credentials: "include"
       });
       if (!usersResponse.ok) throw new Error(await usersResponse.text());
       const users = await usersResponse.json();
@@ -164,8 +168,8 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
       if (typeof user?.updatedAt !== "string") throw new Error("Current owner revision not found for reset setup");
       const response = await fetch(`${apiBaseUrl}/api/v1/admin/users/${encodeURIComponent(userId)}/password-reset`, {
         method: "POST",
+        credentials: "include",
         headers: {
-          authorization: `Bearer ${bearer}`,
           "content-type": "application/json",
           "Idempotency-Key": `bootstrap-password-reset-${crypto.randomUUID()}`
         },
@@ -184,7 +188,7 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
   await page.getByLabel("New password").fill("reset horse");
   await page.getByLabel("Confirm password").fill("reset horse");
   await page.getByRole("button", { name: "Reset", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Bootstrap E2E Campaign", level: 1 })).toBeVisible();
+  await expectCurrentCampaign(page, "Bootstrap E2E Campaign");
 
   managePanel = await openManageCategory(page, "Account");
   let workspaceSelector = managePanel.getByLabel("Active organization workspace");
@@ -198,16 +202,17 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
   managePanel = await openManageCategory(page, "Campaign");
   await openCreateDrawer(managePanel, "New campaign");
   await managePanel.getByRole("textbox", { name: "Campaign name", exact: true }).fill("Side Workspace Campaign");
+  await managePanel.getByRole("button", { name: "4. Review" }).click();
   await managePanel.getByRole("button", { name: "Create Campaign Setup", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Side Workspace Campaign", level: 1 })).toBeVisible();
+  await expectCurrentCampaign(page, "Side Workspace Campaign");
   managePanel = await openManageCategory(page, "Account");
   workspaceSelector = managePanel.getByLabel("Active organization workspace");
   await expect(workspaceSelector).toContainText("Side Workspace");
   await expect(managePanel.locator(".mini-form-meta")).toContainText("Owner - 1 campaigns");
   await workspaceSelector.selectOption({ label: "Bootstrap Owner's Workspace" });
   await expect(managePanel.locator(".status", { hasText: "Workspace switched to Bootstrap Owner's Workspace" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Bootstrap E2E Campaign", level: 1 })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Side Workspace Campaign", level: 1 })).not.toBeVisible();
+  await expectCurrentCampaign(page, "Bootstrap E2E Campaign");
+  await expect(page.getByLabel("Current campaign", { exact: true })).not.toHaveText("Side Workspace Campaign");
   managePanel = await openManageCategory(page, "People");
   await managePanel.getByRole("textbox", { name: "Invite email", exact: true }).fill("revoked-invite.e2e@example.test");
   await managePanel.getByRole("combobox", { name: "Invite role" }).selectOption("observer");
@@ -221,7 +226,7 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
   workspaceSelector = managePanel.getByLabel("Active organization workspace");
   await workspaceSelector.selectOption({ label: "Side Workspace" });
   await expect(managePanel.locator(".status", { hasText: "Workspace switched to Side Workspace" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Side Workspace Campaign", level: 1 })).toBeVisible();
+  await expectCurrentCampaign(page, "Side Workspace Campaign");
   managePanel = await openManageCategory(page, "People");
   await expect(organizationInviteRoster).not.toContainText("revoked-invite.e2e@example.test");
   await managePanel.getByRole("textbox", { name: "Invite email", exact: true }).fill("side-invite.e2e@example.test");
@@ -233,10 +238,10 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
   workspaceSelector = managePanel.getByLabel("Active organization workspace");
   await workspaceSelector.selectOption({ label: "Bootstrap Owner's Workspace" });
   await expect(managePanel.locator(".status", { hasText: "Workspace switched to Bootstrap Owner's Workspace" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Bootstrap E2E Campaign", level: 1 })).toBeVisible();
+  await expectCurrentCampaign(page, "Bootstrap E2E Campaign");
   managePanel = await openManageCategory(page, "People");
   await expect(organizationInviteRoster).not.toContainText("side-invite.e2e@example.test");
-  const memberRegister = await page.request.post(`${apiBaseUrl}/api/v1/auth/register`, {
+  const memberRegister = await request.post(`${apiBaseUrl}/api/v1/auth/register`, {
     data: {
       email: "org-member.e2e@example.test",
       displayName: "Org Member",
@@ -244,7 +249,7 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
     }
   });
   expect(memberRegister.ok()).toBeTruthy();
-  const sideMemberRegister = await page.request.post(`${apiBaseUrl}/api/v1/auth/register`, {
+  const sideMemberRegister = await request.post(`${apiBaseUrl}/api/v1/auth/register`, {
     data: {
       email: "side-member.e2e@example.test",
       displayName: "Side Member",
@@ -253,12 +258,19 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
   });
   expect(sideMemberRegister.ok()).toBeTruthy();
 
+  let riskSessionCleanupPreviewRequests = 0;
   let riskSessionCleanupRequests = 0;
+  let expiredPasswordResetPrunePreviewRequests = 0;
   let expiredPasswordResetPruneRequests = 0;
   let adminPasswordResetRequests = 0;
+  const riskSessionTargetSetHash = `sha256:${"d".repeat(64)}`;
+  const expiredPasswordResetTargetSetHash = `sha256:${"e".repeat(64)}`;
   await page.route("**/api/v1/admin/auth/operations", async (route) => {
     const response = await route.fetch();
     const body = await response.json();
+    if (!body?.sessions?.totals || !body?.passwordResets) {
+      throw new Error(`Unexpected admin auth operations response (${response.status()}): ${JSON.stringify(body)}`);
+    }
     body.sessions.totals.sessionCount = Math.max(body.sessions.totals.sessionCount ?? 0, riskSessionCleanupRequests === 0 ? 1 : 0);
     body.sessions.totals.riskSessionCount = riskSessionCleanupRequests === 0 ? 1 : 0;
     body.sessions.totals.staleSessionCount = riskSessionCleanupRequests === 0 ? 1 : 0;
@@ -269,12 +281,26 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
     await route.fulfill({ response, json: body });
   });
   await page.route("**/api/v1/admin/sessions/risk/revoke", async (route) => {
+    const body = route.request().postDataJSON() as { dryRun?: boolean; targetSetHash?: string };
+    if (body.dryRun === true) {
+      riskSessionCleanupPreviewRequests += 1;
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ matched: 1, revoked: 0, remainingRiskSessionCount: 1, targetSetHash: riskSessionTargetSetHash }) });
+      return;
+    }
+    expect(body.targetSetHash).toBe(riskSessionTargetSetHash);
     riskSessionCleanupRequests += 1;
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ matched: 1, revoked: 1, remainingRiskSessionCount: 0 }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ matched: 1, revoked: 1, remainingRiskSessionCount: 0, targetSetHash: riskSessionTargetSetHash }) });
   });
   await page.route("**/api/v1/admin/password-resets/prune", async (route) => {
+    const body = route.request().postDataJSON() as { dryRun?: boolean; targetSetHash?: string };
+    if (body.dryRun === true) {
+      expiredPasswordResetPrunePreviewRequests += 1;
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ matched: 1, pruned: 0, expiredRemaining: 1, targetSetHash: expiredPasswordResetTargetSetHash }) });
+      return;
+    }
+    expect(body.targetSetHash).toBe(expiredPasswordResetTargetSetHash);
     expiredPasswordResetPruneRequests += 1;
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ matched: 1, pruned: 1, expiredRemaining: 0 }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ matched: 1, pruned: 1, expiredRemaining: 0, targetSetHash: expiredPasswordResetTargetSetHash }) });
   });
   await page.route("**/api/v1/admin/users/*/password-reset", async (route) => {
     adminPasswordResetRequests += 1;
@@ -404,6 +430,7 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
   let staleAiToolRecoveryRequests = 0;
   let staleAiProposalRecoveryRequests = 0;
   let staleAiApprovedProposalRecoveryRequests = 0;
+  const staleAiTargetSetHash = `sha256:${"a".repeat(64)}`;
   await page.route("**/api/v1/admin/ai/operations", async (route) => {
     const response = await route.fetch();
     const body = await response.json();
@@ -427,25 +454,33 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
     await route.fulfill({ response, json: body });
   });
   await page.route("**/api/v1/admin/ai/threads/stale/fail", async (route) => {
-    staleAiThreadRecoveryRequests += 1;
-    staleAiThreadsCleared = true;
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ matched: 1, updated: 1 }) });
+    const requestBody = route.request().postDataJSON() as { dryRun?: boolean };
+    if (!requestBody.dryRun) {
+      staleAiThreadRecoveryRequests += 1;
+      staleAiThreadsCleared = true;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ targetSetHash: staleAiTargetSetHash, matched: 1, updated: requestBody.dryRun ? 0 : 1 }) });
   });
   await page.route("**/api/v1/admin/ai/tool-calls/stale/fail", async (route) => {
-    staleAiToolRecoveryRequests += 1;
-    staleAiToolsCleared = true;
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ matched: 1, updated: 1 }) });
+    const requestBody = route.request().postDataJSON() as { dryRun?: boolean };
+    if (!requestBody.dryRun) {
+      staleAiToolRecoveryRequests += 1;
+      staleAiToolsCleared = true;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ targetSetHash: staleAiTargetSetHash, matched: 1, updated: requestBody.dryRun ? 0 : 1 }) });
   });
   await page.route("**/api/v1/admin/ai/proposals/stale/reject", async (route) => {
-    const requestBody = route.request().postDataJSON() as { includeApproved?: boolean };
-    if (requestBody.includeApproved) {
-      staleAiApprovedProposalRecoveryRequests += 1;
-      staleAiApprovedProposalsCleared = true;
-    } else {
-      staleAiProposalRecoveryRequests += 1;
-      staleAiProposalsCleared = true;
+    const requestBody = route.request().postDataJSON() as { dryRun?: boolean; includeApproved?: boolean };
+    if (!requestBody.dryRun) {
+      if (requestBody.includeApproved) {
+        staleAiApprovedProposalRecoveryRequests += 1;
+        staleAiApprovedProposalsCleared = true;
+      } else {
+        staleAiProposalRecoveryRequests += 1;
+        staleAiProposalsCleared = true;
+      }
     }
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ matched: 1, updated: 1 }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ targetSetHash: staleAiTargetSetHash, matched: 1, updated: requestBody.dryRun ? 0 : 1 }) });
   });
   let pluginRegistrySyncRequests = 0;
   await page.route("**/api/v1/admin/plugins/operations", async (route) => {
@@ -524,7 +559,10 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
   await expect(workspaceDefaults).toContainText("Workspace defaults saved");
   managePanel = await openManageCategory(page, "Campaign");
   await openCreateDrawer(managePanel, "New campaign");
+  await managePanel.getByRole("button", { name: "2. Scene & map" }).click();
   await expect(managePanel.getByRole("textbox", { name: "Setup initial scene name" })).toHaveValue("Workspace Opening");
+  await managePanel.getByRole("button", { name: "3. Invitation" }).click();
+  await managePanel.getByText("Advanced permission settings", { exact: true }).click();
   await expect(managePanel.getByLabel("Setup campaign permission template")).toHaveValue("player_authoring");
   managePanel = await openManageCategory(page, "Server Admin");
   const organizationMembers = page.getByRole("region", { name: "Organization members" });
@@ -541,7 +579,7 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
   workspaceSelector = managePanel.getByLabel("Active organization workspace");
   await workspaceSelector.selectOption({ label: "Side Workspace" });
   await expect(managePanel.locator(".status", { hasText: "Workspace switched to Side Workspace" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Side Workspace Campaign", level: 1 })).toBeVisible();
+  await expectCurrentCampaign(page, "Side Workspace Campaign");
   managePanel = await openManageCategory(page, "Server Admin");
   await expect(orgMemberCard).toHaveCount(0);
   await organizationMembers.getByRole("textbox", { name: "Organization member email" }).fill("side-member.e2e@example.test");
@@ -554,7 +592,7 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
   workspaceSelector = managePanel.getByLabel("Active organization workspace");
   await workspaceSelector.selectOption({ label: "Bootstrap Owner's Workspace" });
   await expect(managePanel.locator(".status", { hasText: "Workspace switched to Bootstrap Owner's Workspace" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Bootstrap E2E Campaign", level: 1 })).toBeVisible();
+  await expectCurrentCampaign(page, "Bootstrap E2E Campaign");
   managePanel = await openManageCategory(page, "Server Admin");
   await expect(sideMemberCard).toHaveCount(0);
   await expect(orgMemberCard).toBeVisible();
@@ -583,11 +621,53 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
   await expect(storageOps).toContainText("SQLite Storage");
   await expect(storageOps.getByRole("button", { name: "Create Backup" })).toBeVisible();
   await expect(storageOps.getByRole("button", { name: "Run Restore Drill" })).toBeVisible();
+  // Seed a prior recovery point so the next creation proves the UI never
+  // drills stale props while its admin snapshot refresh is still in flight.
   await storageOps.getByRole("button", { name: "Create Backup" }).click();
-  await expect(storageOps).toContainText(/Database-only backup created: opentabletop-.*\.sqlite/);
-  await expect(storageOps).toContainText("asset snapshot pairing is still required");
+  await expect(storageOps).toContainText(/Paired recovery point created: opentabletop-.*\.sqlite/);
+  await expect(storageOps).toContainText("Paired asset snapshot");
+
+  let releaseStorageRefresh!: () => void;
+  const heldStorageRefresh = new Promise<void>((resolve) => {
+    releaseStorageRefresh = resolve;
+  });
+  let markStorageRefreshStarted!: () => void;
+  const storageRefreshStarted = new Promise<void>((resolve) => {
+    markStorageRefreshStarted = resolve;
+  });
+  let holdNextStorageRefresh = true;
+  await page.route("**/api/v1/admin/storage/operations", async (route) => {
+    if (!holdNextStorageRefresh || route.request().method() !== "GET") {
+      await route.continue();
+      return;
+    }
+    holdNextStorageRefresh = false;
+    markStorageRefreshStarted();
+    await heldStorageRefresh;
+    await route.continue();
+  });
+  const createdBackupResponse = page.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith("/api/v1/admin/storage/backup") && response.status() === 200);
+  await storageOps.getByRole("button", { name: "Create Backup" }).click();
+  const createdBackup = await (await createdBackupResponse).json() as {
+    fileName: string;
+    recoveryPoint: { manifest?: { assetSnapshot?: { provider: string; snapshotId: string; createdAt: string } } };
+  };
+  await storageRefreshStarted;
+  try {
+    await expect(storageOps).not.toContainText(`Paired recovery point created: ${createdBackup.fileName}`);
+    await expect(storageOps.getByRole("button", { name: "Run Restore Drill" })).toBeDisabled();
+  } finally {
+    releaseStorageRefresh();
+  }
+  await expect(storageOps).toContainText(`Paired recovery point created: ${createdBackup.fileName}`);
+  await page.unroute("**/api/v1/admin/storage/operations");
+
   await expect(storageOps.getByRole("button", { name: "Run Restore Drill" })).toBeEnabled();
+  const restoreDrillRequest = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/api/v1/admin/storage/restore-drill"));
   await storageOps.getByRole("button", { name: "Run Restore Drill" }).click();
+  const restoreDrillPayload = (await restoreDrillRequest).postDataJSON() as { backupFileName?: string; expectedAssetSnapshot?: unknown };
+  expect(restoreDrillPayload.backupFileName).toBe(createdBackup.fileName);
+  expect(restoreDrillPayload.expectedAssetSnapshot).toEqual(createdBackup.recoveryPoint.manifest?.assetSnapshot);
   await expect(storageOps).toContainText("Restore drill passed");
   const latestBackupName = (await storageOps.getByLabel("Confirm storage restore backup filename").getAttribute("placeholder")) ?? "";
   expect(latestBackupName).toMatch(/^opentabletop-.*\.sqlite$/);
@@ -652,10 +732,12 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
   await expect(authOperations).toContainText("Risk Session User");
   await expect(authOperations.getByRole("button", { name: "Revoke risk sessions" })).toBeEnabled();
   await authOperations.getByRole("button", { name: "Revoke risk sessions" }).click();
+  await expect.poll(() => riskSessionCleanupPreviewRequests).toBe(1);
   await expect.poll(() => riskSessionCleanupRequests).toBe(1);
   await expect(authOperations.getByRole("button", { name: "Revoke risk sessions" })).toBeDisabled();
   await expect(authOperations.getByRole("button", { name: "Prune expired resets" })).toBeEnabled();
   await authOperations.getByRole("button", { name: "Prune expired resets" }).click();
+  await expect.poll(() => expiredPasswordResetPrunePreviewRequests).toBe(1);
   await expect.poll(() => expiredPasswordResetPruneRequests).toBe(1);
   await expect(authOperations.getByRole("button", { name: "Prune expired resets" })).toBeDisabled();
   const emailOutbox = page.getByRole("region", { name: "Email outbox" });

@@ -68,6 +68,14 @@ export type CsvImportConfig = {
 };
 
 
+export function campaignArchiveTargetId(value: unknown): string | undefined {
+  const archive = recordValue(value);
+  const campaigns = recordValue(archive.data).campaigns;
+  const firstCampaign = Array.isArray(campaigns) ? recordValue(campaigns[0]) : {};
+  return stringValue(firstCampaign.id) ?? stringValue(recordValue(archive.manifest).campaignId);
+}
+
+
 export function summarizeImport(result: CampaignImportResult): string {
   const collections = ["campaigns", "members", "scenes", "tokens", "actors", "journals", "handouts", "chat", "rolls", "combats", "contentImports"];
   const changed = collections.map((collection) => [collection, result.counts[collection] ?? 0] as const).filter(([, count]) => count > 0);
@@ -290,6 +298,52 @@ export type CampaignImportResult = {
   importScope?: ArchiveImportScope;
   importCollections?: ArchiveImportCollection[];
   importWarnings?: string[];
+  operation?: ArchiveImportOperationSummary;
+};
+
+
+export type ArchiveImportRollbackConflict = {
+  collection: string;
+  id: string;
+  reason: "record_changed" | "asset_bytes_changed" | "reference_conflict";
+};
+
+
+export type ArchiveImportOperationSummary = {
+  id: string;
+  campaignIds: string[];
+  status: "applied" | "partially_rolled_back" | "rolled_back";
+  mode: "upsert" | "reject_conflicts" | "skip_conflicts";
+  scope: ArchiveImportScope;
+  collections: string[];
+  createdAt: string;
+  updatedAt: string;
+  recordCount: number;
+  assetFileCount: number;
+  remainingRecordCount: number;
+  remainingAssetFileCount: number;
+  lastRollbackAt?: string;
+  lastRollbackConflicts: ArchiveImportRollbackConflict[];
+};
+
+
+export type ArchiveImportRollbackPreview = ArchiveImportOperationSummary & {
+  impact: {
+    restoreRecords: number;
+    deleteRecords: number;
+    restoreAssetFiles: number;
+    deleteAssetFiles: number;
+  };
+  conflicts: ArchiveImportRollbackConflict[];
+};
+
+
+export type ArchiveImportRollbackResult = {
+  operation: ArchiveImportOperationSummary;
+  rolledBackRecords: number;
+  rolledBackAssetFiles: number;
+  conflicts: ArchiveImportRollbackConflict[];
+  campaignUpdatedAt?: string;
 };
 
 

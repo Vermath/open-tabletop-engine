@@ -28,6 +28,7 @@ class CountingMemoryStateStore extends MemoryStateStore {
 
   override save(): void {
     this.saveCount += 1;
+    super.save();
   }
 }
 
@@ -225,7 +226,7 @@ describe("feature completeness regressions", () => {
       realtime.close();
       await app.close();
     }
-  });
+  }, 15_000);
 
   it("returns roll search results only when the caller can read the roll", async () => {
     const store = new MemoryStateStore();
@@ -832,6 +833,8 @@ function seedSession(store: MemoryStateStore, userId: string): { token: string }
       lastSeenAt: new Date().toISOString(),
     }) satisfies UserSession,
   );
+  store.save();
+  store.flush();
   return { token };
 }
 

@@ -47,6 +47,7 @@ export interface RegisterAdminIdentityRoutesOptions {
   publicUser(user: User): unknown;
   appendAudit(actorUserId: string, input: AdminIdentityAuditInput): void;
   appendReadAudit(actorUserId: string, input: AdminIdentityAuditInput): void;
+  disconnectSession?(sessionId: string): void;
   emailDeliveryOptions?: EmailDeliveryOptions;
 }
 
@@ -225,7 +226,8 @@ export function registerAdminIdentityRoutes(app: FastifyInstance, options: Regis
     if (!session) return reply.code(404).send({ error: "not_found", message: "Session not found" });
     const before = publicSession(session);
     try {
-      revokeSingleSession(store, session, request.body?.expectedUpdatedAt ?? request.query.expectedUpdatedAt);
+      const revoked = revokeSingleSession(store, session, request.body?.expectedUpdatedAt ?? request.query.expectedUpdatedAt);
+      for (const revokedSession of revoked.sessions) options.disconnectSession?.(revokedSession.id);
     } catch (error) {
       return sendOperatorError(reply, error);
     }

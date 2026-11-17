@@ -46,6 +46,7 @@ const dndMonsterVariantRoutesSource = readFileSync(new URL("./dnd-monster-varian
 const adminIdentityRoutesSource = readFileSync(new URL("./admin-identity-routes.ts", import.meta.url), "utf8");
 const scimRoutesSource = readFileSync(new URL("./scim-routes.ts", import.meta.url), "utf8");
 const adminAssetRoutesSource = readFileSync(new URL("./admin-asset-routes.ts", import.meta.url), "utf8");
+const universalVttImportSource = readFileSync(new URL("./universal-vtt-import.ts", import.meta.url), "utf8");
 const routeSources = [
   { name: "app.ts", source: appSource },
   { name: "calculation-override-routes.ts", source: calculationOverrideRoutesSource },
@@ -58,6 +59,7 @@ const routeSources = [
   { name: "admin-identity-routes.ts", source: adminIdentityRoutesSource },
   { name: "scim-routes.ts", source: scimRoutesSource },
   { name: "admin-asset-routes.ts", source: adminAssetRoutesSource },
+  { name: "universal-vtt-import.ts", source: universalVttImportSource },
 ] as const;
 const aggregateSource = routeSources.map(({ source }) => source).join("\n");
 
@@ -84,6 +86,7 @@ const EXEMPTIONS: readonly ExemptionRule[] = [
   { pattern: /^\/api\/v1\/campaigns\/:[^/]+\/dnd\/monster-templates\/preview$/, reason: "non-mutating monster-template validation preview" },
   { pattern: /^\/api\/v1\/campaigns\/:[^/]+\/dnd\/monster-variants\/preview$/, reason: "non-mutating immutable-base variant preview" },
   { pattern: /^\/api\/v1\/campaigns\/:[^/]+\/systems\/:[^/]+\/controlled-creatures\/preview$/, reason: "non-mutating controlled-creature preview" },
+  { pattern: /^\/api\/v1\/campaigns\/:[^/]+\/systems\/:[^/]+\/characters\/preview$/, reason: "non-mutating guided character preview" },
   { pattern: /^\/api\/v1\/campaigns\/:[^/]+\/systems\/:[^/]+\/actors\/:[^/]+\/spell-preparation\/preview$/, reason: "non-mutating spell-preparation preview stored only in the idempotency ledger" },
   { pattern: /^\/api\/v1\/scenes\/:[^/]+\/ai-edits\/apply-to-target$/, reason: "explicit AI behavior boundary; leave existing execution behavior unchanged" },
   { pattern: /^\/api\/v1\/campaigns\/:[^/]+\/content-imports\/pdf\/ai$/, reason: "explicit AI behavior boundary" },
@@ -268,7 +271,7 @@ function specializedRouteGuards(route: SourceRoute, source: string): boolean {
 function directGuardEvidence(route: SourceRoute): { idempotency: boolean; revision: boolean } {
   return {
     idempotency: /idempotency-key|Idempotency-Key|requireConsequentialMutation/.test(route.handlerSource),
-    revision: /expectedUpdatedAt|requireExpectedRevision|requiredRevisions|expectedActorUpdatedAt|expectedItemUpdatedAt|expectedCombatUpdatedAt|preparedPreviewKey/.test(route.handlerSource)
+    revision: /expectedUpdatedAt|requireExpectedRevision|requiredRevisions|expectedActorUpdatedAt|expectedItemUpdatedAt|expectedCombatUpdatedAt|preparedPreviewKey|prepareTokenMoveBatchCommand/.test(route.handlerSource)
   };
 }
 
@@ -277,8 +280,8 @@ describe("non-AI mutation route contract", () => {
   const centralDescriptors = extractCentralGuardDescriptors(appSource);
 
   it("keeps the current mutation inventory explicit and classified", () => {
-    expect(routes).toHaveLength(246);
-    expect(routes.filter((route) => route.sourceName === "app.ts")).toHaveLength(202);
+    expect(routes).toHaveLength(259);
+    expect(routes.filter((route) => route.sourceName === "app.ts")).toHaveLength(214);
     expect(routes.filter((route) => route.sourceName === "calculation-override-routes.ts")).toHaveLength(2);
     expect(routes.filter((route) => route.sourceName === "archive-operations.ts")).toHaveLength(0);
     expect(routes.filter((route) => route.sourceName === "asset-operations.ts")).toHaveLength(0);
@@ -289,6 +292,7 @@ describe("non-AI mutation route contract", () => {
     expect(routes.filter((route) => route.sourceName === "admin-identity-routes.ts")).toHaveLength(9);
     expect(routes.filter((route) => route.sourceName === "scim-routes.ts")).toHaveLength(10);
     expect(routes.filter((route) => route.sourceName === "admin-asset-routes.ts")).toHaveLength(4);
+    expect(routes.filter((route) => route.sourceName === "universal-vtt-import.ts")).toHaveLength(1);
     expect(centralDescriptors.length).toBeGreaterThan(0);
     const duplicates = routes
       .map((route) => `${route.method} ${route.path}`)

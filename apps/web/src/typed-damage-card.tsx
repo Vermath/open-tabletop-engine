@@ -57,7 +57,7 @@ interface ResolvedMixedDamageComponent {
   amount: number;
   damageType: string;
   adjustedAmount: number;
-  defense: "normal" | "resistance" | "immunity" | "vulnerability";
+  defense: "normal" | "resistance" | "immunity" | "vulnerability" | "resistance-and-vulnerability";
 }
 
 export function normalizedMixedDamageComponents(components: MixedDamageDraftComponent[]): Array<{ amount: number; damageType: string }> | undefined {
@@ -72,9 +72,20 @@ export function resolvedMixedDamageComponents(details: unknown): ResolvedMixedDa
   if (!isRecord(details) || !Array.isArray(details.components)) return [];
   return details.components.flatMap((value) => {
     if (!isRecord(value) || !Number.isInteger(value.amount) || !Number.isInteger(value.adjustedAmount) || typeof value.damageType !== "string") return [];
-    if (!(["normal", "resistance", "immunity", "vulnerability"] as const).includes(value.defense as ResolvedMixedDamageComponent["defense"])) return [];
+    if (!(["normal", "resistance", "immunity", "vulnerability", "resistance-and-vulnerability"] as const).includes(value.defense as ResolvedMixedDamageComponent["defense"])) return [];
     return [{ amount: value.amount as number, damageType: value.damageType, adjustedAmount: value.adjustedAmount as number, defense: value.defense as ResolvedMixedDamageComponent["defense"] }];
   });
+}
+
+export function typedDamagePreviewValue(value: unknown): string {
+  if (value === undefined) return "not set";
+  if (value === null) return "none";
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "structured value";
+  }
 }
 
 export function TypedDamageCard(props: {
@@ -250,7 +261,7 @@ export function TypedDamageCard(props: {
               <article className="operator-item admin-item" key={target.actorId}>
                 <strong>{target.actorName}</strong>
                 <MixedDamageTargetBreakdown details={target.preview.details} />
-                {target.preview.changes.map((change) => <div className="operator-row tool-call-row" key={`${target.actorId}:${change.path}`}><span>{change.path}</span><strong>{String(change.before ?? "not set")} to {String(change.after ?? "not set")}</strong></div>)}
+                {target.preview.changes.map((change) => <div className="operator-row tool-call-row" key={`${target.actorId}:${change.path}`}><span>{change.path}</span><strong>{typedDamagePreviewValue(change.before)} to {typedDamagePreviewValue(change.after)}</strong></div>)}
                 {target.preview.blockers.map((blocker) => <p className="advancement-choice-status" key={blocker.code}>{blocker.message}</p>)}
               </article>
             ))}
@@ -275,7 +286,7 @@ function MixedDamageTargetBreakdown({ details }: { details?: Record<string, unkn
     <div className="mixed-damage-resolution" aria-label="Resolved damage components">
       {components.map((component, index) => (
         <div className="operator-row tool-call-row" key={`${component.damageType}:${index}`}>
-          <span>{formatNumber(component.amount)} {component.damageType} · {component.defense}</span>
+          <span>{formatNumber(component.amount)} {component.damageType} · {component.defense.replace(/-/g, " ")}</span>
           <strong>{formatNumber(component.adjustedAmount)}</strong>
         </div>
       ))}

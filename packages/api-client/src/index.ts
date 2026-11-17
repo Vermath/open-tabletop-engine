@@ -2,8 +2,10 @@ import {
   apiVersion,
   apiVersionHeader,
   campaignArchiveStreamContentType,
+  dnd5eSrdRageActionRollIds,
   routes,
 } from "@open-tabletop/api-contracts";
+import type { Dnd5eSrdRageActionKind } from "@open-tabletop/api-contracts";
 import type {
   Actor,
   ActorCalculationExplanation,
@@ -38,10 +40,22 @@ import type {
   ContentImportBatch,
   ContentImportLicense,
   CoverLevel,
+  DeclarativeActionRequest,
+  DeclarativeActorSheet,
+  DeclarativeQuickRoll,
+  DeclarativeResourceCost,
   Dnd5eInventoryOverview,
   Dnd5eInventoryOwnerRef,
   Dnd5eLootData,
   Dnd5eMerchantCatalogEntry,
+  Dnd5eSrdCombatantSyncMutationResult,
+  Dnd5eSrdCombatVitalsMutationResult,
+  Dnd5eSrdCombatVitalsRequest,
+  Dnd5eSrdLegendaryActionSpendRequest,
+  Dnd5eSrdLegendaryActionSpendResult,
+  Dnd5eAbility,
+  Dnd5eAbilityScoreMethod,
+  Dnd5eStandardArrayAssignment,
   Dnd5eSrdPendingAdvancement,
   Dnd5eSrdPendingAdvancementCancelRequest,
   Dnd5eSrdPendingAdvancementCancelResult,
@@ -55,6 +69,8 @@ import type {
   DndControlledCreatureCommandRequest,
   DndControlledCreatureConcentrationEndRequest,
   DndControlledCreatureConfirmRequest,
+  DndControlledCreatureActionHandoff,
+  DndControlledCreatureCreatePrefill,
   DndControlledCreatureCreateRequest,
   DndControlledCreatureEndRequest,
   DndControlledCreatureMutationResult,
@@ -73,6 +89,8 @@ import type {
   DiceRoll,
   DiceRollFairness,
   Encounter,
+  EncounterMonsterPlacementBatchInput,
+  EncounterMonsterPlacementBatchResult,
   EngineEvent,
   FogPreset,
   FogRegion,
@@ -97,10 +115,15 @@ import type {
   Scene,
   SceneAnnotation,
   SceneAnnotationKind,
+  SceneDuplicationRequest,
+  SceneDuplicationResult,
   ScenePathMeasurement,
   SystemCapability,
   SystemManifestData,
+  SystemManifestIdentity,
   Token,
+  TokenMoveBatchRequest,
+  TokenMoveBatchResult,
   User,
   UserPreferences,
   UserSession,
@@ -111,9 +134,10 @@ import type {
   World,
   WorldRecord,
   WorldRelation,
-} from "@open-tabletop/core";
+} from "@open-tabletop/api-contracts";
 
 export { campaignArchiveStreamContentType };
+export type { DeclarativeActionRequest, DeclarativeActorSheet, DeclarativeQuickRoll, DeclarativeResourceCost, SystemManifestIdentity };
 
 export interface OpenTabletopClientOptions {
   token?: string;
@@ -129,6 +153,46 @@ export interface MutationRequestOptions {
 /** Required retry identity for a prepared mutation commit. */
 export interface PreparedMutationRequestOptions extends MutationRequestOptions {
   idempotencyKey: string;
+}
+
+export type OperationalRetentionRecordClass = "delivered_emails" | "delivered_webhooks" | "maintenance_jobs";
+
+export interface OperationalRetentionDiagnostics {
+  policyVersion: 1;
+  generatedAt: string;
+  preservationDefault: true;
+  supportedRecordClasses: OperationalRetentionRecordClass[];
+  counts: Record<OperationalRetentionRecordClass, number>;
+  totalEligibleTerminalRecords: number;
+  exemptions: string[];
+}
+
+export interface OperationalRetentionPlan {
+  policyVersion: 1;
+  preservationDefault: true;
+  dryRun: boolean;
+  cutoffAt: string;
+  olderThanDays: number;
+  recordClasses: OperationalRetentionRecordClass[];
+  batchSize: number;
+  eligibleCount: number;
+  selectedCount: number;
+  remainingCount: number;
+  targetSetHash: string;
+  selected: Array<{ recordClass: OperationalRetentionRecordClass; id: string; completedAt: string }>;
+  counts: Record<OperationalRetentionRecordClass, number>;
+  exemptions: string[];
+  deletedCount?: number;
+  reason?: string;
+}
+
+export interface OperationalRetentionRequest {
+  recordClasses: OperationalRetentionRecordClass[];
+  olderThanDays: number;
+  batchSize?: number;
+  dryRun?: boolean;
+  targetSetHash?: string;
+  reason?: string;
 }
 
 const preparedRoutePart = (value: string): string => encodeURIComponent(value);
@@ -194,6 +258,8 @@ export interface CampaignInviteCreateResult {
   invite: CampaignInviteInfo;
   token: string;
   acceptUrl: string;
+  /** Present when invite creation advances the parent campaign revision. */
+  campaignUpdatedAt?: string;
 }
 
 export interface CampaignInvitePreviewResult {
@@ -261,7 +327,54 @@ export interface CampaignArchiveImportResult {
   importedCampaignIds: string[];
   counts: Record<string, number>;
   conflicts: Array<{ collection: string; id: string }>;
+  skippedConflicts?: Array<{ collection: string; id: string }>;
   assetFiles: number;
+  dryRun?: boolean;
+  importScope?: "all" | "assets_only" | "selected_collections";
+  importCollections?: string[];
+  importWarnings?: string[];
+  operation?: CampaignArchiveImportOperationSummary;
+}
+
+export interface CampaignArchiveImportRollbackConflict {
+  collection: string;
+  id: string;
+  reason: "record_changed" | "asset_bytes_changed" | "reference_conflict";
+}
+
+export interface CampaignArchiveImportOperationSummary {
+  id: string;
+  campaignIds: string[];
+  status: "applied" | "partially_rolled_back" | "rolled_back";
+  mode: "upsert" | "reject_conflicts" | "skip_conflicts";
+  scope: "all" | "assets_only" | "selected_collections";
+  collections: string[];
+  createdAt: string;
+  updatedAt: string;
+  recordCount: number;
+  assetFileCount: number;
+  remainingRecordCount: number;
+  remainingAssetFileCount: number;
+  lastRollbackAt?: string;
+  lastRollbackConflicts: CampaignArchiveImportRollbackConflict[];
+}
+
+export interface CampaignArchiveImportRollbackPreview extends CampaignArchiveImportOperationSummary {
+  impact: {
+    restoreRecords: number;
+    deleteRecords: number;
+    restoreAssetFiles: number;
+    deleteAssetFiles: number;
+  };
+  conflicts: CampaignArchiveImportRollbackConflict[];
+}
+
+export interface CampaignArchiveImportRollbackResult {
+  operation: CampaignArchiveImportOperationSummary;
+  rolledBackRecords: number;
+  rolledBackAssetFiles: number;
+  conflicts: CampaignArchiveImportRollbackConflict[];
+  campaignUpdatedAt?: string;
 }
 
 export interface DiceRollVerification {
@@ -292,6 +405,26 @@ export interface SceneEditHistory {
   entries: SceneEditHistoryEntry[];
 }
 
+export interface PlayerPreviewSnapshot extends Pick<CampaignSnapshot, "scenes" | "tokens" | "actors" | "assets" | "vision" | "chat"> {
+  campaign: Pick<Campaign, "id" | "name">;
+  selectedSceneId: string;
+  generatedAt: string;
+  handouts: Handout[];
+  combats: Array<Pick<Combat, "id" | "active" | "turnPresentation"> & {
+    combatants: Array<Pick<Combat["combatants"][number], "id" | "tokenId">>;
+  }>;
+}
+
+/** The campaign's voice and video room on the operator-configured provider; `enabled: false` when none is configured. */
+export type CampaignCallResponse =
+  | { enabled: false }
+  | { enabled: true; provider: string; origin: string; url: string };
+
+export interface PlayerPreviewResponse {
+  readOnly: true;
+  player: Pick<User, "id" | "displayName">;
+  snapshot: PlayerPreviewSnapshot;
+}
 export interface SceneVisionOptions {
   /** Campaign member to preview. The server requires scene.update for cross-user previews. */
   previewUserId?: string;
@@ -587,6 +720,13 @@ export interface AiEditLayerApplyResult {
   replacedTokenCount: number;
 }
 
+export interface AiEditLayerApplyInput {
+  expectedUpdatedAt: string;
+  expectedTargetUpdatedAt: string;
+  expectedSourceTokenUpdatedAt: Record<string, string>;
+  expectedTargetTokenUpdatedAt: Record<string, string>;
+}
+
 export type AiReasoningEffort =
   "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
@@ -597,7 +737,9 @@ export interface AiThreadMessageInput {
 
 export interface AiThreadCreateInput {
   prompt: string;
+  expectedUpdatedAt: string;
   surface?: "agent_panel" | "ai_studio";
+  approvalMode?: "manual" | "auto";
   model?: string;
   reasoningEffort?: AiReasoningEffort;
   contextScopes?: AiContextScope[];
@@ -606,6 +748,62 @@ export interface AiThreadCreateInput {
   selectedTokenIds?: string[];
   messages?: AiThreadMessageInput[];
 }
+
+export interface AiThreadCreateResponse {
+  thread: AiThread;
+  assistantMessage: string;
+  events: Array<{ type: string; [key: string]: unknown }>;
+}
+
+export interface AiEvaluationToolOutputFieldExpectationInput {
+  path?: string;
+  equals?: unknown;
+}
+
+export interface AiEvaluationToolOutputExpectationInput {
+  toolName?: string;
+  status?: "completed" | "failed";
+  outputFields?: AiEvaluationToolOutputFieldExpectationInput[];
+  outputContains?: string[];
+  outputOmits?: string[];
+}
+
+export interface AiEvaluationResponseCriterionInput {
+  name?: string;
+  requiredSubstrings?: string[];
+  forbiddenSubstrings?: string[];
+  minCharacters?: number;
+  maxCharacters?: number;
+}
+
+export interface AiEvaluationCreateInput {
+  threadId: string;
+  expectedThreadUpdatedAt: string;
+  name?: string;
+  expectedStatus?: "completed" | "failed";
+  expectedProvider?: string;
+  requiredToolCalls?: string[];
+  requiredAdvertisedTools?: string[];
+  forbiddenAdvertisedTools?: string[];
+  forbiddenAdvertisedPermissions?: string[];
+  expectedToolOutputs?: AiEvaluationToolOutputExpectationInput[];
+  requiredResponseSubstrings?: string[];
+  forbiddenResponseSubstrings?: string[];
+  responseCriteria?: AiEvaluationResponseCriterionInput[];
+  requireNoFailedToolCalls?: boolean;
+  minToolCallCount?: number;
+  minResponseCharacters?: number;
+  maxResponseCharacters?: number;
+  maxDurationMs?: number;
+  maxEstimatedCostUsd?: number;
+}
+
+export type ProposalCreateInput = Partial<
+  Pick<Proposal, "title" | "summary" | "changesJson" | "diffJson">
+> & {
+  /** Campaign revision reviewed before creating this proposal. */
+  expectedUpdatedAt: string;
+};
 
 export interface AiEffectivePolicy {
   installation: {
@@ -788,6 +986,30 @@ export interface SystemRuntimeInfo extends SystemManifestData {
   runtimeCapabilities: SystemCapability[];
   unsupportedCapabilities: SystemCapability[];
   installedAt?: string;
+  installedVersions?: SystemManifestIdentity[];
+  binding?: SystemManifestIdentity;
+}
+
+export interface CampaignSystemBindingInput {
+  expectedUpdatedAt: string;
+  system: SystemManifestIdentity;
+  expectedBinding: SystemManifestIdentity | null;
+}
+
+export interface CampaignSystemBindingResult {
+  campaign: Campaign;
+  binding: SystemManifestIdentity;
+}
+
+export type SystemActorSheet = (Record<string, unknown> & { kind?: undefined }) | DeclarativeActorSheet;
+
+export interface DeclarativeActionResult {
+  roll: DiceRoll;
+  chat: ChatMessage;
+  actor: Actor;
+  sheet: DeclarativeActorSheet;
+  quickRoll: DeclarativeQuickRoll;
+  cost?: DeclarativeResourceCost;
 }
 
 export interface SystemActivationResult {
@@ -814,6 +1036,18 @@ export interface SessionInfo {
 
 export interface SessionLoginInfo extends SessionInfo {
   token: string;
+  session: PublicSession;
+}
+
+export interface SessionCookieUpgradeInfo {
+  ok: true;
+  session: PublicSession;
+  upgradeExpiresAt: string;
+}
+
+export interface SessionCookieUpgradeConfirmInfo {
+  ok: true;
+  upgradeConfirmed: true;
   session: PublicSession;
 }
 
@@ -1101,6 +1335,7 @@ export interface Dnd5eSrdEldritchInvocationOptionInfo {
 }
 
 export interface Dnd5eSrdCharacterOriginsInfo {
+  standardArray: { abilities: Dnd5eAbility[]; values: number[] };
   backgrounds: Array<{
     id: string;
     name: string;
@@ -1259,6 +1494,8 @@ export interface SystemCharacterCreateInput {
   ownerUserId?: string;
   backgroundId?: string;
   speciesId?: string;
+  abilityScoreMethod?: Dnd5eAbilityScoreMethod;
+  standardArrayAssignment?: Dnd5eStandardArrayAssignment;
   abilityScoreIncreases?: Record<string, number>;
   classSkillProficiencies?: string[];
   originLanguageChoices?: string[];
@@ -1306,6 +1543,25 @@ export interface SystemCharacterCreateResult {
   actor: Actor;
   items: Item[];
   sheet?: Record<string, unknown>;
+}
+
+export interface SystemCharacterPreviewResult {
+  templateId: string;
+  preview: {
+    ok: boolean;
+    issues: Array<{ field: string; code: string; message: string }>;
+    proposedData?: Record<string, unknown>;
+    proposedItems?: SystemCharacterTemplateItem[];
+    derived?: {
+      abilityScores: Dnd5eStandardArrayAssignment;
+      abilityModifiers: Record<Dnd5eAbility, number>;
+      savingThrows: Record<Dnd5eAbility, number>;
+      armorClass: number;
+      hitPoints: { current: number; max: number };
+      speed: number;
+      proficiencyBonus: number;
+    };
+  };
 }
 
 export interface SystemMonsterCreateInput {
@@ -1713,9 +1969,43 @@ export interface SystemActorAdvancementInfo {
   advancementClassName?: string;
   nextClassLevel?: number;
   grantsFeat?: boolean;
+  requiresSubclass?: boolean;
+  subclassOptions?: Dnd5eSrdAdvancementSubclassOptionInfo[];
   feats?: Array<Record<string, unknown>>;
   weaponMastery?: SystemActorAdvancementWeaponMasteryInfo;
-  multiclassOptions?: Array<Record<string, unknown> & { weaponMastery?: SystemActorAdvancementWeaponMasteryInfo }>;
+  multiclassOptions?: Array<Record<string, unknown> & { requiresSubclass?: boolean; weaponMastery?: SystemActorAdvancementWeaponMasteryInfo }>;
+  spellAdvancement?: {
+    paths: Dnd5eSrdSpellAdvancementPathInfo[];
+  };
+}
+
+export interface Dnd5eSrdAdvancementSubclassOptionInfo {
+  id: string;
+  name: string;
+  className: string;
+  selectionLevel: number;
+  summary?: string;
+  featureNames: string[];
+  alwaysPreparedSpells?: string[];
+}
+
+export interface Dnd5eSrdSpellAdvancementPathInfo {
+  className: string;
+  nextClassLevel: number;
+  spellcastingAbility: "intelligence" | "wisdom" | "charisma";
+  acquisitionMode: "prepared-class-level" | "prepared-long-rest" | "spellbook";
+  maxSpellLevel: number;
+  preparedSpellCapacity: number;
+  spellbookAdditions: number;
+  eligibleSpells: Array<{
+    id: string;
+    name: string;
+    level: number;
+    school?: string;
+    ritual: boolean;
+    classes: string[];
+    source: string;
+  }>;
 }
 
 export interface SystemActorAdvancementWeaponMasteryInfo {
@@ -1742,19 +2032,45 @@ export interface SystemActorRollInput {
   useFreeResource?: boolean;
   effectChoice?: string;
   saveOutcomes?: Record<string, "success" | "failure">;
+  weaponMastery?: Dnd5eSrdWeaponMasteryUseInput;
   reactionUse?: boolean;
+  sneakAttackEligible?: boolean;
   rechargeCheck?: number;
   commit?: boolean;
   preview?: boolean;
   prepare?: boolean;
   preparedPreviewKey?: string;
+  /** Exact server-issued predecessor ticket for a guarded damage continuation. */
+  continuationId?: string;
   expectedUpdatedAt?: string;
+  controlledCreature?: DndControlledCreatureActionContext;
+}
+
+export interface DndControlledCreatureActionContext {
+  sceneId?: string;
+  token?: DndControlledCreatureCreatePrefill["token"];
+}
+
+export interface Dnd5eSrdWeaponMasteryUseInput {
+  use: boolean;
+  damageDealt?: boolean;
+  nickExtraAttack?: boolean;
+  secondaryTargetActorId?: string;
+  geometryConfirmed?: boolean;
+  pushDistanceFeet?: number;
 }
 
 export type Dnd5eSrdActionCommitInput = Dnd5eSrdPreparedActionCommitRequest;
 
+export type { Dnd5eSrdRageActionKind };
+
+export interface Dnd5eSrdRageActionPreviewInput {
+  kind: Dnd5eSrdRageActionKind;
+  expectedUpdatedAt: string;
+}
+
 export type Dnd5eSrdPreparedActionPreviewInput = SystemActorRollInput &
-  ({ consumeResources: true } | { applyEffect: true }) & {
+  ({ consumeResources: true } | { applyEffect: true } | { weaponMastery: Dnd5eSrdWeaponMasteryUseInput & { use: true } } | { controlledCreature: DndControlledCreatureActionContext }) & {
     prepare: true;
     preparedPreviewKey?: never;
   };
@@ -1788,6 +2104,7 @@ export interface SystemActorRollResult {
   effect?: Record<string, unknown>;
   effects?: Array<Record<string, unknown>>;
   resolution?: Record<string, unknown>;
+  controlledCreatureHandoff?: DndControlledCreatureActionHandoff;
   actor: Actor;
   updatedActors?: Actor[];
   sheet?: Record<string, unknown>;
@@ -1795,6 +2112,33 @@ export interface SystemActorRollResult {
   preparation?: Dnd5eSrdPreparedActionInfo;
   rulesMutationId?: string;
   undo?: DndRulesMutationUndoDescriptor;
+}
+
+export interface Dnd5eSrdHeroicInspirationGrantInput {
+  expectedActorUpdatedAt: string;
+  recipientActorId?: string;
+  expectedRecipientUpdatedAt?: string;
+}
+
+export interface Dnd5eSrdHeroicInspirationGrantResult {
+  awardedTo: "actor" | "recipient";
+  actor: Actor;
+  recipient?: Actor;
+}
+
+export interface Dnd5eSrdHeroicInspirationRerollInput {
+  originalRollId: string;
+  selectedTermIndex: number;
+  selectedResultIndex: number;
+  expectedActorUpdatedAt: string;
+}
+
+export interface Dnd5eSrdHeroicInspirationRerollResult {
+  actor: Actor;
+  originalRoll: DiceRoll;
+  reroll: DiceRoll;
+  chat: ChatMessage;
+  mustUseNewRoll: true;
 }
 
 export interface SystemActorConditionApplyInput {
@@ -1870,6 +2214,10 @@ type Dnd5eSrdAdvancementPreviewInput = {
   hitPointMode?: "fixed" | "roll";
   hitPointRoll?: number;
   abilityChoices?: Record<string, number>;
+  /** Two canonical Wizard spells added to the spellbook at this Wizard level. */
+  wizardSpellbookAdditions?: string[];
+  /** Complete normal prepared-spell list for the advanced class after advancement. */
+  classPreparedSpellChoices?: string[];
 };
 
 type Dnd5eSrdRestRulesPreviewInput = {
@@ -2000,7 +2348,21 @@ export interface Dnd5eSrdRulesPreviewResult {
     };
   }>;
   proposedData?: Record<string, unknown>;
-  details?: Record<string, unknown>;
+  details?: Record<string, unknown> & {
+    spellAdvancement?: {
+      className: string;
+      classLevel: number;
+      spellcastingAbility: "intelligence" | "wisdom" | "charisma";
+      acquisitionMode: "prepared-class-level" | "prepared-long-rest" | "spellbook";
+      maxSpellLevel: number;
+      preparedSpellCapacity: number;
+      preparedSpellIds: string[];
+      wizardSpellbookAdditions: string[];
+      resultingSpellbookSpellIds: string[];
+      materializedSpellIds: string[];
+      spellGrants: Array<{ compendiumEntryId: string; itemData: Record<string, unknown> }>;
+    };
+  };
   batch?: {
     targets: Array<{
       actorId: string;
@@ -2084,6 +2446,7 @@ export const apiClientExcludedRoutePatterns = [
 export class OpenTabletopClient {
   private readonly fetchImpl: typeof fetch;
   private readonly baseUrl: string;
+  private cookieSessionConfirmed = false;
 
   constructor(
     baseUrl: string,
@@ -2095,6 +2458,18 @@ export class OpenTabletopClient {
 
   async health(): Promise<{ ok: boolean; version: string; service: string }> {
     return this.get(routes.health);
+  }
+
+  async operationalRetentionDiagnostics(): Promise<OperationalRetentionDiagnostics> {
+    return this.get(routes.adminRetentionOperations);
+  }
+
+  async previewOperationalRetention(input: Omit<OperationalRetentionRequest, "dryRun" | "targetSetHash" | "reason">, idempotencyKey: string): Promise<OperationalRetentionPlan> {
+    return this.post(routes.adminRetentionPrune, { ...input, dryRun: true }, { "Idempotency-Key": idempotencyKey });
+  }
+
+  async pruneOperationalRetention(input: OperationalRetentionRequest & { targetSetHash: string; reason: string }, idempotencyKey: string): Promise<OperationalRetentionPlan> {
+    return this.post(routes.adminRetentionPrune, { ...input, dryRun: false }, { "Idempotency-Key": idempotencyKey });
   }
 
   async login(input: {
@@ -2121,6 +2496,31 @@ export class OpenTabletopClient {
 
   async session(): Promise<SessionInfo> {
     return this.get(routes.session);
+  }
+
+  async upgradeSessionCookie(expectedUserId: string): Promise<SessionCookieUpgradeInfo> {
+    return this.request("POST", routes.sessionCookieUpgrade, { expectedUserId }, {}, "include");
+  }
+
+  async confirmSessionCookieUpgrade(expectedUserId: string): Promise<SessionCookieUpgradeConfirmInfo> {
+    const confirmation = await this.request<SessionCookieUpgradeConfirmInfo>(
+      "POST",
+      routes.sessionCookieUpgradeConfirm,
+      { expectedUserId },
+      {},
+      "include",
+      false,
+    );
+    if (
+      confirmation.upgradeConfirmed !== true ||
+      confirmation.session?.userId !== expectedUserId
+    ) {
+      throw new Error(
+        "Session cookie confirmation did not match the expected user.",
+      );
+    }
+    this.cookieSessionConfirmed = true;
+    return confirmation;
   }
 
   async profile(): Promise<{ user: User }> {
@@ -2235,7 +2635,10 @@ export class OpenTabletopClient {
       );
     return new WebSocketCtor(
       this.realtimeUrl(campaignId, options),
-      realtimeProtocols(options.protocols, options.token ?? this.options.token),
+      realtimeProtocols(
+        options.protocols,
+        options.token ?? (this.cookieSessionConfirmed ? undefined : this.options.token),
+      ),
     );
   }
 
@@ -2794,6 +3197,16 @@ export class OpenTabletopClient {
     });
   }
 
+  async duplicateScenes(
+    campaignId: string,
+    input: SceneDuplicationRequest,
+    idempotencyKey: string,
+  ): Promise<SceneDuplicationResult> {
+    return this.post(routes.sceneDuplications(campaignId), input, {
+      "Idempotency-Key": idempotencyKey,
+    });
+  }
+
   async scene(sceneId: string): Promise<Scene> {
     return this.get(routes.scene(sceneId));
   }
@@ -2828,6 +3241,10 @@ export class OpenTabletopClient {
     );
   }
 
+  /** Read-only player table projection; the server enforces the caller's GM authority. */
+  async scenePlayerPreview(sceneId: string, userId: string): Promise<PlayerPreviewResponse> {
+    return this.get(`${routes.scenePlayerPreview(sceneId)}?userId=${encodeURIComponent(userId)}`);
+  }
   async sampleSceneVision(
     sceneId: string,
     point: { x: number; y: number },
@@ -2951,6 +3368,7 @@ export class OpenTabletopClient {
       kind: SceneAnnotationKind;
       points: VisionPoint[];
       label?: string;
+      visibility?: "public" | "gm";
       color?: string;
       radius?: number;
       expiresInSeconds?: number;
@@ -2970,6 +3388,7 @@ export class OpenTabletopClient {
       Pick<
         SceneAnnotation,
         | "label"
+        | "visibility"
         | "color"
         | "layer"
         | "groupId"
@@ -3003,6 +3422,10 @@ export class OpenTabletopClient {
       undefined,
       { "Idempotency-Key": idempotencyKey },
     );
+  }
+
+  async campaignCall(campaignId: string): Promise<CampaignCallResponse> {
+    return this.get(routes.campaignCall(campaignId));
   }
 
   async fogPresets(campaignId: string): Promise<FogPreset[]> {
@@ -3187,8 +3610,12 @@ export class OpenTabletopClient {
 
   async applyAiEditLayerToTarget(
     sceneId: string,
+    input: AiEditLayerApplyInput,
+    idempotencyKey: string,
   ): Promise<AiEditLayerApplyResult> {
-    return this.post(routes.sceneAiEditsApply(sceneId), {});
+    return this.post(routes.sceneAiEditsApply(sceneId), input, {
+      "Idempotency-Key": idempotencyKey,
+    });
   }
 
   async assets(campaignId: string): Promise<MapAsset[]> {
@@ -3296,6 +3723,17 @@ export class OpenTabletopClient {
     idempotencyKey: string,
   ): Promise<Token> {
     return this.post(routes.tokens(sceneId), input, {
+      "Idempotency-Key": idempotencyKey,
+    });
+  }
+
+  /** Moves every token atomically after the server preflights all revisions and permissions. */
+  async moveTokens(
+    sceneId: string,
+    input: TokenMoveBatchRequest,
+    idempotencyKey: string,
+  ): Promise<TokenMoveBatchResult> {
+    return this.post(routes.tokenMoves(sceneId), input, {
       "Idempotency-Key": idempotencyKey,
     });
   }
@@ -3810,6 +4248,16 @@ export class OpenTabletopClient {
     );
   }
 
+  async spendDnd5eSrdLegendaryAction(
+    combatId: string,
+    actorId: string,
+    input: Dnd5eSrdLegendaryActionSpendRequest,
+    idempotencyKey: string,
+  ): Promise<Dnd5eSrdLegendaryActionSpendResult> {
+    if (!idempotencyKey.trim()) throw new Error("Legendary-action spends require an Idempotency-Key");
+    return this.post(routes.combatLegendaryActionSpend(combatId, actorId), input, { "Idempotency-Key": idempotencyKey });
+  }
+
   async previewCombatEffectSchedule(
     combatId: string,
     input: CombatEffectSchedulePreviewInput,
@@ -3902,9 +4350,10 @@ export class OpenTabletopClient {
     input: Partial<Combat["combatants"][number]> & {
       syncActorSheet?: boolean;
       expectedUpdatedAt: string;
+      expectedActorUpdatedAt?: string;
     },
     idempotencyKey: string,
-  ): Promise<Combat> {
+  ): Promise<Combat | Dnd5eSrdCombatantSyncMutationResult> {
     return this.patch(routes.combatant(combatId, combatantId), input, {
       "Idempotency-Key": idempotencyKey,
     });
@@ -3998,27 +4447,30 @@ export class OpenTabletopClient {
 
   async createProposal(
     campaignId: string,
-    input: Partial<
-      Pick<Proposal, "title" | "summary" | "changesJson" | "diffJson">
-    >,
+    input: ProposalCreateInput,
+    options: PreparedMutationRequestOptions,
   ): Promise<Proposal> {
-    return this.post(routes.proposals(campaignId), input);
+    return this.post(
+      routes.proposals(campaignId),
+      input,
+      requiredIdempotencyHeaders(options, "Proposal creation"),
+    );
   }
 
-  async approveProposal(proposalId: string): Promise<Proposal> {
-    return this.post(routes.proposalApprove(proposalId), {});
+  async approveProposal(proposalId: string, expectedUpdatedAt: string, idempotencyKey: string): Promise<Proposal> {
+    return this.post(routes.proposalApprove(proposalId), { expectedUpdatedAt }, { "Idempotency-Key": idempotencyKey });
   }
 
-  async applyProposal(proposalId: string): Promise<Proposal> {
-    return this.post(routes.proposalApply(proposalId), {});
+  async applyProposal(proposalId: string, expectedUpdatedAt: string, idempotencyKey: string): Promise<Proposal> {
+    return this.post(routes.proposalApply(proposalId), { expectedUpdatedAt }, { "Idempotency-Key": idempotencyKey });
   }
 
-  async revertProposal(proposalId: string): Promise<Proposal> {
-    return this.post(routes.proposalRevert(proposalId), {});
+  async revertProposal(proposalId: string, expectedUpdatedAt: string, idempotencyKey: string): Promise<Proposal> {
+    return this.post(routes.proposalRevert(proposalId), { expectedUpdatedAt }, { "Idempotency-Key": idempotencyKey });
   }
 
-  async rejectProposal(proposalId: string): Promise<Proposal> {
-    return this.post(routes.proposalReject(proposalId), {});
+  async rejectProposal(proposalId: string, expectedUpdatedAt: string, idempotencyKey: string): Promise<Proposal> {
+    return this.post(routes.proposalReject(proposalId), { expectedUpdatedAt }, { "Idempotency-Key": idempotencyKey });
   }
 
   async aiPolicy(campaignId: string): Promise<AiEffectivePolicy> {
@@ -4063,8 +4515,10 @@ export class OpenTabletopClient {
   async createAiThread(
     campaignId: string,
     input: AiThreadCreateInput,
-  ): Promise<AiThread> {
-    return this.post(routes.aiThreads(campaignId), input);
+    options: MutationRequestOptions = {},
+  ): Promise<AiThreadCreateResponse> {
+    if (!options.idempotencyKey) throw new Error("AI thread creation requires an Idempotency-Key");
+    return this.post(routes.aiThreads(campaignId), input, { "Idempotency-Key": options.idempotencyKey });
   }
 
   async mcp(input: McpJsonRpcRequest): Promise<McpJsonRpcResponse> {
@@ -4088,9 +4542,14 @@ export class OpenTabletopClient {
 
   async createAiEvaluation(
     campaignId: string,
-    input: unknown,
+    input: AiEvaluationCreateInput,
+    options: PreparedMutationRequestOptions,
   ): Promise<AiEvaluationRun> {
-    return this.post(routes.aiEvaluations(campaignId), input);
+    return this.post(
+      routes.aiEvaluations(campaignId),
+      input,
+      requiredIdempotencyHeaders(options, "AI evaluation creation"),
+    );
   }
 
   async aiMemory(campaignId: string): Promise<AiMemoryFact[]> {
@@ -4099,20 +4558,31 @@ export class OpenTabletopClient {
 
   async createAiMemory(
     campaignId: string,
-    input: Partial<AiMemoryFact>,
+    input: Partial<AiMemoryFact> & { expectedUpdatedAt: string },
+    options: MutationRequestOptions = {},
   ): Promise<AiMemoryFact> {
-    return this.post(routes.aiMemory(campaignId), input);
+    if (!options.idempotencyKey) throw new Error("AI memory creation requires an Idempotency-Key");
+    return this.post(routes.aiMemory(campaignId), input, { "Idempotency-Key": options.idempotencyKey });
   }
 
   async extractAiMemory(
     campaignId: string,
-    input: { transcript: string },
+    input: { sourceText?: string; visibility?: "public" | "gm_only"; expectedUpdatedAt: string },
+    options: PreparedMutationRequestOptions,
   ): Promise<unknown> {
-    return this.post(routes.aiMemoryExtract(campaignId), input);
+    return this.post(
+      routes.aiMemoryExtract(campaignId),
+      input,
+      requiredIdempotencyHeaders(options, "AI memory extraction"),
+    );
   }
 
-  async approveAiMemory(factId: string): Promise<AiMemoryFact> {
-    return this.post(routes.aiMemoryApprove(factId), {});
+  async approveAiMemory(
+    factId: string,
+    expectedUpdatedAt: string,
+    idempotencyKey: string,
+  ): Promise<AiMemoryFact> {
+    return this.post(routes.aiMemoryApprove(factId), { expectedUpdatedAt }, { "Idempotency-Key": idempotencyKey });
   }
 
   async aiMemoryFact(factId: string): Promise<AiMemoryFact> {
@@ -4125,17 +4595,27 @@ export class OpenTabletopClient {
       worldId?: string | null;
       subject?: string | null;
       confidence?: number | null;
+      expectedUpdatedAt: string;
     },
+    idempotencyKey: string,
   ): Promise<AiMemoryFact> {
-    return this.patch(routes.aiMemoryFact(factId), input);
+    return this.patch(routes.aiMemoryFact(factId), input, { "Idempotency-Key": idempotencyKey });
   }
 
-  async rejectAiMemory(factId: string): Promise<AiMemoryFact> {
-    return this.post(routes.aiMemoryReject(factId), {});
+  async rejectAiMemory(
+    factId: string,
+    expectedUpdatedAt: string,
+    idempotencyKey: string,
+  ): Promise<AiMemoryFact> {
+    return this.post(routes.aiMemoryReject(factId), { expectedUpdatedAt }, { "Idempotency-Key": idempotencyKey });
   }
 
-  async deleteAiMemory(factId: string): Promise<AiMemoryFact> {
-    return this.delete(routes.aiMemoryFact(factId));
+  async deleteAiMemory(
+    factId: string,
+    expectedUpdatedAt: string,
+    idempotencyKey: string,
+  ): Promise<AiMemoryFact> {
+    return this.delete(`${routes.aiMemoryFact(factId)}?${new URLSearchParams({ expectedUpdatedAt })}`, undefined, { "Idempotency-Key": idempotencyKey });
   }
 
   async aiToolCalls(campaignId: string): Promise<AiToolCall[]> {
@@ -4145,23 +4625,44 @@ export class OpenTabletopClient {
   async retryAiToolCall(
     campaignId: string,
     toolCallId: string,
-    input: { dryRun?: boolean } = {},
+    input: { dryRun?: boolean; expectedUpdatedAt: string },
+    idempotencyKey: string,
   ): Promise<unknown> {
-    return this.post(routes.aiToolCallRetry(campaignId, toolCallId), input);
+    return this.post(routes.aiToolCallRetry(campaignId, toolCallId), input, { "Idempotency-Key": idempotencyKey });
   }
 
   async aiSessionRecap(
     campaignId: string,
-    input: { transcript?: string },
+    input: { sessionId?: string; transcript?: string; manualNotes?: string; expectedUpdatedAt: string },
+    options: PreparedMutationRequestOptions,
   ): Promise<unknown> {
-    return this.post(routes.aiSessionRecap(campaignId), input);
+    return this.post(
+      routes.aiSessionRecap(campaignId),
+      input,
+      requiredIdempotencyHeaders(options, "AI session recap creation"),
+    );
   }
 
   async aiEncounterDesign(
     campaignId: string,
-    input: unknown,
+    input: {
+      prompt: string;
+      difficulty?: string;
+      sceneName?: string;
+      sceneWidth?: number;
+      sceneHeight?: number;
+      gridSize?: number;
+      worldId?: string;
+      partyActorIds?: string[];
+      expectedUpdatedAt: string;
+    },
+    options: PreparedMutationRequestOptions,
   ): Promise<Proposal> {
-    return this.post(routes.aiEncounterDesign(campaignId), input);
+    return this.post(
+      routes.aiEncounterDesign(campaignId),
+      input,
+      requiredIdempotencyHeaders(options, "AI encounter design"),
+    );
   }
 
   async aiGenerateMapAsset(
@@ -4170,12 +4671,19 @@ export class OpenTabletopClient {
       prompt: string;
       name?: string;
       sceneId?: string;
+      sourceAssetId?: string;
       size?: string;
       quality?: string;
       outputFormat?: "png" | "jpeg" | "webp";
+      expectedUpdatedAt: string;
     },
+    options: PreparedMutationRequestOptions,
   ): Promise<unknown> {
-    return this.post(routes.aiGenerateMapAsset(campaignId), input);
+    return this.post(
+      routes.aiGenerateMapAsset(campaignId),
+      input,
+      requiredIdempotencyHeaders(options, "AI map asset generation"),
+    );
   }
 
   async aiGenerateTokenAsset(
@@ -4184,12 +4692,21 @@ export class OpenTabletopClient {
       prompt: string;
       name?: string;
       tokenId?: string;
+      sourceAssetId?: string;
+      reuseKey?: string;
+      reuseExisting?: boolean;
       size?: string;
       quality?: string;
       outputFormat?: "png" | "jpeg" | "webp";
+      expectedUpdatedAt: string;
     },
+    options: PreparedMutationRequestOptions,
   ): Promise<unknown> {
-    return this.post(routes.aiGenerateTokenAsset(campaignId), input);
+    return this.post(
+      routes.aiGenerateTokenAsset(campaignId),
+      input,
+      requiredIdempotencyHeaders(options, "AI token asset generation"),
+    );
   }
 
   async plugins(): Promise<PluginRuntimeInfo[]>;
@@ -4334,6 +4851,20 @@ export class OpenTabletopClient {
     );
   }
 
+  async bindCampaignSystem(
+    campaignId: string,
+    systemId: string,
+    input: CampaignSystemBindingInput,
+    options: PreparedMutationRequestOptions,
+  ): Promise<CampaignSystemBindingResult> {
+    if (!input.expectedUpdatedAt.trim()) throw new Error("System binding requires the exact campaign revision");
+    if (input.system.systemId !== systemId) throw new Error("System binding identity must match the route system");
+    if (!options.idempotencyKey.trim()) throw new Error("System binding requires an Idempotency-Key");
+    return this.post(routes.campaignSystemBinding(campaignId, systemId), input, {
+      "Idempotency-Key": options.idempotencyKey,
+    });
+  }
+
   async registerSystem(
     campaignId: string,
     manifest: SystemManifestData,
@@ -4360,6 +4891,14 @@ export class OpenTabletopClient {
     return this.get(routes.systemCharacterOrigins(campaignId, systemId));
   }
 
+  async previewSystemCharacter(
+    campaignId: string,
+    systemId: string,
+    input: SystemCharacterCreateInput & { templateId: string },
+  ): Promise<SystemCharacterPreviewResult> {
+    return this.post(routes.systemCharacterPreview(campaignId, systemId), input);
+  }
+
   async createSystemCharacter(
     campaignId: string,
     systemId: string,
@@ -4378,6 +4917,16 @@ export class OpenTabletopClient {
     idempotencyKey: string,
   ): Promise<SystemMonsterCreateResult> {
     return this.post(routes.systemMonsters(campaignId, systemId), input, {
+      "Idempotency-Key": idempotencyKey,
+    });
+  }
+
+  async placeEncounterMonsters(
+    sceneId: string,
+    input: EncounterMonsterPlacementBatchInput,
+    idempotencyKey: string,
+  ): Promise<EncounterMonsterPlacementBatchResult> {
+    return this.post(routes.encounterMonsterPlacements(sceneId), input, {
       "Idempotency-Key": idempotencyKey,
     });
   }
@@ -5027,6 +5576,24 @@ export class OpenTabletopClient {
     );
   }
 
+  /** Applies one server-authoritative DM combat-vitals adjustment against exact actor and active-combat revisions. */
+  async adjustDnd5eSrdCombatVitals(
+    campaignId: string,
+    systemId: string,
+    actorId: string,
+    input: Dnd5eSrdCombatVitalsRequest,
+    idempotencyKey: string,
+  ): Promise<Dnd5eSrdCombatVitalsMutationResult> {
+    if (!idempotencyKey.trim()) {
+      throw new Error("Combat-vitals adjustments require an Idempotency-Key");
+    }
+    return this.post(
+      routes.systemActorCombatVitals(campaignId, systemId, actorId),
+      input,
+      { "Idempotency-Key": idempotencyKey },
+    );
+  }
+
   async undoDndRulesMutation(
     campaignId: string,
     mutationId: string,
@@ -5209,21 +5776,86 @@ export class OpenTabletopClient {
     campaignId: string,
     systemId: string,
     actorId: string,
-  ): Promise<unknown> {
+  ): Promise<SystemActorSheet> {
     return this.get(routes.systemActorSheet(campaignId, systemId, actorId));
+  }
+
+  async grantDnd5eSrdHeroicInspiration(
+    campaignId: string,
+    actorId: string,
+    input: Dnd5eSrdHeroicInspirationGrantInput,
+    options: PreparedMutationRequestOptions,
+  ): Promise<Dnd5eSrdHeroicInspirationGrantResult> {
+    if (!input.expectedActorUpdatedAt.trim()) throw new Error("Heroic Inspiration grants require the exact actor revision");
+    if (input.recipientActorId && !input.expectedRecipientUpdatedAt?.trim()) throw new Error("Heroic Inspiration transfers require the exact recipient revision");
+    if (!options.idempotencyKey.trim()) throw new Error("Heroic Inspiration grants require an Idempotency-Key");
+    return this.post(
+      routes.systemActorHeroicInspirationGrant(campaignId, "dnd-5e-srd", actorId),
+      input,
+      { "Idempotency-Key": options.idempotencyKey },
+    );
+  }
+
+  async rerollDnd5eSrdHeroicInspiration(
+    campaignId: string,
+    actorId: string,
+    input: Dnd5eSrdHeroicInspirationRerollInput,
+    options: PreparedMutationRequestOptions,
+  ): Promise<Dnd5eSrdHeroicInspirationRerollResult> {
+    if (!input.originalRollId.trim() || !input.expectedActorUpdatedAt.trim()) throw new Error("Heroic Inspiration rerolls require the original roll and exact actor revision");
+    if (!Number.isInteger(input.selectedTermIndex) || input.selectedTermIndex < 0 || !Number.isInteger(input.selectedResultIndex) || input.selectedResultIndex < 0) throw new Error("Heroic Inspiration rerolls require one selected d20 result");
+    if (!options.idempotencyKey.trim()) throw new Error("Heroic Inspiration rerolls require an Idempotency-Key");
+    return this.post(
+      routes.systemActorHeroicInspirationReroll(campaignId, "dnd-5e-srd", actorId),
+      input,
+      { "Idempotency-Key": options.idempotencyKey },
+    );
+  }
+
+  async rollDeclarativeSystemActor(
+    campaignId: string,
+    systemId: string,
+    actorId: string,
+    input: DeclarativeActionRequest,
+    options: PreparedMutationRequestOptions,
+  ): Promise<DeclarativeActionResult> {
+    if (!input.rollId.trim() || !input.expectedActorUpdatedAt.trim()) throw new Error("Declarative rolls require a rollId and the exact actor revision");
+    if (input.expectedSystem.systemId !== systemId) throw new Error("Declarative roll identity must match the route system");
+    if (!options.idempotencyKey.trim()) throw new Error("Declarative rolls require an Idempotency-Key");
+    return this.post(routes.systemActorRoll(campaignId, systemId, actorId), input, {
+      "Idempotency-Key": options.idempotencyKey,
+    });
   }
 
   async rollSystemActor(
     campaignId: string,
     systemId: string,
     actorId: string,
+    input: DeclarativeActionRequest,
+    options: PreparedMutationRequestOptions,
+  ): Promise<DeclarativeActionResult>;
+  async rollSystemActor(
+    campaignId: string,
+    systemId: string,
+    actorId: string,
     input: SystemActorRollInput,
+    options?: MutationRequestOptions,
+  ): Promise<SystemActorRollResult>;
+  async rollSystemActor(
+    campaignId: string,
+    systemId: string,
+    actorId: string,
+    input: SystemActorRollInput | DeclarativeActionRequest,
     options: MutationRequestOptions = {},
-  ): Promise<SystemActorRollResult> {
+  ): Promise<SystemActorRollResult | DeclarativeActionResult> {
+    if ("expectedSystem" in input) {
+      if (!options.idempotencyKey?.trim()) throw new Error("Declarative rolls require an Idempotency-Key");
+      return this.rollDeclarativeSystemActor(campaignId, systemId, actorId, input as DeclarativeActionRequest, { idempotencyKey: options.idempotencyKey });
+    }
     if (systemId === "dnd-5e-srd") {
       const preparedCommit = Boolean(input.preparedPreviewKey);
       const consequential =
-        input.consumeResources === true || input.applyEffect === true;
+        input.consumeResources === true || input.applyEffect === true || input.weaponMastery?.use === true || input.controlledCreature !== undefined;
       if (input.prepare === true && !options.idempotencyKey?.trim()) {
         throw new Error(
           "Prepared D&D action previews require an Idempotency-Key",
@@ -5279,6 +5911,22 @@ export class OpenTabletopClient {
       input,
       options,
     );
+  }
+
+  /** Prepares a Rage start, extension, or voluntary end with exact revision and retry identity. */
+  async prepareDnd5eSrdRageAction(
+    campaignId: string,
+    actorId: string,
+    input: Dnd5eSrdRageActionPreviewInput,
+    options: PreparedMutationRequestOptions,
+  ): Promise<SystemActorRollResult> {
+    return this.prepareDnd5eSrdAction(campaignId, actorId, {
+      rollId: dnd5eSrdRageActionRollIds[input.kind],
+      expectedUpdatedAt: input.expectedUpdatedAt,
+      consumeResources: true,
+      prepare: true,
+      commit: false,
+    }, options);
   }
 
   async commitDnd5eSrdAction(
@@ -5491,7 +6139,7 @@ export class OpenTabletopClient {
   async analyzePdfContentImport(
     campaignId: string,
     body: BodyInit,
-    options: { sourceName?: string; idempotencyKey: string },
+    options: { sourceName?: string; idempotencyKey: string; expectedUpdatedAt: string },
   ): Promise<ContentImportBatch> {
     const headers: Record<string, string> = {
       "content-type": "application/pdf",
@@ -5500,7 +6148,7 @@ export class OpenTabletopClient {
     headers["Idempotency-Key"] = options.idempotencyKey;
     return this.requestRaw(
       "POST",
-      routes.contentImportPdfAi(campaignId),
+      `${routes.contentImportPdfAi(campaignId)}?${new URLSearchParams({ expectedUpdatedAt: options.expectedUpdatedAt })}`,
       body,
       headers,
     );
@@ -5574,6 +6222,34 @@ export class OpenTabletopClient {
     return this.get(routes.dogfoodReportBundle(campaignId));
   }
 
+  async campaignArchiveImportOperations(
+    campaignId: string,
+    status?: CampaignArchiveImportOperationSummary["status"],
+  ): Promise<{ items: CampaignArchiveImportOperationSummary[] }> {
+    const query = status ? `?${new URLSearchParams({ status }).toString()}` : "";
+    return this.get(`${routes.campaignArchiveImportOperations(campaignId)}${query}`);
+  }
+
+  async previewCampaignArchiveImportRollback(
+    campaignId: string,
+    operationId: string,
+  ): Promise<CampaignArchiveImportRollbackPreview> {
+    return this.get(routes.campaignArchiveImportOperationPreview(campaignId, operationId));
+  }
+
+  async rollbackCampaignArchiveImport(
+    campaignId: string,
+    operationId: string,
+    expectedUpdatedAt: string,
+    idempotencyKey: string,
+  ): Promise<CampaignArchiveImportRollbackResult> {
+    return this.post(
+      routes.campaignArchiveImportOperationRollback(campaignId, operationId),
+      { expectedUpdatedAt, confirmOperationId: operationId },
+      { "Idempotency-Key": idempotencyKey },
+    );
+  }
+
   async importCampaign(
     archive: unknown,
     idempotencyKey: string,
@@ -5633,10 +6309,13 @@ export class OpenTabletopClient {
       [apiVersionHeader]: apiVersion,
       ...extraHeaders,
     };
-    if (this.options.token)
-      headers.authorization = `Bearer ${this.options.token}`;
-    if (this.options.userId) headers["x-user-id"] = this.options.userId;
-    const init: RequestInit & { duplex?: "half" } = { method, headers, body };
+    this.applyConfiguredIdentity(headers);
+    const init: RequestInit & { duplex?: "half" } = {
+      method,
+      headers,
+      body,
+      credentials: this.cookieSessionCredentials(),
+    };
     if (typeof ReadableStream !== "undefined" && body instanceof ReadableStream)
       init.duplex = "half";
     const response = await this.fetchImpl(`${this.baseUrl}${path}`, init);
@@ -5686,13 +6365,12 @@ export class OpenTabletopClient {
       [apiVersionHeader]: apiVersion,
       ...headers,
     };
-    if (this.options.token)
-      requestHeaders.authorization = `Bearer ${this.options.token}`;
-    if (this.options.userId) requestHeaders["x-user-id"] = this.options.userId;
+    this.applyConfiguredIdentity(requestHeaders);
     const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
       method,
       headers: requestHeaders,
       body,
+      credentials: this.cookieSessionCredentials(),
     });
     if (!response.ok) throw new Error(await response.text());
     return response.json() as Promise<T>;
@@ -5700,12 +6378,11 @@ export class OpenTabletopClient {
 
   private async getText(path: string): Promise<string> {
     const headers: Record<string, string> = { [apiVersionHeader]: apiVersion };
-    if (this.options.token)
-      headers.authorization = `Bearer ${this.options.token}`;
-    if (this.options.userId) headers["x-user-id"] = this.options.userId;
+    this.applyConfiguredIdentity(headers);
     const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
       method: "GET",
       headers,
+      credentials: this.cookieSessionCredentials(),
     });
     if (!response.ok) throw new Error(await response.text());
     return response.text();
@@ -5716,22 +6393,37 @@ export class OpenTabletopClient {
     path: string,
     body?: unknown,
     extraHeaders: Record<string, string> = {},
+    credentials?: RequestCredentials,
+    includeConfiguredIdentity = true,
   ): Promise<T> {
     const headers: Record<string, string> = {
       [apiVersionHeader]: apiVersion,
       ...extraHeaders,
     };
     if (body !== undefined) headers["content-type"] = "application/json";
-    if (this.options.token)
-      headers.authorization = `Bearer ${this.options.token}`;
-    if (this.options.userId) headers["x-user-id"] = this.options.userId;
+    this.applyConfiguredIdentity(headers, includeConfiguredIdentity);
     const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
+      credentials: credentials ?? this.cookieSessionCredentials(),
     });
     if (!response.ok) throw new Error(await response.text());
     return response.json() as Promise<T>;
+  }
+
+  private applyConfiguredIdentity(
+    headers: Record<string, string>,
+    includeConfiguredIdentity = true,
+  ): void {
+    if (!includeConfiguredIdentity || this.cookieSessionConfirmed) return;
+    if (this.options.token)
+      headers.authorization = `Bearer ${this.options.token}`;
+    if (this.options.userId) headers["x-user-id"] = this.options.userId;
+  }
+
+  private cookieSessionCredentials(): RequestCredentials | undefined {
+    return this.cookieSessionConfirmed ? "include" : undefined;
   }
 }
 
@@ -5754,6 +6446,16 @@ export interface CampaignSearchResult {
   worldId?: string;
   visibility?: string;
   score: number;
+}
+
+function requiredIdempotencyHeaders(
+  options: PreparedMutationRequestOptions | undefined,
+  operation: string,
+): Record<string, string> {
+  const idempotencyKey = options?.idempotencyKey.trim();
+  if (!idempotencyKey)
+    throw new Error(`${operation} requires an Idempotency-Key`);
+  return { "Idempotency-Key": idempotencyKey };
 }
 
 function normalizeClientBaseUrl(value: string): string {

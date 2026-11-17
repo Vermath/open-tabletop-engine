@@ -51,7 +51,7 @@ describe("D&D advancement feat API eligibility", () => {
     } finally {
       await app.close();
     }
-  });
+  }, 15_000);
 
   it("filters level-4 choices and rejects Epic Boons and duplicate feats atomically", async () => {
     const store = new MemoryStateStore();

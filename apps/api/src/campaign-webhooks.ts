@@ -91,6 +91,9 @@ export interface CampaignWebhookTransportResult {
   ok: boolean;
   responseStatus?: number;
   responseBytes?: number;
+  responseBody?: string;
+  /** Present only for a rejected 3xx response so an explicit caller can revalidate it. */
+  redirectLocation?: string;
   errorCode?: CampaignWebhookSafeErrorCode;
 }
 
@@ -102,12 +105,16 @@ export interface CampaignWebhookTransport {
 export interface CampaignWebhookTransportOptions {
   production?: boolean;
   timeoutMs?: number;
+  maxRequestBytes?: number;
+  maxResponseBytes?: number;
   resolveHostname?: (hostname: string) => Promise<string[]>;
 }
 
 export function createCampaignWebhookTransport(options: CampaignWebhookTransportOptions = {}): CampaignWebhookTransport {
   const production = options.production ?? process.env.NODE_ENV === "production";
   const timeoutMs = boundedTimeout(options.timeoutMs);
+  const requestByteLimit = boundedByteLimit(options.maxRequestBytes, maxRequestBytes);
+  const responseByteLimit = boundedByteLimit(options.maxResponseBytes, maxResponseBytes);
   const resolveHostname = options.resolveHostname ?? defaultResolveHostname;
 
   const validateWithDeadline = (url: string, deadline: number) => validateCampaignWebhookTarget(url, {
@@ -121,12 +128,12 @@ export function createCampaignWebhookTransport(options: CampaignWebhookTransport
       const deadline = Date.now() + timeoutMs;
       const validation = await validateWithDeadline(input.url, deadline);
       if (!validation.ok) return { ok: false, errorCode: validation.errorCode };
-      if (Buffer.byteLength(input.body, "utf8") > maxRequestBytes) return { ok: false, errorCode: "request_too_large" };
+      if (Buffer.byteLength(input.body, "utf8") > requestByteLimit) return { ok: false, errorCode: "request_too_large" };
       const pinnedAddress = validation.resolvedAddresses[0];
       if (!pinnedAddress) return { ok: false, errorCode: "dns_error" };
       const remainingMs = deadline - Date.now();
       if (remainingMs <= 0) return { ok: false, errorCode: "timeout" };
-      return sendPinnedCampaignWebhook(validation.normalizedUrl, pinnedAddress, input, remainingMs);
+      return sendPinnedCampaignWebhook(validation.normalizedUrl, pinnedAddress, input, remainingMs, responseByteLimit);
     },
   };
 }
@@ -237,6 +244,11 @@ function blockedTarget(): CampaignWebhookTargetValidation {
   return { ok: false, errorCode: "blocked_target", message: "Webhook targets must resolve only to public internet addresses" };
 }
 
+function boundedByteLimit(value: number | undefined, fallback: number): number {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(1_024, Math.min(128 * 1024 * 1024, Math.floor(value!)));
+}
+
 function boundedTimeout(value: number | undefined): number {
   if (!Number.isFinite(value)) return defaultTimeoutMs;
   return Math.max(500, Math.min(15_000, Math.floor(value!)));
@@ -284,6 +296,7 @@ export function sendPinnedCampaignWebhook(
   pinnedAddress: string,
   input: CampaignWebhookTransportInput,
   timeoutMs: number,
+  responseByteLimit = maxResponseBytes,
 ): Promise<CampaignWebhookTransportResult> {
   const target = new URL(normalizedUrl);
   const requestImpl = target.protocol === "https:" ? httpsRequest : httpRequest;
@@ -312,28 +325,38 @@ export function sendPinnedCampaignWebhook(
     }, (response) => {
       const responseStatus = response.statusCode ?? 0;
       if (responseStatus >= 300 && responseStatus < 400) {
+        const redirectLocation = response.headers.location;
         response.destroy();
-        finish({ ok: false, responseStatus, errorCode: "redirect_rejected" });
+        finish({
+          ok: false,
+          responseStatus,
+          errorCode: "redirect_rejected",
+          ...(redirectLocation ? { redirectLocation } : {}),
+        });
         return;
       }
       const declaredLength = Number(response.headers["content-length"]);
-      if (Number.isFinite(declaredLength) && declaredLength > maxResponseBytes) {
+      if (Number.isFinite(declaredLength) && declaredLength > responseByteLimit) {
         response.destroy();
         finish({ ok: false, responseStatus, errorCode: "response_too_large" });
         return;
       }
       let responseBytes = 0;
+      const responseChunks: Buffer[] = [];
       response.on("data", (chunk: Buffer | string) => {
-        responseBytes += typeof chunk === "string" ? Buffer.byteLength(chunk) : chunk.byteLength;
-        if (responseBytes > maxResponseBytes) {
+        const bytes = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+        responseBytes += bytes.byteLength;
+        if (responseBytes > responseByteLimit) {
           response.destroy();
           finish({ ok: false, responseStatus, errorCode: "response_too_large" });
+          return;
         }
+        responseChunks.push(bytes);
       });
       response.on("end", () => {
         if (settled) return;
         if (responseStatus < 200 || responseStatus >= 300) finish({ ok: false, responseStatus, responseBytes, errorCode: "http_error" });
-        else finish({ ok: true, responseStatus, responseBytes });
+        else finish({ ok: true, responseStatus, responseBytes, responseBody: Buffer.concat(responseChunks).toString("utf8") });
       });
       response.on("error", () => finish({ ok: false, responseStatus, errorCode: "network_error" }));
       response.on("aborted", () => finish({ ok: false, responseStatus, errorCode: timedOut ? "timeout" : "network_error" }));

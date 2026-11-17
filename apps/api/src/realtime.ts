@@ -13,15 +13,23 @@ export interface RealtimeClient {
 
 export type RealtimeEventFilter = (event: EngineEvent, client: RealtimeClient) => EngineEvent | undefined;
 
+export type RealtimeHubLifecycleEvent = "connected" | "disconnected" | "revoked" | "send_failure";
+
 export class RealtimeHub {
   private readonly clients = new Set<RealtimeClient>();
 
+  constructor(private readonly observeLifecycle?: (event: RealtimeHubLifecycleEvent) => void) {}
+
   add(client: RealtimeClient): void {
+    const size = this.clients.size;
     this.clients.add(client);
+    if (this.clients.size !== size) this.observeLifecycle?.("connected");
   }
 
   remove(client: RealtimeClient): boolean {
-    return this.clients.delete(client);
+    const removed = this.clients.delete(client);
+    if (removed) this.observeLifecycle?.("disconnected");
+    return removed;
   }
 
   clientsMatching(input: { campaignId: string; userId?: string }): RealtimeClient[] {
@@ -39,10 +47,15 @@ export class RealtimeHub {
   }
 
   disconnectSession(sessionId: string): RealtimeClient[] {
+    return this.disconnectWhere((client) => client.sessionId === sessionId);
+  }
+
+  disconnectWhere(predicate: (client: RealtimeClient) => boolean): RealtimeClient[] {
     const removed: RealtimeClient[] = [];
     for (const client of this.clients) {
-      if (client.sessionId !== sessionId) continue;
+      if (!predicate(client)) continue;
       this.clients.delete(client);
+      this.observeLifecycle?.("revoked");
       removed.push(client);
       try {
         client.close?.();
@@ -61,7 +74,7 @@ export class RealtimeHub {
       try {
         client.send(serialized);
       } catch {
-        this.clients.delete(client);
+        if (this.clients.delete(client)) this.observeLifecycle?.("send_failure");
       }
     }
   }
@@ -77,7 +90,7 @@ export class RealtimeHub {
         } catch {
           // A socket can close between route dispatch and broadcast. Do not let
           // one stale connection abort delivery to the rest of the campaign.
-          this.clients.delete(client);
+          if (this.clients.delete(client)) this.observeLifecycle?.("send_failure");
         }
       }
     }

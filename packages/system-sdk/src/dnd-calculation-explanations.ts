@@ -5,7 +5,7 @@ import type {
   CalculationSource,
   CalculationTerm,
   ContentImportLicense
-} from "@open-tabletop/core";
+} from "@open-tabletop/api-contracts";
 
 export const DND_5E_SRD_CALCULATION_EXPLANATION_VERSION = "1.0.0";
 

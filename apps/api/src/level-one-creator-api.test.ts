@@ -1,3 +1,4 @@
+import { emptyState, type EngineState } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
 import { buildApp } from "./fixtures/legacy-build-app.js";
 import { MemoryStateStore } from "./store.js";
@@ -188,6 +189,89 @@ describe("guided level-one character creation API", () => {
       await app.close();
     }
   });
+
+  it("previews, creates, and archive-round-trips an exact standard-array assignment", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+    const standardArrayAssignment = { strength: 15, dexterity: 14, constitution: 13, intelligence: 12, wisdom: 10, charisma: 8 };
+    const payload = {
+      ...fighterEquipment,
+      creationMode: "level-one-srd",
+      templateId: "fighter",
+      name: "Standard Array Fighter",
+      ownerUserId: "usr_demo_player",
+      backgroundId: "soldier",
+      speciesId: "orc",
+      abilityScoreMethod: "standard-array",
+      standardArrayAssignment,
+      abilityScoreIncreases: { strength: 2, dexterity: 1 },
+      classSkillProficiencies: ["acrobatics", "perception"],
+      originLanguageChoices: ["draconic", "elvish"],
+      classLanguageChoices: []
+    };
+    try {
+      const preview = await app.inject({
+        method: "POST",
+        url: `${route}/preview`,
+        headers,
+        payload
+      });
+      expect(preview.statusCode, preview.body).toBe(200);
+      expect(preview.json().preview.proposedData).toEqual(expect.objectContaining({
+        attributes: { strength: 17, dexterity: 15, constitution: 13, intelligence: 12, wisdom: 10, charisma: 8 },
+        origin: expect.objectContaining({ abilityScoreMethod: "standard-array", standardArrayAssignment })
+      }));
+
+      const actorCount = store.state.actors.length;
+      const invalid = await app.inject({
+        method: "POST",
+        url: route,
+        headers: { ...headers, "idempotency-key": "standard-array-invalid" },
+        payload: { ...payload, name: "Invalid Standard Array", standardArrayAssignment: { ...standardArrayAssignment, charisma: 10 } }
+      });
+      expect(invalid.statusCode).toBe(400);
+      expect(invalid.json().issues).toEqual(expect.arrayContaining([expect.objectContaining({ field: "standardArrayAssignment", code: "invalid_array" })]));
+      expect(store.state.actors).toHaveLength(actorCount);
+
+      const created = await app.inject({
+        method: "POST",
+        url: route,
+        headers: { ...headers, "idempotency-key": "standard-array-create" },
+        payload
+      });
+      expect(created.statusCode, created.body).toBe(200);
+      const actor = created.json().actor;
+      expect(actor.data).toEqual(expect.objectContaining({
+        attributes: { strength: 17, dexterity: 15, constitution: 13, intelligence: 12, wisdom: 10, charisma: 8 },
+        origin: expect.objectContaining({ abilityScoreMethod: "standard-array", standardArrayAssignment }),
+        dnd5eCharacterCreation: expect.objectContaining({
+          mode: "level-one-srd",
+          options: expect.objectContaining({ abilityScoreMethod: "standard-array", standardArrayAssignment })
+        })
+      }));
+
+      const exported = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/export", headers });
+      expect(exported.statusCode, exported.body).toBe(200);
+      const targetState: EngineState = emptyState();
+      targetState.users.push({ id: "usr_demo_gm", displayName: "Archive GM", createdAt: "2026-07-17T00:00:00.000Z", updatedAt: "2026-07-17T00:00:00.000Z" });
+      const targetStore = new MemoryStateStore(targetState);
+      const targetApp = await buildApp({ store: targetStore });
+      try {
+        const imported = await targetApp.inject({ method: "POST", url: "/api/v1/import/campaign", headers, payload: exported.json() });
+        expect(imported.statusCode, imported.body).toBe(200);
+        const reloaded = targetStore.state.actors.find((candidate) => candidate.id === actor.id);
+        expect(reloaded?.data).toEqual(expect.objectContaining({
+          attributes: { strength: 17, dexterity: 15, constitution: 13, intelligence: 12, wisdom: 10, charisma: 8 },
+          origin: expect.objectContaining({ abilityScoreMethod: "standard-array", standardArrayAssignment }),
+          dnd5eCharacterCreation: expect.objectContaining({ options: expect.objectContaining({ abilityScoreMethod: "standard-array", standardArrayAssignment }) })
+        }));
+      } finally {
+        await targetApp.close();
+      }
+    } finally {
+      await app.close();
+    }
+  }, 30_000);
 
   it("creates a complete guided build while retaining template-default compatibility", async () => {
     const store = new MemoryStateStore();
@@ -430,6 +514,48 @@ describe("guided level-one character creation API", () => {
           selectedBenefit: expect.objectContaining({ reductionFormula: "1d12+2" })
         })
       }));
+
+      const manualPrepare = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${goliath.json().actor.id}/roll`,
+        headers: { ...headers, "idempotency-key": "manual-resolution-prepare" },
+        payload: { rollId: "species-goliath-giant-ancestry", applyEffect: true, expectedUpdatedAt: goliath.json().actor.updatedAt, prepare: true, commit: false }
+      });
+      expect(manualPrepare.statusCode, manualPrepare.body).toBe(200);
+      expect(manualPrepare.json().resolution.manualResolutionRequired).toMatchObject({ supportStatus: "manual" });
+      const manualCommit = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${goliath.json().actor.id}/roll`,
+        headers: { ...headers, "idempotency-key": "manual-resolution-commit" },
+        payload: {
+          preparedPreviewKey: manualPrepare.json().preparation.preparedPreviewKey,
+          expectedUpdatedAt: manualPrepare.json().preparation.revisions.actorUpdatedAt[goliath.json().actor.id]
+        }
+      });
+      expect(manualCommit.statusCode, manualCommit.body).toBe(200);
+      expect(manualCommit.json().resolution.manualResolutionRequired).toMatchObject({ supportStatus: "manual" });
+
+      const rogue = await app.inject({
+        method: "POST",
+        url: route,
+        headers,
+        payload: { templateId: "rogue", name: "Unsupported Damage Rogue", ownerUserId: "usr_demo_gm" }
+      });
+      expect(rogue.statusCode).toBe(200);
+      const unsupported = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${rogue.json().actor.id}/roll`,
+        headers: { ...headers, "idempotency-key": "unsupported-resolution-prepare" },
+        payload: { rollId: "feature-sneak-attack-damage", applyEffect: true, targetActorId: goliath.json().actor.id, expectedUpdatedAt: rogue.json().actor.updatedAt, prepare: true, commit: false }
+      });
+      expect(unsupported.statusCode).toBe(409);
+      expect(unsupported.json()).toMatchObject({
+        error: "pending_resolution",
+        resolution: {
+          pendingChoice: { kind: "damageType", options: ["Bludgeoning", "Piercing", "Slashing"] },
+          manualResolutionRequired: { supportStatus: "manual" }
+        }
+      });
 
       const templateDefault = await app.inject({
         method: "POST",

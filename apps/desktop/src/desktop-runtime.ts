@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+import { readFile, writeFile } from "node:fs/promises";
 import { win32 } from "node:path";
 
 export interface DesktopDataPaths {
@@ -86,4 +88,29 @@ export async function shutdownDesktopResources(resources: DesktopShutdownResourc
     if (result.status === "rejected") failures.push({ resource: operations[index]![0], message: result.reason instanceof Error ? result.reason.message : String(result.reason) });
   }
   return failures;
+}
+
+/** Reuse one local signing key across restarts without requiring consumer setup. */
+export async function ensureDesktopAssetSigningSecret(paths: DesktopDataPaths, baseEnv: NodeJS.ProcessEnv = process.env): Promise<string> {
+  const configured = baseEnv.OTTE_ASSET_URL_SIGNING_SECRET;
+  if (configured?.trim()) return configured;
+  const keyPath = joinDesktopPath(paths.dataDir, "asset-url-signing.key");
+  const readPersistedKey = async (): Promise<string> => {
+    const key = (await readFile(keyPath, "utf8")).trim();
+    if (!/^[a-f0-9]{64}$/.test(key)) throw new Error("The persisted desktop asset signing key is invalid; restore the original key file before starting.");
+    return key;
+  };
+  try {
+    return await readPersistedKey();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  const generated = randomBytes(32).toString("hex");
+  try {
+    await writeFile(keyPath, generated + "\n", { encoding: "utf8", flag: "wx", mode: 0o600 });
+    return generated;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    return readPersistedKey();
+  }
 }

@@ -1,4 +1,4 @@
-import { createEvent, createTimestamped, type CampaignSession, type EngineEvent, type PermissionName, type Scene } from "@open-tabletop/core";
+import { createEvent, createTimestamped, normalizeJournalEntry, type CampaignSession, type EngineEvent, type JournalEntry, type JournalEntryRevision, type PermissionName, type Scene } from "@open-tabletop/core";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { StateStore } from "./store.js";
 
@@ -26,7 +26,7 @@ interface CampaignSessionActionBody {
 interface CampaignSessionAuditInput {
   campaignId: string;
   action: string;
-  targetType: "campaign_session";
+  targetType: "campaign_session" | "journal";
   targetId: string;
   before?: unknown;
   after?: unknown;
@@ -78,6 +78,86 @@ function idempotencyKey(headers: FastifyRequest["headers"]): string | undefined 
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+const SESSION_REPORT_SCHEMA = "otte.session-report/v1";
+
+function synchronizedSessionReportBody(entry: JournalEntry, session: CampaignSession): { body: string; previousStatus: unknown } | undefined {
+  if (entry.visibility !== "gm_only" || !entry.tags.includes("session-report") || !entry.tags.includes(`session:${session.id}`)) return undefined;
+  const match = /```json\s*\r?\n([\s\S]*?)\r?\n```/.exec(entry.body);
+  if (!match || match.index === undefined) return undefined;
+  let report: unknown;
+  try {
+    report = JSON.parse(match[1]!) as unknown;
+  } catch {
+    return undefined;
+  }
+  if (!isRecord(report) || report.schema !== SESSION_REPORT_SCHEMA || report.session_id !== session.id) return undefined;
+  if (report.session_status === session.status && report.session_number === session.number) return undefined;
+  const nextReport = { ...report, session_number: session.number, session_status: session.status };
+  const replacement = `\`\`\`json\n${JSON.stringify(nextReport, null, 2)}\n\`\`\``;
+  return {
+    body: `${entry.body.slice(0, match.index)}${replacement}${entry.body.slice(match.index + match[0].length)}`,
+    previousStatus: report.session_status,
+  };
+}
+
+function synchronizeSessionReportJournals(
+  dependencies: CampaignSessionRouteDependencies,
+  session: CampaignSession,
+  userId: string,
+): JournalEntry[] {
+  const synchronized: JournalEntry[] = [];
+  for (const entry of dependencies.store.state.journals) {
+    if (entry.campaignId !== session.campaignId) continue;
+    const update = synchronizedSessionReportBody(entry, session);
+    if (!update) continue;
+    const current = normalizeJournalEntry(entry);
+    const previousRevision: JournalEntryRevision = {
+      id: `jrev_${current.id}_${current.revision ?? 1}`,
+      revision: current.revision ?? 1,
+      kind: current.kind ?? "entry",
+      parentId: current.parentId,
+      title: current.title,
+      body: current.body,
+      visibility: current.visibility,
+      visibleToUserIds: [...current.visibleToUserIds],
+      visibleToActorIds: [...current.visibleToActorIds],
+      tags: [...current.tags],
+      links: (current.links ?? []).map((link) => ({ ...link })),
+      canonStatus: current.canonStatus ?? "draft",
+      changedBy: userId,
+      createdAt: current.updatedAt,
+    };
+    const updatedAt = dependencies.nextRevisionTimestamp(current.updatedAt);
+    Object.assign(entry, {
+      body: update.body,
+      revision: (current.revision ?? 1) + 1,
+      revisions: [...(current.revisions ?? []), previousRevision],
+      canonStatus: "in_review" as const,
+      canonReviewedBy: undefined,
+      canonReviewedAt: undefined,
+      canonReviewNote: undefined,
+      updatedBy: userId,
+      updatedAt,
+    });
+    dependencies.appendAudit(userId, {
+      campaignId: session.campaignId,
+      action: "journal.sessionReport.sync",
+      targetType: "journal",
+      targetId: entry.id,
+      before: { sessionId: session.id, sessionStatus: update.previousStatus, visibility: entry.visibility },
+      after: { sessionId: session.id, sessionStatus: session.status, visibility: entry.visibility, revision: entry.revision },
+    });
+    synchronized.push(entry);
+  }
+  return synchronized;
+}
+
+function broadcastSynchronizedSessionReports(dependencies: CampaignSessionRouteDependencies, entries: JournalEntry[], userId: string): void {
+  for (const entry of entries) {
+    dependencies.broadcast(createEvent({ campaignId: entry.campaignId, type: "journal.updated", actorUserId: userId, targetId: entry.id, payload: entry }));
+  }
 }
 
 function boundedText(value: unknown, maxLength: number): string | undefined {
@@ -210,8 +290,10 @@ export function registerCampaignSessionRoutes(
     if (!normalized.ok) return badRequest(reply, normalized.error);
     const before = campaignSessionAuditSummary(session);
     Object.assign(session, normalized.value, { updatedBy: userId, updatedAt: dependencies.nextRevisionTimestamp(session.updatedAt) });
+    const synchronizedReports = synchronizeSessionReportJournals(dependencies, session, userId);
     dependencies.appendAudit(userId, { campaignId: session.campaignId, action: "campaign.session.update", targetType: "campaign_session", targetId: session.id, before, after: campaignSessionAuditSummary(session) });
     store.save();
+    broadcastSynchronizedSessionReports(dependencies, synchronizedReports, userId);
     dependencies.broadcast(createEvent({ campaignId: session.campaignId, type: "campaign.session.updated", actorUserId: userId, targetId: session.id, payload: session }));
     return session;
   });
@@ -236,9 +318,11 @@ export function registerCampaignSessionRoutes(
     const startedAt = dependencies.nextRevisionTimestamp(session.updatedAt);
     if (scene) dependencies.activateScene(scene, userId, startedAt);
     Object.assign(session, { status: "live" as const, startedAt, endedAt: undefined, updatedBy: userId, updatedAt: startedAt });
+    const synchronizedReports = synchronizeSessionReportJournals(dependencies, session, userId);
     dependencies.appendAudit(userId, { campaignId: session.campaignId, action: "campaign.session.start", targetType: "campaign_session", targetId: session.id, after: campaignSessionAuditSummary(session) });
     store.save();
     if (scene) dependencies.broadcast(createEvent({ campaignId: scene.campaignId, type: "scene.activated", actorUserId: userId, targetId: scene.id, payload: scene }));
+    broadcastSynchronizedSessionReports(dependencies, synchronizedReports, userId);
     dependencies.broadcast(createEvent({ campaignId: session.campaignId, type: "campaign.session.started", actorUserId: userId, targetId: session.id, payload: session }));
     return session;
   });
@@ -257,8 +341,10 @@ export function registerCampaignSessionRoutes(
     const userId = dependencies.currentUserId(request.headers);
     const endedAt = dependencies.nextRevisionTimestamp(session.updatedAt);
     Object.assign(session, { status: "completed" as const, notes, endedAt, updatedBy: userId, updatedAt: endedAt });
+    const synchronizedReports = synchronizeSessionReportJournals(dependencies, session, userId);
     dependencies.appendAudit(userId, { campaignId: session.campaignId, action: "campaign.session.complete", targetType: "campaign_session", targetId: session.id, after: campaignSessionAuditSummary(session) });
     store.save();
+    broadcastSynchronizedSessionReports(dependencies, synchronizedReports, userId);
     dependencies.broadcast(createEvent({ campaignId: session.campaignId, type: "campaign.session.completed", actorUserId: userId, targetId: session.id, payload: session }));
     return session;
   });

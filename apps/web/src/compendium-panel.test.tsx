@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { COMPENDIUM_CATALOG_WINDOW_SIZE, CompendiumPanel, compendiumCatalogPath, compendiumCatalogWindow, compendiumEntryUpdateState, conflictChoiceDetail, conflictChoiceLabel } from "./compendium-panel.js";
+import { COMPENDIUM_CATALOG_WINDOW_SIZE, CompendiumPanel, compendiumCatalogPath, compendiumCatalogWindow, compendiumEntryAnchorId, compendiumEntryUpdateState, conflictChoiceDetail, conflictChoiceLabel } from "./compendium-panel.js";
 
 const timestamp = "2026-07-13T00:00:00.000Z";
 
@@ -39,6 +39,9 @@ const entry = {
 } satisfies CompendiumCatalogEntry;
 
 describe("CompendiumPanel", () => {
+  it("provides a stable exact-record focus target", () => {
+    expect(compendiumEntryAnchorId("srd/longsword")).toBe("campaign-search-compendium-srd%2Flongsword");
+  });
   it("renders a standalone, accessible system and actor selection surface", () => {
     const html = renderToStaticMarkup(
       <CompendiumPanel

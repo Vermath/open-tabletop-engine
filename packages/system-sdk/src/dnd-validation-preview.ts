@@ -1,4 +1,6 @@
-import type { Actor, Item } from "@open-tabletop/core";
+import type { Actor, Item } from "@open-tabletop/api-contracts";
+import { dnd5eSrdClassSpellGrantData, dnd5eSrdSpellcastingClassProfile, type Dnd5eSrdSpellAcquisitionMode, type Dnd5eSrdSpellcastingAbility, type Dnd5eSrdSpellcastingClassName } from "./dnd-spell-grants.js";
+import { dnd5eSrdSpellReplacementCount, dnd5eSrdSpellReplacementLimit } from "./dnd-spell-preparation.js";
 import {
   DND_5E_SRD_SYSTEM_ID,
   DND_5E_SRD_VERSION,
@@ -11,6 +13,7 @@ import {
   dnd5eSrdAdvancementClassName,
   dnd5eSrdClassAdvancementProfile,
   dnd5eSrdClassHitDieSize,
+  dnd5eSrdCompendium,
   dnd5eSrdFeatEntry,
   dnd5eSrdHitDicePools,
   dnd5eSrdMulticlassPrerequisites,
@@ -32,6 +35,100 @@ export const DND_5E_SRD_ACTOR_SCHEMA_VERSION = "1.0.0";
 export const DND_5E_SRD_ITEM_SCHEMA_VERSION = "1.0.0";
 export const DND_5E_SRD_RULES_PREVIEW_VERSION = "1.0.0";
 export const DND_5E_SRD_REPAIR_PREVIEW_VERSION = "1.0.0";
+
+export type Dnd5eSrdAbilityName = "strength" | "dexterity" | "constitution" | "intelligence" | "wisdom" | "charisma";
+export type Dnd5eSrdLifeState = "conscious" | "unconscious" | "stable" | "dead" | "defeated";
+
+export interface Dnd5eSrdManagedPool extends Record<string, unknown> {
+  current: number;
+  max: number;
+}
+
+export interface Dnd5eSrdManagedHitDicePool extends Dnd5eSrdManagedPool {
+  className: string;
+  size: string;
+}
+
+export interface Dnd5eSrdManagedClassLevel extends Record<string, unknown> {
+  className?: string;
+  /** Legacy spelling retained losslessly by the compatible parser. */
+  class?: string;
+  level: number;
+}
+
+/**
+ * Typed view of the flat Actor.data roots currently owned by reviewed D&D
+ * rules operations. The index signature deliberately preserves untouched
+ * homebrew and future-system fields.
+ */
+export interface Dnd5eSrdActorManagedData extends Record<string, unknown> {
+  ruleset?: string;
+  class?: string;
+  level?: number;
+  classes?: Dnd5eSrdManagedClassLevel[];
+  attributes?: Partial<Record<Dnd5eSrdAbilityName, number>> & Record<string, unknown>;
+  hp?: Dnd5eSrdManagedPool;
+  hitDice?: Dnd5eSrdManagedPool & { size?: string };
+  hitDicePools?: Dnd5eSrdManagedHitDicePool[];
+  temporaryHitPoints?: number | ({ current: number } & Record<string, unknown>);
+  temporaryHp?: number | ({ current: number } & Record<string, unknown>);
+  tempHp?: number | ({ current: number } & Record<string, unknown>);
+  deathSaves?: { successes: number; failures: number } & Record<string, unknown>;
+  lifeState?: Dnd5eSrdLifeState;
+  defeated?: boolean;
+  conditions?: unknown[];
+  resources?: Record<string, unknown>;
+  spellSlots?: Record<string, unknown>;
+  rulesEngine?: Record<string, unknown>;
+  heroicInspiration?: boolean;
+  weaponMasteries?: unknown[];
+  weaponMasteriesByClass?: Record<string, unknown>;
+  armorClass?: number;
+}
+
+/** Typed view of Item.data roots consumed by current D&D rules resolvers. */
+export interface Dnd5eSrdItemManagedData extends Record<string, unknown> {
+  quantity?: number;
+  equipped?: boolean;
+  prepared?: boolean;
+  alwaysPrepared?: boolean;
+  requiresAttunement?: boolean;
+  attuned?: boolean;
+  charges?: number | Record<string, unknown>;
+  uses?: number | Record<string, unknown>;
+  damageType?: string;
+  secondaryDamageType?: string;
+  armorType?: string;
+  category?: string;
+  equipmentCategory?: string;
+  ability?: string;
+  mastery?: string;
+}
+
+export interface Dnd5eSrdManagedDataSource {
+  entityKind: "actor" | "item";
+  entityId: string;
+  systemId: typeof DND_5E_SRD_SYSTEM_ID;
+  rulesVersion: typeof DND_5E_SRD_VERSION;
+  /** Existing durable records are flat and did not carry a data-schema version. */
+  sourceSchemaVersion: "legacy-unversioned";
+  schemaVersion: string;
+}
+
+export interface Dnd5eSrdManagedDataView<T extends Record<string, unknown>> {
+  source: Dnd5eSrdManagedDataSource;
+  migration: {
+    from: "legacy-unversioned";
+    to: string;
+    lossless: true;
+  };
+  data: T;
+  warnings: Dnd5eSrdValidationIssue[];
+}
+
+export type Dnd5eSrdManagedDataParseResult<T extends Record<string, unknown>> =
+  | { ok: true; value: Dnd5eSrdManagedDataView<T> }
+  | { ok: false; source: Dnd5eSrdManagedDataSource; issues: Dnd5eSrdValidationIssue[] };
 
 export type Dnd5eSrdValidationSeverity = "error" | "warning";
 
@@ -133,6 +230,29 @@ export interface Dnd5eSrdAdvancementPreviewRequest {
   weaponMasteryChoices?: string[];
   featId?: string;
   abilityChoices?: Record<string, number>;
+  /** Canonical Wizard spells gained when this advancement raises Wizard level. */
+  wizardSpellbookAdditions?: string[];
+  /** Complete normal prepared-spell list for the class after this advancement. */
+  classPreparedSpellChoices?: string[];
+  /** Server-derived actor-owned spells that do not consume normal preparation capacity. */
+  serverAlwaysPreparedSpellIds?: string[];
+}
+
+export interface Dnd5eSrdSpellAdvancementPlan extends Record<string, unknown> {
+  className: Dnd5eSrdSpellcastingClassName;
+  classLevel: number;
+  spellcastingAbility: Dnd5eSrdSpellcastingAbility;
+  acquisitionMode: Dnd5eSrdSpellAcquisitionMode;
+  maxSpellLevel: number;
+  preparedSpellCapacity: number;
+  preparedSpellIds: string[];
+  wizardSpellbookAdditions: string[];
+  resultingSpellbookSpellIds: string[];
+  materializedSpellIds: string[];
+  spellGrants: Array<{
+    compendiumEntryId: string;
+    itemData: ReturnType<typeof dnd5eSrdClassSpellGrantData>;
+  }>;
 }
 
 export interface Dnd5eSrdRestHitDiePreviewSelection {
@@ -288,8 +408,99 @@ function validatePool(issues: Dnd5eSrdValidationIssue[], value: unknown, path: s
   }
 }
 
+function validateClassLevels(issues: Dnd5eSrdValidationIssue[], value: unknown): void {
+  if (value === undefined) return;
+  if (!Array.isArray(value)) {
+    issues.push(issue("/data/classes", "error", "schema.array", "Class levels must be an array."));
+    return;
+  }
+  const seen = new Set<string>();
+  value.forEach((entry, index) => {
+    const path = `/data/classes/${index}`;
+    if (!isRecord(entry)) {
+      issues.push(issue(path, "error", "schema.object", "Expected a class-level object."));
+      return;
+    }
+    const className = typeof entry.className === "string" ? entry.className : typeof entry.class === "string" ? entry.class : undefined;
+    if (!className?.trim()) issues.push(issue(`${path}/className`, "error", "schema.required", "Class name is required."));
+    else {
+      const key = className.trim().toLowerCase();
+      if (seen.has(key)) issues.push(issue(`${path}/className`, "error", "rules.duplicate_class", "Each class can have only one class-level entry."));
+      seen.add(key);
+    }
+    validateFiniteInteger(issues, entry.level, `${path}/level`, { minimum: 1, maximum: 20, required: true });
+  });
+}
+
+function validateTemporaryHitPoints(issues: Dnd5eSrdValidationIssue[], data: Record<string, unknown>): void {
+  for (const key of ["temporaryHitPoints", "temporaryHp", "tempHp"] as const) {
+    const value = data[key];
+    if (value === undefined) continue;
+    const path = `/data/${key}`;
+    if (isRecord(value)) validateFiniteInteger(issues, value.current, `${path}/current`, { minimum: 0, required: true });
+    else validateFiniteInteger(issues, value, path, { minimum: 0 });
+  }
+}
+
+function validateDeathSaves(issues: Dnd5eSrdValidationIssue[], value: unknown): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    issues.push(issue("/data/deathSaves", "error", "schema.object", "Death Saves must be an object."));
+    return;
+  }
+  validateFiniteInteger(issues, value.successes, "/data/deathSaves/successes", { minimum: 0, maximum: 3, required: true });
+  validateFiniteInteger(issues, value.failures, "/data/deathSaves/failures", { minimum: 0, maximum: 3, required: true });
+}
+
+function validateManagedPoolMap(issues: Dnd5eSrdValidationIssue[], value: unknown, path: string): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    issues.push(issue(path, "error", "schema.object", "Expected a resource-pool object."));
+    return;
+  }
+  for (const [key, rawPool] of Object.entries(value)) {
+    if (!isRecord(rawPool) || (!("current" in rawPool) && !("max" in rawPool))) continue;
+    const poolPath = `${path}/${pointerSegment(key)}`;
+    validateFiniteInteger(issues, rawPool.current, `${poolPath}/current`, { minimum: 0, required: true });
+    validateFiniteInteger(issues, rawPool.max, `${poolPath}/max`, { minimum: 0, required: true });
+    if (typeof rawPool.current === "number" && typeof rawPool.max === "number" && rawPool.current > rawPool.max) {
+      issues.push(issue(`${poolPath}/current`, "error", "rules.pool_above_maximum", "Current value cannot exceed the maximum."));
+    }
+  }
+}
+
+function validateActorManagedSubroots(issues: Dnd5eSrdValidationIssue[], data: Record<string, unknown>): void {
+  validateClassLevels(issues, data.classes);
+  validateTemporaryHitPoints(issues, data);
+  validateDeathSaves(issues, data.deathSaves);
+  validateManagedPoolMap(issues, data.resources, "/data/resources");
+  validateManagedPoolMap(issues, data.spellSlots, "/data/spellSlots");
+  if (data.rulesEngine !== undefined && !isRecord(data.rulesEngine)) issues.push(issue("/data/rulesEngine", "error", "schema.object", "Rules-engine state must be an object."));
+  if (data.weaponMasteries !== undefined && !Array.isArray(data.weaponMasteries)) issues.push(issue("/data/weaponMasteries", "error", "schema.array", "Weapon Masteries must be an array."));
+  if (data.weaponMasteriesByClass !== undefined && !isRecord(data.weaponMasteriesByClass)) issues.push(issue("/data/weaponMasteriesByClass", "error", "schema.object", "Weapon Masteries by class must be an object."));
+  if (data.heroicInspiration !== undefined && typeof data.heroicInspiration !== "boolean") issues.push(issue("/data/heroicInspiration", "error", "schema.boolean", "Heroic Inspiration must be true or false."));
+  if (data.armorClass !== undefined) validateFiniteInteger(issues, data.armorClass, "/data/armorClass", { minimum: 0 });
+  if (data.defeated !== undefined && typeof data.defeated !== "boolean") issues.push(issue("/data/defeated", "error", "schema.boolean", "Defeated must be true or false."));
+  if (data.lifeState !== undefined && (typeof data.lifeState !== "string" || !["conscious", "unconscious", "stable", "dead", "defeated"].includes(data.lifeState.toLowerCase()))) {
+    issues.push(issue("/data/lifeState", "error", "schema.enum", "Life state must be conscious, unconscious, stable, dead, or defeated."));
+  }
+}
+
+function validateOptionalUsePool(issues: Dnd5eSrdValidationIssue[], value: unknown, path: string): void {
+  if (value === undefined) return;
+  if (typeof value === "number") {
+    validateFiniteInteger(issues, value, path, { minimum: 0 });
+    return;
+  }
+  if (!isRecord(value)) {
+    issues.push(issue(path, "error", "schema.object", "Expected a use-pool object."));
+    return;
+  }
+  if ("current" in value || "max" in value) validatePool(issues, value, path, true);
+}
+
 /** Read-only, forward-compatible validation for the D&D actor envelope and known SRD fields. */
-export function validateDnd5eSrdActor(actor: Actor): Dnd5eSrdValidationReport {
+export function validateDnd5eSrdActor(actor: Actor, options: { requireCharacterCore?: boolean } = {}): Dnd5eSrdValidationReport {
   const issues: Dnd5eSrdValidationIssue[] = [];
   if (!actor || typeof actor !== "object") {
     issues.push(issue("", "error", "schema.object", "Expected an actor object."));
@@ -310,35 +521,37 @@ export function validateDnd5eSrdActor(actor: Actor): Dnd5eSrdValidationReport {
   else if (data.ruleset !== DND_5E_SRD_VERSION) issues.push(issue("/data/ruleset", "warning", "rules.version_mismatch", `Stored rules version does not match ${DND_5E_SRD_VERSION}.`));
 
   const isCharacter = typeof actor.type === "string" && actor.type.toLowerCase() === "character";
-  if (isCharacter) validateFiniteInteger(issues, data.level, "/data/level", { minimum: 1, maximum: 20, required: true });
+  const requireCharacterCore = isCharacter && options.requireCharacterCore !== false;
+  if (isCharacter) validateFiniteInteger(issues, data.level, "/data/level", { minimum: 1, maximum: 20, required: requireCharacterCore });
   else validateFiniteNumber(issues, data.level, "/data/level", { minimum: 0 });
-  if (isCharacter) {
-    if (typeof data.class !== "string" || !data.class.trim()) issues.push(issue("/data/class", "error", "schema.required", "A character class is required."));
+  if (isCharacter && (requireCharacterCore || data.class !== undefined)) {
+    if (typeof data.class !== "string" || !data.class.trim()) issues.push(issue("/data/class", "error", requireCharacterCore ? "schema.required" : "schema.string", requireCharacterCore ? "A character class is required." : "Character class must be a non-empty string."));
     else if (!Object.keys(dnd5eSrdMulticlassPrerequisites).some((className) => className.toLowerCase() === data.class!.toString().toLowerCase())) {
       issues.push(issue("/data/class", "warning", "rules.homebrew_class", "This class is not automated by the SRD rules helper; its fields are preserved."));
     }
   }
 
   if (data.attributes === undefined) {
-    if (isCharacter) issues.push(issue("/data/attributes", "error", "schema.required", "Character ability scores are required."));
+    if (requireCharacterCore) issues.push(issue("/data/attributes", "error", "schema.required", "Character ability scores are required."));
   } else if (!isRecord(data.attributes)) {
     issues.push(issue("/data/attributes", "error", "schema.object", "Ability scores must be an object."));
   } else {
     for (const ability of DND_ABILITY_NAMES) {
-      validateFiniteInteger(issues, data.attributes[ability], `/data/attributes/${ability}`, { minimum: 0, maximum: 30, required: isCharacter });
+      validateFiniteInteger(issues, data.attributes[ability], `/data/attributes/${ability}`, { minimum: 0, maximum: 30, required: requireCharacterCore });
     }
   }
 
-  validatePool(issues, data.hp, "/data/hp", isCharacter);
+  validatePool(issues, data.hp, "/data/hp", requireCharacterCore);
   if (isRecord(data.hp) && typeof data.hp.current === "number" && data.hp.current < 0) {
     issues.push(issue("/data/hp/current", "error", "rules.hit_points_negative", "Hit Points cannot be negative."));
   }
-  validatePool(issues, data.hitDice, "/data/hitDice", isCharacter);
+  validatePool(issues, data.hitDice, "/data/hitDice", requireCharacterCore);
   if (isRecord(data.hitDice) && data.hitDice.size !== undefined && (typeof data.hitDice.size !== "string" || !DND_HIT_DICE.has(data.hitDice.size.toLowerCase()))) {
     issues.push(issue("/data/hitDice/size", "error", "rules.hit_die_unsupported", "Expected d6, d8, d10, or d12."));
   }
   if (data.hitDicePools !== undefined) validateHitDicePools(issues, data.hitDicePools);
   if (data.conditions !== undefined && !Array.isArray(data.conditions)) issues.push(issue("/data/conditions", "error", "schema.array", "Conditions must be an array."));
+  validateActorManagedSubroots(issues, data);
   return actorReport(actor.id, issues);
 }
 
@@ -402,9 +615,19 @@ export function validateDnd5eSrdItem(item: Item): Dnd5eSrdValidationReport {
   if (item.data.alwaysPrepared !== undefined && typeof item.data.alwaysPrepared !== "boolean") issues.push(issue("/data/alwaysPrepared", "error", "schema.boolean", "Always prepared must be true or false."));
   if (item.data.alwaysPrepared === true && item.data.prepared === false) issues.push(issue("/data/prepared", "error", "rules.always_prepared", "An always-prepared spell cannot be unprepared."));
   if (item.data.requiresAttunement !== undefined && typeof item.data.requiresAttunement !== "boolean") issues.push(issue("/data/requiresAttunement", "error", "schema.boolean", "Requires attunement must be true or false."));
+  if (item.data.attuned !== undefined && typeof item.data.attuned !== "boolean") issues.push(issue("/data/attuned", "error", "schema.boolean", "Attuned must be true or false."));
+  validateOptionalUsePool(issues, item.data.charges, "/data/charges");
+  validateOptionalUsePool(issues, item.data.uses, "/data/uses");
+  for (const key of ["armorType", "category", "equipmentCategory", "ability", "mastery"] as const) {
+    if (item.data[key] !== undefined && (typeof item.data[key] !== "string" || !item.data[key].trim())) issues.push(issue(`/data/${key}`, "error", "schema.string", `${key} must be a non-empty string.`));
+  }
   for (const key of ["damageType", "secondaryDamageType"] as const) {
     const value = item.data[key];
-    if (value === undefined || typeof value !== "string") continue;
+    if (value === undefined) continue;
+    if (typeof value !== "string" || !value.trim()) {
+      issues.push(issue(`/data/${key}`, "error", "schema.string", `${key} must be a non-empty string.`));
+      continue;
+    }
     for (const damageType of value.toLowerCase().split(/[\/,]/).map((entry) => entry.trim()).filter(Boolean)) {
       if (!DND_DAMAGE_TYPES.has(damageType) && damageType !== "choice" && damageType !== "weapon") {
         issues.push(issue(`/data/${key}`, "warning", "rules.homebrew_damage_type", `Damage type ${damageType} is not an SRD automated type; the value is preserved.`));
@@ -425,6 +648,65 @@ function itemReport(entityId: string, issues: Dnd5eSrdValidationIssue[]): Dnd5eS
     valid: !ordered.some((entry) => entry.severity === "error"),
     issues: ordered
   };
+}
+
+function managedDataSource(entityKind: "actor" | "item", entityId: string): Dnd5eSrdManagedDataSource {
+  return {
+    entityKind,
+    entityId,
+    systemId: DND_5E_SRD_SYSTEM_ID,
+    rulesVersion: DND_5E_SRD_VERSION,
+    sourceSchemaVersion: "legacy-unversioned",
+    schemaVersion: entityKind === "actor" ? DND_5E_SRD_ACTOR_SCHEMA_VERSION : DND_5E_SRD_ITEM_SCHEMA_VERSION
+  };
+}
+
+function managedDataParseResult<T extends Record<string, unknown>>(
+  source: Dnd5eSrdManagedDataSource,
+  data: Record<string, unknown>,
+  report: Dnd5eSrdValidationReport
+): Dnd5eSrdManagedDataParseResult<T> {
+  const errors = report.issues.filter((entry) => entry.severity === "error");
+  if (errors.length > 0) return { ok: false, source, issues: cloneValue(errors) };
+  return {
+    ok: true,
+    value: {
+      source,
+      migration: { from: "legacy-unversioned", to: source.schemaVersion, lossless: true },
+      data: cloneValue(data) as T,
+      warnings: cloneValue(report.issues.filter((entry) => entry.severity === "warning"))
+    }
+  };
+}
+
+/**
+ * Parses only managed roots that are present. Missing legacy roots remain
+ * valid so generic/homebrew actors can keep loading; strict character review
+ * continues to use validateDnd5eSrdActor's default required-core mode.
+ */
+export function parseDnd5eSrdActorManagedData(actor: Actor): Dnd5eSrdManagedDataParseResult<Dnd5eSrdActorManagedData> {
+  const source = managedDataSource("actor", typeof actor?.id === "string" ? actor.id : "");
+  const report = validateDnd5eSrdActor(actor, { requireCharacterCore: false });
+  return managedDataParseResult(source, isRecord(actor?.data) ? actor.data : {}, report);
+}
+
+/** Item counterpart to parseDnd5eSrdActorManagedData. */
+export function parseDnd5eSrdItemManagedData(item: Item): Dnd5eSrdManagedDataParseResult<Dnd5eSrdItemManagedData> {
+  const source = managedDataSource("item", typeof item?.id === "string" ? item.id : "");
+  const report = validateDnd5eSrdItem(item);
+  return managedDataParseResult(source, isRecord(item?.data) ? item.data : {}, report);
+}
+
+/** Returns a fresh flat record for storage/API compatibility. */
+export function dnd5eSrdManagedDataRecord<T extends Record<string, unknown>>(view: Dnd5eSrdManagedDataView<T>): Record<string, unknown> {
+  return cloneValue(view.data);
+}
+
+export function formatDnd5eSrdManagedDataError(result: Dnd5eSrdManagedDataParseResult<Record<string, unknown>>): string | undefined {
+  if (result.ok) return undefined;
+  const first = result.issues[0];
+  if (!first) return `D&D ${result.source.entityKind} data did not match schema ${result.source.schemaVersion}.`;
+  return `D&D ${result.source.entityKind} ${result.source.entityId || "(unknown)"} schema ${result.source.schemaVersion} validation failed at ${first.path || "/"} (${first.code}): ${first.message}`;
 }
 
 function repairCandidate(
@@ -634,6 +916,166 @@ function actorClassLevel(actor: Actor, className: string): number {
     : 0;
 }
 
+function normalizedSpellId(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function actorClassNames(actor: Actor): string[] {
+  if (!Array.isArray(actor.data.classes)) {
+    return typeof actor.data.class === "string" && actor.data.class.trim() ? [actor.data.class.trim()] : [];
+  }
+  return actor.data.classes.flatMap((raw) => {
+    if (!isRecord(raw)) return [];
+    const className = typeof raw.className === "string" ? raw.className : typeof raw.class === "string" ? raw.class : undefined;
+    return className?.trim() ? [className.trim()] : [];
+  });
+}
+
+function actorPreparedSpellIdsForClass(actor: Actor, className: string): string[] {
+  const spellcasting = isRecord(actor.data.spellcasting) ? actor.data.spellcasting : {};
+  const byClass = isRecord(spellcasting.preparedSpellsByClass) ? spellcasting.preparedSpellsByClass : {};
+  const classList = Object.entries(byClass).find(([key]) => key.toLowerCase() === className.toLowerCase())?.[1];
+  if (Array.isArray(classList)) {
+    return classList
+      .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+      .map(normalizedSpellId);
+  }
+
+  const existingClassLevel = actorClassLevel(actor, className);
+  if (existingClassLevel < 1 || !Array.isArray(spellcasting.preparedSpells)) return [];
+  const classNames = [...new Set(actorClassNames(actor).map((value) => value.toLowerCase()))];
+  const declaredClass = typeof spellcasting.className === "string" ? spellcasting.className.toLowerCase() : undefined;
+  if ((classNames.length !== 1 || classNames[0] !== className.toLowerCase()) && declaredClass !== className.toLowerCase()) return [];
+  return spellcasting.preparedSpells
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .map(normalizedSpellId);
+}
+
+function spellAdvancementPlan(
+  request: Dnd5eSrdAdvancementPreviewRequest,
+  className: string,
+  nextClassLevel: number,
+  envelope: Dnd5eSrdRulesPreviewEnvelope
+): Dnd5eSrdSpellAdvancementPlan | undefined {
+  const requested = request.wizardSpellbookAdditions !== undefined || request.classPreparedSpellChoices !== undefined;
+  const profile = dnd5eSrdSpellcastingClassProfile(className, nextClassLevel);
+  if (!profile) {
+    if (!requested) return undefined;
+    if (request.wizardSpellbookAdditions !== undefined) block(envelope, "/wizardSpellbookAdditions", "rules.choice_not_available", `${className} does not gain Wizard spellbook additions.`);
+    if (request.classPreparedSpellChoices !== undefined) block(envelope, "/classPreparedSpellChoices", "rules.choice_not_available", `${className} is not an SRD spellcasting class.`);
+    return undefined;
+  }
+  const { className: canonicalClassName, preparedSpellCapacity, maxSpellLevel } = profile;
+  const preparedSpellIds = (request.classPreparedSpellChoices ?? []).map(normalizedSpellId);
+  const wizardSpellbookAdditions = (request.wizardSpellbookAdditions ?? []).map(normalizedSpellId);
+  if (request.classPreparedSpellChoices === undefined) {
+    block(envelope, "/classPreparedSpellChoices", "rules.choice_required", `${canonicalClassName} level ${nextClassLevel} requires a complete prepared-spell list of ${preparedSpellCapacity} spells.`);
+  } else if (preparedSpellIds.length !== preparedSpellCapacity) {
+    block(envelope, "/classPreparedSpellChoices", "rules.invalid_count", `Choose exactly ${preparedSpellCapacity} normal ${canonicalClassName} prepared spells.`);
+  }
+  if (new Set(preparedSpellIds).size !== preparedSpellIds.length) {
+    block(envelope, "/classPreparedSpellChoices", "rules.duplicate_spell", "Prepared-spell choices cannot repeat a spell.");
+  }
+
+  if (profile.spellbookAdditions > 0) {
+    if (request.wizardSpellbookAdditions === undefined) {
+      block(envelope, "/wizardSpellbookAdditions", "rules.choice_required", `Wizard level ${nextClassLevel} requires exactly ${profile.spellbookAdditions} new spellbook spells.`);
+    } else if (wizardSpellbookAdditions.length !== profile.spellbookAdditions) {
+      block(envelope, "/wizardSpellbookAdditions", "rules.invalid_count", `Choose exactly ${profile.spellbookAdditions} new Wizard spellbook spells.`);
+    }
+    if (new Set(wizardSpellbookAdditions).size !== wizardSpellbookAdditions.length) {
+      block(envelope, "/wizardSpellbookAdditions", "rules.duplicate_spell", "Wizard spellbook additions cannot repeat a spell.");
+    }
+  } else if (request.wizardSpellbookAdditions !== undefined) {
+    block(envelope, "/wizardSpellbookAdditions", "rules.choice_not_available", "Only Wizard advancement gains spellbook additions.");
+  }
+
+  const compendium = new Map(dnd5eSrdCompendium().filter((entry) => entry.type === "spell").map((entry) => [entry.id, entry]));
+  const validateClassSpell = (spellId: string, path: string): void => {
+    const entry = compendium.get(spellId);
+    if (!entry) {
+      block(envelope, path, "rules.unknown_spell", `${spellId || "The selected spell"} is not a canonical D&D 5.5e SRD spell.`);
+      return;
+    }
+    const classes = Array.isArray(entry.data.classes) ? entry.data.classes.filter((value): value is string => typeof value === "string") : [];
+    if (!classes.some((value) => value.toLowerCase() === canonicalClassName.toLowerCase())) {
+      block(envelope, path, "rules.outside_class_list", `${entry.name} is not a ${canonicalClassName} spell.`);
+    }
+    const level = typeof entry.data.level === "number" && Number.isInteger(entry.data.level) ? entry.data.level : -1;
+    if (level < 1 || level > maxSpellLevel) {
+      block(envelope, path, "rules.spell_level_unavailable", `${entry.name} is not an available level 1-${maxSpellLevel} ${canonicalClassName} spell.`);
+    }
+  };
+  preparedSpellIds.forEach((spellId, index) => validateClassSpell(spellId, `/classPreparedSpellChoices/${index}`));
+  wizardSpellbookAdditions.forEach((spellId, index) => validateClassSpell(spellId, `/wizardSpellbookAdditions/${index}`));
+
+  const spellcasting = isRecord(request.actor.data.spellcasting) ? request.actor.data.spellcasting : {};
+  const currentSpellbookSpellIds = Array.isArray(spellcasting.spellbookSpells)
+    ? spellcasting.spellbookSpells.filter((value): value is string => typeof value === "string" && value.trim().length > 0).map(normalizedSpellId)
+    : [];
+  const currentSpellbook = new Set(currentSpellbookSpellIds);
+  for (const [index, spellId] of wizardSpellbookAdditions.entries()) {
+    if (currentSpellbook.has(spellId)) block(envelope, `/wizardSpellbookAdditions/${index}`, "rules.spell_already_known", `${spellId} is already in this Wizard's spellbook.`);
+  }
+  const resultingSpellbookSpellIds = canonicalClassName === "Wizard"
+    ? [...new Set([...currentSpellbookSpellIds, ...wizardSpellbookAdditions])]
+    : [];
+  if (canonicalClassName === "Wizard") {
+    const resultingBook = new Set(resultingSpellbookSpellIds);
+    preparedSpellIds.forEach((spellId, index) => {
+      if (!resultingBook.has(spellId)) block(envelope, `/classPreparedSpellChoices/${index}`, "rules.wizard_spellbook_required", `${spellId} is not in the resulting Wizard spellbook.`);
+    });
+  }
+
+  const storedAlwaysPrepared = Array.isArray(spellcasting.alwaysPreparedSpells)
+    ? spellcasting.alwaysPreparedSpells.filter((value): value is string => typeof value === "string").map(normalizedSpellId)
+    : [];
+  const alwaysPrepared = new Set([...storedAlwaysPrepared, ...(request.serverAlwaysPreparedSpellIds ?? []).map(normalizedSpellId)]);
+  preparedSpellIds.forEach((spellId, index) => {
+    if (alwaysPrepared.has(spellId)) block(envelope, `/classPreparedSpellChoices/${index}`, "rules.always_prepared_excluded", `${spellId} is always prepared and does not consume normal preparation capacity.`);
+  });
+
+  const replacementLimit = dnd5eSrdSpellReplacementLimit(canonicalClassName);
+  if (profile.acquisitionMode === "prepared-class-level" && typeof replacementLimit === "number" && nextClassLevel > 1) {
+    const currentSpellIds = actorPreparedSpellIdsForClass(request.actor, canonicalClassName);
+    const replacementCount = dnd5eSrdSpellReplacementCount(currentSpellIds, preparedSpellIds, preparedSpellCapacity);
+    if (replacementCount > replacementLimit) {
+      block(
+        envelope,
+        "/classPreparedSpellChoices",
+        "rules.spell_replacement_limit",
+        `${canonicalClassName} can replace only one known spell when gaining a class level; this list replaces ${replacementCount}.`
+      );
+    }
+  }
+
+  if (envelope.blockers.length > 0) return undefined;
+  const prepared = new Set(preparedSpellIds);
+  const materializedSpellIds = canonicalClassName === "Wizard" ? resultingSpellbookSpellIds : preparedSpellIds;
+  return {
+    className: canonicalClassName,
+    classLevel: nextClassLevel,
+    spellcastingAbility: profile.spellcastingAbility,
+    acquisitionMode: profile.acquisitionMode,
+    maxSpellLevel,
+    preparedSpellCapacity,
+    preparedSpellIds,
+    wizardSpellbookAdditions,
+    resultingSpellbookSpellIds,
+    materializedSpellIds,
+    spellGrants: materializedSpellIds.map((compendiumEntryId) => ({
+      compendiumEntryId,
+      itemData: dnd5eSrdClassSpellGrantData({
+        compendiumEntryId,
+        className: canonicalClassName,
+        selectedAtLevel: nextClassLevel,
+        prepared: prepared.has(compendiumEntryId),
+        inSpellbook: canonicalClassName === "Wizard"
+      })
+    }))
+  };
+}
+
 function previewAdvancement(request: Dnd5eSrdAdvancementPreviewRequest, envelope: Dnd5eSrdRulesPreviewEnvelope): Dnd5eSrdRulesPreviewEnvelope {
   if (envelope.blockers.length > 0) return finalize(envelope);
   const raw = request as unknown as Record<string, unknown>;
@@ -642,6 +1084,15 @@ function previewAdvancement(request: Dnd5eSrdAdvancementPreviewRequest, envelope
   if (raw.subclassId !== undefined && typeof raw.subclassId !== "string") block(envelope, "/subclassId", "schema.string", "Subclass id must be a string.");
   if (raw.weaponMasteryChoices !== undefined && (!Array.isArray(raw.weaponMasteryChoices) || raw.weaponMasteryChoices.some((value) => typeof value !== "string"))) {
     block(envelope, "/weaponMasteryChoices", "schema.string_array", "Weapon Mastery choices must be a list of weapon identifiers.");
+  }
+  if (raw.wizardSpellbookAdditions !== undefined && (!Array.isArray(raw.wizardSpellbookAdditions) || raw.wizardSpellbookAdditions.some((value) => typeof value !== "string" || !value.trim()))) {
+    block(envelope, "/wizardSpellbookAdditions", "schema.string_array", "Wizard spellbook additions must be a list of non-empty spell identifiers.");
+  }
+  if (raw.classPreparedSpellChoices !== undefined && (!Array.isArray(raw.classPreparedSpellChoices) || raw.classPreparedSpellChoices.some((value) => typeof value !== "string" || !value.trim()))) {
+    block(envelope, "/classPreparedSpellChoices", "schema.string_array", "Prepared-spell choices must be a list of non-empty spell identifiers.");
+  }
+  if (raw.serverAlwaysPreparedSpellIds !== undefined && (!Array.isArray(raw.serverAlwaysPreparedSpellIds) || raw.serverAlwaysPreparedSpellIds.some((value) => typeof value !== "string" || !value.trim()))) {
+    block(envelope, "/serverAlwaysPreparedSpellIds", "schema.string_array", "Server-derived always-prepared spells must be a list of non-empty spell identifiers.");
   }
   if (raw.featId !== undefined && typeof raw.featId !== "string") block(envelope, "/featId", "schema.string", "Feat id must be a string.");
   if (raw.hitPointRoll !== undefined && typeof raw.hitPointRoll !== "number") block(envelope, "/hitPointRoll", "schema.number", "Hit Point roll must be a number.");
@@ -709,6 +1160,7 @@ function previewAdvancement(request: Dnd5eSrdAdvancementPreviewRequest, envelope
   if (request.hitPointMode === "roll" && request.hitPointRoll === undefined) {
     envelope.serverRolls.push({ id: "advancement.hit-points", path: "/hitPointRoll", formula: `1${dnd5eSrdClassHitDieSize(className, request.actor)}`, reason: `Roll ${className} Hit Points on the server.` });
   }
+  const spellPlan = spellAdvancementPlan(request, className, nextClassLevel, envelope);
   if (envelope.blockers.length > 0 || envelope.serverRolls.length > 0) return finalize(envelope);
   try {
     const actor = cloneValue(request.actor);
@@ -726,9 +1178,36 @@ function previewAdvancement(request: Dnd5eSrdAdvancementPreviewRequest, envelope
       request.featId,
       { abilities: cloneValue(request.abilityChoices), advancement: { nextClassLevel, nextCharacterLevel } }
     );
+    if (spellPlan) {
+      const spellcasting = isRecord(proposedData.spellcasting) ? cloneValue(proposedData.spellcasting) : {};
+      const preparedSpellCapacityByClass = isRecord(spellcasting.preparedSpellCapacityByClass) ? cloneValue(spellcasting.preparedSpellCapacityByClass) : {};
+      const preparedSpellsByClass = isRecord(spellcasting.preparedSpellsByClass) ? cloneValue(spellcasting.preparedSpellsByClass) : {};
+      const spellcastingAbilityByClass = isRecord(spellcasting.spellcastingAbilityByClass) ? cloneValue(spellcasting.spellcastingAbilityByClass) : {};
+      preparedSpellCapacityByClass[spellPlan.className] = { classLevel: spellPlan.classLevel, capacity: spellPlan.preparedSpellCapacity };
+      preparedSpellsByClass[spellPlan.className] = [...spellPlan.preparedSpellIds];
+      spellcastingAbilityByClass[spellPlan.className] = spellPlan.spellcastingAbility;
+      const multiclass = new Set(actorClassNames({ ...actor, data: proposedData }).map((value) => value.toLowerCase())).size > 1;
+      proposedData = {
+        ...proposedData,
+        spellcasting: {
+          ...spellcasting,
+          preparedSpellCapacityByClass,
+          preparedSpellsByClass,
+          spellcastingAbilityByClass,
+          ...(!multiclass ? {
+            preparedSpellCapacity: spellPlan.preparedSpellCapacity,
+            preparedSpellCapacityLevel: spellPlan.classLevel,
+            preparedSpells: [...spellPlan.preparedSpellIds],
+            ability: spellPlan.spellcastingAbility,
+            className: spellPlan.className
+          } : {}),
+          ...(spellPlan.className === "Wizard" ? { spellbookSpells: [...spellPlan.resultingSpellbookSpellIds] } : {})
+        }
+      };
+    }
     envelope.proposedData = cloneValue(proposedData);
     envelope.changes = diffData(request.actor.data, proposedData, "advancement");
-    envelope.details = { optionId, className, nextClassLevel, grantsFeat, featGrant, hitPointMode: request.hitPointMode, ...(request.subclassId ? { subclassId: request.subclassId } : {}), ...(request.weaponMasteryChoices ? { weaponMasteryChoices: [...request.weaponMasteryChoices] } : {}), ...(request.featId ? { featId: request.featId } : {}) };
+    envelope.details = { optionId, className, nextClassLevel, grantsFeat, featGrant, hitPointMode: request.hitPointMode, ...(request.subclassId ? { subclassId: request.subclassId } : {}), ...(request.weaponMasteryChoices ? { weaponMasteryChoices: [...request.weaponMasteryChoices] } : {}), ...(request.featId ? { featId: request.featId } : {}), ...(spellPlan ? { spellAdvancement: cloneValue(spellPlan) } : {}) };
   } catch (error) {
     block(envelope, "", "rules.preview_rejected", error instanceof Error ? error.message : "Advancement preview failed.");
   }

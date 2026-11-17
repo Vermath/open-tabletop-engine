@@ -1,4 +1,4 @@
-FROM node:22-alpine AS base
+FROM node:22-alpine@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2 AS base
 WORKDIR /app
 RUN corepack enable
 
@@ -10,7 +10,7 @@ COPY plugins ./plugins
 RUN pnpm install --frozen-lockfile
 
 FROM deps AS build
-RUN pnpm build
+RUN pnpm turbo run build --filter=@open-tabletop/worker...
 
 FROM base AS runner
 ENV NODE_ENV=production

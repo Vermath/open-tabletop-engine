@@ -34,6 +34,9 @@ describe("CampaignWebhooksPanel", () => {
     expect(campaignWebhookPaths.webhook("campaign/one", "hook?one")).toBe(
       "/api/v1/campaigns/campaign%2Fone/webhooks/hook%3Fone",
     );
+    expect(campaignWebhookPaths.remove("campaign/one", "hook?one", "2026-07-18T12:34:56.789Z")).toBe(
+      "/api/v1/campaigns/campaign%2Fone/webhooks/hook%3Fone?expectedUpdatedAt=2026-07-18T12%3A34%3A56.789Z",
+    );
     expect(campaignWebhookPaths.retry("campaign/one", "hook?one", "delivery#one")).toBe(
       "/api/v1/campaigns/campaign%2Fone/webhooks/hook%3Fone/deliveries/delivery%23one/retry",
     );

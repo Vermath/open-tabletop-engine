@@ -49,6 +49,7 @@ export function emptyState(): EngineState {
     pluginStorage: [],
     pluginReviews: [],
     contentImports: [],
+    campaignArchiveImportOperations: [],
     fogPresets: [],
     campaignWebhooks: [],
     campaignWebhookDeliveries: [],
@@ -339,6 +340,9 @@ export function makeArchive(state: EngineState, campaignId: string): CampaignArc
     pluginStorage: state.pluginStorage.filter((item) => item.campaignId === campaignId),
     pluginReviews: [],
     contentImports: state.contentImports.filter((item) => item.campaignId === campaignId && item.status !== "deleted"),
+    // Recovery inverses can contain pre-import rows and private durable object
+    // references. They are installation-local and never portable campaign data.
+    campaignArchiveImportOperations: [],
     fogPresets: state.fogPresets.filter((item) => item.campaignId === campaignId),
     // Outbound webhook targets, signing material, and operational delivery
     // history are installation-local and never enter portable campaign files.
@@ -499,6 +503,17 @@ export function normalizeEngineState(input: Partial<EngineState>): EngineState {
     const aiPolicy = normalizeStoredAiCampaignPolicy(campaign.aiPolicy);
     const eventSequence = Number.isSafeInteger(campaign.eventSequence) && (campaign.eventSequence ?? 0) >= 0 ? campaign.eventSequence : 0;
     return aiPolicy ? { ...campaign, aiPolicy, eventSequence } : { ...campaign, aiPolicy: undefined, eventSequence };
+  });
+  // Standard player seats no longer inherit Agent access. Preserve the
+  // explicit AI-assisted campaign template for legacy persisted grants.
+  state.permissionGrants = state.permissionGrants.map((grant) => {
+    const aiAssistedTemplateGrant = grant.subjectType === "role"
+      && grant.subjectId === "player"
+      && grant.metadata?.source === "campaign_permission_template"
+      && grant.metadata?.templateId === "ai_assisted"
+      && grant.metadata?.aiUseTemplateVersion !== 1;
+    if (!aiAssistedTemplateGrant) return grant;
+    return { ...grant, permissions: grant.permissions.includes("ai.use") ? grant.permissions : [...grant.permissions, "ai.use"], metadata: { ...grant.metadata, aiUseTemplateVersion: 1 } };
   });
   // Preserve the existing scene collection when every row is already current.
   // Besides avoiding an unnecessary allocation, archive callers intentionally

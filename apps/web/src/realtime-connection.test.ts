@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 
 import { realtimeConnectionIdentity, realtimeUiLabel, startRealtimeConnection } from "./realtime-connection.js";
 
+const navigationSource = readFileSync(resolve(__dirname, "workspace-navigation.tsx"), "utf8").replace(/\r\n/g, "\n");
 const appSource = readFileSync(resolve(__dirname, "App.tsx"), "utf8").replace(/\r\n/g, "\n");
 
 interface RealtimeSocketLike {
@@ -219,18 +220,24 @@ describe("realtime connection", () => {
       blankCanvasDemoOpen: false,
       campaignId: "camp_demo",
       sessionToken: "ots_test",
+      userId: "usr_demo_gm",
+      sessionEpoch: 1,
       sceneId: "scn_vault"
     });
     const secondScene = realtimeConnectionIdentity({
       blankCanvasDemoOpen: false,
       campaignId: "camp_demo",
       sessionToken: "ots_test",
+      userId: "usr_demo_gm",
+      sessionEpoch: 1,
       sceneId: "scn_cavern"
     });
 
     expect(secondScene).toBe(firstScene);
-    expect(realtimeConnectionIdentity({ blankCanvasDemoOpen: false, campaignId: "camp_other", sessionToken: "ots_test", sceneId: "scn_cavern" })).not.toBe(firstScene);
-    expect(realtimeConnectionIdentity({ blankCanvasDemoOpen: true, campaignId: "camp_demo", sessionToken: "ots_test", sceneId: "scn_vault" })).toBeNull();
+    expect(realtimeConnectionIdentity({ blankCanvasDemoOpen: false, campaignId: "camp_other", sessionToken: "ots_test", userId: "usr_demo_gm", sessionEpoch: 1, sceneId: "scn_cavern" })).not.toBe(firstScene);
+    expect(realtimeConnectionIdentity({ blankCanvasDemoOpen: false, campaignId: "camp_demo", sessionToken: "ots_test", userId: "usr_other", sessionEpoch: 1 })).not.toBe(firstScene);
+    expect(realtimeConnectionIdentity({ blankCanvasDemoOpen: false, campaignId: "camp_demo", sessionToken: "ots_test", userId: "usr_demo_gm", sessionEpoch: 2 })).not.toBe(firstScene);
+    expect(realtimeConnectionIdentity({ blankCanvasDemoOpen: true, campaignId: "camp_demo", sessionToken: "ots_test", userId: "usr_demo_gm", sessionEpoch: 1, sceneId: "scn_vault" })).toBeNull();
   });
 
   it("never presents a reconnecting socket as connected", () => {
@@ -239,11 +246,11 @@ describe("realtime connection", () => {
     expect(realtimeUiLabel("connected")).toBe("Connected");
     expect(realtimeUiLabel("reconnecting")).toBe("Reconnecting");
     expect(realtimeUiLabel("syncing")).toBe("Syncing");
-    expect(appSource).toContain('onUnavailable: () => {\n        setRealtimeUiState("reconnecting");');
+    expect(appSource).toMatch(/onUnavailable: \(\) => \{\s*if \(cancelled\) return;\s*setRealtimeUiState\("reconnecting"\);/);
     expect(appSource).toContain('setRealtimeUiState("syncing")');
     expect(appSource).toContain("await realtimeHandlers.onOpen(true)");
     expect(appSource).toContain('inert={realtimeUiState === "syncing" ? true : undefined}');
-    expect(appSource).toContain('data-connection-state={realtimeUiState} role="status" aria-live="polite"');
+    expect(navigationSource).toContain('data-connection-state={realtimeUiState} role="status" aria-live="polite"');
     expect(appSource).not.toContain('status.toLowerCase().includes("realtime")');
   });
 });

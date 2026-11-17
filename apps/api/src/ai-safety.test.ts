@@ -1,6 +1,7 @@
 import type { Campaign } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
 import {
+  aiProviderConfiguration,
   aiRetentionExpiresAt,
   annotateAiToolOutput,
   normalizeAiCampaignPolicyInput,
@@ -21,6 +22,20 @@ const campaign: Campaign = {
 };
 
 describe("AI policy safety", () => {
+  it("reports unavailable providers as configuration-required instead of ready", () => {
+    expect(aiProviderConfiguration({ id: "unavailable-ai-provider", label: "Unavailable AI Provider" })).toEqual({
+      id: "unavailable-ai-provider",
+      label: "Unavailable AI Provider",
+      configured: false,
+      status: "unavailable",
+      message: "No live AI provider is available. Ask the server operator to configure and authenticate Codex app-server."
+    });
+    expect(aiProviderConfiguration({ id: "codex-app-server", label: "Codex App Server" })).toMatchObject({
+      configured: true,
+      status: "configured"
+    });
+  });
+
   it("fails closed when production installation controls are missing", () => {
     const installation = resolveAiInstallationPolicy({ NODE_ENV: "production" }, "production");
     const policy = resolveEffectiveAiPolicy(campaign, installation, "production");

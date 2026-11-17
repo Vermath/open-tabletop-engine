@@ -1,22 +1,31 @@
+import { selectInspectorPanel } from "./inspector-navigation.js";
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 
 const apiBaseUrl = `http://127.0.0.1:${process.env.OTTE_E2E_API_PORT ?? 4100}`;
 
+async function expectDemoCampaign(page: Page): Promise<void> {
+  const currentCampaign = page.getByLabel("Current campaign", { exact: true });
+  await expect(currentCampaign).toBeVisible();
+  await expect(currentCampaign).toHaveText("The Ember Vault");
+}
+
 async function loginAsDemoGm(page: Page): Promise<void> {
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expectDemoCampaign(page);
 }
 
 async function openInspectorPanel(page: Page, panelName: "Actors" | "Compendium"): Promise<Locator> {
+  const showInspector = page.getByRole("button", { name: "Show inspector", exact: true });
+  if (await showInspector.isVisible()) await showInspector.click();
   if (panelName === "Compendium") {
     const prep = page.getByRole("button", { name: "Prep", exact: true });
     await prep.click();
     await expect(prep).toHaveAttribute("aria-pressed", "true");
     await expect(page.locator(".inspector-tabs").getByRole("tab", { name: "Sessions", exact: true })).toBeVisible();
   }
-  await page.locator(".inspector-tabs").getByRole("tab", { name: panelName, exact: true }).click();
+  await selectInspectorPanel(page, panelName);
   const panel = page.getByRole("tabpanel", { name: panelName });
   await expect(panel).toBeVisible();
   return panel;
@@ -41,12 +50,10 @@ async function createSystemCharacter(
 ): Promise<{ id: string; name: string }> {
   return page.evaluate(
     async ({ apiBaseUrl, input }) => {
-      const bearer = localStorage.getItem("otte:sessionToken");
-      if (!bearer) throw new Error("No browser session token available for controlled-creature setup");
       const response = await fetch(`${apiBaseUrl}/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters`, {
         method: "POST",
+        credentials: "include",
         headers: {
-          authorization: `Bearer ${bearer}`,
           "content-type": "application/json",
           "idempotency-key": `e2e-character:${crypto.randomUUID()}`,
         },
@@ -67,17 +74,15 @@ async function createSystemCharacter(
 async function createActorFeature(page: Page, actorId: string, name: string): Promise<void> {
   await page.evaluate(
     async ({ apiBaseUrl, actorId, name }) => {
-      const bearer = localStorage.getItem("otte:sessionToken");
-      if (!bearer) throw new Error("No browser session token available for controlled-creature source setup");
       const campaignResponse = await fetch(`${apiBaseUrl}/api/v1/campaigns/camp_demo`, {
-        headers: { authorization: `Bearer ${bearer}` },
+        credentials: "include",
       });
       if (!campaignResponse.ok) throw new Error(await campaignResponse.text());
       const campaign = (await campaignResponse.json()) as { updatedAt: string };
       const response = await fetch(`${apiBaseUrl}/api/v1/campaigns/camp_demo/items`, {
         method: "POST",
+        credentials: "include",
         headers: {
-          authorization: `Bearer ${bearer}`,
           "content-type": "application/json",
           "idempotency-key": `e2e-feature:${crypto.randomUUID()}`,
         },
@@ -119,16 +124,18 @@ test("T30 explains an actor total and exposes the campaign compatibility report"
   test.setTimeout(90_000);
   await loginAsDemoGm(page);
 
-  await page.getByRole("button", { name: "Token Valen Ash" }).first().click();
+  const valenToken = page.getByRole("button", { name: "Token Valen Ash" }).first();
+  if ((await valenToken.getAttribute("aria-pressed")) !== "true") await valenToken.click();
   const actorsPanel = await openInspectorPanel(page, "Actors");
   await actorsPanel.getByRole("tab", { name: "Stats", exact: true }).click();
 
-  const displayedArmorClass = await actorsPanel
-    .locator(".metric-row", { hasText: "Armor class" })
-    .locator("strong")
-    .innerText();
-  const rulesTraceDisclosure = actorsPanel.locator("details.actor-rules-trace-disclosure");
-  await rulesTraceDisclosure.locator("summary").click();
+  const armorClassSummary = actorsPanel.getByRole("region", { name: "Actor at a glance", exact: true }).getByTitle(/^Armor class(?: -|$)/);
+  await expect(armorClassSummary).toBeVisible();
+  await expect(armorClassSummary).toHaveText(/^\s*AC\s+\d+\s*$/);
+  const displayedArmorClass = (await armorClassSummary.innerText()).trim().replace(/^AC\s+/, "");
+  const rulesTraceDisclosure = actorsPanel.locator("details.actor-rules-trace-disclosure").filter({ has: page.getByText("Rules trace & calculation sources", { exact: true }) });
+  await rulesTraceDisclosure.locator(":scope > summary").click();
+  await expect(rulesTraceDisclosure).toHaveAttribute("open", "");
   const explanation = rulesTraceDisclosure.locator("section.calculation-explanation");
   await expect(explanation.getByRole("heading", { name: "How the numbers work" })).toBeVisible();
 
@@ -238,7 +245,7 @@ test("T33 completes summon, command, dismiss, transform, and revert journeys", a
   await createSystemCharacter(page, { templateId: "rogue", name: targetName });
   await createActorFeature(page, sourceActor.id, `E2E Ember Command ${suffix}`);
   await page.reload();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expectDemoCampaign(page);
 
   const compendiumTab = await openInspectorPanel(page, "Compendium");
   const controlled = compendiumTab.locator("section.controlled-creatures-panel");

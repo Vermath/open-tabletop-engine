@@ -1,392 +1,460 @@
 # Feature Audit
 
-> Current post-remediation audit, 2026-07-14. Repository source, tests, generated contracts, and runtime journeys are evidence; older roadmap prose is not. The implementation is an uncommitted working tree above base commit `e1501351ebc2`, so release publication remains a separate action.
+## 2026-07-17 remediation closure addendum (authoritative)
+
+This addendum supersedes the 2026-07-16 status language wherever it conflicts. The earlier audit is retained as the discovery ledger. All code-addressable findings identified there have now been remediated in the current **uncommitted working tree**; this is not a claim that the tranche is committed, deployed, independently reviewed, or production-proven.
+
+### Current executive verdict
+
+OpenTabletop is now a **locally qualified private-alpha candidate**: the final repository gate and every exact-tree browser journey recorded below are green. The strongest change is not feature count: rules-visible transitions, multi-user mutations, recovery, creator/advancement state, browser security, realtime continuity, and operator recovery now use connected authoritative paths with regression coverage. No known July 16 code-addressable release blocker remains deliberately unimplemented.
+
+### Remediation closure matrix
+
+| Area | July 16 findings closed in the working tree |
+|---|---|
+| Combat and state integrity | N01 critical verdict continuity, N02 actor/combatant recovery, N03 deterministic continuation binding, N04 atomic permission-checked batch movement, and N08 combat-panel vitals/roster controls |
+| Release and operations | N05 bounded API gate diagnostics, N06 short AI durable phases around provider waits, and N07 coherent Compose/security/paired-backup wiring |
+| Character and D&D workflows | N09 resumable scoped drafts, N10 authoritative standard array, N11 typed spell grants and casting attribution, N12 effective speed derivation, and N13 explicit subclass gating |
+| First-session and recurring play | N14 one-scene map/onboarding readiness, N15 searchable/show-all capped collections, N16 rendered handouts plus recoverable journal drafts, and N20 selected managed-effect lifecycle coverage |
+| Public trust surfaces | N17 hardened cookie session transport/CSP/revocation, N18 proxy- and account-aware throttling with bounded async verification, and N19 revision/OpenAPI/realtime sequence parity for AI and agent paths |
+| Audit-adjacent tickets | T38-T41 and T48 release/rules hygiene, T42 legendary actions, T43 SRD content decision, T44 demo hygiene, T45 canvas capture, T46 sheet/API agreement, and T47 X01 evidence capture |
+
+### Release boundary after remediation
+
+| Stage | Current disposition |
+|---|---|
+| Internal engineering build | **Locally qualified.** The clean repository gate, aggregate/default browser suite, clean bootstrap, canonical restart journey, and full Level 3 combat journey are green on the same working tree. |
+| Private alpha | Still requires X01 repeated real GM/player sessions, X03 an independent non-no-op hosted state-plus-asset restore, and X02 only if enterprise identity is advertised. |
+| Public beta | Still requires X04 physical assistive-technology/device evidence, X05 hosted operating drills, X06 content/legal approval, X07 independent security review, and X08 provider/AI quality evidence if AI is offered. |
+
+The correct claim is therefore **code-complete for the reviewed remediation scope, locally validated, and externally evidence-gated**. Historical tables below describe what was found, not what remains open.
+
+### Final local qualification evidence
+
+| Gate | Exact-tree result on 2026-07-17 |
+|---|---|
+| `pnpm check` | Green: lint, repository and E2E type checks, all package tests, and all production builds. API: 131 files, 807 passed, 1 intentional skip. Web: 136 files, 686 passed. System SDK: 38 files, 305 passed. |
+| `pnpm e2e` | Green in one serial command: aggregate/default 62/62, followed immediately by clean-deployment bootstrap 1/1. |
+| Canonical public journey | Green 1/1: blank-deployment GM/player campaign, legal advancement, combat, API restart, and resume. |
+| Full Level 3 combat | Green 1/1: generated map, four legal Level 3 sheets, encounter placement, R-04 coverage, combat completion, and continuity evidence. |
+| Documentation and diff hygiene | Documentation site check and `git diff --check` are required at handoff and recorded in the final validation summary. |
+
+This evidence qualifies the local tree only. The tranche remains uncommitted, undeployed, and not independently reviewed; X01-X08 retain the release boundaries above.
+
+## 2026-07-16 working-tree addendum (authoritative)
+
+This addendum supersedes the release-readiness conclusions below where they conflict. It does **not** erase the historical audit ledger. The current evidence cutoff is committed HEAD `9de6a3c` plus the uncommitted working tree. That working tree contains a substantial rules and end-to-end tranche that is implemented but not yet released. This audit changed documentation only.
+
+### Executive verdict
+
+The repository contains a real, persistent, API-first VTT and can complete a representative D&D 5.5e level-3 combat journey. It is not yet a dependable private-alpha release candidate. Two game-state correctness defects, one partial-write collaboration defect, a nondeterministic canonical journey, and several operational/security gaps remain. The product is best described as a **functional internal playtest build with broad feature coverage and uneven workflow completion**.
+
+Completion status uses the brief's canonical vocabulary. Historical labels such as "Verified live" and "Verified in code" below describe evidence confidence, not product completeness.
+
+- **Complete:** the user-complete primary path is connected, persistent, and supported by current evidence.
+- **Functional but incomplete:** useful end-to-end behavior exists, but a common workflow, authority boundary, recovery path, or scale case is incomplete.
+- **Prototype:** demonstrable behavior exists but still depends on manual interpretation or developer-facing controls.
+- **UI-only / Backend-only:** only one side of the user-to-authority path is connected.
+- **Stub or placeholder:** a named surface/data marker exists without a usable behavior.
+- **Broken:** a connected path can produce wrong, partial, unsafe, or unreleasable behavior.
+- **Not implemented:** no path exists; this can be intentional.
+- **Unable to verify:** code or configuration exists, but the required external/runtime evidence was unavailable.
+
+### Corrective capability matrix
+
+| Capability | Status | Current evidence and remaining product gap |
+|---|---|---|
+| Authentication and campaign persistence | Complete (local scope) | Account, membership, campaign, scene, actor, asset, and archive paths are persistent. Hosted durability and recovery are separately unable to verify. |
+| Campaign creation and setup | Functional but incomplete | Setup guidance exists, but readiness can be reported from a background and token that belong to different scenes, and the final play condition never becomes complete. |
+| Setup readiness indicator | UI-only | Readiness is derived in the web client and is both cross-scene and permanently incomplete; it is not an authoritative campaign invariant. |
+| Invites, roles, and ownership | Functional but incomplete | Explicit server permissions are a strength. The invite surface truncates at eight records without paging or a complete management view. |
+| Level-1 character creation | Functional but incomplete | Class/species/background/origin choices work, but there is no complete standard-array reassignment, point-buy, or rolled-stat workflow. Draft state is local and can be lost on close or reload. |
+| Character advancement | Functional but incomplete | The dirty tree adds stronger advancement and spell-choice handling, but authoritative spell acquisition remains limited to a narrow Cleric/Wizard path and multiclass spellcasting ability can be attributed incorrectly. |
+| Character sheet | Functional but incomplete | Core combat statistics and actions exist. Long loadouts and action lists are silently truncated, and movement bonuses are not reflected in effective speed. |
+| Maps and scenes | Functional but incomplete | Scene backgrounds, walls, lights, fog, grids, and calibration exist. Upload, selection, and calibration are separated enough to slow first-session setup. |
+| Hex-grid play | Not implemented (intentional) | The product is D&D-specific and supports square/gridless play; no hex parity work is recommended now. |
+| Tokens and ownership | Broken | Placement and movement work, but a mixed-authority multi-token drag fans out independent writes; permitted tokens can move before another token is rejected. |
+| Fog, walls, lighting, and vision | Functional but incomplete | Strong functional coverage. Keyboard-only board operation and richer tactical semantics remain incomplete. |
+| Encounter setup and initiative | Complete | Encounter construction, initiative, turns, rounds, and combat lifecycle are implemented for the reviewed core path. |
+| Live combat management | Functional but incomplete | Attack, damage, saves, conditions, concentration, and continuation flows exist. The combat panel lacks direct HP/temp-HP/damage/heal and add/remove-combatant controls. |
+| Attack criticals | Broken | Natural-hit determination exists, but critical outcome is not persisted into the damage continuation and the critical-damage helper is unused. Critical hits can resolve ordinary damage. |
+| Healing from 0 HP during combat | Broken | Actor state is normalized, but the active combatant can remain defeated with stale death-save state because combat synchronization only sets defeat and never clears it. |
+| Action economy and class resources | Functional but incomplete | Focused System SDK and API suites passed, including the current action-economy and advancement tranche. Broader class/subclass completeness remains uneven. |
+| Spells | Functional but incomplete | The SRD catalog is broad and spell attacks/saves/resources work. Many spells remain data-only or require manual adjudication. |
+| Complex persistent-effect automation | Stub or placeholder | Many spell actions are absent or use a zero formula; typed concentration/conditions exist, but no complete managed-effect lifecycle exists. Manual adjudication is the supported fallback. |
+| Monsters | Functional but incomplete | Broad SRD threat coverage, actions, saves, and initiative are available. Legendary cadence and complex persistent monster mechanics are still prototype-level. |
+| Dice, chat, and visibility | Functional but incomplete | Dice and public/GM-only chat work. Whisper targeting, scroll retention, and a clear communication model are not complete. |
+| Journals and handouts | Prototype | Journals are useful but draft recovery is weak. Handouts are effectively read-only text rather than a polished Markdown/media player experience. |
+| Assets, export/import, and archives | Functional but incomplete | Checksummed, bounded archive behavior is a strength. Scheduled backup configuration is not fully passed through Compose, and asset/database pairing needs operator evidence. |
+| Backup scheduler | Backend-only | Runtime scheduling code exists, but Compose does not pass the complete scheduler configuration and no operator-facing proof was verified. |
+| Self-hosting | Broken | The documented Compose default uses an HTTP S3 endpoint while production runtime rejects non-HTTPS endpoints; a required signing secret is not enabled in the example environment. |
+| AI assistance | Functional but incomplete | The automatic execution model is preserved and has explicit permissions/citations. A streamed AI request can hold the global durable mutation coordinator for the provider timeout, blocking unrelated writes. |
+| Realtime recovery | Functional but incomplete | Snapshot refresh exists. AI/agent events are outside campaign sequencing, and revision/OpenAPI guards explicitly exempt important AI surfaces. |
+| Browser security | Broken | A long-lived bearer token is stored in localStorage, static hosting lacks a CSP, and login throttling is proxy-unaware and not account-aware. |
+| Responsive and accessible operation | Functional but incomplete | Conventional controls are usable, but the main board remains pointer-first and lacks full keyboard movement, measurement, drawing, and fog workflows. |
+| Hostile-code plugin sandbox/marketplace | Not implemented (intentional) | The current VM is a trusted-administrator extension boundary; do not market it as hostile-code isolation. |
+| Hosted concurrency, provider lifecycle, restore, and device matrix | Unable to verify | These require real infrastructure, providers, users, restore drills, and physical assistive-technology/device evidence. |
+| Items, equipment, and treasure | Functional but incomplete | Inventory graph, equipment state, attunement, Weapon Mastery, typed bonuses, and commerce helpers exist in `packages/system-sdk/src/dnd-inventory-commerce.ts` and related modules; ammunition, party inventory/transfer, containers, buying/selling, and duplicate-effect prevention were not all verified end to end. |
+| Rules content and compendium | Functional but incomplete | Current inspection found 835 entries: 475 items, 341 spells, and 19 conditions with SRD provenance; search/filter/actionability exists, while richer cross-linking, drag/drop breadth, version conflicts, and every content category remain partial. |
+| Homebrew and manual overrides | Functional but incomplete | Calculation overrides, custom actors/items/actions/content provenance, and preservation of unknown import fields support table deviation; campaign-wide toggles, every custom content type, duplicate/conflict resolution, and upgrade behavior are uneven. |
+| Public API and trusted-admin plugins | Functional but incomplete | Typed REST/OpenAPI/client, idempotency, permissions, events, and plugin commands are strong; AI/agent validation/sequence exceptions remain, and the plugin VM is not hostile-code isolation. |
+
+### End-to-end workflow audit
+
+Statuses below are completion statuses. Runtime statements come from the fresh full-combat/canonical runs or the prior live walk identified in the historical ledger; code-only conclusions are labeled in the evidence cell.
+
+#### Campaign setup journey
+
+| Step | Status | Evidence and UX finding | Likely abandonment / access concern |
+|---:|---|---|---|
+| 1. Install or open | Broken for documented self-hosting | `docker-compose.yml:23-33` defaults to HTTP MinIO while `apps/api/src/runtime.ts:142-155` rejects non-HTTPS production endpoints; `.env.example:87-88` leaves the signing secret disabled. | A self-hosting DM can fail before seeing the product. |
+| 2. Create account | Complete (local) | Auth/session routes in `apps/api/src/app.ts`; registration/login exercised by `tests/e2e/canonical-public-journey.spec.ts`. | Error recovery exists; public token/throttle risks are release concerns, not a local dead end. |
+| 3. Create campaign | Complete | Campaign create/settings lifecycle is connected through `apps/api/src/app.ts` and `apps/web/src/App.tsx`; exercised in the canonical journey. | Large manage surface is dense but not a blocker. |
+| 4. Configure campaign rules | Functional but incomplete | Rules boundaries and manual adjudication are visible, but no complete campaign rule-toggle model was found; core rules remain system-wide/shared-SDK behavior. | A house-rule-heavy DM must use manual overrides/homebrew rather than a guided policy setup. |
+| 5. Invite players | Functional but incomplete | Invitation routes and UI work; `apps/web/src/App.tsx:9503` displays only the first eight invites without paging. | Campaign-scale invite management hides records. |
+| 6. Accept invitation | Complete | Second-browser join is exercised by `canonical-public-journey.spec.ts`; server membership controls access. | No critical dead end observed. |
+| 7. Create/import character | Functional but incomplete | `apps/web/src/character-creator-dialog.tsx:362,625,632` keeps a local draft that dismissal/reload can lose; standard-array assignment is incomplete; import route exists in `apps/api/src/app.ts`. | Highest setup abandonment: losing a multi-step character draft. Keyboard/modal close behavior needs testing. |
+| 8. DM review/approval | Not implemented as a dedicated gate | No mandatory approval workflow was located; assignment/ownership and server validation exist instead. | Acceptable only if documented as a deliberate DM-control model. |
+| 9. Create scene | Complete | Scene lifecycle routes in `apps/api/src/app.ts`; scene controls in `apps/web/src/App.tsx`; duplication logic in `apps/api/src/scene-duplication.ts`. | No critical dead end observed. |
+| 10. Upload map | Functional but incomplete | Background selector is around `apps/web/src/App.tsx:9631`; upload control is separated near `:9882`. | DM may search two distant surfaces and abandon map setup. |
+| 11. Configure grid | Complete for square/gridless | `apps/web/src/scene-grid-fields.tsx` and `apps/api/src/gridless-scene-api.test.ts`; hex is intentionally not implemented. | Calibration is discoverability-heavy; keyboard/device evidence unavailable. |
+| 12. Place tokens | Broken for mixed-authority groups | Drag is exposed at `apps/web/src/scene-canvas.tsx:731`; `apps/web/src/App.tsx:4411` fans group moves into independent requests. | A denial can leave a partially moved board. |
+| 13. Create/import encounter | Complete on reviewed core path | Encounter/placement routes in `apps/api/src/app.ts`; `apps/api/src/encounter-monster-placement.test.ts`; initiative path exercised in full-combat E2E. | Large/custom encounter performance was not verified. |
+| 14. Create journal/handout | Prototype | Journal routes are in `apps/api/src/app.ts`; handout surface at `apps/web/src/handout-library-panel.tsx:354` is effectively read-only text rather than rendered media-rich content. | Weak draft recovery and presentation reduce prep confidence. |
+| 15. Prepare first session | Functional but incomplete | `apps/web/src/campaign-setup-steps.tsx:180-187` can combine background/token readiness from different scenes and never completes final play readiness. | The onboarding success state is misleading and then permanently incomplete. |
+
+#### Player journey
+
+| Step | Status | Evidence and UX finding | Likely abandonment / access concern |
+|---:|---|---|---|
+| 1. Join campaign | Complete | Invite acceptance and player browser are covered by the canonical journey. | No critical dead end observed. |
+| 2. Open character | Complete | Character/actor sheet route and selection in `apps/web/src/App.tsx` and `actor-panel.tsx`; canonical/full-combat fixtures open the player actor. | Multiple-character scale was not manually verified. |
+| 3. Find core statistics | Functional but incomplete | `apps/web/src/actor-panel.tsx` exposes vitals, defenses, saves, skills, and resources; long collections are capped. | Hidden overflow can look like missing data. |
+| 4. Make ability check | Complete on reviewed path | Shared quick rolls in `packages/system-sdk/src/index.ts`; server roll resolution in `apps/api/src/app.ts`; focused action-economy tests pass. | Formula details are available; no critical issue observed. |
+| 5. Make saving throw | Complete on reviewed path | Save Advantage logic in `packages/system-sdk/src/dnd-save-advantage.test.ts`; server-authoritative roll path. | Complex temporary stacking remains a broader rules risk. |
+| 6. Make attack | Functional but incomplete | Attack preview works, but fresh `canonical-public-journey.spec.ts:413` failed once with a disabled final continuation and passed on rerun. | A player can stall immediately after a hit. |
+| 7. Roll/apply damage | Broken for critical attacks | `packages/system-sdk/src/dnd-action-continuations.ts:46-64` omits critical metadata; critical helper at `dnd-rules-completion.ts:304-315` is unused. | The table loses trust when a visible critical deals ordinary damage. |
+| 8. Cast spell | Functional but incomplete | 341 current spell records; action/save/attack/resource paths work, but complex spells are manual and grant-source ability can be wrong for affected multiclass casters. | Player may need DM/manual correction for complex or misattributed spells. |
+| 9. Spend resource | Complete on focused paths | Action-economy/resource suites passed; current Second Wind/Tactical Mind fixes are in the working tree but unreleased. | Aggregate release evidence remains unstable. |
+| 10. Move token | Functional but incomplete | Single-token movement works; multi-token mixed-authority movement is broken as described above. | Permission error can partially change the board. |
+| 11. Target creature | Functional but incomplete | Target selection/attack/save continuations exist in web/API; advanced area/geometry remains reviewed/manual. | Manual geometry is acceptable when labeled, but adds DM overhead. |
+| 12. Receive damage | Complete except critical source | Typed damage, resistance/immunity/vulnerability, temp HP, and actor updates are in System SDK/API focused coverage. | Critical source defect can under-apply damage. |
+| 13. Receive healing | Broken in active combat recovery | Actor clears zero-HP state in `packages/system-sdk/src/index.ts:12029-12037`; `syncCombatDefeatedFromActorIds` at `apps/api/src/app.ts:22501-22511` never clears combatant defeat. | Sheet and initiative can disagree about whether the player may act. |
+| 14. Gain condition | Complete on core path | Typed conditions/effects are represented in System SDK and actor/combat APIs; full-combat journey exercises condition state. | Complex stacking/duration semantics remain partial. |
+| 15. End concentration | Complete on core path | Concentration state and cleanup are centralized in System SDK/API and surfaced on the sheet. | Exact complex spell lifecycle remains manual. |
+| 16. Take rest | Complete on reviewed path | Short/Long Rest, Hit Dice, and resource restoration live in `packages/system-sdk/src/index.ts` with focused regression coverage. | No broad imported/homebrew rest matrix was run. |
+| 17. Level up | Functional but incomplete | Dirty-tree advancement API tests pass; `packages/system-sdk/src/dnd-validation-preview.ts:927-946` narrows authoritative spell choices; web flow omits other casters. | Affected spellcasters can complete a level with incomplete/wrong spell attribution. |
+
+#### Combat journey
+
+| Step | Status | Evidence and UX finding | Likely abandonment / access concern |
+|---:|---|---|---|
+| 1. Activate combat scene | Complete | Scene activation and combat start in `apps/api/src/app.ts`; full-level-3 Playwright journey passed 1/1. | No critical issue observed. |
+| 2. Add PCs/enemies/allies/hidden participants | Complete on reviewed path | Encounter placement and participant review are connected; hidden participant permissions were covered by prior live walk. | Very large rosters not verified. |
+| 3. Roll/enter initiative | Complete | Server roll/manual input and readiness gating are connected; full-combat journey passed. | No critical issue observed. |
+| 4. Handle surprise/hidden combatants | Functional but incomplete | Surprised flags and permission-filtered visibility exist in combat/participant UI; broader stealth adjudication remains manual. | Manual stealth is acceptable; player visibility must remain explicit. |
+| 5. Begin first turn | Complete | Combat progression/turn ledger in API/System SDK; active turn is surfaced in combat panel. | No critical issue observed. |
+| 6. Measure movement | Functional but incomplete | Scene toolbar provides ruler/measurement/path aids; movement rules such as difficult terrain/opportunity are advisory/manual. | Pointer-first tools limit keyboard and tablet users. |
+| 7. Roll attack | Functional but incomplete | Hit preview works; continuation race is nondeterministic in canonical E2E. | Player can be stranded after a successful hit. |
+| 8. Apply cover/advantage/disadvantage | Functional but incomplete | Roll mode and cover/tactical aids exist; geometry-derived enforcement is deliberately manual. | DM overhead, but safer than incorrect geometry automation. |
+| 9. Roll/apply damage | Broken | Critical verdict is lost between attack and damage; ordinary typed damage works. | Foundation exit blocker. |
+| 10. Apply resistance/immunity/vulnerability | Complete on typed paths | Central typed-damage handling in System SDK/API; focused combat coverage. | Mixed/custom untyped effects remain manual. |
+| 11. Apply condition | Complete on core path | Typed condition mutation and actor/combat state are connected. | Complex duration/stacking effects remain partial. |
+| 12. Check concentration | Complete on core path | Concentration checks/cleanup are part of damage resolution and sheet state. | Complex spell-specific exceptions remain manual. |
+| 13. Place spell template | Prototype | Area templates/drawing tools exist on the scene canvas; authoritative geometry/effect application is reviewed/manual. | Usable with a DM, not automatic rules proof. |
+| 14. Resolve multiple target saves | Functional but incomplete | Target/save continuations exist; breadth of multi-target spell categories was not exhaustively run. | Manual cleanup may be required for complex areas. |
+| 15. Apply half damage on success | Functional but incomplete | Save/damage preview supports reviewed adjustments; no complete every-spell matrix was verified. | DM must inspect ambiguous spell behavior. |
+| 16. Use recharge ability | Functional but incomplete | Monster stat/action/resource data supports recharge-style actions, but no full representative recharge E2E was verified. | Unable to claim table-wide automation. |
+| 17. Resolve reaction | Functional but incomplete | Reaction action-economy slots exist; timing/interrupt UI and opportunity attacks remain partial/manual. | Reaction windows can be missed without DM prompting. |
+| 18. Drop creature to 0 HP | Complete for actor transition | System SDK zero-HP/death-save transition and API commit are tested; full-combat path covers defeat. | Recovery from this state is the separate broken seam. |
+| 19. Resolve death save/monster death | Functional but incomplete | Death saves/stabilization work; healing recovery can leave combatant defeated. | Contradictory recovery is a real-play blocker. |
+| 20. Advance round | Complete | Turn/round controls and action-economy reset exist in combat progression. | Legendary between-turn cadence remains partial. |
+| 21. End combat | Complete | Reviewed end confirmation and combat completion path exist. | No critical issue observed. |
+| 22. Record XP/loot | Functional but incomplete | Combat completion exposes XP/GP/loot recording; richer party inventory/transfer was not verified end to end. | DM may finish accounting outside the combat panel. |
+
+#### Campaign-management journey
+
+| Step | Status | Evidence and UX finding | Likely abandonment / access concern |
+|---:|---|---|---|
+| 1. Create NPC | Functional but incomplete | Actor/custom monster creation and monster cloning exist in API/System SDK; a polished campaign-NPC workflow was not exercised fresh. | Faster than raw data entry only on known paths. |
+| 2. Link NPC to location | Functional but incomplete | Journal entity links/backlinks exist in `apps/api/src/app.ts` journal routes; exact NPC-to-location UX was code-verified, not freshly run. | Dense information architecture can hide the relationship. |
+| 3. Record quest | Functional but incomplete | Journal/record types and linked records support campaign information; no dedicated quest-state E2E was found. | Users may fall back to freeform notes. |
+| 4. Publish handout | Prototype | Publication/player receipt is covered by canonical history, but `handout-library-panel.tsx:354` is a read-only text presentation with limited media/rich formatting. | Players receive information, but presentation is below campaign-source-of-truth quality. |
+| 5. Play session | Functional but incomplete | Fresh full-level-3 combat E2E passed; exploration/social workflows are less directly evidenced. | Combat is the strongest session slice; non-combat continuity is thinner. |
+| 6. Record session notes | Functional but incomplete | Journal routes/history/canon review exist; draft autosave/recovery evidence is weak. | A reload/close can threaten uncommitted writing. |
+| 7. Generate AI draft summary | Unable to verify end to end | AI thread/provider paths exist in `apps/api/src/app.ts`; no live provider summary was run in this audit. | Provider/configuration/privacy behavior remains external evidence. |
+| 8. Review/edit AI draft | Unable to verify end to end | Thread/review surfaces exist, but no fresh provider-backed edit/cancel workflow was completed. | Do not claim a complete AI campaign workflow. |
+| 9. Update campaign canon | Functional but incomplete | Journal canon-review/history paths exist; exact AI-draft-to-canon flow was not exercised. | Manual canon review is the safe supported path. |
+| 10. Search a past event | Functional but incomplete | Exact search/navigation is implemented; campaign-scale recall and ranking were not benchmarked. | Search quality at multi-session scale remains unverified. |
+| 11. Export campaign | Complete locally | Bounded/checksummed archive and streaming export paths in `apps/api/src/app.ts` and `apps/web/src/archive-stream-client.ts`; focused coverage exists. | Local export is a strength. |
+| 12. Restore to another installation | Unable to verify | Import/recovery code exists, but current Compose/backup wiring and paired asset restore were not proven in a clean independent installation. | Final campaign-ownership promise is not yet demonstrated. |
+
+#### Cross-journey UX findings
+
+- **Smooth:** account/campaign creation, core scene/encounter creation, initiative, ordinary typed rolls/damage, turn progression, and local archive export.
+- **Confusing/excessive clicks:** map upload/background/calibration, combat HP management outside the combat panel, long-sheet/list truncation, and campaign information spread across dense management surfaces.
+- **Dead ends/data loss:** creator draft dismissal/reload, canonical damage continuation flake, onboarding's never-complete state, mixed-authority partial move, and healed actor/combatant divergence.
+- **Missing feedback:** list caps lack show-all/paging, group denial does not guarantee rollback, complex spell/manual boundaries are not uniformly surfaced, and hosted backup health is not proven.
+- **Loading/error/success:** the main paths have conventional states, but the incorrect onboarding success model and stranded preview show that state transitions are not consistently authoritative.
+- **Accessibility/mobile:** conventional forms are partly usable; the board remains pointer-first, core geometry tools lack full keyboard equivalents, and the physical assistive-technology/tablet matrix is unable to verify.
+
+
+### Serious issues found in the current tree
+
+| ID / severity | Affected user; user, technical, and rules impact | Evidence | Recommended response | Real-play / public-release effect | Disposition |
+|---|---|---|---|---|---|
+| F-01 / Critical | Players and DMs see a critical deal ordinary damage; the continuation loses the critical verdict; definitely incorrect D&D attack damage | `packages/system-sdk/src/dnd-action-continuations.ts:46-64`; unused helper `dnd-rules-completion.ts:304-315`; Champion metadata `index.ts:2241-2242` | Typed server critical verdict/threshold and dice-only transform with replay/undo tests | Blocks Foundation exit and every later stage / blocks public release | Fix immediately |
+| F-02 / High | A healed player may still be defeated in initiative; actor/combat sources diverge; definitely incorrect recovery state | Actor clears state at `packages/system-sdk/src/index.ts:12029-12037`; API applies update at `apps/api/src/app.ts:10621-10665`; one-way sync at `:22501-22511` | Transactional bidirectional actor-to-combatant life-state projection | Blocks real combat and private alpha / blocks public release | Fix immediately |
+| F-03 / High | DMs/players can partially move a group after permission rejection; independent writes violate atomicity; rules geometry is unchanged | Drag exposed at `apps/web/src/scene-canvas.tsx:731`; independent `Promise.all` requests at `apps/web/src/App.tsx:4411` | Typed permission-checked batch command, one transaction/event/undo | Blocks collaborative real play / blocks public release | Fix immediately |
+| F-04 / High | All users can be unable to mutate while one AI stream waits; a global durable critical section spans an external provider call; D&D commands are delayed, not reinterpreted | Coordinator `apps/api/src/app.ts:844-874,1037`; mutation hook `:17904-17933,18045-18047`; AI route `:7467-7553`; provider timeout `packages/codex-app-server-provider/src/index.ts:251-255` | Split pending/provider/final phases and test delayed-provider concurrency; preserve governed automatic execution | Blocks AI-enabled real play / blocks public release if AI is offered | Fix before enabling AI for alpha; otherwise disable in that profile |
+| F-05 / High | Self-host operators can fail to boot or restore incomplete campaigns; config/backup wiring contradicts runtime; no direct D&D rule impact | `docker-compose.yml:23-33,62-67`; `.env.example:87-88`; `apps/api/src/runtime.ts:142-155`; `asset-operations.ts:1819-1858` | Coherent local-storage profile, signing secret, scheduler health, paired DB/assets restore drill | Blocks documented self-host play / blocks advertised self-host public release | May begin during M0; required and independently proven for M3 exit |
+| F-06 / High | Players can stall after a hit; UI preview identity/realtime state is nondeterministic; rules sequence cannot complete | Fresh failure at `tests/e2e/canonical-public-journey.spec.ts:413` followed by immediate pass; full-level-3 journey passed | Fix the state race without sleeps/retries; require delayed-event tests and 10/10 clean runs | Blocks dependable real-play release qualification / blocks public release | Fix immediately |
+| F-07 / High | Public users face amplified session theft and credential abuse; browser/local auth controls are weak; no direct D&D rule impact | `apps/web/src/api.ts:5-32,248-249`; seven-day default `apps/api/src/app.ts:20326-20328`; cookie support `session-transport-auth.ts:24-41,73-87`; no CSP `static-runtime.ts:128-150`, `infra/docker/nginx.conf:1-11`; throttle `app.ts:17645-17665` | Cookie/session migration and revocation, CSP, trusted proxy plus account/network throttling | Does not block trusted local play / blocks public beta | Schedule before public beta |
+| F-08 / Medium | New DMs/players lose drafts or cannot find required records; local state/list caps and pointer-first controls harm usability; no direct rules error | Creator `character-creator-dialog.tsx:362,625,632`; sheet caps `actor-panel.tsx:602,619,628,669`; invites `App.tsx:9503`; chat scroll `chat-rail.tsx:60`; handout `handout-library-panel.tsx:354` | Resumable drafts, paging/show-all, session-speed panels, keyboard task coverage | Blocks some users' real play / blocks public beta | Schedule in M1/M2 |
+| F-09 / Medium | Maintainers face broad regression/conflict scope; composition roots concentrate domain changes; rules impact is indirect through regression risk | Measured current files: `apps/api/src/app.ts` about 25.6k lines; `packages/system-sdk/src/index.ts` about 18k; `packages/api-contracts/src/index.ts` about 16.3k; `apps/web/src/App.tsx` about 11.2k | Extract only touched pure seams and enforce new-growth budgets; no rewrite | Does not itself block play or public release | Monitor and reduce incrementally |
+
+### End-to-end abandonment points
+
+1. A first-time DM can upload a map, but upload, background selection, calibration, and onboarding completion do not form one guided path.
+2. A player can spend time in character creation and lose the entire draft by dismissing or reloading the dialog.
+3. A DM can enter combat but must leave the combat surface to apply routine HP changes or manage the roster.
+4. A player can hit an attack and reach the damage continuation, but the canonical journey intermittently leaves the final action disabled.
+5. A DM can multi-select tokens they can and cannot control and produce a partial move rather than one clear rejection.
+6. A healed character can appear conscious on the sheet while remaining defeated in combat.
+7. A player with a long inventory or action list can believe entries are missing because the sheet silently caps the displayed records.
+8. A group can use chat, journals, and handouts, but weak draft recovery, forced chat scrolling, and limited whisper/handout presentation create friction during live play.
+9. An operator following the documented Docker quickstart can fail before reaching the product because production storage validation contradicts the Compose defaults.
+
+### Fresh verification record
+
+Run on 2026-07-16 against the current working tree:
+
+| Check | Result | Interpretation |
+|---|---|---|
+| `pnpm.cmd gate:fast` | Pass | Deployment smoke 2/2 and API contracts 81/81 passed. |
+| `pnpm.cmd gate:evidence:test` | Pass | Evidence gate passed with 61 records. |
+| Focused System SDK rules suites | Pass | 3 files, 30 tests passed. |
+| Focused API action-economy and spell-advancement suites | Pass | 2 files, 8 tests passed. |
+| Full level-3 combat Playwright journey | Pass | 1/1 passed in the fresh run. |
+| Canonical public Playwright journey, run 1 | Fail | Damage preview appeared, but "Use previewed action" remained disabled. |
+| Canonical public Playwright journey, immediate rerun | Pass | 1/1 passed, demonstrating nondeterminism rather than a deterministic functional absence. |
+| `TURBO_FORCE=true pnpm.cmd check` | Fail | Lint and typecheck completed, but the aggregate API test stage ended with 27 failures, 4 worker RPC errors, and many late five-second timeouts; the build phase was not reached. |
+| Isolated full API suite | Inconclusive | It exceeded 30 minutes and was stopped; this is test-operability evidence, not a product pass. |
+
+The historical sections below remain useful implementation evidence, but statements such as "no hidden implementation backlog," "clean working tree," or "locally validated release candidate" are no longer current.
+
+> Independent re-audit, 2026-07-15 (late evening). Evidence cutoff is committed HEAD `b5e30f1` ("Stabilize cold API release tests") with a clean working tree. This revision supersedes the 2026-07-16-dated ledger written by the implementing session: that ledger's claims have now been **independently re-verified** by a separate audit session through fresh validation runs, code tracing, and a live in-browser workflow walk. Differences from the prior ledger are called out explicitly.
+>
+> During this audit, three commits landed concurrently (`f64c6f2` audit implementation, `63d5950` dependency-audit repair, `b5e30f1` gate stabilization). `63d5950` broke the release-gate guard test for ~16 minutes; this audit independently produced the identical one-line repair that `b5e30f1` then committed. Details in "Verification incidents" below.
 
 ## Executive finding
 
-Open Tabletop Engine is a connected, API-first D&D 5.5e virtual tabletop. It is no longer accurately described as an architectural foundation or a collection of prototypes. Accounts, campaigns, permissions, invitations, reviewed characters, sheets, scenes, maps, tokens, dice, chat, journals, encounters, combat, rules transactions, compendium/homebrew, assets, archives, realtime recovery, operational controls, plugins, and the existing AI agent participate in the same persistent campaign model.
+Open Tabletop Engine at `b5e30f1` is a broad, connected, DM-first D&D 5.5e VTT. Accounts, campaigns, permissions, members, resumable setup, characters, scenes (square and gridless), tokens, encounters, combat, dice, chat, journals, assets, archives, realtime recovery, plugins, and the campaign-governed AI agent participate in one persistent permissioned model. The T01–T37 audit backlog is code-complete and committed, and this session independently confirmed representative claims in every area it probed.
 
-The current code connects the preparation, player-action, combat, campaign-management, restart, export, and restore mechanics needed for a representative D&D session. That is an implementation-path claim, not evidence that a group has completed a whole session without assistance. The audit's code-addressable non-AI P0-P3 defects were implemented beyond the original first-ticket sequence. Remaining gates require people or external infrastructure: repeated real campaign sessions, live OIDC/SCIM, hosted HTTPS/recovery/migration/rollback, production observations, manual assistive technology and cross-browser/device checks, content/legal approval, and independent security review.
+The re-audit found **one new authoritative rules defect** (Second Wind consumes the standard Action instead of a Bonus Action — see `DND_RULES_AUDIT.md` R-04), one adjacent likely defect (Tactical Mind), a **red default E2E suite** (`pnpm e2e` — unmaintained through the tranche; sampled failures are predominantly stale test expectations rather than product defects, with one deterministic harness race; T48), and several evidence-hygiene findings including a CI release gate that has been red on main for the last several pushes. None of these invalidate the overall verdict: the product is a locally validated audit candidate whose remaining promotion risk is concentrated in the external/manual evidence gates X01–X08, plus a small new code tranche (T38–T48).
 
-The AI agent was deliberately left intact. Manual proposal review and governed automatic execution are both supported campaign governance modes; proposal-only language is not a product requirement.
+This document does **not** declare a public release.
 
-## Method and claim boundary
+## Method and status legend
 
-The audit traced user surfaces through client calls, API schemas/routes, authorization, rules resolution, persistence, realtime events, archive behavior, and tests. Representative counterexamples were converted into regression tests. Browser evidence exercised public UI paths rather than page-script state injection. Documentation is cited only when the implementation or an external operating procedure is the subject.
+Claims were traced through public UI, typed client/contracts, API validation/authorization, revisions/idempotency, rules resolution, persistence, realtime filtering, archives, and focused regressions — and, for this revision, through fresh runs and a live browser session against the demo campaign.
 
-Status meanings:
-
-- **Complete:** connected, persistent, permission-checked, and automated sufficiently for the declared scope.
-- **Functional but incomplete:** useful end to end, but a stated manual/external/compatibility boundary remains.
-- **Prototype:** demonstrable behavior not yet appropriate for normal campaign reliance.
-- **UI-only / Backend-only:** one side lacks a connected counterpart.
-- **Broken:** a verified implemented path currently produces an incorrect or unsafe outcome.
-- **Not implemented:** no connected implementation exists.
-- **Unable to verify:** evidence requires unavailable credentials, infrastructure, content, devices, or human participants.
-- **Intentionally out of scope:** a deliberate product boundary, not an accidental stub.
+| Status | Meaning |
+| --- | --- |
+| Verified live | This session exercised it end-to-end in a running browser session or fresh test run |
+| Verified in code | This session traced the implementation and its regression coverage in source |
+| Implemented | Claimed by the prior ledger with named code; consistent with everything this session probed, but not individually re-traced |
+| Declared boundary | Works for the stated scope; the manual/external/compatibility boundary is intentional and visible |
+| External evidence required | Requires real users, providers, hosted infrastructure, devices, or independent review (X01–X08) |
 
 ## Repository overview
 
-| Layer | Implementation and responsibility |
-| --- | --- |
-| Web | React/Vite application in `apps/web`; `App.tsx` composes extracted actor, combat, encounter, session, campaign, world, compatibility, inventory, controlled-creature, compendium, AI, and administration panels |
-| API | Fastify application in `apps/api`; route modules and `app.ts` own authorization, validation, revisions, idempotency, transactions, persistence coordination, realtime, archives, operations, plugins, and AI integration |
-| Rules | `packages/system-sdk`; D&D static content, validation, calculations, actions, advancement, rest, damage, effects, spells, inventory, monsters, controlled creatures, and custom content |
-| Shared model | `packages/core`; campaign records, events, permissions, compatibility, tactical state, pending transactions, and shared state operations |
-| Contracts/client | `packages/api-contracts` and `packages/api-client`; generated/runtime OpenAPI alignment and reusable typed calls |
-| Persistence | SQLite state store plus asset providers, maintenance/backups, snapshot history, archive staging, compensating rollback, and recovery tests |
-| Realtime | WebSocket event sequence, privacy filtering, bounded history, delta reconciliation, presence, and authoritative snapshot recovery |
-| Other apps | desktop, worker, relay, asset edge, AI gateway; scoped around the main single-writer API topology |
-| Extension/AI | plugin SDK/runtime, example plugins, AI core, provider integrations, proposal review and governed automatic execution |
-| Operations | Docker/self-host/hosted recipes, readiness, migration/security/deployment/performance/capacity checks, docs site, SBOM and release-evidence scripts |
-
-Workspace packages are declared by `pnpm-workspace.yaml`. The central product is the API/web/core/system-SDK path; auxiliary apps and SDKs support that product rather than define a second one.
+| Layer | Contents | Measured at `b5e30f1` |
+| --- | --- | --- |
+| `apps/web` | React client (Vite) | `App.tsx` 11,192 lines; heavy panels lazy-loaded |
+| `apps/api` | Fastify REST + WebSocket authoritative server | `app.ts` 25,499 lines; 339 route handlers; `app.test.ts` 40,388 lines |
+| `apps/desktop`, `apps/relay`, `apps/worker`, `apps/asset-edge` | Electron host, Cloudflare relay, job worker, asset edge | Present with their own suites |
+| `packages/system-sdk` | D&D 5.5e SRD rules/content | `index.ts` 17,982 lines plus 40+ extracted `dnd-*` modules |
+| `packages/core`, `api-contracts`, `api-client`, `dice-engine`, `plugin-sdk`, `ai-core`, `codex-app-server-provider`, `tunnel-protocol` | Shared domain, contracts, typed client, dice, plugins, AI | `api-contracts/index.ts` 16,302 lines |
+| Content | SRD 5.2.1 compendium | 835 entries served with per-entry CC BY 4.0 attribution (verified live) |
 
 ## Capability inventory
 
-### Accounts, campaigns, permissions, and persistence
+### Accounts, campaigns and permissions
 
-| Capability | Status | Evidence and boundary |
+| Capability | Status | Notes/evidence |
 | --- | --- | --- |
-| Registration, password sessions, reset, MFA | Complete | Auth/session/revocation routes and broad API/browser coverage in `apps/api/src/app.test.ts` and `tests/e2e/auth-tabletop.spec.ts` |
-| User profile and preferences | Complete | Revisioned profile API and connected account/preferences UI; `profile-rules-transfer.test.ts` |
-| OIDC login/linking | Functional but incomplete | Issuer/endpoint HTTPS, redirect/DNS/IP/SSRF and verified-email hardening in `oidc-http-security.ts`; live provider smoke remains external |
-| SCIM provisioning/role mapping | Functional but incomplete | Server-admin SCIM contracts, safe role mapping and tests; live provider lifecycle remains external |
-| Campaign create/onboarding/settings | Complete | Resumable setup, rules profile, starter content and persistence across API/web/browser |
-| Campaign duplicate/archive/restore/delete | Complete | Revisioned/idempotent administration UI/API; `campaign-duplication.test.ts`, `campaign-administration.test.ts` |
-| Invitations, accept/revoke/expiry, rejoin | Complete | GM/assistant/player/observer roles, MFA/session policy and private invite browser journey |
-| Membership and multiple DMs | Complete | Owner, GM, assistant GM, player, observer, scoped grants and authorization matrix |
-| Campaign ownership transfer | Complete | Current-owner-only, exact revision, idempotency, reason/audit, UI confirmation; `campaign-ownership-transfer.tsx` |
-| Character assignment/transfer | Complete | Same-campaign recipient validation, accept/decline/cancel, status/history and connected account UI; `character-transfer-panel.tsx` |
-| Character-specific permissions | Complete | Private actor/item redaction, owner/grant checks, permission-filtered snapshots and mutation routes |
-| Scene-level delegation | Complete | Read/update-only bounded grants, exact revision/idempotency and management UI; `scene-delegation-routes.ts` |
-| Session scheduling/planning | Complete | Agenda, linked records, scheduled time, notes, start/complete lifecycle; `session-desk-panel.tsx` |
-| Archived-campaign write policy | Complete | Lifecycle gates prevent normal mutation while retaining authorized read/restore |
-| Concurrent shared editing | Complete | Consequential mutations require exact current revisions and idempotency; stale writes return structured conflict/current state; route contract tests |
-| Durable acknowledgement | Complete within SQLite topology | Serialized mutation coordinator, commit/rollback failure handling, nested dirty tracking and restart tests; `sqlite-store.ts` |
-| Refresh/reconnect | Complete | Sequence/gap detection, deltas and permission-filtered authoritative snapshot; `realtime-connection.ts`, `realtime-snapshot-delta.ts` |
-| Snapshot history | Complete | Bounded, permission-filtered history and API tests; `snapshot-history.ts` |
+| Registration, password sessions, reset, MFA | Implemented | Independent security review remains X07 |
+| OIDC login/link, SCIM provisioning | Declared boundary | Live provider lifecycle is X02 if advertised |
+| Campaign create/settings/lifecycle | Verified live | Manage panel sections: Account/Campaign/People/Scenes/Archives |
+| Resumable first-session setup (T12) | Verified live | Four-step wizard (Campaign → Scene & map → Invitation → Review) observed; draft scoping/resume covered by `campaign-setup-resume.spec.ts` |
+| Member list, role update, removal (T10) | Verified in code | `campaign-member-management-api.test.ts`, `campaign-members-panel.tsx`; removed-user snapshot denial asserted |
+| Invitations and rejoin | Verified live | Canonical journey creates an invite (`oti_…` token) and joins a second browser as the player |
+| Character/scene-specific permissions | Verified live | Player seat: adversaries hidden ("No adversaries yet"), unowned character vitals redacted to "? / ?", GM controls absent |
+| Ownership and character transfer | Implemented | Revisioned accept/decline/cancel with audit |
+| Session planning | Implemented | Agenda/linked records/lifecycle per prior ledger |
+| Concurrent editing/recovery | Declared boundary | Single-node scope; canonical journey restarts the API mid-session and resumes (verified live) |
 
-### Character creation, advancement, and session sheet
+### Character, advancement and player sheet
 
-| Capability | Status | Evidence and boundary |
+| Capability | Status | Notes/evidence |
 | --- | --- | --- |
-| Level-one creator | Complete for declared SRD scope | Species/ancestry, background, ability increases, origin feat, class, skills, tools, languages, equipment, mastery, spells and class choices; focused creator tests and browser fixtures |
-| Character import/validation/repair | Complete for JSON contract | Versioned validation, issue provenance, lossless unknown fields and non-destructive repair preview; arbitrary proprietary formats are not claimed |
-| Campaign character review | Complete | Optional-by-default policy, fingerprinted submit/approve/change request/override, token/combat gates; `dnd-character-review.ts` |
-| Core sheet hierarchy | Complete | Session-first stats/actions/defenses/resources/loadout/effects plus calculation details; `actor-panel.tsx`, `actor-loadout-panel.tsx` |
-| Ability, skill, save, initiative, death rolls | Complete | Server rolls with formula/source/visibility/history and actor-specific action IDs |
-| Weapon attacks and typed damage | Complete | Attack/damage actions, critical formulas, typed multi-component/multi-target preview/apply, defenses, temp HP and combat sync |
-| HP, temp HP, death and stabilization | Complete | Prepared healing/damage, zero-HP lifecycle, death saves and actor/combatant consistency |
-| Short and Long Rest | Complete | Player-selected Hit Dice, server rolls, class resources/Pact Magic, HP/max/temp/death/exhaustion recovery and exact revisions |
-| Advancement, ASI/feats/subclasses | Complete | Class-specific schedules, explicit choices, Constitution HP, durable pending reviews, cancel/commit; feat matrix tests |
-| Multiclassing | Complete within declared profiles | Eligibility, class levels, hit-die pools, spell-slot composition and custom class profile seam |
-| Spell known/prepared/always/spellbook | Complete | Dedicated mutation, class/resource semantics, Wizard ritual availability and UI |
-| Inventory/equipment/attunement | Complete | Equip/carry, benefits/actions gates, capacity/prerequisites, charges, cursed recovery, revision/audit |
-| Features/resources/limited uses | Complete within modeled content | Spend/recharge/recovery and sourced actions; unsupported prose remains manual |
-| Conditions/effects/concentration | Complete | Immunity sources, duration/schedule, replacement/expiry/cleanup and reasoned override |
-| Currency, containers, weight, ammunition | Complete | Cycle/depth checks, encumbrance, transfers, party stash and commerce |
-| Biography/notes/custom fields | Complete | Descriptive/homebrew fields remain editable without bypassing managed rules roots |
-| Mobile/tablet/keyboard sheet use | Functional but incomplete | Responsive and automated keyboard/accessibility tests pass; manual device/AT certification remains external |
+| Level-one creator | Verified live | Canonical journey builds a legal SRD character through validation gates |
+| Core sheet statistics and quick rolls (T05) | Verified live | Sheet payload carries ~40 server-computed quick rolls; every formula this session checked was correct (see rules audit) |
+| HP / temp HP / death / stabilization (T04) | Verified live | 0 HP → death-save row 0/3–0/3; natural 20 rolled live → "revived", HP 1, counters reset, undo envelope with expected revisions |
+| Heroic Inspiration (T09) | Verified live | Grant → "Ready", overflow-grant recipient picker, "Reroll die 20 (kept)" control; API grant/transfer/reroll with audit at `app.ts:10142`, `:10190` |
+| Rest and resources | Verified in code | Hit Dice, class resources, Pact Magic, exhaustion recovery (`index.ts:9994`) |
+| Advancement + retry (T35) | Implemented | Canonical journey advances to Level 2 (verified live via spec assertions) |
+| Multiclassing (T21) | Verified in code | Central class-level semantics; **per-class hit-dice pools now implemented** (`index.ts:3563`), superseding the earlier single-pool simplification; separate Warlock pact slots |
+| Spell/inventory/effects/concentration | Verified live | Concentration state surfaced on sheet; spells carry `action: "bonus"`/`"action"` data; inventory graph/commerce modules in `dnd-inventory-commerce.ts` |
+| Armor Class intent (T30) | Verified in code | `dnd-armor-class-intent.ts` migration invoked at boot and on actor mutations (`app.ts:1036` et al.); live sheet shows derived AC breakdown |
+| Import/validation/repair | Implemented | `characters/import` route; unknown fields preserved (T17) |
 
-### Scenes, maps, tokens, and tactical play
+### Rules automation
 
-| Capability | Status | Evidence and boundary |
+| Capability | Status | Notes/evidence |
 | --- | --- | --- |
-| Scene create/edit/duplicate/reorder/archive/activate | Complete | Connected manager UI, exact revisions, permissions and persistence |
-| Map/image upload and positioning | Complete | Asset upload, rendition selection and scene background controls |
-| Square grid/gridless and calibration | Complete | Origin/scale/dimensions/calibration UI and tests; hex expansion is intentionally deferred |
-| Pan/zoom and responsive canvas | Complete | Canvas viewport transforms and resize handling in `scene-canvas.tsx` |
-| Token placement/linking/ownership/locking | Complete | Actor tray supports pointer and accessible non-drag placement; server permissions |
-| Token movement, size, rotation, elevation, bars, labels | Complete | Revisioned transforms and UI controls |
-| Hidden/invisible and GM/player views | Complete | Snapshot/event redaction, GM preview and visibility-specific rendering |
-| Multi-select, bulk actions, copy/paste, undo | Complete | Connected tabletop operations with tests |
-| Drawing, measurement, pings | Complete | Persistent annotations plus ruler and presence-aware pings |
-| Areas/templates and targeting | Complete within typed scope | Circle/cone/line overlays, multi-target selection and preview summaries |
-| Fog, walls, doors, windows | Complete within declared 2D model | Authored barriers/open state and permission-aware fog |
-| Lights/darkness and senses | Complete within declared model | Typed light, magical darkness, darkvision/blindsight/truesight/tremorsense and per-token vision |
-| Layers and GM-only information | Complete | Layered scene/token/journal visibility and private snapshot filtering |
-| Difficult terrain and cover | Advisory by design | Measurement and explicit directional rulings; no guessed pathfinding/collision/AC mutation |
-| Large scenes/maps | Functional but incomplete | Deterministic local capacity/performance gates exist; hosted production envelope remains external |
+| Exact monster initiative/saves/skills (T22) | Verified in code | `dnd-monster-core-rolls.ts` |
+| Action economy + Action Surge (T23) | Verified live | Turn ledger observed in a live combat resolution (round/turnIndex/actionsUsed/audit event) — **and this observation exposed R-04 (Second Wind misclassified as an Action); see rules audit** |
+| Saving-throw Advantage (T27) | Verified in code | `dnd-save-advantage.test.ts`; roll-mode sources in d20 automation |
+| Calculation overrides (T24) | Verified in code | `dnd-calculation-overrides.ts` + world-graph tests |
+| Weapon Mastery (T28) | Verified in code | All eight properties with correct SRD semantics and source-page citations (`dnd-weapon-mastery.ts:52`); UI wired at `actor-panel.tsx:880`; Push is reviewed manual geometry |
+| Rage (T29) | Verified in code | Lifecycle with eligibility (heavy-armor exclusion), extension triggers, per-roll damage bonus; correctly declares `action: "Bonus Action"` |
+| Recorded-roll replay (T36) | Verified live | Live rolls carry `fairness` (algorithm/serverSeed/serverSeedHash); code comment and contract state the no-precommit trusted-host boundary (`fair-dice.ts:18`) |
+| Rules support boundary (T20) | Verified live | Combat panel labels "Damage, movement, and map geometry remain manual unless shown in the preview" |
+| Lair/regional mechanics | Verified in code | Scheduled environment mechanics with initiative-count/round-start/round-end triggers (`dnd-advanced-mechanics.ts:300`) — surfaced in the combat panel drawer (verified live) |
+| Legendary actions | Declared boundary | Present as stat-block prose entries with a trackable effect roll (`dnd-monster-stat-blocks.ts:79` et al.); **no dedicated per-round legendary-action counter economy** — see backlog T42 |
 
-### Encounter and combat management
+### Scenes, maps and tokens
 
-| Capability | Status | Evidence and boundary |
+| Capability | Status | Notes/evidence |
 | --- | --- | --- |
-| Encounter create/search/clone/save/history | Complete | Encounter builder, catalog, budgets and durable records |
-| Add PCs, monsters, allies, hidden participants | Complete | Selected readiness review; placement is not required to avoid accidental omission |
-| Initiative roll/manual entry/ties/order | Complete | Server rolls or reviewed values; explicit order and hidden redaction |
-| Surprise and first-turn setup | Complete within reviewed setup | Participant flags are reviewed; narrative determination remains DM-controlled |
-| Turn/round/active indication | Complete | Previous/next/end controls, lifecycle events and responsive UI |
-| Actions, bonus actions, reactions/readied declarations | Complete within typed tracking | Action metadata/resources and reaction use; trigger interpretation may be manual |
-| Legendary/lair/regional mechanics | Complete | Advanced schedules/resources and operator surfaces |
-| Conditions, concentration, durations, saves | Complete | Sourced effects and scheduled start/end processing |
-| Recharge and monster resources | Complete | Server rolls, spend/recover and action availability |
-| Damage/healing/temp HP/defenses/critical | Complete | Typed transactions, exact revisions, actor/combatant synchronization and undo |
-| Multiple targets/save-for-half | Complete when typed | Atomic reviewed per-target resolution; ambiguity stops without mutation |
-| Cover/difficult terrain/opportunity attacks | Advisory/manual | Tools support the ruling but do not infer geometry or silently change math |
-| Undo mistakes | Complete for consequential modeled transactions | Stale-safe captured roots; later edits prevent destructive undo |
-| Combat completion and history | Complete | End lifecycle, recent combats, audit and reward linkage |
-| XP, milestone, GP, loot | Complete | Permission-aligned revisioned/idempotent award and claim flows |
+| Scene create/edit/duplicate/reorder/archive/activate | Verified in code | Batch duplication remaps scenes/tokens/actors/items/overrides/encounters (`scene-duplication.ts:117`, route `app.ts:3350`) |
+| Square/gridless mode (T11) | Verified in code | `gridless-scene-api.test.ts`, `gridless-scenes.spec.ts`, `scene-grid-fields.tsx` |
+| Map upload/positioning/calibration | Implemented | Calibration square-only (declared) |
+| Tokens: placement/link/move/size/rotation/elevation/bars/hidden | Verified live | Demo board tokens listed with ownership; hidden-from-player behavior observed from the player seat |
+| Drawing/measurement/pings/templates | Verified live | Toolbar: Ruler, Measure circle/cone, Ping, Reveal fog, Drawing, Area template, Delete latest, Undo scene edit |
+| Fog/walls/doors/light/senses/layers | Implemented | Extensive prior-session verification; not re-walked this session |
+| Cover/difficult terrain/pathfinding | Declared boundary | Reviewed/manual by design |
 
-### Dice, rolls, chat, and communication
+### Encounters and combat
 
-| Capability | Status | Evidence and boundary |
+| Capability | Status | Notes/evidence |
 | --- | --- | --- |
-| Standard notation and modifiers | Complete | Parser/evaluator supports declared notation, keep/drop, rerolls, minimums and optional explosions with transparent details |
-| Checks, saves, attacks, damage, healing, initiative, death | Complete | Typed actor/system roll actions and server authority |
-| Advantage/disadvantage/critical/bonus dice | Complete | Formula transformation, source display and cancellation behavior |
-| Multiple damage types | Complete | Roll breakdown feeds typed per-component damage resolution |
-| Public/private/GM/self rolls | Complete | Visibility policies, redacted realtime/history and search |
-| Secret roll trust/audit | Complete | Server-generated result and durable roll/audit record |
-| Inline rolls/macros/reusable actions | Complete | Chat/reference cards and permissioned macro lifecycle |
-| Public chat/whispers/in-character/OOC | Complete | Channel/recipient/actor metadata and realtime delivery |
-| Reply/edit/delete/moderation/search | Complete | Permission-aware history and local mutation feedback |
-| Roll/spell/item/rules cards | Complete within supplied metadata | Structured chat cards and references |
-| Pings/presence/connection state/reconnect | Complete | Presence lifecycle, sequence tracking and authoritative refresh |
-| Notifications/accessibility | Functional but incomplete | Named regions/status and keyboard paths automated; manual AT notification quality remains external |
+| Encounter create/search/clone/save/history | Implemented | Exact search opens saved encounters (T34) |
+| Monster/ally/PC placement (T26) | Verified in code | Resumable idempotent operation, `encounter-monster-placement.test.ts` |
+| Initiative/manual entry/surprise | Verified live | Participant review with per-combatant initiative inputs + Surprised flags; start blocked until initiative entered; server-roll option for linked NPCs |
+| Turn/round tracking and conflict recovery (T06) | Verified live | Round 1 → turn controls; two-step "End → Confirm end"; single-retry conflict logic in `combat-conflict.ts` |
+| Rewards | Verified live | Split XP / Split GP / Record loot controls at combat end |
+| Controlled creatures (T37) | Verified in code | Typed handoff, source-locked stat blocks, reload-scoped draft (`dnd-controlled-creatures.ts`, `controlled-creature-handoff-state.ts`) |
 
-### Spells, monsters, items, and compendium
+### Dice, chat, journals and information
 
-| Capability | Status | Evidence and boundary |
+| Capability | Status | Notes/evidence |
 | --- | --- | --- |
-| Spell metadata/search/filter/reference | Complete for bundled/user content | Level/school/time/range/components/duration/concentration/ritual and action metadata where provided |
-| Spell preparation, slots, Pact Magic, rituals | Complete | Class-aware dedicated state and recovery; `dnd-spell-preparation.ts` |
-| Upcasting/scaling/attack/save/damage/healing | Complete when data-backed | Typed preview/source; prose-only exceptions stay manual |
-| Persistent effects/summoning/transformation | Complete within typed helpers | Confirmed lifecycle and controlled-creature integration |
-| Monster/NPC stat blocks/search/filter/clone | Complete | Catalog/custom content, encounter insertion, token/actor links and hidden presentation |
-| Monster actions/traits/reactions/legendary/lair | Complete within supplied records | Actions/resources/recharge/defenses/immunities/senses and combat operation |
-| Custom monsters/scaling/templates | Complete within custom builder | Campaign-scoped, versioned and provenance-aware; no proprietary catalog claim |
-| Weapons/armor/shields/gear/tools/consumables | Complete within supplied content | Properties, mastery, state, actions, quantity, charges and compendium import |
-| Magic items/attunement/curses | Complete within typed metadata | Eligibility/state/effects and audited manager recovery |
-| Party inventory/loot/merchants | Complete | Containers, transfers, stock, buy/sell, claims and audit |
-| Campaign compendium | Complete | Full-text/filter, source/version/license, conflict keep/merge/replace, duplicate detection and actor import state |
-| Homebrew builders | Complete | Monster, spell, item, feat, species, background, subclass and condition forms/API |
-| Content provenance/licensing metadata | Complete in code; external review required | Package content notice, per-record metadata and archive preservation; release owner/legal signoff remains external |
-| Proprietary D&D content | Intentionally out of scope | No recommendation or implementation to scrape/copy/bundle unauthorized material |
+| Public/private/GM roll visibility | Verified live | Roll response carries visibility; death-save redaction fields stripped for non-visible sources (`app.ts:19569`) |
+| Roll history/formulas/replay | Verified live | Full formula + terms + fairness in every roll payload |
+| Chat, whispers, handouts | Verified live | Roll cards auto-post; canonical journey covers handout publication and player receipt |
+| Journals: folders/links/backlinks/history/canon-review | Verified in code | Routes at `app.ts:5598–5721` |
+| Search/navigation | Implemented | Exact actionable targets (T34) |
 
-### Journals and campaign information
+### Assets, archives and recovery
 
-| Capability | Status | Evidence and boundary |
+| Capability | Status | Notes/evidence |
 | --- | --- | --- |
-| Notes/handouts/NPC/location/quest/faction/session records | Complete | Journal/world graph types, folders/tags and session links |
-| Player-visible, DM-only and per-player access | Complete | Server filtering and permission-aware search/snapshot/events |
-| Folders, tags, search, backlinks | Complete | Campaign knowledge index and world graph UI |
-| Entity relationships | Complete | Typed links among actors, locations, quests, factions, scenes, items and journals |
-| Images/rich text/references/embedded rolls | Complete within sanitized document model | Asset links and structured references; arbitrary unsafe HTML is not required |
-| Session summaries and campaign canon review | Complete | Session lifecycle, history and explicit canon workflow |
-| Revision history/autosave/error recovery | Complete | Exact revisions, idempotency, local error state and snapshot history |
-| Export/portability | Complete | Knowledge collections and references participate in validated archives |
+| Asset upload/renditions/references | Implemented | Provider durability deployment-specific |
+| Archive validation/import/export + streaming (T33) | Verified in code | `/export`, `/export/stream`, `archive-stream-client.ts` with progress/cancel |
+| Campaign import recovery (T25) | Verified in code | `campaign-archive-import-recovery.ts` (539 lines), identity-bound rollback, `archive-import-operations` routes |
+| Coordinated backups / retention (T15/T16) | Implemented | Hosted non-no-op proof remains X03 |
 
-### Exploration, social, and in-person-assisted play
+### API, plugins and AI
 
-| Capability | Status | Evidence and boundary |
+| Capability | Status | Notes/evidence |
 | --- | --- | --- |
-| Exploration preparation and record keeping | Functional but incomplete | Scenes/maps, measurement, pings, journals, locations, quests, factions, session agendas, checks and persistent canon provide connected support. There is no claim that travel procedure, discovery, hazards, line of sight, navigation, or open-ended environmental prose is automatically adjudicated. |
-| Exploration resolution during play | Functional but incomplete | Players can roll typed checks, move tokens, reveal information and record outcomes; geometry-dependent and narrative consequences remain explicit DM rulings. Automated evidence covers those component paths, not a complete exploration encounter observed with a real group. |
-| Social-encounter preparation and play | Functional but incomplete | NPC/world records, in-character and out-of-character chat, whispers, checks/saves, handouts, notes and canon review are connected. There is no dedicated social-combat engine, disposition simulator, or automatic resolution of persuasion, deception, negotiation, influence, or NPC intent. |
-| In-person-assisted tabletop use | Functional but incomplete | The responsive web workspace, GM/player visibility, local dice/chat, token controls and independent clients can assist a table using laptops or tablets. Automated Chromium phone/tablet/keyboard coverage exists, but no physical-room, projector, shared-screen, touch-device, offline-network, or assistive-technology session has been certified. |
-| Dedicated kiosk, shared-display, hot-seat, or offline table mode | Intentionally out of scope for the audited P0-P3 program | In-person-assisted play uses ordinary authenticated browser clients. A separate kiosk/shared-display/hot-seat mode and offline-first operation/reconciliation are deferred until observed table use demonstrates a need; neither is counted as external evidence or as an implemented capability. |
-
-### Assets, archives, ownership, and recovery
-
-| Capability | Status | Evidence and boundary |
-| --- | --- | --- |
-| Images/maps/tokens/portraits/handouts | Complete | Upload, signed delivery, permissions and connected selectors |
-| Type/size/quota validation | Complete | Provider/config limits and server validation |
-| Folders/tags/search/reuse | Complete | Asset library metadata and UI |
-| Deduplication/renditions/thumbnails | Complete | Content hash, WebP/thumbnail variants, variant-aware URLs; `asset-renditions.ts` |
-| Delete/dangling references/lifecycle | Complete | Reference checks, archive state, cleanup and audited deletion |
-| Campaign export/import | Complete | Version, schema, references, checksums, conflict modes, redaction and ownership regeneration |
-| Large asset archive streaming | Complete | Additive framed binary export/import with raw asset frames, SHA-256 trailers, backpressure, caps and temp staging; legacy JSON remains compatible |
-| Atomic failed import recovery | Complete | State/object prewrite snapshots and compensating rollback; staging verified before mutation |
-| Character/scene/journal/compendium/asset portability | Complete within archive contract | Scoped/partial exports and dependency closure |
-| Backup/restore/retention | Complete locally | SQLite maintenance and coordinated state/object guidance/tests; hosted drill remains external |
-| Schema migration and rollback | Complete locally | Golden/current fixtures and smoke scripts; target deployment drill remains external |
-
-### API, developer platform, plugins, and AI
-
-| Capability | Status | Evidence and boundary |
-| --- | --- | --- |
-| Versioned REST API/OpenAPI | Complete for declared contract | `/api/v1`, generated schemas, non-AI runtime request and response enforcement |
-| Authentication/authorization | Complete | Session/worker identities and permission matrices; UI hiding is not the security boundary |
-| Revisions/idempotency/conflicts | Complete | The [exhaustive non-AI mutation contract](verification/non-ai-mutation-route-contract-2026-07-13.md) locks 246 routes; shared writes use exact revisions and retry keys, while 37 operator mutations declare K/R/P/X runtime and OpenAPI guarantees |
-| WebSockets/events | Complete | Sequenced, filtered campaign events and delta/snapshot recovery |
-| Webhooks | Complete outbound-only | Allowlisted metadata events, HMAC secret/rotation, SSRF/DNS pinning, queue/retry/audit; no inbound mutation |
-| API client and examples | Complete | Reusable typed client plus example plugins/integrations |
-| Plugin lifecycle/capabilities | Complete within trusted-admin boundary | Signed-by-default production posture, typed permissioned commands, attribution/audit and runtime isolation |
-| Hostile plugin marketplace | Intentionally out of scope | Current runtime is not marketed as a hardened adversarial ecosystem |
-| Headless/worker access | Complete within scoped identity | Worker commands map to allowlisted permissioned operations; no full server-admin session |
-| Existing AI agent | Complete relative to accepted baseline | Providers, context retrieval, tools, memory, audit, citations/privacy diagnostics, proposal review and governed auto execution remain intact |
-| AI behavior redesign | Intentionally out of scope | This non-AI remediation neither makes the agent optional nor forces proposal-only operation |
+| Typed REST/OpenAPI/client | Verified in code | 339 handlers; contracts/client/coverage-gate pattern |
+| Plugin commands/permissions/review | Implemented | Trusted-admin boundary (declared) |
+| Typed managed D&D subroots (T17) | Verified in code | Managed-root set at `app.ts:16876`; unknown fields preserved |
+| AI provider/policy/admin controls | Verified in code | Codex App Server provider; `OTTE_AI_*` policy env (scopes, retention, transmission disclosure); admin stale-sweep/retry/evaluation routes (`app.ts:2181–2254`) |
+| AI manual review + governed auto execution | Implemented | Both modes preserved; quality/adversarial evidence remains X07/X08 |
 
 ### Operational quality
 
-| Capability | Status | Evidence and boundary |
+| Capability | Status | Notes/evidence |
 | --- | --- | --- |
-| Install/local development | Complete | `pnpm` workspace commands, seed/demo and contributor docs |
-| Docker/self-host | Complete within single-writer topology | Compose reflects SQLite API + object storage + optional scoped worker; no misleading unused Postgres/Redis |
-| Environment validation/readiness | Complete | Production secrets/providers fail closed with safe reason codes |
-| Error handling/logging/redaction | Complete | Structured request IDs, local status, safe logs, signed URL/token redaction |
-| Monitoring/diagnostics | Complete locally | Health/readiness, admin diagnostics, performance/capacity artifacts; production integration remains deployment-specific |
-| Rate limiting/input validation | Complete | Strict JSON body behavior, location-aware query/params coercion, OpenAPI runtime validation |
-| Dependency/security health | Complete locally | Production audit, smoke, SBOM and threat model; independent review external |
-| Browser/responsive/accessibility automation | Complete for declared automated baseline | Chromium desktop/phone/tablet and keyboard/labels; wider/manual matrix external |
-| Automated tests/build | Complete locally | Consolidated package unit/integration/component/browser plus security/migration/deployment/performance/docs gates are green; external/hosted evidence remains separate |
-| Demo/onboarding/docs | Complete | Seeded campaign, GM/player guides, beta dogfood/recovery/release docs |
-| Release process | Functional but incomplete | Scripts/evidence templates exist; dirty worktree and external release gates intentionally block publication |
+| Aggregate validation configuration (T07) | Verified live | `apps/api/vitest.config.ts` pins `maxWorkers: 2` with isolated single-fork perf project; fresh forced root runs recorded below |
+| Lazy web boundaries (T13) | Verified in code | `deferred-panels.tsx`; dice runtime demand-loaded |
+| Safer session transport (T14) | Verified in code | Header/cookie/subprotocol-first credential resolution; URL-token compatibility mode env-gated (`session-transport-auth.ts`) |
+| Observability/retention/admin ops (T16/T18) | Verified in code | `operations-observability.ts`, `admin-retention-*` |
+| CI | Verified in code | `release-smoke.yml` runs the tokenless `pnpm release:smoke:offline` suite on push/PR and scopes the authenticated open-issue audit to trusted pushes |
 
-## End-to-end workflow audit
+## End-to-end workflow findings
 
-### Campaign setup journey
+### Canonical blank-deployment journey (T08) — verified live
 
-| Steps | Result | Evidence/UX finding |
+`npx playwright test -c playwright.canonical.config.ts` at the audit cutoff: **1 passed (1.3m)**. The spec (`tests/e2e/canonical-public-journey.spec.ts`, 637 lines) covers: owner bootstrap → four-step campaign setup → invite → player join in a second browser context → legal character creation → public/private rolls with structured consequence review (including focus-management assertions) → resource spend → healing with effect → rest review → concentration → advancement to Level 2 → encounter placement → combat with player action pending GM confirmation → death-save terminal states → **API process restart mid-session with state resume**.
+
+### Live demo-campaign walk (this session)
+
+Driven in a real browser against `pnpm dev` servers:
+
+1. Demo GM login → full workspace (party, adversaries, scene, chat, combat).
+2. Strength save roll → `POST /roll` 200; server-rolled `1d20+5 = 19` with fairness seed/hash; chat card posted.
+3. Combat: participant review → initiative validation → start → "Round 1, Level 1 Fighter is up" → two-step end confirm.
+4. Death saves: HP to 0 → death-save row → natural 20 → revived at 1 HP, counters reset, atomic actor update with undo envelope.
+5. Heroic Inspiration: grant → Ready; overflow-grant recipient list; reroll-kept-die control bound to the last roll.
+6. Player seat: adversaries hidden, vitals redacted, GM-only controls absent.
+7. Compendium: 835 entries; "fireball" search returns 4; per-entry SRD 5.2.1 / CC BY 4.0 attribution.
+
+### Workflow qualities and rough edges observed
+
+- Roll buttons carry exact formulas in accessible labels ("Roll Strength saving throw 1d20+5").
+- Selecting an actor fires three `commitMode:"preview"` roll POSTs (by design, for previews) — harmless but chatty.
+- The in-app browser could not capture screenshots of the canvas-heavy board page (30s timeouts) while DOM/JS stayed responsive; text-level verification was used instead. Not reproduced under Playwright (which passed and screenshots fine); treated as an environment artifact unless it recurs (see backlog T45).
+- Demo campaign chat retains months of QA debris ("Visual QA", "hello from command line") — cosmetic, but the first thing a new evaluator sees (backlog T44).
+
+## Verification incidents (process findings)
+
+1. **Release gate broke mid-audit.** `63d5950` (22:15) changed `security:audit` to `node scripts/audit-production-dependencies.mjs` without updating the guard pin in `deployment-smoke.test.ts:30`. This audit's first fresh forced root run therefore failed exactly there (706/708 API tests passing). This audit applied the one-line repair; `b5e30f1` (22:31) committed the identical fix plus two cold-start timeout bumps. Lesson recorded as risk AR-32: guard-pinned strings make gate drift loud (good) but the gate must be run before push (CI does run it on push — the break would have been caught there).
+2. **Prior ledger's frozen evidence is not reproducible from the repo.** The claimed snapshot `20260716T030254960Z` and its consecutive-run records are not persisted as machine-readable artifacts in the tree. This audit replaced them with its own fresh runs (below). Backlog T40 proposes persisting release-gate evidence artifacts.
+3. **GitHub Release Smoke has been red on main across the recent pushes** (checked live via `gh run list`/`gh run view`): `e4c6ac9` and `f64c6f2` failed in ~50s (early `security:audit` step — the old `pnpm audit` invocation, which `63d5950` then replaced), `63d5950` failed at 8m50s (the guard-pin break), and `b5e30f1` **completed failure at 29m in the `pnpm e2e` step: 18 failed / 39 passed (19.9m)** — the same failure classes this audit sampled locally, including the death-save harness race (`expect(received).toBeTruthy()`), plus additional CI-only timeout failures on the slower runner. Local `pnpm check` green and CI red coexisted for at least a day. T48 (suite repair) + the already-landed audit fix are what stand between main and a green release gate; T40/T41 formalize the loop.
+4. **The default Playwright suite (`pnpm e2e`) is red at HEAD.** A fresh run failed ≥6 `auth-tabletop.spec.ts` tests. Sampled failure artifacts show **stale test expectations, not product defects**: the scene-comparison test pins pre-f64c6f2 UI copy while the shipped "Prep drift review" comparison renders correctly, and the combat-tracker test expects death-save counters to persist at 3/3 where T04's intended semantics reset them on stabilization (one residual sync question noted in T48). The suite went unmaintained through the tranche because `pnpm check` runs no Playwright, CI failed earlier at `security:audit`, and only the canonical spec was executed in isolation. Backlog **T48** repairs the suite; the CI gate cannot go green without it.
+
+## Validation record (this session, fresh)
+
+| Run | Command | Result |
 | --- | --- | --- |
-| Install/open, create account, create campaign | Complete | Bootstrap and normal-auth browser suites; resumable setup |
-| Configure rules, invite, accept, rejoin | Complete | Rules profile, invitation role/expiry/revoke, private-context acceptance |
-| Create/import and review character | Complete | Legal level-one browser fixtures plus import/repair/review contracts |
-| Create scene, upload map, calibrate grid, place tokens | Complete | Connected content/tabletop UI; accessible placement path |
-| Create/import encounter and review launch | Complete | Saved participants and direct reviewed combat start |
-| Create journal/handout and plan first session | Complete | Linked knowledge/session desk lifecycle |
-| Evidence boundary | Functional path complete; whole-session usability unverified | Automation proves connected steps and recovery, not real-user discoverability, pacing, or successful completion without assistance |
+| 1 | `TURBO_FORCE=true pnpm check` at `63d5950` content | **FAILED as expected from the gate break**: API `deployment-smoke` 1 failure; 706 passed + 1 skipped of 708 API tests (114 files); all other 24 test tasks green; turbo test phase 4m51s |
+| 2 | `pnpm --filter @open-tabletop/api exec vitest run src/deployment-smoke.test.ts` after repair | 2/2 passed |
+| 3 | `npx playwright test -c playwright.canonical.config.ts` | **1 passed (1.3m)** — blank-deployment GM+player journey incl. API restart/resume |
+| 4 | `TURBO_FORCE=true pnpm check` at `b5e30f1` content | **PASSED (exit 0)** — lint 25/25 (51.9s), typecheck 25/25 (54.1s), E2E typecheck, tests 25/25 (305 test files, **1,842 passed, 1 skipped**, 5m18s), build 15/15 (39.5s) |
+| 5 | Live browser workflow walk (demo campaign) | Completed as described above |
+| 6 | `pnpm e2e` (default config; bootstrap config never ran because the default suite exited 1) | **RED — 16 failed / 41 passed (17.7m)**. Caveat recorded for honesty: this audit accidentally contaminated the run's later specs — believing the background run dead, the auditor killed its port-4100/5174 servers at ~23:00 and ran a targeted spec in parallel; the canonical spec fails inside this run (at the bootstrap form) yet passed standalone, and some late-file failures (browser-evidence, campaign-setup-resume) are partially attributable to that interference. The first ~37 tests predate the interference: 8 genuine failures in `auth-tabletop.spec.ts` (tests 11, 12, 20, 22, 23, 24, 33, 37). Failure classes sampled from artifacts: stale pinned copy (pre-f64c6f2 scene-comparison text), old-semantics expectations (death-save counters pre-T04), and one deterministic harness race in a f64c6f2-added spec (re-verified alone on a quiet machine: still fails; diagnosis in backlog T48). **The clean-runner verdict is run 8 (CI): 18 failed / 39 passed** |
+| 7 | `npx playwright test tests/e2e/auth-tabletop.spec.ts --grep "character at 0 HP"` (quiet machine) | 1 failed — deterministic reproduction of the run-6 class-c failure at `auth-tabletop.spec.ts:3976` (`resolution.deathSave` undefined on the awaited response); analysis in T48 |
+| 8 | GitHub Release Smoke on `b5e30f1` (`gh run view 29469185455`, completed during this audit) | **Failure at the `pnpm e2e` step: 18 failed / 39 passed (19.9m)** — the authoritative full default-suite verdict; matches the locally sampled failure classes |
 
-Phase-3 UX findings:
+Line-count and artifact measurements this session: `App.tsx` 11,192; `system-sdk/index.ts` 17,982; `app.ts` 25,499; `app.test.ts` 40,388; `api-contracts/index.ts` 16,302 (all matching the prior ledger's claims).
 
-| Dimension | Current finding |
+## Intentional boundaries and non-claims
+
+- SQLite single-writer, process-local realtime; small-group topology. HA/multi-replica not claimed.
+- Cover, difficult-terrain routing, line of effect, Push displacement, and arbitrary prose remain reviewed/manual.
+- Legendary actions are tracked as reviewed stat-block effects, not an automated per-round economy (candidate T42).
+- Plugins are trusted-admin extensions, not hostile-code isolation.
+- Proprietary non-SRD content is not distributable without independent rights; shipped content is SRD 5.2.1 under CC BY 4.0 with embedded attribution.
+- Automated accessibility coverage is not a physical AT/device matrix (X04).
+- AI can execute automatically only within campaign/deployment policy and typed permissioned transactions.
+
+## External/manual gates (unchanged)
+
+| ID | Gate |
 | --- | --- |
-| Smooth path | Account/campaign creation, rules profile, invite, reviewed character, scene, encounter and session plan form one resumable route with persisted intermediate state. |
-| Confusing or likely abandonment points | Import repair, character-review fingerprints, grid calibration and encounter readiness are the most concept-dense steps. Helper text and validation exist, but only observed users can establish whether the terminology and sequence are understandable. |
-| Dead ends | No known automated-path dead end remains: expired/revoked invites, invalid imports, missing choices and stale writes return a next action instead of silently failing. Live identity providers and real-user recovery remain unverified. |
-| Click burden | Preparing a first session still requires several deliberate objects and confirmations. Resumability prevents repetition, but no timed task study or click-count target proves that the setup burden is acceptable. |
-| Permission edge cases | Owner, GM, assistant-GM, player and observer capabilities are server checked; invitations and private character review do not rely on hidden buttons. Denials preserve state and expose a bounded error. |
-| Data-loss edge cases | Draft setup state, exact revisions, idempotency, snapshot history and archive validation cover refresh, retry and stale-edit cases locally. Hosted storage failure and recovery remain external evidence. |
-| Rules edge cases | Campaign profile and level-one validation block illegal modeled choices; unsupported/homebrew exceptions remain reviewable or manual and do not silently mutate managed rules roots. |
-| Accessibility and mobile | Semantic controls, non-drag token placement, keyboard paths and phone/tablet layouts are automated. Physical touch, screen reader and non-Chromium setup work remain manual gates. |
-| Empty, loading, success, and error states | Empty campaigns expose setup/starter actions; async work exposes busy state; successful steps persist and update the workspace; validation, permission and conflict errors are visible and retryable. Comprehension of those states is not yet user-tested. |
+| X01 | Repeated real GM/player sessions with observed correction/conflict/recovery outcomes |
+| X02 | Live selected-provider OIDC/SCIM lifecycle, if advertised |
+| X03 | Hosted non-no-op state-plus-asset backup/restore/migration/rollback |
+| X04 | Physical assistive-technology/browser/device matrix |
+| X05 | Hosted HTTPS/capacity/proxy/realtime/alerts/incident drill |
+| X06 | Content inventory, attribution and legal approval |
+| X07 | Independent security review, including plugin and adversarial AI cases |
+| X08 | Representative AI quality/provider-handling evaluation, if AI is offered |
 
-### Player journey
-
-| Steps | Result | Evidence/UX finding |
-| --- | --- | --- |
-| Join/open owned character/find core stats | Complete | Permission-filtered party/sheet and session-first actor panel |
-| Check/save/attack/damage | Complete | Typed server actions with visible formulas and source terms |
-| Cast/spend/move/target | Complete | Spell/resource, token and target flows with permission feedback |
-| Receive damage/healing/condition/end concentration | Complete | Prepared typed transactions and effect lifecycle |
-| Rest and level up | Complete | Durable preview/review/commit, pending advancement resume/cancel |
-| Refresh/reconnect | Complete | Sequence/delta and authoritative snapshot; no duplicate mutation |
-| Evidence boundary | Functional path complete; whole-session usability unverified | Automated action paths do not establish player comprehension, pacing, social/exploration quality, or assistive-technology usability |
-
-Phase-3 UX findings:
-
-| Dimension | Current finding |
-| --- | --- |
-| Smooth path | An assigned character opens into session-first stats and actions; checks, saves, attacks, spells, resources, movement, damage, conditions, rest and advancement use connected server-owned flows. |
-| Confusing or likely abandonment points | Dense spell/resource/loadout interactions and the difference between a manual ruling and an automated transaction are the likeliest comprehension risks. Calculation sources and local explanations reduce ambiguity, but player observation is still required. |
-| Dead ends | No known supported action ends in an inert control. Missing ownership, unavailable resources, unsupported prose and stale state produce a denial, manual boundary, or retry path without mutation. |
-| Click burden | Common rolls and actions are direct; advanced inventory, spell preparation, effect and advancement work uses focused panels and preview/confirm steps. The safety confirmations are intentional, but their pacing cost is not measured. |
-| Permission edge cases | Assigned-character, character-owner and scoped-grant checks filter records, actions, events and snapshots. Private actors and GM-only information are redacted rather than merely hidden in the UI. |
-| Data-loss edge cases | Pending advancement, idempotent retry, exact revisions, realtime gap recovery and authoritative snapshots preserve work across reload/reconnect. Hosted partition and device-loss behavior remains external. |
-| Rules edge cases | Typed cases show formula, source and result; invalid state blocks; ambiguous prose becomes an explicit DM ruling. The sheet does not claim to automate every published exception. |
-| Accessibility and mobile | Primary actions remain reachable at automated phone/tablet widths with keyboard names and status regions. Screen-reader announcement quality, physical touch ergonomics and non-Chromium behavior remain unverified. |
-| Empty, loading, success, and error states | Empty action/resource lists explain the absence; requests show busy state; successful actions update durable history/state; validation, permission, resource and conflict errors stay adjacent or enter a live status region with a retry path. |
-
-### Combat journey
-
-All requested representative steps are connected: scene activation, reviewed participants, initiative/manual order/ties/surprise flags, movement measurement, attacks, advantage/disadvantage/cover ruling, typed damage/defenses, conditions/concentration, templates/multiple targets/save-for-half, recharge/reactions, zero HP/death saves, turn/round advance, end, rewards and history. Geometry-dependent cover, difficult terrain, opportunity attacks, and exceptional spell prose are explicit DM decisions rather than hidden automation.
-
-The prior player attack omission, collapsed turn control, selected-participant omission, synthetic initiative, silent permission errors, and actor/combatant damage drift now have targeted UI/API tests.
-
-Phase-3 UX findings:
-
-| Dimension | Current finding |
-| --- | --- |
-| Smooth path | Reviewed encounter participants flow into initiative, turn operation, typed actions/effects, completion, rewards and history without a separate state model. |
-| Confusing or likely abandonment points | Initiative readiness, hidden participants, advanced monster resources and advisory-versus-automated tactical rulings carry the highest cognitive load. Labels and previews exist; observed combat pacing remains required evidence. |
-| Dead ends | An ambiguous action, stale target, missing resource or unauthorized operation stops before mutation and explains the manual/retry path. No known automated-path dead end remains, but unsupported prose intentionally ends in DM adjudication. |
-| Click burden | Participant/order review and consequential multi-target preview/confirmation add deliberate steps; common turn controls remain exposed. No timed encounter study proves that the confirmation cost is acceptable in sustained play. |
-| Permission edge cases | Managers control encounter/combat lifecycle; players use only owned/granted actors and allowed targets. Hidden/private participants, rolls and events are filtered at the API and realtime layers. |
-| Data-loss edge cases | Actor and combatant changes commit atomically with exact revisions, idempotency, audit and stale-safe undo; reconnect uses sequence/delta/snapshot recovery. Hosted failure during a real combat remains unevidenced. |
-| Rules edge cases | Typed damage, defenses, criticals, effects, concentration, durations, resources and zero-HP state are automated; cover, terrain, opportunity attacks and exceptional prose remain visible rulings. |
-| Accessibility and mobile | Turn controls, actor actions and tabletop controls have responsive/keyboard regressions and non-drag placement. Screen-reader live-combat announcements and physical touch pacing require manual verification. |
-| Empty, loading, success, and error states | Empty encounter/combat states offer setup rather than inert trackers; requests expose busy state; success updates the active turn/history; validation, permission, stale and unsupported errors remain visible without partial application. |
-
-### Campaign-management journey
-
-NPC/location/quest/faction links, handouts, session notes, campaign canon, search/backlinks, summaries, export and restore are connected. The existing AI agent can draft or operate according to campaign governance; this remediation did not alter its capability. The archive journey verifies actual state reversal rather than a no-op import.
-
-Phase-3 UX findings:
-
-| Dimension | Current finding |
-| --- | --- |
-| Smooth path | Knowledge records, links, sessions, canon, search, administration, export and restore share the campaign model and survive reload/archive round trips. |
-| Confusing or likely abandonment points | World-graph relationships, canon review, ownership transfer and archive conflict modes are the densest administrative concepts. Confirmations and summaries exist, but information architecture still needs real-GM observation. |
-| Dead ends | Empty searches, missing links, invalid archives, stale revisions and unavailable permissions return bounded outcomes rather than inert screens. Live-provider and hosted-recovery failures remain outside local proof. |
-| Click burden | Routine search/edit/link work is connected, while destructive or ownership-changing actions require review and confirmation. No measured campaign-prep study establishes the cost of maintaining a large knowledge base. |
-| Permission edge cases | GM/assistant/player/observer visibility, per-player journals, ownership transfer and destructive actions are enforced server-side and reflected in filtered snapshots/search/events. |
-| Data-loss edge cases | Exact revisions, idempotency, history, validation, staged import and compensating rollback protect local state/assets. Hosted backup, migration and rollback drills still block release evidence. |
-| Rules edge cases | Campaign profiles and reasoned overrides are explicit; journals/canon and plugin commands cannot silently rewrite managed D&D state. The AI agent retains manual proposal and governed automatic execution modes unchanged. |
-| Accessibility and mobile | Named responsive panels and keyboard/error states are automated; dense knowledge graphs, long-form editing, screen readers, physical tablets and non-Chromium browsers need manual verification. |
-| Empty, loading, success, and error states | Empty collections and no-result searches expose create/clear-filter actions; async operations show progress; success updates durable history; permission, conflict, validation and restore errors remain actionable and non-destructive. |
-
-These four journeys establish connected implementation coverage, not a claim that a complete real session has been observed. Exploration, social interaction, room/device ergonomics, group pacing and cross-role comprehension remain part of the external session and device evidence queue.
-
-## UX, accessibility, and state feedback
-
-- Primary sheet/combat/encounter actions are extracted into named panels and remain reachable at supported automated widths.
-- Actor placement has a non-drag keyboard/pointer path.
-- Mutation failures appear next to the action or in a live status region rather than only in a rejected network call.
-- Busy/loading/retry states use shared retryable and abort/session-switch guards.
-- Realtime shows connection/recovery state and refreshes only the required snapshot/delta.
-- Modal labels, focus behavior, keyboard activation, phone/tablet layout and advanced panels have automated regressions.
-- Manual NVDA, Narrator, VoiceOver, TalkBack and representative physical touch-device evidence is still required; automation cannot certify those experiences.
-
-## Broken, partial, misleading, or absent surfaces
-
-### Broken
-
-No current code-addressable P0-P3 defect is intentionally left open. A consolidated failing test or external-session defect reopens this statement and must be fixed at the narrowest responsible layer.
-
-### Functional but incomplete / unable to verify
-
-- Repeated real GM/player campaigns without engineering intervention or database repair.
-- Live OIDC and SCIM against selected providers over hosted HTTPS.
-- Manual assistive-technology, Edge/Firefox/Safari, and physical touch-device certification.
-- Hosted HTTPS backup/restore, migration, rollback, capacity, observability, alerting, and support drills.
-- Release-owner content/legal/attribution approval and an independent security review.
-
-### Intentionally absent
-
-Voice/video, social/community discovery, 3D terrain/VFX, procedural generation, a broad marketplace, universal rules DSL, unrelated game-system breadth, speculative hex investment, unauthorized proprietary content, and an unmeasured multi-region rewrite are not current product requirements. The current AI agent is not absent, optionalized, or proposal-only.
-
-## Validation record
-
-### Focused implementation evidence
-
-- System SDK rules suites cover advancement, rests, damage, conditions, effects, spells, controlled creatures, inventory, monsters and class schedules.
-- API suites cover every non-AI route's authentication/authorization/preconditions, runtime OpenAPI validation, concurrency, archives, SQLite, realtime, OIDC, workers, plugins and campaign operations.
-- Core/contracts/client suites cover shared state, transaction records and wire compatibility.
-- Web suites cover actor/combat/encounter/session/tabletop/knowledge/admin flows, responsive behavior and mutation feedback.
-- Browser suites cover normal seeded play, clean bootstrap, invitations, legal creators, reviewed combat, reconnect/restart, and non-no-op archive recovery.
-
-### Consolidated local validation
-
-<!-- CONSOLIDATED_VALIDATION -->
-- `pnpm check` passed: **28/28 lint targets** in 25.605 seconds, **28/28 typecheck targets** in 12.002 seconds, E2E TypeScript compilation, **28/28 test targets** in 2 minutes 34.753 seconds, and **17/17 build targets** in 54.566 seconds. The production web build retained its non-blocking chunk-size warning.
-- The strict standalone API matrix passed **89/89 files and 611 tests**, with **1 intentional live-identity-provider smoke skip**, in 190.3 seconds. The root rerun independently passed the same **89 files / 611 passed / 1 skipped** matrix in 153.39 seconds. Major companion totals were web **92 files / 458 tests**, system SDK **20 / 159**, core **10 / 75**, API contracts **15 / 72**, API client **9 / 38**, and worker **1 / 27**.
-- The normal Chromium acceptance suite passed **49/49** in 7.3 minutes; the clean-deployment bootstrap suite passed **1/1** in 56.5 seconds; `pnpm e2e:typecheck` passed. All seven tracked browser evidence screenshots remained byte-for-byte unchanged.
-- `pnpm security:audit` reported **no known vulnerabilities**; security smoke passed **7/7**, migration smoke **2/2**, and deployment smoke **2/2**. The selected performance smoke and soak tests each passed; the unselected counterpart in each filtered run is reported by Vitest as skipped by design.
-- `pnpm perf:capacity` passed the deterministic single-node/single-writer envelope for **1 GM, 5 players, 6 realtime connections, 200 scene tokens, 302 observed chat messages, and 60 journals**. P95 measurements were **18.661 ms initial connect, 65.14 ms reads, 40.826 ms mutations, 40.905 ms fanout, and 2.748 ms reconnect**; total workload time was **379.23 ms**, SQLite size was **372,736 bytes**, and persistence after reopen was true.
-- `pnpm docs:site:test`, `pnpm docs:site:check`, `pnpm sbom:test`, `pnpm v1:evidence:test`, `pnpm v1:issues:test`, and final `git diff --check` passed.
-- `release:smoke` was not run as one command because its clean-worktree gate correctly rejects this intentionally uncommitted implementation. Its local component gates were run individually. `v1:issues:check` remains an authenticated GitHub/external-state check and is not local release evidence.
-- The only API skip requires live `OTTE_IDENTITY_SMOKE_BASE_URL`, `OTTE_IDENTITY_SMOKE_ADMIN_TOKEN`, and `OTTE_SCIM_BEARER_TOKEN` values (or equivalent local OIDC/SCIM setup). Pre-existing dirty AI implementation files were preserved outside this remediation; the statement here is that this remediation did not change AI behavior, not that every AI-path working-tree file equals `HEAD`.
-<!-- /CONSOLIDATED_VALIDATION -->
-
-### Evidence that remains external or manual
-
-- Live OIDC/SCIM sandbox and hosted HTTPS smoke.
-- NVDA, Narrator, VoiceOver and TalkBack; Edge, Firefox, Safari and representative physical touch devices.
-- Internal and invited external GM/player groups completing repeated sessions/campaign arcs.
-- Hosted backup/restore, forward migration, rollback, capacity and production-observability drills.
-- Release-owner legal/content provenance review and independent security review.
-
-Passing local automation is necessary but never substituted for those artifacts.
+With the aggregate gate re-proven green at `b5e30f1`, the correct description remains: **locally validated audit candidate; not production-proven.** The next work is X01–X08 plus the small T38+ tranche in `IMPLEMENTATION_BACKLOG.md`.

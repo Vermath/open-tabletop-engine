@@ -14,6 +14,7 @@ import {
   postAssetCdnPurgeWebhook,
 } from "./asset-operations.js";
 import type { AssetStorage } from "./asset-storage.js";
+import type { CampaignWebhookTransport } from "./campaign-webhooks.js";
 import { MemoryStateStore } from "./store.js";
 
 class RecordingAssetStorage implements AssetStorage {
@@ -230,13 +231,14 @@ describe("asset operator mutation safety", () => {
   });
 
   it("forwards a stable delivery identity to the CDN boundary", async () => {
-    const fetchMock = vi.fn(
-      async (
-        _input: Parameters<typeof fetch>[0],
-        _init?: Parameters<typeof fetch>[1],
-      ) => new Response(undefined, { status: 202 }),
-    );
-    vi.stubGlobal("fetch", fetchMock);
+    const send = vi.fn<CampaignWebhookTransport["send"]>(async () => ({
+      ok: true,
+      responseStatus: 202,
+    }));
+    const transport: CampaignWebhookTransport = {
+      validateTarget: vi.fn(),
+      send,
+    };
 
     await postAssetCdnPurgeWebhook(
       "https://cdn-operator.example.test/purge",
@@ -245,20 +247,20 @@ describe("asset operator mutation safety", () => {
       "replace stale object",
       "https://cdn.example.test/api/v1/assets/asset_operator/blob",
       "delivery_asset_operator_01",
+      transport,
     );
 
-    expect(fetchMock).toHaveBeenCalledOnce();
-    const [url, init] = fetchMock.mock.calls[0]!;
-    expect(url).toBe("https://cdn-operator.example.test/purge");
-    expect(init).toMatchObject({
-      method: "POST",
+    expect(send).toHaveBeenCalledOnce();
+    const [request] = send.mock.calls[0]!;
+    expect(request).toMatchObject({
+      url: "https://cdn-operator.example.test/purge",
       headers: {
         "content-type": "application/json",
         "idempotency-key": "delivery_asset_operator_01",
         "x-open-tabletop-delivery-id": "delivery_asset_operator_01",
       },
     });
-    expect(JSON.parse(String(init?.body))).toMatchObject({
+    expect(JSON.parse(request.body)).toMatchObject({
       assetId: "asset_operator",
       deliveryId: "delivery_asset_operator_01",
       requestedByUserId: "usr_admin",

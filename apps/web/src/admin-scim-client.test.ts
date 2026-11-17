@@ -18,8 +18,8 @@ describe("admin SCIM mapping client", () => {
   beforeEach(() => {
     vi.stubGlobal("localStorage", {
       getItem: vi.fn((key: string) => {
-        if (key === "otte:sessionToken") return "ots_scim-test";
-        if (key === "otte:sessionTokenUser" || key === "otte:userId") return "usr_admin";
+        if (key === "otte:sessionTransport") return "cookie";
+        if (key === "otte:userId") return "usr_admin";
         return null;
       }),
       setItem: vi.fn(),

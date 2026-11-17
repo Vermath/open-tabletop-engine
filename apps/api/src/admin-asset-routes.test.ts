@@ -13,6 +13,7 @@ import {
 } from "./admin-asset-routes.js";
 import type { AssetCleanupScheduler } from "./asset-operations.js";
 import type { AssetStorage } from "./asset-storage.js";
+import type { CampaignWebhookTransport } from "./campaign-webhooks.js";
 import { MemoryStateStore } from "./store.js";
 
 const body = Buffer.from("asset-bytes");
@@ -333,14 +334,24 @@ describe("admin asset operator routes", () => {
   it("requires the exact asset revision and forwards X to CDN delivery", async () => {
     process.env.OTTE_ASSET_CDN_PURGE_WEBHOOK_URL =
       "https://cdn.example.test/purge";
-    const fetchMock = vi.fn(
-      async (
-        _input: Parameters<typeof fetch>[0],
-        _init?: Parameters<typeof fetch>[1],
-      ) => new Response(undefined, { status: 202 }),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-    const { app, store } = await fixture();
+    const send = vi.fn<CampaignWebhookTransport["send"]>(async () => ({
+      ok: true,
+      responseStatus: 202,
+      responseBytes: 0,
+    }));
+    const transport: CampaignWebhookTransport = {
+      send,
+      async validateTarget(url) {
+        return {
+          ok: true,
+          normalizedUrl: url,
+          resolvedAddresses: ["93.184.216.34"],
+        };
+      },
+    };
+    const { app, store } = await fixture({
+      assetCdnPurgeTransport: transport,
+    });
     try {
       const stale = await app.inject({
         method: "POST",
@@ -352,7 +363,7 @@ describe("admin asset operator routes", () => {
         },
       });
       expect(stale.statusCode).toBe(409);
-      expect(fetchMock).not.toHaveBeenCalled();
+      expect(send).not.toHaveBeenCalled();
 
       const missingDelivery = await app.inject({
         method: "POST",
@@ -375,7 +386,7 @@ describe("admin asset operator routes", () => {
         },
       });
       expect(mismatchedDelivery.statusCode).toBe(400);
-      expect(fetchMock).not.toHaveBeenCalled();
+      expect(send).not.toHaveBeenCalled();
 
       const purge = await app.inject({
         method: "POST",
@@ -392,8 +403,8 @@ describe("admin asset operator routes", () => {
         status: "purged",
         deliveryId: "asset-purge-current",
       });
-      const [, init] = fetchMock.mock.calls[0]!;
-      expect(init?.headers).toMatchObject({
+      const [delivery] = send.mock.calls[0]!;
+      expect(delivery.headers).toMatchObject({
         "idempotency-key": "asset-purge-current",
         "x-open-tabletop-delivery-id": "asset-purge-current",
       });

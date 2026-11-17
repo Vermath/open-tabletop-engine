@@ -15,6 +15,7 @@ import {
   type AssetOperationOptions,
 } from "./asset-operations.js";
 import type { AssetStorage } from "./asset-storage.js";
+import type { CampaignWebhookTransport } from "./campaign-webhooks.js";
 import {
   normalizeOperatorDeliveryId,
   normalizeOperatorTargetSetHash,
@@ -46,6 +47,8 @@ export interface AdminAssetRouteDependencies<TWorkerExecution> {
   assetStorage: AssetStorage;
   uploadDir: string;
   assetCleanupScheduler: AssetCleanupScheduler;
+  /** Test/local adapter seam; production uses the SSRF-hardened default transport. */
+  assetCdnPurgeTransport?: CampaignWebhookTransport;
   requireServerAdmin(
     reply: FastifyReply,
     headers: RequestHeaders,
@@ -107,6 +110,7 @@ export function registerAdminAssetRoutes<TWorkerExecution>(
     assetStorage,
     uploadDir,
     assetCleanupScheduler,
+    assetCdnPurgeTransport,
     requireServerAdmin,
     appendReadAudit,
     appendAudit,
@@ -361,10 +365,16 @@ export function registerAdminAssetRoutes<TWorkerExecution>(
           currentUpdatedAt: asset.updatedAt,
         });
       }
-      const result = await purgeAssetCdnCache(store, asset, adminUserId, {
-        reason: body.reason,
-        deliveryId: body.deliveryId,
-      });
+      const result = await purgeAssetCdnCache(
+        store,
+        asset,
+        adminUserId,
+        {
+          reason: body.reason,
+          deliveryId: body.deliveryId,
+        },
+        assetCdnPurgeTransport,
+      );
       store.save();
       if (result.status === "not_configured")
         return reply.code(400).send(result);

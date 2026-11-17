@@ -46,7 +46,7 @@ describe("coordinated database and asset recovery contracts", () => {
       },
     });
     expect(schemas.StorageRestoreRequest).toMatchObject({
-      required: ["backupFileName", "confirmFileName", "expectedStateRevision"],
+      required: ["backupFileName", "confirmFileName", "expectedStateRevision", "requireAssetSnapshot", "expectedAssetSnapshot"],
       properties: {
         expectedStateRevision: { pattern: "^sha256:[a-f0-9]{64}$" },
         requireAssetSnapshot: { type: "boolean" },

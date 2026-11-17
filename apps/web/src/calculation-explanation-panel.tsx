@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import { apiGet, apiPost } from "./api.js";
 import { errorMessage, formatDateTime } from "./sheet-format.js";
 import { isStaleWriteError, sharedMutationIdempotencyKey, staleDraftPreservedMessage } from "./shared-mutation.js";
+import { RulesSupportBoundaryNotice, rulesBoundaryFromCalculation } from "./rules-support-boundary.js";
 
 interface CalculationExplanationPanelProps {
   campaignId: string;
@@ -221,6 +222,7 @@ export function CalculationExplanationPanel({ campaignId, actor, canManageOverri
         Server-computed results, ordered terms, and source provenance. Flags call out values that still need a human ruling.
       </p>
 
+      {mutationStatus && <p className={/failed/i.test(mutationStatus) ? "panel-status error" : "panel-status"} role="status">{mutationStatus}</p>}
       {loadState === "loading" && <p className="panel-status" role="status">Loading calculation sources...</p>}
       {loadState === "error" && (
         <div className="inline-error" role="alert">
@@ -297,7 +299,6 @@ export function CalculationExplanationPanel({ campaignId, actor, canManageOverri
               )}
             </form>
           )}
-          {mutationStatus && <p className={/failed/i.test(mutationStatus) ? "panel-status error" : "panel-status"} role="status">{mutationStatus}</p>}
           <div className="calculation-groups">
             {groupedFields.map(({ group, fields }) => (
               <details className="calculation-group" key={group} open={group === "defenses" || group === "checks"}>
@@ -314,6 +315,7 @@ export function CalculationExplanationPanel({ campaignId, actor, canManageOverri
                           <strong>{field.label}</strong>
                           <span>{field.result}{field.unit ? ` ${field.unit}` : ""}</span>
                         </div>
+                        <RulesSupportBoundaryNotice boundary={rulesBoundaryFromCalculation(field)} />
                         {flagLabels.length > 0 && (
                           <div className="calculation-flags" aria-label={`Review flags for ${field.label}`}>
                             {flagLabels.map((label) => <span key={label}>{label}</span>)}

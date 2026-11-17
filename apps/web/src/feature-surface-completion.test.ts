@@ -42,7 +42,7 @@ describe("world atlas surface", () => {
     expect(appSource).toContain('workspaceMode !== "prep" || worldFilterMatchesScene');
     expect(appSource).toContain("<WorldAtlasPanel");
     expect(appSource).toContain("<HandoutLibraryPanel");
-    expect(appSource).toContain("<CampaignMemoryPanel");
+    expect(appSource).toContain("<LazyCampaignMemoryPanel");
   });
 });
 
@@ -123,8 +123,8 @@ describe("saved encounter builder lifecycle", () => {
     expect(builderSource).toContain("onLaunchThreats");
     expect(appSource).toContain("launchEncounterThreatTokens");
     expect(appSource).toContain("setCombatSetupOpen(true)");
-    expect(appSource).toContain("actorId: createdMonster.actor.id");
-    expect(appSource).toContain("encounter-place:${placementAttemptId}:${threat.id}:${index}:token");
+    expect(appSource).toContain("/encounter-monster-placements");
+    expect(appSource).toContain("encounterMonsterPlacementAttemptsRef");
   });
 });
 

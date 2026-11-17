@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { orderCampaignCompatibilityIssues, summarizeCampaignCompatibility } from "./compatibility.js";
+import { WEB_API_COMPATIBILITY_VERSION, orderCampaignCompatibilityIssues, summarizeCampaignCompatibility } from "./compatibility.js";
 import type { CampaignCompatibilityIssue } from "./types.js";
 
 const warning: CampaignCompatibilityIssue = {
@@ -13,6 +13,10 @@ const warning: CampaignCompatibilityIssue = {
 };
 
 describe("campaign compatibility helpers", () => {
+  it("publishes a non-empty browser/API startup compatibility version", () => {
+    expect(WEB_API_COMPATIBILITY_VERSION).toMatch(/^\d+$/);
+  });
+
   it("produces deterministic blocking-first issue order and summaries", () => {
     const blocking: CampaignCompatibilityIssue = {
       ...warning,

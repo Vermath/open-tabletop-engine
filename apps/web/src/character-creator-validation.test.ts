@@ -15,6 +15,15 @@ const template: CharacterTemplateInfo = {
   items: []
 };
 
+const standardArrayAssignment: NonNullable<CharacterCreateInput["standardArrayAssignment"]> = {
+  strength: 15,
+  dexterity: 14,
+  constitution: 13,
+  intelligence: 12,
+  wisdom: 10,
+  charisma: 8
+};
+
 const origins: CharacterOriginsInfo = {
   backgrounds: [{ id: "soldier", name: "Soldier", abilityScores: ["strength", "dexterity", "constitution"], feat: "Savage Attacker", skillProficiencies: ["athletics", "intimidation"], toolProficiencies: ["gaming-set"], startingGp: 50 }],
   species: [
@@ -134,6 +143,8 @@ function humanInput(overrides: Partial<CharacterCreateInput> = {}): CharacterCre
     ownerUserId: "usr_demo_player",
     backgroundId: "soldier",
     speciesId: "human",
+    abilityScoreMethod: "standard-array",
+    standardArrayAssignment,
     abilityScoreIncreases: { strength: 2, dexterity: 1 },
     classSkillProficiencies: ["acrobatics", "history"],
     originLanguageChoices: ["common-sign-language", "draconic"],
@@ -178,6 +189,8 @@ describe("character creator client validation", () => {
         ownerUserId: "usr_demo_player",
         backgroundId: "soldier",
         speciesId: "elf",
+        abilityScoreMethod: "standard-array",
+        standardArrayAssignment,
         abilityScoreIncreases: { strength: 2, dexterity: 1 },
         classSkillProficiencies: ["acrobatics", "history"],
         originLanguageChoices: ["common-sign-language", "draconic"],
@@ -197,6 +210,8 @@ describe("character creator client validation", () => {
       ownerUserId: "usr_demo_player",
       backgroundId: "soldier",
       speciesId,
+      abilityScoreMethod: "standard-array",
+      standardArrayAssignment,
       abilityScoreIncreases: { strength: 2, dexterity: 1 },
       classSkillProficiencies: ["acrobatics", "history"],
       originLanguageChoices: ["common-sign-language", "draconic"],
@@ -336,6 +351,8 @@ describe("character creator client validation", () => {
       ownerUserId: "usr_demo_player",
       backgroundId: "soldier",
       speciesId: "elf",
+      abilityScoreMethod: "standard-array",
+      standardArrayAssignment,
       abilityScoreIncreases: { strength: 2, dexterity: 1 },
       classSkillProficiencies: ["acrobatics", "arcana", "history", "perception"],
       originLanguageChoices: ["draconic", "elvish"],

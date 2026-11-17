@@ -1,9 +1,20 @@
-import { createId, nowIso, type Token } from "@open-tabletop/core";
+import { createId, nowIso, type Scene, type Token } from "@open-tabletop/core";
 
 export type BoardTokenPositionChange = { tokenId: string; before: Pick<Token, "x" | "y">; after: Pick<Token, "x" | "y"> };
 export type BoardTokenFrameChange = { tokenId: string; before: Pick<Token, "x" | "y" | "width" | "height">; after: Pick<Token, "x" | "y" | "width" | "height"> };
 export type BoardHistoryAction = { kind: "tokens.create" | "tokens.delete"; tokens: Token[] } | { kind: "tokens.move"; changes: BoardTokenPositionChange[] } | { kind: "tokens.resize"; changes: BoardTokenFrameChange[] };
 export type BoardHistoryDirection = "undo" | "redo";
+
+export function boardHistoryStatus(action: BoardHistoryAction, direction: BoardHistoryDirection): string {
+  if (action.kind === "tokens.move") return direction === "undo" ? "Token move undone" : "Token move redone";
+  if (action.kind === "tokens.resize") return direction === "undo" ? "Token resize undone" : "Token resize redone";
+  if (action.kind === "tokens.create") {
+    if (direction === "undo") return action.tokens.length === 1 ? "Token creation undone" : "Token creations undone";
+    return action.tokens.length === 1 ? "Token creation redone" : "Token creations redone";
+  }
+  if (direction === "undo") return action.tokens.length === 1 ? "Token deletion undone" : "Token deletions undone";
+  return action.tokens.length === 1 ? "Token deletion redone" : "Token deletions redone";
+}
 
 export interface LocalBoardHistoryResult {
   tokens: Token[];
@@ -38,21 +49,31 @@ export function applyLocalBoardHistoryAction(tokens: Token[], action: BoardHisto
   };
 }
 
-export function createTokenCopies(tokens: Token[], options: { idFactory?: () => string; now?: () => string; offset?: number } = {}): Token[] {
+export function createTokenCopies(tokens: Token[], options: { idFactory?: () => string; now?: () => string; offset?: number; scene?: Pick<Scene, "width" | "height">; pendingServerRevision?: boolean } = {}): Token[] {
   const idFactory = options.idFactory ?? (() => createId("tok"));
   const timestamp = options.now ?? nowIso;
   const offset = options.offset ?? 24;
+  const scene = options.scene;
+  const minX = Math.min(...tokens.map((token) => token.x));
+  const minY = Math.min(...tokens.map((token) => token.y));
+  const maxRight = Math.max(...tokens.map((token) => token.x + token.width));
+  const maxBottom = Math.max(...tokens.map((token) => token.y + token.height));
+  const deltaX = scene ? Math.max(-minX, Math.min(scene.width - maxRight, offset)) : offset;
+  const deltaY = scene ? Math.max(-minY, Math.min(scene.height - maxBottom, offset)) : offset;
   return tokens.map((token) => {
     const now = timestamp();
     return {
       ...token,
       id: idFactory(),
       name: copyTokenName(token.name),
-      x: token.x + offset,
-      y: token.y + offset,
+      // Translate the group together when it fits. Oversized groups may lose
+      // spacing, but every token's origin stays reachable without resizing it.
+      x: scene ? Math.max(0, Math.min(Math.max(0, scene.width - token.width), token.x + deltaX)) : token.x + deltaX,
+      y: scene ? Math.max(0, Math.min(Math.max(0, scene.height - token.height), token.y + deltaY)) : token.y + deltaY,
       targetedByUserIds: [],
       createdAt: now,
-      updatedAt: now
+      // A copy saved by the API has no authoritative revision until creation completes.
+      updatedAt: options.pendingServerRevision ? "" : now
     };
   });
 }

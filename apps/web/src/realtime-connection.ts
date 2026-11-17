@@ -21,6 +21,8 @@ export interface RealtimeConnectionIdentityInput {
   blankCanvasDemoOpen: boolean;
   campaignId: string;
   sessionToken: string;
+  userId: string;
+  sessionEpoch: number;
   sceneId?: string;
 }
 
@@ -52,8 +54,8 @@ export interface StartRealtimeConnectionOptions {
 }
 
 export function realtimeConnectionIdentity(input: RealtimeConnectionIdentityInput): string | null {
-  if (input.blankCanvasDemoOpen || !input.campaignId || !input.sessionToken) return null;
-  return `${input.campaignId}:${input.sessionToken}`;
+  if (input.blankCanvasDemoOpen || !input.campaignId || !input.sessionToken || !input.userId) return null;
+  return `${input.campaignId}:${input.userId}:${input.sessionEpoch}:${input.sessionToken}`;
 }
 
 export function realtimeReconnectDelayMs(attempt: number): number {

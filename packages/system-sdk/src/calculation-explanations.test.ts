@@ -1,4 +1,4 @@
-import type { Actor, CalculationFieldExplanation, Item } from "@open-tabletop/core";
+import type { Actor, CalculationFieldExplanation, Item } from "@open-tabletop/api-contracts";
 import { describe, expect, it } from "vitest";
 import { DND_5E_SRD_VERSION, dnd5eSrdCalculationExplanation } from "./index.js";
 
@@ -82,9 +82,12 @@ describe("D&D SRD calculation explanations", () => {
       terms: [expect.objectContaining({ label: "Stored proficiency bonus (normalized)", source: { kind: "override", id: rogue.id, name: rogue.name } })]
     });
     expect(field(overridden.fields, "armor-class")).toMatchObject({
-      result: 18,
-      flags: { override: true },
-      terms: [expect.objectContaining({ source: { kind: "override", id: rogue.id, name: rogue.name } })]
+      result: 14,
+      flags: { override: false, ambiguous: true, manual: true },
+      terms: [
+        expect.objectContaining({ label: "Leather Armor", source: { kind: "item", id: leather.id, name: leather.name } }),
+        expect.objectContaining({ label: "Dexterity modifier", signedValue: 3 })
+      ]
     });
   });
 

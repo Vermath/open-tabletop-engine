@@ -155,7 +155,7 @@ describe("createRealtimeHandlers", () => {
     handlers.dispose();
   });
 
-  it("authoritatively refreshes every successful reconnect before reporting ready", async () => {
+  it("authoritatively refreshes every successful reconnect, including reconnects that may have missed stable AI events", async () => {
     const refresh = vi.fn(async () => undefined);
     const handlers = createRealtimeHandlers({
       refresh,

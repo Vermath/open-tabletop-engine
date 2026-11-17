@@ -1,0 +1,46 @@
+.scene-board .wall-layer line.door {
+  stroke-width: 3;
+  stroke-dasharray: none;
+  opacity: .65;
+}
+.scene-board .wall-layer line.door.open { opacity: .25; }
+.door-glyph { color: var(--accent-strong); }
+.door-glyph.open { color: var(--green); }
+.door-glyph.locked { color: var(--red); }
+.scene-board .structure-handle.door-lock-toggle {
+  width: max-content;
+  height: auto;
+  min-height: 28px;
+  padding-inline: 8px;
+  transform: translate(-50%, 13px);
+  color: var(--paper);
+  background: var(--surface-0);
+  font-size: var(--type-small);
+}
+.door-glyph rect { fill: var(--surface-0); stroke: currentColor; vector-effect: non-scaling-stroke; }
+.door-glyph path { fill: none; stroke: currentColor; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.scene-board .structure-handle.door-handle { background: transparent; border-color: transparent; box-shadow: none; }
+.scene-board .structure-handle.door-handle:is(:hover, :focus-visible, .selected) { border-color: var(--accent-strong); }
+
+:root:not([data-reduced-motion="true"]) .vision-outline {
+  transition: opacity var(--motion-normal) ease-out;
+}
+@starting-style {
+  :root:not([data-reduced-motion="true"]) .vision-outline { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root .vision-outline { transition: none; }
+}
+
+.fog-hide-feedback { fill: color-mix(in srgb, var(--color-black) 45%, transparent); }
+.fog-shade-transition { opacity: 0; }
+:root:not([data-reduced-motion="true"]) .fog-shade-transition {
+  animation: fog-shade-fade var(--motion-normal) ease-out;
+}
+@keyframes fog-shade-fade {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root .fog-shade-transition { animation: none; }
+}
