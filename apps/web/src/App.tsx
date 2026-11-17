@@ -2230,8 +2230,10 @@ export function App() {
       if (active?.id !== id || realtimeSelectionRef.current.userId !== id || (save && !save.isCurrent())) return;
       const user = mostRecentProfileUser(active, savedProfileRef.current);
       const previous = resolvedUserPreferences(user);
+      const preferences = { ...previous, ...patch };
+      if (save && patch.interfaceSounds) preferences.interfaceSounds = { ...(previous.interfaceSounds ?? patch.interfaceSounds), enabled: patch.interfaceSounds.enabled };
       try {
-        const result = await updateUserProfile({ user, displayName: user.displayName, preferences: { ...previous, ...patch }, idempotencyKey: `${attemptKey}:${user.updatedAt}` });
+        const result = await updateUserProfile({ user, displayName: user.displayName, preferences, idempotencyKey: `${attemptKey}:${user.updatedAt}` });
         applyAuthenticatedUser(result.user);
         save?.onSaved();
       } catch (failure) {
