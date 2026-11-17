@@ -15,7 +15,7 @@ const mapFixture = resolve("tests/e2e/fixtures/offset-grid.png");
 const canvasMargin = 256;
 const gmHeaders = { authorization: "Bearer otte-cookie-session", origin: webBaseUrl };
 
-async function api<T>(page: Page, method: "GET" | "POST", path: string, data?: unknown): Promise<T> {
+async function api<T>(page: Page, method: "GET" | "POST" | "PATCH", path: string, data?: unknown): Promise<T> {
   const response = await page.request.fetch(`${apiBaseUrl}${path}`, {
     method, data,
     headers: { ...gmHeaders, ...(method === "GET" ? {} : { "idempotency-key": `board-canvas:${crypto.randomUUID()}` }) },
@@ -262,4 +262,58 @@ test("the canvas stays the size of the view while zooming and panning, and token
   await page.waitForTimeout(400);
   const after = (await canvasState(board))!;
   expect(after.draws).toBe(before.draws);
+});
+
+test("fading manual fog never renders tokens outside the player's visible area", async ({ page, browser }) => {
+  await login(page);
+  const originallyActive = (await api<Scene[]>(page, "GET", `/api/v1/campaigns/${campaignId}/scenes`)).find((scene) => scene.active);
+  const { scene } = await createMapScene(page);
+  const sceneUrl = `/api/v1/scenes/${scene.id}`;
+  const revision = async () => (await api<Scene>(page, "GET", sceneUrl)).updatedAt;
+  await api(page, "POST", `${sceneUrl}/tokens`, { name: "Fog boundary witness", x: 440, y: 350, expectedUpdatedAt: await revision() });
+  await api(page, "POST", `${sceneUrl}/fog`, { x: 300, y: 375, radius: 215, mode: "reveal", expectedUpdatedAt: await revision() });
+  const context = await browser.newContext({ baseURL: webBaseUrl, extraHTTPHeaders: { Origin: webBaseUrl } });
+  try {
+    await api(page, "PATCH", sceneUrl, { active: true, expectedUpdatedAt: await revision() });
+    const player = await context.newPage();
+    await player.goto("/");
+    await player.evaluate(async (apiOrigin) => {
+      const response = await fetch(`${apiOrigin}/api/v1/auth/login`, {
+        method: "POST", credentials: "include", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: "player@example.test" })
+      });
+      if (!response.ok) throw new Error(await response.text());
+      const login = await response.json() as { user: { id: string } };
+      localStorage.setItem("otte:userId", login.user.id);
+      localStorage.setItem("otte:sessionTransport", "cookie");
+    }, apiBaseUrl);
+    await player.reload();
+
+    const board = player.getByRole("group", { name: `${scene.name} interactive battle map`, exact: true });
+    const witness = board.getByRole("button", { name: /token Fog boundary witness$/ });
+    const outside = board.getByRole("button", { name: /token Canvas scout$/ });
+    await expect(witness).toBeVisible();
+    await expect(outside).toHaveCount(0);
+    await player.evaluate(() => {
+      let faded = false;
+      Object.defineProperty(window, "fogFadeObserved", { get: () => faded });
+      const observer = new MutationObserver(() => {
+        if (!document.querySelector(".vision-mask-layer .fog-shade-transition")) return;
+        faded = true;
+        observer.disconnect();
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+    });
+    await api(page, "POST", `${sceneUrl}/fog`, { x: 465, y: 375, radius: 55, mode: "hide", expectedUpdatedAt: await revision() });
+    await expect(witness).toHaveCount(0);
+    await expect(outside).toHaveCount(0);
+    await expect.poll(() => player.evaluate(() => Reflect.get(window, "fogFadeObserved"))).toBe(true);
+  } finally {
+    await context.close();
+    if (originallyActive) {
+      const previousUrl = `/api/v1/scenes/${originallyActive.id}`;
+      const previous = await api<Scene>(page, "GET", previousUrl);
+      await api(page, "PATCH", previousUrl, { active: true, expectedUpdatedAt: previous.updatedAt });
+    }
+  }
 });
