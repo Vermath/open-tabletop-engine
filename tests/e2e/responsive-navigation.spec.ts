@@ -91,6 +91,39 @@ test("the inspector menu toggles closed and Escape preserves the active canvas t
   await expect(ruler).toHaveAttribute("aria-pressed", "true");
 });
 
+test("desktop Prep content keeps measured inspector tabs in one row", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Demo GM", exact: true }).click();
+  await page.getByRole("button", { name: "Prep", exact: true }).click();
+  await selectInspectorPanel(page, "Sessions");
+  await expect(page.getByRole("region", { name: "Session Desk" })).toBeVisible();
+  await page.getByRole("button", { name: "Show scene", exact: true }).click();
+  await expect(page.locator(".table-grid")).toHaveAttribute("data-content-workspace", "true");
+  await expect(page.locator(".table-grid")).toHaveAttribute("data-scene-preview", "true");
+
+  const tabs = page.getByRole("tablist", { name: "Inspector panels" });
+  const more = page.getByRole("button", { name: "More inspector panels" });
+  await expect(more).toBeVisible();
+  await expect(tabs).toHaveCSS("flex-wrap", "nowrap");
+  await expect(tabs).toHaveCSS("padding-inline-start", "0px");
+  await expect.poll(() => tabs.evaluate((list) => {
+    const row = list.parentElement!;
+    const tabButtons = Array.from(list.querySelectorAll<HTMLElement>("[role='tab']"));
+    const moreButton = row.querySelector<HTMLElement>("[aria-label='More inspector panels']")!;
+    const measurements = [moreButton, ...tabButtons].map((button) => {
+      const id = button === moreButton ? "more" : button.id.replace("inspector-tab-", "");
+      const probe = row.querySelector<HTMLElement>(`[data-measure="${id}"]`)!;
+      return Math.abs(button.getBoundingClientRect().width - probe.getBoundingClientRect().width);
+    });
+    return {
+      fits: list.scrollWidth <= list.clientWidth + 1,
+      rows: new Set(tabButtons.map((button) => button.getBoundingClientRect().top)).size,
+      mismatchedWidths: measurements.filter((difference) => difference > 1),
+    };
+  })).toEqual({ fits: true, rows: 1, mismatchedWidths: [] });
+});
+
 test("chat replies and edits open directly from the message", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM", exact: true }).click();
