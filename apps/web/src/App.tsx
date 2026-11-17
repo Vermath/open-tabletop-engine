@@ -635,6 +635,7 @@ export function App() {
   const realtimeBoardCaptureHandlerRef = useRef<(data: unknown) => boolean>(() => false);
   const realtimeApplyRef = useRef<(data: unknown) => RealtimeApplyResult>(() => "ignored");
   const realtimeSequenceRef = useRef(snapshot.eventSequence);
+  const visionRequestRef = useRef(0);
   const hpAdjustRef = useRef<Map<string, { current: number; max: number; timer: number; actor: Actor; request: WorkspaceBoundRequest }>>(new Map());
   const actorConditionQueueRef = useRef<Map<string, Promise<Actor | undefined>>>(new Map());
   const actorSheetMutationQueueRef = useRef(new KeyedMutationQueue());
@@ -1324,6 +1325,7 @@ export function App() {
       throw error;
     }
     if (seq !== refreshSeqRef.current || !workspaceRequestIsCurrent(nextCampaignId, requestUserId)) return next;
+    visionRequestRef.current += 1;
     realtimeSequenceRef.current = next.eventSequence;
     snapshotRef.current = next;
     setSnapshot(next);
@@ -1576,11 +1578,11 @@ export function App() {
   realtimeReconcileRef.current = async (scopes) => {
     if (scopes.includes("snapshot")) return realtimeRefreshRef.current();
     const selection = { ...realtimeSelectionRef.current };
-    const selectedScene = snapshotRef.current.scenes.find((scene) => scene.id === selection.sceneId);
+    const visionSceneId = scopes.includes("vision") && snapshotRef.current.scenes.some((scene) => scene.id === selection.sceneId) ? selection.sceneId : undefined;
+    const visionRequest = visionSceneId ? ++visionRequestRef.current : undefined;
     const filterTokens = hasPermission("token.read") && !(hasPermission("token.update") || hasPermission("scene.update"));
-    const visionPath = selectedScene ? `/api/v1/scenes/${selectedScene.id}/vision${filterTokens ? "?includeTokens=true" : ""}` : undefined;
     const [vision, lore] = await Promise.all([
-      scopes.includes("vision") && visionPath ? apiGet<VisionSnapshot>(visionPath) : Promise.resolve(undefined),
+      visionSceneId ? apiGet<VisionSnapshot>(`/api/v1/scenes/${visionSceneId}/vision${filterTokens ? "?includeTokens=true" : ""}`) : Promise.resolve(undefined),
       scopes.includes("lore")
         ? Promise.all([
             apiGet<WorldAtlasWorld[]>(`/api/v1/campaigns/${selection.campaignId}/worlds`),
@@ -1591,7 +1593,7 @@ export function App() {
         : Promise.resolve(undefined)
     ]);
     if (!workspaceRequestIsCurrent(selection.campaignId, selection.userId) || realtimeSelectionRef.current.sceneId !== selection.sceneId) return undefined;
-    if (vision?.userId === selection.userId) setSnapshot((current) => applySceneVision(current, vision));
+    if (vision && visionRequest === visionRequestRef.current && vision.sceneId === selection.sceneId && vision.userId === selection.userId) setSnapshot((current) => applySceneVision(current, vision));
     if (lore) {
       const [nextWorlds, nextHandouts, worldRecords, worldRelations] = lore;
       loreRealtimeRefreshPendingRef.current = false;
