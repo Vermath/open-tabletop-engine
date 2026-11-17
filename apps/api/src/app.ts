@@ -1893,7 +1893,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       if (sessionCookieDeferred(request.headers)) deferSessionCookieActivation(session);
       store.save();
       flushStore(store);
-      return { status: "authenticated" as const, token, session, user: publicUser(user), memberships: store.state.members.filter((member) => member.userId === user.id), serverAdmin: isServerAdminUser(store, user.id), accountKey: normalizeEmail(user.email) ?? user.id };
+      return { status: "authenticated" as const, token, session, user: publicUser(user), memberships: store.state.members.filter((member) => member.userId === user.id).map(publicCampaignMember), serverAdmin: isServerAdminUser(store, user.id), accountKey: normalizeEmail(user.email) ?? user.id };
     });
     if (outcome.status === "unauthorized") return unauthorized(reply, "Invalid login credentials");
     if (outcome.status === "disabled") return forbidden(reply, "User account is disabled");
@@ -1962,7 +1962,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       });
       if (!sessionCookieDeferred(request.headers)) attachSessionCookie(reply, login.token, login.session);
       else markSessionCookieDeferred(reply);
-      return { token: login.token, session: publicSession(login.session), user: publicUser(login.user), memberships: store.state.members.filter((member) => member.userId === login.user.id), serverAdmin: isServerAdminUser(store, login.user.id) };
+      return { token: login.token, session: publicSession(login.session), user: publicUser(login.user), memberships: store.state.members.filter((member) => member.userId === login.user.id).map(publicCampaignMember), serverAdmin: isServerAdminUser(store, login.user.id) };
     } catch (error) {
       return unauthorized(reply, errorMessage(error));
     }
@@ -2004,7 +2004,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (outcome.status === "disabled") return forbidden(reply, "User account is disabled");
     if (!sessionCookieDeferred(request.headers)) attachSessionCookie(reply, outcome.token, outcome.nextSession);
     else markSessionCookieDeferred(reply);
-    return { token: outcome.token, session: publicSession(outcome.nextSession), user: publicUser(outcome.user), memberships: store.state.members.filter((member) => member.userId === outcome.user.id), serverAdmin: isServerAdminUser(store, outcome.user.id) };
+    return { token: outcome.token, session: publicSession(outcome.nextSession), user: publicUser(outcome.user), memberships: store.state.members.filter((member) => member.userId === outcome.user.id).map(publicCampaignMember), serverAdmin: isServerAdminUser(store, outcome.user.id) };
   });
 
   app.get("/api/v1/auth/mfa", async (request, reply) => {
@@ -2998,7 +2998,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       const login = await completeOidcCallback(request, store, config, request.query.code, request.query.state, durableMutations);
       attachSessionCookie(reply, login.token, login.session);
       if (login.returnTo) return reply.redirect(ssoRedirectUrl(login.returnTo, cookieSessionBearerMarker, login.user.id));
-      return { token: login.token, session: publicSession(login.session), user: publicUser(login.user), memberships: store.state.members.filter((member) => member.userId === login.user.id), serverAdmin: isServerAdminUser(store, login.user.id), identity: publicIdentity(login.identity) };
+      return { token: login.token, session: publicSession(login.session), user: publicUser(login.user), memberships: store.state.members.filter((member) => member.userId === login.user.id).map(publicCampaignMember), serverAdmin: isServerAdminUser(store, login.user.id), identity: publicIdentity(login.identity) };
     } catch (error) {
       return unauthorized(reply, `OIDC callback failed: ${errorMessage(error)}`);
     }
@@ -3091,7 +3091,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const session = sessionFromRequest(store, undefined, request.headers);
     const user = store.state.users.find((item) => item.id === userId);
     if (!user) return unauthorized(reply, "Unknown user session");
-    return { user: publicUser(user), session: session ? publicSession(session) : undefined, memberships: store.state.members.filter((member) => member.userId === userId), serverAdmin: isServerAdminUser(store, userId), serverAdmins: serverAdminRuntimePosture(store), organization: organizationWorkspaceForRequest(store, userId, request.headers), organizations: organizationWorkspaceInfos(store, userId) };
+    return { user: publicUser(user), session: session ? publicSession(session) : undefined, memberships: store.state.members.filter((member) => member.userId === userId).map(publicCampaignMember), serverAdmin: isServerAdminUser(store, userId), serverAdmins: serverAdminRuntimePosture(store), organization: organizationWorkspaceForRequest(store, userId, request.headers), organizations: organizationWorkspaceInfos(store, userId) };
   });
 
   app.get("/api/v1/auth/profile", async (request, reply) => {
@@ -3408,7 +3408,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/members", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.read");
     if (allowed !== true) return allowed;
-    return store.state.members.filter((member) => member.campaignId === request.params.campaignId).map((member) => memberSessionInfo(store, member));
+    // SCIM sources name identity-provider groups and mappings; only campaign managers need them.
+    const includeSource = canCampaign(store, currentUserId(store, request.headers)!, request.params.campaignId, "campaign.update");
+    return store.state.members.filter((member) => member.campaignId === request.params.campaignId).map((member) => {
+      const info = memberSessionInfo(store, member);
+      return includeSource ? info : publicCampaignMember(info);
+    });
   });
 
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/presence", async (request, reply) => {
@@ -22239,6 +22244,11 @@ function campaignPermissionTemplate(value: unknown): CampaignPermissionTemplate 
 function campaignPermissionTemplateGrants(campaignId: string, templateId: CampaignPermissionTemplateId): PermissionGrant[] {
   const template = campaignPermissionTemplates[templateId];
   return template.grants.map((grant) => createTimestamped("grant", { subjectType: "role" as const, subjectId: grant.role, campaignId, permissions: grant.permissions, metadata: { source: "campaign_permission_template", templateId, ...(templateId === "ai_assisted" ? { aiUseTemplateVersion: 1 } : {}) } }));
+}
+
+function publicCampaignMember<T extends CampaignMember>(member: T): Omit<T, "source"> {
+  const { source: _source, ...publicMember } = member;
+  return publicMember;
 }
 
 function memberSessionInfo(store: StateStore, member: CampaignMember): CampaignMember & { user: Pick<User, "id" | "displayName" | "email">; active: boolean; permissions: PermissionName[] } {

@@ -9426,6 +9426,16 @@ describe("api", () => {
         role: "observer",
         source: { type: "scim_group", groupId, mappingId }
       });
+      const scimUserSession = await app.inject({ method: "GET", url: "/api/v1/auth/session", headers: { "x-user-id": userId } });
+      expect(scimUserSession.statusCode).toBe(200);
+      expect(scimUserSession.json().memberships.find((member: { campaignId: string }) => member.campaignId === "camp_demo")).not.toHaveProperty("source");
+      expect(scimUserSession.body).not.toContain(mappingId);
+      const playerMemberList = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/members", headers: { "x-user-id": "usr_demo_player" } });
+      expect(playerMemberList.statusCode).toBe(200);
+      expect(playerMemberList.json().find((member: { userId: string }) => member.userId === userId)).not.toHaveProperty("source");
+      expect(playerMemberList.body).not.toContain(mappingId);
+      const managerMemberList = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/members", headers: adminHeaders });
+      expect(managerMemberList.json().find((member: { userId: string }) => member.userId === userId)).toMatchObject({ source: { type: "scim_group", groupId, mappingId } });
 
       const archive = await app.inject({
         method: "GET",
