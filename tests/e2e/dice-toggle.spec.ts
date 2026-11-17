@@ -228,7 +228,7 @@ test("mute works before profile persistence and text-only dice still play a cue"
         super(options);
         contexts += 1;
       }
-      createOscillator() {
+      override createOscillator() {
         notes += 1;
         return super.createOscillator();
       }
