@@ -36,7 +36,7 @@ describe("desktop layout regressions", () => {
   it("keeps the token create action readable in desktop play and prep topbars", () => {
     expect(stylesSource).not.toContain("minmax(74px, 0.6fr) 44px");
     expect(stylesSource).not.toContain(".quick-create-form .primary-button {\n  min-width: 44px;");
-    expect(stylesSource).toContain(".primary-button:disabled {\n  border-color: rgba(148, 160, 173, 0.18);\n  background: #111923;\n  color: #8390a0;");
+    expect(stylesSource).toContain(".primary-button:disabled {\n  border-color: color-mix(in srgb, var(--muted) 18%, transparent);\n  background: var(--surface-1);\n  color: var(--muted);");
     expect(stylesSource).toContain(".rail-play + .workspace .topbar {\n  grid-template-columns: minmax(220px, 300px) minmax(180px, 1fr);");
     expect(stylesSource).toContain('grid-template-areas:\n    "title scenes"\n    "create create";');
     expect(stylesSource).toContain(".rail-play + .workspace .quick-create-form {\n  grid-area: create;");
@@ -60,7 +60,7 @@ describe("desktop layout regressions", () => {
     expect(stylesSource).toContain(".rail-admin:has(> .manage-category-list) {\n  top: 0;\n  right: 0;\n  bottom: 0;\n  left: 264px;");
     expect(stylesSource).toContain("grid-template-columns: 196px minmax(0, 1fr);");
     expect(stylesSource).toContain(".manage-category-content {\n  grid-column: 2;");
-    expect(stylesSource).toContain("background: #090f16;");
+    expect(stylesSource).toContain("background: var(--surface-0);");
     expect(stylesSource).toContain(".rail-manage + .workspace .manage-workspace-stage {\n  display: none;");
     expect(stylesSource).toContain(".manage-scene-filter-panel {\n  position: sticky;");
     expect(stylesSource).toContain("grid-template-columns: minmax(180px, 0.8fr) minmax(220px, 1fr) auto auto;");
@@ -109,7 +109,7 @@ describe("desktop layout regressions", () => {
     expect(stylesSource).toContain(".ai-agent-composer-status {");
     expect(stylesSource).toContain(".ai-agent-feed {");
     expect(stylesSource).toContain(".ai-agent-status-pill {");
-    expect(stylesSource).toContain("background: #070b10;\n  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(229, 176, 74, 0.08);\n  isolation: isolate;");
+    expect(stylesSource).toContain("background: var(--surface-0);\n  box-shadow: 0 24px 80px color-mix(in srgb, var(--color-black) 50%, transparent), 0 0 0 1px color-mix(in srgb, var(--accent) 8%, transparent);\n  isolation: isolate;");
     expect(stylesSource).toContain("@media (max-width: 900px) {\n  .ai-agent-popout {\n    right: 12px;\n    bottom: calc(76px + env(safe-area-inset-bottom, 0px));");
     expect(stylesSource).toContain("@media (max-width: 760px) {\n  .ai-agent-popout {\n    right: 8px;\n    bottom: calc(70px + env(safe-area-inset-bottom, 0px));");
   });
@@ -191,7 +191,7 @@ describe("desktop layout regressions", () => {
     expect(stylesSource).toContain('grid-template-areas:\n    "title filters scenes"\n    "create create create";');
     expect(stylesSource).toContain("@media (max-width: 1040px) and (min-width: 641px) {\n  .rail-prep + .workspace {\n    grid-template-rows: minmax(188px, auto) minmax(0, 1fr) auto;");
     expect(stylesSource).toContain('grid-template-areas:\n      "title filters"\n      "scenes scenes"\n      "create create";');
-    expect(stylesSource).toContain(".scene-tab-wrap.selectable {\n  grid-template-columns: 28px minmax(0, auto);\n  border-color: rgba(148, 160, 173, 0.18);");
+    expect(stylesSource).toContain(".scene-tab-wrap.selectable {\n  grid-template-columns: 28px minmax(0, auto);\n  border-color: color-mix(in srgb, var(--muted) 18%, transparent);");
     expect(stylesSource).toContain(".scene-tab-select {\n  justify-self: center;\n  width: 20px;");
     expect(stylesSource).toContain(".rail-prep + .workspace .table-tool-panel.canvas-asset-dock {\n    top: 76px;\n    right: 12px;\n    left: auto;\n    width: max-content;");
     expect(stylesSource).toContain("box-shadow: none;\n  backdrop-filter: none;\n  pointer-events: auto;");
@@ -295,7 +295,7 @@ describe("desktop layout regressions", () => {
     expect(aiPanelSource).toContain('className="ai-asset-task ai-map-asset-task"');
     expect(aiPanelSource).toContain('className="ai-asset-task ai-token-asset-task"');
     expect(stylesSource).toContain(".ai-field select {\n  width: 100%;\n  min-height: 36px;");
-    expect(stylesSource).toContain(".admin-form-grid input,\n.admin-form-grid select {\n  width: 100%;\n  min-height: 36px;\n  padding: 0 9px;\n  border: 1px solid #463b2a;\n  border-radius: 6px;");
+    expect(stylesSource).toContain(".admin-form-grid input,\n.admin-form-grid select {\n  width: 100%;\n  min-height: 36px;\n  padding: 0 9px;\n  border: 1px solid var(--line);\n  border-radius: var(--radius-s);");
     expect(stylesSource).toContain("@media (min-width: 1181px) {\n  .ai-create-workflow.ai-create-intent-map > .ai-assets-panel,");
     expect(stylesSource).toContain(".ai-create-workflow.ai-create-intent-map > .ai-assets-panel,\n.ai-create-workflow.ai-create-intent-token-batch > .ai-assets-panel,\n.ai-create-workflow.ai-create-intent-selected-token > .ai-assets-panel {\n  order: -1;");
     expect(stylesSource).toContain(".ai-create-workflow.ai-create-intent-token-batch .ai-token-asset-task,\n.ai-create-workflow.ai-create-intent-selected-token .ai-token-asset-task {\n  order: -1;");
