@@ -2486,7 +2486,7 @@ a[href]:focus-visible,
 }
 
 .asset-quota-fill.danger {
-  background: var(--accent);
+  background: var(--red);
 }
 
 .asset-pressure-list {
