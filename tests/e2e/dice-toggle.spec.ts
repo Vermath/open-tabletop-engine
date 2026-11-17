@@ -331,19 +331,7 @@ test("a saved profile replaces an unsaved rail sound override", async ({ page })
   }
 });
 
-test("overlapping sound toggles keep the last choice and save it on the latest revision", async ({ page }) => {
-  await loginSeededDemo(page);
-  const mute = page.getByRole("button", { name: "Mute interface sounds", exact: true });
-  const unmute = page.getByRole("button", { name: "Unmute interface sounds", exact: true });
-  await expect(mute.or(unmute)).toBeVisible();
-  const originallyEnabled = await mute.isVisible();
-  if (originallyEnabled) {
-    const update = page.waitForResponse(isProfilePreferenceUpdate);
-    await mute.click();
-    expect((await update).ok()).toBe(true);
-  }
-  await expect(unmute).toBeVisible();
-
+async function holdSoundPreferenceWrites(page: Page) {
   let releaseUnmute!: () => void;
   let releaseMute!: () => void;
   const pendingUnmute = new Promise<void>((resolve) => { releaseUnmute = resolve; });
@@ -357,6 +345,30 @@ test("overlapping sound toggles keep the last choice and save it on the latest r
     await (enabled ? pendingUnmute : pendingMute);
     await route.continue();
   });
+  return {
+    patches, releaseUnmute, releaseMute,
+    async close() {
+      releaseUnmute();
+      releaseMute();
+      await page.unroute("**/api/v1/auth/profile");
+    },
+  };
+}
+
+test("overlapping sound toggles keep the last choice and save it on the latest revision", async ({ page }) => {
+  await loginSeededDemo(page);
+  const mute = page.getByRole("button", { name: "Mute interface sounds", exact: true });
+  const unmute = page.getByRole("button", { name: "Unmute interface sounds", exact: true });
+  await expect(mute.or(unmute)).toBeVisible();
+  const originallyEnabled = await mute.isVisible();
+  if (originallyEnabled) {
+    const update = page.waitForResponse(isProfilePreferenceUpdate);
+    await mute.click();
+    expect((await update).ok()).toBe(true);
+  }
+  await expect(unmute).toBeVisible();
+
+  const { patches, releaseUnmute, releaseMute, close } = await holdSoundPreferenceWrites(page);
   try {
     const first = page.waitForResponse(isProfilePreferenceUpdate);
     await unmute.click();
@@ -372,9 +384,53 @@ test("overlapping sound toggles keep the last choice and save it on the latest r
     releaseMute();
     expect((await second).ok()).toBe(true);
   } finally {
+    await close();
+  }
+
+  await page.reload();
+  await expect(unmute).toBeVisible();
+  if (originallyEnabled) {
+    const restore = page.waitForResponse(isProfilePreferenceUpdate);
+    await unmute.click();
+    expect((await restore).ok()).toBe(true);
+  }
+});
+
+test("a profile save in flight preserves a newer rail mute", async ({ page }) => {
+  await loginSeededDemo(page);
+  const mute = page.getByRole("button", { name: "Mute interface sounds", exact: true });
+  const unmute = page.getByRole("button", { name: "Unmute interface sounds", exact: true });
+  await expect(mute.or(unmute)).toBeVisible();
+  const originallyEnabled = await mute.isVisible();
+  if (!originallyEnabled) {
+    const update = page.waitForResponse(isProfilePreferenceUpdate);
+    await unmute.click();
+    expect((await update).ok()).toBe(true);
+    await expect(mute).toBeVisible();
+  }
+
+  await page.getByRole("button", { name: "Manage", exact: true }).click();
+  const manage = page.getByRole("region", { name: "Manage workspace panel" });
+  await manage.locator(".manage-category-button", { hasText: "Account" }).click();
+  await expect(manage.getByRole("checkbox", { name: "Play interface sounds" })).toBeChecked();
+  const { patches, releaseUnmute, releaseMute, close } = await holdSoundPreferenceWrites(page);
+  try {
+    const profile = page.waitForResponse(isProfilePreferenceUpdate);
+    await manage.getByRole("button", { name: "Save profile & preferences" }).click();
+    await expect.poll(() => patches.map(({ enabled }) => enabled)).toEqual([true]);
+    await manage.getByRole("button", { name: "Close", exact: true }).click();
+    await mute.click();
+    await expect(unmute).toBeVisible();
     releaseUnmute();
+    expect((await profile).ok()).toBe(true);
+    await expect.poll(() => patches.map(({ enabled }) => enabled)).toEqual([true, false]);
+    expect(patches[1]!.revision).not.toBe(patches[0]!.revision);
+    await expect(unmute).toBeVisible();
+    const latest = page.waitForResponse(isProfilePreferenceUpdate);
     releaseMute();
-    await page.unroute("**/api/v1/auth/profile");
+    expect((await latest).ok()).toBe(true);
+  } finally {
+    await close();
   }
 
   await page.reload();
