@@ -124,6 +124,7 @@ export async function startApiRuntime(options: ApiRuntimeOptions = {}): Promise<
   const port = options.port ?? Number(process.env.PORT ?? 4000);
   const appOptions: BuildAppOptions = {
     store: new SqliteStateStore(options.sqlitePath ?? process.env.OTTE_SQLITE_PATH),
+    seedDemoPresentation: process.env.NODE_ENV !== "test",
     uploadDir: options.uploadDir,
     pluginRoot,
     ...(options.aiProvider ? { aiProvider: options.aiProvider } : {})

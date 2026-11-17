@@ -1,0 +1,6 @@
+Ember Vault demo art
+
+The battle map and five character portraits were generated for OpenTabletop
+Engine using OpenAI ImageGen. No third-party artwork was downloaded. The
+portraits were cropped from a generated atlas and the images were encoded
+as WebP for distribution with this repository under its AGPL-3.0-only license.
