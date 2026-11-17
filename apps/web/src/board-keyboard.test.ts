@@ -60,7 +60,7 @@ describe("player preview keyboard isolation", () => {
     const scope = {
       ...mutations, boardKeyboardAction, playerPreview: { open: true },
       selectedOverlay: null, selectedTokens: [{ id: "gm-token" }], canDeleteSelectedBoardTokens: true,
-      boardClipboardTokens: [{}], boardUndoStack: [{}], boardRedoStack: [{}],
+      boardClipboardTokens: [{}], boardUndoStack: { current: [{}] }, boardRedoStack: { current: [{}] },
       hasPermission: () => true, setStatus: vi.fn(), setSelectedOverlay: vi.fn(),
     };
     const keys = [{ key: "Delete" }, ...["z", "y", "c", "v"].map((key) => ({ key, ctrlKey: true }))];
