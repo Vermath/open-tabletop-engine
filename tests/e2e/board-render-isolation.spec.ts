@@ -75,6 +75,30 @@ async function openScene(page: Page, scene: Scene): Promise<Locator> {
 
 const renderCounts = (page: Page) => page.evaluate(() => ({ ...(window as unknown as { __otteBoardRenderCounts: RenderCounts }).__otteBoardRenderCounts }));
 
+test("pasted tokens use the server revision on a browser with a fast clock", async ({ page }) => {
+  test.setTimeout(90_000);
+  await login(page);
+  const { scene } = await createBusyScene(page);
+  const board = await openScene(page, scene);
+  await page.clock.setFixedTime(new Date("2100-01-01T00:00:00Z"));
+  await board.getByRole("button", { name: /token Piece 01$/ }).click();
+  await page.keyboard.press("Control+c");
+  const createdResponse = page.waitForResponse((response) => response.request().method() === "POST" &&
+    new URL(response.url()).pathname === `/api/v1/scenes/${scene.id}/tokens`);
+  await page.keyboard.press("Control+v");
+  const created = await createdResponse;
+  expect(created.ok(), await created.text()).toBe(true);
+  const token = (await created.json()) as Token;
+  const piece = board.getByRole("button", { name: /token Piece 01 Copy$/ });
+  await piece.focus();
+  const moveResponse = page.waitForResponse((response) => response.request().method() === "POST" &&
+    new URL(response.url()).pathname === `/api/v1/scenes/${scene.id}/tokens/move`);
+  await page.keyboard.press("ArrowRight");
+  const moved = await moveResponse;
+  expect(moved.request().postDataJSON().changes).toContainEqual(expect.objectContaining({ tokenId: token.id, expectedUpdatedAt: token.updatedAt }));
+  expect(moved.ok(), await moved.text()).toBe(true);
+});
+
 /** Waits until the board has stopped rendering, so a later difference belongs to the action under test. */
 async function settledCounts(page: Page): Promise<RenderCounts> {
   let previous = await renderCounts(page);

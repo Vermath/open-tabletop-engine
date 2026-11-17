@@ -4419,13 +4419,15 @@ export function App() {
     }
 
     if (changes.length === 0) return;
+    if (changes.some(({ token }) => !latestAuthoritativeToken(token.id, token)?.updatedAt)) await boardSyncQueueRef.current;
+    if (!workspaceRequestIsCurrent(campaignId, currentUserId)) return;
     const sceneId = changes[0]!.token.sceneId;
     const scene = snapshotRef.current.scenes.find((candidate) => candidate.id === sceneId);
     if (!scene) throw new Error("Scene is unavailable for token movement");
     const payload: TokenMoveBatchRequest = {
       expectedSceneUpdatedAt: scene.updatedAt,
       changes: changes.map(({ token, position }) => {
-        const latest = snapshotRef.current.tokens.find((candidate) => candidate.id === token.id) ?? token;
+        const latest = latestAuthoritativeToken(token.id, token)!;
         return { tokenId: latest.id, ...position, expectedUpdatedAt: latest.updatedAt };
       }).sort((left, right) => left.tokenId.localeCompare(right.tokenId))
     };
@@ -4455,8 +4457,9 @@ export function App() {
     }
 
     await runWorkspaceBoundAction(
-      (request) => {
-        const latest = snapshotRef.current.tokens.find((candidate) => candidate.id === token.id) ?? token;
+      async (request) => {
+        if (!latestAuthoritativeToken(token.id, token)?.updatedAt) await boardSyncQueueRef.current;
+        const latest = latestAuthoritativeToken(token.id, token)!;
         const payload = { ...frame, expectedUpdatedAt: latest.updatedAt };
         return apiPatch<Token>(`/api/v1/tokens/${token.id}`, payload, { signal: request.controller.signal, idempotencyKey: sharedMutationIdempotencyKey(`token:resize:${token.id}`, latest.updatedAt, payload) });
       },
@@ -4470,8 +4473,12 @@ export function App() {
       if (!workspaceBoundRequestIsCurrent(request)) return;
       const scene = sceneRevisions.get(token.sceneId) ?? await apiGet<Scene>(`/api/v1/scenes/${token.sceneId}`, { signal: request.controller.signal });
       const payload = { ...tokenRestorePayload(token), expectedUpdatedAt: scene.updatedAt };
-      await apiPost<Token>(`/api/v1/scenes/${token.sceneId}/tokens`, payload, { signal: request.controller.signal, idempotencyKey: sharedMutationIdempotencyKey(`token:restore:${token.id}`, scene.updatedAt, payload) });
-      sceneRevisions.set(token.sceneId, await apiGet<Scene>(`/api/v1/scenes/${token.sceneId}`, { signal: request.controller.signal }));
+      const created = await apiPost<Token>(`/api/v1/scenes/${token.sceneId}/tokens`, payload, { signal: request.controller.signal, idempotencyKey: sharedMutationIdempotencyKey(`token:restore:${token.id}`, scene.updatedAt, payload) });
+      if (!workspaceBoundRequestIsCurrent(request)) return;
+      applyTokensToSnapshot([created]);
+      const updatedScene = await apiGet<Scene>(`/api/v1/scenes/${token.sceneId}`, { signal: request.controller.signal });
+      sceneRevisions.set(token.sceneId, updatedScene);
+      if (workspaceBoundRequestIsCurrent(request) && updatedScene.updatedAt > (snapshotRef.current.scenes.find((item) => item.id === updatedScene.id)?.updatedAt ?? "")) applySceneToSnapshot(updatedScene);
     }
   }
 
@@ -4625,7 +4632,7 @@ export function App() {
       return;
     }
     const pasteSources = boardClipboardTokens.map((token) => ({ ...token, sceneId: selectedScene.id }));
-    const pastedTokens = createTokenCopies(pasteSources, { scene: selectedScene, offset: Math.max(16, Math.round(selectedScene.gridSize / 2)) });
+    const pastedTokens = createTokenCopies(pasteSources, { scene: selectedScene, offset: Math.max(16, Math.round(selectedScene.gridSize / 2)), pendingServerRevision: !blankCanvasDemoOpen });
     setSnapshot((current) => ({ ...current, tokens: [...current.tokens, ...pastedTokens] }));
     selectCanvasTokens(pastedTokens.map((token) => token.id));
     pushBoardHistoryAction({ kind: "tokens.create", tokens: pastedTokens });
