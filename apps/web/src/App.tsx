@@ -721,7 +721,7 @@ export function App() {
   const liveCampaignSession = campaignSessions.find((session) => session.status === "live");
   const currentTurnCombatant = combatTurnCombatant(activeCombat, "current");
   const nextTurnCombatant = combatTurnCombatant(activeCombat, "next");
-  const { settings: interfaceSounds, toggle: toggleInterfaceSounds, play: playInterfaceCue } = useInterfaceSounds({ preferences: snapshot.session?.user.preferences?.interfaceSounds, muted: audioMuted, masterVolume: audioMasterVolume, scene: selectedScene, userId: currentUserId, combat: activeCombat, combatant: currentTurnCombatant, tokens: snapshot.tokens, actors: snapshot.actors, onSettingsChange: (settings) => persistQuickPreferences({ interfaceSounds: settings }, "Set interface sounds") });
+  const { settings: interfaceSounds, toggle: toggleInterfaceSounds, play: playInterfaceCue, applySavedSettings: applySavedInterfaceSounds } = useInterfaceSounds({ preferences: snapshot.session?.user.preferences?.interfaceSounds, muted: audioMuted, masterVolume: audioMasterVolume, scene: selectedScene, userId: currentUserId, combat: activeCombat, combatant: currentTurnCombatant, tokens: snapshot.tokens, actors: snapshot.actors, onSettingsChange: (settings) => persistQuickPreferences({ interfaceSounds: settings }, "Set interface sounds") });
   const currentTurnTokenIds = useMemo(() => currentTurnCombatant?.tokenId ? [currentTurnCombatant.tokenId] : [], [currentTurnCombatant?.tokenId]);
   const nextTurnTokenIds = useMemo(() => nextTurnCombatant?.tokenId && nextTurnCombatant.id !== currentTurnCombatant?.id ? [nextTurnCombatant.tokenId] : [], [nextTurnCombatant?.tokenId, nextTurnCombatant?.id, currentTurnCombatant?.id]);
   const recentEndedCombats = snapshot.combats.filter((combat) => !combat.active).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).slice(0, 3);
@@ -2211,7 +2211,9 @@ export function App() {
     document.documentElement.dataset.chatNotifications = preferences.chatNotifications;
   }
 
-  function applyAuthenticatedUser(user: User): void {
+  function applyAuthenticatedUser(user: User, source: "profile" | "quick" = "profile"): void {
+    if (user.id !== realtimeSelectionRef.current.userId) return;
+    if (source === "profile") applySavedInterfaceSounds(user.id, user.preferences?.interfaceSounds);
     applyPreferenceRuntime(user);
     setSnapshot((current) => ({
       ...current,
@@ -2221,7 +2223,6 @@ export function App() {
     }));
     setStatus("Profile preferences synced");
   }
-
   function persistQuickPreferences(patch: Partial<NonNullable<User["preferences"]>>, label: string): void {
     const user = snapshotRef.current.session?.user;
     if (!user) return;
@@ -2232,7 +2233,7 @@ export function App() {
     void campaignAction.runAction(label, async () => {
       try {
         const result = await updateUserProfile({ user, displayName: user.displayName, preferences, idempotencyKey: attemptKey });
-        applyAuthenticatedUser(result.user);
+        applyAuthenticatedUser(result.user, "quick");
       } catch (failure) {
         applyPreferenceRuntime({ ...user, preferences: previous });
         throw failure;
