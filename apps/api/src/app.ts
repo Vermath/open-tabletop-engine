@@ -12897,10 +12897,6 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     if (!opaqueHeaderText(request.headers["idempotency-key"])) return badRequest(reply, "Archive import rollback requires an Idempotency-Key header");
     if (request.body?.confirmOperationId !== request.params.operationId) return badRequest(reply, "Archive import rollback confirmation must match the operation id");
-    const operation = store.state.campaignArchiveImportOperations.find((candidate) => candidate.id === request.params.operationId && candidate.campaignIds.includes(request.params.campaignId));
-    if (!operation) return notFound(reply, "Archive import operation not found");
-    const operationAllowed = requireCampaignArchiveImportOperationUpdatePermission(store, reply, request.headers, userId, operation.campaignIds);
-    if (operationAllowed !== true) return operationAllowed;
     const campaign = store.state.campaigns.find((candidate) => candidate.id === request.params.campaignId);
     if (!campaign) return notFound(reply, "Campaign not found");
     const revision = requireExpectedRevision(reply, {
@@ -12912,6 +12908,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       label: "Campaign archive import rollback",
     });
     if (revision !== true) return revision;
+    // A rollback restores every campaign the import touched, so the caller must be able to update all of them.
+    const operation = store.state.campaignArchiveImportOperations.find((candidate) => candidate.id === request.params.operationId && candidate.campaignIds.includes(request.params.campaignId));
+    const operationAllowed = operation ? requireCampaignArchiveImportOperationUpdatePermission(store, reply, request.headers, userId, operation.campaignIds) : true;
+    if (operationAllowed !== true) return operationAllowed;
     try {
       return await rollbackCampaignArchiveImportOperation({ store, assetStorage, operationId: request.params.operationId, campaignId: campaign.id, userId });
     } catch (error) {
