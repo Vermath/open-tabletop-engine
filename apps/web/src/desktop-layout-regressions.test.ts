@@ -56,7 +56,7 @@ describe("desktop layout regressions", () => {
 
   it("keeps the manage drawer opaque and scene filters visible while scrolling", () => {
     expect(stylesSource).toContain(".rail-admin {\n  position: fixed;");
-    expect(stylesSource).toContain("background: #090e14;");
+    expect(stylesSource).toContain("background: var(--surface-0);");
     expect(stylesSource).toContain(".rail-admin:has(> .manage-category-list) {\n  top: 0;\n  right: 0;\n  bottom: 0;\n  left: 264px;");
     expect(stylesSource).toContain("grid-template-columns: 196px minmax(0, 1fr);");
     expect(stylesSource).toContain(".manage-category-content {\n  grid-column: 2;");
@@ -306,7 +306,7 @@ describe("desktop layout regressions", () => {
     expect(appSource).toContain('aria-label={mode.label} aria-pressed={workspaceMode === mode.id} title={mode.label}');
     expect(stylesSource).toContain(".rail-play + .workspace .quick-create-form,\n  .rail-prep + .workspace .quick-create-form {\n    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.2fr) minmax(56px, 0.7fr) minmax(90px, 1fr);");
     expect(stylesSource).toContain(".rail-play + .workspace .quick-create-form input,\n  .rail-play + .workspace .quick-create-form select,\n  .rail-play + .workspace .quick-create-form .primary-button,");
-    expect(stylesSource).toContain("min-height: 40px;\n    padding-inline: 8px;\n    font-size: 14px;");
+    expect(stylesSource).toContain("min-height: 40px;\n    padding-inline: 8px;\n    font-size: var(--type-control);");
     expect(stylesSource).toContain(".rail-play + .workspace .quick-create-form input[aria-label=\"Token name\"],");
     expect(stylesSource).toContain(".rail-prep + .workspace .quick-create-form input[aria-label=\"Token name\"] {\n    grid-column: 1 / -1;");
     expect(stylesSource).toContain(".rail-play + .workspace .quick-create-form .primary-button,\n  .rail-prep + .workspace .quick-create-form .primary-button {\n    grid-column: auto;");
@@ -326,7 +326,7 @@ describe("desktop layout regressions", () => {
     expect(stylesSource).toContain("flex-wrap: wrap;\n    justify-content: center;\n    gap: 6px;");
     expect(stylesSource).toContain("max-width: calc(100svw - 24px);\n    padding: 6px;\n    overflow-x: visible;");
     expect(stylesSource).toContain(".toolbar:has(.tool-more[open]) {\n  z-index: 9;");
-    expect(stylesSource).toContain("background: #0a0f16;");
+    expect(stylesSource).toContain("background: var(--surface-0);");
     expect(stylesSource).toContain(".toolbar .tool,\n  .toolbar .icon-button {\n    width: 40px;\n    min-width: 40px;\n    height: 40px;");
     expect(stylesSource).toContain(".workspace:has(.modal-backdrop) {\n  position: relative;\n  z-index: 90;");
     expect(stylesSource).toContain(".modal-backdrop {\n    padding: 14px 14px calc(86px + env(safe-area-inset-bottom, 0px));");
@@ -349,13 +349,13 @@ describe("desktop layout regressions", () => {
     expect(stylesSource).toContain(".rail-play .rail-mode {\n    flex: 1 1 auto;\n    position: static;\n    display: flex;");
     expect(stylesSource).toContain("min-height: 40px;\n    padding: 0;\n    overflow-x: auto;");
     expect(stylesSource).toContain(".rail-play .workspace-mode-switcher .ghost-button {\n    flex: 1 1 0;");
-    expect(stylesSource).toContain("min-width: 0;\n    min-height: 38px;\n    padding: 0 4px;\n    font-size: 11px;");
+    expect(stylesSource).toContain("min-width: 0;\n    min-height: 38px;\n    padding: 0 4px;\n    font-size: var(--type-small);");
     expect(appSource).toContain('aria-label="AI Agent" title="AI Agent"');
     expect(appSource).toContain("ai-agent-toggle-label-compact");
     expect(appSource).toContain("Audio");
     expect(stylesSource).toContain(".rail-play .ai-agent-toggle {\n    flex: 0 0 62px;");
     expect(stylesSource).toContain("width: 62px;\n    min-width: 62px;\n    min-height: 36px;\n    padding: 0 6px;\n    gap: 4px;\n    font-size: 0;");
-    expect(stylesSource).toContain(".rail-play .ai-agent-toggle-label-compact {\n    display: inline;\n    font-size: 11px;");
+    expect(stylesSource).toContain(".rail-play .ai-agent-toggle-label-compact {\n    display: inline;\n    font-size: var(--type-small);");
     expect(stylesSource).toContain(".rail-play .ai-agent-toggle {\n    flex: 0 0 44px;\n    width: 44px;\n    min-width: 44px;\n    padding: 0;\n    gap: 0;\n  }");
     expect(stylesSource).toContain(".chat-composer-dock {\n    gap: 5px;\n    padding: 8px;");
     expect(stylesSource).toContain(".workspace-prep .inspector-tabs,\n  .workspace-prep .inspector > .tabs {\n    grid-template-columns: repeat(4, minmax(0, 1fr));\n    gap: 5px;");
@@ -395,7 +395,7 @@ describe("desktop layout regressions", () => {
 
   it("keeps small board token initials legible instead of clipping into one-letter ellipses", () => {
     expect(stylesSource).toContain(".token .token-label {\n  max-width: calc(100% - 4px);");
-    expect(stylesSource).toContain("font-size: 10px;\n  line-height: 1;");
+    expect(stylesSource).toContain("font-size: var(--type-small);\n  line-height: 1;");
   });
 
   it("makes the layer stack readable and targetable after moving it away from lower controls", () => {
