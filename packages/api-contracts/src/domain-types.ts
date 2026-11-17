@@ -603,6 +603,7 @@ export interface VisionSnapshot {
   polygons: VisionPolygon[];
   sceneUpdatedAt?: Timestamps["updatedAt"];
   visibleTokens?: Token[];
+  visibleTokenAssets?: MapAsset[];
 }
 
 export interface VisionPointSample {
