@@ -249,6 +249,12 @@ export interface AiProviderRequest {
   surface?: string;
   signal?: AbortSignal;
   executeTool?: (toolName: string, input: unknown) => Promise<unknown>;
+  /**
+   * Whether this caller may start the provider's own interactive sign-in. Provider
+   * sign-in binds server-wide credentials, so hosts should only allow it for
+   * server administrators; otherwise providers just report that sign-in is needed.
+   */
+  providerLoginAllowed?: boolean;
 }
 
 export type AiProviderEvent =

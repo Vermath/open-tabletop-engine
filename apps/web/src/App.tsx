@@ -7125,7 +7125,7 @@ export function App() {
         aiAgentPendingAuthRequestRef.current = { prompt, requestMessages, selectedAssetId: requestSelectedAssetId };
         const promptMessage = opened
           ? "Codex sign-in opened. Finish the ChatGPT OAuth flow; the original agent request will resume automatically."
-          : "Codex sign-in is required. Use the sign-in button below; the original agent request will resume automatically.";
+          : codexAuth.authUrl ?? codexAuth.verificationUrl ? "Codex sign-in is required. Use the sign-in button below; the original agent request will resume automatically." : "Codex needs a ChatGPT sign-in, which only a server admin can start. Ask a server admin to send one AI request, then try again.";
         setAiAgentCodexAuth({ ...codexAuth, opened, message: promptMessage });
         clearPendingAiAgentAssistantMessage();
         if (!options.authRetry) setAiAgentMessages((messages) => [...messages, { id: `agent-auth-${Date.now()}`, role: "system", content: promptMessage, createdAt: new Date().toISOString() }]);
@@ -11142,7 +11142,7 @@ function AiAgentPanel(props: {
                   <KeyRound size={16} /> Open sign-in
                 </button>
               ) : (
-                <span className="ai-agent-auth-missing">No sign-in link</span>
+                <span className="ai-agent-auth-missing">Server admin sign-in needed</span>
               )}
               {props.codexAuth.userCode && (
                 <div className="ai-agent-auth-code">

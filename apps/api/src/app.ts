@@ -399,6 +399,7 @@ export interface ImageAssetGenerationInput {
   campaignId: string;
   userId: string;
   signal?: AbortSignal;
+  providerLoginAllowed?: boolean;
 }
 
 export interface GeneratedImageAsset {
@@ -8327,7 +8328,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         const sourceId = context.sources?.find((source) => source.locator === `pdf:${sourceName}:page:${page.pageNumber}`)?.id;
         const pagePrompt = pdfContentImportPagePrompt({ sourceName, pageNumber: page.pageNumber, pageCount, text: JSON.stringify({ content: page.text.slice(0, pdfContentImportMaxPageChars()), boundary: "untrusted_data", sourceId: sourceId ?? "missing" }) });
         let providerOutput = "";
-        for await (const event of aiProvider.stream({ threadId: thread.id, messages: [{ role: "user", content: pagePrompt }], tools: [], context, surface: "pdf_content_import", model: agentModel(), reasoningEffort: agentReasoningEffort(process.env.OTTE_PDF_IMPORT_REASONING_EFFORT ?? "high"), signal: providerSignal })) {
+        for await (const event of aiProvider.stream({ threadId: thread.id, messages: [{ role: "user", content: pagePrompt }], tools: [], context, surface: "pdf_content_import", model: agentModel(), reasoningEffort: agentReasoningEffort(process.env.OTTE_PDF_IMPORT_REASONING_EFFORT ?? "high"), signal: providerSignal, providerLoginAllowed: isServerAdminUser(store, userId) })) {
           events.push(event);
           if (event.type === "usage.reported") mergeAiUsage(thread, event.usage);
           if (event.type === "message.delta") providerOutput += event.delta;
@@ -8830,6 +8831,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       else store.state.aiThreads.push(structuredClone(thread));
     };
     const providerInput: AiProviderRequest = {
+      // Codex sign-in binds the server's provider account, so only server admins may start it.
+      providerLoginAllowed: isServerAdminUser(store, userId),
       threadId: thread.id,
       messages: agentMessagesForRequest(prompt, request.body),
       tools: providerTools,
@@ -9155,7 +9158,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     let providerOutput = "";
     const events: AiProviderEvent[] = [];
     try {
-      for await (const event of aiProvider.stream({ threadId: thread.id, messages: [{ role: "user", content: prompt }], tools: [], context, signal: providerSignal })) {
+      for await (const event of aiProvider.stream({ threadId: thread.id, messages: [{ role: "user", content: prompt }], tools: [], context, signal: providerSignal, providerLoginAllowed: isServerAdminUser(store, userId) })) {
         events.push(event);
         if (event.type === "usage.reported") {
           mergeAiUsage(thread, event.usage);
@@ -9432,7 +9435,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       completeAiThread(thread, startedAtMs, 0, events.length, 0);
     } else {
       try {
-        for await (const event of aiProvider.stream({ threadId: thread.id, messages: [{ role: "user", content: prompt }], tools: [], context, signal: providerSignal })) {
+        for await (const event of aiProvider.stream({ threadId: thread.id, messages: [{ role: "user", content: prompt }], tools: [], context, signal: providerSignal, providerLoginAllowed: isServerAdminUser(store, userId) })) {
           events.push(event);
           if (event.type === "usage.reported") mergeAiUsage(thread, event.usage);
           if (event.type === "message.delta") providerOutput += event.delta;
@@ -9592,7 +9595,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       completeAiThread(thread, startedAtMs, 0, events.length, 0);
     } else {
       try {
-        for await (const event of aiProvider.stream({ threadId: thread.id, messages: [{ role: "user", content: providerPrompt }], tools: [], context, signal: providerSignal })) {
+        for await (const event of aiProvider.stream({ threadId: thread.id, messages: [{ role: "user", content: providerPrompt }], tools: [], context, signal: providerSignal, providerLoginAllowed: isServerAdminUser(store, userId) })) {
           events.push(event);
           if (event.type === "usage.reported") mergeAiUsage(thread, event.usage);
           if (event.type === "message.delta") providerOutput += event.delta;
@@ -13309,7 +13312,7 @@ class CodexAppServerImageAssetGenerator implements ImageAssetGenerator {
   }
 
   async generate(input: ImageAssetGenerationInput): Promise<GeneratedImageAsset> {
-    const image = await this.transport.generateImage({ prompt: imageGenerationPrompt(input), outputFormat: input.outputFormat ?? "png", sourceImages: input.sourceImageUrl ? [{ url: input.sourceImageUrl, mimeType: input.sourceImageMimeType }] : undefined, signal: input.signal, baseInstructions: "You generate raster map and token artwork for OpenTabletop Engine virtual tabletop campaigns.", developerInstructions: "Use Codex app-server image generation. If a source image is attached, use it as the visual reference for the requested edit or variant. Return an actual generated raster image result. Do not return SVG, HTML, markdown art, or a textual placeholder." });
+    const image = await this.transport.generateImage({ prompt: imageGenerationPrompt(input), outputFormat: input.outputFormat ?? "png", sourceImages: input.sourceImageUrl ? [{ url: input.sourceImageUrl, mimeType: input.sourceImageMimeType }] : undefined, signal: input.signal, providerLoginAllowed: input.providerLoginAllowed === true, baseInstructions: "You generate raster map and token artwork for OpenTabletop Engine virtual tabletop campaigns.", developerInstructions: "Use Codex app-server image generation. If a source image is attached, use it as the visual reference for the requested edit or variant. Return an actual generated raster image result. Do not return SVG, HTML, markdown art, or a textual placeholder." });
     const body = Buffer.from(image.base64, "base64");
     return { body, mimeType: mimeTypeForGeneratedImage(body, input.outputFormat ?? "png"), provider: this.id, model: this.options.model, revisedPrompt: image.revisedPrompt, sourcePrompt: input.prompt };
   }
@@ -16780,7 +16783,7 @@ function createAiToolContext(
     generateImageAsset: async ({ kind, prompt, name, folder, tags, size, quality, outputFormat, sourceImageUrl, sourceImageMimeType }) => {
       const sourcePrompt = prompt.trim();
       if (!sourcePrompt) return { error: "invalid_tool_input", message: "Prompt is required." };
-      const generated = await runtime.imageAssetGenerator.generate({ kind, prompt: sourcePrompt, name, size, quality, outputFormat, sourceImageUrl, sourceImageMimeType, campaignId, userId, signal });
+      const generated = await runtime.imageAssetGenerator.generate({ kind, prompt: sourcePrompt, name, size, quality, outputFormat, sourceImageUrl, sourceImageMimeType, campaignId, userId, signal, providerLoginAllowed: isServerAdminUser(store, userId) });
       if (signal?.aborted) return { error: "tool_cancelled", message: "Agent turn stopped by the user." };
       if (generated.body.length === 0) return { error: "image_generation_failed", message: "Generated image body was empty." };
       const rasterMimeType = rasterMimeTypeForGeneratedImage(generated.body);
