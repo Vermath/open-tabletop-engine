@@ -7,6 +7,7 @@
     "playwright.config.ts",
     "playwright.bootstrap.config.ts",
     "playwright.crossbrowser.config.ts",
+    "playwright.demo.config.ts",
     "playwright.multiplayer.config.ts",
     "tests/e2e/**/*.ts"
   ]
