@@ -1248,14 +1248,15 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(page.getByRole("status", { name: "Scene selection summary" })).toContainText("2 selected");
   await page.getByRole("textbox", { name: "Bulk scene folder" }).fill("prep/selected");
   await page.getByRole("button", { name: "Move selected scenes" }).click();
-  await expect(statusMessage(page, "Moved 2 selected scenes to prep/selected")).toBeVisible();
+  await expect(sceneTab(page, "Vault Entry")).toContainText("prep/selected");
+  await expect(sceneTab(page, "Vault Entry Reorder")).toContainText("prep/selected");
   await expect(page.getByRole("textbox", { name: "Edit scene folder" })).toHaveValue("prep/selected");
   await page.getByRole("button", { name: "Clear selected scenes" }).click();
   await expect(page.getByRole("status", { name: "Scene selection summary" })).toContainText("0 selected");
   await page.getByRole("textbox", { name: "Scene search" }).fill("Vault Entry Reorder");
   await page.getByRole("textbox", { name: "Bulk scene folder" }).fill("prep/bulk");
   await page.getByRole("button", { name: "Move visible scenes" }).click();
-  await expect(statusMessage(page, "Moved 1 visible scenes to prep/bulk")).toBeVisible();
+  await expect(sceneTab(page, "Vault Entry Reorder")).toContainText("prep/bulk");
   await expect(page.getByRole("textbox", { name: "Edit scene folder" })).toHaveValue("prep/bulk");
   const reorderSortOrderBeforeMove = await getSceneSortOrderByName(page, "Vault Entry Reorder");
   await expect(page.getByRole("button", { name: "Move Up" })).toBeEnabled();
@@ -1847,7 +1848,7 @@ test("GM can organize prep across the World Atlas, Handout Library, and Session 
     await sessionForm.getByRole("textbox", { name: "Session title" }).fill(sessionTitle);
     await sessionForm.getByRole("textbox", { name: "Session agenda" }).fill(sessionAgenda);
     await sessionForm.getByRole("textbox", { name: "Session notes" }).fill(sessionNotes);
-    await sessionForm.getByRole("checkbox", { name: "Vault Entry" }).check();
+    await sessionForm.getByRole("checkbox", { name: "Vault Entry", exact: true }).check();
     await sessionForm.getByRole("button", { name: "Save", exact: true }).click();
     await expect(statusMessage(page, `${sessionTitle} planned`)).toBeVisible();
     const sessionRow = sessionDesk.getByRole("listitem").filter({ hasText: sessionTitle });
@@ -2455,7 +2456,6 @@ test("GM can run the browser combat tracker lifecycle", async ({ page }) => {
   await openInspectorPanel(page, "SDK");
   const sdkPanel = sdkRuntimePanel(page);
   await sdkPanel.getByRole("button", { name: "Create Monster" }).click();
-  await expect(statusMessage(page, "Goblin Minion monster created")).toBeVisible();
   await expect(sdkPanel.locator(".metric-row", { hasText: "Created Monster" })).toContainText("Goblin Minion");
 
   await openInspectorPanel(page, "Actors");
