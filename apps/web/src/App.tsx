@@ -379,6 +379,7 @@ export function App() {
   const [activeDiceCasts, setActiveDiceCasts] = useState<DiceCastPlan[]>([]);
   const [concealedRollIds, setConcealedRollIds] = useState<Set<string>>(() => new Set());
   const seenCastRollIdsRef = useRef<Set<string> | null>(null);
+  const diceCastEpochRef = useRef(0);
   const dice3dEnabledRef = useRef(dice3dEnabled);
   const diceRevealTimersRef = useRef<Map<string, number>>(new Map());
   const diceRevealStatusesRef = useRef<Map<string, string>>(new Map());
@@ -2369,24 +2370,18 @@ export function App() {
     }, 100);
     return () => window.clearTimeout(preloadTimer);
   }, [dice3dEnabled, snapshotReady]);
-  useLayoutEffect(() => () => { clearPhysicsDice(); }, [campaignId, currentUserId]);
-  useEffect(() => {
-    if (dice3dEnabled) return;
-    clearPhysicsDice();
-    setActiveDiceCasts([]);
-    for (const timerId of diceRevealTimersRef.current.values()) window.clearTimeout(timerId);
-    diceRevealTimersRef.current.clear();
-    diceRevealStatusesRef.current.clear();
-    setConcealedRollIds(new Set());
-  }, [dice3dEnabled]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    setActiveDiceCasts([]);
+    setConcealedRollIds(new Set());
     return () => {
+      diceCastEpochRef.current += 1;
+      clearPhysicsDice();
       for (const timerId of diceRevealTimersRef.current.values()) window.clearTimeout(timerId);
       diceRevealTimersRef.current.clear();
       diceRevealStatusesRef.current.clear();
     };
-  }, []);
+  }, [campaignId, currentUserId, dice3dEnabled]);
 
   useLayoutEffect(() => {
     if (!snapshotReady) return;
@@ -2401,7 +2396,8 @@ export function App() {
     const casts = fresh.slice(-2).map((roll) => diceCastPlan(roll)).filter((cast) => cast.dice.length > 0);
     if (casts.length === 0) return;
     const reduceMotion = resolvedUserPreferences(snapshot.session?.user ?? {}).reducedMotion || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const castIsCurrent = () => dice3dEnabledRef.current && workspaceRequestIsCurrent(campaignId, currentUserId);
+    const castEpoch = diceCastEpochRef.current;
+    const castIsCurrent = () => castEpoch === diceCastEpochRef.current && dice3dEnabledRef.current && workspaceRequestIsCurrent(campaignId, currentUserId);
     for (const cast of casts) {
       if (reduceMotion || dice3dPreferenceEnvironment().saveData) {
         playInterfaceCue("dice");

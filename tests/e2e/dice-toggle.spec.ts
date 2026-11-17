@@ -130,6 +130,51 @@ async function rollFromPage(page: Page, formula: string, visibility: "public" | 
   }, { apiBaseUrl, formula, visibility });
 }
 
+test("leaving a campaign during a cast releases its concealed chat result", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("otte:dice3d", "on"));
+  let unblockDiceAssets!: () => void;
+  const diceAssetsPaused = new Promise<void>((resolve) => { unblockDiceAssets = resolve; });
+  await page.route("**/assets/dice-box/**", async (route) => {
+    await diceAssetsPaused;
+    await route.continue();
+  });
+  try {
+    await loginSeededDemo(page);
+    const campaignName = "Dice switch " + Date.now().toString(36);
+    await page.evaluate(async ({ apiBaseUrl, campaignName }) => {
+      const response = await fetch(`${apiBaseUrl}/api/v1/campaigns`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID() },
+        body: JSON.stringify({ name: campaignName })
+      });
+      if (!response.ok) throw new Error(await response.text());
+    }, { apiBaseUrl, campaignName });
+    await page.reload();
+    await openInspectorPanel(page, "Chat");
+    await ensure3dDiceEnabled(page);
+    await page.getByRole("textbox", { name: "Dice formula" }).fill("1d4+61");
+    await page.getByRole("button", { name: "Roll dice" }).click();
+    const rollTotal = page.locator(".chat-roll-card").filter({ hasText: "1d4+61" }).locator(".chat-roll-total");
+    await expect(rollTotal).toHaveText("...");
+
+    async function switchCampaign(name: string) {
+      const switcher = page.locator("details.campaign-switcher");
+      if (!(await switcher.evaluate((element) => (element as HTMLDetailsElement).open))) {
+        await switcher.locator("summary").click();
+      }
+      await page.getByRole("navigation", { name: "Campaigns" }).getByRole("button", { name, exact: true }).click();
+      await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText(name);
+    }
+    await switchCampaign(campaignName);
+    await switchCampaign("The Ember Vault");
+    await openInspectorPanel(page, "Chat");
+    await expect(rollTotal).toHaveText(/6[2-5]/);
+    await expect(page.locator(".dice-cast-label")).toHaveCount(0);
+  } finally {
+    unblockDiceAssets();
+  }
+});
 
 test("the dice stage bounds callouts to the board and only displays rolls visible to its viewer", async ({ page, browser, baseURL }) => {
   if (!baseURL) throw new Error("The dice test needs a web base URL.");
