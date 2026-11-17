@@ -551,7 +551,7 @@ export function EncounterBuilderDialog(props: {
             </button>
           </div>
           <div className="encounter-saved-list">
-            {availableSavedEncounters.length === 0 ? <EmptyState icon={<Swords size={17} />} text="No saved encounters yet." action={props.canSave ? { label: "Start an encounter", run: beginNewEncounter } : undefined} /> : availableSavedEncounters.map((encounter) => {
+            {availableSavedEncounters.length === 0 ? <EmptyState icon={<Swords size={17} />} text="No saved encounters yet." action={props.canSave ? { label: "Start an encounter", disabled: saving || deleting, run: beginNewEncounter } : undefined} /> : availableSavedEncounters.map((encounter) => {
               const compositionAvailable = encounter.systemId === props.systemId && encounter.threats !== undefined;
               return (
                 <button

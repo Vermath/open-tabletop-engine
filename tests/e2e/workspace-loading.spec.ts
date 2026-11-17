@@ -115,3 +115,72 @@ test("a scene draft edited while the destination loads stays on the original sce
     release();
   }
 });
+
+test("a search result opens the requested scene across worlds", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Demo GM", exact: true }).click();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
+  const campaignPath = "/api/v1/campaigns/camp_demo";
+  const revision = async () => (await gmApi<{ updatedAt: string }>(page, "GET", campaignPath)).updatedAt;
+  const world = await gmApi<{ id: string }>(page, "POST", campaignPath + "/worlds", {
+    name: "Other world " + crypto.randomUUID().slice(0, 8), expectedUpdatedAt: await revision()
+  });
+  await gmApi(page, "POST", campaignPath + "/scenes", {
+    name: "First scene in other world", worldId: world.id, expectedUpdatedAt: await revision()
+  });
+  const destination = await gmApi<{ id: string; name: string }>(page, "POST", campaignPath + "/scenes", {
+    name: "Hidden Harbor " + crypto.randomUUID().slice(0, 8), worldId: world.id, expectedUpdatedAt: await revision()
+  });
+  await page.reload();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/api/v1/campaigns/camp_demo/snapshot*", async (route) => {
+    if (new URL(route.request().url()).searchParams.get("sceneId") === destination.id) await pending;
+    await route.continue();
+  });
+  try {
+    await page.getByRole("tab", { name: "Search", exact: true }).click();
+    const search = page.getByRole("region", { name: "Campaign Search" });
+    await search.getByRole("textbox", { name: "Search this campaign" }).fill(destination.name);
+    await search.getByRole("button", { name: new RegExp(destination.name) }).click();
+    await expect(page.getByRole("progressbar", { name: "Loading selected scene" })).toBeVisible();
+    await expect(page.getByRole("group", { name: "Vault Entry interactive battle map" })).toBeVisible();
+    release();
+    await expect(page.getByRole("group", { name: destination.name + " interactive battle map" })).toBeVisible();
+    await expect(page.getByRole("progressbar", { name: "Loading selected scene" })).toHaveCount(0);
+  } finally {
+    release();
+  }
+});
+
+test("the empty saved-encounter action is disabled during the first save", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Demo GM", exact: true }).click();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
+  await page.getByRole("button", { name: "Open command palette" }).click();
+  const palette = page.getByRole("dialog", { name: "Command palette" });
+  await palette.getByRole("textbox", { name: "Command palette search" }).fill("Open Encounter Builder");
+  await palette.getByRole("option", { name: /Open Encounter Builder/ }).click();
+  const dialog = page.getByRole("dialog", { name: "Encounter builder" });
+  const startEncounter = dialog.getByRole("button", { name: "Start an encounter" });
+  await expect(startEncounter).toBeEnabled();
+  await dialog.getByRole("textbox", { name: "Encounter name" }).fill("First saved encounter");
+  await dialog.getByRole("textbox", { name: "Search encounter threats" }).fill("Goblin");
+  const goblin = dialog.locator("article.encounter-threat").filter({ hasText: "Goblin" }).first();
+  await goblin.getByRole("button", { name: "Add" }).click();
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/encounter-plan", async (route) => {
+    if (route.request().postDataJSON()?.createEncounter) await pending;
+    await route.continue();
+  });
+  try {
+    await dialog.getByRole("button", { name: "Save encounter", exact: true }).click();
+    await expect(startEncounter).toBeDisabled();
+    release();
+    await expect(dialog.getByRole("region", { name: "Saved encounters" })).toContainText("First saved encounter");
+  } finally {
+    release();
+  }
+});

@@ -5,12 +5,12 @@ import "./workspace-states.css";
 export function EmptyState({ icon, text, action }: {
   icon: ReactNode;
   text: string;
-  action?: { label: string; run(): void };
+  action?: { label: string; disabled?: boolean; run(): void };
 }) {
   return <div className="table-empty-state">
     <span className="table-empty-icon" aria-hidden="true">{icon}</span>
     <p>{text}</p>
-    {action && <button className="primary-button small" type="button" onClick={action.run}>{action.label}</button>}
+    {action && <button className="primary-button small" type="button" disabled={action.disabled} onClick={action.run}>{action.label}</button>}
   </div>;
 }
 

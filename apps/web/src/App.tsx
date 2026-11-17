@@ -321,7 +321,7 @@ export function App() {
   const [snapshotReady, setSnapshotReady] = useState(false);
   const [campaignId, setCampaignId] = useState(() => initialStoredId("otte:selectedCampaignId", "camp_demo"));
   const [sceneSwitchTarget, setSceneSwitchTarget] = useState("");
-  const sceneSwitchRef = useRef<{ sceneId: string }>(undefined);
+  const sceneSwitchRef = useRef<{ sceneId: string; worldId?: string }>(undefined);
   const [sceneId, setSceneId] = useState(() => initialStoredId("otte:selectedSceneId", "scn_vault_entry"));
   const [selectedTokenId, setSelectedTokenIdState] = useState("tok_valen");
   const [selectedTokenIds, setSelectedTokenIds] = useState<string[]>(["tok_valen"]);
@@ -668,7 +668,7 @@ export function App() {
     .filter((scene) => sceneFolderFilter === "all" || scene.folder === sceneFolderFilter)
     .filter((scene) => !normalizedSceneSearch || [scene.name, scene.folder ?? "", scene.id].some((value) => value.toLocaleLowerCase().includes(normalizedSceneSearch)));
   const selectedPrepScenes = visibleScenes.filter((scene) => selectedPrepSceneIds.includes(scene.id));
-  const selectedScene = workspaceMode === "prep"
+  const selectedScene = workspaceMode === "prep" && !sceneSwitchTarget
     ? selectedSceneForWorldFilter(accessibleScenes, sceneId, selectedWorldId)
     : accessibleScenes.find((scene) => scene.id === sceneId) ?? accessibleScenes.find((scene) => scene.active);
   const canPreviewPlayer = hasPermission("campaign.update") && hasPermission("actor.readPrivate") && (hasPermission("scene.update") || selectedScene?.permissions?.[currentUserId]?.includes("scene.update") === true);
@@ -1309,7 +1309,7 @@ export function App() {
     }
   }
 
-  async function refresh(nextCampaignId = campaignId, nextSceneId = sceneId, options: { syncStatus?: boolean; selectSceneOnLoad?: () => boolean } = {}) {
+  async function refresh(nextCampaignId = campaignId, nextSceneId = sceneId, options: { syncStatus?: boolean; selectSceneOnLoad?: () => boolean; sceneWorldId?: string } = {}) {
     if (blankCanvasDemoOpen) {
       setSnapshotReady(true);
       if (options.syncStatus !== false) setStatus(blankCanvasDemoNotice);
@@ -1353,6 +1353,7 @@ export function App() {
     realtimeSelectionRef.current = { campaignId: resolvedCampaignId, sceneId: resolvedSceneId, userId: requestUserId };
     setCampaignId(resolvedCampaignId);
     setSceneId(resolvedSceneId);
+    if (options.sceneWorldId) setSelectedWorldId(options.sceneWorldId);
     // Selection belongs to the user, not the snapshot: keep it as long as the
     // tokens still exist, auto-select only on the very first load.
     const firstLoadToken = !snapshotReady && scene ? next.tokens.find((item) => item.sceneId === scene.id) : undefined;
@@ -2131,7 +2132,7 @@ export function App() {
   }, [tab, workspaceMode]);
 
   useEffect(() => {
-    if (workspaceMode !== "prep" || canonicalPrepSceneId === sceneId) return;
+    if (workspaceMode !== "prep" || canonicalPrepSceneId === sceneId || sceneSwitchRef.current) return;
     // During a campaign switch the previous snapshot can render once under the
     // new campaign id. Wait for its scene collection instead of persisting an
     // id from the old campaign as the new canonical selection.
@@ -2144,7 +2145,7 @@ export function App() {
         setStatus(`Scene selection changed; refresh failed: ${errorMessage(syncError)}`);
       }
     });
-  }, [campaignId, canonicalPrepSceneId, currentUserId, sceneId, workspaceMode]);
+  }, [campaignId, canonicalPrepSceneId, currentUserId, sceneId, sceneSwitchTarget, workspaceMode]);
 
   useEffect(() => {
     if (workspaceMode !== "live" && workspaceMode !== "prep") setTableFocusMode(false);
@@ -8807,27 +8808,26 @@ export function App() {
     setManageCategory(category);
     return true;
   };
-  const selectScene = (nextSceneId: string) => {
+  const selectScene = (nextSceneId: string, worldId?: string) => {
     if (blockCampaignSetupNavigation("leaving campaign setup")) return false;
-    if (nextSceneId === sceneSwitchRef.current?.sceneId) return true;
-    if (nextSceneId === sceneId) {
-      sceneSwitchRef.current = undefined;
-      setSceneSwitchTarget("");
-      if (workspaceMode === "prep" || shortPhone) showScene();
-      return true;
-    }
-    if (sceneEditorNavigationBlocked()) {
+    const pending = sceneSwitchRef.current;
+    if (pending?.sceneId === nextSceneId && pending.worldId === worldId) return true;
+    if (nextSceneId !== sceneId && sceneEditorNavigationBlocked()) {
       setStatus("Save or discard scene changes before switching scenes");
       return false;
     }
-    if (blankCanvasDemoOpen) setSceneId(nextSceneId);
-    else {
-      const intent = { sceneId: nextSceneId };
+    if (blankCanvasDemoOpen || nextSceneId === sceneId) {
+      sceneSwitchRef.current = undefined;
+      setSceneSwitchTarget("");
+      setSceneId(nextSceneId);
+      if (worldId) setSelectedWorldId(worldId);
+    } else {
+      const intent = { sceneId: nextSceneId, worldId };
       sceneSwitchRef.current = intent;
       setSceneSwitchTarget(nextSceneId);
       const isCurrent = () => sceneSwitchRef.current === intent && workspaceRequestIsCurrent(campaignId, currentUserId);
       const canSelect = () => canCommitSceneSwitch(isCurrent() && realtimeSelectionRef.current.sceneId === sceneId, sceneDraftDirtyRef.current);
-      void retrySceneSwitch(canSelect, () => refresh(campaignId, nextSceneId, { syncStatus: false, selectSceneOnLoad: canSelect }))
+      void retrySceneSwitch(canSelect, () => refresh(campaignId, nextSceneId, { syncStatus: false, selectSceneOnLoad: canSelect, sceneWorldId: worldId }))
         .catch((error) => { if (isCurrent()) reportError(error); })
         .finally(() => { if (isCurrent()) { sceneSwitchRef.current = undefined; setSceneSwitchTarget(""); } });
     }
@@ -8875,8 +8875,7 @@ export function App() {
         setStatus(`${result.title} is no longer available to this seat. Campaign search has refreshed.`);
         return;
       }
-      if (result.worldId) setSelectedWorldId(result.worldId);
-      if (!selectScene(result.id)) return;
+      if (!selectScene(result.id, result.worldId)) return;
     } else if (result.type === "actor") {
       if (!snapshot.actors.some((actor) => actor.id === result.target.id)) {
         setCampaignSearchFocus(undefined);
