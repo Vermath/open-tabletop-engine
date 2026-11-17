@@ -1,5 +1,6 @@
 import type { VisionSnapshot } from "@open-tabletop/core";
 import type { Snapshot } from "./api.js";
+import { sameSnapshotValue } from "./realtime-snapshot-delta.js";
 
 export function applySceneVision(snapshot: Snapshot, response: VisionSnapshot): Snapshot {
   const { visibleTokens, visibleTokenAssets, sceneUpdatedAt, ...vision } = response;
@@ -12,14 +13,20 @@ export function applySceneVision(snapshot: Snapshot, response: VisionSnapshot): 
   const tokens = snapshot.tokens.filter((token) => token.sceneId !== scene.id);
   for (const token of visibleTokens) {
     const current = known.get(token.id);
-    tokens.push(current && current.updatedAt > token.updatedAt ? current : token);
+    tokens.push(current && current.updatedAt >= token.updatedAt ? current : token);
   }
-  if (!visibleTokenAssets?.length) return { ...snapshot, vision, tokens };
-
-  const assets = new Map(snapshot.assets.map((asset) => [asset.id, asset]));
-  for (const asset of visibleTokenAssets) {
-    const current = assets.get(asset.id);
-    if (!current || current.updatedAt < asset.updatedAt) assets.set(asset.id, asset);
+  let assets = snapshot.assets;
+  if (visibleTokenAssets?.length) {
+    const knownAssets = new Map(assets.map((asset) => [asset.id, asset]));
+    let changed = false;
+    for (const asset of visibleTokenAssets) {
+      const current = knownAssets.get(asset.id);
+      if (current && current.updatedAt >= asset.updatedAt) continue;
+      knownAssets.set(asset.id, asset);
+      changed = true;
+    }
+    if (changed) assets = [...knownAssets.values()];
   }
-  return { ...snapshot, vision, tokens, assets: [...assets.values()] };
+  if (assets === snapshot.assets && sameSnapshotValue(snapshot.vision, vision) && snapshot.tokens.length === tokens.length && tokens.every((token, index) => token === snapshot.tokens[index])) return snapshot;
+  return { ...snapshot, vision, tokens, assets };
 }

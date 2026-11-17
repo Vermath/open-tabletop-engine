@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import type { boardRenderCounts } from "../../apps/web/src/board-render-counts.js";
 import type { Campaign, Scene, Token } from "../../packages/core/src/types.js";
 
 /**
@@ -14,9 +15,9 @@ const gmHeaders = { authorization: "Bearer otte-cookie-session", origin: webBase
 const tokenCount = 24;
 const wallCount = 30;
 
-type RenderCounts = Record<"token" | "lighting" | "darkness" | "difficultTerrain" | "walls" | "structureHandles" | "visionMask", number>;
+type RenderCounts = typeof boardRenderCounts;
 
-async function api<T>(page: Page, method: "GET" | "POST", path: string, data?: unknown): Promise<T> {
+async function api<T>(page: Page, method: "GET" | "POST" | "PATCH", path: string, data?: unknown): Promise<T> {
   const response = await page.request.fetch(`${apiBaseUrl}${path}`, {
     method, data,
     headers: { ...gmHeaders, ...(method === "GET" ? {} : { "idempotency-key": `board-isolation:${crypto.randomUUID()}` }) },
@@ -75,6 +76,30 @@ async function openScene(page: Page, scene: Scene): Promise<Locator> {
 
 const renderCounts = (page: Page) => page.evaluate(() => ({ ...(window as unknown as { __otteBoardRenderCounts: RenderCounts }).__otteBoardRenderCounts }));
 
+test("pasted tokens use the server revision on a browser with a fast clock", async ({ page }) => {
+  test.setTimeout(90_000);
+  await login(page);
+  const { scene } = await createBusyScene(page);
+  const board = await openScene(page, scene);
+  await page.clock.setFixedTime(new Date("2100-01-01T00:00:00Z"));
+  await board.getByRole("button", { name: /token Piece 01$/ }).click();
+  await page.keyboard.press("Control+c");
+  const createdResponse = page.waitForResponse((response) => response.request().method() === "POST" &&
+    new URL(response.url()).pathname === `/api/v1/scenes/${scene.id}/tokens`);
+  await page.keyboard.press("Control+v");
+  const created = await createdResponse;
+  expect(created.ok(), await created.text()).toBe(true);
+  const token = (await created.json()) as Token;
+  const piece = board.getByRole("button", { name: /token Piece 01 Copy$/ });
+  await piece.focus();
+  const moveResponse = page.waitForResponse((response) => response.request().method() === "POST" &&
+    new URL(response.url()).pathname === `/api/v1/scenes/${scene.id}/tokens/move`);
+  await page.keyboard.press("ArrowRight");
+  const moved = await moveResponse;
+  expect(moved.request().postDataJSON().changes).toContainEqual(expect.objectContaining({ tokenId: token.id, expectedUpdatedAt: token.updatedAt }));
+  expect(moved.ok(), await moved.text()).toBe(true);
+});
+
 /** Waits until the board has stopped rendering, so a later difference belongs to the action under test. */
 async function settledCounts(page: Page): Promise<RenderCounts> {
   let previous = await renderCounts(page);
@@ -112,6 +137,12 @@ test("moving one token re-renders that token, not the board", async ({ page }) =
 
   // The move itself still works and still shows.
   await expect.poll(() => piece.evaluate((element) => parseFloat((element as HTMLElement).style.left))).toBeGreaterThan((moved.x / scene.width) * 100);
+  const tokenX = async () => (await api<Token[]>(page, "GET", `/api/v1/scenes/${scene.id}/tokens`)).find(({ id }) => id === moved.id)?.x;
+  const movedX = await tokenX();
+  await page.keyboard.press("Control+z");
+  await expect.poll(tokenX).toBe(moved.x);
+  await page.keyboard.press("Control+Shift+z");
+  await expect.poll(tokenX).toBe(movedX);
 });
 
 test("zooming re-renders no token and no static layer", async ({ page }) => {
@@ -127,7 +158,11 @@ test("zooming re-renders no token and no static layer", async ({ page }) => {
   await expect.poll(async () => (await board.boundingBox())!.width).toBeGreaterThan(widthBefore * 1.2);
   const after = await settledCounts(page);
 
-  expect(after, "zoom resizes the board; nothing drawn in scene units needs to render again").toEqual(before);
+  const { app: appBefore, scene: sceneBefore, ...layersBefore } = before;
+  const { app: appAfter, scene: sceneAfter, ...layersAfter } = after;
+  expect(appAfter).toBeGreaterThan(appBefore);
+  expect(sceneAfter).toBeGreaterThan(sceneBefore);
+  expect(layersAfter, "zoom resizes the board; nothing drawn in scene units needs to render again").toEqual(layersBefore);
   // Everything still sits where the zoomed board puts it.
   await expect(board.locator("button.token")).toHaveCount(tokenCount);
   await expect(board.locator(".wall-layer line")).toHaveCount(wallCount);
@@ -147,4 +182,79 @@ test("selecting a wall re-renders the handles and leaves the tokens alone", asyn
   expect(after.structureHandles - before.structureHandles, "the handle list shows the selection").toBeGreaterThan(0);
   expect(after.token - before.token, "no token changed").toBe(0);
   expect(after.walls - before.walls, "the wall lines did not change").toBe(0);
+});
+
+test("an incoming chat message leaves the scene component alone", async ({ page }) => {
+  await login(page);
+  await expect(page.locator(".scene-board")).toBeVisible();
+  const showInspector = page.getByRole("button", { name: "Show inspector", exact: true });
+  if (await showInspector.isVisible()) await showInspector.click();
+  const inspector = page.getByRole("tablist", { name: "Inspector panels", exact: true });
+  await inspector.getByRole("tab", { name: /^Chat/ }).click();
+  const before = await settledCounts(page);
+  expect(before.scene).toBeGreaterThan(0);
+
+  const body = "Incoming table message " + crypto.randomUUID();
+  await api(page, "POST", "/api/v1/chat/messages", { campaignId, body, type: "plain", visibility: "public" });
+  await expect(page.getByRole("region", { name: "Chat", exact: true }).getByText(body, { exact: true })).toBeVisible();
+
+  const { app: appBefore, ...boardBefore } = before;
+  const { app: appAfter, ...boardAfter } = await renderCounts(page);
+  expect(appAfter).toBeGreaterThan(appBefore);
+  expect(boardAfter).toEqual(boardBefore);
+});
+
+test("a player sees the moved token and its updated vision on a second client", async ({ browser, page }) => {
+  test.setTimeout(90_000);
+  await login(page);
+  const scenes = await api<Scene[]>(page, "GET", "/api/v1/campaigns/" + campaignId + "/scenes");
+  const previous = scenes.find((scene) => scene.active);
+  const campaign = await api<Campaign>(page, "GET", "/api/v1/campaigns/" + campaignId);
+  const scene = await api<Scene>(page, "POST", "/api/v1/campaigns/" + campaignId + "/scenes", {
+    name: "Vision reconciliation " + crypto.randomUUID().slice(0, 8),
+    width: 800, height: 600, gridType: "square", gridSize: 50, visibilityMode: "fog",
+    expectedUpdatedAt: campaign.updatedAt,
+  });
+  const scenePath = "/api/v1/scenes/" + scene.id;
+  const player = await browser.newPage({ baseURL: webBaseUrl, viewport: { width: 1440, height: 900 } });
+  try {
+    await api(page, "POST", scenePath + "/fog", {
+      x: 650, y: 450, radius: 50, hidden: false, expectedUpdatedAt: scene.updatedAt,
+    });
+    const fogged = await api<Scene>(page, "GET", scenePath);
+    const token = await api<Token>(page, "POST", scenePath + "/tokens", {
+      name: "Player lantern", x: 200, y: 200, width: 50, height: 50, visionEnabled: true, visionRadius: 150,
+      ownerUserIds: ["usr_demo_player"], expectedUpdatedAt: fogged.updatedAt,
+    });
+    const prepared = await api<Scene>(page, "GET", scenePath);
+    await api(page, "PATCH", scenePath, { active: true, expectedUpdatedAt: prepared.updatedAt });
+    await page.reload();
+    await page.getByRole("button", { name: "Live Table", exact: true }).click();
+    await page.locator(".scene-tab").filter({ hasText: scene.name }).click();
+    await login(player);
+    const sessionUser = player.getByRole("combobox", { name: "Session user", exact: true });
+    await sessionUser.selectOption("usr_demo_player");
+    await expect(sessionUser).toHaveValue("usr_demo_player");
+    await expect(player.locator(".session-pulse")).toHaveAttribute("data-connection-state", "connected");
+    const tokenSelector = ".scene-board button[data-token-id='" + token.id + "']";
+    const playerToken = player.locator(tokenSelector);
+    await expect(playerToken).toBeVisible();
+    const outline = player.locator(".scene-board .vision-mask-layer .vision-outline.token").first();
+    await expect(outline).toHaveAttribute("points", /\d/);
+    const oldOutline = await outline.getAttribute("points");
+    const oldPosition = await playerToken.evaluate((element) => element.style.left);
+
+    const moved = page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === scenePath + "/tokens/move");
+    await page.locator(tokenSelector).press("ArrowRight");
+    expect((await moved).ok()).toBe(true);
+    await expect.poll(() => playerToken.evaluate((element) => element.style.left)).not.toBe(oldPosition);
+    await expect.poll(() => outline.getAttribute("points")).not.toBe(oldOutline);
+  } finally {
+    await player.close();
+    if (previous) {
+      const path = "/api/v1/scenes/" + previous.id;
+      const latest = await api<Scene>(page, "GET", path);
+      await api(page, "PATCH", path, { active: true, expectedUpdatedAt: latest.updatedAt });
+    }
+  }
 });

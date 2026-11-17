@@ -46,7 +46,7 @@ function harness(tokens = [token("hero")], selectedTokenIds: string[] = []) {
     tokens, props: {
       scene, zoom: 0.75, selectedTokenIds, canMoveToken: true, canResizeToken: true,
       fogBrushMode: null, annotationTool: null, onSelect, onTokenMovePersist, onTokenResizePersist,
-      onTokenMoveCommit: vi.fn(), onTokenResizeCommit: vi.fn(), onMoved: vi.fn(async () => undefined),
+      onTokenResizeCommit: vi.fn(), onMoved: vi.fn(async () => undefined),
     },
     calibrationActive: false, activeLayerTokenIds: new Set(tokens.map((item) => item.id)), selectedTokenIdSet: new Set(selectedTokenIds),
     tokenDragRef, tokenResizeRef, pointerSelectedTokenRef, skipTokenRecentreRef, tokenFrameOverrides: {} as TokenFrameOverrides,
