@@ -86,9 +86,10 @@ test("scene switching retries when a realtime token edit supersedes the pending 
     const priorPosition = await piece.evaluate((element) => (element as HTMLElement).style.left);
     await target.click();
     await started;
-    const [token] = await gmApi<Array<{ id: string; x: number; updatedAt: string }>>(page, "GET", "/api/v1/scenes/scn_vault_entry/tokens");
-    expect(token?.id).toBe("tok_valen");
-    await gmApi(page, "PATCH", "/api/v1/tokens/tok_valen", { x: token!.x + 25, expectedUpdatedAt: token!.updatedAt });
+    const tokens = await gmApi<Array<{ id: string; x: number; updatedAt: string }>>(page, "GET", "/api/v1/scenes/scn_vault_entry/tokens");
+    const token = tokens.find(({ id }) => id === "tok_valen");
+    if (!token) throw new Error("The vault is missing Valen's seeded token");
+    await gmApi(page, "PATCH", "/api/v1/tokens/tok_valen", { x: token.x + 25, expectedUpdatedAt: token.updatedAt });
     await expect.poll(() => piece.evaluate((element) => (element as HTMLElement).style.left)).not.toBe(priorPosition);
     release();
     await expect(page.getByRole("group", { name: scene.name + " interactive battle map" })).toBeVisible();
