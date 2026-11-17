@@ -9440,6 +9440,14 @@ function dnd5eSrdMonsterThreat(id: string, name: string, role: string, summary: 
   };
 }
 
+/** The standalone catalog lists placeable monster sources alongside importable actor items. */
+export function dnd5eSrdMonsterCatalog() {
+  return dnd5eSrdEncounterThreats().map((threat) => ({
+    id: 'srd-monster:' + threat.id, type: "monster", name: threat.name, summary: threat.summary,
+    data: { challengeRating: threat.challengeRating }, provenance: structuredClone(DND_5E_SRD_COMPENDIUM_PROVENANCE),
+  }));
+}
+
 export function dnd5eSrdMonsterActorData(threatId: string): Record<string, unknown> | undefined {
   const threat = dnd5eSrdEncounterThreats().find((item) => item.id === threatId);
   if (!threat) return undefined;

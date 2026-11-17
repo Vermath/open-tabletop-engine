@@ -1,3 +1,4 @@
+import { compendiumPlacementActions, type BoardAction, type PlacementAttempts } from "./compendium-placement-client.js";
 import { EmptyState, WorkspaceLoading, canCommitSceneSwitch, preloadWorkspaceScene, retrySceneSwitch } from "./workspace-states.js";
 import { resolveChatRecipientId } from "./chat-recipient.js";
 import { annotationTranslationDelta } from "@open-tabletop/core";
@@ -19,7 +20,7 @@ import { actorForSelection, adversaryActorsForSceneBoard, isAdversaryActor } fro
 import { assetThumbnailUrl } from "./api.js";
 import { activeSceneAnnotations } from "./annotation-expiry.js";
 import { applyActiveSceneIdentity, applyAuthoritativeScene } from "./active-scene-state.js";
-import { applyLocalBoardHistoryAction, boardHistoryStatus, createTokenCopies, type BoardHistoryAction, type BoardHistoryDirection, type BoardTokenFrameChange } from "./board-history.js";
+import { tokenRestorePayload, applyLocalBoardHistoryAction, boardHistoryStatus, createTokenCopies, type BoardHistoryAction, type BoardHistoryDirection, type BoardTokenFrameChange } from "./board-history.js";
 import { blankCanvasDemoCampaignId, blankCanvasDemoNotice, blankCanvasDemoSceneId, blankCanvasDemoUserId, createBlankCanvasDemoAsset, createBlankCanvasDemoSnapshot, seededDemoLoginErrorMessage, seededDemoUnavailableMessage } from "./blank-canvas-demo.js";
 import { scenePointFromClient } from "./board-geometry.js";
 import { boardKeyboardAction } from "./board-keyboard.js";
@@ -337,8 +338,9 @@ export function App() {
   const [selectedActorId, setSelectedActorId] = useState("");
   const [selectedBoardAssetId, setSelectedBoardAssetId] = useState("");
   const [activeTokenLayer, setActiveTokenLayer] = useState<TokenLayer>("player");
-  const boardUndoStack = useRef<BoardHistoryAction[]>([]);
-  const boardRedoStack = useRef<BoardHistoryAction[]>([]);
+  const monsterPlacementAttempts = useRef<PlacementAttempts>(new Map());
+  const boardUndoStack = useRef<BoardAction[]>([]);
+  const boardRedoStack = useRef<BoardAction[]>([]);
   const [boardClipboardTokens, setBoardClipboardTokens] = useState<Token[]>([]);
   const boardSyncQueueRef = useRef(Promise.resolve());
   const [battleMapZoom, setBattleMapZoom] = useState(1);
@@ -1194,6 +1196,7 @@ export function App() {
     tokenAuthoritativeRef.current.clear();
     sceneSwitchRef.current = undefined; setSceneSwitchTarget("");
     boardSyncQueueRef.current = Promise.resolve();
+    monsterPlacementAttempts.current.clear();
     boardUndoStack.current = [];
     boardRedoStack.current = [];
     setBoardClipboardTokens([]);
@@ -3921,8 +3924,33 @@ export function App() {
     return created;
   }
 
+  const monsterPlacement = compendiumPlacementActions({
+    attempts: monsterPlacementAttempts.current,
+    scene: selectedScene, canPlace: !blankCanvasDemoOpen && hasPermission("actor.create") && hasPermission("token.create"),
+    currentScene: () => snapshotRef.current.scenes.find((scene) => scene.id === realtimeSelectionRef.current.sceneId),
+    run: runWorkspaceBoundAction, applyScene: applySceneToSnapshot, status: setStatus,
+    reconcile: (scene) => refresh(scene.campaignId, scene.id, { syncStatus: false }),
+    applyPair: (actor, token) => {
+      applyActorToSnapshot(actor);
+      applyTokensToSnapshot([token]);
+      setActiveTokenLayer("player");
+      selectSingleToken(token.id);
+      setSelectedActorId(actor.id);
+    },
+    removePair: (actorId, tokenId) => {
+      actorSheetAuthoritativeRef.current.delete(actorId);
+      tokenAuthoritativeRef.current.delete(tokenId);
+      setSnapshot((current) => ({ ...current, actors: current.actors.filter((actor) => actor.id !== actorId), tokens: current.tokens.filter((token) => token.id !== tokenId) }));
+      selectSingleToken("");
+    },
+    remember: (action) => {
+      if (!boardUndoStack.current.some((entry) => entry.kind === "monster.place" && entry.placementId === action.placementId)) pushBoardHistoryAction(action);
+    },
+  });
+
   async function createTokenFromDrop(payload: TokenDropPayload, point: VisionPoint) {
     tokenDropHandledRef.current = true;
+    if (payload.type === "monster" && payload.attemptId) return monsterPlacement.place(payload.id, payload.attemptId, point);
     await createToken({
       actorId: payload.actorId,
       imageAssetId: payload.imageAssetId,
@@ -4384,41 +4412,13 @@ export function App() {
     );
   }
 
-  function pushBoardHistoryAction(action: BoardHistoryAction) {
-    const size = action.kind === "tokens.move" || action.kind === "tokens.resize" ? action.changes.length : action.tokens.length;
+  function pushBoardHistoryAction(action: BoardAction) {
+    const size = action.kind === "monster.place" ? 1 : action.kind === "tokens.move" || action.kind === "tokens.resize" ? action.changes.length : action.tokens.length;
     if (size === 0) return;
     boardUndoStack.current = [...boardUndoStack.current, action].slice(-boardHistoryLimit);
     boardRedoStack.current = [];
   }
 
-  function tokenRestorePayload(token: Token): Partial<Token> {
-    return {
-      id: token.id,
-      actorId: token.actorId,
-      name: token.name,
-      x: token.x,
-      y: token.y,
-      width: token.width,
-      height: token.height,
-      rotation: token.rotation,
-      elevation: token.elevation,
-      layer: token.layer,
-      hidden: token.hidden,
-      locked: token.locked,
-      visionEnabled: token.visionEnabled,
-      visionRadius: token.visionRadius,
-      brightVisionRadius: token.brightVisionRadius,
-      dimVisionRadius: token.dimVisionRadius,
-      senses: token.senses,
-      disposition: token.disposition,
-      imageAssetId: token.imageAssetId,
-      ownerUserIds: token.ownerUserIds,
-      notes: token.notes,
-      conditions: token.conditions,
-      auras: token.auras,
-      metadata: token.metadata
-    };
-  }
 
   async function persistSceneCanvasTokenMove(changes: TokenMovePersistenceChange[]) {
     if (changes.length === 0) return;
@@ -4600,27 +4600,23 @@ export function App() {
     selectSingleToken(combatant.tokenId);
   }
 
-  async function undoBoardAction() {
-    const action = boardUndoStack.current.at(-1);
-    if (!action) {
-      setStatus("Nothing to undo");
-      return;
+  async function changeBoardHistory(direction: BoardHistoryDirection) {
+    const from = direction === "undo" ? boardUndoStack : boardRedoStack;
+    const to = direction === "undo" ? boardRedoStack : boardUndoStack;
+    const action = from.current.at(-1);
+    if (!action) return setStatus("Nothing to " + direction);
+    if (action.kind === "monster.place") {
+      await boardSyncQueueRef.current;
+      if (from.current.at(-1) !== action || !await monsterPlacement.change(action, direction)) return;
+    } else {
+      applyLocalBoardHistory(action, direction);
     }
-    applyLocalBoardHistory(action, "undo");
-    boardUndoStack.current = boardUndoStack.current.slice(0, -1);
-    boardRedoStack.current = [...boardRedoStack.current, action].slice(-boardHistoryLimit);
+    const wasLast = from.current.at(-1) === action;
+    from.current = from.current.filter((entry) => entry !== action);
+    if (wasLast) to.current = [...to.current, action].slice(-boardHistoryLimit);
   }
-
-  async function redoBoardAction() {
-    const action = boardRedoStack.current.at(-1);
-    if (!action) {
-      setStatus("Nothing to redo");
-      return;
-    }
-    applyLocalBoardHistory(action, "redo");
-    boardRedoStack.current = boardRedoStack.current.slice(0, -1);
-    boardUndoStack.current = [...boardUndoStack.current, action].slice(-boardHistoryLimit);
-  }
+  function undoBoardAction() { return changeBoardHistory("undo"); }
+  function redoBoardAction() { return changeBoardHistory("redo"); }
 
   async function copySelectedBoardTokens() {
     if (selectedTokens.length === 0) {
@@ -10641,6 +10637,8 @@ export function App() {
               <>
                 <LazyCompendiumPanel
                 key={`compendium:${campaignId}:${currentUserId}`}
+                sceneId={selectedScene?.id}
+                onPlaceMonster={!blankCanvasDemoOpen && hasPermission("actor.create") && hasPermission("token.create") ? monsterPlacement.place : undefined}
                 campaignId={campaignId}
                 systems={snapshot.systems}
                 actors={snapshot.actors}
