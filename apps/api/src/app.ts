@@ -4597,10 +4597,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!canCampaign(store, userId, campaignId, "token.read") || !canCampaign(store, viewerId, campaignId, "token.read")) return forbidden(reply, "Token read permission required");
     const cache = createTokenVisibilityCache();
     const sceneTokens = store.state.tokens.filter((token) => token.sceneId === scene.id);
+    const visibleTokens = visibleTokensForUser(store, viewerId, campaignId, sceneTokens, cache);
+    const imageIds = new Set(visibleTokens.flatMap((token) => token.imageAssetId ? [token.imageAssetId] : []));
     return {
       ...visionSnapshotForUser(store, viewerId, campaignId, scene, cache),
       sceneUpdatedAt: scene.updatedAt,
-      visibleTokens: visibleTokensForUser(store, viewerId, campaignId, sceneTokens, cache),
+      visibleTokens,
+      visibleTokenAssets: imageIds.size && canCampaign(store, viewerId, campaignId, "scene.read")
+        ? store.state.assets.filter((asset) => asset.campaignId === campaignId && imageIds.has(asset.id))
+        : [],
     };
   });
 
