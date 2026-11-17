@@ -1,5 +1,6 @@
 import { permissionsForRole } from "@open-tabletop/core";
-import type { MapAsset } from "@open-tabletop/core";
+import type { ChatMessage, DiceRoll, MapAsset } from "@open-tabletop/core";
+import { rollFormula } from "@open-tabletop/dice-engine";
 import type { Snapshot } from "./api.js";
 
 export const blankCanvasDemoUserId = "usr_blank_canvas_demo";
@@ -13,6 +14,19 @@ export const seededDemoUnavailableMessage = "Seeded demo data is not available i
 export function seededDemoLoginErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return /invalid login credentials/i.test(message) ? seededDemoUnavailableMessage : message;
+}
+
+type DemoChatInput = Pick<ChatMessage, "body" | "type" | "visibility" | "recipientUserIds" | "rollId" | "replyToMessageId">;
+
+export function blankCanvasTableRoll(identity: Pick<DiceRoll, "id" | "campaignId" | "userId">, formula: string, visibility: DiceRoll["visibility"], label: string): DiceRoll {
+  const timestamp = new Date().toISOString();
+  const result = rollFormula(formula);
+  return { ...identity, formula, label, visibility, terms: result.terms, total: result.total, createdAt: timestamp, updatedAt: timestamp };
+}
+
+export function blankCanvasChatMessage(identity: Pick<ChatMessage, "id" | "campaignId" | "sceneId" | "userId">, input: DemoChatInput): ChatMessage {
+  const timestamp = new Date().toISOString();
+  return { ...identity, ...input, createdAt: timestamp, updatedAt: timestamp };
 }
 
 const blankCanvasDemoPermissions = permissionsForRole("gm");
