@@ -42,8 +42,8 @@
   --turn-current-glow: rgba(226, 187, 142, 0.4);
   --turn-next: #8bbec3;
   --turn-next-glow: rgba(139, 190, 195, 0.38);
-  --crit: #e2bb8e;
-  --fumble: #df9485;
+  --crit: var(--accent-strong);
+  --fumble: var(--color-danger);
   --shadow-1: 0 3px 12px rgba(0, 0, 0, 0.22);
   --shadow-2: 0 12px 48px rgba(0, 0, 0, 0.4);
   --radius-s: 6px;
@@ -82,7 +82,7 @@
   --surface-2: var(--color-surface-2);
   --color-surface-3: #2e2719;
   --surface-3: var(--color-surface-3);
-  --color-accent: #d6a854;
+  --color-accent: var(--color-warning);
   --accent: var(--color-accent);
   --accent-strong: #e8c376;
   --accent-ink: #21180d;
@@ -93,7 +93,7 @@
   --glass: rgba(24, 20, 13, 0.86);
   --glass-border: rgba(214, 168, 84, 0.16);
   --ring: rgba(232, 195, 118, 0.7);
-  --crit: #e8c376;
+  --crit: var(--accent-strong);
   --fumble: #c97a6a;
   --shadow-1: 0 2px 6px rgba(8, 5, 1, 0.42), 0 10px 28px rgba(8, 5, 1, 0.34);
   --shadow-2: 0 8px 22px rgba(8, 5, 1, 0.5), 0 28px 80px rgba(8, 5, 1, 0.55);
@@ -123,4 +123,7 @@
   --ease-exit: ease-in;
   --color-black: #000;
   --color-white: #fff;
+  --board-background:
+    radial-gradient(circle at 48% 45%, rgba(72, 105, 116, 0.26), transparent 30%),
+    linear-gradient(135deg, #202a31, #101820 48%, #171612);
 }
