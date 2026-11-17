@@ -1,3 +1,4 @@
+import { tokenRestorePayload } from "./token-restore.js";
 import { compendiumPlacementActions, type BoardAction, type PlacementAttempts } from "./compendium-placement-client.js";
 import { EmptyState, WorkspaceLoading, canCommitSceneSwitch, preloadWorkspaceScene, retrySceneSwitch } from "./workspace-states.js";
 import { resolveChatRecipientId } from "./chat-recipient.js";
@@ -20,7 +21,7 @@ import { actorForSelection, adversaryActorsForSceneBoard, isAdversaryActor } fro
 import { assetThumbnailUrl } from "./api.js";
 import { activeSceneAnnotations } from "./annotation-expiry.js";
 import { applyActiveSceneIdentity, applyAuthoritativeScene } from "./active-scene-state.js";
-import { tokenRestorePayload, applyLocalBoardHistoryAction, boardHistoryStatus, createTokenCopies, type BoardHistoryAction, type BoardHistoryDirection, type BoardTokenFrameChange } from "./board-history.js";
+import { applyLocalBoardHistoryAction, boardHistoryStatus, createTokenCopies, type BoardHistoryAction, type BoardHistoryDirection, type BoardTokenFrameChange } from "./board-history.js";
 import { blankCanvasDemoCampaignId, blankCanvasDemoNotice, blankCanvasDemoSceneId, blankCanvasDemoUserId, createBlankCanvasDemoAsset, createBlankCanvasDemoSnapshot, seededDemoLoginErrorMessage, seededDemoUnavailableMessage } from "./blank-canvas-demo.js";
 import { scenePointFromClient } from "./board-geometry.js";
 import { boardKeyboardAction } from "./board-keyboard.js";
