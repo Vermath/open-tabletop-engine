@@ -58,8 +58,16 @@ async function stopApi(signal = "SIGTERM") {
   if (!current || current.exitCode !== null || current.signalCode !== null) return;
   intentionalStop = true;
   const exited = new Promise((resolveExit) => current.once("exit", resolveExit));
-  current.kill(signal);
-  await exited;
+  const deadline = setTimeout(() => {
+    console.warn("E2E API did not exit after its shutdown signal; terminating the test process.");
+    current.kill("SIGKILL");
+  }, 5_000);
+  try {
+    current.kill(signal);
+    await exited;
+  } finally {
+    clearTimeout(deadline);
+  }
 }
 
 async function restartApi() {
