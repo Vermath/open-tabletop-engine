@@ -64,7 +64,7 @@ async function tableSnapshot(page: Page, sceneId: string): Promise<TableSnapshot
 async function tokenPresentation(board: Locator) {
   return board.locator(".token").evaluateAll((elements) => elements.map((element) => ({
     name: element.querySelector(".token-nameplate")?.textContent,
-    hpWidth: (element.querySelector(".token-hp > span") as HTMLElement | null)?.style.width ?? null,
+    hpFill: (element.querySelector(".token-hp > span") as HTMLElement | null)?.style.getPropertyValue("--token-hp-fill") ?? null,
   })).sort((left, right) => (left.name ?? "").localeCompare(right.name ?? "")));
 }
 
@@ -234,8 +234,8 @@ test("competitive player preview matches a separate authenticated player's table
     expect(actual.actors.find((actor) => actor.id === hero.id)?.data.hp).toEqual({ current: 7, max: 13 });
     expect(actual.actors.find((actor) => actor.id === npc.id)?.data).toEqual({});
     const actualPresentation = await tokenPresentation(actualBoard);
-    expect(actualPresentation.find((token) => token.name === "Preview Hero")?.hpWidth).toBe("54%");
-    expect(actualPresentation.find((token) => token.name === "Preview Sentinel")?.hpWidth).toBeNull();
+    expect(actualPresentation.find((token) => token.name === "Preview Hero")?.hpFill).toBe("54%");
+    expect(actualPresentation.find((token) => token.name === "Preview Sentinel")?.hpFill).toBeNull();
     const actualMessages = actual.chat.map((message) => message.body);
     // Roll cards and emotes render their bodies outside .chat-body. Count the
     // whole message stream before comparing the preview's plain-text projection.
