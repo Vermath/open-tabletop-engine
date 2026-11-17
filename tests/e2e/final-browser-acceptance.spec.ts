@@ -429,7 +429,7 @@ test.describe("final strict browser acceptance", () => {
     await expect(statusMessage(page, "Vault Entry grid calibrated to 50 px")).toBeVisible();
 
     await page.reload();
-    await expect(page.locator('.scene-tab', { hasText: "Vault Entry" })).toBeVisible();
+    await expect(page.locator(".scene-tab").filter({ has: page.getByText("Vault Entry", { exact: true }) })).toBeVisible();
     const scenes = await apiJson<Array<{ id: string; name: string; gridSize: number; backgroundAssetId?: string; metadata: JsonRecord }>>(
       page,
       "GET",
