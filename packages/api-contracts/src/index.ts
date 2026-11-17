@@ -5819,6 +5819,15 @@ const componentSchemas = {
       sourceKind: { type: "string", enum: ["campaign", "actor_instance", "srd", "bundled", "homebrew"] },
     },
   },
+  SceneMapPin: {
+    type: "object", additionalProperties: false,
+    required: ["id", "label", "targetType", "targetId", "audience", "x", "y"],
+    properties: {
+      id: idSchema, label: { type: "string", minLength: 1, maxLength: 40 },
+      targetType: { type: "string", enum: ["journal", "handout"] }, targetId: idSchema,
+      audience: { type: "string", enum: ["gm", "readers"] }, x: { type: "number", minimum: 0 }, y: { type: "number", minimum: 0 },
+    },
+  },
   Scene: {
     type: "object",
     additionalProperties: true,
@@ -5864,6 +5873,7 @@ const componentSchemas = {
       fogHistory: arrayOf({ type: "object", additionalProperties: true }),
       activationHistory: arrayOf(schemaRef("SceneActivationHistoryEntry")),
       annotationHistory: arrayOf(schemaRef("SceneAnnotationHistoryEntry")),
+      mapPins: arrayOf(schemaRef("SceneMapPin")),
       walls: arrayOf(schemaRef("Wall")),
       lights: arrayOf(schemaRef("LightSource")),
       annotations: arrayOf(schemaRef("SceneAnnotation")),
@@ -6019,6 +6029,11 @@ const componentSchemas = {
     type: "object",
     additionalProperties: false,
     properties: {
+      expectedUpdatedAt: dateTimeSchema,
+      mapPin: {
+        description: "Set one pin or remove one by ID. Send only mapPin and expectedUpdatedAt, with an Idempotency-Key.",
+        oneOf: [schemaRef("SceneMapPin"), { type: "object", additionalProperties: false, required: ["remove"], properties: { remove: idSchema } }],
+      },
       worldId: { anyOf: [idSchema, { type: "null" }] },
       name: stringSchema,
       width: { type: "number", minimum: 1, maximum: 100000 },

@@ -360,6 +360,7 @@ import {
 import { rollFormulaWithFairness, verifyDiceRollRecord as verifyFairDiceRollRecord } from "./fair-dice.js";
 import { applyHeroicInspirationReroll, heroicInspirationDieChoices } from "./heroic-inspiration.js";
 import { OperationsObservability, operationsMetricsEnabled } from "./operations-observability.js";
+import { detachMapPins, editMapPin, mapPinAccessMayChange, projectMapPins } from "./scene-map-pins.js";
 import { commitPreparedSceneDuplication, prepareSceneDuplication, sceneDuplicationPreview, SceneDuplicationError } from "./scene-duplication.js";
 import {
   commitPreparedTokenMoveBatchCommand,
@@ -655,7 +656,7 @@ interface CampaignOwnershipTransferBody {
   expectedUpdatedAt?: unknown;
   reason?: unknown;
 }
-type ScenePatchBody = Partial<Pick<Scene, "name" | "width" | "height" | "gridType" | "gridSize" | "gridOrigin" | "visibilityMode" | "active" | "sortOrder" | "fog" | "walls" | "lights" | "annotations" | "metadata">> & { worldId?: string | null; backgroundAssetId?: string | null; folder?: string | null; expectedUpdatedAt?: string };
+type ScenePatchBody = { mapPin?: unknown } & Partial<Pick<Scene, "name" | "width" | "height" | "gridType" | "gridSize" | "gridOrigin" | "visibilityMode" | "active" | "sortOrder" | "fog" | "walls" | "lights" | "annotations" | "metadata">> & { worldId?: string | null; backgroundAssetId?: string | null; folder?: string | null; expectedUpdatedAt?: string };
 type TokenPatchBody = Partial<Pick<Token, "actorId" | "name" | "x" | "y" | "width" | "height" | "rotation" | "elevation" | "layer" | "hidden" | "locked" | "visionEnabled" | "visionRadius" | "senses" | "disposition" | "imageAssetId" | "ownerUserIds" | "notes" | "conditions" | "auras" | "targetedByUserIds" | "metadata">> & { brightVisionRadius?: number | null; dimVisionRadius?: number | null; expectedUpdatedAt?: unknown };
 type ActorPatchBody = Partial<Pick<Actor, "systemId" | "ownerUserId" | "type" | "name" | "imageAssetId" | "data" | "permissions">> & { worldId?: string | null; expectedUpdatedAt?: unknown; manualOverrideReason?: unknown };
 type ItemPatchBody = Omit<Partial<Item>, "actorId" | "worldId"> & { actorId?: string | null; worldId?: string | null; expectedUpdatedAt?: unknown; manualOverrideReason?: unknown };
@@ -1223,12 +1224,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   let pendingWebhookDeliveryCount = 0;
   type CampaignWebhookDeliveryRevision = Pick<CampaignWebhookDelivery, "id" | "campaignId" | "webhookId" | "updatedAt">;
   const broadcastToClients = (event: EngineEvent) => {
+    const refreshPins = mapPinAccessMayChange(store.state, event);
     const visibilityCache = createTokenVisibilityCache();
     hub.broadcast(event, (candidate, client) => {
       if (!realtimeClientAuthorizationIsCurrent(store, client)) {
         if (client.sessionId) disconnectRealtimeSession(client.sessionId);
         return undefined;
       }
+      if (refreshPins) return { ...candidate, targetId: undefined, payload: { refreshRequired: true } };
       return filterRealtimeEvent(store, candidate, client.userId, visibilityCache);
     });
   };
@@ -4770,6 +4773,18 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
     const allowed = requireScenePermission(store, reply, request.headers, scene, "scene.update");
     if (allowed !== true) return allowed;
+    if (isRecord(request.body) && "mapPin" in request.body) {
+      if (!canCampaign(store, userId!, campaignId, "campaign.update") || !canCampaign(store, userId!, campaignId, "token.reveal")) return forbidden(reply, "Managing map pins requires campaign.update and token.reveal");
+      if (Object.keys(request.body).some((field) => field !== "mapPin" && field !== "expectedUpdatedAt")) return badRequest(reply, "Edit one map pin per request");
+      const guarded = requireSceneTacticalMutationGuard(request, reply, scene, request.body.expectedUpdatedAt, "Editing map pins");
+      if (guarded !== true) return guarded;
+      const error = editMapPin(scene, request.body.mapPin, (pin) => canReadMapPinTarget(store, userId!, campaignId, pin));
+      if (error) return badRequest(reply, error);
+      scene.updatedAt = nextRevisionTimestamp(scene.updatedAt);
+      store.save();
+      broadcast(createEvent({ campaignId, type: "scene.updated", actorUserId: userId, targetId: scene.id, payload: scene }));
+      return scene;
+    }
     const normalizedBody = normalizeScenePatch(request.body);
     if (!normalizedBody.ok) return badRequest(reply, normalizedBody.error);
     const body = normalizedBody.value;
@@ -6715,9 +6730,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       return conflict(reply, "Remove journal backlinks before deleting this entry");
     }
     store.state.journals.splice(index, 1);
+    const pinScenes = detachMapPins(store.state, entry.campaignId, "journal", entry.id, nextRevisionTimestamp);
     for (const session of store.state.campaignSessions) if (session.recapJournalId === entry.id) session.recapJournalId = undefined;
     appendServerAuditLog(store, userId, { campaignId: entry.campaignId, action: "journal.delete", targetType: "journal", targetId: entry.id, before: journalAuditSnapshot(entry), after: { deleted: true } });
     store.save();
+    for (const scene of pinScenes) broadcast(createEvent({ campaignId: scene.campaignId, type: "scene.updated", targetId: scene.id, payload: scene }));
     broadcast(createEvent({ campaignId: entry.campaignId, type: "journal.deleted", actorUserId: userId, targetId: entry.id, payload: entry }));
     return journalPayloadForUser(store, userId, entry);
   });
@@ -6806,8 +6823,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const handout = normalizeHandout(existing);
     const userId = currentUserId(store, request.headers)!;
     store.state.handouts.splice(index, 1);
+    const pinScenes = detachMapPins(store.state, handout.campaignId, "handout", handout.id, nextRevisionTimestamp);
     appendServerAuditLog(store, userId, { campaignId: handout.campaignId, action: "handout.delete", targetType: "handout", targetId: handout.id, before: handout, after: { deleted: true } });
     store.save();
+    for (const scene of pinScenes) broadcast(createEvent({ campaignId: scene.campaignId, type: "scene.updated", targetId: scene.id, payload: scene }));
     broadcast(createEvent({ campaignId: handout.campaignId, type: "handout.deleted", actorUserId: userId, targetId: handout.id, payload: handout }));
     return handout;
   });
@@ -12796,6 +12815,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     archive.manifest.dependencyWarnings = scoped.dependencyWarnings;
     archive.manifest.redactionMode = exportOptions.value.redaction;
     archive.manifest.compatibilityNotes = campaignArchiveCompatibilityNotes(exportOptions.value);
+    if (!workerAuthorizationRequested(request.headers) && !canExportLinkedSceneContent(store, currentUserId(store, request.headers)!, archive)) return forbidden(reply, "Archive contains restricted campaign content");
     try {
       return await withArchivedAssetFiles(archive, assetStorage);
     } catch (error) {
@@ -12828,6 +12848,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     archive.manifest.dependencyWarnings = scoped.dependencyWarnings;
     archive.manifest.redactionMode = exportOptions.value.redaction;
     archive.manifest.compatibilityNotes = campaignArchiveCompatibilityNotes(exportOptions.value);
+    if (!workerAuthorizationRequested(request.headers) && !canExportLinkedSceneContent(store, currentUserId(store, request.headers)!, archive)) return forbidden(reply, "Archive contains restricted campaign content");
     try {
       assertCampaignArchiveStreamExportSize(archive, campaignArchiveStreamLimits);
     } catch (error) {
@@ -17423,6 +17444,7 @@ function prepareProposalChanges(store: StateStore, campaignId: string, userId: s
   for (const [index, rawChange] of value.entries()) {
     const change = proposalChangeFromInput(rawChange);
     if (!change) return { error: "invalid_proposal_change", message: `Proposal change ${index + 1} is invalid` };
+    if (change.entity === "scene" && "mapPins" in change.data) return { error: "invalid_proposal_change", message: "Edit map pins through the scene map pin command" };
     changes.push(change);
   }
   const normalizedChanges = normalizeProposalChanges(changes, campaignId, userId, store.state);
@@ -20680,7 +20702,7 @@ function registerIdempotencyReplay(app: FastifyInstance, store: StateStore): Ide
       .code(record.statusCode)
       .header("Idempotency-Replayed", "true")
       .type(record.contentType ?? "application/json")
-      .send(record.responseBody);
+      .send(record.contentType?.includes("json") && record.responseBody.includes('"mapPins"') ? projectSceneResponseForUser(store, record.userId!, JSON.parse(record.responseBody)) : record.responseBody);
     return true;
   };
 
@@ -24108,8 +24130,33 @@ function sceneAnnotationIsPublic(annotation: Pick<SceneAnnotation, "visibility">
   return annotation.visibility === undefined || annotation.visibility === "public";
 }
 
+function canExportLinkedSceneContent(store: StateStore, userId: string, archive: CampaignArchive): boolean {
+  const campaignId = archive.manifest.campaignId;
+  const canReveal = canCampaign(store, userId, campaignId, "token.reveal");
+  if (archive.data.journals.some((entry) => !canReadJournalEntry(store, userId, entry)) ||
+      archive.data.handouts.some((entry) => !canReadHandout(store, userId, entry))) return false;
+  if (archive.data.scenes.some((scene) => scene.mapPins?.some((pin) =>
+    !canReadSceneRecord(store, userId, scene) || (pin.audience === "gm" && !canReveal) || !canReadMapPinTarget(store, userId, campaignId, pin)))) return false;
+  // Inverses and guards can contain past pin locations and deleted records.
+  const hasHistoricalPins = archive.data.proposals.some((proposal) =>
+    [...proposal.changesJson, ...(proposal.inverseChangesJson ?? [])].some((change) => change.entity === "scene" && "mapPins" in change.data) ||
+    proposal.revertGuardsJson?.some((guard) => guard.entity === "scene" && guard.expected && "mapPins" in guard.expected));
+  return !hasHistoricalPins || (canReveal && canCampaign(store, userId, campaignId, "journal.readSecret") && canCampaign(store, userId, campaignId, "handout.readSecret"));
+}
+
+function canReadMapPinTarget(store: StateStore, userId: string, campaignId: string, pin: NonNullable<Scene["mapPins"]>[number]): boolean {
+  if (pin.targetType === "journal" && store.state.journals.some((entry) => entry.id === pin.targetId && entry.campaignId === campaignId && entry.kind === "folder")) return false;
+  return journalLinkTargetVisibleToUser(store, userId, campaignId, pin.targetType, pin.targetId);
+}
+
 function scenePayloadForUser(store: StateStore, userId: string, scene: Scene): Scene {
-  const result = withoutSceneEditHistory(scene);
+  const stripped = withoutSceneEditHistory(scene);
+  let result = stripped;
+  if (scene.mapPins !== undefined) {
+    const current = store.state.scenes.find((item) => item.id === scene.id && item.campaignId === scene.campaignId);
+    result = projectMapPins(stripped, current && canReadSceneRecord(store, userId, current) ? current : undefined,
+      canCampaign(store, userId, scene.campaignId, "token.reveal"), (pin) => canReadMapPinTarget(store, userId, scene.campaignId, pin));
+  }
   if (canCampaign(store, userId, scene.campaignId, "token.reveal")) return result;
   const privateIds = new Set((scene.annotations ?? []).filter((annotation) => !sceneAnnotationIsPublic(annotation)).map((annotation) => annotation.id));
   const publicAnnotations = (scene.annotations ?? []).filter(sceneAnnotationIsPublic);
@@ -24144,7 +24191,7 @@ function projectSceneResponseForUser(store: StateStore, userId: string, payload:
       annotations: annotationRecords(data.annotations),
       ...(data.annotationHistory !== undefined ? { annotationHistory: annotationRecords(data.annotationHistory) } : {}),
     } as unknown as Scene) : undefined;
-    for (const key of ["annotations", "annotationHistory", "sceneEditHistory"] as const) {
+    for (const key of ["mapPins", "annotations", "annotationHistory", "sceneEditHistory"] as const) {
       if (data[key] === undefined) continue;
       if (projected && key in projected) projectedData[key] = projected[key];
       else delete projectedData[key];

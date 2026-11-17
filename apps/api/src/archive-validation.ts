@@ -1,3 +1,4 @@
+import { validMapPinCollection } from "./scene-map-pins.js";
 import { createHash } from "node:crypto";
 import { emptyState, type Actor, type CampaignArchive, type EngineState, type Item } from "@open-tabletop/core";
 import { DND_5E_SRD_SYSTEM_ID, validateDnd5eSrdActor, validateDnd5eSrdItem } from "@open-tabletop/system-sdk";
@@ -394,6 +395,7 @@ function validateNestedArchiveRecord(collection: string, record: Record<string, 
     }
   }
   if (collection === "scenes") {
+    if (record.mapPins !== undefined && !validMapPinCollection(record.mapPins)) return "mapPins must contain valid distinct journal or handout pins";
     const gridStates = [record, ...(Array.isArray(record.sceneEditHistory) ? record.sceneEditHistory.flatMap((entry) => isRecord(entry) && isRecord(entry.state) ? [entry.state] : []) : [])];
     for (const gridState of gridStates) {
       for (const field of ["annotations", "annotationHistory"]) {
