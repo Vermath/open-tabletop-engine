@@ -1,10 +1,12 @@
+import { EmptyState } from "./workspace-states.js";
 import type { ContentImportBatch, ContentImportEntityKind, ContentImportSource, MapAsset, Scene } from "@open-tabletop/core";
 import { Boxes, Check, ChevronDown, ChevronRight, Download, Eye, FileText, Image as ImageIcon, MapPin, Plus, RefreshCw, RotateCcw, Trash2, Upload, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { assetFolderBreadcrumbsFor, assetFolderPathOptions, assetMatchesFolderFilter, childAssetFolderOptions, contentImportAdapterEntities, contentImportAdapterPresets, contentImportPreviewSource, type AssetLifecycleStatus, type ContentImportAdapterPresetId, type ContentImportDraftEntity, type ContentImportPreviewSource, type FailedAssetUpload } from "./content-import-data.js";
-import { assetBlobUrl, type CampaignAssetStorageInfo } from "./api.js";
+import { assetThumbnailUrl, type CampaignAssetStorageInfo } from "./api.js";
 import { formatPercent, formatStorageBytes, contentImportStatusClass, formatDateTime, formatNumber, titleCaseLabel } from "./sheet-format.js";
 import { setTokenDropPreview, writeTokenDropData } from "./token-drag.js";
+import { RetryableActionNotice, useRetryableAction } from "./retryable-action.js";
 
 
 export function ContentImportPanel(props: {
@@ -43,6 +45,7 @@ export function ContentImportPanel(props: {
   onRollback(batch: ContentImportBatch): Promise<void>;
   onDelete(batch: ContentImportBatch): Promise<void>;
   canManage: boolean;
+  canProposeAiChanges: boolean;
   canCreateAsset: boolean;
   canUpdateScene: boolean;
   canCreateToken: boolean;
@@ -58,6 +61,11 @@ export function ContentImportPanel(props: {
   const [adapterSourceUrl, setAdapterSourceUrl] = useState("");
   const [adapterConfig, setAdapterConfig] = useState("columns=name,body;delimiter=,;kind=item");
   const [pdfFile, setPdfFile] = useState<File | undefined>();
+  const canAnalyzePdf = props.canManage && props.canProposeAiChanges;
+  const pdfImportDisabledReason = props.canManage
+    ? "Codex PDF analysis requires ai.proposeChanges permission."
+    : "Codex PDF analysis requires campaign.update permission.";
+  const action = useRetryableAction(props.selectedScene?.campaignId);
   const assetFolderOptions = useMemo(
     () => [...new Set(props.assets.flatMap((asset) => assetFolderPathOptions(asset.folder)))].sort((left, right) => left.localeCompare(right)),
     [props.assets]
@@ -162,6 +170,11 @@ export function ContentImportPanel(props: {
   }
   return (
     <div className="panel-stack content-manager">
+      <RetryableActionNotice
+        operation={action.operation}
+        onRetry={action.retryAction ? () => void action.retryAction?.() : undefined}
+        onDismiss={action.clearAction}
+      />
       <section className="operator-section asset-library asset-library-clean" aria-label="Asset library">
         <div className="asset-library-header">
           <div>
@@ -172,7 +185,7 @@ export function ContentImportPanel(props: {
             <button className="primary-button" type="button" aria-label="Upload Asset" disabled={!props.canCreateAsset} title={props.canCreateAsset ? "Upload an asset" : "Requires scene.create"} onClick={() => document.getElementById(uploadInputId)?.click()}>
               <Upload size={16} /> Upload
             </button>
-            <button className="ghost-button" type="button" aria-label="Upload Background" disabled={!props.canCreateAsset || !props.canUpdateScene || !props.selectedScene} title={props.selectedScene ? "Upload and set as current scene background" : "Select a scene first"} onClick={() => document.getElementById(backgroundInputId)?.click()}>
+            <button className="ghost-button" type="button" aria-label={props.selectedScene ? `Upload background for ${props.selectedScene.name}` : "Upload Background"} disabled={!props.canCreateAsset || !props.canUpdateScene || !props.selectedScene} title={props.selectedScene ? `Upload and set as ${props.selectedScene.name} background` : "Select a scene first"} onClick={() => document.getElementById(backgroundInputId)?.click()}>
               <ImageIcon size={16} /> Background
             </button>
           </div>
@@ -227,13 +240,13 @@ export function ContentImportPanel(props: {
               </label>
               {selectedAssets.length > 0 && (
                 <>
-                  <button className="ghost-button" type="button" aria-label="Batch archive assets" disabled={!props.canUpdateScene} onClick={() => updateSelectedAssetLifecycle("archived").catch(console.error)}>
+                  <button className="ghost-button" type="button" aria-label="Batch archive assets" disabled={!props.canUpdateScene} onClick={() => void action.runAction("Archive selected assets", () => updateSelectedAssetLifecycle("archived"))}>
                     <RotateCcw size={15} /> Archive
                   </button>
-                  <button className="ghost-button" type="button" aria-label="Batch restore assets" disabled={!props.canUpdateScene} onClick={() => updateSelectedAssetLifecycle("active").catch(console.error)}>
+                  <button className="ghost-button" type="button" aria-label="Batch restore assets" disabled={!props.canUpdateScene} onClick={() => void action.runAction("Restore selected assets", () => updateSelectedAssetLifecycle("active"))}>
                     <Check size={15} /> Restore
                   </button>
-                  <button className="ghost-button" type="button" aria-label="Batch delete assets" disabled={!props.canUpdateScene} onClick={() => updateSelectedAssetLifecycle("deleted").catch(console.error)}>
+                  <button className="ghost-button" type="button" aria-label="Batch delete assets" disabled={!props.canUpdateScene} onClick={() => void action.runAction("Delete selected assets", () => updateSelectedAssetLifecycle("deleted"))}>
                     <X size={15} /> Delete
                   </button>
                 </>
@@ -377,26 +390,33 @@ export function ContentImportPanel(props: {
           aria-label="Upload asset file"
           accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml,application/pdf,text/plain,application/json"
           hidden
-          onChange={async (event) => {
+          onChange={(event) => {
             const input = event.currentTarget;
             const file = input.files?.[0];
             if (!file) return;
-            await props.onUploadAsset(file, false);
-            input.value = "";
+            void action.runAction(`Upload ${file.name}`, async () => {
+              await props.onUploadAsset(file, false);
+              input.value = "";
+            });
           }}
         />
         <input
+          key={`${backgroundInputId}:${props.selectedScene?.id ?? "none"}`}
           id={backgroundInputId}
           type="file"
-          aria-label="Upload background file"
+          aria-label={props.selectedScene ? `Upload background file for ${props.selectedScene.name}` : "Upload background file"}
+          data-scene-id={props.selectedScene?.id}
+          disabled={!props.canCreateAsset || !props.canUpdateScene || !props.selectedScene}
           accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
           hidden
-          onChange={async (event) => {
+          onChange={(event) => {
             const input = event.currentTarget;
             const file = input.files?.[0];
             if (!file) return;
-            await props.onUploadAsset(file, true);
-            input.value = "";
+            void action.runAction(`Upload ${file.name} as background`, async () => {
+              await props.onUploadAsset(file, true);
+              input.value = "";
+            });
           }}
         />
         {hasAssetActivityStatus && <div className="admin-status asset-activity-status" role="status" aria-live="polite">{props.assetStatus}</div>}
@@ -404,7 +424,7 @@ export function ContentImportPanel(props: {
           <div className="operator-row tool-call-row" aria-label="Asset upload recovery">
             <span>{props.failedAssetUpload.file.name} failed: {props.failedAssetUpload.message}</span>
             <div className="admin-actions">
-              <button className="ghost-button" type="button" onClick={() => props.onRetryFailedAssetUpload().catch(console.error)}>
+              <button className="ghost-button" type="button" onClick={() => void action.runAction("Retry asset upload", props.onRetryFailedAssetUpload)}>
                 <RefreshCw size={16} /> Retry upload
               </button>
               <button className="ghost-button" type="button" onClick={props.onDismissFailedAssetUpload}>
@@ -415,10 +435,8 @@ export function ContentImportPanel(props: {
         )}
         <div className="asset-list asset-list-clean">
           {filteredAssets.length === 0 ? (
-            <div className="empty-state compact asset-empty-state">
-              <strong>{props.assets.length === 0 ? "No assets yet." : "No assets match this view."}</strong>
-              <span>{props.assets.length === 0 ? "Upload campaign art, maps, handouts, or PDFs to start the library." : isFilteringAssets ? "Try clearing search or filters." : "Upload an asset to add it here."}</span>
-            </div>
+            <EmptyState icon={<ImageIcon size={17} />} text={props.assets.length === 0 ? "No assets yet." : "No assets match this view."}
+              action={props.assets.length === 0 && props.canCreateAsset ? { label: "Upload first asset", run: () => document.getElementById(uploadInputId)?.click() } : undefined} />
           ) : (
             filteredAssets.map((asset) => {
               const lifecycle = asset.lifecycle?.status ?? "active";
@@ -431,7 +449,7 @@ export function ContentImportPanel(props: {
               const hiddenTagCount = Math.max(0, (asset.tags?.length ?? 0) - tagPreview.length);
               return (
                 <article className={selected ? "asset-card asset-card-clean selected" : "asset-card asset-card-clean"} key={asset.id}>
-                  <div className="asset-thumb">{isImage && !isDeleted ? <img src={assetBlobUrl(asset)} alt="" /> : <FileText size={24} />}</div>
+                  <div className="asset-thumb">{isImage && !isDeleted ? <img src={assetThumbnailUrl(asset)} alt="" /> : <FileText size={24} />}</div>
                   <div className="asset-detail">
                     <div className="asset-card-main">
                       <div>
@@ -461,23 +479,23 @@ export function ContentImportPanel(props: {
                         aria-label={`Place ${asset.name} asset on scene`}
                         title={props.canCreateToken && !isDeleted && isImage ? "Drag asset to the scene" : "Requires token.create and an active image asset"}
                         disabled={!props.canCreateToken || isDeleted || !isImage}
-                        onClick={() => props.onPlaceAssetToken(asset).catch(console.error)}
+                        onClick={() => void action.runAction(`Place ${asset.name} on the scene`, () => props.onPlaceAssetToken(asset))}
                         onDragStart={(event) => {
                           writeTokenDropData(event.dataTransfer, { type: "asset", id: asset.id, imageAssetId: asset.id, name: asset.name, layer: "map", disposition: "neutral" });
-                          setTokenDropPreview(event.dataTransfer, asset.name, assetBlobUrl(asset));
+                          setTokenDropPreview(event.dataTransfer, asset.name, assetThumbnailUrl(asset));
                         }}
                       >
                         <MapPin size={16} /> Place
                       </button>
-                      <button className="ghost-button" type="button" disabled={!props.canUpdateScene || !props.selectedScene || isDeleted || !isImage} onClick={() => props.onSetSceneBackground(asset).catch(console.error)}>
+                      <button className="ghost-button" type="button" disabled={!props.canUpdateScene || !props.selectedScene || isDeleted || !isImage} onClick={() => void action.runAction(`Set ${asset.name} as the scene background`, () => props.onSetSceneBackground(asset))}>
                         <Eye size={16} /> Background
                       </button>
                       {lifecycle === "active" ? (
-                        <button className="ghost-button" type="button" disabled={!props.canUpdateScene} onClick={() => props.onUpdateAssetLifecycle(asset, "archived").catch(console.error)}>
+                        <button className="ghost-button" type="button" disabled={!props.canUpdateScene} onClick={() => void action.runAction(`Archive ${asset.name}`, () => props.onUpdateAssetLifecycle(asset, "archived"))}>
                           <RotateCcw size={16} /> Archive
                         </button>
                       ) : (
-                        <button className="ghost-button" type="button" disabled={!props.canUpdateScene} onClick={() => props.onUpdateAssetLifecycle(asset, "active").catch(console.error)}>
+                        <button className="ghost-button" type="button" disabled={!props.canUpdateScene} onClick={() => void action.runAction(`Restore ${asset.name}`, () => props.onUpdateAssetLifecycle(asset, "active"))}>
                           <Check size={16} /> Restore
                         </button>
                       )}
@@ -489,11 +507,11 @@ export function ContentImportPanel(props: {
                         onSubmit={(event) => {
                           event.preventDefault();
                           const form = new FormData(event.currentTarget);
-                          props.onUpdateAssetMetadata(asset, {
+                          void action.runAction(`Save ${asset.name} metadata`, () => props.onUpdateAssetMetadata(asset, {
                             name: String(form.get("name") ?? asset.name),
                             folder: String(form.get("folder") ?? asset.folder ?? ""),
                             tags: String(form.get("tags") ?? (asset.tags ?? []).join(", "))
-                          }).catch(console.error);
+                          }));
                         }}
                       >
                         <input name="name" aria-label={`${asset.name} asset name`} defaultValue={asset.name} />
@@ -509,16 +527,16 @@ export function ContentImportPanel(props: {
                         {asset.lifecycle?.expiresAt && <span>expires {formatDateTime(asset.lifecycle.expiresAt)}</span>}
                       </div>
                       <div className="admin-actions">
-                        <button className="ghost-button" type="button" disabled={isDeleted} onClick={() => props.onCreateAssetDeliveryUrl(asset).catch(console.error)}>
+                        <button className="ghost-button" type="button" disabled={isDeleted} onClick={() => void action.runAction(`Create a signed URL for ${asset.name}`, () => props.onCreateAssetDeliveryUrl(asset))}>
                           <Download size={16} /> Signed URL
                         </button>
-                        <button className="ghost-button" type="button" disabled={!props.canUpdateScene || lifecycle === "archived"} onClick={() => props.onUpdateAssetLifecycle(asset, "archived").catch(console.error)}>
+                        <button className="ghost-button" type="button" disabled={!props.canUpdateScene || lifecycle === "archived"} onClick={() => void action.runAction(`Archive ${asset.name}`, () => props.onUpdateAssetLifecycle(asset, "archived"))}>
                           <RotateCcw size={16} /> Archive
                         </button>
-                        <button className="ghost-button" type="button" disabled={!props.canUpdateScene || lifecycle === "active"} onClick={() => props.onUpdateAssetLifecycle(asset, "active").catch(console.error)}>
+                        <button className="ghost-button" type="button" disabled={!props.canUpdateScene || lifecycle === "active"} onClick={() => void action.runAction(`Restore ${asset.name}`, () => props.onUpdateAssetLifecycle(asset, "active"))}>
                           <Check size={16} /> Restore
                         </button>
-                        <button className="ghost-button" type="button" disabled={!props.canUpdateScene || isDeleted} onClick={() => props.onUpdateAssetLifecycle(asset, "deleted").catch(console.error)}>
+                        <button className="ghost-button" type="button" disabled={!props.canUpdateScene || isDeleted} onClick={() => void action.runAction(`Delete ${asset.name}`, () => props.onUpdateAssetLifecycle(asset, "deleted"))}>
                           <X size={16} /> Delete
                         </button>
                       </div>
@@ -544,7 +562,10 @@ export function ContentImportPanel(props: {
             className="operator-section content-import-form content-import-form-clean"
             onSubmit={(event) => {
               event.preventDefault();
-              props.onPreview(previewEntities, previewSource).then(() => setDraftEntities([])).catch(console.error);
+              void action.runAction("Preview content import", async () => {
+                await props.onPreview(previewEntities, previewSource);
+                setDraftEntities([]);
+              });
             }}
           >
         <section className="operator-section compact" aria-label="Content import adapter setup">
@@ -589,6 +610,7 @@ export function ContentImportPanel(props: {
               id={pdfInputId}
               type="file"
               accept="application/pdf"
+              disabled={!canAnalyzePdf}
               hidden
               onChange={(event) => {
                 const file = event.currentTarget.files?.[0];
@@ -596,22 +618,26 @@ export function ContentImportPanel(props: {
                 event.currentTarget.value = "";
               }}
             />
-            <button className="ghost-button" type="button" disabled={!props.canManage} title={props.canManage ? "Choose a PDF for Codex analysis" : "Requires campaign.update"} onClick={() => document.getElementById(pdfInputId)?.click()}>
+            <button className="ghost-button" type="button" disabled={!canAnalyzePdf} title={canAnalyzePdf ? "Choose a PDF for Codex analysis" : pdfImportDisabledReason} onClick={() => document.getElementById(pdfInputId)?.click()}>
               <FileText size={16} /> Codex PDF
             </button>
             <button
               className="ghost-button"
               type="button"
-              disabled={!props.canManage || !pdfFile}
-              title={pdfFile ? `Analyze ${pdfFile.name}` : "Choose a PDF first"}
+              disabled={!canAnalyzePdf || !pdfFile}
+              title={!canAnalyzePdf ? pdfImportDisabledReason : pdfFile ? `Analyze ${pdfFile.name}` : "Choose a PDF first"}
               onClick={() => {
                 if (!pdfFile) return;
-                props.onAnalyzePdf(pdfFile).then(() => setPdfFile(undefined)).catch(console.error);
+                void action.runAction(`Analyze ${pdfFile.name}`, async () => {
+                  await props.onAnalyzePdf(pdfFile);
+                  setPdfFile(undefined);
+                });
               }}
             >
               <Upload size={16} /> Analyze PDF
             </button>
             {pdfFile && <span className="admin-inline-status">{pdfFile.name}</span>}
+            {!canAnalyzePdf && <span className="admin-inline-status">{pdfImportDisabledReason}</span>}
           </div>
         </section>
         <div className="admin-form-grid">
@@ -733,13 +759,13 @@ export function ContentImportPanel(props: {
                   </div>
                 )}
                 <div className="admin-actions">
-                  <button className="ghost-button" onClick={() => props.onApply(batch, selectedEntityIds).catch(console.error)} disabled={!props.canManage || batch.status === "applied" || batch.status === "rolled_back" || selectedCount === 0} title={props.canManage ? "Apply selected import entities" : "Requires campaign.update"}>
+                  <button className="ghost-button" onClick={() => void action.runAction(`Apply ${batch.source.sourceName} import`, () => props.onApply(batch, selectedEntityIds))} disabled={!props.canManage || batch.status === "applied" || batch.status === "rolled_back" || selectedCount === 0} title={props.canManage ? "Apply selected import entities" : "Requires campaign.update"}>
                     <Check size={16} /> Apply Selected
                   </button>
-                  <button className="ghost-button" onClick={() => props.onRollback(batch).catch(console.error)} disabled={!props.canManage || batch.status !== "applied"} title={props.canManage ? "Rollback applied records" : "Requires campaign.update"}>
+                  <button className="ghost-button" onClick={() => void action.runAction(`Rollback ${batch.source.sourceName} import`, () => props.onRollback(batch))} disabled={!props.canManage || batch.status !== "applied"} title={props.canManage ? "Rollback applied records" : "Requires campaign.update"}>
                     <RotateCcw size={16} /> Rollback
                   </button>
-                  <button className="ghost-button" onClick={() => props.onDelete(batch).catch(console.error)} disabled={!props.canManage || batch.status === "applied"} title={props.canManage ? "Delete import preview" : "Requires campaign.update"}>
+                  <button className="ghost-button" onClick={() => void action.runAction(`Delete ${batch.source.sourceName} import preview`, () => props.onDelete(batch))} disabled={!props.canManage || batch.status === "applied"} title={props.canManage ? "Delete import preview" : "Requires campaign.update"}>
                     <X size={16} /> Delete
                   </button>
                 </div>

@@ -1,5 +1,7 @@
 # Public Alpha Readiness
 
+> Historical evidence notice (2026-07-13): the product owner accepts the existing AI agent's manual-proposal and governed automatic-execution modes. Any proposal-only description below records the older alpha exercise and is superseded; it is not a current product, security, or release constraint.
+
 Last updated: 2026-05-11
 
 ## Objective
@@ -17,7 +19,7 @@ Ship OpenTabletop Engine public alpha v0.1 as a launchable open-source VTT, not 
 
 | Artifact | Current evidence |
 | --- | --- |
-| `AGENTS.md` | Confirms API-first VTT scope, scoped edits, shared `packages/core` types, proposal-only AI/plugin state changes, explicit permissions, and permissive SDK licensing. |
+| `AGENTS.md` | Confirms API-first VTT scope, scoped edits, shared `packages/core` types, unchanged existing AI behavior, permissioned plugin application boundaries, explicit permissions, and permissive SDK licensing. |
 | `README.md` | Introduces product principles, apps/packages, clean `pnpm install --frozen-lockfile`, `pnpm check`, separate API/web startup commands, public-alpha demo import runbook, alpha scope, and legal/content-safety notes. |
 | `prd.md` | Defines full platform plan, legal boundaries, plugin/system/AI architecture, MVP scope, and later beta hardening; public alpha is a stricter launch-readiness step after MVP. |
 | `package.json` | Version `0.1.0`; `pnpm check` runs lint, typecheck, test, and build through Turbo. |

@@ -15,6 +15,9 @@ describe("chat layout", () => {
     expect(source).not.toContain('className="operator-section chat-room"');
     expect(source).toContain("function ChatMessageItem");
     expect(source).toContain("function RollMessageCard");
+    expect(source).toContain("Replay recorded roll");
+    expect(source).toContain("no pre-roll host commitment");
+    expect(source).not.toContain("Verify fairness");
     expect(source).toContain("function ChatComposer");
     expect(appSource).toContain("rolls={snapshot.rolls}");
     expect(source).toContain("rollById");

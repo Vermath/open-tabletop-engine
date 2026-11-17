@@ -1,7 +1,7 @@
 import { performance } from "node:perf_hooks";
 import { createTimestamped, type CampaignMember, type ChatMessage, type JournalEntry, type Token, type User } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
-import { buildApp } from "./app.js";
+import { buildApp } from "./fixtures/legacy-build-app.js";
 import { MemoryStateStore } from "./store.js";
 
 const gmHeaders = { "x-user-id": "usr_demo_gm" };
@@ -103,6 +103,15 @@ describe("performance soak", () => {
     };
 
     try {
+      for (const url of [
+        "/api/v1/scenes/scn_vault_entry/tokens",
+        "/api/v1/campaigns/camp_demo/chat/export",
+        "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/compendium",
+        "/api/v1/campaigns/camp_demo/export",
+      ]) {
+        const warmup = await app.inject({ method: "GET", url, headers: gmHeaders });
+        expect(warmup.statusCode, `soak warmup ${url}`).toBe(200);
+      }
       for (let cycle = 0; cycle < 6; cycle += 1) {
         const cycleStarted = performance.now();
         const tokenRead = await measureRequest("soak scene token read", () =>

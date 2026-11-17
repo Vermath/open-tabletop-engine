@@ -8,8 +8,8 @@
   "type": "module",
   "main": "dist/main.js",
   "scripts": {
-    "build": "node ../../scripts/run-package-manager.mjs --filter @open-tabletop/api build && node ../../scripts/run-package-manager.mjs --filter @open-tabletop/web build && node ../../scripts/run-package-manager.mjs --filter @open-tabletop/tunnel-protocol build && tsc -p tsconfig.json",
-    "dist": "node ../../scripts/run-package-scripts.mjs build && electron-builder",
+    "build": "tsc -p tsconfig.json",
+    "dist": "pnpm --filter @open-tabletop/desktop... build && electron-builder",
     "lint": "tsc -p tsconfig.json --noEmit",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"

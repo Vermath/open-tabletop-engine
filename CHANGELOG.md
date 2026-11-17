@@ -65,7 +65,7 @@ Release notes: [docs/release/v1.0.md](docs/release/v1.0.md)
 
 - v1 self-hosting support is explicitly scoped to a single-writer SQLite JSON-record store plus configured asset storage.
 - API/OpenAPI/client contracts now cover the main public route surface with shared error, auth, idempotency, pagination, and rate-limit policy.
-- AI and plugin execution remain proposal/review gated and must not mutate campaign state directly.
+- The existing AI proposal and automatic-execution modes remain supported and unchanged; plugin execution remains permission-checked and auditable through application commands.
 
 ### Known Limitations
 

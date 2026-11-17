@@ -1,4 +1,4 @@
-import type { FogRegion, LightSource, Scene, Token, VisionPoint, VisionPolygon, Wall } from "./types.js";
+import type { FogRegion, LightSource, Scene, Token, TokenSense, VisionPoint, VisionPolygon, Wall } from "./types.js";
 
 const FULL_CIRCLE = Math.PI * 2;
 const ANGLE_EPSILON = 0.0002;
@@ -39,16 +39,21 @@ export function computeTokenVisionPolygon(scene: Pick<Scene, "width" | "height" 
     sourceId: token.id,
     radius,
     lightLevel: brightRadius && brightRadius >= dimRadius ? "bright" : token.brightVisionRadius !== undefined || token.dimVisionRadius !== undefined ? "dim" : undefined,
+    senseType: "normal",
     points: computeVisibilityPolygon(scene, tokenCenter(token), radius)
   };
 }
 
-export function computeTokenVisionPolygons(scene: Pick<Scene, "width" | "height" | "walls">, token: Pick<Token, "id" | "x" | "y" | "width" | "height" | "visionEnabled" | "visionRadius" | "brightVisionRadius" | "dimVisionRadius">): VisionPolygon[] {
+export function computeTokenVisionPolygons(scene: Pick<Scene, "width" | "height" | "walls">, token: Pick<Token, "id" | "x" | "y" | "width" | "height" | "visionEnabled" | "visionRadius" | "brightVisionRadius" | "dimVisionRadius" | "senses">): VisionPolygon[] {
   const dimRadius = normalizedLightRadius(token.dimVisionRadius) ?? normalizedLightRadius(token.visionRadius) ?? 0;
   const brightRadius = normalizedLightRadius(token.brightVisionRadius);
   const outerRadius = Math.max(dimRadius, brightRadius ?? 0);
-  if (!token.visionEnabled || outerRadius <= 0) return [];
-  if (!brightRadius || brightRadius >= dimRadius) return [computeTokenVisionPolygon(scene, token)].filter((polygon): polygon is VisionPolygon => Boolean(polygon));
+  if (!token.visionEnabled) return [];
+  const typedSensePolygons = computeTypedSensePolygons(scene, token, token.senses ?? []);
+  if (outerRadius <= 0) return typedSensePolygons;
+  if (!brightRadius || brightRadius >= dimRadius) {
+    return [...[computeTokenVisionPolygon(scene, token)].filter((polygon): polygon is VisionPolygon => Boolean(polygon)), ...typedSensePolygons];
+  }
   const origin = tokenCenter(token);
   return [
     {
@@ -57,6 +62,7 @@ export function computeTokenVisionPolygons(scene: Pick<Scene, "width" | "height"
       sourceId: token.id,
       radius: dimRadius,
       lightLevel: "dim",
+      senseType: "normal",
       points: computeVisibilityPolygon(scene, origin, dimRadius)
     },
     {
@@ -65,9 +71,34 @@ export function computeTokenVisionPolygons(scene: Pick<Scene, "width" | "height"
       sourceId: token.id,
       radius: brightRadius,
       lightLevel: "bright",
+      senseType: "normal",
       points: computeVisibilityPolygon(scene, origin, brightRadius)
-    }
+    },
+    ...typedSensePolygons
   ];
+}
+
+function computeTypedSensePolygons(
+  scene: Pick<Scene, "width" | "height" | "walls">,
+  token: Pick<Token, "id" | "x" | "y" | "width" | "height">,
+  senses: readonly TokenSense[]
+): VisionPolygon[] {
+  const origin = tokenCenter(token);
+  return senses
+    .filter((sense) => normalizedLightRadius(sense.range) !== undefined)
+    .map((sense) => ({
+      id: `vision_${token.id}_sense_${sense.type}`,
+      source: "token" as const,
+      sourceId: token.id,
+      radius: sense.range,
+      senseType: sense.type,
+      points: computeVisibilityPolygon(scene, origin, sense.range)
+    }));
+}
+
+/** A light with `shadows: false` is not blocked by walls. */
+function lightOcclusionScene<T extends Pick<Scene, "width" | "height" | "walls">>(scene: T, light: Pick<LightSource, "shadows">): Pick<Scene, "width" | "height" | "walls"> {
+  return light.shadows === false ? { width: scene.width, height: scene.height, walls: [] } : scene;
 }
 
 export function computeLightVisionPolygon(scene: Pick<Scene, "width" | "height" | "walls">, light: LightSource): VisionPolygon {
@@ -81,7 +112,9 @@ export function computeLightVisionPolygon(scene: Pick<Scene, "width" | "height" 
     lightLevel: brightRadius && brightRadius >= dimRadius ? "bright" : light.brightRadius !== undefined || light.dimRadius !== undefined ? "dim" : undefined,
     color: light.color,
     opacity: Math.max(0.05, Math.min(0.7, light.intensity ?? 0.28)),
-    points: computeVisibilityPolygon(scene, { x: light.x, y: light.y }, light.radius)
+    lightingEffect: light.kind ?? "light",
+    magical: Boolean(light.magical),
+    points: computeVisibilityPolygon(lightOcclusionScene(scene, light), { x: light.x, y: light.y }, light.radius)
   };
 }
 
@@ -100,7 +133,9 @@ export function computeLightVisionPolygons(scene: Pick<Scene, "width" | "height"
       lightLevel: "dim",
       color: light.color,
       opacity: Math.max(0.03, Math.min(0.45, (light.intensity ?? 0.28) * 0.55)),
-      points: computeVisibilityPolygon(scene, { x: light.x, y: light.y }, dimRadius)
+      lightingEffect: light.kind ?? "light",
+      magical: Boolean(light.magical),
+      points: computeVisibilityPolygon(lightOcclusionScene(scene, light), { x: light.x, y: light.y }, dimRadius)
     },
     {
       id: `light_${light.id}_bright`,
@@ -110,7 +145,9 @@ export function computeLightVisionPolygons(scene: Pick<Scene, "width" | "height"
       lightLevel: "bright",
       color: light.color,
       opacity: Math.max(0.08, Math.min(0.7, light.intensity ?? 0.28)),
-      points: computeVisibilityPolygon(scene, { x: light.x, y: light.y }, brightRadius)
+      lightingEffect: light.kind ?? "light",
+      magical: Boolean(light.magical),
+      points: computeVisibilityPolygon(lightOcclusionScene(scene, light), { x: light.x, y: light.y }, brightRadius)
     }
   ];
 }
@@ -157,6 +194,35 @@ export function isPointInsideVisionPolygon(point: VisionPoint, polygon: VisionPo
 
 export function isPointInsideVisionPolygons(point: VisionPoint, polygons: VisionPolygon[]): boolean {
   return polygons.some((polygon) => isPointInsideVisionPolygon(point, polygon));
+}
+
+/** Applies the same visibility rules to server disclosure and player map sampling. */
+export function isPointVisibleInSceneVision(point: VisionPoint, options: {
+  visibilityMode?: Scene["visibilityMode"];
+  fogActive: boolean;
+  polygons: readonly VisionPolygon[];
+}): boolean {
+  const containing = options.polygons.filter((polygon) => isPointInsideVisionPolygon(point, polygon));
+  if (containing.some((polygon) => polygon.source === "fog" && polygon.mode === "hide")) return false;
+  const ownedVision = containing.filter((polygon) => polygon.source === "token");
+  const darkness = containing.filter((polygon) => polygon.lightingEffect === "darkness");
+  if (!visionSensesBypassDarkness(ownedVision, darkness)) return false;
+  if (options.visibilityMode === "dynamic") {
+    if (ownedVision.length === 0) return false;
+    return ownedVision.some((polygon) => visionSenseBypassesAmbientDarkness(polygon.senseType)) ||
+      containing.some((polygon) => polygon.source === "light" && polygon.lightingEffect !== "darkness");
+  }
+  return !options.fogActive || containing.some((polygon) => polygon.source !== "light" && polygon.mode !== "hide");
+}
+
+export function visionSenseBypassesAmbientDarkness(senseType: VisionPolygon["senseType"]): boolean {
+  return senseType === "darkvision" || senseType === "blindsight" || senseType === "tremorsense" || senseType === "truesight";
+}
+
+export function visionSensesBypassDarkness(visionPolygons: ReadonlyArray<Pick<VisionPolygon, "senseType">>, darknessPolygons: ReadonlyArray<Pick<VisionPolygon, "magical">>): boolean {
+  if (darknessPolygons.length === 0) return true;
+  const bypassesMagical = visionPolygons.some((polygon) => polygon.senseType === "blindsight" || polygon.senseType === "tremorsense" || polygon.senseType === "truesight");
+  return bypassesMagical || (!darknessPolygons.some((polygon) => polygon.magical) && visionPolygons.some((polygon) => polygon.senseType === "darkvision"));
 }
 
 export function buildSmoothFogBrushPolygon(scene: Pick<Scene, "width" | "height">, rawPoints: VisionPoint[], options: SmoothFogBrushOptions = {}): { points: VisionPoint[]; radius: number } | undefined {
@@ -282,8 +348,13 @@ function sceneBounds(width: number, height: number): Segment[] {
 
 function visionBlockingWallSegments(walls: Wall[]): Segment[] {
   return walls
-    .filter((wall) => wall.blocksVision && distance({ x: wall.x1, y: wall.y1 }, { x: wall.x2, y: wall.y2 }) > 0.5)
+    .filter((wall) => wallBlocksVision(wall) && distance({ x: wall.x1, y: wall.y1 }, { x: wall.x2, y: wall.y2 }) > 0.5)
     .map((wall) => ({ a: { x: wall.x1, y: wall.y1 }, b: { x: wall.x2, y: wall.y2 } }));
+}
+
+export function wallBlocksVision(wall: Pick<Wall, "blocksVision" | "kind" | "open" | "locked">): boolean {
+  if ((wall.kind === "door" && !wall.locked || wall.kind === "window") && wall.open) return false;
+  return wall.blocksVision;
 }
 
 function clampPoint(point: VisionPoint, width: number, height: number): VisionPoint {

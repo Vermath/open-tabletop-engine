@@ -18,3 +18,25 @@ export function sceneTabWrapClass(canSelectScene: boolean, selected: boolean, ca
     canDeleteScene ? "deletable" : ""
   ].filter(Boolean).join(" ");
 }
+
+export type SceneSelectionWorkspaceMode = "live" | "prep" | "ai" | "manage";
+
+export interface SceneSelectionDestination {
+  workspaceMode: SceneSelectionWorkspaceMode;
+  manageCategory?: "scenes";
+}
+
+/**
+ * Scene navigation should not eject a GM from the scene editor. A user who
+ * cannot manage scenes still lands on the live table, where selecting an
+ * accessible scene has a visible result.
+ */
+export function sceneSelectionDestination(
+  workspaceMode: SceneSelectionWorkspaceMode,
+  canManageScenes: boolean,
+): SceneSelectionDestination {
+  if (workspaceMode !== "manage") return { workspaceMode };
+  return canManageScenes
+    ? { workspaceMode: "manage", manageCategory: "scenes" }
+    : { workspaceMode: "live" };
+}

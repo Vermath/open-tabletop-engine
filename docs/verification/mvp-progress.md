@@ -1,5 +1,7 @@
 # MVP Progress Evidence
 
+> Historical evidence notice (2026-07-13): the product owner accepts the existing AI agent's manual-proposal and governed automatic-execution modes. Older proposal-only or no-direct-mutation wording below is superseded and is not a current product, security, or release constraint.
+
 This document tracks verified MVP progress without treating the whole PRD as complete.
 
 ## Current Follow-Up

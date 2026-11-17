@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { approveProposal, applyProposal, buildSmoothFogBrushPolygon, computeFogRevealPolygon, computeLightVisionPolygon, computeLightVisionPolygons, computeTokenVisionPolygon, computeTokenVisionPolygons, hasPermission, isPointInsideVisionPolygon, rejectProposal, seedState, tokenCenter } from "./index.js";
+import { approveProposal, applyProposal, buildSmoothFogBrushPolygon, computeFogRevealPolygon, computeLightVisionPolygon, computeLightVisionPolygons, computeTokenVisionPolygon, computeTokenVisionPolygons, hasPermission, isPointInsideVisionPolygon, permissionsForRole, rejectProposal, seedState, tokenCenter } from "./index.js";
 
 describe("core permissions", () => {
   it("gives owners full campaign authority and keeps observers read-only", () => {
@@ -45,6 +45,32 @@ describe("core permissions", () => {
 
     expect(hasPermission({ ...baseInput, permission: "journal.create" })).toBe(true);
     expect(hasPermission({ ...baseInput, permission: "journal.delete" })).toBe(false);
+  });
+
+  it("keeps Agent access opt-in for players without removing public campaign memory", () => {
+    const state = seedState();
+    const baseInput = {
+      userId: "usr_demo_player",
+      campaignId: "camp_demo",
+      members: state.members,
+      grants: state.permissionGrants
+    };
+
+    expect(permissionsForRole("player")).not.toContain("ai.use");
+    expect(permissionsForRole("player")).toContain("ai.readPublicMemory");
+    expect(permissionsForRole("assistant_gm")).toContain("ai.use");
+    expect(hasPermission({ ...baseInput, permission: "ai.use" })).toBe(false);
+
+    state.permissionGrants.push({
+      id: "grant_player_ai_opt_in",
+      subjectType: "role",
+      subjectId: "player",
+      campaignId: "camp_demo",
+      permissions: ["ai.use"],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    });
+    expect(hasPermission({ ...baseInput, permission: "ai.use" })).toBe(true);
   });
 
   it("does not honor permission grants at expiration or with malformed expiration timestamps", () => {
@@ -334,6 +360,46 @@ describe("proposal application", () => {
 });
 
 describe("vision polygons", () => {
+  it("treats closed doors as vision blockers and open doors as passable", () => {
+    const state = seedState();
+    const scene = state.scenes.find((item) => item.id === "scn_vault_entry")!;
+    const token = state.tokens.find((item) => item.id === "tok_valen")!;
+    token.visionRadius = 220;
+    scene.walls = [{ id: "door_screen", x1: 200, y1: 300, x2: 600, y2: 300, blocksVision: true, blocksMovement: true, kind: "door", open: false }];
+
+    expect(isPointInsideVisionPolygon({ x: 325, y: 225 }, computeTokenVisionPolygon(scene, token)!)).toBe(false);
+
+    scene.walls[0]!.open = true;
+    expect(isPointInsideVisionPolygon({ x: 325, y: 225 }, computeTokenVisionPolygon(scene, token)!)).toBe(true);
+  });
+
+  it("emits independently ranged polygons for typed senses", () => {
+    const state = seedState();
+    const scene = state.scenes.find((item) => item.id === "scn_vault_entry")!;
+    const token = state.tokens.find((item) => item.id === "tok_valen")!;
+    scene.walls = [];
+    token.visionRadius = 0;
+    token.senses = [
+      { type: "darkvision", range: 120 },
+      { type: "blindsight", range: 30 }
+    ];
+
+    expect(computeTokenVisionPolygons(scene, token)).toEqual([
+      expect.objectContaining({ sourceId: token.id, senseType: "darkvision", radius: 120 }),
+      expect.objectContaining({ sourceId: token.id, senseType: "blindsight", radius: 30 })
+    ]);
+  });
+
+  it("preserves typed magical darkness metadata in visibility polygons", () => {
+    const state = seedState();
+    const scene = state.scenes.find((item) => item.id === "scn_vault_entry")!;
+    scene.walls = [];
+
+    expect(computeLightVisionPolygons(scene, { id: "darkness", x: 325, y: 375, radius: 90, color: "#111827", kind: "darkness", magical: true })).toEqual([
+      expect.objectContaining({ source: "light", sourceId: "darkness", lightingEffect: "darkness", magical: true, radius: 90 })
+    ]);
+  });
+
   it("clips token sight at vision-blocking walls", () => {
     const state = seedState();
     const scene = state.scenes.find((item) => item.id === "scn_vault_entry")!;

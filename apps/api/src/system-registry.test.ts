@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SystemManifestData } from "@open-tabletop/core";
 import { afterEach, describe, expect, it } from "vitest";
-import { buildApp } from "./app.js";
+import { buildApp } from "./fixtures/legacy-build-app.js";
 import { SqliteStateStore } from "./sqlite-store.js";
 import { MemoryStateStore } from "./store.js";
 

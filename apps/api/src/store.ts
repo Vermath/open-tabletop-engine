@@ -2,12 +2,16 @@ import { randomUUID } from "node:crypto";
 import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { emptyState, normalizeEngineState, seedState, type EngineState } from "@open-tabletop/core";
+import { assertDeclarativeSystemState, assertDeclarativeSystemStateCandidate, DeclarativeSystemStateError } from "./declarative-system-state.js";
 
 export interface StateStore {
   state: EngineState;
   save(): void;
   flush?(): void;
   replace(state: EngineState, options?: { flush?: boolean }): void;
+  /** Restore the last successfully persisted state without serializing a request-wide clone. */
+  restoreDurableState?(): void;
+  readiness?(): { ok: boolean; reason?: string } | Promise<{ ok: boolean; reason?: string }>;
 }
 
 export interface StoreSeedOptions {
@@ -37,13 +41,13 @@ export class CoalescedStateWriter {
     this.timer = setTimeout(() => {
       this.timer = undefined;
       // A throw here would be an uncaught exception in timer context and
-      // crash the process; stay dirty so the next save or flush retries,
-      // and let explicit flush() callers see the error instead.
+      // crash the process. Retry I/O failures later; schema failures restore
+      // accepted state and must never leave an invalid candidate pending.
       try {
         this.flush();
       } catch (error) {
-        this.dirty = true;
-        console.error("Deferred state flush failed; will retry on next save or flush", error);
+        this.dirty = !(error instanceof DeclarativeSystemStateError);
+        console.error(this.dirty ? "Deferred state flush failed; will retry on next save or flush" : "Invalid declarative state discarded", error);
       }
     }, this.delayMs);
     this.timer.unref?.();
@@ -59,9 +63,9 @@ export class CoalescedStateWriter {
       this.writeNow();
       this.dirty = false;
     } catch (error) {
-      // Explicit flush callers must be able to retry the same pending state
-      // without first issuing an unrelated save.
-      this.dirty = true;
+      // Retry pending state after transient I/O failure. Invalid declarative
+      // candidates have already been restored and must be discarded.
+      this.dirty = !(error instanceof DeclarativeSystemStateError);
       throw error;
     }
   }
@@ -70,15 +74,28 @@ export class CoalescedStateWriter {
     this.flush();
     this.unregisterShutdownFlush();
   }
+
+  discard(): void {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = undefined;
+    }
+    this.dirty = false;
+  }
 }
 
 export class FileStateStore implements StateStore {
   state: EngineState;
   private readonly writer: CoalescedStateWriter;
+  private acceptedState: EngineState;
+  private acceptedContents: string;
 
   constructor(private readonly filePath = resolve(process.cwd(), "storage", "state.json"), private readonly options: StoreSeedOptions = {}) {
     this.state = this.load();
-    this.writer = new CoalescedStateWriter(() => writeStateFile(this.filePath, this.state));
+    assertDeclarativeSystemState(this.state);
+    this.acceptedContents = JSON.stringify(this.state, null, 2);
+    this.acceptedState = JSON.parse(this.acceptedContents) as EngineState;
+    this.writer = new CoalescedStateWriter(() => this.writeNow());
   }
 
   save(): void {
@@ -95,14 +112,34 @@ export class FileStateStore implements StateStore {
     if (options.flush !== false) this.flush();
   }
 
+  restoreDurableState(): void {
+    this.writer.discard();
+    this.state = JSON.parse(this.acceptedContents) as EngineState;
+  }
+
   close(): void {
     this.writer.close();
+  }
+
+  private writeNow(): void {
+    // Reuse the one complete file serialization for validation and rollback.
+    try {
+      assertDeclarativeSystemStateCandidate(this.acceptedState, this.state);
+    } catch (error) {
+      if (error instanceof DeclarativeSystemStateError) this.restoreDurableState();
+      throw error;
+    }
+    const contents = JSON.stringify(this.state, null, 2);
+    writeStateFile(this.filePath, contents);
+    this.acceptedContents = contents;
+    this.acceptedState = JSON.parse(contents) as EngineState;
   }
 
   private load(): EngineState {
     if (!existsSync(this.filePath)) {
       const seeded = demoSeedEnabled(this.options) ? seedState() : emptyState();
-      writeStateFile(this.filePath, seeded);
+      assertDeclarativeSystemState(seeded);
+      writeStateFile(this.filePath, JSON.stringify(seeded, null, 2));
       return seeded;
     }
     const parsed = JSON.parse(readFileSync(this.filePath, "utf8")) as Partial<EngineState>;
@@ -112,25 +149,47 @@ export class FileStateStore implements StateStore {
 
 export class MemoryStateStore implements StateStore {
   state: EngineState;
+  private acceptedState: EngineState;
+  private dirty = false;
 
   constructor(state: EngineState = seedState()) {
     this.state = normalizeEngineState(state);
+    assertDeclarativeSystemState(this.state);
+    this.acceptedState = structuredClone(this.state);
   }
 
-  save(): void {}
+  save(): void {
+    this.dirty = true;
+  }
 
-  flush(): void {}
+  flush(): void {
+    if (!this.dirty) return;
+    try {
+      assertDeclarativeSystemStateCandidate(this.acceptedState, this.state);
+      this.acceptedState = structuredClone(this.state);
+      this.dirty = false;
+    } catch (error) {
+      if (error instanceof DeclarativeSystemStateError) this.restoreDurableState();
+      throw error;
+    }
+  }
 
-  replace(state: EngineState, _options: { flush?: boolean } = {}): void {
+  replace(state: EngineState, options: { flush?: boolean } = {}): void {
     this.state = normalizeEngineState(state);
+    this.save();
+    if (options.flush !== false) this.flush();
+  }
+
+  restoreDurableState(): void {
+    this.dirty = false;
+    this.state = structuredClone(this.acceptedState);
   }
 }
 
-function writeStateFile(filePath: string, state: EngineState): void {
+function writeStateFile(filePath: string, contents: string): void {
   const directory = dirname(filePath);
   mkdirSync(directory, { recursive: true });
   const tempPath = join(directory, `.${basename(filePath)}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`);
-  const contents = JSON.stringify(state, null, 2);
   let fileDescriptor: number | undefined;
 
   try {

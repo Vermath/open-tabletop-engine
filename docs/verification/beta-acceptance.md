@@ -4,7 +4,7 @@ Date: 2026-05-11
 
 ## Objective
 
-Ship OpenTabletop Engine beta v0.2 from the public-alpha baseline as a dogfoodable VTT for real multi-session campaigns: reliable persistence, safer self-hosting, clearer contributor paths, SRD-only content, proposal-based AI/plugins, safe import primitives, and outside-dogfood proof.
+Ship OpenTabletop Engine beta v0.2 from the public-alpha baseline as a dogfoodable VTT for real multi-session campaigns: reliable persistence, safer self-hosting, clearer contributor paths, SRD-only content, governed manual/automatic AI execution, permission-checked plugins, safe import primitives, and outside-dogfood proof.
 
 ## Final Status
 

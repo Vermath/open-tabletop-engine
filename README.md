@@ -10,7 +10,7 @@ OpenTabletop Engine is an API-first virtual tabletop platform for campaigns, wor
 4. Plugins are first-class citizens.
 5. Rules systems are data-driven.
 6. The GM owns campaign state.
-7. AI creates reviewable proposals by default; explicit auto-accept is a user choice.
+7. AI is a first-class agent with governed proposal and automatic-execution modes; neither mode is treated as a second-class fallback.
 8. Secrets are permissioned.
 9. Everything important is exportable.
 10. Every destructive action is reversible or auditable.
@@ -19,7 +19,6 @@ OpenTabletop Engine is an API-first virtual tabletop platform for campaigns, wor
 
 - `apps/api`: Fastify REST and WebSocket server.
 - `apps/web`: React VTT client.
-- `apps/ai-gateway`: provider-agnostic AI gateway entrypoint.
 - `apps/desktop`: Electron desktop host that runs the API and web client locally.
 - `apps/relay`: Cloudflare Worker and Durable Object relay for internet sharing from a desktop host.
 - `apps/worker`: HTTP-backed worker runner for exports, imports, and AI jobs.
@@ -35,7 +34,6 @@ OpenTabletop Engine is an API-first virtual tabletop platform for campaigns, wor
 - `packages/ai-core`: provider interface, tools, redaction, proposal helpers.
 - `packages/codex-app-server-provider`: Codex app-server transport for AI turns, tools, and asset generation.
 - `packages/tunnel-protocol`: validated relay frame protocol shared by desktop and relay.
-- `packages/database`: Drizzle-ready schema definitions and migration notes.
 
 ## Documentation
 
@@ -64,6 +62,7 @@ pnpm docs:site:check
 ## Development
 
 ```bash
+corepack enable # one-time: provides the pinned pnpm from package.json
 pnpm install --frozen-lockfile
 pnpm check
 ```
@@ -110,12 +109,12 @@ The `desktop-release` GitHub Actions workflow builds:
 - macOS `.dmg` packages for `x64` and `arm64`.
 - SHA256 checksum files.
 
-Signing and notarization are optional for the current desktop pipeline. Set repository variable `REQUIRE_DESKTOP_SIGNING=true` only when CI should fail unsigned builds. Signing secrets can be supplied later through electron-builder-compatible Apple, Authenticode, or Azure Trusted Signing variables.
+Manual workflow runs can build unsigned artifacts; tagged releases require valid signatures and macOS notarization. Set repository variable `REQUIRE_DESKTOP_SIGNING=true` to require signing on manual runs as well. Signing secrets can be supplied later through electron-builder-compatible Apple, Authenticode, or Azure Trusted Signing variables.
 
-Run a local unpackaged installer build with:
+Run a local unpacked app build (without an installer) with:
 
 ```bash
-pnpm --filter @open-tabletop/desktop dist -- --dir
+pnpm --filter @open-tabletop/desktop dist --dir --publish never
 ```
 
 Tagged releases using `desktop-v*` upload artifacts to GitHub Releases.
@@ -137,7 +136,7 @@ To run it from a clean checkout:
 3. Start the API with `pnpm --filter @open-tabletop/api dev`.
 4. Start the web client with `pnpm --filter @open-tabletop/web dev`.
 5. Open `http://localhost:5173`.
-6. Use the sidebar `Import` button and choose `docs/demo/ember-vault-public-alpha.ottx.json`.
+6. Open **Manage → Archives**. Under **Archive Import**, select **Apply archive** and **All records**, then choose **Import Archive** and select `docs/demo/ember-vault-public-alpha.ottx.json`.
 7. Select `The Ember Vault: Public Alpha One-Shot` from the campaign list.
 8. Use the session switcher to try the GM and player views. The imported demo users are `Demo GM` and `Demo Player`.
 
@@ -183,7 +182,7 @@ Current release tracks:
 
 - API-first campaign, world, scene, token, actor, item, handout, journal, session, encounter, search, chat, dice, combat, proposal, plugin, system, and scoped export/import surfaces.
 - `dnd-5e-srd` as the primary rules runtime for the demo slice.
-- Permission-filtered AI provider flow with candidate-to-approved campaign memory, encounter and recap workflows, proposal approval/revert semantics, and a deterministic local structured fallback; provider setup is documented in `docs/ai/overview.md`.
+- Permission-filtered AI provider flow with candidate-to-approved campaign memory, encounter and recap workflows, both manual proposal review and governed automatic execution, revert/audit semantics, and a deterministic local structured fallback; provider setup is documented in `docs/ai/overview.md`.
 - Permissioned plugin and system SDK examples documented under `docs/api/rest.md`, `docs/plugin-sdk/overview.md`, and `docs/system-sdk/overview.md`; plugin commands and subscribed events can request proposal-backed chat/storage changes, while system manifests are validated and installed durably under server-admin authority.
 - Public-alpha extension smoke path: install `plugins/example-macro-plugin` on the imported demo with only `chat.write`, run `/spark`, and inspect installed systems or switch through `generic-fantasy` before restoring `dnd-5e-srd`.
 - Beta dogfood path: accepted in `docs/verification/beta-acceptance.md`.
@@ -197,7 +196,7 @@ D&D Beyond import is not implemented as a scraper or auth-bypass flow. Do not sc
 
 ## Licensing
 
-The platform core is AGPL-3.0-only. SDK packages such as `packages/api-client`, `packages/plugin-sdk`, and `packages/system-sdk` are MIT-licensed so third-party plugin and system authors can reuse them without inheriting the platform license. Documentation under `docs/` is CC BY 4.0.
+The platform core is AGPL-3.0-only. SDK source code such as `packages/api-client`, `packages/plugin-sdk`, and `packages/system-sdk` is MIT-licensed so third-party plugin and system authors can reuse it without inheriting the platform license. The MIT-licensed `packages/api-contracts` package owns the shared public data contracts used by the API client and system SDK, so those packages do not depend on the platform core; [the type contract notice](packages/api-contracts/TYPE_CONTRACT_NOTICE.md) records the extracted declaration scope and provenance. Structured SRD-derived records distributed with `packages/system-sdk` remain CC BY 4.0 content and carry a package-local `CONTENT_NOTICE.md`; the published [System SDK code and content notice](docs/legal/system-sdk-content-notice.md) records the same distribution boundary and attribution. Documentation under `docs/` is CC BY 4.0.
 
 Example plugins and systems should keep clear license metadata and must not bundle proprietary tabletop content.
 
