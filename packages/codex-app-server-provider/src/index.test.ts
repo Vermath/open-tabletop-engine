@@ -1,5 +1,5 @@
 import type { AiProviderRequest } from "@open-tabletop/ai-core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   CodexAppServerAuthRequiredError,
   CodexAppServerProvider,
@@ -452,14 +452,21 @@ describe("CodexAppServerWebSocketTransport", () => {
       })
     });
 
-    const events = [];
-    for await (const event of provider.stream({
-      ...baseRequest,
-      executeTool: async () => {
-        await new Promise((resolve) => setTimeout(resolve, 60));
-        return { proposalId: "prop_map", implemented: true };
-      }
-    })) events.push(event);
+    const collectEvents = async () => {
+      const events = [];
+      for await (const event of provider.stream({
+        ...baseRequest,
+        executeTool: async () => {
+          await new Promise((resolve) => setTimeout(resolve, 60));
+          return { proposalId: "prop_map", implemented: true };
+        }
+      })) events.push(event);
+      return events;
+    };
+
+    vi.useFakeTimers();
+    const [events] = await Promise.all([collectEvents(), vi.runAllTimersAsync()])
+      .finally(() => vi.useRealTimers());
 
     expect(events).toEqual([
       {
