@@ -1,4 +1,4 @@
-import { selectInspectorPanel } from "./inspector-navigation.js";
+import { openAbilityRollMenu, selectInspectorPanel } from "./inspector-navigation.js";
 import type { APIResponse, Browser, ConsoleMessage, Locator, Page, Request } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { dnd5eSrdCompendium } from "../../packages/system-sdk/src/index.js";
@@ -279,8 +279,8 @@ async function exercisePlayerSheetBeforeCombat(page: Page, characterName: string
   await actorPanel.getByRole("tab", { name: "Stats" }).click();
   const stats = actorPanel.getByRole("region", { name: "Actor stats sheet" });
 
-  await rollCoreStatistic(page, stats.getByRole("button", { name: /Roll Strength check/ }), "Canonical Ember Campaign");
-  await rollCoreStatistic(page, stats.getByRole("button", { name: /Roll Dexterity saving throw/ }), "Canonical Ember Campaign");
+  await rollCoreStatistic(page, await openAbilityRollMenu(stats, "Strength", "check"), "Canonical Ember Campaign");
+  await rollCoreStatistic(page, await openAbilityRollMenu(stats, "Dexterity", "saving throw"), "Canonical Ember Campaign");
 
   const hp = stats.getByLabel("Actor sheet healing target HP");
   await applyReviewedTypedDamageToHp(page, { apiBaseUrl, campaignName: "Canonical Ember Campaign", actorName: characterName, targetHp: 5 });
@@ -710,7 +710,7 @@ async function createIndependentPlayer(browser: Browser, inviteToken: string, ob
   const page = await context.newPage();
   observeFirstPartyUrls(page, observedUrls);
   await page.goto(`/join?invite=${encodeURIComponent(inviteToken)}`);
-  await expect(page.locator(".section-title", { hasText: "Accept Invite" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Accept Invite", exact: true })).toBeVisible();
   await page.getByRole("textbox", { name: "Join email" }).fill("canonical.player@example.test");
   await page.getByRole("textbox", { name: "Display name" }).fill("Canonical Player");
   await page.getByLabel("Join password").fill("correct horse");
