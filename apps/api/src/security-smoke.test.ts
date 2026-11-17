@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, scryptSync } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -11,6 +11,7 @@ import { MemoryStateStore } from "./store.js";
 
 const gmHeaders = { "x-user-id": "usr_demo_gm" };
 const playerHeaders = { "x-user-id": "usr_demo_player" };
+const demoPassword = "demo-password-123";
 const envKeys = [
   "NODE_ENV",
   "OTTE_ADMIN_USER_IDS",
@@ -23,12 +24,42 @@ const envKeys = [
   "OTTE_PLUGIN_TRUST_KEYS"
 ];
 
+function campaignRevision(store: MemoryStateStore): string {
+  return store.state.campaigns.find((campaign) => campaign.id === "camp_demo")!.updatedAt;
+}
+
 describe("security smoke", () => {
   afterEach(() => {
     restoreEnv(snapshot);
   });
 
   const snapshot = snapshotEnv(envKeys);
+
+  it("sanitizes unexpected server errors while preserving explicit client errors", async () => {
+    const app = await buildApp({ store: new MemoryStateStore() });
+    app.get("/__security-smoke/unexpected-error", async () => {
+      throw new Error("sensitive database connection detail");
+    });
+    app.get("/__security-smoke/client-error", async () => {
+      const error = new Error("Trusted request validation detail") as Error & { statusCode: number; code: string };
+      error.statusCode = 400;
+      error.code = "FST_ERR_VALIDATION";
+      throw error;
+    });
+
+    try {
+      const unexpected = await app.inject({ method: "GET", url: "/__security-smoke/unexpected-error" });
+      expect(unexpected.statusCode).toBe(500);
+      expect(unexpected.json()).toEqual({ error: "internal_server_error", message: "Internal server error" });
+      expect(unexpected.body).not.toContain("sensitive database connection detail");
+
+      const clientError = await app.inject({ method: "GET", url: "/__security-smoke/client-error" });
+      expect(clientError.statusCode).toBe(400);
+      expect(clientError.json()).toMatchObject({ statusCode: 400, message: "Trusted request validation detail" });
+    } finally {
+      await app.close();
+    }
+  });
 
   it("enforces server-admin auth boundaries", async () => {
     const app = await buildApp({ store: new MemoryStateStore() });
@@ -60,6 +91,7 @@ describe("security smoke", () => {
         url: "/api/v1/campaigns/camp_demo/assets/upload",
         headers: {
           ...gmHeaders,
+          "idempotency-key": "security-active-svg-upload",
           "content-type": "image/svg+xml",
           "x-asset-name": encodeURIComponent("active.svg")
         },
@@ -93,6 +125,7 @@ describe("security smoke", () => {
         url: "/api/v1/campaigns/camp_demo/assets/upload",
         headers: {
           ...gmHeaders,
+          "idempotency-key": "security-signed-image-upload",
           "content-type": "image/png",
           "x-asset-name": encodeURIComponent("signed.png")
         },
@@ -153,7 +186,7 @@ describe("security smoke", () => {
     }) satisfies MapAsset;
 
     try {
-      expect(assetStorageKey(asset)).toBe("___camp_demo/___asset_with_slashes.png");
+      expect(assetStorageKey(asset)).toMatch(/^camp_demo--[0-9a-f]{32}\/asset_with_slashes--[0-9a-f]{32}\.png$/);
       const traversalAsset = { ...asset, storage: { provider: "local" as const, key: "../escape.png" } };
       await expect(storage.put(traversalAsset, Buffer.from("bytes"))).rejects.toThrow("Invalid asset storage path");
       expect(existsSync(join(directory, "..", "escape.png"))).toBe(false);
@@ -170,8 +203,9 @@ describe("security smoke", () => {
       writeVersionedPluginPackage(pluginRoot, "signed-plugin", "signed-plugin", "1.0.0", "Signed macro");
       writePluginSignature(pluginRoot, "signed-plugin", "trusted-local", "shared-secret");
 
+      const pluginStore = new MemoryStateStore();
       app = await buildApp({
-        store: new MemoryStateStore(),
+        store: pluginStore,
         pluginRegistry: loadPluginRegistry({
           pluginRoot,
           trustPolicy: { policy: "require_trusted", keys: { "trusted-local": "shared-secret" } }
@@ -181,15 +215,15 @@ describe("security smoke", () => {
       const unsignedInstall = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/plugins/unsigned-plugin/install",
-        headers: gmHeaders,
-        payload: { permissions: ["chat.write"] }
+        headers: { ...gmHeaders, "idempotency-key": "security-unsigned-install" },
+        payload: { permissions: ["chat.write"], expectedUpdatedAt: campaignRevision(pluginStore) }
       });
       expect(unsignedInstall.statusCode).toBe(403);
 
       const unsignedCommand = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/plugins/unsigned-plugin/chat-command",
-        headers: gmHeaders,
+        headers: { ...gmHeaders, "idempotency-key": "security-unsigned-command" },
         payload: { command: "/version" }
       });
       expect(unsignedCommand.statusCode).toBe(403);
@@ -197,8 +231,8 @@ describe("security smoke", () => {
       const signedInstall = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/plugins/signed-plugin/install",
-        headers: gmHeaders,
-        payload: { permissions: ["chat.write"] }
+        headers: { ...gmHeaders, "idempotency-key": "security-signed-install" },
+        payload: { permissions: ["chat.write"], expectedUpdatedAt: campaignRevision(pluginStore) }
       });
       expect(signedInstall.statusCode).toBe(200);
       expect(signedInstall.json().plugin.trust).toMatchObject({ status: "trusted", installable: true });
@@ -206,7 +240,7 @@ describe("security smoke", () => {
       const signedCommand = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/plugins/signed-plugin/chat-command",
-        headers: gmHeaders,
+        headers: { ...gmHeaders, "idempotency-key": "security-signed-command" },
         payload: { command: "/version" }
       });
       expect(signedCommand.statusCode).toBe(200);
@@ -217,6 +251,7 @@ describe("security smoke", () => {
     }
   });
 
+  // This matrix boots four app instances; leave headroom for full-suite shared-process load.
   it("covers plugin trust policy posture across production, registry, and review-required deployments", async () => {
     const pluginRoot = mkdtempSync(join(tmpdir(), "otte-security-plugin-matrix-"));
     let app: Awaited<ReturnType<typeof buildApp>> | undefined;
@@ -231,22 +266,25 @@ describe("security smoke", () => {
       delete process.env.OTTE_PLUGIN_REVIEW_POLICY;
       process.env.OTTE_PLUGIN_TRUST_POLICY = "allow_unsigned";
       delete process.env.OTTE_PLUGIN_TRUST_KEYS;
+      const permissiveStore = new MemoryStateStore();
       app = await buildApp({
-        store: new MemoryStateStore(),
+        store: permissiveStore,
         pluginRegistry: loadPluginRegistry({
           pluginRoot,
           trustPolicy: { policy: "allow_unsigned" }
         })
       });
-      const permissiveRegistryAdminHeaders = await loginTestUser(app, "usr_demo_gm");
+      const permissiveRegistryAdminHeaders = await loginTestUser(app, permissiveStore, "usr_demo_gm");
       const registryReviewBlockedInstall = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/plugins/registry-signed-plugin/install",
-        headers: permissiveRegistryAdminHeaders,
-        payload: { permissions: ["chat.write"] }
+        headers: { ...permissiveRegistryAdminHeaders, "idempotency-key": "security-registry-review-blocked" },
+        payload: { permissions: ["chat.write"], expectedUpdatedAt: campaignRevision(permissiveStore) }
       });
       expect(registryReviewBlockedInstall.statusCode).toBe(403);
-      expect(registryReviewBlockedInstall.json().message).toContain("requires marketplace approval");
+      // A present but unverifiable signature is always a trust failure. Review
+      // policy must not mask or downgrade that fail-closed decision.
+      expect(registryReviewBlockedInstall.json().message).toContain("signature key is not trusted");
       const permissiveRegistryPosture = await app.inject({
         method: "GET",
         url: "/api/v1/admin/plugins/operations",
@@ -255,15 +293,14 @@ describe("security smoke", () => {
       expect(permissiveRegistryPosture.statusCode).toBe(200);
       expect(permissiveRegistryPosture.json()).toEqual(
         expect.objectContaining({
-          policy: { review: "allow_unreviewed", trust: "allow_unsigned" },
-          actionReasons: expect.arrayContaining(["community_registry_review_policy_permissive"]),
+          policy: { review: "require_approved", trust: "allow_unsigned" },
+          actionReasons: expect.arrayContaining(["review_backlog"]),
           registryOperations: expect.objectContaining({
-            communityDistributionNeedsReviewPolicy: true
+            communityDistributionNeedsReviewPolicy: false
           }),
           remediationQueue: expect.arrayContaining([
             expect.objectContaining({
-              code: "require_review_for_community_registries",
-              action: expect.stringContaining("OTTE_PLUGIN_REVIEW_POLICY=require_approved")
+              code: "review_marketplace_packages"
             })
           ])
         })
@@ -275,14 +312,15 @@ describe("security smoke", () => {
       process.env.OTTE_PLUGIN_REVIEW_POLICY = "require_approved";
       process.env.OTTE_PLUGIN_TRUST_POLICY = "allow_unsigned";
       delete process.env.OTTE_PLUGIN_TRUST_KEYS;
+      const productionStore = new MemoryStateStore();
       app = await buildApp({
-        store: new MemoryStateStore(),
+        store: productionStore,
         pluginRegistry: loadPluginRegistry({
           pluginRoot,
           trustPolicy: { policy: "allow_unsigned" }
         })
       });
-      const productionAdminHeaders = await loginTestUser(app, "usr_demo_gm");
+      const productionAdminHeaders = await loginTestUser(app, productionStore, "usr_demo_gm");
       const productionUnsignedPosture = await app.inject({
         method: "GET",
         url: "/api/v1/admin/plugins/operations",
@@ -310,14 +348,15 @@ describe("security smoke", () => {
       process.env.NODE_ENV = "development";
       process.env.OTTE_PLUGIN_TRUST_POLICY = "require_trusted";
       delete process.env.OTTE_PLUGIN_TRUST_KEYS;
+      const missingKeyStore = new MemoryStateStore();
       app = await buildApp({
-        store: new MemoryStateStore(),
+        store: missingKeyStore,
         pluginRegistry: loadPluginRegistry({
           pluginRoot,
           trustPolicy: { policy: "require_trusted", keys: {} }
         })
       });
-      const missingKeyAdminHeaders = await loginTestUser(app, "usr_demo_gm");
+      const missingKeyAdminHeaders = await loginTestUser(app, missingKeyStore, "usr_demo_gm");
       const missingKeyPosture = await app.inject({
         method: "GET",
         url: "/api/v1/admin/plugins/operations",
@@ -342,19 +381,20 @@ describe("security smoke", () => {
       process.env.NODE_ENV = "production";
       process.env.OTTE_PLUGIN_TRUST_POLICY = "require_trusted";
       process.env.OTTE_PLUGIN_TRUST_KEYS = JSON.stringify({ "trusted-local": "shared-secret" });
+      const trustedStore = new MemoryStateStore();
       app = await buildApp({
-        store: new MemoryStateStore(),
+        store: trustedStore,
         pluginRegistry: loadPluginRegistry({
           pluginRoot,
           trustPolicy: { policy: "require_trusted", keys: { "trusted-local": "shared-secret" } }
         })
       });
-      const trustedAdminHeaders = await loginTestUser(app, "usr_demo_gm");
+      const trustedAdminHeaders = await loginTestUser(app, trustedStore, "usr_demo_gm");
       const reviewBlockedInstall = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/plugins/registry-signed-plugin/install",
-        headers: trustedAdminHeaders,
-        payload: { permissions: ["chat.write"] }
+        headers: { ...trustedAdminHeaders, "idempotency-key": "security-review-blocked-install" },
+        payload: { permissions: ["chat.write"], expectedUpdatedAt: campaignRevision(trustedStore) }
       });
       expect(reviewBlockedInstall.statusCode).toBe(403);
       expect(reviewBlockedInstall.json().message).toContain("requires marketplace approval");
@@ -374,16 +414,16 @@ describe("security smoke", () => {
       const approvedReview = await app.inject({
         method: "PATCH",
         url: `/api/v1/admin/plugins/reviews/${registryReview.review.reviewKey}`,
-        headers: trustedAdminHeaders,
-        payload: { status: "approved", note: "deployment matrix smoke" }
+        headers: { ...trustedAdminHeaders, "idempotency-key": "security-plugin-review-approve" },
+        payload: { status: "approved", notes: "deployment matrix smoke", expectedUpdatedAt: registryReview.review.updatedAt }
       });
       expect(approvedReview.statusCode).toBe(200);
 
       const approvedInstall = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/plugins/registry-signed-plugin/install",
-        headers: trustedAdminHeaders,
-        payload: { permissions: ["chat.write"] }
+        headers: { ...trustedAdminHeaders, "idempotency-key": "security-approved-install" },
+        payload: { permissions: ["chat.write"], expectedUpdatedAt: campaignRevision(trustedStore) }
       });
       expect(approvedInstall.statusCode).toBe(200);
       expect(approvedInstall.json().plugin).toMatchObject({
@@ -394,8 +434,8 @@ describe("security smoke", () => {
       const localUnsignedInstall = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/plugins/local-unsigned-plugin/install",
-        headers: trustedAdminHeaders,
-        payload: { permissions: ["chat.write"] }
+        headers: { ...trustedAdminHeaders, "idempotency-key": "security-local-unsigned-install" },
+        payload: { permissions: ["chat.write"], expectedUpdatedAt: campaignRevision(trustedStore) }
       });
       expect(localUnsignedInstall.statusCode).toBe(403);
       expect(localUnsignedInstall.json().message).toContain("unsigned");
@@ -403,7 +443,7 @@ describe("security smoke", () => {
       const signedCommand = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/plugins/registry-signed-plugin/chat-command",
-        headers: trustedAdminHeaders,
+        headers: { ...trustedAdminHeaders, "idempotency-key": "security-registry-signed-command" },
         payload: { command: "/version" }
       });
       expect(signedCommand.statusCode).toBe(200);
@@ -412,7 +452,7 @@ describe("security smoke", () => {
       await app?.close();
       rmSync(pluginRoot, { recursive: true, force: true });
     }
-  });
+  }, 15_000);
 });
 
 function snapshotEnv(keys: string[]): Record<string, string | undefined> {
@@ -465,12 +505,27 @@ function writePluginSignature(pluginRoot: string, packageId: string, keyId: stri
   );
 }
 
-async function loginTestUser(app: Awaited<ReturnType<typeof buildApp>>, userId: string): Promise<{ authorization: string }> {
+function testPasswordHash(password = demoPassword): string {
+  const salt = "test-password-salt";
+  return `scrypt:${salt}:${scryptSync(password, salt, 32).toString("base64url")}`;
+}
+
+function seedDemoPassword(store: MemoryStateStore, userId: string): { email?: string; password?: string; userId: string } {
+  const user = store.state.users.find((item) => item.id === userId);
+  if (!user) throw new Error(`Missing test user ${userId}`);
+  user.passwordHash = testPasswordHash();
+  user.passwordResetRequired = false;
+  user.mfa = undefined;
+  return { userId, email: user.email, password: user.email ? demoPassword : undefined };
+}
+
+async function loginTestUser(app: Awaited<ReturnType<typeof buildApp>>, store: MemoryStateStore, userId: string): Promise<{ authorization: string }> {
+  const credentials = seedDemoPassword(store, userId);
   const email = userId === "usr_demo_gm" ? "gm@example.test" : userId === "usr_demo_player" ? "player@example.test" : undefined;
   const login = await app.inject({
     method: "POST",
     url: "/api/v1/auth/login",
-    payload: email ? { email } : { userId }
+    payload: email ? { email, password: credentials.password } : { userId }
   });
   expect(login.statusCode).toBe(200);
   return { authorization: `Bearer ${login.json().token}` };

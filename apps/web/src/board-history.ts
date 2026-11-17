@@ -1,7 +1,8 @@
-import { createId, nowIso, type Token } from "@open-tabletop/core";
+import { createId, nowIso, type Scene, type Token } from "@open-tabletop/core";
 
 export type BoardTokenPositionChange = { tokenId: string; before: Pick<Token, "x" | "y">; after: Pick<Token, "x" | "y"> };
-export type BoardHistoryAction = { kind: "tokens.create" | "tokens.delete"; tokens: Token[] } | { kind: "tokens.move"; changes: BoardTokenPositionChange[] };
+export type BoardTokenFrameChange = { tokenId: string; before: Pick<Token, "x" | "y" | "width" | "height">; after: Pick<Token, "x" | "y" | "width" | "height"> };
+export type BoardHistoryAction = { kind: "tokens.create" | "tokens.delete"; tokens: Token[] } | { kind: "tokens.move"; changes: BoardTokenPositionChange[] } | { kind: "tokens.resize"; changes: BoardTokenFrameChange[] };
 export type BoardHistoryDirection = "undo" | "redo";
 
 export interface LocalBoardHistoryResult {
@@ -10,7 +11,7 @@ export interface LocalBoardHistoryResult {
 }
 
 export function applyLocalBoardHistoryAction(tokens: Token[], action: BoardHistoryAction, direction: BoardHistoryDirection): LocalBoardHistoryResult {
-  if (action.kind === "tokens.move") {
+  if (action.kind === "tokens.move" || action.kind === "tokens.resize") {
     const target = direction === "undo" ? "before" : "after";
     const changesById = new Map(action.changes.map((change) => [change.tokenId, change[target]]));
     return {
@@ -37,18 +38,27 @@ export function applyLocalBoardHistoryAction(tokens: Token[], action: BoardHisto
   };
 }
 
-export function createTokenCopies(tokens: Token[], options: { idFactory?: () => string; now?: () => string; offset?: number } = {}): Token[] {
+export function createTokenCopies(tokens: Token[], options: { idFactory?: () => string; now?: () => string; offset?: number; scene?: Pick<Scene, "width" | "height"> } = {}): Token[] {
   const idFactory = options.idFactory ?? (() => createId("tok"));
   const timestamp = options.now ?? nowIso;
   const offset = options.offset ?? 24;
+  const scene = options.scene;
+  const minX = Math.min(...tokens.map((token) => token.x));
+  const minY = Math.min(...tokens.map((token) => token.y));
+  const maxRight = Math.max(...tokens.map((token) => token.x + token.width));
+  const maxBottom = Math.max(...tokens.map((token) => token.y + token.height));
+  const deltaX = scene ? Math.max(-minX, Math.min(scene.width - maxRight, offset)) : offset;
+  const deltaY = scene ? Math.max(-minY, Math.min(scene.height - maxBottom, offset)) : offset;
   return tokens.map((token) => {
     const now = timestamp();
     return {
       ...token,
       id: idFactory(),
       name: copyTokenName(token.name),
-      x: token.x + offset,
-      y: token.y + offset,
+      // Translate the group together when it fits. Oversized groups may lose
+      // spacing, but every token's origin stays reachable without resizing it.
+      x: scene ? Math.max(0, Math.min(Math.max(0, scene.width - token.width), token.x + deltaX)) : token.x + deltaX,
+      y: scene ? Math.max(0, Math.min(Math.max(0, scene.height - token.height), token.y + deltaY)) : token.y + deltaY,
       targetedByUserIds: [],
       createdAt: now,
       updatedAt: now

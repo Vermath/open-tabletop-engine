@@ -1,5 +1,7 @@
 # Player Guide
 
+Before joining, check the [supported browser statement](./supported-browsers.md). Desktop Chromium is the automated compatibility baseline. Firefox 151.0 and WebKit 26.5 on Windows have [bounded join and play automation evidence](../verification/crossbrowser-2026-09-06.md); actual Safari, mobile devices, and assistive technology remain separately unverified.
+
 ## Join
 
 1. Get the invite token or invite URL from the GM.

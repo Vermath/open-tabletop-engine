@@ -20,34 +20,19 @@ jobs:
     name: pnpm identity:smoke
     runs-on: ubuntu-latest
     timeout-minutes: 20
-
-    env:
-      OTTE_IDENTITY_SMOKE_BASE_URL: ${{ secrets.OTTE_IDENTITY_SMOKE_BASE_URL }}
-      OTTE_IDENTITY_SMOKE_ADMIN_TOKEN: ${{ secrets.OTTE_IDENTITY_SMOKE_ADMIN_TOKEN }}
-      OTTE_IDENTITY_SMOKE_ADMIN_USER_ID: ${{ secrets.OTTE_IDENTITY_SMOKE_ADMIN_USER_ID }}
-      OTTE_OIDC_ISSUER: ${{ secrets.OTTE_OIDC_ISSUER }}
-      OTTE_OIDC_CLIENT_ID: ${{ secrets.OTTE_OIDC_CLIENT_ID }}
-      OTTE_OIDC_CLIENT_SECRET: ${{ secrets.OTTE_OIDC_CLIENT_SECRET }}
-      OTTE_OIDC_REDIRECT_URI: ${{ secrets.OTTE_OIDC_REDIRECT_URI }}
-      OTTE_OIDC_SCOPE: ${{ secrets.OTTE_OIDC_SCOPE }}
-      OTTE_OIDC_DISPLAY_NAME: ${{ secrets.OTTE_OIDC_DISPLAY_NAME }}
-      OTTE_OIDC_TOKEN_AUTH: ${{ secrets.OTTE_OIDC_TOKEN_AUTH }}
-      OTTE_OIDC_ALLOW_INSECURE: ${{ secrets.OTTE_OIDC_ALLOW_INSECURE }}
-      OTTE_OIDC_ALLOWED_RETURN_ORIGINS: ${{ secrets.OTTE_OIDC_ALLOWED_RETURN_ORIGINS }}
-      OTTE_WEB_ORIGIN: ${{ secrets.OTTE_WEB_ORIGIN }}
-      OTTE_SCIM_BEARER_TOKEN: ${{ secrets.OTTE_SCIM_BEARER_TOKEN }}
+    environment: identity-smoke
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 8.7.0
+        uses: pnpm/action-setup@b0f76dfb45f55f8421693e4803ac7bb65143bd34 # v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 22
           cache: pnpm
@@ -57,9 +42,16 @@ jobs:
 
       - name: Validate identity smoke secrets are configured
         shell: bash
+        env:
+          OTTE_IDENTITY_SMOKE_TARGET: ${{ inputs.smoke_target }}
+          OTTE_IDENTITY_SMOKE_BASE_URL: ${{ secrets.OTTE_IDENTITY_SMOKE_BASE_URL }}
+          OTTE_IDENTITY_SMOKE_ADMIN_TOKEN: ${{ secrets.OTTE_IDENTITY_SMOKE_ADMIN_TOKEN }}
+          OTTE_OIDC_ISSUER: ${{ secrets.OTTE_OIDC_ISSUER }}
+          OTTE_OIDC_CLIENT_ID: ${{ secrets.OTTE_OIDC_CLIENT_ID }}
+          OTTE_SCIM_BEARER_TOKEN: ${{ secrets.OTTE_SCIM_BEARER_TOKEN }}
         run: |
           set -euo pipefail
-          if [[ "${{ inputs.smoke_target }}" == "deployed-api" ]]; then
+          if [[ "${OTTE_IDENTITY_SMOKE_TARGET}" == "deployed-api" ]]; then
             missing=()
             [[ -n "${OTTE_IDENTITY_SMOKE_BASE_URL:-}" ]] || missing+=("OTTE_IDENTITY_SMOKE_BASE_URL")
             [[ -n "${OTTE_IDENTITY_SMOKE_ADMIN_TOKEN:-}" ]] || missing+=("OTTE_IDENTITY_SMOKE_ADMIN_TOKEN")
@@ -76,4 +68,20 @@ jobs:
           fi
 
       - name: Run identity smoke
+        env:
+          OTTE_IDENTITY_SMOKE_TARGET: ${{ inputs.smoke_target }}
+          OTTE_IDENTITY_SMOKE_BASE_URL: ${{ secrets.OTTE_IDENTITY_SMOKE_BASE_URL }}
+          OTTE_IDENTITY_SMOKE_ADMIN_TOKEN: ${{ secrets.OTTE_IDENTITY_SMOKE_ADMIN_TOKEN }}
+          OTTE_IDENTITY_SMOKE_ADMIN_USER_ID: ${{ secrets.OTTE_IDENTITY_SMOKE_ADMIN_USER_ID }}
+          OTTE_OIDC_ISSUER: ${{ secrets.OTTE_OIDC_ISSUER }}
+          OTTE_OIDC_CLIENT_ID: ${{ secrets.OTTE_OIDC_CLIENT_ID }}
+          OTTE_OIDC_CLIENT_SECRET: ${{ secrets.OTTE_OIDC_CLIENT_SECRET }}
+          OTTE_OIDC_REDIRECT_URI: ${{ secrets.OTTE_OIDC_REDIRECT_URI }}
+          OTTE_OIDC_SCOPE: ${{ secrets.OTTE_OIDC_SCOPE }}
+          OTTE_OIDC_DISPLAY_NAME: ${{ secrets.OTTE_OIDC_DISPLAY_NAME }}
+          OTTE_OIDC_TOKEN_AUTH: ${{ secrets.OTTE_OIDC_TOKEN_AUTH }}
+          OTTE_OIDC_ALLOW_INSECURE: ${{ secrets.OTTE_OIDC_ALLOW_INSECURE }}
+          OTTE_OIDC_ALLOWED_RETURN_ORIGINS: ${{ secrets.OTTE_OIDC_ALLOWED_RETURN_ORIGINS }}
+          OTTE_WEB_ORIGIN: ${{ secrets.OTTE_WEB_ORIGIN }}
+          OTTE_SCIM_BEARER_TOKEN: ${{ secrets.OTTE_SCIM_BEARER_TOKEN }}
         run: pnpm identity:smoke

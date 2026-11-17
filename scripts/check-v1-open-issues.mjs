@@ -50,9 +50,22 @@ function loadIssues() {
   }
 
   const output = execFileSync(
-    "gh",
-    ["issue", "list", "--repo", repo, "--state", "open", "--limit", "100", "--json", "number,title,labels,url"],
+    ghBinary(),
+    [...ghBinaryArgs(), "issue", "list", "--repo", repo, "--state", "open", "--limit", "1000", "--json", "number,title,labels,url"],
     { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }
   );
   return JSON.parse(output);
+}
+
+function ghBinary() {
+  return process.env.OTTE_GH_BIN ?? "gh";
+}
+
+function ghBinaryArgs() {
+  if (!process.env.OTTE_GH_BIN_ARGS_JSON) return [];
+  const args = JSON.parse(process.env.OTTE_GH_BIN_ARGS_JSON);
+  if (!Array.isArray(args) || !args.every((arg) => typeof arg === "string")) {
+    throw new Error("OTTE_GH_BIN_ARGS_JSON must be a JSON array of strings.");
+  }
+  return args;
 }

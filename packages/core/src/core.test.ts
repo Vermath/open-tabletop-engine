@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { approveProposal, applyProposal, buildSmoothFogBrushPolygon, computeFogRevealPolygon, computeLightVisionPolygon, computeLightVisionPolygons, computeTokenVisionPolygon, computeTokenVisionPolygons, hasPermission, isPointInsideVisionPolygon, rejectProposal, seedState, tokenCenter } from "./index.js";
+import { approveProposal, applyProposal, buildSmoothFogBrushPolygon, computeFogRevealPolygon, computeLightVisionPolygon, computeLightVisionPolygons, computeTokenVisionPolygon, computeTokenVisionPolygons, hasPermission, isPointInsideVisionPolygon, permissionsForRole, rejectProposal, seedState, tokenCenter } from "./index.js";
 
 describe("core permissions", () => {
   it("gives owners full campaign authority and keeps observers read-only", () => {
@@ -45,6 +45,57 @@ describe("core permissions", () => {
 
     expect(hasPermission({ ...baseInput, permission: "journal.create" })).toBe(true);
     expect(hasPermission({ ...baseInput, permission: "journal.delete" })).toBe(false);
+  });
+
+  it("keeps Agent access opt-in for players without removing public campaign memory", () => {
+    const state = seedState();
+    const baseInput = {
+      userId: "usr_demo_player",
+      campaignId: "camp_demo",
+      members: state.members,
+      grants: state.permissionGrants
+    };
+
+    expect(permissionsForRole("player")).not.toContain("ai.use");
+    expect(permissionsForRole("player")).toContain("ai.readPublicMemory");
+    expect(permissionsForRole("assistant_gm")).toContain("ai.use");
+    expect(hasPermission({ ...baseInput, permission: "ai.use" })).toBe(false);
+
+    state.permissionGrants.push({
+      id: "grant_player_ai_opt_in",
+      subjectType: "role",
+      subjectId: "player",
+      campaignId: "camp_demo",
+      permissions: ["ai.use"],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    });
+    expect(hasPermission({ ...baseInput, permission: "ai.use" })).toBe(true);
+  });
+
+  it("does not honor permission grants at expiration or with malformed expiration timestamps", () => {
+    const state = seedState();
+    const baseInput = {
+      userId: "usr_demo_player",
+      campaignId: "camp_demo",
+      permission: "journal.create" as const,
+      members: state.members,
+      now: new Date("2026-01-02T00:00:00.000Z")
+    };
+    const grant = {
+      id: "grant_expiring",
+      subjectType: "user" as const,
+      subjectId: "usr_demo_player",
+      campaignId: "camp_demo",
+      permissions: ["journal.create" as const],
+      expiresAt: "2026-01-02T00:00:00.000Z",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+
+    expect(hasPermission({ ...baseInput, grants: [grant] })).toBe(false);
+    expect(hasPermission({ ...baseInput, grants: [{ ...grant, expiresAt: "not-a-timestamp" }] })).toBe(false);
+    expect(hasPermission({ ...baseInput, grants: [{ ...grant, expiresAt: "2026-01-02T00:00:00.001Z" }] })).toBe(true);
   });
 });
 
@@ -98,9 +149,257 @@ describe("proposal application", () => {
     expect(() => applyProposal({ ...state, proposals: [rejected] }, rejected)).toThrow("approved");
     expect(() => rejectProposal(applied)).toThrow("pending or approved");
   });
+
+  it("copies only collections touched by proposal application", () => {
+    const state = seedState();
+    const originalToken = state.tokens.find((item) => item.id === "tok_valen")!;
+    const proposal = {
+      id: "prop_copy_scope",
+      campaignId: "camp_demo",
+      createdByType: "ai" as const,
+      title: "Move token and add note",
+      summary: "Move a token and add a journal entry",
+      status: "approved" as const,
+      approvalRequired: true,
+      changesJson: [
+        {
+          entity: "token" as const,
+          action: "update" as const,
+          id: "tok_valen",
+          data: { x: originalToken.x + 50 }
+        },
+        {
+          entity: "journal" as const,
+          action: "create" as const,
+          data: {
+            id: "jnl_copy_scope",
+            campaignId: "camp_demo",
+            title: "Copy scope",
+            body: "Text",
+            visibility: "gm_only",
+            visibleToUserIds: [],
+            visibleToActorIds: [],
+            tags: [],
+            createdBy: "usr_demo_gm",
+            updatedBy: "usr_demo_gm",
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z"
+          }
+        }
+      ],
+      diffJson: {},
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+    state.proposals = [proposal];
+
+    const next = applyProposal(state, proposal, "usr_demo_gm");
+
+    expect(state.tokens[0]).toBe(originalToken);
+    expect(state.tokens[0]!.x).toBe(originalToken.x);
+    expect(state.journals).toHaveLength(1);
+    expect(state.proposals[0]!.status).toBe("approved");
+
+    expect(next.tokens).not.toBe(state.tokens);
+    expect(next.tokens[0]).not.toBe(originalToken);
+    expect(next.tokens[0]!.x).toBe(originalToken.x + 50);
+    expect(next.journals).not.toBe(state.journals);
+    expect(next.journals).toHaveLength(2);
+    expect(next.proposals).not.toBe(state.proposals);
+    expect(next.proposals[0]!.status).toBe("applied");
+
+    expect(next.users).toBe(state.users);
+    expect(next.campaigns).toBe(state.campaigns);
+    expect(next.scenes).toBe(state.scenes);
+    expect(next.actors).toBe(state.actors);
+  });
+
+  it("rejects proposal changes that target entities outside the proposal campaign", () => {
+    const state = seedState();
+    state.campaigns.push({
+      id: "camp_other",
+      ownerUserId: "usr_demo_gm",
+      name: "Other Campaign",
+      description: "",
+      defaultSystemId: "dnd-5e-srd",
+      visibility: "private",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    });
+    state.scenes.push({
+      id: "scn_other",
+      campaignId: "camp_other",
+      name: "Other Scene",
+      width: 800,
+      height: 600,
+      gridType: "square",
+      gridSize: 50,
+      active: true,
+      sortOrder: 0,
+      fog: [],
+      walls: [],
+      lights: [],
+      annotations: [],
+      metadata: {},
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    });
+    state.tokens.push({
+      id: "tok_other",
+      sceneId: "scn_other",
+      name: "Other Token",
+      x: 10,
+      y: 10,
+      width: 50,
+      height: 50,
+      rotation: 0,
+      hidden: false,
+      locked: false,
+      visionEnabled: false,
+      visionRadius: 0,
+      disposition: "neutral",
+      metadata: {},
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    });
+    const proposal = {
+      id: "prop_cross_campaign",
+      campaignId: "camp_demo",
+      createdByType: "ai" as const,
+      title: "Move other token",
+      summary: "Should not cross campaign boundaries",
+      status: "approved" as const,
+      approvalRequired: true,
+      changesJson: [{ entity: "token" as const, action: "update" as const, id: "tok_other", data: { x: 300 } }],
+      diffJson: {},
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+
+    expect(() => applyProposal({ ...state, proposals: [proposal] }, proposal, "usr_demo_gm")).toThrow("outside proposal campaign");
+  });
+
+  it("clones proposal create payloads before inserting them into state", () => {
+    const state = seedState();
+    const data = {
+      id: "jnl_payload_clone",
+      campaignId: "camp_demo",
+      title: "Payload clone",
+      body: "Text",
+      visibility: "gm_only",
+      visibleToUserIds: [],
+      visibleToActorIds: [],
+      tags: ["original"],
+      createdBy: "usr_demo_gm",
+      updatedBy: "usr_demo_gm",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+    const proposal = {
+      id: "prop_payload_clone",
+      campaignId: "camp_demo",
+      createdByType: "ai" as const,
+      title: "Add cloned note",
+      summary: "Inserted state should not alias proposal payload",
+      status: "approved" as const,
+      approvalRequired: true,
+      changesJson: [{ entity: "journal" as const, action: "create" as const, data }],
+      diffJson: {},
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+
+    const next = applyProposal({ ...state, proposals: [proposal] }, proposal, "usr_demo_gm");
+    data.tags.push("mutated-after-apply");
+
+    expect(next.journals.find((journal) => journal.id === "jnl_payload_clone")?.tags).toEqual(["original"]);
+  });
+
+  it("rejects duplicate and missing ids in proposal creates", () => {
+    const state = seedState();
+    const proposal = {
+      id: "prop_duplicate_id",
+      campaignId: "camp_demo",
+      createdByType: "ai" as const,
+      title: "Duplicate note",
+      summary: "Must not corrupt entity identity",
+      status: "approved" as const,
+      approvalRequired: true,
+      changesJson: [{ entity: "journal" as const, action: "create" as const, data: { ...state.journals[0] } }],
+      diffJson: {},
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+
+    expect(() => applyProposal({ ...state, proposals: [proposal] }, proposal)).toThrow("already exists");
+    const missingId = { ...proposal, id: "prop_missing_id", changesJson: [{ ...proposal.changesJson[0]!, data: { campaignId: "camp_demo" } }] };
+    expect(() => applyProposal({ ...state, proposals: [missingId] }, missingId)).toThrow("non-empty entity id");
+  });
+
+  it("rejects proposal updates that rewrite entity ids", () => {
+    const state = seedState();
+    const proposal = {
+      id: "prop_rewrite_id",
+      campaignId: "camp_demo",
+      createdByType: "ai" as const,
+      title: "Rewrite token id",
+      summary: "Must preserve entity identity",
+      status: "approved" as const,
+      approvalRequired: true,
+      changesJson: [{ entity: "token" as const, action: "update" as const, id: "tok_valen", data: { id: "tok_rewritten", x: 400 } }],
+      diffJson: {},
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+
+    expect(() => applyProposal({ ...state, proposals: [proposal] }, proposal)).toThrow("cannot change entity id");
+    const erasedId = { ...proposal, id: "prop_erase_id", changesJson: [{ ...proposal.changesJson[0]!, data: { id: undefined, x: 400 } }] };
+    expect(() => applyProposal({ ...state, proposals: [erasedId] }, erasedId)).toThrow("cannot change entity id");
+    expect(state.tokens[0]?.id).toBe("tok_valen");
+  });
 });
 
 describe("vision polygons", () => {
+  it("treats closed doors as vision blockers and open doors as passable", () => {
+    const state = seedState();
+    const scene = state.scenes.find((item) => item.id === "scn_vault_entry")!;
+    const token = state.tokens.find((item) => item.id === "tok_valen")!;
+    token.visionRadius = 220;
+    scene.walls = [{ id: "door_screen", x1: 200, y1: 300, x2: 600, y2: 300, blocksVision: true, blocksMovement: true, kind: "door", open: false }];
+
+    expect(isPointInsideVisionPolygon({ x: 325, y: 225 }, computeTokenVisionPolygon(scene, token)!)).toBe(false);
+
+    scene.walls[0]!.open = true;
+    expect(isPointInsideVisionPolygon({ x: 325, y: 225 }, computeTokenVisionPolygon(scene, token)!)).toBe(true);
+  });
+
+  it("emits independently ranged polygons for typed senses", () => {
+    const state = seedState();
+    const scene = state.scenes.find((item) => item.id === "scn_vault_entry")!;
+    const token = state.tokens.find((item) => item.id === "tok_valen")!;
+    scene.walls = [];
+    token.visionRadius = 0;
+    token.senses = [
+      { type: "darkvision", range: 120 },
+      { type: "blindsight", range: 30 }
+    ];
+
+    expect(computeTokenVisionPolygons(scene, token)).toEqual([
+      expect.objectContaining({ sourceId: token.id, senseType: "darkvision", radius: 120 }),
+      expect.objectContaining({ sourceId: token.id, senseType: "blindsight", radius: 30 })
+    ]);
+  });
+
+  it("preserves typed magical darkness metadata in visibility polygons", () => {
+    const state = seedState();
+    const scene = state.scenes.find((item) => item.id === "scn_vault_entry")!;
+    scene.walls = [];
+
+    expect(computeLightVisionPolygons(scene, { id: "darkness", x: 325, y: 375, radius: 90, color: "#111827", kind: "darkness", magical: true })).toEqual([
+      expect.objectContaining({ source: "light", sourceId: "darkness", lightingEffect: "darkness", magical: true, radius: 90 })
+    ]);
+  });
+
   it("clips token sight at vision-blocking walls", () => {
     const state = seedState();
     const scene = state.scenes.find((item) => item.id === "scn_vault_entry")!;
@@ -149,6 +448,55 @@ describe("vision polygons", () => {
     expect(isPointInsideVisionPolygon({ x: 500, y: 375 }, polygons[1]!)).toBe(false);
   });
 
+  it("uses the largest configured token vision zone as the outer radius", () => {
+    const state = seedState();
+    const scene = state.scenes.find((item) => item.id === "scn_vault_entry")!;
+    const baseToken = state.tokens.find((item) => item.id === "tok_valen")!;
+    scene.walls = [];
+    const cases = [
+      {
+        name: "bright exceeds base",
+        token: { ...baseToken, visionRadius: 30, brightVisionRadius: 60, dimVisionRadius: undefined },
+        expectedRadii: [60]
+      },
+      {
+        name: "bright exceeds dim",
+        token: { ...baseToken, visionRadius: 30, brightVisionRadius: 60, dimVisionRadius: 30 },
+        expectedRadii: [60]
+      },
+      {
+        name: "dim exceeds bright",
+        token: { ...baseToken, visionRadius: 30, brightVisionRadius: 30, dimVisionRadius: 90 },
+        expectedRadii: [90, 30]
+      },
+      {
+        name: "bright equals dim",
+        token: { ...baseToken, visionRadius: 30, brightVisionRadius: 60, dimVisionRadius: 60 },
+        expectedRadii: [60]
+      },
+      {
+        name: "zero bright falls back to dim",
+        token: { ...baseToken, visionRadius: 30, brightVisionRadius: 0, dimVisionRadius: 50 },
+        expectedRadii: [50]
+      },
+      {
+        name: "bright works without dim or base",
+        token: { ...baseToken, visionRadius: 0, brightVisionRadius: 40, dimVisionRadius: 0 },
+        expectedRadii: [40]
+      }
+    ];
+
+    for (const testCase of cases) {
+      const polygons = computeTokenVisionPolygons(scene, testCase.token);
+      const expectedOuterRadius = testCase.expectedRadii[0]!;
+      const center = tokenCenter(testCase.token);
+
+      expect(polygons.map((polygon) => polygon.radius), testCase.name).toEqual(testCase.expectedRadii);
+      expect(isPointInsideVisionPolygon({ x: center.x + expectedOuterRadius - 5, y: center.y }, polygons[0]!), testCase.name).toBe(true);
+      expect(isPointInsideVisionPolygon({ x: center.x + expectedOuterRadius + 5, y: center.y }, polygons[0]!), testCase.name).toBe(false);
+    }
+  });
+
   it("clips colored light polygons with the same wall geometry", () => {
     const state = seedState();
     const scene = state.scenes.find((item) => item.id === "scn_vault_entry")!;
@@ -177,6 +525,41 @@ describe("vision polygons", () => {
     expect(isPointInsideVisionPolygon({ x: 360, y: 375 }, polygons[1]!)).toBe(true);
     expect(isPointInsideVisionPolygon({ x: 500, y: 375 }, polygons[0]!)).toBe(true);
     expect(isPointInsideVisionPolygon({ x: 500, y: 375 }, polygons[1]!)).toBe(false);
+  });
+
+  it("uses a larger bright light radius as the visible outer zone", () => {
+    const state = seedState();
+    const scene = state.scenes.find((item) => item.id === "scn_vault_entry")!;
+    scene.walls = [];
+
+    const polygons = computeLightVisionPolygons(scene, {
+      id: "light_bright_outer",
+      x: 325,
+      y: 375,
+      radius: 30,
+      brightRadius: 90,
+      dimRadius: 40,
+      color: "#fbbf24",
+      intensity: 0.4,
+    });
+
+    expect(polygons).toHaveLength(1);
+    expect(polygons[0]).toMatchObject({ radius: 90, lightLevel: "bright" });
+    expect(isPointInsideVisionPolygon({ x: 405, y: 375 }, polygons[0]!)).toBe(true);
+  });
+
+  it("classifies equal bright and dim radii as a bright-only zone", () => {
+    const state = seedState();
+    const scene = state.scenes.find((item) => item.id === "scn_vault_entry")!;
+    const token = state.tokens.find((item) => item.id === "tok_valen")!;
+    scene.walls = [];
+
+    expect(computeTokenVisionPolygons(scene, { ...token, visionRadius: 60, brightVisionRadius: 60, dimVisionRadius: 60 })).toEqual([
+      expect.objectContaining({ radius: 60, lightLevel: "bright" }),
+    ]);
+    expect(computeLightVisionPolygons(scene, { id: "light_equal", x: 325, y: 375, radius: 60, brightRadius: 60, dimRadius: 60, color: "#fbbf24", intensity: 0.4 })).toEqual([
+      expect.objectContaining({ radius: 60, lightLevel: "bright" }),
+    ]);
   });
 
   it("supports polygon fog regions and hide fog modes", () => {

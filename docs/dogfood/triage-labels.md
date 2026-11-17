@@ -11,7 +11,7 @@ Use these labels for v0.3 outside dogfood reports.
 | `realtime` | WebSocket, reconnect, or multi-seat sync issues. |
 | `archive` | Import, export, backup, restore, or compatibility issues. |
 | `content-import` | Preview, apply, rollback, delete, or adapter-boundary issues. |
-| `ai-safety` | Proposal safety, permission filtering, eval failures, or AI tool behavior. |
+| `ai-safety` | AI permission boundaries, configured autonomy-mode behavior, eval failures, or tool behavior. |
 | `plugin-system` | Plugin permission behavior or rules-system runtime issues. |
 | `ops` | Deployment, health, admin, persistence, or recovery issues. |
 | `privacy` | Secrets, redaction, report bundle, or visibility leak concerns. |

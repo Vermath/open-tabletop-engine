@@ -11,11 +11,21 @@ export const plugin: OpenTabletopPlugin = {
     runtime: { apiVersion: "0.1", sandbox: "vm" },
     permissions: ["chat.write", "token.read"],
     ui: { panels: [{ id: "macro-pad", title: "Macro Pad", icon: "wand" }] },
-    chatCommands: [{ command: "/spark", description: "Posts a sample magical effect." }]
+    chatCommands: [
+      { command: "/spark", description: "Proposes a sample magical effect." },
+    ],
+    eventSubscriptions: [
+      {
+        type: "token.moved",
+        description: "Proposes a chat note when a token moves.",
+      },
+    ],
   },
   activate(context) {
     context.onEvent("token.moved", async (event) => {
-      await context.postChatMessage({ body: `A token moved: ${event.targetId}` });
+      await context.postChatMessage({
+        body: `A token moved: ${event.targetId}`,
+      });
     });
-  }
+  },
 };

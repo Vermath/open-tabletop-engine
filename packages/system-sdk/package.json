@@ -3,20 +3,30 @@
   "version": "0.3.0",
   "private": true,
   "license": "MIT",
+  "contentLicense": "CC-BY-4.0",
+  "contentNotice": "CONTENT_NOTICE.md",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "!dist/**/*.test.*",
+    "!dist/**/test-fixtures.*",
+    "LICENSE",
+    "CONTENT_NOTICE.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "lint": "tsc -p tsconfig.json --noEmit",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests --testTimeout=15000",
+    "prepack": "pnpm run build"
   },
   "dependencies": {
-    "@open-tabletop/core": "workspace:*"
+    "@open-tabletop/api-contracts": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.7.2",
-    "vitest": "^2.1.8"
+    "vitest": "^3.2.6"
   }
 }

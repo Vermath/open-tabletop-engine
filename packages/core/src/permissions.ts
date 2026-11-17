@@ -5,6 +5,10 @@ const rolePermissions: Record<UserRole, PermissionName[]> = {
     "campaign.read",
     "campaign.update",
     "campaign.delete",
+    "world.read",
+    "world.create",
+    "world.update",
+    "world.delete",
     "scene.read",
     "scene.create",
     "scene.update",
@@ -27,6 +31,11 @@ const rolePermissions: Record<UserRole, PermissionName[]> = {
     "journal.create",
     "journal.update",
     "journal.delete",
+    "handout.read",
+    "handout.readSecret",
+    "handout.create",
+    "handout.update",
+    "handout.delete",
     "chat.read",
     "chat.write",
     "chat.moderate",
@@ -43,6 +52,10 @@ const rolePermissions: Record<UserRole, PermissionName[]> = {
   gm: [
     "campaign.read",
     "campaign.update",
+    "world.read",
+    "world.create",
+    "world.update",
+    "world.delete",
     "scene.read",
     "scene.create",
     "scene.update",
@@ -65,6 +78,11 @@ const rolePermissions: Record<UserRole, PermissionName[]> = {
     "journal.create",
     "journal.update",
     "journal.delete",
+    "handout.read",
+    "handout.readSecret",
+    "handout.create",
+    "handout.update",
+    "handout.delete",
     "chat.read",
     "chat.write",
     "chat.moderate",
@@ -80,6 +98,9 @@ const rolePermissions: Record<UserRole, PermissionName[]> = {
   ],
   assistant_gm: [
     "campaign.read",
+    "world.read",
+    "world.create",
+    "world.update",
     "scene.read",
     "scene.create",
     "scene.update",
@@ -95,6 +116,10 @@ const rolePermissions: Record<UserRole, PermissionName[]> = {
     "journal.readSecret",
     "journal.create",
     "journal.update",
+    "handout.read",
+    "handout.readSecret",
+    "handout.create",
+    "handout.update",
     "chat.read",
     "chat.write",
     "combat.manage",
@@ -106,19 +131,20 @@ const rolePermissions: Record<UserRole, PermissionName[]> = {
   ],
   player: [
     "campaign.read",
+    "world.read",
     "scene.read",
     "token.read",
     "token.move",
     "actor.read",
     "actor.updateOwned",
     "journal.read",
+    "handout.read",
     "chat.read",
     "chat.write",
     "dice.roll",
-    "ai.use",
     "ai.readPublicMemory"
   ],
-  observer: ["campaign.read", "scene.read", "token.read", "actor.read", "journal.read", "chat.read"],
+  observer: ["campaign.read", "world.read", "scene.read", "token.read", "actor.read", "journal.read", "handout.read", "chat.read"],
   plugin: [],
   ai_assistant: []
 };
@@ -140,7 +166,10 @@ export function hasPermission(input: {
   const now = input.now ?? new Date();
   const grantAllows = input.grants.some((grant) => {
     if (grant.campaignId !== input.campaignId) return false;
-    if (grant.expiresAt && new Date(grant.expiresAt) < now) return false;
+    if (grant.expiresAt) {
+      const expiresAt = Date.parse(grant.expiresAt);
+      if (!Number.isFinite(expiresAt) || expiresAt <= now.getTime()) return false;
+    }
     if (grant.subjectType === "user" && grant.subjectId === input.userId) return grant.permissions.includes(input.permission);
     if (member && grant.subjectType === "role" && grant.subjectId === member.role) return grant.permissions.includes(input.permission);
     return false;
