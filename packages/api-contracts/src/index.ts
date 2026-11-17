@@ -6292,6 +6292,9 @@ const componentSchemas = {
       userId: idSchema,
       fogActive: { type: "boolean" },
       polygons: arrayOf(schemaRef("VisionPolygon")),
+      sceneUpdatedAt: dateTimeSchema,
+      visibleTokens: arrayOf(schemaRef("Token")),
+      visibleTokenAssets: arrayOf(schemaRef("MapAsset")),
     },
   },
   VisionPointSample: {
@@ -14511,6 +14514,13 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },  "GET /api/v1/scenes/{sceneId}/vision": {
     parameters: [
+      {
+        name: "includeTokens",
+        in: "query",
+        required: false,
+        description: "Include the viewer's authorized tokens from the same scene revision. Requires token.read.",
+        schema: { type: "boolean" },
+      },
       {
         name: "previewUserId",
         in: "query",

@@ -596,6 +596,9 @@ export interface VisionSnapshot {
   userId: ID;
   fogActive: boolean;
   polygons: VisionPolygon[];
+  sceneUpdatedAt?: Timestamps["updatedAt"];
+  visibleTokens?: Token[];
+  visibleTokenAssets?: MapAsset[];
 }
 
 export interface VisionPointSample {
