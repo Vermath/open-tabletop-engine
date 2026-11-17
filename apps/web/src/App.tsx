@@ -10848,7 +10848,7 @@ export function App() {
           }}
         />
       )}
-      {commandPaletteOpen && <CommandPalette commands={paletteCommands} onRun={runPaletteCommand} onClose={() => setCommandPaletteOpen(false)} />}
+      <CommandPalette open={commandPaletteOpen} commands={paletteCommands} onRun={runPaletteCommand} onClose={() => setCommandPaletteOpen(false)} />
       {advancementModalOpen && selectedActor && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
           if (event.target === event.currentTarget) setAdvancementModalOpen(false);
@@ -10944,8 +10944,8 @@ export function App() {
           />
         </DeferredPanel>
       )}
-      {shortcutOverlayOpen && <KeyboardShortcutDialog onClose={() => setShortcutOverlayOpen(false)} />}
-      {toasts.length > 0 && <ToastStack toasts={toasts} onDismiss={dismissToast} />}
+      <KeyboardShortcutDialog open={shortcutOverlayOpen} onClose={() => setShortcutOverlayOpen(false)} />
+      <ToastStack key={`${campaignId}:${currentUserId}`} toasts={toasts} onDismiss={dismissToast} />
       {activeDiceCasts.length > 0 && <DiceCastOverlay casts={activeDiceCasts} />}
     </main>
     {realtimeUiState === "syncing" && <RealtimeSyncGuard />}

@@ -3,28 +3,44 @@
   to { opacity: 1; translate: 0 0; }
 }
 
-:root:not([data-reduced-motion="true"]) :is(
-  .movable-panel, .token-context-menu, .toast-stack > *, .modal-dialog,
-  .command-palette, .inspector-panel-content, [role="menu"]
-) {
-  animation: interface-enter var(--motion-fast) var(--ease-enter);
+@keyframes interface-exit {
+  from { opacity: 1; }
+  to { opacity: 0; }
 }
 
-:root:not([data-reduced-motion="true"]) :is(dialog, [popover]) {
+.interface-exiting {
   opacity: 0;
-  transition:
-    opacity var(--motion-fast) var(--ease-exit),
-    display var(--motion-fast) allow-discrete,
-    overlay var(--motion-fast) allow-discrete;
+  pointer-events: none;
 }
 
-:root:not([data-reduced-motion="true"]) :is(dialog[open], [popover]:popover-open) {
-  opacity: 1;
-}
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion="true"]) :is(
+    .movable-panel, .token-context-menu, .toast-stack > *, .modal-dialog,
+    .command-palette, .inspector-panel-content, [role="menu"]
+  ) {
+    animation: interface-enter var(--motion-fast) var(--ease-enter);
+  }
 
-@starting-style {
-  :root:not([data-reduced-motion="true"]) :is(dialog[open], [popover]:popover-open) {
+  :root:not([data-reduced-motion="true"]) :is(dialog, [popover]) {
     opacity: 0;
+    transition:
+      opacity calc(var(--motion-fast) * 0.75) var(--ease-exit),
+      display calc(var(--motion-fast) * 0.75) allow-discrete,
+      overlay calc(var(--motion-fast) * 0.75) allow-discrete;
+  }
+
+  :root:not([data-reduced-motion="true"]) :is(dialog[open], [popover]:popover-open) {
+    opacity: 1;
+  }
+
+  @starting-style {
+    :root:not([data-reduced-motion="true"]) :is(dialog[open], [popover]:popover-open) {
+      opacity: 0;
+    }
+  }
+
+  :root:not([data-reduced-motion="true"]) .interface-exiting {
+    animation: interface-exit calc(var(--motion-fast) * 0.75) var(--ease-exit);
   }
 }
 
