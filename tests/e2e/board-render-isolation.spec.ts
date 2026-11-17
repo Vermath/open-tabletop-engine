@@ -158,8 +158,9 @@ test("zooming re-renders no token and no static layer", async ({ page }) => {
   await expect.poll(async () => (await board.boundingBox())!.width).toBeGreaterThan(widthBefore * 1.2);
   const after = await settledCounts(page);
 
-  const { scene: sceneBefore, ...layersBefore } = before;
-  const { scene: sceneAfter, ...layersAfter } = after;
+  const { app: appBefore, scene: sceneBefore, ...layersBefore } = before;
+  const { app: appAfter, scene: sceneAfter, ...layersAfter } = after;
+  expect(appAfter).toBeGreaterThan(appBefore);
   expect(sceneAfter).toBeGreaterThan(sceneBefore);
   expect(layersAfter, "zoom resizes the board; nothing drawn in scene units needs to render again").toEqual(layersBefore);
   // Everything still sits where the zoomed board puts it.
