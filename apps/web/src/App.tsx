@@ -278,7 +278,6 @@ function initialAiAgentPanelPosition(): FloatingPanelPosition {
   };
 }
 
-
 export function App() {
   boardRenderCounts.app += 1;
   const consequenceReview = useConsequenceReview();
