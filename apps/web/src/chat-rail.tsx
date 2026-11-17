@@ -1,3 +1,4 @@
+import { EmptyState } from "./workspace-states.js";
 import type { ChatMessage, DiceRoll } from "@open-tabletop/core";
 import { Activity, Check, ChevronDown, Dices, MessageSquare, MoreHorizontal, PencilLine, Plus, Reply, Save, Send, ShieldCheck, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -36,6 +37,7 @@ export type ChatRailProps = {
   onDeleteMessage(message: ChatMessage): Promise<void>;
   onModerateMessage(message: ChatMessage, status: "open" | "follow_up" | "reviewed"): Promise<void>;
   canModerate: boolean;
+  canWrite?: boolean;
   canRollDice: boolean;
   dice3dEnabled: boolean;
   onToggleDice3d(): void;
@@ -189,7 +191,7 @@ function CampaignChatRail(props: ChatRailProps) {
         if (follows) setUnseenMessageCount(0);
       }}>
         {props.messages.length === 0 ? (
-          <div className="empty-state compact">No messages yet.</div>
+          <EmptyState icon={<MessageSquare size={17} />} text="No messages yet." action={props.canWrite ? { label: "Write a message", run: () => streamRef.current?.closest(".chat-rail")?.querySelector<HTMLElement>('[aria-label="Chat message"]')?.focus() } : undefined} />
         ) : (
           props.messages.map((message) => (
             <ChatMessageItem key={message.id} campaignId={props.campaignId} message={message} roll={message.rollId ? rollById.get(message.rollId) : undefined} rollConcealed={message.rollId ? props.concealedRollIds.has(message.rollId) : false} memberNames={memberNames} messageById={messageById} canEdit={message.userId === props.currentUserId && !message.rollId && message.type !== "roll"} canModerate={props.canModerate} onReplyToMessage={props.onReplyToMessage} onEditMessage={props.onEditMessage} onDeleteMessage={props.onDeleteMessage} onModerateMessage={props.onModerateMessage} />

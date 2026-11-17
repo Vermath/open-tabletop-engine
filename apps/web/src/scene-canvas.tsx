@@ -695,7 +695,7 @@ export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: num
     });
   }, [orderedTokens, props.scene.gridSize]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport) return;
     let frame = 0;
