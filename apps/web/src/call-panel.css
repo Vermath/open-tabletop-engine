@@ -14,11 +14,11 @@
   width: min(var(--floating-panel-width, 420px), calc(100vw - 16px));
   height: min(var(--floating-panel-height, 340px), calc(100vh - 16px));
   overflow: hidden;
-  border: 1px solid var(--line-strong, rgba(148, 160, 173, 0.28));
-  border-radius: 8px;
+  border: 1px solid var(--line-strong, color-mix(in srgb, var(--muted) 28%, transparent));
+  border-radius: var(--radius-m);
   color: var(--paper);
-  background: var(--surface-1, #0b1016);
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+  background: var(--surface-1, var(--surface-0));
+  box-shadow: 0 24px 80px color-mix(in srgb, var(--color-black) 50%, transparent);
 }
 
 .call-panel-header {
@@ -26,7 +26,7 @@
   align-items: center;
   gap: 8px;
   padding: 6px 8px 6px 10px;
-  border-bottom: 1px solid var(--line, rgba(148, 160, 173, 0.18));
+  border-bottom: 1px solid var(--line, color-mix(in srgb, var(--muted) 18%, transparent));
 }
 
 .call-panel-title {
@@ -55,7 +55,7 @@
   height: 100%;
   min-height: 0;
   border: 0;
-  background: #000;
+  background: var(--color-black);
 }
 
 .call-consent {

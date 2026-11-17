@@ -4,6 +4,8 @@
  * not re-render the rest of the board; nothing in the app depends on it.
  */
 export const boardRenderCounts = {
+  app: 0,
+  scene: 0,
   token: 0,
   lighting: 0,
   darkness: 0,

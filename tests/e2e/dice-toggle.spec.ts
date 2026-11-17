@@ -210,6 +210,13 @@ test("the dice stage bounds callouts to the board and only displays rolls visibl
     await rollFromPage(page, "1d6+34", "public");
     await expect(callout(player, "1d6+34")).toBeVisible();
     await expect(player.locator(".dice-cast-label").filter({ hasText: /1d6\+3[23]/ })).toHaveCount(0);
+
+    const stage = page.locator(".dice-table-stage");
+    await page.getByRole("button", { name: "Manage", exact: true }).click();
+    await expect.poll(() => stage.boundingBox()).toEqual(await page.locator(".workspace").boundingBox());
+    await page.getByRole("button", { name: "Live Table", exact: true }).click();
+    await expect(page.locator(".scene-viewport")).toBeVisible();
+    await expect.poll(() => stage.boundingBox()).toEqual(await page.locator(".scene-viewport").boundingBox());
   } finally {
     await playerContext.close();
   }
