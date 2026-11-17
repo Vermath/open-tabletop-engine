@@ -1,5 +1,6 @@
+import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
-import type { Campaign, Scene } from "../../packages/core/src/types.js";
+import type { Campaign, MapAsset, Scene, VisionSnapshot } from "../../packages/core/src/types.js";
 
 const apiOrigin = `http://127.0.0.1:${process.env.OTTE_E2E_API_PORT ?? 4100}`;
 const webOrigin = `http://127.0.0.1:${process.env.OTTE_E2E_WEB_PORT ?? 5174}`;
@@ -27,7 +28,18 @@ test("changing manual fog updates the player's tokens without reloading the camp
   const path = "/api/v1/scenes/" + scene.id;
   const revise = async (url = path) => (await gmApi<Scene>(page, "GET", url)).updatedAt;
   await gmApi(page, "POST", path + "/tokens", { name: "Fog witness", x: 440, y: 350, expectedUpdatedAt: await revise() });
-  await gmApi(page, "POST", path + "/tokens", { name: "Outside witness", x: 760, y: 350, expectedUpdatedAt: await revise() });
+  const upload = await page.request.post(apiOrigin + campaignPath + "/assets/upload", {
+    headers: {
+      authorization: "Bearer otte-cookie-session", origin: webOrigin, "idempotency-key": crypto.randomUUID(),
+      "content-type": "image/png", "x-asset-name": "fog-witness.png",
+    },
+    data: readFileSync("tests/e2e/fixtures/offset-grid.png"),
+  });
+  expect(upload.ok(), await upload.text()).toBe(true);
+  const { asset } = await upload.json() as { asset: MapAsset };
+  await gmApi(page, "POST", path + "/tokens", {
+    name: "Outside witness", x: 760, y: 350, imageAssetId: asset.id, expectedUpdatedAt: await revise(),
+  });
   await gmApi(page, "POST", path + "/fog", { x: 300, y: 375, radius: 215, mode: "reveal", expectedUpdatedAt: await revise() });
   const context = await browser.newContext({ baseURL: webOrigin, extraHTTPHeaders: { Origin: webOrigin } });
   try {
@@ -53,22 +65,32 @@ test("changing manual fog updates the player's tokens without reloading the camp
     await expect(player.locator('.session-pulse[data-connection-state="connected"]')).toBeVisible();
     const requests: URL[] = [];
     player.on("request", (request) => requests.push(new URL(request.url())));
+    const waitForScopedVision = () => player.waitForResponse((entry) => {
+      const url = new URL(entry.url());
+      return url.pathname === path + "/vision" && url.searchParams.get("includeTokens") === "true" && entry.ok();
+    });
     for (const action of ["hide", "undo"] as const) {
-      const response = player.waitForResponse((entry) => {
-        const url = new URL(entry.url());
-        return url.pathname === path + "/vision" && url.searchParams.get("includeTokens") === "true" && entry.ok();
-      });
+      const response = waitForScopedVision();
       void response.catch(() => undefined);
       if (action === "hide") {
         await gmApi(page, "POST", path + "/fog", { x: 465, y: 375, radius: 55, mode: "hide", expectedUpdatedAt: await revise() });
       } else {
         await gmApi(page, "POST", path + "/fog/undo", { expectedUpdatedAt: await revise() });
       }
-      const { visibleTokens } = await (await response).json() as { visibleTokens: { name: string }[] };
-      expect(visibleTokens.some(({ name }) => name === "Fog witness")).toBe(action === "undo");
+      const { visibleTokens, visibleTokenAssets } = await (await response).json() as VisionSnapshot;
+      expect(visibleTokens?.some(({ name }) => name === "Fog witness")).toBe(action === "undo");
+      expect(visibleTokenAssets?.map(({ id }) => id)).not.toContain(asset.id);
       await expect(witness).toHaveCount(action === "hide" ? 0 : 1);
       await expect(outside).toHaveCount(0);
     }
+    const reveal = waitForScopedVision();
+    void reveal.catch(() => undefined);
+    await gmApi(page, "POST", path + "/fog", { x: 785, y: 375, radius: 55, mode: "reveal", expectedUpdatedAt: await revise() });
+    const vision = await (await reveal).json() as VisionSnapshot;
+    expect(vision.visibleTokenAssets?.map(({ id }) => id)).toEqual([asset.id]);
+    await expect(outside).toBeVisible();
+    await expect(outside.locator("img.token-image")).toHaveJSProperty("complete", true);
+    await expect.poll(() => outside.locator("img.token-image").evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
     expect(requests.filter((url) => url.pathname.endsWith("/snapshot"))).toHaveLength(0);
   } finally {
     await context.close();
