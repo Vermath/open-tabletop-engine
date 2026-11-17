@@ -9,7 +9,7 @@ const command = vi.mocked(apiPost);
 beforeEach(() => command.mockReset());
 
 function setup() {
-  let scene = { id: "scene", width: 500, height: 500, gridSize: 50, updatedAt: "revision-1" } as Scene;
+  let scene = { id: "scene/one", width: 500, height: 500, gridSize: 50, updatedAt: "revision-1" } as Scene;
   const actor = { id: "actor", name: "Aboleth" } as Actor;
   const token = { id: "token", actorId: actor.id, sceneId: scene.id } as Token;
   const snapshot = { actors: [actor], tokens: [token] };
@@ -34,6 +34,7 @@ describe("compendium gesture retries", () => {
     command.mockRejectedValueOnce(new ApiError("stale", 409, { code: "stale_write" }, ""));
     await expect(compendiumPlacementActions(options).place("srd-monster:aboleth", "gesture")).rejects.toThrow("stale");
     const first = command.mock.calls[0]!;
+    expect(first[0]).toBe("/api/v1/scenes/scene%2Fone/compendium-monster-placements");
     const retry = command.mock.calls[1]!;
     expect(retry[1]).toEqual(first[1]);
     expect(retry[2]?.idempotencyKey).toBe(first[2]?.idempotencyKey);
@@ -60,8 +61,9 @@ describe("compendium gesture retries", () => {
       request?.onReplay?.();
       return { direction: "undo", actorId: "actor", tokenId: "token", scene: result().scene };
     });
-    const history: MonsterPlacementHistory = { kind: "monster.place", sceneId: "scene", placementId: "placement" };
+    const history: MonsterPlacementHistory = { kind: "monster.place", sceneId: "scene/one", placementId: "placement?one" };
     expect(await actions.change(history, "undo")).toBe(false);
+    expect(command.mock.calls[0]![0]).toBe("/api/v1/scenes/scene%2Fone/compendium-monster-placements/placement%3Fone/history");
     expect(options.removePair).not.toHaveBeenCalled();
   });
 });

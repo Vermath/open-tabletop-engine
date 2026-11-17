@@ -1,4 +1,4 @@
-import { routes, type Actor, type CompendiumMonsterPlacement, type CompendiumMonsterPlacementInput, type CompendiumPlacementHistoryResult, type Scene, type Token, type VisionPoint } from "@open-tabletop/api-contracts";
+import type { Actor, CompendiumMonsterPlacement, CompendiumMonsterPlacementInput, CompendiumPlacementHistoryResult, Scene, Token, VisionPoint } from "@open-tabletop/api-contracts";
 import { ApiError, apiPost } from "./api.js";
 import { tokenCoordinatesFromCenter } from "./scene-canvas.js";
 import { isStaleWriteError } from "./shared-mutation.js";
@@ -30,6 +30,10 @@ interface PlacementOptions {
   status(message: string): void;
 }
 
+function placementPath(sceneId: string): string {
+  return `/api/v1/scenes/${encodeURIComponent(sceneId)}/compendium-monster-placements`;
+}
+
 export function compendiumPlacementActions(options: PlacementOptions) {
   async function post<T extends { scene: Scene }>(request: WorkspaceBoundRequest, path: string, payload: unknown, key: string, rejected: (error: unknown) => void) {
     let replayed = false;
@@ -56,7 +60,7 @@ export function compendiumPlacementActions(options: PlacementOptions) {
     }
     const { input, key } = attempt;
     await options.run((request) =>
-      post<CompendiumMonsterPlacement>(request, routes.compendiumMonsterPlacements(scene.id), input, key, (error) => {
+      post<CompendiumMonsterPlacement>(request, placementPath(scene.id), input, key, (error) => {
         if (isStaleWriteError(error) || (error instanceof ApiError && [400, 403, 404].includes(error.status))) options.attempts.delete(gestureId);
       }), ({ result, snapshot }) => {
       options.attempts.delete(gestureId);
@@ -83,7 +87,7 @@ export function compendiumPlacementActions(options: PlacementOptions) {
     let applied = false;
     try {
       await options.run((request) =>
-        post<CompendiumPlacementHistoryResult>(request, routes.compendiumPlacementHistory(scene.id, action.placementId),
+        post<CompendiumPlacementHistoryResult>(request, `${placementPath(scene.id)}/${encodeURIComponent(action.placementId)}/history`,
           { direction, expectedUpdatedAt: attempt.revision }, attempt.key, (error) => {
             if (error instanceof ApiError && error.status < 500) action.pending = undefined;
           }), ({ result, snapshot }) => {
