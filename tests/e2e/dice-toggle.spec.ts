@@ -81,9 +81,14 @@ test("3D dice preloads the physics stage when enabled", async ({ page }) => {
   await expect.poll(() => page.locator("#dice-box-stage canvas").count(), { timeout: 6_000 }).toBeGreaterThan(0);
 });
 
-test("3D dice hides the roll result until the cast settles", async ({ page }) => {
+test("the layered dice cast reveals one result without progress or fallback toasts", async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem("otte:dice3d", "on");
+    const getContext = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, contextId: string, ...args: unknown[]) {
+      if (contextId.includes("webgl")) return null;
+      return Reflect.apply(getContext, this, [contextId, ...args]);
+    } as typeof getContext;
   });
   await loginSeededDemo(page);
   await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
@@ -101,8 +106,12 @@ test("3D dice hides the roll result until the cast settles", async ({ page }) =>
   await expect(rollCard.locator(".chat-roll-total")).toHaveText("...");
   await expect(rollCard.locator(".chat-roll-dice")).toHaveCount(0);
   await expect(page.locator(".rail > .status")).toContainText("Rolling dice");
+  const diceToasts = page.locator(".toast").filter({ hasText: /Rolling dice|3D dice engine unavailable|Rolled/ });
+  await expect(diceToasts).toHaveCount(0);
 
   await expect(rollCard.locator(".chat-roll-total")).toHaveText(/[1-4]/, { timeout: 4_000 });
+  await expect(page.locator(".dice-cast-label")).toHaveCount(1);
+  await expect(diceToasts).toHaveCount(0);
   await expect(rollCard.locator(".chat-roll-dice")).toHaveCount(0);
   await rollCard.locator(".chat-roll-summary").click();
   await expect(rollCard.locator(".chat-roll-dice")).toHaveCount(1);

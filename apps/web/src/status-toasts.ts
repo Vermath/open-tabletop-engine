@@ -19,7 +19,7 @@ export interface Toast {
 const maxVisibleToasts = 3;
 const infoToastMs = 4000;
 const errorToastMs = 8000;
-const statusNoisePattern = /^(ready|loading|synced|connected|rolled)\b/i;
+const statusNoisePattern = /^(ready|loading|synced|connected|rolled|rolling dice)\b/i;
 const connectionStatusPattern = /realtime|reconnect|api offline/i;
 const errorStatusPattern = /fail|error|denied|requires?\b|required|unable|invalid|missing|cannot|can't|expired|unauthorized|forbidden|blocked|conflict|not allowed|do(?:es)? not match|timed out|no longer available/i;
 
