@@ -353,13 +353,18 @@ test("multi-panel keyboard journey remains operable without pointer input", asyn
 
   await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 
-  const actorsNav = page.getByRole("tab", { name: "Actors", exact: true });
-  await tabUntilFocused(page, actorsNav);
-  await actorsNav.press("ArrowRight");
-  await expect(page.getByRole("tab", { selected: true })).toBeFocused();
-  await selectInspectorPanelWithKeyboard(page, "Search");
+  const nav = page.getByRole("tablist", { name: "Inspector panels" });
+  let focusedTab = nav.getByRole("tab", { name: "Actors", exact: true });
+  await tabUntilFocused(page, focusedTab);
+  for (const name of ["Compendium", "Handouts", "Journal", "Search"]) {
+    await focusedTab.press("ArrowRight");
+    focusedTab = nav.getByRole("tab", { name, exact: true });
+    await expect(focusedTab).toBeFocused();
+    await expect(focusedTab).toHaveAttribute("aria-selected", "true");
+  }
   await expect(page.getByRole("region", { name: "Campaign Search" })).toBeVisible();
-  await selectInspectorPanelWithKeyboard(page, "Chat");
+  await focusedTab.press("ArrowRight");
+  await expect(nav.getByRole("tab", { name: /^Chat/ })).toBeFocused();
   await expect(page.locator('[aria-label="Chat messages"]')).toBeVisible();
 
   const chatCommandLine = page.getByRole("textbox", { name: "Chat message" });
@@ -379,7 +384,8 @@ test("multi-panel keyboard journey remains operable without pointer input", asyn
   await assetSearch.fill("vault");
   await expect(assetSearch).toHaveValue("vault");
 
-  await selectInspectorPanelWithKeyboard(page, "Plugins");
+  await nav.getByRole("tab", { name: "Assets", exact: true }).press("ArrowRight");
+  await expect(nav.getByRole("tab", { name: "Plugins", exact: true })).toBeFocused();
   await expect(page.getByRole("region", { name: "Plugin marketplace filters" })).toBeVisible();
 
   const pluginSearch = page.getByRole("textbox", { name: "Plugin marketplace search" });

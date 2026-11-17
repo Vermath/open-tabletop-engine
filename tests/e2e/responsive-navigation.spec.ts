@@ -56,7 +56,11 @@ for (const viewport of [
     }
     await tabs.getByRole("tab", { name: "Actors", exact: true }).focus();
     await page.keyboard.press("End");
-    await expect(tabs.getByRole("tab", { selected: true })).toBeFocused();
+    const combat = tabs.getByRole("tab", { name: "Combat", exact: true });
+    await expect(combat).toBeFocused();
+    await expect(combat).toHaveAttribute("aria-selected", "true");
+    await combat.press("Home");
+    await expect(tabs.getByRole("tab", { name: "Actors", exact: true })).toBeFocused();
     await selectInspectorPanel(page, "Chat");
     await expect(page.getByRole("textbox", { name: "Chat message", exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -64,6 +68,10 @@ for (const viewport of [
 }
 
 test("the inspector menu toggles closed and Escape preserves the active canvas tool", async ({ page }) => {
+  await page.addInitScript(() => {
+    Reflect.defineProperty(HTMLElement.prototype, "showPopover", { value: undefined });
+    Reflect.defineProperty(HTMLElement.prototype, "hidePopover", { value: undefined });
+  });
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM", exact: true }).click();
@@ -81,6 +89,22 @@ test("the inspector menu toggles closed and Escape preserves the active canvas t
   await expect(menu).toBeHidden();
   await expect(more).toBeFocused();
   await expect(ruler).toHaveAttribute("aria-pressed", "true");
+});
+
+test("chat replies and edits open directly from the message", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Demo GM", exact: true }).click();
+  await selectInspectorPanel(page, "Chat");
+  const text = "Direct chat actions " + randomUUID();
+  await page.getByRole("textbox", { name: "Chat message", exact: true }).fill(text);
+  await page.getByRole("button", { name: "Send chat command", exact: true }).click();
+  const message = page.getByLabel("Chat messages", { exact: true }).locator("article").filter({ hasText: text });
+  await message.getByRole("button", { name: /^Reply to message/ }).click();
+  const draft = page.getByRole("status", { name: "Chat reply target" });
+  await expect(draft).toContainText(text);
+  await draft.getByRole("button", { name: "Clear", exact: true }).click();
+  await message.getByRole("button", { name: /^Edit message/ }).click();
+  await expect(message.getByRole("form", { name: "Edit chat message" })).toBeVisible();
 });
 
 test("long connection errors wrap on a phone and can be retried", async ({ page }) => {

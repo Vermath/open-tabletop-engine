@@ -233,9 +233,23 @@ export function WorkspaceInspectorTabs({ inspectorTabs, tab, chatUnreadCount, on
     }
   }
   const overflow = ordered.filter((item) => !visibleIds.has(item));
+  const activateAndFocus = (item: InspectorTab) => {
+    onSelectTab(item);
+    requestAnimationFrame(() => document.getElementById("inspector-tab-" + item)?.focus());
+  };
   return (
     <div className="inspector-tab-bar" ref={row}>
-      <div className="tabs inspector-tabs" role="tablist" aria-label="Inspector panels">
+      <div className="tabs inspector-tabs" role="tablist" aria-label="Inspector panels" onKeyDownCapture={(event) => {
+        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+        const focused = (event.target as HTMLElement).closest("[role='tab']");
+        const index = ordered.findIndex((item) => focused?.id === "inspector-tab-" + item);
+        if (index < 0) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const next = event.key === "Home" ? 0 : event.key === "End" ? ordered.length - 1
+          : (index + (event.key === "ArrowRight" ? 1 : -1) + ordered.length) % ordered.length;
+        activateAndFocus(ordered[next]!);
+      }}>
         {ordered.filter((item) => visibleIds.has(item)).map((item) => {
           const Icon = inspectorIcons[item];
           return <TabButton key={item} active={tab === item} icon={<Icon size={15} />} label={labels(item)} tabId={"inspector-tab-" + item} panelId={"inspector-panel-" + item} onClick={() => onSelectTab(item)} />;
@@ -248,8 +262,7 @@ export function WorkspaceInspectorTabs({ inspectorTabs, tab, chatUnreadCount, on
             return <button className="ghost-button small" type="button" role="menuitem" key={item} onClick={() => {
               close();
               setRemembered(item);
-              onSelectTab(item);
-              requestAnimationFrame(() => document.getElementById("inspector-tab-" + item)?.focus());
+              activateAndFocus(item);
             }}><Icon size={15} aria-hidden="true" /> {labels(item)}</button>;
           })}
         </ActionMenu>

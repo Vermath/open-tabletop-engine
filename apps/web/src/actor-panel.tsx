@@ -2,7 +2,6 @@ import type { Actor, Combat, DeclarativeActorSheet as DeclarativeSheet, Item, Ma
 import type { Dnd5eSrdSpellPreparationMutationResult } from "@open-tabletop/core";
 import { Boxes, Check, ChevronRight, ChevronUp, Crosshair, Dices, Eraser, Eye, FileText, Grip, Hand, LockKeyhole, MapPin, PencilLine, Pentagon, Plus, Shield, Swords, Timer, Upload, Users, WandSparkles, X, Zap } from "lucide-react";
 import { useEffect, useReducer, useRef, useState } from "react";
-import { ActionMenu } from "./action-menu.js";
 import { apiGet, apiPost, type Snapshot } from "./api.js";
 import { isAdversaryActor } from "./actor-rails.js";
 import { HpBar, resolveHitPointEdit } from "./hp-bar.js";
@@ -201,17 +200,15 @@ export function CoreStatisticsSection(props: { stats: ActorCoreStatistics; canRo
             {ability.score !== undefined ? ` ${formatNumber(ability.score)}` : ""}
             {ability.modifier !== undefined ? ` (${signedModifier(ability.modifier)})` : ""}
           </span>
-          <ActionMenu label={"Roll " + ability.label} trigger={<><Dices size={14} aria-hidden="true" /> Roll</>} disabled={!props.canRoll || (!ability.check && !ability.save)}>
-            {(close) => <>
+          <span className="ability-roll-actions" role="group" aria-label={ability.label + " rolls"}>
             {ability.check && (
               <button
                 className="ghost-button small"
                 type="button"
-                role="menuitem"
                 title={`Roll ${ability.label} check: ${ability.check.formula}`}
                 aria-label={`Roll ${ability.label} check ${ability.check.formula}`}
                 disabled={!props.canRoll}
-                onClick={() => { close(); props.onRoll(ability.check!.rollId); }}
+                onClick={() => props.onRoll(ability.check!.rollId)}
               >
                 Check
               </button>
@@ -220,17 +217,15 @@ export function CoreStatisticsSection(props: { stats: ActorCoreStatistics; canRo
               <button
                 className="ghost-button small"
                 type="button"
-                role="menuitem"
                 title={`Roll ${ability.label} saving throw: ${ability.save.formula}${sourcedD20Description(ability.save) ? `; ${sourcedD20Description(ability.save)}` : ""}`}
                 aria-label={`Roll ${ability.label} saving throw ${ability.save.formula}${sourcedD20Description(ability.save) ? `; ${sourcedD20Description(ability.save)}` : ""}`}
                 disabled={!props.canRoll}
-                onClick={() => { close(); props.onRoll(ability.save!.rollId); }}
+                onClick={() => props.onRoll(ability.save!.rollId)}
               >
                 {sourcedD20ButtonLabel(ability.save)}
               </button>
             )}
-            </>}
-          </ActionMenu>
+          </span>
         </div>
       ))}
       {stats.passives.map((passive) => (

@@ -1,4 +1,4 @@
-import { openAbilityRollMenu } from "./inspector-navigation.js";
+import { abilityRoll } from "./inspector-navigation.js";
 import type { APIResponse, Locator, Page } from "@playwright/test";
 import { expect } from "@playwright/test";
 
@@ -139,7 +139,7 @@ async function rollAndReroll(
   await selectRollVisibility(page, input.expectedVisibility);
   const stats = await openActorStats(page, input.characterName);
   const before = await visibleRollHistory(page, input.apiBaseUrl, input.campaignId);
-  await (await openAbilityRollMenu(stats, input.ability, input.action)).click();
+  await abilityRoll(stats, input.ability, input.action).click();
   await expect.poll(async () => {
     const current = await visibleRollHistory(page, input.apiBaseUrl, input.campaignId);
     const beforeIds = new Set(before.map((roll) => roll.id));

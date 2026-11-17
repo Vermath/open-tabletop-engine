@@ -220,11 +220,13 @@ export function ChatMessageItem(props: { campaignId: string; message: ChatMessag
         <span className={`chat-visibility chat-visibility-${props.message.visibility}`}>{chatVisibilityLabel(props.message.visibility)}</span>
         {props.message.editedAt && <span className="chat-edited-label" title={`Edited ${formatDateTime(props.message.editedAt)}`}>edited</span>}
         {props.message.moderationStatus && props.message.moderationStatus !== "open" && <span className="chat-visibility"><ShieldCheck size={12} aria-hidden="true" /> {props.message.moderationStatus === "follow_up" ? "Follow up" : "Reviewed"}</span>}
-        {(props.onReplyToMessage || props.canEdit || props.canModerate) && (
+        <span className="chat-message-actions">
+          {props.onReplyToMessage && <button className="chat-message-action" type="button" aria-label={`Reply to message from ${author}`} title="Reply" onClick={() => props.onReplyToMessage?.(props.message)}><Reply size={12} /></button>}
+          {props.canEdit && !editing && <button className="chat-message-action" type="button" aria-label={`Edit message from ${author}`} title="Edit message" onClick={() => { setEditBody(props.message.body); setEditing(true); }}><PencilLine size={12} /></button>}
+        </span>
+        {props.canModerate && (props.onDeleteMessage || props.onModerateMessage) && (
           <ActionMenu label={"More actions for message from " + author} className="chat-message-action" onDismiss={() => setDeleteConfirmation(false)} trigger={<MoreHorizontal size={14} aria-hidden="true" />}>
             {(close) => <>
-              {props.onReplyToMessage && <button className="ghost-button small" type="button" role="menuitem" onClick={() => { close(); props.onReplyToMessage?.(props.message); }}><Reply size={12} /> Reply</button>}
-              {props.canEdit && !editing && <button className="ghost-button small" type="button" role="menuitem" onClick={() => { close(); setEditBody(props.message.body); setEditing(true); }}><PencilLine size={12} /> Edit</button>}
               {props.canModerate && props.onDeleteMessage && <button className="ghost-button small danger" type="button" role="menuitem" onClick={() => {
                 if (!deleteConfirmation) {
                   setDeleteConfirmation(true);

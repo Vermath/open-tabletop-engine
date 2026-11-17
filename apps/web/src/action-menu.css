@@ -1,5 +1,6 @@
 .action-menu {
   position: fixed;
+  z-index: 400;
   inset: auto;
   margin: 0;
   box-sizing: border-box;
@@ -24,3 +25,9 @@
 }
 .action-menu > [role="separator"] { margin: 4px; border-top: 1px solid var(--line); }
 .action-menu [aria-checked="true"] { color: var(--accent-strong); }
+
+.ability-roll-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}

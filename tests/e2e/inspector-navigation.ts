@@ -15,9 +15,6 @@ export async function selectInspectorPanel(page: Page, name: string | RegExp) {
   return tab;
 }
 
-export async function openAbilityRollMenu(stats: Locator, ability: string, action: "check" | "saving throw") {
-  const label = "Roll " + ability;
-  await stats.getByRole("button", { name: label, exact: true }).click();
-  return stats.getByRole("menu", { name: label, exact: true })
-    .getByRole("menuitem", { name: new RegExp("^" + label + " " + action + "\\b") });
+export function abilityRoll(stats: Locator, ability: string, action: "check" | "saving throw") {
+  return stats.getByRole("button", { name: new RegExp("^Roll " + ability + " " + action + "\\b") });
 }

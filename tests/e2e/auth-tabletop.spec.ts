@@ -4531,9 +4531,7 @@ test("character at 0 HP resolves Death Saving Throws from the sheet to a termina
 
   // A healthy character has core rolls but no Death Saving Throw affordance.
   const statsSheet = actorPanel.getByRole("region", { name: "Actor stats sheet" });
-  await statsSheet.getByRole("button", { name: "Roll Strength", exact: true }).click();
-  await expect(statsSheet.getByRole("menuitem", { name: /Roll Strength check/ })).toBeVisible();
-  await page.keyboard.press("Escape");
+  await expect(statsSheet.getByRole("button", { name: /Roll Strength check/ })).toBeVisible();
   await expect(statsSheet.locator(".actor-death-save-row")).toHaveCount(0);
 
   const heroHp = (hero.data.hp as { current: number }).current;

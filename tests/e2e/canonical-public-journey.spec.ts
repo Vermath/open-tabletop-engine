@@ -1,4 +1,4 @@
-import { openAbilityRollMenu, selectInspectorPanel } from "./inspector-navigation.js";
+import { abilityRoll, selectInspectorPanel } from "./inspector-navigation.js";
 import type { APIResponse, Browser, ConsoleMessage, Locator, Page, Request } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { dnd5eSrdCompendium } from "../../packages/system-sdk/src/index.js";
@@ -279,8 +279,8 @@ async function exercisePlayerSheetBeforeCombat(page: Page, characterName: string
   await actorPanel.getByRole("tab", { name: "Stats" }).click();
   const stats = actorPanel.getByRole("region", { name: "Actor stats sheet" });
 
-  await rollCoreStatistic(page, await openAbilityRollMenu(stats, "Strength", "check"), "Canonical Ember Campaign");
-  await rollCoreStatistic(page, await openAbilityRollMenu(stats, "Dexterity", "saving throw"), "Canonical Ember Campaign");
+  await rollCoreStatistic(page, abilityRoll(stats, "Strength", "check"), "Canonical Ember Campaign");
+  await rollCoreStatistic(page, abilityRoll(stats, "Dexterity", "saving throw"), "Canonical Ember Campaign");
 
   const hp = stats.getByLabel("Actor sheet healing target HP");
   await applyReviewedTypedDamageToHp(page, { apiBaseUrl, campaignName: "Canonical Ember Campaign", actorName: characterName, targetHp: 5 });
