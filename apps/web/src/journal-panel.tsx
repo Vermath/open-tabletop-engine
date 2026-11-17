@@ -1,3 +1,4 @@
+import { EmptyState } from "./workspace-states.js";
 import type {
   Actor,
   JournalBacklink,
@@ -362,7 +363,7 @@ export function JournalPanel(props: JournalPanelProps) {
         </details>
       )}
       <section className="journal-list" aria-label="Journal hierarchy">
-        {props.journals.length === 0 ? <div className="empty-state compact"><span>No journal records yet.</span><span className="journal-empty-hint">Recap is ready after play.</span></div> : journalHierarchyRows(props.journals).map(({ journal, depth }) => (
+        {props.journals.length === 0 ? <EmptyState icon={<ScrollText size={17} />} text="No journal records yet." action={props.canCreate ? { label: "Write the first record", run: () => setCreateDrawerOpen(true) } : undefined} /> : journalHierarchyRows(props.journals).map(({ journal, depth }) => (
           <JournalEntryCard
             key={journal.id}
             campaignId={props.campaignId}

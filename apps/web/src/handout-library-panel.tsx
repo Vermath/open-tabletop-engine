@@ -1,3 +1,4 @@
+import { EmptyState } from "./workspace-states.js";
 import type { Actor, MapAsset, Visibility } from "@open-tabletop/core";
 import { BookOpen, Check, Eye, FileText, Link2, Plus, Save, Search, Trash2, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -277,12 +278,8 @@ export function HandoutLibraryPanel(props: {
           </div>
           <div className="handout-list" role="list" aria-label="Handouts">
             {filtered.length === 0 ? (
-              <div className="empty-state compact lore-empty-state">
-                <BookOpen size={26} aria-hidden="true" />
-                <strong>{props.handouts.length === 0 ? "Your handout library starts here" : "No handouts match these filters"}</strong>
-                <p>{props.handouts.length === 0 ? props.canCreate ? "Create a handout for a clue, a letter, or campaign lore. Set its audience before sharing." : "Handouts shared with you will appear here." : "Try another search or clear the filters to see the rest of the library."}</p>
-                {props.handouts.length > 0 && <button className="ghost-button small" type="button" onClick={() => { setQuery(""); setWorldFilter(""); setReadFilter("all"); }}>Clear filters</button>}
-              </div>
+              <EmptyState icon={<BookOpen size={17} />} text={props.handouts.length === 0 ? "Handouts shared with you will appear here." : "No handouts match these filters."}
+                action={props.handouts.length > 0 ? { label: "Clear filters", run: () => { setQuery(""); setWorldFilter(""); setReadFilter("all"); } } : props.canCreate ? { label: "Create first handout", run: () => { setCreating(true); setSelectedId(""); } } : undefined} />
             ) : filtered.map((item) => {
               const unread = !item.readByUserIds.includes(props.currentUserId);
               return (

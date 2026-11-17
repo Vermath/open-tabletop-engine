@@ -640,12 +640,14 @@ describe("desktop layout regressions", () => {
     expect(appSource).toContain('const suffix = message ? `: ${message}` : "";');
     expect(appSource).toContain("setStatus(apiOfflineStatus(message));");
     expect(appSource).toContain("setStatus(apiOfflineStatus(error));");
-    expect(appSource).toContain('const apiOffline = status.startsWith("API offline");');
-    expect(appSource).toContain('{apiOffline ? "API connection required" : campaignLoadFailed ? "Campaign load failed" : "Loading campaign"}');
-    expect(appSource).toContain('status reset-status ${loadFailed ? "connection-status" : ""}');
+    const startup = readFileSync(resolve(__dirname, "workspace-states.tsx"), "utf8");
+    expect(appSource).toContain("<WorkspaceLoading status={status} />");
+    expect(startup).toContain('status.startsWith("API offline")');
+    expect(startup).toContain('{offline ? "API connection required" : "Campaign load failed"}');
+    expect(startup).toContain('className="status reset-status connection-status"');
     expect(stylesSource).toContain(".reset-panel .connection-status {\n  line-height: 1.45;\n  text-transform: none;");
-    expect(appSource).toContain("Retry campaign load");
-    expect(appSource).toContain("onClick={() => window.location.reload()}");
+    expect(startup).toContain("Retry campaign load");
+    expect(startup).toContain("onClick={() => window.location.reload()}");
   });
 
   it("lets the full character sheet dismiss through expected modal interactions", () => {
