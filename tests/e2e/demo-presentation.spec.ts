@@ -13,7 +13,7 @@ test("Explore demo opens the illustrated vault and gives its monsters playable s
   await board.getByRole("button", { name: /token Cinder Sentry$/ }).click();
   const inspector = page.getByRole("complementary", { name: "Inspector", exact: true });
   await expect(inspector.getByRole("heading", { name: "Cinder Sentry", exact: true })).toBeVisible();
-  await expect(inspector).toContainText(/AC\s*18/);
+  await expect(inspector.getByText("AC 18", { exact: true })).toBeVisible();
   await inspector.getByRole("button", { name: "Sheet", exact: true }).click();
   await expect(page.getByText(/Slam/, { exact: false }).first()).toBeVisible();
 });
