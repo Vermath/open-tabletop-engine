@@ -1,3 +1,4 @@
+import { selectInspectorPanel } from "./inspector-navigation.js";
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import type { User } from "../../packages/core/src/types.js";
@@ -7,7 +8,7 @@ const apiBaseUrl = `http://127.0.0.1:${process.env.OTTE_E2E_API_PORT ?? 4100}`;
 async function openInspectorPanel(page: Page, panelName: string) {
   const showInspector = page.getByRole("button", { name: "Show inspector", exact: true });
   if (await showInspector.isVisible()) await showInspector.click();
-  await page.locator(".inspector-tabs").getByRole("tab", { name: panelName, exact: true }).click();
+  await selectInspectorPanel(page, panelName);
 }
 
 async function loginSeededDemo(page: Page, email = "gm@example.test") {

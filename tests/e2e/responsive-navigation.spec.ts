@@ -1,3 +1,4 @@
+import { selectInspectorPanel } from "./inspector-navigation.js";
 import { randomUUID } from "node:crypto";
 import { expect, test, type Locator } from "@playwright/test";
 
@@ -37,7 +38,9 @@ for (const viewport of [
     await page.goto("/");
     await page.getByRole("button", { name: "Demo GM", exact: true }).click();
     const tabs = page.getByRole("tablist", { name: "Inspector panels" });
-    await expect(tabs.getByRole("tab")).toHaveCount(7);
+    await expect(tabs.getByRole("tab", { name: "Actors" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "More inspector panels" })).toBeVisible();
+    await expect.poll(() => tabs.getByRole("tab").evaluateAll((items) => new Set(items.map((item) => item.getBoundingClientRect().top)).size)).toBe(1);
     await expectUnclippedLabels(tabs.getByRole("tab"));
     if (viewport.width <= 640) {
       const railControls = page.locator(".workspace-mode-switcher button, .rail > .ai-agent-toggle");
@@ -53,12 +56,89 @@ for (const viewport of [
     }
     await tabs.getByRole("tab", { name: "Actors", exact: true }).focus();
     await page.keyboard.press("End");
-    await expect(tabs.getByRole("tab", { name: "Combat", exact: true })).toBeFocused();
-    await tabs.getByRole("tab", { name: "Chat", exact: true }).click();
+    const combat = tabs.getByRole("tab", { name: "Combat", exact: true });
+    await expect(combat).toBeFocused();
+    await expect(combat).toHaveAttribute("aria-selected", "true");
+    await combat.press("Home");
+    await expect(tabs.getByRole("tab", { name: "Actors", exact: true })).toBeFocused();
+    await selectInspectorPanel(page, "Chat");
     await expect(page.getByRole("textbox", { name: "Chat message", exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   });
 }
+
+test("the inspector menu toggles closed and Escape preserves the active canvas tool", async ({ page }) => {
+  await page.addInitScript(() => {
+    Reflect.defineProperty(HTMLElement.prototype, "showPopover", { value: undefined });
+    Reflect.defineProperty(HTMLElement.prototype, "hidePopover", { value: undefined });
+  });
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Demo GM", exact: true }).click();
+  const more = page.getByRole("button", { name: "More inspector panels" });
+  const menu = page.getByRole("menu", { name: "More inspector panels" });
+  const ruler = page.getByRole("button", { name: "Ruler", exact: true });
+  await ruler.click();
+  await more.click();
+  await expect(menu).toBeVisible();
+  await more.click();
+  await expect(menu).toBeHidden();
+  await more.click();
+  await expect(menu).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+  await expect(more).toBeFocused();
+  await expect(ruler).toHaveAttribute("aria-pressed", "true");
+});
+
+test("desktop Prep content keeps measured inspector tabs in one row", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Demo GM", exact: true }).click();
+  await page.getByRole("button", { name: "Prep", exact: true }).click();
+  await selectInspectorPanel(page, "Sessions");
+  await expect(page.getByRole("region", { name: "Session Desk" })).toBeVisible();
+  await page.getByRole("button", { name: "Show scene", exact: true }).click();
+  await expect(page.locator(".table-grid")).toHaveAttribute("data-content-workspace", "true");
+  await expect(page.locator(".table-grid")).toHaveAttribute("data-scene-preview", "true");
+
+  const tabs = page.getByRole("tablist", { name: "Inspector panels" });
+  const more = page.getByRole("button", { name: "More inspector panels" });
+  await expect(more).toBeVisible();
+  await expect(tabs).toHaveCSS("flex-wrap", "nowrap");
+  await expect(tabs).toHaveCSS("padding-inline-start", "0px");
+  await expect.poll(() => tabs.evaluate((list) => {
+    const row = list.parentElement!;
+    const tabButtons = Array.from(list.querySelectorAll<HTMLElement>("[role='tab']"));
+    const moreButton = row.querySelector<HTMLElement>("[aria-label='More inspector panels']")!;
+    const measurements = [moreButton, ...tabButtons].map((button) => {
+      const id = button === moreButton ? "more" : button.id.replace("inspector-tab-", "");
+      const probe = row.querySelector<HTMLElement>(`[data-measure="${id}"]`)!;
+      return Math.abs(button.getBoundingClientRect().width - probe.getBoundingClientRect().width);
+    });
+    return {
+      fits: list.scrollWidth <= list.clientWidth + 1,
+      rows: new Set(tabButtons.map((button) => button.getBoundingClientRect().top)).size,
+      mismatchedWidths: measurements.filter((difference) => difference > 1),
+    };
+  })).toEqual({ fits: true, rows: 1, mismatchedWidths: [] });
+});
+
+test("chat replies and edits open directly from the message", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Demo GM", exact: true }).click();
+  await selectInspectorPanel(page, "Chat");
+  const text = "Direct chat actions " + randomUUID();
+  await page.getByRole("textbox", { name: "Chat message", exact: true }).fill(text);
+  await page.getByRole("button", { name: "Send chat command", exact: true }).click();
+  const message = page.getByLabel("Chat messages", { exact: true }).locator("article").filter({ hasText: text });
+  await message.getByRole("button", { name: /^Reply to message/ }).click();
+  const draft = page.getByRole("status", { name: "Chat reply target" });
+  await expect(draft).toContainText(text);
+  await draft.getByRole("button", { name: "Clear", exact: true }).click();
+  await message.getByRole("button", { name: /^Edit message/ }).click();
+  await expect(message.getByRole("form", { name: "Edit chat message" })).toBeVisible();
+});
 
 test("long connection errors wrap on a phone and can be retried", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 740 });
@@ -140,7 +220,7 @@ test("desktop workspaces emphasize the scene and give preparation its own readin
     await expect(inspector).toBeVisible();
 
     await page.getByRole("button", { name: "Prep", exact: true }).click();
-    await page.getByRole("tablist", { name: "Inspector panels" }).getByRole("tab", { name: "Sessions", exact: true }).click();
+    await selectInspectorPanel(page, "Sessions");
     await expect(page.getByRole("heading", { level: 1, name: "Sessions", exact: true })).toBeVisible();
     const grid = page.locator(".table-grid");
     const scene = page.locator("#scene-workspace");
@@ -165,7 +245,7 @@ test("desktop workspaces emphasize the scene and give preparation its own readin
     await sceneTools.locator(":scope > summary").click();
     await expect(sceneTools.getByRole("textbox", { name: "Scene search", exact: true })).toBeHidden();
 
-    await page.getByRole("tablist", { name: "Inspector panels" }).getByRole("tab", { name: "Actors", exact: true }).click();
+    await selectInspectorPanel(page, "Actors");
     await expect(scene).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   } finally {
@@ -308,7 +388,7 @@ test.describe("short phone scene view", () => {
     await expect(scene).toBeHidden();
     await expect(actors).toHaveAttribute("aria-selected", "true");
 
-    await page.getByRole("tablist", { name: "Inspector panels" }).getByRole("tab", { name: "Sessions", exact: true }).click();
+    await selectInspectorPanel(page, "Sessions");
     const sessions = page.getByRole("region", { name: "Session Desk", exact: true });
     const planSession = sessions.getByRole("button", { name: "Plan session", exact: true });
     await expectUnclippedLabels(planSession);
@@ -341,7 +421,7 @@ test("a hidden chat inspector reports new messages and clears unread only when r
   await expect(page.getByRole("status").filter({ hasText: "Profile preferences synced" })).toBeVisible();
   await manage.getByRole("button", { name: "Close", exact: true }).click();
   const chatTab = page.locator("#inspector-tab-chat");
-  await chatTab.click();
+  await selectInspectorPanel(page, "Chat");
   await page.getByRole("button", { name: "Hide inspector", exact: true }).click();
   await expect(page.locator("#workspace-inspector")).toBeHidden();
 

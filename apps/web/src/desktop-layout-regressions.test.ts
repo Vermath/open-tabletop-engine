@@ -241,8 +241,9 @@ describe("desktop layout regressions", () => {
     expect(stylesSource).toContain('.shell[data-table-focus="true"] .inspector {\n    display: none;');
   });
 
-  it("keeps all Prep destinations visible and makes inspector tabs keyboard-operable", () => {
-    expect(stylesSource).toContain(".workspace-prep .inspector-tabs {\n    display: grid;\n    grid-template-columns: repeat(4, minmax(0, 1fr));");
+  it("keeps all Prep destinations reachable and makes inspector tabs keyboard-operable", () => {
+    expect(readFileSync(resolve(__dirname, "inspector-tabs.css"), "utf8")).toContain("flex-wrap: nowrap");
+    expect(navigationSource).toContain('label="More inspector panels"');
     expect(sceneCanvasSource).toContain('role="tab" aria-controls={props.panelId} aria-selected={props.active} tabIndex={props.active ? 0 : -1}');
     expect(appSource).toContain("<InspectorPanelContent ");
     const panelSource = readFileSync(resolve(__dirname, "interface-surfaces.tsx"), "utf8");
@@ -250,9 +251,9 @@ describe("desktop layout regressions", () => {
     expect(panelSource).toContain('aria-labelledby={closing ? undefined : "inspector-tab-" + view.tab}');
     expect(sceneCanvasSource).toContain('["ArrowLeft", "ArrowRight", "Home", "End"]');
     expect(appSource).toContain('? ["actors", "compendium", "sessions", "worlds", "handouts", "journal", "memory", "search", "content", "plugins"]');
-    expect(navigationSource).toContain('label="Search"');
-    expect(navigationSource).toContain('label="Canon"');
-    expect(navigationSource).toContain('label="Assets"');
+    expect(navigationSource).toContain('search: "Search"');
+    expect(navigationSource).toContain('memory: "Canon"');
+    expect(navigationSource).toContain('content: "Assets"');
   });
 
   it("keeps the phone toolbar to one primary row while retaining secondary tools", () => {

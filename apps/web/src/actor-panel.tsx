@@ -203,7 +203,7 @@ export function CoreStatisticsSection(props: { stats: ActorCoreStatistics; canRo
             {ability.score !== undefined ? ` ${formatNumber(ability.score)}` : ""}
             {ability.modifier !== undefined ? ` (${signedModifier(ability.modifier)})` : ""}
           </span>
-          <span className="button-row">
+          <span className="ability-roll-actions" role="group" aria-label={ability.label + " rolls"}>
             {ability.check && (
               <button
                 className="ghost-button small"

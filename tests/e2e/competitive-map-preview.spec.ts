@@ -1,3 +1,4 @@
+import { selectInspectorPanel } from "./inspector-navigation.js";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Locator, type Page } from "@playwright/test";
@@ -225,7 +226,7 @@ test("competitive player preview matches a separate authenticated player's table
     const actualBoard = await openScene(playerPage, scene);
     await expect(actualBoard.getByRole("button", { name: "Player Objects & Tokens token Preview Hero", exact: true })).toBeVisible();
     await expect(actualBoard.getByRole("button", { name: /BROWSER_PRIVATE_TOKEN/ })).toHaveCount(0);
-    await playerPage.locator(".inspector-tabs").getByRole("tab", { name: "Chat", exact: true }).click();
+    await selectInspectorPanel(playerPage, "Chat");
     const playerChat = playerPage.getByRole("textbox", { name: "Chat message", exact: true });
     await playerChat.fill("Browser message from authenticated player");
     await playerChat.press("Enter");
@@ -271,7 +272,7 @@ test("competitive player preview matches a separate authenticated player's table
     await expect(dialog).not.toContainText("BROWSER_PRIVATE_CHAT");
     await page.screenshot({ path: resolve(artifactDir, "gm-player-preview-chat.png"), fullPage: true });
 
-    await playerPage.locator(".inspector-tabs").getByRole("tab", { name: "Handouts", exact: true }).click();
+    await selectInspectorPanel(playerPage, "Handouts");
     const library = playerPage.getByRole("region", { name: "Handout Library" });
     await expect(library).toBeVisible();
     await library.getByRole("button").filter({ hasText: "Browser public clue" }).click();

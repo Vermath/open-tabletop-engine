@@ -1,3 +1,4 @@
+import { selectInspectorPanel } from "./inspector-navigation.js";
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 
@@ -24,7 +25,7 @@ async function openInspectorPanel(page: Page, panelName: "Actors" | "Compendium"
     await expect(prep).toHaveAttribute("aria-pressed", "true");
     await expect(page.locator(".inspector-tabs").getByRole("tab", { name: "Sessions", exact: true })).toBeVisible();
   }
-  await page.locator(".inspector-tabs").getByRole("tab", { name: panelName, exact: true }).click();
+  await selectInspectorPanel(page, panelName);
   const panel = page.getByRole("tabpanel", { name: panelName });
   await expect(panel).toBeVisible();
   return panel;

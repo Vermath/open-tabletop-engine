@@ -1,9 +1,11 @@
 import type { Campaign, MapAsset, Scene } from "@open-tabletop/core";
 import { BookOpen, Boxes, Brain, ChevronDown, ChevronLeft, ChevronRight, Eye, FileText, Globe2, Map as MapIcon, MessageSquare, PencilLine, Plus, ScrollText, Search, Shield, Swords, Timer, Trash2, Upload, Users } from "lucide-react";
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { assetThumbnailUrl } from "./api.js";
 import { isUsableImageAsset, TabButton } from "./scene-canvas.js";
 import { sceneQuickCreateIndex, sceneTabWrapClass, showTrailingSceneCreate } from "./scene-tabs.js";
+import { ActionMenu } from "./action-menu.js";
+import "./inspector-tabs.css";
 import { formatNumber } from "./sheet-format.js";
 
 export type InspectorTab = "actors" | "compendium" | "sessions" | "worlds" | "handouts" | "journal" | "memory" | "search" | "chat" | "combat" | "content" | "plugins";
@@ -187,21 +189,92 @@ interface WorkspaceInspectorTabsProps {
   onSelectTab: (tab: InspectorTab) => void;
 }
 
+const inspectorIcons = {
+  actors: Users, compendium: BookOpen, sessions: Timer, worlds: Globe2, handouts: BookOpen, journal: ScrollText,
+  memory: Brain, search: Search, chat: MessageSquare, combat: Swords, content: Upload, plugins: Boxes,
+} satisfies Record<InspectorTab, typeof Users>;
+const inspectorMoreClassName = "ghost-button small inspector-tab-more";
+
 export function WorkspaceInspectorTabs({ inspectorTabs, tab, chatUnreadCount, onSelectTab }: WorkspaceInspectorTabsProps) {
+  const ordered = (Object.keys(inspectorPanelNames) as InspectorTab[]).filter((item) => inspectorTabs.includes(item));
+  const row = useRef<HTMLDivElement>(null);
+  const measurement = useRef<HTMLDivElement>(null);
+  const [available, setAvailable] = useState<number | undefined>(undefined);
+  const [widths, setWidths] = useState<Record<string, number>>({});
+  const [remembered, setRemembered] = useState<InspectorTab>();
+  const labels = (item: InspectorTab) => item === "chat" && chatUnreadCount ? "Chat (" + formatNumber(chatUnreadCount) + ")" : inspectorPanelNames[item];
+  const choicesKey = ordered.join(":");
+  useLayoutEffect(() => {
+    if (!row.current || !measurement.current) return;
+    const measure = () => {
+      setAvailable(row.current?.clientWidth);
+      setWidths(Object.fromEntries(Array.from(measurement.current?.querySelectorAll<HTMLElement>("[data-measure]") ?? []).map((element) => [element.dataset.measure!, element.getBoundingClientRect().width])));
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(row.current);
+    observer.observe(measurement.current);
+    measure();
+    return () => observer.disconnect();
+  }, [choicesKey, chatUnreadCount]);
+
+  const visibleIds = new Set(ordered);
+  if (available !== undefined && ordered.every((item) => widths[item] !== undefined)) {
+    const fitsAll = ordered.reduce((sum, item) => sum + widths[item]! + 4, 16) <= available;
+    if (!fitsAll) {
+      visibleIds.clear();
+      let remaining = available - (widths.more ?? 64) - 24;
+      for (const item of new Set([tab, remembered, "actors", "chat", "combat", ...ordered] as const)) {
+        if (!item || !ordered.includes(item)) continue;
+        const width = widths[item]! + 4;
+        if (item === tab || width <= remaining) {
+          visibleIds.add(item);
+          remaining -= width;
+        }
+      }
+    }
+  }
+  const overflow = ordered.filter((item) => !visibleIds.has(item));
+  const activateAndFocus = (item: InspectorTab) => {
+    onSelectTab(item);
+    requestAnimationFrame(() => document.getElementById("inspector-tab-" + item)?.focus());
+  };
   return (
-    <div className="tabs inspector-tabs" role="tablist" aria-label="Inspector panels">
-      {inspectorTabs.includes("actors") && <TabButton active={tab === "actors"} icon={<Users size={15} />} label="Actors" tabId="inspector-tab-actors" panelId="inspector-panel-actors" onClick={() => onSelectTab("actors")} />}
-      {inspectorTabs.includes("compendium") && <TabButton active={tab === "compendium"} icon={<BookOpen size={15} />} label="Compendium" tabId="inspector-tab-compendium" panelId="inspector-panel-compendium" onClick={() => onSelectTab("compendium")} />}
-      {inspectorTabs.includes("sessions") && <TabButton active={tab === "sessions"} icon={<Timer size={15} />} label="Sessions" tabId="inspector-tab-sessions" panelId="inspector-panel-sessions" onClick={() => onSelectTab("sessions")} />}
-      {inspectorTabs.includes("worlds") && <TabButton active={tab === "worlds"} icon={<Globe2 size={15} />} label="Worlds" tabId="inspector-tab-worlds" panelId="inspector-panel-worlds" onClick={() => onSelectTab("worlds")} />}
-      {inspectorTabs.includes("handouts") && <TabButton active={tab === "handouts"} icon={<BookOpen size={15} />} label="Handouts" tabId="inspector-tab-handouts" panelId="inspector-panel-handouts" onClick={() => onSelectTab("handouts")} />}
-      {inspectorTabs.includes("journal") && <TabButton active={tab === "journal"} icon={<ScrollText size={15} />} label="Journal" tabId="inspector-tab-journal" panelId="inspector-panel-journal" onClick={() => onSelectTab("journal")} />}
-      {inspectorTabs.includes("memory") && <TabButton active={tab === "memory"} icon={<Brain size={15} />} label="Canon" tabId="inspector-tab-memory" panelId="inspector-panel-memory" onClick={() => onSelectTab("memory")} />}
-      {inspectorTabs.includes("search") && <TabButton active={tab === "search"} icon={<Search size={15} />} label="Search" tabId="inspector-tab-search" panelId="inspector-panel-search" onClick={() => onSelectTab("search")} />}
-      {inspectorTabs.includes("chat") && <TabButton active={tab === "chat"} icon={<MessageSquare size={15} />} label={chatUnreadCount > 0 ? `Chat (${formatNumber(chatUnreadCount)})` : "Chat"} tabId="inspector-tab-chat" panelId="inspector-panel-chat" onClick={() => onSelectTab("chat")} />}
-      {inspectorTabs.includes("combat") && <TabButton active={tab === "combat"} icon={<Swords size={15} />} label="Combat" tabId="inspector-tab-combat" panelId="inspector-panel-combat" onClick={() => onSelectTab("combat")} />}
-      {inspectorTabs.includes("content") && <TabButton active={tab === "content"} icon={<Upload size={15} />} label="Assets" tabId="inspector-tab-content" panelId="inspector-panel-content" onClick={() => onSelectTab("content")} />}
-      {inspectorTabs.includes("plugins") && <TabButton active={tab === "plugins"} icon={<Boxes size={15} />} label="Plugins" tabId="inspector-tab-plugins" panelId="inspector-panel-plugins" onClick={() => onSelectTab("plugins")} />}
+    <div className="inspector-tab-bar" ref={row}>
+      <div className="tabs inspector-tabs" role="tablist" aria-label="Inspector panels" onKeyDownCapture={(event) => {
+        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+        const focused = (event.target as HTMLElement).closest("[role='tab']");
+        const index = ordered.findIndex((item) => focused?.id === "inspector-tab-" + item);
+        if (index < 0) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const next = event.key === "Home" ? 0 : event.key === "End" ? ordered.length - 1
+          : (index + (event.key === "ArrowRight" ? 1 : -1) + ordered.length) % ordered.length;
+        activateAndFocus(ordered[next]!);
+      }}>
+        {ordered.filter((item) => visibleIds.has(item)).map((item) => {
+          const Icon = inspectorIcons[item];
+          return <TabButton key={item} active={tab === item} icon={<Icon size={15} />} label={labels(item)} tabId={"inspector-tab-" + item} panelId={"inspector-panel-" + item} onClick={() => onSelectTab(item)} />;
+        })}
+      </div>
+      {overflow.length > 0 && (
+        <ActionMenu label="More inspector panels" className={inspectorMoreClassName} trigger={<>More <ChevronDown size={12} /></>}>
+          {(close) => overflow.map((item) => {
+            const Icon = inspectorIcons[item];
+            return <button className="ghost-button small" type="button" role="menuitem" key={item} onClick={() => {
+              close();
+              setRemembered(item);
+              activateAndFocus(item);
+            }}><Icon size={15} aria-hidden="true" /> {labels(item)}</button>;
+          })}
+        </ActionMenu>
+      )}
+      <div className="inspector-tab-measure" aria-hidden="true" ref={measurement}>
+        {ordered.map((item) => {
+          const Icon = inspectorIcons[item];
+          return <span key={item} data-measure={item}><Icon size={15} /> {labels(item)}</span>;
+        })}
+        <span className={inspectorMoreClassName} data-measure="more">More <ChevronDown size={12} /></span>
+      </div>
     </div>
   );
 }
