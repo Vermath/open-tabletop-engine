@@ -159,18 +159,22 @@ test("a blocked AI provider does not block combat and reconnect restores both du
       assistantMessage: "The controlled E2E provider turn completed after the table mutation.",
     });
 
-    const reconnectedSnapshot = tablePage.waitForResponse(
-      (response) => response.request().method() === "GET"
-        && new URL(response.url()).pathname === `/api/v1/campaigns/${campaignId}/snapshot`
-        && response.ok(),
-      { timeout: 30_000 },
-    );
+    const connection = tablePage.locator(".session-pulse");
+    await expect(connection).toHaveAttribute("data-connection-state", "connected");
     const beforeRestart = await request.get(`${apiControlBaseUrl}/status`);
     expect(beforeRestart.ok(), await beforeRestart.text()).toBe(true);
     const beforeRestartBody = await beforeRestart.json() as { generation: number; running: boolean };
     expect(beforeRestartBody.running).toBe(true);
 
-    const restart = await request.post(`${apiControlBaseUrl}/restart`);
+    const [snapshotResponse, restart] = await Promise.all([
+      tablePage.waitForResponse(
+        (response) => response.request().method() === "GET"
+          && new URL(response.url()).pathname === `/api/v1/campaigns/${campaignId}/snapshot`
+          && response.ok(),
+        { timeout: 30_000 },
+      ),
+      request.post(`${apiControlBaseUrl}/restart`),
+    ]);
     expect(restart.ok(), await restart.text()).toBe(true);
     expect(await restart.json()).toMatchObject({ generation: beforeRestartBody.generation + 1, restarted: true });
     await expect.poll(
@@ -178,7 +182,6 @@ test("a blocked AI provider does not block combat and reconnect restores both du
       { timeout: 30_000 },
     ).toBe(true);
 
-    const snapshotResponse = await reconnectedSnapshot;
     const snapshot = await snapshotResponse.json() as CampaignSnapshot;
     expect(snapshot.combats).toContainEqual(expect.objectContaining({
       id: combatMutation.body.id,
