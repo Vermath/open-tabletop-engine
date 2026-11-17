@@ -1,0 +1,63 @@
+.scene-board .token {
+  --token-edge: var(--muted);
+  border: 2px solid var(--token-edge);
+  box-shadow: 0 0 0 1px var(--ink), var(--shadow-1);
+}
+
+.scene-board .token.friendly { --token-edge: var(--green); }
+.scene-board .token.hostile { --token-edge: var(--red); }
+.scene-board .token.neutral { --token-edge: var(--brass); }
+
+.scene-board .token.selected {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+}
+
+.scene-board .token-selection-frame { border: 0; }
+.scene-board .token:not(.has-image) .token-visual {
+  border-radius: inherit;
+  container-type: inline-size;
+  color: var(--paper);
+  background: linear-gradient(145deg, color-mix(in srgb, var(--token-tint) 38%, var(--ink)), color-mix(in srgb, var(--token-tint) 15%, var(--ink)));
+}
+.scene-board .token:not(.has-image) .token-label {
+  --type-initials: min(var(--type-title, 1em), 40cqi);
+  max-width: 100%;
+  font-size: var(--type-initials);
+  text-overflow: clip;
+}
+.scene-board .token:is(.selected, :focus-visible) .token-nameplate,
+.scene-board[data-show-token-names] .token .token-nameplate { opacity: 1; }
+
+.scene-board .token .token-hp {
+  inset: -3px;
+  height: auto;
+  min-width: 0;
+  border: 0;
+  filter: drop-shadow(0 1px 1px var(--ink));
+  background: none;
+  box-shadow: none;
+}
+
+.scene-board .token .token-hp > span {
+  --token-hp-color: var(--green);
+  display: block;
+  background: conic-gradient(from 118deg, var(--token-hp-color) calc(var(--token-hp-fill) * .345), var(--ink) 0 34.5%, transparent 0);
+  box-shadow: none;
+  mask: radial-gradient(farthest-side, transparent calc(100% - 4px), currentColor calc(100% - 3px));
+}
+.scene-board .token .token-hp.warning > span { --token-hp-color: var(--brass); }
+.scene-board .token .token-hp.danger > span { --token-hp-color: var(--red); }
+
+.scene-board .token-conditions { top: calc(100% + 5px); pointer-events: auto; }
+.scene-board .token-condition-chip { display: inline-flex; align-items: center; min-width: 15px; justify-content: center; }
+.token-condition-description {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+@media (prefers-reduced-motion: reduce) {
+  .scene-board .token .token-nameplate { transition: none; }
+}

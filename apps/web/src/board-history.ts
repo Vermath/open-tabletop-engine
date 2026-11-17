@@ -38,7 +38,7 @@ export function applyLocalBoardHistoryAction(tokens: Token[], action: BoardHisto
   };
 }
 
-export function createTokenCopies(tokens: Token[], options: { idFactory?: () => string; now?: () => string; offset?: number; scene?: Pick<Scene, "width" | "height"> } = {}): Token[] {
+export function createTokenCopies(tokens: Token[], options: { idFactory?: () => string; now?: () => string; offset?: number; scene?: Pick<Scene, "width" | "height">; pendingServerRevision?: boolean } = {}): Token[] {
   const idFactory = options.idFactory ?? (() => createId("tok"));
   const timestamp = options.now ?? nowIso;
   const offset = options.offset ?? 24;
@@ -61,7 +61,8 @@ export function createTokenCopies(tokens: Token[], options: { idFactory?: () => 
       y: scene ? Math.max(0, Math.min(Math.max(0, scene.height - token.height), token.y + deltaY)) : token.y + deltaY,
       targetedByUserIds: [],
       createdAt: now,
-      updatedAt: now
+      // A copy saved by the API has no authoritative revision until creation completes.
+      updatedAt: options.pendingServerRevision ? "" : now
     };
   });
 }

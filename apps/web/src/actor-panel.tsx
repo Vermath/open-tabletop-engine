@@ -1,9 +1,11 @@
 import type { Actor, Combat, DeclarativeActorSheet as DeclarativeSheet, Item, MapAsset, Scene, Token, TokenLayer } from "@open-tabletop/core";
 import type { Dnd5eSrdSpellPreparationMutationResult } from "@open-tabletop/core";
 import { Boxes, Check, ChevronRight, ChevronUp, Crosshair, Dices, Eraser, Eye, FileText, Grip, Hand, LockKeyhole, MapPin, PencilLine, Pentagon, Plus, Shield, Swords, Timer, Upload, Users, WandSparkles, X, Zap } from "lucide-react";
-import { useEffect, useReducer, useRef, useState } from "react";
+import { useEffect, useReducer, useRef, useState, type ComponentProps } from "react";
 import { apiGet, apiPost, type Snapshot } from "./api.js";
 import { isAdversaryActor } from "./actor-rails.js";
+import { memoWithEventProps } from "./memo-with-event-props.js";
+import { useStructurallyStable } from "./board-render-stability.js";
 import { HpBar, resolveHitPointEdit } from "./hp-bar.js";
 import { HitDiceRestCard, type ActorRestOptions, type RestPreviewEnvelope } from "./hit-dice-rest-card.js";
 import { TypedDamageCard, type TypedDamageApplyResult } from "./typed-damage-card.js";
@@ -1853,4 +1855,18 @@ export function ActorPanel(inputProps: { campaignId: string; actor?: Actor; toke
       )}
     </div>
   );
+}
+
+const MemoizedActorPanel = memoWithEventProps(ActorPanel, [
+  "setCompendiumSearch", "updateActorHp", "adjustActorHp", "awardActorXp", "onLevelUp",
+  "onPreviewRestActor", "onRestActor", "onTypedDamageApplied", "updateActorData", "onActorUpdated",
+  "toggleActorCondition", "updateItemData", "changeActorAttunement", "assignItemToActor",
+  "onSpellPreparationApplied", "updateToken", "onUploadTokenImage", "targetToken", "targetTokens",
+  "deleteToken", "deleteActor", "updateTokenVision", "useActorAction", "onImportCompendiumEntry",
+  "onPurchaseCompendiumEntry", "onPlaceActor",
+]);
+
+export function LiveActorPanel(props: ComponentProps<typeof ActorPanel>) {
+  const xpProgress = useStructurallyStable(props.xpProgress);
+  return <MemoizedActorPanel {...props} xpProgress={xpProgress} />;
 }
