@@ -52,7 +52,7 @@ import { appendGridCalibrationPoint, GridCalibrationPanel, type GridCalibrationR
 import { sceneBackgroundChangePlan, sceneMapConfigurationChanged, sceneMapConfigurationMetadata } from "./scene-background-calibration.js";
 import { normalizeSceneGridType, normalizeSceneVisibilityMode, SceneGridFields, SceneVisibilityField, sceneGridFormSummary, sceneGridSummary } from "./scene-grid-fields.js";
 import { SceneDelegationPanel } from "./scene-delegation-panel.js";
-import { ProfilePreferences, resolvedUserPreferences, updateUserProfile } from "./profile-preferences.js";
+import { applyProfilePreferences, applyProfileUserToSnapshot, mostRecentProfileUser, ProfilePreferences, resolvedUserPreferences, updateUserProfile, type ProfileUpdateInput } from "./profile-preferences.js";
 import { HpBar } from "./hp-bar.js";
 import { deleteJournalEntry, JournalPanel, updateJournalEntry, type JournalCreateOptions, type JournalDraft, type JournalLinkTargetOption } from "./journal-panel.js";
 import { MemoizedChatRail as ChatRail } from "./chat-rail.js";
@@ -728,7 +728,7 @@ export function App() {
   const liveCampaignSession = campaignSessions.find((session) => session.status === "live");
   const currentTurnCombatant = combatTurnCombatant(activeCombat, "current");
   const nextTurnCombatant = combatTurnCombatant(activeCombat, "next");
-  const { settings: interfaceSounds, toggle: toggleInterfaceSounds, play: playInterfaceCue, applySavedSettings: applySavedInterfaceSounds } = useInterfaceSounds({ preferences: snapshot.session?.user.preferences?.interfaceSounds, muted: audioMuted, masterVolume: audioMasterVolume, scene: selectedScene, userId: currentUserId, combat: activeCombat, combatant: currentTurnCombatant, tokens: snapshot.tokens, actors: snapshot.actors, onSettingsChange: (settings, save) => persistQuickPreferences({ interfaceSounds: settings }, "Set interface sounds", save) });
+  const { settings: interfaceSounds, toggle: toggleInterfaceSounds, play: playInterfaceCue, applySavedSettings: applySavedInterfaceSounds, readToggleVersion: readSoundToggleVersion } = useInterfaceSounds({ preferences: snapshot.session?.user.preferences?.interfaceSounds, muted: audioMuted, masterVolume: audioMasterVolume, scene: selectedScene, userId: currentUserId, combat: activeCombat, combatant: currentTurnCombatant, tokens: snapshot.tokens, actors: snapshot.actors, onSettingsChange: (settings, save) => persistQuickPreferences({ interfaceSounds: settings }, "Set interface sounds", save) });
   const currentTurnTokenIds = useMemo(() => currentTurnCombatant?.tokenId ? [currentTurnCombatant.tokenId] : [], [currentTurnCombatant?.tokenId]);
   const nextTurnTokenIds = useMemo(() => nextTurnCombatant?.tokenId && nextTurnCombatant.id !== currentTurnCombatant?.id ? [nextTurnCombatant.tokenId] : [], [nextTurnCombatant?.tokenId, nextTurnCombatant?.id, currentTurnCombatant?.id]);
   const recentEndedCombats = snapshot.combats.filter((combat) => !combat.active).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).slice(0, 3);
@@ -2209,28 +2209,24 @@ export function App() {
     }
   }, [uiTheme]);
 
-  function applyPreferenceRuntime(user: User): void {
-    const preferences = resolvedUserPreferences(user);
-    setUiTheme(preferences.theme);
-    setDice3dEnabled(preferences.dice3dEnabled);
-    document.documentElement.dataset.reducedMotion = preferences.reducedMotion ? "true" : "false";
-    document.documentElement.dataset.chatNotifications = preferences.chatNotifications;
-  }
-
-  function applyAuthenticatedUser(user: User, source: "profile" | "quick" = "profile"): void {
+  function applyPreferenceRuntime(user: User): void { applyProfilePreferences(user, setUiTheme, setDice3dEnabled); }
+  function applyAuthenticatedUser(user: User, soundToggleVersion?: number): void {
     if (user.id !== realtimeSelectionRef.current.userId) return;
-    const lastSaved = savedProfileRef.current;
-    if (lastSaved?.id === user.id && lastSaved.updatedAt > user.updatedAt) return;
+    if (mostRecentProfileUser(user, savedProfileRef.current) !== user) return;
     savedProfileRef.current = user;
-    if (source === "profile") applySavedInterfaceSounds(user.id, user.preferences?.interfaceSounds);
+    if (soundToggleVersion !== undefined) applySavedInterfaceSounds(user.id, user.preferences?.interfaceSounds, soundToggleVersion);
     applyPreferenceRuntime(user);
-    setSnapshot((current) => ({
-      ...current,
-      session: current.session ? { ...current.session, user } : current.session,
-      members: current.members.map((member) => member.user.id === user.id ? { ...member, user: { ...member.user, displayName: user.displayName, email: user.email } } : member),
-      organizationMembers: current.organizationMembers.map((member) => member.user.id === user.id ? { ...member, user: { ...member.user, displayName: user.displayName, email: user.email } } : member)
-    }));
+    setSnapshot((current) => applyProfileUserToSnapshot(current, user));
     setStatus("Profile preferences synced");
+  }
+  function saveProfilePreferences(input: ProfileUpdateInput): Promise<void> {
+    const soundToggleVersion = readSoundToggleVersion();
+    return profilePreferenceQueueRef.current.enqueue(input.user.id, async () => {
+      if (input.user.id !== realtimeSelectionRef.current.userId) throw new Error("The signed-in account changed before the profile could be saved.");
+      const user = mostRecentProfileUser(input.user, savedProfileRef.current);
+      const result = await updateUserProfile({ ...input, user, idempotencyKey: `${input.idempotencyKey}:${user.updatedAt}` });
+      applyAuthenticatedUser(result.user, soundToggleVersion);
+    });
   }
   function persistQuickPreferences(patch: Partial<NonNullable<User["preferences"]>>, label: string, save?: InterfaceSoundSave): void {
     const signedIn = snapshotRef.current.session?.user;
@@ -2241,12 +2237,11 @@ export function App() {
     void campaignAction.runAction(label, () => profilePreferenceQueueRef.current.enqueue(id, async () => {
       const active = snapshotRef.current.session?.user;
       if (active?.id !== id || realtimeSelectionRef.current.userId !== id || (save && !save.isCurrent())) return;
-      const saved = savedProfileRef.current;
-      const user = saved?.id === id && saved.updatedAt > active.updatedAt ? saved : active;
+      const user = mostRecentProfileUser(active, savedProfileRef.current);
       const previous = resolvedUserPreferences(user);
       try {
         const result = await updateUserProfile({ user, displayName: user.displayName, preferences: { ...previous, ...patch }, idempotencyKey: `${attemptKey}:${user.updatedAt}` });
-        applyAuthenticatedUser(result.user, "quick");
+        applyAuthenticatedUser(result.user);
         save?.onSaved();
       } catch (failure) {
         if (!save && realtimeSelectionRef.current.userId === id) applyPreferenceRuntime({ ...user, preferences: previous });
@@ -9310,7 +9305,7 @@ export function App() {
           <div className="manage-category-content">
             {activeManageCategory === "account" && (
               <div className="manage-card-grid">
-        {snapshot.session?.user && <ProfilePreferences user={snapshot.session.user} onSaved={applyAuthenticatedUser} />}
+        {snapshot.session?.user && <ProfilePreferences user={snapshot.session.user} onSave={saveProfilePreferences} />}
         <CharacterTransferPanel
           campaignId={campaignId}
           currentUserId={currentUserId}
