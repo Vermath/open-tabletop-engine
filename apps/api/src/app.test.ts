@@ -30730,6 +30730,41 @@ registerCommand("/state", (input) => {
     }
   });
 
+  it("prevents revising another user's proposal without ai.applyChanges", async () => {
+    const store = new MemoryStateStore();
+    store.state.permissionGrants.push(
+      createTimestamped("grant", {
+        subjectType: "user" as const,
+        subjectId: "usr_demo_player",
+        campaignId: "camp_demo",
+        permissions: ["ai.proposeChanges"]
+      })
+    );
+    const pendingProposal = (id: string, createdByUserId: string, title: string) =>
+      createTimestamped("prop", { id, campaignId: "camp_demo", createdByUserId, createdByType: "user" as const, title, summary: "Original summary", status: "pending" as const, changesJson: [], diffJson: {}, approvalRequired: true });
+    store.state.proposals.push(pendingProposal("prop_gm_owned", "usr_demo_gm", "GM proposal"), pendingProposal("prop_player_owned", "usr_demo_player", "Player proposal"));
+    const app = await buildApp({ store });
+    const revise = (proposalId: string, id: number) => app.inject({
+      method: "POST",
+      url: "/api/v1/mcp",
+      headers: { "x-user-id": "usr_demo_player" },
+      payload: { jsonrpc: "2.0", id, method: "tools/call", params: { campaignId: "camp_demo", name: "revise_proposal", arguments: { proposalId, title: "Revised title", summary: "Revised summary", changes: [] } } }
+    });
+    try {
+      const othersProposal = await revise("prop_gm_owned", 5);
+      expect(othersProposal.statusCode).toBe(200);
+      expect(othersProposal.json().result.isError).toBe(true);
+      expect(JSON.parse(othersProposal.json().result.content[0].text)).toMatchObject({ error: "missing_permission", permission: "ai.applyChanges" });
+      expect(store.state.proposals.find((proposal) => proposal.id === "prop_gm_owned")).toMatchObject({ title: "GM proposal", summary: "Original summary", createdByUserId: "usr_demo_gm" });
+
+      const ownProposal = await revise("prop_player_owned", 6);
+      expect(ownProposal.json().result.isError).not.toBe(true);
+      expect(store.state.proposals.find((proposal) => proposal.id === "prop_player_owned")).toMatchObject({ title: "Revised title", summary: "Revised summary" });
+    } finally {
+      await app.close();
+    }
+  });
+
   it("can select the codex loopback ai provider from configuration", async () => {
     const previousProvider = process.env.OTTE_AI_PROVIDER;
     process.env.OTTE_AI_PROVIDER = "codex-loopback";
