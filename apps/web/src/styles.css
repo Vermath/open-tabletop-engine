@@ -1116,15 +1116,15 @@ a[href]:focus-visible,
 }
 
 .light-polygon {
-  filter: saturate(1.08);
+  filter: var(--light-feather,) saturate(1.08);
 }
 
 .light-polygon.dim {
-  filter: saturate(0.92) brightness(0.9);
+  filter: var(--light-feather,) saturate(0.92) brightness(0.9);
 }
 
 .light-polygon.bright {
-  filter: saturate(1.25) brightness(1.15);
+  filter: var(--light-feather,) saturate(1.25) brightness(1.15);
 }
 
 .darkness-layer {

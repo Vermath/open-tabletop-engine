@@ -5156,7 +5156,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return scene;
   });
 
-  app.post<{ Params: { sceneId: string }; Body: { x1: number; y1: number; x2: number; y2: number; blocksVision?: boolean; blocksMovement?: boolean; kind?: WallKind; open?: boolean } }>("/api/v1/scenes/:sceneId/walls", async (request, reply) => {
+  app.post<{ Params: { sceneId: string }; Body: { x1: number; y1: number; x2: number; y2: number; blocksVision?: boolean; blocksMovement?: boolean; kind?: WallKind; open?: boolean; locked?: boolean } }>("/api/v1/scenes/:sceneId/walls", async (request, reply) => {
     const campaignId = campaignIdForScene(store, request.params.sceneId);
     if (!campaignId) return notFound(reply, "Scene not found");
     const userId = requireUser(store, reply, request.headers);
@@ -5171,7 +5171,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }
     const kind: WallKind = normalized.patch.kind ?? "wall";
     const defaults = wallDefaultsForKind(kind);
-    const wall = { id: createId("wall"), x1: normalized.patch.x1, y1: normalized.patch.y1, x2: normalized.patch.x2, y2: normalized.patch.y2, blocksVision: normalized.patch.blocksVision ?? defaults.blocksVision, blocksMovement: normalized.patch.blocksMovement ?? defaults.blocksMovement, kind, ...(kind === "door" || kind === "window" ? { open: normalized.patch.open ?? false } : {}) };
+    const wall = { id: createId("wall"), x1: normalized.patch.x1, y1: normalized.patch.y1, x2: normalized.patch.x2, y2: normalized.patch.y2, blocksVision: normalized.patch.blocksVision ?? defaults.blocksVision, blocksMovement: normalized.patch.blocksMovement ?? defaults.blocksMovement, kind, ...(kind === "door" || kind === "window" ? { open: normalized.patch.open ?? false } : {}), ...(normalized.patch.locked === undefined ? {} : { locked: normalized.patch.locked }) };
     captureSceneEditSnapshot(scene, userId, "scene.wall.create");
     scene.walls.push(wall);
     scene.updatedAt = nowIso();
@@ -5181,7 +5181,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return scene;
   });
 
-  app.patch<{ Params: { sceneId: string; wallId: string }; Body: Partial<Pick<Wall, "x1" | "y1" | "x2" | "y2" | "blocksVision" | "blocksMovement" | "kind" | "open">> }>("/api/v1/scenes/:sceneId/walls/:wallId", async (request, reply) => {
+  app.patch<{ Params: { sceneId: string; wallId: string }; Body: Partial<Pick<Wall, "x1" | "y1" | "x2" | "y2" | "blocksVision" | "blocksMovement" | "kind" | "open" | "locked">> }>("/api/v1/scenes/:sceneId/walls/:wallId", async (request, reply) => {
     const campaignId = campaignIdForScene(store, request.params.sceneId);
     if (!campaignId) return notFound(reply, "Scene not found");
     const userId = requireUser(store, reply, request.headers);
@@ -18784,7 +18784,7 @@ function wallDefaultsForKind(kind: WallKind): Pick<Wall, "blocksVision" | "block
   return { blocksVision: true, blocksMovement: true };
 }
 
-function normalizeWallPatch(body: Partial<Pick<Wall, "x1" | "y1" | "x2" | "y2" | "blocksVision" | "blocksMovement" | "kind" | "open">>, current?: Wall): { patch: Partial<Wall> } | { error: string } {
+function normalizeWallPatch(body: Partial<Pick<Wall, "x1" | "y1" | "x2" | "y2" | "blocksVision" | "blocksMovement" | "kind" | "open" | "locked">>, current?: Wall): { patch: Partial<Wall> } | { error: string } {
   const patch: Partial<Wall> = {};
   for (const key of ["x1", "y1", "x2", "y2"] as const) {
     if (body[key] === undefined) continue;
@@ -18800,10 +18800,19 @@ function normalizeWallPatch(body: Partial<Pick<Wall, "x1" | "y1" | "x2" | "y2" |
     if (body.blocksVision === undefined) patch.blocksVision = defaults.blocksVision;
     if (body.blocksMovement === undefined) patch.blocksMovement = defaults.blocksMovement;
     if (body.kind !== "door" && body.kind !== "window") patch.open = undefined;
+    if (body.kind !== "door") patch.locked = undefined;
+  }
+  const kind = body.kind ?? current?.kind ?? "wall";
+  if (body.locked !== undefined) {
+    if (typeof body.locked !== "boolean" || kind !== "door") return { error: "Only doors accept a boolean lock state" };
+    patch.locked = body.locked;
+  }
+  if (kind === "door" && (body.locked ?? current?.locked)) {
+    if (body.open === true) return { error: "Unlock the door before opening it" };
+    if (body.locked === true) patch.open = false;
   }
   if (body.open !== undefined) {
     if (typeof body.open !== "boolean") return { error: "Wall open must be a boolean" };
-    const kind = body.kind ?? current?.kind ?? "wall";
     if (kind !== "door" && kind !== "window") return { error: "Only doors and windows can be opened" };
     patch.open = body.open;
   }

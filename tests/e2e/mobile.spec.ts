@@ -223,11 +223,18 @@ for (const viewport of viewportCases) {
         }).toBeGreaterThan(0);
       }
       await expectAndDeleteTokensByName(page, tokenName);
+      await expect(page.getByRole("button", { name: `Token ${tokenName}`, exact: true })).toHaveCount(0);
 
       await page.getByRole("button", { name: "Manage", exact: true }).click();
-      await expect(page.getByLabel("Session user")).toBeVisible();
-      await page.getByLabel("Session user").selectOption("usr_demo_player");
-      await expect(page.getByLabel("Session user")).toHaveValue("usr_demo_player", { timeout: 15_000 });
+      const sessionUser = page.getByLabel("Session user");
+      await expect(sessionUser).toHaveValue("usr_demo_gm");
+      const [login] = await Promise.all([
+        page.waitForResponse((response) => response.request().method() === "POST" &&
+          new URL(response.url()).pathname === "/api/v1/auth/login"),
+        sessionUser.selectOption("usr_demo_player")
+      ]);
+      expect(login.ok(), await login.text()).toBe(true);
+      await expect(sessionUser).toHaveValue("usr_demo_player", { timeout: 15_000 });
       await page.getByRole("region", { name: "Manage workspace panel" }).getByRole("button", { name: "Close", exact: true }).click();
       await expect(page.locator(".topbar")).toContainText("The Ember Vault");
       await page.reload();
