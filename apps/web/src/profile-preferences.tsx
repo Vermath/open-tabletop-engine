@@ -1,7 +1,7 @@
 import type { User, UserPreferences } from "@open-tabletop/core";
 import { Check, RefreshCw, UserCog } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { apiPatch } from "./api.js";
+import { apiPatch, type Snapshot } from "./api.js";
 import { defaultInterfaceSounds } from "./interface-sounds.js";
 import { errorMessage } from "./sheet-format.js";
 
@@ -17,12 +17,38 @@ export function resolvedUserPreferences(user: Pick<User, "preferences">): UserPr
   return { ...defaultUserPreferences, ...user.preferences };
 }
 
-export function updateUserProfile(input: {
+export type ProfileUpdateInput = {
   user: User;
   displayName: string;
   preferences: UserPreferences;
   idempotencyKey: string;
-}): Promise<{ user: User }> {
+};
+
+export function mostRecentProfileUser(user: User, saved: User | undefined): User {
+  return saved?.id === user.id && saved.updatedAt > user.updatedAt ? saved : user;
+}
+
+export function applyProfilePreferences(user: User, setTheme: (theme: UserPreferences["theme"]) => void, setDice3dEnabled: (enabled: boolean) => void): void {
+  const preferences = resolvedUserPreferences(user);
+  setTheme(preferences.theme);
+  setDice3dEnabled(preferences.dice3dEnabled);
+  document.documentElement.dataset.reducedMotion = preferences.reducedMotion ? "true" : "false";
+  document.documentElement.dataset.chatNotifications = preferences.chatNotifications;
+}
+
+export function applyProfileUserToSnapshot(snapshot: Snapshot, user: User): Snapshot {
+  if (snapshot.session?.user.id !== user.id) return snapshot;
+  const updateMember = <T extends { user: Pick<User, "id" | "displayName" | "email"> }>(member: T): T =>
+    member.user.id === user.id ? { ...member, user: { ...member.user, displayName: user.displayName, email: user.email } } : member;
+  return {
+    ...snapshot,
+    session: { ...snapshot.session, user },
+    members: snapshot.members.map(updateMember),
+    organizationMembers: snapshot.organizationMembers.map(updateMember),
+  };
+}
+
+export function updateUserProfile(input: ProfileUpdateInput): Promise<{ user: User }> {
   return apiPatch<{ user: User }>("/api/v1/auth/profile", {
     expectedUpdatedAt: input.user.updatedAt,
     displayName: input.displayName.trim(),
@@ -30,7 +56,7 @@ export function updateUserProfile(input: {
   }, { idempotencyKey: input.idempotencyKey });
 }
 
-export function ProfilePreferences(props: { user: User; onSaved(user: User): void }) {
+export function ProfilePreferences(props: { user: User; onSave(input: ProfileUpdateInput): Promise<void> }) {
   const [displayName, setDisplayName] = useState(props.user.displayName);
   const [preferences, setPreferences] = useState<UserPreferences>(() => resolvedUserPreferences(props.user));
   const [busy, setBusy] = useState(false);
@@ -55,9 +81,8 @@ export function ProfilePreferences(props: { user: User; onSaved(user: User): voi
     setError("");
     setSuccess("");
     try {
-      const result = await updateUserProfile({ user: props.user, displayName, preferences, idempotencyKey: attemptRef.current.idempotencyKey });
+      await props.onSave({ user: props.user, displayName, preferences, idempotencyKey: attemptRef.current.idempotencyKey });
       attemptRef.current = undefined;
-      props.onSaved(result.user);
       setSuccess("Profile and play preferences saved across devices.");
     } catch (failure) {
       setError(errorMessage(failure));
