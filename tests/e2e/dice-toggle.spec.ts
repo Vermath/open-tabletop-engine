@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import type { User } from "../../packages/core/src/types.js";
 
 const apiBaseUrl = `http://127.0.0.1:${process.env.OTTE_E2E_API_PORT ?? 4100}`;
 
@@ -118,6 +119,18 @@ test("the layered dice cast reveals one result without progress or fallback toas
   await expect(page.locator(".rail > .status")).toContainText(/Rolled [1-4]/);
 });
 
+async function rollFromPage(page: Page, formula: string, visibility: "public" | "gm_only" | "whisper") {
+  await page.evaluate(async ({ apiBaseUrl, formula, visibility }) => {
+    const response = await fetch(`${apiBaseUrl}/api/v1/dice/roll`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID() },
+      body: JSON.stringify({ campaignId: "camp_demo", formula, visibility })
+    });
+    if (!response.ok) throw new Error(await response.text());
+  }, { apiBaseUrl, formula, visibility });
+}
+
 test("leaving a campaign during a cast releases its concealed chat result", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("otte:dice3d", "on"));
   let unblockDiceAssets!: () => void;
@@ -180,34 +193,22 @@ test("the dice stage bounds callouts to the board and only displays rolls visibl
       await ensure3dDiceEnabled(viewer);
     }));
 
-    async function roll(formula: string, visibility: "public" | "gm_only" | "whisper") {
-      await page.evaluate(async ({ apiBaseUrl, formula, visibility }) => {
-        const response = await fetch(`${apiBaseUrl}/api/v1/dice/roll`, {
-          method: "POST",
-          credentials: "include",
-          headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID() },
-          body: JSON.stringify({ campaignId: "camp_demo", formula, visibility })
-        });
-        if (!response.ok) throw new Error(await response.text());
-      }, { apiBaseUrl, formula, visibility });
-    }
-
     function callout(viewer: Page, formula: string) {
       return viewer.locator(".dice-cast-static .dice-cast-label").filter({ hasText: formula });
     }
 
-    await roll("1d6+31", "public");
+    await rollFromPage(page, "1d6+31", "public");
     await expect(callout(page, "1d6+31")).toBeVisible();
     await expect(callout(player, "1d6+31")).toBeVisible();
     expect(await page.locator(".dice-table-stage").boundingBox()).toEqual(await page.locator(".scene-viewport").boundingBox());
     await expect(page.locator(".dice-table-stage canvas")).toHaveCount(0);
     await expect(player.locator(".dice-table-stage canvas")).toHaveCount(0);
 
-    await roll("1d6+32", "gm_only");
+    await rollFromPage(page, "1d6+32", "gm_only");
     await expect(callout(page, "1d6+32")).toBeVisible();
-    await roll("1d6+33", "whisper");
+    await rollFromPage(page, "1d6+33", "whisper");
     await expect(callout(page, "1d6+33")).toBeVisible();
-    await roll("1d6+34", "public");
+    await rollFromPage(page, "1d6+34", "public");
     await expect(callout(player, "1d6+34")).toBeVisible();
     await expect(player.locator(".dice-cast-label").filter({ hasText: /1d6\+3[23]/ })).toHaveCount(0);
 
@@ -220,4 +221,235 @@ test("the dice stage bounds callouts to the board and only displays rolls visibl
   } finally {
     await playerContext.close();
   }
+});
+
+test("mute works before profile persistence and text-only dice still play a cue", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.addInitScript(() => {
+    const OriginalAudioContext = window.AudioContext;
+    let contexts = 0;
+    let notes = 0;
+    Object.defineProperty(window, "interfaceAudioContexts", { get: () => contexts });
+    Object.defineProperty(window, "interfaceAudioNotes", { get: () => notes });
+    window.AudioContext = class extends OriginalAudioContext {
+      constructor(options?: AudioContextOptions) {
+        super(options);
+        contexts += 1;
+      }
+      override createOscillator() {
+        notes += 1;
+        return super.createOscillator();
+      }
+    };
+  });
+  await loginSeededDemo(page);
+  await openInspectorPanel(page, "Chat");
+  await ensure3dDiceEnabled(page);
+  const mute = page.getByRole("button", { name: "Mute interface sounds", exact: true });
+  const unmute = page.getByRole("button", { name: "Unmute interface sounds", exact: true });
+  const countContexts = () => page.evaluate(() => Reflect.get(window, "interfaceAudioContexts") as number);
+  if (await unmute.isVisible()) {
+    const update = page.waitForResponse(isProfilePreferenceUpdate);
+    await unmute.click();
+    expect((await update).ok()).toBe(true);
+  }
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/api/v1/auth/profile", async (route) => {
+    if (route.request().method() !== "PATCH") return route.continue();
+    await pending;
+    await route.fulfill({ status: 503, json: { error: "Preference storage unavailable" } });
+  });
+  try {
+    const failed = page.waitForResponse(isProfilePreferenceUpdate);
+    await mute.click();
+    await expect(unmute).toBeVisible();
+    await rollFromPage(page, "1d6+81", "public");
+    await expect(page.locator(".dice-cast-label").filter({ hasText: "1d6+81" })).toBeVisible();
+    expect(await countContexts()).toBe(0);
+    release();
+    expect((await failed).status()).toBe(503);
+    await expect(unmute).toBeVisible();
+    await rollFromPage(page, "1d6+82", "public");
+    await expect(page.locator(".dice-cast-label").filter({ hasText: "1d6+82" })).toBeVisible();
+    expect(await countContexts()).toBe(0);
+  } finally {
+    release();
+    await page.unroute("**/api/v1/auth/profile");
+  }
+
+  const update = page.waitForResponse(isProfilePreferenceUpdate);
+  await unmute.click();
+  expect((await update).ok()).toBe(true);
+  await expect(mute).toBeVisible();
+  const switched = page.waitForResponse(isProfilePreferenceUpdate);
+  await page.getByRole("button", { name: "Use text-only dice" }).click();
+  expect((await switched).ok()).toBe(true);
+  await rollFromPage(page, "1d6+83", "public");
+  await expect.poll(countContexts).toBe(1);
+  expect(await page.evaluate(() => Reflect.get(window, "interfaceAudioNotes"))).toBe(3);
+  await expect(page.locator(".dice-cast-label").filter({ hasText: "1d6+83" })).toHaveCount(0);
+});
+
+test("a saved profile replaces an unsaved rail sound override", async ({ page }) => {
+  await loginSeededDemo(page);
+  const mute = page.getByRole("button", { name: "Mute interface sounds", exact: true });
+  const unmute = page.getByRole("button", { name: "Unmute interface sounds", exact: true });
+  await expect(mute.or(unmute)).toBeVisible();
+  const originallyEnabled = await mute.isVisible();
+  if (originallyEnabled) {
+    const update = page.waitForResponse(isProfilePreferenceUpdate);
+    await mute.click();
+    expect((await update).ok()).toBe(true);
+  }
+  await expect(unmute).toBeVisible();
+  await page.route("**/api/v1/auth/profile", async (route) => {
+    if (route.request().method() !== "PATCH") return route.continue();
+    await route.fulfill({ status: 503, json: { error: "Preference storage unavailable" } });
+  });
+  try {
+    const failed = page.waitForResponse(isProfilePreferenceUpdate);
+    await unmute.click();
+    expect((await failed).status()).toBe(503);
+    await expect(mute).toBeVisible();
+  } finally {
+    await page.unroute("**/api/v1/auth/profile");
+  }
+  await page.getByRole("button", { name: "Manage", exact: true }).click();
+  const manage = page.getByRole("region", { name: "Manage workspace panel" });
+  await manage.locator(".manage-category-button", { hasText: "Account" }).click();
+  await expect(manage.getByRole("checkbox", { name: "Play interface sounds" })).not.toBeChecked();
+  const saved = page.waitForResponse(isProfilePreferenceUpdate);
+  await manage.getByRole("button", { name: "Save profile & preferences" }).click();
+  expect((await saved).ok()).toBe(true);
+  await manage.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(unmute).toBeVisible();
+  if (originallyEnabled) {
+    const restored = page.waitForResponse(isProfilePreferenceUpdate);
+    await unmute.click();
+    expect((await restored).ok()).toBe(true);
+  }
+});
+
+async function holdSoundPreferenceWrites(page: Page) {
+  let releaseUnmute!: () => void;
+  let releaseMute!: () => void;
+  const pendingUnmute = new Promise<void>((resolve) => { releaseUnmute = resolve; });
+  const pendingMute = new Promise<void>((resolve) => { releaseMute = resolve; });
+  const patches: { enabled: boolean; volume: number; revision: string }[] = [];
+  await page.route("**/api/v1/auth/profile", async (route) => {
+    if (route.request().method() !== "PATCH") return route.continue();
+    const body = route.request().postDataJSON() as { expectedUpdatedAt: string; preferences: { interfaceSounds: { enabled: boolean; volume: number } } };
+    const { enabled, volume } = body.preferences.interfaceSounds;
+    patches.push({ enabled, volume, revision: body.expectedUpdatedAt });
+    await (enabled ? pendingUnmute : pendingMute);
+    await route.continue();
+  });
+  return {
+    patches, releaseUnmute, releaseMute,
+    async close() {
+      releaseUnmute();
+      releaseMute();
+      await page.unroute("**/api/v1/auth/profile");
+    },
+  };
+}
+
+test("overlapping sound toggles keep the last choice and save it on the latest revision", async ({ page }) => {
+  await loginSeededDemo(page);
+  const mute = page.getByRole("button", { name: "Mute interface sounds", exact: true });
+  const unmute = page.getByRole("button", { name: "Unmute interface sounds", exact: true });
+  await expect(mute.or(unmute)).toBeVisible();
+  const originallyEnabled = await mute.isVisible();
+  if (originallyEnabled) {
+    const update = page.waitForResponse(isProfilePreferenceUpdate);
+    await mute.click();
+    expect((await update).ok()).toBe(true);
+  }
+  await expect(unmute).toBeVisible();
+
+  const { patches, releaseUnmute, releaseMute, close } = await holdSoundPreferenceWrites(page);
+  try {
+    const first = page.waitForResponse(isProfilePreferenceUpdate);
+    await unmute.click();
+    await expect.poll(() => patches.map(({ enabled }) => enabled)).toEqual([true]);
+    await mute.click();
+    await expect(unmute).toBeVisible();
+    releaseUnmute();
+    expect((await first).ok()).toBe(true);
+    await expect.poll(() => patches.map(({ enabled }) => enabled)).toEqual([true, false]);
+    expect(patches[1]!.revision).not.toBe(patches[0]!.revision);
+    await expect(unmute).toBeVisible();
+    const second = page.waitForResponse(isProfilePreferenceUpdate);
+    releaseMute();
+    expect((await second).ok()).toBe(true);
+  } finally {
+    await close();
+  }
+
+  await page.reload();
+  await expect(unmute).toBeVisible();
+  if (originallyEnabled) {
+    const restore = page.waitForResponse(isProfilePreferenceUpdate);
+    await unmute.click();
+    expect((await restore).ok()).toBe(true);
+  }
+});
+
+test("a profile save in flight preserves a newer rail mute", async ({ page }) => {
+  await loginSeededDemo(page);
+  const mute = page.getByRole("button", { name: "Mute interface sounds", exact: true });
+  const unmute = page.getByRole("button", { name: "Unmute interface sounds", exact: true });
+  await expect(mute.or(unmute)).toBeVisible();
+  const profileUrl = apiBaseUrl + "/api/v1/auth/profile";
+  const readProfile = async () => {
+    const response = await page.request.get(profileUrl);
+    expect(response.ok()).toBe(true);
+    return (await response.json() as { user: User }).user;
+  };
+  const original = await readProfile();
+  const originallyEnabled = await mute.isVisible();
+  if (!originallyEnabled) {
+    const update = page.waitForResponse(isProfilePreferenceUpdate);
+    await unmute.click();
+    expect((await update).ok()).toBe(true);
+    await expect(mute).toBeVisible();
+  }
+
+  await page.getByRole("button", { name: "Manage", exact: true }).click();
+  const manage = page.getByRole("region", { name: "Manage workspace panel" });
+  await manage.locator(".manage-category-button", { hasText: "Account" }).click();
+  await expect(manage.getByRole("checkbox", { name: "Play interface sounds" })).toBeChecked();
+  await manage.getByRole("slider", { name: "Interface sound volume" }).press("End");
+  await expect(manage.getByRole("slider", { name: "Interface sound volume" })).toHaveValue("1");
+  const { patches, releaseUnmute, releaseMute, close } = await holdSoundPreferenceWrites(page);
+  try {
+    const profile = page.waitForResponse(isProfilePreferenceUpdate);
+    await manage.getByRole("button", { name: "Save profile & preferences" }).click();
+    await expect.poll(() => patches.map(({ enabled }) => enabled)).toEqual([true]);
+    await manage.getByRole("button", { name: "Close", exact: true }).click();
+    await mute.click();
+    await expect(unmute).toBeVisible();
+    releaseUnmute();
+    expect((await profile).ok()).toBe(true);
+    await expect.poll(() => patches.map(({ enabled }) => enabled)).toEqual([true, false]);
+    expect(patches[1]!.revision).not.toBe(patches[0]!.revision);
+    expect(patches.map(({ volume }) => volume)).toEqual([1, 1]);
+    await expect(unmute).toBeVisible();
+    const latest = page.waitForResponse(isProfilePreferenceUpdate);
+    releaseMute();
+    expect((await latest).ok()).toBe(true);
+  } finally {
+    await close();
+  }
+
+  await page.reload();
+  await expect(unmute).toBeVisible();
+  const saved = await readProfile();
+  expect(saved.preferences?.interfaceSounds).toEqual({ enabled: false, volume: 1 });
+  const restore = await page.request.patch(profileUrl, {
+    headers: { origin: new URL(page.url()).origin, "idempotency-key": crypto.randomUUID() },
+    data: { expectedUpdatedAt: saved.updatedAt, displayName: saved.displayName, preferences: original.preferences },
+  });
+  expect(restore.ok(), await restore.text()).toBe(true);
 });

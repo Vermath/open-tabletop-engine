@@ -35,6 +35,7 @@ export interface UserPreferences {
   theme: "midnight" | "ember";
   dice3dEnabled: boolean;
   reducedMotion: boolean;
+  interfaceSounds?: { enabled: boolean; volume: number };
   chatNotifications: "all" | "mentions" | "none";
 }
 
