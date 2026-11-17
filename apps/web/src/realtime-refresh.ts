@@ -1,5 +1,8 @@
 export const realtimeRefreshDebounceMs = 250;
 
+export type RealtimeReconcileScope = "vision" | "lore" | "snapshot";
+export type RealtimeApplyResult = "applied" | "ignored" | RealtimeReconcileScope;
+
 export interface WorkspaceSelectionIdentity {
   campaignId: string;
   userId: string;
@@ -21,13 +24,14 @@ export interface BoardCaptureRequestDecision {
 interface RealtimeHandlersInput {
   refresh: () => Promise<unknown>;
   handleBoardCaptureEvent: (data: unknown) => boolean;
-  applyRealtimeEvent?: (data: unknown) => void;
+  applyRealtimeEvent?: (data: unknown) => RealtimeApplyResult;
+  reconcile?: (scopes: RealtimeReconcileScope[]) => Promise<unknown>;
   setStatus: (next: StatusUpdater) => void;
   onRefreshError: () => void;
 }
 
 interface RealtimeHandlers {
-  onOpen: () => void;
+  onOpen: (reconnected?: boolean) => Promise<void>;
   onMessage: (data: unknown) => void;
   onError: () => void;
   dispose: () => void;
@@ -35,25 +39,49 @@ interface RealtimeHandlers {
 
 export function createRealtimeHandlers(input: RealtimeHandlersInput): RealtimeHandlers {
   let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+  const pendingReconcileScopes = new Set<RealtimeReconcileScope>();
 
   const clearRefreshTimer = () => {
     if (refreshTimer === undefined) return;
     clearTimeout(refreshTimer);
     refreshTimer = undefined;
+    pendingReconcileScopes.clear();
+  };
+
+  const scheduleReconcile = (scope: RealtimeReconcileScope) => {
+    if (scope === "snapshot") {
+      pendingReconcileScopes.clear();
+      pendingReconcileScopes.add("snapshot");
+    } else if (!pendingReconcileScopes.has("snapshot")) {
+      pendingReconcileScopes.add(scope);
+    }
+    if (refreshTimer !== undefined) clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(() => {
+      refreshTimer = undefined;
+      const scopes = pendingReconcileScopes.has("snapshot")
+        ? (["snapshot"] satisfies RealtimeReconcileScope[])
+        : [...pendingReconcileScopes];
+      pendingReconcileScopes.clear();
+      const task = input.reconcile ? input.reconcile(scopes) : input.refresh();
+      task.catch(input.onRefreshError);
+    }, realtimeRefreshDebounceMs);
   };
 
   return {
-    onOpen: () => {
+    onOpen: async (reconnected = false) => {
+      clearRefreshTimer();
+      if (reconnected) {
+        // A reconnect has no event cursor or replay contract. The only safe
+        // boundary is a new permission-filtered campaign snapshot.
+        await input.refresh();
+        return;
+      }
       input.setStatus((current) => (current === "Loading campaign" || current.toLowerCase().includes("realtime") || current.startsWith("API offline") ? "Realtime connected" : current));
     },
     onMessage: (data) => {
       if (input.handleBoardCaptureEvent(data)) return;
-      input.applyRealtimeEvent?.(data);
-      clearRefreshTimer();
-      refreshTimer = setTimeout(() => {
-        refreshTimer = undefined;
-        input.refresh().catch(input.onRefreshError);
-      }, realtimeRefreshDebounceMs);
+      const result = input.applyRealtimeEvent?.(data) ?? "snapshot";
+      if (result === "vision" || result === "lore" || result === "snapshot") scheduleReconcile(result);
     },
     onError: () => input.setStatus("Realtime unavailable"),
     dispose: clearRefreshTimer

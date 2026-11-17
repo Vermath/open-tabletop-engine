@@ -1,0 +1,40 @@
+export const keyboardShortcutRows: ReadonlyArray<{ keys: string; label: string }> = [
+  { keys: "Ctrl+K", label: "Command palette" },
+  { keys: "F", label: "Focus the battle map" },
+  { keys: "V", label: "Select tool" },
+  { keys: "R", label: "Ruler" },
+  { keys: "C", label: "Measure circle" },
+  { keys: "O", label: "Measure cone" },
+  { keys: "P", label: "Ping" },
+  { keys: "D", label: "Draw" },
+  { keys: "A", label: "Area template" },
+  { keys: "Arrow keys", label: "Move a focused token or position the active board tool" },
+  { keys: "Shift+Arrow", label: "Move a focused token by one pixel" },
+  { keys: "Enter / Space", label: "Start or finish a keyboard board gesture" },
+  { keys: "Shift+Click", label: "Multi-select tokens" },
+  { keys: "Scroll", label: "Zoom the map at the pointer" },
+  { keys: "Right-drag", label: "Pan the map (also Alt+drag or middle-drag)" },
+  { keys: "Right-click", label: "Open token actions (Shift+F10 from the keyboard)" },
+  { keys: "Esc", label: "Close panels and dialogs" },
+  { keys: "?", label: "Toggle this overlay" }
+];
+
+export const mapDockOpenStorageKey = "otte:mapDockOpen";
+export const quickCreateOpenStorageKey = "otte:quickCreateOpen";
+
+export type TabletopWorkspaceMode = "live" | "prep" | "manage";
+
+export const workspaceInspectorTabs: Record<TabletopWorkspaceMode, readonly string[]> = {
+  live: ["actors", "compendium", "handouts", "journal", "search", "chat", "combat"],
+  prep: ["actors", "compendium", "sessions", "worlds", "handouts", "journal", "memory", "search", "content", "plugins"],
+  manage: ["actors", "compendium", "journal", "content", "plugins"],
+};
+
+export function isInspectorTabAllowed(mode: TabletopWorkspaceMode, tab: string): boolean {
+  return workspaceInspectorTabs[mode].includes(tab);
+}
+
+export function closeWorkspaceDialogState(clearTransientState: () => void, ...setOpen: Array<(open: boolean) => void>): void {
+  clearTransientState();
+  for (const setter of setOpen) setter(false);
+}

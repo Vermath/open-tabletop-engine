@@ -27,8 +27,6 @@ jobs:
         with:
           persist-credentials: false
       - uses: pnpm/action-setup@b0f76dfb45f55f8421693e4803ac7bb65143bd34 # v6
-        with:
-          version: 8.7.0
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 22
@@ -64,14 +62,12 @@ jobs:
         with:
           persist-credentials: false
       - uses: pnpm/action-setup@b0f76dfb45f55f8421693e4803ac7bb65143bd34 # v6
-        with:
-          version: 8.7.0
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @open-tabletop/desktop dist -- --win nsis --publish never
+      - run: pnpm --filter @open-tabletop/desktop dist --win nsis --publish never
         env:
           CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
@@ -161,14 +157,12 @@ jobs:
         with:
           persist-credentials: false
       - uses: pnpm/action-setup@b0f76dfb45f55f8421693e4803ac7bb65143bd34 # v6
-        with:
-          version: 8.7.0
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @open-tabletop/desktop dist -- --mac dmg --${{ matrix.arch }} --publish never
+      - run: pnpm --filter @open-tabletop/desktop dist --mac dmg --${{ matrix.arch }} --publish never
         env:
           CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}

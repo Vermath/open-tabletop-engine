@@ -12,6 +12,6 @@
 
 - Campaign import/export data loss.
 - Player visibility leaks for GM-only notes, hidden tokens, private actor data, or pending AI proposals.
-- AI/plugin state mutation without proposal approval and audit evidence.
+- AI or plugin state mutation that bypasses the configured autonomy mode, permissions, revisions, validation, or audit evidence.
 - Content import apply failures that leave partial records after rollback.
 - Realtime failures that do not recover after page refresh.

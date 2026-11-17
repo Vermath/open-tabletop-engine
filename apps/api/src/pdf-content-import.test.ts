@@ -1,7 +1,7 @@
 import type { AiProvider, AiProviderEvent, AiProviderRequest } from "@open-tabletop/ai-core";
 import { createTimestamped, type ContentImportBatch, type PermissionGrant } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
-import { buildApp } from "./app.js";
+import { buildApp } from "./fixtures/legacy-build-app.js";
 import { MemoryStateStore } from "./store.js";
 
 class PdfImportAiProvider implements AiProvider {
@@ -68,11 +68,12 @@ describe("AI PDF content import", () => {
     try {
       const previewResponse = await app.inject({
         method: "POST",
-        url: "/api/v1/campaigns/camp_demo/content-imports/pdf/ai",
+        url: `/api/v1/campaigns/camp_demo/content-imports/pdf/ai?expectedUpdatedAt=${encodeURIComponent(store.state.campaigns.find((campaign) => campaign.id === "camp_demo")!.updatedAt)}`,
         headers: {
           "content-type": "application/pdf",
           "x-source-name": "ember-vault.pdf",
-          "x-user-id": "usr_demo_gm"
+          "x-user-id": "usr_demo_gm",
+          "idempotency-key": "pdf-import-preview"
         },
         payload: Buffer.from("%PDF-1.7\n%test")
       });
@@ -143,11 +144,12 @@ describe("AI PDF content import", () => {
     try {
       const response = await app.inject({
         method: "POST",
-        url: "/api/v1/campaigns/camp_demo/content-imports/pdf/ai",
+        url: `/api/v1/campaigns/camp_demo/content-imports/pdf/ai?expectedUpdatedAt=${encodeURIComponent(store.state.campaigns.find((campaign) => campaign.id === "camp_demo")!.updatedAt)}`,
         headers: {
           "content-type": "application/pdf",
           "x-source-name": "player.pdf",
-          "x-user-id": "usr_demo_player"
+          "x-user-id": "usr_demo_player",
+          "idempotency-key": "pdf-import-player-denied"
         },
         payload: Buffer.from("%PDF-1.7\n%test")
       });

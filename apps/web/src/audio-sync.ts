@@ -4,6 +4,8 @@ type DisplayAudioTrack = AudioTrack & { deliveryUrl?: string };
 
 export interface DesiredAudioState {
   trackId: string;
+  /** Stable source identity; unlike a signed delivery URL, this survives snapshot refreshes. */
+  sourceUrl: string;
   url: string;
   playing: boolean;
   loop: boolean;
@@ -26,11 +28,29 @@ export function desiredAudioStates(tracks: readonly AudioTrack[], options: { mas
     .filter((track) => typeof track.url === "string" && track.url.length > 0)
     .map((track) => ({
       trackId: track.id,
+      sourceUrl: track.url,
       url: (track as DisplayAudioTrack).deliveryUrl ?? track.url,
       playing: Boolean(track.playing),
       loop: track.kind === "sfx" ? false : Boolean(track.loop),
       volume: clamp01(track.volume) * master
     }));
+}
+
+/**
+ * Keeps a playing element on its current signed URL when a snapshot merely
+ * remints the same managed asset. Replacing `src` restarts HTML media, so a
+ * fresh delivery URL is adopted only before playback or when the underlying
+ * track source actually changes.
+ */
+export function shouldReplaceAudioSource(input: {
+  currentSourceUrl: string | null;
+  currentPlaybackUrl: string | null;
+  nextSourceUrl: string;
+  nextPlaybackUrl: string;
+  paused: boolean;
+}): boolean {
+  return input.currentSourceUrl !== input.nextSourceUrl
+    || (input.paused && input.currentPlaybackUrl !== input.nextPlaybackUrl);
 }
 
 export function activeAudioCount(tracks: readonly AudioTrack[]): number {

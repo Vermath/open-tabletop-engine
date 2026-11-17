@@ -1,7 +1,8 @@
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { releaseWorktreeFailureMessage, releaseWorktreeStatus } from "./release-worktree-clean.mjs";
+import { validateReleaseGateEvidence } from "./release-gate-evidence.mjs";
 import { releaseEvidenceGateById, requiredAssistiveTechnologyEnvironments } from "./v1-release-gates.mjs";
 
 const repoRoot = process.cwd();
@@ -9,6 +10,7 @@ const evidenceRoot = process.env.OTTE_EVIDENCE_ROOT ?? repoRoot;
 const headCommit = git("rev-parse HEAD");
 const currentCommit = process.env.OTTE_RELEASE_COMMIT ?? headCommit;
 const commitSource = process.env.OTTE_RELEASE_COMMIT ? "OTTE_RELEASE_COMMIT" : "git rev-parse HEAD";
+const gateArtifactPaths = optionValues(process.argv.slice(2), "--gate-artifact");
 
 if (!fullSha(currentCommit)) {
   console.error(`OTTE_RELEASE_COMMIT must be a full 40-character commit SHA; received ${currentCommit}.`);
@@ -27,6 +29,7 @@ if (!worktreeStatus.ok) {
 }
 
 const checks = [
+  ...gateArtifactPaths.map(checkMachineReadableGateArtifact),
   checkIdentityProviderSmoke(),
   checkAssistiveTechnologyPass(),
   checkExternalGmValidation(),
@@ -54,6 +57,19 @@ if (failed.length > 0) {
 }
 
 console.log("\nv1 release evidence is complete for the checked gates.");
+
+function checkMachineReadableGateArtifact(path) {
+  try {
+    const document = JSON.parse(readFileSync(resolve(repoRoot, path), "utf8"));
+    const validation = validateReleaseGateEvidence(document, {
+      expectedCommit: currentCommit,
+      repoRoot,
+    });
+    return result(`Machine-readable ${document.gate ?? "release"} gate evidence`, validation.ok, validation.errors);
+  } catch (error) {
+    return result(`Machine-readable release gate evidence: ${path}`, false, [error.message]);
+  }
+}
 
 function checkIdentityProviderSmoke() {
   const releaseGate = gate("identity-provider");
@@ -472,4 +488,15 @@ function git(args) {
 
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function optionValues(args, option) {
+  const values = [];
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] !== option) continue;
+    if (!args[index + 1]) throw new Error(`${option} requires a path`);
+    values.push(args[index + 1]);
+    index += 1;
+  }
+  return values;
 }

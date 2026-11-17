@@ -1,7 +1,10 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { handoutPayload, mergeHandoutReadReceipt, upsertHandoutItem, type HandoutLibraryItem } from "./handout-library-panel.js";
+import { clearHandoutDraftAfterConfirmedSave, HandoutEditor, handoutPayload, mergeHandoutReadReceipt, storedHandoutDraft, upsertHandoutItem, type HandoutDraft, type HandoutLibraryItem } from "./handout-library-panel.js";
+import { localDraftKey, removeLocalDraft, writeLocalDraft } from "./local-draft-storage.js";
 
 const panelSource = readFileSync(resolve(__dirname, "handout-library-panel.tsx"), "utf8").replace(/\r\n/g, "\n");
 
@@ -92,6 +95,125 @@ describe("handout collection updates", () => {
     expect(panelSource).toContain("props.onHandoutsChange((current) => mergeHandoutReadReceipt(current, updated));");
     expect(panelSource).toContain("props.onHandoutsChange((current) => upsertHandoutItem(current, updated, !input.id));");
     expect(panelSource).toContain("props.onHandoutsChange((current) => current.filter((item) => item.id !== selected.id));");
+  });
+
+  it("validates recoverable drafts and renders handouts instead of a read-only textarea", () => {
+    expect(storedHandoutDraft({
+      worldId: "",
+      title: "Recovered clue",
+      body: "**Look below.**",
+      visibility: "gm_only",
+      visibleToUserIds: [],
+      visibleToActorIds: [],
+      assetIds: ["asset-1"],
+      tags: "clue"
+    })?.title).toBe("Recovered clue");
+    expect(storedHandoutDraft({ title: 42 })).toBeUndefined();
+    expect(panelSource).toContain("<MarkdownDocument");
+    expect(panelSource).toContain("<HandoutAssetGallery");
+    expect(panelSource).toContain('localDraftKey("handout"');
+  });
+
+  it("clears a recoverable draft only after the server confirms the save", async () => {
+    let clearCount = 0;
+    const clear = () => { clearCount += 1; };
+
+    await expect(clearHandoutDraftAfterConfirmedSave({ title: "Clue" }, async () => false, clear)).resolves.toBe(false);
+    expect(clearCount).toBe(0);
+
+    await expect(clearHandoutDraftAfterConfirmedSave({ title: "Clue" }, async () => true, clear)).resolves.toBe(true);
+    expect(clearCount).toBe(1);
+
+    await expect(clearHandoutDraftAfterConfirmedSave({ title: "Clue" }, async () => { throw new Error("offline"); }, clear)).rejects.toThrow("offline");
+    expect(clearCount).toBe(1);
+  });
+
+  it("reopens the editor with a closed or failed-save draft and clears it only after confirmation", async () => {
+    const values = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => { values.set(key, value); },
+      removeItem: (key: string) => { values.delete(key); },
+    };
+    const priorWindow = globalThis.window;
+    Object.defineProperty(globalThis, "window", { configurable: true, value: { localStorage: storage } });
+    try {
+      const key = localDraftKey("handout", "campaign-1", "user-1", "new");
+      const draft: HandoutDraft = {
+        worldId: "",
+        title: "Recovered lighthouse clue",
+        body: "**The lens points north.**",
+        visibility: "gm_only",
+        visibleToUserIds: [],
+        visibleToActorIds: [],
+        assetIds: [],
+        tags: "clue",
+      };
+      expect(writeLocalDraft(key, draft, storage)).toBe(true);
+      const onCancel = () => undefined;
+      const renderEditor = () => renderToStaticMarkup(createElement(HandoutEditor, {
+        campaignId: "campaign-1",
+        currentUserId: "user-1",
+        worlds: [],
+        members: [],
+        actors: [],
+        assets: [],
+        canManage: true,
+        busy: false,
+        onSave: async () => false,
+        onCancel,
+      }));
+
+      const firstOpen = renderEditor();
+      expect(firstOpen).toContain("Recovered lighthouse clue");
+      expect(firstOpen).toContain("The lens points north.");
+      expect(firstOpen).toContain("Handout draft saved in this browser.");
+      expect(panelSource).toContain('onClick={props.onCancel}><Check size={14} /> Close and keep draft');
+
+      // Closing calls only the parent close handler; the persisted editor draft remains for the next mount.
+      onCancel();
+      expect(renderEditor()).toContain("Recovered lighthouse clue");
+
+      await expect(clearHandoutDraftAfterConfirmedSave(draft, async () => false, () => removeLocalDraft(key, storage))).resolves.toBe(false);
+      expect(renderEditor()).toContain("Recovered lighthouse clue");
+
+      await expect(clearHandoutDraftAfterConfirmedSave(draft, async () => true, () => removeLocalDraft(key, storage))).resolves.toBe(true);
+      const afterConfirmedSave = renderEditor();
+      expect(afterConfirmedSave).not.toContain("Recovered lighthouse clue");
+      expect(afterConfirmedSave).not.toContain("Handout draft saved in this browser.");
+    } finally {
+      if (priorWindow === undefined) Reflect.deleteProperty(globalThis, "window");
+      else Object.defineProperty(globalThis, "window", { configurable: true, value: priorWindow });
+    }
+  });
+
+  it("unmounts both existing and new editors on close or discard without conflating close with recovery deletion", () => {
+    expect(panelSource).toContain('onCancel={() => { setCreating(false); setSelectedId(""); setDeleteArmed(false); }}');
+    expect(panelSource).toContain("removeLocalDraft(draftStorageKey);\n    setDraftPersistence(\"idle\");\n    props.onCancel();");
+    expect(panelSource).toContain('onClick={props.onCancel}><Check size={14} /> Close and keep draft');
+  });
+
+  it("renders every handout edit control disabled while an async save is pending", () => {
+    const html = renderToStaticMarkup(createElement(HandoutEditor, {
+      campaignId: "campaign-1",
+      currentUserId: "user-1",
+      item: handout("handout-1", { title: "Saving handout" }),
+      worlds: [],
+      members: [],
+      actors: [],
+      assets: [],
+      canManage: true,
+      busy: true,
+      onSave: async () => true,
+      onCancel: () => undefined,
+    }));
+
+    expect(html).toMatch(/aria-label="Handout title"[^>]*disabled/);
+    expect(html).toMatch(/aria-label="Handout body"[^>]*disabled/);
+    expect(html).toMatch(/aria-label="Handout world"[^>]*disabled/);
+    expect(html).toMatch(/aria-label="Handout visibility"[^>]*disabled/);
+    expect(html).toMatch(/aria-label="Handout tags"[^>]*disabled/);
+    expect(html).toContain("Save handout</button>");
   });
 });
 

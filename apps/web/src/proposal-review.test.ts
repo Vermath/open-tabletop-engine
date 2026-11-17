@@ -148,6 +148,9 @@ function snapshotFixture(overrides: Partial<Snapshot> = {}): Snapshot {
     organizationMembers: [],
     organizationInvites: [],
     members: [],
+    presences: [],
+    eventSequence: 0,
+    realtimeRecovery: "refetch_snapshot_on_gap",
     scenes: [],
     fogPresets: [],
     assets: [],
@@ -170,6 +173,9 @@ function snapshotFixture(overrides: Partial<Snapshot> = {}): Snapshot {
     plugins: [],
     systems: [],
     characterTemplates: [],
-    ...overrides
+    ...overrides,
+    worldRecords: overrides.worldRecords ?? [],
+    worldRelations: overrides.worldRelations ?? [],
+    calculationOverrides: overrides.calculationOverrides ?? []
   };
 }

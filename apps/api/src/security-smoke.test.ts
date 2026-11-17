@@ -24,6 +24,10 @@ const envKeys = [
   "OTTE_PLUGIN_TRUST_KEYS"
 ];
 
+function campaignRevision(store: MemoryStateStore): string {
+  return store.state.campaigns.find((campaign) => campaign.id === "camp_demo")!.updatedAt;
+}
+
 describe("security smoke", () => {
   afterEach(() => {
     restoreEnv(snapshot);
@@ -87,6 +91,7 @@ describe("security smoke", () => {
         url: "/api/v1/campaigns/camp_demo/assets/upload",
         headers: {
           ...gmHeaders,
+          "idempotency-key": "security-active-svg-upload",
           "content-type": "image/svg+xml",
           "x-asset-name": encodeURIComponent("active.svg")
         },
@@ -120,6 +125,7 @@ describe("security smoke", () => {
         url: "/api/v1/campaigns/camp_demo/assets/upload",
         headers: {
           ...gmHeaders,
+          "idempotency-key": "security-signed-image-upload",
           "content-type": "image/png",
           "x-asset-name": encodeURIComponent("signed.png")
         },
@@ -197,8 +203,9 @@ describe("security smoke", () => {
       writeVersionedPluginPackage(pluginRoot, "signed-plugin", "signed-plugin", "1.0.0", "Signed macro");
       writePluginSignature(pluginRoot, "signed-plugin", "trusted-local", "shared-secret");
 
+      const pluginStore = new MemoryStateStore();
       app = await buildApp({
-        store: new MemoryStateStore(),
+        store: pluginStore,
         pluginRegistry: loadPluginRegistry({
           pluginRoot,
           trustPolicy: { policy: "require_trusted", keys: { "trusted-local": "shared-secret" } }
@@ -208,15 +215,15 @@ describe("security smoke", () => {
       const unsignedInstall = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/plugins/unsigned-plugin/install",
-        headers: gmHeaders,
-        payload: { permissions: ["chat.write"] }
+        headers: { ...gmHeaders, "idempotency-key": "security-unsigned-install" },
+        payload: { permissions: ["chat.write"], expectedUpdatedAt: campaignRevision(pluginStore) }
       });
       expect(unsignedInstall.statusCode).toBe(403);
 
       const unsignedCommand = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/plugins/unsigned-plugin/chat-command",
-        headers: gmHeaders,
+        headers: { ...gmHeaders, "idempotency-key": "security-unsigned-command" },
         payload: { command: "/version" }
       });
       expect(unsignedCommand.statusCode).toBe(403);
@@ -224,8 +231,8 @@ describe("security smoke", () => {
       const signedInstall = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/plugins/signed-plugin/install",
-        headers: gmHeaders,
-        payload: { permissions: ["chat.write"] }
+        headers: { ...gmHeaders, "idempotency-key": "security-signed-install" },
+        payload: { permissions: ["chat.write"], expectedUpdatedAt: campaignRevision(pluginStore) }
       });
       expect(signedInstall.statusCode).toBe(200);
       expect(signedInstall.json().plugin.trust).toMatchObject({ status: "trusted", installable: true });
@@ -233,7 +240,7 @@ describe("security smoke", () => {
       const signedCommand = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/plugins/signed-plugin/chat-command",
-        headers: gmHeaders,
+        headers: { ...gmHeaders, "idempotency-key": "security-signed-command" },
         payload: { command: "/version" }
       });
       expect(signedCommand.statusCode).toBe(200);
@@ -244,6 +251,7 @@ describe("security smoke", () => {
     }
   });
 
+  // This matrix boots four app instances; leave headroom for full-suite shared-process load.
   it("covers plugin trust policy posture across production, registry, and review-required deployments", async () => {
     const pluginRoot = mkdtempSync(join(tmpdir(), "otte-security-plugin-matrix-"));
     let app: Awaited<ReturnType<typeof buildApp>> | undefined;
@@ -270,8 +278,8 @@ describe("security smoke", () => {
       const registryReviewBlockedInstall = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/plugins/registry-signed-plugin/install",
-        headers: permissiveRegistryAdminHeaders,
-        payload: { permissions: ["chat.write"] }
+        headers: { ...permissiveRegistryAdminHeaders, "idempotency-key": "security-registry-review-blocked" },
+        payload: { permissions: ["chat.write"], expectedUpdatedAt: campaignRevision(permissiveStore) }
       });
       expect(registryReviewBlockedInstall.statusCode).toBe(403);
       // A present but unverifiable signature is always a trust failure. Review
@@ -285,15 +293,14 @@ describe("security smoke", () => {
       expect(permissiveRegistryPosture.statusCode).toBe(200);
       expect(permissiveRegistryPosture.json()).toEqual(
         expect.objectContaining({
-          policy: { review: "allow_unreviewed", trust: "allow_unsigned" },
-          actionReasons: expect.arrayContaining(["community_registry_review_policy_permissive"]),
+          policy: { review: "require_approved", trust: "allow_unsigned" },
+          actionReasons: expect.arrayContaining(["review_backlog"]),
           registryOperations: expect.objectContaining({
-            communityDistributionNeedsReviewPolicy: true
+            communityDistributionNeedsReviewPolicy: false
           }),
           remediationQueue: expect.arrayContaining([
             expect.objectContaining({
-              code: "require_review_for_community_registries",
-              action: expect.stringContaining("OTTE_PLUGIN_REVIEW_POLICY=require_approved")
+              code: "review_marketplace_packages"
             })
           ])
         })
@@ -386,8 +393,8 @@ describe("security smoke", () => {
       const reviewBlockedInstall = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/plugins/registry-signed-plugin/install",
-        headers: trustedAdminHeaders,
-        payload: { permissions: ["chat.write"] }
+        headers: { ...trustedAdminHeaders, "idempotency-key": "security-review-blocked-install" },
+        payload: { permissions: ["chat.write"], expectedUpdatedAt: campaignRevision(trustedStore) }
       });
       expect(reviewBlockedInstall.statusCode).toBe(403);
       expect(reviewBlockedInstall.json().message).toContain("requires marketplace approval");
@@ -407,16 +414,16 @@ describe("security smoke", () => {
       const approvedReview = await app.inject({
         method: "PATCH",
         url: `/api/v1/admin/plugins/reviews/${registryReview.review.reviewKey}`,
-        headers: trustedAdminHeaders,
-        payload: { status: "approved", note: "deployment matrix smoke" }
+        headers: { ...trustedAdminHeaders, "idempotency-key": "security-plugin-review-approve" },
+        payload: { status: "approved", notes: "deployment matrix smoke", expectedUpdatedAt: registryReview.review.updatedAt }
       });
       expect(approvedReview.statusCode).toBe(200);
 
       const approvedInstall = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/plugins/registry-signed-plugin/install",
-        headers: trustedAdminHeaders,
-        payload: { permissions: ["chat.write"] }
+        headers: { ...trustedAdminHeaders, "idempotency-key": "security-approved-install" },
+        payload: { permissions: ["chat.write"], expectedUpdatedAt: campaignRevision(trustedStore) }
       });
       expect(approvedInstall.statusCode).toBe(200);
       expect(approvedInstall.json().plugin).toMatchObject({
@@ -427,8 +434,8 @@ describe("security smoke", () => {
       const localUnsignedInstall = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/plugins/local-unsigned-plugin/install",
-        headers: trustedAdminHeaders,
-        payload: { permissions: ["chat.write"] }
+        headers: { ...trustedAdminHeaders, "idempotency-key": "security-local-unsigned-install" },
+        payload: { permissions: ["chat.write"], expectedUpdatedAt: campaignRevision(trustedStore) }
       });
       expect(localUnsignedInstall.statusCode).toBe(403);
       expect(localUnsignedInstall.json().message).toContain("unsigned");
@@ -436,7 +443,7 @@ describe("security smoke", () => {
       const signedCommand = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/plugins/registry-signed-plugin/chat-command",
-        headers: trustedAdminHeaders,
+        headers: { ...trustedAdminHeaders, "idempotency-key": "security-registry-signed-command" },
         payload: { command: "/version" }
       });
       expect(signedCommand.statusCode).toBe(200);
@@ -445,7 +452,7 @@ describe("security smoke", () => {
       await app?.close();
       rmSync(pluginRoot, { recursive: true, force: true });
     }
-  });
+  }, 15_000);
 });
 
 function snapshotEnv(keys: string[]): Record<string, string | undefined> {

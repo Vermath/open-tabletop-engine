@@ -1,0 +1,168 @@
+{
+  "schema": "otte.dogfood-remediation/v1",
+  "campaignId": "camp_mrq0uezud0po6htf",
+  "recordedAt": "2026-07-18",
+  "sourcePapercuts": "papercuts.json",
+  "summary": {
+    "recordedIssues": 19,
+    "codeAddressed": 19,
+    "verificationFindings": 2,
+    "verificationFindingsFixed": 2,
+    "historicalPapercutsPreserved": true
+  },
+  "verification": {
+    "focusedRegressionSuites": "passed",
+    "fullRepositoryCheck": "passed",
+    "liveBrowserRegression": "passed",
+    "databaseQuickCheck": "ok",
+    "databaseQuickCheckPerformedAfterReconciliation": true,
+    "apiBuildFingerprint": "sha256:bc657ec2fca0a583218be2a46c0c985832058c4b369144bfcc8aa64a7f46a679",
+    "historicalCampaignReconciliation": {
+      "method": "authenticated_permission_checked_api",
+      "sessionsWithOneExactEncounter": 3,
+      "encounterLinkedTokenCounts": [3, 2, 4],
+      "furnaceBridgePartyTokens": 4
+    }
+  },
+  "items": [
+    {
+      "id": "PC-001",
+      "status": "fixed",
+      "resolution": "Action drafts now reset when campaign, actor, scene, or combat context changes. Targets are limited to the current scene, safe self-targeting remains available, and duplicate names are disambiguated through final consequence review."
+    },
+    {
+      "id": "PC-002",
+      "status": "fixed",
+      "resolution": "Invite creation now returns the authoritative campaign revision and the client advances its snapshot and revision reference, allowing consecutive invitations without reload or blind retry."
+    },
+    {
+      "id": "PC-003",
+      "status": "fixed",
+      "resolution": "Explicit invitation credentials take precedence over stale cookies, credential state is committed before campaign refresh, and unknown token-only sessions fail closed."
+    },
+    {
+      "id": "PC-004",
+      "status": "fixed",
+      "resolution": "Encounter quantity controls now retain unique accessible names by threat and surface after every increment."
+    },
+    {
+      "id": "PC-005",
+      "status": "fixed",
+      "resolution": "HP reductions route through reviewed typed damage, direct HP controls are healing-only, and actor/combat snapshots reconcile after the authoritative mutation."
+    },
+    {
+      "id": "PC-006",
+      "status": "fixed",
+      "resolution": "Action review stages and commit labels are explicit, the final review cannot be dismissed through its backdrop, and prepared confirmation state remains pending until an exact commit or cancellation."
+    },
+    {
+      "id": "PC-007",
+      "status": "fixed",
+      "resolution": "Session scheduling values are normalized, verified against the response echo, and retried only when the scheduling field itself needs reconciliation."
+    },
+    {
+      "id": "PC-008",
+      "status": "fixed",
+      "resolution": "Recap generation now exposes an explicit scope selector and derives session-scoped totals from exact session bounds, tags, scenes, and linked encounters, with campaign scope labeled separately."
+    },
+    {
+      "id": "PC-009",
+      "status": "fixed",
+      "resolution": "Encounter placement now requires the typed encounter identifier and links it to the sole live session atomically; ambiguous multiple-live-session placement fails before any write."
+    },
+    {
+      "id": "PC-010",
+      "status": "fixed",
+      "resolution": "Successful encounter placement appends the exact created token identifiers to the encounter atomically and idempotently."
+    },
+    {
+      "id": "PC-011",
+      "status": "fixed",
+      "resolution": "Private structured GM reports now synchronize session status and number during lifecycle changes while preserving privacy, observations, revisions, and audits."
+    },
+    {
+      "id": "PC-012",
+      "status": "fixed",
+      "resolution": "Session completion now uses a confirmed single-submit guard that survives roll, chat, and status rerenders."
+    },
+    {
+      "id": "PC-013",
+      "status": "fixed",
+      "resolution": "The People count now derives from accepted campaign membership rather than the currently visible seat."
+    },
+    {
+      "id": "PC-014",
+      "status": "fixed",
+      "resolution": "Scene navigation is owned by the Manage workflow while Manage is open, so scene changes retain the workflow and no hidden duplicate overlay intercepts selection."
+    },
+    {
+      "id": "PC-015",
+      "status": "fixed",
+      "resolution": "Active-scene state now reconciles from session start, authoritative API responses, and realtime snapshots instead of briefly retaining the prior scene."
+    },
+    {
+      "id": "PC-016",
+      "status": "fixed",
+      "resolution": "A permission-gated Place missing party command adds only absent player characters with deterministic non-overlapping placement, preserves existing tokens, and fails before mutation when no space is available."
+    },
+    {
+      "id": "PC-017",
+      "status": "fixed",
+      "resolution": "Character creation now gives spell choices source-specific accessible names and groups, including unique Magic Initiate labels, while preserving choice capacity and legality rules."
+    },
+    {
+      "id": "PC-018",
+      "status": "fixed",
+      "resolution": "The local stack now combines semantic API compatibility with an exact SHA-256 source fingerprint covering API and shared sources, plugins, lockfile, manifests, and the API Dockerfile. The API computes and persists the build fingerprint, while Vite and the development browser fail closed on a missing or mismatched fingerprint."
+    },
+    {
+      "id": "PC-019",
+      "status": "code_addressed",
+      "resolution": "Map and background file inputs are now bound and disabled against the exact selected scene identifier and name, and remount when the selected scene changes. This prevents the product-side wrong-scene picker state; the Browser plugin's uncaught filechooser timeout and kernel reset remain outside this repository."
+    }
+  ],
+  "verificationFindings": [
+    {
+      "id": "VF-001",
+      "status": "fixed",
+      "resolution": "The API image now copies infra/docker/api.Dockerfile into the runtime fingerprint input set. A packaging regression test proves the image contains every source used by exact compatibility verification."
+    },
+    {
+      "id": "VF-002",
+      "status": "fixed",
+      "resolution": "A verified realtime WebSocket no longer holds the request-scoped durable mutation gate for its connection lifetime. Realtime authorization is read-only, stale session activity is left to bounded HTTP requests, and a spoofed Upgrade header cannot bypass mutation serialization."
+    }
+  ],
+  "remainingExternalOrManualEvidence": [
+    {
+      "id": "RES-001",
+      "area": "Browser plugin",
+      "detail": "The Browser plugin can still reset its automation kernel after its own uncaught filechooser timeout."
+    },
+    {
+      "id": "EL-001",
+      "area": "human evidence",
+      "detail": "Independent human usability, social-play, and coordination evidence is still required."
+    },
+    {
+      "id": "EL-002",
+      "area": "concurrency",
+      "detail": "Genuinely concurrent clients and realtime write-conflict evidence are still required."
+    },
+    {
+      "id": "EL-003",
+      "area": "recovery",
+      "detail": "Reconnect, snapshot restore, staff repair, and failure-driven abandonment evidence are still required."
+    },
+    {
+      "id": "EL-004",
+      "area": "client diversity",
+      "detail": "Mixed-device, mobile, degraded-network, and accessibility-user evidence are still required."
+    },
+    {
+      "id": "RES-003",
+      "area": "character creation duration",
+      "detail": "The accessibility ambiguity is fixed, but whether the creator feels too lengthy remains a subjective human-validation question."
+    }
+  ]
+}

@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800" role="img" aria-labelledby="title desc">
+  <title id="title">Furnace Bridge battle map</title>
+  <desc id="desc">An iron bridge crossing a glowing lava furnace, with segmented platforms, pipes, vents, slag islands, and railings.</desc>
+  <defs>
+    <linearGradient id="lava" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffdc56"/>
+      <stop offset=".32" stop-color="#f47b20"/>
+      <stop offset=".68" stop-color="#a92f1d"/>
+      <stop offset="1" stop-color="#3c171a"/>
+    </linearGradient>
+    <pattern id="lavaCrust" width="160" height="100" patternUnits="userSpaceOnUse">
+      <rect width="160" height="100" fill="url(#lava)"/>
+      <path d="M-15 25q35-35 72 4t71-5 50 6M-30 82q42-42 90-3t72-2 53-12" fill="none" stroke="#5d211d" stroke-width="14" opacity=".7"/>
+      <path d="M0 44q28-22 52 4m40 25q31-28 67-4" fill="none" stroke="#ffd75d" stroke-width="7" opacity=".8"/>
+    </pattern>
+    <pattern id="iron" width="100" height="100" patternUnits="userSpaceOnUse">
+      <rect width="100" height="100" fill="#55595c"/>
+      <path d="M0 0h100v100H0zM0 50h100M50 0v100" stroke="#25292d" stroke-width="7"/>
+      <circle cx="10" cy="10" r="5" fill="#9fa3a3"/><circle cx="90" cy="90" r="5" fill="#9fa3a3"/>
+    </pattern>
+    <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
+      <path d="M50 0H0v50" fill="none" stroke="#f4e9cc" stroke-width="2" opacity=".34"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="800" fill="url(#lavaCrust)"/>
+  <path d="M0 0h220v800H0zM980 0h220v800H980z" fill="#282a2d"/>
+  <path d="M35 0h145v800H35zM1020 0h145v800h-145z" fill="url(#iron)"/>
+
+  <rect x="130" y="280" width="940" height="240" rx="22" fill="#202428" stroke="#121416" stroke-width="24"/>
+  <rect x="150" y="300" width="900" height="200" fill="url(#iron)"/>
+  <path d="M150 325h900M150 475h900" stroke="#b77a3e" stroke-width="18"/>
+  <path d="M150 325h900M150 475h900" stroke="#302a25" stroke-width="6" stroke-dasharray="28 20"/>
+  <path d="M330 300v200M550 300v200M770 300v200" stroke="#171a1d" stroke-width="12"/>
+
+  <g fill="#393c3f" stroke="#17191b" stroke-width="10">
+    <circle cx="265" cy="400" r="62"/><circle cx="600" cy="400" r="62"/><circle cx="935" cy="400" r="62"/>
+  </g>
+  <g fill="#1f2022" stroke="#9a7147" stroke-width="8">
+    <circle cx="265" cy="400" r="28"/><circle cx="600" cy="400" r="28"/><circle cx="935" cy="400" r="28"/>
+  </g>
+
+  <g fill="#4a4140" stroke="#201a1a" stroke-width="10">
+    <path d="M360 95l75-55 105 30 35 95-70 75-110-18-45-78z"/>
+    <path d="M700 590l92-35 93 52 12 102-82 58-105-37-27-86z"/>
+    <path d="M485 650l45-28 58 22 16 58-43 42-62-14-22-42z"/>
+  </g>
+  <g fill="#ffb23e" opacity=".85">
+    <path d="M390 115l52-30 61 20-31 36-47 24z"/>
+    <path d="M730 625l60-25 58 32-32 48-60 8z"/>
+  </g>
+
+  <g stroke="#71777a" stroke-width="26" fill="none">
+    <path d="M80 105h165q65 0 65 65v55"/>
+    <path d="M1120 695H955q-65 0-65-65v-55"/>
+  </g>
+  <g stroke="#202326" stroke-width="8" fill="none">
+    <path d="M80 105h165q65 0 65 65v55"/>
+    <path d="M1120 695H955q-65 0-65-65v-55"/>
+  </g>
+  <g fill="#b9c0c0" stroke="#333638" stroke-width="8">
+    <circle cx="90" cy="650" r="38"/><path d="M65 650h50M90 625v50"/>
+    <circle cx="1110" cy="150" r="38"/><path d="M1085 150h50M1110 125v50"/>
+  </g>
+  <rect width="1200" height="800" fill="url(#grid)" pointer-events="none"/>
+</svg>

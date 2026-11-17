@@ -15,7 +15,8 @@ import {
   type WorkerJobRecord
 } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
-import { buildApp } from "./app.js";
+import { buildApp } from "./fixtures/legacy-build-app.js";
+import { LocalAssetStorage } from "./asset-storage.js";
 import { SqliteStateStore } from "./sqlite-store.js";
 
 const adminHeaders = { "x-user-id": "usr_demo_gm" };
@@ -96,7 +97,7 @@ describe("migration smoke", () => {
       expect(storageBeforeBackup.statusCode).toBe(200);
       expect(storageBeforeBackup.json()).toMatchObject({
         supported: true,
-        migrations: { expectedVersions: [1], latestAppliedVersion: 1, missingVersions: [] },
+        migrations: { expectedVersions: [1, 2], latestAppliedVersion: 2, missingVersions: [] },
         indexes: { missing: [] },
         integrity: { ok: true }
       });
@@ -104,7 +105,7 @@ describe("migration smoke", () => {
       const backup = await app.inject({
         method: "POST",
         url: "/api/v1/admin/storage/backup",
-        headers: adminHeaders,
+        headers: { ...adminHeaders, "idempotency-key": "migration-smoke-storage-backup" },
         payload: { reason: "migration smoke" }
       });
       expect(backup.statusCode).toBe(200);
@@ -115,7 +116,7 @@ describe("migration smoke", () => {
         url: "/api/v1/admin/storage/restore-drill",
         headers: adminHeaders
       });
-      expect(restoreDrill.statusCode).toBe(200);
+      expect(restoreDrill.statusCode, restoreDrill.body).toBe(200);
       expect(restoreDrill.json()).toMatchObject({ status: "passed", campaignCount: 2 });
       expect(restoreDrill.json().recordCount).toBeGreaterThan(0);
 
@@ -153,7 +154,11 @@ describe("migration smoke", () => {
       legacyStore.close();
 
       const upgradedStore = new SqliteStateStore(databasePath, { seedDemo: false });
-      const app = await buildApp({ store: upgradedStore });
+      const uploadDir = join(directory, "uploads");
+      const assetStorage = new LocalAssetStorage(uploadDir);
+      const legacyAsset = upgradedStore.state.assets.find((asset) => asset.id === "ast_v03_tactical_map")!;
+      await assetStorage.put(legacyAsset, Buffer.alloc(legacyAsset.sizeBytes));
+      const app = await buildApp({ store: upgradedStore, assetStorage, uploadDir });
       try {
         expect(upgradedStore.state.campaigns.map((campaign) => campaign.id)).toContain("camp_demo");
         expect(upgradedStore.state.scenes.map((scene) => scene.id)).toContain("scn_vault_entry");
@@ -165,16 +170,23 @@ describe("migration smoke", () => {
         expect(upgradedStore.state.jobs.map((job) => job.id)).toContain("job_v03_storage_backup");
         expect(upgradedStore.storageOperations()).toMatchObject({
           supported: true,
-          migrations: { expectedVersions: [1], latestAppliedVersion: 1, missingVersions: [] },
+          migrations: { expectedVersions: [1, 2], latestAppliedVersion: 2, missingVersions: [] },
           indexes: { missing: [] },
           integrity: { ok: true }
         });
 
+        const campaignRevisionBeforeSceneCreate = upgradedStore.state.campaigns.find((campaign) => campaign.id === "camp_demo")!.updatedAt;
         const createdScene = await app.inject({
           method: "POST",
           url: "/api/v1/campaigns/camp_demo/scenes",
           headers: { ...adminHeaders, "Idempotency-Key": "v03-upgrade-scene-create" },
-          payload: { name: "V0.3 Upgrade Verification", width: 640, height: 480, gridSize: 40 }
+          payload: {
+            name: "V0.3 Upgrade Verification",
+            width: 640,
+            height: 480,
+            gridSize: 40,
+            expectedUpdatedAt: campaignRevisionBeforeSceneCreate
+          }
         });
         expect(createdScene.statusCode).toBe(200);
         expect(upgradedStore.state.idempotencyRecords).toHaveLength(1);
@@ -183,7 +195,13 @@ describe("migration smoke", () => {
           method: "POST",
           url: "/api/v1/campaigns/camp_demo/scenes",
           headers: { ...adminHeaders, "Idempotency-Key": "v03-upgrade-scene-create" },
-          payload: { gridSize: 40, height: 480, name: "V0.3 Upgrade Verification", width: 640 }
+          payload: {
+            expectedUpdatedAt: campaignRevisionBeforeSceneCreate,
+            gridSize: 40,
+            height: 480,
+            name: "V0.3 Upgrade Verification",
+            width: 640
+          }
         });
         expect(replayedScene.statusCode).toBe(200);
         expect(replayedScene.headers["idempotency-replayed"]).toBe("true");
@@ -191,7 +209,7 @@ describe("migration smoke", () => {
         const backup = await app.inject({
           method: "POST",
           url: "/api/v1/admin/storage/backup",
-          headers: adminHeaders,
+          headers: { ...adminHeaders, "idempotency-key": "v03-upgrade-storage-backup" },
           payload: { reason: "v0.3 upgrade smoke" }
         });
         expect(backup.statusCode).toBe(200);
@@ -202,7 +220,7 @@ describe("migration smoke", () => {
           url: "/api/v1/admin/storage/restore-drill",
           headers: adminHeaders
         });
-        expect(restoreDrill.statusCode).toBe(200);
+        expect(restoreDrill.statusCode, restoreDrill.body).toBe(200);
         expect(restoreDrill.json()).toMatchObject({ status: "passed", campaignCount: 1 });
         expect(restoreDrill.json().collections).toEqual(
           expect.arrayContaining([
@@ -240,7 +258,7 @@ describe("migration smoke", () => {
 
       const persistedStore = new SqliteStateStore(databasePath, { seedDemo: false });
       try {
-        expect(persistedStore.state.idempotencyRecords).toHaveLength(1);
+        expect(persistedStore.state.idempotencyRecords.some((record) => record.key === "v03-upgrade-scene-create")).toBe(true);
         expect(persistedStore.state.scenes.some((scene) => scene.name === "V0.3 Upgrade Verification")).toBe(true);
         expect(persistedStore.state.assets.some((asset) => asset.id === "ast_v03_tactical_map")).toBe(true);
         expect(persistedStore.state.jobs.some((job) => job.id === "job_v03_storage_backup")).toBe(true);
