@@ -106,6 +106,7 @@ import { RetryableActionNotice, useRetryableAction } from "./retryable-action.js
 import { isStaleWriteError, sharedMutationIdempotencyKey } from "./shared-mutation.js";
 import { KeyedMutationQueue } from "./keyed-mutation-queue.js";
 import { clampFloatingPanel, useMovablePanel, type FloatingPanelPosition, type FloatingPanelSize } from "./movable-panel.js";
+import { defaultInterfaceSounds, useInterfaceSounds } from "./interface-sounds.js";
 import { DiceTableStage } from "./dice-table-stage.js";
 import { CommandPalette, KeyboardShortcutDialog, RealtimeSyncGuard, ToastStack } from "./tabletop-overlays.js";
 import { actorActionConsequenceReview, actorActionRequest, committedActionStatus, preparedActionIsRoutine, typedDamageConsequenceReview, type CommittedActorActionResponse, type PreparedActorActionResponse, type PreparedTypedDamageResponse } from "./actor-action-review.js";
@@ -712,6 +713,8 @@ export function App() {
   const liveCampaignSession = campaignSessions.find((session) => session.status === "live");
   const currentTurnCombatant = combatTurnCombatant(activeCombat, "current");
   const nextTurnCombatant = combatTurnCombatant(activeCombat, "next");
+  const interfaceSounds = snapshot.session?.user.preferences?.interfaceSounds ?? defaultInterfaceSounds;
+  const playInterfaceCue = useInterfaceSounds({ preferences: interfaceSounds, muted: audioMuted, masterVolume: audioMasterVolume, scene: selectedScene, userId: currentUserId, combat: activeCombat, combatant: currentTurnCombatant, tokens: snapshot.tokens, actors: snapshot.actors });
   const currentTurnTokenIds = currentTurnCombatant?.tokenId ? [currentTurnCombatant.tokenId] : [];
   const nextTurnTokenIds = nextTurnCombatant?.tokenId && nextTurnCombatant.id !== currentTurnCombatant?.id ? [nextTurnCombatant.tokenId] : [];
   const recentEndedCombats = snapshot.combats.filter((combat) => !combat.active).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).slice(0, 3);
@@ -2368,9 +2371,7 @@ export function App() {
     }, 100);
     return () => window.clearTimeout(preloadTimer);
   }, [dice3dEnabled, snapshotReady]);
-
   useLayoutEffect(() => () => { clearPhysicsDice(); }, [campaignId, currentUserId]);
-
   useEffect(() => {
     if (dice3dEnabled) return;
     clearPhysicsDice();
@@ -2405,6 +2406,7 @@ export function App() {
     const castIsCurrent = () => dice3dEnabledRef.current && workspaceRequestIsCurrent(campaignId, currentUserId);
     for (const cast of casts) {
       if (reduceMotion || dice3dPreferenceEnvironment().saveData) {
+        playInterfaceCue("dice");
         setActiveDiceCasts((current) => [...current.slice(-1), { ...cast, dice: [], settleMs: 0 }].slice(-2));
         window.setTimeout(() => {
           setActiveDiceCasts((current) => current.filter((item) => item.rollId !== cast.rollId));
@@ -6093,6 +6095,7 @@ export function App() {
     const existingTimer = diceRevealTimersRef.current.get(cast.rollId);
     if (existingTimer !== undefined) window.clearTimeout(existingTimer);
     const timerId = window.setTimeout(() => {
+      playInterfaceCue("dice");
       diceRevealTimersRef.current.delete(cast.rollId);
       const revealedStatus = diceRevealStatusesRef.current.get(cast.rollId);
       diceRevealStatusesRef.current.delete(cast.rollId);
@@ -9106,6 +9109,7 @@ export function App() {
             <div className="brand">OpenTabletop</div>
           </div>
           <div className="rail-quick-actions">
+            {snapshot.session?.user && <button className="icon-button" type="button" aria-label={interfaceSounds.enabled ? "Mute interface sounds" : "Unmute interface sounds"} aria-pressed={interfaceSounds.enabled} onClick={() => persistQuickPreferences({ interfaceSounds: { ...interfaceSounds, enabled: !interfaceSounds.enabled } }, "Set interface sounds")}><Music size={15} aria-hidden="true" /></button>}
             <button className="icon-button" type="button" title="Command palette (Ctrl+K)" aria-label="Open command palette" onClick={() => setCommandPaletteOpen(true)}>
               <Search size={15} />
             </button>
