@@ -577,7 +577,7 @@ export async function apiPost<T>(path: string, body: unknown, options: ApiReques
     signal: options.signal
   });
   if (!response.ok) throw await apiErrorFromResponse(response);
-  if (response.headers.get("idempotency-replayed") === "true") options.onReplay?.();
+  if (options.onReplay && response.headers?.get?.("idempotency-replayed") === "true") options.onReplay();
   return response.json() as Promise<T>;
 }
 
