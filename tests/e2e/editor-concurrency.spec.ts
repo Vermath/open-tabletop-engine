@@ -1,3 +1,4 @@
+import { selectInspectorPanel } from "./inspector-navigation.js";
 import { randomUUID } from "node:crypto";
 import { expect, test, type APIResponse, type Page } from "@playwright/test";
 
@@ -61,7 +62,7 @@ for (const editor of editors) {
 
     try {
       await page.getByRole("button", { name: "Prep", exact: true }).click();
-      await page.getByRole("tab", { name: editor.panel, exact: true }).click();
+      await selectInspectorPanel(page, editor.panel);
       const panel = page.getByRole("region", { name: editor.region, exact: true });
       if (editor.kind === "world") {
         await panel.getByRole("group", { name: "Filter prep scenes by world" }).getByRole("button", { name: new RegExp(`^${title} `) }).click();
@@ -132,7 +133,7 @@ test("replacing a session's linked scene clears its old start selection and star
     await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
     await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText(campaignName);
     await page.getByRole("button", { name: "Prep", exact: true }).click();
-    await page.getByRole("tab", { name: "Sessions", exact: true }).click();
+    await selectInspectorPanel(page, "Sessions");
     await page.getByRole("region", { name: "Session Desk" }).getByRole("listitem").filter({ hasText: "Swap the linked scene" }).getByRole("button").first().click();
     const form = page.getByRole("form", { name: "Edit session Swap the linked scene", exact: true });
     const activation = form.getByRole("combobox", { name: "Scene to activate when session starts" });

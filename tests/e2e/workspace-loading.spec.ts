@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { selectInspectorPanel } from "./inspector-navigation.js";
 
 test("the campaign loading shell settles below 0.05 cumulative layout shift", async ({ page }) => {
   let releaseSnapshot!: () => void;
@@ -140,7 +141,7 @@ test("a search result opens the requested scene across worlds", async ({ page })
     await route.continue();
   });
   try {
-    await page.getByRole("tab", { name: "Search", exact: true }).click();
+    await selectInspectorPanel(page, "Search");
     const search = page.getByRole("region", { name: "Campaign Search" });
     await search.getByRole("textbox", { name: "Search this campaign" }).fill(destination.name);
     await search.getByRole("button", { name: new RegExp(destination.name) }).click();

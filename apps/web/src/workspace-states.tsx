@@ -1,5 +1,6 @@
 import { RefreshCw } from "lucide-react";
 import type { ReactNode } from "react";
+import { assetBlobUrl, type Snapshot } from "./api.js";
 import "./workspace-states.css";
 
 export function EmptyState({ icon, text, action }: {
@@ -40,7 +41,14 @@ export function WorkspaceLoading({ status }: { status: string }) {
   );
 }
 
-export async function preloadSceneImage(url: string | undefined): Promise<void> {
+export function preloadWorkspaceScene(snapshot: Pick<Snapshot, "scenes" | "assets">, sceneId: string): Promise<void> {
+  const scene = snapshot.scenes.find((item) => item.id === sceneId);
+  if (!scene) throw new Error("This scene is no longer available.");
+  const background = snapshot.assets.find((asset) => asset.id === scene.backgroundAssetId);
+  return preloadSceneImage(background ? assetBlobUrl(background) : undefined);
+}
+
+async function preloadSceneImage(url: string | undefined): Promise<void> {
   if (!url) return;
   const image = new Image();
   image.src = url;
