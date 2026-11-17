@@ -1,4 +1,4 @@
-import type { Actor, Combat, CombatEnvironmentMechanic } from "@open-tabletop/core";
+import type { Actor, Combat, CombatEnvironmentMechanic } from "@open-tabletop/api-contracts";
 import { describe, expect, it } from "vitest";
 import {
   combatEnvironmentMechanicDue,

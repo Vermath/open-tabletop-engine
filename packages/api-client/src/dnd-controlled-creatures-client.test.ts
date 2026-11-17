@@ -3,7 +3,7 @@ import type {
   DndControlledCreatureMutationResult,
   DndControlledCreaturePreview,
   DndControlledCreatureRevisionSet,
-} from "@open-tabletop/core";
+} from "@open-tabletop/api-contracts";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
 import { OpenTabletopClient } from "./index.js";

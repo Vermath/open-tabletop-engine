@@ -214,19 +214,22 @@ describe("strict D&D inventory and commerce API", () => {
         payload: { quantity: 1, destination: { kind: "party_stash", stashId: stash.id }, expectedUpdatedAt: pack.updatedAt, expectedSourceUpdatedAt: actor.updatedAt, expectedDestinationUpdatedAt: stash.updatedAt }
       });
       expect(moved.statusCode).toBe(200);
-      expect(pack.actorId).toBeUndefined();
-      expect(pouch.actorId).toBeUndefined();
-      expect((pouch.data[DND5E_INVENTORY_METADATA_KEY] as Record<string, unknown>).parentItemId).toBe(pack.id);
+      const currentPack = store.state.items.find((candidate) => candidate.id === pack.id)!;
+      const currentPouch = store.state.items.find((candidate) => candidate.id === pouch.id)!;
+      const currentActor = store.state.actors.find((candidate) => candidate.id === actor.id)!;
+      expect(currentPack.actorId).toBeUndefined();
+      expect(currentPouch.actorId).toBeUndefined();
+      expect((currentPouch.data[DND5E_INVENTORY_METADATA_KEY] as Record<string, unknown>).parentItemId).toBe(pack.id);
 
       const consumed = await app.inject({
         method: "POST",
         url: `/api/v1/campaigns/camp_demo/dnd/inventory/items/${bow.id}/consume-ammunition`,
         headers: { ...gmHeaders, "idempotency-key": "arrow-consume" },
-        payload: { ammunitionItemId: arrows.id, amount: 2, expectedUpdatedAt: bow.updatedAt, expectedAmmunitionUpdatedAt: arrows.updatedAt, expectedActorUpdatedAt: actor.updatedAt }
+        payload: { ammunitionItemId: arrows.id, amount: 2, expectedUpdatedAt: bow.updatedAt, expectedAmmunitionUpdatedAt: arrows.updatedAt, expectedActorUpdatedAt: currentActor.updatedAt }
       });
       expect(consumed.statusCode).toBe(200);
       expect(consumed.json()).toMatchObject({ consumed: 2, remaining: 18 });
-      expect(arrows.data.quantity).toBe(18);
+      expect(store.state.items.find((candidate) => candidate.id === arrows.id)!.data.quantity).toBe(18);
     } finally {
       await app.close();
     }

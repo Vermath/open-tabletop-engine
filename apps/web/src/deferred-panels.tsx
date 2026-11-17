@@ -14,6 +14,7 @@ export const deferredPanelImporters = {
   compendium: () => import("./compendium-panel.js"),
   compatibility: () => import("./compatibility-panel.js"),
   contentImport: () => import("./content-import-panel.js"),
+  universalVttImport: () => import("./universal-vtt-import-panel.js"),
   controlledCreatures: () => import("./controlled-creatures-panel.js"),
   characterCreator: () => import("./character-creator-dialog.js"),
   advancement: () => import("./advancement-flow.js"),
@@ -34,6 +35,7 @@ export const LazyCampaignWebhooksPanel = lazy(async () => ({ default: (await def
 export const LazyCompendiumPanel = lazy(async () => ({ default: (await deferredPanelImporters.compendium()).CompendiumPanel }));
 export const LazyCompatibilityPanel = lazy(async () => ({ default: (await deferredPanelImporters.compatibility()).CompatibilityPanel }));
 export const LazyContentImportPanel = lazy(async () => ({ default: (await deferredPanelImporters.contentImport()).ContentImportPanel }));
+export const LazyUniversalVttImportPanel = lazy(async () => ({ default: (await deferredPanelImporters.universalVttImport()).UniversalVttImportPanel }));
 export const LazyControlledCreaturesPanel = lazy(async () => ({ default: (await deferredPanelImporters.controlledCreatures()).ControlledCreaturesPanel }));
 export const LazyCharacterCreatorDialog = lazy(async () => ({ default: (await deferredPanelImporters.characterCreator()).CharacterCreatorDialog }));
 export const LazyAdvancementFlow = lazy(async () => ({ default: (await deferredPanelImporters.advancement()).AdvancementFlow }));

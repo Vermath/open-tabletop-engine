@@ -12,7 +12,7 @@ import type {
   Item,
   Scene,
   Token,
-} from "@open-tabletop/core";
+} from "@open-tabletop/api-contracts";
 import { DND_5E_SRD_VERSION } from "./dnd-static-content.js";
 
 export const DND_CONTROLLED_CREATURE_DATA_KEY = "dnd5eControlledCreature";

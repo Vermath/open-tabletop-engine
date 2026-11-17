@@ -1,4 +1,4 @@
-import type { TokenMoveBatchResult } from "@open-tabletop/core";
+import type { TokenMoveBatchResult } from "@open-tabletop/api-contracts";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
 import { OpenTabletopClient } from "./index.js";

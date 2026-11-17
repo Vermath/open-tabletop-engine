@@ -52,7 +52,8 @@ test("GM streams an above-fixture archive, cancels import, retries, and restores
 
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 
   const originalScene = await apiJson<{ id: string; name: string; backgroundAssetId?: string; updatedAt: string }>(
     await page.request.get(`${apiBaseUrl}/api/v1/scenes/scn_vault_entry`, { headers: gmHeaders }),
@@ -75,7 +76,8 @@ test("GM streams an above-fixture archive, cancels import, retries, and restores
   );
 
   await page.reload();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   await openArchives(page);
   const exportWizard = page.getByRole("region", { name: "Archive export wizard" });
   await exportWizard.getByRole("button", { name: "Export Large Archive (.ottx)" }).click();
@@ -101,7 +103,8 @@ test("GM streams an above-fixture archive, cancels import, retries, and restores
     },
   }));
   await page.reload();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   await openArchives(page);
 
   let releaseInterceptedImport: (() => void) | undefined;

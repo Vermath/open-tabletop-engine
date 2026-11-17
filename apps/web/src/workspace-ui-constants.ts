@@ -12,8 +12,9 @@ export const keyboardShortcutRows: ReadonlyArray<{ keys: string; label: string }
   { keys: "Shift+Arrow", label: "Move a focused token by one pixel" },
   { keys: "Enter / Space", label: "Start or finish a keyboard board gesture" },
   { keys: "Shift+Click", label: "Multi-select tokens" },
-  { keys: "Alt+Drag", label: "Pan the map" },
-  { keys: "Ctrl+Scroll", label: "Zoom the map" },
+  { keys: "Scroll", label: "Zoom the map at the pointer" },
+  { keys: "Right-drag", label: "Pan the map (also Alt+drag or middle-drag)" },
+  { keys: "Right-click", label: "Open token actions (Shift+F10 from the keyboard)" },
   { keys: "Esc", label: "Close panels and dialogs" },
   { keys: "?", label: "Toggle this overlay" }
 ];

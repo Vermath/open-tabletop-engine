@@ -51,7 +51,8 @@ interface CampaignSummary {
 async function loginAsDemoGm(page: Page): Promise<void> {
   await page.goto(webBaseUrl);
   await page.getByRole("button", { name: "Demo GM", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault", exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 }
 
 async function browserApi<T>(
@@ -190,7 +191,8 @@ test("a blocked AI provider does not block combat and reconnect restores both du
       status: "completed",
       assistantMessage: "The controlled E2E provider turn completed after the table mutation.",
     }));
-    await expect(tablePage.getByRole("heading", { name: "The Ember Vault", exact: true })).toBeVisible();
+    await expect(tablePage.getByLabel("Current campaign", { exact: true })).toBeVisible();
+    await expect(tablePage.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   } finally {
     await request.post(`${apiControlBaseUrl}/ai/release`).catch(() => undefined);
     await aiResponsePromise?.catch(() => undefined);

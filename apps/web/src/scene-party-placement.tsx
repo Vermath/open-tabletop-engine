@@ -1,4 +1,4 @@
-import type { Actor, Scene, Token } from "@open-tabletop/core";
+import { sceneGridOrigin, sceneGridSize, type Actor, type Scene, type Token } from "@open-tabletop/core";
 import { Users } from "lucide-react";
 
 export interface PartyTokenPlacement {
@@ -48,7 +48,7 @@ interface TokenRectangle {
  * a party member while filling a new map.
  */
 export function planMissingPartyTokenPlacements(
-  scene: Pick<Scene, "id" | "width" | "height" | "gridSize">,
+  scene: Pick<Scene, "id" | "width" | "height" | "gridSize" | "gridType" | "gridOrigin">,
   partyActors: readonly Actor[],
   tokens: readonly Token[]
 ): PartyTokenPlacementPlan {
@@ -56,7 +56,7 @@ export function planMissingPartyTokenPlacements(
   const representedActorIds = new Set(sceneTokens.flatMap((token) => token.actorId ? [token.actorId] : []));
   const uniquePartyActors = uniqueActors(partyActors);
   const missingActors = uniquePartyActors.filter((actor) => !representedActorIds.has(actor.id));
-  const tokenSize = Math.max(1, Math.round(scene.gridSize) || 1);
+  const tokenSize = sceneGridSize(scene);
   const candidates = stagingCandidates(scene, tokenSize);
   const occupied: TokenRectangle[] = sceneTokens.map(tokenRectangle);
   const placements: PartyTokenPlacement[] = [];
@@ -140,7 +140,7 @@ export function ScenePartyPlacementControl({
   busy = false,
   onPlaceMissingParty,
 }: {
-  scene?: Pick<Scene, "id" | "name" | "width" | "height" | "gridSize">;
+  scene?: Pick<Scene, "id" | "name" | "width" | "height" | "gridSize" | "gridType" | "gridOrigin">;
   partyActors: readonly Actor[];
   tokens: readonly Token[];
   canCreateToken: boolean;
@@ -193,18 +193,25 @@ function uniqueActors(actors: readonly Actor[]): Actor[] {
 }
 
 function stagingCandidates(
-  scene: Pick<Scene, "width" | "height" | "gridSize">,
+  scene: Pick<Scene, "width" | "height" | "gridSize" | "gridType" | "gridOrigin">,
   tokenSize: number
 ): TokenRectangle[] {
-  const maxX = Math.floor((scene.width - tokenSize) / tokenSize) * tokenSize;
-  const maxY = Math.floor((scene.height - tokenSize) / tokenSize) * tokenSize;
-  if (maxX < 0 || maxY < 0) return [];
+  const origin = sceneGridOrigin(scene);
+  const firstX = scene.gridType === "square" ? positiveModulo(origin.x, tokenSize) : 0;
+  const firstY = scene.gridType === "square" ? positiveModulo(origin.y, tokenSize) : 0;
+  const columns = Math.floor((scene.width - firstX) / tokenSize);
+  const rows = Math.floor((scene.height - firstY) / tokenSize);
+  if (columns < 1 || rows < 1) return [];
 
-  const preferredX = clampToGrid(scene.width * 0.35 - tokenSize / 2, 0, maxX, tokenSize);
-  const preferredY = clampToGrid(scene.height * 0.65 - tokenSize / 2, 0, maxY, tokenSize);
+  const maxX = firstX + (columns - 1) * tokenSize;
+  const maxY = firstY + (rows - 1) * tokenSize;
+  const preferredX = clampToGrid(scene.width * 0.35 - tokenSize / 2, firstX, maxX, tokenSize);
+  const preferredY = clampToGrid(scene.height * 0.65 - tokenSize / 2, firstY, maxY, tokenSize);
   const candidates: TokenRectangle[] = [];
-  for (let y = 0; y <= maxY; y += tokenSize) {
-    for (let x = 0; x <= maxX; x += tokenSize) {
+  for (let row = 0; row < rows; row += 1) {
+    const y = firstY + row * tokenSize;
+    for (let column = 0; column < columns; column += 1) {
+      const x = firstX + column * tokenSize;
       candidates.push({ x, y, width: tokenSize, height: tokenSize });
     }
   }
@@ -216,7 +223,11 @@ function stagingCandidates(
 }
 
 function clampToGrid(value: number, minimum: number, maximum: number, gridSize: number): number {
-  return Math.max(minimum, Math.min(maximum, Math.round(value / gridSize) * gridSize));
+  return Math.max(minimum, Math.min(maximum, minimum + Math.round((value - minimum) / gridSize) * gridSize));
+}
+
+function positiveModulo(value: number, divisor: number): number {
+  return ((value % divisor) + divisor) % divisor;
 }
 
 function tokenRectangle(token: Pick<Token, "x" | "y" | "width" | "height">): TokenRectangle {

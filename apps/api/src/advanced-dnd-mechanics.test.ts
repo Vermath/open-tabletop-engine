@@ -55,6 +55,8 @@ function addAdvancedMechanicsFixtures(store: MemoryStateStore) {
   }) satisfies Combat;
   store.state.actors.push(actor, target);
   store.state.combats.push(combat);
+  store.save();
+  store.flush();
   return { actor, target, combat };
 }
 

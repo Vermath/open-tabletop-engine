@@ -209,6 +209,7 @@ describe("atomic encounter monster placement", () => {
       pending = false;
 
       override save(): void {
+        super.save();
         this.pending = true;
       }
 
@@ -218,6 +219,7 @@ describe("atomic encounter monster placement", () => {
           this.failNextFlush = false;
           throw new Error("injected encounter placement persistence failure");
         }
+        super.flush();
         this.pending = false;
       }
     }
@@ -246,6 +248,8 @@ describe("atomic encounter monster placement", () => {
       createdByUserId: "usr_demo_gm",
       updatedByUserId: "usr_demo_gm",
     }));
+    store.save();
+    store.flush();
     const transport = new RecordingTransport();
     const app = await buildApp({ store, webhookTransport: transport });
     const scene = store.state.scenes.find((candidate) => candidate.id === "scn_vault_entry")!;

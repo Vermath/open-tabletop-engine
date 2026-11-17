@@ -1,8 +1,10 @@
+import { annotationTranslationDelta, clampScenePoint, sceneGridOrigin, sceneGridSize, snapScenePointToGrid, translatedAnnotationPoints } from "@open-tabletop/core";
 import type { Actor, FogMode, MapAsset, Scene, SceneAnnotation, SceneAnnotationKind, SceneAnnotationLayer, SceneTemplateShape, Token, TokenLayer, VisionPoint, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
 import { assetBlobUrl } from "./api.js";
 import { BrickWall, ChevronLeft, ChevronRight, Circle, Crosshair, Eraser, Eye, Flame, Grip, Image as ImageIcon, Layers, Lightbulb, LockKeyhole, Map as MapIcon, MapPin, Paintbrush, PencilLine, Pentagon, Plus, Ruler, Swords, Trash2, Triangle, X, ZoomIn, ZoomOut, RefreshCw, Hand, RotateCcw, Boxes, ScrollText, Download, Upload, UserX } from "lucide-react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { BoardTokenFrameChange, BoardTokenPositionChange } from "./board-history.js";
 import { computeTokenMovements, formatGridDistance } from "./board-animation.js";
 import { scenePointFromClient } from "./board-geometry.js";
@@ -12,8 +14,18 @@ import { templateConePoints } from "./scene-annotations.js";
 import { errorMessage, formatNumber, titleCaseLabel } from "./sheet-format.js";
 import { hasTokenDropData, readTokenDropData, type TokenDropPayload } from "./token-drag.js";
 import { RetryableActionNotice, useRetryableAction } from "./retryable-action.js";
+import { DynamicVisibilityMask } from "./scene-visibility-mask.js";
+import { anchorScrollDelta, exceedsPanThreshold, scrollKeepingViewCentre, pinchZoom, pointerDistance, pointerMidpoint, wheelEventZoomsMap, wheelZoomFactor, zoomAnchorAt, type ViewportPoint, type ZoomAnchor } from "./map-viewport-gestures.js";
+import { TokenContextMenu, tokenContextMenuActions } from "./token-context-menu.js";
+import { preferredMapRenderer, useBoardCanvasLayers } from "./board-canvas-layers.js";
+import { BoardDarknessLayer, BoardDifficultTerrainLayer, BoardLightingLayer, BoardStructureHandles, BoardVisionMaskLayer, BoardWallLayer, type BoardStructureHandlers } from "./board-layers.js";
+import { useStableHandlers, useStructurallyStable } from "./board-render-stability.js";
+import { BoardToken, type BoardTokenHandlers } from "./board-token.js";
+
+export { lightPolygonClassName, polygonPoints, visionPolygonClassName } from "./board-layers.js";
 
 const pingAnnotationTtlSeconds = 5;
+const noDifficultTerrain: NonNullable<Scene["difficultTerrain"]> = [];
 const annotationExpiryTimerSlackMs = 25;
 const maxBrowserTimerDelayMs = 2_147_483_647;
 const annotationLayers: SceneAnnotationLayer[] = ["measurement", "effects", "drawings", "notes"];
@@ -80,6 +92,7 @@ export interface AnnotationMoveDraft {
   pointIndex?: number;
   start: VisionPoint;
   originalPoints: VisionPoint[];
+  snapToGrid?: boolean;
   points: VisionPoint[];
   current: VisionPoint;
 }
@@ -95,6 +108,7 @@ export interface TokenDragDraft {
   x: number;
   y: number;
   origins: Record<string, TokenDragOrigin>;
+  selectionOptions?: TokenSelectionOptions;
   settling?: boolean;
 }
 
@@ -108,6 +122,7 @@ export interface TokenResizeDraft {
   handle: TokenResizeHandle;
   origin: TokenFrame;
   frame: TokenFrame;
+  selectionOptions?: TokenSelectionOptions;
 }
 
 
@@ -162,7 +177,7 @@ export interface KeyboardBoardGesture {
 }
 
 export function boardArrowDelta(key: string, scene: Pick<Scene, "gridSize" | "gridType">, fine: boolean): VisionPoint | undefined {
-  const step = fine ? 1 : scene.gridType === "gridless" ? 10 : Math.max(1, scene.gridSize);
+  const step = fine ? 1 : scene.gridType === "gridless" ? 10 : sceneGridSize(scene);
   if (key === "ArrowUp") return { x: 0, y: -step };
   if (key === "ArrowDown") return { x: 0, y: step };
   if (key === "ArrowLeft") return { x: -step, y: 0 };
@@ -171,10 +186,7 @@ export function boardArrowDelta(key: string, scene: Pick<Scene, "gridSize" | "gr
 }
 
 export function movedKeyboardCursor(scene: Pick<Scene, "width" | "height">, cursor: VisionPoint, delta: VisionPoint): VisionPoint {
-  return {
-    x: Math.round(clampSceneCoordinate(cursor.x + delta.x, 0, scene.width)),
-    y: Math.round(clampSceneCoordinate(cursor.y + delta.y, 0, scene.height))
-  };
+  return clampScenePoint(scene, { x: cursor.x + delta.x, y: cursor.y + delta.y });
 }
 
 export function keyboardTokenPositions(
@@ -190,8 +202,19 @@ export function keyboardTokenPositions(
   const boundedDeltaX = clampSceneCoordinate(delta.x, -minX, scene.width - maxRight);
   const boundedDeltaY = clampSceneCoordinate(delta.y, -minY, scene.height - maxBottom);
   return Object.fromEntries(
-    tokens.map((token) => [token.id, { x: Math.round(token.x + boundedDeltaX), y: Math.round(token.y + boundedDeltaY) }])
+    tokens.map((token) => [token.id, { x: token.x + boundedDeltaX, y: token.y + boundedDeltaY }])
   );
+}
+
+export function editedAnnotationPoints(scene: Pick<Scene, "width" | "height"> & Partial<Pick<Scene, "gridSize" | "gridType">>, draft: AnnotationMoveDraft, point: VisionPoint): VisionPoint[] {
+  if (draft.mode === "point" && draft.pointIndex !== undefined) {
+    return draft.originalPoints.map((annotationPoint, index) =>
+      index === draft.pointIndex
+        ? { x: clampSceneCoordinate(point.x, 0, scene.width), y: clampSceneCoordinate(point.y, 0, scene.height) }
+        : annotationPoint
+    );
+  }
+  return translatedAnnotationPoints(scene, draft.originalPoints, { x: point.x - draft.start.x, y: point.y - draft.start.y }, draft.snapToGrid);
 }
 
 export function isKeyboardFogGestureKind(kind: KeyboardBoardGesture["kind"]): kind is KeyboardFogGestureKind {
@@ -235,9 +258,11 @@ export const largeTokenVisualScale = 0.96;
 
 export const battleMapZoomMin = 0.5;
 
-export const battleMapZoomMax = 2;
+export const battleMapZoomMax = 6;
 
 export const battleMapZoomStep = 0.25;
+
+const zoomAnchorHoldMs = 200;
 
 
 export function clampSceneCoordinate(value: number, min: number, max: number): number {
@@ -338,45 +363,62 @@ export function MapLayerStack(props: { scene?: Scene; tokens: Token[]; activeTok
 }
 
 
-export function snapTokenAxisToGrid(position: number, size: number, sceneSize: number, gridSize: number): number {
-  const safeSize = Math.max(1, Math.round(size) || 1);
-  const safeGridSize = Math.max(1, Math.round(gridSize) || 1);
+export function snapTokenAxisToGrid(position: number, size: number, sceneSize: number, gridSize: number, origin = 0): number {
+  const safeSize = Number.isFinite(size) && size >= 1 ? size : 1;
+  const safeGridSize = sceneGridSize({ gridSize });
   const maxPosition = Math.max(0, sceneSize - safeSize);
   const gridCells = Math.max(1, Math.round(safeSize / safeGridSize));
-  const isGridSized = Math.abs(safeSize - gridCells * safeGridSize) <= 1;
+  const isGridSized = Math.abs(safeSize - gridCells * safeGridSize) <= 0.01;
   if (isGridSized) {
-    return clampSceneCoordinate(Math.round(position / safeGridSize) * safeGridSize, 0, maxPosition);
+    return clampSceneCoordinate(origin + Math.round((position - origin) / safeGridSize) * safeGridSize, 0, maxPosition);
   }
   const center = position + safeSize / 2;
   const firstCenter = safeSize / 2;
   const lastCenter = Math.max(firstCenter, sceneSize - safeSize / 2);
-  const snappedCenter = Math.round((center - safeGridSize / 2) / safeGridSize) * safeGridSize + safeGridSize / 2;
-  return Math.round(clampSceneCoordinate(snappedCenter, firstCenter, lastCenter) - safeSize / 2);
+  const snappedCenter = origin + Math.round((center - origin - safeGridSize / 2) / safeGridSize) * safeGridSize + safeGridSize / 2;
+  return clampSceneCoordinate(snappedCenter, firstCenter, lastCenter) - safeSize / 2;
 }
 
 
 export function boundedTokenCoordinates(scene: Pick<Scene, "width" | "height">, token: Pick<Token, "width" | "height">, x: number, y: number): Pick<Token, "x" | "y"> {
-  const width = Math.max(1, Math.round(token.width) || 1);
-  const height = Math.max(1, Math.round(token.height) || 1);
+  const width = Number.isFinite(token.width) && token.width >= 1 ? token.width : 1;
+  const height = Number.isFinite(token.height) && token.height >= 1 ? token.height : 1;
   return {
-    x: clampSceneCoordinate(Math.round(x), 0, Math.max(0, scene.width - width)),
-    y: clampSceneCoordinate(Math.round(y), 0, Math.max(0, scene.height - height))
+    x: clampSceneCoordinate(x, 0, Math.max(0, scene.width - width)),
+    y: clampSceneCoordinate(y, 0, Math.max(0, scene.height - height))
   };
 }
 
 
-type TokenGridScene = Pick<Scene, "width" | "height" | "gridSize"> & Partial<Pick<Scene, "gridType">>;
+type TokenGridScene = Pick<Scene, "width" | "height" | "gridSize"> & Partial<Pick<Scene, "gridType" | "gridOrigin">>;
 
 export function snappedTokenCoordinates(scene: TokenGridScene, token: Pick<Token, "width" | "height">, x: number, y: number): Pick<Token, "x" | "y"> {
-  if (scene.gridType === "gridless") return boundedTokenCoordinates(scene, token, x, y);
+  if (scene.gridType && scene.gridType !== "square") return boundedTokenCoordinates(scene, token, x, y);
   return boundedTokenCoordinates(
     scene,
     token,
-    snapTokenAxisToGrid(x, token.width, scene.width, scene.gridSize),
-    snapTokenAxisToGrid(y, token.height, scene.height, scene.gridSize)
+    snapTokenAxisToGrid(x, token.width, scene.width, scene.gridSize, sceneGridOrigin(scene).x),
+    snapTokenAxisToGrid(y, token.height, scene.height, scene.gridSize, sceneGridOrigin(scene).y)
   );
 }
 
+
+export function finishedTokenDragChanges(scene: TokenGridScene, tokens: Token[], draft: TokenDragDraft): TokenMovePersistenceChange[] {
+  // Selecting an off-grid token must not snap it or add a move to history.
+  if (draft.x === draft.startX && draft.y === draft.startY) return [];
+  const token = tokens.find((item) => item.id === draft.tokenId);
+  if (!token) return [];
+  const snapped = snappedTokenCoordinates(scene, token, draft.x, draft.y);
+  const group = tokens.filter((item) => draft.origins[item.id]);
+  const positions = keyboardTokenPositions(
+    scene,
+    group.map((item) => ({ id: item.id, ...draft.origins[item.id]! })),
+    { x: snapped.x - draft.startX, y: snapped.y - draft.startY }
+  );
+  return group
+    .map((item) => ({ token: item, position: positions[item.id]! }))
+    .filter(({ token: item, position }) => item.x !== position.x || item.y !== position.y);
+}
 
 export function tokenCoordinatesFromCenter(scene: TokenGridScene, width: number, height: number, centerX: number, centerY: number): Pick<Token, "x" | "y"> {
   return snappedTokenCoordinates(scene, { width, height }, centerX - width / 2, centerY - height / 2);
@@ -413,24 +455,25 @@ export function tokenFrameChanged(before: TokenFrame, after: TokenFrame): boolea
 }
 
 
-export function snapSceneAxisToGrid(value: number, sceneSize: number, gridSize: number): number {
-  const safeGridSize = Math.max(1, Math.round(gridSize) || 1);
-  return clampSceneCoordinate(Math.round(value / safeGridSize) * safeGridSize, 0, sceneSize);
+export function snapSceneAxisToGrid(value: number, sceneSize: number, gridSize: number, origin = 0): number {
+  return snapScenePointToGrid({ width: sceneSize, height: 1, gridSize, gridType: "square", gridOrigin: { x: origin, y: 0 } }, { x: value, y: 0 }).x;
 }
 
 
 export function tokenResizeFrameFromPoint(scene: TokenGridScene, origin: TokenFrame, handle: TokenResizeHandle, point: VisionPoint): TokenFrame {
-  const minSize = scene.gridType === "gridless" ? 1 : Math.max(1, Math.round(scene.gridSize) || 1);
-  const position = (value: number, sceneSize: number) => scene.gridType === "gridless" ? clampSceneCoordinate(Math.round(value), 0, sceneSize) : snapSceneAxisToGrid(value, sceneSize, scene.gridSize);
+  const freeform = Boolean(scene.gridType && scene.gridType !== "square");
+  const minSize = freeform ? 1 : sceneGridSize(scene);
+  const gridOrigin = sceneGridOrigin(scene);
+  const position = (value: number, sceneSize: number, offset: number) => freeform ? clampSceneCoordinate(value, 0, sceneSize) : snapSceneAxisToGrid(value, sceneSize, scene.gridSize, offset);
   let left = origin.x;
   let top = origin.y;
   let right = origin.x + origin.width;
   let bottom = origin.y + origin.height;
 
-  if (handle.includes("w")) left = position(point.x, scene.width);
-  if (handle.includes("e")) right = position(point.x, scene.width);
-  if (handle.includes("n")) top = position(point.y, scene.height);
-  if (handle.includes("s")) bottom = position(point.y, scene.height);
+  if (handle.includes("w")) left = position(point.x, scene.width, gridOrigin.x);
+  if (handle.includes("e")) right = position(point.x, scene.width, gridOrigin.x);
+  if (handle.includes("n")) top = position(point.y, scene.height, gridOrigin.y);
+  if (handle.includes("s")) bottom = position(point.y, scene.height, gridOrigin.y);
 
   if (handle.includes("w")) left = Math.min(left, right - minSize);
   if (handle.includes("e")) right = Math.max(right, left + minSize);
@@ -443,10 +486,10 @@ export function tokenResizeFrameFromPoint(scene: TokenGridScene, origin: TokenFr
   bottom = clampSceneCoordinate(bottom, top + minSize, scene.height);
 
   return {
-    x: Math.round(left),
-    y: Math.round(top),
-    width: Math.round(right - left),
-    height: Math.round(bottom - top)
+    x: left,
+    y: top,
+    width: right - left,
+    height: bottom - top
   };
 }
 
@@ -466,7 +509,7 @@ export const tokenResizeHandles: Array<{ id: TokenResizeHandle; label: string }>
 export const tokenCornerResizeHandles = tokenResizeHandles.filter((handle) => handle.id.length === 2);
 
 
-export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapAsset; selectedAssetId?: string; assets: MapAsset[]; tokens: Token[]; actors: Actor[]; boardCurrentUserId: string; canSeeAllVitals: boolean; currentTurnTokenIds: string[]; nextTurnTokenIds: string[]; vision?: VisionSnapshot; visionPreviewLabel?: string; selectedTokenId: string; selectedTokenIds: string[]; activeTokenLayer: TokenLayer; fogBrushMode: FogMode | null; annotationTool: AnnotationTool; calibrationPoints?: VisionPoint[]; onCalibrationPoint?(point: VisionPoint): void; templateShape: SceneTemplateShape; visibleAnnotationLayers: Record<SceneAnnotationLayer, boolean>; canDropToken: boolean; canMoveToken: boolean; canUpdateAnnotations: boolean; canResizeToken: boolean; canUpdateTokenLayer: boolean; onSelect(id: string, options?: TokenSelectionOptions): void; onSelectMany(ids: string[], options?: TokenSelectionOptions): void; onSelectBackgroundAsset(assetId: string): void; onClearSelection(): void; onMoved(): Promise<void>; onTokenMovePersist(changes: TokenMovePersistenceChange[]): Promise<void>; onTokenResizePersist(token: Token, frame: TokenFrame): Promise<void>; onTokenMoveCommit(changes: BoardTokenPositionChange[]): void; onTokenResizeCommit(changes: BoardTokenFrameChange[]): void; onTokenLayerCycle(token: Token): Promise<void>; onTokenDrop(payload: TokenDropPayload, point: VisionPoint): Promise<void>; onFogStroke(mode: FogMode, points: VisionPoint[]): Promise<void>; onAnnotationCreate(kind: SceneAnnotationKind, points: VisionPoint[], radius?: number): Promise<void>; onAnnotationMove(annotation: SceneAnnotation, points: VisionPoint[]): Promise<void>; onTogglePortal(wall: Scene["walls"][number]): Promise<void>; selectedOverlay: { type: "annotation" | "wall" | "light"; id: string } | null; onSelectOverlay(next: { type: "annotation" | "wall" | "light"; id: string } | null): void; onZoomBy(delta: number): void }) {
+export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: number; backgroundAsset?: MapAsset; selectedAssetId?: string; assets: MapAsset[]; tokens: Token[]; actors: Actor[]; boardCurrentUserId: string; canSeeAllVitals: boolean; currentTurnTokenIds: string[]; nextTurnTokenIds: string[]; vision?: VisionSnapshot; visionPreviewLabel?: string; selectedTokenId: string; selectedTokenIds: string[]; activeTokenLayer: TokenLayer; fogBrushMode: FogMode | null; annotationTool: AnnotationTool; calibrationPoints?: VisionPoint[]; onCalibrationPoint?(point: VisionPoint): void; templateShape: SceneTemplateShape; visibleAnnotationLayers: Record<SceneAnnotationLayer, boolean>; canDropToken: boolean; canMoveToken: boolean; canUpdateAnnotations: boolean; canResizeToken: boolean; canUpdateTokenLayer: boolean; onSelect(id: string, options?: TokenSelectionOptions): void; onInspectToken(id: string): void; onSelectMany(ids: string[], options?: TokenSelectionOptions): void; onSelectBackgroundAsset(assetId: string): void; onClearSelection(): void; onMoved(): Promise<void>; onTokenMovePersist(changes: TokenMovePersistenceChange[]): Promise<void>; onTokenResizePersist(token: Token, frame: TokenFrame): Promise<void>; onTokenMoveCommit(changes: BoardTokenPositionChange[]): void; onTokenResizeCommit(changes: BoardTokenFrameChange[]): void; onTokenLayerCycle(token: Token): Promise<void>; onTokenDrop(payload: TokenDropPayload, point: VisionPoint): Promise<void>; onFogStroke(mode: FogMode, points: VisionPoint[]): Promise<void>; onAnnotationCreate(kind: SceneAnnotationKind, points: VisionPoint[], radius?: number): Promise<void>; onAnnotationMove(annotation: SceneAnnotation, points: VisionPoint[]): Promise<void>; onTogglePortal(wall: Scene["walls"][number]): Promise<void>; selectedOverlay: { type: "annotation" | "wall" | "light"; id: string } | null; onSelectOverlay(next: { type: "annotation" | "wall" | "light"; id: string } | null): void; onZoomBy(delta: number): void; onTokenTarget?(tokenId: string, targeted: boolean): void | Promise<void> }) {
   const mutationAction = useRetryableAction(props.scene.id);
   const calibrationActive = Boolean(props.onCalibrationPoint);
   const [tokenDrag, setTokenDrag] = useState<TokenDragDraft | null>(null);
@@ -502,6 +545,7 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
         .map(({ token }) => token),
     [tokens]
   );
+  const boardTokenById = useMemo(() => new Map(tokens.map((token) => [token.id, token])), [tokens]);
   const orderedActiveLayerTokens = useMemo(() => orderedTokens.filter((token) => activeLayerTokenIds.has(token.id)), [orderedTokens, activeLayerTokenIds]);
   const selectedTokenIdSet = useMemo(() => new Set(props.selectedTokenIds), [props.selectedTokenIds]);
   const selectedViewportToken = useMemo(() => tokens.find((token) => token.id === props.selectedTokenId), [tokens, props.selectedTokenId]);
@@ -546,7 +590,7 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
       visibleAnnotations.map((annotation) => {
         const points = annotationMoveDraft?.annotationId === annotation.id ? annotationMoveDraft.points : annotationOverrides[annotation.id];
         if (!points) return annotation;
-        const radius = annotation.kind === "template" && points.length >= 2 ? Math.round(distanceBetween(points[0]!, points[1]!)) : annotation.radius;
+        const radius = annotation.kind === "template" && points.length >= 2 && !annotationTranslationDelta(annotation.points, points) ? Math.round(distanceBetween(points[0]!, points[1]!)) : annotation.radius;
         return { ...annotation, points, radius };
       }),
     [visibleAnnotations, annotationMoveDraft, annotationOverrides]
@@ -555,7 +599,11 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
     () => displayAnnotations.filter((annotation) => !(annotation.kind === "ping" && annotation.points[0] && localPings.some((ping) => Math.hypot(ping.x - annotation.points[0]!.x, ping.y - annotation.points[0]!.y) < 12))),
     [displayAnnotations, localPings]
   );
-  const vision = props.vision?.sceneId === props.scene.id ? props.vision : undefined;
+  // A reconciled snapshot arrives as new objects even when nothing changed; keep the old references then, so the memoised layers below skip.
+  const vision = useStructurallyStable(props.vision?.sceneId === props.scene.id ? props.vision : undefined);
+  const sceneWalls = useStructurallyStable(props.scene.walls);
+  const sceneLights = useStructurallyStable(props.scene.lights);
+  const difficultTerrain = useStructurallyStable(props.scene.difficultTerrain ?? noDifficultTerrain);
   const lightPolygons = useMemo(() => vision?.polygons.filter((polygon) => polygon.source === "light" && polygon.lightingEffect !== "darkness" && polygon.points.length > 2) ?? [], [vision]);
   const darknessPolygons = useMemo(() => vision?.polygons.filter((polygon) => polygon.lightingEffect === "darkness" && polygon.points.length > 2) ?? [], [vision]);
   const nonmagicalDarknessPolygons = useMemo(() => darknessPolygons.filter((polygon) => !polygon.magical), [darknessPolygons]);
@@ -576,6 +624,18 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
     "--map-zoom": String(props.zoom)
   } as CSSProperties;
   const showGridOverlay = sceneGridOverlayVisible(props.scene);
+  const [mapRenderer] = useState(preferredMapRenderer);
+  const mapImageRef = useRef<HTMLImageElement>(null);
+  const canvasLayers = useBoardCanvasLayers({
+    enabled: mapRenderer === "canvas",
+    viewportRef,
+    boardRef,
+    imageRef: mapImageRef,
+    imageKey: props.backgroundAsset ? `${props.backgroundAsset.id}:${props.backgroundAsset.updatedAt}` : undefined,
+    scene: props.scene,
+    boardWidth: boardDimensions.width,
+    boardHeight: boardDimensions.height
+  });
 
   useEffect(() => {
     setKeyboardCursor({ x: Math.round(props.scene.width / 2), y: Math.round(props.scene.height / 2) });
@@ -653,15 +713,234 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
     });
   }, [tokens]);
 
+  // --- Map zoom, pan and token menu gestures ---------------------------------
+  const [tokenMenu, setTokenMenu] = useState<{ tokenId: string; x: number; y: number } | null>(null);
+  const tokenMenuOpenerRef = useRef<HTMLElement | null>(null);
+  const closeTokenMenu = useCallback((restoreFocus = false) => {
+    setTokenMenu(null);
+    if (restoreFocus && tokenMenuOpenerRef.current?.isConnected) tokenMenuOpenerRef.current.focus({ preventScroll: true });
+  }, []);
+  /** Zoom last requested from the parent, quantised the same way the parent stores it. */
+  const zoomRequestRef = useRef(props.zoom);
+  /** Unquantised zoom, so many small trackpad or pinch deltas add up instead of rounding away. */
+  const zoomPreciseRef = useRef(props.zoom);
+  const zoomAnchorRef = useRef<ZoomAnchor | null>(null);
+  const zoomAnchorReleaseTimerRef = useRef<number | undefined>(undefined);
+  const skipTokenRecentreRef = useRef(false);
+  const previousBoardLayoutRef = useRef<{ sceneId: string; zoom: number; left: number; top: number; width: number; height: number; scroll: ViewportPoint; viewport: SceneViewportSize } | null>(null);
+  const onZoomByRef = useRef(props.onZoomBy);
+  onZoomByRef.current = props.onZoomBy;
+  const touchPointsRef = useRef(new Map<number, ViewportPoint>());
+  const pinchRef = useRef<{ pointerIds: [number, number]; startDistance: number; startZoom: number; u: number; v: number } | null>(null);
+  const secondaryPanRef = useRef<{ pointerId: number; start: ViewportPoint; startScrollLeft: number; startScrollTop: number; moved: boolean; tokenId?: string } | null>(null);
+
+  function applyZoomAnchor() {
+    const anchor = zoomAnchorRef.current;
+    const viewport = viewportRef.current;
+    const board = boardRef.current;
+    if (!anchor || !viewport || !board) return;
+    const delta = anchorScrollDelta(board.getBoundingClientRect(), anchor);
+    viewport.scrollLeft += delta.x;
+    viewport.scrollTop += delta.y;
+  }
+
+  /** Zooms to `nextZoom` while keeping the anchored board point under its screen position. Uses refs only, so it is safe to call from long-lived listeners. */
+  function requestZoom(nextZoom: number, anchor: ZoomAnchor) {
+    zoomPreciseRef.current = Math.max(battleMapZoomMin, Math.min(battleMapZoomMax, nextZoom));
+    const target = clampBattleMapZoom(zoomPreciseRef.current);
+    zoomAnchorRef.current = anchor;
+    // Zooming can add or remove scrollbars, which resizes the board again a frame
+    // later. Hold the anchor briefly so that follow-up layout keeps the point too.
+    window.clearTimeout(zoomAnchorReleaseTimerRef.current);
+    zoomAnchorReleaseTimerRef.current = window.setTimeout(() => {
+      if (!pinchRef.current) zoomAnchorRef.current = null;
+    }, zoomAnchorHoldMs);
+    if (target === zoomRequestRef.current) {
+      applyZoomAnchor();
+      return;
+    }
+    const delta = target - zoomRequestRef.current;
+    zoomRequestRef.current = target;
+    skipTokenRecentreRef.current = true;
+    onZoomByRef.current(delta);
+  }
+
+  useLayoutEffect(() => {
+    zoomRequestRef.current = props.zoom;
+    if (clampBattleMapZoom(zoomPreciseRef.current) !== props.zoom) zoomPreciseRef.current = props.zoom;
+  }, [props.zoom]);
+
+  useLayoutEffect(() => {
+    const viewport = viewportRef.current;
+    const board = boardRef.current;
+    if (!viewport || !board) return;
+    const previous = previousBoardLayoutRef.current;
+    const layout = { left: board.offsetLeft, top: board.offsetTop, width: board.offsetWidth, height: board.offsetHeight };
+    if (zoomAnchorRef.current) {
+      applyZoomAnchor();
+    } else if (previous && previous.sceneId === props.scene.id && previous.zoom !== props.zoom && !selectedViewportToken) {
+      // Toolbar zoom has no pointer to anchor to: keep the centre of the view where it was.
+      // Reading the live offsets here is too late: layout already clamped them when the board shrank.
+      const scroll = scrollKeepingViewCentre(previous, layout, previous.scroll, previous.viewport);
+      viewport.scrollLeft = scroll.x;
+      viewport.scrollTop = scroll.y;
+    }
+    previousBoardLayoutRef.current = { sceneId: props.scene.id, zoom: props.zoom, ...layout, scroll: { x: viewport.scrollLeft, y: viewport.scrollTop }, viewport: { width: viewport.clientWidth, height: viewport.clientHeight } };
+  }, [boardDimensions.height, boardDimensions.width, props.zoom, props.scene.id]);
+
+  useEffect(() => {
+    // React registers wheel listeners as passive, which cannot stop the page from scrolling or zooming.
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const handleWheel = (event: WheelEvent) => {
+      const board = boardRef.current;
+      if (!board || !wheelEventZoomsMap(event)) return;
+      event.preventDefault();
+      requestZoom(zoomPreciseRef.current * wheelZoomFactor(event.deltaY, event.deltaMode), zoomAnchorAt(board.getBoundingClientRect(), event.clientX, event.clientY));
+    };
+    viewport.addEventListener("wheel", handleWheel, { passive: false });
+    return () => viewport.removeEventListener("wheel", handleWheel);
+  }, []);
+
+  useEffect(() => {
+    setTokenMenu(null);
+  }, [props.scene.id, props.zoom, props.readOnly]);
+
+  function openTokenMenu(tokenId: string, position: ViewportPoint) {
+    if (props.readOnly || calibrationActive) return;
+    tokenDragRef.current = null;
+    setTokenDrag(null);
+    tokenResizeRef.current = null;
+    setTokenResize(null);
+    tokenMenuOpenerRef.current = boardRef.current?.querySelector<HTMLElement>(`[data-token-id="${CSS.escape(tokenId)}"]`) ?? null;
+    setTokenMenu({ tokenId, x: position.x, y: position.y });
+  }
+
+  function cancelSinglePointerGestures(pointerId: number) {
+    cancelSelectionBox(pointerId);
+    cancelMapPan(pointerId);
+    cancelTokenDrag(pointerId);
+    cancelTokenResize(pointerId);
+    if (annotationDraftRef.current?.pointerId === pointerId) {
+      annotationDraftRef.current = null;
+      setAnnotationDraft(null);
+    }
+    if (fogStrokeRef.current?.pointerId === pointerId) {
+      fogStrokeRef.current = null;
+      setFogStroke(null);
+    }
+    if (annotationMoveDraftRef.current?.pointerId === pointerId) {
+      annotationMoveDraftRef.current = null;
+      setAnnotationMoveDraft(null);
+    }
+  }
+
+  // The viewport sees every pointer event first (capture phase), so a second
+  // finger or the right mouse button can take over from token and board gestures.
+  function handleViewportPointerDownCapture(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.pointerType === "touch") {
+      const touches = touchPointsRef.current;
+      touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (touches.size > 2) {
+        event.stopPropagation();
+        return;
+      }
+      if (touches.size < 2) return;
+      const board = boardRef.current;
+      const [[firstId, first], [secondId, second]] = [...touches.entries()] as [[number, ViewportPoint], [number, ViewportPoint]];
+      const startDistance = pointerDistance(first, second);
+      if (!board || startDistance <= 0) return;
+      cancelSinglePointerGestures(firstId);
+      cancelSinglePointerGestures(secondId);
+      const midpoint = pointerMidpoint(first, second);
+      const anchor = zoomAnchorAt(board.getBoundingClientRect(), midpoint.x, midpoint.y);
+      pinchRef.current = { pointerIds: [firstId, secondId], startDistance, startZoom: zoomPreciseRef.current, u: anchor.u, v: anchor.v };
+      event.stopPropagation();
+      return;
+    }
+    if (event.button !== 2) return;
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const tokenElement = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-token-id]") : null;
+    secondaryPanRef.current = {
+      pointerId: event.pointerId,
+      start: { x: event.clientX, y: event.clientY },
+      startScrollLeft: viewport.scrollLeft,
+      startScrollTop: viewport.scrollTop,
+      moved: false,
+      tokenId: tokenElement?.dataset.tokenId
+    };
+    viewport.setPointerCapture(event.pointerId);
+    event.stopPropagation();
+  }
+
+  function handleViewportPointerMoveCapture(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.pointerType === "touch") {
+      const touches = touchPointsRef.current;
+      if (!touches.has(event.pointerId)) return;
+      touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      const pinch = pinchRef.current;
+      if (!pinch || !pinch.pointerIds.includes(event.pointerId)) return;
+      const first = touches.get(pinch.pointerIds[0]);
+      const second = touches.get(pinch.pointerIds[1]);
+      if (first && second) {
+        // Anchoring the starting board point to the moving midpoint pans and zooms in one gesture.
+        const midpoint = pointerMidpoint(first, second);
+        requestZoom(pinchZoom(pinch.startZoom, pinch.startDistance, pointerDistance(first, second)), { u: pinch.u, v: pinch.v, clientX: midpoint.x, clientY: midpoint.y });
+      }
+      event.stopPropagation();
+      return;
+    }
+    const pan = secondaryPanRef.current;
+    if (!pan || pan.pointerId !== event.pointerId) return;
+    const current = { x: event.clientX, y: event.clientY };
+    if (!pan.moved && exceedsPanThreshold(pan.start, current)) {
+      pan.moved = true;
+      setMapPanning(true);
+    }
+    const viewport = viewportRef.current;
+    if (pan.moved && viewport) {
+      viewport.scrollLeft = pan.startScrollLeft - (current.x - pan.start.x);
+      viewport.scrollTop = pan.startScrollTop - (current.y - pan.start.y);
+    }
+    event.stopPropagation();
+  }
+
+  function handleViewportPointerEndCapture(event: ReactPointerEvent<HTMLDivElement>, cancelled: boolean) {
+    if (event.pointerType === "touch") {
+      touchPointsRef.current.delete(event.pointerId);
+      if (pinchRef.current?.pointerIds.includes(event.pointerId)) {
+        pinchRef.current = null;
+        zoomAnchorRef.current = null;
+        event.stopPropagation();
+      }
+      return;
+    }
+    const pan = secondaryPanRef.current;
+    if (!pan || pan.pointerId !== event.pointerId) return;
+    secondaryPanRef.current = null;
+    if (pan.moved) setMapPanning(false);
+    // A right-click that did not turn into a drag opens the token menu on release.
+    else if (!cancelled && pan.tokenId) openTokenMenu(pan.tokenId, { x: event.clientX, y: event.clientY });
+    event.stopPropagation();
+  }
+
+  const tokenMenuToken = tokenMenu ? tokens.find((token) => token.id === tokenMenu.tokenId) : undefined;
+
   useEffect(() => {
     const token = selectedViewportToken;
-    if (!token) return;
+    // A wheel or pinch zoom keeps the point under the pointer fixed; do not pull the view back to the selection.
+    const zoomedAtPointer = skipTokenRecentreRef.current;
+    skipTokenRecentreRef.current = false;
+    if (zoomedAtPointer || !token || tokenDragRef.current || tokenResizeRef.current) return;
     const frame = window.requestAnimationFrame(() => {
+      if (tokenDragRef.current || tokenResizeRef.current) return;
       const viewport = viewportRef.current;
       const board = boardRef.current;
       if (!viewport || !board || board.clientWidth <= 0 || board.clientHeight <= 0) return;
-      const tokenCenterX = ((token.x + token.width / 2) / props.scene.width) * board.clientWidth;
-      const tokenCenterY = ((token.y + token.height / 2) / props.scene.height) * board.clientHeight;
+      const visibleFrame = renderedTokenFrame(token);
+      const tokenCenterX = ((visibleFrame.x + visibleFrame.width / 2) / props.scene.width) * board.clientWidth;
+      const tokenCenterY = ((visibleFrame.y + visibleFrame.height / 2) / props.scene.height) * board.clientHeight;
       const maxScrollLeft = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
       const maxScrollTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
       const compactViewport = viewport.clientWidth < 360 || viewport.clientHeight < 220;
@@ -797,10 +1076,6 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
     return boundedTokenCoordinates(props.scene, token, x, y);
   }
 
-  function snappedTokenPosition(token: Token, x: number, y: number): Pick<TokenDragDraft, "x" | "y"> {
-    return snappedTokenCoordinates(props.scene, token, x, y);
-  }
-
   function renderedTokenFrame(token: Token): TokenFrame {
     return tokenFrameOverrides[token.id] ?? tokenFrame(token);
   }
@@ -824,7 +1099,7 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
     }
     const deltaX = clampSceneCoordinate(x - draft.startX, minDeltaX, maxDeltaX);
     const deltaY = clampSceneCoordinate(y - draft.startY, minDeltaY, maxDeltaY);
-    return { x: Math.round(draft.startX + deltaX), y: Math.round(draft.startY + deltaY) };
+    return { x: draft.startX + deltaX, y: draft.startY + deltaY };
   }
 
   function startTokenDrag(token: Token, event: ReactPointerEvent<HTMLButtonElement>) {
@@ -857,15 +1132,15 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
       startY: start.y,
       x: start.x,
       y: start.y,
-      origins
+      origins,
+      selectionOptions: {
+        additive: event.shiftKey || event.ctrlKey || event.metaKey,
+        preserveExisting: selectedTokenIdSet.has(token.id) && props.selectedTokenIds.length > 1
+      }
     };
     tokenDragRef.current = next;
     setTokenDrag(next);
     pointerSelectedTokenRef.current = token.id;
-    props.onSelect(token.id, {
-      additive: event.shiftKey || event.ctrlKey || event.metaKey,
-      preserveExisting: selectedTokenIdSet.has(token.id) && props.selectedTokenIds.length > 1
-    });
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -887,6 +1162,7 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
 
   function cancelTokenDrag(pointerId: number) {
     if (tokenDragRef.current?.pointerId !== pointerId) return;
+    pointerSelectedTokenRef.current = null;
     tokenDragRef.current = null;
     setTokenDrag(null);
   }
@@ -894,25 +1170,11 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
   function finishTokenDrag(pointerId: number) {
     const current = tokenDragRef.current;
     if (!current || current.pointerId !== pointerId) return;
-    const token = tokens.find((item) => item.id === current.tokenId);
-    if (!token) {
-      tokenDragRef.current = null;
-      setTokenDrag(null);
-      return;
-    }
-    const snapped = snappedTokenPosition(token, current.x, current.y);
-    const deltaX = snapped.x - current.startX;
-    const deltaY = snapped.y - current.startY;
-    const movedTokens = Object.entries(current.origins)
-      .flatMap(([tokenId, origin]) => {
-        const movedToken = tokens.find((item) => item.id === tokenId);
-        if (!movedToken) return [];
-        const next = snappedTokenCoordinates(props.scene, movedToken, origin.x + deltaX, origin.y + deltaY);
-        return [{ token: movedToken, position: next }];
-      })
-      .filter(({ token: movedToken, position }) => movedToken.x !== position.x || movedToken.y !== position.y);
+    const movedTokens = finishedTokenDragChanges(props.scene, tokens, current);
     tokenDragRef.current = null;
     setTokenDrag(null);
+    // Selection may open the inspector or recenter the board; wait until pointer coordinates are final.
+    if (tokens.some((token) => token.id === current.tokenId)) props.onSelect(current.tokenId, current.selectionOptions);
     if (movedTokens.length === 0) {
       return;
     }
@@ -945,13 +1207,12 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
   function startTokenResize(token: Token, handle: TokenResizeHandle, event: ReactPointerEvent<HTMLElement>) {
     if (calibrationActive || !props.canResizeToken || !activeLayerTokenIds.has(token.id) || props.fogBrushMode || props.annotationTool) return;
     const origin = renderedTokenFrame(token);
-    const next = { tokenId: token.id, pointerId: event.pointerId, handle, origin, frame: origin };
+    const next = { tokenId: token.id, pointerId: event.pointerId, handle, origin, frame: origin, selectionOptions: { preserveExisting: selectedTokenIdSet.has(token.id) } };
     tokenResizeRef.current = next;
     setTokenResize(next);
     tokenDragRef.current = null;
     setTokenDrag(null);
     pointerSelectedTokenRef.current = token.id;
-    props.onSelect(token.id, { preserveExisting: selectedTokenIdSet.has(token.id) });
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -972,6 +1233,7 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
 
   function cancelTokenResize(pointerId: number) {
     if (tokenResizeRef.current?.pointerId !== pointerId) return;
+    pointerSelectedTokenRef.current = null;
     tokenResizeRef.current = null;
     setTokenResize(null);
   }
@@ -982,7 +1244,9 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
     const token = tokens.find((item) => item.id === current.tokenId);
     tokenResizeRef.current = null;
     setTokenResize(null);
-    if (!token || !tokenFrameChanged(tokenFrame(token), current.frame)) return;
+    if (!token) return;
+    props.onSelect(token.id, current.selectionOptions);
+    if (!tokenFrameChanged(tokenFrame(token), current.frame)) return;
     const before = tokenFrame(token);
     const after = current.frame;
     setTokenFrameOverrides((overrides) => ({
@@ -1049,26 +1313,10 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
     void mutationAction.runAction(`Create ${titleCaseLabel(kind)}`, () => props.onAnnotationCreate(kind, points, radius));
   }
 
-  function editedAnnotationPoints(draft: AnnotationMoveDraft, point: VisionPoint): VisionPoint[] {
-    if (draft.mode === "point" && draft.pointIndex !== undefined) {
-      return draft.originalPoints.map((annotationPoint, index) =>
-        index === draft.pointIndex
-          ? { x: Math.max(0, Math.min(props.scene.width, point.x)), y: Math.max(0, Math.min(props.scene.height, point.y)) }
-          : annotationPoint
-      );
-    }
-    const deltaX = point.x - draft.start.x;
-    const deltaY = point.y - draft.start.y;
-    return draft.originalPoints.map((annotationPoint) => ({
-      x: Math.max(0, Math.min(props.scene.width, Math.round(annotationPoint.x + deltaX))),
-      y: Math.max(0, Math.min(props.scene.height, Math.round(annotationPoint.y + deltaY)))
-    }));
-  }
-
   function startAnnotationMove(annotation: SceneAnnotation, clientX: number, clientY: number, pointerId: number, mode: AnnotationMoveDraft["mode"], pointIndex?: number) {
     const point = boardPoint(clientX, clientY);
     if (!point) return;
-    const next = { annotationId: annotation.id, pointerId, mode, pointIndex, start: point, current: point, originalPoints: annotation.points, points: annotation.points };
+    const next = { annotationId: annotation.id, pointerId, mode, pointIndex, start: point, current: point, originalPoints: annotation.points, points: annotation.points, snapToGrid: annotation.snapToGrid };
     annotationMoveDraftRef.current = next;
     setAnnotationMoveDraft(next);
   }
@@ -1078,7 +1326,7 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
     if (!current || current.pointerId !== pointerId) return;
     const point = boardPoint(clientX, clientY);
     if (!point) return;
-    const next = { ...current, current: point, points: editedAnnotationPoints(current, point) };
+    const next = { ...current, current: point, points: editedAnnotationPoints(props.scene, current, point) };
     annotationMoveDraftRef.current = next;
     setAnnotationMoveDraft(next);
   }
@@ -1104,13 +1352,15 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
     void mutationAction.runAction(`Move ${titleCaseLabel(annotation.kind)}`, async () => {
       try {
         await props.onAnnotationMove(annotation, current.points);
-      } catch (error) {
+      } finally {
+        // The callback applies the authoritative scene before resolving. Drop
+        // this preview even if normalization changed it, but keep newer drags.
         setAnnotationOverrides((overrides) => {
+          if (overrides[annotation.id] !== current.points) return overrides;
           const next = { ...overrides };
           delete next[annotation.id];
           return next;
         });
-        throw error;
       }
     });
   }
@@ -1293,17 +1543,93 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
     ));
   }
 
+  // Stable handler objects for the memoised tokens and structure handles. Each method runs against the latest committed render.
+  const tokenHandlers = useStableHandlers<BoardTokenHandlers>({
+    contextMenu(tokenId, event) {
+      event.preventDefault();
+      event.stopPropagation();
+      // A mouse right-click opens the menu on release, so a right-drag can pan instead.
+      // Keyboard (Shift+F10, Menu key) and touch long-press open it here.
+      if (event.nativeEvent.button === 2) return;
+      const rect = event.currentTarget.getBoundingClientRect();
+      openTokenMenu(tokenId, { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+    },
+    click(tokenId, event) {
+      if (calibrationActive || props.readOnly) return;
+      if (!activeLayerTokenIds.has(tokenId)) return;
+      if (pointerSelectedTokenRef.current === tokenId) {
+        pointerSelectedTokenRef.current = null;
+        return;
+      }
+      props.onSelect(tokenId, { additive: event.shiftKey || event.ctrlKey || event.metaKey, preserveExisting: selectedTokenIdSet.has(tokenId) && props.selectedTokenIds.length > 1 });
+    },
+    keyDown(tokenId, event) {
+      const token = boardTokenById.get(tokenId);
+      if (token) moveTokenFromKeyboard(token, event);
+    },
+    pointerDown(tokenId, event) {
+      setKeyboardCursorVisible(false);
+      if (!activeLayerTokenIds.has(tokenId)) return;
+      if (props.readOnly || calibrationActive || props.fogBrushMode || props.annotationTool) return;
+      const token = boardTokenById.get(tokenId);
+      if (token) startTokenDrag(token, event);
+    },
+    pointerMove(tokenId, event) {
+      if (tokenDragRef.current?.tokenId !== tokenId || tokenDragRef.current.pointerId !== event.pointerId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      moveTokenDrag(event.clientX, event.clientY, event.pointerId);
+    },
+    pointerUp(tokenId, event) {
+      if (tokenDragRef.current?.tokenId !== tokenId || tokenDragRef.current.pointerId !== event.pointerId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      finishTokenDrag(event.pointerId);
+    },
+    pointerCancel(tokenId, event) {
+      if (tokenDragRef.current?.tokenId !== tokenId || tokenDragRef.current.pointerId !== event.pointerId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      cancelTokenDrag(event.pointerId);
+    },
+    lostPointerCapture(tokenId, event) {
+      if (tokenDragRef.current?.tokenId === tokenId && tokenDragRef.current.pointerId === event.pointerId) cancelTokenDrag(event.pointerId);
+    },
+    resizePointerDown(tokenId, handleId, event) {
+      event.stopPropagation();
+      const token = boardTokenById.get(tokenId);
+      if (token) startTokenResize(token, handleId as TokenResizeHandle, event);
+    }
+  });
+  const structureHandlers = useStableHandlers<BoardStructureHandlers>({
+    selectWall(wallId) {
+      props.onClearSelection();
+      props.onSelectOverlay({ type: "wall", id: wallId });
+    },
+    togglePortal(wallId) {
+      const wall = props.scene.walls.find((entry) => entry.id === wallId);
+      if (wall) void props.onTogglePortal(wall);
+    },
+    selectLight(lightId) {
+      props.onClearSelection();
+      props.onSelectOverlay({ type: "light", id: lightId });
+    }
+  });
+
   return (
     <div
       ref={viewportRef}
       className={`scene-viewport ${mapPanning ? "panning" : ""}`}
       role="region"
       aria-label={`${props.scene.name} battle map viewport`}
-      onWheel={(event) => {
-        if (!event.ctrlKey && !event.metaKey) return;
-        event.preventDefault();
-        props.onZoomBy(event.deltaY > 0 ? -battleMapZoomStep : battleMapZoomStep);
+      onScroll={(event) => {
+        if (previousBoardLayoutRef.current) previousBoardLayoutRef.current.scroll = { x: event.currentTarget.scrollLeft, y: event.currentTarget.scrollTop };
       }}
+      onPointerDownCapture={handleViewportPointerDownCapture}
+      onPointerMoveCapture={handleViewportPointerMoveCapture}
+      onPointerUpCapture={(event) => handleViewportPointerEndCapture(event, false)}
+      onPointerCancelCapture={(event) => handleViewportPointerEndCapture(event, true)}
+      onContextMenu={(event) => event.preventDefault()}
     >
       <RetryableActionNotice
         operation={mutationAction.operation}
@@ -1312,21 +1638,22 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
         className="scene-action-failure"
       />
       <p id={keyboardInstructionsId} className="sr-only">
-        Focus a movable token and use arrow keys to move it by one grid square, or hold Shift for one-pixel movement. For measurement, drawing, fog, and calibration tools, focus the board, use arrow keys to position the cursor, Enter or Space to start and finish, and Escape to cancel.
+        {props.readOnly ? "Read-only player map. Scroll to zoom and drag to pan." : "Scroll to zoom the map and right-drag to pan it. Focus a movable token and use arrow keys to move it by one grid square, or hold Shift for one-pixel movement; press Shift+F10 for token actions. For measurement, drawing, fog, and calibration tools, focus the board, use arrow keys to position the cursor, Enter or Space to start and finish, and Escape to cancel."}
       </p>
       <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">{keyboardStatus}</span>
       <div
         ref={boardRef}
-        data-agent-board-root="true"
+        data-agent-board-root={props.readOnly ? undefined : "true"}
         data-scene-id={props.scene.id}
+        data-map-renderer={mapRenderer}
         className={`scene-board ${!calibrationActive && (props.fogBrushMode || props.annotationTool) ? "brush-mode" : ""} ${calibrationActive ? "grid-calibration-mode" : ""} ${tokenDrag && !tokenDrag.settling ? "token-drag-active" : ""} ${tokenResize ? "token-resize-active" : ""} ${selectionBox ? "token-selecting" : ""} ${dropActive ? "drop-active" : ""} ${mapPanning ? "map-panning" : ""}`}
         style={boardStyle}
         role="group"
-        aria-label={`${props.scene.name} interactive battle map`}
+        aria-label={`${props.scene.name} ${props.readOnly ? "read-only player map" : "interactive battle map"}`}
         aria-describedby={keyboardInstructionsId}
-        aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Enter Space Escape"
+        aria-keyshortcuts={props.readOnly ? undefined : "ArrowUp ArrowDown ArrowLeft ArrowRight Enter Space Escape"}
         tabIndex={0}
-        onKeyDown={handleBoardKeyDown}
+        onKeyDown={props.readOnly ? undefined : handleBoardKeyDown}
         onPointerDownCapture={takeOverBoardWithPointer}
       onDragEnter={(event) => {
         if (calibrationActive || !props.canDropToken || props.fogBrushMode || props.annotationTool || !hasTokenDropData(event.dataTransfer)) return;
@@ -1355,6 +1682,7 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
       onPointerDown={(event) => {
         const point = boardPoint(event.clientX, event.clientY);
         if (!point) return;
+        if (props.readOnly) { startMapPan(event); return; }
         if (calibrationActive) {
           if (event.button === 0) {
             event.preventDefault();
@@ -1381,7 +1709,8 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
           return;
         }
         if (!props.fogBrushMode) {
-          startSelectionBox(event, point);
+          if (event.pointerType === "touch") startMapPan(event);
+          else startSelectionBox(event, point);
           return;
         }
         event.currentTarget.setPointerCapture(event.pointerId);
@@ -1455,7 +1784,8 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
       }}
     >
       {props.visionPreviewLabel && <div className="player-vision-preview-badge" role="status">Player vision: {props.visionPreviewLabel}</div>}
-      {props.backgroundAsset && <img className="scene-map" src={assetBlobUrl(props.backgroundAsset)} alt="" draggable={false} />}
+      {props.backgroundAsset && <img ref={mapImageRef} className="scene-map" src={assetBlobUrl(props.backgroundAsset)} alt="" draggable={false} />}
+      {canvasLayers.mapCanvas}
       {props.calibrationPoints && props.calibrationPoints.length > 0 && (
         <svg className="grid-calibration-overlay" viewBox={`0 0 ${props.scene.width} ${props.scene.height}`} preserveAspectRatio="none" aria-hidden="true">
           {props.calibrationPoints.length === 2 && <line x1={props.calibrationPoints[0]!.x} y1={props.calibrationPoints[0]!.y} x2={props.calibrationPoints[1]!.x} y2={props.calibrationPoints[1]!.y} />}
@@ -1466,11 +1796,12 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
         <div
           className="grid-lines"
           style={{
-            backgroundSize: `${(props.scene.gridSize / props.scene.width) * 100}% ${(props.scene.gridSize / props.scene.height) * 100}%`
+            backgroundSize: `${(sceneGridSize(props.scene) / props.scene.width) * 100}% ${(sceneGridSize(props.scene) / props.scene.height) * 100}%`,
+            backgroundPosition: `${sceneGridOrigin(props.scene).x / props.scene.width * boardDimensions.width}px ${sceneGridOrigin(props.scene).y / props.scene.height * boardDimensions.height}px`
           }}
         />
       )}
-      {props.backgroundAsset && props.activeTokenLayer === "map" && !calibrationActive && !props.fogBrushMode && !props.annotationTool && (
+      {!props.readOnly && props.backgroundAsset && props.activeTokenLayer === "map" && !calibrationActive && !props.fogBrushMode && !props.annotationTool && (
         <button
           className={`scene-map-hitbox ${props.selectedAssetId === props.backgroundAsset.id ? "selected" : ""}`}
           type="button"
@@ -1499,45 +1830,20 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
           aria-hidden="true"
         />
       ))}
-      {lightPolygons.length > 0 && (
-        <svg className="lighting-layer" viewBox={`0 0 ${props.scene.width} ${props.scene.height}`} aria-hidden="true">
-          {lightPolygons.map((polygon) => (
-            <polygon key={polygon.id} className={lightPolygonClassName(polygon)} points={polygonPoints(polygon)} style={{ fill: polygon.color ?? "#facc15", opacity: polygon.opacity ?? 0.22 }} />
-          ))}
-        </svg>
-      )}
-      {darknessPolygons.length > 0 && (
-        <svg className="darkness-layer" viewBox={`0 0 ${props.scene.width} ${props.scene.height}`} aria-hidden="true">
-          <defs>
-            <mask id={mundaneDarknessMaskId} maskUnits="userSpaceOnUse">
-              <rect width={props.scene.width} height={props.scene.height} fill="black" />
-              {nonmagicalDarknessPolygons.map((polygon) => <polygon key={`${polygon.id}-mundane-darkness`} points={polygonPoints(polygon)} fill="white" />)}
-              {nonmagicalDarknessBypassPolygons.map((polygon) => <polygon key={`${polygon.id}-mundane-bypass`} points={polygonPoints(polygon)} fill="black" />)}
-            </mask>
-            <mask id={magicalDarknessMaskId} maskUnits="userSpaceOnUse">
-              <rect width={props.scene.width} height={props.scene.height} fill="black" />
-              {magicalDarknessPolygons.map((polygon) => <polygon key={`${polygon.id}-magical-darkness`} points={polygonPoints(polygon)} fill="white" />)}
-              {magicalDarknessBypassPolygons.map((polygon) => <polygon key={`${polygon.id}-magical-bypass`} points={polygonPoints(polygon)} fill="black" />)}
-            </mask>
-          </defs>
-          {nonmagicalDarknessPolygons.length > 0 && <rect className="darkness-fill mundane" width={props.scene.width} height={props.scene.height} mask={`url(#${mundaneDarknessMaskId})`} />}
-          {magicalDarknessPolygons.length > 0 && <rect className="darkness-fill magical" width={props.scene.width} height={props.scene.height} mask={`url(#${magicalDarknessMaskId})`} />}
-        </svg>
-      )}
-      {(props.scene.difficultTerrain?.length ?? 0) > 0 && (
-        <svg className="difficult-terrain-layer" viewBox={`0 0 ${props.scene.width} ${props.scene.height}`} aria-label="Authored difficult terrain">
-          {(props.scene.difficultTerrain ?? []).map((region) => (
-            <polygon key={region.id} points={region.points.map((point) => `${point.x},${point.y}`).join(" ")} style={{ fill: region.color ?? "#d97706" }}>
-              <title>{region.label}</title>
-            </polygon>
-          ))}
-        </svg>
-      )}
-      {props.scene.walls.map((wall) => (
-        <svg className={`wall-layer ${wall.kind ?? "wall"} ${wall.open ? "open" : "closed"}`} key={wall.id} viewBox={`0 0 ${props.scene.width} ${props.scene.height}`}>
-          <line x1={wall.x1} y1={wall.y1} x2={wall.x2} y2={wall.y2} />
-        </svg>
-      ))}
+      <BoardLightingLayer width={props.scene.width} height={props.scene.height} polygons={lightPolygons} />
+      <BoardDarknessLayer
+        width={props.scene.width}
+        height={props.scene.height}
+        present={darknessPolygons.length > 0}
+        mundane={nonmagicalDarknessPolygons}
+        magical={magicalDarknessPolygons}
+        mundaneBypass={nonmagicalDarknessBypassPolygons}
+        magicalBypass={magicalDarknessBypassPolygons}
+        mundaneMaskId={mundaneDarknessMaskId}
+        magicalMaskId={magicalDarknessMaskId}
+      />
+      <BoardDifficultTerrainLayer width={props.scene.width} height={props.scene.height} regions={difficultTerrain} />
+      <BoardWallLayer width={props.scene.width} height={props.scene.height} walls={sceneWalls} />
       {(renderedAnnotations.length > 0 || localPings.length > 0) && (
         <svg className="annotation-layer" viewBox={`0 0 ${props.scene.width} ${props.scene.height}`} aria-label="Scene annotations">
           {renderedAnnotations.map((annotation) => (
@@ -1601,74 +1907,20 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
           )}
         </div>
       )}
-      {props.canUpdateAnnotations && !calibrationActive && !props.fogBrushMode && !props.annotationTool && (props.scene.walls.length > 0 || props.scene.lights.length > 0) && (
-        <div className="annotation-handles structure-handles" aria-label="Wall and light handles">
-          {props.scene.walls.map((wall) => (
-            <button
-              key={`wall-${wall.id}`}
-              className={`structure-handle ${wall.kind === "terrain" ? "terrain-handle" : wall.kind === "door" ? "door-handle" : wall.kind === "window" ? "window-handle" : "wall-handle"} ${wall.open ? "open" : "closed"} ${props.selectedOverlay?.type === "wall" && props.selectedOverlay.id === wall.id ? "selected" : ""}`}
-              type="button"
-              style={{ left: `${((wall.x1 + wall.x2) / 2 / props.scene.width) * 100}%`, top: `${((wall.y1 + wall.y2) / 2 / props.scene.height) * 100}%` }}
-              aria-label={`Select ${wall.kind === "terrain" ? "terrain wall" : wall.kind ?? "wall"}`}
-              title={`${wall.kind === "terrain" ? "Terrain wall" : titleCaseWallKind(wall.kind)}${wall.kind === "door" || wall.kind === "window" ? ` (${wall.open ? "open" : "closed"}) - double-click to ${wall.open ? "close" : "open"}` : ""} - click to select, Delete to remove`}
-              onPointerDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-              }}
-              onClick={(event) => {
-                event.stopPropagation();
-                props.onClearSelection();
-                props.onSelectOverlay({ type: "wall", id: wall.id });
-              }}
-              onDoubleClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                if (wall.kind === "door" || wall.kind === "window") void props.onTogglePortal(wall);
-              }}
-            />
-          ))}
-          {props.scene.lights.map((light) => (
-            <button
-              key={`light-${light.id}`}
-              className={`structure-handle light-handle ${props.selectedOverlay?.type === "light" && props.selectedOverlay.id === light.id ? "selected" : ""}`}
-              type="button"
-              style={{ left: `${(light.x / props.scene.width) * 100}%`, top: `${(light.y / props.scene.height) * 100}%` }}
-              aria-label="Select light"
-              title="Light - click to select, Delete to remove"
-              onPointerDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-              }}
-              onClick={(event) => {
-                event.stopPropagation();
-                props.onClearSelection();
-                props.onSelectOverlay({ type: "light", id: light.id });
-              }}
-            />
-          ))}
-        </div>
+      {props.canUpdateAnnotations && !calibrationActive && !props.fogBrushMode && !props.annotationTool && (sceneWalls.length > 0 || sceneLights.length > 0) && (
+        <BoardStructureHandles
+          width={props.scene.width}
+          height={props.scene.height}
+          walls={sceneWalls}
+          lights={sceneLights}
+          selectedWallId={props.selectedOverlay?.type === "wall" ? props.selectedOverlay.id : undefined}
+          selectedLightId={props.selectedOverlay?.type === "light" ? props.selectedOverlay.id : undefined}
+          handlers={structureHandlers}
+        />
       )}
-      {vision?.fogActive && (
-        <svg className="vision-mask-layer" viewBox={`0 0 ${props.scene.width} ${props.scene.height}`} aria-hidden="true">
-          <defs>
-            <mask id={maskId}>
-              <rect width={props.scene.width} height={props.scene.height} fill="white" />
-              {revealedPolygons.map((polygon) => (
-                <polygon key={polygon.id} points={polygonPoints(polygon)} fill="black" />
-              ))}
-              {hiddenPolygons.map((polygon) => (
-                <polygon key={polygon.id} points={polygonPoints(polygon)} fill="white" />
-              ))}
-            </mask>
-          </defs>
-          <rect className="vision-dim" width={props.scene.width} height={props.scene.height} mask={`url(#${maskId})`} />
-          {revealedPolygons.map((polygon) => (
-            <polygon key={`${polygon.id}-outline`} className={visionPolygonClassName(polygon)} points={polygonPoints(polygon)} />
-          ))}
-          {hiddenPolygons.map((polygon) => (
-            <polygon key={`${polygon.id}-outline`} className="vision-outline hide" points={polygonPoints(polygon)} />
-          ))}
-        </svg>
+      {vision?.fogActive && props.scene.visibilityMode === "dynamic" && <DynamicVisibilityMask scene={props.scene} vision={vision} />}
+      {vision?.fogActive && props.scene.visibilityMode !== "dynamic" && (
+        <BoardVisionMaskLayer width={props.scene.width} height={props.scene.height} maskId={maskId} revealed={revealedPolygons} hidden={hiddenPolygons} />
       )}
       {fogStroke && (
         <svg className="fog-brush-preview" viewBox={`0 0 ${props.scene.width} ${props.scene.height}`} aria-hidden="true">
@@ -1690,7 +1942,7 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
           <SceneAnnotationShape annotation={draftAnnotation({ pointerId: -1, kind: keyboardGesture.kind, points: keyboardGesture.points }, props.templateShape)} scene={props.scene} />
         </svg>
       )}
-      {keyboardCursorVisible && (
+      {!props.readOnly && keyboardCursorVisible && (
         <>
           <span
             className="keyboard-board-cursor"
@@ -1737,120 +1989,41 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
         const tokenHp = linkedActor?.data.hp as { current?: number; max?: number } | undefined;
         const tokenHpRatio = tokenHp && typeof tokenHp.current === "number" && typeof tokenHp.max === "number" && tokenHp.max > 0 ? Math.max(0, Math.min(1, tokenHp.current / tokenHp.max)) : undefined;
         const showTokenVitals = tokenHpRatio !== undefined && (props.canSeeAllVitals || token.ownerUserIds?.includes(props.boardCurrentUserId));
-        const tokenHpTone = tokenHpRatio === undefined ? "" : tokenHpRatio <= 0.25 ? "danger" : tokenHpRatio <= 0.5 ? "warning" : "healthy";
         const tokenConditionEntries = [...(token.conditions ?? []).map((condition) => condition.name), ...(linkedActor ? actorConditionLabels(linkedActor) : [])];
         const isCurrentTurn = currentTurnTokenIdSet.has(token.id);
         const isNextTurn = !isCurrentTurn && nextTurnTokenIdSet.has(token.id);
-        const turnStateLabel = isCurrentTurn ? "current turn" : isNextTurn ? "up next" : undefined;
         return (
-          <button
+          <BoardToken
             key={token.id}
-            className={`token layer-${layer} ${activeLayerToken ? "active-layer" : "inactive-layer"} ${token.disposition} ${tokenImageAsset ? "has-image" : ""} ${selected ? "selected" : ""} ${props.selectedTokenId === token.id ? "primary-selected" : ""} ${token.targetedByUserIds?.length ? "targeted" : ""} ${token.auras?.length ? "has-aura" : ""} ${dragPosition ? "dragging" : ""} ${isCurrentTurn ? "turn-current" : ""} ${isNextTurn ? "turn-next" : ""} ${tokenHpRatio !== undefined && tokenHpRatio <= 0 ? "down" : tokenHpRatio !== undefined && tokenHpRatio <= 0.5 ? "bloodied" : ""}`}
-            data-turn-state={isCurrentTurn ? "current" : isNextTurn ? "next" : undefined}
-            style={{
-              left: `${(visualX / props.scene.width) * 100}%`,
-              top: `${(visualY / props.scene.height) * 100}%`,
-              width: `${(visualWidth / props.scene.width) * 100}%`,
-              height: `${(visualHeight / props.scene.height) * 100}%`,
-              pointerEvents: calibrationActive ? "none" : undefined
-            }}
-            aria-label={`${tokenLayerLabel(layer)} token ${token.name}${(token.elevation ?? 0) !== 0 ? ` at ${formatNumber(Math.abs(token.elevation ?? 0))} feet ${(token.elevation ?? 0) > 0 ? "above" : "below"} ground` : ""}${turnStateLabel ? `, ${turnStateLabel}` : ""}`}
-            aria-pressed={selected}
-            aria-describedby={keyboardInstructionsId}
-            aria-keyshortcuts={props.canMoveToken ? "ArrowUp ArrowDown ArrowLeft ArrowRight" : undefined}
-            tabIndex={calibrationActive ? -1 : undefined}
-            title={!props.canMoveToken ? "Token movement requires token.move" : props.canUpdateTokenLayer ? "Arrow keys move; Shift moves 1 px; right-click moves to next layer" : "Arrow keys move; Shift moves 1 px"}
-            onContextMenu={(event) => {
-              if (calibrationActive || !props.canUpdateTokenLayer || props.fogBrushMode || props.annotationTool) return;
-              event.preventDefault();
-              event.stopPropagation();
-              tokenDragRef.current = null;
-              setTokenDrag(null);
-              tokenResizeRef.current = null;
-              setTokenResize(null);
-              pointerSelectedTokenRef.current = token.id;
-              void mutationAction.runAction(`Move ${token.name} to the next layer`, () => props.onTokenLayerCycle(token));
-            }}
-            onClick={(event) => {
-              if (calibrationActive) return;
-              if (!activeLayerToken) return;
-              if (pointerSelectedTokenRef.current === token.id) {
-                pointerSelectedTokenRef.current = null;
-                return;
-              }
-              props.onSelect(token.id, { additive: event.shiftKey || event.ctrlKey || event.metaKey, preserveExisting: selected && props.selectedTokenIds.length > 1 });
-            }}
-            onKeyDown={(event) => moveTokenFromKeyboard(token, event)}
-            onPointerDown={(event) => {
-              setKeyboardCursorVisible(false);
-              if (!activeLayerToken) return;
-              if (calibrationActive || props.fogBrushMode || props.annotationTool) return;
-              startTokenDrag(token, event);
-            }}
-            onPointerMove={(event) => {
-              if (tokenDragRef.current?.tokenId !== token.id || tokenDragRef.current.pointerId !== event.pointerId) return;
-              event.preventDefault();
-              event.stopPropagation();
-              moveTokenDrag(event.clientX, event.clientY, event.pointerId);
-            }}
-            onPointerUp={(event) => {
-              if (tokenDragRef.current?.tokenId !== token.id || tokenDragRef.current.pointerId !== event.pointerId) return;
-              event.preventDefault();
-              event.stopPropagation();
-              finishTokenDrag(event.pointerId);
-            }}
-            onPointerCancel={(event) => {
-              if (tokenDragRef.current?.tokenId !== token.id || tokenDragRef.current.pointerId !== event.pointerId) return;
-              event.preventDefault();
-              event.stopPropagation();
-              cancelTokenDrag(event.pointerId);
-            }}
-            onLostPointerCapture={(event) => {
-              if (tokenDragRef.current?.tokenId === token.id && tokenDragRef.current.pointerId === event.pointerId) cancelTokenDrag(event.pointerId);
-            }}
-          >
-            <span className="token-visual" style={{ transform: `rotate(${token.rotation}deg)` }} aria-hidden="true">
-              {tokenImageAsset && <img className="token-image" src={assetBlobUrl(tokenImageAsset)} alt="" draggable={false} />}
-              <span className="token-label">{token.name.slice(0, 2).toUpperCase()}</span>
-            </span>
-            <span className="token-nameplate" aria-hidden="true">{token.name}</span>
-            {(token.elevation ?? 0) !== 0 && (
-              <small className="token-elevation" aria-hidden="true" title={`${formatNumber(Math.abs(token.elevation ?? 0))} feet ${(token.elevation ?? 0) > 0 ? "above" : "below"} ground`}>
-                {(token.elevation ?? 0) > 0 ? "+" : "-"}{formatNumber(Math.abs(token.elevation ?? 0))} ft
-              </small>
-            )}
-            {showTokenVitals && (
-              <span className={`token-hp ${tokenHpTone}`} aria-hidden="true">
-                <span style={{ width: `${Math.round((tokenHpRatio ?? 0) * 100)}%` }} />
-              </span>
-            )}
-            {(isCurrentTurn || isNextTurn) && <span className={`token-turn-ring ${isCurrentTurn ? "current" : "next"}`} aria-hidden="true" />}
-            {tokenConditionEntries.length > 0 ? (
-              <span className="token-conditions" aria-hidden="true" title={tokenConditionEntries.join(", ")}>
-                {tokenConditionEntries.slice(0, 3).map((condition, index) => (
-                  <small className="token-condition-chip" key={`${token.id}-condition-${index}`}>{condition}</small>
-                ))}
-                {tokenConditionEntries.length > 3 && <small className="token-condition-chip overflow">+{tokenConditionEntries.length - 3}</small>}
-              </span>
-            ) : null}
-            {token.auras?.length ? <small className="token-aura-count">{token.auras.length}</small> : null}
-            {canResize && (
-              <>
-                <span className="token-selection-frame" aria-hidden="true" />
-                {tokenCornerResizeHandles.map((handle) => (
-                  <span
-                    className={`token-resize-corner handle-${handle.id}`}
-                    key={`${token.id}-${handle.id}`}
-                    title={handle.label}
-                    onPointerDown={(event) => {
-                      event.stopPropagation();
-                      startTokenResize(token, handle.id, event);
-                    }}
-                  />
-                ))}
-              </>
-            )}
-          </button>
+            id={token.id}
+            name={token.name}
+            layer={layer}
+            layerLabel={tokenLayerLabel(layer)}
+            activeLayer={activeLayerToken}
+            disposition={token.disposition}
+            imageUrl={tokenImageAsset ? assetBlobUrl(tokenImageAsset) : undefined}
+            selected={selected}
+            primarySelected={props.selectedTokenId === token.id}
+            targeted={Boolean(token.targetedByUserIds?.length)}
+            auraCount={token.auras?.length ?? 0}
+            dragging={Boolean(dragPosition)}
+            turnState={isCurrentTurn ? "current" : isNextTurn ? "next" : undefined}
+            left={(visualX / props.scene.width) * 100}
+            top={(visualY / props.scene.height) * 100}
+            width={(visualWidth / props.scene.width) * 100}
+            height={(visualHeight / props.scene.height) * 100}
+            rotation={token.rotation}
+            elevation={token.elevation ?? 0}
+            hpRatio={tokenHpRatio}
+            showVitals={Boolean(showTokenVitals)}
+            conditions={JSON.stringify(tokenConditionEntries)}
+            readOnly={Boolean(props.readOnly)}
+            canMove={props.canMoveToken}
+            calibrationActive={calibrationActive}
+            describedBy={keyboardInstructionsId}
+            resizeHandles={canResize ? tokenCornerResizeHandles : undefined}
+            handlers={tokenHandlers}
+          />
         );
       })}
       {orderedTokens.map((token) => {
@@ -1871,6 +2044,24 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
         );
       })}
       </div>
+      {tokenMenu && tokenMenuToken && createPortal(
+        <TokenContextMenu
+          tokenName={tokenMenuToken.name}
+          position={tokenMenu}
+          onClose={closeTokenMenu}
+          actions={tokenContextMenuActions({
+            tokenName: tokenMenuToken.name,
+            targeted: tokenMenuToken.targetedByUserIds?.includes(props.boardCurrentUserId) ?? false,
+            nextLayerLabel: tokenLayerLabel(nextTokenLayer(tokenLayer(tokenMenuToken))),
+            canTarget: Boolean(props.onTokenTarget),
+            canChangeLayer: props.canUpdateTokenLayer,
+            onShowInInspector: () => props.onInspectToken(tokenMenuToken.id),
+            onToggleTarget: () => void mutationAction.runAction(`Update target mark on ${tokenMenuToken.name}`, async () => { await props.onTokenTarget?.(tokenMenuToken.id, !(tokenMenuToken.targetedByUserIds?.includes(props.boardCurrentUserId) ?? false)); }),
+            onMoveToNextLayer: () => void mutationAction.runAction(`Move ${tokenMenuToken.name} to the next layer`, () => props.onTokenLayerCycle(tokenMenuToken))
+          })}
+        />,
+        document.body
+      )}
     </div>
   );
 }
@@ -2098,26 +2289,7 @@ export function appendStrokePoint(points: VisionPoint[], point: VisionPoint, gri
 }
 
 
-export function polygonPoints(polygon: VisionPolygon): string {
-  return polygon.points.map((point) => `${point.x},${point.y}`).join(" ");
-}
 
-
-function titleCaseWallKind(kind: Scene["walls"][number]["kind"]): string {
-  if (kind === "terrain") return "Terrain wall";
-  if (kind === "door") return "Door";
-  if (kind === "window") return "Window";
-  return "Wall";
-}
-
-export function visionPolygonClassName(polygon: VisionPolygon): string {
-  return ["vision-outline", polygon.source, polygon.lightLevel].filter(Boolean).join(" ");
-}
-
-
-export function lightPolygonClassName(polygon: VisionPolygon): string {
-  return ["light-polygon", polygon.lightLevel].filter(Boolean).join(" ");
-}
 
 
 export function tokenCenter(token: Token): { x: number; y: number } {
@@ -2187,59 +2359,68 @@ export function Toolbar(props: { onSelectTool: ToolAction; onCreateToken: ToolAc
   }, [advancedOpen]);
 
   return (
-    <div className="toolbar">
-      <button className={`tool ${props.activeFogBrushMode || props.activeAnnotationTool ? "" : "active"}`} title="Select (V)" aria-label="Select" onClick={() => runToolAction(props.onSelectTool)}>
-        <Hand size={17} />
-      </button>
-      {props.canCreateToken && (
-        <button className="tool" title="Token" aria-label="Add token" onClick={() => runToolAction(props.onCreateToken)}>
-          <Plus size={17} />
+    <div className="toolbar" role="group" aria-label="Map tools">
+      <div className="toolbar-group" role="group" aria-label="Select and place">
+        <span className="tool-group-label" aria-hidden="true">Table</span>
+        <button className={`tool ${props.activeFogBrushMode || props.activeAnnotationTool ? "" : "active"}`} title="Select (V)" data-tooltip="Select · V" aria-label="Select" aria-pressed={!props.activeFogBrushMode && !props.activeAnnotationTool} onClick={() => runToolAction(props.onSelectTool)}>
+          <Hand size={17} />
         </button>
-      )}
-      <span className="tool-divider" aria-hidden="true" />
-      <button className={`tool ${props.activeAnnotationTool === "ruler" ? "active" : ""}`} title="Ruler - measure distance (R)" aria-label="Ruler" onClick={() => props.onToggleAnnotationTool("ruler")} disabled={!props.canAnnotate}>
-        <Ruler size={17} />
-      </button>
-      <button className={`tool tool-mobile-secondary ${props.activeAnnotationTool === "measure-circle" ? "active" : ""}`} title="Measure circle (C)" aria-label="Measure circle" onClick={() => props.onToggleAnnotationTool("measure-circle")} disabled={!props.canAnnotate}>
-        <Circle size={17} />
-      </button>
-      <button className={`tool tool-mobile-secondary ${props.activeAnnotationTool === "measure-cone" ? "active" : ""}`} title="Measure cone (O)" aria-label="Measure cone" onClick={() => props.onToggleAnnotationTool("measure-cone")} disabled={!props.canAnnotate}>
-        <Triangle size={17} />
-      </button>
-      <button className={`tool ${props.activeAnnotationTool === "ping" ? "active" : ""}`} title="Ping - point everyone here (P)" aria-label="Ping" onClick={() => props.onToggleAnnotationTool("ping")} disabled={!props.canAnnotate}>
-        <MapPin size={17} />
-      </button>
-      {(props.canRevealFog || props.canUpdateScene) && <span className="tool-divider" aria-hidden="true" />}
-      {props.canRevealFog && (
-        <button className="tool" title="Reveal fog" aria-label="Reveal fog" onClick={() => runToolAction(props.onRevealFog)}>
-          <Eye size={17} />
+        {props.canCreateToken && (
+          <button className="tool" title="Add token" data-tooltip="Add token" aria-label="Add token" onClick={() => runToolAction(props.onCreateToken)}>
+            <Plus size={17} />
+          </button>
+        )}
+      </div>
+      <div className="toolbar-group" role="group" aria-label="Measure and point">
+        <span className="tool-group-label" aria-hidden="true">Measure</span>
+        <button className={`tool ${props.activeAnnotationTool === "ruler" ? "active" : ""}`} title="Ruler - measure distance (R)" data-tooltip="Ruler · R" aria-label="Ruler" aria-pressed={props.activeAnnotationTool === "ruler"} onClick={() => props.onToggleAnnotationTool("ruler")} disabled={!props.canAnnotate}>
+          <Ruler size={17} />
         </button>
-      )}
-      {props.canUpdateScene && (
-        <button className={`tool tool-mobile-secondary ${props.activeAnnotationTool === "drawing" ? "active" : ""}`} title="Drawing (D)" aria-label="Drawing" onClick={() => props.onToggleAnnotationTool("drawing")}>
-          <PencilLine size={17} />
-        </button>
-      )}
-      {props.canUpdateScene && (
-        <button className={`tool tool-mobile-secondary ${props.activeAnnotationTool === "template" ? "active" : ""}`} title="Area template (A)" aria-label="Area template" onClick={() => props.onToggleAnnotationTool("template")}>
+        <button className={`tool tool-mobile-secondary ${props.activeAnnotationTool === "measure-circle" ? "active" : ""}`} title="Measure circle (C)" data-tooltip="Circle · C" aria-label="Measure circle" aria-pressed={props.activeAnnotationTool === "measure-circle"} onClick={() => props.onToggleAnnotationTool("measure-circle")} disabled={!props.canAnnotate}>
           <Circle size={17} />
         </button>
+        <button className={`tool tool-mobile-secondary ${props.activeAnnotationTool === "measure-cone" ? "active" : ""}`} title="Measure cone (O)" data-tooltip="Cone · O" aria-label="Measure cone" aria-pressed={props.activeAnnotationTool === "measure-cone"} onClick={() => props.onToggleAnnotationTool("measure-cone")} disabled={!props.canAnnotate}>
+          <Triangle size={17} />
+        </button>
+        <button className={`tool ${props.activeAnnotationTool === "ping" ? "active" : ""}`} title="Ping - point everyone here (P)" data-tooltip="Ping · P" aria-label="Ping" aria-pressed={props.activeAnnotationTool === "ping"} onClick={() => props.onToggleAnnotationTool("ping")} disabled={!props.canAnnotate}>
+          <MapPin size={17} />
+        </button>
+      </div>
+      {(props.canRevealFog || props.canUpdateScene) && (
+        <div className="toolbar-group" role="group" aria-label="Create and reveal">
+          <span className="tool-group-label" aria-hidden="true">Create</span>
+          {props.canRevealFog && (
+            <button className="tool" title="Reveal fog" data-tooltip="Reveal fog" aria-label="Reveal fog" onClick={() => runToolAction(props.onRevealFog)}>
+              <Eye size={17} />
+            </button>
+          )}
+          {props.canUpdateScene && (
+            <>
+              <button className={`tool tool-mobile-secondary ${props.activeAnnotationTool === "drawing" ? "active" : ""}`} title="Drawing (D)" data-tooltip="Draw · D" aria-label="Drawing" aria-pressed={props.activeAnnotationTool === "drawing"} onClick={() => props.onToggleAnnotationTool("drawing")}>
+                <PencilLine size={17} />
+              </button>
+              <button className={`tool tool-mobile-secondary ${props.activeAnnotationTool === "template" ? "active" : ""}`} title="Area template (A)" data-tooltip="Template · A" aria-label="Area template" aria-pressed={props.activeAnnotationTool === "template"} onClick={() => props.onToggleAnnotationTool("template")}>
+                <Circle size={17} />
+              </button>
+            </>
+          )}
+        </div>
       )}
       {props.canUpdateScene && (
-        <button className="tool tool-mobile-secondary" title="Delete latest annotation" aria-label="Delete latest annotation" onClick={() => runToolAction(props.onDeleteLatestAnnotation)}>
-          <X size={17} />
-        </button>
+        <div className="toolbar-group toolbar-group-history" role="group" aria-label="Edit history">
+          <span className="tool-group-label" aria-hidden="true">History</span>
+          <button className="tool tool-mobile-secondary" title="Delete latest annotation" data-tooltip="Delete annotation" aria-label="Delete latest annotation" onClick={() => runToolAction(props.onDeleteLatestAnnotation)}>
+            <X size={17} />
+          </button>
+          <button className="tool tool-mobile-secondary" title="Undo scene edit" data-tooltip="Undo scene edit" aria-label="Undo scene edit" onClick={() => runToolAction(props.onUndoScene)}>
+            <RotateCcw size={17} />
+          </button>
+        </div>
       )}
-      {props.canUpdateScene && (
-        <button className="tool tool-mobile-secondary" title="Undo scene edit" aria-label="Undo scene edit" onClick={() => runToolAction(props.onUndoScene)}>
-          <RotateCcw size={17} />
-        </button>
-      )}
-      {(props.canManageCombat || props.canRevealFog || props.canUpdateScene) && <span className="tool-divider" aria-hidden="true" />}
       {(props.canManageCombat || props.canRevealFog || props.canUpdateScene) && (
         <details ref={advancedToolsRef} className="tool-more" open={advancedOpen} onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}>
           <summary className="tool" title="Advanced tools" aria-label="Advanced tools">
-            <Boxes size={17} />
+            <Boxes size={17} /><span className="tool-more-label">More</span>
           </summary>
           <div className="tool-more-panel" aria-label="Advanced table tools">
             <div className="tool-more-mobile-only">
@@ -2316,7 +2497,7 @@ export function Toolbar(props: { onSelectTool: ToolAction; onCreateToken: ToolAc
               <>
                 {!props.canRevealFog && <div className="tool-more-heading">Fog and vision</div>}
                 <button className={`ghost-button ${props.playerVisionPreviewLabel ? "active" : ""}`} type="button" aria-pressed={Boolean(props.playerVisionPreviewLabel)} onClick={() => runToolAction(props.onCyclePlayerVisionPreview, { closeAdvanced: true })}>
-                  <Eye size={15} /> {props.playerVisionPreviewLabel ? `Preview: ${props.playerVisionPreviewLabel}` : "Preview player vision"}
+                  <Eye size={15} /> {props.playerVisionPreviewLabel ? `Preview: ${props.playerVisionPreviewLabel}` : "Preview player view"}
                 </button>
               </>
             )}

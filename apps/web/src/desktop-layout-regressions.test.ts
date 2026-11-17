@@ -1,11 +1,16 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { Toolbar } from "./scene-canvas.js";
 
 const appSource = readFileSync(resolve(__dirname, "App.tsx"), "utf8").replace(/\r\n/g, "\n");
+const navigationSource = readFileSync(resolve(__dirname, "workspace-navigation.tsx"), "utf8").replace(/\r\n/g, "\n");
 const apiSource = readFileSync(resolve(__dirname, "api.ts"), "utf8").replace(/\r\n/g, "\n");
 const stylesSource = readFileSync(resolve(__dirname, "styles.css"), "utf8").replace(/\r\n/g, "\n");
 const sceneCanvasSource = readFileSync(resolve(__dirname, "scene-canvas.tsx"), "utf8").replace(/\r\n/g, "\n");
+const boardTokenSource = readFileSync(resolve(__dirname, "board-token.tsx"), "utf8").replace(/\r\n/g, "\n");
 const sceneGridFieldsSource = readFileSync(resolve(__dirname, "scene-grid-fields.tsx"), "utf8").replace(/\r\n/g, "\n");
 const campaignSetupStepsSource = readFileSync(resolve(__dirname, "campaign-setup-steps.tsx"), "utf8").replace(/\r\n/g, "\n");
 const movablePanelSource = readFileSync(resolve(__dirname, "movable-panel.ts"), "utf8").replace(/\r\n/g, "\n");
@@ -145,7 +150,7 @@ describe("desktop layout regressions", () => {
   });
 
   it("does not show token creation chrome to users who cannot create tokens", () => {
-    expect(appSource).toContain('const showQuickCreate = (workspaceMode === "live" || workspaceMode === "prep") && hasPermission("token.create");');
+    expect(appSource.match(/const showQuickCreate = (.*);/)?.[1]).toBe('showTableWorkspace && !sceneWorkspaceHidden && hasPermission("token.create")');
   });
 
   it("keeps the dice roller visible inside the chat rail instead of leaving dead dice handlers", () => {
@@ -197,17 +202,17 @@ describe("desktop layout regressions", () => {
   });
 
   it("keeps scene tab actions in Prep and routes deletion through review", () => {
-    expect(appSource).toContain("const quickCreateSceneIndex = sceneQuickCreateIndex(visibleScenes.length);");
-    expect(appSource).toContain("const showTrailingSceneCreateButton = showTrailingSceneCreate(visibleScenes.length);");
-    expect(appSource).toContain('className="icon-button scene-tab-add"');
-    expect(appSource).toContain('aria-label="Add draft scene after newest scene"');
-    expect(appSource).toContain('className="icon-button scene-tab-delete"');
+    expect(navigationSource).toContain("const quickCreateSceneIndex = sceneQuickCreateIndex(visibleScenes.length);");
+    expect(navigationSource).toContain("const showTrailingSceneCreateButton = showTrailingSceneCreate(visibleScenes.length);");
+    expect(navigationSource).toContain('className="icon-button scene-tab-add"');
+    expect(navigationSource).toContain('aria-label="Add draft scene after newest scene"');
+    expect(navigationSource).toContain('className="icon-button scene-tab-delete"');
     expect(appSource).toContain("createScene({ insertBeforeScene: scene, active: false })");
     expect(appSource).toContain('const canQuickCreateScene = workspaceMode === "prep" && hasPermission("scene.create");');
-    expect(appSource).toContain('const canQuickDeleteScenes = workspaceMode === "prep" && hasPermission("scene.delete")');
+    expect(appSource).toContain('const canQuickDeleteScenes = workspaceMode === "prep" && sceneManagementOpen && hasPermission("scene.delete")');
     expect(appSource).toContain("function openSceneDeleteReview(targetScene: Scene)");
     expect(appSource).toContain('setManageCategory("scenes");');
-    expect(appSource).toContain("openSceneDeleteReview(scene)");
+    expect(appSource).toContain("onDeleteScene={openSceneDeleteReview}");
     expect(appSource).toContain("const [newSceneActive, setNewSceneActive] = useState(false);");
     expect(appSource).toContain("onTokenLayerCycle={cycleTokenLayer}");
     expect(stylesSource).toContain(".scene-tab-wrap.selectable.deletable {\n  grid-template-columns: 28px minmax(0, auto) 30px;");
@@ -216,8 +221,12 @@ describe("desktop layout regressions", () => {
     expect(stylesSource).toContain(".rail-prep + .workspace .scene-tab-wrap.selectable.deletable {\n    grid-template-columns: minmax(0, auto) 30px;");
     expect(sceneCanvasSource).toContain("export function nextTokenLayer(layer: TokenLayer): TokenLayer");
     expect(sceneCanvasSource).toContain("if (event.button !== 0) return;");
-    expect(sceneCanvasSource).toContain("onContextMenu={(event) => {");
-    expect(sceneCanvasSource).toContain("mutationAction.runAction(`Move ${token.name} to the next layer`");
+    // The token is a memoised component; its context menu handler lives on the board and is reached by token id.
+    expect(boardTokenSource).toContain("onContextMenu={(event) => handlers.contextMenu(id, event)}");
+    expect(sceneCanvasSource).toContain("contextMenu(tokenId, event) {");
+    expect(sceneCanvasSource).toContain("openTokenMenu(tokenId, { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });");
+    expect(sceneCanvasSource).toContain("onMoveToNextLayer: () => void mutationAction.runAction(`Move ${tokenMenuToken.name} to the next layer`, () => props.onTokenLayerCycle(tokenMenuToken))");
+    expect(sceneCanvasSource).toContain("canChangeLayer: props.canUpdateTokenLayer");
     expect(stylesSource).toContain(".token.inactive-layer {\n  opacity: 0.58;\n  cursor: context-menu;\n  pointer-events: auto;");
   });
 
@@ -238,9 +247,9 @@ describe("desktop layout regressions", () => {
     expect(appSource).toContain('role="tabpanel" id={`inspector-panel-${tab}`} aria-labelledby={`inspector-tab-${tab}`}');
     expect(sceneCanvasSource).toContain('["ArrowLeft", "ArrowRight", "Home", "End"]');
     expect(appSource).toContain('? ["actors", "compendium", "sessions", "worlds", "handouts", "journal", "memory", "search", "content", "plugins"]');
-    expect(appSource).toContain('label="Search"');
-    expect(appSource).toContain('label="Canon"');
-    expect(appSource).toContain('label="Assets"');
+    expect(navigationSource).toContain('label="Search"');
+    expect(navigationSource).toContain('label="Canon"');
+    expect(navigationSource).toContain('label="Assets"');
   });
 
   it("keeps the phone toolbar to one primary row while retaining secondary tools", () => {
@@ -248,8 +257,7 @@ describe("desktop layout regressions", () => {
     expect(sceneCanvasSource).toContain('className="tool-more-mobile-only"');
     expect(stylesSource).toContain(".toolbar:has(.tool-more) > .tool-mobile-secondary {\n    display: none;");
     expect(stylesSource).toContain(".tool-more-mobile-only {\n    display: contents;");
-    expect(stylesSource).toContain(".workspace-live .inspector-tabs {\n    display: grid;\n    grid-template-columns: repeat(6, minmax(0, 1fr));");
-    expect(stylesSource).toContain(".workspace-live .inspector-tabs .tab {\n    min-width: 0;\n    min-height: 42px;");
+    // Label fit and touch target sizes are verified in responsive-navigation.spec.ts.
   });
 
   it("keeps tablet prep/content panels from clipping controls and status labels", () => {
@@ -586,17 +594,29 @@ describe("desktop layout regressions", () => {
   });
 
   it("hides unavailable GM-only table tools instead of filling player toolbars with disabled controls", () => {
-    expect(toolbarSource).toContain("{props.canCreateToken && (\n        <button className=\"tool\" title=\"Token\"");
-    expect(toolbarSource).toContain("{props.canRevealFog && (\n        <button className=\"tool\" title=\"Reveal fog\"");
-    expect(toolbarSource).toContain("{props.canUpdateScene && (\n        <button className={`tool tool-mobile-secondary ${props.activeAnnotationTool === \"drawing\" ? \"active\" : \"\"}`}");
-    expect(toolbarSource).toContain("{props.canManageCombat && (\n              <button className=\"ghost-button\" type=\"button\" onClick={() => runToolAction(props.onStartCombat, { closeAdvanced: true })}>");
-    expect(toolbarSource).toContain("{(props.canManageCombat || props.canRevealFog || props.canUpdateScene) && (");
-    expect(toolbarSource).not.toContain("disabled={!props.canCreateToken}");
-    expect(toolbarSource).not.toContain("disabled={!props.canRevealFog}");
-    expect(toolbarSource).not.toContain("disabled={!props.canUpdateScene}");
-    expect(toolbarSource).not.toContain("disabled={!props.canManageCombat}");
+    const noop = () => undefined;
+    const renderToolbar = (canManage: boolean) => renderToStaticMarkup(createElement(Toolbar, {
+      onSelectTool: noop, onCreateToken: noop, onStartCombat: noop,
+      onRevealFog: noop, onHideFog: noop, onRevealFogPolygon: noop,
+      onToggleFogBrush: noop, onToggleAnnotationTool: noop, onDeleteLatestAnnotation: noop,
+      onUndoScene: noop, onUndoFog: noop, onShowFogHistory: noop, onSampleVisionPoint: noop,
+      onSaveFogPreset: noop, onApplyFogPreset: noop, onDeleteFogPreset: noop,
+      onCyclePlayerVisionPreview: noop, onAddWall: noop, onAddTerrainWall: noop,
+      onAddDoor: noop, onAddWindow: noop, onAddLight: noop, onAddDarkness: noop,
+      onActionError: noop, canCreateToken: canManage, canManageCombat: canManage,
+      canRevealFog: canManage, canPreviewPlayerVision: canManage,
+      activeFogBrushMode: null, activeAnnotationTool: null, hasFogPresets: false,
+      canUpdateScene: canManage, canAnnotate: true
+    }));
+    const player = renderToolbar(false);
+    expect(player).toContain('aria-label="Select"');
+    expect(player).toContain('aria-label="Ruler"');
+    expect(player).toContain('aria-label="Ping"');
+    for (const label of ["Add token", "Reveal fog", "Drawing", "Area template", "Edit history", "Advanced tools"]) {
+      expect(player).not.toContain(`aria-label="${label}"`);
+      expect(renderToolbar(true)).toContain(`aria-label="${label}"`);
+    }
   });
-
   it("keeps the advanced table menu focused on actions that are not already in the primary toolbar", () => {
     expect(appSource).toContain("<Toolbar key={`${workspaceMode}-${tab}`}");
     expect(toolbarSource).toContain("const [advancedOpen, setAdvancedOpen] = useState(false);");

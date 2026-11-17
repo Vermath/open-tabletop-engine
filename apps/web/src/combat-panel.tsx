@@ -20,6 +20,8 @@ export function CombatPanel(props: { campaignId: string; combat?: Combat; recent
   const defeatedCount = combatants.filter((combatant) => combatant.defeated).length;
   const pendingActions = props.combat?.actions?.filter((action) => action.status === "pending_gm") ?? [];
   const turnPending = props.combat ? pendingControls.has(`turn:${props.combat.id}`) : false;
+  const previousTurn = props.combat ? nextCombatTurnPosition(props.combat, -1) : undefined;
+  const canGoPrevious = Boolean(props.combat && previousTurn && (previousTurn.round !== props.combat.round || previousTurn.turnIndex !== props.combat.turnIndex));
   const startPending = pendingControls.has("combat:start");
   const actorById = new Map(props.actors.map((actor) => [actor.id, actor]));
   const tokenById = new Map(props.tokens.map((token) => [token.id, token]));
@@ -259,7 +261,7 @@ export function CombatPanel(props: { campaignId: string; combat?: Combat; recent
             <div className="combat-turn-controls">
               {props.canManage && (
                 <div className="combat-turn-navigation" role="group" aria-label="Turn controls">
-                  <button className="ghost-button" type="button" onClick={() => runPendingControl(`turn:${props.combat!.id}`, "Move to the previous turn", () => props.onPrevious(props.combat!))} disabled={combatants.length === 0 || turnPending}>
+                  <button className="ghost-button" type="button" onClick={() => runPendingControl(`turn:${props.combat!.id}`, "Move to the previous turn", () => props.onPrevious(props.combat!))} disabled={!canGoPrevious || turnPending}>
                     <ChevronLeft size={14} /> Prev
                   </button>
                   <button className="primary-button combat-next-turn" type="button" onClick={() => runPendingControl(`turn:${props.combat!.id}`, "Move to the next turn", () => props.onNext(props.combat!))} disabled={combatants.length === 0 || turnPending}>
@@ -647,8 +649,9 @@ export function nextCombatTurnPosition(combat: Combat, direction: 1 | -1): { tur
       turnIndex = 0;
       round += 1;
     } else if (turnIndex < 0) {
+      if (round <= 1) return { turnIndex: combat.turnIndex, round: combat.round };
       turnIndex = combatants.length - 1;
-      round = Math.max(1, round - 1);
+      round -= 1;
     }
     if (!combatants[turnIndex]?.defeated) return { turnIndex, round };
   }

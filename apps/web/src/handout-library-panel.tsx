@@ -1,6 +1,6 @@
 import type { Actor, MapAsset, Visibility } from "@open-tabletop/core";
 import { BookOpen, Check, Eye, FileText, Link2, Plus, Save, Search, Trash2, Users } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiDelete, apiPatch, apiPost, assetBlobUrl, assetThumbnailUrl, type Snapshot } from "./api.js";
 import { campaignSearchAnchorId } from "./campaign-search-panel.js";
 import { DraftPersistenceNotice, draftPersistenceStatus, type DraftPersistenceStatus } from "./draft-persistence-notice.js";
@@ -114,6 +114,8 @@ function visibilityLabel(visibility: Visibility): string {
 export function storedHandoutDraft(value: unknown): HandoutDraft | undefined {
   if (!value || typeof value !== "object") return undefined;
   const draft = value as Partial<HandoutDraft>;
+  if (draft.id !== undefined && typeof draft.id !== "string") return undefined;
+  if (draft.expectedUpdatedAt !== undefined && typeof draft.expectedUpdatedAt !== "string") return undefined;
   if (typeof draft.worldId !== "string" || typeof draft.title !== "string" || typeof draft.body !== "string" || typeof draft.tags !== "string") return undefined;
   if (!["public", "gm_only", "specific_players", "specific_characters"].includes(String(draft.visibility))) return undefined;
   if (!Array.isArray(draft.visibleToUserIds) || !draft.visibleToUserIds.every((id) => typeof id === "string")) return undefined;
@@ -148,6 +150,7 @@ export function HandoutLibraryPanel(props: {
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
   const [deleteArmed, setDeleteArmed] = useState(false);
+  const editorRef = useRef<HTMLDivElement>(null);
   const selected = props.handouts.find((item) => item.id === selectedId);
   const filtered = useMemo(() => filterHandoutLibrary(props.handouts, { query, worldId: worldFilter, read: readFilter, userId: props.currentUserId }), [props.handouts, props.currentUserId, query, readFilter, worldFilter]);
 
@@ -155,6 +158,14 @@ export function HandoutLibraryPanel(props: {
     if (!selectedId || props.handouts.some((item) => item.id === selectedId)) return;
     setSelectedId("");
   }, [props.handouts, selectedId]);
+
+  useEffect(() => {
+    if (!creating && !selectedId) return;
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.scrollIntoView({ block: "nearest" });
+    editor.querySelector<HTMLInputElement>('input[aria-label="Handout title"]')?.focus();
+  }, [creating, selectedId]);
 
   async function handleMutationError(prefix: string, error: unknown) {
     if (isStaleWriteError(error)) {
@@ -215,12 +226,15 @@ export function HandoutLibraryPanel(props: {
 
   return (
     <section className="panel-stack lore-panel handout-library-panel" aria-label="Handout Library">
-      <div className="lore-panel-heading">
-        <div>
-          <div className="section-title">Handout Library</div>
-          <h2>Shareable table documents</h2>
+      <div className="lore-page-intro">
+        <div className="lore-panel-heading">
+          <div>
+            <div className="section-title">Handout Library</div>
+            <h2>Clues, lore &amp; player handouts</h2>
+          </div>
+          {props.canCreate && <button className="primary-button" type="button" aria-label="Create handout" title="Create handout" onClick={() => { setCreating(true); setSelectedId(""); }}><Plus size={15} aria-hidden="true" /> Create handout</button>}
         </div>
-        <BookOpen size={20} aria-hidden="true" />
+        <p className="account-summary">Keep campaign documents together and choose who can read each one.</p>
       </div>
 
       {props.loadState === "loading" && <div className="lore-load-state" role="status">Loading handouts…</div>}
@@ -231,81 +245,97 @@ export function HandoutLibraryPanel(props: {
         </div>
       )}
 
-      <div className="lore-filter-grid">
-        <label className="lore-search-field span-full">
-          <Search size={14} aria-hidden="true" />
-          <span className="sr-only">Search handouts</span>
-          <input aria-label="Search handouts" value={query} placeholder="Search title, text, or tags" onChange={(event) => setQuery(event.target.value)} />
-        </label>
-        <label>
-          <span>World</span>
-          <select aria-label="Filter handouts by world" value={worldFilter} onChange={(event) => setWorldFilter(event.target.value)}>
-            <option value="">All worlds</option>
-            <option value="unfiled">Unfiled</option>
-            {props.worlds.map((world) => <option key={world.id} value={world.id}>{world.name}</option>)}
-          </select>
-        </label>
-        <label>
-          <span>Reading</span>
-          <select aria-label="Filter handouts by read state" value={readFilter} onChange={(event) => setReadFilter(event.target.value as HandoutReadFilter)}>
-            <option value="all">All</option>
-            <option value="unread">Unread</option>
-            <option value="read">Read</option>
-          </select>
-        </label>
-      </div>
+      <div className="handout-workspace">
+        <div className="handout-navigation">
+          <div className="lore-filter-grid">
+            <label className="lore-search-field span-full">
+              <Search size={14} aria-hidden="true" />
+              <span className="sr-only">Search handouts</span>
+              <input aria-label="Search handouts" value={query} placeholder="Search title, text, or tags" onChange={(event) => setQuery(event.target.value)} />
+            </label>
+            <label>
+              <span>World</span>
+              <select aria-label="Filter handouts by world" value={worldFilter} onChange={(event) => setWorldFilter(event.target.value)}>
+                <option value="">All worlds</option>
+                <option value="unfiled">Unfiled</option>
+                {props.worlds.map((world) => <option key={world.id} value={world.id}>{world.name}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>Reading</span>
+              <select aria-label="Filter handouts by read state" value={readFilter} onChange={(event) => setReadFilter(event.target.value as HandoutReadFilter)}>
+                <option value="all">All</option>
+                <option value="unread">Unread</option>
+                <option value="read">Read</option>
+              </select>
+            </label>
+          </div>
 
-      <div className="lore-list-heading">
-        <span>Library</span>
-        <div>
-          <strong>{formatNumber(filtered.length)}</strong>
-          {props.canCreate && <button className="icon-button" type="button" aria-label="Create handout" title="Create handout" onClick={() => { setCreating(true); setSelectedId(""); }}><Plus size={14} /></button>}
+          <div className="lore-list-heading">
+            <span>Library</span>
+            <strong>{formatNumber(filtered.length)}</strong>
+          </div>
+          <div className="handout-list" role="list" aria-label="Handouts">
+            {filtered.length === 0 ? (
+              <div className="empty-state compact lore-empty-state">
+                <BookOpen size={26} aria-hidden="true" />
+                <strong>{props.handouts.length === 0 ? "Your handout library starts here" : "No handouts match these filters"}</strong>
+                <p>{props.handouts.length === 0 ? props.canCreate ? "Create a handout for a clue, a letter, or campaign lore. Set its audience before sharing." : "Handouts shared with you will appear here." : "Try another search or clear the filters to see the rest of the library."}</p>
+                {props.handouts.length > 0 && <button className="ghost-button small" type="button" onClick={() => { setQuery(""); setWorldFilter(""); setReadFilter("all"); }}>Clear filters</button>}
+              </div>
+            ) : filtered.map((item) => {
+              const unread = !item.readByUserIds.includes(props.currentUserId);
+              return (
+                <div role="listitem" key={item.id}>
+                  <button id={campaignSearchAnchorId("handout", item.id)} className={selectedId === item.id ? "handout-list-item active" : "handout-list-item"} type="button" aria-current={selectedId === item.id ? "true" : undefined} onClick={() => void openHandout(item)}>
+                    <span className={unread ? "handout-read-dot unread" : "handout-read-dot"} aria-label={unread ? "Unread" : "Read"} />
+                    <span>
+                      <strong>{item.title}</strong>
+                      <small>{visibilityLabel(item.visibility)} · {item.tags.slice(0, 2).join(" · ") || "untagged"}</small>
+                    </span>
+                    <FileText size={15} aria-hidden="true" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
         </div>
-      </div>
-      <div className="handout-list" role="list" aria-label="Handouts">
-        {filtered.length === 0 ? <div className="empty-state compact">No handouts match this view.</div> : filtered.map((item) => {
-          const unread = !item.readByUserIds.includes(props.currentUserId);
-          return (
-            <div role="listitem" key={item.id}>
-              <button id={campaignSearchAnchorId("handout", item.id)} className={selectedId === item.id ? "handout-list-item active" : "handout-list-item"} type="button" aria-current={selectedId === item.id ? "true" : undefined} onClick={() => void openHandout(item)}>
-                <span className={unread ? "handout-read-dot unread" : "handout-read-dot"} aria-label={unread ? "Unread" : "Read"} />
-                <span>
-                  <strong>{item.title}</strong>
-                  <small>{visibilityLabel(item.visibility)} · {item.tags.slice(0, 2).join(" · ") || "untagged"}</small>
-                </span>
-                <FileText size={15} aria-hidden="true" />
-              </button>
-            </div>
-          );
-        })}
-      </div>
+        {(selected || creating) && (
+          <div className="handout-content" ref={editorRef}>
+            <HandoutEditor
+              key={selected?.id ?? "new"}
+              campaignId={props.campaignId}
+              currentUserId={props.currentUserId}
+              item={selected}
+              worlds={props.worlds}
+              members={props.members}
+              actors={props.actors}
+              assets={props.assets}
+              canManage={selected ? props.canUpdate : props.canCreate}
+              busy={busy}
+              onSave={saveHandout}
+              onCancel={() => { setCreating(false); setSelectedId(""); setDeleteArmed(false); }}
+            />
 
-      {(selected || creating) && (
-        <HandoutEditor
-          key={selected?.id ?? "new"}
-          campaignId={props.campaignId}
-          currentUserId={props.currentUserId}
-          item={selected}
-          worlds={props.worlds}
-          members={props.members}
-          actors={props.actors}
-          assets={props.assets}
-          canManage={selected ? props.canUpdate : props.canCreate}
-          busy={busy}
-          onSave={saveHandout}
-          onCancel={() => { setCreating(false); setSelectedId(""); setDeleteArmed(false); }}
-        />
-      )}
-
-      {selected && props.canDelete && (
-        <div className="handout-danger-row">
-          {deleteArmed ? (
-            <button className="danger-button" type="button" disabled={busy} onClick={() => void deleteHandout()}><Trash2 size={14} /> Confirm delete</button>
-          ) : (
-            <button className="ghost-button" type="button" disabled={busy} onClick={() => setDeleteArmed(true)}><Trash2 size={14} /> Delete handout</button>
-          )}
-        </div>
-      )}
+            {selected && props.canDelete && (
+              <div className="handout-danger-row">
+                {deleteArmed ? (
+                  <button className="danger-button" type="button" disabled={busy} onClick={() => void deleteHandout()}><Trash2 size={14} /> Confirm delete</button>
+                ) : (
+                  <button className="ghost-button" type="button" disabled={busy} onClick={() => setDeleteArmed(true)}><Trash2 size={14} /> Delete handout</button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+        {!selected && !creating && filtered.length > 0 && (
+          <div className="handout-content empty-state compact lore-empty-state">
+            <BookOpen size={26} aria-hidden="true" />
+            <strong>Choose a handout to read it</strong>
+            <p>Open a document from the library to see its text and linked images.</p>
+          </div>
+        )}
+      </div>
     </section>
   );
 }
@@ -335,6 +365,21 @@ export async function clearHandoutDraftAfterConfirmedSave<T>(
   return saved;
 }
 
+export function handoutDraftFromItem(item?: HandoutLibraryItem): HandoutDraft {
+  return {
+    id: item?.id,
+    expectedUpdatedAt: item?.updatedAt,
+    worldId: item?.worldId ?? "",
+    title: item?.title ?? "",
+    body: item?.body ?? "",
+    visibility: item?.visibility ?? "public",
+    visibleToUserIds: item?.visibleToUserIds ?? [],
+    visibleToActorIds: item?.visibleToActorIds ?? [],
+    assetIds: item?.assetIds ?? [],
+    tags: item?.tags.join(", ") ?? ""
+  };
+}
+
 export function HandoutEditor(props: {
   campaignId: string;
   currentUserId: string;
@@ -349,30 +394,18 @@ export function HandoutEditor(props: {
   onCancel(): void;
 }) {
   const draftStorageKey = localDraftKey("handout", props.campaignId, props.currentUserId, props.item?.id ?? "new");
-  const initialDraft: HandoutDraft = {
-    id: props.item?.id,
-    expectedUpdatedAt: props.item?.updatedAt,
-    worldId: props.item?.worldId ?? "",
-    title: props.item?.title ?? "",
-    body: props.item?.body ?? "",
-    visibility: props.item?.visibility ?? "public",
-    visibleToUserIds: props.item?.visibleToUserIds ?? [],
-    visibleToActorIds: props.item?.visibleToActorIds ?? [],
-    assetIds: props.item?.assetIds ?? [],
-    tags: props.item?.tags.join(", ") ?? ""
-  };
-  const recoveredDraft = storedHandoutDraft(readLocalDraft<unknown>(draftStorageKey));
+  const initialDraft = handoutDraftFromItem(props.item);
+  const [recoveredDraft] = useState(() => props.canManage ? storedHandoutDraft(readLocalDraft<unknown>(draftStorageKey)) : undefined);
   const [draft, setDraft] = useState<HandoutDraft>(() => recoveredDraft
-    ? { ...recoveredDraft, id: props.item?.id, expectedUpdatedAt: props.item?.updatedAt }
+    ? { ...recoveredDraft, id: props.item?.id }
     : initialDraft);
   const [draftTouched, setDraftTouched] = useState(Boolean(recoveredDraft));
   const [draftPersistence, setDraftPersistence] = useState<DraftPersistenceStatus>(recoveredDraft ? "saved" : "idle");
+  const stale = Boolean(props.item && props.item.updatedAt !== draft.expectedUpdatedAt);
   useEffect(() => {
-    if (!props.item || props.item.id !== draft.id || props.item.updatedAt === draft.expectedUpdatedAt) return;
-    // Advance only the concurrency token. User-authored fields stay intact so
-    // a stale-write refresh never destroys the draft they were reviewing.
-    setDraft((current) => ({ ...current, expectedUpdatedAt: props.item?.updatedAt }));
-  }, [draft.expectedUpdatedAt, draft.id, props.item?.id, props.item?.updatedAt]);
+    if (draftTouched || !props.item || props.item.updatedAt === draft.expectedUpdatedAt) return;
+    setDraft(handoutDraftFromItem(props.item));
+  }, [draftTouched, draft.expectedUpdatedAt, props.item]);
   useEffect(() => {
     if (draftTouched && props.canManage) setDraftPersistence(draftPersistenceStatus(writeLocalDraft(draftStorageKey, draft)));
   }, [draft, draftStorageKey, draftTouched, props.canManage]);
@@ -386,13 +419,20 @@ export function HandoutEditor(props: {
     setDraft(update);
   };
   const saveDraft = async () => {
-    if (props.busy) return;
+    if (props.busy || stale || !props.canManage) return;
     const saved = await clearHandoutDraftAfterConfirmedSave(
       draft,
       props.onSave,
       () => removeLocalDraft(draftStorageKey)
     );
     if (!saved) return;
+    setDraftTouched(false);
+    setDraftPersistence("idle");
+  };
+  const reloadDraft = () => {
+    if (props.busy) return;
+    removeLocalDraft(draftStorageKey);
+    setDraft(handoutDraftFromItem(props.item));
     setDraftTouched(false);
     setDraftPersistence("idle");
   };
@@ -409,6 +449,23 @@ export function HandoutEditor(props: {
         {props.item && <span><Eye size={13} /> Read by {formatNumber(readCount)}</span>}
       </div>
       {props.canManage && <DraftPersistenceNotice subject="Handout" status={draftPersistence} />}
+      {stale && draftTouched && props.item && (
+        <div className="lore-load-state error editor-conflict" role="alert">
+          <span>This handout changed elsewhere. Your draft is preserved; review the latest saved content before saving.</span>
+          <details>
+            <summary>Review latest saved handout</summary>
+            <p><strong>{props.item.title}</strong></p>
+            <MarkdownDocument source={props.item.body} label="Latest saved handout body" />
+            <p>World: {props.worlds.find((world) => world.id === props.item?.worldId)?.name ?? "Unfiled"}</p>
+            <p>Audience: {visibilityLabel(props.item.visibility)}</p>
+            {props.item.visibility === "specific_players" && <p>Players: {props.members.filter((member) => props.item?.visibleToUserIds.includes(member.user.id)).map((member) => member.user.displayName).join(", ") || "None"}</p>}
+            {props.item.visibility === "specific_characters" && <p>Characters: {props.actors.filter((actor) => props.item?.visibleToActorIds.includes(actor.id)).map((actor) => actor.name).join(", ") || "None"}</p>}
+            <p>Tags: {props.item.tags.join(", ") || "None"}</p>
+            <p>Assets: {props.assets.filter((asset) => props.item?.assetIds.includes(asset.id)).map((asset) => asset.name).join(", ") || "None"}</p>
+          </details>
+          <button className="ghost-button small" type="button" disabled={props.busy} onClick={reloadDraft}>Discard draft and load latest</button>
+        </div>
+      )}
       <label>
         <span>Title</span>
         <input aria-label="Handout title" value={draft.title} readOnly={!props.canManage} disabled={props.busy} required onChange={(event) => updateDraft((current) => ({ ...current, title: event.target.value }))} />
@@ -491,7 +548,7 @@ export function HandoutEditor(props: {
 
       {props.canManage && (
         <div className="button-row wrap">
-          <button className="primary-button" type="submit" disabled={props.busy || !draft.title.trim() || !canSaveTargets || !canSaveCharacters}><Save size={14} /> {props.item ? "Save handout" : "Share handout"}</button>
+          <button className="primary-button" type="submit" disabled={props.busy || stale || !draft.title.trim() || !canSaveTargets || !canSaveCharacters}><Save size={14} /> {props.item ? "Save handout" : "Share handout"}</button>
           <button className="ghost-button" type="button" disabled={props.busy} onClick={props.onCancel}><Check size={14} /> Close and keep draft</button>
           {draftTouched && <button className="ghost-button" type="button" disabled={props.busy} onClick={discardDraft}><Trash2 size={14} /> Discard draft</button>}
         </div>

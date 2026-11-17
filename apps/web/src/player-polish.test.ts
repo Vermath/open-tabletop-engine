@@ -9,6 +9,7 @@ const advancementFlowSource = existsSync(advancementFlowPath) ? readFileSync(adv
 const journalPanelSource = readFileSync(resolve(__dirname, "journal-panel.tsx"), "utf8");
 const stylesSource = readFileSync(resolve(__dirname, "styles.css"), "utf8");
 const sceneCanvasSource = readFileSync(resolve(__dirname, "scene-canvas.tsx"), "utf8");
+const boardTokenSource = readFileSync(resolve(__dirname, "board-token.tsx"), "utf8");
 const actorPanelSource = readFileSync(resolve(__dirname, "actor-panel.tsx"), "utf8");
 
 describe("player seat polish", () => {
@@ -62,8 +63,10 @@ describe("player seat polish", () => {
   });
 
   it("marks the current and next token with shape-aware, non-color-only turn cues", () => {
-    expect(sceneCanvasSource).toContain('data-turn-state={isCurrentTurn ? "current" : isNextTurn ? "next" : undefined}');
-    expect(sceneCanvasSource).toContain('const turnStateLabel = isCurrentTurn ? "current turn" : isNextTurn ? "up next" : undefined;');
+    expect(sceneCanvasSource).toContain('turnState={isCurrentTurn ? "current" : isNextTurn ? "next" : undefined}');
+    expect(boardTokenSource).toContain("data-turn-state={props.turnState}");
+    expect(boardTokenSource).toContain('const turnStateLabel = isCurrentTurn ? "current turn" : isNextTurn ? "up next" : undefined;');
+    expect(boardTokenSource).toContain('${turnStateLabel ? `, ${turnStateLabel}` : ""}`}');
     expect(sceneCanvasSource).toContain('isNextTurn = !isCurrentTurn && nextTurnTokenIdSet.has(token.id)');
     expect(stylesSource).toContain('border-radius: inherit;');
     expect(stylesSource).toContain('border: 2px solid var(--turn-current);');

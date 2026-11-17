@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 
@@ -70,6 +71,8 @@ async function expectSceneTokenByName(page: Page, name: string) {
 }
 
 async function openInspectorPanel(page: Page, panelName: string) {
+  const showInspector = page.getByRole("button", { name: "Show inspector", exact: true });
+  if (await showInspector.isVisible()) await showInspector.click();
   const visiblePanelName = panelName === "Content" ? "Assets" : panelName;
   await page.locator(".inspector-tabs").getByRole("tab", { name: visiblePanelName, exact: true }).click();
 }
@@ -192,7 +195,7 @@ for (const viewport of viewportCases) {
       await expect(page.getByRole("textbox", { name: "Chat message" })).toBeVisible();
 
       await page.getByRole("button", { name: "Prep", exact: true }).click();
-      await page.getByRole("tab", { name: "Assets" }).click();
+      await openInspectorPanel(page, "Assets");
       await expect(page.getByRole("region", { name: "Asset library" })).toBeVisible();
       await expect(page.getByRole("textbox", { name: "Asset search" })).toBeVisible();
 
@@ -259,11 +262,66 @@ test.describe("short phone viewport", () => {
     viewport: { width: 320, height: 568 }
   });
 
+  test("opens reachable campaign choices and switches campaigns on a short phone", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("button", { name: "Demo GM", exact: true }).click();
+    const currentCampaign = page.getByLabel("Current campaign", { exact: true });
+    await expect(currentCampaign).toHaveText("The Ember Vault");
+    const campaignName = `Phone switch ${randomUUID().slice(0, 8)}`;
+    const headers = { "x-user-id": "usr_demo_gm" };
+    const create = await page.request.post(`${apiBaseUrl}/api/v1/campaigns`, {
+      headers: { ...headers, "idempotency-key": `e2e-mobile-campaign-create:${randomUUID()}` },
+      data: { name: campaignName },
+    });
+    expect(create.ok(), await create.text()).toBe(true);
+    const campaign = await create.json() as { id: string };
+
+    try {
+      await page.reload();
+      await expect(currentCampaign).toBeVisible();
+      await expect(currentCampaign).toHaveText("The Ember Vault");
+      const switcher = page.locator("details.campaign-switcher");
+      const summary = switcher.locator(":scope > summary");
+      await expect(summary).toBeInViewport();
+      await summary.tap();
+      await expect(switcher).toHaveAttribute("open", "");
+      const choices = switcher.getByRole("navigation", { name: "Campaigns", exact: true });
+      for (const name of ["The Ember Vault", campaignName]) {
+        const choice = choices.getByRole("button", { name, exact: true });
+        await expect(choice).toBeVisible();
+        await choice.scrollIntoViewIfNeeded();
+        await expect(choice).toBeInViewport({ ratio: 1 });
+        expect(await choice.evaluate((element) => {
+          const box = element.getBoundingClientRect();
+          const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+          return box.width > 0 && box.height > 0
+            && box.left >= 0 && box.right <= window.innerWidth
+            && box.top >= 0 && box.bottom <= window.innerHeight
+            && Boolean(hit && (hit === element || element.contains(hit)));
+        }), `${name} must be a reachable touch target`).toBe(true);
+      }
+      await choices.getByRole("button", { name: campaignName, exact: true }).tap();
+      await expect(currentCampaign).toBeVisible();
+      await expect(currentCampaign).toHaveText(campaignName);
+      await expect(summary).toHaveAttribute("aria-label", `Switch campaign: ${campaignName}`);
+      if (!(await switcher.evaluate((element) => (element as HTMLDetailsElement).open))) await summary.tap();
+      await choices.getByRole("button", { name: "The Ember Vault", exact: true }).tap();
+      await expect(currentCampaign).toHaveText("The Ember Vault");
+    } finally {
+      const current = await page.request.get(`${apiBaseUrl}/api/v1/campaigns/${campaign.id}`, { headers });
+      expect(current.ok(), await current.text()).toBe(true);
+      const revision = await current.json() as { updatedAt: string };
+      const deleted = await page.request.delete(`${apiBaseUrl}/api/v1/campaigns/${campaign.id}?expectedUpdatedAt=${encodeURIComponent(revision.updatedAt)}`, {
+        headers: { ...headers, "idempotency-key": `e2e-mobile-campaign-delete:${randomUUID()}` },
+      });
+      expect(deleted.ok(), await deleted.text()).toBe(true);
+    }
+  });
   test("keeps the Prep inspector reachable above the mobile rail", async ({ page }) => {
     await page.goto("/");
     await page.getByRole("button", { name: "Demo GM" }).click();
     await page.getByRole("button", { name: "Prep", exact: true }).click();
-    await page.getByRole("tab", { name: "Assets", exact: true }).click();
+    await openInspectorPanel(page, "Assets");
 
     const tableGrid = page.locator(".table-grid.workspace-prep");
     const inspectorPanel = page.locator(".workspace-prep .inspector-panel-content");
@@ -283,19 +341,27 @@ test.describe("short phone viewport", () => {
     const assetSearch = page.getByRole("textbox", { name: "Asset search" });
     await assetSearch.scrollIntoViewIfNeeded();
     await expect(assetSearch).toBeInViewport();
-    expect(await assetSearch.evaluate((element) => {
+    const reachability = await assetSearch.evaluate((element) => {
       const box = element.getBoundingClientRect();
       const panel = element.closest<HTMLElement>(".inspector-panel-content")?.getBoundingClientRect();
       const railTop = document.querySelector<HTMLElement>(".rail")?.getBoundingClientRect().top ?? window.innerHeight;
       const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
-      return Boolean(
-        panel
-        && box.top >= panel.top
-        && box.bottom <= Math.min(panel.bottom, railTop, window.innerHeight)
-        && hit
-        && (hit === element || element.contains(hit))
-      );
-    })).toBe(true);
+      return {
+        box: box.toJSON(),
+        panel: panel?.toJSON() ?? null,
+        railTop,
+        viewportHeight: window.innerHeight,
+        hit: hit ? { tag: hit.tagName, id: hit.id, class: hit.getAttribute("class"), label: hit.getAttribute("aria-label") } : null,
+        reachable: Boolean(
+          panel
+          && box.top >= panel.top
+          && box.bottom <= Math.min(panel.bottom, railTop, window.innerHeight)
+          && hit
+          && (hit === element || element.contains(hit))
+        ),
+      };
+    });
+    expect(reachability.reachable, JSON.stringify(reachability)).toBe(true);
     await expect(inspectorPanel).toBeVisible();
   });
 

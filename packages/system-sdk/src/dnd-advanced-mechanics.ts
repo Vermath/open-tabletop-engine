@@ -5,7 +5,7 @@ import type {
   RulesEffectSchedule,
   RulesEffectScheduleEvent,
   RulesEffectScheduleTiming
-} from "@open-tabletop/core";
+} from "@open-tabletop/api-contracts";
 import type { RulesResolutionActorUpdate } from "./dnd-resolution-types.js";
 
 type JsonRecord = Record<string, unknown>;

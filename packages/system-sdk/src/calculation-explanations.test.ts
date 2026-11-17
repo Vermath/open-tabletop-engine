@@ -1,4 +1,4 @@
-import type { Actor, CalculationFieldExplanation, Item } from "@open-tabletop/core";
+import type { Actor, CalculationFieldExplanation, Item } from "@open-tabletop/api-contracts";
 import { describe, expect, it } from "vitest";
 import { DND_5E_SRD_VERSION, dnd5eSrdCalculationExplanation } from "./index.js";
 

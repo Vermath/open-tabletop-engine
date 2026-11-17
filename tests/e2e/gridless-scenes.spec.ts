@@ -17,7 +17,8 @@ async function loginDemoGm(page: Page): Promise<void> {
     localStorage.setItem("otte:sessionTransport", "cookie");
   }, apiBaseUrl);
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 }
 
 async function openScenes(page: Page): Promise<Locator> {
@@ -30,7 +31,7 @@ async function openScenes(page: Page): Promise<Locator> {
 
 async function newSceneForm(panel: Locator): Promise<Locator> {
   const details = panel.locator("details.create-drawer", { hasText: "New scene" });
-  await details.evaluate((element) => { (element as HTMLDetailsElement).open = true; });
+  if (!(await details.evaluate((element) => (element as HTMLDetailsElement).open))) await details.locator(":scope > summary").click();
   return details.locator("form");
 }
 
@@ -47,7 +48,7 @@ test("GM creates, reloads, and plays on gridless and square scenes", async ({ pa
   await form.getByRole("combobox", { name: "Scene grid type" }).selectOption("gridless");
   await expect(form.getByRole("spinbutton", { name: "Scene grid size" })).toHaveCount(0);
   await expect(form.locator(".scene-size-presets")).toHaveCount(0);
-  await expect(form.getByRole("note")).toContainText("Distance, reach, and area placement require a manual ruling");
+  await expect(form.getByRole("note").filter({ hasText: "Distance, reach, and area placement" })).toContainText("Distance, reach, and area placement require a manual ruling");
   await form.locator('input[type="checkbox"]').check();
   const gridlessCreate = page.waitForResponse((response) => response.request().method() === "POST" && /\/campaigns\/camp_demo\/scenes$/.test(response.url()));
   await form.getByRole("button", { name: "Add Scene" }).click();
@@ -59,11 +60,13 @@ test("GM creates, reloads, and plays on gridless and square scenes", async ({ pa
   panel = await openScenes(page);
   await expect(panel.getByRole("combobox", { name: "Edit scene grid type" })).toHaveValue("gridless");
   await expect(panel.getByRole("spinbutton", { name: "Edit scene grid size" })).toHaveCount(0);
-  await expect(panel.getByRole("note")).toContainText("free token placement");
+  await expect(panel.getByRole("note").filter({ hasText: "free token placement" })).toContainText("free token placement");
   await closeManage(panel);
   await page.getByRole("button", { name: "Prep", exact: true }).click();
   await expect(page.getByRole("button", { name: "Calibrate grid" })).toHaveCount(0);
 
+  const showScene = page.getByRole("button", { name: "Show scene", exact: true });
+  if (await showScene.isVisible()) await showScene.click();
   const quickCreate = page.locator("form.quick-create-form");
   if (!(await quickCreate.getByRole("textbox", { name: "Token name" }).isVisible())) {
     await page.getByRole("button", { name: "Token", exact: true }).click();

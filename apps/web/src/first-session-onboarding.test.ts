@@ -70,11 +70,11 @@ describe("first-session onboarding", () => {
 
   it("makes map upload a recoverable background-to-calibration workflow", () => {
     expect(appSource).toContain('throw new Error("Select a scene before uploading a map.")');
-    expect(appSource).toContain('setAsBackground: true');
-    expect(appSource).toContain("selected: realtimeSelectionRef.current.sceneId === scene.id");
+    expect(appSource).toContain("uploadPreparedSceneMap({ scene: latestScene");
+    expect(appSource).toContain("selected: options.selected ?? realtimeSelectionRef.current.sceneId === scene.id");
     expect(appSource).toContain("setGridCalibrationOpen(plan.calibrationOpen)");
     expect(backgroundCalibrationSource).toContain('if (scene.gridType === "gridless")');
-    expect(appSource).toContain("resetSceneMapCalibration(uploaded.scene");
+    expect(appSource).toContain("finishSceneBackgroundChange(result.scene");
     expect(backgroundCalibrationSource).toContain('mapCalibrationComplete: scene.gridType === "gridless" && Boolean(scene.backgroundAssetId)');
     expect(appSource).toContain('mapCalibrationComplete: Boolean(targetScene.backgroundAssetId)');
     expect(appSource).toContain('Map upload failed: ${errorMessage(error)}');

@@ -96,6 +96,11 @@ function computeTypedSensePolygons(
     }));
 }
 
+/** A light with `shadows: false` is not blocked by walls. */
+function lightOcclusionScene<T extends Pick<Scene, "width" | "height" | "walls">>(scene: T, light: Pick<LightSource, "shadows">): Pick<Scene, "width" | "height" | "walls"> {
+  return light.shadows === false ? { width: scene.width, height: scene.height, walls: [] } : scene;
+}
+
 export function computeLightVisionPolygon(scene: Pick<Scene, "width" | "height" | "walls">, light: LightSource): VisionPolygon {
   const dimRadius = normalizedLightRadius(light.dimRadius) ?? normalizedLightRadius(light.radius) ?? 0;
   const brightRadius = normalizedLightRadius(light.brightRadius);
@@ -109,7 +114,7 @@ export function computeLightVisionPolygon(scene: Pick<Scene, "width" | "height" 
     opacity: Math.max(0.05, Math.min(0.7, light.intensity ?? 0.28)),
     lightingEffect: light.kind ?? "light",
     magical: Boolean(light.magical),
-    points: computeVisibilityPolygon(scene, { x: light.x, y: light.y }, light.radius)
+    points: computeVisibilityPolygon(lightOcclusionScene(scene, light), { x: light.x, y: light.y }, light.radius)
   };
 }
 
@@ -130,7 +135,7 @@ export function computeLightVisionPolygons(scene: Pick<Scene, "width" | "height"
       opacity: Math.max(0.03, Math.min(0.45, (light.intensity ?? 0.28) * 0.55)),
       lightingEffect: light.kind ?? "light",
       magical: Boolean(light.magical),
-      points: computeVisibilityPolygon(scene, { x: light.x, y: light.y }, dimRadius)
+      points: computeVisibilityPolygon(lightOcclusionScene(scene, light), { x: light.x, y: light.y }, dimRadius)
     },
     {
       id: `light_${light.id}_bright`,
@@ -142,7 +147,7 @@ export function computeLightVisionPolygons(scene: Pick<Scene, "width" | "height"
       opacity: Math.max(0.08, Math.min(0.7, light.intensity ?? 0.28)),
       lightingEffect: light.kind ?? "light",
       magical: Boolean(light.magical),
-      points: computeVisibilityPolygon(scene, { x: light.x, y: light.y }, brightRadius)
+      points: computeVisibilityPolygon(lightOcclusionScene(scene, light), { x: light.x, y: light.y }, brightRadius)
     }
   ];
 }
@@ -189,6 +194,35 @@ export function isPointInsideVisionPolygon(point: VisionPoint, polygon: VisionPo
 
 export function isPointInsideVisionPolygons(point: VisionPoint, polygons: VisionPolygon[]): boolean {
   return polygons.some((polygon) => isPointInsideVisionPolygon(point, polygon));
+}
+
+/** Applies the same visibility rules to server disclosure and player map sampling. */
+export function isPointVisibleInSceneVision(point: VisionPoint, options: {
+  visibilityMode?: Scene["visibilityMode"];
+  fogActive: boolean;
+  polygons: readonly VisionPolygon[];
+}): boolean {
+  const containing = options.polygons.filter((polygon) => isPointInsideVisionPolygon(point, polygon));
+  if (containing.some((polygon) => polygon.source === "fog" && polygon.mode === "hide")) return false;
+  const ownedVision = containing.filter((polygon) => polygon.source === "token");
+  const darkness = containing.filter((polygon) => polygon.lightingEffect === "darkness");
+  if (!visionSensesBypassDarkness(ownedVision, darkness)) return false;
+  if (options.visibilityMode === "dynamic") {
+    if (ownedVision.length === 0) return false;
+    return ownedVision.some((polygon) => visionSenseBypassesAmbientDarkness(polygon.senseType)) ||
+      containing.some((polygon) => polygon.source === "light" && polygon.lightingEffect !== "darkness");
+  }
+  return !options.fogActive || containing.some((polygon) => polygon.source !== "light" && polygon.mode !== "hide");
+}
+
+export function visionSenseBypassesAmbientDarkness(senseType: VisionPolygon["senseType"]): boolean {
+  return senseType === "darkvision" || senseType === "blindsight" || senseType === "tremorsense" || senseType === "truesight";
+}
+
+export function visionSensesBypassDarkness(visionPolygons: ReadonlyArray<Pick<VisionPolygon, "senseType">>, darknessPolygons: ReadonlyArray<Pick<VisionPolygon, "magical">>): boolean {
+  if (darknessPolygons.length === 0) return true;
+  const bypassesMagical = visionPolygons.some((polygon) => polygon.senseType === "blindsight" || polygon.senseType === "tremorsense" || polygon.senseType === "truesight");
+  return bypassesMagical || (!darknessPolygons.some((polygon) => polygon.magical) && visionPolygons.some((polygon) => polygon.senseType === "darkvision"));
 }
 
 export function buildSmoothFogBrushPolygon(scene: Pick<Scene, "width" | "height">, rawPoints: VisionPoint[], options: SmoothFogBrushOptions = {}): { points: VisionPoint[]; radius: number } | undefined {
