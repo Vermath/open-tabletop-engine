@@ -388,6 +388,13 @@ test("competitive unlinked token keeps its editor separate from actor selection 
   const actorIds = new Set([intentionalActor.id, linkedActor.id]);
   const actorsBefore = (await tableSnapshot(page, scene.id)).actors.filter((actor) => actorIds.has(actor.id));
   const board = await openScene(page, scene, true);
+  const initials = board.getByRole("button", { name: "Player Objects & Tokens token Unlinked marker", exact: true }).locator(".token-label");
+  await expect(initials).toHaveText("UN");
+  expect(await initials.evaluate((label) => {
+    const letters = document.createRange();
+    letters.selectNodeContents(label);
+    return letters.getBoundingClientRect().width <= label.clientWidth + 1;
+  })).toBe(true);
   const inspector = page.getByRole("complementary", { name: "Inspector", exact: true });
   const chooseIntentionalActor = () => page.getByRole("region", { name: "Party", exact: true }).getByRole("button", { name: /Intentional actor selection/ }).click();
   await chooseIntentionalActor();

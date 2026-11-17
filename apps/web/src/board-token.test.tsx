@@ -27,7 +27,7 @@ describe("board token", () => {
 
   it("is a button positioned in scene percentages, named for assistive technology", () => {
     const markup = render();
-    expect(markup).toMatch(/^<button class="token layer-player active-layer friendly +" data-token-id="tok_hero" aria-haspopup="menu" style="left:40%;top:37\.5%;width:5%;height:6\.25%;--token-hue:\d+"/);
+    expect(markup).toMatch(/^<button class="token layer-player active-layer friendly +" data-token-id="tok_hero" aria-haspopup="menu" style="left:40%;top:37\.5%;width:5%;height:6\.25%;--token-tint:var\(--[a-z]+\)"/);
     expect(markup.match(/class="([^"]*)"/)![1]!.split(" ").filter(Boolean)).toEqual(["token", "layer-player", "active-layer", "friendly"]);
     expect(markup).toContain('aria-label="Player Objects &amp; Tokens token Valen Ash"');
     expect(markup).toContain('aria-pressed="false"');
@@ -94,6 +94,12 @@ describe("board token", () => {
     expect(five.match(/token-condition-chip"/g)).toHaveLength(3);
     expect(five).toContain('<small class="token-condition-chip overflow">+2</small>');
     expect(render({ conditions: JSON.stringify(['Odd "name", with, commas']) })).toContain("Odd &quot;name&quot;, with, commas");
+  });
+
+  it("uses distinct icons for charmed, stunned, grappled and restrained", () => {
+    const icons = (conditions: string[]) => render({ conditions: JSON.stringify(conditions) });
+    expect(icons(["Charmed", "Stunned"])).toMatch(/title="Charmed"><svg[^>]+lucide-sparkles.*title="Stunned"><svg[^>]+lucide-zap/);
+    expect(icons(["Grappled", "Restrained"])).toMatch(/title="Grappled"><svg[^>]+lucide-link.*title="Restrained"><svg[^>]+lucide-lock-keyhole/);
   });
 
   it("rotates only the artwork", () => {

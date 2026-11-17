@@ -1,5 +1,5 @@
 import type { Token, TokenLayer } from "@open-tabletop/core";
-import { Ban, Bed, Droplet, EarOff, EyeOff, Footprints, Ghost, HeartOff, Link, Moon, Skull, Snowflake, Sparkles, Unlink, ZapOff } from "lucide-react";
+import { Ban, Bed, Droplet, EarOff, EyeOff, Footprints, Ghost, HeartOff, Link, LockKeyhole, Moon, Skull, Snowflake, Sparkles, Unlink, Zap, ZapOff } from "lucide-react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { memo, useId } from "react";
 import { boardRenderCounts } from "./board-render-counts.js";
@@ -9,13 +9,15 @@ import "./board-token.css";
 const conditionIcons = new Map(Object.entries({
   blinded: EyeOff, charmed: Sparkles, deafened: EarOff, exhaustion: Moon, frightened: Ghost,
   grappled: Link, incapacitated: Ban, invisible: Unlink, paralyzed: ZapOff, petrified: Snowflake,
-  poisoned: Droplet, prone: Footprints, restrained: Link, stunned: Sparkles, unconscious: Bed, dead: Skull, dying: HeartOff,
+  poisoned: Droplet, prone: Footprints, restrained: LockKeyhole, stunned: Zap, unconscious: Bed, dead: Skull, dying: HeartOff,
 }));
 
-function tokenHue(id: string): number {
+const tokenTints = ["var(--brass)", "var(--green)", "var(--teal)", "var(--red)", "var(--arcane)"] as const;
+
+function tokenTint(id: string): string {
   let hash = 0;
   for (const char of id) hash = (Math.imul(hash, 31) + char.charCodeAt(0)) >>> 0;
-  return hash % 360;
+  return tokenTints[hash % tokenTints.length]!;
 }
 
 /**
@@ -101,7 +103,7 @@ export const BoardToken = memo(function BoardToken(props: BoardTokenProps) {
         width: `${props.width}%`,
         height: `${props.height}%`,
         pointerEvents: props.calibrationActive ? "none" : undefined,
-        "--token-hue": tokenHue(id),
+        "--token-tint": tokenTint(id),
       } as CSSProperties}
       aria-label={`${props.layerLabel} token ${props.name}${props.elevation !== 0 ? ` at ${formatNumber(Math.abs(props.elevation))} feet ${props.elevation > 0 ? "above" : "below"} ground` : ""}${turnStateLabel ? `, ${turnStateLabel}` : ""}`}
       aria-pressed={props.selected}
