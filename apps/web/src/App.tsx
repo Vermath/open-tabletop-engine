@@ -112,7 +112,7 @@ import { isStaleWriteError, sharedMutationIdempotencyKey } from "./shared-mutati
 import { KeyedMutationQueue } from "./keyed-mutation-queue.js";
 import { InspectorPanelContent, InterfaceSurface } from "./interface-surfaces.js";
 import { clampFloatingPanel, useMovablePanel, type FloatingPanelPosition, type FloatingPanelSize } from "./movable-panel.js";
-import { useInterfaceSounds } from "./interface-sounds.js";
+import { useInterfaceSounds, type InterfaceSoundSave } from "./interface-sounds.js";
 import { DiceTableStage } from "./dice-table-stage.js";
 import { CommandPalette, KeyboardShortcutDialog, RealtimeSyncGuard, ToastStack } from "./tabletop-overlays.js";
 import { actorActionConsequenceReview, actorActionRequest, committedActionStatus, preparedActionIsRoutine, typedDamageConsequenceReview, type CommittedActorActionResponse, type PreparedActorActionResponse, type PreparedTypedDamageResponse } from "./actor-action-review.js";
@@ -649,6 +649,8 @@ export function App() {
   const actorSheetMutationQueueRef = useRef(new KeyedMutationQueue());
   const actorSheetAuthoritativeRef = useRef<Map<string, Actor>>(new Map());
   const tokenMutationQueueRef = useRef(new KeyedMutationQueue());
+  const profilePreferenceQueueRef = useRef(new KeyedMutationQueue());
+  const savedProfileRef = useRef<User | undefined>(undefined);
   const tokenAuthoritativeRef = useRef<Map<string, Token>>(new Map());
   const snapshotRef = useRef(snapshot);
   useLayoutEffect(() => { snapshotRef.current = snapshot; }, [snapshot]);
@@ -721,7 +723,7 @@ export function App() {
   const liveCampaignSession = campaignSessions.find((session) => session.status === "live");
   const currentTurnCombatant = combatTurnCombatant(activeCombat, "current");
   const nextTurnCombatant = combatTurnCombatant(activeCombat, "next");
-  const { settings: interfaceSounds, toggle: toggleInterfaceSounds, play: playInterfaceCue, applySavedSettings: applySavedInterfaceSounds } = useInterfaceSounds({ preferences: snapshot.session?.user.preferences?.interfaceSounds, muted: audioMuted, masterVolume: audioMasterVolume, scene: selectedScene, userId: currentUserId, combat: activeCombat, combatant: currentTurnCombatant, tokens: snapshot.tokens, actors: snapshot.actors, onSettingsChange: (settings) => persistQuickPreferences({ interfaceSounds: settings }, "Set interface sounds") });
+  const { settings: interfaceSounds, toggle: toggleInterfaceSounds, play: playInterfaceCue, applySavedSettings: applySavedInterfaceSounds } = useInterfaceSounds({ preferences: snapshot.session?.user.preferences?.interfaceSounds, muted: audioMuted, masterVolume: audioMasterVolume, scene: selectedScene, userId: currentUserId, combat: activeCombat, combatant: currentTurnCombatant, tokens: snapshot.tokens, actors: snapshot.actors, onSettingsChange: (settings, save) => persistQuickPreferences({ interfaceSounds: settings }, "Set interface sounds", save) });
   const currentTurnTokenIds = useMemo(() => currentTurnCombatant?.tokenId ? [currentTurnCombatant.tokenId] : [], [currentTurnCombatant?.tokenId]);
   const nextTurnTokenIds = useMemo(() => nextTurnCombatant?.tokenId && nextTurnCombatant.id !== currentTurnCombatant?.id ? [nextTurnCombatant.tokenId] : [], [nextTurnCombatant?.tokenId, nextTurnCombatant?.id, currentTurnCombatant?.id]);
   const recentEndedCombats = snapshot.combats.filter((combat) => !combat.active).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).slice(0, 3);
@@ -2208,6 +2210,9 @@ export function App() {
 
   function applyAuthenticatedUser(user: User, source: "profile" | "quick" = "profile"): void {
     if (user.id !== realtimeSelectionRef.current.userId) return;
+    const lastSaved = savedProfileRef.current;
+    if (lastSaved?.id === user.id && lastSaved.updatedAt > user.updatedAt) return;
+    savedProfileRef.current = user;
     if (source === "profile") applySavedInterfaceSounds(user.id, user.preferences?.interfaceSounds);
     applyPreferenceRuntime(user);
     setSnapshot((current) => ({
@@ -2218,22 +2223,27 @@ export function App() {
     }));
     setStatus("Profile preferences synced");
   }
-  function persistQuickPreferences(patch: Partial<NonNullable<User["preferences"]>>, label: string): void {
-    const user = snapshotRef.current.session?.user;
-    if (!user) return;
-    const previous = resolvedUserPreferences(user);
-    const preferences = { ...previous, ...patch };
-    const attemptKey = `profile-quick-preference:${user.id}:${globalThis.crypto.randomUUID()}`;
-    applyPreferenceRuntime({ ...user, preferences });
-    void campaignAction.runAction(label, async () => {
+  function persistQuickPreferences(patch: Partial<NonNullable<User["preferences"]>>, label: string, save?: InterfaceSoundSave): void {
+    const signedIn = snapshotRef.current.session?.user;
+    if (!signedIn) return;
+    const { id } = signedIn;
+    const attemptKey = `profile-quick-preference:${id}:${globalThis.crypto.randomUUID()}`;
+    if (!save) applyPreferenceRuntime({ ...signedIn, preferences: { ...resolvedUserPreferences(signedIn), ...patch } });
+    void campaignAction.runAction(label, () => profilePreferenceQueueRef.current.enqueue(id, async () => {
+      const active = snapshotRef.current.session?.user;
+      if (active?.id !== id || realtimeSelectionRef.current.userId !== id || (save && !save.isCurrent())) return;
+      const saved = savedProfileRef.current;
+      const user = saved?.id === id && saved.updatedAt > active.updatedAt ? saved : active;
+      const previous = resolvedUserPreferences(user);
       try {
-        const result = await updateUserProfile({ user, displayName: user.displayName, preferences, idempotencyKey: attemptKey });
+        const result = await updateUserProfile({ user, displayName: user.displayName, preferences: { ...previous, ...patch }, idempotencyKey: `${attemptKey}:${user.updatedAt}` });
         applyAuthenticatedUser(result.user, "quick");
+        save?.onSaved();
       } catch (failure) {
-        applyPreferenceRuntime({ ...user, preferences: previous });
+        if (!save && realtimeSelectionRef.current.userId === id) applyPreferenceRuntime({ ...user, preferences: previous });
         throw failure;
       }
-    });
+    }));
   }
 
   useEffect(() => {
