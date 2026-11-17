@@ -6296,6 +6296,7 @@ const componentSchemas = {
       polygons: arrayOf(schemaRef("VisionPolygon")),
       sceneUpdatedAt: dateTimeSchema,
       visibleTokens: arrayOf(schemaRef("Token")),
+      visibleTokenAssets: arrayOf(schemaRef("MapAsset")),
     },
   },
   VisionPointSample: {
