@@ -18,7 +18,7 @@
   scrollbar-width: thin;
 }
 .inspector .inspector-tab-bar .inspector-tabs .tab,
-.inspector-tab-measure span {
+.inspector-tab-measure span:not([data-measure="more"]) {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
@@ -28,6 +28,10 @@
   padding-inline: 7px;
   font-size: var(--type-small);
   white-space: nowrap;
+}
+.inspector-tab-bar .inspector-tab-more {
+  flex: 0 0 auto;
+  min-width: max-content;
 }
 .inspector-tab-measure {
   position: absolute;

@@ -193,6 +193,7 @@ const inspectorIcons = {
   actors: Users, compendium: BookOpen, sessions: Timer, worlds: Globe2, handouts: BookOpen, journal: ScrollText,
   memory: Brain, search: Search, chat: MessageSquare, combat: Swords, content: Upload, plugins: Boxes,
 } satisfies Record<InspectorTab, typeof Users>;
+const inspectorMoreClassName = "ghost-button small inspector-tab-more";
 
 export function WorkspaceInspectorTabs({ inspectorTabs, tab, chatUnreadCount, onSelectTab }: WorkspaceInspectorTabsProps) {
   const ordered = (Object.keys(inspectorPanelNames) as InspectorTab[]).filter((item) => inspectorTabs.includes(item));
@@ -256,7 +257,7 @@ export function WorkspaceInspectorTabs({ inspectorTabs, tab, chatUnreadCount, on
         })}
       </div>
       {overflow.length > 0 && (
-        <ActionMenu label="More inspector panels" trigger={<>More <ChevronDown size={12} /></>}>
+        <ActionMenu label="More inspector panels" className={inspectorMoreClassName} trigger={<>More <ChevronDown size={12} /></>}>
           {(close) => overflow.map((item) => {
             const Icon = inspectorIcons[item];
             return <button className="ghost-button small" type="button" role="menuitem" key={item} onClick={() => {
@@ -272,7 +273,7 @@ export function WorkspaceInspectorTabs({ inspectorTabs, tab, chatUnreadCount, on
           const Icon = inspectorIcons[item];
           return <span key={item} data-measure={item}><Icon size={15} /> {labels(item)}</span>;
         })}
-        <span data-measure="more">More <ChevronDown size={12} /></span>
+        <span className={inspectorMoreClassName} data-measure="more">More <ChevronDown size={12} /></span>
       </div>
     </div>
   );
