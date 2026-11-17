@@ -6,5 +6,6 @@ import { App } from "./App.js";
 import "@fontsource-variable/alegreya/wght.css";
 import "@fontsource-variable/figtree/wght.css";
 import "./styles.css";
+import "./form-controls.css";
 
 createRoot(document.getElementById("root")!).render(<App />);
