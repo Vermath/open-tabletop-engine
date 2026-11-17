@@ -9,20 +9,20 @@ async function openInspectorPanel(page: Page, panelName: string) {
   await page.locator(".inspector-tabs").getByRole("tab", { name: panelName, exact: true }).click();
 }
 
-async function loginDemoGm(page: Page) {
+async function loginSeededDemo(page: Page, email = "gm@example.test") {
   await page.goto("/");
-  await page.evaluate(async (apiBaseUrl) => {
+  await page.evaluate(async ({ apiBaseUrl, email }) => {
     const response = await fetch(`${apiBaseUrl}/api/v1/auth/login`, {
       method: "POST",
       credentials: "include",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email: "gm@example.test" })
+      body: JSON.stringify({ email })
     });
     if (!response.ok) throw new Error(await response.text());
     const login = (await response.json()) as { user: { id: string } };
     localStorage.setItem("otte:userId", login.user.id);
     localStorage.setItem("otte:sessionTransport", "cookie");
-  }, apiBaseUrl);
+  }, { apiBaseUrl, email });
   await page.goto("/");
 }
 
@@ -47,7 +47,7 @@ test("demo GM can turn 3D dice off for text-only rolling", async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem("otte:dice3d", "on");
   });
-  await loginDemoGm(page);
+  await loginSeededDemo(page);
   await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 
@@ -72,7 +72,7 @@ test("3D dice preloads the physics stage when enabled", async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem("otte:dice3d", "on");
   });
-  await loginDemoGm(page);
+  await loginSeededDemo(page);
   await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 
@@ -85,7 +85,7 @@ test("3D dice hides the roll result until the cast settles", async ({ page }) =>
   await page.addInitScript(() => {
     localStorage.setItem("otte:dice3d", "on");
   });
-  await loginDemoGm(page);
+  await loginSeededDemo(page);
   await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 
@@ -107,4 +107,55 @@ test("3D dice hides the roll result until the cast settles", async ({ page }) =>
   await rollCard.locator(".chat-roll-summary").click();
   await expect(rollCard.locator(".chat-roll-dice")).toHaveCount(1);
   await expect(page.locator(".rail > .status")).toContainText(/Rolled [1-4]/);
+});
+
+test("the dice stage bounds callouts to the board and only displays rolls visible to its viewer", async ({ page, browser, baseURL }) => {
+  if (!baseURL) throw new Error("The dice test needs a web base URL.");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const playerContext = await browser.newContext({ baseURL, extraHTTPHeaders: { Origin: baseURL } });
+  await playerContext.addInitScript(() => {
+    Object.defineProperty(navigator, "connection", { value: { saveData: true } });
+  });
+  try {
+    const player = await playerContext.newPage();
+    await Promise.all([loginSeededDemo(page), loginSeededDemo(player, "player@example.test")]);
+    await Promise.all([page, player].map(async (viewer) => {
+      await expect(viewer.locator(".scene-viewport")).toBeVisible();
+      await openInspectorPanel(viewer, "Chat");
+      await ensure3dDiceEnabled(viewer);
+    }));
+
+    async function roll(formula: string, visibility: "public" | "gm_only" | "whisper") {
+      await page.evaluate(async ({ apiBaseUrl, formula, visibility }) => {
+        const response = await fetch(`${apiBaseUrl}/api/v1/dice/roll`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID() },
+          body: JSON.stringify({ campaignId: "camp_demo", formula, visibility })
+        });
+        if (!response.ok) throw new Error(await response.text());
+      }, { apiBaseUrl, formula, visibility });
+    }
+
+    function callout(viewer: Page, formula: string) {
+      return viewer.locator(".dice-cast-static .dice-cast-label").filter({ hasText: formula });
+    }
+
+    await roll("1d6+31", "public");
+    await expect(callout(page, "1d6+31")).toBeVisible();
+    await expect(callout(player, "1d6+31")).toBeVisible();
+    expect(await page.locator(".dice-table-stage").boundingBox()).toEqual(await page.locator(".scene-viewport").boundingBox());
+    await expect(page.locator(".dice-table-stage canvas")).toHaveCount(0);
+    await expect(player.locator(".dice-table-stage canvas")).toHaveCount(0);
+
+    await roll("1d6+32", "gm_only");
+    await expect(callout(page, "1d6+32")).toBeVisible();
+    await roll("1d6+33", "whisper");
+    await expect(callout(page, "1d6+33")).toBeVisible();
+    await roll("1d6+34", "public");
+    await expect(callout(player, "1d6+34")).toBeVisible();
+    await expect(player.locator(".dice-cast-label").filter({ hasText: /1d6\+3[23]/ })).toHaveCount(0);
+  } finally {
+    await playerContext.close();
+  }
 });
