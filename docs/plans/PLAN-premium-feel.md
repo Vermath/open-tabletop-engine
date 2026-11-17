@@ -106,6 +106,8 @@ Tracks are independent of each other. PR #79 must be merged first for Tracks A a
 
 **Done when.** The same harness shows keyboard move at most 5 slow frames and long-task time under 50 ms, and one keyboard move causes at most two renders of `App()`. Zoom is a separate problem (layout-based zoom and canvas glow redraws) and is not a target here. A profiler recording of a chat message arriving shows the board not rendering. `App.tsx` is shorter than before.
 
+**Outcome (2026-11-16).** Deduplication came first, followed by a profile of keyboard moves, incoming chat, and HP changes. Vision reconciliation now has a scene- and user-scoped store with selectors for the board and layer controls. The full snapshot stays in React state so urgent updates retain React's batching. Stable props isolate Chat and Actors, and party placement reuses its calculation when its inputs are unchanged. See [the measurements](../engineering/board-performance.md#snapshot-reconciliation-and-panel-renders).
+
 **Not in scope.** Converting every panel. URL routing. A state library.
 
 **Size.** Large. Do it in the smallest slices that keep the suite green; open the PR as soon as the store and the first converted component work.
@@ -325,7 +327,7 @@ Tracks are independent of each other. PR #79 must be merged first for Tracks A a
 | PR | Title | Needs | Status |
 | --- | --- | --- | --- |
 | 1 | Board does not re-render when nothing on it changed | #79 | Opened 2026-11-16; frame targets moved to PR 2 |
-| 2 | Snapshot store with selectors | PR 1 | |
+| 2 | Deduplicate snapshot writes and isolate panels | PR 1 | Implemented with scoped vision selectors |
 | 3 | Demo scene worth exploring | P1 | |
 | 4 | Tokens that look finished | P4 | |
 | 5 | Soft light and fades | #79 | |
