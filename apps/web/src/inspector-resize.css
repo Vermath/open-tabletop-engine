@@ -24,7 +24,7 @@
     position: absolute;
     inset: 0 3px;
     background: transparent;
-    transition: background 120ms ease-out;
+    transition: background var(--motion-fast) ease-out;
   }
 
   .inspector-resize-handle:hover::after,

@@ -1,3 +1,4 @@
+import "./design-tokens.css";
 import { createRoot } from "react-dom/client";
 import { App } from "./App.js";
 // Bundled variable fonts (SIL Open Font License 1.1) so the interface looks the same on every
