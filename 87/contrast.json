@@ -1,0 +1,700 @@
+{
+  "desktop-midnight-sign-in": {
+    "failures": [],
+    "manual": [
+      [
+        ".entry-eyebrow"
+      ],
+      [
+        "h2"
+      ],
+      [
+        "p"
+      ]
+    ],
+    "passes": 14
+  },
+  "desktop-midnight-live": {
+    "failures": [],
+    "manual": [
+      [
+        ".token-label"
+      ],
+      [
+        ".token-nameplate"
+      ]
+    ],
+    "passes": 68
+  },
+  "desktop-midnight-actors": {
+    "failures": [],
+    "manual": [
+      [
+        ".token-label"
+      ],
+      [
+        ".token-nameplate"
+      ]
+    ],
+    "passes": 70
+  },
+  "desktop-midnight-chat": {
+    "failures": [],
+    "manual": [
+      [
+        ".token-label"
+      ],
+      [
+        ".token-nameplate"
+      ]
+    ],
+    "passes": 94
+  },
+  "desktop-midnight-compendium": {
+    "failures": [],
+    "manual": [
+      [
+        ".token-label"
+      ],
+      [
+        ".token-nameplate"
+      ]
+    ],
+    "passes": 74
+  },
+  "desktop-midnight-prep": {
+    "failures": [],
+    "manual": [],
+    "passes": 66
+  },
+  "desktop-midnight-manage": {
+    "failures": [],
+    "manual": [
+      [
+        ".manage-drawer-heading > div > .section-title"
+      ],
+      [
+        ".manage-drawer-heading > div > strong"
+      ],
+      [
+        ".manage-drawer-close"
+      ],
+      [
+        ".manage-category-button[type=\"button\"]:nth-child(1) > span > strong"
+      ],
+      [
+        ".manage-category-button[type=\"button\"]:nth-child(1) > em"
+      ],
+      [
+        "button[aria-current=\"page\"] > span > strong"
+      ],
+      [
+        "button[aria-current=\"page\"] > em"
+      ],
+      [
+        ".manage-category-button[type=\"button\"]:nth-child(3) > span > strong"
+      ],
+      [
+        ".manage-category-button[type=\"button\"]:nth-child(3) > em"
+      ],
+      [
+        ".manage-category-button[type=\"button\"]:nth-child(4) > span > strong"
+      ],
+      [
+        ".manage-category-button[type=\"button\"]:nth-child(4) > em"
+      ],
+      [
+        ".manage-category-button[type=\"button\"]:nth-child(5) > span > strong"
+      ],
+      [
+        ".create-drawer > summary"
+      ],
+      [
+        ".first-session-setup > .section-title"
+      ],
+      [
+        "#first-session-setup-heading"
+      ],
+      [
+        ".complete:nth-child(1) > button[type=\"button\"] > .setup-step-state[aria-hidden=\"true\"]"
+      ],
+      [
+        ".complete:nth-child(1) > button[type=\"button\"] > span:nth-child(2) > strong"
+      ],
+      [
+        ".complete:nth-child(1) > button[type=\"button\"] > span:nth-child(2) > small"
+      ],
+      [
+        ".complete:nth-child(2) > button[type=\"button\"] > .setup-step-state[aria-hidden=\"true\"]"
+      ],
+      [
+        ".complete:nth-child(2) > button[type=\"button\"] > span:nth-child(2) > strong"
+      ],
+      [
+        ".complete:nth-child(2) > button[type=\"button\"] > span:nth-child(2) > small"
+      ],
+      [
+        ".next > button[type=\"button\"] > .setup-step-state[aria-hidden=\"true\"]"
+      ],
+      [
+        ".next > button[type=\"button\"] > span:nth-child(2) > strong"
+      ],
+      [
+        ".next > button[type=\"button\"] > span:nth-child(2) > small"
+      ],
+      [
+        ".pending:nth-child(4) > button[type=\"button\"] > .setup-step-state[aria-hidden=\"true\"]"
+      ],
+      [
+        ".pending:nth-child(4) > button[type=\"button\"] > span:nth-child(2) > strong"
+      ],
+      [
+        ".pending:nth-child(4) > button[type=\"button\"] > span:nth-child(2) > small"
+      ],
+      [
+        ".pending:nth-child(5) > button[type=\"button\"] > .setup-step-state[aria-hidden=\"true\"]"
+      ],
+      [
+        ".pending:nth-child(5) > button[type=\"button\"] > span:nth-child(2) > strong"
+      ],
+      [
+        ".pending:nth-child(5) > button[type=\"button\"] > span:nth-child(2) > small"
+      ],
+      [
+        ".campaign-settings > .section-title"
+      ],
+      [
+        "input[aria-label=\"Edit campaign name\"]"
+      ],
+      [
+        "textarea[aria-label=\"Edit campaign description\"]"
+      ],
+      [
+        "select[aria-label=\"Edit campaign rules system\"]"
+      ],
+      [
+        "select[aria-label=\"Edit campaign visibility\"]"
+      ],
+      [
+        ".campaign-settings > .wide.ghost-button[type=\"submit\"]"
+      ],
+      [
+        ".campaign-settings > p"
+      ],
+      [
+        ".campaign-settings > .wide.ghost-button[type=\"button\"]"
+      ],
+      [
+        ".danger-zone > p"
+      ],
+      [
+        "input[aria-label=\"Confirm campaign delete\"]"
+      ],
+      [
+        ".campaign-duplicate-card > summary"
+      ],
+      [
+        ".campaign-rules-profile > .operator-heading > div > .section-title"
+      ],
+      [
+        "#campaign-rules-title"
+      ],
+      [
+        ".campaign-rules-identity > label:nth-child(1) > span"
+      ]
+    ],
+    "passes": 34
+  },
+  "desktop-ember-sign-in": {
+    "failures": [],
+    "manual": [
+      [
+        ".entry-eyebrow"
+      ],
+      [
+        "h2"
+      ],
+      [
+        "p"
+      ]
+    ],
+    "passes": 14
+  },
+  "desktop-ember-live": {
+    "failures": [],
+    "manual": [
+      [
+        ".token-label"
+      ],
+      [
+        ".token-nameplate"
+      ]
+    ],
+    "passes": 68
+  },
+  "desktop-ember-actors": {
+    "failures": [],
+    "manual": [
+      [
+        ".token-label"
+      ],
+      [
+        ".token-nameplate"
+      ]
+    ],
+    "passes": 70
+  },
+  "desktop-ember-chat": {
+    "failures": [],
+    "manual": [
+      [
+        ".token-label"
+      ],
+      [
+        ".token-nameplate"
+      ]
+    ],
+    "passes": 94
+  },
+  "desktop-ember-compendium": {
+    "failures": [],
+    "manual": [
+      [
+        ".token-label"
+      ],
+      [
+        ".token-nameplate"
+      ]
+    ],
+    "passes": 74
+  },
+  "desktop-ember-prep": {
+    "failures": [],
+    "manual": [],
+    "passes": 135
+  },
+  "desktop-ember-manage": {
+    "failures": [],
+    "manual": [
+      [
+        ".manage-drawer-heading > div > .section-title"
+      ],
+      [
+        ".manage-drawer-heading > div > strong"
+      ],
+      [
+        ".manage-drawer-close"
+      ],
+      [
+        ".manage-category-button[type=\"button\"]:nth-child(1) > span > strong"
+      ],
+      [
+        ".manage-category-button[type=\"button\"]:nth-child(1) > em"
+      ],
+      [
+        "button[aria-current=\"page\"] > span > strong"
+      ],
+      [
+        "button[aria-current=\"page\"] > em"
+      ],
+      [
+        ".manage-category-button[type=\"button\"]:nth-child(3) > span > strong"
+      ],
+      [
+        ".manage-category-button[type=\"button\"]:nth-child(3) > em"
+      ],
+      [
+        ".manage-category-button[type=\"button\"]:nth-child(4) > span > strong"
+      ],
+      [
+        ".manage-category-button[type=\"button\"]:nth-child(4) > em"
+      ],
+      [
+        ".manage-category-button[type=\"button\"]:nth-child(5) > span > strong"
+      ],
+      [
+        ".create-drawer > summary"
+      ],
+      [
+        ".first-session-setup > .section-title"
+      ],
+      [
+        "#first-session-setup-heading"
+      ],
+      [
+        ".complete:nth-child(1) > button[type=\"button\"] > .setup-step-state[aria-hidden=\"true\"]"
+      ],
+      [
+        ".complete:nth-child(1) > button[type=\"button\"] > span:nth-child(2) > strong"
+      ],
+      [
+        ".complete:nth-child(1) > button[type=\"button\"] > span:nth-child(2) > small"
+      ],
+      [
+        ".complete:nth-child(2) > button[type=\"button\"] > .setup-step-state[aria-hidden=\"true\"]"
+      ],
+      [
+        ".complete:nth-child(2) > button[type=\"button\"] > span:nth-child(2) > strong"
+      ],
+      [
+        ".complete:nth-child(2) > button[type=\"button\"] > span:nth-child(2) > small"
+      ],
+      [
+        ".next > button[type=\"button\"] > .setup-step-state[aria-hidden=\"true\"]"
+      ],
+      [
+        ".next > button[type=\"button\"] > span:nth-child(2) > strong"
+      ],
+      [
+        ".next > button[type=\"button\"] > span:nth-child(2) > small"
+      ],
+      [
+        ".pending:nth-child(4) > button[type=\"button\"] > .setup-step-state[aria-hidden=\"true\"]"
+      ],
+      [
+        ".pending:nth-child(4) > button[type=\"button\"] > span:nth-child(2) > strong"
+      ],
+      [
+        ".pending:nth-child(4) > button[type=\"button\"] > span:nth-child(2) > small"
+      ],
+      [
+        ".pending:nth-child(5) > button[type=\"button\"] > .setup-step-state[aria-hidden=\"true\"]"
+      ],
+      [
+        ".pending:nth-child(5) > button[type=\"button\"] > span:nth-child(2) > strong"
+      ],
+      [
+        ".pending:nth-child(5) > button[type=\"button\"] > span:nth-child(2) > small"
+      ],
+      [
+        ".campaign-settings > .section-title"
+      ],
+      [
+        "input[aria-label=\"Edit campaign name\"]"
+      ],
+      [
+        "textarea[aria-label=\"Edit campaign description\"]"
+      ],
+      [
+        "select[aria-label=\"Edit campaign rules system\"]"
+      ],
+      [
+        "select[aria-label=\"Edit campaign visibility\"]"
+      ],
+      [
+        ".campaign-settings > .wide.ghost-button[type=\"submit\"]"
+      ],
+      [
+        ".campaign-settings > p"
+      ],
+      [
+        ".campaign-settings > .wide.ghost-button[type=\"button\"]"
+      ],
+      [
+        ".danger-zone > p"
+      ],
+      [
+        "input[aria-label=\"Confirm campaign delete\"]"
+      ],
+      [
+        ".campaign-duplicate-card > summary"
+      ],
+      [
+        ".campaign-rules-profile > .operator-heading > div > .section-title"
+      ],
+      [
+        "#campaign-rules-title"
+      ],
+      [
+        ".campaign-rules-identity > label:nth-child(1) > span"
+      ]
+    ],
+    "passes": 34
+  },
+  "phone-midnight-sign-in": {
+    "failures": [],
+    "manual": [
+      [
+        ".entry-eyebrow"
+      ],
+      [
+        "h2"
+      ],
+      [
+        "p"
+      ]
+    ],
+    "passes": 12
+  },
+  "phone-midnight-live": {
+    "failures": [],
+    "manual": [
+      [
+        ".token-nameplate"
+      ]
+    ],
+    "passes": 47
+  },
+  "phone-midnight-actors": {
+    "failures": [],
+    "manual": [
+      [
+        ".token-nameplate"
+      ]
+    ],
+    "passes": 49
+  },
+  "phone-midnight-chat": {
+    "failures": [],
+    "manual": [
+      [
+        ".token-nameplate"
+      ],
+      [
+        "button[title=\"Add 1d100 to the formula\"]"
+      ]
+    ],
+    "passes": 67
+  },
+  "phone-midnight-compendium": {
+    "failures": [],
+    "manual": [
+      [
+        ".token-nameplate"
+      ]
+    ],
+    "passes": 53
+  },
+  "phone-midnight-prep": {
+    "failures": [],
+    "manual": [],
+    "passes": 102
+  },
+  "phone-midnight-manage": {
+    "failures": [],
+    "manual": [
+      [
+        "button[aria-label=\"Live Table\"]"
+      ],
+      [
+        "button[aria-label=\"Prep\"]"
+      ],
+      [
+        "button[aria-label=\"AI Studio\"]"
+      ],
+      [
+        "button[aria-label=\"Manage\"]"
+      ],
+      [
+        ".manage-drawer-heading > div > .section-title"
+      ],
+      [
+        ".manage-drawer-heading > div > strong"
+      ],
+      [
+        ".manage-drawer-close"
+      ],
+      [
+        ".manage-category-button[type=\"button\"]:nth-child(1) > span > strong"
+      ],
+      [
+        ".manage-category-button[type=\"button\"]:nth-child(1) > em"
+      ],
+      [
+        "button[aria-current=\"page\"] > span > strong"
+      ],
+      [
+        "button[aria-current=\"page\"] > em"
+      ],
+      [
+        ".manage-category-button[type=\"button\"]:nth-child(3) > span > strong"
+      ],
+      [
+        ".manage-category-button[type=\"button\"]:nth-child(3) > em"
+      ],
+      [
+        ".manage-category-button[type=\"button\"]:nth-child(4) > span > strong"
+      ],
+      [
+        ".manage-category-button[type=\"button\"]:nth-child(4) > em"
+      ],
+      [
+        ".manage-category-button[type=\"button\"]:nth-child(5) > span > strong"
+      ],
+      [
+        ".campaign-settings > .section-title"
+      ],
+      [
+        "input[aria-label=\"Edit campaign name\"]"
+      ],
+      [
+        "textarea[aria-label=\"Edit campaign description\"]"
+      ],
+      [
+        "select[aria-label=\"Edit campaign rules system\"]"
+      ],
+      [
+        "select[aria-label=\"Edit campaign visibility\"]"
+      ],
+      [
+        ".campaign-settings > .wide.ghost-button[type=\"submit\"]"
+      ],
+      [
+        ".campaign-settings > p"
+      ],
+      [
+        ".campaign-settings > .wide.ghost-button[type=\"button\"]"
+      ],
+      [
+        ".danger-zone > p"
+      ],
+      [
+        "input[aria-label=\"Confirm campaign delete\"]"
+      ]
+    ],
+    "passes": 23
+  },
+  "phone-ember-sign-in": {
+    "failures": [],
+    "manual": [
+      [
+        ".entry-eyebrow"
+      ],
+      [
+        "h2"
+      ],
+      [
+        "p"
+      ]
+    ],
+    "passes": 12
+  },
+  "phone-ember-live": {
+    "failures": [],
+    "manual": [
+      [
+        ".token-nameplate"
+      ]
+    ],
+    "passes": 47
+  },
+  "phone-ember-actors": {
+    "failures": [],
+    "manual": [
+      [
+        ".token-nameplate"
+      ]
+    ],
+    "passes": 49
+  },
+  "phone-ember-chat": {
+    "failures": [],
+    "manual": [
+      [
+        ".token-nameplate"
+      ],
+      [
+        "button[title=\"Add 1d100 to the formula\"]"
+      ]
+    ],
+    "passes": 67
+  },
+  "phone-ember-compendium": {
+    "failures": [],
+    "manual": [
+      [
+        ".token-nameplate"
+      ]
+    ],
+    "passes": 53
+  },
+  "phone-ember-prep": {
+    "failures": [],
+    "manual": [],
+    "passes": 102
+  },
+  "phone-ember-manage": {
+    "failures": [],
+    "manual": [
+      [
+        "button[aria-label=\"Live Table\"]"
+      ],
+      [
+        "button[aria-label=\"Prep\"]"
+      ],
+      [
+        "button[aria-label=\"AI Studio\"]"
+      ],
+      [
+        "button[aria-label=\"Manage\"]"
+      ],
+      [
+        ".manage-drawer-heading > div > .section-title"
+      ],
+      [
+        ".manage-drawer-heading > div > strong"
+      ],
+      [
+        ".manage-drawer-close"
+      ],
+      [
+        ".manage-category-button[type=\"button\"]:nth-child(1) > span > strong"
+      ],
+      [
+        ".manage-category-button[type=\"button\"]:nth-child(1) > em"
+      ],
+      [
+        "button[aria-current=\"page\"] > span > strong"
+      ],
+      [
+        "button[aria-current=\"page\"] > em"
+      ],
+      [
+        ".manage-category-button[type=\"button\"]:nth-child(3) > span > strong"
+      ],
+      [
+        ".manage-category-button[type=\"button\"]:nth-child(3) > em"
+      ],
+      [
+        ".manage-category-button[type=\"button\"]:nth-child(4) > span > strong"
+      ],
+      [
+        ".manage-category-button[type=\"button\"]:nth-child(4) > em"
+      ],
+      [
+        ".manage-category-button[type=\"button\"]:nth-child(5) > span > strong"
+      ],
+      [
+        ".campaign-settings > .section-title"
+      ],
+      [
+        "input[aria-label=\"Edit campaign name\"]"
+      ],
+      [
+        "textarea[aria-label=\"Edit campaign description\"]"
+      ],
+      [
+        "select[aria-label=\"Edit campaign rules system\"]"
+      ],
+      [
+        "select[aria-label=\"Edit campaign visibility\"]"
+      ],
+      [
+        ".campaign-settings > .wide.ghost-button[type=\"submit\"]"
+      ],
+      [
+        ".campaign-settings > p"
+      ],
+      [
+        ".campaign-settings > .wide.ghost-button[type=\"button\"]"
+      ],
+      [
+        ".danger-zone > p"
+      ],
+      [
+        "input[aria-label=\"Confirm campaign delete\"]"
+      ]
+    ],
+    "passes": 23
+  }
+}

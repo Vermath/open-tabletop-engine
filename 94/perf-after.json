@@ -1,0 +1,59 @@
+{
+  "recordedAt": "2026-11-17T14:52:40.848Z",
+  "browser": "chromium",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "renderer": "canvas",
+  "fixture": {
+    "width": 4096,
+    "height": 3072,
+    "walls": 301,
+    "lights": 13,
+    "tokens": 50
+  },
+  "boardDomNodes": 862,
+  "frameIntervalMs": {
+    "wheelZoom": {
+      "frames": 91,
+      "p50": 16.7,
+      "p95": 33.4,
+      "max": 133.3,
+      "over33": 7,
+      "longTaskMs": 262,
+      "canvasDraws": 4,
+      "canvasDrawMs": 192
+    },
+    "pan": {
+      "frames": 136,
+      "p50": 16.7,
+      "p95": 16.8,
+      "max": 66.7,
+      "over33": 2,
+      "longTaskMs": 67,
+      "canvasDraws": 1,
+      "canvasDrawMs": 54
+    },
+    "tokenDrag": {
+      "frames": 154,
+      "p50": 16.7,
+      "p95": 16.8,
+      "max": 83.3,
+      "over33": 1,
+      "longTaskMs": 86,
+      "canvasDraws": 1,
+      "canvasDrawMs": 67
+    },
+    "keyboardMove": {
+      "frames": 155,
+      "p50": 16.7,
+      "p95": 33.3,
+      "max": 33.5,
+      "over33": 1,
+      "longTaskMs": 0,
+      "canvasDraws": 0,
+      "canvasDrawMs": 0
+    }
+  }
+}
