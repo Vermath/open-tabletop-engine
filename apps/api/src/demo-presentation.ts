@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { nowIso, type Actor, type Encounter, type MapAsset, type Token, type Wall } from "@open-tabletop/core";
+import { dnd5eSrdMonsterActorData } from "@open-tabletop/system-sdk";
 import type { StateStore } from "./store.js";
 
 type IngestDemoAsset = (campaignId: string, name: string, bytes: Buffer) => Promise<MapAsset>;
@@ -10,9 +11,9 @@ const width = 2800;
 const height = 2100;
 const gridSize = 100;
 const adversaries = [
-  { id: "sentry", name: "Cinder Sentry", x: 1300, y: 950, hp: 22 },
-  { id: "scout", name: "Ember Scout", x: 1980, y: 1040, hp: 13 },
-  { id: "elemental", name: "Ash Elemental", x: 1440, y: 265, hp: 30 }
+  { id: "sentry", threatId: "animated-armor", name: "Cinder Sentry", x: 1300, y: 950 },
+  { id: "scout", threatId: "goblin-warrior", name: "Ember Scout", x: 1980, y: 1040 },
+  { id: "elemental", threatId: "magma-mephit", name: "Ash Elemental", x: 1440, y: 265 }
 ] as const;
 
 const wallSegments: ReadonlyArray<readonly [string, number, number, number, number, "wall" | "door"]> = [
@@ -20,9 +21,11 @@ const wallSegments: ReadonlyArray<readonly [string, number, number, number, numb
   ["east", 2660, 105, 2660, 1980, "wall"],
   ["south", 2660, 1980, 135, 1980, "wall"],
   ["west", 135, 1980, 135, 105, "wall"],
-  ["upper-west", 135, 472, 1376, 472, "wall"],
-  ["upper-door", 1376, 472, 1518, 472, "door"],
-  ["upper-east", 1518, 472, 2660, 472, "wall"],
+  ["upper-west", 135, 472, 646, 472, "wall"],
+  ["upper-midwest", 810, 472, 1350, 472, "wall"],
+  ["upper-door", 1350, 472, 1540, 472, "door"],
+  ["upper-mideast", 1540, 472, 2260, 472, "wall"],
+  ["upper-east", 2420, 472, 2660, 472, "wall"],
   ["lower-west", 135, 1450, 648, 1450, "wall"],
   ["lower-midwest", 810, 1450, 1376, 1450, "wall"],
   ["lower-door", 1376, 1450, 1518, 1450, "door"],
@@ -48,7 +51,11 @@ export async function seedDemoPresentation(store: StateStore, ingest: IngestDemo
   const valenPortrait = await load("valen", "Valen Ash.webp");
   const miraPortrait = await load("mira", "Mira Vale.webp");
   const monsters = [];
-  for (const monster of adversaries) monsters.push({ ...monster, art: await load(monster.id, `${monster.name}.webp`) });
+  for (const monster of adversaries) {
+    const data = dnd5eSrdMonsterActorData(monster.threatId);
+    if (!data) throw new Error(`Missing bundled demo monster: ${monster.threatId}`);
+    monsters.push({ ...monster, data, art: await load(monster.id, `${monster.name}.webp`) });
+  }
 
   const timestamp = nowIso();
   const timestamps = { createdAt: timestamp, updatedAt: timestamp };
@@ -87,7 +94,7 @@ export async function seedDemoPresentation(store: StateStore, ingest: IngestDemo
     const actor: Actor = {
       ...timestamps, id: `act_ember_vault_${monster.id}`, name: monster.name, campaignId,
       type: "monster", systemId: campaign.defaultSystemId, imageAssetId: monster.art.id,
-      data: { hp: { current: monster.hp, max: monster.hp } }, permissions: {}
+      data: monster.data, permissions: {}
     };
     const token: Token = {
       ...tokenDefaults, ...timestamps, id: `tok_ember_vault_${monster.id}`, actorId: actor.id, name: monster.name,

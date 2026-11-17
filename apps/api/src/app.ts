@@ -13175,7 +13175,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }
   }
 
-  if (options.seedDemoPresentation && process.env.NODE_ENV !== "production" && demoSeedEnabled()) {
+  if (options.seedDemoPresentation && demoSeedEnabled()) {
     try {
       await seedDemoPresentation(store, async (campaignId, sourceName, body) => {
         const mimeType = "image/webp";

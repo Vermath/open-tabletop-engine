@@ -19,6 +19,9 @@ it("installs the illustrated demo once and restores its six originals from a cam
     expect(scene).toMatchObject({ width: 2800, height: 2100, gridSize: 100, metadata: { mapCalibrationComplete: true } });
     expect(scene?.lights).toHaveLength(3);
     expect(scene?.walls.filter((wall) => wall.kind === "door" && wall.open === false)).toHaveLength(2);
+    for (const x of [730, 2340]) {
+      expect(scene?.walls.some((wall) => wall.y1 === 472 && wall.y2 === 472 && wall.x1 <= x && x <= wall.x2)).toBe(false);
+    }
     expect(scene?.fog).toMatchObject([{ mode: "reveal", shape: "polygon" }]);
     expect(map).toMatchObject({ image: { width: 2800, height: 2100 }, mimeType: "image/webp" });
     expect(map?.renditions?.length).toBeGreaterThan(0);
@@ -29,6 +32,15 @@ it("installs the illustrated demo once and restores its six originals from a cam
     expect(tokens).toHaveLength(5);
     expect(new Set(tokens.map((token) => token.imageAssetId))).toEqual(new Set(assets.filter((asset) => asset !== map).map((asset) => asset.id)));
     expect(store.state.encounters.find((encounter) => encounter.name === "The Vault Watch")?.tokenIds).toEqual(tokens.filter((token) => token.disposition === "hostile").map((token) => token.id));
+    for (const token of tokens.filter((candidate) => candidate.disposition === "hostile")) {
+      const actor = store.state.actors.find(({ id }) => id === token.actorId);
+      expect(actor?.data).toMatchObject({
+        armorClass: expect.any(Number),
+        hp: { max: expect.any(Number) },
+        monster: { statBlock: { actions: expect.arrayContaining([expect.objectContaining({ attackBonus: expect.any(Number), damageFormula: expect.any(String) })]) } },
+      });
+      expect(actor?.data.armorClass).not.toBe(10);
+    }
 
     const restarted = await buildApp({ store, uploadDir, seedDemoPresentation: true });
     await restarted.close();

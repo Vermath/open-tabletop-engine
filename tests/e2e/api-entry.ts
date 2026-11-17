@@ -54,6 +54,7 @@ const aiProvider = new GatedE2eAiProvider(new CodexAppServerProvider({
 }));
 
 const runtime = await startApiRuntime({
+  seedDemoPresentation: process.env.OTTE_E2E_DEMO_PRESENTATION === "true",
   port,
   host,
   sqlitePath: process.env.OTTE_SQLITE_PATH,
