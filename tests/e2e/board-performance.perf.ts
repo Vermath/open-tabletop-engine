@@ -18,6 +18,7 @@ const fixture = {
   height: Number(process.env.OTTE_PERF_MAP_HEIGHT ?? 3072),
   walls: Number(process.env.OTTE_PERF_WALLS ?? 300),
   lights: Number(process.env.OTTE_PERF_LIGHTS ?? 12),
+  animateLights: process.env.OTTE_PERF_ANIMATED_LIGHTS === "1",
   tokens: Number(process.env.OTTE_PERF_TOKENS ?? 50),
 };
 const outputPath = resolve(process.env.OTTE_PERF_OUTPUT ?? "output/board-performance/latest.json");
@@ -118,7 +119,10 @@ async function buildFixture(page: Page) {
     }
     for (let index = 0; index < fixture.lights; index += 1) {
       const revision = (await scene()).updatedAt;
-      await call(`/api/v1/scenes/${sceneId}/lights`, json({ x: 300 + (index % 4) * (fixture.width / 4), y: 300 + Math.floor(index / 4) * (fixture.height / 3), radius: 420, color: "#ffd27a", expectedUpdatedAt: revision }, `perf-light-${index}-${revision}`));
+      const placement = fixture.animateLights
+        ? { x: 180 + (index % 4) * 65, y: 180 + Math.floor(index / 4) * 65, radius: 180, animation: "flicker" }
+        : { x: 300 + (index % 4) * (fixture.width / 4), y: 300 + Math.floor(index / 4) * (fixture.height / 3), radius: 420 };
+      await call(`/api/v1/scenes/${sceneId}/lights`, json({ ...placement, color: "#ffd27a", expectedUpdatedAt: revision }, `perf-light-${index}-${revision}`));
     }
     const existing = await call(`/api/v1/scenes/${sceneId}/tokens`) as unknown[];
     for (let index = existing.length; index < fixture.tokens; index += 1) {
@@ -162,6 +166,15 @@ test("board frame times on a large scene", async ({ page }) => {
     if (value === "dom") window.localStorage.setItem("otte:boardRenderer", "dom");
   }, renderer);
   // The production build has no demo sign-in buttons, so sign the seeded GM in through the API.
+  if (fixture.animateLights) await page.addInitScript(() => {
+    let animatedDraws = 0;
+    Object.defineProperty(window, "animatedLightDraws", { get: () => animatedDraws });
+    const clearRect = CanvasRenderingContext2D.prototype.clearRect;
+    CanvasRenderingContext2D.prototype.clearRect = function (...args) {
+      if (this.canvas.classList.contains("board-light-animation")) animatedDraws += 1;
+      return clearRect.apply(this, args);
+    };
+  });
   await page.goto("/");
   await page.evaluate(async ({ apiBaseUrl, email }) => {
     const response = await fetch(`${apiBaseUrl}/api/v1/auth/login`, { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ email }) });
@@ -187,6 +200,24 @@ test("board frame times on a large scene", async ({ page }) => {
   const viewport = (await page.locator(".scene-viewport").boundingBox())!;
   const centre = { x: viewport.x + viewport.width / 2, y: viewport.y + viewport.height / 2 };
   const results: Record<string, FrameStats> = {};
+  if (fixture.animateLights) {
+    const animation = board.locator(".board-light-animation");
+    await expect(animation).toBeVisible();
+    const bounds = (await board.boundingBox())!;
+    for (let index = 0; index < fixture.lights; index += 1) {
+      const x = bounds.x + (180 + (index % 4) * 65) * bounds.width / fixture.width;
+      const y = bounds.y + (180 + Math.floor(index / 4) * 65) * bounds.height / fixture.height;
+      expect(x).toBeGreaterThan(viewport.x);
+      expect(x).toBeLessThan(viewport.x + viewport.width);
+      expect(y).toBeGreaterThan(viewport.y);
+      expect(y).toBeLessThan(viewport.y + viewport.height);
+    }
+    results.idleAnimatedLights = await measure(page, () => page.waitForTimeout(2000), "idleAnimatedLights");
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await expect(animation).toBeHidden();
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await expect(animation).toBeVisible();
+  }
 
   // Zoom in so the map overflows the view, as it does in play.
   await page.mouse.move(centre.x, centre.y);
@@ -200,6 +231,17 @@ test("board frame times on a large scene", async ({ page }) => {
     for (let step = 1; step <= 60; step += 1) { await page.mouse.move(centre.x - step * 5, centre.y - step * 3); await page.waitForTimeout(16); }
     await page.mouse.up({ button: "right" });
   }, "pan");
+
+  if (fixture.animateLights) {
+    const animation = board.locator(".board-light-animation");
+    await page.locator(".scene-viewport").evaluate((view) => view.scrollTo({ left: view.scrollWidth, top: view.scrollHeight, behavior: "instant" }));
+    await expect(animation).toBeHidden();
+    const draws = () => page.evaluate(() => Reflect.get(window, "animatedLightDraws") as number);
+    const offscreenDraws = await draws();
+    expect(offscreenDraws).toBeGreaterThan(0);
+    await page.waitForTimeout(250);
+    expect(await draws()).toBe(offscreenDraws);
+  }
 
   // Bring a fixture token to the middle of the view and drag it.
   const dragged = page.getByRole("button", { name: /token Perf 25$/ });

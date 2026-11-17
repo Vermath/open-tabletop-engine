@@ -1,4 +1,3 @@
-import { makeArchive } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
 import { buildApp } from "./fixtures/legacy-build-app.js";
 import { MemoryStateStore } from "./store.js";
@@ -18,7 +17,18 @@ describe("scene light animation", () => {
       const valid = await edit("flicker");
       expect(valid.statusCode).toBe(200);
       expect(valid.json().lights[0]).toMatchObject({ animation: "flicker", radius: 180 });
-      expect(JSON.stringify(makeArchive(store.state, "camp_demo"))).toContain('"animation":"flicker"');
+      const headers = { "x-user-id": "usr_demo_gm" };
+      const archive = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/export", headers });
+      expect(archive.statusCode).toBe(200);
+      const restoredStore = new MemoryStateStore();
+      const restored = await buildApp({ store: restoredStore });
+      try {
+        const imported = await restored.inject({ method: "POST", url: "/api/v1/import/campaign", headers, payload: archive.json() });
+        expect(imported.statusCode, imported.body).toBe(200);
+        expect(restoredStore.state.scenes.find((scene) => scene.id === "scn_vault_entry")?.lights[0]).toMatchObject({ animation: "flicker", radius: 180 });
+      } finally {
+        await restored.close();
+      }
     } finally {
       await app.close();
     }
