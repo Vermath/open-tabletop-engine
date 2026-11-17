@@ -1,6 +1,7 @@
 import { selectInspectorPanel } from "./inspector-navigation.js";
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import type { User } from "../../packages/core/src/types.js";
 
 const apiBaseUrl = `http://127.0.0.1:${process.env.OTTE_E2E_API_PORT ?? 4100}`;
 
@@ -336,12 +337,12 @@ async function holdSoundPreferenceWrites(page: Page) {
   let releaseMute!: () => void;
   const pendingUnmute = new Promise<void>((resolve) => { releaseUnmute = resolve; });
   const pendingMute = new Promise<void>((resolve) => { releaseMute = resolve; });
-  const patches: { enabled: boolean; revision: string }[] = [];
+  const patches: { enabled: boolean; volume: number; revision: string }[] = [];
   await page.route("**/api/v1/auth/profile", async (route) => {
     if (route.request().method() !== "PATCH") return route.continue();
-    const body = route.request().postDataJSON() as { expectedUpdatedAt: string; preferences: { interfaceSounds: { enabled: boolean } } };
-    const enabled = body.preferences.interfaceSounds.enabled;
-    patches.push({ enabled, revision: body.expectedUpdatedAt });
+    const body = route.request().postDataJSON() as { expectedUpdatedAt: string; preferences: { interfaceSounds: { enabled: boolean; volume: number } } };
+    const { enabled, volume } = body.preferences.interfaceSounds;
+    patches.push({ enabled, volume, revision: body.expectedUpdatedAt });
     await (enabled ? pendingUnmute : pendingMute);
     await route.continue();
   });
@@ -401,6 +402,13 @@ test("a profile save in flight preserves a newer rail mute", async ({ page }) =>
   const mute = page.getByRole("button", { name: "Mute interface sounds", exact: true });
   const unmute = page.getByRole("button", { name: "Unmute interface sounds", exact: true });
   await expect(mute.or(unmute)).toBeVisible();
+  const profileUrl = apiBaseUrl + "/api/v1/auth/profile";
+  const readProfile = async () => {
+    const response = await page.request.get(profileUrl);
+    expect(response.ok()).toBe(true);
+    return (await response.json() as { user: User }).user;
+  };
+  const original = await readProfile();
   const originallyEnabled = await mute.isVisible();
   if (!originallyEnabled) {
     const update = page.waitForResponse(isProfilePreferenceUpdate);
@@ -413,6 +421,8 @@ test("a profile save in flight preserves a newer rail mute", async ({ page }) =>
   const manage = page.getByRole("region", { name: "Manage workspace panel" });
   await manage.locator(".manage-category-button", { hasText: "Account" }).click();
   await expect(manage.getByRole("checkbox", { name: "Play interface sounds" })).toBeChecked();
+  await manage.getByRole("slider", { name: "Interface sound volume" }).press("End");
+  await expect(manage.getByRole("slider", { name: "Interface sound volume" })).toHaveValue("1");
   const { patches, releaseUnmute, releaseMute, close } = await holdSoundPreferenceWrites(page);
   try {
     const profile = page.waitForResponse(isProfilePreferenceUpdate);
@@ -425,6 +435,7 @@ test("a profile save in flight preserves a newer rail mute", async ({ page }) =>
     expect((await profile).ok()).toBe(true);
     await expect.poll(() => patches.map(({ enabled }) => enabled)).toEqual([true, false]);
     expect(patches[1]!.revision).not.toBe(patches[0]!.revision);
+    expect(patches.map(({ volume }) => volume)).toEqual([1, 1]);
     await expect(unmute).toBeVisible();
     const latest = page.waitForResponse(isProfilePreferenceUpdate);
     releaseMute();
@@ -435,9 +446,11 @@ test("a profile save in flight preserves a newer rail mute", async ({ page }) =>
 
   await page.reload();
   await expect(unmute).toBeVisible();
-  if (originallyEnabled) {
-    const restore = page.waitForResponse(isProfilePreferenceUpdate);
-    await unmute.click();
-    expect((await restore).ok()).toBe(true);
-  }
+  const saved = await readProfile();
+  expect(saved.preferences?.interfaceSounds).toEqual({ enabled: false, volume: 1 });
+  const restore = await page.request.patch(profileUrl, {
+    headers: { origin: new URL(page.url()).origin, "idempotency-key": crypto.randomUUID() },
+    data: { expectedUpdatedAt: saved.updatedAt, displayName: saved.displayName, preferences: original.preferences },
+  });
+  expect(restore.ok(), await restore.text()).toBe(true);
 });
