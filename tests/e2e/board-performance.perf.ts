@@ -231,7 +231,10 @@ test("board frame times on a large scene", async ({ page }) => {
   results.keyboardMove = await measure(page, async () => {
     for (let step = 0; step < 10; step += 1) {
       const before = await appRenderCount();
+      const persisted = page.waitForResponse((response) =>
+        response.request().method() === "POST" && new URL(response.url()).pathname === `/api/v1/scenes/${sceneId}/tokens/move`);
       await page.keyboard.press(step % 2 === 0 ? "ArrowRight" : "ArrowLeft");
+      expect((await persisted).ok()).toBe(true);
       await page.waitForTimeout(250);
       keyboardAppRenders.push(await appRenderCount() - before);
     }
