@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const budget = {"literalColors": 949, "fontSizes": 43, "motionDurations": 24};
+const budget = {"literalColors":798,"fontSizes":40,"motionDurations":20};
 
 describe("design token budget", () => {
   it("keeps web styles within the recorded colour, type and motion limits", () => {

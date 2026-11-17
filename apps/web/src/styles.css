@@ -3034,9 +3034,9 @@ a[href]:focus-visible,
   gap: 8px;
   min-width: 0;
   padding: 10px;
-  border: 1px solid #463b2a;
-  border-radius: 7px;
-  background: #15130f;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--surface-0);
 }
 
 .chat-history-entry p,
@@ -3044,7 +3044,7 @@ a[href]:focus-visible,
   min-width: 0;
   margin: 0;
   overflow-wrap: anywhere;
-  color: #e8dcc4;
+  color: var(--paper);
 }
 
 .roll-term-breakdown {
@@ -3101,7 +3101,7 @@ a[href]:focus-visible,
   display: grid;
   gap: 5px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--type-label);
   text-transform: uppercase;
 }
 
@@ -3109,8 +3109,8 @@ a[href]:focus-visible,
 .compendium-browser select {
   width: 100%;
   min-height: 32px;
-  border-color: #463b2a;
-  background: #15130f;
+  border-color: var(--line);
+  background: var(--surface-0);
 }
 
 .compendium-list {
@@ -3125,21 +3125,21 @@ a[href]:focus-visible,
   gap: 8px;
   min-width: 0;
   padding: 8px;
-  border: 1px solid #332b20;
-  border-radius: 6px;
-  background: #100f0c;
+  border: 1px solid var(--surface-2);
+  border-radius: var(--radius-s);
+  background: var(--surface-0);
 }
 
 .compendium-entry strong {
-  color: #f3e5c8;
-  font-size: 12px;
+  color: var(--paper);
+  font-size: var(--type-small);
 }
 
 .compendium-entry p {
   margin: 3px 0 6px;
   overflow-wrap: anywhere;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--type-small);
 }
 
 .standalone-compendium .compendium-entry {
@@ -3159,20 +3159,20 @@ a[href]:focus-visible,
   display: grid;
   gap: 8px;
   padding: 10px;
-  border: 1px solid #463b2a;
-  border-radius: 7px;
-  background: #15130f;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--surface-0);
 }
 
 .compendium-retry {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   color: var(--red);
-  font-size: 12px;
+  font-size: var(--type-small);
 }
 
 .compendium-conflict {
-  border-color: rgba(214, 168, 84, 0.72);
+  border-color: color-mix(in srgb, var(--accent) 72%, transparent);
 }
 
 .compendium-conflict h4,
@@ -3208,7 +3208,7 @@ a[href]:focus-visible,
 .compendium-entry-heading > div > span,
 .compendium-summary > span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--type-small);
 }
 
 .compendium-provenance {
@@ -3221,7 +3221,7 @@ a[href]:focus-visible,
   display: grid;
   grid-template-columns: 64px minmax(0, 1fr);
   gap: 8px;
-  font-size: 11px;
+  font-size: var(--type-small);
 }
 
 .compendium-provenance dt {
@@ -3249,7 +3249,7 @@ a[href]:focus-visible,
   gap: 4px;
   padding: 7px 0 0 18px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--type-small);
 }
 
 .compendium-workspace,
@@ -3562,7 +3562,7 @@ a[href]:focus-visible,
 .inventory-capacity,
 .inventory-commerce-card {
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-m);
   display: grid;
   gap: 0.5rem;
   padding: 0.65rem;
@@ -3851,7 +3851,7 @@ a[href]:focus-visible,
 pre,
 textarea {
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-m);
   background: var(--panel-2);
 }
 
@@ -3884,7 +3884,7 @@ textarea {
 .combatant-header span:first-child {
   display: block;
   color: var(--teal);
-  font-size: 11px;
+  font-size: var(--type-label);
   text-transform: uppercase;
 }
 
@@ -3897,7 +3897,7 @@ textarea {
   gap: 5px;
   min-width: 0;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--type-label);
   text-transform: uppercase;
 }
 
@@ -3912,15 +3912,15 @@ textarea {
 
 .sheet-row label {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--type-small);
 }
 
 .sheet-row input {
   min-height: 34px;
   padding: 0 8px;
   border: 1px solid var(--line);
-  border-radius: 6px;
-  background: #1b1812;
+  border-radius: var(--radius-s);
+  background: var(--ink);
 }
 
 .inspector-grid {
@@ -3929,7 +3929,7 @@ textarea {
   gap: 8px;
   padding: 10px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-m);
   background: var(--panel-2);
 }
 
@@ -3939,7 +3939,7 @@ textarea {
   gap: 5px;
   min-width: 0;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--type-label);
   text-transform: uppercase;
 }
 
@@ -3991,10 +3991,10 @@ textarea {
   width: 100%;
   min-height: 32px;
   padding: 0 8px;
-  border: 1px solid #463b2a;
-  border-radius: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
   color: var(--paper);
-  background: #15130f;
+  background: var(--surface-0);
 }
 
 .combatant.active {
@@ -4068,7 +4068,7 @@ textarea {
 .proposal span,
 .chat-line span {
   color: var(--teal);
-  font-size: 11px;
+  font-size: var(--type-label);
   text-transform: uppercase;
 }
 
@@ -4266,7 +4266,7 @@ textarea {
   align-items: center;
   padding: 8px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-m);
   background: var(--panel);
 }
 
@@ -4277,7 +4277,7 @@ textarea {
   align-items: center;
   padding: 8px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-m);
   background: var(--panel);
 }
 
@@ -4285,10 +4285,10 @@ textarea {
 .chat-box select {
   min-width: 0;
   min-height: 32px;
-  border: 1px solid #463b2a;
-  border-radius: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
   color: var(--paper);
-  background: #15130f;
+  background: var(--surface-0);
 }
 
 input {
@@ -4310,8 +4310,8 @@ input {
   display: flex;
   gap: 10px;
   align-items: baseline;
-  color: #e8dcc4;
-  font-size: 13px;
+  color: var(--paper);
+  font-size: var(--type-body);
 }
 
 .chat-line.roll {
@@ -5460,8 +5460,8 @@ body {
   grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
   overflow: hidden;
-  border-left-color: #24303d;
-  background: linear-gradient(180deg, rgba(10, 15, 22, 0.98), rgba(6, 10, 15, 0.98));
+  border-left-color: var(--surface-3);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-0) 98%, transparent), color-mix(in srgb, var(--surface-0) 98%, transparent));
 }
 
 .tabs {
@@ -5496,8 +5496,8 @@ body {
   padding: 8px;
   overflow-x: auto;
   overflow-y: hidden;
-  border-bottom-color: rgba(148, 160, 173, 0.16);
-  background: rgba(7, 11, 17, 0.82);
+  border-bottom-color: color-mix(in srgb, var(--muted) 16%, transparent);
+  background: color-mix(in srgb, var(--surface-0) 82%, transparent);
   scrollbar-width: thin;
 }
 
@@ -5507,17 +5507,17 @@ body {
   min-height: 36px;
   min-width: max-content;
   padding: 0 10px;
-  border-color: rgba(148, 160, 173, 0.16);
-  border-radius: 7px;
-  background: rgba(14, 20, 29, 0.76);
+  border-color: color-mix(in srgb, var(--muted) 16%, transparent);
+  border-radius: var(--radius-s);
+  background: color-mix(in srgb, var(--ink) 76%, transparent);
   color: var(--muted);
 }
 
 .inspector-tabs .tab.active,
 .inspector > .tabs .tab.active {
-  border-color: rgba(244, 180, 74, 0.74);
+  border-color: color-mix(in srgb, var(--accent) 74%, transparent);
   color: var(--paper);
-  background: rgba(22, 18, 11, 0.96);
+  background: color-mix(in srgb, var(--surface-0) 96%, transparent);
 }
 
 .inspector > .panel-stack,
@@ -5557,8 +5557,8 @@ body {
 .proposal,
 .journal-entry,
 .combatant {
-  border-color: rgba(148, 160, 173, 0.18);
-  background-color: rgba(21, 28, 38, 0.68);
+  border-color: color-mix(in srgb, var(--muted) 18%, transparent);
+  background-color: color-mix(in srgb, var(--surface-1) 68%, transparent);
 }
 
 .button-row {
@@ -5681,8 +5681,8 @@ body {
     "dice-icon formula roll visibility save"
     "saved saved saved saved saved";
   gap: 6px;
-  border-color: rgba(148, 160, 173, 0.22);
-  background: rgba(15, 21, 29, 0.78);
+  border-color: color-mix(in srgb, var(--muted) 22%, transparent);
+  background: color-mix(in srgb, var(--ink) 78%, transparent);
 }
 
 .dice-box > svg {
@@ -5693,9 +5693,9 @@ body {
   grid-area: formula;
   min-height: 32px;
   padding: 0 9px;
-  border: 1px solid #463b2a;
-  border-radius: 6px;
-  background: #15130f;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--surface-0);
 }
 
 .dice-box button[aria-label="Roll dice"] {
@@ -5729,9 +5729,9 @@ body {
   display: grid;
   gap: 9px;
   padding: 10px;
-  border: 1px solid rgba(148, 160, 173, 0.22);
-  border-radius: 8px;
-  background: rgba(15, 21, 29, 0.78);
+  border: 1px solid color-mix(in srgb, var(--muted) 22%, transparent);
+  border-radius: var(--radius-m);
+  background: color-mix(in srgb, var(--ink) 78%, transparent);
 }
 
 .chat-command-panel label {
@@ -5777,11 +5777,11 @@ body {
 
 .chat-command-help code {
   padding: 3px 6px;
-  border: 1px solid rgba(148, 160, 173, 0.24);
-  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--muted) 24%, transparent);
+  border-radius: var(--radius-s);
   color: var(--muted);
-  background: rgba(15, 21, 29, 0.78);
-  font-size: 11px;
+  background: color-mix(in srgb, var(--ink) 78%, transparent);
+  font-size: var(--type-small);
 }
 
 .chat-rail {
@@ -5792,8 +5792,8 @@ body {
   height: 100%;
   overflow: hidden;
   background:
-    linear-gradient(180deg, rgba(10, 16, 24, 0.8), rgba(5, 9, 14, 0.95)),
-    #070b10;
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-0) 80%, transparent), color-mix(in srgb, var(--color-black) 95%, transparent)),
+    var(--surface-0);
 }
 
 .chat-presence-summary {
@@ -5803,7 +5803,7 @@ body {
   gap: 6px 12px;
   padding: 8px 10px 0;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--type-small);
 }
 
 .chat-presence-summary > span,
@@ -5879,37 +5879,37 @@ body {
   gap: 7px;
   min-width: 0;
   padding: 9px 10px;
-  border: 1px solid rgba(148, 160, 173, 0.14);
-  border-left: 2px solid rgba(148, 160, 173, 0.28);
-  border-radius: 7px;
-  background: rgba(13, 18, 25, 0.72);
+  border: 1px solid color-mix(in srgb, var(--muted) 14%, transparent);
+  border-left: 2px solid color-mix(in srgb, var(--muted) 28%, transparent);
+  border-radius: var(--radius-s);
+  background: color-mix(in srgb, var(--surface-0) 72%, transparent);
 }
 
 .chat-message-roll {
-  border-color: rgba(80, 208, 178, 0.2);
-  border-left-color: rgba(80, 208, 178, 0.72);
-  background: rgba(8, 15, 22, 0.82);
+  border-color: color-mix(in srgb, var(--teal) 20%, transparent);
+  border-left-color: color-mix(in srgb, var(--teal) 72%, transparent);
+  background: color-mix(in srgb, var(--surface-0) 82%, transparent);
 }
 
 .chat-message-gm {
-  border-left-color: rgba(244, 180, 74, 0.78);
-  background: rgba(25, 18, 9, 0.58);
+  border-left-color: color-mix(in srgb, var(--accent) 78%, transparent);
+  background: color-mix(in srgb, var(--surface-0) 58%, transparent);
 }
 
 .chat-message-whisper {
-  border-left-color: rgba(111, 179, 255, 0.78);
-  background: rgba(8, 18, 30, 0.68);
+  border-left-color: color-mix(in srgb, var(--turn-next) 78%, transparent);
+  background: color-mix(in srgb, var(--surface-0) 68%, transparent);
 }
 
 .chat-message-ooc,
 .chat-message-system {
-  border-left-color: rgba(148, 160, 173, 0.56);
-  background: rgba(12, 16, 22, 0.56);
+  border-left-color: color-mix(in srgb, var(--muted) 56%, transparent);
+  background: color-mix(in srgb, var(--surface-0) 56%, transparent);
 }
 
 .chat-message-emote {
-  border-left-color: rgba(213, 142, 255, 0.68);
-  background: rgba(20, 13, 25, 0.54);
+  border-left-color: color-mix(in srgb, var(--muted) 68%, transparent);
+  background: color-mix(in srgb, var(--surface-0) 54%, transparent);
 }
 
 .chat-message-header {
@@ -5923,54 +5923,54 @@ body {
 .chat-author {
   min-width: 0;
   overflow: hidden;
-  color: #f6ead4;
-  font-size: 13px;
+  color: var(--paper);
+  font-size: var(--type-body);
   font-weight: 800;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .chat-time {
-  color: rgba(191, 207, 222, 0.7);
-  font-size: 11px;
+  color: color-mix(in srgb, var(--arcane) 85%, transparent);
+  font-size: var(--type-small);
   white-space: nowrap;
 }
 
 .chat-visibility {
   min-width: 0;
   padding: 2px 6px;
-  border: 1px solid rgba(148, 160, 173, 0.22);
+  border: 1px solid color-mix(in srgb, var(--muted) 22%, transparent);
   border-radius: 999px;
-  color: rgba(231, 239, 248, 0.82);
-  font-size: 11px;
+  color: color-mix(in srgb, var(--paper) 85%, transparent);
+  font-size: var(--type-label);
   font-weight: 800;
   letter-spacing: 0;
   text-transform: uppercase;
 }
 
 .chat-visibility-gm_only {
-  border-color: rgba(244, 180, 74, 0.44);
-  color: #ffd78a;
+  border-color: color-mix(in srgb, var(--accent) 44%, transparent);
+  color: var(--accent-strong);
 }
 
 .chat-visibility-whisper {
-  border-color: rgba(111, 179, 255, 0.42);
-  color: #a7d4ff;
+  border-color: color-mix(in srgb, var(--turn-next) 42%, transparent);
+  color: var(--turn-next);
 }
 
 .chat-body,
 .chat-recipient-line {
   min-width: 0;
   margin: 0;
-  color: #e8dcc4;
-  font-size: 14px;
+  color: var(--paper);
+  font-size: var(--type-control);
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
 
 .chat-recipient-line {
-  color: rgba(191, 207, 222, 0.72);
-  font-size: 12px;
+  color: color-mix(in srgb, var(--arcane) 85%, transparent);
+  font-size: var(--type-small);
 }
 
 .chat-reply-context,
@@ -5981,11 +5981,11 @@ body {
   gap: 7px;
   min-width: 0;
   padding: 7px 8px;
-  border: 1px solid rgba(148, 160, 173, 0.16);
-  border-radius: 6px;
-  color: rgba(218, 228, 238, 0.78);
-  background: rgba(5, 9, 14, 0.56);
-  font-size: 12px;
+  border: 1px solid color-mix(in srgb, var(--muted) 16%, transparent);
+  border-radius: var(--radius-s);
+  color: color-mix(in srgb, var(--paper) 85%, transparent);
+  background: color-mix(in srgb, var(--color-black) 56%, transparent);
+  font-size: var(--type-small);
 }
 
 .chat-reply-context span,
@@ -6002,12 +6002,12 @@ body {
   gap: 10px;
   min-width: 0;
   padding: 10px;
-  border: 1px solid rgba(80, 208, 178, 0.24);
-  border-radius: 7px;
+  border: 1px solid color-mix(in srgb, var(--teal) 24%, transparent);
+  border-radius: var(--radius-s);
   background:
-    linear-gradient(135deg, rgba(13, 30, 38, 0.92), rgba(10, 14, 25, 0.96)),
-    #091019;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    linear-gradient(135deg, color-mix(in srgb, var(--surface-1) 92%, transparent), color-mix(in srgb, var(--surface-0) 96%, transparent)),
+    var(--surface-0);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-white) 4%, transparent);
 }
 
 .chat-roll-total {
@@ -6016,11 +6016,11 @@ body {
   min-width: 42px;
   height: 34px;
   padding: 0 10px;
-  border: 1px solid rgba(244, 180, 74, 0.58);
-  border-radius: 8px;
-  color: #ffffff;
-  background: #05080d;
-  font-size: 18px;
+  border: 1px solid color-mix(in srgb, var(--accent) 58%, transparent);
+  border-radius: var(--radius-m);
+  color: var(--color-white);
+  background: var(--color-black);
+  font-size: var(--type-title);
   line-height: 1;
 }
 
@@ -6038,22 +6038,22 @@ body {
   min-width: 54px;
   max-width: 100%;
   padding: 6px 8px;
-  border: 1px solid rgba(148, 160, 173, 0.18);
-  border-radius: 7px;
-  background: rgba(5, 9, 14, 0.62);
+  border: 1px solid color-mix(in srgb, var(--muted) 18%, transparent);
+  border-radius: var(--radius-s);
+  background: color-mix(in srgb, var(--color-black) 62%, transparent);
 }
 
 .chat-roll-die strong {
-  color: #ffffff;
-  font-size: 14px;
+  color: var(--color-white);
+  font-size: var(--type-control);
   line-height: 1;
 }
 
 .chat-roll-die span,
 .chat-roll-die small {
   min-width: 0;
-  color: rgba(218, 228, 238, 0.72);
-  font-size: 11px;
+  color: color-mix(in srgb, var(--paper) 85%, transparent);
+  font-size: var(--type-small);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -6063,11 +6063,11 @@ body {
   display: grid;
   gap: 8px;
   padding: 10px;
-  border-top: 1px solid rgba(148, 160, 173, 0.16);
+  border-top: 1px solid color-mix(in srgb, var(--muted) 16%, transparent);
   background:
-    linear-gradient(180deg, rgba(9, 14, 20, 0.96), rgba(5, 8, 12, 0.98)),
-    #070b10;
-  box-shadow: 0 -18px 34px rgba(0, 0, 0, 0.32);
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-0) 96%, transparent), color-mix(in srgb, var(--color-black) 98%, transparent)),
+    var(--surface-0);
+  box-shadow: 0 -18px 34px color-mix(in srgb, var(--color-black) 32%, transparent);
 }
 
 .chat-composer-row {
@@ -6080,7 +6080,7 @@ body {
 
 .chat-composer-row > svg {
   margin-bottom: 11px;
-  color: rgba(191, 207, 222, 0.74);
+  color: color-mix(in srgb, var(--arcane) 85%, transparent);
 }
 
 .chat-composer-row textarea {
@@ -6089,8 +6089,8 @@ body {
   min-height: 46px;
   max-height: 150px;
   resize: vertical;
-  border-color: rgba(148, 160, 173, 0.22);
-  background: rgba(7, 11, 17, 0.92);
+  border-color: color-mix(in srgb, var(--muted) 22%, transparent);
+  background: color-mix(in srgb, var(--surface-0) 92%, transparent);
   line-height: 1.35;
 }
 
@@ -6100,9 +6100,9 @@ body {
 
 .chat-command-reference {
   margin: 0;
-  color: rgba(191, 207, 222, 0.62);
+  color: color-mix(in srgb, var(--arcane) 85%, transparent);
   font-family: var(--font-mono, "Cascadia Mono", Consolas, monospace);
-  font-size: 11px;
+  font-size: var(--type-small);
   overflow-wrap: anywhere;
 }
 
@@ -6110,8 +6110,8 @@ body {
   display: flex;
   gap: 10px;
   align-items: baseline;
-  color: #e8dcc4;
-  font-size: 13px;
+  color: var(--paper);
+  font-size: var(--type-body);
 }
 
 .chat-line.roll {
@@ -7128,8 +7128,8 @@ body {
   grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
   overflow: hidden;
-  border-left-color: #24303d;
-  background: linear-gradient(180deg, rgba(10, 15, 22, 0.98), rgba(6, 10, 15, 0.98));
+  border-left-color: var(--surface-3);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-0) 98%, transparent), color-mix(in srgb, var(--surface-0) 98%, transparent));
 }
 
 .tabs {
@@ -7164,8 +7164,8 @@ body {
   padding: 8px;
   overflow-x: auto;
   overflow-y: hidden;
-  border-bottom-color: rgba(148, 160, 173, 0.16);
-  background: rgba(7, 11, 17, 0.82);
+  border-bottom-color: color-mix(in srgb, var(--muted) 16%, transparent);
+  background: color-mix(in srgb, var(--surface-0) 82%, transparent);
   scrollbar-width: thin;
 }
 
@@ -7175,17 +7175,17 @@ body {
   min-height: 32px;
   min-width: max-content;
   padding: 0 10px;
-  border-color: rgba(148, 160, 173, 0.16);
-  border-radius: 7px;
-  background: rgba(14, 20, 29, 0.76);
+  border-color: color-mix(in srgb, var(--muted) 16%, transparent);
+  border-radius: var(--radius-s);
+  background: color-mix(in srgb, var(--ink) 76%, transparent);
   color: var(--muted);
 }
 
 .inspector-tabs .tab.active,
 .inspector > .tabs .tab.active {
-  border-color: rgba(244, 180, 74, 0.74);
+  border-color: color-mix(in srgb, var(--accent) 74%, transparent);
   color: var(--paper);
-  background: rgba(22, 18, 11, 0.96);
+  background: color-mix(in srgb, var(--surface-0) 96%, transparent);
 }
 
 .inspector > .panel-stack,
@@ -7220,8 +7220,8 @@ body {
 .proposal,
 .journal-entry,
 .combatant {
-  border-color: rgba(148, 160, 173, 0.18);
-  background-color: rgba(21, 28, 38, 0.68);
+  border-color: color-mix(in srgb, var(--muted) 18%, transparent);
+  background-color: color-mix(in srgb, var(--surface-1) 68%, transparent);
 }
 
 .button-row {
@@ -7338,8 +7338,8 @@ body {
     "dice-icon formula roll visibility save"
     "saved saved saved saved saved";
   gap: 6px;
-  border-color: rgba(148, 160, 173, 0.22);
-  background: rgba(15, 21, 29, 0.78);
+  border-color: color-mix(in srgb, var(--muted) 22%, transparent);
+  background: color-mix(in srgb, var(--ink) 78%, transparent);
 }
 
 .dice-box > svg {
@@ -7376,8 +7376,8 @@ body {
 .chat-box {
   grid-area: chat;
   grid-template-columns: auto 110px 118px 142px minmax(180px, 1fr) auto;
-  border-color: rgba(148, 160, 173, 0.22);
-  background: rgba(15, 21, 29, 0.78);
+  border-color: color-mix(in srgb, var(--muted) 22%, transparent);
+  background: color-mix(in srgb, var(--ink) 78%, transparent);
 }
 
 .chat-box input,
@@ -7501,7 +7501,7 @@ body {
 
   .inspector {
     border-left: 0;
-    border-top: 1px solid #24303d;
+    border-top: 1px solid var(--surface-3);
   }
 
   .console {
@@ -8627,7 +8627,7 @@ body {
     min-height: 38px;
     gap: 3px;
     padding: 0 3px;
-    font-size: 11px;
+    font-size: var(--type-small);
   }
 
   .manage-category-button {
@@ -9495,13 +9495,13 @@ body {
 }
 
 .ai-trust-note.ai-availability-failed {
-  border-color: rgba(224, 112, 112, 0.34);
-  background: rgba(224, 112, 112, 0.1);
+  border-color: color-mix(in srgb, var(--red) 34%, transparent);
+  background: color-mix(in srgb, var(--red) 10%, transparent);
 }
 
 .ai-trust-note.ai-availability-running {
-  border-color: rgba(148, 160, 173, 0.28);
-  background: rgba(148, 160, 173, 0.08);
+  border-color: color-mix(in srgb, var(--muted) 28%, transparent);
+  background: color-mix(in srgb, var(--muted) 8%, transparent);
 }
 
 .map-layer-stack {
@@ -10508,7 +10508,7 @@ a:focus-visible {
 .chat-message {
   border: 1px solid transparent;
   border-radius: var(--radius-m);
-  transition: border-color 130ms ease, background 130ms ease;
+  transition: border-color var(--motion-fast) ease, background var(--motion-fast) ease;
 }
 
 .chat-message:hover {
@@ -10518,7 +10518,7 @@ a:focus-visible {
 
 .chat-author {
   font-family: var(--font-display);
-  font-size: 14px;
+  font-size: var(--type-control);
   letter-spacing: 0.01em;
 }
 
@@ -10570,7 +10570,7 @@ a:focus-visible {
   justify-content: space-between;
   gap: 8px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--type-small);
 }
 
 .dice-formula-guidance p { margin: 0; }
@@ -10588,9 +10588,9 @@ a:focus-visible {
   color: var(--muted);
   background: var(--surface-1);
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: var(--type-small);
   line-height: 1;
-  transition: border-color 120ms ease, color 120ms ease, background 120ms ease, transform 120ms ease;
+  transition: border-color var(--motion-fast) ease, color var(--motion-fast) ease, background var(--motion-fast) ease, transform var(--motion-fast) ease;
 }
 
 .dice-chip:hover {
@@ -10610,8 +10610,8 @@ a:focus-visible {
   background:
     linear-gradient(135deg, var(--arcane-soft), transparent 55%),
     var(--surface-2);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  animation: arcane-roll-pop 240ms ease-out;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-white) 4%, transparent);
+  animation: arcane-roll-pop var(--motion-normal) ease-out;
 }
 
 .chat-roll-total {
@@ -10621,7 +10621,7 @@ a:focus-visible {
   color: var(--accent-strong);
   background: var(--surface-0);
   font-family: var(--font-display);
-  font-size: 20px;
+  font-size: var(--type-heading);
 }
 
 .chat-roll-die {
@@ -10642,7 +10642,7 @@ a:focus-visible {
   margin-top: 2px;
   padding: 1px 8px;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: var(--type-label);
   font-style: normal;
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -10656,20 +10656,20 @@ a:focus-visible {
 }
 
 .chat-roll-flag-fumble {
-  border: 1px solid rgba(196, 121, 107, 0.5);
+  border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
   color: var(--fumble);
-  background: rgba(196, 121, 107, 0.12);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 .chat-roll-card-crit {
   border-color: var(--accent-border);
-  animation: arcane-roll-pop 240ms ease-out, arcane-crit-glow 2.2s ease-in-out 240ms 3;
+  animation: arcane-roll-pop var(--motion-normal) ease-out, arcane-crit-glow 2.2s ease-in-out var(--motion-normal) 3;
 }
 
 .chat-roll-card-fumble {
-  border-color: rgba(196, 121, 107, 0.45);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
   background:
-    linear-gradient(135deg, rgba(196, 121, 107, 0.12), transparent 55%),
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 12%, transparent), transparent 55%),
     var(--surface-2);
 }
 
@@ -10695,7 +10695,7 @@ a:focus-visible {
 .chat-roll-verification .ghost-button.small {
   min-height: 28px;
   padding: 4px 8px;
-  font-size: 11px;
+  font-size: var(--type-small);
 }
 
 .chat-roll-replay-scope {
@@ -10720,7 +10720,7 @@ a:focus-visible {
 }
 
 .chat-roll-card-fumble .chat-roll-total {
-  border-color: rgba(196, 121, 107, 0.5);
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
   color: var(--fumble);
 }
 
@@ -10955,9 +10955,9 @@ a:focus-visible {
   position: relative;
   color: var(--paper);
   font-family: var(--font-display);
-  font-size: 19px;
+  font-size: var(--type-title);
   line-height: 1;
-  animation: arcane-die-reveal 200ms ease-out calc(var(--cast-delay, 0ms) + var(--cast-ms, 1150ms) * 0.84) both;
+  animation: arcane-die-reveal var(--motion-normal) ease-out calc(var(--cast-delay, 0ms) + var(--cast-ms, 1150ms) * 0.84) both;
 }
 
 .dice-cast-die-d4 strong {
@@ -10974,7 +10974,7 @@ a:focus-visible {
 }
 
 .dice-cast-die-fumble .dice-cast-face {
-  stroke: rgba(196, 121, 107, 0.7);
+  stroke: color-mix(in srgb, var(--accent) 70%, transparent);
 }
 
 .dice-cast-die-fumble strong {
@@ -10995,8 +10995,8 @@ a:focus-visible {
   border-radius: 999px;
   background: var(--glass);
   color: var(--muted);
-  font-size: 12px;
-  animation: arcane-die-reveal 220ms ease-out var(--cast-label-delay, 1000ms) both;
+  font-size: var(--type-small);
+  animation: arcane-die-reveal var(--motion-normal) ease-out var(--cast-label-delay, 1000ms) both;
 }
 
 .dice-cast-label span {
@@ -11008,7 +11008,7 @@ a:focus-visible {
 .dice-cast-label strong {
   color: var(--paper);
   font-family: var(--font-display);
-  font-size: 17px;
+  font-size: var(--type-title);
   line-height: 1;
 }
 
@@ -11021,7 +11021,7 @@ a:focus-visible {
 }
 
 .dice-cast-fumble .dice-cast-label {
-  border-color: rgba(196, 121, 107, 0.5);
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
 }
 
 .dice-cast-fumble .dice-cast-label strong {
@@ -11072,7 +11072,7 @@ a:focus-visible {
   }
 
   .dice-cast-die strong {
-    font-size: 16px;
+    font-size: var(--type-title);
   }
 }
 
@@ -11781,7 +11781,7 @@ a:focus-visible {
   min-height: 32px;
   padding: 2px 4px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-s);
   background: none;
   color: inherit;
   font: inherit;
@@ -11790,7 +11790,7 @@ a:focus-visible {
 }
 
 .chat-roll-summary:hover:not(:disabled) {
-  background: rgba(148, 160, 173, 0.08);
+  background: color-mix(in srgb, var(--muted) 8%, transparent);
 }
 
 .chat-roll-summary:disabled {
@@ -11799,8 +11799,8 @@ a:focus-visible {
 
 .chat-roll-kind {
   flex: none;
-  color: rgba(128, 222, 199, 0.88);
-  font-size: 11px;
+  color: color-mix(in srgb, var(--turn-next) 88%, transparent);
+  font-size: var(--type-label);
   font-weight: 900;
   text-transform: uppercase;
 }
@@ -11809,8 +11809,8 @@ a:focus-visible {
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
-  color: #ffffff;
-  font-size: 13px;
+  color: var(--color-white);
+  font-size: var(--type-body);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -11819,9 +11819,9 @@ a:focus-visible {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
-  color: rgba(218, 228, 238, 0.72);
+  color: color-mix(in srgb, var(--paper) 85%, transparent);
   font-family: var(--font-mono, "Cascadia Mono", Consolas, monospace);
-  font-size: 11px;
+  font-size: var(--type-small);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -11831,7 +11831,7 @@ a:focus-visible {
   margin: 0;
   padding: 1px 6px;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: var(--type-small);
   font-style: normal;
   font-weight: 700;
 }
@@ -11841,13 +11841,13 @@ a:focus-visible {
   min-width: 34px;
   height: 26px;
   padding: 0 8px;
-  font-size: 15px;
+  font-size: var(--type-control);
 }
 
 .chat-roll-chevron {
   flex: none;
-  color: var(--muted, #94a0ad);
-  transition: transform 0.15s ease;
+  color: var(--muted, var(--muted));
+  transition: transform var(--motion-fast) ease;
 }
 
 .chat-roll-chevron.open {
@@ -11858,7 +11858,7 @@ a:focus-visible {
   display: grid;
   gap: 8px;
   padding: 8px 4px 6px;
-  border-top: 1px solid rgba(148, 160, 173, 0.14);
+  border-top: 1px solid color-mix(in srgb, var(--muted) 14%, transparent);
   margin-top: 4px;
 }
 
@@ -11997,7 +11997,7 @@ a:focus-visible {
   margin: 0;
   overflow: hidden;
   font-family: var(--font-display);
-  font-size: 20px;
+  font-size: var(--type-heading);
   line-height: 1.15;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -12013,7 +12013,7 @@ a:focus-visible {
   border-radius: 999px;
   background: var(--accent-soft);
   color: var(--accent-strong);
-  font-size: 13px;
+  font-size: var(--type-body);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -12061,14 +12061,14 @@ a:focus-visible {
   gap: 10px;
   margin-top: 2px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--type-label);
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
 .actor-sheet-subheading strong {
-  font-size: 11px;
+  font-size: var(--type-small);
   font-weight: 600;
   letter-spacing: 0.02em;
   text-transform: none;
@@ -12095,13 +12095,13 @@ a:focus-visible {
 }
 
 .actor-action-info strong {
-  font-size: 13px;
+  font-size: var(--type-body);
 }
 
 .actor-action-info span {
   overflow: visible;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--type-small);
   line-height: 1.35;
   overflow-wrap: anywhere;
   text-overflow: clip;
@@ -12138,7 +12138,7 @@ a:focus-visible {
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: rgba(148, 160, 173, 0.12);
+  background: color-mix(in srgb, var(--muted) 12%, transparent);
 }
 
 .hp-bar-fill {
@@ -12147,7 +12147,7 @@ a:focus-visible {
   bottom: 0;
   left: 0;
   border-radius: 999px;
-  transition: width 0.25s ease, background-color 0.25s ease;
+  transition: width var(--motion-normal) ease, background-color var(--motion-normal) ease;
 }
 
 .hp-bar-fill.healthy {
@@ -12171,10 +12171,10 @@ a:focus-visible {
   display: grid;
   place-items: center;
   color: var(--paper);
-  font-size: 11px;
+  font-size: var(--type-small);
   font-weight: 700;
   letter-spacing: 0.03em;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
+  text-shadow: 0 1px 2px color-mix(in srgb, var(--color-black) 65%, transparent);
   font-variant-numeric: tabular-nums;
 }
 
@@ -12223,12 +12223,12 @@ a:focus-visible {
   border-radius: 999px;
   background: var(--surface-2);
   color: var(--paper);
-  font-size: 12px;
+  font-size: var(--type-small);
   font-variant-numeric: tabular-nums;
 }
 
 .actor-vital-condition {
-  border-color: rgba(214, 108, 98, 0.5);
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
   color: var(--red);
 }
 
@@ -12269,7 +12269,7 @@ a:focus-visible {
   gap: 4px;
   padding: 4px;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-m);
   background: var(--surface-0);
 }
 
@@ -12278,7 +12278,7 @@ a:focus-visible {
   min-width: 0;
   min-height: 32px;
   border: none;
-  border-radius: 7px;
+  border-radius: var(--radius-s);
 }
 
 @media (max-width: 900px) {
@@ -12576,7 +12576,7 @@ a:focus-visible {
   place-items: center;
   width: 20px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--type-small);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -12593,7 +12593,7 @@ a:focus-visible {
   min-width: 0;
   padding: 2px 4px;
   border: none;
-  border-radius: 7px;
+  border-radius: var(--radius-s);
   background: none;
   color: inherit;
   font: inherit;
@@ -12602,7 +12602,7 @@ a:focus-visible {
 }
 
 .combatant-focus:hover {
-  background: rgba(148, 160, 173, 0.08);
+  background: color-mix(in srgb, var(--muted) 8%, transparent);
 }
 
 .combatant-name {
@@ -12614,7 +12614,7 @@ a:focus-visible {
 
 .combatant-name strong {
   overflow: hidden;
-  font-size: 13px;
+  font-size: var(--type-body);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -12622,7 +12622,7 @@ a:focus-visible {
 .combatant-name small {
   overflow: hidden;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--type-small);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -12634,7 +12634,7 @@ a:focus-visible {
   height: 3px;
   overflow: hidden;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.5);
+  background: color-mix(in srgb, var(--color-black) 50%, transparent);
 }
 
 .combatant-hp > span {
@@ -12642,7 +12642,7 @@ a:focus-visible {
   height: 100%;
   border-radius: inherit;
   background: var(--green);
-  transition: width 0.25s ease;
+  transition: width var(--motion-normal) ease;
 }
 
 .combatant-hp.warning > span {
@@ -12667,7 +12667,7 @@ a:focus-visible {
 }
 
 .combatant-expand svg {
-  transition: transform 0.15s ease;
+  transition: transform var(--motion-fast) ease;
 }
 
 .combatant-expand svg.open {
@@ -12883,7 +12883,7 @@ a:focus-visible {
   display: grid;
   place-items: center;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--type-small);
   font-weight: 700;
 }
 
@@ -13031,7 +13031,7 @@ a:focus-visible {
 }
 
 .actor-sheet-header {
-  background: rgba(148, 160, 173, 0.07);
+  background: color-mix(in srgb, var(--muted) 7%, transparent);
 }
 
 .combat-turn-controls {
@@ -14711,8 +14711,8 @@ a:focus-visible {
 
 .actor-rest-card {
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.025);
+  border-radius: var(--radius-m);
+  background: color-mix(in srgb, var(--color-white) 2.5%, transparent);
 }
 
 .actor-rest-card > summary {
@@ -14734,7 +14734,7 @@ a:focus-visible {
 
 .actor-rest-card > summary strong {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--type-small);
 }
 
 .actor-rest-card-body {
@@ -14788,7 +14788,7 @@ a:focus-visible {
   margin-left: auto;
   place-items: center;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-s);
   background: transparent;
   color: var(--muted);
   cursor: pointer;
@@ -14810,8 +14810,8 @@ a:focus-visible {
 }
 
 .chat-message-action.danger {
-  border-color: rgba(224, 102, 102, 0.55);
-  color: #f2a2a2;
+  border-color: color-mix(in srgb, var(--red) 55%, transparent);
+  color: var(--red);
 }
 
 .chat-moderation-control {
@@ -14821,20 +14821,20 @@ a:focus-visible {
   gap: 6px;
   margin-top: 6px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--type-small);
 }
 
 .chat-moderation-control select {
   min-width: 0;
   min-height: 28px;
   padding: 3px 7px;
-  font-size: 11px;
+  font-size: var(--type-small);
 }
 
 .chat-action-status {
   margin: 4px 0 0;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--type-small);
 }
 
 .chat-dice-status {
@@ -14843,7 +14843,7 @@ a:focus-visible {
 
 .chat-edited-label {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--type-small);
   font-style: italic;
 }
 
@@ -14854,7 +14854,7 @@ a:focus-visible {
 }
 
 .chat-edit-form textarea { width: 100%; resize: vertical; }
-.chat-edit-form [role="status"] { color: var(--muted); font-size: 11px; }
+.chat-edit-form [role="status"] { color: var(--muted); font-size: var(--type-small); }
 
 .dice-tray-divider {
   width: 1px;
@@ -14870,7 +14870,7 @@ a:focus-visible {
 }
 
 .dice-preset-chip {
-  border-color: rgba(240, 198, 116, 0.32);
+  border-color: color-mix(in srgb, var(--accent-strong) 32%, transparent);
   color: var(--accent-strong);
   background: var(--surface-2);
 }
@@ -14881,7 +14881,7 @@ a:focus-visible {
 .lore-panel textarea:focus-visible,
 .actor-rest-card button:focus-visible,
 .chat-edit-form textarea:focus-visible {
-  outline: 2px solid rgba(240, 198, 116, 0.92);
+  outline: 2px solid color-mix(in srgb, var(--accent-strong) 92%, transparent);
   outline-offset: 2px;
 }
 
@@ -15521,7 +15521,7 @@ a:focus-visible {
     min-width: max-content;
     justify-content: center;
     padding-inline: 8px;
-    font-size: 12px;
+    font-size: var(--type-small);
   }
 
   .workspace-prep .inspector {
@@ -15543,7 +15543,7 @@ a:focus-visible {
     min-width: 0;
     min-height: 36px;
     padding-inline: 5px;
-    font-size: 11px;
+    font-size: var(--type-small);
   }
 }
 
@@ -15594,7 +15594,7 @@ a:focus-visible {
     justify-content: center;
     gap: 4px;
     padding-inline: 7px;
-    font-size: 12px;
+    font-size: var(--type-small);
   }
 
   .toolbar {
@@ -15866,7 +15866,7 @@ a:focus-visible {
   margin: 0;
   padding: 11px;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-m);
   background: var(--surface-1);
 }
 
@@ -15874,7 +15874,7 @@ a:focus-visible {
 .advancement-ability-allocation legend {
   padding: 0 5px;
   color: var(--paper);
-  font-size: 12px;
+  font-size: var(--type-small);
   font-weight: 700;
 }
 
@@ -15885,7 +15885,7 @@ a:focus-visible {
   gap: 9px;
   padding: 8px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-m);
   cursor: pointer;
 }
 
@@ -15903,7 +15903,7 @@ a:focus-visible {
 .advancement-ability-grid small,
 .advancement-feat-summary span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--type-small);
   line-height: 1.4;
 }
 
@@ -15945,7 +15945,7 @@ a:focus-visible {
 .advancement-spell-choices {
   padding: 10px;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-m);
   background: var(--surface-1);
 }
 
@@ -15968,13 +15968,13 @@ a:focus-visible {
 
 .advancement-choice-status {
   margin: 0;
-  color: var(--warning, #d6a854);
-  font-size: 12px;
+  color: var(--warning, var(--accent));
+  font-size: var(--type-small);
   line-height: 1.4;
 }
 
 .advancement-choice-status.complete {
-  color: var(--success, #79c99e);
+  color: var(--success, var(--teal));
 }
 
 .advancement-preview-diff {
@@ -15982,7 +15982,7 @@ a:focus-visible {
   gap: 6px;
   padding: 8px;
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: var(--radius-m);
   background: color-mix(in srgb, var(--surface-1) 84%, transparent);
 }
 
@@ -16975,7 +16975,7 @@ textarea:focus-visible, summary:focus-visible, a:focus-visible,
 .primary-button { box-shadow: none; font-weight: 650; }
 .primary-button:hover { background: var(--accent); box-shadow: none; }
 .subtle, .mini-form-meta, .admin-meta, .account-summary, .session-pulse { color: var(--muted); }
-.eyebrow, .section-title, .actor-sheet-subheading { font-size: 11px; letter-spacing: 0.09em; font-weight: 650; }
+.eyebrow, .section-title, .actor-sheet-subheading { font-size: var(--type-label); letter-spacing: 0.09em; font-weight: 650; }
 .admin-status, .panel-status { font-size: 12px; line-height: 1.45; }
 
 .rail { gap: 12px; padding: 18px 12px 12px; background: var(--surface-1); }
@@ -17020,7 +17020,7 @@ textarea:focus-visible, summary:focus-visible, a:focus-visible,
 .scene-visibility-badge { margin-left: 6px; border: 0; background: transparent; font-size: 11px; }
 .workspace-view-actions { grid-area: actions; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 7px; }
 .workspace-view-actions .ghost-button { min-height: 34px; padding-inline: 10px; white-space: nowrap; }
-.inspector-unread-badge { display: inline-flex; align-items: center; min-height: 21px; padding: 2px 7px; border: 1px solid var(--accent-border); border-radius: 999px; background: var(--accent-soft); color: var(--accent-strong); font-size: 11px; font-weight: 650; }
+.inspector-unread-badge { display: inline-flex; align-items: center; min-height: 21px; padding: 2px 7px; border: 1px solid var(--accent-border); border-radius: 999px; background: var(--accent-soft); color: var(--accent-strong); font-size: var(--type-small); font-weight: 650; }
 .workspace .topbar .scene-tabs { grid-area: scenes; gap: 5px; padding: 0; }
 .scene-tab { min-width: 0; min-height: 34px; max-width: 190px; grid-template-columns: 23px minmax(0, auto); gap: 6px; padding: 3px 9px 3px 4px; font-size: 12px; border-color: transparent; background: transparent; }
 .scene-tab-thumb { width: 23px; border-color: var(--line); background: var(--surface-0); }
@@ -17055,7 +17055,7 @@ textarea:focus-visible, summary:focus-visible, a:focus-visible,
 
 .inspector { background: var(--surface-1); border-left-color: var(--line); }
 .workspace-live .inspector-tabs, .workspace-prep .inspector-tabs { display: flex; flex-wrap: wrap; gap: 2px; padding: 8px; background: var(--surface-1); border-bottom: 1px solid var(--line); }
-.workspace-live .inspector-tabs .tab, .workspace-prep .inspector-tabs .tab { flex: 1 0 auto; width: auto; min-height: 34px; min-width: max-content; padding: 0 8px; border: 0; border-radius: 5px; background: transparent; font-size: 12px; color: var(--muted); }
+.workspace-live .inspector-tabs .tab, .workspace-prep .inspector-tabs .tab { flex: 1 0 auto; width: auto; min-height: 34px; min-width: max-content; padding: 0 8px; border: 0; border-radius: var(--radius-s); background: transparent; font-size: var(--type-small); color: var(--muted); }
 .workspace-live .inspector-tabs .tab.active, .workspace-prep .inspector-tabs .tab.active { background: var(--accent-soft); color: var(--accent-strong); box-shadow: inset 0 -2px var(--accent); }
 .panel-stack { gap: 12px; padding: 16px; }
 .operator-section, .account-box, .asset-card, .actor-action-row, .modal-dialog, .create-drawer, .lore-editor, .lore-list { border-color: var(--line); background: var(--surface-1); }
@@ -17066,32 +17066,32 @@ textarea:focus-visible, summary:focus-visible, a:focus-visible,
 .actor-sidebar-summary .actor-hero { padding: 0 0 0 10px; border: 0; background: transparent; border-radius: 0; }
 .actor-identity { display: flex; gap: 12px; align-items: center; justify-content: space-between; }
 .actor-identity-copy { flex: 1 1 auto; min-width: 0; width: auto; }
-.actor-identity h2 { margin: 3px 0; font-size: 25px; }
-.actor-sidebar-summary .actor-identity .actor-sheet-open { flex: 0 0 auto; min-height: 34px; width: auto; padding: 0 10px; font-size: 12px; }
+.actor-identity h2 { margin: 3px 0; font-size: var(--type-heading); }
+.actor-sidebar-summary .actor-identity .actor-sheet-open { flex: 0 0 auto; min-height: 34px; width: auto; padding: 0 10px; font-size: var(--type-small); }
 .actor-hero .admin-meta { gap: 2px 6px; }
-.actor-hero .admin-meta span { padding: 0; border: 0; background: transparent; font-size: 11px; color: var(--muted); }
+.actor-hero .admin-meta span { padding: 0; border: 0; background: transparent; font-size: var(--type-small); color: var(--muted); }
 .actor-at-a-glance { display: grid; gap: 9px; padding: 10px 0 12px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; }
 .actor-at-a-glance .hp-bar { grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; }
-.hp-bar-track { height: 25px; border: 0; border-radius: 5px; background: var(--surface-3); }
-.hp-bar-fill { border-radius: 4px; }
-.hp-bar-fill.healthy { background: #4e7048; opacity: 1; }
-.hp-bar-value { color: #fff; font-size: 11px; text-shadow: 0 1px 2px #25301f; }
+.hp-bar-track { height: 25px; border: 0; border-radius: var(--radius-s); background: var(--surface-3); }
+.hp-bar-fill { border-radius: var(--radius-s); }
+.hp-bar-fill.healthy { background: var(--line-strong); opacity: 1; }
+.hp-bar-value { color: var(--color-white); font-size: var(--type-small); text-shadow: 0 1px 2px var(--surface-2); }
 .hp-bar-steppers { gap: 4px; }
 .hp-bar-reviewed { grid-template-columns: auto 30px 30px; }
 .hp-step { min-height: 30px; padding-inline: 7px; border-color: var(--line); border-radius: 5px; font-size: 11px; background: transparent; }
 .hp-step-damage { color: var(--red); }
 .actor-vitals-row { gap: 5px 12px; }
-.actor-vital { gap: 4px; padding: 0; border: 0; border-radius: 0; background: transparent; font-size: 12px; }
-.actor-sidebar-summary > .tabs { gap: 2px; padding: 3px; border: 0; border-radius: 6px; background: var(--surface-0); }
-.actor-sidebar-summary > .tabs .tab { min-height: 32px; font-size: 12px; }
+.actor-vital { gap: 4px; padding: 0; border: 0; border-radius: 0; background: transparent; font-size: var(--type-small); }
+.actor-sidebar-summary > .tabs { gap: 2px; padding: 3px; border: 0; border-radius: var(--radius-s); background: var(--surface-0); }
+.actor-sidebar-summary > .tabs .tab { min-height: 32px; font-size: var(--type-small); }
 .actor-sidebar-summary > .tabs .tab.active { background: var(--surface-3); color: var(--paper); }
 .actor-sidebar-summary > .operator-section:not(.placement-tray) { padding: 0; border: 0; background: transparent; }
 .actor-core-statistics { display: grid; gap: 0; }
 .actor-core-statistics .actor-sheet-subheading { margin-bottom: 7px; }
-.actor-core-statistics .metric-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 40px; margin: 0; padding: 5px 0; border: 0; border-bottom: 1px solid color-mix(in srgb, var(--line) 62%, transparent); border-radius: 0; background: transparent; font-size: 13px; }
+.actor-core-statistics .metric-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 40px; margin: 0; padding: 5px 0; border: 0; border-bottom: 1px solid color-mix(in srgb, var(--line) 62%, transparent); border-radius: 0; background: transparent; font-size: var(--type-body); }
 .actor-core-statistics .metric-row > span:first-child { flex: 1; }
 .actor-core-statistics .metric-row > .button-row { display: flex; flex: none; gap: 5px; }
-.actor-core-statistics .metric-row .ghost-button { min-height: 30px; min-width: 49px; width: auto; padding: 0 8px; font-size: 12px; }
+.actor-core-statistics .metric-row .ghost-button { min-height: 30px; min-width: 49px; width: auto; padding: 0 8px; font-size: var(--type-small); }
 .actor-sidebar-summary .placement-tray-disclosure { padding: 0; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; }
 .placement-tray-disclosure > summary { display: flex; align-items: center; justify-content: space-between; gap: 9px; min-height: 36px; padding: 3px 0 8px; list-style: none; cursor: pointer; color: var(--muted); font-size: 12px; }
 .placement-tray-disclosure > summary > span:first-child { display: inline-flex; gap: 7px; align-items: center; }
@@ -17101,7 +17101,7 @@ textarea:focus-visible, summary:focus-visible, a:focus-visible,
 .placement-tray-body input { width: 100%; min-height: 34px; padding: 0 9px; }
 .placement-tray-body .admin-status { margin: 0; padding: 0; border: 0; background: transparent; font-size: 11px; }
 .actor-detail-disclosure, .actor-maintenance-disclosure, .actor-rules-trace-disclosure { border-top: 1px solid var(--line); padding-top: 6px; }
-.actor-detail-disclosure > summary, .actor-maintenance-disclosure > summary, .actor-rules-trace-disclosure > summary { min-height: 36px; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; cursor: pointer; }
+.actor-detail-disclosure > summary, .actor-maintenance-disclosure > summary, .actor-rules-trace-disclosure > summary { min-height: 36px; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: var(--type-small); cursor: pointer; }
 .actor-detail-disclosure > .actor-detail-body, .actor-maintenance-body { display: grid; gap: 10px; padding: 8px 0 12px; border: 0; background: transparent; }
 .actor-detail-disclosure:not([open]) > .actor-detail-body { display: none; }
 .actor-detail-disclosure > summary::after, .actor-maintenance-disclosure > summary::after, .actor-rules-trace-disclosure > summary::after, .placement-tray-disclosure > summary::after { content: ""; flex: none; width: 6px; height: 6px; margin-left: auto; margin-right: 3px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); }
