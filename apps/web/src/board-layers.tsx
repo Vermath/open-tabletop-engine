@@ -1,5 +1,5 @@
 import type { Scene, VisionPolygon } from "@open-tabletop/core";
-import { memo, useId } from "react";
+import { memo, useId, useLayoutEffect, useRef, useState } from "react";
 import "./board-light-finish.css";
 import { boardRenderCounts } from "./board-render-counts.js";
 
@@ -195,26 +195,77 @@ export const BoardStructureHandles = memo(function BoardStructureHandles(props: 
   );
 });
 
-export const BoardVisionMaskLayer = memo(function BoardVisionMaskLayer(props: { width: number; height: number; maskId: string; revealed: readonly VisionPolygon[]; hidden: readonly VisionPolygon[] }) {
+interface FogPolygons {
+  revealed: readonly VisionPolygon[];
+  hidden: readonly VisionPolygon[];
+}
+
+function FogMask({ id, width, height, fog, inverse = false }: {
+  id: string; width: number; height: number; fog: FogPolygons; inverse?: boolean;
+}) {
+  const shaded = inverse ? "black" : "white";
+  const clear = inverse ? "white" : "black";
+  return <mask id={id}>
+    <rect width={width} height={height} fill={shaded} />
+    {fog.revealed.map((polygon) => <polygon key={polygon.id} points={polygonPoints(polygon)} fill={clear} />)}
+    {fog.hidden.map((polygon) => <polygon key={polygon.id} points={polygonPoints(polygon)} fill={shaded} />)}
+  </mask>;
+}
+
+function fogGeometry(fog: FogPolygons): string {
+  const revealed = fog.revealed.filter((polygon) => polygon.source === "fog").map(polygonPoints);
+  return JSON.stringify([revealed, fog.hidden.map(polygonPoints)]);
+}
+
+export const BoardVisionMaskLayer = memo(function BoardVisionMaskLayer(props: FogPolygons & { width: number; height: number; maskId: string }) {
+  const { width, height, maskId, revealed, hidden } = props;
+  const previous = useRef<{ maskId: string; geometry: string; fog: FogPolygons }>(undefined);
+  const [transition, setTransition] = useState<{ from: FogPolygons; geometry: string }>();
+  useLayoutEffect(() => {
+    const fog = { revealed, hidden };
+    const geometry = fogGeometry(fog);
+    const before = previous.current;
+    previous.current = { maskId, geometry, fog };
+    if (!before || before.maskId !== maskId) {
+      setTransition(undefined);
+      return;
+    }
+    if (geometry === before.geometry) return;
+    const reduced = document.documentElement.dataset.reducedMotion === "true" || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    setTransition(reduced ? undefined : { from: before.fog, geometry });
+  }, [maskId, revealed, hidden]);
+
+  useLayoutEffect(() => {
+    if (!transition) return;
+    const clear = window.setTimeout(() => setTransition(undefined), 240);
+    return () => window.clearTimeout(clear);
+  }, [transition]);
+
   boardRenderCounts.visionMask += 1;
   return (
-    <svg className="vision-mask-layer" viewBox={`0 0 ${props.width} ${props.height}`} aria-hidden="true">
+    <svg className="vision-mask-layer" viewBox={`0 0 ${width} ${height}`} aria-hidden="true">
       <defs>
-        <mask id={props.maskId}>
-          <rect width={props.width} height={props.height} fill="white" />
-          {props.revealed.map((polygon) => (
-            <polygon key={polygon.id} points={polygonPoints(polygon)} fill="black" />
-          ))}
-          {props.hidden.map((polygon) => (
-            <polygon key={polygon.id} points={polygonPoints(polygon)} fill="white" />
-          ))}
-        </mask>
+        <FogMask id={maskId} width={width} height={height} fog={props} />
+        {transition && <>
+          <FogMask id={maskId + "-prior"} width={width} height={height} fog={transition.from} />
+          <FogMask id={maskId + "-prior-clear"} width={width} height={height} fog={transition.from} inverse />
+          <FogMask id={maskId + "-current-clear"} width={width} height={height} fog={props} inverse />
+        </>}
       </defs>
-      <rect className="vision-dim" width={props.width} height={props.height} mask={`url(#${props.maskId})`} />
-      {props.revealed.map((polygon) => (
+      <rect className="vision-dim" width={width} height={height} mask={`url(#${maskId})`} />
+      {transition && <g key={transition.geometry}>
+        {/* The live fog mask always applies first. Transitional paint can only cover more. */}
+        <g mask={`url(#${maskId}-prior)`}>
+          <rect className="vision-dim fog-shade-transition" width={width} height={height} mask={`url(#${maskId}-current-clear)`} />
+        </g>
+        <g mask={`url(#${maskId})`}>
+          <rect className="fog-hide-feedback fog-shade-transition" width={width} height={height} mask={`url(#${maskId}-prior-clear)`} />
+        </g>
+      </g>}
+      {revealed.map((polygon) => (
         <polygon key={`${polygon.id}-outline`} className={visionPolygonClassName(polygon)} points={polygonPoints(polygon)} />
       ))}
-      {props.hidden.map((polygon) => (
+      {hidden.map((polygon) => (
         <polygon key={`${polygon.id}-outline`} className="vision-outline hide" points={polygonPoints(polygon)} />
       ))}
     </svg>
