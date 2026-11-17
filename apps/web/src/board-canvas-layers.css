@@ -22,3 +22,25 @@
 .scene-board[data-board-capture="true"] > .board-map-canvas {
   display: none;
 }
+
+
+.board-light-animation {
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+  mix-blend-mode: screen;
+}
+.scene-board[data-board-capture="true"] > .board-light-animation { display: none; }
+
+.scene-light-animation {
+  display: flex;
+  width: fit-content;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  align-self: flex-end;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--surface-2);
+  color: var(--paper);
+}

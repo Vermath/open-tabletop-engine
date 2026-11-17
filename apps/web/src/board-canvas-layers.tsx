@@ -1,4 +1,4 @@
-import type { Scene } from "@open-tabletop/core";
+import type { LightSource, Scene } from "@open-tabletop/core";
 import type { ReactNode, RefObject } from "react";
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { boardCanvasPinsImage, boardCanvasPixelRatio, boardPaddingBox, boardCanvasStretchRange, boardCanvasWindow, boardCanvasWindowCovers, containedImageRect, devicePixelSnapOffset, imageDrawRects, lightGlow, lightGlowIsDrawn, scaleBoardRect, visibleBoardRect, type BoardRect } from "./board-canvas-geometry.js";
@@ -34,7 +34,9 @@ export function preferredMapRenderer(): MapRenderer {
 
 /** False for the renderer's canvas, which a DOM snapshot must skip: a map served from another origin taints it, and reading a tainted canvas throws. */
 export function boardCaptureIncludes(node: Node): boolean {
-  return !("classList" in node && (node as Element).classList.contains("board-map-canvas"));
+  if (!("classList" in node)) return true;
+  const classes = (node as Element).classList;
+  return !classes.contains("board-map-canvas") && !classes.contains("board-light-animation");
 }
 
 /**
@@ -265,6 +267,88 @@ export function useBoardCanvasLayers(options: BoardCanvasLayerOptions): { mapCan
     };
   }, [draw, options.enabled, options.imageKey, options.imageRef, options.viewportRef]);
 
+  const animatedLights = useAnimatedBoardLights(options, lightsKey);
   if (!options.enabled) return { mapCanvas: null };
-  return { mapCanvas: <canvas ref={canvasRef} className="board-map-canvas" aria-hidden="true" /> };
+  return { mapCanvas: <><canvas ref={canvasRef} className="board-map-canvas" aria-hidden="true" />{animatedLights}</> };
+}
+
+export function animatedLightAmount(animation: LightSource["animation"], time: number, phase: number) {
+  const pulse = Math.sin(time / 430 + phase);
+  if (animation === "pulse") return (pulse + 1) / 2;
+  if (animation === "flicker") return 0.5 + Math.sin(time / 72 + phase) * 0.25 + Math.sin(time / 113 + phase * 2) * 0.2;
+  return 0;
+}
+
+function useAnimatedBoardLights(options: BoardCanvasLayerOptions, lightsKey: string): ReactNode {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const latest = useRef(options);
+  latest.current = options;
+  const hasAnimation = options.scene.lights.some((light) => light.kind !== "darkness" && (light.animation === "flicker" || light.animation === "pulse"));
+  const enabled = options.enabled && hasAnimation;
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const { viewportRef, boardRef } = latest.current;
+    const viewport = viewportRef.current;
+    const board = boardRef.current;
+    if (!enabled || !canvas || !viewport || !board) return;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const visibleCanvas = canvas;
+    const view = viewport;
+    const map = board;
+    let frame = 0;
+    let paint: ((time: number) => void) | undefined;
+    const tick = (time: number) => { paint?.(time); if (paint) frame = window.requestAnimationFrame(tick); };
+    function restart() {
+      window.cancelAnimationFrame(frame);
+      paint = undefined;
+      visibleCanvas.hidden = true;
+      if (document.hidden || reduced.matches || document.documentElement.dataset.reducedMotion === "true") return;
+      const bounds = measureBoard(map);
+      const visible = visibleBoardRect(view.getBoundingClientRect(), bounds);
+      if (!visible || bounds.width <= 0 || bounds.height <= 0) return;
+      const scene = latest.current.scene;
+      const lights = scene.lights.flatMap((light, phase) => {
+        if (light.kind === "darkness" || (light.animation !== "flicker" && light.animation !== "pulse")) return [];
+        const shape = lightGlow(light, scene, bounds.width, bounds.height, visible);
+        return lightGlowIsDrawn(shape, visible) ? [{ light, shape, phase }] : [];
+      });
+      if (lights.length === 0) return;
+      const ratio = Math.min(boardCanvasPixelRatio(visible.width, visible.height, window.devicePixelRatio || 1), 1);
+      const context = prepareCanvas(visibleCanvas, visible, ratio, { x: 0, y: 0 });
+      if (!context) return;
+      const glows = lights.map(({ light, shape, phase }) => ({ light, shape, phase, color: canvasColorChannels(context, light.color) }));
+      visibleCanvas.hidden = false;
+      paint = (time) => {
+        context.clearRect(0, 0, visible.width, visible.height);
+        for (const { light, shape, phase, color } of glows) {
+          const amount = animatedLightAmount(light.animation, time, phase);
+          const radius = shape.outerRadius * (0.82 + 0.17 * amount);
+          const gradient = context.createRadialGradient(shape.x, shape.y, 0, shape.x, shape.y, radius);
+          gradient.addColorStop(0, "rgba(" + color.red + "," + color.green + "," + color.blue + "," + (shape.opacity * color.alpha * amount * 0.55) + ")");
+          gradient.addColorStop(1, "transparent");
+          context.fillStyle = gradient;
+          context.fillRect(shape.x - radius, shape.y - radius, radius * 2, radius * 2);
+        }
+      };
+      frame = window.requestAnimationFrame(tick);
+    }
+    const resize = new ResizeObserver(restart);
+    resize.observe(viewport);
+    resize.observe(board);
+    const preferences = new MutationObserver(restart);
+    preferences.observe(document.documentElement, { attributes: true, attributeFilter: ["data-reduced-motion"] });
+    viewport.addEventListener("scroll", restart, { passive: true });
+    document.addEventListener("visibilitychange", restart);
+    reduced.addEventListener("change", restart);
+    restart();
+    return () => {
+      window.cancelAnimationFrame(frame);
+      resize.disconnect();
+      preferences.disconnect();
+      viewport.removeEventListener("scroll", restart);
+      document.removeEventListener("visibilitychange", restart);
+      reduced.removeEventListener("change", restart);
+    };
+  }, [enabled, lightsKey, options.scene.width, options.scene.height]);
+  return enabled ? <canvas ref={canvasRef} className="board-light-animation" aria-hidden="true" hidden /> : null;
 }

@@ -480,6 +480,8 @@ export interface LightSource {
   magical?: boolean;
   /** When false, walls do not block this light. Defaults to true. */
   shadows?: boolean;
+  /** Visual glow animation. Vision geometry uses the authored radius. */
+  animation?: "none" | "flicker" | "pulse";
 }
 
 export interface DifficultTerrainRegion extends Timestamps {
