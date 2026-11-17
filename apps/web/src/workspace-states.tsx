@@ -51,3 +51,14 @@ export async function preloadSceneImage(url: string | undefined): Promise<void> 
     window.clearTimeout(timeout);
   }
 }
+
+/** Retry when a realtime update supersedes the snapshot while navigation is pending. */
+export async function retrySceneSwitch(canSelect: () => boolean, load: () => Promise<unknown>): Promise<void> {
+  while (canSelect()) await load();
+}
+
+export function canCommitSceneSwitch(current: boolean, draftDirty: boolean): boolean {
+  if (!current) return false;
+  if (draftDirty) throw new Error("Save or discard scene changes before switching scenes");
+  return true;
+}

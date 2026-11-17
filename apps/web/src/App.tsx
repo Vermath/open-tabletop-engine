@@ -1,4 +1,4 @@
-import { EmptyState, WorkspaceLoading, preloadSceneImage } from "./workspace-states.js";
+import { EmptyState, WorkspaceLoading, canCommitSceneSwitch, preloadSceneImage, retrySceneSwitch } from "./workspace-states.js";
 import { annotationTranslationDelta } from "@open-tabletop/core";
 import type { Actor, AiMemoryFact, AiThread, AiToolCall, AudioTrack, AuditLog, Campaign, ChatMessage, Combat, CombatAction, CombatLegendaryActionPrompt, ContentImportBatch, ContentImportEntityKind, ContentImportSource, DiceRoll, EmailOutboxMessage, Encounter, EncounterMonsterPlacementBatchInput, EncounterMonsterPlacementBatchResult, FogHistoryEntry, FogMode, FogPreset, GridType, Item, JournalCanonStatus, JournalEntry, MapAsset, MessageType, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, SceneAnnotation, SceneAnnotationKind, SceneAnnotationLayer, SceneDuplicationPlan, SceneDuplicationRequest, SceneDuplicationResult, SceneTemplateShape, ScimAssignableRole, Token, TokenLayer, User, UserRole, Visibility, VisionPoint, VisionPointSample, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
 import type { Dnd5eSrdCombatantSyncMutationResult, Dnd5eSrdCombatVitalsKind, Dnd5eSrdCombatVitalsMutationResult, Dnd5eSrdPendingAdvancement, Dnd5eSrdSpellPreparationMutationResult, DndControlledCreatureActionHandoff, DndRulesMutationUndoDescriptor, DndRulesMutationUndoResult } from "@open-tabletop/core";
@@ -321,6 +321,7 @@ export function App() {
   const [snapshotReady, setSnapshotReady] = useState(false);
   const [campaignId, setCampaignId] = useState(() => initialStoredId("otte:selectedCampaignId", "camp_demo"));
   const [sceneSwitchTarget, setSceneSwitchTarget] = useState("");
+  const sceneSwitchRef = useRef<{ sceneId: string }>(undefined);
   const [sceneId, setSceneId] = useState(() => initialStoredId("otte:selectedSceneId", "scn_vault_entry"));
   const [selectedTokenId, setSelectedTokenIdState] = useState("tok_valen");
   const [selectedTokenIds, setSelectedTokenIds] = useState<string[]>(["tok_valen"]);
@@ -694,6 +695,8 @@ export function App() {
   const sessionPulseStatus = realtimeUiLabel(realtimeUiState);
   const onlineParticipantLabel = `${formatNumber(snapshot.presences.length)} online${snapshot.presences.length > 0 ? `: ${snapshot.presences.map((presence) => presence.displayName).join(", ")}` : ""}`;
   const hasUnsavedSceneDraft = workspaceMode === "manage" && manageCategory === "scenes" && sceneEditDirty;
+  const sceneDraftDirtyRef = useRef(hasUnsavedSceneDraft);
+  useLayoutEffect(() => { sceneDraftDirtyRef.current = hasUnsavedSceneDraft; }, [hasUnsavedSceneDraft]);
   const activeSystemId = snapshot.systems.find((system) => system.active)?.id ?? selectedCampaign?.defaultSystemId;
   const selectedActor = actorForSelection(snapshot.actors, selectedActorId, selectedToken, activeSystemId);
   const advancementCatalog = useAdvancementCatalog({ campaignId, actor: selectedActor, disabled: blankCanvasDemoOpen || !isAdvancementCatalogVisible({ advancementModalOpen, workspaceMode, inspectorVisible, tab }) });
@@ -1175,6 +1178,7 @@ export function App() {
     actorSheetAuthoritativeRef.current.clear();
     tokenMutationQueueRef.current.clear();
     tokenAuthoritativeRef.current.clear();
+    sceneSwitchRef.current = undefined; setSceneSwitchTarget("");
     boardSyncQueueRef.current = Promise.resolve();
     setBoardUndoStack([]);
     setBoardRedoStack([]);
@@ -1305,7 +1309,7 @@ export function App() {
     }
   }
 
-  async function refresh(nextCampaignId = campaignId, nextSceneId = sceneId, options: { syncStatus?: boolean; selectSceneOnLoad?: boolean } = {}) {
+  async function refresh(nextCampaignId = campaignId, nextSceneId = sceneId, options: { syncStatus?: boolean; selectSceneOnLoad?: () => boolean } = {}) {
     if (blankCanvasDemoOpen) {
       setSnapshotReady(true);
       if (options.syncStatus !== false) setStatus(blankCanvasDemoNotice);
@@ -1321,15 +1325,16 @@ export function App() {
     try {
       next = await loadSnapshot(nextCampaignId, nextSceneId);
       if (options.selectSceneOnLoad) {
-        const backgroundId = next.scenes.find((scene) => scene.id === nextSceneId)?.backgroundAssetId;
-        const background = next.assets.find((asset) => asset.id === backgroundId);
+        const target = next.scenes.find((scene) => scene.id === nextSceneId);
+        if (!target) throw new Error("This scene is no longer available.");
+        const background = next.assets.find((asset) => asset.id === target.backgroundAssetId);
         await preloadSceneImage(background ? assetBlobUrl(background) : undefined);
       }
     } catch (error) {
       if (seq !== refreshSeqRef.current || !workspaceRequestIsCurrent(nextCampaignId, requestUserId)) return snapshotRef.current;
       throw error;
     }
-    if (seq !== refreshSeqRef.current || !workspaceRequestIsCurrent(nextCampaignId, requestUserId)) return next;
+    if (seq !== refreshSeqRef.current || !workspaceRequestIsCurrent(nextCampaignId, requestUserId) || options.selectSceneOnLoad?.() === false) return next;
     realtimeSequenceRef.current = next.eventSequence;
     snapshotRef.current = next;
     setSnapshot(next);
@@ -8804,9 +8809,10 @@ export function App() {
   };
   const selectScene = (nextSceneId: string) => {
     if (blockCampaignSetupNavigation("leaving campaign setup")) return false;
-    if (nextSceneId === sceneSwitchTarget) return true;
+    if (nextSceneId === sceneSwitchRef.current?.sceneId) return true;
     if (nextSceneId === sceneId) {
-      if (sceneSwitchTarget) { invalidateInFlightRefreshes(); setSceneSwitchTarget(""); }
+      sceneSwitchRef.current = undefined;
+      setSceneSwitchTarget("");
       if (workspaceMode === "prep" || shortPhone) showScene();
       return true;
     }
@@ -8816,10 +8822,14 @@ export function App() {
     }
     if (blankCanvasDemoOpen) setSceneId(nextSceneId);
     else {
+      const intent = { sceneId: nextSceneId };
+      sceneSwitchRef.current = intent;
       setSceneSwitchTarget(nextSceneId);
-      void refresh(campaignId, nextSceneId, { syncStatus: false, selectSceneOnLoad: true })
-        .catch((error) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) reportError(error); })
-        .finally(() => setSceneSwitchTarget((current) => current === nextSceneId ? "" : current));
+      const isCurrent = () => sceneSwitchRef.current === intent && workspaceRequestIsCurrent(campaignId, currentUserId);
+      const canSelect = () => canCommitSceneSwitch(isCurrent() && realtimeSelectionRef.current.sceneId === sceneId, sceneDraftDirtyRef.current);
+      void retrySceneSwitch(canSelect, () => refresh(campaignId, nextSceneId, { syncStatus: false, selectSceneOnLoad: canSelect }))
+        .catch((error) => { if (isCurrent()) reportError(error); })
+        .finally(() => { if (isCurrent()) { sceneSwitchRef.current = undefined; setSceneSwitchTarget(""); } });
     }
     if (workspaceMode === "prep" || shortPhone) showScene();
     return true;
