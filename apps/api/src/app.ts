@@ -832,6 +832,9 @@ interface CampaignPermissionTemplate {
 }
 
 const MAX_FOG_HISTORY_ENTRIES = 100;
+// Every wall and light adds vision work, so editable scenes share one ceiling.
+const MAX_SCENE_WALLS = 10_000;
+const MAX_SCENE_LIGHTS = 5_000;
 const DEFAULT_SYSTEM_ID = DND_5E_SRD_SYSTEM_ID;
 const CORE_COMPATIBILITY_VERSION = "0.3.0";
 const AI_STALE_RUNNING_THREAD_MS = 15 * 60 * 1000;
@@ -4093,6 +4096,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.post<{ Params: { campaignId: string }; Body: Partial<Scene> }>("/api/v1/campaigns/:campaignId/scenes", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "scene.create");
     if (allowed !== true) return allowed;
+    if (request.body.walls !== undefined && (!Array.isArray(request.body.walls) || request.body.walls.length > MAX_SCENE_WALLS)) return badRequest(reply, `Scene walls must be an array of at most ${MAX_SCENE_WALLS} objects`);
+    if (request.body.lights !== undefined && (!Array.isArray(request.body.lights) || request.body.lights.length > MAX_SCENE_LIGHTS)) return badRequest(reply, `Scene lights must be an array of at most ${MAX_SCENE_LIGHTS} objects`);
     const gridFields = normalizeSceneGridFields(request.body);
     if (!gridFields.ok) return badRequest(reply, gridFields.error);
     const userId = currentUserId(store, request.headers);
@@ -5150,6 +5155,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
     const allowed = requireScenePermission(store, reply, request.headers, scene, "scene.update");
     if (allowed !== true) return allowed;
+    if (scene.walls.length >= MAX_SCENE_WALLS) return badRequest(reply, `Scene walls are limited to ${MAX_SCENE_WALLS}`);
     const normalized = normalizeWallPatch(request.body ?? {});
     if ("error" in normalized) return badRequest(reply, normalized.error);
     if (normalized.patch.x1 === undefined || normalized.patch.y1 === undefined || normalized.patch.x2 === undefined || normalized.patch.y2 === undefined) {
@@ -5226,6 +5232,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
     const allowed = requireScenePermission(store, reply, request.headers, scene, "scene.update");
     if (allowed !== true) return allowed;
+    if (scene.lights.length >= MAX_SCENE_LIGHTS) return badRequest(reply, `Scene lights are limited to ${MAX_SCENE_LIGHTS}`);
     const light = { id: createId("light"), x: request.body.x, y: request.body.y, radius: request.body.radius ?? 180, brightRadius: request.body.brightRadius, dimRadius: request.body.dimRadius, color: request.body.color ?? (request.body.kind === "darkness" ? "#111827" : "#facc15"), intensity: clampLightIntensity(request.body.intensity ?? (request.body.kind === "darkness" ? 0.82 : 0.28)), kind: request.body.kind ?? "light", magical: Boolean(request.body.magical) };
     const normalized = normalizeLightSourcePatch(light);
     if ("error" in normalized) return badRequest(reply, normalized.error);
@@ -19028,8 +19035,8 @@ function normalizeScenePatch(rawBody: unknown): { ok: true; value: ScenePatchBod
   }
   for (const [field, maximum] of [
     ["fog", 5_000],
-    ["walls", 10_000],
-    ["lights", 5_000],
+    ["walls", MAX_SCENE_WALLS],
+    ["lights", MAX_SCENE_LIGHTS],
     ["annotations", 10_000],
   ] as const) {
     if (!(field in rawBody)) continue;

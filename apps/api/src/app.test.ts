@@ -11436,6 +11436,31 @@ describe("api", () => {
     }
   });
 
+  it("caps scene walls and lights at the editable scene ceiling", async () => {
+    const store = new MemoryStateStore();
+    const scene = store.state.scenes.find((item) => item.id === "scn_vault_entry")!;
+    scene.walls = Array.from({ length: 10_000 }, (_, index) => ({ id: `wall_cap_${index}`, x1: index % 100, y1: 0, x2: index % 100, y2: 10, blocksVision: true, blocksMovement: true, kind: "wall" as const }));
+    scene.lights = Array.from({ length: 5_000 }, (_, index) => ({ id: `light_cap_${index}`, x: 10, y: 10, radius: 20, color: "#facc15", intensity: 0.2, kind: "light" as const, magical: false }));
+    const app = await buildApp({ store });
+    const wall = await app.inject({ method: "POST", url: "/api/v1/scenes/scn_vault_entry/walls", headers: authHeaders, payload: { x1: 10, y1: 10, x2: 200, y2: 10 } });
+    expect(wall.statusCode).toBe(400);
+    expect(wall.json().message).toContain("limited to 10000");
+    const light = await app.inject({ method: "POST", url: "/api/v1/scenes/scn_vault_entry/lights", headers: authHeaders, payload: { x: 100, y: 100 } });
+    expect(light.statusCode).toBe(400);
+    expect(light.json().message).toContain("limited to 5000");
+    expect(scene.walls).toHaveLength(10_000);
+    expect(scene.lights).toHaveLength(5_000);
+    const oversizedScene = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/scenes",
+      headers: authHeaders,
+      payload: { name: "Too Many Walls", walls: Array.from({ length: 10_001 }, () => ({})) }
+    });
+    expect(oversizedScene.statusCode).toBe(400);
+    expect(store.state.scenes.some((item) => item.name === "Too Many Walls")).toBe(false);
+    await app.close();
+  });
+
   it("supports polygon reveal and hide brush fog operations", async () => {
     const store = new MemoryStateStore();
     const scene = store.state.scenes.find((item) => item.id === "scn_vault_entry")!;
