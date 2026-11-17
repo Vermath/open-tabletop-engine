@@ -4,35 +4,34 @@ import type { DiceCastPlan } from "./dice-3d.js";
 import { DiceCastOverlay } from "./tabletop-overlays.js";
 import "./dice-table-stage.css";
 
-export function DiceTableStage({ casts }: { casts: DiceCastPlan[] }) {
+export function DiceTableStage({ casts, boardId }: { casts: DiceCastPlan[]; boardId?: string }) {
   const stageRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const stage = stageRef.current;
-    const workspace = document.querySelector<HTMLElement>(".workspace");
+    const workspace = stage?.parentElement?.querySelector<HTMLElement>(".workspace");
     if (!stage || !workspace) return;
-    let target: HTMLElement | undefined;
-    const resize = new ResizeObserver(update);
-    const changes = new MutationObserver(update);
-    function update() {
-      const board = workspace!.querySelector<HTMLElement>(".scene-viewport");
-      const next = board?.getClientRects().length ? board : workspace!;
-      if (next !== target) {
-        if (target) resize.unobserve(target);
-        resize.observe(next);
-        target = next;
-      }
-      const rect = next.getBoundingClientRect();
-      Object.assign(stage!.style, { left: rect.left + "px", top: rect.top + "px", width: rect.width + "px", height: rect.height + "px" });
-    }
-    update();
-    changes.observe(workspace, { childList: true, subtree: true });
-    window.addEventListener("resize", update);
-    return () => {
-      resize.disconnect();
-      changes.disconnect();
-      window.removeEventListener("resize", update);
+    const board = boardId ? workspace.querySelector<HTMLElement>(".scene-viewport") : null;
+    const target = board ?? workspace;
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const { left, top, width, height } = target.getBoundingClientRect();
+      Object.assign(stage.style, { left: left + "px", top: top + "px", width: width + "px", height: height + "px" });
     };
-  }, []);
+    const schedule = () => { if (!frame) frame = window.requestAnimationFrame(update); };
+    update();
+    const resize = new ResizeObserver(schedule);
+    resize.observe(target);
+    if (target !== workspace) resize.observe(workspace);
+    window.addEventListener("resize", schedule);
+    window.addEventListener("scroll", schedule, { passive: true });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      resize.disconnect();
+      window.removeEventListener("resize", schedule);
+      window.removeEventListener("scroll", schedule);
+    };
+  }, [boardId]);
   return (
     <div className="dice-table-stage" ref={stageRef} aria-hidden="true">
       <div className="dice-box-stage" id={diceBoxContainerId} />

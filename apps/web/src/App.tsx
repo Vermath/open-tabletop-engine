@@ -10798,7 +10798,7 @@ export function App() {
           onReject={rejectAiAgentProposal}
         />
       )}
-      <DiceTableStage casts={activeDiceCasts.filter((cast) => snapshot.rolls.some((roll) => roll.id === cast.rollId))} />
+      <DiceTableStage boardId={showTableWorkspace && !sceneWorkspaceHidden ? selectedScene?.id : undefined} casts={activeDiceCasts.filter((cast) => snapshot.rolls.some((roll) => roll.id === cast.rollId))} />
       {!blankCanvasDemoOpen && <AudioPlaybackLayer tracks={snapshot.audioTracks} masterVolume={audioMasterVolume} muted={audioMuted} />}
       {!blankCanvasDemoOpen && audioSoundboardOpen && hasPermission("scene.update") && (
         <AudioSoundboard
