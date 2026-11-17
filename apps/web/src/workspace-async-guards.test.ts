@@ -1,10 +1,12 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { closeWorkspaceDialogState } from "./workspace-ui-constants.js";
 
 const appSource = readFileSync(resolve(__dirname, "App.tsx"), "utf8").replace(/\r\n/g, "\n");
 const apiSource = readFileSync(resolve(__dirname, "api.ts"), "utf8").replace(/\r\n/g, "\n");
 const adminSource = readFileSync(resolve(__dirname, "admin-panel.tsx"), "utf8").replace(/\r\n/g, "\n");
+const adminPluginClientSource = readFileSync(resolve(__dirname, "admin-plugin-client.ts"), "utf8").replace(/\r\n/g, "\n");
 const workspaceBoundActionSource = readFileSync(resolve(__dirname, "workspace-bound-action.ts"), "utf8").replace(/\r\n/g, "\n");
 
 describe("workspace-bound async operations", () => {
@@ -23,21 +25,40 @@ describe("workspace-bound async operations", () => {
     expect(appSource).toContain("setAdminSnapshot(undefined);");
     expect(appSource).toContain("setFailedAssetUpload(undefined);");
     expect(appSource).toContain('setAssetStatus("No asset action this session");');
-    expect(appSource).toContain("setAudioSoundboardOpen(false);");
+    const clearTransientState = vi.fn();
+    const closeAudioSoundboard = vi.fn();
+    closeWorkspaceDialogState(clearTransientState, closeAudioSoundboard);
+    expect(clearTransientState).toHaveBeenCalledOnce();
+    expect(closeAudioSoundboard).toHaveBeenCalledWith(false);
   });
 
   it("guards admin, asset, audio, and plugin completion paths", () => {
     expect(appSource).toContain("async function runWorkspaceAdminAction<T>(");
     expect(appSource).toContain("loadAdminSnapshot({ signal: request.controller.signal })");
     expect(appSource).toContain("apiUploadAsset({");
-    expect(appSource).toContain("}, { signal: request.controller.signal })");
-    expect(appSource).toContain("`/api/v1/audio/${track.id}`, { playing: !track.playing }, { signal: request.controller.signal }");
+    expect(appSource).toContain("idempotencyKey: uploadAttempt.idempotencyKey");
+    const audioBody = appSource.slice(appSource.indexOf("async function toggleAudioTrack"), appSource.indexOf("function createBlankCanvasDemoRoll"));
+    expect(audioBody).toContain("expectedUpdatedAt: latest.updatedAt");
+    expect(audioBody).toContain("signal: request.controller.signal");
+    expect(audioBody).toContain("idempotencyKey:");
     expect(appSource).toContain("`/api/v1/campaigns/${request.campaignId}/plugins/${plugin.id}/install`");
-    expect(appSource).toContain('"/api/v1/plugins/registry/sync", { campaignId: request.campaignId }, { signal: request.controller.signal }');
+    expect(appSource).toContain("syncCampaignPluginRegistry(request.campaignId, expectedRegistryRevision, request.controller.signal)");
+    expect(adminPluginClientSource).toContain('"/api/v1/plugins/registry/sync"');
+    expect(adminPluginClientSource).toContain('"plugin-registry-sync"');
+    expect(appSource).toContain("idempotencyKey: attempt.idempotencyKey");
+  });
+
+  it("binds the map file picker to the named selected scene", () => {
+    expect(appSource).toContain("`Upload map to ${selectedScene.name} and calibrate`");
+    expect(appSource).toContain("`Choose map file for ${selectedScene.name}`");
+    expect(appSource).toContain("data-scene-id={selectedScene?.id}");
+    expect(appSource).toContain('key={`map-upload-file:${selectedScene?.id ?? "none"}`}');
   });
 
   it("reports committed plugin, character-import, and proposal actions separately from reconciliation failures", () => {
     expect(appSource).toContain("Reload to reconcile plugin state.");
+    const installPluginSource = appSource.slice(appSource.indexOf("async function installPlugin"), appSource.indexOf("async function syncPluginRegistries"));
+    expect(installPluginSource).toContain("await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });");
     expect(appSource).toContain("applyActorToSnapshot(imported.actor);");
     expect(appSource).toContain("Proposal changes reverted; background refresh failed:");
     expect(appSource).toContain('key={`encounter-builder:${selectedCampaign.id}:${currentUserId}:${encounterBuilderSystem.id}`}');
@@ -67,7 +88,7 @@ describe("workspace-bound async operations", () => {
     expect(appSource).toContain("async function useActorAction(rollId: string");
     expect(appSource).toContain("`/api/v1/campaigns/${request.campaignId}/systems/${actor.systemId}/actors/${actor.id}/roll`");
     expect(appSource).toContain("}, { signal: request.controller.signal })");
-    expect(appSource).toContain("const dataUrl = await toPng(board");
+    expect(appSource).toContain("const dataUrl = await withDomBoardForCapture(board, (filter) => toPng(board");
     expect(appSource).toContain('if (!workspaceBoundRequestIsCurrent(request)) return "stale" as const;');
     expect(appSource).toContain("setAiAgentStatus(\"Agent ready\");");
     expect(appSource).toContain("if (result === \"sent\") setAiAgentStatus(\"Board capture sent\");");
@@ -75,7 +96,8 @@ describe("workspace-bound async operations", () => {
 
   it("drops token-vision mutation responses after the campaign or user changes", () => {
     expect(appSource).toContain("const tokenId = selectedToken.id;");
-    expect(appSource).toContain("`/api/v1/tokens/${tokenId}`, patch, { signal: request.controller.signal }");
+    expect(appSource).toContain("`/api/v1/tokens/${tokenId}`, payload, { signal: request.controller.signal, idempotencyKey:");
+    expect(appSource).toContain("const payload = { ...patch, expectedUpdatedAt: latest.updatedAt };");
     expect(appSource).toContain("if (updated.id !== tokenId) return;");
     expect(appSource).toContain("return applied;");
   });
@@ -85,7 +107,9 @@ describe("workspace-bound async operations", () => {
     const assignItemBody = appSource.slice(appSource.indexOf("async function assignItemToActor"), appSource.indexOf("function canAssignItemFromSheet"));
     for (const body of [updateItemBody, assignItemBody]) {
       expect(body).toContain("await runWorkspaceBoundAction(");
-      expect(body).toContain("{ signal: request.controller.signal }");
+      expect(body).toContain("signal: request.controller.signal");
+      expect(body).toContain("idempotencyKey:");
+      expect(body).toContain("expectedUpdatedAt: latest.updatedAt");
       expect(body).toContain("applyItemToSnapshot(updated);");
     }
   });
@@ -96,7 +120,9 @@ describe("workspace-bound async operations", () => {
     for (const body of [importBody, purchaseBody]) {
       expect(body).toContain("await runWorkspaceBoundAction(");
       expect(body).toContain("request.campaignId");
-      expect(body).toContain("{ signal: request.controller.signal }");
+      expect(body).toContain("signal: request.controller.signal");
+      expect(body).toContain("idempotencyKey:");
+      expect(body).toContain("expectedUpdatedAt: actor.updatedAt");
       expect(body).toContain("await refresh(request.campaignId, realtimeSelectionRef.current.sceneId);");
     }
   });
@@ -128,7 +154,11 @@ describe("workspace-bound async operations", () => {
     expect(appSource).toContain("const login = await loginSession(userId, { persist: false, signal: controller.signal }).catch");
     expect(appSource).toContain("if (!requestIsCurrent()) return undefined;");
     expect(appSource).toContain("if (!login || !requestIsCurrent()) return;");
-    expect(appSource.indexOf("if (!login || !requestIsCurrent()) return;")).toBeLessThan(appSource.indexOf("storeSession(login);"));
+    const switchBody = appSource.slice(appSource.indexOf("async function switchSession"), appSource.indexOf("async function switchActiveOrganization"));
+    expect(switchBody).toContain("commitDeferredCredential(login, credentialTicket, requestIsCurrent");
+    const demoBody = appSource.slice(appSource.indexOf("async function startDemoGmSession"), appSource.indexOf("async function submitLogin"));
+    expect(demoBody).toContain('loginSession("usr_demo_gm", { persist: false })');
+    expect(demoBody.indexOf("commitDeferredCredential(login")).toBeLessThan(demoBody.indexOf("setBlankCanvasDemoOpen(false)"));
   });
 
   it("invalidates pending credential work on logout and identity changes", () => {
@@ -151,6 +181,12 @@ describe("workspace-bound async operations", () => {
       const body = appSource.slice(appSource.indexOf(start), appSource.indexOf(end));
       expect(body).toContain("cancelInviteAcceptance();");
     }
+  });
+
+  it("commits an accepted invite session before loading the invited campaign", () => {
+    const body = appSource.slice(appSource.indexOf("async function acceptInvite()"), appSource.indexOf("async function createCampaignFromSetup"));
+    expect(body.indexOf("await commitDeferredCredential(result")).toBeGreaterThanOrEqual(0);
+    expect(body.indexOf("await commitDeferredCredential(result")).toBeLessThan(body.indexOf("await refresh(result.campaign.id)"));
   });
 
   it("clears account secrets and scopes MFA completions to the active session", () => {

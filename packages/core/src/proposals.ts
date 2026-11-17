@@ -111,6 +111,12 @@ export function applyProposal(
     throw new Error("Proposal must be approved before applying");
   }
 
+  if (proposal.createdByType === "plugin") {
+    for (const change of proposal.changesJson) {
+      assertPluginProposalChangeBoundary(change);
+    }
+  }
+
   const appliedAt = nowIso();
   const next: EngineState = { ...state };
   const copiedCollections = new Set<CopyOnWriteCollectionKey>();
@@ -160,6 +166,28 @@ export function applyProposal(
     };
   }
   return next;
+}
+
+/**
+ * A plugin proposal must never become a raw rules-data patch merely because a
+ * human approved it. Rules-managed Actor and Item changes belong to typed
+ * system transactions; proposal-based plugin changes are limited to a
+ * presentation-only rename even for legacy or externally-authored records.
+ */
+function assertPluginProposalChangeBoundary(change: ProposalChange): void {
+  if (change.entity !== "actor" && change.entity !== "item") return;
+  if (
+    change.action !== "update" ||
+    !change.id ||
+    Object.keys(change.data).length !== 1 ||
+    typeof change.data.name !== "string" ||
+    !change.data.name.trim() ||
+    change.data.name.trim().length > 160
+  ) {
+    throw new Error(
+      `Plugin proposals may only rename ${change.entity} records; rules-managed changes require a typed system transaction`,
+    );
+  }
 }
 
 export function revertProposal(

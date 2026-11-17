@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { apiDelete, apiPatch, apiPost } from "./api.js";
 import { campaignSearchAnchorId } from "./campaign-search-panel.js";
 import { errorMessage, formatDateTime, formatNumber } from "./sheet-format.js";
+import { sharedMutationIdempotencyKey } from "./shared-mutation.js";
 
 export type CampaignMemoryStatus = AiMemoryFactStatus;
 export type CampaignMemoryView = "canon" | "review";
@@ -52,31 +53,36 @@ const memoryTypes: Array<{ id: AiMemoryFactType; label: string }> = [
   { id: "ai_suggestion", label: "AI suggestion" }
 ];
 
-export function createCampaignMemory(campaignId: string, input: MemoryDraft): Promise<CampaignMemoryFact> {
-  return apiPost<CampaignMemoryFact>(`/api/v1/campaigns/${campaignId}/ai/memory`, memoryDraftPayload(input));
+export function createCampaignMemory(campaignId: string, expectedUpdatedAt: string, input: MemoryDraft): Promise<CampaignMemoryFact> {
+  const payload = { ...memoryDraftPayload(input), expectedUpdatedAt };
+  return apiPost<CampaignMemoryFact>(`/api/v1/campaigns/${campaignId}/ai/memory`, payload, { idempotencyKey: sharedMutationIdempotencyKey(`ai-memory:create:${campaignId}`, expectedUpdatedAt, payload) });
 }
 
-export function updateCampaignMemory(factId: string, input: MemoryDraft): Promise<CampaignMemoryFact> {
+export function updateCampaignMemory(factId: string, expectedUpdatedAt: string, input: MemoryDraft): Promise<CampaignMemoryFact> {
   const editableFields = memoryDraftPayload(input);
-  return apiPatch<CampaignMemoryFact>(`/api/v1/ai/memory/${factId}`, {
+  const payload = {
     text: editableFields.text,
     type: editableFields.type,
     subject: editableFields.subject,
     visibility: editableFields.visibility,
-    confidence: editableFields.confidence
-  });
+    confidence: editableFields.confidence,
+    expectedUpdatedAt
+  };
+  return apiPatch<CampaignMemoryFact>(`/api/v1/ai/memory/${factId}`, payload, { idempotencyKey: sharedMutationIdempotencyKey(`ai-memory:update:${factId}`, expectedUpdatedAt, payload) });
 }
 
-export function transitionCampaignMemory(factId: string, action: "approve" | "reject"): Promise<CampaignMemoryFact> {
-  return apiPost<CampaignMemoryFact>(`/api/v1/ai/memory/${factId}/${action}`, {});
+export function transitionCampaignMemory(factId: string, expectedUpdatedAt: string, action: "approve" | "reject"): Promise<CampaignMemoryFact> {
+  const payload = { expectedUpdatedAt };
+  return apiPost<CampaignMemoryFact>(`/api/v1/ai/memory/${factId}/${action}`, payload, { idempotencyKey: sharedMutationIdempotencyKey(`ai-memory:${action}:${factId}`, expectedUpdatedAt, payload) });
 }
 
-export function retconCampaignMemory(factId: string): Promise<CampaignMemoryFact> {
-  return apiPatch<CampaignMemoryFact>(`/api/v1/ai/memory/${factId}`, { status: "retconned" });
+export function retconCampaignMemory(factId: string, expectedUpdatedAt: string): Promise<CampaignMemoryFact> {
+  const payload = { status: "retconned", expectedUpdatedAt };
+  return apiPatch<CampaignMemoryFact>(`/api/v1/ai/memory/${factId}`, payload, { idempotencyKey: sharedMutationIdempotencyKey(`ai-memory:retcon:${factId}`, expectedUpdatedAt, payload) });
 }
 
-export function deleteCampaignMemory(factId: string): Promise<unknown> {
-  return apiDelete<unknown>(`/api/v1/ai/memory/${factId}`);
+export function deleteCampaignMemory(factId: string, expectedUpdatedAt: string): Promise<unknown> {
+  return apiDelete<unknown>(`/api/v1/ai/memory/${factId}?expectedUpdatedAt=${encodeURIComponent(expectedUpdatedAt)}`, { idempotencyKey: sharedMutationIdempotencyKey(`ai-memory:delete:${factId}`, expectedUpdatedAt, {}) });
 }
 
 function memorySourceLabel(fact?: CampaignMemoryFact): string {
@@ -85,6 +91,7 @@ function memorySourceLabel(fact?: CampaignMemoryFact): string {
 
 export function CampaignMemoryPanel(props: {
   campaignId: string;
+  campaignUpdatedAt: string;
   facts: CampaignMemoryFact[];
   canCreate: boolean;
   canReview: boolean;
@@ -118,7 +125,7 @@ export function CampaignMemoryPanel(props: {
     if (!input.text.trim()) return;
     setBusyId("new");
     try {
-      const created = await createCampaignMemory(props.campaignId, input);
+      const created = await createCampaignMemory(props.campaignId, props.campaignUpdatedAt, input);
       replaceFact(created);
       setCreating(false);
       setView("review");
@@ -134,7 +141,7 @@ export function CampaignMemoryPanel(props: {
   async function updateFact(fact: CampaignMemoryFact, input: MemoryDraft) {
     setBusyId(fact.id);
     try {
-      const updated = await updateCampaignMemory(fact.id, input);
+      const updated = await updateCampaignMemory(fact.id, fact.updatedAt, input);
       replaceFact(updated);
       props.onStatus("Memory details updated");
     } catch (error) {
@@ -147,7 +154,7 @@ export function CampaignMemoryPanel(props: {
   async function transitionFact(fact: CampaignMemoryFact, action: "approve" | "reject") {
     setBusyId(fact.id);
     try {
-      const updated = await transitionCampaignMemory(fact.id, action);
+      const updated = await transitionCampaignMemory(fact.id, fact.updatedAt, action);
       replaceFact(updated);
       props.onStatus(action === "approve" ? "Memory approved into canon" : "Memory candidate rejected");
     } catch (error) {
@@ -160,7 +167,7 @@ export function CampaignMemoryPanel(props: {
   async function retconFact(fact: CampaignMemoryFact) {
     setBusyId(fact.id);
     try {
-      const updated = await retconCampaignMemory(fact.id);
+      const updated = await retconCampaignMemory(fact.id, fact.updatedAt);
       replaceFact(updated);
       props.onStatus("Memory moved out of canon; add a replacement candidate if the fact changed");
     } catch (error) {
@@ -173,7 +180,7 @@ export function CampaignMemoryPanel(props: {
   async function deleteFact(fact: CampaignMemoryFact) {
     setBusyId(fact.id);
     try {
-      await deleteCampaignMemory(fact.id);
+      await deleteCampaignMemory(fact.id, fact.updatedAt);
       props.onFactsChange(props.facts.filter((item) => item.id !== fact.id));
       props.onStatus("Memory deleted");
     } catch (error) {

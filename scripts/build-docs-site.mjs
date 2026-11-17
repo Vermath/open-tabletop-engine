@@ -16,6 +16,7 @@ const markdownRoots = [
   join(root, "README.md"),
   join(root, "CHANGELOG.md"),
   join(root, "docs"),
+  join(root, "packages", "api-contracts", "TYPE_CONTRACT_NOTICE.md"),
 ];
 const excludedPublicSources = new Set(
   [

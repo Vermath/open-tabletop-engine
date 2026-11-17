@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sceneDeleteConfirmationMatches, sceneQuickCreateIndex, sceneTabWrapClass, showTrailingSceneCreate } from "./scene-tabs";
+import { sceneDeleteConfirmationMatches, sceneQuickCreateIndex, sceneSelectionDestination, sceneTabWrapClass, showTrailingSceneCreate } from "./scene-tabs";
 
 describe("sceneTabWrapClass", () => {
   it("does not reserve checkbox layout space when scene selection is unavailable", () => {
@@ -31,5 +31,22 @@ describe("sceneTabWrapClass", () => {
     expect(sceneDeleteConfirmationMatches("Vault Entry", "Renamed Draft")).toBe(false);
     expect(sceneDeleteConfirmationMatches("Vault Entry", "Vault Entry")).toBe(true);
     expect(sceneDeleteConfirmationMatches(undefined, "Vault Entry")).toBe(false);
+  });
+
+  it("keeps a scene manager in Manage > Scenes when another scene is selected", () => {
+    expect(sceneSelectionDestination("manage", true)).toEqual({
+      workspaceMode: "manage",
+      manageCategory: "scenes",
+    });
+  });
+
+  it("does not change live, prep, or AI workspace context during scene selection", () => {
+    expect(sceneSelectionDestination("live", true)).toEqual({ workspaceMode: "live" });
+    expect(sceneSelectionDestination("prep", true)).toEqual({ workspaceMode: "prep" });
+    expect(sceneSelectionDestination("ai", true)).toEqual({ workspaceMode: "ai" });
+  });
+
+  it("returns account-only Manage users to the live table for scene selection", () => {
+    expect(sceneSelectionDestination("manage", false)).toEqual({ workspaceMode: "live" });
   });
 });

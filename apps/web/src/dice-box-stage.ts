@@ -36,6 +36,7 @@ let boxPromise: Promise<DiceBoxLike | null> | null = null;
 let readyBox: DiceBoxLike | null = null;
 let state: DiceBoxState = "idle";
 let clearTimer = 0;
+let currentRoll = 0;
 
 export function diceBoxStatus(): DiceBoxState {
   return state;
@@ -73,6 +74,7 @@ export async function primePhysicsDiceStage(): Promise<boolean> {
 }
 
 export function clearPhysicsDice(): void {
+  currentRoll += 1;
   if (clearTimer && typeof window !== "undefined") {
     window.clearTimeout(clearTimer);
     clearTimer = 0;
@@ -86,9 +88,11 @@ export function clearPhysicsDice(): void {
 
 function runPhysicsDiceRoll(box: DiceBoxLike, notation: string, lingerMs: number): boolean {
   if (clearTimer) window.clearTimeout(clearTimer);
+  const roll = ++currentRoll;
   box
     .roll(notation)
     .then(() => {
+      if (roll !== currentRoll) return;
       clearTimer = window.setTimeout(() => {
         box.clearDice();
         clearTimer = 0;
@@ -96,6 +100,7 @@ function runPhysicsDiceRoll(box: DiceBoxLike, notation: string, lingerMs: number
     })
     .catch((error) => {
       console.warn("3D dice roll failed.", error);
+      if (roll !== currentRoll) return;
       clearTimer = window.setTimeout(() => {
         box.clearDice();
         clearTimer = 0;
@@ -121,22 +126,11 @@ async function waitForReadyDiceBox(maxWaitMs: number): Promise<DiceBoxLike | nul
   }
 }
 
-/** True when the physics box took the roll; false means the caller should use the CSS fallback. */
-export function castPhysicsDice(plan: DiceCastPlan, lingerMs = physicsDiceLingerMs): boolean {
-  const notation = diceBoxNotation(plan);
-  if (!notation) return false;
-  if (!readyBox) {
-    void prepareDiceBox();
-    return false;
-  }
-  return runPhysicsDiceRoll(readyBox, notation, lingerMs);
-}
-
 /** Waits briefly for a warming dice box so cold-start rolls do not immediately downgrade. */
-export async function castPhysicsDiceWhenReady(plan: DiceCastPlan, lingerMs = physicsDiceLingerMs, maxWaitMs = physicsDiceReadyWaitMs): Promise<boolean> {
+export async function castPhysicsDiceWhenReady(plan: DiceCastPlan, lingerMs = physicsDiceLingerMs, maxWaitMs = physicsDiceReadyWaitMs, isCurrent = () => true): Promise<boolean> {
   const notation = diceBoxNotation(plan);
   if (!notation) return false;
   const box = await waitForReadyDiceBox(maxWaitMs);
-  if (!box) return false;
+  if (!box || !isCurrent()) return false;
   return runPhysicsDiceRoll(box, notation, lingerMs);
 }

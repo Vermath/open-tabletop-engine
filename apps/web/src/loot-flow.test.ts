@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const appSource = readFileSync(resolve(__dirname, "App.tsx"), "utf8");
+const actorLoadoutSource = readFileSync(resolve(__dirname, "actor-loadout-panel.tsx"), "utf8");
 const tokenDragSource = readFileSync(resolve(__dirname, "token-drag.ts"), "utf8");
 const combatPanelSource = readFileSync(resolve(__dirname, "combat-panel.tsx"), "utf8");
 const stylesSource = readFileSync(resolve(__dirname, "styles.css"), "utf8");
@@ -20,7 +21,7 @@ describe("loot flow", () => {
   });
 
   it("provides a give-to fallback per loadout item", () => {
-    expect(appSource).toContain('aria-label={`Give ${item.name} to actor`}');
+    expect(actorLoadoutSource).toContain('aria-label={`Give ${item.name} to actor`}');
   });
 
   it("splits party gold from combat", () => {

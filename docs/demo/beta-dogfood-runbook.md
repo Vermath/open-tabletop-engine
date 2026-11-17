@@ -30,5 +30,5 @@ Expected campaign members:
 - Import returns campaign `camp_beta_ember_vault` with 4 users, 4 members, 2 scenes, 5 tokens, 6 actors, 4 items, 5 journals, 2 handouts, 6 chat messages, 4 rolls, 1 encounter, 1 combat, 1 AI eval, 1 proposal, 1 memory, 3 AI tool calls, 1 plugin storage record, and 4 audit logs.
 - Export/import round trip preserves all three session recap journals, actor HP/resources, combat round, loot, AI memory, plugin storage, and export checkpoint audit entries.
 - Player views hide GM-only prep and the hidden scout until the GM reveals it.
-- AI remains proposal based; the fixture starts with `prop_beta_ai_recap_memory` pending.
+- The fixture starts with `prop_beta_ai_recap_memory` pending so proposal review can be exercised; the product also supports governed automatic execution.
 - No Roll20, proprietary D&D, D&D Beyond, scraping, or auth bypass content is part of the fixture.

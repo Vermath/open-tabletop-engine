@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   comparePluginVersions,
   parsePluginVersion,
+  PLUGIN_PERMISSION_ALLOWLIST,
   pluginCoreCompatibility,
   pluginEventPermission,
   validatePluginManifest,
@@ -22,6 +23,16 @@ const validManifest = {
 describe("plugin manifest validation", () => {
   it("accepts SemVer build metadata and validates all nested manifest fields", () => {
     expect(validatePluginManifest(validManifest)).toEqual([]);
+  });
+
+  it("accepts the typed atomic token movement permission", () => {
+    expect(PLUGIN_PERMISSION_ALLOWLIST).toContain("token.move");
+    expect(
+      validatePluginManifest({
+        ...validManifest,
+        permissions: ["chat.write", "token.move"],
+      }),
+    ).toEqual([]);
   });
 
   it("returns validation errors instead of throwing for malformed nested values", () => {

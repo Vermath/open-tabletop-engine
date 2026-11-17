@@ -1,5 +1,8 @@
-import { contextBridge, ipcRenderer } from "electron";
-import type { DesktopPreloadApi, DesktopStatus, StartInternetShareInput } from "./desktop-api.js";
+// Sandboxed preloads are classic scripts. Type queries keep tsc from emitting ESM imports or markers.
+const { contextBridge, ipcRenderer } = require("electron") as typeof import("electron");
+type DesktopPreloadApi = import("./desktop-api.js").DesktopPreloadApi;
+type DesktopStatus = import("./desktop-api.js").DesktopStatus;
+type StartInternetShareInput = import("./desktop-api.js").StartInternetShareInput;
 
 const desktopApi: DesktopPreloadApi = {
   getDesktopStatus: () => ipcRenderer.invoke("desktop:getStatus") as Promise<DesktopStatus>,

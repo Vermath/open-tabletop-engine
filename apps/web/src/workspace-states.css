@@ -1,0 +1,31 @@
+.table-empty-state {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--surface-1);
+  color: var(--paper);
+}
+.table-empty-state p { margin: 0; line-height: 1.35; }
+.table-empty-icon { display: grid; place-items: center; color: var(--accent-strong); }
+
+.workspace-loading .workspace { display: flex; min-width: 0; flex-direction: column; }
+.workspace-loading .topbar { min-height: 62px; }
+.workspace-loading-status { margin: 0; padding: 0 16px 8px; color: var(--muted); }
+.workspace-loading-table { display: grid; flex: 1 1 auto; grid-template-columns: minmax(0, 1fr) clamp(280px, 30%, 430px); gap: 8px; padding: 8px; }
+.workspace-loading-map, .workspace-loading-inspector { background: var(--surface-1); border: 1px solid var(--line); border-radius: var(--radius-m); }
+.workspace-loading .rail > span, .workspace-loading-inspector > span {
+  display: block;
+  height: 32px;
+  margin: 8px;
+  border-radius: var(--radius-s);
+  background: var(--surface-2);
+}
+@media (max-width: 720px) {
+  .workspace-loading-table { grid-template-columns: minmax(0, 1fr); }
+  .workspace-loading-inspector { display: none; }
+}
+.scene-workspace:has(.scene-switch-progress) { position: relative; }
+.scene-switch-progress { position: absolute; inset: 0 0 auto; z-index: 8; height: 3px; width: 100%; appearance: none; border: 0; accent-color: var(--accent-strong); }

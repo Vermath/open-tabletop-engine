@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { filterPaletteCommands, fuzzyScore, movePaletteIndex, paletteDiceFormula, type PaletteCommand } from "./command-palette.js";
+import { campaignRecordPaletteCommands, filterPaletteCommands, fuzzyScore, movePaletteIndex, paletteDiceFormula, type PaletteCommand } from "./command-palette.js";
 
 const commands: PaletteCommand[] = [
   { id: "ws-live", label: "Go to Live Table", section: "Workspace", keywords: "play board map" },
@@ -77,5 +77,23 @@ describe("palette index movement", () => {
 
   it("stays at zero for empty lists", () => {
     expect(movePaletteIndex(5, 1, 0)).toBe(0);
+  });
+});
+
+describe("campaign-scale record commands", () => {
+  const actors = Array.from({ length: 120 }, (_, index) => ({ id: `actor-${index}`, name: `Actor ${index}` }));
+  const journals = Array.from({ length: 80 }, (_, index) => ({ id: `journal-${index}`, title: `Journal ${index}`, tags: ["large-campaign"] }));
+
+  it("keeps every accessible actor and journal searchable", () => {
+    const commands = campaignRecordPaletteCommands({ actors, journals, includeJournals: true });
+    expect(commands).toHaveLength(200);
+    expect(filterPaletteCommands(commands, "Actor 119").map((command) => command.id)).toContain("actor:actor-119");
+    expect(filterPaletteCommands(commands, "Journal 79").map((command) => command.id)).toContain("journal:journal-79");
+  });
+
+  it("does not expose prep-only journal commands to roles without prep access", () => {
+    const commands = campaignRecordPaletteCommands({ actors, journals, includeJournals: false });
+    expect(commands).toHaveLength(120);
+    expect(commands.some((command) => command.id.startsWith("journal:"))).toBe(false);
   });
 });

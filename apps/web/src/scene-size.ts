@@ -19,18 +19,22 @@ export const sceneSizePresets: SceneSizePreset[] = [
 ];
 
 export function sceneDimensionsFromCells(size: SceneSizeCells, gridSize: number): { width: number; height: number } {
-  const safeGridSize = normalizeSceneSizeValue(gridSize, 50);
+  const safeGridSize = normalizeSceneGridSize(gridSize, 50);
   return {
-    width: normalizeSceneSizeValue(size.columns, 24) * safeGridSize,
-    height: normalizeSceneSizeValue(size.rows, 16) * safeGridSize
+    width: Math.round(normalizeSceneSizeValue(size.columns, 24) * safeGridSize),
+    height: Math.round(normalizeSceneSizeValue(size.rows, 16) * safeGridSize)
   };
 }
 
 export function sceneGridCellSummary(width: number, height: number, gridSize: number): string {
-  const safeGridSize = normalizeSceneSizeValue(gridSize, 50);
+  const safeGridSize = normalizeSceneGridSize(gridSize, 50);
   const columns = Math.max(1, Math.round(normalizeSceneSizeValue(width, 1200) / safeGridSize));
   const rows = Math.max(1, Math.round(normalizeSceneSizeValue(height, 800) / safeGridSize));
   return `${columns} x ${rows} squares`;
+}
+
+export function normalizeSceneGridSize(value: number, fallback: number): number {
+  return Number.isFinite(value) && value >= 1 ? value : fallback;
 }
 
 export function normalizeSceneSizeValue(value: number, fallback: number): number {
