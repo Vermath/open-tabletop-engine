@@ -2056,6 +2056,7 @@ export function dnd5eSrdSpeciesTraitRolls(actor: Actor): QuickRoll[] {
 export function dnd5eSrdActionRolls(actor: Actor, items: Item[] = []): QuickRoll[] {
   const actionItems = dnd5eSrdActionAvailableItems(actor, items);
   const attacksPerAction = dnd5eSrdAttacksPerAction(actor);
+  const weaponDamageRollIds = attacksPerAction > 1 ? dnd5eSrdWeaponDamageRollIds(actor, actionItems) : new Set<string>();
   const attackRolls = dnd5eSrdAttackRolls(actor, actionItems, attacksPerAction);
   const effectRolls = dnd5eSrdEffectRolls(actor, actionItems);
   const damageAndEffectRolls = genericFantasyActionRolls(actor, actionItems).map((roll) => {
@@ -2065,7 +2066,7 @@ export function dnd5eSrdActionRolls(actor: Actor, items: Item[] = []): QuickRoll
     const nextRoll = martialArtsFormula ? { ...rollWithMetadata, formula: martialArtsFormula, metadata: { ...rollWithMetadata.metadata, martialArts: { die: dnd5eSrdMartialArtsDie(actor), dexterousAttacks: true } } } : rollWithMetadata;
     const rageDamageBonus = dnd5eSrdRageDamageBonusForRoll(actor, actionItems, roll.id);
     const rageRoll = rageDamageBonus > 0 ? { ...nextRoll, formula: appendFormulaBonus(nextRoll.formula, rageDamageBonus), metadata: { ...nextRoll.metadata, rageDamageBonus, rageSource: "Rage" } } : nextRoll;
-    if (attacksPerAction <= 1 || !dnd5eSrdIsWeaponDamageRoll(actor, actionItems, roll.id)) return rageRoll;
+    if (attacksPerAction <= 1 || !weaponDamageRollIds.has(roll.id)) return rageRoll;
     return { ...rageRoll, metadata: { ...rageRoll.metadata, attacksPerAction, feature: "Extra Attack" } };
   });
   return [...attackRolls, ...effectRolls, ...damageAndEffectRolls];
@@ -2156,19 +2157,21 @@ function dnd5eSrdActionAvailableItems(actor: Actor, items: Item[]): Item[] {
 }
 
 function dnd5eSrdAttackRolls(actor: Actor, items: Item[], attacksPerAction = dnd5eSrdAttacksPerAction(actor)): QuickRoll[] {
+  let proficiencies: string[] | undefined;
+  const weaponProficiencies = () => (proficiencies ??= dnd5eSrdExplicitWeaponProficiencies(actor, items));
   return items.filter((item) => itemBelongsToActor(actor, item)).flatMap((item) => {
     const data = recordValue(item.data);
     if (item.type === "spell" && booleanValue(data.spellAttack)) return [dnd5eSrdSpellAttackRoll(actor, items, item, data)];
-    if (item.type !== "spell" && dnd5eSrdIsWeaponData(data) && stringValue(data.damage)) return [dnd5eSrdWeaponAttackRoll(actor, items, item, data, attacksPerAction)];
+    if (item.type !== "spell" && dnd5eSrdIsWeaponData(data) && stringValue(data.damage)) return [dnd5eSrdWeaponAttackRoll(actor, items, item, data, attacksPerAction, weaponProficiencies)];
     return [];
   });
 }
 
-function dnd5eSrdWeaponAttackRoll(actor: Actor, items: Item[], item: Item, data: Record<string, unknown>, attacksPerAction: number): QuickRoll {
+function dnd5eSrdWeaponAttackRoll(actor: Actor, items: Item[], item: Item, data: Record<string, unknown>, attacksPerAction: number, weaponProficiencies: () => string[]): QuickRoll {
   const ability = dnd5eSrdWeaponAttackAbility(actor, data);
   const conditionRoll = dnd5eSrdD20Automation(actor, "attack-roll", ability);
   const abilityBonus = genericFantasyAttributeModifier(actor, ability);
-  const proficiencyMultiplier = dnd5eSrdWeaponProficiencyMultiplier(actor, items, data);
+  const proficiencyMultiplier = dnd5eSrdWeaponProficiencyMultiplier(actor, weaponProficiencies, data);
   const proficiencyBonus = dnd5eSrdProficiencyBonus(actor) * proficiencyMultiplier;
   const itemBonus = numericValue(data.attackBonus, 0);
   const sourceTags = ["deals-damage", ...(dnd5eSrdHasMartialArts(actor) && dnd5eSrdIsMonkWeapon(data) ? ["monk-weapon"] : []), ...(ability === "strength" && dnd5eSrdActiveRageEffect(actor) ? ["rage-active"] : [])];
@@ -16952,12 +16955,9 @@ function dnd5eSrdChampionSurvivorMetadata(actor: Actor): Record<string, unknown>
   };
 }
 
-function dnd5eSrdIsWeaponDamageRoll(actor: Actor, items: Item[], rollId: string): boolean {
-  return items.filter((item) => itemBelongsToActor(actor, item)).some((item) => {
-    const data = recordValue(item.data);
-    if (!dnd5eSrdIsWeaponData(data)) return false;
-    return rollId === `item-${item.id}-damage` || rollId === `item-${item.id}-versatile-damage`;
-  });
+function dnd5eSrdWeaponDamageRollIds(actor: Actor, items: Item[]): Set<string> {
+  const weapons = items.filter((item) => itemBelongsToActor(actor, item) && dnd5eSrdIsWeaponData(recordValue(item.data)));
+  return new Set(weapons.flatMap((item) => [`item-${item.id}-damage`, `item-${item.id}-versatile-damage`]));
 }
 
 function dnd5eSrdIsWeaponData(data: Record<string, unknown>): boolean {
@@ -16973,16 +16973,20 @@ function dnd5eSrdWeaponAttackAbility(actor: Actor, data: Record<string, unknown>
   return ability;
 }
 
-function dnd5eSrdWeaponProficiencyMultiplier(actor: Actor, items: Item[], data: Record<string, unknown>): number {
-  if (data.proficient === false) return 0;
-  if (data.proficient === true) return 1;
-  const explicitProficiencies = [
+function dnd5eSrdExplicitWeaponProficiencies(actor: Actor, items: Item[]): string[] {
+  return [
     ...normalizeStringArray(actor.data.weaponProficiencies),
     ...items
       .filter((item) => itemBelongsToActor(actor, item))
       .filter((item) => itemQuantity(recordValue(item.data)) > 0)
       .flatMap((item) => normalizeStringArray(recordValue(item.data).weaponProficiencies))
   ];
+}
+
+function dnd5eSrdWeaponProficiencyMultiplier(actor: Actor, weaponProficiencies: () => string[], data: Record<string, unknown>): number {
+  if (data.proficient === false) return 0;
+  if (data.proficient === true) return 1;
+  const explicitProficiencies = weaponProficiencies();
   if (explicitProficiencies.some((proficiency) => dnd5eSrdWeaponMatchesProficiency(proficiency, data))) return 1;
   const weaponCategory = (stringValue(data.weaponCategory) || "simple").toLowerCase();
   if (weaponCategory === "simple") return 1;
