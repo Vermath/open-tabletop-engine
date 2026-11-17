@@ -1,5 +1,6 @@
 import type { Scene, VisionPolygon } from "@open-tabletop/core";
-import { memo } from "react";
+import { memo, useId } from "react";
+import "./board-light-finish.css";
 import { boardRenderCounts } from "./board-render-counts.js";
 
 /**
@@ -38,13 +39,28 @@ export function lightPolygonClassName(polygon: VisionPolygon): string {
   return ["light-polygon", polygon.lightLevel].filter(Boolean).join(" ");
 }
 
+function FeatherInside({ id }: { id: string }) {
+  return <filter id={id}><feGaussianBlur stdDeviation="2" /><feComposite in2="SourceGraphic" operator="in" /></filter>;
+}
+
+function DoorGlyph({ wall }: { wall: Wall }) {
+  const x = (wall.x1 + wall.x2) / 2;
+  const y = (wall.y1 + wall.y2) / 2;
+  return <g className={wall.open ? "door-glyph open" : "door-glyph closed"} transform={"translate(" + x + " " + y + ")"}>
+    <rect x="-11" y="-11" width="22" height="22" rx="4" />
+    <path d={wall.open ? "M-6 7V-7H5V7 M-6-7L1-4V9L-6 7" : "M-5 7V-7H5V7Z M2 0h1"} />
+  </g>;
+}
+
 export const BoardLightingLayer = memo(function BoardLightingLayer(props: { width: number; height: number; polygons: readonly VisionPolygon[] }) {
+  const feather = useId();
   boardRenderCounts.lighting += 1;
   if (props.polygons.length === 0) return null;
   return (
     <svg className="lighting-layer" viewBox={`0 0 ${props.width} ${props.height}`} aria-hidden="true">
+      <defs><FeatherInside id={feather} /></defs>
       {props.polygons.map((polygon) => (
-        <polygon key={polygon.id} className={lightPolygonClassName(polygon)} points={polygonPoints(polygon)} style={{ fill: polygon.color ?? "#facc15", opacity: polygon.opacity ?? 0.22 }} />
+        <polygon key={polygon.id} className={lightPolygonClassName(polygon)} points={polygonPoints(polygon)} filter={"url(#" + feather + ")"} style={{ fill: polygon.color ?? "#facc15", opacity: polygon.opacity ?? 0.22 }} />
       ))}
     </svg>
   );
@@ -62,19 +78,21 @@ export const BoardDarknessLayer = memo(function BoardDarknessLayer(props: {
   mundaneMaskId: string;
   magicalMaskId: string;
 }) {
+  const feather = useId();
   boardRenderCounts.darkness += 1;
   if (!props.present) return null;
   return (
     <svg className="darkness-layer" viewBox={`0 0 ${props.width} ${props.height}`} aria-hidden="true">
       <defs>
+        <FeatherInside id={feather} />
         <mask id={props.mundaneMaskId} maskUnits="userSpaceOnUse">
           <rect width={props.width} height={props.height} fill="black" />
-          {props.mundane.map((polygon) => <polygon key={`${polygon.id}-mundane-darkness`} points={polygonPoints(polygon)} fill="white" />)}
+          {props.mundane.map((polygon) => <polygon key={`${polygon.id}-mundane-darkness`} points={polygonPoints(polygon)} fill="white" filter={"url(#" + feather + ")"} />)}
           {props.mundaneBypass.map((polygon) => <polygon key={`${polygon.id}-mundane-bypass`} points={polygonPoints(polygon)} fill="black" />)}
         </mask>
         <mask id={props.magicalMaskId} maskUnits="userSpaceOnUse">
           <rect width={props.width} height={props.height} fill="black" />
-          {props.magical.map((polygon) => <polygon key={`${polygon.id}-magical-darkness`} points={polygonPoints(polygon)} fill="white" />)}
+          {props.magical.map((polygon) => <polygon key={`${polygon.id}-magical-darkness`} points={polygonPoints(polygon)} fill="white" filter={"url(#" + feather + ")"} />)}
           {props.magicalBypass.map((polygon) => <polygon key={`${polygon.id}-magical-bypass`} points={polygonPoints(polygon)} fill="black" />)}
         </mask>
       </defs>
@@ -107,6 +125,7 @@ export const BoardWallLayer = memo(function BoardWallLayer(props: { width: numbe
       {props.walls.map((wall) => (
         <line className={`${wall.kind ?? "wall"} ${wall.open ? "open" : "closed"}`} key={wall.id} x1={wall.x1} y1={wall.y1} x2={wall.x2} y2={wall.y2} />
       ))}
+      {props.walls.filter((wall) => wall.kind === "door").map((wall) => <DoorGlyph key={"door-" + wall.id} wall={wall} />)}
     </svg>
   );
 });
