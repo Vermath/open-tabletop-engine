@@ -6,7 +6,7 @@ import { useReconciledVision, type VisionReconciliation } from "./vision-reconci
 
 const MemoizedSceneCanvas = memoWithEventProps(SceneCanvas, [
   "onCalibrationPoint", "onSelect", "onInspectToken", "onSelectMany", "onSelectBackgroundAsset",
-  "onClearSelection", "onMoved", "onTokenMovePersist", "onTokenResizePersist", "onTokenMoveCommit",
+  "onClearSelection", "onMoved", "onTokenMovePersist", "onTokenResizePersist",
   "onTokenResizeCommit", "onTokenLayerCycle", "onTokenDrop", "onFogStroke", "onAnnotationCreate",
   "onAnnotationMove", "onTogglePortal", "onSetLightAnimation", "onSelectOverlay", "onZoomBy", "onTokenTarget",
 ]);
