@@ -126,6 +126,25 @@ test("long connection errors wrap on a phone and can be retried", async ({ page 
   await retry.click();
   await expect(page.getByRole("heading", { name: "Sign In" })).toBeVisible();
 });
+
+test.describe("320px touch navigation", () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 320, height: 568 } });
+
+  test("Soundboard stays in the fixed rail and opens on tap", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("button", { name: "Demo GM", exact: true }).click();
+    await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
+    await page.evaluate(() => document.fonts.ready);
+    const soundboard = page.getByRole("button", { name: "Soundboard", exact: true });
+    await expect(soundboard).toBeInViewport({ ratio: 1 });
+    await expectUnclippedLabels(soundboard);
+    const { x, y, width, height } = (await soundboard.boundingBox())!;
+    expect(width).toBeGreaterThanOrEqual(44);
+    expect(height).toBeGreaterThanOrEqual(44);
+    await page.touchscreen.tap(x + width / 2, y + height / 2);
+    await expect(soundboard).toHaveAttribute("aria-expanded", "true");
+  });
+});
 test("desktop workspaces emphasize the scene and give preparation its own reading space", async ({ page }) => {
   test.setTimeout(60_000);
   await page.setViewportSize({ width: 1280, height: 900 });

@@ -2422,6 +2422,7 @@ test("GM can export and safely re-import a campaign archive", async ({ page }) =
   await expect(statusMessage(page, /Imported non-conflicting records; skipped \d+ conflicts/)).toBeVisible();
   await expect(reopenedImportWizard.getByLabel("Archive import validation")).toContainText("Skipped");
 
+  await expect(page.getByLabel("Import campaign archive")).toHaveValue("");
   await importWizard.getByRole("combobox", { name: "Archive import mode" }).selectOption("upsert");
   await page.getByLabel("Import campaign archive").setInputFiles(archivePath);
   await expect(page.locator("#import-status")).toContainText(/Imported with \d+ conflicts/);

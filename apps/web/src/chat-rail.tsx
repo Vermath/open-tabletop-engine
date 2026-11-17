@@ -3,6 +3,7 @@ import { Activity, Check, ChevronDown, Dices, MessageSquare, MoreHorizontal, Pen
 import { useEffect, useRef, useState } from "react";
 import { verifyDiceRoll, type DiceRollVerification, type Snapshot } from "./api.js";
 import { ActionMenu } from "./action-menu.js";
+import { memoWithEventProps } from "./memo-with-event-props.js";
 import { campaignSearchAnchorId } from "./campaign-search-panel.js";
 import { addDieToFormula, adjustDiceModifier, diceQuickPresets, diceTraySides, rollHighlight, rollTermHighlight } from "./dice-insights.js";
 import { errorMessage, formatDateTime, formatNumber, formatRollTermDetail, formatRollTermName, rollTermTotal, safeProbabilityRange, titleCaseLabel } from "./sheet-format.js";
@@ -55,6 +56,11 @@ export function chatStreamIsNearBottom(input: Pick<HTMLElement, "clientHeight" |
 export function ChatRail(props: ChatRailProps) {
   return <CampaignChatRail key={props.campaignId} {...props} />;
 }
+
+export const MemoizedChatRail = memoWithEventProps(ChatRail, [
+  "setCommand", "setDiceFormula", "setDiceVisibility", "onRollDice", "onSaveDiceFormula", "onSubmitCommand",
+  "onClearReply", "onReplyToMessage", "onEditMessage", "onDeleteMessage", "onModerateMessage", "onToggleDice3d",
+]);
 
 function CampaignChatRail(props: ChatRailProps) {
   const streamRef = useRef<HTMLDivElement>(null);
