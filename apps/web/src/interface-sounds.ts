@@ -66,6 +66,13 @@ export function useInterfaceSounds(input: {
     if (override && (override.userId !== input.userId || override.enabled === savedSettings.enabled)) setOverride(undefined);
   }, [input.userId, override, savedSettings.enabled]);
   const player = useRef<ReturnType<typeof createInterfaceSoundPlayer> | undefined>(undefined);
+  function applySavedSettings(userId: string, preferences: UserPreferences["interfaceSounds"]) {
+    if (latest.current.userId !== userId) return;
+    const next = preferences ?? defaultInterfaceSounds;
+    latest.current.settings = next;
+    setOverride((current) => current?.userId === userId ? undefined : current);
+    if (!next.enabled) player.current?.close();
+  }
   function toggle() {
     const enabled = !settings.enabled;
     const next = { ...settings, enabled };
@@ -98,5 +105,5 @@ export function useInterfaceSounds(input: {
     }
     if (pings.some(({ id, expiresAt }) => !before.pings.has(id) && (!expiresAt || Date.parse(expiresAt) > Date.now()))) play("ping");
   }, [scope, turn, combatant, scene?.annotations, actors, tokens, play, userId]);
-  return { settings, toggle, play };
+  return { settings, toggle, play, applySavedSettings };
 }
