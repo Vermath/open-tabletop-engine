@@ -79,5 +79,5 @@ export function useInterfaceSounds(input: {
     }
     if (pings.some(({ id, expiresAt }) => !before.pings.has(id) && (!expiresAt || Date.parse(expiresAt) > Date.now()))) play("ping");
   }, [scope, turn, combatant, scene?.annotations, actors, tokens, play, userId]);
-  return play;
+  return { settings: input.preferences ?? defaultInterfaceSounds, play };
 }
