@@ -55,6 +55,7 @@ export function useInterfaceSounds(input: {
   combatant?: Combatant;
   tokens: readonly Token[];
   actors: readonly Actor[];
+  onSettingsChange(settings: NonNullable<UserPreferences["interfaceSounds"]>): void;
 }) {
   const savedSettings = input.preferences ?? defaultInterfaceSounds;
   const [override, setOverride] = useState<{ userId: string; enabled: boolean }>();
@@ -65,10 +66,13 @@ export function useInterfaceSounds(input: {
     if (override && (override.userId !== input.userId || override.enabled === savedSettings.enabled)) setOverride(undefined);
   }, [input.userId, override, savedSettings.enabled]);
   const player = useRef<ReturnType<typeof createInterfaceSoundPlayer> | undefined>(undefined);
-  function setEnabled(enabled: boolean) {
-    latest.current.settings = { ...settings, enabled };
+  function toggle() {
+    const enabled = !settings.enabled;
+    const next = { ...settings, enabled };
+    latest.current.settings = next;
     setOverride({ userId: input.userId, enabled });
     if (!enabled) player.current?.close();
+    input.onSettingsChange(next);
   }
   const play = useRef((cue: InterfaceCue) => {
     const { settings, muted, masterVolume } = latest.current;
@@ -94,5 +98,5 @@ export function useInterfaceSounds(input: {
     }
     if (pings.some(({ id, expiresAt }) => !before.pings.has(id) && (!expiresAt || Date.parse(expiresAt) > Date.now()))) play("ping");
   }, [scope, turn, combatant, scene?.annotations, actors, tokens, play, userId]);
-  return { settings, setEnabled, play };
+  return { settings, toggle, play };
 }
