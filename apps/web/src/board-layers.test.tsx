@@ -45,7 +45,7 @@ describe("static board layers", () => {
 
   it("draws light polygons with their colour and opacity, and nothing without any", () => {
     const markup = renderToStaticMarkup(<BoardLightingLayer width={1200} height={800} polygons={[polygon("a", { color: "#7ad1ff", opacity: 0.4, lightLevel: "bright" }), polygon("b")]} />);
-    expect(markup).toContain('<svg class="lighting-layer" viewBox="0 0 1200 800" aria-hidden="true">');
+    expect(markup).toMatch(/<svg class="lighting-layer" viewBox="0 0 1200 800" aria-hidden="true" style="--light-feather:url\(#[^)]*\)">/);
     expect(markup).toContain('<feGaussianBlur stdDeviation="2"></feGaussianBlur><feComposite in2="SourceGraphic" operator="in">');
     expect(markup).toMatch(/class="light-polygon bright" points="0,0 10.5,0 10.5,20" filter="url\(#[^)]*\)" style="fill:#7ad1ff;opacity:0.4"/);
     expect(markup).toMatch(/class="light-polygon" points="0,0 10.5,0 10.5,20" filter="url\(#[^)]*\)" style="fill:#facc15;opacity:0.22"/);
