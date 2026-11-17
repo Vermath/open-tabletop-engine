@@ -17074,7 +17074,7 @@ textarea:focus-visible, summary:focus-visible, a:focus-visible,
 .actor-at-a-glance .hp-bar { grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; }
 .hp-bar-track { height: 25px; border: 0; border-radius: var(--radius-s); background: var(--surface-3); }
 .hp-bar-fill { border-radius: var(--radius-s); }
-.hp-bar-fill.healthy { background: var(--line-strong); opacity: 1; }
+.hp-bar-fill.healthy { background: var(--color-health-healthy); opacity: 1; }
 .hp-bar-value { color: var(--color-white); font-size: var(--type-small); text-shadow: 0 1px 2px var(--surface-2); }
 .hp-bar-steppers { gap: 4px; }
 .hp-bar-reviewed { grid-template-columns: auto 30px 30px; }
