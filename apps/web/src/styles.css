@@ -17330,6 +17330,15 @@ textarea:focus-visible, summary:focus-visible, a:focus-visible,
   .rail > .campaign-switcher .campaign-list .nav-item span { white-space: normal; overflow-wrap: anywhere; text-align: left; }
 }
 
+@media (max-width: 360px) {
+  .rail .workspace-mode-switcher .ghost-button {
+    gap: 0;
+    padding: 0;
+    line-height: 1;
+    white-space: normal;
+  }
+}
+
 /* A short phone has room for one useful pane at a time. Both stay mounted;
    the existing inspector toggle selects which surface receives the space. */
 @media (max-width: 640px) and (max-height: 680px) {
