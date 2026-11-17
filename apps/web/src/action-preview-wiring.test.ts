@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { changesRealtimeRecord } from "./realtime-snapshot-delta.js";
 
 const actorPanelSource = readFileSync(resolve(__dirname, "actor-panel.tsx"), "utf8");
 const appSource = readFileSync(resolve(__dirname, "App.tsx"), "utf8");
@@ -73,6 +74,10 @@ describe("actor action preview wiring", () => {
     expect(appSource).toContain("upsertNewestRealtimeRecord(current.actors, actor)");
     expect(appSource).toContain("upsertNewestRealtimeRecord(current.items, item)");
     expect(appSource).toContain("upsertNewestRealtimeRecord(current.combats, combat)");
-    expect(appSource).toContain("knownActor.updatedAt > actor.updatedAt");
+    expect(appSource).toContain("if (!changesRealtimeRecord(knownActor, actor)) return;");
+    expect(changesRealtimeRecord(
+      { updatedAt: "2026-07-17T12:00:02.000Z" },
+      { updatedAt: "2026-07-17T12:00:01.000Z" }
+    )).toBe(false);
   });
 });

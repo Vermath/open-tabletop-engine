@@ -1,9 +1,11 @@
 import type { Actor, Combat, DeclarativeActorSheet as DeclarativeSheet, Item, MapAsset, Scene, Token, TokenLayer } from "@open-tabletop/core";
 import type { Dnd5eSrdSpellPreparationMutationResult } from "@open-tabletop/core";
 import { Boxes, Check, ChevronRight, ChevronUp, Crosshair, Dices, Eraser, Eye, FileText, Grip, Hand, LockKeyhole, MapPin, PencilLine, Pentagon, Plus, Shield, Swords, Timer, Upload, Users, WandSparkles, X, Zap } from "lucide-react";
-import { useEffect, useReducer, useRef, useState } from "react";
+import { useEffect, useReducer, useRef, useState, type ComponentProps } from "react";
 import { apiGet, apiPost, type Snapshot } from "./api.js";
 import { isAdversaryActor } from "./actor-rails.js";
+import { memoWithEventProps } from "./memo-with-event-props.js";
+import { useStructurallyStable } from "./board-render-stability.js";
 import { HpBar, resolveHitPointEdit } from "./hp-bar.js";
 import { HitDiceRestCard, type ActorRestOptions, type RestPreviewEnvelope } from "./hit-dice-rest-card.js";
 import { TypedDamageCard, type TypedDamageApplyResult } from "./typed-damage-card.js";
@@ -17,6 +19,7 @@ import { clampNumber, formatGp, formatNumber, numericValue, slugId, titleCaseLab
 import { formatTokenSenses, parseTokenSenses } from "./actor-sheet-data.js";
 import { RetryableActionNotice, useRetryableAction } from "./retryable-action.js";
 import { clampFloatingPanel, useMovablePanel } from "./movable-panel.js";
+import { InterfaceSurface } from "./interface-surfaces.js";
 import { useModalAccessibility } from "./modal-accessibility.js";
 import { HeroicInspirationCard } from "./heroic-inspiration-card.js";
 import { RulesSupportBoundaryNotice, rulesBoundaryFromAction } from "./rules-support-boundary.js";
@@ -1116,6 +1119,7 @@ export function ActorPanel(inputProps: { campaignId: string; actor?: Actor; toke
       </div>
     );
   };
+  const sheetActor = props.actor;
   return (
     <div className="panel-stack actor-sidebar-summary">
       <header className={`panel-hero actor-hero actor-identity actor-tone-${sheetTone}`}>
@@ -1158,13 +1162,13 @@ export function ActorPanel(inputProps: { campaignId: string; actor?: Actor; toke
           ))}
         </div>
       </section>}
-      {fullSheetOpen && standardSheet && (
-        <aside className={`actor-sheet-popout movable-panel actor-tone-${sheetTone}`} role="dialog" aria-labelledby={`actor-full-sheet-title-${props.actor.id}`} style={sheetPanel.style} {...sheetPanel.panelProps}>
+      {standardSheet && <InterfaceSurface key={sheetActor.id} open={fullSheetOpen} render={(closing) => (
+        <aside className={`actor-sheet-popout movable-panel actor-tone-${sheetTone}`} data-interface-exit={closing || undefined} inert={closing} role="dialog" aria-labelledby={`actor-full-sheet-title-${sheetActor.id}`} style={sheetPanel.style} {...sheetPanel.panelProps}>
           <header className="actor-sheet-header floating-panel-header" title="Drag panel" {...sheetPanel.dragHandleProps}>
             <Hand className="floating-panel-drag-icon" size={14} aria-hidden="true" />
             <div className="actor-sheet-title">
               <div className="section-title">{adversary ? "NPC Sheet" : "Character Sheet"}</div>
-              <h2 id={`actor-full-sheet-title-${props.actor.id}`}>{props.actor.name}</h2>
+              <h2 id={`actor-full-sheet-title-${sheetActor.id}`}>{sheetActor.name}</h2>
             </div>
             <span className="actor-sheet-ac" title={armorClass?.label ? `Armor class - ${armorClass.label}` : "Armor class"}>
               <Shield size={13} aria-hidden="true" /> {armorClass ? armorClass.value : "?"}
@@ -1176,7 +1180,7 @@ export function ActorPanel(inputProps: { campaignId: string; actor?: Actor; toke
           <div className="actor-sheet-body">
             <section className="actor-sheet-section" aria-label="Full sheet stats">
               <HpBar current={hp?.current} max={hp?.max} canEdit={props.canUpdateActor} damageRequiresReview={damageRequiresReview} onAdjust={(delta) => props.adjustActorHp(props.actor!, delta)} onReviewDamage={openReviewedDamage} />
-              {coreStatistics?.actorId === props.actor.id && (
+              {coreStatistics?.actorId === sheetActor.id && (
                 <CoreStatisticsSection
                   stats={coreStatistics.stats}
                   canRoll={props.canUseAction}
@@ -1265,7 +1269,7 @@ export function ActorPanel(inputProps: { campaignId: string; actor?: Actor; toke
             <Grip size={13} aria-hidden="true" />
           </button>
         </aside>
-      )}
+      )} />}
       {props.canCreateToken && (
       <ActorPlacementTray
         actors={props.actors}
@@ -1851,4 +1855,18 @@ export function ActorPanel(inputProps: { campaignId: string; actor?: Actor; toke
       )}
     </div>
   );
+}
+
+const MemoizedActorPanel = memoWithEventProps(ActorPanel, [
+  "setCompendiumSearch", "updateActorHp", "adjustActorHp", "awardActorXp", "onLevelUp",
+  "onPreviewRestActor", "onRestActor", "onTypedDamageApplied", "updateActorData", "onActorUpdated",
+  "toggleActorCondition", "updateItemData", "changeActorAttunement", "assignItemToActor",
+  "onSpellPreparationApplied", "updateToken", "onUploadTokenImage", "targetToken", "targetTokens",
+  "deleteToken", "deleteActor", "updateTokenVision", "useActorAction", "onImportCompendiumEntry",
+  "onPurchaseCompendiumEntry", "onPlaceActor",
+]);
+
+export function LiveActorPanel(props: ComponentProps<typeof ActorPanel>) {
+  const xpProgress = useStructurallyStable(props.xpProgress);
+  return <MemoizedActorPanel {...props} xpProgress={xpProgress} />;
 }
