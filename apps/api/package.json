@@ -5,16 +5,27 @@
   "license": "AGPL-3.0-only",
   "type": "module",
   "main": "dist/server.js",
+  "types": "dist/server.d.ts",
+  "exports": {
+    ".": "./dist/server.js",
+    "./runtime": {
+      "types": "./dist/runtime.d.ts",
+      "default": "./dist/runtime.js"
+    }
+  },
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "node dist/server.js",
-    "build": "pnpm --filter @open-tabletop/api^... build && tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json",
     "lint": "tsc -p tsconfig.json --noEmit",
+    "storage:maintenance": "tsx src/sqlite-maintenance-cli.ts",
+    "storage:fixture:generate": "node scripts/generate-sqlite-v1-fixture.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1040.0",
+    "@fastify/ajv-compiler": "4.0.5",
     "@fastify/cors": "^10.0.2",
     "@fastify/websocket": "^11.0.1",
     "@open-tabletop/ai-core": "workspace:*",
@@ -24,11 +35,14 @@
     "@open-tabletop/dice-engine": "workspace:*",
     "@open-tabletop/plugin-sdk": "workspace:*",
     "@open-tabletop/system-sdk": "workspace:*",
-    "fastify": "^5.1.0"
+    "@openai/codex": "^0.133.0",
+    "fastify": "5.12.5",
+    "pdfjs-dist": "6.2.108",
+    "sharp": "0.35.5"
   },
   "devDependencies": {
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
-    "vitest": "^2.1.8"
+    "vitest": "^3.2.6"
   }
 }

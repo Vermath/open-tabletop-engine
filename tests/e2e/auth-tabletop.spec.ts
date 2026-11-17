@@ -1,15 +1,48 @@
 import { Buffer } from "node:buffer";
+import { randomUUID } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Locator, Page } from "@playwright/test";
+import type { APIResponse, Locator, Page, Response } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import type { ChatMessage, DiceRoll } from "../../packages/core/src/index.js";
+import {
+  DND_5E_SRD_PREPARED_SPELL_CAPACITY,
+  dnd5eSrdCompendium,
+  dnd5eSrdWeaponMasteryChoiceCount,
+  dnd5eSrdWeaponMasteryEligibleWeaponIds
+} from "../../packages/system-sdk/src/index.js";
 
 const apiBaseUrl = `http://127.0.0.1:${process.env.OTTE_E2E_API_PORT ?? 4100}`;
+const gmApiHeaders = { "x-user-id": "usr_demo_gm" };
+
+function gmMutationHeaders(scope: string) {
+  return { ...gmApiHeaders, "idempotency-key": `e2e-${scope}:${randomUUID()}` };
+}
+
+function expectedUpdatedAtUrl(url: string, updatedAt: string) {
+  return `${url}?expectedUpdatedAt=${encodeURIComponent(updatedAt)}`;
+}
+
+async function mockInvitePreview(page: Page) {
+  await page.route("**/api/v1/invites/preview?*", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        campaign: { id: "camp_demo", name: "The Ember Vault" },
+        invite: { role: "player", status: "pending" },
+        expectedUpdatedAt: "2026-07-14T12:00:00.000Z"
+      })
+    });
+  });
+}
 
 interface E2EToken {
   id: string;
   name: string;
+  sceneId: string;
+  updatedAt: string;
   actorId?: string;
   x: number;
   y: number;
@@ -22,6 +55,133 @@ interface E2EActor {
   id: string;
   name: string;
   data: Record<string, unknown>;
+}
+
+interface E2EItem {
+  actorId?: string;
+  type: string;
+  data: Record<string, unknown>;
+}
+
+const e2eSubclassByClass: Record<string, string> = {
+  barbarian: "path-of-the-berserker",
+  bard: "college-of-lore",
+  cleric: "life-domain",
+  druid: "circle-of-the-land",
+  fighter: "champion",
+  monk: "warrior-of-the-open-hand",
+  paladin: "oath-of-devotion",
+  ranger: "hunter",
+  rogue: "thief",
+  sorcerer: "draconic-sorcery",
+  warlock: "fiend-patron",
+  wizard: "evoker"
+};
+
+function e2eAdvancementChoices(className: string, nextClassLevel: number, actor?: E2EActor, actorItems: E2EItem[] = []) {
+  const abilityChoicesByLevel: Record<number, Record<string, number>> = {
+    4: { strength: 2 },
+    6: { charisma: 2 },
+    8: { dexterity: 2 },
+    10: { intelligence: 2 },
+    12: { constitution: 2 },
+    14: { strength: 2 },
+    16: { wisdom: 2 }
+  };
+  const normalizedClass = className.toLowerCase();
+  const generalFeatLevels = normalizedClass === "fighter"
+    ? new Set([4, 6, 8, 12, 14, 16])
+    : normalizedClass === "rogue"
+      ? new Set([4, 8, 10, 12, 16])
+      : new Set([4, 8, 12, 16]);
+  const abilityChoices = generalFeatLevels.has(nextClassLevel) ? abilityChoicesByLevel[nextClassLevel] : undefined;
+  const priorMasteryCount = dnd5eSrdWeaponMasteryChoiceCount(className, nextClassLevel - 1);
+  const masteryCount = dnd5eSrdWeaponMasteryChoiceCount(className, nextClassLevel);
+  const weaponMasteryChoices = masteryCount > 0 && (nextClassLevel === 2 || masteryCount !== priorMasteryCount)
+    ? dnd5eSrdWeaponMasteryEligibleWeaponIds(className).slice(0, masteryCount)
+    : undefined;
+  const canonicalSpellcastingClass = Object.keys(DND_5E_SRD_PREPARED_SPELL_CAPACITY)
+    .find((candidate) => candidate.toLowerCase() === normalizedClass);
+  const preparedSpellCapacity = canonicalSpellcastingClass
+    ? DND_5E_SRD_PREPARED_SPELL_CAPACITY[canonicalSpellcastingClass]?.[nextClassLevel - 1]
+    : undefined;
+  const spellcasting = actor?.data.spellcasting && typeof actor.data.spellcasting === "object" && !Array.isArray(actor.data.spellcasting)
+    ? actor.data.spellcasting as Record<string, unknown>
+    : {};
+  const currentPreparedByClass = spellcasting.preparedSpellsByClass && typeof spellcasting.preparedSpellsByClass === "object" && !Array.isArray(spellcasting.preparedSpellsByClass)
+    ? Object.entries(spellcasting.preparedSpellsByClass as Record<string, unknown>)
+      .find(([candidate]) => candidate.toLowerCase() === normalizedClass)?.[1]
+    : undefined;
+  const currentPrepared = Array.isArray(currentPreparedByClass) ? currentPreparedByClass : spellcasting.preparedSpells;
+  const currentPreparedSpellIds = Array.isArray(currentPrepared)
+    ? currentPrepared.filter((spellId): spellId is string => typeof spellId === "string" && spellId.length > 0)
+    : [];
+  const maxSpellLevel = canonicalSpellcastingClass
+    ? normalizedClass === "warlock"
+      ? Math.min(5, Math.ceil(nextClassLevel / 2))
+      : normalizedClass === "paladin" || normalizedClass === "ranger"
+        ? Math.min(5, Math.ceil(nextClassLevel / 4))
+        : Math.min(9, Math.ceil(nextClassLevel / 2))
+    : 0;
+  const eligibleSpellIds = canonicalSpellcastingClass
+    ? dnd5eSrdCompendium()
+      .filter((entry) => entry.type === "spell"
+        && typeof entry.data.level === "number"
+        && entry.data.level >= 1
+        && entry.data.level <= maxSpellLevel
+        && Array.isArray(entry.data.classes)
+        && entry.data.classes.some((candidate) => typeof candidate === "string" && candidate.toLowerCase() === normalizedClass))
+      .sort((left, right) => Number(left.data.level) - Number(right.data.level) || left.id.localeCompare(right.id))
+      .map((entry) => entry.id)
+    : [];
+  const alwaysPreparedSpellIds = new Set(actorItems.flatMap((item) => {
+    if (item.type !== "spell" || item.data.alwaysPrepared !== true) return [];
+    const minimumLevel = typeof item.data.minimumCharacterLevel === "number" ? item.data.minimumCharacterLevel : 1;
+    const compendiumId = item.data.compendiumId ?? item.data.compendiumEntryId;
+    return minimumLevel <= nextClassLevel && typeof compendiumId === "string" ? [compendiumId] : [];
+  }));
+  const currentSpellbookSpellIds = Array.isArray(spellcasting.spellbookSpells)
+    ? spellcasting.spellbookSpells.filter((spellId): spellId is string => typeof spellId === "string" && spellId.length > 0)
+    : [];
+  const wizardSpellbookAdditions = normalizedClass === "wizard"
+    ? eligibleSpellIds.filter((spellId) => !currentSpellbookSpellIds.includes(spellId) && !alwaysPreparedSpellIds.has(spellId)).slice(0, 2)
+    : undefined;
+  const resultingSpellbookSpellIds = normalizedClass === "wizard"
+    ? [...new Set([...currentSpellbookSpellIds, ...(wizardSpellbookAdditions ?? [])])]
+    : eligibleSpellIds;
+  const classPreparedSpellChoices = preparedSpellCapacity === undefined
+    ? undefined
+    : [...new Set([
+      ...currentPreparedSpellIds.filter((spellId) => !alwaysPreparedSpellIds.has(spellId)),
+      ...resultingSpellbookSpellIds.filter((spellId) => !alwaysPreparedSpellIds.has(spellId))
+    ])].slice(0, preparedSpellCapacity);
+  return {
+    ...(nextClassLevel === 3 ? { subclassId: e2eSubclassByClass[normalizedClass] } : {}),
+    ...(weaponMasteryChoices ? { weaponMasteryChoices } : {}),
+    ...(wizardSpellbookAdditions ? { wizardSpellbookAdditions } : {}),
+    ...(classPreparedSpellChoices ? { classPreparedSpellChoices } : {}),
+    ...(abilityChoices ? { featId: "ability-score-improvement", abilityChoices } : {})
+  };
+}
+
+function e2eWizardCreationSpellChoices() {
+  const wizardSpells = dnd5eSrdCompendium()
+    .filter((entry) => entry.type === "spell"
+      && Array.isArray(entry.data.classes)
+      && entry.data.classes.some((candidate) => typeof candidate === "string" && candidate.toLowerCase() === "wizard"))
+    .sort((left, right) => Number(left.data.level) - Number(right.data.level) || left.id.localeCompare(right.id));
+  const cantripIds = wizardSpells.filter((entry) => entry.data.level === 0).map((entry) => entry.id);
+  const levelOneIds = wizardSpells.filter((entry) => entry.data.level === 1).map((entry) => entry.id);
+  if (cantripIds.length < 5 || levelOneIds.length < 7) throw new Error("The E2E Wizard fixture requires five cantrips and seven level-one spells");
+  const wizardSpellbookChoices = levelOneIds.slice(0, 6);
+  return {
+    classCantripChoices: cantripIds.slice(0, 3),
+    wizardSpellbookChoices,
+    classPreparedSpellChoices: wizardSpellbookChoices.slice(0, 4),
+    backgroundMagicInitiateCantrips: cantripIds.slice(3, 5),
+    backgroundMagicInitiateSpell: levelOneIds[levelOneIds.length - 1]!,
+    backgroundMagicInitiateAbility: "intelligence"
+  };
 }
 
 async function openManageCategory(page: Page, categoryName: string) {
@@ -39,24 +199,239 @@ async function closeManage(page: Page) {
 }
 
 async function openInspectorPanel(page: Page, panelName: string) {
-  await page.locator(".inspector-tabs").getByRole("button", { name: panelName, exact: true }).click();
+  const reopen = page.getByRole("button", { name: "Show inspector", exact: true });
+  if (await reopen.isVisible()) await reopen.click();
+  const panelId = panelName === "SDK" ? "plugins" : panelName === "Content" ? "content" : panelName.toLowerCase();
+  const tab = page.locator(`#inspector-tab-${panelId}`);
+  await expect(tab).toBeVisible();
+  await tab.click();
+  await expect(tab).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator(`#inspector-panel-${panelId}`)).toBeVisible();
+}
+
+async function openEncounterBuilder(page: Page): Promise<Locator> {
+  await page.getByRole("button", { name: "Open command palette" }).click();
+  const palette = page.getByRole("dialog", { name: "Command palette" });
+  await palette.getByRole("textbox", { name: "Command palette search" }).fill("Open Encounter Builder");
+  await palette.getByRole("option", { name: /Open Encounter Builder/ }).click();
+  const dialog = page.getByRole("dialog", { name: "Encounter builder" });
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
+function selectedActorPanel(page: Page) {
+  return page.locator(".inspector");
+}
+
+function sdkRuntimePanel(page: Page) {
+  return page.locator(".inspector .panel-stack", { hasText: "Runtime SDK" });
+}
+
+function combatTrackerPanel(page: Page) {
+  return page.locator(".inspector .panel-stack").filter({ has: page.locator(".combat-hero") });
 }
 
 async function openActorDisclosure(root: Locator, summaryText: string) {
   const details = root.locator("details.actor-detail-disclosure").filter({ hasText: summaryText }).first();
-  await expect(details.locator("summary")).toBeVisible();
+  await expect(details.locator(":scope > summary")).toBeVisible();
   const isOpen = await details.evaluate((element) => (element as HTMLDetailsElement).open);
   if (!isOpen) {
-    await details.evaluate((element) => {
-      (element as HTMLDetailsElement).open = true;
-      element.scrollIntoView({ block: "nearest" });
-    });
+    await details.locator(":scope > summary").click();
   }
+}
+
+async function openDetails(details: Locator) {
+  await expect(details.locator(":scope > summary")).toBeVisible();
+  const isOpen = await details.evaluate((element) => (element as HTMLDetailsElement).open);
+  if (!isOpen) {
+    await details.locator(":scope > summary").click();
+  }
+}
+
+async function openCreateDrawer(page: Page, label: string) {
+  await openDetails(page.locator("details.create-drawer").filter({ hasText: label }).first());
+}
+
+async function openTokenQuickCreate(page: Page) {
+  const tokenName = page.getByRole("textbox", { name: "Token name" });
+  if (await tokenName.isVisible().catch(() => false)) return;
+  await page.getByRole("button", { name: "Token", exact: true }).click();
+  await expect(tokenName).toBeVisible();
+}
+
+async function expectJsonResponse<T>(response: Pick<APIResponse, "ok" | "text">): Promise<T> {
+  const body = await response.text();
+  expect(response.ok(), body).toBeTruthy();
+  return JSON.parse(body) as T;
+}
+
+async function currentCampaignUpdatedAt(page: Page, campaignId = "camp_demo") {
+  const campaign = await expectJsonResponse<{ updatedAt: string }>(
+    await page.request.get(`${apiBaseUrl}/api/v1/campaigns/${campaignId}`, {
+      headers: gmApiHeaders
+    })
+  );
+  return campaign.updatedAt;
+}
+
+async function expectAiAssetGenerationResult(response: APIResponse) {
+  const body = await response.text();
+  if (response.ok()) {
+    expect(body).toContain("proposalId");
+  } else {
+    expect(body).toContain("codex app-server");
+  }
+}
+
+async function openAiAgent(page: Page) {
+  const toggle = page.getByRole("button", { name: "AI Agent", exact: true });
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") {
+    await toggle.click();
+  }
+  const panel = page.getByRole("complementary", { name: "AI Agent" });
+  await expect(panel).toBeVisible();
+  return panel;
+}
+
+async function approveAgentProposal(page: Page, proposalTitle: string) {
+  const aiAgent = await openAiAgent(page);
+  const proposal = aiAgent.locator(".ai-agent-proposal-row", { hasText: proposalTitle }).first();
+  await expect(proposal).toContainText("pending");
+  const appliedResponse = page.waitForResponse((response) =>
+    response.request().method() === "POST"
+    && /\/api\/v1\/proposals\/[^/]+\/apply$/.test(new URL(response.url()).pathname)
+  );
+  await proposal.getByRole("button", { name: "Approve and apply" }).click();
+  const applied = await expectJsonResponse<{ title: string; status: string }>(await appliedResponse);
+  expect(applied).toMatchObject({ title: proposalTitle, status: "applied" });
+  await expect(proposal).toBeHidden();
+  await aiAgent.getByRole("button", { name: "Close AI Agent" }).click();
+  await expect(aiAgent).toBeHidden();
 }
 
 async function clickElement(locator: Locator) {
   await expect(locator).toBeVisible();
   await locator.evaluate((element) => (element as HTMLElement).click());
+}
+
+async function clickAndConfirmPreparedDndAction(locator: Locator): Promise<Response> {
+  const page = locator.page();
+  let actionCard: Locator | undefined;
+  if (!(await locator.isEnabled().catch(() => false))) {
+    actionCard = locator.locator("xpath=ancestor::article[1]");
+    const preview = actionCard.getByRole("button", { name: "Preview", exact: true });
+    if (await preview.isVisible().catch(() => false)) await preview.click();
+  }
+  try {
+    await expect(locator).toBeEnabled({ timeout: 10_000 });
+  } catch (error) {
+    const cardText = actionCard && await actionCard.isVisible().catch(() => false) ? await actionCard.innerText() : "no action card";
+    const previewText = await page.getByRole("region", { name: "Action resolution preview" }).innerText().catch(() => "no action preview");
+    throw new Error(`Action commit stayed disabled after preview. Card: ${cardText}. Preview: ${previewText}`, { cause: error });
+  }
+  await locator.click();
+  const review = page.getByRole("dialog", { name: /Review .* action/ });
+  await expect(review).toBeVisible();
+  await expect(review.getByText("Structured consequence review", { exact: true })).toBeVisible();
+  await expect(review.locator(".account-summary", { hasText: "Rule source: D&D 5e SRD server resolver" })).toHaveText("Rule source: D&D 5e SRD server resolver");
+  const commit = review.getByRole("button", { name: "Commit exact action", exact: true });
+  await expect(commit).toBeEnabled();
+  const committedResponse = page.waitForResponse((response) => {
+    const request = response.request();
+    if (request.method() !== "POST" || !/\/actors\/[^/]+\/roll$/.test(new URL(request.url()).pathname)) return false;
+    try {
+      const body = request.postDataJSON() as { commit?: boolean; prepare?: boolean; preparedPreviewKey?: string };
+      return typeof body.preparedPreviewKey === "string" || (body.commit !== false && body.prepare !== true);
+    } catch {
+      return false;
+    }
+  }, { timeout: 30_000 });
+  await commit.click();
+  const committed = await committedResponse;
+  expect(committed.ok(), await committed.text()).toBeTruthy();
+  await expect(review).toBeHidden();
+  return committed;
+}
+
+async function runCombatantControlUpdate(page: Page, control: Locator, action: () => Promise<unknown>) {
+  const responsePromise = page.waitForResponse((response) =>
+    response.request().method() === "PATCH" && /\/api\/v1\/combats\/[^/]+\/combatants\/[^/]+$/.test(new URL(response.url()).pathname)
+  );
+  await action();
+  await expect(control).toBeDisabled();
+  await expectJsonResponse(await responsePromise);
+  await expect(control).toBeEnabled();
+}
+
+async function commitCombatantDraft(page: Page, input: Locator, value: string) {
+  await runCombatantControlUpdate(page, input, async () => {
+    await input.fill(value);
+    await input.press("Enter");
+  });
+}
+
+function statusMessage(page: Page, text: string | RegExp) {
+  return page.getByRole("status").filter({ hasText: text }).first();
+}
+
+function sceneTab(page: Page, sceneName: string) {
+  return page.locator(".scene-tabs button.scene-tab").filter({
+    has: page.getByText(sceneName, { exact: true })
+  });
+}
+
+async function startCombatFromPanel(panel: Locator, options: { currentTurnTokenName?: string } = {}) {
+  const review = panel.getByRole("button", { name: "Review combatants" });
+  if (!(await review.isVisible().catch(() => false))) {
+    const end = panel.getByRole("button", { name: "End" });
+    if (await end.isVisible().catch(() => false)) {
+      await endCombatFromPanel(panel.page(), panel);
+    }
+  }
+  await review.click();
+  const dialog = panel.page().getByRole("dialog", { name: /^Review / });
+  await expect(dialog).toBeVisible();
+  const selectAll = dialog.getByRole("button", { name: "Select all" });
+  if (await selectAll.isEnabled()) await selectAll.click();
+  if (options.currentTurnTokenName) {
+    const serverRoll = dialog.getByRole("checkbox", { name: /Server-roll initiative/ });
+    if (await serverRoll.isChecked()) await serverRoll.uncheck();
+  }
+  const manualInitiatives = dialog.locator('input[type="number"]:enabled');
+  for (let index = 0; index < await manualInitiatives.count(); index += 1) {
+    await manualInitiatives.nth(index).fill(String(20 - index));
+  }
+  if (options.currentTurnTokenName) {
+    await dialog.getByRole("spinbutton", { name: `${options.currentTurnTokenName} initiative` }).fill("99");
+  }
+  const start = dialog.getByRole("button", { name: /^Start combat \(\d+\)$/ });
+  await expect(start).toBeEnabled();
+  await start.click();
+  await expect(dialog).toBeHidden();
+}
+
+async function advanceCombatFromPanel(page: Page, panel: Locator, controlName: "Next turn" | "Prev") {
+  const control = panel.getByRole("button", { name: controlName });
+  // A concurrent server write can answer the first PATCH with a structured 409
+  // stale_write; the client rebases on the returned state and retries once, so
+  // wait for the successful PATCH. An unrecovered conflict times out here.
+  const responsePromise = page.waitForResponse((response) =>
+    response.request().method() === "PATCH" && /\/api\/v1\/combats\/[^/]+$/.test(new URL(response.url()).pathname) && response.ok()
+  );
+  await clickElement(control);
+  await expectJsonResponse(await responsePromise);
+  await expect(control).toBeEnabled();
+}
+
+async function endCombatFromPanel(page: Page, panel: Locator) {
+  const responsePromise = page.waitForResponse((response) =>
+    response.request().method() === "DELETE" && /\/api\/v1\/combats\/[^/]+$/.test(new URL(response.url()).pathname)
+  );
+  await clickElement(panel.getByRole("button", { name: "End" }));
+  const confirm = panel.getByRole("button", { name: "Confirm end combat" });
+  if (await confirm.isVisible().catch(() => false)) await clickElement(confirm);
+  await expectJsonResponse(await responsePromise);
+  await expect(panel.getByRole("button", { name: "Review combatants" })).toBeVisible();
 }
 
 async function setCheckbox(locator: Locator, checked: boolean) {
@@ -69,7 +444,7 @@ async function setCheckbox(locator: Locator, checked: boolean) {
 
 async function submitChatCommand(page: Page, command: string) {
   await openInspectorPanel(page, "Chat");
-  const commandLine = page.getByRole("textbox", { name: "Chat command line" });
+  const commandLine = page.getByRole("textbox", { name: "Chat message" });
   await expect(commandLine).toBeVisible();
   await commandLine.fill(command);
   await page.getByRole("button", { name: "Send chat command" }).click();
@@ -82,67 +457,162 @@ async function loginDemoSession(page: Page, userId: "usr_demo_gm" | "usr_demo_pl
       const email = userId === "usr_demo_gm" ? "gm@example.test" : "player@example.test";
       const response = await fetch(`${apiBaseUrl}/api/v1/auth/login`, {
         method: "POST",
+        credentials: "include",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ email })
       });
       if (!response.ok) throw new Error(await response.text());
-      const login = (await response.json()) as { token: string; user: { id: string } };
+      const login = (await response.json()) as { user: { id: string } };
       localStorage.setItem("otte:userId", login.user.id);
-      localStorage.setItem("otte:sessionToken", login.token);
-      localStorage.setItem("otte:sessionTokenUser", login.user.id);
+      localStorage.setItem("otte:sessionTransport", "cookie");
     },
     { apiBaseUrl, userId }
   );
   await page.goto("/");
 }
 
+async function getCampaignDefaultSystemId(page: Page): Promise<string> {
+  const campaign = await expectJsonResponse<{ defaultSystemId: string }>(
+    await page.request.get(`${apiBaseUrl}/api/v1/campaigns/camp_demo`, { headers: gmApiHeaders })
+  );
+  return campaign.defaultSystemId;
+}
+
+async function activateCampaignSystem(page: Page, systemId: string): Promise<void> {
+  const campaign = await expectJsonResponse<{ updatedAt: string }>(
+    await page.request.get(`${apiBaseUrl}/api/v1/campaigns/camp_demo`, { headers: gmApiHeaders })
+  );
+  await expectJsonResponse(
+    await page.request.post(`${apiBaseUrl}/api/v1/campaigns/camp_demo/systems/${encodeURIComponent(systemId)}/install`, {
+      headers: gmMutationHeaders(`activate-system-${systemId}`),
+      data: { expectedUpdatedAt: campaign.updatedAt }
+    })
+  );
+}
+
 async function selectTokenInspectorActor(page: Page, actorName: string) {
-  const actorPanel = page.locator(".panel-stack", { hasText: "Selected Actor" });
-  await openActorDisclosure(actorPanel, "Token settings");
-  await page.getByRole("combobox", { name: "Token inspector actor" }).selectOption({ label: actorName });
+  const panel = selectedActorPanel(page);
+  await openActorDisclosure(panel, "Token settings");
+  const actorSelect = panel.getByRole("combobox", { name: "Token inspector actor" });
+  const actorOption = actorSelect.getByRole("option", { name: actorName, exact: true });
+  await expect(actorOption).toHaveCount(1);
+  const actorId = await actorOption.getAttribute("value");
+  if (!actorId) throw new Error(`Token inspector actor option ${actorName} has no actor id`);
+  const updatedResponse = page.waitForResponse((response) => {
+    const request = response.request();
+    if (request.method() !== "PATCH" || !/\/api\/v1\/tokens\/[^/]+$/.test(new URL(request.url()).pathname)) return false;
+    try {
+      return (request.postDataJSON() as { actorId?: string }).actorId === actorId;
+    } catch {
+      return false;
+    }
+  });
+  await actorSelect.selectOption(actorId);
+  await expectJsonResponse(await updatedResponse);
+  await expect(panel.getByRole("heading", { name: actorName, exact: true })).toBeVisible();
+  await panel.getByRole("tab", { name: "Actions" }).click();
+  await expect(panel.getByRole("region", { name: "Actor action sheet" })).toBeVisible();
 }
 
 async function selectActionTargetActor(page: Page, actorName: string) {
-  const actorPanel = page.locator(".panel-stack", { hasText: "Selected Actor" });
-  await openActorDisclosure(actorPanel, "Actor details");
-  await page.getByRole("combobox", { name: "Action target actor" }).selectOption({ label: actorName });
+  const panel = selectedActorPanel(page);
+  const sourceHeading = panel.locator(".actor-hero h2");
+  const sourceActorName = (await sourceHeading.innerText()).trim();
+  await openActorDisclosure(panel, "Actor details");
+  const targetSelect = panel.getByRole("combobox", { name: "Action target actor" });
+  const targetOption = targetSelect.getByRole("option", { name: actorName, exact: true });
+  await expect(targetOption).toHaveCount(1);
+  const targetActorId = await targetOption.getAttribute("value");
+  if (!targetActorId) throw new Error(`Action target actor option ${actorName} has no actor id`);
+  await targetSelect.selectOption(targetActorId);
+  await expect(sourceHeading).toHaveText(sourceActorName);
+  await openActorDisclosure(panel, "Actor details");
+  await expect(targetSelect).toHaveValue(targetActorId);
+  await expect(panel.getByRole("checkbox", { name: "Apply action effect" })).toBeVisible();
+  await expect(panel.getByRole("checkbox", { name: "Consume action resources" })).toBeVisible();
 }
 
 async function createSystemCharacter(page: Page, input: { templateId: string; name: string; ownerUserId: string; advanceToLevel?: number }): Promise<E2EActor> {
-  return page.evaluate(
-    async ({ apiBaseUrl, input }) => {
-      const bearer = localStorage.getItem("otte:sessionToken");
-      if (!bearer) throw new Error("No browser session token available for actor setup");
+  const creationChoices = input.templateId.toLowerCase() === "wizard" ? e2eWizardCreationSpellChoices() : {};
+  let actor = await page.evaluate(
+    async ({ apiBaseUrl, input, creationChoices }) => {
       const created = await fetch(`${apiBaseUrl}/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters`, {
         method: "POST",
-        headers: { authorization: `Bearer ${bearer}`, "content-type": "application/json" },
-        body: JSON.stringify({ templateId: input.templateId, name: input.name, ownerUserId: input.ownerUserId })
+        credentials: "include",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": `e2e-character-create:${crypto.randomUUID()}`,
+        },
+        body: JSON.stringify({ templateId: input.templateId, name: input.name, ownerUserId: input.ownerUserId, ...creationChoices })
       });
       if (!created.ok) throw new Error(await created.text());
-      let actor = (await created.json()).actor as E2EActor;
-      for (let level = 2; level <= (input.advanceToLevel ?? 1); level += 1) {
-        const advanced = await fetch(`${apiBaseUrl}/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${actor.id}/advance`, {
+      return (await created.json()).actor as E2EActor;
+    },
+    { apiBaseUrl, input, creationChoices }
+  );
+  for (let level = 2; level <= (input.advanceToLevel ?? 1); level += 1) {
+    const actorItems = await page.evaluate(
+      async ({ apiBaseUrl, actorId }) => {
+        const response = await fetch(`${apiBaseUrl}/api/v1/campaigns/camp_demo/items`, { credentials: "include" });
+        if (!response.ok) throw new Error(await response.text());
+        return ((await response.json()) as E2EItem[]).filter((item) => item.actorId === actorId);
+      },
+      { apiBaseUrl, actorId: actor.id }
+    );
+    const choices = e2eAdvancementChoices(input.templateId, level, actor, actorItems);
+    actor = await page.evaluate(
+      async ({ apiBaseUrl, actorId, choices }) => {
+        const previewKey = `e2e-advancement-preview:${crypto.randomUUID()}`;
+        const commitKey = `e2e-advancement-commit:${crypto.randomUUID()}`;
+        const previewResponse = await fetch(`${apiBaseUrl}/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${actorId}/rules-preview`, {
           method: "POST",
-          headers: { authorization: `Bearer ${bearer}`, "content-type": "application/json" },
-          body: JSON.stringify({ optionId: "level-up" })
+          credentials: "include",
+          headers: { "content-type": "application/json", "idempotency-key": previewKey },
+          body: JSON.stringify({
+            operation: "advancement",
+            optionId: "level-up",
+            hitPointMode: "fixed",
+            prepare: true,
+            ...choices
+          })
+        });
+        if (!previewResponse.ok) throw new Error(await previewResponse.text());
+        const preview = await previewResponse.json() as {
+          status?: string;
+          blockers?: unknown[];
+          preparation?: { preparedPreviewKey?: string; actorUpdatedAt?: string };
+        };
+        if (preview.status !== "ready" || !preview.preparation?.preparedPreviewKey || !preview.preparation.actorUpdatedAt) {
+          throw new Error(`Advancement preview was not ready for choices ${JSON.stringify(choices)}: ${JSON.stringify(preview)}`);
+        }
+        const advanced = await fetch(`${apiBaseUrl}/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${actorId}/advance`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "content-type": "application/json", "idempotency-key": commitKey },
+          body: JSON.stringify({
+            preparedPreviewKey: preview.preparation.preparedPreviewKey,
+            expectedUpdatedAt: preview.preparation.actorUpdatedAt
+          })
         });
         if (!advanced.ok) throw new Error(await advanced.text());
-        actor = (await advanced.json()).actor as E2EActor;
-      }
-      return actor;
-    },
-    { apiBaseUrl, input }
-  );
+        return (await advanced.json()).actor as E2EActor;
+      },
+      { apiBaseUrl, actorId: actor.id, choices }
+    );
+  }
+  return actor;
 }
 
 async function createSystemMonster(page: Page, input: { threatId: string; name: string; ownerUserId: string }): Promise<E2EActor> {
   return page.evaluate(
     async ({ apiBaseUrl, input }) => {
-      const bearer = localStorage.getItem("otte:sessionToken");
-      if (!bearer) throw new Error("No browser session token available for monster setup");
       const response = await fetch(`${apiBaseUrl}/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/monsters`, {
         method: "POST",
-        headers: { authorization: `Bearer ${bearer}`, "content-type": "application/json" },
+        credentials: "include",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": `e2e-monster-create:${crypto.randomUUID()}`
+        },
         body: JSON.stringify(input)
       });
       if (!response.ok) throw new Error(await response.text());
@@ -152,24 +622,33 @@ async function createSystemMonster(page: Page, input: { threatId: string; name: 
   );
 }
 
-async function createRulesTargetActor(page: Page, input: { name: string; hp: { current: number; max: number }; ownerUserId?: string }): Promise<E2EActor> {
+async function createRulesTargetActor(page: Page, input: { name: string; hp: { current: number; max: number }; ownerUserId?: string; actorType?: "character" | "npc" | "monster"; armorClass?: number; conditions?: Array<{ id: string }> }): Promise<E2EActor> {
   return page.evaluate(
     async ({ apiBaseUrl, input }) => {
-      const bearer = localStorage.getItem("otte:sessionToken");
-      if (!bearer) throw new Error("No browser session token available for actor setup");
+      const campaignResponse = await fetch(`${apiBaseUrl}/api/v1/campaigns/camp_demo`, {
+        credentials: "include"
+      });
+      if (!campaignResponse.ok) throw new Error(await campaignResponse.text());
+      const campaign = await campaignResponse.json() as { updatedAt: string };
       const response = await fetch(`${apiBaseUrl}/api/v1/campaigns/camp_demo/actors`, {
         method: "POST",
-        headers: { authorization: `Bearer ${bearer}`, "content-type": "application/json" },
+        credentials: "include",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": `e2e-rules-target-create:${crypto.randomUUID()}`
+        },
         body: JSON.stringify({
+          expectedUpdatedAt: campaign.updatedAt,
           systemId: "dnd-5e-srd",
           ownerUserId: input.ownerUserId ?? "usr_demo_player",
-          type: "character",
+          type: input.actorType ?? "npc",
           name: input.name,
           data: {
             ruleset: "SRD 5.2.1",
             hp: input.hp,
+            ...(input.armorClass !== undefined ? { armorClass: input.armorClass } : {}),
             attributes: { strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10 },
-            conditions: []
+            conditions: input.conditions ?? []
           }
         })
       });
@@ -183,10 +662,8 @@ async function createRulesTargetActor(page: Page, input: { name: string; hp: { c
 async function getActorById(page: Page, actorId: string): Promise<E2EActor> {
   return page.evaluate(
     async ({ apiBaseUrl, actorId }) => {
-      const bearer = localStorage.getItem("otte:sessionToken");
-      if (!bearer) throw new Error("No browser session token available for actor lookup");
       const response = await fetch(`${apiBaseUrl}/api/v1/campaigns/camp_demo/actors`, {
-        headers: { authorization: `Bearer ${bearer}` }
+        credentials: "include"
       });
       if (!response.ok) throw new Error(await response.text());
       const actors = (await response.json()) as E2EActor[];
@@ -198,15 +675,71 @@ async function getActorById(page: Page, actorId: string): Promise<E2EActor> {
   );
 }
 
+async function applyTypedDamage(page: Page, actorId: string, amount: number): Promise<E2EActor> {
+  return page.evaluate(
+    async ({ apiBaseUrl, actorId, amount }) => {
+      const base = `${apiBaseUrl}/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${actorId}`;
+      const previewResponse = await fetch(`${base}/rules-preview`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": `e2e-typed-damage-preview:${crypto.randomUUID()}`,
+        },
+        body: JSON.stringify({ operation: "typed-damage", prepare: true, amount, damageType: "force" }),
+      });
+      if (!previewResponse.ok) throw new Error(await previewResponse.text());
+      const preview = await previewResponse.json() as {
+        status?: string;
+        blockers?: unknown[];
+        preparation?: {
+          preparedPreviewKey?: string;
+          actorUpdatedAt?: Record<string, string>;
+          itemUpdatedAt?: Record<string, string>;
+          combatUpdatedAt?: string;
+        };
+      };
+      if (preview.status !== "ready" || !preview.preparation?.preparedPreviewKey || !preview.preparation.actorUpdatedAt || !preview.preparation.itemUpdatedAt) {
+        throw new Error(`Typed damage preview was not ready: ${JSON.stringify(preview)}`);
+      }
+      const appliedResponse = await fetch(`${base}/typed-damage/apply`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": `e2e-typed-damage-apply:${crypto.randomUUID()}`,
+        },
+        body: JSON.stringify({
+          preparedPreviewKey: preview.preparation.preparedPreviewKey,
+          expectedActorUpdatedAt: preview.preparation.actorUpdatedAt,
+          expectedItemUpdatedAt: preview.preparation.itemUpdatedAt,
+          ...(preview.preparation.combatUpdatedAt ? { expectedCombatUpdatedAt: preview.preparation.combatUpdatedAt } : {}),
+        }),
+      });
+      if (!appliedResponse.ok) throw new Error(await appliedResponse.text());
+      return (await appliedResponse.json()).actor as E2EActor;
+    },
+    { apiBaseUrl, actorId, amount },
+  );
+}
+
 async function createSceneToken(page: Page, input: { name: string; x: number; y: number; ownerUserIds: string[]; actorId?: string }): Promise<E2EToken> {
   return page.evaluate(
     async ({ apiBaseUrl, input }) => {
-      const bearer = localStorage.getItem("otte:sessionToken");
-      if (!bearer) throw new Error("No browser session token available for token setup");
+      const sceneResponse = await fetch(`${apiBaseUrl}/api/v1/campaigns/camp_demo/scenes`, {
+        credentials: "include"
+      });
+      if (!sceneResponse.ok) throw new Error(await sceneResponse.text());
+      const scene = ((await sceneResponse.json()) as Array<{ id: string; updatedAt: string }>).find((item) => item.id === "scn_vault_entry");
+      if (!scene) throw new Error("Vault Entry scene is unavailable for token setup");
       const response = await fetch(`${apiBaseUrl}/api/v1/scenes/scn_vault_entry/tokens`, {
         method: "POST",
-        headers: { authorization: `Bearer ${bearer}`, "content-type": "application/json" },
-        body: JSON.stringify({ ...input, width: 50, height: 50, hidden: false, locked: false, disposition: "neutral" })
+        credentials: "include",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": `e2e-token-create:${crypto.randomUUID()}`
+        },
+        body: JSON.stringify({ ...input, width: 50, height: 50, hidden: false, locked: false, disposition: "neutral", expectedUpdatedAt: scene.updatedAt })
       });
       if (!response.ok) throw new Error(await response.text());
       return response.json();
@@ -218,11 +751,16 @@ async function createSceneToken(page: Page, input: { name: string; x: number; y:
 async function deleteTokenById(page: Page, tokenId: string) {
   await page.evaluate(
     async ({ apiBaseUrl, tokenId }) => {
-      const bearer = localStorage.getItem("otte:sessionToken");
-      if (!bearer) throw new Error("No browser session token available for token cleanup");
-      const response = await fetch(`${apiBaseUrl}/api/v1/tokens/${tokenId}`, {
+      const tokenResponse = await fetch(`${apiBaseUrl}/api/v1/scenes/scn_vault_entry/tokens`, {
+        credentials: "include"
+      });
+      if (!tokenResponse.ok) throw new Error(await tokenResponse.text());
+      const token = ((await tokenResponse.json()) as Array<{ id: string; updatedAt: string }>).find((item) => item.id === tokenId);
+      if (!token) return;
+      const response = await fetch(`${apiBaseUrl}/api/v1/tokens/${tokenId}?expectedUpdatedAt=${encodeURIComponent(token.updatedAt)}`, {
         method: "DELETE",
-        headers: { authorization: `Bearer ${bearer}` }
+        credentials: "include",
+        headers: { "idempotency-key": `e2e-token-delete:${crypto.randomUUID()}` }
       });
       if (!response.ok && response.status !== 404) throw new Error(await response.text());
     },
@@ -230,15 +768,41 @@ async function deleteTokenById(page: Page, tokenId: string) {
   );
 }
 
+async function deleteActorById(page: Page, actorId: string) {
+  await page.evaluate(
+    async ({ apiBaseUrl, actorId }) => {
+      const actorResponse = await fetch(`${apiBaseUrl}/api/v1/actors/${actorId}`, { credentials: "include" });
+      if (actorResponse.status === 404) return;
+      if (!actorResponse.ok) throw new Error(await actorResponse.text());
+      const actor = await actorResponse.json() as { updatedAt: string };
+      const response = await fetch(`${apiBaseUrl}/api/v1/actors/${actorId}?expectedUpdatedAt=${encodeURIComponent(actor.updatedAt)}`, {
+        method: "DELETE",
+        credentials: "include",
+        headers: { "idempotency-key": `e2e-actor-delete:${crypto.randomUUID()}` }
+      });
+      if (!response.ok && response.status !== 404) throw new Error(await response.text());
+    },
+    { apiBaseUrl, actorId }
+  );
+}
+
 async function patchTokenConditions(page: Page, tokenId: string, conditions: Array<{ id: string; name: string }>) {
   await page.evaluate(
     async ({ apiBaseUrl, tokenId, conditions }) => {
-      const bearer = localStorage.getItem("otte:sessionToken");
-      if (!bearer) throw new Error("No browser session token available for token patch");
+      const tokenResponse = await fetch(`${apiBaseUrl}/api/v1/scenes/scn_vault_entry/tokens`, {
+        credentials: "include"
+      });
+      if (!tokenResponse.ok) throw new Error(await tokenResponse.text());
+      const token = ((await tokenResponse.json()) as Array<{ id: string; updatedAt: string }>).find((item) => item.id === tokenId);
+      if (!token) throw new Error(`Token ${tokenId} not found for condition patch`);
       const response = await fetch(`${apiBaseUrl}/api/v1/tokens/${tokenId}`, {
         method: "PATCH",
-        headers: { authorization: `Bearer ${bearer}`, "content-type": "application/json" },
-        body: JSON.stringify({ conditions })
+        credentials: "include",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": `e2e-token-condition:${crypto.randomUUID()}`
+        },
+        body: JSON.stringify({ conditions, expectedUpdatedAt: token.updatedAt })
       });
       if (!response.ok) throw new Error(await response.text());
     },
@@ -249,10 +813,8 @@ async function patchTokenConditions(page: Page, tokenId: string, conditions: Arr
 async function getSceneTokenById(page: Page, tokenId: string): Promise<E2EToken> {
   return page.evaluate(
     async ({ apiBaseUrl, tokenId }) => {
-      const bearer = localStorage.getItem("otte:sessionToken");
-      if (!bearer) throw new Error("No browser session token available for token lookup");
       const response = await fetch(`${apiBaseUrl}/api/v1/scenes/scn_vault_entry/tokens`, {
-        headers: { authorization: `Bearer ${bearer}` }
+        credentials: "include"
       });
       if (!response.ok) throw new Error(await response.text());
       const tokens = await response.json();
@@ -267,10 +829,8 @@ async function getSceneTokenById(page: Page, tokenId: string): Promise<E2EToken>
 async function getNewestSceneTokenByName(page: Page, name: string): Promise<E2EToken> {
   return page.evaluate(
     async ({ apiBaseUrl, name }) => {
-      const bearer = localStorage.getItem("otte:sessionToken");
-      if (!bearer) throw new Error("No browser session token available for token lookup");
       const response = await fetch(`${apiBaseUrl}/api/v1/scenes/scn_vault_entry/tokens`, {
-        headers: { authorization: `Bearer ${bearer}` }
+        credentials: "include"
       });
       if (!response.ok) throw new Error(await response.text());
       const tokens = await response.json();
@@ -287,10 +847,8 @@ async function getNewestSceneTokenByName(page: Page, name: string): Promise<E2ET
 async function getSceneSortOrderByName(page: Page, name: string): Promise<number> {
   return page.evaluate(
     async ({ apiBaseUrl, name }) => {
-      const bearer = localStorage.getItem("otte:sessionToken");
-      if (!bearer) throw new Error("No browser session token available for scene lookup");
       const response = await fetch(`${apiBaseUrl}/api/v1/campaigns/camp_demo/scenes`, {
-        headers: { authorization: `Bearer ${bearer}` }
+        credentials: "include"
       });
       if (!response.ok) throw new Error(await response.text());
       const scenes = (await response.json()) as Array<{ name: string; sortOrder: number }>;
@@ -322,14 +880,11 @@ async function scenePointToClient(page: Page, point: { x: number; y: number }, s
   };
 }
 
-async function deleteNewestTokenByName(page: Page, name: string) {
+async function deleteNewestTokenByName(page: Page, name: string, options: { missingOk?: boolean } = {}) {
   await page.evaluate(
-    async ({ apiBaseUrl, name }) => {
-      const bearer = localStorage.getItem("otte:sessionToken");
-      if (!bearer) throw new Error("No browser session token available for token cleanup");
-      const headers = { authorization: `Bearer ${bearer}` };
+    async ({ apiBaseUrl, name, missingOk }) => {
       const getJson = async (path: string) => {
-        const response = await fetch(`${apiBaseUrl}${path}`, { headers });
+        const response = await fetch(`${apiBaseUrl}${path}`, { credentials: "include" });
         if (!response.ok) throw new Error(await response.text());
         return response.json();
       };
@@ -343,34 +898,52 @@ async function deleteNewestTokenByName(page: Page, name: string) {
       const [token] = tokens
         .filter((item: { name?: string }) => item.name === name)
         .sort((left: { createdAt?: string }, right: { createdAt?: string }) => String(right.createdAt ?? "").localeCompare(String(left.createdAt ?? "")));
-      if (!token) throw new Error(`No token named ${name} found for cleanup`);
-      const response = await fetch(`${apiBaseUrl}/api/v1/tokens/${token.id}`, { method: "DELETE", headers });
+      if (!token) {
+        if (missingOk) return;
+        throw new Error(`No token named ${name} found for cleanup`);
+      }
+      const response = await fetch(`${apiBaseUrl}/api/v1/tokens/${token.id}?expectedUpdatedAt=${encodeURIComponent(token.updatedAt)}`, {
+        method: "DELETE",
+        credentials: "include",
+        headers: { "idempotency-key": `e2e-token-delete:${crypto.randomUUID()}` }
+      });
       if (!response.ok) throw new Error(await response.text());
     },
-    { apiBaseUrl, name }
+    { apiBaseUrl, name, missingOk: options.missingOk ?? false }
   );
 }
 
 test("GM can switch selected-token permission presets", async ({ page }) => {
+  test.setTimeout(120_000);
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
+
+  // The accessibility deletion journey runs immediately before this test in
+  // the shared demo database. Make this journey independent of a delayed
+  // optimistic board-sync cleanup before asserting exact targeting counts.
+  await deleteNewestTokenByName(page, "E2E Delete Target", { missingOk: true });
+  await page.reload();
 
   await openInspectorPanel(page, "Actors");
-  const actorPanel = page.locator(".panel-stack", { hasText: "Selected Actor" });
+  const actorPanel = selectedActorPanel(page);
   await openActorDisclosure(actorPanel, "Token settings");
   const tokenPermissionPresets = page.getByLabel("Token permission presets");
   await expect(tokenPermissionPresets).toBeVisible();
-  await page.getByRole("tab", { name: "Compendium" }).click();
+  await page.getByRole("tabpanel", { name: "Actors" }).getByRole("tab", { name: "Compendium", exact: true }).click();
   const compendiumBrowser = page.locator('[aria-label="Actor compendium browser"]');
   await compendiumBrowser.getByRole("textbox", { name: "Compendium search" }).fill("Healing Word");
-  await compendiumBrowser.locator("article", { hasText: "Healing Word" }).getByRole("button", { name: "Add" }).click();
-  await expect(page.getByText("Healing Word imported")).toBeVisible();
+  const healingWordEntry = compendiumBrowser.locator("article").filter({
+    has: page.getByText("Healing Word", { exact: true })
+  });
+  await healingWordEntry.getByRole("button", { name: "Add" }).click();
+  await expect(statusMessage(page, "Healing Word imported")).toBeVisible();
   await openActorDisclosure(actorPanel, "Actor details");
   const tokenActionTargets = page.getByLabel("Token action target shortcuts");
   await expect(tokenActionTargets).toContainText("Target Valen Ash");
   await setCheckbox(page.getByRole("checkbox", { name: "Targeted" }), true);
-  await expect(page.getByText("Token targeted")).toBeVisible();
+  await expect(statusMessage(page, "Token targeted")).toBeVisible();
   await expect(tokenActionTargets).toContainText("Target Valen Ash (marked)");
   const canvasTargetManager = page.getByLabel("Canvas target manager");
   await expect(canvasTargetManager).toContainText("My targets 1 / 1");
@@ -380,10 +953,10 @@ test("GM can switch selected-token permission presets", async ({ page }) => {
   await openActorDisclosure(actorPanel, "Token settings");
   await expect(page.getByRole("button", { name: "Token Valen Ash" }).first()).toBeVisible();
   await clickElement(canvasTargetManager.getByRole("button", { name: "Target visible" }));
-  await expect(page.getByText("Targeted 2 tokens")).toBeVisible();
+  await expect(statusMessage(page, "Targeted 2 tokens")).toBeVisible();
   await expect(canvasTargetManager).toContainText("My targets 2 / 2");
   await clickElement(canvasTargetManager.getByRole("button", { name: "Clear my targets" }));
-  await expect(page.getByText("Cleared 2 targets")).toBeVisible();
+  await expect(statusMessage(page, "Cleared 2 targets")).toBeVisible();
   await expect(canvasTargetManager).toContainText("My targets 0 / 2");
   const targetArea = canvasTargetManager.getByLabel("Canvas target area");
   await targetArea.getByRole("spinbutton", { name: "Target area x" }).fill("0");
@@ -393,26 +966,25 @@ test("GM can switch selected-token permission presets", async ({ page }) => {
   await expect(targetArea.getByLabel("Target area preview")).toContainText("2 tokens in area");
   await expect(targetArea.getByLabel("Target area preview")).toContainText("Valen Ash");
   await clickElement(targetArea.getByRole("button", { name: "Target area" }));
-  await expect(page.getByText("Targeted 2 tokens")).toBeVisible();
+  await expect(statusMessage(page, "Targeted 2 tokens")).toBeVisible();
   await expect(canvasTargetManager).toContainText("My targets 2 / 2");
   await clickElement(targetArea.getByRole("button", { name: "Clear area targets" }));
-  await expect(page.getByText("Cleared 2 targets")).toBeVisible();
+  await expect(statusMessage(page, "Cleared 2 targets")).toBeVisible();
   await expect(canvasTargetManager).toContainText("My targets 0 / 2");
   await page.evaluate(async ({ apiBaseUrl }) => {
-    const bearer = localStorage.getItem("otte:sessionToken");
-    if (!bearer) throw new Error("No browser session token available for lasso setup");
-    const headers = { authorization: `Bearer ${bearer}` };
-    const campaigns = await fetch(`${apiBaseUrl}/api/v1/campaigns`, { headers }).then((response) => response.json());
+    const campaigns = await fetch(`${apiBaseUrl}/api/v1/campaigns`, { credentials: "include" }).then((response) => response.json());
     const campaign = campaigns.find((item: { name?: string }) => item.name === "The Ember Vault") ?? campaigns[0];
-    const scenes = await fetch(`${apiBaseUrl}/api/v1/campaigns/${campaign.id}/scenes`, { headers }).then((response) => response.json());
+    const scenes = await fetch(`${apiBaseUrl}/api/v1/campaigns/${campaign.id}/scenes`, { credentials: "include" }).then((response) => response.json());
     const scene = scenes.find((item: { name?: string }) => item.name === "Vault Entry") ?? scenes[0];
     const response = await fetch(`${apiBaseUrl}/api/v1/scenes/${scene.id}/annotations`, {
       method: "POST",
-      headers: { ...headers, "content-type": "application/json" },
+      credentials: "include",
+      headers: { "content-type": "application/json", "idempotency-key": `e2e-annotation-create:${crypto.randomUUID()}` },
       body: JSON.stringify({
         kind: "drawing",
         label: "Drawing",
         color: "#a78bfa",
+        expectedUpdatedAt: scene.updatedAt,
         points: [
           { x: 0, y: 0 },
           { x: scene.width, y: 0 },
@@ -426,37 +998,79 @@ test("GM can switch selected-token permission presets", async ({ page }) => {
   }, { apiBaseUrl });
   await expect(canvasTargetManager.getByLabel("Latest drawing lasso preview")).toContainText("2 tokens in lasso");
   await clickElement(canvasTargetManager.getByRole("button", { name: "Target lasso" }));
-  await expect(page.getByText("Targeted 2 tokens")).toBeVisible();
+  await expect(statusMessage(page, "Targeted 2 tokens")).toBeVisible();
   await expect(canvasTargetManager).toContainText("My targets 2 / 2");
   await clickElement(canvasTargetManager.getByRole("button", { name: "Clear lasso targets" }));
-  await expect(page.getByText("Cleared 2 targets")).toBeVisible();
+  await expect(statusMessage(page, "Cleared 2 targets")).toBeVisible();
   await expect(canvasTargetManager).toContainText("My targets 0 / 2");
   await clickElement(page.getByRole("button", { name: "Delete latest annotation" }));
-  await expect(page.getByText("Drawing deleted")).toBeVisible();
+  await expect(statusMessage(page, "Drawing deleted")).toBeVisible();
+  const targetedResponsePromise = page.waitForResponse((response) =>
+    response.request().method() === "POST" && /\/api\/v1\/tokens\/[^/]+\/target$/.test(new URL(response.url()).pathname)
+  );
   await setCheckbox(page.getByRole("checkbox", { name: "Targeted" }), true);
-  await expect(page.getByText("Token targeted")).toBeVisible();
-  await clickElement(tokenPermissionPresets.getByRole("button", { name: "Party controlled" }));
-  await expect(page.getByText("Token updated")).toBeVisible();
-  await expect(tokenPermissionPresets).toContainText("Party controlled");
-  await expect(page.locator(".metric-row", { hasText: "Token State" })).toContainText("Owners 1");
-
+  await expect(statusMessage(page, "Token targeted")).toBeVisible();
+  const targetedToken = await expectJsonResponse<{ updatedAt: string }>(await targetedResponsePromise);
+  const presetResponsePromise = page.waitForResponse((response) =>
+    response.request().method() === "PATCH" && /\/api\/v1\/tokens\/[^/]+$/.test(new URL(response.url()).pathname)
+  );
   await clickElement(tokenPermissionPresets.getByRole("button", { name: "GM locked" }));
-  await expect(page.getByText("Token updated")).toBeVisible();
+  await expect(statusMessage(page, "Token updated")).toBeVisible();
+  const presetResponse = await presetResponsePromise;
+  const presetRequest = presetResponse.request().postDataJSON() as { expectedUpdatedAt?: string };
+  expect(presetRequest.expectedUpdatedAt).toBe(targetedToken.updatedAt);
+  await expectJsonResponse(presetResponse);
   await expect(tokenPermissionPresets).toContainText("GM locked");
   await expect(page.locator(".metric-row", { hasText: "Token State" })).toContainText("Targeted 1");
   await expect(page.locator(".metric-row", { hasText: "Token State" })).not.toContainText("Owners");
+
+  await clickElement(tokenPermissionPresets.getByRole("button", { name: "Party controlled" }));
+  await expect(statusMessage(page, "Token updated")).toBeVisible();
+  await expect(tokenPermissionPresets).toContainText("Party controlled");
+  await expect(page.locator(".metric-row", { hasText: "Token State" })).toContainText("Owners 1");
   const selectedTargeted = page.getByRole("checkbox", { name: "Targeted" });
   if (await selectedTargeted.isChecked()) {
     await setCheckbox(selectedTargeted, false);
-    await expect(page.getByText("Token untargeted")).toBeVisible();
+    await expect(statusMessage(page, "Token untargeted")).toBeVisible();
   }
   await deleteTokenById(page, placedToken.id);
+});
+
+test("token inspector surfaces a rejected edit", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Demo GM" }).click();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
+  await openInspectorPanel(page, "Actors");
+  const actorPanel = selectedActorPanel(page);
+  await openActorDisclosure(actorPanel, "Token settings");
+  const presets = page.getByLabel("Token permission presets");
+  await expect(presets).toBeVisible();
+
+  let rejected = false;
+  await page.route("**/api/v1/tokens/*", async (route) => {
+    if (!rejected && route.request().method() === "PATCH") {
+      rejected = true;
+      await route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({ message: "Token inspector edit rejected" })
+      });
+      return;
+    }
+    await route.continue();
+  });
+
+  await clickElement(presets.getByRole("button", { name: "GM locked" }));
+  await expect(statusMessage(page, "Token update failed: Token inspector edit rejected")).toBeVisible();
+  expect(rejected).toBe(true);
 });
 
 test("GM can box-select and drag multiple scene tokens", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 
   const suffix = Date.now().toString(36);
   let firstToken: E2EToken | undefined;
@@ -467,10 +1081,19 @@ test("GM can box-select and drag multiple scene tokens", async ({ page }) => {
     await page.reload();
     await expect(page.getByRole("button", { name: `Token ${firstToken.name}` })).toBeVisible();
     await expect(page.getByRole("button", { name: `Token ${secondToken.name}` })).toBeVisible();
+    const expandLayerPanel = page.getByRole("button", { name: "Expand layer panel" });
+    if (await expandLayerPanel.isVisible().catch(() => false)) await expandLayerPanel.click();
     await expect(page.getByLabel("Map layer stack")).toContainText("Player");
 
-    const start = await scenePointToClient(page, { x: 880, y: 580 });
-    const end = await scenePointToClient(page, { x: 1080, y: 710 });
+    // Opening the layer panel resizes the board through ResizeObserver. Wait
+    // for that geometry to settle, then derive both endpoints from one frame.
+    const board = await page.locator(".scene-board").elementHandle();
+    expect(board).not.toBeNull();
+    await board!.waitForElementState("stable");
+    const boardBox = await board!.boundingBox();
+    expect(boardBox).not.toBeNull();
+    const start = { x: boardBox!.x + (880 / 1200) * boardBox!.width, y: boardBox!.y + (580 / 800) * boardBox!.height };
+    const end = { x: boardBox!.x + (1080 / 1200) * boardBox!.width, y: boardBox!.y + (710 / 800) * boardBox!.height };
     await page.mouse.move(start.x, start.y);
     await page.mouse.down();
     await page.mouse.move(end.x, end.y, { steps: 8 });
@@ -491,26 +1114,97 @@ test("GM can box-select and drag multiple scene tokens", async ({ page }) => {
   }
 });
 
+test("legacy raw session migrates across reload, logout clears access, and server revocation is observed", async ({ page, request }) => {
+  const legacyLoginResponse = await request.post(`${apiBaseUrl}/api/v1/auth/login`, {
+    data: { email: "gm@example.test" },
+  });
+  const legacyLogin = await expectJsonResponse<{ token: string; user: { id: string } }>(legacyLoginResponse);
+
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Sign In" })).toBeVisible();
+  await page.evaluate(({ token, userId }) => {
+    localStorage.setItem("otte:userId", userId);
+    localStorage.setItem("otte:sessionToken", token);
+    localStorage.setItem("otte:sessionTokenUser", userId);
+    localStorage.removeItem("otte:sessionTransport");
+  }, { token: legacyLogin.token, userId: legacyLogin.user.id });
+
+  await page.reload();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
+  await expect.poll(() => page.evaluate(() => ({
+    legacyToken: localStorage.getItem("otte:sessionToken"),
+    legacyTokenUser: localStorage.getItem("otte:sessionTokenUser"),
+    transport: localStorage.getItem("otte:sessionTransport"),
+  }))).toEqual({ legacyToken: null, legacyTokenUser: null, transport: "cookie" });
+
+  await page.reload();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
+  expect(await page.evaluate(() => localStorage.getItem("otte:sessionToken"))).toBeNull();
+  expect(await page.evaluate(async (baseUrl) => (await fetch(`${baseUrl}/api/v1/auth/session`, { credentials: "include" })).status, apiBaseUrl)).toBe(200);
+
+  const accountPanel = await openManageCategory(page, "Account");
+  const logoutResponse = page.waitForResponse((response) =>
+    response.request().method() === "POST" && new URL(response.url()).pathname === "/api/v1/auth/logout"
+  );
+  await accountPanel.getByRole("button", { name: "Logout", exact: true }).click();
+  expect((await logoutResponse).status()).toBe(200);
+  await expect(page.getByRole("heading", { name: "Sign In" })).toBeVisible();
+  expect(await page.evaluate(async (baseUrl) => (await fetch(`${baseUrl}/api/v1/auth/session`, { credentials: "include" })).status, apiBaseUrl)).toBe(401);
+  expect(await page.evaluate(() => localStorage.getItem("otte:sessionTransport"))).toBeNull();
+
+  await page.getByRole("button", { name: "Demo GM" }).click();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
+  const currentSessionId = await page.evaluate(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/v1/auth/session`, { credentials: "include" });
+    if (!response.ok) throw new Error(await response.text());
+    const payload = await response.json() as { session?: { id?: string } };
+    if (!payload.session?.id) throw new Error("Authenticated session response did not include a session id");
+    return payload.session.id;
+  }, apiBaseUrl);
+  const revokeStatus = await page.evaluate(async ({ baseUrl, sessionId }) => (
+    await fetch(`${baseUrl}/api/v1/auth/sessions/${encodeURIComponent(sessionId)}`, {
+      method: "DELETE",
+      credentials: "include",
+    })
+  ).status, { baseUrl: apiBaseUrl, sessionId: currentSessionId });
+  expect(revokeStatus).toBe(200);
+  expect(await page.evaluate(async (baseUrl) => (await fetch(`${baseUrl}/api/v1/auth/session`, { credentials: "include" })).status, apiBaseUrl)).toBe(401);
+
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Sign In" })).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem("otte:sessionTransport"))).toBeNull();
+});
+
 test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(600_000);
   await page.goto("/");
 
   await expect(page.getByRole("heading", { name: "Sign In" })).toBeVisible();
   await page.getByRole("button", { name: "Demo GM" }).click();
 
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   await openManageCategory(page, "Campaign");
   await expect(page.getByText("Campaign Settings")).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Edit campaign name" })).toHaveValue("The Ember Vault");
   await expect(page.getByText("Delete is audited and removes").first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "Save Campaign" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Save Campaign", exact: true })).toBeEnabled();
   await expect(page.getByText("Campaign status: Active")).toBeVisible();
   await page.getByRole("button", { name: "Archive Campaign" }).click();
-  await expect(page.getByText("The Ember Vault archived")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Restore Campaign" })).toBeVisible();
-  await page.getByRole("button", { name: "Restore Campaign" }).click();
-  await expect(page.getByText("The Ember Vault restored")).toBeVisible();
-  await expect(page.getByText("Campaign status: Active")).toBeVisible();
+  try {
+    await expect(page.getByText(/Campaign status: Archived/)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Restore Campaign" })).toBeVisible();
+    await page.getByRole("button", { name: "Restore Campaign" }).click();
+    await expect(page.getByText("Campaign status: Active")).toBeVisible();
+  } finally {
+    const restoreCampaign = page.getByRole("button", { name: "Restore Campaign" });
+    if (await restoreCampaign.isVisible().catch(() => false)) await restoreCampaign.click();
+    await expect(page.getByText("Campaign status: Active")).toBeVisible();
+  }
   await expect(page.getByRole("button", { name: "Delete Campaign" })).toBeDisabled();
 
   await openManageCategory(page, "Scenes");
@@ -525,21 +1219,21 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(page.getByText("Delete is audited and removes").first()).toBeVisible();
   await page.getByRole("textbox", { name: "Edit scene folder" }).fill("prep/vault");
   await page.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(page.getByText("Vault Entry updated")).toBeVisible();
+  await expect(statusMessage(page, "Vault Entry updated")).toBeVisible();
   await page.getByRole("combobox", { name: "Scene folder filter" }).selectOption("prep/vault");
-  await expect(page.getByRole("button", { name: /Vault Entry/ })).toBeVisible();
+  await expect(sceneTab(page, "Vault Entry")).toBeVisible();
   await page.getByRole("combobox", { name: "Scene folder filter" }).selectOption("all");
   await expect(page.getByRole("status", { name: "Scene filter summary" })).toContainText("scenes");
   await page.getByRole("textbox", { name: "Scene search" }).fill("Vault Entry");
-  await expect(page.getByRole("button", { name: /Vault Entry/ })).toBeVisible();
+  await expect(sceneTab(page, "Vault Entry")).toBeVisible();
   await page.getByRole("textbox", { name: "Scene search" }).fill("Missing Scene");
   await expect(page.getByText("No scenes match filters.")).toBeVisible();
   await page.getByRole("textbox", { name: "Scene search" }).fill("");
   await expect(page.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
-  await expect(page.getByRole("button", { name: "Duplicate Scene" })).toBeEnabled();
-  await expect(page.getByRole("button", { name: "Delete Scene" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Duplicate Scene", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Delete Scene", exact: true })).toBeDisabled();
   await page.getByRole("textbox", { name: "Duplicate scene name" }).fill("Vault Entry Reorder");
-  await page.getByRole("button", { name: "Duplicate Scene" }).click();
+  await page.getByRole("button", { name: "Duplicate Scene", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Edit scene name" })).toHaveValue("Vault Entry Reorder");
   await expect(sceneStateComparison).toContainText("Vault Entry Reorder");
   await expect(sceneStateComparison).toContainText("Active scene");
@@ -549,22 +1243,21 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(sceneStateComparison).toContainText("Scene diff details");
   await expect(sceneStateComparison).toContainText("Prep drift review");
   await expect(sceneStateComparison).toContainText("Token roster");
-  await expect(sceneStateComparison).toContainText("Selected-only none; active-only");
-  await expect(sceneStateComparison).toContainText("Valen Ash");
+  await expect(sceneStateComparison).toContainText("No token roster drift");
   await expect(sceneStateComparison).toContainText("Background asset");
   await page.getByRole("textbox", { name: "Scene search" }).fill("");
   await page.getByRole("button", { name: "Select visible scenes" }).click();
   await expect(page.getByRole("status", { name: "Scene selection summary" })).toContainText("2 selected");
   await page.getByRole("textbox", { name: "Bulk scene folder" }).fill("prep/selected");
   await page.getByRole("button", { name: "Move selected scenes" }).click();
-  await expect(page.getByText("Moved 2 selected scenes to prep/selected")).toBeVisible();
+  await expect(statusMessage(page, "Moved 2 selected scenes to prep/selected")).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Edit scene folder" })).toHaveValue("prep/selected");
   await page.getByRole("button", { name: "Clear selected scenes" }).click();
   await expect(page.getByRole("status", { name: "Scene selection summary" })).toContainText("0 selected");
   await page.getByRole("textbox", { name: "Scene search" }).fill("Vault Entry Reorder");
   await page.getByRole("textbox", { name: "Bulk scene folder" }).fill("prep/bulk");
   await page.getByRole("button", { name: "Move visible scenes" }).click();
-  await expect(page.getByText("Moved 1 visible scenes to prep/bulk")).toBeVisible();
+  await expect(statusMessage(page, "Moved 1 visible scenes to prep/bulk")).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Edit scene folder" })).toHaveValue("prep/bulk");
   const reorderSortOrderBeforeMove = await getSceneSortOrderByName(page, "Vault Entry Reorder");
   await expect(page.getByRole("button", { name: "Move Up" })).toBeEnabled();
@@ -578,9 +1271,9 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(sceneActivationHistory).toContainText("1 activation");
   await expect(sceneActivationHistory).toContainText("previous active scn_vault_entry");
   await page.getByRole("textbox", { name: "Confirm scene delete" }).fill("Vault Entry Reorder");
-  await page.getByRole("button", { name: "Delete Scene" }).click();
+  await page.getByRole("button", { name: "Delete Scene", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Edit scene name" })).toHaveValue("Vault Entry");
-  await page.getByRole("button", { name: "Activate", exact: true }).click();
+  await expect(statusMessage(page, "Vault Entry Reorder deleted; Vault Entry is now live")).toBeVisible();
   await expect(page.getByRole("button", { name: "Activate", exact: true })).toBeDisabled();
   await expect(sceneActivationHistory).toContainText("2 activations");
   await closeManage(page);
@@ -589,70 +1282,90 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await submitChatCommand(page, "/roll 1d20+5");
   await expect(page.getByRole("status").filter({ hasText: /^Rolled \d+$/ })).toBeVisible();
   await openInspectorPanel(page, "Actors");
-  await page.getByRole("tab", { name: "Compendium" }).click();
+  await page.getByRole("tabpanel", { name: "Actors" }).getByRole("tab", { name: "Compendium", exact: true }).click();
   const compendiumBrowser = page.locator('[aria-label="Actor compendium browser"]');
   await expect(compendiumBrowser).toContainText("Compendium");
   await compendiumBrowser.getByRole("textbox", { name: "Compendium search" }).fill("Healing Word");
   await expect(compendiumBrowser).toContainText("Healing Word");
-  await compendiumBrowser.locator("article", { hasText: "Healing Word" }).getByRole("button", { name: "Add" }).click();
-  await expect(page.getByText("Healing Word imported")).toBeVisible();
+  const healingWordEntry = compendiumBrowser.locator("article").filter({
+    has: page.getByText("Healing Word", { exact: true })
+  });
+  await healingWordEntry.getByRole("button", { name: "Add" }).click();
+  await expect(statusMessage(page, /Healing Word (imported|at content version .* already present)/)).toBeVisible();
+  await openActorDisclosure(selectedActorPanel(page), "Actor details");
   await expect(page.locator(".metric-row", { hasText: "Spells" })).toContainText("Healing Word");
   await page.getByRole("tab", { name: "Loadout" }).click();
   const healingWordLoadout = page.getByRole("region", { name: "Actor loadout sheet" }).locator("article", { hasText: "Healing Word" }).first();
   await expect(healingWordLoadout).toContainText("prepared");
-  await healingWordLoadout.getByRole("checkbox", { name: "Healing Word prepared" }).click();
-  await expect(page.getByText("Healing Word updated")).toBeVisible();
-  await expect(healingWordLoadout).toContainText("unprepared");
+  const spellPreparation = page.getByRole("region", { name: "D&D spell preparation" });
+  await spellPreparation.getByRole("checkbox", { name: "Healing Word", exact: true }).uncheck();
+  await spellPreparation.getByRole("button", { name: "Preview preparation" }).click();
+  const preparationReview = spellPreparation.getByLabel("Spell preparation review");
+  await expect(preparationReview).toContainText("This character does not have a supported stored spellcasting class");
+  await expect(preparationReview).toContainText("No item preparation flags will change");
+  await expect(preparationReview.getByRole("button", { name: "Apply prepared spells" })).toBeDisabled();
+  await expect(healingWordLoadout).toContainText("prepared");
   await page.getByRole("tab", { name: "Actions" }).click();
   await expect(page.getByRole("region", { name: "Actor action sheet" })).toContainText("Healing Word Healing");
-  await openActorDisclosure(page.locator(".panel-stack", { hasText: "Selected Actor" }), "Actor details");
+  await openActorDisclosure(selectedActorPanel(page), "Actor details");
   await expect(page.getByRole("combobox", { name: "Action target actor" })).toBeVisible();
   await page.getByRole("combobox", { name: "Action target actor" }).selectOption({ label: "Valen Ash" });
   await setCheckbox(page.getByRole("checkbox", { name: "Apply action effect" }), true);
   await setCheckbox(page.getByRole("checkbox", { name: "Consume action resources" }), false);
-  await clickElement(page.getByRole("button", { name: "Use Healing Word Healing" }));
-  await expect(page.getByText(/Valen Ash (used action|action posted).*applied/)).toBeVisible();
+  const healingWordAction = page.getByRole("region", { name: "Actor action sheet" }).locator("article").filter({
+    has: page.getByText("Healing Word Healing", { exact: true })
+  });
+  await clickAndConfirmPreparedDndAction(healingWordAction.getByRole("button", { name: "Continue to final review" }));
+  await expect(statusMessage(page, /Valen Ash (used action|action posted).*applied/)).toBeVisible();
   await page.getByRole("button", { name: "Token Valen Ash" }).first().click();
-  await openActorDisclosure(page.locator(".panel-stack", { hasText: "Selected Actor" }), "Token settings");
+  await openActorDisclosure(selectedActorPanel(page), "Token settings");
   await page.getByRole("textbox", { name: "Token conditions" }).fill("Marked, Blessed");
   await page.getByRole("textbox", { name: "Token conditions" }).blur();
-  await expect(page.getByText("Token updated")).toBeVisible();
+  await expect(statusMessage(page, "Token updated")).toBeVisible();
   await page.getByRole("textbox", { name: "Token auras" }).fill("Guardian Aura:15:#38bdf8");
   await page.getByRole("textbox", { name: "Token auras" }).blur();
   await expect(page.getByText("Guardian Aura 15")).toBeVisible();
   await page.getByRole("textbox", { name: "Token notes" }).fill("Hold the vault doorway.");
   await page.getByRole("textbox", { name: "Token notes" }).blur();
-  await expect(page.getByText("Token updated")).toBeVisible();
+  await expect(statusMessage(page, "Token updated")).toBeVisible();
   const tokenOwners = page.locator('[aria-label="Token owners"]');
   await setCheckbox(tokenOwners.getByRole("checkbox", { name: "Demo Player" }), true);
-  await expect(page.getByText("Token updated")).toBeVisible();
+  await expect(statusMessage(page, "Token updated")).toBeVisible();
   await expect(page.locator(".metric-row", { hasText: "Token State" })).toContainText("Owners 1");
-  await setCheckbox(page.getByRole("checkbox", { name: "Targeted" }), true);
-  await expect(page.getByText("Token targeted")).toBeVisible();
+  const targetedCheckbox = page.getByRole("checkbox", { name: "Targeted" });
+  if (!(await targetedCheckbox.isChecked())) {
+    await setCheckbox(targetedCheckbox, true);
+    await expect(statusMessage(page, "Token targeted")).toBeVisible();
+  }
+  await expect(targetedCheckbox).toBeChecked();
   const sceneBoard = page.locator(".scene-board").first();
+  await openTokenQuickCreate(page);
   await page.getByRole("combobox", { name: "Token actor" }).selectOption("act_valen");
   await page.getByRole("button", { name: "Add token" }).click();
-  await expect(page.getByText("Valen Ash created")).toBeVisible();
+  await expect(statusMessage(page, "Valen Ash created")).toBeVisible();
+  await openActorDisclosure(selectedActorPanel(page), "Token settings");
   await expect(page.getByRole("textbox", { name: "Token inspector name" })).toHaveValue("Valen Ash");
   await deleteNewestTokenByName(page, "Valen Ash");
   const box = await sceneBoard.boundingBox();
   expect(box).not.toBeNull();
+  await openTokenQuickCreate(page);
   await page.getByRole("textbox", { name: "Token name" }).fill("AOE Target");
   await page.getByRole("button", { name: "Token", exact: true }).click();
-  await expect(page.getByText("AOE Target created")).toBeVisible();
+  await expect(statusMessage(page, "AOE Target created")).toBeVisible();
   const aoeTarget = await getNewestSceneTokenByName(page, "AOE Target");
   await patchTokenConditions(page, aoeTarget.id, [
     { id: "resistant-fire", name: "Resistant fire" },
     { id: "concentrating", name: "Concentrating" }
   ]);
   const annotationPanel = page.getByRole("region", { name: "Annotation layers and history" });
-  await page.getByRole("button", { name: "Ping" }).click();
+  await page.getByRole("button", { name: "Drawing", exact: true }).click();
   await expect(annotationPanel).toBeVisible();
   await annotationPanel.getByRole("textbox", { name: "Annotation group label" }).fill("E2E Markup");
   await annotationPanel.getByRole("combobox", { name: "Annotation layer" }).selectOption("measurement");
   await annotationPanel.getByRole("button", { name: "Close annotation settings" }).click();
+  await page.getByRole("button", { name: "Ping" }).click();
   await sceneBoard.click({ position: { x: Math.round(box!.width * 0.2), y: Math.round(box!.height * 0.76) } });
-  await expect(page.getByText("Ping added")).toBeVisible();
+  await expect(statusMessage(page, "Ping sent")).toBeVisible();
   await page.getByRole("button", { name: "Drawing", exact: true }).click();
   await expect(annotationPanel).toBeVisible();
   for (const section of ["Layer visibility", "Groups", "History"]) {
@@ -661,7 +1374,7 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(annotationPanel.getByRole("region", { name: "Annotation group summary" })).toContainText("E2E Markup");
   await annotationPanel.getByRole("button", { name: "Close annotation settings" }).click();
   await page.getByRole("button", { name: "Ruler" }).click();
-  await expect(page.getByText("Ruler tool active")).toBeVisible();
+  await expect(statusMessage(page, "Ruler tool active")).toBeVisible();
   await page.getByRole("button", { name: "Area template" }).click();
   await expect(annotationPanel).toBeVisible();
   for (const section of ["Layer visibility", "History", "Area template"]) {
@@ -683,7 +1396,7 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await page.mouse.down();
   await page.mouse.move(templateBox!.x + templateBox!.width * 0.5, templateBox!.y + templateBox!.height * 0.5);
   await page.mouse.up();
-  await expect(page.getByText("Template added")).toBeVisible();
+  await expect(statusMessage(page, "Template added")).toBeVisible();
   await page.getByRole("button", { name: "Drawing", exact: true }).click();
   await expect(annotationPanel).toBeVisible();
   for (const section of ["Layer visibility", "History", "Area template"]) {
@@ -699,35 +1412,37 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(annotationPanel.getByRole("region", { name: "Area template automation" })).toContainText("Dexterity save DC 15");
   await expect(annotationPanel.getByRole("region", { name: "Area template automation" })).toContainText("damage 6 fire");
   await annotationPanel.getByRole("checkbox", { name: "Show Effects annotations" }).uncheck();
-  await expect(page.getByText("Effects annotations hidden")).toBeVisible();
+  await expect(statusMessage(page, "Effects annotations hidden")).toBeVisible();
   await expect(page.locator(".scene-annotation.template")).toHaveCount(0);
   await annotationPanel.getByRole("checkbox", { name: "Show Effects annotations" }).check();
-  await expect(page.getByText("Effects annotations shown")).toBeVisible();
+  await expect(statusMessage(page, "Effects annotations shown")).toBeVisible();
   await expect(page.locator(".scene-annotation.template")).toBeVisible();
   await annotationPanel.getByRole("button", { name: "Target affected" }).click();
-  await expect(page.getByText("Targeted 1 tokens")).toBeVisible();
+  await expect(statusMessage(page, "Targeted 1 tokens")).toBeVisible();
   await annotationPanel.getByRole("button", { name: "Roll damage" }).click();
-  await expect(page.getByText("Template damage 6")).toBeVisible();
+  await expect(statusMessage(page, "Template damage 6")).toBeVisible();
   await annotationPanel.getByRole("button", { name: "Apply damage" }).click();
-  await expect(page.getByText("Applied template damage to 1 tokens")).toBeVisible();
+  await expect(statusMessage(page, "Applied template damage to 1 tokens")).toBeVisible();
   const damagedTarget = await getSceneTokenById(page, aoeTarget.id);
   expect(damagedTarget.conditions?.map((condition) => condition.name)).toContain("Damaged 3 fire (resisted; concentration DC 10)");
   await annotationPanel.getByRole("button", { name: "Resolve saves" }).click();
-  await expect(page.getByText("Resolved saves for 1 tokens")).toBeVisible();
+  await expect(statusMessage(page, "Resolved saves for 1 tokens")).toBeVisible();
   const resolvedTarget = await getSceneTokenById(page, aoeTarget.id);
   expect(resolvedTarget.conditions?.some((condition) => /^(Saved|Failed) Dexterity \d+ vs DC 15 - Damaged (1|3) fire \(resisted; concentration DC 10\)$/.test(condition.name))).toBeTruthy();
   await page.evaluate(async ({ apiBaseUrl }) => {
-    const bearer = localStorage.getItem("otte:sessionToken");
-    if (!bearer) throw new Error("No browser session token available for drawing setup");
-    const headers = { authorization: `Bearer ${bearer}` };
-    const campaigns = await fetch(`${apiBaseUrl}/api/v1/campaigns`, { headers }).then((response) => response.json());
+    const campaigns = await fetch(`${apiBaseUrl}/api/v1/campaigns`, { credentials: "include" }).then((response) => response.json());
     const campaign = campaigns.find((item: { name?: string }) => item.name === "The Ember Vault") ?? campaigns[0];
-    const scenes = await fetch(`${apiBaseUrl}/api/v1/campaigns/${campaign.id}/scenes`, { headers }).then((response) => response.json());
+    const scenes = await fetch(`${apiBaseUrl}/api/v1/campaigns/${campaign.id}/scenes`, { credentials: "include" }).then((response) => response.json());
     const scene = scenes.find((item: { name?: string }) => item.name === "Vault Entry") ?? scenes[0];
     const response = await fetch(`${apiBaseUrl}/api/v1/scenes/${scene.id}/annotations`, {
       method: "POST",
-      headers: { ...headers, "content-type": "application/json" },
+      credentials: "include",
+      headers: {
+        "content-type": "application/json",
+        "idempotency-key": `e2e-create-drawing:${crypto.randomUUID()}`,
+      },
       body: JSON.stringify({
+        expectedUpdatedAt: scene.updatedAt,
         kind: "drawing",
         label: "Drawing",
         color: "#a78bfa",
@@ -743,10 +1458,11 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
     if (!response.ok) throw new Error(await response.text());
   }, { apiBaseUrl });
   await page.reload();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   await expect(page.locator(".scene-annotation.drawing").first()).toBeVisible();
   await page.getByRole("button", { name: "Select", exact: true }).click();
-  await expect(page.getByText("Select tool active")).toBeVisible();
+  await expect(statusMessage(page, "Select tool active")).toBeVisible();
   const templateMoveHandle = page.getByRole("button", { name: "Move Template annotation in E2E Markup" });
   await expect(templateMoveHandle).toBeVisible();
   const templateMoveHandleBox = await templateMoveHandle.boundingBox();
@@ -755,7 +1471,7 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await page.mouse.down();
   await page.mouse.move(templateMoveHandleBox!.x + templateMoveHandleBox!.width / 2 - 72, templateMoveHandleBox!.y + templateMoveHandleBox!.height / 2 - 48);
   await page.mouse.up();
-  await expect(page.getByText("Moved Template annotation")).toBeVisible();
+  await expect(statusMessage(page, "Moved Template annotation")).toBeVisible();
   const drawingEndHandle = page.getByRole("button", { name: "Edit path end Drawing annotation in E2E Markup" });
   await expect(drawingEndHandle).toBeVisible();
   const drawingEndHandleBox = await drawingEndHandle.boundingBox();
@@ -764,7 +1480,7 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await page.mouse.down();
   await page.mouse.move(drawingEndHandleBox!.x + drawingEndHandleBox!.width / 2 + 28, drawingEndHandleBox!.y + drawingEndHandleBox!.height / 2 - 18);
   await page.mouse.up();
-  await expect(page.getByText("Moved Drawing annotation")).toBeVisible();
+  await expect(statusMessage(page, "Moved Drawing annotation")).toBeVisible();
   await page.getByRole("button", { name: "Drawing", exact: true }).click();
   await expect(annotationPanel).toBeVisible();
   for (const section of ["Layer visibility", "Groups", "History", "Area template"]) {
@@ -775,19 +1491,18 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(annotationPanel.getByRole("region", { name: "Annotation history" })).toContainText("Update");
   await expect(annotationPanel.getByRole("region", { name: "Area template automation" })).toContainText("Line template");
   await annotationPanel.getByRole("button", { name: "Nudge annotation group E2E Markup" }).click();
-  await expect(page.getByText("Moved 3 annotations in E2E Markup")).toBeVisible();
+  await expect(statusMessage(page, /Moved [23] annotations in E2E Markup/)).toBeVisible();
   const recolorGroup = annotationPanel.getByRole("button", { name: "Recolor annotation group E2E Markup" });
   await recolorGroup.focus();
   await expect(recolorGroup).toBeFocused();
   await recolorGroup.press("Enter");
-  await expect(page.getByText("Recolored 3 annotations in E2E Markup")).toBeVisible();
+  await expect(statusMessage(page, /Recolored [23] annotations in E2E Markup/)).toBeVisible();
   await expect(annotationPanel.getByRole("region", { name: "Annotation history" })).toContainText("Update");
   const deleteGroup = annotationPanel.getByRole("button", { name: "Delete annotation group E2E Markup" });
   await deleteGroup.focus();
   await expect(deleteGroup).toBeFocused();
   await deleteGroup.press("Enter");
-  await expect(page.getByText("Deleted 3 annotations in E2E Markup")).toBeVisible();
-  await page.getByRole("button", { name: "Ping" }).click();
+  await expect(statusMessage(page, /Deleted [23] annotations in E2E Markup/)).toBeVisible();
   await expect(annotationPanel).toBeVisible();
   await expect(annotationPanel.getByRole("region", { name: "Annotation layer summary" })).toContainText("No annotations yet");
   await page.getByRole("button", { name: "Select", exact: true }).click();
@@ -806,19 +1521,23 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(chatMessages.locator("article", { hasText: "E2E GM moderation checkpoint" }).first()).toContainText("GM");
 
   await page.getByRole("button", { name: "Prep", exact: true }).click();
-  await page.getByRole("button", { name: "Content" }).click();
-  await expect(page.getByText("Asset Library")).toBeVisible();
+  await page.getByRole("tab", { name: "Assets" }).click();
+  await expect(page.getByRole("region", { name: "Asset library" })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Asset search" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Asset lifecycle filter" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Asset restore recovery" })).toContainText("Recoverable");
-  await expect(page.locator('[aria-label="Asset quota usage"]').getByText("No campaign quota configured")).toBeVisible();
-  await expect(page.locator('[aria-label="Asset quota management"]')).toContainText("Quota health");
+  const recoveryPanel = page.getByRole("region", { name: "Asset restore recovery" });
+  await expect(page.locator('[aria-label="Asset quota usage"]')).toContainText("remaining");
+  await expect(page.locator('[aria-label="Asset quota management"]')).toContainText("Quota policy");
   await expect(page.locator('[aria-label="Asset quota management"]')).toContainText("Recommended action");
+  await expect(page.locator('[aria-label="Asset quota management"]')).toContainText("No quota cleanup needed");
+  const storageDetails = page.locator("details.asset-maintenance-drawer").filter({ hasText: "Storage and delivery details" }).first();
+  await openDetails(storageDetails);
   await expect(page.getByText("Delivery ready")).toBeVisible();
   await expect(page.getByText("signed_blob delivery")).toBeVisible();
   await expect(page.getByText("0 undeliverable - 0 CDN eligible")).toBeVisible();
   await expect(page.getByRole("button", { name: "Upload Asset" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "Upload Background" })).toBeEnabled();
+  await openDetails(page.locator("details.asset-upload-defaults"));
   await page.getByRole("textbox", { name: "Asset upload folder" }).fill("maps/vault");
   await page.getByRole("textbox", { name: "Asset upload tags" }).fill("e2e, map");
   await page.locator("#asset-library-upload").setInputFiles({
@@ -830,29 +1549,32 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(page.getByLabel("Asset upload recovery")).toContainText("blocked-map.svg");
   await page.getByRole("button", { name: "Retry upload" }).click();
   await expect(page.getByText(/Upload failed:/)).toBeVisible();
-  await page.getByRole("button", { name: "Dismiss" }).click();
+  await page.getByRole("button", { name: "Dismiss", exact: true }).click();
   await expect(page.getByLabel("Asset upload recovery")).toHaveCount(0);
   await page.locator("#asset-library-upload").setInputFiles({
     name: "e2e-map.svg",
     mimeType: "image/svg+xml",
     buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#345"/><circle cx="32" cy="32" r="18" fill="#d9b44a"/></svg>')
   });
-  await expect(page.getByText("e2e-map.svg uploaded")).toBeVisible();
+  await expect(statusMessage(page, "e2e-map.svg uploaded")).toBeVisible();
   await page.getByRole("textbox", { name: "Asset search" }).fill("e2e-map");
   const assetLibrary = page.getByRole("region", { name: "Asset library" });
   const uploadedAsset = assetLibrary.locator("article", { hasText: "e2e-map.svg" });
   await expect(uploadedAsset).toBeVisible();
   await expect(uploadedAsset).toContainText("maps/vault");
-  await expect(uploadedAsset).toContainText("e2e, map");
+  await expect(uploadedAsset).toContainText("e2e");
+  await expect(uploadedAsset).toContainText("map");
+  await openDetails(uploadedAsset.locator("details.asset-card-details"));
   await uploadedAsset.getByRole("textbox", { name: "e2e-map.svg asset folder" }).fill("maps/revised");
   await uploadedAsset.getByRole("textbox", { name: "e2e-map.svg asset tags" }).fill("vault, background");
   await uploadedAsset.getByRole("button", { name: "Save Metadata" }).click();
-  await expect(page.getByText("e2e-map.svg metadata updated")).toBeVisible();
+  await expect(statusMessage(page, "e2e-map.svg metadata updated")).toBeVisible();
   await expect(uploadedAsset).toContainText("maps/revised");
-  await expect(uploadedAsset).toContainText("vault, background");
+  await expect(uploadedAsset).toContainText("vault");
+  await expect(uploadedAsset).toContainText("background");
   await uploadedAsset.getByRole("button", { name: "Signed URL" }).click();
-  await expect(page.getByText("Signed URL ready for e2e-map.svg")).toBeVisible();
-  await expect(page.getByText("Asset delivery URL created")).toBeVisible();
+  await expect(statusMessage(page, "Signed URL ready for e2e-map.svg")).toBeVisible();
+  await expect(statusMessage(page, "Asset delivery URL created")).toBeVisible();
   const assetFolderNavigation = page.getByLabel("Asset folder navigation");
   await expect(assetFolderNavigation).toContainText("maps");
   await page.getByRole("button", { name: "Open asset folder maps" }).click();
@@ -862,26 +1584,28 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(page.getByRole("combobox", { name: "Asset folder filter" })).toHaveValue("maps/revised");
   await expect(uploadedAsset).toBeVisible();
   await uploadedAsset.getByRole("button", { name: "Place e2e-map.svg asset on scene" }).click();
-  await expect(page.getByText("e2e-map.svg placed on scene")).toBeVisible();
+  await expect(statusMessage(page, "e2e-map.svg placed on scene")).toBeVisible();
   await deleteNewestTokenByName(page, "e2e-map.svg");
-  await page.getByRole("combobox", { name: "Canvas asset folder" }).selectOption("maps/revised");
-  await page.getByRole("textbox", { name: "Canvas image search" }).fill("e2e-map");
-  await expect(page.getByRole("region", { name: "Canvas asset thumbnail grid" })).toContainText("e2e-map.svg");
-  await page.getByRole("button", { name: "Select canvas asset e2e-map.svg" }).click();
-  await expect(page.getByRole("combobox", { name: "Canvas asset picker" })).toHaveValue(/asset_/);
-  await expect(page.getByLabel("Selected canvas asset preview")).toContainText("e2e-map.svg");
-  await expect(page.getByLabel("Selected canvas asset preview")).toContainText("maps/revised");
-  await expect(page.getByLabel("Selected canvas asset preview").locator("img")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Place selected canvas asset" })).toBeEnabled();
-  await expect(page.getByRole("button", { name: "Set selected canvas background" })).toBeEnabled();
-  await page.getByRole("spinbutton", { name: "Canvas asset placement count" }).fill("2");
-  await page.getByRole("button", { name: "Place selected canvas asset" }).click();
-  await expect(page.getByText("Placed 2 e2e-map.svg tokens")).toBeVisible();
+  const canvasAssetPicker = page.getByRole("region", { name: "Canvas asset picker" });
+  await canvasAssetPicker.locator("summary").click();
+  await canvasAssetPicker.getByRole("combobox", { name: "Canvas asset folder" }).selectOption("maps/revised");
+  await canvasAssetPicker.getByRole("textbox", { name: "Canvas image search" }).fill("e2e-map");
+  await expect(canvasAssetPicker.getByRole("region", { name: "Canvas asset thumbnail grid" })).toContainText("e2e-map.svg");
+  await canvasAssetPicker.getByRole("button", { name: "Select canvas asset e2e-map.svg" }).click();
+  await expect(canvasAssetPicker.getByRole("combobox", { name: "Canvas asset picker" })).toHaveValue(/asset_/);
+  await expect(canvasAssetPicker.getByLabel("Selected canvas asset preview")).toContainText("e2e-map.svg");
+  await expect(canvasAssetPicker.getByLabel("Selected canvas asset preview")).toContainText("maps/revised");
+  await expect(canvasAssetPicker.getByLabel("Selected canvas asset preview").locator("img")).toBeVisible();
+  await expect(canvasAssetPicker.getByRole("button", { name: "Place selected canvas asset" })).toBeEnabled();
+  await expect(canvasAssetPicker.getByRole("button", { name: "Set selected canvas background" })).toBeEnabled();
+  await canvasAssetPicker.getByRole("spinbutton", { name: "Canvas asset placement count" }).fill("2");
+  await canvasAssetPicker.getByRole("button", { name: "Place selected canvas asset" }).click();
+  await expect(statusMessage(page, "Placed 2 e2e-map.svg tokens")).toBeVisible();
   await deleteNewestTokenByName(page, "e2e-map.svg");
   await deleteNewestTokenByName(page, "e2e-map.svg");
   const boardBox = await sceneBoard.boundingBox();
   expect(boardBox).not.toBeNull();
-  const canvasAssetTile = page.getByRole("button", { name: "Select canvas asset e2e-map.svg" });
+  const canvasAssetTile = canvasAssetPicker.getByRole("button", { name: "Select canvas asset e2e-map.svg" });
   const dropPoint = {
     clientX: Math.floor(boardBox!.x + boardBox!.width * 0.5),
     clientY: Math.floor(boardBox!.y + boardBox!.height * 0.82)
@@ -904,35 +1628,38 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await deleteNewestTokenByName(page, "e2e-map.svg");
   await uploadedAsset.getByRole("checkbox", { name: "Select e2e-map.svg asset" }).check();
   await page.getByRole("button", { name: "Batch archive assets" }).click();
-  await expect(page.getByText("e2e-map.svg marked archived")).toBeVisible();
-  await expect(uploadedAsset.locator(".status-pill")).toContainText("archived");
-  await expect(page.getByRole("region", { name: "Asset restore recovery" })).toContainText("e2e-map.svg");
+  await expect(statusMessage(page, "e2e-map.svg marked archived")).toBeVisible();
+  await expect(uploadedAsset.locator(".status-pill")).toContainText("Archived");
+  await openDetails(recoveryPanel);
+  await expect(recoveryPanel).toContainText("e2e-map.svg");
   await page.getByRole("combobox", { name: "Asset lifecycle filter" }).selectOption("archived");
   await expect(uploadedAsset).toBeVisible();
   await uploadedAsset.getByRole("checkbox", { name: "Select e2e-map.svg asset" }).check();
   await page.getByRole("button", { name: "Batch restore assets" }).click();
-  await expect(page.getByText("e2e-map.svg marked active")).toBeVisible();
+  await expect(statusMessage(page, "e2e-map.svg marked active")).toBeVisible();
   await page.getByRole("combobox", { name: "Asset lifecycle filter" }).selectOption("all");
-  await expect(uploadedAsset.locator(".status-pill")).toContainText("active");
+  await expect(uploadedAsset.locator(".status-pill")).toContainText("Active");
   await uploadedAsset.getByRole("button", { name: "Delete" }).click();
-  await expect(page.getByText("e2e-map.svg marked deleted")).toBeVisible();
-  await expect(uploadedAsset.locator(".status-pill")).toContainText("deleted");
+  await expect(statusMessage(page, "e2e-map.svg marked deleted")).toBeVisible();
+  await expect(uploadedAsset.locator(".status-pill")).toContainText("Deleted");
   await expect(uploadedAsset.getByRole("button", { name: "Place e2e-map.svg asset on scene" })).toBeDisabled();
   await expect(uploadedAsset.getByRole("button", { name: "Background", exact: true })).toBeDisabled();
   await expect(uploadedAsset.getByRole("button", { name: "Signed URL" })).toBeDisabled();
-  await expect(page.getByRole("region", { name: "Asset restore recovery" })).toContainText("e2e-map.svg");
+  await openDetails(recoveryPanel);
+  await expect(recoveryPanel).toContainText("e2e-map.svg");
   await page.getByRole("combobox", { name: "Asset lifecycle filter" }).selectOption("deleted");
   await expect(uploadedAsset).toBeVisible();
   await uploadedAsset.getByRole("checkbox", { name: "Select e2e-map.svg asset" }).check();
   await page.getByRole("button", { name: "Batch restore assets" }).click();
-  await expect(page.getByText("e2e-map.svg marked active")).toBeVisible();
+  await expect(statusMessage(page, "e2e-map.svg marked active")).toBeVisible();
   await page.getByRole("combobox", { name: "Asset lifecycle filter" }).selectOption("all");
-  await expect(uploadedAsset.locator(".status-pill")).toContainText("active");
+  await expect(uploadedAsset.locator(".status-pill")).toContainText("Active");
   await page.getByRole("combobox", { name: "Asset folder filter" }).selectOption("maps/revised");
   await expect(uploadedAsset).toBeVisible();
   await page.getByRole("combobox", { name: "Asset folder filter" }).selectOption("all");
   await uploadedAsset.getByRole("button", { name: "Background", exact: true }).click();
-  await expect(page.getByText("e2e-map.svg set as Vault Entry background")).toBeVisible();
+  await page.getByRole("dialog", { name: "Place e2e-map.svg", exact: true }).getByRole("button", { name: "Keep canvas and replace map" }).click();
+  await expect(statusMessage(page, "e2e-map.svg set as Vault Entry background")).toBeVisible();
   await expect(page.locator(".scene-tab-thumb img").first()).toBeVisible();
   await openManageCategory(page, "Scenes");
   await page.getByRole("combobox", { name: "Edit scene background asset" }).selectOption({ label: "No background" });
@@ -940,11 +1667,14 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(page.locator(".scene-background-preview")).toContainText("No background");
   await page.getByRole("combobox", { name: "Edit scene background asset" }).selectOption({ label: "e2e-map.svg" });
   await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByRole("dialog", { name: "Place e2e-map.svg", exact: true }).getByRole("button", { name: "Keep canvas and replace map" }).click();
   await expect(page.locator(".scene-background-preview")).toContainText("e2e-map.svg");
   await closeManage(page);
   await page.getByRole("button", { name: "Prep", exact: true }).click();
-  await page.getByRole("button", { name: "Content" }).click();
-  await expect(page.getByText("Content Import", { exact: true })).toBeVisible();
+  await page.getByRole("tab", { name: "Assets" }).click();
+  const contentImportDrawer = page.locator("details.content-import-drawer");
+  await openDetails(contentImportDrawer);
+  await expect(contentImportDrawer).toContainText("Content import");
 
   await page.getByRole("combobox", { name: "Content import adapter" }).selectOption("csv_items");
   await page.getByRole("textbox", { name: "Adapter source name" }).fill("E2E CSV Adapter Source");
@@ -954,13 +1684,13 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(page.getByLabel("Adapter preview summary")).toContainText("Adapter: csv-item-list-v1");
   await expect(page.getByLabel("Adapter preview summary")).toContainText("2 generated entities");
   await page.getByRole("button", { name: "Preview Batch" }).click();
-  await expect(page.getByText("Content import previewed")).toBeVisible();
+  await expect(statusMessage(page, "Content import previewed")).toBeVisible();
   const adapterImportReport = page.locator(".content-import-report", { hasText: "E2E Adapter Torch" });
   await expect(adapterImportReport.locator('[aria-label="Provenance and license"]')).toContainText("Source: Adapter");
   await expect(adapterImportReport.locator('[aria-label="Provenance and license"]')).toContainText("Adapter: csv-item-list-v1");
   await expect(adapterImportReport.locator('[aria-label="Import entity selection"]')).toContainText("Journal: E2E Adapter Rope");
   await adapterImportReport.getByRole("button", { name: "Delete" }).click();
-  await expect(page.getByText("Deleted E2E CSV Adapter Source")).toBeVisible();
+  await expect(statusMessage(page, "Deleted E2E CSV Adapter Source")).toBeVisible();
   await expect(page.getByText("No content imports for this campaign.")).toBeVisible();
 
   await page.getByRole("combobox", { name: "Content import adapter" }).selectOption("manual");
@@ -973,7 +1703,7 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await page.getByRole("textbox", { name: "Content import name" }).fill("E2E Import Handout");
   await page.getByRole("textbox", { name: "Content import body" }).fill("A handout that should stay excluded during selective apply.");
   await page.getByRole("button", { name: "Preview Batch" }).click();
-  await expect(page.getByText("Content import previewed")).toBeVisible();
+  await expect(statusMessage(page, "Content import previewed")).toBeVisible();
 
   const importReport = page.locator(".content-import-report", { hasText: "E2E Import Ledger" });
   await expect(importReport.locator('[aria-label="Validation report"]')).toContainText("2 warnings");
@@ -989,15 +1719,21 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await importReport.getByRole("checkbox", { name: "Select E2E Import Handout" }).uncheck();
   await expect(importReport.getByRole("button", { name: "Apply Selected" })).toBeDisabled();
   await importReport.getByRole("checkbox", { name: "Select E2E Import Ledger" }).check();
+  const applyContentImportResponse = page.waitForResponse((response) =>
+    response.request().method() === "POST" && /\/api\/v1\/content-imports\/[^/]+\/apply$/.test(new URL(response.url()).pathname)
+  );
   await importReport.getByRole("button", { name: "Apply Selected" }).click();
-  await expect(page.getByText("Content import applied")).toBeVisible();
+  const appliedContentImport = await expectJsonResponse<{ appliedRecords: Array<{ collection: string; id: string }> }>(await applyContentImportResponse);
+  const importedLedgerId = appliedContentImport.appliedRecords.find((record) => record.collection === "items")?.id;
+  expect(importedLedgerId).toBeTruthy();
+  await expect(statusMessage(page, "Content import applied")).toBeVisible();
   await expect(importReport).toContainText("applied to items");
-  await page.getByRole("button", { name: "Actors" }).click();
+  await page.getByRole("tab", { name: "Actors" }).click();
   await page.getByRole("tab", { name: "Loadout" }).click();
   const assignment = page.getByLabel("Assign item to actor");
   await expect(assignment.getByRole("combobox", { name: "Unassigned item" })).toContainText("E2E Import Ledger");
   await page.getByRole("button", { name: "Drag E2E Import Ledger to actor loadout" }).dragTo(page.getByRole("region", { name: "Actor loadout sheet" }));
-  const assignmentStatus = page.getByText("E2E Import Ledger assigned to Valen Ash");
+  const assignmentStatus = statusMessage(page, "Gave E2E Import Ledger to Valen Ash");
   let assignedByDrag = false;
   try {
     await expect(assignmentStatus).toBeVisible({ timeout: 2000 });
@@ -1013,16 +1749,401 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(page.getByRole("region", { name: "Actor loadout sheet" })).toContainText("E2E Import Ledger");
   const importedLoadoutItem = page.getByRole("region", { name: "Actor loadout sheet" }).locator("article", { hasText: "E2E Import Ledger" });
   await importedLoadoutItem.getByRole("button", { name: "Add one" }).click();
-  await expect(page.getByText("E2E Import Ledger updated")).toBeVisible();
+  await expect(statusMessage(page, "E2E Import Ledger updated")).toBeVisible();
   await expect(importedLoadoutItem).toContainText("E2E Import Ledger x2");
   await importedLoadoutItem.getByRole("button", { name: "Spend one" }).click();
-  await expect(page.getByText("E2E Import Ledger updated")).toBeVisible();
+  await expect(statusMessage(page, "E2E Import Ledger updated")).toBeVisible();
   await expect(importedLoadoutItem).toContainText("E2E Import Ledger x1");
   await page.getByRole("button", { name: "Prep", exact: true }).click();
-  await page.getByRole("button", { name: "Content" }).click();
+  await page.getByRole("tab", { name: "Assets" }).click();
+  await openDetails(contentImportDrawer);
   await importReport.getByRole("button", { name: "Rollback" }).click();
-  await expect(page.getByText("Content import rolled back")).toBeVisible();
+  const rollbackConflict = page.getByRole("alert").filter({ hasText: "Rollback Web manual content import import failed" });
+  await expect(rollbackConflict).toContainText("Imported content changed or is still referenced. Resolve the reported conflicts before retrying rollback.");
+  await expect(importReport).toContainText("applied");
+  const importedLedger = await expectJsonResponse<{ updatedAt: string }>(await page.request.get(`${apiBaseUrl}/api/v1/items/${importedLedgerId}`, { headers: gmApiHeaders }));
+  await expectJsonResponse(await page.request.delete(expectedUpdatedAtUrl(`${apiBaseUrl}/api/v1/items/${importedLedgerId}`, importedLedger.updatedAt), { headers: gmMutationHeaders("resolve-content-import-rollback-conflict") }));
+  await rollbackConflict.getByRole("button", { name: "Retry" }).click();
+  await expect(statusMessage(page, "Content import rolled back")).toBeVisible();
   await expect(importReport.locator('[aria-label="Import history"]')).toContainText("Rolled back:");
+});
+
+test("GM can organize prep across the World Atlas, Handout Library, and Session Desk", async ({ page }) => {
+  test.setTimeout(60_000);
+  const suffix = Date.now().toString(36);
+  const worldName = `E2E Ashen Atlas ${suffix}`;
+  const worldDescription = "A persistent E2E world for linked prep.";
+  const handoutTitle = `E2E Atlas Brief ${suffix}`;
+  const handoutBody = "The western vault opens only when the ember bell rings.";
+  const sessionTitle = `E2E Atlas Session ${suffix}`;
+  const sessionAgenda = "Review the atlas brief, enter Vault Entry, and follow the ember bell clue.";
+  const sessionNotes = "Bring the linked handout into play.";
+  let vaultSceneId = "";
+  let originalWorldId: string | undefined;
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Demo GM" }).click();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
+
+  try {
+    const scenes = await expectJsonResponse<Array<{ id: string; name: string; worldId?: string }>>(
+      await page.request.get(`${apiBaseUrl}/api/v1/campaigns/camp_demo/scenes`, { headers: gmApiHeaders })
+    );
+    const vaultScene = scenes.find((scene) => scene.name === "Vault Entry");
+    expect(vaultScene).toBeDefined();
+    vaultSceneId = vaultScene!.id;
+    originalWorldId = vaultScene!.worldId;
+
+    await page.getByRole("button", { name: "Prep", exact: true }).click();
+    await openInspectorPanel(page, "Worlds");
+    const worldAtlas = page.getByRole("region", { name: "World Atlas" });
+    await expect(worldAtlas.getByRole("heading", { name: "Your worlds & scenes" })).toBeVisible();
+    const addWorld = worldAtlas.locator("details.lore-create-drawer").filter({
+      has: page.getByRole("textbox", { name: "New world name" })
+    });
+    await openDetails(addWorld);
+    await addWorld.getByRole("textbox", { name: "New world name" }).fill(worldName);
+    await addWorld.getByRole("textbox", { name: "New world description" }).fill(worldDescription);
+    await addWorld.getByRole("button", { name: "Create world" }).click();
+    await expect(statusMessage(page, `${worldName} added to the atlas`)).toBeVisible();
+    const worldEditor = worldAtlas.getByRole("form", { name: `Edit world ${worldName}` });
+    await expect(worldEditor.getByRole("textbox", { name: "World name" })).toHaveValue(worldName);
+    await expect(worldEditor.getByRole("textbox", { name: "World description" })).toHaveValue(worldDescription);
+
+    const worldFilters = worldAtlas.getByRole("group", { name: "Filter prep scenes by world" });
+    await worldFilters.getByRole("button", { name: /^All / }).click();
+    await worldAtlas.getByRole("combobox", { name: "World for Vault Entry", exact: true }).selectOption({ label: worldName });
+    await expect(statusMessage(page, `Vault Entry moved to ${worldName}`)).toBeVisible();
+    await worldFilters.getByRole("button", { name: new RegExp(`^${worldName} `) }).click();
+    await expect(worldAtlas.getByRole("region", { name: "World scenes" })).toContainText("Vault Entry");
+
+    await openInspectorPanel(page, "Handouts");
+    const handoutLibrary = page.getByRole("region", { name: "Handout Library" });
+    await expect(handoutLibrary.getByRole("heading", { name: "Clues, lore & player handouts" })).toBeVisible();
+    await handoutLibrary.getByRole("button", { name: "Create handout" }).click();
+    const handoutForm = handoutLibrary.getByRole("form", { name: "Create handout" });
+    await handoutForm.getByRole("textbox", { name: "Handout title" }).fill(handoutTitle);
+    await handoutForm.getByRole("textbox", { name: "Handout body" }).fill(handoutBody);
+    await handoutForm.getByRole("combobox", { name: "Handout world" }).selectOption({ label: worldName });
+    await handoutForm.getByRole("combobox", { name: "Handout visibility" }).selectOption("public");
+    await handoutForm.getByRole("textbox", { name: "Handout tags" }).fill("atlas, ember-bell");
+    await handoutForm.getByRole("button", { name: "Share handout" }).click();
+    await expect(statusMessage(page, `${handoutTitle} shared`)).toBeVisible();
+    const handoutRow = handoutLibrary.getByRole("listitem").filter({ hasText: handoutTitle });
+    await expect(handoutRow).toContainText("Everyone");
+    await expect(handoutRow).toContainText("atlas");
+    const savedHandout = handoutLibrary.getByRole("form", { name: `Edit handout ${handoutTitle}` });
+    await expect(savedHandout.getByRole("textbox", { name: "Handout body" })).toHaveValue(handoutBody);
+    await expect(savedHandout.getByRole("combobox", { name: "Handout world" })).toHaveValue(
+      (await expectJsonResponse<Array<{ id: string; name: string }>>(
+        await page.request.get(`${apiBaseUrl}/api/v1/campaigns/camp_demo/worlds`, { headers: gmApiHeaders })
+      )).find((world) => world.name === worldName)!.id
+    );
+
+    await openInspectorPanel(page, "Sessions");
+    const sessionDesk = page.getByRole("region", { name: "Session Desk" });
+    await expect(sessionDesk.getByRole("heading", { name: "Your campaign sessions" })).toBeVisible();
+    await sessionDesk.getByRole("button", { name: "Plan session" }).click();
+    const sessionForm = sessionDesk.getByRole("form", { name: "Plan campaign session" });
+    await sessionForm.getByRole("textbox", { name: "Session title" }).fill(sessionTitle);
+    await sessionForm.getByRole("textbox", { name: "Session agenda" }).fill(sessionAgenda);
+    await sessionForm.getByRole("textbox", { name: "Session notes" }).fill(sessionNotes);
+    await sessionForm.getByRole("checkbox", { name: "Vault Entry" }).check();
+    await sessionForm.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(statusMessage(page, `${sessionTitle} planned`)).toBeVisible();
+    const sessionRow = sessionDesk.getByRole("listitem").filter({ hasText: sessionTitle });
+    await expect(sessionRow).toContainText("planned");
+    await expect(sessionRow).toContainText("Unscheduled");
+    const savedSession = sessionDesk.getByRole("form", { name: `Edit session ${sessionTitle}` });
+    await expect(savedSession.getByRole("textbox", { name: "Session agenda" })).toHaveValue(sessionAgenda);
+    await expect(savedSession.getByRole("textbox", { name: "Session notes" })).toHaveValue(sessionNotes);
+    await expect(savedSession.getByRole("combobox", { name: "Scene to activate when session starts" })).toContainText("Vault Entry");
+
+    await page.reload();
+    await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
+    await page.getByRole("button", { name: "Prep", exact: true }).click();
+
+    await openInspectorPanel(page, "Worlds");
+    const reloadedAtlas = page.getByRole("region", { name: "World Atlas" });
+    await reloadedAtlas.getByRole("textbox", { name: "Search worlds" }).fill(worldName);
+    const reloadedWorldFilters = reloadedAtlas.getByRole("group", { name: "Filter prep scenes by world" });
+    await reloadedWorldFilters.getByRole("button", { name: new RegExp(`^${worldName} `) }).click();
+    await expect(reloadedAtlas.getByRole("region", { name: "World scenes" })).toContainText("Vault Entry");
+
+    await openInspectorPanel(page, "Handouts");
+    const reloadedHandouts = page.getByRole("region", { name: "Handout Library" });
+    await reloadedHandouts.getByRole("textbox", { name: "Search handouts" }).fill(handoutTitle);
+    await reloadedHandouts.getByRole("combobox", { name: "Filter handouts by world" }).selectOption({ label: worldName });
+    await expect(reloadedHandouts.getByRole("listitem").filter({ hasText: handoutTitle })).toContainText("ember-bell");
+
+    await openInspectorPanel(page, "Sessions");
+    const reloadedSessions = page.getByRole("region", { name: "Session Desk" });
+    await expect(reloadedSessions.getByRole("listitem").filter({ hasText: sessionTitle })).toContainText("planned");
+  } finally {
+    try {
+      const sessionsResponse = await page.request.get(`${apiBaseUrl}/api/v1/campaigns/camp_demo/sessions`, { headers: gmApiHeaders });
+      if (sessionsResponse.ok()) {
+        const sessions = (await sessionsResponse.json()) as Array<{ id: string; title: string; status: string; updatedAt: string }>;
+        for (const session of sessions.filter((item) => item.title === sessionTitle && item.status === "planned")) {
+          await page.request.delete(
+            expectedUpdatedAtUrl(`${apiBaseUrl}/api/v1/campaign-sessions/${session.id}`, session.updatedAt),
+            { headers: gmMutationHeaders("delete-session") },
+          );
+        }
+      }
+      const handoutsResponse = await page.request.get(`${apiBaseUrl}/api/v1/campaigns/camp_demo/handouts`, { headers: gmApiHeaders });
+      if (handoutsResponse.ok()) {
+        const handouts = (await handoutsResponse.json()) as Array<{ id: string; title: string; updatedAt: string }>;
+        for (const handout of handouts.filter((item) => item.title === handoutTitle)) {
+          await page.request.delete(
+            expectedUpdatedAtUrl(`${apiBaseUrl}/api/v1/handouts/${handout.id}`, handout.updatedAt),
+            { headers: gmMutationHeaders("delete-handout") },
+          );
+        }
+      }
+      if (vaultSceneId) {
+        const currentScenes = await expectJsonResponse<Array<{ id: string; updatedAt: string }>>(
+          await page.request.get(`${apiBaseUrl}/api/v1/campaigns/camp_demo/scenes`, { headers: gmApiHeaders }),
+        );
+        const currentVaultScene = currentScenes.find((scene) => scene.id === vaultSceneId);
+        expect(currentVaultScene).toBeDefined();
+        await page.request.patch(`${apiBaseUrl}/api/v1/scenes/${vaultSceneId}`, {
+          headers: gmMutationHeaders("restore-scene-world"),
+          data: { worldId: originalWorldId ?? null, expectedUpdatedAt: currentVaultScene!.updatedAt }
+        });
+      }
+      const worldsResponse = await page.request.get(`${apiBaseUrl}/api/v1/campaigns/camp_demo/worlds`, { headers: gmApiHeaders });
+      if (worldsResponse.ok()) {
+        const worlds = (await worldsResponse.json()) as Array<{ id: string; name: string; updatedAt: string }>;
+        for (const world of worlds.filter((item) => item.name === worldName)) {
+          await page.request.delete(
+            expectedUpdatedAtUrl(`${apiBaseUrl}/api/v1/worlds/${world.id}`, world.updatedAt),
+            { headers: gmMutationHeaders("delete-world") },
+          );
+        }
+      }
+    } catch {
+      // Preserve the primary browser assertion when the server is already unavailable.
+    }
+  }
+});
+
+test("World and handout panels reconcile realtime changes made by another client", async ({ page }) => {
+  const suffix = Date.now().toString(36);
+  const worldName = `Realtime World ${suffix}`;
+  const handoutTitle = `Realtime Handout ${suffix}`;
+  let worldId = "";
+  let handoutId = "";
+  let worldUpdatedAt = "";
+  let handoutUpdatedAt = "";
+
+  await page.goto("/");
+  const realtimeConnected = page.waitForEvent("websocket");
+  await page.getByRole("button", { name: "Demo GM" }).click();
+  await realtimeConnected;
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
+
+  try {
+    await page.getByRole("button", { name: "Prep", exact: true }).click();
+    await openInspectorPanel(page, "Worlds");
+    const worldAtlas = page.getByRole("region", { name: "World Atlas" });
+    await expect(worldAtlas.getByRole("group", { name: "Filter prep scenes by world" })).toBeVisible();
+
+    const campaignBeforeWorld = await expectJsonResponse<{ updatedAt: string }>(
+      await page.request.get(`${apiBaseUrl}/api/v1/campaigns/camp_demo`, { headers: gmApiHeaders }),
+    );
+    const world = await expectJsonResponse<{ id: string; updatedAt: string }>(
+      await page.request.post(`${apiBaseUrl}/api/v1/campaigns/camp_demo/worlds`, {
+        headers: gmMutationHeaders("create-realtime-world"),
+        data: {
+          name: worldName,
+          description: "Created outside the open browser client.",
+          expectedUpdatedAt: campaignBeforeWorld.updatedAt,
+        }
+      })
+    );
+    worldId = world.id;
+    worldUpdatedAt = world.updatedAt;
+    await expect(worldAtlas.getByRole("button", { name: new RegExp(`^${worldName} `) })).toBeVisible();
+
+    await openInspectorPanel(page, "Handouts");
+    const handoutLibrary = page.getByRole("region", { name: "Handout Library" });
+    const campaignBeforeHandout = await expectJsonResponse<{ updatedAt: string }>(
+      await page.request.get(`${apiBaseUrl}/api/v1/campaigns/camp_demo`, { headers: gmApiHeaders }),
+    );
+    const handout = await expectJsonResponse<{ id: string; updatedAt: string }>(
+      await page.request.post(`${apiBaseUrl}/api/v1/campaigns/camp_demo/handouts`, {
+        headers: gmMutationHeaders("create-realtime-handout"),
+        data: {
+          expectedUpdatedAt: campaignBeforeHandout.updatedAt,
+          worldId,
+          title: handoutTitle,
+          body: "Created outside the open browser client.",
+          visibility: "public",
+          visibleToUserIds: [],
+          visibleToActorIds: [],
+          assetIds: [],
+          tags: ["realtime"]
+        }
+      })
+    );
+    handoutId = handout.id;
+    handoutUpdatedAt = handout.updatedAt;
+    const handoutRow = handoutLibrary.getByRole("listitem").filter({ hasText: handoutTitle });
+    await expect(handoutRow.getByRole("button")).toBeVisible();
+  } finally {
+    if (handoutId && handoutUpdatedAt) {
+      await page.request.delete(
+        expectedUpdatedAtUrl(`${apiBaseUrl}/api/v1/handouts/${handoutId}`, handoutUpdatedAt),
+        { headers: gmMutationHeaders("delete-realtime-handout") },
+      ).catch(() => undefined);
+    }
+    if (worldId && worldUpdatedAt) {
+      await page.request.delete(
+        expectedUpdatedAtUrl(`${apiBaseUrl}/api/v1/worlds/${worldId}`, worldUpdatedAt),
+        { headers: gmMutationHeaders("delete-realtime-world") },
+      ).catch(() => undefined);
+    }
+  }
+});
+
+test("failed AI proposal actions remain available for retry", async ({ page }) => {
+  const suffix = Date.now().toString(36);
+  const draftResponse = await expectJsonResponse<{ proposal: { id: string; title: string; updatedAt: string } }>(
+    await page.request.post(`${apiBaseUrl}/api/v1/campaigns/camp_demo/ai/encounter-design`, {
+      headers: gmMutationHeaders("failed-ai-proposal-draft"),
+      data: {
+        prompt: `A retry-only encounter proposal ${suffix}`,
+        difficulty: "standard",
+        sceneName: `Retry proposal scene ${suffix}`,
+        sceneWidth: 900,
+        sceneHeight: 700,
+        gridSize: 50,
+        expectedUpdatedAt: await currentCampaignUpdatedAt(page)
+      }
+    })
+  );
+  const draft = draftResponse.proposal;
+
+  try {
+    await page.goto("/");
+    await page.getByRole("button", { name: "Demo GM" }).click();
+    await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
+    const aiAgent = await openAiAgent(page);
+    const proposal = aiAgent.locator(".ai-agent-proposal-row", { hasText: draft.title });
+    await expect(proposal).toHaveCount(1);
+    await page.route(`**/api/v1/proposals/${draft.id}/approve`, (route) => route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({ message: "temporary approval failure" })
+    }));
+    await proposal.getByRole("button", { name: "Approve and apply" }).click();
+    await expect(aiAgent.getByText("Apply failed: temporary approval failure", { exact: true })).toBeVisible();
+    await expect(proposal).toBeVisible();
+    await page.unroute(`**/api/v1/proposals/${draft.id}/approve`);
+
+    await page.route(`**/api/v1/proposals/${draft.id}/reject`, (route) => route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({ message: "temporary rejection failure" })
+    }));
+    await proposal.getByRole("button", { name: "Reject" }).click();
+    await expect(aiAgent.getByText("Reject failed: temporary rejection failure", { exact: true })).toBeVisible();
+    await expect(proposal).toBeVisible();
+    await page.unroute(`**/api/v1/proposals/${draft.id}/reject`);
+  } finally {
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+    await expectJsonResponse(
+      await page.request.post(`${apiBaseUrl}/api/v1/proposals/${draft.id}/reject`, {
+        headers: gmMutationHeaders("failed-ai-proposal-reject"),
+        data: { expectedUpdatedAt: draft.updatedAt }
+      }),
+    );
+  }
+});
+
+test("AI auto-apply consent is scoped to the current user and campaign", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Demo GM" }).click();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
+  const aiAgent = await openAiAgent(page);
+  const approvalMode = aiAgent.getByRole("combobox", { name: "AI Agent approval mode" });
+  await expect(approvalMode).toHaveValue("manual");
+  await approvalMode.selectOption("auto");
+  await expect(approvalMode).toHaveValue("auto");
+
+  const campaignName = `Scoped AI ${Date.now().toString(36)}`;
+  const campaign = await page.evaluate(async ({ apiBaseUrl, campaignName }) => {
+    const response = await fetch(`${apiBaseUrl}/api/v1/campaigns`, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "content-type": "application/json",
+        "idempotency-key": `e2e-create-scoped-campaign:${crypto.randomUUID()}`,
+      },
+      body: JSON.stringify({ name: campaignName, description: "AI preference scope test" })
+    });
+    if (!response.ok) throw new Error(await response.text());
+    return (await response.json()) as { id: string; updatedAt: string };
+  }, { apiBaseUrl, campaignName });
+
+  try {
+    await page.reload();
+    await openDetails(page.locator("details.campaign-switcher"));
+    await page.getByRole("navigation", { name: "Campaigns" }).getByRole("button", { name: campaignName }).click();
+    await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText(campaignName);
+    const scopedAgent = await openAiAgent(page);
+    await expect(scopedAgent.getByRole("combobox", { name: "AI Agent approval mode" })).toHaveValue("manual");
+
+    await openDetails(page.locator("details.campaign-switcher"));
+    await page.getByRole("navigation", { name: "Campaigns" }).getByRole("button", { name: "The Ember Vault" }).click();
+    await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
+    await expect(scopedAgent.getByRole("combobox", { name: "AI Agent approval mode" })).toHaveValue("auto");
+  } finally {
+    const currentCampaign = await expectJsonResponse<{ updatedAt: string }>(
+      await page.request.get(`${apiBaseUrl}/api/v1/campaigns/${campaign.id}`, { headers: gmApiHeaders }),
+    );
+    await expectJsonResponse(
+      await page.request.delete(
+        expectedUpdatedAtUrl(`${apiBaseUrl}/api/v1/campaigns/${campaign.id}`, currentCampaign.updatedAt),
+        { headers: gmMutationHeaders("delete-scoped-campaign") },
+      ),
+    );
+  }
+});
+
+test("blank canvas opens in actionable prep and accepts a local map", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Try Blank Canvas" }).click();
+  await expect(page.getByRole("button", { name: "Prep", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("tab", { name: "Assets" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("heading", { name: "Asset manager" })).toBeVisible();
+
+  const fileChooserPromise = page.waitForEvent("filechooser");
+  await page.getByRole("button", { name: "Upload Background" }).click();
+  const fileChooser = await fileChooserPromise;
+  await fileChooser.setFiles({
+    name: "local-demo-map.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64")
+  });
+
+  await expect(page.getByRole("status").filter({ hasText: /local-demo-map\.png.*background/i }).first()).toBeVisible();
+  await expect(page.getByRole("region", { name: "Asset library" })).toContainText("local-demo-map.png");
+  await expect(page.locator(".scene-map")).toBeVisible();
+
+  await page.getByRole("button", { name: "Manage", exact: true }).click();
+  await page.getByRole("region", { name: "Demo mode" }).getByRole("button", { name: "Exit" }).click();
+  await page.getByRole("button", { name: "Demo GM" }).click();
+  await expect(page.getByRole("button", { name: "Live Table", exact: true })).toHaveAttribute("aria-pressed", "true");
 });
 
 test("GM can create a campaign through the setup wizard", async ({ page }) => {
@@ -1030,50 +2151,157 @@ test("GM can create a campaign through the setup wizard", async ({ page }) => {
 
   await page.getByRole("button", { name: "Demo GM" }).click();
   await openManageCategory(page, "Campaign");
+  await openCreateDrawer(page, "New campaign");
   await expect(page.getByText("Campaign Setup", { exact: true })).toBeVisible();
 
   await page.getByRole("textbox", { name: "Campaign name", exact: true }).fill("E2E Setup Campaign");
   await page.getByRole("textbox", { name: "Campaign description", exact: true }).fill("Created through the campaign setup wizard");
   await page.getByRole("combobox", { name: "Campaign visibility", exact: true }).selectOption("invite_only");
-  await page.getByRole("textbox", { name: "Setup initial scene name" }).fill("First Session");
-  await page.getByRole("textbox", { name: "Setup initial scene folder" }).fill("session-1");
-  await page.getByRole("spinbutton", { name: "Setup scene width" }).fill("1400");
-  await page.getByRole("spinbutton", { name: "Setup scene height" }).fill("900");
-  await page.getByRole("spinbutton", { name: "Setup scene grid size" }).fill("70");
+  await page.getByRole("button", { name: "Next: Scene & map" }).click();
+  await expect(page.getByRole("checkbox", { name: "Include starter content" })).toBeChecked();
+  await page.getByRole("button", { name: "Next: Invitation" }).click();
   await page.getByRole("checkbox", { name: "Create starter invite" }).check();
   await page.getByRole("textbox", { name: "Setup invite email" }).fill("setup-player@example.com");
   await page.getByRole("combobox", { name: "Setup default player permission preset" }).selectOption("player");
+  await openDetails(page.locator("details.campaign-setup-advanced").filter({ hasText: "Advanced permission settings" }));
   await page.getByRole("combobox", { name: "Setup campaign permission template" }).selectOption("player_authoring");
   await expect(page.getByText("Players can create actors, journal entries, and tokens for collaborative prep.")).toBeVisible();
+  await page.getByRole("button", { name: "Next: Review" }).click();
   const setupImpact = page.locator('[aria-label="Campaign setup impact"]');
   await expect(setupImpact).toContainText("Invite only - Player invite for setup-player@example.com");
-  await expect(setupImpact).toContainText("First Session - 1400x900 - grid 70 - session-1");
+  await expect(setupImpact).toContainText("First Session - 1200x800 - grid 50 - starter content");
   await expect(setupImpact).toContainText("Player authoring");
-  await page.getByRole("textbox", { name: "Setup onboarding title" }).fill("Welcome Heroes");
-  await page.getByRole("textbox", { name: "Setup onboarding copy" }).fill("Session zero: agree on tone, safety tools, and the opening scene.");
-  await expect(setupImpact).toContainText("Public handout: Welcome Heroes");
+  await expect(setupImpact).toContainText("Starter content: First Session and welcome notes");
 
   await page.getByRole("button", { name: "Create Campaign Setup" }).click();
 
-  await expect(page.locator("h1").filter({ hasText: "E2E Setup Campaign" })).toBeVisible();
-  await expect(page.getByText("E2E Setup Campaign created with First Session; player invite ready; Player authoring permissions applied")).toBeVisible();
-  await page.getByRole("button", { name: "Prep", exact: true }).click();
-  await expect(page.getByRole("button", { name: /First Session/ })).toBeVisible();
-  await openManageCategory(page, "People");
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("E2E Setup Campaign");
+  await expect(page.getByRole("status").filter({ hasText: "E2E Setup Campaign created with First Session; invite link ready to copy; Player authoring permissions applied" })).toBeVisible();
   await expect(page.locator('input[aria-label="Invite token"][readonly]')).toHaveValue(/^oti_/);
+  await expect(page.getByRole("textbox", { name: "Invite link" })).toHaveValue(/\/join\?invite=oti_/);
+  await expect(page.getByRole("textbox", { name: "Invite link" })).toBeFocused();
   await closeManage(page);
 
   await page.getByRole("button", { name: "Prep", exact: true }).click();
-  await page.getByRole("button", { name: "Journal" }).click();
-  await expect(page.getByText("Welcome Heroes")).toBeVisible();
-  await expect(page.getByText("Session zero: agree on tone, safety tools, and the opening scene.")).toBeVisible();
+  await expect(sceneTab(page, "First Session")).toBeVisible();
+  await page.getByRole("tab", { name: "Journal" }).click();
+  await expect(page.getByRole("heading", { name: "Running your first session", exact: true })).toBeVisible();
+  await expect(page.getByText("Create characters from the party rail character creator.")).toBeVisible();
+  await expect(page.getByText("Generate a session recap from the Journal tab.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "GM notes", exact: true })).toBeVisible();
+
+  await openManageCategory(page, "Campaign");
+  await openCreateDrawer(page, "New campaign");
+  await page.getByRole("textbox", { name: "Campaign name", exact: true }).fill("E2E Bare Campaign");
+  await page.getByRole("button", { name: "Next: Scene & map" }).click();
+  await page.getByRole("checkbox", { name: "Include starter content" }).uncheck();
+  await page.getByRole("textbox", { name: "Setup initial scene name" }).fill("Bare Opening");
+  await openDetails(page.locator("details.campaign-setup-advanced").filter({ hasText: "Advanced scene and onboarding settings" }));
+  await page.getByRole("textbox", { name: "Setup onboarding title" }).fill("Bare Welcome");
+  await page.getByRole("textbox", { name: "Setup onboarding copy" }).fill("A handout for the bare setup path.");
+  await page.getByRole("button", { name: "Next: Invitation" }).click();
+  await page.getByRole("button", { name: "Skip for now" }).click();
+  await expect(setupImpact).toContainText("Bare Opening - 1200x800 - grid 50 - session-0");
+  await expect(setupImpact).toContainText("Public handout: Bare Welcome");
+  await page.getByRole("button", { name: "Create Campaign Setup" }).click();
+
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("E2E Bare Campaign");
+  await expect(page.getByRole("status").filter({ hasText: "E2E Bare Campaign created with Bare Opening; opened session prep" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Prep", exact: true })).toBeFocused();
+  await expect(sceneTab(page, "Bare Opening")).toBeVisible();
+  await page.getByRole("tab", { name: "Journal" }).click();
+  await expect(page.getByRole("heading", { name: "Bare Welcome", exact: true })).toBeVisible();
+  await expect(page.getByText("A handout for the bare setup path.")).toBeVisible();
+  await expect(page.getByText("Running your first session")).not.toBeVisible();
+});
+
+test("campaign setup locks duplicate submits and resumes after a failed follow-up", async ({ page }) => {
+  let campaignPosts = 0;
+  let inviteAttempts = 0;
+  let releaseFirstCampaign!: () => void;
+  const firstCampaignGate = new Promise<void>((resolve) => {
+    releaseFirstCampaign = resolve;
+  });
+  let holdFirstCampaign = true;
+
+  await page.route("**/api/v1/campaigns", async (route) => {
+    if (route.request().method() !== "POST") {
+      await route.continue();
+      return;
+    }
+    campaignPosts += 1;
+    if (holdFirstCampaign) {
+      holdFirstCampaign = false;
+      await firstCampaignGate;
+    }
+    await route.continue();
+  });
+  await page.route("**/api/v1/campaigns/*/invites", async (route) => {
+    if (route.request().method() !== "POST") {
+      await route.continue();
+      return;
+    }
+    inviteAttempts += 1;
+    if (inviteAttempts === 1) {
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "simulated invite failure" })
+      });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Demo GM" }).click();
+  await openManageCategory(page, "Campaign");
+  await openCreateDrawer(page, "New campaign");
+  const campaignName = page.getByRole("textbox", { name: "Campaign name", exact: true });
+  await campaignName.fill("E2E Retry Safe Campaign");
+  const setupForm = page.locator("form.campaign-setup-steps");
+  await page.getByRole("button", { name: "Next: Scene & map" }).click();
+  await page.getByRole("button", { name: "Skip for now" }).click();
+  await page.getByRole("checkbox", { name: "Create starter invite" }).check();
+  await page.getByRole("textbox", { name: "Setup invite email" }).fill("retry-safe@example.com");
+  await page.getByRole("button", { name: "Next: Review" }).click();
+  const submitButton = setupForm.locator('button[type="submit"]');
+  await submitButton.click();
+  await expect.poll(() => campaignPosts).toBe(1);
+  try {
+    await expect(submitButton).toBeDisabled();
+    await expect(setupForm.locator("fieldset")).toHaveAttribute("disabled", "");
+    await submitButton.evaluate((button: HTMLButtonElement) => button.click());
+    expect(campaignPosts).toBe(1);
+  } finally {
+    releaseFirstCampaign();
+  }
+
+  await expect(page.getByRole("status").filter({ hasText: "simulated invite failure" })).toBeVisible();
+  await expect(submitButton).toHaveText(/Retry Campaign Setup/);
+  await expect(setupForm.locator("fieldset")).toHaveAttribute("disabled", "");
+  expect(campaignPosts).toBe(1);
+  expect(inviteAttempts).toBe(1);
+
+  await submitButton.click();
+  const inviteLink = page.getByRole("textbox", { name: "Invite link" });
+  await expect(page.getByRole("status").filter({ hasText: "E2E Retry Safe Campaign created with First Session; invite link ready to copy" })).toBeVisible();
+  await expect(inviteLink).toHaveValue(/\/join\?invite=oti_/);
+  await expect(inviteLink).toBeFocused();
+  expect(campaignPosts).toBe(1);
+  expect(inviteAttempts).toBe(2);
 });
 
 test("GM can export and safely re-import a campaign archive", async ({ page }) => {
   test.setTimeout(60_000);
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   await openManageCategory(page, "Archives");
 
   const exportWizard = page.getByRole("region", { name: "Archive export wizard" });
@@ -1084,7 +2312,7 @@ test("GM can export and safely re-import a campaign archive", async ({ page }) =
   await expect(exportWizard.getByLabel("Archive compatibility notes")).toContainText("v0.3/v1-compatible importer");
 
   const downloadPromise = page.waitForEvent("download");
-  await exportWizard.getByRole("button", { name: "Export Archive" }).click();
+  await exportWizard.getByRole("button", { name: "Export JSON (small archives)" }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toContain("The Ember Vault");
 
@@ -1135,7 +2363,7 @@ test("GM can export and safely re-import a campaign archive", async ({ page }) =
   writeFileSync(badArchivePath, "{ broken archive");
 
   await page.getByLabel("Import campaign archive").setInputFiles(badArchivePath);
-  await expect(page.getByText("Archive import failed")).toBeVisible();
+  await expect(statusMessage(page, "Archive import failed")).toBeVisible();
   await expect(page.getByLabel("Archive import recovery")).toContainText("broken.ottx.json");
   await page.getByRole("button", { name: "Retry import" }).click();
   await expect(page.getByLabel("Archive import recovery")).toContainText("broken.ottx.json");
@@ -1144,12 +2372,12 @@ test("GM can export and safely re-import a campaign archive", async ({ page }) =
   await expect(importWizard.getByRole("combobox", { name: "Archive import mode" })).toHaveValue("upsert");
   await importWizard.getByRole("combobox", { name: "Archive import mode" }).selectOption("reject_conflicts");
   await page.getByLabel("Import campaign archive").setInputFiles(archivePath);
-  await expect(page.getByText("Archive import failed")).toBeVisible();
+  await expect(statusMessage(page, "Archive import failed")).toBeVisible();
   await expect(page.locator("#import-status")).toContainText("import_conflict");
   await expect(page.getByLabel("Archive import recovery")).toContainText(download.suggestedFilename());
   await importWizard.getByRole("combobox", { name: "Archive import mode" }).selectOption("dry_run");
   await page.getByLabel("Import campaign archive").setInputFiles(archivePath);
-  await expect(page.getByText(/Archive dry run found \d+ conflicts/)).toBeVisible();
+  await expect(statusMessage(page, /Archive dry run found \d+ conflicts/)).toBeVisible();
   await expect(importWizard.getByLabel("Archive import validation")).toContainText("dry run");
   await expect(importWizard.getByLabel("Archive import validation")).toContainText("campaigns");
   await importWizard.getByRole("combobox", { name: "Archive import scope" }).selectOption("assets_only");
@@ -1167,98 +2395,159 @@ test("GM can export and safely re-import a campaign archive", async ({ page }) =
   await importWizard.getByLabel("Import Journals").check();
   await importWizard.getByLabel("Import Tokens").uncheck();
   await page.getByLabel("Import campaign archive").setInputFiles(selectedCollectionArchivePath);
-  await expect(page.getByText(/Archive imported|Imported with \d+ conflicts/)).toBeVisible();
+  await expect(statusMessage(page, /Archive imported|Imported with \d+ conflicts/)).toBeVisible();
   await expect(importWizard.getByLabel("Archive import validation")).toContainText("selected records");
   await expect(importWizard.getByLabel("Archive import validation")).toContainText("journals");
   await closeManage(page);
   await page.getByRole("button", { name: "Prep", exact: true }).click();
-  await page.getByRole("button", { name: "Journal" }).click();
-  await expect(page.getByText(selectedJournalTitle)).toBeVisible();
+  await page.getByRole("tab", { name: "Journal" }).click();
+  await expect(page.getByRole("heading", { name: selectedJournalTitle, exact: true })).toBeVisible();
   await expect(page.getByText("Imported through the selected-collection archive browser path.")).toBeVisible();
   await openManageCategory(page, "Archives");
   const reopenedImportWizard = page.getByRole("region", { name: "Archive import wizard" });
   await expect(reopenedImportWizard).toBeVisible();
+  const archiveRecovery = reopenedImportWizard.getByRole("region", { name: "Archive import rollback operations" });
+  await expect(archiveRecovery).toBeVisible();
+  const operationPicker = archiveRecovery.getByRole("combobox", { name: "Import operation" });
+  const selectedImportOperationId = await operationPicker.inputValue();
+  expect(selectedImportOperationId).toMatch(/^arcimp_/);
+  await archiveRecovery.getByRole("button", { name: "Review rollback impact" }).click();
+  await expect(archiveRecovery.getByLabel("Archive rollback impact confirmation")).toContainText("delete 1 records");
+  await archiveRecovery.getByRole("textbox", { name: "Type operation id to confirm rollback" }).fill(selectedImportOperationId);
+  await archiveRecovery.getByRole("button", { name: "Roll back this import" }).click();
+  await expect(statusMessage(page, "Archive import rolled back")).toBeVisible();
+  await expect(operationPicker.locator(`option[value="${selectedImportOperationId}"]`)).toContainText("rolled_back");
   await reopenedImportWizard.getByRole("combobox", { name: "Archive import scope" }).selectOption("all");
 
   await reopenedImportWizard.getByRole("combobox", { name: "Archive import mode" }).selectOption("skip_conflicts");
   await page.getByLabel("Import campaign archive").setInputFiles(archivePath);
-  await expect(page.getByText(/Imported non-conflicting records; skipped \d+ conflicts/)).toBeVisible();
+  await expect(statusMessage(page, /Imported non-conflicting records; skipped \d+ conflicts/)).toBeVisible();
   await expect(reopenedImportWizard.getByLabel("Archive import validation")).toContainText("Skipped");
-  await expect(reopenedImportWizard.getByLabel("Archive import validation")).toContainText("Rollback snapshot");
-  const rollbackDownloadPromise = page.waitForEvent("download");
-  await reopenedImportWizard.getByLabel("Archive import validation").getByRole("button", { name: "Download" }).click();
-  const rollbackDownload = await rollbackDownloadPromise;
-  expect(rollbackDownload.suggestedFilename()).toContain("rollback-before");
 
   await importWizard.getByRole("combobox", { name: "Archive import mode" }).selectOption("upsert");
   await page.getByLabel("Import campaign archive").setInputFiles(archivePath);
-  await expect(page.getByText(/Imported with \d+ conflicts/)).toBeVisible();
+  await expect(page.locator("#import-status")).toContainText(/Imported with \d+ conflicts/);
   await expect(page.locator("#import-status")).toContainText(download.suggestedFilename());
   await expect(page.getByLabel("Archive import recovery")).toHaveCount(0);
 });
 
 test("GM can run the browser combat tracker lifecycle", async ({ page }) => {
+  test.setTimeout(90_000);
+  let demoLoginAttempts = 0;
+  await page.route("**/api/v1/auth/login", async (route) => {
+    const body = route.request().postDataJSON() as { email?: string };
+    if (body.email === "gm@example.test") {
+      demoLoginAttempts += 1;
+      if (demoLoginAttempts === 1) {
+        await route.abort("connectionfailed");
+        return;
+      }
+    }
+    await route.continue();
+  });
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
+  expect(demoLoginAttempts).toBe(2);
+  await page.unroute("**/api/v1/auth/login");
 
   await page.getByRole("button", { name: "Prep", exact: true }).click();
-  await page.getByRole("button", { name: "SDK", exact: true }).click();
-  const sdkPanel = page.locator(".panel-stack", { hasText: "Runtime SDK" });
+  await openInspectorPanel(page, "SDK");
+  const sdkPanel = sdkRuntimePanel(page);
   await sdkPanel.getByRole("button", { name: "Create Monster" }).click();
-  await expect(page.getByText("Goblin Minion monster created")).toBeVisible();
+  await expect(statusMessage(page, "Goblin Minion monster created")).toBeVisible();
   await expect(sdkPanel.locator(".metric-row", { hasText: "Created Monster" })).toContainText("Goblin Minion");
 
   await openInspectorPanel(page, "Actors");
+  await openTokenQuickCreate(page);
   await page.getByRole("textbox", { name: "Token name" }).fill("Goblin Minion");
   await page.getByRole("combobox", { name: "Token actor" }).selectOption({ label: "Goblin Minion" });
   await page.getByRole("combobox", { name: "Token disposition" }).selectOption("hostile");
   await page.getByRole("button", { name: "Token", exact: true }).click();
-  await expect(page.getByText("Goblin Minion created")).toBeVisible();
+  await expect(statusMessage(page, "Goblin Minion created")).toBeVisible();
   await expect(page.getByRole("button", { name: "Token Goblin Minion" }).first()).toBeVisible();
 
   await page.getByRole("button", { name: "Live Table", exact: true }).click();
   await openInspectorPanel(page, "Combat");
-  const combatPanel = page.locator(".panel-stack", { hasText: "Combat Tracker" });
-  await expect(combatPanel.getByRole("button", { name: "Start from scene tokens" })).toBeVisible();
-  await combatPanel.getByRole("button", { name: "Start from scene tokens" }).click();
+  const combatPanel = combatTrackerPanel(page);
+  await startCombatFromPanel(combatPanel, { currentTurnTokenName: "Valen Ash" });
 
-  await expect(combatPanel.getByText("Round", { exact: true })).toBeVisible();
-  await expect(combatPanel.locator(".metric-tile", { hasText: "Round" })).toContainText("1");
+  await expect(combatPanel.getByRole("heading", { name: "Round 1" })).toBeVisible();
+  await expect(combatPanel.getByLabel("Combat summary")).toContainText("combatants");
   await expect(combatPanel.getByText("Valen Ash").first()).toBeVisible();
   await expect(combatPanel.getByText("Goblin Minion").first()).toBeVisible();
-  await expect(combatPanel.getByText("Combat Audit")).toBeVisible();
-  await expect(combatPanel.getByText("combat.started")).toBeVisible();
+  const combatAudit = combatPanel.locator('details[aria-label="Combat audit"]');
+  await openDetails(combatAudit);
+  await expect(combatAudit).toContainText("combat.started");
 
-  const valenCombatant = combatPanel.locator(".combatant", { hasText: "Valen Ash" }).first();
-  await expect(valenCombatant.getByLabel("Valen Ash initiative")).toHaveValue(/\d+/);
-  await valenCombatant.getByLabel("Valen Ash initiative").fill("21");
-  await expect(valenCombatant.getByLabel("Valen Ash initiative")).toHaveValue("21");
-  await valenCombatant.getByLabel("Valen Ash readiness").selectOption("ready");
-  await expect(valenCombatant.getByText("ready", { exact: true })).toBeVisible();
-  await valenCombatant.getByLabel("Valen Ash combat conditions").fill("prone:2, concentrating, stunned");
-  await valenCombatant.getByLabel("Valen Ash death save successes").fill("3");
-  await valenCombatant.getByLabel("Valen Ash death save failures").fill("1");
-  await valenCombatant.getByRole("checkbox", { name: /used$/ }).click();
-  await expect(valenCombatant.getByRole("checkbox", { name: /used$/ })).toBeChecked();
-  await expect(valenCombatant).toContainText("Death saves 3/3 successes, 1/3 failures");
-  await expect(valenCombatant).toContainText("Outcome: stable");
-  await expect(valenCombatant).toContainText("Focus 3 depleted");
-  await expect(valenCombatant).toContainText("Conditions: prone:2, stunned, concentration lost, stable");
-  await expect(valenCombatant.getByLabel("Valen Ash condition timing")).toContainText("prone expires in 2 rounds");
+  const valenCombatant = combatPanel.locator(".combatant-row", { hasText: "Valen Ash" }).first();
+  const valenDetails = valenCombatant.getByRole("button", { name: "Valen Ash details" });
+  await valenDetails.click();
+  async function reopenValenDetails() {
+    await valenDetails.click();
+    await expect(valenDetails).toHaveAttribute("aria-expanded", "false");
+    await valenDetails.click();
+    await expect(valenDetails).toHaveAttribute("aria-expanded", "true");
+  }
+  const initiative = valenCombatant.getByLabel("Valen Ash initiative");
+  await expect(initiative).toHaveValue(/\d+/);
+  await commitCombatantDraft(page, initiative, "21");
+  await reopenValenDetails();
+  await expect(initiative).toHaveValue("21");
+  const readiness = valenCombatant.getByLabel("Valen Ash readiness");
+  await runCombatantControlUpdate(page, readiness, () => readiness.selectOption("ready"));
+  await reopenValenDetails();
+  await expect(readiness).toHaveValue("ready");
+  await commitCombatantDraft(page, valenCombatant.getByLabel("Valen Ash combat conditions"), "prone:2, concentrating, stunned");
+  await reopenValenDetails();
+  const valenBeforeDamage = await getActorById(page, "act_valen");
+  await applyTypedDamage(page, valenBeforeDamage.id, (valenBeforeDamage.data.hp as { current: number }).current);
+  await expect.poll(async () => ((await getActorById(page, valenBeforeDamage.id)).data.hp as { current: number }).current).toBe(0);
+  await commitCombatantDraft(page, valenCombatant.getByLabel("Valen Ash death save failures"), "1");
+  await reopenValenDetails();
+  await commitCombatantDraft(page, valenCombatant.getByLabel("Valen Ash death save successes"), "3");
+  await reopenValenDetails();
+  const resourceUsed = valenCombatant.getByRole("checkbox", { name: /used$/ });
+  await runCombatantControlUpdate(page, resourceUsed, () => resourceUsed.click());
+  await expect(resourceUsed).toBeChecked();
+  await expect(valenCombatant.getByLabel("Valen Ash combat state")).toContainText("Death saves 0/3 - 0/3");
+  await expect(valenCombatant.getByLabel("Valen Ash combat state")).toContainText("Stable");
+  await expect(valenCombatant.getByLabel("Valen Ash combat state")).toContainText("Focus 3 depleted");
+  await expect(valenCombatant).toContainText("prone:2, stunned, concentration lost, unconscious, stable");
+  await expect(valenCombatant.getByLabel("Valen Ash combat state")).toContainText("prone expires in 2 rounds");
   await openInspectorPanel(page, "Actors");
-  const actorPanel = page.locator(".panel-stack", { hasText: "Selected Actor" });
-  await expect(actorPanel.locator(".metric-row", { hasText: "Conditions" })).toContainText("prone:2, stunned, concentration lost, stable");
-  await expect(actorPanel.locator(".metric-row", { hasText: "Combat State" })).toContainText("Death saves 3/3 successes, 1/3 failures");
+  const actorPanel = selectedActorPanel(page);
+  await openActorDisclosure(actorPanel, "Actor details");
+  await openDetails(actorPanel.locator("details.actor-condition-editor"));
+  await expect(actorPanel.locator(".metric-row", { hasText: "Conditions" })).toContainText(/Prone, Stunned, Concentration Lost, Unconscious, Stable/i);
+  await expect(actorPanel.locator(".metric-row", { hasText: "Combat State" })).toContainText("Death saves 0/3 successes, 0/3 failures");
   await expect(actorPanel.locator(".metric-row", { hasText: "Combat State" })).toContainText("Stable");
   await expect(actorPanel.locator(".metric-row", { hasText: "Combat State" })).toContainText("Focus 3 used and depleted");
-  await actorPanel.getByLabel("Actor sheet current HP").fill("11");
-  await expect(actorPanel.getByLabel("Actor sheet current HP")).toHaveValue("11");
-  await actorPanel.getByLabel("Actor sheet current HP").fill("17");
-  await expect(actorPanel.getByLabel("Actor sheet current HP")).toHaveValue("17");
+  const healingTargetHp = actorPanel.getByLabel("Actor sheet healing target HP");
+  await expect(healingTargetHp).toHaveAccessibleDescription("This field heals only. To reduce HP, use Reviewed typed damage below.");
+  await healingTargetHp.fill("11");
+  await expect(healingTargetHp).toHaveValue("11");
+  await healingTargetHp.fill("17");
+  await expect(healingTargetHp).toHaveValue("17");
+  const hpUpdateResponse = page.waitForResponse((response) => {
+    const request = response.request();
+    return request.method() === "POST" && /\/api\/v1\/campaigns\/[^/]+\/systems\/[^/]+\/actors\/[^/]+\/combat-vitals$/.test(new URL(request.url()).pathname);
+  });
+  const conditionsPatchResponse = page.waitForResponse((response) => {
+    const request = response.request();
+    if (request.method() !== "PATCH" || !/\/api\/v1\/actors\/[^/]+$/.test(new URL(request.url()).pathname)) return false;
+    const body = request.postDataJSON() as { data?: { conditions?: unknown[] } };
+    return Array.isArray(body.data?.conditions) && JSON.stringify(body.data.conditions).toLowerCase().includes("blessed");
+  });
   await actorPanel.getByLabel("Actor sheet conditions").fill("blessed, prone");
   await actorPanel.getByLabel("Actor sheet conditions").blur();
-  await expect(actorPanel.locator(".metric-row", { hasText: "Conditions" })).toContainText("Blessed, prone");
+  const hpResult = await expectJsonResponse<{ actor: { updatedAt: string } }>(await hpUpdateResponse);
+  const conditionsResponse = await conditionsPatchResponse;
+  const conditionsRequest = conditionsResponse.request().postDataJSON() as { expectedUpdatedAt?: string };
+  expect(conditionsRequest.expectedUpdatedAt).toBe(hpResult.actor.updatedAt);
+  await expectJsonResponse(conditionsResponse);
+  await expect(actorPanel.locator(".metric-row", { hasText: "Conditions" })).toContainText(/Blessed, Prone/i);
   await openActorDisclosure(actorPanel, "Actor details");
   await actorPanel.getByLabel("Focus resource current").fill("2");
   await actorPanel.getByLabel("Focus resource current").blur();
@@ -1267,137 +2556,242 @@ test("GM can run the browser combat tracker lifecycle", async ({ page }) => {
   const targetManager = actorPanel.getByRole("region", { name: "Canvas target manager" });
   await expect(targetManager).toContainText("Initiative: Valen Ash");
   await expect(targetManager.getByRole("button", { name: "Target current turn" })).toBeEnabled();
+  const targetedResponse = page.waitForResponse((response) => response.request().method() === "POST" && /\/api\/v1\/tokens\/[^/]+\/target$/.test(new URL(response.url()).pathname));
   await clickElement(targetManager.getByRole("button", { name: "Target current turn" }));
-  await expect(page.getByText("Targeted 1 tokens")).toBeVisible();
+  await expectJsonResponse(await targetedResponse);
   await expect(targetManager).toContainText(/My targets [12] \//);
   await openInspectorPanel(page, "Combat");
-  await valenCombatant.getByLabel("Defeated").click();
-  await expect(valenCombatant.getByText("defeated", { exact: true })).toBeVisible();
+  const valenDetailsButton = valenCombatant.getByRole("button", { name: "Valen Ash details" });
+  if ((await valenDetailsButton.getAttribute("aria-expanded")) !== "true") await valenDetailsButton.click();
 
-  const roundRow = combatPanel.locator(".metric-tile", { hasText: "Round" });
+  const roundHeading = combatPanel.getByRole("heading", { name: /Round \d+/ });
   async function advanceUntilRound(round: string) {
     for (let attempts = 0; attempts < 8; attempts += 1) {
-      if ((await roundRow.textContent())?.includes(round)) return;
-      await combatPanel.getByRole("button", { name: "Next" }).click();
+      if ((await roundHeading.textContent())?.includes(`Round ${round}`)) return;
+      await advanceCombatFromPanel(page, combatPanel, "Next turn");
     }
-    await expect(roundRow).toContainText(round);
+    await expect(roundHeading).toContainText(`Round ${round}`);
   }
   async function previousUntilRound(round: string) {
     for (let attempts = 0; attempts < 8; attempts += 1) {
-      if ((await roundRow.textContent())?.includes(round)) return;
-      await combatPanel.getByRole("button", { name: "Previous" }).click();
+      if ((await roundHeading.textContent())?.includes(`Round ${round}`)) return;
+      await advanceCombatFromPanel(page, combatPanel, "Prev");
     }
-    await expect(roundRow).toContainText(round);
+    await expect(roundHeading).toContainText(`Round ${round}`);
   }
 
-  await combatPanel.getByRole("button", { name: "Next" }).click();
-  await expect(roundRow).toContainText("1");
+  await advanceCombatFromPanel(page, combatPanel, "Next turn");
+  await expect(roundHeading).toContainText("Round 1");
   await advanceUntilRound("2");
-  await expect(roundRow).toContainText("2");
-  await expect(combatPanel.getByText("combat.updated").first()).toBeVisible();
-  await expect(valenCombatant.getByLabel("Valen Ash condition timing")).toContainText("prone expires in 1 round");
+  await expect(roundHeading).toContainText("Round 2");
+  await openDetails(combatAudit);
+  await expect(combatAudit).toContainText("combat.updated");
+  await expect(valenCombatant.getByLabel("Valen Ash combat state")).toContainText("prone expires in 2 rounds");
+  await valenCombatant.getByLabel("Defeated").click();
+  await expect(valenCombatant).toContainText("Defeated");
   await advanceUntilRound("3");
-  await expect(valenCombatant.getByLabel("Valen Ash condition timing")).toContainText("No timed conditions");
+  await expect(valenCombatant.getByLabel("Valen Ash combat state")).toContainText("prone expires in 2 rounds");
   await previousUntilRound("2");
 
-  await combatPanel.getByRole("button", { name: "End" }).click();
-  await expect(combatPanel.getByRole("button", { name: "Start from scene tokens" })).toBeVisible();
+  await endCombatFromPanel(page, combatPanel);
   await deleteNewestTokenByName(page, "Goblin Minion");
 });
 
+test("actor sheet surfaces a rejected edit", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Demo GM" }).click();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
+  await openInspectorPanel(page, "Actors");
+  const actorPanel = selectedActorPanel(page);
+  await openDetails(actorPanel.locator("details.actor-condition-editor"));
+  await expect(actorPanel.getByLabel("Actor sheet conditions")).toBeVisible();
+
+  let rejected = false;
+  await page.route("**/api/v1/actors/*", async (route) => {
+    if (!rejected && route.request().method() === "PATCH") {
+      rejected = true;
+      await route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({ message: "Actor sheet edit rejected" })
+      });
+      return;
+    }
+    await route.continue();
+  });
+
+  await actorPanel.getByLabel("Actor sheet conditions").fill("rejected condition");
+  await actorPanel.getByLabel("Actor sheet conditions").blur();
+  await expect(statusMessage(page, "Actor sheet edit rejected")).toBeVisible();
+  expect(rejected).toBe(true);
+});
+
 test("player combat action requires GM confirmation and completes the browser flow", async ({ browser }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(600_000);
   const gmPage = await browser.newPage();
   const playerPage = await browser.newPage();
   const suffix = Date.now().toString(36);
 
   await gmPage.goto("/");
   await gmPage.getByRole("button", { name: "Demo GM" }).click();
-  await expect(gmPage.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(gmPage.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(gmPage.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 
-  const fighter = await createSystemCharacter(gmPage, { templateId: "fighter", name: `E2E Confirm Fighter ${suffix}`, ownerUserId: "usr_demo_player" });
-  const target = await createRulesTargetActor(gmPage, { name: `E2E Confirm Target ${suffix}`, hp: { current: 2, max: 12 }, ownerUserId: "usr_demo_gm" });
+  const fighter = await createSystemCharacter(gmPage, { templateId: "fighter", name: `E2E Confirm Fighter ${suffix}`, ownerUserId: "usr_demo_player", advanceToLevel: 5 });
+  const target = await createRulesTargetActor(gmPage, { name: `E2E Confirm Target ${suffix}`, hp: { current: 2, max: 100 }, ownerUserId: "usr_demo_gm", actorType: "character", armorClass: 1, conditions: [{ id: "restrained" }] });
   const fighterToken = await createSceneToken(gmPage, { name: `E2E Confirm Fighter Token ${suffix}`, actorId: fighter.id, x: 320, y: 330, ownerUserIds: ["usr_demo_player"] });
-  const targetToken = await createSceneToken(gmPage, { name: `E2E Confirm Target Token ${suffix}`, actorId: target.id, x: 460, y: 330, ownerUserIds: [] });
+  const targetToken = await createSceneToken(gmPage, { name: `E2E Confirm Target Token ${suffix}`, actorId: target.id, x: 390, y: 330, ownerUserIds: [] });
 
+  try {
   await gmPage.reload();
-  await expect(gmPage.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(gmPage.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(gmPage.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   await gmPage.getByRole("button", { name: "Live Table", exact: true }).click();
   await openInspectorPanel(gmPage, "Combat");
-  const combatPanel = gmPage.locator(".panel-stack", { hasText: "Combat Tracker" });
-  await combatPanel.getByRole("button", { name: "Start from scene tokens" }).click();
+  const combatPanel = combatTrackerPanel(gmPage);
+  await startCombatFromPanel(combatPanel, { currentTurnTokenName: fighterToken.name });
   await expect(combatPanel.getByText(fighterToken.name).first()).toBeVisible();
   await expect(combatPanel.getByText(targetToken.name).first()).toBeVisible();
 
   await loginDemoSession(playerPage, "usr_demo_player");
-  await expect(playerPage.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
-  if ((await playerPage.locator("p", { hasText: "Demo Player" }).count()) === 0) {
-    await playerPage.locator('select[aria-label="Session user"]').selectOption("usr_demo_player");
+  await expect(playerPage.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(playerPage.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
+  const sessionUser = playerPage.getByRole("combobox", { name: "Session user", exact: true });
+  if ((await sessionUser.inputValue()) !== "usr_demo_player") {
+    await sessionUser.selectOption("usr_demo_player");
   }
-  await expect(playerPage.locator("p", { hasText: "Demo Player" })).toBeVisible();
+  await expect(sessionUser).toHaveValue("usr_demo_player");
   const playerTokenButton = playerPage.getByRole("button", { name: `Token ${fighterToken.name}` });
   await expect(playerTokenButton).toBeVisible({ timeout: 10_000 });
   await playerTokenButton.click();
   await expect(playerTokenButton).toHaveAttribute("aria-pressed", "true", { timeout: 10_000 });
   await openInspectorPanel(playerPage, "Actors");
-  const playerActorPanel = playerPage.locator(".panel-stack", { hasText: "Selected Actor" });
+  const playerActorPanel = selectedActorPanel(playerPage);
   await expect(playerActorPanel.getByRole("heading", { name: fighter.name })).toBeVisible({ timeout: 10_000 });
   await playerActorPanel.getByRole("tab", { name: "Actions" }).click();
   await openActorDisclosure(playerActorPanel, "Actor details");
   await playerActorPanel.getByRole("combobox", { name: "Action target actor" }).selectOption({ label: target.name });
-  await setCheckbox(playerActorPanel.getByRole("checkbox", { name: "Apply action effect" }), true);
+  const applyEffect = playerActorPanel.getByRole("checkbox", { name: "Apply action effect" });
+  const consumeResources = playerActorPanel.getByRole("checkbox", { name: "Consume action resources" });
+  await setCheckbox(applyEffect, false);
+  await setCheckbox(consumeResources, false);
   const actionSheet = playerActorPanel.getByRole("region", { name: "Actor action sheet" });
+  const actionPreview = actionSheet.getByRole("region", { name: "Action resolution preview" });
+  const attackCard = actionSheet.locator("article", { hasText: "Longsword Attack" }).first();
   const damageCard = actionSheet.locator("article", { hasText: "Longsword Damage" }).first();
   await expect(damageCard).toContainText("effect supported");
-  await damageCard.getByRole("button", { name: "Use action" }).click();
-  await expect(playerPage.getByText(`${fighter.name} action pending GM confirmation`)).toBeVisible();
+  let continuationArmed = false;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await attackCard.getByRole("button", { name: "Preview" }).click();
+    await expect(actionPreview).toContainText("Longsword Attack");
+    const attackResponse = await clickAndConfirmPreparedDndAction(actionPreview.getByRole("button", { name: "Continue to final review for previewed action" }));
+    const attack = await expectJsonResponse<{
+      resolution?: { auditEvents?: Array<{ code?: string }> };
+    }>(attackResponse);
+    await expect(statusMessage(playerPage, `${fighter.name} action posted`)).toBeVisible();
+    continuationArmed = attack.resolution?.auditEvents?.some((event) => event.code === "continuation.armed") === true;
+    if (continuationArmed) break;
+  }
+  expect(continuationArmed, "one of the level-5 Fighter's two advantaged Attack rolls should arm Longsword Damage against AC 1").toBe(true);
+  await setCheckbox(applyEffect, true);
+  const damageCommit = actionPreview.getByRole("button", { name: "Continue to final review for previewed action" });
+  await expect.poll(async () => {
+    await damageCard.getByRole("button", { name: "Preview" }).click();
+    if (!(await actionPreview.getByText("Longsword Damage", { exact: false }).first().isVisible().catch(() => false))) return false;
+    return damageCommit.isEnabled();
+  }, { timeout: 10_000, message: "the committed attack continuation should enable the matching Longsword Damage preview" }).toBe(true);
+  await clickAndConfirmPreparedDndAction(damageCommit);
+  await expect(statusMessage(playerPage, `${fighter.name} action pending GM confirmation`)).toBeVisible();
   await expect.poll(async () => ((await getActorById(gmPage, target.id)).data.hp as { current: number }).current).toBe(2);
 
   await openInspectorPanel(gmPage, "Combat");
   await expect(combatPanel.getByText("Pending GM Confirmation")).toBeVisible();
   await expect(combatPanel.locator("article", { hasText: "Longsword Damage" })).toContainText(fighter.name);
   await combatPanel.locator("article", { hasText: "Longsword Damage" }).getByRole("button", { name: "Confirm" }).click();
-  await expect(gmPage.getByText("Longsword Damage confirmed")).toBeVisible();
+  await expect(statusMessage(gmPage, "Longsword Damage confirmed")).toBeVisible();
   await expect.poll(async () => ((await getActorById(gmPage, target.id)).data.hp as { current: number }).current).toBe(0);
-  const targetCombatant = combatPanel.locator(".combatant", { hasText: targetToken.name }).first();
-  await expect(targetCombatant.getByRole("checkbox", { name: "Defeated" })).toBeChecked();
+  const targetCombatant = combatPanel.locator(".combatant-row", { hasText: targetToken.name }).first();
+  await expect(targetCombatant).toContainText("unconscious");
 
-  await combatPanel.getByRole("button", { name: "Next" }).click();
-  await expect(gmPage.getByText("Combat updated")).toBeVisible();
-  await combatPanel.getByRole("button", { name: "End" }).click();
-  await expect(combatPanel.getByText("Ended Combat Recap")).toBeVisible();
-  await expect(combatPanel.getByText(/confirmed actions/).first()).toBeVisible();
+  const targetDetails = targetCombatant.getByRole("button", { name: `${targetToken.name} details` });
+  if ((await targetDetails.getAttribute("aria-expanded")) !== "true") await targetDetails.click();
+  await expect(targetDetails).toHaveAttribute("aria-expanded", "true");
+  const vitals = targetCombatant.getByRole("region", { name: `${targetToken.name} hit point tools` });
+  await expect(vitals).toBeVisible();
+  await vitals.getByRole("spinbutton", { name: `${target.name} healing amount` }).fill("4");
+  const healedResponse = gmPage.waitForResponse((response) => response.request().method() === "POST" && /\/actors\/[^/]+\/combat-vitals$/.test(new URL(response.url()).pathname));
+  await vitals.getByRole("button", { name: "Heal", exact: true }).click();
+  await expectJsonResponse(await healedResponse);
+  await expect(statusMessage(gmPage, `${target.name} healed 4 HP`)).toBeVisible();
+  await expect.poll(async () => ((await getActorById(gmPage, target.id)).data.hp as { current: number }).current).toBe(4);
+  await expect(targetCombatant).toContainText("4/100 HP");
+  await expect(targetCombatant).not.toHaveClass(/defeated/);
+  await expect(targetCombatant.getByRole("checkbox", { name: "Defeated" })).not.toBeChecked();
+  await expect(targetCombatant.locator(".combatant-focus small")).not.toContainText("unconscious");
+
+  const removedResponse = gmPage.waitForResponse((response) => response.request().method() === "PATCH" && /\/api\/v1\/combats\/[^/]+$/.test(new URL(response.url()).pathname) && response.ok());
+  await targetCombatant.getByRole("button", { name: "Remove from combat", exact: true }).click();
+  await expectJsonResponse(await removedResponse);
+  await expect(targetCombatant).toBeHidden();
+
+  const roster = combatPanel.locator('details[aria-label="Combat roster controls"]');
+  await openDetails(roster);
+  await roster.getByRole("combobox", { name: "Token to add to combat" }).selectOption(targetToken.id);
+  await roster.getByRole("spinbutton", { name: "New combatant initiative" }).fill("7");
+  const addedResponse = gmPage.waitForResponse((response) => response.request().method() === "PATCH" && /\/api\/v1\/combats\/[^/]+$/.test(new URL(response.url()).pathname) && response.ok());
+  await roster.getByRole("button", { name: "Add to combat", exact: true }).click();
+  await expectJsonResponse(await addedResponse);
+  await expect(targetCombatant).toBeVisible();
+  await expect(targetCombatant).toContainText("4/100 HP");
+
+  await advanceCombatFromPanel(gmPage, combatPanel, "Next turn");
+  await expect(statusMessage(gmPage, "Combat updated")).toBeVisible();
+  await endCombatFromPanel(gmPage, combatPanel);
+  const endedRecap = combatPanel.locator('details[aria-label="Ended combat recap"]');
+  await expect(endedRecap).toBeVisible();
+  await endedRecap.locator("summary").click();
+  await expect(endedRecap).toContainText(/confirmed actions/);
 
   mkdirSync("output/playwright", { recursive: true });
   await gmPage.screenshot({ path: `output/playwright/combat-confirmation-${suffix}.png`, fullPage: true });
-  await gmPage.close();
-  await playerPage.close();
+  } finally {
+    if (!gmPage.isClosed()) {
+      await openInspectorPanel(gmPage, "Combat").catch(() => undefined);
+      const cleanupCombatPanel = combatTrackerPanel(gmPage);
+      if (await cleanupCombatPanel.getByRole("button", { name: "End" }).isVisible().catch(() => false)) {
+        await endCombatFromPanel(gmPage, cleanupCombatPanel).catch(() => undefined);
+      }
+    }
+    await deleteTokenById(gmPage, fighterToken.id).catch(() => undefined);
+    await deleteTokenById(gmPage, targetToken.id).catch(() => undefined);
+    await deleteActorById(gmPage, fighter.id).catch(() => undefined);
+    await deleteActorById(gmPage, target.id).catch(() => undefined);
+    await gmPage.close().catch(() => undefined);
+    await playerPage.close().catch(() => undefined);
+  }
 });
 
 test("GM can draft and apply an AI proposal from the browser", async ({ page }) => {
-  const comparisonSeed = await page.request.post(`${apiBaseUrl}/api/v1/campaigns/camp_demo/proposals`, {
-    headers: { "x-user-id": "usr_demo_gm" },
-    data: {
-      title: "Scene comparison check",
-      summary: "Shows the current scene values beside the proposed update.",
-      createdByType: "ai",
-      sourceId: "thread_comparison_check",
-      changesJson: [
-        {
-          entity: "scene",
-          action: "update",
-          id: "scn_vault_entry",
-          data: { name: "Vault Entry Revised", folder: "comparison" }
-        }
-      ],
-      diffJson: {}
-    }
-  });
-  expect(comparisonSeed.ok()).toBeTruthy();
-
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
+
+  const comparisonSeed = await expectJsonResponse<{ proposal: { id: string; title: string } }>(
+    await page.request.post(`${apiBaseUrl}/api/v1/campaigns/camp_demo/ai/encounter-design`, {
+      headers: gmMutationHeaders("ai-comparison-seed"),
+      data: {
+        prompt: "A comparison proposal for the current vault scene.",
+        difficulty: "standard",
+        sceneName: "Scene comparison check",
+        sceneWidth: 900,
+        sceneHeight: 700,
+        gridSize: 50,
+        expectedUpdatedAt: await currentCampaignUpdatedAt(page)
+      }
+    })
+  );
 
   const archiveResponse = await page.request.get(`${apiBaseUrl}/api/v1/campaigns/camp_demo/export`, {
     headers: { "x-user-id": "usr_demo_gm" }
@@ -1465,181 +2859,233 @@ test("GM can draft and apply an AI proposal from the browser", async ({ page }) 
     createdAt: aiRecoverySeededAt,
     updatedAt: aiRecoverySeededAt
   });
+  const aiRecoveryCampaign = await expectJsonResponse<{ updatedAt: string }>(
+    await page.request.get(`${apiBaseUrl}/api/v1/campaigns/camp_demo`, { headers: gmApiHeaders })
+  );
   const aiRecoveryImport = await page.request.post(`${apiBaseUrl}/api/v1/import/campaign`, {
-    headers: { "x-user-id": "usr_demo_gm" },
+    headers: gmMutationHeaders("ai-recovery-import"),
     data: {
       archive: aiRecoveryArchive,
       mode: "upsert",
-      scope: "all"
+      scope: "all",
+      expectedUpdatedAt: aiRecoveryCampaign.updatedAt
     }
   });
   expect(aiRecoveryImport.ok(), await aiRecoveryImport.text()).toBeTruthy();
   await page.reload();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 
-  await page.getByRole("button", { name: "AI Studio", exact: true }).click();
-  const aiPanel = page.locator(".panel-stack", { hasText: "Permissioned AI" });
-  const aiViewTabs = aiPanel.getByRole("navigation", { name: "AI workspace views" });
-  await expect(aiPanel.getByRole("region", { name: "AI proposal review queue" })).toContainText("Review Queue");
-  await aiViewTabs.getByRole("button", { name: /Ops/ }).click();
-  const recoveryControls = aiPanel.getByRole("region", { name: "AI recovery controls" });
-  await expect(recoveryControls).toContainText("E2E failed provider thread");
-  await expect(recoveryControls).toContainText("E2E provider timeout");
-  await expect(recoveryControls).toContainText("read_compendium");
-  await expect(recoveryControls).toContainText("tool_failed");
-  await recoveryControls.locator(".tool-call-row", { hasText: "E2E failed provider thread" }).getByRole("button", { name: "Replay" }).click();
-  await expect(page.getByText("AI thread replayed")).toBeVisible();
-  const retryToolResponse = page.waitForResponse((response) =>
-    response.request().method() === "POST" &&
-    response.url().includes("/api/v1/campaigns/camp_demo/ai/tool-calls/tool_e2e_retryable_compendium_failure/retry")
+  let aiAgent = await openAiAgent(page);
+  await expect(aiAgent.getByLabel("AI Agent prompt")).toBeVisible();
+  await expect(aiAgent.locator(".ai-agent-proposal-row", { hasText: comparisonSeed.proposal.title })).toContainText("pending");
+
+  const replayThread = await expectJsonResponse<{ thread: { status: string }; assistantMessage: string }>(
+    await page.request.post(`${apiBaseUrl}/api/v1/campaigns/camp_demo/ai/threads`, {
+      headers: gmMutationHeaders("ai-replay-thread"),
+      data: {
+        prompt: "Replay this failed provider prompt from the browser.",
+        surface: "ai_studio",
+        expectedUpdatedAt: await currentCampaignUpdatedAt(page)
+      }
+    })
   );
-  await recoveryControls.locator(".tool-call-row", { hasText: "read_compendium" }).getByRole("button", { name: "Retry" }).click();
-  const retryToolResult = await retryToolResponse;
-  expect(retryToolResult.ok(), await retryToolResult.text()).toBeTruthy();
-  const retryToolBody = await retryToolResult.json() as { retried: number; completed: number; failed: number; skipped: number };
+  expect(replayThread.thread.status).toBe("completed");
+  expect(replayThread.assistantMessage).toContain("Codex loopback handled");
+  const retryToolBody = await expectJsonResponse<{ retried: number; completed: number; failed: number; skipped: number }>(
+    await page.request.post(`${apiBaseUrl}/api/v1/campaigns/camp_demo/ai/tool-calls/tool_e2e_retryable_compendium_failure/retry`, {
+      headers: gmMutationHeaders("ai-tool-call-retry"),
+      data: { expectedUpdatedAt: aiRecoverySeededAt }
+    })
+  );
   expect(retryToolBody).toMatchObject({ retried: 1, completed: 1, failed: 0, skipped: 0 });
-  await expect(recoveryControls.locator(".tool-call-row", { hasText: "read_compendium" })).toHaveCount(0);
-  await aiViewTabs.getByRole("button", { name: /Review/ }).click();
-  const proposalHistory = aiPanel.getByRole("region", { name: "Proposal history" });
-  const comparisonProposal = proposalHistory.locator("article", { hasText: "Scene comparison check" });
-  await comparisonProposal.getByText("Review details").click();
-  const comparisonDiff = comparisonProposal.getByRole("region", { name: "Scene comparison check review diff" });
-  await expect(comparisonDiff).toContainText("Existing Comparison");
-  await expect(comparisonDiff).toContainText("Vault Entry Revised");
-  await expect(comparisonDiff).toContainText("Current");
-  await expect(comparisonDiff).toContainText("Proposed");
 
-  await aiViewTabs.getByRole("button", { name: "Create", exact: true }).click();
-  const generationTargets = aiPanel.getByRole("region", { name: "AI generation targets" });
-  const assetGeneration = aiPanel.getByRole("region", { name: "AI asset generation" });
-  await expect(generationTargets).toContainText("Vault Entry");
-  await expect(generationTargets).toContainText("Valen Ash");
-  await expect(assetGeneration).toContainText("Vault Entry");
-  await assetGeneration.getByLabel("AI map generation prompt").fill("E2E generated vault map with moonlit bridges and tactical cover.");
-  await assetGeneration.getByRole("button", { name: "Generate Map" }).click();
-  const mapDrafted = page.getByText("Map generation proposal drafted");
-  const mapFailed = page.getByText(/Map image generation failed:/);
-  await expect(mapDrafted.or(mapFailed)).toBeVisible();
-  if (await mapDrafted.isVisible()) {
-    await aiViewTabs.getByRole("button", { name: /Review/ }).click();
-    const mapAssetProposal = proposalHistory.locator("article", { hasText: "Generated map:" }).first();
-    await expect(mapAssetProposal).toContainText("pending");
-    await mapAssetProposal.getByText("Review details").click();
-    await expect(mapAssetProposal.getByRole("region", { name: /Generated map: .* review diff/ })).toContainText("asset create");
-    await expect(mapAssetProposal.getByRole("region", { name: /Generated map: .* review diff/ })).toContainText("scene update");
-    await mapAssetProposal.getByRole("button", { name: "Apply" }).click();
-    await expect(mapAssetProposal).toContainText("applied");
-  } else {
-    await expect(mapFailed).toContainText("codex app-server");
-  }
+  await expectAiAssetGenerationResult(await page.request.post(`${apiBaseUrl}/api/v1/campaigns/camp_demo/ai/generate-map-asset`, {
+    headers: gmMutationHeaders("ai-generate-map-asset"),
+    data: {
+      prompt: "E2E generated vault map with moonlit bridges and tactical cover.",
+      name: "E2E Generated Vault Map",
+      sceneId: "scn_vault_entry",
+      size: "1536x1024",
+      quality: "low",
+      outputFormat: "png",
+      expectedUpdatedAt: await currentCampaignUpdatedAt(page)
+    }
+  }));
+  await expectAiAssetGenerationResult(await page.request.post(`${apiBaseUrl}/api/v1/campaigns/camp_demo/ai/generate-token-asset`, {
+    headers: gmMutationHeaders("ai-generate-token-asset"),
+    data: {
+      prompt: "E2E generated Valen Ash token portrait with ember armor and shield.",
+      name: "E2E Generated Valen Token",
+      tokenId: "tok_valen",
+      size: "1024x1024",
+      quality: "low",
+      outputFormat: "png",
+      expectedUpdatedAt: await currentCampaignUpdatedAt(page)
+    }
+  }));
 
-  await aiViewTabs.getByRole("button", { name: "Create", exact: true }).click();
-  await assetGeneration.getByLabel("AI token generation prompt").fill("E2E generated Valen Ash token portrait with ember armor and shield.");
-  await assetGeneration.getByRole("button", { name: "Generate Token Art" }).click();
-  const tokenDrafted = page.getByText("Token art proposal drafted");
-  const tokenFailed = page.getByText(/Token image generation failed:/);
-  await expect(tokenDrafted.or(tokenFailed)).toBeVisible();
-  if (await tokenDrafted.isVisible()) {
-    await aiViewTabs.getByRole("button", { name: /Review/ }).click();
-    const tokenAssetProposal = proposalHistory.locator("article", { hasText: "Generated token:" }).first();
-    await expect(tokenAssetProposal).toContainText("pending");
-    await tokenAssetProposal.getByText("Review details").click();
-    await expect(tokenAssetProposal.getByRole("region", { name: /Generated token: .* review diff/ })).toContainText("asset create");
-    await expect(tokenAssetProposal.getByRole("region", { name: /Generated token: .* review diff/ })).toContainText("token update");
-    await tokenAssetProposal.getByRole("button", { name: "Apply" }).click();
-    await expect(tokenAssetProposal).toContainText("applied");
-  } else {
-    await expect(tokenFailed).toContainText("codex app-server");
-  }
+  const encounterDraft = await expectJsonResponse<{ proposal: { id: string; title: string; status: string; changesJson: Array<{ entity: string; action: string }> } }>(
+    await page.request.post(`${apiBaseUrl}/api/v1/campaigns/camp_demo/ai/encounter-design`, {
+      headers: gmMutationHeaders("ai-encounter-draft"),
+      data: {
+        prompt: "Mirror sentries defend the sealed vault",
+        difficulty: "standard",
+        sceneName: "AI Draft Encounter Scene",
+        sceneWidth: 1200,
+        sceneHeight: 800,
+        gridSize: 50,
+        expectedUpdatedAt: await currentCampaignUpdatedAt(page)
+      }
+    })
+  );
+  expect(encounterDraft.proposal.status).toBe("pending");
+  expect(encounterDraft.proposal.changesJson).toEqual(expect.arrayContaining([
+    expect.objectContaining({ entity: "encounter", action: "create" }),
+    expect.objectContaining({ entity: "scene", action: "create" })
+  ]));
+  await page.reload();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
+  aiAgent = await openAiAgent(page);
+  const encounterProposal = aiAgent.locator(".ai-agent-proposal-row", { hasText: encounterDraft.proposal.title }).first();
+  await expect(encounterProposal).toContainText("pending");
+  await encounterProposal.getByRole("button", { name: "Approve and apply" }).click();
+  await expect(aiAgent.getByText("Proposal applied").first()).toBeVisible();
+  await expect(sceneTab(page, "AI Draft Encounter Scene")).toHaveAttribute("aria-pressed", "true");
 
-  await aiViewTabs.getByRole("button", { name: "Create", exact: true }).click();
-  await aiPanel.getByLabel("AI prompt").fill("Mirror sentries defend the sealed vault");
-  await aiPanel.getByRole("button", { name: "Draft Encounter", exact: true }).click();
-  await aiViewTabs.getByRole("button", { name: /Review/ }).click();
+  const extractedMemory = await expectJsonResponse<{ memory: { id: string; text: string; visibility: string; sourceIds: string[]; updatedAt: string } }>(
+    await page.request.post(`${apiBaseUrl}/api/v1/campaigns/camp_demo/ai/memory/extract`, {
+      headers: gmMutationHeaders("ai-memory-extract"),
+      data: {
+        sourceText: "The moonlit vault door only opens for the amber sigil.",
+        visibility: "gm_only",
+        expectedUpdatedAt: await currentCampaignUpdatedAt(page)
+      }
+    })
+  );
+  expect(extractedMemory.memory.text).toContain("amber sigil");
+  expect(extractedMemory.memory.visibility).toBe("gm_only");
+  expect(extractedMemory.memory.sourceIds[0]).toMatch(/^thr_/);
+  const approvedMemory = await expectJsonResponse<{ approvedByUserId: string; updatedAt: string }>(
+    await page.request.post(`${apiBaseUrl}/api/v1/ai/memory/${extractedMemory.memory.id}/approve`, {
+      headers: gmMutationHeaders("ai-memory-approve"),
+      data: { expectedUpdatedAt: extractedMemory.memory.updatedAt }
+    })
+  );
+  expect(approvedMemory.approvedByUserId).toBe("usr_demo_gm");
+  await expectJsonResponse<{ id: string }>(
+    await page.request.delete(
+      expectedUpdatedAtUrl(`${apiBaseUrl}/api/v1/ai/memory/${extractedMemory.memory.id}`, approvedMemory.updatedAt),
+      { headers: gmMutationHeaders("ai-memory-delete") }
+    )
+  );
 
-  const proposal = proposalHistory.locator("article", { hasText: "Encounter Designer Draft" });
-  await expect(proposal).toContainText("pending");
-  await expect(proposal).toContainText("Mirror sentries defend the sealed vault");
-  await proposal.getByText("Review details").click();
-  await expect(proposal.getByRole("region", { name: "Encounter Designer Draft review diff" })).toContainText("encounter create");
-  await expect(proposal.getByRole("region", { name: "Encounter Designer Draft review diff" })).toContainText("scene create");
-  await expect(proposal.getByText("Review Diff")).toBeVisible();
-  await expect(proposal.getByRole("region", { name: "Encounter Designer Draft proposal timeline" })).toContainText("Current pending");
-  await expect(proposal.getByRole("button", { name: "Apply" })).toBeVisible();
-
-  await proposal.getByRole("button", { name: "Apply" }).click();
-  await expect(proposal).toContainText("applied");
-  await expect(proposal.getByRole("region", { name: "Encounter Designer Draft proposal timeline" })).toContainText("Current applied");
-  await expect(proposal.getByRole("button", { name: "Apply" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /AI Draft Encounter Scene/ })).toHaveAttribute("aria-pressed", "true");
-  await aiViewTabs.getByRole("button", { name: "Create", exact: true }).click();
-  await expect(generationTargets).toContainText("AI Draft Encounter Scene");
-
-  await aiPanel.getByLabel("AI prompt").fill("The moonlit vault door only opens for the amber sigil.");
-  await aiPanel.getByRole("button", { name: "Extract Memory", exact: true }).click();
-  await aiViewTabs.getByRole("button", { name: /Memory/ }).click();
-  const memory = aiPanel.locator("article", { hasText: "amber sigil" });
-  await expect(memory).toContainText("pending memory");
-  await memory.getByRole("button", { name: "Approve" }).click();
-  await expect(memory).toContainText("approved memory");
-  await expect(memory.locator(".metric-row", { hasText: "Visibility" })).toContainText("gm_only");
-  await expect(memory.locator(".metric-row", { hasText: "Source" })).toContainText("thr_");
-  await expect(memory.locator(".metric-row", { hasText: "Approval" })).toContainText("usr_demo_gm");
-  await memory.getByRole("button", { name: "Delete" }).click();
-  await expect(page.getByText("Memory deleted")).toBeVisible();
-  await expect(aiPanel.getByRole("region", { name: "AI memory facts" }).locator("article", { hasText: "amber sigil" })).toHaveCount(0);
-
-  await aiViewTabs.getByRole("button", { name: "Create", exact: true }).click();
-  await aiPanel.getByRole("button", { name: "Recap Session", exact: true }).click();
-  await expect(page.getByText("Session recap queued for approval")).toBeVisible();
-  await aiViewTabs.getByRole("button", { name: /Review/ }).click();
-  const recapProposal = proposalHistory.locator("article", { hasText: "Session Recap" });
+  const recapDraft = await expectJsonResponse<{
+    proposal: {
+      id: string;
+      title: string;
+      status: string;
+      changesJson: Array<{ entity: string; data: { id?: string; title?: string; body?: string; visibility?: string; tags?: string[] } }>;
+    };
+    memory: { text: string };
+  }>(
+    await page.request.post(`${apiBaseUrl}/api/v1/campaigns/camp_demo/ai/session-recap`, {
+      headers: gmMutationHeaders("ai-session-recap"),
+      data: {
+        transcript: "The party secured the ember vault clue.",
+        expectedUpdatedAt: await currentCampaignUpdatedAt(page)
+      }
+    })
+  );
+  expect(recapDraft.proposal.status).toBe("pending");
+  expect(recapDraft.memory.text).toContain("ember vault clue");
+  const gmRecapChange = recapDraft.proposal.changesJson.find((change) => change.entity === "journal" && change.data.tags?.includes("gm-recap"));
+  expect(gmRecapChange?.data).toEqual(
+    expect.objectContaining({ id: expect.stringMatching(/^jnl_/), title: expect.any(String), visibility: "gm_only", body: expect.stringContaining("ember vault clue") })
+  );
+  await page.reload();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
+  aiAgent = await openAiAgent(page);
+  const recapProposal = aiAgent.locator(".ai-agent-proposal-row", { hasText: recapDraft.proposal.title }).first();
   await expect(recapProposal).toContainText("pending");
-  await recapProposal.getByText("Review details").click();
-  await expect(recapProposal.getByRole("region", { name: "Session Recap review diff" })).toContainText("journal create");
-  await expect(recapProposal.getByRole("region", { name: "Session Recap proposal timeline" })).toContainText("Current pending");
-  await aiViewTabs.getByRole("button", { name: /Memory/ }).click();
-  await expect(aiPanel.getByRole("region", { name: "AI memory facts" }).locator("article", { hasText: "Session recap:" })).toContainText("pending memory");
-  await aiViewTabs.getByRole("button", { name: /Review/ }).click();
-  await recapProposal.getByRole("button", { name: "Apply" }).click();
-  await expect(recapProposal).toContainText("applied");
-  await recapProposal.getByText("Review details").click();
-  await expect(recapProposal.getByRole("region", { name: "Session Recap proposal timeline" })).toContainText("Current applied");
+  const recapApproveResponse = page.waitForResponse((response) =>
+    response.request().method() === "POST"
+    && new URL(response.url()).pathname === `/api/v1/proposals/${recapDraft.proposal.id}/approve`
+  );
+  const recapApplyResponse = page.waitForResponse((response) =>
+    response.request().method() === "POST"
+    && new URL(response.url()).pathname === `/api/v1/proposals/${recapDraft.proposal.id}/apply`
+  );
+  await recapProposal.getByRole("button", { name: "Approve and apply" }).click();
+  const approvedRecap = await expectJsonResponse<{ id: string; status: string }>(await recapApproveResponse);
+  expect(approvedRecap).toMatchObject({ id: recapDraft.proposal.id, status: "approved" });
+  const appliedRecap = await expectJsonResponse<{ id: string; status: string }>(await recapApplyResponse);
+  expect(appliedRecap).toMatchObject({ id: recapDraft.proposal.id, status: "applied" });
+  const journalsAfterApply = await expectJsonResponse<Array<{ id: string; title: string; body: string; visibility: string }>>(
+    await page.request.get(`${apiBaseUrl}/api/v1/campaigns/camp_demo/journal`, { headers: gmApiHeaders })
+  );
+  expect(journalsAfterApply).toContainEqual(
+    expect.objectContaining({
+      id: gmRecapChange!.data.id,
+      title: gmRecapChange!.data.title,
+      body: expect.stringContaining("ember vault clue"),
+      visibility: "gm_only"
+    })
+  );
 
-  await aiViewTabs.getByRole("button", { name: "Create", exact: true }).click();
-  await aiPanel.getByLabel("AI prompt").fill("A brittle bridge hazard should be rejected from prep.");
-  await aiPanel.getByRole("button", { name: "Draft Encounter", exact: true }).click();
-  await aiViewTabs.getByRole("button", { name: /Review/ }).click();
-  const rejectedProposal = proposalHistory.locator("article", { hasText: "brittle bridge hazard" });
+  const rejectedDraft = await expectJsonResponse<{ proposal: { id: string; title: string; status: string } }>(
+    await page.request.post(`${apiBaseUrl}/api/v1/campaigns/camp_demo/ai/encounter-design`, {
+      headers: gmMutationHeaders("ai-rejected-draft"),
+      data: {
+        prompt: "A brittle bridge hazard should be rejected from prep.",
+        difficulty: "standard",
+        sceneName: "Rejected AI Draft Encounter Scene",
+        sceneWidth: 1200,
+        sceneHeight: 800,
+        gridSize: 50,
+        expectedUpdatedAt: await currentCampaignUpdatedAt(page)
+      }
+    })
+  );
+  expect(rejectedDraft.proposal.status).toBe("pending");
+  await page.reload();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
+  aiAgent = await openAiAgent(page);
+  const rejectedProposal = aiAgent.locator(".ai-agent-proposal-row", { hasText: rejectedDraft.proposal.title }).first();
   await expect(rejectedProposal).toContainText("pending");
-  await rejectedProposal.getByText("Review details").click();
   await rejectedProposal.getByRole("button", { name: "Reject" }).click();
-  await expect(rejectedProposal).toContainText("rejected");
-  await expect(rejectedProposal.getByRole("button", { name: "Apply" })).toHaveCount(0);
+  await expect(aiAgent.getByText("Proposal rejected").first()).toBeVisible();
+  const proposals = await expectJsonResponse<Array<{ id: string; status: string }>>(
+    await page.request.get(`${apiBaseUrl}/api/v1/campaigns/camp_demo/proposals`, { headers: gmApiHeaders })
+  );
+  expect(proposals.find((proposal) => proposal.id === rejectedDraft.proposal.id)?.status).toBe("rejected");
 
-  await aiPanel.getByLabel("Proposal status filter").selectOption("rejected");
-  await expect(proposalHistory.locator("article", { hasText: "brittle bridge hazard" })).toContainText("rejected");
-  await expect(proposalHistory.locator("article", { hasText: "Mirror sentries defend the sealed vault" })).toHaveCount(0);
-  await aiPanel.getByLabel("Proposal status filter").selectOption("applied");
-  await expect(proposalHistory.locator("article", { hasText: "Mirror sentries defend the sealed vault" })).toContainText("applied");
-  await aiPanel.getByLabel("Proposal search").fill("mirror sentries");
-  await expect(proposalHistory.locator("article", { hasText: "Mirror sentries defend the sealed vault" })).toContainText("Mirror sentries defend the sealed vault");
-
+  await aiAgent.getByRole("button", { name: "Close AI Agent" }).click();
+  await expect(aiAgent).toBeHidden();
+  await page.reload();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   await page.getByRole("button", { name: "Prep", exact: true }).click();
-  await page.getByRole("button", { name: "Journal" }).click();
-  const recapJournal = page.locator("article.journal-entry", { hasText: "Session Recap" });
-  await expect(recapJournal).toContainText("gm_only");
-  await expect(recapJournal).toContainText("Session recap:");
+  await openInspectorPanel(page, "Journal");
+  const recapJournal = page.getByRole("article", { name: `Journal entry ${gmRecapChange!.data.title!}` });
+  await expect(recapJournal).toBeVisible({ timeout: 15_000 });
+  await expect(recapJournal.locator(".operator-heading")).toContainText("gm_only");
+  await expect(recapJournal).toContainText("ember vault clue");
 });
 
 test("GM can run SDK plugin and system workflows from the browser", async ({ page }) => {
+  test.setTimeout(300_000);
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 
   await page.getByRole("button", { name: "Prep", exact: true }).click();
-  await page.getByRole("button", { name: "SDK", exact: true }).click();
-  const sdkPanel = page.locator(".panel-stack", { hasText: "Runtime SDK" });
+  await openInspectorPanel(page, "SDK");
+  const sdkPanel = sdkRuntimePanel(page);
   await expect(sdkPanel.locator(".metric-row", { hasText: "Active System" })).toContainText("D&D 5.5e SRD");
   await expect(sdkPanel.locator(".metric-row", { hasText: "Registry Browser" })).toContainText("registry packages");
   await expect(sdkPanel.getByRole("button", { name: "Sync marketplace registries" })).toBeVisible();
@@ -1647,12 +3093,14 @@ test("GM can run SDK plugin and system workflows from the browser", async ({ pag
   await expect(sdkPanel.getByRole("combobox", { name: "Plugin marketplace source filter" })).toBeVisible();
   await expect(sdkPanel.getByRole("combobox", { name: "Plugin marketplace status filter" })).toBeVisible();
   await expect(sdkPanel.getByRole("combobox", { name: "Plugin marketplace core filter" })).toBeVisible();
-  const marketplaceRiskReview = sdkPanel.getByRole("region", { name: "Plugin marketplace risk review" });
-  await expect(marketplaceRiskReview).toContainText("Signature warnings");
+  const marketplaceRiskReview = sdkPanel.locator('details[aria-label="Plugin marketplace risk review"]');
+  await openDetails(marketplaceRiskReview);
+  await expect(marketplaceRiskReview).toContainText("signature warnings");
   await expect(marketplaceRiskReview).toContainText("signature warning");
-  const registryHistory = sdkPanel.getByRole("region", { name: "Plugin registry history" });
-  await expect(registryHistory).toContainText("Registry sources");
-  await expect(registryHistory).toContainText("Registry packages");
+  const registryHistory = sdkPanel.locator('details[aria-label="Plugin registry history"]');
+  await openDetails(registryHistory);
+  await expect(registryHistory).toContainText("sources");
+  await expect(registryHistory).toContainText("registry packages");
   await expect(registryHistory).toContainText("last sync");
   await expect(sdkPanel).toContainText("0 incompatible");
   await sdkPanel.getByRole("textbox", { name: "Plugin marketplace search" }).fill("versioned");
@@ -1683,9 +3131,14 @@ test("GM can run SDK plugin and system workflows from the browser", async ({ pag
   await expect(pluginCard).toContainText("Core: >=0.1.0 on 0.3.0");
   await expect(pluginCard).toContainText("core compatible");
   await pluginCard.getByRole("button", { name: "Review and install" }).click();
+  const permissionReview = page.getByRole("dialog", { name: "Install 0.1.0" });
+  await expect(permissionReview.getByRole("group", { name: "Permissions to grant" })).toContainText("chat.write");
+  await expect(permissionReview.getByRole("group", { name: "Permissions to grant" })).toContainText("token.read");
+  await permissionReview.getByRole("button", { name: "Install 0.1.0 with 2 permissions" }).click();
   await expect(pluginCard).toContainText("installed plugin");
   await expect(pluginCard).toContainText("Installed v");
   await pluginCard.getByRole("button", { name: "/spark" }).click();
+  await approveAgentProposal(page, "Example Macro Plugin: /spark");
   await page.getByRole("button", { name: "Live Table", exact: true }).click();
   await openInspectorPanel(page, "Chat");
   await expect(page.locator('[aria-label="Chat messages"]')).toContainText(/Spark macro: from the browser tabletop near .*Valen Ash/);
@@ -1696,7 +3149,8 @@ test("GM can run SDK plugin and system workflows from the browser", async ({ pag
   await expect(versionedPluginCard).toContainText("Compatibility: latest 2.0.0");
   await expect(versionedPluginCard).toContainText("Versions: 2 compatible, 0 blocked");
   await versionedPluginCard.getByRole("button", { name: "Install 1.0.0" }).click();
-  await expect(page.getByText("Versioned Browser Plugin installed")).toBeVisible();
+  await page.getByRole("dialog", { name: "Install 1.0.0" }).getByRole("button", { name: "Install 1.0.0 with 1 permission" }).click();
+  await expect(statusMessage(page, "Versioned Browser Plugin installed")).toBeVisible();
   await expect(versionedPluginCard).toContainText("Installed v1.0.0");
   await expect(versionedPluginCard.getByRole("button", { name: "Upgrade to 2.0.0" })).toBeEnabled();
   await sdkPanel.getByRole("combobox", { name: "Plugin marketplace status filter" }).selectOption("upgrade");
@@ -1707,28 +3161,35 @@ test("GM can run SDK plugin and system workflows from the browser", async ({ pag
   await expect(pluginCard).toBeVisible();
   await sdkPanel.getByRole("combobox", { name: "Plugin marketplace status filter" }).selectOption("all");
   await versionedPluginCard.getByRole("button", { name: "/versioned" }).click();
+  await approveAgentProposal(page, "Versioned Browser Plugin: /versioned");
   await page.getByRole("button", { name: "Live Table", exact: true }).click();
   await openInspectorPanel(page, "Chat");
   await expect(page.locator('[aria-label="Chat messages"]')).toContainText("Versioned browser plugin v1");
   await page.getByRole("button", { name: "Prep", exact: true }).click();
   await openInspectorPanel(page, "SDK");
   await versionedPluginCard.getByRole("button", { name: "Upgrade to 2.0.0" }).click();
-  await expect(page.getByText("Versioned Browser Plugin upgraded")).toBeVisible();
+  const upgradeDialog = page.getByRole("dialog", { name: "Upgrade to 2.0.0" });
+  await upgradeDialog.getByRole("button", { name: "Upgrade to 2.0.0 with 1 permission" }).click();
+  await expect(upgradeDialog).toBeHidden();
   await expect(versionedPluginCard).toContainText("Installed v2.0.0");
   await versionedPluginCard.getByRole("button", { name: "/versioned" }).click();
+  await approveAgentProposal(page, "Versioned Browser Plugin: /versioned");
   await page.getByRole("button", { name: "Live Table", exact: true }).click();
   await openInspectorPanel(page, "Chat");
   await expect(page.locator('[aria-label="Chat messages"]')).toContainText("Versioned browser plugin v2");
   await page.getByRole("button", { name: "Prep", exact: true }).click();
   await openInspectorPanel(page, "SDK");
   await versionedPluginCard.getByRole("button", { name: "Roll back to 1.0.0" }).click();
-  await expect(page.getByText("Versioned Browser Plugin rolled back")).toBeVisible();
+  const rollbackDialog = page.getByRole("dialog", { name: "Roll back to 1.0.0" });
+  await rollbackDialog.getByRole("button", { name: "Roll back to 1.0.0 with 1 permission" }).click();
+  await expect(rollbackDialog).toBeHidden();
   await expect(versionedPluginCard).toContainText("Installed v1.0.0");
   await expect(versionedPluginCard).toContainText("Audit history: 3 plugin.install rows");
 
   await expect(sdkPanel.getByText("System Registry")).toBeVisible();
   const dndSystemCard = sdkPanel.locator("article", { hasText: "D&D 5.5e SRD" });
-  await expect(dndSystemCard).toContainText("Manifest validation");
+  await expect(dndSystemCard).toContainText("Bundled rules manifest");
+  await expect(dndSystemCard).toContainText("Migration: no campaign migration required");
   await expect(dndSystemCard).toContainText("Core: >=0.1.0");
   await expect(dndSystemCard).toContainText("Entrypoints: client/server");
   await expect(dndSystemCard).toContainText("Schemas: actor/item");
@@ -1736,28 +3197,40 @@ test("GM can run SDK plugin and system workflows from the browser", async ({ pag
   await expect(dndSystemCard).toContainText("Activation impact");
 
   const fighterTemplate = sdkPanel.locator("article", { hasText: "SRD 5.2.1 martial character" });
+  const fighterCreated = page.waitForResponse((response) =>
+    response.request().method() === "POST"
+    && /\/api\/v1\/campaigns\/[^/]+\/systems\/[^/]+\/characters$/.test(new URL(response.url()).pathname)
+    && response.ok()
+  );
   await fighterTemplate.getByRole("button", { name: "Create" }).click();
-  await expect(page.getByText("Fighter created")).toBeVisible();
+  const createdFighter = await expectJsonResponse<{ actor: { id: string; name: string } }>(await fighterCreated);
+  expect(createdFighter.actor.name).toBe("Fighter");
+  await expect(page.getByRole("button", { name: /Fighter Fighter/ })).toBeVisible();
   await openInspectorPanel(page, "Actors");
-  await openActorDisclosure(page.locator(".panel-stack", { hasText: "Selected Actor" }), "Token settings");
+  await openActorDisclosure(selectedActorPanel(page), "Token settings");
+  const tokenActorUpdate = page.waitForResponse((response) => {
+    if (response.request().method() !== "PATCH" || !/\/api\/v1\/tokens\/[^/]+$/.test(new URL(response.url()).pathname)) return false;
+    const body = response.request().postDataJSON() as { actorId?: string };
+    return typeof body.actorId === "string";
+  });
   await page.getByRole("combobox", { name: "Token inspector actor" }).selectOption({ label: "Fighter" });
-  await expect(page.getByText("Token updated")).toBeVisible();
+  await expectJsonResponse(await tokenActorUpdate);
   await expect(page.getByRole("heading", { name: "Fighter" })).toBeVisible();
-  await page.getByRole("button", { name: "Open Full Sheet" }).click();
-  const fullSheet = page.getByRole("dialog", { name: "Fighter full character sheet" });
-  await expect(fullSheet.getByRole("region", { name: "Full sheet stats" })).toContainText("HP");
-  await expect(fullSheet.getByRole("region", { name: "Full sheet loadout" })).toContainText("items");
-  await expect(fullSheet.getByRole("region", { name: "Full sheet actions" })).toContainText("Actions");
+  await page.getByRole("button", { name: "Sheet" }).click();
+  const fullSheet = page.getByRole("dialog", { name: "Fighter" });
+  await expect(fullSheet.getByRole("region", { name: "Full sheet stats" }).getByLabel(/^Hit points/i)).toBeVisible();
+  await expect(fullSheet.getByRole("region", { name: "Full sheet loadout" })).toBeVisible();
+  await expect(fullSheet.getByRole("region", { name: "Full sheet actions" })).toContainText("Longsword Damage");
   await expect(fullSheet.getByRole("region", { name: "Full sheet targeting" })).toContainText("Action target");
-  await fullSheet.getByRole("button", { name: "Close" }).click();
-  await page.getByRole("tab", { name: "Compendium" }).click();
+  await fullSheet.getByRole("button", { name: "Close full character sheet" }).click();
+  await page.getByRole("tabpanel", { name: "Actors" }).getByRole("tab", { name: "Compendium", exact: true }).click();
   const fighterCompendium = page.locator('[aria-label="Actor compendium browser"]');
   await fighterCompendium.getByRole("textbox", { name: "Compendium search" }).fill("Arrows");
   const arrowsEntry = fighterCompendium.locator("article", { hasText: "Arrows" }).first();
   await expect(arrowsEntry).toContainText("1 gp");
   await arrowsEntry.getByRole("spinbutton", { name: "Arrows purchase quantity" }).fill("2");
   await arrowsEntry.getByRole("button", { name: "Purchase" }).click();
-  await expect(page.getByText("Arrows purchased", { exact: true })).toBeVisible();
+  await expect(statusMessage(page, "Arrows purchased")).toBeVisible();
   await expect(fighterCompendium.getByRole("status")).toContainText("Arrows purchased for 2 gp; 48 gp remaining");
   await page.getByRole("tab", { name: "Loadout" }).click();
   await expect(page.getByRole("region", { name: "Actor loadout sheet" })).toContainText("Arrows x2");
@@ -1773,50 +3246,67 @@ test("GM can run SDK plugin and system workflows from the browser", async ({ pag
   await expect(actionPreview).toContainText("Effect support");
   await expect(actionPreview).toContainText("Resources");
   await page.getByRole("button", { name: "Prep", exact: true }).click();
-  await page.getByRole("button", { name: "SDK", exact: true }).click();
+  await openInspectorPanel(page, "SDK");
   await expect(sdkPanel.getByRole("region", { name: "Actor advancement choices" })).toContainText("1 choices");
   await expect(sdkPanel.getByRole("combobox", { name: "Advancement option" })).toContainText("Level 2");
-  await expect(sdkPanel.getByRole("button", { name: "Level Up" })).toBeDisabled();
+  await expect(sdkPanel.getByRole("button", { name: "Level Up", exact: true })).toBeDisabled();
+  await sdkPanel.getByRole("radio", { name: /Fixed average/ }).check();
+  const weaponMasteryChoices = sdkPanel.getByRole("group", { name: "Weapon Mastery choices" });
+  await expect(weaponMasteryChoices).toContainText("Choose exactly 3 Weapon Mastery weapons");
+  await weaponMasteryChoices.getByRole("checkbox").nth(0).check();
+  await weaponMasteryChoices.getByRole("checkbox").nth(1).check();
+  await weaponMasteryChoices.getByRole("checkbox").nth(2).check();
+  await expect(weaponMasteryChoices.getByRole("status")).toContainText("3 of 3 Weapon Mastery weapons selected");
   await sdkPanel.getByRole("button", { name: "Review advancement" }).click();
   await expect(sdkPanel.getByRole("region", { name: "Advancement review step" })).toContainText("Level 2");
   await sdkPanel.getByLabel("Confirm advancement review").check();
-  await sdkPanel.getByRole("button", { name: "Level Up" }).click();
-  await expect(page.getByText("Fighter advanced to Level 2")).toBeVisible();
+  await sdkPanel.getByRole("button", { name: "Level Up", exact: true }).click();
+  await expect(statusMessage(page, "Fighter advanced to Level 2")).toBeVisible();
   await openInspectorPanel(page, "Actors");
   await page.getByRole("tab", { name: "Actions" }).click();
-  const actorPanel = page.locator(".panel-stack", { hasText: "Selected Actor" });
+  const actorPanel = selectedActorPanel(page);
   const actorResources = actorPanel.locator(".metric-row", { hasText: "Resources" });
   await expect(actorResources).toContainText("Second Wind 2/2");
   await openActorDisclosure(actorPanel, "Actor details");
-  await page.locator("#actor-hp").fill("1");
+  const fighterBeforeDamage = await getActorById(page, createdFighter.actor.id);
+  const fighterHpBeforeDamage = (fighterBeforeDamage.data.hp as { current: number }).current;
+  await applyTypedDamage(page, fighterBeforeDamage.id, Math.max(0, fighterHpBeforeDamage - 1));
+  await expect.poll(async () => ((await getActorById(page, fighterBeforeDamage.id)).data.hp as { current: number }).current).toBe(1);
   await expect(page.locator("#actor-hp")).toHaveValue("1");
   await page.getByRole("combobox", { name: "Action target actor" }).selectOption({ label: "Fighter" });
   await setCheckbox(page.getByRole("checkbox", { name: "Apply action effect" }), true);
   await setCheckbox(page.getByRole("checkbox", { name: "Consume action resources" }), true);
   const secondWindCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Second Wind" }).first();
   await expect(secondWindCard).toContainText("effect supported");
-  await secondWindCard.getByRole("button", { name: "Use action" }).click();
-  await expect(page.getByText("Fighter used action: Second Wind 1; healing applied")).toBeVisible();
+  await secondWindCard.getByRole("button", { name: "Preview" }).click();
+  await expect(actionPreview).toContainText("Preview ready");
+  await clickAndConfirmPreparedDndAction(actionPreview.getByRole("button", { name: "Continue to final review for previewed action" }));
+  await expect(statusMessage(page, "Fighter used action: Second Wind 1; healing applied")).toBeVisible();
   await expect(actorResources).toContainText("Second Wind 1/2");
   await expect.poll(async () => Number(await page.locator("#actor-hp").inputValue())).toBeGreaterThan(1);
   await setCheckbox(page.getByRole("checkbox", { name: "Apply action effect" }), true);
-  const actionSurgeCard = page.locator("article", { hasText: "Action Surge" }).first();
+  const actionSurgeCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Action Surge" }).first();
   await expect(actionSurgeCard).toContainText("Effect unsupported: clear Apply action effect to roll this action.");
-  await expect(actionSurgeCard.getByRole("button", { name: "Use action" })).toBeDisabled();
+  await expect(actionSurgeCard.getByRole("button", { name: "Continue to final review" })).toBeDisabled();
   await setCheckbox(page.getByRole("checkbox", { name: "Apply action effect" }), false);
-  await expect(actionSurgeCard.getByRole("button", { name: "Use action" })).toBeEnabled();
+  await actionSurgeCard.getByRole("button", { name: "Preview" }).click();
+  await expect(actionPreview).toContainText("Action Surge");
+  await expect(actionPreview).toContainText("Preview ready");
+  await expect(actionSurgeCard.getByRole("button", { name: "Continue to final review" })).toBeEnabled();
 
-  await page.getByRole("button", { name: "AI Studio", exact: true }).click();
-  const aiWorkspace = page.locator(".panel-stack", { hasText: "Permissioned AI" });
-  await aiWorkspace.getByRole("button", { name: "Plan Encounter", exact: true }).click();
-  await expect(aiWorkspace.getByRole("region", { name: "AI encounter planning" })).toContainText("encounter");
+  const encounterPlan = await expectJsonResponse<{ plan: { summary: string; difficulty: string } }>(
+    await page.request.post(`${apiBaseUrl}/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/encounter-plan`, {
+      headers: gmMutationHeaders("dnd-encounter-plan"),
+      data: { threats: [] }
+    })
+  );
+  expect(encounterPlan.plan.summary.toLowerCase()).toContain("encounter");
+  expect(encounterPlan.plan.difficulty).toBeTruthy();
   await page.getByRole("button", { name: "Prep", exact: true }).click();
-  await page.getByRole("button", { name: "SDK", exact: true }).click();
+  await openInspectorPanel(page, "SDK");
   const rollCountBeforeSystemCheck = await page.evaluate(async (apiBaseUrl) => {
-    const bearer = localStorage.getItem("otte:sessionToken");
-    if (!bearer) throw new Error("No browser session token available for roll lookup");
     const response = await fetch(`${apiBaseUrl}/api/v1/campaigns/camp_demo/rolls`, {
-      headers: { authorization: `Bearer ${bearer}` }
+      credentials: "include"
     });
     if (!response.ok) throw new Error(await response.text());
     return (await response.json()).length;
@@ -1825,10 +3315,8 @@ test("GM can run SDK plugin and system workflows from the browser", async ({ pag
   await expect
     .poll(async () =>
       page.evaluate(async (apiBaseUrl) => {
-        const bearer = localStorage.getItem("otte:sessionToken");
-        if (!bearer) throw new Error("No browser session token available for roll lookup");
         const response = await fetch(`${apiBaseUrl}/api/v1/campaigns/camp_demo/rolls`, {
-          headers: { authorization: `Bearer ${bearer}` }
+          credentials: "include"
         });
         if (!response.ok) throw new Error(await response.text());
         return (await response.json()).length;
@@ -1837,27 +3325,36 @@ test("GM can run SDK plugin and system workflows from the browser", async ({ pag
     .toBeGreaterThan(rollCountBeforeSystemCheck);
 
   await page.getByRole("button", { name: "Prep", exact: true }).click();
-  await page.getByRole("button", { name: "SDK", exact: true }).click();
+  await openInspectorPanel(page, "SDK");
   const genericSystemCard = sdkPanel.locator("article", { hasText: "Generic Fantasy" });
-  await expect(genericSystemCard).toContainText("available system");
-  await expect(genericSystemCard).toContainText("Core: >=0.1.0");
-  await expect(genericSystemCard).toContainText("Entrypoints: client/server");
-  await expect(genericSystemCard).toContainText("Schemas: actor/item");
-  await expect(genericSystemCard).toContainText("Permissions: 4");
-  await genericSystemCard.getByRole("button", { name: "Activate" }).click();
-  await expect(page.getByText("Generic Fantasy activated")).toBeVisible();
-  await expect(sdkPanel.locator(".metric-row", { hasText: "Active System" })).toContainText("Generic Fantasy");
-  await expect(genericSystemCard).toContainText("active system");
+  const originalSystemId = await getCampaignDefaultSystemId(page);
+  try {
+    await expect(genericSystemCard).toContainText("available system");
+    await expect(genericSystemCard).toContainText("Core: >=0.1.0");
+    await expect(genericSystemCard).toContainText("Entrypoints: client/server");
+    await expect(genericSystemCard).toContainText("Schemas: actor/item");
+    await expect(genericSystemCard).toContainText("Permissions: 4");
+    await genericSystemCard.getByRole("button", { name: "Activate" }).click();
+    await expect(statusMessage(page, "Generic Fantasy activated")).toBeVisible();
+    await expect(sdkPanel.locator(".metric-row", { hasText: "Active System" })).toContainText("Generic Fantasy");
+    await expect(genericSystemCard).toContainText("active system");
+  } finally {
+    if ((await getCampaignDefaultSystemId(page)) !== originalSystemId) {
+      await activateCampaignSystem(page, originalSystemId);
+    }
+  }
+  expect(await getCampaignDefaultSystemId(page)).toBe(originalSystemId);
 });
 
 test("GM can apply broader D&D SRD action effects from the browser", async ({ page }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(600_000);
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 
   const suffix = Date.now().toString(36);
-  const target = await createRulesTargetActor(page, { name: `E2E Rules Target ${suffix}`, hp: { current: 100, max: 100 } });
+  const target = await createRulesTargetActor(page, { name: `E2E Rules Target ${suffix}`, hp: { current: 500, max: 500 } });
   const cleric = await createSystemCharacter(page, { templateId: "cleric", name: `E2E Cleric ${suffix}`, ownerUserId: "usr_demo_player", advanceToLevel: 5 });
   const bard = await createSystemCharacter(page, { templateId: "bard", name: `E2E Bard ${suffix}`, ownerUserId: "usr_demo_player", advanceToLevel: 5 });
   const druid = await createSystemCharacter(page, { templateId: "druid", name: `E2E Druid ${suffix}`, ownerUserId: "usr_demo_player", advanceToLevel: 5 });
@@ -1882,11 +3379,14 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
   await createSceneToken(page, { name: `E2E Monk Token ${suffix}`, actorId: monk.id, x: 470, y: 330, ownerUserIds: ["usr_demo_player"] });
   await createSceneToken(page, { name: `E2E Ranger Token ${suffix}`, actorId: ranger.id, x: 530, y: 330, ownerUserIds: ["usr_demo_player"] });
   await createSceneToken(page, { name: `E2E Rogue Token ${suffix}`, actorId: rogue.id, x: 590, y: 330, ownerUserIds: ["usr_demo_player"] });
+  await createSceneToken(page, { name: `E2E Rules Target Token ${suffix}`, actorId: target.id, x: 650, y: 330, ownerUserIds: [] });
 
   await page.reload();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   await page.getByRole("button", { name: `Token E2E Paladin Token ${suffix}` }).click();
   await openInspectorPanel(page, "Actors");
+  await expect(selectedActorPanel(page)).toContainText(`E2E Paladin ${suffix}`);
   await page.getByRole("tab", { name: "Actions" }).click();
   await expect(page.getByRole("heading", { name: `E2E Paladin ${suffix}` })).toBeVisible();
   await selectActionTargetActor(page, target.name);
@@ -1895,26 +3395,26 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
   const divineSmiteCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Divine Smite" }).first();
   await expect(divineSmiteCard).toContainText("effect supported");
   const targetHpBeforeSmite = (target.data.hp as { current: number }).current;
-  await divineSmiteCard.getByRole("button", { name: "Use action" }).click();
-  await expect(page.getByText(new RegExp(`E2E Paladin ${suffix} used action: Level 1 Spell Slot \\d+; damage applied`))).toBeVisible();
+  await clickAndConfirmPreparedDndAction(divineSmiteCard.getByRole("button", { name: "Continue to final review" }));
+  await expect(statusMessage(page, new RegExp(`E2E Paladin ${suffix} used action: Level 1 Spell Slot \\d+; damage applied`))).toBeVisible();
   await expect
     .poll(async () => ((await getActorById(page, target.id)).data.hp as { current: number }).current)
     .toBeLessThan(targetHpBeforeSmite);
   await selectTokenInspectorActor(page, paladin.name);
-  await expect(page.getByText("Token updated")).toBeVisible();
+  await expect(statusMessage(page, "Token updated")).toBeVisible();
   await expect(page.getByRole("heading", { name: `E2E Paladin ${suffix}` })).toBeVisible();
   await selectActionTargetActor(page, target.name);
   const targetHpBeforeLayOnHands = ((await getActorById(page, target.id)).data.hp as { current: number }).current;
   const layOnHandsCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Lay On Hands" }).first();
   await expect(layOnHandsCard).toContainText("effect supported");
-  await layOnHandsCard.getByRole("button", { name: "Use action" }).click();
-  await expect(page.getByText(new RegExp(`E2E Paladin ${suffix} used action: Lay On Hands \\d+; healing applied`))).toBeVisible();
+  await clickAndConfirmPreparedDndAction(layOnHandsCard.getByRole("button", { name: "Continue to final review" }));
+  await expect(statusMessage(page, new RegExp(`E2E Paladin ${suffix} used action: Lay On Hands \\d+; healing applied`))).toBeVisible();
   await expect
     .poll(async () => ((await getActorById(page, target.id)).data.hp as { current: number }).current)
     .toBeGreaterThan(targetHpBeforeLayOnHands);
 
   await selectTokenInspectorActor(page, cleric.name);
-  await expect(page.getByText("Token updated")).toBeVisible();
+  await expect(statusMessage(page, "Token updated")).toBeVisible();
   await expect(page.getByRole("heading", { name: `E2E Cleric ${suffix}` })).toBeVisible();
   await selectActionTargetActor(page, target.name);
   await setCheckbox(page.getByRole("checkbox", { name: "Apply action effect" }), true);
@@ -1926,29 +3426,66 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
   const divineSparkPreview = page.getByRole("region", { name: "Action resolution preview" });
   await expect(divineSparkPreview).toContainText("Divine Spark Damage");
   await divineSparkPreview.getByRole("group", { name: `${target.name} constitution save outcome` }).getByRole("button", { name: "Failure" }).click();
-  await divineSparkPreview.getByRole("button", { name: "Use previewed action" }).click();
-  await expect(page.getByText(new RegExp(`E2E Cleric ${suffix} used action: Channel Divinity \\d+; damage applied`))).toBeVisible();
+  await clickAndConfirmPreparedDndAction(divineSparkPreview.getByRole("button", { name: "Continue to final review for previewed action" }));
+  await expect(statusMessage(page, new RegExp(`E2E Cleric ${suffix} used action: Channel Divinity \\d+; damage applied`))).toBeVisible();
   await expect
     .poll(async () => ((await getActorById(page, target.id)).data.hp as { current: number }).current)
     .toBeLessThan(targetHpBeforeDivineSpark);
 
   await selectTokenInspectorActor(page, sorcerer.name);
-  await expect(page.getByText("Token updated")).toBeVisible();
+  await expect(statusMessage(page, "Token updated")).toBeVisible();
   await expect(page.getByRole("heading", { name: `E2E Sorcerer ${suffix}` })).toBeVisible();
   await selectActionTargetActor(page, target.name);
   await setCheckbox(page.getByRole("checkbox", { name: "Apply action effect" }), true);
   await setCheckbox(page.getByRole("checkbox", { name: "Consume action resources" }), true);
-  const chromaticOrbCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Chromatic Orb Damage" }).first();
-  await expect(chromaticOrbCard).toContainText("effect supported");
+  const sorcererSlotsBeforeChromaticOrb = (((await getActorById(page, sorcerer.id)).data.spellSlots as Record<string, { current: number }>).level1?.current) ?? 0;
+  const chromaticOrbAttackCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Chromatic Orb Attack" }).first();
+  await setCheckbox(page.getByRole("checkbox", { name: "Apply action effect" }), false);
+  await expect(chromaticOrbAttackCard).toContainText("roll only action");
+  const chromaticOrbAttackResponse = await clickAndConfirmPreparedDndAction(chromaticOrbAttackCard.getByRole("button", { name: "Continue to final review" }));
+  const chromaticOrbAttack = await expectJsonResponse<{
+    usage: { consumed: Array<{ type: string; key: string; amount: number }> };
+    resolution: { action: { kind: string } };
+  }>(chromaticOrbAttackResponse);
+  expect(chromaticOrbAttack).toMatchObject({
+    usage: { consumed: [{ type: "spellSlot", key: "level1", amount: 1 }] },
+    resolution: { action: { kind: "action" } }
+  });
+  await expect(statusMessage(page, new RegExp(`E2E Sorcerer ${suffix} used action: Level 1 Spell Slot \\d+`))).toBeVisible();
+  await expect
+    .poll(async () => ((((await getActorById(page, sorcerer.id)).data.spellSlots as Record<string, { current: number }>).level1?.current) ?? 0))
+    .toBe(sorcererSlotsBeforeChromaticOrb - 1);
+  const sorcererSlotsAfterChromaticOrbAttack = (((await getActorById(page, sorcerer.id)).data.spellSlots as Record<string, { current: number }>).level1?.current) ?? 0;
+
+  const sorcererPanel = selectedActorPanel(page);
+  await expect(sorcererPanel.getByRole("heading", { name: `E2E Sorcerer ${suffix}`, exact: true })).toBeVisible({ timeout: 10_000 });
+  const sorcererActionSheet = sorcererPanel.getByRole("region", { name: "Actor action sheet" });
+  await expect(sorcererActionSheet).toBeVisible({ timeout: 10_000 });
+  const chromaticOrbCard = sorcererActionSheet.locator("article", { hasText: "Chromatic Orb Damage" }).first();
+  await expect(chromaticOrbCard).toContainText("effect supported", { timeout: 10_000 });
+  await openActorDisclosure(sorcererPanel, "Actor details");
+  await expect(sorcererPanel.getByRole("checkbox", { name: "Apply action effect" })).toBeVisible({ timeout: 10_000 });
+  await setCheckbox(page.getByRole("checkbox", { name: "Apply action effect" }), true);
   const targetHpBeforeChromaticOrb = ((await getActorById(page, target.id)).data.hp as { current: number }).current;
-  await chromaticOrbCard.getByRole("button", { name: "Use action" }).click();
-  await expect(page.getByText(new RegExp(`E2E Sorcerer ${suffix} used action: Level 1 Spell Slot \\d+; damage applied`))).toBeVisible();
+  const chromaticOrbDamageResponse = await clickAndConfirmPreparedDndAction(chromaticOrbCard.getByRole("button", { name: "Continue to final review" }));
+  const chromaticOrbDamage = await expectJsonResponse<{
+    usage?: unknown;
+    effect: { type: string; targetActorId: string };
+    resolution: { action: { kind: string; metadata: { activation: string } } };
+  }>(chromaticOrbDamageResponse);
+  expect(chromaticOrbDamage).toMatchObject({
+    effect: { type: "damage", targetActorId: target.id },
+    resolution: { action: { kind: "free", metadata: { activation: "on-hit" } } }
+  });
+  expect(chromaticOrbDamage.usage).toBeUndefined();
+  await expect(statusMessage(page, `E2E Sorcerer ${suffix} action posted; damage applied`)).toBeVisible();
   await expect
     .poll(async () => ((await getActorById(page, target.id)).data.hp as { current: number }).current)
     .toBeLessThan(targetHpBeforeChromaticOrb);
+  expect(((((await getActorById(page, sorcerer.id)).data.spellSlots as Record<string, { current: number }>).level1?.current) ?? 0)).toBe(sorcererSlotsAfterChromaticOrbAttack);
 
   await selectTokenInspectorActor(page, warlock.name);
-  await expect(page.getByText("Token updated")).toBeVisible();
+  await expect(statusMessage(page, "Token updated")).toBeVisible();
   await expect(page.getByRole("heading", { name: `E2E Warlock ${suffix}` })).toBeVisible();
   await selectActionTargetActor(page, target.name);
   await setCheckbox(page.getByRole("checkbox", { name: "Apply action effect" }), true);
@@ -1956,8 +3493,8 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
   const hexCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Hex Damage" }).first();
   await expect(hexCard).toContainText("effect supported");
   const targetHpBeforeHex = ((await getActorById(page, target.id)).data.hp as { current: number }).current;
-  await hexCard.getByRole("button", { name: "Use action" }).click();
-  await expect(page.getByText(new RegExp(`E2E Warlock ${suffix} used action: Level \\d+ Spell Slot \\d+; damage applied`))).toBeVisible();
+  await clickAndConfirmPreparedDndAction(hexCard.getByRole("button", { name: "Continue to final review" }));
+  await expect(statusMessage(page, new RegExp(`E2E Warlock ${suffix} used action: Level \\d+ Pact Magic Slot \\d+; damage applied`))).toBeVisible();
   await expect
     .poll(async () => ((await getActorById(page, target.id)).data.hp as { current: number }).current)
     .toBeLessThan(targetHpBeforeHex);
@@ -1965,19 +3502,19 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
   const pactSlotLevel = Object.keys((warlockAfterHex.data.spellSlots as Record<string, { current: number }>) ?? {}).find((key) => key.startsWith("level")) ?? "level3";
   const pactSlotsAfterHex = ((warlockAfterHex.data.spellSlots as Record<string, { current: number }>)[pactSlotLevel]?.current) ?? 0;
   await selectTokenInspectorActor(page, warlock.name);
-  await expect(page.getByText("Token updated")).toBeVisible();
+  await expect(statusMessage(page, "Token updated")).toBeVisible();
   await expect(page.getByRole("heading", { name: `E2E Warlock ${suffix}` })).toBeVisible();
   await setCheckbox(page.getByRole("checkbox", { name: "Apply action effect" }), false);
   const magicalCunningCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Magical Cunning" }).first();
   await expect(magicalCunningCard).toContainText("roll only action");
-  await magicalCunningCard.getByRole("button", { name: "Use action" }).click();
-  await expect(page.getByText(new RegExp(`E2E Warlock ${suffix} used action: Magical Cunning \\d+`))).toBeVisible();
+  await clickAndConfirmPreparedDndAction(magicalCunningCard.getByRole("button", { name: "Continue to final review" }));
+  await expect(statusMessage(page, new RegExp(`E2E Warlock ${suffix} used action: Magical Cunning \\d+`))).toBeVisible();
   await expect
     .poll(async () => (((await getActorById(page, warlock.id)).data.spellSlots as Record<string, { current: number }>)[pactSlotLevel]?.current) ?? 0)
     .toBeGreaterThan(pactSlotsAfterHex);
 
   await selectTokenInspectorActor(page, druid.name);
-  await expect(page.getByText("Token updated")).toBeVisible();
+  await expect(statusMessage(page, "Token updated")).toBeVisible();
   await expect(page.getByRole("heading", { name: `E2E Druid ${suffix}` })).toBeVisible();
   await selectActionTargetActor(page, target.name);
   await setCheckbox(page.getByRole("checkbox", { name: "Apply action effect" }), true);
@@ -1985,14 +3522,14 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
   const cureWoundsCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Cure Wounds Healing" }).first();
   await expect(cureWoundsCard).toContainText("effect supported");
   const targetHpBeforeCureWounds = ((await getActorById(page, target.id)).data.hp as { current: number }).current;
-  await cureWoundsCard.getByRole("button", { name: "Use action" }).click();
-  await expect(page.getByText(new RegExp(`E2E Druid ${suffix} used action: Level 1 Spell Slot \\d+; healing applied`))).toBeVisible();
+  await clickAndConfirmPreparedDndAction(cureWoundsCard.getByRole("button", { name: "Continue to final review" }));
+  await expect(statusMessage(page, new RegExp(`E2E Druid ${suffix} used action: Level 1 Spell Slot \\d+; healing applied`))).toBeVisible();
   await expect
     .poll(async () => ((await getActorById(page, target.id)).data.hp as { current: number }).current)
     .toBeGreaterThan(targetHpBeforeCureWounds);
 
   await selectTokenInspectorActor(page, wizard.name);
-  await expect(page.getByText("Token updated")).toBeVisible();
+  await expect(statusMessage(page, "Token updated")).toBeVisible();
   await expect(page.getByRole("heading", { name: `E2E Wizard ${suffix}` })).toBeVisible();
   await selectActionTargetActor(page, target.name);
   await setCheckbox(page.getByRole("checkbox", { name: "Apply action effect" }), true);
@@ -2000,14 +3537,14 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
   const fireBoltCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Fire Bolt Damage" }).first();
   await expect(fireBoltCard).toContainText("effect supported");
   const targetHpBeforeFireBolt = ((await getActorById(page, target.id)).data.hp as { current: number }).current;
-  await fireBoltCard.getByRole("button", { name: "Use action" }).click();
-  await expect(page.getByText(new RegExp(`E2E Wizard ${suffix} action posted; damage applied`))).toBeVisible();
+  await clickAndConfirmPreparedDndAction(fireBoltCard.getByRole("button", { name: "Continue to final review" }));
+  await expect(statusMessage(page, new RegExp(`E2E Wizard ${suffix} action posted; damage applied`))).toBeVisible();
   await expect
     .poll(async () => ((await getActorById(page, target.id)).data.hp as { current: number }).current)
     .toBeLessThan(targetHpBeforeFireBolt);
 
   await selectTokenInspectorActor(page, monster.name);
-  await expect(page.getByText("Token updated")).toBeVisible();
+  await expect(statusMessage(page, "Token updated")).toBeVisible();
   await expect(page.getByRole("heading", { name: `E2E Giant Spider ${suffix}` })).toBeVisible();
   await selectActionTargetActor(page, target.name);
   await setCheckbox(page.getByRole("checkbox", { name: "Apply action effect" }), true);
@@ -2015,22 +3552,23 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
   const biteDamageCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Bite Damage" }).first();
   await expect(biteDamageCard).toContainText("effect supported");
   const targetHpBeforeBite = ((await getActorById(page, target.id)).data.hp as { current: number }).current;
-  await biteDamageCard.getByRole("button", { name: "Use action" }).click();
-  await expect(page.getByText(new RegExp(`E2E Giant Spider ${suffix} action posted; damage applied`))).toBeVisible();
+  await clickAndConfirmPreparedDndAction(biteDamageCard.getByRole("button", { name: "Continue to final review" }));
+  await expect(statusMessage(page, new RegExp(`E2E Giant Spider ${suffix} action posted; damage applied`))).toBeVisible();
   await expect
     .poll(async () => ((await getActorById(page, target.id)).data.hp as { current: number }).current)
     .toBeLessThan(targetHpBeforeBite);
   await selectTokenInspectorActor(page, monster.name);
-  await expect(page.getByText("Token updated")).toBeVisible();
+  await expect(statusMessage(page, "Token updated")).toBeVisible();
   await expect(page.getByRole("heading", { name: `E2E Giant Spider ${suffix}` })).toBeVisible();
   await selectActionTargetActor(page, target.name);
   const webEffectCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Web Effect" }).first();
   await expect(webEffectCard).toContainText("effect supported");
-  await webEffectCard.getByRole("button", { name: "Use action" }).click();
-  await expect(page.getByText("Save outcomes are required before this D&D action can be committed.")).toBeVisible();
+  await webEffectCard.getByRole("button", { name: "Preview", exact: true }).click();
+  await expect(webEffectCard).toContainText("Resolve pending inputs before committing.");
+  await expect(webEffectCard.getByRole("button", { name: "Continue to final review" })).toBeDisabled();
 
   await selectTokenInspectorActor(page, bard.name);
-  await expect(page.getByText("Token updated")).toBeVisible();
+  await expect(statusMessage(page, "Token updated")).toBeVisible();
   await expect(page.getByRole("heading", { name: `E2E Bard ${suffix}` })).toBeVisible();
   await selectActionTargetActor(page, target.name);
   await setCheckbox(page.getByRole("checkbox", { name: "Apply action effect" }), true);
@@ -2038,51 +3576,54 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
   const healingWordCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Healing Word Healing" }).first();
   await expect(healingWordCard).toContainText("effect supported");
   const targetHpBeforeHealingWord = ((await getActorById(page, target.id)).data.hp as { current: number }).current;
-  await healingWordCard.getByRole("button", { name: "Use action" }).click();
-  await expect(page.getByText(new RegExp(`E2E Bard ${suffix} used action: Level 1 Spell Slot \\d+; healing applied`))).toBeVisible();
+  await clickAndConfirmPreparedDndAction(healingWordCard.getByRole("button", { name: "Continue to final review" }));
+  await expect(statusMessage(page, new RegExp(`E2E Bard ${suffix} used action: Level 1 Spell Slot \\d+; healing applied`))).toBeVisible();
   await expect
     .poll(async () => ((await getActorById(page, target.id)).data.hp as { current: number }).current)
     .toBeGreaterThan(targetHpBeforeHealingWord);
   await selectTokenInspectorActor(page, bard.name);
-  await expect(page.getByText("Token updated")).toBeVisible();
+  await expect(statusMessage(page, "Token updated")).toBeVisible();
   await expect(page.getByRole("heading", { name: `E2E Bard ${suffix}` })).toBeVisible();
   const bardicInspirationBefore = (((await getActorById(page, bard.id)).data.resources as Record<string, { current: number }>).bardicInspiration?.current) ?? 0;
   await setCheckbox(page.getByRole("checkbox", { name: "Apply action effect" }), false);
   const bardicInspirationCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Bardic Inspiration" }).first();
   await expect(bardicInspirationCard).toContainText("roll only action");
-  await bardicInspirationCard.getByRole("button", { name: "Use action" }).click();
-  await expect(page.getByText(new RegExp(`E2E Bard ${suffix} used action: Bardic Inspiration \\d+`))).toBeVisible();
+  await clickAndConfirmPreparedDndAction(bardicInspirationCard.getByRole("button", { name: "Continue to final review" }));
+  await expect(statusMessage(page, new RegExp(`E2E Bard ${suffix} used action: Bardic Inspiration \\d+`))).toBeVisible();
   await expect
     .poll(async () => (((await getActorById(page, bard.id)).data.resources as Record<string, { current: number }>).bardicInspiration?.current) ?? 0)
     .toBeLessThan(bardicInspirationBefore);
   const bardicInspirationSpent = (((await getActorById(page, bard.id)).data.resources as Record<string, { current: number }>).bardicInspiration?.current) ?? 0;
   await selectTokenInspectorActor(page, bard.name);
-  await expect(page.getByText("Token updated")).toBeVisible();
+  await expect(statusMessage(page, "Token updated")).toBeVisible();
   await expect(page.getByRole("heading", { name: `E2E Bard ${suffix}` })).toBeVisible();
   const fontOfInspirationCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Font of Inspiration" }).first();
   await expect(fontOfInspirationCard).toContainText("roll only action");
-  await fontOfInspirationCard.getByRole("button", { name: "Use action" }).click();
-  await expect(page.getByText(new RegExp(`E2E Bard ${suffix} used action: Level 1 Spell Slot \\d+`))).toBeVisible();
+  await clickAndConfirmPreparedDndAction(fontOfInspirationCard.getByRole("button", { name: "Continue to final review" }));
+  await expect(statusMessage(page, new RegExp(`E2E Bard ${suffix} used action: Level 1 Spell Slot \\d+`))).toBeVisible();
   await expect
     .poll(async () => (((await getActorById(page, bard.id)).data.resources as Record<string, { current: number }>).bardicInspiration?.current) ?? 0)
     .toBeGreaterThan(bardicInspirationSpent);
 
   await selectTokenInspectorActor(page, monk.name);
-  await expect(page.getByText("Token updated")).toBeVisible();
+  await expect(statusMessage(page, "Token updated")).toBeVisible();
   await expect(page.getByRole("heading", { name: `E2E Monk ${suffix}` })).toBeVisible();
   await selectActionTargetActor(page, target.name);
   await setCheckbox(page.getByRole("checkbox", { name: "Apply action effect" }), true);
   await setCheckbox(page.getByRole("checkbox", { name: "Consume action resources" }), true);
   const stunningStrikeCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Stunning Strike" }).first();
   await expect(stunningStrikeCard).toContainText("effect supported");
-  await stunningStrikeCard.getByRole("button", { name: "Use action" }).click();
-  await expect(page.getByText("Save outcomes are required before this D&D action can be committed.")).toBeVisible();
+  await stunningStrikeCard.getByRole("button", { name: "Preview" }).click();
+  const stunningStrikePreview = page.getByRole("region", { name: "Action resolution preview" });
+  await expect(stunningStrikePreview).toContainText("Stunning Strike");
+  await expect(stunningStrikePreview.getByRole("group", { name: `${target.name} constitution save outcome` })).toBeVisible();
+  await expect(stunningStrikePreview.getByRole("button", { name: "Continue to final review for previewed action" })).toBeDisabled();
   const deflectCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Deflect" }).first();
   await expect(deflectCard).toContainText("Deflect Attacks Reaction Damage");
   await expect(deflectCard).toContainText("effect supported");
 
   await selectTokenInspectorActor(page, ranger.name);
-  await expect(page.getByText("Token updated")).toBeVisible();
+  await expect(statusMessage(page, "Token updated")).toBeVisible();
   await expect(page.getByRole("heading", { name: `E2E Ranger ${suffix}` })).toBeVisible();
   await selectActionTargetActor(page, target.name);
   await setCheckbox(page.getByRole("checkbox", { name: "Apply action effect" }), true);
@@ -2090,47 +3631,65 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
   const huntersMarkCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Hunter's Mark" }).first();
   await expect(huntersMarkCard).toContainText("effect supported");
   const targetHpBeforeHuntersMark = ((await getActorById(page, target.id)).data.hp as { current: number }).current;
-  await huntersMarkCard.getByRole("button", { name: "Use action" }).click();
-  await expect(page.getByText(new RegExp(`E2E Ranger ${suffix} used action: Level 1 Spell Slot \\d+; damage applied`))).toBeVisible();
+  await clickAndConfirmPreparedDndAction(huntersMarkCard.getByRole("button", { name: "Continue to final review" }));
+  await expect(statusMessage(page, new RegExp(`E2E Ranger ${suffix} used action: Level 1 Spell Slot \\d+; damage applied`))).toBeVisible();
   await expect
     .poll(async () => ((await getActorById(page, target.id)).data.hp as { current: number }).current)
     .toBeLessThan(targetHpBeforeHuntersMark);
 
   await selectTokenInspectorActor(page, rogue.name);
-  await expect(page.getByText("Token updated")).toBeVisible();
+  await expect(statusMessage(page, "Token updated")).toBeVisible();
   await expect(page.getByRole("heading", { name: `E2E Rogue ${suffix}` })).toBeVisible();
   await selectActionTargetActor(page, target.name);
   await setCheckbox(page.getByRole("checkbox", { name: "Apply action effect" }), true);
   const sneakAttackCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Sneak Attack" }).first();
   await expect(sneakAttackCard).toContainText("effect supported");
   const targetHpBeforeSneakAttack = ((await getActorById(page, target.id)).data.hp as { current: number }).current;
-  await sneakAttackCard.getByRole("button", { name: "Use action" }).click();
-  await expect(page.getByText(new RegExp(`E2E Rogue ${suffix} action posted; damage applied`))).toBeVisible();
-  await expect
-    .poll(async () => ((await getActorById(page, target.id)).data.hp as { current: number }).current)
-    .toBeLessThan(targetHpBeforeSneakAttack);
+  await sneakAttackCard.getByRole("button", { name: "Preview" }).click();
+  const sneakAttackPreview = page.getByRole("region", { name: "Action resolution preview" });
+  await expect(sneakAttackPreview).toContainText("Choose one option before this action can be fully automated.");
+  const sneakAttackDamageType = sneakAttackPreview.getByRole("combobox", { name: "Action effect choice" });
+  await expect(sneakAttackDamageType.locator("option")).toHaveText(["Choose option", "Bludgeoning", "Piercing", "Slashing"]);
+  await sneakAttackDamageType.selectOption("Piercing");
+  const sneakAttackCommit = await clickAndConfirmPreparedDndAction(sneakAttackPreview.getByRole("button", { name: "Continue to final review for previewed action" }));
+  const committedSneakAttack = await expectJsonResponse<{
+    resolution: { action: { kind: string; metadata: { activation: string } }; effects: Array<{ type: string; damageType: string; effectChoice: string; choiceKind: string }> };
+  }>(sneakAttackCommit);
+  expect(committedSneakAttack.resolution).toMatchObject({
+    action: { kind: "free", metadata: { activation: "on-hit" } },
+    effects: [expect.objectContaining({ type: "damage", damageType: "piercing", effectChoice: "Piercing", choiceKind: "damageType" })]
+  });
+  await expect(statusMessage(page, `E2E Rogue ${suffix} action posted; damage applied`)).toBeVisible();
+  await expect.poll(async () => ((await getActorById(page, target.id)).data.hp as { current: number }).current).toBeLessThan(targetHpBeforeSneakAttack);
 
   await selectTokenInspectorActor(page, barbarian.name);
-  await expect(page.getByText("Token updated")).toBeVisible();
+  await expect(statusMessage(page, "Token updated")).toBeVisible();
   await expect(page.getByRole("heading", { name: `E2E Barbarian ${suffix}` })).toBeVisible();
+  await selectActionTargetActor(page, barbarian.name);
+  await setCheckbox(page.getByRole("checkbox", { name: "Apply action effect" }), true);
+  await setCheckbox(page.getByRole("checkbox", { name: "Consume action resources" }), true);
+  const rageBefore = ((((await getActorById(page, barbarian.id)).data.resources as Record<string, { current: number }>).rage?.current) ?? 0);
+  const rageCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article").filter({ has: page.getByText("Rage", { exact: true }) }).first();
+  await expect(rageCard).toContainText("effect supported");
+  await clickAndConfirmPreparedDndAction(rageCard.getByRole("button", { name: "Continue to final review" }));
+  await expect.poll(async () => ((((await getActorById(page, barbarian.id)).data.resources as Record<string, { current: number }>).rage?.current) ?? 0)).toBeLessThan(rageBefore);
+
+  await selectTokenInspectorActor(page, barbarian.name);
+  await expect(statusMessage(page, "Token updated")).toBeVisible();
   await selectActionTargetActor(page, target.name);
   await setCheckbox(page.getByRole("checkbox", { name: "Apply action effect" }), true);
-  const rageDamageCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Rage Damage" }).first();
+  const rageDamageCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article").filter({ has: page.getByText("Rage Damage Bonus", { exact: true }) }).first();
   await expect(rageDamageCard).toContainText("effect supported");
   const targetHpBeforeRageDamage = ((await getActorById(page, target.id)).data.hp as { current: number }).current;
-  await rageDamageCard.getByRole("button", { name: "Use action" }).click();
-  await expect(page.getByText(new RegExp(`E2E Barbarian ${suffix} action posted; damage applied`))).toBeVisible();
-  await expect
-    .poll(async () => ((await getActorById(page, target.id)).data.hp as { current: number }).current)
-    .toBeLessThan(targetHpBeforeRageDamage);
+  await rageDamageCard.getByRole("button", { name: "Preview" }).click();
+  const rageDamagePreview = page.getByRole("region", { name: "Action resolution preview" });
+  await expect(rageDamagePreview).toContainText("Manual resolution required: Rage Damage Bonus uses unsupported damage type weapon; resolve it manually.");
+  await expect(rageDamagePreview.getByRole("button", { name: "Continue to final review for previewed action" })).toBeDisabled();
+  await expect.poll(async () => ((await getActorById(page, target.id)).data.hp as { current: number }).current).toBe(targetHpBeforeRageDamage);
 });
 
 test("SDK marketplace blocks trust-policy failures in the browser", async ({ page }) => {
-  await page.route("**/api/v1/campaigns/*/plugins", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify([
+  const marketplaceFixturePlugins = [
         {
           id: "unsigned-fixture-plugin",
           name: "Unsigned Fixture Plugin",
@@ -2177,19 +3736,32 @@ test("SDK marketplace blocks trust-policy failures in the browser", async ({ pag
           permissionReview: { requestedPermissions: ["chat.send"], grantRequired: false },
           chatCommands: [{ command: "/tampered", description: "Should fail closed" }]
         }
-      ])
+      ];
+  await page.route("**/api/v1/campaigns/*/plugins", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(marketplaceFixturePlugins)
     });
+  });
+  await page.route("**/api/v1/campaigns/*/snapshot*", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { bundled?: Record<string, unknown> };
+    body.bundled = { ...(body.bundled ?? {}), plugins: marketplaceFixturePlugins };
+    await route.fulfill({ response, json: body });
   });
 
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
 
   await page.getByRole("button", { name: "Prep", exact: true }).click();
-  await page.getByRole("button", { name: "SDK", exact: true }).click();
-  const sdkPanel = page.locator(".panel-stack", { hasText: "Runtime SDK" });
-  const marketplaceRiskReview = sdkPanel.getByRole("region", { name: "Plugin marketplace risk review" });
-  await expect(marketplaceRiskReview).toContainText("2 samples");
+  await openInspectorPanel(page, "SDK");
+  const sdkPanel = sdkRuntimePanel(page);
+  const marketplaceRiskReview = sdkPanel.locator('details[aria-label="Plugin marketplace risk review"]');
+  await openDetails(marketplaceRiskReview);
+  await expect(marketplaceRiskReview).toContainText("2 flagged");
   await expect(marketplaceRiskReview).toContainText("Unsigned Fixture Plugin");
   await expect(marketplaceRiskReview).toContainText("trust blocked");
   await expect(marketplaceRiskReview).toContainText("Tampered Fixture Plugin");
@@ -2208,40 +3780,414 @@ test("SDK marketplace blocks trust-policy failures in the browser", async ({ pag
   await expect(tamperedPluginCard.getByRole("button", { name: "/tampered" })).toBeDisabled();
 });
 
-test("SDK marketplace is read-only for players in the browser", async ({ page }) => {
+test("SDK marketplace is hidden from players in the browser", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   await page.getByLabel("Session user").selectOption("usr_demo_player");
-  await expect(page.locator(".account-summary", { hasText: "Demo Player" })).toBeVisible();
+  await expect(page.getByLabel("Session user")).toHaveValue("usr_demo_player");
 
-  await page.getByRole("button", { name: "Prep", exact: true }).click();
-  await page.getByRole("button", { name: "SDK", exact: true }).click();
-  const sdkPanel = page.locator(".panel-stack", { hasText: "Runtime SDK" });
-  await expect(sdkPanel.getByRole("button", { name: "Sync marketplace registries" })).toBeDisabled();
-  const pluginCard = sdkPanel.locator("article", { hasText: "Example Macro Plugin" });
-  await expect(pluginCard).toContainText("Permission review");
-  const pluginMutationButtons = sdkPanel.getByRole("button", { name: /^(Review and install|Install |Upgrade to )/ });
-  await expect(pluginMutationButtons.first()).toBeVisible();
-  for (let index = 0; index < await pluginMutationButtons.count(); index += 1) {
-    await expect(pluginMutationButtons.nth(index)).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Prep", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: "Plugins", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "AI Studio", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "AI Agent", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Account", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add token" })).toHaveCount(0);
+  for (const tabName of ["Actors", "Compendium", "Handouts", "Journal", "Search", "Chat", "Combat"]) {
+    await expect(page.getByRole("tablist", { name: "Inspector panels" }).getByRole("tab", { name: tabName, exact: true })).toBeVisible();
   }
-  await expect(sdkPanel.getByText("System Registry")).toBeVisible();
-  const inactiveSystem = sdkPanel.locator("article", { hasText: "Stellar Frontiers" });
-  await expect(inactiveSystem).toContainText("available system");
-  await expect(inactiveSystem).toContainText("Core: >=0.1.0");
-  await expect(inactiveSystem).toContainText("Entrypoints: client/server");
-  await expect(inactiveSystem).toContainText("Schemas: actor/item");
-  await expect(inactiveSystem).toContainText("Permissions: 4");
-  await expect(inactiveSystem.getByRole("button", { name: "Activate" })).toBeDisabled();
-  const characterTemplate = sdkPanel.locator("article", { hasText: "character template" }).first();
-  await expect(characterTemplate.getByRole("button", { name: "Create" })).toBeDisabled();
+
+  await page.getByRole("button", { name: "Open command palette" }).click();
+  const commandPalette = page.getByRole("dialog", { name: "Command palette" });
+  await commandPalette.getByRole("textbox", { name: "Command palette search" }).fill("AI Agent");
+  await expect(commandPalette.getByText("Open AI Agent", { exact: true })).toHaveCount(0);
+  await commandPalette.getByRole("textbox", { name: "Command palette search" }).press("Escape");
+
+  const journalTab = page.getByRole("tab", { name: "Journal", exact: true });
+  await expect(journalTab).toHaveAttribute("aria-controls", "inspector-panel-journal");
+  await journalTab.click();
+  const journalPanel = page.getByRole("tabpanel");
+  await expect(journalPanel).toHaveAttribute("id", "inspector-panel-journal");
+  await expect(journalPanel.getByRole("region", { name: "Journal hierarchy" })).toBeVisible();
+  await expect(journalPanel.getByText("New entry", { exact: true })).toHaveCount(0);
+  await expect(journalPanel.getByRole("button", { name: "Generate session recap" })).toHaveCount(0);
+});
+
+test("closing a delayed invite cannot replace a newer login", async ({ page }) => {
+  let releaseInvite!: () => void;
+  let markInviteStarted!: () => void;
+  const inviteStarted = new Promise<void>((resolve) => { markInviteStarted = resolve; });
+  const inviteReleased = new Promise<void>((resolve) => { releaseInvite = resolve; });
+  await mockInvitePreview(page);
+  await page.route("**/api/v1/invites/accept", async (route) => {
+    markInviteStarted();
+    await inviteReleased;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        token: "stale-invite-token",
+        user: { id: "usr_stale_invite", displayName: "Stale Invite" },
+        session: { id: "ses_stale_invite", userId: "usr_stale_invite" },
+        memberships: [],
+        campaign: { id: "camp_stale_invite", name: "Stale Invite Campaign" }
+      })
+    }).catch(() => undefined);
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Have an invite token?" }).click();
+  await page.getByRole("textbox", { name: "Public invite token" }).fill("oti_delayed");
+  await page.getByRole("textbox", { name: "Join email" }).fill("delayed@example.test");
+  await page.getByLabel("Join password").fill("correct horse");
+  await page.getByRole("button", { name: "Accept Invite" }).click();
+  await inviteStarted;
+
+  await page.getByRole("button", { name: "Use sign in instead" }).click();
+  await page.getByRole("button", { name: "Demo GM" }).click();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
+  releaseInvite();
+  await page.waitForTimeout(200);
+
+  expect(await page.evaluate(() => ({ userId: localStorage.getItem("otte:userId") }))).toMatchObject({
+    userId: "usr_demo_gm"
+  });
+  expect(await page.evaluate(() => localStorage.getItem("otte:sessionToken"))).toBeNull();
+});
+
+test("invite acceptance sends only one in-flight one-time-token request", async ({ page }) => {
+  let requestCount = 0;
+  let releaseInvite!: () => void;
+  let markInviteStarted!: () => void;
+  const inviteStarted = new Promise<void>((resolve) => { markInviteStarted = resolve; });
+  const inviteReleased = new Promise<void>((resolve) => { releaseInvite = resolve; });
+  await mockInvitePreview(page);
+  await page.route("**/api/v1/invites/accept", async (route) => {
+    requestCount += 1;
+    markInviteStarted();
+    await inviteReleased;
+    await route.fulfill({
+      status: 401,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "unauthorized", message: "Invite request rejected for test" })
+    });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Have an invite token?" }).click();
+  const inviteForm = page.locator("form.invite-accept-form");
+  await inviteForm.getByRole("textbox", { name: "Public invite token" }).fill("oti_single_flight");
+  await inviteForm.getByRole("textbox", { name: "Join email" }).fill("single-flight@example.test");
+  await inviteForm.getByLabel("Join password").fill("correct horse");
+  const submit = inviteForm.locator('button[type="submit"]');
+
+  await submit.evaluate((button) => {
+    if (!(button instanceof HTMLButtonElement)) throw new Error("Invite submit control is not a button");
+    button.click();
+    button.click();
+  });
+  await inviteStarted;
+
+  expect(requestCount).toBe(1);
+  await expect(inviteForm).toHaveAttribute("aria-busy", "true");
+  await expect(submit).toBeDisabled();
+  await expect(submit).toContainText("Accepting Invite");
+
+  releaseInvite();
+  await expect(inviteForm).toHaveAttribute("aria-busy", "false");
+  await expect(submit).toBeEnabled();
+  await expect(page.getByText("Invite request rejected for test")).toBeVisible();
+  expect(requestCount).toBe(1);
+});
+
+test("a delayed invite cannot replace a newer session switch", async ({ page }) => {
+  let releaseInvite!: () => void;
+  let markInviteStarted!: () => void;
+  const inviteStarted = new Promise<void>((resolve) => { markInviteStarted = resolve; });
+  const inviteReleased = new Promise<void>((resolve) => { releaseInvite = resolve; });
+  await mockInvitePreview(page);
+  await page.route("**/api/v1/invites/accept", async (route) => {
+    markInviteStarted();
+    await inviteReleased;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        token: "stale-authenticated-invite-token",
+        user: { id: "usr_stale_authenticated_invite", displayName: "Stale Authenticated Invite" },
+        session: { id: "ses_stale_authenticated_invite", userId: "usr_stale_authenticated_invite" },
+        memberships: [],
+        campaign: { id: "camp_stale_authenticated_invite", name: "Stale Authenticated Invite Campaign" }
+      })
+    }).catch(() => undefined);
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Demo GM" }).click();
+  await openManageCategory(page, "People");
+  await openDetails(page.locator("details", { hasText: "Join with an invite token" }));
+  const joinButton = page.getByRole("button", { name: "Join", exact: true });
+  const joinForm = page.locator("form", { has: joinButton });
+  await joinForm.getByRole("textbox", { name: "Invite token" }).fill("oti_delayed_authenticated");
+  await joinForm.getByRole("textbox", { name: "Join email" }).fill("delayed-authenticated@example.test");
+  await joinForm.getByLabel("Password").fill("correct horse");
+  await joinButton.click();
+  await inviteStarted;
+
+  await page.getByLabel("Session user").selectOption("usr_demo_player");
+  await expect(page.getByLabel("Session user")).toHaveValue("usr_demo_player");
+  releaseInvite();
+  await page.waitForTimeout(200);
+
+  expect(await page.evaluate(() => ({ userId: localStorage.getItem("otte:userId") }))).toMatchObject({
+    userId: "usr_demo_player"
+  });
+  expect(await page.evaluate(() => localStorage.getItem("otte:sessionToken"))).toBeNull();
+});
+
+test("delayed GM actor and token mutations cannot apply after switching to a player", async ({ page }) => {
+  test.setTimeout(60_000);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Demo GM" }).click();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
+
+  const baseline = await page.evaluate(async ({ apiBaseUrl }) => {
+    const tokenResponse = await fetch(`${apiBaseUrl}/api/v1/scenes/scn_vault_entry/tokens`, { credentials: "include" });
+    if (!tokenResponse.ok) throw new Error(await tokenResponse.text());
+    const tokens = await tokenResponse.json() as Array<{ id: string; actorId?: string; name: string }>;
+    const token = tokens.find((item) => item.id === "tok_valen");
+    if (!token) throw new Error("Valen token is unavailable for stale mutation setup");
+    if (!token.actorId) throw new Error("Valen token has no actor for stale mutation setup");
+    const actorResponse = await fetch(`${apiBaseUrl}/api/v1/actors/${token.actorId}`, { credentials: "include" });
+    if (!actorResponse.ok) throw new Error(await actorResponse.text());
+    return { actor: await actorResponse.json() as { id: string; name: string; campaignId: string; systemId: string }, token };
+  }, { apiBaseUrl });
+
+  const selectBaselineActor = async () => {
+    const token = page.locator(".token").filter({ hasText: baseline.token.name }).first();
+    if ((await token.getAttribute("aria-pressed")) !== "true") {
+      await token.focus();
+      await token.press("Enter");
+    }
+    await expect(selectedActorPanel(page)).toContainText(baseline.actor.name);
+  };
+  await selectBaselineActor();
+
+  let actorRelease!: () => void;
+  let actorStartedResolve!: () => void;
+  const actorStarted = new Promise<void>((resolve) => { actorStartedResolve = resolve; });
+  const actorReleased = new Promise<void>((resolve) => { actorRelease = resolve; });
+  await page.route("**/api/v1/**", async (route) => {
+    const request = route.request();
+    const pathname = new URL(request.url()).pathname;
+    const genericActorUpdate = request.method() === "PATCH" && pathname === `/api/v1/actors/${baseline.actor.id}`;
+    const conditionPath = `/api/v1/campaigns/${baseline.actor.campaignId}/systems/${baseline.actor.systemId}/actors/${baseline.actor.id}/conditions`;
+    const conditionUpdate = (request.method() === "POST" && pathname === conditionPath)
+      || (request.method() === "DELETE" && pathname.startsWith(`${conditionPath}/`));
+    if (!genericActorUpdate && !conditionUpdate) return route.continue();
+    actorStartedResolve();
+    await actorReleased;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(conditionUpdate
+        ? { actor: { ...baseline.actor, name: "GM stale actor response" } }
+        : { ...baseline.actor, name: "GM stale actor response" })
+    }).catch(() => undefined);
+  });
+
+  await page.getByRole("button", { name: "Poisoned", exact: true }).click();
+  await actorStarted;
+  await page.getByLabel("Session user").selectOption("usr_demo_player");
+  await expect(page.getByLabel("Session user")).toHaveValue("usr_demo_player");
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
+  actorRelease();
+  await page.waitForTimeout(200);
+  await expect(page.getByText("GM stale actor response")).toHaveCount(0);
+
+  await page.getByLabel("Session user").selectOption("usr_demo_gm");
+  await expect(page.getByLabel("Session user")).toHaveValue("usr_demo_gm");
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
+  await selectBaselineActor();
+
+  let tokenRelease!: () => void;
+  let tokenStartedResolve!: () => void;
+  const tokenStarted = new Promise<void>((resolve) => { tokenStartedResolve = resolve; });
+  const tokenReleased = new Promise<void>((resolve) => { tokenRelease = resolve; });
+  await page.route("**/api/v1/tokens/tok_valen", async (route) => {
+    if (route.request().method() !== "PATCH") return route.continue();
+    tokenStartedResolve();
+    await tokenReleased;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ...baseline.token, name: "GM stale token response", notes: "GM-only stale notes" })
+    }).catch(() => undefined);
+  });
+
+  const actorPanel = selectedActorPanel(page);
+  await openActorDisclosure(actorPanel, "Token settings");
+  const tokenName = page.getByRole("textbox", { name: "Token inspector name" });
+  await tokenName.fill("Attempted token update");
+  await tokenName.press("Tab");
+  await tokenStarted;
+  await page.getByLabel("Session user").selectOption("usr_demo_player");
+  await expect(page.getByLabel("Session user")).toHaveValue("usr_demo_player");
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
+  tokenRelease();
+  await page.waitForTimeout(200);
+
+  await expect(page.getByText("GM stale token response")).toHaveCount(0);
+  expect(await page.locator("textarea").evaluateAll((elements) => elements.map((element) => (element as HTMLTextAreaElement).value))).not.toContain("GM-only stale notes");
+  expect(await page.evaluate(() => localStorage.getItem("otte:userId"))).toBe("usr_demo_player");
+});
+
+test("closing Encounter Builder retries the same atomic monster placement", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Demo GM" }).click();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
+
+  const encounter = await page.evaluate(async ({ apiBaseUrl }) => {
+    const headers = { "content-type": "application/json" };
+    const campaignResponse = await fetch(`${apiBaseUrl}/api/v1/campaigns/camp_demo`, { credentials: "include", headers });
+    if (!campaignResponse.ok) throw new Error(await campaignResponse.text());
+    const campaign = await campaignResponse.json() as { defaultSystemId?: string; updatedAt: string };
+    const systemId = campaign.defaultSystemId ?? "generic-fantasy";
+    const threatsResponse = await fetch(`${apiBaseUrl}/api/v1/campaigns/camp_demo/systems/${encodeURIComponent(systemId)}/encounter-threats`, { credentials: "include", headers });
+    if (!threatsResponse.ok) throw new Error(await threatsResponse.text());
+    const threats = await threatsResponse.json() as Array<{ id: string; name: string }>;
+    const threat = threats[0];
+    if (!threat) throw new Error("No encounter threat available");
+    const name = `Cancelable Placement ${Date.now().toString(36)}`;
+    const response = await fetch(`${apiBaseUrl}/api/v1/campaigns/camp_demo/systems/${encodeURIComponent(systemId)}/encounter-plan`, {
+      method: "POST",
+      credentials: "include",
+      headers: { ...headers, "idempotency-key": `encounter-cancellation-${Date.now().toString(36)}` },
+      body: JSON.stringify({
+        partyActorIds: [],
+        threats: [{ id: threat.id, count: 3 }],
+        createEncounter: true,
+        name,
+        expectedUpdatedAt: campaign.updatedAt,
+      })
+    });
+    if (!response.ok) throw new Error(await response.text());
+    const result = await response.json() as { encounter?: { id: string; name: string } };
+    if (!result.encounter) throw new Error("Encounter setup did not return a saved encounter");
+    return result.encounter;
+  }, { apiBaseUrl });
+
+  const baselineActors = await expectJsonResponse<E2EActor[]>(await page.request.get(apiBaseUrl + "/api/v1/campaigns/camp_demo/actors", { headers: gmApiHeaders }));
+  const baselineTokens = await expectJsonResponse<E2EToken[]>(await page.request.get(apiBaseUrl + "/api/v1/scenes/scn_vault_entry/tokens", { headers: gmApiHeaders }));
+  let placementRelease!: () => void;
+  let placementCommittedResolve!: () => void;
+  let placementSettledResolve!: () => void;
+  let placementRequestCount = 0;
+  const placementKeys: string[] = [];
+  const placementBodies: string[] = [];
+  type PlacementResult = {
+    placements: Array<{ actor: E2EActor & { updatedAt: string }; sceneToken: E2EToken }>;
+    scene: { id: string; updatedAt: string };
+  };
+  let committedResult: PlacementResult | undefined;
+  const placementCommitted = new Promise<void>((resolve) => { placementCommittedResolve = resolve; });
+  const placementSettled = new Promise<void>((resolve) => { placementSettledResolve = resolve; });
+  const placementReleased = new Promise<void>((resolve) => { placementRelease = resolve; });
+  await page.route("**/api/v1/scenes/scn_vault_entry/encounter-monster-placements", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    placementRequestCount += 1;
+    placementKeys.push(route.request().headers()["idempotency-key"] ?? "");
+    placementBodies.push(route.request().postData() ?? "");
+    if (placementRequestCount !== 1) return route.continue();
+    const upstream = await route.fetch();
+    const body = await upstream.text();
+    committedResult = JSON.parse(body) as PlacementResult;
+    placementCommittedResolve();
+    await placementReleased;
+    await route.fulfill({ status: upstream.status(), headers: upstream.headers(), body }).catch(() => undefined);
+    placementSettledResolve();
+  });
+
+  try {
+    await page.reload();
+    const dialog = await openEncounterBuilder(page);
+    await dialog.getByRole("button", { name: new RegExp(encounter.name) }).click();
+    const place = dialog.getByRole("button", { name: "Place monsters on scene" });
+    await expect(place).toBeEnabled();
+    await place.click();
+    await placementCommitted;
+    await dialog.getByRole("button", { name: "Cancel monster placement and close encounter builder" }).click();
+    await expect(dialog).toBeHidden();
+    placementRelease();
+    await placementSettled;
+
+    const reopenedDialog = await openEncounterBuilder(page);
+    await reopenedDialog.getByRole("button", { name: new RegExp(encounter.name) }).click();
+    const replayResponsePromise = page.waitForResponse((response) =>
+      response.url().endsWith("/api/v1/scenes/scn_vault_entry/encounter-monster-placements")
+      && response.request().method() === "POST"
+      && response.headers()["idempotency-replayed"] === "true"
+    );
+    await reopenedDialog.getByRole("button", { name: "Place monsters on scene" }).click();
+    const replayResponse = await replayResponsePromise;
+    expect(replayResponse.status()).toBe(200);
+    const replayedResult = await replayResponse.json() as PlacementResult;
+    expect(placementRequestCount).toBe(2);
+    expect(placementKeys[1]).toBe(placementKeys[0]);
+    expect(placementBodies[1]).toBe(placementBodies[0]);
+    expect(replayedResult).toEqual(committedResult);
+    expect(replayedResult.placements).toHaveLength(3);
+
+    const actors = await expectJsonResponse<E2EActor[]>(await page.request.get(apiBaseUrl + "/api/v1/campaigns/camp_demo/actors", { headers: gmApiHeaders }));
+    const tokens = await expectJsonResponse<E2EToken[]>(await page.request.get(apiBaseUrl + "/api/v1/scenes/scn_vault_entry/tokens", { headers: gmApiHeaders }));
+    const placedActorIds = new Set(replayedResult.placements.map((placement) => placement.actor.id));
+    const placedTokenIds = new Set(replayedResult.placements.map((placement) => placement.sceneToken.id));
+    expect(actors).toHaveLength(baselineActors.length + 3);
+    expect(tokens).toHaveLength(baselineTokens.length + 3);
+    expect(actors.filter((actor) => placedActorIds.has(actor.id))).toHaveLength(3);
+    expect(tokens.filter((token) => placedActorIds.has(token.actorId ?? "") && placedTokenIds.has(token.id))).toHaveLength(3);
+  } finally {
+    placementRelease();
+    await page.unrouteAll({ behavior: "ignoreErrors" }).catch(() => undefined);
+    for (const [index, placement] of (committedResult?.placements ?? []).entries()) {
+      const deleteTokenResponse = await page.request.delete(
+        expectedUpdatedAtUrl(apiBaseUrl + "/api/v1/tokens/" + placement.sceneToken.id, placement.sceneToken.updatedAt),
+        { headers: gmMutationHeaders("delete-atomic-placement-token-" + index) },
+      );
+      if (deleteTokenResponse.status() !== 404) await expectJsonResponse(deleteTokenResponse);
+      const deleteActorResponse = await page.request.delete(
+        expectedUpdatedAtUrl(apiBaseUrl + "/api/v1/actors/" + placement.actor.id, placement.actor.updatedAt),
+        { headers: gmMutationHeaders("delete-atomic-placement-actor-" + index) },
+      );
+      if (deleteActorResponse.status() !== 404) await expectJsonResponse(deleteActorResponse);
+    }
+    const currentEncounterResponse = await page.request.get(`${apiBaseUrl}/api/v1/encounters/${encounter.id}`, {
+      headers: gmApiHeaders,
+    });
+    if (currentEncounterResponse.status() !== 404) {
+      const currentEncounter = await expectJsonResponse<{ updatedAt: string }>(currentEncounterResponse);
+      const deleteEncounterResponse = await page.request.delete(
+        expectedUpdatedAtUrl(`${apiBaseUrl}/api/v1/encounters/${encounter.id}`, currentEncounter.updatedAt),
+        { headers: gmMutationHeaders("delete-cancelled-encounter") },
+      );
+      if (deleteEncounterResponse.status() !== 404) await expectJsonResponse(deleteEncounterResponse);
+    }
+  }
 });
 
 test("player can accept an invite from a private browser session", async ({ browser, page }) => {
+  test.setTimeout(120_000);
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   await openManageCategory(page, "People");
 
   await page.getByRole("textbox", { name: "Invite email", exact: true }).fill("e2e.invited@example.test");
@@ -2250,22 +4196,33 @@ test("player can accept an invite from a private browser session", async ({ brow
   await expect(createdInviteToken).toHaveValue(/^oti_/);
   const inviteToken = await createdInviteToken.inputValue();
   expect(inviteToken).toMatch(/^oti_/);
+  const createdInviteLink = page.getByRole("textbox", { name: "Invite link" });
+  await expect(createdInviteLink).toHaveValue(new RegExp(`/join\\?invite=${inviteToken}$`));
   await page.evaluate(async ({ apiBaseUrl }) => {
-    const bearer = localStorage.getItem("otte:sessionToken");
-    if (!bearer) throw new Error("No browser session token available for hidden-scene setup");
-    const headers = { authorization: `Bearer ${bearer}` };
-    const campaigns = await fetch(`${apiBaseUrl}/api/v1/campaigns`, { headers }).then((response) => response.json());
+    const campaigns = await fetch(`${apiBaseUrl}/api/v1/campaigns`, { credentials: "include" }).then((response) => response.json());
     const campaign = campaigns.find((item: { name?: string }) => item.name === "The Ember Vault") ?? campaigns[0];
     if (!campaign) throw new Error("No campaign available for hidden-scene setup");
     const response = await fetch(`${apiBaseUrl}/api/v1/campaigns/${campaign.id}/scenes`, {
       method: "POST",
-      headers: { ...headers, "content-type": "application/json" },
-      body: JSON.stringify({ name: "GM Prep Hidden Scene", active: false, folder: "gm-prep", width: 900, height: 700, gridSize: 50 })
+      credentials: "include",
+      headers: {
+        "content-type": "application/json",
+        "idempotency-key": `e2e-hidden-scene-create:${crypto.randomUUID()}`,
+      },
+      body: JSON.stringify({
+        name: "GM Prep Hidden Scene",
+        active: false,
+        folder: "gm-prep",
+        width: 900,
+        height: 700,
+        gridSize: 50,
+        expectedUpdatedAt: campaign.updatedAt,
+      })
     });
     if (!response.ok) throw new Error(await response.text());
   }, { apiBaseUrl });
   await page.reload();
-  await expect(page.getByRole("button", { name: /GM Prep Hidden Scene/ })).toBeVisible();
+  await expect(sceneTab(page, "GM Prep Hidden Scene")).toBeVisible();
 
   const origin = new URL(page.url()).origin;
   const privateContext = await browser.newContext();
@@ -2273,18 +4230,20 @@ test("player can accept an invite from a private browser session", async ({ brow
   const createdTokenIds: string[] = [];
   try {
     await privatePage.goto(`${origin}/join?invite=${encodeURIComponent(inviteToken)}`);
-    await expect(privatePage.locator(".section-title", { hasText: "Accept Invite" })).toBeVisible();
+    await expect(privatePage.getByRole("heading", { name: "Accept Invite", exact: true })).toBeVisible();
     await expect(privatePage.getByRole("textbox", { name: "Public invite token" })).toHaveValue(inviteToken);
     await privatePage.getByRole("textbox", { name: "Join email" }).fill("e2e.invited@example.test");
     await privatePage.getByRole("textbox", { name: "Display name" }).fill("E2E Invited Player");
     await privatePage.getByLabel("Join password").fill("correct horse");
     await privatePage.getByRole("button", { name: "Accept Invite" }).click();
 
-    await expect(privatePage.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+    await expect(privatePage.getByLabel("Current campaign", { exact: true })).toBeVisible();
+
+    await expect(privatePage.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
     await expect(privatePage.getByText("Campaign Settings")).not.toBeVisible();
-    await expect(privatePage.getByRole("button", { name: /Vault Entry/ })).toBeVisible();
-    await expect(privatePage.getByRole("button", { name: /GM Prep Hidden Scene/ })).toHaveCount(0);
-    await expect(privatePage.getByRole("button", { name: "Chat", exact: true })).toBeVisible();
+    await expect(sceneTab(privatePage, "Vault Entry")).toBeVisible();
+    await expect(sceneTab(privatePage, "GM Prep Hidden Scene")).toHaveCount(0);
+    await expect(privatePage.getByRole("tab", { name: "Chat", exact: true })).toBeVisible();
 
     await submitChatCommand(page, "Realtime GM broadcast");
     await openInspectorPanel(privatePage, "Chat");
@@ -2294,69 +4253,70 @@ test("player can accept an invite from a private browser session", async ({ brow
     await openInspectorPanel(page, "Chat");
     await expect(page.locator('[aria-label="Chat messages"]')).toContainText("Realtime player whisper");
 
-    await submitChatCommand(privatePage, "/roll 1d20+1");
-    await expect(privatePage.getByRole("status").filter({ hasText: /^Rolled \d+$/ })).toBeVisible();
-    await submitChatCommand(privatePage, "/gmroll 1d20+2");
-    await expect(privatePage.getByRole("status").filter({ hasText: /^Rolled \d+$/ })).toBeVisible();
+    // Realtime connection updates can replace the transient "Rolled" status.
+    // Match each acknowledged roll ID to its durable chat result instead.
+    for (const expected of [
+      { command: "/roll 1d20+1", formula: "1d20+1", visibility: "public", viewer: privatePage },
+      { command: "/gmroll 1d20+2", formula: "1d20+2", visibility: "gm_only", viewer: page },
+    ]) {
+      const responsePromise = privatePage.waitForResponse((response) =>
+        response.request().method() === "POST"
+        && new URL(response.url()).pathname === "/api/v1/dice/roll"
+        && response.request().postDataJSON().formula === expected.formula,
+      );
+      await submitChatCommand(privatePage, expected.command);
+      const roll = await expectJsonResponse<DiceRoll>(await responsePromise);
+      expect(roll).toMatchObject({ formula: expected.formula, visibility: expected.visibility });
+      const messages = await expectJsonResponse<ChatMessage[]>(await page.request.get(
+        `${apiBaseUrl}/api/v1/chat/messages?campaignId=camp_demo`, { headers: gmApiHeaders },
+      ));
+      const message = messages.find((candidate) => candidate.rollId === roll.id);
+      expect(message).toBeDefined();
+      await openInspectorPanel(expected.viewer, "Chat");
+      const visibleMessage = expected.viewer.locator(`[id="campaign-search-chat-${encodeURIComponent(message!.id)}"]`);
+      await expect(visibleMessage.getByRole("button", {
+        name: `Table roll: rolled ${roll.formula} for ${roll.total}. Toggle breakdown.`, exact: true,
+      })).toBeVisible();
+    }
     const playerRolls = await privatePage.evaluate(async ({ apiBaseUrl }) => {
-      const bearer = localStorage.getItem("otte:sessionToken");
-      if (!bearer) throw new Error("No browser session token available for roll lookup");
       const response = await fetch(`${apiBaseUrl}/api/v1/campaigns/camp_demo/rolls`, {
-        headers: { authorization: `Bearer ${bearer}` }
+        credentials: "include"
       });
       if (!response.ok) throw new Error(await response.text());
       return (await response.json()) as Array<{ formula?: string; visibility?: string }>;
     }, { apiBaseUrl });
     expect(playerRolls.some((roll) => roll.formula === "1d20+1" && roll.visibility === "public")).toBe(true);
-    expect(playerRolls.some((roll) => roll.formula === "1d20+2" && roll.visibility === "gm_only")).toBe(true);
+    expect(playerRolls.some((roll) => roll.formula === "1d20+2" && roll.visibility === "gm_only")).toBe(false);
 
     const playerUserId = await privatePage.evaluate(() => localStorage.getItem("otte:userId"));
     expect(playerUserId).toBeTruthy();
     const tokenSuffix = Date.now().toString(36);
-    const playerActor = await page.evaluate(
-      async ({ apiBaseUrl, playerUserId, tokenSuffix }) => {
-        const bearer = localStorage.getItem("otte:sessionToken");
-        if (!bearer) throw new Error("No browser session token available for player actor setup");
-        const headers = { authorization: `Bearer ${bearer}`, "content-type": "application/json" };
-        const characterResponse = await fetch(`${apiBaseUrl}/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ templateId: "fighter", name: `E2E Player Fighter ${tokenSuffix}`, ownerUserId: playerUserId })
-        });
-        if (!characterResponse.ok) throw new Error(await characterResponse.text());
-        const character = await characterResponse.json();
-        const advanceResponse = await fetch(`${apiBaseUrl}/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${character.actor.id}/advance`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ optionId: "level-up" })
-        });
-        if (!advanceResponse.ok) throw new Error(await advanceResponse.text());
-        const advanced = await advanceResponse.json();
-        return advanced.actor as { id: string; name: string };
-      },
-      { apiBaseUrl, playerUserId, tokenSuffix }
-    );
+    const playerActor = await createSystemCharacter(page, {
+      templateId: "fighter",
+      name: `E2E Player Fighter ${tokenSuffix}`,
+      ownerUserId: playerUserId!,
+      advanceToLevel: 2
+    });
     const ownedToken = await createSceneToken(page, { name: `E2E Owned ${tokenSuffix}`, x: 430, y: 350, ownerUserIds: [playerUserId!], actorId: playerActor.id });
     const unownedToken = await createSceneToken(page, { name: `E2E Unowned ${tokenSuffix}`, x: 560, y: 360, ownerUserIds: [] });
     createdTokenIds.push(ownedToken.id, unownedToken.id);
 
     await privatePage.reload();
-    await expect(privatePage.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
-    await expect(privatePage.getByRole("button", { name: /Vault Entry/ })).toBeVisible();
+    await expect(privatePage.getByLabel("Current campaign", { exact: true })).toBeVisible();
+    await expect(privatePage.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
+    await expect(sceneTab(privatePage, "Vault Entry")).toBeVisible();
     await expect(privatePage.getByRole("button", { name: `Token ${ownedToken.name}` })).toBeVisible();
     await expect(privatePage.getByRole("button", { name: `Token ${unownedToken.name}` })).toBeVisible();
     await privatePage.getByRole("button", { name: `Token ${ownedToken.name}` }).click();
-    await privatePage.getByRole("button", { name: "Actors", exact: true }).click();
-    const actorPanel = privatePage.locator(".panel-stack", { hasText: "Selected Actor" });
+    await privatePage.getByRole("tab", { name: "Actors", exact: true }).click();
+    const actorPanel = selectedActorPanel(privatePage);
     await expect(actorPanel.getByRole("heading", { name: playerActor.name })).toBeVisible();
-    await expect(actorPanel.locator(".metric-row", { hasText: "Resources" })).toContainText("Action Surge 1/1");
     await privatePage.getByRole("tab", { name: "Actions" }).click();
     const playerActionSheet = privatePage.getByRole("region", { name: "Actor action sheet" });
-    const actionSurgeCard = playerActionSheet.locator("article", { hasText: "Action Surge" }).first();
-    await expect(actionSurgeCard).toContainText("roll only action");
-    await actionSurgeCard.getByRole("button", { name: "Use action" }).click();
-    await expect(privatePage.getByText(new RegExp(`${playerActor.name} used action: Action Surge 0`))).toBeVisible();
-    await expect(actorPanel.locator(".metric-row", { hasText: "Resources" })).toContainText("Action Surge 0/1");
+    const longswordAttackCard = playerActionSheet.locator("article", { hasText: "Longsword Attack" }).first();
+    await expect(longswordAttackCard).toContainText("roll only action");
+    await clickAndConfirmPreparedDndAction(longswordAttackCard.getByRole("button", { name: "Continue to final review" }));
+    await expect(statusMessage(privatePage, new RegExp(`${playerActor.name} (used action|action posted)`))).toBeVisible();
 
     const ownedBefore = await getSceneTokenById(page, ownedToken.id);
     await dragTokenByName(privatePage, ownedToken.name, 120, 70);
@@ -2376,8 +4336,94 @@ test("player can accept an invite from a private browser session", async ({ brow
     for (const tokenId of createdTokenIds) {
       await deleteTokenById(page, tokenId).catch(() => undefined);
     }
-    await privateContext.close();
+    await privateContext.close().catch(() => undefined);
   }
+});
+
+test("quick scene creation stays draft and dirty scene edits block navigation", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Demo GM" }).click();
+  await openManageCategory(page, "Scenes");
+  await openCreateDrawer(page, "New scene");
+
+  const sceneName = `Quick Draft ${Date.now().toString(36)}`;
+  const sceneFolder = `dirty-guard-${Date.now().toString(36)}`;
+  await page.getByRole("textbox", { name: "Scene name", exact: true }).fill(sceneName);
+  await page.getByRole("textbox", { name: "Scene folder", exact: true }).fill(sceneFolder);
+  await page.getByRole("checkbox", { name: "Activate for players", exact: true }).check();
+  await closeManage(page);
+  await page.getByRole("button", { name: "Prep", exact: true }).click();
+  await page.getByRole("button", { name: "Add draft scene after newest scene" }).click();
+  await expect(sceneTab(page, sceneName)).toBeVisible();
+
+  const createdScene = await page.evaluate(async ({ apiBaseUrl, sceneName }) => {
+    const campaigns = await fetch(`${apiBaseUrl}/api/v1/campaigns`, { credentials: "include" }).then((response) => response.json());
+    const campaign = campaigns.find((item: { name?: string }) => item.name === "The Ember Vault") ?? campaigns[0];
+    const scenes = await fetch(`${apiBaseUrl}/api/v1/campaigns/${campaign.id}/scenes`, { credentials: "include" }).then((response) => response.json());
+    return scenes.find((scene: { name?: string }) => scene.name === sceneName) as { id: string; active: boolean; updatedAt: string } | undefined;
+  }, { apiBaseUrl, sceneName });
+  expect(createdScene).toMatchObject({ active: false });
+
+  await sceneTab(page, "Vault Entry").click();
+  await openManageCategory(page, "Scenes");
+  const editName = page.getByRole("textbox", { name: "Edit scene name" });
+  const managePanel = page.getByRole("region", { name: "Manage workspace panel" });
+  await sceneTab(page, sceneName).click();
+  await expect(managePanel).toBeVisible();
+  await expect(editName).toHaveValue(sceneName);
+  await sceneTab(page, "Vault Entry").click();
+  await expect(managePanel).toBeVisible();
+  await expect(editName).toHaveValue("Vault Entry");
+  await expect(page.getByRole("checkbox", { name: /Active player scene/ })).toBeDisabled();
+  await editName.fill("Vault Entry unsaved");
+  const folderFilter = page.getByRole("combobox", { name: "Scene folder filter" });
+  await folderFilter.selectOption(sceneFolder);
+  await expect(folderFilter).toHaveValue("all");
+  await expect(editName).toHaveValue("Vault Entry unsaved");
+  await page.getByRole("button", { name: "Select visible scenes" }).click();
+  const duplicateSelectedButtons = page.locator("button", { hasText: "Duplicate selected scenes" });
+  await expect(duplicateSelectedButtons).toHaveCount(2);
+  await expect(duplicateSelectedButtons.nth(0)).toBeDisabled();
+  await expect(duplicateSelectedButtons.nth(1)).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await expect(managePanel).toBeVisible();
+  await expect(editName).toHaveValue("Vault Entry unsaved");
+  await page.keyboard.press("Control+K");
+  await page.getByRole("textbox", { name: "Command palette search" }).fill("Go to Prep");
+  await page.keyboard.press("Enter");
+  await expect(managePanel).toBeVisible();
+  await expect(editName).toHaveValue("Vault Entry unsaved");
+  await managePanel.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(managePanel).toBeVisible();
+  await expect(editName).toHaveValue("Vault Entry unsaved");
+  await expect(statusMessage(page, "Save or discard scene changes before leaving Scene Manager")).toBeVisible();
+  await page.getByRole("button", { name: "Discard", exact: true }).click();
+  await closeManage(page);
+  await page.getByRole("button", { name: "Prep", exact: true }).click();
+  await sceneTab(page, "Vault Entry").click();
+  await openManageCategory(page, "Scenes");
+  await expect(editName).toHaveValue("Vault Entry");
+
+  await page.evaluate(async ({ apiBaseUrl, sceneId }) => {
+    if (!sceneId) return;
+    const current = await fetch(`${apiBaseUrl}/api/v1/scenes/${sceneId}`, {
+      credentials: "include",
+    });
+    if (current.status === 404) return;
+    if (!current.ok) throw new Error(await current.text());
+    const scene = await current.json() as { updatedAt: string };
+    const deleted = await fetch(
+      `${apiBaseUrl}/api/v1/scenes/${sceneId}?expectedUpdatedAt=${encodeURIComponent(scene.updatedAt)}`,
+      {
+        method: "DELETE",
+        credentials: "include",
+        headers: {
+          "idempotency-key": `e2e-quick-scene-delete:${crypto.randomUUID()}`,
+        },
+      },
+    );
+    if (!deleted.ok && deleted.status !== 404) throw new Error(await deleted.text());
+  }, { apiBaseUrl, sceneId: createdScene?.id });
 });
 
 test("GM can bulk duplicate selected prep scenes", async ({ page }) => {
@@ -2387,26 +4433,173 @@ test("GM can bulk duplicate selected prep scenes", async ({ page }) => {
   await expect(page.getByText("Scene Manager")).toBeVisible();
 
   const prefix = `Bulk Prep ${Date.now()}`;
-  const activeForPlayers = page.getByRole("checkbox", { name: "Activate for players" });
+  await openCreateDrawer(page, "New scene");
+  const activeForPlayers = page.getByRole("checkbox", { name: "Activate for players", exact: true });
   if (await activeForPlayers.isChecked()) await activeForPlayers.uncheck();
 
   await page.getByRole("textbox", { name: "Scene name", exact: true }).fill(`${prefix} A`);
-  await page.getByRole("button", { name: "Add Scene" }).click();
-  await expect(page.getByRole("button", { name: new RegExp(`${prefix} A`) })).toBeVisible();
+  await page.getByRole("button", { name: "Add Scene", exact: true }).click();
+  await expect(sceneTab(page, `${prefix} A`)).toBeVisible();
   await page.getByRole("textbox", { name: "Scene name", exact: true }).fill(`${prefix} B`);
-  await page.getByRole("button", { name: "Add Scene" }).click();
-  await expect(page.getByRole("button", { name: new RegExp(`${prefix} B`) })).toBeVisible();
+  await page.getByRole("button", { name: "Add Scene", exact: true }).click();
+  await expect(sceneTab(page, `${prefix} B`)).toBeVisible();
 
   await page.getByRole("textbox", { name: "Scene search" }).fill(prefix);
   await expect(page.getByRole("status", { name: "Scene filter summary" })).toContainText("2 of");
   await page.getByRole("button", { name: "Select visible scenes" }).click();
   await expect(page.getByRole("status", { name: "Scene selection summary" })).toContainText("2 selected");
+  const previewRequestPromise = page.waitForRequest((request) => request.method() === "POST" && new URL(request.url()).pathname.endsWith("/scene-duplications"));
   await page.getByRole("button", { name: "Duplicate selected scenes" }).click();
-  await expect(page.getByText("Duplicated 2 selected scenes")).toBeVisible();
+  const previewRequest = await previewRequestPromise;
+  expect(previewRequest.postDataJSON()).toMatchObject({ dryRun: true, sources: [{}, {}] });
+  const review = page.getByRole("region", { name: "Scene duplication review" });
+  await expect(review).toBeVisible();
+  await expect(review.getByRole("list", { name: "Planned scene copies" })).toContainText(`${prefix} A Copy`);
+  await expect(review.getByRole("list", { name: "Planned scene copies" })).toContainText(`${prefix} B Copy`);
+  const commitResponsePromise = page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname.endsWith("/scene-duplications") && response.status() === 201);
+  await review.getByRole("button", { name: "Confirm duplicate selected scenes" }).click();
+  const commitResponse = await commitResponsePromise;
+  expect(commitResponse.request().postDataJSON()).toMatchObject({ dryRun: false, sources: [{}, {}] });
+  await expect(page.getByText(/Duplicated 2 scenes, \d+ tokens, and \d+ actors atomically/)).toBeVisible();
   await expect(page.getByRole("status", { name: "Scene selection summary" })).toContainText("2 selected");
 
+  await page.reload();
+  await openManageCategory(page, "Scenes");
   await page.getByRole("textbox", { name: "Scene search" }).fill(`${prefix} A Copy`);
-  await expect(page.getByRole("button", { name: new RegExp(`${prefix} A Copy`) })).toBeVisible();
+  await expect(sceneTab(page, `${prefix} A Copy`)).toBeVisible();
   await page.getByRole("textbox", { name: "Scene search" }).fill(`${prefix} B Copy`);
-  await expect(page.getByRole("button", { name: new RegExp(`${prefix} B Copy`) })).toBeVisible();
+  await expect(sceneTab(page, `${prefix} B Copy`)).toBeVisible();
+});
+
+test("failed prep scene duplication leaves no partial copies", async ({ page }) => {
+  await page.goto("/");
+  const manageButton = page.getByRole("button", { name: "Manage", exact: true });
+  await page.getByRole("button", { name: "Demo GM" }).click();
+  await expect(manageButton).toBeVisible();
+  await openManageCategory(page, "Scenes");
+
+  const prefix = `Failed Bulk Prep ${Date.now()}`;
+  await openCreateDrawer(page, "New scene");
+  const activeForPlayers = page.getByRole("checkbox", { name: "Activate for players", exact: true });
+  if (await activeForPlayers.isChecked()) await activeForPlayers.uncheck();
+  for (const suffix of ["A", "B"]) {
+    await page.getByRole("textbox", { name: "Scene name", exact: true }).fill(`${prefix} ${suffix}`);
+    await page.getByRole("button", { name: "Add Scene", exact: true }).click();
+    await expect(sceneTab(page, `${prefix} ${suffix}`)).toBeVisible();
+  }
+
+  await page.getByRole("textbox", { name: "Scene search" }).fill(prefix);
+  await page.getByRole("button", { name: "Select visible scenes" }).click();
+  await page.getByRole("button", { name: "Duplicate selected scenes" }).click();
+  const review = page.getByRole("region", { name: "Scene duplication review" });
+  await expect(review).toBeVisible();
+  await page.route("**/scene-duplications", async (route) => {
+    const body = route.request().postDataJSON() as { dryRun?: boolean };
+    if (body.dryRun === false) {
+      await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "forced_failure", message: "Forced atomic duplication failure" }) });
+      return;
+    }
+    await route.continue();
+  });
+  await review.getByRole("button", { name: "Confirm duplicate selected scenes" }).click();
+  await expect(statusMessage(page, "Forced atomic duplication failure")).toBeVisible();
+
+  await page.reload();
+  await openManageCategory(page, "Scenes");
+  await page.getByRole("textbox", { name: "Scene search" }).fill(`${prefix} Copy`);
+  await expect(page.getByRole("status", { name: "Scene filter summary" })).toContainText("0 of");
+  await expect(sceneTab(page, `${prefix} A Copy`)).toHaveCount(0);
+  await expect(sceneTab(page, `${prefix} B Copy`)).toHaveCount(0);
+});
+
+test("character at 0 HP resolves Death Saving Throws from the sheet to a terminal state", async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Demo GM" }).click();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
+
+  const suffix = Date.now().toString(36);
+  const hero = await createSystemCharacter(page, { templateId: "cleric", name: `E2E Dying Hero ${suffix}`, ownerUserId: "usr_demo_gm" });
+  await createSceneToken(page, { name: `E2E Dying Token ${suffix}`, actorId: hero.id, x: 640, y: 320, ownerUserIds: [] });
+
+  await page.reload();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
+  await page.getByRole("button", { name: `Token E2E Dying Token ${suffix}` }).click();
+  await openInspectorPanel(page, "Actors");
+  const actorPanel = selectedActorPanel(page);
+  await expect(actorPanel).toContainText(`E2E Dying Hero ${suffix}`);
+
+  // A healthy character has core rolls but no Death Saving Throw affordance.
+  const statsSheet = actorPanel.getByRole("region", { name: "Actor stats sheet" });
+  await expect(statsSheet.getByRole("button", { name: /Roll Strength check/ })).toBeVisible();
+  await expect(statsSheet.locator(".actor-death-save-row")).toHaveCount(0);
+
+  const heroHp = (hero.data.hp as { current: number }).current;
+  await applyTypedDamage(page, hero.id, heroHp);
+  await expect.poll(async () => ((await getActorById(page, hero.id)).data.hp as { current: number }).current).toBe(0);
+
+  const deathSaveRow = statsSheet.locator(".actor-death-save-row");
+  await expect(deathSaveRow).toContainText("Death saves 0/3 - 0/3");
+  const rollButton = deathSaveRow.getByRole("button", { name: /Roll Death Saving Throw/ });
+  await expect(rollButton).toBeVisible();
+
+  // Each roll adds at least one counter or revives, so a terminal outcome
+  // (Stable, Dead, or natural-20 revival) always arrives within five rolls.
+  let terminal: "stable" | "dead" | "revived" | undefined;
+  for (let attempt = 0; attempt < 5 && !terminal; attempt += 1) {
+    const commit = page.waitForResponse((response) => {
+      if (response.request().method() !== "POST" || !/\/actors\/[^/]+\/roll$/.test(new URL(response.url()).pathname) || !response.ok()) return false;
+      try {
+        const body = response.request().postDataJSON() as { commit?: boolean; prepare?: boolean; rollId?: string };
+        return body.rollId === "death-save" && body.commit !== false && body.prepare !== true;
+      } catch {
+        return false;
+      }
+    });
+    await rollButton.click();
+    const committed = await expectJsonResponse<{ resolution?: { deathSave?: { result?: "revived" | "stable" | "dead"; successes: number; failures: number } } }>(await commit);
+    const outcome = committed.resolution?.deathSave;
+    expect(outcome).toBeTruthy();
+    await expect(statusMessage(page, /Death Saving Throw/)).toBeVisible();
+    terminal = outcome?.result;
+    if (!terminal) {
+      await expect(deathSaveRow).toContainText(`Death saves ${outcome!.successes}/3 - ${outcome!.failures}/3`);
+    }
+  }
+  expect(terminal).toBeTruthy();
+
+  const persistedActor = await getActorById(page, hero.id);
+  if (terminal === "revived") {
+    expect(persistedActor.data).toMatchObject({ hp: { current: 1 }, deathSaves: { successes: 0, failures: 0 }, lifeState: "conscious" });
+    await expect.poll(async () => await page.locator("#actor-hp").inputValue()).toBe("1");
+    await expect(statsSheet.locator(".actor-death-save-row")).toHaveCount(0);
+  } else {
+    expect(persistedActor.data).toMatchObject(
+      terminal === "stable"
+        ? { hp: { current: 0 }, deathSaves: { successes: 0, failures: 0 }, lifeState: "stable" }
+        : { hp: { current: 0 }, deathSaves: { failures: 3 }, lifeState: "dead" }
+    );
+    await expect(deathSaveRow).toContainText(terminal === "stable" ? "Stable" : "Dead");
+    await expect(deathSaveRow.getByRole("button", { name: /Roll Death Saving Throw/ })).toHaveCount(0);
+  }
+
+  // The roll and its outcome reach the shared chat history.
+  await openInspectorPanel(page, "Chat");
+  await expect(page.locator(".chat-message", { hasText: "Death Saving Throw" }).last()).toContainText(/success|failure|natural/);
+
+  // Terminal lifecycle and the Stable 0/0 reset survive a fresh browser load.
+  await page.reload();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
+  await page.getByRole("button", { name: `Token E2E Dying Token ${suffix}` }).click();
+  await openInspectorPanel(page, "Actors");
+  const reloadedStats = selectedActorPanel(page).getByRole("region", { name: "Actor stats sheet" });
+  if (terminal === "revived") {
+    await expect(reloadedStats.locator(".actor-death-save-row")).toHaveCount(0);
+  } else {
+    await expect(reloadedStats.locator(".actor-death-save-row")).toContainText(terminal === "stable" ? "Stable" : "Dead");
+    if (terminal === "stable") await expect(reloadedStats.locator(".actor-death-save-row")).toContainText("Death saves 0/3 - 0/3");
+  }
 });

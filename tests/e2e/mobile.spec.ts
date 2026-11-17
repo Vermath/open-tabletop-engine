@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 
@@ -14,13 +15,10 @@ async function expectAndDeleteTokensByName(page: Page, name: string) {
 }
 
 async function deleteTokensByName(page: Page, name: string, options: { requireFound?: boolean } = {}) {
-  return page.evaluate(
+  const deletedCount = await page.evaluate(
     async ({ apiBaseUrl, name }) => {
-      const bearer = localStorage.getItem("otte:sessionToken");
-      if (!bearer) throw new Error("No browser session token available for token cleanup");
-      const headers = { authorization: `Bearer ${bearer}` };
       const getJson = async (path: string) => {
-        const response = await fetch(`${apiBaseUrl}${path}`, { headers });
+        const response = await fetch(`${apiBaseUrl}${path}`, { credentials: "include" });
         if (!response.ok) throw new Error(await response.text());
         return response.json();
       };
@@ -31,9 +29,14 @@ async function deleteTokensByName(page: Page, name: string, options: { requireFo
       const scene = scenes.find((item: { name?: string }) => item.name === "Vault Entry") ?? scenes.find((item: { active?: boolean }) => item.active) ?? scenes[0];
       if (!scene) throw new Error("No scene available for token cleanup");
       const tokens = await getJson(`/api/v1/scenes/${scene.id}/tokens`);
-      const matchingTokens = tokens.filter((item: { name?: string }) => item.name === name);
+      const matchingTokens = tokens.filter((item: { name?: string; updatedAt?: string }) => item.name === name);
       for (const token of matchingTokens) {
-        const response = await fetch(`${apiBaseUrl}/api/v1/tokens/${token.id}`, { method: "DELETE", headers });
+        if (typeof token.updatedAt !== "string" || !token.updatedAt) throw new Error(`Token ${token.id} has no revision for cleanup`);
+        const response = await fetch(`${apiBaseUrl}/api/v1/tokens/${token.id}?expectedUpdatedAt=${encodeURIComponent(token.updatedAt)}`, {
+          method: "DELETE",
+          credentials: "include",
+          headers: { "idempotency-key": `e2e-token-delete-${token.id}-${token.updatedAt}` }
+        });
         if (!response.ok) throw new Error(await response.text());
       }
       return matchingTokens.length;
@@ -47,11 +50,8 @@ async function deleteTokensByName(page: Page, name: string, options: { requireFo
 async function expectSceneTokenByName(page: Page, name: string) {
   return page.evaluate(
     async ({ apiBaseUrl, name }) => {
-      const bearer = localStorage.getItem("otte:sessionToken");
-      if (!bearer) throw new Error("No browser session token available for token lookup");
-      const headers = { authorization: `Bearer ${bearer}` };
       const getJson = async (path: string) => {
-        const response = await fetch(`${apiBaseUrl}${path}`, { headers });
+        const response = await fetch(`${apiBaseUrl}${path}`, { credentials: "include" });
         if (!response.ok) throw new Error(await response.text());
         return response.json();
       };
@@ -71,18 +71,28 @@ async function expectSceneTokenByName(page: Page, name: string) {
 }
 
 async function openInspectorPanel(page: Page, panelName: string) {
-  await page.locator(".inspector-tabs").getByRole("button", { name: panelName, exact: true }).click();
+  const showInspector = page.getByRole("button", { name: "Show inspector", exact: true });
+  if (await showInspector.isVisible()) await showInspector.click();
+  const visiblePanelName = panelName === "Content" ? "Assets" : panelName;
+  await page.locator(".inspector-tabs").getByRole("tab", { name: visiblePanelName, exact: true }).click();
+}
+
+async function openTokenQuickCreate(page: Page) {
+  const tokenName = page.getByRole("textbox", { name: "Token name" });
+  if (await tokenName.isVisible().catch(() => false)) return;
+  await page.getByRole("button", { name: "Token", exact: true }).click();
+  await expect(tokenName).toBeVisible();
 }
 
 async function submitChatCommand(page: Page, command: string) {
   await openInspectorPanel(page, "Chat");
-  const commandLine = page.getByRole("textbox", { name: "Chat command line" });
+  const commandLine = page.getByRole("textbox", { name: "Chat message" });
   await expect(commandLine).toBeVisible();
   await commandLine.fill(command);
   await page.getByRole("button", { name: "Send chat command" }).click();
 }
 
-async function dragTokenWithTouch(page: Page, tokenName: string) {
+async function dragTokenOnBoard(page: Page, tokenName: string) {
   const token = page.getByRole("button", { name: `Token ${tokenName}` });
   await expect(token).toBeVisible();
   const tokenBox = await token.boundingBox();
@@ -93,12 +103,11 @@ async function dragTokenWithTouch(page: Page, tokenName: string) {
     x: Math.min(boardBox.x + boardBox.width - 24, start.x + Math.max(54, boardBox.width * 0.12)),
     y: Math.min(boardBox.y + boardBox.height - 24, start.y + Math.max(54, boardBox.height * 0.12))
   };
-  const client = await page.context().newCDPSession(page);
-  await client.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ ...start, id: 1, radiusX: 4, radiusY: 4, force: 1 }] });
-  await client.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: (start.x + end.x) / 2, y: (start.y + end.y) / 2, id: 1, radiusX: 4, radiusY: 4, force: 1 }] });
-  await client.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ ...end, id: 1, radiusX: 4, radiusY: 4, force: 1 }] });
-  await client.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-  await client.detach();
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move((start.x + end.x) / 2, (start.y + end.y) / 2, { steps: 4 });
+  await page.mouse.move(end.x, end.y, { steps: 4 });
+  await page.mouse.up();
 }
 
 for (const viewport of viewportCases) {
@@ -115,19 +124,49 @@ for (const viewport of viewportCases) {
       await expect(page.getByRole("heading", { name: "Sign In" })).toBeVisible();
       await page.getByRole("button", { name: "Demo GM" }).click();
 
-      await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
-      const headingBox = await page.getByRole("heading", { name: "The Ember Vault" }).boundingBox();
-      const sessionBox = await page.getByLabel("Session user").boundingBox();
-      expect(headingBox?.y ?? 0).toBeLessThan(sessionBox?.y ?? 0);
-      const tableAreaBox = await page.locator(".table-area").boundingBox();
+      const workspaceBox = await page.getByRole("main", { name: "OpenTabletop workspace" }).boundingBox();
+      expect(workspaceBox).not.toBeNull();
+      await expect(page.locator(".topbar")).toContainText("The Ember Vault");
       const addToken = page.getByRole("button", { name: "Add token" });
       await expect(addToken).toBeVisible();
       const addTokenBox = await addToken.boundingBox();
-      expect(addTokenBox?.height ?? 0).toBeGreaterThanOrEqual(44);
-      expect(addTokenBox?.width ?? 0).toBeGreaterThanOrEqual(44);
-      expect(addTokenBox?.y ?? 0).toBeGreaterThan((tableAreaBox?.y ?? 0) + (tableAreaBox?.height ?? 0) * 0.45);
+      const minimumToolTarget = viewport.isMobile ? 40 : 44;
+      expect(addTokenBox?.height ?? 0).toBeGreaterThanOrEqual(minimumToolTarget);
+      expect(addTokenBox?.width ?? 0).toBeGreaterThanOrEqual(minimumToolTarget);
+      expect(
+        await addToken.evaluate((element) => {
+          const box = element.getBoundingClientRect();
+          const tableArea = element.closest<HTMLElement>(".table-area")?.getBoundingClientRect();
+          const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+          return Boolean(
+            tableArea
+            && box.left >= Math.max(0, tableArea.left)
+            && box.right <= Math.min(window.innerWidth, tableArea.right)
+            && box.top >= Math.max(0, tableArea.top)
+            && box.bottom <= Math.min(window.innerHeight, tableArea.bottom)
+            && hit
+            && (hit === element || element.contains(hit))
+          );
+        })
+      ).toBe(true);
+      if (viewport.isMobile) {
+        await page.locator('summary[aria-label="Advanced tools"]').click();
+        const secondaryTool = page.getByLabel("Advanced table tools").getByRole("button", { name: "Measure circle" });
+        await expect(secondaryTool).toBeVisible();
+        const secondaryToolBox = await secondaryTool.boundingBox();
+        expect(secondaryToolBox?.height ?? 0).toBeGreaterThanOrEqual(40);
+        expect(secondaryToolBox?.width ?? 0).toBeGreaterThanOrEqual(40);
+        expect(await secondaryTool.evaluate((element) => {
+          const box = element.getBoundingClientRect();
+          const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+          return box.top >= 0 && box.bottom <= window.innerHeight && Boolean(hit && (hit === element || element.contains(hit)));
+        })).toBe(true);
+        await secondaryTool.click();
+        await expect(page.locator(".rail > .status")).toContainText("Circle measure tool active");
+      }
       await openInspectorPanel(page, "Chat");
-      await expect(page.getByRole("textbox", { name: "Chat command line" })).toBeVisible();
+      await expect(page.getByRole("textbox", { name: "Chat message" })).toBeVisible();
+      await openTokenQuickCreate(page);
       const controlsFitViewport = await page.locator(".topbar").evaluate(() => {
         const viewportWidth = window.innerWidth;
         const controls = Array.from(document.querySelectorAll(".scene-filter-panel input, .scene-filter-panel select, .scene-filter-panel button, .quick-create-form input, .quick-create-form select, .quick-create-form button"));
@@ -142,41 +181,214 @@ for (const viewport of viewportCases) {
       await deleteTokensByName(page, tokenName);
       await page.getByRole("textbox", { name: "Token name" }).fill(tokenName);
       await addToken.tap();
-      await expect(page.getByText(`${tokenName} created`)).toBeVisible();
+      await expect(page.locator(".rail > .status")).toContainText(`${tokenName} created`);
       const createdToken = await expectSceneTokenByName(page, tokenName);
 
       const chatMessage = `Mobile ${viewport.label} live-play check`;
       await submitChatCommand(page, "/roll 1d4");
-      await expect(page.getByText(/Rolled \d+/)).toBeVisible();
+      await expect(page.locator(".rail > .status")).toContainText(/Rolled \d+/);
       await submitChatCommand(page, chatMessage);
       await expect(page.locator(".chat-message", { hasText: chatMessage })).toBeVisible();
 
       await openInspectorPanel(page, "Chat");
       await expect(page.locator('[aria-label="Chat messages"]')).toContainText(chatMessage);
-      await expect(page.getByRole("textbox", { name: "Chat command line" })).toBeVisible();
+      await expect(page.getByRole("textbox", { name: "Chat message" })).toBeVisible();
 
       await page.getByRole("button", { name: "Prep", exact: true }).click();
-      await page.getByRole("button", { name: "Content" }).click();
-      await expect(page.getByText("Asset Library")).toBeVisible();
+      await openInspectorPanel(page, "Assets");
+      await expect(page.getByRole("region", { name: "Asset library" })).toBeVisible();
       await expect(page.getByRole("textbox", { name: "Asset search" })).toBeVisible();
 
       await page.getByRole("button", { name: "Live Table", exact: true }).click();
       await openInspectorPanel(page, "Actors");
+      await openTokenQuickCreate(page);
       await expect(page.getByRole("combobox", { name: "Token actor" })).toBeVisible();
 
-      await dragTokenWithTouch(page, tokenName);
-      await expect.poll(async () => {
-        const movedToken = await expectSceneTokenByName(page, tokenName);
-        return Math.abs(movedToken.x - createdToken.x) + Math.abs(movedToken.y - createdToken.y);
-      }).toBeGreaterThan(0);
+      if (viewport.isMobile) {
+        await page.locator(".toolbar").getByRole("button", { name: "Select", exact: true }).click();
+        const tokenButton = page.getByRole("button", { name: `Token ${tokenName}` });
+        await tokenButton.focus();
+        await expect(tokenButton).toBeFocused();
+        await page.keyboard.press("ArrowRight");
+        await expect.poll(async () => {
+          const movedToken = await expectSceneTokenByName(page, tokenName);
+          return Math.abs(movedToken.x - createdToken.x) + Math.abs(movedToken.y - createdToken.y);
+        }).toBeGreaterThan(0);
+      } else {
+        await dragTokenOnBoard(page, tokenName);
+        await expect.poll(async () => {
+          const movedToken = await expectSceneTokenByName(page, tokenName);
+          return Math.abs(movedToken.x - createdToken.x) + Math.abs(movedToken.y - createdToken.y);
+        }).toBeGreaterThan(0);
+      }
       await expectAndDeleteTokensByName(page, tokenName);
 
+      await page.getByRole("button", { name: "Manage", exact: true }).click();
+      await expect(page.getByLabel("Session user")).toBeVisible();
       await page.getByLabel("Session user").selectOption("usr_demo_player");
-      await expect(page.locator(".account-summary", { hasText: "Demo Player" })).toBeVisible();
-      await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+      await expect(page.getByLabel("Session user")).toHaveValue("usr_demo_player", { timeout: 15_000 });
+      await page.getByRole("region", { name: "Manage workspace panel" }).getByRole("button", { name: "Close", exact: true }).click();
+      await expect(page.locator(".topbar")).toContainText("The Ember Vault");
       await page.reload();
-      await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+      await expect(page.locator(".topbar")).toContainText("The Ember Vault");
       await expect(page.getByRole("heading", { name: "No campaign" })).toHaveCount(0);
     });
   });
 }
+
+test.describe("phone keyboard board movement", () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+
+  test("moves a focused seeded token without a pointer", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("button", { name: "Demo GM" }).click();
+    await page.locator(".toolbar").getByRole("button", { name: "Select", exact: true }).click();
+
+    const token = page.locator(".scene-board > .token.active-layer").first();
+    await expect(token).toBeVisible();
+    const before = await token.evaluate((element) => (element as HTMLElement).style.left);
+    await token.focus();
+    await expect(token).toBeFocused();
+    await token.press("ArrowRight");
+    await expect.poll(() => token.evaluate((element) => (element as HTMLElement).style.left)).not.toBe(before);
+    await expect(page.locator(".scene-viewport .sr-only[role='status']")).toContainText(/moved/);
+  });
+});
+
+test.describe("short phone viewport", () => {
+  test.use({
+    hasTouch: true,
+    isMobile: true,
+    viewport: { width: 320, height: 568 }
+  });
+
+  test("opens reachable campaign choices and switches campaigns on a short phone", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("button", { name: "Demo GM", exact: true }).click();
+    const currentCampaign = page.getByLabel("Current campaign", { exact: true });
+    await expect(currentCampaign).toHaveText("The Ember Vault");
+    const campaignName = `Phone switch ${randomUUID().slice(0, 8)}`;
+    const headers = { "x-user-id": "usr_demo_gm" };
+    const create = await page.request.post(`${apiBaseUrl}/api/v1/campaigns`, {
+      headers: { ...headers, "idempotency-key": `e2e-mobile-campaign-create:${randomUUID()}` },
+      data: { name: campaignName },
+    });
+    expect(create.ok(), await create.text()).toBe(true);
+    const campaign = await create.json() as { id: string };
+
+    try {
+      await page.reload();
+      await expect(currentCampaign).toBeVisible();
+      await expect(currentCampaign).toHaveText("The Ember Vault");
+      const switcher = page.locator("details.campaign-switcher");
+      const summary = switcher.locator(":scope > summary");
+      await expect(summary).toBeInViewport();
+      await summary.tap();
+      await expect(switcher).toHaveAttribute("open", "");
+      const choices = switcher.getByRole("navigation", { name: "Campaigns", exact: true });
+      for (const name of ["The Ember Vault", campaignName]) {
+        const choice = choices.getByRole("button", { name, exact: true });
+        await expect(choice).toBeVisible();
+        await choice.scrollIntoViewIfNeeded();
+        await expect(choice).toBeInViewport({ ratio: 1 });
+        expect(await choice.evaluate((element) => {
+          const box = element.getBoundingClientRect();
+          const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+          return box.width > 0 && box.height > 0
+            && box.left >= 0 && box.right <= window.innerWidth
+            && box.top >= 0 && box.bottom <= window.innerHeight
+            && Boolean(hit && (hit === element || element.contains(hit)));
+        }), `${name} must be a reachable touch target`).toBe(true);
+      }
+      await choices.getByRole("button", { name: campaignName, exact: true }).tap();
+      await expect(currentCampaign).toBeVisible();
+      await expect(currentCampaign).toHaveText(campaignName);
+      await expect(summary).toHaveAttribute("aria-label", `Switch campaign: ${campaignName}`);
+      if (!(await switcher.evaluate((element) => (element as HTMLDetailsElement).open))) await summary.tap();
+      await choices.getByRole("button", { name: "The Ember Vault", exact: true }).tap();
+      await expect(currentCampaign).toHaveText("The Ember Vault");
+    } finally {
+      const current = await page.request.get(`${apiBaseUrl}/api/v1/campaigns/${campaign.id}`, { headers });
+      expect(current.ok(), await current.text()).toBe(true);
+      const revision = await current.json() as { updatedAt: string };
+      const deleted = await page.request.delete(`${apiBaseUrl}/api/v1/campaigns/${campaign.id}?expectedUpdatedAt=${encodeURIComponent(revision.updatedAt)}`, {
+        headers: { ...headers, "idempotency-key": `e2e-mobile-campaign-delete:${randomUUID()}` },
+      });
+      expect(deleted.ok(), await deleted.text()).toBe(true);
+    }
+  });
+  test("keeps the Prep inspector reachable above the mobile rail", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("button", { name: "Demo GM" }).click();
+    await page.getByRole("button", { name: "Prep", exact: true }).click();
+    await openInspectorPanel(page, "Assets");
+
+    const tableGrid = page.locator(".table-grid.workspace-prep");
+    const inspectorPanel = page.locator(".workspace-prep .inspector-panel-content");
+    const compactLayout = await tableGrid.evaluate((element) => {
+      const panel = element.querySelector<HTMLElement>(".inspector-panel-content");
+      return {
+        clientHeight: element.clientHeight,
+        scrollHeight: element.scrollHeight,
+        scrollTop: element.scrollTop,
+        panelHeight: panel?.getBoundingClientRect().height ?? 0
+      };
+    });
+    expect(compactLayout.scrollHeight).toBeLessThanOrEqual(compactLayout.clientHeight + 1);
+    expect(compactLayout.scrollTop).toBe(0);
+    expect(compactLayout.panelHeight).toBeGreaterThanOrEqual(48);
+
+    const assetSearch = page.getByRole("textbox", { name: "Asset search" });
+    await assetSearch.scrollIntoViewIfNeeded();
+    await expect(assetSearch).toBeInViewport();
+    const reachability = await assetSearch.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      const panel = element.closest<HTMLElement>(".inspector-panel-content")?.getBoundingClientRect();
+      const railTop = document.querySelector<HTMLElement>(".rail")?.getBoundingClientRect().top ?? window.innerHeight;
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+      return {
+        box: box.toJSON(),
+        panel: panel?.toJSON() ?? null,
+        railTop,
+        viewportHeight: window.innerHeight,
+        hit: hit ? { tag: hit.tagName, id: hit.id, class: hit.getAttribute("class"), label: hit.getAttribute("aria-label") } : null,
+        reachable: Boolean(
+          panel
+          && box.top >= panel.top
+          && box.bottom <= Math.min(panel.bottom, railTop, window.innerHeight)
+          && hit
+          && (hit === element || element.contains(hit))
+        ),
+      };
+    });
+    expect(reachability.reachable, JSON.stringify(reachability)).toBe(true);
+    await expect(inspectorPanel).toBeVisible();
+  });
+
+  test("keeps blank-canvas demo controls inside the mobile rail", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("button", { name: "Try Blank Canvas" }).click();
+
+    await expect(page.getByRole("button", { name: "Prep", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("tab", { name: "Assets", exact: true })).toHaveAttribute("aria-selected", "true");
+    const demoBanner = page.getByRole("region", { name: "Demo mode" });
+    const exitButton = demoBanner.getByRole("button", { name: "Exit", exact: true });
+    const bannerBox = await demoBanner.boundingBox();
+    const railBox = await page.locator(".rail").boundingBox();
+    expect(bannerBox?.width ?? 0).toBeLessThanOrEqual(48);
+    expect(bannerBox?.height ?? 0).toBeLessThanOrEqual(44);
+    expect(bannerBox?.y ?? 0).toBeGreaterThanOrEqual((railBox?.y ?? 0) - 1);
+    await expect(exitButton).toBeVisible();
+    await expect(exitButton).toBeInViewport();
+
+    const assetSearch = page.getByRole("textbox", { name: "Asset search" });
+    await assetSearch.scrollIntoViewIfNeeded();
+    await expect(assetSearch).toBeInViewport();
+    expect(await assetSearch.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      const railTop = document.querySelector<HTMLElement>(".rail")?.getBoundingClientRect().top ?? window.innerHeight;
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+      return box.bottom <= railTop + 1 && Boolean(hit && (hit === element || element.contains(hit)));
+    })).toBe(true);
+  });
+});

@@ -19,5 +19,13 @@
   "ui": {
     "panels": [{ "id": "macro-pad", "title": "Macro Pad", "icon": "wand" }]
   },
-  "chatCommands": [{ "command": "/spark", "description": "Posts a sample magical effect." }]
+  "chatCommands": [
+    { "command": "/spark", "description": "Proposes a sample magical effect." }
+  ],
+  "eventSubscriptions": [
+    {
+      "type": "token.moved",
+      "description": "Proposes a chat note when a token moves."
+    }
+  ]
 }

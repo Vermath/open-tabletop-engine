@@ -1,0 +1,221 @@
+import { permissionsForRole } from "@open-tabletop/core";
+import type { MapAsset } from "@open-tabletop/core";
+import type { Snapshot } from "./api.js";
+
+export const blankCanvasDemoUserId = "usr_blank_canvas_demo";
+export const blankCanvasDemoOrganizationId = "org_blank_canvas_demo";
+export const blankCanvasDemoCampaignId = "camp_blank_canvas_demo";
+export const blankCanvasDemoSceneId = "scn_blank_canvas_demo";
+export const blankCanvasDemoSystemId = "generic-fantasy";
+export const blankCanvasDemoNotice = "Demo mode: changes are local to this tab and reset when you leave or refresh.";
+export const seededDemoUnavailableMessage = "Seeded demo data is not available in this database. Try Blank Canvas or sign in with an account.";
+
+export function seededDemoLoginErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return /invalid login credentials/i.test(message) ? seededDemoUnavailableMessage : message;
+}
+
+const blankCanvasDemoPermissions = permissionsForRole("gm");
+
+export function createBlankCanvasDemoAsset(input: {
+  id: string;
+  name: string;
+  url: string;
+  mimeType: string;
+  sizeBytes: number;
+  folder?: string;
+  tags?: string[];
+  timestamp?: string;
+}): MapAsset {
+  const timestamp = input.timestamp ?? new Date().toISOString();
+  return {
+    id: input.id,
+    campaignId: blankCanvasDemoCampaignId,
+    name: input.name,
+    url: input.url,
+    mimeType: input.mimeType,
+    sizeBytes: input.sizeBytes,
+    folder: input.folder,
+    tags: input.tags,
+    lifecycle: { status: "active", updatedAt: timestamp, updatedByUserId: blankCanvasDemoUserId },
+    createdAt: timestamp,
+    updatedAt: timestamp
+  };
+}
+
+export function createBlankCanvasDemoSnapshot(timestamp = new Date().toISOString()): Snapshot {
+  const workspace: Snapshot["organizations"][number] = {
+    id: blankCanvasDemoOrganizationId,
+    name: "Blank Canvas Demo",
+    ownerUserId: blankCanvasDemoUserId,
+    defaultSystemId: blankCanvasDemoSystemId,
+    defaultCampaignVisibility: "private",
+    defaultPermissionTemplate: "standard",
+    defaultInviteRole: "player",
+    defaultSceneName: "Blank Canvas",
+    defaultSceneFolder: "Demo",
+    defaultSceneWidth: 1200,
+    defaultSceneHeight: 800,
+    defaultSceneGridSize: 50,
+    onboardingTitle: "",
+    onboardingBody: "",
+    role: "owner",
+    memberCount: 1,
+    campaignCount: 1,
+    createdAt: timestamp,
+    updatedAt: timestamp
+  };
+
+  return {
+    session: {
+      user: {
+        id: blankCanvasDemoUserId,
+        displayName: "Demo GM",
+        email: "demo@example.test",
+        createdAt: timestamp,
+        updatedAt: timestamp
+      },
+      session: {
+        id: "sess_blank_canvas_demo",
+        userId: blankCanvasDemoUserId,
+        activeOrganizationId: blankCanvasDemoOrganizationId,
+        expiresAt: timestamp,
+        lastSeenAt: timestamp,
+        createdAt: timestamp,
+        updatedAt: timestamp
+      },
+      memberships: [
+        {
+          id: "mem_blank_canvas_demo",
+          campaignId: blankCanvasDemoCampaignId,
+          userId: blankCanvasDemoUserId,
+          role: "gm",
+          createdAt: timestamp,
+          updatedAt: timestamp
+        }
+      ],
+      organization: workspace,
+      organizations: [workspace]
+    },
+    workspaceDefaults: workspace,
+    organizations: [workspace],
+    organizationMembers: [
+      {
+        id: "orgmem_blank_canvas_demo",
+        organizationId: blankCanvasDemoOrganizationId,
+        userId: blankCanvasDemoUserId,
+        role: "owner",
+        user: {
+          id: blankCanvasDemoUserId,
+          displayName: "Demo GM",
+          email: "demo@example.test"
+        },
+        createdAt: timestamp,
+        updatedAt: timestamp
+      }
+    ],
+    organizationInvites: [],
+    campaigns: [
+      {
+        id: blankCanvasDemoCampaignId,
+        organizationId: blankCanvasDemoOrganizationId,
+        ownerUserId: blankCanvasDemoUserId,
+        name: "Blank Canvas Demo",
+        description: "A local-only tabletop workspace for trying the engine.",
+        defaultSystemId: blankCanvasDemoSystemId,
+        visibility: "private",
+        createdAt: timestamp,
+        updatedAt: timestamp
+      }
+    ],
+    members: [
+      {
+        id: "mem_blank_canvas_demo",
+        campaignId: blankCanvasDemoCampaignId,
+        userId: blankCanvasDemoUserId,
+        role: "gm",
+        user: {
+          id: blankCanvasDemoUserId,
+          displayName: "Demo GM",
+          email: "demo@example.test"
+        },
+        active: true,
+        permissions: blankCanvasDemoPermissions,
+        createdAt: timestamp,
+        updatedAt: timestamp
+      }
+    ],
+    presences: [],
+    eventSequence: 0,
+    realtimeRecovery: "refetch_snapshot_on_gap",
+    worldRecords: [],
+    worldRelations: [],
+    scenes: [
+      {
+        id: blankCanvasDemoSceneId,
+        campaignId: blankCanvasDemoCampaignId,
+        name: "Blank Canvas",
+        width: 1200,
+        height: 800,
+        gridType: "square",
+        gridSize: 50,
+        folder: "Demo",
+        active: true,
+        sortOrder: 1,
+        fog: [],
+        walls: [],
+        lights: [],
+        annotations: [],
+        metadata: {},
+        createdAt: timestamp,
+        updatedAt: timestamp
+      }
+    ],
+    fogPresets: [],
+    assets: [],
+    tokens: [],
+    actors: [],
+    calculationOverrides: [],
+    items: [],
+    vision: {
+      sceneId: blankCanvasDemoSceneId,
+      userId: blankCanvasDemoUserId,
+      fogActive: false,
+      polygons: []
+    },
+    journals: [],
+    chat: [],
+    rolls: [],
+    diceMacros: [],
+    audioTracks: [],
+    encounters: [],
+    combats: [],
+    combatAudit: [],
+    proposals: [],
+    contentImports: [],
+    memory: [],
+    aiThreads: [],
+    aiUsage: {
+      campaignId: blankCanvasDemoCampaignId,
+      threadCount: 0,
+      completedThreadCount: 0,
+      failedThreadCount: 0,
+      runningThreadCount: 0,
+      retryAttempts: 0,
+      eventCount: 0,
+      toolCallCount: 0,
+      durationMs: 0,
+      usage: {
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        estimatedCostUsd: 0
+      },
+      providers: []
+    },
+    aiToolCalls: [],
+    plugins: [],
+    systems: [],
+    characterTemplates: []
+  };
+}

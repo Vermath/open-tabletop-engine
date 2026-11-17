@@ -1,0 +1,24 @@
+/*
+ * Canvas map renderer. One canvas draws the map image and, when the map
+ * fills the board, the light glows for the visible part of the board.
+ * The AI board capture shows the original elements for its snapshot.
+ */
+.board-map-canvas {
+  position: absolute;
+  z-index: 0;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Keep the image's own opacity and filter (the canvas reads them) and clip it away instead. */
+.scene-board[data-map-renderer="canvas"]:not([data-board-capture="true"]) > .scene-map {
+  clip-path: inset(100%);
+}
+
+.scene-board[data-map-renderer="canvas"]:not([data-board-capture="true"]) > .board-map-canvas[data-draws-lights] ~ .light-source {
+  display: none;
+}
+
+.scene-board[data-board-capture="true"] > .board-map-canvas {
+  display: none;
+}

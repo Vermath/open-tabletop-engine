@@ -1,0 +1,150 @@
+import { expect, test, type Locator, type Page } from "@playwright/test";
+import type { Campaign, Scene, Token } from "../../packages/core/src/types.js";
+
+/**
+ * The board's tokens and static layers are memoised. These tests pin the
+ * point of that: moving one token does not re-render the other tokens, the
+ * walls or their handles, and zooming re-renders none of them. They read the
+ * render counters the layers keep in `window.__otteBoardRenderCounts`.
+ */
+const apiBaseUrl = `http://127.0.0.1:${process.env.OTTE_E2E_API_PORT ?? 4100}`;
+const webBaseUrl = `http://127.0.0.1:${process.env.OTTE_E2E_WEB_PORT ?? 5174}`;
+const campaignId = "camp_demo";
+const gmHeaders = { authorization: "Bearer otte-cookie-session", origin: webBaseUrl };
+const tokenCount = 24;
+const wallCount = 30;
+
+type RenderCounts = Record<"token" | "lighting" | "darkness" | "difficultTerrain" | "walls" | "structureHandles" | "visionMask", number>;
+
+async function api<T>(page: Page, method: "GET" | "POST", path: string, data?: unknown): Promise<T> {
+  const response = await page.request.fetch(`${apiBaseUrl}${path}`, {
+    method, data,
+    headers: { ...gmHeaders, ...(method === "GET" ? {} : { "idempotency-key": `board-isolation:${crypto.randomUUID()}` }) },
+  });
+  const body = await response.text();
+  expect(response.ok(), `${method} ${path}: ${body}`).toBe(true);
+  return JSON.parse(body) as T;
+}
+
+async function login(page: Page) {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Demo GM", exact: true }).click();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
+}
+
+/** A scene of its own with enough tokens and walls that re-rendering all of them would be unmistakable. */
+async function createBusyScene(page: Page): Promise<{ scene: Scene; tokens: Token[] }> {
+  const campaign = await api<Campaign>(page, "GET", `/api/v1/campaigns/${campaignId}`);
+  const created = await api<Scene>(page, "POST", `/api/v1/campaigns/${campaignId}/scenes`, {
+    name: `Render isolation ${Date.now().toString(36)}`, width: 1600, height: 1200, gridType: "square", gridSize: 50, expectedUpdatedAt: campaign.updatedAt,
+  });
+  const revision = async () => (await api<Scene>(page, "GET", `/api/v1/scenes/${created.id}`)).updatedAt;
+  for (let index = 0; index < wallCount; index += 1) {
+    const x = 100 + (index % 10) * 140;
+    const y = 100 + Math.floor(index / 10) * 350;
+    await api(page, "POST", `/api/v1/scenes/${created.id}/walls`, { x1: x, y1: y, x2: x + 100, y2: y, ...(index % 7 === 0 ? { kind: "door" } : {}), expectedUpdatedAt: await revision() });
+  }
+  await api(page, "POST", `/api/v1/scenes/${created.id}/lights`, { x: 400, y: 400, radius: 260, color: "#ffd27a", expectedUpdatedAt: await revision() });
+  const tokens: Token[] = [];
+  for (let index = 0; index < tokenCount; index += 1) {
+    tokens.push(await api<Token>(page, "POST", `/api/v1/scenes/${created.id}/tokens`, {
+      name: `Piece ${String(index + 1).padStart(2, "0")}`, x: 200 + (index % 8) * 150, y: 250 + Math.floor(index / 8) * 300, width: 50, height: 50, ownerUserIds: ["usr_demo_gm"], expectedUpdatedAt: await revision(),
+    }));
+  }
+  const scene = await api<Scene>(page, "GET", `/api/v1/scenes/${created.id}`);
+  expect(scene.walls).toHaveLength(wallCount);
+  return { scene, tokens };
+}
+
+async function openScene(page: Page, scene: Scene): Promise<Locator> {
+  await page.reload();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
+  await page.getByRole("button", { name: "Prep", exact: true }).click();
+  const tab = page.locator(".scene-tab").filter({ hasText: scene.name });
+  await expect(tab).toBeVisible();
+  await tab.click();
+  const showScene = page.getByRole("button", { name: "Show scene", exact: true });
+  if (await showScene.isVisible()) await showScene.click();
+  const board = page.getByRole("group", { name: `${scene.name} interactive battle map`, exact: true });
+  await expect(board).toBeVisible();
+  await expect(board.locator("button.token")).toHaveCount(tokenCount);
+  await expect(board.locator(".wall-layer line")).toHaveCount(wallCount);
+  return board;
+}
+
+const renderCounts = (page: Page) => page.evaluate(() => ({ ...(window as unknown as { __otteBoardRenderCounts: RenderCounts }).__otteBoardRenderCounts }));
+
+/** Waits until the board has stopped rendering, so a later difference belongs to the action under test. */
+async function settledCounts(page: Page): Promise<RenderCounts> {
+  let previous = await renderCounts(page);
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    await page.waitForTimeout(400);
+    const current = await renderCounts(page);
+    if (JSON.stringify(current) === JSON.stringify(previous)) return current;
+    previous = current;
+  }
+  throw new Error("The board never stopped rendering");
+}
+
+test("moving one token re-renders that token, not the board", async ({ page }) => {
+  test.setTimeout(180_000);
+  await login(page);
+  const { scene, tokens } = await createBusyScene(page);
+  const board = await openScene(page, scene);
+  const moved = tokens[9]!;
+  const piece = board.getByRole("button", { name: new RegExp(`token ${moved.name}$`) });
+  await piece.focus();
+  const before = await settledCounts(page);
+
+  await page.keyboard.press("ArrowRight");
+  await expect.poll(async () => (await api<{ tokens: Token[] }>(page, "GET", `/api/v1/campaigns/${campaignId}/snapshot?sceneId=${scene.id}`)).tokens.find((entry) => entry.id === moved.id)?.x).toBeGreaterThan(moved.x);
+  const after = await settledCounts(page);
+
+  // The moved token renders a handful of times (move, selection, confirmation; twice each under development strict mode).
+  // Before memoisation every app render drew all 24 tokens, well over a hundred token renders for one move.
+  const tokenRenders = after.token - before.token;
+  expect(tokenRenders, "only the moved token should re-render").toBeGreaterThan(0);
+  expect(tokenRenders, "only the moved token should re-render").toBeLessThan(tokenCount);
+  expect(after.walls - before.walls, "walls did not change").toBe(0);
+  expect(after.structureHandles - before.structureHandles, "wall and light handles did not change").toBe(0);
+  expect(after.difficultTerrain - before.difficultTerrain).toBe(0);
+
+  // The move itself still works and still shows.
+  await expect.poll(() => piece.evaluate((element) => parseFloat((element as HTMLElement).style.left))).toBeGreaterThan((moved.x / scene.width) * 100);
+});
+
+test("zooming re-renders no token and no static layer", async ({ page }) => {
+  test.setTimeout(180_000);
+  await login(page);
+  const { scene } = await createBusyScene(page);
+  const board = await openScene(page, scene);
+  const before = await settledCounts(page);
+  const widthBefore = (await board.boundingBox())!.width;
+
+  const zoomIn = page.getByRole("button", { name: "Zoom battle map in", exact: true });
+  for (let step = 0; step < 3; step += 1) await zoomIn.click();
+  await expect.poll(async () => (await board.boundingBox())!.width).toBeGreaterThan(widthBefore * 1.2);
+  const after = await settledCounts(page);
+
+  expect(after, "zoom resizes the board; nothing drawn in scene units needs to render again").toEqual(before);
+  // Everything still sits where the zoomed board puts it.
+  await expect(board.locator("button.token")).toHaveCount(tokenCount);
+  await expect(board.locator(".wall-layer line")).toHaveCount(wallCount);
+});
+
+test("selecting a wall re-renders the handles and leaves the tokens alone", async ({ page }) => {
+  test.setTimeout(180_000);
+  await login(page);
+  const { scene } = await createBusyScene(page);
+  const board = await openScene(page, scene);
+  const before = await settledCounts(page);
+
+  await board.locator(".structure-handle.door-handle").first().click();
+  await expect(board.locator(".structure-handle.selected")).toHaveCount(1);
+  const after = await settledCounts(page);
+
+  expect(after.structureHandles - before.structureHandles, "the handle list shows the selection").toBeGreaterThan(0);
+  expect(after.token - before.token, "no token changed").toBe(0);
+  expect(after.walls - before.walls, "the wall lines did not change").toBe(0);
+});

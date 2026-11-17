@@ -1,0 +1,72 @@
+{
+  "schema": "otte.simulated-browser-campaign/v1",
+  "recordedAt": "2026-07-18",
+  "campaign": {
+    "id": "camp_mrq0uezud0po6htf",
+    "title": "Emberwake: The Three Seals"
+  },
+  "evidenceBoundary": {
+    "evidenceClass": "simulated_browser_multi_seat",
+    "rolesControlledBy": "Codex",
+    "liveProductUi": true,
+    "separateSeatAccounts": true,
+    "sequentialSeatSwitching": true,
+    "x01HumanEvidenceSatisfied": false
+  },
+  "result": {
+    "sessionsCompleted": 3,
+    "mapsUploadedCalibratedAndActivated": 6,
+    "encountersCompleted": 3,
+    "combatRounds": 6,
+    "persistentPlayerCharacters": 4,
+    "startingLevel": 1,
+    "endingLevel": 3,
+    "rollsPersisted": 33,
+    "chatRecordsPersisted": 50,
+    "publicChatRecords": 38,
+    "journalsPersisted": 4,
+    "blockingStateLossObserved": false
+  },
+  "verification": {
+    "browserReload": "passed",
+    "browserHardReloadAfterRemediation": "passed",
+    "multiMapBrowserRegression": [
+      "01 Cinder Market",
+      "05 Furnace Bridge",
+      "06 Bellfoundry Sanctum"
+    ],
+    "fullRepositoryCheck": "passed",
+    "databaseQuickCheck": "ok",
+    "databaseQuickCheckPerformedAfterReconciliation": true,
+    "apiBuildFingerprint": "sha256:bc657ec2fca0a583218be2a46c0c985832058c4b369144bfcc8aa64a7f46a679",
+    "soleActiveScene": "06 Bellfoundry Sanctum",
+    "allCombatsInactive": true,
+    "allSessionsCompleted": true,
+    "sessionsWithOneExactEncounter": 3,
+    "encounterLinkedTokenCounts": [3, 2, 4],
+    "furnaceBridgePartyTokens": 4,
+    "gmReportsPrivate": true,
+    "publicRecapPresent": true
+  },
+  "files": {
+    "sessions": "sessions.json",
+    "continuity": "continuity.json",
+    "papercuts": "papercuts.json",
+    "remediation": "remediation.json",
+    "narrativeReport": "../../../docs/verification/x01-simulated-browser-campaign-2026-07-18.md",
+    "maps": [
+      "maps/01-cinder-market.svg",
+      "maps/02-smuggler-drain.svg",
+      "maps/03-old-bell-road.svg",
+      "maps/04-ashen-ossuary.svg",
+      "maps/05-furnace-bridge.svg",
+      "maps/06-bellfoundry-sanctum.svg"
+    ]
+  },
+  "privacy": {
+    "credentialsIncluded": false,
+    "invitationTokensIncluded": false,
+    "authTokensIncluded": false,
+    "diceServerSeedsIncluded": false
+  }
+}

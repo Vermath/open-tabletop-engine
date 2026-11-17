@@ -15,7 +15,7 @@
   },
   "devDependencies": {
     "typescript": "^5.7.2",
-    "vitest": "^2.1.8",
-    "wrangler": "^4.87.0"
+    "vitest": "^3.2.6",
+    "wrangler": "^4.110.0"
   }
 }

@@ -1,0 +1,576 @@
+import type { Actor, MapAsset, Visibility } from "@open-tabletop/core";
+import { BookOpen, Check, Eye, FileText, Link2, Plus, Save, Search, Trash2, Users } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { apiDelete, apiPatch, apiPost, assetBlobUrl, assetThumbnailUrl, type Snapshot } from "./api.js";
+import { campaignSearchAnchorId } from "./campaign-search-panel.js";
+import { DraftPersistenceNotice, draftPersistenceStatus, type DraftPersistenceStatus } from "./draft-persistence-notice.js";
+import { localDraftKey, readLocalDraft, removeLocalDraft, writeLocalDraft } from "./local-draft-storage.js";
+import { MarkdownDocument } from "./markdown-document.js";
+import { errorMessage, formatNumber } from "./sheet-format.js";
+import { isStaleWriteError, sharedMutationIdempotencyKey, staleDraftPreservedMessage } from "./shared-mutation.js";
+import type { LoreCollectionLoadState, WorldAtlasWorld } from "./world-atlas-panel.js";
+
+export interface HandoutLibraryItem {
+  id: string;
+  campaignId: string;
+  worldId?: string;
+  title: string;
+  body: string;
+  visibility: Visibility;
+  visibleToUserIds: string[];
+  visibleToActorIds: string[];
+  assetIds: string[];
+  tags: string[];
+  readByUserIds: string[];
+  createdBy?: string;
+  updatedBy?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type HandoutReadFilter = "all" | "unread" | "read";
+
+export interface HandoutDraft {
+  id?: string;
+  expectedUpdatedAt?: string;
+  worldId: string;
+  title: string;
+  body: string;
+  visibility: Visibility;
+  visibleToUserIds: string[];
+  visibleToActorIds: string[];
+  assetIds: string[];
+  tags: string;
+}
+
+export type HandoutLibraryUpdate = (current: HandoutLibraryItem[]) => HandoutLibraryItem[];
+
+export function upsertHandoutItem(items: HandoutLibraryItem[], updated: HandoutLibraryItem, prependNew = false): HandoutLibraryItem[] {
+  if (items.some((item) => item.id === updated.id)) {
+    return items.map((item) => {
+      if (item.id !== updated.id) return item;
+      const content = item.updatedAt.localeCompare(updated.updatedAt) > 0 ? item : updated;
+      return { ...content, readByUserIds: [...new Set([...item.readByUserIds, ...updated.readByUserIds])] };
+    });
+  }
+  // Only a create response may introduce an item. A delayed read/update
+  // response must not resurrect an item removed by a concurrent delete.
+  return prependNew ? [updated, ...items] : items;
+}
+
+export function mergeHandoutReadReceipt(items: HandoutLibraryItem[], receipt: HandoutLibraryItem): HandoutLibraryItem[] {
+  return items.map((item) => item.id === receipt.id
+    ? { ...item, readByUserIds: [...new Set([...item.readByUserIds, ...receipt.readByUserIds])] }
+    : item);
+}
+
+export function parseHandoutTags(value: string): string[] {
+  return [...new Set(value.split(",").map((tag) => tag.trim()).filter(Boolean))];
+}
+
+export function filterHandoutLibrary(items: HandoutLibraryItem[], input: { query: string; worldId: string; read: HandoutReadFilter; userId: string }): HandoutLibraryItem[] {
+  const query = input.query.trim().toLocaleLowerCase();
+  return items
+    .filter((item) => !input.worldId || (input.worldId === "unfiled" ? !item.worldId : item.worldId === input.worldId))
+    .filter((item) => input.read === "all" || (input.read === "read") === item.readByUserIds.includes(input.userId))
+    .filter((item) => !query || [item.title, item.body, ...item.tags].some((value) => value.toLocaleLowerCase().includes(query)))
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+}
+
+export function markHandoutRead(handoutId: string): Promise<HandoutLibraryItem> {
+  return apiPost<HandoutLibraryItem>(`/api/v1/handouts/${handoutId}/read`, {});
+}
+
+export function persistHandout(campaignId: string, campaignUpdatedAt: string, input: HandoutDraft): Promise<HandoutLibraryItem> {
+  const expectedUpdatedAt = input.id ? input.expectedUpdatedAt : campaignUpdatedAt;
+  if (!expectedUpdatedAt) return Promise.reject(new Error("The handout revision is unavailable. Refresh and try again."));
+  const payload = { ...handoutPayload(input), expectedUpdatedAt };
+  return input.id
+    ? apiPatch<HandoutLibraryItem>(`/api/v1/handouts/${input.id}`, payload, {
+      idempotencyKey: sharedMutationIdempotencyKey(`handout:update:${input.id}`, expectedUpdatedAt, payload)
+    })
+    : apiPost<HandoutLibraryItem>(`/api/v1/campaigns/${campaignId}/handouts`, payload, {
+      idempotencyKey: sharedMutationIdempotencyKey(`handout:create:${campaignId}`, expectedUpdatedAt, payload)
+    });
+}
+
+export function deleteLibraryHandout(handoutId: string, expectedUpdatedAt: string): Promise<unknown> {
+  return apiDelete<unknown>(`/api/v1/handouts/${handoutId}?expectedUpdatedAt=${encodeURIComponent(expectedUpdatedAt)}`, {
+    idempotencyKey: sharedMutationIdempotencyKey(`handout:delete:${handoutId}`, expectedUpdatedAt, {})
+  });
+}
+
+function toggleId(values: string[], id: string, checked: boolean): string[] {
+  return checked ? [...new Set([...values, id])] : values.filter((value) => value !== id);
+}
+
+function visibilityLabel(visibility: Visibility): string {
+  if (visibility === "gm_only") return "GM only";
+  if (visibility === "specific_players") return "Selected players";
+  if (visibility === "specific_characters") return "Character owners";
+  return "Everyone";
+}
+
+export function storedHandoutDraft(value: unknown): HandoutDraft | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const draft = value as Partial<HandoutDraft>;
+  if (draft.id !== undefined && typeof draft.id !== "string") return undefined;
+  if (draft.expectedUpdatedAt !== undefined && typeof draft.expectedUpdatedAt !== "string") return undefined;
+  if (typeof draft.worldId !== "string" || typeof draft.title !== "string" || typeof draft.body !== "string" || typeof draft.tags !== "string") return undefined;
+  if (!["public", "gm_only", "specific_players", "specific_characters"].includes(String(draft.visibility))) return undefined;
+  if (!Array.isArray(draft.visibleToUserIds) || !draft.visibleToUserIds.every((id) => typeof id === "string")) return undefined;
+  if (!Array.isArray(draft.visibleToActorIds) || !draft.visibleToActorIds.every((id) => typeof id === "string")) return undefined;
+  if (!Array.isArray(draft.assetIds) || !draft.assetIds.every((id) => typeof id === "string")) return undefined;
+  return draft as HandoutDraft;
+}
+
+export function HandoutLibraryPanel(props: {
+  campaignId: string;
+  campaignUpdatedAt: string;
+  currentUserId: string;
+  handouts: HandoutLibraryItem[];
+  worlds: WorldAtlasWorld[];
+  members: Snapshot["members"];
+  actors: Actor[];
+  assets: MapAsset[];
+  canCreate: boolean;
+  canUpdate: boolean;
+  canDelete: boolean;
+  loadState?: LoreCollectionLoadState;
+  loadError?: string;
+  onRetryLoad?(): void;
+  onHandoutsChange(update: HandoutLibraryUpdate): void;
+  onRefreshSharedState(): Promise<void>;
+  onStatus(message: string): void;
+}) {
+  const [query, setQuery] = useState("");
+  const [worldFilter, setWorldFilter] = useState("");
+  const [readFilter, setReadFilter] = useState<HandoutReadFilter>("all");
+  const [selectedId, setSelectedId] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [deleteArmed, setDeleteArmed] = useState(false);
+  const editorRef = useRef<HTMLDivElement>(null);
+  const selected = props.handouts.find((item) => item.id === selectedId);
+  const filtered = useMemo(() => filterHandoutLibrary(props.handouts, { query, worldId: worldFilter, read: readFilter, userId: props.currentUserId }), [props.handouts, props.currentUserId, query, readFilter, worldFilter]);
+
+  useEffect(() => {
+    if (!selectedId || props.handouts.some((item) => item.id === selectedId)) return;
+    setSelectedId("");
+  }, [props.handouts, selectedId]);
+
+  useEffect(() => {
+    if (!creating && !selectedId) return;
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.scrollIntoView({ block: "nearest" });
+    editor.querySelector<HTMLInputElement>('input[aria-label="Handout title"]')?.focus();
+  }, [creating, selectedId]);
+
+  async function handleMutationError(prefix: string, error: unknown) {
+    if (isStaleWriteError(error)) {
+      await props.onRefreshSharedState();
+      props.onStatus(`${prefix}: ${staleDraftPreservedMessage}`);
+      return;
+    }
+    props.onStatus(`${prefix}: ${errorMessage(error)}`);
+  }
+
+  async function openHandout(item: HandoutLibraryItem) {
+    setSelectedId(item.id);
+    setCreating(false);
+    setDeleteArmed(false);
+    if (item.readByUserIds.includes(props.currentUserId)) return;
+    try {
+      const updated = await markHandoutRead(item.id);
+      props.onHandoutsChange((current) => mergeHandoutReadReceipt(current, updated));
+    } catch {
+      // Reading remains available even when an older server does not support read receipts.
+    }
+  }
+
+  async function saveHandout(input: HandoutDraft): Promise<boolean> {
+    if (busy || !input.title.trim()) return false;
+    setBusy(true);
+    try {
+      const updated = await persistHandout(props.campaignId, props.campaignUpdatedAt, input);
+      props.onHandoutsChange((current) => upsertHandoutItem(current, updated, !input.id));
+      setSelectedId(updated.id);
+      setCreating(false);
+      props.onStatus(`${updated.title} ${input.id ? "updated" : "shared"}`);
+      if (!input.id) await props.onRefreshSharedState();
+      return true;
+    } catch (error) {
+      await handleMutationError("Handout save failed", error);
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteHandout() {
+    if (!selected || busy) return;
+    setBusy(true);
+    try {
+      await deleteLibraryHandout(selected.id, selected.updatedAt);
+      props.onHandoutsChange((current) => current.filter((item) => item.id !== selected.id));
+      setSelectedId("");
+      setDeleteArmed(false);
+      props.onStatus(`${selected.title} deleted`);
+    } catch (error) {
+      await handleMutationError("Handout deletion failed", error);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="panel-stack lore-panel handout-library-panel" aria-label="Handout Library">
+      <div className="lore-page-intro">
+        <div className="lore-panel-heading">
+          <div>
+            <div className="section-title">Handout Library</div>
+            <h2>Clues, lore &amp; player handouts</h2>
+          </div>
+          {props.canCreate && <button className="primary-button" type="button" aria-label="Create handout" title="Create handout" onClick={() => { setCreating(true); setSelectedId(""); }}><Plus size={15} aria-hidden="true" /> Create handout</button>}
+        </div>
+        <p className="account-summary">Keep campaign documents together and choose who can read each one.</p>
+      </div>
+
+      {props.loadState === "loading" && <div className="lore-load-state" role="status">Loading handouts…</div>}
+      {props.loadState === "error" && (
+        <div className="lore-load-state error" role="alert">
+          <span>{props.loadError || "Handouts could not be loaded."}</span>
+          {props.onRetryLoad && <button className="ghost-button small" type="button" onClick={props.onRetryLoad}>Retry</button>}
+        </div>
+      )}
+
+      <div className="handout-workspace">
+        <div className="handout-navigation">
+          <div className="lore-filter-grid">
+            <label className="lore-search-field span-full">
+              <Search size={14} aria-hidden="true" />
+              <span className="sr-only">Search handouts</span>
+              <input aria-label="Search handouts" value={query} placeholder="Search title, text, or tags" onChange={(event) => setQuery(event.target.value)} />
+            </label>
+            <label>
+              <span>World</span>
+              <select aria-label="Filter handouts by world" value={worldFilter} onChange={(event) => setWorldFilter(event.target.value)}>
+                <option value="">All worlds</option>
+                <option value="unfiled">Unfiled</option>
+                {props.worlds.map((world) => <option key={world.id} value={world.id}>{world.name}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>Reading</span>
+              <select aria-label="Filter handouts by read state" value={readFilter} onChange={(event) => setReadFilter(event.target.value as HandoutReadFilter)}>
+                <option value="all">All</option>
+                <option value="unread">Unread</option>
+                <option value="read">Read</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="lore-list-heading">
+            <span>Library</span>
+            <strong>{formatNumber(filtered.length)}</strong>
+          </div>
+          <div className="handout-list" role="list" aria-label="Handouts">
+            {filtered.length === 0 ? (
+              <div className="empty-state compact lore-empty-state">
+                <BookOpen size={26} aria-hidden="true" />
+                <strong>{props.handouts.length === 0 ? "Your handout library starts here" : "No handouts match these filters"}</strong>
+                <p>{props.handouts.length === 0 ? props.canCreate ? "Create a handout for a clue, a letter, or campaign lore. Set its audience before sharing." : "Handouts shared with you will appear here." : "Try another search or clear the filters to see the rest of the library."}</p>
+                {props.handouts.length > 0 && <button className="ghost-button small" type="button" onClick={() => { setQuery(""); setWorldFilter(""); setReadFilter("all"); }}>Clear filters</button>}
+              </div>
+            ) : filtered.map((item) => {
+              const unread = !item.readByUserIds.includes(props.currentUserId);
+              return (
+                <div role="listitem" key={item.id}>
+                  <button id={campaignSearchAnchorId("handout", item.id)} className={selectedId === item.id ? "handout-list-item active" : "handout-list-item"} type="button" aria-current={selectedId === item.id ? "true" : undefined} onClick={() => void openHandout(item)}>
+                    <span className={unread ? "handout-read-dot unread" : "handout-read-dot"} aria-label={unread ? "Unread" : "Read"} />
+                    <span>
+                      <strong>{item.title}</strong>
+                      <small>{visibilityLabel(item.visibility)} · {item.tags.slice(0, 2).join(" · ") || "untagged"}</small>
+                    </span>
+                    <FileText size={15} aria-hidden="true" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        {(selected || creating) && (
+          <div className="handout-content" ref={editorRef}>
+            <HandoutEditor
+              key={selected?.id ?? "new"}
+              campaignId={props.campaignId}
+              currentUserId={props.currentUserId}
+              item={selected}
+              worlds={props.worlds}
+              members={props.members}
+              actors={props.actors}
+              assets={props.assets}
+              canManage={selected ? props.canUpdate : props.canCreate}
+              busy={busy}
+              onSave={saveHandout}
+              onCancel={() => { setCreating(false); setSelectedId(""); setDeleteArmed(false); }}
+            />
+
+            {selected && props.canDelete && (
+              <div className="handout-danger-row">
+                {deleteArmed ? (
+                  <button className="danger-button" type="button" disabled={busy} onClick={() => void deleteHandout()}><Trash2 size={14} /> Confirm delete</button>
+                ) : (
+                  <button className="ghost-button" type="button" disabled={busy} onClick={() => setDeleteArmed(true)}><Trash2 size={14} /> Delete handout</button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+        {!selected && !creating && filtered.length > 0 && (
+          <div className="handout-content empty-state compact lore-empty-state">
+            <BookOpen size={26} aria-hidden="true" />
+            <strong>Choose a handout to read it</strong>
+            <p>Open a document from the library to see its text and linked images.</p>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+export function handoutPayload(input: HandoutDraft) {
+  return {
+    ...(input.expectedUpdatedAt ? { expectedUpdatedAt: input.expectedUpdatedAt } : {}),
+    worldId: input.worldId || (input.id ? null : undefined),
+    title: input.title.trim(),
+    body: input.body.trim(),
+    visibility: input.visibility,
+    visibleToUserIds: input.visibility === "specific_players" ? input.visibleToUserIds : [],
+    visibleToActorIds: input.visibility === "specific_characters" ? input.visibleToActorIds : [],
+    assetIds: input.assetIds,
+    tags: parseHandoutTags(input.tags)
+  };
+}
+
+/** Keep the recoverable browser draft unless the server confirmed the save. */
+export async function clearHandoutDraftAfterConfirmedSave<T>(
+  draft: T,
+  onSave: (value: T) => Promise<boolean>,
+  clearDraft: () => void
+): Promise<boolean> {
+  const saved = await onSave(draft);
+  if (saved) clearDraft();
+  return saved;
+}
+
+export function handoutDraftFromItem(item?: HandoutLibraryItem): HandoutDraft {
+  return {
+    id: item?.id,
+    expectedUpdatedAt: item?.updatedAt,
+    worldId: item?.worldId ?? "",
+    title: item?.title ?? "",
+    body: item?.body ?? "",
+    visibility: item?.visibility ?? "public",
+    visibleToUserIds: item?.visibleToUserIds ?? [],
+    visibleToActorIds: item?.visibleToActorIds ?? [],
+    assetIds: item?.assetIds ?? [],
+    tags: item?.tags.join(", ") ?? ""
+  };
+}
+
+export function HandoutEditor(props: {
+  campaignId: string;
+  currentUserId: string;
+  item?: HandoutLibraryItem;
+  worlds: WorldAtlasWorld[];
+  members: Snapshot["members"];
+  actors: Actor[];
+  assets: MapAsset[];
+  canManage: boolean;
+  busy: boolean;
+  onSave(input: HandoutDraft): Promise<boolean>;
+  onCancel(): void;
+}) {
+  const draftStorageKey = localDraftKey("handout", props.campaignId, props.currentUserId, props.item?.id ?? "new");
+  const initialDraft = handoutDraftFromItem(props.item);
+  const [recoveredDraft] = useState(() => props.canManage ? storedHandoutDraft(readLocalDraft<unknown>(draftStorageKey)) : undefined);
+  const [draft, setDraft] = useState<HandoutDraft>(() => recoveredDraft
+    ? { ...recoveredDraft, id: props.item?.id }
+    : initialDraft);
+  const [draftTouched, setDraftTouched] = useState(Boolean(recoveredDraft));
+  const [draftPersistence, setDraftPersistence] = useState<DraftPersistenceStatus>(recoveredDraft ? "saved" : "idle");
+  const stale = Boolean(props.item && props.item.updatedAt !== draft.expectedUpdatedAt);
+  useEffect(() => {
+    if (draftTouched || !props.item || props.item.updatedAt === draft.expectedUpdatedAt) return;
+    setDraft(handoutDraftFromItem(props.item));
+  }, [draftTouched, draft.expectedUpdatedAt, props.item]);
+  useEffect(() => {
+    if (draftTouched && props.canManage) setDraftPersistence(draftPersistenceStatus(writeLocalDraft(draftStorageKey, draft)));
+  }, [draft, draftStorageKey, draftTouched, props.canManage]);
+  const canSaveTargets = draft.visibility !== "specific_players" || draft.visibleToUserIds.length > 0;
+  const canSaveCharacters = draft.visibility !== "specific_characters" || draft.visibleToActorIds.length > 0;
+  const readCount = props.item?.readByUserIds.length ?? 0;
+  const linkedAssets = props.assets.filter((asset) => draft.assetIds.includes(asset.id));
+  const updateDraft = (update: (current: HandoutDraft) => HandoutDraft) => {
+    if (props.busy) return;
+    setDraftTouched(true);
+    setDraft(update);
+  };
+  const saveDraft = async () => {
+    if (props.busy || stale || !props.canManage) return;
+    const saved = await clearHandoutDraftAfterConfirmedSave(
+      draft,
+      props.onSave,
+      () => removeLocalDraft(draftStorageKey)
+    );
+    if (!saved) return;
+    setDraftTouched(false);
+    setDraftPersistence("idle");
+  };
+  const reloadDraft = () => {
+    if (props.busy) return;
+    removeLocalDraft(draftStorageKey);
+    setDraft(handoutDraftFromItem(props.item));
+    setDraftTouched(false);
+    setDraftPersistence("idle");
+  };
+  const discardDraft = () => {
+    removeLocalDraft(draftStorageKey);
+    setDraftPersistence("idle");
+    props.onCancel();
+  };
+
+  return (
+    <form className="lore-editor handout-editor" aria-label={props.item ? `Edit handout ${props.item.title}` : "Create handout"} onSubmit={(event) => { event.preventDefault(); void saveDraft(); }}>
+      <div className="lore-editor-title">
+        <strong>{props.item ? "Handout details" : "New handout"}</strong>
+        {props.item && <span><Eye size={13} /> Read by {formatNumber(readCount)}</span>}
+      </div>
+      {props.canManage && <DraftPersistenceNotice subject="Handout" status={draftPersistence} />}
+      {stale && draftTouched && props.item && (
+        <div className="lore-load-state error editor-conflict" role="alert">
+          <span>This handout changed elsewhere. Your draft is preserved; review the latest saved content before saving.</span>
+          <details>
+            <summary>Review latest saved handout</summary>
+            <p><strong>{props.item.title}</strong></p>
+            <MarkdownDocument source={props.item.body} label="Latest saved handout body" />
+            <p>World: {props.worlds.find((world) => world.id === props.item?.worldId)?.name ?? "Unfiled"}</p>
+            <p>Audience: {visibilityLabel(props.item.visibility)}</p>
+            {props.item.visibility === "specific_players" && <p>Players: {props.members.filter((member) => props.item?.visibleToUserIds.includes(member.user.id)).map((member) => member.user.displayName).join(", ") || "None"}</p>}
+            {props.item.visibility === "specific_characters" && <p>Characters: {props.actors.filter((actor) => props.item?.visibleToActorIds.includes(actor.id)).map((actor) => actor.name).join(", ") || "None"}</p>}
+            <p>Tags: {props.item.tags.join(", ") || "None"}</p>
+            <p>Assets: {props.assets.filter((asset) => props.item?.assetIds.includes(asset.id)).map((asset) => asset.name).join(", ") || "None"}</p>
+          </details>
+          <button className="ghost-button small" type="button" disabled={props.busy} onClick={reloadDraft}>Discard draft and load latest</button>
+        </div>
+      )}
+      <label>
+        <span>Title</span>
+        <input aria-label="Handout title" value={draft.title} readOnly={!props.canManage} disabled={props.busy} required onChange={(event) => updateDraft((current) => ({ ...current, title: event.target.value }))} />
+      </label>
+      {props.canManage ? (
+        <>
+          <label>
+            <span>Body</span>
+            <textarea aria-label="Handout body" value={draft.body} rows={9} disabled={props.busy} placeholder="Markdown-friendly handout text" onChange={(event) => updateDraft((current) => ({ ...current, body: event.target.value }))} />
+          </label>
+          <details className="handout-preview" open={Boolean(draft.body.trim())}>
+            <summary>Rendered preview</summary>
+            <MarkdownDocument source={draft.body} label={`Preview of ${draft.title || "new handout"}`} />
+            <HandoutAssetGallery assets={linkedAssets} />
+          </details>
+        </>
+      ) : (
+        <>
+          <MarkdownDocument source={draft.body} label={draft.title || "Handout"} />
+          <HandoutAssetGallery assets={linkedAssets} />
+        </>
+      )}
+      <div className="lore-filter-grid">
+        <label>
+          <span>World</span>
+          <select aria-label="Handout world" value={draft.worldId} disabled={!props.canManage || props.busy} onChange={(event) => updateDraft((current) => ({ ...current, worldId: event.target.value }))}>
+            <option value="">Unfiled</option>
+            {props.worlds.map((world) => <option key={world.id} value={world.id}>{world.name}</option>)}
+          </select>
+        </label>
+        <label>
+          <span>Audience</span>
+          <select aria-label="Handout visibility" value={draft.visibility} disabled={!props.canManage || props.busy} onChange={(event) => updateDraft((current) => ({ ...current, visibility: event.target.value as Visibility }))}>
+            <option value="public">Everyone</option>
+            <option value="gm_only">GM only</option>
+            <option value="specific_players">Selected players</option>
+            <option value="specific_characters">Character owners</option>
+          </select>
+        </label>
+      </div>
+      <label>
+        <span>Tags</span>
+        <input aria-label="Handout tags" value={draft.tags} readOnly={!props.canManage} disabled={props.busy} placeholder="lore, quest, session-3" onChange={(event) => updateDraft((current) => ({ ...current, tags: event.target.value }))} />
+      </label>
+
+      {draft.visibility === "specific_players" && (
+        <fieldset className="lore-target-grid">
+          <legend><Users size={13} /> Players who can read</legend>
+          {props.members.map((member) => (
+            <label key={member.user.id}>
+              <input type="checkbox" checked={draft.visibleToUserIds.includes(member.user.id)} disabled={!props.canManage || props.busy} onChange={(event) => updateDraft((current) => ({ ...current, visibleToUserIds: toggleId(current.visibleToUserIds, member.user.id, event.target.checked) }))} />
+              <span>{member.user.displayName}</span>
+            </label>
+          ))}
+        </fieldset>
+      )}
+      {draft.visibility === "specific_characters" && (
+        <fieldset className="lore-target-grid">
+          <legend><Users size={13} /> Character owners who can read</legend>
+          {props.actors.map((actor) => (
+            <label key={actor.id}>
+              <input type="checkbox" checked={draft.visibleToActorIds.includes(actor.id)} disabled={!props.canManage || props.busy} onChange={(event) => updateDraft((current) => ({ ...current, visibleToActorIds: toggleId(current.visibleToActorIds, actor.id, event.target.checked) }))} />
+              <span>{actor.name}</span>
+            </label>
+          ))}
+        </fieldset>
+      )}
+
+      <details className="lore-link-drawer">
+        <summary><Link2 size={14} /> Linked assets <span>{formatNumber(draft.assetIds.length)}</span></summary>
+        <div className="lore-target-grid">
+          {props.assets.length === 0 ? <span className="account-summary">No campaign assets yet.</span> : props.assets.map((asset) => (
+            <label key={asset.id}>
+              <input type="checkbox" checked={draft.assetIds.includes(asset.id)} disabled={!props.canManage || props.busy} onChange={(event) => updateDraft((current) => ({ ...current, assetIds: toggleId(current.assetIds, asset.id, event.target.checked) }))} />
+              <span>{asset.name}</span>
+            </label>
+          ))}
+        </div>
+      </details>
+
+      {props.canManage && (
+        <div className="button-row wrap">
+          <button className="primary-button" type="submit" disabled={props.busy || stale || !draft.title.trim() || !canSaveTargets || !canSaveCharacters}><Save size={14} /> {props.item ? "Save handout" : "Share handout"}</button>
+          <button className="ghost-button" type="button" disabled={props.busy} onClick={props.onCancel}><Check size={14} /> Close and keep draft</button>
+          {draftTouched && <button className="ghost-button" type="button" disabled={props.busy} onClick={discardDraft}><Trash2 size={14} /> Discard draft</button>}
+        </div>
+      )}
+    </form>
+  );
+}
+
+function HandoutAssetGallery({ assets }: { assets: MapAsset[] }) {
+  if (assets.length === 0) return null;
+  return (
+    <section className="handout-asset-gallery" aria-label="Linked handout media">
+      {assets.map((asset) => asset.mimeType.startsWith("image/") ? (
+        <figure key={asset.id}>
+          <a href={assetBlobUrl(asset)} target="_blank" rel="noreferrer">
+            <img src={assetThumbnailUrl(asset)} alt={asset.name} loading="lazy" />
+          </a>
+          <figcaption>{asset.name}</figcaption>
+        </figure>
+      ) : (
+        <a className="handout-asset-link" key={asset.id} href={assetBlobUrl(asset)} target="_blank" rel="noreferrer"><FileText size={15} /> {asset.name}</a>
+      ))}
+    </section>
+  );
+}

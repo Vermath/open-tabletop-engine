@@ -1,16 +1,24 @@
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { releaseWorktreeFailureMessage, releaseWorktreeStatus } from "./release-worktree-clean.mjs";
+import { validateReleaseGateEvidence } from "./release-gate-evidence.mjs";
 import { releaseEvidenceGateById, requiredAssistiveTechnologyEnvironments } from "./v1-release-gates.mjs";
 
 const repoRoot = process.cwd();
 const evidenceRoot = process.env.OTTE_EVIDENCE_ROOT ?? repoRoot;
-const currentCommit = process.env.OTTE_RELEASE_COMMIT ?? git("rev-parse HEAD");
+const headCommit = git("rev-parse HEAD");
+const currentCommit = process.env.OTTE_RELEASE_COMMIT ?? headCommit;
 const commitSource = process.env.OTTE_RELEASE_COMMIT ? "OTTE_RELEASE_COMMIT" : "git rev-parse HEAD";
+const gateArtifactPaths = optionValues(process.argv.slice(2), "--gate-artifact");
 
 if (!fullSha(currentCommit)) {
   console.error(`OTTE_RELEASE_COMMIT must be a full 40-character commit SHA; received ${currentCommit}.`);
+  process.exit(1);
+}
+
+if (process.env.OTTE_RELEASE_COMMIT && normalizeSha(currentCommit) !== normalizeSha(headCommit)) {
+  console.error(`OTTE_RELEASE_COMMIT must match checked-out HEAD ${headCommit}; received ${currentCommit}.`);
   process.exit(1);
 }
 
@@ -21,6 +29,7 @@ if (!worktreeStatus.ok) {
 }
 
 const checks = [
+  ...gateArtifactPaths.map(checkMachineReadableGateArtifact),
   checkIdentityProviderSmoke(),
   checkAssistiveTechnologyPass(),
   checkExternalGmValidation(),
@@ -48,6 +57,19 @@ if (failed.length > 0) {
 }
 
 console.log("\nv1 release evidence is complete for the checked gates.");
+
+function checkMachineReadableGateArtifact(path) {
+  try {
+    const document = JSON.parse(readFileSync(resolve(repoRoot, path), "utf8"));
+    const validation = validateReleaseGateEvidence(document, {
+      expectedCommit: currentCommit,
+      repoRoot,
+    });
+    return result(`Machine-readable ${document.gate ?? "release"} gate evidence`, validation.ok, validation.errors);
+  } catch (error) {
+    return result(`Machine-readable release gate evidence: ${path}`, false, [error.message]);
+  }
+}
 
 function checkIdentityProviderSmoke() {
   const releaseGate = gate("identity-provider");
@@ -319,10 +341,57 @@ function privateHost(hostname) {
       (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
       (octets[0] === 192 && octets[1] === 168) ||
       (octets[0] === 198 && (octets[1] === 18 || octets[1] === 19)) ||
-      (octets[0] === 169 && octets[1] === 254)
+      (octets[0] === 169 && octets[1] === 254) ||
+      octets[0] >= 224
     );
   }
-  return normalized.startsWith("fc") || normalized.startsWith("fd") || normalized.startsWith("fe80:");
+  const address = ipv6Value(normalized);
+  if (address === undefined) return false;
+  return nonPublicIpv6Ranges.some(([base, prefixLength]) => ipv6CidrContains(address, base, prefixLength));
+}
+
+const nonPublicIpv6Ranges = [
+  ["::", 96], // unspecified, loopback, and deprecated IPv4-compatible forms
+  ["::ffff:0:0", 96], // IPv4-mapped forms
+  ["64:ff9b::", 96], // translation-only well-known prefix
+  ["64:ff9b:1::", 48], // local-use translation prefix
+  ["100::", 64], // discard-only
+  ["2001:2::", 48], // benchmarking
+  ["2001:10::", 28], // deprecated ORCHID
+  ["2001:20::", 28], // ORCHIDv2
+  ["2001:db8::", 32], // documentation
+  ["3fff::", 20], // documentation
+  ["5f00::", 16], // segment-routing SIDs
+  ["fc00::", 7], // unique-local
+  ["fe80::", 10], // link-local
+  ["fec0::", 10], // deprecated site-local
+  ["ff00::", 8] // multicast
+].map(([base, prefixLength]) => [ipv6Value(base), prefixLength]);
+
+function ipv6CidrContains(address, base, prefixLength) {
+  if (base === undefined) return false;
+  const suffixBits = 128n - BigInt(prefixLength);
+  return address >> suffixBits === base >> suffixBits;
+}
+
+function ipv6Value(input) {
+  let normalized = input.toLowerCase();
+  if (!normalized.includes(":")) return undefined;
+  const ipv4Match = normalized.match(/(?:^|:)(\d{1,3}(?:\.\d{1,3}){3})$/);
+  if (ipv4Match) {
+    const octets = ipv4Match[1].split(".").map(Number);
+    if (octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) return undefined;
+    normalized = `${normalized.slice(0, -ipv4Match[1].length)}${((octets[0] << 8) | octets[1]).toString(16)}:${((octets[2] << 8) | octets[3]).toString(16)}`;
+  }
+  const halves = normalized.split("::");
+  if (halves.length > 2) return undefined;
+  const head = halves[0] ? halves[0].split(":") : [];
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(":") : [];
+  const missing = 8 - head.length - tail.length;
+  if ((halves.length === 1 && missing !== 0) || (halves.length === 2 && missing < 1)) return undefined;
+  const parts = [...head, ...Array(missing).fill("0"), ...tail];
+  if (parts.length !== 8 || parts.some((part) => !/^[0-9a-f]{1,4}$/.test(part))) return undefined;
+  return parts.reduce((value, part) => (value << 16n) | BigInt(Number.parseInt(part, 16)), 0n);
 }
 
 function reservedHost(hostname) {
@@ -419,4 +488,15 @@ function git(args) {
 
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function optionValues(args, option) {
+  const values = [];
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] !== option) continue;
+    if (!args[index + 1]) throw new Error(`${option} requires a path`);
+    values.push(args[index + 1]);
+    index += 1;
+  }
+  return values;
 }

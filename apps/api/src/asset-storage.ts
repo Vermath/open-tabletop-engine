@@ -1,15 +1,53 @@
-import { createReadStream, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import {
+  accessSync,
+  constants,
+  createReadStream,
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { mkdir, rename, rm } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
 import { Readable } from "node:stream";
-import { CreateBucketCommand, DeleteObjectCommand, GetObjectCommand, HeadBucketCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { pipeline } from "node:stream/promises";
+import {
+  CreateBucketCommand,
+  DeleteObjectCommand,
+  GetObjectCommand,
+  HeadBucketCommand,
+  PutObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3";
 import type { AssetStorageRef, MapAsset } from "@open-tabletop/core";
 
 export interface AssetStorage {
   readonly provider: AssetStorageRef["provider"];
-  put(asset: MapAsset, body: Buffer): Promise<AssetStorageRef>;
+  /** Prepare provider-owned resources required before readiness can succeed. */
+  initialize?(): Promise<void>;
+  put(
+    asset: MapAsset,
+    body: Buffer,
+    options?: AssetStorageWriteOptions,
+  ): Promise<AssetStorageRef>;
+  putStream?(
+    asset: MapAsset,
+    body: NodeJS.ReadableStream,
+    sizeBytes?: number,
+    options?: AssetStorageWriteOptions,
+  ): Promise<AssetStorageRef>;
   read(asset: MapAsset): Promise<Buffer | undefined>;
   stream?(asset: MapAsset): Promise<NodeJS.ReadableStream | undefined>;
   delete(asset: MapAsset): Promise<boolean>;
+  healthCheck?(): Promise<{ ok: boolean; reason?: string }>;
+}
+
+export interface AssetStorageWriteOptions {
+  /** Stable identity for one prepared per-object storage operation. */
+  operationId?: string;
 }
 
 export interface AssetStorageOptions {
@@ -21,7 +59,10 @@ export function createAssetStorage(options: AssetStorageOptions): AssetStorage {
   return createAssetStorageForProvider(provider, options);
 }
 
-export function createAssetStorageForProvider(provider: string, options: AssetStorageOptions): AssetStorage {
+export function createAssetStorageForProvider(
+  provider: string,
+  options: AssetStorageOptions,
+): AssetStorage {
   if (provider === "s3" || provider === "minio") {
     return new S3AssetStorage({
       bucket: requiredEnv("OTTE_S3_BUCKET"),
@@ -29,10 +70,14 @@ export function createAssetStorageForProvider(provider: string, options: AssetSt
       region: process.env.OTTE_S3_REGION ?? "us-east-1",
       accessKeyId: process.env.OTTE_S3_ACCESS_KEY_ID,
       secretAccessKey: process.env.OTTE_S3_SECRET_ACCESS_KEY,
-      forcePathStyle: booleanEnv("OTTE_S3_FORCE_PATH_STYLE", Boolean(process.env.OTTE_S3_ENDPOINT))
+      forcePathStyle: booleanEnv(
+        "OTTE_S3_FORCE_PATH_STYLE",
+        Boolean(process.env.OTTE_S3_ENDPOINT),
+      ),
     });
   }
-  if (provider !== "local") throw new Error(`Unsupported OTTE_ASSET_STORAGE provider: ${provider}`);
+  if (provider !== "local")
+    throw new Error(`Unsupported OTTE_ASSET_STORAGE provider: ${provider}`);
   return new LocalAssetStorage(options.uploadDir);
 }
 
@@ -41,37 +86,94 @@ export class LocalAssetStorage implements AssetStorage {
 
   constructor(private readonly uploadDir: string) {}
 
-  async put(asset: MapAsset, body: Buffer): Promise<AssetStorageRef> {
-    const key = asset.storage?.provider === "local" ? asset.storage.key : assetStorageKey(asset);
+  async put(
+    asset: MapAsset,
+    body: Buffer,
+    _options?: AssetStorageWriteOptions,
+  ): Promise<AssetStorageRef> {
+    const key =
+      asset.storage?.provider === "local"
+        ? asset.storage.key
+        : assetStorageKey(asset);
     const filePath = this.filePathForKey(key);
     mkdirSync(dirname(filePath), { recursive: true });
     writeFileSync(filePath, body);
     return { provider: "local", key };
   }
 
+  async putStream(
+    asset: MapAsset,
+    body: NodeJS.ReadableStream,
+    _sizeBytes?: number,
+    _options?: AssetStorageWriteOptions,
+  ): Promise<AssetStorageRef> {
+    const key =
+      asset.storage?.provider === "local"
+        ? asset.storage.key
+        : assetStorageKey(asset);
+    const filePath = this.filePathForKey(key);
+    const temporaryPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+    await mkdir(dirname(filePath), { recursive: true });
+    try {
+      await pipeline(
+        body as Readable,
+        createWriteStream(temporaryPath, { flags: "wx" }),
+      );
+      await rename(temporaryPath, filePath);
+    } catch (error) {
+      await rm(temporaryPath, { force: true });
+      throw error;
+    }
+    return { provider: "local", key };
+  }
+
   async read(asset: MapAsset): Promise<Buffer | undefined> {
-    const filePath = this.filePathForKey(asset.storage?.provider === "local" ? asset.storage.key : assetStorageKey(asset));
+    const filePath = this.filePathForKey(
+      asset.storage?.provider === "local"
+        ? asset.storage.key
+        : assetStorageKey(asset),
+    );
     if (!existsSync(filePath)) return undefined;
     return readFileSync(filePath);
   }
 
   async stream(asset: MapAsset): Promise<NodeJS.ReadableStream | undefined> {
-    const filePath = this.filePathForKey(asset.storage?.provider === "local" ? asset.storage.key : assetStorageKey(asset));
+    const filePath = this.filePathForKey(
+      asset.storage?.provider === "local"
+        ? asset.storage.key
+        : assetStorageKey(asset),
+    );
     if (!existsSync(filePath)) return undefined;
     return createReadStream(filePath);
   }
 
   async delete(asset: MapAsset): Promise<boolean> {
-    const filePath = this.filePathForKey(asset.storage?.provider === "local" ? asset.storage.key : assetStorageKey(asset));
+    const filePath = this.filePathForKey(
+      asset.storage?.provider === "local"
+        ? asset.storage.key
+        : assetStorageKey(asset),
+    );
     if (!existsSync(filePath)) return false;
     unlinkSync(filePath);
     return true;
   }
 
+  async healthCheck(): Promise<{ ok: boolean; reason?: string }> {
+    try {
+      const root = resolve(this.uploadDir);
+      mkdirSync(root, { recursive: true });
+      accessSync(root, constants.R_OK | constants.W_OK);
+      return { ok: true };
+    } catch {
+      return { ok: false, reason: "local_asset_storage_unavailable" };
+    }
+  }
+
   private filePathForKey(key: string): string {
     const root = resolve(this.uploadDir);
     const filePath = resolve(root, key);
-    if (!isWithinPath(root, filePath)) throw new Error("Invalid asset storage path");
+    if (!isWithinPath(root, filePath))
+      throw new Error("Invalid asset storage path");
     return filePath;
   }
 }
@@ -99,15 +201,19 @@ export class S3AssetStorage implements AssetStorage {
         options.accessKeyId && options.secretAccessKey
           ? {
               accessKeyId: options.accessKeyId,
-              secretAccessKey: options.secretAccessKey
+              secretAccessKey: options.secretAccessKey,
             }
-          : undefined
+          : undefined,
     });
   }
 
-  async put(asset: MapAsset, body: Buffer): Promise<AssetStorageRef> {
+  async put(
+    asset: MapAsset,
+    body: Buffer,
+    options?: AssetStorageWriteOptions,
+  ): Promise<AssetStorageRef> {
     await this.ensureBucket();
-    const key = asset.storage?.provider === "s3" ? asset.storage.key : assetStorageKey(asset);
+    const key = this.configuredStorageKey(asset) ?? assetStorageKey(asset);
     await this.client.send(
       new PutObjectCommand({
         Bucket: this.options.bucket,
@@ -116,22 +222,49 @@ export class S3AssetStorage implements AssetStorage {
         ContentType: asset.mimeType,
         Metadata: {
           assetId: asset.id,
-          campaignId: asset.campaignId
-        }
-      })
+          campaignId: asset.campaignId,
+          ...(options?.operationId ? { operationId: options.operationId } : {}),
+        },
+      }),
+    );
+    return { provider: "s3", bucket: this.options.bucket, key };
+  }
+
+  async putStream(
+    asset: MapAsset,
+    body: NodeJS.ReadableStream,
+    sizeBytes?: number,
+    options?: AssetStorageWriteOptions,
+  ): Promise<AssetStorageRef> {
+    await this.ensureBucket();
+    const key = this.configuredStorageKey(asset) ?? assetStorageKey(asset);
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.options.bucket,
+        Key: key,
+        Body: body as Readable,
+        ...(sizeBytes !== undefined ? { ContentLength: sizeBytes } : {}),
+        ContentType: asset.mimeType,
+        Metadata: {
+          assetId: asset.id,
+          campaignId: asset.campaignId,
+          ...(options?.operationId ? { operationId: options.operationId } : {}),
+        },
+      }),
     );
     return { provider: "s3", bucket: this.options.bucket, key };
   }
 
   async read(asset: MapAsset): Promise<Buffer | undefined> {
+    const key = this.configuredStorageKey(asset);
+    if (!key) return undefined;
     await this.ensureBucket();
-    const key = asset.storage?.provider === "s3" ? asset.storage.key : assetStorageKey(asset);
     try {
       const object = await this.client.send(
         new GetObjectCommand({
-          Bucket: asset.storage?.bucket ?? this.options.bucket,
-          Key: key
-        })
+          Bucket: this.options.bucket,
+          Key: key,
+        }),
       );
       if (!object.Body) return undefined;
       return bodyToBuffer(object.Body);
@@ -141,29 +274,89 @@ export class S3AssetStorage implements AssetStorage {
     }
   }
 
-  async delete(asset: MapAsset): Promise<boolean> {
+  async stream(asset: MapAsset): Promise<NodeJS.ReadableStream | undefined> {
+    const key = this.configuredStorageKey(asset);
+    if (!key) return undefined;
     await this.ensureBucket();
-    const key = asset.storage?.provider === "s3" ? asset.storage.key : assetStorageKey(asset);
+    try {
+      const object = await this.client.send(
+        new GetObjectCommand({ Bucket: this.options.bucket, Key: key }),
+      );
+      return object.Body ? (object.Body as NodeJS.ReadableStream) : undefined;
+    } catch (error) {
+      if (isS3NotFound(error)) return undefined;
+      throw error;
+    }
+  }
+
+  async delete(asset: MapAsset): Promise<boolean> {
+    const key = this.configuredStorageKey(asset);
+    if (!key) return false;
+    await this.ensureBucket();
     await this.client.send(
       new DeleteObjectCommand({
-        Bucket: asset.storage?.bucket ?? this.options.bucket,
-        Key: key
-      })
+        Bucket: this.options.bucket,
+        Key: key,
+      }),
     );
     return true;
   }
 
-  private ensureBucket(): Promise<void> {
-    this.ready ??= this.createBucketIfMissing();
-    return this.ready;
+  async healthCheck(): Promise<{ ok: boolean; reason?: string }> {
+    try {
+      await this.assertBucketReady();
+      return { ok: true };
+    } catch (error) {
+      if (isS3NotFound(error)) {
+        this.ready = undefined;
+        try {
+          await this.assertBucketReady();
+          return { ok: true };
+        } catch {
+          // Return the same non-secret readiness reason for failed repair attempts.
+        }
+      }
+      return { ok: false, reason: "s3_asset_storage_unavailable" };
+    }
+  }
+
+  async initialize(): Promise<void> {
+    await this.ensureBucket();
+  }
+
+  private async assertBucketReady(): Promise<void> {
+    await this.initialize();
+    await this.client.send(
+      new HeadBucketCommand({ Bucket: this.options.bucket }),
+    );
+  }
+
+  private async ensureBucket(): Promise<void> {
+    const attempt = (this.ready ??= this.createBucketIfMissing());
+    try {
+      await attempt;
+    } catch (error) {
+      if (this.ready === attempt) this.ready = undefined;
+      throw error;
+    }
+  }
+
+  private configuredStorageKey(asset: MapAsset): string | undefined {
+    if (asset.storage?.provider !== "s3") return assetStorageKey(asset);
+    if (asset.storage.bucket !== this.options.bucket) return undefined;
+    return asset.storage.key;
   }
 
   private async createBucketIfMissing(): Promise<void> {
     try {
-      await this.client.send(new HeadBucketCommand({ Bucket: this.options.bucket }));
+      await this.client.send(
+        new HeadBucketCommand({ Bucket: this.options.bucket }),
+      );
     } catch (error) {
       if (!isS3NotFound(error)) throw error;
-      await this.client.send(new CreateBucketCommand({ Bucket: this.options.bucket }));
+      await this.client.send(
+        new CreateBucketCommand({ Bucket: this.options.bucket }),
+      );
     }
   }
 }
@@ -173,7 +366,18 @@ export function assetStorageKey(asset: MapAsset): string {
 }
 
 function assetStorageKeyPart(value: string): string {
-  return value.replace(/[^a-zA-Z0-9_-]/g, "_") || "unknown";
+  if (/^[a-z0-9_-]+$/.test(value)) return value;
+  const label =
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 32) || "unknown";
+  const digest = createHash("sha256")
+    .update(value, "utf8")
+    .digest("hex")
+    .slice(0, 32);
+  return `${label}--${digest}`;
 }
 
 function extensionForMimeType(mimeType: string): string {
@@ -188,6 +392,22 @@ function extensionForMimeType(mimeType: string): string {
       return ".gif";
     case "image/svg+xml":
       return ".svg";
+    case "audio/mpeg":
+      return ".mp3";
+    case "audio/wav":
+    case "audio/wave":
+    case "audio/x-wav":
+      return ".wav";
+    case "audio/ogg":
+      return ".ogg";
+    case "audio/webm":
+      return ".webm";
+    case "audio/aac":
+      return ".aac";
+    case "audio/flac":
+      return ".flac";
+    case "audio/mp4":
+      return ".m4a";
     default:
       return ".bin";
   }
@@ -218,16 +438,29 @@ async function bodyToBuffer(body: unknown): Promise<Buffer> {
     }
     return Buffer.concat(chunks);
   }
-  if (isTransformableBody(body)) return Buffer.from(await body.transformToByteArray());
+  if (isTransformableBody(body))
+    return Buffer.from(await body.transformToByteArray());
   throw new Error("Unsupported S3 body stream");
 }
 
-function isTransformableBody(body: unknown): body is { transformToByteArray(): Promise<Uint8Array> } {
-  return Boolean(body && typeof body === "object" && "transformToByteArray" in body);
+function isTransformableBody(
+  body: unknown,
+): body is { transformToByteArray(): Promise<Uint8Array> } {
+  return Boolean(
+    body && typeof body === "object" && "transformToByteArray" in body,
+  );
 }
 
 function isS3NotFound(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
-  const candidate = error as { name?: string; $metadata?: { httpStatusCode?: number } };
-  return candidate.name === "NotFound" || candidate.name === "NoSuchKey" || candidate.name === "NoSuchBucket" || candidate.$metadata?.httpStatusCode === 404;
+  const candidate = error as {
+    name?: string;
+    $metadata?: { httpStatusCode?: number };
+  };
+  return (
+    candidate.name === "NotFound" ||
+    candidate.name === "NoSuchKey" ||
+    candidate.name === "NoSuchBucket" ||
+    candidate.$metadata?.httpStatusCode === 404
+  );
 }

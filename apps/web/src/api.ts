@@ -1,9 +1,55 @@
-import type { Actor, AiEvaluationRun, AiMemoryFact, AiThread, AiToolCall, AiUsageMetrics, AuditLog, Campaign, CampaignMember, ChatMessage, Combat, ContentImportBatch, DiceMacro, DiceRoll, EmailOutboxMessage, Encounter, FogPreset, Item, JobStatus, JobType, JournalEntry, MapAsset, OrganizationMember, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, ScimAssignableRole, ScimGroup, ScimGroupRoleMapping, Token, User, UserRole, UserSession, VisionSnapshot } from "@open-tabletop/core";
+import type { Actor, AiEvaluationRun, AiMemoryFact, AiThread, AiToolCall, AiUsageMetrics, AudioTrack, AuditLog, CalculationOverride, Campaign, CampaignMember, CampaignPresence, ChatMessage, Combat, ContentImportBatch, DiceMacro, DiceRoll, DiceRollFairness, EmailOutboxMessage, Encounter, FogPreset, Item, JobStatus, JobType, JournalEntry, MapAsset, OrganizationMember, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, SystemManifestSchemas, SystemManifestIdentity, DeclarativeSystemDefinition, ScimAssignableRole, ScimGroup, ScimGroupRoleMapping, Token, User, UserRole, UserSession, VisionSnapshot, WorldRecord, WorldRelation } from "@open-tabletop/core";
+import { ApiCompatibilityError, apiBuildFingerprintIssue, apiCompatibilityIssue, type ApiHealthIdentity } from "./api-compatibility.js";
+import type { UniversalVttImportInput, UniversalVttImportResult } from "@open-tabletop/api-contracts";
+
+export type { UniversalVttImportInput, UniversalVttImportResult } from "@open-tabletop/api-contracts";
+
+export { ApiCompatibilityError, apiBuildFingerprintIssue, apiCompatibilityIssue } from "./api-compatibility.js";
 
 export const baseUrl = import.meta.env.VITE_API_URL ?? "";
 
-const sessionTokenKey = "otte:sessionToken";
-const sessionTokenUserKey = "otte:sessionTokenUser";
+export async function assertApiCompatibility(
+  fetchHealth: typeof fetch = fetch
+): Promise<void> {
+  const response = await fetchHealth(`${baseUrl}/api/v1/health`, {
+    credentials: "include",
+    cache: "no-store",
+    headers: { accept: "application/json" }
+  });
+  let health: ApiHealthIdentity | undefined;
+  try {
+    health = await response.json() as ApiHealthIdentity;
+  } catch {
+    throw new ApiCompatibilityError("API health did not return a JSON identity.");
+  }
+  if (!response.ok) {
+    const detail = typeof (health as { message?: unknown } | undefined)?.message === "string"
+      ? (health as { message: string }).message
+      : `API health returned HTTP ${response.status}.`;
+    throw new ApiCompatibilityError(detail);
+  }
+  const issue = apiCompatibilityIssue(health);
+  if (issue) throw new ApiCompatibilityError(`${issue} Stop the retained API or point the web dev server at the current API.`);
+  const expectedBuildFingerprint = import.meta.env.DEV ? import.meta.env.VITE_EXPECTED_API_BUILD_FINGERPRINT : undefined;
+  const buildIssue = expectedBuildFingerprint ? apiBuildFingerprintIssue(health, expectedBuildFingerprint) : undefined;
+  if (buildIssue) throw new ApiCompatibilityError(`${buildIssue} Restart the API from this checkout or point the web dev server at the intended current API.`);
+}
+
+const legacySessionTokenKey = "otte:sessionToken";
+const legacySessionTokenUserKey = "otte:sessionTokenUser";
+const sessionTransportKey = "otte:sessionTransport";
+const cookieSessionMarker = "otte-cookie-session";
+let inMemorySessionToken = "";
+let legacySessionMigrated = false;
+let legacySessionUpgradePending = false;
+let legacySessionUpgradePromise: Promise<void> | undefined;
+let statelessDemoApiMode = false;
+let sessionTransportEpoch = 0;
+const seededDemoLoginRetryDelayMs = 200;
+
+async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  return fetch(input, { ...init, credentials: "include" });
+}
 
 export class ApiError extends Error {
   constructor(
@@ -21,51 +67,124 @@ export function getSessionUserId(): string {
   return localStorage.getItem("otte:userId") ?? "usr_demo_gm";
 }
 
-export function setSessionUserId(userId: string): void {
-  localStorage.setItem("otte:userId", userId);
-  localStorage.removeItem(sessionTokenKey);
-  localStorage.removeItem(sessionTokenUserKey);
+export function getSessionToken(): string {
+  return sessionCredentialToken() ? cookieSessionMarker : "";
 }
 
-export function getSessionToken(): string {
-  return localStorage.getItem(sessionTokenKey) ?? "";
+export function getSessionTransportEpoch(): number {
+  return sessionTransportEpoch;
 }
 
 export function storeSession(login: SessionLoginInfo): void {
+  migrateLegacySessionToken();
+  inMemorySessionToken = cookieSessionMarker;
+  sessionTransportEpoch += 1;
+  legacySessionUpgradePending = false;
   localStorage.setItem("otte:userId", login.user.id);
-  localStorage.setItem(sessionTokenKey, login.token);
-  localStorage.setItem(sessionTokenUserKey, login.user.id);
+  localStorage.setItem(sessionTransportKey, "cookie");
+  localStorage.removeItem(legacySessionTokenKey);
+  localStorage.removeItem(legacySessionTokenUserKey);
 }
 
 export function clearSession(): void {
-  localStorage.removeItem(sessionTokenKey);
-  localStorage.removeItem(sessionTokenUserKey);
+  inMemorySessionToken = "";
+  sessionTransportEpoch += 1;
+  legacySessionUpgradePending = false;
+  legacySessionUpgradePromise = undefined;
+  localStorage.removeItem(legacySessionTokenKey);
+  localStorage.removeItem(legacySessionTokenUserKey);
+  localStorage.removeItem(sessionTransportKey);
 }
 
-export function consumeSsoRedirect(): string | undefined {
+function migrateLegacySessionToken(): void {
+  if (legacySessionMigrated) return;
+  legacySessionMigrated = true;
+  const token = localStorage.getItem(legacySessionTokenKey) ?? "";
+  const tokenUserId = localStorage.getItem(legacySessionTokenUserKey);
+  const userId = getSessionUserId();
+  if (token && tokenUserId === userId) {
+    inMemorySessionToken = token;
+    legacySessionUpgradePending = true;
+    return;
+  }
+  localStorage.removeItem(legacySessionTokenKey);
+  localStorage.removeItem(legacySessionTokenUserKey);
+}
+
+export function setStatelessDemoApiMode(enabled: boolean): void {
+  statelessDemoApiMode = enabled;
+}
+
+export async function consumeSsoRedirect(): Promise<string | undefined> {
   const hash = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : window.location.hash;
   const params = new URLSearchParams(hash);
   const token = params.get("ssoToken");
-  const userId = params.get("ssoUserId");
-  if (!token || !userId) return undefined;
+  if (token !== cookieSessionMarker) return undefined;
+  const response = await apiFetch(`${baseUrl}/api/v1/auth/session`, {
+    headers: { authorization: `Bearer ${cookieSessionMarker}` },
+  });
+  if (!response.ok) throw await apiErrorFromResponse(response);
+  const authenticated = await response.json() as { user?: { id?: string } };
+  const userId = authenticated.user?.id;
+  if (!userId) throw new Error("OIDC session response did not include an authenticated user.");
+  inMemorySessionToken = cookieSessionMarker;
+  sessionTransportEpoch += 1;
+  legacySessionUpgradePending = false;
   localStorage.setItem("otte:userId", userId);
-  localStorage.setItem(sessionTokenKey, token);
-  localStorage.setItem(sessionTokenUserKey, userId);
+  localStorage.setItem(sessionTransportKey, "cookie");
+  localStorage.removeItem(legacySessionTokenKey);
+  localStorage.removeItem(legacySessionTokenUserKey);
+  // Keep the callback marker available for a retry until the cookie has been
+  // verified and the corresponding browser identity is safely committed.
   window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
   return userId;
 }
 
-export async function loginSession(userId = getSessionUserId()): Promise<SessionLoginInfo> {
+export async function loginSession(userId = getSessionUserId(), options: { persist?: boolean; signal?: AbortSignal } = {}): Promise<SessionLoginInfo> {
   const demoEmail = demoLoginEmail(userId);
-  const response = await fetch(`${baseUrl}/api/v1/auth/login`, {
+  const requestLogin = () => apiFetch(`${baseUrl}/api/v1/auth/login`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(demoEmail ? { email: demoEmail } : { userId })
+    headers: { "content-type": "application/json", ...(options.persist === false ? { "x-otte-defer-session-cookie": "1" } : {}) },
+    body: JSON.stringify(demoEmail ? { email: demoEmail } : { userId }),
+    signal: options.signal
   });
+  let response: Response;
+  try {
+    response = await requestLogin();
+  } catch (error) {
+    // Seeded demo buttons use deferred credentials, so a response lost to a
+    // transient connection failure cannot commit a cookie behind the stale
+    // credential ticket guard. Retry that transport failure exactly once.
+    // Password login, HTTP/auth responses, persisted sessions, and aborted
+    // workspace switches deliberately remain single-attempt operations.
+    if (!demoEmail || options.persist !== false || !isTransientFetchFailure(error) || options.signal?.aborted) throw error;
+    await waitForSeededDemoLoginRetry(options.signal);
+    response = await requestLogin();
+  }
   if (!response.ok) throw new Error(await response.text());
   const login = (await response.json()) as SessionLoginInfo;
-  storeSession(login);
+  if (options.persist !== false) await confirmAndStoreBrowserSession(login);
   return login;
+}
+
+function isTransientFetchFailure(error: unknown): boolean {
+  return error instanceof TypeError;
+}
+
+function waitForSeededDemoLoginRetry(signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.reject(signal.reason ?? new DOMException("Seeded demo sign-in cancelled", "AbortError"));
+  return new Promise((resolve, reject) => {
+    const timer = globalThis.setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, seededDemoLoginRetryDelayMs);
+    const onAbort = () => {
+      globalThis.clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      reject(signal?.reason ?? new DOMException("Seeded demo sign-in cancelled", "AbortError"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 function demoLoginEmail(userId: string): string | undefined {
@@ -74,110 +193,122 @@ function demoLoginEmail(userId: string): string | undefined {
   return undefined;
 }
 
-export async function loginPasswordSession(input: { email: string; password: string; mfaCode?: string; recoveryCode?: string }): Promise<SessionLoginInfo> {
-  const response = await fetch(`${baseUrl}/api/v1/auth/login`, {
+export async function loginPasswordSession(input: { email: string; password: string; mfaCode?: string; recoveryCode?: string }, options: { persist?: boolean; signal?: AbortSignal } = {}): Promise<SessionLoginInfo> {
+  const response = await apiFetch(`${baseUrl}/api/v1/auth/login`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(input)
+    headers: { "content-type": "application/json", ...(options.persist === false ? { "x-otte-defer-session-cookie": "1" } : {}) },
+    body: JSON.stringify(input),
+    signal: options.signal,
   });
-  if (!response.ok) throw new Error(await response.text());
+  if (!response.ok) throw await apiErrorFromResponse(response);
   const login = (await response.json()) as SessionLoginInfo;
-  storeSession(login);
+  if (options.persist !== false) await confirmAndStoreBrowserSession(login);
   return login;
 }
 
-export async function registerSession(input: { email: string; displayName: string; password: string }): Promise<SessionLoginInfo> {
-  const response = await fetch(`${baseUrl}/api/v1/auth/register`, {
+export async function registerSession(input: { email: string; displayName: string; password: string }, options: { persist?: boolean; signal?: AbortSignal } = {}): Promise<SessionLoginInfo> {
+  const response = await apiFetch(`${baseUrl}/api/v1/auth/register`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(input)
+    headers: { "content-type": "application/json", ...(options.persist === false ? { "x-otte-defer-session-cookie": "1" } : {}) },
+    body: JSON.stringify(input),
+    signal: options.signal,
   });
   if (!response.ok) throw new Error(await response.text());
   const login = (await response.json()) as SessionLoginInfo;
-  storeSession(login);
+  if (options.persist !== false) await confirmAndStoreBrowserSession(login);
   return login;
 }
 
 export async function logoutSession(): Promise<{ ok: boolean }> {
-  const response = await fetch(`${baseUrl}/api/v1/auth/logout`, {
-    method: "POST",
-    headers: await sessionHeaders()
-  });
-  clearSession();
-  if (!response.ok) throw new Error(await response.text());
-  return response.json() as Promise<{ ok: boolean }>;
+  try {
+    const response = await apiFetch(`${baseUrl}/api/v1/auth/logout`, {
+      method: "POST",
+      headers: await sessionHeaders()
+    });
+    if (!response.ok) throw new Error(await response.text());
+    return response.json() as Promise<{ ok: boolean }>;
+  } finally {
+    clearSession();
+  }
 }
 
-export async function changePasswordSession(input: { currentPassword: string; newPassword: string }): Promise<SessionLoginInfo> {
-  const response = await fetch(`${baseUrl}/api/v1/auth/password/change`, {
+export async function changePasswordSession(input: { currentPassword: string; newPassword: string }, options: { persist?: boolean; signal?: AbortSignal } = {}): Promise<SessionLoginInfo> {
+  const response = await apiFetch(`${baseUrl}/api/v1/auth/password/change`, {
     method: "POST",
-    headers: { "content-type": "application/json", ...(await sessionHeaders()) },
-    body: JSON.stringify(input)
+    headers: { "content-type": "application/json", ...(options.persist === false ? { "x-otte-defer-session-cookie": "1" } : {}), ...(await sessionHeaders()) },
+    body: JSON.stringify(input),
+    signal: options.signal
   });
   if (!response.ok) throw new Error(await response.text());
   const login = (await response.json()) as SessionLoginInfo;
-  storeSession(login);
+  if (options.persist !== false) await confirmAndStoreBrowserSession(login);
   return login;
 }
 
-export async function loadMfaStatus(): Promise<MfaInfo> {
-  const response = await fetch(`${baseUrl}/api/v1/auth/mfa`, {
-    headers: await sessionHeaders()
+export async function loadMfaStatus(options: ApiRequestOptions = {}): Promise<MfaInfo> {
+  const response = await apiFetch(`${baseUrl}/api/v1/auth/mfa`, {
+    headers: await sessionHeaders(),
+    signal: options.signal
   });
   if (!response.ok) throw new Error(await response.text());
   return response.json() as Promise<MfaInfo>;
 }
 
-export async function enrollTotpMfa(input: { currentPassword: string }): Promise<TotpEnrollInfo> {
-  const response = await fetch(`${baseUrl}/api/v1/auth/mfa/totp/enroll`, {
+export async function enrollTotpMfa(input: { currentPassword: string }, options: ApiRequestOptions = {}): Promise<TotpEnrollInfo> {
+  const response = await apiFetch(`${baseUrl}/api/v1/auth/mfa/totp/enroll`, {
     method: "POST",
     headers: { "content-type": "application/json", ...(await sessionHeaders()) },
-    body: JSON.stringify(input)
+    body: JSON.stringify(input),
+    signal: options.signal
   });
   if (!response.ok) throw new Error(await response.text());
   return response.json() as Promise<TotpEnrollInfo>;
 }
 
-export async function confirmTotpMfa(input: { code: string }): Promise<TotpConfirmInfo> {
-  const response = await fetch(`${baseUrl}/api/v1/auth/mfa/totp/confirm`, {
+export async function confirmTotpMfa(input: { code: string }, options: ApiRequestOptions = {}): Promise<TotpConfirmInfo> {
+  const response = await apiFetch(`${baseUrl}/api/v1/auth/mfa/totp/confirm`, {
     method: "POST",
     headers: { "content-type": "application/json", ...(await sessionHeaders()) },
-    body: JSON.stringify(input)
+    body: JSON.stringify(input),
+    signal: options.signal
   });
   if (!response.ok) throw new Error(await response.text());
   return response.json() as Promise<TotpConfirmInfo>;
 }
 
-export async function disableTotpMfa(input: { currentPassword: string; mfaCode?: string; recoveryCode?: string }): Promise<TotpConfirmInfo> {
-  const response = await fetch(`${baseUrl}/api/v1/auth/mfa/totp`, {
+export async function disableTotpMfa(input: { currentPassword: string; mfaCode?: string; recoveryCode?: string }, options: ApiRequestOptions = {}): Promise<TotpConfirmInfo> {
+  const response = await apiFetch(`${baseUrl}/api/v1/auth/mfa/totp`, {
     method: "DELETE",
     headers: { "content-type": "application/json", ...(await sessionHeaders()) },
-    body: JSON.stringify(input)
+    body: JSON.stringify(input),
+    signal: options.signal
   });
   if (!response.ok) throw new Error(await response.text());
   return response.json() as Promise<TotpConfirmInfo>;
 }
 
 export async function loadBootstrapStatus(): Promise<BootstrapStatus> {
-  const response = await fetch(`${baseUrl}/api/v1/auth/bootstrap`);
+  await assertApiCompatibility();
+  const response = await apiFetch(`${baseUrl}/api/v1/auth/bootstrap`);
   if (!response.ok) throw new Error(await response.text());
   return response.json() as Promise<BootstrapStatus>;
 }
 
-export async function bootstrapOwnerSession(input: { email: string; displayName: string; password: string; campaignName: string; campaignDescription?: string; defaultSystemId?: string }): Promise<BootstrapOwnerInfo> {
-  const response = await fetch(`${baseUrl}/api/v1/auth/bootstrap`, {
+export async function bootstrapOwnerSession(input: { email: string; displayName: string; password: string; campaignName: string; campaignDescription?: string; defaultSystemId?: string }, options: { persist?: boolean; signal?: AbortSignal } = {}): Promise<BootstrapOwnerInfo> {
+  const response = await apiFetch(`${baseUrl}/api/v1/auth/bootstrap`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(input)
+    headers: { "content-type": "application/json", ...(options.persist === false ? { "x-otte-defer-session-cookie": "1" } : {}) },
+    body: JSON.stringify(input),
+    signal: options.signal,
   });
   if (!response.ok) throw new Error(await response.text());
   const login = (await response.json()) as BootstrapOwnerInfo;
-  storeSession(login);
+  if (options.persist !== false) await confirmAndStoreBrowserSession(login);
   return login;
 }
 
 export async function requestPasswordReset(email: string): Promise<{ ok: boolean }> {
-  const response = await fetch(`${baseUrl}/api/v1/auth/password-reset/request`, {
+  const response = await apiFetch(`${baseUrl}/api/v1/auth/password-reset/request`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ email })
@@ -186,32 +317,77 @@ export async function requestPasswordReset(email: string): Promise<{ ok: boolean
   return response.json() as Promise<{ ok: boolean }>;
 }
 
-export async function confirmPasswordResetSession(input: { token: string; password: string }): Promise<SessionLoginInfo> {
-  const response = await fetch(`${baseUrl}/api/v1/auth/password-reset/confirm`, {
+export async function confirmPasswordResetSession(input: { token: string; password: string }, options: { persist?: boolean; signal?: AbortSignal } = {}): Promise<SessionLoginInfo> {
+  const response = await apiFetch(`${baseUrl}/api/v1/auth/password-reset/confirm`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(input)
+    headers: { "content-type": "application/json", ...(options.persist === false ? { "x-otte-defer-session-cookie": "1" } : {}) },
+    body: JSON.stringify(input),
+    signal: options.signal,
   });
   if (!response.ok) throw new Error(await response.text());
   const login = (await response.json()) as SessionLoginInfo;
-  storeSession(login);
+  if (options.persist !== false) await confirmAndStoreBrowserSession(login);
   return login;
 }
 
-export async function acceptInviteSession(input: { token: string; email: string; displayName: string; password: string }): Promise<InviteAcceptInfo> {
-  const response = await fetch(`${baseUrl}/api/v1/invites/accept`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(input)
+export interface InvitePreviewInfo {
+  invite: CampaignInviteInfo;
+  campaign: Pick<Campaign, "id" | "name" | "description">;
+  expectedUpdatedAt: string;
+}
+
+export async function loadInvitePreview(token: string, options: { signal?: AbortSignal } = {}): Promise<InvitePreviewInfo> {
+  const response = await apiFetch(`${baseUrl}/api/v1/invites/preview?token=${encodeURIComponent(token)}`, {
+    signal: options.signal
   });
-  if (!response.ok) throw new Error(await response.text());
+  if (!response.ok) throw await apiErrorFromResponse(response);
+  return response.json() as Promise<InvitePreviewInfo>;
+}
+
+export async function acceptInviteSession(
+  input: { token: string; email: string; displayName?: string; password: string; mfaCode?: string; recoveryCode?: string },
+  options: { persist?: boolean; signal?: AbortSignal; idempotencyKey: string }
+): Promise<InviteAcceptInfo> {
+  const preview = await loadInvitePreview(input.token, { signal: options.signal });
+  const response = await apiFetch(`${baseUrl}/api/v1/invites/accept`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "idempotency-key": options.idempotencyKey, ...(options.persist === false ? { "x-otte-defer-session-cookie": "1" } : {}) },
+    body: JSON.stringify({ ...input, expectedUpdatedAt: preview.expectedUpdatedAt }),
+    signal: options.signal
+  });
+  if (!response.ok) throw await apiErrorFromResponse(response);
   const accepted = (await response.json()) as InviteAcceptInfo;
-  storeSession(accepted);
+  if (options.persist !== false) await confirmAndStoreBrowserSession(accepted);
   return accepted;
 }
 
+/** Commits a response selected by stale-result guards before changing browser credentials. */
+export async function activateDeferredSession(login: SessionLoginInfo, options: { persist?: boolean } = {}): Promise<void> {
+  const upgraded = await apiFetch(`${baseUrl}/api/v1/auth/session/upgrade-cookie`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${login.token}` },
+    body: JSON.stringify({ expectedUserId: login.user.id }),
+  });
+  if (!upgraded.ok) throw await apiErrorFromResponse(upgraded);
+  await assertUpgradeUser(upgraded, login.user.id);
+  const confirmed = await apiFetch(`${baseUrl}/api/v1/auth/session/upgrade-cookie/confirm`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${cookieSessionMarker}` },
+    body: JSON.stringify({ expectedUserId: login.user.id }),
+  });
+  if (!confirmed.ok) throw await apiErrorFromResponse(confirmed);
+  await assertUpgradeConfirmation(confirmed, login.user.id);
+  try {
+    await assertAuthenticatedCookieSession(login.user.id);
+  } catch (error) {
+    await discardUnconfirmedCookieSession();
+    throw error;
+  }
+  if (options.persist !== false) storeSession(login);
+}
+
 export async function startOidcLogin(returnTo = window.location.origin + window.location.pathname): Promise<OidcStartInfo> {
-  const response = await fetch(`${baseUrl}/api/v1/auth/oidc/start`, {
+  const response = await apiFetch(`${baseUrl}/api/v1/auth/oidc/start`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ returnTo })
@@ -221,22 +397,130 @@ export async function startOidcLogin(returnTo = window.location.origin + window.
 }
 
 export async function loadOidcConfig(): Promise<OidcConfigInfo> {
-  const response = await fetch(`${baseUrl}/api/v1/auth/oidc/config`);
+  const response = await apiFetch(`${baseUrl}/api/v1/auth/oidc/config`);
   if (!response.ok) throw new Error(await response.text());
   return response.json() as Promise<OidcConfigInfo>;
 }
 
 async function ensureSessionToken(): Promise<string> {
-  const token = localStorage.getItem(sessionTokenKey);
-  const tokenUserId = localStorage.getItem(sessionTokenUserKey);
-  const userId = getSessionUserId();
-  if (token && tokenUserId === userId) return token;
-  const login = await loginSession(userId);
-  return login.token;
+  if (statelessDemoApiMode) throw new Error("Demo mode is local-only and cannot call the authenticated API.");
+  const token = sessionCredentialToken();
+  if (!token) throw new ApiError("Sign in required", 401, { error: "unauthorized", message: "Sign in required" }, "Sign in required");
+  return token;
+}
+
+/** The legacy bearer is private to one upgrade request and never exposed to UI state. */
+function sessionCredentialToken(): string {
+  migrateLegacySessionToken();
+  if (inMemorySessionToken) return inMemorySessionToken;
+  return localStorage.getItem(sessionTransportKey) === "cookie" ? cookieSessionMarker : "";
 }
 
 async function sessionHeaders(): Promise<Record<string, string>> {
-  return { authorization: `Bearer ${await ensureSessionToken()}` };
+  await ensureLegacySessionCookieUpgrade();
+  const token = await ensureSessionToken();
+  return { authorization: `Bearer ${token}` };
+}
+
+async function ensureLegacySessionCookieUpgrade(): Promise<void> {
+  migrateLegacySessionToken();
+  if (!legacySessionUpgradePending) return;
+  if (legacySessionUpgradePromise) return legacySessionUpgradePromise;
+  legacySessionUpgradePromise = (async () => {
+    const expectedUserId = localStorage.getItem(legacySessionTokenUserKey);
+    if (!expectedUserId) throw new Error("Legacy session user is unavailable for cookie upgrade.");
+    // If the prior confirmation response was interrupted, the rotated cookie
+    // is already usable and this confirmation safely finishes revocation.
+    const pendingConfirmation = await apiFetch(`${baseUrl}/api/v1/auth/session/upgrade-cookie/confirm`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${cookieSessionMarker}` },
+      body: JSON.stringify({ expectedUserId }),
+    });
+    if (pendingConfirmation.ok) {
+      await finalizeLegacySessionCookieUpgrade(pendingConfirmation);
+      return;
+    }
+
+    const legacyBearer = inMemorySessionToken;
+    if (!legacyBearer || legacyBearer === cookieSessionMarker) throw new Error("Legacy session credential is unavailable for cookie upgrade.");
+    const upgraded = await apiFetch(`${baseUrl}/api/v1/auth/session/upgrade-cookie`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${legacyBearer}` },
+      body: JSON.stringify({ expectedUserId }),
+    });
+    if (!upgraded.ok) throw await apiErrorFromResponse(upgraded);
+    await assertUpgradeUser(upgraded, expectedUserId);
+    const confirmed = await apiFetch(`${baseUrl}/api/v1/auth/session/upgrade-cookie/confirm`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${cookieSessionMarker}` },
+      body: JSON.stringify({ expectedUserId }),
+    });
+    if (!confirmed.ok) throw await apiErrorFromResponse(confirmed);
+    await finalizeLegacySessionCookieUpgrade(confirmed);
+  })().finally(() => {
+    legacySessionUpgradePromise = undefined;
+  });
+  return legacySessionUpgradePromise;
+}
+
+async function assertUpgradeUser(response: Response, expectedUserId: string): Promise<void> {
+  const payload = await response.json() as { session?: { userId?: string } };
+  if (payload.session?.userId !== expectedUserId) {
+    throw new Error("Legacy session upgrade returned a different user.");
+  }
+}
+
+async function confirmAndStoreBrowserSession(login: SessionLoginInfo): Promise<void> {
+  try {
+    await assertAuthenticatedCookieSession(login.user.id);
+  } catch (error) {
+    await discardUnconfirmedCookieSession();
+    throw error;
+  }
+  storeSession(login);
+}
+
+async function assertAuthenticatedCookieSession(expectedUserId: string): Promise<void> {
+  const response = await apiFetch(`${baseUrl}/api/v1/auth/session`, {
+    headers: { authorization: `Bearer ${cookieSessionMarker}` },
+  });
+  if (!response.ok) throw await apiErrorFromResponse(response);
+  const payload = await response.json() as { user?: { id?: string }; session?: { userId?: string } };
+  const authenticatedUserId = payload.user?.id ?? payload.session?.userId;
+  if (authenticatedUserId !== expectedUserId) throw new Error("Browser session cookie did not match the expected user.");
+}
+
+async function discardUnconfirmedCookieSession(): Promise<void> {
+  try {
+    await apiFetch(`${baseUrl}/api/v1/auth/logout`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${cookieSessionMarker}` },
+    });
+  } catch {
+    // The caller still rejects activation; a later interactive login replaces
+    // any cookie that could not be cleared while the server was unreachable.
+  }
+}
+
+async function finalizeLegacySessionCookieUpgrade(response: Response): Promise<void> {
+  const expectedUserId = localStorage.getItem(legacySessionTokenUserKey);
+  if (!expectedUserId) throw new Error("Legacy session user is unavailable for cookie confirmation.");
+  await assertUpgradeConfirmation(response, expectedUserId);
+  await assertAuthenticatedCookieSession(expectedUserId);
+  legacySessionUpgradePending = false;
+  inMemorySessionToken = cookieSessionMarker;
+  sessionTransportEpoch += 1;
+  localStorage.setItem(sessionTransportKey, "cookie");
+  localStorage.removeItem(legacySessionTokenKey);
+  localStorage.removeItem(legacySessionTokenUserKey);
+}
+
+async function assertUpgradeConfirmation(response: Response, expectedUserId: string): Promise<void> {
+  if (response.headers.get("x-otte-session-transport") !== "cookie") throw new Error("Server did not confirm session cookie activation.");
+  const payload = await response.json() as { upgradeConfirmed?: boolean; session?: { userId?: string } };
+  if (!payload.upgradeConfirmed || payload.session?.userId !== expectedUserId) {
+    throw new Error("Session cookie confirmation did not match the expected user.");
+  }
 }
 
 async function apiErrorFromResponse(response: Response): Promise<ApiError> {
@@ -263,77 +547,148 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export async function apiGet<T>(path: string): Promise<T> {
-  const response = await fetch(`${baseUrl}${path}`, {
-    headers: await sessionHeaders()
+interface ApiRequestOptions {
+  signal?: AbortSignal;
+  idempotencyKey?: string;
+  body?: unknown;
+}
+
+function mutationHeaders(options: ApiRequestOptions): Record<string, string> {
+  return {
+    "content-type": "application/json",
+    ...(options.idempotencyKey ? { "idempotency-key": options.idempotencyKey } : {})
+  };
+}
+
+export async function apiGet<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
+  const response = await apiFetch(`${baseUrl}${path}`, {
+    headers: await sessionHeaders(),
+    signal: options.signal
   });
   if (!response.ok) throw await apiErrorFromResponse(response);
   return response.json() as Promise<T>;
 }
 
-export async function apiPost<T>(path: string, body: unknown): Promise<T> {
-  const response = await fetch(`${baseUrl}${path}`, {
+export async function apiPost<T>(path: string, body: unknown, options: ApiRequestOptions = {}): Promise<T> {
+  const response = await apiFetch(`${baseUrl}${path}`, {
     method: "POST",
-    headers: { "content-type": "application/json", ...(await sessionHeaders()) },
-    body: JSON.stringify(body)
+    headers: { ...mutationHeaders(options), ...(await sessionHeaders()) },
+    body: JSON.stringify(body),
+    signal: options.signal
   });
   if (!response.ok) throw await apiErrorFromResponse(response);
   return response.json() as Promise<T>;
 }
 
-export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
-  const response = await fetch(`${baseUrl}${path}`, {
+
+export function apiImportUniversalVtt(
+  campaignId: string,
+  input: UniversalVttImportInput,
+  options: ApiRequestOptions & { idempotencyKey: string }
+): Promise<UniversalVttImportResult> {
+  return apiPost<UniversalVttImportResult>(`/api/v1/campaigns/${encodeURIComponent(campaignId)}/scenes/import-universal-vtt`, input, options);
+}
+
+export async function apiAnalyzePdfContentImport(
+  input: { campaignId: string; file: File; expectedUpdatedAt: string },
+  options: ApiRequestOptions & { idempotencyKey: string }
+): Promise<ContentImportBatch> {
+  const response = await apiFetch(`${baseUrl}/api/v1/campaigns/${input.campaignId}/content-imports/pdf/ai?${new URLSearchParams({ expectedUpdatedAt: input.expectedUpdatedAt })}`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/pdf",
+      "x-source-name": encodeURIComponent(input.file.name || "uploaded.pdf"),
+      "idempotency-key": options.idempotencyKey,
+      ...(await sessionHeaders())
+    },
+    body: input.file,
+    signal: options.signal
+  });
+  if (!response.ok) throw await apiErrorFromResponse(response);
+  return response.json() as Promise<ContentImportBatch>;
+}
+
+export async function apiPatch<T>(path: string, body: unknown, options: ApiRequestOptions = {}): Promise<T> {
+  const response = await apiFetch(`${baseUrl}${path}`, {
     method: "PATCH",
-    headers: { "content-type": "application/json", ...(await sessionHeaders()) },
-    body: JSON.stringify(body)
+    headers: { ...mutationHeaders(options), ...(await sessionHeaders()) },
+    body: JSON.stringify(body),
+    signal: options.signal
   });
   if (!response.ok) throw await apiErrorFromResponse(response);
   return response.json() as Promise<T>;
 }
 
-export async function apiDelete<T>(path: string): Promise<T> {
-  const response = await fetch(`${baseUrl}${path}`, {
+export async function apiDelete<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
+  const response = await apiFetch(`${baseUrl}${path}`, {
     method: "DELETE",
-    headers: await sessionHeaders()
+    headers: {
+      ...(options.body !== undefined ? { "content-type": "application/json" } : {}),
+      ...(options.idempotencyKey ? { "idempotency-key": options.idempotencyKey } : {}),
+      ...(await sessionHeaders())
+    },
+    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    signal: options.signal
   });
   if (!response.ok) throw await apiErrorFromResponse(response);
   return response.json() as Promise<T>;
 }
 
-export async function updateWorkspaceDefaults(input: Partial<OrganizationWorkspace>): Promise<OrganizationWorkspace> {
-  return apiPatch<OrganizationWorkspace>("/api/v1/organization/workspace-defaults", input);
+export async function updateWorkspaceDefaults(input: Partial<OrganizationWorkspace>, options: ApiRequestOptions = {}): Promise<OrganizationWorkspace> {
+  return apiPatch<OrganizationWorkspace>("/api/v1/organization/workspace-defaults", input, options);
 }
 
-export async function createOrganizationWorkspace(input: Partial<OrganizationWorkspace> & { name: string }): Promise<{ organization: OrganizationWorkspace; session: UserSession; organizations: OrganizationWorkspaceInfo[] }> {
-  return apiPost<{ organization: OrganizationWorkspace; session: UserSession; organizations: OrganizationWorkspaceInfo[] }>("/api/v1/organizations", input);
+export async function createOrganizationWorkspace(input: Partial<OrganizationWorkspace> & { name: string }, options: ApiRequestOptions & { idempotencyKey: string }): Promise<{ organization: OrganizationWorkspace; session: UserSession; organizations: OrganizationWorkspaceInfo[] }> {
+  return apiPost<{ organization: OrganizationWorkspace; session: UserSession; organizations: OrganizationWorkspaceInfo[] }>("/api/v1/organizations", input, options);
 }
 
-export async function loadOrganizationMembers(): Promise<OrganizationMemberInfo[]> {
-  return apiGet<OrganizationMemberInfo[]>("/api/v1/organization/members");
+export async function loadOrganizationMembers(options: ApiRequestOptions = {}): Promise<OrganizationMemberInfo[]> {
+  return apiGet<OrganizationMemberInfo[]>("/api/v1/organization/members", options);
 }
 
-export async function upsertOrganizationMember(input: { email?: string; userId?: string; role: Exclude<OrganizationMemberRole, "owner"> }): Promise<OrganizationMemberInfo> {
-  return apiPost<OrganizationMemberInfo>("/api/v1/organization/members", input);
+export async function upsertOrganizationMember(input: { email?: string; userId?: string; role: Exclude<OrganizationMemberRole, "owner">; expectedOrganizationUpdatedAt: string }, options: ApiRequestOptions & { idempotencyKey: string }): Promise<OrganizationMemberInfo> {
+  return apiPost<OrganizationMemberInfo>("/api/v1/organization/members", input, options);
 }
 
-export async function updateOrganizationMemberRole(memberId: string, role: Exclude<OrganizationMemberRole, "owner">): Promise<OrganizationMemberInfo> {
-  return apiPatch<OrganizationMemberInfo>(`/api/v1/organization/members/${memberId}`, { role });
+export async function updateOrganizationMemberRole(memberId: string, role: Exclude<OrganizationMemberRole, "owner">, expectedUpdatedAt: string, options: ApiRequestOptions & { idempotencyKey: string }): Promise<OrganizationMemberInfo> {
+  return apiPatch<OrganizationMemberInfo>(`/api/v1/organization/members/${memberId}`, { role, expectedUpdatedAt }, options);
 }
 
-export async function removeOrganizationMember(memberId: string): Promise<{ removed: boolean; memberId: string; userId: string; removedCampaignMemberships: number }> {
-  return apiDelete<{ removed: boolean; memberId: string; userId: string; removedCampaignMemberships: number }>(`/api/v1/organization/members/${memberId}`);
+export async function removeOrganizationMember(memberId: string, expectedUpdatedAt: string, options: ApiRequestOptions & { idempotencyKey: string }): Promise<{ removed: boolean; memberId: string; userId: string; removedCampaignMemberships: number }> {
+  return apiDelete<{ removed: boolean; memberId: string; userId: string; removedCampaignMemberships: number }>(`/api/v1/organization/members/${memberId}?expectedUpdatedAt=${encodeURIComponent(expectedUpdatedAt)}`, options);
 }
 
 export async function loadOrganizationInvites(): Promise<OrganizationInviteInfo[]> {
   return apiGet<OrganizationInviteInfo[]>("/api/v1/organization/invites");
 }
 
-export async function revokeInvite(inviteId: string): Promise<CampaignInviteInfo> {
-  return apiPost<CampaignInviteInfo>(`/api/v1/invites/${inviteId}/revoke`, {});
+export async function revokeInvite(inviteId: string, expectedUpdatedAt: string, options: ApiRequestOptions & { idempotencyKey: string }): Promise<CampaignInviteInfo> {
+  return apiPost<CampaignInviteInfo>(`/api/v1/invites/${inviteId}/revoke`, { expectedUpdatedAt }, options);
 }
 
 export async function switchOrganization(organizationId: string): Promise<OrganizationSwitchInfo> {
   return apiPatch<OrganizationSwitchInfo>("/api/v1/organization/session", { organizationId });
+}
+
+export interface CampaignSessionInfo {
+  id: string;
+  campaignId: string;
+  status: "planned" | "live" | "completed";
+  title: string;
+  number: number;
+  agenda: string;
+  notes: string;
+  scheduledFor?: string;
+  startedAt?: string;
+  endedAt?: string;
+  sceneIds: string[];
+  encounterIds: string[];
+  recapProposalId?: string;
+  recapJournalId?: string;
+  createdBy: string;
+  updatedBy: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Snapshot {
@@ -344,19 +699,28 @@ export interface Snapshot {
   organizationInvites: OrganizationInviteInfo[];
   campaigns: Campaign[];
   members: CampaignMemberInfo[];
+  presences: CampaignPresence[];
+  eventSequence: number;
+  realtimeRecovery: "refetch_snapshot_on_gap";
+  history?: SnapshotHistoryMeta;
   scenes: Scene[];
+  worldRecords: WorldRecord[];
+  worldRelations: WorldRelation[];
   fogPresets: FogPreset[];
   assets: MapAsset[];
   assetStorage?: CampaignAssetStorageInfo;
   tokens: Token[];
   actors: Actor[];
+  calculationOverrides: CalculationOverride[];
   items: Item[];
   vision?: VisionSnapshot;
   journals: JournalEntry[];
   chat: ChatMessage[];
   rolls: DiceRoll[];
   diceMacros: DiceMacro[];
+  audioTracks: AudioTrack[];
   encounters: Encounter[];
+  campaignSessions?: CampaignSessionInfo[];
   combats: Combat[];
   combatAudit: AuditLog[];
   proposals: Proposal[];
@@ -368,6 +732,66 @@ export interface Snapshot {
   plugins: PluginRuntimeInfo[];
   systems: SystemRuntimeInfo[];
   characterTemplates: CharacterTemplateInfo[];
+}
+
+export interface SnapshotHistoryMeta {
+  limit: number;
+  collections: Record<string, { total: number; returned: number; truncated: boolean }>;
+}
+
+interface CampaignSnapshotPayload {
+  generatedAt: string;
+  eventSequence: number;
+  realtimeRecovery: "refetch_snapshot_on_gap";
+  history?: SnapshotHistoryMeta;
+  campaign: Campaign;
+  members: CampaignMemberInfo[];
+  presences: CampaignPresence[];
+  scenes: Scene[];
+  worldRecords: WorldRecord[];
+  worldRelations: WorldRelation[];
+  selectedSceneId?: string;
+  activeSceneId?: string;
+  vision?: VisionSnapshot;
+  tokens: Token[];
+  fogPresets: FogPreset[];
+  assets: MapAsset[];
+  actors: Actor[];
+  calculationOverrides: CalculationOverride[];
+  items: Item[];
+  journals: JournalEntry[];
+  chat: ChatMessage[];
+  rolls: DiceRoll[];
+  diceMacros: DiceMacro[];
+  encounters: Encounter[];
+  campaignSessions?: CampaignSessionInfo[];
+  combats: Combat[];
+  proposals: Proposal[];
+  memory: AiMemoryFact[];
+  bundled?: CampaignSnapshotBundled;
+}
+
+interface CampaignSnapshotBundled {
+  assetStorage?: CampaignAssetStorageInfo;
+  audioTracks?: AudioTrack[];
+  plugins?: PluginRuntimeInfo[];
+  systems?: SystemRuntimeInfo[];
+  characterTemplates?: CharacterTemplateInfo[];
+  contentImports?: ContentImportBatch[];
+  aiThreads?: AiThread[];
+  aiUsage?: AiUsageSummary;
+  aiToolCalls?: AiToolCall[];
+  combatAudit?: AuditLog[];
+}
+
+export interface DiceRollVerification {
+  rollId: string;
+  formula: string;
+  verified: boolean;
+  reason?: "fairness_unavailable" | "unsupported_algorithm" | "seed_hash_mismatch" | "formula_unparseable" | "source_roll_unavailable" | "reroll_link_mismatch" | "result_mismatch";
+  fairness?: DiceRollFairness;
+  expected: { total: number };
+  recomputed?: { total: number };
 }
 
 export interface CampaignAssetStorageInfo {
@@ -443,6 +867,12 @@ export interface SessionInfo {
   };
 }
 
+function canManageActiveOrganization(session: SessionInfo): boolean {
+  const activeOrganizationId = session.organization?.id;
+  const activeOrganization = activeOrganizationId ? session.organizations?.find((organization) => organization.id === activeOrganizationId) : undefined;
+  return Boolean(session.serverAdmin || activeOrganization?.role === "owner" || activeOrganization?.role === "admin");
+}
+
 export interface PublicSession extends Pick<UserSession, "id" | "userId" | "activeOrganizationId" | "expiresAt" | "lastSeenAt" | "createdAt" | "updatedAt"> {}
 
 export interface AdminSessionRiskItem {
@@ -511,6 +941,8 @@ export interface InviteCreateInfo {
   invite: CampaignInviteInfo;
   token: string;
   acceptUrl: string;
+  /** Present when invite creation advances the parent campaign revision. */
+  campaignUpdatedAt?: string;
 }
 
 export interface OrganizationInviteInfo extends CampaignInviteInfo {
@@ -548,7 +980,52 @@ export type OidcConfigInfo =
 
 export interface CampaignMemberInfo extends CampaignMember {
   user: Pick<User, "id" | "displayName" | "email">;
+  active: boolean;
   permissions: PermissionName[];
+}
+
+export async function updateCampaignMember(
+  campaignId: string,
+  member: Pick<CampaignMemberInfo, "id" | "updatedAt">,
+  role: Extract<UserRole, "gm" | "assistant_gm" | "player" | "observer">,
+  options: ApiRequestOptions & { idempotencyKey: string }
+): Promise<CampaignMemberInfo> {
+  return apiPatch<CampaignMemberInfo>(
+    `/api/v1/campaigns/${encodeURIComponent(campaignId)}/members/${encodeURIComponent(member.id)}`,
+    { role, expectedUpdatedAt: member.updatedAt },
+    options
+  );
+}
+
+export async function removeCampaignMember(
+  campaignId: string,
+  member: Pick<CampaignMemberInfo, "id" | "updatedAt">,
+  options: ApiRequestOptions & { idempotencyKey: string }
+): Promise<CampaignMemberInfo> {
+  const query = new URLSearchParams({ expectedUpdatedAt: member.updatedAt });
+  return apiDelete<CampaignMemberInfo>(
+    `/api/v1/campaigns/${encodeURIComponent(campaignId)}/members/${encodeURIComponent(member.id)}?${query}`,
+    options
+  );
+}
+
+export interface CampaignOwnershipTransferResult {
+  campaign: Campaign;
+  previousOwner: CampaignMemberInfo;
+  newOwner: CampaignMemberInfo;
+}
+
+export async function transferCampaignOwnership(
+  campaignId: string,
+  input: { targetUserId: string; expectedUpdatedAt: string; reason?: string },
+  idempotencyKey: string,
+  options: ApiRequestOptions = {}
+): Promise<CampaignOwnershipTransferResult> {
+  return apiPost<CampaignOwnershipTransferResult>(
+    `/api/v1/campaigns/${encodeURIComponent(campaignId)}/ownership-transfer`,
+    input,
+    { ...options, idempotencyKey }
+  );
 }
 
 export type PluginReviewStatus = "pending" | "approved" | "rejected";
@@ -570,6 +1047,12 @@ export interface PluginReviewInfo {
   createdAt: string;
   updatedAt: string;
 }
+
+export type MarketplacePluginReviewInfo = {
+  review: Omit<PluginReviewInfo, "registryUrl" | "packageUrl" | "notes" | "reviewedByUserId">;
+  installable: boolean;
+  installBlock?: string;
+};
 
 export interface PluginRuntimeInfo {
   id: string;
@@ -596,15 +1079,21 @@ export interface PluginRuntimeInfo {
       satisfied: boolean;
     };
     compatibilityBlock?: string;
+    permissions: string[];
+    permissionReview: {
+      requestedPermissions: string[];
+      grantRequired: boolean;
+    };
+    trust: PluginRuntimeInfo["trust"];
+    source: NonNullable<PluginRuntimeInfo["source"]>;
+    marketplaceReview?: { installable: boolean; status: PluginReviewStatus; installBlock?: string };
   }>;
   source?: {
-    type: string;
+    type: "local" | "registry";
     packageId: string;
-    sandbox: string;
+    sandbox: "vm" | "manifest-only";
     manifestChecksum?: string;
     checksum?: string;
-    registryUrl?: string;
-    packageUrl?: string;
     packageChecksum?: string;
     syncedAt?: string;
   };
@@ -618,7 +1107,6 @@ export interface PluginRuntimeInfo {
       keyId?: string;
       algorithm?: string;
       verified: boolean;
-      signaturePath?: string;
     };
   };
   distribution: {
@@ -629,12 +1117,11 @@ export interface PluginRuntimeInfo {
     requestedPermissions: string[];
     grantRequired: boolean;
   };
-  marketplaceReview?: AdminPluginReviewInfo;
+  marketplaceReview?: MarketplacePluginReviewInfo;
   chatCommands?: Array<{ command: string; description: string }>;
   audit?: {
     installCount: number;
     lastInstallAt?: string;
-    lastActorUserId?: string;
     versions: string[];
   };
 }
@@ -648,12 +1135,18 @@ export interface SystemRuntimeInfo {
     client?: string;
     server?: string;
   };
-  schemas?: {
-    actor?: string;
-    item?: string;
-  };
+  schemas?: SystemManifestSchemas;
   permissions?: PermissionName[];
+  capabilities?: string[];
   active: boolean;
+  source?: "bundled" | "api";
+  dataDriven?: boolean;
+  definition?: DeclarativeSystemDefinition;
+  installedVersions?: SystemManifestIdentity[];
+  binding?: SystemManifestIdentity;
+  runtimeCapabilities?: string[];
+  unsupportedCapabilities?: string[];
+  installedAt?: string;
 }
 
 export interface CharacterTemplateInfo {
@@ -1092,6 +1585,25 @@ export interface AdminDurationSummary {
 
 export interface AdminAuthOperations {
   generatedAt: string;
+  authenticationCapacity: {
+    passwordWork: {
+      active: number;
+      queued: number;
+      maxConcurrent: number;
+      maxQueue: number;
+      completedVerifications: number;
+      completedHashes: number;
+      saturationCount: number;
+      queueTimeoutCount: number;
+      failureCount: number;
+    };
+    loginThrottle: {
+      bucketCount: number;
+      maxBuckets: number;
+      consumedAttempts: number;
+      limitedAttempts: number;
+    };
+  };
   actionRequired: boolean;
   actionReasons: string[];
   remediationQueue: Array<{
@@ -1278,7 +1790,11 @@ export interface AdminAuthConnectionTestResult {
 }
 
 export interface AdminEmailOutboxRetryAllResult {
+  generatedAt: string;
   dryRun: boolean;
+  deduplicated: boolean;
+  batchDeliveryId?: string;
+  targetSetHash: string;
   limit: number;
   statuses: string[];
   matched: number;
@@ -1524,6 +2040,7 @@ export interface AdminAssetStorageInfo {
           status: string;
           reason?: string;
           cdnUrl?: string;
+          deliveryId?: string;
           error?: string;
           createdAt: string;
         }>;
@@ -1616,6 +2133,7 @@ export interface AdminAssetIntegrityReport {
     assetId: string;
     name: string;
     campaignId: string;
+    updatedAt: string;
     provider: string;
     status: "verified" | "missing" | "mismatched" | "cleanup_eligible" | "skipped" | "failed";
     reason?: string;
@@ -2040,15 +2558,24 @@ export interface AdminPluginReviewInfo {
     permissions: string[];
     chatCommands?: Array<{ command: string; description: string }>;
   };
-  source: NonNullable<PluginRuntimeInfo["source"]>;
+  source: NonNullable<PluginRuntimeInfo["source"]> & {
+    manifestPath: string;
+    clientEntrypoint?: string;
+    serverEntrypoint?: string;
+    registryUrl?: string;
+    packageUrl?: string;
+  };
   distribution: PluginRuntimeInfo["distribution"];
-  trust: PluginRuntimeInfo["trust"];
+  trust: Omit<PluginRuntimeInfo["trust"], "signature"> & {
+    signature?: NonNullable<PluginRuntimeInfo["trust"]["signature"]> & { signaturePath?: string };
+  };
   installable: boolean;
   installBlock?: string;
 }
 
 export interface AdminPluginReviewSnapshot {
   generatedAt: string;
+  registryRevision: string;
   policy: {
     mode: "allow_unreviewed" | "require_approved";
   };
@@ -2063,6 +2590,7 @@ export interface AdminPluginReviewSnapshot {
 
 export interface AdminPluginOperations {
   generatedAt: string;
+  registryRevision: string;
   actionRequired: boolean;
   actionReasons: string[];
   policy: {
@@ -2333,7 +2861,8 @@ export interface AdminPluginReviewOperationSample {
 }
 
 export interface AdminScimGroupRoleMapping extends ScimGroupRoleMapping {
-  group?: Pick<ScimGroup, "id" | "displayName" | "externalId" | "memberUserIds">;
+  group?: Pick<ScimGroup, "id" | "displayName" | "externalId" | "memberUserIds" | "updatedAt">;
+  targetSetHash: string;
 }
 
 export interface AdminScimGroupRoleMappingInput {
@@ -2353,6 +2882,49 @@ export interface AdminScimGroupRoleMappingResult {
     removedMemberships: number;
     preservedManualMemberships: number;
   };
+}
+
+export interface AdminScimGroupRoleMappingPreview {
+  selection: AdminScimGroupRoleMappingInput;
+  group?: Pick<ScimGroup, "id" | "displayName" | "externalId" | "memberUserIds" | "updatedAt">;
+  memberCount: number;
+  affectedCampaignMembershipCount: number;
+  targetSetHash: string;
+}
+
+interface PreparedAdminScimMapping {
+  fingerprint: string;
+  payload: AdminScimGroupRoleMappingInput & { preparedTargetSetHash: string };
+}
+
+const preparedAdminScimMappings = new Map<string, PreparedAdminScimMapping>();
+
+export async function previewAdminScimGroupRoleMapping(input: AdminScimGroupRoleMappingInput, options: ApiRequestOptions = {}): Promise<AdminScimGroupRoleMappingPreview> {
+  const query = new URLSearchParams({ campaignId: input.campaignId, role: input.role });
+  if (input.groupId) query.set("groupId", input.groupId);
+  if (input.groupExternalId) query.set("groupExternalId", input.groupExternalId);
+  if (input.groupDisplayName) query.set("groupDisplayName", input.groupDisplayName);
+  return apiGet<AdminScimGroupRoleMappingPreview>(`/api/v1/admin/scim/group-role-mappings/preview?${query}`, options);
+}
+
+export async function createAdminScimGroupRoleMapping(input: AdminScimGroupRoleMappingInput, options: ApiRequestOptions & { idempotencyKey: string }): Promise<AdminScimGroupRoleMappingResult> {
+  const fingerprint = JSON.stringify(input);
+  let prepared = preparedAdminScimMappings.get(options.idempotencyKey);
+  if (!prepared || prepared.fingerprint !== fingerprint) {
+    const preview = await previewAdminScimGroupRoleMapping(input, options);
+    prepared = { fingerprint, payload: { ...input, preparedTargetSetHash: preview.targetSetHash } };
+    preparedAdminScimMappings.set(options.idempotencyKey, prepared);
+  }
+  const result = await apiPost<AdminScimGroupRoleMappingResult>("/api/v1/admin/scim/group-role-mappings", prepared.payload, options);
+  preparedAdminScimMappings.delete(options.idempotencyKey);
+  return result;
+}
+
+export async function deleteAdminScimGroupRoleMapping(mapping: AdminScimGroupRoleMapping, options: ApiRequestOptions & { idempotencyKey: string }): Promise<{ removedMemberships: number }> {
+  return apiDelete<{ removedMemberships: number }>(`/api/v1/admin/scim/group-role-mappings/${encodeURIComponent(mapping.id)}`, {
+    ...options,
+    body: { expectedUpdatedAt: mapping.updatedAt, preparedTargetSetHash: mapping.targetSetHash }
+  });
 }
 
 export interface AdminUserInfo extends Omit<User, "passwordHash" | "mfa"> {
@@ -2436,7 +3008,7 @@ export interface AdminStorageOperations {
   };
   backups?: {
     directoryName: string;
-    latest?: { fileName: string; sizeBytes: number; createdAt: string };
+    latest?: AdminStorageBackupSummary;
   };
   scheduledBackups?: {
     enabled: boolean;
@@ -2455,23 +3027,143 @@ export interface AdminStorageOperations {
       error?: string;
     };
   };
+  restoreStateRevision?: string;
   actionRequired: boolean;
   actionReasons: string[];
   remediation?: string;
 }
 
-export interface AdminStorageBackupResult {
-  status: "created";
+export interface AdminOperationsLatencyMetrics {
+  count: number;
+  totalMs: number;
+  maxMs: number;
+  buckets: Array<{ le: number | "infinity"; count: number }>;
+}
+
+export interface AdminOperationsOutcomeMetrics {
+  attempts: number;
+  succeeded: number;
+  failed: number;
+  latencyMs: AdminOperationsLatencyMetrics;
+}
+
+export interface AdminOperationsMetrics {
+  version: 1;
+  enabled: boolean;
+  startedAt: string;
+  generatedAt: string;
+  privacy: {
+    boundedDimensions: true;
+    containsCampaignIds: false;
+    containsUserIds: false;
+    containsCredentials: false;
+    containsPrivateContent: false;
+  };
+  http: {
+    requests: number;
+    errorResponses: number;
+    staleWriteConflicts: number;
+    methods: Record<"GET" | "POST" | "PATCH" | "PUT" | "DELETE" | "OTHER", number>;
+    statusClasses: Record<"2xx" | "3xx" | "4xx" | "5xx", number>;
+    latencyMs: AdminOperationsLatencyMetrics;
+  };
+  realtime: {
+    connectionsOpened: number;
+    disconnections: number;
+    revokedConnections: number;
+    sendFailures: number;
+    activeConnections: number;
+    heartbeatGapMs: AdminOperationsLatencyMetrics;
+  };
+  persistence: AdminOperationsOutcomeMetrics;
+  recovery: Record<"backup" | "restore_drill" | "restore", AdminOperationsOutcomeMetrics>;
+}
+
+export type AdminOperationalRetentionRecordClass = "delivered_emails" | "delivered_webhooks" | "maintenance_jobs";
+
+export interface AdminOperationalRetentionDiagnostics {
+  policyVersion: 1;
+  generatedAt: string;
+  preservationDefault: true;
+  supportedRecordClasses: AdminOperationalRetentionRecordClass[];
+  counts: Record<AdminOperationalRetentionRecordClass, number>;
+  totalEligibleTerminalRecords: number;
+  exemptions: string[];
+}
+
+export interface AdminOperationalRetentionPlan {
+  policyVersion: 1;
+  preservationDefault: true;
+  dryRun: boolean;
+  cutoffAt: string;
+  olderThanDays: number;
+  recordClasses: AdminOperationalRetentionRecordClass[];
+  batchSize: number;
+  eligibleCount: number;
+  selectedCount: number;
+  remainingCount: number;
+  targetSetHash: string;
+  selected: Array<{ recordClass: AdminOperationalRetentionRecordClass; id: string; completedAt: string }>;
+  counts: Record<AdminOperationalRetentionRecordClass, number>;
+  exemptions: string[];
+  deletedCount?: number;
+  reason?: string;
+}
+
+export interface AdminAssetSnapshotIdentity {
+  provider: "local" | "s3";
+  snapshotId: string;
+  createdAt: string;
+}
+
+export interface AdminStorageRecoveryPoint {
+  manifestFileName: string;
+  manifestStatus: "present" | "missing" | "invalid";
+  paired: boolean;
+  actionRequired: boolean;
+  actionReasons: string[];
+  manifest?: {
+    kind: "open-tabletop-recovery-point";
+    version: 1;
+    createdAt: string;
+    database: {
+      fileName: string;
+      sizeBytes: number;
+      checksumAlgorithm: "sha256";
+      checksum: string;
+    };
+    assetInventory: {
+      provider: "local" | "s3" | "unknown";
+      assetCount: number;
+      objectCount: number;
+      sizeBytes: number;
+      digestAlgorithm: "sha256";
+      digest: string;
+    };
+    assetSnapshot?: AdminAssetSnapshotIdentity;
+  };
+}
+
+export interface AdminStorageBackupSummary {
   fileName: string;
   sizeBytes: number;
   createdAt: string;
+  recoveryPoint: AdminStorageRecoveryPoint;
+}
+
+export interface AdminStorageBackupResult extends AdminStorageBackupSummary {
+  status: "created";
   reason?: string;
+  prunedFileNames?: string[];
 }
 
 export interface AdminStorageRestoreDrillResult {
   status: "passed" | "failed";
   checkedAt: string;
-  backup?: { fileName: string; sizeBytes: number; createdAt: string };
+  backup?: AdminStorageBackupSummary;
+  recoveryPoint?: AdminStorageRecoveryPoint;
+  actionRequired: boolean;
+  actionReasons: string[];
   integrity?: { checkedAt: string; ok: boolean; result: string };
   campaignCount?: number;
   recordCount?: number;
@@ -2482,6 +3174,36 @@ export interface AdminStorageRestoreDrillResult {
 export interface AdminStorageRestoreResult extends AdminStorageRestoreDrillResult {
   restoredAt?: string;
   reason?: string;
+  paired?: boolean;
+  assetRestore?: {
+    identity: AdminAssetSnapshotIdentity;
+    assetCount: number;
+    objectCount: number;
+    storedObjectCount: number;
+    sizeBytes: number;
+  };
+  rollbackRecoveryPoint?: {
+    backupFileName: string;
+    assetSnapshot: AdminAssetSnapshotIdentity;
+  };
+  rollback?: {
+    status: "succeeded" | "failed";
+    errors: string[];
+  };
+  reconciliation?: {
+    policy: "preserve-live-security-plane";
+    usersPreserved: number;
+    sessionsPreserved: number;
+    oauthStatesCleared: number;
+    passwordResetTokensCleared: number;
+    invitesPreserved: number;
+    pendingEmailsQuarantined: number;
+    webhooksDisabled: number;
+    pendingWebhookDeliveriesQuarantined: number;
+    jobsCancelled: number;
+    idempotencyRecordsCleared: number;
+    backupOnlyCampaignsAssignedToRecoveryAdmin: number;
+  };
 }
 
 export interface AdminJob {
@@ -2504,6 +3226,12 @@ export interface AdminJob {
   completedAt?: string;
   cancelledAt?: string;
   cancelledByUserId?: string;
+  leasedBy?: string;
+  leaseRequestId?: string;
+  leaseRevision?: number;
+  leaseExpiresAt?: string;
+  lastHeartbeatAt?: string;
+  dispatchStartedAt?: string;
   createdByUserId?: string;
   updatedByUserId?: string;
   logs: Array<{ at: string; level: "info" | "warning" | "error"; message: string; details?: Record<string, unknown> }>;
@@ -2568,6 +3296,7 @@ export interface AdminJobOperations {
 }
 
 export interface AdminJobAlertResult {
+  deliveryId: string;
   status: "dry_run" | "delivered" | "skipped" | "failed";
   configured: boolean;
   actionRequired: boolean;
@@ -2589,6 +3318,8 @@ export interface AdminSnapshot {
   jobOperations: AdminJobOperations;
   authOperations: AdminAuthOperations;
   storageOperations: AdminStorageOperations;
+  operationsMetrics: AdminOperationsMetrics;
+  retentionOperations: AdminOperationalRetentionDiagnostics;
   assetStorage: AdminAssetStorageInfo;
   assetIntegrity: AdminAssetIntegrityReport;
   renderingOperations: AdminRenderingOperations;
@@ -2599,35 +3330,55 @@ export interface AdminSnapshot {
   scimGroupRoleMappings: AdminScimGroupRoleMapping[];
 }
 
-export async function loadAdminSnapshot(): Promise<AdminSnapshot> {
-  const [users, sessions, emailOutbox, audit, jobs, jobOperations, authOperations, storageOperations, assetStorage, assetIntegrity, renderingOperations, systemOperations, aiOperations, pluginReviews, pluginOperations, scimGroupRoleMappings] = await Promise.all([
-    apiGet<AdminUserInfo[]>("/api/v1/admin/users"),
-    apiGet<AdminSessionInfo[]>("/api/v1/admin/sessions"),
-    apiGet<EmailOutboxMessage[]>("/api/v1/admin/email-outbox"),
-    apiGet<AdminAuditLogExport>("/api/v1/admin/audit-logs?limit=12"),
-    apiGet<AdminJob[]>("/api/v1/admin/jobs?limit=12"),
-    apiGet<AdminJobOperations>("/api/v1/admin/jobs/operations"),
-    apiGet<AdminAuthOperations>("/api/v1/admin/auth/operations"),
-    apiGet<AdminStorageOperations>("/api/v1/admin/storage/operations"),
-    apiGet<AdminAssetStorageInfo>("/api/v1/admin/assets/storage"),
-    apiGet<AdminAssetIntegrityReport>("/api/v1/admin/assets/integrity"),
-    apiGet<AdminRenderingOperations>("/api/v1/admin/rendering/operations"),
-    apiGet<AdminSystemOperations>("/api/v1/admin/systems/operations"),
-    apiGet<AdminAiOperations>("/api/v1/admin/ai/operations"),
-    apiGet<AdminPluginReviewSnapshot>("/api/v1/admin/plugins/reviews"),
-    apiGet<AdminPluginOperations>("/api/v1/admin/plugins/operations"),
-    apiGet<AdminScimGroupRoleMapping[]>("/api/v1/admin/scim/group-role-mappings")
+export async function loadAdminSnapshot(options: ApiRequestOptions = {}): Promise<AdminSnapshot> {
+  const [users, sessions, emailOutbox, audit, jobs, jobOperations, authOperations, storageOperations, operationsMetrics, retentionOperations, assetStorage, assetIntegrity, renderingOperations, systemOperations, aiOperations, pluginReviews, pluginOperations, scimGroupRoleMappings] = await Promise.all([
+    apiGet<AdminUserInfo[]>("/api/v1/admin/users", options),
+    apiGet<AdminSessionInfo[]>("/api/v1/admin/sessions", options),
+    apiGet<EmailOutboxMessage[]>("/api/v1/admin/email-outbox", options),
+    apiGet<AdminAuditLogExport>("/api/v1/admin/audit-logs?limit=12", options),
+    apiGet<AdminJob[]>("/api/v1/admin/jobs?limit=12", options),
+    apiGet<AdminJobOperations>("/api/v1/admin/jobs/operations", options),
+    apiGet<AdminAuthOperations>("/api/v1/admin/auth/operations", options),
+    apiGet<AdminStorageOperations>("/api/v1/admin/storage/operations", options),
+    apiGet<AdminOperationsMetrics>("/api/v1/admin/operations/metrics", options),
+    apiGet<AdminOperationalRetentionDiagnostics>("/api/v1/admin/retention/operations", options),
+    apiGet<AdminAssetStorageInfo>("/api/v1/admin/assets/storage", options),
+    apiGet<AdminAssetIntegrityReport>("/api/v1/admin/assets/integrity", options),
+    apiGet<AdminRenderingOperations>("/api/v1/admin/rendering/operations", options),
+    apiGet<AdminSystemOperations>("/api/v1/admin/systems/operations", options),
+    apiGet<AdminAiOperations>("/api/v1/admin/ai/operations", options),
+    apiGet<AdminPluginReviewSnapshot>("/api/v1/admin/plugins/reviews", options),
+    apiGet<AdminPluginOperations>("/api/v1/admin/plugins/operations", options),
+    apiGet<AdminScimGroupRoleMapping[]>("/api/v1/admin/scim/group-role-mappings", options)
   ]);
-  return { users, sessions, emailOutbox, audit, jobs, jobOperations, authOperations, storageOperations, assetStorage, assetIntegrity, renderingOperations, systemOperations, aiOperations, pluginReviews, pluginOperations, scimGroupRoleMappings };
+  return { users, sessions, emailOutbox, audit, jobs, jobOperations, authOperations, storageOperations, operationsMetrics, retentionOperations, assetStorage, assetIntegrity, renderingOperations, systemOperations, aiOperations, pluginReviews, pluginOperations, scimGroupRoleMappings };
 }
 
 type DisplayMapAsset = MapAsset & { deliveryUrl?: string };
+type DisplayAudioTrack = AudioTrack & { deliveryUrl?: string };
 
 export function assetBlobUrl(asset: MapAsset): string {
   const displayAsset = asset as DisplayMapAsset;
   const url = displayAsset.deliveryUrl ?? asset.url;
   if (/^(https?:|data:|blob:)/.test(url)) return url;
-  return `${baseUrl}${url}`;
+  return absoluteApiUrl(url);
+}
+
+export function assetThumbnailUrl(asset: MapAsset): string {
+  return assetRenditionUrl(asset, "thumbnail");
+}
+
+function assetRenditionUrl(asset: MapAsset, kind: "thumbnail" | "optimized"): string {
+  if (!asset.renditions?.some((rendition) => rendition.kind === kind)) return assetBlobUrl(asset);
+  const url = assetBlobUrl(asset);
+  if (url.startsWith("data:") || url.startsWith("blob:")) return url;
+  return `${url}${url.includes("?") ? "&" : "?"}variant=${kind}`;
+}
+
+function absoluteApiUrl(url: string): string {
+  if (!baseUrl) return url;
+  const normalizedUrl = url.startsWith("/") ? url : `/${url}`;
+  return `${baseUrl.replace(/\/+$/, "")}${normalizedUrl}`;
 }
 
 async function assetDeliveryUrl(assetId: string): Promise<{ url: string; expiresAt: string }> {
@@ -2648,41 +3399,72 @@ async function withAssetDeliveryUrls(assets: MapAsset[]): Promise<MapAsset[]> {
   );
 }
 
-export async function apiUploadAsset(input: { campaignId: string; sceneId?: string; file: File; setAsBackground?: boolean; folder?: string; tags?: string[] }): Promise<{ asset: MapAsset; scene?: Scene }> {
+async function withAudioDeliveryUrls(audioTracks: AudioTrack[]): Promise<AudioTrack[]> {
+  return Promise.all(
+    audioTracks.map(async (track) => {
+      const assetId = managedAssetIdFromUrl(track.url);
+      if (!assetId) return track;
+      try {
+        const delivery = await assetDeliveryUrl(assetId);
+        return { ...track, deliveryUrl: delivery.url } satisfies DisplayAudioTrack;
+      } catch {
+        return track;
+      }
+    })
+  );
+}
+
+function managedAssetIdFromUrl(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  const match = /^\/api\/v1\/assets\/([^/?#]+)\/blob(?:[?#].*)?$/.exec(url);
+  return match?.[1];
+}
+
+export async function apiUploadAsset(input: { campaignId: string; sceneId?: string; expectedSceneUpdatedAt?: string; file: File; setAsBackground?: boolean; folder?: string; tags?: string[] }, options: ApiRequestOptions & { idempotencyKey: string }): Promise<{ asset: MapAsset; scene?: Scene }> {
   const params = new URLSearchParams();
   if (input.sceneId) params.set("sceneId", input.sceneId);
   if (input.setAsBackground) params.set("setAsBackground", "true");
-  const response = await fetch(`${baseUrl}/api/v1/campaigns/${input.campaignId}/assets/upload?${params.toString()}`, {
+  if (input.setAsBackground) {
+    if (!input.sceneId || !input.expectedSceneUpdatedAt) throw new Error("Background uploads require the current scene revision.");
+    params.set("expectedSceneUpdatedAt", input.expectedSceneUpdatedAt);
+  }
+  const response = await apiFetch(`${baseUrl}/api/v1/campaigns/${input.campaignId}/assets/upload?${params.toString()}`, {
     method: "POST",
     headers: {
       "content-type": input.file.type || "application/octet-stream",
       "x-asset-name": encodeURIComponent(input.file.name),
       ...(input.folder ? { "x-asset-folder": encodeURIComponent(input.folder) } : {}),
       ...(input.tags && input.tags.length > 0 ? { "x-asset-tags": encodeURIComponent(input.tags.join(",")) } : {}),
+      "idempotency-key": options.idempotencyKey,
       ...(await sessionHeaders())
     },
-    body: input.file
+    body: input.file,
+    signal: options.signal
   });
   if (!response.ok) throw new Error(await response.text());
   return response.json() as Promise<{ asset: MapAsset; scene?: Scene }>;
 }
 
+export async function verifyDiceRoll(campaignId: string, rollId: string): Promise<DiceRollVerification> {
+  return apiGet<DiceRollVerification>(`/api/v1/campaigns/${campaignId}/rolls/${rollId}/verify`);
+}
+
 export async function loadSnapshot(campaignId?: string, sceneId?: string): Promise<Snapshot> {
-  const snapshotHeaders = { authorization: `Bearer ${await ensureSessionToken()}` };
+  const snapshotHeaders = await sessionHeaders();
   const snapshotGet = async <T,>(path: string): Promise<T> => {
-    const response = await fetch(`${baseUrl}${path}`, {
+    const response = await apiFetch(`${baseUrl}${path}`, {
       headers: snapshotHeaders
     });
     if (!response.ok) throw new Error(await response.text());
     return response.json() as Promise<T>;
   };
-  const [session, campaigns, workspaceDefaults, organizationMembers, organizationInvites] = await Promise.all([
+  const [session, campaigns, workspaceDefaults, organizationMembers] = await Promise.all([
     snapshotGet<SessionInfo>("/api/v1/auth/session"),
     snapshotGet<Campaign[]>("/api/v1/campaigns"),
     snapshotGet<OrganizationWorkspace>("/api/v1/organization/workspace-defaults"),
-    snapshotGet<OrganizationMemberInfo[]>("/api/v1/organization/members"),
-    snapshotGet<OrganizationInviteInfo[]>("/api/v1/organization/invites").catch(() => [])
+    snapshotGet<OrganizationMemberInfo[]>("/api/v1/organization/members")
   ]);
+  const organizationInvites = canManageActiveOrganization(session) ? await snapshotGet<OrganizationInviteInfo[]>("/api/v1/organization/invites").catch(() => []) : [];
   const selectedCampaignId = campaigns.find((campaign) => campaign.id === campaignId)?.id ?? campaigns[0]?.id;
   if (!selectedCampaignId) {
     return {
@@ -2693,17 +3475,24 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
       organizationInvites,
       campaigns,
       members: [],
+      presences: [],
+      eventSequence: 0,
+      realtimeRecovery: "refetch_snapshot_on_gap",
       scenes: [],
+      worldRecords: [],
+      worldRelations: [],
       fogPresets: [],
       assets: [],
       assetStorage: undefined,
       tokens: [],
       actors: [],
+      calculationOverrides: [],
       items: [],
       journals: [],
       chat: [],
       rolls: [],
       diceMacros: [],
+      audioTracks: [],
       encounters: [],
       combats: [],
       combatAudit: [],
@@ -2717,41 +3506,42 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
       characterTemplates: []
     };
   }
-  const scenes = await snapshotGet<Scene[]>(`/api/v1/campaigns/${selectedCampaignId}/scenes`);
-  const selectedSceneId = scenes.find((scene) => scene.id === sceneId)?.id ?? scenes.find((scene) => scene.active)?.id ?? scenes[0]?.id;
-  const activeSceneId = scenes.find((scene) => scene.active)?.id;
-  const tokenSceneIds = [...new Set([selectedSceneId, activeSceneId].filter((id): id is string => Boolean(id)))];
-  const members = await snapshotGet<CampaignMemberInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/members`);
+  const snapshotQuery = new URLSearchParams();
+  if (sceneId) snapshotQuery.set("sceneId", sceneId);
+  const campaignSnapshot = await snapshotGet<CampaignSnapshotPayload>(`/api/v1/campaigns/${selectedCampaignId}/snapshot${snapshotQuery.size > 0 ? `?${snapshotQuery.toString()}` : ""}`);
+  const hasBundledResources = campaignSnapshot.bundled !== undefined;
+  const bundled = campaignSnapshot.bundled ?? {};
+  const members = campaignSnapshot.members;
   const currentMember = members.find((member) => member.user.id === session.user.id);
+  const canManageCampaign = currentMember?.permissions.includes("campaign.update") ?? false;
+  const canReadScenes = currentMember?.permissions.includes("scene.read") ?? false;
+  const canReadActors = currentMember?.permissions.includes("actor.read") ?? false;
   const canViewAiOperations = currentMember?.permissions.includes("ai.proposeChanges") ?? false;
-  const [assets, assetStorage, fogPresets, tokens, vision, actors, items, journals, chat, rolls, diceMacros, encounters, combats, proposals, contentImports, memory, aiThreads, aiUsage, aiToolCalls, plugins, systems] = await Promise.all([
-    snapshotGet<MapAsset[]>(`/api/v1/campaigns/${selectedCampaignId}/assets`),
-    snapshotGet<CampaignAssetStorageInfo>(`/api/v1/campaigns/${selectedCampaignId}/assets/storage`),
-    currentMember?.permissions.includes("token.reveal") ? snapshotGet<FogPreset[]>(`/api/v1/campaigns/${selectedCampaignId}/fog-presets`) : Promise.resolve([]),
-    tokenSceneIds.length > 0 ? Promise.all(tokenSceneIds.map((id) => snapshotGet<Token[]>(`/api/v1/scenes/${id}/tokens`))).then((sceneTokens) => sceneTokens.flat()) : Promise.resolve([]),
-    selectedSceneId ? snapshotGet<VisionSnapshot>(`/api/v1/scenes/${selectedSceneId}/vision`) : Promise.resolve(undefined),
-    snapshotGet<Actor[]>(`/api/v1/campaigns/${selectedCampaignId}/actors`),
-    snapshotGet<Item[]>(`/api/v1/campaigns/${selectedCampaignId}/items`),
-    snapshotGet<JournalEntry[]>(`/api/v1/campaigns/${selectedCampaignId}/journal`),
-    snapshotGet<ChatMessage[]>(`/api/v1/chat/messages?campaignId=${selectedCampaignId}`),
-    snapshotGet<DiceRoll[]>(`/api/v1/campaigns/${selectedCampaignId}/rolls`),
-    snapshotGet<DiceMacro[]>(`/api/v1/campaigns/${selectedCampaignId}/dice-macros`),
-    snapshotGet<Encounter[]>(`/api/v1/campaigns/${selectedCampaignId}/encounters`),
-    snapshotGet<Combat[]>(`/api/v1/campaigns/${selectedCampaignId}/combats`),
-    snapshotGet<Proposal[]>(`/api/v1/campaigns/${selectedCampaignId}/proposals`),
-    snapshotGet<ContentImportBatch[]>(`/api/v1/campaigns/${selectedCampaignId}/content-imports`),
-    snapshotGet<AiMemoryFact[]>(`/api/v1/campaigns/${selectedCampaignId}/ai/memory`),
-    canViewAiOperations ? snapshotGet<AiThread[]>(`/api/v1/campaigns/${selectedCampaignId}/ai/threads`) : Promise.resolve([]),
-    canViewAiOperations ? snapshotGet<AiUsageSummary>(`/api/v1/campaigns/${selectedCampaignId}/ai/usage`) : Promise.resolve(undefined),
-    canViewAiOperations ? snapshotGet<AiToolCall[]>(`/api/v1/campaigns/${selectedCampaignId}/ai/tool-calls`) : Promise.resolve([]),
-    snapshotGet<PluginRuntimeInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/plugins`),
-    snapshotGet<SystemRuntimeInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/systems`)
+  const activeCombatId = campaignSnapshot.combats.find((combat) => combat.active)?.id;
+  const [assetStorage, audioTracks, contentImports, aiThreads, aiUsage, aiToolCalls, plugins, systems, combatAudit] = await Promise.all([
+    bundled.assetStorage !== undefined
+      ? Promise.resolve(bundled.assetStorage)
+      : !hasBundledResources && canReadScenes
+        ? snapshotGet<CampaignAssetStorageInfo>(`/api/v1/campaigns/${selectedCampaignId}/assets/storage`)
+        : Promise.resolve(undefined),
+    bundled.audioTracks !== undefined ? Promise.resolve(bundled.audioTracks) : snapshotGet<AudioTrack[]>(`/api/v1/campaigns/${selectedCampaignId}/audio`),
+    bundled.contentImports !== undefined ? Promise.resolve(bundled.contentImports) : canManageCampaign ? snapshotGet<ContentImportBatch[]>(`/api/v1/campaigns/${selectedCampaignId}/content-imports`) : Promise.resolve([]),
+    bundled.aiThreads !== undefined ? Promise.resolve(bundled.aiThreads) : canViewAiOperations ? snapshotGet<AiThread[]>(`/api/v1/campaigns/${selectedCampaignId}/ai/threads`) : Promise.resolve([]),
+    bundled.aiUsage !== undefined ? Promise.resolve(bundled.aiUsage) : canViewAiOperations ? snapshotGet<AiUsageSummary>(`/api/v1/campaigns/${selectedCampaignId}/ai/usage`) : Promise.resolve(undefined),
+    bundled.aiToolCalls !== undefined ? Promise.resolve(bundled.aiToolCalls) : canViewAiOperations ? snapshotGet<AiToolCall[]>(`/api/v1/campaigns/${selectedCampaignId}/ai/tool-calls`) : Promise.resolve([]),
+    bundled.plugins !== undefined ? Promise.resolve(bundled.plugins) : snapshotGet<PluginRuntimeInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/plugins`),
+    bundled.systems !== undefined ? Promise.resolve(bundled.systems) : snapshotGet<SystemRuntimeInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/systems`),
+    bundled.combatAudit !== undefined ? Promise.resolve(bundled.combatAudit) : activeCombatId ? snapshotGet<AuditLog[]>(`/api/v1/combats/${activeCombatId}/audit`) : Promise.resolve([])
   ]);
-  const activeCombatId = combats.find((combat) => combat.active)?.id;
-  const combatAudit = activeCombatId ? await snapshotGet<AuditLog[]>(`/api/v1/combats/${activeCombatId}/audit`) : [];
-  const activeSystemId = systems.find((system) => system.active)?.id ?? systems[0]?.id;
-  const characterTemplates = activeSystemId ? await snapshotGet<CharacterTemplateInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/systems/${activeSystemId}/character-templates`) : [];
-  const displayAssets = await withAssetDeliveryUrls(assets);
+  const activeSystem = systems.find((system) => system.active) ?? systems[0];
+  const activeSystemId = activeSystem?.id;
+  const characterTemplates =
+    bundled.characterTemplates !== undefined
+      ? bundled.characterTemplates
+      : !hasBundledResources && canReadActors && activeSystemId && (activeSystem.runtimeCapabilities ?? []).includes("character-templates")
+        ? await snapshotGet<CharacterTemplateInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/systems/${activeSystemId}/character-templates`)
+        : [];
+  const [displayAssets, displayAudioTracks] = await Promise.all([withAssetDeliveryUrls(campaignSnapshot.assets), withAudioDeliveryUrls(audioTracks)]);
   return {
     session,
     workspaceDefaults,
@@ -2760,24 +3550,33 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
     organizationInvites,
     campaigns,
     members,
-    scenes,
-    fogPresets,
+    presences: campaignSnapshot.presences,
+    eventSequence: campaignSnapshot.eventSequence ?? 0,
+    realtimeRecovery: campaignSnapshot.realtimeRecovery ?? "refetch_snapshot_on_gap",
+    history: campaignSnapshot.history,
+    scenes: campaignSnapshot.scenes,
+    worldRecords: campaignSnapshot.worldRecords ?? [],
+    worldRelations: campaignSnapshot.worldRelations ?? [],
+    fogPresets: campaignSnapshot.fogPresets,
     assets: displayAssets,
     assetStorage,
-    tokens,
-    vision,
-    actors,
-    items,
-    journals,
-    chat,
-    rolls,
-    diceMacros,
-    encounters,
-    combats,
+    tokens: campaignSnapshot.tokens,
+    vision: campaignSnapshot.vision,
+    actors: campaignSnapshot.actors,
+    calculationOverrides: campaignSnapshot.calculationOverrides ?? [],
+    items: campaignSnapshot.items,
+    journals: campaignSnapshot.journals,
+    chat: campaignSnapshot.chat,
+    rolls: campaignSnapshot.rolls,
+    diceMacros: campaignSnapshot.diceMacros,
+    audioTracks: displayAudioTracks,
+    encounters: campaignSnapshot.encounters,
+    campaignSessions: campaignSnapshot.campaignSessions ?? [],
+    combats: campaignSnapshot.combats,
     combatAudit,
-    proposals,
+    proposals: campaignSnapshot.proposals,
     contentImports,
-    memory,
+    memory: campaignSnapshot.memory,
     aiThreads,
     aiUsage,
     aiToolCalls,
