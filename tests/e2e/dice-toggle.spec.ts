@@ -215,16 +215,22 @@ test("the dice stage bounds callouts to the board and only displays rolls visibl
   }
 });
 
-test("muting interface sounds prevents AudioContext creation during a roll", async ({ page }) => {
+test("mute works before profile persistence and text-only dice still play a cue", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.addInitScript(() => {
     const OriginalAudioContext = window.AudioContext;
     let contexts = 0;
+    let notes = 0;
     Object.defineProperty(window, "interfaceAudioContexts", { get: () => contexts });
+    Object.defineProperty(window, "interfaceAudioNotes", { get: () => notes });
     window.AudioContext = class extends OriginalAudioContext {
       constructor(options?: AudioContextOptions) {
         super(options);
         contexts += 1;
+      }
+      createOscillator() {
+        notes += 1;
+        return super.createOscillator();
       }
     };
   });
@@ -234,22 +240,45 @@ test("muting interface sounds prevents AudioContext creation during a roll", asy
   const mute = page.getByRole("button", { name: "Mute interface sounds", exact: true });
   const unmute = page.getByRole("button", { name: "Unmute interface sounds", exact: true });
   const countContexts = () => page.evaluate(() => Reflect.get(window, "interfaceAudioContexts") as number);
-  if (await mute.isVisible()) {
+  if (await unmute.isVisible()) {
     const update = page.waitForResponse(isProfilePreferenceUpdate);
-    await mute.click();
+    await unmute.click();
     expect((await update).ok()).toBe(true);
   }
-  await expect(unmute).toBeVisible();
-
-  await rollFromPage(page, "1d6+81", "public");
-  await expect(page.locator(".dice-cast-label").filter({ hasText: "1d6+81" })).toBeVisible();
-  expect(await countContexts()).toBe(0);
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/api/v1/auth/profile", async (route) => {
+    if (route.request().method() !== "PATCH") return route.continue();
+    await pending;
+    await route.fulfill({ status: 503, json: { error: "Preference storage unavailable" } });
+  });
+  try {
+    const failed = page.waitForResponse(isProfilePreferenceUpdate);
+    await mute.click();
+    await expect(unmute).toBeVisible();
+    await rollFromPage(page, "1d6+81", "public");
+    await expect(page.locator(".dice-cast-label").filter({ hasText: "1d6+81" })).toBeVisible();
+    expect(await countContexts()).toBe(0);
+    release();
+    expect((await failed).status()).toBe(503);
+    await expect(unmute).toBeVisible();
+    await rollFromPage(page, "1d6+82", "public");
+    await expect(page.locator(".dice-cast-label").filter({ hasText: "1d6+82" })).toBeVisible();
+    expect(await countContexts()).toBe(0);
+  } finally {
+    release();
+    await page.unroute("**/api/v1/auth/profile");
+  }
 
   const update = page.waitForResponse(isProfilePreferenceUpdate);
   await unmute.click();
   expect((await update).ok()).toBe(true);
   await expect(mute).toBeVisible();
-  await rollFromPage(page, "1d6+82", "public");
-  await expect(page.locator(".dice-cast-label").filter({ hasText: "1d6+82" })).toBeVisible();
+  const switched = page.waitForResponse(isProfilePreferenceUpdate);
+  await page.getByRole("button", { name: "Use text-only dice" }).click();
+  expect((await switched).ok()).toBe(true);
+  await rollFromPage(page, "1d6+83", "public");
   await expect.poll(countContexts).toBe(1);
+  expect(await page.evaluate(() => Reflect.get(window, "interfaceAudioNotes"))).toBe(3);
+  await expect(page.locator(".dice-cast-label").filter({ hasText: "1d6+83" })).toHaveCount(0);
 });

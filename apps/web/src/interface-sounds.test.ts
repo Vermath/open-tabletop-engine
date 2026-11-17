@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createInterfaceSoundPlayer, defaultInterfaceSounds } from "./interface-sounds.js";
+import { createInterfaceSoundPlayer, defaultInterfaceSounds, interfaceTurnKey } from "./interface-sounds.js";
 
 describe("interface sounds", () => {
   it("defaults to a quiet enabled setting", () => {
@@ -12,5 +12,13 @@ describe("interface sounds", () => {
     player.play("ping", 0.2, false);
     player.play("dice", 0, true);
     expect(create).not.toHaveBeenCalled();
+  });
+  it("recognizes a new player turn without replaying cues on roster reindexing", () => {
+    const before = { id: "combat", round: 2, turnIndex: 1 };
+    const reindexed = { ...before, turnIndex: 0 };
+    const combatant = { id: "current-player" };
+    expect(interfaceTurnKey(reindexed, combatant)).toBe(interfaceTurnKey(before, combatant));
+    expect(interfaceTurnKey({ ...reindexed, round: 3 }, combatant)).not.toBe(interfaceTurnKey(before, combatant));
+    expect(interfaceTurnKey(reindexed, { id: "next-player" })).not.toBe(interfaceTurnKey(before, combatant));
   });
 });

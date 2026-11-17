@@ -1,8 +1,12 @@
 import type { Actor, Combat, Combatant, Scene, Token, UserPreferences } from "@open-tabletop/core";
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 export const defaultInterfaceSounds = { enabled: true, volume: 0.24 };
 export type InterfaceCue = "dice" | "turn" | "ping";
+
+export function interfaceTurnKey(combat?: Pick<Combat, "id" | "round">, combatant?: Pick<Combatant, "id">) {
+  return combat && combatant ? JSON.stringify([combat.id, combat.round, combatant.id]) : undefined;
+}
 
 const cues: Record<InterfaceCue, readonly (readonly [frequency: number, delay: number, duration: number])[]> = {
   dice: [[155, 0, 0.035], [118, 0.055, 0.06], [83, 0.12, 0.07]],
@@ -52,20 +56,31 @@ export function useInterfaceSounds(input: {
   tokens: readonly Token[];
   actors: readonly Actor[];
 }) {
-  const latest = useRef(input);
-  useLayoutEffect(() => { latest.current = input; });
+  const savedSettings = input.preferences ?? defaultInterfaceSounds;
+  const [override, setOverride] = useState<{ userId: string; enabled: boolean }>();
+  const settings = override?.userId === input.userId ? { ...savedSettings, enabled: override.enabled } : savedSettings;
+  const latest = useRef({ ...input, settings });
+  useLayoutEffect(() => { latest.current = { ...input, settings }; });
+  useEffect(() => {
+    if (override && (override.userId !== input.userId || override.enabled === savedSettings.enabled)) setOverride(undefined);
+  }, [input.userId, override, savedSettings.enabled]);
   const player = useRef<ReturnType<typeof createInterfaceSoundPlayer> | undefined>(undefined);
+  function setEnabled(enabled: boolean) {
+    latest.current.settings = { ...settings, enabled };
+    setOverride({ userId: input.userId, enabled });
+    if (!enabled) player.current?.close();
+  }
   const play = useRef((cue: InterfaceCue) => {
-    const { preferences = defaultInterfaceSounds, muted, masterVolume } = latest.current;
-    if (!preferences.enabled || muted || document.hidden || !navigator.userActivation?.hasBeenActive || !window.AudioContext) return;
+    const { settings, muted, masterVolume } = latest.current;
+    if (!settings.enabled || muted || document.hidden || !navigator.userActivation?.hasBeenActive || !window.AudioContext) return;
     player.current ??= createInterfaceSoundPlayer(() => new window.AudioContext());
-    player.current.play(cue, preferences.volume * masterVolume, true);
+    player.current.play(cue, settings.volume * masterVolume, true);
   }).current;
   useEffect(() => () => { player.current?.close(); }, []);
 
   const { scene, userId, combat, combatant, actors, tokens } = input;
   const scope = scene?.id + ":" + userId;
-  const turn = combat && combatant ? [combat.id, combat.round, combat.turnIndex, combatant.id].join(":") : undefined;
+  const turn = interfaceTurnKey(combat, combatant);
   const previous = useRef<{ scope: string; turn?: string; pings: Set<string> } | undefined>(undefined);
   useEffect(() => {
     const pings = scene?.annotations.filter((annotation) => annotation.kind === "ping") ?? [];
@@ -79,5 +94,5 @@ export function useInterfaceSounds(input: {
     }
     if (pings.some(({ id, expiresAt }) => !before.pings.has(id) && (!expiresAt || Date.parse(expiresAt) > Date.now()))) play("ping");
   }, [scope, turn, combatant, scene?.annotations, actors, tokens, play, userId]);
-  return { settings: input.preferences ?? defaultInterfaceSounds, play };
+  return { settings, setEnabled, play };
 }
