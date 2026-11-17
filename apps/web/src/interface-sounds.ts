@@ -61,6 +61,7 @@ export function useInterfaceSounds(input: {
   const savedSettings = input.preferences ?? defaultInterfaceSounds;
   const [override, setOverride] = useState<{ userId: string; enabled: boolean }>();
   const overrideRef = useRef(override);
+  const toggleVersion = useRef(0);
   const settings = override?.userId === input.userId ? { ...savedSettings, enabled: override.enabled } : savedSettings;
   const latest = useRef({ ...input, settings });
   useLayoutEffect(() => {
@@ -71,8 +72,8 @@ export function useInterfaceSounds(input: {
     setOverride((current) => current?.userId === input.userId ? current : undefined);
   }, [input.userId]);
   const player = useRef<ReturnType<typeof createInterfaceSoundPlayer> | undefined>(undefined);
-  function applySavedSettings(userId: string, preferences: UserPreferences["interfaceSounds"]) {
-    if (latest.current.userId !== userId) return;
+  function applySavedSettings(userId: string, preferences: UserPreferences["interfaceSounds"], savedToggleVersion: number) {
+    if (latest.current.userId !== userId || toggleVersion.current !== savedToggleVersion) return;
     const next = preferences ?? defaultInterfaceSounds;
     latest.current.settings = next;
     overrideRef.current = undefined;
@@ -83,6 +84,7 @@ export function useInterfaceSounds(input: {
     const enabled = !latest.current.settings.enabled;
     const next = { ...latest.current.settings, enabled };
     const override = { userId: input.userId, enabled };
+    toggleVersion.current += 1;
     latest.current.settings = next;
     overrideRef.current = override;
     setOverride(override);
@@ -120,5 +122,5 @@ export function useInterfaceSounds(input: {
     }
     if (pings.some(({ id, expiresAt }) => !before.pings.has(id) && (!expiresAt || Date.parse(expiresAt) > Date.now()))) play("ping");
   }, [scope, turn, combatant, scene?.annotations, actors, tokens, play, userId]);
-  return { settings, toggle, play, applySavedSettings };
+  return { settings, toggle, play, applySavedSettings, readToggleVersion: () => toggleVersion.current };
 }
