@@ -12566,9 +12566,7 @@ a:focus-visible {
 }
 
 .token:hover .token-nameplate,
-.token.primary-selected .token-nameplate,
-.token.turn-current .token-nameplate,
-.token.turn-next .token-nameplate {
+.token.primary-selected .token-nameplate {
   opacity: 1;
 }
 

@@ -27,7 +27,7 @@ describe("board token", () => {
 
   it("is a button positioned in scene percentages, named for assistive technology", () => {
     const markup = render();
-    expect(markup).toMatch(/^<button class="token layer-player active-layer friendly +" data-token-id="tok_hero" aria-haspopup="menu" style="left:40%;top:37\.5%;width:5%;height:6\.25%"/);
+    expect(markup).toMatch(/^<button class="token layer-player active-layer friendly +" data-token-id="tok_hero" aria-haspopup="menu" style="left:40%;top:37\.5%;width:5%;height:6\.25%;--token-hue:\d+"/);
     expect(markup.match(/class="([^"]*)"/)![1]!.split(" ").filter(Boolean)).toEqual(["token", "layer-player", "active-layer", "friendly"]);
     expect(markup).toContain('aria-label="Player Objects &amp; Tokens token Valen Ash"');
     expect(markup).toContain('aria-pressed="false"');
@@ -62,7 +62,7 @@ describe("board token", () => {
     expect(hidden).toContain(" bloodied");
     expect(hidden).not.toContain("token-hp");
     const shown = render({ hpRatio: 0.5, showVitals: true });
-    expect(shown).toContain('<span class="token-hp warning" aria-hidden="true"><span style="width:50%"></span></span>');
+    expect(shown).toContain('<span class="token-hp warning" aria-hidden="true"><span style="--token-hp-fill:50%"></span></span>');
     expect(render({ hpRatio: 0.2, showVitals: true })).toContain('class="token-hp danger"');
     expect(render({ hpRatio: 0.9, showVitals: true })).toContain('class="token-hp healthy"');
     expect(render({ hpRatio: 0, showVitals: true })).toContain(' down"');
@@ -83,7 +83,12 @@ describe("board token", () => {
   it("shows up to three conditions and counts the rest", () => {
     expect(render()).not.toContain("token-conditions");
     const two = render({ conditions: JSON.stringify(["Prone", "Poisoned"]) });
-    expect(two).toContain('<span class="token-conditions" aria-hidden="true" title="Prone, Poisoned"><small class="token-condition-chip">Prone</small><small class="token-condition-chip">Poisoned</small></span>');
+    expect(two).toContain('title="Prone, Poisoned"');
+    expect(two).toContain('title="Prone"><svg');
+    expect(two).toContain('title="Poisoned"><svg');
+    const descriptionId = two.match(/<span class="token-condition-description" id="([^"]+)">Prone, Poisoned/)?.[1];
+    expect(descriptionId).toBeDefined();
+    expect(two).toContain('aria-describedby="board-help ' + descriptionId + '"');
     const five = render({ conditions: JSON.stringify(["A", "B", "C", "D", "E"]) });
     expect(five).toContain('title="A, B, C, D, E"');
     expect(five.match(/token-condition-chip"/g)).toHaveLength(3);
