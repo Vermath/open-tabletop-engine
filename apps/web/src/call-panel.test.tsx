@@ -139,9 +139,10 @@ describe("how the call is wired", () => {
   const panel = source("call-panel.tsx");
 
   it("creates the frame only in the joined stage", () => {
-    expect(panel).toContain("{joined ? <CallFrame call={props.call} /> : <CallConsentNotice");
+    expect(panel).toContain("{props.closing ? null : joined ? <CallFrame call={props.call} /> : <CallConsentNotice");
     expect(panel.match(/<iframe/g)).toHaveLength(1);
-    expect(panel).toContain("{stage !== \"closed\" && createPortal(");
+    expect(panel).toContain("createPortal(");
+    expect(panel).toContain('open={stage !== "closed"}');
   });
 
   it("asks this server for the room and nothing else", () => {
@@ -154,7 +155,7 @@ describe("how the call is wired", () => {
   it("is mounted once, among the rail utilities, outside anything a workspace mode hides", () => {
     const app = source("App.tsx");
     expect(app.match(/<CampaignCallControl /g)).toHaveLength(1);
-    const mount = app.indexOf("<CampaignCallControl campaignId={campaignId} />");
+    const mount = app.indexOf("<CampaignCallControl ");
     expect(mount).toBeGreaterThan(app.indexOf('aria-label="Soundboard"'));
     expect(mount).toBeLessThan(app.indexOf('<section className="party-rail" aria-label="Party">'));
     // The line before it closes the Soundboard's own condition, so the control is not inside one.

@@ -5526,7 +5526,7 @@ body {
   overflow: auto;
 }
 
-.inspector > .inspector-panel-content {
+.inspector-content-stage > .inspector-panel-content {
   min-height: 0;
   overflow: auto;
 }

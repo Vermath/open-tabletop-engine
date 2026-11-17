@@ -1,9 +1,9 @@
 import { useLayoutEffect, useRef, useState } from "react";
 
-const exitCleanupMs = 140;
+export const exitCleanupMs = 140;
 
-function interfaceMotionReduced(): boolean {
-  return document.documentElement.dataset.reducedMotion === "true" || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+export function interfaceMotionReduced(): boolean {
+  return typeof window === "undefined" || document.documentElement.dataset.reducedMotion === "true" || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
 /** Keep the painted surface briefly while its controls and focus trap are already inactive. */
