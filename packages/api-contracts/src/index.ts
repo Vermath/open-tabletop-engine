@@ -6334,6 +6334,7 @@ const componentSchemas = {
       blocksMovement: { type: "boolean" },
       kind: { type: "string", enum: ["wall", "terrain", "door", "window"] },
       open: { type: "boolean" },
+      locked: { type: "boolean" },
     },
   },
   WallInput: {
@@ -6348,6 +6349,7 @@ const componentSchemas = {
       blocksMovement: { type: "boolean" },
       kind: { type: "string", enum: ["wall", "terrain", "door", "window"] },
       open: { type: "boolean" },
+      locked: { type: "boolean" },
     },
   },
   LightSource: {

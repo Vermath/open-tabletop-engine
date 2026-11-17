@@ -5325,11 +5325,14 @@ export function App() {
     void refresh(campaignId, selectedScene?.id ?? sceneId, { syncStatus: false });
   }
 
-  async function toggleScenePortal(wall: Scene["walls"][number]) {
-    if (!selectedScene || (wall.kind !== "door" && wall.kind !== "window")) return;
-    const open = !wall.open;
-    applySceneToSnapshot(await patchSceneChildMutation(selectedScene, `/api/v1/scenes/${selectedScene.id}/walls/${wall.id}`, { open }, `scene:wall:toggle:${wall.id}`));
-    setQuietStatus(`${wall.kind === "door" ? "Door" : "Window"} ${open ? "opened" : "closed"}`);
+  async function toggleScenePortal(wall: Scene["walls"][number], toggleLock = false) {
+    if (!selectedScene || !hasPermission("scene.update") || (wall.kind !== "door" && wall.kind !== "window")) return;
+    if (toggleLock ? wall.kind !== "door" : wall.locked) return;
+    const patch = toggleLock ? { locked: !wall.locked } : { open: !wall.open };
+    const updated = await patchSceneChildMutation(selectedScene, `/api/v1/scenes/${selectedScene.id}/walls/${wall.id}`, patch, `scene:wall:toggle:${wall.id}`).catch((error: unknown) => { reportError(error); return undefined; });
+    if (!updated) return;
+    applySceneToSnapshot(updated);
+    setQuietStatus(`${wall.kind === "door" ? "Door" : "Window"} ${toggleLock ? (patch.locked ? "locked" : "unlocked") : (patch.open ? "opened" : "closed")}`);
     void refresh(campaignId, selectedScene.id, { syncStatus: false });
   }
 
