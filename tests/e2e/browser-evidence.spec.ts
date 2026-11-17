@@ -261,7 +261,7 @@ async function runLinkedSessionThroughDesk(page: Page, input: { encounterName: s
   await form.getByRole("textbox", { name: "Session title" }).fill(input.sessionTitle);
   await form.getByRole("textbox", { name: "Session agenda" }).fill(`Meet the party, face ${input.encounterName}, and close the first session.`);
   await form.getByRole("textbox", { name: "Session notes" }).fill("Browser evidence: creator, encounter, and session state stayed inside public product controls.");
-  const sceneChoice = form.getByRole("checkbox", { name: "Vault Entry" });
+  const sceneChoice = form.getByRole("checkbox", { name: "Vault Entry", exact: true });
   if (!(await sceneChoice.isChecked())) await sceneChoice.check();
   await openDetails(form.locator("details").filter({ hasText: "Linked encounters" }));
   const encounterChoice = form.getByRole("checkbox", { name: input.encounterName });
