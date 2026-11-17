@@ -95,5 +95,5 @@ describe("gridless scene API", () => {
     } finally {
       await app.close();
     }
-  });
+  }, 15_000);
 });

@@ -1,5 +1,9 @@
 # System SDK
 
+External authors can use the bounded [declarative-v1 integration](declarative-v1.md) for inline actor/item schemas, editable actor fields, quick rolls, and fixed resource costs. Start with the original [Lantern Road example](../../packages/system-sdk/examples/lantern-road/system.json). The guide covers exact version binding, permissioned API calls, and current integration verification limits.
+
+The capability list below describes the broader built-in runtime surface. External declarative packages implement only the capabilities supported by the trusted declarative adapter.
+
 Rules systems declare:
 
 - `system.manifest.json`
@@ -24,8 +28,8 @@ See `plugins/example-system-generic-fantasy` for the minimal installable system 
 
 ## System Author Checklist
 
-- Provide `system.manifest.json` with a lowercase kebab-case id, semantic version, display name, compatible core range, safe package-relative schema/entrypoint paths, least-privilege permissions, and explicit capabilities.
-- Treat manifest metadata as declarative. Registration never grants an external package executable runtime capabilities; the current server admits external packages only with `data-model`, and returns `unsupported_system_capability` for unavailable rules features.
+- Provide a JSON manifest with a lowercase kebab-case id, semantic version, display name, compatible core range, least-privilege permissions, and explicit capabilities. Legacy metadata uses safe package-relative schema/entrypoint paths; `declarative-v1` uses inline schemas and empty entrypoints.
+- Choose an external manifest format explicitly. Legacy manifests with schema path strings remain `data-model` metadata. A validated `definition.kind: "declarative-v1"` package uses bounded inline schemas and the trusted host adapter for `data-model`, `actor-sheet`, `quick-rolls`, and fixed-cost `actions`; it requires empty `entrypoints`. Neither format loads arbitrary package code. See [declarative-v1](declarative-v1.md) for capability derivation and constraints.
 - Keep actor and item data schemas versioned and tolerant of older records; migration-impact notes should describe any field additions, removals, or default changes.
 - Ship character templates, compendium coverage, condition metadata, encounter threat catalogs, and action/rest/advancement hooks together so the GM-facing System Registry can show capability coverage before activation.
 - Keep legal boundaries explicit: include source/license metadata for reusable rules content and do not bundle proprietary material.

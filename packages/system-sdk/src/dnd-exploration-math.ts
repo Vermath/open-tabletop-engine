@@ -1,4 +1,4 @@
-import type { Actor } from "@open-tabletop/core";
+import type { Actor } from "@open-tabletop/api-contracts";
 import { dnd5eSrdXpThresholds } from "./dnd-static-content.js";
 
 type Dnd5eSrdUtilityRoll = {

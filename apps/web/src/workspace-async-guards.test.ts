@@ -88,7 +88,7 @@ describe("workspace-bound async operations", () => {
     expect(appSource).toContain("async function useActorAction(rollId: string");
     expect(appSource).toContain("`/api/v1/campaigns/${request.campaignId}/systems/${actor.systemId}/actors/${actor.id}/roll`");
     expect(appSource).toContain("}, { signal: request.controller.signal })");
-    expect(appSource).toContain("const dataUrl = await toPng(board");
+    expect(appSource).toContain("const dataUrl = await withDomBoardForCapture(board, (filter) => toPng(board");
     expect(appSource).toContain('if (!workspaceBoundRequestIsCurrent(request)) return "stale" as const;');
     expect(appSource).toContain("setAiAgentStatus(\"Agent ready\");");
     expect(appSource).toContain("if (result === \"sent\") setAiAgentStatus(\"Board capture sent\");");

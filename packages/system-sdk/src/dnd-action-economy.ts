@@ -1,5 +1,5 @@
-import type { Combat, Dnd5eSrdAttackOutcome, Dnd5eSrdCriticalOutcome } from "@open-tabletop/core";
-export type { Dnd5eSrdAttackOutcome, Dnd5eSrdCriticalOutcome } from "@open-tabletop/core";
+import type { Combat, Dnd5eSrdAttackOutcome, Dnd5eSrdCriticalOutcome } from "@open-tabletop/api-contracts";
+export type { Dnd5eSrdAttackOutcome, Dnd5eSrdCriticalOutcome } from "@open-tabletop/api-contracts";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -156,8 +156,9 @@ function storedLedger(data: JsonRecord, combat: Pick<Combat, "id" | "round" | "t
   const economy = record(rules.actionEconomy);
   const actions = record(economy.standardActions);
   const stored = record(actions[combat.id]);
+  // Actual start_turn progression clears these ledgers. Initiative positions can
+  // change during the same turn, so an array index must not restore spent actions.
   const sameTurn = finiteInteger(stored.round, -1) === combat.round
-    && finiteInteger(stored.turnIndex, -1) === combat.turnIndex
     && text(stored.actorId) === actorId;
   if (!sameTurn) {
     return { round: combat.round, turnIndex: combat.turnIndex, actorId, actionsUsed: 0, actionSurgeGrants: 0, uses: [] };
@@ -192,7 +193,7 @@ function withLedger(data: JsonRecord, combatId: string, ledger: Dnd5eSrdTurnActi
 
 function continuationLedger(data: JsonRecord, combat: Pick<Combat, "id" | "round" | "turnIndex">, actorId: string): JsonRecord {
   const stored = record(record(record(record(data.rulesEngine).actionEconomy).continuations)[combat.id]);
-  return finiteInteger(stored.round, -1) === combat.round && finiteInteger(stored.turnIndex, -1) === combat.turnIndex && text(stored.actorId) === actorId
+  return finiteInteger(stored.round, -1) === combat.round && text(stored.actorId) === actorId
     ? stored
     : { round: combat.round, turnIndex: combat.turnIndex, actorId, tickets: [] };
 }

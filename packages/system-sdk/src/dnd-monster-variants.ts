@@ -1,4 +1,4 @@
-import type { CompendiumCatalogEntry, CompendiumProvenance } from "@open-tabletop/core";
+import type { CompendiumCatalogEntry, CompendiumProvenance } from "@open-tabletop/api-contracts";
 
 import { buildDndCustomContent, type DndCustomContentDraft, type DndCustomContentIssue } from "./dnd-custom-content.js";
 

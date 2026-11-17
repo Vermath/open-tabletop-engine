@@ -43,14 +43,44 @@ function token(input: Partial<Token> & Pick<Token, "id" | "sceneId" | "name">): 
 }
 
 describe("actor rails", () => {
-  it("keeps an explicitly selected off-board actor independent of token selection", () => {
+  it("preserves explicit actor selection and fallbacks when no token is selected", () => {
     const actors = [
-      actor({ id: "act_on_board", name: "On Board" }),
+      actor({ id: "act_other_system", name: "Other System", systemId: "other-system" }),
+      actor({ id: "act_active_system", name: "Active System" }),
       actor({ id: "act_off_board", name: "Off Board" })
     ];
 
     expect(actorForSelection(actors, "act_off_board", undefined, "generic-fantasy")?.id).toBe("act_off_board");
-    expect(actorForSelection(actors, "", "act_on_board", "generic-fantasy")?.id).toBe("act_on_board");
+    expect(actorForSelection(actors, "", undefined, "generic-fantasy")?.id).toBe("act_active_system");
+    expect(actorForSelection(actors, "act_missing", undefined, "generic-fantasy")?.id).toBe("act_active_system");
+    expect(actorForSelection(actors, "", undefined, "missing-system")?.id).toBe("act_other_system");
+  });
+
+  it.each(["act_off_board", "", "act_missing"])("keeps an unlinked selected token actorless with actor selection %j", (selectedActorId) => {
+    const actors = [
+      actor({ id: "act_default", name: "Default" }),
+      actor({ id: "act_off_board", name: "Off Board" })
+    ];
+
+    expect(actorForSelection(actors, selectedActorId, {}, "generic-fantasy")).toBeUndefined();
+  });
+
+  it.each(["act_off_board", "", "act_missing"])("keeps a selected token actorless when its linked actor is unavailable with actor selection %j", (selectedActorId) => {
+    const actors = [
+      actor({ id: "act_default", name: "Default" }),
+      actor({ id: "act_off_board", name: "Off Board" })
+    ];
+
+    expect(actorForSelection(actors, selectedActorId, { actorId: "act_unavailable" }, "generic-fantasy")).toBeUndefined();
+  });
+
+  it("prefers the selected token's linked actor over an explicitly selected actor", () => {
+    const actors = [
+      actor({ id: "act_off_board", name: "Off Board" }),
+      actor({ id: "act_on_board", name: "On Board" })
+    ];
+
+    expect(actorForSelection(actors, "act_off_board", { actorId: "act_on_board" }, "generic-fantasy")?.id).toBe("act_on_board");
   });
 
   it("shows only adversaries placed as board tokens in the selected scene", () => {

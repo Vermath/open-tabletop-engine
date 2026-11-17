@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { boardArrowDelta, keyboardTokenPositions, movedKeyboardCursor, movedKeyboardGesture, runAnnouncedSceneCanvasMutation } from "./scene-canvas.js";
 
 const canvasSource = readFileSync(new URL("./scene-canvas.tsx", import.meta.url), "utf8");
+const boardTokenSource = readFileSync(new URL("./board-token.tsx", import.meta.url), "utf8");
 const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
 const stylesSource = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
 
@@ -73,9 +74,11 @@ describe("keyboard-complete scene canvas", () => {
   });
 
   it("wires named keyboard help, token movement, gesture completion, and visible focus into the actual canvas", () => {
-    expect(canvasSource).toContain('aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Enter Space Escape"');
-    expect(canvasSource).toContain("onKeyDown={handleBoardKeyDown}");
-    expect(canvasSource).toContain("onKeyDown={(event) => moveTokenFromKeyboard(token, event)}");
+    expect(canvasSource).toContain('aria-keyshortcuts={props.readOnly ? undefined : "ArrowUp ArrowDown ArrowLeft ArrowRight Enter Space Escape"}');
+    expect(canvasSource).toContain("onKeyDown={props.readOnly ? undefined : handleBoardKeyDown}");
+    expect(boardTokenSource).toContain("onKeyDown={props.readOnly ? undefined : (event) => handlers.keyDown(id, event)}");
+    expect(canvasSource).toContain("keyDown(tokenId, event) {\n      const token = boardTokenById.get(tokenId);\n      if (token) moveTokenFromKeyboard(token, event);");
+    expect(canvasSource).toContain("readOnly={Boolean(props.readOnly)}");
     expect(canvasSource).toContain("if (!props.canMoveToken) return;");
     expect(appSource).toContain('canMoveToken={hasPermission("token.move")}');
     expect(canvasSource).toContain("Enter or Space to start and finish");
@@ -84,9 +87,10 @@ describe("keyboard-complete scene canvas", () => {
     expect(canvasSource).toContain("onPointerDownCapture={takeOverBoardWithPointer}");
     expect(canvasSource).toContain('setKeyboardStatus("Keyboard board operation cancelled by pointer input")');
     expect(canvasSource).toContain("if (calibrationActive) return null;");
-    expect(canvasSource).toContain('pointerEvents: calibrationActive ? "none" : undefined');
+    expect(boardTokenSource).toContain('pointerEvents: props.calibrationActive ? "none" : undefined');
+    expect(canvasSource).toContain("calibrationActive={calibrationActive}");
     expect(appSource).toContain("setGridCalibrationOpen(false); setGridCalibrationPoints([]);");
-    expect(appSource).toContain("if (next) { setFogBrushMode(null); setAnnotationTool(null);");
+    expect(appSource).toContain("if (next) { showScene(); setFogBrushMode(null); setAnnotationTool(null);");
     expect(stylesSource).toContain(".keyboard-board-cursor");
     expect(stylesSource).toContain(".scene-board:focus-visible");
   });

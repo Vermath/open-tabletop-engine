@@ -186,7 +186,13 @@ describe("D&D combat-vitals mutations", () => {
       });
       expect(undo.statusCode, undo.body).toBe(200);
       expect({ ...undo.json().actors[0], updatedAt: actorBefore.updatedAt }).toEqual(actorBefore);
-      expect({ ...undo.json().combat, updatedAt: combatBefore.updatedAt }).toEqual(combatBefore);
+      expect({ ...undo.json().combat, updatedAt: combatBefore.updatedAt }).toEqual({
+        ...combatBefore,
+        turnPresentation: {
+          currentCombatantId: "combatant_vitals_target",
+          nextCombatantId: "combatant_vitals_ally",
+        },
+      });
       expect(undo.json().combat.combatants[1]).toEqual(allyCombatantBefore);
       expect(store.state.dndRulesMutations.find((candidate) => candidate.id === mutation.id)?.status).toBe("undone");
 

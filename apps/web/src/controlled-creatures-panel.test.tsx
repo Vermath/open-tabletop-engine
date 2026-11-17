@@ -99,7 +99,10 @@ describe("ControlledCreaturesPanel", () => {
     expect(clearHandoff).toHaveBeenCalledOnce();
     expect(closeCharacterCreator).toHaveBeenCalledWith(false);
     expect(closeAnotherDialog).toHaveBeenCalledWith(false);
-    expect(appSource.indexOf("if (prepared.controlledCreatureHandoff)")).toBeLessThan(appSource.indexOf("consequenceReview.review(actorActionConsequenceReview"));
+    // The handoff is checked before either the one-step decision or the review dialog.
+    expect(appSource.indexOf("if (prepared.controlledCreatureHandoff)")).toBeGreaterThan(-1);
+    expect(appSource.indexOf("if (prepared.controlledCreatureHandoff)")).toBeLessThan(appSource.indexOf("preparedActionIsRoutine(prepared, review)"));
+    expect(appSource.indexOf("if (prepared.controlledCreatureHandoff)")).toBeLessThan(appSource.indexOf("consequenceReview.review(review)"));
     expect(source).toContain('consumeHandoff("confirmed")');
     expect(source).toContain('consumeHandoff("cancelled")');
   });

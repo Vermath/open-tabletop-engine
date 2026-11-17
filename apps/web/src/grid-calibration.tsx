@@ -7,16 +7,22 @@ export interface GridCalibrationResult {
   distance: number;
   cellsBetween: number;
   gridSize: number;
+  gridOrigin: VisionPoint;
 }
 
 export function gridCalibrationResult(points: VisionPoint[], cellsBetween: number): GridCalibrationResult | undefined {
   if (points.length !== 2 || !Number.isFinite(cellsBetween) || cellsBetween <= 0) return undefined;
   const [start, end] = points;
   if (!start || !end) return undefined;
-  const distance = Math.hypot(end.x - start.x, end.y - start.y);
+  const deltaX = Math.abs(end.x - start.x);
+  const deltaY = Math.abs(end.y - start.y);
+  // Measure square cells along one axis, never across a diagonal.
+  if (Math.min(deltaX, deltaY) > Math.max(2, Math.max(deltaX, deltaY) * 0.03)) return undefined;
+  const distance = Math.max(deltaX, deltaY);
   if (!Number.isFinite(distance) || distance < 2) return undefined;
-  const gridSize = Math.max(2, Math.round((distance / cellsBetween) * 100) / 100);
-  return { distance, cellsBetween, gridSize };
+  const gridSize = Math.max(1, Math.round((distance / cellsBetween) * 100) / 100);
+  const offset = (coordinate: number) => Math.round(((coordinate % gridSize + gridSize) % gridSize) * 100) / 100;
+  return { distance, cellsBetween, gridSize, gridOrigin: { x: offset(start.x), y: offset(start.y) } };
 }
 
 export function appendGridCalibrationPoint(points: VisionPoint[], point: VisionPoint): VisionPoint[] {
@@ -28,7 +34,7 @@ export function GridCalibrationPanel(props: {
   scene: Scene;
   points: VisionPoint[];
   onPointsChange(points: VisionPoint[]): void;
-  onApply(gridSize: number): Promise<void>;
+  onApply(result: GridCalibrationResult): Promise<void>;
   onClose(): void;
 }) {
   const [cellsBetween, setCellsBetween] = useState("1");
@@ -50,7 +56,7 @@ export function GridCalibrationPanel(props: {
     setBusy(true);
     setError("");
     try {
-      await props.onApply(result.gridSize);
+      await props.onApply(result);
       props.onClose();
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure));
@@ -68,11 +74,11 @@ export function GridCalibrationPanel(props: {
         </div>
         <button className="icon-button" type="button" aria-label="Close grid calibration" disabled={busy} onClick={props.onClose}><X size={15} /></button>
       </header>
-      <p><Crosshair size={14} aria-hidden="true" /> Select two matching grid lines on the board, then enter how many cells lie between them.</p>
+      <p><Crosshair size={14} aria-hidden="true" /> Select two grid intersections on the same row or column, then enter how many cells lie between them. The first intersection anchors the grid.</p>
       <div className="grid-calibration-coordinates">
         {[0, 1].map((index) => (
           <fieldset key={index}>
-            <legend>{index === 0 ? "First line" : "Second line"}</legend>
+            <legend>{index === 0 ? "First intersection" : "Second intersection"}</legend>
             <label><span>X</span><input aria-label={`${index === 0 ? "First" : "Second"} calibration point X`} type="number" value={props.points[index]?.x ?? ""} onChange={(event) => updatePoint(index, "x", event.target.value)} /></label>
             <label><span>Y</span><input aria-label={`${index === 0 ? "First" : "Second"} calibration point Y`} type="number" value={props.points[index]?.y ?? ""} onChange={(event) => updatePoint(index, "y", event.target.value)} /></label>
           </fieldset>
@@ -87,9 +93,10 @@ export function GridCalibrationPanel(props: {
           <>
             <span>Measured {formatNumber(result.distance)} scene pixels</span>
             <strong>Recommended grid: {formatNumber(result.gridSize)} px</strong>
+            <span>Grid origin: {formatNumber(result.gridOrigin.x)}, {formatNumber(result.gridOrigin.y)} px</span>
             <span>Current grid: {formatNumber(props.scene.gridSize)} px</span>
           </>
-        ) : <span>Select both points to calculate a grid size.</span>}
+        ) : <span>{props.points.length === 2 ? "Choose intersections on the same row or column, at least 2 pixels apart." : "Select both intersections to calculate grid size and origin."}</span>}
       </div>
       {error && <p className="creator-error" role="alert">Calibration failed: {error}</p>}
       <div className="button-row wrap">

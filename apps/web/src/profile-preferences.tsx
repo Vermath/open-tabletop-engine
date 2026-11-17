@@ -1,13 +1,15 @@
 import type { User, UserPreferences } from "@open-tabletop/core";
 import { Check, RefreshCw, UserCog } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { apiPatch } from "./api.js";
+import { apiPatch, type Snapshot } from "./api.js";
+import { defaultInterfaceSounds } from "./interface-sounds.js";
 import { errorMessage } from "./sheet-format.js";
 
 export const defaultUserPreferences: UserPreferences = {
   theme: "midnight",
   dice3dEnabled: true,
   reducedMotion: false,
+  interfaceSounds: defaultInterfaceSounds,
   chatNotifications: "mentions"
 };
 
@@ -15,12 +17,38 @@ export function resolvedUserPreferences(user: Pick<User, "preferences">): UserPr
   return { ...defaultUserPreferences, ...user.preferences };
 }
 
-export function updateUserProfile(input: {
+export type ProfileUpdateInput = {
   user: User;
   displayName: string;
   preferences: UserPreferences;
   idempotencyKey: string;
-}): Promise<{ user: User }> {
+};
+
+export function mostRecentProfileUser(user: User, saved: User | undefined): User {
+  return saved?.id === user.id && saved.updatedAt > user.updatedAt ? saved : user;
+}
+
+export function applyProfilePreferences(user: User, setTheme: (theme: UserPreferences["theme"]) => void, setDice3dEnabled: (enabled: boolean) => void): void {
+  const preferences = resolvedUserPreferences(user);
+  setTheme(preferences.theme);
+  setDice3dEnabled(preferences.dice3dEnabled);
+  document.documentElement.dataset.reducedMotion = preferences.reducedMotion ? "true" : "false";
+  document.documentElement.dataset.chatNotifications = preferences.chatNotifications;
+}
+
+export function applyProfileUserToSnapshot(snapshot: Snapshot, user: User): Snapshot {
+  if (snapshot.session?.user.id !== user.id) return snapshot;
+  const updateMember = <T extends { user: Pick<User, "id" | "displayName" | "email"> }>(member: T): T =>
+    member.user.id === user.id ? { ...member, user: { ...member.user, displayName: user.displayName, email: user.email } } : member;
+  return {
+    ...snapshot,
+    session: { ...snapshot.session, user },
+    members: snapshot.members.map(updateMember),
+    organizationMembers: snapshot.organizationMembers.map(updateMember),
+  };
+}
+
+export function updateUserProfile(input: ProfileUpdateInput): Promise<{ user: User }> {
   return apiPatch<{ user: User }>("/api/v1/auth/profile", {
     expectedUpdatedAt: input.user.updatedAt,
     displayName: input.displayName.trim(),
@@ -28,7 +56,7 @@ export function updateUserProfile(input: {
   }, { idempotencyKey: input.idempotencyKey });
 }
 
-export function ProfilePreferences(props: { user: User; onSaved(user: User): void }) {
+export function ProfilePreferences(props: { user: User; onSave(input: ProfileUpdateInput): Promise<void> }) {
   const [displayName, setDisplayName] = useState(props.user.displayName);
   const [preferences, setPreferences] = useState<UserPreferences>(() => resolvedUserPreferences(props.user));
   const [busy, setBusy] = useState(false);
@@ -53,9 +81,8 @@ export function ProfilePreferences(props: { user: User; onSaved(user: User): voi
     setError("");
     setSuccess("");
     try {
-      const result = await updateUserProfile({ user: props.user, displayName, preferences, idempotencyKey: attemptRef.current.idempotencyKey });
+      await props.onSave({ user: props.user, displayName, preferences, idempotencyKey: attemptRef.current.idempotencyKey });
       attemptRef.current = undefined;
-      props.onSaved(result.user);
       setSuccess("Profile and play preferences saved across devices.");
     } catch (failure) {
       setError(errorMessage(failure));
@@ -74,6 +101,8 @@ export function ProfilePreferences(props: { user: User; onSaved(user: User): voi
       <label><span>Theme</span><select aria-label="Persisted interface theme" value={preferences.theme} disabled={busy} onChange={(event) => setPreferences((current) => ({ ...current, theme: event.target.value as UserPreferences["theme"] }))}><option value="midnight">Midnight</option><option value="ember">Ember</option></select></label>
       <label className="inline-check"><input type="checkbox" checked={preferences.dice3dEnabled} disabled={busy} onChange={(event) => setPreferences((current) => ({ ...current, dice3dEnabled: event.target.checked }))} /><span>Show 3D dice</span></label>
       <label className="inline-check"><input type="checkbox" checked={preferences.reducedMotion} disabled={busy} onChange={(event) => setPreferences((current) => ({ ...current, reducedMotion: event.target.checked }))} /><span>Reduce interface motion on every device</span></label>
+      <label className="inline-check"><input type="checkbox" checked={preferences.interfaceSounds?.enabled ?? true} disabled={busy} onChange={(event) => setPreferences((current) => ({ ...current, interfaceSounds: { ...(current.interfaceSounds ?? defaultInterfaceSounds), enabled: event.target.checked } }))} /><span>Play interface sounds</span></label>
+      <label><span>Interface sound volume</span><input aria-label="Interface sound volume" type="range" min={0} max={1} step={0.05} value={preferences.interfaceSounds?.volume ?? defaultInterfaceSounds.volume} disabled={busy || preferences.interfaceSounds?.enabled === false} onChange={(event) => setPreferences((current) => ({ ...current, interfaceSounds: { ...(current.interfaceSounds ?? defaultInterfaceSounds), volume: Number(event.target.value) } }))} /></label>
       <label><span>Chat notifications</span><select aria-label="Chat notification preference" value={preferences.chatNotifications} disabled={busy} onChange={(event) => setPreferences((current) => ({ ...current, chatNotifications: event.target.value as UserPreferences["chatNotifications"] }))}><option value="all">All new messages</option><option value="mentions">Mentions and whispers</option><option value="none">None</option></select></label>
       {error && <div className="inline-error" role="alert"><strong>Preferences were not saved.</strong><span>{error}</span><button className="ghost-button small" type="button" disabled={busy} onClick={() => void save()}><RefreshCw size={13} /> Retry</button></div>}
       {success && <p className="panel-success" role="status">{success}</p>}

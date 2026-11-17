@@ -1,6 +1,6 @@
 import { deepStrictEqual, doesNotMatch, match, strictEqual } from "node:assert";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, parse } from "node:path";
 import {
   currentWorkspaceState,
   expectedCheckTasks,
@@ -21,6 +21,7 @@ import {
   releaseEvidenceOutputDigestScope,
   summarizeReleaseEvidenceOutput,
 } from "./release-evidence-diagnostics.mjs";
+import { ensureReleaseEvidenceOutputDirectory } from "./release-evidence-output.mjs";
 import "./test-release-evidence-process.mjs";
 
 const repoRoot = process.cwd();
@@ -34,6 +35,32 @@ match(recorderSource, /OTTE_GATE_TIMEOUT_DIAGNOSTIC/);
 match(recorderSource, /appendBoundedOutput/);
 match(recorderSource, /terminateGateProcessTree/);
 match(recorderSource, /summarizeReleaseEvidenceOutput/);
+let existingDirectoryCreationAttempted = false;
+const existingFilesystemRoot = parse(repoRoot).root;
+ensureReleaseEvidenceOutputDirectory(
+  join(existingFilesystemRoot, "release-evidence.json"),
+  {
+    createDirectory() {
+      existingDirectoryCreationAttempted = true;
+      throw Object.assign(new Error("simulated Windows drive-root failure"), {
+        code: "EPERM",
+      });
+    },
+  },
+);
+strictEqual(existingDirectoryCreationAttempted, false);
+let missingDirectoryCreation;
+const missingDirectory = join(repoRoot, "missing-release-evidence-directory");
+ensureReleaseEvidenceOutputDirectory(join(missingDirectory, "evidence.json"), {
+  pathExists: () => false,
+  createDirectory(directory, options) {
+    missingDirectoryCreation = { directory, options };
+  },
+});
+deepStrictEqual(missingDirectoryCreation, {
+  directory: missingDirectory,
+  options: { recursive: true },
+});
 const diagnostic = boundedRedactedDiagnostic(
   `${"build output\n".repeat(2_000)}Authorization: Bearer release-token-value\nOTTE_ASSET_URL_SIGNING_SECRET=signing secret with spaces\nhttps://operator:password@example.com/path?X-Amz-Credential=query-credential&X-Amz-Signature=query-signature\n{"password":"json-secret","safe":"retained"}\ngithub_pat_abcdefghijklmnopqrstuvwxyz1234567890\n-----BEGIN PRIVATE KEY-----\nprivate-key-value\n-----END PRIVATE KEY-----\nuseful compiler failure`,
   { maximumBytes: 1_024, sourceTruncatedBytes: 5 },
@@ -125,6 +152,66 @@ deepStrictEqual(parsed.get("@open-tabletop/core"), {
 deepStrictEqual(parsed.get("@open-tabletop/api"), {
   testFiles: { total: 4, passed: 3, failed: 1, skipped: 0 },
   tests: { total: 10, passed: 8, failed: 1, skipped: 1 },
+});
+const groupedVitestOutput = [
+  "\u001b[36m::group::@open-tabletop/web:test\u001b[0m",
+  "\u001b[32m Test Files  3 passed (3)\u001b[0m",
+  "      Tests  10 passed | 2 skipped (12)",
+  "::endgroup::",
+  "Tests  99 passed (99)",
+  "::group::@open-tabletop/plugin:test",
+  "No test files found, exiting with code 0",
+  "::endgroup::",
+].join("\r\n");
+const groupedParsed = parseVitestTaskSummaries(groupedVitestOutput);
+deepStrictEqual(groupedParsed.get("@open-tabletop/web"), {
+  testFiles: { total: 3, passed: 3, failed: 0, skipped: 0 },
+  tests: { total: 12, passed: 10, failed: 0, skipped: 2 },
+});
+deepStrictEqual(groupedParsed.get("@open-tabletop/plugin"), {
+  testFiles: { total: 0, passed: 0, failed: 0, skipped: 0 },
+  tests: { total: 0, passed: 0, failed: 0, skipped: 0 },
+});
+
+const unrelatedGroupParsed = parseVitestTaskSummaries(
+  [
+    "::group::@open-tabletop/core:test",
+    "Test Files  1 passed (1)",
+    "Tests  2 passed (2)",
+    "::group::@open-tabletop/web:build",
+    "Test Files  99 passed (99)",
+    "Tests  99 passed (99)",
+    "::endgroup::",
+  ].join("\n"),
+);
+deepStrictEqual(unrelatedGroupParsed.get("@open-tabletop/core"), {
+  testFiles: { total: 1, passed: 1, failed: 0, skipped: 0 },
+  tests: { total: 2, passed: 2, failed: 0, skipped: 0 },
+});
+strictEqual(unrelatedGroupParsed.has("@open-tabletop/web"), false);
+
+const mixedParsed = parseVitestTaskSummaries(
+  [
+    "::group::@open-tabletop/core:test",
+    "Test Files  2 passed (2)",
+    "@open-tabletop/api:test: Test Files  3 passed (3)",
+    "@open-tabletop/api:test: Tests  6 passed (6)",
+    "Tests  4 passed (4)",
+    "::endgroup::",
+    "@open-tabletop/web:test: No test files found",
+  ].join("\n"),
+);
+deepStrictEqual(mixedParsed.get("@open-tabletop/core"), {
+  testFiles: { total: 2, passed: 2, failed: 0, skipped: 0 },
+  tests: { total: 4, passed: 4, failed: 0, skipped: 0 },
+});
+deepStrictEqual(mixedParsed.get("@open-tabletop/api"), {
+  testFiles: { total: 3, passed: 3, failed: 0, skipped: 0 },
+  tests: { total: 6, passed: 6, failed: 0, skipped: 0 },
+});
+deepStrictEqual(mixedParsed.get("@open-tabletop/web"), {
+  testFiles: { total: 0, passed: 0, failed: 0, skipped: 0 },
+  tests: { total: 0, passed: 0, failed: 0, skipped: 0 },
 });
 deepStrictEqual(
   parsePlaywrightSummary(

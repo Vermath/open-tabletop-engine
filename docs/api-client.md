@@ -1,12 +1,14 @@
 # API Client
 
-`@open-tabletop/api-client` is the reusable TypeScript client for public v1 REST routes and the realtime WebSocket stream. It is MIT-licensed so external tools, bots, companion apps, and extension packages can depend on it without inheriting the platform server's AGPL license.
+`@open-tabletop/api-client` is the MIT-licensed TypeScript client for public v1 REST routes and the realtime WebSocket stream. Its shared data contracts come from the MIT-licensed `@open-tabletop/api-contracts` package; using the client does not require the AGPL platform core package.
 
-Install it next to the shared domain types:
+The client is currently a private workspace package. This repository does not establish that it is available as a published package. Resolve its dependencies from the repository root using the existing pnpm workspace:
 
 ```bash
-pnpm add @open-tabletop/api-client @open-tabletop/core
+pnpm install
 ```
+
+Keep the client and API contracts versions aligned. Local package archives include their production JavaScript, declarations, and license notices. Registry publication remains a separate release action; the private workspace flags are unchanged.
 
 Create a client with either a bearer session token or the legacy development `x-user-id` header. Production integrations should use bearer tokens returned by the normal auth flow.
 
@@ -31,7 +33,7 @@ const campaign = await client.createCampaign({
 Use `connectRealtime` when the runtime provides `WebSocket`, or pass a constructor for Node-based tools and tests. The helper converts `http` to `ws`, converts `https` to `wss`, attaches `campaignId`, and sends the client token through an `otte.auth.<token>` WebSocket subprotocol unless a per-call token is provided.
 
 ```ts
-import type { EngineEvent } from "@open-tabletop/core";
+import type { EngineEvent } from "@open-tabletop/api-contracts";
 import { OpenTabletopClient } from "@open-tabletop/api-client";
 
 const client = new OpenTabletopClient("https://api.example.test", { token });
@@ -60,7 +62,9 @@ The reusable client intentionally excludes server-admin routes, SCIM bearer-prov
 
 ## Rules-system registration
 
-System registration and campaign activation are separate calls. Registration requires both server-admin authority and `campaign.update` for the explicit campaign context. External packages are currently data-model-only; runtime capabilities are server-controlled and unsupported feature calls return a structured `422` response.
+System registration, exact version binding, and campaign activation are separate operations. Registration requires server-admin authority, `campaign.update` for the explicit campaign context, and an idempotency key. Legacy manifests with schema path strings remain data-model metadata. Validated `declarative-v1` packages use bounded inline schemas and the trusted host adapter for actor sheets, quick rolls, and fixed resource costs. See the [declarative system guide](system-sdk/declarative-v1.md) for the executable package format, version binding, permissions, and current integration verification limits.
+
+This example registers a legacy data-model manifest and activates it with the exact campaign revision and a separate replay key:
 
 ```ts
 const registered = await client.registerSystem("camp_demo", {
@@ -74,11 +78,19 @@ const registered = await client.registerSystem("camp_demo", {
   capabilities: ["data-model"]
 }, "system-register:camp_demo:my-data-system:attempt-1");
 
-const activated = await client.installSystem("camp_demo", registered.id);
+const campaignForActivation = await client.campaign("camp_demo");
+const activated = await client.installSystem(
+  "camp_demo",
+  registered.id,
+  campaignForActivation.updatedAt,
+  "system-activate:camp_demo:my-data-system:attempt-1",
+);
 console.log(activated.campaign.defaultSystemId);
 ```
 
-Treat `400 invalid_system_manifest`, `403`, `409`, and `422 unsupported_system_capabilities` as expected registration outcomes. The catalog's `runtimeCapabilities` and `unsupportedCapabilities` fields are authoritative; manifest claims do not load or execute arbitrary server code.
+For an executable declarative system, first use `bindCampaignSystem(campaignId, systemId, { expectedUpdatedAt, system, expectedBinding }, { idempotencyKey })` to select its exact installed `{ systemId, version, checksum }`. This requires a GM with `campaign.update`; use `null` only when there is no previous binding. Binding does not change the campaign default. The separate `installSystem(campaignId, systemId, expectedUpdatedAt, idempotencyKey)` activation method requires the current campaign revision and an existing valid binding for declarative systems.
+
+Treat `400 invalid_system_manifest`, `403`, `409`, and structured `422` errors as expected integration outcomes. The catalog's `runtimeCapabilities`, `unsupportedCapabilities`, `installedVersions`, and campaign `binding` describe the host's supported runtime and selected version. Manifest claims do not load arbitrary package code.
 
 Package registration and registry synchronization are operator mutations. Pass a stable idempotency key to `registerPlugin(...)` and `syncPluginRegistry(...)`; registry sync also requires the exact `expectedRegistryRevision` from `GET /api/v1/admin/plugins/reviews` or `GET /api/v1/admin/plugins/operations`. A successful sync returns its previous and resulting revisions. Reuse the same key only when retrying the same request after an uncertain transport outcome.
 

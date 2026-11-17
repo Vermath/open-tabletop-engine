@@ -53,6 +53,14 @@ export function shouldPreserveAdvancementCatalog(loadedActorId: string, requeste
   return loadedActorId === requestedActorId;
 }
 
+export function isAdvancementCatalogVisible(input: { advancementModalOpen: boolean; workspaceMode: string; inspectorVisible: boolean; tab: string }): boolean {
+  return input.advancementModalOpen || (
+    (input.workspaceMode === "live" || input.workspaceMode === "prep")
+    && input.inspectorVisible
+    && (input.tab === "actors" || input.tab === "plugins")
+  );
+}
+
 export function useAdvancementCatalog(input: { campaignId: string; actor?: Actor; disabled?: boolean }) {
   const [data, setData] = useState<AdvancementCatalogData>(emptyCatalog);
   const [loadState, setLoadState] = useState<"idle" | "loading" | "ready" | "error">("idle");

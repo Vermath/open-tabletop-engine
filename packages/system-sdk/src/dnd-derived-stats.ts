@@ -1,4 +1,4 @@
-import type { Actor, Item } from "@open-tabletop/core";
+import type { Actor, Item } from "@open-tabletop/api-contracts";
 
 type JsonRecord = Record<string, unknown>;
 

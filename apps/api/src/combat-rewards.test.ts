@@ -40,6 +40,8 @@ function addRewardFixtures(store: MemoryStateStore) {
   });
   store.state.actors.push(first, second);
   store.state.combats.push(combat);
+  store.save();
+  store.flush();
   return { first, second, combat };
 }
 

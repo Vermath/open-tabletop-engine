@@ -677,9 +677,101 @@
       "id": "FF-027",
       "status": "fixed",
       "summary": "The atomic scene-duplication E2E could falsely time out before reaching the feature when the first Demo GM login request hit a transient connection failure.",
-      "repair": "Added a bounded retry around only the demo-workspace readiness precondition while preserving the forced commit failure and zero-partial-copy assertions unchanged.",
+      "repair": "Isolated the feature assertions from the login precondition, then removed the one-off test retry after FF-032 moved bounded recovery into the seeded-demo product path; forced commit failure and zero-partial-copy assertions remain unchanged.",
       "regressionEvidence": [
         "tests/e2e/auth-tabletop.spec.ts"
+      ],
+      "browserEvidence": []
+    },
+    {
+      "id": "FF-028",
+      "status": "fixed",
+      "summary": "Vite API-fingerprint watcher tests used Windows-only fixture paths, so the hosted Linux release gate rejected valid platform-native path matching.",
+      "repair": "Constructed watcher fixture roots and event paths with node:path so the same behavioral contract runs on Windows and POSIX hosts.",
+      "regressionEvidence": [
+        "apps/web/src/vite-config.test.ts"
+      ],
+      "browserEvidence": []
+    },
+    {
+      "id": "FF-029",
+      "status": "fixed",
+      "summary": "The public simulation results embedded a developer-local filesystem path, causing the documentation publication guard to reject the site build.",
+      "repair": "Reworded the finding with a platform-neutral path description while preserving the cross-platform diagnosis and evidence.",
+      "regressionEvidence": [
+        "docs/verification/full-feature-browser-simulation-results-2026-07-18.md",
+        "scripts/build-docs-site.mjs"
+      ],
+      "browserEvidence": []
+    },
+    {
+      "id": "FF-030",
+      "status": "fixed",
+      "summary": "Turbo 2.10.4 switched GitHub Actions test output to grouped log blocks, so the release evidence parser omitted per-package test counts and rejected the hosted gate after both cold checks passed.",
+      "repair": "Added stateful parsing for Turbo test group boundaries while retaining support for prefixed test summary lines, with regression coverage for grouped, prefixed, and mixed output.",
+      "regressionEvidence": [
+        "scripts/release-gate-evidence.mjs",
+        "scripts/test-release-gate-evidence.mjs"
+      ],
+      "browserEvidence": []
+    },
+    {
+      "id": "FF-031",
+      "status": "fixed",
+      "summary": "A release-evidence output destination directly inside an existing Windows drive root could fail with EPERM because the recorder unconditionally called recursive directory creation for that root.",
+      "repair": "Added an existence guard before parent-directory creation, with functional regression coverage that simulates the Windows-root failure and covers missing-directory creation.",
+      "regressionEvidence": [
+        "scripts/record-release-evidence.mjs",
+        "scripts/release-evidence-output.mjs",
+        "scripts/test-release-gate-evidence.mjs"
+      ],
+      "browserEvidence": []
+    },
+    {
+      "id": "FF-032",
+      "status": "fixed",
+      "summary": "A transient first Demo GM login connection failure left the product on Sign In with Failed to fetch, blocking unrelated actual-play journeys before their feature began.",
+      "repair": "Added one 200 ms abort-aware retry only for transport-rejected seeded-demo login requests using deferred credentials; HTTP and auth responses, persisted sessions, non-demo and password logins, second failures, aborted switches, and stale credential tickets remain non-retryable or non-committing.",
+      "regressionEvidence": [
+        "apps/web/src/api.ts",
+        "apps/web/src/api.test.ts",
+        "tests/e2e/auth-tabletop.spec.ts"
+      ],
+      "browserEvidence": []
+    },
+    {
+      "id": "FF-033",
+      "status": "fixed",
+      "summary": "The FF-032 retry pushed the production entry's initial static graph to 1,600,274 bytes, exceeding the enforced 1,600,000-byte budget and blocking the web build.",
+      "repair": "Left the FF-032 login implementation unchanged and stopped forcing the small eager dice engine into the lazy 3D physics vendor chunk. The physics vendor is now truly deferred, and budget enforcement runs against the finalized emitted bundle; the exact initial static graph is 1,048,365 bytes without raising the 1,600,000-byte budget.",
+      "regressionEvidence": [
+        "apps/web/vite.config.ts",
+        "apps/web/src/vite-config.test.ts",
+        "tests/e2e/dice-toggle.spec.ts",
+        "apps/web/src/api.test.ts",
+        "tests/e2e/auth-tabletop.spec.ts"
+      ],
+      "browserEvidence": []
+    },
+    {
+      "id": "FF-034",
+      "status": "fixed",
+      "summary": "Under full-suite contention, the gridless-scene and reviewed typed-damage API integration tests could exceed Vitest's generic 5-second default even though immediate focused reruns completed well below that limit.",
+      "repair": "Applied the repository's established 15-second allowance to those two multi-request integration tests. Those explicit guards remain; FF-035 subsequently corrected the same contention budget at the API functional-project boundary.",
+      "regressionEvidence": [
+        "apps/api/src/gridless-scene-api.test.ts",
+        "apps/api/src/typed-damage-combat-sync.test.ts"
+      ],
+      "browserEvidence": []
+    },
+    {
+      "id": "FF-035",
+      "status": "fixed",
+      "summary": "Successive clean exact-commit cold suites exhausted Vitest's generic 5-second default in three unrelated full-app API journeys: gridless scenes, reviewed typed damage, and actual request logging. The functional suite contains 588 buildApp invocations across 95 test files, so one-at-a-time exemptions did not match the category's contention profile.",
+      "repair": "Set a 15-second timeout only on the api-functional Vitest project and locked that boundary with a config-contract regression. Retries remain disabled; the isolated performance project keeps its default timeout and explicit performance budgets; the intentional timeout diagnostic remains excluded at 3 seconds; fixture cleanup remains 2.5 seconds; production behavior is unchanged.",
+      "regressionEvidence": [
+        "apps/api/vitest.config.ts",
+        "apps/api/src/vitest-performance-isolation.test.ts"
       ],
       "browserEvidence": []
     }
@@ -719,14 +811,14 @@
   "verification": {
     "focused": {
       "status": "passed",
-      "detail": "Focused regressions for FF-001 through FF-027 passed during remediation; the FF-021 audio-sync gate passed 9 of 9 tests, the FF-022 modal accessibility gate passed 3 of 3 tests, and the FF-027 scene-duplication journey passed five fresh-server repetitions plus a simulated first-login connection abort."
+      "detail": "Focused regressions for FF-001 through FF-035 passed during remediation; the FF-021 audio-sync gate passed 9 of 9 tests, the FF-022 modal accessibility gate passed 3 of 3 tests, FF-027 retained its atomic failure assertions without a one-off login retry, the FF-028 Vite watcher suite passed 11 of 11 with platform-native fixture paths, the FF-029 documentation publication guard passed after path-neutral wording, the FF-030 release-evidence parser covered grouped, prefixed, and mixed Turbo test output, the FF-031 output-directory guard covered existing-root and missing-directory paths, FF-032 covered bounded seeded-demo transport recovery plus no-retry auth, password, second-failure, abort, and stale-commit boundaries, FF-033 left those boundaries unchanged while moving final enforcement to the emitted bundle, reducing its exact initial static graph to 1,048,365 bytes under the unchanged 1,600,000-byte ceiling, and passing all 3 focused 3D-dice Playwright journeys, FF-034 passed five sequential reruns plus a contention run with test-local guards, and FF-035 passed five sequential six-file affected-cohort runs while preserving the isolated performance and diagnostic timeout boundaries."
     },
     "webTypecheck": {
       "status": "passed"
     },
     "webTests": {
       "status": "passed",
-      "detail": "761 web tests passed after FF-021."
+      "detail": "763 web tests passed after FF-033."
     },
     "pnpmCheck": {
       "status": "passed",

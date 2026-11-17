@@ -1,5 +1,6 @@
 import type { Actor } from "@open-tabletop/core";
 import { Users } from "lucide-react";
+import { useEffect, useState } from "react";
 import { formatNumber } from "./sheet-format.js";
 import { setTokenDropPreview, writeTokenDropData } from "./token-drag.js";
 
@@ -21,13 +22,18 @@ export function ActorPlacementTray({
   onSearchChange(value: string): void;
   onPlaceActor(actor: Actor): void;
 }) {
+  const [open, setOpen] = useState(Boolean(search.trim()));
+  useEffect(() => {
+    if (search.trim()) setOpen(true);
+  }, [search]);
   const placeableActors = filterActorPlacementActors(actors, search);
   return (
-    <section className="operator-section placement-tray" aria-label="Actor placement tray">
-      <div className="operator-heading">
-        <div className="section-title">Place actors</div>
-        <strong>click or drag</strong>
-      </div>
+    <details className="operator-section placement-tray placement-tray-disclosure" aria-label="Actor placement tray" open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
+      <summary>
+        <span><Users size={14} aria-hidden="true" /> Place actors</span>
+        <span className="placement-tray-count">{formatNumber(actors.length)}</span>
+      </summary>
+      <div className="placement-tray-body">
       <label>
         <span>Search actors</span>
         <input aria-label="Search actors to place" value={search} placeholder="Character or NPC" onChange={(event) => onSearchChange(event.target.value)} />
@@ -55,6 +61,7 @@ export function ActorPlacementTray({
           </button>
         ))}
       </div>
-    </section>
+      </div>
+    </details>
   );
 }
