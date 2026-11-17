@@ -1,4 +1,5 @@
 import { EmptyState, WorkspaceLoading, canCommitSceneSwitch, preloadWorkspaceScene, retrySceneSwitch } from "./workspace-states.js";
+import { resolveChatRecipientId } from "./chat-recipient.js";
 import { annotationTranslationDelta } from "@open-tabletop/core";
 import { boardRenderCounts } from "./board-render-counts.js";
 import { applySceneVision } from "./player-scene-visibility.js";
@@ -6396,13 +6397,7 @@ export function App() {
   }
 
   function resolveChatRecipient(query?: string): string | undefined {
-    const normalized = query?.trim().toLocaleLowerCase();
-    if (!normalized) return undefined;
-    const match = chatRecipientOptions.find((member) => {
-      const names = [member.user.id, member.user.displayName, member.user.email ?? ""].map((value) => value.toLocaleLowerCase());
-      return names.some((value) => value === normalized || value.includes(normalized));
-    });
-    return match?.user.id;
+    return resolveChatRecipientId(chatRecipientOptions, query);
   }
 
   async function submitChatCommand() {
