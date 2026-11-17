@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { ExternalLink, Grip, Hand, Phone, PhoneOff, X } from "lucide-react";
 import { apiGet } from "./api.js";
 import { useMovablePanel } from "./movable-panel.js";
+import { InterfaceSurface } from "./interface-surfaces.js";
 import "./call-panel.css";
 
 /**
@@ -145,7 +146,7 @@ export function CallFrame(props: { call: CampaignCall }) {
   );
 }
 
-function CallPanel(props: { call: CampaignCall; stage: Exclude<CallStage, "closed">; onJoin(): void; onClose(): void }) {
+function CallPanel(props: { call: CampaignCall; stage: CallStage; closing: boolean; onJoin(): void; onClose(): void }) {
   const panel = useMovablePanel(
     () => ({ x: Math.max(8, (typeof window === "undefined" ? 1280 : window.innerWidth) - 440), y: 72 }),
     { width: 420, height: 340 },
@@ -153,7 +154,7 @@ function CallPanel(props: { call: CampaignCall; stage: Exclude<CallStage, "close
   );
   const joined = props.stage === "joined";
   return (
-    <aside className="call-panel movable-panel" aria-label={`${props.call.provider} call`} style={panel.style} {...panel.panelProps}>
+    <aside className="call-panel movable-panel" data-interface-exit={props.closing || undefined} inert={props.closing} aria-label={`${props.call.provider} call`} style={panel.style} {...panel.panelProps}>
       <header className="call-panel-header floating-panel-header" title="Drag panel. Double-click to minimise; the call keeps running." {...panel.dragHandleProps}>
         <Hand className="floating-panel-drag-icon" size={14} aria-hidden="true" />
         <div className="call-panel-title">
@@ -165,7 +166,7 @@ function CallPanel(props: { call: CampaignCall; stage: Exclude<CallStage, "close
           {joined ? <PhoneOff size={16} aria-hidden="true" /> : <X size={17} aria-hidden="true" />}
         </button>
       </header>
-      {joined ? <CallFrame call={props.call} /> : <CallConsentNotice call={props.call} onJoin={props.onJoin} onDismiss={props.onClose} />}
+      {props.closing ? null : joined ? <CallFrame call={props.call} /> : <CallConsentNotice call={props.call} onJoin={props.onJoin} onDismiss={props.onClose} />}
       <button className="floating-panel-resize-handle" type="button" aria-label="Resize call panel" title="Resize panel" {...panel.resizeHandleProps}>
         <Grip size={13} aria-hidden="true" />
       </button>
@@ -187,13 +188,14 @@ export function CampaignCallControl(props: { campaignId: string }) {
   return (
     <>
       <CallLauncher call={call} stage={stage} onToggle={() => setStage((current) => nextCallStage(current, "toggle", hasCallConsent(call.origin)))} />
-      {stage !== "closed" && createPortal(
-        <CallPanel
+      {createPortal(
+        <InterfaceSurface key={call.url} open={stage !== "closed"} render={(closing) => <CallPanel
           call={call}
           stage={stage}
+          closing={closing}
           onJoin={() => { rememberCallConsent(call.origin); setStage((current) => nextCallStage(current, "confirm", true)); }}
           onClose={() => setStage("closed")}
-        />,
+        />} />,
         document.body
       )}
     </>

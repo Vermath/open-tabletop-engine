@@ -18,6 +18,7 @@ import { RetryableActionNotice, useRetryableAction } from "./retryable-action.js
 import { DynamicVisibilityMask } from "./scene-visibility-mask.js";
 import { anchorScrollDelta, exceedsPanThreshold, scrollKeepingViewCentre, pinchZoom, pointerDistance, pointerMidpoint, wheelEventZoomsMap, wheelZoomFactor, zoomAnchorAt, type ViewportPoint, type ZoomAnchor } from "./map-viewport-gestures.js";
 import { TokenContextMenu, tokenContextMenuActions } from "./token-context-menu.js";
+import { useInterfacePresence } from "./interface-presence.js";
 import { preferredMapRenderer, useBoardCanvasLayers } from "./board-canvas-layers.js";
 import { BoardDarknessLayer, BoardDifficultTerrainLayer, BoardLightingLayer, BoardStructureHandles, BoardVisionMaskLayer, BoardWallLayer, type BoardStructureHandlers } from "./board-layers.js";
 import { useStableHandlers, useStructurallyStable } from "./board-render-stability.js";
@@ -941,7 +942,14 @@ export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: num
     event.stopPropagation();
   }
 
-  const tokenMenuToken = tokenMenu ? tokens.find((token) => token.id === tokenMenu.tokenId) : undefined;
+  const tokenMenuPresence = useInterfacePresence(tokenMenu !== null);
+  const menuScope = props.scene.id + ":" + props.boardCurrentUserId;
+  const departingMenu = useRef<{ position: NonNullable<typeof tokenMenu>; scope: string }>(undefined);
+  useLayoutEffect(() => {
+    if (tokenMenu) departingMenu.current = { position: tokenMenu, scope: menuScope };
+  }, [tokenMenu, menuScope]);
+  const menuPosition = tokenMenu ?? (tokenMenuPresence.mounted && departingMenu.current?.scope === menuScope ? departingMenu.current.position : undefined);
+  const tokenMenuToken = menuPosition ? tokens.find((token) => token.id === menuPosition.tokenId) : undefined;
 
   useEffect(() => {
     const token = selectedViewportToken;
@@ -2047,10 +2055,11 @@ export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: num
         );
       })}
       </div>
-      {tokenMenu && tokenMenuToken && createPortal(
+      {menuPosition && tokenMenuToken && createPortal(
         <TokenContextMenu
           tokenName={tokenMenuToken.name}
-          position={tokenMenu}
+          position={menuPosition}
+          closing={tokenMenuPresence.closing}
           onClose={closeTokenMenu}
           actions={tokenContextMenuActions({
             tokenName: tokenMenuToken.name,

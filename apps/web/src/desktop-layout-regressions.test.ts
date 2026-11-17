@@ -244,7 +244,10 @@ describe("desktop layout regressions", () => {
   it("keeps all Prep destinations visible and makes inspector tabs keyboard-operable", () => {
     expect(stylesSource).toContain(".workspace-prep .inspector-tabs {\n    display: grid;\n    grid-template-columns: repeat(4, minmax(0, 1fr));");
     expect(sceneCanvasSource).toContain('role="tab" aria-controls={props.panelId} aria-selected={props.active} tabIndex={props.active ? 0 : -1}');
-    expect(appSource).toContain('role="tabpanel" id={`inspector-panel-${tab}`} aria-labelledby={`inspector-tab-${tab}`}');
+    expect(appSource).toContain("<InspectorPanelContent ");
+    const panelSource = readFileSync(resolve(__dirname, "interface-surfaces.tsx"), "utf8");
+    expect(panelSource).toContain('role={closing ? undefined : "tabpanel"} id={closing ? undefined : "inspector-panel-" + view.tab}');
+    expect(panelSource).toContain('aria-labelledby={closing ? undefined : "inspector-tab-" + view.tab}');
     expect(sceneCanvasSource).toContain('["ArrowLeft", "ArrowRight", "Home", "End"]');
     expect(appSource).toContain('? ["actors", "compendium", "sessions", "worlds", "handouts", "journal", "memory", "search", "content", "plugins"]');
     expect(navigationSource).toContain('label="Search"');
@@ -653,7 +656,7 @@ describe("desktop layout regressions", () => {
     expect(actorPanelSource).toContain('document.addEventListener("keydown", closeOnEscape);');
     expect(actorPanelSource).toContain('className={`actor-sheet-popout movable-panel actor-tone-${sheetTone}`}');
     expect(actorPanelSource).toContain('aria-label="Close full character sheet"');
-    expect(actorPanelSource).toContain('<h2 id={`actor-full-sheet-title-${props.actor.id}`}>{props.actor.name}</h2>');
+    expect(actorPanelSource).toContain('<h2 id={`actor-full-sheet-title-${sheetActor.id}`}>{sheetActor.name}</h2>');
     expect(actorPanelSource).not.toContain("{props.actor.name} full character sheet");
   });
 
