@@ -1,6 +1,7 @@
 FROM node:26-alpine@sha256:e88a35be04478413b7c71c455cd9865de9b9360e1f43456be5951032d7ac1a66 AS base
 WORKDIR /app
-RUN corepack enable
+# Node.js 25+ no longer bundles Corepack, so install it explicitly.
+RUN npm install -g corepack@0.36.0 && corepack enable
 
 FROM base AS deps
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json tsconfig.base.json ./

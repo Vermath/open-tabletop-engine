@@ -327,6 +327,12 @@ describe("deployment smoke", () => {
     expect(readWorkspaceFile("infra/docker/worker.Dockerfile")).toContain(
       "pnpm turbo run build --filter=@open-tabletop/worker...",
     );
+    // Node.js 25+ images no longer ship Corepack; `corepack enable` alone would fail.
+    for (const dockerfile of ["api", "web", "worker"]) {
+      expect(readWorkspaceFile(`infra/docker/${dockerfile}.Dockerfile`)).toMatch(
+        /RUN npm install -g corepack@\d+\.\d+\.\d+ && corepack enable/,
+      );
+    }
 
     const composeEnvInitializer = readWorkspaceFile(
       "scripts/init-compose-env.mjs",
