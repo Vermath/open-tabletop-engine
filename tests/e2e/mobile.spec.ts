@@ -1,3 +1,4 @@
+import { selectInspectorPanel } from "./inspector-navigation.js";
 import { randomUUID } from "node:crypto";
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
@@ -74,7 +75,7 @@ async function openInspectorPanel(page: Page, panelName: string) {
   const showInspector = page.getByRole("button", { name: "Show inspector", exact: true });
   if (await showInspector.isVisible()) await showInspector.click();
   const visiblePanelName = panelName === "Content" ? "Assets" : panelName;
-  await page.locator(".inspector-tabs").getByRole("tab", { name: visiblePanelName, exact: true }).click();
+  await selectInspectorPanel(page, visiblePanelName);
 }
 
 async function openTokenQuickCreate(page: Page) {

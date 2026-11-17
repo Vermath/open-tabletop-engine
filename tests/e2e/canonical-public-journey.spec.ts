@@ -1,3 +1,4 @@
+import { selectInspectorPanel } from "./inspector-navigation.js";
 import type { APIResponse, Browser, ConsoleMessage, Locator, Page, Request } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { dnd5eSrdCompendium } from "../../packages/system-sdk/src/index.js";
@@ -62,7 +63,7 @@ async function closeManage(page: Page): Promise<void> {
 async function openInspectorPanel(page: Page, panelName: string): Promise<void> {
   const reopen = page.getByRole("button", { name: "Show inspector", exact: true });
   if (await reopen.isVisible()) await reopen.click();
-  await page.locator(".inspector-tabs").getByRole("tab", { name: panelName, exact: true }).click();
+  await selectInspectorPanel(page, panelName);
 }
 
 function selectedActorPanel(page: Page): Locator {

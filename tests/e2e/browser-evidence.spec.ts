@@ -1,3 +1,4 @@
+import { selectInspectorPanel } from "./inspector-navigation.js";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -36,7 +37,7 @@ async function openDetails(details: Locator) {
 }
 
 async function openInspectorPanel(page: Page, panelName: "Actors" | "Combat" | "Journal" | "Plugins" | "Sessions") {
-  await page.locator(".inspector-tabs").getByRole("tab", { name: panelName, exact: true }).click();
+  await selectInspectorPanel(page, panelName);
 }
 
 async function endActiveCombatIfPresent(page: Page): Promise<void> {

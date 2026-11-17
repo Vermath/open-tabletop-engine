@@ -1,3 +1,4 @@
+import { selectInspectorPanel } from "./inspector-navigation.js";
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -412,7 +413,7 @@ async function closeManage(page: Page): Promise<void> {
 }
 
 async function openInspectorPanel(page: Page, name: "Actors" | "Combat" | "Assets"): Promise<void> {
-  await page.locator(".inspector-tabs").getByRole("tab", { name, exact: true }).click();
+  await selectInspectorPanel(page, name);
 }
 
 async function selectPartyActor(page: Page, actorName: string): Promise<void> {

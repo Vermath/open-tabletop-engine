@@ -1,3 +1,4 @@
+import { selectInspectorPanel } from "./inspector-navigation.js";
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -202,10 +203,7 @@ async function openInspectorPanel(page: Page, panelName: string) {
   const reopen = page.getByRole("button", { name: "Show inspector", exact: true });
   if (await reopen.isVisible()) await reopen.click();
   const panelId = panelName === "SDK" ? "plugins" : panelName === "Content" ? "content" : panelName.toLowerCase();
-  const tab = page.locator(`#inspector-tab-${panelId}`);
-  await expect(tab).toBeVisible();
-  await tab.click();
-  await expect(tab).toHaveAttribute("aria-selected", "true");
+  await selectInspectorPanel(page, panelName === "SDK" ? "Plugins" : panelName === "Content" ? "Assets" : panelName);
   await expect(page.locator(`#inspector-panel-${panelId}`)).toBeVisible();
 }
 
@@ -1521,7 +1519,7 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(chatMessages.locator("article", { hasText: "E2E GM moderation checkpoint" }).first()).toContainText("GM");
 
   await page.getByRole("button", { name: "Prep", exact: true }).click();
-  await page.getByRole("tab", { name: "Assets" }).click();
+  await selectInspectorPanel(page, "Assets");
   await expect(page.getByRole("region", { name: "Asset library" })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Asset search" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Asset lifecycle filter" })).toBeVisible();
@@ -1671,7 +1669,7 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(page.locator(".scene-background-preview")).toContainText("e2e-map.svg");
   await closeManage(page);
   await page.getByRole("button", { name: "Prep", exact: true }).click();
-  await page.getByRole("tab", { name: "Assets" }).click();
+  await selectInspectorPanel(page, "Assets");
   const contentImportDrawer = page.locator("details.content-import-drawer");
   await openDetails(contentImportDrawer);
   await expect(contentImportDrawer).toContainText("Content import");
@@ -1728,7 +1726,7 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   expect(importedLedgerId).toBeTruthy();
   await expect(statusMessage(page, "Content import applied")).toBeVisible();
   await expect(importReport).toContainText("applied to items");
-  await page.getByRole("tab", { name: "Actors" }).click();
+  await selectInspectorPanel(page, "Actors");
   await page.getByRole("tab", { name: "Loadout" }).click();
   const assignment = page.getByLabel("Assign item to actor");
   await expect(assignment.getByRole("combobox", { name: "Unassigned item" })).toContainText("E2E Import Ledger");
@@ -1755,7 +1753,7 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(statusMessage(page, "E2E Import Ledger updated")).toBeVisible();
   await expect(importedLoadoutItem).toContainText("E2E Import Ledger x1");
   await page.getByRole("button", { name: "Prep", exact: true }).click();
-  await page.getByRole("tab", { name: "Assets" }).click();
+  await selectInspectorPanel(page, "Assets");
   await openDetails(contentImportDrawer);
   await importReport.getByRole("button", { name: "Rollback" }).click();
   const rollbackConflict = page.getByRole("alert").filter({ hasText: "Rollback Web manual content import import failed" });
@@ -2186,7 +2184,7 @@ test("GM can create a campaign through the setup wizard", async ({ page }) => {
 
   await page.getByRole("button", { name: "Prep", exact: true }).click();
   await expect(sceneTab(page, "First Session")).toBeVisible();
-  await page.getByRole("tab", { name: "Journal" }).click();
+  await selectInspectorPanel(page, "Journal");
   await expect(page.getByRole("heading", { name: "Running your first session", exact: true })).toBeVisible();
   await expect(page.getByText("Create characters from the party rail character creator.")).toBeVisible();
   await expect(page.getByText("Generate a session recap from the Journal tab.")).toBeVisible();
@@ -2213,7 +2211,7 @@ test("GM can create a campaign through the setup wizard", async ({ page }) => {
   await expect(page.getByRole("status").filter({ hasText: "E2E Bare Campaign created with Bare Opening; opened session prep" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Prep", exact: true })).toBeFocused();
   await expect(sceneTab(page, "Bare Opening")).toBeVisible();
-  await page.getByRole("tab", { name: "Journal" }).click();
+  await selectInspectorPanel(page, "Journal");
   await expect(page.getByRole("heading", { name: "Bare Welcome", exact: true })).toBeVisible();
   await expect(page.getByText("A handout for the bare setup path.")).toBeVisible();
   await expect(page.getByText("Running your first session")).not.toBeVisible();
@@ -2400,7 +2398,7 @@ test("GM can export and safely re-import a campaign archive", async ({ page }) =
   await expect(importWizard.getByLabel("Archive import validation")).toContainText("journals");
   await closeManage(page);
   await page.getByRole("button", { name: "Prep", exact: true }).click();
-  await page.getByRole("tab", { name: "Journal" }).click();
+  await selectInspectorPanel(page, "Journal");
   await expect(page.getByRole("heading", { name: selectedJournalTitle, exact: true })).toBeVisible();
   await expect(page.getByText("Imported through the selected-collection archive browser path.")).toBeVisible();
   await openManageCategory(page, "Archives");
@@ -3795,7 +3793,7 @@ test("SDK marketplace is hidden from players in the browser", async ({ page }) =
   await expect(page.getByRole("button", { name: "Account", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add token" })).toHaveCount(0);
   for (const tabName of ["Actors", "Compendium", "Handouts", "Journal", "Search", "Chat", "Combat"]) {
-    await expect(page.getByRole("tablist", { name: "Inspector panels" }).getByRole("tab", { name: tabName, exact: true })).toBeVisible();
+    await selectInspectorPanel(page, tabName);
   }
 
   await page.getByRole("button", { name: "Open command palette" }).click();
@@ -3804,7 +3802,7 @@ test("SDK marketplace is hidden from players in the browser", async ({ page }) =
   await expect(commandPalette.getByText("Open AI Agent", { exact: true })).toHaveCount(0);
   await commandPalette.getByRole("textbox", { name: "Command palette search" }).press("Escape");
 
-  const journalTab = page.getByRole("tab", { name: "Journal", exact: true });
+  const journalTab = await selectInspectorPanel(page, "Journal");
   await expect(journalTab).toHaveAttribute("aria-controls", "inspector-panel-journal");
   await journalTab.click();
   const journalPanel = page.getByRole("tabpanel");
@@ -4243,7 +4241,7 @@ test("player can accept an invite from a private browser session", async ({ brow
     await expect(privatePage.getByText("Campaign Settings")).not.toBeVisible();
     await expect(sceneTab(privatePage, "Vault Entry")).toBeVisible();
     await expect(sceneTab(privatePage, "GM Prep Hidden Scene")).toHaveCount(0);
-    await expect(privatePage.getByRole("tab", { name: "Chat", exact: true })).toBeVisible();
+    await selectInspectorPanel(privatePage, "Chat");
 
     await submitChatCommand(page, "Realtime GM broadcast");
     await openInspectorPanel(privatePage, "Chat");
@@ -4308,7 +4306,7 @@ test("player can accept an invite from a private browser session", async ({ brow
     await expect(privatePage.getByRole("button", { name: `Token ${ownedToken.name}` })).toBeVisible();
     await expect(privatePage.getByRole("button", { name: `Token ${unownedToken.name}` })).toBeVisible();
     await privatePage.getByRole("button", { name: `Token ${ownedToken.name}` }).click();
-    await privatePage.getByRole("tab", { name: "Actors", exact: true }).click();
+    await selectInspectorPanel(privatePage, "Actors");
     const actorPanel = selectedActorPanel(privatePage);
     await expect(actorPanel.getByRole("heading", { name: playerActor.name })).toBeVisible();
     await privatePage.getByRole("tab", { name: "Actions" }).click();
@@ -4533,7 +4531,9 @@ test("character at 0 HP resolves Death Saving Throws from the sheet to a termina
 
   // A healthy character has core rolls but no Death Saving Throw affordance.
   const statsSheet = actorPanel.getByRole("region", { name: "Actor stats sheet" });
-  await expect(statsSheet.getByRole("button", { name: /Roll Strength check/ })).toBeVisible();
+  await statsSheet.getByRole("button", { name: "Roll Strength", exact: true }).click();
+  await expect(statsSheet.getByRole("menuitem", { name: /Roll Strength check/ })).toBeVisible();
+  await page.keyboard.press("Escape");
   await expect(statsSheet.locator(".actor-death-save-row")).toHaveCount(0);
 
   const heroHp = (hero.data.hp as { current: number }).current;

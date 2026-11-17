@@ -1,7 +1,8 @@
 import type { ChatMessage, DiceRoll } from "@open-tabletop/core";
-import { Activity, Check, ChevronDown, Dices, MessageSquare, PencilLine, Plus, Reply, Save, Send, ShieldCheck, Trash2, X } from "lucide-react";
+import { Activity, Check, ChevronDown, Dices, MessageSquare, MoreHorizontal, PencilLine, Plus, Reply, Save, Send, ShieldCheck, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { verifyDiceRoll, type DiceRollVerification, type Snapshot } from "./api.js";
+import { ActionMenu } from "./action-menu.js";
 import { campaignSearchAnchorId } from "./campaign-search-panel.js";
 import { addDieToFormula, adjustDiceModifier, diceQuickPresets, diceTraySides, rollHighlight, rollTermHighlight } from "./dice-insights.js";
 import { errorMessage, formatDateTime, formatNumber, formatRollTermDetail, formatRollTermName, rollTermTotal, safeProbabilityRange, titleCaseLabel } from "./sheet-format.js";
@@ -218,24 +219,36 @@ export function ChatMessageItem(props: { campaignId: string; message: ChatMessag
         <span className="chat-time">{formatDateTime(props.message.createdAt)}</span>
         <span className={`chat-visibility chat-visibility-${props.message.visibility}`}>{chatVisibilityLabel(props.message.visibility)}</span>
         {props.message.editedAt && <span className="chat-edited-label" title={`Edited ${formatDateTime(props.message.editedAt)}`}>edited</span>}
-        <span className="chat-message-actions">
-          {props.onReplyToMessage && <button className="chat-message-action" type="button" aria-label={`Reply to message from ${author}`} title="Reply" onClick={() => props.onReplyToMessage?.(props.message)}><Reply size={12} /></button>}
-          {props.canEdit && !editing && <button className="chat-message-action" type="button" aria-label={`Edit message from ${author}`} title="Edit message" onClick={() => { setEditBody(props.message.body); setEditing(true); }}><PencilLine size={12} /></button>}
-          {props.canModerate && props.onDeleteMessage && (
-            <button className={deleteConfirmation ? "chat-message-action danger" : "chat-message-action"} type="button" aria-label={deleteConfirmation ? `Confirm delete message from ${author}` : `Delete message from ${author}`} title={deleteConfirmation ? "Confirm delete" : "Delete message"} onClick={() => {
-              if (!deleteConfirmation) {
-                setDeleteConfirmation(true);
-                setModerationStatus("Select delete again to confirm.");
-                return;
-              }
-              setModerationStatus("Deleting...");
-              props.onDeleteMessage?.(props.message).catch((error) => {
+        {props.message.moderationStatus && props.message.moderationStatus !== "open" && <span className="chat-visibility"><ShieldCheck size={12} aria-hidden="true" /> {props.message.moderationStatus === "follow_up" ? "Follow up" : "Reviewed"}</span>}
+        {(props.onReplyToMessage || props.canEdit || props.canModerate) && (
+          <ActionMenu label={"More actions for message from " + author} className="chat-message-action" onDismiss={() => setDeleteConfirmation(false)} trigger={<MoreHorizontal size={14} aria-hidden="true" />}>
+            {(close) => <>
+              {props.onReplyToMessage && <button className="ghost-button small" type="button" role="menuitem" onClick={() => { close(); props.onReplyToMessage?.(props.message); }}><Reply size={12} /> Reply</button>}
+              {props.canEdit && !editing && <button className="ghost-button small" type="button" role="menuitem" onClick={() => { close(); setEditBody(props.message.body); setEditing(true); }}><PencilLine size={12} /> Edit</button>}
+              {props.canModerate && props.onDeleteMessage && <button className="ghost-button small danger" type="button" role="menuitem" onClick={() => {
+                if (!deleteConfirmation) {
+                  setDeleteConfirmation(true);
+                  setModerationStatus("Select delete again to confirm.");
+                  return;
+                }
+                close();
                 setDeleteConfirmation(false);
-                setModerationStatus(`Delete failed: ${errorMessage(error)}`);
-              });
-            }}><Trash2 size={12} /></button>
-          )}
-        </span>
+                setModerationStatus("Deleting...");
+                props.onDeleteMessage?.(props.message).catch((error) => setModerationStatus("Delete failed: " + errorMessage(error)));
+              }}><Trash2 size={12} /> {deleteConfirmation ? "Confirm delete" : "Delete"}</button>}
+              {props.canModerate && props.onModerateMessage && <>
+                <div role="separator" aria-label={"Moderation status for message from " + author} />
+                {(["open", "follow_up", "reviewed"] as const).map((status) => (
+                  <button className="ghost-button small" type="button" role="menuitemradio" key={status} aria-checked={(props.message.moderationStatus ?? "open") === status} onClick={() => {
+                    close();
+                    setModerationStatus("Saving moderation...");
+                    props.onModerateMessage?.(props.message, status).then(() => setModerationStatus("Moderation saved.")).catch((error) => setModerationStatus("Moderation failed: " + errorMessage(error)));
+                  }}>{status === "follow_up" ? "Follow up" : titleCaseLabel(status)}</button>
+                ))}
+              </>}
+            </>}
+          </ActionMenu>
+        )}
       </header>
       {replyMessage && (
         <div className="chat-reply-context" aria-label="Chat reply context">
@@ -265,21 +278,6 @@ export function ChatMessageItem(props: { campaignId: string; message: ChatMessag
       )}
       {props.message.visibility === "whisper" && recipientLabel && <p className="chat-recipient-line">To {recipientLabel}</p>}
       {props.message.rollId && !props.roll && <p className="chat-recipient-line">Roll result is not available in this snapshot.</p>}
-      {props.canModerate && props.onModerateMessage && (
-        <label className="chat-moderation-control">
-          <ShieldCheck size={12} aria-hidden="true" />
-          <span>Moderation</span>
-          <select aria-label={`Moderation status for message from ${author}`} value={props.message.moderationStatus ?? "open"} onChange={(event) => {
-            const status = event.target.value as "open" | "follow_up" | "reviewed";
-            setModerationStatus("Saving moderation...");
-            props.onModerateMessage?.(props.message, status).then(() => setModerationStatus("Moderation saved.")).catch((error) => setModerationStatus(`Moderation failed: ${errorMessage(error)}`));
-          }}>
-            <option value="open">Open</option>
-            <option value="follow_up">Follow up</option>
-            <option value="reviewed">Reviewed</option>
-          </select>
-        </label>
-      )}
       {moderationStatus && <p className="chat-action-status" role="status">{moderationStatus}</p>}
     </article>
   );

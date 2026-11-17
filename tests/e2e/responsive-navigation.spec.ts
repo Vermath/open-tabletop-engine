@@ -1,3 +1,4 @@
+import { selectInspectorPanel } from "./inspector-navigation.js";
 import { randomUUID } from "node:crypto";
 import { expect, test, type Locator } from "@playwright/test";
 
@@ -37,7 +38,9 @@ for (const viewport of [
     await page.goto("/");
     await page.getByRole("button", { name: "Demo GM", exact: true }).click();
     const tabs = page.getByRole("tablist", { name: "Inspector panels" });
-    await expect(tabs.getByRole("tab")).toHaveCount(7);
+    await expect(tabs.getByRole("tab", { name: "Actors" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "More inspector panels" })).toBeVisible();
+    await expect.poll(() => tabs.getByRole("tab").evaluateAll((items) => new Set(items.map((item) => item.getBoundingClientRect().top)).size)).toBe(1);
     await expectUnclippedLabels(tabs.getByRole("tab"));
     if (viewport.width <= 640) {
       const railControls = page.locator(".workspace-mode-switcher button, .rail > .ai-agent-toggle");
@@ -53,8 +56,8 @@ for (const viewport of [
     }
     await tabs.getByRole("tab", { name: "Actors", exact: true }).focus();
     await page.keyboard.press("End");
-    await expect(tabs.getByRole("tab", { name: "Combat", exact: true })).toBeFocused();
-    await tabs.getByRole("tab", { name: "Chat", exact: true }).click();
+    await expect(tabs.getByRole("tab", { selected: true })).toBeFocused();
+    await selectInspectorPanel(page, "Chat");
     await expect(page.getByRole("textbox", { name: "Chat message", exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   });
@@ -121,7 +124,7 @@ test("desktop workspaces emphasize the scene and give preparation its own readin
     await expect(inspector).toBeVisible();
 
     await page.getByRole("button", { name: "Prep", exact: true }).click();
-    await page.getByRole("tablist", { name: "Inspector panels" }).getByRole("tab", { name: "Sessions", exact: true }).click();
+    await selectInspectorPanel(page, "Sessions");
     await expect(page.getByRole("heading", { level: 1, name: "Sessions", exact: true })).toBeVisible();
     const grid = page.locator(".table-grid");
     const scene = page.locator("#scene-workspace");
@@ -146,7 +149,7 @@ test("desktop workspaces emphasize the scene and give preparation its own readin
     await sceneTools.locator(":scope > summary").click();
     await expect(sceneTools.getByRole("textbox", { name: "Scene search", exact: true })).toBeHidden();
 
-    await page.getByRole("tablist", { name: "Inspector panels" }).getByRole("tab", { name: "Actors", exact: true }).click();
+    await selectInspectorPanel(page, "Actors");
     await expect(scene).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   } finally {
@@ -289,7 +292,7 @@ test.describe("short phone scene view", () => {
     await expect(scene).toBeHidden();
     await expect(actors).toHaveAttribute("aria-selected", "true");
 
-    await page.getByRole("tablist", { name: "Inspector panels" }).getByRole("tab", { name: "Sessions", exact: true }).click();
+    await selectInspectorPanel(page, "Sessions");
     const sessions = page.getByRole("region", { name: "Session Desk", exact: true });
     const planSession = sessions.getByRole("button", { name: "Plan session", exact: true });
     await expectUnclippedLabels(planSession);
@@ -322,7 +325,7 @@ test("a hidden chat inspector reports new messages and clears unread only when r
   await expect(page.getByRole("status").filter({ hasText: "Profile preferences synced" })).toBeVisible();
   await manage.getByRole("button", { name: "Close", exact: true }).click();
   const chatTab = page.locator("#inspector-tab-chat");
-  await chatTab.click();
+  await selectInspectorPanel(page, "Chat");
   await page.getByRole("button", { name: "Hide inspector", exact: true }).click();
   await expect(page.locator("#workspace-inspector")).toBeHidden();
 
