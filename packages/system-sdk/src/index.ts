@@ -1,5 +1,6 @@
 import type { Actor, ActorCalculationExplanation, CalculationSource, CalculationTerm, Combat, CompendiumCatalogEntry, CompendiumProvenance, Item, PermissionName, SystemCapability, SystemManifestData } from "@open-tabletop/api-contracts";
 import type { Dnd5eSrdConcentrationCleanup, RulesResolutionActorUpdate } from "./dnd-resolution-types.js";
+import { DND_5E_SRD_COMPENDIUM_PROVENANCE, monsterCatalogEntries } from "./dnd-compendium-catalog.js";
 import { DND_5E_SRD_MONSTER_STAT_BLOCKS, type Dnd5eSrdMonsterAction, type Dnd5eSrdMonsterStatBlock } from "./dnd-monster-stat-blocks.js";
 import { buildDnd5eSrdCalculationExplanation, type Dnd5eSrdCalculationFlagInput, type Dnd5eSrdRollCalculationInput, type Dnd5eSrdScalarCalculationInput } from "./dnd-calculation-explanations.js";
 import {
@@ -751,22 +752,6 @@ export interface MysticNoirCompendiumEntry extends RulesCompendiumEntry {
 }
 
 type GenericFantasyCompendiumEntrySeed = Omit<GenericFantasyCompendiumEntry, "provenance">;
-
-const DND_5E_SRD_COMPENDIUM_PROVENANCE: CompendiumProvenance = {
-  sourceKind: "srd",
-  sourceName: "Dungeons & Dragons System Reference Document",
-  sourceVersion: "5.2.1",
-  contentVersion: "5.2.1",
-  systemId: DND_5E_SRD_SYSTEM_ID,
-  systemVersion: "5.2.1",
-  rulesVersion: DND_5E_SRD_VERSION,
-  license: {
-    name: "Creative Commons Attribution 4.0 International",
-    url: "https://creativecommons.org/licenses/by/4.0/",
-    usage: "srd",
-    attribution: "Dungeons & Dragons System Reference Document 5.2.1 by Wizards of the Coast LLC, licensed under CC BY 4.0."
-  }
-};
 
 function bundledExampleCompendiumProvenance(systemId: string, sourceName: string): CompendiumProvenance {
   return {
@@ -9440,12 +9425,8 @@ function dnd5eSrdMonsterThreat(id: string, name: string, role: string, summary: 
   };
 }
 
-/** The standalone catalog lists placeable monster sources alongside importable actor items. */
 export function dnd5eSrdMonsterCatalog() {
-  return dnd5eSrdEncounterThreats().map((threat) => ({
-    id: 'srd-monster:' + threat.id, type: "monster", name: threat.name, summary: threat.summary,
-    data: { challengeRating: threat.challengeRating }, provenance: structuredClone(DND_5E_SRD_COMPENDIUM_PROVENANCE),
-  }));
+  return monsterCatalogEntries(dnd5eSrdEncounterThreats());
 }
 
 export function dnd5eSrdMonsterActorData(threatId: string): Record<string, unknown> | undefined {
