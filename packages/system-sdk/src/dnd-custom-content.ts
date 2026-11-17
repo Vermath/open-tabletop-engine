@@ -1,4 +1,4 @@
-import type { CompendiumCatalogEntry, ContentImportLicense } from "@open-tabletop/core";
+import type { CompendiumCatalogEntry, ContentImportLicense } from "@open-tabletop/api-contracts";
 
 import { DND_5E_SRD_SYSTEM_ID, DND_5E_SRD_VERSION } from "./index.js";
 

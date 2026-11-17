@@ -2,7 +2,7 @@ import type {
   Dnd5eSrdSpellPreparationMutationResult,
   Dnd5eSrdSpellPreparationPreviewRequest,
   Dnd5eSrdSpellPreparationPreviewResponse,
-} from "@open-tabletop/core";
+} from "@open-tabletop/api-contracts";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import { OpenTabletopClient } from "./index.js";
 

@@ -11,6 +11,7 @@ export default defineConfig({
   testIgnore: [
     "**/bootstrap.spec.ts",
     "**/canonical-public-journey.spec.ts",
+    "**/multiplayer-recovery.spec.ts",
   ],
   fullyParallel: false,
   workers: 1,

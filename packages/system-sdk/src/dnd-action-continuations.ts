@@ -1,4 +1,4 @@
-import type { Item } from "@open-tabletop/core";
+import type { Item } from "@open-tabletop/api-contracts";
 import type { Dnd5eSrdContinuationGrant, Dnd5eSrdCriticalOutcome } from "./dnd-action-economy.js";
 
 type JsonRecord = Record<string, unknown>;

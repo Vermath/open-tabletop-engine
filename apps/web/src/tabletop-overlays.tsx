@@ -1,17 +1,30 @@
-import { Search } from "lucide-react";
+import { RefreshCw, Search, X } from "lucide-react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { filterPaletteCommands, movePaletteIndex, paletteDiceFormula, type PaletteCommand } from "./command-palette.js";
 import { dieShapeName, dieShapePoints, type DiceCastPlan } from "./dice-3d.js";
 import { useModalAccessibility } from "./modal-accessibility.js";
+import { useInterfacePresence, useLeavingInterfaceItems } from "./interface-presence.js";
 import { formatNumber } from "./sheet-format.js";
+import { keyboardShortcutRows } from "./workspace-ui-constants.js";
 
-export function CommandPalette(props: { commands: PaletteCommand[]; onRun(commandId: string): void; onClose(): void }) {
+interface CommandPaletteProps {
+  commands: PaletteCommand[];
+  onRun(commandId: string): void;
+  onClose(): void;
+}
+
+export function CommandPalette({ open, ...props }: CommandPaletteProps & { open: boolean }) {
+  const { mounted, closing } = useInterfacePresence(open);
+  return mounted ? <CommandPaletteContents {...props} closing={closing} /> : null;
+}
+
+function CommandPaletteContents(props: CommandPaletteProps & { closing: boolean }) {
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const dialogRef = useModalAccessibility<HTMLDivElement>(props.onClose, { initialFocusRef: inputRef });
+  const dialogRef = useModalAccessibility<HTMLDivElement>(props.onClose, { enabled: !props.closing, initialFocusRef: inputRef });
 
   const queryFormula = paletteDiceFormula(query);
   const matches = filterPaletteCommands(props.commands, query).slice(0, 12);
@@ -26,13 +39,14 @@ export function CommandPalette(props: { commands: PaletteCommand[]; onRun(comman
 
   return (
     <div
-      className="command-palette-backdrop"
+      className={props.closing ? "command-palette-backdrop interface-exiting" : "command-palette-backdrop"}
+      inert={props.closing}
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) props.onClose();
       }}
     >
-      <div ref={dialogRef} className="command-palette" role="dialog" aria-modal="true" aria-label="Command palette" tabIndex={-1}>
+      <div ref={dialogRef} className="command-palette" role="dialog" aria-modal={props.closing ? undefined : true} aria-label="Command palette" tabIndex={-1}>
         <div className="command-palette-input-row">
           <Search size={16} aria-hidden="true" />
           <input
@@ -110,7 +124,7 @@ export function DiceCastOverlay(props: { casts: DiceCastPlan[] }) {
   return (
     <div className="dice-cast-overlay" aria-hidden="true">
       {props.casts.map((cast) => (
-        <div className={cast.highlight ? `dice-cast dice-cast-${cast.highlight}` : "dice-cast"} key={cast.rollId}>
+        <div className={["dice-cast", cast.settleMs === 0 && "dice-cast-static", cast.highlight && `dice-cast-${cast.highlight}`].filter(Boolean).join(" ")} key={cast.rollId}>
           <div className="dice-cast-dice">
             {cast.dice.map((die) => {
               const shape = dieShapeName(die.sides);
@@ -136,11 +150,73 @@ export function DiceCastOverlay(props: { casts: DiceCastPlan[] }) {
             })}
           </div>
           <div className="dice-cast-label" style={{ "--cast-label-delay": `${cast.settleMs}ms` } as CSSProperties}>
-            <span>{cast.label}</span>
+            <span>{cast.formula}</span>
             <strong>{formatNumber(cast.total)}</strong>
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+export function KeyboardShortcutDialog({ open, onClose }: { open: boolean; onClose(): void }) {
+  const { mounted, closing } = useInterfacePresence(open);
+  const dialogRef = useModalAccessibility<HTMLDivElement>(onClose, { enabled: open });
+  if (!mounted) return null;
+  return (
+    <div className={closing ? "modal-backdrop interface-exiting" : "modal-backdrop"} inert={closing} role="presentation" onMouseDown={(event) => {
+      if (event.target === event.currentTarget) onClose();
+    }}>
+      <div ref={dialogRef} className="modal-dialog shortcut-overlay" role="dialog" aria-modal={closing ? undefined : true} aria-label="Keyboard shortcuts" tabIndex={-1}>
+        <div className="operator-heading">
+          <div className="section-title">Keyboard Shortcuts</div>
+          <button className="icon-button" type="button" aria-label="Close keyboard shortcuts" onClick={onClose}>
+            <X size={15} />
+          </button>
+        </div>
+        <div className="shortcut-grid">
+          {keyboardShortcutRows.map((row) => (
+            <div className="shortcut-row" key={row.keys}>
+              <kbd>{row.keys}</kbd>
+              <span>{row.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function ToastStack(props: { toasts: ReadonlyArray<{ id: number; text: string; tone: "info" | "error"; action?: { label: string; run(): void } }>; onDismiss(id: number): void }) {
+  const leaving = useLeavingInterfaceItems(props.toasts);
+  if (props.toasts.length === 0 && leaving.length === 0) return null;
+  return (
+    <div className="toast-stack">
+      {[...props.toasts.map((toast) => ({ toast, closing: false })), ...leaving.map((toast) => ({ toast, closing: true }))].map(({ toast, closing }) => (
+        <div className={`toast toast-${toast.tone}${closing ? " interface-exiting" : ""}`} inert={closing} key={toast.id}>
+          <span>{toast.text}</span>
+          {toast.action && (
+            <button className="ghost-button small toast-action" type="button" onClick={() => { toast.action!.run(); props.onDismiss(toast.id); }}>
+              {toast.action.label}
+            </button>
+          )}
+          <button className="icon-button" type="button" aria-label="Dismiss notification" onClick={() => props.onDismiss(toast.id)}>
+            <X size={13} />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function RealtimeSyncGuard() {
+  return (
+    <div className="realtime-sync-guard" role="status" aria-live="assertive" aria-label="Refreshing shared table state">
+      <RefreshCw size={18} aria-hidden="true" />
+      <div>
+        <strong>Syncing the table</strong>
+        <span>Refreshing authoritative campaign state before play resumes.</span>
+      </div>
     </div>
   );
 }

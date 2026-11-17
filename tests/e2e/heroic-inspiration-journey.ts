@@ -1,3 +1,4 @@
+import { abilityRoll } from "./inspector-navigation.js";
 import type { APIResponse, Locator, Page } from "@playwright/test";
 import { expect } from "@playwright/test";
 
@@ -39,6 +40,18 @@ type RerollResult = {
 
 type HeroicPair = Pick<RerollResult, "originalRoll" | "reroll">;
 
+async function expectCurrentCampaign(page: Page, campaignName: string): Promise<void> {
+  const currentCampaign = page.getByLabel("Current campaign", { exact: true });
+  await expect(currentCampaign).toBeVisible();
+  await expect(currentCampaign).toHaveText(campaignName);
+}
+
+async function showInspector(page: Page): Promise<void> {
+  const show = page.getByRole("button", { name: "Show inspector", exact: true });
+  if (await show.isVisible()) await show.click();
+  await expect(page.locator(".inspector")).toBeVisible();
+}
+
 export async function exerciseHeroicInspirationJourney(input: {
   apiBaseUrl: string;
   campaignName: string;
@@ -53,7 +66,8 @@ export async function exerciseHeroicInspirationJourney(input: {
     campaignName: input.campaignName,
     characterName: input.characterName,
     expectedVisibility: "public",
-    rollButtonName: /Roll Strength check/,
+    ability: "Strength",
+    action: "check",
   });
   expect(publicPair.originalRoll.actorId).toBe(firstGrant.id);
 
@@ -65,7 +79,8 @@ export async function exerciseHeroicInspirationJourney(input: {
     campaignName: input.campaignName,
     characterName: input.characterName,
     expectedVisibility: "gm_only",
-    rollButtonName: /Roll Dexterity saving throw/,
+    ability: "Dexterity",
+    action: "saving throw",
   });
 
   const [playerHistory, gmHistory] = await Promise.all([
@@ -84,7 +99,7 @@ export async function exerciseHeroicInspirationJourney(input: {
 
 async function grantHeroicInspiration(page: Page, apiBaseUrl: string, campaignName: string, characterName: string): Promise<HeroicActor> {
   await page.reload();
-  await expect(page.getByRole("heading", { name: campaignName })).toBeVisible();
+  await expectCurrentCampaign(page, campaignName);
   const stats = await openActorStats(page, characterName);
   const card = stats.getByRole("region", { name: "Heroic Inspiration", exact: true });
   await expect(card).toContainText("None");
@@ -115,15 +130,16 @@ async function rollAndReroll(
     campaignName: string;
     characterName: string;
     expectedVisibility: "public" | "gm_only";
-    rollButtonName: RegExp;
+    ability: string;
+    action: "check" | "saving throw";
   },
 ): Promise<HeroicPair> {
   await page.reload();
-  await expect(page.getByRole("heading", { name: input.campaignName })).toBeVisible();
+  await expectCurrentCampaign(page, input.campaignName);
   await selectRollVisibility(page, input.expectedVisibility);
   const stats = await openActorStats(page, input.characterName);
   const before = await visibleRollHistory(page, input.apiBaseUrl, input.campaignId);
-  await stats.getByRole("button", { name: input.rollButtonName }).click();
+  await abilityRoll(stats, input.ability, input.action).click();
   await expect.poll(async () => {
     const current = await visibleRollHistory(page, input.apiBaseUrl, input.campaignId);
     const beforeIds = new Set(before.map((roll) => roll.id));
@@ -135,7 +151,7 @@ async function rollAndReroll(
   expect(sourceRoll).toBeDefined();
 
   await page.reload();
-  await expect(page.getByRole("heading", { name: input.campaignName })).toBeVisible();
+  await expectCurrentCampaign(page, input.campaignName);
   const refreshedStats = await openActorStats(page, input.characterName);
   const card = refreshedStats.getByRole("region", { name: "Heroic Inspiration", exact: true });
   await expect(card).toContainText("Ready");
@@ -181,6 +197,7 @@ async function openActorStats(page: Page, characterName: string): Promise<Locato
   const actor = page.getByRole("region", { name: "Party" }).getByRole("button").filter({ hasText: characterName });
   await expect(actor).toBeVisible();
   await actor.click();
+  await showInspector(page);
   await page.locator(".inspector-tabs").getByRole("tab", { name: "Actors", exact: true }).click();
   const inspector = page.locator(".inspector");
   await inspector.getByRole("tab", { name: "Stats" }).click();
@@ -190,6 +207,7 @@ async function openActorStats(page: Page, characterName: string): Promise<Locato
 }
 
 async function selectRollVisibility(page: Page, visibility: "public" | "gm_only"): Promise<void> {
+  await showInspector(page);
   await page.locator(".inspector-tabs").getByRole("tab", { name: "Chat", exact: true }).click();
   const chat = page.locator(".inspector").getByRole("region", { name: "Chat", exact: true });
   await expect(chat).toBeVisible();
@@ -204,7 +222,8 @@ async function assertChatHistory(
   canSeePrivate: boolean,
 ): Promise<void> {
   await page.reload();
-  await expect(page.getByRole("heading", { name: campaignName })).toBeVisible();
+  await expectCurrentCampaign(page, campaignName);
+  await showInspector(page);
   await page.locator(".inspector-tabs").getByRole("tab", { name: "Chat", exact: true }).click();
   const chat = page.locator(".inspector").getByRole("region", { name: "Chat", exact: true });
   await expect(chat).toBeVisible();

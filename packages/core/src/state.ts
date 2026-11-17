@@ -504,6 +504,17 @@ export function normalizeEngineState(input: Partial<EngineState>): EngineState {
     const eventSequence = Number.isSafeInteger(campaign.eventSequence) && (campaign.eventSequence ?? 0) >= 0 ? campaign.eventSequence : 0;
     return aiPolicy ? { ...campaign, aiPolicy, eventSequence } : { ...campaign, aiPolicy: undefined, eventSequence };
   });
+  // Standard player seats no longer inherit Agent access. Preserve the
+  // explicit AI-assisted campaign template for legacy persisted grants.
+  state.permissionGrants = state.permissionGrants.map((grant) => {
+    const aiAssistedTemplateGrant = grant.subjectType === "role"
+      && grant.subjectId === "player"
+      && grant.metadata?.source === "campaign_permission_template"
+      && grant.metadata?.templateId === "ai_assisted"
+      && grant.metadata?.aiUseTemplateVersion !== 1;
+    if (!aiAssistedTemplateGrant) return grant;
+    return { ...grant, permissions: grant.permissions.includes("ai.use") ? grant.permissions : [...grant.permissions, "ai.use"], metadata: { ...grant.metadata, aiUseTemplateVersion: 1 } };
+  });
   // Preserve the existing scene collection when every row is already current.
   // Besides avoiding an unnecessary allocation, archive callers intentionally
   // collect the campaign's scenes once and reuse that collection for token

@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
 import {
   currentWorkspaceState,
   expectedCheckTasks,
@@ -20,6 +20,7 @@ import {
   spawnGateProcess,
   terminateGateProcessTree,
 } from "./release-evidence-process.mjs";
+import { ensureReleaseEvidenceOutputDirectory } from "./release-evidence-output.mjs";
 
 const repoRoot = process.cwd();
 const { gate, outputPath } = parseArguments(process.argv.slice(2));
@@ -118,7 +119,7 @@ const destination =
     "release-evidence",
     `${fileTimestamp(artifact.startedAt)}-${commitSha.slice(0, 12)}-${gate}.json`,
   );
-mkdirSync(dirname(destination), { recursive: true });
+ensureReleaseEvidenceOutputDirectory(destination);
 writeFileSync(destination, `${JSON.stringify(artifact, null, 2)}\n`, "utf8");
 
 console.log(`\nRelease-gate evidence: ${relative(repoRoot, destination)}`);

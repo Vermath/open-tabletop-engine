@@ -1,4 +1,4 @@
-import type { ActorCalculationExplanation, CalculationFieldExplanation, CalculationOverride } from "@open-tabletop/core";
+import type { ActorCalculationExplanation, CalculationFieldExplanation, CalculationOverride } from "@open-tabletop/api-contracts";
 
 type JsonRecord = Record<string, unknown>;
 

@@ -1,9 +1,10 @@
-import { createTimestamped, type Actor, type Combat } from "@open-tabletop/core";
+import type { Actor, Combat } from "@open-tabletop/api-contracts";
+import { timestampedFixture } from "./test-fixtures.js";
 import { describe, expect, it } from "vitest";
 import { advanceDnd5eSrdEffectLifecycle, endDnd5eSrdConcentration } from "./dnd-effect-lifecycle.js";
 
 function actor(id: string, data: Record<string, unknown>): Actor {
-  return createTimestamped("act", {
+  return timestampedFixture({
     id,
     campaignId: "camp_lifecycle",
     systemId: "dnd-5e-srd",

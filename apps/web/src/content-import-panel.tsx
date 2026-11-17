@@ -1,3 +1,4 @@
+import { EmptyState } from "./workspace-states.js";
 import type { ContentImportBatch, ContentImportEntityKind, ContentImportSource, MapAsset, Scene } from "@open-tabletop/core";
 import { Boxes, Check, ChevronDown, ChevronRight, Download, Eye, FileText, Image as ImageIcon, MapPin, Plus, RefreshCw, RotateCcw, Trash2, Upload, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -434,10 +435,8 @@ export function ContentImportPanel(props: {
         )}
         <div className="asset-list asset-list-clean">
           {filteredAssets.length === 0 ? (
-            <div className="empty-state compact asset-empty-state">
-              <strong>{props.assets.length === 0 ? "No assets yet." : "No assets match this view."}</strong>
-              <span>{props.assets.length === 0 ? "Upload campaign art, maps, handouts, or PDFs to start the library." : isFilteringAssets ? "Try clearing search or filters." : "Upload an asset to add it here."}</span>
-            </div>
+            <EmptyState icon={<ImageIcon size={17} />} text={props.assets.length === 0 ? "No assets yet." : "No assets match this view."}
+              action={props.assets.length === 0 && props.canCreateAsset ? { label: "Upload first asset", run: () => document.getElementById(uploadInputId)?.click() } : undefined} />
           ) : (
             filteredAssets.map((asset) => {
               const lifecycle = asset.lifecycle?.status ?? "active";

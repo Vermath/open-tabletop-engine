@@ -18,6 +18,8 @@ function zeroHpFixture(store: MemoryStateStore): { actor: Actor; combat: Combat 
     createdAt: next(actor.updatedAt), updatedAt: next(next(actor.updatedAt))
   };
   store.state.combats.push(combat);
+  store.save();
+  store.flush();
   return { actor, combat };
 }
 
@@ -68,7 +70,10 @@ describe("exact combatant-to-actor lifecycle synchronization", () => {
       });
       expect(undo.statusCode, undo.body).toBe(200);
       expect({ ...undo.json().actors[0], updatedAt: actorBefore.updatedAt }).toEqual(actorBefore);
-      expect({ ...undo.json().combat, updatedAt: combatBefore.updatedAt }).toEqual(combatBefore);
+      expect({ ...undo.json().combat, updatedAt: combatBefore.updatedAt }).toEqual({
+        ...combatBefore,
+        turnPresentation: { currentCombatantId: "cmbt_combatant_actor_sync" },
+      });
     } finally {
       await app.close();
     }

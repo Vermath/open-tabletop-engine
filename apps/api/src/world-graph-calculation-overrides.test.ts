@@ -603,7 +603,7 @@ describe("calculation override ledger security and history", () => {
       const clearPayload = {
         reason: "The temporary ruling expired",
         expectedUpdatedAt: created.json().updatedAt,
-        expectedActorUpdatedAt: actor.updatedAt,
+        expectedActorUpdatedAt: store.state.actors.find((item) => item.id === actor.id)!.updatedAt,
       };
       const clearHeaders = { ...gmHeaders, "idempotency-key": "calculation-override-clear" };
       const cleared = await app.inject({

@@ -15,11 +15,13 @@ export function CombatPanel(props: { campaignId: string; combat?: Combat; recent
   const pendingControlsRef = useRef<Set<string>>(new Set());
   const action = useRetryableAction(`${props.campaignId}:${props.combat?.id ?? "none"}`);
   const combatants = props.combat?.combatants ?? [];
-  const activeCombatant = props.combat && combatants.length > 0 ? combatants[props.combat.turnIndex] ?? combatants[0] : undefined;
+  const activeCombatant = combatTurnCombatant(props.combat, "current");
   const readyCount = combatants.filter((combatant) => combatant.readiness === "ready").length;
   const defeatedCount = combatants.filter((combatant) => combatant.defeated).length;
   const pendingActions = props.combat?.actions?.filter((action) => action.status === "pending_gm") ?? [];
   const turnPending = props.combat ? pendingControls.has(`turn:${props.combat.id}`) : false;
+  const previousTurn = props.combat ? nextCombatTurnPosition(props.combat, -1) : undefined;
+  const canGoPrevious = Boolean(props.combat && previousTurn && (previousTurn.round !== props.combat.round || previousTurn.turnIndex !== props.combat.turnIndex));
   const startPending = pendingControls.has("combat:start");
   const actorById = new Map(props.actors.map((actor) => [actor.id, actor]));
   const tokenById = new Map(props.tokens.map((token) => [token.id, token]));
@@ -136,7 +138,7 @@ export function CombatPanel(props: { campaignId: string; combat?: Combat; recent
           />
           <div className="combatant-list" role="list" aria-label="Initiative order">
             {combatants.map((combatant, index) => {
-              const isTurn = index === props.combat?.turnIndex;
+              const isTurn = combatant.id === activeCombatant?.id;
               const expanded = expandedCombatantId === combatant.id;
               const actor = combatantActor(combatant);
               const hp = actor?.data.hp as { current?: number; max?: number } | undefined;
@@ -259,7 +261,7 @@ export function CombatPanel(props: { campaignId: string; combat?: Combat; recent
             <div className="combat-turn-controls">
               {props.canManage && (
                 <div className="combat-turn-navigation" role="group" aria-label="Turn controls">
-                  <button className="ghost-button" type="button" onClick={() => runPendingControl(`turn:${props.combat!.id}`, "Move to the previous turn", () => props.onPrevious(props.combat!))} disabled={combatants.length === 0 || turnPending}>
+                  <button className="ghost-button" type="button" onClick={() => runPendingControl(`turn:${props.combat!.id}`, "Move to the previous turn", () => props.onPrevious(props.combat!))} disabled={!canGoPrevious || turnPending}>
                     <ChevronLeft size={14} /> Prev
                   </button>
                   <button className="primary-button combat-next-turn" type="button" onClick={() => runPendingControl(`turn:${props.combat!.id}`, "Move to the next turn", () => props.onNext(props.combat!))} disabled={combatants.length === 0 || turnPending}>
@@ -647,12 +649,25 @@ export function nextCombatTurnPosition(combat: Combat, direction: 1 | -1): { tur
       turnIndex = 0;
       round += 1;
     } else if (turnIndex < 0) {
+      if (round <= 1) return { turnIndex: combat.turnIndex, round: combat.round };
       turnIndex = combatants.length - 1;
-      round = Math.max(1, round - 1);
+      round -= 1;
     }
     if (!combatants[turnIndex]?.defeated) return { turnIndex, round };
   }
   return { turnIndex: combat.turnIndex, round: combat.round };
+}
+
+export function combatTurnCombatant(combat: Combat | undefined, turn: "current" | "next"): Combat["combatants"][number] | undefined {
+  if (!combat || combat.combatants.length === 0) return undefined;
+  if (combat.turnPresentation !== undefined) {
+    const combatantId = turn === "current" ? combat.turnPresentation.currentCombatantId : combat.turnPresentation.nextCombatantId;
+    return combatantId ? combat.combatants.find((combatant) => combatant.id === combatantId) : undefined;
+  }
+  const current = combat.combatants[combat.turnIndex] ?? combat.combatants[0];
+  if (turn === "current" || combat.combatants.length < 2) return turn === "current" ? current : undefined;
+  const next = combat.combatants[nextCombatTurnPosition(combat, 1).turnIndex];
+  return next?.id === current?.id ? undefined : next;
 }
 
 

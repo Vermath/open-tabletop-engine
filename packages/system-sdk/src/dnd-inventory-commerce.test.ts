@@ -1,4 +1,5 @@
-import { createTimestamped, type Actor, type Dnd5eInventoryOwnerRef, type Item } from "@open-tabletop/core";
+import type { Actor, Dnd5eInventoryOwnerRef, Item } from "@open-tabletop/api-contracts";
+import { timestampedFixture } from "./test-fixtures.js";
 import { describe, expect, it } from "vitest";
 import {
   DND5E_INVENTORY_METADATA_KEY,
@@ -14,7 +15,7 @@ import {
   dnd5eMerchantData,
 } from "./dnd-inventory-commerce.js";
 
-const actor = createTimestamped("act", {
+const actor = timestampedFixture({
   id: "act_inventory",
   campaignId: "camp_inventory",
   systemId: "dnd-5e-srd",
@@ -29,7 +30,7 @@ const actorOwner: Dnd5eInventoryOwnerRef = { kind: "actor", actorId: actor.id };
 const stashOwner: Dnd5eInventoryOwnerRef = { kind: "party_stash", stashId: "itm_stash" };
 
 function inventoryItem(id: string, name: string, data: Record<string, unknown>, actorId: string | null = actor.id): Item {
-  return createTimestamped("itm", {
+  return timestampedFixture({
     id,
     campaignId: actor.campaignId,
     systemId: actor.systemId,

@@ -23,15 +23,12 @@ export function HpBar(props: { current?: number; max?: number; canEdit: boolean;
     <div className="hp-bar" aria-label={`Hit points ${props.current ?? "?"} of ${props.max ?? "?"}`}>
       <div className="hp-bar-track" role="meter" aria-valuemin={0} aria-valuemax={max} aria-valuenow={current}>
         <div className={`hp-bar-fill ${tone}`} style={{ width: `${max > 0 ? Math.round(ratio * 100) : 0}%` }} />
-        <span className="hp-bar-value">{props.current ?? "?"} / {props.max ?? "?"}</span>
+        <span className="hp-bar-value">HP {props.current ?? "?"} / {props.max ?? "?"}</span>
       </div>
-      {props.damageRequiresReview && (
-        <p className="admin-status" role="note">D&amp;D damage uses Reviewed typed damage so defenses, temporary HP, death saves, and combat state are applied together.</p>
-      )}
       {props.canEdit && (
-        <div className="hp-bar-steppers" role="group" aria-label="Adjust hit points">
+        <div className={props.damageRequiresReview ? "hp-bar-steppers hp-bar-reviewed" : "hp-bar-steppers"} role="group" aria-label="Adjust hit points">
           {props.damageRequiresReview ? (
-            <button className="hp-step hp-step-damage" type="button" aria-label="Open reviewed typed damage" onClick={props.onReviewDamage}>Review damage</button>
+            <button className="hp-step hp-step-damage" type="button" aria-label="Open reviewed typed damage" title="Review damage with resistances, temporary HP, and death saves included" onClick={props.onReviewDamage}>Review damage</button>
           ) : (
             <>
               <button className="hp-step hp-step-damage" type="button" aria-label="Take 5 damage" onClick={() => props.onAdjust(-5)}>-5</button>

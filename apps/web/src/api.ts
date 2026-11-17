@@ -1,5 +1,8 @@
-import type { Actor, AiEvaluationRun, AiMemoryFact, AiThread, AiToolCall, AiUsageMetrics, AudioTrack, AuditLog, CalculationOverride, Campaign, CampaignMember, CampaignPresence, ChatMessage, Combat, ContentImportBatch, DiceMacro, DiceRoll, DiceRollFairness, EmailOutboxMessage, Encounter, FogPreset, Item, JobStatus, JobType, JournalEntry, MapAsset, OrganizationMember, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, ScimAssignableRole, ScimGroup, ScimGroupRoleMapping, Token, User, UserRole, UserSession, VisionSnapshot, WorldRecord, WorldRelation } from "@open-tabletop/core";
+import type { Actor, AiEvaluationRun, AiMemoryFact, AiThread, AiToolCall, AiUsageMetrics, AudioTrack, AuditLog, CalculationOverride, Campaign, CampaignMember, CampaignPresence, ChatMessage, Combat, ContentImportBatch, DiceMacro, DiceRoll, DiceRollFairness, EmailOutboxMessage, Encounter, FogPreset, Item, JobStatus, JobType, JournalEntry, MapAsset, OrganizationMember, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, SystemManifestSchemas, SystemManifestIdentity, DeclarativeSystemDefinition, ScimAssignableRole, ScimGroup, ScimGroupRoleMapping, Token, User, UserRole, UserSession, VisionSnapshot, WorldRecord, WorldRelation } from "@open-tabletop/core";
 import { ApiCompatibilityError, apiBuildFingerprintIssue, apiCompatibilityIssue, type ApiHealthIdentity } from "./api-compatibility.js";
+import type { UniversalVttImportInput, UniversalVttImportResult } from "@open-tabletop/api-contracts";
+
+export type { UniversalVttImportInput, UniversalVttImportResult } from "@open-tabletop/api-contracts";
 
 export { ApiCompatibilityError, apiBuildFingerprintIssue, apiCompatibilityIssue } from "./api-compatibility.js";
 
@@ -42,6 +45,7 @@ let legacySessionUpgradePending = false;
 let legacySessionUpgradePromise: Promise<void> | undefined;
 let statelessDemoApiMode = false;
 let sessionTransportEpoch = 0;
+const seededDemoLoginRetryDelayMs = 200;
 
 async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
   return fetch(input, { ...init, credentials: "include" });
@@ -138,16 +142,49 @@ export async function consumeSsoRedirect(): Promise<string | undefined> {
 
 export async function loginSession(userId = getSessionUserId(), options: { persist?: boolean; signal?: AbortSignal } = {}): Promise<SessionLoginInfo> {
   const demoEmail = demoLoginEmail(userId);
-  const response = await apiFetch(`${baseUrl}/api/v1/auth/login`, {
+  const requestLogin = () => apiFetch(`${baseUrl}/api/v1/auth/login`, {
     method: "POST",
     headers: { "content-type": "application/json", ...(options.persist === false ? { "x-otte-defer-session-cookie": "1" } : {}) },
     body: JSON.stringify(demoEmail ? { email: demoEmail } : { userId }),
     signal: options.signal
   });
+  let response: Response;
+  try {
+    response = await requestLogin();
+  } catch (error) {
+    // Seeded demo buttons use deferred credentials, so a response lost to a
+    // transient connection failure cannot commit a cookie behind the stale
+    // credential ticket guard. Retry that transport failure exactly once.
+    // Password login, HTTP/auth responses, persisted sessions, and aborted
+    // workspace switches deliberately remain single-attempt operations.
+    if (!demoEmail || options.persist !== false || !isTransientFetchFailure(error) || options.signal?.aborted) throw error;
+    await waitForSeededDemoLoginRetry(options.signal);
+    response = await requestLogin();
+  }
   if (!response.ok) throw new Error(await response.text());
   const login = (await response.json()) as SessionLoginInfo;
   if (options.persist !== false) await confirmAndStoreBrowserSession(login);
   return login;
+}
+
+function isTransientFetchFailure(error: unknown): boolean {
+  return error instanceof TypeError;
+}
+
+function waitForSeededDemoLoginRetry(signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.reject(signal.reason ?? new DOMException("Seeded demo sign-in cancelled", "AbortError"));
+  return new Promise((resolve, reject) => {
+    const timer = globalThis.setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, seededDemoLoginRetryDelayMs);
+    const onAbort = () => {
+      globalThis.clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      reject(signal?.reason ?? new DOMException("Seeded demo sign-in cancelled", "AbortError"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 function demoLoginEmail(userId: string): string | undefined {
@@ -293,15 +330,25 @@ export async function confirmPasswordResetSession(input: { token: string; passwo
   return login;
 }
 
+export interface InvitePreviewInfo {
+  invite: CampaignInviteInfo;
+  campaign: Pick<Campaign, "id" | "name" | "description">;
+  expectedUpdatedAt: string;
+}
+
+export async function loadInvitePreview(token: string, options: { signal?: AbortSignal } = {}): Promise<InvitePreviewInfo> {
+  const response = await apiFetch(`${baseUrl}/api/v1/invites/preview?token=${encodeURIComponent(token)}`, {
+    signal: options.signal
+  });
+  if (!response.ok) throw await apiErrorFromResponse(response);
+  return response.json() as Promise<InvitePreviewInfo>;
+}
+
 export async function acceptInviteSession(
   input: { token: string; email: string; displayName?: string; password: string; mfaCode?: string; recoveryCode?: string },
   options: { persist?: boolean; signal?: AbortSignal; idempotencyKey: string }
 ): Promise<InviteAcceptInfo> {
-  const previewResponse = await apiFetch(`${baseUrl}/api/v1/invites/preview?token=${encodeURIComponent(input.token)}`, {
-    signal: options.signal
-  });
-  if (!previewResponse.ok) throw await apiErrorFromResponse(previewResponse);
-  const preview = (await previewResponse.json()) as { expectedUpdatedAt: string };
+  const preview = await loadInvitePreview(input.token, { signal: options.signal });
   const response = await apiFetch(`${baseUrl}/api/v1/invites/accept`, {
     method: "POST",
     headers: { "content-type": "application/json", "idempotency-key": options.idempotencyKey, ...(options.persist === false ? { "x-otte-defer-session-cookie": "1" } : {}) },
@@ -358,10 +405,8 @@ export async function loadOidcConfig(): Promise<OidcConfigInfo> {
 async function ensureSessionToken(): Promise<string> {
   if (statelessDemoApiMode) throw new Error("Demo mode is local-only and cannot call the authenticated API.");
   const token = sessionCredentialToken();
-  const userId = getSessionUserId();
-  if (token) return token;
-  const login = await loginSession(userId);
-  return getSessionToken() || login.token;
+  if (!token) throw new ApiError("Sign in required", 401, { error: "unauthorized", message: "Sign in required" }, "Sign in required");
+  return token;
 }
 
 /** The legacy bearer is private to one upgrade request and never exposed to UI state. */
@@ -533,6 +578,15 @@ export async function apiPost<T>(path: string, body: unknown, options: ApiReques
   });
   if (!response.ok) throw await apiErrorFromResponse(response);
   return response.json() as Promise<T>;
+}
+
+
+export function apiImportUniversalVtt(
+  campaignId: string,
+  input: UniversalVttImportInput,
+  options: ApiRequestOptions & { idempotencyKey: string }
+): Promise<UniversalVttImportResult> {
+  return apiPost<UniversalVttImportResult>(`/api/v1/campaigns/${encodeURIComponent(campaignId)}/scenes/import-universal-vtt`, input, options);
 }
 
 export async function apiAnalyzePdfContentImport(
@@ -1081,15 +1135,15 @@ export interface SystemRuntimeInfo {
     client?: string;
     server?: string;
   };
-  schemas?: {
-    actor?: string;
-    item?: string;
-  };
+  schemas?: SystemManifestSchemas;
   permissions?: PermissionName[];
   capabilities?: string[];
   active: boolean;
   source?: "bundled" | "api";
   dataDriven?: boolean;
+  definition?: DeclarativeSystemDefinition;
+  installedVersions?: SystemManifestIdentity[];
+  binding?: SystemManifestIdentity;
   runtimeCapabilities?: string[];
   unsupportedCapabilities?: string[];
   installedAt?: string;

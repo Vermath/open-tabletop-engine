@@ -363,8 +363,17 @@ describe("deployment smoke", () => {
       "OTTE_ASSET_CDN_BASE_URL must use HTTPS outside loopback development",
     );
     expect(nginxRenderer).toContain(
-      "envsubst '${OTTE_ASSET_CDN_CONNECT_SOURCE}'",
+      "envsubst '${OTTE_ASSET_CDN_CONNECT_SOURCE} ${OTTE_CALL_FRAME_DIRECTIVE} ${OTTE_WEB_PERMISSIONS_POLICY}'",
     );
+    // Frames and device permissions stay same-origin unless the operator configures a call provider.
+    expect(nginx).toContain("worker-src 'self' blob:${OTTE_CALL_FRAME_DIRECTIVE}\" always;");
+    expect(nginx).not.toContain("frame-src");
+    expect(nginx).toContain("add_header Permissions-Policy '${OTTE_WEB_PERMISSIONS_POLICY}' always;");
+    expect(nginxRenderer).toContain("call_configured=${OTTE_CALL_EMBED_URL:-}");
+    expect(nginxRenderer).toContain('OTTE_WEB_PERMISSIONS_POLICY="camera=(), geolocation=(), microphone=()"');
+    expect(nginxRenderer).toContain("OTTE_CALL_EMBED_URL must use HTTPS outside loopback development");
+    expect(compose.match(/OTTE_CALL_EMBED_URL: \$\{OTTE_CALL_EMBED_URL:-\}/g)).toHaveLength(2);
+    expect(compose).toContain("OTTE_CALL_ROOM_SECRET: ${OTTE_CALL_ROOM_SECRET:-}");
     expect(nginxRenderer).not.toContain("connect-src https:");
     expect(nginx).toContain("proxy_set_header Host $http_host;");
     expect(nginx).toContain("proxy_set_header X-Forwarded-Host $http_host;");

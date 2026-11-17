@@ -1,4 +1,4 @@
-import type { Actor, Item } from "@open-tabletop/core";
+import type { Actor, Item } from "@open-tabletop/api-contracts";
 import { dnd5eSrdClassSpellGrantData, dnd5eSrdSpellcastingClassProfile, type Dnd5eSrdSpellAcquisitionMode, type Dnd5eSrdSpellcastingAbility, type Dnd5eSrdSpellcastingClassName } from "./dnd-spell-grants.js";
 import { dnd5eSrdSpellReplacementCount, dnd5eSrdSpellReplacementLimit } from "./dnd-spell-preparation.js";
 import {

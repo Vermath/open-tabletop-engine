@@ -1,3 +1,4 @@
+import { selectInspectorPanel } from "./inspector-navigation.js";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,18 +21,23 @@ function statusMessage(page: Page, text: string | RegExp) {
   return page.getByRole("status").filter({ hasText: text }).first();
 }
 
+async function expectCampaignReady(page: Page): Promise<void> {
+  const campaign = page.getByLabel("Current campaign", { exact: true });
+  await expect(campaign).toBeVisible();
+  await expect(campaign).toHaveText("The Ember Vault");
+}
+
 async function openDetails(details: Locator) {
-  await expect(details.locator("summary")).toBeVisible();
+  const summary = details.locator(":scope > summary");
+  await expect(summary).toBeVisible();
   if (!(await details.evaluate((element) => (element as HTMLDetailsElement).open))) {
-    await details.evaluate((element) => {
-      (element as HTMLDetailsElement).open = true;
-      element.scrollIntoView({ block: "nearest" });
-    });
+    await summary.click();
   }
+  await expect(details).toHaveJSProperty("open", true);
 }
 
 async function openInspectorPanel(page: Page, panelName: "Actors" | "Combat" | "Journal" | "Plugins" | "Sessions") {
-  await page.locator(".inspector-tabs").getByRole("tab", { name: panelName, exact: true }).click();
+  await selectInspectorPanel(page, panelName);
 }
 
 async function endActiveCombatIfPresent(page: Page): Promise<void> {
@@ -95,7 +101,7 @@ async function closeManage(page: Page) {
 async function loginAsDemoGm(page: Page) {
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expectCampaignReady(page);
 }
 
 function selectedActorPanel(page: Page) {
@@ -194,7 +200,7 @@ async function prepareEncounterParty(dialog: Locator, characterName: string) {
 async function createSavedEncounterThroughBuilder(page: Page, input: { characterName: string; encounterName: string }) {
   const threatName = "Goblin Warrior";
   await page.reload();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expectCampaignReady(page);
   await expect(page.getByRole("region", { name: "Party" })).toContainText(input.characterName);
   const dialog = await openEncounterBuilder(page);
   await dialog.getByRole("textbox", { name: "Encounter name" }).fill(input.encounterName);
@@ -255,7 +261,7 @@ async function runLinkedSessionThroughDesk(page: Page, input: { encounterName: s
   await form.getByRole("textbox", { name: "Session title" }).fill(input.sessionTitle);
   await form.getByRole("textbox", { name: "Session agenda" }).fill(`Meet the party, face ${input.encounterName}, and close the first session.`);
   await form.getByRole("textbox", { name: "Session notes" }).fill("Browser evidence: creator, encounter, and session state stayed inside public product controls.");
-  const sceneChoice = form.getByRole("checkbox", { name: "Vault Entry" });
+  const sceneChoice = form.getByRole("checkbox", { name: "Vault Entry", exact: true });
   if (!(await sceneChoice.isChecked())) await sceneChoice.check();
   await openDetails(form.locator("details").filter({ hasText: "Linked encounters" }));
   const encounterChoice = form.getByRole("checkbox", { name: input.encounterName });
@@ -360,7 +366,7 @@ test.describe("browser acceptance evidence", () => {
     await expect(savedAdvancement).toContainText("Saved advancement draft");
 
     await page.reload();
-    await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+    await expectCampaignReady(page);
     await selectPartyActor(page, fighterName);
     await page.getByRole("button", { name: "Prep", exact: true }).click();
     await openInspectorPanel(page, "Plugins");
@@ -375,7 +381,7 @@ test.describe("browser acceptance evidence", () => {
     await expect(savedAdvancement).toContainText("Saved advancement ready for review");
 
     await page.reload();
-    await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+    await expectCampaignReady(page);
     await selectPartyActor(page, fighterName);
     await page.getByRole("button", { name: "Prep", exact: true }).click();
     await openInspectorPanel(page, "Plugins");
@@ -416,6 +422,7 @@ test.describe("browser acceptance evidence", () => {
     await expect.poll(async () => Number(await healingTargetHp.inputValue())).toBeGreaterThan(1);
     const expectedHp = Number(await healingTargetHp.inputValue());
 
+    await openDetails(actorPanel.locator("details.actor-rest-disclosure"));
     const recovery = actorPanel.locator("details.actor-rest-card").first();
     await openDetails(recovery);
     await recovery.getByRole("button", { name: "Review short rest" }).click();
@@ -440,7 +447,7 @@ test.describe("browser acceptance evidence", () => {
       { timeout: 30_000 },
     ).toBe(true);
     await page.reload();
-    await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+    await expectCampaignReady(page);
     await assertPersistedFighterState(page, fighterName, expectedHp);
 
     const managePanel = await openManageCategory(page, "Archives");
@@ -459,7 +466,7 @@ test.describe("browser acceptance evidence", () => {
     await applyReviewedTypedDamageToHp(page, { apiBaseUrl, campaignName: "The Ember Vault", actorName: fighterName, targetHp: 0 });
     await expect(selectedActorPanel(page).getByLabel("Actor sheet healing target HP")).toHaveValue("0");
     await page.reload();
-    await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+    await expectCampaignReady(page);
     await page.getByRole("button", { name: "Live Table", exact: true }).click();
     await selectPartyActor(page, fighterName);
     await openInspectorPanel(page, "Actors");
@@ -475,7 +482,7 @@ test.describe("browser acceptance evidence", () => {
     await expect(importPanel.getByLabel("Archive import recovery")).toHaveCount(0);
     await closeManage(page);
     await page.reload();
-    await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+    await expectCampaignReady(page);
     await assertPersistedFighterState(page, fighterName, expectedHp);
   });
 });

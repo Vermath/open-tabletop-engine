@@ -1,3 +1,4 @@
+import { selectInspectorPanel } from "./inspector-navigation.js";
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 
@@ -27,6 +28,12 @@ function statusMessage(page: Page, text: string | RegExp): Locator {
   return page.getByRole("status").filter({ hasText: text }).first();
 }
 
+async function expectCampaignReady(page: Page): Promise<void> {
+  const campaign = page.getByLabel("Current campaign", { exact: true });
+  await expect(campaign).toBeVisible();
+  await expect(campaign).toHaveText("The Ember Vault");
+}
+
 async function apiJson<T>(
   page: Page,
   method: "GET" | "POST" | "PATCH" | "DELETE",
@@ -51,7 +58,7 @@ async function apiJson<T>(
 async function loginAsDemoGm(page: Page): Promise<void> {
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
-  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await expectCampaignReady(page);
   const cookies = await page.context().cookies(apiBaseUrl);
   expect(cookies.some((cookie) => cookie.name === "otte_session" || cookie.name === "__Host-otte_session")).toBe(true);
 }
@@ -84,7 +91,7 @@ async function openManageCategory(page: Page, categoryName: string): Promise<Loc
 }
 
 async function openInspectorPanel(page: Page, panelName: "Actors" | "Plugins"): Promise<Locator> {
-  await page.locator(".inspector-tabs").getByRole("tab", { name: panelName, exact: true }).click();
+  await selectInspectorPanel(page, panelName);
   const panel = page.getByRole("tabpanel", { name: panelName });
   await expect(panel).toBeVisible();
   return panel;
@@ -238,7 +245,7 @@ test.describe("final strict browser acceptance", () => {
     await expect(creator.getByRole("status").filter({ hasText: "Draft saved in this browser." })).toBeVisible();
 
     await page.reload();
-    await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+    await expectCampaignReady(page);
     await page.getByRole("button", { name: "Open character creator", exact: true }).click();
     const recovery = page.getByRole("dialog", { name: "Recover character draft?" });
     await expect(recovery).toContainText("A saved character is waiting in this browser");
@@ -406,6 +413,9 @@ test.describe("final strict browser acceptance", () => {
       buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600"><rect width="800" height="600" fill="#1f2937"/><path d="M0 0H800V600H0Z" stroke="#f59e0b"/></svg>'),
     });
 
+    const mapPlacementReview = page.getByRole("dialog", { name: `Place ${mapName}`, exact: true });
+    await expect(mapPlacementReview).toContainText("Vault Entry already has a map or prepared content.");
+    await mapPlacementReview.getByRole("button", { name: "Keep canvas and replace map", exact: true }).click();
     await expect(statusMessage(page, `${mapName} is set as the background. Click two grid intersections to calibrate.`)).toBeVisible();
     const calibration = page.locator(".grid-calibration-panel");
     await expect(calibration.getByRole("heading", { name: "Match the map grid" })).toBeVisible();
@@ -419,7 +429,7 @@ test.describe("final strict browser acceptance", () => {
     await expect(statusMessage(page, "Vault Entry grid calibrated to 50 px")).toBeVisible();
 
     await page.reload();
-    await expect(page.locator('.scene-tab', { hasText: "Vault Entry" })).toBeVisible();
+    await expect(page.locator(".scene-tab").filter({ has: page.getByText("Vault Entry", { exact: true }) })).toBeVisible();
     const scenes = await apiJson<Array<{ id: string; name: string; gridSize: number; backgroundAssetId?: string; metadata: JsonRecord }>>(
       page,
       "GET",
