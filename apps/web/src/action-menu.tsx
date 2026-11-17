@@ -19,14 +19,15 @@ export function ActionMenu({ label, trigger, className = "ghost-button small", d
   const close = () => { panel.current?.hidePopover(); button.current?.focus(); };
   return (
     <>
-      <button ref={button} className={className} type="button" aria-label={label} aria-haspopup="menu" aria-controls={id} aria-expanded={open} disabled={disabled}
+      <button ref={button} className={className} type="button" aria-label={label} aria-haspopup="menu" aria-controls={id} aria-expanded={open} popoverTarget={id} disabled={disabled}
         onKeyDown={(event) => { if (event.key === "ArrowDown" && !open) { event.preventDefault(); event.currentTarget.click(); } }}
-        onClick={() => {
+        onClick={(event) => {
+          event.preventDefault();
           const anchor = button.current?.getBoundingClientRect();
           const menu = panel.current;
           if (!anchor || !menu) return;
           if (menu.matches(":popover-open")) { close(); return; }
-          menu.showPopover();
+          menu.showPopover({ source: event.currentTarget });
           const rect = menu.getBoundingClientRect();
           menu.style.left = Math.max(8, Math.min(anchor.right - rect.width, window.innerWidth - rect.width - 8)) + "px";
           menu.style.top = (anchor.bottom + rect.height + 8 <= window.innerHeight ? anchor.bottom + 4 : Math.max(8, anchor.top - rect.height - 4)) + "px";
@@ -39,7 +40,7 @@ export function ActionMenu({ label, trigger, className = "ghost-button small", d
           if (!isOpen) onDismiss?.();
         }}
         onKeyDown={(event) => {
-          if (event.key === "Escape") { event.preventDefault(); close(); return; }
+          if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); return; }
           const choices = items();
           const index = choices.indexOf(document.activeElement as HTMLButtonElement);
           if (choices.length === 0 || !["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;

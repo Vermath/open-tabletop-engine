@@ -63,6 +63,26 @@ for (const viewport of [
   });
 }
 
+test("the inspector menu toggles closed and Escape preserves the active canvas tool", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Demo GM", exact: true }).click();
+  const more = page.getByRole("button", { name: "More inspector panels" });
+  const menu = page.getByRole("menu", { name: "More inspector panels" });
+  const ruler = page.getByRole("button", { name: "Ruler", exact: true });
+  await ruler.click();
+  await more.click();
+  await expect(menu).toBeVisible();
+  await more.click();
+  await expect(menu).toBeHidden();
+  await more.click();
+  await expect(menu).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+  await expect(more).toBeFocused();
+  await expect(ruler).toHaveAttribute("aria-pressed", "true");
+});
+
 test("long connection errors wrap on a phone and can be retried", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 740 });
   await page.route("**/api/v1/health", (route) => route.fulfill({
