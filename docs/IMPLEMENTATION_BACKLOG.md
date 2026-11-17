@@ -27,11 +27,11 @@ This ledger supersedes conflicting open statuses below. The earlier specificatio
 | N19 | Closed in working tree - selected AI/agent routes have contract, revision/idempotency, ordering, and gap-recovery parity. |
 | N20 | Closed in working tree - a deliberately bounded managed-effect lifecycle is authoritative; universal effect automation remains out of scope. |
 
-T38-T42 and T44-T48 are closed in the working tree; T43 is closed as an SRD content decision (do not add non-SRD Aasimar content on a parity assumption). X01-X08 are the only remaining audit gates and are external/manual evidence, not hidden implementation tickets. Any code defect discovered while collecting that evidence reopens as a new ticket with an authoritative path and regression.
+T38-T42 and T44-T48 are closed in the working tree; T43 is closed as an SRD content decision (do not add non-SRD Aasimar content on a parity assumption). With X01 session capture retired, X02-X08 are the remaining audit gates and are external/manual evidence, not hidden implementation tickets. Any code defect discovered while collecting that evidence reopens as a new ticket with an authoritative path and regression.
 
 ### Release qualification queue
 
-RQ01 final local qualification is **complete locally as of 2026-07-17**: `pnpm check`, aggregate/default 62/62 plus bootstrap 1/1, canonical 1/1, full Level 3 combat 1/1, documentation validation, and diff hygiene are green on the exact working tree. RQ02 independent quickstart is next. RQ03-RQ10 remain the ordered X01/X03/X05/X04/X06-X08 evidence and findings-closure work defined in `PRODUCT_ROADMAP.md`; they are not silently replaced by more feature implementation.
+RQ01 final local qualification is **complete locally as of 2026-07-17**: `pnpm check`, aggregate/default 62/62 plus bootstrap 1/1, canonical 1/1, full Level 3 combat 1/1, documentation validation, and diff hygiene are green on the exact working tree. RQ02 independent quickstart is next. RQ05-RQ10 cover the remaining X03/X05/X04/X06-X08 evidence and findings-closure work defined in `PRODUCT_ROADMAP.md`; they are not silently replaced by more feature implementation.
 
 ## 2026-07-16 implementation backlog addendum (authoritative)
 
@@ -87,7 +87,7 @@ This addendum replaces the "small hygiene tranche only" conclusion below. Histor
 - **Dependencies / relevant code:** depends on E1 life-state correctness; primarily `combat-panel.tsx`, `character-creator-dialog.tsx`, campaign setup steps, map/background/grid components, sheet/list panels, and existing typed APIs.
 - **Technical / rules / data / API approach:** compose existing server commands; version client drafts first; add paging/query contracts only where caps hide real data; derive setup readiness from one scene. D&D calculations stay server/shared-rule authoritative.
 - **UI / security / migration implications:** keyboard and small-screen task completion are acceptance criteria; permissions and disabled reasons remain explicit; draft keys are account/campaign scoped and cleared on commit; contract changes are additive.
-- **Test strategy / acceptance / done:** component state/permission tests, E2E close/reload/recover, full-combat panel use, campaign-scale list fixtures, and moderated first-session manual test. Done when no required task loses or silently hides state.
+- **Test strategy / acceptance / done:** component state/permission tests, E2E close/reload/recover, full-combat panel use, campaign-scale list fixtures, and a two-client first-session workflow test. Done when no required task loses or silently hides state.
 - **Effort / confidence:** L / High.
 
 #### E4 - Character and SRD depth
@@ -107,7 +107,7 @@ This addendum replaces the "small hygiene tranche only" conclusion below. Histor
 - **Dependencies / relevant code:** follows stable E1/E2 contracts; journals/handouts/chat, realtime sequencing, session transport/static hosting, authentication throttles, scanner/webhook URL policy, dependency configuration, board input model, migrations and public docs.
 - **Technical / rules / data / API approach:** extend existing sequence/session/permission primitives; use explicit content visibility/provenance; migrate tokens with revocation/compatibility; reuse one outbound-target validator; version all persisted changes.
 - **UI / security / migration implications:** untrusted-user threat model and WCAG task completion are gates; preserve campaign ownership/export; publish compatibility, privacy, AI-provider, and manual-rules boundaries.
-- **Test strategy / acceptance / done:** reconnect/gap tests, security integration and independent review, keyboard/device audit, migration/rollback, restore/load evidence, and recurring external sessions. Done only when no unaccepted Critical/High public risk remains.
+- **Test strategy / acceptance / done:** reconnect/gap tests, security integration and independent review, keyboard/device audit, migration/rollback, and restore/load evidence. Done only when no unaccepted Critical/High public risk remains.
 - **Effort / confidence:** XL / Medium.
 
 
@@ -404,11 +404,10 @@ All committed. See `DND_RULES_AUDIT.md` for the per-ticket resolution table and 
 6. **T42 / T43** as X01 feedback and licensing checks dictate.
 7. **T45** timeboxed whenever convenient.
 
-## External/manual evidence queue (unchanged)
+## External/manual evidence queue
 
 | ID | Required evidence | Release gate |
 | --- | --- | --- |
-| X01 | Repeated internal and invited GM/player sessions, including abandonment, correction, conflict, staff-repair outcomes | Internal Playable / Private Alpha |
 | X02 | Live OIDC/SCIM provider lifecycle, if advertised | Private Alpha |
 | X03 | Timestamped, non-no-op hosted state-plus-asset backup, restore, forward migration, rollback | Private Alpha / Public Beta |
 | X04 | NVDA, Narrator, VoiceOver, TalkBack, Edge, Firefox, Safari, physical touch-device matrix | Private Alpha / Public Beta |

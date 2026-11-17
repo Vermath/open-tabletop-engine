@@ -236,7 +236,7 @@ function runFailsWhenReleaseGateCommandsAreMissing() {
     );
     assert(
       result.stderr.includes(
-        "docs/release/v1.0.md missing final evidence gate: external GM",
+        "docs/release/v1.0.md missing final evidence gate: assistive-technology",
       ),
       "docs check should name missing final evidence gate",
     );
