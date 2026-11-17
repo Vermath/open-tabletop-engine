@@ -17274,7 +17274,7 @@ textarea:focus-visible, summary:focus-visible, a:focus-visible,
   .workspace-scene-tools .prep-primary-actions .ghost-button { min-height: 32px; padding-inline: 7px; font-size: var(--type-small); }
   .scene-management-disclosure > summary { min-height: 32px; }
   .rail, .rail-play { gap: 6px; padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px)); }
-  .rail .workspace-mode-switcher { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); flex: 1 1 auto; width: auto; min-width: 0; gap: 2px; }
+  .rail .workspace-mode-switcher { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); flex: 1 1 0; width: auto; min-width: 0; gap: 2px; }
   .rail .workspace-mode-switcher .ghost-button { flex: 1 1 0; width: auto; min-width: 44px; min-height: 44px; height: 44px; padding: 3px 1px; gap: 3px; font-size: var(--type-small); line-height: 1.1; flex-direction: column; }
   .rail > .ai-agent-toggle { flex: 0 0 44px; width: 44px; min-width: 44px; min-height: 44px; height: 44px; padding: 3px 1px; gap: 3px; font-size: var(--type-small); line-height: 1.1; }
   .table-grid { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(122px, 46%) minmax(0, 54%); }
