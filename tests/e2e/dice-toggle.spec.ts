@@ -109,6 +109,19 @@ test("3D dice hides the roll result until the cast settles", async ({ page }) =>
   await expect(page.locator(".rail > .status")).toContainText(/Rolled [1-4]/);
 });
 
+async function rollFromPage(page: Page, formula: string, visibility: "public" | "gm_only" | "whisper") {
+  await page.evaluate(async ({ apiBaseUrl, formula, visibility }) => {
+    const response = await fetch(`${apiBaseUrl}/api/v1/dice/roll`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID() },
+      body: JSON.stringify({ campaignId: "camp_demo", formula, visibility })
+    });
+    if (!response.ok) throw new Error(await response.text());
+  }, { apiBaseUrl, formula, visibility });
+}
+
+
 test("the dice stage bounds callouts to the board and only displays rolls visible to its viewer", async ({ page, browser, baseURL }) => {
   if (!baseURL) throw new Error("The dice test needs a web base URL.");
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -125,37 +138,64 @@ test("the dice stage bounds callouts to the board and only displays rolls visibl
       await ensure3dDiceEnabled(viewer);
     }));
 
-    async function roll(formula: string, visibility: "public" | "gm_only" | "whisper") {
-      await page.evaluate(async ({ apiBaseUrl, formula, visibility }) => {
-        const response = await fetch(`${apiBaseUrl}/api/v1/dice/roll`, {
-          method: "POST",
-          credentials: "include",
-          headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID() },
-          body: JSON.stringify({ campaignId: "camp_demo", formula, visibility })
-        });
-        if (!response.ok) throw new Error(await response.text());
-      }, { apiBaseUrl, formula, visibility });
-    }
-
     function callout(viewer: Page, formula: string) {
       return viewer.locator(".dice-cast-static .dice-cast-label").filter({ hasText: formula });
     }
 
-    await roll("1d6+31", "public");
+    await rollFromPage(page, "1d6+31", "public");
     await expect(callout(page, "1d6+31")).toBeVisible();
     await expect(callout(player, "1d6+31")).toBeVisible();
     expect(await page.locator(".dice-table-stage").boundingBox()).toEqual(await page.locator(".scene-viewport").boundingBox());
     await expect(page.locator(".dice-table-stage canvas")).toHaveCount(0);
     await expect(player.locator(".dice-table-stage canvas")).toHaveCount(0);
 
-    await roll("1d6+32", "gm_only");
+    await rollFromPage(page, "1d6+32", "gm_only");
     await expect(callout(page, "1d6+32")).toBeVisible();
-    await roll("1d6+33", "whisper");
+    await rollFromPage(page, "1d6+33", "whisper");
     await expect(callout(page, "1d6+33")).toBeVisible();
-    await roll("1d6+34", "public");
+    await rollFromPage(page, "1d6+34", "public");
     await expect(callout(player, "1d6+34")).toBeVisible();
     await expect(player.locator(".dice-cast-label").filter({ hasText: /1d6\+3[23]/ })).toHaveCount(0);
   } finally {
     await playerContext.close();
   }
+});
+
+test("muting interface sounds prevents AudioContext creation during a roll", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.addInitScript(() => {
+    const OriginalAudioContext = window.AudioContext;
+    let contexts = 0;
+    Object.defineProperty(window, "interfaceAudioContexts", { get: () => contexts });
+    window.AudioContext = class extends OriginalAudioContext {
+      constructor(options?: AudioContextOptions) {
+        super(options);
+        contexts += 1;
+      }
+    };
+  });
+  await loginSeededDemo(page);
+  await openInspectorPanel(page, "Chat");
+  await ensure3dDiceEnabled(page);
+  const mute = page.getByRole("button", { name: "Mute interface sounds", exact: true });
+  const unmute = page.getByRole("button", { name: "Unmute interface sounds", exact: true });
+  const countContexts = () => page.evaluate(() => Reflect.get(window, "interfaceAudioContexts") as number);
+  if (await mute.isVisible()) {
+    const update = page.waitForResponse(isProfilePreferenceUpdate);
+    await mute.click();
+    expect((await update).ok()).toBe(true);
+  }
+  await expect(unmute).toBeVisible();
+
+  await rollFromPage(page, "1d6+81", "public");
+  await expect(page.locator(".dice-cast-label").filter({ hasText: "1d6+81" })).toBeVisible();
+  expect(await countContexts()).toBe(0);
+
+  const update = page.waitForResponse(isProfilePreferenceUpdate);
+  await unmute.click();
+  expect((await update).ok()).toBe(true);
+  await expect(mute).toBeVisible();
+  await rollFromPage(page, "1d6+82", "public");
+  await expect(page.locator(".dice-cast-label").filter({ hasText: "1d6+82" })).toBeVisible();
+  await expect.poll(countContexts).toBe(1);
 });
