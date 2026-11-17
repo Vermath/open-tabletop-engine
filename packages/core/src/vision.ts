@@ -352,8 +352,8 @@ function visionBlockingWallSegments(walls: Wall[]): Segment[] {
     .map((wall) => ({ a: { x: wall.x1, y: wall.y1 }, b: { x: wall.x2, y: wall.y2 } }));
 }
 
-export function wallBlocksVision(wall: Pick<Wall, "blocksVision" | "kind" | "open">): boolean {
-  if ((wall.kind === "door" || wall.kind === "window") && wall.open) return false;
+export function wallBlocksVision(wall: Pick<Wall, "blocksVision" | "kind" | "open" | "locked">): boolean {
+  if ((wall.kind === "door" && !wall.locked || wall.kind === "window") && wall.open) return false;
   return wall.blocksVision;
 }
 

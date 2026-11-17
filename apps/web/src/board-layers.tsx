@@ -1,5 +1,6 @@
 import type { Scene, VisionPolygon } from "@open-tabletop/core";
-import { memo } from "react";
+import { memo, useId, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import "./board-light-finish.css";
 import { boardRenderCounts } from "./board-render-counts.js";
 
 /**
@@ -38,13 +39,30 @@ export function lightPolygonClassName(polygon: VisionPolygon): string {
   return ["light-polygon", polygon.lightLevel].filter(Boolean).join(" ");
 }
 
+function FeatherInside({ id }: { id: string }) {
+  return <filter id={id}><feGaussianBlur stdDeviation="2" /><feComposite in2="SourceGraphic" operator="in" /></filter>;
+}
+
+function DoorGlyph({ wall }: { wall: Wall }) {
+  const x = (wall.x1 + wall.x2) / 2;
+  const y = (wall.y1 + wall.y2) / 2;
+  const state = wall.locked ? "locked" : wall.open ? "open" : "closed";
+  const icon = { locked: "M-5 0h10v7h-10z M-3 0v-3a3 3 0 0 1 6 0v3 M0 3v1", open: "M-6 7V-7H5V7 M-6-7L1-4V9L-6 7", closed: "M-5 7V-7H5V7Z M2 0h1" }[state];
+  return <g className={"door-glyph " + state} transform={"translate(" + x + " " + y + ")"}>
+    <rect x="-11" y="-11" width="22" height="22" rx="4" />
+    <path d={icon} />
+  </g>;
+}
+
 export const BoardLightingLayer = memo(function BoardLightingLayer(props: { width: number; height: number; polygons: readonly VisionPolygon[] }) {
+  const feather = useId();
   boardRenderCounts.lighting += 1;
   if (props.polygons.length === 0) return null;
   return (
-    <svg className="lighting-layer" viewBox={`0 0 ${props.width} ${props.height}`} aria-hidden="true">
+    <svg className="lighting-layer" viewBox={`0 0 ${props.width} ${props.height}`} aria-hidden="true" style={{ "--light-feather": "url(#" + feather + ")" } as CSSProperties}>
+      <defs><FeatherInside id={feather} /></defs>
       {props.polygons.map((polygon) => (
-        <polygon key={polygon.id} className={lightPolygonClassName(polygon)} points={polygonPoints(polygon)} style={{ fill: polygon.color ?? "#facc15", opacity: polygon.opacity ?? 0.22 }} />
+        <polygon key={polygon.id} className={lightPolygonClassName(polygon)} points={polygonPoints(polygon)} filter={"url(#" + feather + ")"} style={{ fill: polygon.color ?? "#facc15", opacity: polygon.opacity ?? 0.22 }} />
       ))}
     </svg>
   );
@@ -62,19 +80,21 @@ export const BoardDarknessLayer = memo(function BoardDarknessLayer(props: {
   mundaneMaskId: string;
   magicalMaskId: string;
 }) {
+  const feather = useId();
   boardRenderCounts.darkness += 1;
   if (!props.present) return null;
   return (
     <svg className="darkness-layer" viewBox={`0 0 ${props.width} ${props.height}`} aria-hidden="true">
       <defs>
+        <FeatherInside id={feather} />
         <mask id={props.mundaneMaskId} maskUnits="userSpaceOnUse">
           <rect width={props.width} height={props.height} fill="black" />
-          {props.mundane.map((polygon) => <polygon key={`${polygon.id}-mundane-darkness`} points={polygonPoints(polygon)} fill="white" />)}
+          {props.mundane.map((polygon) => <polygon key={`${polygon.id}-mundane-darkness`} points={polygonPoints(polygon)} fill="white" filter={"url(#" + feather + ")"} />)}
           {props.mundaneBypass.map((polygon) => <polygon key={`${polygon.id}-mundane-bypass`} points={polygonPoints(polygon)} fill="black" />)}
         </mask>
         <mask id={props.magicalMaskId} maskUnits="userSpaceOnUse">
           <rect width={props.width} height={props.height} fill="black" />
-          {props.magical.map((polygon) => <polygon key={`${polygon.id}-magical-darkness`} points={polygonPoints(polygon)} fill="white" />)}
+          {props.magical.map((polygon) => <polygon key={`${polygon.id}-magical-darkness`} points={polygonPoints(polygon)} fill="white" filter={"url(#" + feather + ")"} />)}
           {props.magicalBypass.map((polygon) => <polygon key={`${polygon.id}-magical-bypass`} points={polygonPoints(polygon)} fill="black" />)}
         </mask>
       </defs>
@@ -107,14 +127,16 @@ export const BoardWallLayer = memo(function BoardWallLayer(props: { width: numbe
       {props.walls.map((wall) => (
         <line className={`${wall.kind ?? "wall"} ${wall.open ? "open" : "closed"}`} key={wall.id} x1={wall.x1} y1={wall.y1} x2={wall.x2} y2={wall.y2} />
       ))}
+      {props.walls.filter((wall) => wall.kind === "door").map((wall) => <DoorGlyph key={"door-" + wall.id} wall={wall} />)}
     </svg>
   );
 });
 
 export interface BoardStructureHandlers {
   selectWall(wallId: string): void;
-  togglePortal(wallId: string): void;
+  togglePortal(wallId: string, toggleLock?: boolean): void;
   selectLight(lightId: string): void;
+  setLightAnimation(lightId: string, animation: NonNullable<Light["animation"]>): void;
   [name: string]: (...args: never[]) => unknown;
 }
 
@@ -126,9 +148,13 @@ export const BoardStructureHandles = memo(function BoardStructureHandles(props: 
   lights: readonly Light[];
   selectedWallId: string | undefined;
   selectedLightId: string | undefined;
+  canAnimateLight?: boolean;
   handlers: BoardStructureHandlers;
 }) {
   boardRenderCounts.structureHandles += 1;
+  const door = props.walls.find((wall) => wall.kind === "door" && wall.id === props.selectedWallId);
+  const lockLabel = door?.locked ? "Unlock door" : "Lock door";
+  const light = props.canAnimateLight ? props.lights.find(({ id, kind }) => id === props.selectedLightId && kind !== "darkness") : undefined;
   return (
     <div className="annotation-handles structure-handles" aria-label="Wall and light handles">
       {props.walls.map((wall) => (
@@ -138,7 +164,7 @@ export const BoardStructureHandles = memo(function BoardStructureHandles(props: 
           type="button"
           style={{ left: `${((wall.x1 + wall.x2) / 2 / props.width) * 100}%`, top: `${((wall.y1 + wall.y2) / 2 / props.height) * 100}%` }}
           aria-label={`Select ${wall.kind === "terrain" ? "terrain wall" : wall.kind ?? "wall"}`}
-          title={`${wall.kind === "terrain" ? "Terrain wall" : titleCaseWallKind(wall.kind)}${wall.kind === "door" || wall.kind === "window" ? ` (${wall.open ? "open" : "closed"}) - double-click to ${wall.open ? "close" : "open"}` : ""} - click to select, Delete to remove`}
+          title={`${titleCaseWallKind(wall.kind)}${wall.locked ? " (locked)" : wall.kind === "door" || wall.kind === "window" ? ` (${wall.open ? "open" : "closed"}) - double-click to ${wall.open ? "close" : "open"}` : ""} - click to select, Delete to remove`}
           onPointerDown={(event) => {
             event.preventDefault();
             event.stopPropagation();
@@ -150,10 +176,17 @@ export const BoardStructureHandles = memo(function BoardStructureHandles(props: 
           onDoubleClick={(event) => {
             event.preventDefault();
             event.stopPropagation();
-            if (wall.kind === "door" || wall.kind === "window") props.handlers.togglePortal(wall.id);
+            if ((wall.kind === "door" && !wall.locked) || wall.kind === "window") props.handlers.togglePortal(wall.id);
           }}
         />
       ))}
+      {door && <button
+        className="structure-handle door-lock-toggle"
+        style={{ left: `${((door.x1 + door.x2) / 2 / props.width) * 100}%`, top: `${((door.y1 + door.y2) / 2 / props.height) * 100}%` }}
+        type="button"
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => { event.stopPropagation(); props.handlers.togglePortal(door.id, true); }}
+      >{lockLabel}</button>}
       {props.lights.map((light) => (
         <button
           key={`light-${light.id}`}
@@ -172,30 +205,92 @@ export const BoardStructureHandles = memo(function BoardStructureHandles(props: 
           }}
         />
       ))}
+      {light && <label className="scene-light-animation"
+        style={{ left: `${light.x / props.width * 100}%`, top: `${light.y / props.height * 100}%` }}
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}>
+        Light animation
+        <select value={light.animation ?? "none"} onChange={(event) => props.handlers.setLightAnimation(light.id, event.target.value as NonNullable<Light["animation"]>)}>
+          <option value="none">Steady</option>
+          <option value="flicker">Flicker</option>
+          <option value="pulse">Pulse</option>
+        </select>
+      </label>}
     </div>
   );
 });
 
-export const BoardVisionMaskLayer = memo(function BoardVisionMaskLayer(props: { width: number; height: number; maskId: string; revealed: readonly VisionPolygon[]; hidden: readonly VisionPolygon[] }) {
+interface FogPolygons {
+  revealed: readonly VisionPolygon[];
+  hidden: readonly VisionPolygon[];
+}
+
+function FogMask({ id, width, height, fog, inverse = false }: {
+  id: string; width: number; height: number; fog: FogPolygons; inverse?: boolean;
+}) {
+  const shaded = inverse ? "black" : "white";
+  const clear = inverse ? "white" : "black";
+  return <mask id={id}>
+    <rect width={width} height={height} fill={shaded} />
+    {fog.revealed.map((polygon) => <polygon key={polygon.id} points={polygonPoints(polygon)} fill={clear} />)}
+    {fog.hidden.map((polygon) => <polygon key={polygon.id} points={polygonPoints(polygon)} fill={shaded} />)}
+  </mask>;
+}
+
+function fogGeometry(fog: FogPolygons): string {
+  const revealed = fog.revealed.filter((polygon) => polygon.source === "fog").map(polygonPoints);
+  return JSON.stringify([revealed, fog.hidden.map(polygonPoints)]);
+}
+
+export const BoardVisionMaskLayer = memo(function BoardVisionMaskLayer(props: FogPolygons & { width: number; height: number; maskId: string }) {
+  const { width, height, maskId, revealed, hidden } = props;
+  const previous = useRef<{ maskId: string; geometry: string; fog: FogPolygons }>(undefined);
+  const [transition, setTransition] = useState<{ from: FogPolygons; geometry: string }>();
+  useLayoutEffect(() => {
+    const fog = { revealed, hidden };
+    const geometry = fogGeometry(fog);
+    const before = previous.current;
+    previous.current = { maskId, geometry, fog };
+    if (!before || before.maskId !== maskId) {
+      setTransition(undefined);
+      return;
+    }
+    if (geometry === before.geometry) return;
+    const reduced = document.documentElement.dataset.reducedMotion === "true" || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    setTransition(reduced ? undefined : { from: before.fog, geometry });
+  }, [maskId, revealed, hidden]);
+
+  useLayoutEffect(() => {
+    if (!transition) return;
+    const clear = window.setTimeout(() => setTransition(undefined), 240);
+    return () => window.clearTimeout(clear);
+  }, [transition]);
+
   boardRenderCounts.visionMask += 1;
   return (
-    <svg className="vision-mask-layer" viewBox={`0 0 ${props.width} ${props.height}`} aria-hidden="true">
+    <svg className="vision-mask-layer" viewBox={`0 0 ${width} ${height}`} aria-hidden="true">
       <defs>
-        <mask id={props.maskId}>
-          <rect width={props.width} height={props.height} fill="white" />
-          {props.revealed.map((polygon) => (
-            <polygon key={polygon.id} points={polygonPoints(polygon)} fill="black" />
-          ))}
-          {props.hidden.map((polygon) => (
-            <polygon key={polygon.id} points={polygonPoints(polygon)} fill="white" />
-          ))}
-        </mask>
+        <FogMask id={maskId} width={width} height={height} fog={props} />
+        {transition && <>
+          <FogMask id={maskId + "-prior"} width={width} height={height} fog={transition.from} />
+          <FogMask id={maskId + "-prior-clear"} width={width} height={height} fog={transition.from} inverse />
+          <FogMask id={maskId + "-current-clear"} width={width} height={height} fog={props} inverse />
+        </>}
       </defs>
-      <rect className="vision-dim" width={props.width} height={props.height} mask={`url(#${props.maskId})`} />
-      {props.revealed.map((polygon) => (
+      <rect className="vision-dim" width={width} height={height} mask={`url(#${maskId})`} />
+      {transition && <g key={transition.geometry}>
+        {/* The live fog mask always applies first. Transitional paint can only cover more. */}
+        <g mask={`url(#${maskId}-prior)`}>
+          <rect className="vision-dim fog-shade-transition" width={width} height={height} mask={`url(#${maskId}-current-clear)`} />
+        </g>
+        <g mask={`url(#${maskId})`}>
+          <rect className="fog-hide-feedback fog-shade-transition" width={width} height={height} mask={`url(#${maskId}-prior-clear)`} />
+        </g>
+      </g>}
+      {revealed.map((polygon) => (
         <polygon key={`${polygon.id}-outline`} className={visionPolygonClassName(polygon)} points={polygonPoints(polygon)} />
       ))}
-      {props.hidden.map((polygon) => (
+      {hidden.map((polygon) => (
         <polygon key={`${polygon.id}-outline`} className="vision-outline hide" points={polygonPoints(polygon)} />
       ))}
     </svg>

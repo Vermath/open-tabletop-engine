@@ -11,7 +11,7 @@ const polygon = (id: string, extra: Partial<VisionPolygon> = {}): VisionPolygon 
   ({ id, source: "light", points: [{ x: 0, y: 0 }, { x: 10.5, y: 0 }, { x: 10.5, y: 20 }], ...extra }) as VisionPolygon;
 const wall = (id: string, extra: Partial<Scene["walls"][number]> = {}) => ({ id, x1: 100, y1: 200, x2: 300, y2: 200, ...extra }) as Scene["walls"][number];
 const light = (id: string) => ({ id, x: 250, y: 100, radius: 200, color: "#ffd27a" }) as Scene["lights"][number];
-const handlers: BoardStructureHandlers = { selectWall: () => undefined, togglePortal: () => undefined, selectLight: () => undefined };
+const handlers: BoardStructureHandlers = { selectWall: () => undefined, togglePortal: () => undefined, selectLight: () => undefined, setLightAnimation: () => undefined };
 const memoType = Symbol.for("react.memo");
 
 describe("polygon helpers", () => {
@@ -45,7 +45,10 @@ describe("static board layers", () => {
 
   it("draws light polygons with their colour and opacity, and nothing without any", () => {
     const markup = renderToStaticMarkup(<BoardLightingLayer width={1200} height={800} polygons={[polygon("a", { color: "#7ad1ff", opacity: 0.4, lightLevel: "bright" }), polygon("b")]} />);
-    expect(markup).toBe('<svg class="lighting-layer" viewBox="0 0 1200 800" aria-hidden="true"><polygon class="light-polygon bright" points="0,0 10.5,0 10.5,20" style="fill:#7ad1ff;opacity:0.4"></polygon><polygon class="light-polygon" points="0,0 10.5,0 10.5,20" style="fill:#facc15;opacity:0.22"></polygon></svg>');
+    expect(markup).toMatch(/<svg class="lighting-layer" viewBox="0 0 1200 800" aria-hidden="true" style="--light-feather:url\(#[^)]*\)">/);
+    expect(markup).toContain('<feGaussianBlur stdDeviation="2"></feGaussianBlur><feComposite in2="SourceGraphic" operator="in">');
+    expect(markup).toMatch(/class="light-polygon bright" points="0,0 10.5,0 10.5,20" filter="url\(#[^)]*\)" style="fill:#7ad1ff;opacity:0.4"/);
+    expect(markup).toMatch(/class="light-polygon" points="0,0 10.5,0 10.5,20" filter="url\(#[^)]*\)" style="fill:#facc15;opacity:0.22"/);
     expect(renderToStaticMarkup(<BoardLightingLayer width={1200} height={800} polygons={[]} />)).toBe("");
   });
 
@@ -53,7 +56,8 @@ describe("static board layers", () => {
     const markup = renderToStaticMarkup(
       <BoardDarknessLayer width={1200} height={800} present mundane={[polygon("m")]} magical={[polygon("g")]} mundaneBypass={[polygon("dv")]} magicalBypass={[polygon("ts")]} mundaneMaskId="mask-mundane" magicalMaskId="mask-magical" />
     );
-    expect(markup).toContain('<mask id="mask-mundane" maskUnits="userSpaceOnUse"><rect width="1200" height="800" fill="black"></rect><polygon points="0,0 10.5,0 10.5,20" fill="white"></polygon><polygon points="0,0 10.5,0 10.5,20" fill="black"></polygon></mask>');
+    expect(markup).toContain('<mask id="mask-mundane" maskUnits="userSpaceOnUse"><rect width="1200" height="800" fill="black"></rect><polygon points="0,0 10.5,0 10.5,20" fill="white" filter=');
+    expect(markup).toContain('<polygon points="0,0 10.5,0 10.5,20" fill="black"></polygon></mask>');
     expect(markup).toContain('<mask id="mask-magical" maskUnits="userSpaceOnUse">');
     expect(markup).toContain('<rect class="darkness-fill mundane" width="1200" height="800" mask="url(#mask-mundane)"></rect>');
     expect(markup).toContain('<rect class="darkness-fill magical" width="1200" height="800" mask="url(#mask-magical)"></rect>');
@@ -68,7 +72,8 @@ describe("static board layers", () => {
 
   it("draws every wall as one line in one layer", () => {
     const markup = renderToStaticMarkup(<BoardWallLayer width={1200} height={800} walls={[wall("a"), wall("b", { kind: "door", open: true }), wall("c", { kind: "window" })]} />);
-    expect(markup).toBe('<svg class="wall-layer" viewBox="0 0 1200 800" aria-hidden="true"><line class="wall closed" x1="100" y1="200" x2="300" y2="200"></line><line class="door open" x1="100" y1="200" x2="300" y2="200"></line><line class="window closed" x1="100" y1="200" x2="300" y2="200"></line></svg>');
+    expect(markup).toContain('<svg class="wall-layer" viewBox="0 0 1200 800" aria-hidden="true"><line class="wall closed" x1="100" y1="200" x2="300" y2="200"></line><line class="door open" x1="100" y1="200" x2="300" y2="200"></line><line class="window closed" x1="100" y1="200" x2="300" y2="200"></line>');
+    expect(markup).toContain('<g class="door-glyph open" transform="translate(200 200)">');
     expect(renderToStaticMarkup(<BoardWallLayer width={1200} height={800} walls={[]} />)).toBe("");
   });
 

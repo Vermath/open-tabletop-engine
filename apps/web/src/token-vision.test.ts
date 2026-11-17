@@ -55,8 +55,8 @@ describe("token vision editing", () => {
     expect(appSource).toContain("onTogglePortal={toggleScenePortal}");
     expect(appSource).toContain('kind: "darkness"');
     expect(boardLayersSource).toContain('onDoubleClick={(event) => {');
-    expect(boardLayersSource).toContain('if (wall.kind === "door" || wall.kind === "window") props.handlers.togglePortal(wall.id);');
-    expect(sceneCanvasSource).toContain("if (wall) void props.onTogglePortal(wall);");
+    expect(boardLayersSource).toContain('if ((wall.kind === "door" && !wall.locked) || wall.kind === "window") props.handlers.togglePortal(wall.id);');
+    expect(sceneCanvasSource).toContain("if (wall) void props.onTogglePortal(wall, toggleLock);");
     expect(boardLayersSource).toContain('className="darkness-layer"');
     expect(sceneCanvasSource).toContain("<BoardDarknessLayer");
     expect(sceneCanvasSource).toContain("Player vision: {props.visionPreviewLabel}");

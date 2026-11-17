@@ -1,8 +1,24 @@
 import type { Token, TokenLayer } from "@open-tabletop/core";
-import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
-import { memo } from "react";
+import { Ban, Bed, Droplet, EarOff, EyeOff, Footprints, Ghost, HeartOff, Link, LockKeyhole, Moon, Skull, Snowflake, Sparkles, Unlink, Zap, ZapOff } from "lucide-react";
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
+import { memo, useId } from "react";
 import { boardRenderCounts } from "./board-render-counts.js";
 import { formatNumber } from "./sheet-format.js";
+import "./board-token.css";
+
+const conditionIcons = new Map(Object.entries({
+  blinded: EyeOff, charmed: Sparkles, deafened: EarOff, exhaustion: Moon, frightened: Ghost,
+  grappled: Link, incapacitated: Ban, invisible: Unlink, paralyzed: ZapOff, petrified: Snowflake,
+  poisoned: Droplet, prone: Footprints, restrained: LockKeyhole, stunned: Zap, unconscious: Bed, dead: Skull, dying: HeartOff,
+}));
+
+const tokenTints = ["var(--brass)", "var(--green)", "var(--teal)", "var(--red)", "var(--arcane)"] as const;
+
+function tokenTint(id: string): string {
+  let hash = 0;
+  for (const char of id) hash = (Math.imul(hash, 31) + char.charCodeAt(0)) >>> 0;
+  return tokenTints[hash % tokenTints.length]!;
+}
 
 /**
  * One token on the board, memoised.
@@ -73,6 +89,8 @@ export const BoardToken = memo(function BoardToken(props: BoardTokenProps) {
   const turnStateLabel = isCurrentTurn ? "current turn" : isNextTurn ? "up next" : undefined;
   const tokenHpTone = hpRatio === undefined ? "" : hpRatio <= 0.25 ? "danger" : hpRatio <= 0.5 ? "warning" : "healthy";
   const conditionEntries = JSON.parse(props.conditions) as string[];
+  const descriptionId = useId();
+  const conditionDescription = conditionEntries.length ? descriptionId : undefined;
   return (
     <button
       className={`token layer-${props.layer} ${props.activeLayer ? "active-layer" : "inactive-layer"} ${props.disposition} ${props.imageUrl ? "has-image" : ""} ${props.selected ? "selected" : ""} ${props.primarySelected ? "primary-selected" : ""} ${props.targeted ? "targeted" : ""} ${props.auraCount ? "has-aura" : ""} ${props.dragging ? "dragging" : ""} ${isCurrentTurn ? "turn-current" : ""} ${isNextTurn ? "turn-next" : ""} ${hpRatio !== undefined && hpRatio <= 0 ? "down" : hpRatio !== undefined && hpRatio <= 0.5 ? "bloodied" : ""}`}
@@ -84,11 +102,12 @@ export const BoardToken = memo(function BoardToken(props: BoardTokenProps) {
         top: `${props.top}%`,
         width: `${props.width}%`,
         height: `${props.height}%`,
-        pointerEvents: props.calibrationActive ? "none" : undefined
-      }}
+        pointerEvents: props.calibrationActive ? "none" : undefined,
+        "--token-tint": tokenTint(id),
+      } as CSSProperties}
       aria-label={`${props.layerLabel} token ${props.name}${props.elevation !== 0 ? ` at ${formatNumber(Math.abs(props.elevation))} feet ${props.elevation > 0 ? "above" : "below"} ground` : ""}${turnStateLabel ? `, ${turnStateLabel}` : ""}`}
       aria-pressed={props.selected}
-      aria-describedby={props.describedBy}
+      aria-describedby={[props.describedBy, conditionDescription].filter(Boolean).join(" ")}
       aria-keyshortcuts={props.canMove ? "ArrowUp ArrowDown ArrowLeft ArrowRight" : undefined}
       tabIndex={props.calibrationActive || props.readOnly ? -1 : undefined}
       aria-disabled={props.readOnly || undefined}
@@ -114,18 +133,20 @@ export const BoardToken = memo(function BoardToken(props: BoardTokenProps) {
       )}
       {props.showVitals && (
         <span className={`token-hp ${tokenHpTone}`} aria-hidden="true">
-          <span style={{ width: `${Math.round((hpRatio ?? 0) * 100)}%` }} />
+          <span style={{ "--token-hp-fill": `${Math.round((hpRatio ?? 0) * 100)}%` } as CSSProperties} />
         </span>
       )}
       {(isCurrentTurn || isNextTurn) && <span className={`token-turn-ring ${isCurrentTurn ? "current" : "next"}`} aria-hidden="true" />}
       {conditionEntries.length > 0 ? (
         <span className="token-conditions" aria-hidden="true" title={conditionEntries.join(", ")}>
-          {conditionEntries.slice(0, 3).map((condition, index) => (
-            <small className="token-condition-chip" key={`${id}-condition-${index}`}>{condition}</small>
-          ))}
+          {conditionEntries.slice(0, 3).map((condition, index) => {
+            const Icon = conditionIcons.get(condition.toLowerCase());
+            return <small className="token-condition-chip" key={index} title={condition}>{Icon ? <Icon size={12} /> : condition}</small>;
+          })}
           {conditionEntries.length > 3 && <small className="token-condition-chip overflow">+{conditionEntries.length - 3}</small>}
         </span>
       ) : null}
+      {conditionDescription && <span className="token-condition-description" id={conditionDescription}>{conditionEntries.join(", ")}</span>}
       {props.auraCount ? <small className="token-aura-count">{props.auraCount}</small> : null}
       {props.resizeHandles && (
         <>

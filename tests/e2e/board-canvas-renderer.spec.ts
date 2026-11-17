@@ -15,7 +15,7 @@ const mapFixture = resolve("tests/e2e/fixtures/offset-grid.png");
 const canvasMargin = 256;
 const gmHeaders = { authorization: "Bearer otte-cookie-session", origin: webBaseUrl };
 
-async function api<T>(page: Page, method: "GET" | "POST", path: string, data?: unknown): Promise<T> {
+async function api<T>(page: Page, method: "GET" | "POST" | "PATCH", path: string, data?: unknown): Promise<T> {
   const response = await page.request.fetch(`${apiBaseUrl}${path}`, {
     method, data,
     headers: { ...gmHeaders, ...(method === "GET" ? {} : { "idempotency-key": `board-canvas:${crypto.randomUUID()}` }) },
@@ -149,6 +149,7 @@ test("the canvas renderer draws the same board as the DOM renderer and keeps the
   await expect(board.locator(".light-source")).toHaveCount(2);
   await expect(board.locator(".light-source.darkness")).toHaveCount(1);
   await expect(board.locator(".light-source").first()).toBeHidden();
+
   await expect(board.locator("button.token")).toHaveCount(1);
   expect(await board.locator("canvas.board-map-canvas").evaluate((canvas) => getComputedStyle(canvas).pointerEvents)).toBe("none");
 
@@ -169,6 +170,7 @@ test("the canvas renderer draws the same board as the DOM renderer and keeps the
   // Both screenshots follow the same steps: reopen the scene, select the token, wait for vision.
   board = await openScene(page, scene);
   const canvasShot = await settledScreenshot(page, board);
+  await expect(board.locator(".lighting-layer .light-polygon").first()).toHaveCSS("filter", /url\(.+\).*saturate\(/);
 
   // Same scene, same view, original DOM renderer.
   await page.evaluate(() => window.localStorage.setItem("otte:boardRenderer", "dom"));
@@ -262,4 +264,113 @@ test("the canvas stays the size of the view while zooming and panning, and token
   await page.waitForTimeout(400);
   const after = (await canvasState(board))!;
   expect(after.draws).toBe(before.draws);
+});
+
+test("fading manual fog never renders tokens outside the player's visible area", async ({ page, browser }) => {
+  await login(page);
+  const originallyActive = (await api<Scene[]>(page, "GET", `/api/v1/campaigns/${campaignId}/scenes`)).find((scene) => scene.active);
+  const { scene } = await createMapScene(page);
+  const sceneUrl = `/api/v1/scenes/${scene.id}`;
+  const revision = async () => (await api<Scene>(page, "GET", sceneUrl)).updatedAt;
+  await api(page, "POST", `${sceneUrl}/tokens`, { name: "Fog boundary witness", x: 440, y: 350, expectedUpdatedAt: await revision() });
+  await api(page, "POST", `${sceneUrl}/fog`, { x: 300, y: 375, radius: 215, mode: "reveal", expectedUpdatedAt: await revision() });
+  const context = await browser.newContext({ baseURL: webBaseUrl, extraHTTPHeaders: { Origin: webBaseUrl } });
+  try {
+    await api(page, "PATCH", sceneUrl, { active: true, expectedUpdatedAt: await revision() });
+    const player = await context.newPage();
+    await player.goto("/");
+    await player.evaluate(async (apiOrigin) => {
+      const response = await fetch(`${apiOrigin}/api/v1/auth/login`, {
+        method: "POST", credentials: "include", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: "player@example.test" })
+      });
+      if (!response.ok) throw new Error(await response.text());
+      const login = await response.json() as { user: { id: string } };
+      localStorage.setItem("otte:userId", login.user.id);
+      localStorage.setItem("otte:sessionTransport", "cookie");
+    }, apiBaseUrl);
+    await player.reload();
+
+    const board = player.getByRole("group", { name: `${scene.name} interactive battle map`, exact: true });
+    const witness = board.getByRole("button", { name: /token Fog boundary witness$/ });
+    const outside = board.getByRole("button", { name: /token Canvas scout$/ });
+    await expect(witness).toBeVisible();
+    await expect(outside).toHaveCount(0);
+    await player.evaluate(() => {
+      let faded = false;
+      Object.defineProperty(window, "fogFadeObserved", { get: () => faded });
+      const observer = new MutationObserver(() => {
+        if (!document.querySelector(".vision-mask-layer .fog-shade-transition")) return;
+        faded = true;
+        observer.disconnect();
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+    });
+    await api(page, "POST", `${sceneUrl}/fog`, { x: 465, y: 375, radius: 55, mode: "hide", expectedUpdatedAt: await revision() });
+    await expect(witness).toHaveCount(0);
+    await expect(outside).toHaveCount(0);
+    await expect.poll(() => player.evaluate(() => Reflect.get(window, "fogFadeObserved"))).toBe(true);
+  } finally {
+    await context.close();
+    if (originallyActive) {
+      const previousUrl = `/api/v1/scenes/${originallyActive.id}`;
+      const previous = await api<Scene>(page, "GET", previousUrl);
+      await api(page, "PATCH", previousUrl, { active: true, expectedUpdatedAt: previous.updatedAt });
+    }
+  }
+});
+
+test("a selected door can be locked and unlocked on the board", async ({ page }) => {
+  await login(page);
+  const { scene } = await createMapScene(page);
+  const path = `/api/v1/scenes/${scene.id}`;
+  await api(page, "POST", path + "/walls", { kind: "door", open: true, x1: 290, y1: 220, x2: 400, y2: 220, expectedUpdatedAt: scene.updatedAt });
+  const board = await openScene(page, scene);
+  const handle = board.getByRole("button", { name: "Select door", exact: true });
+  await expect(board.locator(".door-glyph.open")).toHaveCount(1);
+  await handle.click();
+  await board.getByRole("button", { name: "Lock door", exact: true }).click();
+  await expect(board.locator(".door-glyph.locked")).toHaveCount(1);
+  await handle.dblclick();
+  await expect(board.locator(".door-glyph.locked")).toHaveCount(1);
+  await board.getByRole("button", { name: "Unlock door", exact: true }).click();
+  await expect(board.locator(".door-glyph.closed")).toHaveCount(1);
+  await handle.dblclick();
+  await expect(board.locator(".door-glyph.open")).toHaveCount(1);
+});
+
+test("animated lights reuse their canvas during small pans and are edited on the board", async ({ page }) => {
+  await login(page);
+  const { scene } = await createMapScene(page);
+  const board = await openScene(page, scene);
+  await board.getByRole("button", { name: "Select light", exact: true }).first().click();
+  const picker = board.getByRole("combobox", { name: "Light animation", exact: true });
+  await expect(picker).toHaveValue("none");
+  await picker.selectOption("pulse");
+  await expect(picker).toHaveValue("pulse");
+  const canvas = board.locator("canvas.board-light-animation");
+  await expect(canvas).toBeVisible();
+  const zoom = page.getByRole("button", { name: "Zoom battle map in", exact: true });
+  for (let index = 0; index < 5; index += 1) await zoom.click();
+  const pan = await canvas.evaluate(async (canvas) => {
+    const viewport = canvas.closest<HTMLElement>(".scene-viewport")!;
+    const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    viewport.scrollLeft = Math.min(60, Math.floor((viewport.scrollWidth - viewport.clientWidth) / 2));
+    await nextFrame();
+    await nextFrame();
+    const before = viewport.scrollLeft;
+    let canvasChanges = 0;
+    const observer = new MutationObserver((entries) => { canvasChanges += entries.length; });
+    observer.observe(canvas, { attributes: true, attributeFilter: ["width", "height", "style"] });
+    for (let step = 0; step < 8; step += 1) {
+      viewport.scrollLeft += 2;
+      await nextFrame();
+    }
+    observer.disconnect();
+    return { distance: viewport.scrollLeft - before, canvasChanges };
+  });
+  expect(pan.distance).toBeGreaterThan(0);
+  expect(pan.canvasChanges).toBe(0);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(canvas).toBeHidden();
 });

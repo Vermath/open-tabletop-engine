@@ -1,5 +1,5 @@
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import "./inspector-resize.css";
 
 export const inspectorWidthStorageKey = "otte:inspectorWidth";
@@ -55,7 +55,7 @@ export function InspectorResizeHandle(props: { inspectorId: string; onResize(wid
   const [inspectorWidth, setInspectorWidth] = useState(0);
   const dragRef = useRef<{ pointerId: number } | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const inspector = document.getElementById(props.inspectorId);
     if (!inspector) return;
     const measure = () => setInspectorWidth(inspector.offsetWidth);

@@ -89,6 +89,7 @@ export function AudioPlaybackLayer(props: { tracks: AudioTrack[]; masterVolume: 
 }
 
 export function AudioSoundboard(props: {
+  closing?: boolean;
   tracks: AudioTrack[];
   masterVolume: number;
   muted: boolean;
@@ -128,7 +129,7 @@ export function AudioSoundboard(props: {
   };
 
   return (
-    <aside className="audio-soundboard movable-panel" aria-label="Soundboard" style={soundboardPanel.style} {...soundboardPanel.panelProps}>
+    <aside className="audio-soundboard movable-panel" data-interface-exit={props.closing || undefined} inert={props.closing} aria-label="Soundboard" style={soundboardPanel.style} {...soundboardPanel.panelProps}>
       <header className="audio-soundboard-header floating-panel-header" title="Drag panel" {...soundboardPanel.dragHandleProps}>
         <Hand className="floating-panel-drag-icon" size={14} aria-hidden="true" />
         <div className="section-title">

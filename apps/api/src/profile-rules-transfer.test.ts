@@ -15,14 +15,14 @@ describe("persisted profile, campaign rules, and character transfer contracts", 
         payload: {
           expectedUpdatedAt: user.updatedAt,
           displayName: "Table Player",
-          preferences: { theme: "ember", dice3dEnabled: false, reducedMotion: true, chatNotifications: "all" }
+          preferences: { theme: "ember", dice3dEnabled: false, reducedMotion: true, chatNotifications: "all", interfaceSounds: { enabled: false, volume: 0.4 } }
         }
       });
       expect(updated.statusCode).toBe(200);
       expect(updated.json().user).toMatchObject({
         id: user.id,
         displayName: "Table Player",
-        preferences: { theme: "ember", dice3dEnabled: false, reducedMotion: true, chatNotifications: "all" }
+        preferences: { theme: "ember", dice3dEnabled: false, reducedMotion: true, chatNotifications: "all", interfaceSounds: { enabled: false, volume: 0.4 } }
       });
       expect(updated.body).not.toContain("passwordHash");
 

@@ -1895,6 +1895,7 @@ const componentSchemas = {
       theme: { type: "string", enum: ["midnight", "ember"] },
       dice3dEnabled: { type: "boolean" },
       reducedMotion: { type: "boolean" },
+      interfaceSounds: { type: "object", additionalProperties: false, required: ["enabled", "volume"], properties: { enabled: { type: "boolean" }, volume: { type: "number", minimum: 0, maximum: 1 } } },
       chatNotifications: { type: "string", enum: ["all", "mentions", "none"] },
     },
   },
@@ -1918,6 +1919,7 @@ const componentSchemas = {
           theme: { type: "string", enum: ["midnight", "ember"] },
           dice3dEnabled: { type: "boolean" },
           reducedMotion: { type: "boolean" },
+          interfaceSounds: { type: "object", additionalProperties: false, required: ["enabled", "volume"], properties: { enabled: { type: "boolean" }, volume: { type: "number", minimum: 0, maximum: 1 } } },
           chatNotifications: { type: "string", enum: ["all", "mentions", "none"] },
         },
       },
@@ -6292,6 +6294,8 @@ const componentSchemas = {
       userId: idSchema,
       fogActive: { type: "boolean" },
       polygons: arrayOf(schemaRef("VisionPolygon")),
+      sceneUpdatedAt: dateTimeSchema,
+      visibleTokens: arrayOf(schemaRef("Token")),
     },
   },
   VisionPointSample: {
@@ -6334,6 +6338,7 @@ const componentSchemas = {
       blocksMovement: { type: "boolean" },
       kind: { type: "string", enum: ["wall", "terrain", "door", "window"] },
       open: { type: "boolean" },
+      locked: { type: "boolean" },
     },
   },
   WallInput: {
@@ -6348,6 +6353,7 @@ const componentSchemas = {
       blocksMovement: { type: "boolean" },
       kind: { type: "string", enum: ["wall", "terrain", "door", "window"] },
       open: { type: "boolean" },
+      locked: { type: "boolean" },
     },
   },
   LightSource: {
@@ -6365,6 +6371,7 @@ const componentSchemas = {
       intensity: { type: "number", minimum: 0 },
       kind: { type: "string", enum: ["light", "darkness"] },
       magical: { type: "boolean" },
+      animation: { type: "string", enum: ["none", "flicker", "pulse"] },
       shadows: { type: "boolean" },
     },
   },
@@ -6381,6 +6388,7 @@ const componentSchemas = {
       intensity: { type: "number", minimum: 0 },
       kind: { type: "string", enum: ["light", "darkness"] },
       magical: { type: "boolean" },
+      animation: { type: "string", enum: ["none", "flicker", "pulse"] },
     },
   },
   SceneAnnotation: {
@@ -14511,6 +14519,13 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     },
   },  "GET /api/v1/scenes/{sceneId}/vision": {
     parameters: [
+      {
+        name: "includeTokens",
+        in: "query",
+        required: false,
+        description: "Include the viewer's authorized tokens from the same scene revision. Requires token.read.",
+        schema: { type: "boolean" },
+      },
       {
         name: "previewUserId",
         in: "query",

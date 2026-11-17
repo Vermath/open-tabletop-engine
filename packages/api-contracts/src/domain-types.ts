@@ -35,6 +35,7 @@ export interface UserPreferences {
   theme: "midnight" | "ember";
   dice3dEnabled: boolean;
   reducedMotion: boolean;
+  interfaceSounds?: { enabled: boolean; volume: number };
   chatNotifications: "all" | "mentions" | "none";
 }
 
@@ -455,6 +456,8 @@ export interface Wall {
   kind?: WallKind;
   /** Open doors and windows do not block vision or movement. */
   open?: boolean;
+  /** A locked door stays closed until a scene editor unlocks it. */
+  locked?: boolean;
 }
 
 export interface CampaignRulesProfile {
@@ -480,6 +483,8 @@ export interface LightSource {
   magical?: boolean;
   /** When false, walls do not block this light. Defaults to true. */
   shadows?: boolean;
+  /** Visual glow animation. Vision geometry uses the authored radius. */
+  animation?: "none" | "flicker" | "pulse";
 }
 
 export interface DifficultTerrainRegion extends Timestamps {
@@ -596,6 +601,8 @@ export interface VisionSnapshot {
   userId: ID;
   fogActive: boolean;
   polygons: VisionPolygon[];
+  sceneUpdatedAt?: Timestamps["updatedAt"];
+  visibleTokens?: Token[];
 }
 
 export interface VisionPointSample {

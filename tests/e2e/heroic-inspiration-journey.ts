@@ -1,3 +1,4 @@
+import { abilityRoll } from "./inspector-navigation.js";
 import type { APIResponse, Locator, Page } from "@playwright/test";
 import { expect } from "@playwright/test";
 
@@ -65,7 +66,8 @@ export async function exerciseHeroicInspirationJourney(input: {
     campaignName: input.campaignName,
     characterName: input.characterName,
     expectedVisibility: "public",
-    rollButtonName: /Roll Strength check/,
+    ability: "Strength",
+    action: "check",
   });
   expect(publicPair.originalRoll.actorId).toBe(firstGrant.id);
 
@@ -77,7 +79,8 @@ export async function exerciseHeroicInspirationJourney(input: {
     campaignName: input.campaignName,
     characterName: input.characterName,
     expectedVisibility: "gm_only",
-    rollButtonName: /Roll Dexterity saving throw/,
+    ability: "Dexterity",
+    action: "saving throw",
   });
 
   const [playerHistory, gmHistory] = await Promise.all([
@@ -127,7 +130,8 @@ async function rollAndReroll(
     campaignName: string;
     characterName: string;
     expectedVisibility: "public" | "gm_only";
-    rollButtonName: RegExp;
+    ability: string;
+    action: "check" | "saving throw";
   },
 ): Promise<HeroicPair> {
   await page.reload();
@@ -135,7 +139,7 @@ async function rollAndReroll(
   await selectRollVisibility(page, input.expectedVisibility);
   const stats = await openActorStats(page, input.characterName);
   const before = await visibleRollHistory(page, input.apiBaseUrl, input.campaignId);
-  await stats.getByRole("button", { name: input.rollButtonName }).click();
+  await abilityRoll(stats, input.ability, input.action).click();
   await expect.poll(async () => {
     const current = await visibleRollHistory(page, input.apiBaseUrl, input.campaignId);
     const beforeIds = new Set(before.map((roll) => roll.id));

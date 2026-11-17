@@ -4568,7 +4568,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       };
     },
   });
-  app.get<{ Params: { sceneId: string }; Querystring: { previewUserId?: string } }>("/api/v1/scenes/:sceneId/vision", async (request, reply): Promise<VisionSnapshot | FastifyReply> => {
+  app.get<{ Params: { sceneId: string }; Querystring: { previewUserId?: string; includeTokens?: boolean } }>("/api/v1/scenes/:sceneId/vision", async (request, reply): Promise<VisionSnapshot | FastifyReply> => {
     const campaignId = campaignIdForScene(store, request.params.sceneId);
     if (!campaignId) return notFound(reply, "Scene not found");
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
@@ -4578,6 +4578,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (activeOrganization !== true) return activeOrganization;
     if (!canReadSceneRecord(store, userId, scene)) return notFound(reply, "Scene not found");
     const previewUserId = request.query.previewUserId?.trim();
+    let viewerId = userId;
     if (previewUserId && previewUserId !== userId) {
       const previewAllowed = requireCampaignPermissionForUser(store, reply, request.headers, userId, campaignId, "scene.update");
       if (previewAllowed !== true) return previewAllowed;
@@ -4585,9 +4586,17 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         return badRequest(reply, "Player vision preview user must be a campaign member");
       }
       if (!canReadSceneRecord(store, previewUserId, scene)) return forbidden(reply, "Preview user cannot read this scene");
-      return visionSnapshotForUser(store, previewUserId, campaignId, scene);
+      viewerId = previewUserId;
     }
-    return visionSnapshotForUser(store, userId, campaignId, scene);
+    if (!request.query.includeTokens) return visionSnapshotForUser(store, viewerId, campaignId, scene);
+    if (!canCampaign(store, userId, campaignId, "token.read") || !canCampaign(store, viewerId, campaignId, "token.read")) return forbidden(reply, "Token read permission required");
+    const cache = createTokenVisibilityCache();
+    const sceneTokens = store.state.tokens.filter((token) => token.sceneId === scene.id);
+    return {
+      ...visionSnapshotForUser(store, viewerId, campaignId, scene, cache),
+      sceneUpdatedAt: scene.updatedAt,
+      visibleTokens: visibleTokensForUser(store, viewerId, campaignId, sceneTokens, cache),
+    };
   });
 
   app.get<{ Params: { sceneId: string }; Querystring: { x?: string; y?: string } }>("/api/v1/scenes/:sceneId/vision/sample", async (request, reply): Promise<VisionPointSample | FastifyReply> => {
@@ -5137,7 +5146,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return scene;
   });
 
-  app.post<{ Params: { sceneId: string }; Body: { x1: number; y1: number; x2: number; y2: number; blocksVision?: boolean; blocksMovement?: boolean; kind?: WallKind; open?: boolean } }>("/api/v1/scenes/:sceneId/walls", async (request, reply) => {
+  app.post<{ Params: { sceneId: string }; Body: { x1: number; y1: number; x2: number; y2: number; blocksVision?: boolean; blocksMovement?: boolean; kind?: WallKind; open?: boolean; locked?: boolean } }>("/api/v1/scenes/:sceneId/walls", async (request, reply) => {
     const campaignId = campaignIdForScene(store, request.params.sceneId);
     if (!campaignId) return notFound(reply, "Scene not found");
     const userId = requireUser(store, reply, request.headers);
@@ -5152,7 +5161,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }
     const kind: WallKind = normalized.patch.kind ?? "wall";
     const defaults = wallDefaultsForKind(kind);
-    const wall = { id: createId("wall"), x1: normalized.patch.x1, y1: normalized.patch.y1, x2: normalized.patch.x2, y2: normalized.patch.y2, blocksVision: normalized.patch.blocksVision ?? defaults.blocksVision, blocksMovement: normalized.patch.blocksMovement ?? defaults.blocksMovement, kind, ...(kind === "door" || kind === "window" ? { open: normalized.patch.open ?? false } : {}) };
+    const wall = { id: createId("wall"), x1: normalized.patch.x1, y1: normalized.patch.y1, x2: normalized.patch.x2, y2: normalized.patch.y2, blocksVision: normalized.patch.blocksVision ?? defaults.blocksVision, blocksMovement: normalized.patch.blocksMovement ?? defaults.blocksMovement, kind, ...(kind === "door" || kind === "window" ? { open: normalized.patch.open ?? false } : {}), ...(normalized.patch.locked === undefined ? {} : { locked: normalized.patch.locked }) };
     captureSceneEditSnapshot(scene, userId, "scene.wall.create");
     scene.walls.push(wall);
     scene.updatedAt = nowIso();
@@ -5162,7 +5171,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return scene;
   });
 
-  app.patch<{ Params: { sceneId: string; wallId: string }; Body: Partial<Pick<Wall, "x1" | "y1" | "x2" | "y2" | "blocksVision" | "blocksMovement" | "kind" | "open">> }>("/api/v1/scenes/:sceneId/walls/:wallId", async (request, reply) => {
+  app.patch<{ Params: { sceneId: string; wallId: string }; Body: Partial<Pick<Wall, "x1" | "y1" | "x2" | "y2" | "blocksVision" | "blocksMovement" | "kind" | "open" | "locked">> }>("/api/v1/scenes/:sceneId/walls/:wallId", async (request, reply) => {
     const campaignId = campaignIdForScene(store, request.params.sceneId);
     if (!campaignId) return notFound(reply, "Scene not found");
     const userId = requireUser(store, reply, request.headers);
@@ -5213,7 +5222,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return scene;
   });
 
-  app.post<{ Params: { sceneId: string }; Body: { x: number; y: number; radius?: number; brightRadius?: number; dimRadius?: number; color?: string; intensity?: number; kind?: LightSource["kind"]; magical?: boolean } }>("/api/v1/scenes/:sceneId/lights", async (request, reply) => {
+  app.post<{ Params: { sceneId: string }; Body: { x: number; y: number; radius?: number; brightRadius?: number; dimRadius?: number; color?: string; intensity?: number; kind?: LightSource["kind"]; magical?: boolean; animation?: LightSource["animation"] } }>("/api/v1/scenes/:sceneId/lights", async (request, reply) => {
     const campaignId = campaignIdForScene(store, request.params.sceneId);
     if (!campaignId) return notFound(reply, "Scene not found");
     const userId = requireUser(store, reply, request.headers);
@@ -5221,7 +5230,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
     const allowed = requireScenePermission(store, reply, request.headers, scene, "scene.update");
     if (allowed !== true) return allowed;
-    const light = { id: createId("light"), x: request.body.x, y: request.body.y, radius: request.body.radius ?? 180, brightRadius: request.body.brightRadius, dimRadius: request.body.dimRadius, color: request.body.color ?? (request.body.kind === "darkness" ? "#111827" : "#facc15"), intensity: clampLightIntensity(request.body.intensity ?? (request.body.kind === "darkness" ? 0.82 : 0.28)), kind: request.body.kind ?? "light", magical: Boolean(request.body.magical) };
+    const light = { id: createId("light"), x: request.body.x, y: request.body.y, radius: request.body.radius ?? 180, brightRadius: request.body.brightRadius, dimRadius: request.body.dimRadius, color: request.body.color ?? (request.body.kind === "darkness" ? "#111827" : "#facc15"), intensity: clampLightIntensity(request.body.intensity ?? (request.body.kind === "darkness" ? 0.82 : 0.28)), kind: request.body.kind ?? "light", magical: Boolean(request.body.magical), animation: request.body.animation };
     const normalized = normalizeLightSourcePatch(light);
     if ("error" in normalized) return badRequest(reply, normalized.error);
     Object.assign(light, normalized.patch);
@@ -5234,7 +5243,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return scene;
   });
 
-  app.patch<{ Params: { sceneId: string; lightId: string }; Body: Partial<Pick<LightSource, "x" | "y" | "radius" | "brightRadius" | "dimRadius" | "color" | "intensity" | "kind" | "magical">> }>("/api/v1/scenes/:sceneId/lights/:lightId", async (request, reply) => {
+  app.patch<{ Params: { sceneId: string; lightId: string }; Body: Partial<Pick<LightSource, "x" | "y" | "radius" | "brightRadius" | "dimRadius" | "color" | "intensity" | "kind" | "magical" | "animation">> }>("/api/v1/scenes/:sceneId/lights/:lightId", async (request, reply) => {
     const campaignId = campaignIdForScene(store, request.params.sceneId);
     if (!campaignId) return notFound(reply, "Scene not found");
     const userId = requireUser(store, reply, request.headers);
@@ -18763,7 +18772,7 @@ function wallDefaultsForKind(kind: WallKind): Pick<Wall, "blocksVision" | "block
   return { blocksVision: true, blocksMovement: true };
 }
 
-function normalizeWallPatch(body: Partial<Pick<Wall, "x1" | "y1" | "x2" | "y2" | "blocksVision" | "blocksMovement" | "kind" | "open">>, current?: Wall): { patch: Partial<Wall> } | { error: string } {
+function normalizeWallPatch(body: Partial<Pick<Wall, "x1" | "y1" | "x2" | "y2" | "blocksVision" | "blocksMovement" | "kind" | "open" | "locked">>, current?: Wall): { patch: Partial<Wall> } | { error: string } {
   const patch: Partial<Wall> = {};
   for (const key of ["x1", "y1", "x2", "y2"] as const) {
     if (body[key] === undefined) continue;
@@ -18779,10 +18788,19 @@ function normalizeWallPatch(body: Partial<Pick<Wall, "x1" | "y1" | "x2" | "y2" |
     if (body.blocksVision === undefined) patch.blocksVision = defaults.blocksVision;
     if (body.blocksMovement === undefined) patch.blocksMovement = defaults.blocksMovement;
     if (body.kind !== "door" && body.kind !== "window") patch.open = undefined;
+    if (body.kind !== "door") patch.locked = undefined;
+  }
+  const kind = body.kind ?? current?.kind ?? "wall";
+  if (body.locked !== undefined) {
+    if (typeof body.locked !== "boolean" || kind !== "door") return { error: "Only doors accept a boolean lock state" };
+    patch.locked = body.locked;
+  }
+  if (kind === "door" && (body.locked ?? current?.locked)) {
+    if (body.open === true) return { error: "Unlock the door before opening it" };
+    if (body.locked === true) patch.open = false;
   }
   if (body.open !== undefined) {
     if (typeof body.open !== "boolean") return { error: "Wall open must be a boolean" };
-    const kind = body.kind ?? current?.kind ?? "wall";
     if (kind !== "door" && kind !== "window") return { error: "Only doors and windows can be opened" };
     patch.open = body.open;
   }
@@ -18794,7 +18812,7 @@ function normalizeWallPatch(body: Partial<Pick<Wall, "x1" | "y1" | "x2" | "y2" |
   return { patch };
 }
 
-function normalizeLightSourcePatch(body: Partial<Pick<LightSource, "x" | "y" | "radius" | "brightRadius" | "dimRadius" | "color" | "intensity" | "kind" | "magical">>, current?: LightSource): { patch: Partial<LightSource> } | { error: string } {
+function normalizeLightSourcePatch(body: Partial<Pick<LightSource, "x" | "y" | "radius" | "brightRadius" | "dimRadius" | "color" | "intensity" | "kind" | "magical" | "animation">>, current?: LightSource): { patch: Partial<LightSource> } | { error: string } {
   const patch: Partial<LightSource> = {};
   if (body.x !== undefined) {
     if (!Number.isFinite(body.x)) return { error: "Light x must be a finite number" };
@@ -18834,6 +18852,10 @@ function normalizeLightSourcePatch(body: Partial<Pick<LightSource, "x" | "y" | "
   if (body.magical !== undefined) {
     if (typeof body.magical !== "boolean") return { error: "Light magical must be a boolean" };
     patch.magical = body.magical;
+  }
+  if (body.animation !== undefined) {
+    if (body.animation !== "none" && body.animation !== "flicker" && body.animation !== "pulse") return { error: "Light animation must be none, flicker, or pulse" };
+    patch.animation = body.animation;
   }
   if (Object.keys(patch).length === 0) return { error: "Light update must include at least one field" };
   return { patch };
@@ -18907,7 +18929,7 @@ function defaultUserPreferences(): UserPreferences {
 
 function normalizeUserPreferences(value: unknown, current?: UserPreferences): { ok: true; value: UserPreferences } | { ok: false; error: string } {
   if (!isRecord(value)) return { ok: false, error: "Profile preferences must be an object" };
-  const unexpected = Object.keys(value).find((key) => !["theme", "dice3dEnabled", "reducedMotion", "chatNotifications"].includes(key));
+  const unexpected = Object.keys(value).find((key) => !["theme", "dice3dEnabled", "reducedMotion", "chatNotifications", "interfaceSounds"].includes(key));
   if (unexpected) return { ok: false, error: `Profile preference is not supported: ${unexpected}` };
   const preferences = { ...defaultUserPreferences(), ...current };
   if ("theme" in value) {
@@ -18921,6 +18943,15 @@ function normalizeUserPreferences(value: unknown, current?: UserPreferences): { 
   if ("reducedMotion" in value) {
     if (typeof value.reducedMotion !== "boolean") return { ok: false, error: "Profile reducedMotion must be boolean" };
     preferences.reducedMotion = value.reducedMotion;
+  }
+  if ("interfaceSounds" in value) {
+    const settings = value.interfaceSounds;
+    if (!isRecord(settings) || Object.keys(settings).some((key) => key !== "enabled" && key !== "volume") ||
+      typeof settings.enabled !== "boolean" || typeof settings.volume !== "number" ||
+      !Number.isFinite(settings.volume) || settings.volume < 0 || settings.volume > 1) {
+      return { ok: false, error: "Profile interface sounds need an enabled flag and volume from 0 to 1" };
+    }
+    preferences.interfaceSounds = { enabled: settings.enabled, volume: settings.volume };
   }
   if ("chatNotifications" in value) {
     if (value.chatNotifications !== "all" && value.chatNotifications !== "mentions" && value.chatNotifications !== "none") {

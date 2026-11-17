@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { boardCaptureIncludes, canvasColorChannels, mapRendererStorageKey, preferredMapRenderer, withDomBoardForCapture } from "./board-canvas-layers.js";
+import { animatedLightAmount, boardCaptureIncludes, canvasColorChannels, mapRendererStorageKey, preferredMapRenderer, withDomBoardForCapture } from "./board-canvas-layers.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const source = (name: string) => readFileSync(resolve(here, name), "utf8");
@@ -32,6 +32,18 @@ function stubBrowser(options: { stored?: string | null; context?: unknown; stora
 }
 
 afterEach(() => vi.unstubAllGlobals());
+
+describe("animated lights", () => {
+  it("varies flicker and pulse within the original glow radius", () => {
+    expect(animatedLightAmount("none", 50, 0)).toBe(0);
+    for (const style of ["flicker", "pulse"] as const) {
+      const values = Array.from({ length: 300 }, (_, step) => animatedLightAmount(style, step * 11, 2));
+      expect(Math.min(...values)).toBeGreaterThanOrEqual(0);
+      expect(Math.max(...values)).toBeLessThanOrEqual(1);
+      expect(Math.max(...values) - Math.min(...values)).toBeGreaterThan(0.5);
+    }
+  });
+});
 
 describe("renderer choice", () => {
   it("is the DOM renderer where there is no document", () => {
