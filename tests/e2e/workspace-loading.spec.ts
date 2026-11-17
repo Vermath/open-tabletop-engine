@@ -158,6 +158,14 @@ test("the empty saved-encounter action is disabled during the first save", async
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM", exact: true }).click();
   await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
+  const campaign = await gmApi<{ name: string }>(page, "POST", "/api/v1/campaigns", {
+    name: "Encounter test " + crypto.randomUUID().slice(0, 8)
+  });
+  await page.reload();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
+  await page.locator("details.campaign-switcher > summary").click();
+  await page.getByRole("navigation", { name: "Campaigns" }).getByRole("button", { name: campaign.name, exact: true }).click();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText(campaign.name);
   await page.getByRole("button", { name: "Open command palette" }).click();
   const palette = page.getByRole("dialog", { name: "Command palette" });
   await palette.getByRole("textbox", { name: "Command palette search" }).fill("Open Encounter Builder");
