@@ -342,7 +342,7 @@ import { activeCombatForTypedDamage, dndTypedDamageCombatantChanges } from "./dn
 import { registerSceneDelegationRoutes } from "./scene-delegation-routes.js";
 import { exceedsSceneVisionBudget, MAX_SCENE_LIGHTS, MAX_SCENE_WALLS, SceneVisionBudgetError } from "./scene-vision-budget.js";
 import { registerUniversalVttImportRoute } from "./universal-vtt-import.js";
-import { partyRollForUser, registerPartyRollRoutes } from "./party-roll-routes.js";
+import { partyRollChangedEvent, partyRollForUser, registerPartyRollRoutes, replacePartyRollResult } from "./party-roll-routes.js";
 import { registerCampaignSessionRoutes } from "./campaign-session-routes.js";
 import { registerCampaignWebhookRoutes } from "./campaign-webhook-routes.js";
 import { CAMPAIGN_WEBHOOK_QUEUE_MAX_PENDING_DELIVERIES, CAMPAIGN_WEBHOOK_SUBSCRIPTION_LIMIT_PER_CAMPAIGN, createCampaignWebhookDelivery, pruneCampaignWebhookCampaignLedger, pruneCampaignWebhookDeliveryLedger, pruneCampaignWebhookLedgers } from "./campaign-webhook-ledger.js";
@@ -12359,9 +12359,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     actor.updatedAt = nextRevisionTimestamp(actor.updatedAt);
     store.state.rolls.push(reroll);
     store.state.chat.push(message);
+    const changedRequest = replacePartyRollResult(store, original, reroll, nextRevisionTimestamp);
     appendServerAuditLog(store, userId, { campaignId: actor.campaignId, action: "system.actor.heroicInspiration.reroll", targetType: "actor", targetId: actor.id, before: { actorData: actorBefore, originalRollId: original.id, originalTotal: original.total }, after: { rerollRollId: reroll.id, rerollTotal: reroll.total, selectedTermIndex, selectedResultIndex, originalResult: transformed.originalResult, replacementResult, requiredResult: true } });
     store.save();
     broadcastActorUpdated(broadcast, actor);
+    if (changedRequest) broadcast(partyRollChangedEvent(changedRequest));
     broadcast(createEvent({ campaignId: reroll.campaignId, type: "dice.roll.created", actorUserId: userId, targetId: reroll.id, payload: reroll }));
     broadcast(createEvent({ campaignId: message.campaignId, type: "chat.message.created", actorUserId: userId, targetId: message.id, payload: message }));
     return { actor: actorPayloadForUser(store, userId, actor), originalRoll: original, reroll, chat: message, mustUseNewRoll: true };

@@ -66,6 +66,20 @@ it("uses the current sheet and records exactly one private result per selected c
       expect.objectContaining({ actorId: original.id, result: { id: roll.id, formula: expectedFormula, total: roll.total } }),
       { actorId: peer.id, actorName: peer.name, userId: peer.ownerUserId },
     ]);
+    original.data.heroicInspiration = true;
+    const rerolled = await app.inject({
+      method: "POST", url: `${campaign}/systems/dnd-5e-srd/actors/${original.id}/heroic-inspiration/reroll`,
+      headers: { ...player, "idempotency-key": "party-inspiration" },
+      payload: { originalRollId: roll.id, selectedTermIndex: 0, selectedResultIndex: 0, expectedActorUpdatedAt: original.updatedAt },
+    });
+    expect(rerolled.statusCode, rerolled.body).toBe(200);
+    const replacement = rerolled.json().reroll;
+    const currentResult = { id: replacement.id, formula: expectedFormula, total: replacement.total };
+    expect((await visibleRequests(gm))[0]?.recipients[0]?.result).toEqual(currentResult);
+    expect((await visibleRequests(player))[0]?.recipients[0]?.result).toEqual(currentResult);
+    expect((await visibleRequests(other))[0]?.recipients[0]?.result).toBeUndefined();
+    expect((await answerOnce()).json()).toEqual({ id: replacement.id });
+
     const peerAccount = store.state.users.find((user) => user.id === peer.ownerUserId)!;
     peerAccount.disabledAt = new Date().toISOString();
     expect((await visibleRequests(gm))[0]?.recipients[1]?.unavailable).toBe(true);
