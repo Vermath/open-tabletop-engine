@@ -1,3 +1,5 @@
+import { routes as claimRoutes, type CharacterClaimOption, type CharacterClaimResult } from "@open-tabletop/api-contracts";
+import { CharacterClaimPanel } from "./character-claim-panel.js";
 import { tokenRestorePayload } from "./token-restore.js";
 import { compendiumPlacementActions, type BoardAction, type PlacementAttempts } from "./compendium-placement-client.js";
 import { EmptyState, WorkspaceLoading, canCommitSceneSwitch, preloadWorkspaceScene, retrySceneSwitch } from "./workspace-states.js";
@@ -1373,13 +1375,17 @@ export function App() {
     if (options.sceneWorldId) setSelectedWorldId(options.sceneWorldId);
     // Selection belongs to the user, not the snapshot: keep it as long as the
     // tokens still exist, auto-select only on the very first load.
-    const firstLoadToken = !snapshotReady && scene ? next.tokens.find((item) => item.sceneId === scene.id) : undefined;
+    const playerEntering = !snapshotReady && next.members.some((member) => member.user.id === requestUserId && member.role === "player");
+    const ownedCharacter = playerEntering ? next.tokens.find((item) => item.sceneId === resolvedSceneId && !item.hidden && (item.layer ?? "player") === "player" && next.actors.some((actor) => actor.id === item.actorId && actor.type === "character" && actor.ownerUserId === requestUserId)) : undefined;
+    const firstLoadToken = !snapshotReady && scene ? ownedCharacter ?? next.tokens.find((item) => item.sceneId === scene.id) : undefined;
+    if (ownedCharacter) setSelectedActorId(ownedCharacter.actorId ?? "");
     setSelectedTokenIds((current) => {
+      if (ownedCharacter) return [ownedCharacter.id];
       const valid = current.filter((id) => next.tokens.some((item) => item.id === id));
       if (valid.length > 0) return valid.length === current.length ? current : valid;
       return firstLoadToken ? [firstLoadToken.id] : valid;
     });
-    setSelectedTokenIdState((current) => (current && next.tokens.some((item) => item.id === current) ? current : firstLoadToken?.id ?? ""));
+    setSelectedTokenIdState((current) => ownedCharacter?.id ?? (current && next.tokens.some((item) => item.id === current) ? current : firstLoadToken?.id ?? ""));
     setSnapshotReady(true);
     if (options.syncStatus !== false) setStatus("Synced");
     return next;
@@ -3041,6 +3047,30 @@ export function App() {
     setStatus("Invite revoked");
   }
 
+  async function chooseCharacter(option: CharacterClaimOption, idempotencyKey: string, managing: boolean) {
+    await runWorkspaceBoundAction(async (request) => {
+      const options = { idempotencyKey, signal: request.controller.signal };
+      if (managing) {
+        await apiPost(claimRoutes.characterClaimOffer(request.campaignId, option.actorId), { expectedUpdatedAt: option.updatedAt, offered: !option.offered }, options);
+        return undefined;
+      }
+      return apiPost<CharacterClaimResult>(claimRoutes.characterClaim(request.campaignId, option.actorId), { expectedUpdatedAt: option.updatedAt }, options);
+    }, async (claim, request) => {
+      const next = await refresh(request.campaignId, claim?.sceneId ?? realtimeSelectionRef.current.sceneId, { syncStatus: false, selectSceneOnLoad: claim ? () => workspaceBoundRequestIsCurrent(request) : undefined });
+      if (!workspaceBoundRequestIsCurrent(request)) return;
+      if (claim && next.tokens.some((token) => token.id === claim.tokenId && token.actorId === claim.actorId && token.ownerUserIds?.includes(request.userId))) {
+        setActiveTokenLayer("player");
+        setSelectedBoardAssetId("");
+        setSelectedActorId(claim.actorId);
+        setSelectedTokenIdState(claim.tokenId);
+        setSelectedTokenIds([claim.tokenId]);
+        resetWorkspaceNavigation("live", "actors");
+        setInspectorOpen(true);
+        setStatus(`Joined the table as ${option.name}`);
+      } else if (!claim) setStatus(`${option.name} ${option.offered ? "withdrawn" : "offered to players"}`);
+    });
+  }
+
   async function acceptInvite() {
     if (inviteAcceptBusyRef.current) return;
     cancelInviteAcceptance();
@@ -3092,7 +3122,7 @@ export function App() {
         setStatus("Invite accepted");
       });
       if (!committed) return;
-      await refresh(result.campaign.id);
+      await refresh(result.campaign.id, "");
     } finally {
       if (inviteAcceptAbortRef.current === controller) inviteAcceptAbortRef.current = null;
       if (requestSequence === inviteAcceptSequenceRef.current) {
@@ -9498,6 +9528,7 @@ export function App() {
             )}
             {activeManageCategory === "people" && (
               <div className="manage-card-grid">
+        {currentMember && ["owner", "gm", "assistant_gm"].includes(currentMember.role) && hasPermission("actor.update") && hasPermission("token.update") && <CharacterClaimPanel key={campaignId + currentUserId} campaignId={campaignId} managing snapshot={snapshot} onChoose={(option, key) => chooseCharacter(option, key, true)} />}
         <CharacterTransferPanel
           campaignId={campaignId}
           currentUserId={currentUserId}
@@ -10305,6 +10336,9 @@ export function App() {
         {showTableWorkspace ? (
         <div className={`table-grid workspace-${workspaceMode}`} data-short-phone={shortPhone ? "true" : undefined} data-content-workspace={contentWorkspace ? "true" : undefined} data-scene-preview={contentWorkspace && prepScenePreview ? "true" : undefined} data-inspector-open={inspectorVisible ? "true" : "false"} {...inspectorWidth.layoutProps}>
           <section id="scene-workspace" className={`table-area scene-workspace ${canvasAssetDragging ? "canvas-asset-dragging" : ""}`} hidden={sceneWorkspaceHidden}>
+            {workspaceMode === "live" && currentMember?.role === "player" && hasPermission("actor.updateOwned") && hasPermission("actor.read") && hasPermission("scene.read") && hasPermission("token.read") && !snapshot.actors.some((actor) => actor.type === "character" && actor.ownerUserId === currentUserId) && (
+              <CharacterClaimPanel key={campaignId + currentUserId} campaignId={campaignId} snapshot={snapshot} onChoose={(option, key) => chooseCharacter(option, key, false)} />
+            )}
             {sceneSwitchTarget && <progress aria-label="Loading selected scene" className="scene-switch-progress" />}
             <Toolbar key={`${workspaceMode}-${tab}`} onSelectTool={selectCanvasTool} onCreateToken={async () => { await createToken(); }} onStartCombat={openCombatSetup} onRevealFog={revealFog} onHideFog={hideFog} onRevealFogPolygon={revealFogPolygon} onToggleFogBrush={toggleFogBrush} onToggleAnnotationTool={toggleAnnotationTool} onDeleteLatestAnnotation={deleteLatestAnnotation} onUndoScene={undoSceneEdit} onUndoFog={undoFog} onShowFogHistory={showFogHistory} onSampleVisionPoint={sampleVisionPoint} onSaveFogPreset={saveFogPreset} onApplyFogPreset={applyFogPreset} onDeleteFogPreset={deleteFogPreset} onCyclePlayerVisionPreview={playerPreview.show} onAddWall={addWall} onAddTerrainWall={addTerrainWall} onAddDoor={addDoor} onAddWindow={addWindow} onAddLight={addLight} onAddDarkness={addDarkness} onActionError={(error) => reportError(error)} canCreateToken={hasPermission("token.create")} canManageCombat={hasPermission("combat.manage")} canRevealFog={hasPermission("token.reveal")} canPreviewPlayerVision={Boolean(selectedScene && canPreviewPlayer && playerPreview.players.length > 0)} playerVisionPreviewLabel={playerPreview.open ? playerPreview.playerName : undefined} activeFogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} activeAnnotationTool={annotationTool} hasFogPresets={snapshot.fogPresets.length > 0} canUpdateScene={hasPermission("scene.update")} canAnnotate={hasPermission("scene.read")} />
             <div className="map-play-surface">

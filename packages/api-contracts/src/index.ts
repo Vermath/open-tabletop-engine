@@ -100,6 +100,9 @@ export const routes = {
     `/api/v1/campaigns/${pathPart(campaignId)}/ownership-transfer`,
   campaignDuplicate: (campaignId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/duplicate`,
+  characterClaims: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/character-claims`,
+  characterClaimOffer: (campaignId: string, actorId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/actors/${pathPart(actorId)}/claim-offer`,
+  characterClaim: (campaignId: string, actorId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/actors/${pathPart(actorId)}/claim`,
   characterTransfers: (campaignId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/character-transfers`,
   characterTransferCreate: (campaignId: string, actorId: string) =>
@@ -780,6 +783,9 @@ const endpointSpecs = [
   ["DELETE", "/api/v1/campaigns/{campaignId}/members/{memberId}"],
   ["POST", "/api/v1/campaigns/{campaignId}/ownership-transfer"],
   ["POST", "/api/v1/campaigns/{campaignId}/duplicate"],
+  ["GET", "/api/v1/campaigns/{campaignId}/character-claims"],
+  ["POST", "/api/v1/campaigns/{campaignId}/actors/{actorId}/claim-offer"],
+  ["POST", "/api/v1/campaigns/{campaignId}/actors/{actorId}/claim"],
   ["GET", "/api/v1/campaigns/{campaignId}/character-transfers"],
   ["POST", "/api/v1/campaigns/{campaignId}/actors/{actorId}/transfers"],
   ["POST", "/api/v1/campaigns/{campaignId}/character-transfers/{transferId}/accept"],
@@ -5307,6 +5313,14 @@ const componentSchemas = {
       rulesProfile: schemaRef("CampaignRulesProfile"),
     },
   },
+  CharacterClaimOption: {
+    type: "object", additionalProperties: false, required: ["actorId", "name", "updatedAt", "offered"],
+    properties: { actorId: idSchema, name: stringSchema, updatedAt: dateTimeSchema, offered: { type: "boolean" } },
+  },
+  CharacterClaimResult: {
+    type: "object", additionalProperties: false, required: ["actorId", "sceneId", "tokenId"],
+    properties: { actorId: idSchema, sceneId: idSchema, tokenId: idSchema },
+  },
   CharacterTransfer: {
     type: "object",
     additionalProperties: false,
@@ -7221,6 +7235,8 @@ const componentSchemas = {
       campaignId: idSchema,
       worldId: idSchema,
       systemId: idSchema,
+      characterClaimOffered: { type: "boolean" },
+      characterClaimOfferedByUserId: idSchema,
       ownerUserId: idSchema,
       type: stringSchema,
       name: stringSchema,
@@ -14158,6 +14174,19 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
       "409": jsonResponse("Source campaign revision conflict", schemaRef("ErrorResponse")),
       "413": jsonResponse("Campaign assets exceed the configured duplication limit", schemaRef("ErrorResponse")),
     },
+  },
+  "GET /api/v1/campaigns/{campaignId}/character-claims": {
+    responses: { "200": jsonResponse("Eligible character choices for the current member", arrayOf(schemaRef("CharacterClaimOption"))) },
+  },
+  "POST /api/v1/campaigns/{campaignId}/actors/{actorId}/claim-offer": {
+    parameters: [idempotencyKeyParameter],
+    requestBody: jsonRequestBody({ type: "object", additionalProperties: false, required: ["offered", "expectedUpdatedAt"], properties: { offered: { type: "boolean" }, expectedUpdatedAt: dateTimeSchema } }),
+    responses: { "200": jsonResponse("Updated player character offer", schemaRef("CharacterClaimOption")), "409": jsonResponse("Character changed or is ineligible", schemaRef("ErrorResponse")) },
+  },
+  "POST /api/v1/campaigns/{campaignId}/actors/{actorId}/claim": {
+    parameters: [idempotencyKeyParameter],
+    requestBody: jsonRequestBody({ type: "object", additionalProperties: false, required: ["expectedUpdatedAt"], properties: { expectedUpdatedAt: dateTimeSchema } }),
+    responses: { "200": jsonResponse("Claimed character and live token", schemaRef("CharacterClaimResult")), "409": jsonResponse("Character changed or is unavailable", schemaRef("ErrorResponse")) },
   },
   "GET /api/v1/campaigns/{campaignId}/character-transfers": {
     responses: { "200": jsonResponse("Visible pending and resolved character transfers", arrayOf(schemaRef("CharacterTransfer"))) },
