@@ -677,6 +677,12 @@ export function App() {
   const campaignSetupDraftScope = useMemo(() => activeOrganizationId && currentUserId ? { organizationId: activeOrganizationId, userId: currentUserId, campaignId: campaignId || "new" } satisfies CampaignSetupDraftScope : undefined, [activeOrganizationId, campaignId, currentUserId]);
   const campaignSetupDraftKey = campaignSetupDraftScope ? campaignSetupDraftStorageKey(campaignSetupDraftScope) : "";
   const currentMember = snapshot.members.find((member) => member.user.id === currentUserId);
+  const canReceivePresentation = currentMember?.role === "player" && currentMember.active !== false;
+  useEffect(() => {
+    if (!presentation || canReceivePresentation || presentation.connectionKey !== realtimeConnectionKey) return;
+    dismissPresentation.current?.(presentation.content.id);
+    setPresentation(undefined);
+  }, [presentation, canReceivePresentation, realtimeConnectionKey]);
   const hasPermission = (permission: PermissionName) => currentMember?.permissions.includes(permission) ?? false;
   const orderedScenes = [...snapshot.scenes].sort(compareScenesForDisplay);
   const accessibleScenes = hasPermission("scene.update") ? orderedScenes : orderedScenes.filter((scene) => scene.active);
@@ -2106,6 +2112,12 @@ export function App() {
       onMessage: (data) => {
         if (cancelled) return;
         const message = parseRealtimePayload(data);
+        if (message && typeof message === "object" && "channel" in message && message.channel === "presentation.revoked") {
+          if ("campaignId" in message && message.campaignId === campaignId && "id" in message) {
+            setPresentation((current) => current?.content.id === message.id ? undefined : current);
+          }
+          return;
+        }
         if (isPresentation(message)) {
           if (message.campaignId === campaignId && message.expiresAt > Date.now()) setPresentation({ connectionKey: realtimeConnectionKey, content: message });
           return;
@@ -9072,7 +9084,7 @@ export function App() {
     <>
     {consequenceReview.dialog}
     {sceneMapPreparation.dialog}
-    {presentation && presentation.connectionKey === realtimeConnectionKey && <PresentedContent content={presentation.content} onDismiss={() => {
+    {canReceivePresentation && presentation && presentation.connectionKey === realtimeConnectionKey && <PresentedContent content={presentation.content} onDismiss={() => {
       dismissPresentation.current?.(presentation.content.id);
       setPresentation(undefined);
     }} />}
