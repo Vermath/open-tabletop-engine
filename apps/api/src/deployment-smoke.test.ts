@@ -1,7 +1,8 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { assetDeliveryBase } from "./asset-operations.js";
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 
@@ -10,6 +11,23 @@ function readWorkspaceFile(path: string): string {
 }
 
 describe("deployment smoke", () => {
+  it("serves Railway assets through the public origin while preserving explicit delivery settings", () => {
+    const headers = { host: "tabletop-api.railway.internal:8080", "x-forwarded-proto": "https" };
+    try {
+      vi.stubEnv("OTTE_ASSET_CDN_BASE_URL", "");
+      vi.stubEnv("OTTE_PUBLIC_URL", "");
+      vi.stubEnv("OTTE_WEB_ORIGIN", "https://table.example/");
+      expect(assetDeliveryBase(headers)).toBe("https://table.example");
+      expect(assetDeliveryBase({ ...headers, host: "api.example" })).toBe("https://api.example");
+      vi.stubEnv("OTTE_PUBLIC_URL", "https://api.example");
+      expect(assetDeliveryBase(headers)).toBe("https://api.example");
+      vi.stubEnv("OTTE_ASSET_CDN_BASE_URL", "https://cdn.example");
+      expect(assetDeliveryBase(headers)).toBe("https://cdn.example");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("pins every third-party workflow action to an immutable commit", () => {
     const workflowDirectory = resolve(rootDir, ".github/workflows");
     for (const file of readdirSync(workflowDirectory).filter((name) =>
@@ -467,6 +485,7 @@ describe("deployment smoke", () => {
     expect(workerDockerfile).toContain("USER node");
 
     const railwayApi = readWorkspaceFile("railway.api.json");
+    expect(railwayApi).toContain("OTTE_PUBLIC_URL=${OTTE_PUBLIC_URL:-$OTTE_WEB_ORIGIN}");
     expect(railwayApi).toContain(
       "OTTE_SQLITE_PATH=/app/storage/opentabletop.sqlite",
     );

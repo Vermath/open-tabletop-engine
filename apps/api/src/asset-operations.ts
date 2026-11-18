@@ -3872,12 +3872,18 @@ export function signedAssetDelivery(
 export function assetDeliveryBase(
   headers: Record<string, string | string[] | undefined>,
 ): string {
+  const host = headerValue(headers.host) ?? "localhost";
+  // The Railway web proxy connects to the API's private service address.
+  // Players retrieve images through the configured public web origin.
+  const railwayWebOrigin = /\.railway\.internal(?::\d+)?$/i.test(host)
+    ? process.env.OTTE_WEB_ORIGIN?.trim()
+    : undefined;
   const configured =
     process.env.OTTE_ASSET_CDN_BASE_URL?.trim() ||
-    process.env.OTTE_PUBLIC_URL?.trim();
+    process.env.OTTE_PUBLIC_URL?.trim() ||
+    railwayWebOrigin;
   if (configured) return configured.replace(/\/+$/, "");
   const protocol = headerValue(headers["x-forwarded-proto"]) ?? "http";
-  const host = headerValue(headers.host) ?? "localhost";
   return `${protocol}://${host}`;
 }
 
