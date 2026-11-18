@@ -2525,7 +2525,8 @@ export function App() {
     setNewSceneVisibilityMode("fog");
   }, [selectedCampaign?.id]);
 
-  useEffect(() => {
+  // Hydrate clean fields before the browser can deliver another edit.
+  useLayoutEffect(() => {
     if (!selectedScene) return;
     if (sceneEditDirty) return;
     setSceneEditName(selectedScene.name);

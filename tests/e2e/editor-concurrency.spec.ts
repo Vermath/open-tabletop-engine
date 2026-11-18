@@ -207,12 +207,23 @@ test("a scene background can be cleared and reselected when realtime precedes th
       await committed;
       await expect(background).toBeDisabled();
       await expect(save).toBeDisabled();
+      // Deliver the next native change as soon as the refreshed form accepts input.
+      await background.evaluate((element, nextAssetId) => {
+        const select = element as HTMLSelectElement;
+        const observer = new MutationObserver(() => {
+          if (select.matches(":disabled")) return;
+          observer.disconnect();
+          select.value = nextAssetId;
+          select.dispatchEvent(new Event("change", { bubbles: true }));
+        });
+        observer.observe(select.closest("fieldset")!, { attributes: true, attributeFilter: ["disabled"] });
+      }, asset.id);
     } finally { release(); }
     await expect(background).toBeEnabled();
     await page.unroute(apiBaseUrl + sceneUrl);
     await expect(form.locator(".scene-background-preview")).toContainText("No background");
 
-    await background.selectOption(asset.id);
+    await expect(background).toHaveValue(asset.id);
     await save.click();
     await page.getByRole("dialog", { name: "Place " + assetName, exact: true }).getByRole("button", { name: "Keep canvas and replace map" }).click();
     await expect(form.locator(".scene-background-preview")).toContainText(assetName);
