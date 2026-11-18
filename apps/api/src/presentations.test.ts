@@ -94,6 +94,7 @@ it("sends saved content only to selected live seats and limits images to their c
     expect((await present(gm)).statusCode).toBe(200);
     await expect.poll(() => selected.presentations.length).toBe(4);
     const latest = selected.presentations[3]!;
+    expect(latest.recipientSeat).toEqual({ id: member.id, userId: player, updatedAt: member.updatedAt });
     await new Promise<void>((resolve) => { selected.ws.addEventListener("close", () => resolve()); selected.ws.close(); });
     const reconnected = await listen(player);
     expect((await blob(player, image.id, latest.id)).statusCode).toBe(404);

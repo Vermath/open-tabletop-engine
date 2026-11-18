@@ -133,6 +133,24 @@ test("presents a private illustrated handout and journal pin while the player st
     await player.addInitScript(() => {
       if (!sessionStorage.getItem("hold-test-snapshot")) return;
       sessionStorage.removeItem("hold-test-snapshot");
+      // Replay the actual revoked packet and its revocation after a later grant arrives.
+      window.WebSocket = class extends WebSocket {
+        constructor(url: string | URL, protocols?: string | string[]) {
+          super(url, protocols);
+          if (new URL(url).pathname !== "/api/v1/realtime") return;
+          let last: { id: string; data: string } | undefined;
+          this.addEventListener("message", (event) => {
+            const frame = JSON.parse(event.data);
+            if (frame.channel === "presentation") last = { id: frame.id, data: event.data };
+            if (frame.channel !== "presentation.revoked" || !last || last.id !== frame.id) return;
+            const revoked = last.data;
+            Object.assign(window, { replayRevokedPresentation: () => {
+              this.dispatchEvent(new MessageEvent("message", { data: revoked }));
+              this.dispatchEvent(new MessageEvent("message", { data: event.data }));
+            } });
+          });
+        }
+      };
       const held = new Promise<void>((resolve) => window.addEventListener("release-test-snapshot", () => resolve(), { once: true }));
       const fetch = window.fetch.bind(window);
       window.fetch = async (...args) => {
@@ -143,6 +161,7 @@ test("presents a private illustrated handout and journal pin while the player st
     });
     let receivedPresence!: () => void;
     let receivedPresentation!: () => void;
+    let receivedJournal = false;
     const connected = new Promise<void>((resolve) => { receivedPresence = resolve; });
     const delivered = new Promise<void>((resolve) => { receivedPresentation = resolve; });
     player.on("websocket", (socket) => {
@@ -150,7 +169,10 @@ test("presents a private illustrated handout and journal pin while the player st
       socket.on("framereceived", ({ payload }) => {
         const frame = JSON.parse(String(payload));
         if (frame.type === "presence.snapshot") receivedPresence();
-        if (frame.channel === "presentation") receivedPresentation();
+        if (frame.channel === "presentation") {
+          receivedPresentation();
+          if (frame.body.includes("both braziers")) receivedJournal = true;
+        }
       });
     });
     try {
@@ -178,16 +200,17 @@ test("presents a private illustrated handout and journal pin while the player st
       await expect(player.getByRole("img", { name: asset.name })).toHaveCount(0);
       await expect(playerBoard).toBeVisible();
       await expect(page.getByRole("checkbox", { name: "Demo Player" })).toHaveCount(0);
-      // A pin can open while the GM's full campaign refresh is still in flight.
-      await page.evaluate(() => {
-        const held = new Promise<void>((resolve) => window.addEventListener("release-gm-snapshot", () => resolve(), { once: true }));
+      await expect(player.getByRole("combobox", { name: "Session user" }).locator("option:checked")).toContainText("observer");
+      // The GM and recipient can both retain the observer snapshot while the promotion is in flight.
+      await Promise.all([page, player].map((participant) => participant.evaluate(() => {
+        const held = new Promise<void>((resolve) => window.addEventListener("release-promotion-snapshot", () => resolve(), { once: true }));
         const fetch = window.fetch.bind(window);
         window.fetch = async (...args) => {
           const response = await fetch(...args);
           if (new URL(response.url).pathname === "/api/v1/campaigns/camp_demo/snapshot") await held;
           return response;
         };
-      });
+      })));
     } finally {
       await seatRole("player");
     }
@@ -206,10 +229,22 @@ test("presents a private illustrated handout and journal pin while the player st
     try {
       await pinDialog.getByRole("checkbox", { name: "Demo Player" }).check({ timeout: 5000 });
     } finally {
-      await page.evaluate(() => window.dispatchEvent(new Event("release-gm-snapshot")));
+      await page.evaluate(() => window.dispatchEvent(new Event("release-promotion-snapshot")));
     }
     await pinDialog.getByRole("button", { name: "Show selected players" }).click();
-    await expect(modal).toContainText("both braziers");
+    try {
+      await expect.poll(() => receivedJournal).toBe(true);
+      await expect(modal).toContainText("both braziers");
+      await player.evaluate(async () => {
+        const replay = (window as Window & { replayRevokedPresentation?: () => void }).replayRevokedPresentation;
+        if (!replay) throw new Error("The player socket did not receive its presentation revocation");
+        replay();
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      });
+      await expect(modal).toContainText("both braziers");
+    } finally {
+      await player.evaluate(() => window.dispatchEvent(new Event("release-promotion-snapshot")));
+    }
     await expect(player.getByRole("button", { name: "Open map pin GM key" })).toHaveCount(0);
     await player.reload();
     await expect(playerBoard).toBeVisible();

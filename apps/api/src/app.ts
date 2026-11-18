@@ -305,7 +305,7 @@ import { assertDeclarativeArchiveDependencies, declarativeArchiveSystemRequireme
 import { declarativeSystemManifestChecksum, DeclarativeRuntimeError } from "./declarative-system-runtime.js";
 import { assertDeclarativeSystemRecord, assertDeclarativeSystemStateCandidate, DeclarativeSystemStateError, resolvePinnedDeclarativeSystem } from "./declarative-system-state.js";
 import { advanceDeclarativeBindingRevisions, advanceImportedDeclarativeBindingRevisions, declarativeRuntimeForActor, initialDeclarativeBinding, installedDeclarativeIdentity, isDeclarativeSystem, sameSystemIdentity } from "./declarative-system-host.js";
-import type { RealtimePresentation } from "@open-tabletop/core";
+import { PRESENTATION_TTL_MS, type RealtimePresentation } from "@open-tabletop/core";
 import { RealtimeHub, type RealtimeClient } from "./realtime.js";
 import { createRequestLoggerOptions, type RequestLogStream } from "./request-logging.js";
 import { FileStateStore, MemoryStateStore, demoSeedEnabled, type StateStore } from "./store.js";
@@ -6936,7 +6936,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       || !body.recipientUserIds.length || body.recipientUserIds.length > 100) return badRequest(reply, "Choose 1 to 100 player seats");
     if (!canCampaign(store, userId, campaignId, body.targetType === "journal" ? "journal.update" : "handout.update")) return forbidden(reply, "Cannot present this content");
     const recipientIds = new Set(body.recipientUserIds);
-    if ([...recipientIds].some((id) => !store.state.members.some((member) => member.userId === id && member.campaignId === campaignId && member.role === "player") || !isActiveUserId(store, id))) {
+    const recipientSeats = new Map(store.state.members
+      .filter((member) => member.campaignId === campaignId && recipientIds.has(member.userId) && member.role === "player" && isActiveUserId(store, member.userId))
+      .map((member) => [member.userId, member]));
+    if (recipientSeats.size !== recipientIds.size) {
       return badRequest(reply, "Choose current campaign players");
     }
     if (body.targetType === "journal" || body.pinId !== undefined || body.sceneId !== undefined) {
@@ -6951,15 +6954,17 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const images = handout ? store.state.assets.filter((asset) => asset.campaignId === campaignId && handout.assetIds.includes(asset.id)
       && isPresentationImage(asset) && canReadAssetRecord(store, userId, asset)).map(({ id: assetId, name }) => ({ assetId, name })) : [];
     const delivered = new Set<string>();
-    const expiresAt = Date.now() + 5 * 60_000;
+    const expiresAt = Date.now() + PRESENTATION_TTL_MS;
     for (const client of hub.clientsMatching({ campaignId })) {
-      if (!client.userId || !recipientIds.has(client.userId) || !client.isOpen?.() || !realtimeClientAuthorizationIsCurrent(store, client)) continue;
+      const seat = client.userId && recipientSeats.get(client.userId);
+      if (!seat || !client.isOpen?.() || !realtimeClientAuthorizationIsCurrent(store, client)) continue;
       const id = randomBytes(24).toString("base64url");
-      const envelope: RealtimePresentation = { channel: "presentation", campaignId, id, expiresAt, title: entry.title, body: entry.body, images };
+      const envelope: RealtimePresentation = { channel: "presentation", campaignId, id, expiresAt, title: entry.title, body: entry.body, images,
+        recipientSeat: { id: seat.id, userId: seat.userId, updatedAt: seat.updatedAt } };
       try {
         client.send(JSON.stringify(envelope));
         client.presentation = { id, expiresAt, handoutId: handout?.id, assetIds: new Set(images.map((image) => image.assetId)) };
-        delivered.add(client.userId);
+        delivered.add(seat.userId);
       } catch {
         hub.remove(client);
       }
