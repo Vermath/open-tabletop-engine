@@ -1637,6 +1637,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   const browserAllowedOrigins = configuredBrowserOrigins();
   await app.register(cors, {
     credentials: true,
+    methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE"],
     exposedHeaders: ["x-otte-session-transport", "idempotency-replayed"],
     origin(origin, callback) {
       if (!origin || browserAllowedOrigins.includes(origin)) return callback(null, true);
