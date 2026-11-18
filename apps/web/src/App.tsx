@@ -104,8 +104,8 @@ import { TypedDamageCard, type TypedDamageApplyResult } from "./typed-damage-car
 import { ActorLoadoutPanel, filterActorLoadoutItems, type ActorLoadoutFilter } from "./actor-loadout-panel.js";
 import { TacticalMapAids, coverLevelLabel, sceneCoverOverrideBetween } from "./tactical-map-aids.js";
 import { CalculationExplanationPanel } from "./calculation-explanation-panel.js";
-import { DeferredPanel, LazyActorPanel as ActorPanel, LazyAdminPanel, LazyAdvancementFlow, LazyAiPanel, LazyCampaignMemoryPanel, LazyCampaignWebhooksPanel, LazyCharacterCreatorDialog, LazyCompatibilityPanel, LazyCompendiumPanel, LazyContentImportPanel, LazyControlledCreaturesPanel, LazyDndCharacterReviewPanel, LazyDndCustomContentPanel, LazyDndInventoryCommercePanel, LazySdkPanel } from "./deferred-panels.js";
-import { PartyRollPanel } from "./party-roll-panel.js";
+import { DeferredPanel, LazyPartyRollPanel, LazyActorPanel as ActorPanel, LazyAdminPanel, LazyAdvancementFlow, LazyAiPanel, LazyCampaignMemoryPanel, LazyCampaignWebhooksPanel, LazyCharacterCreatorDialog, LazyCompatibilityPanel, LazyCompendiumPanel, LazyContentImportPanel, LazyControlledCreaturesPanel, LazyDndCharacterReviewPanel, LazyDndCustomContentPanel, LazyDndInventoryCommercePanel, LazySdkPanel } from "./deferred-panels.js";
+
 import type { PartyRollRequest } from "@open-tabletop/api-contracts";
 import { LiveSessionBanner, SessionDeskPanel, sessionReportAllowed } from "./session-desk-panel.js";
 import { sessionRecapJournalPayload } from "./session-recap.js";
@@ -10151,8 +10151,8 @@ export function App() {
             onlineCount={snapshot.presences.length}
             sceneActive={canManageScenes && selectedScene && workspaceMode !== "manage" && !sceneWorkspaceHidden ? selectedScene.active : undefined}
           />
-          {workspaceMode === "live" && !playerPreview.open && !blankCanvasDemoOpen && currentMember?.campaignId === campaignId && snapshot.session?.user.id === currentUserId && (
-            <PartyRollPanel key={`${campaignId}:${currentUserId}:${currentMember.role}`} campaignId={campaignId} currentUserId={currentUserId}
+          {workspaceMode === "live" && !playerPreview.open && !blankCanvasDemoOpen && currentMember?.campaignId === campaignId && snapshot.session?.user.id === currentUserId && (canManagePartyRolls || Boolean(snapshot.partyRollRequests?.length)) && (
+            <DeferredPanel label="party rolls"><LazyPartyRollPanel key={`${campaignId}:${currentUserId}:${currentMember.role}`} campaignId={campaignId} currentUserId={currentUserId}
               canManage={canManagePartyRolls}
               requests={(snapshot.partyRollRequests ?? []).filter((entry) => entry.campaignId === campaignId).flatMap((entry) => {
                 if (canManagePartyRolls) return [entry];
@@ -10160,7 +10160,7 @@ export function App() {
                 const recipients = entry.recipients.filter((row) => row.userId === currentUserId && snapshot.actors.some((actor) => actor.id === row.actorId && actor.ownerUserId === currentUserId));
                 return recipients.length ? [{ ...entry, recipients }] : [];
               })}
-              onRefresh={async () => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) await refresh(campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false }); }} />
+              onRefresh={async () => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) await refresh(campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false }); }} /></DeferredPanel>
           )}
           {showTableWorkspace && <WorkspaceViewControls
             shortPhone={shortPhone}

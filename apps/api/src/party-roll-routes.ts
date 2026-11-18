@@ -1,7 +1,8 @@
+import { createHash } from "node:crypto";
 import {
   createEvent, createTimestamped, hasPermission,
   type Actor, type DiceRoll, type EngineEvent, type PartyRollChoice, type PartyRollRecipient,
-  type PartyRollRequest, type PermissionName,
+  type PartyRollRequest, type PermissionName, type StoredPartyRollRequest,
 } from "@open-tabletop/core";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { rollFormulaWithFairness } from "./fair-dice.js";
@@ -32,7 +33,8 @@ function managesRequests(store: StateStore, userId: string, campaignId: string):
 
 function eligibleCharacter(store: StateStore, actor: Actor): actor is Actor & { ownerUserId: string } {
   const owner = actor.ownerUserId;
-  return actor.type === "character" && Boolean(owner && memberRole(store, owner, actor.campaignId) === "player"
+  return actor.type === "character" && Boolean(owner && store.state.users.some((user) => user.id === owner && !user.disabledAt)
+    && memberRole(store, owner, actor.campaignId) === "player"
     && permitted(store, owner, actor.campaignId, "actor.read") && permitted(store, owner, actor.campaignId, "dice.roll"));
 }
 
@@ -42,7 +44,8 @@ function currentPlayerCharacter(store: StateStore, campaignId: string, row: Part
     && actor.ownerUserId === userId && eligibleCharacter(store, actor));
 }
 
-export function partyRollForUser(store: StateStore, userId: string, request: PartyRollRequest): PartyRollRequest | undefined {
+export function partyRollForUser(store: StateStore, userId: string, stored: StoredPartyRollRequest): PartyRollRequest | undefined {
+  const { creation: _creation, ...request } = stored;
   if (managesRequests(store, userId, request.campaignId)) return {
     ...request,
     recipients: request.recipients.map((row) => row.result || currentPlayerCharacter(store, request.campaignId, row, row.userId)
@@ -50,6 +53,10 @@ export function partyRollForUser(store: StateStore, userId: string, request: Par
   };
   const recipients = request.recipients.filter((row) => currentPlayerCharacter(store, request.campaignId, row, userId));
   return recipients.length ? { ...request, recipients } : undefined;
+}
+
+function hashParts(parts: unknown[]): string {
+  return createHash("sha256").update(JSON.stringify(parts)).digest("hex");
 }
 
 function sheetChecks(dependencies: PartyRollDependencies, actor: Actor) {
@@ -86,11 +93,18 @@ export function registerPartyRollRoutes(app: FastifyInstance, dependencies: Part
     const allowed = requireManager(reply, request.headers, campaignId);
     if (allowed !== true) return allowed;
     const key = request.headers["idempotency-key"];
-    if (typeof key !== "string" || !key.trim()) return reply.code(400).send({ error: "bad_request", message: "An Idempotency-Key is required" });
+    if (typeof key !== "string" || !key.trim() || key.length > 160) return reply.code(400).send({ error: "bad_request", message: "Supply an Idempotency-Key of 1–160 characters" });
     const { rollId, actorIds } = request.body ?? {};
     if (typeof rollId !== "string" || !Array.isArray(actorIds) || !actorIds.length || actorIds.length > 100
       || actorIds.some((id) => typeof id !== "string") || new Set(actorIds).size !== actorIds.length) {
       return reply.code(400).send({ error: "bad_request", message: "Choose a check and 1–100 distinct characters" });
+    }
+    const scopedKeyHash = hashParts([campaignId, currentUserId(request.headers), key.trim()]);
+    const inputHash = hashParts([rollId, [...actorIds].sort()]);
+    const prior = store.state.partyRollRequests.find((entry) => entry.campaignId === campaignId && entry.creation?.scopedKeyHash === scopedKeyHash);
+    if (prior) {
+      if (prior.creation?.inputHash !== inputHash) return reply.code(409).send({ error: "conflict", message: "This Idempotency-Key already identifies a different party roll request" });
+      return reply.code(201).header("Idempotency-Replayed", "true").send({ id: prior.id });
     }
     const recipients: PartyRollRecipient[] = [];
     let label = "";
@@ -102,7 +116,7 @@ export function registerPartyRollRoutes(app: FastifyInstance, dependencies: Part
       label = roll.label;
       recipients.push({ actorId: actor.id, actorName: actor.name, userId: actor.ownerUserId });
     }
-    const entry = createTimestamped("partyroll", { campaignId, rollId, label, recipients });
+    const entry = createTimestamped("partyroll", { campaignId, rollId, label, recipients, creation: { scopedKeyHash, inputHash } });
     store.state.partyRollRequests.push(entry);
     changed(entry);
     return reply.code(201).send({ id: entry.id });

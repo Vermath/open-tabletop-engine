@@ -1678,6 +1678,11 @@ export interface PartyRollRequest extends Timestamps {
   recipients: PartyRollRecipient[];
 }
 
+/** Installation-local retry identity. Never included in player or GM responses. */
+export interface StoredPartyRollRequest extends PartyRollRequest {
+  creation?: { scopedKeyHash: string; inputHash: string };
+}
+
 export interface PartyRollChoice {
   actorId: ID;
   actorName: string;
@@ -3206,7 +3211,7 @@ export interface EngineState {
   handouts: Handout[];
   chat: ChatMessage[];
   rolls: DiceRoll[];
-  partyRollRequests: PartyRollRequest[];
+  partyRollRequests: StoredPartyRollRequest[];
   diceMacros: DiceMacro[];
   audioTracks: AudioTrack[];
   encounters: Encounter[];

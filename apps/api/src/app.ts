@@ -20938,6 +20938,8 @@ function idempotencyRecordIsSafe(record: EngineState["idempotencyRecords"][numbe
 function idempotencyPathIsEligible(path: string): boolean {
   const pathname = path.split("?")[0] ?? path;
   if (pathname === "/api/v1/auth" || pathname.startsWith("/api/v1/auth/")) return false;
+  // A party request owns a campaign- and creator-scoped key for its full lifetime.
+  if (/^\/api\/v1\/campaigns\/[^/]+\/party-roll-requests$/.test(pathname)) return false;
   if (pathname === "/api/v1/invites/accept") return false;
   if (pathname === "/api/v1/organization/invites") return false;
   if (/^\/api\/v1\/campaigns\/[^/]+\/invites$/.test(pathname)) return false;

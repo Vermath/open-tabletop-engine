@@ -6,6 +6,7 @@ import { Component, lazy, Suspense, type ReactNode } from "react";
  * pulling every operator tool into the initial tabletop bundle.
  */
 export const deferredPanelImporters = {
+  partyRolls: () => import("./party-roll-panel.js"),
   admin: () => import("./admin-panel.js"),
   ai: () => import("./ai-panel.js"),
   actor: () => import("./actor-panel.js"),
@@ -27,6 +28,7 @@ export const deferredPanelImporters = {
 /** Backward-compatible name for direct-navigation tests and consumers. */
 export const nonAiPanelImporters = deferredPanelImporters;
 
+export const LazyPartyRollPanel = lazy(async () => ({ default: (await deferredPanelImporters.partyRolls()).PartyRollPanel }));
 export const LazyAdminPanel = lazy(async () => ({ default: (await deferredPanelImporters.admin()).AdminPanel }));
 export const LazyAiPanel = lazy(async () => ({ default: (await deferredPanelImporters.ai()).AiPanel }));
 export const LazyActorPanel = lazy(async () => ({ default: (await deferredPanelImporters.actor()).LiveActorPanel }));

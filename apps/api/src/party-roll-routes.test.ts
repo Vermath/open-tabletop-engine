@@ -36,6 +36,12 @@ it("uses the current sheet and records exactly one private result per selected c
     expect(first.statusCode, first.body).toBe(201);
     expect(first.json()).toEqual(replay.json());
     expect(store.state.partyRollRequests).toHaveLength(1);
+    expect(store.state.idempotencyRecords.some((record) => record.key === "party-check")).toBe(false);
+    const reordered = await app.inject({ method: "POST", url: base, headers: { ...gm, "idempotency-key": "party-check" }, payload: { ...payload, actorIds: [...payload.actorIds].reverse() } });
+    expect(reordered.headers["idempotency-replayed"]).toBe("true");
+    expect(reordered.json()).toEqual(first.json());
+    expect((await visibleRequests(gm))[0]).not.toHaveProperty("creation");
+    expect((await visibleRequests(player))[0]).not.toHaveProperty("creation");
     const answer = `${base}/${first.json().id}/actors/${original.id}/roll`;
     expect((await visibleRequests(player))[0]?.recipients.map((row) => row.actorId)).toEqual([original.id]);
     expect((await visibleRequests(other))[0]?.recipients.map((row) => row.actorId)).toEqual([peer.id]);
@@ -60,6 +66,14 @@ it("uses the current sheet and records exactly one private result per selected c
       expect.objectContaining({ actorId: original.id, result: { id: roll.id, formula: expectedFormula, total: roll.total } }),
       { actorId: peer.id, actorName: peer.name, userId: peer.ownerUserId },
     ]);
+    const peerAccount = store.state.users.find((user) => user.id === peer.ownerUserId)!;
+    peerAccount.disabledAt = new Date().toISOString();
+    expect((await visibleRequests(gm))[0]?.recipients[1]?.unavailable).toBe(true);
+    const choices = await app.inject({ method: "GET", url: `${base}/choices`, headers: gm });
+    expect(choices.json().map((choice: { actorId: string }) => choice.actorId)).not.toContain(peer.id);
+    const disabledRequest = await app.inject({ method: "POST", url: base, headers: { ...gm, "idempotency-key": "disabled-owner" }, payload });
+    expect(disabledRequest.statusCode).toBe(400);
+    delete peerAccount.disabledAt;
     peer.ownerUserId = original.ownerUserId!;
     expect(await visibleRequests(other)).toEqual([]);
     expect((await visibleRequests(player))[0]?.recipients).toHaveLength(1);
@@ -80,10 +94,21 @@ it("restores a pending save and its recorded result across SQLite restarts", asy
     const created = await app.inject({ method: "POST", url: base, headers: { ...gm, "idempotency-key": "party-save" }, payload: { actorIds: ["act_valen"], rollId: "save-strength" } });
     expect(created.statusCode, created.body).toBe(201);
     const url = `${base}/${created.json().id}/actors/act_valen/roll`;
+    // Model a completely evicted global retry ledger before restarting the process.
+    store.state.idempotencyRecords = [];
+    store.save();
+    store.flush();
     await app.close();
     store.close();
     store = new SqliteStateStore(db);
     app = await buildApp({ store });
+    const retry = await app.inject({ method: "POST", url: base, headers: { ...gm, "idempotency-key": "party-save" }, payload: { actorIds: ["act_valen"], rollId: "save-strength" } });
+    expect(retry.statusCode).toBe(201);
+    expect(retry.headers["idempotency-replayed"]).toBe("true");
+    expect(retry.json()).toEqual(created.json());
+    const changed = await app.inject({ method: "POST", url: base, headers: { ...gm, "idempotency-key": "party-save" }, payload: { actorIds: ["act_valen"], rollId: "save-dexterity" } });
+    expect(changed.statusCode).toBe(409);
+    expect(store.state.partyRollRequests).toHaveLength(1);
     const response = await app.inject({ method: "POST", url, headers: player });
     expect(response.statusCode, response.body).toBe(200);
     await app.close();

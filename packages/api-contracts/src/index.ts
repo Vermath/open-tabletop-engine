@@ -14193,7 +14193,10 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     requestBody: jsonRequestBody({ type: "object", required: ["rollId", "actorIds"], properties: {
       rollId: idSchema, actorIds: { type: "array", items: idSchema, minItems: 1, maxItems: 100, uniqueItems: true },
     } }),
-    responses: { "201": jsonResponse("Created party roll request ID", schemaRef("PartyRollReceipt")) },
+    responses: {
+      "201": jsonResponse("Created or replayed party roll request ID", schemaRef("PartyRollReceipt")),
+      "409": jsonResponse("This key identifies a different party roll request", schemaRef("ErrorResponse")),
+    },
   },
   "POST /api/v1/campaigns/{campaignId}/party-roll-requests/{requestId}/actors/{actorId}/roll": {
     responses: { "200": jsonResponse("Recorded roll ID, including on retry", schemaRef("PartyRollReceipt")) },

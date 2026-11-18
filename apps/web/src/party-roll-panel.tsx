@@ -1,4 +1,4 @@
-import { routes, type PartyRollChoice, type PartyRollRequest } from "@open-tabletop/api-contracts";
+import type { PartyRollChoice, PartyRollRequest } from "@open-tabletop/api-contracts";
 import { Dices, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { apiGet, apiPost } from "./api.js";
@@ -20,6 +20,7 @@ export function PartyRollPanel({ campaignId, currentUserId, canManage, requests,
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const submitting = useRef(false);
+  const requestPath = `/api/v1/campaigns/${encodeURIComponent(campaignId)}/party-roll-requests`;
   const storageKey = `otte:party-roll-attempt:${campaignId}:${currentUserId}`;
 
   useEffect(() => {
@@ -33,7 +34,7 @@ export function PartyRollPanel({ campaignId, currentUserId, canManage, requests,
     if (!open || !canManage) return;
     const controller = new AbortController();
     setChoices(undefined);
-    apiGet<PartyRollChoice[]>(routes.partyRollChoices(campaignId), { signal: controller.signal })
+    apiGet<PartyRollChoice[]>(`${requestPath}/choices`, { signal: controller.signal })
       .then((next) => {
         if (controller.signal.aborted) return;
         setChoices(next);
@@ -41,7 +42,7 @@ export function PartyRollPanel({ campaignId, currentUserId, canManage, requests,
       })
       .catch((cause) => { if (!controller.signal.aborted) setError(errorMessage(cause)); });
     return () => controller.abort();
-  }, [open, campaignId, canManage]);
+  }, [open, requestPath, canManage]);
 
   const checks = Array.from(new Map(choices?.flatMap((choice) => choice.rolls.map((roll) => [roll.id, roll] as const))).values());
   const eligible = choices?.filter((choice) => choice.rolls.some((roll) => roll.id === check)) ?? [];
@@ -71,13 +72,13 @@ export function PartyRollPanel({ campaignId, currentUserId, canManage, requests,
     const last = sessionStorage.getItem(storageKey);
     const id = last?.startsWith(fingerprint + "\n") ? last.slice(fingerprint.length + 1) : crypto.randomUUID();
     sessionStorage.setItem(storageKey, fingerprint + "\n" + id);
-    await apiPost(routes.partyRollRequests(campaignId), input, { idempotencyKey: id });
+    await apiPost(requestPath, input, { idempotencyKey: id });
     sessionStorage.removeItem(storageKey);
     setActorIds([]);
   }
 
   function answer(requestId: string, actorId: string) {
-    return mutate(async () => { await apiPost(routes.answerPartyRoll(campaignId, requestId, actorId), {}); });
+    return mutate(async () => { await apiPost(`${requestPath}/${encodeURIComponent(requestId)}/actors/${encodeURIComponent(actorId)}/roll`, {}); });
   }
 
   if (!canManage && !requests.length) return null;

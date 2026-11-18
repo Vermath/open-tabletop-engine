@@ -99,6 +99,7 @@ export type {
   PartyRollChoice,
   PartyRollRecipient,
   PartyRollRequest,
+  StoredPartyRollRequest,
   CharacterTransfer,
   DndRulesMutationKind,
   DndRulesMutationStatus,
