@@ -93,7 +93,7 @@ import { assetMatchesFolderFilter, campaignArchiveTargetId, contentImportEntityD
 import { ArchiveImportRecovery, recoverDeletedArchiveImportWorkspace } from "./archive-import-recovery.js";
 import { downloadCampaignArchiveStream, isArchiveTransferAbort, isCampaignArchiveStreamFile, readCampaignArchiveStreamMetadata, uploadCampaignArchiveStream } from "./archive-stream-client.js";
 import { ArchiveTransferProgress, archiveTransferIsBusy, type ArchiveTransferState } from "./archive-transfer-progress.js";
-import { archiveExportCollectionOptions, archiveExportMinimumRecordCount, type ArchiveExportCollection, type ArchiveExportScope } from "./archive-export-estimate.js";
+import type { ArchiveExportCollection, ArchiveExportScope } from "./archive-export-estimate.js";
 import { systemAdvancementOptionId, systemEncounterThreatId, systemRollId } from "./system-actions.js";
 import type { CharacterCreateInput, CharacterCreatorRulesPreview, CharacterOriginsInfo } from "./character-creator-dialog.js";
 import { CharacterImportDialog, type CharacterImportOutcome } from "./character-import-dialog.js";
@@ -109,7 +109,7 @@ import { TypedDamageCard, type TypedDamageApplyResult } from "./typed-damage-car
 import { ActorLoadoutPanel, filterActorLoadoutItems, type ActorLoadoutFilter } from "./actor-loadout-panel.js";
 import { TacticalMapAids, coverLevelLabel, sceneCoverOverrideBetween } from "./tactical-map-aids.js";
 import { CalculationExplanationPanel } from "./calculation-explanation-panel.js";
-import { DeferredPanel, LazyPartyRollPanel, LazyActorPanel as ActorPanel, LazyAdminPanel, LazyAdvancementFlow, LazyAiPanel, LazyCampaignMemoryPanel, LazyCampaignWebhooksPanel, LazyCharacterCreatorDialog, LazyCompatibilityPanel, LazyCompendiumPanel, LazyContentImportPanel, LazyControlledCreaturesPanel, LazyDndCharacterReviewPanel, LazyDndCustomContentPanel, LazyDndInventoryCommercePanel, LazySdkPanel } from "./deferred-panels.js";
+import { DeferredPanel, LazyArchiveExportWizard, LazyArchiveImportWizard, LazyPartyRollPanel, LazyActorPanel as ActorPanel, LazyAdminPanel, LazyAdvancementFlow, LazyAiPanel, LazyCampaignMemoryPanel, LazyCampaignWebhooksPanel, LazyCharacterCreatorDialog, LazyCompatibilityPanel, LazyCompendiumPanel, LazyContentImportPanel, LazyControlledCreaturesPanel, LazyDndCharacterReviewPanel, LazyDndCustomContentPanel, LazyDndInventoryCommercePanel, LazySdkPanel } from "./deferred-panels.js";
 
 import type { PartyRollRequest } from "@open-tabletop/api-contracts";
 import { LiveSessionBanner, SessionDeskPanel, sessionReportAllowed } from "./session-desk-panel.js";
@@ -256,24 +256,6 @@ function aiAgentProviderMessages(messages: AiAgentMessage[]): Array<{ role: "use
 function isAiAgentClearCommand(prompt: string): boolean {
   return /^\/clear(?:\s+.*)?$/i.test(prompt.trim());
 }
-
-const archiveImportCollectionOptions: Array<{ id: ArchiveImportCollection; label: string }> = [
-  { id: "assets", label: "Assets" },
-  { id: "scenes", label: "Scenes" },
-  { id: "tokens", label: "Tokens" },
-  { id: "actors", label: "Actors" },
-  { id: "items", label: "Items" },
-  { id: "journals", label: "Journals" },
-  { id: "handouts", label: "Handouts" },
-  { id: "chat", label: "Chat" },
-  { id: "rolls", label: "Rolls" },
-  { id: "diceMacros", label: "Dice macros" },
-  { id: "rollableTables", label: "Rollable tables" },
-  { id: "encounters", label: "Encounters" },
-  { id: "combats", label: "Combats" },
-  { id: "contentImports", label: "Import batches" },
-  { id: "fogPresets", label: "Fog presets" }
-];
 
 function initialAiAgentPanelSize(): FloatingPanelSize {
   return {
@@ -753,17 +735,6 @@ export function App() {
   const nextTurnTokenIds = useMemo(() => nextTurnCombatant?.tokenId && nextTurnCombatant.id !== currentTurnCombatant?.id ? [nextTurnCombatant.tokenId] : [], [nextTurnCombatant?.tokenId, nextTurnCombatant?.id, currentTurnCombatant?.id]);
   const recentEndedCombats = snapshot.combats.filter((combat) => !combat.active).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).slice(0, 3);
   const selectedPermissionTemplate = campaignPermissionTemplates.find((template) => template.id === setupPermissionTemplate) ?? campaignPermissionTemplates[0]!;
-  const archiveExportRecordCount = archiveExportMinimumRecordCount({ campaignId, scope: archiveExportScope, worldId: archiveExportWorldId, collections: archiveExportCollections, snapshot, worlds, handouts });
-  const archiveCompatibilityNotes = [
-    archiveExportScope === "campaign"
-      ? "Exports the selected campaign and all related portable tabletop records."
-      : archiveExportScope === "world"
-        ? "Exports one world with dependency-closed scenes, actors, content, assets, sessions, and audit records."
-        : "Exports the campaign identity shell plus the selected record collections and referenced dependency records; dependency warnings are embedded in the archive.",
-    "The displayed count is a conservative minimum because the server can include dependencies and history unavailable in the browser snapshot.",
-    "Archive 0.2.0 is accepted by the current v0.3/v1-compatible importer.",
-    "Portable redaction strips account secrets, sessions, MFA, SCIM sources, plugin reviews, idempotency records, jobs, and organization records while preserving playable content."
-  ];
   const chatRecipientOptions = snapshot.members.filter((member) => member.user.id !== currentUserId);
   const chatReplyTarget = snapshot.chat.find((message) => message.id === chatReplyToMessageId);
   const campaignDeleteImpact = selectedCampaign
@@ -10009,190 +9980,62 @@ export function App() {
             )}
             {activeManageCategory === "archives" && (
               <div className="manage-card-grid">
-        <section className="account-box" aria-label="Archive export wizard">
-          <div className="section-title">Archive Export</div>
-          <select aria-label="Archive export scope" value={archiveExportScope} onChange={(event) => { const scope = event.target.value as ArchiveExportScope; setArchiveExportScope(scope); if (scope === "world" && !archiveExportWorldId) setArchiveExportWorldId(worlds[0]?.id ?? ""); }}>
-            <option value="campaign">Current campaign</option>
-            <option value="world">One world</option>
-            <option value="selected_collections">Selected record collections</option>
-          </select>
-          {archiveExportScope === "world" && (
-            <label>
-              <span>World</span>
-              <select aria-label="Archive export world" value={archiveExportWorldId} onChange={(event) => setArchiveExportWorldId(event.target.value)}>
-                <option value="">Select a world</option>
-                {worlds.map((world) => <option key={world.id} value={world.id}>{world.name}</option>)}
-              </select>
-            </label>
-          )}
-          {archiveExportScope === "selected_collections" && (
-            <div className="asset-pressure-list archive-export-collections" aria-label="Archive export collection selection">
-              {archiveExportCollectionOptions.map((option) => (
-                <label className="operator-row tool-call-row" key={option.id}>
-                  <span>{option.label}</span>
-                  <input
-                    type="checkbox"
-                    aria-label={`Export ${option.label}`}
-                    checked={archiveExportCollections.includes(option.id)}
-                    onChange={(event) => updateArchiveExportCollection(option.id, event.target.checked)}
+                <DeferredPanel label="campaign archives">
+                  <LazyArchiveExportWizard
+                    campaignId={campaignId}
+                    snapshot={snapshot}
+                    worlds={worlds}
+                    handouts={handouts}
+                    scope={archiveExportScope}
+                    worldId={archiveExportWorldId}
+                    collections={archiveExportCollections}
+                    version={archiveExportVersion}
+                    redaction={archiveRedactionMode}
+                    status={archiveExportStatus}
+                    busy={archiveTransferBusy}
+                    onScopeChange={setArchiveExportScope}
+                    onWorldChange={setArchiveExportWorldId}
+                    onCollectionChange={updateArchiveExportCollection}
+                    onVersionChange={setArchiveExportVersion}
+                    onRedactionChange={setArchiveRedactionMode}
+                    onStreamExport={() => void exportCampaignStream().catch((error) => setArchiveExportStatus(error instanceof Error ? error.message : String(error)))}
+                    onJsonExport={() => void exportCampaignJson().catch((error) => setArchiveExportStatus(error instanceof Error ? error.message : String(error)))}
                   />
-                </label>
-              ))}
-            </div>
-          )}
-          <select aria-label="Archive export version" value={archiveExportVersion} onChange={(event) => setArchiveExportVersion(event.target.value as ArchiveExportVersion)}>
-            <option value="0.2.0">Archive 0.2.0</option>
-          </select>
-          <select aria-label="Archive redaction mode" value={archiveRedactionMode} onChange={(event) => setArchiveRedactionMode(event.target.value as ArchiveRedactionMode)}>
-            <option value="portable">Portable table archive</option>
-          </select>
-          <div className="asset-pressure-list" aria-label="Archive compatibility notes">
-            <div className="operator-row tool-call-row">
-              <span>Scope</span>
-              <strong>{archiveExportRecordCount === undefined ? "Select a world to estimate" : `At least ${formatNumber(archiveExportRecordCount)} records`}</strong>
-            </div>
-            {archiveCompatibilityNotes.map((note) => (
-              <div className="operator-row tool-call-row" key={note}>
-                <span>Note</span>
-                <strong>{note}</strong>
-              </div>
-            ))}
-          </div>
-          <p className="account-summary">{archiveExportStatus}</p>
-          <button className="ghost-button wide" type="button" disabled={archiveTransferBusy || (archiveExportScope === "world" && !archiveExportWorldId)} onClick={() => exportCampaignStream().catch((error) => setArchiveExportStatus(error instanceof Error ? error.message : String(error)))} title="Stream a large .ottx archive directly to disk">
-            <Download size={16} /> Export Large Archive (.ottx)
-          </button>
-          <button className="ghost-button wide" type="button" disabled={archiveTransferBusy || (archiveExportScope === "world" && !archiveExportWorldId)} onClick={() => exportCampaignJson().catch((error) => setArchiveExportStatus(error instanceof Error ? error.message : String(error)))} title="Materialize a legacy JSON archive for small campaigns and older tooling">
-            <Download size={16} /> Export JSON (small archives)
-          </button>
-        </section>
-        <button className="ghost-button" onClick={() => exportDogfoodReportBundle().catch((error) => reportError(error))} title="Download a redacted issue report bundle">
-          <Download size={16} /> Report Bundle
-        </button>
-        <ArchiveTransferProgress state={archiveTransfer} onCancel={cancelArchiveTransfer} />
-        <section className="account-box" aria-label="Archive import wizard">
-          <div className="section-title">Archive Import</div>
-          <select aria-label="Archive import mode" value={archiveImportMode} onChange={(event) => updateArchiveImportMode(event.target.value as ArchiveImportMode)}>
-            <option value="upsert">Apply archive</option>
-            <option value="reject_conflicts">Reject conflicts</option>
-            <option value="skip_conflicts">Skip conflicts</option>
-            <option value="dry_run">Dry run validation</option>
-          </select>
-          <select aria-label="Archive import scope" value={archiveImportScope} onChange={(event) => updateArchiveImportScope(event.target.value as ArchiveImportScope)}>
-            <option value="all">All records</option>
-            <option value="assets_only">Assets only</option>
-            <option value="selected_collections">Selected records</option>
-          </select>
-          {archiveImportScope === "selected_collections" && (
-            <div className="asset-pressure-list" aria-label="Archive import collection selection">
-              {archiveImportCollectionOptions.map((option) => (
-                <label className="operator-row tool-call-row" key={option.id}>
-                  <span>{option.label}</span>
-                  <input
-                    type="checkbox"
-                    aria-label={`Import ${option.label}`}
-                    checked={archiveImportCollections.includes(option.id)}
-                    onChange={(event) => updateArchiveImportCollection(option.id, event.target.checked)}
-                  />
-                </label>
-              ))}
-            </div>
-          )}
-          <button className="ghost-button wide" type="button" onClick={() => document.getElementById("import-file")?.click()} disabled={isImportingArchive || archiveTransferBusy} aria-describedby="import-status" title="Import a streamed .ottx archive or legacy .ottx.json archive">
-            {isImportingArchive ? <RefreshCw size={16} /> : <Upload size={16} />} {archiveImportMode === "dry_run" ? "Validate Archive" : "Import Archive"}
-          </button>
-          {archiveImportReport && (
-            <div className="asset-pressure-list" aria-label="Archive import validation">
-              <div className="operator-row tool-call-row">
-                <span>{archiveImportReportFileName || "Archive"}</span>
-                <strong>{archiveImportReport.dryRun ? "dry run" : "applied"}</strong>
-              </div>
-              <div className="operator-row tool-call-row">
-                <span>Scope</span>
-                <strong>{archiveImportReport.importScope === "assets_only" ? "assets only" : archiveImportReport.importScope === "selected_collections" ? "selected records" : "all records"}</strong>
-              </div>
-              {archiveImportReport.importCollections && archiveImportReport.importScope === "selected_collections" && (
-                <div className="operator-row tool-call-row">
-                  <span>Collections</span>
-                  <strong>{archiveImportReport.importCollections.join(", ")}</strong>
-                </div>
-              )}
-              <div className="operator-row tool-call-row">
-                <span>Records</span>
-                <strong>{summarizeImport(archiveImportReport)}</strong>
-              </div>
-              <div className="operator-row tool-call-row">
-                <span>Conflicts</span>
-                <strong>{formatNumber(archiveImportReport.conflicts.length)}</strong>
-              </div>
-              {archiveImportReport.importWarnings && archiveImportReport.importWarnings.length > 0 && (
-                <div className="operator-row tool-call-row">
-                  <span>Dependency warnings</span>
-                  <strong>{formatNumber(archiveImportReport.importWarnings.length)}</strong>
-                </div>
-              )}
-              {archiveImportReport.importWarnings?.slice(0, 3).map((warning) => (
-                <div className="operator-row tool-call-row" key={warning}>
-                  <span>Warning</span>
-                  <strong>{warning}</strong>
-                </div>
-              ))}
-              {archiveImportReport.skippedConflicts && (
-                <div className="operator-row tool-call-row">
-                  <span>Skipped</span>
-                  <strong>{formatNumber(archiveImportReport.skippedConflicts.length)}</strong>
-                </div>
-              )}
-              {archiveImportReport.conflicts.slice(0, 4).map((conflict) => (
-                <div className="operator-row tool-call-row" key={`${conflict.collection}:${conflict.id}`}>
-                  <span>{conflict.collection}</span>
-                  <strong>{conflict.id}</strong>
-                </div>
-              ))}
-            </div>
-          )}
-          <ArchiveImportRecovery
-            operations={archiveImportOperations}
-            selectedOperationId={selectedArchiveImportOperationId}
-            preview={archiveImportRollbackPreview}
-            busy={archiveImportRecoveryBusy}
-            onSelect={(operationId) => {
-              setSelectedArchiveImportOperationId(operationId);
-              setArchiveImportRollbackPreview(undefined);
-            }}
-            onPreview={(operationId) => void previewArchiveImportRollback(operationId).catch((error) => reportError(error))}
-            onRollback={(operationId) => void rollbackArchiveImport(operationId).catch((error) => reportError(error))}
-          />
-        </section>
-        <input
-          id="import-file"
-          type="file"
-          accept=".ottx,.ottx.json,application/vnd.open-tabletop.ottx-stream,application/json"
-          aria-label="Import campaign archive"
-          hidden
-          onChange={async (event) => {
-            const file = event.target.files?.[0];
-            if (!file) return;
-            await importCampaignArchive(file, event.currentTarget);
-          }}
-        />
-        <div id="import-status" className="import-status" role="status" aria-live="polite">
-          <strong>Import</strong>
-          <span>{importStatus}</span>
-        </div>
-        {failedArchiveImport && (
-          <div className="operator-row tool-call-row" aria-label="Archive import recovery">
-            <span>{failedArchiveImport.file.name} failed: {failedArchiveImport.message}</span>
-            <div className="admin-actions">
-              <button className="ghost-button" type="button" disabled={isImportingArchive || archiveTransferBusy} onClick={() => retryArchiveImport().catch((error) => reportError(error))}>
-                <RefreshCw size={16} /> Retry import
-              </button>
-              <button className="ghost-button" type="button" onClick={dismissArchiveImportFailure}>
-                <X size={16} /> Dismiss
-              </button>
-            </div>
-          </div>
-        )}
+                  <button className="ghost-button" onClick={() => exportDogfoodReportBundle().catch((error) => reportError(error))} title="Download a redacted issue report bundle">
+                    <Download size={16} /> Report Bundle
+                  </button>
+                  <ArchiveTransferProgress state={archiveTransfer} onCancel={cancelArchiveTransfer} />
+                  <LazyArchiveImportWizard
+                    mode={archiveImportMode}
+                    scope={archiveImportScope}
+                    collections={archiveImportCollections}
+                    importing={isImportingArchive}
+                    transferBusy={archiveTransferBusy}
+                    report={archiveImportReport}
+                    reportFileName={archiveImportReportFileName}
+                    status={importStatus}
+                    failure={failedArchiveImport}
+                    onModeChange={updateArchiveImportMode}
+                    onScopeChange={updateArchiveImportScope}
+                    onCollectionChange={updateArchiveImportCollection}
+                    onImport={importCampaignArchive}
+                    onRetry={() => void retryArchiveImport().catch(reportError)}
+                    onDismissFailure={dismissArchiveImportFailure}
+                  >
+                    <ArchiveImportRecovery
+                      operations={archiveImportOperations}
+                      selectedOperationId={selectedArchiveImportOperationId}
+                      preview={archiveImportRollbackPreview}
+                      busy={archiveImportRecoveryBusy}
+                      onSelect={(operationId) => {
+                        setSelectedArchiveImportOperationId(operationId);
+                        setArchiveImportRollbackPreview(undefined);
+                      }}
+                      onPreview={(operationId) => void previewArchiveImportRollback(operationId).catch((error) => reportError(error))}
+                      onRollback={(operationId) => void rollbackArchiveImport(operationId).catch((error) => reportError(error))}
+                    />
+                  </LazyArchiveImportWizard>
+                </DeferredPanel>
               </div>
             )}
             {activeManageCategory === "serverAdmin" && (
