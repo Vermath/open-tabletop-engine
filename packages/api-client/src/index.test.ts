@@ -59,6 +59,7 @@ const toolCallId = "tool_client";
 const inviteId = "inv_client";
 const sessionId = "sess_client";
 const requestId = "req_client";
+const partyRequestId = "party_check_client";
 const fogId = "fog_client";
 const wallId = "wall_client";
 const lightId = "light_client";
@@ -1856,6 +1857,9 @@ describe("OpenTabletopClient", () => {
         "2026-07-13T00:00:00.000Z",
         "webhook-retry-client",
       ),
+      client.partyRollChoices(campaignId),
+      client.requestPartyRoll(campaignId, { rollId: "skill-perception", actorIds: [actorId] }, "party-roll-client"),
+      client.answerPartyRoll(campaignId, partyRequestId, actorId),
       client.campaignSessions(campaignId),
       client.createCampaignSession(
         campaignId,
@@ -3259,6 +3263,7 @@ function normalizeCall(call: string): string {
     .replace(campaignSessionId, "{sessionId}")
     .replace(characterTransferId, "{transferId}")
     .replace(sessionId, "{sessionId}")
+    .replace(partyRequestId, "{requestId}")
     .replace(requestId, "{captureHandle}")
     .replace(fogId, "{fogId}")
     .replace(wallId, "{wallId}")
