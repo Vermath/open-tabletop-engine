@@ -11,6 +11,7 @@ import {
 } from "@open-tabletop/core";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { normalizeOperatorTargetSetHash, operatorTargetSetHash } from "./operator-mutation.js";
+import { nextRevisionTimestamp } from "./revision-timestamp.js";
 import type { StateStore } from "./store.js";
 
 const SCIM_ERROR_SCHEMA = "urn:ietf:params:scim:api:messages:2.0:Error";
@@ -774,7 +775,7 @@ function syncScimGroupRoleMapping(store: StateStore, mapping: ScimGroupRoleMappi
         sourceMember.campaignId = mapping.campaignId;
         sourceMember.role = mapping.role;
         sourceMember.source = { type: "scim_group", groupId: group.id, mappingId: mapping.id };
-        sourceMember.updatedAt = nowIso();
+        sourceMember.updatedAt = nextRevisionTimestamp(sourceMember.updatedAt);
         updatedMemberships += 1;
       }
       continue;

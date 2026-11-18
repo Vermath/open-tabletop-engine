@@ -47,8 +47,18 @@ describe("campaign ownership administration", () => {
       }));
 
       const headers = { ...gmHeaders, "idempotency-key": "campaign-transfer-player-owner" };
+      const targetSeat = store.state.members.find((member) => member.campaignId === campaign.id && member.userId === payload.targetUserId)!;
+      const ownerSeat = store.state.members.find((member) => member.campaignId === campaign.id && member.role === "owner")!;
+      const targetSeatTime = Date.now() + 60_000;
+      ownerSeat.updatedAt = new Date(targetSeatTime - 15_000).toISOString();
+      // A restored member can carry a valid timestamp in another time zone.
+      targetSeat.updatedAt = new Date(targetSeatTime - 8 * 60 * 60_000).toISOString().replace("Z", "-08:00");
       const transferred = await app.inject({ method: "POST", url: route, headers, payload });
       expect(transferred.statusCode).toBe(200);
+      const transferredAt = transferred.json().campaign.updatedAt;
+      expect(Date.parse(transferredAt)).toBeGreaterThan(targetSeatTime);
+      expect(transferred.json().newOwner.updatedAt).toBe(transferredAt);
+      expect(transferred.json().previousOwner.updatedAt).toBe(transferredAt);
       expect(transferred.json()).toEqual(expect.objectContaining({
         campaign: expect.objectContaining({ id: campaign.id, ownerUserId: "usr_demo_player" }),
         previousOwner: expect.objectContaining({ userId: "usr_demo_gm", role: "gm" }),

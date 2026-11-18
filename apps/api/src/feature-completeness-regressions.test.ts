@@ -46,6 +46,8 @@ describe("feature completeness regressions", () => {
     const store = new MemoryStateStore();
     const member = store.state.members.find((entry) => entry.campaignId === "camp_demo" && entry.userId === "usr_demo_player")!;
     member.source = { type: "scim_group", groupId: "grp_players", mappingId: "map_players" };
+    const priorSeatTime = Date.now() + 60_000;
+    member.updatedAt = new Date(priorSeatTime).toISOString();
     const { token } = seedSession(store, member.userId);
     const app = await buildApp({ store });
     await app.listen({ host: "127.0.0.1", port: 0 });
@@ -56,6 +58,7 @@ describe("feature completeness regressions", () => {
       const accepted = await app.inject({ method: "POST", url: "/api/v1/invites/accept", headers: { authorization: `Bearer ${token}` }, payload: { token: invite.json().token } });
       expect(accepted.statusCode, accepted.body).toBe(200);
       expect(accepted.json().membership).toMatchObject({ id: member.id });
+      expect(Date.parse(member.updatedAt)).toBeGreaterThan(priorSeatTime);
       expect(accepted.json().membership).not.toHaveProperty("source");
       const event = await reader.waitFor("campaign.member.joined", member.userId);
       expect(event.payload).toMatchObject({ id: member.id });

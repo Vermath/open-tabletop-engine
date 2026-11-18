@@ -85,15 +85,21 @@ it("sends saved content only to selected live seats and limits images to their c
     await expect.poll(() => selected.presentations.length).toBe(3);
     const demoted = selected.presentations[2]!;
     const member = store.state.members.find((m) => m.userId === player)!;
+    const priorSeatTime = Date.now() + 60_000;
+    member.updatedAt = new Date(priorSeatTime).toISOString();
     const changeRole = (role: "observer" | "player") => app.inject({ method: "PATCH", url: `/api/v1/campaigns/${campaignId}/members/${member.id}`,
       headers: { "x-user-id": gm, "idempotency-key": crypto.randomUUID() }, payload: { role, expectedUpdatedAt: member.updatedAt } });
     expect((await changeRole("observer")).statusCode).toBe(200);
+    const observerTime = Date.parse(member.updatedAt);
+    expect(observerTime).toBeGreaterThan(priorSeatTime);
     await expect.poll(() => selected.messages.map((m) => JSON.parse(m)).some((m) => m.channel === "presentation.revoked" && m.id === demoted.id)).toBe(true);
     expect((await changeRole("player")).statusCode).toBe(200);
+    expect(Date.parse(member.updatedAt)).toBeGreaterThan(observerTime);
     expect((await blob(player, image.id, demoted.id)).statusCode).toBe(404);
     expect((await present(gm)).statusCode).toBe(200);
     await expect.poll(() => selected.presentations.length).toBe(4);
     const latest = selected.presentations[3]!;
+    expect(latest.recipientSeat).toEqual({ id: member.id, userId: player, updatedAt: member.updatedAt });
     await new Promise<void>((resolve) => { selected.ws.addEventListener("close", () => resolve()); selected.ws.close(); });
     const reconnected = await listen(player);
     expect((await blob(player, image.id, latest.id)).statusCode).toBe(404);

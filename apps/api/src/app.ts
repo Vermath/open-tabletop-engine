@@ -1,4 +1,5 @@
 import { campaignCharacterClaimRoster, characterClaimOption } from "./character-claims.js";
+import { nextRevisionTimestamp } from "./revision-timestamp.js";
 import { dnd5eSrdMonsterCatalog } from "@open-tabletop/system-sdk";
 import { registerCompendiumPlacementRoutes } from "./compendium-placement-routes.js";
 import { clampScenePoint, sceneGridSize, sceneGridOrigin, snapScenePointToGrid, snapTokenCenterToGrid } from "@open-tabletop/core";
@@ -305,7 +306,7 @@ import { assertDeclarativeArchiveDependencies, declarativeArchiveSystemRequireme
 import { declarativeSystemManifestChecksum, DeclarativeRuntimeError } from "./declarative-system-runtime.js";
 import { assertDeclarativeSystemRecord, assertDeclarativeSystemStateCandidate, DeclarativeSystemStateError, resolvePinnedDeclarativeSystem } from "./declarative-system-state.js";
 import { advanceDeclarativeBindingRevisions, advanceImportedDeclarativeBindingRevisions, declarativeRuntimeForActor, initialDeclarativeBinding, installedDeclarativeIdentity, isDeclarativeSystem, sameSystemIdentity } from "./declarative-system-host.js";
-import type { RealtimePresentation } from "@open-tabletop/core";
+import { PRESENTATION_TTL_MS, type RealtimePresentation } from "@open-tabletop/core";
 import { RealtimeHub, type RealtimeClient } from "./realtime.js";
 import { createRequestLoggerOptions, type RequestLogStream } from "./request-logging.js";
 import { FileStateStore, MemoryStateStore, demoSeedEnabled, type StateStore } from "./store.js";
@@ -3522,7 +3523,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (typeof reason === "string" && reason.length > 160) return badRequest(reply, "reason must be 160 characters or fewer");
 
     const previousTargetRole = newOwnerMember.role;
-    const updatedAt = nextRevisionTimestamp(campaign.updatedAt);
+    const updatedAt = nextRevisionTimestamp(campaign.updatedAt, previousOwnerMember.updatedAt, newOwnerMember.updatedAt);
     campaign.ownerUserId = targetUserId;
     campaign.updatedAt = updatedAt;
     previousOwnerMember.role = "gm";
@@ -3550,7 +3551,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!role) return badRequest(reply, "role must be gm, assistant_gm, player, or observer");
     const before = { role: member.role };
     member.role = role;
-    member.updatedAt = nowIso();
+    member.updatedAt = nextRevisionTimestamp(member.updatedAt);
     appendServerAuditLog(store, userId, { campaignId: member.campaignId, action: "campaign.member.update", targetType: "campaign_member", targetId: member.id, before, after: { role: member.role, userId: member.userId } });
     store.save();
     broadcast(createEvent({ campaignId: member.campaignId, type: "campaign.member.updated", actorUserId: userId, targetId: member.id, payload: member }));
@@ -3709,7 +3710,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         store.state.members.push(member);
       } else if (member.role !== "owner") {
         member.role = invite.role;
-        member.updatedAt = nowIso();
+        member.updatedAt = nextRevisionTimestamp(member.updatedAt);
       }
       invite.acceptedAt = nowIso();
       invite.acceptedByUserId = user.id;
@@ -6936,7 +6937,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       || !body.recipientUserIds.length || body.recipientUserIds.length > 100) return badRequest(reply, "Choose 1 to 100 player seats");
     if (!canCampaign(store, userId, campaignId, body.targetType === "journal" ? "journal.update" : "handout.update")) return forbidden(reply, "Cannot present this content");
     const recipientIds = new Set(body.recipientUserIds);
-    if ([...recipientIds].some((id) => !store.state.members.some((member) => member.userId === id && member.campaignId === campaignId && member.role === "player") || !isActiveUserId(store, id))) {
+    const recipientSeats = new Map(store.state.members
+      .filter((member) => member.campaignId === campaignId && recipientIds.has(member.userId) && member.role === "player" && isActiveUserId(store, member.userId))
+      .map((member) => [member.userId, member]));
+    if (recipientSeats.size !== recipientIds.size) {
       return badRequest(reply, "Choose current campaign players");
     }
     if (body.targetType === "journal" || body.pinId !== undefined || body.sceneId !== undefined) {
@@ -6951,15 +6955,17 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const images = handout ? store.state.assets.filter((asset) => asset.campaignId === campaignId && handout.assetIds.includes(asset.id)
       && isPresentationImage(asset) && canReadAssetRecord(store, userId, asset)).map(({ id: assetId, name }) => ({ assetId, name })) : [];
     const delivered = new Set<string>();
-    const expiresAt = Date.now() + 5 * 60_000;
+    const expiresAt = Date.now() + PRESENTATION_TTL_MS;
     for (const client of hub.clientsMatching({ campaignId })) {
-      if (!client.userId || !recipientIds.has(client.userId) || !client.isOpen?.() || !realtimeClientAuthorizationIsCurrent(store, client)) continue;
+      const seat = client.userId && recipientSeats.get(client.userId);
+      if (!seat || !client.isOpen?.() || !realtimeClientAuthorizationIsCurrent(store, client)) continue;
       const id = randomBytes(24).toString("base64url");
-      const envelope: RealtimePresentation = { channel: "presentation", campaignId, id, expiresAt, title: entry.title, body: entry.body, images };
+      const envelope: RealtimePresentation = { channel: "presentation", campaignId, id, expiresAt, title: entry.title, body: entry.body, images,
+        recipientSeat: { id: seat.id, userId: seat.userId, updatedAt: seat.updatedAt } };
       try {
         client.send(JSON.stringify(envelope));
         client.presentation = { id, expiresAt, handoutId: handout?.id, assetIds: new Set(images.map((image) => image.assetId)) };
-        delivered.add(client.userId);
+        delivered.add(seat.userId);
       } catch {
         hub.remove(client);
       }
@@ -29168,12 +29174,6 @@ function staleWriteConflict(reply: FastifyReply, input: { resourceType: Revision
 }
 
 type RevisionResourceType = "rollable_table" | "actor" | "calculation_override" | "campaign" | "campaign_invite" | "campaign_member" | "campaign_session" | "character_transfer" | "combat" | "content_import" | "item" | "journal" | "organization" | "organization_member" | "plugin_storage" | "scene" | "token" | "user" | "world_record" | "world_relation";
-
-function nextRevisionTimestamp(current: string): string {
-  const now = Date.now();
-  const currentTime = Date.parse(current);
-  return new Date(Number.isFinite(currentTime) && currentTime >= now ? currentTime + 1 : now).toISOString();
-}
 
 function advanceCampaignAggregateRevision(store: StateStore, campaignId: string): Campaign | undefined {
   const campaign = store.state.campaigns.find((candidate) => candidate.id === campaignId);

@@ -4,7 +4,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { clearHandoutDraftAfterConfirmedSave, HandoutEditor, handoutPayload, mergeHandoutReadReceipt, storedHandoutDraft, upsertHandoutItem, type HandoutDraft, type HandoutLibraryItem } from "./handout-library-panel.js";
-import { presentationSeatAccess, PresentToPlayers } from "./presentation.js";
+import { isPresentation, presentationSeatAccess, PresentToPlayers } from "./presentation.js";
 import type { CampaignMemberInfo } from "./api.js";
 import { localDraftKey, removeLocalDraft, writeLocalDraft } from "./local-draft-storage.js";
 
@@ -33,6 +33,30 @@ it("holds presentations until membership for the current campaign, account and s
   expect(access(scope)).toBe("allowed");
   expect(access(scope, [])).toBe("denied");
   expect(access(scope, [{ ...player, role: "observer" }])).toBe("denied");
+});
+
+it("uses only a newer grant for the same active recipient seat", () => {
+  const scope = { campaignId: "camp", userId: "player", sessionEpoch: 3 };
+  const observer: CampaignMemberInfo = { id: "seat", campaignId: "camp", userId: "player", role: "observer", active: true, permissions: [],
+    user: { id: "player", displayName: "Player" }, createdAt: "", updatedAt: "2026-11-18T00:00:01Z" };
+  const granted = { id: observer.id, userId: observer.userId, updatedAt: "2026-11-18T00:00:02Z" };
+  const access = (members = [observer], seat = granted, membershipScope = scope) => presentationSeatAccess(membershipScope, "camp", "player", 3, members, seat);
+  expect(access()).toBe("allowed");
+  expect(access([], granted)).toBe("denied");
+  expect(access([{ ...observer, active: false }])).toBe("denied");
+  expect(access([{ ...observer, updatedAt: granted.updatedAt }])).toBe("denied");
+  expect(access([{ ...observer, updatedAt: "2026-11-18T00:00:03Z" }])).toBe("denied");
+  for (const seat of [{ ...granted, userId: "other" }, { ...granted, id: "another-seat" }]) {
+    expect(access([observer], seat)).toBe("denied");
+    expect(access([{ ...observer, role: "player" }], seat)).toBe("denied");
+  }
+  for (const other of [{ ...scope, campaignId: "other" }, { ...scope, userId: "other" }, { ...scope, sessionEpoch: 4 }]) {
+    expect(access([observer], granted, other)).toBe("pending");
+  }
+  expect(presentationSeatAccess(scope, "camp", "player", 3, [observer])).toBe("denied");
+  const packet = { channel: "presentation", campaignId: "camp", id: "grant", title: "", body: "", images: [], expiresAt: 1 };
+  expect(isPresentation(packet)).toBe(true);
+  expect(isPresentation({ ...packet, recipientSeat: { ...granted, updatedAt: "invalid" } })).toBe(false);
 });
 
 describe("handout collection updates", () => {

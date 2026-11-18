@@ -19,12 +19,16 @@ export interface RealtimePresenceEnvelope {
   presences?: CampaignPresence[];
 }
 
+export const PRESENTATION_TTL_MS = 5 * 60_000;
+
 /** A live, recipient-only message, never recorded in the campaign event log. */
 export interface RealtimePresentation {
   channel: "presentation";
   campaignId: ID;
   id: ID;
   expiresAt: number;
+  /** The active player seat checked by the server for this connection. */
+  recipientSeat?: { id: ID; userId: ID; updatedAt: string };
   title: string;
   body: string;
   images: { assetId: ID; name: string }[];
