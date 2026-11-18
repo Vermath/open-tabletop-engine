@@ -1,4 +1,4 @@
-import { routes, type CharacterClaimOption } from "@open-tabletop/api-contracts";
+import type { CharacterClaimOption } from "@open-tabletop/api-contracts";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiGet, type Snapshot } from "./api.js";
 import { errorMessage } from "./sheet-format.js";
@@ -22,7 +22,7 @@ export function CharacterClaimPanel(props: {
   const attempt = useRef<{ fingerprint: string; key: string } | undefined>(undefined);
   useEffect(() => {
     const controller = new AbortController();
-    apiGet<CharacterClaimOption[]>(routes.characterClaims(props.campaignId), { signal: controller.signal })
+    apiGet<CharacterClaimOption[]>(`/api/v1/campaigns/${encodeURIComponent(props.campaignId)}/character-claims`, { signal: controller.signal })
       .then((next) => { if (!controller.signal.aborted) setOptions(next); })
       .catch((failure) => { if (!controller.signal.aborted) setError(errorMessage(failure)); });
     return () => controller.abort();

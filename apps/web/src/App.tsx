@@ -1,4 +1,4 @@
-import { routes as claimRoutes, type CharacterClaimOption, type CharacterClaimResult } from "@open-tabletop/api-contracts";
+import type { CharacterClaimOption, CharacterClaimResult } from "@open-tabletop/api-contracts";
 import { CharacterClaimPanel } from "./character-claim-panel.js";
 import { tokenRestorePayload } from "./token-restore.js";
 import { compendiumPlacementActions, type BoardAction, type PlacementAttempts } from "./compendium-placement-client.js";
@@ -3049,11 +3049,12 @@ export function App() {
   async function chooseCharacter(option: CharacterClaimOption, idempotencyKey: string, managing: boolean) {
     await runWorkspaceBoundAction(async (request) => {
       const options = { idempotencyKey, signal: request.controller.signal };
+      const actorPath = `/api/v1/campaigns/${encodeURIComponent(request.campaignId)}/actors/${encodeURIComponent(option.actorId)}`;
       if (managing) {
-        await apiPost(claimRoutes.characterClaimOffer(request.campaignId, option.actorId), { expectedUpdatedAt: option.updatedAt, offered: !option.offered }, options);
+        await apiPost(actorPath + "/claim-offer", { expectedUpdatedAt: option.updatedAt, offered: !option.offered }, options);
         return undefined;
       }
-      return apiPost<CharacterClaimResult>(claimRoutes.characterClaim(request.campaignId, option.actorId), { expectedUpdatedAt: option.updatedAt }, options);
+      return apiPost<CharacterClaimResult>(actorPath + "/claim", { expectedUpdatedAt: option.updatedAt }, options);
     }, async (claim, request) => {
       const next = await refresh(request.campaignId, claim?.sceneId ?? realtimeSelectionRef.current.sceneId, { syncStatus: false, selectSceneOnLoad: claim ? () => workspaceBoundRequestIsCurrent(request) : undefined });
       if (!workspaceBoundRequestIsCurrent(request)) return;
