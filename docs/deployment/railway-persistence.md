@@ -18,6 +18,8 @@ Keep the API service at one replica while SQLite is the active store. Scale the 
 
 ## API Runtime Variables
 
+Set `OTTE_WEB_ORIGIN` on the API service to the public HTTPS origin players use for the web app. The Railway start command uses this origin for signed map and token images unless you explicitly set `OTTE_PUBLIC_URL`. If you configure start commands in the Railway dashboard, set `OTTE_PUBLIC_URL` there as well. The web service can still reach the API over Railway's private network using `OTTE_API_URL`.
+
 `railway.api.json` sets the production API start command with these persistence defaults:
 
 ```bash
@@ -47,7 +49,7 @@ After attaching the volume and deploying:
 4. Open the hosted app and create a campaign.
 5. Upload a small map asset.
 6. Redeploy the API service without wiping the volume.
-7. Confirm the campaign and uploaded asset still load.
+7. Open the campaign as a player and confirm the uploaded map renders. Without a separate asset CDN, a signed URL from `POST /api/v1/assets/{assetId}/delivery-url` should have the public web origin. The image must load from that URL in a browser.
 8. Confirm the first startup seeds missing bundled plugin packages from `/app/plugins` into the volume-backed plugin directory. Startup never overwrites an existing persisted package directory, so registry-installed or operator-repaired packages remain authoritative across redeploys.
 9. As a server admin, call `GET /api/v1/admin/storage/operations`; expect supported SQLite posture, integrity `ok`, no missing migrations, no missing indexes, and a latest backup after startup backup completes.
 10. Run `POST /api/v1/admin/storage/restore-drill`; expect `status: "passed"`.
