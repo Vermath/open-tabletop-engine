@@ -42,7 +42,7 @@ import { createVisionReconciliation } from "./vision-reconciliation.js";
 import { loadRealtimeWorkspaceChanges } from "./realtime-workspace-load.js";
 import { changesRealtimeRecord, removeRealtimeRecord, sameSnapshotValue, upsertBoundedRealtimeRecord, upsertNewestPrependedRealtimeRecord, upsertNewestRealtimeRecord, upsertNewestRealtimeRecords, upsertRealtimeRecord } from "./realtime-snapshot-delta.js";
 import type { RealtimePresentation } from "@open-tabletop/core";
-import { isPresentation, PresentedContent } from "./presentation.js";
+import { isPresentation, presentationSeatAccess, PresentedContent } from "./presentation.js";
 import { applyPresenceEnvelope, parseRealtimePayload, realtimeSequenceDecision } from "./realtime-sequence.js";
 import { settleWorkspaceLoreLoad } from "./workspace-lore-load.js";
 import { settleWorkspaceBoundAction, type WorkspaceBoundRequest, type WorkspaceRequestIdentity } from "./workspace-bound-action.js";
@@ -677,12 +677,18 @@ export function App() {
   const campaignSetupDraftScope = useMemo(() => activeOrganizationId && currentUserId ? { organizationId: activeOrganizationId, userId: currentUserId, campaignId: campaignId || "new" } satisfies CampaignSetupDraftScope : undefined, [activeOrganizationId, campaignId, currentUserId]);
   const campaignSetupDraftKey = campaignSetupDraftScope ? campaignSetupDraftStorageKey(campaignSetupDraftScope) : "";
   const currentMember = snapshot.members.find((member) => member.user.id === currentUserId);
-  const canReceivePresentation = currentMember?.role === "player" && currentMember.active !== false;
+  const presentationAccess = presentationSeatAccess(snapshot.membershipScope, campaignId, currentUserId, sessionTransportEpoch, snapshot.members);
   useEffect(() => {
-    if (!presentation || canReceivePresentation || presentation.connectionKey !== realtimeConnectionKey) return;
-    dismissPresentation.current?.(presentation.content.id);
-    setPresentation(undefined);
-  }, [presentation, canReceivePresentation, realtimeConnectionKey]);
+    if (!presentation || presentation.connectionKey !== realtimeConnectionKey) return;
+    const dismiss = () => {
+      dismissPresentation.current?.(presentation.content.id);
+      setPresentation((current) => current?.content.id === presentation.content.id ? undefined : current);
+    };
+    const remaining = presentation.content.expiresAt - Date.now();
+    if (presentationAccess === "denied" || remaining <= 0) { dismiss(); return; }
+    const timer = window.setTimeout(dismiss, remaining);
+    return () => window.clearTimeout(timer);
+  }, [presentation, presentationAccess, realtimeConnectionKey]);
   const hasPermission = (permission: PermissionName) => currentMember?.permissions.includes(permission) ?? false;
   const orderedScenes = [...snapshot.scenes].sort(compareScenesForDisplay);
   const accessibleScenes = hasPermission("scene.update") ? orderedScenes : orderedScenes.filter((scene) => scene.active);
@@ -9084,7 +9090,7 @@ export function App() {
     <>
     {consequenceReview.dialog}
     {sceneMapPreparation.dialog}
-    {canReceivePresentation && presentation && presentation.connectionKey === realtimeConnectionKey && <PresentedContent content={presentation.content} onDismiss={() => {
+    {presentationAccess === "allowed" && presentation && presentation.connectionKey === realtimeConnectionKey && presentation.content.expiresAt > Date.now() && <PresentedContent content={presentation.content} onDismiss={() => {
       dismissPresentation.current?.(presentation.content.id);
       setPresentation(undefined);
     }} />}

@@ -693,6 +693,7 @@ export interface CampaignSessionInfo {
 }
 
 export interface Snapshot {
+  membershipScope?: { campaignId: string; userId: string; sessionEpoch: number };
   session?: SessionInfo;
   workspaceDefaults?: OrganizationWorkspace;
   organizations: OrganizationWorkspaceInfo[];
@@ -3439,6 +3440,7 @@ export async function verifyDiceRoll(campaignId: string, rollId: string): Promis
 
 export async function loadSnapshot(campaignId?: string, sceneId?: string): Promise<Snapshot> {
   const snapshotHeaders = await sessionHeaders();
+  const snapshotSessionEpoch = getSessionTransportEpoch();
   const snapshotGet = async <T,>(path: string): Promise<T> => {
     const response = await apiFetch(`${baseUrl}${path}`, {
       headers: snapshotHeaders
@@ -3538,6 +3540,7 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
     organizationInvites,
     campaigns,
     members,
+    membershipScope: { campaignId: selectedCampaignId, userId: session.user.id, sessionEpoch: snapshotSessionEpoch },
     presences: campaignSnapshot.presences,
     eventSequence: campaignSnapshot.eventSequence ?? 0,
     realtimeRecovery: campaignSnapshot.realtimeRecovery ?? "refetch_snapshot_on_gap",

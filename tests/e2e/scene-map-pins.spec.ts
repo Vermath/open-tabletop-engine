@@ -128,7 +128,40 @@ test("presents a private illustrated handout and journal pin while the player st
     await expect(playerBoard).toBeVisible();
     expect(player.url()).toBe(beforeUrl);
     await expect.poll(async () => (await player.request.get(imageUrl, { headers: headers() })).status()).toBe(404);
-    await page.getByRole("button", { name: "Show selected players" }).click();
+    // A new socket can receive a private presentation before the campaign snapshot arrives.
+    await player.evaluate(() => sessionStorage.setItem("hold-test-snapshot", "1"));
+    await player.addInitScript(() => {
+      if (!sessionStorage.getItem("hold-test-snapshot")) return;
+      sessionStorage.removeItem("hold-test-snapshot");
+      const held = new Promise<void>((resolve) => window.addEventListener("release-test-snapshot", () => resolve(), { once: true }));
+      const fetch = window.fetch.bind(window);
+      window.fetch = async (...args) => {
+        const response = await fetch(...args);
+        if (new URL(response.url).pathname === "/api/v1/campaigns/camp_demo/snapshot") await held;
+        return response;
+      };
+    });
+    let receivedPresence!: () => void;
+    let receivedPresentation!: () => void;
+    const connected = new Promise<void>((resolve) => { receivedPresence = resolve; });
+    const delivered = new Promise<void>((resolve) => { receivedPresentation = resolve; });
+    player.on("websocket", (socket) => {
+      if (new URL(socket.url()).pathname !== "/api/v1/realtime") return;
+      socket.on("framereceived", ({ payload }) => {
+        const frame = JSON.parse(String(payload));
+        if (frame.type === "presence.snapshot") receivedPresence();
+        if (frame.channel === "presentation") receivedPresentation();
+      });
+    });
+    try {
+      await player.reload({ waitUntil: "domcontentloaded" });
+      await connected;
+      await page.getByRole("button", { name: "Show selected players" }).click();
+      await delivered;
+      await expect(modal).toHaveCount(0);
+    } finally {
+      await player.evaluate(() => window.dispatchEvent(new Event("release-test-snapshot")));
+    }
     await expect.poll(() => image.evaluate((element) => (element as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
     const secondUrl = (await image.getAttribute("src"))!;
     async function seatRole(role: "observer" | "player") {
