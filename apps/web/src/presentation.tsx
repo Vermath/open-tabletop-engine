@@ -11,7 +11,7 @@ export function PresentToPlayers({ campaignId, target, members }: { campaignId: 
   const [selected, setSelected] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
-  const players = members.filter((member) => member.role === "player");
+  const players = members.filter((member) => member.role === "player" && member.active !== false);
   const recipientUserIds = players.filter((member) => selected.includes(member.user.id)).map((member) => member.user.id);
   async function present() {
     setBusy(true);

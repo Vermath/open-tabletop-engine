@@ -92,6 +92,10 @@ it("sends saved content only to selected live seats and limits images to their c
     for (const secret of [handout.title, handout.body, image.name, journal.title, journal.body]) expect(unselected.messages.join(" ")).not.toContain(secret);
     await new Promise<void>((resolve) => { reconnected.ws.addEventListener("close", () => resolve()); reconnected.ws.close(); });
     expect((await present(gm)).json()).toEqual({ deliveredUserIds: [] });
+    const secondPlayer = store.state.users.find((user) => user.id === other)!;
+    secondPlayer.disabledAt = new Date().toISOString();
+    expect((await present(gm, { recipientUserIds: [player, other] })).statusCode).toBe(400);
+    delete secondPlayer.disabledAt;
     expect(handout).toEqual(before);
     const snapshot = await app.inject({ method: "GET", url: `/api/v1/campaigns/${campaignId}/snapshot`, headers: { "x-user-id": player } });
     expect(snapshot.body).not.toContain(handout.title);

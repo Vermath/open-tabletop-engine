@@ -4,9 +4,23 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { clearHandoutDraftAfterConfirmedSave, HandoutEditor, handoutPayload, mergeHandoutReadReceipt, storedHandoutDraft, upsertHandoutItem, type HandoutDraft, type HandoutLibraryItem } from "./handout-library-panel.js";
+import { PresentToPlayers } from "./presentation.js";
+import type { CampaignMemberInfo } from "./api.js";
 import { localDraftKey, removeLocalDraft, writeLocalDraft } from "./local-draft-storage.js";
 
 const panelSource = readFileSync(resolve(__dirname, "handout-library-panel.tsx"), "utf8").replace(/\r\n/g, "\n");
+
+it("offers only active player seats as presentation recipients", () => {
+  function seat(name: string, role: CampaignMemberInfo["role"], active: boolean): CampaignMemberInfo {
+    return { id: name, campaignId: "camp", userId: name, role, active, permissions: [], user: { id: name, displayName: name },
+      createdAt: "2026-11-18T00:00:00Z", updatedAt: "2026-11-18T00:00:00Z" };
+  }
+  const markup = renderToStaticMarkup(createElement(PresentToPlayers, { campaignId: "camp", target: { targetType: "handout", targetId: "letter", expectedUpdatedAt: "revision" },
+    members: [seat("Current Player", "player", true), seat("Disabled Player", "player", false), seat("GM", "gm", true)] }));
+  expect(markup).toContain("Current Player");
+  expect(markup).not.toContain("Disabled Player");
+  expect(markup.match(/type="checkbox"/g)).toHaveLength(1);
+});
 
 describe("handout collection updates", () => {
   it("sends the version captured when an existing handout editor opened", () => {
