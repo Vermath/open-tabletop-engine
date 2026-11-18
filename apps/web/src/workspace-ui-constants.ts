@@ -1,6 +1,7 @@
 export const keyboardShortcutRows: ReadonlyArray<{ keys: string; label: string }> = [
   { keys: "Ctrl+K", label: "Command palette" },
   { keys: "F", label: "Focus the battle map" },
+  { keys: "1–6", label: "Use a personal hotbar slot on the live map" },
   { keys: "V", label: "Select tool" },
   { keys: "R", label: "Ruler" },
   { keys: "C", label: "Measure circle" },

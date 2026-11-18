@@ -1,3 +1,4 @@
+import { writePinDrag } from "./scene-pin-drag.js";
 import { EmptyState } from "./workspace-states.js";
 import type { Actor, MapAsset, Visibility } from "@open-tabletop/core";
 import { BookOpen, Check, Eye, FileText, Link2, Plus, Save, Search, Trash2, Users } from "lucide-react";
@@ -284,7 +285,7 @@ export function HandoutLibraryPanel(props: {
               const unread = !item.readByUserIds.includes(props.currentUserId);
               return (
                 <div role="listitem" key={item.id}>
-                  <button id={campaignSearchAnchorId("handout", item.id)} className={selectedId === item.id ? "handout-list-item active" : "handout-list-item"} type="button" aria-current={selectedId === item.id ? "true" : undefined} onClick={() => void openHandout(item)}>
+                  <button draggable={props.canUpdate} onDragStart={(event) => writePinDrag(event.dataTransfer, { targetType: "handout", targetId: item.id })} id={campaignSearchAnchorId("handout", item.id)} className={selectedId === item.id ? "handout-list-item active" : "handout-list-item"} type="button" aria-current={selectedId === item.id ? "true" : undefined} onClick={() => void openHandout(item)}>
                     <span className={unread ? "handout-read-dot unread" : "handout-read-dot"} aria-label={unread ? "Unread" : "Read"} />
                     <span>
                       <strong>{item.title}</strong>
@@ -554,7 +555,7 @@ export function HandoutEditor(props: {
   );
 }
 
-function HandoutAssetGallery({ assets }: { assets: MapAsset[] }) {
+export function HandoutAssetGallery({ assets }: { assets: MapAsset[] }) {
   if (assets.length === 0) return null;
   return (
     <section className="handout-asset-gallery" aria-label="Linked handout media">

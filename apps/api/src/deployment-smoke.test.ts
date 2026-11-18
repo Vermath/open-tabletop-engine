@@ -43,8 +43,11 @@ describe("deployment smoke", () => {
     expect(packageJson.scripts["deployment:smoke"]).toBe(
       "pnpm --filter @open-tabletop/api exec vitest run src/deployment-smoke.test.ts",
     );
-    expect(packageJson.scripts["release:smoke:offline"]).toContain(
-      "pnpm v1:worktree:check && pnpm security:audit && pnpm gate:check:cold-pair && pnpm gate:diagnostics:test && pnpm gate:evidence:test && pnpm e2e",
+    expect(packageJson.scripts["release:smoke:offline"]).toBe(
+      "pnpm release:smoke:checks && pnpm e2e && pnpm release:smoke:runtime && pnpm release:smoke:packages",
+    );
+    expect(packageJson.scripts["release:smoke:checks"]).toBe(
+      "pnpm v1:worktree:check && pnpm security:audit && pnpm gate:check:cold-pair && pnpm gate:diagnostics:test && pnpm gate:evidence:test",
     );
     expect(packageJson.scripts["security:audit"]).toBe(
       "node scripts/audit-production-dependencies.mjs",
@@ -79,17 +82,11 @@ describe("deployment smoke", () => {
     expect(packageJson.scripts["release:smoke"]).toBe(
       "pnpm release:smoke:offline && pnpm v1:issues:check",
     );
-    expect(packageJson.scripts["release:smoke:offline"]).toContain(
-      "deployment:smoke",
+    expect(packageJson.scripts["release:smoke:runtime"]).toBe(
+      "pnpm security:smoke && pnpm migration:smoke && pnpm deployment:smoke && pnpm compose:recovery:test && pnpm perf:smoke && pnpm perf:soak && pnpm perf:capacity",
     );
-    expect(packageJson.scripts["release:smoke:offline"]).toContain("perf:soak");
-    expect(packageJson.scripts["release:smoke:offline"]).toContain(
-      "docs:site:check",
-    );
-    expect(packageJson.scripts["release:smoke:offline"]).toContain("sbom:test");
-    expect(packageJson.scripts["release:smoke:offline"]).toContain("sbom:api");
-    expect(packageJson.scripts["release:smoke:offline"]).toContain(
-      "compose:env:test",
+    expect(packageJson.scripts["release:smoke:packages"]).toBe(
+      "pnpm docs:site:test && pnpm docs:site:check && pnpm compose:env:test && pnpm sbom:test && pnpm sbom:api && pnpm sbom:image:policy:test && pnpm sbom:image:api",
     );
     expect(packageJson.scripts["release:smoke"]).toContain("v1:issues:check");
 
@@ -211,10 +208,33 @@ describe("deployment smoke", () => {
     }
 
     const compose = readWorkspaceFile("docker-compose.yml");
-    expect(compose).toMatch(
-      /image: minio\/minio:RELEASE\.[^@\s]+@sha256:[0-9a-f]{64}/,
+    expect(compose).toContain("context: ./infra/docker");
+    expect(compose).toContain("dockerfile: minio.Dockerfile");
+    const storageImage = readWorkspaceFile("infra/docker/minio.Dockerfile");
+    expect(storageImage).toContain("minio-checksums/${TARGETARCH}.sha256");
+    expect(storageImage).toContain(
+      "sha256sum --strict --check /tmp/release.sha256",
     );
-    expect(compose).not.toContain("minio/minio:latest");
+    for (const arch of ["amd64", "arm64", "ppc64le"]) {
+      const checksums = readWorkspaceFile(
+        `infra/docker/minio-checksums/${arch}.sha256`,
+      );
+      const files = checksums
+        .trim()
+        .split(/\r?\n/)
+        .map((line) => {
+          expect(line).toMatch(/^[a-f0-9]{64}  \S+$/);
+          return line.slice(66);
+        });
+      expect(files.sort()).toEqual([
+        "mc",
+        "mc.minisig",
+        "mc.sha256sum",
+        "minio",
+        "minio.minisig",
+        "minio.sha256sum",
+      ]);
+    }
     expect(compose).toContain("dockerfile: infra/docker/api.Dockerfile");
     expect(compose).toContain("dockerfile: infra/docker/web.Dockerfile");
     expect(compose).toContain("dockerfile: infra/docker/worker.Dockerfile");

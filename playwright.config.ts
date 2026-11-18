@@ -26,7 +26,7 @@ export default defineConfig({
     extraHTTPHeaders: { Origin: webBaseUrl },
     actionTimeout: 30_000,
     navigationTimeout: 60_000,
-    trace: "on-first-retry",
+    trace: process.env.CI ? "retain-on-failure" : "on-first-retry",
   },
   webServer: [
     {

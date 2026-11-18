@@ -89,6 +89,10 @@ import type {
   DiceRoll,
   DiceRollFairness,
   Encounter,
+  CompendiumMonsterPlacementInput,
+  CompendiumMonsterPlacement,
+  CompendiumPlacementHistoryInput,
+  CompendiumPlacementHistoryResult,
   EncounterMonsterPlacementBatchInput,
   EncounterMonsterPlacementBatchResult,
   EngineEvent,
@@ -3339,8 +3343,9 @@ export class OpenTabletopClient {
 
   async updateScene(
     sceneId: string,
-    input: Omit<Partial<Scene>, "worldId"> & {
+    input: Omit<Partial<Scene>, "worldId" | "mapPins"> & {
       worldId?: string | null;
+      mapPin?: NonNullable<Scene["mapPins"]>[number] | { remove: string };
       expectedUpdatedAt: string;
     },
     idempotencyKey: string,
@@ -4919,6 +4924,14 @@ export class OpenTabletopClient {
     return this.post(routes.systemMonsters(campaignId, systemId), input, {
       "Idempotency-Key": idempotencyKey,
     });
+  }
+
+  async placeCompendiumMonster(sceneId: string, input: CompendiumMonsterPlacementInput, idempotencyKey: string): Promise<CompendiumMonsterPlacement> {
+    return this.post(routes.compendiumMonsterPlacements(sceneId), input, { "Idempotency-Key": idempotencyKey });
+  }
+
+  async changeCompendiumPlacement(sceneId: string, placementId: string, input: CompendiumPlacementHistoryInput, idempotencyKey: string): Promise<CompendiumPlacementHistoryResult> {
+    return this.post(routes.compendiumPlacementHistory(sceneId, placementId), input, { "Idempotency-Key": idempotencyKey });
   }
 
   async placeEncounterMonsters(

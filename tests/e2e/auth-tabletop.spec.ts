@@ -1657,6 +1657,7 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(statusMessage(page, "e2e-map.svg marked active")).toBeVisible();
   await page.getByRole("combobox", { name: "Asset lifecycle filter" }).selectOption("all");
   await expect(uploadedAsset.locator(".status-pill")).toContainText("Active");
+  await openDetails(uploadedAsset.locator("details.asset-card-details"));
   await uploadedAsset.getByRole("button", { name: "Delete" }).click();
   await expect(statusMessage(page, "e2e-map.svg marked deleted")).toBeVisible();
   await expect(uploadedAsset.locator(".status-pill")).toContainText("Deleted");
@@ -4480,7 +4481,7 @@ test("GM can bulk duplicate selected prep scenes", async ({ page }) => {
   await review.getByRole("button", { name: "Confirm duplicate selected scenes" }).click();
   const commitResponse = await commitResponsePromise;
   expect(commitResponse.request().postDataJSON()).toMatchObject({ dryRun: false, sources: [{}, {}] });
-  await expect(page.getByText(/Duplicated 2 scenes, \d+ tokens, and \d+ actors atomically/)).toBeVisible();
+  await expect(statusMessage(page, /Duplicated 2 scenes, \d+ tokens, and \d+ actors atomically/)).toBeVisible();
   await expect(page.getByRole("status", { name: "Scene selection summary" })).toContainText("2 selected");
 
   await page.reload();

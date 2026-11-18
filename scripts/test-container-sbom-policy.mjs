@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 
-const dockerfiles = ["infra/docker/api.Dockerfile", "infra/docker/worker.Dockerfile", "infra/docker/web.Dockerfile"];
+const dockerfiles = ["infra/docker/api.Dockerfile", "infra/docker/minio.Dockerfile", "infra/docker/worker.Dockerfile", "infra/docker/web.Dockerfile"];
 for (const file of dockerfiles) {
   const source = readFileSync(file, "utf8");
   for (const line of source.split(/\r?\n/).filter((candidate) => candidate.startsWith("FROM ") && !candidate.includes("FROM base") && !candidate.includes("FROM deps"))) {

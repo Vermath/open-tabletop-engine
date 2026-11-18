@@ -258,6 +258,10 @@ function applyProposalChange(
 ): ProposalChange[] {
   assertCampaignProposalChange(change);
   if (change.action === "delete") {
+    if ((change.entity === "journal" || change.entity === "handout") && state.scenes.some((scene) =>
+      scene.campaignId === campaignId && scene.mapPins?.some((pin) => pin.targetType === change.entity && pin.targetId === change.id))) {
+      throw new Error("Remove linked map pins before deleting this entry in a proposal");
+    }
     if (change.entity === "scene")
       return deleteSceneWithDomainSemantics(
         state,

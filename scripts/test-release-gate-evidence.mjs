@@ -116,27 +116,59 @@ const releaseWorkflow = readFileSync(
   join(repoRoot, ".github", "workflows", "release-smoke.yml"),
   "utf8",
 );
-match(
-  releaseWorkflow,
-  /- name: Upload release gate evidence\s+if: always\(\)\s+uses: actions\/upload-artifact@[0-9a-f]+[\s\S]*?name: open-tabletop-release-gate-evidence[\s\S]*?path: artifacts\/release-evidence\/\*\.json[\s\S]*?if-no-files-found: error/,
-);
+const workflowSteps = releaseWorkflow.split(/^      - name: /m).slice(1);
+function workflowStep(name) {
+  const step = workflowSteps.find((text) => text.split(/\r?\n/, 1)[0] === name);
+  if (!step) throw new Error(`Missing Release Smoke step: ${name}`);
+  return step;
+}
+
 match(releaseWorkflow, /timeout-minutes: 120/);
-match(
-  releaseWorkflow,
-  /- name: Run release smoke\s+run: pnpm release:smoke:offline/,
-);
-match(
-  releaseWorkflow,
-  /- name: Audit open release issues\s+if: github\.event_name == 'push'\s+env:\s+GH_TOKEN: \$\{\{ github\.token \}\}\s+run: pnpm v1:issues:check/,
-);
-doesNotMatch(
-  releaseWorkflow,
-  /- name: Run release smoke\s+env:[\s\S]*?GH_TOKEN/,
-);
-match(
-  releaseWorkflow,
-  /name: open-tabletop-api-sbom[\s\S]*?\.codex-artifacts\/sbom\/open-tabletop-api\.cdx\.json[\s\S]*?include-hidden-files: true[\s\S]*?if-no-files-found: error/,
-);
+match(releaseWorkflow, /fail-fast: false/);
+for (const [stage, name, command] of [
+  ["checks", "Run tests and cold builds", "pnpm release:smoke:checks"],
+  ["browser", "Run browser journeys", "pnpm e2e"],
+  ["runtime", "Run runtime and recovery checks", "pnpm release:smoke:runtime"],
+  ["packages", "Verify packages and generate SBOMs", "pnpm release:smoke:packages"],
+]) {
+  strictEqual(releaseWorkflow.includes(`stage: ${stage}\n`), true);
+  const step = workflowStep(name);
+  strictEqual(step.includes(`if: matrix.stage == '${stage}'`), true);
+  strictEqual(step.includes(`run: ${command}\n`), true);
+}
+
+match(releaseWorkflow, /name: pnpm release:smoke:offline\s+needs: stages\s+if: always\(\)/);
+const aggregate = workflowStep("Require every stage to pass");
+match(aggregate, /STAGES_RESULT: \$\{\{ needs\.stages\.result \}\}/);
+match(aggregate, /run: test "\$STAGES_RESULT" = success/);
+
+const uploadEvidence = workflowStep("Upload release gate evidence");
+match(uploadEvidence, /steps\.checks\.outcome == 'success'/);
+match(uploadEvidence, /hashFiles\('artifacts\/release-evidence\/\*\.json'\)/);
+match(uploadEvidence, /uses: actions\/upload-artifact@[0-9a-f]{40}/);
+match(uploadEvidence, /name: open-tabletop-release-gate-evidence/);
+match(uploadEvidence, /path: artifacts\/release-evidence\/\*\.json/);
+match(uploadEvidence, /if-no-files-found: error/);
+
+const uploadTraces = workflowStep("Upload failed browser traces");
+match(uploadTraces, /failure\(\) && steps\.journeys\.outcome == 'failure'/);
+match(uploadTraces, /path: test-results\/\*\*\/trace\.zip/);
+
+const issueAudit = workflowStep("Audit open release issues");
+match(issueAudit, /if: github\.event_name == 'push'/);
+match(issueAudit, /GH_TOKEN: \$\{\{ github\.token \}\}/);
+match(issueAudit, /run: node scripts\/check-v1-open-issues\.mjs/);
+strictEqual(releaseWorkflow.match(/GH_TOKEN:/g)?.length, 1);
+
+const uploadSboms = workflowStep("Upload API service SBOM");
+match(uploadSboms, /steps\.packages\.outcome == 'success'/);
+match(uploadSboms, /name: open-tabletop-api-sbom/);
+match(uploadSboms, /\.codex-artifacts\/sbom\/open-tabletop-api\.cdx\.json/);
+match(uploadSboms, /\.codex-artifacts\/sbom\/open-tabletop-api-image\.cdx\.json/);
+match(uploadSboms, /include-hidden-files: true/);
+match(uploadSboms, /if-no-files-found: error/);
+match(workflowStep("Start and probe production images"), /run: bash scripts\/smoke-compose-images\.sh/);
+
 const commitSha = "a".repeat(40);
 const expectedTasks = expectedCheckTasks(repoRoot);
 const vitestOutput = [

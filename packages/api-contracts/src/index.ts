@@ -226,6 +226,8 @@ export const routes = {
     `/api/v1/scenes/${pathPart(sceneId)}/annotations`,
   sceneAnnotation: (sceneId: string, annotationId: string) =>
     `/api/v1/scenes/${pathPart(sceneId)}/annotations/${pathPart(annotationId)}`,
+  compendiumMonsterPlacements: (sceneId: string) => `/api/v1/scenes/${pathPart(sceneId)}/compendium-monster-placements`,
+  compendiumPlacementHistory: (sceneId: string, placementId: string) => `/api/v1/scenes/${pathPart(sceneId)}/compendium-monster-placements/${pathPart(placementId)}/history`,
   encounterMonsterPlacements: (sceneId: string) =>
     `/api/v1/scenes/${pathPart(sceneId)}/encounter-monster-placements`,
   tokens: (sceneId: string) => `/api/v1/scenes/${pathPart(sceneId)}/tokens`,
@@ -872,6 +874,8 @@ const endpointSpecs = [
   ["GET", "/api/v1/scenes/{sceneId}/tokens"],
   ["POST", "/api/v1/scenes/{sceneId}/tokens"],
   ["POST", "/api/v1/scenes/{sceneId}/tokens/move"],
+  ["POST", "/api/v1/scenes/{sceneId}/compendium-monster-placements"],
+  ["POST", "/api/v1/scenes/{sceneId}/compendium-monster-placements/{placementId}/history"],
   ["POST", "/api/v1/scenes/{sceneId}/encounter-monster-placements"],
   ["POST", "/api/v1/tokens/{tokenId}/target"],
   ["PATCH", "/api/v1/tokens/{tokenId}"],
@@ -5819,6 +5823,15 @@ const componentSchemas = {
       sourceKind: { type: "string", enum: ["campaign", "actor_instance", "srd", "bundled", "homebrew"] },
     },
   },
+  SceneMapPin: {
+    type: "object", additionalProperties: false,
+    required: ["id", "label", "targetType", "targetId", "audience", "x", "y"],
+    properties: {
+      id: idSchema, label: { type: "string", minLength: 1, maxLength: 40 },
+      targetType: { type: "string", enum: ["journal", "handout"] }, targetId: idSchema,
+      audience: { type: "string", enum: ["gm", "readers"] }, x: { type: "number", minimum: 0 }, y: { type: "number", minimum: 0 },
+    },
+  },
   Scene: {
     type: "object",
     additionalProperties: true,
@@ -5864,6 +5877,7 @@ const componentSchemas = {
       fogHistory: arrayOf({ type: "object", additionalProperties: true }),
       activationHistory: arrayOf(schemaRef("SceneActivationHistoryEntry")),
       annotationHistory: arrayOf(schemaRef("SceneAnnotationHistoryEntry")),
+      mapPins: arrayOf(schemaRef("SceneMapPin")),
       walls: arrayOf(schemaRef("Wall")),
       lights: arrayOf(schemaRef("LightSource")),
       annotations: arrayOf(schemaRef("SceneAnnotation")),
@@ -6019,6 +6033,11 @@ const componentSchemas = {
     type: "object",
     additionalProperties: false,
     properties: {
+      expectedUpdatedAt: dateTimeSchema,
+      mapPin: {
+        description: "Set one pin or remove one by ID. Send only mapPin and expectedUpdatedAt, with an Idempotency-Key.",
+        oneOf: [schemaRef("SceneMapPin"), { type: "object", additionalProperties: false, required: ["remove"], properties: { remove: idSchema } }],
+      },
       worldId: { anyOf: [idSchema, { type: "null" }] },
       name: stringSchema,
       width: { type: "number", minimum: 1, maximum: 100000 },
@@ -10792,6 +10811,10 @@ const componentSchemas = {
       ownerUserId: idSchema,
     },
   },
+  CompendiumMonsterPlacement: {
+    type: "object", required: ["placementId", "actor", "sceneToken", "scene"],
+    properties: { placementId: idSchema, actor: schemaRef("Actor"), sceneToken: schemaRef("Token"), scene: schemaRef("Scene") },
+  },
   EncounterMonsterPlacementDraft: {
     type: "object",
     additionalProperties: false,
@@ -14796,6 +14819,33 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
       "409": jsonResponse("The scene or a token changed before the batch committed", schemaRef("StaleWriteConflictResponse")),
     },
   },
+  "POST /api/v1/scenes/{sceneId}/compendium-monster-placements": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody({ type: "object", additionalProperties: false, required: ["entryId", "x", "y", "expectedUpdatedAt"],
+      properties: { entryId: idSchema, x: { type: "number" }, y: { type: "number" }, expectedUpdatedAt: dateTimeSchema } }),
+    responses: {
+      "200": jsonResponse("Placed a compendium monster and its linked actor", schemaRef("CompendiumMonsterPlacement")),
+      "400": jsonResponse("Invalid placement", schemaRef("ErrorResponse")),
+      "403": jsonResponse("Missing placement permission", schemaRef("ErrorResponse")),
+      "404": jsonResponse("Scene or source unavailable", schemaRef("ErrorResponse")),
+      "409": jsonResponse("Scene changed before placement", schemaRef("ErrorResponse")),
+    },
+  },
+  "POST /api/v1/scenes/{sceneId}/compendium-monster-placements/{placementId}/history": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody({ type: "object", additionalProperties: false, required: ["direction", "expectedUpdatedAt"],
+      properties: { direction: { type: "string", enum: ["undo", "redo"] }, expectedUpdatedAt: dateTimeSchema } }),
+    responses: {
+      "200": jsonResponse("Undid or restored the original actor and token", { oneOf: [
+        { type: "object", required: ["direction", "actorId", "tokenId", "scene"], properties: { direction: { const: "undo" }, actorId: idSchema, tokenId: idSchema, scene: schemaRef("Scene") } },
+        { allOf: [schemaRef("CompendiumMonsterPlacement"), { type: "object", required: ["direction"], properties: { direction: { const: "redo" } } }] },
+      ] }),
+      "400": jsonResponse("Invalid history operation", schemaRef("ErrorResponse")),
+      "403": jsonResponse("Missing creation or deletion permission", schemaRef("ErrorResponse")),
+      "404": jsonResponse("Placement is unavailable", schemaRef("ErrorResponse")),
+      "409": jsonResponse("Placement changed or is in use", schemaRef("ErrorResponse")),
+    },
+  },
   "POST /api/v1/scenes/{sceneId}/encounter-monster-placements": {
     parameters: [{
       ...idempotencyKeyParameter,
@@ -15928,6 +15978,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
   },
   "GET /api/v1/campaigns/{campaignId}/systems/{systemId}/compendium": {
     parameters: [
+      { name: "includeMonsters", in: "query", required: false, schema: { type: "boolean" }, description: "Include placeable SRD monster entries" },
       { name: "q", in: "query", required: false, schema: { type: "string", maxLength: 160 }, description: "Case-insensitive search across name, summary, type, and source" },
       { name: "type", in: "query", required: false, schema: { type: "string" }, description: "Single compendium entry type" },
       { name: "types", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated compendium entry types" },
@@ -17129,7 +17180,7 @@ function openApiParameterKey(parameter: OpenApiParameter): string {
 
 const sharedRevisionRoutePatterns: ReadonlyArray<{ methods: ReadonlySet<HttpMethod>; pattern: RegExp }> = [
   { methods: new Set(["POST"]), pattern: /^\/api\/v1\/campaigns\/[^/]+\/(?:worlds|scenes|scene-duplications|actors|items|handouts|encounters|combats(?:\/start)?)$/ },
-  { methods: new Set(["POST"]), pattern: /^\/api\/v1\/scenes\/[^/]+\/(?:tokens|encounter-monster-placements)$/ },
+  { methods: new Set(["POST"]), pattern: /^\/api\/v1\/scenes\/[^/]+\/(?:tokens|encounter-monster-placements|compendium-monster-placements(?:\/[^/]+\/history)?)$/ },
   { methods: new Set(["PATCH", "DELETE"]), pattern: /^\/api\/v1\/campaigns\/[^/]+$/ },
   { methods: new Set(["POST"]), pattern: /^\/api\/v1\/campaigns\/[^/]+\/(?:archive|restore)$/ },
   { methods: new Set(["POST"]), pattern: /^\/api\/v1\/campaigns\/[^/]+\/archive-import-operations\/[^/]+\/rollback$/ },
