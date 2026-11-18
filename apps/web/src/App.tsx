@@ -1,3 +1,5 @@
+import { tokenRestorePayload } from "./token-restore.js";
+import { compendiumPlacementActions, type BoardAction, type PlacementAttempts } from "./compendium-placement-client.js";
 import { EmptyState, WorkspaceLoading, canCommitSceneSwitch, preloadWorkspaceScene, retrySceneSwitch } from "./workspace-states.js";
 import { resolveChatRecipientId } from "./chat-recipient.js";
 import { annotationTranslationDelta } from "@open-tabletop/core";
@@ -6,7 +8,7 @@ import { applySceneVision } from "./player-scene-visibility.js";
 import type { Actor, AiMemoryFact, AiThread, AiToolCall, AudioTrack, AuditLog, Campaign, ChatMessage, Combat, CombatAction, CombatLegendaryActionPrompt, ContentImportBatch, ContentImportEntityKind, ContentImportSource, DiceRoll, EmailOutboxMessage, Encounter, EncounterMonsterPlacementBatchInput, EncounterMonsterPlacementBatchResult, FogHistoryEntry, FogMode, FogPreset, GridType, Item, JournalCanonStatus, JournalEntry, MapAsset, MessageType, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, SceneAnnotation, SceneAnnotationKind, SceneAnnotationLayer, SceneDuplicationPlan, SceneDuplicationRequest, SceneDuplicationResult, SceneTemplateShape, ScimAssignableRole, Token, TokenLayer, User, UserRole, Visibility, VisionPoint, VisionPointSample, VisionPolygon } from "@open-tabletop/core";
 import type { Dnd5eSrdCombatantSyncMutationResult, Dnd5eSrdCombatVitalsKind, Dnd5eSrdCombatVitalsMutationResult, Dnd5eSrdPendingAdvancement, Dnd5eSrdSpellPreparationMutationResult, DndControlledCreatureActionHandoff, DndRulesMutationUndoDescriptor, DndRulesMutationUndoResult } from "@open-tabletop/core";
 import type { TokenMoveBatchRequest, TokenMoveBatchResult } from "@open-tabletop/core";
-import { probabilityRange, rollFormula } from "@open-tabletop/dice-engine";
+import { probabilityRange } from "@open-tabletop/dice-engine";
 import { Activity, BookOpen, Bot, Boxes, Brain, BrickWall, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Circle, Copy, Crosshair, Dices, Download, Eraser, Eye, FileText, Flame, Globe2, Grip, Hand, Image as ImageIcon, KeyRound, Layers, Lightbulb, LockKeyhole, Mail, Map as MapIcon, MapPin, Maximize2, MessageSquare, Minimize2, Moon, Music, Paintbrush, PencilLine, Pentagon, Play, Plus, RefreshCw, RotateCcw, Ruler, ScrollText, Search, Send, Shield, Swords, Timer, Trash2, Triangle, Upload, UserCog, UserPlus, Users, UserX, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
 import type { CSSProperties, DragEvent as ReactDragEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { startTransition, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -20,7 +22,7 @@ import { assetThumbnailUrl } from "./api.js";
 import { activeSceneAnnotations } from "./annotation-expiry.js";
 import { applyActiveSceneIdentity, applyAuthoritativeScene } from "./active-scene-state.js";
 import { applyLocalBoardHistoryAction, boardHistoryStatus, createTokenCopies, type BoardHistoryAction, type BoardHistoryDirection, type BoardTokenFrameChange } from "./board-history.js";
-import { blankCanvasDemoCampaignId, blankCanvasDemoNotice, blankCanvasDemoSceneId, blankCanvasDemoUserId, createBlankCanvasDemoAsset, createBlankCanvasDemoSnapshot, seededDemoLoginErrorMessage, seededDemoUnavailableMessage } from "./blank-canvas-demo.js";
+import { blankCanvasTableRoll, blankCanvasChatMessage, blankCanvasDemoCampaignId, blankCanvasDemoNotice, blankCanvasDemoSceneId, blankCanvasDemoUserId, createBlankCanvasDemoAsset, createBlankCanvasDemoSnapshot, seededDemoLoginErrorMessage, seededDemoUnavailableMessage } from "./blank-canvas-demo.js";
 import { scenePointFromClient } from "./board-geometry.js";
 import { boardKeyboardAction } from "./board-keyboard.js";
 import { boundedBoardCapturePixelRatio } from "./board-capture.js";
@@ -55,6 +57,7 @@ import { normalizeSceneGridType, normalizeSceneVisibilityMode, SceneGridFields, 
 import { SceneDelegationPanel } from "./scene-delegation-panel.js";
 import { applyProfilePreferences, applyProfileUserToSnapshot, mostRecentProfileUser, ProfilePreferences, resolvedUserPreferences, updateUserProfile, type ProfileUpdateInput } from "./profile-preferences.js";
 import { HpBar } from "./hp-bar.js";
+import { saveScenePin } from "./scene-pin-client.js";
 import { deleteJournalEntry, JournalPanel, updateJournalEntry, type JournalCreateOptions, type JournalDraft, type JournalLinkTargetOption } from "./journal-panel.js";
 import { MemoizedChatRail as ChatRail } from "./chat-rail.js";
 import { CampaignOwnershipTransfer, type CampaignOwnershipTransferInput } from "./campaign-ownership-transfer.js";
@@ -74,6 +77,9 @@ import { cleanupAdminStoredAssets, migrateAdminStoredAssets, purgeAdminAssetCdnC
 import { failStaleAdminAiThreads, failStaleAdminAiToolCalls, rejectStaleAdminAiProposals, retryAdminAiToolCall as requestRetryAdminAiToolCall } from "./admin-ai-client.js";
 import { issueAdminPasswordReset as requestAdminPasswordReset, pruneExpiredPasswordResets as requestPruneExpiredPasswordResets, retryAdminEmail as requestRetryAdminEmail, retryAllAdminEmails as requestRetryAllAdminEmails, revokeAdminRiskSessions as requestRevokeAdminRiskSessions, revokeAdminSession as requestRevokeAdminSession, revokeAdminUserSessions as requestRevokeAdminUserSessions, updateAdminUser } from "./admin-identity-client.js";
 import { syncAdminPluginRegistry, syncCampaignPluginRegistry, updateAdminPluginReview } from "./admin-plugin-client.js";
+import { PersonalHotbar } from "./personal-hotbar.js";
+import { hotbarStoragePrefix } from "./personal-hotbar-state.js";
+import { prepareDeclarativeRoll, rollDeclarativeActor } from "./declarative-system-client.js";
 import { LiveMapLayerStack, LiveSceneCanvas } from "./live-scene-canvas.js";
 import { MapSelectionStatus, MapZoomControls, Toolbar, annotationColor, annotationGroupKey, annotationToolLabel, annotationToolShowsSettings, battleMapZoomStep, clampBattleMapZoom, defaultAnnotationLayer, distanceBetween, isUsableImageAsset, nextTokenLayer, sceneGridOverlayVisible, tokenCenter, tokenCoordinatesFromCenter, tokenFrame, tokenLayer, tokenLayerLabel, tokenLayers, useAnnotationExpiryClock, type TokenFrame, type TokenMovePersistenceChange, type TokenSelectionOptions } from "./scene-canvas.js";
 import { campaignPermissionTemplates, type CampaignPermissionTemplateId } from "./admin-data.js";
@@ -337,8 +343,9 @@ export function App() {
   const [selectedActorId, setSelectedActorId] = useState("");
   const [selectedBoardAssetId, setSelectedBoardAssetId] = useState("");
   const [activeTokenLayer, setActiveTokenLayer] = useState<TokenLayer>("player");
-  const boardUndoStack = useRef<BoardHistoryAction[]>([]);
-  const boardRedoStack = useRef<BoardHistoryAction[]>([]);
+  const monsterPlacementAttempts = useRef<PlacementAttempts>(new Map());
+  const boardUndoStack = useRef<BoardAction[]>([]);
+  const boardRedoStack = useRef<BoardAction[]>([]);
   const [boardClipboardTokens, setBoardClipboardTokens] = useState<Token[]>([]);
   const boardSyncQueueRef = useRef(Promise.resolve());
   const [battleMapZoom, setBattleMapZoom] = useState(1);
@@ -1194,6 +1201,7 @@ export function App() {
     tokenAuthoritativeRef.current.clear();
     sceneSwitchRef.current = undefined; setSceneSwitchTarget("");
     boardSyncQueueRef.current = Promise.resolve();
+    monsterPlacementAttempts.current.clear();
     boardUndoStack.current = [];
     boardRedoStack.current = [];
     setBoardClipboardTokens([]);
@@ -1672,7 +1680,7 @@ export function App() {
     }
     if (!event || typeof event.type !== "string" || event.campaignId !== campaignId) return "ignored";
     const payload = event.payload;
-    if (payload?.refreshRequired === true) return "snapshot";
+    if (payload?.refreshRequired === true) { if (event.type.startsWith("handout.") || event.type.startsWith("actor.")) loreRealtimeRefreshPendingRef.current = true; return "snapshot"; }
     // Deleting a world detaches world-linked actors, journals, handouts, and
     // records. Reconcile that cascade from the authoritative snapshot.
     if (event.type === "world.deleted") return "snapshot";
@@ -3921,8 +3929,33 @@ export function App() {
     return created;
   }
 
+  const monsterPlacement = compendiumPlacementActions({
+    attempts: monsterPlacementAttempts.current,
+    scene: selectedScene, canPlace: !blankCanvasDemoOpen && hasPermission("actor.create") && hasPermission("token.create"),
+    currentScene: () => snapshotRef.current.scenes.find((scene) => scene.id === realtimeSelectionRef.current.sceneId),
+    run: runWorkspaceBoundAction, applyScene: applySceneToSnapshot, status: setStatus,
+    reconcile: (scene) => refresh(scene.campaignId, scene.id, { syncStatus: false }),
+    applyPair: (actor, token) => {
+      applyActorToSnapshot(actor);
+      applyTokensToSnapshot([token]);
+      setActiveTokenLayer("player");
+      selectSingleToken(token.id);
+      setSelectedActorId(actor.id);
+    },
+    removePair: (actorId, tokenId) => {
+      actorSheetAuthoritativeRef.current.delete(actorId);
+      tokenAuthoritativeRef.current.delete(tokenId);
+      setSnapshot((current) => ({ ...current, actors: current.actors.filter((actor) => actor.id !== actorId), tokens: current.tokens.filter((token) => token.id !== tokenId) }));
+      selectSingleToken("");
+    },
+    remember: (action) => {
+      if (!boardUndoStack.current.some((entry) => entry.kind === "monster.place" && entry.placementId === action.placementId)) pushBoardHistoryAction(action);
+    },
+  });
+
   async function createTokenFromDrop(payload: TokenDropPayload, point: VisionPoint) {
     tokenDropHandledRef.current = true;
+    if (payload.type === "monster" && payload.attemptId) return monsterPlacement.place(payload.id, payload.attemptId, point);
     await createToken({
       actorId: payload.actorId,
       imageAssetId: payload.imageAssetId,
@@ -4384,41 +4417,13 @@ export function App() {
     );
   }
 
-  function pushBoardHistoryAction(action: BoardHistoryAction) {
-    const size = action.kind === "tokens.move" || action.kind === "tokens.resize" ? action.changes.length : action.tokens.length;
+  function pushBoardHistoryAction(action: BoardAction) {
+    const size = action.kind === "monster.place" ? 1 : action.kind === "tokens.move" || action.kind === "tokens.resize" ? action.changes.length : action.tokens.length;
     if (size === 0) return;
     boardUndoStack.current = [...boardUndoStack.current, action].slice(-boardHistoryLimit);
     boardRedoStack.current = [];
   }
 
-  function tokenRestorePayload(token: Token): Partial<Token> {
-    return {
-      id: token.id,
-      actorId: token.actorId,
-      name: token.name,
-      x: token.x,
-      y: token.y,
-      width: token.width,
-      height: token.height,
-      rotation: token.rotation,
-      elevation: token.elevation,
-      layer: token.layer,
-      hidden: token.hidden,
-      locked: token.locked,
-      visionEnabled: token.visionEnabled,
-      visionRadius: token.visionRadius,
-      brightVisionRadius: token.brightVisionRadius,
-      dimVisionRadius: token.dimVisionRadius,
-      senses: token.senses,
-      disposition: token.disposition,
-      imageAssetId: token.imageAssetId,
-      ownerUserIds: token.ownerUserIds,
-      notes: token.notes,
-      conditions: token.conditions,
-      auras: token.auras,
-      metadata: token.metadata
-    };
-  }
 
   async function persistSceneCanvasTokenMove(changes: TokenMovePersistenceChange[]) {
     if (changes.length === 0) return;
@@ -4600,27 +4605,23 @@ export function App() {
     selectSingleToken(combatant.tokenId);
   }
 
-  async function undoBoardAction() {
-    const action = boardUndoStack.current.at(-1);
-    if (!action) {
-      setStatus("Nothing to undo");
-      return;
+  async function changeBoardHistory(direction: BoardHistoryDirection) {
+    const from = direction === "undo" ? boardUndoStack : boardRedoStack;
+    const to = direction === "undo" ? boardRedoStack : boardUndoStack;
+    const action = from.current.at(-1);
+    if (!action) return setStatus("Nothing to " + direction);
+    if (action.kind === "monster.place") {
+      await boardSyncQueueRef.current;
+      if (from.current.at(-1) !== action || !await monsterPlacement.change(action, direction)) return;
+    } else {
+      applyLocalBoardHistory(action, direction);
     }
-    applyLocalBoardHistory(action, "undo");
-    boardUndoStack.current = boardUndoStack.current.slice(0, -1);
-    boardRedoStack.current = [...boardRedoStack.current, action].slice(-boardHistoryLimit);
+    const wasLast = from.current.at(-1) === action;
+    from.current = from.current.filter((entry) => entry !== action);
+    if (wasLast) to.current = [...to.current, action].slice(-boardHistoryLimit);
   }
-
-  async function redoBoardAction() {
-    const action = boardRedoStack.current.at(-1);
-    if (!action) {
-      setStatus("Nothing to redo");
-      return;
-    }
-    applyLocalBoardHistory(action, "redo");
-    boardRedoStack.current = boardRedoStack.current.slice(0, -1);
-    boardUndoStack.current = [...boardUndoStack.current, action].slice(-boardHistoryLimit);
-  }
+  function undoBoardAction() { return changeBoardHistory("undo"); }
+  function redoBoardAction() { return changeBoardHistory("redo"); }
 
   async function copySelectedBoardTokens() {
     if (selectedTokens.length === 0) {
@@ -6028,38 +6029,11 @@ export function App() {
   }
 
   function createBlankCanvasDemoRoll(formula: string, visibility: DiceRoll["visibility"], label: string): DiceRoll {
-    const timestamp = new Date().toISOString();
-    const result = rollFormula(formula);
-    return {
-      id: nextBlankCanvasDemoId("roll_demo"),
-      campaignId,
-      userId: currentUserId,
-      formula,
-      label,
-      visibility,
-      terms: result.terms,
-      total: result.total,
-      createdAt: timestamp,
-      updatedAt: timestamp
-    };
+    return blankCanvasTableRoll({ id: nextBlankCanvasDemoId("roll_demo"), campaignId, userId: currentUserId }, formula, visibility, label);
   }
 
-  function createBlankCanvasDemoChatMessage(input: Pick<ChatMessage, "body" | "type" | "visibility" | "recipientUserIds"> & { rollId?: string; replyToMessageId?: string }): ChatMessage {
-    const timestamp = new Date().toISOString();
-    return {
-      id: nextBlankCanvasDemoId("chat_demo"),
-      campaignId,
-      sceneId: selectedScene?.id,
-      userId: currentUserId,
-      body: input.body,
-      type: input.type,
-      visibility: input.visibility,
-      recipientUserIds: input.recipientUserIds,
-      rollId: input.rollId,
-      replyToMessageId: input.replyToMessageId,
-      createdAt: timestamp,
-      updatedAt: timestamp
-    };
+  function createBlankCanvasDemoChatMessage(input: Parameters<typeof blankCanvasChatMessage>[1]): ChatMessage {
+    return blankCanvasChatMessage({ id: nextBlankCanvasDemoId("chat_demo"), campaignId, sceneId: selectedScene?.id, userId: currentUserId }, input);
   }
 
   function shouldDelayDiceResult(roll: DiceRoll): boolean {
@@ -6129,14 +6103,13 @@ export function App() {
       setRollStatusAfterDiceReveal(roll, `Rolled ${roll.total} for this demo tab`);
       return;
     }
-    const roll = await postDiceRoll("table", {
-      campaignId,
-      formula,
-      visibility: diceVisibility,
-      label: "Table roll"
-    });
-    setRollStatusAfterDiceReveal(roll, `Rolled ${roll.total}`);
-    await refresh(campaignId, sceneId, { syncStatus: false });
+    await runWorkspaceBoundAction(
+      (request) => postDiceRoll("table", { campaignId: request.campaignId, formula, visibility: diceVisibility, label: "Table roll" }, request.controller.signal),
+      async (roll, request) => {
+        setRollStatusAfterDiceReveal(roll, `Rolled ${roll.total}`);
+        await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });
+      }
+    );
   }
 
   async function rollTemplateDamage(annotation: SceneAnnotation) {
@@ -7686,9 +7659,8 @@ export function App() {
       }
     );
   }
-  async function useActorAction(rollId: string, options: ActorActionCommitOptions = {}) {
-    if (!selectedActor) return;
-    const actor = selectedActor;
+  async function useActorAction(rollId: string, options: ActorActionCommitOptions = {}, actor = selectedActor) {
+    if (!actor) return;
     const consumeResources = options.consumeResources ?? true;
     const initiallyConsequentialDndAction = actor.systemId === "dnd-5e-srd" && Boolean(consumeResources || options.applyEffect || options.weaponMastery?.use);
     const actionRequest = actorActionRequest(rollId, actor.updatedAt, { ...options, consumeResources }, diceVisibility);
@@ -10322,7 +10294,7 @@ export function App() {
             <Toolbar key={`${workspaceMode}-${tab}`} onSelectTool={selectCanvasTool} onCreateToken={async () => { await createToken(); }} onStartCombat={openCombatSetup} onRevealFog={revealFog} onHideFog={hideFog} onRevealFogPolygon={revealFogPolygon} onToggleFogBrush={toggleFogBrush} onToggleAnnotationTool={toggleAnnotationTool} onDeleteLatestAnnotation={deleteLatestAnnotation} onUndoScene={undoSceneEdit} onUndoFog={undoFog} onShowFogHistory={showFogHistory} onSampleVisionPoint={sampleVisionPoint} onSaveFogPreset={saveFogPreset} onApplyFogPreset={applyFogPreset} onDeleteFogPreset={deleteFogPreset} onCyclePlayerVisionPreview={playerPreview.show} onAddWall={addWall} onAddTerrainWall={addTerrainWall} onAddDoor={addDoor} onAddWindow={addWindow} onAddLight={addLight} onAddDarkness={addDarkness} onActionError={(error) => reportError(error)} canCreateToken={hasPermission("token.create")} canManageCombat={hasPermission("combat.manage")} canRevealFog={hasPermission("token.reveal")} canPreviewPlayerVision={Boolean(selectedScene && canPreviewPlayer && playerPreview.players.length > 0)} playerVisionPreviewLabel={playerPreview.open ? playerPreview.playerName : undefined} activeFogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} activeAnnotationTool={annotationTool} hasFogPresets={snapshot.fogPresets.length > 0} canUpdateScene={hasPermission("scene.update")} canAnnotate={hasPermission("scene.read")} />
             <div className="map-play-surface">
               {activeCombat && selectedScene && <InitiativeStrip combat={activeCombat} currentCombatantId={currentTurnCombatant?.id} nextCombatantId={nextTurnCombatant?.id} canAdvance={hasPermission("combat.manage")} onFocusCombatant={(combatant) => selectSingleToken(combatant.tokenId)} onNextTurn={(combat) => advanceCombatTurn(combat, 1)} onOpenTracker={() => selectInspectorTab("combat")} onError={reportError} />}
-              {selectedScene ? <LiveSceneCanvas visionStore={visionStore} scene={selectedScene} zoom={battleMapZoom} backgroundAsset={selectedMapAsset} selectedAssetId={selectedBoardAssetId} assets={snapshot.assets} tokens={snapshot.tokens} actors={snapshot.actors} boardCurrentUserId={currentUserId} canSeeAllVitals={hasPermission("combat.manage")} currentTurnTokenIds={currentTurnTokenIds} nextTurnTokenIds={nextTurnTokenIds} vision={snapshot.vision} selectedTokenId={selectedTokenId} selectedTokenIds={selectedTokenIds} activeTokenLayer={activeTokenLayer} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} calibrationPoints={gridCalibrationOpen && selectedScene.gridType !== "gridless" ? gridCalibrationPoints : undefined} onCalibrationPoint={gridCalibrationOpen && selectedScene.gridType !== "gridless" ? (point) => setGridCalibrationPoints((current) => appendGridCalibrationPoint(current, point)) : undefined} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canMoveToken={hasPermission("token.move")} canUpdateAnnotations={hasPermission("scene.update")} canResizeToken={hasPermission("token.update")} canUpdateTokenLayer={hasPermission("token.update")} onSelect={selectCanvasToken} onInspectToken={(tokenId) => { selectCanvasToken(tokenId); selectInspectorTab("actors"); }} onSelectMany={selectCanvasTokens} onSelectBackgroundAsset={selectBoardBackgroundAsset} onClearSelection={clearTokenSelection} onMoved={async () => undefined} onTokenMovePersist={persistSceneCanvasTokenMove} onTokenResizePersist={persistSceneCanvasTokenResize} onTokenResizeCommit={recordTokenResizeAction} onTokenLayerCycle={cycleTokenLayer} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} onTogglePortal={toggleScenePortal} onSetLightAnimation={(lightId, animation) => { void patchSceneChildMutation(selectedScene, `/api/v1/scenes/${selectedScene.id}/lights/${lightId}`, { animation }, `scene:light:animation:${lightId}`).then(applySceneToSnapshot).catch(reportError); }} selectedOverlay={selectedOverlay} onSelectOverlay={setSelectedOverlay} onZoomBy={zoomBattleMap} onTokenTarget={setTokenTarget} /> : (
+              {selectedScene ? <LiveSceneCanvas pinJournals={snapshot.journals} pinHandouts={handouts} onSavePin={hasPermission("campaign.update") && hasPermission("scene.update") && hasPermission("token.reveal") ? async (scene, mapPin) => { const request = currentWorkspaceRequestIdentity(); const result = await runSharedMutation(() => saveScenePin(scene, mapPin), scene.campaignId, scene.id); if (workspaceIdentityIsCurrent(request)) applySceneToSnapshot(result); } : undefined} visionStore={visionStore} scene={selectedScene} zoom={battleMapZoom} backgroundAsset={selectedMapAsset} selectedAssetId={selectedBoardAssetId} assets={snapshot.assets} tokens={snapshot.tokens} actors={snapshot.actors} boardCurrentUserId={currentUserId} canSeeAllVitals={hasPermission("combat.manage")} currentTurnTokenIds={currentTurnTokenIds} nextTurnTokenIds={nextTurnTokenIds} vision={snapshot.vision} selectedTokenId={selectedTokenId} selectedTokenIds={selectedTokenIds} activeTokenLayer={activeTokenLayer} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} calibrationPoints={gridCalibrationOpen && selectedScene.gridType !== "gridless" ? gridCalibrationPoints : undefined} onCalibrationPoint={gridCalibrationOpen && selectedScene.gridType !== "gridless" ? (point) => setGridCalibrationPoints((current) => appendGridCalibrationPoint(current, point)) : undefined} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canMoveToken={hasPermission("token.move")} canUpdateAnnotations={hasPermission("scene.update")} canResizeToken={hasPermission("token.update")} canUpdateTokenLayer={hasPermission("token.update")} onSelect={selectCanvasToken} onInspectToken={(tokenId) => { selectCanvasToken(tokenId); selectInspectorTab("actors"); }} onSelectMany={selectCanvasTokens} onSelectBackgroundAsset={selectBoardBackgroundAsset} onClearSelection={clearTokenSelection} onMoved={async () => undefined} onTokenMovePersist={persistSceneCanvasTokenMove} onTokenResizePersist={persistSceneCanvasTokenResize} onTokenResizeCommit={recordTokenResizeAction} onTokenLayerCycle={cycleTokenLayer} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} onTogglePortal={toggleScenePortal} onSetLightAnimation={(lightId, animation) => { void patchSceneChildMutation(selectedScene, `/api/v1/scenes/${selectedScene.id}/lights/${lightId}`, { animation }, `scene:light:animation:${lightId}`).then(applySceneToSnapshot).catch(reportError); }} selectedOverlay={selectedOverlay} onSelectOverlay={setSelectedOverlay} onZoomBy={zoomBattleMap} onTokenTarget={setTokenTarget} /> : (
                 <div className="empty-state empty-state-action">
                   {!selectedCampaign ? <>
                     <h2>Start your first table</h2>
@@ -10339,6 +10311,12 @@ export function App() {
                   </>}
                 </div>
               )}
+              {workspaceMode === "live" && !sceneWorkspaceHidden && !playerPreview.open && !blankCanvasDemoOpen && selectedScene?.campaignId === campaignId && currentMember?.campaignId === campaignId && snapshot.session?.user.id === currentUserId &&
+                <PersonalHotbar key={hotbarStoragePrefix(apiBase, currentUserId, campaignId)} storagePrefix={hotbarStoragePrefix(apiBase, currentUserId, campaignId)} campaignId={campaignId} userId={currentUserId}
+                  actors={snapshot.actors} selectedActorId={selectedActor?.id} sceneId={selectedScene.id} tokens={snapshot.tokens} selectedTokenId={selectedToken?.id} items={snapshot.items} permissions={currentMember.permissions} savedFormulas={savedDiceFormulas} macros={snapshot.diceMacros}
+                  onDiceRoll={rollDice} onActorRoll={useActorAction} onError={reportError} onDeclarativeRoll={(sheet, rollId) => runWorkspaceBoundAction(
+                    (request) => rollDeclarativeActor(prepareDeclarativeRoll(request.campaignId, sheet, rollId, crypto.randomUUID()), request.controller.signal),
+                    (result) => { applyActorToSnapshot(result.actor); setStatus(`${result.quickRoll.label}: ${result.roll.total}`); })} />}
             </div>
             {gridCalibrationOpen && selectedScene && selectedScene.gridType !== "gridless" && (
               <GridCalibrationPanel
@@ -10641,6 +10619,8 @@ export function App() {
               <>
                 <LazyCompendiumPanel
                 key={`compendium:${campaignId}:${currentUserId}`}
+                sceneId={selectedScene?.id}
+                onPlaceMonster={!blankCanvasDemoOpen && hasPermission("actor.create") && hasPermission("token.create") ? monsterPlacement.place : undefined}
                 campaignId={campaignId}
                 systems={snapshot.systems}
                 actors={snapshot.actors}

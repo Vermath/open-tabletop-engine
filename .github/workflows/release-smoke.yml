@@ -8,13 +8,24 @@ on:
 
 permissions:
   contents: read
-  issues: read
 
 jobs:
-  release-smoke:
-    name: pnpm release:smoke:offline
+  stages:
+    name: ${{ matrix.name }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Tests and cold builds
+            stage: checks
+          - name: Browser journeys
+            stage: browser
+          - name: Runtime and recovery
+            stage: runtime
+          - name: Production images and SBOMs
+            stage: packages
 
     steps:
       - name: Checkout
@@ -34,20 +45,44 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Run tests and cold builds
+        id: checks
+        if: matrix.stage == 'checks'
+        run: pnpm release:smoke:checks
+
+      - name: Build workspace dependencies
+        if: matrix.stage == 'browser' || matrix.stage == 'runtime'
+        run: pnpm exec turbo run build --filter=@open-tabletop/api... --filter=@open-tabletop/web...
+
       - name: Install Playwright Chromium
+        if: matrix.stage == 'browser'
         run: pnpm exec playwright install --with-deps chromium
 
-      - name: Run release smoke
-        run: pnpm release:smoke:offline
+      - name: Run browser journeys
+        id: journeys
+        if: matrix.stage == 'browser'
+        run: pnpm e2e
 
-      - name: Audit open release issues
-        if: github.event_name == 'push'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: pnpm v1:issues:check
+      - name: Upload failed browser traces
+        if: failure() && steps.journeys.outcome == 'failure'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: failed-browser-traces
+          path: test-results/**/trace.zip
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Run runtime and recovery checks
+        if: matrix.stage == 'runtime'
+        run: pnpm release:smoke:runtime
+
+      - name: Verify packages and generate SBOMs
+        id: packages
+        if: matrix.stage == 'packages'
+        run: pnpm release:smoke:packages
 
       - name: Upload release gate evidence
-        if: always()
+        if: ${{ !cancelled() && matrix.stage == 'checks' && (steps.checks.outcome == 'success' || hashFiles('artifacts/release-evidence/*.json') != '') }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: open-tabletop-release-gate-evidence
@@ -55,7 +90,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload API service SBOM
-        if: always()
+        if: steps.packages.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: open-tabletop-api-sbom
@@ -64,3 +99,33 @@ jobs:
             .codex-artifacts/sbom/open-tabletop-api-image.cdx.json
           include-hidden-files: true
           if-no-files-found: error
+
+      - name: Start and probe production images
+        if: matrix.stage == 'packages'
+        run: bash scripts/smoke-compose-images.sh
+
+  release-smoke:
+    name: pnpm release:smoke:offline
+    needs: stages
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+    steps:
+      - name: Require every stage to pass
+        env:
+          STAGES_RESULT: ${{ needs.stages.result }}
+        run: test "$STAGES_RESULT" = success
+
+      - name: Checkout issue audit
+        if: github.event_name == 'push'
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Audit open release issues
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/check-v1-open-issues.mjs

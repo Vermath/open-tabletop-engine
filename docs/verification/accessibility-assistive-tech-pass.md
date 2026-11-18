@@ -99,4 +99,6 @@ Stop the pass and file a blocking issue if:
 
 The Playwright accessibility smoke is a regression gate, not a substitute for this manual pass. v1.0 final acceptance needs completed evidence for the required environments or an explicit owner-approved accessibility descoping note in `docs/prd-v1-gap-closure.md`.
 
-If the owner explicitly descopes or substitutes part of the assistive-technology matrix, record a release-evidence line using the exact form `- Owner-approved descope: Release owner accepted ...` or `- Owner-approved descope: Release owner approved ...` with the concrete approval context. The `pnpm v1:evidence:check` gate only treats that explicit field as an override when the value itself says the owner accepted or approved it, and it rejects blank, placeholder, pending, ambiguous, or negative values such as `none`, `n/a`, `tbd`, `Temporary reduced matrix`, `<approval summary>`, or `<explicit owner approval summary>`.
+For an owner-approved descope, copy the override block above. Give the heading a real scope label, record the checked release commit, name the affected environments, and explain the reason. The approval field must state what the release owner accepted or approved.
+
+For a substitution, use the heading `## Assistive Technology Owner-Approved Substitution: <scope label>` and the field `- Owner-approved substitution: Release owner approved ...`. Include the original and replacement environment under `Required environments replaced or removed` and record the commit and reason as above.

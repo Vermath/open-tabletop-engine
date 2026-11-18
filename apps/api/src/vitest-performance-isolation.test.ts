@@ -13,7 +13,7 @@ describe("API Vitest performance isolation", () => {
     expect(config).toContain('exclude: [performanceTestFile, diagnosticFixtureTestFile]');
     expect(config).toContain('include: [performanceTestFile]');
     expect(config).toContain('pool: "forks"');
-    expect(config).toContain("singleFork: true");
+    expect(performanceProject).toContain("maxWorkers: 1");
     expect(config).toContain("maxWorkers: 2");
     expect(config).toContain('setupFiles: ["src/vitest.setup.ts"]');
     expect(config).toContain("retry: 0");

@@ -2,6 +2,7 @@ import type { Scene, VisionPolygon } from "@open-tabletop/core";
 import { memo, useId, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import "./board-light-finish.css";
 import { boardRenderCounts } from "./board-render-counts.js";
+import { safeLightCssColor } from "./light-color.js";
 
 /**
  * The board's static layers as memoised components. Each draws only from its
@@ -62,7 +63,7 @@ export const BoardLightingLayer = memo(function BoardLightingLayer(props: { widt
     <svg className="lighting-layer" viewBox={`0 0 ${props.width} ${props.height}`} aria-hidden="true" style={{ "--light-feather": "url(#" + feather + ")" } as CSSProperties}>
       <defs><FeatherInside id={feather} /></defs>
       {props.polygons.map((polygon) => (
-        <polygon key={polygon.id} className={lightPolygonClassName(polygon)} points={polygonPoints(polygon)} filter={"url(#" + feather + ")"} style={{ fill: polygon.color ?? "#facc15", opacity: polygon.opacity ?? 0.22 }} />
+        <polygon key={polygon.id} className={lightPolygonClassName(polygon)} points={polygonPoints(polygon)} filter={"url(#" + feather + ")"} style={{ fill: safeLightCssColor(polygon.color, polygon.lightingEffect), opacity: polygon.opacity ?? 0.22 }} />
       ))}
     </svg>
   );

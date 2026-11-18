@@ -3,7 +3,7 @@ import { Activity, Check, Download, KeyRound, Mail, RefreshCw, RotateCcw, Send, 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiGet, apiPost, type AdminAuthConnectionTestResult, type AdminJob, type AdminJobAlertResult, type AdminOperationalRetentionPlan, type AdminOperationalRetentionRecordClass, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminSessionInfo, type AdminSnapshot, type AdminStorageBackupResult, type AdminStorageRestoreDrillResult, type AdminStorageRestoreResult, type AdminUserInfo, type OrganizationMemberInfo, type PluginReviewStatus, type SystemRuntimeInfo } from "./api.js";
 import { campaignPermissionTemplates, identityProviderSetupGuides, type CampaignPermissionTemplateId } from "./admin-data.js";
-import { aiToolCallErrorCode, scimMappingLabel } from "./admin-panel-utils.js";
+import { scimMappingLabel } from "./admin-panel-utils.js";
 import { MetricTile } from "./metric-tile.js";
 import { downloadJson, errorMessage, formatAdminList, formatCost, formatDateTime, formatDuration, formatDurationSeconds, formatNumber, formatPercent, formatStorageBytes, jobStatusClass, readinessStatusClass, recordValue, registryHostLabel, stringValue, titleCaseLabel } from "./sheet-format.js";
 
@@ -2619,7 +2619,7 @@ export function AdminPanel(props: { admin?: AdminSnapshot; campaigns: Campaign[]
             ))}
             {aiOperations.evaluationCoverage.recentUnevaluatedThreads.slice(0, 3).map((thread) => (
               <div className="operator-row tool-call-row" key={`ai-unevaluated-thread-${thread.id}`}>
-                <span>{thread.title}</span>
+                <span>Thread {thread.id}</span>
                 <strong>{thread.status ?? "unknown"} - {thread.provider} - {formatDateTime(thread.updatedAt)}</strong>
               </div>
             ))}
@@ -2728,7 +2728,7 @@ export function AdminPanel(props: { admin?: AdminSnapshot; campaigns: Campaign[]
             ))}
             {aiOperations.risk.providerErrors.flatMap((error) => error.recentThreads.slice(0, 2).map((thread) => ({ error, thread }))).slice(0, 3).map(({ error, thread }) => (
               <div className="operator-row tool-call-row" key={`provider-error-thread-${error.message}-${thread.id}`}>
-                <span>{thread.title}</span>
+                <span>Thread {thread.id}</span>
                 <strong>{thread.provider} - {thread.failedAt ? formatDateTime(thread.failedAt) : thread.status} - retries {formatNumber(thread.retryAttempts)}</strong>
               </div>
             ))}
@@ -2747,7 +2747,7 @@ export function AdminPanel(props: { admin?: AdminSnapshot; campaigns: Campaign[]
             {aiOperations.risk.failedToolRetryPolicy?.recentRetryable.slice(0, 5).map((toolCall) => (
               <div className="operator-row tool-call-row" key={`retryable-tool-${toolCall.id}`}>
                 <span>{toolCall.toolName}</span>
-                <strong>{toolCall.threadTitle ?? toolCall.threadId} - {toolCall.campaignName ?? "unknown"} - {toolCall.retryReason}</strong>
+                <strong>{toolCall.threadId} - {toolCall.campaignName ?? "unknown"} - {toolCall.retryReason}</strong>
                 <button className="ghost-button" title="Replay retryable failed AI tool call" onClick={() => props.onRetryAiToolCall(toolCall.id, toolCall.toolName).catch(console.error)}>
                   <RefreshCw size={14} /> Retry tool
                 </button>
@@ -2767,7 +2767,7 @@ export function AdminPanel(props: { admin?: AdminSnapshot; campaigns: Campaign[]
             ))}
             {aiOperations.risk.recentStaleRunningThreads.slice(0, 3).map((thread) => (
               <div className="operator-row tool-call-row" key={`stale-thread-${thread.id}`}>
-                <span>{thread.title}</span>
+                <span>Thread {thread.id}</span>
                 <strong>{thread.provider} - stale {formatDuration(thread.ageMs)}</strong>
               </div>
             ))}
@@ -2779,13 +2779,13 @@ export function AdminPanel(props: { admin?: AdminSnapshot; campaigns: Campaign[]
             ))}
             {aiOperations.recentThreads.slice(0, 5).map((thread) => (
               <div className="operator-row tool-call-row" key={thread.id}>
-                <span>{thread.title}</span>
+                <span>Thread {thread.id}</span>
                 <strong>{thread.status ?? "running"} - {thread.provider} - {formatDuration(thread.durationMs)}</strong>
               </div>
             ))}
             {aiOperations.recentToolCalls.slice(0, 5).map((toolCall) => {
               const retryable = retryableAiToolCallIds.has(toolCall.id);
-              const errorCode = aiToolCallErrorCode(toolCall.output);
+              const errorCode = toolCall.error;
               return (
                 <div className="operator-row tool-call-row" key={toolCall.id}>
                   <span>{toolCall.toolName}</span>

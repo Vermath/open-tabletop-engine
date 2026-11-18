@@ -12,6 +12,24 @@ const currentCommit = process.env.OTTE_RELEASE_COMMIT ?? headCommit;
 const commitSource = process.env.OTTE_RELEASE_COMMIT ? "OTTE_RELEASE_COMMIT" : "git rev-parse HEAD";
 const gateArtifactPaths = optionValues(process.argv.slice(2), "--gate-artifact");
 
+const nonPublicIpv6Ranges = [
+  ["::", 96], // unspecified, loopback, and deprecated IPv4-compatible forms
+  ["::ffff:0:0", 96], // IPv4-mapped forms
+  ["64:ff9b::", 96], // translation-only well-known prefix
+  ["64:ff9b:1::", 48], // local-use translation prefix
+  ["100::", 64], // discard-only
+  ["2001:2::", 48], // benchmarking
+  ["2001:10::", 28], // deprecated ORCHID
+  ["2001:20::", 28], // ORCHIDv2
+  ["2001:db8::", 32], // documentation
+  ["3fff::", 20], // documentation
+  ["5f00::", 16], // segment-routing SIDs
+  ["fc00::", 7], // unique-local
+  ["fe80::", 10], // link-local
+  ["fec0::", 10], // deprecated site-local
+  ["ff00::", 8] // multicast
+].map(([base, prefixLength]) => [ipv6Value(base), prefixLength]);
+
 if (!fullSha(currentCommit)) {
   console.error(`OTTE_RELEASE_COMMIT must be a full 40-character commit SHA; received ${currentCommit}.`);
   process.exit(1);
@@ -84,6 +102,7 @@ function checkIdentityProviderSmoke() {
       meaningfulField(field(section.body, "Provider")) &&
       meaningfulField(field(section.body, "Provider sandbox or tenant label")) &&
       meaningfulChoiceField(field(section.body, "Smoke target")) &&
+      !skippedSmokeEvidence(section) &&
       passField(field(section.body, "OIDC discovery/test result")) &&
       passField(field(section.body, "SCIM ServiceProviderConfig result"))
   );
@@ -186,19 +205,19 @@ function gate(id) {
 }
 
 function sectionsFor(markdown, headingPrefix) {
-  const clean = stripCodeFences(markdown);
-  const lines = clean.split(/\r?\n/);
   const sections = [];
   let current = null;
 
-  for (const line of lines) {
-    const heading = line.match(/^##\s+(.+)$/);
+  for (const { line, fenced } of markdownLines(markdown)) {
+    const heading = !fenced && line.match(/^##\s+(.+)$/);
     if (heading) {
       if (current) sections.push(current);
-      current = { title: heading[1].trim(), body: "" };
+      current = { title: heading[1].trim(), body: "", output: "" };
       continue;
     }
-    if (current) current.body += `${line}\n`;
+    if (!current) continue;
+    if (fenced) current.output += `${line}\n`;
+    else current.body += `${line}\n`;
   }
   if (current) sections.push(current);
 
@@ -206,12 +225,23 @@ function sectionsFor(markdown, headingPrefix) {
 }
 
 function field(body, name) {
-  const pattern = new RegExp(`^-\\s*${escapeRegExp(name)}:\\s*(.+)$`, "im");
+  const pattern = new RegExp(`^-[ \\t]*${escapeRegExp(name)}:[ \\t]*(.*)$`, "im");
   return body.match(pattern)?.[1]?.trim().replace(/^`|`$/g, "") ?? "";
 }
 
-function stripCodeFences(markdown) {
-  return markdown.replace(/```[\s\S]*?```/g, "");
+function* markdownLines(markdown) {
+  let fence = "";
+  for (const line of markdown.split(/\r?\n/)) {
+    const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (fence) {
+      if (marker && marker[1].startsWith(fence) && !marker[2].trim()) fence = "";
+      else yield { line, fenced: true };
+    } else if (marker) {
+      fence = marker[1];
+    } else {
+      yield { line, fenced: false };
+    }
+  }
 }
 
 function placeholder(value) {
@@ -322,24 +352,6 @@ function privateHost(hostname) {
   return nonPublicIpv6Ranges.some(([base, prefixLength]) => ipv6CidrContains(address, base, prefixLength));
 }
 
-const nonPublicIpv6Ranges = [
-  ["::", 96], // unspecified, loopback, and deprecated IPv4-compatible forms
-  ["::ffff:0:0", 96], // IPv4-mapped forms
-  ["64:ff9b::", 96], // translation-only well-known prefix
-  ["64:ff9b:1::", 48], // local-use translation prefix
-  ["100::", 64], // discard-only
-  ["2001:2::", 48], // benchmarking
-  ["2001:10::", 28], // deprecated ORCHID
-  ["2001:20::", 28], // ORCHIDv2
-  ["2001:db8::", 32], // documentation
-  ["3fff::", 20], // documentation
-  ["5f00::", 16], // segment-routing SIDs
-  ["fc00::", 7], // unique-local
-  ["fe80::", 10], // link-local
-  ["fec0::", 10], // deprecated site-local
-  ["ff00::", 8] // multicast
-].map(([base, prefixLength]) => [ipv6Value(base), prefixLength]);
-
 function ipv6CidrContains(address, base, prefixLength) {
   if (base === undefined) return false;
   const suffixBits = 128n - BigInt(prefixLength);
@@ -387,10 +399,23 @@ function passField(value) {
   return !templateChoice(normalized.toLowerCase()) && !normalized.includes("/") && /^pass(?:\b|:|-|$)/i.test(normalized);
 }
 
+function skippedSmokeEvidence(section) {
+  // This field covers optional provisioning, independently of the required smoke.
+  const body = section.body.replace(/^-[ \t]*SCIM Users\/Groups provisioning check, if performed:.*$/gim, "");
+  const text = `${section.title}\n${body}\n${section.output}`;
+  return text.split(/\r?\n/).some((line) => {
+    const status = line
+      .replace(/\b(?:no|zero|0)\s+(?:(?:tests?|checks?|runs?|suites?)\s+)?(?:(?:were|was|are|is)\s+)?skipped\b/gi, "")
+      .replace(/\b(?:not\s+|non[- ])skipped\b/gi, "")
+      .replace(/\bskipped(?:\s+(?:tests?|checks?|runs?|suites?))?\s*:\s*(?:none|zero|0)\b/gi, "");
+    return /\b(?:skipped|not run)\b|\bskip\b.{0,40}\bbecause\b/i.test(status);
+  });
+}
+
 function meaningfulField(value) {
   const normalized = value.trim().toLowerCase();
   return (
-    Boolean(normalized) &&
+    /[\p{L}\p{N}]/u.test(normalized) &&
     !["none", "n/a", "na", "no", "pending", "tbd", "<approval summary>", "<explicit owner approval summary>"].includes(normalized) &&
     !placeholder(normalized) &&
     !templateChoice(normalized)
@@ -415,42 +440,39 @@ function negativeOwnerApproval(value) {
 }
 
 function ownerOverridePlaceholder(markdown) {
-  const evidenceText = stripCodeFences(markdown);
-  const matches = evidenceText.matchAll(/^-\s*Owner-approved (?:substitution|descope|substitute):\s*(.+)$/gim);
-  for (const match of matches) {
-    const value = match[1].trim().toLowerCase();
-    if (
-      !value ||
-      ["none", "n/a", "na", "no", "not approved", "pending", "tbd", "<approval summary>", "<explicit owner approval summary>"].includes(value) ||
-      placeholder(value) ||
-      templateChoice(value) ||
-      value.includes("/") ||
-      negativeOwnerApproval(value) ||
-      !(/\bowner\b[\s\S]*\b(?:accepted|approved)\b|\b(?:accepted|approved)\b[\s\S]*\bowner\b/.test(value))
-    ) {
-      return true;
-    }
+  for (const { line, fenced } of markdownLines(markdown)) {
+    const match = !fenced && /^-[ \t]*Owner-approved (?:substitution|descope|substitute):[ \t]*(.*)$/i.exec(line);
+    if (!match) continue;
+    if (!validOwnerApproval(match[1])) return true;
   }
   return false;
 }
 
+function validOwnerApproval(approval) {
+  const value = approval.trim().toLowerCase();
+  return meaningfulChoiceField(value) &&
+    !negativeOwnerApproval(value) &&
+    /\bowner\b.*\b(?:accepted|approved)\b|\b(?:accepted|approved)\b.*\bowner\b/.test(value);
+}
+
 function explicitOwnerOverride(markdown) {
-  const evidenceText = stripCodeFences(markdown);
-  const matches = evidenceText.matchAll(/^-\s*Owner-approved (?:substitution|descope|substitute):\s*(.+)$/gim);
-  for (const match of matches) {
-    const value = match[1].trim().toLowerCase();
+  const assistiveOverrides = sectionsFor(markdown, "Assistive Technology Owner-Approved ");
+  for (const section of assistiveOverrides) {
+    const heading = /^Assistive Technology Owner-Approved (Descope|Substitution|Substitute):\s*(.+)$/i.exec(section.title);
+    if (!heading || !meaningfulField(heading[2])) continue;
+    const ownerApproval = heading[1].toLowerCase() === "descope"
+      ? field(section.body, "Owner-approved descope")
+      : field(section.body, "Owner-approved substitution") || field(section.body, "Owner-approved substitute");
     if (
-      value &&
-      !["none", "n/a", "na", "no", "not approved", "pending", "tbd", "<approval summary>", "<explicit owner approval summary>"].includes(value) &&
-      !placeholder(value) &&
-      !templateChoice(value) &&
-      !value.includes("/") &&
-      !negativeOwnerApproval(value) &&
-      /\bowner\b[\s\S]*\b(?:accepted|approved)\b|\b(?:accepted|approved)\b[\s\S]*\bowner\b/.test(value)
+      validOwnerApproval(ownerApproval) &&
+      evidenceCommitMatches(section.body) &&
+      meaningfulField(field(section.body, "Required environments replaced or removed")) &&
+      meaningfulField(field(section.body, "Reason"))
     ) {
       return true;
     }
   }
+
   return false;
 }
 

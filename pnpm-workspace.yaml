@@ -14,4 +14,4 @@ overrides:
   fast-uri: 3.1.9
   "fastify>find-my-way": 9.7.0
   fast-xml-builder: 1.1.7
-  ws: 8.21.0
+  ws: 8.22.0

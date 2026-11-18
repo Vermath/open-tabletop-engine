@@ -10,7 +10,7 @@
     "build": "tsc -p tsconfig.json",
     "lint": "tsc -p tsconfig.json --noEmit",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run --exclude=dist/** --passWithNoTests",
     "prepack": "pnpm run build"
   },
   "files": [
@@ -24,7 +24,7 @@
     "TYPE_CONTRACT_NOTICE.md"
   ],
   "devDependencies": {
-    "typescript": "^5.7.2",
-    "vitest": "^3.2.6"
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
   }
 }

@@ -1,3 +1,5 @@
+import { dnd5eSrdMonsterCatalog } from "@open-tabletop/system-sdk";
+import { registerCompendiumPlacementRoutes } from "./compendium-placement-routes.js";
 import { clampScenePoint, sceneGridSize, sceneGridOrigin, snapScenePointToGrid, snapTokenCenterToGrid } from "@open-tabletop/core";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
@@ -5,7 +7,7 @@ import { basename, extname, resolve } from "node:path";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import { aiCitationWarnings, buildPermissionFilteredContext, filterPermissionFilteredContextByScopes, validateAiCitationClaims, type AiBoardCaptureResult, type AiMessage, type AiProvider, type AiProviderEvent, type AiProviderRequest, type AiReasoningEffort, type AiToolContext, type AiToolDefinition, type AiToolJsonSchema, type PermissionFilteredContext } from "@open-tabletop/ai-core";
-import { apiContractPolicy, apiVersion, apiVersionHeader, openApiSpec } from "@open-tabletop/api-contracts";
+import { apiContractPolicy, apiVersion, apiVersionHeader, openApiSpec, type AdminAiThreadSummary, type AdminAiToolCallSummary } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, CodexAppServerWebSocketTransport, LoopbackCodexTransport, stopLocalCodexAppServers } from "@open-tabletop/codex-app-server-provider";
 import {
   aiMemoryFactStatus,
@@ -337,6 +339,7 @@ import { registerCallEmbedRoutes } from "./call-embed.js";
 import { registerOpenApiRuntimeValidation } from "./openapi-runtime-validation.js";
 import { activeCombatForTypedDamage, dndTypedDamageCombatantChanges } from "./dnd-typed-damage-combat.js";
 import { registerSceneDelegationRoutes } from "./scene-delegation-routes.js";
+import { exceedsSceneVisionBudget, MAX_SCENE_LIGHTS, MAX_SCENE_WALLS, SceneVisionBudgetError } from "./scene-vision-budget.js";
 import { registerUniversalVttImportRoute } from "./universal-vtt-import.js";
 import { registerCampaignSessionRoutes } from "./campaign-session-routes.js";
 import { registerCampaignWebhookRoutes } from "./campaign-webhook-routes.js";
@@ -360,6 +363,7 @@ import {
 import { rollFormulaWithFairness, verifyDiceRollRecord as verifyFairDiceRollRecord } from "./fair-dice.js";
 import { applyHeroicInspirationReroll, heroicInspirationDieChoices } from "./heroic-inspiration.js";
 import { OperationsObservability, operationsMetricsEnabled } from "./operations-observability.js";
+import { detachMapPins, editMapPin, mapPinAccessMayChange, projectMapPins } from "./scene-map-pins.js";
 import { commitPreparedSceneDuplication, prepareSceneDuplication, sceneDuplicationPreview, SceneDuplicationError } from "./scene-duplication.js";
 import {
   commitPreparedTokenMoveBatchCommand,
@@ -655,7 +659,7 @@ interface CampaignOwnershipTransferBody {
   expectedUpdatedAt?: unknown;
   reason?: unknown;
 }
-type ScenePatchBody = Partial<Pick<Scene, "name" | "width" | "height" | "gridType" | "gridSize" | "gridOrigin" | "visibilityMode" | "active" | "sortOrder" | "fog" | "walls" | "lights" | "annotations" | "metadata">> & { worldId?: string | null; backgroundAssetId?: string | null; folder?: string | null; expectedUpdatedAt?: string };
+type ScenePatchBody = { mapPin?: unknown } & Partial<Pick<Scene, "name" | "width" | "height" | "gridType" | "gridSize" | "gridOrigin" | "visibilityMode" | "active" | "sortOrder" | "fog" | "walls" | "lights" | "annotations" | "metadata">> & { worldId?: string | null; backgroundAssetId?: string | null; folder?: string | null; expectedUpdatedAt?: string };
 type TokenPatchBody = Partial<Pick<Token, "actorId" | "name" | "x" | "y" | "width" | "height" | "rotation" | "elevation" | "layer" | "hidden" | "locked" | "visionEnabled" | "visionRadius" | "senses" | "disposition" | "imageAssetId" | "ownerUserIds" | "notes" | "conditions" | "auras" | "targetedByUserIds" | "metadata">> & { brightVisionRadius?: number | null; dimVisionRadius?: number | null; expectedUpdatedAt?: unknown };
 type ActorPatchBody = Partial<Pick<Actor, "systemId" | "ownerUserId" | "type" | "name" | "imageAssetId" | "data" | "permissions">> & { worldId?: string | null; expectedUpdatedAt?: unknown; manualOverrideReason?: unknown };
 type ItemPatchBody = Omit<Partial<Item>, "actorId" | "worldId"> & { actorId?: string | null; worldId?: string | null; expectedUpdatedAt?: unknown; manualOverrideReason?: unknown };
@@ -1223,12 +1227,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   let pendingWebhookDeliveryCount = 0;
   type CampaignWebhookDeliveryRevision = Pick<CampaignWebhookDelivery, "id" | "campaignId" | "webhookId" | "updatedAt">;
   const broadcastToClients = (event: EngineEvent) => {
+    const refreshPins = mapPinAccessMayChange(store.state, event);
     const visibilityCache = createTokenVisibilityCache();
     hub.broadcast(event, (candidate, client) => {
       if (!realtimeClientAuthorizationIsCurrent(store, client)) {
         if (client.sessionId) disconnectRealtimeSession(client.sessionId);
         return undefined;
       }
+      if (refreshPins) return { ...candidate, targetId: undefined, payload: { refreshRequired: true } };
       return filterRealtimeEvent(store, candidate, client.userId, visibilityCache);
     });
   };
@@ -1582,6 +1588,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   });
 
   app.setErrorHandler((error, request, reply) => {
+    if (error instanceof SceneVisionBudgetError) return reply.code(422).send({ error: "scene_vision_budget_exceeded", message: error.message });
     if (error instanceof DeclarativeArchiveDependencyError) return reply.code(422).send({ error: error.code, message: error.message, issues: error.issues });
     if (error instanceof DeclarativeSystemStateError) return reply.code(422).send({ error: "invalid_system_state", message: error.message, issues: error.issues });
     if (error instanceof DeclarativeRuntimeError) {
@@ -1629,7 +1636,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   const browserAllowedOrigins = configuredBrowserOrigins();
   await app.register(cors, {
     credentials: true,
-    exposedHeaders: ["x-otte-session-transport"],
+    methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE"],
+    exposedHeaders: ["x-otte-session-transport", "idempotency-replayed"],
     origin(origin, callback) {
       if (!origin || browserAllowedOrigins.includes(origin)) return callback(null, true);
       return callback(null, false);
@@ -1896,7 +1904,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       if (sessionCookieDeferred(request.headers)) deferSessionCookieActivation(session);
       store.save();
       flushStore(store);
-      return { status: "authenticated" as const, token, session, user: publicUser(user), memberships: store.state.members.filter((member) => member.userId === user.id), serverAdmin: isServerAdminUser(store, user.id), accountKey: normalizeEmail(user.email) ?? user.id };
+      return { status: "authenticated" as const, token, session, user: publicUser(user), memberships: store.state.members.filter((member) => member.userId === user.id).map(publicCampaignMember), serverAdmin: isServerAdminUser(store, user.id), accountKey: normalizeEmail(user.email) ?? user.id };
     });
     if (outcome.status === "unauthorized") return unauthorized(reply, "Invalid login credentials");
     if (outcome.status === "disabled") return forbidden(reply, "User account is disabled");
@@ -1965,7 +1973,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       });
       if (!sessionCookieDeferred(request.headers)) attachSessionCookie(reply, login.token, login.session);
       else markSessionCookieDeferred(reply);
-      return { token: login.token, session: publicSession(login.session), user: publicUser(login.user), memberships: store.state.members.filter((member) => member.userId === login.user.id), serverAdmin: isServerAdminUser(store, login.user.id) };
+      return { token: login.token, session: publicSession(login.session), user: publicUser(login.user), memberships: store.state.members.filter((member) => member.userId === login.user.id).map(publicCampaignMember), serverAdmin: isServerAdminUser(store, login.user.id) };
     } catch (error) {
       return unauthorized(reply, errorMessage(error));
     }
@@ -2007,7 +2015,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (outcome.status === "disabled") return forbidden(reply, "User account is disabled");
     if (!sessionCookieDeferred(request.headers)) attachSessionCookie(reply, outcome.token, outcome.nextSession);
     else markSessionCookieDeferred(reply);
-    return { token: outcome.token, session: publicSession(outcome.nextSession), user: publicUser(outcome.user), memberships: store.state.members.filter((member) => member.userId === outcome.user.id), serverAdmin: isServerAdminUser(store, outcome.user.id) };
+    return { token: outcome.token, session: publicSession(outcome.nextSession), user: publicUser(outcome.user), memberships: store.state.members.filter((member) => member.userId === outcome.user.id).map(publicCampaignMember), serverAdmin: isServerAdminUser(store, outcome.user.id) };
   });
 
   app.get("/api/v1/auth/mfa", async (request, reply) => {
@@ -3001,7 +3009,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       const login = await completeOidcCallback(request, store, config, request.query.code, request.query.state, durableMutations);
       attachSessionCookie(reply, login.token, login.session);
       if (login.returnTo) return reply.redirect(ssoRedirectUrl(login.returnTo, cookieSessionBearerMarker, login.user.id));
-      return { token: login.token, session: publicSession(login.session), user: publicUser(login.user), memberships: store.state.members.filter((member) => member.userId === login.user.id), serverAdmin: isServerAdminUser(store, login.user.id), identity: publicIdentity(login.identity) };
+      return { token: login.token, session: publicSession(login.session), user: publicUser(login.user), memberships: store.state.members.filter((member) => member.userId === login.user.id).map(publicCampaignMember), serverAdmin: isServerAdminUser(store, login.user.id), identity: publicIdentity(login.identity) };
     } catch (error) {
       return unauthorized(reply, `OIDC callback failed: ${errorMessage(error)}`);
     }
@@ -3094,7 +3102,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const session = sessionFromRequest(store, undefined, request.headers);
     const user = store.state.users.find((item) => item.id === userId);
     if (!user) return unauthorized(reply, "Unknown user session");
-    return { user: publicUser(user), session: session ? publicSession(session) : undefined, memberships: store.state.members.filter((member) => member.userId === userId), serverAdmin: isServerAdminUser(store, userId), serverAdmins: serverAdminRuntimePosture(store), organization: organizationWorkspaceForRequest(store, userId, request.headers), organizations: organizationWorkspaceInfos(store, userId) };
+    return { user: publicUser(user), session: session ? publicSession(session) : undefined, memberships: store.state.members.filter((member) => member.userId === userId).map(publicCampaignMember), serverAdmin: isServerAdminUser(store, userId), serverAdmins: serverAdminRuntimePosture(store), organization: organizationWorkspaceForRequest(store, userId, request.headers), organizations: organizationWorkspaceInfos(store, userId) };
   });
 
   app.get("/api/v1/auth/profile", async (request, reply) => {
@@ -3411,7 +3419,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/members", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.read");
     if (allowed !== true) return allowed;
-    return store.state.members.filter((member) => member.campaignId === request.params.campaignId).map((member) => memberSessionInfo(store, member));
+    // SCIM sources name identity-provider groups and mappings; only campaign managers need them.
+    const includeSource = canCampaign(store, currentUserId(store, request.headers)!, request.params.campaignId, "campaign.update");
+    return campaignMemberList(store, request.params.campaignId, includeSource);
   });
 
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/presence", async (request, reply) => {
@@ -3666,7 +3676,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     broadcast(createEvent({ campaignId: outcome.campaignId, type: "campaign.member.joined", actorUserId: outcome.user.id, targetId: outcome.user.id, payload: outcome.member }));
     if (!sessionCookieDeferred(request.headers)) attachSessionCookie(reply, outcome.sessionToken, outcome.session);
     else markSessionCookieDeferred(reply);
-    return { token: outcome.sessionToken, session: publicSession(outcome.session), user: outcome.user, serverAdmin: outcome.serverAdmin, invite: outcome.invite, membership: outcome.membership, campaign: outcome.campaign };
+    return { token: outcome.sessionToken, session: publicSession(outcome.session), user: outcome.user, serverAdmin: outcome.serverAdmin, invite: outcome.invite, membership: publicCampaignMember(outcome.membership), campaign: outcome.campaign };
   });
 
   registerCampaignSessionRoutes(app, {
@@ -4096,6 +4106,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.post<{ Params: { campaignId: string }; Body: Partial<Scene> }>("/api/v1/campaigns/:campaignId/scenes", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "scene.create");
     if (allowed !== true) return allowed;
+    if (request.body.walls !== undefined && (!Array.isArray(request.body.walls) || request.body.walls.length > MAX_SCENE_WALLS || request.body.walls.some((wall) => !isRecord(wall)))) return badRequest(reply, `Scene walls must be an array of at most ${MAX_SCENE_WALLS} objects`);
+    if (request.body.lights !== undefined && (!Array.isArray(request.body.lights) || request.body.lights.length > MAX_SCENE_LIGHTS || request.body.lights.some((light) => !isRecord(light)))) return badRequest(reply, `Scene lights must be an array of at most ${MAX_SCENE_LIGHTS} objects`);
+    if (exceedsSceneVisionBudget(request.body.walls ?? [], request.body.lights ?? [], [])) throw new SceneVisionBudgetError();
     const gridFields = normalizeSceneGridFields(request.body);
     if (!gridFields.ok) return badRequest(reply, gridFields.error);
     const userId = currentUserId(store, request.headers);
@@ -4286,12 +4299,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!opaqueHeaderText(request.headers["idempotency-key"])) return badRequest(reply, "Asset upload requires an Idempotency-Key header");
     const userId = currentUserId(store, request.headers)!;
     const shouldSetBackground = request.query.sceneId && truthyQuery(request.query.setAsBackground);
-    const scene = shouldSetBackground ? store.state.scenes.find((item) => item.id === request.query.sceneId && item.campaignId === request.params.campaignId) : undefined;
+    const findBackgroundScene = () => shouldSetBackground ? store.state.scenes.find((item) => item.id === request.query.sceneId && item.campaignId === request.params.campaignId) : undefined;
+    let scene = findBackgroundScene();
+    const checkBackgroundRevision = (target: Scene) => requireExpectedRevision(reply, { resourceType: "scene", resourceId: target.id, currentUpdatedAt: target.updatedAt, expectedUpdatedAt: request.query.expectedSceneUpdatedAt, current: withoutSceneEditHistory(target), label: "Scene" });
     if (shouldSetBackground) {
       const sceneUpdateAllowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "scene.update");
       if (sceneUpdateAllowed !== true) return sceneUpdateAllowed;
       if (!scene) return notFound(reply, "Scene not found");
-      const revision = requireExpectedRevision(reply, { resourceType: "scene", resourceId: scene.id, currentUpdatedAt: scene.updatedAt, expectedUpdatedAt: request.query.expectedSceneUpdatedAt, current: withoutSceneEditHistory(scene), label: "Scene" });
+      const revision = checkBackgroundRevision(scene);
       if (revision !== true) return revision;
     }
     const body = Buffer.isBuffer(request.body) ? request.body : Buffer.from([]);
@@ -4301,9 +4316,20 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const sourceName = displayNameFromHeader(request.headers["x-asset-name"]) ?? "Uploaded Map";
     const folder = normalizeAssetFolder(headerText(request.headers["x-asset-folder"]));
     const tags = normalizeAssetTags(headerText(request.headers["x-asset-tags"]));
+    const checksum = checksumForBuffer(body);
+    // Reject uploads that cannot fit before any external scanner sees the bytes;
+    // the full check below still counts renditions once they are built.
+    const duplicateCandidate = reusableUploadedAsset(store, request.params.campaignId, checksum, body.length, mimeType);
+    const quotaPrecheck = duplicateCandidate ? undefined : assetQuotaExceeded(store, request.params.campaignId, body.length);
+    if (quotaPrecheck) return reply.code(413).send(quotaPrecheck);
     const scan = await scanUploadedAsset(body, mimeType, sourceName, { externalTransport: options.assetScannerTransport });
     if (scan.blocked) return assetSecurityBlocked(reply, scan);
-    const checksum = checksumForBuffer(body);
+    if (shouldSetBackground) {
+      scene = findBackgroundScene();
+      if (!scene) return notFound(reply, "Scene not found");
+      const revision = checkBackgroundRevision(scene);
+      if (revision !== true) return revision;
+    }
     const duplicate = reusableUploadedAsset(store, request.params.campaignId, checksum, body.length, mimeType);
     if (duplicate) {
       let mapCalibrationReset = false;
@@ -4770,9 +4796,22 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
     const allowed = requireScenePermission(store, reply, request.headers, scene, "scene.update");
     if (allowed !== true) return allowed;
+    if (isRecord(request.body) && "mapPin" in request.body) {
+      if (!canCampaign(store, userId!, campaignId, "campaign.update") || !canCampaign(store, userId!, campaignId, "token.reveal")) return forbidden(reply, "Managing map pins requires campaign.update and token.reveal");
+      if (Object.keys(request.body).some((field) => field !== "mapPin" && field !== "expectedUpdatedAt")) return badRequest(reply, "Edit one map pin per request");
+      const guarded = requireSceneTacticalMutationGuard(request, reply, scene, request.body.expectedUpdatedAt, "Editing map pins");
+      if (guarded !== true) return guarded;
+      const error = editMapPin(scene, request.body.mapPin, (pin) => canReadMapPinTarget(store, userId!, campaignId, pin));
+      if (error) return badRequest(reply, error);
+      scene.updatedAt = nextRevisionTimestamp(scene.updatedAt);
+      store.save();
+      broadcast(createEvent({ campaignId, type: "scene.updated", actorUserId: userId, targetId: scene.id, payload: scene }));
+      return scene;
+    }
     const normalizedBody = normalizeScenePatch(request.body);
     if (!normalizedBody.ok) return badRequest(reply, normalizedBody.error);
     const body = normalizedBody.value;
+    if ((body.walls || body.lights) && exceedsSceneVisionBudget(body.walls ?? scene.walls, body.lights ?? scene.lights, store.state.tokens, scene.id)) throw new SceneVisionBudgetError();
     if (body.annotations !== undefined && !canCampaign(store, userId!, campaignId, "token.reveal")) {
       if (body.annotations.some((annotation) => !sceneAnnotationIsPublic(annotation)) || scene.annotations.some((annotation) => !sceneAnnotationIsPublic(annotation))) return forbidden(reply, "Replacing GM annotations requires token.reveal permission");
     }
@@ -4844,7 +4883,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       const privateState = (annotations: SceneAnnotation[]) => annotations.filter((annotation) => !sceneAnnotationIsPublic(annotation));
       if (JSON.stringify(privateState(scene.annotations)) !== JSON.stringify(privateState(previous))) return forbidden(reply, "Undoing GM annotation changes requires token.reveal permission");
     }
-    const undone = undoSceneEdit(scene);
+    const undone = undoSceneEdit(scene, store.state.tokens);
     if (!undone) return badRequest(reply, "No scene edits available to undo");
     appendServerAuditLog(store, userId, { campaignId, action: "scene.edit.undo", targetType: "scene", targetId: scene.id, before: { snapshotId: undone.id, kind: undone.kind, at: undone.at } });
     store.save();
@@ -4890,8 +4929,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       const tokenAllowed = requireCampaignPermission(store, reply, request.headers, targetScene.campaignId, "token.create");
       if (tokenAllowed !== true) return tokenAllowed;
     }
+    const retainedTokens = store.state.tokens.filter((token) => token.sceneId === targetScene.id && token.metadata.aiEditSourceSceneId !== aiEditScene.id);
+    if (exceedsSceneVisionBudget(aiEditScene.walls.length ? aiEditScene.walls : targetScene.walls, aiEditScene.lights.length ? aiEditScene.lights : targetScene.lights, retainedTokens, targetScene.id, sourceTokens)) throw new SceneVisionBudgetError();
     const appliedAt = nowIso();
-    const before = { backgroundAssetId: targetScene.backgroundAssetId, fogCount: targetScene.fog.length, wallCount: targetScene.walls.length, lightCount: targetScene.lights.length, annotationCount: targetScene.annotations?.length ?? 0, appliedTokenCount: store.state.tokens.filter((token) => token.sceneId === targetScene.id && token.metadata.aiEditSourceSceneId === aiEditScene.id).length };
+    const before = { backgroundAssetId: targetScene.backgroundAssetId, fogCount: targetScene.fog.length, wallCount: targetScene.walls.length, lightCount: targetScene.lights.length, annotationCount: targetScene.annotations?.length ?? 0, appliedTokenCount: targetTokens.length };
     if (aiEditScene.backgroundAssetId) targetScene.backgroundAssetId = aiEditScene.backgroundAssetId;
     if (aiEditScene.fog.length > 0) targetScene.fog = cloneJsonValue(aiEditScene.fog) as FogRegion[];
     if (aiEditScene.walls.length > 0) targetScene.walls = cloneJsonValue(aiEditScene.walls) as Wall[];
@@ -5160,6 +5201,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
     const allowed = requireScenePermission(store, reply, request.headers, scene, "scene.update");
     if (allowed !== true) return allowed;
+    if (scene.walls.length >= MAX_SCENE_WALLS) return badRequest(reply, `Scene walls are limited to ${MAX_SCENE_WALLS}`);
     const normalized = normalizeWallPatch(request.body ?? {});
     if ("error" in normalized) return badRequest(reply, normalized.error);
     if (normalized.patch.x1 === undefined || normalized.patch.y1 === undefined || normalized.patch.x2 === undefined || normalized.patch.y2 === undefined) {
@@ -5168,6 +5210,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const kind: WallKind = normalized.patch.kind ?? "wall";
     const defaults = wallDefaultsForKind(kind);
     const wall = { id: createId("wall"), x1: normalized.patch.x1, y1: normalized.patch.y1, x2: normalized.patch.x2, y2: normalized.patch.y2, blocksVision: normalized.patch.blocksVision ?? defaults.blocksVision, blocksMovement: normalized.patch.blocksMovement ?? defaults.blocksMovement, kind, ...(kind === "door" || kind === "window" ? { open: normalized.patch.open ?? false } : {}), ...(normalized.patch.locked === undefined ? {} : { locked: normalized.patch.locked }) };
+    if (exceedsSceneVisionBudget([...scene.walls, wall], scene.lights, store.state.tokens, scene.id)) throw new SceneVisionBudgetError();
     captureSceneEditSnapshot(scene, userId, "scene.wall.create");
     scene.walls.push(wall);
     scene.updatedAt = nowIso();
@@ -5200,6 +5243,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       return badRequest(reply, "Wall endpoints must not be identical");
     }
     const before = { ...wall };
+    if (exceedsSceneVisionBudget(scene.walls.map((item) => item === wall ? candidate : item), scene.lights, store.state.tokens, scene.id)) throw new SceneVisionBudgetError();
     captureSceneEditSnapshot(scene, userId, "scene.wall.update");
     Object.assign(wall, normalized.patch);
     scene.updatedAt = nowIso();
@@ -5236,10 +5280,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
     const allowed = requireScenePermission(store, reply, request.headers, scene, "scene.update");
     if (allowed !== true) return allowed;
+    if (scene.lights.length >= MAX_SCENE_LIGHTS) return badRequest(reply, `Scene lights are limited to ${MAX_SCENE_LIGHTS}`);
     const light = { id: createId("light"), x: request.body.x, y: request.body.y, radius: request.body.radius ?? 180, brightRadius: request.body.brightRadius, dimRadius: request.body.dimRadius, color: request.body.color ?? (request.body.kind === "darkness" ? "#111827" : "#facc15"), intensity: clampLightIntensity(request.body.intensity ?? (request.body.kind === "darkness" ? 0.82 : 0.28)), kind: request.body.kind ?? "light", magical: Boolean(request.body.magical), animation: request.body.animation };
     const normalized = normalizeLightSourcePatch(light);
     if ("error" in normalized) return badRequest(reply, normalized.error);
     Object.assign(light, normalized.patch);
+    if (exceedsSceneVisionBudget(scene.walls, [...scene.lights, light], store.state.tokens, scene.id)) throw new SceneVisionBudgetError();
     captureSceneEditSnapshot(scene, userId, "scene.light.create");
     scene.lights.push(light);
     scene.updatedAt = nowIso();
@@ -5266,6 +5312,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       return badRequest(reply, normalized.error);
     }
     const before = { ...light };
+    if (exceedsSceneVisionBudget(scene.walls, scene.lights.map((item) => item === light ? { ...item, ...normalized.patch } : item), store.state.tokens, scene.id)) throw new SceneVisionBudgetError();
     captureSceneEditSnapshot(scene, userId, "scene.light.update");
     Object.assign(light, normalized.patch);
     scene.updatedAt = nowIso();
@@ -5385,6 +5432,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const normalizedTabletop = normalizeTokenTabletopPatch(request.body, campaignMemberUserIds(store, campaignId));
     if ("error" in normalizedTabletop) return badRequest(reply, normalizedTabletop.error);
     Object.assign(token, normalizedVision.patch, normalizedLayer.patch, normalizedTabletop.patch);
+    if (token.visionEnabled && exceedsSceneVisionBudget(scene.walls, scene.lights, store.state.tokens, scene.id, [token])) throw new SceneVisionBudgetError();
     store.state.tokens.push(token);
     scene.updatedAt = nextRevisionTimestamp(scene.updatedAt);
     store.save();
@@ -5415,6 +5463,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     });
     if (!prepared.ok) return sendTokenMoveBatchCommandFailure(reply, prepared.error);
 
+    const movedTokens = prepared.value.changes.map(({ token, x, y }) => ({ ...token, x, y }));
+    if (exceedsSceneVisionBudget(scene.walls, scene.lights, store.state.tokens, scene.id, movedTokens)) throw new SceneVisionBudgetError();
     const committed = commitPreparedTokenMoveBatchCommand(prepared.value);
     appendServerAuditLog(store, userId, {
       campaignId,
@@ -5491,6 +5541,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const normalizedTransform = normalizeTokenTransformPatch(request.body);
     if ("error" in normalizedTransform) return badRequest(reply, normalizedTransform.error);
     const patch = moveOnly ? normalizedMove.patch : { ...tokenPatchFromBody(request.body), ...normalizedMove.patch, ...normalizedTransform.patch, ...normalizedVision.patch, ...normalizedLayer.patch, ...normalizedTabletop.patch };
+    const candidate = { ...token, ...patch };
+    const visionChanged = moved || request.body.width !== undefined || request.body.height !== undefined || Object.keys(normalizedVision.patch).length > 0;
+    if (candidate.visionEnabled && visionChanged && exceedsSceneVisionBudget(scene.walls, scene.lights, store.state.tokens, scene.id, [candidate])) throw new SceneVisionBudgetError();
     Object.assign(token, patch, { updatedAt: nowIso() });
     store.save();
     if (scene) {
@@ -6715,9 +6768,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       return conflict(reply, "Remove journal backlinks before deleting this entry");
     }
     store.state.journals.splice(index, 1);
+    const pinScenes = detachMapPins(store.state, entry.campaignId, "journal", entry.id, nextRevisionTimestamp);
     for (const session of store.state.campaignSessions) if (session.recapJournalId === entry.id) session.recapJournalId = undefined;
     appendServerAuditLog(store, userId, { campaignId: entry.campaignId, action: "journal.delete", targetType: "journal", targetId: entry.id, before: journalAuditSnapshot(entry), after: { deleted: true } });
     store.save();
+    for (const scene of pinScenes) broadcast(createEvent({ campaignId: scene.campaignId, type: "scene.updated", targetId: scene.id, payload: scene }));
     broadcast(createEvent({ campaignId: entry.campaignId, type: "journal.deleted", actorUserId: userId, targetId: entry.id, payload: entry }));
     return journalPayloadForUser(store, userId, entry);
   });
@@ -6806,8 +6861,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const handout = normalizeHandout(existing);
     const userId = currentUserId(store, request.headers)!;
     store.state.handouts.splice(index, 1);
+    const pinScenes = detachMapPins(store.state, handout.campaignId, "handout", handout.id, nextRevisionTimestamp);
     appendServerAuditLog(store, userId, { campaignId: handout.campaignId, action: "handout.delete", targetType: "handout", targetId: handout.id, before: handout, after: { deleted: true } });
     store.save();
+    for (const scene of pinScenes) broadcast(createEvent({ campaignId: scene.campaignId, type: "scene.updated", targetId: scene.id, payload: scene }));
     broadcast(createEvent({ campaignId: handout.campaignId, type: "handout.deleted", actorUserId: userId, targetId: handout.id, payload: handout }));
     return handout;
   });
@@ -10301,6 +10358,91 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return { threat, actor: actorPayloadForUser(store, userId, actor), ...(privateDataVisible ? { sheet: systemSheetForStore(store, actor, []) } : {}) };
   });
 
+  function prepareMonsterPlacement(reply: FastifyReply, scene: Scene, userId: string, rawPlacement: unknown, index: number): { actor: Actor; token: Token; result: EncounterMonsterPlacementResult } | FastifyReply {
+    const campaignId = scene.campaignId;
+    if (!isRecord(rawPlacement)) return badRequest(reply, `Encounter monster placement ${index + 1} must be an object`);
+    const threatId = normalizeNonEmptyString(rawPlacement.threatId);
+    const customMonsterItemId = normalizeNonEmptyString(rawPlacement.customMonsterItemId);
+    if (rawPlacement.threatId !== undefined && !threatId) return badRequest(reply, `Encounter monster placement ${index + 1} threatId must be a non-empty string`);
+    if (rawPlacement.customMonsterItemId !== undefined && !customMonsterItemId) return badRequest(reply, `Encounter monster placement ${index + 1} customMonsterItemId must be a non-empty string`);
+    if (Boolean(threatId) === Boolean(customMonsterItemId)) return badRequest(reply, `Encounter monster placement ${index + 1} must choose exactly one bundled threat or campaign custom monster`);
+    const customItem = customMonsterItemId
+      ? store.state.items.find((item) => item.id === customMonsterItemId && isDndCustomContentItem(item, campaignId) && item.type === "monster")
+      : undefined;
+    if (customMonsterItemId && !customItem) return notFound(reply, `Encounter monster placement ${index + 1} campaign custom monster not found`);
+    if (customItem && !canCampaign(store, userId, campaignId, "campaign.update")) return forbidden(reply, "Missing permission: campaign.update");
+    const bundledThreat = customItem ? undefined : dnd5eSrdEncounterThreats().find((item) => item.id === threatId);
+    if (!customItem && !bundledThreat) return notFound(reply, `Encounter monster placement ${index + 1} encounter threat not found`);
+    const customEntry = customItem ? dndCustomContentPayload(customItem).entry : undefined;
+    const threat = customEntry
+      ? { id: customEntry.id, systemId: customEntry.provenance.systemId, name: customEntry.name, summary: customEntry.summary, role: "custom", budget: Number(customEntry.data.xp ?? 0), challengeRating: String(customEntry.data.challengeRating ?? "0"), data: cloneRecord(customEntry.data), provenance: cloneCompendiumProvenance(customEntry.provenance) }
+      : bundledThreat!;
+    const data = customEntry ? dnd5eCustomMonsterActorData(customEntry) : dnd5eSrdMonsterActorData(threat.id);
+    if (!data) return notFound(reply, `Encounter monster placement ${index + 1} monster stat block not found`);
+    const ownerUserId = campaignActorOwnerUserId(store, campaignId, rawPlacement.ownerUserId, userId);
+    if (!ownerUserId.ok) return badRequest(reply, `Encounter monster placement ${index + 1}: ${ownerUserId.error}`);
+    if (rawPlacement.name !== undefined && typeof rawPlacement.name !== "string") return badRequest(reply, `Encounter monster placement ${index + 1} name must be a string`);
+    const requestedName = typeof rawPlacement.name === "string" ? rawPlacement.name.trim() : "";
+    if (requestedName.length > 160) return badRequest(reply, `Encounter monster placement ${index + 1} name must be at most 160 characters`);
+    const x = finiteNumberFromUnknown(rawPlacement.x);
+    const y = finiteNumberFromUnknown(rawPlacement.y);
+    const width = finiteNumberFromUnknown(rawPlacement.width);
+    const height = finiteNumberFromUnknown(rawPlacement.height);
+    if (x === undefined || y === undefined) return badRequest(reply, `Encounter monster placement ${index + 1} x and y must be finite numbers`);
+    if (width === undefined || height === undefined || width <= 0 || height <= 0) return badRequest(reply, `Encounter monster placement ${index + 1} width and height must be greater than zero`);
+    const normalizedLayer = normalizeTokenLayerPatch({ layer: rawPlacement.layer as TokenLayer | undefined });
+    if ("error" in normalizedLayer) return badRequest(reply, `Encounter monster placement ${index + 1}: ${normalizedLayer.error}`);
+    const disposition = rawPlacement.disposition;
+    if (disposition !== undefined && disposition !== "friendly" && disposition !== "neutral" && disposition !== "hostile") {
+      return badRequest(reply, `Encounter monster placement ${index + 1} disposition must be friendly, neutral, or hostile`);
+    }
+    const actor = createTimestamped("act", { campaignId, systemId: DND_5E_SRD_SYSTEM_ID, ownerUserId: ownerUserId.value, type: "monster", name: requestedName || threat.name, data: cloneRecord(data), permissions: {} }) satisfies Actor;
+    const token = createTimestamped("tok", {
+      sceneId: scene.id,
+      actorId: actor.id,
+      name: actor.name,
+      x,
+      y,
+      width,
+      height,
+      rotation: 0,
+      elevation: 0,
+      layer: normalizedLayer.patch.layer ?? "player",
+      hidden: false,
+      locked: false,
+      visionEnabled: true,
+      visionRadius: 160,
+      disposition: disposition ?? "hostile",
+      ownerUserIds: canReadHiddenTokens(store, userId, campaignId) ? [] : [userId],
+      notes: "",
+      conditions: [],
+      auras: [],
+      targetedByUserIds: [],
+      metadata: {},
+    }) satisfies Token;
+    const privateDataVisible = canReadActorPrivateData(store, userId, campaignId, actor);
+    return {
+      actor,
+      token,
+      result: {
+        threat: threat as unknown as Record<string, unknown>,
+        actor: actorPayloadForUser(store, userId, actor),
+        sceneToken: token,
+        ...(privateDataVisible ? { sheet: systemSheetForStore(store, actor, []) as unknown as Record<string, unknown> } : {}),
+      },
+    };
+  }
+
+  registerCompendiumPlacementRoutes(app, {
+    store, prepareMonsterPlacement, nextRevisionTimestamp, stageRequestEventsUntilDurableSave, broadcast,
+    requireCampaignPermission: (reply, headers, campaignId, permission) => requireCampaignPermission(store, reply, headers, campaignId, permission),
+    currentUserId: (headers) => currentUserId(store, headers),
+    actorForUser: (userId, actor) => actorPayloadForUser(store, userId, actor),
+    sceneForUser: (userId, scene) => scenePayloadForUser(store, userId, scene),
+    canReadScene: (userId, scene) => canReadSceneRecord(store, userId, scene),
+    appendAudit: (userId, input) => appendServerAuditLog(store, userId, input),
+  });
+
   app.post<{ Params: { sceneId: string }; Body: EncounterMonsterPlacementBatchInput }>("/api/v1/scenes/:sceneId/encounter-monster-placements", async (request, reply) => {
     const campaignId = campaignIdForScene(store, request.params.sceneId);
     if (!campaignId) return notFound(reply, "Scene not found");
@@ -10329,82 +10471,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       return badRequest(reply, "Encounter monster placement requires between 1 and 100 placements");
     }
     const scene = store.state.scenes.find((candidate) => candidate.id === request.params.sceneId)!;
-    const defaultOwnerUserIds = !canReadHiddenTokens(store, userId, campaignId) ? [userId] : [];
     const prepared: Array<{ actor: Actor; token: Token; result: EncounterMonsterPlacementResult }> = [];
     for (const [index, rawPlacement] of rawBody.placements.entries()) {
-      if (!isRecord(rawPlacement)) return badRequest(reply, `Encounter monster placement ${index + 1} must be an object`);
-      const threatId = normalizeNonEmptyString(rawPlacement.threatId);
-      const customMonsterItemId = normalizeNonEmptyString(rawPlacement.customMonsterItemId);
-      if (rawPlacement.threatId !== undefined && !threatId) return badRequest(reply, `Encounter monster placement ${index + 1} threatId must be a non-empty string`);
-      if (rawPlacement.customMonsterItemId !== undefined && !customMonsterItemId) return badRequest(reply, `Encounter monster placement ${index + 1} customMonsterItemId must be a non-empty string`);
-      if (Boolean(threatId) === Boolean(customMonsterItemId)) return badRequest(reply, `Encounter monster placement ${index + 1} must choose exactly one bundled threat or campaign custom monster`);
-      const customItem = customMonsterItemId
-        ? store.state.items.find((item) => item.id === customMonsterItemId && isDndCustomContentItem(item, campaignId) && item.type === "monster")
-        : undefined;
-      if (customMonsterItemId && !customItem) return notFound(reply, `Encounter monster placement ${index + 1} campaign custom monster not found`);
-      if (customItem && !canCampaign(store, userId, campaignId, "campaign.update")) return forbidden(reply, "Missing permission: campaign.update");
-      const bundledThreat = customItem ? undefined : dnd5eSrdEncounterThreats().find((item) => item.id === threatId);
-      if (!customItem && !bundledThreat) return notFound(reply, `Encounter monster placement ${index + 1} encounter threat not found`);
-      const customEntry = customItem ? dndCustomContentPayload(customItem).entry : undefined;
-      const threat = customEntry
-        ? { id: customEntry.id, systemId: customEntry.provenance.systemId, name: customEntry.name, summary: customEntry.summary, role: "custom", budget: Number(customEntry.data.xp ?? 0), challengeRating: String(customEntry.data.challengeRating ?? "0"), data: cloneRecord(customEntry.data), provenance: cloneCompendiumProvenance(customEntry.provenance) }
-        : bundledThreat!;
-      const data = customEntry ? dnd5eCustomMonsterActorData(customEntry) : dnd5eSrdMonsterActorData(threat.id);
-      if (!data) return notFound(reply, `Encounter monster placement ${index + 1} monster stat block not found`);
-      const ownerUserId = campaignActorOwnerUserId(store, campaignId, rawPlacement.ownerUserId, userId);
-      if (!ownerUserId.ok) return badRequest(reply, `Encounter monster placement ${index + 1}: ${ownerUserId.error}`);
-      if (rawPlacement.name !== undefined && typeof rawPlacement.name !== "string") return badRequest(reply, `Encounter monster placement ${index + 1} name must be a string`);
-      const requestedName = typeof rawPlacement.name === "string" ? rawPlacement.name.trim() : "";
-      if (requestedName.length > 160) return badRequest(reply, `Encounter monster placement ${index + 1} name must be at most 160 characters`);
-      const x = finiteNumberFromUnknown(rawPlacement.x);
-      const y = finiteNumberFromUnknown(rawPlacement.y);
-      const width = finiteNumberFromUnknown(rawPlacement.width);
-      const height = finiteNumberFromUnknown(rawPlacement.height);
-      if (x === undefined || y === undefined) return badRequest(reply, `Encounter monster placement ${index + 1} x and y must be finite numbers`);
-      if (width === undefined || height === undefined || width <= 0 || height <= 0) return badRequest(reply, `Encounter monster placement ${index + 1} width and height must be greater than zero`);
-      const normalizedLayer = normalizeTokenLayerPatch({ layer: rawPlacement.layer as TokenLayer | undefined });
-      if ("error" in normalizedLayer) return badRequest(reply, `Encounter monster placement ${index + 1}: ${normalizedLayer.error}`);
-      const disposition = rawPlacement.disposition;
-      if (disposition !== undefined && disposition !== "friendly" && disposition !== "neutral" && disposition !== "hostile") {
-        return badRequest(reply, `Encounter monster placement ${index + 1} disposition must be friendly, neutral, or hostile`);
-      }
-      const actor = createTimestamped("act", { campaignId, systemId: system.id, ownerUserId: ownerUserId.value, type: "monster", name: requestedName || threat.name, data: cloneRecord(data), permissions: {} }) satisfies Actor;
-      const token = createTimestamped("tok", {
-        sceneId: scene.id,
-        actorId: actor.id,
-        name: actor.name,
-        x,
-        y,
-        width,
-        height,
-        rotation: 0,
-        elevation: 0,
-        layer: normalizedLayer.patch.layer ?? "player",
-        hidden: false,
-        locked: false,
-        visionEnabled: true,
-        visionRadius: 160,
-        disposition: disposition ?? "hostile",
-        ownerUserIds: [...defaultOwnerUserIds],
-        notes: "",
-        conditions: [],
-        auras: [],
-        targetedByUserIds: [],
-        metadata: {},
-      }) satisfies Token;
-      const privateDataVisible = canReadActorPrivateData(store, userId, campaignId, actor);
-      prepared.push({
-        actor,
-        token,
-        result: {
-          threat: threat as unknown as Record<string, unknown>,
-          actor: actorPayloadForUser(store, userId, actor),
-          sceneToken: token,
-          ...(privateDataVisible ? { sheet: systemSheetForStore(store, actor, []) as unknown as Record<string, unknown> } : {}),
-        },
-      });
+      const placement = prepareMonsterPlacement(reply, scene, userId, rawPlacement, index);
+      if (!("result" in placement)) return placement;
+      prepared.push(placement);
     }
     const placedTokenIds = prepared.map((placement) => placement.token.id);
+    if (exceedsSceneVisionBudget(scene.walls, scene.lights, store.state.tokens, scene.id, prepared.map(({ token }) => token))) throw new SceneVisionBudgetError();
     const encounterTokenIdsBefore = [...encounter.tokenIds];
     store.state.actors.push(...prepared.map((placement) => placement.actor));
     store.state.tokens.push(...prepared.map((placement) => placement.token));
@@ -10449,13 +10523,17 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return { import: privateDataVisible ? imported : { ...imported, data: {}, items: [] }, actor: actorPayloadForUser(store, userId, actor), items: items.map((item) => itemPayloadForUser(store, userId, item)), ...(privateDataVisible ? { sheet: systemSheetForStore(store, actor, items) } : {}) };
   });
 
-  app.get<{ Params: { campaignId: string; systemId: string }; Querystring: { q?: string; type?: string; types?: string } }>("/api/v1/campaigns/:campaignId/systems/:systemId/compendium", async (request, reply) => {
+  app.get<{ Params: { campaignId: string; systemId: string }; Querystring: { q?: string; type?: string; types?: string; includeMonsters?: boolean } }>("/api/v1/campaigns/:campaignId/systems/:systemId/compendium", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.read");
     if (allowed !== true) return allowed;
     const system = findRegisteredSystem(store.state, request.params.systemId);
     if (!system) return notFound(reply, "System not found");
     const userId = currentUserId(store, request.headers);
     const catalog = campaignCompendiumEntries(store, request.params.campaignId, system.id, Boolean(userId && canCampaign(store, userId, request.params.campaignId, "campaign.update")));
+    if (request.query.includeMonsters === true && system.id === DND_5E_SRD_SYSTEM_ID) {
+      catalog.push(...dnd5eSrdMonsterCatalog());
+      catalog.sort((left, right) => left.name.localeCompare(right.name) || left.id.localeCompare(right.id));
+    }
     const entries = filteredCampaignCompendiumEntries(catalog, request.query);
     return {
       systemId: system.id,
@@ -12796,6 +12874,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     archive.manifest.dependencyWarnings = scoped.dependencyWarnings;
     archive.manifest.redactionMode = exportOptions.value.redaction;
     archive.manifest.compatibilityNotes = campaignArchiveCompatibilityNotes(exportOptions.value);
+    if (!workerAuthorizationRequested(request.headers) && !canExportLinkedSceneContent(store, currentUserId(store, request.headers)!, archive)) return forbidden(reply, "Archive contains restricted campaign content");
     try {
       return await withArchivedAssetFiles(archive, assetStorage);
     } catch (error) {
@@ -12828,6 +12907,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     archive.manifest.dependencyWarnings = scoped.dependencyWarnings;
     archive.manifest.redactionMode = exportOptions.value.redaction;
     archive.manifest.compatibilityNotes = campaignArchiveCompatibilityNotes(exportOptions.value);
+    if (!workerAuthorizationRequested(request.headers) && !canExportLinkedSceneContent(store, currentUserId(store, request.headers)!, archive)) return forbidden(reply, "Archive contains restricted campaign content");
     try {
       assertCampaignArchiveStreamExportSize(archive, campaignArchiveStreamLimits);
     } catch (error) {
@@ -14082,7 +14162,7 @@ function adminAiOperations(store: StateStore, aiProvider: AiProvider) {
     risk,
     campaigns,
     recentEvaluations: store.state.aiEvaluations.slice().sort(sortTimestampsDesc).slice(0, 20),
-    recentThreads: store.state.aiThreads.slice().sort(sortTimestampsDesc).slice(0, 20),
+    recentThreads: store.state.aiThreads.slice().sort(sortTimestampsDesc).slice(0, 20).map((thread) => adminAiThreadInfo(thread, store.state.campaigns)),
     recentToolCalls: store.state.aiToolCalls
       .slice()
       .sort(sortTimestampsDesc)
@@ -14240,14 +14320,14 @@ function aiOperationsRemediationQueue(input: { runtimePosture: ReturnType<typeof
     });
   }
   if (input.risk.staleRunningThreadCount > 0) {
-    remediations.push({ code: "fail_stale_ai_threads", severity: "error", action: "Run stale AI thread cleanup to mark hung running threads failed after confirming provider timeout behavior.", affectedCount: input.risk.staleRunningThreadCount, samples: input.risk.recentStaleRunningThreads.slice(0, 3).map((thread) => ({ threadId: thread.id, campaignId: thread.campaignId, provider: thread.provider, title: thread.title, ageMs: thread.ageMs })) });
+    remediations.push({ code: "fail_stale_ai_threads", severity: "error", action: "Run stale AI thread cleanup to mark hung running threads failed after confirming provider timeout behavior.", affectedCount: input.risk.staleRunningThreadCount, samples: input.risk.recentStaleRunningThreads.slice(0, 3).map((thread) => ({ threadId: thread.id, campaignId: thread.campaignId, provider: thread.provider, ageMs: thread.ageMs })) });
   }
   if (input.risk.staleStartedToolCallCount > 0) {
     remediations.push({ code: "fail_stale_ai_tool_calls", severity: "error", action: "Run stale AI tool-call cleanup so hung started calls become explicit failures that can be reviewed or retried.", affectedCount: input.risk.staleStartedToolCallCount, samples: input.risk.recentStaleStartedToolCalls.slice(0, 3).map((call) => ({ toolCallId: call.id, threadId: call.threadId, campaignId: call.campaignId, provider: call.provider, toolName: call.toolName, ageMs: call.ageMs })) });
   }
   const retryablePolicy = input.risk.failedToolRetryPolicy;
   if (retryablePolicy && retryablePolicy.retryableCount > 0) {
-    remediations.push({ code: "replay_retryable_ai_tools", severity: "warning", action: "Replay retryable failed AI tool calls after confirming the original thread user still has the required campaign permissions.", affectedCount: retryablePolicy.retryableCount, samples: retryablePolicy.recentRetryable.slice(0, 3).map((call) => ({ toolCallId: call.id, threadId: call.threadId, campaignId: call.campaignId, campaignName: call.campaignName, provider: call.provider, threadTitle: call.threadTitle, threadStatus: call.threadStatus, toolName: call.toolName, error: call.error, retryReason: call.retryReason, createdAt: call.createdAt })) });
+    remediations.push({ code: "replay_retryable_ai_tools", severity: "warning", action: "Replay retryable failed AI tool calls after confirming the original thread user still has the required campaign permissions.", affectedCount: retryablePolicy.retryableCount, samples: retryablePolicy.recentRetryable.slice(0, 3).map((call) => ({ toolCallId: call.id, threadId: call.threadId, campaignId: call.campaignId, campaignName: call.campaignName, provider: call.provider, threadStatus: call.threadStatus, toolName: call.toolName, error: call.error, retryReason: call.retryReason, createdAt: call.createdAt })) });
   }
   const nonRetryableTools = retryablePolicy?.byTool.filter((tool) => tool.nonRetryable > 0) ?? [];
   if (nonRetryableTools.length > 0) {
@@ -14262,7 +14342,7 @@ function aiOperationsRemediationQueue(input: { runtimePosture: ReturnType<typeof
       samples: input.replayOperations.recentRetried
         .filter((call) => call.resultStatus === "failed")
         .slice(0, 3)
-        .map((call) => ({ toolCallId: call.id, threadId: call.threadId, campaignId: call.campaignId, campaignName: call.campaignName, provider: call.provider, threadTitle: call.threadTitle, toolName: call.toolName, resultCallId: call.resultCallId, resultError: call.resultError, retriedAt: call.retriedAt })),
+        .map((call) => ({ toolCallId: call.id, threadId: call.threadId, campaignId: call.campaignId, campaignName: call.campaignName, provider: call.provider, toolName: call.toolName, resultCallId: call.resultCallId, resultError: call.resultError, retriedAt: call.retriedAt })),
     });
   }
   if (input.risk.costBudgetExceeded) {
@@ -14306,7 +14386,7 @@ function summarizeAiEvaluationCoverage(threads: AiThread[], evaluations: AiEvalu
       .slice()
       .sort(sortTimestampsDesc)
       .slice(0, 20)
-      .map((thread) => ({ id: thread.id, campaignId: thread.campaignId, title: thread.title, provider: thread.provider, status: thread.status, createdAt: thread.createdAt, updatedAt: thread.updatedAt })),
+      .map((thread) => ({ id: thread.id, campaignId: thread.campaignId, provider: thread.provider, status: thread.status, createdAt: thread.createdAt, updatedAt: thread.updatedAt })),
   };
 }
 
@@ -14471,7 +14551,7 @@ function summarizeAiOperationsRisk(store: StateStore) {
       .slice()
       .sort(sortTimestampsDesc)
       .slice(0, 20)
-      .map((thread) => ({ id: thread.id, campaignId: thread.campaignId, title: thread.title, provider: thread.provider, startedAt: thread.startedAt, ageMs: aiRunningThreadAgeMs(thread) })),
+      .map((thread) => ({ id: thread.id, campaignId: thread.campaignId, provider: thread.provider, startedAt: thread.startedAt, ageMs: aiRunningThreadAgeMs(thread) })),
     recentStaleStartedToolCalls: staleStartedToolCalls
       .slice()
       .sort(sortTimestampsDesc)
@@ -14603,7 +14683,7 @@ async function retryFailedAiToolCalls(store: StateStore, runtime: AiToolRuntime,
   const tools = createAiThreadTools();
   const failedCalls = store.state.aiToolCalls
     .filter((call) => call.status === "failed")
-    .filter((call) => aiToolFailureRetryPolicy(call).retryable)
+    .filter((call) => aiToolFailureRetryPolicy(aiToolErrorCode(call.output)).retryable)
     .filter((call) => call.retry === undefined)
     .filter((call) => !toolCallId || call.id === toolCallId)
     .filter((call) => !threadId || call.threadId === threadId)
@@ -14623,7 +14703,7 @@ async function retryFailedAiToolCalls(store: StateStore, runtime: AiToolRuntime,
   for (const call of failedCalls) {
     const thread = threadById.get(call.threadId);
     const originalInputCall = aiToolCallRetryInputCall(store, call);
-    const policy = aiToolFailureRetryPolicy(call);
+    const policy = aiToolFailureRetryPolicy(aiToolErrorCode(call.output));
     if (!thread || !originalInputCall) {
       skipped += 1;
       results.push(aiToolRetrySummary(call, thread, { retryReason: policy.reason, status: "skipped", skipReason: "missing_original_input" }));
@@ -14691,15 +14771,17 @@ function summarizeAiProviderErrors(threads: AiThread[], campaignById: Map<string
         .slice()
         .sort(sortTimestampsDesc)
         .slice(0, 5)
-        .map((thread) => ({ id: thread.id, campaignId: thread.campaignId, campaignName: campaignById.get(thread.campaignId)?.name, provider: thread.provider, title: thread.title, status: thread.status, failedAt: thread.failedAt, retryAttempts: thread.retryAttempts, durationMs: thread.durationMs })),
+        .map((thread) => ({ id: thread.id, campaignId: thread.campaignId, campaignName: campaignById.get(thread.campaignId)?.name, provider: thread.provider, status: thread.status, failedAt: thread.failedAt, retryAttempts: thread.retryAttempts, durationMs: thread.durationMs })),
     }))
     .sort((left, right) => right.count - left.count || left.message.localeCompare(right.message))
     .slice(0, 20);
 }
 
 function sanitizeAiProviderError(message: string | undefined): string | undefined {
-  const trimmed = message?.replace(/\s+/g, " ").trim();
-  return trimmed ? trimmed.slice(0, 160) : undefined;
+  if (!message?.trim()) return undefined;
+  if (/\b(?:timeout|timed out)\b/i.test(message)) return "provider_timeout";
+  if (/\brate[ _-]limit(?:ed)?\b/i.test(message)) return "provider_rate_limited";
+  return "provider_error";
 }
 
 function summarizeAiFailedToolCalls(toolCalls: AiToolCall[]) {
@@ -14707,7 +14789,7 @@ function summarizeAiFailedToolCalls(toolCalls: AiToolCall[]) {
   for (const call of toolCalls) {
     const entry = counts.get(call.toolName) ?? { toolName: call.toolName, count: 0, errorCount: new Map<string, number>() };
     entry.count += 1;
-    const errorCode = aiToolErrorCode(call.output);
+    const errorCode = adminAiToolErrorCode(call.output);
     if (errorCode) entry.errorCount.set(errorCode, (entry.errorCount.get(errorCode) ?? 0) + 1);
     counts.set(call.toolName, entry);
   }
@@ -14724,7 +14806,7 @@ function summarizeAiFailedToolCalls(toolCalls: AiToolCall[]) {
 }
 
 function summarizeAiFailedToolRetryPolicy(toolCalls: AiToolCall[], threadById: Map<string, AiThread>, campaignById: Map<string, Campaign>) {
-  const retryableCalls = toolCalls.filter((call) => aiToolFailureRetryPolicy(call).retryable);
+  const retryableCalls = toolCalls.filter((call) => aiToolFailureRetryPolicy(adminAiToolErrorCode(call.output)).retryable);
   return {
     retryableCount: retryableCalls.length,
     nonRetryableCount: Math.max(0, toolCalls.length - retryableCalls.length),
@@ -14735,8 +14817,8 @@ function summarizeAiFailedToolRetryPolicy(toolCalls: AiToolCall[], threadById: M
       .slice(0, 20)
       .map((call) => {
         const thread = threadById.get(call.threadId);
-        const policy = aiToolFailureRetryPolicy(call);
-        return { id: call.id, threadId: call.threadId, campaignId: thread?.campaignId, campaignName: thread ? campaignById.get(thread.campaignId)?.name : undefined, provider: thread?.provider, threadTitle: thread?.title, threadStatus: thread?.status, toolName: call.toolName, error: aiToolErrorCode(call.output), retryReason: policy.reason, createdAt: call.createdAt };
+        const policy = aiToolFailureRetryPolicy(adminAiToolErrorCode(call.output));
+        return { id: call.id, threadId: call.threadId, campaignId: thread?.campaignId, campaignName: thread ? campaignById.get(thread.campaignId)?.name : undefined, provider: thread?.provider, threadStatus: thread?.status, toolName: call.toolName, error: adminAiToolErrorCode(call.output), retryReason: policy.reason, createdAt: call.createdAt };
       }),
   };
 }
@@ -14744,7 +14826,7 @@ function summarizeAiFailedToolRetryPolicy(toolCalls: AiToolCall[], threadById: M
 function summarizeAiFailedToolRetryPolicyByTool(toolCalls: AiToolCall[]) {
   const counts = new Map<string, { toolName: string; retryable: number; nonRetryable: number; reasons: Map<string, number> }>();
   for (const call of toolCalls) {
-    const policy = aiToolFailureRetryPolicy(call);
+    const policy = aiToolFailureRetryPolicy(adminAiToolErrorCode(call.output));
     const entry = counts.get(call.toolName) ?? { toolName: call.toolName, retryable: 0, nonRetryable: 0, reasons: new Map<string, number>() };
     if (policy.retryable) {
       entry.retryable += 1;
@@ -14796,7 +14878,7 @@ function summarizeAiToolReplayOperations(store: StateStore) {
         const thread = threadById.get(call.threadId);
         const campaign = thread ? campaignById.get(thread.campaignId) : undefined;
         const resultCall = call.retry?.resultCallId ? toolCallById.get(call.retry.resultCallId) : undefined;
-        return { id: call.id, threadId: call.threadId, campaignId: thread?.campaignId, campaignName: campaign?.name, provider: thread?.provider, threadTitle: thread?.title, threadStatus: thread?.status, toolName: call.toolName, originalError: aiToolErrorCode(call.output), retriedAt: call.retry?.retriedAt, startedCallId: call.retry?.startedCallId, resultCallId: call.retry?.resultCallId, resultStatus: call.retry?.resultStatus, resultError: resultCall ? aiToolErrorCode(resultCall.output) : undefined };
+        return { id: call.id, threadId: call.threadId, campaignId: thread?.campaignId, campaignName: campaign?.name, provider: thread?.provider, threadStatus: thread?.status, toolName: call.toolName, originalError: adminAiToolErrorCode(call.output), retriedAt: call.retry?.retriedAt, startedCallId: call.retry?.startedCallId, resultCallId: call.retry?.resultCallId, resultStatus: call.retry?.resultStatus, resultError: resultCall ? adminAiToolErrorCode(resultCall.output) : undefined };
       }),
     recentRuns: replayAuditLogs.slice(0, 12).map((log) => {
       const after = isRecord(log.after) ? log.after : {};
@@ -14805,8 +14887,7 @@ function summarizeAiToolReplayOperations(store: StateStore) {
   };
 }
 
-function aiToolFailureRetryPolicy(call: AiToolCall): { retryable: boolean; reason: string } {
-  const errorCode = aiToolErrorCode(call.output);
+function aiToolFailureRetryPolicy(errorCode: string | undefined): { retryable: boolean; reason: string } {
   if (errorCode === "tool_failed" || errorCode === "stale_tool_call") return { retryable: true, reason: errorCode };
   if (errorCode === "missing_permission" || errorCode === "invalid_tool_input" || errorCode === "unknown_tool") return { retryable: false, reason: errorCode };
   return { retryable: false, reason: errorCode ?? "unknown_failure" };
@@ -14839,10 +14920,70 @@ function adminAiEvaluationInfo(evaluation: AiEvaluationRun, threadById: Map<stri
   return { ...evaluation, campaignName: campaign?.name, threadTitle: thread?.title, threadStatus: thread?.status, failedChecks: evaluation.checks.filter((check) => check.status === "failed") };
 }
 
-function adminAiToolCallInfo(call: AiToolCall, threadById: Map<string, AiThread>, campaigns: Campaign[]) {
+// Only return locally defined error codes. Providers and older stored calls can put
+// arbitrary campaign text in the error field, including on a completed call.
+const adminAiToolErrorCodes = new Set([
+  "asset_bytes_unavailable", "asset_quota_exceeded", "asset_too_large", "blocked_critical_action",
+  "conflict", "empty_change", "image_generation_failed", "invalid_proposal_change",
+  "invalid_proposal_changes", "invalid_proposal_scope", "invalid_tool_input", "missing_permission",
+  "not_found", "pending_resolution", "proposal_apply_incomplete", "proposal_not_approved",
+  "proposal_not_pending", "stale_tool_call", "tool_cancelled", "tool_failed", "tool_unavailable",
+  "unknown_tool", "unsupported_effect", "unsupported_target",
+]);
+
+function adminAiToolErrorCode(output: unknown): string | undefined {
+  if (!isRecord(output) || typeof output.error !== "string") return undefined;
+  const code = output.error.trim();
+  if (!code) return undefined;
+  return adminAiToolErrorCodes.has(code) ? code : "unknown_failure";
+}
+
+function adminAiThreadInfo(thread: AiThread, campaigns: Campaign[]): AdminAiThreadSummary {
+  const usage = thread.usage;
+  return {
+    id: thread.id,
+    campaignId: thread.campaignId,
+    campaignName: campaigns.find((campaign) => campaign.id === thread.campaignId)?.name,
+    provider: thread.provider,
+    status: thread.status,
+    startedAt: thread.startedAt,
+    completedAt: thread.completedAt,
+    failedAt: thread.failedAt,
+    durationMs: thread.durationMs,
+    retryAttempts: thread.retryAttempts,
+    eventCount: thread.eventCount,
+    toolCallCount: thread.toolCallCount,
+    usage: usage && {
+      promptCharacters: usage.promptCharacters, contextCharacters: usage.contextCharacters,
+      responseCharacters: usage.responseCharacters, inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens, totalTokens: usage.totalTokens, estimatedCostUsd: usage.estimatedCostUsd,
+    },
+    createdAt: thread.createdAt,
+    updatedAt: thread.updatedAt,
+  };
+}
+
+function adminAiToolCallInfo(call: AiToolCall, threadById: Map<string, AiThread>, campaigns: Campaign[]): AdminAiToolCallSummary {
   const thread = threadById.get(call.threadId);
   const campaign = thread ? campaigns.find((item) => item.id === thread.campaignId) : undefined;
-  return { ...call, campaignId: thread?.campaignId, campaignName: campaign?.name, provider: thread?.provider, threadTitle: thread?.title, threadStatus: thread?.status };
+  return {
+    id: call.id,
+    threadId: call.threadId,
+    campaignId: thread?.campaignId,
+    campaignName: campaign?.name,
+    provider: thread?.provider,
+    threadStatus: thread?.status,
+    toolName: call.toolName,
+    status: call.status,
+    durationMs: call.durationMs,
+    error: adminAiToolErrorCode(call.output),
+    retry: call.retry && {
+      retriedAt: call.retry.retriedAt, startedCallId: call.retry.startedCallId,
+      resultCallId: call.retry.resultCallId, resultStatus: call.retry.resultStatus,
+    },
+    createdAt: call.createdAt,
+    updatedAt: call.updatedAt,
+  };
 }
 
 function aiProviderRuntimeConfig(aiProvider: AiProvider) {
@@ -17423,6 +17564,7 @@ function prepareProposalChanges(store: StateStore, campaignId: string, userId: s
   for (const [index, rawChange] of value.entries()) {
     const change = proposalChangeFromInput(rawChange);
     if (!change) return { error: "invalid_proposal_change", message: `Proposal change ${index + 1} is invalid` };
+    if (change.entity === "scene" && "mapPins" in change.data) return { error: "invalid_proposal_change", message: "Edit map pins through the scene map pin command" };
     changes.push(change);
   }
   const normalizedChanges = normalizeProposalChanges(changes, campaignId, userId, store.state);
@@ -19118,8 +19260,8 @@ function normalizeScenePatch(rawBody: unknown): { ok: true; value: ScenePatchBod
   }
   for (const [field, maximum] of [
     ["fog", 5_000],
-    ["walls", 10_000],
-    ["lights", 5_000],
+    ["walls", MAX_SCENE_WALLS],
+    ["lights", MAX_SCENE_LIGHTS],
     ["annotations", 10_000],
   ] as const) {
     if (!(field in rawBody)) continue;
@@ -19943,6 +20085,7 @@ const sharedMutationRevisionDescriptors: readonly SharedMutationRevisionDescript
   { methods: new Set(["POST"]), pattern: /^\/api\/v1\/campaigns\/([^/]+)\/ai\/(?:threads|memory(?:\/extract)?|session-recap|encounter-design|generate-map-asset|generate-token-asset)$/, collection: "campaigns", resourceType: "campaign" },
   { methods: new Set(["POST"]), pattern: /^\/api\/v1\/campaigns\/([^/]+)\/content-imports\/pdf\/ai$/, collection: "campaigns", resourceType: "campaign", expectedFrom: "query" },
   { methods: new Set(["POST"]), pattern: /^\/api\/v1\/scenes\/([^/]+)\/tokens$/, collection: "scenes", resourceType: "scene" },
+  { methods: new Set(["POST"]), pattern: /^\/api\/v1\/scenes\/([^/]+)\/compendium-monster-placements(?:\/[^/]+\/history)?$/, collection: "scenes", resourceType: "scene" },
   { methods: new Set(["POST"]), pattern: /^\/api\/v1\/scenes\/([^/]+)\/encounter-monster-placements$/, collection: "scenes", resourceType: "scene" },
   { methods: new Set(["PATCH", "DELETE"]), pattern: /^\/api\/v1\/campaigns\/([^/]+)$/, collection: "campaigns", resourceType: "campaign" },
   { methods: new Set(["POST"]), pattern: /^\/api\/v1\/campaigns\/([^/]+)\/(?:archive|restore)$/, collection: "campaigns", resourceType: "campaign" },
@@ -20052,6 +20195,10 @@ function sharedMutationCallerMayMutate(store: StateStore, userId: string, pathna
   if (world) return campaignPermission(world.campaignId, method === "DELETE" ? "world.delete" : "world.update");
   const scene = store.state.scenes.find((candidate) => candidate.id === record.id);
   if (scene) {
+    if (/\/compendium-monster-placements(?:\/[^/]+\/history)?$/.test(pathname)) {
+      const undo = pathname.endsWith("/history") && isRecord(body) && body.direction === "undo";
+      return canReadSceneRecord(store, userId, scene) && campaignPermission(scene.campaignId, undo ? "actor.delete" : "actor.create") && campaignPermission(scene.campaignId, undo ? "token.delete" : "token.create");
+    }
     if (/\/encounter-monster-placements$/.test(pathname)) return campaignPermission(scene.campaignId, "actor.create") && campaignPermission(scene.campaignId, "token.create") && campaignPermission(scene.campaignId, "combat.manage");
     if (/\/tokens$/.test(pathname)) return campaignPermission(scene.campaignId, "token.create");
     if (/\/delegations(?:\/|$)/.test(pathname)) return campaignPermission(scene.campaignId, "scene.update");
@@ -20680,7 +20827,7 @@ function registerIdempotencyReplay(app: FastifyInstance, store: StateStore): Ide
       .code(record.statusCode)
       .header("Idempotency-Replayed", "true")
       .type(record.contentType ?? "application/json")
-      .send(record.responseBody);
+      .send(record.contentType?.includes("json") && record.responseBody.includes('"mapPins"') ? projectSceneResponseForUser(store, record.userId!, JSON.parse(record.responseBody)) : record.responseBody);
     return true;
   };
 
@@ -20926,7 +21073,7 @@ function permissionsForUser(store: StateStore, userId: string, campaignId: strin
 }
 
 interface TokenVisibilityCache {
-  scenes: Map<string, CachedSceneVisibility>;
+  scenes: Map<string, CachedSceneVisibility | { key: string; overBudget: true }>;
 }
 
 interface CachedSceneVisibility {
@@ -20968,11 +21115,12 @@ function isTokenVisibleToUser(store: StateStore, userId: string, campaignId: str
   if (isTokenOwnedByUser(store, userId, token)) return true;
   const scene = store.state.scenes.find((item) => item.id === token.sceneId);
   if (!scene) return false;
-  const visibility = sceneVisibilityForCache(scene, cache);
+  const visibility = sceneVisibilityForCache(store, scene, cache);
+  if ("overBudget" in visibility) return false;
   return isPointVisibleInSceneVision(centerOfToken(token), {
     visibilityMode: scene.visibilityMode,
     fogActive: visibility.activeFog.length > 0,
-    polygons: [...visibility.fogPolygons, ...ownedVisionPolygonsForUser(store, userId, scene, sceneTokens, cache), ...visibility.lightPolygons]
+    polygons: [...visibility.fogPolygons, ...ownedVisionPolygonsForUser(store, userId, scene, visibility, sceneTokens), ...visibility.lightPolygons]
   });
 }
 
@@ -20985,26 +21133,22 @@ function campaignMemberUserIds(store: StateStore, campaignId: string): Set<strin
 }
 
 function visionSnapshotForUser(store: StateStore, userId: string, campaignId: string, scene: Scene, cache?: TokenVisibilityCache): VisionSnapshot {
-  const activeFog = scene.fog.filter((region) => !region.hidden);
-  const lightPolygons = sceneVisibilityForCache(scene, cache).lightPolygons;
+  const visibility = sceneVisibilityForCache(store, scene, cache);
+  if ("overBudget" in visibility) throw new SceneVisionBudgetError();
+  const { activeFog, lightPolygons } = visibility;
   if (canReadHiddenTokens(store, userId, campaignId) || (scene.visibilityMode !== "dynamic" && activeFog.length === 0)) {
     return { sceneId: scene.id, userId, fogActive: false, polygons: lightPolygons };
   }
-  const visibility = sceneVisibilityForCache(scene, cache);
-  return { sceneId: scene.id, userId, fogActive: true, polygons: [...visibility.fogPolygons, ...ownedVisionPolygonsForUser(store, userId, scene, undefined, cache), ...lightPolygons] };
+  return { sceneId: scene.id, userId, fogActive: true, polygons: [...visibility.fogPolygons, ...ownedVisionPolygonsForUser(store, userId, scene, visibility), ...lightPolygons] };
 }
 
-function ownedVisionPolygonsForUser(store: StateStore, userId: string, scene: Scene, sceneTokens?: Token[], cache?: TokenVisibilityCache): VisionPolygon[] {
-  if (cache) {
-    const visibility = sceneVisibilityForCache(scene, cache);
-    const userCache = sceneTokens ? providedTokenVisionCache(visibility, sceneTokens) : visibility.ownedVisionByStoreTokens;
-    const cached = userCache.get(userId);
-    if (cached) return cached;
-    const polygons = computeOwnedVisionPolygonsForUser(store, userId, scene, sceneTokens);
-    userCache.set(userId, polygons);
-    return polygons;
-  }
-  return computeOwnedVisionPolygonsForUser(store, userId, scene, sceneTokens);
+function ownedVisionPolygonsForUser(store: StateStore, userId: string, scene: Scene, visibility: CachedSceneVisibility, sceneTokens?: Token[]): VisionPolygon[] {
+  const userCache = sceneTokens ? providedTokenVisionCache(visibility, sceneTokens) : visibility.ownedVisionByStoreTokens;
+  const cached = userCache.get(userId);
+  if (cached) return cached;
+  const polygons = computeOwnedVisionPolygonsForUser(store, userId, scene, sceneTokens);
+  userCache.set(userId, polygons);
+  return polygons;
 }
 
 function computeOwnedVisionPolygonsForUser(store: StateStore, userId: string, scene: Scene, sceneTokens?: Token[]): VisionPolygon[] {
@@ -21020,16 +21164,15 @@ function providedTokenVisionCache(visibility: CachedSceneVisibility, sceneTokens
   return userCache;
 }
 
-function sceneVisibilityForCache(scene: Scene, cache?: TokenVisibilityCache): CachedSceneVisibility {
+function sceneVisibilityForCache(store: StateStore, scene: Scene, cache?: TokenVisibilityCache): CachedSceneVisibility | { key: string; overBudget: true } {
   const key = `${scene.id}:${scene.updatedAt}`;
-  if (cache) {
-    const cached = cache.scenes.get(scene.id);
-    if (cached?.key === key) return cached;
-    const visibility = computeSceneVisibility(scene, key);
-    cache.scenes.set(scene.id, visibility);
-    return visibility;
-  }
-  return computeSceneVisibility(scene, key);
+  const cached = cache?.scenes.get(scene.id);
+  if (cached?.key === key) return cached;
+  const visibility = exceedsSceneVisionBudget(scene.walls, scene.lights, store.state.tokens, scene.id)
+    ? { key, overBudget: true as const }
+    : computeSceneVisibility(scene, key);
+  cache?.scenes.set(scene.id, visibility);
+  return visibility;
 }
 
 function computeSceneVisibility(scene: Scene, key: string): CachedSceneVisibility {
@@ -21078,13 +21221,16 @@ function visionBlockersForPoint(store: StateStore, userId: string, scene: Scene,
 }
 
 function sceneRenderingDiagnostics(store: StateStore, scene: Scene) {
-  const fogPolygons = scene.fog.map((region) => computeFogRevealPolygon(scene, region)).filter((polygon): polygon is VisionPolygon => Boolean(polygon));
-  const lightPolygons = scene.lights.flatMap((light) => computeLightVisionPolygons(scene, light)).filter((polygon): polygon is VisionPolygon => Boolean(polygon));
   const sceneTokens = store.state.tokens.filter((token) => token.sceneId === scene.id);
-  const tokenPolygons = sceneTokens.filter((token) => token.visionEnabled && tokenVisionOuterRadius(token) > 0).flatMap((token) => computeTokenVisionPolygons(scene, token));
+  const overBudget = exceedsSceneVisionBudget(scene.walls, scene.lights, sceneTokens, scene.id);
+  const fogPolygons = scene.fog.map((region) => computeFogRevealPolygon(scene, region)).filter((polygon): polygon is VisionPolygon => Boolean(polygon));
+  const lightPolygons = overBudget ? [] : scene.lights.flatMap((light) => computeLightVisionPolygons(scene, light));
+  const tokenPolygons = overBudget ? [] : sceneTokens.filter((token) => token.visionEnabled && tokenVisionOuterRadius(token) > 0).flatMap((token) => computeTokenVisionPolygons(scene, token));
   const polygons = [...fogPolygons, ...lightPolygons, ...tokenPolygons];
   const complexity = sceneRenderingComplexity(polygons);
-  const issues = [...sceneRenderingDiagnosticIssues(scene, sceneTokens), ...sceneRenderingComplexityIssues(complexity)];
+  const issues = overBudget
+    ? [sceneRenderingIssue("scene_vision_budget_exceeded", "error", "scene", scene.id, new SceneVisionBudgetError().message)]
+    : [...sceneRenderingDiagnosticIssues(scene, sceneTokens), ...sceneRenderingComplexityIssues(complexity)];
   const issueSeverityCounts = countBy(issues, (issue) => String(issue.severity ?? "unknown"));
   const issueCodeCounts = countBy(issues, (issue) => String(issue.code ?? "unknown"));
   const actionReasons = sceneRenderingActionReasons(issueSeverityCounts, complexity);
@@ -21862,6 +22008,9 @@ function realtimeClientAuthorizationIsCurrent(store: StateStore, client: Realtim
 
 function filterRealtimeEvent(store: StateStore, event: EngineEvent, userId: string | undefined, visibilityCache?: TokenVisibilityCache): EngineEvent | undefined {
   if (!userId || !canCampaign(store, userId, event.campaignId, "campaign.read")) return undefined;
+  if (event.type.startsWith("campaign.member.") && isRecord(event.payload) && "source" in event.payload && !canCampaign(store, userId, event.campaignId, "campaign.update")) {
+    return redactedRealtimeEvent(event, publicCampaignMember(event.payload));
+  }
   if (event.type === "agent.boardCaptureRequested") {
     const payload = isRecord(event.payload) ? event.payload : {};
     return payload.userId === userId ? event : undefined;
@@ -22000,6 +22149,10 @@ function filterRealtimeEvent(store: StateStore, event: EngineEvent, userId: stri
     if (readableScene && !canReadSceneRecord(store, userId, readableScene)) return undefined;
     if (!readableScene && !canAccessPreparedScenes(store, userId, event.campaignId)) return undefined;
     if (scene && Array.isArray(scene.annotations)) return redactedRealtimeEvent(event, scenePayloadForUser(store, userId, scene as Scene));
+    if (scene && "fogHistory" in scene && !canCampaign(store, userId, event.campaignId, "token.reveal")) {
+      const { fogHistory: _fogHistory, ...playerScene } = scene;
+      return { ...event, payload: withoutSceneEditHistory(playerScene as Scene) };
+    }
     if (scene && "sceneEditHistory" in scene) return { ...event, payload: withoutSceneEditHistory(scene as Scene) };
     return event;
   }
@@ -22329,6 +22482,18 @@ function campaignPermissionTemplate(value: unknown): CampaignPermissionTemplate 
 function campaignPermissionTemplateGrants(campaignId: string, templateId: CampaignPermissionTemplateId): PermissionGrant[] {
   const template = campaignPermissionTemplates[templateId];
   return template.grants.map((grant) => createTimestamped("grant", { subjectType: "role" as const, subjectId: grant.role, campaignId, permissions: grant.permissions, metadata: { source: "campaign_permission_template", templateId, ...(templateId === "ai_assisted" ? { aiUseTemplateVersion: 1 } : {}) } }));
+}
+
+function publicCampaignMember<T extends CampaignMember | Record<string, unknown>>(member: T): Omit<T, "source"> {
+  const { source: _source, ...publicMember } = member;
+  return publicMember;
+}
+
+function campaignMemberList(store: StateStore, campaignId: string, includeSource: boolean) {
+  return store.state.members.filter((member) => member.campaignId === campaignId).map((member) => {
+    const info = memberSessionInfo(store, member);
+    return includeSource ? info : publicCampaignMember(info);
+  });
 }
 
 function memberSessionInfo(store: StateStore, member: CampaignMember): CampaignMember & { user: Pick<User, "id" | "displayName" | "email">; active: boolean; permissions: PermissionName[] } {
@@ -23993,7 +24158,7 @@ function buildCampaignSnapshot(store: StateStore, userId: string, campaign: Camp
     realtimeRecovery: "refetch_snapshot_on_gap",
     user: publicUser(store.state.users.find((candidate) => candidate.id === userId)!),
     campaign,
-    members: store.state.members.filter((member) => member.campaignId === campaignId).map((member) => memberSessionInfo(store, member)),
+    members: campaignMemberList(store, campaignId, canManage),
     campaignSessions: store.state.campaignSessions.filter((session) => session.campaignId === campaignId && (canViewPrep || session.status === "live")).map((session) => (canViewPrep ? session : { ...session, agenda: "", notes: "", encounterIds: session.encounterIds.filter((encounterId) => store.state.combats.some((combat) => combat.active && combat.campaignId === campaignId && combat.encounterId === encounterId)), sceneIds: session.sceneIds.filter((sceneId) => scenes.some((scene) => scene.id === sceneId)) })),
     worlds: canWorld ? store.state.worlds.filter((world) => world.campaignId === campaignId) : [],
     worldRecords: readableWorldRecords,
@@ -24066,10 +24231,11 @@ function captureSceneEditSnapshot(scene: Scene, userId: string | undefined, kind
   scene.sceneEditHistory = [...(scene.sceneEditHistory ?? []), snapshot].slice(-SCENE_EDIT_HISTORY_LIMIT);
 }
 
-function undoSceneEdit(scene: Scene): SceneEditSnapshot | undefined {
+function undoSceneEdit(scene: Scene, tokens: Token[]): SceneEditSnapshot | undefined {
   const history = scene.sceneEditHistory ?? [];
   const last = history[history.length - 1];
   if (!last) return undefined;
+  if (exceedsSceneVisionBudget(last.state.walls, last.state.lights, tokens, scene.id)) throw new SceneVisionBudgetError();
   scene.sceneEditHistory = history.slice(0, -1);
   const restored = structuredClone(last.state);
   scene.worldId = restored.worldId;
@@ -24108,16 +24274,43 @@ function sceneAnnotationIsPublic(annotation: Pick<SceneAnnotation, "visibility">
   return annotation.visibility === undefined || annotation.visibility === "public";
 }
 
+function canExportLinkedSceneContent(store: StateStore, userId: string, archive: CampaignArchive): boolean {
+  const campaignId = archive.manifest.campaignId;
+  const canReveal = canCampaign(store, userId, campaignId, "token.reveal");
+  if (archive.data.journals.some((entry) => !canReadJournalEntry(store, userId, entry)) ||
+      archive.data.handouts.some((entry) => !canReadHandout(store, userId, entry))) return false;
+  if (archive.data.scenes.some((scene) => scene.mapPins?.some((pin) =>
+    !canReadSceneRecord(store, userId, scene) || (pin.audience === "gm" && !canReveal) || !canReadMapPinTarget(store, userId, campaignId, pin)))) return false;
+  // Inverses and guards can contain past pin locations and deleted records.
+  const hasHistoricalPins = archive.data.proposals.some((proposal) =>
+    [...proposal.changesJson, ...(proposal.inverseChangesJson ?? [])].some((change) => change.entity === "scene" && "mapPins" in change.data) ||
+    proposal.revertGuardsJson?.some((guard) => guard.entity === "scene" && guard.expected && "mapPins" in guard.expected));
+  return !hasHistoricalPins || (canReveal && canCampaign(store, userId, campaignId, "journal.readSecret") && canCampaign(store, userId, campaignId, "handout.readSecret"));
+}
+
+function canReadMapPinTarget(store: StateStore, userId: string, campaignId: string, pin: NonNullable<Scene["mapPins"]>[number]): boolean {
+  if (pin.targetType === "journal" && store.state.journals.some((entry) => entry.id === pin.targetId && entry.campaignId === campaignId && entry.kind === "folder")) return false;
+  return journalLinkTargetVisibleToUser(store, userId, campaignId, pin.targetType, pin.targetId);
+}
+
 function scenePayloadForUser(store: StateStore, userId: string, scene: Scene): Scene {
-  const result = withoutSceneEditHistory(scene);
+  const stripped = withoutSceneEditHistory(scene);
+  let result = stripped;
+  if (scene.mapPins !== undefined) {
+    const current = store.state.scenes.find((item) => item.id === scene.id && item.campaignId === scene.campaignId);
+    result = projectMapPins(stripped, current && canReadSceneRecord(store, userId, current) ? current : undefined,
+      canCampaign(store, userId, scene.campaignId, "token.reveal"), (pin) => canReadMapPinTarget(store, userId, scene.campaignId, pin));
+  }
   if (canCampaign(store, userId, scene.campaignId, "token.reveal")) return result;
+  // Fog history records hidden and since-removed fog geometry; it is GM data, like GET /fog/history.
+  const { fogHistory: _fogHistory, ...playerScene } = result;
   const privateIds = new Set((scene.annotations ?? []).filter((annotation) => !sceneAnnotationIsPublic(annotation)).map((annotation) => annotation.id));
   const publicAnnotations = (scene.annotations ?? []).filter(sceneAnnotationIsPublic);
   const visibleTokenIds = publicAnnotations.some((annotation) => annotation.affectedTokenIds?.length)
     ? new Set(visibleTokensForUser(store, userId, scene.campaignId, store.state.tokens.filter((token) => token.sceneId === scene.id)).map((token) => token.id))
     : new Set<string>();
   return {
-    ...result,
+    ...playerScene,
     annotations: publicAnnotations.map((annotation) => annotation.affectedTokenIds ? { ...annotation, affectedTokenIds: annotation.affectedTokenIds.filter((id) => visibleTokenIds.has(id)) } : annotation),
     ...(scene.annotationHistory ? { annotationHistory: scene.annotationHistory.filter((entry) => sceneAnnotationIsPublic(entry) && !privateIds.has(entry.annotationId)).map((entry) => entry.affectedTokenIds ? { ...entry, affectedTokenIds: entry.affectedTokenIds.filter((id) => visibleTokenIds.has(id)) } : entry) } : {}),
   };
@@ -24144,14 +24337,14 @@ function projectSceneResponseForUser(store: StateStore, userId: string, payload:
       annotations: annotationRecords(data.annotations),
       ...(data.annotationHistory !== undefined ? { annotationHistory: annotationRecords(data.annotationHistory) } : {}),
     } as unknown as Scene) : undefined;
-    for (const key of ["annotations", "annotationHistory", "sceneEditHistory"] as const) {
+    for (const key of ["mapPins", "annotations", "annotationHistory", "sceneEditHistory", "fogHistory"] as const) {
       if (data[key] === undefined) continue;
       if (projected && key in projected) projectedData[key] = projected[key];
       else delete projectedData[key];
     }
     return { ...payload, data: projectedData };
   }
-  if (typeof payload.id === "string" && typeof payload.campaignId === "string" && Array.isArray(payload.annotations)) return scenePayloadForUser(store, userId, payload as unknown as Scene);
+  if (typeof payload.id === "string" && typeof payload.campaignId === "string" && (Array.isArray(payload.annotations) || Array.isArray(payload.fogHistory))) return scenePayloadForUser(store, userId, payload as unknown as Scene);
   // Include proposal wrappers and rollback guards: their expected scenes are
   // authoritative internally, but must use the same caller projection on the wire.
   let result = payload;

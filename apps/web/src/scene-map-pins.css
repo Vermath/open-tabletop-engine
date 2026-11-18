@@ -1,0 +1,23 @@
+.scene-lore-pin {
+  position: absolute;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: .25rem;
+  max-width: 14rem;
+  padding: .2rem .4rem;
+  transform: translate(-50%, -50%);
+  overflow-wrap: anywhere;
+  border: 1px solid currentColor;
+  border-radius: .4rem;
+  background: var(--surface-2);
+  color: var(--accent-strong);
+  cursor: pointer;
+}
+.scene-pin-tools { position: absolute; bottom: .75rem; left: .75rem; z-index: 7; }
+@media (max-width: 640px) {
+  .scene-pin-tools { width: 44px; min-height: 44px; padding: 0; justify-content: center; }
+  .scene-pin-tools > span { display: none; }
+}
+.scene-pin-dialog { width: min(28rem, 90vw); max-height: 85vh; overflow: auto; padding: 1rem; border-radius: .6rem; }
+.scene-pin-dialog::backdrop { background: color-mix(in srgb, var(--color-black) 55%, transparent); }

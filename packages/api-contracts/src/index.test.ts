@@ -40,6 +40,22 @@ describe("api contracts", () => {
     });
   });
 
+  it("publishes the restricted server-admin thread and tool summaries", () => {
+    const { AdminAiOperations, AdminAiThreadSummary, AdminAiToolCallSummary } = openApiSpec.components.schemas;
+    expect(AdminAiOperations.properties.recentThreads.items).toEqual({ $ref: "#/components/schemas/AdminAiThreadSummary" });
+    expect(AdminAiOperations.properties.recentToolCalls.items).toEqual({ $ref: "#/components/schemas/AdminAiToolCallSummary" });
+    expect(AdminAiThreadSummary.additionalProperties).toBe(false);
+    expect(AdminAiToolCallSummary.additionalProperties).toBe(false);
+    expect(AdminAiThreadSummary.required).toEqual(["id", "campaignId", "provider", "createdAt", "updatedAt"]);
+    for (const field of ["userId", "title", "prompt", "providerError", "assistantMessage", "sources", "citations"]) {
+      expect(AdminAiThreadSummary.properties).not.toHaveProperty(field);
+    }
+    for (const field of ["input", "output", "threadTitle"]) {
+      expect(AdminAiToolCallSummary.properties).not.toHaveProperty(field);
+    }
+    expect(AdminAiToolCallSummary.properties.error.type).toBe("string");
+  });
+
   it("keeps per-thread usage distinct from campaign usage summaries", () => {
     expect(openApiSpec.components.schemas.AiThread.properties.usage).toEqual({
       $ref: "#/components/schemas/AiThreadUsageMetrics",

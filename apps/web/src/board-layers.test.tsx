@@ -50,6 +50,9 @@ describe("static board layers", () => {
     expect(markup).toMatch(/class="light-polygon bright" points="0,0 10.5,0 10.5,20" filter="url\(#[^)]*\)" style="fill:#7ad1ff;opacity:0.4"/);
     expect(markup).toMatch(/class="light-polygon" points="0,0 10.5,0 10.5,20" filter="url\(#[^)]*\)" style="fill:#facc15;opacity:0.22"/);
     expect(renderToStaticMarkup(<BoardLightingLayer width={1200} height={800} polygons={[]} />)).toBe("");
+    const invalidLight = renderToStaticMarkup(<BoardLightingLayer width={1200} height={800} polygons={[polygon("c", { color: "url(#other-element)" })]} />);
+    expect(invalidLight).toContain("fill:#facc15");
+    expect(invalidLight).not.toContain("other-element");
   });
 
   it("masks mundane and magical darkness separately, with the senses that see through each", () => {

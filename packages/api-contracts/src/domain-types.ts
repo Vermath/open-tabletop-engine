@@ -266,6 +266,14 @@ export interface WorldRelation extends Timestamps {
   updatedByUserId: ID;
 }
 
+export interface SceneMapPin extends VisionPoint {
+  id: ID;
+  label: string;
+  targetType: "journal" | "handout";
+  targetId: ID;
+  audience: "gm" | "readers";
+}
+
 export interface Scene extends Timestamps {
   id: ID;
   campaignId: ID;
@@ -290,6 +298,7 @@ export interface Scene extends Timestamps {
   walls: Wall[];
   lights: LightSource[];
   annotations: SceneAnnotation[];
+  mapPins?: SceneMapPin[];
   /** Explicitly authored movement-cost areas. Missing on legacy scenes. */
   difficultTerrain?: DifficultTerrainRegion[];
   /** GM-authored cover rulings between a source and target token. Missing on legacy scenes. */
@@ -1760,6 +1769,29 @@ export interface Encounter extends Timestamps {
   threats?: Array<{ id: ID; count: number }>;
 }
 
+export interface CompendiumMonsterPlacementInput {
+  entryId: string;
+  expectedUpdatedAt: string;
+  x: number;
+  y: number;
+}
+
+export interface CompendiumMonsterPlacement {
+  placementId: ID;
+  actor: Actor;
+  sceneToken: Token;
+  scene: Scene;
+}
+
+export interface CompendiumPlacementHistoryInput {
+  direction: "undo" | "redo";
+  expectedUpdatedAt: string;
+}
+
+export type CompendiumPlacementHistoryResult =
+  | { direction: "undo"; actorId: ID; tokenId: ID; scene: Scene }
+  | ({ direction: "redo" } & CompendiumMonsterPlacement);
+
 export interface EncounterMonsterPlacementDraft {
   threatId?: ID;
   customMonsterItemId?: ID;
@@ -2428,6 +2460,22 @@ export interface AiThread extends Timestamps {
   retentionExpiresAt?: string;
   usage?: AiUsageMetrics;
 }
+
+/** Server-wide diagnostics expose only operational fields from campaign threads. */
+export type AdminAiThreadSummary = Pick<AiThread,
+  | "id" | "campaignId" | "provider" | "status" | "startedAt" | "completedAt" | "failedAt"
+  | "durationMs" | "retryAttempts" | "eventCount" | "toolCallCount" | "usage" | "createdAt" | "updatedAt"
+> & { campaignName?: string };
+
+export type AdminAiToolCallSummary = Pick<AiToolCall,
+  "id" | "threadId" | "toolName" | "status" | "durationMs" | "retry" | "createdAt" | "updatedAt"
+> & {
+  campaignId?: ID;
+  campaignName?: string;
+  provider?: string;
+  threadStatus?: AiThread["status"];
+  error?: string;
+};
 
 export type AiSourceKind =
   | "official_open_rules"

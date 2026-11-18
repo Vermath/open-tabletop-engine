@@ -17,6 +17,8 @@ interface EdgeFetchInit extends RequestInit {
 
 const ASSET_BLOB_PATH = /^\/api\/v1\/assets\/([^/]+)\/blob$/;
 const FORWARDED_HEADERS = ["accept", "accept-language", "if-modified-since", "if-none-match", "origin", "range"];
+const SIGNED_ASSET_QUERY_PARAMS = new Set(["disposition", "expiresAt", "signature", "variant"]);
+const ASSET_VARIANTS = new Set(["thumbnail", "optimized"]);
 
 export default {
   async fetch(request: Request, env: AssetEdgeEnv): Promise<Response> {
@@ -36,6 +38,14 @@ export async function handleAssetEdgeRequest(request: Request, env: AssetEdgeEnv
 
   const assetId = match[1] ?? "";
   if (!/^[A-Za-z0-9_-]+$/.test(assetId)) return edgeError(400, "invalid_asset_id", "Asset id is not edge-cacheable");
+
+  if (hasUnexpectedQueryParams(url.searchParams)) {
+    return edgeError(400, "invalid_asset_query", "Signed asset URL contains unsupported or repeated query parameters");
+  }
+  const variant = url.searchParams.get("variant");
+  if (variant !== null && !ASSET_VARIANTS.has(variant)) {
+    return edgeError(400, "invalid_asset_variant", "Asset variant must be thumbnail or optimized");
+  }
 
   const disposition = url.searchParams.get("disposition") ?? "inline";
   if (disposition !== "inline" && disposition !== "attachment") {
@@ -155,6 +165,15 @@ function remainingTtlSeconds(expiresAt: string, nowMs: number, maxTtlSeconds: nu
 function edgeMaxTtlSeconds(value: string | undefined): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? Math.min(Math.floor(parsed), 24 * 60 * 60) : 3600;
+}
+
+function hasUnexpectedQueryParams(searchParams: URLSearchParams): boolean {
+  const seen = new Set<string>();
+  for (const name of searchParams.keys()) {
+    if (!SIGNED_ASSET_QUERY_PARAMS.has(name) || seen.has(name)) return true;
+    seen.add(name);
+  }
+  return false;
 }
 
 function edgeCacheKey(url: URL, path: string): string {

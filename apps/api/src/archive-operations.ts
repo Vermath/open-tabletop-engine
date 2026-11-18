@@ -268,7 +268,10 @@ export function closeArchiveRecordDependencies(data: EngineState, source: Engine
     const itemIds = data.combats.flatMap((record) => record.actions?.flatMap((action) => action.itemUpdates?.map((update) => update.itemId) ?? []) ?? []);
     changed = add("items", itemIds) || changed;
 
+    const pinTargets = data.scenes.flatMap((scene) => scene.mapPins ?? []);
+    changed = add("handouts", pinTargets.filter((pin) => pin.targetType === "handout").map((pin) => pin.targetId)) || changed;
     const journalIds = [
+      ...pinTargets.filter((pin) => pin.targetType === "journal").map((pin) => pin.targetId),
       ...data.journals.map((record) => record.parentId),
       ...data.campaignSessions.map((record) => record.recapJournalId)
     ].filter((id): id is string => Boolean(id));
@@ -842,7 +845,11 @@ export function contentImportRollbackConflicts(state: EngineState, campaignId: s
     }
   }
 
-  const campaignSceneIds = new Set(state.scenes.filter((scene) => scene.campaignId === campaignId).map((scene) => scene.id));
+  const campaignScenes = state.scenes.filter((scene) => scene.campaignId === campaignId);
+  for (const scene of campaignScenes) {
+    for (const pin of scene.mapPins ?? []) addDependency(pin.targetType === "journal" ? "journals" : "handouts", pin.targetId, "scenes", scene.id, "mapPins.targetId");
+  }
+  const campaignSceneIds = new Set(campaignScenes.map((scene) => scene.id));
   for (const token of state.tokens.filter((token) => campaignSceneIds.has(token.sceneId))) addDependency("actors", token.actorId, "tokens", token.id, "actorId");
   for (const actor of state.actors.filter((actor) => actor.campaignId === campaignId)) {
     const controlledCreature = isRecord(actor.data.dnd5eControlledCreature) && actor.data.dnd5eControlledCreature.status === "active" ? actor.data.dnd5eControlledCreature : undefined;
@@ -1047,7 +1054,7 @@ export function archiveImportDependencyWarnings(scope: "all" | "assets_only" | "
     worlds: ["worldRecords", "scenes", "actors", "items", "journals", "handouts", "encounters"],
     worldRecords: ["worlds", "worldRelations"],
     worldRelations: ["worldRecords"],
-    scenes: ["worlds", "assets", "fogPresets"],
+    scenes: ["worlds", "assets", "fogPresets", ...new Set(archive.data.scenes.flatMap((scene) => scene.mapPins?.map((pin) => pin.targetType === "journal" ? "journals" as const : "handouts" as const) ?? []))],
     tokens: ["scenes", "actors", "assets"],
     actors: ["worlds", "items", "assets", "calculationOverrides"],
     calculationOverrides: ["actors"],
@@ -1160,6 +1167,9 @@ export function archiveWithRegeneratedIds(archive: CampaignArchive, options: { u
   const remappedData = remapArchiveReferences(data, idMap) as EngineState;
   // Package identities live outside the campaign-record ID namespace. Restore
   // only known domain fields; retain historical remapping inside arbitrary data.
+  for (const [index, scene] of data.scenes.entries()) {
+    if (scene.mapPins) remappedData.scenes[index]!.mapPins = scene.mapPins.map((pin) => ({ ...pin, targetId: idMap.get(pin.targetId) ?? pin.targetId }));
+  }
   for (const [index, campaign] of data.campaigns.entries()) {
     const remapped = remappedData.campaigns[index]!;
     remapped.defaultSystemId = campaign.defaultSystemId;
@@ -1623,6 +1633,10 @@ export function archiveReferenceProtection(
   }
 
   for (const scene of archive.data.scenes) {
+    for (const pin of scene.mapPins ?? []) {
+      const error = validateReference(scene.campaignId, pin.targetType === "journal" ? "journals" : "handouts", pin.targetId, `Map pin ${pin.id}`);
+      if (error) return { ok: false, error };
+    }
     const error =
       validateReference(scene.campaignId, "worlds", scene.worldId, `Scene ${scene.id}`) ??
       validateReference(scene.campaignId, "assets", scene.backgroundAssetId, `Scene ${scene.id}`);

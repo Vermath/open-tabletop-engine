@@ -7,6 +7,8 @@ FROM base AS deps
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json tsconfig.base.json ./
 COPY apps ./apps
 COPY packages ./packages
+COPY plugins ./plugins
+COPY infra/docker/api.Dockerfile ./infra/docker/api.Dockerfile
 RUN pnpm install --frozen-lockfile
 
 FROM deps AS build

@@ -6,7 +6,7 @@ Status: release-owner checklist for the v1.0 release candidate. This checklist i
 
 - Confirm the release commit is the intended final candidate and has no uncommitted product or documentation changes.
 - Run `pnpm install --frozen-lockfile`.
-- Run `pnpm release:smoke`.
+- Run `pnpm release:smoke`. The hosted workflow reports tests and cold builds, browser journeys, runtime and recovery, and production images separately. Its summary check requires all four. For a failed browser test, download `failed-browser-traces` from the run and open its ZIP with `pnpm exec playwright show-trace <trace.zip>`.
 - Run `pnpm docs:site:test` if verifying publication guards outside the full release smoke run.
 - Run `pnpm docs:site:check`.
 - Run `pnpm identity:smoke` only when real OIDC/SCIM sandbox variables are configured; skipped output does not satisfy provider readiness.

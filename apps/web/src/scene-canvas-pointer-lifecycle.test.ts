@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import type { Token } from "@open-tabletop/core";
-import { ScriptTarget, transpileModule } from "typescript";
+import { stripTypeScriptTypes } from "node:module";
 import { describe, expect, it, vi } from "vitest";
 import { scenePointFromClient } from "./board-geometry.js";
 import {
@@ -17,14 +17,14 @@ function section(start: string, end: string) {
   if (begin < 0 || finish < 0) throw new Error(`Canvas section not found: ${start}`);
   return source.slice(begin, finish);
 }
-const pointerCode = transpileModule([
+const pointerCode = stripTypeScriptTypes([
   section("  function boardPoint(", "  function annotationDraftPoint("),
   section("  function boundedTokenPosition(", "  function appendFogStrokePoint("),
   "function scheduleRecenter() {",
   section("  useEffect(() => {\n    const token = selectedViewportToken;", "  function boardPoint(").replace(/\r\n/g, "\n"),
   "}",
   "({ startTokenDrag, moveTokenDrag, finishTokenDrag, cancelTokenDrag, startTokenResize, moveTokenResize, finishTokenResize, cancelTokenResize, scheduleRecenter });",
-].join("\n"), { compilerOptions: { target: ScriptTarget.ES2022 } }).outputText;
+].join("\n"));
 
 function token(id: string, x = 208.5, y = 206.5): Token {
   return { id, sceneId: "scene", name: id, x, y, width: 50, height: 50, rotation: 0, disposition: "friendly", layer: "player", metadata: {} } as Token;

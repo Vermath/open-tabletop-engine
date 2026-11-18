@@ -9,6 +9,7 @@ import type {
   JournalEntryRevision,
   Visibility,
 } from "@open-tabletop/core";
+import { writePinDrag } from "./scene-pin-drag.js";
 import { BookOpenCheck, Folder, History, Link2, PencilLine, Plus, Save, ScrollText, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiDelete, apiGet, apiPatch, type CampaignSessionInfo, type Snapshot } from "./api.js";
@@ -529,7 +530,7 @@ function JournalEntryCard(props: JournalEntryCardProps) {
   }
 
   return (
-    <article id={campaignSearchAnchorId("journal", props.journal.id)} className="journal-entry" data-depth={Math.min(props.depth, 6)} aria-label={`Journal ${kind} ${props.journal.title}`} tabIndex={-1}>
+    <article draggable={props.canUpdate && kind !== "folder" && !editing} onDragStart={(event) => writePinDrag(event.dataTransfer, { targetType: "journal", targetId: props.journal.id })} id={campaignSearchAnchorId("journal", props.journal.id)} className="journal-entry" data-depth={Math.min(props.depth, 6)} aria-label={`Journal ${kind} ${props.journal.title}`} tabIndex={-1}>
       <div className="operator-heading"><span>{kind === "folder" ? <><Folder size={14} /> Folder</> : props.journal.visibility}</span><strong>{(props.journal.canonStatus ?? "draft").replace("_", " ")}</strong></div>
       <h3>{props.journal.title}</h3>
       {props.journal.body && <p>{props.journal.body}</p>}
