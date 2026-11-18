@@ -86,6 +86,7 @@ const stateCollections = [
   "handouts",
   "chat",
   "rolls",
+  "partyRollRequests",
   "diceMacros",
   "audioTracks",
   "encounters",

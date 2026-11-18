@@ -1,0 +1,13 @@
+.party-roll-control { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+.party-roll-dialog { width: min(30rem, calc(100vw - 2rem)); max-height: 80dvh; overflow-y: auto; box-sizing: border-box; padding: 1rem; border: 1px solid var(--line, #455266); border-radius: .7rem; background: var(--panel, #17202d); color: inherit; }
+.party-roll-dialog::backdrop { background: rgb(0 0 0 / .55); }
+.party-roll-dialog header, .party-roll-roster li { display: flex; align-items: center; justify-content: space-between; gap: .6rem; }
+.party-roll-dialog h2, .party-roll-dialog h3, .party-roll-roster ul { margin: 0; }
+.party-roll-dialog form, .party-roll-dialog fieldset, .party-roll-dialog form > label { display: grid; gap: .55rem; }
+.party-roll-dialog form { margin-block: .85rem; }
+.party-roll-dialog fieldset { border: 1px solid var(--line, #455266); border-radius: .4rem; }
+.party-roll-dialog .inline-check { display: flex; align-items: center; gap: .5rem; }
+.party-roll-dialog .inline-check input { width: auto; }
+.party-roll-roster { border-top: 1px solid var(--line, #455266); padding-top: .7rem; margin-top: .7rem; }
+.party-roll-roster ul { list-style: none; padding: 0; }
+.party-roll-roster li { padding: .3rem 0; }

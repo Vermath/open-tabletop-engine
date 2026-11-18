@@ -1468,6 +1468,7 @@ export function mergeArchive(state: EngineState, archive: CampaignArchive): Reco
     contentImports: upsertRecords(state.contentImports, archive.data.contentImports ?? []),
     campaignArchiveImportOperations: 0,
     fogPresets: upsertRecords(state.fogPresets, archive.data.fogPresets ?? []),
+    partyRollRequests: 0,
     campaignWebhooks: 0,
     campaignWebhookDeliveries: 0,
     idempotencyRecords: 0,

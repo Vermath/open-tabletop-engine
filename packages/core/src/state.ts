@@ -31,6 +31,7 @@ export function emptyState(): EngineState {
     journals: [],
     handouts: [],
     chat: [],
+    partyRollRequests: [],
     rolls: [],
     diceMacros: [],
     audioTracks: [],
@@ -323,6 +324,8 @@ export function makeArchive(state: EngineState, campaignId: string): CampaignArc
     journals: state.journals.filter((item) => item.campaignId === campaignId),
     handouts: state.handouts.filter((item) => item.campaignId === campaignId),
     chat: state.chat.filter((item) => item.campaignId === campaignId),
+    // Live player prompts are bound to the original table and its memberships.
+    partyRollRequests: [],
     rolls: state.rolls.filter((item) => item.campaignId === campaignId),
     diceMacros: state.diceMacros.filter((item) => item.campaignId === campaignId),
     audioTracks: state.audioTracks.filter((item) => item.campaignId === campaignId),

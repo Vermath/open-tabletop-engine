@@ -1678,6 +1678,33 @@ export interface ChatMessage extends Timestamps {
   editedAt?: string;
 }
 
+export interface PartyRollRecipient {
+  actorId: ID;
+  actorName: string;
+  userId: ID;
+  unavailable?: true;
+  result?: Pick<DiceRoll, "id" | "formula" | "total">;
+}
+
+export interface PartyRollRequest extends Timestamps {
+  id: ID;
+  campaignId: ID;
+  rollId: string;
+  label: string;
+  recipients: PartyRollRecipient[];
+}
+
+/** Installation-local retry identity. Never included in player or GM responses. */
+export interface StoredPartyRollRequest extends PartyRollRequest {
+  creation?: { scopedKeyHash: string; inputHash: string };
+}
+
+export interface PartyRollChoice {
+  actorId: ID;
+  actorName: string;
+  rolls: Array<{ id: string; label: string }>;
+}
+
 export interface DiceRoll extends Timestamps {
   id: ID;
   campaignId: ID;
@@ -3200,6 +3227,7 @@ export interface EngineState {
   handouts: Handout[];
   chat: ChatMessage[];
   rolls: DiceRoll[];
+  partyRollRequests: StoredPartyRollRequest[];
   diceMacros: DiceMacro[];
   audioTracks: AudioTrack[];
   encounters: Encounter[];

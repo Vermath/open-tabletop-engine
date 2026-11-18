@@ -44,6 +44,7 @@ export type EngineEventType =
   | "chat.message.created"
   | "chat.message.updated"
   | "chat.message.deleted"
+  | "partyRoll.updated"
   | "dice.roll.created"
   | "dice.macro.created"
   | "dice.macro.updated"

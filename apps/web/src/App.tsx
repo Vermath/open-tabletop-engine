@@ -106,7 +106,9 @@ import { TypedDamageCard, type TypedDamageApplyResult } from "./typed-damage-car
 import { ActorLoadoutPanel, filterActorLoadoutItems, type ActorLoadoutFilter } from "./actor-loadout-panel.js";
 import { TacticalMapAids, coverLevelLabel, sceneCoverOverrideBetween } from "./tactical-map-aids.js";
 import { CalculationExplanationPanel } from "./calculation-explanation-panel.js";
-import { DeferredPanel, LazyActorPanel as ActorPanel, LazyAdminPanel, LazyAdvancementFlow, LazyAiPanel, LazyCampaignMemoryPanel, LazyCampaignWebhooksPanel, LazyCharacterCreatorDialog, LazyCompatibilityPanel, LazyCompendiumPanel, LazyContentImportPanel, LazyControlledCreaturesPanel, LazyDndCharacterReviewPanel, LazyDndCustomContentPanel, LazyDndInventoryCommercePanel, LazySdkPanel } from "./deferred-panels.js";
+import { DeferredPanel, LazyPartyRollPanel, LazyActorPanel as ActorPanel, LazyAdminPanel, LazyAdvancementFlow, LazyAiPanel, LazyCampaignMemoryPanel, LazyCampaignWebhooksPanel, LazyCharacterCreatorDialog, LazyCompatibilityPanel, LazyCompendiumPanel, LazyContentImportPanel, LazyControlledCreaturesPanel, LazyDndCharacterReviewPanel, LazyDndCustomContentPanel, LazyDndInventoryCommercePanel, LazySdkPanel } from "./deferred-panels.js";
+
+import type { PartyRollRequest } from "@open-tabletop/api-contracts";
 import { LiveSessionBanner, SessionDeskPanel, sessionReportAllowed } from "./session-desk-panel.js";
 import { sessionRecapJournalPayload } from "./session-recap.js";
 import { useModalAccessibility } from "./modal-accessibility.js";
@@ -676,6 +678,7 @@ export function App() {
   const campaignSetupDraftScope = useMemo(() => activeOrganizationId && currentUserId ? { organizationId: activeOrganizationId, userId: currentUserId, campaignId: campaignId || "new" } satisfies CampaignSetupDraftScope : undefined, [activeOrganizationId, campaignId, currentUserId]);
   const campaignSetupDraftKey = campaignSetupDraftScope ? campaignSetupDraftStorageKey(campaignSetupDraftScope) : "";
   const currentMember = snapshot.members.find((member) => member.user.id === currentUserId);
+  const canManagePartyRolls = Boolean(currentMember && ["owner", "gm", "assistant_gm"].includes(currentMember.role) && currentMember.permissions.includes("combat.manage"));
   const hasPermission = (permission: PermissionName) => currentMember?.permissions.includes(permission) ?? false;
   const orderedScenes = [...snapshot.scenes].sort(compareScenesForDisplay);
   const accessibleScenes = hasPermission("scene.update") ? orderedScenes : orderedScenes.filter((scene) => scene.active);
@@ -1694,6 +1697,11 @@ export function App() {
     if (event.type.startsWith("world.") || event.type.startsWith("handout.")) {
       loreRealtimeRefreshPendingRef.current = true;
       return "lore";
+    }
+    if (event.type === "partyRoll.updated" && payload && typeof payload.id === "string" && Array.isArray(payload.recipients)) {
+      invalidateInFlightRefreshes();
+      setSnapshot((current) => ({ ...current, partyRollRequests: upsertNewestRealtimeRecord(current.partyRollRequests ?? [], payload as unknown as PartyRollRequest) }));
+      return "applied";
     }
     if (applyAiAgentRealtimeEvent(event)) return "applied";
     if ((event.type === "actor.created" || event.type === "actor.updated") && payload && payload.redacted !== true && typeof payload.id === "string" && payload.data && typeof payload.data === "object") {
@@ -10189,6 +10197,17 @@ export function App() {
             onlineCount={snapshot.presences.length}
             sceneActive={canManageScenes && selectedScene && workspaceMode !== "manage" && !sceneWorkspaceHidden ? selectedScene.active : undefined}
           />
+          {workspaceMode === "live" && !playerPreview.open && !blankCanvasDemoOpen && currentMember?.campaignId === campaignId && snapshot.session?.user.id === currentUserId && (canManagePartyRolls || Boolean(snapshot.partyRollRequests?.length)) && (
+            <DeferredPanel label="party rolls"><LazyPartyRollPanel key={`${campaignId}:${currentUserId}:${currentMember.role}`} campaignId={campaignId} currentUserId={currentUserId}
+              canManage={canManagePartyRolls}
+              requests={(snapshot.partyRollRequests ?? []).filter((entry) => entry.campaignId === campaignId).flatMap((entry) => {
+                if (canManagePartyRolls) return [entry];
+                if (currentMember.role !== "player" || !hasPermission("dice.roll") || !hasPermission("actor.read")) return [];
+                const recipients = entry.recipients.filter((row) => row.userId === currentUserId && snapshot.actors.some((actor) => actor.id === row.actorId && actor.ownerUserId === currentUserId));
+                return recipients.length ? [{ ...entry, recipients }] : [];
+              })}
+              onRefresh={async () => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) await refresh(campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false }); }} /></DeferredPanel>
+          )}
           {showTableWorkspace && <WorkspaceViewControls
             shortPhone={shortPhone}
             contentWorkspace={contentWorkspace}
