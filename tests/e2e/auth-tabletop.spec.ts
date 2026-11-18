@@ -1657,6 +1657,7 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(statusMessage(page, "e2e-map.svg marked active")).toBeVisible();
   await page.getByRole("combobox", { name: "Asset lifecycle filter" }).selectOption("all");
   await expect(uploadedAsset.locator(".status-pill")).toContainText("Active");
+  await openDetails(uploadedAsset.locator("details.asset-card-details"));
   await uploadedAsset.getByRole("button", { name: "Delete" }).click();
   await expect(statusMessage(page, "e2e-map.svg marked deleted")).toBeVisible();
   await expect(uploadedAsset.locator(".status-pill")).toContainText("Deleted");
