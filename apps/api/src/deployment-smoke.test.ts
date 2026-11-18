@@ -485,6 +485,7 @@ describe("deployment smoke", () => {
     expect(workerDockerfile).toContain("USER node");
 
     const railwayApi = readWorkspaceFile("railway.api.json");
+    expect(railwayApi).toContain("OTTE_PUBLIC_URL=${OTTE_PUBLIC_URL:-$OTTE_WEB_ORIGIN}");
     expect(railwayApi).toContain(
       "OTTE_SQLITE_PATH=/app/storage/opentabletop.sqlite",
     );
