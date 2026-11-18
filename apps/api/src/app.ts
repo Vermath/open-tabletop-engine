@@ -1,4 +1,5 @@
 import { campaignCharacterClaimRoster, characterClaimOption } from "./character-claims.js";
+import { nextRevisionTimestamp } from "./revision-timestamp.js";
 import { dnd5eSrdMonsterCatalog } from "@open-tabletop/system-sdk";
 import { registerCompendiumPlacementRoutes } from "./compendium-placement-routes.js";
 import { clampScenePoint, sceneGridSize, sceneGridOrigin, snapScenePointToGrid, snapTokenCenterToGrid } from "@open-tabletop/core";
@@ -3522,7 +3523,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (typeof reason === "string" && reason.length > 160) return badRequest(reply, "reason must be 160 characters or fewer");
 
     const previousTargetRole = newOwnerMember.role;
-    const updatedAt = nextRevisionTimestamp(campaign.updatedAt);
+    const latestRevision = [campaign.updatedAt, previousOwnerMember.updatedAt, newOwnerMember.updatedAt].sort().at(-1)!;
+    const updatedAt = nextRevisionTimestamp(latestRevision);
     campaign.ownerUserId = targetUserId;
     campaign.updatedAt = updatedAt;
     previousOwnerMember.role = "gm";
@@ -3550,7 +3552,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!role) return badRequest(reply, "role must be gm, assistant_gm, player, or observer");
     const before = { role: member.role };
     member.role = role;
-    member.updatedAt = nowIso();
+    member.updatedAt = nextRevisionTimestamp(member.updatedAt);
     appendServerAuditLog(store, userId, { campaignId: member.campaignId, action: "campaign.member.update", targetType: "campaign_member", targetId: member.id, before, after: { role: member.role, userId: member.userId } });
     store.save();
     broadcast(createEvent({ campaignId: member.campaignId, type: "campaign.member.updated", actorUserId: userId, targetId: member.id, payload: member }));
@@ -3709,7 +3711,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         store.state.members.push(member);
       } else if (member.role !== "owner") {
         member.role = invite.role;
-        member.updatedAt = nowIso();
+        member.updatedAt = nextRevisionTimestamp(member.updatedAt);
       }
       invite.acceptedAt = nowIso();
       invite.acceptedByUserId = user.id;
@@ -29173,12 +29175,6 @@ function staleWriteConflict(reply: FastifyReply, input: { resourceType: Revision
 }
 
 type RevisionResourceType = "rollable_table" | "actor" | "calculation_override" | "campaign" | "campaign_invite" | "campaign_member" | "campaign_session" | "character_transfer" | "combat" | "content_import" | "item" | "journal" | "organization" | "organization_member" | "plugin_storage" | "scene" | "token" | "user" | "world_record" | "world_relation";
-
-function nextRevisionTimestamp(current: string): string {
-  const now = Date.now();
-  const currentTime = Date.parse(current);
-  return new Date(Number.isFinite(currentTime) && currentTime >= now ? currentTime + 1 : now).toISOString();
-}
 
 function advanceCampaignAggregateRevision(store: StateStore, campaignId: string): Campaign | undefined {
   const campaign = store.state.campaigns.find((candidate) => candidate.id === campaignId);
