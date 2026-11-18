@@ -89,6 +89,7 @@ export const exportSelectableArchiveCollections = [
   "chat",
   "rolls",
   "diceMacros",
+  "rollableTables",
   "audioTracks",
   "encounters",
   "campaignSessions",
@@ -288,6 +289,8 @@ export function closeArchiveRecordDependencies(data: EngineState, source: Engine
       ...data.combats.flatMap((record) => record.actions?.map((action) => action.rollId) ?? [])
     ].filter((id): id is string => Boolean(id));
     changed = add("rolls", rollIds) || changed;
+
+    changed = add("rollableTables", data.chat.flatMap((record) => record.rollableTableId ? [record.rollableTableId] : [])) || changed;
 
     const messageIds = data.chat.map((record) => record.replyToMessageId).filter((id): id is string => Boolean(id));
     changed = add("chat", messageIds) || changed;
@@ -1029,6 +1032,7 @@ export const operatorSelectableArchiveCollections = [
   "chat",
   "rolls",
   "diceMacros",
+  "rollableTables",
   "audioTracks",
   "encounters",
   "campaignSessions",
@@ -1061,7 +1065,7 @@ export function archiveImportDependencyWarnings(scope: "all" | "assets_only" | "
     items: ["worlds", "actors"],
     journals: ["worlds", "assets"],
     handouts: ["worlds", "assets"],
-    chat: ["rolls"],
+    chat: archive.data.chat.some((message) => message.rollableTableId) ? ["rolls", "rollableTables"] : ["rolls"],
     encounters: ["worlds", "actors", "tokens"],
     campaignSessions: ["scenes", "encounters", "journals"],
     combats: ["actors", "tokens", "scenes"],
@@ -1106,6 +1110,7 @@ export const regeneratableArchiveCollections = [
   "chat",
   "rolls",
   "diceMacros",
+  "rollableTables",
   "audioTracks",
   "encounters",
   "campaignSessions",
@@ -1139,6 +1144,7 @@ export const archiveIdPrefixes: Record<(typeof regeneratableArchiveCollections)[
   chat: "msg",
   rolls: "roll",
   diceMacros: "mac",
+  rollableTables: "tbl",
   audioTracks: "audio",
   encounters: "enc",
   campaignSessions: "cses",
@@ -1167,6 +1173,9 @@ export function archiveWithRegeneratedIds(archive: CampaignArchive, options: { u
   const remappedData = remapArchiveReferences(data, idMap) as EngineState;
   // Package identities live outside the campaign-record ID namespace. Restore
   // only known domain fields; retain historical remapping inside arbitrary data.
+  for (const [index, table] of data.rollableTables.entries()) {
+    Object.assign(remappedData.rollableTables[index]!, { name: table.name, entries: table.entries, category: table.category, visibility: table.visibility });
+  }
   for (const [index, scene] of data.scenes.entries()) {
     if (scene.mapPins) remappedData.scenes[index]!.mapPins = scene.mapPins.map((pin) => ({ ...pin, targetId: idMap.get(pin.targetId) ?? pin.targetId }));
   }
@@ -1447,6 +1456,7 @@ export function mergeArchive(state: EngineState, archive: CampaignArchive): Reco
     handouts: upsertRecords(state.handouts, archive.data.handouts),
     chat: upsertRecords(state.chat, archive.data.chat),
     rolls: upsertRecords(state.rolls, archive.data.rolls),
+    rollableTables: upsertRecords(state.rollableTables, archive.data.rollableTables ?? []),
     diceMacros: upsertRecords(state.diceMacros, archive.data.diceMacros ?? []),
     audioTracks: upsertRecords(state.audioTracks, archive.data.audioTracks ?? []),
     encounters: upsertRecords(state.encounters, archive.data.encounters),
@@ -1684,6 +1694,7 @@ export function archiveReferenceProtection(
     const error =
       validateReference(message.campaignId, "scenes", message.sceneId, `Chat message ${message.id}`) ??
       validateReference(message.campaignId, "rolls", message.rollId, `Chat message ${message.id}`) ??
+      validateReference(message.campaignId, "rollableTables", message.rollableTableId, `Chat message ${message.id}`, false) ??
       validateReference(message.campaignId, "chat", message.replyToMessageId, `Chat message ${message.id}`, false);
     if (error) return { ok: false, error };
   }

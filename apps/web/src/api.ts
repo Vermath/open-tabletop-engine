@@ -1,4 +1,4 @@
-import type { Actor, AiEvaluationRun, AiMemoryFact, AiThread, AiToolCall, AiUsageMetrics, AudioTrack, AuditLog, CalculationOverride, Campaign, CampaignMember, CampaignPresence, ChatMessage, Combat, ContentImportBatch, DiceMacro, DiceRoll, DiceRollFairness, EmailOutboxMessage, Encounter, FogPreset, Item, JobStatus, JobType, JournalEntry, MapAsset, OrganizationMember, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, SystemManifestSchemas, SystemManifestIdentity, DeclarativeSystemDefinition, ScimAssignableRole, ScimGroup, ScimGroupRoleMapping, Token, User, UserRole, UserSession, VisionSnapshot, WorldRecord, WorldRelation } from "@open-tabletop/core";
+import type { Actor, AiEvaluationRun, AiMemoryFact, AiThread, AiToolCall, AiUsageMetrics, AudioTrack, AuditLog, CalculationOverride, Campaign, CampaignMember, CampaignPresence, ChatMessage, Combat, ContentImportBatch, RollableTable, DiceMacro, DiceRoll, DiceRollFairness, EmailOutboxMessage, Encounter, FogPreset, Item, JobStatus, JobType, JournalEntry, MapAsset, OrganizationMember, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, SystemManifestSchemas, SystemManifestIdentity, DeclarativeSystemDefinition, ScimAssignableRole, ScimGroup, ScimGroupRoleMapping, Token, User, UserRole, UserSession, VisionSnapshot, WorldRecord, WorldRelation } from "@open-tabletop/core";
 import { ApiCompatibilityError, apiBuildFingerprintIssue, apiCompatibilityIssue, type ApiHealthIdentity } from "./api-compatibility.js";
 import type { PartyRollRequest, AdminAiThreadSummary, AdminAiToolCallSummary, UniversalVttImportInput, UniversalVttImportResult } from "@open-tabletop/api-contracts";
 
@@ -719,6 +719,7 @@ export interface Snapshot {
   chat: ChatMessage[];
   rolls: DiceRoll[];
   diceMacros: DiceMacro[];
+  rollableTables?: RollableTable[];
   audioTracks: AudioTrack[];
   encounters: Encounter[];
   partyRollRequests?: PartyRollRequest[];
@@ -765,6 +766,7 @@ interface CampaignSnapshotPayload {
   chat: ChatMessage[];
   rolls: DiceRoll[];
   diceMacros: DiceMacro[];
+  rollableTables?: RollableTable[];
   encounters: Encounter[];
   partyRollRequests?: PartyRollRequest[];
   campaignSessions?: CampaignSessionInfo[];
@@ -3559,6 +3561,7 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
     chat: campaignSnapshot.chat,
     rolls: campaignSnapshot.rolls,
     diceMacros: campaignSnapshot.diceMacros,
+    rollableTables: campaignSnapshot.rollableTables ?? [],
     audioTracks: displayAudioTracks,
     encounters: campaignSnapshot.encounters,
     partyRollRequests: campaignSnapshot.partyRollRequests ?? [],

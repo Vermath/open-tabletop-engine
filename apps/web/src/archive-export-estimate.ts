@@ -16,6 +16,7 @@ export const archiveExportCollectionOptions = [
   { id: "chat", label: "Chat" },
   { id: "rolls", label: "Rolls" },
   { id: "diceMacros", label: "Dice macros" },
+  { id: "rollableTables", label: "Rollable tables" },
   { id: "encounters", label: "Encounters" },
   { id: "combats", label: "Combats" },
   { id: "contentImports", label: "Import batches" },
@@ -39,7 +40,7 @@ type ArchiveEstimateSnapshot = Pick<
   Snapshot,
   | "campaigns" | "members" | "history" | "worldRecords" | "worldRelations" | "scenes" | "fogPresets"
   | "assets" | "tokens" | "actors" | "calculationOverrides" | "items" | "journals" | "chat" | "rolls"
-  | "diceMacros" | "audioTracks" | "encounters" | "campaignSessions" | "combats" | "combatAudit" | "proposals"
+  | "diceMacros" | "rollableTables" | "audioTracks" | "encounters" | "campaignSessions" | "combats" | "combatAudit" | "proposals"
   | "contentImports" | "memory" | "aiThreads" | "aiToolCalls"
 >;
 
@@ -57,7 +58,7 @@ type KnownArchiveCollection = ArchiveExportCollection | "worldRecords" | "worldR
 
 const allKnownArchiveCollections: readonly KnownArchiveCollection[] = [
   "worlds", "worldRecords", "worldRelations", "assets", "scenes", "tokens", "actors", "calculationOverrides",
-  "characterTransfers", "items", "journals", "handouts", "chat", "rolls", "diceMacros", "audioTracks", "encounters",
+  "characterTransfers", "items", "journals", "handouts", "chat", "rolls", "diceMacros", "rollableTables", "audioTracks", "encounters",
   "campaignSessions", "combats", "proposals", "aiThreads", "aiMemory", "aiToolCalls", "auditLogs", "contentImports", "fogPresets"
 ];
 
@@ -93,6 +94,7 @@ function knownCollectionCounts(input: ArchiveExportEstimateInput): Partial<Recor
     chat: historyTotal("chat", snapshot.chat.length),
     rolls: historyTotal("rolls", snapshot.rolls.length),
     diceMacros: snapshot.diceMacros.length,
+    rollableTables: snapshot.rollableTables?.length ?? 0,
     audioTracks: snapshot.audioTracks.length,
     encounters: snapshot.encounters.length,
     campaignSessions: historyTotal("campaignSessions", snapshot.campaignSessions?.length ?? 0),

@@ -88,6 +88,7 @@ const stateCollections = [
   "rolls",
   "partyRollRequests",
   "diceMacros",
+  "rollableTables",
   "audioTracks",
   "encounters",
   "campaignSessions",

@@ -1681,6 +1681,7 @@ export interface ChatMessage extends Timestamps {
   visibility: "public" | "gm_only" | "whisper";
   recipientUserIds: ID[];
   rollId?: ID;
+  rollableTableId?: ID;
   replyToMessageId?: ID;
   moderationStatus?: ChatModerationStatus;
   moderatedByUserId?: ID;
@@ -1759,6 +1760,23 @@ export interface DiceRollFairness {
   serverSeed: string;
   serverSeedHash: string;
   clientSeed?: string;
+}
+
+export interface RollableTableEntry {
+  text: string;
+  weight: number;
+}
+
+export interface RollableTableInput {
+  name: string;
+  category: "loot" | "encounter" | "rumor";
+  visibility: "public" | "gm_only";
+  entries: RollableTableEntry[];
+}
+
+export interface RollableTable extends RollableTableInput, Timestamps {
+  id: ID;
+  campaignId: ID;
 }
 
 export interface DiceMacro extends Timestamps {
@@ -3240,6 +3258,7 @@ export interface EngineState {
   rolls: DiceRoll[];
   partyRollRequests: StoredPartyRollRequest[];
   diceMacros: DiceMacro[];
+  rollableTables: RollableTable[];
   audioTracks: AudioTrack[];
   encounters: Encounter[];
   campaignSessions: CampaignSession[];

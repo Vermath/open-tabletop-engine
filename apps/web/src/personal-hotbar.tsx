@@ -1,4 +1,4 @@
-import type { Actor, DeclarativeActorSheet, DiceMacro, Item, PermissionName, Token } from "@open-tabletop/core";
+import type { Actor, DeclarativeActorSheet, DiceMacro, Item, PermissionName, RollableTable, Token } from "@open-tabletop/core";
 import { Pencil, Plus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { actorActionOptions } from "./actor-sheet-data.js";
@@ -21,6 +21,8 @@ interface Props {
   items: Item[];
   savedFormulas: string[];
   macros: DiceMacro[];
+  tables: RollableTable[];
+  onDrawTable(tableId: string, visibility: RollableTable["visibility"]): Promise<void>;
   permissions: PermissionName[];
   onActorRoll(rollId: string, options: ActorActionCommitOptions, actor: Actor): Promise<void>;
   onDeclarativeRoll(sheet: DeclarativeActorSheet, rollId: string): Promise<void>;
@@ -35,6 +37,8 @@ export function PersonalHotbar(props: Props) {
   const [actorId, setActorId] = useState("");
   const [rollId, setRollId] = useState("");
   const [formula, setFormula] = useState("");
+  const [tableId, setTableId] = useState("");
+  const [drawAudience, setDrawAudience] = useState<RollableTable["visibility"]>("public");
   const [macroId, setMacroId] = useState("");
   const [busy, setBusy] = useState(false);
   const [targetRequest, setTargetRequest] = useState<{ pin: Extract<HotbarPin, { kind: "actor" }>; sceneId: string }>();
@@ -44,6 +48,9 @@ export function PersonalHotbar(props: Props) {
   const canRoll = props.permissions.includes("dice.roll");
   const actors = props.actors.filter((actor) => actor.campaignId === props.campaignId && canUseHotbarActor(actor, props.userId, props.permissions));
   const macros = props.macros.filter((macro) => canRoll && macro.campaignId === props.campaignId && (macro.visibility === "public" || props.permissions.includes("campaign.update")));
+  const canManage = props.permissions.includes("campaign.update");
+  const tables = props.tables.filter((table) => canRoll && props.permissions.includes("chat.write") && table.campaignId === props.campaignId && (table.visibility === "public" || canManage));
+  const pickedTable = tables.find((table) => table.id === tableId) ?? tables[0];
   const requestedActors = new Set(pins.flatMap((pin) => pin?.kind === "actor" ? [pin.actorId] : []));
   const pickingActor = actors.find((actor) => actor.id === actorId) ?? actors[0];
   if (editIndex !== undefined && source === "actor" && pickingActor) requestedActors.add(pickingActor.id);
@@ -63,6 +70,7 @@ export function PersonalHotbar(props: Props) {
   function draftPin(): HotbarPin | undefined {
     if (!canRoll) return;
     if (source === "actor" && pickingActor && pickedRoll) return { kind: "actor", actorId: pickingActor.id, rollId: pickedRoll.id };
+    if (source === "table" && pickedTable) return { kind: "table", tableId: pickedTable.id, visibility: pickedTable.visibility === "gm_only" ? "gm_only" : canManage ? drawAudience : "public" };
     if (source === "macro" && pickedMacro) return { kind: "macro", macroId: pickedMacro.id };
     if (source === "formula" && validHotbarFormula(formula.trim())) return { kind: "formula", formula: formula.trim() };
   }
@@ -73,6 +81,8 @@ export function PersonalHotbar(props: Props) {
     setSource(pin?.kind ?? (actors.length ? "actor" : "formula"));
     setActorId(pin?.kind === "actor" ? pin.actorId : props.selectedActorId ?? "");
     setRollId(pin?.kind === "actor" ? pin.rollId : "");
+    setTableId(pin?.kind === "table" ? pin.tableId : "");
+    setDrawAudience(pin?.kind === "table" ? pin.visibility : "public");
     setMacroId(pin?.kind === "macro" ? pin.macroId : "");
     setFormula(pin?.kind === "formula" ? pin.formula : props.savedFormulas[0] ?? "");
   }
@@ -111,6 +121,11 @@ export function PersonalHotbar(props: Props) {
   function resolve(pin: HotbarPin, chosenTarget?: string) {
     if (!canRoll) return;
     if (pin.kind === "formula") return { label: pin.formula, run: () => props.onDiceRoll(pin.formula) };
+    if (pin.kind === "table") {
+      const table = tables.find((entry) => entry.id === pin.tableId);
+      if (!table || (table.visibility === "gm_only" && pin.visibility !== "gm_only") || (pin.visibility === "gm_only" && !canManage)) return;
+      return { label: table.name, detail: pin.visibility === "gm_only" ? "GM only" : "Public", run: () => props.onDrawTable(table.id, pin.visibility) };
+    }
     if (pin.kind === "macro") {
       const macro = macros.find((candidate) => candidate.id === pin.macroId);
       if (macro) return { label: macro.name, run: () => props.onDiceRoll(macro.formula) };
@@ -172,7 +187,7 @@ export function PersonalHotbar(props: Props) {
         <div className="operator-heading"><h2>Edit hotbar</h2><button className="icon-button" aria-label="Close hotbar editor" onClick={() => setEditIndex(undefined)}><X size={16} /></button></div>
         <label>Slot<select value={editIndex} onChange={(event) => edit(Number(event.target.value))}>{pins.map((_, index) => <option key={index} value={index}>{index + 1}</option>)}</select></label>
         <label>Shortcut type<select value={source} onChange={(event) => setSource(event.target.value as HotbarPin["kind"])}>
-          <option value="actor">Actor action</option><option value="formula">Dice formula</option><option value="macro">Campaign dice macro</option>
+          <option value="actor">Actor action</option><option value="formula">Dice formula</option><option value="macro">Campaign dice macro</option><option value="table">Rollable table</option>
         </select></label>
         {source === "actor" && <>
           <label>Actor<select value={pickingActor?.id ?? ""} onChange={(event) => { setActorId(event.target.value); setRollId(""); }}>{actors.map((actor) => <option key={actor.id} value={actor.id}>{actor.name}</option>)}</select></label>
@@ -183,6 +198,12 @@ export function PersonalHotbar(props: Props) {
         </>}
         {source === "formula" && <label>Dice formula<input list="hotbar-saved-formulas" value={formula} onChange={(event) => setFormula(event.target.value)} placeholder="1d20+5" />
           <datalist id="hotbar-saved-formulas">{props.savedFormulas.map((saved) => <option key={saved} value={saved} />)}</datalist></label>}
+        {source === "table" && <>
+          <label>Rollable table<select value={pickedTable?.id ?? ""} onChange={(event) => setTableId(event.target.value)}>{tables.map((table) => <option key={table.id} value={table.id}>{table.name}</option>)}</select></label>
+          {pickedTable && <label>Draw audience<select value={pickedTable.visibility === "gm_only" ? "gm_only" : canManage ? drawAudience : "public"} onChange={(event) => setDrawAudience(event.target.value as RollableTable["visibility"])}>
+            {pickedTable.visibility === "public" && <option value="public">Public</option>}{canManage && <option value="gm_only">GM only</option>}
+          </select></label>}
+        </>}
         {source === "macro" && <label>Campaign dice macro<select value={pickedMacro?.id ?? ""} onChange={(event) => setMacroId(event.target.value)}>{macros.map((macro) => <option key={macro.id} value={macro.id}>{macro.name} · {macro.formula}</option>)}</select>{!macros.length && <span>No campaign dice macros available.</span>}</label>}
         <div className="button-row">
           <button type="button" className="primary-button" disabled={!draftPin()} onClick={() => save(draftPin())}>Pin to slot {editIndex + 1}</button>

@@ -278,6 +278,9 @@ export const routes = {
   chatExport: (campaignId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/chat/export`,
   dice: "/api/v1/dice/roll",
+  rollableTables: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/rollable-tables`,
+  rollableTable: (campaignId: string, tableId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/rollable-tables/${pathPart(tableId)}`,
+  drawRollableTable: (campaignId: string, tableId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/rollable-tables/${pathPart(tableId)}/draw`,
   diceMacros: (campaignId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/dice-macros`,
   campaignAudio: (campaignId: string) =>
@@ -933,6 +936,11 @@ const endpointSpecs = [
   ["GET", "/api/v1/campaigns/{campaignId}/rolls/{rollId}/verify"],
   ["GET", "/api/v1/campaigns/{campaignId}/snapshot"],
   ["GET", "/api/v1/campaigns/{campaignId}/chat/export"],
+  ["GET", "/api/v1/campaigns/{campaignId}/rollable-tables"],
+  ["POST", "/api/v1/campaigns/{campaignId}/rollable-tables"],
+  ["PATCH", "/api/v1/campaigns/{campaignId}/rollable-tables/{tableId}"],
+  ["DELETE", "/api/v1/campaigns/{campaignId}/rollable-tables/{tableId}"],
+  ["POST", "/api/v1/campaigns/{campaignId}/rollable-tables/{tableId}/draw"],
   ["GET", "/api/v1/campaigns/{campaignId}/dice-macros"],
   ["POST", "/api/v1/campaigns/{campaignId}/dice-macros"],
   ["GET", "/api/v1/campaigns/{campaignId}/audio"],
@@ -5264,6 +5272,7 @@ const componentSchemas = {
       "chat",
       "rolls",
       "diceMacros",
+      "rollableTables",
       "encounters",
       "combats",
       "proposals",
@@ -5300,6 +5309,7 @@ const componentSchemas = {
       chat: arrayOf(schemaRef("ChatMessage")),
       rolls: arrayOf(schemaRef("DiceRoll")),
       diceMacros: arrayOf(schemaRef("DiceMacro")),
+      rollableTables: arrayOf(schemaRef("RollableTable")),
       encounters: arrayOf(schemaRef("Encounter")),
       combats: arrayOf(schemaRef("Combat")),
       proposals: arrayOf(schemaRef("Proposal")),
@@ -6841,6 +6851,7 @@ const componentSchemas = {
       visibility: { type: "string", enum: ["public", "gm_only", "whisper"] },
       recipientUserIds: arrayOf(idSchema),
       rollId: idSchema,
+      rollableTableId: idSchema,
       replyToMessageId: idSchema,
       moderationStatus: {
         type: "string",
@@ -8780,6 +8791,24 @@ const componentSchemas = {
       },
       messages: arrayOf(schemaRef("ChatMessage")),
     },
+  },
+  RollableTableFields: {
+    type: "object",
+    properties: {
+      name: { type: "string", minLength: 1, maxLength: 100 },
+      category: { type: "string", enum: ["loot", "encounter", "rumor"] },
+      visibility: { type: "string", enum: ["public", "gm_only"] },
+      entries: { type: "array", minItems: 1, maxItems: 100, items: {
+        type: "object", required: ["text", "weight"],
+        properties: { text: { type: "string", minLength: 1, maxLength: 500 }, weight: { type: "integer", minimum: 1, maximum: 10000 } },
+      } },
+    },
+  },
+  RollableTableInput: {
+    allOf: [schemaRef("RollableTableFields"), { type: "object", required: ["name", "category", "visibility", "entries"] }],
+  },
+  RollableTable: {
+    allOf: [schemaRef("RollableTableInput"), { type: "object", required: ["id", "campaignId", "createdAt", "updatedAt"], properties: { ...idTimestampProperties, campaignId: idSchema } }],
   },
   DiceMacro: {
     type: "object",
@@ -15634,6 +15663,28 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
       ),
     },
   },
+  "GET /api/v1/campaigns/{campaignId}/rollable-tables": {
+    responses: { "200": jsonResponse("Visible weighted tables", arrayOf(schemaRef("RollableTable"))) },
+  },
+  "POST /api/v1/campaigns/{campaignId}/rollable-tables": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody(schemaRef("RollableTableInput")),
+    responses: { "200": jsonResponse("Created table", schemaRef("RollableTable")) },
+  },
+  "PATCH /api/v1/campaigns/{campaignId}/rollable-tables/{tableId}": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody(schemaRef("RollableTableFields")),
+    responses: { "200": jsonResponse("Updated table", schemaRef("RollableTable")) },
+  },
+  "DELETE /api/v1/campaigns/{campaignId}/rollable-tables/{tableId}": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    responses: { "200": jsonResponse("Removed table", schemaRef("RollableTable")) },
+  },
+  "POST /api/v1/campaigns/{campaignId}/rollable-tables/{tableId}/draw": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody({ type: "object", required: ["visibility"], properties: { visibility: { type: "string", enum: ["public", "gm_only"] } } }),
+    responses: { "200": jsonResponse("Persisted chat result", schemaRef("ChatMessage")) },
+  },
   "GET /api/v1/campaigns/{campaignId}/dice-macros": {
     responses: {
       "200": jsonResponse(
@@ -17313,6 +17364,7 @@ function openApiParameterKey(parameter: OpenApiParameter): string {
 }
 
 const sharedRevisionRoutePatterns: ReadonlyArray<{ methods: ReadonlySet<HttpMethod>; pattern: RegExp }> = [
+  { methods: new Set(["PATCH", "DELETE"]), pattern: /^\/api\/v1\/campaigns\/[^/]+\/rollable-tables\/[^/]+$/ },
   { methods: new Set(["POST"]), pattern: /^\/api\/v1\/campaigns\/[^/]+\/(?:worlds|scenes|scene-duplications|actors|items|handouts|encounters|combats(?:\/start)?)$/ },
   { methods: new Set(["POST"]), pattern: /^\/api\/v1\/scenes\/[^/]+\/(?:tokens|encounter-monster-placements|compendium-monster-placements(?:\/[^/]+\/history)?)$/ },
   { methods: new Set(["PATCH", "DELETE"]), pattern: /^\/api\/v1\/campaigns\/[^/]+$/ },

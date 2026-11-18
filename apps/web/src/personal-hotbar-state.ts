@@ -5,7 +5,8 @@ export const hotbarSize = 6;
 export type HotbarPin =
   | { kind: "actor"; actorId: string; rollId: string }
   | { kind: "formula"; formula: string }
-  | { kind: "macro"; macroId: string };
+  | { kind: "macro"; macroId: string }
+  | { kind: "table"; tableId: string; visibility: "gm_only" | "public" };
 
 export function hotbarStoragePrefix(apiBase: string, userId: string, campaignId: string) {
   return `otte:hotbar:${JSON.stringify([apiBase, userId, campaignId])}:`;
@@ -24,6 +25,7 @@ function readPin(value: string | null): HotbarPin | undefined {
   try {
     const pin = JSON.parse(value);
     if (pin?.kind === "formula" && typeof pin.formula === "string" && validHotbarFormula(pin.formula)) return { kind: "formula", formula: pin.formula };
+    if (pin?.kind === "table" && typeof pin.tableId === "string" && pin.tableId && (pin.visibility === "public" || pin.visibility === "gm_only")) return { kind: "table", tableId: pin.tableId, visibility: pin.visibility };
     if (pin?.kind === "macro" && typeof pin.macroId === "string" && pin.macroId) return { kind: "macro", macroId: pin.macroId };
     if (pin?.kind === "actor" && typeof pin.actorId === "string" && pin.actorId && typeof pin.rollId === "string" && pin.rollId) return { kind: "actor", actorId: pin.actorId, rollId: pin.rollId };
   } catch {

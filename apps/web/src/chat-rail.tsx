@@ -1,5 +1,5 @@
 import { EmptyState } from "./workspace-states.js";
-import type { ChatMessage, DiceRoll } from "@open-tabletop/core";
+import type { ChatMessage, DiceRoll, RollableTable } from "@open-tabletop/core";
 import { Activity, Check, ChevronDown, Dices, MessageSquare, MoreHorizontal, PencilLine, Plus, Reply, Save, Send, ShieldCheck, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { verifyDiceRoll, type DiceRollVerification, type Snapshot } from "./api.js";
@@ -8,9 +8,13 @@ import { memoWithEventProps } from "./memo-with-event-props.js";
 import { campaignSearchAnchorId } from "./campaign-search-panel.js";
 import { addDieToFormula, adjustDiceModifier, diceQuickPresets, diceTraySides, rollHighlight, rollTermHighlight } from "./dice-insights.js";
 import { errorMessage, formatDateTime, formatNumber, formatRollTermDetail, formatRollTermName, rollTermTotal, safeProbabilityRange, titleCaseLabel } from "./sheet-format.js";
-
+import { RollableTablesPanel } from "./rollable-tables-panel.js";
+import type { TableMutation } from "./rollable-table-actions.js";
 
 export type ChatRailProps = {
+  tables?: RollableTable[];
+  canManageTables?: boolean;
+  onTableMutation?(action: TableMutation): Promise<void>;
   campaignId: string;
   command: string;
   setCommand(value: string): void;
@@ -60,7 +64,7 @@ export function ChatRail(props: ChatRailProps) {
 }
 
 export const MemoizedChatRail = memoWithEventProps(ChatRail, [
-  "setCommand", "setDiceFormula", "setDiceVisibility", "onRollDice", "onSaveDiceFormula", "onSubmitCommand",
+  "onTableMutation", "setCommand", "setDiceFormula", "setDiceVisibility", "onRollDice", "onSaveDiceFormula", "onSubmitCommand",
   "onClearReply", "onReplyToMessage", "onEditMessage", "onDeleteMessage", "onModerateMessage", "onToggleDice3d",
 ]);
 
@@ -131,6 +135,7 @@ function CampaignChatRail(props: ChatRailProps) {
           )}
         </details>
         <span>{props.notificationPreference === "all" ? "All message alerts" : props.notificationPreference === "mentions" ? "Mention & whisper alerts" : "Alerts muted"}</span>
+        {props.tables && props.onTableMutation && <RollableTablesPanel tables={props.tables} canManage={Boolean(props.canManageTables)} canDraw={Boolean(props.canRollDice && props.canWrite)} mutate={props.onTableMutation} />}
       </div>
       <form
         className="dice-box chat-dice-box"
@@ -194,7 +199,7 @@ function CampaignChatRail(props: ChatRailProps) {
           <EmptyState icon={<MessageSquare size={17} />} text="No messages yet." action={props.canWrite ? { label: "Write a message", run: () => streamRef.current?.closest(".chat-rail")?.querySelector<HTMLElement>('[aria-label="Chat message"]')?.focus() } : undefined} />
         ) : (
           props.messages.map((message) => (
-            <ChatMessageItem key={message.id} campaignId={props.campaignId} message={message} roll={message.rollId ? rollById.get(message.rollId) : undefined} rollConcealed={message.rollId ? props.concealedRollIds.has(message.rollId) : false} memberNames={memberNames} messageById={messageById} canEdit={message.userId === props.currentUserId && !message.rollId && message.type !== "roll"} canModerate={props.canModerate} onReplyToMessage={props.onReplyToMessage} onEditMessage={props.onEditMessage} onDeleteMessage={props.onDeleteMessage} onModerateMessage={props.onModerateMessage} />
+            <ChatMessageItem key={message.id} campaignId={props.campaignId} message={message} roll={message.rollId ? rollById.get(message.rollId) : undefined} rollConcealed={message.rollId ? props.concealedRollIds.has(message.rollId) : false} memberNames={memberNames} messageById={messageById} canEdit={message.userId === props.currentUserId && !message.rollableTableId && !message.rollId && message.type !== "roll"} canModerate={props.canModerate} onReplyToMessage={props.onReplyToMessage} onEditMessage={props.onEditMessage} onDeleteMessage={props.onDeleteMessage} onModerateMessage={props.onModerateMessage} />
           ))
         )}
       </div>
