@@ -55,6 +55,23 @@ export function partyRollForUser(store: StateStore, userId: string, stored: Stor
   return recipients.length ? { ...request, recipients } : undefined;
 }
 
+export function partyRollChangedEvent(request: PartyRollRequest): EngineEvent {
+  // Socket recipients get a permission-filtered projection of the committed roster.
+  return createEvent({ campaignId: request.campaignId, type: "partyRoll.updated", targetId: request.id, payload: {} });
+}
+
+export function replacePartyRollResult(store: StateStore, original: DiceRoll, replacement: DiceRoll, nextRevision: (timestamp: string) => string): PartyRollRequest | undefined {
+  for (const request of store.state.partyRollRequests) {
+    if (request.campaignId !== original.campaignId) continue;
+    const row = request.recipients.find((recipient) => recipient.actorId === original.actorId && recipient.result?.id === original.id);
+    if (!row) continue;
+    row.result = { id: replacement.id, formula: replacement.formula, total: replacement.total };
+    request.updatedAt = nextRevision(request.updatedAt);
+    return request;
+  }
+  return undefined;
+}
+
 function hashParts(parts: unknown[]): string {
   return createHash("sha256").update(JSON.stringify(parts)).digest("hex");
 }
@@ -74,8 +91,7 @@ export function registerPartyRollRoutes(app: FastifyInstance, dependencies: Part
   };
   const changed = (request: PartyRollRequest) => {
     store.save();
-    // Project from authoritative state for each socket. The source event carries no private roster.
-    broadcast(createEvent({ campaignId: request.campaignId, type: "partyRoll.updated", targetId: request.id, payload: {} }));
+    broadcast(partyRollChangedEvent(request));
   };
 
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/party-roll-requests/choices", async (request, reply) => {
