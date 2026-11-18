@@ -30,7 +30,7 @@ export OTTE_WORKER_TOKEN OTTE_WORKER_TOKEN_HASHES
 "${compose[@]}" build minio api web worker
 "${compose[@]}" up -d --wait --wait-timeout 180 api web
 "${compose[@]}" exec -T minio sh -ec '
-  mc alias set smoke http://127.0.0.1:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null
+  mc alias set -- smoke http://127.0.0.1:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null
   mc mb smoke/otte-storage-probe
   printf %s storage-roundtrip | mc pipe smoke/otte-storage-probe/probe.txt
   test "$(mc cat smoke/otte-storage-probe/probe.txt)" = storage-roundtrip
