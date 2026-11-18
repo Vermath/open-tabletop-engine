@@ -2,7 +2,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, wri
 import { tmpdir } from "node:os";
 import { basename, join, resolve, sep } from "node:path";
 import { Script } from "node:vm";
-import ts from "typescript";
+import { fileURLToPath } from "node:url";
+import { execFileSync } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
 import type { DesktopPreloadApi } from "./desktop-api.js";
 import { desktopDataPaths, ensureDesktopAssetSigningSecret } from "./desktop-runtime.js";
@@ -69,13 +70,14 @@ describe("desktop first-start signing key", () => {
 describe("sandbox preload build format", () => {
   it("runs the compiled preload as classic JavaScript with Electron's allowed require", async () => {
     const packageRoot = resolve(__dirname, "..");
-    const config = ts.readConfigFile(join(packageRoot, "tsconfig.json"), ts.sys.readFile);
-    const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, packageRoot);
-    const source = readFileSync(join(__dirname, "preload.ts"), "utf8");
-    const compiled = ts.transpileModule(source, { compilerOptions: parsed.options, fileName: "preload.ts" });
+    const output = mkdtempSync(join(tmpdir(), "otte-desktop-startup-"));
+    temporaryRoots.push(output);
+    const compiler = fileURLToPath(new URL("./bin/tsc", import.meta.resolve("typescript/package.json")));
+    execFileSync(process.execPath, [compiler, "-p", join(packageRoot, "tsconfig.json"), "--outDir", output, "--noCheck"], { stdio: "inherit" });
+    const compiled = readFileSync(join(output, "preload.js"), "utf8");
     let exposed: DesktopPreloadApi | undefined;
     const calls: unknown[][] = [];
-    new Script(compiled.outputText, { filename: "preload.js" }).runInNewContext({
+    new Script(compiled, { filename: "preload.js" }).runInNewContext({
       require: (name: string) => {
         expect(name).toBe("electron");
         return {
@@ -87,5 +89,5 @@ describe("sandbox preload build format", () => {
     expect(exposed).toBeDefined();
     expect(await exposed!.getDesktopStatus()).toEqual({ dataRoot: "fixture" });
     expect(calls).toEqual([["desktop:getStatus"]]);
-  });
+  }, 30_000);
 });

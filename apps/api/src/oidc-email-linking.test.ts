@@ -23,7 +23,7 @@ const oidcEnvKeys = [
   "OTTE_OIDC_ALLOW_INSECURE"
 ] as const;
 
-describe.sequential("OIDC verified-email account linking", () => {
+describe("OIDC verified-email account linking", { concurrent: false }, () => {
   it("links a new OIDC identity to an existing normalized-email user only when email_verified is true", async () => {
     const harness = await createOidcHarness({
       sub: "verified-link-subject",

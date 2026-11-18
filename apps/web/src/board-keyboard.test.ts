@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { runInNewContext } from "node:vm";
-import { ScriptTarget, transpileModule } from "typescript";
+import { stripTypeScriptTypes } from "node:module";
 import { describe, expect, it, vi } from "vitest";
 import { boardKeyboardAction } from "./board-keyboard";
 
@@ -43,7 +43,7 @@ function appKeyboardHandler(name: string, scope: Record<string, unknown>) {
   const start = appSource.indexOf(`const ${name} = (event: KeyboardEvent) => {`);
   const end = appSource.indexOf(`window.addEventListener("keydown", ${name})`, start);
   if (start < 0 || end < 0) throw new Error(`Keyboard handler ${name} not found`);
-  const code = transpileModule(`${appSource.slice(start, end)}\n${name};`, { compilerOptions: { target: ScriptTarget.ES2022 } }).outputText;
+  const code = stripTypeScriptTypes(`${appSource.slice(start, end)}\n${name};`);
   return runInNewContext(code, scope) as (keyboardEvent: ReturnType<typeof event> & { preventDefault(): void }) => void;
 }
 
